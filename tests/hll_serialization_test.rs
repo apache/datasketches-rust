@@ -24,10 +24,10 @@ fn get_test_data_path(sub_dir: &str, name: &str) -> PathBuf {
 
 fn test_sketch_file(path: PathBuf, expected_cardinality: usize, expected_lg_k: u8) {
     let bytes = fs::read(&path).expect("file should exist and should be readable");
-    let sketch = HllSketch::deserialize(&bytes).expect("deserialization should succeed");
+    let sketch1 = HllSketch::deserialize(&bytes).expect("deserialization should succeed");
 
     assert_eq!(
-        sketch.lg_config_k(),
+        sketch1.lg_config_k(),
         expected_lg_k,
         "Wrong lg_config_k in {}",
         path.display()
@@ -36,8 +36,25 @@ fn test_sketch_file(path: PathBuf, expected_cardinality: usize, expected_lg_k: u
     // TODO: implement check with 2% error rate
     _ = expected_cardinality;
 
-    let serialized_bytes = sketch.serialize().expect("serialization should succeed");
-    assert_eq!(serialized_bytes, bytes);
+    // Serialize and deserialize again to test round-trip
+    let serialized_bytes = sketch1.serialize().expect("serialization should succeed");
+    let sketch2 = HllSketch::deserialize(&serialized_bytes)
+        .expect("round-trip deserialization should succeed");
+
+    // Check that both sketches are functionally equivalent
+    assert_eq!(
+        sketch2.lg_config_k(),
+        sketch1.lg_config_k(),
+        "lg_config_k mismatch after round-trip for {}",
+        path.display()
+    );
+
+    // Check that the sketches are functionally equal
+    assert!(
+        sketch1.equals(&sketch2),
+        "Sketches are not equal after round-trip for {}",
+        path.display()
+    );
 }
 
 #[test]

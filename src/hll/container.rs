@@ -11,13 +11,42 @@ use crate::hll::cubic_interpolation::using_x_and_y_tables;
 pub const COUPON_EMPTY: u32 = 0;
 
 /// Container for storing coupons with basic cardinality estimation
+#[derive(Clone)]
 pub struct Container {
     /// Log2 of container size
-    pub lg_size: usize,
+    pub(crate) lg_size: usize,
     /// Array of coupon values (0 = empty)
-    pub coupons: Box<[u32]>,
+    pub(crate) coupons: Box<[u32]>,
     /// Number of non-empty coupons
-    pub len: usize,
+    pub(crate) len: usize,
+}
+
+impl PartialEq for Container {
+    fn eq(&self, other: &Self) -> bool {
+        // Two containers are equal if they have the same non-empty coupons
+        // (regardless of order or internal storage)
+        if self.len != other.len {
+            return false;
+        }
+
+        let mut coupons1: Vec<u32> = self
+            .coupons
+            .iter()
+            .filter(|&&c| c != COUPON_EMPTY)
+            .copied()
+            .collect();
+        let mut coupons2: Vec<u32> = other
+            .coupons
+            .iter()
+            .filter(|&&c| c != COUPON_EMPTY)
+            .copied()
+            .collect();
+
+        coupons1.sort_unstable();
+        coupons2.sort_unstable();
+
+        coupons1 == coupons2
+    }
 }
 
 impl Container {
