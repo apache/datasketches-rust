@@ -1,4 +1,31 @@
-//! Test
+//! HyperLogLog sketch implementation for cardinality estimation.
+//!
+//! This module provides a probabilistic data structure for estimating the cardinality
+//! (number of distinct elements) of large datasets with high accuracy and low memory usage.
+//!
+//! # Overview
+//!
+//! HyperLogLog (HLL) sketches use hash functions to estimate cardinality in logarithmic space.
+//! This implementation follows the Apache DataSketches specification and supports multiple
+//! storage modes that automatically adapt based on cardinality:
+//!
+//! - **List mode**: Stores individual coupons for small cardinalities
+//! - **Set mode**: Uses a hash set for medium cardinalities
+//! - **HLL mode**: Uses compact arrays for large cardinalities
+//!
+//! # HLL Types
+//!
+//! Three target HLL types are supported, trading precision for memory:
+//!
+//! - [`HllType::Hll4`]: 4 bits per bucket (most compact)
+//! - [`HllType::Hll6`]: 6 bits per bucket (balanced)
+//! - [`HllType::Hll8`]: 8 bits per bucket (highest precision)
+//!
+//! # Coupons
+//!
+//! A coupon is a 32-bit value encoding both a slot number (26 bits) and a value (6 bits).
+//! The slot identifies which bucket to update, and the value represents the number of
+//! leading zeros in the hash plus one.
 
 use std::io;
 use std::io::Read;
