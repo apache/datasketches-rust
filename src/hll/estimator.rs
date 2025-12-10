@@ -29,6 +29,17 @@ pub struct HipEstimator {
     out_of_order: bool,
 }
 
+impl PartialEq for HipEstimator {
+    fn eq(&self, other: &Self) -> bool {
+        // For serialization round-trip tests, f64 values should be bit-identical
+        // after going through binary serialization
+        self.hip_accum == other.hip_accum
+            && self.kxq0 == other.kxq0
+            && self.kxq1 == other.kxq1
+            && self.out_of_order == other.out_of_order
+    }
+}
+
 impl HipEstimator {
     /// Create a new HIP estimator for a sketch with 2^lg_config_k registers
     pub fn new(lg_config_k: u8) -> Self {

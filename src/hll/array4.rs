@@ -25,6 +25,17 @@ pub struct Array4 {
     estimator: HipEstimator,
 }
 
+impl PartialEq for Array4 {
+    fn eq(&self, other: &Self) -> bool {
+        self.lg_config_k == other.lg_config_k
+            && self.cur_min == other.cur_min
+            && self.num_at_cur_min == other.num_at_cur_min
+            && self.bytes.as_ref() == other.bytes.as_ref()
+            && self.aux_map == other.aux_map
+            && self.estimator == other.estimator
+    }
+}
+
 impl Array4 {
     pub fn new(lg_config_k: u8) -> Self {
         let num_bytes = 1 << (lg_config_k - 1);
@@ -214,15 +225,16 @@ impl Array4 {
     /// Deserialize Array4 from HLL mode bytes
     ///
     /// Expects full HLL preamble (40 bytes) followed by packed 4-bit data and optional aux map.
-    pub(crate) fn deserialize(
+    pub fn deserialize(
         bytes: &[u8],
         lg_config_k: u8,
         compact: bool,
         ooo: bool,
     ) -> std::io::Result<Self> {
         use std::io::{Error, ErrorKind};
-        use crate::hll::{get_slot, get_value};
+
         use crate::hll::serialization::*;
+        use crate::hll::{get_slot, get_value};
 
         let num_bytes = 1 << (lg_config_k - 1); // k/2 bytes for 4-bit packing
 
@@ -230,50 +242,13 @@ impl Array4 {
         let cur_min = bytes[HLL_CUR_MIN_BYTE];
 
         // Read HIP estimator values from preamble
-        let hip_accum = f64::from_le_bytes([
-            bytes[HIP_ACCUM_DOUBLE],
-            bytes[HIP_ACCUM_DOUBLE + 1],
-            bytes[HIP_ACCUM_DOUBLE + 2],
-            bytes[HIP_ACCUM_DOUBLE + 3],
-            bytes[HIP_ACCUM_DOUBLE + 4],
-            bytes[HIP_ACCUM_DOUBLE + 5],
-            bytes[HIP_ACCUM_DOUBLE + 6],
-            bytes[HIP_ACCUM_DOUBLE + 7],
-        ]);
-        let kxq0 = f64::from_le_bytes([
-            bytes[KXQ0_DOUBLE],
-            bytes[KXQ0_DOUBLE + 1],
-            bytes[KXQ0_DOUBLE + 2],
-            bytes[KXQ0_DOUBLE + 3],
-            bytes[KXQ0_DOUBLE + 4],
-            bytes[KXQ0_DOUBLE + 5],
-            bytes[KXQ0_DOUBLE + 6],
-            bytes[KXQ0_DOUBLE + 7],
-        ]);
-        let kxq1 = f64::from_le_bytes([
-            bytes[KXQ1_DOUBLE],
-            bytes[KXQ1_DOUBLE + 1],
-            bytes[KXQ1_DOUBLE + 2],
-            bytes[KXQ1_DOUBLE + 3],
-            bytes[KXQ1_DOUBLE + 4],
-            bytes[KXQ1_DOUBLE + 5],
-            bytes[KXQ1_DOUBLE + 6],
-            bytes[KXQ1_DOUBLE + 7],
-        ]);
+        let hip_accum = read_f64_le(bytes, HIP_ACCUM_DOUBLE);
+        let kxq0 = read_f64_le(bytes, KXQ0_DOUBLE);
+        let kxq1 = read_f64_le(bytes, KXQ1_DOUBLE);
 
         // Read num_at_cur_min and aux_count
-        let num_at_cur_min = u32::from_le_bytes([
-            bytes[CUR_MIN_COUNT_INT],
-            bytes[CUR_MIN_COUNT_INT + 1],
-            bytes[CUR_MIN_COUNT_INT + 2],
-            bytes[CUR_MIN_COUNT_INT + 3],
-        ]);
-        let aux_count = u32::from_le_bytes([
-            bytes[AUX_COUNT_INT],
-            bytes[AUX_COUNT_INT + 1],
-            bytes[AUX_COUNT_INT + 2],
-            bytes[AUX_COUNT_INT + 3],
-        ]);
+        let num_at_cur_min = read_u32_le(bytes, CUR_MIN_COUNT_INT);
+        let aux_count = read_u32_le(bytes, AUX_COUNT_INT);
 
         // Calculate expected length
         let expected_len = if compact {
@@ -307,12 +282,7 @@ impl Array4 {
 
             for i in 0..aux_count {
                 let offset = aux_start + (i as usize * COUPON_SIZE_BYTES);
-                let coupon = u32::from_le_bytes([
-                    bytes[offset],
-                    bytes[offset + 1],
-                    bytes[offset + 2],
-                    bytes[offset + 3],
-                ]);
+                let coupon = read_u32_le(bytes, offset);
                 let slot = get_slot(coupon) & ((1 << lg_config_k) - 1);
                 let value = get_value(coupon);
                 aux.insert(slot, value);
@@ -340,7 +310,7 @@ impl Array4 {
     /// Serialize Array4 to bytes
     ///
     /// Produces full HLL preamble (40 bytes) followed by packed 4-bit data and optional aux map.
-    pub(crate) fn serialize(&self, lg_config_k: u8) -> std::io::Result<Vec<u8>> {
+    pub fn serialize(&self, lg_config_k: u8) -> std::io::Result<Vec<u8>> {
         use crate::hll::pack_coupon;
         use crate::hll::serialization::*;
 
@@ -378,20 +348,15 @@ impl Array4 {
         bytes[MODE_BYTE] = encode_mode_byte(CUR_MODE_HLL, TGT_HLL4);
 
         // Write HIP estimator values
-        bytes[HIP_ACCUM_DOUBLE..HIP_ACCUM_DOUBLE + DOUBLE_SIZE_BYTES]
-            .copy_from_slice(&self.estimator.hip_accum().to_le_bytes());
-        bytes[KXQ0_DOUBLE..KXQ0_DOUBLE + DOUBLE_SIZE_BYTES]
-            .copy_from_slice(&self.estimator.kxq0().to_le_bytes());
-        bytes[KXQ1_DOUBLE..KXQ1_DOUBLE + DOUBLE_SIZE_BYTES]
-            .copy_from_slice(&self.estimator.kxq1().to_le_bytes());
+        write_f64_le(&mut bytes, HIP_ACCUM_DOUBLE, self.estimator.hip_accum());
+        write_f64_le(&mut bytes, KXQ0_DOUBLE, self.estimator.kxq0());
+        write_f64_le(&mut bytes, KXQ1_DOUBLE, self.estimator.kxq1());
 
         // Write num_at_cur_min
-        bytes[CUR_MIN_COUNT_INT..CUR_MIN_COUNT_INT + INT_SIZE_BYTES]
-            .copy_from_slice(&self.num_at_cur_min.to_le_bytes());
+        write_u32_le(&mut bytes, CUR_MIN_COUNT_INT, self.num_at_cur_min);
 
         // Write aux_count
-        bytes[AUX_COUNT_INT..AUX_COUNT_INT + INT_SIZE_BYTES]
-            .copy_from_slice(&aux_count.to_le_bytes());
+        write_u32_le(&mut bytes, AUX_COUNT_INT, aux_count);
 
         // Write packed 4-bit byte array
         bytes[HLL_BYTE_ARR_START..HLL_BYTE_ARR_START + num_bytes].copy_from_slice(&self.bytes);
@@ -401,7 +366,7 @@ impl Array4 {
         for (i, (slot, value)) in aux_entries.iter().enumerate() {
             let offset = aux_start + (i * COUPON_SIZE_BYTES);
             let coupon = pack_coupon(*slot, *value);
-            bytes[offset..offset + COUPON_SIZE_BYTES].copy_from_slice(&coupon.to_le_bytes());
+            write_u32_le(&mut bytes, offset, coupon);
         }
 
         Ok(bytes)

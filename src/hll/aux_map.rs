@@ -22,6 +22,35 @@ pub struct AuxMap {
     count: u32,
 }
 
+impl PartialEq for AuxMap {
+    fn eq(&self, other: &Self) -> bool {
+        // Two aux maps are equal if they have the same lg_config_k
+        // and the same non-empty entries (regardless of internal storage order)
+        if self.lg_config_k != other.lg_config_k || self.count != other.count {
+            return false;
+        }
+
+        // Collect and sort non-empty entries from both maps
+        let mut entries1: Vec<u32> = self
+            .entries
+            .iter()
+            .filter(|&&e| e != ENTRY_EMPTY)
+            .copied()
+            .collect();
+        let mut entries2: Vec<u32> = other
+            .entries
+            .iter()
+            .filter(|&&e| e != ENTRY_EMPTY)
+            .copied()
+            .collect();
+
+        entries1.sort_unstable();
+        entries2.sort_unstable();
+
+        entries1 == entries2
+    }
+}
+
 /// Get lg_aux_arr_ints for a given lg_config_k
 ///
 /// This determines the initial size of the auxiliary hash map
