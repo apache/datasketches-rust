@@ -6,22 +6,7 @@
 use std::io;
 
 use crate::hll::container::{COUPON_EMPTY, Container};
-
-// Constants for serialization
-const LIST_PREINTS: u8 = 2;
-const LIST_INT_ARR_START: usize = 8;
-const PREAMBLE_INTS_BYTE: usize = 0;
-const SER_VER_BYTE: usize = 1;
-const FAMILY_BYTE: usize = 2;
-const LG_K_BYTE: usize = 3;
-const LG_ARR_BYTE: usize = 4;
-const FLAGS_BYTE: usize = 5;
-const LIST_COUNT_BYTE: usize = 6;
-const MODE_BYTE: usize = 7;
-const HLL_FAMILY_ID: u8 = 7;
-const SER_VER: u8 = 1;
-const EMPTY_FLAG_MASK: u8 = 4;
-const COMPACT_FLAG_MASK: u8 = 8;
+use crate::hll::serialization::*;
 
 /// List for sequential coupon storage with duplicate detection
 #[derive(Clone)]
@@ -138,8 +123,8 @@ impl List {
         // Write count
         bytes[LIST_COUNT_BYTE] = coupon_count as u8;
 
-        // Write mode byte: low 2 bits = current mode (0=LIST), bits 2-3 = target type
-        bytes[MODE_BYTE] = tgt_hll_type << 2; // Current mode is LIST (0)
+        // Write mode byte: LIST mode with target HLL type
+        bytes[MODE_BYTE] = encode_mode_byte(CUR_MODE_LIST, tgt_hll_type);
 
         // Write coupons (only non-empty ones if compact)
         if !empty {

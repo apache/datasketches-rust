@@ -7,21 +7,7 @@ use std::io;
 
 use crate::hll::KEY_MASK_26;
 use crate::hll::container::{COUPON_EMPTY, Container};
-
-// Constants for serialization
-const HASH_SET_PREINTS: u8 = 3;
-const HASH_SET_COUNT_INT: usize = 8;
-const HASH_SET_INT_ARR_START: usize = 12;
-const PREAMBLE_INTS_BYTE: usize = 0;
-const SER_VER_BYTE: usize = 1;
-const FAMILY_BYTE: usize = 2;
-const LG_K_BYTE: usize = 3;
-const LG_ARR_BYTE: usize = 4;
-const FLAGS_BYTE: usize = 5;
-const MODE_BYTE: usize = 7;
-const HLL_FAMILY_ID: u8 = 7;
-const SER_VER: u8 = 1;
-const COMPACT_FLAG_MASK: u8 = 8;
+use crate::hll::serialization::*;
 
 /// Hash set for efficient coupon storage with collision handling
 #[derive(Clone)]
@@ -196,8 +182,8 @@ impl HashSet {
         }
         bytes[FLAGS_BYTE] = flags;
 
-        // Write mode byte: low 2 bits = current mode (1=SET), bits 2-3 = target type
-        bytes[MODE_BYTE] = 1 | (tgt_hll_type << 2);
+        // Write mode byte: SET mode with target HLL type
+        bytes[MODE_BYTE] = encode_mode_byte(CUR_MODE_SET, tgt_hll_type);
 
         // Write coupon count
         bytes[HASH_SET_COUNT_INT..HASH_SET_COUNT_INT + 4]

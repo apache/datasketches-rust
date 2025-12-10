@@ -5,43 +5,7 @@ use crate::hll::array6::Array6;
 use crate::hll::array8::Array8;
 use crate::hll::hash_set::HashSet;
 use crate::hll::list::List;
-
-// Binary format constants
-const HLL_FAMILY_ID: u8 = 7;
-const SER_VER: u8 = 1;
-
-// Flag bit masks (byte 5)
-const EMPTY_FLAG_MASK: u8 = 4;
-const COMPACT_FLAG_MASK: u8 = 8;
-const OUT_OF_ORDER_FLAG_MASK: u8 = 16;
-const FULL_SIZE_FLAG_MASK: u8 = 32;
-
-// Preamble offsets
-const PREAMBLE_INTS_BYTE: usize = 0;
-const SER_VER_BYTE: usize = 1;
-const FAMILY_BYTE: usize = 2;
-const LG_K_BYTE: usize = 3;
-const LG_ARR_BYTE: usize = 4;
-const FLAGS_BYTE: usize = 5;
-const LIST_COUNT_BYTE: usize = 6;
-const HLL_CUR_MIN_BYTE: usize = 6;
-const MODE_BYTE: usize = 7;
-
-// Data offsets
-const LIST_INT_ARR_START: usize = 8;
-const HASH_SET_COUNT_INT: usize = 8;
-const HASH_SET_INT_ARR_START: usize = 12;
-const HIP_ACCUM_DOUBLE: usize = 8;
-const KXQ0_DOUBLE: usize = 16;
-const KXQ1_DOUBLE: usize = 24;
-const CUR_MIN_COUNT_INT: usize = 32;
-const AUX_COUNT_INT: usize = 36;
-const HLL_BYTE_ARR_START: usize = 40;
-
-// Preamble sizes
-const LIST_PREINTS: u8 = 2;
-const HASH_SET_PREINTS: u8 = 3;
-const HLL_PREINTS: u8 = 10;
+use crate::hll::serialization::*;
 
 /// Current sketch mode
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -149,8 +113,8 @@ impl HllSketch {
         }
 
         // Extract mode and type
-        let cur_mode = extract_cur_mode(mode_byte);
-        let tgt_type = extract_tgt_hll_type(mode_byte);
+        let cur_mode = extract_cur_mode_enum(mode_byte);
+        let tgt_type = extract_tgt_hll_type_enum(mode_byte);
         let empty = (flags & EMPTY_FLAG_MASK) != 0;
         let compact = (flags & COMPACT_FLAG_MASK) != 0;
         let ooo = (flags & OUT_OF_ORDER_FLAG_MASK) != 0;
@@ -213,22 +177,22 @@ impl HllSketch {
     }
 }
 
-/// Extract current mode from mode byte (low 2 bits)
-fn extract_cur_mode(mode_byte: u8) -> CurMode {
-    match mode_byte & 0x3 {
-        0 => CurMode::List,
-        1 => CurMode::Set,
-        2 => CurMode::Hll,
+/// Extract current mode from mode byte using serialization module
+fn extract_cur_mode_enum(mode_byte: u8) -> CurMode {
+    match crate::hll::serialization::extract_cur_mode(mode_byte) {
+        CUR_MODE_LIST => CurMode::List,
+        CUR_MODE_SET => CurMode::Set,
+        CUR_MODE_HLL => CurMode::Hll,
         _ => unreachable!(),
     }
 }
 
-/// Extract target HLL type from mode byte (bits 2-3)
-fn extract_tgt_hll_type(mode_byte: u8) -> TgtHllType {
-    match (mode_byte >> 2) & 0x3 {
-        0 => TgtHllType::Hll4,
-        1 => TgtHllType::Hll6,
-        2 => TgtHllType::Hll8,
+/// Extract target HLL type from mode byte using serialization module
+fn extract_tgt_hll_type_enum(mode_byte: u8) -> TgtHllType {
+    match crate::hll::serialization::extract_tgt_hll_type(mode_byte) {
+        TGT_HLL4 => TgtHllType::Hll4,
+        TGT_HLL6 => TgtHllType::Hll6,
+        TGT_HLL8 => TgtHllType::Hll8,
         _ => unreachable!(),
     }
 }
