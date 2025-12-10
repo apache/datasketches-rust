@@ -4,7 +4,7 @@
 //! HLL bitmap estimator for small cardinalities.
 
 const NUM_EXACT: usize = 25;
-const EULER_MASCHERONI: f64 = 0.577215664901532860606512090082;
+const EULER_MASCHERONI: f64 = 0.577_215_664_901_532_9;
 
 /// Exact harmonic numbers H(n) for n = 0..24
 const EXACT_HARMONIC: [f64; NUM_EXACT] = [

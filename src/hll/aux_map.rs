@@ -206,20 +206,41 @@ impl AuxMap {
             }
         })
     }
+}
 
-    /// Convert into an iterator over (slot, value) pairs
-    pub fn into_iter(self) -> impl Iterator<Item = (u32, u8)> {
-        let config_k_mask = (1 << self.lg_config_k) - 1;
-        self.entries
-            .into_vec()
-            .into_iter()
-            .filter_map(move |entry| {
-                if entry != ENTRY_EMPTY {
-                    Some((get_slot(entry) & config_k_mask, get_value(entry)))
-                } else {
-                    None
+/// Iterator over AuxMap entries
+pub struct AuxMapIter {
+    entries: std::vec::IntoIter<u32>,
+    config_k_mask: u32,
+}
+
+impl Iterator for AuxMapIter {
+    type Item = (u32, u8);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            match self.entries.next() {
+                Some(entry) if entry != ENTRY_EMPTY => {
+                    let slot = get_slot(entry) & self.config_k_mask;
+                    let value = get_value(entry);
+                    return Some((slot, value));
                 }
-            })
+                Some(_) => continue, // Skip empty entries
+                None => return None,
+            }
+        }
+    }
+}
+
+impl IntoIterator for AuxMap {
+    type Item = (u32, u8);
+    type IntoIter = AuxMapIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        AuxMapIter {
+            entries: self.entries.into_vec().into_iter(),
+            config_k_mask: (1 << self.lg_config_k) - 1,
+        }
     }
 }
 
