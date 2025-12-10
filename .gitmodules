@@ -1,0 +1,3 @@
+[submodule "test/datasketches-go"]
+	path = test/datasketches-go
+	url = https://github.com/apache/datasketches-go.git
