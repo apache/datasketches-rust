@@ -222,34 +222,64 @@ impl Array4 {
     ) -> std::io::Result<Self> {
         use std::io::{Error, ErrorKind};
         use crate::hll::{get_slot, get_value};
+        use crate::hll::serialization::*;
 
         let num_bytes = 1 << (lg_config_k - 1); // k/2 bytes for 4-bit packing
 
-        // Read cur_min from header byte 6
-        let cur_min = bytes[6];
+        // Read cur_min from header
+        let cur_min = bytes[HLL_CUR_MIN_BYTE];
 
         // Read HIP estimator values from preamble
         let hip_accum = f64::from_le_bytes([
-            bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15],
+            bytes[HIP_ACCUM_DOUBLE],
+            bytes[HIP_ACCUM_DOUBLE + 1],
+            bytes[HIP_ACCUM_DOUBLE + 2],
+            bytes[HIP_ACCUM_DOUBLE + 3],
+            bytes[HIP_ACCUM_DOUBLE + 4],
+            bytes[HIP_ACCUM_DOUBLE + 5],
+            bytes[HIP_ACCUM_DOUBLE + 6],
+            bytes[HIP_ACCUM_DOUBLE + 7],
         ]);
         let kxq0 = f64::from_le_bytes([
-            bytes[16], bytes[17], bytes[18], bytes[19], bytes[20], bytes[21], bytes[22],
-            bytes[23],
+            bytes[KXQ0_DOUBLE],
+            bytes[KXQ0_DOUBLE + 1],
+            bytes[KXQ0_DOUBLE + 2],
+            bytes[KXQ0_DOUBLE + 3],
+            bytes[KXQ0_DOUBLE + 4],
+            bytes[KXQ0_DOUBLE + 5],
+            bytes[KXQ0_DOUBLE + 6],
+            bytes[KXQ0_DOUBLE + 7],
         ]);
         let kxq1 = f64::from_le_bytes([
-            bytes[24], bytes[25], bytes[26], bytes[27], bytes[28], bytes[29], bytes[30],
-            bytes[31],
+            bytes[KXQ1_DOUBLE],
+            bytes[KXQ1_DOUBLE + 1],
+            bytes[KXQ1_DOUBLE + 2],
+            bytes[KXQ1_DOUBLE + 3],
+            bytes[KXQ1_DOUBLE + 4],
+            bytes[KXQ1_DOUBLE + 5],
+            bytes[KXQ1_DOUBLE + 6],
+            bytes[KXQ1_DOUBLE + 7],
         ]);
 
         // Read num_at_cur_min and aux_count
-        let num_at_cur_min = u32::from_le_bytes([bytes[32], bytes[33], bytes[34], bytes[35]]);
-        let aux_count = u32::from_le_bytes([bytes[36], bytes[37], bytes[38], bytes[39]]);
+        let num_at_cur_min = u32::from_le_bytes([
+            bytes[CUR_MIN_COUNT_INT],
+            bytes[CUR_MIN_COUNT_INT + 1],
+            bytes[CUR_MIN_COUNT_INT + 2],
+            bytes[CUR_MIN_COUNT_INT + 3],
+        ]);
+        let aux_count = u32::from_le_bytes([
+            bytes[AUX_COUNT_INT],
+            bytes[AUX_COUNT_INT + 1],
+            bytes[AUX_COUNT_INT + 2],
+            bytes[AUX_COUNT_INT + 3],
+        ]);
 
         // Calculate expected length
         let expected_len = if compact {
-            40 // Just preamble for compact empty sketch
+            HLL_PREAMBLE_SIZE // Just preamble for compact empty sketch
         } else {
-            40 + num_bytes + (aux_count as usize * 4) // preamble + packed data + aux entries
+            HLL_PREAMBLE_SIZE + num_bytes + (aux_count as usize * COUPON_SIZE_BYTES)
         };
 
         if bytes.len() < expected_len {
@@ -263,20 +293,20 @@ impl Array4 {
             ));
         }
 
-        // Read packed 4-bit byte array from offset 40
+        // Read packed 4-bit byte array from HLL_BYTE_ARR_START
         let mut data = vec![0u8; num_bytes];
         if !compact {
-            data.copy_from_slice(&bytes[40..40 + num_bytes]);
+            data.copy_from_slice(&bytes[HLL_BYTE_ARR_START..HLL_BYTE_ARR_START + num_bytes]);
         }
 
         // Read aux map if present
         let mut aux_map = None;
         if aux_count > 0 {
             let mut aux = AuxMap::new(lg_config_k);
-            let aux_start = 40 + num_bytes;
+            let aux_start = HLL_BYTE_ARR_START + num_bytes;
 
             for i in 0..aux_count {
-                let offset = aux_start + (i as usize * 4);
+                let offset = aux_start + (i as usize * COUPON_SIZE_BYTES);
                 let coupon = u32::from_le_bytes([
                     bytes[offset],
                     bytes[offset + 1],
@@ -312,6 +342,7 @@ impl Array4 {
     /// Produces full HLL preamble (40 bytes) followed by packed 4-bit data and optional aux map.
     pub(crate) fn serialize(&self, lg_config_k: u8) -> std::io::Result<Vec<u8>> {
         use crate::hll::pack_coupon;
+        use crate::hll::serialization::*;
 
         let num_bytes = 1 << (lg_config_k - 1); // k/2 bytes for 4-bit packing
 
@@ -323,22 +354,8 @@ impl Array4 {
         };
 
         let aux_count = aux_entries.len() as u32;
-        let total_size = 40 + num_bytes + (aux_count as usize * 4);
+        let total_size = HLL_PREAMBLE_SIZE + num_bytes + (aux_count as usize * COUPON_SIZE_BYTES);
         let mut bytes = vec![0u8; total_size];
-
-        // Offsets (same as sketch.rs constants)
-        const PREAMBLE_INTS_BYTE: usize = 0;
-        const SER_VER_BYTE: usize = 1;
-        const FAMILY_BYTE: usize = 2;
-        const LG_K_BYTE: usize = 3;
-        const LG_ARR_BYTE: usize = 4;
-        const FLAGS_BYTE: usize = 5;
-        const HLL_CUR_MIN_BYTE: usize = 6;
-        const MODE_BYTE: usize = 7;
-        const HLL_PREINTS: u8 = 10;
-        const HLL_FAMILY_ID: u8 = 7;
-        const SER_VER: u8 = 1;
-        const OUT_OF_ORDER_FLAG_MASK: u8 = 16;
 
         // Write standard header
         bytes[PREAMBLE_INTS_BYTE] = HLL_PREINTS;
@@ -357,29 +374,34 @@ impl Array4 {
         // Write cur_min
         bytes[HLL_CUR_MIN_BYTE] = self.cur_min;
 
-        // Mode byte: low 2 bits = HLL (2), bits 2-3 = HLL4 (0)
-        bytes[MODE_BYTE] = 2 | (0 << 2); // 0b00000010 = HLL mode, HLL4 type
+        // Mode byte: HLL mode with HLL4 type
+        bytes[MODE_BYTE] = encode_mode_byte(CUR_MODE_HLL, TGT_HLL4);
 
         // Write HIP estimator values
-        bytes[8..16].copy_from_slice(&self.estimator.hip_accum().to_le_bytes());
-        bytes[16..24].copy_from_slice(&self.estimator.kxq0().to_le_bytes());
-        bytes[24..32].copy_from_slice(&self.estimator.kxq1().to_le_bytes());
+        bytes[HIP_ACCUM_DOUBLE..HIP_ACCUM_DOUBLE + DOUBLE_SIZE_BYTES]
+            .copy_from_slice(&self.estimator.hip_accum().to_le_bytes());
+        bytes[KXQ0_DOUBLE..KXQ0_DOUBLE + DOUBLE_SIZE_BYTES]
+            .copy_from_slice(&self.estimator.kxq0().to_le_bytes());
+        bytes[KXQ1_DOUBLE..KXQ1_DOUBLE + DOUBLE_SIZE_BYTES]
+            .copy_from_slice(&self.estimator.kxq1().to_le_bytes());
 
         // Write num_at_cur_min
-        bytes[32..36].copy_from_slice(&self.num_at_cur_min.to_le_bytes());
+        bytes[CUR_MIN_COUNT_INT..CUR_MIN_COUNT_INT + INT_SIZE_BYTES]
+            .copy_from_slice(&self.num_at_cur_min.to_le_bytes());
 
         // Write aux_count
-        bytes[36..40].copy_from_slice(&aux_count.to_le_bytes());
+        bytes[AUX_COUNT_INT..AUX_COUNT_INT + INT_SIZE_BYTES]
+            .copy_from_slice(&aux_count.to_le_bytes());
 
         // Write packed 4-bit byte array
-        bytes[40..40 + num_bytes].copy_from_slice(&self.bytes);
+        bytes[HLL_BYTE_ARR_START..HLL_BYTE_ARR_START + num_bytes].copy_from_slice(&self.bytes);
 
         // Write aux map entries if present
-        let aux_start = 40 + num_bytes;
+        let aux_start = HLL_BYTE_ARR_START + num_bytes;
         for (i, (slot, value)) in aux_entries.iter().enumerate() {
-            let offset = aux_start + (i * 4);
+            let offset = aux_start + (i * COUPON_SIZE_BYTES);
             let coupon = pack_coupon(*slot, *value);
-            bytes[offset..offset + 4].copy_from_slice(&coupon.to_le_bytes());
+            bytes[offset..offset + COUPON_SIZE_BYTES].copy_from_slice(&coupon.to_le_bytes());
         }
 
         Ok(bytes)

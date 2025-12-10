@@ -94,12 +94,13 @@ impl Array8 {
         ooo: bool,
     ) -> std::io::Result<Self> {
         use std::io::{Error, ErrorKind};
+        use crate::hll::serialization::*;
 
         let k = 1 << lg_config_k;
         let expected_len = if compact {
-            40 // Just preamble for compact empty sketch
+            HLL_PREAMBLE_SIZE // Just preamble for compact empty sketch
         } else {
-            40 + k as usize
+            HLL_PREAMBLE_SIZE + k as usize
         };
 
         if bytes.len() < expected_len {
@@ -115,25 +116,48 @@ impl Array8 {
 
         // Read HIP estimator values from preamble
         let hip_accum = f64::from_le_bytes([
-            bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15],
+            bytes[HIP_ACCUM_DOUBLE],
+            bytes[HIP_ACCUM_DOUBLE + 1],
+            bytes[HIP_ACCUM_DOUBLE + 2],
+            bytes[HIP_ACCUM_DOUBLE + 3],
+            bytes[HIP_ACCUM_DOUBLE + 4],
+            bytes[HIP_ACCUM_DOUBLE + 5],
+            bytes[HIP_ACCUM_DOUBLE + 6],
+            bytes[HIP_ACCUM_DOUBLE + 7],
         ]);
         let kxq0 = f64::from_le_bytes([
-            bytes[16], bytes[17], bytes[18], bytes[19], bytes[20], bytes[21], bytes[22],
-            bytes[23],
+            bytes[KXQ0_DOUBLE],
+            bytes[KXQ0_DOUBLE + 1],
+            bytes[KXQ0_DOUBLE + 2],
+            bytes[KXQ0_DOUBLE + 3],
+            bytes[KXQ0_DOUBLE + 4],
+            bytes[KXQ0_DOUBLE + 5],
+            bytes[KXQ0_DOUBLE + 6],
+            bytes[KXQ0_DOUBLE + 7],
         ]);
         let kxq1 = f64::from_le_bytes([
-            bytes[24], bytes[25], bytes[26], bytes[27], bytes[28], bytes[29], bytes[30],
-            bytes[31],
+            bytes[KXQ1_DOUBLE],
+            bytes[KXQ1_DOUBLE + 1],
+            bytes[KXQ1_DOUBLE + 2],
+            bytes[KXQ1_DOUBLE + 3],
+            bytes[KXQ1_DOUBLE + 4],
+            bytes[KXQ1_DOUBLE + 5],
+            bytes[KXQ1_DOUBLE + 6],
+            bytes[KXQ1_DOUBLE + 7],
         ]);
 
         // Read num_at_cur_min (for Array8, this is num_zeros since cur_min=0)
-        let num_zeros =
-            u32::from_le_bytes([bytes[32], bytes[33], bytes[34], bytes[35]]);
+        let num_zeros = u32::from_le_bytes([
+            bytes[CUR_MIN_COUNT_INT],
+            bytes[CUR_MIN_COUNT_INT + 1],
+            bytes[CUR_MIN_COUNT_INT + 2],
+            bytes[CUR_MIN_COUNT_INT + 3],
+        ]);
 
-        // Read byte array from offset 40
+        // Read byte array from offset HLL_BYTE_ARR_START
         let mut data = vec![0u8; k as usize];
         if !compact {
-            data.copy_from_slice(&bytes[40..40 + k as usize]);
+            data.copy_from_slice(&bytes[HLL_BYTE_ARR_START..HLL_BYTE_ARR_START + k as usize]);
         }
 
         // Create estimator and restore state
@@ -155,23 +179,11 @@ impl Array8 {
     ///
     /// Produces full HLL preamble (40 bytes) followed by k bytes of data.
     pub(crate) fn serialize(&self, lg_config_k: u8) -> std::io::Result<Vec<u8>> {
-        let k = 1 << lg_config_k;
-        let total_size = 40 + k as usize;
-        let mut bytes = vec![0u8; total_size];
+        use crate::hll::serialization::*;
 
-        // Offsets (same as sketch.rs constants)
-        const PREAMBLE_INTS_BYTE: usize = 0;
-        const SER_VER_BYTE: usize = 1;
-        const FAMILY_BYTE: usize = 2;
-        const LG_K_BYTE: usize = 3;
-        const LG_ARR_BYTE: usize = 4;
-        const FLAGS_BYTE: usize = 5;
-        const HLL_CUR_MIN_BYTE: usize = 6;
-        const MODE_BYTE: usize = 7;
-        const HLL_PREINTS: u8 = 10;
-        const HLL_FAMILY_ID: u8 = 7;
-        const SER_VER: u8 = 1;
-        const OUT_OF_ORDER_FLAG_MASK: u8 = 16;
+        let k = 1 << lg_config_k;
+        let total_size = HLL_PREAMBLE_SIZE + k as usize;
+        let mut bytes = vec![0u8; total_size];
 
         // Write standard header
         bytes[PREAMBLE_INTS_BYTE] = HLL_PREINTS;
@@ -190,22 +202,27 @@ impl Array8 {
         // cur_min is always 0 for Array8
         bytes[HLL_CUR_MIN_BYTE] = 0;
 
-        // Mode byte: low 2 bits = HLL (2), bits 2-3 = HLL8 (2)
-        bytes[MODE_BYTE] = 2 | (2 << 2); // 0b00001010 = HLL mode, HLL8 type
+        // Mode byte: HLL mode with HLL8 type
+        bytes[MODE_BYTE] = encode_mode_byte(CUR_MODE_HLL, TGT_HLL8);
 
         // Write HIP estimator values
-        bytes[8..16].copy_from_slice(&self.estimator.hip_accum().to_le_bytes());
-        bytes[16..24].copy_from_slice(&self.estimator.kxq0().to_le_bytes());
-        bytes[24..32].copy_from_slice(&self.estimator.kxq1().to_le_bytes());
+        bytes[HIP_ACCUM_DOUBLE..HIP_ACCUM_DOUBLE + DOUBLE_SIZE_BYTES]
+            .copy_from_slice(&self.estimator.hip_accum().to_le_bytes());
+        bytes[KXQ0_DOUBLE..KXQ0_DOUBLE + DOUBLE_SIZE_BYTES]
+            .copy_from_slice(&self.estimator.kxq0().to_le_bytes());
+        bytes[KXQ1_DOUBLE..KXQ1_DOUBLE + DOUBLE_SIZE_BYTES]
+            .copy_from_slice(&self.estimator.kxq1().to_le_bytes());
 
         // Write num_at_cur_min (num_zeros for Array8)
-        bytes[32..36].copy_from_slice(&self.num_zeros.to_le_bytes());
+        bytes[CUR_MIN_COUNT_INT..CUR_MIN_COUNT_INT + INT_SIZE_BYTES]
+            .copy_from_slice(&self.num_zeros.to_le_bytes());
 
         // Write aux_count (always 0 for Array8)
-        bytes[36..40].copy_from_slice(&0u32.to_le_bytes());
+        bytes[AUX_COUNT_INT..AUX_COUNT_INT + INT_SIZE_BYTES]
+            .copy_from_slice(&0u32.to_le_bytes());
 
         // Write byte array
-        bytes[40..].copy_from_slice(&self.bytes);
+        bytes[HLL_BYTE_ARR_START..].copy_from_slice(&self.bytes);
 
         Ok(bytes)
     }

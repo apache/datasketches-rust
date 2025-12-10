@@ -17,6 +17,7 @@ pub mod estimator;
 pub mod harmonic_numbers;
 pub mod hash_set;
 pub mod list;
+pub mod serialization;
 pub mod sketch;
 
 const KEY_BITS_26: u32 = 26;
