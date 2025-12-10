@@ -29,6 +29,15 @@ impl Container {
         }
     }
 
+    /// Create container from existing coupons
+    pub fn from_coupons(lg_size: usize, coupons: Box<[u32]>, len: usize) -> Self {
+        Self {
+            lg_size,
+            coupons,
+            len,
+        }
+    }
+
     pub fn is_full(&self) -> bool {
         self.len == self.coupons.len()
     }

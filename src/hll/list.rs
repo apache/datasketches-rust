@@ -7,7 +7,7 @@ use crate::hll::container::{COUPON_EMPTY, Container};
 
 /// List for sequential coupon storage with duplicate detection
 pub struct List {
-    container: Container,
+    pub(crate) container: Container,
 }
 
 impl Default for List {
@@ -21,6 +21,13 @@ impl List {
     pub fn new(lg_size: usize) -> Self {
         Self {
             container: Container::new(lg_size),
+        }
+    }
+
+    /// Create list from existing coupons (for deserialization)
+    pub(crate) fn from_coupons(lg_size: usize, coupons: Box<[u32]>, len: usize) -> Self {
+        Self {
+            container: Container::from_coupons(lg_size, coupons, len),
         }
     }
 
