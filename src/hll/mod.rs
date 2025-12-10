@@ -20,6 +20,14 @@ pub mod list;
 pub mod serialization;
 pub mod sketch;
 
+/// Target HLL type
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HllType {
+    Hll4 = 0,
+    Hll6 = 1,
+    Hll8 = 2,
+}
+
 const KEY_BITS_26: u32 = 26;
 const KEY_MASK_26: u32 = (1 << KEY_BITS_26) - 1;
 

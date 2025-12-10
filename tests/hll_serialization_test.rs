@@ -11,7 +11,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use datasketches_rust::hll::sketch::HllSketch;
+use datasketches::hll::sketch::HllSketch;
 
 const TEST_DATA_DIR: &str = "tests/datasketches-go/serialization_test_data";
 
@@ -33,8 +33,37 @@ fn test_sketch_file(path: PathBuf, expected_cardinality: usize, expected_lg_k: u
         path.display()
     );
 
-    // TODO: implement check with 2% error rate
-    _ = expected_cardinality;
+    // Check cardinality estimate with error bounds
+    // For lg_k=12, theoretical RSE ≈ 1.625%, but we use 2% margin to account for:
+    // - Small sample sizes (especially n < 100)
+    // - Out-of-order mode (composite estimator)
+    // - Variation across implementations
+    let estimate = sketch1.estimate();
+    let expected = expected_cardinality as f64;
+
+    if expected > 0.0 {
+        let error_margin = 0.02; // 2% error margin
+        let lower_bound = expected * (1.0 - error_margin);
+        let upper_bound = expected * (1.0 + error_margin);
+
+        assert!(
+            estimate >= lower_bound && estimate <= upper_bound,
+            "Estimate {} outside bounds [{}, {}] for expected {} in {}",
+            estimate,
+            lower_bound,
+            upper_bound,
+            expected,
+            path.display()
+        );
+    } else {
+        // For n=0, estimate should be very close to 0
+        assert!(
+            estimate < 1.0,
+            "Expected near-zero estimate for empty sketch, got {} in {}",
+            estimate,
+            path.display()
+        );
+    }
 
     // Serialize and deserialize again to test round-trip
     let serialized_bytes = sketch1.serialize().expect("serialization should succeed");
@@ -53,6 +82,17 @@ fn test_sketch_file(path: PathBuf, expected_cardinality: usize, expected_lg_k: u
     assert!(
         sketch1.equals(&sketch2),
         "Sketches are not equal after round-trip for {}",
+        path.display()
+    );
+
+    // Verify estimates match after round-trip
+    let estimate2 = sketch2.estimate();
+    assert_eq!(
+        estimate,
+        estimate2,
+        "Estimates differ after round-trip: {} vs {} for {}",
+        estimate,
+        estimate2,
         path.display()
     );
 }
@@ -153,5 +193,38 @@ fn test_go_hll8_compatibility() {
         let filename = format!("hll8_n{}_go.sk", n);
         let path = get_test_data_path("go_generated_files", &filename);
         test_sketch_file(path, n, 12);
+    }
+}
+
+#[test]
+fn test_estimate_accuracy() {
+    // This test verifies and prints actual estimates to show accuracy
+    let test_cases = [
+        ("java_generated_files", "hll8_n1000_java.sk", 1000),
+        ("java_generated_files", "hll8_n10000_java.sk", 10000),
+        ("java_generated_files", "hll8_n100000_java.sk", 100000),
+        ("java_generated_files", "hll8_n1000000_java.sk", 1000000),
+    ];
+
+    println!("\nCardinality Estimation Accuracy:");
+    println!("{:<12} {:<12} {:<10}", "Expected", "Estimate", "Error %");
+    println!("{:-<40}", "");
+
+    for (dir, file, expected) in test_cases {
+        let path = get_test_data_path(dir, file);
+        let bytes = fs::read(&path).expect("file should exist");
+        let sketch = HllSketch::deserialize(&bytes).expect("deserialization should succeed");
+        let estimate = sketch.estimate();
+        let error_pct = (estimate - expected as f64).abs() / expected as f64;
+
+        println!(
+            "{:<12} {:<12.0} {:<10.3}%",
+            expected,
+            estimate,
+            error_pct * 100.
+        );
+
+        // All estimates should be within 2% error
+        assert!(error_pct < 0.02, "Error too high: {:.3}%", error_pct);
     }
 }

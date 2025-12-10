@@ -5,9 +5,9 @@
 
 use std::io;
 
-use crate::hll::KEY_MASK_26;
 use crate::hll::container::{COUPON_EMPTY, Container};
 use crate::hll::serialization::*;
+use crate::hll::{HllType, KEY_MASK_26};
 
 /// Hash set for efficient coupon storage with collision handling
 #[derive(Clone)]
@@ -79,15 +79,15 @@ impl HashSet {
         self.container = new_set.container;
     }
 
+    /// Get the current cardinality estimate
+    pub fn estimate(&self) -> f64 {
+        self.container.estimate()
+    }
+
     /// Deserialize a HashSet from bytes
     pub fn deserialize(bytes: &[u8], compact: bool) -> io::Result<Self> {
         // Read coupon count from bytes 8-11
-        let coupon_count = u32::from_le_bytes([
-            bytes[HASH_SET_COUNT_INT],
-            bytes[HASH_SET_COUNT_INT + 1],
-            bytes[HASH_SET_COUNT_INT + 2],
-            bytes[HASH_SET_COUNT_INT + 3],
-        ]) as usize;
+        let coupon_count = read_u32_le(bytes, HASH_SET_COUNT_INT) as usize;
 
         // Compute array size
         let lg_arr = bytes[LG_ARR_BYTE] as usize;
@@ -109,13 +109,8 @@ impl HashSet {
             // Create a new hash set and insert coupons one by one
             let mut hash_set = HashSet::new(lg_arr);
             for i in 0..coupon_count {
-                let offset = HASH_SET_INT_ARR_START + i * 4;
-                let coupon = u32::from_le_bytes([
-                    bytes[offset],
-                    bytes[offset + 1],
-                    bytes[offset + 2],
-                    bytes[offset + 3],
-                ]);
+                let offset = HASH_SET_INT_ARR_START + i * COUPON_SIZE_BYTES;
+                let coupon = read_u32_le(bytes, offset);
                 hash_set.update(coupon);
             }
             Ok(hash_set)
@@ -137,13 +132,8 @@ impl HashSet {
             // Read entire hash table including empty slots
             let mut coupons = vec![0u32; array_size];
             for i in 0..array_size {
-                let offset = HASH_SET_INT_ARR_START + i * 4;
-                coupons[i] = u32::from_le_bytes([
-                    bytes[offset],
-                    bytes[offset + 1],
-                    bytes[offset + 2],
-                    bytes[offset + 3],
-                ]);
+                let offset = HASH_SET_INT_ARR_START + i * COUPON_SIZE_BYTES;
+                coupons[i] = read_u32_le(bytes, offset);
             }
 
             Ok(Self {
@@ -157,7 +147,7 @@ impl HashSet {
     }
 
     /// Serialize a HashSet to bytes
-    pub fn serialize(&self, lg_config_k: u8, tgt_hll_type: u8) -> io::Result<Vec<u8>> {
+    pub fn serialize(&self, lg_config_k: u8, hll_type: HllType) -> io::Result<Vec<u8>> {
         let compact = true; // Always use compact format
         let coupon_count = self.container.len;
         let lg_arr = self.container.lg_size;
@@ -183,11 +173,10 @@ impl HashSet {
         bytes[FLAGS_BYTE] = flags;
 
         // Write mode byte: SET mode with target HLL type
-        bytes[MODE_BYTE] = encode_mode_byte(CUR_MODE_SET, tgt_hll_type);
+        bytes[MODE_BYTE] = encode_mode_byte(CUR_MODE_SET, hll_type as u8);
 
         // Write coupon count
-        bytes[HASH_SET_COUNT_INT..HASH_SET_COUNT_INT + 4]
-            .copy_from_slice(&(coupon_count as u32).to_le_bytes());
+        write_u32_le(&mut bytes, HASH_SET_COUNT_INT, coupon_count as u32);
 
         // Write coupons
         if compact {

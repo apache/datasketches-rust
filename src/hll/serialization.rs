@@ -139,3 +139,41 @@ pub const DOUBLE_SIZE_BYTES: usize = 8;
 
 /// Size of an int (u32) in bytes
 pub const INT_SIZE_BYTES: usize = 4;
+
+/// Read a u32 value from bytes at the given offset (little-endian)
+#[inline]
+pub fn read_u32_le(bytes: &[u8], offset: usize) -> u32 {
+    u32::from_le_bytes([
+        bytes[offset],
+        bytes[offset + 1],
+        bytes[offset + 2],
+        bytes[offset + 3],
+    ])
+}
+
+/// Read a f64 value from bytes at the given offset (little-endian)
+#[inline]
+pub fn read_f64_le(bytes: &[u8], offset: usize) -> f64 {
+    f64::from_le_bytes([
+        bytes[offset],
+        bytes[offset + 1],
+        bytes[offset + 2],
+        bytes[offset + 3],
+        bytes[offset + 4],
+        bytes[offset + 5],
+        bytes[offset + 6],
+        bytes[offset + 7],
+    ])
+}
+
+/// Write a u32 value to bytes at the given offset (little-endian)
+#[inline]
+pub fn write_u32_le(bytes: &mut [u8], offset: usize, value: u32) {
+    bytes[offset..offset + INT_SIZE_BYTES].copy_from_slice(&value.to_le_bytes());
+}
+
+/// Write a f64 value to bytes at the given offset (little-endian)
+#[inline]
+pub fn write_f64_le(bytes: &mut [u8], offset: usize, value: f64) {
+    bytes[offset..offset + DOUBLE_SIZE_BYTES].copy_from_slice(&value.to_le_bytes());
+}

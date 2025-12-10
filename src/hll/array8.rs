@@ -17,6 +17,15 @@ pub struct Array8 {
     estimator: HipEstimator,
 }
 
+impl PartialEq for Array8 {
+    fn eq(&self, other: &Self) -> bool {
+        self.lg_config_k == other.lg_config_k
+            && self.num_zeros == other.num_zeros
+            && self.bytes.as_ref() == other.bytes.as_ref()
+            && self.estimator == other.estimator
+    }
+}
+
 impl Array8 {
     pub fn new(lg_config_k: u8) -> Self {
         let k = 1 << lg_config_k;
@@ -87,13 +96,14 @@ impl Array8 {
     /// Deserialize Array8 from HLL mode bytes
     ///
     /// Expects full HLL preamble (40 bytes) followed by k bytes of data.
-    pub(crate) fn deserialize(
+    pub fn deserialize(
         bytes: &[u8],
         lg_config_k: u8,
         compact: bool,
         ooo: bool,
     ) -> std::io::Result<Self> {
         use std::io::{Error, ErrorKind};
+
         use crate::hll::serialization::*;
 
         let k = 1 << lg_config_k;
@@ -115,44 +125,12 @@ impl Array8 {
         }
 
         // Read HIP estimator values from preamble
-        let hip_accum = f64::from_le_bytes([
-            bytes[HIP_ACCUM_DOUBLE],
-            bytes[HIP_ACCUM_DOUBLE + 1],
-            bytes[HIP_ACCUM_DOUBLE + 2],
-            bytes[HIP_ACCUM_DOUBLE + 3],
-            bytes[HIP_ACCUM_DOUBLE + 4],
-            bytes[HIP_ACCUM_DOUBLE + 5],
-            bytes[HIP_ACCUM_DOUBLE + 6],
-            bytes[HIP_ACCUM_DOUBLE + 7],
-        ]);
-        let kxq0 = f64::from_le_bytes([
-            bytes[KXQ0_DOUBLE],
-            bytes[KXQ0_DOUBLE + 1],
-            bytes[KXQ0_DOUBLE + 2],
-            bytes[KXQ0_DOUBLE + 3],
-            bytes[KXQ0_DOUBLE + 4],
-            bytes[KXQ0_DOUBLE + 5],
-            bytes[KXQ0_DOUBLE + 6],
-            bytes[KXQ0_DOUBLE + 7],
-        ]);
-        let kxq1 = f64::from_le_bytes([
-            bytes[KXQ1_DOUBLE],
-            bytes[KXQ1_DOUBLE + 1],
-            bytes[KXQ1_DOUBLE + 2],
-            bytes[KXQ1_DOUBLE + 3],
-            bytes[KXQ1_DOUBLE + 4],
-            bytes[KXQ1_DOUBLE + 5],
-            bytes[KXQ1_DOUBLE + 6],
-            bytes[KXQ1_DOUBLE + 7],
-        ]);
+        let hip_accum = read_f64_le(bytes, HIP_ACCUM_DOUBLE);
+        let kxq0 = read_f64_le(bytes, KXQ0_DOUBLE);
+        let kxq1 = read_f64_le(bytes, KXQ1_DOUBLE);
 
         // Read num_at_cur_min (for Array8, this is num_zeros since cur_min=0)
-        let num_zeros = u32::from_le_bytes([
-            bytes[CUR_MIN_COUNT_INT],
-            bytes[CUR_MIN_COUNT_INT + 1],
-            bytes[CUR_MIN_COUNT_INT + 2],
-            bytes[CUR_MIN_COUNT_INT + 3],
-        ]);
+        let num_zeros = read_u32_le(bytes, CUR_MIN_COUNT_INT);
 
         // Read byte array from offset HLL_BYTE_ARR_START
         let mut data = vec![0u8; k as usize];
@@ -178,7 +156,7 @@ impl Array8 {
     /// Serialize Array8 to bytes
     ///
     /// Produces full HLL preamble (40 bytes) followed by k bytes of data.
-    pub(crate) fn serialize(&self, lg_config_k: u8) -> std::io::Result<Vec<u8>> {
+    pub fn serialize(&self, lg_config_k: u8) -> std::io::Result<Vec<u8>> {
         use crate::hll::serialization::*;
 
         let k = 1 << lg_config_k;
@@ -206,20 +184,15 @@ impl Array8 {
         bytes[MODE_BYTE] = encode_mode_byte(CUR_MODE_HLL, TGT_HLL8);
 
         // Write HIP estimator values
-        bytes[HIP_ACCUM_DOUBLE..HIP_ACCUM_DOUBLE + DOUBLE_SIZE_BYTES]
-            .copy_from_slice(&self.estimator.hip_accum().to_le_bytes());
-        bytes[KXQ0_DOUBLE..KXQ0_DOUBLE + DOUBLE_SIZE_BYTES]
-            .copy_from_slice(&self.estimator.kxq0().to_le_bytes());
-        bytes[KXQ1_DOUBLE..KXQ1_DOUBLE + DOUBLE_SIZE_BYTES]
-            .copy_from_slice(&self.estimator.kxq1().to_le_bytes());
+        write_f64_le(&mut bytes, HIP_ACCUM_DOUBLE, self.estimator.hip_accum());
+        write_f64_le(&mut bytes, KXQ0_DOUBLE, self.estimator.kxq0());
+        write_f64_le(&mut bytes, KXQ1_DOUBLE, self.estimator.kxq1());
 
         // Write num_at_cur_min (num_zeros for Array8)
-        bytes[CUR_MIN_COUNT_INT..CUR_MIN_COUNT_INT + INT_SIZE_BYTES]
-            .copy_from_slice(&self.num_zeros.to_le_bytes());
+        write_u32_le(&mut bytes, CUR_MIN_COUNT_INT, self.num_zeros);
 
         // Write aux_count (always 0 for Array8)
-        bytes[AUX_COUNT_INT..AUX_COUNT_INT + INT_SIZE_BYTES]
-            .copy_from_slice(&0u32.to_le_bytes());
+        write_u32_le(&mut bytes, AUX_COUNT_INT, 0);
 
         // Write byte array
         bytes[HLL_BYTE_ARR_START..].copy_from_slice(&self.bytes);

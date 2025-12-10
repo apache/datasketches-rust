@@ -5,6 +5,7 @@
 
 use std::io;
 
+use crate::hll::HllType;
 use crate::hll::container::{COUPON_EMPTY, Container};
 use crate::hll::serialization::*;
 
@@ -49,6 +50,11 @@ impl List {
         }
     }
 
+    /// Get the current cardinality estimate
+    pub fn estimate(&self) -> f64 {
+        self.container.estimate()
+    }
+
     /// Deserialize a List from bytes
     pub fn deserialize(bytes: &[u8], empty: bool, compact: bool) -> io::Result<Self> {
         // Read coupon count from byte 6
@@ -75,13 +81,8 @@ impl List {
         let mut coupons = vec![0u32; array_size];
         if !empty && coupon_count > 0 {
             for i in 0..array_size {
-                let offset = LIST_INT_ARR_START + i * 4;
-                coupons[i] = u32::from_le_bytes([
-                    bytes[offset],
-                    bytes[offset + 1],
-                    bytes[offset + 2],
-                    bytes[offset + 3],
-                ]);
+                let offset = LIST_INT_ARR_START + i * COUPON_SIZE_BYTES;
+                coupons[i] = read_u32_le(bytes, offset);
             }
         }
 
@@ -91,7 +92,7 @@ impl List {
     }
 
     /// Serialize a List to bytes
-    pub fn serialize(&self, lg_config_k: u8, tgt_hll_type: u8) -> io::Result<Vec<u8>> {
+    pub fn serialize(&self, lg_config_k: u8, hll_type: HllType) -> io::Result<Vec<u8>> {
         let compact = true; // Always use compact format
         let empty = self.container.len == 0;
         let coupon_count = self.container.len;
@@ -124,7 +125,7 @@ impl List {
         bytes[LIST_COUNT_BYTE] = coupon_count as u8;
 
         // Write mode byte: LIST mode with target HLL type
-        bytes[MODE_BYTE] = encode_mode_byte(CUR_MODE_LIST, tgt_hll_type);
+        bytes[MODE_BYTE] = encode_mode_byte(CUR_MODE_LIST, hll_type as u8);
 
         // Write coupons (only non-empty ones if compact)
         if !empty {
