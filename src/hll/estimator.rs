@@ -126,8 +126,7 @@ impl HipEstimator {
             _ => 0.7213 / (1.0 + 1.079 / k),
         };
 
-        let hyper_est = (correction_factor * k * k) / (self.kxq0 + self.kxq1);
-        hyper_est
+        (correction_factor * k * k) / (self.kxq0 + self.kxq1)
     }
 
     /// Get linear counting (bitmap) estimate for small cardinalities

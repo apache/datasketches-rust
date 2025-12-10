@@ -80,9 +80,9 @@ impl List {
         // Read coupons
         let mut coupons = vec![0u32; array_size];
         if !empty && coupon_count > 0 {
-            for i in 0..array_size {
+            for (i, coupon) in coupons.iter_mut().enumerate() {
                 let offset = LIST_INT_ARR_START + i * COUPON_SIZE_BYTES;
-                coupons[i] = read_u32_le(bytes, offset);
+                *coupon = read_u32_le(bytes, offset);
             }
         }
 

@@ -15,7 +15,7 @@ pub fn using_x_and_y_tables(x_arr: &[f64], y_arr: &[f64], x: f64) -> f64 {
     }
 
     let offset = find_straddle(x_arr, x);
-    debug_assert!(offset <= last_idx - 1);
+    debug_assert!(offset < last_idx);
 
     // Select 4-point window based on position in array
     if offset == 0 {
@@ -80,8 +80,8 @@ fn interpolate_using_x_arr_and_y_stride(
     x: f64,
 ) -> f64 {
     cubic_interpolate(
-        x_arr[offset + 0],
-        y_stride * (offset + 0) as f64,
+        x_arr[offset],
+        y_stride * offset as f64,
         x_arr[offset + 1],
         y_stride * (offset + 1) as f64,
         x_arr[offset + 2],
@@ -93,6 +93,7 @@ fn interpolate_using_x_arr_and_y_stride(
 }
 
 /// Cubic interpolation using the Lagrange interpolation formula.
+#[allow(clippy::too_many_arguments)]
 fn cubic_interpolate(
     x0: f64,
     y0: f64,

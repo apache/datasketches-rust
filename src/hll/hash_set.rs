@@ -38,7 +38,6 @@ impl HashSet {
     /// Insert coupon into hash set, ignoring duplicates
     pub fn update(&mut self, coupon: u32) {
         let mask = (1 << self.container.lg_size) - 1;
-        let coupon = coupon;
 
         // Initial probe position from low bits of coupon
         let mut probe = coupon & mask;
@@ -131,9 +130,9 @@ impl HashSet {
 
             // Read entire hash table including empty slots
             let mut coupons = vec![0u32; array_size];
-            for i in 0..array_size {
+            for (i, coupon) in coupons.iter_mut().enumerate() {
                 let offset = HASH_SET_INT_ARR_START + i * COUPON_SIZE_BYTES;
-                coupons[i] = read_u32_le(bytes, offset);
+                *coupon = read_u32_le(bytes, offset);
             }
 
             Ok(Self {
