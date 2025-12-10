@@ -3,12 +3,36 @@
 //! Uses open addressing with a custom stride function to handle collisions.
 //! Provides better performance than List when many coupons are stored.
 
+use std::io;
+
 use crate::hll::KEY_MASK_26;
 use crate::hll::container::{COUPON_EMPTY, Container};
 
+// Constants for serialization
+const HASH_SET_PREINTS: u8 = 3;
+const HASH_SET_COUNT_INT: usize = 8;
+const HASH_SET_INT_ARR_START: usize = 12;
+const PREAMBLE_INTS_BYTE: usize = 0;
+const SER_VER_BYTE: usize = 1;
+const FAMILY_BYTE: usize = 2;
+const LG_K_BYTE: usize = 3;
+const LG_ARR_BYTE: usize = 4;
+const FLAGS_BYTE: usize = 5;
+const MODE_BYTE: usize = 7;
+const HLL_FAMILY_ID: u8 = 7;
+const SER_VER: u8 = 1;
+const COMPACT_FLAG_MASK: u8 = 8;
+
 /// Hash set for efficient coupon storage with collision handling
+#[derive(Clone)]
 pub struct HashSet {
     container: Container,
+}
+
+impl PartialEq for HashSet {
+    fn eq(&self, other: &Self) -> bool {
+        self.container == other.container
+    }
 }
 
 impl Default for HashSet {
@@ -67,5 +91,142 @@ impl HashSet {
         }
 
         self.container = new_set.container;
+    }
+
+    /// Deserialize a HashSet from bytes
+    pub fn deserialize(bytes: &[u8], compact: bool) -> io::Result<Self> {
+        // Read coupon count from bytes 8-11
+        let coupon_count = u32::from_le_bytes([
+            bytes[HASH_SET_COUNT_INT],
+            bytes[HASH_SET_COUNT_INT + 1],
+            bytes[HASH_SET_COUNT_INT + 2],
+            bytes[HASH_SET_COUNT_INT + 3],
+        ]) as usize;
+
+        // Compute array size
+        let lg_arr = bytes[LG_ARR_BYTE] as usize;
+
+        if compact {
+            // Compact mode: only couponCount coupons are stored
+            let expected_len = HASH_SET_INT_ARR_START + (coupon_count * 4);
+            if bytes.len() < expected_len {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!(
+                        "SET data too short: expected {}, got {}",
+                        expected_len,
+                        bytes.len()
+                    ),
+                ));
+            }
+
+            // Create a new hash set and insert coupons one by one
+            let mut hash_set = HashSet::new(lg_arr);
+            for i in 0..coupon_count {
+                let offset = HASH_SET_INT_ARR_START + i * 4;
+                let coupon = u32::from_le_bytes([
+                    bytes[offset],
+                    bytes[offset + 1],
+                    bytes[offset + 2],
+                    bytes[offset + 3],
+                ]);
+                hash_set.update(coupon);
+            }
+            Ok(hash_set)
+        } else {
+            // Non-compact mode: full hash table with empty slots
+            let array_size = 1 << lg_arr;
+            let expected_len = HASH_SET_INT_ARR_START + (array_size * 4);
+            if bytes.len() < expected_len {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!(
+                        "SET data too short: expected {}, got {}",
+                        expected_len,
+                        bytes.len()
+                    ),
+                ));
+            }
+
+            // Read entire hash table including empty slots
+            let mut coupons = vec![0u32; array_size];
+            for i in 0..array_size {
+                let offset = HASH_SET_INT_ARR_START + i * 4;
+                coupons[i] = u32::from_le_bytes([
+                    bytes[offset],
+                    bytes[offset + 1],
+                    bytes[offset + 2],
+                    bytes[offset + 3],
+                ]);
+            }
+
+            Ok(Self {
+                container: Container::from_coupons(
+                    lg_arr,
+                    coupons.into_boxed_slice(),
+                    coupon_count,
+                ),
+            })
+        }
+    }
+
+    /// Serialize a HashSet to bytes
+    pub fn serialize(&self, lg_config_k: u8, tgt_hll_type: u8) -> io::Result<Vec<u8>> {
+        let compact = true; // Always use compact format
+        let coupon_count = self.container.len;
+        let lg_arr = self.container.lg_size;
+
+        // Compute size
+        let array_size = if compact { coupon_count } else { 1 << lg_arr };
+        let total_size = HASH_SET_INT_ARR_START + (array_size * 4);
+
+        let mut bytes = vec![0u8; total_size];
+
+        // Write preamble
+        bytes[PREAMBLE_INTS_BYTE] = HASH_SET_PREINTS;
+        bytes[SER_VER_BYTE] = SER_VER;
+        bytes[FAMILY_BYTE] = HLL_FAMILY_ID;
+        bytes[LG_K_BYTE] = lg_config_k;
+        bytes[LG_ARR_BYTE] = lg_arr as u8;
+
+        // Write flags
+        let mut flags = 0u8;
+        if compact {
+            flags |= COMPACT_FLAG_MASK;
+        }
+        bytes[FLAGS_BYTE] = flags;
+
+        // Write mode byte: low 2 bits = current mode (1=SET), bits 2-3 = target type
+        bytes[MODE_BYTE] = 1 | (tgt_hll_type << 2);
+
+        // Write coupon count
+        bytes[HASH_SET_COUNT_INT..HASH_SET_COUNT_INT + 4]
+            .copy_from_slice(&(coupon_count as u32).to_le_bytes());
+
+        // Write coupons
+        if compact {
+            // Compact mode: collect non-empty coupons and sort for deterministic output
+            let mut coupons_vec: Vec<u32> = self
+                .container
+                .coupons
+                .iter()
+                .filter(|&&c| c != 0)
+                .copied()
+                .collect();
+            coupons_vec.sort_unstable();
+
+            for (i, coupon) in coupons_vec.iter().enumerate() {
+                let offset = HASH_SET_INT_ARR_START + i * 4;
+                bytes[offset..offset + 4].copy_from_slice(&coupon.to_le_bytes());
+            }
+        } else {
+            // Non-compact mode: write entire hash table
+            for (i, coupon) in self.container.coupons.iter().enumerate() {
+                let offset = HASH_SET_INT_ARR_START + i * 4;
+                bytes[offset..offset + 4].copy_from_slice(&coupon.to_le_bytes());
+            }
+        }
+
+        Ok(bytes)
     }
 }
