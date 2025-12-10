@@ -113,6 +113,133 @@ impl Array6 {
     pub fn num_zeros(&self) -> u32 {
         self.num_zeros
     }
+
+    /// Deserialize Array6 from HLL mode bytes
+    ///
+    /// Expects full HLL preamble (40 bytes) followed by packed 6-bit data.
+    pub(crate) fn deserialize(
+        bytes: &[u8],
+        lg_config_k: u8,
+        compact: bool,
+        ooo: bool,
+    ) -> std::io::Result<Self> {
+        use std::io::{Error, ErrorKind};
+
+        let k = 1 << lg_config_k;
+        let num_bytes = num_bytes_for_k(k);
+        let expected_len = if compact {
+            40 // Just preamble for compact empty sketch
+        } else {
+            40 + num_bytes
+        };
+
+        if bytes.len() < expected_len {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                format!(
+                    "Array6 data too short: expected {}, got {}",
+                    expected_len,
+                    bytes.len()
+                ),
+            ));
+        }
+
+        // Read HIP estimator values from preamble
+        let hip_accum = f64::from_le_bytes([
+            bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15],
+        ]);
+        let kxq0 = f64::from_le_bytes([
+            bytes[16], bytes[17], bytes[18], bytes[19], bytes[20], bytes[21], bytes[22],
+            bytes[23],
+        ]);
+        let kxq1 = f64::from_le_bytes([
+            bytes[24], bytes[25], bytes[26], bytes[27], bytes[28], bytes[29], bytes[30],
+            bytes[31],
+        ]);
+
+        // Read num_at_cur_min (for Array6, this is num_zeros since cur_min=0)
+        let num_zeros = u32::from_le_bytes([bytes[32], bytes[33], bytes[34], bytes[35]]);
+
+        // Read packed byte array from offset 40
+        let mut data = vec![0u8; num_bytes];
+        if !compact {
+            data.copy_from_slice(&bytes[40..40 + num_bytes]);
+        }
+
+        // Create estimator and restore state
+        let mut estimator = HipEstimator::new(lg_config_k);
+        estimator.set_hip_accum(hip_accum);
+        estimator.set_kxq0(kxq0);
+        estimator.set_kxq1(kxq1);
+        estimator.set_out_of_order(ooo);
+
+        Ok(Self {
+            lg_config_k,
+            bytes: data.into_boxed_slice(),
+            num_zeros,
+            estimator,
+        })
+    }
+
+    /// Serialize Array6 to bytes
+    ///
+    /// Produces full HLL preamble (40 bytes) followed by packed 6-bit data.
+    pub(crate) fn serialize(&self, lg_config_k: u8) -> std::io::Result<Vec<u8>> {
+        let k = 1 << lg_config_k;
+        let num_bytes = num_bytes_for_k(k);
+        let total_size = 40 + num_bytes;
+        let mut bytes = vec![0u8; total_size];
+
+        // Offsets (same as sketch.rs constants)
+        const PREAMBLE_INTS_BYTE: usize = 0;
+        const SER_VER_BYTE: usize = 1;
+        const FAMILY_BYTE: usize = 2;
+        const LG_K_BYTE: usize = 3;
+        const LG_ARR_BYTE: usize = 4;
+        const FLAGS_BYTE: usize = 5;
+        const HLL_CUR_MIN_BYTE: usize = 6;
+        const MODE_BYTE: usize = 7;
+        const HLL_PREINTS: u8 = 10;
+        const HLL_FAMILY_ID: u8 = 7;
+        const SER_VER: u8 = 1;
+        const OUT_OF_ORDER_FLAG_MASK: u8 = 16;
+
+        // Write standard header
+        bytes[PREAMBLE_INTS_BYTE] = HLL_PREINTS;
+        bytes[SER_VER_BYTE] = SER_VER;
+        bytes[FAMILY_BYTE] = HLL_FAMILY_ID;
+        bytes[LG_K_BYTE] = lg_config_k;
+        bytes[LG_ARR_BYTE] = 0; // Not used for HLL mode
+
+        // Write flags
+        let mut flags = 0u8;
+        if self.estimator.is_out_of_order() {
+            flags |= OUT_OF_ORDER_FLAG_MASK;
+        }
+        bytes[FLAGS_BYTE] = flags;
+
+        // cur_min is always 0 for Array6
+        bytes[HLL_CUR_MIN_BYTE] = 0;
+
+        // Mode byte: low 2 bits = HLL (2), bits 2-3 = HLL6 (1)
+        bytes[MODE_BYTE] = 2 | (1 << 2); // 0b00000110 = HLL mode, HLL6 type
+
+        // Write HIP estimator values
+        bytes[8..16].copy_from_slice(&self.estimator.hip_accum().to_le_bytes());
+        bytes[16..24].copy_from_slice(&self.estimator.kxq0().to_le_bytes());
+        bytes[24..32].copy_from_slice(&self.estimator.kxq1().to_le_bytes());
+
+        // Write num_at_cur_min (num_zeros for Array6)
+        bytes[32..36].copy_from_slice(&self.num_zeros.to_le_bytes());
+
+        // Write aux_count (always 0 for Array6)
+        bytes[36..40].copy_from_slice(&0u32.to_le_bytes());
+
+        // Write packed byte array
+        bytes[40..].copy_from_slice(&self.bytes);
+
+        Ok(bytes)
+    }
 }
 
 // Constants
