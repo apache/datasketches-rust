@@ -166,6 +166,18 @@ impl AuxMap {
         self.lg_size = new_lg_size;
     }
 
+    /// Iterate over (slot, value) pairs without consuming the map
+    pub fn iter(&self) -> impl Iterator<Item = (u32, u8)> + '_ {
+        let config_k_mask = (1 << self.lg_config_k) - 1;
+        self.entries.iter().filter_map(move |&entry| {
+            if entry != ENTRY_EMPTY {
+                Some((get_slot(entry) & config_k_mask, get_value(entry)))
+            } else {
+                None
+            }
+        })
+    }
+
     /// Convert into an iterator over (slot, value) pairs
     pub fn into_iter(self) -> impl Iterator<Item = (u32, u8)> {
         let config_k_mask = (1 << self.lg_config_k) - 1;

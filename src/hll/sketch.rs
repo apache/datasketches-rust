@@ -245,17 +245,22 @@ fn deserialize_set(bytes: &[u8], compact: bool) -> io::Result<Mode> {
 
 /// Deserialize HLL mode sketch
 fn deserialize_hll(
-    _bytes: &[u8],
+    bytes: &[u8],
     lg_config_k: u8,
     tgt_type: TgtHllType,
-    _compact: bool,
-    _ooo: bool,
+    compact: bool,
+    ooo: bool,
 ) -> io::Result<Mode> {
-    // TODO: Implement HLL deserialization
     match tgt_type {
-        TgtHllType::Hll4 => Ok(Mode::Array4(Array4::new(lg_config_k))),
-        TgtHllType::Hll6 => Ok(Mode::Array6(Array6::new(lg_config_k))),
-        TgtHllType::Hll8 => Ok(Mode::Array8(Array8::new(lg_config_k))),
+        TgtHllType::Hll4 => {
+            Array4::deserialize(bytes, lg_config_k, compact, ooo).map(Mode::Array4)
+        }
+        TgtHllType::Hll6 => {
+            Array6::deserialize(bytes, lg_config_k, compact, ooo).map(Mode::Array6)
+        }
+        TgtHllType::Hll8 => {
+            Array8::deserialize(bytes, lg_config_k, compact, ooo).map(Mode::Array8)
+        }
     }
 }
 
@@ -270,28 +275,16 @@ fn serialize_set(set: &HashSet, lg_config_k: u8, tgt_hll_type: TgtHllType) -> io
 }
 
 /// Serialize HLL4 mode sketch
-fn serialize_hll4(_arr: &Array4, _lg_config_k: u8) -> io::Result<Vec<u8>> {
-    // TODO: Implement HLL4 serialization
-    Err(io::Error::new(
-        io::ErrorKind::Other,
-        "HLL4 serialization not yet implemented",
-    ))
+fn serialize_hll4(arr: &Array4, lg_config_k: u8) -> io::Result<Vec<u8>> {
+    arr.serialize(lg_config_k)
 }
 
 /// Serialize HLL6 mode sketch
-fn serialize_hll6(_arr: &Array6, _lg_config_k: u8) -> io::Result<Vec<u8>> {
-    // TODO: Implement HLL6 serialization
-    Err(io::Error::new(
-        io::ErrorKind::Other,
-        "HLL6 serialization not yet implemented",
-    ))
+fn serialize_hll6(arr: &Array6, lg_config_k: u8) -> io::Result<Vec<u8>> {
+    arr.serialize(lg_config_k)
 }
 
 /// Serialize HLL8 mode sketch
-fn serialize_hll8(_arr: &Array8, _lg_config_k: u8) -> io::Result<Vec<u8>> {
-    // TODO: Implement HLL8 serialization
-    Err(io::Error::new(
-        io::ErrorKind::Other,
-        "HLL8 serialization not yet implemented",
-    ))
+fn serialize_hll8(arr: &Array8, lg_config_k: u8) -> io::Result<Vec<u8>> {
+    arr.serialize(lg_config_k)
 }
