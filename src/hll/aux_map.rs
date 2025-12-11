@@ -15,6 +15,7 @@ const ENTRY_EMPTY: u32 = 0;
 /// # Entry Encoding
 /// Each entry is an u32 packed as: [value (upper 6 bits) | slot_no (lower 26 bits)]
 /// Empty entries are represented as 0.
+#[derive(Debug, Clone)]
 pub struct AuxMap {
     lg_size: u8,
     lg_config_k: u8,

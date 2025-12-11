@@ -11,14 +11,14 @@ use crate::hll::cubic_interpolation::using_x_and_y_tables;
 pub const COUPON_EMPTY: u32 = 0;
 
 /// Container for storing coupons with basic cardinality estimation
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Container {
     /// Log2 of container size
-    pub(crate) lg_size: usize,
+    lg_size: usize,
     /// Array of coupon values (0 = empty)
-    pub(crate) coupons: Box<[u32]>,
+    pub coupons: Box<[u32]>,
     /// Number of non-empty coupons
-    pub(crate) len: usize,
+    pub len: usize,
 }
 
 impl PartialEq for Container {
@@ -67,12 +67,20 @@ impl Container {
         }
     }
 
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    pub fn lg_size(&self) -> usize {
+        self.lg_size
+    }
+
     pub fn is_full(&self) -> bool {
         self.len == self.coupons.len()
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.len == 0
+    pub fn capacity(&self) -> usize {
+        self.coupons.len()
     }
 
     /// Get cardinality estimate using cubic interpolation
@@ -96,5 +104,10 @@ impl Container {
         let est = using_x_and_y_tables(&X_ARR, &Y_ARR, len);
         let bound = est / (1.0 + n_std_dev * COUPON_RSE);
         len.max(bound)
+    }
+
+    /// Iterate over all non-empty coupons
+    pub fn iter(&self) -> impl Iterator<Item = u32> + '_ {
+        self.coupons.iter().filter(|&&c| c != COUPON_EMPTY).copied()
     }
 }

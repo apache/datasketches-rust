@@ -18,9 +18,6 @@ pub const COMPACT_FLAG_MASK: u8 = 8;
 /// Flag indicating out-of-order mode (HIP estimator invalid)
 pub const OUT_OF_ORDER_FLAG_MASK: u8 = 16;
 
-/// Flag indicating full-size serialization (all slots stored)
-pub const FULL_SIZE_FLAG_MASK: u8 = 32;
-
 /// Offset of preamble size field (in 4-byte ints)
 pub const PREAMBLE_INTS_BYTE: usize = 0;
 

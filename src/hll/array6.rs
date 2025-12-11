@@ -10,6 +10,7 @@ use crate::hll::{get_slot, get_value};
 const VAL_MASK_6: u16 = 0x3F; // 6 bits: 0b0011_1111
 
 /// Core Array6 data structure - stores 6-bit values with cross-byte packing
+#[derive(Debug, Clone)]
 pub struct Array6 {
     lg_config_k: u8,
     /// Packed 6-bit values, may cross byte boundaries
@@ -84,11 +85,6 @@ impl Array6 {
         self.bytes[byte_idx + 1] = bytes_out[1];
     }
 
-    /// Get value for a slot (public API)
-    pub fn get(&self, slot: u32) -> u8 {
-        self.get_raw(slot)
-    }
-
     /// Update with a coupon
     pub fn update(&mut self, coupon: u32) {
         let mask = (1 << self.lg_config_k) - 1;
@@ -118,9 +114,11 @@ impl Array6 {
         self.estimator.estimate(self.lg_config_k, 0, self.num_zeros)
     }
 
-    /// Get the number of zero-valued slots
-    pub fn num_zeros(&self) -> u32 {
-        self.num_zeros
+    /// Set the HIP accumulator value
+    ///
+    /// This is used when promoting from coupon modes to carry forward the estimate
+    pub fn set_hip_accum(&mut self, value: f64) {
+        self.estimator.set_hip_accum(value);
     }
 
     /// Deserialize Array6 from HLL mode bytes
@@ -248,16 +246,6 @@ mod tests {
     use crate::hll::{coupon, pack_coupon};
 
     #[test]
-    fn test_array6_basic() {
-        let arr = Array6::new(10); // 1024 buckets
-
-        // Initially all slots should be 0
-        assert_eq!(arr.get(0), 0);
-        assert_eq!(arr.get(100), 0);
-        assert_eq!(arr.num_zeros(), 1024);
-    }
-
-    #[test]
     fn test_num_bytes_calculation() {
         // k=16 slots: 16 * 6 bits = 96 bits = 12 bytes
         assert_eq!(num_bytes_for_k(16), (16 * 3 / 4) + 1);
@@ -319,41 +307,6 @@ mod tests {
     }
 
     #[test]
-    fn test_update_basic() {
-        let mut arr = Array6::new(4);
-
-        // Update slot 0 with value 5
-        arr.update(pack_coupon(0, 5));
-        assert_eq!(arr.get(0), 5);
-
-        // Update with a smaller value (should be ignored)
-        arr.update(pack_coupon(0, 3));
-        assert_eq!(arr.get(0), 5);
-
-        // Update with a larger value
-        arr.update(pack_coupon(0, 8));
-        assert_eq!(arr.get(0), 8);
-    }
-
-    #[test]
-    fn test_num_zeros_tracking() {
-        let mut arr = Array6::new(4); // 16 slots
-        assert_eq!(arr.num_zeros(), 16);
-
-        // Update one slot from 0 to non-zero
-        arr.update(pack_coupon(0, 5));
-        assert_eq!(arr.num_zeros(), 15);
-
-        // Update same slot again (should not change num_zeros)
-        arr.update(pack_coupon(0, 10));
-        assert_eq!(arr.num_zeros(), 15);
-
-        // Update another slot
-        arr.update(pack_coupon(1, 3));
-        assert_eq!(arr.num_zeros(), 14);
-    }
-
-    #[test]
     fn test_hip_estimator() {
         let mut arr = Array6::new(10); // 1024 buckets
 
@@ -362,7 +315,7 @@ mod tests {
 
         // Add some unique values using real coupon hashing
         for i in 0..10_000u32 {
-            let coupon = coupon(&mut &i.to_ne_bytes()[..]).unwrap();
+            let coupon = coupon(&mut &i.to_ne_bytes()[..]);
             arr.update(coupon);
         }
 

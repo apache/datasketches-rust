@@ -10,7 +10,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use datasketches::hll::sketch::HllSketch;
+use datasketches::hll::HllSketch;
 
 const TEST_DATA_DIR: &str = "tests/serialization_test_data";
 
@@ -79,7 +79,7 @@ fn test_sketch_file(path: PathBuf, expected_cardinality: usize, expected_lg_k: u
 
     // Check that the sketches are functionally equal
     assert!(
-        sketch1.equals(&sketch2),
+        sketch1.eq(&sketch2),
         "Sketches are not equal after round-trip for {}",
         path.display()
     );
