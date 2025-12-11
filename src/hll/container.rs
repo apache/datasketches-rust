@@ -91,18 +91,22 @@ impl Container {
     }
 
     /// Get upper confidence bound for cardinality estimate
-    pub fn upper_bound(&self, n_std_dev: f64) -> f64 {
+    pub fn upper_bound(&self, num_std_dev: u8) -> f64 {
         let len = self.len as f64;
         let est = using_x_and_y_tables(&X_ARR, &Y_ARR, len);
-        let bound = est / (1.0 - n_std_dev * COUPON_RSE);
+        // Upper bound: negative RSE means (1 + rse) < 1, so bound > estimate
+        let rse = -(num_std_dev as f64) * COUPON_RSE;
+        let bound = est / (1.0 + rse);
         len.max(bound)
     }
 
     /// Get lower confidence bound for cardinality estimate
-    pub fn lower_bound(&self, n_std_dev: f64) -> f64 {
+    pub fn lower_bound(&self, num_std_dev: u8) -> f64 {
         let len = self.len as f64;
         let est = using_x_and_y_tables(&X_ARR, &Y_ARR, len);
-        let bound = est / (1.0 + n_std_dev * COUPON_RSE);
+        // Lower bound: positive RSE means (1 + rse) > 1, so bound < estimate
+        let rse = (num_std_dev as f64) * COUPON_RSE;
+        let bound = est / (1.0 + rse);
         len.max(bound)
     }
 

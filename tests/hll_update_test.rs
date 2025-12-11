@@ -207,3 +207,131 @@ fn test_invalid_lg_k_low() {
 fn test_invalid_lg_k_high() {
     HllSketch::new(22, HllType::Hll8);
 }
+
+#[test]
+fn test_bounds_basic() {
+    let mut sketch = HllSketch::new(12, HllType::Hll8);
+
+    // Add 1000 unique values
+    for i in 0..1000 {
+        sketch.update(&i);
+    }
+
+    let estimate = sketch.estimate();
+    let upper1 = sketch.upper_bound(1);
+    let lower1 = sketch.lower_bound(1);
+    let upper2 = sketch.upper_bound(2);
+    let lower2 = sketch.lower_bound(2);
+    let upper3 = sketch.upper_bound(3);
+    let lower3 = sketch.lower_bound(3);
+
+    // Basic sanity checks
+    assert!(lower1 <= estimate, "Lower bound should be <= estimate");
+    assert!(estimate <= upper1, "Estimate should be <= upper bound");
+
+    // Bounds should widen with more standard deviations
+    assert!(lower2 <= lower1, "2-sigma lower should be <= 1-sigma lower");
+    assert!(upper1 <= upper2, "1-sigma upper should be <= 2-sigma upper");
+    assert!(lower3 <= lower2, "3-sigma lower should be <= 2-sigma lower");
+    assert!(upper2 <= upper3, "2-sigma upper should be <= 3-sigma upper");
+
+    // Bounds should be reasonable (within 50% for 3-sigma)
+    assert!(
+        lower3 > estimate * 0.5,
+        "3-sigma lower bound seems too low: {} vs estimate {}",
+        lower3,
+        estimate
+    );
+    assert!(
+        upper3 < estimate * 1.5,
+        "3-sigma upper bound seems too high: {} vs estimate {}",
+        upper3,
+        estimate
+    );
+}
+
+#[test]
+fn test_bounds_all_modes() {
+    // Test List mode (small cardinality)
+    let mut sketch = HllSketch::new(12, HllType::Hll8);
+    for i in 0..10 {
+        sketch.update(&i);
+    }
+    let estimate = sketch.estimate();
+    let upper = sketch.upper_bound(2);
+    let lower = sketch.lower_bound(2);
+    assert!(
+        lower <= estimate && estimate <= upper,
+        "Bounds don't contain estimate in LIST mode"
+    );
+
+    // Test Set mode (medium cardinality)
+    for i in 10..100 {
+        sketch.update(&i);
+    }
+    let estimate = sketch.estimate();
+    let upper = sketch.upper_bound(2);
+    let lower = sketch.lower_bound(2);
+    assert!(
+        lower <= estimate && estimate <= upper,
+        "Bounds don't contain estimate in SET mode"
+    );
+
+    // Test HLL mode (large cardinality)
+    for i in 100..5000 {
+        sketch.update(&i);
+    }
+    let estimate = sketch.estimate();
+    let upper = sketch.upper_bound(2);
+    let lower = sketch.lower_bound(2);
+    assert!(
+        lower <= estimate && estimate <= upper,
+        "Bounds don't contain estimate in HLL mode"
+    );
+}
+
+#[test]
+fn test_bounds_different_lg_k() {
+    // Smaller lg_k should have wider bounds (higher RSE)
+    let mut sketch_small = HllSketch::new(8, HllType::Hll8); // lg_k=8, k=256
+    let mut sketch_large = HllSketch::new(14, HllType::Hll8); // lg_k=14, k=16384
+
+    for i in 0..1000 {
+        sketch_small.update(&i);
+        sketch_large.update(&i);
+    }
+
+    let est_small = sketch_small.estimate();
+    let est_large = sketch_large.estimate();
+
+    let upper_small = sketch_small.upper_bound(2);
+    let lower_small = sketch_small.lower_bound(2);
+    let upper_large = sketch_large.upper_bound(2);
+    let lower_large = sketch_large.lower_bound(2);
+
+    // Calculate relative width of confidence intervals
+    let width_small = (upper_small - lower_small) / est_small;
+    let width_large = (upper_large - lower_large) / est_large;
+
+    // Smaller sketch should have wider relative confidence interval
+    assert!(
+        width_small > width_large,
+        "Smaller sketch should have wider confidence interval: {} vs {}",
+        width_small,
+        width_large
+    );
+}
+
+#[test]
+fn test_bounds_empty_sketch() {
+    let sketch = HllSketch::new(12, HllType::Hll8);
+
+    let estimate = sketch.estimate();
+    let upper = sketch.upper_bound(2);
+    let lower = sketch.lower_bound(2);
+
+    assert_eq!(estimate, 0.0, "Empty sketch should have 0 estimate");
+    assert!(lower >= 0.0, "Lower bound should be non-negative");
+    assert!(upper >= 0.0, "Upper bound should be non-negative");
+    assert!(lower <= upper, "Lower bound should be <= upper bound");
+}

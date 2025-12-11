@@ -69,7 +69,6 @@ tmp/
 
 # Build artifacts
 target/
-serialization_test_data/
 out/
 build/
 jarsIn/
