@@ -10,6 +10,7 @@ use crate::hll::{get_slot, get_value};
 const AUX_TOKEN: u8 = 15;
 
 /// Core Array4 data structure - stores 4-bit values efficiently
+#[derive(Debug, Clone)]
 pub struct Array4 {
     lg_config_k: u8,
     /// Packed 4-bit values: 2 values per byte
@@ -76,21 +77,6 @@ impl Array4 {
         } else {
             (old_byte & 0x0F) | (value << 4) // set high nibble
         };
-    }
-
-    /// Get actual value for slot (adjusted for cur_min and aux map)
-    pub fn get(&self, slot: u32) -> u8 {
-        let raw = self.get_raw(slot);
-        if raw < AUX_TOKEN {
-            raw + self.cur_min
-        } else {
-            // raw == AUX_TOKEN, lookup in aux map
-            self.aux_map
-                .as_ref()
-                .expect("AUX_TOKEN present but no aux map")
-                .get(slot)
-                .expect("AUX_TOKEN but slot not in aux map")
-        }
     }
 
     pub fn update(&mut self, coupon: u32) {
@@ -220,6 +206,13 @@ impl Array4 {
         // Array4 tracks cur_min and num_at_cur_min dynamically
         self.estimator
             .estimate(self.lg_config_k, self.cur_min, self.num_at_cur_min)
+    }
+
+    /// Set the HIP accumulator value
+    ///
+    /// This is used when promoting from coupon modes to carry forward the estimate
+    pub fn set_hip_accum(&mut self, value: f64) {
+        self.estimator.set_hip_accum(value);
     }
 
     /// Deserialize Array4 from HLL mode bytes
@@ -379,15 +372,6 @@ mod tests {
     use crate::hll::{coupon, pack_coupon};
 
     #[test]
-    fn test_array4_basic() {
-        let arr = Array4::new(10); // 1024 buckets
-
-        // Initially all slots should be 0
-        assert_eq!(arr.get(0), 0);
-        assert_eq!(arr.get(100), 0);
-    }
-
-    #[test]
     fn test_get_set_raw() {
         let mut data = Array4::new(4); // 16 buckets
 
@@ -410,23 +394,6 @@ mod tests {
     }
 
     #[test]
-    fn test_update_basic() {
-        let mut data = Array4::new(4);
-
-        // Update slot 0 with value 5
-        data.update(pack_coupon(0, 5));
-        assert_eq!(data.get(0), 5);
-
-        // Update with a smaller value (should be ignored)
-        data.update(pack_coupon(0, 3));
-        assert_eq!(data.get(0), 5);
-
-        // Update with a larger value
-        data.update(pack_coupon(0, 8));
-        assert_eq!(data.get(0), 8);
-    }
-
-    #[test]
     fn test_hip_estimator_basic() {
         let mut arr = Array4::new(10); // 1024 buckets
 
@@ -435,7 +402,7 @@ mod tests {
 
         // Add some unique values to different slots
         for i in 0..10_000u32 {
-            let coupon = coupon(&mut &i.to_ne_bytes()[..]).unwrap();
+            let coupon = coupon(i);
             arr.update(coupon);
         }
 

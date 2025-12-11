@@ -10,7 +10,7 @@ use crate::hll::container::{COUPON_EMPTY, Container};
 use crate::hll::serialization::*;
 
 /// List for sequential coupon storage with duplicate detection
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct List {
     container: Container,
 }
@@ -50,9 +50,8 @@ impl List {
         }
     }
 
-    /// Get the current cardinality estimate
-    pub fn estimate(&self) -> f64 {
-        self.container.estimate()
+    pub fn container(&self) -> &Container {
+        &self.container
     }
 
     /// Deserialize a List from bytes
@@ -94,9 +93,9 @@ impl List {
     /// Serialize a List to bytes
     pub fn serialize(&self, lg_config_k: u8, hll_type: HllType) -> io::Result<Vec<u8>> {
         let compact = true; // Always use compact format
-        let empty = self.container.len == 0;
-        let coupon_count = self.container.len;
-        let lg_arr = self.container.lg_size;
+        let empty = self.container.len() == 0;
+        let coupon_count = self.container.len();
+        let lg_arr = self.container.lg_size();
 
         // Compute size
         let array_size = if compact { coupon_count } else { 1 << lg_arr };
@@ -130,12 +129,12 @@ impl List {
         // Write coupons (only non-empty ones if compact)
         if !empty {
             let mut write_idx = 0;
-            for coupon in self.container.coupons.iter() {
+            for coupon in &self.container.coupons {
                 if compact && *coupon == 0 {
                     continue; // Skip empty coupons in compact mode
                 }
                 let offset = LIST_INT_ARR_START + write_idx * 4;
-                bytes[offset..offset + 4].copy_from_slice(&coupon.to_le_bytes());
+                write_u32_le(&mut bytes, offset, *coupon);
                 write_idx += 1;
                 if write_idx >= array_size {
                     break;

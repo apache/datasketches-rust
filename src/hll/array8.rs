@@ -7,6 +7,7 @@ use crate::hll::estimator::HipEstimator;
 use crate::hll::{get_slot, get_value};
 
 /// Core Array8 data structure - one byte per slot, no packing
+#[derive(Debug, Clone)]
 pub struct Array8 {
     lg_config_k: u8,
     /// Direct byte array: bytes[slot] = value
@@ -83,14 +84,11 @@ impl Array8 {
         self.estimator.estimate(self.lg_config_k, 0, self.num_zeros)
     }
 
-    /// Get the number of zero-valued slots
-    pub fn num_zeros(&self) -> u32 {
-        self.num_zeros
-    }
-
-    /// Get the total number of bytes used
-    pub fn size_bytes(&self) -> usize {
-        self.bytes.len()
+    /// Set the HIP accumulator value
+    ///
+    /// This is used when promoting from coupon modes to carry forward the estimate
+    pub fn set_hip_accum(&mut self, value: f64) {
+        self.estimator.set_hip_accum(value);
     }
 
     /// Deserialize Array8 from HLL mode bytes
@@ -214,19 +212,6 @@ mod tests {
         assert_eq!(arr.get(0), 0);
         assert_eq!(arr.get(100), 0);
         assert_eq!(arr.get(1023), 0);
-        assert_eq!(arr.num_zeros(), 1024);
-
-        // Storage should be exactly k bytes
-        assert_eq!(arr.size_bytes(), 1024);
-    }
-
-    #[test]
-    fn test_storage_calculation() {
-        // Array8 uses exactly k bytes
-        assert_eq!(Array8::new(4).size_bytes(), 16);
-        assert_eq!(Array8::new(8).size_bytes(), 256);
-        assert_eq!(Array8::new(10).size_bytes(), 1024);
-        assert_eq!(Array8::new(14).size_bytes(), 16384);
     }
 
     #[test]
@@ -275,30 +260,6 @@ mod tests {
     }
 
     #[test]
-    fn test_num_zeros_tracking() {
-        let mut arr = Array8::new(4); // 16 slots
-        assert_eq!(arr.num_zeros(), 16);
-
-        // Update one slot from 0 to non-zero
-        arr.update(pack_coupon(0, 5));
-        assert_eq!(arr.num_zeros(), 15);
-
-        // Update same slot again (should not change num_zeros)
-        arr.update(pack_coupon(0, 10));
-        assert_eq!(arr.num_zeros(), 15);
-
-        // Update another slot
-        arr.update(pack_coupon(1, 3));
-        assert_eq!(arr.num_zeros(), 14);
-
-        // Update multiple slots to zero
-        for i in 2..16 {
-            arr.update(pack_coupon(i, 1));
-        }
-        assert_eq!(arr.num_zeros(), 0);
-    }
-
-    #[test]
     fn test_hip_estimator() {
         let mut arr = Array8::new(10); // 1024 buckets
 
@@ -307,7 +268,7 @@ mod tests {
 
         // Add some unique values using real coupon hashing
         for i in 0..10_000u32 {
-            let coupon = coupon(&mut &i.to_ne_bytes()[..]).unwrap();
+            let coupon = coupon(&mut &i.to_ne_bytes()[..]);
             arr.update(coupon);
         }
 
@@ -373,29 +334,5 @@ mod tests {
             arr.estimator.kxq1() < 1e-10,
             "kxq1 should be very small (1/2^50 ≈ 8.9e-16)"
         );
-    }
-
-    #[test]
-    fn test_memory_comparison() {
-        let lg_k = 10; // 1024 slots
-
-        // Array4: k/2 bytes
-        let array4_size = 512;
-
-        // Array6: (k*3)/4 + 1 bytes
-        let array6_size = 769;
-
-        // Array8: k bytes
-        let array8 = Array8::new(lg_k);
-        assert_eq!(array8.size_bytes(), 1024);
-
-        // Verify Array8 is largest
-        assert!(array8.size_bytes() > array4_size);
-        assert!(array8.size_bytes() > array6_size);
-
-        // Array8 is 2x Array4, ~1.33x Array6
-        assert_eq!(array8.size_bytes(), 2 * array4_size);
-        assert!((array8.size_bytes() as f64) / (array6_size as f64) > 1.3);
-        assert!((array8.size_bytes() as f64) / (array6_size as f64) < 1.4);
     }
 }

@@ -10,7 +10,7 @@ use crate::hll::serialization::*;
 use crate::hll::{HllType, KEY_MASK_26};
 
 /// Hash set for efficient coupon storage with collision handling
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct HashSet {
     container: Container,
 }
@@ -37,7 +37,7 @@ impl HashSet {
 
     /// Insert coupon into hash set, ignoring duplicates
     pub fn update(&mut self, coupon: u32) {
-        let mask = (1 << self.container.lg_size) - 1;
+        let mask = (1 << self.container.lg_size()) - 1;
 
         // Initial probe position from low bits of coupon
         let mut probe = coupon & mask;
@@ -57,7 +57,7 @@ impl HashSet {
 
             // Collision: compute stride and probe next position
             // Stride is always odd to ensure all slots are visited
-            let stride = ((coupon & KEY_MASK_26) >> self.container.lg_size) | 1;
+            let stride = ((coupon & KEY_MASK_26) >> self.container.lg_size()) | 1;
             probe = (probe + stride) & mask;
             if probe == starting_position {
                 panic!("HashSet full; no empty slots");
@@ -65,22 +65,8 @@ impl HashSet {
         }
     }
 
-    /// Internally grow the set container by a power of two, copying all
-    /// the existing values to the new container.
-    pub fn grow(&mut self, lg_size: usize) {
-        debug_assert!(lg_size > self.container.lg_size);
-
-        let mut new_set = HashSet::new(lg_size);
-        for coupon in &self.container.coupons {
-            new_set.update(*coupon)
-        }
-
-        self.container = new_set.container;
-    }
-
-    /// Get the current cardinality estimate
-    pub fn estimate(&self) -> f64 {
-        self.container.estimate()
+    pub fn container(&self) -> &Container {
+        &self.container
     }
 
     /// Deserialize a HashSet from bytes
@@ -148,8 +134,8 @@ impl HashSet {
     /// Serialize a HashSet to bytes
     pub fn serialize(&self, lg_config_k: u8, hll_type: HllType) -> io::Result<Vec<u8>> {
         let compact = true; // Always use compact format
-        let coupon_count = self.container.len;
-        let lg_arr = self.container.lg_size;
+        let coupon_count = self.container.len();
+        let lg_arr = self.container.lg_size();
 
         // Compute size
         let array_size = if compact { coupon_count } else { 1 << lg_arr };

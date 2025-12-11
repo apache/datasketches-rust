@@ -27,25 +27,25 @@
 //! The slot identifies which bucket to update, and the value represents the number of
 //! leading zeros in the hash plus one.
 
-use std::io;
-use std::io::Read;
+use std::hash::Hash;
 
-use murmur3::murmur3_x64_128;
+mod array4;
+mod array6;
+mod array8;
+mod aux_map;
+mod composite_interpolation;
+mod container;
+mod coupon_mapping;
+mod cubic_interpolation;
+mod estimator;
+mod harmonic_numbers;
+mod hash_set;
+mod list;
+mod serialization;
+mod sketch;
 
-pub mod array4;
-pub mod array6;
-pub mod array8;
-pub mod aux_map;
-pub mod composite_interpolation;
-pub mod container;
-pub mod coupon_mapping;
-pub mod cubic_interpolation;
-pub mod estimator;
-pub mod harmonic_numbers;
-pub mod hash_set;
-pub mod list;
-pub mod serialization;
-pub mod sketch;
+// Re-export public API
+pub use sketch::HllSketch;
 
 /// Target HLL type
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -85,19 +85,19 @@ fn pack_coupon(slot: u32, value: u8) -> u32 {
     ((value as u32) << KEY_BITS_26) | (slot & KEY_MASK_26)
 }
 
-pub fn coupon<R: Read>(v: &mut R) -> io::Result<u32> {
+pub fn coupon<H: Hash>(v: H) -> u32 {
     const DEFAULT_SEED: u32 = 9001;
-    let hash = murmur3_x64_128(v, DEFAULT_SEED)?;
 
-    let lo: u64 = hash as u64;
-    let hi: u64 = (hash >> 64) as u64;
+    let mut hasher = mur3::Hasher128::with_seed(DEFAULT_SEED);
+    v.hash(&mut hasher);
+    let (lo, hi) = hasher.finish128();
 
     let addr26 = lo as u32 & KEY_MASK_26;
     let lz = hi.leading_zeros();
     let capped = lz.min(62);
     let value = capped + 1;
 
-    Ok(value << KEY_BITS_26 | addr26)
+    value << KEY_BITS_26 | addr26
 }
 
 #[cfg(test)]

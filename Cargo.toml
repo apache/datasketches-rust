@@ -21,4 +21,4 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-murmur3 = "0.5"
+mur3 = "0.1"
