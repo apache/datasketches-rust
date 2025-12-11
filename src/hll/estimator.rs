@@ -110,6 +110,38 @@ impl HipEstimator {
         }
     }
 
+    /// Get upper bound for cardinality estimate
+    ///
+    /// Returns the upper confidence bound for the cardinality estimate.
+    pub fn upper_bound(
+        &self,
+        lg_config_k: u8,
+        cur_min: u8,
+        num_at_cur_min: u32,
+        num_std_dev: u8,
+    ) -> f64 {
+        let estimate = self.estimate(lg_config_k, cur_min, num_at_cur_min);
+        let rse = get_rel_err(lg_config_k, true, self.out_of_order, num_std_dev);
+        // RSE is negative for upper bounds, so (1 + rse) < 1, making bound > estimate
+        estimate / (1.0 + rse)
+    }
+
+    /// Get lower bound for cardinality estimate
+    ///
+    /// Returns the lower confidence bound for the cardinality estimate.
+    pub fn lower_bound(
+        &self,
+        lg_config_k: u8,
+        cur_min: u8,
+        num_at_cur_min: u32,
+        num_std_dev: u8,
+    ) -> f64 {
+        let estimate = self.estimate(lg_config_k, cur_min, num_at_cur_min);
+        let rse = get_rel_err(lg_config_k, false, self.out_of_order, num_std_dev);
+        // RSE is positive for lower bounds, so (1 + rse) > 1, making bound < estimate
+        estimate / (1.0 + rse)
+    }
+
     /// Get raw HLL estimate using standard HyperLogLog formula
     ///
     /// Formula: correctionFactor * k^2 / (kxq0 + kxq1)
@@ -268,6 +300,180 @@ fn inv_pow2(value: u8) -> f64 {
         f64::exp2(-(value as f64))
     }
 }
+
+/// Get relative error for HLL estimates
+///
+/// This matches the implementation in datasketches-cpp HllUtil.hpp and RelativeErrorTables.hpp
+///
+/// # Arguments
+/// * `lg_config_k` - Log2 of number of registers (must be 4-21)
+/// * `upper_bound` - Whether computing upper bound (vs lower bound)
+/// * `ooo` - Whether sketch is out-of-order (merged/deserialized)
+/// * `num_std_dev` - Number of standard deviations (1, 2, or 3)
+///
+/// # Returns
+/// Relative error factor to apply to estimate
+fn get_rel_err(lg_config_k: u8, upper_bound: bool, ooo: bool, num_std_dev: u8) -> f64 {
+    // For lg_k > 12, use analytical formula with RSE factors
+    if lg_config_k > 12 {
+        // RSE factors from Apache DataSketches C++ implementation
+        // HLL_HIP_RSE_FACTOR = sqrt(ln(2)) ≈ 0.8325546
+        // HLL_NON_HIP_RSE_FACTOR = sqrt((3 * ln(2)) - 1) ≈ 1.03896
+        let rse_factor = if ooo {
+            1.03896 // Non-HIP (out-of-order)
+        } else {
+            0.8325546 // HIP (in-order)
+        };
+
+        let k = (1 << lg_config_k) as f64;
+        let sign = if upper_bound { -1.0 } else { 1.0 };
+
+        return sign * (num_std_dev as f64) * rse_factor / k.sqrt();
+    }
+
+    // For lg_k <= 12, use empirically measured lookup tables
+    // Tables are indexed by: ((lg_k - 4) * 3) + (num_std_dev - 1)
+    let idx = ((lg_config_k - 4) * 3 + (num_std_dev - 1)) as usize;
+
+    // Select the appropriate table based on ooo and upper_bound flags
+    match (ooo, upper_bound) {
+        (false, false) => HIP_LB[idx],    // Case 0: HIP, Lower Bound
+        (false, true) => HIP_UB[idx],     // Case 1: HIP, Upper Bound
+        (true, false) => NON_HIP_LB[idx], // Case 2: Non-HIP, Lower Bound
+        (true, true) => NON_HIP_UB[idx],  // Case 3: Non-HIP, Upper Bound
+    }
+}
+
+// Relative error lookup tables from Apache DataSketches C++ implementation
+// RelativeErrorTables-internal.hpp
+
+/// HIP (in-order) Lower Bound errors for lg_k 4-12, std_dev 1-3
+/// Q(.84134), Q(.97725), Q(.99865) quantiles
+const HIP_LB: [f64; 27] = [
+    0.207316195,
+    0.502865572,
+    0.882303765, //4
+    0.146981579,
+    0.335426881,
+    0.557052, //5
+    0.104026721,
+    0.227683872,
+    0.365888317, //6
+    0.073614601,
+    0.156781585,
+    0.245740374, //7
+    0.05205248,
+    0.108783763,
+    0.168030442, //8
+    0.036770852,
+    0.075727545,
+    0.11593785, //9
+    0.025990219,
+    0.053145536,
+    0.080772263, //10
+    0.018373987,
+    0.037266176,
+    0.056271814, //11
+    0.012936253,
+    0.02613829,
+    0.039387631, //12
+];
+
+/// HIP (in-order) Upper Bound errors for lg_k 4-12, std_dev 1-3
+/// Q(.15866), Q(.02275), Q(.00135) quantiles
+const HIP_UB: [f64; 27] = [
+    -0.207805347,
+    -0.355574279,
+    -0.475535095, //4
+    -0.146988328,
+    -0.262390832,
+    -0.360864026, //5
+    -0.103877775,
+    -0.191503663,
+    -0.269311582, //6
+    -0.073452978,
+    -0.138513438,
+    -0.198487447, //7
+    -0.051982806,
+    -0.099703123,
+    -0.144128618, //8
+    -0.036768609,
+    -0.07138158,
+    -0.104430324, //9
+    -0.025991325,
+    -0.050854296,
+    -0.0748143, //10
+    -0.01834533,
+    -0.036121138,
+    -0.05327616, //11
+    -0.012920332,
+    -0.025572893,
+    -0.037896952, //12
+];
+
+/// Non-HIP (out-of-order) Lower Bound errors for lg_k 4-12, std_dev 1-3
+/// Q(.84134), Q(.97725), Q(.99865) quantiles
+const NON_HIP_LB: [f64; 27] = [
+    0.254409839,
+    0.682266712,
+    1.304022158, //4
+    0.181817353,
+    0.443389054,
+    0.778776219, //5
+    0.129432281,
+    0.295782195,
+    0.49252279, //6
+    0.091640655,
+    0.201175925,
+    0.323664385, //7
+    0.064858051,
+    0.138523393,
+    0.218805328, //8
+    0.045851855,
+    0.095925072,
+    0.148635751, //9
+    0.032454144,
+    0.067009668,
+    0.102660669, //10
+    0.022921382,
+    0.046868565,
+    0.071307398, //11
+    0.016155679,
+    0.032825719,
+    0.049677541, //12
+];
+
+/// Non-HIP (out-of-order) Upper Bound errors for lg_k 4-12, std_dev 1-3
+/// Q(.15866), Q(.02275), Q(.00135) quantiles
+const NON_HIP_UB: [f64; 27] = [
+    -0.256980172,
+    -0.411905944,
+    -0.52651057, // lg_k=4
+    -0.182332109,
+    -0.310275547,
+    -0.412660505, // lg_k=5
+    -0.129314228,
+    -0.230142294,
+    -0.315636197, // lg_k=6
+    -0.091584836,
+    -0.16834013,
+    -0.236346847, // lg_k=7
+    -0.06487411,
+    -0.122045231,
+    -0.174112107, // lg_k=8
+    -0.04591465,
+    -0.08784505,
+    -0.126917615, // lg_k=9
+    -0.032433119,
+    -0.062897613,
+    -0.091862929, // lg_k=10
+    -0.022960633,
+    -0.044875401,
+    -0.065736049, // lg_k=11
+    -0.016186662,
+    -0.031827816,
+    -0.046973459, // lg_k=12
+];
 
 #[cfg(test)]
 mod tests {

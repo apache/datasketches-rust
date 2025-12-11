@@ -84,6 +84,18 @@ impl Array8 {
         self.estimator.estimate(self.lg_config_k, 0, self.num_zeros)
     }
 
+    /// Get upper bound for cardinality estimate
+    pub fn upper_bound(&self, num_std_dev: u8) -> f64 {
+        self.estimator
+            .upper_bound(self.lg_config_k, 0, self.num_zeros, num_std_dev)
+    }
+
+    /// Get lower bound for cardinality estimate
+    pub fn lower_bound(&self, num_std_dev: u8) -> f64 {
+        self.estimator
+            .lower_bound(self.lg_config_k, 0, self.num_zeros, num_std_dev)
+    }
+
     /// Set the HIP accumulator value
     ///
     /// This is used when promoting from coupon modes to carry forward the estimate

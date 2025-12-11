@@ -155,6 +155,34 @@ impl HllSketch {
         }
     }
 
+    /// Get upper bound for cardinality estimate
+    ///
+    /// Returns the upper confidence bound for the cardinality estimate based on
+    /// the number of standard deviations requested.
+    pub fn upper_bound(&self, num_std_dev: u8) -> f64 {
+        match &self.mode {
+            Mode::List { list, .. } => list.container().upper_bound(num_std_dev),
+            Mode::Set { set, .. } => set.container().upper_bound(num_std_dev),
+            Mode::Array4(arr) => arr.upper_bound(num_std_dev),
+            Mode::Array6(arr) => arr.upper_bound(num_std_dev),
+            Mode::Array8(arr) => arr.upper_bound(num_std_dev),
+        }
+    }
+
+    /// Get lower bound for cardinality estimate
+    ///
+    /// Returns the lower confidence bound for the cardinality estimate based on
+    /// the number of standard deviations requested.
+    pub fn lower_bound(&self, num_std_dev: u8) -> f64 {
+        match &self.mode {
+            Mode::List { list, .. } => list.container().lower_bound(num_std_dev),
+            Mode::Set { set, .. } => set.container().lower_bound(num_std_dev),
+            Mode::Array4(arr) => arr.lower_bound(num_std_dev),
+            Mode::Array6(arr) => arr.lower_bound(num_std_dev),
+            Mode::Array8(arr) => arr.lower_bound(num_std_dev),
+        }
+    }
+
     pub fn deserialize(bytes: &[u8]) -> io::Result<HllSketch> {
         if bytes.len() < 8 {
             return Err(io::Error::new(
