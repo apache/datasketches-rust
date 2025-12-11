@@ -15,6 +15,39 @@
 // specific language governing permissions and limitations
 // under the License.
 
+//! HyperLogLog sketch implementation
+//!
+//! This module provides the main [`HllSketch`] struct, which is the primary interface
+//! for creating and using HLL sketches for cardinality estimation.
+//!
+//! # Adaptive Mode System
+//!
+//! The sketch automatically transitions between three internal modes based on cardinality:
+//!
+//! - **List mode**: Stores individual coupons in a compact list for small cardinalities.
+//!   Used when fewer than ~32 unique values have been seen.
+//!
+//! - **Set mode**: Uses a hash set with open addressing for medium cardinalities.
+//!   Provides better performance than list mode while still being space-efficient.
+//!   The set grows dynamically until it reaches K/8 entries.
+//!
+//! - **HLL mode**: Uses the full HLL array (Array4, Array6, or Array8) for large cardinalities.
+//!   Provides constant memory usage and accurate estimates for billions of unique values.
+//!
+//! Mode transitions are automatic and transparent to the user. Each promotion preserves
+//! all previously observed values and maintains estimation accuracy.
+//!
+//! # Serialization
+//!
+//! Sketches can be serialized and deserialized while preserving all state, including:
+//! - Current mode and HLL type
+//! - All observed values (coupons or register values)
+//! - HIP accumulator state for accurate estimation
+//! - Out-of-order flag for merged/deserialized sketches
+//!
+//! The serialization format is compatible with Apache DataSketches implementations
+//! in Java and C++, enabling cross-platform sketch exchange.
+
 use std::hash::Hash;
 use std::io;
 
