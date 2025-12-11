@@ -41,8 +41,6 @@ fn main() {
     let estimate3 = sketch2.estimate();
     println!("Estimate after deserialization: {:.2}", estimate3);
 
-    println!("\nDebug: {:?}", sketch2);
-
     // Different types
     println!("\nHLL works with any hashable type:");
     let mut multi_sketch = HllSketch::new(10, HllType::Hll6);
@@ -51,6 +49,4 @@ fn main() {
     multi_sketch.update(42);
     multi_sketch.update(vec![1, 2, 3]);
     println!("Estimate with mixed types: {:.2}", multi_sketch.estimate());
-
-    println!("\nDebug: {:?}", multi_sketch);
 }
