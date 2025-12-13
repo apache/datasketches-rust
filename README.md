@@ -16,22 +16,22 @@
     specific language governing permissions and limitations
     under the License.
 -->
-=================
+
 # Apache<sup>&reg;</sup> DataSketches&trade; Core Rust Library Component
 
-### **NOTE: This repository is under development**
+> [!WARNING]
+>
+> This repository is under early development. Use it with caution!
 
 This is the core Rust component of the DataSketches library.  It contains a subset of the sketching algorithms and can be accessed directly from user applications. 
 
-Note that we have parallel core library components for Java, C++, Python and GO implementations of many of the same sketch algorithms:
+Note that we have parallel core library components for Java, C++, Python, and Go implementations of many of the same sketch algorithms:
 
-- [datasketches-java](https://github.com/apache/datasketches-java), 
-- [datasketches-cpp](https://github.com/apache/datasketches-cpp), 
-- [datasketches-python](https://github.com/apache/datasketches-python),
-- [datasketches-go](https://github.com/apache/datasketches-go).
+- [datasketches-java](https://github.com/apache/datasketches-java)
+- [datasketches-cpp](https://github.com/apache/datasketches-cpp)
+- [datasketches-python](https://github.com/apache/datasketches-python)
+- [datasketches-go](https://github.com/apache/datasketches-go)
 
 Please visit the main [DataSketches website](https://datasketches.apache.org) for more information.
 
-If you are interested in making contributions to this site please see our [Community](https://datasketches.apache.org/docs/Community/) page for how to contact us.
-
-## Build & Runtime Dependencies
+If you are interested in making contributions to this site, please see our [Community](https://datasketches.apache.org/docs/Community/) page for how to contact us.
