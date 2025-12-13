@@ -15,7 +15,7 @@
 # limitations under the License.
 #
 
-# Eclipse project files 
+# Eclipse project files
 .classpath
 .project
 .settings/
@@ -69,7 +69,6 @@ tmp/
 
 # Build artifacts
 target/
-serialization_test_data/
 out/
 build/
 jarsIn/
@@ -84,6 +83,3 @@ doc/
 _site/
 _*
 _*/
-
-# Sketch binary test files
-*.sk
