@@ -297,7 +297,7 @@ mod tests {
 
         // Add some unique values using real coupon hashing
         for i in 0..10_000u32 {
-            let coupon = coupon(&mut &i.to_ne_bytes()[..]);
+            let coupon = coupon(i);
             arr.update(coupon);
         }
 

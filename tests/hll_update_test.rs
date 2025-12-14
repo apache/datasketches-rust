@@ -26,7 +26,7 @@ fn test_basic_update() {
 
     // Update with some values
     for i in 0..100 {
-        sketch.update(&i);
+        sketch.update(i);
     }
 
     let estimate = sketch.estimate();
@@ -45,7 +45,7 @@ fn test_list_to_set_promotion() {
 
     // Add enough unique values to trigger promotion
     for i in 0..600 {
-        sketch.update(&i);
+        sketch.update(i);
     }
 
     let estimate = sketch.estimate();
@@ -63,7 +63,7 @@ fn test_set_to_hll_promotion() {
 
     // Add enough values to trigger List→Set→HLL promotions
     for i in 0..1000 {
-        sketch.update(&i);
+        sketch.update(i);
     }
 
     let estimate = sketch.estimate();
@@ -81,7 +81,7 @@ fn test_duplicate_handling() {
     // Add same values multiple times
     for _ in 0..10 {
         for i in 0..100 {
-            sketch.update(&i);
+            sketch.update(i);
         }
     }
 
@@ -99,11 +99,11 @@ fn test_different_types() {
     let mut sketch = HllSketch::new(10, HllType::Hll8);
 
     // Mix different types
-    sketch.update(&42i32);
-    sketch.update(&"hello");
-    sketch.update(&100u64);
-    sketch.update(&true);
-    sketch.update(&vec![1, 2, 3]);
+    sketch.update(42i32);
+    sketch.update("hello");
+    sketch.update(100u64);
+    sketch.update(true);
+    sketch.update(vec![1, 2, 3]);
 
     let estimate = sketch.estimate();
     assert!(estimate >= 5.0, "Should have at least 5 distinct values");
@@ -114,7 +114,7 @@ fn test_hll4_type() {
     let mut sketch = HllSketch::new(12, HllType::Hll4);
 
     for i in 0..1000 {
-        sketch.update(&i);
+        sketch.update(i);
     }
 
     let estimate = sketch.estimate();
@@ -130,7 +130,7 @@ fn test_hll6_type() {
     let mut sketch = HllSketch::new(12, HllType::Hll6);
 
     for i in 0..1000 {
-        sketch.update(&i);
+        sketch.update(i);
     }
 
     let estimate = sketch.estimate();
@@ -147,7 +147,7 @@ fn test_serialization_roundtrip_after_updates() {
 
     // Add values and promote through all modes
     for i in 0..2000 {
-        sketch1.update(&i);
+        sketch1.update(i);
     }
 
     let estimate1 = sketch1.estimate();
@@ -175,7 +175,7 @@ fn test_large_cardinality() {
 
     // Add 100K unique values
     for i in 0..100_000 {
-        sketch.update(&i);
+        sketch.update(i);
     }
 
     let estimate = sketch.estimate();
@@ -199,15 +199,15 @@ fn test_equals_method() {
 
     // Add same values to both
     for i in 0..100 {
-        sketch1.update(&i);
-        sketch2.update(&i);
+        sketch1.update(i);
+        sketch2.update(i);
     }
 
     // Should still be equal
     assert!(sketch1.eq(&sketch2));
 
     // Add different value to sketch2
-    sketch2.update(&999);
+    sketch2.update(999);
 
     // Now they're different
     assert!(!sketch1.eq(&sketch2));
@@ -231,7 +231,7 @@ fn test_bounds_basic() {
 
     // Add 1000 unique values
     for i in 0..1000 {
-        sketch.update(&i);
+        sketch.update(i);
     }
 
     let estimate = sketch.estimate();
@@ -272,7 +272,7 @@ fn test_bounds_all_modes() {
     // Test List mode (small cardinality)
     let mut sketch = HllSketch::new(12, HllType::Hll8);
     for i in 0..10 {
-        sketch.update(&i);
+        sketch.update(i);
     }
     let estimate = sketch.estimate();
     let upper = sketch.upper_bound(2);
@@ -284,7 +284,7 @@ fn test_bounds_all_modes() {
 
     // Test Set mode (medium cardinality)
     for i in 10..100 {
-        sketch.update(&i);
+        sketch.update(i);
     }
     let estimate = sketch.estimate();
     let upper = sketch.upper_bound(2);
@@ -296,7 +296,7 @@ fn test_bounds_all_modes() {
 
     // Test HLL mode (large cardinality)
     for i in 100..5000 {
-        sketch.update(&i);
+        sketch.update(i);
     }
     let estimate = sketch.estimate();
     let upper = sketch.upper_bound(2);
@@ -314,8 +314,8 @@ fn test_bounds_different_lg_k() {
     let mut sketch_large = HllSketch::new(14, HllType::Hll8); // lg_k=14, k=16384
 
     for i in 0..1000 {
-        sketch_small.update(&i);
-        sketch_large.update(&i);
+        sketch_small.update(i);
+        sketch_large.update(i);
     }
 
     let est_small = sketch_small.estimate();
