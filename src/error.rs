@@ -19,9 +19,6 @@
 
 use std::fmt;
 
-/// Result type for datasketches serialization / deserialization operations
-pub type SerdeResult<T> = std::result::Result<T, SerdeError>;
-
 /// Errors that can occur during sketch serialization or deserialization
 #[derive(Debug, Clone)]
 pub enum SerdeError {

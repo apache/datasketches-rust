@@ -20,7 +20,7 @@
 //! Uses open addressing with a custom stride function to handle collisions.
 //! Provides better performance than List when many coupons are stored.
 
-use crate::error::{SerdeError, SerdeResult};
+use crate::error::SerdeError;
 use crate::hll::container::{COUPON_EMPTY, Container};
 use crate::hll::serialization::*;
 use crate::hll::{HllType, KEY_MASK_26};
@@ -80,7 +80,7 @@ impl HashSet {
     }
 
     /// Deserialize a HashSet from bytes
-    pub fn deserialize(bytes: &[u8], compact: bool) -> SerdeResult<Self> {
+    pub fn deserialize(bytes: &[u8], compact: bool) -> Result<Self, SerdeError> {
         // Read coupon count from bytes 8-11
         let coupon_count = read_u32_le(bytes, HASH_SET_COUNT_INT) as usize;
 

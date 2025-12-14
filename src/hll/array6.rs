@@ -21,7 +21,7 @@
 //! This is sufficient for most HLL use cases without needing exception handling or
 //! cur_min optimization like Array4.
 
-use crate::error::SerdeResult;
+use crate::error::SerdeError;
 use crate::hll::estimator::HipEstimator;
 use crate::hll::{NumStdDev, get_slot, get_value};
 
@@ -150,8 +150,7 @@ impl Array6 {
         lg_config_k: u8,
         compact: bool,
         ooo: bool,
-    ) -> SerdeResult<Self> {
-        use crate::error::SerdeError;
+    ) -> Result<Self, SerdeError> {
         use crate::hll::serialization::*;
 
         let k = 1 << lg_config_k;

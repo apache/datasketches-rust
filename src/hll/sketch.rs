@@ -22,7 +22,7 @@
 
 use std::hash::Hash;
 
-use crate::error::{SerdeError, SerdeResult};
+use crate::error::SerdeError;
 use crate::hll::array4::Array4;
 use crate::hll::array6::Array6;
 use crate::hll::array8::Array8;
@@ -175,7 +175,7 @@ impl HllSketch {
     }
 
     /// Deserializes an HLL sketch from bytes
-    pub fn deserialize(bytes: &[u8]) -> SerdeResult<HllSketch> {
+    pub fn deserialize(bytes: &[u8]) -> Result<HllSketch, SerdeError> {
         if bytes.len() < 8 {
             return Err(SerdeError::InsufficientData(
                 "sketch data too short (< 8 bytes)".to_string(),

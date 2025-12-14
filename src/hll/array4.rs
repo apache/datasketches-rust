@@ -21,7 +21,7 @@
 //! When values exceed 4 bits after cur_min offset, they're stored in an auxiliary hash map.
 
 use super::aux_map::AuxMap;
-use crate::error::SerdeResult;
+use crate::error::SerdeError;
 use crate::hll::estimator::HipEstimator;
 use crate::hll::{NumStdDev, get_slot, get_value};
 
@@ -250,8 +250,7 @@ impl Array4 {
         lg_config_k: u8,
         compact: bool,
         ooo: bool,
-    ) -> SerdeResult<Self> {
-        use crate::error::SerdeError;
+    ) -> Result<Self, SerdeError> {
         use crate::hll::serialization::*;
         use crate::hll::{get_slot, get_value};
 
