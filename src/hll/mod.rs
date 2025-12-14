@@ -85,7 +85,7 @@ pub enum HllType {
     /// It is generally the slowest in terms of update time, but has the smallest storage
     /// footprint of about K/2 * 1.03 bytes.
     Hll4,
-    /// Uses a 6-bit field per HLL bucket. It is the generally the next fastest in terms
+    /// Uses a 6-bit field per HLL bucket. It is generally the next fastest in terms
     /// of update time with a storage footprint of about 3/4 * K bytes.
     Hll6,
     /// Uses an 8-bit byte per HLL bucket. It is generally the fastest in terms of update
