@@ -55,7 +55,7 @@ pub const fn get_x_arr_length() -> usize {
 ///
 /// # Panics
 ///
-/// If lg_k is not supported (currently supports 4-12, full support requires 4-21)
+/// If lg_k is not in range [4, 21]
 pub fn get_x_arr(lg_k: u8) -> &'static [f64; NUM_X_VALUES] {
     if !(4..=21).contains(&lg_k) {
         panic!("lg_k must be in range [4, 21], got: {}", lg_k);

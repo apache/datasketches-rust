@@ -97,10 +97,6 @@ impl AuxMap {
     }
 
     /// Insert a new slot-value pair
-    ///
-    /// # Panics
-    ///
-    /// If the slot already exists in the map
     pub fn insert(&mut self, slot: u32, value: u8) {
         let index = self.find(slot);
         match index {
@@ -128,10 +124,6 @@ impl AuxMap {
     }
 
     /// Replace value for existing slot
-    ///
-    /// # Panics
-    ///
-    /// If the slot doesn't exist in the map
     pub fn replace(&mut self, slot: u32, value: u8) {
         match self.find(slot) {
             FindResult::Found(idx) => {
