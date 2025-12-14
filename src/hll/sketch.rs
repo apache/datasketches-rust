@@ -43,48 +43,13 @@ enum CurMode {
 /// A HyperLogLog sketch.
 ///
 /// See the [module level documentation](self) for more.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct HllSketch {
     lg_config_k: u8,
     mode: Mode,
 }
 
-impl PartialEq for HllSketch {
-    fn eq(&self, other: &Self) -> bool {
-        if self.lg_config_k != other.lg_config_k {
-            return false;
-        }
-
-        match (&self.mode, &other.mode) {
-            (
-                Mode::List {
-                    list: l1,
-                    hll_type: t1,
-                },
-                Mode::List {
-                    list: l2,
-                    hll_type: t2,
-                },
-            ) => l1 == l2 && t1 == t2,
-            (
-                Mode::Set {
-                    set: s1,
-                    hll_type: t1,
-                },
-                Mode::Set {
-                    set: s2,
-                    hll_type: t2,
-                },
-            ) => s1 == s2 && t1 == t2,
-            (Mode::Array4(a1), Mode::Array4(a2)) => a1 == a2,
-            (Mode::Array6(a1), Mode::Array6(a2)) => a1 == a2,
-            (Mode::Array8(a1), Mode::Array8(a2)) => a1 == a2,
-            _ => false, // Different modes are not equal
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 enum Mode {
     List { list: List, hll_type: HllType },
     Set { set: HashSet, hll_type: HllType },

@@ -26,15 +26,9 @@ use crate::hll::container::{COUPON_EMPTY, Container};
 use crate::hll::serialization::*;
 
 /// List for sequential coupon storage with duplicate detection
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct List {
     container: Container,
-}
-
-impl PartialEq for List {
-    fn eq(&self, other: &Self) -> bool {
-        self.container == other.container
-    }
 }
 
 impl Default for List {

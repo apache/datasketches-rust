@@ -27,7 +27,7 @@ use crate::hll::{get_slot, get_value};
 const AUX_TOKEN: u8 = 15;
 
 /// Core Array4 data structure - stores 4-bit values efficiently
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Array4 {
     lg_config_k: u8,
     /// Packed 4-bit values: 2 values per byte
@@ -41,17 +41,6 @@ pub struct Array4 {
     aux_map: Option<AuxMap>,
     /// HIP estimator for cardinality estimation
     estimator: HipEstimator,
-}
-
-impl PartialEq for Array4 {
-    fn eq(&self, other: &Self) -> bool {
-        self.lg_config_k == other.lg_config_k
-            && self.cur_min == other.cur_min
-            && self.num_at_cur_min == other.num_at_cur_min
-            && self.bytes.as_ref() == other.bytes.as_ref()
-            && self.aux_map == other.aux_map
-            && self.estimator == other.estimator
-    }
 }
 
 impl Array4 {

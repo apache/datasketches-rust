@@ -24,7 +24,7 @@ use crate::hll::estimator::HipEstimator;
 use crate::hll::{get_slot, get_value};
 
 /// Core Array8 data structure - one byte per slot, no packing
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Array8 {
     lg_config_k: u8,
     /// Direct byte array: bytes[slot] = value
@@ -33,15 +33,6 @@ pub struct Array8 {
     num_zeros: u32,
     /// HIP estimator for cardinality estimation
     estimator: HipEstimator,
-}
-
-impl PartialEq for Array8 {
-    fn eq(&self, other: &Self) -> bool {
-        self.lg_config_k == other.lg_config_k
-            && self.num_zeros == other.num_zeros
-            && self.bytes.as_ref() == other.bytes.as_ref()
-            && self.estimator == other.estimator
-    }
 }
 
 impl Array8 {

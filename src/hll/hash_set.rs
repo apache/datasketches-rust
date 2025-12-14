@@ -26,15 +26,9 @@ use crate::hll::serialization::*;
 use crate::hll::{HllType, KEY_MASK_26};
 
 /// Hash set for efficient coupon storage with collision handling
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct HashSet {
     container: Container,
-}
-
-impl PartialEq for HashSet {
-    fn eq(&self, other: &Self) -> bool {
-        self.container == other.container
-    }
 }
 
 impl Default for HashSet {

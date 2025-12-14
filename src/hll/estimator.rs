@@ -34,7 +34,7 @@ use crate::hll::{composite_interpolation, cubic_interpolation, harmonic_numbers}
 ///   for accurate sequential updates
 /// - **Out-of-order mode**: Uses composite estimator (raw HLL + linear counting)
 ///   after deserialization or merging
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct HipEstimator {
     /// HIP estimator accumulator
     hip_accum: f64,
@@ -44,17 +44,6 @@ pub struct HipEstimator {
     kxq1: f64,
     /// Out-of-order flag: when true, HIP updates are skipped
     out_of_order: bool,
-}
-
-impl PartialEq for HipEstimator {
-    fn eq(&self, other: &Self) -> bool {
-        // For serialization round-trip tests, f64 values should be bit-identical
-        // after going through binary serialization
-        self.hip_accum == other.hip_accum
-            && self.kxq0 == other.kxq0
-            && self.kxq1 == other.kxq1
-            && self.out_of_order == other.out_of_order
-    }
 }
 
 impl HipEstimator {

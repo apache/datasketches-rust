@@ -27,7 +27,7 @@ use crate::hll::{get_slot, get_value};
 const VAL_MASK_6: u16 = 0x3F; // 6 bits: 0b0011_1111
 
 /// Core Array6 data structure - stores 6-bit values with cross-byte packing
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Array6 {
     lg_config_k: u8,
     /// Packed 6-bit values, may cross byte boundaries
@@ -36,15 +36,6 @@ pub struct Array6 {
     num_zeros: u32,
     /// HIP estimator for cardinality estimation
     estimator: HipEstimator,
-}
-
-impl PartialEq for Array6 {
-    fn eq(&self, other: &Self) -> bool {
-        self.lg_config_k == other.lg_config_k
-            && self.num_zeros == other.num_zeros
-            && self.bytes.as_ref() == other.bytes.as_ref()
-            && self.estimator == other.estimator
-    }
 }
 
 impl Array6 {
