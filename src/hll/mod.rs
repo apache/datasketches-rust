@@ -69,6 +69,7 @@ mod list;
 mod serialization;
 mod sketch;
 
+pub use estimator::NumStdDev;
 pub use sketch::HllSketch;
 
 /// Target HLL type.

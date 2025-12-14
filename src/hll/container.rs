@@ -20,9 +20,9 @@
 //! Provides a simple array-based storage for coupons (hash values) with
 //! cubic interpolation-based cardinality estimation and confidence bounds.
 
-use crate::hll::COUPON_RSE;
 use crate::hll::coupon_mapping::{X_ARR, Y_ARR};
 use crate::hll::cubic_interpolation::using_x_and_y_tables;
+use crate::hll::{COUPON_RSE, NumStdDev};
 
 /// Sentinel value indicating an empty coupon slot
 pub const COUPON_EMPTY: u32 = 0;
@@ -108,21 +108,21 @@ impl Container {
     }
 
     /// Get upper confidence bound for cardinality estimate
-    pub fn upper_bound(&self, num_std_dev: u8) -> f64 {
+    pub fn upper_bound(&self, num_std_dev: NumStdDev) -> f64 {
         let len = self.len as f64;
         let est = using_x_and_y_tables(&X_ARR, &Y_ARR, len);
         // Upper bound: negative RSE means (1 + rse) < 1, so bound > estimate
-        let rse = -(num_std_dev as f64) * COUPON_RSE;
+        let rse = -(num_std_dev as u8 as f64) * COUPON_RSE;
         let bound = est / (1.0 + rse);
         len.max(bound)
     }
 
     /// Get lower confidence bound for cardinality estimate
-    pub fn lower_bound(&self, num_std_dev: u8) -> f64 {
+    pub fn lower_bound(&self, num_std_dev: NumStdDev) -> f64 {
         let len = self.len as f64;
         let est = using_x_and_y_tables(&X_ARR, &Y_ARR, len);
         // Lower bound: positive RSE means (1 + rse) > 1, so bound < estimate
-        let rse = (num_std_dev as f64) * COUPON_RSE;
+        let rse = (num_std_dev as u8 as f64) * COUPON_RSE;
         let bound = est / (1.0 + rse);
         len.max(bound)
     }

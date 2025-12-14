@@ -30,7 +30,7 @@ use crate::hll::container::Container;
 use crate::hll::hash_set::HashSet;
 use crate::hll::list::List;
 use crate::hll::serialization::*;
-use crate::hll::{HllType, RESIZE_DENOM, RESIZE_NUMER, coupon};
+use crate::hll::{HllType, NumStdDev, RESIZE_DENOM, RESIZE_NUMER, coupon};
 
 /// Current sketch mode
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,7 +42,7 @@ enum CurMode {
 
 /// A HyperLogLog sketch.
 ///
-/// See the [module level documentation](self) for more.
+/// See the [hll module level documentation](crate::hll) for more.
 #[derive(Debug, Clone, PartialEq)]
 pub struct HllSketch {
     lg_config_k: u8,
@@ -150,7 +150,7 @@ impl HllSketch {
     ///
     /// Returns the upper confidence bound for the cardinality estimate based on
     /// the number of standard deviations requested.
-    pub fn upper_bound(&self, num_std_dev: u8) -> f64 {
+    pub fn upper_bound(&self, num_std_dev: NumStdDev) -> f64 {
         match &self.mode {
             Mode::List { list, .. } => list.container().upper_bound(num_std_dev),
             Mode::Set { set, .. } => set.container().upper_bound(num_std_dev),
@@ -164,7 +164,7 @@ impl HllSketch {
     ///
     /// Returns the lower confidence bound for the cardinality estimate based on
     /// the number of standard deviations requested.
-    pub fn lower_bound(&self, num_std_dev: u8) -> f64 {
+    pub fn lower_bound(&self, num_std_dev: NumStdDev) -> f64 {
         match &self.mode {
             Mode::List { list, .. } => list.container().lower_bound(num_std_dev),
             Mode::Set { set, .. } => set.container().lower_bound(num_std_dev),

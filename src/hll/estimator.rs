@@ -120,12 +120,19 @@ impl HipEstimator {
     /// Get upper bound for cardinality estimate
     ///
     /// Returns the upper confidence bound for the cardinality estimate.
+    ///
+    /// # Arguments
+    ///
+    /// * `lg_config_k` - Log2 of number of registers (k)
+    /// * `cur_min` - Current minimum register value (for Array4, 0 for Array6/8)
+    /// * `num_at_cur_min` - Number of registers at cur_min value
+    /// * `num_std_dev` - Number of standard deviations (1, 2, or 3)
     pub fn upper_bound(
         &self,
         lg_config_k: u8,
         cur_min: u8,
         num_at_cur_min: u32,
-        num_std_dev: u8,
+        num_std_dev: NumStdDev,
     ) -> f64 {
         let estimate = self.estimate(lg_config_k, cur_min, num_at_cur_min);
         let rse = get_rel_err(lg_config_k, true, self.out_of_order, num_std_dev);
@@ -136,12 +143,19 @@ impl HipEstimator {
     /// Get lower bound for cardinality estimate
     ///
     /// Returns the lower confidence bound for the cardinality estimate.
+    ///
+    /// # Arguments
+    ///
+    /// * `lg_config_k` - Log2 of number of registers (k)
+    /// * `cur_min` - Current minimum register value (for Array4, 0 for Array6/8)
+    /// * `num_at_cur_min` - Number of registers at cur_min value
+    /// * `num_std_dev` - Number of standard deviations (1, 2, or 3)
     pub fn lower_bound(
         &self,
         lg_config_k: u8,
         cur_min: u8,
         num_at_cur_min: u32,
-        num_std_dev: u8,
+        num_std_dev: NumStdDev,
     ) -> f64 {
         let estimate = self.estimate(lg_config_k, cur_min, num_at_cur_min);
         let rse = get_rel_err(lg_config_k, false, self.out_of_order, num_std_dev);
@@ -308,6 +322,22 @@ fn inv_pow2(value: u8) -> f64 {
     }
 }
 
+/// Number of standard deviations for confidence bounds
+///
+/// This enum specifies the number of standard deviations to use when computing
+/// upper and lower bounds for cardinality estimates. Higher values provide wider
+/// confidence intervals with greater certainty that the true cardinality falls
+/// within the bounds.
+#[repr(u8)]
+pub enum NumStdDev {
+    /// One standard deviation (\~68% confidence interval)
+    StdDev1 = 1,
+    /// Two standard deviations (\~95% confidence interval)
+    StdDev2 = 2,
+    /// Three standard deviations (\~99.7% confidence interval)
+    StdDev3 = 3,
+}
+
 /// Get relative error for HLL estimates
 ///
 /// This matches the implementation in datasketches-cpp HllUtil.hpp and RelativeErrorTables.hpp
@@ -322,7 +352,7 @@ fn inv_pow2(value: u8) -> f64 {
 /// # Returns
 ///
 /// Relative error factor to apply to estimate
-fn get_rel_err(lg_config_k: u8, upper_bound: bool, ooo: bool, num_std_dev: u8) -> f64 {
+fn get_rel_err(lg_config_k: u8, upper_bound: bool, ooo: bool, num_std_dev: NumStdDev) -> f64 {
     // For lg_k > 12, use analytical formula with RSE factors
     if lg_config_k > 12 {
         // RSE factors from Apache DataSketches C++ implementation
@@ -337,12 +367,12 @@ fn get_rel_err(lg_config_k: u8, upper_bound: bool, ooo: bool, num_std_dev: u8) -
         let k = (1 << lg_config_k) as f64;
         let sign = if upper_bound { -1.0 } else { 1.0 };
 
-        return sign * (num_std_dev as f64) * rse_factor / k.sqrt();
+        return sign * (num_std_dev as u8 as f64) * rse_factor / k.sqrt();
     }
 
     // For lg_k <= 12, use empirically measured lookup tables
     // Tables are indexed by: ((lg_k - 4) * 3) + (num_std_dev - 1)
-    let idx = ((lg_config_k - 4) * 3 + (num_std_dev - 1)) as usize;
+    let idx = ((lg_config_k as usize) - 4) * 3 + ((num_std_dev as usize) - 1);
 
     // Select the appropriate table based on ooo and upper_bound flags
     match (ooo, upper_bound) {

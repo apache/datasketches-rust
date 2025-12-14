@@ -22,7 +22,7 @@
 
 use super::aux_map::AuxMap;
 use crate::hll::estimator::HipEstimator;
-use crate::hll::{get_slot, get_value};
+use crate::hll::{NumStdDev, get_slot, get_value};
 
 const AUX_TOKEN: u8 = 15;
 
@@ -215,7 +215,7 @@ impl Array4 {
     }
 
     /// Get upper bound for cardinality estimate
-    pub fn upper_bound(&self, num_std_dev: u8) -> f64 {
+    pub fn upper_bound(&self, num_std_dev: NumStdDev) -> f64 {
         self.estimator.upper_bound(
             self.lg_config_k,
             self.cur_min,
@@ -225,7 +225,7 @@ impl Array4 {
     }
 
     /// Get lower bound for cardinality estimate
-    pub fn lower_bound(&self, num_std_dev: u8) -> f64 {
+    pub fn lower_bound(&self, num_std_dev: NumStdDev) -> f64 {
         self.estimator.lower_bound(
             self.lg_config_k,
             self.cur_min,

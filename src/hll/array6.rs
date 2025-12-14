@@ -22,7 +22,7 @@
 //! cur_min optimization like Array4.
 
 use crate::hll::estimator::HipEstimator;
-use crate::hll::{get_slot, get_value};
+use crate::hll::{NumStdDev, get_slot, get_value};
 
 const VAL_MASK_6: u16 = 0x3F; // 6 bits: 0b0011_1111
 
@@ -123,13 +123,13 @@ impl Array6 {
     }
 
     /// Get upper bound for cardinality estimate
-    pub fn upper_bound(&self, num_std_dev: u8) -> f64 {
+    pub fn upper_bound(&self, num_std_dev: NumStdDev) -> f64 {
         self.estimator
             .upper_bound(self.lg_config_k, 0, self.num_zeros, num_std_dev)
     }
 
     /// Get lower bound for cardinality estimate
-    pub fn lower_bound(&self, num_std_dev: u8) -> f64 {
+    pub fn lower_bound(&self, num_std_dev: NumStdDev) -> f64 {
         self.estimator
             .lower_bound(self.lg_config_k, 0, self.num_zeros, num_std_dev)
     }

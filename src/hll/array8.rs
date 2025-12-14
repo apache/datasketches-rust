@@ -21,7 +21,7 @@
 //! This provides the maximum value range (0-255) with no bit-packing complexity.
 
 use crate::hll::estimator::HipEstimator;
-use crate::hll::{get_slot, get_value};
+use crate::hll::{NumStdDev, get_slot, get_value};
 
 /// Core Array8 data structure - one byte per slot, no packing
 #[derive(Debug, Clone, PartialEq)]
@@ -93,13 +93,13 @@ impl Array8 {
     }
 
     /// Get upper bound for cardinality estimate
-    pub fn upper_bound(&self, num_std_dev: u8) -> f64 {
+    pub fn upper_bound(&self, num_std_dev: NumStdDev) -> f64 {
         self.estimator
             .upper_bound(self.lg_config_k, 0, self.num_zeros, num_std_dev)
     }
 
     /// Get lower bound for cardinality estimate
-    pub fn lower_bound(&self, num_std_dev: u8) -> f64 {
+    pub fn lower_bound(&self, num_std_dev: NumStdDev) -> f64 {
         self.estimator
             .lower_bound(self.lg_config_k, 0, self.num_zeros, num_std_dev)
     }
