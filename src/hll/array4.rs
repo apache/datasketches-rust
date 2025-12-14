@@ -21,6 +21,7 @@
 //! When values exceed 4 bits after cur_min offset, they're stored in an auxiliary hash map.
 
 use super::aux_map::AuxMap;
+use crate::error::SerdeResult;
 use crate::hll::estimator::HipEstimator;
 use crate::hll::{NumStdDev, get_slot, get_value};
 
@@ -249,7 +250,7 @@ impl Array4 {
         lg_config_k: u8,
         compact: bool,
         ooo: bool,
-    ) -> crate::error::SerdeResult<Self> {
+    ) -> SerdeResult<Self> {
         use crate::error::SerdeError;
         use crate::hll::serialization::*;
         use crate::hll::{get_slot, get_value};
@@ -325,7 +326,7 @@ impl Array4 {
     /// Serialize Array4 to bytes
     ///
     /// Produces full HLL preamble (40 bytes) followed by packed 4-bit data and optional aux map.
-    pub fn serialize(&self, lg_config_k: u8) -> crate::error::SerdeResult<Vec<u8>> {
+    pub fn serialize(&self, lg_config_k: u8) -> Vec<u8> {
         use crate::hll::pack_coupon;
         use crate::hll::serialization::*;
 
@@ -384,7 +385,7 @@ impl Array4 {
             write_u32_le(&mut bytes, offset, coupon);
         }
 
-        Ok(bytes)
+        bytes
     }
 }
 

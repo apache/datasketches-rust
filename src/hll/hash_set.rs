@@ -136,7 +136,7 @@ impl HashSet {
     }
 
     /// Serialize a HashSet to bytes
-    pub fn serialize(&self, lg_config_k: u8, hll_type: HllType) -> SerdeResult<Vec<u8>> {
+    pub fn serialize(&self, lg_config_k: u8, hll_type: HllType) -> Vec<u8> {
         let compact = true; // Always use compact format
         let coupon_count = self.container.len();
         let lg_arr = self.container.lg_size();
@@ -191,6 +191,6 @@ impl HashSet {
             }
         }
 
-        Ok(bytes)
+        bytes
     }
 }

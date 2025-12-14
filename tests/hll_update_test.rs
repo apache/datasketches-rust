@@ -153,7 +153,7 @@ fn test_serialization_roundtrip_after_updates() {
     let estimate1 = sketch1.estimate();
 
     // Serialize and deserialize
-    let bytes = sketch1.serialize().unwrap();
+    let bytes = sketch1.serialize();
     let sketch2 = HllSketch::deserialize(&bytes).unwrap();
 
     let estimate2 = sketch2.estimate();

@@ -51,7 +51,7 @@ fn main() {
 
     // Serialize and deserialize
     println!("\nSerializing sketch...");
-    let bytes = sketch.serialize().unwrap();
+    let bytes = sketch.serialize();
     println!("Serialized size: {} bytes", bytes.len());
 
     let sketch2 = HllSketch::deserialize(&bytes).unwrap();

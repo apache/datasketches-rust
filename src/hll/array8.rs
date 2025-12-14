@@ -20,6 +20,7 @@
 //! Array8 is the simplest HLL array implementation, storing one byte per slot.
 //! This provides the maximum value range (0-255) with no bit-packing complexity.
 
+use crate::error::SerdeResult;
 use crate::hll::estimator::HipEstimator;
 use crate::hll::{NumStdDev, get_slot, get_value};
 
@@ -119,7 +120,7 @@ impl Array8 {
         lg_config_k: u8,
         compact: bool,
         ooo: bool,
-    ) -> crate::error::SerdeResult<Self> {
+    ) -> SerdeResult<Self> {
         use crate::error::SerdeError;
         use crate::hll::serialization::*;
 
@@ -170,7 +171,7 @@ impl Array8 {
     /// Serialize Array8 to bytes
     ///
     /// Produces full HLL preamble (40 bytes) followed by k bytes of data.
-    pub fn serialize(&self, lg_config_k: u8) -> crate::error::SerdeResult<Vec<u8>> {
+    pub fn serialize(&self, lg_config_k: u8) -> Vec<u8> {
         use crate::hll::serialization::*;
 
         let k = 1 << lg_config_k;
@@ -211,7 +212,7 @@ impl Array8 {
         // Write byte array
         bytes[HLL_BYTE_ARR_START..].copy_from_slice(&self.bytes);
 
-        Ok(bytes)
+        bytes
     }
 }
 

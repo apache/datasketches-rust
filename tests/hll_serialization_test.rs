@@ -82,7 +82,7 @@ fn test_sketch_file(path: PathBuf, expected_cardinality: usize, expected_lg_k: u
     }
 
     // Serialize and deserialize again to test round-trip
-    let serialized_bytes = sketch1.serialize().expect("serialization should succeed");
+    let serialized_bytes = sketch1.serialize();
     let sketch2 = HllSketch::deserialize(&serialized_bytes)
         .expect("round-trip deserialization should succeed");
 

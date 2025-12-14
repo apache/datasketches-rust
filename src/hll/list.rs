@@ -98,7 +98,7 @@ impl List {
     }
 
     /// Serialize a List to bytes
-    pub fn serialize(&self, lg_config_k: u8, hll_type: HllType) -> SerdeResult<Vec<u8>> {
+    pub fn serialize(&self, lg_config_k: u8, hll_type: HllType) -> Vec<u8> {
         let compact = true; // Always use compact format
         let empty = self.container.len() == 0;
         let coupon_count = self.container.len();
@@ -149,6 +149,6 @@ impl List {
             }
         }
 
-        Ok(bytes)
+        bytes
     }
 }

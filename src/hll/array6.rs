@@ -21,6 +21,7 @@
 //! This is sufficient for most HLL use cases without needing exception handling or
 //! cur_min optimization like Array4.
 
+use crate::error::SerdeResult;
 use crate::hll::estimator::HipEstimator;
 use crate::hll::{NumStdDev, get_slot, get_value};
 
@@ -149,7 +150,7 @@ impl Array6 {
         lg_config_k: u8,
         compact: bool,
         ooo: bool,
-    ) -> crate::error::SerdeResult<Self> {
+    ) -> SerdeResult<Self> {
         use crate::error::SerdeError;
         use crate::hll::serialization::*;
 
@@ -201,7 +202,7 @@ impl Array6 {
     /// Serialize Array6 to bytes
     ///
     /// Produces full HLL preamble (40 bytes) followed by packed 6-bit data.
-    pub fn serialize(&self, lg_config_k: u8) -> crate::error::SerdeResult<Vec<u8>> {
+    pub fn serialize(&self, lg_config_k: u8) -> Vec<u8> {
         use crate::hll::serialization::*;
 
         let k = 1 << lg_config_k;
@@ -243,7 +244,7 @@ impl Array6 {
         // Write packed byte array
         bytes[HLL_BYTE_ARR_START..].copy_from_slice(&self.bytes);
 
-        Ok(bytes)
+        bytes
     }
 }
 

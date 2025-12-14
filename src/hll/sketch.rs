@@ -284,7 +284,7 @@ impl HllSketch {
     }
 
     /// Serializes the HLL sketch to bytes
-    pub fn serialize(&self) -> SerdeResult<Vec<u8>> {
+    pub fn serialize(&self) -> Vec<u8> {
         match &self.mode {
             Mode::List { list, hll_type } => list.serialize(self.lg_config_k, *hll_type),
             Mode::Set { set, hll_type } => set.serialize(self.lg_config_k, *hll_type),
