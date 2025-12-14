@@ -39,8 +39,8 @@ fn get_test_data_path(sub_dir: &str, name: &str) -> PathBuf {
 }
 
 fn test_sketch_file(path: PathBuf, expected_cardinality: usize, expected_lg_k: u8) {
-    let bytes = fs::read(&path).expect("file should exist and should be readable");
-    let sketch1 = HllSketch::deserialize(&bytes).expect("deserialization should succeed");
+    let bytes = fs::read(&path).unwrap();
+    let sketch1 = HllSketch::deserialize(&bytes).unwrap();
 
     assert_eq!(
         sketch1.lg_config_k(),
@@ -83,8 +83,7 @@ fn test_sketch_file(path: PathBuf, expected_cardinality: usize, expected_lg_k: u
 
     // Serialize and deserialize again to test round-trip
     let serialized_bytes = sketch1.serialize();
-    let sketch2 = HllSketch::deserialize(&serialized_bytes)
-        .expect("round-trip deserialization should succeed");
+    let sketch2 = HllSketch::deserialize(&serialized_bytes).unwrap();
 
     // Check that both sketches are functionally equivalent
     assert_eq!(
@@ -195,8 +194,8 @@ fn test_estimate_accuracy() {
 
     for (dir, file, expected) in test_cases {
         let path = get_test_data_path(dir, file);
-        let bytes = fs::read(&path).expect("file should exist");
-        let sketch = HllSketch::deserialize(&bytes).expect("deserialization should succeed");
+        let bytes = fs::read(&path).unwrap();
+        let sketch = HllSketch::deserialize(&bytes).unwrap();
         let estimate = sketch.estimate();
         let error_pct = (estimate - expected as f64).abs() / expected as f64;
 
