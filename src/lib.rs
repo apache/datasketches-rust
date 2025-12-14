@@ -15,7 +15,14 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#![doc = include_str!("../README.md")]
+//! # Apache® DataSketches™ Core Rust Library Component
+//!
+//! The Sketching Core Library provides a range of stochastic streaming algorithms and closely
+//! related Rust technologies that are particularly useful when integrating this technology into
+//! systems that must deal with massive data.
+//!
+//! This library is divided into modules that constitute distinct groups of functionality.
+
 #![deny(missing_docs)]
 
 pub mod error;
