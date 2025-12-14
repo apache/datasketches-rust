@@ -109,9 +109,9 @@ impl Array4 {
         } else {
             self.aux_map
                 .as_ref()
-                .expect("AUX_TOKEN without aux_map")
+                .expect("aux_map should be initialized since stored value is AUX_TOKEN")
                 .get(slot)
-                .expect("AUX_TOKEN but slot not in aux_map")
+                .expect("slot should be in aux_map since associated value is AUX_TOKEN")
         };
 
         if new_value <= old_value {
@@ -128,7 +128,10 @@ impl Array4 {
         match (raw_stored, shifted_new) {
             // Case 1: Both old and new are exceptions
             (AUX_TOKEN, shifted) if shifted >= AUX_TOKEN => {
-                self.aux_map.as_mut().unwrap().replace(slot, new_value);
+                self.aux_map
+                    .as_mut()
+                    .expect("aux_map should be initialized since stored value is AUX_TOKEN")
+                    .replace(slot, new_value);
             }
             // Case 2: Old is exception, new is not (impossible without cur_min change)
             (AUX_TOKEN, _) => {
