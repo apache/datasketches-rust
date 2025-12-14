@@ -20,8 +20,7 @@
 //! Provides sequential storage with linear search for duplicates.
 //! Efficient for small numbers of coupons before transitioning to HashSet.
 
-use std::io;
-
+use crate::error::{SerdeError, SerdeResult};
 use crate::hll::HllType;
 use crate::hll::container::{COUPON_EMPTY, Container};
 use crate::hll::serialization::*;
@@ -72,7 +71,7 @@ impl List {
     }
 
     /// Deserialize a List from bytes
-    pub fn deserialize(bytes: &[u8], empty: bool, compact: bool) -> io::Result<Self> {
+    pub fn deserialize(bytes: &[u8], empty: bool, compact: bool) -> SerdeResult<Self> {
         // Read coupon count from byte 6
         let coupon_count = bytes[LIST_COUNT_BYTE] as usize;
 
@@ -83,14 +82,11 @@ impl List {
         // Validate length
         let expected_len = LIST_INT_ARR_START + (array_size * 4);
         if bytes.len() < expected_len {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!(
-                    "LIST data too short: expected {}, got {}",
-                    expected_len,
-                    bytes.len()
-                ),
-            ));
+            return Err(SerdeError::InsufficientData(format!(
+                "expected {}, got {}",
+                expected_len,
+                bytes.len()
+            )));
         }
 
         // Read coupons
@@ -108,7 +104,7 @@ impl List {
     }
 
     /// Serialize a List to bytes
-    pub fn serialize(&self, lg_config_k: u8, hll_type: HllType) -> io::Result<Vec<u8>> {
+    pub fn serialize(&self, lg_config_k: u8, hll_type: HllType) -> SerdeResult<Vec<u8>> {
         let compact = true; // Always use compact format
         let empty = self.container.len() == 0;
         let coupon_count = self.container.len();

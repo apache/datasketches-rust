@@ -20,8 +20,7 @@
 //! Uses open addressing with a custom stride function to handle collisions.
 //! Provides better performance than List when many coupons are stored.
 
-use std::io;
-
+use crate::error::{SerdeError, SerdeResult};
 use crate::hll::container::{COUPON_EMPTY, Container};
 use crate::hll::serialization::*;
 use crate::hll::{HllType, KEY_MASK_26};
@@ -87,7 +86,7 @@ impl HashSet {
     }
 
     /// Deserialize a HashSet from bytes
-    pub fn deserialize(bytes: &[u8], compact: bool) -> io::Result<Self> {
+    pub fn deserialize(bytes: &[u8], compact: bool) -> SerdeResult<Self> {
         // Read coupon count from bytes 8-11
         let coupon_count = read_u32_le(bytes, HASH_SET_COUNT_INT) as usize;
 
@@ -98,14 +97,11 @@ impl HashSet {
             // Compact mode: only couponCount coupons are stored
             let expected_len = HASH_SET_INT_ARR_START + (coupon_count * 4);
             if bytes.len() < expected_len {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    format!(
-                        "SET data too short: expected {}, got {}",
-                        expected_len,
-                        bytes.len()
-                    ),
-                ));
+                return Err(SerdeError::InsufficientData(format!(
+                    "expected {}, got {}",
+                    expected_len,
+                    bytes.len()
+                )));
             }
 
             // Create a new hash set and insert coupons one by one
@@ -121,14 +117,11 @@ impl HashSet {
             let array_size = 1 << lg_arr;
             let expected_len = HASH_SET_INT_ARR_START + (array_size * 4);
             if bytes.len() < expected_len {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    format!(
-                        "SET data too short: expected {}, got {}",
-                        expected_len,
-                        bytes.len()
-                    ),
-                ));
+                return Err(SerdeError::InsufficientData(format!(
+                    "expected {}, got {}",
+                    expected_len,
+                    bytes.len()
+                )));
             }
 
             // Read entire hash table including empty slots
@@ -149,7 +142,7 @@ impl HashSet {
     }
 
     /// Serialize a HashSet to bytes
-    pub fn serialize(&self, lg_config_k: u8, hll_type: HllType) -> io::Result<Vec<u8>> {
+    pub fn serialize(&self, lg_config_k: u8, hll_type: HllType) -> SerdeResult<Vec<u8>> {
         let compact = true; // Always use compact format
         let coupon_count = self.container.len();
         let lg_arr = self.container.lg_size();

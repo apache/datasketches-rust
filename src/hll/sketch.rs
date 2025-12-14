@@ -21,8 +21,8 @@
 //! for creating and using HLL sketches for cardinality estimation.
 
 use std::hash::Hash;
-use std::io;
 
+use crate::error::{SerdeError, SerdeResult};
 use crate::hll::array4::Array4;
 use crate::hll::array6::Array6;
 use crate::hll::array8::Array8;
@@ -210,11 +210,10 @@ impl HllSketch {
     }
 
     /// Deserializes an HLL sketch from bytes
-    pub fn deserialize(bytes: &[u8]) -> io::Result<HllSketch> {
+    pub fn deserialize(bytes: &[u8]) -> SerdeResult<HllSketch> {
         if bytes.len() < 8 {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "sketch data too short (< 8 bytes)",
+            return Err(SerdeError::InsufficientData(
+                "sketch data too short (< 8 bytes)".to_string(),
             ));
         }
 
@@ -226,36 +225,48 @@ impl HllSketch {
         let flags = bytes[FLAGS_BYTE];
         let mode_byte = bytes[MODE_BYTE];
 
-        // Verify family ID (HLL = 7)
+        // Verify family ID
         if family_id != HLL_FAMILY_ID {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("invalid family: expected 7 (HLL), got {}", family_id),
-            ));
+            return Err(SerdeError::InvalidFamily(format!(
+                "expected {} (HLL), got {}",
+                HLL_FAMILY_ID, family_id
+            )));
         }
 
         // Verify serialization version
         if ser_ver != SER_VER {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!(
-                    "invalid serialization version: expected {}, got {}",
-                    SER_VER, ser_ver
-                ),
-            ));
+            return Err(SerdeError::UnsupportedVersion(format!(
+                "expected {}, got {}",
+                SER_VER, ser_ver
+            )));
         }
 
         // Verify lg_k range (4-21 are valid)
         if !(4..=21).contains(&lg_config_k) {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("invalid lg_k: {}, must be in [4; 21]", lg_config_k),
-            ));
+            return Err(SerdeError::InvalidParameter(format!(
+                "lg_k must be in [4; 21], got {}",
+                lg_config_k
+            )));
         }
 
         // Extract mode and type
-        let cur_mode = extract_cur_mode_enum(mode_byte);
-        let hll_type = extract_hll_type_enum(mode_byte);
+        let cur_mode = match extract_cur_mode(mode_byte) {
+            CUR_MODE_LIST => CurMode::List,
+            CUR_MODE_SET => CurMode::Set,
+            CUR_MODE_HLL => CurMode::Hll,
+            mode => return Err(SerdeError::MalformedData(format!("invalid mode: {}", mode))),
+        };
+        let hll_type = match extract_tgt_hll_type(mode_byte) {
+            TGT_HLL4 => HllType::Hll4,
+            TGT_HLL6 => HllType::Hll6,
+            TGT_HLL8 => HllType::Hll8,
+            hll_type => {
+                return Err(SerdeError::MalformedData(format!(
+                    "invalid HLL type: {}",
+                    hll_type
+                )));
+            }
+        };
         let empty = (flags & EMPTY_FLAG_MASK) != 0;
         let compact = (flags & COMPACT_FLAG_MASK) != 0;
         let ooo = (flags & OUT_OF_ORDER_FLAG_MASK) != 0;
@@ -265,13 +276,10 @@ impl HllSketch {
             match cur_mode {
                 CurMode::List => {
                     if preamble_ints != LIST_PREINTS {
-                        return Err(io::Error::new(
-                            io::ErrorKind::InvalidData,
-                            format!(
-                                "invalid preamble ints for LIST mode: expected {}, got {}",
-                                LIST_PREINTS, preamble_ints
-                            ),
-                        ));
+                        return Err(SerdeError::MalformedData(format!(
+                            "LIST mode preamble: expected {}, got {}",
+                            LIST_PREINTS, preamble_ints
+                        )));
                     }
 
                     let list = List::deserialize(bytes, empty, compact)?;
@@ -279,13 +287,10 @@ impl HllSketch {
                 }
                 CurMode::Set => {
                     if preamble_ints != HASH_SET_PREINTS {
-                        return Err(io::Error::new(
-                            io::ErrorKind::InvalidData,
-                            format!(
-                                "invalid preamble ints for SET mode: expected {}, got {}",
-                                HASH_SET_PREINTS, preamble_ints
-                            ),
-                        ));
+                        return Err(SerdeError::MalformedData(format!(
+                            "SET mode preamble: expected {}, got {}",
+                            HASH_SET_PREINTS, preamble_ints
+                        )));
                     }
 
                     let set = HashSet::deserialize(bytes, compact)?;
@@ -293,13 +298,10 @@ impl HllSketch {
                 }
                 CurMode::Hll => {
                     if preamble_ints != HLL_PREINTS {
-                        return Err(io::Error::new(
-                            io::ErrorKind::InvalidData,
-                            format!(
-                                "invalid preamble ints for HLL mode: expected {}, got {}",
-                                HLL_PREINTS, preamble_ints
-                            ),
-                        ));
+                        return Err(SerdeError::MalformedData(format!(
+                            "HLL mode preamble: expected {}, got {}",
+                            HLL_PREINTS, preamble_ints
+                        )));
                     }
 
                     match hll_type {
@@ -317,7 +319,7 @@ impl HllSketch {
     }
 
     /// Serializes the HLL sketch to bytes
-    pub fn serialize(&self) -> io::Result<Vec<u8>> {
+    pub fn serialize(&self) -> SerdeResult<Vec<u8>> {
         match &self.mode {
             Mode::List { list, hll_type } => list.serialize(self.lg_config_k, *hll_type),
             Mode::Set { set, hll_type } => set.serialize(self.lg_config_k, *hll_type),
@@ -376,25 +378,5 @@ fn promote_container_to_array(container: &Container, hll_type: HllType, lg_confi
             array.set_hip_accum(container.estimate());
             Mode::Array8(array)
         }
-    }
-}
-
-/// Extract current mode from mode byte using serialization module
-fn extract_cur_mode_enum(mode_byte: u8) -> CurMode {
-    match extract_cur_mode(mode_byte) {
-        CUR_MODE_LIST => CurMode::List,
-        CUR_MODE_SET => CurMode::Set,
-        CUR_MODE_HLL => CurMode::Hll,
-        _ => unreachable!(),
-    }
-}
-
-/// Extract target HLL type from mode byte using serialization module
-fn extract_hll_type_enum(mode_byte: u8) -> HllType {
-    match extract_tgt_hll_type(mode_byte) {
-        TGT_HLL4 => HllType::Hll4,
-        TGT_HLL6 => HllType::Hll6,
-        TGT_HLL8 => HllType::Hll8,
-        _ => unreachable!(),
     }
 }

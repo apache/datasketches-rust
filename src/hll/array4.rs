@@ -260,9 +260,8 @@ impl Array4 {
         lg_config_k: u8,
         compact: bool,
         ooo: bool,
-    ) -> std::io::Result<Self> {
-        use std::io::{Error, ErrorKind};
-
+    ) -> crate::error::SerdeResult<Self> {
+        use crate::error::SerdeError;
         use crate::hll::serialization::*;
         use crate::hll::{get_slot, get_value};
 
@@ -288,14 +287,11 @@ impl Array4 {
         };
 
         if bytes.len() < expected_len {
-            return Err(Error::new(
-                ErrorKind::InvalidData,
-                format!(
-                    "Array4 data too short: expected {}, got {}",
-                    expected_len,
-                    bytes.len()
-                ),
-            ));
+            return Err(SerdeError::InsufficientData(format!(
+                "expected {}, got {}",
+                expected_len,
+                bytes.len()
+            )));
         }
 
         // Read packed 4-bit byte array from HLL_BYTE_ARR_START
@@ -340,7 +336,7 @@ impl Array4 {
     /// Serialize Array4 to bytes
     ///
     /// Produces full HLL preamble (40 bytes) followed by packed 4-bit data and optional aux map.
-    pub fn serialize(&self, lg_config_k: u8) -> std::io::Result<Vec<u8>> {
+    pub fn serialize(&self, lg_config_k: u8) -> crate::error::SerdeResult<Vec<u8>> {
         use crate::hll::pack_coupon;
         use crate::hll::serialization::*;
 

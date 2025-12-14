@@ -128,9 +128,8 @@ impl Array8 {
         lg_config_k: u8,
         compact: bool,
         ooo: bool,
-    ) -> std::io::Result<Self> {
-        use std::io::{Error, ErrorKind};
-
+    ) -> crate::error::SerdeResult<Self> {
+        use crate::error::SerdeError;
         use crate::hll::serialization::*;
 
         let k = 1 << lg_config_k;
@@ -141,14 +140,11 @@ impl Array8 {
         };
 
         if bytes.len() < expected_len {
-            return Err(Error::new(
-                ErrorKind::InvalidData,
-                format!(
-                    "Array8 data too short: expected {}, got {}",
-                    expected_len,
-                    bytes.len()
-                ),
-            ));
+            return Err(SerdeError::InsufficientData(format!(
+                "expected {}, got {}",
+                expected_len,
+                bytes.len()
+            )));
         }
 
         // Read HIP estimator values from preamble
@@ -183,7 +179,7 @@ impl Array8 {
     /// Serialize Array8 to bytes
     ///
     /// Produces full HLL preamble (40 bytes) followed by k bytes of data.
-    pub fn serialize(&self, lg_config_k: u8) -> std::io::Result<Vec<u8>> {
+    pub fn serialize(&self, lg_config_k: u8) -> crate::error::SerdeResult<Vec<u8>> {
         use crate::hll::serialization::*;
 
         let k = 1 << lg_config_k;
