@@ -15,4 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#![doc = include_str!("../README.md")]
+#![deny(missing_docs)]
+
 pub mod hll;

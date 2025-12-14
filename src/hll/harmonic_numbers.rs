@@ -85,10 +85,12 @@ fn harmonic_number(n: usize) -> f64 {
 /// This is used for linear counting in the HLL composite estimator.
 ///
 /// # Arguments
+///
 /// * `bit_vector_length` - Total length of bit vector (k for HLL)
 /// * `num_bits_set` - Number of bits set (non-zero registers)
 ///
 /// # Returns
+///
 /// Estimated cardinality based on coupon collector problem
 pub fn bitmap_estimate(bit_vector_length: u32, num_bits_set: u32) -> f64 {
     let k = bit_vector_length;

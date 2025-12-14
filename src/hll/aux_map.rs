@@ -30,6 +30,7 @@ const ENTRY_EMPTY: u32 = 0;
 /// the 4-bit representation (after cur_min offset) in the main Array4.
 ///
 /// # Entry Encoding
+///
 /// Each entry is an u32 packed as: [value (upper 6 bits) | slot_no (lower 26 bits)]
 /// Empty entries are represented as 0.
 #[derive(Debug, Clone)]
@@ -98,6 +99,7 @@ impl AuxMap {
     /// Insert a new slot-value pair
     ///
     /// # Panics
+    ///
     /// If the slot already exists in the map
     pub fn insert(&mut self, slot: u32, value: u8) {
         let index = self.find(slot);
@@ -126,6 +128,7 @@ impl AuxMap {
     /// Replace value for existing slot
     ///
     /// # Panics
+    ///
     /// If the slot doesn't exist in the map
     pub fn replace(&mut self, slot: u32, value: u8) {
         match self.find(slot) {

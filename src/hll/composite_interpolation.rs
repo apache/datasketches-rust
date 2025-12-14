@@ -35,6 +35,7 @@ const Y_STRIDES: [u32; 18] = [
 /// Get Y stride for a given lg_k
 ///
 /// # Panics
+///
 /// If lg_k is not in range [4, 21]
 pub fn get_y_stride(lg_k: u8) -> u32 {
     if !(4..=21).contains(&lg_k) {
@@ -53,6 +54,7 @@ pub const fn get_x_arr_length() -> usize {
 /// Returns a reference to the pre-computed X values for cubic interpolation.
 ///
 /// # Panics
+///
 /// If lg_k is not supported (currently supports 4-12, full support requires 4-21)
 pub fn get_x_arr(lg_k: u8) -> &'static [f64; NUM_X_VALUES] {
     if !(4..=21).contains(&lg_k) {

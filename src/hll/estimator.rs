@@ -116,6 +116,7 @@ impl HipEstimator {
     /// Dispatches to either HIP or composite estimator based on out-of-order flag.
     ///
     /// # Arguments
+    ///
     /// * `lg_config_k` - Log2 of number of registers (k)
     /// * `cur_min` - Current minimum register value (for Array4, 0 for Array6/8)
     /// * `num_at_cur_min` - Number of registers at cur_min value
@@ -323,12 +324,14 @@ fn inv_pow2(value: u8) -> f64 {
 /// This matches the implementation in datasketches-cpp HllUtil.hpp and RelativeErrorTables.hpp
 ///
 /// # Arguments
+///
 /// * `lg_config_k` - Log2 of number of registers (must be 4-21)
 /// * `upper_bound` - Whether computing upper bound (vs lower bound)
 /// * `ooo` - Whether sketch is out-of-order (merged/deserialized)
 /// * `num_std_dev` - Number of standard deviations (1, 2, or 3)
 ///
 /// # Returns
+///
 /// Relative error factor to apply to estimate
 fn get_rel_err(lg_config_k: u8, upper_bound: bool, ooo: bool, num_std_dev: u8) -> f64 {
     // For lg_k > 12, use analytical formula with RSE factors

@@ -120,6 +120,7 @@ pub fn extract_tgt_hll_type(mode_byte: u8) -> u8 {
 /// Encode mode byte from current mode and target type
 ///
 /// # Arguments
+///
 /// * `cur_mode` - 0 = LIST, 1 = SET, 2 = HLL
 /// * `tgt_type` - 0 = HLL4, 1 = HLL6, 2 = HLL8
 #[inline]

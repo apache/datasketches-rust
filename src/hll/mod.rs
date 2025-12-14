@@ -26,9 +26,12 @@
 //! This implementation follows the Apache DataSketches specification and supports multiple
 //! storage modes that automatically adapt based on cardinality:
 //!
-//! - **List mode**: Stores individual coupons for small cardinalities
+//! - **List mode**: Stores individual values for small cardinalities
 //! - **Set mode**: Uses a hash set for medium cardinalities
 //! - **HLL mode**: Uses compact arrays for large cardinalities
+//!
+//! Mode transitions are automatic and transparent to the user. Each promotion preserves
+//! all previously observed values and maintains estimation accuracy.
 //!
 //! # HLL Types
 //!
@@ -38,11 +41,16 @@
 //! - [`HllType::Hll6`]: 6 bits per bucket (balanced)
 //! - [`HllType::Hll8`]: 8 bits per bucket (highest precision)
 //!
-//! # Coupons
+//! # Serialization
 //!
-//! A coupon is a 32-bit value encoding both a slot number (26 bits) and a value (6 bits).
-//! The slot identifies which bucket to update, and the value represents the number of
-//! leading zeros in the hash plus one.
+//! Sketches can be serialized and deserialized while preserving all state, including:
+//! - Current mode and HLL type
+//! - All observed values (coupons or register values)
+//! - HIP accumulator state for accurate estimation
+//! - Out-of-order flag for merged/deserialized sketches
+//!
+//! The serialization format is compatible with Apache DataSketches implementations
+//! in Java and C++, enabling cross-platform sketch exchange.
 
 use std::hash::Hash;
 
@@ -61,24 +69,35 @@ mod list;
 mod serialization;
 mod sketch;
 
-// Re-export public API
 pub use sketch::HllSketch;
 
-/// Target HLL type
+/// Target HLL type.
+///
+/// See [module level documentation](self) for more details.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HllType {
-    Hll4 = 0,
-    Hll6 = 1,
-    Hll8 = 2,
+    /// Uses a 4-bit field per HLL bucket and for large counts may require the use of a
+    /// small internal auxiliary array for storing statistical exceptions, which are rare.
+    /// For the values of lgConfigK > 13 (K = 8192), this additional array adds about 3%
+    /// to the overall storage.
+    ///
+    /// It is generally the slowest in terms of update time, but has the smallest storage
+    /// footprint of about K/2 * 1.03 bytes.
+    Hll4,
+    /// Uses a 6-bit field per HLL bucket. It is the generally the next fastest in terms
+    /// of update time with a storage footprint of about 3/4 * K bytes.
+    Hll6,
+    /// Uses an 8-bit byte per HLL bucket. It is generally the fastest in terms of update
+    /// time but has the largest storage footprint of about K bytes.
+    Hll8,
 }
 
 const KEY_BITS_26: u32 = 26;
 const KEY_MASK_26: u32 = (1 << KEY_BITS_26) - 1;
 
-const COUPON_RSE_FACTOR: f64 = 0.409; // at transition point not the asymptote
+const COUPON_RSE_FACTOR: f64 = 0.409; // At transition point not the asymptote
 const COUPON_RSE: f64 = COUPON_RSE_FACTOR / (1 << 13) as f64;
 
-// Constants
 const RESIZE_NUMER: u32 = 3; // Resize at 3/4 = 75% load factor
 const RESIZE_DENOM: u32 = 4;
 
@@ -102,7 +121,8 @@ fn pack_coupon(slot: u32, value: u8) -> u32 {
     ((value as u32) << KEY_BITS_26) | (slot & KEY_MASK_26)
 }
 
-pub fn coupon<H: Hash>(v: H) -> u32 {
+/// Generate a coupon from a hashable value.
+fn coupon<H: Hash>(v: H) -> u32 {
     const DEFAULT_SEED: u32 = 9001;
 
     let mut hasher = mur3::Hasher128::with_seed(DEFAULT_SEED);

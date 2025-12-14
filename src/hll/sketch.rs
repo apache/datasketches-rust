@@ -19,34 +19,6 @@
 //!
 //! This module provides the main [`HllSketch`] struct, which is the primary interface
 //! for creating and using HLL sketches for cardinality estimation.
-//!
-//! # Adaptive Mode System
-//!
-//! The sketch automatically transitions between three internal modes based on cardinality:
-//!
-//! - **List mode**: Stores individual coupons in a compact list for small cardinalities.
-//!   Used when fewer than ~32 unique values have been seen.
-//!
-//! - **Set mode**: Uses a hash set with open addressing for medium cardinalities.
-//!   Provides better performance than list mode while still being space-efficient.
-//!   The set grows dynamically until it reaches K/8 entries.
-//!
-//! - **HLL mode**: Uses the full HLL array (Array4, Array6, or Array8) for large cardinalities.
-//!   Provides constant memory usage and accurate estimates for billions of unique values.
-//!
-//! Mode transitions are automatic and transparent to the user. Each promotion preserves
-//! all previously observed values and maintains estimation accuracy.
-//!
-//! # Serialization
-//!
-//! Sketches can be serialized and deserialized while preserving all state, including:
-//! - Current mode and HLL type
-//! - All observed values (coupons or register values)
-//! - HIP accumulator state for accurate estimation
-//! - Out-of-order flag for merged/deserialized sketches
-//!
-//! The serialization format is compatible with Apache DataSketches implementations
-//! in Java and C++, enabling cross-platform sketch exchange.
 
 use std::hash::Hash;
 use std::io;
@@ -68,6 +40,9 @@ enum CurMode {
     Hll = 2,
 }
 
+/// A HyperLogLog sketch.
+///
+/// See the [module level documentation](self) for more.
 #[derive(Debug, Clone)]
 pub struct HllSketch {
     lg_config_k: u8,
@@ -122,6 +97,7 @@ impl HllSketch {
     /// Create a new HLL sketch
     ///
     /// # Arguments
+    ///
     /// * `lg_config_k` - Log2 of the number of buckets (K). Must be in [4, 21].
     ///   - lg_k=4: 16 buckets, ~26% relative error
     ///   - lg_k=12: 4096 buckets, ~1.6% relative error (common choice)
@@ -129,6 +105,7 @@ impl HllSketch {
     /// * `hll_type` - Target HLL array type (Hll4, Hll6, or Hll8)
     ///
     /// # Panics
+    ///
     /// Panics if lg_config_k is not in [4, 21]
     pub fn new(lg_config_k: u8, hll_type: HllType) -> Self {
         assert!(
@@ -144,6 +121,7 @@ impl HllSketch {
         }
     }
 
+    /// Get the configured lg_config_k
     pub fn lg_config_k(&self) -> u8 {
         self.lg_config_k
     }
@@ -152,7 +130,6 @@ impl HllSketch {
     ///
     /// This accepts any type that implements `Hash`. The value is hashed
     /// and converted to a coupon, which is then inserted into the sketch.
-    /// The sketch will automatically promote from List → Set → HLL as needed.
     pub fn update<T: Hash>(&mut self, value: T) {
         let coupon = coupon(value);
         self.update_with_coupon(coupon);
@@ -163,7 +140,6 @@ impl HllSketch {
     /// This is useful when you've already computed the coupon externally,
     /// or when deserializing and replaying coupons.
     fn update_with_coupon(&mut self, coupon: u32) {
-        // Perform the update
         match &mut self.mode {
             Mode::List { list, hll_type } => {
                 list.update(coupon);
@@ -233,6 +209,7 @@ impl HllSketch {
         }
     }
 
+    /// Deserializes an HLL sketch from bytes
     pub fn deserialize(bytes: &[u8]) -> io::Result<HllSketch> {
         if bytes.len() < 8 {
             return Err(io::Error::new(
@@ -339,6 +316,7 @@ impl HllSketch {
         Ok(HllSketch { lg_config_k, mode })
     }
 
+    /// Serializes the HLL sketch to bytes
     pub fn serialize(&self) -> io::Result<Vec<u8>> {
         match &self.mode {
             Mode::List { list, hll_type } => list.serialize(self.lg_config_k, *hll_type),
