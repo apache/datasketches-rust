@@ -105,7 +105,9 @@ impl AuxMap {
         let index = self.find(slot);
         match index {
             FindResult::Found(_) => {
-                panic!("slot {} already exists in aux map", slot);
+                // Invariant: Array4 always check existance before inserting
+                // a new value on the same slot.
+                unreachable!("slot {} already exists in aux map", slot);
             }
             FindResult::Empty(idx) => {
                 self.entries[idx] = pack_coupon(slot, value);
@@ -136,7 +138,9 @@ impl AuxMap {
                 self.entries[idx] = pack_coupon(slot, value);
             }
             FindResult::Empty(_) => {
-                panic!("slot {} not found in aux map", slot);
+                // Invariant: Array4 always check existance before replacing
+                // an old value on the same slot.
+                unreachable!("slot {} not found in aux map", slot);
             }
         }
     }
@@ -168,7 +172,10 @@ impl AuxMap {
             probe = (probe + stride) & mask;
 
             if probe == start {
-                panic!("AuxMap full; no empty slots");
+                // Invariant: AuxMap::insert is responsible for
+                // growing the AuxMap when a new entry is is inserted
+                // causing the map to be full.
+                unreachable!("AuxMap full; no empty slots");
             }
         }
     }
@@ -206,7 +213,9 @@ impl AuxMap {
                     let stride = (slot >> new_lg_size) | 1;
                     probe = (probe + stride) & new_mask;
                     if probe == start_position {
-                        panic!("AuxMap full; no empty slots");
+                        // Invariant: there will always be space for all
+                        // `self.entries` in the `new_entries` array.
+                        unreachable!("AuxMap full; no empty slots");
                     }
                 }
             }

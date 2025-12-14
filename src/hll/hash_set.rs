@@ -70,7 +70,9 @@ impl HashSet {
             let stride = ((coupon & KEY_MASK_26) >> self.container.lg_size()) | 1;
             probe = (probe + stride) & mask;
             if probe == starting_position {
-                panic!("HashSet full; no empty slots");
+                // Invariant: the caller (HllSketch) is responsible for
+                // growing / upgrading the HashSet when it's full
+                unreachable!("HashSet full; no empty slots");
             }
         }
     }
