@@ -235,12 +235,12 @@ fn test_bounds_basic() {
     }
 
     let estimate = sketch.estimate();
-    let upper1 = sketch.upper_bound(NumStdDev::StdDev1);
-    let lower1 = sketch.lower_bound(NumStdDev::StdDev1);
-    let upper2 = sketch.upper_bound(NumStdDev::StdDev2);
-    let lower2 = sketch.lower_bound(NumStdDev::StdDev2);
-    let upper3 = sketch.upper_bound(NumStdDev::StdDev3);
-    let lower3 = sketch.lower_bound(NumStdDev::StdDev3);
+    let upper1 = sketch.upper_bound(NumStdDev::One);
+    let lower1 = sketch.lower_bound(NumStdDev::One);
+    let upper2 = sketch.upper_bound(NumStdDev::Two);
+    let lower2 = sketch.lower_bound(NumStdDev::Two);
+    let upper3 = sketch.upper_bound(NumStdDev::Three);
+    let lower3 = sketch.lower_bound(NumStdDev::Three);
 
     // Basic sanity checks
     assert!(lower1 <= estimate, "Lower bound should be <= estimate");
@@ -275,8 +275,8 @@ fn test_bounds_all_modes() {
         sketch.update(i);
     }
     let estimate = sketch.estimate();
-    let upper = sketch.upper_bound(NumStdDev::StdDev2);
-    let lower = sketch.lower_bound(NumStdDev::StdDev2);
+    let upper = sketch.upper_bound(NumStdDev::Two);
+    let lower = sketch.lower_bound(NumStdDev::Two);
     assert!(
         lower <= estimate && estimate <= upper,
         "Bounds don't contain estimate in LIST mode"
@@ -287,8 +287,8 @@ fn test_bounds_all_modes() {
         sketch.update(i);
     }
     let estimate = sketch.estimate();
-    let upper = sketch.upper_bound(NumStdDev::StdDev2);
-    let lower = sketch.lower_bound(NumStdDev::StdDev2);
+    let upper = sketch.upper_bound(NumStdDev::Two);
+    let lower = sketch.lower_bound(NumStdDev::Two);
     assert!(
         lower <= estimate && estimate <= upper,
         "Bounds don't contain estimate in SET mode"
@@ -299,8 +299,8 @@ fn test_bounds_all_modes() {
         sketch.update(i);
     }
     let estimate = sketch.estimate();
-    let upper = sketch.upper_bound(NumStdDev::StdDev2);
-    let lower = sketch.lower_bound(NumStdDev::StdDev2);
+    let upper = sketch.upper_bound(NumStdDev::Two);
+    let lower = sketch.lower_bound(NumStdDev::Two);
     assert!(
         lower <= estimate && estimate <= upper,
         "Bounds don't contain estimate in HLL mode"
@@ -321,10 +321,10 @@ fn test_bounds_different_lg_k() {
     let est_small = sketch_small.estimate();
     let est_large = sketch_large.estimate();
 
-    let upper_small = sketch_small.upper_bound(NumStdDev::StdDev2);
-    let lower_small = sketch_small.lower_bound(NumStdDev::StdDev2);
-    let upper_large = sketch_large.upper_bound(NumStdDev::StdDev2);
-    let lower_large = sketch_large.lower_bound(NumStdDev::StdDev2);
+    let upper_small = sketch_small.upper_bound(NumStdDev::Two);
+    let lower_small = sketch_small.lower_bound(NumStdDev::Two);
+    let upper_large = sketch_large.upper_bound(NumStdDev::Two);
+    let lower_large = sketch_large.lower_bound(NumStdDev::Two);
 
     // Calculate relative width of confidence intervals
     let width_small = (upper_small - lower_small) / est_small;
@@ -344,8 +344,8 @@ fn test_bounds_empty_sketch() {
     let sketch = HllSketch::new(12, HllType::Hll8);
 
     let estimate = sketch.estimate();
-    let upper = sketch.upper_bound(NumStdDev::StdDev2);
-    let lower = sketch.lower_bound(NumStdDev::StdDev2);
+    let upper = sketch.upper_bound(NumStdDev::Two);
+    let lower = sketch.lower_bound(NumStdDev::Two);
 
     assert_eq!(estimate, 0.0, "Empty sketch should have 0 estimate");
     assert!(lower >= 0.0, "Lower bound should be non-negative");

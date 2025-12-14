@@ -331,11 +331,11 @@ fn inv_pow2(value: u8) -> f64 {
 #[repr(u8)]
 pub enum NumStdDev {
     /// One standard deviation (\~68% confidence interval)
-    StdDev1 = 1,
+    One = 1,
     /// Two standard deviations (\~95% confidence interval)
-    StdDev2 = 2,
+    Two = 2,
     /// Three standard deviations (\~99.7% confidence interval)
-    StdDev3 = 3,
+    Three = 3,
 }
 
 /// Get relative error for HLL estimates
