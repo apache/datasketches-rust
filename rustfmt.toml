@@ -15,24 +15,5 @@
 # specific language governing permissions and limitations
 # under the License.
 
-# Eclipse project files
-.classpath
-.project
-.settings
-.checkstyle
-
-# IntelliJ project files
-.idea
-**/*.iml
-*.ipr
-*.iws
-
-# VSCode project files
-.vscode
-!.vscode/settings.json
-
-# OSX files
-**/.DS_Store
-
-# Build artifacts
-**/target
+edition = "2024"
+reorder_imports = true

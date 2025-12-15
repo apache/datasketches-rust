@@ -15,24 +15,6 @@
 # specific language governing permissions and limitations
 # under the License.
 
-# Eclipse project files
-.classpath
-.project
-.settings
-.checkstyle
+headerPath = "Apache-2.0-ASF.txt"
 
-# IntelliJ project files
-.idea
-**/*.iml
-*.ipr
-*.iws
-
-# VSCode project files
-.vscode
-!.vscode/settings.json
-
-# OSX files
-**/.DS_Store
-
-# Build artifacts
-**/target
+includes = ['**/*.rs', '**/*.yml', '**/*.yaml', '**/*.toml']

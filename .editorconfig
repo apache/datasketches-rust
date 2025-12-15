@@ -15,24 +15,14 @@
 # specific language governing permissions and limitations
 # under the License.
 
-# Eclipse project files
-.classpath
-.project
-.settings
-.checkstyle
+root = true
 
-# IntelliJ project files
-.idea
-**/*.iml
-*.ipr
-*.iws
+[*]
+end_of_line = lf
+indent_style = space
+insert_final_newline = true
+trim_trailing_whitespace = true
 
-# VSCode project files
-.vscode
-!.vscode/settings.json
-
-# OSX files
-**/.DS_Store
-
-# Build artifacts
-**/target
+[*.toml]
+indent_size = tab
+tab_width = 2

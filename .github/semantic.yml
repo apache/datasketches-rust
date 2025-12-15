@@ -15,24 +15,31 @@
 # specific language governing permissions and limitations
 # under the License.
 
-# Eclipse project files
-.classpath
-.project
-.settings
-.checkstyle
+# The pull request's title should be fulfilled the following pattern:
+#
+#     <type>[optional scope]: <description>
+#
+# ... where valid types and scopes can be found below; for example:
+#
+#     build(maven): One level down for native profile
+#
+# More about configurations on https://github.com/Ezard/semantic-prs#configuration
 
-# IntelliJ project files
-.idea
-**/*.iml
-*.ipr
-*.iws
+enabled: true
 
-# VSCode project files
-.vscode
-!.vscode/settings.json
+titleOnly: true
 
-# OSX files
-**/.DS_Store
+types:
+  - feat
+  - fix
+  - docs
+  - style
+  - refactor
+  - perf
+  - test
+  - build
+  - ci
+  - chore
+  - revert
 
-# Build artifacts
-**/target
+targetUrl: https://github.com/apache/datasketches-rust/blob/main/.github/semantic.yml

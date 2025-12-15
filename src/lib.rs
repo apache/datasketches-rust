@@ -23,6 +23,7 @@
 //!
 //! This library is divided into modules that constitute distinct groups of functionality.
 
+#![cfg_attr(docsrs, feature(doc_cfg))]
 #![deny(missing_docs)]
 
 pub mod error;

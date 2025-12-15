@@ -18,7 +18,21 @@
 [package]
 name = "datasketches"
 version = "0.1.0"
+
 edition = "2024"
+rust-version = "1.85.0"
+
+categories = ["data-structures", "algorithms"]
+description = "A software library of stochastic streaming algorithms (a.k.a. sketches)"
+homepage = "https://datasketches.apache.org"
+keywords = ["sketch", "hyperloglog", "probabilistic"]
+license = "Apache-2.0"
+readme = "README.md"
+repository = "https://github.com/apache/datasketches-rust"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-mur3 = "0.1"
+mur3 = { version = "0.1.0" }

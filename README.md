@@ -17,13 +17,13 @@
     under the License.
 -->
 
-# Apache<sup>&reg;</sup> DataSketches&trade; Core Rust Library Component
+# Apache® DataSketches™ Core Rust Library Component
 
 > [!WARNING]
 >
 > This repository is under early development. Use it with caution!
 
-This is the core Rust component of the DataSketches library.  It contains a subset of the sketching algorithms and can be accessed directly from user applications. 
+This is the core Rust component of the DataSketches library.  It contains a subset of the sketching algorithms and can be accessed directly from user applications.
 
 Note that we have parallel core library components for Java, C++, Python, and Go implementations of many of the same sketch algorithms:
 
