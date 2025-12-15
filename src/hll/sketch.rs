@@ -30,7 +30,7 @@ use crate::hll::container::Container;
 use crate::hll::hash_set::HashSet;
 use crate::hll::list::List;
 use crate::hll::serialization::*;
-use crate::hll::{HllType, NumStdDev, RESIZE_DENOM, RESIZE_NUMER, coupon};
+use crate::hll::{HllType, NumStdDev, RESIZE_DENOM, RESIZE_NUMERATOR, coupon};
 
 /// Current sketch mode
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -120,7 +120,7 @@ impl HllSketch {
             Mode::Set { set, hll_type } => {
                 set.update(coupon);
                 let should_promote = RESIZE_DENOM as usize * set.container().len()
-                    > RESIZE_NUMER as usize * set.container().capacity();
+                    > RESIZE_NUMERATOR as usize * set.container().capacity();
                 if should_promote {
                     self.mode = if set.container().lg_size() == self.lg_config_k as usize - 3 {
                         promote_container_to_array(set.container(), *hll_type, self.lg_config_k)

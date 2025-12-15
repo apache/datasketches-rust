@@ -99,7 +99,7 @@ const KEY_MASK_26: u32 = (1 << KEY_BITS_26) - 1;
 const COUPON_RSE_FACTOR: f64 = 0.409; // At transition point not the asymptote
 const COUPON_RSE: f64 = COUPON_RSE_FACTOR / (1 << 13) as f64;
 
-const RESIZE_NUMER: u32 = 3; // Resize at 3/4 = 75% load factor
+const RESIZE_NUMERATOR: u32 = 3; // Resize at 3/4 = 75% load factor
 const RESIZE_DENOM: u32 = 4;
 
 /// Extract slot number (low 26 bits) from coupon

@@ -16,7 +16,7 @@
 # under the License.
 
 [default.extend-words]
-"NUMER" = "NUMER"
+"PREINTS" = "PREINTS"
 
 [files]
 extend-exclude = []
