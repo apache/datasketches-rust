@@ -39,8 +39,11 @@ fn get_test_data_path(sub_dir: &str, name: &str) -> PathBuf {
 }
 
 fn test_sketch_file(path: PathBuf, expected_cardinality: usize, expected_lg_k: u8) {
+    let expected = expected_cardinality as f64;
+
     let bytes = fs::read(&path).unwrap();
     let sketch1 = HllSketch::deserialize(&bytes).unwrap();
+    let estimate1 = sketch1.estimate();
 
     assert_eq!(
         sketch1.lg_config_k(),
@@ -54,18 +57,15 @@ fn test_sketch_file(path: PathBuf, expected_cardinality: usize, expected_lg_k: u
     // - Small sample sizes (especially n < 100)
     // - Out-of-order mode (composite estimator)
     // - Variation across implementations
-    let estimate = sketch1.estimate();
-    let expected = expected_cardinality as f64;
-
     if expected > 0.0 {
         let error_margin = 0.02; // 2% error margin
         let lower_bound = expected * (1.0 - error_margin);
         let upper_bound = expected * (1.0 + error_margin);
 
         assert!(
-            estimate >= lower_bound && estimate <= upper_bound,
+            estimate1 >= lower_bound && estimate1 <= upper_bound,
             "Estimate {} outside bounds [{}, {}] for expected {} in {}",
-            estimate,
+            estimate1,
             lower_bound,
             upper_bound,
             expected,
@@ -74,9 +74,9 @@ fn test_sketch_file(path: PathBuf, expected_cardinality: usize, expected_lg_k: u
     } else {
         // For n=0, estimate should be very close to 0
         assert!(
-            estimate < 1.0,
+            estimate1 < 1.0,
             "Expected near-zero estimate for empty sketch, got {} in {}",
-            estimate,
+            estimate1,
             path.display()
         );
     }
@@ -94,8 +94,9 @@ fn test_sketch_file(path: PathBuf, expected_cardinality: usize, expected_lg_k: u
     );
 
     // Check that the sketches are functionally equal
-    assert!(
-        sketch1.eq(&sketch2),
+    assert_eq!(
+        sketch1,
+        sketch2,
         "Sketches are not equal after round-trip for {}",
         path.display()
     );
@@ -103,11 +104,9 @@ fn test_sketch_file(path: PathBuf, expected_cardinality: usize, expected_lg_k: u
     // Verify estimates match after round-trip
     let estimate2 = sketch2.estimate();
     assert_eq!(
-        estimate,
+        estimate1,
         estimate2,
-        "Estimates differ after round-trip: {} vs {} for {}",
-        estimate,
-        estimate2,
+        "Estimates differ after round-trip for {}",
         path.display()
     );
 }
@@ -197,16 +196,11 @@ fn test_estimate_accuracy() {
         let bytes = fs::read(&path).unwrap();
         let sketch = HllSketch::deserialize(&bytes).unwrap();
         let estimate = sketch.estimate();
-        let error_pct = (estimate - expected as f64).abs() / expected as f64;
+        let error_pct = ((estimate - expected as f64).abs() / expected as f64) * 100.;
 
-        println!(
-            "{:<12} {:<12.0} {:<10.3}%",
-            expected,
-            estimate,
-            error_pct * 100.
-        );
+        println!("{:<12} {:<12.0} {:<10.3}", expected, estimate, error_pct,);
 
         // All estimates should be within 2% error
-        assert!(error_pct < 0.02, "Error too high: {:.3}%", error_pct);
+        assert!(error_pct < 2., "Error too high: {:.3}%", error_pct);
     }
 }
