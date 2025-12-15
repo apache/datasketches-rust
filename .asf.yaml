@@ -15,11 +15,15 @@
 # specific language governing permissions and limitations
 # under the License.
 
+# All configurations could be found here: https://github.com/apache/infrastructure-asfyaml/
+
 github:
   description: A software library of stochastic streaming algorithms, a.k.a. sketches.
   homepage: https://datasketches.apache.org
-  ghp_branch: gh-pages
-  ghp_path: /docs
+  labels:
+    - rust
+    - algorithms
+    - datasketches
   features:
     issues: true
     projects: true
@@ -28,28 +32,19 @@ github:
     squash: true
     merge: false
     rebase: false
-#  protected_branches:
-#    main:
-#      required_status_checks:
-        # strict means "Require branches to be up to date before merging."
-#        strict: true
-
-#      required_pull_request_reviews:
-#        dismiss_stale_reviews: false
-#        required_approving_review_count: 1
-
-      # squash or rebase must be allowed in the repo for this setting to be set to true.
-#      required_linear_history: false
-
-#      required_signatures: false
-
-      # requires all conversations to be resolved before merging is possible
-#      required_conversation_resolution: false
+  del_branch_on_merge: true
+  protected_branches:
+    main:
+      required_status_checks:
+        contexts:
+          - Required
+      required_pull_request_reviews:
+        required_approving_review_count: 1
 
   dependabot_alerts:  true
   dependabot_updates: false
 
-  # Attempt to make the auto-generated github emails more easily readable in email clients.
+  # Attempt to make the auto-generated GitHub emails more easily readable in email clients.
   custom_subjects:
     new_pr: "[PR] {title} ({repository})"
     close_pr: "Re: [PR] {title} ({repository})"
@@ -70,10 +65,9 @@ github:
     delete_comment_discussion: "Re: [D] {title} ({repository})"
 
 notifications:
-  commits:              commits@datasketches.apache.org
-  issues:               dev@datasketches.apache.org
-  discussions:          dev@datasketches.apache.org
-  pullrequests_status:  dev@datasketches.apache.org
+  commits: commits@datasketches.apache.org
+  issues: dev@datasketches.apache.org
+  discussions: dev@datasketches.apache.org
+  pullrequests_status: dev@datasketches.apache.org
   pullrequests_comment: dev@datasketches.apache.org
-  # Send dependabot PRs to commits@ instead
   pullrequests_bot_dependabot: commits@datasketches.apache.org
