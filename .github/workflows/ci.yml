@@ -86,6 +86,11 @@ jobs:
         run: |
           rustup toolchain install ${{ matrix.rust-version }}
           rustup default ${{ matrix.rust-version }}
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+          cache-dependency-path: |
+            tools/snapshots/go/go.sum
       - name: Generate test snapshots
         shell: bash
         working-directory: tools/snapshots/go
