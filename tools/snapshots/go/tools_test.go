@@ -17,7 +17,7 @@ func TestGenerateGoFile(t *testing.T) {
 	require.NoError(t, err)
 
 	workspace := filepath.Join(path, "..", "..", "..")
-	println("%v", workspace)
+	target := filepath.Join(workspace, "tests", "serialization_test_data", "go_generated_files")
 
 	nArr := []int{0, 1, 10, 100, 1000, 10000, 100000, 1000000}
 	for _, n := range nArr {
@@ -33,22 +33,22 @@ func TestGenerateGoFile(t *testing.T) {
 			require.NoError(t, hll6.UpdateUInt64(uint64(i)))
 			require.NoError(t, hll8.UpdateUInt64(uint64(i)))
 		}
-		err = os.MkdirAll(workspace, os.ModePerm)
+		err = os.MkdirAll(target, os.ModePerm)
 		require.NoError(t, err)
 
 		sl4, err := hll4.ToCompactSlice()
 		require.NoError(t, err)
-		err = os.WriteFile(fmt.Sprintf("%s/hll4_n%d_go.sk", workspace, n), sl4, 0644)
+		err = os.WriteFile(fmt.Sprintf("%s/hll4_n%d_go.sk", target, n), sl4, 0644)
 		require.NoError(t, err)
 
 		sl6, err := hll6.ToCompactSlice()
 		require.NoError(t, err)
-		err = os.WriteFile(fmt.Sprintf("%s/hll6_n%d_go.sk", workspace, n), sl6, 0644)
+		err = os.WriteFile(fmt.Sprintf("%s/hll6_n%d_go.sk", target, n), sl6, 0644)
 		require.NoError(t, err)
 
 		sl8, err := hll8.ToCompactSlice()
 		require.NoError(t, err)
-		err = os.WriteFile(fmt.Sprintf("%s/hll8_n%d_go.sk", workspace, n), sl8, 0644)
+		err = os.WriteFile(fmt.Sprintf("%s/hll8_n%d_go.sk", target, n), sl8, 0644)
 		require.NoError(t, err)
 	}
 }

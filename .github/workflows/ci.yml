@@ -86,6 +86,10 @@ jobs:
         run: |
           rustup toolchain install ${{ matrix.rust-version }}
           rustup default ${{ matrix.rust-version }}
+      - name: Generate test snapshots
+        shell: bash
+        working-directory: tools/snapshots/go
+        run: go test -v ./...
       - name: Build
         run: cargo build --workspace --all-features --bins --tests --examples --benches --lib
       - name: Run unit tests
