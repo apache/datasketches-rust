@@ -43,9 +43,7 @@ jobs:
       - name: Delete rust-toolchain.toml
         run: rm rust-toolchain.toml
       - name: Install toolchain
-        uses: dtolnay/rust-toolchain@nightly
-        with:
-          components: rustfmt,clippy
+        run: rustup toolchain install --component rustfmt,clippy nightly
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
         with:
@@ -85,9 +83,9 @@ jobs:
         run: rm rust-toolchain.toml
       - uses: Swatinem/rust-cache@v2
       - name: Install toolchain
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: ${{ matrix.rust-version }}
+        run: |
+          rustup toolchain install ${{ matrix.rust-version }}
+          rustup default ${{ matrix.rust-version }}
       - name: Build
         run: cargo build --workspace --all-features --bins --tests --examples --benches --lib
       - name: Run unit tests
