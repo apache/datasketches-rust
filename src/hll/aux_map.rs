@@ -20,7 +20,7 @@
 //! Stores slot-value pairs for values that don't fit in the 4-bit main array.
 //! Uses open addressing with stride-based probing for collision resolution.
 
-use crate::hll::{RESIZE_DENOM, RESIZE_NUMER, get_slot, get_value, pack_coupon};
+use crate::hll::{RESIZE_DENOMINATOR, RESIZE_NUMERATOR, get_slot, get_value, pack_coupon};
 
 const ENTRY_EMPTY: u32 = 0;
 
@@ -175,7 +175,7 @@ impl AuxMap {
     /// Check if we need to grow the hash table (75% load factor)
     fn check_grow(&mut self) {
         let size = 1 << self.lg_size;
-        if (RESIZE_DENOM * self.count) > (RESIZE_NUMER * size) {
+        if (RESIZE_DENOMINATOR * self.count) > (RESIZE_NUMERATOR * size) {
             self.grow();
         }
     }

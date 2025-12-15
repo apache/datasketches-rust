@@ -36,3 +36,12 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
 mur3 = { version = "0.1.0" }
+
+[lints.rust]
+unknown_lints = "deny"
+unsafe_code = "deny"
+unused_must_use = "deny"
+
+[lints.clippy]
+dbg_macro = "deny"
+too_many_arguments = "allow"

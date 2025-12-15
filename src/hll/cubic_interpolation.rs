@@ -110,7 +110,6 @@ fn interpolate_using_x_arr_and_y_stride(
 }
 
 /// Cubic interpolation using the Lagrange interpolation formula.
-#[allow(clippy::too_many_arguments)]
 fn cubic_interpolate(
     x0: f64,
     y0: f64,
@@ -122,20 +121,20 @@ fn cubic_interpolate(
     y3: f64,
     x: f64,
 ) -> f64 {
-    let l0_numer = (x - x1) * (x - x2) * (x - x3);
-    let l1_numer = (x - x0) * (x - x2) * (x - x3);
-    let l2_numer = (x - x0) * (x - x1) * (x - x3);
-    let l3_numer = (x - x0) * (x - x1) * (x - x2);
+    let l0_numerator = (x - x1) * (x - x2) * (x - x3);
+    let l1_numerator = (x - x0) * (x - x2) * (x - x3);
+    let l2_numerator = (x - x0) * (x - x1) * (x - x3);
+    let l3_numerator = (x - x0) * (x - x1) * (x - x2);
 
-    let l0_denom = (x0 - x1) * (x0 - x2) * (x0 - x3);
-    let l1_denom = (x1 - x0) * (x1 - x2) * (x1 - x3);
-    let l2_denom = (x2 - x0) * (x2 - x1) * (x2 - x3);
-    let l3_denom = (x3 - x0) * (x3 - x1) * (x3 - x2);
+    let l0_denominator = (x0 - x1) * (x0 - x2) * (x0 - x3);
+    let l1_denominator = (x1 - x0) * (x1 - x2) * (x1 - x3);
+    let l2_denominator = (x2 - x0) * (x2 - x1) * (x2 - x3);
+    let l3_denominator = (x3 - x0) * (x3 - x1) * (x3 - x2);
 
-    let term0 = y0 * l0_numer / l0_denom;
-    let term1 = y1 * l1_numer / l1_denom;
-    let term2 = y2 * l2_numer / l2_denom;
-    let term3 = y3 * l3_numer / l3_denom;
+    let term0 = y0 * l0_numerator / l0_denominator;
+    let term1 = y1 * l1_numerator / l1_denominator;
+    let term2 = y2 * l2_numerator / l2_denominator;
+    let term3 = y3 * l3_numerator / l3_denominator;
 
     term0 + term1 + term2 + term3
 }
