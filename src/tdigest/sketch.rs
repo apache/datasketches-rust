@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::convert::identity;
+
 const BUFFER_MULTIPLIER: usize = 4;
 
 /// T-Digest sketch for estimating quantiles and ranks.
@@ -85,12 +87,17 @@ impl TDigest {
         self.max = self.max.max(value);
     }
 
+    /// Returns parameter k (compression) that was used to configure this TDigest.
+    pub fn k(&self) -> usize {
+        self.k
+    }
+
     /// Returns true if TDigest has not seen any data.
     pub fn is_empty(&self) -> bool {
         self.centroids.is_empty() && self.buffer.is_empty()
     }
 
-    /// Returns minimum value seen by TDigest.
+    /// Returns minimum value seen by TDigest; `None` if TDigest is empty.
     pub fn min_value(&self) -> Option<f64> {
         if self.is_empty() {
             None
@@ -99,7 +106,7 @@ impl TDigest {
         }
     }
 
-    /// Returns maximum value seen by TDigest.
+    /// Returns maximum value seen by TDigest; `None` if TDigest is empty.
     pub fn max_value(&self) -> Option<f64> {
         if self.is_empty() {
             None
@@ -113,17 +120,137 @@ impl TDigest {
         self.centroids_weight + (self.buffer.len() as u64)
     }
 
-    /// Compute approximate quantile value corresponding to the given normalized rank
+    /// Compute approximate normalized rank (from 0 to 1 inclusive) of the given value.
+    ///
+    /// Returns `None` if TDigest is empty.
     ///
     /// # Panics
     ///
-    /// If rank is not in [0.0, 1.0], or if TDigest is empty.
-    pub fn get_quantile(&mut self, rank: f64) -> f64 {
-        assert!(rank >= 0.0 && rank <= 1.0, "rank must be in [0.0, 1.0]");
-        assert!(!self.is_empty(), "TDigest is empty");
-        self.compress();
+    /// If the value is `NaN`.
+    pub fn get_rank(&mut self, value: f64) -> Option<f64> {
+        assert!(!value.is_nan(), "value must not be NaN");
+
+        if self.is_empty() {
+            return None;
+        }
+        if value < self.min {
+            return Some(0.0);
+        }
+        if value > self.max {
+            return Some(1.0);
+        }
+        // one centroid and value == min == max
+        if self.centroids.len() + self.buffer.len() == 1 {
+            return Some(0.5);
+        }
+
+        self.compress(); // side effect
+        let centroids_weight = self.centroids_weight as f64;
+        let num_centroids = self.centroids.len();
+
+        // left tail
+        let first_mean = self.centroids[0].mean;
+        if value < first_mean {
+            if first_mean - self.min > 0. {
+                return Some(if value == self.min {
+                    0.5 / centroids_weight
+                } else {
+                    1. + (((value - self.min) / (first_mean - self.min))
+                        * ((self.centroids[0].weight as f64 / 2.) - 1.))
+                });
+            }
+            return Some(0.); // should never happen
+        }
+
+        // right tail
+        let last_mean = self.centroids[num_centroids - 1].mean;
+        if value > last_mean {
+            if self.max - last_mean > 0. {
+                return Some(if value == self.max {
+                    1. - (0.5 / centroids_weight)
+                } else {
+                    1.0 - ((1.0
+                        + (((self.max - value) / (self.max - last_mean))
+                            * ((self.centroids[num_centroids - 1].weight as f64 / 2.) - 1.)))
+                        / centroids_weight)
+                });
+            }
+            return Some(1.); // should never happen
+        }
+
+        let mut lower = self
+            .centroids
+            .binary_search_by(|c| {
+                if c.mean < value {
+                    std::cmp::Ordering::Less
+                } else {
+                    std::cmp::Ordering::Greater
+                }
+            })
+            .unwrap_or_else(identity);
+        debug_assert_ne!(lower, num_centroids, "get_rank: lower == end");
+        let mut upper = self
+            .centroids
+            .binary_search_by(|c| {
+                if c.mean > value {
+                    std::cmp::Ordering::Greater
+                } else {
+                    std::cmp::Ordering::Less
+                }
+            })
+            .unwrap_or_else(identity);
+        debug_assert_ne!(upper, 0, "get_rank: upper == begin");
+        if value < self.centroids[lower].mean {
+            lower -= 1;
+        }
+        if (upper == num_centroids) || (self.centroids[upper - 1].mean >= value) {
+            upper -= 1;
+        }
+
+        let mut weight_below = 0.;
+        let mut i = 0;
+        while i < lower {
+            weight_below += self.centroids[i].weight as f64;
+            i += 1;
+        }
+        weight_below += self.centroids[lower].weight as f64 / 2.;
+
+        let mut weight_delta = 0.;
+        while i < upper {
+            weight_delta += self.centroids[i].weight as f64;
+            i += 1;
+        }
+        weight_delta -= self.centroids[lower].weight as f64 / 2.;
+        weight_delta += self.centroids[upper].weight as f64 / 2.;
+        Some(
+            if self.centroids[upper].mean - self.centroids[lower].mean > 0. {
+                (weight_below
+                    + (weight_delta * (value - self.centroids[lower].mean)
+                        / (self.centroids[upper].mean - self.centroids[lower].mean)))
+                    / centroids_weight
+            } else {
+                (weight_below + weight_delta / 2.) / centroids_weight
+            },
+        )
+    }
+
+    /// Compute approximate quantile value corresponding to the given normalized rank.
+    ///
+    /// Returns `None` if TDigest is empty.
+    ///
+    /// # Panics
+    ///
+    /// If rank is not in [0.0, 1.0].
+    pub fn get_quantile(&mut self, rank: f64) -> Option<f64> {
+        assert!((0.0..=1.0).contains(&rank), "rank must be in [0.0, 1.0]");
+
+        if self.is_empty() {
+            return None;
+        }
+
+        self.compress(); // side effect
         if self.centroids.len() == 1 {
-            return self.centroids[0].mean;
+            return Some(self.centroids[0].mean);
         }
 
         // at least 2 centroids
@@ -131,22 +258,26 @@ impl TDigest {
         let num_centroids = self.centroids.len();
         let weight = rank * centroids_weight;
         if weight < 1. {
-            return self.min;
+            return Some(self.min);
         }
         if weight > centroids_weight - 1. {
-            return self.max;
+            return Some(self.max);
         }
         let first_weight = self.centroids[0].weight as f64;
         if first_weight > 1. && weight < first_weight / 2. {
-            return self.min
-                + (((weight - 1.) / ((first_weight / 2.) - 1.))
-                    * (self.centroids[0].mean - self.min));
+            return Some(
+                self.min
+                    + (((weight - 1.) / ((first_weight / 2.) - 1.))
+                        * (self.centroids[0].mean - self.min)),
+            );
         }
         let last_weight = self.centroids[num_centroids - 1].weight as f64;
         if last_weight > 1. && (centroids_weight - weight <= last_weight / 2.) {
-            return self.max
-                + (((centroids_weight - weight - 1.) / ((last_weight / 2.) - 1.))
-                    * (self.max - self.centroids[num_centroids - 1].mean));
+            return Some(
+                self.max
+                    + (((centroids_weight - weight - 1.) / ((last_weight / 2.) - 1.))
+                        * (self.max - self.centroids[num_centroids - 1].mean)),
+            );
         }
 
         // interpolate between extremes
@@ -158,25 +289,25 @@ impl TDigest {
                 let mut left_weight = 0.;
                 if self.centroids[i].weight == 1 {
                     if weight - weight_so_far < 0.5 {
-                        return self.centroids[i].mean;
+                        return Some(self.centroids[i].mean);
                     }
                     left_weight = 0.5;
                 }
                 let mut right_weight = 0.;
                 if self.centroids[i + 1].weight == 1 {
                     if weight_so_far + dw - weight < 0.5 {
-                        return self.centroids[i + 1].mean;
+                        return Some(self.centroids[i + 1].mean);
                     }
                     right_weight = 0.5;
                 }
                 let w1 = weight - weight_so_far - left_weight;
                 let w2 = weight_so_far + dw - weight - right_weight;
-                return weighted_average(
+                return Some(weighted_average(
                     self.centroids[i].mean,
                     w1,
                     self.centroids[i + 1].mean,
                     w2,
-                );
+                ));
             }
             weight_so_far += dw;
         }
@@ -185,7 +316,12 @@ impl TDigest {
             - (self.centroids_weight as f64)
             - ((self.centroids[num_centroids - 1].weight as f64) / 2.);
         let w2 = (self.centroids[num_centroids - 1].weight as f64 / 2.) - w1;
-        weighted_average(self.centroids[num_centroids - 1].mean, w1, self.max, w2)
+        Some(weighted_average(
+            self.centroids[num_centroids - 1].mean,
+            w1,
+            self.max,
+            w2,
+        ))
     }
 
     /// Process buffered values and merge centroids if needed.
