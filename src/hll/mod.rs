@@ -33,6 +33,13 @@
 //! Mode transitions are automatic and transparent to the user. Each promotion preserves
 //! all previously observed values and maintains estimation accuracy.
 //!
+//! # Core Types
+//!
+//! The primary type for cardinality estimation is [`HllSketch`], which maintains a single
+//! sketch and provides methods to update with new values and retrieve cardinality estimates.
+//! For combining multiple sketches, use [`HllUnion`], which efficiently merges sketches
+//! that may have different configurations.
+//!
 //! # HLL Types
 //!
 //! Three target HLL types are supported, trading precision for memory:
@@ -40,6 +47,19 @@
 //! - [`HllType::Hll4`]: 4 bits per bucket (most compact)
 //! - [`HllType::Hll6`]: 6 bits per bucket (balanced)
 //! - [`HllType::Hll8`]: 8 bits per bucket (highest precision)
+//!
+//! # Union Operations
+//!
+//! The [`HllUnion`] type enables combining multiple HLL sketches into a unified estimate.
+//! It maintains an internal "gadget" sketch that accumulates the union of all input sketches
+//! and automatically handles:
+//!
+//! - Sketches with different `lg_k` precision levels (resizes/downsamples as needed)
+//! - Sketches in different modes (List, Set, or Array)
+//! - Sketches with different target HLL types
+//!
+//! The union operation preserves cardinality estimation accuracy while enabling distributed
+//! computation patterns where sketches are built independently and merged later.
 //!
 //! # Serialization
 //!
