@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use byteorder::{ByteOrder, LE, ReadBytesExt};
+use byteorder::{LE, ReadBytesExt};
 use std::cmp::Ordering;
 use std::convert::identity;
 use std::io::Cursor;
@@ -28,7 +28,7 @@ const BUFFER_MULTIPLIER: usize = 4;
 /// T-Digest sketch for estimating quantiles and ranks.
 ///
 /// See the [module documentation](self) for more details.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct TDigest {
     k: u16,
 
@@ -147,7 +147,7 @@ impl TDigest {
         self.centroids_weight + (self.buffer.len() as u64)
     }
 
-    /// Merge the given t-Digest into this one
+    /// Merge the given TDigest into this one
     pub fn merge(&mut self, other: &TDigest) {
         if other.is_empty() {
             return;
@@ -175,7 +175,7 @@ impl TDigest {
     /// # Panics
     ///
     /// If the value is `NaN`.
-    pub fn get_rank(&mut self, value: f64) -> Option<f64> {
+    pub fn rank(&mut self, value: f64) -> Option<f64> {
         assert!(!value.is_nan(), "value must not be NaN");
 
         if self.is_empty() {
@@ -277,7 +277,7 @@ impl TDigest {
     /// # Panics
     ///
     /// If rank is not in [0.0, 1.0].
-    pub fn get_quantile(&mut self, rank: f64) -> Option<f64> {
+    pub fn quantile(&mut self, rank: f64) -> Option<f64> {
         assert!((0.0..=1.0).contains(&rank), "rank must be in [0.0, 1.0]");
 
         if self.is_empty() {
@@ -364,7 +364,35 @@ impl TDigest {
     pub fn serialize(&mut self) -> Vec<u8> {
         self.compress();
 
-        let mut bytes = vec![];
+        let mut total_size = 0;
+        if self.is_empty() || self.is_single_value() {
+            // 1 byte preamble
+            // + 1 byte serial version
+            // + 1 byte family
+            // + 2 bytes k
+            // + 1 byte flags
+            // + 2 bytes unused
+            total_size += size_of::<u64>();
+        } else {
+            // all of the above
+            // + 4 bytes num centroids
+            // + 4 bytes num buffered
+            total_size += size_of::<u64>() * 2;
+        }
+        if self.is_empty() {
+            // nothing more
+        } else if self.is_single_value() {
+            // + 8 bytes single value
+            total_size += size_of::<f64>();
+        } else {
+            // + 8 bytes min
+            // + 8 bytes max
+            total_size += size_of::<f64>() * 2;
+            // + (8+8) bytes per centroid
+            total_size += self.centroids.len() * (size_of::<f64>() + size_of::<u64>());
+        }
+
+        let mut bytes = Vec::with_capacity(total_size);
         bytes.push(match self.total_weight() {
             0 => PREAMBLE_LONGS_EMPTY_OR_SINGLE,
             1 => PREAMBLE_LONGS_EMPTY_OR_SINGLE,
@@ -372,7 +400,7 @@ impl TDigest {
         });
         bytes.push(SERIAL_VERSION);
         bytes.push(TDIGEST_FAMILY_ID);
-        LE::write_u16(&mut bytes, self.k);
+        bytes.extend_from_slice(&self.k.to_le_bytes());
         bytes.push({
             let mut flags = 0;
             if self.is_empty() {
@@ -386,21 +414,21 @@ impl TDigest {
             }
             flags
         });
-        LE::write_u16(&mut bytes, 0); // unused
+        bytes.extend_from_slice(&0u16.to_le_bytes()); // unused
         if self.is_empty() {
             return bytes;
         }
         if self.is_single_value() {
-            LE::write_f64(&mut bytes, self.min);
+            bytes.extend_from_slice(&self.min.to_le_bytes());
             return bytes;
         }
-        LE::write_u32(&mut bytes, self.centroids.len() as u32);
-        LE::write_u32(&mut bytes, 0); // unused
-        LE::write_f64(&mut bytes, self.min);
-        LE::write_f64(&mut bytes, self.max);
+        bytes.extend_from_slice(&(self.centroids.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(&0u32.to_le_bytes()); // unused
+        bytes.extend_from_slice(&self.min.to_le_bytes());
+        bytes.extend_from_slice(&self.max.to_le_bytes());
         for centroid in &self.centroids {
-            LE::write_f64(&mut bytes, centroid.mean);
-            LE::write_u64(&mut bytes, centroid.weight);
+            bytes.extend_from_slice(&centroid.mean.to_le_bytes());
+            bytes.extend_from_slice(&centroid.weight.to_le_bytes());
         }
         bytes
     }
@@ -411,8 +439,12 @@ impl TDigest {
     /// represent (mean, weight). [^1]
     ///
     /// [^1]: This is to support reading the `tdigest<float>` format from the C++ implementation.
-    pub fn deserialize(bytes: &[u8], is_float: bool) -> Result<Self, SerdeError> {
-        let make_error = |tag: &'static str| move |_| SerdeError::InsufficientData(tag.to_string());
+    pub fn deserialize(bytes: &[u8], is_f32: bool) -> Result<Self, SerdeError> {
+        fn make_error(tag: &'static str) -> impl FnOnce(std::io::Error) -> SerdeError {
+            let tag = tag.to_string();
+            move |_| SerdeError::InsufficientData(tag)
+        }
+
         let mut cursor = Cursor::new(bytes);
 
         let preamble_longs = cursor.read_u8().map_err(make_error("preamble_longs"))?;
@@ -453,7 +485,7 @@ impl TDigest {
 
         let reverse_merge = (flags & FLAGS_REVERSE_MERGE) != 0;
         if is_single_value {
-            let value = if is_float {
+            let value = if is_f32 {
                 cursor
                     .read_f32::<LE>()
                     .map_err(make_error("single_value"))? as f64
@@ -481,7 +513,7 @@ impl TDigest {
         let num_buffered = cursor
             .read_u32::<LE>()
             .map_err(make_error("num_buffered"))? as usize;
-        let (min, max) = if is_float {
+        let (min, max) = if is_f32 {
             (
                 cursor.read_f32::<LE>().map_err(make_error("min"))? as f64,
                 cursor.read_f32::<LE>().map_err(make_error("max"))? as f64,
@@ -495,7 +527,7 @@ impl TDigest {
         let mut centroids = Vec::with_capacity(num_centroids);
         let mut centroids_weight = 0;
         for _ in 0..num_centroids {
-            let (mean, weight) = if is_float {
+            let (mean, weight) = if is_f32 {
                 (
                     cursor.read_f32::<LE>().map_err(make_error("mean"))? as f64,
                     cursor.read_u32::<LE>().map_err(make_error("weight"))? as u64,
@@ -511,7 +543,7 @@ impl TDigest {
         }
         let mut buffer = Vec::with_capacity(num_buffered);
         for _ in 0..num_buffered {
-            buffer.push(if is_float {
+            buffer.push(if is_f32 {
                 cursor
                     .read_f32::<LE>()
                     .map_err(make_error("buffered_value"))? as f64
