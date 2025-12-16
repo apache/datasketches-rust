@@ -138,7 +138,7 @@ fn coupon<H: Hash>(v: H) -> u32 {
     let capped = lz.min(62);
     let value = capped + 1;
 
-    value << KEY_BITS_26 | addr26
+    (value << KEY_BITS_26) | addr26
 }
 
 #[cfg(test)]

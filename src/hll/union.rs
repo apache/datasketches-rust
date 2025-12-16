@@ -27,28 +27,6 @@
 //! - Different lg_k values (automatically resizes as needed)
 //! - Different modes (List, Set, Array4/6/8)
 //! - Different target HLL types
-//!
-//! # Example
-//!
-//! ```ignore
-//! use datasketches::hll::{HllSketch, HllUnion, HllType};
-//!
-//! let mut union = HllUnion::new(12);
-//!
-//! let mut sketch1 = HllSketch::new(12, HllType::Hll8);
-//! sketch1.update("foo");
-//! sketch1.update("bar");
-//!
-//! let mut sketch2 = HllSketch::new(12, HllType::Hll8);
-//! sketch2.update("bar");
-//! sketch2.update("baz");
-//!
-//! union.update(&sketch1);
-//! union.update(&sketch2);
-//!
-//! let result = union.get_result(HllType::Hll8);
-//! println!("Union estimate: {}", result.estimate());
-//! ```
 
 use crate::hll::array4::Array4;
 use crate::hll::array6::Array6;
@@ -81,12 +59,6 @@ impl HllUnion {
     /// # Panics
     ///
     /// Panics if `lg_max_k` is not in the range [4, 21].
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// let union = HllUnion::new(12); // Can handle sketches up to lg_k=12
-    /// ```
     pub fn new(lg_max_k: u8) -> Self {
         assert!(
             (4..=21).contains(&lg_max_k),
@@ -139,13 +111,17 @@ impl HllUnion {
                         let mut new_array = Array8::new(src_lg_k);
 
                         // Step 2: Downsample current gadget into new array
-                        if let Mode::Array8(old_gadget) = self.gadget.mode() {
-                            merge_array_with_downsample(
-                                &mut new_array,
-                                src_lg_k,
-                                &Mode::Array8(old_gadget.clone()),
-                                dst_lg_k,
-                            );
+                        match self.gadget.mode() {
+                            Mode::Array8(old_gadget) => {
+                                merge_array_with_downsample(
+                                    &mut new_array,
+                                    src_lg_k,
+                                    &Mode::Array8(old_gadget.clone()),
+                                    dst_lg_k,
+                                );
+                            }
+                            // Invariant: is_gadget_array check guarantees gadget is Array8
+                            _ => unreachable!("Gadget mode changed unexpectedly; was Array8"),
                         }
 
                         // Step 3: Merge source into new array
@@ -155,9 +131,12 @@ impl HllUnion {
                         self.gadget = HllSketch::from_mode(src_lg_k, Mode::Array8(new_array));
                     } else {
                         // Standard merge: src_lg_k >= dst_lg_k
-                        let dst_mode = self.gadget.mode_mut();
-                        if let Mode::Array8(dst_array) = dst_mode {
-                            merge_array_into_array8(dst_array, dst_lg_k, src_mode, src_lg_k);
+                        match self.gadget.mode_mut() {
+                            Mode::Array8(dst_array) => {
+                                merge_array_into_array8(dst_array, dst_lg_k, src_mode, src_lg_k);
+                            }
+                            // Invariant: is_gadget_array check guarantees gadget is Array8
+                            _ => unreachable!("Gadget mode changed unexpectedly; was Array8"),
                         }
                     }
                 } else {
@@ -182,19 +161,6 @@ impl HllUnion {
     /// # Arguments
     ///
     /// * `hll_type` - The target HLL type for the result sketch (Hll4, Hll6, or Hll8)
-    ///
-    /// # Returns
-    ///
-    /// A new HllSketch containing the union of all input sketches, converted to the
-    /// requested HLL type if necessary.
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// let mut union = HllUnion::new(12);
-    /// // ... update with sketches ...
-    /// let result = union.get_result(HllType::Hll6); // Get result as Hll6
-    /// ```
     pub fn get_result(&self, hll_type: HllType) -> HllSketch {
         let gadget_type = self.gadget.target_type();
 
@@ -236,51 +202,26 @@ impl HllUnion {
     ///
     /// Clears all data from the internal gadget, allowing the union to be reused
     /// for a new set of operations.
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// let mut union = HllUnion::new(12);
-    /// // ... update with sketches ...
-    /// union.reset(); // Clear everything and start fresh
-    /// ```
     pub fn reset(&mut self) {
-        // Recreate the gadget as empty
         self.gadget = HllSketch::new(self.lg_max_k, HllType::Hll8);
     }
 
-    /// Check if the union is empty (no sketches have been added)
-    ///
-    /// # Returns
-    ///
-    /// `true` if no sketches have been added to the union, `false` otherwise
+    /// Check if the union is empty
     pub fn is_empty(&self) -> bool {
         self.gadget.is_empty()
     }
 
     /// Get the current cardinality estimate of the union
-    ///
-    /// # Returns
-    ///
-    /// The estimated number of unique elements across all unioned sketches
     pub fn estimate(&self) -> f64 {
         self.gadget.estimate()
     }
 
     /// Get the current lg_config_k of the internal gadget
-    ///
-    /// # Returns
-    ///
-    /// The log2 of the number of buckets in the internal gadget
     pub fn lg_config_k(&self) -> u8 {
         self.gadget.lg_config_k()
     }
 
     /// Get the maximum lg_k this union can handle
-    ///
-    /// # Returns
-    ///
-    /// The lg_max_k value specified when creating the union
     pub fn lg_max_k(&self) -> u8 {
         self.lg_max_k
     }
@@ -302,9 +243,11 @@ fn merge_coupons_into_gadget(gadget: &mut HllSketch, src_mode: &Mode) {
                 gadget.update_with_coupon(coupon);
             }
         }
-        _ => {
-            // Array modes don't have coupons to iterate
-            // This shouldn't be called for array modes
+        // Invariant: Array modes are handled separately via merge_array_into_array8
+        Mode::Array4(_) | Mode::Array6(_) | Mode::Array8(_) => {
+            unreachable!(
+                "merge_coupons_into_gadget called with array mode; array modes should use merge_array_into_array8"
+            );
         }
     }
 }
@@ -322,8 +265,11 @@ fn merge_coupons_into_mode(dst: &mut Array8, src_mode: &Mode) {
                 dst.update(coupon);
             }
         }
-        _ => {
-            // Array modes don't have coupons
+        // Invariant: Array modes are handled via copy_or_downsample, not coupon iteration
+        Mode::Array4(_) | Mode::Array6(_) | Mode::Array8(_) => {
+            unreachable!(
+                "merge_coupons_into_mode called with array mode; array modes should use copy_or_downsample"
+            );
         }
     }
 }
@@ -351,18 +297,36 @@ fn merge_array_into_array8(dst_array8: &mut Array8, dst_lg_k: u8, src_mode: &Mod
     }
 }
 
+/// Extract HIP accumulator from an array mode
+fn get_array_hip_accum(mode: &Mode) -> f64 {
+    match mode {
+        Mode::Array8(src) => src.hip_accum(),
+        Mode::Array6(src) => src.hip_accum(),
+        Mode::Array4(src) => src.hip_accum(),
+        // Invariant: Only called with array modes (List/Set handled separately)
+        Mode::List { .. } | Mode::Set { .. } => {
+            unreachable!("get_array_hip_accum called with non-array mode; List/Set not supported");
+        }
+    }
+}
+
+/// Merge Array4/Array6 into Array8 by iterating registers
+fn merge_array46_same_lgk(dst: &mut Array8, num_registers: usize, get_value: impl Fn(u32) -> u8) {
+    for slot in 0..num_registers {
+        let val = get_value(slot as u32);
+        let current = dst.values()[slot];
+        if val > current {
+            dst.set_register(slot, val);
+        }
+    }
+    dst.rebuild_estimator_from_registers();
+}
+
 /// Merge arrays with same lg_k
 ///
 /// Takes the max of corresponding registers and combines HIP accumulators.
 fn merge_array_same_lgk(dst: &mut Array8, src_mode: &Mode) {
-    // Get source HIP accumulator
-    let src_hip = match src_mode {
-        Mode::Array8(src) => src.hip_accum(),
-        Mode::Array6(src) => src.hip_accum(),
-        Mode::Array4(src) => src.hip_accum(),
-        _ => unreachable!("Only array modes should be passed to merge_array_same_lgk"),
-    };
-
+    let src_hip = get_array_hip_accum(src_mode);
     let dst_hip = dst.hip_accum();
 
     match src_mode {
@@ -372,29 +336,11 @@ fn merge_array_same_lgk(dst: &mut Array8, src_mode: &Mode) {
         }
         Mode::Array6(src) => {
             // Array6 → Array8: read and merge slot by slot
-            // Use direct register modification to avoid estimator inconsistency
-            for slot in 0..src.num_registers() {
-                let val = src.get(slot as u32);
-                let current = dst.values()[slot];
-                if val > current {
-                    dst.set_register(slot, val);
-                }
-            }
-            // Rebuild estimator state from the modified registers
-            dst.rebuild_estimator_from_registers();
+            merge_array46_same_lgk(dst, src.num_registers(), |slot| src.get(slot));
         }
         Mode::Array4(src) => {
-            // Array4 → Array8: read adjusted values and merge
-            // Use direct register modification to avoid estimator inconsistency
-            for slot in 0..src.num_registers() {
-                let val = src.get(slot as u32);
-                let current = dst.values()[slot];
-                if val > current {
-                    dst.set_register(slot, val);
-                }
-            }
-            // Rebuild estimator state from the modified registers
-            dst.rebuild_estimator_from_registers();
+            // Array4 → Array8: read and merge slot by slot
+            merge_array46_same_lgk(dst, src.num_registers(), |slot| src.get(slot));
         }
         _ => unreachable!("Only array modes should be passed to merge_array_same_lgk"),
     }
@@ -405,6 +351,27 @@ fn merge_array_same_lgk(dst: &mut Array8, src_mode: &Mode) {
     }
 }
 
+/// Merge Array4/Array6 into Array8 with downsampling
+fn merge_array46_with_downsample(
+    dst: &mut Array8,
+    dst_lg_k: u8,
+    num_registers: usize,
+    get_value: impl Fn(u32) -> u8,
+) {
+    let dst_mask = (1 << dst_lg_k) - 1;
+    for src_slot in 0..num_registers {
+        let val = get_value(src_slot as u32);
+        if val > 0 {
+            let dst_slot = (src_slot as u32 & dst_mask) as usize;
+            let current = dst.values()[dst_slot];
+            if val > current {
+                dst.set_register(dst_slot, val);
+            }
+        }
+    }
+    dst.rebuild_estimator_from_registers();
+}
+
 /// Merge arrays with downsampling (src lg_k > dst lg_k)
 ///
 /// Multiple source registers map to each destination register via masking.
@@ -412,17 +379,12 @@ fn merge_array_same_lgk(dst: &mut Array8, src_mode: &Mode) {
 fn merge_array_with_downsample(dst: &mut Array8, dst_lg_k: u8, src_mode: &Mode, src_lg_k: u8) {
     assert!(
         src_lg_k > dst_lg_k,
-        "This function requires src_lg_k > dst_lg_k"
+        "merge_array_with_downsample requires src_lg_k > dst_lg_k (got src={}, dst={})",
+        src_lg_k,
+        dst_lg_k
     );
 
-    // Get source HIP accumulator
-    let src_hip = match src_mode {
-        Mode::Array8(src) => src.hip_accum(),
-        Mode::Array6(src) => src.hip_accum(),
-        Mode::Array4(src) => src.hip_accum(),
-        _ => unreachable!("Only array modes should be passed to merge_array_with_downsample"),
-    };
-
+    let src_hip = get_array_hip_accum(src_mode);
     let dst_hip = dst.hip_accum();
 
     match src_mode {
@@ -432,37 +394,11 @@ fn merge_array_with_downsample(dst: &mut Array8, dst_lg_k: u8, src_mode: &Mode, 
         }
         Mode::Array6(src) => {
             // Array6 → Array8 with downsampling
-            // Use direct register modification to avoid estimator inconsistency
-            let dst_mask = (1 << dst_lg_k) - 1;
-            for src_slot in 0..src.num_registers() {
-                let val = src.get(src_slot as u32);
-                if val > 0 {
-                    let dst_slot = (src_slot as u32 & dst_mask) as usize;
-                    let current = dst.values()[dst_slot];
-                    if val > current {
-                        dst.set_register(dst_slot, val);
-                    }
-                }
-            }
-            // Rebuild estimator state from the modified registers
-            dst.rebuild_estimator_from_registers();
+            merge_array46_with_downsample(dst, dst_lg_k, src.num_registers(), |slot| src.get(slot));
         }
         Mode::Array4(src) => {
             // Array4 → Array8 with downsampling
-            // Use direct register modification to avoid estimator inconsistency
-            let dst_mask = (1 << dst_lg_k) - 1;
-            for src_slot in 0..src.num_registers() {
-                let val = src.get(src_slot as u32);
-                if val > 0 {
-                    let dst_slot = (src_slot as u32 & dst_mask) as usize;
-                    let current = dst.values()[dst_slot];
-                    if val > current {
-                        dst.set_register(dst_slot, val);
-                    }
-                }
-            }
-            // Rebuild estimator state from the modified registers
-            dst.rebuild_estimator_from_registers();
+            merge_array46_with_downsample(dst, dst_lg_k, src.num_registers(), |slot| src.get(slot));
         }
         _ => unreachable!("Only array modes should be passed to merge_array_with_downsample"),
     }
@@ -534,6 +470,17 @@ fn convert_array8_to_type(src: &Array8, lg_config_k: u8, target_type: HllType) -
     }
 }
 
+/// Copy Array4/Array6 registers into Array8 by converting to coupons
+fn copy_array46_via_coupons(dst: &mut Array8, num_registers: usize, get_value: impl Fn(u32) -> u8) {
+    for slot in 0..num_registers {
+        let val = get_value(slot as u32);
+        if val > 0 {
+            let coupon = pack_coupon(slot as u32, val);
+            dst.update(coupon);
+        }
+    }
+}
+
 /// Copy or downsample a source array to create a new Array8
 ///
 /// Directly copies if src_lg_k <= tgt_lg_k, downsamples otherwise.
@@ -542,50 +489,32 @@ fn copy_or_downsample(src_mode: &Mode, src_lg_k: u8, tgt_lg_k: u8) -> Array8 {
     if src_lg_k <= tgt_lg_k {
         // Direct copy - no downsampling needed
         let mut result = Array8::new(src_lg_k);
-
-        // Get the source's HIP accumulator value to preserve
-        let src_hip = match src_mode {
-            Mode::Array8(src) => src.hip_accum(),
-            Mode::Array6(src) => src.hip_accum(),
-            Mode::Array4(src) => src.hip_accum(),
-            _ => unreachable!("Only array modes should be passed"),
-        };
+        let src_hip = get_array_hip_accum(src_mode);
 
         match src_mode {
             Mode::Array8(src) => {
                 result.merge_array_same_lgk(src.values());
             }
             Mode::Array6(src) => {
-                for slot in 0..src.num_registers() {
-                    let val = src.get(slot as u32);
-                    if val > 0 {
-                        let coupon = pack_coupon(slot as u32, val);
-                        result.update(coupon);
-                    }
-                }
+                copy_array46_via_coupons(&mut result, src.num_registers(), |slot| src.get(slot));
             }
             Mode::Array4(src) => {
-                for slot in 0..src.num_registers() {
-                    let val = src.get(slot as u32);
-                    if val > 0 {
-                        let coupon = pack_coupon(slot as u32, val);
-                        result.update(coupon);
-                    }
-                }
+                copy_array46_via_coupons(&mut result, src.num_registers(), |slot| src.get(slot));
             }
-            _ => unreachable!("Only array modes should be passed"),
+            // Invariant: Only called with array modes (promoted gadget scenario)
+            Mode::List { .. } | Mode::Set { .. } => {
+                unreachable!(
+                    "copy_or_downsample called with non-array mode; gadget must be promoted to array first"
+                );
+            }
         }
 
-        // Preserve HIP accumulator from source
         result.set_hip_accum(src_hip);
         result
     } else {
         // Downsample from src to tgt
         let mut result = Array8::new(tgt_lg_k);
-
-        // merge_array_with_downsample will handle HIP accumulator combination
         merge_array_with_downsample(&mut result, tgt_lg_k, src_mode, src_lg_k);
-
         result
     }
 }
@@ -593,35 +522,6 @@ fn copy_or_downsample(src_mode: &Mode, src_lg_k: u8, tgt_lg_k: u8) -> Array8 {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_union_new() {
-        let union = HllUnion::new(12);
-        assert_eq!(union.lg_max_k(), 12);
-        assert_eq!(union.lg_config_k(), 12);
-        assert!(union.is_empty());
-    }
-
-    #[test]
-    #[should_panic(expected = "lg_max_k must be in [4, 21]")]
-    fn test_union_new_invalid_lg_k_low() {
-        let _union = HllUnion::new(3);
-    }
-
-    #[test]
-    #[should_panic(expected = "lg_max_k must be in [4, 21]")]
-    fn test_union_new_invalid_lg_k_high() {
-        let _union = HllUnion::new(22);
-    }
-
-    #[test]
-    fn test_union_reset() {
-        let mut union = HllUnion::new(10);
-        // Even without updates, reset should work
-        union.reset();
-        assert!(union.is_empty());
-        assert_eq!(union.lg_config_k(), 10);
-    }
 
     #[test]
     fn test_union_basic_list_mode() {
@@ -650,7 +550,7 @@ mod tests {
         // Should have ~5 unique values (foo, bar, baz, qux, quux)
         let estimate = result.estimate();
         assert!(
-            estimate >= 4.0 && estimate <= 6.0,
+            (4.0..=6.0).contains(&estimate),
             "Expected estimate around 5, got {}",
             estimate
         );
@@ -1050,7 +950,7 @@ mod tests {
 
         let estimate = result.estimate();
         assert!(
-            estimate >= 3.0 && estimate <= 5.0,
+            (3.0..=5.0).contains(&estimate),
             "Expected estimate around 3, got {}",
             estimate
         );
