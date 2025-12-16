@@ -33,10 +33,8 @@
 //! ```ignore
 //! use datasketches::hll::{HllSketch, HllUnion, HllType};
 //!
-//! // Create a union with lg_max_k = 12
 //! let mut union = HllUnion::new(12);
 //!
-//! // Create and update some sketches
 //! let mut sketch1 = HllSketch::new(12, HllType::Hll8);
 //! sketch1.update("foo");
 //! sketch1.update("bar");
@@ -45,16 +43,18 @@
 //! sketch2.update("bar");
 //! sketch2.update("baz");
 //!
-//! // Union the sketches
 //! union.update(&sketch1);
 //! union.update(&sketch2);
 //!
-//! // Get the result (should estimate ~3 unique items)
 //! let result = union.get_result(HllType::Hll8);
 //! println!("Union estimate: {}", result.estimate());
 //! ```
 
-use crate::hll::{HllSketch, HllType};
+use crate::hll::array4::Array4;
+use crate::hll::array6::Array6;
+use crate::hll::array8::Array8;
+use crate::hll::mode::Mode;
+use crate::hll::{HllSketch, HllType, pack_coupon};
 
 /// An HLL Union for combining multiple HLL sketches.
 ///
@@ -89,7 +89,7 @@ impl HllUnion {
     /// ```
     pub fn new(lg_max_k: u8) -> Self {
         assert!(
-            lg_max_k >= 4 && lg_max_k <= 21,
+            (4..=21).contains(&lg_max_k),
             "lg_max_k must be in [4, 21], got {}",
             lg_max_k
         );
@@ -103,35 +103,11 @@ impl HllUnion {
 
     /// Update the union with another sketch
     ///
-    /// This merges the input sketch into the union's internal gadget.
-    /// The method handles:
-    /// - Sketches with different lg_k values (resizes as needed)
-    /// - Sketches in different modes (List, Set, Array)
+    /// Merges the input sketch into the union's internal gadget, handling:
+    /// - Sketches with different lg_k values (resizes/downsamples as needed)
+    /// - Sketches in different modes (List, Set, Array4/6/8)
     /// - Sketches with different target HLL types
-    ///
-    /// # Arguments
-    ///
-    /// * `sketch` - The sketch to merge into the union
-    ///
-    /// # Algorithm
-    ///
-    /// 1. If sketch lg_k > union lg_max_k: down-sample the sketch data
-    /// 2. If sketch lg_k < gadget lg_k: keep gadget (higher precision)
-    /// 3. If sketch lg_k > gadget lg_k: upsize gadget to match
-    /// 4. Merge the data based on modes:
-    ///    - List/Set mode: iterate coupons and update gadget
-    ///    - Array mode: merge registers (take max of each pair)
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// let mut union = HllUnion::new(12);
-    /// let sketch = HllSketch::new(10, HllType::Hll6);
-    /// union.update(&sketch);
-    /// ```
     pub fn update(&mut self, sketch: &HllSketch) {
-        use crate::hll::mode::Mode;
-
         // Early return if source is empty
         if sketch.is_empty() {
             return;
@@ -160,11 +136,16 @@ impl HllUnion {
                         // This mirrors C++ HllUnion-internal.hpp lines 252-260
 
                         // Step 1: Create new Array8 at src_lg_k
-                        let mut new_array = crate::hll::array8::Array8::new(src_lg_k);
+                        let mut new_array = Array8::new(src_lg_k);
 
                         // Step 2: Downsample current gadget into new array
                         if let Mode::Array8(old_gadget) = self.gadget.mode() {
-                            merge_array_with_downsample(&mut new_array, src_lg_k, &Mode::Array8(old_gadget.clone()), dst_lg_k);
+                            merge_array_with_downsample(
+                                &mut new_array,
+                                src_lg_k,
+                                &Mode::Array8(old_gadget.clone()),
+                                dst_lg_k,
+                            );
                         }
 
                         // Step 3: Merge source into new array
@@ -181,21 +162,13 @@ impl HllUnion {
                     }
                 } else {
                     // Gadget is List/Set, source is Array - promote gadget
-                    // This mirrors C++ union_impl lines 243-250
-
-                    // Step 1: Copy/downsample source to create new Array8
                     let mut new_array = copy_or_downsample(src_mode, src_lg_k, self.lg_max_k);
 
-                    // Step 2: Merge gadget's coupons into the new array
                     let old_gadget_mode = self.gadget.mode();
                     merge_coupons_into_mode(&mut new_array, old_gadget_mode);
 
-                    // Step 3: Replace gadget with new Array8
                     let final_lg_k = new_array.num_registers().trailing_zeros() as u8;
-                    self.gadget = HllSketch::from_mode(
-                        final_lg_k,
-                        Mode::Array8(new_array),
-                    );
+                    self.gadget = HllSketch::from_mode(final_lg_k, Mode::Array8(new_array));
                 }
             }
         }
@@ -223,8 +196,6 @@ impl HllUnion {
     /// let result = union.get_result(HllType::Hll6); // Get result as Hll6
     /// ```
     pub fn get_result(&self, hll_type: HllType) -> HllSketch {
-        use crate::hll::mode::Mode;
-
         let gadget_type = self.gadget.target_type();
 
         // If requested type matches gadget type, just clone
@@ -235,24 +206,20 @@ impl HllUnion {
         // Type conversion needed
         match self.gadget.mode() {
             // List/Set modes: just change the target type
-            Mode::List { list, .. } => {
-                HllSketch::from_mode(
-                    self.gadget.lg_config_k(),
-                    Mode::List {
-                        list: list.clone(),
-                        hll_type,
-                    },
-                )
-            }
-            Mode::Set { set, .. } => {
-                HllSketch::from_mode(
-                    self.gadget.lg_config_k(),
-                    Mode::Set {
-                        set: set.clone(),
-                        hll_type,
-                    },
-                )
-            }
+            Mode::List { list, .. } => HllSketch::from_mode(
+                self.gadget.lg_config_k(),
+                Mode::List {
+                    list: list.clone(),
+                    hll_type,
+                },
+            ),
+            Mode::Set { set, .. } => HllSketch::from_mode(
+                self.gadget.lg_config_k(),
+                Mode::Set {
+                    set: set.clone(),
+                    hll_type,
+                },
+            ),
             // Array8 mode: convert to requested array type
             Mode::Array8(array8) => {
                 convert_array8_to_type(array8, self.gadget.lg_config_k(), hll_type)
@@ -319,16 +286,11 @@ impl HllUnion {
     }
 }
 
-/// Merge coupons from a List or Set mode sketch into the gadget
+/// Merge coupons from a List or Set mode into the gadget
 ///
-/// This iterates over all coupons in the source container and updates
-/// the gadget sketch with each one. The gadget handles mode transitions
-/// automatically (List → Set → Array).
-///
-/// This mirrors the C++ implementation's coupon iteration approach.
-fn merge_coupons_into_gadget(gadget: &mut HllSketch, src_mode: &crate::hll::mode::Mode) {
-    use crate::hll::mode::Mode;
-
+/// Iterates over all coupons in the source and updates the gadget.
+/// The gadget handles mode transitions automatically (List → Set → Array).
+fn merge_coupons_into_gadget(gadget: &mut HllSketch, src_mode: &Mode) {
     match src_mode {
         Mode::List { list, .. } => {
             for coupon in list.container().iter() {
@@ -347,13 +309,8 @@ fn merge_coupons_into_gadget(gadget: &mut HllSketch, src_mode: &crate::hll::mode
     }
 }
 
-/// Merge coupons from a List or Set mode directly into an Array8
-///
-/// Similar to merge_coupons_into_gadget, but works directly with an Array8
-/// instead of going through an HllSketch.
-fn merge_coupons_into_mode(dst: &mut crate::hll::array8::Array8, src_mode: &crate::hll::mode::Mode) {
-    use crate::hll::mode::Mode;
-
+/// Merge coupons from a List or Set mode into an Array8
+fn merge_coupons_into_mode(dst: &mut Array8, src_mode: &Mode) {
     match src_mode {
         Mode::List { list, .. } => {
             for coupon in list.container().iter() {
@@ -371,23 +328,13 @@ fn merge_coupons_into_mode(dst: &mut crate::hll::array8::Array8, src_mode: &crat
     }
 }
 
-/// Merge an HLL array into an Array8 gadget
+/// Merge an HLL array into an Array8
 ///
-/// This handles merging from Array4, Array6, or Array8 sources into an
-/// Array8 destination. It dispatches based on lg_k relationship:
+/// Handles merging from Array4, Array6, or Array8 sources. Dispatches based on lg_k:
 /// - Same lg_k: optimized bulk merge
 /// - src lg_k > dst lg_k: downsample src into dst
-///
-/// Note: The case where src_lg_k < dst_lg_k is handled by the caller
-/// (requires gadget replacement, not in-place merge).
-///
-/// This mirrors the C++ Hll8Array::mergeHll() implementation.
-fn merge_array_into_array8(
-    dst_array8: &mut crate::hll::array8::Array8,
-    dst_lg_k: u8,
-    src_mode: &crate::hll::mode::Mode,
-    src_lg_k: u8,
-) {
+/// - src lg_k < dst lg_k: handled by caller (requires gadget replacement)
+fn merge_array_into_array8(dst_array8: &mut Array8, dst_lg_k: u8, src_mode: &Mode, src_lg_k: u8) {
     assert!(
         src_lg_k >= dst_lg_k,
         "merge_array_into_array8 requires src_lg_k >= dst_lg_k (got src={}, dst={})",
@@ -406,11 +353,8 @@ fn merge_array_into_array8(
 
 /// Merge arrays with same lg_k
 ///
-/// For same lg_k, we can use the optimized merge methods that directly
-/// take the max of corresponding registers. Also combines HIP accumulators.
-fn merge_array_same_lgk(dst: &mut crate::hll::array8::Array8, src_mode: &crate::hll::mode::Mode) {
-    use crate::hll::mode::Mode;
-
+/// Takes the max of corresponding registers and combines HIP accumulators.
+fn merge_array_same_lgk(dst: &mut Array8, src_mode: &Mode) {
     // Get source HIP accumulator
     let src_hip = match src_mode {
         Mode::Array8(src) => src.hip_accum(),
@@ -456,7 +400,6 @@ fn merge_array_same_lgk(dst: &mut crate::hll::array8::Array8, src_mode: &crate::
     }
 
     // Combine HIP accumulators: take max
-    // This mirrors C++ HllUnion-internal.hpp line ~225
     if src_hip > dst_hip {
         dst.set_hip_accum(src_hip);
     }
@@ -464,18 +407,13 @@ fn merge_array_same_lgk(dst: &mut crate::hll::array8::Array8, src_mode: &crate::
 
 /// Merge arrays with downsampling (src lg_k > dst lg_k)
 ///
-/// When source has higher precision, multiple source registers map to
-/// each destination register via masking: dst_slot = src_slot & dst_mask
+/// Multiple source registers map to each destination register via masking.
 /// Also combines HIP accumulators.
-fn merge_array_with_downsample(
-    dst: &mut crate::hll::array8::Array8,
-    dst_lg_k: u8,
-    src_mode: &crate::hll::mode::Mode,
-    src_lg_k: u8,
-) {
-    use crate::hll::mode::Mode;
-
-    assert!(src_lg_k > dst_lg_k, "This function requires src_lg_k > dst_lg_k");
+fn merge_array_with_downsample(dst: &mut Array8, dst_lg_k: u8, src_mode: &Mode, src_lg_k: u8) {
+    assert!(
+        src_lg_k > dst_lg_k,
+        "This function requires src_lg_k > dst_lg_k"
+    );
 
     // Get source HIP accumulator
     let src_hip = match src_mode {
@@ -539,13 +477,7 @@ fn merge_array_with_downsample(
 ///
 /// Creates a new sketch with the requested type by copying register values
 /// from the Array8 source. Preserves the HIP accumulator.
-fn convert_array8_to_type(
-    src: &crate::hll::array8::Array8,
-    lg_config_k: u8,
-    target_type: HllType,
-) -> HllSketch {
-    use crate::hll::mode::Mode;
-
+fn convert_array8_to_type(src: &Array8, lg_config_k: u8, target_type: HllType) -> HllSketch {
     match target_type {
         HllType::Hll8 => {
             // Just clone as Array8
@@ -554,14 +486,14 @@ fn convert_array8_to_type(
         HllType::Hll6 => {
             // Convert Array8 → Array6
             // Simply copy all registers - Array6 uses same byte-per-register but with 6-bit packing
-            let mut array6 = crate::hll::array6::Array6::new(lg_config_k);
+            let mut array6 = Array6::new(lg_config_k);
 
             // Copy all register values by simulating a merge
             for slot in 0..src.num_registers() {
                 let val = src.values()[slot];
                 if val > 0 {
                     let clamped_val = val.min(63); // Array6 max value is 63
-                    let coupon = crate::hll::pack_coupon(slot as u32, clamped_val);
+                    let coupon = pack_coupon(slot as u32, clamped_val);
                     array6.update(coupon);
                 }
             }
@@ -579,13 +511,13 @@ fn convert_array8_to_type(
         }
         HllType::Hll4 => {
             // Convert Array8 → Array4
-            let mut array4 = crate::hll::array4::Array4::new(lg_config_k);
+            let mut array4 = Array4::new(lg_config_k);
 
             // Copy all register values
             for slot in 0..src.num_registers() {
                 let val = src.values()[slot];
                 if val > 0 {
-                    let coupon = crate::hll::pack_coupon(slot as u32, val);
+                    let coupon = pack_coupon(slot as u32, val);
                     array4.update(coupon);
                 }
             }
@@ -604,21 +536,12 @@ fn convert_array8_to_type(
 
 /// Copy or downsample a source array to create a new Array8
 ///
-/// If src_lg_k <= tgt_lg_k: direct copy
-/// If src_lg_k > tgt_lg_k: downsample to tgt_lg_k
-///
-/// This mirrors the C++ copy_or_downsample function. The result is always
-/// marked as out-of-order and HIP accumulator is preserved from source.
-fn copy_or_downsample(
-    src_mode: &crate::hll::mode::Mode,
-    src_lg_k: u8,
-    tgt_lg_k: u8,
-) -> crate::hll::array8::Array8 {
-    use crate::hll::mode::Mode;
-
+/// Directly copies if src_lg_k <= tgt_lg_k, downsamples otherwise.
+/// Result is marked as out-of-order and HIP accumulator is preserved.
+fn copy_or_downsample(src_mode: &Mode, src_lg_k: u8, tgt_lg_k: u8) -> Array8 {
     if src_lg_k <= tgt_lg_k {
         // Direct copy - no downsampling needed
-        let mut result = crate::hll::array8::Array8::new(src_lg_k);
+        let mut result = Array8::new(src_lg_k);
 
         // Get the source's HIP accumulator value to preserve
         let src_hip = match src_mode {
@@ -636,7 +559,7 @@ fn copy_or_downsample(
                 for slot in 0..src.num_registers() {
                     let val = src.get(slot as u32);
                     if val > 0 {
-                        let coupon = crate::hll::pack_coupon(slot as u32, val);
+                        let coupon = pack_coupon(slot as u32, val);
                         result.update(coupon);
                     }
                 }
@@ -645,7 +568,7 @@ fn copy_or_downsample(
                 for slot in 0..src.num_registers() {
                     let val = src.get(slot as u32);
                     if val > 0 {
-                        let coupon = crate::hll::pack_coupon(slot as u32, val);
+                        let coupon = pack_coupon(slot as u32, val);
                         result.update(coupon);
                     }
                 }
@@ -658,7 +581,7 @@ fn copy_or_downsample(
         result
     } else {
         // Downsample from src to tgt
-        let mut result = crate::hll::array8::Array8::new(tgt_lg_k);
+        let mut result = Array8::new(tgt_lg_k);
 
         // merge_array_with_downsample will handle HIP accumulator combination
         merge_array_with_downsample(&mut result, tgt_lg_k, src_mode, src_lg_k);
@@ -798,8 +721,8 @@ mod tests {
         }
 
         // Both should be in Array mode now
-        assert!(matches!(sketch1.mode(), crate::hll::mode::Mode::Array8(_)));
-        assert!(matches!(sketch2.mode(), crate::hll::mode::Mode::Array8(_)));
+        assert!(matches!(sketch1.mode(), Mode::Array8(_)));
+        assert!(matches!(sketch2.mode(), Mode::Array8(_)));
 
         union.update(&sketch1);
         union.update(&sketch2);
@@ -890,14 +813,14 @@ mod tests {
         sketch1.update("a");
         sketch1.update("b");
         sketch1.update("c");
-        assert!(matches!(sketch1.mode(), crate::hll::mode::Mode::List { .. }));
+        assert!(matches!(sketch1.mode(), Mode::List { .. }));
 
         // Second sketch: large (Array mode)
         let mut sketch2 = HllSketch::new(12, HllType::Hll8);
         for i in 0..10_000 {
             sketch2.update(i);
         }
-        assert!(matches!(sketch2.mode(), crate::hll::mode::Mode::Array8(_)));
+        assert!(matches!(sketch2.mode(), Mode::Array8(_)));
 
         union.update(&sketch1);
         union.update(&sketch2);
@@ -923,14 +846,14 @@ mod tests {
         for i in 0..10_000 {
             sketch1.update(i);
         }
-        assert!(matches!(sketch1.mode(), crate::hll::mode::Mode::Array8(_)));
+        assert!(matches!(sketch1.mode(), Mode::Array8(_)));
 
         // Second sketch: small (List mode)
         let mut sketch2 = HllSketch::new(12, HllType::Hll8);
         sketch2.update("a");
         sketch2.update("b");
         sketch2.update("c");
-        assert!(matches!(sketch2.mode(), crate::hll::mode::Mode::List { .. }));
+        assert!(matches!(sketch2.mode(), Mode::List { .. }));
 
         union.update(&sketch1);
         union.update(&sketch2);
@@ -1123,7 +1046,7 @@ mod tests {
         let result = union.get_result(HllType::Hll6);
 
         assert_eq!(result.target_type(), HllType::Hll6);
-        assert!(matches!(result.mode(), crate::hll::mode::Mode::List { .. }));
+        assert!(matches!(result.mode(), Mode::List { .. }));
 
         let estimate = result.estimate();
         assert!(

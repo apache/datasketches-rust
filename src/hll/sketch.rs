@@ -29,9 +29,9 @@ use crate::hll::array8::Array8;
 use crate::hll::container::Container;
 use crate::hll::hash_set::HashSet;
 use crate::hll::list::List;
+use crate::hll::mode::Mode;
 use crate::hll::serialization::*;
 use crate::hll::{HllType, NumStdDev, RESIZE_DENOMINATOR, RESIZE_NUMERATOR, coupon};
-use crate::hll::mode::Mode;
 
 /// A HyperLogLog sketch.
 ///

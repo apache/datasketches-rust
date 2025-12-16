@@ -1,8 +1,8 @@
+use crate::hll::HllType;
 use crate::hll::array4::Array4;
 use crate::hll::array6::Array6;
 use crate::hll::array8::Array8;
 use crate::hll::hash_set::HashSet;
-use crate::hll::HllType;
 use crate::hll::list::List;
 
 #[derive(Debug, Clone, PartialEq)]

@@ -66,9 +66,9 @@ mod estimator;
 mod harmonic_numbers;
 mod hash_set;
 mod list;
+mod mode;
 mod serialization;
 mod sketch;
-mod mode;
 mod union;
 
 pub use self::estimator::NumStdDev;
