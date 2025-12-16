@@ -76,7 +76,7 @@ impl Array4 {
     /// Returns the true register value:
     /// - If raw < 15: value = cur_min + raw
     /// - If raw == 15 (AUX_TOKEN): value is in aux_map
-    pub(crate) fn get(&self, slot: u32) -> u8 {
+    pub(super) fn get(&self, slot: u32) -> u8 {
         let raw = self.get_raw(slot);
 
         if raw < AUX_TOKEN {
@@ -91,12 +91,12 @@ impl Array4 {
     }
 
     /// Get the number of registers (K = 2^lg_config_k)
-    pub(crate) fn num_registers(&self) -> usize {
+    pub(super) fn num_registers(&self) -> usize {
         1 << self.lg_config_k
     }
 
     /// Get the current HIP accumulator value
-    pub(crate) fn hip_accum(&self) -> f64 {
+    pub(super) fn hip_accum(&self) -> f64 {
         self.estimator.hip_accum()
     }
 

@@ -70,17 +70,17 @@ impl Array6 {
 
     /// Get the unpacked 6-bit value (0-63) at the given slot
     #[inline]
-    pub(crate) fn get(&self, slot: u32) -> u8 {
+    pub(super) fn get(&self, slot: u32) -> u8 {
         self.get_raw(slot)
     }
 
     /// Get the number of registers (K = 2^lg_config_k)
-    pub(crate) fn num_registers(&self) -> usize {
+    pub(super) fn num_registers(&self) -> usize {
         1 << self.lg_config_k
     }
 
     /// Get the current HIP accumulator value
-    pub(crate) fn hip_accum(&self) -> f64 {
+    pub(super) fn hip_accum(&self) -> f64 {
         self.estimator.hip_accum()
     }
 

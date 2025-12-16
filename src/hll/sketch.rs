@@ -79,12 +79,12 @@ impl HllSketch {
     ///
     /// * `lg_config_k` - Log2 of the number of buckets (K)
     /// * `mode` - The mode to initialize the sketch with
-    pub(crate) fn from_mode(lg_config_k: u8, mode: Mode) -> Self {
+    pub(super) fn from_mode(lg_config_k: u8, mode: Mode) -> Self {
         Self { lg_config_k, mode }
     }
 
     /// Get the current mode of the sketch
-    pub(crate) fn mode(&self) -> &Mode {
+    pub(super) fn mode(&self) -> &Mode {
         &self.mode
     }
 
@@ -93,7 +93,7 @@ impl HllSketch {
     /// # Safety
     ///
     /// Caller must maintain internal invariants (num_zeros, estimator state).
-    pub(crate) fn mode_mut(&mut self) -> &mut Mode {
+    pub(super) fn mode_mut(&mut self) -> &mut Mode {
         &mut self.mode
     }
 
@@ -136,7 +136,7 @@ impl HllSketch {
     /// Update the sketch with a raw coupon value
     ///
     /// Maintains all sketch invariants including mode transitions and estimator updates.
-    pub(crate) fn update_with_coupon(&mut self, coupon: u32) {
+    pub(super) fn update_with_coupon(&mut self, coupon: u32) {
         match &mut self.mode {
             Mode::List { list, hll_type } => {
                 list.update(coupon);
