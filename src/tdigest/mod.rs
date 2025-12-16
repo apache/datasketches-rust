@@ -52,22 +52,3 @@ mod serialization;
 
 mod sketch;
 pub use self::sketch::TDigest;
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct Centroid {
-    mean: f64,
-    weight: u64,
-}
-
-impl Centroid {
-    fn add(&mut self, other: Centroid) {
-        if self.weight != 0 {
-            let total_weight = self.weight + other.weight;
-            self.mean += (other.weight as f64) * (other.mean - self.mean) / (total_weight as f64);
-            self.weight = total_weight;
-        } else {
-            self.mean = other.mean;
-            self.weight = other.weight;
-        }
-    }
-}

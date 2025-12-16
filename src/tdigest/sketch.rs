@@ -16,11 +16,11 @@
 // under the License.
 
 use byteorder::{ByteOrder, LE, ReadBytesExt};
+use std::cmp::Ordering;
 use std::convert::identity;
 use std::io::Cursor;
 
 use crate::error::SerdeError;
-use crate::tdigest::Centroid;
 use crate::tdigest::serialization::*;
 
 const BUFFER_MULTIPLIER: usize = 4;
@@ -228,24 +228,12 @@ impl TDigest {
 
         let mut lower = self
             .centroids
-            .binary_search_by(|c| {
-                if c.mean < value {
-                    std::cmp::Ordering::Less
-                } else {
-                    std::cmp::Ordering::Greater
-                }
-            })
+            .binary_search_by(|c| centroid_lower_bound(c, value))
             .unwrap_or_else(identity);
         debug_assert_ne!(lower, num_centroids, "get_rank: lower == end");
         let mut upper = self
             .centroids
-            .binary_search_by(|c| {
-                if c.mean > value {
-                    std::cmp::Ordering::Greater
-                } else {
-                    std::cmp::Ordering::Less
-                }
-            })
+            .binary_search_by(|c| centroid_upper_bound(c, value))
             .unwrap_or_else(identity);
         debug_assert_ne!(upper, 0, "get_rank: upper == begin");
         if value < self.centroids[lower].mean {
@@ -618,10 +606,45 @@ impl TDigest {
     }
 }
 
-fn centroid_cmp(a: &Centroid, b: &Centroid) -> std::cmp::Ordering {
+fn centroid_cmp(a: &Centroid, b: &Centroid) -> Ordering {
     match a.mean.partial_cmp(&b.mean) {
         Some(order) => order,
         None => unreachable!("NaN values should never be present in centroids"),
+    }
+}
+
+fn centroid_lower_bound(c: &Centroid, value: f64) -> Ordering {
+    if c.mean < value {
+        Ordering::Less
+    } else {
+        Ordering::Greater
+    }
+}
+
+fn centroid_upper_bound(c: &Centroid, value: f64) -> Ordering {
+    if c.mean > value {
+        Ordering::Greater
+    } else {
+        Ordering::Less
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Centroid {
+    mean: f64,
+    weight: u64,
+}
+
+impl Centroid {
+    fn add(&mut self, other: Centroid) {
+        if self.weight != 0 {
+            let total_weight = self.weight + other.weight;
+            self.mean += (other.weight as f64) * (other.mean - self.mean) / (total_weight as f64);
+            self.weight = total_weight;
+        } else {
+            self.mean = other.mean;
+            self.weight = other.weight;
+        }
     }
 }
 
