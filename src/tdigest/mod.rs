@@ -50,30 +50,3 @@
 
 mod sketch;
 pub use self::sketch::TDigest;
-
-/// The default value of K if one is not specified.
-const DEFAULT_K: usize = 200;
-
-/// Generates cluster sizes proportional to `q*(1-q)`.
-///
-/// The use of a normalizing function results in a strictly bounded number of clusters no matter
-/// how many samples.
-///
-/// Corresponds to K_2 in the reference implementation
-mod scale_function {
-    pub(super) fn max(q: f64, normalizer: f64) -> f64 {
-        q * (1. - q) / normalizer
-    }
-
-    pub(super) fn normalizer(compression: f64, n: f64) -> f64 {
-        compression / z(compression, n)
-    }
-
-    pub(super) fn z(compression: f64, n: f64) -> f64 {
-        4. * (n / compression).ln() + 24.
-    }
-}
-
-const fn weighted_average(x1: f64, w1: f64, x2: f64, w2: f64) -> f64 {
-    (x1 * w1 + x2 * w2) / (w1 + w2)
-}
