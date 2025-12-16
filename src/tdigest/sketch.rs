@@ -17,24 +17,9 @@
 
 use std::convert::identity;
 
+use crate::tdigest::{Centroid, TDigest};
+
 const BUFFER_MULTIPLIER: usize = 4;
-
-/// T-Digest sketch for estimating quantiles and ranks.
-///
-/// See the [module documentation](super) for more details.
-#[derive(Debug, Clone, PartialEq)]
-pub struct TDigest {
-    k: usize,
-
-    reverse_merge: bool,
-    min: f64,
-    max: f64,
-
-    centroids: Vec<Centroid>,
-    centroids_weight: u64,
-    centroids_capacity: usize,
-    buffer: Vec<f64>,
-}
 
 impl Default for TDigest {
     fn default() -> Self {
@@ -346,7 +331,7 @@ impl TDigest {
     }
 
     /// Process buffered values and merge centroids if needed.
-    fn compress(&mut self) {
+    pub(super) fn compress(&mut self) {
         if self.buffer.is_empty() {
             return;
         }
@@ -365,7 +350,7 @@ impl TDigest {
     /// * `buffer` is generated from `self.buffer`, and thus:
     ///     * No `NAN` values are present in `buffer`.
     ///     * We should clear `self.buffer` after merging.
-    fn do_merge(&mut self, mut buffer: Vec<Centroid>, weight: u64) {
+    pub(super) fn do_merge(&mut self, mut buffer: Vec<Centroid>, weight: u64) {
         buffer.extend(std::mem::take(&mut self.centroids));
         buffer.sort_by(centroid_cmp);
         if self.reverse_merge {
@@ -419,25 +404,6 @@ fn centroid_cmp(a: &Centroid, b: &Centroid) -> std::cmp::Ordering {
     match a.mean.partial_cmp(&b.mean) {
         Some(order) => order,
         None => unreachable!("NaN values should never be present in centroids"),
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct Centroid {
-    mean: f64,
-    weight: u64,
-}
-
-impl Centroid {
-    fn add(&mut self, other: Centroid) {
-        if self.weight != 0 {
-            let total_weight = self.weight + other.weight;
-            self.mean += (other.weight as f64) * (other.mean - self.mean) / (total_weight as f64);
-            self.weight = total_weight;
-        } else {
-            self.mean = other.mean;
-            self.weight = other.weight;
-        }
     }
 }
 

@@ -48,5 +48,42 @@
 //!
 //! [paper]: https://arxiv.org/abs/1902.04023
 
+mod iter;
+mod serialization;
 mod sketch;
-pub use self::sketch::TDigest;
+
+/// T-Digest sketch for estimating quantiles and ranks.
+///
+/// See the [module documentation](self) for more details.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TDigest {
+    k: usize,
+
+    reverse_merge: bool,
+    min: f64,
+    max: f64,
+
+    centroids: Vec<Centroid>,
+    centroids_weight: u64,
+    centroids_capacity: usize,
+    buffer: Vec<f64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Centroid {
+    mean: f64,
+    weight: u64,
+}
+
+impl Centroid {
+    fn add(&mut self, other: Centroid) {
+        if self.weight != 0 {
+            let total_weight = self.weight + other.weight;
+            self.mean += (other.weight as f64) * (other.mean - self.mean) / (total_weight as f64);
+            self.weight = total_weight;
+        } else {
+            self.mean = other.mean;
+            self.weight = other.weight;
+        }
+    }
+}
