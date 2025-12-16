@@ -257,6 +257,14 @@ impl Array4 {
         use crate::hll::serialization::*;
         use crate::hll::{get_slot, get_value};
 
+        if bytes.len() < HLL_PREAMBLE_SIZE {
+            return Err(SerdeError::InsufficientData(format!(
+                "expected at least {}, got {}",
+                HLL_PREAMBLE_SIZE,
+                bytes.len()
+            )));
+        }
+
         let num_bytes = 1 << (lg_config_k - 1); // k/2 bytes for 4-bit packing
 
         // Read cur_min from header
