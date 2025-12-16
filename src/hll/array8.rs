@@ -132,6 +132,23 @@ impl Array8 {
         self.estimator.hip_accum()
     }
 
+    /// Directly set a register value
+    ///
+    /// This bypasses the normal update path and directly modifies the register.
+    /// Caller must call rebuild_estimator_from_registers() after all modifications.
+    pub(crate) fn set_register(&mut self, slot: usize, value: u8) {
+        self.bytes[slot] = value;
+    }
+
+    /// Rebuild estimator state from current register values
+    ///
+    /// Recomputes num_zeros, kxq0, kxq1, and marks estimator as out-of-order.
+    /// Should be called after bulk register modifications.
+    pub(crate) fn rebuild_estimator_from_registers(&mut self) {
+        self.rebuild_cached_values();
+        self.estimator.set_out_of_order(true);
+    }
+
     /// Merge another Array8 with the same lg_k
     ///
     /// Performs register-by-register max merge. Marks estimator as

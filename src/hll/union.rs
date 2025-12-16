@@ -204,31 +204,65 @@ impl HllUnion {
     /// Get the union result as a new sketch
     ///
     /// Returns a copy of the internal gadget sketch with the specified target HLL type.
+    /// If the requested type differs from the gadget's type, conversion is performed.
     ///
     /// # Arguments
     ///
-    /// * `hll_type` - The target HLL type for the result sketch (Note: type conversion not yet implemented)
+    /// * `hll_type` - The target HLL type for the result sketch (Hll4, Hll6, or Hll8)
     ///
     /// # Returns
     ///
-    /// A new HllSketch containing the union of all input sketches
+    /// A new HllSketch containing the union of all input sketches, converted to the
+    /// requested HLL type if necessary.
     ///
     /// # Example
     ///
     /// ```ignore
     /// let mut union = HllUnion::new(12);
     /// // ... update with sketches ...
-    /// let result = union.get_result(HllType::Hll8);
+    /// let result = union.get_result(HllType::Hll6); // Get result as Hll6
     /// ```
-    ///
-    /// # Note
-    ///
-    /// Currently returns a clone of the gadget regardless of target_type.
-    /// Type conversion (Hll8 → Hll6/Hll4) will be implemented in Phase 3.
-    pub fn get_result(&self, _hll_type: HllType) -> HllSketch {
-        // For Phase 2, just return a clone of the gadget
-        // TODO: Phase 3 - implement type conversion if requested type differs from Hll8
-        self.gadget.clone()
+    pub fn get_result(&self, hll_type: HllType) -> HllSketch {
+        use crate::hll::mode::Mode;
+
+        let gadget_type = self.gadget.target_type();
+
+        // If requested type matches gadget type, just clone
+        if hll_type == gadget_type {
+            return self.gadget.clone();
+        }
+
+        // Type conversion needed
+        match self.gadget.mode() {
+            // List/Set modes: just change the target type
+            Mode::List { list, .. } => {
+                HllSketch::from_mode(
+                    self.gadget.lg_config_k(),
+                    Mode::List {
+                        list: list.clone(),
+                        hll_type,
+                    },
+                )
+            }
+            Mode::Set { set, .. } => {
+                HllSketch::from_mode(
+                    self.gadget.lg_config_k(),
+                    Mode::Set {
+                        set: set.clone(),
+                        hll_type,
+                    },
+                )
+            }
+            // Array8 mode: convert to requested array type
+            Mode::Array8(array8) => {
+                convert_array8_to_type(array8, self.gadget.lg_config_k(), hll_type)
+            }
+            // Array4/6 should never occur in gadget (always Hll8)
+            Mode::Array4(_) | Mode::Array6(_) => {
+                // Shouldn't happen, but handle gracefully
+                self.gadget.clone()
+            }
+        }
     }
 
     /// Reset the union to its initial empty state
@@ -394,30 +428,29 @@ fn merge_array_same_lgk(dst: &mut crate::hll::array8::Array8, src_mode: &crate::
         }
         Mode::Array6(src) => {
             // Array6 → Array8: read and merge slot by slot
+            // Use direct register modification to avoid estimator inconsistency
             for slot in 0..src.num_registers() {
                 let val = src.get(slot as u32);
-                let dst_vals = dst.values();
-                let current = dst_vals[slot];
+                let current = dst.values()[slot];
                 if val > current {
-                    // Need mutable access - we'll use update via coupon
-                    // For now, this is a limitation we'll address
-                    // TODO: Add a more efficient path
-                    let coupon = crate::hll::pack_coupon(slot as u32, val);
-                    dst.update(coupon);
+                    dst.set_register(slot, val);
                 }
             }
+            // Rebuild estimator state from the modified registers
+            dst.rebuild_estimator_from_registers();
         }
         Mode::Array4(src) => {
             // Array4 → Array8: read adjusted values and merge
+            // Use direct register modification to avoid estimator inconsistency
             for slot in 0..src.num_registers() {
                 let val = src.get(slot as u32);
-                let dst_vals = dst.values();
-                let current = dst_vals[slot];
+                let current = dst.values()[slot];
                 if val > current {
-                    let coupon = crate::hll::pack_coupon(slot as u32, val);
-                    dst.update(coupon);
+                    dst.set_register(slot, val);
                 }
             }
+            // Rebuild estimator state from the modified registers
+            dst.rebuild_estimator_from_registers();
         }
         _ => unreachable!("Only array modes should be passed to merge_array_same_lgk"),
     }
@@ -461,27 +494,37 @@ fn merge_array_with_downsample(
         }
         Mode::Array6(src) => {
             // Array6 → Array8 with downsampling
+            // Use direct register modification to avoid estimator inconsistency
             let dst_mask = (1 << dst_lg_k) - 1;
             for src_slot in 0..src.num_registers() {
                 let val = src.get(src_slot as u32);
                 if val > 0 {
                     let dst_slot = (src_slot as u32 & dst_mask) as usize;
-                    let coupon = crate::hll::pack_coupon(dst_slot as u32, val);
-                    dst.update(coupon);
+                    let current = dst.values()[dst_slot];
+                    if val > current {
+                        dst.set_register(dst_slot, val);
+                    }
                 }
             }
+            // Rebuild estimator state from the modified registers
+            dst.rebuild_estimator_from_registers();
         }
         Mode::Array4(src) => {
             // Array4 → Array8 with downsampling
+            // Use direct register modification to avoid estimator inconsistency
             let dst_mask = (1 << dst_lg_k) - 1;
             for src_slot in 0..src.num_registers() {
                 let val = src.get(src_slot as u32);
                 if val > 0 {
                     let dst_slot = (src_slot as u32 & dst_mask) as usize;
-                    let coupon = crate::hll::pack_coupon(dst_slot as u32, val);
-                    dst.update(coupon);
+                    let current = dst.values()[dst_slot];
+                    if val > current {
+                        dst.set_register(dst_slot, val);
+                    }
                 }
             }
+            // Rebuild estimator state from the modified registers
+            dst.rebuild_estimator_from_registers();
         }
         _ => unreachable!("Only array modes should be passed to merge_array_with_downsample"),
     }
@@ -489,6 +532,73 @@ fn merge_array_with_downsample(
     // Combine HIP accumulators: take max
     if src_hip > dst_hip {
         dst.set_hip_accum(src_hip);
+    }
+}
+
+/// Convert Array8 to a different HLL type
+///
+/// Creates a new sketch with the requested type by copying register values
+/// from the Array8 source. Preserves the HIP accumulator.
+fn convert_array8_to_type(
+    src: &crate::hll::array8::Array8,
+    lg_config_k: u8,
+    target_type: HllType,
+) -> HllSketch {
+    use crate::hll::mode::Mode;
+
+    match target_type {
+        HllType::Hll8 => {
+            // Just clone as Array8
+            HllSketch::from_mode(lg_config_k, Mode::Array8(src.clone()))
+        }
+        HllType::Hll6 => {
+            // Convert Array8 → Array6
+            // Simply copy all registers - Array6 uses same byte-per-register but with 6-bit packing
+            let mut array6 = crate::hll::array6::Array6::new(lg_config_k);
+
+            // Copy all register values by simulating a merge
+            for slot in 0..src.num_registers() {
+                let val = src.values()[slot];
+                if val > 0 {
+                    let clamped_val = val.min(63); // Array6 max value is 63
+                    let coupon = crate::hll::pack_coupon(slot as u32, clamped_val);
+                    array6.update(coupon);
+                }
+            }
+
+            // Now the array6 has all the register values and its estimator is properly computed
+            // But we want to preserve the source's estimate for accuracy
+            // Take the max of the two estimates
+            let src_est = src.estimate();
+            let arr6_est = array6.estimate();
+            if src_est > arr6_est {
+                array6.set_hip_accum(src_est);
+            }
+
+            HllSketch::from_mode(lg_config_k, Mode::Array6(array6))
+        }
+        HllType::Hll4 => {
+            // Convert Array8 → Array4
+            let mut array4 = crate::hll::array4::Array4::new(lg_config_k);
+
+            // Copy all register values
+            for slot in 0..src.num_registers() {
+                let val = src.values()[slot];
+                if val > 0 {
+                    let coupon = crate::hll::pack_coupon(slot as u32, val);
+                    array4.update(coupon);
+                }
+            }
+
+            // Preserve the source's estimate for accuracy
+            let src_est = src.estimate();
+            let arr4_est = array4.estimate();
+            if src_est > arr4_est {
+                array4.set_hip_accum(src_est);
+            }
+
+            HllSketch::from_mode(lg_config_k, Mode::Array4(array4))
+        }
     }
 }
 
@@ -911,6 +1021,144 @@ mod tests {
         assert!(
             estimate > 8_000.0 && estimate < 12_000.0,
             "Expected estimate around 10000, got {}",
+            estimate
+        );
+    }
+
+    #[test]
+    fn test_union_get_result_type_conversion_hll6() {
+        // Test getting result as Hll6
+        let mut union = HllUnion::new(12);
+
+        let mut sketch = HllSketch::new(12, HllType::Hll8);
+        for i in 0..5_000 {
+            sketch.update(i);
+        }
+
+        union.update(&sketch);
+
+        // Get result as Hll6
+        let result = union.get_result(HllType::Hll6);
+
+        // Verify it's Hll6
+        assert_eq!(result.target_type(), HllType::Hll6);
+
+        // Estimate should be similar
+        let estimate = result.estimate();
+        assert!(
+            estimate > 4_000.0 && estimate < 6_000.0,
+            "Expected estimate around 5000, got {}",
+            estimate
+        );
+    }
+
+    #[test]
+    fn test_union_get_result_type_conversion_hll4() {
+        // Test getting result as Hll4
+        let mut union = HllUnion::new(12);
+
+        let mut sketch = HllSketch::new(12, HllType::Hll8);
+        for i in 0..5_000 {
+            sketch.update(i);
+        }
+
+        union.update(&sketch);
+
+        // Get result as Hll4
+        let result = union.get_result(HllType::Hll4);
+
+        // Verify it's Hll4
+        assert_eq!(result.target_type(), HllType::Hll4);
+
+        // Estimate should be similar (Hll4 may have slightly different precision)
+        let estimate = result.estimate();
+        assert!(
+            estimate > 4_000.0 && estimate < 6_000.0,
+            "Expected estimate around 5000, got {}",
+            estimate
+        );
+    }
+
+    #[test]
+    fn test_union_get_result_no_conversion_needed() {
+        // Test that requesting Hll8 when gadget is Hll8 just clones
+        let mut union = HllUnion::new(12);
+
+        let mut sketch = HllSketch::new(12, HllType::Hll8);
+        for i in 0..1_000 {
+            sketch.update(i);
+        }
+
+        union.update(&sketch);
+
+        // Get result as Hll8 (no conversion needed)
+        let result = union.get_result(HllType::Hll8);
+
+        // Verify it's Hll8
+        assert_eq!(result.target_type(), HllType::Hll8);
+
+        // Estimate should match
+        let estimate = result.estimate();
+        assert!(
+            estimate > 900.0 && estimate < 1_100.0,
+            "Expected estimate around 1000, got {}",
+            estimate
+        );
+    }
+
+    #[test]
+    fn test_union_get_result_from_list_mode() {
+        // Test type conversion when gadget is still in List mode
+        let mut union = HllUnion::new(12);
+
+        // Add just a few values so gadget stays in List mode
+        let mut sketch = HllSketch::new(12, HllType::Hll8);
+        sketch.update("a");
+        sketch.update("b");
+        sketch.update("c");
+
+        union.update(&sketch);
+
+        // Get result as Hll6 - should just change the target type
+        let result = union.get_result(HllType::Hll6);
+
+        assert_eq!(result.target_type(), HllType::Hll6);
+        assert!(matches!(result.mode(), crate::hll::mode::Mode::List { .. }));
+
+        let estimate = result.estimate();
+        assert!(
+            estimate >= 3.0 && estimate <= 5.0,
+            "Expected estimate around 3, got {}",
+            estimate
+        );
+    }
+
+    #[test]
+    fn test_union_hll6_arrays_with_overlap() {
+        // Test unioning Hll6 sketches (which will be in Array6 mode)
+        let mut union = HllUnion::new(12);
+
+        let mut sketch1 = HllSketch::new(12, HllType::Hll6);
+        for i in 0..10_000 {
+            sketch1.update(i);
+        }
+
+        let mut sketch2 = HllSketch::new(12, HllType::Hll6);
+        for i in 5_000..15_000 {
+            sketch2.update(i);
+        }
+
+        union.update(&sketch1);
+        union.update(&sketch2);
+
+        let result = union.get_result(HllType::Hll6);
+        let estimate = result.estimate();
+
+        // Should estimate ~15,000 unique values (0-14,999)
+        // Both sketches are Hll6, so we expect the full union
+        assert!(
+            estimate > 13_000.0 && estimate < 17_000.0,
+            "Expected estimate around 15000, got {}. This suggests sketch2 overwrote sketch1 instead of merging.",
             estimate
         );
     }
