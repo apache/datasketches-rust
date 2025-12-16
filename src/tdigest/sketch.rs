@@ -29,18 +29,18 @@ impl Default for TDigest {
 
 impl TDigest {
     /// The default value of K if one is not specified.
-    pub const DEFAULT_K: usize = 200;
+    pub const DEFAULT_K: u16 = 200;
 
     /// Creates a tdigest instance with the given value of k.
     ///
     /// # Panics
     ///
     /// If k is less than 10
-    pub fn new(k: usize) -> Self {
+    pub fn new(k: u16) -> Self {
         assert!(k >= 10, "k must be at least 10");
 
         let fudge = if k < 30 { 30 } else { 10 };
-        let centroids_capacity = (k * 2) + fudge;
+        let centroids_capacity = (k as usize * 2) + fudge;
 
         let centroids = Vec::with_capacity(centroids_capacity);
         let buffer = Vec::with_capacity(centroids_capacity * BUFFER_MULTIPLIER);
@@ -73,7 +73,7 @@ impl TDigest {
     }
 
     /// Returns parameter k (compression) that was used to configure this TDigest.
-    pub fn k(&self) -> usize {
+    pub fn k(&self) -> u16 {
         self.k
     }
 

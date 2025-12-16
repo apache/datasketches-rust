@@ -48,7 +48,6 @@
 //!
 //! [paper]: https://arxiv.org/abs/1902.04023
 
-mod iter;
 mod serialization;
 mod sketch;
 
@@ -57,7 +56,7 @@ mod sketch;
 /// See the [module documentation](self) for more details.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TDigest {
-    k: usize,
+    k: u16,
 
     reverse_merge: bool,
     min: f64,
