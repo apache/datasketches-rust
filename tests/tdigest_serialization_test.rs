@@ -15,17 +15,19 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use datasketches::tdigest::TDigest;
+use datasketches::tdigest::TDigestMut;
 
 #[test]
 fn test_empty() {
-    let mut td = TDigest::new(100);
+    let mut td = TDigestMut::new(100);
     assert!(td.is_empty());
 
     let bytes = td.serialize();
     assert_eq!(bytes.len(), 8);
+    let td = td.freeze();
 
-    let deserialized_td = TDigest::deserialize(&bytes, false).unwrap();
+    let deserialized_td = TDigestMut::deserialize(&bytes, false).unwrap();
+    let deserialized_td = deserialized_td.freeze();
     assert_eq!(td.k(), deserialized_td.k());
     assert_eq!(td.total_weight(), deserialized_td.total_weight());
     assert!(td.is_empty());
@@ -34,13 +36,14 @@ fn test_empty() {
 
 #[test]
 fn test_single_value() {
-    let mut td = TDigest::default();
+    let mut td = TDigestMut::default();
     td.update(123.0);
 
     let bytes = td.serialize();
     assert_eq!(bytes.len(), 16);
 
-    let deserialized_td = TDigest::deserialize(&bytes, false).unwrap();
+    let deserialized_td = TDigestMut::deserialize(&bytes, false).unwrap();
+    let deserialized_td = deserialized_td.freeze();
     assert_eq!(deserialized_td.k(), 200);
     assert_eq!(deserialized_td.total_weight(), 1);
     assert!(!deserialized_td.is_empty());
@@ -50,15 +53,17 @@ fn test_single_value() {
 
 #[test]
 fn test_many_values() {
-    let mut td = TDigest::new(100);
+    let mut td = TDigestMut::new(100);
     for i in 0..1000 {
         td.update(i as f64);
     }
 
     let bytes = td.serialize();
     assert_eq!(bytes.len(), 1584);
+    let td = td.freeze();
 
-    let mut deserialized_td = TDigest::deserialize(&bytes, false).unwrap();
+    let deserialized_td = TDigestMut::deserialize(&bytes, false).unwrap();
+    let deserialized_td = deserialized_td.freeze();
     assert_eq!(td.k(), deserialized_td.k());
     assert_eq!(td.total_weight(), deserialized_td.total_weight());
     assert_eq!(td.is_empty(), deserialized_td.is_empty());

@@ -15,13 +15,13 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use datasketches::tdigest::TDigest;
+use datasketches::tdigest::TDigestMut;
 use googletest::assert_that;
 use googletest::prelude::{eq, near};
 
 #[test]
 fn test_empty() {
-    let mut tdigest = TDigest::new(10);
+    let mut tdigest = TDigestMut::new(10);
     assert!(tdigest.is_empty());
     assert_eq!(tdigest.k(), 10);
     assert_eq!(tdigest.total_weight(), 0);
@@ -38,7 +38,7 @@ fn test_empty() {
 
 #[test]
 fn test_one_value() {
-    let mut tdigest = TDigest::new(100);
+    let mut tdigest = TDigestMut::new(100);
     tdigest.update(1.0);
     assert_eq!(tdigest.k(), 100);
     assert_eq!(tdigest.total_weight(), 1);
@@ -56,7 +56,7 @@ fn test_one_value() {
 fn test_many_values() {
     let n = 10000;
 
-    let mut tdigest = TDigest::default();
+    let mut tdigest = TDigestMut::default();
     for i in 0..n {
         tdigest.update(i as f64);
     }
@@ -103,7 +103,7 @@ fn test_many_values() {
 
 #[test]
 fn test_rank_two_values() {
-    let mut tdigest = TDigest::new(100);
+    let mut tdigest = TDigestMut::new(100);
     tdigest.update(1.0);
     tdigest.update(2.0);
     assert_eq!(tdigest.rank(0.99), Some(0.0));
@@ -117,7 +117,7 @@ fn test_rank_two_values() {
 
 #[test]
 fn test_rank_repeated_values() {
-    let mut tdigest = TDigest::new(100);
+    let mut tdigest = TDigestMut::new(100);
     tdigest.update(1.0);
     tdigest.update(1.0);
     tdigest.update(1.0);
@@ -129,7 +129,7 @@ fn test_rank_repeated_values() {
 
 #[test]
 fn test_repeated_blocks() {
-    let mut tdigest = TDigest::new(100);
+    let mut tdigest = TDigestMut::new(100);
     tdigest.update(1.0);
     tdigest.update(2.0);
     tdigest.update(2.0);
@@ -143,10 +143,10 @@ fn test_repeated_blocks() {
 
 #[test]
 fn test_merge_small() {
-    let mut td1 = TDigest::new(10);
+    let mut td1 = TDigestMut::new(10);
     td1.update(1.0);
     td1.update(2.0);
-    let mut td2 = TDigest::new(10);
+    let mut td2 = TDigestMut::new(10);
     td2.update(2.0);
     td2.update(3.0);
     td1.merge(&td2);
@@ -164,8 +164,8 @@ fn test_merge_small() {
 fn test_merge_large() {
     let n = 10000;
 
-    let mut td1 = TDigest::new(10);
-    let mut td2 = TDigest::new(10);
+    let mut td1 = TDigestMut::new(10);
+    let mut td2 = TDigestMut::new(10);
     let sup = n / 2;
     for i in 0..sup {
         td1.update(i as f64);
