@@ -82,12 +82,12 @@ impl TDigest {
     ///
     /// [^1]: This is to support reading the `tdigest<float>` format from the C++ implementation.
     pub fn deserialize(bytes: &[u8], is_float: bool) -> Result<Self, SerdeError> {
-        let make_error = |_| SerdeError::InsufficientData("tdigest".to_string());
+        let make_error = |tag: &'static str| move |_| SerdeError::InsufficientData(tag.to_string());
         let mut cursor = Cursor::new(bytes);
 
-        let preamble_longs = cursor.read_u8().map_err(make_error)?;
-        let serial_version = cursor.read_u8().map_err(make_error)?;
-        let family_id = cursor.read_u8().map_err(make_error)?;
+        let preamble_longs = cursor.read_u8().map_err(make_error("preamble_longs"))?;
+        let serial_version = cursor.read_u8().map_err(make_error("serial_version"))?;
+        let family_id = cursor.read_u8().map_err(make_error("family_id"))?;
         if family_id != TDIGEST_FAMILY_ID {
             // TODO: Support reading format of the reference implementation
             return Err(SerdeError::InvalidFamily(format!(
@@ -101,8 +101,8 @@ impl TDigest {
                 SERIAL_VERSION, serial_version
             )));
         }
-        let k = cursor.read_u16::<LE>().map_err(make_error)?;
-        let flags = cursor.read_u8().map_err(make_error)?;
+        let k = cursor.read_u16::<LE>().map_err(make_error("k"))?;
+        let flags = cursor.read_u8().map_err(make_error("flags"))?;
         let is_empty = (flags & FLAGS_IS_EMPTY) != 0;
         let is_single_value = (flags & FLAGS_IS_SINGLE_VALUE) != 0;
         let expected_preamble_longs = if is_empty || is_single_value {
@@ -116,16 +116,21 @@ impl TDigest {
                 expected_preamble_longs, preamble_longs
             )));
         }
-        cursor.read_u16::<LE>().map_err(make_error)?; // unused
+        cursor.read_u16::<LE>().map_err(make_error("<unused>"))?; // unused
         if is_empty {
             return Ok(TDigest::new(k));
         }
+
         let reverse_merge = (flags & FLAGS_REVERSE_MERGE) != 0;
         if is_single_value {
             let value = if is_float {
-                cursor.read_f32::<LE>().map_err(make_error)? as f64
+                cursor
+                    .read_f32::<LE>()
+                    .map_err(make_error("single_value"))? as f64
             } else {
-                cursor.read_f64::<LE>().map_err(make_error)?
+                cursor
+                    .read_f64::<LE>()
+                    .map_err(make_error("single_value"))?
             };
             return Ok(TDigest::make(
                 k,
@@ -140,17 +145,21 @@ impl TDigest {
                 vec![],
             ));
         }
-        let num_centroids = cursor.read_u32::<LE>().map_err(make_error)? as usize;
-        let num_buffered = cursor.read_u32::<LE>().map_err(make_error)? as usize;
+        let num_centroids = cursor
+            .read_u32::<LE>()
+            .map_err(make_error("num_centroids"))? as usize;
+        let num_buffered = cursor
+            .read_u32::<LE>()
+            .map_err(make_error("num_buffered"))? as usize;
         let (min, max) = if is_float {
             (
-                cursor.read_f32::<LE>().map_err(make_error)? as f64,
-                cursor.read_f32::<LE>().map_err(make_error)? as f64,
+                cursor.read_f32::<LE>().map_err(make_error("min"))? as f64,
+                cursor.read_f32::<LE>().map_err(make_error("max"))? as f64,
             )
         } else {
             (
-                cursor.read_f64::<LE>().map_err(make_error)?,
-                cursor.read_f64::<LE>().map_err(make_error)?,
+                cursor.read_f64::<LE>().map_err(make_error("min"))?,
+                cursor.read_f64::<LE>().map_err(make_error("max"))?,
             )
         };
         let mut centroids = Vec::with_capacity(num_centroids);
@@ -158,13 +167,13 @@ impl TDigest {
         for _ in 0..num_centroids {
             let (mean, weight) = if is_float {
                 (
-                    cursor.read_f32::<LE>().map_err(make_error)? as f64,
-                    cursor.read_u32::<LE>().map_err(make_error)? as u64,
+                    cursor.read_f32::<LE>().map_err(make_error("mean"))? as f64,
+                    cursor.read_u32::<LE>().map_err(make_error("weight"))? as u64,
                 )
             } else {
                 (
-                    cursor.read_f64::<LE>().map_err(make_error)?,
-                    cursor.read_u64::<LE>().map_err(make_error)?,
+                    cursor.read_f64::<LE>().map_err(make_error("mean"))?,
+                    cursor.read_u64::<LE>().map_err(make_error("weight"))?,
                 )
             };
             centroids_weight += weight;
@@ -173,9 +182,13 @@ impl TDigest {
         let mut buffer = Vec::with_capacity(num_buffered);
         for _ in 0..num_buffered {
             buffer.push(if is_float {
-                cursor.read_f32::<LE>().map_err(make_error)? as f64
+                cursor
+                    .read_f32::<LE>()
+                    .map_err(make_error("buffered_value"))? as f64
             } else {
-                cursor.read_f64::<LE>().map_err(make_error)?
+                cursor
+                    .read_f64::<LE>()
+                    .map_err(make_error("buffered_value"))?
             })
         }
         Ok(TDigest::make(
