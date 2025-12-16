@@ -37,21 +37,42 @@ impl TDigest {
     ///
     /// If k is less than 10
     pub fn new(k: u16) -> Self {
+        Self::make(
+            k,
+            false,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            vec![],
+            0,
+            vec![],
+        )
+    }
+
+    // for deserialization
+    pub(super) fn make(
+        k: u16,
+        reverse_merge: bool,
+        min: f64,
+        max: f64,
+        mut centroids: Vec<Centroid>,
+        centroids_weight: u64,
+        mut buffer: Vec<f64>,
+    ) -> Self {
         assert!(k >= 10, "k must be at least 10");
 
         let fudge = if k < 30 { 30 } else { 10 };
         let centroids_capacity = (k as usize * 2) + fudge;
 
-        let centroids = Vec::with_capacity(centroids_capacity);
-        let buffer = Vec::with_capacity(centroids_capacity * BUFFER_MULTIPLIER);
+        centroids.reserve(centroids_capacity);
+        buffer.reserve(centroids_capacity * BUFFER_MULTIPLIER);
 
         TDigest {
             k,
-            reverse_merge: false,
-            min: f64::INFINITY,
-            max: f64::NEG_INFINITY,
+            reverse_merge,
+            min,
+            max,
             centroids,
-            centroids_weight: 0,
+            centroids_weight,
             centroids_capacity,
             buffer,
         }
