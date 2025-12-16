@@ -70,8 +70,31 @@ impl HllSketch {
         }
     }
 
-    pub(super) fn mode(&self) -> &Mode {
+    /// Create an HLL sketch directly from a Mode
+    ///
+    /// This is used internally (e.g., by union operations) to construct
+    /// sketches in specific modes without going through List mode first.
+    ///
+    /// # Arguments
+    ///
+    /// * `lg_config_k` - Log2 of the number of buckets (K)
+    /// * `mode` - The mode to initialize the sketch with
+    pub(crate) fn from_mode(lg_config_k: u8, mode: Mode) -> Self {
+        Self { lg_config_k, mode }
+    }
+
+    /// Get the current mode of the sketch
+    pub(crate) fn mode(&self) -> &Mode {
         &self.mode
+    }
+
+    /// Get mutable access to the current mode
+    ///
+    /// # Safety
+    ///
+    /// Caller must maintain internal invariants (num_zeros, estimator state).
+    pub(crate) fn mode_mut(&mut self) -> &mut Mode {
+        &mut self.mode
     }
 
     /// Check if the sketch is empty (no values have been added)
@@ -112,9 +135,8 @@ impl HllSketch {
 
     /// Update the sketch with a raw coupon value
     ///
-    /// This is useful when you've already computed the coupon externally,
-    /// or when deserializing and replaying coupons.
-    fn update_with_coupon(&mut self, coupon: u32) {
+    /// Maintains all sketch invariants including mode transitions and estimator updates.
+    pub(crate) fn update_with_coupon(&mut self, coupon: u32) {
         match &mut self.mode {
             Mode::List { list, hll_type } => {
                 list.update(coupon);

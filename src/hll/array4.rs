@@ -71,6 +71,35 @@ impl Array4 {
         }
     }
 
+    /// Get the actual value at a slot (adjusted for cur_min and aux_map)
+    ///
+    /// Returns the true register value:
+    /// - If raw < 15: value = cur_min + raw
+    /// - If raw == 15 (AUX_TOKEN): value is in aux_map
+    pub(crate) fn get(&self, slot: u32) -> u8 {
+        let raw = self.get_raw(slot);
+
+        if raw < AUX_TOKEN {
+            self.cur_min + raw
+        } else {
+            // Value is in aux_map
+            self.aux_map
+                .as_ref()
+                .and_then(|map| map.get(slot))
+                .unwrap_or(self.cur_min) // Fallback (shouldn't happen)
+        }
+    }
+
+    /// Get the number of registers (K = 2^lg_config_k)
+    pub(crate) fn num_registers(&self) -> usize {
+        1 << self.lg_config_k
+    }
+
+    /// Get the current HIP accumulator value
+    pub(crate) fn hip_accum(&self) -> f64 {
+        self.estimator.hip_accum()
+    }
+
     /// Set raw 4-bit value in slot
     #[inline]
     fn put_raw(&mut self, slot: u32, value: u8) {

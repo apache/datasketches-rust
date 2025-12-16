@@ -68,6 +68,22 @@ impl Array6 {
         ((two_bytes >> shift) & VAL_MASK_6) as u8
     }
 
+    /// Get the unpacked 6-bit value (0-63) at the given slot
+    #[inline]
+    pub(crate) fn get(&self, slot: u32) -> u8 {
+        self.get_raw(slot)
+    }
+
+    /// Get the number of registers (K = 2^lg_config_k)
+    pub(crate) fn num_registers(&self) -> usize {
+        1 << self.lg_config_k
+    }
+
+    /// Get the current HIP accumulator value
+    pub(crate) fn hip_accum(&self) -> f64 {
+        self.estimator.hip_accum()
+    }
+
     /// Set value in a slot (6-bit value)
     ///
     /// Uses read-modify-write on 16-bit window to preserve surrounding bits.
@@ -251,8 +267,6 @@ impl Array6 {
         bytes
     }
 }
-
-// Constants
 
 /// Calculate number of bytes needed for k slots with 6 bits each
 fn num_bytes_for_k(k: u32) -> usize {

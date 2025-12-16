@@ -117,6 +117,108 @@ impl Array8 {
         self.num_zeros == (1 << self.lg_config_k)
     }
 
+    /// Get read access to register values (one byte per register)
+    pub(crate) fn values(&self) -> &[u8] {
+        &self.bytes
+    }
+
+    /// Get the number of registers (K = 2^lg_config_k)
+    pub(crate) fn num_registers(&self) -> usize {
+        1 << self.lg_config_k
+    }
+
+    /// Get the current HIP accumulator value
+    pub(crate) fn hip_accum(&self) -> f64 {
+        self.estimator.hip_accum()
+    }
+
+    /// Merge another Array8 with the same lg_k
+    ///
+    /// Performs register-by-register max merge. Marks estimator as
+    /// out-of-order since HIP cannot be maintained during bulk operations.
+    ///
+    /// # Panics
+    ///
+    /// Panics if src length doesn't match self length (different lg_k).
+    pub(crate) fn merge_array_same_lgk(&mut self, src: &[u8]) {
+        assert_eq!(
+            src.len(),
+            self.bytes.len(),
+            "Source and destination must have same lg_k"
+        );
+
+        for (i, &val) in src.iter().enumerate() {
+            self.bytes[i] = self.bytes[i].max(val);
+        }
+
+        self.rebuild_cached_values();
+        self.estimator.set_out_of_order(true);
+    }
+
+    /// Merge an array with larger lg_k (downsampling)
+    ///
+    /// When merging a source with lg_k > dst lg_k, multiple source registers
+    /// map to each destination register using the masking operation:
+    /// `dst_slot = src_slot & ((1 << dst_lg_k) - 1)`
+    ///
+    /// The destination takes the max of all source values that map to it.
+    ///
+    /// # Parameters
+    ///
+    /// * `src` - Source register values (length must be 2^src_lg_k)
+    /// * `src_lg_k` - Log2 of source register count
+    ///
+    /// # Panics
+    ///
+    /// Panics if src_lg_k <= self.lg_config_k (not downsampling).
+    pub(crate) fn merge_array_with_downsample(&mut self, src: &[u8], src_lg_k: u8) {
+        assert!(
+            src_lg_k > self.lg_config_k,
+            "Source lg_k must be greater than destination lg_k for downsampling"
+        );
+        assert_eq!(
+            src.len(),
+            1 << src_lg_k,
+            "Source length must match 2^src_lg_k"
+        );
+
+        let dst_mask = (1 << self.lg_config_k) - 1;
+
+        for (src_slot, &val) in src.iter().enumerate() {
+            let dst_slot = (src_slot as u32 & dst_mask) as usize;
+            self.bytes[dst_slot] = self.bytes[dst_slot].max(val);
+        }
+
+        self.rebuild_cached_values();
+        self.estimator.set_out_of_order(true);
+    }
+
+    /// Rebuild cached values after bulk modifications
+    ///
+    /// Recomputes num_zeros by counting zero-valued registers.
+    /// This is needed after merge operations that bypass normal update paths.
+    fn rebuild_cached_values(&mut self) {
+        self.num_zeros = self.bytes.iter().filter(|&&v| v == 0).count() as u32;
+
+        // Recompute kxq values from actual register values
+        // This is essential after bulk merges where registers change but estimator isn't updated incrementally
+        let mut kxq0_sum = 0.0;
+        let mut kxq1_sum = 0.0;
+
+        for &val in self.bytes.iter() {
+            if val == 0 {
+                kxq0_sum += 1.0;
+            } else if val < 32 {
+                kxq0_sum += 1.0 / (1u64 << val) as f64;
+            } else {
+                kxq1_sum += 1.0 / (1u64 << val) as f64;
+            }
+        }
+
+        self.estimator.set_kxq0(kxq0_sum);
+        self.estimator.set_kxq1(kxq1_sum);
+    }
+
     /// Deserialize Array8 from HLL mode bytes
     ///
     /// Expects full HLL preamble (40 bytes) followed by k bytes of data.
@@ -355,5 +457,150 @@ mod tests {
             arr.estimator.kxq1() < 1e-10,
             "kxq1 should be very small (1/2^50 ≈ 8.9e-16)"
         );
+    }
+
+    #[test]
+    fn test_values_access() {
+        let mut arr = Array8::new(4); // 16 slots
+
+        // Set some values
+        arr.put(0, 10);
+        arr.put(5, 25);
+        arr.put(15, 63);
+
+        // Test read access via values()
+        let vals = arr.values();
+        assert_eq!(vals.len(), 16);
+        assert_eq!(vals[0], 10);
+        assert_eq!(vals[5], 25);
+        assert_eq!(vals[15], 63);
+        assert_eq!(vals[1], 0); // Untouched slot
+    }
+
+    #[test]
+    fn test_merge_array_same_lgk() {
+        let mut dst = Array8::new(4); // 16 slots
+        let mut src = Array8::new(4); // 16 slots
+
+        // Set up dst with some values
+        dst.put(0, 10);
+        dst.put(1, 20);
+        dst.put(2, 30);
+
+        // Set up src with overlapping and new values
+        src.put(1, 15); // Smaller than dst[1]=20, should keep 20
+        src.put(2, 35); // Larger than dst[2]=30, should update to 35
+        src.put(3, 40); // New value
+
+        // Merge src into dst
+        dst.merge_array_same_lgk(src.values());
+
+        // Check results
+        assert_eq!(dst.get(0), 10, "dst[0] unchanged");
+        assert_eq!(dst.get(1), 20, "dst[1] kept max value");
+        assert_eq!(dst.get(2), 35, "dst[2] updated to larger value");
+        assert_eq!(dst.get(3), 40, "dst[3] got new value");
+
+        // Verify estimator marked as OOO
+        assert!(dst.estimator.is_out_of_order());
+
+        // Verify num_zeros updated (should be 12: 16 - 4 non-zero)
+        assert_eq!(dst.num_zeros, 12);
+    }
+
+    #[test]
+    fn test_merge_array_with_downsample() {
+        // Downsampling from lg_k=5 (32 slots) to lg_k=4 (16 slots)
+        let mut dst = Array8::new(4); // 16 slots
+        let mut src = Array8::new(5); // 32 slots
+
+        // Set up dst
+        dst.put(0, 10);
+        dst.put(1, 20);
+
+        // Set up src - slots 0 and 16 both map to dst slot 0
+        src.put(0, 15); // maps to dst[0], max(10, 15) = 15
+        src.put(16, 25); // maps to dst[0], max(15, 25) = 25
+        src.put(1, 18); // maps to dst[1], max(20, 18) = 20
+        src.put(17, 30); // maps to dst[1], max(20, 30) = 30
+
+        // Merge with downsampling
+        dst.merge_array_with_downsample(src.values(), 5);
+
+        // Check results - dst takes max of all src slots that map to it
+        assert_eq!(dst.get(0), 25, "dst[0] = max(10, 15, 25)");
+        assert_eq!(dst.get(1), 30, "dst[1] = max(20, 18, 30)");
+
+        // Verify estimator marked as OOO
+        assert!(dst.estimator.is_out_of_order());
+    }
+
+    #[test]
+    #[should_panic(expected = "Source and destination must have same lg_k")]
+    fn test_merge_same_lgk_panics_on_size_mismatch() {
+        let mut dst = Array8::new(4); // 16 slots
+        let src = Array8::new(5); // 32 slots - wrong size!
+
+        dst.merge_array_same_lgk(src.values());
+    }
+
+    #[test]
+    #[should_panic(expected = "Source lg_k must be greater")]
+    fn test_merge_downsample_panics_if_not_downsampling() {
+        let mut dst = Array8::new(5); // 32 slots
+        let src = Array8::new(4); // 16 slots - can't upsample!
+
+        dst.merge_array_with_downsample(src.values(), 4);
+    }
+
+    #[test]
+    fn test_rebuild_cached_values() {
+        let mut arr = Array8::new(4); // 16 slots
+
+        // Set some non-zero values
+        arr.put(0, 10);
+        arr.put(1, 20);
+        arr.put(2, 30);
+
+        // Manually corrupt num_zeros
+        arr.num_zeros = 999;
+
+        // Rebuild should fix it
+        arr.rebuild_cached_values();
+
+        // Should be 13 zeros (16 total - 3 non-zero)
+        assert_eq!(arr.num_zeros, 13);
+    }
+
+    #[test]
+    fn test_merge_preserves_max_semantics() {
+        let mut dst = Array8::new(4);
+        let mut src = Array8::new(4);
+
+        // Fill dst with ascending values
+        for i in 0..16 {
+            dst.put(i, i as u8);
+        }
+
+        // Fill src with descending values
+        for i in 0..16 {
+            src.put(i, (15 - i) as u8);
+        }
+
+        dst.merge_array_same_lgk(src.values());
+
+        // Result should be max at each position
+        for i in 0..16 {
+            let expected = (i as u8).max((15 - i) as u8);
+            assert_eq!(
+                dst.get(i),
+                expected,
+                "slot {} should be max({}, {}) = {}",
+                i,
+                i,
+                15 - i,
+                expected
+            );
+        }
     }
 }
