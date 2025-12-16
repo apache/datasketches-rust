@@ -32,13 +32,16 @@ use crate::hll::array4::Array4;
 use crate::hll::array6::Array6;
 use crate::hll::array8::Array8;
 use crate::hll::mode::Mode;
-use crate::hll::{HllSketch, HllType, pack_coupon};
+use crate::hll::{HllSketch, HllType, NumStdDev, pack_coupon};
+use std::hash::Hash;
 
 /// An HLL Union for combining multiple HLL sketches.
 ///
 /// The union maintains an internal sketch (the "gadget") that accumulates
 /// the union of all input sketches. It automatically handles sketches with
 /// different configurations and modes.
+///
+/// See the [hll module level documentation](crate::hll) for more.
 #[derive(Debug, Clone)]
 pub struct HllUnion {
     /// Maximum lg_k that this union can handle
@@ -72,6 +75,14 @@ impl HllUnion {
         Self { lg_max_k, gadget }
     }
 
+    /// Update the union's gadget with a value
+    ///
+    /// This accepts any type that implements `Hash`. The value is hashed
+    /// and converted to a coupon, which is then inserted into the sketch.
+    pub fn update_value<T: Hash>(&mut self, value: T) {
+        self.gadget.update(value);
+    }
+
     /// Update the union with another sketch
     ///
     /// Merges the input sketch into the union's internal gadget, handling:
@@ -88,57 +99,100 @@ impl HllUnion {
         let src_mode = sketch.mode();
 
         match src_mode {
-            // Source is List or Set - iterate coupons into gadget
             Mode::List { .. } | Mode::Set { .. } => {
-                merge_coupons_into_gadget(&mut self.gadget, src_mode);
+                self.update_from_list_or_set(sketch, src_mode, src_lg_k, dst_lg_k);
+            }
+            Mode::Array4(_) | Mode::Array6(_) | Mode::Array8(_) => {
+                self.update_from_array(src_mode, src_lg_k, dst_lg_k);
+            }
+        }
+    }
+
+    /// Update union from a List or Set mode sketch
+    fn update_from_list_or_set(
+        &mut self,
+        sketch: &HllSketch,
+        src_mode: &Mode,
+        src_lg_k: u8,
+        dst_lg_k: u8,
+    ) {
+        // Fast path: If gadget is empty and lg_k matches, directly copy as HLL_8
+        if self.gadget.is_empty() && src_lg_k == dst_lg_k {
+            self.gadget = if sketch.target_type() == HllType::Hll8 {
+                sketch.clone()
+            } else {
+                // Convert to Hll8 by changing target type
+                convert_coupon_mode_to_hll8(src_mode, src_lg_k)
+            };
+        } else {
+            // Regular path: merge coupons into gadget
+            merge_coupons_into_gadget(&mut self.gadget, src_mode);
+        }
+    }
+
+    /// Update union from an Array mode sketch
+    fn update_from_array(&mut self, src_mode: &Mode, src_lg_k: u8, dst_lg_k: u8) {
+        // Fast path: If gadget is empty, just copy/downsample source
+        if self.gadget.is_empty() {
+            let new_array = copy_or_downsample(src_mode, src_lg_k, self.lg_max_k);
+            let final_lg_k = new_array.num_registers().trailing_zeros() as u8;
+            self.gadget = HllSketch::from_mode(final_lg_k, Mode::Array8(new_array));
+            return;
+        }
+
+        let is_gadget_array = matches!(self.gadget.mode(), Mode::Array8(_));
+
+        if is_gadget_array {
+            self.merge_array_into_array_gadget(src_mode, src_lg_k, dst_lg_k);
+        } else {
+            self.promote_gadget_and_merge_array(src_mode, src_lg_k);
+        }
+    }
+
+    /// Merge an array source into an array gadget
+    fn merge_array_into_array_gadget(&mut self, src_mode: &Mode, src_lg_k: u8, dst_lg_k: u8) {
+        if src_lg_k < dst_lg_k {
+            // Source has lower precision - must downsize gadget
+            let mut new_array = Array8::new(src_lg_k);
+
+            match self.gadget.mode() {
+                Mode::Array8(old_gadget) => {
+                    merge_array_with_downsample(
+                        &mut new_array,
+                        src_lg_k,
+                        &Mode::Array8(old_gadget.clone()),
+                        dst_lg_k,
+                    );
+                }
+                _ => {
+                    unreachable!("gadget mode changed unexpectedly; should never be Array4/Array6")
+                }
             }
 
-            // Source is Array - merge into gadget's Array8
-            Mode::Array4(_) | Mode::Array6(_) | Mode::Array8(_) => {
-                let is_gadget_array = matches!(self.gadget.mode(), Mode::Array8(_));
-
-                if is_gadget_array {
-                    // Both arrays - need to handle downsizing if necessary
-                    if src_lg_k < dst_lg_k {
-                        let mut new_array = Array8::new(src_lg_k);
-                        match self.gadget.mode() {
-                            Mode::Array8(old_gadget) => {
-                                merge_array_with_downsample(
-                                    &mut new_array,
-                                    src_lg_k,
-                                    &Mode::Array8(old_gadget.clone()),
-                                    dst_lg_k,
-                                );
-                            }
-                            _ => unreachable!(
-                                "gadget mode changed unexpectedly; should never be Array4/Array6"
-                            ),
-                        }
-
-                        merge_array_same_lgk(&mut new_array, src_mode);
-                        self.gadget = HllSketch::from_mode(src_lg_k, Mode::Array8(new_array));
-                    } else {
-                        match self.gadget.mode_mut() {
-                            Mode::Array8(dst_array) => {
-                                merge_array_into_array8(dst_array, dst_lg_k, src_mode, src_lg_k);
-                            }
-                            _ => unreachable!(
-                                "gadget mode changed unexpectedly; should never be Array4/Array6"
-                            ),
-                        }
-                    }
-                } else {
-                    // Gadget is List/Set, source is Array - promote gadget
-                    let mut new_array = copy_or_downsample(src_mode, src_lg_k, self.lg_max_k);
-
-                    let old_gadget_mode = self.gadget.mode();
-                    merge_coupons_into_mode(&mut new_array, old_gadget_mode);
-
-                    let final_lg_k = new_array.num_registers().trailing_zeros() as u8;
-                    self.gadget = HllSketch::from_mode(final_lg_k, Mode::Array8(new_array));
+            merge_array_same_lgk(&mut new_array, src_mode);
+            self.gadget = HllSketch::from_mode(src_lg_k, Mode::Array8(new_array));
+        } else {
+            // Standard merge: src_lg_k >= dst_lg_k
+            match self.gadget.mode_mut() {
+                Mode::Array8(dst_array) => {
+                    merge_array_into_array8(dst_array, dst_lg_k, src_mode, src_lg_k);
+                }
+                _ => {
+                    unreachable!("gadget mode changed unexpectedly; should never be Array4/Array6")
                 }
             }
         }
+    }
+
+    /// Promote gadget from List/Set to Array and merge array source
+    fn promote_gadget_and_merge_array(&mut self, src_mode: &Mode, src_lg_k: u8) {
+        let mut new_array = copy_or_downsample(src_mode, src_lg_k, self.lg_max_k);
+
+        let old_gadget_mode = self.gadget.mode();
+        merge_coupons_into_mode(&mut new_array, old_gadget_mode);
+
+        let final_lg_k = new_array.num_registers().trailing_zeros() as u8;
+        self.gadget = HllSketch::from_mode(final_lg_k, Mode::Array8(new_array));
     }
 
     /// Get the union result as a new sketch
@@ -180,24 +234,6 @@ impl HllUnion {
         }
     }
 
-    /// Reset the union to its initial empty state
-    ///
-    /// Clears all data from the internal gadget, allowing the union to be reused
-    /// for a new set of operations.
-    pub fn reset(&mut self) {
-        self.gadget = HllSketch::new(self.lg_max_k, HllType::Hll8);
-    }
-
-    /// Check if the union is empty
-    pub fn is_empty(&self) -> bool {
-        self.gadget.is_empty()
-    }
-
-    /// Get the current cardinality estimate of the union
-    pub fn estimate(&self) -> f64 {
-        self.gadget.estimate()
-    }
-
     /// Get the current lg_config_k of the internal gadget
     pub fn lg_config_k(&self) -> u8 {
         self.gadget.lg_config_k()
@@ -206,6 +242,61 @@ impl HllUnion {
     /// Get the maximum lg_k this union can handle
     pub fn lg_max_k(&self) -> u8 {
         self.lg_max_k
+    }
+
+    /// Check if the union is empty
+    pub fn is_empty(&self) -> bool {
+        self.gadget.is_empty()
+    }
+
+    /// Reset the union to its initial empty state
+    ///
+    /// Clears all data from the internal gadget, allowing the union to be reused
+    /// for a new set of operations.
+    pub fn reset(&mut self) {
+        self.gadget = HllSketch::new(self.lg_max_k, HllType::Hll8);
+    }
+
+    /// Get the current cardinality estimate of the union
+    pub fn estimate(&self) -> f64 {
+        self.gadget.estimate()
+    }
+
+    /// Get upper bound for cardinality estimate of the union
+    ///
+    /// Returns the upper confidence bound for the cardinality estimate based on
+    /// the number of standard deviations requested.
+    pub fn upper_bound(&self, num_std_dev: NumStdDev) -> f64 {
+        self.gadget.upper_bound(num_std_dev)
+    }
+
+    /// Get lower bound for cardinality estimate of the union
+    ///
+    /// Returns the lower confidence bound for the cardinality estimate based on
+    /// the number of standard deviations requested.
+    pub fn lower_bound(&self, num_std_dev: NumStdDev) -> f64 {
+        self.gadget.lower_bound(num_std_dev)
+    }
+}
+
+/// Convert a coupon mode (List or Set) to Hll8 target type
+fn convert_coupon_mode_to_hll8(src_mode: &Mode, src_lg_k: u8) -> HllSketch {
+    match src_mode {
+        Mode::List { list, .. } => HllSketch::from_mode(
+            src_lg_k,
+            Mode::List {
+                list: list.clone(),
+                hll_type: HllType::Hll8,
+            },
+        ),
+        Mode::Set { set, .. } => HllSketch::from_mode(
+            src_lg_k,
+            Mode::Set {
+                set: set.clone(),
+                hll_type: HllType::Hll8,
+            },
+        ),
+        _ => unreachable!("convert_coupon_mode_to_hll8 called with non-coupon mode"),
     }
 }
 
