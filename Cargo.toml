@@ -37,6 +37,9 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 mur3 = { version = "0.1.0" }
 
+[dev-dependencies]
+googletest = { version = "0.14.2" }
+
 [lints.rust]
 unknown_lints = "deny"
 unsafe_code = "deny"

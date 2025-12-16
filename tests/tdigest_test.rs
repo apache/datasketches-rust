@@ -16,6 +16,8 @@
 // under the License.
 
 use datasketches::tdigest::TDigest;
+use googletest::assert_that;
+use googletest::prelude::{eq, near};
 
 #[test]
 fn test_empty() {
@@ -52,24 +54,45 @@ fn test_one_value() {
 
 #[test]
 fn test_many_values() {
+    let n = 10000;
+
+    let mut tdigest = TDigest::default();
+    for i in 0..n {
+        tdigest.update(i as f64);
+    }
+
+    assert!(!tdigest.is_empty());
+    assert_eq!(tdigest.total_weight(), n);
+    assert_eq!(tdigest.min_value(), Some(0.0));
+    assert_eq!(tdigest.max_value(), Some((n - 1) as f64));
+
+    assert_that!(tdigest.get_rank(0.0).unwrap(), near(0.0, 0.0001));
+    assert_that!(
+        tdigest.get_rank((n / 4) as f64).unwrap(),
+        near(0.25, 0.0001)
+    );
+    assert_that!(tdigest.get_rank((n / 2) as f64).unwrap(), near(0.5, 0.0001));
+    assert_that!(
+        tdigest.get_rank((n * 3 / 4) as f64).unwrap(),
+        near(0.75, 0.0001)
+    );
+    assert_that!(tdigest.get_rank(n as f64).unwrap(), eq(1.0));
+    assert_that!(tdigest.get_quantile(0.0).unwrap(), eq(0.0));
+    assert_that!(
+        tdigest.get_quantile(0.5).unwrap(),
+        near((n / 2) as f64, 0.03 * (n / 2) as f64)
+    );
+    assert_that!(
+        tdigest.get_quantile(0.9).unwrap(),
+        near((n as f64) * 0.9, 0.01 * (n as f64) * 0.9)
+    );
+    assert_that!(
+        tdigest.get_quantile(0.95).unwrap(),
+        near((n as f64) * 0.95, 0.01 * (n as f64) * 0.95)
+    );
+    assert_that!(tdigest.get_quantile(1.0).unwrap(), eq((n - 1) as f64));
+
     // TODO: Later until PMF and CDF are supported
-    // const size_t n = 10000;
-    // tdigest_double td;
-    // for (size_t i = 0; i < n; ++i) td.update(i);
-    // REQUIRE_FALSE(td.is_empty());
-    // REQUIRE(td.get_total_weight() == n);
-    // REQUIRE(td.get_min_value() == 0);
-    // REQUIRE(td.get_max_value() == n - 1);
-    // REQUIRE(td.get_rank(0) == Approx(0).margin(0.0001));
-    // REQUIRE(td.get_rank(n / 4) == Approx(0.25).margin(0.0001));
-    // REQUIRE(td.get_rank(n / 2) == Approx(0.5).margin(0.0001));
-    // REQUIRE(td.get_rank(n * 3 / 4) == Approx(0.75).margin(0.0001));
-    // REQUIRE(td.get_rank(n) == 1);
-    // REQUIRE(td.get_quantile(0) == 0);
-    // REQUIRE(td.get_quantile(0.5) == Approx(n / 2).epsilon(0.03));
-    // REQUIRE(td.get_quantile(0.9) == Approx(n * 0.9).epsilon(0.01));
-    // REQUIRE(td.get_quantile(0.95) == Approx(n * 0.95).epsilon(0.01));
-    // REQUIRE(td.get_quantile(1) == n - 1);
     // const double split_points[1] {n / 2};
     // const auto pmf = td.get_PMF(split_points, 1);
     // REQUIRE(pmf.size() == 2);
@@ -119,4 +142,50 @@ fn test_repeated_blocks() {
     assert_eq!(tdigest.get_rank(2.0), Some(0.5));
     assert_eq!(tdigest.get_rank(3.0), Some(0.875));
     assert_eq!(tdigest.get_rank(3.01), Some(1.0));
+}
+
+#[test]
+fn test_merge_small() {
+    let mut td1 = TDigest::new(10);
+    td1.update(1.0);
+    td1.update(2.0);
+    let mut td2 = TDigest::new(10);
+    td2.update(2.0);
+    td2.update(3.0);
+    td1.merge(&td2);
+    assert_eq!(td1.min_value(), Some(1.0));
+    assert_eq!(td1.max_value(), Some(3.0));
+    assert_eq!(td1.total_weight(), 4);
+    assert_eq!(td1.get_rank(0.99), Some(0.0));
+    assert_eq!(td1.get_rank(1.0), Some(0.125));
+    assert_eq!(td1.get_rank(2.0), Some(0.5));
+    assert_eq!(td1.get_rank(3.0), Some(0.875));
+    assert_eq!(td1.get_rank(3.01), Some(1.0));
+}
+
+#[test]
+fn test_merge_large() {
+    let n = 10000;
+
+    let mut td1 = TDigest::new(10);
+    let mut td2 = TDigest::new(10);
+    let sup = n / 2;
+    for i in 0..sup {
+        td1.update(i as f64);
+        td2.update((sup + i) as f64);
+    }
+    td1.merge(&td2);
+
+    assert_eq!(td1.total_weight(), n);
+    assert_eq!(td1.min_value(), Some(0.0));
+    assert_eq!(td1.max_value(), Some((n - 1) as f64));
+
+    assert_that!(td1.get_rank(0.0).unwrap(), near(0.0, 0.0001));
+    assert_that!(td1.get_rank((n / 4) as f64).unwrap(), near(0.25, 0.0001));
+    assert_that!(td1.get_rank((n / 2) as f64).unwrap(), near(0.5, 0.0001));
+    assert_that!(
+        td1.get_rank((n * 3 / 4) as f64).unwrap(),
+        near(0.75, 0.0001)
+    );
+    assert_that!(td1.get_rank(n as f64).unwrap(), eq(1.0));
 }

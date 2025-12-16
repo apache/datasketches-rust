@@ -120,6 +120,27 @@ impl TDigest {
         self.centroids_weight + (self.buffer.len() as u64)
     }
 
+    /// Merge the given t-Digest into this one
+    pub fn merge(&mut self, other: &TDigest) {
+        if other.is_empty() {
+            return;
+        }
+
+        let mut tmp = Vec::with_capacity(
+            self.centroids.len() + self.buffer.len() + other.centroids.len() + other.buffer.len(),
+        );
+        for &v in &self.buffer {
+            tmp.push(Centroid { mean: v, weight: 1 });
+        }
+        for &v in &other.buffer {
+            tmp.push(Centroid { mean: v, weight: 1 });
+        }
+        for &c in &other.centroids {
+            tmp.push(c);
+        }
+        self.do_merge(tmp, self.buffer.len() as u64 + other.total_weight())
+    }
+
     /// Compute approximate normalized rank (from 0 to 1 inclusive) of the given value.
     ///
     /// Returns `None` if TDigest is empty.
@@ -333,7 +354,7 @@ impl TDigest {
         for &v in &self.buffer {
             tmp.push(Centroid { mean: v, weight: 1 });
         }
-        self.merge(tmp, self.buffer.len() as u64)
+        self.do_merge(tmp, self.buffer.len() as u64)
     }
 
     /// Merges the given buffer of centroids into this TDigest.
@@ -344,7 +365,7 @@ impl TDigest {
     /// * `buffer` is generated from `self.buffer`, and thus:
     ///     * No `NAN` values are present in `buffer`.
     ///     * We should clear `self.buffer` after merging.
-    fn merge(&mut self, mut buffer: Vec<Centroid>, weight: u64) {
+    fn do_merge(&mut self, mut buffer: Vec<Centroid>, weight: u64) {
         buffer.extend(std::mem::take(&mut self.centroids));
         buffer.sort_by(centroid_cmp);
         if self.reverse_merge {
