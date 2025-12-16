@@ -68,6 +68,7 @@ mod hash_set;
 mod list;
 mod serialization;
 mod sketch;
+mod mode;
 
 pub use self::estimator::NumStdDev;
 pub use self::sketch::HllSketch;

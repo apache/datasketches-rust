@@ -245,6 +245,11 @@ impl Array4 {
         self.estimator.set_hip_accum(value);
     }
 
+    /// Check if the sketch is empty (all slots are zero)
+    pub fn is_empty(&self) -> bool {
+        self.num_at_cur_min == (1 << self.lg_config_k) && self.cur_min == 0
+    }
+
     /// Deserialize Array4 from HLL mode bytes
     ///
     /// Expects full HLL preamble (40 bytes) followed by packed 4-bit data and optional aux map.

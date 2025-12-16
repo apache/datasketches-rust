@@ -31,14 +31,7 @@ use crate::hll::hash_set::HashSet;
 use crate::hll::list::List;
 use crate::hll::serialization::*;
 use crate::hll::{HllType, NumStdDev, RESIZE_DENOMINATOR, RESIZE_NUMERATOR, coupon};
-
-/// Current sketch mode
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum CurMode {
-    List = 0,
-    Set = 1,
-    Hll = 2,
-}
+use crate::hll::mode::Mode;
 
 /// A HyperLogLog sketch.
 ///
@@ -47,15 +40,6 @@ enum CurMode {
 pub struct HllSketch {
     lg_config_k: u8,
     mode: Mode,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-enum Mode {
-    List { list: List, hll_type: HllType },
-    Set { set: HashSet, hll_type: HllType },
-    Array4(Array4),
-    Array6(Array6),
-    Array8(Array8),
 }
 
 impl HllSketch {
@@ -83,6 +67,32 @@ impl HllSketch {
         Self {
             lg_config_k,
             mode: Mode::List { list, hll_type },
+        }
+    }
+
+    pub(super) fn mode(&self) -> &Mode {
+        &self.mode
+    }
+
+    /// Check if the sketch is empty (no values have been added)
+    pub fn is_empty(&self) -> bool {
+        match &self.mode {
+            Mode::List { list, .. } => list.container().is_empty(),
+            Mode::Set { set, .. } => set.container().is_empty(),
+            Mode::Array4(arr) => arr.is_empty(),
+            Mode::Array6(arr) => arr.is_empty(),
+            Mode::Array8(arr) => arr.is_empty(),
+        }
+    }
+
+    /// Get the target HLL type for this sketch
+    pub fn target_type(&self) -> HllType {
+        match &self.mode {
+            Mode::List { hll_type, .. } => *hll_type,
+            Mode::Set { hll_type, .. } => *hll_type,
+            Mode::Array4(_) => HllType::Hll4,
+            Mode::Array6(_) => HllType::Hll6,
+            Mode::Array8(_) => HllType::Hll8,
         }
     }
 
@@ -214,13 +224,6 @@ impl HllSketch {
             )));
         }
 
-        // Extract mode and type
-        let cur_mode = match extract_cur_mode(mode_byte) {
-            CUR_MODE_LIST => CurMode::List,
-            CUR_MODE_SET => CurMode::Set,
-            CUR_MODE_HLL => CurMode::Hll,
-            mode => return Err(SerdeError::MalformedData(format!("invalid mode: {}", mode))),
-        };
         let hll_type = match extract_tgt_hll_type(mode_byte) {
             TGT_HLL4 => HllType::Hll4,
             TGT_HLL6 => HllType::Hll6,
@@ -232,14 +235,15 @@ impl HllSketch {
                 )));
             }
         };
+
         let empty = (flags & EMPTY_FLAG_MASK) != 0;
         let compact = (flags & COMPACT_FLAG_MASK) != 0;
         let ooo = (flags & OUT_OF_ORDER_FLAG_MASK) != 0;
 
         // Deserialize based on mode
         let mode =
-            match cur_mode {
-                CurMode::List => {
+            match extract_cur_mode(mode_byte) {
+                CUR_MODE_LIST => {
                     if preamble_ints != LIST_PREINTS {
                         return Err(SerdeError::MalformedData(format!(
                             "LIST mode preamble: expected {}, got {}",
@@ -250,7 +254,7 @@ impl HllSketch {
                     let list = List::deserialize(bytes, empty, compact)?;
                     Mode::List { list, hll_type }
                 }
-                CurMode::Set => {
+                CUR_MODE_SET => {
                     if preamble_ints != HASH_SET_PREINTS {
                         return Err(SerdeError::MalformedData(format!(
                             "SET mode preamble: expected {}, got {}",
@@ -261,7 +265,7 @@ impl HllSketch {
                     let set = HashSet::deserialize(bytes, compact)?;
                     Mode::Set { set, hll_type }
                 }
-                CurMode::Hll => {
+                CUR_MODE_HLL => {
                     if preamble_ints != HLL_PREINTS {
                         return Err(SerdeError::MalformedData(format!(
                             "HLL mode preamble: expected {}, got {}",
@@ -278,6 +282,7 @@ impl HllSketch {
                             .map(Mode::Array8)?,
                     }
                 }
+                mode => return Err(SerdeError::MalformedData(format!("invalid mode: {}", mode))),
             };
 
         Ok(HllSketch { lg_config_k, mode })
