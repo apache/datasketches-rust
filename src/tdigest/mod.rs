@@ -49,24 +49,9 @@
 //! [paper]: https://arxiv.org/abs/1902.04023
 
 mod serialization;
+
 mod sketch;
-
-/// T-Digest sketch for estimating quantiles and ranks.
-///
-/// See the [module documentation](self) for more details.
-#[derive(Debug, Clone, PartialEq)]
-pub struct TDigest {
-    k: u16,
-
-    reverse_merge: bool,
-    min: f64,
-    max: f64,
-
-    centroids: Vec<Centroid>,
-    centroids_weight: u64,
-    centroids_capacity: usize,
-    buffer: Vec<f64>,
-}
+pub use self::sketch::TDigest;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct Centroid {
