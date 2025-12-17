@@ -30,10 +30,22 @@ fn test_empty() {
     assert_eq!(tdigest.rank(0.0), None);
     assert_eq!(tdigest.quantile(0.5), None);
 
-    // TODO: Support PMF and CDF
-    // const double split_points[1] {0};
-    // REQUIRE_THROWS_AS(td.get_PMF(split_points, 1), std::runtime_error);
-    // REQUIRE_THROWS_AS(td.get_CDF(split_points, 1), std::runtime_error);
+    let split_points = [0.0];
+    assert_eq!(tdigest.pmf(&split_points), None);
+    assert_eq!(tdigest.cdf(&split_points), None);
+
+    let tdigest = TDigestMut::new(10).freeze();
+    assert!(tdigest.is_empty());
+    assert_eq!(tdigest.k(), 10);
+    assert_eq!(tdigest.total_weight(), 0);
+    assert_eq!(tdigest.min_value(), None);
+    assert_eq!(tdigest.max_value(), None);
+    assert_eq!(tdigest.rank(0.0), None);
+    assert_eq!(tdigest.quantile(0.5), None);
+
+    let split_points = [0.0];
+    assert_eq!(tdigest.pmf(&split_points), None);
+    assert_eq!(tdigest.cdf(&split_points), None);
 }
 
 #[test]
@@ -89,16 +101,15 @@ fn test_many_values() {
     );
     assert_that!(tdigest.quantile(1.0).unwrap(), eq((n - 1) as f64));
 
-    // TODO: Later until PMF and CDF are supported
-    // const double split_points[1] {n / 2};
-    // const auto pmf = td.get_PMF(split_points, 1);
-    // REQUIRE(pmf.size() == 2);
-    // REQUIRE(pmf[0] == Approx(0.5).margin(0.0001));
-    // REQUIRE(pmf[1] == Approx(0.5).margin(0.0001));
-    // const auto cdf = td.get_CDF(split_points, 1);
-    // REQUIRE(cdf.size() == 2);
-    // REQUIRE(cdf[0] == Approx(0.5).margin(0.0001));
-    // REQUIRE(cdf[1] == 1);
+    let split_points = [n as f64 / 2.0];
+    let pmf = tdigest.pmf(&split_points).unwrap();
+    assert_eq!(pmf.len(), 2);
+    assert_that!(pmf[0], near(0.5, 0.0001));
+    assert_that!(pmf[1], near(0.5, 0.0001));
+    let cdf = tdigest.cdf(&split_points).unwrap();
+    assert_eq!(cdf.len(), 2);
+    assert_that!(cdf[0], near(0.5, 0.0001));
+    assert_that!(cdf[1], eq(1.0));
 }
 
 #[test]

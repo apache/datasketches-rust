@@ -182,13 +182,73 @@ impl TDigestMut {
         }
     }
 
-    fn view(&self) -> TDigestView<'_> {
+    fn view(&mut self) -> TDigestView<'_> {
+        self.compress(); // side effect
         TDigestView {
             min: self.min,
             max: self.max,
             centroids: &self.centroids,
             centroids_weight: self.centroids_weight,
         }
+    }
+
+    /// Returns an approximation to the Cumulative Distribution Function (CDF), which is the
+    /// cumulative analog of the PMF, of the input stream given a set of split points.
+    ///
+    /// # Arguments
+    ///
+    /// * `split_points`: An array of _m_ unique, monotonically increasing values that divide the
+    ///   input domain into _m+1_ consecutive disjoint intervals.
+    ///
+    /// # Returns
+    ///
+    /// An array of m+1 doubles, which are a consecutive approximation to the CDF of the input
+    /// stream given the split points. The value at array position j of the returned CDF array
+    /// is the sum of the returned values in positions 0 through j of the returned PMF array.
+    /// This can be viewed as array of ranks of the given split points plus one more value that
+    /// is always 1.
+    ///
+    /// Returns `None` if TDigest is empty.
+    ///
+    /// # Panics
+    ///
+    /// If `split_points` is not unique, not monotonically increasing, or contains `NaN` values.
+    pub fn cdf(&mut self, split_points: &[f64]) -> Option<Vec<f64>> {
+        check_split_points(split_points);
+
+        if self.is_empty() {
+            return None;
+        }
+
+        self.view().cdf(split_points)
+    }
+
+    /// Returns an approximation to the Probability Mass Function (PMF) of the input stream
+    /// given a set of split points.
+    ///
+    /// # Arguments
+    ///
+    /// * `split_points`: An array of _m_ unique, monotonically increasing values that divide the
+    ///   input domain into _m+1_ consecutive disjoint intervals (bins).
+    ///
+    /// # Returns
+    ///
+    /// An array of m+1 doubles each of which is an approximation to the fraction of the input
+    /// stream values (the mass) that fall into one of those intervals.
+    ///
+    /// Returns `None` if TDigest is empty.
+    ///
+    /// # Panics
+    ///
+    /// If `split_points` is not unique, not monotonically increasing, or contains `NaN` values.
+    pub fn pmf(&mut self, split_points: &[f64]) -> Option<Vec<f64>> {
+        check_split_points(split_points);
+
+        if self.is_empty() {
+            return None;
+        }
+
+        self.view().pmf(split_points)
     }
 
     /// Compute approximate normalized rank (from 0 to 1 inclusive) of the given value.
@@ -215,7 +275,6 @@ impl TDigestMut {
             return Some(0.5);
         }
 
-        self.compress(); // side effect
         self.view().rank(value)
     }
 
@@ -233,7 +292,6 @@ impl TDigestMut {
             return None;
         }
 
-        self.compress(); // side effect
         self.view().quantile(rank)
     }
 
@@ -658,6 +716,53 @@ impl TDigest {
         }
     }
 
+    /// Returns an approximation to the Cumulative Distribution Function (CDF), which is the
+    /// cumulative analog of the PMF, of the input stream given a set of split points.
+    ///
+    /// # Arguments
+    ///
+    /// * `split_points`: An array of _m_ unique, monotonically increasing values that divide the
+    ///   input domain into _m+1_ consecutive disjoint intervals.
+    ///
+    /// # Returns
+    ///
+    /// An array of m+1 doubles, which are a consecutive approximation to the CDF of the input
+    /// stream given the split points. The value at array position j of the returned CDF array
+    /// is the sum of the returned values in positions 0 through j of the returned PMF array.
+    /// This can be viewed as array of ranks of the given split points plus one more value that
+    /// is always 1.
+    ///
+    /// Returns `None` if TDigest is empty.
+    ///
+    /// # Panics
+    ///
+    /// If `split_points` is not unique, not monotonically increasing, or contains `NaN` values.
+    pub fn cdf(&self, split_points: &[f64]) -> Option<Vec<f64>> {
+        self.view().cdf(split_points)
+    }
+
+    /// Returns an approximation to the Probability Mass Function (PMF) of the input stream
+    /// given a set of split points.
+    ///
+    /// # Arguments
+    ///
+    /// * `split_points`: An array of _m_ unique, monotonically increasing values that divide the
+    ///   input domain into _m+1_ consecutive disjoint intervals (bins).
+    ///
+    /// # Returns
+    ///
+    /// An array of m+1 doubles each of which is an approximation to the fraction of the input
+    /// stream values (the mass) that fall into one of those intervals.
+    ///
+    /// Returns `None` if TDigest is empty.
+    ///
+    /// # Panics
+    ///
+    /// If `split_points` is not unique, not monotonically increasing, or contains `NaN` values.
+    pub fn pmf(&self, split_points: &[f64]) -> Option<Vec<f64>> {
+        self.view().pmf(split_points)
+    }
+
     /// Compute approximate normalized rank (from 0 to 1 inclusive) of the given value.
     ///
     /// Returns `None` if TDigest is empty.
@@ -705,6 +810,32 @@ struct TDigestView<'a> {
 }
 
 impl TDigestView<'_> {
+    fn pmf(&self, split_points: &[f64]) -> Option<Vec<f64>> {
+        let mut buckets = self.cdf(split_points)?;
+        for i in (1..buckets.len()).rev() {
+            buckets[i] -= buckets[i - 1];
+        }
+        Some(buckets)
+    }
+
+    fn cdf(&self, split_points: &[f64]) -> Option<Vec<f64>> {
+        check_split_points(split_points);
+
+        if self.centroids.is_empty() {
+            return None;
+        }
+
+        let mut ranks = Vec::with_capacity(split_points.len() + 1);
+        for &p in split_points {
+            match self.rank(p) {
+                Some(rank) => ranks.push(rank),
+                None => unreachable!("non-empty TDigest never returns None from rank"),
+            }
+        }
+        ranks.push(1.0);
+        Some(ranks)
+    }
+
     fn rank(&self, value: f64) -> Option<f64> {
         debug_assert!(!value.is_nan(), "value must not be NaN");
 
@@ -879,6 +1010,23 @@ impl TDigestView<'_> {
             self.max,
             w2,
         ))
+    }
+}
+
+/// Checks the sequential validity of the given array of double values.
+/// They must be unique, monotonically increasing and not NaN.
+#[track_caller]
+fn check_split_points(split_points: &[f64]) {
+    let len = split_points.len();
+    if len == 1 && split_points[0].is_nan() {
+        panic!("split_points must not contain NaN values: {split_points:?}");
+    }
+    for i in 0..len - 1 {
+        if split_points[i] < split_points[i + 1] {
+            // we must use this positive condition because NaN comparisons are always false
+            continue;
+        }
+        panic!("split_points must be unique and monotonically increasing: {split_points:?}");
     }
 }
 
