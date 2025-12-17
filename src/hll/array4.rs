@@ -71,6 +71,35 @@ impl Array4 {
         }
     }
 
+    /// Get the actual value at a slot (adjusted for cur_min and aux_map)
+    ///
+    /// Returns the true register value:
+    /// - If raw < 15: value = cur_min + raw
+    /// - If raw == 15 (AUX_TOKEN): value is in aux_map
+    pub(super) fn get(&self, slot: u32) -> u8 {
+        let raw = self.get_raw(slot);
+
+        if raw < AUX_TOKEN {
+            self.cur_min + raw
+        } else {
+            // Value is in aux_map
+            self.aux_map
+                .as_ref()
+                .and_then(|map| map.get(slot))
+                .unwrap_or(self.cur_min) // Fallback (shouldn't happen)
+        }
+    }
+
+    /// Get the number of registers (K = 2^lg_config_k)
+    pub(super) fn num_registers(&self) -> usize {
+        1 << self.lg_config_k
+    }
+
+    /// Get the current HIP accumulator value
+    pub(super) fn hip_accum(&self) -> f64 {
+        self.estimator.hip_accum()
+    }
+
     /// Set raw 4-bit value in slot
     #[inline]
     fn put_raw(&mut self, slot: u32, value: u8) {
@@ -245,6 +274,11 @@ impl Array4 {
         self.estimator.set_hip_accum(value);
     }
 
+    /// Check if the sketch is empty (all slots are zero)
+    pub fn is_empty(&self) -> bool {
+        self.num_at_cur_min == (1 << self.lg_config_k) && self.cur_min == 0
+    }
+
     /// Deserialize Array4 from HLL mode bytes
     ///
     /// Expects full HLL preamble (40 bytes) followed by packed 4-bit data and optional aux map.
@@ -256,6 +290,14 @@ impl Array4 {
     ) -> Result<Self, SerdeError> {
         use crate::hll::serialization::*;
         use crate::hll::{get_slot, get_value};
+
+        if bytes.len() < HLL_PREAMBLE_SIZE {
+            return Err(SerdeError::InsufficientData(format!(
+                "expected at least {}, got {}",
+                HLL_PREAMBLE_SIZE,
+                bytes.len()
+            )));
+        }
 
         let num_bytes = 1 << (lg_config_k - 1); // k/2 bytes for 4-bit packing
 

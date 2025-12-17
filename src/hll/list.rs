@@ -100,7 +100,7 @@ impl List {
     /// Serialize a List to bytes
     pub fn serialize(&self, lg_config_k: u8, hll_type: HllType) -> Vec<u8> {
         let compact = true; // Always use compact format
-        let empty = self.container.len() == 0;
+        let empty = self.container.is_empty();
         let coupon_count = self.container.len();
         let lg_arr = self.container.lg_size();
 
