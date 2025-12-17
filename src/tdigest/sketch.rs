@@ -178,7 +178,6 @@ impl TDigestMut {
             max: self.max,
             centroids: self.centroids,
             centroids_weight: self.centroids_weight,
-            centroids_capacity: self.centroids_capacity,
         }
     }
 
@@ -670,7 +669,6 @@ pub struct TDigest {
 
     centroids: Vec<Centroid>,
     centroids_weight: u64,
-    centroids_capacity: usize,
 }
 
 impl TDigest {
