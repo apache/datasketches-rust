@@ -30,7 +30,7 @@ const BUFFER_MULTIPLIER: usize = 4;
 
 /// T-Digest sketch for estimating quantiles and ranks.
 ///
-/// See the [module documentation](self) for more details.
+/// See the [module documentation](super) for more details.
 #[derive(Debug, Clone)]
 pub struct TDigestMut {
     k: u16,
@@ -376,7 +376,7 @@ impl TDigestMut {
     /// Supports reading format of the reference implementation (auto-detected) [^2].
     ///
     /// [^1]: This is to support reading the `tdigest<float>` format from the C++ implementation.
-    /// [^2]: https://github.com/tdunning/t-digest
+    /// [^2]: <https://github.com/tdunning/t-digest>
     pub fn deserialize(bytes: &[u8], is_f32: bool) -> Result<Self, SerdeError> {
         fn make_error(tag: &'static str) -> impl FnOnce(std::io::Error) -> SerdeError {
             move |_| SerdeError::InsufficientData(tag.to_string())
@@ -660,7 +660,7 @@ impl TDigestMut {
 
 /// Immutable (frozen) T-Digest sketch for estimating quantiles and ranks.
 ///
-/// See the [module documentation](self) for more details.
+/// See the [module documentation](super) for more details.
 pub struct TDigest {
     k: u16,
 
