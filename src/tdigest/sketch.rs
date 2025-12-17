@@ -788,8 +788,7 @@ impl TDigest {
     }
 
     /// Converts this immutable TDigest into a mutable one.
-    pub fn into_mut(mut self) -> TDigestMut {
-        self.centroids.reserve(self.centroids_capacity);
+    pub fn unfreeze(self) -> TDigestMut {
         TDigestMut::make(
             self.k,
             self.reverse_merge,
@@ -797,7 +796,7 @@ impl TDigest {
             self.max,
             self.centroids,
             self.centroids_weight,
-            Vec::with_capacity(self.centroids_capacity * BUFFER_MULTIPLIER),
+            vec![],
         )
     }
 }

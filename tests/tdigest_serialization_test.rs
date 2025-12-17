@@ -65,7 +65,7 @@ fn test_sketch_file(path: PathBuf, n: u64, with_buffer: bool, is_f32: bool) {
     }
 
     if !with_buffer && !is_f32 {
-        let mut td = td.into_mut();
+        let mut td = td.unfreeze();
         let roundtrip_bytes = td.serialize();
         assert_eq!(bytes, roundtrip_bytes, "filepath: {path}");
     }
