@@ -58,8 +58,9 @@ impl HllSketch {
     /// If lg_config_k is not in range [4, 21]
     pub fn new(lg_config_k: u8, hll_type: HllType) -> Self {
         assert!(
-            lg_config_k > 4 && lg_config_k < 21,
-            "lg_config_k must be in [4, 21]"
+            (4..=21).contains(&lg_config_k),
+            "lg_config_k must be in [4, 21], got {}",
+            lg_config_k
         );
 
         let list = List::default();
