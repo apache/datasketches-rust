@@ -381,20 +381,6 @@ impl TDigestMut {
             move |_| SerdeError::InsufficientData(tag.to_string())
         }
 
-        fn check_non_nan(value: f64, tag: &'static str) -> Result<(), SerdeError> {
-            if value.is_nan() {
-                return Err(SerdeError::MalformedData(format!("{tag} cannot be NaN")));
-            }
-            Ok(())
-        }
-
-        fn check_nonzero(value: u64, tag: &'static str) -> Result<(), SerdeError> {
-            if value == 0 {
-                return Err(SerdeError::MalformedData(format!("{tag} cannot be zero")));
-            }
-            Ok(())
-        }
-
         let mut cursor = Cursor::new(bytes);
 
         let preamble_longs = cursor.read_u8().map_err(make_error("preamble_longs"))?;
@@ -416,6 +402,11 @@ impl TDigestMut {
             )));
         }
         let k = cursor.read_u16::<LE>().map_err(make_error("k"))?;
+        if k < 10 {
+            return Err(SerdeError::InvalidParameter(format!(
+                "k must be at least 10, got {k}"
+            )));
+        }
         let flags = cursor.read_u8().map_err(make_error("flags"))?;
         let is_empty = (flags & FLAGS_IS_EMPTY) != 0;
         let is_single_value = (flags & FLAGS_IS_SINGLE_VALUE) != 0;
@@ -540,8 +531,15 @@ impl TDigestMut {
                 }
                 // compatibility with asBytes()
                 let min = cursor.read_f64::<BE>().map_err(make_error("min"))?;
+                check_non_nan(min, "min in compat format")?;
                 let max = cursor.read_f64::<BE>().map_err(make_error("max"))?;
+                check_non_nan(max, "max in compat format")?;
                 let k = cursor.read_f64::<BE>().map_err(make_error("k"))? as u16;
+                if k < 10 {
+                    return Err(SerdeError::InvalidParameter(format!(
+                        "k must be at least 10, got {k}"
+                    )));
+                }
                 let num_centroids = cursor
                     .read_u32::<BE>()
                     .map_err(make_error("num_centroids"))?
@@ -550,7 +548,9 @@ impl TDigestMut {
                 let mut centroids = Vec::with_capacity(num_centroids);
                 for _ in 0..num_centroids {
                     let weight = cursor.read_f64::<BE>().map_err(make_error("weight"))? as u64;
+                    check_nonzero(weight, "centroid weight in compat format")?;
                     let mean = cursor.read_f64::<BE>().map_err(make_error("mean"))?;
+                    check_non_nan(mean, "centroid mean in compat format")?;
                     total_weight += weight;
                     centroids.push(Centroid { mean, weight });
                 }
@@ -571,8 +571,15 @@ impl TDigestMut {
                 // COMPAT_FLOAT: compatibility with asSmallBytes()
                 // reference implementation uses doubles for min and max
                 let min = cursor.read_f64::<BE>().map_err(make_error("min"))?;
+                check_non_nan(min, "min in compat format")?;
                 let max = cursor.read_f64::<BE>().map_err(make_error("max"))?;
+                check_non_nan(max, "max in compat format")?;
                 let k = cursor.read_f32::<BE>().map_err(make_error("k"))? as u16;
+                if k < 10 {
+                    return Err(SerdeError::InvalidParameter(format!(
+                        "k must be at least 10, got {k}"
+                    )));
+                }
                 // reference implementation stores capacities of the array of centroids and the
                 // buffer as shorts they can be derived from k in the constructor
                 cursor.read_u32::<BE>().map_err(make_error("<unused>"))?;
@@ -584,7 +591,9 @@ impl TDigestMut {
                 let mut centroids = Vec::with_capacity(num_centroids);
                 for _ in 0..num_centroids {
                     let weight = cursor.read_f32::<BE>().map_err(make_error("weight"))? as u64;
+                    check_nonzero(weight, "centroid weight in compat format")?;
                     let mean = cursor.read_f32::<BE>().map_err(make_error("mean"))? as f64;
+                    check_non_nan(mean, "centroid mean in compat format")?;
                     total_weight += weight;
                     centroids.push(Centroid { mean, weight });
                 }
@@ -1051,7 +1060,8 @@ fn check_split_points(split_points: &[f64]) {
 fn centroid_cmp(a: &Centroid, b: &Centroid) -> Ordering {
     match a.mean.partial_cmp(&b.mean) {
         Some(order) => order,
-        None => unreachable!("NaN values should not be present in centroids"),
+        // FIXME: avoid panic on NaN but since now on the result is undefined
+        None => f64::total_cmp(&a.mean, &b.mean),
     }
 }
 
@@ -1111,6 +1121,20 @@ impl Centroid {
             self.weight = other.weight;
         }
     }
+}
+
+fn check_non_nan(value: f64, tag: &'static str) -> Result<(), SerdeError> {
+    if value.is_nan() {
+        return Err(SerdeError::MalformedData(format!("{tag} cannot be NaN")));
+    }
+    Ok(())
+}
+
+fn check_nonzero(value: u64, tag: &'static str) -> Result<(), SerdeError> {
+    if value == 0 {
+        return Err(SerdeError::MalformedData(format!("{tag} cannot be zero")));
+    }
+    Ok(())
 }
 
 /// Generates cluster sizes proportional to `q*(1-q)`.
