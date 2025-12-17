@@ -531,13 +531,13 @@ impl TDigestMut {
                 }
                 // compatibility with asBytes()
                 let min = cursor.read_f64::<BE>().map_err(make_error("min"))?;
-                check_non_nan(min, "min in compat format")?;
+                check_non_nan(min, "min in compat double format")?;
                 let max = cursor.read_f64::<BE>().map_err(make_error("max"))?;
-                check_non_nan(max, "max in compat format")?;
+                check_non_nan(max, "max in compat double format")?;
                 let k = cursor.read_f64::<BE>().map_err(make_error("k"))? as u16;
                 if k < 10 {
                     return Err(SerdeError::InvalidParameter(format!(
-                        "k must be at least 10, got {k}"
+                        "k must be at least 10, got {k} in compat double format"
                     )));
                 }
                 let num_centroids = cursor
@@ -548,9 +548,9 @@ impl TDigestMut {
                 let mut centroids = Vec::with_capacity(num_centroids);
                 for _ in 0..num_centroids {
                     let weight = cursor.read_f64::<BE>().map_err(make_error("weight"))? as u64;
-                    check_nonzero(weight, "centroid weight in compat format")?;
+                    check_nonzero(weight, "centroid weight in compat double format")?;
                     let mean = cursor.read_f64::<BE>().map_err(make_error("mean"))?;
-                    check_non_nan(mean, "centroid mean in compat format")?;
+                    check_non_nan(mean, "centroid mean in compat double format")?;
                     total_weight += weight;
                     centroids.push(Centroid { mean, weight });
                 }
@@ -571,13 +571,13 @@ impl TDigestMut {
                 // COMPAT_FLOAT: compatibility with asSmallBytes()
                 // reference implementation uses doubles for min and max
                 let min = cursor.read_f64::<BE>().map_err(make_error("min"))?;
-                check_non_nan(min, "min in compat format")?;
+                check_non_nan(min, "min in compat float format")?;
                 let max = cursor.read_f64::<BE>().map_err(make_error("max"))?;
-                check_non_nan(max, "max in compat format")?;
+                check_non_nan(max, "max in compat float format")?;
                 let k = cursor.read_f32::<BE>().map_err(make_error("k"))? as u16;
                 if k < 10 {
                     return Err(SerdeError::InvalidParameter(format!(
-                        "k must be at least 10, got {k}"
+                        "k must be at least 10, got {k} in compat float format"
                     )));
                 }
                 // reference implementation stores capacities of the array of centroids and the
@@ -591,9 +591,9 @@ impl TDigestMut {
                 let mut centroids = Vec::with_capacity(num_centroids);
                 for _ in 0..num_centroids {
                     let weight = cursor.read_f32::<BE>().map_err(make_error("weight"))? as u64;
-                    check_nonzero(weight, "centroid weight in compat format")?;
+                    check_nonzero(weight, "centroid weight in compat float format")?;
                     let mean = cursor.read_f32::<BE>().map_err(make_error("mean"))? as f64;
-                    check_non_nan(mean, "centroid mean in compat format")?;
+                    check_non_nan(mean, "centroid mean in compat float format")?;
                     total_weight += weight;
                     centroids.push(Centroid { mean, weight });
                 }
