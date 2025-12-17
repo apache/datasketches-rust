@@ -196,27 +196,34 @@ fn test_merge_large() {
 }
 
 #[test]
-fn test_infinite() {
+fn test_invalid_inputs() {
+    let n = 100;
+
     let mut td = TDigestMut::new(10);
-    for _ in 0..10000 {
+    for _ in 0..n {
+        td.update(f64::NAN);
+    }
+    assert!(td.is_empty());
+
+    let mut td = TDigestMut::new(10);
+    for _ in 0..n {
         td.update(f64::INFINITY);
     }
-    assert_eq!(td.quantile(0.5), Some(f64::INFINITY));
+    assert!(td.is_empty());
 
     let mut td = TDigestMut::new(10);
-    for _ in 0..10000 {
+    for _ in 0..n {
         td.update(f64::NEG_INFINITY);
     }
-    assert_eq!(td.quantile(0.5), Some(f64::NEG_INFINITY));
+    assert!(td.is_empty());
 
-    // FIXME: merging -inf and inf results in NaN centroid mean
-    // let mut td = TDigestMut::new(10);
-    // for i in 0..10000 {
-    //     if i % 2 == 0 {
-    //         td.update(f64::INFINITY);
-    //     } else {
-    //         td.update(f64::NEG_INFINITY);
-    //     }
-    // }
-    // assert!(td.quantile(0.5).is_some());
+    let mut td = TDigestMut::new(10);
+    for i in 0..n {
+        if i % 2 == 0 {
+            td.update(f64::INFINITY);
+        } else {
+            td.update(f64::NEG_INFINITY);
+        }
+    }
+    assert!(td.is_empty());
 }

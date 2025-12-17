@@ -99,9 +99,11 @@ impl TDigestMut {
         }
     }
 
-    /// Update this TDigest with the given value (`NaN` values are ignored).
+    /// Update this TDigest with the given value.
+    ///
+    /// [f64::NAN], [f64::INFINITY], and [f64::NEG_INFINITY] values are ignored.
     pub fn update(&mut self, value: f64) {
-        if value.is_nan() {
+        if value.is_nan() || value.is_infinite() {
             return;
         }
 
@@ -438,6 +440,7 @@ impl TDigestMut {
                     .map_err(make_error("single_value"))?
             };
             check_non_nan(value, "single_value")?;
+            check_non_infinite(value, "single_value")?;
             return Ok(TDigestMut::make(
                 k,
                 reverse_merge,
@@ -485,6 +488,7 @@ impl TDigestMut {
                 )
             };
             check_non_nan(mean, "centroid mean")?;
+            check_non_infinite(mean, "centroid")?;
             check_nonzero(weight, "centroid weight")?;
             centroids_weight += weight;
             centroids.push(Centroid { mean, weight });
@@ -501,6 +505,7 @@ impl TDigestMut {
                     .map_err(make_error("buffered_value"))?
             };
             check_non_nan(value, "buffered_value mean")?;
+            check_non_infinite(value, "buffered_value mean")?;
             buffer.push(value);
         }
         Ok(TDigestMut::make(
@@ -531,8 +536,8 @@ impl TDigestMut {
                 }
                 // compatibility with asBytes()
                 let min = cursor.read_f64::<BE>().map_err(make_error("min"))?;
-                check_non_nan(min, "min in compat double format")?;
                 let max = cursor.read_f64::<BE>().map_err(make_error("max"))?;
+                check_non_nan(min, "min in compat double format")?;
                 check_non_nan(max, "max in compat double format")?;
                 let k = cursor.read_f64::<BE>().map_err(make_error("k"))? as u16;
                 if k < 10 {
@@ -548,9 +553,10 @@ impl TDigestMut {
                 let mut centroids = Vec::with_capacity(num_centroids);
                 for _ in 0..num_centroids {
                     let weight = cursor.read_f64::<BE>().map_err(make_error("weight"))? as u64;
-                    check_nonzero(weight, "centroid weight in compat double format")?;
                     let mean = cursor.read_f64::<BE>().map_err(make_error("mean"))?;
+                    check_nonzero(weight, "centroid weight in compat double format")?;
                     check_non_nan(mean, "centroid mean in compat double format")?;
+                    check_non_infinite(mean, "centroid mean in compat double format")?;
                     total_weight += weight;
                     centroids.push(Centroid { mean, weight });
                 }
@@ -571,8 +577,8 @@ impl TDigestMut {
                 // COMPAT_FLOAT: compatibility with asSmallBytes()
                 // reference implementation uses doubles for min and max
                 let min = cursor.read_f64::<BE>().map_err(make_error("min"))?;
-                check_non_nan(min, "min in compat float format")?;
                 let max = cursor.read_f64::<BE>().map_err(make_error("max"))?;
+                check_non_nan(min, "min in compat float format")?;
                 check_non_nan(max, "max in compat float format")?;
                 let k = cursor.read_f32::<BE>().map_err(make_error("k"))? as u16;
                 if k < 10 {
@@ -591,9 +597,10 @@ impl TDigestMut {
                 let mut centroids = Vec::with_capacity(num_centroids);
                 for _ in 0..num_centroids {
                     let weight = cursor.read_f32::<BE>().map_err(make_error("weight"))? as u64;
-                    check_nonzero(weight, "centroid weight in compat float format")?;
                     let mean = cursor.read_f32::<BE>().map_err(make_error("mean"))? as f64;
+                    check_nonzero(weight, "centroid weight in compat float format")?;
                     check_non_nan(mean, "centroid mean in compat float format")?;
+                    check_non_infinite(mean, "centroid mean in compat float format")?;
                     total_weight += weight;
                     centroids.push(Centroid { mean, weight });
                 }
@@ -1060,8 +1067,7 @@ fn check_split_points(split_points: &[f64]) {
 fn centroid_cmp(a: &Centroid, b: &Centroid) -> Ordering {
     match a.mean.partial_cmp(&b.mean) {
         Some(order) => order,
-        // FIXME: avoid panic on NaN but since now on the result is undefined
-        None => f64::total_cmp(&a.mean, &b.mean),
+        None => unreachable!("NaN values should never be present in centroids"),
     }
 }
 
@@ -1090,32 +1096,17 @@ struct Centroid {
 impl Centroid {
     fn add(&mut self, other: Centroid) {
         if self.weight != 0 {
-            let total_weight = self.weight + other.weight;
-            let (self_mean, other_mean) = (self.mean, other.mean);
-            match (self_mean, other_mean) {
-                (f64::INFINITY, f64::INFINITY) => self.mean = f64::INFINITY,
-                (f64::NEG_INFINITY, f64::NEG_INFINITY) => self.mean = f64::NEG_INFINITY,
-                _ => {
-                    debug_assert!(
-                        !self_mean.is_nan() && !other_mean.is_nan(),
-                        "NaN values should never be present in centroids; self: {}, other: {}",
-                        self_mean,
-                        other_mean
-                    );
-                    self.mean = self_mean
-                        + ((other.weight as f64) * (other_mean - self_mean)
-                            / (total_weight as f64));
-                }
-            }
+            self.weight += other.weight;
 
+            let (total_weight, other_weight) = (self.weight as f64, other.weight as f64);
+            let (self_mean, other_mean) = (self.mean, other.mean);
+            self.mean = self_mean + (other_weight * (other_mean - self_mean) / (total_weight));
             debug_assert!(
                 !self.mean.is_nan(),
                 "NaN values should never be present in centroids; self: {}, other: {}",
                 self_mean,
                 other_mean
             );
-
-            self.weight = total_weight;
         } else {
             self.mean = other.mean;
             self.weight = other.weight;
@@ -1126,6 +1117,13 @@ impl Centroid {
 fn check_non_nan(value: f64, tag: &'static str) -> Result<(), SerdeError> {
     if value.is_nan() {
         return Err(SerdeError::MalformedData(format!("{tag} cannot be NaN")));
+    }
+    Ok(())
+}
+
+fn check_non_infinite(value: f64, tag: &'static str) -> Result<(), SerdeError> {
+    if value.is_infinite() {
+        return Err(SerdeError::MalformedData(format!("{tag} cannot be is_infinite")));
     }
     Ok(())
 }
