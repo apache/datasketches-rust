@@ -381,6 +381,20 @@ impl TDigestMut {
             move |_| SerdeError::InsufficientData(tag.to_string())
         }
 
+        fn check_non_nan(value: f64, tag: &'static str) -> Result<(), SerdeError> {
+            if value.is_nan() {
+                return Err(SerdeError::MalformedData(format!("{tag} cannot be NaN")));
+            }
+            Ok(())
+        }
+
+        fn check_nonzero(value: u64, tag: &'static str) -> Result<(), SerdeError> {
+            if value == 0 {
+                return Err(SerdeError::MalformedData(format!("{tag} cannot be zero")));
+            }
+            Ok(())
+        }
+
         let mut cursor = Cursor::new(bytes);
 
         let preamble_longs = cursor.read_u8().map_err(make_error("preamble_longs"))?;
@@ -432,6 +446,7 @@ impl TDigestMut {
                     .read_f64::<LE>()
                     .map_err(make_error("single_value"))?
             };
+            check_non_nan(value, "single_value")?;
             return Ok(TDigestMut::make(
                 k,
                 reverse_merge,
@@ -462,6 +477,8 @@ impl TDigestMut {
                 cursor.read_f64::<LE>().map_err(make_error("max"))?,
             )
         };
+        check_non_nan(min, "min")?;
+        check_non_nan(max, "max")?;
         let mut centroids = Vec::with_capacity(num_centroids);
         let mut centroids_weight = 0;
         for _ in 0..num_centroids {
@@ -476,12 +493,14 @@ impl TDigestMut {
                     cursor.read_u64::<LE>().map_err(make_error("weight"))?,
                 )
             };
+            check_non_nan(mean, "centroid mean")?;
+            check_nonzero(weight, "centroid weight")?;
             centroids_weight += weight;
             centroids.push(Centroid { mean, weight });
         }
         let mut buffer = Vec::with_capacity(num_buffered);
         for _ in 0..num_buffered {
-            buffer.push(if is_f32 {
+            let value = if is_f32 {
                 cursor
                     .read_f32::<LE>()
                     .map_err(make_error("buffered_value"))? as f64
@@ -489,7 +508,9 @@ impl TDigestMut {
                 cursor
                     .read_f64::<LE>()
                     .map_err(make_error("buffered_value"))?
-            })
+            };
+            check_non_nan(value, "buffered_value mean")?;
+            buffer.push(value);
         }
         Ok(TDigestMut::make(
             k,
@@ -826,7 +847,7 @@ impl TDigestView<'_> {
         for &p in split_points {
             match self.rank(p) {
                 Some(rank) => ranks.push(rank),
-                None => unreachable!("non-empty TDigest never returns None from rank"),
+                None => unreachable!("checked non-empty above"),
             }
         }
         ranks.push(1.0);
@@ -1030,7 +1051,7 @@ fn check_split_points(split_points: &[f64]) {
 fn centroid_cmp(a: &Centroid, b: &Centroid) -> Ordering {
     match a.mean.partial_cmp(&b.mean) {
         Some(order) => order,
-        None => unreachable!("NaN values should never be present in centroids"),
+        None => unreachable!("NaN values should not be present in centroids"),
     }
 }
 
@@ -1060,7 +1081,30 @@ impl Centroid {
     fn add(&mut self, other: Centroid) {
         if self.weight != 0 {
             let total_weight = self.weight + other.weight;
-            self.mean += (other.weight as f64) * (other.mean - self.mean) / (total_weight as f64);
+            let (self_mean, other_mean) = (self.mean, other.mean);
+            match (self_mean, other_mean) {
+                (f64::INFINITY, f64::INFINITY) => self.mean = f64::INFINITY,
+                (f64::NEG_INFINITY, f64::NEG_INFINITY) => self.mean = f64::NEG_INFINITY,
+                _ => {
+                    debug_assert!(
+                        !self_mean.is_nan() && !other_mean.is_nan(),
+                        "NaN values should never be present in centroids; self: {}, other: {}",
+                        self_mean,
+                        other_mean
+                    );
+                    self.mean = self_mean
+                        + ((other.weight as f64) * (other_mean - self_mean)
+                            / (total_weight as f64));
+                }
+            }
+
+            debug_assert!(
+                !self.mean.is_nan(),
+                "NaN values should never be present in centroids; self: {}, other: {}",
+                self_mean,
+                other_mean
+            );
+
             self.weight = total_weight;
         } else {
             self.mean = other.mean;

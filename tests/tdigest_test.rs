@@ -194,3 +194,29 @@ fn test_merge_large() {
     assert_that!(td1.rank((n * 3 / 4) as f64).unwrap(), near(0.75, 0.0001));
     assert_that!(td1.rank(n as f64).unwrap(), eq(1.0));
 }
+
+#[test]
+fn test_infinite() {
+    let mut td = TDigestMut::new(10);
+    for _ in 0..10000 {
+        td.update(f64::INFINITY);
+    }
+    assert_eq!(td.quantile(0.5), Some(f64::INFINITY));
+
+    let mut td = TDigestMut::new(10);
+    for _ in 0..10000 {
+        td.update(f64::NEG_INFINITY);
+    }
+    assert_eq!(td.quantile(0.5), Some(f64::NEG_INFINITY));
+
+    // FIXME: merging -inf and inf results in NaN centroid mean
+    // let mut td = TDigestMut::new(10);
+    // for i in 0..10000 {
+    //     if i % 2 == 0 {
+    //         td.update(f64::INFINITY);
+    //     } else {
+    //         td.update(f64::NEG_INFINITY);
+    //     }
+    // }
+    // assert!(td.quantile(0.5).is_some());
+}
