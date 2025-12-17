@@ -17,15 +17,22 @@
 
 use datasketches::tdigest::TDigestMut;
 use googletest::assert_that;
-use googletest::prelude::near;
+use googletest::prelude::{eq, near};
 use std::fs;
 use std::path::PathBuf;
 
-const TEST_DATA_DIR: &str = "tests/serialization_test_data";
+const TEST_DATA_DIR: &str = "tests/test_data";
+const SERDE_TEST_DATA_DIR: &str = "tests/serialization_test_data";
 
-fn get_test_data_path(sub_dir: &str, name: &str) -> PathBuf {
+fn get_test_data_path(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join(TEST_DATA_DIR)
+        .join(name)
+}
+
+fn get_serde_test_data_path(sub_dir: &str, name: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join(SERDE_TEST_DATA_DIR)
         .join(sub_dir)
         .join(name)
 }
@@ -34,34 +41,25 @@ fn test_sketch_file(path: PathBuf, n: u64, with_buffer: bool, is_f32: bool) {
     let bytes = fs::read(&path).unwrap();
     let td = TDigestMut::deserialize(&bytes, is_f32).unwrap();
     let td = td.freeze();
+
+    let path = path.display();
     if n == 0 {
-        assert!(td.is_empty(), "filepath: {}", path.display());
-        assert_eq!(td.total_weight(), 0, "filepath: {}", path.display());
+        assert!(td.is_empty(), "filepath: {path}");
+        assert_eq!(td.total_weight(), 0, "filepath: {path}");
     } else {
-        assert!(!td.is_empty(), "filepath: {}", path.display());
-        assert_eq!(td.total_weight(), n, "filepath: {}", path.display());
-        assert_eq!(td.min_value(), Some(1.0), "filepath: {}", path.display());
-        assert_eq!(
-            td.max_value(),
-            Some(n as f64),
-            "filepath: {}",
-            path.display()
-        );
-        assert_eq!(td.rank(0.0), Some(0.0), "filepath: {}", path.display());
-        assert_eq!(
-            td.rank((n + 1) as f64),
-            Some(1.0),
-            "filepath: {}",
-            path.display()
-        );
+        assert!(!td.is_empty(), "filepath: {path}");
+        assert_eq!(td.total_weight(), n, "filepath: {path}");
+        assert_eq!(td.min_value(), Some(1.0), "filepath: {path}");
+        assert_eq!(td.max_value(), Some(n as f64), "filepath: {path}");
+        assert_eq!(td.rank(0.0), Some(0.0), "filepath: {path}");
+        assert_eq!(td.rank((n + 1) as f64), Some(1.0), "filepath: {path}");
         if n == 1 {
-            assert_eq!(td.rank(n as f64), Some(0.5), "filepath: {}", path.display());
+            assert_eq!(td.rank(n as f64), Some(0.5), "filepath: {path}");
         } else {
             assert_that!(
                 td.rank(n as f64 / 2.).unwrap(),
                 near(0.5, 0.05),
-                "filepath: {}",
-                path.display()
+                "filepath: {path}",
             );
         }
     }
@@ -69,7 +67,7 @@ fn test_sketch_file(path: PathBuf, n: u64, with_buffer: bool, is_f32: bool) {
     if !with_buffer && !is_f32 {
         let mut td = td.into_mut();
         let roundtrip_bytes = td.serialize();
-        assert_eq!(bytes, roundtrip_bytes, "filepath: {}", path.display());
+        assert_eq!(bytes, roundtrip_bytes, "filepath: {path}");
     }
 }
 
@@ -78,23 +76,60 @@ fn test_deserialize_from_cpp_snapshots() {
     let ns = [0, 1, 10, 100, 1000, 10_000, 100_000, 1_000_000];
     for n in ns {
         let filename = format!("tdigest_double_n{}_cpp.sk", n);
-        let path = get_test_data_path("cpp_generated_files", &filename);
+        let path = get_serde_test_data_path("cpp_generated_files", &filename);
         test_sketch_file(path, n, false, false);
     }
     for n in ns {
         let filename = format!("tdigest_double_buf_n{}_cpp.sk", n);
-        let path = get_test_data_path("cpp_generated_files", &filename);
+        let path = get_serde_test_data_path("cpp_generated_files", &filename);
         test_sketch_file(path, n, true, false);
     }
     for n in ns {
         let filename = format!("tdigest_float_n{}_cpp.sk", n);
-        let path = get_test_data_path("cpp_generated_files", &filename);
+        let path = get_serde_test_data_path("cpp_generated_files", &filename);
         test_sketch_file(path, n, false, true);
     }
     for n in ns {
         let filename = format!("tdigest_float_buf_n{}_cpp.sk", n);
-        let path = get_test_data_path("cpp_generated_files", &filename);
+        let path = get_serde_test_data_path("cpp_generated_files", &filename);
         test_sketch_file(path, n, true, true);
+    }
+}
+
+#[test]
+fn test_deserialize_from_reference_implementation() {
+    for filename in [
+        "tdigest_ref_k100_n10000_double.sk",
+        "tdigest_ref_k100_n10000_float.sk",
+    ] {
+        let path = get_test_data_path(filename);
+        let bytes = fs::read(&path).unwrap();
+        let td = TDigestMut::deserialize(&bytes, false).unwrap();
+        let td = td.freeze();
+
+        let n = 10000;
+        let path = path.display();
+        assert_eq!(td.k(), 100, "filepath: {path}");
+        assert_eq!(td.total_weight(), n, "filepath: {path}");
+        assert_eq!(td.min_value(), Some(0.0), "filepath: {path}");
+        assert_eq!(td.max_value(), Some((n - 1) as f64), "filepath: {path}");
+        assert_that!(td.rank(0.0).unwrap(), near(0.0, 0.0001), "filepath: {path}");
+        assert_that!(
+            td.rank(n as f64 / 4.).unwrap(),
+            near(0.25, 0.0001),
+            "filepath: {path}"
+        );
+        assert_that!(
+            td.rank(n as f64 / 2.).unwrap(),
+            near(0.5, 0.0001),
+            "filepath: {path}"
+        );
+        assert_that!(
+            td.rank((n * 3) as f64 / 4.).unwrap(),
+            near(0.75, 0.0001),
+            "filepath: {path}"
+        );
+        assert_that!(td.rank(n as f64).unwrap(), eq(1.0), "filepath: {path}");
     }
 }
 
@@ -103,7 +138,7 @@ fn test_deserialize_from_java_snapshots() {
     let ns = [0, 1, 10, 100, 1000, 10_000, 100_000, 1_000_000];
     for n in ns {
         let filename = format!("tdigest_double_n{}_java.sk", n);
-        let path = get_test_data_path("java_generated_files", &filename);
+        let path = get_serde_test_data_path("java_generated_files", &filename);
         test_sketch_file(path, n, false, false);
     }
 }

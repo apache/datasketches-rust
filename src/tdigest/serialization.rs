@@ -22,3 +22,7 @@ pub(super) const TDIGEST_FAMILY_ID: u8 = 20;
 pub(super) const FLAGS_IS_EMPTY: u8 = 1 << 0;
 pub(super) const FLAGS_IS_SINGLE_VALUE: u8 = 1 << 1;
 pub(super) const FLAGS_REVERSE_MERGE: u8 = 1 << 2;
+/// the format of the reference implementation is using double (f64) precision
+pub(super) const COMPAT_DOUBLE: u32 = 1;
+/// the format of the reference implementation is using float (f32) precision
+pub(super) const COMPAT_FLOAT: u32 = 2;

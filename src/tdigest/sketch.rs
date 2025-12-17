@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use byteorder::{LE, ReadBytesExt};
+use byteorder::{BE, LE, ReadBytesExt};
 use std::cmp::Ordering;
 use std::convert::identity;
 use std::io::Cursor;
@@ -315,11 +315,13 @@ impl TDigestMut {
     /// Supports reading compact format with (float, int) centroids as opposed to (double, long) to
     /// represent (mean, weight). [^1]
     ///
+    /// Supports reading format of the reference implementation (auto-detected) [^2].
+    ///
     /// [^1]: This is to support reading the `tdigest<float>` format from the C++ implementation.
+    /// [^2]: https://github.com/tdunning/t-digest
     pub fn deserialize(bytes: &[u8], is_f32: bool) -> Result<Self, SerdeError> {
         fn make_error(tag: &'static str) -> impl FnOnce(std::io::Error) -> SerdeError {
-            let tag = tag.to_string();
-            move |_| SerdeError::InsufficientData(tag)
+            move |_| SerdeError::InsufficientData(tag.to_string())
         }
 
         let mut cursor = Cursor::new(bytes);
@@ -328,7 +330,9 @@ impl TDigestMut {
         let serial_version = cursor.read_u8().map_err(make_error("serial_version"))?;
         let family_id = cursor.read_u8().map_err(make_error("family_id"))?;
         if family_id != TDIGEST_FAMILY_ID {
-            // TODO: Support reading format of the reference implementation
+            if preamble_longs == 0 && serial_version == 0 && family_id == 0 {
+                return Self::deserialize_compat(bytes);
+            }
             return Err(SerdeError::InvalidFamily(format!(
                 "expected {} (TDigest), got {}",
                 TDIGEST_FAMILY_ID, family_id
@@ -439,6 +443,87 @@ impl TDigestMut {
             centroids_weight,
             buffer,
         ))
+    }
+
+    // compatibility with the format of the reference implementation
+    // default byte order of ByteBuffer is used there, which is big endian
+    fn deserialize_compat(bytes: &[u8]) -> Result<Self, SerdeError> {
+        fn make_error(tag: &'static str) -> impl FnOnce(std::io::Error) -> SerdeError {
+            move |_| SerdeError::InsufficientData(format!("{tag} in compat format"))
+        }
+
+        let mut cursor = Cursor::new(bytes);
+
+        let ty = cursor.read_u32::<BE>().map_err(make_error("type"))?;
+        match ty {
+            COMPAT_DOUBLE => {
+                fn make_error(tag: &'static str) -> impl FnOnce(std::io::Error) -> SerdeError {
+                    move |_| SerdeError::InsufficientData(format!("{tag} in compat double format"))
+                }
+                // compatibility with asBytes()
+                let min = cursor.read_f64::<BE>().map_err(make_error("min"))?;
+                let max = cursor.read_f64::<BE>().map_err(make_error("max"))?;
+                let k = cursor.read_f64::<BE>().map_err(make_error("k"))? as u16;
+                let num_centroids = cursor
+                    .read_u32::<BE>()
+                    .map_err(make_error("num_centroids"))?
+                    as usize;
+                let mut total_weight = 0;
+                let mut centroids = Vec::with_capacity(num_centroids);
+                for _ in 0..num_centroids {
+                    let weight = cursor.read_f64::<BE>().map_err(make_error("weight"))? as u64;
+                    let mean = cursor.read_f64::<BE>().map_err(make_error("mean"))?;
+                    total_weight += weight;
+                    centroids.push(Centroid { mean, weight });
+                }
+                Ok(TDigestMut::make(
+                    k,
+                    false,
+                    min,
+                    max,
+                    centroids,
+                    total_weight,
+                    vec![],
+                ))
+            }
+            COMPAT_FLOAT => {
+                fn make_error(tag: &'static str) -> impl FnOnce(std::io::Error) -> SerdeError {
+                    move |_| SerdeError::InsufficientData(format!("{tag} in compat float format"))
+                }
+                // COMPAT_FLOAT: compatibility with asSmallBytes()
+                // reference implementation uses doubles for min and max
+                let min = cursor.read_f64::<BE>().map_err(make_error("min"))?;
+                let max = cursor.read_f64::<BE>().map_err(make_error("max"))?;
+                let k = cursor.read_f32::<BE>().map_err(make_error("k"))? as u16;
+                // reference implementation stores capacities of the array of centroids and the
+                // buffer as shorts they can be derived from k in the constructor
+                cursor.read_u32::<BE>().map_err(make_error("<unused>"))?;
+                let num_centroids = cursor
+                    .read_u16::<BE>()
+                    .map_err(make_error("num_centroids"))?
+                    as usize;
+                let mut total_weight = 0;
+                let mut centroids = Vec::with_capacity(num_centroids);
+                for _ in 0..num_centroids {
+                    let weight = cursor.read_f32::<BE>().map_err(make_error("weight"))? as u64;
+                    let mean = cursor.read_f32::<BE>().map_err(make_error("mean"))? as f64;
+                    total_weight += weight;
+                    centroids.push(Centroid { mean, weight });
+                }
+                Ok(TDigestMut::make(
+                    k,
+                    false,
+                    min,
+                    max,
+                    centroids,
+                    total_weight,
+                    vec![],
+                ))
+            }
+            ty => Err(SerdeError::InvalidParameter(format!(
+                "unknown TDigest compat type {ty}",
+            ))),
+        }
     }
 
     fn is_single_value(&self) -> bool {
