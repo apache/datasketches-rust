@@ -15,22 +15,24 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use crate::error::SerdeError;
+use crate::tdigest::serialization::*;
 use byteorder::{BE, LE, ReadBytesExt};
 use std::cmp::Ordering;
 use std::convert::identity;
 use std::io::Cursor;
-
-use crate::error::SerdeError;
-use crate::tdigest::serialization::*;
+use std::num::NonZeroU64;
 
 /// The default value of K if one is not specified.
 const DEFAULT_K: u16 = 200;
 /// Multiplier for buffer size relative to centroids capacity.
 const BUFFER_MULTIPLIER: usize = 4;
+/// Default weight for single values.
+const DEFAULT_WEIGHT: NonZeroU64 = NonZeroU64::new(1).unwrap();
 
 /// T-Digest sketch for estimating quantiles and ranks.
 ///
-/// See the [module documentation](super) for more details.
+/// See the [tdigest module level documentation](crate::tdigest) for more.
 #[derive(Debug, Clone)]
 pub struct TDigestMut {
     k: u16,
@@ -146,7 +148,7 @@ impl TDigestMut {
 
     /// Returns total weight.
     pub fn total_weight(&self) -> u64 {
-        self.centroids_weight + (self.buffer.len() as u64)
+        self.centroids_weight + self.buffer.len() as u64
     }
 
     /// Merge the given TDigest into this one
@@ -159,10 +161,16 @@ impl TDigestMut {
             self.centroids.len() + self.buffer.len() + other.centroids.len() + other.buffer.len(),
         );
         for &v in &self.buffer {
-            tmp.push(Centroid { mean: v, weight: 1 });
+            tmp.push(Centroid {
+                mean: v,
+                weight: DEFAULT_WEIGHT,
+            });
         }
         for &v in &other.buffer {
-            tmp.push(Centroid { mean: v, weight: 1 });
+            tmp.push(Centroid {
+                mean: v,
+                weight: DEFAULT_WEIGHT,
+            });
         }
         for &c in &other.centroids {
             tmp.push(c);
@@ -364,7 +372,7 @@ impl TDigestMut {
         bytes.extend_from_slice(&self.max.to_le_bytes());
         for centroid in &self.centroids {
             bytes.extend_from_slice(&centroid.mean.to_le_bytes());
-            bytes.extend_from_slice(&centroid.weight.to_le_bytes());
+            bytes.extend_from_slice(&centroid.weight.get().to_le_bytes());
         }
         bytes
     }
@@ -448,7 +456,7 @@ impl TDigestMut {
                 value,
                 vec![Centroid {
                     mean: value,
-                    weight: 1,
+                    weight: DEFAULT_WEIGHT,
                 }],
                 1,
                 vec![],
@@ -474,7 +482,7 @@ impl TDigestMut {
         check_non_nan(min, "min")?;
         check_non_nan(max, "max")?;
         let mut centroids = Vec::with_capacity(num_centroids);
-        let mut centroids_weight = 0;
+        let mut centroids_weight = 0u64;
         for _ in 0..num_centroids {
             let (mean, weight) = if is_f32 {
                 (
@@ -489,8 +497,8 @@ impl TDigestMut {
             };
             check_non_nan(mean, "centroid mean")?;
             check_non_infinite(mean, "centroid")?;
-            check_nonzero(weight, "centroid weight")?;
-            centroids_weight += weight;
+            let weight = check_nonzero(weight, "centroid weight")?;
+            centroids_weight += weight.get();
             centroids.push(Centroid { mean, weight });
         }
         let mut buffer = Vec::with_capacity(num_buffered);
@@ -549,15 +557,15 @@ impl TDigestMut {
                     .read_u32::<BE>()
                     .map_err(make_error("num_centroids"))?
                     as usize;
-                let mut total_weight = 0;
+                let mut total_weight = 0u64;
                 let mut centroids = Vec::with_capacity(num_centroids);
                 for _ in 0..num_centroids {
                     let weight = cursor.read_f64::<BE>().map_err(make_error("weight"))? as u64;
                     let mean = cursor.read_f64::<BE>().map_err(make_error("mean"))?;
-                    check_nonzero(weight, "centroid weight in compat double format")?;
+                    let weight = check_nonzero(weight, "centroid weight in compat double format")?;
                     check_non_nan(mean, "centroid mean in compat double format")?;
                     check_non_infinite(mean, "centroid mean in compat double format")?;
-                    total_weight += weight;
+                    total_weight += weight.get();
                     centroids.push(Centroid { mean, weight });
                 }
                 Ok(TDigestMut::make(
@@ -593,15 +601,15 @@ impl TDigestMut {
                     .read_u16::<BE>()
                     .map_err(make_error("num_centroids"))?
                     as usize;
-                let mut total_weight = 0;
+                let mut total_weight = 0u64;
                 let mut centroids = Vec::with_capacity(num_centroids);
                 for _ in 0..num_centroids {
                     let weight = cursor.read_f32::<BE>().map_err(make_error("weight"))? as u64;
                     let mean = cursor.read_f32::<BE>().map_err(make_error("mean"))? as f64;
-                    check_nonzero(weight, "centroid weight in compat float format")?;
+                    let weight = check_nonzero(weight, "centroid weight in compat float format")?;
                     check_non_nan(mean, "centroid mean in compat float format")?;
                     check_non_infinite(mean, "centroid mean in compat float format")?;
-                    total_weight += weight;
+                    total_weight += weight.get();
                     centroids.push(Centroid { mean, weight });
                 }
                 Ok(TDigestMut::make(
@@ -631,7 +639,10 @@ impl TDigestMut {
         }
         let mut tmp = Vec::with_capacity(self.buffer.len() + self.centroids.len());
         for &v in &self.buffer {
-            tmp.push(Centroid { mean: v, weight: 1 });
+            tmp.push(Centroid {
+                mean: v,
+                weight: DEFAULT_WEIGHT,
+            });
         }
         self.do_merge(tmp, self.buffer.len() as u64)
     }
@@ -660,7 +671,7 @@ impl TDigestMut {
         let mut weight_so_far = 0.;
         while current < len {
             let c = buffer[current];
-            let proposed_weight = (self.centroids[num_centroids - 1].weight + c.weight) as f64;
+            let proposed_weight = self.centroids[num_centroids - 1].weight() + c.weight();
             let mut add_this = false;
             if (current != 1) && (current != (len - 1)) {
                 let centroids_weight = self.centroids_weight as f64;
@@ -677,7 +688,7 @@ impl TDigestMut {
                 self.centroids[num_centroids - 1].add(c);
             } else {
                 // copy to a new centroid
-                weight_so_far += self.centroids[num_centroids - 1].weight as f64;
+                weight_so_far += self.centroids[num_centroids - 1].weight();
                 self.centroids.push(c);
                 num_centroids += 1;
             }
@@ -898,7 +909,7 @@ impl TDigestView<'_> {
                     0.5 / centroids_weight
                 } else {
                     1. + (((value - self.min) / (first_mean - self.min))
-                        * ((self.centroids[0].weight as f64 / 2.) - 1.))
+                        * ((self.centroids[0].weight() / 2.) - 1.))
                 });
             }
             return Some(0.); // should never happen
@@ -913,7 +924,7 @@ impl TDigestView<'_> {
                 } else {
                     1.0 - ((1.0
                         + (((self.max - value) / (self.max - last_mean))
-                            * ((self.centroids[num_centroids - 1].weight as f64 / 2.) - 1.)))
+                            * ((self.centroids[num_centroids - 1].weight() / 2.) - 1.)))
                         / centroids_weight)
                 });
             }
@@ -924,12 +935,12 @@ impl TDigestView<'_> {
             .centroids
             .binary_search_by(|c| centroid_lower_bound(c, value))
             .unwrap_or_else(identity);
-        debug_assert_ne!(lower, num_centroids, "get_rank: lower == end");
+        assert_ne!(lower, num_centroids, "get_rank: lower == end");
         let mut upper = self
             .centroids
             .binary_search_by(|c| centroid_upper_bound(c, value))
             .unwrap_or_else(identity);
-        debug_assert_ne!(upper, 0, "get_rank: upper == begin");
+        assert_ne!(upper, 0, "get_rank: upper == begin");
         if value < self.centroids[lower].mean {
             lower -= 1;
         }
@@ -940,18 +951,18 @@ impl TDigestView<'_> {
         let mut weight_below = 0.;
         let mut i = 0;
         while i < lower {
-            weight_below += self.centroids[i].weight as f64;
+            weight_below += self.centroids[i].weight();
             i += 1;
         }
-        weight_below += self.centroids[lower].weight as f64 / 2.;
+        weight_below += self.centroids[lower].weight() / 2.;
 
         let mut weight_delta = 0.;
         while i < upper {
-            weight_delta += self.centroids[i].weight as f64;
+            weight_delta += self.centroids[i].weight();
             i += 1;
         }
-        weight_delta -= self.centroids[lower].weight as f64 / 2.;
-        weight_delta += self.centroids[upper].weight as f64 / 2.;
+        weight_delta -= self.centroids[lower].weight() / 2.;
+        weight_delta += self.centroids[upper].weight() / 2.;
         Some(
             if self.centroids[upper].mean - self.centroids[lower].mean > 0. {
                 (weight_below
@@ -985,7 +996,7 @@ impl TDigestView<'_> {
         if weight > centroids_weight - 1. {
             return Some(self.max);
         }
-        let first_weight = self.centroids[0].weight as f64;
+        let first_weight = self.centroids[0].weight();
         if first_weight > 1. && weight < first_weight / 2. {
             return Some(
                 self.min
@@ -993,7 +1004,7 @@ impl TDigestView<'_> {
                         * (self.centroids[0].mean - self.min)),
             );
         }
-        let last_weight = self.centroids[num_centroids - 1].weight as f64;
+        let last_weight = self.centroids[num_centroids - 1].weight();
         if last_weight > 1. && (centroids_weight - weight <= last_weight / 2.) {
             return Some(
                 self.max
@@ -1005,18 +1016,18 @@ impl TDigestView<'_> {
         // interpolate between extremes
         let mut weight_so_far = first_weight / 2.;
         for i in 0..(num_centroids - 1) {
-            let dw = (self.centroids[i].weight + self.centroids[i + 1].weight) as f64 / 2.;
+            let dw = (self.centroids[i].weight() + self.centroids[i + 1].weight()) / 2.;
             if weight_so_far + dw > weight {
                 // the target weight is between centroids i and i+1
                 let mut left_weight = 0.;
-                if self.centroids[i].weight == 1 {
+                if self.centroids[i].weight.get() == 1 {
                     if weight - weight_so_far < 0.5 {
                         return Some(self.centroids[i].mean);
                     }
                     left_weight = 0.5;
                 }
                 let mut right_weight = 0.;
-                if self.centroids[i + 1].weight == 1 {
+                if self.centroids[i + 1].weight.get() == 1 {
                     if weight_so_far + dw - weight < 0.5 {
                         return Some(self.centroids[i + 1].mean);
                     }
@@ -1034,10 +1045,8 @@ impl TDigestView<'_> {
             weight_so_far += dw;
         }
 
-        let w1 = weight
-            - (self.centroids_weight as f64)
-            - ((self.centroids[num_centroids - 1].weight as f64) / 2.);
-        let w2 = (self.centroids[num_centroids - 1].weight as f64 / 2.) - w1;
+        let w1 = weight - (centroids_weight) - ((self.centroids[num_centroids - 1].weight()) / 2.);
+        let w2 = (self.centroids[num_centroids - 1].weight() / 2.) - w1;
         Some(weighted_average(
             self.centroids[num_centroids - 1].mean,
             w1,
@@ -1090,27 +1099,26 @@ fn centroid_upper_bound(c: &Centroid, value: f64) -> Ordering {
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct Centroid {
     mean: f64,
-    weight: u64,
+    weight: NonZeroU64,
 }
 
 impl Centroid {
     fn add(&mut self, other: Centroid) {
-        if self.weight != 0 {
-            self.weight += other.weight;
+        self.weight = self.weight.saturating_add(other.weight.get());
 
-            let (total_weight, other_weight) = (self.weight as f64, other.weight as f64);
-            let (self_mean, other_mean) = (self.mean, other.mean);
-            self.mean = self_mean + (other_weight * (other_mean - self_mean) / (total_weight));
-            debug_assert!(
-                !self.mean.is_nan(),
-                "NaN values should never be present in centroids; self: {}, other: {}",
-                self_mean,
-                other_mean
-            );
-        } else {
-            self.mean = other.mean;
-            self.weight = other.weight;
-        }
+        let (total_weight, other_weight) = (self.weight(), other.weight());
+        let (self_mean, other_mean) = (self.mean, other.mean);
+        self.mean = self_mean + (other_weight * (other_mean - self_mean) / (total_weight));
+        debug_assert!(
+            !self.mean.is_nan(),
+            "NaN values should never be present in centroids; self: {}, other: {}",
+            self_mean,
+            other_mean
+        );
+    }
+
+    fn weight(&self) -> f64 {
+        self.weight.get() as f64
     }
 }
 
@@ -1123,16 +1131,15 @@ fn check_non_nan(value: f64, tag: &'static str) -> Result<(), SerdeError> {
 
 fn check_non_infinite(value: f64, tag: &'static str) -> Result<(), SerdeError> {
     if value.is_infinite() {
-        return Err(SerdeError::MalformedData(format!("{tag} cannot be is_infinite")));
+        return Err(SerdeError::MalformedData(format!(
+            "{tag} cannot be is_infinite"
+        )));
     }
     Ok(())
 }
 
-fn check_nonzero(value: u64, tag: &'static str) -> Result<(), SerdeError> {
-    if value == 0 {
-        return Err(SerdeError::MalformedData(format!("{tag} cannot be zero")));
-    }
-    Ok(())
+fn check_nonzero(value: u64, tag: &'static str) -> Result<NonZeroU64, SerdeError> {
+    NonZeroU64::new(value).ok_or_else(|| SerdeError::MalformedData(format!("{tag} cannot be zero")))
 }
 
 /// Generates cluster sizes proportional to `q*(1-q)`.
