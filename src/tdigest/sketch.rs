@@ -1104,11 +1104,14 @@ struct Centroid {
 
 impl Centroid {
     fn add(&mut self, other: Centroid) {
+        let (self_weight, other_weight) = (self.weight(), other.weight());
+        let total_weight = self_weight + other_weight;
         self.weight = self.weight.saturating_add(other.weight.get());
 
-        let (total_weight, other_weight) = (self.weight(), other.weight());
         let (self_mean, other_mean) = (self.mean, other.mean);
-        self.mean = self_mean + (other_weight * (other_mean - self_mean) / (total_weight));
+        let ratio_self = self_weight / total_weight;
+        let ratio_other = other_weight / total_weight;
+        self.mean = self_mean.mul_add(ratio_self, other_mean * ratio_other);
         debug_assert!(
             !self.mean.is_nan(),
             "NaN values should never be present in centroids; self: {}, other: {}",
