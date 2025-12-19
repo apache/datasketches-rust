@@ -52,34 +52,19 @@ def check_java_version():
         sys.exit(1)
 
 def run_command(command, cwd=None, shell=False):
-    """Runs a shell command. captures output, prints only on error."""
+    """Runs a shell command, streaming output to stdout/stderr."""
     cmd_str = ' '.join(command) if isinstance(command, list) else command
     print(f"Running: {cmd_str}")
+    sys.stdout.flush() # Ensure 'Running' message appears before command output
     try:
-        # capture_output=True captures stdout and stderr. text=True decodes to string.
-        # We merge stderr into stdout to keep the order of messages
-        result = subprocess.run(
-            command,
-            cwd=cwd,
-            shell=shell,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            encoding='utf-8',
-            errors='replace'
-        )
-
-        if result.returncode != 0:
-            print(f"Error running command: {cmd_str}")
-            print("--- OUTPUT ---")
-            print(result.stdout)
-            print("--- END OUTPUT ---")
-            sys.exit(1)
-
+        # Don't capture output; let it stream to sys.stdout/sys.stderr
+        subprocess.run(command, cwd=cwd, shell=shell, check=True)
+    except subprocess.CalledProcessError as e:
+        print(f"Error running command: {cmd_str}")
+        sys.exit(1)
     except Exception as e:
         print(f"Exception running command: {e}")
         sys.exit(1)
-
 def generate_java_files(project_root):
     print("--- Generating Java Test Data ---")
 
