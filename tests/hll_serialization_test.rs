@@ -32,10 +32,26 @@ use datasketches::hll::HllSketch;
 const TEST_DATA_DIR: &str = "tests/serialization_test_data";
 
 fn get_test_data_path(sub_dir: &str, name: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join(TEST_DATA_DIR)
         .join(sub_dir)
-        .join(name)
+        .join(name);
+
+    if !path.exists() {
+        panic!(
+            r#"serialization test data file not found: {}
+
+            Please ensure test data files are present in the repository. Generally, you can
+            run the following commands from the project root to regenerate the test data files
+            if they are missing:
+
+
+        "#,
+            path.display(),
+        );
+    }
+
+    path
 }
 
 fn test_sketch_file(path: PathBuf, expected_cardinality: usize, expected_lg_k: u8) {
