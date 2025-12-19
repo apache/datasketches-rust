@@ -86,6 +86,14 @@ jobs:
         run: |
           rustup toolchain install ${{ matrix.rust-version }}
           rustup default ${{ matrix.rust-version }}
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          java-version: '25'
+          distribution: 'temurin'
+      - name: Prepare test data
+        shell: bash
+        run: ./tools/generate_serialization_test_data.py
       - name: Build
         run: cargo build --workspace --all-features --bins --tests --examples --benches --lib
       - name: Run unit tests
