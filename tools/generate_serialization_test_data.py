@@ -65,7 +65,12 @@ def generate_java_files(project_root):
     
     # 1. Check prerequisites
     check_command_installed("git")
-    check_command_installed("mvn")
+    
+    mvn_cmd_name = "mvn"
+    if os.name == 'nt':
+        mvn_cmd_name = "mvn.cmd"
+    check_command_installed(mvn_cmd_name)
+    
     check_command_installed("java")
     check_java_version()
 
@@ -85,9 +90,7 @@ def generate_java_files(project_root):
     run_command(["git", "clone", repo_url, str(temp_dir)])
 
     # 5. Run Maven to generate files
-    mvn_cmd = ["mvn", "test", "-P", "generate-java-files"]
-    if os.name == 'nt': # Windows
-        mvn_cmd = ["mvn.cmd", "test", "-P", "generate-java-files"]
+    mvn_cmd = [mvn_cmd_name, "test", "-P", "generate-java-files"]
     
     run_command(mvn_cmd, cwd=temp_dir)
 
