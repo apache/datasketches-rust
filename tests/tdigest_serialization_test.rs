@@ -15,27 +15,16 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use datasketches::tdigest::TDigestMut;
-use googletest::assert_that;
-use googletest::prelude::{eq, near};
+mod common;
+
 use std::fs;
 use std::path::PathBuf;
 
-const TEST_DATA_DIR: &str = "tests/test_data";
-const SERDE_TEST_DATA_DIR: &str = "tests/serialization_test_data";
-
-fn get_test_data_path(name: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join(TEST_DATA_DIR)
-        .join(name)
-}
-
-fn get_serde_test_data_path(sub_dir: &str, name: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join(SERDE_TEST_DATA_DIR)
-        .join(sub_dir)
-        .join(name)
-}
+use common::serialization_test_data;
+use common::test_data;
+use datasketches::tdigest::TDigestMut;
+use googletest::assert_that;
+use googletest::prelude::{eq, near};
 
 fn test_sketch_file(path: PathBuf, n: u64, with_buffer: bool, is_f32: bool) {
     let bytes = fs::read(&path).unwrap();
@@ -76,22 +65,22 @@ fn test_deserialize_from_cpp_snapshots() {
     let ns = [0, 1, 10, 100, 1000, 10_000, 100_000, 1_000_000];
     for n in ns {
         let filename = format!("tdigest_double_n{}_cpp.sk", n);
-        let path = get_serde_test_data_path("cpp_generated_files", &filename);
+        let path = serialization_test_data("cpp_generated_files", &filename);
         test_sketch_file(path, n, false, false);
     }
     for n in ns {
         let filename = format!("tdigest_double_buf_n{}_cpp.sk", n);
-        let path = get_serde_test_data_path("cpp_generated_files", &filename);
+        let path = serialization_test_data("cpp_generated_files", &filename);
         test_sketch_file(path, n, true, false);
     }
     for n in ns {
         let filename = format!("tdigest_float_n{}_cpp.sk", n);
-        let path = get_serde_test_data_path("cpp_generated_files", &filename);
+        let path = serialization_test_data("cpp_generated_files", &filename);
         test_sketch_file(path, n, false, true);
     }
     for n in ns {
         let filename = format!("tdigest_float_buf_n{}_cpp.sk", n);
-        let path = get_serde_test_data_path("cpp_generated_files", &filename);
+        let path = serialization_test_data("cpp_generated_files", &filename);
         test_sketch_file(path, n, true, true);
     }
 }
@@ -102,7 +91,7 @@ fn test_deserialize_from_reference_implementation() {
         "tdigest_ref_k100_n10000_double.sk",
         "tdigest_ref_k100_n10000_float.sk",
     ] {
-        let path = get_test_data_path(filename);
+        let path = test_data(filename);
         let bytes = fs::read(&path).unwrap();
         let td = TDigestMut::deserialize(&bytes, false).unwrap();
         let td = td.freeze();
@@ -138,7 +127,7 @@ fn test_deserialize_from_java_snapshots() {
     let ns = [0, 1, 10, 100, 1000, 10_000, 100_000, 1_000_000];
     for n in ns {
         let filename = format!("tdigest_double_n{}_java.sk", n);
-        let path = get_serde_test_data_path("java_generated_files", &filename);
+        let path = serialization_test_data("java_generated_files", &filename);
         test_sketch_file(path, n, false, false);
     }
 }
