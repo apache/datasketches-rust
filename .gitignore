@@ -36,3 +36,7 @@
 
 # Build artifacts
 **/target
+
+# Temporary files
+tmp_datasketches_java/
+tmp_datasketches_cpp/
