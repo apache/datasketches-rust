@@ -45,7 +45,7 @@ fn get_test_data_path(sub_dir: &str, name: &str) -> PathBuf {
             run the following commands from the project root to regenerate the test data files
             if they are missing:
 
-
+            $ ./tools/generate_serialization_test_data.py
         "#,
             path.display(),
         );
