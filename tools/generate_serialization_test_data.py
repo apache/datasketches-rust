@@ -52,25 +52,45 @@ def check_java_version():
         sys.exit(1)
 
 def run_command(command, cwd=None, shell=False):
-    """Runs a shell command and prints output."""
-    print(f"Running: {' '.join(command) if isinstance(command, list) else command}")
+    """Runs a shell command. captures output, prints only on error."""
+    cmd_str = ' '.join(command) if isinstance(command, list) else command
+    print(f"Running: {cmd_str}")
     try:
-        subprocess.check_call(command, cwd=cwd, shell=shell)
-    except subprocess.CalledProcessError as e:
-        print(f"Error running command: {e}")
+        # capture_output=True captures stdout and stderr. text=True decodes to string.
+        # We merge stderr into stdout to keep the order of messages
+        result = subprocess.run(
+            command,
+            cwd=cwd,
+            shell=shell,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding='utf-8',
+            errors='replace'
+        )
+
+        if result.returncode != 0:
+            print(f"Error running command: {cmd_str}")
+            print("--- OUTPUT ---")
+            print(result.stdout)
+            print("--- END OUTPUT ---")
+            sys.exit(1)
+
+    except Exception as e:
+        print(f"Exception running command: {e}")
         sys.exit(1)
 
 def generate_java_files(project_root):
     print("--- Generating Java Test Data ---")
-    
+
     # 1. Check prerequisites
     check_command_installed("git")
-    
+
     mvn_cmd_name = "mvn"
     if os.name == 'nt':
         mvn_cmd_name = "mvn.cmd"
     check_command_installed(mvn_cmd_name)
-    
+
     check_command_installed("java")
     check_java_version()
 
@@ -82,7 +102,7 @@ def generate_java_files(project_root):
     if temp_dir.exists():
         print(f"Removing existing temporary directory: {temp_dir}")
         shutil.rmtree(temp_dir)
-    
+
     temp_dir.mkdir()
 
     # 4. Clone repository
@@ -90,20 +110,24 @@ def generate_java_files(project_root):
     run_command(["git", "clone", repo_url, str(temp_dir)])
 
     # 5. Run Maven to generate files
-    mvn_cmd = [mvn_cmd_name, "test", "-P", "generate-java-files"]
-    
-    run_command(mvn_cmd, cwd=temp_dir)
+    mvn_cmd = ["mvn", "test", "-P", "generate-java-files"]
+    use_shell = False
+    if os.name == 'nt': # Windows
+        mvn_cmd[0] = "mvn.cmd"
+        use_shell = True
+
+    run_command(mvn_cmd, cwd=temp_dir, shell=use_shell)
 
     # 6. Copy generated files
     generated_files_dir = temp_dir / "serialization_test_data" / "java_generated_files"
-    
+
     if not generated_files_dir.exists():
         print(f"Error: Expected generated files directory not found at {generated_files_dir}")
         sys.exit(1)
 
     print(f"Copying files from {generated_files_dir} to {output_dir}")
     output_dir.mkdir(parents=True, exist_ok=True)
-    
+
     files_copied = 0
     for file_path in generated_files_dir.glob("*.sk"):
         shutil.copy2(file_path, output_dir)
@@ -114,15 +138,16 @@ def generate_java_files(project_root):
         print("Warning: No .sk files were found to copy.")
     else:
         print(f"Successfully copied {files_copied} files.")
-    
+
     # Cleanup done by .gitignore, but could be done here.
 
 def generate_cpp_files(project_root):
     print("--- Generating C++ Test Data ---")
-    
+
     # 1. Check prerequisites
     check_command_installed("git")
     check_command_installed("cmake")
+    check_command_installed("ctest")
 
     # 2. Define paths
     temp_dir = project_root / "tmp_datasketches_cpp"
@@ -132,7 +157,7 @@ def generate_cpp_files(project_root):
     if temp_dir.exists():
         print(f"Removing existing temporary directory: {temp_dir}")
         shutil.rmtree(temp_dir)
-    
+
     temp_dir.mkdir()
 
     # 4. Clone repository
@@ -142,27 +167,25 @@ def generate_cpp_files(project_root):
     # 5. Build and Run CMake
     build_dir = temp_dir / "build"
     build_dir.mkdir(exist_ok=True)
-    
-    # cmake .. -DGENERATE=true
-    run_command(["cmake", "..", "-DGENERATE=true"], cwd=build_dir)
-    
-    # cmake --build build --config Release
-    # Note: cwd is temp_dir because build dir is 'build' relative to it, but the command is cmake --build build
-    # Actually standard cmake usage: cmake --build <build_dir>
+
+    # Configure: Add CMAKE_BUILD_TYPE for single-config generators (Ninja/Make)
+    run_command(["cmake", "..", "-DGENERATE=true", "-DCMAKE_BUILD_TYPE=Release"], cwd=build_dir)
+
+    # Build: Release config
     run_command(["cmake", "--build", ".", "--config", "Release"], cwd=build_dir)
-    
-    # cmake --build build --config Release --target test
-    # This runs the tests which we expect to generate the files because of -DGENERATE=true
-    run_command(["cmake", "--build", ".", "--config", "Release", "--target", "test"], cwd=build_dir)
+
+    # Test: Use ctest which is more portable than 'cmake --target test' (VS uses RUN_TESTS)
+    # --output-on-failure helps debug if a specific test fails
+    run_command(["ctest", "-C", "Release", "--output-on-failure"], cwd=build_dir)
 
     # 6. Copy generated files
     # The instructions say: cp datasketches-cpp/build/*/test/*_cpp.sk serialization_test_data/cpp_generated_files
     # We need to find where they are exactly.
     # It seems they might be in build/test/ or subdirectories depending on generator.
-    
+
     print(f"Copying files to {output_dir}")
     output_dir.mkdir(parents=True, exist_ok=True)
-    
+
     files_copied = 0
     # Search recursively in build directory for *_cpp.sk
     for file_path in build_dir.rglob("*_cpp.sk"):
@@ -193,7 +216,7 @@ def main():
 
     if args.java or args.all:
         generate_java_files(project_root)
-    
+
     if args.cpp or args.all:
         generate_cpp_files(project_root)
 
