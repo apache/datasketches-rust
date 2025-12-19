@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
 # distributed with this work for additional information
@@ -20,7 +21,6 @@ import os
 import subprocess
 import sys
 import shutil
-import re
 import argparse
 from pathlib import Path
 
@@ -30,26 +30,6 @@ def check_command_installed(command):
         print(f"Error: '{command}' is not installed or not in PATH.")
         sys.exit(1)
 
-def check_java_version():
-    """Checks if Java 25 is installed."""
-    try:
-        # java -version prints to stderr
-        result = subprocess.run(["java", "-version"], capture_output=True, text=True)
-        output = result.stderr
-        match = re.search(r'version "(\d+)', output)
-        if match:
-            version = int(match.group(1))
-            if version != 25:
-                print(f"Error: Java 25 is required, but found Java {version}.")
-                sys.exit(1)
-            print(f"Found Java {version}.")
-        else:
-            print("Error: Could not parse Java version.")
-            print(output)
-            sys.exit(1)
-    except Exception as e:
-        print(f"Error checking Java version: {e}")
-        sys.exit(1)
 
 def run_command(command, cwd=None, shell=False):
     """Runs a shell command, streaming output to stdout/stderr."""
@@ -58,26 +38,25 @@ def run_command(command, cwd=None, shell=False):
     sys.stdout.flush() # Ensure 'Running' message appears before command output
     try:
         # Don't capture output; let it stream to sys.stdout/sys.stderr
-        subprocess.run(command, cwd=cwd, shell=shell, check=True)
+        subprocess.check_call(command, cwd=cwd, stderr=subprocess.STDOUT, shell=shell)
     except subprocess.CalledProcessError as e:
-        print(f"Error running command: {cmd_str}")
+        print(f"Error running command: {e}")
+        print("--- OUTPUT ---")
+        print(e.stdout)
+        print("--- END OUTPUT ---")
         sys.exit(1)
-    except Exception as e:
-        print(f"Exception running command: {e}")
-        sys.exit(1)
+
+
 def generate_java_files(project_root):
     print("--- Generating Java Test Data ---")
 
     # 1. Check prerequisites
     check_command_installed("git")
-
+    check_command_installed("java")
     mvn_cmd_name = "mvn"
     if os.name == 'nt':
         mvn_cmd_name = "mvn.cmd"
     check_command_installed(mvn_cmd_name)
-
-    check_command_installed("java")
-    check_java_version()
 
     # 2. Define paths
     temp_dir = project_root / "tmp_datasketches_java"
@@ -124,7 +103,6 @@ def generate_java_files(project_root):
     else:
         print(f"Successfully copied {files_copied} files.")
 
-    # Cleanup done by .gitignore, but could be done here.
 
 def generate_cpp_files(project_root):
     print("--- Generating C++ Test Data ---")
@@ -183,6 +161,7 @@ def generate_cpp_files(project_root):
         print("Warning: No *_cpp.sk files were found to copy.")
     else:
         print(f"Successfully copied {files_copied} files.")
+
 
 def main():
     parser = argparse.ArgumentParser(description="Generate serialization test data for Java and/or C++.")
