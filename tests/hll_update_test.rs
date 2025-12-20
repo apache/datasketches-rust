@@ -15,7 +15,9 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use datasketches::hll::{HllSketch, HllType, NumStdDev};
+use datasketches::hll::HllSketch;
+use datasketches::hll::HllType;
+use datasketches::hll::NumStdDev;
 
 #[test]
 fn test_basic_update() {

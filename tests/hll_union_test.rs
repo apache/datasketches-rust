@@ -27,7 +27,10 @@
 //!
 //! This mirrors the testing strategy used in hll_update_test.rs
 
-use datasketches::hll::{HllSketch, HllType, HllUnion, NumStdDev};
+use datasketches::hll::HllSketch;
+use datasketches::hll::HllType;
+use datasketches::hll::HllUnion;
+use datasketches::hll::NumStdDev;
 
 #[test]
 fn test_union_basic_operations() {

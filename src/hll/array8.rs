@@ -21,8 +21,10 @@
 //! This provides the maximum value range (0-255) with no bit-packing complexity.
 
 use crate::error::SerdeError;
+use crate::hll::NumStdDev;
 use crate::hll::estimator::HipEstimator;
-use crate::hll::{NumStdDev, get_slot, get_value};
+use crate::hll::get_slot;
+use crate::hll::get_value;
 
 /// Core Array8 data structure - one byte per slot, no packing
 #[derive(Debug, Clone, PartialEq)]
@@ -218,7 +220,8 @@ impl Array8 {
         self.num_zeros = self.bytes.iter().filter(|&&v| v == 0).count() as u32;
 
         // Recompute kxq values from actual register values
-        // This is essential after bulk merges where registers change but estimator isn't updated incrementally
+        // This is essential after bulk merges where registers change but estimator isn't updated
+        // incrementally
         let mut kxq0_sum = 0.0;
         let mut kxq1_sum = 0.0;
 
@@ -342,7 +345,8 @@ impl Array8 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hll::{coupon, pack_coupon};
+    use crate::hll::coupon;
+    use crate::hll::pack_coupon;
 
     #[test]
     fn test_array8_basic() {

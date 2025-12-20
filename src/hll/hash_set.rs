@@ -21,9 +21,11 @@
 //! Provides better performance than List when many coupons are stored.
 
 use crate::error::SerdeError;
-use crate::hll::container::{COUPON_EMPTY, Container};
+use crate::hll::HllType;
+use crate::hll::KEY_MASK_26;
+use crate::hll::container::COUPON_EMPTY;
+use crate::hll::container::Container;
 use crate::hll::serialization::*;
-use crate::hll::{HllType, KEY_MASK_26};
 
 /// Hash set for efficient coupon storage with collision handling
 #[derive(Debug, Clone, PartialEq)]

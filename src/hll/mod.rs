@@ -163,7 +163,9 @@ fn coupon<H: Hash>(v: H) -> u32 {
 
 #[cfg(test)]
 mod tests {
-    use crate::hll::{get_slot, get_value, pack_coupon};
+    use crate::hll::get_slot;
+    use crate::hll::get_value;
+    use crate::hll::pack_coupon;
 
     #[test]
     fn test_pack_unpack_coupon() {

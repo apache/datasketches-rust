@@ -15,7 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use datasketches::hll::{HllSketch, HllType};
+use datasketches::hll::HllSketch;
+use datasketches::hll::HllType;
 
 fn main() {
     // Create a new HLL sketch

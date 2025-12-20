@@ -28,12 +28,16 @@
 //! - Different modes (List, Set, Array4/6/8)
 //! - Different target HLL types
 
+use std::hash::Hash;
+
+use crate::hll::HllSketch;
+use crate::hll::HllType;
+use crate::hll::NumStdDev;
 use crate::hll::array4::Array4;
 use crate::hll::array6::Array6;
 use crate::hll::array8::Array8;
 use crate::hll::mode::Mode;
-use crate::hll::{HllSketch, HllType, NumStdDev, pack_coupon};
-use std::hash::Hash;
+use crate::hll::pack_coupon;
 
 /// An HLL Union for combining multiple HLL sketches.
 ///
@@ -55,9 +59,9 @@ impl HllUnion {
     ///
     /// # Arguments
     ///
-    /// * `lg_max_k` - Maximum log2 of the number of buckets. Must be in [4, 21].
-    ///   This determines the maximum precision the union can handle. Input sketches
-    ///   with larger lg_k will be down-sampled.
+    /// * `lg_max_k` - Maximum log2 of the number of buckets. Must be in [4, 21]. This determines
+    ///   the maximum precision the union can handle. Input sketches with larger lg_k will be
+    ///   down-sampled.
     ///
     /// # Panics
     ///

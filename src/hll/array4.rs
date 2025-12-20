@@ -22,8 +22,10 @@
 
 use super::aux_map::AuxMap;
 use crate::error::SerdeError;
+use crate::hll::NumStdDev;
 use crate::hll::estimator::HipEstimator;
-use crate::hll::{NumStdDev, get_slot, get_value};
+use crate::hll::get_slot;
+use crate::hll::get_value;
 
 const AUX_TOKEN: u8 = 15;
 
@@ -288,8 +290,9 @@ impl Array4 {
         compact: bool,
         ooo: bool,
     ) -> Result<Self, SerdeError> {
+        use crate::hll::get_slot;
+        use crate::hll::get_value;
         use crate::hll::serialization::*;
-        use crate::hll::{get_slot, get_value};
 
         if bytes.len() < HLL_PREAMBLE_SIZE {
             return Err(SerdeError::InsufficientData(format!(
@@ -436,7 +439,8 @@ impl Array4 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hll::{coupon, pack_coupon};
+    use crate::hll::coupon;
+    use crate::hll::pack_coupon;
 
     #[test]
     fn test_get_set_raw() {

@@ -22,7 +22,9 @@
 //! This is more accurate than the standard HLL estimator, especially for
 //! moderate cardinalities.
 
-use crate::hll::{composite_interpolation, cubic_interpolation, harmonic_numbers};
+use crate::hll::composite_interpolation;
+use crate::hll::cubic_interpolation;
+use crate::hll::harmonic_numbers;
 
 /// HIP estimator with KxQ registers for improved cardinality estimation
 ///
@@ -30,10 +32,10 @@ use crate::hll::{composite_interpolation, cubic_interpolation, harmonic_numbers}
 /// allowing it to be composed into Array4, Array6, and Array8.
 ///
 /// The estimator supports two modes:
-/// - **In-order mode**: Uses HIP (Historical Inverse Probability) accumulator
-///   for accurate sequential updates
-/// - **Out-of-order mode**: Uses composite estimator (raw HLL + linear counting)
-///   after deserialization or merging
+/// - **In-order mode**: Uses HIP (Historical Inverse Probability) accumulator for accurate
+///   sequential updates
+/// - **Out-of-order mode**: Uses composite estimator (raw HLL + linear counting) after
+///   deserialization or merging
 #[derive(Debug, Clone, PartialEq)]
 pub struct HipEstimator {
     /// HIP estimator accumulator

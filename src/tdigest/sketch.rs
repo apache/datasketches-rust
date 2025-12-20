@@ -15,13 +15,17 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use crate::error::SerdeError;
-use crate::tdigest::serialization::*;
-use byteorder::{BE, LE, ReadBytesExt};
 use std::cmp::Ordering;
 use std::convert::identity;
 use std::io::Cursor;
 use std::num::NonZeroU64;
+
+use byteorder::BE;
+use byteorder::LE;
+use byteorder::ReadBytesExt;
+
+use crate::error::SerdeError;
+use crate::tdigest::serialization::*;
 
 /// The default value of K if one is not specified.
 const DEFAULT_K: u16 = 200;

@@ -17,7 +17,8 @@
 
 use datasketches::tdigest::TDigestMut;
 use googletest::assert_that;
-use googletest::prelude::{eq, near};
+use googletest::prelude::eq;
+use googletest::prelude::near;
 
 #[test]
 fn test_empty() {

@@ -23,15 +23,19 @@
 use std::hash::Hash;
 
 use crate::error::SerdeError;
+use crate::hll::HllType;
+use crate::hll::NumStdDev;
+use crate::hll::RESIZE_DENOMINATOR;
+use crate::hll::RESIZE_NUMERATOR;
 use crate::hll::array4::Array4;
 use crate::hll::array6::Array6;
 use crate::hll::array8::Array8;
 use crate::hll::container::Container;
+use crate::hll::coupon;
 use crate::hll::hash_set::HashSet;
 use crate::hll::list::List;
 use crate::hll::mode::Mode;
 use crate::hll::serialization::*;
-use crate::hll::{HllType, NumStdDev, RESIZE_DENOMINATOR, RESIZE_NUMERATOR, coupon};
 
 /// A HyperLogLog sketch.
 ///

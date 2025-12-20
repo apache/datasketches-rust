@@ -22,7 +22,8 @@
 
 use crate::error::SerdeError;
 use crate::hll::HllType;
-use crate::hll::container::{COUPON_EMPTY, Container};
+use crate::hll::container::COUPON_EMPTY;
+use crate::hll::container::Container;
 use crate::hll::serialization::*;
 
 /// List for sequential coupon storage with duplicate detection

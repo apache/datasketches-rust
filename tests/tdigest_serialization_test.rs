@@ -24,7 +24,8 @@ use common::serialization_test_data;
 use common::test_data;
 use datasketches::tdigest::TDigestMut;
 use googletest::assert_that;
-use googletest::prelude::{eq, near};
+use googletest::prelude::eq;
+use googletest::prelude::near;
 
 fn test_sketch_file(path: PathBuf, n: u64, with_buffer: bool, is_f32: bool) {
     let bytes = fs::read(&path).unwrap();
