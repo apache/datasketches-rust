@@ -127,3 +127,23 @@ fn test_merge_incompatible() {
     let right = CountMinSketch::with_seed(2, 64, DEFAULT_SEED);
     left.merge(&right);
 }
+
+#[test]
+fn test_increment_single_key_like_rust_count_min_sketch() {
+    let mut sketch = CountMinSketch::with_seed(4, 32, DEFAULT_SEED);
+    for _ in 0..300 {
+        sketch.update("key");
+    }
+    assert_eq!(sketch.estimate("key"), 300);
+}
+
+#[test]
+fn test_increment_multi_like_rust_count_min_sketch() {
+    let mut sketch = CountMinSketch::with_seed(6, 128, DEFAULT_SEED);
+    for i in 0..1_000_000u64 {
+        sketch.update(i % 100);
+    }
+    for key in 0..100u64 {
+        assert!(sketch.estimate(key) >= 9_000);
+    }
+}
