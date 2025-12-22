@@ -15,8 +15,10 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use byteorder::{ByteOrder, LE};
 use std::hash::Hasher;
+
+use byteorder::ByteOrder;
+use byteorder::LE;
 
 const DEFAULT_SEED: u64 = 9001;
 const C1: u64 = 0x87c37b91114253d5;
