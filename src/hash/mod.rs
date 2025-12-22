@@ -15,23 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! # Apache® DataSketches™ Core Rust Library Component
-//!
-//! The Sketching Core Library provides a range of stochastic streaming algorithms and closely
-//! related Rust technologies that are particularly useful when integrating this technology into
-//! systems that must deal with massive data.
-//!
-//! This library is divided into modules that constitute distinct groups of functionality.
+mod murmurhash;
 
-#![cfg_attr(docsrs, feature(doc_cfg))]
-#![deny(missing_docs)]
-
-// See https://github.com/apache/datasketches-rust/issues/28 for more information.
-#[cfg(target_endian = "big")]
-compile_error!("datasketches does not support big-endian targets");
-
-pub mod error;
-pub mod hll;
-pub mod tdigest;
-
-mod hash;
+pub use murmurhash::MurmurHash3X64128;
