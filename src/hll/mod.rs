@@ -74,6 +74,8 @@
 
 use std::hash::Hash;
 
+use crate::hash::MurmurHash3X64128;
+
 mod array4;
 mod array6;
 mod array8;
@@ -147,9 +149,7 @@ fn pack_coupon(slot: u32, value: u8) -> u32 {
 
 /// Generate a coupon from a hashable value.
 fn coupon<H: Hash>(v: H) -> u32 {
-    const DEFAULT_SEED: u32 = 9001;
-
-    let mut hasher = mur3::Hasher128::with_seed(DEFAULT_SEED);
+    let mut hasher = MurmurHash3X64128::default();
     v.hash(&mut hasher);
     let (lo, hi) = hasher.finish128();
 

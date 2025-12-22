@@ -4,9 +4,9 @@ use std::hash::Hasher;
 const DEFAULT_SEED: u64 = 9001;
 const C1: u64 = 0x87c37b91114253d5;
 const C2: u64 = 0x4cf5ad432745937f;
-const C3: u64 = 0x52dce729;
-const C4: u64 = 0x38495ab5;
 
+/// The MurmurHash3 is a fast, non-cryptographic, 128-bit hash function that has
+/// excellent avalanche and 2-way bit independence properties.
 #[derive(Debug)]
 pub struct MurmurHash3X64128 {
     h1: u64,
@@ -39,7 +39,8 @@ impl MurmurHash3X64128 {
             if rem > 8 {
                 // read k2 little endian
                 let mut buf = [0u8; 8];
-                buf[..rem - 8].copy_from_slice(&self.buf[8..]);
+                let k2_len = rem - 8;
+                buf[..k2_len].copy_from_slice(&self.buf[8..rem]);
                 // mix k2
                 let mut k2 = u64::from_le_bytes(buf);
                 k2 = k2.wrapping_mul(C2);
@@ -79,10 +80,10 @@ impl MurmurHash3X64128 {
         k1 = k1.wrapping_mul(C2);
         self.h1 ^= k1;
 
-        // out.h1 = MURMUR3_ROTL64(out.h1, 27); out.h1 += out.h2; out.h1 = out.h1*5+c3;
+        // out.h1 = MURMUR3_ROTL64(out.h1, 27); out.h1 += out.h2; out.h1 = out.h1*5+0x52dce729;
         self.h1 = self.h1.rotate_left(27);
         self.h1 = self.h1.wrapping_add(self.h2);
-        self.h1 = self.h1.wrapping_mul(5).wrapping_add(C3);
+        self.h1 = self.h1.wrapping_mul(5).wrapping_add(0x52dce729);
 
         // k2 *= c2; k2 = MURMUR3_ROTL64(k2, 33); k2 *= c1; out.h2 ^= k2;
         k2 = k2.wrapping_mul(C2);
@@ -93,7 +94,7 @@ impl MurmurHash3X64128 {
         // out.h2 = MURMUR3_ROTL64(out.h2,31); out.h2 += out.h1; out.h2 = out.h2*5+c4;
         self.h2 = self.h2.rotate_left(31);
         self.h2 = self.h2.wrapping_add(self.h1);
-        self.h2 = self.h2.wrapping_mul(5).wrapping_add(C4);
+        self.h2 = self.h2.wrapping_mul(5).wrapping_add(0x38495ab5);
 
         // accumulate total length
         self.total += 16;
@@ -165,35 +166,43 @@ fn fmix64(mut k: u64) -> u64 {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    fn murmurhash3_x64_128(key: &[u8], seed: u64) -> (u64, u64) {
+        let mut hasher = MurmurHash3X64128::with_seed(seed);
+        hasher.write(key);
+        hasher.finish128()
+    }
+
     #[test]
     fn test_remainder() {
         // remainder > 8
         let key = "The quick brown fox jumps over the lazy dog";
-        let (h1, h2) = mur3::murmurhash3_x64_128(key.as_bytes(), 0);
+        let (h1, h2) = murmurhash3_x64_128(key.as_bytes(), 0);
         assert_eq!(h1, 0xe34bbc7bbc071b6c);
         assert_eq!(h2, 0x7a433ca9c49a9347);
 
         // change one bit
         let key = "The quick brown fox jumps over the lazy eog";
-        let (h1, h2) = mur3::murmurhash3_x64_128(key.as_bytes(), 0);
+        let (h1, h2) = murmurhash3_x64_128(key.as_bytes(), 0);
         assert_eq!(h1, 0x362108102c62d1c9);
         assert_eq!(h2, 0x3285cd100292b305);
 
         // test a remainder < 8
         let key = "The quick brown fox jumps over the lazy dogdogdog";
-        let (h1, h2) = mur3::murmurhash3_x64_128(key.as_bytes(), 0);
+        let (h1, h2) = murmurhash3_x64_128(key.as_bytes(), 0);
         assert_eq!(h1, 0x9c8205300e612fc4);
         assert_eq!(h2, 0xcbc0af6136aa3df9);
 
         // test a remainder = 8
         let key = "The quick brown fox jumps over the lazy1";
-        let (h1, h2) = mur3::murmurhash3_x64_128(key.as_bytes(), 0);
+        let (h1, h2) = murmurhash3_x64_128(key.as_bytes(), 0);
         assert_eq!(h1, 0xe3301a827e5cdfe3);
         assert_eq!(h2, 0xbdbf05f8da0f0392);
 
         // test a remainder = 0
         let key = "The quick brown fox jumps over t";
-        let (h1, h2) = mur3::murmurhash3_x64_128(key.as_bytes(), 0);
+        let (h1, h2) = murmurhash3_x64_128(key.as_bytes(), 0);
         assert_eq!(h1, 0xdf6af91bb29bdacf);
         assert_eq!(h2, 0x91a341c58df1f3a6);
 
@@ -204,7 +213,7 @@ mod tests {
             0x65, 0x72, 0x20, 0x74, 0x68, 0x65, 0x20, 0x6c, 0x61, 0x7a, 0x79, 0x20, 0x64, 0x6f,
             0x67, 0xff, 0x64, 0x6f, 0x67, 0x00,
         ];
-        let (h1, h2) = mur3::murmurhash3_x64_128(&key, 0);
+        let (h1, h2) = murmurhash3_x64_128(&key, 0);
         assert_eq!(h1, 0xe88abda785929c9e);
         assert_eq!(h2, 0x96b98587cacc83d6);
     }
