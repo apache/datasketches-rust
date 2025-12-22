@@ -1,0 +1,369 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
+use crate::countmin::serialization::{
+    COUNTMIN_FAMILY_ID, FLAGS_IS_EMPTY, LONG_SIZE_BYTES, PREAMBLE_LONGS_SHORT, SERIAL_VERSION,
+    compute_seed_hash,
+};
+use crate::error::SerdeError;
+use crate::hash::MurmurHash3X64128;
+use byteorder::{LE, ReadBytesExt};
+use std::hash::{Hash, Hasher};
+use std::io::Cursor;
+use std::mem::size_of;
+
+const MAX_TABLE_ENTRIES: usize = 1 << 30;
+
+/// Default seed used by the sketch.
+pub const DEFAULT_SEED: u64 = 9001;
+
+/// Count-Min sketch for estimating item frequencies.
+///
+/// The sketch provides upper and lower bounds on estimated item frequencies
+/// with configurable relative error and confidence.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CountMinSketch {
+    num_hashes: u8,
+    num_buckets: u32,
+    seed: u64,
+    total_weight: i64,
+    counts: Vec<i64>,
+    hash_seeds: Vec<u64>,
+}
+
+impl CountMinSketch {
+    /// Creates a new Count-Min sketch with the default seed.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `num_hashes` is 0, `num_buckets` is less than 3, or the
+    /// total table size exceeds the supported limit.
+    pub fn new(num_hashes: u8, num_buckets: u32) -> Self {
+        Self::with_seed(num_hashes, num_buckets, DEFAULT_SEED)
+    }
+
+    /// Creates a new Count-Min sketch with the provided seed.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `num_hashes` is 0, `num_buckets` is less than 3, or the
+    /// total table size exceeds the supported limit.
+    pub fn with_seed(num_hashes: u8, num_buckets: u32, seed: u64) -> Self {
+        let entries = entries_for_config(num_hashes, num_buckets);
+        Self::make(num_hashes, num_buckets, seed, entries)
+    }
+
+    /// Returns the number of hash functions used by the sketch.
+    pub fn num_hashes(&self) -> u8 {
+        self.num_hashes
+    }
+
+    /// Returns the number of buckets per hash function.
+    pub fn num_buckets(&self) -> u32 {
+        self.num_buckets
+    }
+
+    /// Returns the seed used by the sketch.
+    pub fn seed(&self) -> u64 {
+        self.seed
+    }
+
+    /// Returns the total weight inserted into the sketch.
+    pub fn total_weight(&self) -> i64 {
+        self.total_weight
+    }
+
+    /// Returns the relative error (epsilon) implied by the number of buckets.
+    pub fn relative_error(&self) -> f64 {
+        std::f64::consts::E / self.num_buckets as f64
+    }
+
+    /// Returns true if the sketch has not seen any updates.
+    pub fn is_empty(&self) -> bool {
+        self.total_weight == 0
+    }
+
+    /// Suggests the number of buckets to achieve the given relative error.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `relative_error` is negative.
+    pub fn suggest_num_buckets(relative_error: f64) -> u32 {
+        assert!(relative_error >= 0.0, "relative_error must be at least 0");
+        (std::f64::consts::E / relative_error).ceil() as u32
+    }
+
+    /// Suggests the number of hashes to achieve the given confidence.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `confidence` is not in (0, 1].
+    pub fn suggest_num_hashes(confidence: f64) -> u8 {
+        assert!(
+            (0.0..=1.0).contains(&confidence),
+            "confidence must be between 0 and 1.0 (inclusive)"
+        );
+        if confidence == 1.0 {
+            return 127;
+        }
+        let hashes = (1.0 / (1.0 - confidence)).ln().ceil();
+        hashes.min(127.0) as u8
+    }
+
+    /// Updates the sketch with a single occurrence of the item.
+    pub fn update<T: Hash>(&mut self, item: T) {
+        self.update_with_weight(item, 1);
+    }
+
+    /// Updates the sketch with the given item and weight.
+    pub fn update_with_weight<T: Hash>(&mut self, item: T, weight: i64) {
+        if weight == 0 {
+            return;
+        }
+        let abs_weight = abs_i64(weight);
+        self.total_weight = self.total_weight.wrapping_add(abs_weight);
+        let num_buckets = self.num_buckets as usize;
+        for (row, seed) in self.hash_seeds.iter().enumerate() {
+            let bucket = self.bucket_index(&item, *seed);
+            let index = row * num_buckets + bucket;
+            self.counts[index] = self.counts[index].wrapping_add(weight);
+        }
+    }
+
+    /// Returns the estimated frequency of the given item.
+    pub fn estimate<T: Hash>(&self, item: T) -> i64 {
+        let num_buckets = self.num_buckets as usize;
+        let mut min = i64::MAX;
+        for (row, seed) in self.hash_seeds.iter().enumerate() {
+            let bucket = self.bucket_index(&item, *seed);
+            let index = row * num_buckets + bucket;
+            let value = self.counts[index];
+            if value < min {
+                min = value;
+            }
+        }
+        min
+    }
+
+    /// Returns the lower bound on the true frequency of the given item.
+    pub fn lower_bound<T: Hash>(&self, item: T) -> i64 {
+        self.estimate(item)
+    }
+
+    /// Returns the upper bound on the true frequency of the given item.
+    pub fn upper_bound<T: Hash>(&self, item: T) -> i64 {
+        let estimate = self.estimate(item);
+        let error = (self.relative_error() * self.total_weight as f64) as i64;
+        estimate.wrapping_add(error)
+    }
+
+    /// Merges another sketch into this one.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the sketches have incompatible configurations.
+    pub fn merge(&mut self, other: &CountMinSketch) {
+        if std::ptr::eq(self, other) {
+            panic!("Cannot merge a sketch with itself.");
+        }
+        if self.num_hashes != other.num_hashes
+            || self.num_buckets != other.num_buckets
+            || self.seed != other.seed
+        {
+            panic!("Incompatible sketch configuration.");
+        }
+        for (dst, src) in self.counts.iter_mut().zip(other.counts.iter()) {
+            *dst = dst.wrapping_add(*src);
+        }
+        self.total_weight = self.total_weight.wrapping_add(other.total_weight);
+    }
+
+    /// Serializes this sketch into the DataSketches Count-Min format.
+    pub fn serialize(&self) -> Vec<u8> {
+        let header_size = PREAMBLE_LONGS_SHORT as usize * LONG_SIZE_BYTES;
+        let payload_size = if self.is_empty() {
+            0
+        } else {
+            LONG_SIZE_BYTES + (self.counts.len() * size_of::<i64>())
+        };
+        let mut bytes = Vec::with_capacity(header_size + payload_size);
+
+        bytes.push(PREAMBLE_LONGS_SHORT);
+        bytes.push(SERIAL_VERSION);
+        bytes.push(COUNTMIN_FAMILY_ID);
+        bytes.push(if self.is_empty() { FLAGS_IS_EMPTY } else { 0 });
+        bytes.extend_from_slice(&0u32.to_le_bytes());
+
+        bytes.extend_from_slice(&self.num_buckets.to_le_bytes());
+        bytes.push(self.num_hashes);
+        bytes.extend_from_slice(&compute_seed_hash(self.seed).to_le_bytes());
+        bytes.push(0u8);
+
+        if self.is_empty() {
+            return bytes;
+        }
+
+        bytes.extend_from_slice(&self.total_weight.to_le_bytes());
+        for count in &self.counts {
+            bytes.extend_from_slice(&count.to_le_bytes());
+        }
+        bytes
+    }
+
+    /// Deserializes a sketch from bytes using the default seed.
+    pub fn deserialize(bytes: &[u8]) -> Result<Self, SerdeError> {
+        Self::deserialize_with_seed(bytes, DEFAULT_SEED)
+    }
+
+    /// Deserializes a sketch from bytes using the provided seed.
+    pub fn deserialize_with_seed(bytes: &[u8], seed: u64) -> Result<Self, SerdeError> {
+        fn make_error(tag: &'static str) -> impl FnOnce(std::io::Error) -> SerdeError {
+            move |_| SerdeError::InsufficientData(tag.to_string())
+        }
+
+        let mut cursor = Cursor::new(bytes);
+        let preamble_longs = cursor.read_u8().map_err(make_error("preamble_longs"))?;
+        let serial_version = cursor.read_u8().map_err(make_error("serial_version"))?;
+        let family_id = cursor.read_u8().map_err(make_error("family_id"))?;
+        let flags = cursor.read_u8().map_err(make_error("flags"))?;
+        cursor.read_u32::<LE>().map_err(make_error("unused32"))?;
+
+        if family_id != COUNTMIN_FAMILY_ID {
+            return Err(SerdeError::InvalidFamily(format!(
+                "expected {} (CountMinSketch), got {}",
+                COUNTMIN_FAMILY_ID, family_id
+            )));
+        }
+        if serial_version != SERIAL_VERSION {
+            return Err(SerdeError::UnsupportedVersion(format!(
+                "expected {}, got {}",
+                SERIAL_VERSION, serial_version
+            )));
+        }
+        if preamble_longs != PREAMBLE_LONGS_SHORT {
+            return Err(SerdeError::MalformedData(format!(
+                "unsupported preamble_longs {preamble_longs}"
+            )));
+        }
+
+        let num_buckets = cursor.read_u32::<LE>().map_err(make_error("num_buckets"))?;
+        let num_hashes = cursor.read_u8().map_err(make_error("num_hashes"))?;
+        let seed_hash = cursor.read_u16::<LE>().map_err(make_error("seed_hash"))?;
+        cursor.read_u8().map_err(make_error("unused8"))?;
+
+        let expected_seed_hash = compute_seed_hash(seed);
+        if seed_hash != expected_seed_hash {
+            return Err(SerdeError::InvalidParameter(format!(
+                "incompatible seed hash: expected {}, got {}",
+                expected_seed_hash, seed_hash
+            )));
+        }
+
+        let entries = entries_for_config_checked(num_hashes, num_buckets)?;
+        let mut sketch = Self::make(num_hashes, num_buckets, seed, entries);
+        if (flags & FLAGS_IS_EMPTY) != 0 {
+            return Ok(sketch);
+        }
+
+        sketch.total_weight = cursor
+            .read_i64::<LE>()
+            .map_err(make_error("total_weight"))?;
+        for count in sketch.counts.iter_mut() {
+            *count = cursor.read_i64::<LE>().map_err(make_error("counts"))?;
+        }
+        Ok(sketch)
+    }
+
+    fn make(num_hashes: u8, num_buckets: u32, seed: u64, entries: usize) -> Self {
+        let counts = vec![0i64; entries];
+        let hash_seeds = make_hash_seeds(seed, num_hashes);
+        CountMinSketch {
+            num_hashes,
+            num_buckets,
+            seed,
+            total_weight: 0,
+            counts,
+            hash_seeds,
+        }
+    }
+
+    fn bucket_index<T: Hash>(&self, item: &T, seed: u64) -> usize {
+        let mut hasher = MurmurHash3X64128::with_seed(seed);
+        item.hash(&mut hasher);
+        let (h1, _) = hasher.finish128();
+        (h1 % self.num_buckets as u64) as usize
+    }
+}
+
+fn entries_for_config(num_hashes: u8, num_buckets: u32) -> usize {
+    assert!(num_hashes > 0, "num_hashes must be at least 1");
+    assert!(num_buckets >= 3, "num_buckets must be at least 3");
+    let entries = (num_hashes as usize)
+        .checked_mul(num_buckets as usize)
+        .expect("num_hashes * num_buckets overflows usize");
+    assert!(
+        entries < MAX_TABLE_ENTRIES,
+        "num_hashes * num_buckets must be < {}",
+        MAX_TABLE_ENTRIES
+    );
+    entries
+}
+
+fn entries_for_config_checked(num_hashes: u8, num_buckets: u32) -> Result<usize, SerdeError> {
+    if num_hashes == 0 {
+        return Err(SerdeError::InvalidParameter(
+            "num_hashes must be at least 1".to_string(),
+        ));
+    }
+    if num_buckets < 3 {
+        return Err(SerdeError::InvalidParameter(
+            "num_buckets must be at least 3".to_string(),
+        ));
+    }
+    let entries = (num_hashes as usize)
+        .checked_mul(num_buckets as usize)
+        .ok_or_else(|| {
+            SerdeError::InvalidParameter("num_hashes * num_buckets overflows usize".to_string())
+        })?;
+    if entries >= MAX_TABLE_ENTRIES {
+        return Err(SerdeError::InvalidParameter(format!(
+            "num_hashes * num_buckets must be < {}",
+            MAX_TABLE_ENTRIES
+        )));
+    }
+    Ok(entries)
+}
+
+fn make_hash_seeds(seed: u64, num_hashes: u8) -> Vec<u64> {
+    let mut seeds = Vec::with_capacity(num_hashes as usize);
+    for i in 0..num_hashes {
+        // Derive per-row hash seeds deterministically from the sketch seed.
+        let mut hasher = MurmurHash3X64128::with_seed(seed);
+        hasher.write(&u64::from(i).to_le_bytes());
+        let (h1, _) = hasher.finish128();
+        seeds.push(h1);
+    }
+    seeds
+}
+
+fn abs_i64(value: i64) -> i64 {
+    if value >= 0 {
+        value
+    } else {
+        value.wrapping_neg()
+    }
+}
