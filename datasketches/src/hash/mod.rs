@@ -16,5 +16,8 @@
 // under the License.
 
 mod murmurhash;
+mod xxhash;
 
 pub use murmurhash::MurmurHash3X64128;
+#[allow(unused_imports)]
+pub use xxhash::XxHash64;
