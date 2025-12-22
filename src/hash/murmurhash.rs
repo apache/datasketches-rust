@@ -1,3 +1,168 @@
+use byteorder::{ByteOrder, LE};
+use std::hash::Hasher;
+
+const DEFAULT_SEED: u64 = 9001;
+const C1: u64 = 0x87c37b91114253d5;
+const C2: u64 = 0x4cf5ad432745937f;
+const C3: u64 = 0x52dce729;
+const C4: u64 = 0x38495ab5;
+
+#[derive(Debug)]
+pub struct MurmurHash3X64128 {
+    h1: u64,
+    h2: u64,
+    total: u64,
+    buf: [u8; 16],
+    buf_len: usize,
+}
+
+impl MurmurHash3X64128 {
+    pub fn with_seed(seed: u64) -> Self {
+        MurmurHash3X64128 {
+            h1: seed,
+            h2: seed,
+            total: 0,
+            buf: [0; 16],
+            buf_len: 0,
+        }
+    }
+
+    pub fn finish128(&self) -> (u64, u64) {
+        let mut h1 = self.h1;
+        let mut h2 = self.h2;
+
+        let total = self.total + self.buf_len as u64;
+        let rem = self.buf_len;
+
+        // tail
+        if rem > 0 {
+            if rem > 8 {
+                // read k2 little endian
+                let mut buf = [0u8; 8];
+                buf[..rem - 8].copy_from_slice(&self.buf[8..]);
+                // mix k2
+                let mut k2 = u64::from_le_bytes(buf);
+                k2 = k2.wrapping_mul(C2);
+                k2 = k2.rotate_left(33);
+                k2 = k2.wrapping_mul(C1);
+                h2 ^= k2;
+            }
+
+            // read k1 little endian
+            let mut buf = [0u8; 8];
+            let k1_len = rem.min(8);
+            buf[..k1_len].copy_from_slice(&self.buf[..k1_len]);
+            // mix k1
+            let mut k1 = u64::from_le_bytes(buf);
+            k1 = k1.wrapping_mul(C1);
+            k1 = k1.rotate_left(31);
+            k1 = k1.wrapping_mul(C2);
+            h1 ^= k1;
+        }
+
+        h1 ^= total;
+        h2 ^= total;
+        h1 = h1.wrapping_add(h2);
+        h2 = h2.wrapping_add(h1);
+        h1 = fmix64(h1);
+        h2 = fmix64(h2);
+        h1 = h1.wrapping_add(h2);
+        h2 = h2.wrapping_add(h1);
+        (h1, h2)
+    }
+
+    #[inline]
+    fn update(&mut self, mut k1: u64, mut k2: u64) {
+        // k1 *= c1; k1 = MURMUR3_ROTL64(k1, 31); k1 *= c2; out.h1 ^= k1;
+        k1 = k1.wrapping_mul(C1);
+        k1 = k1.rotate_left(31);
+        k1 = k1.wrapping_mul(C2);
+        self.h1 ^= k1;
+
+        // out.h1 = MURMUR3_ROTL64(out.h1, 27); out.h1 += out.h2; out.h1 = out.h1*5+c3;
+        self.h1 = self.h1.rotate_left(27);
+        self.h1 = self.h1.wrapping_add(self.h2);
+        self.h1 = self.h1.wrapping_mul(5).wrapping_add(C3);
+
+        // k2 *= c2; k2 = MURMUR3_ROTL64(k2, 33); k2 *= c1; out.h2 ^= k2;
+        k2 = k2.wrapping_mul(C2);
+        k2 = k2.rotate_left(33);
+        k2 = k2.wrapping_mul(C1);
+        self.h2 ^= k2;
+
+        // out.h2 = MURMUR3_ROTL64(out.h2,31); out.h2 += out.h1; out.h2 = out.h2*5+c4;
+        self.h2 = self.h2.rotate_left(31);
+        self.h2 = self.h2.wrapping_add(self.h1);
+        self.h2 = self.h2.wrapping_mul(5).wrapping_add(C4);
+
+        // accumulate total length
+        self.total += 16;
+    }
+}
+
+impl Default for MurmurHash3X64128 {
+    fn default() -> Self {
+        Self::with_seed(DEFAULT_SEED)
+    }
+}
+
+impl Hasher for MurmurHash3X64128 {
+    fn finish(&self) -> u64 {
+        self.finish128().0
+    }
+
+    fn write(&mut self, mut bytes: &[u8]) {
+        if self.buf_len + bytes.len() < 16 {
+            self.buf[self.buf_len..self.buf_len + bytes.len()].copy_from_slice(bytes);
+            self.buf_len += bytes.len();
+            return;
+        }
+
+        if self.buf_len != 0 {
+            let wanted = 16 - self.buf_len;
+            self.buf[self.buf_len..].copy_from_slice(&bytes[..wanted]);
+
+            let k1 = LE::read_u64(&self.buf[0..8]);
+            let k2 = LE::read_u64(&self.buf[8..16]);
+            self.update(k1, k2);
+
+            bytes = &bytes[wanted..];
+            self.buf_len = 0;
+        }
+
+        // Number of full 128-bit blocks of 16 bytes.
+        // Possible exclusion of a remainder of up to 15 bytes.
+        let blocks = bytes.len() >> 4; // bytes / 16
+
+        // Process the 128-bit blocks (the body) into the hash
+        for i in 0..blocks {
+            let lo = i << 4;
+            let mi = lo + 8;
+            let hi = mi + 8;
+            let k1 = LE::read_u64(&bytes[lo..mi]);
+            let k2 = LE::read_u64(&bytes[mi..hi]);
+            self.update(k1, k2);
+        }
+
+        // remain bytes
+        let len = bytes.len() % 16;
+        if len > 0 {
+            self.buf[0..len].copy_from_slice(&bytes[blocks << 4..]);
+            self.buf_len = len;
+        }
+    }
+}
+
+/// Finalization mix: force all bits of a hash block to avalanche.
+#[inline]
+fn fmix64(mut k: u64) -> u64 {
+    k ^= k >> 33;
+    k = k.wrapping_mul(0xff51afd7ed558ccd);
+    k ^= k >> 33;
+    k = k.wrapping_mul(0xc4ceb9fe1a85ec53);
+    k ^ (k >> 33)
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
