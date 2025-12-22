@@ -33,3 +33,5 @@ compile_error!("datasketches does not support big-endian targets");
 pub mod error;
 pub mod hll;
 pub mod tdigest;
+
+mod hash;
