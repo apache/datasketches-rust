@@ -93,11 +93,9 @@ jobs:
       - name: Prepare test data
         shell: bash
         run: ./tools/generate_serialization_test_data.py
-      - name: Build
-        run: cargo x build
       - name: Run unit tests
         shell: bash
-        run: cargo test --all-features -- --nocapture
+        run: cargo x test
       - name: Run examples
         shell: bash
         working-directory: examples

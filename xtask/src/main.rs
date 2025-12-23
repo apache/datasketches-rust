@@ -29,7 +29,6 @@ struct Command {
 impl Command {
     fn run(self) {
         match self.sub {
-            SubCommand::Build(cmd) => cmd.run(),
             SubCommand::Lint(cmd) => cmd.run(),
             SubCommand::Test(cmd) => cmd.run(),
         }
@@ -38,24 +37,10 @@ impl Command {
 
 #[derive(Subcommand)]
 enum SubCommand {
-    #[clap(about = "Compile workspace packages.")]
-    Build(CommandBuild),
     #[clap(about = "Run format and clippy checks.")]
     Lint(CommandLint),
     #[clap(about = "Run unit tests.")]
     Test(CommandTest),
-}
-
-#[derive(Parser)]
-struct CommandBuild {
-    #[arg(long, help = "Assert that `Cargo.lock` will remain unchanged.")]
-    locked: bool,
-}
-
-impl CommandBuild {
-    fn run(self) {
-        run_command(make_build_cmd(self.locked));
-    }
 }
 
 #[derive(Parser)]
@@ -112,25 +97,6 @@ fn run_command(mut cmd: StdCommand) {
     println!("{cmd:?}");
     let status = cmd.status().expect("failed to execute process");
     assert!(status.success(), "command failed: {status}");
-}
-
-fn make_build_cmd(locked: bool) -> StdCommand {
-    let mut cmd = find_command("cargo");
-    cmd.args([
-        "build",
-        "--workspace",
-        "--exclude",
-        "x",
-        "--all-features",
-        "--tests",
-        "--examples",
-        "--benches",
-        "--bins",
-    ]);
-    if locked {
-        cmd.arg("--locked");
-    }
-    cmd
 }
 
 fn make_test_cmd(no_capture: bool, features: &[&str]) -> StdCommand {
