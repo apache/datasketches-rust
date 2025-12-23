@@ -49,12 +49,7 @@ jobs:
         with:
           tool: typos-cli,taplo-cli,hawkeye
       - name: Check all
-        run: |
-          hawkeye check
-          taplo format --check
-          typos
-          cargo +nightly fmt --all -- --check
-          cargo +nightly clippy --all-targets --all-features -- -D warnings
+        run: cargo x lint
 
   msrv:
     name: Resolve MSRV
@@ -95,15 +90,19 @@ jobs:
         shell: bash
         run: ./tools/generate_serialization_test_data.py
       - name: Build
-        run: cargo build --workspace --all-features --bins --tests --examples --benches --lib
+        run: cargo x build
       - name: Run unit tests
         shell: bash
         run: cargo test --all-features -- --nocapture
       - name: Run examples
         shell: bash
+        working-directory: examples
         run: |
           set -x
-          cargo run --example hll_usage
+          EXAMPLES=$( yq '.bin.[].name' Cargo.toml )
+          for example in $EXAMPLES; do
+            cargo run --bin "$example"
+          done
 
   required:
     name: Required

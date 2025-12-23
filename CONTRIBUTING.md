@@ -30,13 +30,7 @@ cargo version
 # cargo 1.85.0 (<hash> 2024-12-31)
 ```
 
-To keep code style consistent, we use the following tools:
-
-* Nightly `rustfmt` for code formatting: `cargo +nightly fmt --all -- --check`
-* Nightly `clippy` for linting: `cargo +nightly clippy --all-targets --all-features -- -D warnings`
-* [`typos`](https://github.com/crate-ci/typos) for spell checking: `cargo install typos-cli` and then `typos`
-* [`taplo`](https://taplo.tamasfe.dev/) for checking `toml` files: `cargo install taplo-cli` and then `taplo check`
-* [`hawkeye`](https://github.com/korandoru/hawkeye) for checking license header: `cargo install hawkeye` and then `hawkeye check`
+To keep code style consistent, run `cargo x lint --fix` to automatically fix any style issues before committing your changes.
 
 ## Code of Conduct
 
