@@ -124,7 +124,6 @@ fn make_build_cmd(locked: bool) -> StdCommand {
         "--examples",
         "--benches",
         "--bins",
-        "--lib",
     ]);
     if locked {
         cmd.arg("--locked");
