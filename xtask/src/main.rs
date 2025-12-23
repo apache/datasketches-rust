@@ -119,6 +119,8 @@ fn make_build_cmd(locked: bool) -> StdCommand {
     cmd.args([
         "build",
         "--workspace",
+        "--exclude",
+        "x",
         "--all-features",
         "--tests",
         "--examples",
