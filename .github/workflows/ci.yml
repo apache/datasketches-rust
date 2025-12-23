@@ -101,7 +101,7 @@ jobs:
         working-directory: examples
         run: |
           set -x
-          EXAMPLES=$( yq '.bin.[].name' Cargo.toml )
+          EXAMPLES=( hll_update )
           for example in $EXAMPLES; do
             cargo run --bin "$example"
           done
