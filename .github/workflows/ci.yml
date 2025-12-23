@@ -65,7 +65,7 @@ jobs:
       - uses: actions/checkout@v6
       - id: metadata
         run: |
-          msrv=$(yq '.package.rust-version' Cargo.toml)
+          msrv=$(yq '.workspace.package.rust-version' Cargo.toml)
           echo "MSRV: $msrv"
           echo "rust-versions=[\"${msrv}\", \"stable\"]" >> "$GITHUB_OUTPUT"
 

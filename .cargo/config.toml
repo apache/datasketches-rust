@@ -15,33 +15,8 @@
 # specific language governing permissions and limitations
 # under the License.
 
-[workspace]
-members = ["datasketches", "examples", "xtask"]
-resolver = "3"
+[alias]
+x = "run --package x --"
 
-[workspace.package]
-edition = "2024"
-homepage = "https://datasketches.apache.org"
-license = "Apache-2.0"
-readme = "README.md"
-repository = "https://github.com/apache/datasketches-rust"
-rust-version = "1.85.0"
-
-[workspace.dependencies]
-# Workspace dependencies
-datasketches = { path = "datasketches" }
-
-# Crates.io dependencies
-byteorder = { version = "1.5.0" }
-clap = { version = "4.5.20", features = ["derive"] }
-googletest = { version = "0.14.2" }
-which = { version = "8.0.0" }
-
-[workspace.lints.rust]
-unknown_lints = "deny"
-unsafe_code = "deny"
-unused_must_use = "deny"
-
-[workspace.lints.clippy]
-dbg_macro = "deny"
-too_many_arguments = "allow"
+[env]
+CARGO_WORKSPACE_DIR = { value = "", relative = true }

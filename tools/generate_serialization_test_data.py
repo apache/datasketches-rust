@@ -47,7 +47,7 @@ def run_command(command, cwd=None, shell=False):
         sys.exit(1)
 
 
-def generate_java_files(project_root):
+def generate_java_files(workspace_dir, project_dir):
     print("--- Generating Java Test Data ---")
 
     # 1. Check prerequisites
@@ -59,8 +59,8 @@ def generate_java_files(project_root):
     check_command_installed(mvn_cmd_name)
 
     # 2. Define paths
-    temp_dir = project_root / "tmp_datasketches_java"
-    output_dir = project_root / "tests" / "serialization_test_data" / "java_generated_files"
+    temp_dir = workspace_dir / "tmp_datasketches_java"
+    output_dir = project_dir / "tests" / "serialization_test_data" / "java_generated_files"
 
     # 3. Setup temporary directory
     if temp_dir.exists():
@@ -104,7 +104,7 @@ def generate_java_files(project_root):
         print(f"Successfully copied {files_copied} files.")
 
 
-def generate_cpp_files(project_root):
+def generate_cpp_files(workspace_dir, project_root):
     print("--- Generating C++ Test Data ---")
 
     # 1. Check prerequisites
@@ -113,7 +113,7 @@ def generate_cpp_files(project_root):
     check_command_installed("ctest")
 
     # 2. Define paths
-    temp_dir = project_root / "tmp_datasketches_cpp"
+    temp_dir = workspace_dir / "tmp_datasketches_cpp"
     output_dir = project_root / "tests" / "serialization_test_data" / "cpp_generated_files"
 
     # 3. Setup temporary directory
@@ -175,14 +175,15 @@ def main():
     if not args.java and not args.cpp and not args.all:
         args.all = True
 
-    script_dir = Path(__file__).resolve().parent
-    project_root = script_dir.parent
+    tools_dir = Path(__file__).resolve().parent
+    workspace_dir = tools_dir.parent
+    project_dir = workspace_dir / "datasketches"
 
     if args.java or args.all:
-        generate_java_files(project_root)
+        generate_java_files(workspace_dir, project_dir)
 
     if args.cpp or args.all:
-        generate_cpp_files(project_root)
+        generate_cpp_files(workspace_dir, project_dir)
 
 if __name__ == "__main__":
     main()
