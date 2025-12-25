@@ -15,7 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use datasketches::countmin::{CountMinSketch, DEFAULT_SEED};
+use datasketches::countmin::CountMinSketch;
+use datasketches::countmin::DEFAULT_SEED;
 
 #[test]
 fn test_init_defaults() {

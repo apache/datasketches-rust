@@ -15,16 +15,22 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use crate::countmin::serialization::{
-    COUNTMIN_FAMILY_ID, FLAGS_IS_EMPTY, LONG_SIZE_BYTES, PREAMBLE_LONGS_SHORT, SERIAL_VERSION,
-    compute_seed_hash,
-};
-use crate::error::SerdeError;
-use crate::hash::MurmurHash3X64128;
-use byteorder::{LE, ReadBytesExt};
-use std::hash::{Hash, Hasher};
+use std::hash::Hash;
+use std::hash::Hasher;
 use std::io::Cursor;
 use std::mem::size_of;
+
+use byteorder::LE;
+use byteorder::ReadBytesExt;
+
+use crate::countmin::serialization::COUNTMIN_FAMILY_ID;
+use crate::countmin::serialization::FLAGS_IS_EMPTY;
+use crate::countmin::serialization::LONG_SIZE_BYTES;
+use crate::countmin::serialization::PREAMBLE_LONGS_SHORT;
+use crate::countmin::serialization::SERIAL_VERSION;
+use crate::countmin::serialization::compute_seed_hash;
+use crate::error::SerdeError;
+use crate::hash::MurmurHash3X64128;
 
 const MAX_TABLE_ENTRIES: usize = 1 << 30;
 

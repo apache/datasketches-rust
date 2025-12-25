@@ -15,8 +15,9 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use crate::hash::MurmurHash3X64128;
 use std::hash::Hasher;
+
+use crate::hash::MurmurHash3X64128;
 
 pub(super) const PREAMBLE_LONGS_SHORT: u8 = 2;
 pub(super) const SERIAL_VERSION: u8 = 1;
