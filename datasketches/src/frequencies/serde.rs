@@ -40,10 +40,8 @@ pub struct StringSerde;
 
 impl ItemsSerde<String> for StringSerde {
     fn serialize_items(&self, items: &[String]) -> Vec<u8> {
-        if items.is_empty() {
-            return Vec::new();
-        }
-        let mut out = Vec::new();
+        let total_len: usize = items.iter().map(|item| 4 + item.len()).sum();
+        let mut out = Vec::with_capacity(total_len);
         for item in items {
             let bytes = item.as_bytes();
             let len = bytes.len() as u32;
@@ -103,9 +101,6 @@ pub struct I64Serde;
 
 impl ItemsSerde<i64> for I64Serde {
     fn serialize_items(&self, items: &[i64]) -> Vec<u8> {
-        if items.is_empty() {
-            return Vec::new();
-        }
         let mut out = Vec::with_capacity(items.len() * 8);
         for item in items {
             out.extend_from_slice(&item.to_le_bytes());

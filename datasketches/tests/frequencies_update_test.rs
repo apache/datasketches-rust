@@ -17,14 +17,13 @@
 
 use datasketches::frequencies::ErrorType;
 use datasketches::frequencies::FrequentItemsSketch;
-use datasketches::frequencies::FrequentLongsSketch;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct TestItem(i32);
 
 #[test]
 fn test_longs_update_with_zero_count_is_noop() {
-    let mut sketch = FrequentLongsSketch::new(8);
+    let mut sketch: FrequentItemsSketch<i64> = FrequentItemsSketch::new(8);
     sketch.update_with_count(1, 0);
 
     assert!(sketch.is_empty());
@@ -44,17 +43,17 @@ fn test_items_update_with_zero_count_is_noop() {
 
 #[test]
 fn test_capacity_and_epsilon_helpers() {
-    let longs = FrequentLongsSketch::new(8);
+    let longs: FrequentItemsSketch<i64> = FrequentItemsSketch::new(8);
     assert_eq!(longs.get_current_map_capacity(), 6);
     assert_eq!(longs.get_maximum_map_capacity(), 6);
     assert_eq!(longs.get_lg_cur_map_size(), 3);
     assert_eq!(longs.get_lg_max_map_size(), 3);
 
-    let epsilon = FrequentLongsSketch::get_epsilon_for_lg(10);
+    let epsilon = FrequentItemsSketch::<i64>::get_epsilon_for_lg(10);
     let expected = 3.5 / 1024.0;
     assert!((epsilon - expected).abs() < 1e-12);
 
-    let apriori = FrequentLongsSketch::get_apriori_error(10, 10_000);
+    let apriori = FrequentItemsSketch::<i64>::get_apriori_error(10, 10_000);
     assert!((apriori - expected * 10_000.0).abs() < 1e-9);
 
     let items: FrequentItemsSketch<i32> = FrequentItemsSketch::new(1024);
@@ -66,14 +65,14 @@ fn test_capacity_and_epsilon_helpers() {
 
 #[test]
 fn test_longs_empty() {
-    let sketch = FrequentLongsSketch::new(8);
+    let sketch: FrequentItemsSketch<i64> = FrequentItemsSketch::new(8);
 
     assert!(sketch.is_empty());
     assert_eq!(sketch.get_num_active_items(), 0);
     assert_eq!(sketch.get_total_weight(), 0);
-    assert_eq!(sketch.get_estimate(42), 0);
-    assert_eq!(sketch.get_lower_bound(42), 0);
-    assert_eq!(sketch.get_upper_bound(42), 0);
+    assert_eq!(sketch.get_estimate(&42), 0);
+    assert_eq!(sketch.get_lower_bound(&42), 0);
+    assert_eq!(sketch.get_upper_bound(&42), 0);
     assert_eq!(sketch.get_maximum_error(), 0);
 }
 
@@ -93,15 +92,15 @@ fn test_items_empty() {
 
 #[test]
 fn test_longs_one_item() {
-    let mut sketch = FrequentLongsSketch::new(8);
+    let mut sketch: FrequentItemsSketch<i64> = FrequentItemsSketch::new(8);
     sketch.update(10);
 
     assert!(!sketch.is_empty());
     assert_eq!(sketch.get_num_active_items(), 1);
     assert_eq!(sketch.get_total_weight(), 1);
-    assert_eq!(sketch.get_estimate(10), 1);
-    assert_eq!(sketch.get_lower_bound(10), 1);
-    assert_eq!(sketch.get_upper_bound(10), 1);
+    assert_eq!(sketch.get_estimate(&10), 1);
+    assert_eq!(sketch.get_lower_bound(&10), 1);
+    assert_eq!(sketch.get_upper_bound(&10), 1);
 }
 
 #[test]
@@ -120,7 +119,7 @@ fn test_items_one_item() {
 
 #[test]
 fn test_longs_several_items_no_resize_no_purge() {
-    let mut sketch = FrequentLongsSketch::new(8);
+    let mut sketch: FrequentItemsSketch<i64> = FrequentItemsSketch::new(8);
     sketch.update(1);
     sketch.update(2);
     sketch.update(3);
@@ -132,10 +131,10 @@ fn test_longs_several_items_no_resize_no_purge() {
     assert!(!sketch.is_empty());
     assert_eq!(sketch.get_total_weight(), 7);
     assert_eq!(sketch.get_num_active_items(), 4);
-    assert_eq!(sketch.get_estimate(1), 1);
-    assert_eq!(sketch.get_estimate(2), 3);
-    assert_eq!(sketch.get_estimate(3), 2);
-    assert_eq!(sketch.get_estimate(4), 1);
+    assert_eq!(sketch.get_estimate(&1), 1);
+    assert_eq!(sketch.get_estimate(&2), 3);
+    assert_eq!(sketch.get_estimate(&3), 2);
+    assert_eq!(sketch.get_estimate(&4), 1);
     assert_eq!(sketch.get_maximum_error(), 0);
 }
 
@@ -206,7 +205,7 @@ fn test_items_several_items_with_resize_no_purge() {
 
 #[test]
 fn test_longs_estimation_mode() {
-    let mut sketch = FrequentLongsSketch::new(8);
+    let mut sketch: FrequentItemsSketch<i64> = FrequentItemsSketch::new(8);
     sketch.update_with_count(1, 10);
     for item in 2..=6 {
         sketch.update(item);
@@ -222,9 +221,9 @@ fn test_longs_estimation_mode() {
 
     let items = sketch.get_frequent_items(ErrorType::NoFalsePositives);
     assert_eq!(items.len(), 2);
-    assert_eq!(*items[0].item(), 7);
+    assert_eq!(items[0].item(), &7);
     assert_eq!(items[0].estimate(), 15);
-    assert_eq!(*items[1].item(), 1);
+    assert_eq!(items[1].item(), &1);
     assert_eq!(items[1].estimate(), 10);
 
     let items = sketch.get_frequent_items(ErrorType::NoFalseNegatives);
@@ -262,7 +261,7 @@ fn test_items_estimation_mode() {
 
 #[test]
 fn test_longs_purge_keeps_heavy_hitters() {
-    let mut sketch = FrequentLongsSketch::new(8);
+    let mut sketch: FrequentItemsSketch<i64> = FrequentItemsSketch::new(8);
     sketch.update_with_count(1, 10);
     for item in 2..=7 {
         sketch.update(item);
@@ -270,12 +269,12 @@ fn test_longs_purge_keeps_heavy_hitters() {
 
     assert_eq!(sketch.get_total_weight(), 16);
     assert_eq!(sketch.get_maximum_error(), 1);
-    assert_eq!(sketch.get_estimate(1), 10);
-    assert_eq!(sketch.get_lower_bound(1), 9);
+    assert_eq!(sketch.get_estimate(&1), 10);
+    assert_eq!(sketch.get_lower_bound(&1), 9);
 
     let rows = sketch.get_frequent_items(ErrorType::NoFalsePositives);
     assert_eq!(rows.len(), 1);
-    assert_eq!(*rows[0].item(), 1);
+    assert_eq!(rows[0].item(), &1);
     assert_eq!(rows[0].estimate(), 10);
 }
 
@@ -320,14 +319,14 @@ fn test_items_custom_type() {
 
 #[test]
 fn test_longs_merge_estimation_mode() {
-    let mut sketch1 = FrequentLongsSketch::new(16);
+    let mut sketch1: FrequentItemsSketch<i64> = FrequentItemsSketch::new(16);
     sketch1.update_with_count(1, 9);
     for item in 2..=14 {
         sketch1.update(item);
     }
     assert!(sketch1.get_maximum_error() > 0);
 
-    let mut sketch2 = FrequentLongsSketch::new(16);
+    let mut sketch2: FrequentItemsSketch<i64> = FrequentItemsSketch::new(16);
     for item in 8..=20 {
         sketch2.update(item);
     }
@@ -341,9 +340,9 @@ fn test_longs_merge_estimation_mode() {
 
     let items = sketch1.get_frequent_items_with_threshold(ErrorType::NoFalsePositives, 2);
     assert_eq!(items.len(), 2);
-    assert_eq!(*items[0].item(), 21);
+    assert_eq!(items[0].item(), &21);
     assert!(items[0].estimate() >= 11);
-    assert_eq!(*items[1].item(), 1);
+    assert_eq!(items[1].item(), &1);
     assert!(items[1].estimate() >= 9);
 }
 
@@ -378,12 +377,12 @@ fn test_items_merge_estimation_mode() {
 
 #[test]
 fn test_longs_merge_exact_mode() {
-    let mut sketch1 = FrequentLongsSketch::new(8);
+    let mut sketch1: FrequentItemsSketch<i64> = FrequentItemsSketch::new(8);
     sketch1.update(1);
     sketch1.update(2);
     sketch1.update(2);
 
-    let mut sketch2 = FrequentLongsSketch::new(8);
+    let mut sketch2: FrequentItemsSketch<i64> = FrequentItemsSketch::new(8);
     sketch2.update(2);
     sketch2.update(3);
 
@@ -392,9 +391,9 @@ fn test_longs_merge_exact_mode() {
     assert!(!sketch1.is_empty());
     assert_eq!(sketch1.get_total_weight(), 5);
     assert_eq!(sketch1.get_num_active_items(), 3);
-    assert_eq!(sketch1.get_estimate(1), 1);
-    assert_eq!(sketch1.get_estimate(2), 3);
-    assert_eq!(sketch1.get_estimate(3), 1);
+    assert_eq!(sketch1.get_estimate(&1), 1);
+    assert_eq!(sketch1.get_estimate(&2), 3);
+    assert_eq!(sketch1.get_estimate(&3), 1);
     assert_eq!(sketch1.get_maximum_error(), 0);
 }
 
@@ -425,15 +424,15 @@ fn test_items_merge_exact_mode() {
 
 #[test]
 fn test_longs_merge_empty_is_noop() {
-    let mut sketch = FrequentLongsSketch::new(8);
+    let mut sketch: FrequentItemsSketch<i64> = FrequentItemsSketch::new(8);
     sketch.update(1);
 
-    let empty = FrequentLongsSketch::new(8);
+    let empty: FrequentItemsSketch<i64> = FrequentItemsSketch::new(8);
     sketch.merge(&empty);
 
     assert_eq!(sketch.get_total_weight(), 1);
     assert_eq!(sketch.get_num_active_items(), 1);
-    assert_eq!(sketch.get_estimate(1), 1);
+    assert_eq!(sketch.get_estimate(&1), 1);
 }
 
 #[test]
@@ -469,7 +468,7 @@ fn test_row_equality_changes_with_updates() {
 
 #[test]
 fn test_longs_reset() {
-    let mut sketch = FrequentLongsSketch::new(8);
+    let mut sketch: FrequentItemsSketch<i64> = FrequentItemsSketch::new(8);
     sketch.update_with_count(1, 3);
     sketch.update_with_count(2, 2);
     sketch.reset();
@@ -483,7 +482,7 @@ fn test_longs_reset() {
 #[test]
 #[should_panic(expected = "count may not be negative")]
 fn test_longs_negative_count_panics() {
-    let mut sketch = FrequentLongsSketch::new(8);
+    let mut sketch: FrequentItemsSketch<i64> = FrequentItemsSketch::new(8);
     sketch.update_with_count(1, -1);
 }
 
@@ -497,7 +496,7 @@ fn test_items_negative_count_panics() {
 #[test]
 #[should_panic(expected = "value must be power of 2")]
 fn test_longs_invalid_map_size_panics() {
-    FrequentLongsSketch::new(6);
+    FrequentItemsSketch::<i64>::new(6);
 }
 
 #[test]

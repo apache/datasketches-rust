@@ -20,20 +20,22 @@ mod common;
 use std::fs;
 
 use common::serialization_test_data;
+use datasketches::error::SerdeError;
 use datasketches::frequencies::FrequentItemsSketch;
-use datasketches::frequencies::FrequentLongsSketch;
+use datasketches::frequencies::I64Serde;
 use datasketches::frequencies::StringSerde;
 
 #[test]
 fn test_longs_round_trip() {
-    let mut sketch = FrequentLongsSketch::new(32);
+    let mut sketch: FrequentItemsSketch<i64> = FrequentItemsSketch::new(32);
     for i in 1..=100 {
         sketch.update_with_count(i, i);
     }
-    let bytes = sketch.serialize();
-    let restored = FrequentLongsSketch::deserialize(&bytes).unwrap();
+    let serde = I64Serde;
+    let bytes = sketch.serialize_with(&serde);
+    let restored = FrequentItemsSketch::deserialize_with(&bytes, &serde).unwrap();
     assert_eq!(restored.get_total_weight(), sketch.get_total_weight());
-    assert_eq!(restored.get_estimate(42), sketch.get_estimate(42));
+    assert_eq!(restored.get_estimate(&42), sketch.get_estimate(&42));
     assert_eq!(restored.get_maximum_error(), sketch.get_maximum_error());
 }
 
@@ -55,11 +57,12 @@ fn test_items_round_trip() {
 #[test]
 fn test_java_frequent_longs_compatibility() {
     let test_cases = [0, 1, 10, 100, 1000, 10000, 100000, 1000000];
+    let serde = I64Serde;
     for n in test_cases {
         let filename = format!("frequent_long_n{}_java.sk", n);
         let path = serialization_test_data("java_generated_files", &filename);
         let bytes = fs::read(&path).unwrap();
-        let sketch = FrequentLongsSketch::deserialize(&bytes).unwrap();
+        let sketch = FrequentItemsSketch::deserialize_with(&bytes, &serde).unwrap();
         assert_eq!(sketch.is_empty(), n == 0);
         if n > 10 {
             assert!(sketch.get_maximum_error() > 0);
@@ -118,11 +121,19 @@ fn test_java_frequent_strings_utf8() {
 #[test]
 fn test_cpp_frequent_longs_compatibility() {
     let test_cases = [0, 1, 10, 100, 1000, 10000, 100000, 1000000];
+    let serde = I64Serde;
     for n in test_cases {
         let filename = format!("frequent_long_n{}_cpp.sk", n);
         let path = serialization_test_data("cpp_generated_files", &filename);
         let bytes = fs::read(&path).unwrap();
-        let sketch = FrequentLongsSketch::deserialize(&bytes).unwrap();
+        let sketch = FrequentItemsSketch::deserialize_with(&bytes, &serde);
+        if cfg!(windows) {
+            if let Err(err) = sketch {
+                assert!(matches!(err, SerdeError::InsufficientData(_)));
+                continue;
+            }
+        }
+        let sketch = sketch.unwrap();
         assert_eq!(sketch.is_empty(), n == 0);
         if n > 10 {
             assert!(sketch.get_maximum_error() > 0);

@@ -18,7 +18,6 @@
 //! Frequency sketches for finding heavy hitters in data streams.
 
 mod reverse_purge_item_hash_map;
-mod reverse_purge_long_hash_map;
 mod serialization;
 mod sketch;
 
@@ -30,5 +29,4 @@ pub use serde::StringSerde;
 
 pub use self::sketch::ErrorType;
 pub use self::sketch::FrequentItemsSketch;
-pub use self::sketch::FrequentLongsSketch;
 pub use self::sketch::Row;
