@@ -19,6 +19,51 @@ use datasketches::frequencies::ErrorType;
 use datasketches::frequencies::FrequentItemsSketch;
 use datasketches::frequencies::FrequentLongsSketch;
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct TestItem(i32);
+
+#[test]
+fn test_longs_update_with_zero_count_is_noop() {
+    let mut sketch = FrequentLongsSketch::new(8);
+    sketch.update_with_count(1, 0);
+
+    assert!(sketch.is_empty());
+    assert_eq!(sketch.get_total_weight(), 0);
+    assert_eq!(sketch.get_num_active_items(), 0);
+}
+
+#[test]
+fn test_items_update_with_zero_count_is_noop() {
+    let mut sketch = FrequentItemsSketch::new(8);
+    sketch.update_with_count("a".to_string(), 0);
+
+    assert!(sketch.is_empty());
+    assert_eq!(sketch.get_total_weight(), 0);
+    assert_eq!(sketch.get_num_active_items(), 0);
+}
+
+#[test]
+fn test_capacity_and_epsilon_helpers() {
+    let longs = FrequentLongsSketch::new(8);
+    assert_eq!(longs.get_current_map_capacity(), 6);
+    assert_eq!(longs.get_maximum_map_capacity(), 6);
+    assert_eq!(longs.get_lg_cur_map_size(), 3);
+    assert_eq!(longs.get_lg_max_map_size(), 3);
+
+    let epsilon = FrequentLongsSketch::get_epsilon_for_lg(10);
+    let expected = 3.5 / 1024.0;
+    assert!((epsilon - expected).abs() < 1e-12);
+
+    let apriori = FrequentLongsSketch::get_apriori_error(10, 10_000);
+    assert!((apriori - expected * 10_000.0).abs() < 1e-9);
+
+    let items: FrequentItemsSketch<i32> = FrequentItemsSketch::new(1024);
+    assert!((items.get_epsilon() - expected).abs() < 1e-12);
+    assert_eq!(items.get_current_map_capacity(), 6);
+    assert_eq!(items.get_maximum_map_capacity(), 768);
+    assert_eq!(items.get_lg_max_map_size(), 10);
+}
+
 #[test]
 fn test_longs_empty() {
     let sketch = FrequentLongsSketch::new(8);
@@ -160,6 +205,62 @@ fn test_items_several_items_with_resize_no_purge() {
 }
 
 #[test]
+fn test_longs_estimation_mode() {
+    let mut sketch = FrequentLongsSketch::new(8);
+    sketch.update_with_count(1, 10);
+    for item in 2..=6 {
+        sketch.update(item);
+    }
+    sketch.update_with_count(7, 15);
+    for item in 8..=12 {
+        sketch.update(item);
+    }
+
+    assert!(!sketch.is_empty());
+    assert_eq!(sketch.get_total_weight(), 35);
+    assert!(sketch.get_maximum_error() > 0);
+
+    let items = sketch.get_frequent_items(ErrorType::NoFalsePositives);
+    assert_eq!(items.len(), 2);
+    assert_eq!(*items[0].item(), 7);
+    assert_eq!(items[0].estimate(), 15);
+    assert_eq!(*items[1].item(), 1);
+    assert_eq!(items[1].estimate(), 10);
+
+    let items = sketch.get_frequent_items(ErrorType::NoFalseNegatives);
+    assert!(items.len() >= 2);
+    assert!(items.len() <= 12);
+}
+
+#[test]
+fn test_items_estimation_mode() {
+    let mut sketch: FrequentItemsSketch<i32> = FrequentItemsSketch::new(8);
+    sketch.update_with_count(1, 10);
+    for item in 2..=6 {
+        sketch.update(item);
+    }
+    sketch.update_with_count(7, 15);
+    for item in 8..=12 {
+        sketch.update(item);
+    }
+
+    assert!(!sketch.is_empty());
+    assert_eq!(sketch.get_total_weight(), 35);
+    assert!(sketch.get_maximum_error() > 0);
+
+    let items = sketch.get_frequent_items(ErrorType::NoFalsePositives);
+    assert_eq!(items.len(), 2);
+    assert_eq!(items[0].item(), &7);
+    assert_eq!(items[0].estimate(), 15);
+    assert_eq!(items[1].item(), &1);
+    assert_eq!(items[1].estimate(), 10);
+
+    let items = sketch.get_frequent_items(ErrorType::NoFalseNegatives);
+    assert!(items.len() >= 2);
+    assert!(items.len() <= 12);
+}
+
+#[test]
 fn test_longs_purge_keeps_heavy_hitters() {
     let mut sketch = FrequentLongsSketch::new(8);
     sketch.update_with_count(1, 10);
@@ -195,6 +296,84 @@ fn test_items_purge_keeps_heavy_hitters() {
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].item(), "a");
     assert_eq!(rows[0].estimate(), 10);
+}
+
+#[test]
+fn test_items_custom_type() {
+    let mut sketch: FrequentItemsSketch<TestItem> = FrequentItemsSketch::new(8);
+    sketch.update_with_count(TestItem(1), 10);
+    for item in 2..=7 {
+        sketch.update(TestItem(item));
+    }
+    let item = TestItem(8);
+    sketch.update(item);
+
+    assert!(!sketch.is_empty());
+    assert_eq!(sketch.get_total_weight(), 17);
+    assert_eq!(sketch.get_estimate(&TestItem(1)), 10);
+
+    let rows = sketch.get_frequent_items(ErrorType::NoFalsePositives);
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].item(), &TestItem(1));
+    assert_eq!(rows[0].estimate(), 10);
+}
+
+#[test]
+fn test_longs_merge_estimation_mode() {
+    let mut sketch1 = FrequentLongsSketch::new(16);
+    sketch1.update_with_count(1, 9);
+    for item in 2..=14 {
+        sketch1.update(item);
+    }
+    assert!(sketch1.get_maximum_error() > 0);
+
+    let mut sketch2 = FrequentLongsSketch::new(16);
+    for item in 8..=20 {
+        sketch2.update(item);
+    }
+    sketch2.update_with_count(21, 11);
+    assert!(sketch2.get_maximum_error() > 0);
+
+    sketch1.merge(&sketch2);
+    assert!(!sketch1.is_empty());
+    assert_eq!(sketch1.get_total_weight(), 46);
+    assert!(sketch1.get_num_active_items() >= 2);
+
+    let items = sketch1.get_frequent_items_with_threshold(ErrorType::NoFalsePositives, 2);
+    assert_eq!(items.len(), 2);
+    assert_eq!(*items[0].item(), 21);
+    assert!(items[0].estimate() >= 11);
+    assert_eq!(*items[1].item(), 1);
+    assert!(items[1].estimate() >= 9);
+}
+
+#[test]
+fn test_items_merge_estimation_mode() {
+    let mut sketch1: FrequentItemsSketch<i32> = FrequentItemsSketch::new(16);
+    sketch1.update_with_count(1, 9);
+    for item in 2..=14 {
+        sketch1.update(item);
+    }
+    assert!(sketch1.get_maximum_error() > 0);
+
+    let mut sketch2: FrequentItemsSketch<i32> = FrequentItemsSketch::new(16);
+    for item in 8..=20 {
+        sketch2.update(item);
+    }
+    sketch2.update_with_count(21, 11);
+    assert!(sketch2.get_maximum_error() > 0);
+
+    sketch1.merge(&sketch2);
+    assert!(!sketch1.is_empty());
+    assert_eq!(sketch1.get_total_weight(), 46);
+    assert!(sketch1.get_num_active_items() >= 2);
+
+    let items = sketch1.get_frequent_items_with_threshold(ErrorType::NoFalsePositives, 2);
+    assert_eq!(items.len(), 2);
+    assert_eq!(items[0].item(), &21);
+    assert!(items[0].estimate() >= 11);
+    assert_eq!(items[1].item(), &1);
+    assert!(items[1].estimate() >= 9);
 }
 
 #[test]
@@ -242,6 +421,63 @@ fn test_items_merge_exact_mode() {
     assert_eq!(sketch1.get_estimate(&b), 3);
     assert_eq!(sketch1.get_estimate(&c), 1);
     assert_eq!(sketch1.get_maximum_error(), 0);
+}
+
+#[test]
+fn test_longs_merge_empty_is_noop() {
+    let mut sketch = FrequentLongsSketch::new(8);
+    sketch.update(1);
+
+    let empty = FrequentLongsSketch::new(8);
+    sketch.merge(&empty);
+
+    assert_eq!(sketch.get_total_weight(), 1);
+    assert_eq!(sketch.get_num_active_items(), 1);
+    assert_eq!(sketch.get_estimate(1), 1);
+}
+
+#[test]
+fn test_items_merge_empty_is_noop() {
+    let mut sketch: FrequentItemsSketch<i32> = FrequentItemsSketch::new(8);
+    sketch.update(1);
+
+    let empty: FrequentItemsSketch<i32> = FrequentItemsSketch::new(8);
+    sketch.merge(&empty);
+
+    assert_eq!(sketch.get_total_weight(), 1);
+    assert_eq!(sketch.get_num_active_items(), 1);
+    assert_eq!(sketch.get_estimate(&1), 1);
+}
+
+#[test]
+fn test_row_equality_changes_with_updates() {
+    let mut sketch: FrequentItemsSketch<i32> = FrequentItemsSketch::new(8);
+    sketch.update(1);
+    let rows1 = sketch.get_frequent_items(ErrorType::NoFalsePositives);
+    assert_eq!(rows1.len(), 1);
+    let row1 = rows1[0].clone();
+
+    sketch.update(1);
+    let rows2 = sketch.get_frequent_items(ErrorType::NoFalsePositives);
+    assert_eq!(rows2.len(), 1);
+    let row2 = rows2[0].clone();
+
+    assert_ne!(row1, row2);
+    assert_eq!(row2.item(), &1);
+    assert_eq!(row2.estimate(), 2);
+}
+
+#[test]
+fn test_longs_reset() {
+    let mut sketch = FrequentLongsSketch::new(8);
+    sketch.update_with_count(1, 3);
+    sketch.update_with_count(2, 2);
+    sketch.reset();
+
+    assert!(sketch.is_empty());
+    assert_eq!(sketch.get_total_weight(), 0);
+    assert_eq!(sketch.get_num_active_items(), 0);
+    assert_eq!(sketch.get_lg_max_map_size(), 3);
 }
 
 #[test]
