@@ -24,10 +24,11 @@ mod sketch;
 
 pub mod serde;
 
+pub use serde::I64Serde;
+pub use serde::ItemsSerde;
+pub use serde::StringSerde;
+
 pub use self::sketch::ErrorType;
 pub use self::sketch::FrequentItemsSketch;
 pub use self::sketch::FrequentLongsSketch;
 pub use self::sketch::Row;
-pub use serde::I64Serde;
-pub use serde::ItemsSerde;
-pub use serde::StringSerde;

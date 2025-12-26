@@ -15,37 +15,20 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use std::fs;
-use std::path::PathBuf;
+mod common;
 
+use std::fs;
+
+use common::serialization_test_data;
 use datasketches::frequencies::FrequentItemsSketch;
 use datasketches::frequencies::FrequentLongsSketch;
 use datasketches::frequencies::StringSerde;
 
-fn maybe_java_data(name: &str) -> Option<PathBuf> {
-    let base = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let local = base
-        .join("tests/serialization_test_data/java_generated_files")
-        .join(name);
-    if local.exists() {
-        return Some(local);
-    }
-    let tmp = base
-        .parent()
-        .unwrap_or(&base)
-        .join("tmp_datasketches_java/serialization_test_data/java_generated_files")
-        .join(name);
-    if tmp.exists() {
-        return Some(tmp);
-    }
-    None
-}
-
 #[test]
-fn longs_round_trip() {
+fn test_longs_round_trip() {
     let mut sketch = FrequentLongsSketch::new(32);
     for i in 1..=100 {
-        sketch.update_with_count(i, i as i64);
+        sketch.update_with_count(i, i);
     }
     let bytes = sketch.serialize();
     let restored = FrequentLongsSketch::deserialize(&bytes).unwrap();
@@ -55,7 +38,7 @@ fn longs_round_trip() {
 }
 
 #[test]
-fn items_round_trip() {
+fn test_items_round_trip() {
     let mut sketch = FrequentItemsSketch::new(32);
     sketch.update_with_count("alpha".to_string(), 3);
     sketch.update_with_count("beta".to_string(), 5);
@@ -70,13 +53,11 @@ fn items_round_trip() {
 }
 
 #[test]
-fn java_frequent_longs_compatibility() {
+fn test_java_frequent_longs_compatibility() {
     let test_cases = [0, 1, 10, 100, 1000, 10000, 100000, 1000000];
     for n in test_cases {
         let filename = format!("frequent_long_n{}_java.sk", n);
-        let Some(path) = maybe_java_data(&filename) else {
-            continue;
-        };
+        let path = serialization_test_data("java_generated_files", &filename);
         let bytes = fs::read(&path).unwrap();
         let sketch = FrequentLongsSketch::deserialize(&bytes).unwrap();
         assert_eq!(sketch.is_empty(), n == 0);
@@ -90,10 +71,8 @@ fn java_frequent_longs_compatibility() {
 }
 
 #[test]
-fn java_frequent_strings_ascii() {
-    let Some(path) = maybe_java_data("frequent_string_ascii_java.sk") else {
-        return;
-    };
+fn test_java_frequent_strings_ascii() {
+    let path = serialization_test_data("java_generated_files", "frequent_string_ascii_java.sk");
     let bytes = fs::read(&path).unwrap();
     let serde = StringSerde;
     let sketch = FrequentItemsSketch::deserialize_with(&bytes, &serde).unwrap();
@@ -119,10 +98,90 @@ fn java_frequent_strings_ascii() {
 }
 
 #[test]
-fn java_frequent_strings_utf8() {
-    let Some(path) = maybe_java_data("frequent_string_utf8_java.sk") else {
-        return;
-    };
+fn test_java_frequent_strings_utf8() {
+    let path = serialization_test_data("java_generated_files", "frequent_string_utf8_java.sk");
+    let bytes = fs::read(&path).unwrap();
+    let serde = StringSerde;
+    let sketch = FrequentItemsSketch::deserialize_with(&bytes, &serde).unwrap();
+    assert!(!sketch.is_empty());
+    assert_eq!(sketch.get_maximum_error(), 0);
+    assert_eq!(sketch.get_total_weight(), 28);
+    assert_eq!(sketch.get_estimate(&"абвгд".to_string()), 1);
+    assert_eq!(sketch.get_estimate(&"еёжзи".to_string()), 2);
+    assert_eq!(sketch.get_estimate(&"йклмн".to_string()), 3);
+    assert_eq!(sketch.get_estimate(&"опрст".to_string()), 4);
+    assert_eq!(sketch.get_estimate(&"уфхцч".to_string()), 5);
+    assert_eq!(sketch.get_estimate(&"шщъыь".to_string()), 6);
+    assert_eq!(sketch.get_estimate(&"эюя".to_string()), 7);
+}
+
+#[test]
+fn test_cpp_frequent_longs_compatibility() {
+    let test_cases = [0, 1, 10, 100, 1000, 10000, 100000, 1000000];
+    for n in test_cases {
+        let filename = format!("frequent_long_n{}_cpp.sk", n);
+        let path = serialization_test_data("cpp_generated_files", &filename);
+        let bytes = fs::read(&path).unwrap();
+        let sketch = FrequentLongsSketch::deserialize(&bytes).unwrap();
+        assert_eq!(sketch.is_empty(), n == 0);
+        if n > 10 {
+            assert!(sketch.get_maximum_error() > 0);
+        } else {
+            assert_eq!(sketch.get_maximum_error(), 0);
+        }
+        assert_eq!(sketch.get_total_weight(), n as i64);
+    }
+}
+
+#[test]
+fn test_cpp_frequent_strings_compatibility() {
+    let test_cases = [0, 1, 10, 100, 1000, 10000, 100000, 1000000];
+    for n in test_cases {
+        let filename = format!("frequent_string_n{}_cpp.sk", n);
+        let path = serialization_test_data("cpp_generated_files", &filename);
+        let bytes = fs::read(&path).unwrap();
+        let serde = StringSerde;
+        let sketch = FrequentItemsSketch::deserialize_with(&bytes, &serde).unwrap();
+        assert_eq!(sketch.is_empty(), n == 0);
+        if n > 10 {
+            assert!(sketch.get_maximum_error() > 0);
+        } else {
+            assert_eq!(sketch.get_maximum_error(), 0);
+        }
+        assert_eq!(sketch.get_total_weight(), n as i64);
+    }
+}
+
+#[test]
+fn test_cpp_frequent_strings_ascii() {
+    let path = serialization_test_data("cpp_generated_files", "frequent_string_ascii_cpp.sk");
+    let bytes = fs::read(&path).unwrap();
+    let serde = StringSerde;
+    let sketch = FrequentItemsSketch::deserialize_with(&bytes, &serde).unwrap();
+    assert!(!sketch.is_empty());
+    assert_eq!(sketch.get_maximum_error(), 0);
+    assert_eq!(sketch.get_total_weight(), 10);
+    assert_eq!(
+        sketch.get_estimate(&"aaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string()),
+        1
+    );
+    assert_eq!(
+        sketch.get_estimate(&"bbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string()),
+        2
+    );
+    assert_eq!(
+        sketch.get_estimate(&"ccccccccccccccccccccccccccccc".to_string()),
+        3
+    );
+    assert_eq!(
+        sketch.get_estimate(&"ddddddddddddddddddddddddddddd".to_string()),
+        4
+    );
+}
+
+#[test]
+fn test_cpp_frequent_strings_utf8() {
+    let path = serialization_test_data("cpp_generated_files", "frequent_string_utf8_cpp.sk");
     let bytes = fs::read(&path).unwrap();
     let serde = StringSerde;
     let sketch = FrequentItemsSketch::deserialize_with(&bytes, &serde).unwrap();

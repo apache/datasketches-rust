@@ -22,8 +22,8 @@ use std::hash::Hash;
 use crate::error::SerdeError;
 use crate::frequencies::reverse_purge_item_hash_map::ReversePurgeItemHashMap;
 use crate::frequencies::reverse_purge_long_hash_map::ReversePurgeLongHashMap;
-use crate::frequencies::serialization::*;
 use crate::frequencies::serde::ItemsSerde;
+use crate::frequencies::serialization::*;
 
 const LG_MIN_MAP_SIZE: u8 = 3;
 const SAMPLE_SIZE: usize = 1024;
@@ -107,11 +107,7 @@ impl FrequentLongsSketch {
     /// Returns the estimated frequency for an item.
     pub fn get_estimate(&self, item: i64) -> i64 {
         let value = self.hash_map.get(item);
-        if value > 0 {
-            value + self.offset
-        } else {
-            0
-        }
+        if value > 0 { value + self.offset } else { 0 }
     }
 
     /// Returns the lower bound for an item's frequency.
@@ -423,11 +419,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     /// Returns the estimated frequency for an item.
     pub fn get_estimate(&self, item: &T) -> i64 {
         let value = self.hash_map.get(item);
-        if value > 0 {
-            value + self.offset
-        } else {
-            0
-        }
+        if value > 0 { value + self.offset } else { 0 }
     }
 
     /// Returns the lower bound for an item's frequency.

@@ -277,7 +277,9 @@ impl<'a, T> Iterator for ReversePurgeItemIter<'a, T> {
             self.index = self.index.wrapping_add(self.stride) & self.mask;
             if self.map.states[self.index] > 0 {
                 self.count += 1;
-                let key = self.map.keys[self.index].as_ref().expect("active key missing");
+                let key = self.map.keys[self.index]
+                    .as_ref()
+                    .expect("active key missing");
                 return Some((key, self.map.values[self.index]));
             }
         }

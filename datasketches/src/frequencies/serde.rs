@@ -27,7 +27,11 @@ pub trait ItemsSerde<T> {
     fn serialize_items(&self, items: &[T]) -> Vec<u8>;
 
     /// Deserializes `num_items` from bytes, returning items and bytes consumed.
-    fn deserialize_items(&self, bytes: &[u8], num_items: usize) -> Result<(Vec<T>, usize), SerdeError>;
+    fn deserialize_items(
+        &self,
+        bytes: &[u8],
+        num_items: usize,
+    ) -> Result<(Vec<T>, usize), SerdeError>;
 }
 
 /// Serializer for UTF-8 strings compatible with ArrayOfStringsSerDe in Java.
@@ -49,7 +53,11 @@ impl ItemsSerde<String> for StringSerde {
         out
     }
 
-    fn deserialize_items(&self, bytes: &[u8], num_items: usize) -> Result<(Vec<String>, usize), SerdeError> {
+    fn deserialize_items(
+        &self,
+        bytes: &[u8],
+        num_items: usize,
+    ) -> Result<(Vec<String>, usize), SerdeError> {
         if num_items == 0 {
             return Ok((Vec::new(), 0));
         }
@@ -79,7 +87,7 @@ impl ItemsSerde<String> for StringSerde {
                 Err(_) => {
                     return Err(SerdeError::MalformedData(
                         "invalid UTF-8 string payload".to_string(),
-                    ))
+                    ));
                 }
             };
             items.push(value);
@@ -105,7 +113,11 @@ impl ItemsSerde<i64> for I64Serde {
         out
     }
 
-    fn deserialize_items(&self, bytes: &[u8], num_items: usize) -> Result<(Vec<i64>, usize), SerdeError> {
+    fn deserialize_items(
+        &self,
+        bytes: &[u8],
+        num_items: usize,
+    ) -> Result<(Vec<i64>, usize), SerdeError> {
         let needed = num_items
             .checked_mul(8)
             .ok_or_else(|| SerdeError::MalformedData("items size overflow".to_string()))?;
