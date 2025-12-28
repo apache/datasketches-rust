@@ -26,6 +26,10 @@ rust-version.workspace = true
 name = "hll_update"
 path = "src/hll_update.rs"
 
+[[bin]]
+name = "theta_sketch"
+path = "src/theta_sketch.rs"
+
 [package.metadata.release]
 release = false
 

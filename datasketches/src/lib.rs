@@ -34,5 +34,6 @@ pub mod countmin;
 pub mod error;
 pub mod hll;
 pub mod tdigest;
+pub mod theta;
 
 mod hash;
