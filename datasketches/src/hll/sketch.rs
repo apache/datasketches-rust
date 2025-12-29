@@ -22,7 +22,7 @@
 
 use std::hash::Hash;
 
-use crate::error::SerdeError;
+use crate::error::Error;
 use crate::hll::HllType;
 use crate::hll::NumStdDev;
 use crate::hll::RESIZE_DENOMINATOR;
@@ -212,16 +212,16 @@ impl HllSketch {
     }
 
     /// Deserializes an HLL sketch from bytes
-    pub fn deserialize(bytes: &[u8]) -> Result<HllSketch, SerdeError> {
+    pub fn deserialize(bytes: &[u8]) -> Result<HllSketch, Error> {
         if bytes.len() < 8 {
-            return Err(SerdeError::InsufficientData(
-                "sketch data too short (< 8 bytes)".to_string(),
+            return Err(Error::insufficient_data(
+                "sketch data too short (< 8 bytes)",
             ));
         }
 
         // Read and validate preamble
         let preamble_ints = bytes[PREAMBLE_INTS_BYTE];
-        let ser_ver = bytes[SER_VER_BYTE];
+        let serial_ver = bytes[SER_VER_BYTE];
         let family_id = bytes[FAMILY_BYTE];
         let lg_config_k = bytes[LG_K_BYTE];
         let flags = bytes[FLAGS_BYTE];
@@ -229,25 +229,18 @@ impl HllSketch {
 
         // Verify family ID
         if family_id != HLL_FAMILY_ID {
-            return Err(SerdeError::InvalidFamily(format!(
-                "expected {} (HLL), got {}",
-                HLL_FAMILY_ID, family_id
-            )));
+            return Err(Error::invalid_family(HLL_FAMILY_ID, family_id, "HLL"));
         }
 
         // Verify serialization version
-        if ser_ver != SER_VER {
-            return Err(SerdeError::UnsupportedVersion(format!(
-                "expected {}, got {}",
-                SER_VER, ser_ver
-            )));
+        if serial_ver != SERIAL_VER {
+            return Err(Error::unsupported_serial_version(SERIAL_VER, serial_ver));
         }
 
         // Verify lg_k range (4-21 are valid)
         if !(4..=21).contains(&lg_config_k) {
-            return Err(SerdeError::InvalidParameter(format!(
-                "lg_k must be in [4; 21], got {}",
-                lg_config_k
+            return Err(Error::deserial(format!(
+                "lg_k must be in [4; 21], got {lg_config_k}",
             )));
         }
 
@@ -256,10 +249,7 @@ impl HllSketch {
             TGT_HLL6 => HllType::Hll6,
             TGT_HLL8 => HllType::Hll8,
             hll_type => {
-                return Err(SerdeError::MalformedData(format!(
-                    "invalid HLL type: {}",
-                    hll_type
-                )));
+                return Err(Error::deserial(format!("invalid HLL type: {hll_type}")));
             }
         };
 
@@ -272,9 +262,9 @@ impl HllSketch {
             match extract_cur_mode(mode_byte) {
                 CUR_MODE_LIST => {
                     if preamble_ints != LIST_PREINTS {
-                        return Err(SerdeError::MalformedData(format!(
+                        return Err(Error::deserial(format!(
                             "LIST mode preamble: expected {}, got {}",
-                            LIST_PREINTS, preamble_ints
+                            LIST_PREINTS, preamble_ints,
                         )));
                     }
 
@@ -283,7 +273,7 @@ impl HllSketch {
                 }
                 CUR_MODE_SET => {
                     if preamble_ints != HASH_SET_PREINTS {
-                        return Err(SerdeError::MalformedData(format!(
+                        return Err(Error::deserial(format!(
                             "SET mode preamble: expected {}, got {}",
                             HASH_SET_PREINTS, preamble_ints
                         )));
@@ -294,7 +284,7 @@ impl HllSketch {
                 }
                 CUR_MODE_HLL => {
                     if preamble_ints != HLL_PREINTS {
-                        return Err(SerdeError::MalformedData(format!(
+                        return Err(Error::deserial(format!(
                             "HLL mode preamble: expected {}, got {}",
                             HLL_PREINTS, preamble_ints
                         )));
@@ -309,7 +299,7 @@ impl HllSketch {
                             .map(Mode::Array8)?,
                     }
                 }
-                mode => return Err(SerdeError::MalformedData(format!("invalid mode: {}", mode))),
+                mode => return Err(Error::deserial(format!("invalid mode: {mode}"))),
             };
 
         Ok(HllSketch { lg_config_k, mode })

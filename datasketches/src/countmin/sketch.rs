@@ -29,7 +29,7 @@ use crate::countmin::serialization::LONG_SIZE_BYTES;
 use crate::countmin::serialization::PREAMBLE_LONGS_SHORT;
 use crate::countmin::serialization::SERIAL_VERSION;
 use crate::countmin::serialization::compute_seed_hash;
-use crate::error::SerdeError;
+use crate::error::Error;
 use crate::hash::MurmurHash3X64128;
 
 const MAX_TABLE_ENTRIES: usize = 1 << 30;
@@ -231,14 +231,14 @@ impl CountMinSketch {
     }
 
     /// Deserializes a sketch from bytes using the default seed.
-    pub fn deserialize(bytes: &[u8]) -> Result<Self, SerdeError> {
+    pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
         Self::deserialize_with_seed(bytes, DEFAULT_SEED)
     }
 
     /// Deserializes a sketch from bytes using the provided seed.
-    pub fn deserialize_with_seed(bytes: &[u8], seed: u64) -> Result<Self, SerdeError> {
-        fn make_error(tag: &'static str) -> impl FnOnce(std::io::Error) -> SerdeError {
-            move |_| SerdeError::InsufficientData(tag.to_string())
+    pub fn deserialize_with_seed(bytes: &[u8], seed: u64) -> Result<Self, Error> {
+        fn make_error(tag: &'static str) -> impl FnOnce(std::io::Error) -> Error {
+            move |_| Error::insufficient_data(tag)
         }
 
         let mut cursor = Cursor::new(bytes);
@@ -249,21 +249,23 @@ impl CountMinSketch {
         cursor.read_u32::<LE>().map_err(make_error("unused32"))?;
 
         if family_id != COUNTMIN_FAMILY_ID {
-            return Err(SerdeError::InvalidFamily(format!(
-                "expected {} (CountMinSketch), got {}",
-                COUNTMIN_FAMILY_ID, family_id
-            )));
+            return Err(Error::invalid_family(
+                COUNTMIN_FAMILY_ID,
+                family_id,
+                "CountMinSketch",
+            ));
         }
         if serial_version != SERIAL_VERSION {
-            return Err(SerdeError::UnsupportedVersion(format!(
-                "expected {}, got {}",
-                SERIAL_VERSION, serial_version
-            )));
+            return Err(Error::unsupported_serial_version(
+                SERIAL_VERSION,
+                serial_version,
+            ));
         }
         if preamble_longs != PREAMBLE_LONGS_SHORT {
-            return Err(SerdeError::MalformedData(format!(
-                "unsupported preamble_longs {preamble_longs}"
-            )));
+            return Err(Error::invalid_preamble_longs(
+                PREAMBLE_LONGS_SHORT,
+                preamble_longs,
+            ));
         }
 
         let num_buckets = cursor.read_u32::<LE>().map_err(make_error("num_buckets"))?;
@@ -273,9 +275,8 @@ impl CountMinSketch {
 
         let expected_seed_hash = compute_seed_hash(seed);
         if seed_hash != expected_seed_hash {
-            return Err(SerdeError::InvalidParameter(format!(
-                "incompatible seed hash: expected {}, got {}",
-                expected_seed_hash, seed_hash
+            return Err(Error::deserial(format!(
+                "incompatible seed hash: expected {expected_seed_hash}, got {seed_hash}",
             )));
         }
 
@@ -329,26 +330,19 @@ fn entries_for_config(num_hashes: u8, num_buckets: u32) -> usize {
     entries
 }
 
-fn entries_for_config_checked(num_hashes: u8, num_buckets: u32) -> Result<usize, SerdeError> {
+fn entries_for_config_checked(num_hashes: u8, num_buckets: u32) -> Result<usize, Error> {
     if num_hashes == 0 {
-        return Err(SerdeError::InvalidParameter(
-            "num_hashes must be at least 1".to_string(),
-        ));
+        return Err(Error::deserial("num_hashes must be at least 1"));
     }
     if num_buckets < 3 {
-        return Err(SerdeError::InvalidParameter(
-            "num_buckets must be at least 3".to_string(),
-        ));
+        return Err(Error::deserial("num_buckets must be at least 3"));
     }
     let entries = (num_hashes as usize)
         .checked_mul(num_buckets as usize)
-        .ok_or_else(|| {
-            SerdeError::InvalidParameter("num_hashes * num_buckets overflows usize".to_string())
-        })?;
+        .ok_or_else(|| Error::deserial("num_hashes * num_buckets overflows usize"))?;
     if entries >= MAX_TABLE_ENTRIES {
-        return Err(SerdeError::InvalidParameter(format!(
-            "num_hashes * num_buckets must be < {}",
-            MAX_TABLE_ENTRIES
+        return Err(Error::deserial(format!(
+            "num_hashes * num_buckets must be < {MAX_TABLE_ENTRIES}",
         )));
     }
     Ok(entries)

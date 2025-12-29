@@ -20,7 +20,7 @@
 //! Uses open addressing with a custom stride function to handle collisions.
 //! Provides better performance than List when many coupons are stored.
 
-use crate::error::SerdeError;
+use crate::error::Error;
 use crate::hll::HllType;
 use crate::hll::KEY_MASK_26;
 use crate::hll::container::COUPON_EMPTY;
@@ -84,7 +84,7 @@ impl HashSet {
     }
 
     /// Deserialize a HashSet from bytes
-    pub fn deserialize(bytes: &[u8], compact: bool) -> Result<Self, SerdeError> {
+    pub fn deserialize(bytes: &[u8], compact: bool) -> Result<Self, Error> {
         // Read coupon count from bytes 8-11
         let coupon_count = read_u32_le(bytes, HASH_SET_COUNT_INT) as usize;
 
@@ -95,7 +95,7 @@ impl HashSet {
             // Compact mode: only couponCount coupons are stored
             let expected_len = HASH_SET_INT_ARR_START + (coupon_count * 4);
             if bytes.len() < expected_len {
-                return Err(SerdeError::InsufficientData(format!(
+                return Err(Error::insufficient_data(format!(
                     "expected {}, got {}",
                     expected_len,
                     bytes.len()
@@ -115,7 +115,7 @@ impl HashSet {
             let array_size = 1 << lg_arr;
             let expected_len = HASH_SET_INT_ARR_START + (array_size * 4);
             if bytes.len() < expected_len {
-                return Err(SerdeError::InsufficientData(format!(
+                return Err(Error::insufficient_data(format!(
                     "expected {}, got {}",
                     expected_len,
                     bytes.len()
@@ -153,7 +153,7 @@ impl HashSet {
 
         // Write preamble
         bytes[PREAMBLE_INTS_BYTE] = HASH_SET_PREINTS;
-        bytes[SER_VER_BYTE] = SER_VER;
+        bytes[SER_VER_BYTE] = SERIAL_VER;
         bytes[FAMILY_BYTE] = HLL_FAMILY_ID;
         bytes[LG_K_BYTE] = lg_config_k;
         bytes[LG_ARR_BYTE] = lg_arr as u8;

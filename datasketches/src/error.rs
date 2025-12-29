@@ -80,9 +80,14 @@ impl Error {
     ///
     /// ```
     /// use std::error::Error as _;
-    /// use datasketches::error::{Error, ErrorKind};
     ///
-    /// let mut error = Error::new(ErrorKind::MalformedDeserializeData, "failed to deserialize sketch");
+    /// use datasketches::error::Error;
+    /// use datasketches::error::ErrorKind;
+    ///
+    /// let mut error = Error::new(
+    ///     ErrorKind::MalformedDeserializeData,
+    ///     "failed to deserialize sketch",
+    /// );
     /// assert!(error.source().is_none());
     /// error = error.set_source(std::io::Error::new(std::io::ErrorKind::Other, "IO error"));
     /// assert!(error.source().is_some());
@@ -101,6 +106,39 @@ impl Error {
     /// Return error's message.
     pub fn message(&self) -> &str {
         self.message.as_str()
+    }
+}
+
+// Convenience constructors for deserialization errors
+impl Error {
+    pub(crate) fn deserial(msg: impl Into<String>) -> Self {
+        Self::new(ErrorKind::MalformedDeserializeData, msg)
+    }
+
+    pub(crate) fn insufficient_data(msg: impl fmt::Display) -> Self {
+        Self::deserial(format!("insufficient data: {msg}"))
+    }
+
+    pub(crate) fn insufficient_data_of(context: &'static str, msg: impl fmt::Display) -> Self {
+        Self::deserial(format!("insufficient data ({context}): {msg}"))
+    }
+
+    pub(crate) fn invalid_family(expected: u8, actual: u8, name: &'static str) -> Self {
+        Self::deserial(format!(
+            "invalid family: expected {expected} ({name}), got {actual}"
+        ))
+    }
+
+    pub(crate) fn unsupported_serial_version(expected: u8, actual: u8) -> Self {
+        Self::deserial(format!(
+            "unsupported serial version: expected {expected}, got {actual}"
+        ))
+    }
+
+    pub(crate) fn invalid_preamble_longs(expected: u8, actual: u8) -> Self {
+        Self::deserial(format!(
+            "invalid preamble longs: expected {expected}, got {actual}"
+        ))
     }
 }
 
@@ -175,32 +213,3 @@ impl std::error::Error for Error {
         self.source.as_ref().map(|v| v.as_ref())
     }
 }
-
-/// Errors that can occur during sketch serialization or deserialization
-#[derive(Debug, Clone)]
-pub enum SerdeError {
-    /// Insufficient data in buffer
-    InsufficientData(String),
-    /// Invalid sketch family identifier
-    InvalidFamily(String),
-    /// Unsupported serialization version
-    UnsupportedVersion(String),
-    /// Invalid parameter value
-    InvalidParameter(String),
-    /// Malformed or corrupt sketch data
-    MalformedData(String),
-}
-
-impl fmt::Display for SerdeError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            SerdeError::InsufficientData(msg) => write!(f, "insufficient data: {}", msg),
-            SerdeError::InvalidFamily(msg) => write!(f, "invalid family: {}", msg),
-            SerdeError::UnsupportedVersion(msg) => write!(f, "unsupported version: {}", msg),
-            SerdeError::InvalidParameter(msg) => write!(f, "invalid parameter: {}", msg),
-            SerdeError::MalformedData(msg) => write!(f, "malformed data: {}", msg),
-        }
-    }
-}
-
-impl std::error::Error for SerdeError {}
