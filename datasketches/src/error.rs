@@ -23,8 +23,8 @@ use std::fmt;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum ErrorKind {
-    /// The config for sketches is invalid.
-    ConfigInvalid,
+    /// The argument provided is invalid.
+    InvalidArgument,
     /// The sketch data deserializing is malformed.
     MalformedDeserializeData,
 }
@@ -33,7 +33,7 @@ impl ErrorKind {
     /// Convert this error kind instance into static str.
     pub const fn into_static(self) -> &'static str {
         match self {
-            ErrorKind::ConfigInvalid => "ConfigInvalid",
+            ErrorKind::InvalidArgument => "InvalidArgument",
             ErrorKind::MalformedDeserializeData => "MalformedDeserializeData",
         }
     }

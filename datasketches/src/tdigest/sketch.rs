@@ -25,6 +25,7 @@ use byteorder::LE;
 use byteorder::ReadBytesExt;
 
 use crate::error::Error;
+use crate::error::ErrorKind;
 use crate::tdigest::serialization::*;
 
 /// The default value of K if one is not specified.
@@ -60,9 +61,11 @@ impl Default for TDigestMut {
 impl TDigestMut {
     /// Creates a tdigest instance with the given value of k.
     ///
+    /// The fallible version of this method is [`TDigestMut::try_new`].
+    ///
     /// # Panics
     ///
-    /// If k is less than 10
+    /// Panics if k is less than 10
     pub fn new(k: u16) -> Self {
         Self::make(
             k,
@@ -73,6 +76,32 @@ impl TDigestMut {
             0,
             vec![],
         )
+    }
+
+    /// Creates a tdigest instance with the given value of k.
+    ///
+    /// The panicking version of this method is [`TDigestMut::new`].
+    ///
+    /// # Errors
+    ///
+    /// If k is less than 10, returns [`ErrorKind::InvalidArgument`].
+    pub fn try_new(k: u16) -> Result<Self, Error> {
+        if k < 10 {
+            return Err(Error::new(
+                ErrorKind::InvalidArgument,
+                format!("k must be at least 10, got {k}"),
+            ));
+        }
+
+        Ok(Self::make(
+            k,
+            false,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            vec![],
+            0,
+            vec![],
+        ))
     }
 
     // for deserialization
@@ -205,27 +234,7 @@ impl TDigestMut {
         }
     }
 
-    /// Returns an approximation to the Cumulative Distribution Function (CDF), which is the
-    /// cumulative analog of the PMF, of the input stream given a set of split points.
-    ///
-    /// # Arguments
-    ///
-    /// * `split_points`: An array of _m_ unique, monotonically increasing values that divide the
-    ///   input domain into _m+1_ consecutive disjoint intervals.
-    ///
-    /// # Returns
-    ///
-    /// An array of m+1 doubles, which are a consecutive approximation to the CDF of the input
-    /// stream given the split points. The value at array position j of the returned CDF array
-    /// is the sum of the returned values in positions 0 through j of the returned PMF array.
-    /// This can be viewed as array of ranks of the given split points plus one more value that
-    /// is always 1.
-    ///
-    /// Returns `None` if TDigest is empty.
-    ///
-    /// # Panics
-    ///
-    /// If `split_points` is not unique, not monotonically increasing, or contains `NaN` values.
+    /// See [`TDigest::cdf`].
     pub fn cdf(&mut self, split_points: &[f64]) -> Option<Vec<f64>> {
         check_split_points(split_points);
 
@@ -236,24 +245,7 @@ impl TDigestMut {
         self.view().cdf(split_points)
     }
 
-    /// Returns an approximation to the Probability Mass Function (PMF) of the input stream
-    /// given a set of split points.
-    ///
-    /// # Arguments
-    ///
-    /// * `split_points`: An array of _m_ unique, monotonically increasing values that divide the
-    ///   input domain into _m+1_ consecutive disjoint intervals (bins).
-    ///
-    /// # Returns
-    ///
-    /// An array of m+1 doubles each of which is an approximation to the fraction of the input
-    /// stream values (the mass) that fall into one of those intervals.
-    ///
-    /// Returns `None` if TDigest is empty.
-    ///
-    /// # Panics
-    ///
-    /// If `split_points` is not unique, not monotonically increasing, or contains `NaN` values.
+    /// See [`TDigest::pmf`].
     pub fn pmf(&mut self, split_points: &[f64]) -> Option<Vec<f64>> {
         check_split_points(split_points);
 
@@ -264,13 +256,7 @@ impl TDigestMut {
         self.view().pmf(split_points)
     }
 
-    /// Compute approximate normalized rank (from 0 to 1 inclusive) of the given value.
-    ///
-    /// Returns `None` if TDigest is empty.
-    ///
-    /// # Panics
-    ///
-    /// If the value is `NaN`.
+    /// See [`TDigest::rank`].
     pub fn rank(&mut self, value: f64) -> Option<f64> {
         assert!(!value.is_nan(), "value must not be NaN");
 
@@ -291,13 +277,7 @@ impl TDigestMut {
         self.view().rank(value)
     }
 
-    /// Compute approximate quantile value corresponding to the given normalized rank.
-    ///
-    /// Returns `None` if TDigest is empty.
-    ///
-    /// # Panics
-    ///
-    /// If rank is not in [0.0, 1.0].
+    /// See [`TDigest::quantile`].
     pub fn quantile(&mut self, rank: f64) -> Option<f64> {
         assert!((0.0..=1.0).contains(&rank), "rank must be in [0.0, 1.0]");
 
@@ -784,7 +764,8 @@ impl TDigest {
     ///
     /// # Panics
     ///
-    /// If `split_points` is not unique, not monotonically increasing, or contains `NaN` values.
+    /// Panics if `split_points` is not unique, not monotonically increasing, or contains `NaN`
+    /// values.
     pub fn cdf(&self, split_points: &[f64]) -> Option<Vec<f64>> {
         self.view().cdf(split_points)
     }
@@ -806,7 +787,8 @@ impl TDigest {
     ///
     /// # Panics
     ///
-    /// If `split_points` is not unique, not monotonically increasing, or contains `NaN` values.
+    /// Panics if `split_points` is not unique, not monotonically increasing, or contains `NaN`
+    /// values.
     pub fn pmf(&self, split_points: &[f64]) -> Option<Vec<f64>> {
         self.view().pmf(split_points)
     }
@@ -817,7 +799,7 @@ impl TDigest {
     ///
     /// # Panics
     ///
-    /// If the value is `NaN`.
+    /// Panics if the value is `NaN`.
     pub fn rank(&self, value: f64) -> Option<f64> {
         assert!(!value.is_nan(), "value must not be NaN");
         self.view().rank(value)
@@ -829,7 +811,7 @@ impl TDigest {
     ///
     /// # Panics
     ///
-    /// If rank is not in [0.0, 1.0].
+    /// Panics if rank is not in [0.0, 1.0].
     pub fn quantile(&self, rank: f64) -> Option<f64> {
         assert!((0.0..=1.0).contains(&rank), "rank must be in [0.0, 1.0]");
         self.view().quantile(rank)
