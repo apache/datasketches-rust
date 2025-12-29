@@ -149,23 +149,23 @@ impl<T: Eq + Hash> ReversePurgeItemHashMap<T> {
         }
     }
 
-    pub fn get_length(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.keys.len()
     }
 
-    pub fn get_lg_length(&self) -> u8 {
+    pub fn lg_length(&self) -> u8 {
         self.lg_length
     }
 
-    pub fn get_capacity(&self) -> usize {
+    pub fn capacity(&self) -> usize {
         self.load_threshold
     }
 
-    pub fn get_num_active(&self) -> usize {
+    pub fn num_active(&self) -> usize {
         self.num_active
     }
 
-    pub fn get_active_keys(&self) -> Vec<T>
+    pub fn active_keys(&self) -> Vec<T>
     where
         T: Clone,
     {
@@ -183,7 +183,7 @@ impl<T: Eq + Hash> ReversePurgeItemHashMap<T> {
         keys
     }
 
-    pub fn get_active_values(&self) -> Vec<i64> {
+    pub fn active_values(&self) -> Vec<i64> {
         if self.num_active == 0 {
             return Vec::new();
         }

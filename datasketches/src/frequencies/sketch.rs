@@ -102,12 +102,12 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
 
     /// Returns true if the sketch is empty.
     pub fn is_empty(&self) -> bool {
-        self.hash_map.get_num_active() == 0
+        self.hash_map.num_active() == 0
     }
 
     /// Returns the number of active items being tracked.
     pub fn num_active_items(&self) -> usize {
-        self.hash_map.get_num_active()
+        self.hash_map.num_active()
     }
 
     /// Returns the total weight of the stream.
@@ -172,7 +172,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
 
     /// Returns the current map size in log2.
     pub fn lg_cur_map_size(&self) -> u8 {
-        self.hash_map.get_lg_length()
+        self.hash_map.lg_length()
     }
 
     /// Updates the sketch with a count of one.
@@ -256,14 +256,14 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     }
 
     fn maybe_resize_or_purge(&mut self) {
-        if self.hash_map.get_num_active() > self.cur_map_cap {
-            if self.hash_map.get_lg_length() < self.lg_max_map_size {
-                self.hash_map.resize(self.hash_map.get_length() * 2);
-                self.cur_map_cap = self.hash_map.get_capacity();
+        if self.hash_map.num_active() > self.cur_map_cap {
+            if self.hash_map.lg_length() < self.lg_max_map_size {
+                self.hash_map.resize(self.hash_map.len() * 2);
+                self.cur_map_cap = self.hash_map.capacity();
             } else {
                 let delta = self.hash_map.purge(self.sample_size);
                 self.offset += delta;
-                if self.hash_map.get_num_active() > self.maximum_map_capacity() {
+                if self.hash_map.num_active() > self.maximum_map_capacity() {
                     panic!("purge did not reduce number of active items");
                 }
             }
@@ -278,7 +278,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
             "lg_cur_map_size must not exceed lg_max_map_size"
         );
         let map = ReversePurgeItemHashMap::new(1usize << lg_cur);
-        let cur_map_cap = map.get_capacity();
+        let cur_map_cap = map.capacity();
         let max_map_cap = (1usize << lg_max) * LOAD_FACTOR_NUMERATOR / LOAD_FACTOR_DENOMINATOR;
         let sample_size = SAMPLE_SIZE.min(max_map_cap);
         Self {
@@ -301,13 +301,13 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
             out[SER_VER_BYTE] = SER_VER;
             out[FAMILY_BYTE] = FAMILY_ID;
             out[LG_MAX_MAP_SIZE_BYTE] = self.lg_max_map_size;
-            out[LG_CUR_MAP_SIZE_BYTE] = self.hash_map.get_lg_length();
+            out[LG_CUR_MAP_SIZE_BYTE] = self.hash_map.lg_length();
             out[FLAGS_BYTE] = EMPTY_FLAG_MASK;
             return out;
         }
         let active_items = self.num_active_items();
-        let values = self.hash_map.get_active_values();
-        let keys = self.hash_map.get_active_keys();
+        let values = self.hash_map.active_values();
+        let keys = self.hash_map.active_keys();
         let items_bytes = serialize_items(&keys);
         let total_bytes =
             PREAMBLE_LONGS_NONEMPTY as usize * 8 + (active_items * 8) + items_bytes.len();
@@ -316,7 +316,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
         out[SER_VER_BYTE] = SER_VER;
         out[FAMILY_BYTE] = FAMILY_ID;
         out[LG_MAX_MAP_SIZE_BYTE] = self.lg_max_map_size;
-        out[LG_CUR_MAP_SIZE_BYTE] = self.hash_map.get_lg_length();
+        out[LG_CUR_MAP_SIZE_BYTE] = self.hash_map.lg_length();
         out[FLAGS_BYTE] = 0;
         write_u32_le(&mut out, ACTIVE_ITEMS_INT, active_items as u32);
         write_i64_le(&mut out, STREAM_WEIGHT_LONG, self.stream_weight);
