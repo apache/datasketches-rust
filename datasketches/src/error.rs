@@ -50,7 +50,6 @@ pub struct Error {
     kind: ErrorKind,
     message: String,
     context: Vec<(&'static str, String)>,
-    source: Option<anyhow::Error>,
 }
 
 impl Error {
@@ -59,42 +58,13 @@ impl Error {
         Self {
             kind,
             message: message.into(),
-            context: Vec::default(),
-            source: None,
+            context: vec![],
         }
     }
 
     /// Add more context in error.
     pub fn with_context(mut self, key: &'static str, value: impl ToString) -> Self {
         self.context.push((key, value.to_string()));
-        self
-    }
-
-    /// Set source for error.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the source has been set.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use std::error::Error as _;
-    ///
-    /// use datasketches::error::Error;
-    /// use datasketches::error::ErrorKind;
-    ///
-    /// let mut error = Error::new(
-    ///     ErrorKind::InvalidData,
-    ///     "failed to deserialize sketch",
-    /// );
-    /// assert!(error.source().is_none());
-    /// error = error.set_source(std::io::Error::new(std::io::ErrorKind::Other, "IO error"));
-    /// assert!(error.source().is_some());
-    /// ```
-    pub fn set_source(mut self, src: impl Into<anyhow::Error>) -> Self {
-        assert!(self.source.is_none(), "the source error has been set");
-        self.source = Some(src.into());
         self
     }
 
@@ -150,7 +120,6 @@ impl fmt::Debug for Error {
             de.field("kind", &self.kind);
             de.field("message", &self.message);
             de.field("context", &self.context);
-            de.field("source", &self.source);
             return de.finish();
         }
 
@@ -166,12 +135,6 @@ impl fmt::Debug for Error {
             for (k, v) in self.context.iter() {
                 writeln!(f, "   {k}: {v}")?;
             }
-        }
-
-        if let Some(source) = &self.source {
-            writeln!(f)?;
-            writeln!(f, "Source:")?;
-            writeln!(f, "   {source:#}")?;
         }
 
         Ok(())
@@ -200,16 +163,8 @@ impl fmt::Display for Error {
             write!(f, " => {}", self.message)?;
         }
 
-        if let Some(source) = &self.source {
-            write!(f, ", source: {source}")?;
-        }
-
         Ok(())
     }
 }
 
-impl std::error::Error for Error {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        self.source.as_ref().map(|v| v.as_ref())
-    }
-}
+impl std::error::Error for Error {}
