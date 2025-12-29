@@ -22,7 +22,13 @@ use std::hash::Hash;
 use crate::error::SerdeError;
 use crate::frequencies::reverse_purge_item_hash_map::ReversePurgeItemHashMap;
 use crate::frequencies::serde::ItemsSerde;
+use crate::frequencies::serde::deserialize_i64_items;
+use crate::frequencies::serde::deserialize_string_items;
+use crate::frequencies::serde::serialize_i64_items;
+use crate::frequencies::serde::serialize_string_items;
 use crate::frequencies::serialization::*;
+
+type DeserializeItems<T> = fn(&[u8], usize) -> Result<(Vec<T>, usize), SerdeError>;
 
 const LG_MIN_MAP_SIZE: u8 = 3;
 const SAMPLE_SIZE: usize = 1024;
@@ -71,6 +77,8 @@ impl<T> Row<T> {
 }
 
 /// Frequent items sketch for generic item types.
+///
+/// See [`crate::frequencies`] for an overview and error guarantees.
 #[derive(Debug, Clone)]
 pub struct FrequentItemsSketch<T> {
     lg_max_map_size: u8,
@@ -83,6 +91,10 @@ pub struct FrequentItemsSketch<T> {
 
 impl<T: Eq + Hash> FrequentItemsSketch<T> {
     /// Creates a new sketch with the given maximum map size (power of two).
+    ///
+    /// # Panics
+    ///
+    /// Panics if `max_map_size` is not a power of two.
     pub fn new(max_map_size: usize) -> Self {
         let lg_max_map_size = exact_log2(max_map_size);
         Self::with_lg_map_sizes(lg_max_map_size, LG_MIN_MAP_SIZE)
@@ -94,68 +106,72 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     }
 
     /// Returns the number of active items being tracked.
-    pub fn get_num_active_items(&self) -> usize {
+    pub fn num_active_items(&self) -> usize {
         self.hash_map.get_num_active()
     }
 
     /// Returns the total weight of the stream.
-    pub fn get_total_weight(&self) -> i64 {
+    pub fn total_weight(&self) -> i64 {
         self.stream_weight
     }
 
     /// Returns the estimated frequency for an item.
-    pub fn get_estimate(&self, item: &T) -> i64 {
+    pub fn estimate(&self, item: &T) -> i64 {
         let value = self.hash_map.get(item);
         if value > 0 { value + self.offset } else { 0 }
     }
 
     /// Returns the lower bound for an item's frequency.
-    pub fn get_lower_bound(&self, item: &T) -> i64 {
+    pub fn lower_bound(&self, item: &T) -> i64 {
         self.hash_map.get(item)
     }
 
     /// Returns the upper bound for an item's frequency.
-    pub fn get_upper_bound(&self, item: &T) -> i64 {
+    pub fn upper_bound(&self, item: &T) -> i64 {
         self.hash_map.get(item) + self.offset
     }
 
-    /// Returns the maximum error across all items.
-    pub fn get_maximum_error(&self) -> i64 {
+    /// Returns an upper bound on the maximum error of [`FrequentItemsSketch::estimate`]
+    /// for any item.
+    ///
+    /// This is equivalent to the maximum distance between the upper bound and the lower bound
+    /// for any item.
+    pub fn maximum_error(&self) -> i64 {
         self.offset
     }
 
     /// Returns epsilon for this sketch.
-    pub fn get_epsilon(&self) -> f64 {
-        Self::get_epsilon_for_lg(self.lg_max_map_size)
+    pub fn epsilon(&self) -> f64 {
+        Self::epsilon_for_lg(self.lg_max_map_size)
     }
 
     /// Returns epsilon for a sketch configured with `lg_max_map_size`.
-    pub fn get_epsilon_for_lg(lg_max_map_size: u8) -> f64 {
+    pub fn epsilon_for_lg(lg_max_map_size: u8) -> f64 {
         EPSILON_FACTOR / (1u64 << lg_max_map_size) as f64
     }
 
     /// Returns the a priori error estimate.
-    pub fn get_apriori_error(lg_max_map_size: u8, estimated_total_weight: i64) -> f64 {
-        Self::get_epsilon_for_lg(lg_max_map_size) * estimated_total_weight as f64
+    pub fn apriori_error(lg_max_map_size: u8, estimated_total_weight: i64) -> f64 {
+        Self::epsilon_for_lg(lg_max_map_size) * estimated_total_weight as f64
     }
 
     /// Returns the maximum map capacity for this sketch.
-    pub fn get_maximum_map_capacity(&self) -> usize {
+    pub fn maximum_map_capacity(&self) -> usize {
         (1usize << self.lg_max_map_size) * LOAD_FACTOR_NUMERATOR / LOAD_FACTOR_DENOMINATOR
     }
 
     /// Returns the current map capacity.
-    pub fn get_current_map_capacity(&self) -> usize {
+    pub fn current_map_capacity(&self) -> usize {
         self.cur_map_cap
     }
 
     /// Returns the configured lg_max_map_size.
-    pub fn get_lg_max_map_size(&self) -> u8 {
+    pub fn lg_max_map_size(&self) -> u8 {
         self.lg_max_map_size
     }
 
     /// Returns the current map size in log2.
-    pub fn get_lg_cur_map_size(&self) -> u8 {
+    pub fn lg_cur_map_size(&self) -> u8 {
         self.hash_map.get_lg_length()
     }
 
@@ -165,6 +181,10 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     }
 
     /// Updates the sketch with an item and count.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `count` is negative.
     pub fn update_with_count(&mut self, item: T, count: i64) {
         if count == 0 {
             return;
@@ -197,15 +217,15 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     }
 
     /// Returns frequent items using the sketch maximum error as threshold.
-    pub fn get_frequent_items(&self, error_type: ErrorType) -> Vec<Row<T>>
+    pub fn frequent_items(&self, error_type: ErrorType) -> Vec<Row<T>>
     where
         T: Clone,
     {
-        self.get_frequent_items_with_threshold(error_type, self.offset)
+        self.frequent_items_with_threshold(error_type, self.offset)
     }
 
     /// Returns frequent items using a custom threshold.
-    pub fn get_frequent_items_with_threshold(
+    pub fn frequent_items_with_threshold(
         &self,
         error_type: ErrorType,
         threshold: i64,
@@ -235,8 +255,43 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
         rows
     }
 
-    /// Serializes this sketch into a byte vector using the provided serializer.
-    pub fn serialize_with<S: ItemsSerde<T>>(&self, serde: &S) -> Vec<u8>
+    fn maybe_resize_or_purge(&mut self) {
+        if self.hash_map.get_num_active() > self.cur_map_cap {
+            if self.hash_map.get_lg_length() < self.lg_max_map_size {
+                self.hash_map.resize(self.hash_map.get_length() * 2);
+                self.cur_map_cap = self.hash_map.get_capacity();
+            } else {
+                let delta = self.hash_map.purge(self.sample_size);
+                self.offset += delta;
+                if self.hash_map.get_num_active() > self.maximum_map_capacity() {
+                    panic!("purge did not reduce number of active items");
+                }
+            }
+        }
+    }
+
+    fn with_lg_map_sizes(lg_max_map_size: u8, lg_cur_map_size: u8) -> Self {
+        let lg_max = lg_max_map_size.max(LG_MIN_MAP_SIZE);
+        let lg_cur = lg_cur_map_size.max(LG_MIN_MAP_SIZE);
+        assert!(
+            lg_cur <= lg_max,
+            "lg_cur_map_size must not exceed lg_max_map_size"
+        );
+        let map = ReversePurgeItemHashMap::new(1usize << lg_cur);
+        let cur_map_cap = map.get_capacity();
+        let max_map_cap = (1usize << lg_max) * LOAD_FACTOR_NUMERATOR / LOAD_FACTOR_DENOMINATOR;
+        let sample_size = SAMPLE_SIZE.min(max_map_cap);
+        Self {
+            lg_max_map_size: lg_max,
+            cur_map_cap,
+            offset: 0,
+            stream_weight: 0,
+            sample_size,
+            hash_map: map,
+        }
+    }
+
+    fn serialize_inner(&self, serialize_items: fn(&[T]) -> Vec<u8>) -> Vec<u8>
     where
         T: Clone,
     {
@@ -250,10 +305,10 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
             out[FLAGS_BYTE] = EMPTY_FLAG_MASK;
             return out;
         }
-        let active_items = self.get_num_active_items();
+        let active_items = self.num_active_items();
         let values = self.hash_map.get_active_values();
         let keys = self.hash_map.get_active_keys();
-        let items_bytes = serde.serialize_items(&keys);
+        let items_bytes = serialize_items(&keys);
         let total_bytes =
             PREAMBLE_LONGS_NONEMPTY as usize * 8 + (active_items * 8) + items_bytes.len();
         let mut out = vec![0u8; total_bytes];
@@ -276,11 +331,10 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
         out
     }
 
-    /// Deserializes a sketch from bytes using the provided serializer.
-    pub fn deserialize_with<S: ItemsSerde<T>>(bytes: &[u8], serde: &S) -> Result<Self, SerdeError>
-    where
-        T: Clone,
-    {
+    fn deserialize_inner(
+        bytes: &[u8],
+        deserialize_items: DeserializeItems<T>,
+    ) -> Result<Self, SerdeError> {
         if bytes.len() < 8 {
             return Err(SerdeError::InsufficientData(
                 "insufficient data for preamble".to_string(),
@@ -345,7 +399,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
         for i in 0..active_items {
             values.push(read_i64_le(bytes, values_offset + i * 8));
         }
-        let (items, consumed) = serde.deserialize_items(&bytes[items_offset..], active_items)?;
+        let (items, consumed) = deserialize_items(&bytes[items_offset..], active_items)?;
         if items.len() != active_items {
             return Err(SerdeError::MalformedData(
                 "item count mismatch during deserialization".to_string(),
@@ -364,40 +418,42 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
         sketch.offset = offset_val;
         Ok(sketch)
     }
+}
 
-    fn maybe_resize_or_purge(&mut self) {
-        if self.hash_map.get_num_active() > self.cur_map_cap {
-            if self.hash_map.get_lg_length() < self.lg_max_map_size {
-                self.hash_map.resize(self.hash_map.get_length() * 2);
-                self.cur_map_cap = self.hash_map.get_capacity();
-            } else {
-                let delta = self.hash_map.purge(self.sample_size);
-                self.offset += delta;
-                if self.hash_map.get_num_active() > self.get_maximum_map_capacity() {
-                    panic!("purge did not reduce number of active items");
-                }
-            }
-        }
+impl FrequentItemsSketch<i64> {
+    /// Serializes this sketch into a byte vector.
+    pub fn serialize(&self) -> Vec<u8> {
+        self.serialize_inner(serialize_i64_items)
     }
 
-    fn with_lg_map_sizes(lg_max_map_size: u8, lg_cur_map_size: u8) -> Self {
-        let lg_max = lg_max_map_size.max(LG_MIN_MAP_SIZE);
-        let lg_cur = lg_cur_map_size.max(LG_MIN_MAP_SIZE);
-        assert!(
-            lg_cur <= lg_max,
-            "lg_cur_map_size must not exceed lg_max_map_size"
-        );
-        let map = ReversePurgeItemHashMap::new(1usize << lg_cur);
-        let cur_map_cap = map.get_capacity();
-        let max_map_cap = (1usize << lg_max) * LOAD_FACTOR_NUMERATOR / LOAD_FACTOR_DENOMINATOR;
-        let sample_size = SAMPLE_SIZE.min(max_map_cap);
-        Self {
-            lg_max_map_size: lg_max,
-            cur_map_cap,
-            offset: 0,
-            stream_weight: 0,
-            sample_size,
-            hash_map: map,
+    /// Deserializes a sketch from bytes using the selected serializer.
+    ///
+    /// Returns an error if `serde` does not match the sketch item type.
+    pub fn deserialize(bytes: &[u8], serde: ItemsSerde) -> Result<Self, SerdeError> {
+        match serde {
+            ItemsSerde::Int64 => Self::deserialize_inner(bytes, deserialize_i64_items),
+            ItemsSerde::String => Err(SerdeError::InvalidParameter(
+                "ItemsSerde::String cannot deserialize i64 items".to_string(),
+            )),
+        }
+    }
+}
+
+impl FrequentItemsSketch<String> {
+    /// Serializes this sketch into a byte vector.
+    pub fn serialize(&self) -> Vec<u8> {
+        self.serialize_inner(serialize_string_items)
+    }
+
+    /// Deserializes a sketch from bytes using the selected serializer.
+    ///
+    /// Returns an error if `serde` does not match the sketch item type.
+    pub fn deserialize(bytes: &[u8], serde: ItemsSerde) -> Result<Self, SerdeError> {
+        match serde {
+            ItemsSerde::String => Self::deserialize_inner(bytes, deserialize_string_items),
+            ItemsSerde::Int64 => Err(SerdeError::InvalidParameter(
+                "ItemsSerde::Int64 cannot deserialize String items".to_string(),
+            )),
         }
     }
 }

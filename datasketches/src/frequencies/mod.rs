@@ -16,17 +16,20 @@
 // under the License.
 
 //! Frequency sketches for finding heavy hitters in data streams.
+//!
+//! This module implements the Frequent Items sketch from Apache DataSketches. It tracks
+//! approximate frequencies in a stream and can report heavy hitters with explicit
+//! error guarantees (no false negatives or no false positives).
+//!
+//! For background, see the Java documentation:
+//! <https://apache.github.io/datasketches-java/9.0.0/org/apache/datasketches/frequencies/FrequentItemsSketch.html>
 
 mod reverse_purge_item_hash_map;
+mod serde;
 mod serialization;
 mod sketch;
 
-pub mod serde;
-
-pub use serde::I64Serde;
-pub use serde::ItemsSerde;
-pub use serde::StringSerde;
-
+pub use self::serde::ItemsSerde;
 pub use self::sketch::ErrorType;
 pub use self::sketch::FrequentItemsSketch;
 pub use self::sketch::Row;

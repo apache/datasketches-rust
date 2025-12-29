@@ -27,7 +27,7 @@ const DRIFT_LIMIT: usize = 1024;
 const MAX_SAMPLE_SIZE: usize = 1024;
 
 #[derive(Debug, Clone)]
-pub struct ReversePurgeItemHashMap<T> {
+pub(super) struct ReversePurgeItemHashMap<T> {
     lg_length: u8,
     load_threshold: usize,
     keys: Vec<Option<T>>,

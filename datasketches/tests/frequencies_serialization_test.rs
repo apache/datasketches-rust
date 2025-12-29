@@ -22,8 +22,7 @@ use std::fs;
 use common::serialization_test_data;
 use datasketches::error::SerdeError;
 use datasketches::frequencies::FrequentItemsSketch;
-use datasketches::frequencies::I64Serde;
-use datasketches::frequencies::StringSerde;
+use datasketches::frequencies::ItemsSerde;
 
 #[test]
 fn test_longs_round_trip() {
@@ -31,12 +30,12 @@ fn test_longs_round_trip() {
     for i in 1..=100 {
         sketch.update_with_count(i, i);
     }
-    let serde = I64Serde;
-    let bytes = sketch.serialize_with(&serde);
-    let restored = FrequentItemsSketch::deserialize_with(&bytes, &serde).unwrap();
-    assert_eq!(restored.get_total_weight(), sketch.get_total_weight());
-    assert_eq!(restored.get_estimate(&42), sketch.get_estimate(&42));
-    assert_eq!(restored.get_maximum_error(), sketch.get_maximum_error());
+    let serde = ItemsSerde::Int64;
+    let bytes = sketch.serialize();
+    let restored = FrequentItemsSketch::<i64>::deserialize(&bytes, serde).unwrap();
+    assert_eq!(restored.total_weight(), sketch.total_weight());
+    assert_eq!(restored.estimate(&42), sketch.estimate(&42));
+    assert_eq!(restored.maximum_error(), sketch.maximum_error());
 }
 
 #[test]
@@ -46,30 +45,30 @@ fn test_items_round_trip() {
     sketch.update_with_count("beta".to_string(), 5);
     sketch.update_with_count("gamma".to_string(), 7);
 
-    let serde = StringSerde;
-    let bytes = sketch.serialize_with(&serde);
-    let restored = FrequentItemsSketch::deserialize_with(&bytes, &serde).unwrap();
-    assert_eq!(restored.get_total_weight(), sketch.get_total_weight());
-    assert_eq!(restored.get_estimate(&"beta".to_string()), 5);
-    assert_eq!(restored.get_maximum_error(), sketch.get_maximum_error());
+    let serde = ItemsSerde::String;
+    let bytes = sketch.serialize();
+    let restored = FrequentItemsSketch::<String>::deserialize(&bytes, serde).unwrap();
+    assert_eq!(restored.total_weight(), sketch.total_weight());
+    assert_eq!(restored.estimate(&"beta".to_string()), 5);
+    assert_eq!(restored.maximum_error(), sketch.maximum_error());
 }
 
 #[test]
 fn test_java_frequent_longs_compatibility() {
     let test_cases = [0, 1, 10, 100, 1000, 10000, 100000, 1000000];
-    let serde = I64Serde;
+    let serde = ItemsSerde::Int64;
     for n in test_cases {
         let filename = format!("frequent_long_n{}_java.sk", n);
         let path = serialization_test_data("java_generated_files", &filename);
         let bytes = fs::read(&path).unwrap();
-        let sketch = FrequentItemsSketch::deserialize_with(&bytes, &serde).unwrap();
+        let sketch = FrequentItemsSketch::<i64>::deserialize(&bytes, serde).unwrap();
         assert_eq!(sketch.is_empty(), n == 0);
         if n > 10 {
-            assert!(sketch.get_maximum_error() > 0);
+            assert!(sketch.maximum_error() > 0);
         } else {
-            assert_eq!(sketch.get_maximum_error(), 0);
+            assert_eq!(sketch.maximum_error(), 0);
         }
-        assert_eq!(sketch.get_total_weight(), n as i64);
+        assert_eq!(sketch.total_weight(), n as i64);
     }
 }
 
@@ -77,25 +76,25 @@ fn test_java_frequent_longs_compatibility() {
 fn test_java_frequent_strings_ascii() {
     let path = serialization_test_data("java_generated_files", "frequent_string_ascii_java.sk");
     let bytes = fs::read(&path).unwrap();
-    let serde = StringSerde;
-    let sketch = FrequentItemsSketch::deserialize_with(&bytes, &serde).unwrap();
+    let serde = ItemsSerde::String;
+    let sketch = FrequentItemsSketch::<String>::deserialize(&bytes, serde).unwrap();
     assert!(!sketch.is_empty());
-    assert_eq!(sketch.get_maximum_error(), 0);
-    assert_eq!(sketch.get_total_weight(), 10);
+    assert_eq!(sketch.maximum_error(), 0);
+    assert_eq!(sketch.total_weight(), 10);
     assert_eq!(
-        sketch.get_estimate(&"aaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string()),
+        sketch.estimate(&"aaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string()),
         1
     );
     assert_eq!(
-        sketch.get_estimate(&"bbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string()),
+        sketch.estimate(&"bbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string()),
         2
     );
     assert_eq!(
-        sketch.get_estimate(&"ccccccccccccccccccccccccccccc".to_string()),
+        sketch.estimate(&"ccccccccccccccccccccccccccccc".to_string()),
         3
     );
     assert_eq!(
-        sketch.get_estimate(&"ddddddddddddddddddddddddddddd".to_string()),
+        sketch.estimate(&"ddddddddddddddddddddddddddddd".to_string()),
         4
     );
 }
@@ -104,29 +103,29 @@ fn test_java_frequent_strings_ascii() {
 fn test_java_frequent_strings_utf8() {
     let path = serialization_test_data("java_generated_files", "frequent_string_utf8_java.sk");
     let bytes = fs::read(&path).unwrap();
-    let serde = StringSerde;
-    let sketch = FrequentItemsSketch::deserialize_with(&bytes, &serde).unwrap();
+    let serde = ItemsSerde::String;
+    let sketch = FrequentItemsSketch::<String>::deserialize(&bytes, serde).unwrap();
     assert!(!sketch.is_empty());
-    assert_eq!(sketch.get_maximum_error(), 0);
-    assert_eq!(sketch.get_total_weight(), 28);
-    assert_eq!(sketch.get_estimate(&"абвгд".to_string()), 1);
-    assert_eq!(sketch.get_estimate(&"еёжзи".to_string()), 2);
-    assert_eq!(sketch.get_estimate(&"йклмн".to_string()), 3);
-    assert_eq!(sketch.get_estimate(&"опрст".to_string()), 4);
-    assert_eq!(sketch.get_estimate(&"уфхцч".to_string()), 5);
-    assert_eq!(sketch.get_estimate(&"шщъыь".to_string()), 6);
-    assert_eq!(sketch.get_estimate(&"эюя".to_string()), 7);
+    assert_eq!(sketch.maximum_error(), 0);
+    assert_eq!(sketch.total_weight(), 28);
+    assert_eq!(sketch.estimate(&"абвгд".to_string()), 1);
+    assert_eq!(sketch.estimate(&"еёжзи".to_string()), 2);
+    assert_eq!(sketch.estimate(&"йклмн".to_string()), 3);
+    assert_eq!(sketch.estimate(&"опрст".to_string()), 4);
+    assert_eq!(sketch.estimate(&"уфхцч".to_string()), 5);
+    assert_eq!(sketch.estimate(&"шщъыь".to_string()), 6);
+    assert_eq!(sketch.estimate(&"эюя".to_string()), 7);
 }
 
 #[test]
 fn test_cpp_frequent_longs_compatibility() {
     let test_cases = [0, 1, 10, 100, 1000, 10000, 100000, 1000000];
-    let serde = I64Serde;
+    let serde = ItemsSerde::Int64;
     for n in test_cases {
         let filename = format!("frequent_long_n{}_cpp.sk", n);
         let path = serialization_test_data("cpp_generated_files", &filename);
         let bytes = fs::read(&path).unwrap();
-        let sketch = FrequentItemsSketch::deserialize_with(&bytes, &serde);
+        let sketch = FrequentItemsSketch::<i64>::deserialize(&bytes, serde);
         if cfg!(windows) {
             if let Err(err) = sketch {
                 assert!(matches!(err, SerdeError::InsufficientData(_)));
@@ -136,11 +135,11 @@ fn test_cpp_frequent_longs_compatibility() {
         let sketch = sketch.unwrap();
         assert_eq!(sketch.is_empty(), n == 0);
         if n > 10 {
-            assert!(sketch.get_maximum_error() > 0);
+            assert!(sketch.maximum_error() > 0);
         } else {
-            assert_eq!(sketch.get_maximum_error(), 0);
+            assert_eq!(sketch.maximum_error(), 0);
         }
-        assert_eq!(sketch.get_total_weight(), n as i64);
+        assert_eq!(sketch.total_weight(), n as i64);
     }
 }
 
@@ -151,15 +150,15 @@ fn test_cpp_frequent_strings_compatibility() {
         let filename = format!("frequent_string_n{}_cpp.sk", n);
         let path = serialization_test_data("cpp_generated_files", &filename);
         let bytes = fs::read(&path).unwrap();
-        let serde = StringSerde;
-        let sketch = FrequentItemsSketch::deserialize_with(&bytes, &serde).unwrap();
+        let serde = ItemsSerde::String;
+        let sketch = FrequentItemsSketch::<String>::deserialize(&bytes, serde).unwrap();
         assert_eq!(sketch.is_empty(), n == 0);
         if n > 10 {
-            assert!(sketch.get_maximum_error() > 0);
+            assert!(sketch.maximum_error() > 0);
         } else {
-            assert_eq!(sketch.get_maximum_error(), 0);
+            assert_eq!(sketch.maximum_error(), 0);
         }
-        assert_eq!(sketch.get_total_weight(), n as i64);
+        assert_eq!(sketch.total_weight(), n as i64);
     }
 }
 
@@ -167,25 +166,25 @@ fn test_cpp_frequent_strings_compatibility() {
 fn test_cpp_frequent_strings_ascii() {
     let path = serialization_test_data("cpp_generated_files", "frequent_string_ascii_cpp.sk");
     let bytes = fs::read(&path).unwrap();
-    let serde = StringSerde;
-    let sketch = FrequentItemsSketch::deserialize_with(&bytes, &serde).unwrap();
+    let serde = ItemsSerde::String;
+    let sketch = FrequentItemsSketch::<String>::deserialize(&bytes, serde).unwrap();
     assert!(!sketch.is_empty());
-    assert_eq!(sketch.get_maximum_error(), 0);
-    assert_eq!(sketch.get_total_weight(), 10);
+    assert_eq!(sketch.maximum_error(), 0);
+    assert_eq!(sketch.total_weight(), 10);
     assert_eq!(
-        sketch.get_estimate(&"aaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string()),
+        sketch.estimate(&"aaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string()),
         1
     );
     assert_eq!(
-        sketch.get_estimate(&"bbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string()),
+        sketch.estimate(&"bbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string()),
         2
     );
     assert_eq!(
-        sketch.get_estimate(&"ccccccccccccccccccccccccccccc".to_string()),
+        sketch.estimate(&"ccccccccccccccccccccccccccccc".to_string()),
         3
     );
     assert_eq!(
-        sketch.get_estimate(&"ddddddddddddddddddddddddddddd".to_string()),
+        sketch.estimate(&"ddddddddddddddddddddddddddddd".to_string()),
         4
     );
 }
@@ -194,16 +193,16 @@ fn test_cpp_frequent_strings_ascii() {
 fn test_cpp_frequent_strings_utf8() {
     let path = serialization_test_data("cpp_generated_files", "frequent_string_utf8_cpp.sk");
     let bytes = fs::read(&path).unwrap();
-    let serde = StringSerde;
-    let sketch = FrequentItemsSketch::deserialize_with(&bytes, &serde).unwrap();
+    let serde = ItemsSerde::String;
+    let sketch = FrequentItemsSketch::<String>::deserialize(&bytes, serde).unwrap();
     assert!(!sketch.is_empty());
-    assert_eq!(sketch.get_maximum_error(), 0);
-    assert_eq!(sketch.get_total_weight(), 28);
-    assert_eq!(sketch.get_estimate(&"абвгд".to_string()), 1);
-    assert_eq!(sketch.get_estimate(&"еёжзи".to_string()), 2);
-    assert_eq!(sketch.get_estimate(&"йклмн".to_string()), 3);
-    assert_eq!(sketch.get_estimate(&"опрст".to_string()), 4);
-    assert_eq!(sketch.get_estimate(&"уфхцч".to_string()), 5);
-    assert_eq!(sketch.get_estimate(&"шщъыь".to_string()), 6);
-    assert_eq!(sketch.get_estimate(&"эюя".to_string()), 7);
+    assert_eq!(sketch.maximum_error(), 0);
+    assert_eq!(sketch.total_weight(), 28);
+    assert_eq!(sketch.estimate(&"абвгд".to_string()), 1);
+    assert_eq!(sketch.estimate(&"еёжзи".to_string()), 2);
+    assert_eq!(sketch.estimate(&"йклмн".to_string()), 3);
+    assert_eq!(sketch.estimate(&"опрст".to_string()), 4);
+    assert_eq!(sketch.estimate(&"уфхцч".to_string()), 5);
+    assert_eq!(sketch.estimate(&"шщъыь".to_string()), 6);
+    assert_eq!(sketch.estimate(&"эюя".to_string()), 7);
 }
