@@ -26,7 +26,7 @@ pub enum ErrorKind {
     /// The argument provided is invalid.
     InvalidArgument,
     /// The sketch data deserializing is malformed.
-    MalformedDeserializeData,
+    InvalidData,
 }
 
 impl ErrorKind {
@@ -34,7 +34,7 @@ impl ErrorKind {
     pub const fn into_static(self) -> &'static str {
         match self {
             ErrorKind::InvalidArgument => "InvalidArgument",
-            ErrorKind::MalformedDeserializeData => "MalformedDeserializeData",
+            ErrorKind::InvalidData => "InvalidData",
         }
     }
 }
@@ -85,7 +85,7 @@ impl Error {
     /// use datasketches::error::ErrorKind;
     ///
     /// let mut error = Error::new(
-    ///     ErrorKind::MalformedDeserializeData,
+    ///     ErrorKind::InvalidData,
     ///     "failed to deserialize sketch",
     /// );
     /// assert!(error.source().is_none());
@@ -112,7 +112,7 @@ impl Error {
 // Convenience constructors for deserialization errors
 impl Error {
     pub(crate) fn deserial(msg: impl Into<String>) -> Self {
-        Self::new(ErrorKind::MalformedDeserializeData, msg)
+        Self::new(ErrorKind::InvalidData, msg)
     }
 
     pub(crate) fn insufficient_data(msg: impl fmt::Display) -> Self {
