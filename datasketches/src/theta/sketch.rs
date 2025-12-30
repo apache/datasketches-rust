@@ -22,8 +22,8 @@
 
 use std::hash::Hash;
 
+use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::theta::hash_table::DEFAULT_LG_K;
-use crate::theta::hash_table::DEFAULT_SEED;
 use crate::theta::hash_table::MAX_LG_K;
 use crate::theta::hash_table::MAX_THETA;
 use crate::theta::hash_table::MIN_LG_K;
@@ -133,7 +133,7 @@ impl Default for ThetaSketchBuilder {
             lg_k: DEFAULT_LG_K,
             resize_factor: ResizeFactor::default(),
             sampling_probability: 1.0,
-            seed: DEFAULT_SEED,
+            seed: DEFAULT_UPDATE_SEED,
         }
     }
 }

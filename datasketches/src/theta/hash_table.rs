@@ -19,9 +19,6 @@ use std::hash::Hash;
 
 use crate::hash::MurmurHash3X64128;
 
-/// Default seed for hash function
-pub const DEFAULT_SEED: u64 = 9001;
-
 /// Maximum theta value (signed max for compatibility with Java)
 pub const MAX_THETA: u64 = i64::MAX as u64;
 
@@ -353,10 +350,11 @@ fn starting_theta_from_sampling_probability(sampling_probability: f32) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::hash::DEFAULT_UPDATE_SEED;
 
     #[test]
     fn test_new_hash_table() {
-        let table = ThetaHashTable::new(8, ResizeFactor::X8, 1.0, DEFAULT_SEED);
+        let table = ThetaHashTable::new(8, ResizeFactor::X8, 1.0, DEFAULT_UPDATE_SEED);
 
         assert_eq!(
             table.lg_cur_size,
@@ -370,7 +368,7 @@ mod tests {
 
     #[test]
     fn test_hash_and_screen() {
-        let mut table = ThetaHashTable::new(8, ResizeFactor::X8, 1.0, DEFAULT_SEED);
+        let mut table = ThetaHashTable::new(8, ResizeFactor::X8, 1.0, DEFAULT_UPDATE_SEED);
 
         // With MAX_THETA, all hashes should pass
         let hash1 = table.hash_and_screen("test1");
@@ -387,7 +385,7 @@ mod tests {
 
     #[test]
     fn test_try_insert() {
-        let mut table = ThetaHashTable::new(5, ResizeFactor::X8, 1.0, DEFAULT_SEED);
+        let mut table = ThetaHashTable::new(5, ResizeFactor::X8, 1.0, DEFAULT_UPDATE_SEED);
 
         // Insert a hash value
         let hash = table.hash_and_screen("test_value");
@@ -407,7 +405,7 @@ mod tests {
 
     #[test]
     fn test_insert_multiple_values() {
-        let mut table = ThetaHashTable::new(8, ResizeFactor::X8, 1.0, DEFAULT_SEED);
+        let mut table = ThetaHashTable::new(8, ResizeFactor::X8, 1.0, DEFAULT_UPDATE_SEED);
 
         // Insert multiple distinct values
         let mut inserted_count = 0;
@@ -426,7 +424,7 @@ mod tests {
     #[test]
     fn test_resize() {
         {
-            let mut table = ThetaHashTable::new(8, ResizeFactor::X2, 1.0, DEFAULT_SEED);
+            let mut table = ThetaHashTable::new(8, ResizeFactor::X2, 1.0, DEFAULT_UPDATE_SEED);
 
             assert_eq!(table.entries.len(), 32);
 
@@ -448,7 +446,7 @@ mod tests {
 
         // Test different resize factors
         {
-            let mut table = ThetaHashTable::new(8, ResizeFactor::X4, 1.0, DEFAULT_SEED);
+            let mut table = ThetaHashTable::new(8, ResizeFactor::X4, 1.0, DEFAULT_UPDATE_SEED);
 
             assert_eq!(table.entries.len(), 32);
 
@@ -471,7 +469,7 @@ mod tests {
 
     #[test]
     fn test_rebuild() {
-        let mut table = ThetaHashTable::new(5, ResizeFactor::X8, 1.0, DEFAULT_SEED);
+        let mut table = ThetaHashTable::new(5, ResizeFactor::X8, 1.0, DEFAULT_UPDATE_SEED);
 
         assert_eq!(table.lg_cur_size, 6);
         assert_eq!(table.entries.len(), 64);
@@ -507,7 +505,7 @@ mod tests {
 
     #[test]
     fn test_trim() {
-        let mut table = ThetaHashTable::new(5, ResizeFactor::X8, 1.0, DEFAULT_SEED);
+        let mut table = ThetaHashTable::new(5, ResizeFactor::X8, 1.0, DEFAULT_UPDATE_SEED);
 
         // Insert more than k values
         for i in 0..100 {
@@ -528,7 +526,7 @@ mod tests {
 
     #[test]
     fn test_trim_when_not_needed() {
-        let mut table = ThetaHashTable::new(8, ResizeFactor::X8, 1.0, DEFAULT_SEED);
+        let mut table = ThetaHashTable::new(8, ResizeFactor::X8, 1.0, DEFAULT_UPDATE_SEED);
 
         // Insert fewer than k values
         for i in 0..10 {
@@ -550,7 +548,7 @@ mod tests {
 
     #[test]
     fn test_reset() {
-        let mut table = ThetaHashTable::new(8, ResizeFactor::X8, 1.0, DEFAULT_SEED);
+        let mut table = ThetaHashTable::new(8, ResizeFactor::X8, 1.0, DEFAULT_UPDATE_SEED);
         let init_theta = table.theta();
         let init_lg_cur = table.lg_cur_size;
         let init_entries = table.entries.len();
@@ -583,7 +581,7 @@ mod tests {
             8,
             ResizeFactor::X8,
             0.5, // sampling_probability = 0.5
-            DEFAULT_SEED,
+            DEFAULT_UPDATE_SEED,
         );
         assert_eq!(table.theta(), (MAX_THETA as f64 * 0.5) as u64);
 
@@ -604,7 +602,7 @@ mod tests {
 
     #[test]
     fn test_iterator() {
-        let mut table = ThetaHashTable::new(8, ResizeFactor::X8, 1.0, DEFAULT_SEED);
+        let mut table = ThetaHashTable::new(8, ResizeFactor::X8, 1.0, DEFAULT_UPDATE_SEED);
 
         // Insert some values
         let mut inserted_hashes = Vec::new();
@@ -631,7 +629,7 @@ mod tests {
 
     #[test]
     fn test_empty_table_operations() {
-        let mut table = ThetaHashTable::new(8, ResizeFactor::X8, 1.0, DEFAULT_SEED);
+        let mut table = ThetaHashTable::new(8, ResizeFactor::X8, 1.0, DEFAULT_UPDATE_SEED);
 
         assert!(table.is_empty());
         assert_eq!(table.num_entries(), 0);
@@ -648,7 +646,7 @@ mod tests {
 
     #[test]
     fn test_rebuild_preserves_entries_less_than_kth() {
-        let mut table = ThetaHashTable::new(5, ResizeFactor::X8, 1.0, DEFAULT_SEED);
+        let mut table = ThetaHashTable::new(5, ResizeFactor::X8, 1.0, DEFAULT_UPDATE_SEED);
         let k = 1u64 << 5; // k = 32
 
         // Insert many values to trigger rebuild
