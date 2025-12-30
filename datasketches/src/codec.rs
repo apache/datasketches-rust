@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#![allow(dead_code)]
+
 use std::io;
 use std::io::{Cursor, Read};
 
@@ -23,10 +25,6 @@ pub(crate) struct SketchBytes {
 }
 
 impl SketchBytes {
-    pub fn new() -> Self {
-        Self { bytes: vec![] }
-    }
-
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
             bytes: Vec::with_capacity(capacity),
@@ -123,6 +121,11 @@ impl SketchSlice<'_> {
         SketchSlice {
             slice: Cursor::new(slice),
         }
+    }
+
+    pub fn advance(&mut self, n: u64) {
+        let pos = self.slice.position();
+        self.slice.set_position(pos + n);
     }
 
     pub fn read_exact(&mut self, buf: &mut [u8]) -> io::Result<()> {

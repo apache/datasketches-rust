@@ -21,7 +21,7 @@
 //! When values exceed 4 bits after cur_min offset, they're stored in an auxiliary hash map.
 
 use super::aux_map::AuxMap;
-use crate::codec::SketchBytes;
+use crate::codec::{SketchBytes, SketchSlice};
 use crate::error::Error;
 use crate::hll::NumStdDev;
 use crate::hll::estimator::HipEstimator;
@@ -286,67 +286,48 @@ impl Array4 {
     ///
     /// Expects full HLL preamble (40 bytes) followed by packed 4-bit data and optional aux map.
     pub fn deserialize(
-        bytes: &[u8],
+        mut cursor: SketchSlice,
+        cur_min: u8,
         lg_config_k: u8,
         compact: bool,
         ooo: bool,
     ) -> Result<Self, Error> {
         use crate::hll::get_slot;
         use crate::hll::get_value;
-        use crate::hll::serialization::*;
 
-        if bytes.len() < HLL_PREAMBLE_SIZE {
-            return Err(Error::insufficient_data(format!(
-                "expected at least {}, got {}",
-                HLL_PREAMBLE_SIZE,
-                bytes.len()
-            )));
+        fn make_error(tag: &'static str) -> impl FnOnce(std::io::Error) -> Error {
+            move |_| Error::insufficient_data(tag)
         }
 
         let num_bytes = 1 << (lg_config_k - 1); // k/2 bytes for 4-bit packing
 
-        // Read cur_min from header
-        let cur_min = bytes[HLL_CUR_MIN_BYTE];
-
         // Read HIP estimator values from preamble
-        let hip_accum = read_f64_le(bytes, HIP_ACCUM_DOUBLE);
-        let kxq0 = read_f64_le(bytes, KXQ0_DOUBLE);
-        let kxq1 = read_f64_le(bytes, KXQ1_DOUBLE);
+        let hip_accum = cursor.read_f64_le().map_err(make_error("hip_accum"))?;
+        let kxq0 = cursor.read_f64_le().map_err(make_error("kxq0"))?;
+        let kxq1 = cursor.read_f64_le().map_err(make_error("kxq1"))?;
 
         // Read num_at_cur_min and aux_count
-        let num_at_cur_min = read_u32_le(bytes, CUR_MIN_COUNT_INT);
-        let aux_count = read_u32_le(bytes, AUX_COUNT_INT);
+        let num_at_cur_min = cursor.read_u32_le().map_err(make_error("num_at_cur_min"))?;
+        let aux_count = cursor.read_u32_le().map_err(make_error("aux_count"))?;
 
-        // Calculate expected length
-        let expected_len = if compact {
-            HLL_PREAMBLE_SIZE // Just preamble for compact empty sketch
-        } else {
-            HLL_PREAMBLE_SIZE + num_bytes + (aux_count as usize * COUPON_SIZE_BYTES)
-        };
-
-        if bytes.len() < expected_len {
-            return Err(Error::insufficient_data(format!(
-                "expected {}, got {}",
-                expected_len,
-                bytes.len()
-            )));
-        }
-
-        // Read packed 4-bit byte array from HLL_BYTE_ARR_START
+        // Read packed 4-bit byte array
         let mut data = vec![0u8; num_bytes];
         if !compact {
-            data.copy_from_slice(&bytes[HLL_BYTE_ARR_START..HLL_BYTE_ARR_START + num_bytes]);
+            cursor.read_exact(&mut data).map_err(make_error("data"))?;
+        } else {
+            cursor.advance(num_bytes as u64);
         }
 
         // Read aux map if present
         let mut aux_map = None;
         if aux_count > 0 {
             let mut aux = AuxMap::new(lg_config_k);
-            let aux_start = HLL_BYTE_ARR_START + num_bytes;
-
             for i in 0..aux_count {
-                let offset = aux_start + (i as usize * COUPON_SIZE_BYTES);
-                let coupon = read_u32_le(bytes, offset);
+                let coupon = cursor.read_u32_le().map_err(|_| {
+                    Error::insufficient_data(format!(
+                        "expected {aux_count} aux coupons, failed at index {i}",
+                    ))
+                })?;
                 let slot = get_slot(coupon) & ((1 << lg_config_k) - 1);
                 let value = get_value(coupon);
                 aux.insert(slot, value);

@@ -20,7 +20,7 @@
 //! Array8 is the simplest HLL array implementation, storing one byte per slot.
 //! This provides the maximum value range (0-255) with no bit-packing complexity.
 
-use crate::codec::SketchBytes;
+use crate::codec::{SketchBytes, SketchSlice};
 use crate::error::Error;
 use crate::hll::NumStdDev;
 use crate::hll::estimator::HipEstimator;
@@ -244,40 +244,31 @@ impl Array8 {
     ///
     /// Expects full HLL preamble (40 bytes) followed by k bytes of data.
     pub fn deserialize(
-        bytes: &[u8],
+        mut cursor: SketchSlice,
         lg_config_k: u8,
         compact: bool,
         ooo: bool,
     ) -> Result<Self, Error> {
-        use crate::hll::serialization::*;
-
-        let k = 1 << lg_config_k;
-        let expected_len = if compact {
-            HLL_PREAMBLE_SIZE // Just preamble for compact empty sketch
-        } else {
-            HLL_PREAMBLE_SIZE + k as usize
-        };
-
-        if bytes.len() < expected_len {
-            return Err(Error::insufficient_data(format!(
-                "expected {}, got {}",
-                expected_len,
-                bytes.len()
-            )));
+        fn make_error(tag: &'static str) -> impl FnOnce(std::io::Error) -> Error {
+            move |_| Error::insufficient_data(tag)
         }
 
+        let k = 1 << lg_config_k;
+
         // Read HIP estimator values from preamble
-        let hip_accum = read_f64_le(bytes, HIP_ACCUM_DOUBLE);
-        let kxq0 = read_f64_le(bytes, KXQ0_DOUBLE);
-        let kxq1 = read_f64_le(bytes, KXQ1_DOUBLE);
+        let hip_accum = cursor.read_f64_le().map_err(make_error("hip_accum"))?;
+        let kxq0 = cursor.read_f64_le().map_err(make_error("kxq0"))?;
+        let kxq1 = cursor.read_f64_le().map_err(make_error("kxq1"))?;
 
         // Read num_at_cur_min (for Array8, this is num_zeros since cur_min=0)
-        let num_zeros = read_u32_le(bytes, CUR_MIN_COUNT_INT);
+        let num_zeros = cursor.read_u32_le().map_err(make_error("num_zeros"))?;
 
         // Read byte array from offset HLL_BYTE_ARR_START
         let mut data = vec![0u8; k as usize];
         if !compact {
-            data.copy_from_slice(&bytes[HLL_BYTE_ARR_START..HLL_BYTE_ARR_START + k as usize]);
+            cursor.read_exact(&mut data).map_err(make_error("data"))?;
+        } else {
+            cursor.advance(k as u64);
         }
 
         // Create estimator and restore state

@@ -20,8 +20,7 @@
 //! This module provides the main [`HllSketch`] struct, which is the primary interface
 //! for creating and using HLL sketches for cardinality estimation.
 
-use std::hash::Hash;
-
+use crate::codec::SketchSlice;
 use crate::error::Error;
 use crate::hll::HllType;
 use crate::hll::NumStdDev;
@@ -36,6 +35,7 @@ use crate::hll::hash_set::HashSet;
 use crate::hll::list::List;
 use crate::hll::mode::Mode;
 use crate::hll::serialization::*;
+use std::hash::Hash;
 
 /// A HyperLogLog sketch.
 ///
@@ -213,19 +213,26 @@ impl HllSketch {
 
     /// Deserializes an HLL sketch from bytes
     pub fn deserialize(bytes: &[u8]) -> Result<HllSketch, Error> {
-        if bytes.len() < 8 {
-            return Err(Error::insufficient_data(
-                "sketch data too short (< 8 bytes)",
-            ));
+        fn make_error(tag: &'static str) -> impl FnOnce(std::io::Error) -> Error {
+            move |_| Error::insufficient_data(tag)
         }
 
+        let mut cursor = SketchSlice::new(bytes);
+
         // Read and validate preamble
-        let preamble_ints = bytes[PREAMBLE_INTS_BYTE];
-        let serial_ver = bytes[SER_VER_BYTE];
-        let family_id = bytes[FAMILY_BYTE];
-        let lg_config_k = bytes[LG_K_BYTE];
-        let flags = bytes[FLAGS_BYTE];
-        let mode_byte = bytes[MODE_BYTE];
+        let preamble_ints = cursor.read_u8().map_err(make_error("preamble_ints"))?;
+        let serial_version = cursor.read_u8().map_err(make_error("serial_version"))?;
+        let family_id = cursor.read_u8().map_err(make_error("family_id"))?;
+        let lg_config_k = cursor.read_u8().map_err(make_error("lg_config_k"))?;
+        // lg_arr used in List/Set modes
+        let lg_arr = cursor.read_u8().map_err(make_error("lg_arr"))?;
+        let flags = cursor.read_u8().map_err(make_error("flags"))?;
+        // The contextual state byte:
+        // * coupon count in LIST mode
+        // * cur_min in HLL mode
+        // * unused in other modes
+        let state = cursor.read_u8().map_err(make_error("state"))?;
+        let mode_byte = cursor.read_u8().map_err(make_error("mode"))?;
 
         // Verify family ID
         if family_id != HLL_FAMILY_ID {
@@ -233,8 +240,11 @@ impl HllSketch {
         }
 
         // Verify serialization version
-        if serial_ver != SERIAL_VER {
-            return Err(Error::unsupported_serial_version(SERIAL_VER, serial_ver));
+        if serial_version != SERIAL_VER {
+            return Err(Error::unsupported_serial_version(
+                SERIAL_VER,
+                serial_version,
+            ));
         }
 
         // Verify lg_k range (4-21 are valid)
@@ -268,7 +278,9 @@ impl HllSketch {
                         )));
                     }
 
-                    let list = List::deserialize(bytes, empty, compact)?;
+                    let lg_arr = lg_arr as usize;
+                    let coupon_count = state as usize;
+                    let list = List::deserialize(cursor, lg_arr, coupon_count, empty, compact)?;
                     Mode::List { list, hll_type }
                 }
                 CUR_MODE_SET => {
@@ -279,7 +291,8 @@ impl HllSketch {
                         )));
                     }
 
-                    let set = HashSet::deserialize(bytes, compact)?;
+                    let lg_arr = lg_arr as usize;
+                    let set = HashSet::deserialize(cursor, lg_arr, compact)?;
                     Mode::Set { set, hll_type }
                 }
                 CUR_MODE_HLL => {
@@ -291,11 +304,14 @@ impl HllSketch {
                     }
 
                     match hll_type {
-                        HllType::Hll4 => Array4::deserialize(bytes, lg_config_k, compact, ooo)
-                            .map(Mode::Array4)?,
-                        HllType::Hll6 => Array6::deserialize(bytes, lg_config_k, compact, ooo)
+                        HllType::Hll4 => {
+                            let cur_min = state;
+                            Array4::deserialize(cursor, cur_min, lg_config_k, compact, ooo)
+                                .map(Mode::Array4)?
+                        }
+                        HllType::Hll6 => Array6::deserialize(cursor, lg_config_k, compact, ooo)
                             .map(Mode::Array6)?,
-                        HllType::Hll8 => Array8::deserialize(bytes, lg_config_k, compact, ooo)
+                        HllType::Hll8 => Array8::deserialize(cursor, lg_config_k, compact, ooo)
                             .map(Mode::Array8)?,
                     }
                 }

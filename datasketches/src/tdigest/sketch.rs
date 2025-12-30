@@ -21,7 +21,6 @@ use crate::error::ErrorKind;
 use crate::tdigest::serialization::*;
 use std::cmp::Ordering;
 use std::convert::identity;
-use std::io::Cursor;
 use std::num::NonZeroU64;
 
 /// The default value of K if one is not specified.

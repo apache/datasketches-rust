@@ -20,7 +20,7 @@
 //! Provides sequential storage with linear search for duplicates.
 //! Efficient for small numbers of coupons before transitioning to HashSet.
 
-use crate::codec::SketchBytes;
+use crate::codec::{SketchBytes, SketchSlice};
 use crate::error::Error;
 use crate::hll::HllType;
 use crate::hll::container::COUPON_EMPTY;
@@ -67,30 +67,25 @@ impl List {
     }
 
     /// Deserialize a List from bytes
-    pub fn deserialize(bytes: &[u8], empty: bool, compact: bool) -> Result<Self, Error> {
-        // Read coupon count from byte 6
-        let coupon_count = bytes[LIST_COUNT_BYTE] as usize;
-
+    pub fn deserialize(
+        mut cursor: SketchSlice,
+        lg_arr: usize,
+        coupon_count: usize,
+        empty: bool,
+        compact: bool,
+    ) -> Result<Self, Error> {
         // Compute array size
-        let lg_arr = bytes[LG_ARR_BYTE] as usize;
         let array_size = if compact { coupon_count } else { 1 << lg_arr };
-
-        // Validate length
-        let expected_len = LIST_INT_ARR_START + (array_size * 4);
-        if bytes.len() < expected_len {
-            return Err(Error::insufficient_data(format!(
-                "expected {}, got {}",
-                expected_len,
-                bytes.len()
-            )));
-        }
 
         // Read coupons
         let mut coupons = vec![0u32; array_size];
         if !empty && coupon_count > 0 {
             for (i, coupon) in coupons.iter_mut().enumerate() {
-                let offset = LIST_INT_ARR_START + i * COUPON_SIZE_BYTES;
-                *coupon = read_u32_le(bytes, offset);
+                *coupon = cursor.read_u32_le().map_err(|_| {
+                    Error::insufficient_data(format!(
+                        "expect {coupon_count} coupons, failed at index {i}"
+                    ))
+                })?;
             }
         }
 
@@ -108,7 +103,7 @@ impl List {
 
         // Compute size
         let array_size = if compact { coupon_count } else { 1 << lg_arr };
-        let total_size = LIST_INT_ARR_START + (array_size * 4);
+        let total_size = LIST_PREAMBLE_SIZE + (array_size * 4);
 
         let mut bytes = SketchBytes::with_capacity(total_size);
 

@@ -20,7 +20,7 @@
 //! Uses open addressing with a custom stride function to handle collisions.
 //! Provides better performance than List when many coupons are stored.
 
-use crate::codec::SketchBytes;
+use crate::codec::{SketchBytes, SketchSlice};
 use crate::error::Error;
 use crate::hll::HllType;
 use crate::hll::KEY_MASK_26;
@@ -85,49 +85,42 @@ impl HashSet {
     }
 
     /// Deserialize a HashSet from bytes
-    pub fn deserialize(bytes: &[u8], compact: bool) -> Result<Self, Error> {
+    pub fn deserialize(
+        mut cursor: SketchSlice,
+        lg_arr: usize,
+        compact: bool,
+    ) -> Result<Self, Error> {
         // Read coupon count from bytes 8-11
-        let coupon_count = read_u32_le(bytes, HASH_SET_COUNT_INT) as usize;
-
-        // Compute array size
-        let lg_arr = bytes[LG_ARR_BYTE] as usize;
+        let coupon_count = cursor
+            .read_u32_le()
+            .map_err(|_| Error::insufficient_data("coupon_count"))?;
+        let coupon_count = coupon_count as usize;
 
         if compact {
             // Compact mode: only couponCount coupons are stored
-            let expected_len = HASH_SET_INT_ARR_START + (coupon_count * 4);
-            if bytes.len() < expected_len {
-                return Err(Error::insufficient_data(format!(
-                    "expected {}, got {}",
-                    expected_len,
-                    bytes.len()
-                )));
-            }
-
             // Create a new hash set and insert coupons one by one
             let mut hash_set = HashSet::new(lg_arr);
             for i in 0..coupon_count {
-                let offset = HASH_SET_INT_ARR_START + i * COUPON_SIZE_BYTES;
-                let coupon = read_u32_le(bytes, offset);
+                let coupon = cursor.read_u32_le().map_err(|_| {
+                    Error::insufficient_data(format!(
+                        "expected {coupon_count} coupons, failed at index {i}"
+                    ))
+                })?;
                 hash_set.update(coupon);
             }
             Ok(hash_set)
         } else {
             // Non-compact mode: full hash table with empty slots
             let array_size = 1 << lg_arr;
-            let expected_len = HASH_SET_INT_ARR_START + (array_size * 4);
-            if bytes.len() < expected_len {
-                return Err(Error::insufficient_data(format!(
-                    "expected {}, got {}",
-                    expected_len,
-                    bytes.len()
-                )));
-            }
 
             // Read entire hash table including empty slots
             let mut coupons = vec![0u32; array_size];
             for (i, coupon) in coupons.iter_mut().enumerate() {
-                let offset = HASH_SET_INT_ARR_START + i * COUPON_SIZE_BYTES;
-                *coupon = read_u32_le(bytes, offset);
+                *coupon = cursor.read_u32_le().map_err(|_| {
+                    Error::insufficient_data(format!(
+                        "expected {array_size} coupons, failed at index {i}"
+                    ))
+                })?;
             }
 
             Ok(Self {
@@ -148,7 +141,7 @@ impl HashSet {
 
         // Compute size
         let array_size = if compact { coupon_count } else { 1 << lg_arr };
-        let total_size = HASH_SET_INT_ARR_START + (array_size * 4);
+        let total_size = SET_PREAMBLE_SIZE + (array_size * 4);
 
         let mut bytes = SketchBytes::with_capacity(total_size);
 
