@@ -35,4 +35,5 @@ pub mod error;
 pub mod hll;
 pub mod tdigest;
 
+mod codec;
 mod hash;

@@ -15,18 +15,14 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use crate::codec::SketchSlice;
+use crate::error::Error;
+use crate::error::ErrorKind;
+use crate::tdigest::serialization::*;
 use std::cmp::Ordering;
 use std::convert::identity;
 use std::io::Cursor;
 use std::num::NonZeroU64;
-
-use byteorder::BE;
-use byteorder::LE;
-use byteorder::ReadBytesExt;
-
-use crate::error::Error;
-use crate::error::ErrorKind;
-use crate::tdigest::serialization::*;
 
 /// The default value of K if one is not specified.
 const DEFAULT_K: u16 = 200;
@@ -375,7 +371,7 @@ impl TDigestMut {
             move |_| Error::insufficient_data(tag)
         }
 
-        let mut cursor = Cursor::new(bytes);
+        let mut cursor = SketchSlice::new(bytes);
 
         let preamble_longs = cursor.read_u8().map_err(make_error("preamble_longs"))?;
         let serial_version = cursor.read_u8().map_err(make_error("serial_version"))?;
@@ -397,7 +393,7 @@ impl TDigestMut {
                 serial_version,
             ));
         }
-        let k = cursor.read_u16::<LE>().map_err(make_error("k"))?;
+        let k = cursor.read_u16_le().map_err(make_error("k"))?;
         if k < 10 {
             return Err(Error::deserial(format!("k must be at least 10, got {k}")));
         }
@@ -415,7 +411,7 @@ impl TDigestMut {
                 preamble_longs,
             ));
         }
-        cursor.read_u16::<LE>().map_err(make_error("<unused>"))?; // unused
+        cursor.read_u16_le().map_err(make_error("<unused>"))?; // unused
         if is_empty {
             return Ok(TDigestMut::new(k));
         }
@@ -423,13 +419,9 @@ impl TDigestMut {
         let reverse_merge = (flags & FLAGS_REVERSE_MERGE) != 0;
         if is_single_value {
             let value = if is_f32 {
-                cursor
-                    .read_f32::<LE>()
-                    .map_err(make_error("single_value"))? as f64
+                cursor.read_f32_le().map_err(make_error("single_value"))? as f64
             } else {
-                cursor
-                    .read_f64::<LE>()
-                    .map_err(make_error("single_value"))?
+                cursor.read_f64_le().map_err(make_error("single_value"))?
             };
             check_non_nan(value, "single_value")?;
             check_finite(value, "single_value")?;
@@ -446,21 +438,17 @@ impl TDigestMut {
                 vec![],
             ));
         }
-        let num_centroids = cursor
-            .read_u32::<LE>()
-            .map_err(make_error("num_centroids"))? as usize;
-        let num_buffered = cursor
-            .read_u32::<LE>()
-            .map_err(make_error("num_buffered"))? as usize;
+        let num_centroids = cursor.read_u32_le().map_err(make_error("num_centroids"))? as usize;
+        let num_buffered = cursor.read_u32_le().map_err(make_error("num_buffered"))? as usize;
         let (min, max) = if is_f32 {
             (
-                cursor.read_f32::<LE>().map_err(make_error("min"))? as f64,
-                cursor.read_f32::<LE>().map_err(make_error("max"))? as f64,
+                cursor.read_f32_le().map_err(make_error("min"))? as f64,
+                cursor.read_f32_le().map_err(make_error("max"))? as f64,
             )
         } else {
             (
-                cursor.read_f64::<LE>().map_err(make_error("min"))?,
-                cursor.read_f64::<LE>().map_err(make_error("max"))?,
+                cursor.read_f64_le().map_err(make_error("min"))?,
+                cursor.read_f64_le().map_err(make_error("max"))?,
             )
         };
         check_non_nan(min, "min")?;
@@ -470,13 +458,13 @@ impl TDigestMut {
         for _ in 0..num_centroids {
             let (mean, weight) = if is_f32 {
                 (
-                    cursor.read_f32::<LE>().map_err(make_error("mean"))? as f64,
-                    cursor.read_u32::<LE>().map_err(make_error("weight"))? as u64,
+                    cursor.read_f32_le().map_err(make_error("mean"))? as f64,
+                    cursor.read_u32_le().map_err(make_error("weight"))? as u64,
                 )
             } else {
                 (
-                    cursor.read_f64::<LE>().map_err(make_error("mean"))?,
-                    cursor.read_u64::<LE>().map_err(make_error("weight"))?,
+                    cursor.read_f64_le().map_err(make_error("mean"))?,
+                    cursor.read_u64_le().map_err(make_error("weight"))?,
                 )
             };
             check_non_nan(mean, "centroid mean")?;
@@ -488,13 +476,9 @@ impl TDigestMut {
         let mut buffer = Vec::with_capacity(num_buffered);
         for _ in 0..num_buffered {
             let value = if is_f32 {
-                cursor
-                    .read_f32::<LE>()
-                    .map_err(make_error("buffered_value"))? as f64
+                cursor.read_f32_le().map_err(make_error("buffered_value"))? as f64
             } else {
-                cursor
-                    .read_f64::<LE>()
-                    .map_err(make_error("buffered_value"))?
+                cursor.read_f64_le().map_err(make_error("buffered_value"))?
             };
             check_non_nan(value, "buffered_value mean")?;
             check_finite(value, "buffered_value mean")?;
@@ -518,34 +502,32 @@ impl TDigestMut {
             move |_| Error::insufficient_data_of("compat format", tag)
         }
 
-        let mut cursor = Cursor::new(bytes);
+        let mut cursor = SketchSlice::new(bytes);
 
-        let ty = cursor.read_u32::<BE>().map_err(make_error("type"))?;
+        let ty = cursor.read_u32_be().map_err(make_error("type"))?;
         match ty {
             COMPAT_DOUBLE => {
                 fn make_error(tag: &'static str) -> impl FnOnce(std::io::Error) -> Error {
                     move |_| Error::insufficient_data_of("compat double format", tag)
                 }
                 // compatibility with asBytes()
-                let min = cursor.read_f64::<BE>().map_err(make_error("min"))?;
-                let max = cursor.read_f64::<BE>().map_err(make_error("max"))?;
+                let min = cursor.read_f64_be().map_err(make_error("min"))?;
+                let max = cursor.read_f64_be().map_err(make_error("max"))?;
                 check_non_nan(min, "min in compat double format")?;
                 check_non_nan(max, "max in compat double format")?;
-                let k = cursor.read_f64::<BE>().map_err(make_error("k"))? as u16;
+                let k = cursor.read_f64_be().map_err(make_error("k"))? as u16;
                 if k < 10 {
                     return Err(Error::deserial(format!(
                         "k must be at least 10 in compat double format, got {k}"
                     )));
                 }
-                let num_centroids = cursor
-                    .read_u32::<BE>()
-                    .map_err(make_error("num_centroids"))?
-                    as usize;
+                let num_centroids =
+                    cursor.read_u32_be().map_err(make_error("num_centroids"))? as usize;
                 let mut total_weight = 0u64;
                 let mut centroids = Vec::with_capacity(num_centroids);
                 for _ in 0..num_centroids {
-                    let weight = cursor.read_f64::<BE>().map_err(make_error("weight"))? as u64;
-                    let mean = cursor.read_f64::<BE>().map_err(make_error("mean"))?;
+                    let weight = cursor.read_f64_be().map_err(make_error("weight"))? as u64;
+                    let mean = cursor.read_f64_be().map_err(make_error("mean"))?;
                     let weight = check_nonzero(weight, "centroid weight in compat double format")?;
                     check_non_nan(mean, "centroid mean in compat double format")?;
                     check_finite(mean, "centroid mean in compat double format")?;
@@ -568,11 +550,11 @@ impl TDigestMut {
                 }
                 // COMPAT_FLOAT: compatibility with asSmallBytes()
                 // reference implementation uses doubles for min and max
-                let min = cursor.read_f64::<BE>().map_err(make_error("min"))?;
-                let max = cursor.read_f64::<BE>().map_err(make_error("max"))?;
+                let min = cursor.read_f64_be().map_err(make_error("min"))?;
+                let max = cursor.read_f64_be().map_err(make_error("max"))?;
                 check_non_nan(min, "min in compat float format")?;
                 check_non_nan(max, "max in compat float format")?;
-                let k = cursor.read_f32::<BE>().map_err(make_error("k"))? as u16;
+                let k = cursor.read_f32_be().map_err(make_error("k"))? as u16;
                 if k < 10 {
                     return Err(Error::deserial(format!(
                         "k must be at least 10 in compat float format, got {k}"
@@ -580,16 +562,14 @@ impl TDigestMut {
                 }
                 // reference implementation stores capacities of the array of centroids and the
                 // buffer as shorts they can be derived from k in the constructor
-                cursor.read_u32::<BE>().map_err(make_error("<unused>"))?;
-                let num_centroids = cursor
-                    .read_u16::<BE>()
-                    .map_err(make_error("num_centroids"))?
-                    as usize;
+                cursor.read_u32_be().map_err(make_error("<unused>"))?;
+                let num_centroids =
+                    cursor.read_u16_be().map_err(make_error("num_centroids"))? as usize;
                 let mut total_weight = 0u64;
                 let mut centroids = Vec::with_capacity(num_centroids);
                 for _ in 0..num_centroids {
-                    let weight = cursor.read_f32::<BE>().map_err(make_error("weight"))? as u64;
-                    let mean = cursor.read_f32::<BE>().map_err(make_error("mean"))? as f64;
+                    let weight = cursor.read_f32_be().map_err(make_error("weight"))? as u64;
+                    let mean = cursor.read_f32_be().map_err(make_error("mean"))? as f64;
                     let weight = check_nonzero(weight, "centroid weight in compat float format")?;
                     check_non_nan(mean, "centroid mean in compat float format")?;
                     check_finite(mean, "centroid mean in compat float format")?;

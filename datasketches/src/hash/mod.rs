@@ -36,3 +36,14 @@ pub(crate) use self::xxhash::XxHash64;
 /// original source key value and the hashed bit string would be violated. Once you have developed
 /// a history of stored sketches you are stuck with it.
 pub(crate) const DEFAULT_UPDATE_SEED: u64 = 9001;
+
+/// Reads an u64 from a byte slice in little-endian order.
+///
+/// # Panics
+///
+/// Panics if `bytes.len()` is greater than 8.
+fn read_u64_le(bytes: &[u8]) -> u64 {
+    let mut buf = [0u8; 8];
+    buf[..bytes.len()].copy_from_slice(bytes);
+    u64::from_le_bytes(buf)
+}

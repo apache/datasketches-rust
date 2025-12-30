@@ -35,8 +35,6 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-anyhow = { workspace = true }
-byteorder = { workspace = true }
 
 [dev-dependencies]
 googletest = { workspace = true }

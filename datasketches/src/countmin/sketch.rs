@@ -15,14 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use std::hash::Hash;
-use std::hash::Hasher;
-use std::io::Cursor;
-use std::mem::size_of;
-
-use byteorder::LE;
-use byteorder::ReadBytesExt;
-
+use crate::codec::{SketchBytes, SketchSlice};
 use crate::countmin::serialization::COUNTMIN_FAMILY_ID;
 use crate::countmin::serialization::FLAGS_IS_EMPTY;
 use crate::countmin::serialization::LONG_SIZE_BYTES;
@@ -32,6 +25,10 @@ use crate::countmin::serialization::compute_seed_hash;
 use crate::error::Error;
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::hash::MurmurHash3X64128;
+
+use std::hash::Hash;
+use std::hash::Hasher;
+use std::mem::size_of;
 
 const MAX_TABLE_ENTRIES: usize = 1 << 30;
 
@@ -204,28 +201,28 @@ impl CountMinSketch {
         } else {
             LONG_SIZE_BYTES + (self.counts.len() * size_of::<i64>())
         };
-        let mut bytes = Vec::with_capacity(header_size + payload_size);
+        let mut bytes = SketchBytes::with_capacity(header_size + payload_size);
 
-        bytes.push(PREAMBLE_LONGS_SHORT);
-        bytes.push(SERIAL_VERSION);
-        bytes.push(COUNTMIN_FAMILY_ID);
-        bytes.push(if self.is_empty() { FLAGS_IS_EMPTY } else { 0 });
-        bytes.extend_from_slice(&0u32.to_le_bytes());
+        bytes.write_u8(PREAMBLE_LONGS_SHORT);
+        bytes.write_u8(SERIAL_VERSION);
+        bytes.write_u8(COUNTMIN_FAMILY_ID);
+        bytes.write_u8(if self.is_empty() { FLAGS_IS_EMPTY } else { 0 });
+        bytes.write_u32_le(0); // unused
 
-        bytes.extend_from_slice(&self.num_buckets.to_le_bytes());
-        bytes.push(self.num_hashes);
-        bytes.extend_from_slice(&compute_seed_hash(self.seed).to_le_bytes());
-        bytes.push(0u8);
+        bytes.write_u32_le(self.num_buckets);
+        bytes.write_u8(self.num_hashes);
+        bytes.write_u16_le(compute_seed_hash(self.seed));
+        bytes.write_u8(0);
 
         if self.is_empty() {
-            return bytes;
+            return bytes.into_bytes();
         }
 
-        bytes.extend_from_slice(&self.total_weight.to_le_bytes());
-        for count in &self.counts {
-            bytes.extend_from_slice(&count.to_le_bytes());
+        bytes.write_i64_le(self.total_weight);
+        for count in self.counts.iter().copied() {
+            bytes.write_i64_le(count);
         }
-        bytes
+        bytes.into_bytes()
     }
 
     /// Deserializes a sketch from bytes using the default seed.
@@ -239,12 +236,12 @@ impl CountMinSketch {
             move |_| Error::insufficient_data(tag)
         }
 
-        let mut cursor = Cursor::new(bytes);
+        let mut cursor = SketchSlice::new(bytes);
         let preamble_longs = cursor.read_u8().map_err(make_error("preamble_longs"))?;
         let serial_version = cursor.read_u8().map_err(make_error("serial_version"))?;
         let family_id = cursor.read_u8().map_err(make_error("family_id"))?;
         let flags = cursor.read_u8().map_err(make_error("flags"))?;
-        cursor.read_u32::<LE>().map_err(make_error("unused32"))?;
+        cursor.read_u32_le().map_err(make_error("<unused>"))?;
 
         if family_id != COUNTMIN_FAMILY_ID {
             return Err(Error::invalid_family(
@@ -266,9 +263,9 @@ impl CountMinSketch {
             ));
         }
 
-        let num_buckets = cursor.read_u32::<LE>().map_err(make_error("num_buckets"))?;
+        let num_buckets = cursor.read_u32_le().map_err(make_error("num_buckets"))?;
         let num_hashes = cursor.read_u8().map_err(make_error("num_hashes"))?;
-        let seed_hash = cursor.read_u16::<LE>().map_err(make_error("seed_hash"))?;
+        let seed_hash = cursor.read_u16_le().map_err(make_error("seed_hash"))?;
         cursor.read_u8().map_err(make_error("unused8"))?;
 
         let expected_seed_hash = compute_seed_hash(seed);
@@ -284,11 +281,9 @@ impl CountMinSketch {
             return Ok(sketch);
         }
 
-        sketch.total_weight = cursor
-            .read_i64::<LE>()
-            .map_err(make_error("total_weight"))?;
+        sketch.total_weight = cursor.read_i64_le().map_err(make_error("total_weight"))?;
         for count in sketch.counts.iter_mut() {
-            *count = cursor.read_i64::<LE>().map_err(make_error("counts"))?;
+            *count = cursor.read_i64_le().map_err(make_error("counts"))?;
         }
         Ok(sketch)
     }

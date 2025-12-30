@@ -17,9 +17,6 @@
 
 use std::hash::Hasher;
 
-use byteorder::ByteOrder;
-use byteorder::LE;
-
 use crate::hash::DEFAULT_UPDATE_SEED;
 
 const C1: u64 = 0x87c37b91114253d5;
@@ -58,11 +55,8 @@ impl MurmurHash3X64128 {
         if rem > 0 {
             if rem > 8 {
                 // read k2 little endian
-                let mut buf = [0u8; 8];
-                let k2_len = rem - 8;
-                buf[..k2_len].copy_from_slice(&self.buf[8..rem]);
+                let mut k2 = super::read_u64_le(&self.buf[8..rem]);
                 // mix k2
-                let mut k2 = u64::from_le_bytes(buf);
                 k2 = k2.wrapping_mul(C2);
                 k2 = k2.rotate_left(33);
                 k2 = k2.wrapping_mul(C1);
@@ -70,11 +64,9 @@ impl MurmurHash3X64128 {
             }
 
             // read k1 little endian
-            let mut buf = [0u8; 8];
             let k1_len = rem.min(8);
-            buf[..k1_len].copy_from_slice(&self.buf[..k1_len]);
+            let mut k1 = super::read_u64_le(&self.buf[..k1_len]);
             // mix k1
-            let mut k1 = u64::from_le_bytes(buf);
             k1 = k1.wrapping_mul(C1);
             k1 = k1.rotate_left(31);
             k1 = k1.wrapping_mul(C2);
@@ -143,8 +135,8 @@ impl Hasher for MurmurHash3X64128 {
             let wanted = 16 - self.buf_len;
             self.buf[self.buf_len..].copy_from_slice(&bytes[..wanted]);
 
-            let k1 = LE::read_u64(&self.buf[0..8]);
-            let k2 = LE::read_u64(&self.buf[8..16]);
+            let k1 = super::read_u64_le(&self.buf[0..8]);
+            let k2 = super::read_u64_le(&self.buf[8..16]);
             self.update(k1, k2);
 
             bytes = &bytes[wanted..];
@@ -160,8 +152,8 @@ impl Hasher for MurmurHash3X64128 {
             let lo = i << 4;
             let mi = lo + 8;
             let hi = mi + 8;
-            let k1 = LE::read_u64(&bytes[lo..mi]);
-            let k2 = LE::read_u64(&bytes[mi..hi]);
+            let k1 = super::read_u64_le(&bytes[lo..mi]);
+            let k2 = super::read_u64_le(&bytes[mi..hi]);
             self.update(k1, k2);
         }
 
