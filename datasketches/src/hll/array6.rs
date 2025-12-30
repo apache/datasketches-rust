@@ -189,6 +189,7 @@ impl Array6 {
 
         // Read num_at_cur_min (for Array6, this is num_zeros since cur_min=0)
         let num_zeros = cursor.read_u32_le().map_err(make_error("num_zeros"))?;
+        let _aux_count = cursor.read_u32_le().map_err(make_error("aux_count"))?; // always 0
 
         // Read packed byte array from offset HLL_BYTE_ARR_START
         let mut data = vec![0u8; num_bytes];

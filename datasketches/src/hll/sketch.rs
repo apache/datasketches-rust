@@ -230,7 +230,7 @@ impl HllSketch {
         // The contextual state byte:
         // * coupon count in LIST mode
         // * cur_min in HLL mode
-        // * unused in other modes
+        // * unused in SET mode
         let state = cursor.read_u8().map_err(make_error("state"))?;
         let mode_byte = cursor.read_u8().map_err(make_error("mode"))?;
 

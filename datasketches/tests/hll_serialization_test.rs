@@ -87,8 +87,8 @@ fn test_sketch_file(path: PathBuf, expected_cardinality: usize, expected_lg_k: u
 
     // Check that both sketches are functionally equivalent
     assert_eq!(
-        sketch2.lg_config_k(),
         sketch1.lg_config_k(),
+        sketch2.lg_config_k(),
         "lg_config_k mismatch after round-trip for {}",
         path.display()
     );

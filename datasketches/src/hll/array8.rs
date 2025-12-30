@@ -253,7 +253,7 @@ impl Array8 {
             move |_| Error::insufficient_data(tag)
         }
 
-        let k = 1 << lg_config_k;
+        let k = 1usize << lg_config_k;
 
         // Read HIP estimator values from preamble
         let hip_accum = cursor.read_f64_le().map_err(make_error("hip_accum"))?;
@@ -262,9 +262,10 @@ impl Array8 {
 
         // Read num_at_cur_min (for Array8, this is num_zeros since cur_min=0)
         let num_zeros = cursor.read_u32_le().map_err(make_error("num_zeros"))?;
+        let _aux_count = cursor.read_u32_le().map_err(make_error("aux_count"))?; // always 0
 
         // Read byte array from offset HLL_BYTE_ARR_START
-        let mut data = vec![0u8; k as usize];
+        let mut data = vec![0u8; k];
         if !compact {
             cursor.read_exact(&mut data).map_err(make_error("data"))?;
         } else {

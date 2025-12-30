@@ -159,6 +159,9 @@ impl HashSet {
         }
         bytes.write_u8(flags);
 
+        // Write unused byte
+        bytes.write_u8(0);
+
         // Write mode byte: SET mode with target HLL type
         bytes.write_u8(encode_mode_byte(CUR_MODE_SET, hll_type as u8));
 
