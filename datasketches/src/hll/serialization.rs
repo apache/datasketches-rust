@@ -42,7 +42,7 @@ pub const HLL_PREINTS: u8 = 10;
 
 /// Total size of LIST preamble in bytes
 pub const LIST_PREAMBLE_SIZE: usize = 8;
-/// Total size of LIST preamble in bytes
+/// Total size of SET preamble in bytes
 pub const SET_PREAMBLE_SIZE: usize = 12;
 /// Total size of HLL preamble in bytes
 pub const HLL_PREAMBLE_SIZE: usize = 40;

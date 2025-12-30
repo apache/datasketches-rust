@@ -20,7 +20,8 @@
 //! Provides sequential storage with linear search for duplicates.
 //! Efficient for small numbers of coupons before transitioning to HashSet.
 
-use crate::codec::{SketchBytes, SketchSlice};
+use crate::codec::SketchBytes;
+use crate::codec::SketchSlice;
 use crate::error::Error;
 use crate::hll::HllType;
 use crate::hll::container::COUPON_EMPTY;

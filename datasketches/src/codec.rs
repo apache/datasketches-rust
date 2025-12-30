@@ -18,7 +18,8 @@
 #![allow(dead_code)]
 
 use std::io;
-use std::io::{Cursor, Read};
+use std::io::Cursor;
+use std::io::Read;
 
 pub(crate) struct SketchBytes {
     bytes: Vec<u8>,
@@ -117,7 +118,7 @@ pub(crate) struct SketchSlice<'a> {
 }
 
 impl SketchSlice<'_> {
-    pub fn new(slice: &[u8]) -> SketchSlice {
+    pub fn new(slice: &[u8]) -> SketchSlice<'_> {
         SketchSlice {
             slice: Cursor::new(slice),
         }

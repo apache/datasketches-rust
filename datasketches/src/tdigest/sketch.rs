@@ -15,13 +15,14 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::cmp::Ordering;
+use std::convert::identity;
+use std::num::NonZeroU64;
+
 use crate::codec::SketchSlice;
 use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::tdigest::serialization::*;
-use std::cmp::Ordering;
-use std::convert::identity;
-use std::num::NonZeroU64;
 
 /// The default value of K if one is not specified.
 const DEFAULT_K: u16 = 200;

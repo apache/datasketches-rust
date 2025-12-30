@@ -15,7 +15,12 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use crate::codec::{SketchBytes, SketchSlice};
+use std::hash::Hash;
+use std::hash::Hasher;
+use std::mem::size_of;
+
+use crate::codec::SketchBytes;
+use crate::codec::SketchSlice;
 use crate::countmin::serialization::COUNTMIN_FAMILY_ID;
 use crate::countmin::serialization::FLAGS_IS_EMPTY;
 use crate::countmin::serialization::LONG_SIZE_BYTES;
@@ -25,10 +30,6 @@ use crate::countmin::serialization::compute_seed_hash;
 use crate::error::Error;
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::hash::MurmurHash3X64128;
-
-use std::hash::Hash;
-use std::hash::Hasher;
-use std::mem::size_of;
 
 const MAX_TABLE_ENTRIES: usize = 1 << 30;
 

@@ -21,7 +21,8 @@
 //! When values exceed 4 bits after cur_min offset, they're stored in an auxiliary hash map.
 
 use super::aux_map::AuxMap;
-use crate::codec::{SketchBytes, SketchSlice};
+use crate::codec::SketchBytes;
+use crate::codec::SketchSlice;
 use crate::error::Error;
 use crate::hll::NumStdDev;
 use crate::hll::estimator::HipEstimator;

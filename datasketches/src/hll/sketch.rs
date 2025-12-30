@@ -20,6 +20,8 @@
 //! This module provides the main [`HllSketch`] struct, which is the primary interface
 //! for creating and using HLL sketches for cardinality estimation.
 
+use std::hash::Hash;
+
 use crate::codec::SketchSlice;
 use crate::error::Error;
 use crate::hll::HllType;
@@ -35,7 +37,6 @@ use crate::hll::hash_set::HashSet;
 use crate::hll::list::List;
 use crate::hll::mode::Mode;
 use crate::hll::serialization::*;
-use std::hash::Hash;
 
 /// A HyperLogLog sketch.
 ///

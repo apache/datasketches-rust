@@ -20,7 +20,8 @@
 //! Uses open addressing with a custom stride function to handle collisions.
 //! Provides better performance than List when many coupons are stored.
 
-use crate::codec::{SketchBytes, SketchSlice};
+use crate::codec::SketchBytes;
+use crate::codec::SketchSlice;
 use crate::error::Error;
 use crate::hll::HllType;
 use crate::hll::KEY_MASK_26;
