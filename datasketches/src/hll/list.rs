@@ -20,7 +20,7 @@
 //! Provides sequential storage with linear search for duplicates.
 //! Efficient for small numbers of coupons before transitioning to HashSet.
 
-use crate::error::SerdeError;
+use crate::error::Error;
 use crate::hll::HllType;
 use crate::hll::container::COUPON_EMPTY;
 use crate::hll::container::Container;
@@ -66,7 +66,7 @@ impl List {
     }
 
     /// Deserialize a List from bytes
-    pub fn deserialize(bytes: &[u8], empty: bool, compact: bool) -> Result<Self, SerdeError> {
+    pub fn deserialize(bytes: &[u8], empty: bool, compact: bool) -> Result<Self, Error> {
         // Read coupon count from byte 6
         let coupon_count = bytes[LIST_COUNT_BYTE] as usize;
 
@@ -77,7 +77,7 @@ impl List {
         // Validate length
         let expected_len = LIST_INT_ARR_START + (array_size * 4);
         if bytes.len() < expected_len {
-            return Err(SerdeError::InsufficientData(format!(
+            return Err(Error::insufficient_data(format!(
                 "expected {}, got {}",
                 expected_len,
                 bytes.len()
@@ -113,7 +113,7 @@ impl List {
 
         // Write preamble
         bytes[PREAMBLE_INTS_BYTE] = LIST_PREINTS;
-        bytes[SER_VER_BYTE] = SER_VER;
+        bytes[SER_VER_BYTE] = SERIAL_VER;
         bytes[FAMILY_BYTE] = HLL_FAMILY_ID;
         bytes[LG_K_BYTE] = lg_config_k;
         bytes[LG_ARR_BYTE] = lg_arr as u8;

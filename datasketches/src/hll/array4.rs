@@ -21,7 +21,7 @@
 //! When values exceed 4 bits after cur_min offset, they're stored in an auxiliary hash map.
 
 use super::aux_map::AuxMap;
-use crate::error::SerdeError;
+use crate::error::Error;
 use crate::hll::NumStdDev;
 use crate::hll::estimator::HipEstimator;
 use crate::hll::get_slot;
@@ -289,13 +289,13 @@ impl Array4 {
         lg_config_k: u8,
         compact: bool,
         ooo: bool,
-    ) -> Result<Self, SerdeError> {
+    ) -> Result<Self, Error> {
         use crate::hll::get_slot;
         use crate::hll::get_value;
         use crate::hll::serialization::*;
 
         if bytes.len() < HLL_PREAMBLE_SIZE {
-            return Err(SerdeError::InsufficientData(format!(
+            return Err(Error::insufficient_data(format!(
                 "expected at least {}, got {}",
                 HLL_PREAMBLE_SIZE,
                 bytes.len()
@@ -324,7 +324,7 @@ impl Array4 {
         };
 
         if bytes.len() < expected_len {
-            return Err(SerdeError::InsufficientData(format!(
+            return Err(Error::insufficient_data(format!(
                 "expected {}, got {}",
                 expected_len,
                 bytes.len()
@@ -392,7 +392,7 @@ impl Array4 {
 
         // Write standard header
         bytes[PREAMBLE_INTS_BYTE] = HLL_PREINTS;
-        bytes[SER_VER_BYTE] = SER_VER;
+        bytes[SER_VER_BYTE] = SERIAL_VER;
         bytes[FAMILY_BYTE] = HLL_FAMILY_ID;
         bytes[LG_K_BYTE] = lg_config_k;
         bytes[LG_ARR_BYTE] = 0; // Not used for HLL mode

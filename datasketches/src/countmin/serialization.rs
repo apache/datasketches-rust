@@ -15,25 +15,19 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! # Apache® DataSketches™ Core Rust Library Component
-//!
-//! The Sketching Core Library provides a range of stochastic streaming algorithms and closely
-//! related Rust technologies that are particularly useful when integrating this technology into
-//! systems that must deal with massive data.
-//!
-//! This library is divided into modules that constitute distinct groups of functionality.
+use std::hash::Hasher;
 
-#![cfg_attr(docsrs, feature(doc_cfg))]
-#![deny(missing_docs)]
+use crate::hash::MurmurHash3X64128;
 
-// See https://github.com/apache/datasketches-rust/issues/28 for more information.
-#[cfg(target_endian = "big")]
-compile_error!("datasketches does not support big-endian targets");
+pub(super) const PREAMBLE_LONGS_SHORT: u8 = 2;
+pub(super) const SERIAL_VERSION: u8 = 1;
+pub(super) const COUNTMIN_FAMILY_ID: u8 = 18;
+pub(super) const FLAGS_IS_EMPTY: u8 = 1 << 0;
+pub(super) const LONG_SIZE_BYTES: usize = 8;
 
-pub mod countmin;
-pub mod error;
-pub mod frequencies;
-pub mod hll;
-pub mod tdigest;
-
-mod hash;
+pub(super) fn compute_seed_hash(seed: u64) -> u16 {
+    let mut hasher = MurmurHash3X64128::with_seed(0);
+    hasher.write(&seed.to_le_bytes());
+    let (h1, _) = hasher.finish128();
+    (h1 & 0xffff) as u16
+}

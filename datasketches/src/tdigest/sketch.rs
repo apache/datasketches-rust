@@ -24,7 +24,8 @@ use byteorder::BE;
 use byteorder::LE;
 use byteorder::ReadBytesExt;
 
-use crate::error::SerdeError;
+use crate::error::Error;
+use crate::error::ErrorKind;
 use crate::tdigest::serialization::*;
 
 /// The default value of K if one is not specified.
@@ -60,9 +61,11 @@ impl Default for TDigestMut {
 impl TDigestMut {
     /// Creates a tdigest instance with the given value of k.
     ///
+    /// The fallible version of this method is [`TDigestMut::try_new`].
+    ///
     /// # Panics
     ///
-    /// If k is less than 10
+    /// Panics if k is less than 10
     pub fn new(k: u16) -> Self {
         Self::make(
             k,
@@ -73,6 +76,32 @@ impl TDigestMut {
             0,
             vec![],
         )
+    }
+
+    /// Creates a tdigest instance with the given value of k.
+    ///
+    /// The panicking version of this method is [`TDigestMut::new`].
+    ///
+    /// # Errors
+    ///
+    /// If k is less than 10, returns [`ErrorKind::InvalidArgument`].
+    pub fn try_new(k: u16) -> Result<Self, Error> {
+        if k < 10 {
+            return Err(Error::new(
+                ErrorKind::InvalidArgument,
+                format!("k must be at least 10, got {k}"),
+            ));
+        }
+
+        Ok(Self::make(
+            k,
+            false,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            vec![],
+            0,
+            vec![],
+        ))
     }
 
     // for deserialization
@@ -205,27 +234,7 @@ impl TDigestMut {
         }
     }
 
-    /// Returns an approximation to the Cumulative Distribution Function (CDF), which is the
-    /// cumulative analog of the PMF, of the input stream given a set of split points.
-    ///
-    /// # Arguments
-    ///
-    /// * `split_points`: An array of _m_ unique, monotonically increasing values that divide the
-    ///   input domain into _m+1_ consecutive disjoint intervals.
-    ///
-    /// # Returns
-    ///
-    /// An array of m+1 doubles, which are a consecutive approximation to the CDF of the input
-    /// stream given the split points. The value at array position j of the returned CDF array
-    /// is the sum of the returned values in positions 0 through j of the returned PMF array.
-    /// This can be viewed as array of ranks of the given split points plus one more value that
-    /// is always 1.
-    ///
-    /// Returns `None` if TDigest is empty.
-    ///
-    /// # Panics
-    ///
-    /// If `split_points` is not unique, not monotonically increasing, or contains `NaN` values.
+    /// See [`TDigest::cdf`].
     pub fn cdf(&mut self, split_points: &[f64]) -> Option<Vec<f64>> {
         check_split_points(split_points);
 
@@ -236,24 +245,7 @@ impl TDigestMut {
         self.view().cdf(split_points)
     }
 
-    /// Returns an approximation to the Probability Mass Function (PMF) of the input stream
-    /// given a set of split points.
-    ///
-    /// # Arguments
-    ///
-    /// * `split_points`: An array of _m_ unique, monotonically increasing values that divide the
-    ///   input domain into _m+1_ consecutive disjoint intervals (bins).
-    ///
-    /// # Returns
-    ///
-    /// An array of m+1 doubles each of which is an approximation to the fraction of the input
-    /// stream values (the mass) that fall into one of those intervals.
-    ///
-    /// Returns `None` if TDigest is empty.
-    ///
-    /// # Panics
-    ///
-    /// If `split_points` is not unique, not monotonically increasing, or contains `NaN` values.
+    /// See [`TDigest::pmf`].
     pub fn pmf(&mut self, split_points: &[f64]) -> Option<Vec<f64>> {
         check_split_points(split_points);
 
@@ -264,13 +256,7 @@ impl TDigestMut {
         self.view().pmf(split_points)
     }
 
-    /// Compute approximate normalized rank (from 0 to 1 inclusive) of the given value.
-    ///
-    /// Returns `None` if TDigest is empty.
-    ///
-    /// # Panics
-    ///
-    /// If the value is `NaN`.
+    /// See [`TDigest::rank`].
     pub fn rank(&mut self, value: f64) -> Option<f64> {
         assert!(!value.is_nan(), "value must not be NaN");
 
@@ -291,13 +277,7 @@ impl TDigestMut {
         self.view().rank(value)
     }
 
-    /// Compute approximate quantile value corresponding to the given normalized rank.
-    ///
-    /// Returns `None` if TDigest is empty.
-    ///
-    /// # Panics
-    ///
-    /// If rank is not in [0.0, 1.0].
+    /// See [`TDigest::quantile`].
     pub fn quantile(&mut self, rank: f64) -> Option<f64> {
         assert!((0.0..=1.0).contains(&rank), "rank must be in [0.0, 1.0]");
 
@@ -390,9 +370,9 @@ impl TDigestMut {
     ///
     /// [^1]: This is to support reading the `tdigest<float>` format from the C++ implementation.
     /// [^2]: <https://github.com/tdunning/t-digest>
-    pub fn deserialize(bytes: &[u8], is_f32: bool) -> Result<Self, SerdeError> {
-        fn make_error(tag: &'static str) -> impl FnOnce(std::io::Error) -> SerdeError {
-            move |_| SerdeError::InsufficientData(tag.to_string())
+    pub fn deserialize(bytes: &[u8], is_f32: bool) -> Result<Self, Error> {
+        fn make_error(tag: &'static str) -> impl FnOnce(std::io::Error) -> Error {
+            move |_| Error::insufficient_data(tag)
         }
 
         let mut cursor = Cursor::new(bytes);
@@ -401,25 +381,25 @@ impl TDigestMut {
         let serial_version = cursor.read_u8().map_err(make_error("serial_version"))?;
         let family_id = cursor.read_u8().map_err(make_error("family_id"))?;
         if family_id != TDIGEST_FAMILY_ID {
-            if preamble_longs == 0 && serial_version == 0 && family_id == 0 {
-                return Self::deserialize_compat(bytes);
-            }
-            return Err(SerdeError::InvalidFamily(format!(
-                "expected {} (TDigest), got {}",
-                TDIGEST_FAMILY_ID, family_id
-            )));
+            return if preamble_longs == 0 && serial_version == 0 && family_id == 0 {
+                Self::deserialize_compat(bytes)
+            } else {
+                Err(Error::invalid_family(
+                    TDIGEST_FAMILY_ID,
+                    family_id,
+                    "TDigest",
+                ))
+            };
         }
         if serial_version != SERIAL_VERSION {
-            return Err(SerdeError::UnsupportedVersion(format!(
-                "expected {}, got {}",
-                SERIAL_VERSION, serial_version
-            )));
+            return Err(Error::unsupported_serial_version(
+                SERIAL_VERSION,
+                serial_version,
+            ));
         }
         let k = cursor.read_u16::<LE>().map_err(make_error("k"))?;
         if k < 10 {
-            return Err(SerdeError::InvalidParameter(format!(
-                "k must be at least 10, got {k}"
-            )));
+            return Err(Error::deserial(format!("k must be at least 10, got {k}")));
         }
         let flags = cursor.read_u8().map_err(make_error("flags"))?;
         let is_empty = (flags & FLAGS_IS_EMPTY) != 0;
@@ -430,10 +410,10 @@ impl TDigestMut {
             PREAMBLE_LONGS_MULTIPLE
         };
         if preamble_longs != expected_preamble_longs {
-            return Err(SerdeError::MalformedData(format!(
-                "expected preamble_longs to be {}, got {}",
-                expected_preamble_longs, preamble_longs
-            )));
+            return Err(Error::invalid_preamble_longs(
+                expected_preamble_longs,
+                preamble_longs,
+            ));
         }
         cursor.read_u16::<LE>().map_err(make_error("<unused>"))?; // unused
         if is_empty {
@@ -452,7 +432,7 @@ impl TDigestMut {
                     .map_err(make_error("single_value"))?
             };
             check_non_nan(value, "single_value")?;
-            check_non_infinite(value, "single_value")?;
+            check_finite(value, "single_value")?;
             return Ok(TDigestMut::make(
                 k,
                 reverse_merge,
@@ -500,7 +480,7 @@ impl TDigestMut {
                 )
             };
             check_non_nan(mean, "centroid mean")?;
-            check_non_infinite(mean, "centroid")?;
+            check_finite(mean, "centroid")?;
             let weight = check_nonzero(weight, "centroid weight")?;
             centroids_weight += weight.get();
             centroids.push(Centroid { mean, weight });
@@ -517,7 +497,7 @@ impl TDigestMut {
                     .map_err(make_error("buffered_value"))?
             };
             check_non_nan(value, "buffered_value mean")?;
-            check_non_infinite(value, "buffered_value mean")?;
+            check_finite(value, "buffered_value mean")?;
             buffer.push(value);
         }
         Ok(TDigestMut::make(
@@ -533,9 +513,9 @@ impl TDigestMut {
 
     // compatibility with the format of the reference implementation
     // default byte order of ByteBuffer is used there, which is big endian
-    fn deserialize_compat(bytes: &[u8]) -> Result<Self, SerdeError> {
-        fn make_error(tag: &'static str) -> impl FnOnce(std::io::Error) -> SerdeError {
-            move |_| SerdeError::InsufficientData(format!("{tag} in compat format"))
+    fn deserialize_compat(bytes: &[u8]) -> Result<Self, Error> {
+        fn make_error(tag: &'static str) -> impl FnOnce(std::io::Error) -> Error {
+            move |_| Error::insufficient_data_of("compat format", tag)
         }
 
         let mut cursor = Cursor::new(bytes);
@@ -543,8 +523,8 @@ impl TDigestMut {
         let ty = cursor.read_u32::<BE>().map_err(make_error("type"))?;
         match ty {
             COMPAT_DOUBLE => {
-                fn make_error(tag: &'static str) -> impl FnOnce(std::io::Error) -> SerdeError {
-                    move |_| SerdeError::InsufficientData(format!("{tag} in compat double format"))
+                fn make_error(tag: &'static str) -> impl FnOnce(std::io::Error) -> Error {
+                    move |_| Error::insufficient_data_of("compat double format", tag)
                 }
                 // compatibility with asBytes()
                 let min = cursor.read_f64::<BE>().map_err(make_error("min"))?;
@@ -553,8 +533,8 @@ impl TDigestMut {
                 check_non_nan(max, "max in compat double format")?;
                 let k = cursor.read_f64::<BE>().map_err(make_error("k"))? as u16;
                 if k < 10 {
-                    return Err(SerdeError::InvalidParameter(format!(
-                        "k must be at least 10, got {k} in compat double format"
+                    return Err(Error::deserial(format!(
+                        "k must be at least 10 in compat double format, got {k}"
                     )));
                 }
                 let num_centroids = cursor
@@ -568,7 +548,7 @@ impl TDigestMut {
                     let mean = cursor.read_f64::<BE>().map_err(make_error("mean"))?;
                     let weight = check_nonzero(weight, "centroid weight in compat double format")?;
                     check_non_nan(mean, "centroid mean in compat double format")?;
-                    check_non_infinite(mean, "centroid mean in compat double format")?;
+                    check_finite(mean, "centroid mean in compat double format")?;
                     total_weight += weight.get();
                     centroids.push(Centroid { mean, weight });
                 }
@@ -583,8 +563,8 @@ impl TDigestMut {
                 ))
             }
             COMPAT_FLOAT => {
-                fn make_error(tag: &'static str) -> impl FnOnce(std::io::Error) -> SerdeError {
-                    move |_| SerdeError::InsufficientData(format!("{tag} in compat float format"))
+                fn make_error(tag: &'static str) -> impl FnOnce(std::io::Error) -> Error {
+                    move |_| Error::insufficient_data_of("compat float format", tag)
                 }
                 // COMPAT_FLOAT: compatibility with asSmallBytes()
                 // reference implementation uses doubles for min and max
@@ -594,8 +574,8 @@ impl TDigestMut {
                 check_non_nan(max, "max in compat float format")?;
                 let k = cursor.read_f32::<BE>().map_err(make_error("k"))? as u16;
                 if k < 10 {
-                    return Err(SerdeError::InvalidParameter(format!(
-                        "k must be at least 10, got {k} in compat float format"
+                    return Err(Error::deserial(format!(
+                        "k must be at least 10 in compat float format, got {k}"
                     )));
                 }
                 // reference implementation stores capacities of the array of centroids and the
@@ -612,7 +592,7 @@ impl TDigestMut {
                     let mean = cursor.read_f32::<BE>().map_err(make_error("mean"))? as f64;
                     let weight = check_nonzero(weight, "centroid weight in compat float format")?;
                     check_non_nan(mean, "centroid mean in compat float format")?;
-                    check_non_infinite(mean, "centroid mean in compat float format")?;
+                    check_finite(mean, "centroid mean in compat float format")?;
                     total_weight += weight.get();
                     centroids.push(Centroid { mean, weight });
                 }
@@ -626,9 +606,7 @@ impl TDigestMut {
                     vec![],
                 ))
             }
-            ty => Err(SerdeError::InvalidParameter(format!(
-                "unknown TDigest compat type {ty}",
-            ))),
+            ty => Err(Error::deserial(format!("unknown TDigest compat type {ty}"))),
         }
     }
 
@@ -786,7 +764,8 @@ impl TDigest {
     ///
     /// # Panics
     ///
-    /// If `split_points` is not unique, not monotonically increasing, or contains `NaN` values.
+    /// Panics if `split_points` is not unique, not monotonically increasing, or contains `NaN`
+    /// values.
     pub fn cdf(&self, split_points: &[f64]) -> Option<Vec<f64>> {
         self.view().cdf(split_points)
     }
@@ -808,7 +787,8 @@ impl TDigest {
     ///
     /// # Panics
     ///
-    /// If `split_points` is not unique, not monotonically increasing, or contains `NaN` values.
+    /// Panics if `split_points` is not unique, not monotonically increasing, or contains `NaN`
+    /// values.
     pub fn pmf(&self, split_points: &[f64]) -> Option<Vec<f64>> {
         self.view().pmf(split_points)
     }
@@ -819,7 +799,7 @@ impl TDigest {
     ///
     /// # Panics
     ///
-    /// If the value is `NaN`.
+    /// Panics if the value is `NaN`.
     pub fn rank(&self, value: f64) -> Option<f64> {
         assert!(!value.is_nan(), "value must not be NaN");
         self.view().rank(value)
@@ -831,7 +811,7 @@ impl TDigest {
     ///
     /// # Panics
     ///
-    /// If rank is not in [0.0, 1.0].
+    /// Panics if rank is not in [0.0, 1.0].
     pub fn quantile(&self, rank: f64) -> Option<f64> {
         assert!((0.0..=1.0).contains(&rank), "rank must be in [0.0, 1.0]");
         self.view().quantile(rank)
@@ -1129,24 +1109,29 @@ impl Centroid {
     }
 }
 
-fn check_non_nan(value: f64, tag: &'static str) -> Result<(), SerdeError> {
+fn check_non_nan(value: f64, tag: &'static str) -> Result<(), Error> {
     if value.is_nan() {
-        return Err(SerdeError::MalformedData(format!("{tag} cannot be NaN")));
-    }
-    Ok(())
-}
-
-fn check_non_infinite(value: f64, tag: &'static str) -> Result<(), SerdeError> {
-    if value.is_infinite() {
-        return Err(SerdeError::MalformedData(format!(
-            "{tag} cannot be is_infinite"
+        return Err(Error::deserial(format!(
+            "malformed data: {tag} cannot be NaN"
         )));
     }
+
     Ok(())
 }
 
-fn check_nonzero(value: u64, tag: &'static str) -> Result<NonZeroU64, SerdeError> {
-    NonZeroU64::new(value).ok_or_else(|| SerdeError::MalformedData(format!("{tag} cannot be zero")))
+fn check_finite(value: f64, tag: &'static str) -> Result<(), Error> {
+    if value.is_infinite() {
+        return Err(Error::deserial(format!(
+            "malformed data: {tag} cannot be infinite"
+        )));
+    }
+
+    Ok(())
+}
+
+fn check_nonzero(value: u64, tag: &'static str) -> Result<NonZeroU64, Error> {
+    NonZeroU64::new(value)
+        .ok_or_else(|| Error::deserial(format!("malformed data: {tag} cannot be zero")))
 }
 
 /// Generates cluster sizes proportional to `q*(1-q)`.

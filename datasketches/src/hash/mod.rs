@@ -16,5 +16,23 @@
 // under the License.
 
 mod murmurhash;
+mod xxhash;
 
-pub use murmurhash::MurmurHash3X64128;
+pub(crate) use self::murmurhash::MurmurHash3X64128;
+#[allow(unused_imports)]
+pub(crate) use self::xxhash::XxHash64;
+
+/// The seed 9001 used in the sketch update methods is a prime number that was chosen very early
+/// on in experimental testing.
+///
+/// Choosing a seed is somewhat arbitrary, and the author cannot prove that this particular seed
+/// is somehow superior to other seeds. There was some early Internet discussion that a seed of 0
+/// did not produce as clean avalanche diagrams as non-zero seeds, but this may have been more
+/// related to the MurmurHash2 release, which did have some issues. As far as the author can
+/// determine, MurmurHash3 does not have these problems.
+///
+/// In order to perform set operations on two sketches it is critical that the same hash function
+/// and seed are identical for both sketches, otherwise the assumed 1:1 relationship between the
+/// original source key value and the hashed bit string would be violated. Once you have developed
+/// a history of stored sketches you are stuck with it.
+pub(crate) const DEFAULT_UPDATE_SEED: u64 = 9001;
