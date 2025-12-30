@@ -19,21 +19,21 @@ use datasketches::theta::ThetaSketch;
 
 #[test]
 fn test_basic_update() {
-    let mut sketch = ThetaSketch::builder().set_lg_k(12).build();
+    let mut sketch = ThetaSketch::builder().lg_k(12).build();
     assert!(sketch.is_empty());
-    assert_eq!(sketch.get_estimate(), 0.0);
+    assert_eq!(sketch.estimate(), 0.0);
 
     sketch.update("value1");
     assert!(!sketch.is_empty());
-    assert_eq!(sketch.get_estimate(), 1.0);
+    assert_eq!(sketch.estimate(), 1.0);
 
     sketch.update("value2");
-    assert_eq!(sketch.get_estimate(), 2.0);
+    assert_eq!(sketch.estimate(), 2.0);
 }
 
 #[test]
 fn test_update_various_types() {
-    let mut sketch = ThetaSketch::builder().set_lg_k(12).build();
+    let mut sketch = ThetaSketch::builder().lg_k(12).build();
 
     sketch.update("string");
     sketch.update(42i64);
@@ -45,23 +45,23 @@ fn test_update_various_types() {
     sketch.update([1u8, 2, 3]);
 
     assert!(!sketch.is_empty());
-    assert_eq!(sketch.get_estimate(), 5.0);
+    assert_eq!(sketch.estimate(), 5.0);
 }
 
 #[test]
 fn test_duplicate_updates() {
-    let mut sketch = ThetaSketch::builder().set_lg_k(12).build();
+    let mut sketch = ThetaSketch::builder().lg_k(12).build();
 
     for _ in 0..100 {
         sketch.update("same_value");
     }
 
-    assert_eq!(sketch.get_estimate(), 1.0);
+    assert_eq!(sketch.estimate(), 1.0);
 }
 
 #[test]
 fn test_theta_reduction() {
-    let mut sketch = ThetaSketch::builder().set_lg_k(5).build(); // Small k to trigger theta reduction
+    let mut sketch = ThetaSketch::builder().lg_k(5).build(); // Small k to trigger theta reduction
     assert!(!sketch.is_estimation_mode()); // Should be in estimation mode
 
     // Insert many values to trigger theta reduction
@@ -70,30 +70,30 @@ fn test_theta_reduction() {
     }
 
     assert!(sketch.is_estimation_mode()); // Should be in estimation mode
-    assert!(sketch.get_theta() < 1.0);
+    assert!(sketch.theta() < 1.0);
 }
 
 #[test]
 fn test_trim() {
-    let mut sketch = ThetaSketch::builder().set_lg_k(5).build();
+    let mut sketch = ThetaSketch::builder().lg_k(5).build();
 
     // Insert many values
     for i in 0..1000 {
         sketch.update(format!("value_{}", i));
     }
 
-    let before_trim = sketch.get_num_retained();
+    let before_trim = sketch.num_retained();
     sketch.trim();
-    let after_trim = sketch.get_num_retained();
+    let after_trim = sketch.num_retained();
 
     // After trim, should have approximately k entries
     assert!(after_trim <= before_trim);
-    assert_eq!(sketch.get_num_retained(), 32);
+    assert_eq!(sketch.num_retained(), 32);
 }
 
 #[test]
 fn test_reset() {
-    let mut sketch = ThetaSketch::builder().set_lg_k(5).build();
+    let mut sketch = ThetaSketch::builder().lg_k(5).build();
 
     // Insert many values
     for i in 0..1000 {
@@ -101,25 +101,25 @@ fn test_reset() {
     }
     assert!(!sketch.is_empty());
     assert!(sketch.is_estimation_mode());
-    assert!(sketch.get_num_retained() > 32);
-    assert!(sketch.get_theta() < 1.0);
+    assert!(sketch.num_retained() > 32);
+    assert!(sketch.theta() < 1.0);
 
     sketch.reset();
     assert!(sketch.is_empty());
-    assert_eq!(sketch.get_estimate(), 0.0);
-    assert_eq!(sketch.get_theta(), 1.0);
-    assert_eq!(sketch.get_num_retained(), 0);
+    assert_eq!(sketch.estimate(), 0.0);
+    assert_eq!(sketch.theta(), 1.0);
+    assert_eq!(sketch.num_retained(), 0);
     assert!(!sketch.is_estimation_mode());
 }
 
 #[test]
 fn test_iterator() {
-    let mut sketch = ThetaSketch::builder().set_lg_k(12).build();
+    let mut sketch = ThetaSketch::builder().lg_k(12).build();
 
     sketch.update("value1");
     sketch.update("value2");
     sketch.update("value3");
 
     let count: usize = sketch.iter().count();
-    assert_eq!(count, sketch.get_num_retained());
+    assert_eq!(count, sketch.num_retained());
 }

@@ -24,7 +24,7 @@ fn main() {
 
     // Example 1: Basic usage
     println!("1. Basic Theta Sketch Usage:");
-    let mut sketch = ThetaSketch::builder().set_lg_k(10).build();
+    let mut sketch = ThetaSketch::builder().lg_k(10).build();
 
     for i in 0..100 {
         sketch.update(format!("item_{}", i));
@@ -32,9 +32,9 @@ fn main() {
     sketch.update("duplicatee_item");
     sketch.update("duplicatee_item");
 
-    println!("   Estimate: {:.2}", sketch.get_estimate());
-    println!("   Theta: {:.6}", sketch.get_theta());
-    println!("   Num retained: {}", sketch.get_num_retained());
+    println!("   Estimate: {:.2}", sketch.estimate());
+    println!("   Theta: {:.6}", sketch.theta());
+    println!("   Num retained: {}", sketch.num_retained());
     println!();
 
     // Example 2: Add more data to enter estimation mode
@@ -42,8 +42,8 @@ fn main() {
     for i in 0..5000 {
         sketch.update(format!("item_{}", i));
     }
-    println!("   Estimate: {:.2}", sketch.get_estimate());
-    println!("   Theta: {:.6}", sketch.get_theta());
-    println!("   Num retained: {}", sketch.get_num_retained());
+    println!("   Estimate: {:.2}", sketch.estimate());
+    println!("   Theta: {:.6}", sketch.theta());
+    println!("   Num retained: {}", sketch.num_retained());
     println!();
 }

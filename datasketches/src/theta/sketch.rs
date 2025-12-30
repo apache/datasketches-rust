@@ -62,8 +62,8 @@ impl ThetaSketch {
         self.update_f64(value as f64);
     }
 
-    /// Get cardinality estimate
-    pub fn get_estimate(&self) -> f64 {
+    /// Return cardinality estimate
+    pub fn estimate(&self) -> f64 {
         if self.is_empty() {
             return 0.0;
         }
@@ -72,13 +72,13 @@ impl ThetaSketch {
         num_retained / theta
     }
 
-    /// Get theta as a fraction (0.0 to 1.0)
-    pub fn get_theta(&self) -> f64 {
+    /// Return theta as a fraction (0.0 to 1.0)
+    pub fn theta(&self) -> f64 {
         self.table.theta() as f64 / MAX_THETA as f64
     }
 
-    /// Get theta as u64
-    pub fn get_theta64(&self) -> u64 {
+    /// Return theta as u64
+    pub fn theta64(&self) -> u64 {
         self.table.theta()
     }
 
@@ -92,13 +92,13 @@ impl ThetaSketch {
         self.table.theta() < MAX_THETA
     }
 
-    /// Get number of retained entries
-    pub fn get_num_retained(&self) -> usize {
+    /// Return number of retained entries
+    pub fn num_retained(&self) -> usize {
         self.table.num_entries()
     }
 
-    /// Get lg_k
-    pub fn get_lg_k(&self) -> u8 {
+    /// Return lg_k
+    pub fn lg_k(&self) -> u8 {
         self.table.lg_nom_size()
     }
 
@@ -112,7 +112,7 @@ impl ThetaSketch {
         self.table.reset();
     }
 
-    /// Get iterator over hash values
+    /// Return iterator over hash values
     pub fn iter(&self) -> impl Iterator<Item = u64> + '_ {
         self.table.iter()
     }
@@ -140,11 +140,11 @@ impl Default for ThetaSketchBuilder {
 
 impl ThetaSketchBuilder {
     /// Set lg_k (log2 of nominal size k)
-    /// 
+    ///
     /// # Panics
     ///
-    /// If lg_k is not in range [MIN_LG_K, MAX_LG_K]
-    pub fn set_lg_k(mut self, lg_k: u8) -> Self {
+    /// If lg_k is not in range [5, 26]
+    pub fn lg_k(mut self, lg_k: u8) -> Self {
         assert!(
             (MIN_LG_K..=MAX_LG_K).contains(&lg_k),
             "lg_k must be in [{}, {}], got {}",
@@ -157,17 +157,17 @@ impl ThetaSketchBuilder {
     }
 
     /// Set resize factor
-    pub fn set_resize_factor(mut self, rf: ResizeFactor) -> Self {
+    pub fn resize_factor(mut self, rf: ResizeFactor) -> Self {
         self.resize_factor = rf;
         self
     }
 
     /// Set sampling probability p
-    /// 
+    ///
     /// # Panics
     ///
     /// If p is not in range [0.0, 1.0]
-    pub fn set_sampling_probability(mut self, p: f32) -> Self {
+    pub fn sampling_probability(mut self, p: f32) -> Self {
         assert!(
             (0.0..=1.0).contains(&p),
             "p must be in [0.0, 1.0], got {}",
@@ -178,7 +178,7 @@ impl ThetaSketchBuilder {
     }
 
     /// Set hash seed
-    pub fn set_seed(mut self, seed: u64) -> Self {
+    pub fn seed(mut self, seed: u64) -> Self {
         self.seed = seed;
         self
     }
@@ -198,11 +198,12 @@ impl ThetaSketchBuilder {
 
 /// Canonicalize double value for compatibility with Java
 fn canonical_double(value: f64) -> i64 {
-    if value == 0.0 {
-        0i64
-    } else if value.is_nan() {
+    if value.is_nan() {
         0x7ff8000000000000i64 // Java's Double.doubleToLongBits() NaN value
     } else {
-        value.to_bits() as i64
+        // -0.0 + 0.0 == +0.0 under IEEE754 roundTiesToEven rounding mode,
+        // which Rust guarantees. Thus by adding a positive zero we
+        // canonicalize signed zero without any branches in one instruction.
+        (value + 0.0).to_bits() as i64
     }
 }

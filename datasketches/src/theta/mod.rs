@@ -28,15 +28,6 @@
 //! configurable accuracy and memory usage. The implementation supports:
 //!
 //! - **ThetaSketch**: Mutable sketch for building from input data
-//! - **CompactThetaSketch**: Immutable sketch for serialization and set operations
-//! - **ThetaUnion**: For computing union of multiple theta sketches
-//! - **ThetaIntersection**: For computing intersection of multiple theta sketches
-//!
-//! # Serialization
-//!
-//! Sketches can be serialized and deserialized while preserving all state, enabling
-//! cross-platform sketch exchange with other Apache DataSketches implementations
-//! (Java, C++, Python).
 
 mod hash_table;
 mod sketch;
