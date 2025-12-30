@@ -67,11 +67,11 @@ const STRIDE_MASK: u64 = (1 << STRIDE_HASH_BITS) - 1;
 
 /// Specific hash table for theta sketch
 ///
-/// It maintain a array capacity max to [2 ** (lg_max_size)]:
-/// - Before it reach the max capacity, it will extend the array based on resize_factor.
-/// - After it reach the capacity bigger than 2 ** (lg_nom_size), every time the number of entries
-///   exceeds the threshold, it will rebuild the table: only keep the min 2 ** lg_nom_size entries
-///   and update the theta to the k-th smallest entry.
+/// It maintains an array capacity max to 2^lg_max_size:
+/// * Before it reaches the max capacity, it will extend the array based on resize_factor.
+/// * After it reaches the capacity bigger than 2^lg_nom_size, every time the number of entries
+///   exceeds the threshold, it will rebuild the table: only keep the min 2^lg_nom_size entries and
+///   update the theta to the k-th smallest entry.
 #[derive(Debug)]
 pub(crate) struct ThetaHashTable {
     lg_cur_size: u8,
@@ -129,7 +129,7 @@ impl ThetaHashTable {
 
     /// Find an entry in the hash table.
     ///
-    /// Returns the index of the entry if found, otherwise None. The entry may has been inserted or
+    /// Returns the index of the entry if found, otherwise None. The entry may have been inserted or
     /// empty.
     fn find_in_curr_entries(&self, key: u64) -> Option<usize> {
         Self::find_in_entries(&self.entries, key, self.lg_cur_size)
@@ -137,7 +137,7 @@ impl ThetaHashTable {
 
     /// Find index in a given entries.
     ///
-    /// Returns the index of the entry if found, otherwise None. The entry may has been inserted or
+    /// Returns the index of the entry if found, otherwise None. The entry may have been inserted or
     /// empty.
     fn find_in_entries(entries: &[u64], key: u64, lg_size: u8) -> Option<usize> {
         if entries.is_empty() {
@@ -181,7 +181,7 @@ impl ThetaHashTable {
             return false;
         }
 
-        assert!(self.entries[index] == 0, "Entry should be empty");
+        assert_eq!(self.entries[index], 0, "Entry should be empty");
         self.entries[index] = hash;
         self.num_entries += 1;
 
@@ -258,8 +258,8 @@ impl ThetaHashTable {
             }
         }
 
-        assert!(
-            num_inserted == k as usize,
+        assert_eq!(
+            num_inserted, k as usize,
             "Number of inserted entries should be equal to k."
         );
         self.num_entries = num_inserted;
@@ -380,7 +380,7 @@ mod tests {
         // With low theta, some hashes should be filtered
         table.theta = 0;
         let hash3 = table.hash_and_screen("test3");
-        assert!(hash3 == 0);
+        assert_eq!(hash3, 0);
     }
 
     #[test]
@@ -389,7 +389,7 @@ mod tests {
 
         // Insert a hash value
         let hash = table.hash_and_screen("test_value");
-        assert!(hash != 0);
+        assert_ne!(hash, 0);
         assert!(table.try_insert(hash));
         assert_eq!(table.num_entries(), 1);
         assert!(!table.is_empty());
@@ -693,6 +693,6 @@ mod tests {
         inserted_hashes.sort();
         let kth = inserted_hashes[k as usize];
         assert!(table.iter().all(|e| e < kth));
-        assert!(table.theta() == kth);
+        assert_eq!(table.theta(), kth);
     }
 }
