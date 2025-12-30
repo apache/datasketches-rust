@@ -20,7 +20,8 @@ use std::hash::Hasher;
 use byteorder::ByteOrder;
 use byteorder::LE;
 
-const DEFAULT_SEED: u64 = 9001;
+use crate::hash::DEFAULT_UPDATE_SEED;
+
 const C1: u64 = 0x87c37b91114253d5;
 const C2: u64 = 0x4cf5ad432745937f;
 
@@ -122,7 +123,7 @@ impl MurmurHash3X64128 {
 
 impl Default for MurmurHash3X64128 {
     fn default() -> Self {
-        Self::with_seed(DEFAULT_SEED)
+        Self::with_seed(DEFAULT_UPDATE_SEED)
     }
 }
 

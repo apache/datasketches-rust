@@ -30,12 +30,10 @@ use crate::countmin::serialization::PREAMBLE_LONGS_SHORT;
 use crate::countmin::serialization::SERIAL_VERSION;
 use crate::countmin::serialization::compute_seed_hash;
 use crate::error::Error;
+use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::hash::MurmurHash3X64128;
 
 const MAX_TABLE_ENTRIES: usize = 1 << 30;
-
-/// Default seed used by the sketch.
-pub const DEFAULT_SEED: u64 = 9001;
 
 /// Count-Min sketch for estimating item frequencies.
 ///
@@ -59,7 +57,7 @@ impl CountMinSketch {
     /// Panics if `num_hashes` is 0, `num_buckets` is less than 3, or the
     /// total table size exceeds the supported limit.
     pub fn new(num_hashes: u8, num_buckets: u32) -> Self {
-        Self::with_seed(num_hashes, num_buckets, DEFAULT_SEED)
+        Self::with_seed(num_hashes, num_buckets, DEFAULT_UPDATE_SEED)
     }
 
     /// Creates a new Count-Min sketch with the provided seed.
@@ -232,7 +230,7 @@ impl CountMinSketch {
 
     /// Deserializes a sketch from bytes using the default seed.
     pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
-        Self::deserialize_with_seed(bytes, DEFAULT_SEED)
+        Self::deserialize_with_seed(bytes, DEFAULT_UPDATE_SEED)
     }
 
     /// Deserializes a sketch from bytes using the provided seed.

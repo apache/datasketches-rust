@@ -16,14 +16,13 @@
 // under the License.
 
 use datasketches::countmin::CountMinSketch;
-use datasketches::countmin::DEFAULT_SEED;
 
 #[test]
 fn test_init_defaults() {
     let sketch = CountMinSketch::new(3, 5);
     assert_eq!(sketch.num_hashes(), 3);
     assert_eq!(sketch.num_buckets(), 5);
-    assert_eq!(sketch.seed(), DEFAULT_SEED);
+    assert_eq!(sketch.seed(), 9001);
     assert!(sketch.is_empty());
     assert_eq!(sketch.total_weight(), 0);
     assert_eq!(sketch.estimate("missing"), 0);
@@ -41,7 +40,7 @@ fn test_parameter_suggestions() {
     assert_eq!(CountMinSketch::suggest_num_hashes(0.997300204), 6);
 
     let buckets = CountMinSketch::suggest_num_buckets(0.1);
-    let sketch = CountMinSketch::with_seed(3, buckets, DEFAULT_SEED);
+    let sketch = CountMinSketch::new(3, buckets);
     assert!(sketch.relative_error() <= 0.1);
 }
 
@@ -71,8 +70,8 @@ fn test_negative_weights() {
 
 #[test]
 fn test_merge() {
-    let mut left = CountMinSketch::with_seed(3, 64, DEFAULT_SEED);
-    let mut right = CountMinSketch::with_seed(3, 64, DEFAULT_SEED);
+    let mut left = CountMinSketch::new(3, 64);
+    let mut right = CountMinSketch::new(3, 64);
     for _ in 0..10 {
         left.update("a");
     }
@@ -124,14 +123,14 @@ fn test_invalid_buckets() {
 #[test]
 #[should_panic(expected = "Incompatible sketch configuration.")]
 fn test_merge_incompatible() {
-    let mut left = CountMinSketch::with_seed(3, 64, DEFAULT_SEED);
-    let right = CountMinSketch::with_seed(2, 64, DEFAULT_SEED);
+    let mut left = CountMinSketch::new(3, 64);
+    let right = CountMinSketch::new(2, 64);
     left.merge(&right);
 }
 
 #[test]
 fn test_increment_single_key_like_rust_count_min_sketch() {
-    let mut sketch = CountMinSketch::with_seed(4, 32, DEFAULT_SEED);
+    let mut sketch = CountMinSketch::new(4, 32);
     for _ in 0..300 {
         sketch.update("key");
     }
@@ -140,7 +139,7 @@ fn test_increment_single_key_like_rust_count_min_sketch() {
 
 #[test]
 fn test_increment_multi_like_rust_count_min_sketch() {
-    let mut sketch = CountMinSketch::with_seed(6, 128, DEFAULT_SEED);
+    let mut sketch = CountMinSketch::new(6, 128);
     for i in 0..1_000_000u64 {
         sketch.update(i % 100);
     }

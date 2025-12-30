@@ -24,4 +24,3 @@ mod serialization;
 
 mod sketch;
 pub use self::sketch::CountMinSketch;
-pub use self::sketch::DEFAULT_SEED;
