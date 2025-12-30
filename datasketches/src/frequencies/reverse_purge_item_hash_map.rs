@@ -16,6 +16,9 @@
 // under the License.
 
 //! Reverse purge hash map for generic items.
+//!
+//! This linear-probing hash map supports a reverse purge operation that removes
+//! keys with non-positive counts by scanning clusters from the back to the front.
 
 use std::hash::Hash;
 use std::hash::Hasher;
@@ -26,6 +29,7 @@ const LOAD_FACTOR: f64 = 0.75;
 const DRIFT_LIMIT: usize = 1024;
 const MAX_SAMPLE_SIZE: usize = 1024;
 
+/// Linear-probing hash map for (item, count) pairs with reverse purge support.
 #[derive(Debug, Clone)]
 pub(super) struct ReversePurgeItemHashMap<T> {
     lg_length: u8,
@@ -37,6 +41,9 @@ pub(super) struct ReversePurgeItemHashMap<T> {
 }
 
 impl<T: Eq + Hash> ReversePurgeItemHashMap<T> {
+    /// Creates a new map with arrays of length `map_size` (must be a power of two).
+    ///
+    /// The load threshold is set to `LOAD_FACTOR * map_size`.
     pub fn new(map_size: usize) -> Self {
         assert!(map_size.is_power_of_two(), "map_size must be power of 2");
         let lg_length = map_size.trailing_zeros() as u8;
@@ -51,6 +58,7 @@ impl<T: Eq + Hash> ReversePurgeItemHashMap<T> {
         }
     }
 
+    /// Returns the value for `key`, or zero if the key is not present.
     pub fn get(&self, key: &T) -> i64 {
         let probe = self.hash_probe(key);
         if self.states[probe] > 0 {
@@ -59,6 +67,7 @@ impl<T: Eq + Hash> ReversePurgeItemHashMap<T> {
         0
     }
 
+    /// Adds `adjust_amount` to the value for `key`, inserting if absent.
     pub fn adjust_or_put_value(&mut self, key: T, adjust_amount: i64) {
         let mask = self.keys.len() - 1;
         let mut probe = (hash_item(&key) as usize) & mask;
@@ -85,6 +94,7 @@ impl<T: Eq + Hash> ReversePurgeItemHashMap<T> {
         }
     }
 
+    /// Removes all keys with non-positive counts.
     pub fn keep_only_positive_counts(&mut self) {
         let len = self.keys.len();
         let mut first_probe = len - 1;
@@ -105,12 +115,18 @@ impl<T: Eq + Hash> ReversePurgeItemHashMap<T> {
         }
     }
 
+    /// Shifts all values by `adjust_amount`.
+    ///
+    /// This is used during purges to decrement counters.
     pub fn adjust_all_values_by(&mut self, adjust_amount: i64) {
         for value in &mut self.values {
             *value += adjust_amount;
         }
     }
 
+    /// Purges the map by estimating the median count and removing non-positive entries.
+    ///
+    /// Returns the estimated median value that was subtracted from all counts.
     pub fn purge(&mut self, sample_size: usize) -> i64 {
         let limit = sample_size.min(self.num_active).min(MAX_SAMPLE_SIZE);
         let mut samples = Vec::with_capacity(limit);
@@ -129,6 +145,7 @@ impl<T: Eq + Hash> ReversePurgeItemHashMap<T> {
         median
     }
 
+    /// Resizes the hash table to `new_size` (must be a power of two).
     pub fn resize(&mut self, new_size: usize) {
         assert!(new_size.is_power_of_two(), "new_size must be power of 2");
         let mut old_keys = std::mem::take(&mut self.keys);
@@ -149,22 +166,27 @@ impl<T: Eq + Hash> ReversePurgeItemHashMap<T> {
         }
     }
 
+    /// Returns the length of the underlying arrays.
     pub fn len(&self) -> usize {
         self.keys.len()
     }
 
+    /// Returns the log2 of the underlying array length.
     pub fn lg_length(&self) -> u8 {
         self.lg_length
     }
 
+    /// Returns the maximum number of keys before a purge or resize.
     pub fn capacity(&self) -> usize {
         self.load_threshold
     }
 
+    /// Returns the number of active keys in the map.
     pub fn num_active(&self) -> usize {
         self.num_active
     }
 
+    /// Returns the active keys in the map.
     pub fn active_keys(&self) -> Vec<T>
     where
         T: Clone,
@@ -183,6 +205,7 @@ impl<T: Eq + Hash> ReversePurgeItemHashMap<T> {
         keys
     }
 
+    /// Returns the active values in the map.
     pub fn active_values(&self) -> Vec<i64> {
         if self.num_active == 0 {
             return Vec::new();
@@ -196,6 +219,7 @@ impl<T: Eq + Hash> ReversePurgeItemHashMap<T> {
         values
     }
 
+    /// Returns an iterator over active keys and values.
     pub fn iter(&self) -> ReversePurgeItemIter<'_, T> {
         ReversePurgeItemIter::new(self)
     }
@@ -242,6 +266,7 @@ impl<T: Eq + Hash> ReversePurgeItemHashMap<T> {
     }
 }
 
+/// Iterator over active entries using a golden-ratio stride.
 pub struct ReversePurgeItemIter<'a, T> {
     map: &'a ReversePurgeItemHashMap<T>,
     index: usize,

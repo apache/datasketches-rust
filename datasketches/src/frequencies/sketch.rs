@@ -19,7 +19,8 @@
 
 use std::hash::Hash;
 
-use crate::error::SerdeError;
+use crate::error::Error;
+use crate::error::ErrorKind;
 use crate::frequencies::reverse_purge_item_hash_map::ReversePurgeItemHashMap;
 use crate::frequencies::serde::ItemsSerde;
 use crate::frequencies::serde::deserialize_i64_items;
@@ -28,7 +29,7 @@ use crate::frequencies::serde::serialize_i64_items;
 use crate::frequencies::serde::serialize_string_items;
 use crate::frequencies::serialization::*;
 
-type DeserializeItems<T> = fn(&[u8], usize) -> Result<(Vec<T>, usize), SerdeError>;
+type DeserializeItems<T> = fn(&[u8], usize) -> Result<(Vec<T>, usize), Error>;
 
 const LG_MIN_MAP_SIZE: u8 = 3;
 const SAMPLE_SIZE: usize = 1024;
@@ -46,12 +47,14 @@ pub enum ErrorType {
 }
 
 /// Result row for frequent item queries.
+///
+/// Each row includes an estimate and upper and lower bounds on the true frequency.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Row<T> {
     item: T,
     estimate: i64,
     upper_bound: i64,
-    lower_bound: i64,
+    lower_bound: u64,
 }
 
 impl<T> Row<T> {
@@ -70,13 +73,18 @@ impl<T> Row<T> {
         self.upper_bound
     }
 
-    /// Returns the lower bound for the frequency.
-    pub fn lower_bound(&self) -> i64 {
+    /// Returns the guaranteed lower bound for the frequency.
+    ///
+    /// This value is never negative.
+    pub fn lower_bound(&self) -> u64 {
         self.lower_bound
     }
 }
 
 /// Frequent items sketch for generic item types.
+///
+/// The sketch tracks approximate item frequencies and can return estimates with
+/// guaranteed upper and lower bounds.
 ///
 /// See [`crate::frequencies`] for an overview and error guarantees.
 #[derive(Debug, Clone)]
@@ -91,6 +99,9 @@ pub struct FrequentItemsSketch<T> {
 
 impl<T: Eq + Hash> FrequentItemsSketch<T> {
     /// Creates a new sketch with the given maximum map size (power of two).
+    ///
+    /// The maximum map capacity is `0.75 * max_map_size`, and the internal map grows
+    /// from a small starting size up to the maximum as needed.
     ///
     /// # Panics
     ///
@@ -111,22 +122,33 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     }
 
     /// Returns the total weight of the stream.
+    ///
+    /// This is the sum of all counts passed to `update` and `update_with_count`.
     pub fn total_weight(&self) -> i64 {
         self.stream_weight
     }
 
     /// Returns the estimated frequency for an item.
+    ///
+    /// If the item is tracked, this is `item_count + offset`. Otherwise it is zero.
     pub fn estimate(&self, item: &T) -> i64 {
         let value = self.hash_map.get(item);
         if value > 0 { value + self.offset } else { 0 }
     }
 
-    /// Returns the lower bound for an item's frequency.
-    pub fn lower_bound(&self, item: &T) -> i64 {
-        self.hash_map.get(item)
+    /// Returns the guaranteed lower bound frequency for an item.
+    ///
+    /// This value is never negative and is guaranteed to be no larger than the true frequency.
+    /// If the item is not tracked, the lower bound is zero.
+    pub fn lower_bound(&self, item: &T) -> u64 {
+        let value = self.hash_map.get(item);
+        value.max(0) as u64
     }
 
-    /// Returns the upper bound for an item's frequency.
+    /// Returns the guaranteed upper bound frequency for an item.
+    ///
+    /// This value is guaranteed to be no smaller than the true frequency.
+    /// If the item is tracked, this is `item_count + offset`.
     pub fn upper_bound(&self, item: &T) -> i64 {
         self.hash_map.get(item) + self.offset
     }
@@ -156,16 +178,20 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     }
 
     /// Returns the maximum map capacity for this sketch.
+    ///
+    /// This is `0.75 * max_map_size`.
     pub fn maximum_map_capacity(&self) -> usize {
         (1usize << self.lg_max_map_size) * LOAD_FACTOR_NUMERATOR / LOAD_FACTOR_DENOMINATOR
     }
 
     /// Returns the current map capacity.
+    ///
+    /// This is the number of counters supported before resizing or purging.
     pub fn current_map_capacity(&self) -> usize {
         self.cur_map_cap
     }
 
-    /// Returns the configured lg_max_map_size.
+    /// Returns the configured log2 maximum map size.
     pub fn lg_max_map_size(&self) -> u8 {
         self.lg_max_map_size
     }
@@ -185,6 +211,8 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     /// # Panics
     ///
     /// Panics if `count` is negative.
+    ///
+    /// A count of zero is a no-op.
     pub fn update_with_count(&mut self, item: T, count: i64) {
         if count == 0 {
             return;
@@ -196,6 +224,9 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     }
 
     /// Merges another sketch into this one.
+    ///
+    /// The other sketch may have a different map size. The merged sketch respects the
+    /// larger error tolerance of the inputs.
     pub fn merge(&mut self, other: &Self)
     where
         T: Clone,
@@ -217,6 +248,8 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     }
 
     /// Returns frequent items using the sketch maximum error as threshold.
+    ///
+    /// This is equivalent to `frequent_items_with_threshold(self.maximum_error(), error_type)`.
     pub fn frequent_items(&self, error_type: ErrorType) -> Vec<Row<T>>
     where
         T: Clone,
@@ -225,6 +258,11 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     }
 
     /// Returns frequent items using a custom threshold.
+    ///
+    /// If `threshold` is less than `maximum_error`, `maximum_error` is used instead.
+    ///
+    /// For [`ErrorType::NoFalseNegatives`], items are included when `upper_bound > threshold`.
+    /// For [`ErrorType::NoFalsePositives`], items are included when `lower_bound > threshold`.
     pub fn frequent_items_with_threshold(
         &self,
         error_type: ErrorType,
@@ -247,7 +285,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
                     item: item.clone(),
                     estimate: upper,
                     upper_bound: upper,
-                    lower_bound: lower,
+                    lower_bound: lower.max(0) as u64,
                 });
             }
         }
@@ -334,11 +372,9 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     fn deserialize_inner(
         bytes: &[u8],
         deserialize_items: DeserializeItems<T>,
-    ) -> Result<Self, SerdeError> {
+    ) -> Result<Self, Error> {
         if bytes.len() < 8 {
-            return Err(SerdeError::InsufficientData(
-                "insufficient data for preamble".to_string(),
-            ));
+            return Err(Error::insufficient_data("preamble"));
         }
         let pre_longs = bytes[PREAMBLE_LONGS_BYTE] & 0x3f;
         let ser_ver = bytes[SER_VER_BYTE];
@@ -348,39 +384,35 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
         let flags = bytes[FLAGS_BYTE];
         let is_empty = (flags & EMPTY_FLAG_MASK) != 0;
         if ser_ver != SER_VER {
-            return Err(SerdeError::UnsupportedVersion(format!(
-                "unsupported ser_ver {}",
-                ser_ver
-            )));
+            return Err(Error::unsupported_serial_version(SER_VER, ser_ver));
         }
         if family != FAMILY_ID {
-            return Err(SerdeError::InvalidFamily(format!(
-                "expected family {}, got {}",
-                FAMILY_ID, family
-            )));
+            return Err(Error::invalid_family(
+                FAMILY_ID,
+                family,
+                "FrequentItemsSketch",
+            ));
         }
         if lg_cur > lg_max {
-            return Err(SerdeError::InvalidParameter(
-                "lg_cur_map_size exceeds lg_max_map_size".to_string(),
-            ));
+            return Err(Error::deserial("lg_cur_map_size exceeds lg_max_map_size"));
         }
         if is_empty {
             if pre_longs != PREAMBLE_LONGS_EMPTY {
-                return Err(SerdeError::MalformedData(
-                    "empty sketch with invalid preamble size".to_string(),
+                return Err(Error::invalid_preamble_longs(
+                    PREAMBLE_LONGS_EMPTY,
+                    pre_longs,
                 ));
             }
             return Ok(Self::with_lg_map_sizes(lg_max, lg_cur));
         }
         if pre_longs != PREAMBLE_LONGS_NONEMPTY {
-            return Err(SerdeError::MalformedData(
-                "non-empty sketch with invalid preamble size".to_string(),
+            return Err(Error::invalid_preamble_longs(
+                PREAMBLE_LONGS_NONEMPTY,
+                pre_longs,
             ));
         }
         if bytes.len() < PREAMBLE_LONGS_NONEMPTY as usize * 8 {
-            return Err(SerdeError::InsufficientData(
-                "insufficient data for full preamble".to_string(),
-            ));
+            return Err(Error::insufficient_data("full preamble"));
         }
         let active_items = read_u32_le(bytes, ACTIVE_ITEMS_INT) as usize;
         let stream_weight = read_i64_le(bytes, STREAM_WEIGHT_LONG);
@@ -388,12 +420,10 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
         let values_offset = PREAMBLE_LONGS_NONEMPTY as usize * 8;
         let values_bytes = active_items
             .checked_mul(8)
-            .ok_or_else(|| SerdeError::MalformedData("values size overflow".to_string()))?;
+            .ok_or_else(|| Error::deserial("values size overflow"))?;
         let items_offset = values_offset + values_bytes;
         if bytes.len() < items_offset {
-            return Err(SerdeError::InsufficientData(
-                "insufficient data for values".to_string(),
-            ));
+            return Err(Error::insufficient_data("values"));
         }
         let mut values = Vec::with_capacity(active_items);
         for i in 0..active_items {
@@ -401,14 +431,12 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
         }
         let (items, consumed) = deserialize_items(&bytes[items_offset..], active_items)?;
         if items.len() != active_items {
-            return Err(SerdeError::MalformedData(
-                "item count mismatch during deserialization".to_string(),
+            return Err(Error::deserial(
+                "item count mismatch during deserialization",
             ));
         }
         if consumed > bytes.len() - items_offset {
-            return Err(SerdeError::InsufficientData(
-                "insufficient data for items".to_string(),
-            ));
+            return Err(Error::insufficient_data("items"));
         }
         let mut sketch = Self::with_lg_map_sizes(lg_max, lg_cur);
         for (item, value) in items.into_iter().zip(values) {
@@ -429,11 +457,12 @@ impl FrequentItemsSketch<i64> {
     /// Deserializes a sketch from bytes using the selected serializer.
     ///
     /// Returns an error if `serde` does not match the sketch item type.
-    pub fn deserialize(bytes: &[u8], serde: ItemsSerde) -> Result<Self, SerdeError> {
+    pub fn deserialize(bytes: &[u8], serde: ItemsSerde) -> Result<Self, Error> {
         match serde {
             ItemsSerde::Int64 => Self::deserialize_inner(bytes, deserialize_i64_items),
-            ItemsSerde::String => Err(SerdeError::InvalidParameter(
-                "ItemsSerde::String cannot deserialize i64 items".to_string(),
+            ItemsSerde::String => Err(Error::new(
+                ErrorKind::InvalidArgument,
+                "ItemsSerde::String cannot deserialize i64 items",
             )),
         }
     }
@@ -448,11 +477,12 @@ impl FrequentItemsSketch<String> {
     /// Deserializes a sketch from bytes using the selected serializer.
     ///
     /// Returns an error if `serde` does not match the sketch item type.
-    pub fn deserialize(bytes: &[u8], serde: ItemsSerde) -> Result<Self, SerdeError> {
+    pub fn deserialize(bytes: &[u8], serde: ItemsSerde) -> Result<Self, Error> {
         match serde {
             ItemsSerde::String => Self::deserialize_inner(bytes, deserialize_string_items),
-            ItemsSerde::Int64 => Err(SerdeError::InvalidParameter(
-                "ItemsSerde::Int64 cannot deserialize String items".to_string(),
+            ItemsSerde::Int64 => Err(Error::new(
+                ErrorKind::InvalidArgument,
+                "ItemsSerde::Int64 cannot deserialize String items",
             )),
         }
     }

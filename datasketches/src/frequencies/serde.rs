@@ -19,7 +19,7 @@
 
 use std::str;
 
-use crate::error::SerdeError;
+use crate::error::Error;
 use crate::frequencies::serialization::read_i64_le;
 use crate::frequencies::serialization::read_u32_le;
 
@@ -48,7 +48,7 @@ pub(crate) fn serialize_string_items(items: &[String]) -> Vec<u8> {
 pub(crate) fn deserialize_string_items(
     bytes: &[u8],
     num_items: usize,
-) -> Result<(Vec<String>, usize), SerdeError> {
+) -> Result<(Vec<String>, usize), Error> {
     if num_items == 0 {
         return Ok((Vec::new(), 0));
     }
@@ -56,24 +56,22 @@ pub(crate) fn deserialize_string_items(
     let mut offset = 0usize;
     for _ in 0..num_items {
         if offset + 4 > bytes.len() {
-            return Err(SerdeError::InsufficientData(
-                "not enough bytes for string length".to_string(),
+            return Err(Error::insufficient_data(
+                "not enough bytes for string length",
             ));
         }
         let len = read_u32_le(bytes, offset) as usize;
         offset += 4;
         if offset + len > bytes.len() {
-            return Err(SerdeError::InsufficientData(
-                "not enough bytes for string payload".to_string(),
+            return Err(Error::insufficient_data(
+                "not enough bytes for string payload",
             ));
         }
         let slice = &bytes[offset..offset + len];
         let value = match str::from_utf8(slice) {
             Ok(s) => s.to_string(),
             Err(_) => {
-                return Err(SerdeError::MalformedData(
-                    "invalid UTF-8 string payload".to_string(),
-                ));
+                return Err(Error::deserial("invalid UTF-8 string payload"));
             }
         };
         items.push(value);
@@ -93,14 +91,12 @@ pub(crate) fn serialize_i64_items(items: &[i64]) -> Vec<u8> {
 pub(crate) fn deserialize_i64_items(
     bytes: &[u8],
     num_items: usize,
-) -> Result<(Vec<i64>, usize), SerdeError> {
+) -> Result<(Vec<i64>, usize), Error> {
     let needed = num_items
         .checked_mul(8)
-        .ok_or_else(|| SerdeError::MalformedData("items size overflow".to_string()))?;
+        .ok_or_else(|| Error::deserial("items size overflow"))?;
     if bytes.len() < needed {
-        return Err(SerdeError::InsufficientData(
-            "not enough bytes for i64 items".to_string(),
-        ));
+        return Err(Error::insufficient_data("not enough bytes for i64 items"));
     }
     let mut items = Vec::with_capacity(num_items);
     for i in 0..num_items {

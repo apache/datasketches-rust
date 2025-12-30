@@ -20,7 +20,7 @@ mod common;
 use std::fs;
 
 use common::serialization_test_data;
-use datasketches::error::SerdeError;
+use datasketches::error::ErrorKind;
 use datasketches::frequencies::FrequentItemsSketch;
 use datasketches::frequencies::ItemsSerde;
 
@@ -128,7 +128,11 @@ fn test_cpp_frequent_longs_compatibility() {
         let sketch = FrequentItemsSketch::<i64>::deserialize(&bytes, serde);
         if cfg!(windows) {
             if let Err(err) = sketch {
-                assert!(matches!(err, SerdeError::InsufficientData(_)));
+                assert_eq!(err.kind(), ErrorKind::InvalidData);
+                assert!(
+                    err.message().contains("insufficient data"),
+                    "expected insufficient data error, got: {err}"
+                );
                 continue;
             }
         }
