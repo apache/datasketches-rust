@@ -20,6 +20,7 @@
 //! Uses open addressing with a custom stride function to handle collisions.
 //! Provides better performance than List when many coupons are stored.
 
+use crate::codec::SketchBytes;
 use crate::error::Error;
 use crate::hll::HllType;
 use crate::hll::KEY_MASK_26;
@@ -149,27 +150,27 @@ impl HashSet {
         let array_size = if compact { coupon_count } else { 1 << lg_arr };
         let total_size = HASH_SET_INT_ARR_START + (array_size * 4);
 
-        let mut bytes = vec![0u8; total_size];
+        let mut bytes = SketchBytes::with_capacity(total_size);
 
         // Write preamble
-        bytes[PREAMBLE_INTS_BYTE] = HASH_SET_PREINTS;
-        bytes[SER_VER_BYTE] = SERIAL_VER;
-        bytes[FAMILY_BYTE] = HLL_FAMILY_ID;
-        bytes[LG_K_BYTE] = lg_config_k;
-        bytes[LG_ARR_BYTE] = lg_arr as u8;
+        bytes.write_u8(HASH_SET_PREINTS);
+        bytes.write_u8(SERIAL_VER);
+        bytes.write_u8(HLL_FAMILY_ID);
+        bytes.write_u8(lg_config_k);
+        bytes.write_u8(lg_arr as u8);
 
         // Write flags
         let mut flags = 0u8;
         if compact {
             flags |= COMPACT_FLAG_MASK;
         }
-        bytes[FLAGS_BYTE] = flags;
+        bytes.write_u8(flags);
 
         // Write mode byte: SET mode with target HLL type
-        bytes[MODE_BYTE] = encode_mode_byte(CUR_MODE_SET, hll_type as u8);
+        bytes.write_u8(encode_mode_byte(CUR_MODE_SET, hll_type as u8));
 
         // Write coupon count
-        write_u32_le(&mut bytes, HASH_SET_COUNT_INT, coupon_count as u32);
+        bytes.write_u32_le(coupon_count as u32);
 
         // Write coupons
         if compact {
@@ -183,18 +184,16 @@ impl HashSet {
                 .collect();
             coupons_vec.sort_unstable();
 
-            for (i, coupon) in coupons_vec.iter().enumerate() {
-                let offset = HASH_SET_INT_ARR_START + i * 4;
-                bytes[offset..offset + 4].copy_from_slice(&coupon.to_le_bytes());
+            for coupon in coupons_vec.iter().copied() {
+                bytes.write_u32_le(coupon);
             }
         } else {
             // Non-compact mode: write entire hash table
-            for (i, coupon) in self.container.coupons.iter().enumerate() {
-                let offset = HASH_SET_INT_ARR_START + i * 4;
-                bytes[offset..offset + 4].copy_from_slice(&coupon.to_le_bytes());
+            for coupon in self.container.coupons.iter().copied() {
+                bytes.write_u32_le(coupon);
             }
         }
 
-        bytes
+        bytes.into_bytes()
     }
 }

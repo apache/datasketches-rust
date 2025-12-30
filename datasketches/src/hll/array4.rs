@@ -21,6 +21,7 @@
 //! When values exceed 4 bits after cur_min offset, they're stored in an auxiliary hash map.
 
 use super::aux_map::AuxMap;
+use crate::codec::SketchBytes;
 use crate::error::Error;
 use crate::hll::NumStdDev;
 use crate::hll::estimator::HipEstimator;
@@ -388,51 +389,49 @@ impl Array4 {
 
         let aux_count = aux_entries.len() as u32;
         let total_size = HLL_PREAMBLE_SIZE + num_bytes + (aux_count as usize * COUPON_SIZE_BYTES);
-        let mut bytes = vec![0u8; total_size];
+        let mut bytes = SketchBytes::with_capacity(total_size);
 
         // Write standard header
-        bytes[PREAMBLE_INTS_BYTE] = HLL_PREINTS;
-        bytes[SER_VER_BYTE] = SERIAL_VER;
-        bytes[FAMILY_BYTE] = HLL_FAMILY_ID;
-        bytes[LG_K_BYTE] = lg_config_k;
-        bytes[LG_ARR_BYTE] = 0; // Not used for HLL mode
+        bytes.write_u8(HLL_PREINTS);
+        bytes.write_u8(SERIAL_VER);
+        bytes.write_u8(HLL_FAMILY_ID);
+        bytes.write_u8(lg_config_k);
+        bytes.write_u8(0); // unused for HLL mode
 
         // Write flags
         let mut flags = 0u8;
         if self.estimator.is_out_of_order() {
             flags |= OUT_OF_ORDER_FLAG_MASK;
         }
-        bytes[FLAGS_BYTE] = flags;
+        bytes.write_u8(flags);
 
         // Write cur_min
-        bytes[HLL_CUR_MIN_BYTE] = self.cur_min;
+        bytes.write_u8(self.cur_min);
 
         // Mode byte: HLL mode with HLL4 type
-        bytes[MODE_BYTE] = encode_mode_byte(CUR_MODE_HLL, TGT_HLL4);
+        bytes.write_u8(encode_mode_byte(CUR_MODE_HLL, TGT_HLL4));
 
         // Write HIP estimator values
-        write_f64_le(&mut bytes, HIP_ACCUM_DOUBLE, self.estimator.hip_accum());
-        write_f64_le(&mut bytes, KXQ0_DOUBLE, self.estimator.kxq0());
-        write_f64_le(&mut bytes, KXQ1_DOUBLE, self.estimator.kxq1());
+        bytes.write_f64_le(self.estimator.hip_accum());
+        bytes.write_f64_le(self.estimator.kxq0());
+        bytes.write_f64_le(self.estimator.kxq1());
 
         // Write num_at_cur_min
-        write_u32_le(&mut bytes, CUR_MIN_COUNT_INT, self.num_at_cur_min);
+        bytes.write_u32_le(self.num_at_cur_min);
 
         // Write aux_count
-        write_u32_le(&mut bytes, AUX_COUNT_INT, aux_count);
+        bytes.write_u32_le(aux_count);
 
         // Write packed 4-bit byte array
-        bytes[HLL_BYTE_ARR_START..HLL_BYTE_ARR_START + num_bytes].copy_from_slice(&self.bytes);
+        bytes.write(&self.bytes);
 
         // Write aux map entries if present
-        let aux_start = HLL_BYTE_ARR_START + num_bytes;
-        for (i, (slot, value)) in aux_entries.iter().enumerate() {
-            let offset = aux_start + (i * COUPON_SIZE_BYTES);
-            let coupon = pack_coupon(*slot, *value);
-            write_u32_le(&mut bytes, offset, coupon);
+        for (slot, value) in aux_entries.iter().copied() {
+            let coupon = pack_coupon(slot, value);
+            bytes.write_u32_le(coupon);
         }
 
-        bytes
+        bytes.into_bytes()
     }
 }
 

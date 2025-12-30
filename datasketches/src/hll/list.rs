@@ -20,6 +20,7 @@
 //! Provides sequential storage with linear search for duplicates.
 //! Efficient for small numbers of coupons before transitioning to HashSet.
 
+use crate::codec::SketchBytes;
 use crate::error::Error;
 use crate::hll::HllType;
 use crate::hll::container::COUPON_EMPTY;
@@ -109,14 +110,14 @@ impl List {
         let array_size = if compact { coupon_count } else { 1 << lg_arr };
         let total_size = LIST_INT_ARR_START + (array_size * 4);
 
-        let mut bytes = vec![0u8; total_size];
+        let mut bytes = SketchBytes::with_capacity(total_size);
 
         // Write preamble
-        bytes[PREAMBLE_INTS_BYTE] = LIST_PREINTS;
-        bytes[SER_VER_BYTE] = SERIAL_VER;
-        bytes[FAMILY_BYTE] = HLL_FAMILY_ID;
-        bytes[LG_K_BYTE] = lg_config_k;
-        bytes[LG_ARR_BYTE] = lg_arr as u8;
+        bytes.write_u8(LIST_PREINTS);
+        bytes.write_u8(SERIAL_VER);
+        bytes.write_u8(HLL_FAMILY_ID);
+        bytes.write_u8(lg_config_k);
+        bytes.write_u8(lg_arr as u8);
 
         // Write flags
         let mut flags = 0u8;
@@ -126,23 +127,22 @@ impl List {
         if compact {
             flags |= COMPACT_FLAG_MASK;
         }
-        bytes[FLAGS_BYTE] = flags;
+        bytes.write_u8(flags);
 
         // Write count
-        bytes[LIST_COUNT_BYTE] = coupon_count as u8;
+        bytes.write_u8(coupon_count as u8);
 
         // Write mode byte: LIST mode with target HLL type
-        bytes[MODE_BYTE] = encode_mode_byte(CUR_MODE_LIST, hll_type as u8);
+        bytes.write_u8(encode_mode_byte(CUR_MODE_LIST, hll_type as u8));
 
         // Write coupons (only non-empty ones if compact)
         if !empty {
             let mut write_idx = 0;
-            for coupon in &self.container.coupons {
-                if compact && *coupon == 0 {
+            for coupon in self.container.coupons.iter().copied() {
+                if compact && coupon == 0 {
                     continue; // Skip empty coupons in compact mode
                 }
-                let offset = LIST_INT_ARR_START + write_idx * 4;
-                write_u32_le(&mut bytes, offset, *coupon);
+                bytes.write_u32_le(coupon);
                 write_idx += 1;
                 if write_idx >= array_size {
                     break;
@@ -150,6 +150,6 @@ impl List {
             }
         }
 
-        bytes
+        bytes.into_bytes()
     }
 }

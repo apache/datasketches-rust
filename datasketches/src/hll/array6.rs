@@ -21,6 +21,7 @@
 //! This is sufficient for most HLL use cases without needing exception handling or
 //! cur_min optimization like Array4.
 
+use crate::codec::SketchBytes;
 use crate::error::Error;
 use crate::hll::NumStdDev;
 use crate::hll::estimator::HipEstimator;
@@ -230,43 +231,43 @@ impl Array6 {
         let k = 1 << lg_config_k;
         let num_bytes = num_bytes_for_k(k);
         let total_size = HLL_PREAMBLE_SIZE + num_bytes;
-        let mut bytes = vec![0u8; total_size];
+        let mut bytes = SketchBytes::with_capacity(total_size);
 
         // Write standard header
-        bytes[PREAMBLE_INTS_BYTE] = HLL_PREINTS;
-        bytes[SER_VER_BYTE] = SERIAL_VER;
-        bytes[FAMILY_BYTE] = HLL_FAMILY_ID;
-        bytes[LG_K_BYTE] = lg_config_k;
-        bytes[LG_ARR_BYTE] = 0; // Not used for HLL mode
+        bytes.write_u8(HLL_PREINTS);
+        bytes.write_u8(SERIAL_VER);
+        bytes.write_u8(HLL_FAMILY_ID);
+        bytes.write_u8(lg_config_k);
+        bytes.write_u8(0); // unused for HLL mode
 
         // Write flags
         let mut flags = 0u8;
         if self.estimator.is_out_of_order() {
             flags |= OUT_OF_ORDER_FLAG_MASK;
         }
-        bytes[FLAGS_BYTE] = flags;
+        bytes.write_u8(flags);
 
         // cur_min is always 0 for Array6
-        bytes[HLL_CUR_MIN_BYTE] = 0;
+        bytes.write_u8(0);
 
         // Mode byte: HLL mode with HLL6 type
-        bytes[MODE_BYTE] = encode_mode_byte(CUR_MODE_HLL, TGT_HLL6);
+        bytes.write_u8(encode_mode_byte(CUR_MODE_HLL, TGT_HLL6));
 
         // Write HIP estimator values
-        write_f64_le(&mut bytes, HIP_ACCUM_DOUBLE, self.estimator.hip_accum());
-        write_f64_le(&mut bytes, KXQ0_DOUBLE, self.estimator.kxq0());
-        write_f64_le(&mut bytes, KXQ1_DOUBLE, self.estimator.kxq1());
+        bytes.write_f64_le(self.estimator.hip_accum());
+        bytes.write_f64_le(self.estimator.kxq0());
+        bytes.write_f64_le(self.estimator.kxq1());
 
         // Write num_at_cur_min (num_zeros for Array6)
-        write_u32_le(&mut bytes, CUR_MIN_COUNT_INT, self.num_zeros);
+        bytes.write_u32_le(self.num_zeros);
 
         // Write aux_count (always 0 for Array6)
-        write_u32_le(&mut bytes, AUX_COUNT_INT, 0);
+        bytes.write_u32_le(0);
 
         // Write packed byte array
-        bytes[HLL_BYTE_ARR_START..].copy_from_slice(&self.bytes);
+        bytes.write(&self.bytes);
 
-        bytes
+        bytes.into_bytes()
     }
 }
 
