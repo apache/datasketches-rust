@@ -369,12 +369,12 @@ impl BloomFilter {
         let mut bytes = SketchBytes::with_capacity(capacity);
 
         // Preamble - matching C++ byte layout
-        bytes.write_u8(preamble_longs);         // Byte 0
-        bytes.write_u8(SERIAL_VERSION);         // Byte 1
-        bytes.write_u8(FAMILY_ID);              // Byte 2
+        bytes.write_u8(preamble_longs); // Byte 0
+        bytes.write_u8(SERIAL_VERSION); // Byte 1
+        bytes.write_u8(FAMILY_ID); // Byte 2
         bytes.write_u8(if is_empty { EMPTY_FLAG_MASK } else { 0 }); // Byte 3: flags
-        bytes.write_u16_le(self.num_hashes);    // Bytes 4-5
-        bytes.write_u16_le(0);                  // Bytes 6-7: unused
+        bytes.write_u16_le(self.num_hashes); // Bytes 4-5
+        bytes.write_u16_le(0); // Bytes 6-7: unused
 
         bytes.write_u64_le(self.seed);
 
@@ -564,31 +564,22 @@ impl BloomFilter {
 
     /// Gets the value of a single bit.
     fn get_bit(&self, bit_index: u64) -> bool {
-        let word_index = (bit_index >> 6) as usize; // Faster than / 64
-        let bit_offset = bit_index & 63;            // Faster than % 64
+        let word_index = (bit_index >> 6) as usize; // Equivalent to bit_index / 64
+        let bit_offset = bit_index & 63; // Equivalent to bit_index % 64
         let mask = 1u64 << bit_offset;
         (self.bit_array[word_index] & mask) != 0
     }
 
     /// Sets a single bit and updates the count if it wasn't already set.
     fn set_bit(&mut self, bit_index: u64) {
-        let word_index = (bit_index >> 6) as usize; // Faster than / 64
-        let bit_offset = bit_index & 63;            // Faster than % 64
+        let word_index = (bit_index >> 6) as usize; // Equivalent to bit_index / 64
+        let bit_offset = bit_index & 63; // Equivalent to bit_index % 64
         let mask = 1u64 << bit_offset;
 
         if (self.bit_array[word_index] & mask) == 0 {
             self.bit_array[word_index] |= mask;
             self.num_bits_set += 1;
         }
-    }
-
-    /// Recounts all set bits (used after set operations).
-    fn recount_bits_set(&mut self) {
-        self.num_bits_set = self
-            .bit_array
-            .iter()
-            .map(|word| word.count_ones() as u64)
-            .sum();
     }
 }
 

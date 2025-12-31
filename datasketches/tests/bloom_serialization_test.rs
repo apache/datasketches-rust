@@ -32,11 +32,7 @@ use std::path::PathBuf;
 use common::serialization_test_data;
 use datasketches::bloom::BloomFilter;
 
-fn test_bloom_filter_file(
-    path: PathBuf,
-    expected_num_items: u64,
-    expected_num_hashes: u16,
-) {
+fn test_bloom_filter_file(path: PathBuf, expected_num_items: u64, expected_num_hashes: u16) {
     let bytes = fs::read(&path).unwrap();
     let filter1 = BloomFilter::deserialize(&bytes).unwrap();
 
@@ -51,10 +47,21 @@ fn test_bloom_filter_file(
     // Check empty state
     if expected_num_items == 0 {
         assert!(filter1.is_empty(), "Filter should be empty for n=0");
-        assert_eq!(filter1.bits_used(), 0, "Empty filter should have 0 bits set");
+        assert_eq!(
+            filter1.bits_used(),
+            0,
+            "Empty filter should have 0 bits set"
+        );
     } else {
-        assert!(!filter1.is_empty(), "Filter should not be empty for n={}", expected_num_items);
-        assert!(filter1.bits_used() > 0, "Non-empty filter should have bits set");
+        assert!(
+            !filter1.is_empty(),
+            "Filter should not be empty for n={}",
+            expected_num_items
+        );
+        assert!(
+            filter1.bits_used() > 0,
+            "Non-empty filter should have bits set"
+        );
     }
 
     // Verify the items that were inserted (integers 0 to n/10-1)
@@ -74,9 +81,12 @@ fn test_bloom_filter_file(
         }
 
         assert_eq!(
-            false_negatives, 0,
+            false_negatives,
+            0,
             "Found {} false negatives out of {} items in {}",
-            false_negatives, sample_size, path.display()
+            false_negatives,
+            sample_size,
+            path.display()
         );
     }
 
