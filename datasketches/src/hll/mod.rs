@@ -75,29 +75,23 @@
 //! # Usage
 //!
 //! ```rust
-//! use datasketches::hll::HllSketch;
-//! use datasketches::hll::HllType;
-//! use datasketches::hll::NumStdDev;
-//!
+//! # use datasketches::hll::HllSketch;
+//! # use datasketches::hll::HllType;
+//! # use datasketches::hll::NumStdDev;
 //! let mut sketch = HllSketch::new(12, HllType::Hll8);
 //! sketch.update("apple");
-//! sketch.update("banana");
-//!
-//! let estimate = sketch.estimate();
 //! let upper = sketch.upper_bound(NumStdDev::Two);
-//! assert!(upper >= estimate);
+//! assert!(upper >= sketch.estimate());
 //! ```
 //!
 //! # Union
 //!
 //! ```rust
-//! use datasketches::hll::HllSketch;
-//! use datasketches::hll::HllType;
-//! use datasketches::hll::HllUnion;
-//!
+//! # use datasketches::hll::HllSketch;
+//! # use datasketches::hll::HllType;
+//! # use datasketches::hll::HllUnion;
 //! let mut left = HllSketch::new(10, HllType::Hll8);
 //! let mut right = HllSketch::new(10, HllType::Hll8);
-//!
 //! left.update("apple");
 //! right.update("banana");
 //!

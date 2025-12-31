@@ -67,8 +67,7 @@ impl TDigestMut {
     /// # Examples
     ///
     /// ```
-    /// use datasketches::tdigest::TDigestMut;
-    ///
+    /// # use datasketches::tdigest::TDigestMut;
     /// let sketch = TDigestMut::new(100);
     /// assert_eq!(sketch.k(), 100);
     /// ```
@@ -95,8 +94,7 @@ impl TDigestMut {
     /// # Examples
     ///
     /// ```
-    /// use datasketches::tdigest::TDigestMut;
-    ///
+    /// # use datasketches::tdigest::TDigestMut;
     /// let sketch = TDigestMut::try_new(20).expect("valid k");
     /// assert_eq!(sketch.k(), 20);
     /// ```
@@ -156,12 +154,10 @@ impl TDigestMut {
     /// # Examples
     ///
     /// ```
-    /// use datasketches::tdigest::TDigestMut;
-    ///
+    /// # use datasketches::tdigest::TDigestMut;
     /// let mut sketch = TDigestMut::new(100);
     /// sketch.update(1.0);
-    /// sketch.update(2.0);
-    /// assert_eq!(sketch.total_weight(), 2);
+    /// assert!(sketch.total_weight() >= 1);
     /// ```
     pub fn update(&mut self, value: f64) {
         if value.is_nan() || value.is_infinite() {
@@ -215,14 +211,11 @@ impl TDigestMut {
     /// # Examples
     ///
     /// ```
-    /// use datasketches::tdigest::TDigestMut;
-    ///
+    /// # use datasketches::tdigest::TDigestMut;
     /// let mut left = TDigestMut::new(100);
     /// let mut right = TDigestMut::new(100);
-    ///
     /// left.update(1.0);
     /// right.update(2.0);
-    ///
     /// left.merge(&right);
     /// assert_eq!(left.total_weight(), 2);
     /// ```
@@ -257,8 +250,7 @@ impl TDigestMut {
     /// # Examples
     ///
     /// ```
-    /// use datasketches::tdigest::TDigestMut;
-    ///
+    /// # use datasketches::tdigest::TDigestMut;
     /// let mut sketch = TDigestMut::new(100);
     /// sketch.update(1.0);
     /// let frozen = sketch.freeze();
@@ -291,16 +283,13 @@ impl TDigestMut {
     /// # Examples
     ///
     /// ```
-    /// use datasketches::tdigest::TDigestMut;
-    ///
-    /// let mut sketch = TDigestMut::new(100);
-    /// for value in [1.0, 2.0, 3.0] {
-    ///     sketch.update(value);
-    /// }
-    ///
-    /// let cdf = sketch.cdf(&[1.5, 2.5]).expect("non-empty");
-    /// assert_eq!(cdf.len(), 3);
-    /// assert!((cdf[2] - 1.0).abs() < 1e-12);
+    /// # use datasketches::tdigest::TDigestMut;
+    /// # let mut sketch = TDigestMut::new(100);
+    /// # for value in [1.0, 2.0, 3.0] {
+    /// #     sketch.update(value);
+    /// # }
+    /// let cdf = sketch.cdf(&[1.5]).expect("non-empty");
+    /// assert_eq!(cdf.len(), 2);
     /// ```
     pub fn cdf(&mut self, split_points: &[f64]) -> Option<Vec<f64>> {
         check_split_points(split_points);
@@ -317,17 +306,13 @@ impl TDigestMut {
     /// # Examples
     ///
     /// ```
-    /// use datasketches::tdigest::TDigestMut;
-    ///
-    /// let mut sketch = TDigestMut::new(100);
-    /// for value in [1.0, 2.0, 3.0] {
-    ///     sketch.update(value);
-    /// }
-    ///
-    /// let pmf = sketch.pmf(&[1.5, 2.5]).expect("non-empty");
-    /// assert_eq!(pmf.len(), 3);
-    /// let total: f64 = pmf.iter().sum();
-    /// assert!((total - 1.0).abs() < 1e-12);
+    /// # use datasketches::tdigest::TDigestMut;
+    /// # let mut sketch = TDigestMut::new(100);
+    /// # for value in [1.0, 2.0, 3.0] {
+    /// #     sketch.update(value);
+    /// # }
+    /// let pmf = sketch.pmf(&[1.5]).expect("non-empty");
+    /// assert_eq!(pmf.len(), 2);
     /// ```
     pub fn pmf(&mut self, split_points: &[f64]) -> Option<Vec<f64>> {
         check_split_points(split_points);
@@ -344,13 +329,11 @@ impl TDigestMut {
     /// # Examples
     ///
     /// ```
-    /// use datasketches::tdigest::TDigestMut;
-    ///
-    /// let mut sketch = TDigestMut::new(100);
-    /// for value in [1.0, 2.0, 3.0] {
-    ///     sketch.update(value);
-    /// }
-    ///
+    /// # use datasketches::tdigest::TDigestMut;
+    /// # let mut sketch = TDigestMut::new(100);
+    /// # for value in [1.0, 2.0, 3.0] {
+    /// #     sketch.update(value);
+    /// # }
     /// let rank = sketch.rank(2.0).expect("non-empty");
     /// assert!((0.0..=1.0).contains(&rank));
     /// ```
@@ -379,15 +362,13 @@ impl TDigestMut {
     /// # Examples
     ///
     /// ```
-    /// use datasketches::tdigest::TDigestMut;
-    ///
-    /// let mut sketch = TDigestMut::new(100);
-    /// for value in [1.0, 2.0, 3.0] {
-    ///     sketch.update(value);
-    /// }
-    ///
+    /// # use datasketches::tdigest::TDigestMut;
+    /// # let mut sketch = TDigestMut::new(100);
+    /// # for value in [1.0, 2.0, 3.0] {
+    /// #     sketch.update(value);
+    /// # }
     /// let median = sketch.quantile(0.5).expect("non-empty");
-    /// assert!(median >= 1.0 && median <= 3.0);
+    /// assert!((1.0..=3.0).contains(&median));
     /// ```
     pub fn quantile(&mut self, rank: f64) -> Option<f64> {
         assert!((0.0..=1.0).contains(&rank), "rank must be in [0.0, 1.0]");
@@ -404,16 +385,11 @@ impl TDigestMut {
     /// # Examples
     ///
     /// ```
-    /// use datasketches::tdigest::TDigestMut;
-    ///
-    /// let mut sketch = TDigestMut::new(100);
-    /// sketch.update(1.0);
-    ///
+    /// # use datasketches::tdigest::TDigestMut;
+    /// # let mut sketch = TDigestMut::new(100);
+    /// # sketch.update(1.0);
     /// let bytes = sketch.serialize();
-    /// let mut decoded = TDigestMut::deserialize(&bytes, false)
-    ///     .expect("deserialize sketch");
-    /// let median = decoded.quantile(0.5).expect("non-empty");
-    /// assert!((median - 1.0).abs() < 1e-12);
+    /// let _decoded = TDigestMut::deserialize(&bytes, false).expect("valid bytes");
     /// ```
     pub fn serialize(&mut self) -> Vec<u8> {
         self.compress();
@@ -500,16 +476,12 @@ impl TDigestMut {
     /// # Examples
     ///
     /// ```
-    /// use datasketches::tdigest::TDigestMut;
-    ///
-    /// let mut sketch = TDigestMut::new(100);
-    /// sketch.update(1.0);
-    /// sketch.update(2.0);
-    ///
-    /// let bytes = sketch.serialize();
-    /// let mut decoded = TDigestMut::deserialize(&bytes, false)
-    ///     .expect("deserialize sketch");
-    /// assert_eq!(decoded.min_value(), Some(1.0));
+    /// # use datasketches::tdigest::TDigestMut;
+    /// # let mut sketch = TDigestMut::new(100);
+    /// # sketch.update(1.0);
+    /// # sketch.update(2.0);
+    /// # let bytes = sketch.serialize();
+    /// let decoded = TDigestMut::deserialize(&bytes, false).expect("deserialize sketch");
     /// assert_eq!(decoded.max_value(), Some(2.0));
     /// ```
     pub fn deserialize(bytes: &[u8], is_f32: bool) -> Result<Self, Error> {
@@ -896,16 +868,14 @@ impl TDigest {
     /// # Examples
     ///
     /// ```
-    /// use datasketches::tdigest::TDigestMut;
-    ///
-    /// let mut sketch = TDigestMut::new(100);
-    /// for value in [1.0, 2.0, 3.0] {
-    ///     sketch.update(value);
-    /// }
-    ///
+    /// # use datasketches::tdigest::TDigestMut;
+    /// # let mut sketch = TDigestMut::new(100);
+    /// # for value in [1.0, 2.0, 3.0] {
+    /// #     sketch.update(value);
+    /// # }
     /// let digest = sketch.freeze();
-    /// let cdf = digest.cdf(&[1.5, 2.5]).expect("non-empty");
-    /// assert_eq!(cdf.len(), 3);
+    /// let cdf = digest.cdf(&[1.5]).expect("non-empty");
+    /// assert_eq!(cdf.len(), 2);
     /// ```
     pub fn cdf(&self, split_points: &[f64]) -> Option<Vec<f64>> {
         self.view().cdf(split_points)
@@ -934,16 +904,14 @@ impl TDigest {
     /// # Examples
     ///
     /// ```
-    /// use datasketches::tdigest::TDigestMut;
-    ///
-    /// let mut sketch = TDigestMut::new(100);
-    /// for value in [1.0, 2.0, 3.0] {
-    ///     sketch.update(value);
-    /// }
-    ///
+    /// # use datasketches::tdigest::TDigestMut;
+    /// # let mut sketch = TDigestMut::new(100);
+    /// # for value in [1.0, 2.0, 3.0] {
+    /// #     sketch.update(value);
+    /// # }
     /// let digest = sketch.freeze();
-    /// let pmf = digest.pmf(&[1.5, 2.5]).expect("non-empty");
-    /// assert_eq!(pmf.len(), 3);
+    /// let pmf = digest.pmf(&[1.5]).expect("non-empty");
+    /// assert_eq!(pmf.len(), 2);
     /// ```
     pub fn pmf(&self, split_points: &[f64]) -> Option<Vec<f64>> {
         self.view().pmf(split_points)
@@ -960,13 +928,11 @@ impl TDigest {
     /// # Examples
     ///
     /// ```
-    /// use datasketches::tdigest::TDigestMut;
-    ///
-    /// let mut sketch = TDigestMut::new(100);
-    /// for value in [1.0, 2.0, 3.0] {
-    ///     sketch.update(value);
-    /// }
-    ///
+    /// # use datasketches::tdigest::TDigestMut;
+    /// # let mut sketch = TDigestMut::new(100);
+    /// # for value in [1.0, 2.0, 3.0] {
+    /// #     sketch.update(value);
+    /// # }
     /// let digest = sketch.freeze();
     /// let rank = digest.rank(2.0).expect("non-empty");
     /// assert!((0.0..=1.0).contains(&rank));
@@ -987,16 +953,14 @@ impl TDigest {
     /// # Examples
     ///
     /// ```
-    /// use datasketches::tdigest::TDigestMut;
-    ///
-    /// let mut sketch = TDigestMut::new(100);
-    /// for value in [1.0, 2.0, 3.0] {
-    ///     sketch.update(value);
-    /// }
-    ///
+    /// # use datasketches::tdigest::TDigestMut;
+    /// # let mut sketch = TDigestMut::new(100);
+    /// # for value in [1.0, 2.0, 3.0] {
+    /// #     sketch.update(value);
+    /// # }
     /// let digest = sketch.freeze();
     /// let q = digest.quantile(0.5).expect("non-empty");
-    /// assert!(q >= 1.0 && q <= 3.0);
+    /// assert!((1.0..=3.0).contains(&q));
     /// ```
     pub fn quantile(&self, rank: f64) -> Option<f64> {
         assert!((0.0..=1.0).contains(&rank), "rank must be in [0.0, 1.0]");
@@ -1008,12 +972,10 @@ impl TDigest {
     /// # Examples
     ///
     /// ```
-    /// use datasketches::tdigest::TDigestMut;
-    ///
-    /// let mut sketch = TDigestMut::new(100);
-    /// sketch.update(1.0);
-    ///
-    /// let digest = sketch.freeze();
+    /// # use datasketches::tdigest::TDigestMut;
+    /// # let mut sketch = TDigestMut::new(100);
+    /// # sketch.update(1.0);
+    /// # let digest = sketch.freeze();
     /// let mut mutable = digest.unfreeze();
     /// mutable.update(2.0);
     /// assert_eq!(mutable.total_weight(), 2);

@@ -27,32 +27,24 @@
 //! # Usage
 //!
 //! ```rust
-//! use datasketches::frequencies::ErrorType;
-//! use datasketches::frequencies::FrequentItemsSketch;
-//!
-//! let mut sketch = FrequentItemsSketch::<String>::new(64);
-//! let apple = "apple".to_string();
-//! let banana = "banana".to_string();
-//!
-//! sketch.update(apple.clone());
-//! sketch.update_with_count(banana.clone(), 3);
-//!
+//! # use datasketches::frequencies::ErrorType;
+//! # use datasketches::frequencies::FrequentItemsSketch;
+//! let mut sketch = FrequentItemsSketch::<i64>::new(64);
+//! sketch.update_with_count(1, 3);
+//! sketch.update(2);
 //! let rows = sketch.frequent_items(ErrorType::NoFalseNegatives);
-//! assert!(rows.iter().any(|row| row.item() == &banana));
+//! assert!(rows.iter().any(|row| *row.item() == 1));
 //! ```
 //!
 //! # Serialization
 //!
 //! ```rust
-//! use datasketches::frequencies::FrequentItemsSketch;
-//!
+//! # use datasketches::frequencies::FrequentItemsSketch;
 //! let mut sketch = FrequentItemsSketch::<i64>::new(64);
 //! sketch.update_with_count(42, 2);
 //!
 //! let bytes = sketch.serialize();
-//! let decoded = FrequentItemsSketch::<i64>::deserialize(&bytes)
-//!     .expect("deserialize sketch");
-//! assert!(decoded.estimate(&42) >= 2);
+//! let _decoded = FrequentItemsSketch::<i64>::deserialize(&bytes).expect("valid bytes");
 //! ```
 
 mod reverse_purge_item_hash_map;

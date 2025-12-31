@@ -36,8 +36,7 @@
 /// # Examples
 ///
 /// ```
-/// use datasketches::ResizeFactor;
-///
+/// # use datasketches::ResizeFactor;
 /// let factor = ResizeFactor::X4;
 /// assert_eq!(factor.value(), 4);
 /// assert_eq!(factor.lg_value(), 2);

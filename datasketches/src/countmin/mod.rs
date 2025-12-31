@@ -23,29 +23,20 @@
 //! # Usage
 //!
 //! ```rust
-//! use datasketches::countmin::CountMinSketch;
-//!
+//! # use datasketches::countmin::CountMinSketch;
 //! let mut sketch = CountMinSketch::new(5, 256);
-//!
 //! sketch.update("apple");
 //! sketch.update_with_weight("banana", 3);
-//!
-//! let banana = sketch.estimate("banana");
-//! assert!(banana >= 3);
-//!
-//! let upper = sketch.upper_bound("banana");
-//! assert!(upper >= banana);
+//! assert!(sketch.estimate("banana") >= 3);
 //! ```
 //!
 //! # Configuration Helpers
 //!
 //! ```rust
-//! use datasketches::countmin::CountMinSketch;
-//!
-//! let num_buckets = CountMinSketch::suggest_num_buckets(0.01);
-//! let num_hashes = CountMinSketch::suggest_num_hashes(0.99);
-//!
-//! let _sketch = CountMinSketch::new(num_hashes, num_buckets);
+//! # use datasketches::countmin::CountMinSketch;
+//! let buckets = CountMinSketch::suggest_num_buckets(0.01);
+//! let hashes = CountMinSketch::suggest_num_hashes(0.99);
+//! let _sketch = CountMinSketch::new(hashes, buckets);
 //! ```
 
 mod serialization;

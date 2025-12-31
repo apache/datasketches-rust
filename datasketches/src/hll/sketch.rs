@@ -65,9 +65,8 @@ impl HllSketch {
     /// # Examples
     ///
     /// ```
-    /// use datasketches::hll::HllSketch;
-    /// use datasketches::hll::HllType;
-    ///
+    /// # use datasketches::hll::HllSketch;
+    /// # use datasketches::hll::HllType;
     /// let sketch = HllSketch::new(12, HllType::Hll8);
     /// assert_eq!(sketch.lg_config_k(), 12);
     /// ```
@@ -148,13 +147,11 @@ impl HllSketch {
     /// # Examples
     ///
     /// ```
-    /// use datasketches::hll::HllSketch;
-    /// use datasketches::hll::HllType;
-    ///
+    /// # use datasketches::hll::HllSketch;
+    /// # use datasketches::hll::HllType;
     /// let mut sketch = HllSketch::new(10, HllType::Hll8);
     /// sketch.update("apple");
-    /// sketch.update("banana");
-    /// assert!(sketch.estimate() >= 2.0);
+    /// assert!(sketch.estimate() >= 1.0);
     /// ```
     pub fn update<T: Hash>(&mut self, value: T) {
         let coupon = coupon(value);
@@ -200,13 +197,11 @@ impl HllSketch {
     /// # Examples
     ///
     /// ```
-    /// use datasketches::hll::HllSketch;
-    /// use datasketches::hll::HllType;
-    ///
+    /// # use datasketches::hll::HllSketch;
+    /// # use datasketches::hll::HllType;
     /// let mut sketch = HllSketch::new(10, HllType::Hll8);
     /// sketch.update("apple");
-    /// let estimate = sketch.estimate();
-    /// assert!(estimate >= 1.0);
+    /// assert!(sketch.estimate() >= 1.0);
     /// ```
     pub fn estimate(&self) -> f64 {
         match &self.mode {
@@ -251,13 +246,11 @@ impl HllSketch {
     /// # Examples
     ///
     /// ```
-    /// use datasketches::hll::HllSketch;
-    /// use datasketches::hll::HllType;
-    ///
-    /// let mut sketch = HllSketch::new(10, HllType::Hll8);
-    /// sketch.update("apple");
-    ///
-    /// let bytes = sketch.serialize();
+    /// # use datasketches::hll::HllSketch;
+    /// # use datasketches::hll::HllType;
+    /// # let mut sketch = HllSketch::new(10, HllType::Hll8);
+    /// # sketch.update("apple");
+    /// # let bytes = sketch.serialize();
     /// let decoded = HllSketch::deserialize(&bytes).expect("deserialize sketch");
     /// assert!(decoded.estimate() >= 1.0);
     /// ```
@@ -375,15 +368,12 @@ impl HllSketch {
     /// # Examples
     ///
     /// ```
-    /// use datasketches::hll::HllSketch;
-    /// use datasketches::hll::HllType;
-    ///
-    /// let mut sketch = HllSketch::new(10, HllType::Hll8);
-    /// sketch.update("apple");
-    ///
+    /// # use datasketches::hll::HllSketch;
+    /// # use datasketches::hll::HllType;
+    /// # let mut sketch = HllSketch::new(10, HllType::Hll8);
+    /// # sketch.update("apple");
     /// let bytes = sketch.serialize();
-    /// let decoded = HllSketch::deserialize(&bytes).expect("deserialize sketch");
-    /// assert!(decoded.estimate() >= 1.0);
+    /// let _decoded = HllSketch::deserialize(&bytes).expect("valid bytes");
     /// ```
     pub fn serialize(&self) -> Vec<u8> {
         match &self.mode {

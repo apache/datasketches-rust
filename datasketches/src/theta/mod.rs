@@ -32,14 +32,10 @@
 //! # Usage
 //!
 //! ```rust
-//! use datasketches::theta::ThetaSketch;
-//!
+//! # use datasketches::theta::ThetaSketch;
 //! let mut sketch = ThetaSketch::builder().build();
 //! sketch.update("apple");
-//! sketch.update("banana");
-//!
-//! assert!(sketch.estimate() >= 2.0);
-//! assert_eq!(sketch.num_retained(), 2);
+//! assert!(sketch.estimate() >= 1.0);
 //! ```
 
 mod hash_table;

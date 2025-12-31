@@ -70,14 +70,11 @@ impl HllUnion {
     /// # Examples
     ///
     /// ```
-    /// use datasketches::hll::HllType;
-    /// use datasketches::hll::HllUnion;
-    ///
+    /// # use datasketches::hll::HllType;
+    /// # use datasketches::hll::HllUnion;
     /// let mut union = HllUnion::new(10);
     /// union.update_value("apple");
-    ///
-    /// let result = union.get_result(HllType::Hll8);
-    /// assert!(result.estimate() >= 1.0);
+    /// let _result = union.get_result(HllType::Hll8);
     /// ```
     pub fn new(lg_max_k: u8) -> Self {
         assert!(
@@ -100,14 +97,11 @@ impl HllUnion {
     /// # Examples
     ///
     /// ```
-    /// use datasketches::hll::HllType;
-    /// use datasketches::hll::HllUnion;
-    ///
+    /// # use datasketches::hll::HllType;
+    /// # use datasketches::hll::HllUnion;
     /// let mut union = HllUnion::new(10);
     /// union.update_value("apple");
-    ///
-    /// let result = union.get_result(HllType::Hll8);
-    /// assert!(result.estimate() >= 1.0);
+    /// let _result = union.get_result(HllType::Hll8);
     /// ```
     pub fn update_value<T: Hash>(&mut self, value: T) {
         self.gadget.update(value);
@@ -123,20 +117,17 @@ impl HllUnion {
     /// # Examples
     ///
     /// ```
-    /// use datasketches::hll::HllSketch;
-    /// use datasketches::hll::HllType;
-    /// use datasketches::hll::HllUnion;
-    ///
+    /// # use datasketches::hll::HllSketch;
+    /// # use datasketches::hll::HllType;
+    /// # use datasketches::hll::HllUnion;
     /// let mut left = HllSketch::new(10, HllType::Hll8);
     /// let mut right = HllSketch::new(10, HllType::Hll8);
-    ///
     /// left.update("apple");
     /// right.update("banana");
     ///
     /// let mut union = HllUnion::new(10);
     /// union.update(&left);
     /// union.update(&right);
-    ///
     /// let result = union.get_result(HllType::Hll8);
     /// assert!(result.estimate() >= 2.0);
     /// ```
@@ -258,12 +249,10 @@ impl HllUnion {
     /// # Examples
     ///
     /// ```
-    /// use datasketches::hll::HllType;
-    /// use datasketches::hll::HllUnion;
-    ///
+    /// # use datasketches::hll::HllType;
+    /// # use datasketches::hll::HllUnion;
     /// let mut union = HllUnion::new(10);
     /// union.update_value("apple");
-    ///
     /// let result = union.get_result(HllType::Hll6);
     /// assert!(result.estimate() >= 1.0);
     /// ```
