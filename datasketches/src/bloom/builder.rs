@@ -29,19 +29,9 @@ const MAX_NUM_BITS: u64 = (1u64 << 35) - 64; // ~32 GB - reasonable limit
 /// - [`with_size()`](Self::with_size): Specify exact bit count and hash functions (manual)
 #[derive(Debug, Clone)]
 pub struct BloomFilterBuilder {
-    num_bits: Option<u64>,
-    num_hashes: Option<u16>,
+    num_bits: u64,
+    num_hashes: u16,
     seed: u64,
-}
-
-impl Default for BloomFilterBuilder {
-    fn default() -> Self {
-        BloomFilterBuilder {
-            num_bits: None,
-            num_hashes: None,
-            seed: DEFAULT_UPDATE_SEED,
-        }
-    }
 }
 
 impl BloomFilterBuilder {
@@ -79,8 +69,8 @@ impl BloomFilterBuilder {
         let num_hashes = Self::suggest_num_hashes_from_accuracy(max_items, num_bits);
 
         BloomFilterBuilder {
-            num_bits: Some(num_bits),
-            num_hashes: Some(num_hashes),
+            num_bits,
+            num_hashes,
             seed: DEFAULT_UPDATE_SEED,
         }
     }
@@ -97,7 +87,9 @@ impl BloomFilterBuilder {
     ///
     /// # Panics
     ///
-    /// Panics if parameters are invalid.
+    /// Panics if:
+    /// - `num_bits` < MIN_NUM_BITS (64) or `num_bits` > MAX_NUM_BITS (~32 GB)
+    /// - `num_hashes` < 1 or `num_hashes` > 100
     ///
     /// # Examples
     ///
@@ -106,11 +98,22 @@ impl BloomFilterBuilder {
     /// let filter = BloomFilterBuilder::with_size(10_000, 7).build();
     /// ```
     pub fn with_size(num_bits: u64, num_hashes: u16) -> Self {
-        Self::validate_params(num_bits, num_hashes);
+        assert!(
+            num_bits >= MIN_NUM_BITS,
+            "num_bits must be at least {}",
+            MIN_NUM_BITS
+        );
+        assert!(
+            num_bits <= MAX_NUM_BITS,
+            "num_bits must not exceed {}",
+            MAX_NUM_BITS
+        );
+        assert!(num_hashes >= 1, "num_hashes must be at least 1");
+        assert!(num_hashes <= 100, "num_hashes must not exceed 100");
 
         BloomFilterBuilder {
-            num_bits: Some(num_bits),
-            num_hashes: Some(num_hashes),
+            num_bits,
+            num_hashes,
             seed: DEFAULT_UPDATE_SEED,
         }
     }
@@ -138,20 +141,16 @@ impl BloomFilterBuilder {
     ///
     /// Panics if neither `with_accuracy()` nor `with_size()` was called.
     pub fn build(self) -> BloomFilter {
-        let num_bits = self
-            .num_bits
-            .expect("Must call with_accuracy() or with_size() before build()");
-        let num_hashes = self
-            .num_hashes
-            .expect("Must call with_accuracy() or with_size() before build()");
+        let capacity_bits = self.num_bits;
+        let num_hashes = self.num_hashes;
 
-        let num_words = num_bits.div_ceil(64) as usize;
+        let num_words = capacity_bits.div_ceil(64) as usize;
         let bit_array = vec![0u64; num_words];
 
         BloomFilter {
             seed: self.seed,
             num_hashes,
-            capacity_bits: num_bits,
+            capacity_bits,
             num_bits_set: 0,
             bit_array,
         }
@@ -218,21 +217,5 @@ impl BloomFilterBuilder {
     pub fn suggest_num_hashes_from_fpp(fpp: f64) -> u16 {
         let k = -fpp.log2();
         (k.round() as u16).clamp(1, 100)
-    }
-
-    /// Validates builder parameters.
-    fn validate_params(num_bits: u64, num_hashes: u16) {
-        assert!(
-            num_bits >= MIN_NUM_BITS,
-            "num_bits must be at least {}",
-            MIN_NUM_BITS
-        );
-        assert!(
-            num_bits <= MAX_NUM_BITS,
-            "num_bits must not exceed {}",
-            MAX_NUM_BITS
-        );
-        assert!(num_hashes > 0, "num_hashes must be at least 1");
-        assert!(num_hashes <= 100, "num_hashes must not exceed 100");
     }
 }

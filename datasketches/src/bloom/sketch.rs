@@ -67,8 +67,8 @@ impl BloomFilter {
     /// let mut filter = BloomFilterBuilder::with_accuracy(100, 0.01).build();
     /// filter.insert("apple");
     ///
-    /// assert!(filter.contains(&"apple")); // true - was inserted
-    /// assert!(!filter.contains(&"grape")); // false - never inserted (probably)
+    /// assert!(filter.contains(&"apple")); // true - was inserted (probably)
+    /// assert!(!filter.contains(&"grape")); // false - never inserted
     /// ```
     pub fn contains<T: Hash>(&self, item: &T) -> bool {
         if self.is_empty() {
