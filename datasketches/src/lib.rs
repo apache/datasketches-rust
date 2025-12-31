@@ -30,6 +30,7 @@
 #[cfg(target_endian = "big")]
 compile_error!("datasketches does not support big-endian targets");
 
+pub mod bloom;
 pub mod countmin;
 pub mod error;
 pub mod frequencies;
