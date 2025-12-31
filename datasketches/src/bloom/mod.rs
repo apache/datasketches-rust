@@ -109,7 +109,7 @@
 //!
 //! # Implementation Details
 //!
-//! - Uses MurmurHash3 (128-bit) for hashing
+//! - Uses XXHash64 for hashing (compatible with datasketches-cpp)
 //! - Implements double hashing (Kirsch-Mitzenmacher method) for k hash functions
 //! - Bits packed efficiently in `u64` words
 //! - Compatible serialization format with datasketches-cpp (family ID: 21)

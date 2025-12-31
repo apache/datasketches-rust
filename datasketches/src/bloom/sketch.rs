@@ -16,11 +16,12 @@
 // under the License.
 
 use std::hash::Hash;
+use std::hash::Hasher;
 
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
 use crate::error::Error;
-use crate::hash::MurmurHash3X64128;
+use crate::hash::XxHash64;
 
 // Serialization constants (compatible with datasketches-cpp)
 const PREAMBLE_LONGS_EMPTY: u8 = 3;
@@ -481,11 +482,23 @@ impl BloomFilter {
         })
     }
 
-    /// Computes the two base hash values using MurmurHash3.
+    /// Computes the two base hash values using XXHash64.
+    ///
+    /// This matches the C++ implementation's two-hash approach:
+    /// - h0 = XXHash64(item, seed)
+    /// - h1 = XXHash64(item, h0)
     fn compute_hash<T: Hash>(&self, item: &T) -> (u64, u64) {
-        let mut hasher = MurmurHash3X64128::with_seed(self.seed);
+        // First hash with the configured seed
+        let mut hasher = XxHash64::with_seed(self.seed);
         item.hash(&mut hasher);
-        hasher.finish128()
+        let h0 = hasher.finish();
+
+        // Second hash using h0 as the seed (matching C++ approach)
+        let mut hasher = XxHash64::with_seed(h0);
+        item.hash(&mut hasher);
+        let h1 = hasher.finish();
+
+        (h0, h1)
     }
 
     /// Checks if all k bits are set for the given hash values.
