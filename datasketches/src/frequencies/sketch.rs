@@ -104,6 +104,17 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     /// # Panics
     ///
     /// Panics if `max_map_size` is not a power of two.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::frequencies::FrequentItemsSketch;
+    ///
+    /// let mut sketch = FrequentItemsSketch::<i64>::new(64);
+    /// sketch.update(1);
+    /// sketch.update(2);
+    /// assert_eq!(sketch.num_active_items(), 2);
+    /// ```
     pub fn new(max_map_size: usize) -> Self {
         let lg_max_map_size = exact_log2(max_map_size);
         Self::with_lg_map_sizes(lg_max_map_size, LG_MIN_MAP_SIZE)
@@ -129,6 +140,16 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     /// Returns the estimated frequency for an item.
     ///
     /// If the item is tracked, this is `item_count + offset`. Otherwise it is zero.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::frequencies::FrequentItemsSketch;
+    ///
+    /// let mut sketch = FrequentItemsSketch::<i64>::new(64);
+    /// sketch.update_with_count(10, 2);
+    /// assert!(sketch.estimate(&10) >= 2);
+    /// ```
     pub fn estimate(&self, item: &T) -> u64 {
         let value = self.hash_map.get(item);
         if value > 0 { value + self.offset } else { 0 }
@@ -199,6 +220,16 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     }
 
     /// Updates the sketch with a count of one.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::frequencies::FrequentItemsSketch;
+    ///
+    /// let mut sketch = FrequentItemsSketch::<i64>::new(64);
+    /// sketch.update(42);
+    /// assert!(sketch.estimate(&42) >= 1);
+    /// ```
     pub fn update(&mut self, item: T) {
         self.update_with_count(item, 1);
     }
@@ -206,6 +237,17 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     /// Updates the sketch with an item and count.
     ///
     /// A count of zero is a no-op.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::frequencies::FrequentItemsSketch;
+    ///
+    /// let mut sketch = FrequentItemsSketch::<String>::new(64);
+    /// let apple = "apple".to_string();
+    /// sketch.update_with_count(apple.clone(), 3);
+    /// assert!(sketch.estimate(&apple) >= 3);
+    /// ```
     pub fn update_with_count(&mut self, item: T, count: u64) {
         if count == 0 {
             return;
@@ -220,6 +262,24 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     ///
     /// The other sketch may have a different map size. The merged sketch respects the
     /// larger error tolerance of the inputs.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::frequencies::FrequentItemsSketch;
+    ///
+    /// let mut left = FrequentItemsSketch::<String>::new(64);
+    /// let mut right = FrequentItemsSketch::<String>::new(64);
+    ///
+    /// let apple = "apple".to_string();
+    /// let banana = "banana".to_string();
+    ///
+    /// left.update(apple.clone());
+    /// right.update_with_count(banana.clone(), 2);
+    ///
+    /// left.merge(&right);
+    /// assert!(left.estimate(&banana) >= 2);
+    /// ```
     pub fn merge(&mut self, other: &Self)
     where
         T: Clone,
@@ -243,6 +303,23 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     /// Returns frequent items using the sketch maximum error as threshold.
     ///
     /// This is equivalent to `frequent_items_with_threshold(self.maximum_error(), error_type)`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::frequencies::ErrorType;
+    /// use datasketches::frequencies::FrequentItemsSketch;
+    ///
+    /// let mut sketch = FrequentItemsSketch::<String>::new(64);
+    /// let apple = "apple".to_string();
+    /// let banana = "banana".to_string();
+    ///
+    /// sketch.update_with_count(apple.clone(), 5);
+    /// sketch.update(banana.clone());
+    ///
+    /// let rows = sketch.frequent_items(ErrorType::NoFalseNegatives);
+    /// assert!(rows.iter().any(|row| row.item() == &apple));
+    /// ```
     pub fn frequent_items(&self, error_type: ErrorType) -> Vec<Row<T>>
     where
         T: Clone,
@@ -256,6 +333,26 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     ///
     /// For [`ErrorType::NoFalseNegatives`], items are included when `upper_bound > threshold`.
     /// For [`ErrorType::NoFalsePositives`], items are included when `lower_bound > threshold`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::frequencies::ErrorType;
+    /// use datasketches::frequencies::FrequentItemsSketch;
+    ///
+    /// let mut sketch = FrequentItemsSketch::<String>::new(64);
+    /// let apple = "apple".to_string();
+    /// let banana = "banana".to_string();
+    ///
+    /// sketch.update_with_count(apple.clone(), 5);
+    /// sketch.update(banana.clone());
+    ///
+    /// let rows = sketch.frequent_items_with_threshold(
+    ///     ErrorType::NoFalsePositives,
+    ///     3,
+    /// );
+    /// assert!(rows.iter().any(|row| row.item() == &apple));
+    /// ```
     pub fn frequent_items_with_threshold(
         &self,
         error_type: ErrorType,
@@ -459,11 +556,39 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
 
 impl FrequentItemsSketch<i64> {
     /// Serializes this sketch into a byte vector.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::frequencies::FrequentItemsSketch;
+    ///
+    /// let mut sketch = FrequentItemsSketch::<i64>::new(64);
+    /// sketch.update_with_count(7, 2);
+    ///
+    /// let bytes = sketch.serialize();
+    /// let decoded = FrequentItemsSketch::<i64>::deserialize(&bytes)
+    ///     .expect("deserialize sketch");
+    /// assert!(decoded.estimate(&7) >= 2);
+    /// ```
     pub fn serialize(&self) -> Vec<u8> {
         self.serialize_inner(count_i64_items_bytes, serialize_i64_items)
     }
 
     /// Deserializes a sketch from bytes.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::frequencies::FrequentItemsSketch;
+    ///
+    /// let mut sketch = FrequentItemsSketch::<i64>::new(64);
+    /// sketch.update_with_count(7, 2);
+    ///
+    /// let bytes = sketch.serialize();
+    /// let decoded = FrequentItemsSketch::<i64>::deserialize(&bytes)
+    ///     .expect("deserialize sketch");
+    /// assert!(decoded.estimate(&7) >= 2);
+    /// ```
     pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
         Self::deserialize_inner(bytes, deserialize_i64_items)
     }
@@ -471,11 +596,41 @@ impl FrequentItemsSketch<i64> {
 
 impl FrequentItemsSketch<String> {
     /// Serializes this sketch into a byte vector.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::frequencies::FrequentItemsSketch;
+    ///
+    /// let mut sketch = FrequentItemsSketch::<String>::new(64);
+    /// let apple = "apple".to_string();
+    /// sketch.update_with_count(apple.clone(), 2);
+    ///
+    /// let bytes = sketch.serialize();
+    /// let decoded = FrequentItemsSketch::<String>::deserialize(&bytes)
+    ///     .expect("deserialize sketch");
+    /// assert!(decoded.estimate(&apple) >= 2);
+    /// ```
     pub fn serialize(&self) -> Vec<u8> {
         self.serialize_inner(count_string_items_bytes, serialize_string_items)
     }
 
     /// Deserializes a sketch from bytes.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::frequencies::FrequentItemsSketch;
+    ///
+    /// let mut sketch = FrequentItemsSketch::<String>::new(64);
+    /// let apple = "apple".to_string();
+    /// sketch.update_with_count(apple.clone(), 2);
+    ///
+    /// let bytes = sketch.serialize();
+    /// let decoded = FrequentItemsSketch::<String>::deserialize(&bytes)
+    ///     .expect("deserialize sketch");
+    /// assert!(decoded.estimate(&apple) >= 2);
+    /// ```
     pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
         Self::deserialize_inner(bytes, deserialize_string_items)
     }

@@ -47,6 +47,24 @@
 //! [Datasketches page on t-digest](https://datasketches.apache.org/docs/tdigest/tdigest.html).
 //!
 //! [paper]: https://arxiv.org/abs/1902.04023
+//!
+//! # Usage
+//!
+//! ```rust
+//! use datasketches::tdigest::TDigestMut;
+//!
+//! let mut sketch = TDigestMut::new(100);
+//! sketch.update(1.0);
+//! sketch.update(2.0);
+//! sketch.update(3.0);
+//!
+//! let median = sketch.quantile(0.5).expect("non-empty");
+//! assert!(median >= 1.0 && median <= 3.0);
+//!
+//! let frozen = sketch.freeze();
+//! let rank = frozen.rank(2.0).expect("non-empty");
+//! assert!(rank >= 0.0 && rank <= 1.0);
+//! ```
 
 mod serialization;
 

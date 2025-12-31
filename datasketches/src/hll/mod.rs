@@ -71,6 +71,43 @@
 //!
 //! The serialization format is compatible with Apache DataSketches implementations
 //! in Java and C++, enabling cross-platform sketch exchange.
+//!
+//! # Usage
+//!
+//! ```rust
+//! use datasketches::hll::HllSketch;
+//! use datasketches::hll::HllType;
+//! use datasketches::hll::NumStdDev;
+//!
+//! let mut sketch = HllSketch::new(12, HllType::Hll8);
+//! sketch.update("apple");
+//! sketch.update("banana");
+//!
+//! let estimate = sketch.estimate();
+//! let upper = sketch.upper_bound(NumStdDev::Two);
+//! assert!(upper >= estimate);
+//! ```
+//!
+//! # Union
+//!
+//! ```rust
+//! use datasketches::hll::HllSketch;
+//! use datasketches::hll::HllType;
+//! use datasketches::hll::HllUnion;
+//!
+//! let mut left = HllSketch::new(10, HllType::Hll8);
+//! let mut right = HllSketch::new(10, HllType::Hll8);
+//!
+//! left.update("apple");
+//! right.update("banana");
+//!
+//! let mut union = HllUnion::new(10);
+//! union.update(&left);
+//! union.update(&right);
+//!
+//! let result = union.get_result(HllType::Hll8);
+//! assert!(result.estimate() >= 2.0);
+//! ```
 
 use std::hash::Hash;
 

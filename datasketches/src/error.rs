@@ -46,6 +46,17 @@ impl fmt::Display for ErrorKind {
 }
 
 /// Error is the error struct returned by all datasketches functions.
+///
+/// # Examples
+///
+/// ```
+/// use datasketches::error::Error;
+/// use datasketches::error::ErrorKind;
+///
+/// let err = Error::new(ErrorKind::InvalidArgument, "bad input");
+/// assert_eq!(err.kind(), ErrorKind::InvalidArgument);
+/// assert_eq!(err.message(), "bad input");
+/// ```
 pub struct Error {
     kind: ErrorKind,
     message: String,

@@ -66,6 +66,19 @@ impl HllUnion {
     /// # Panics
     ///
     /// Panics if `lg_max_k` is not in the range [4, 21].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::hll::HllType;
+    /// use datasketches::hll::HllUnion;
+    ///
+    /// let mut union = HllUnion::new(10);
+    /// union.update_value("apple");
+    ///
+    /// let result = union.get_result(HllType::Hll8);
+    /// assert!(result.estimate() >= 1.0);
+    /// ```
     pub fn new(lg_max_k: u8) -> Self {
         assert!(
             (4..=21).contains(&lg_max_k),
@@ -83,6 +96,19 @@ impl HllUnion {
     ///
     /// This accepts any type that implements `Hash`. The value is hashed
     /// and converted to a coupon, which is then inserted into the sketch.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::hll::HllType;
+    /// use datasketches::hll::HllUnion;
+    ///
+    /// let mut union = HllUnion::new(10);
+    /// union.update_value("apple");
+    ///
+    /// let result = union.get_result(HllType::Hll8);
+    /// assert!(result.estimate() >= 1.0);
+    /// ```
     pub fn update_value<T: Hash>(&mut self, value: T) {
         self.gadget.update(value);
     }
@@ -93,6 +119,27 @@ impl HllUnion {
     /// - Sketches with different lg_k values (resizes/downsamples as needed)
     /// - Sketches in different modes (List, Set, Array4/6/8)
     /// - Sketches with different target HLL types
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::hll::HllSketch;
+    /// use datasketches::hll::HllType;
+    /// use datasketches::hll::HllUnion;
+    ///
+    /// let mut left = HllSketch::new(10, HllType::Hll8);
+    /// let mut right = HllSketch::new(10, HllType::Hll8);
+    ///
+    /// left.update("apple");
+    /// right.update("banana");
+    ///
+    /// let mut union = HllUnion::new(10);
+    /// union.update(&left);
+    /// union.update(&right);
+    ///
+    /// let result = union.get_result(HllType::Hll8);
+    /// assert!(result.estimate() >= 2.0);
+    /// ```
     pub fn update(&mut self, sketch: &HllSketch) {
         if sketch.is_empty() {
             return;
@@ -207,6 +254,19 @@ impl HllUnion {
     /// # Arguments
     ///
     /// * `hll_type` - The target HLL type for the result sketch (Hll4, Hll6, or Hll8)
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::hll::HllType;
+    /// use datasketches::hll::HllUnion;
+    ///
+    /// let mut union = HllUnion::new(10);
+    /// union.update_value("apple");
+    ///
+    /// let result = union.get_result(HllType::Hll6);
+    /// assert!(result.estimate() >= 1.0);
+    /// ```
     pub fn get_result(&self, hll_type: HllType) -> HllSketch {
         let gadget_type = self.gadget.target_type();
 

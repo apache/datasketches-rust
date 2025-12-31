@@ -28,6 +28,19 @@
 //! configurable accuracy and memory usage. The implementation supports:
 //!
 //! - **ThetaSketch**: Mutable sketch for building from input data
+//!
+//! # Usage
+//!
+//! ```rust
+//! use datasketches::theta::ThetaSketch;
+//!
+//! let mut sketch = ThetaSketch::builder().build();
+//! sketch.update("apple");
+//! sketch.update("banana");
+//!
+//! assert!(sketch.estimate() >= 2.0);
+//! assert_eq!(sketch.num_retained(), 2);
+//! ```
 
 mod hash_table;
 mod sketch;

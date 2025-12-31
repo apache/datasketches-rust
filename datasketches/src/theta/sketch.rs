@@ -38,11 +38,31 @@ pub struct ThetaSketch {
 
 impl ThetaSketch {
     /// Create a new builder for ThetaSketch
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::theta::ThetaSketch;
+    ///
+    /// let sketch = ThetaSketch::builder().lg_k(12).build();
+    /// assert_eq!(sketch.lg_k(), 12);
+    /// ```
     pub fn builder() -> ThetaSketchBuilder {
         ThetaSketchBuilder::default()
     }
 
     /// Update the sketch with a hashable value
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::theta::ThetaSketch;
+    ///
+    /// let mut sketch = ThetaSketch::builder().build();
+    /// sketch.update("apple");
+    /// sketch.update("banana");
+    /// assert_eq!(sketch.num_retained(), 2);
+    /// ```
     pub fn update<T: Hash>(&mut self, value: T) {
         let hash = self.table.hash_and_screen(value);
         if hash != 0 {
@@ -51,6 +71,16 @@ impl ThetaSketch {
     }
 
     /// Update the sketch with a f64 value
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::theta::ThetaSketch;
+    ///
+    /// let mut sketch = ThetaSketch::builder().build();
+    /// sketch.update_f64(1.0);
+    /// assert!(sketch.estimate() >= 1.0);
+    /// ```
     pub fn update_f64(&mut self, value: f64) {
         // Canonicalize double for compatibility with Java
         let canonical = canonical_double(value);
@@ -58,11 +88,32 @@ impl ThetaSketch {
     }
 
     /// Update the sketch with a f32 value
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::theta::ThetaSketch;
+    ///
+    /// let mut sketch = ThetaSketch::builder().build();
+    /// sketch.update_f32(1.0);
+    /// assert!(sketch.estimate() >= 1.0);
+    /// ```
     pub fn update_f32(&mut self, value: f32) {
         self.update_f64(value as f64);
     }
 
     /// Return cardinality estimate
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::theta::ThetaSketch;
+    ///
+    /// let mut sketch = ThetaSketch::builder().build();
+    /// sketch.update("apple");
+    /// sketch.update("banana");
+    /// assert!(sketch.estimate() >= 2.0);
+    /// ```
     pub fn estimate(&self) -> f64 {
         if self.is_empty() {
             return 0.0;
@@ -113,6 +164,17 @@ impl ThetaSketch {
     }
 
     /// Return iterator over hash values
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::theta::ThetaSketch;
+    ///
+    /// let mut sketch = ThetaSketch::builder().build();
+    /// sketch.update("apple");
+    /// let retained: Vec<u64> = sketch.iter().collect();
+    /// assert_eq!(retained.len(), 1);
+    /// ```
     pub fn iter(&self) -> impl Iterator<Item = u64> + '_ {
         self.table.iter()
     }
@@ -144,6 +206,15 @@ impl ThetaSketchBuilder {
     /// # Panics
     ///
     /// If lg_k is not in range [5, 26]
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::theta::ThetaSketch;
+    ///
+    /// let sketch = ThetaSketch::builder().lg_k(12).build();
+    /// assert_eq!(sketch.lg_k(), 12);
+    /// ```
     pub fn lg_k(mut self, lg_k: u8) -> Self {
         assert!(
             (MIN_LG_K..=MAX_LG_K).contains(&lg_k),
@@ -167,6 +238,16 @@ impl ThetaSketchBuilder {
     /// # Panics
     ///
     /// If p is not in range [0.0, 1.0]
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::theta::ThetaSketch;
+    ///
+    /// let _sketch = ThetaSketch::builder()
+    ///     .sampling_probability(0.5)
+    ///     .build();
+    /// ```
     pub fn sampling_probability(mut self, probability: f32) -> Self {
         assert!(
             (0.0..=1.0).contains(&probability),
@@ -177,12 +258,31 @@ impl ThetaSketchBuilder {
     }
 
     /// Set hash seed.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::theta::ThetaSketch;
+    ///
+    /// let _sketch = ThetaSketch::builder().seed(7).build();
+    /// ```
     pub fn seed(mut self, seed: u64) -> Self {
         self.seed = seed;
         self
     }
 
     /// Build the ThetaSketch.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::theta::ThetaSketch;
+    ///
+    /// let sketch = ThetaSketch::builder()
+    ///     .lg_k(10)
+    ///     .build();
+    /// assert_eq!(sketch.lg_k(), 10);
+    /// ```
     pub fn build(self) -> ThetaSketch {
         let table = ThetaHashTable::new(
             self.lg_k,

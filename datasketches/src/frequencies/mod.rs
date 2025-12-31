@@ -23,6 +23,37 @@
 //!
 //! For background, see the Java documentation:
 //! <https://apache.github.io/datasketches-java/9.0.0/org/apache/datasketches/frequencies/FrequentItemsSketch.html>
+//!
+//! # Usage
+//!
+//! ```rust
+//! use datasketches::frequencies::ErrorType;
+//! use datasketches::frequencies::FrequentItemsSketch;
+//!
+//! let mut sketch = FrequentItemsSketch::<String>::new(64);
+//! let apple = "apple".to_string();
+//! let banana = "banana".to_string();
+//!
+//! sketch.update(apple.clone());
+//! sketch.update_with_count(banana.clone(), 3);
+//!
+//! let rows = sketch.frequent_items(ErrorType::NoFalseNegatives);
+//! assert!(rows.iter().any(|row| row.item() == &banana));
+//! ```
+//!
+//! # Serialization
+//!
+//! ```rust
+//! use datasketches::frequencies::FrequentItemsSketch;
+//!
+//! let mut sketch = FrequentItemsSketch::<i64>::new(64);
+//! sketch.update_with_count(42, 2);
+//!
+//! let bytes = sketch.serialize();
+//! let decoded = FrequentItemsSketch::<i64>::deserialize(&bytes)
+//!     .expect("deserialize sketch");
+//! assert!(decoded.estimate(&42) >= 2);
+//! ```
 
 mod reverse_purge_item_hash_map;
 mod serialization;

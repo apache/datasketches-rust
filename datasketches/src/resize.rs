@@ -32,6 +32,16 @@
 /// reached.
 ///
 /// Similarly, "X4" is a factor of 4 and "X8" is a factor of 8.
+///
+/// # Examples
+///
+/// ```
+/// use datasketches::ResizeFactor;
+///
+/// let factor = ResizeFactor::X4;
+/// assert_eq!(factor.value(), 4);
+/// assert_eq!(factor.lg_value(), 2);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ResizeFactor {
     /// Do not resize. Sketch will be configured to full size.
