@@ -19,6 +19,7 @@ use std::cmp::Ordering;
 use std::convert::identity;
 use std::num::NonZeroU64;
 
+use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
 use crate::error::Error;
 use crate::error::ErrorKind;
@@ -316,16 +317,16 @@ impl TDigestMut {
             total_size += self.centroids.len() * (size_of::<f64>() + size_of::<u64>());
         }
 
-        let mut bytes = Vec::with_capacity(total_size);
-        bytes.push(match self.total_weight() {
+        let mut bytes = SketchBytes::with_capacity(total_size);
+        bytes.write_u8(match self.total_weight() {
             0 => PREAMBLE_LONGS_EMPTY_OR_SINGLE,
             1 => PREAMBLE_LONGS_EMPTY_OR_SINGLE,
             _ => PREAMBLE_LONGS_MULTIPLE,
         });
-        bytes.push(SERIAL_VERSION);
-        bytes.push(TDIGEST_FAMILY_ID);
-        bytes.extend_from_slice(&self.k.to_le_bytes());
-        bytes.push({
+        bytes.write_u8(SERIAL_VERSION);
+        bytes.write_u8(TDIGEST_FAMILY_ID);
+        bytes.write_u16_le(self.k);
+        bytes.write_u8({
             let mut flags = 0;
             if self.is_empty() {
                 flags |= FLAGS_IS_EMPTY;
@@ -338,23 +339,23 @@ impl TDigestMut {
             }
             flags
         });
-        bytes.extend_from_slice(&0u16.to_le_bytes()); // unused
+        bytes.write_u16_le(0); // unused
         if self.is_empty() {
-            return bytes;
+            return bytes.into_bytes();
         }
         if self.is_single_value() {
-            bytes.extend_from_slice(&self.min.to_le_bytes());
-            return bytes;
+            bytes.write_f64_le(self.min);
+            return bytes.into_bytes();
         }
-        bytes.extend_from_slice(&(self.centroids.len() as u32).to_le_bytes());
-        bytes.extend_from_slice(&0u32.to_le_bytes()); // unused
-        bytes.extend_from_slice(&self.min.to_le_bytes());
-        bytes.extend_from_slice(&self.max.to_le_bytes());
+        bytes.write_u32_le(self.centroids.len() as u32);
+        bytes.write_u32_le(0); // unused
+        bytes.write_f64_le(self.min);
+        bytes.write_f64_le(self.max);
         for centroid in &self.centroids {
-            bytes.extend_from_slice(&centroid.mean.to_le_bytes());
-            bytes.extend_from_slice(&centroid.weight.get().to_le_bytes());
+            bytes.write_f64_le(centroid.mean);
+            bytes.write_u64_le(centroid.weight.get());
         }
-        bytes
+        bytes.into_bytes()
     }
 
     /// Deserializes a TDigest from bytes.

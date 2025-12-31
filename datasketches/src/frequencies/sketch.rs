@@ -19,15 +19,15 @@
 
 use std::hash::Hash;
 
+use crate::codec::SketchBytes;
+use crate::codec::SketchSlice;
 use crate::error::Error;
 use crate::frequencies::reverse_purge_item_hash_map::ReversePurgeItemHashMap;
-use crate::frequencies::serde::deserialize_i64_items;
-use crate::frequencies::serde::deserialize_string_items;
-use crate::frequencies::serde::serialize_i64_items;
-use crate::frequencies::serde::serialize_string_items;
 use crate::frequencies::serialization::*;
 
-type DeserializeItems<T> = fn(&[u8], usize) -> Result<(Vec<T>, usize), Error>;
+type CountSerializeSize<T> = fn(&[T]) -> usize;
+type SerializeItems<T> = fn(&mut SketchBytes, &[T]);
+type DeserializeItems<T> = fn(SketchSlice<'_>, usize) -> Result<Vec<T>, Error>;
 
 const LG_MIN_MAP_SIZE: u8 = 3;
 const SAMPLE_SIZE: usize = 1024;
@@ -322,63 +322,78 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
         }
     }
 
-    fn serialize_inner(&self, serialize_items: fn(&[T]) -> Vec<u8>) -> Vec<u8>
+    fn serialize_inner(
+        &self,
+        count_serialize_size: CountSerializeSize<T>,
+        serialize_items: SerializeItems<T>,
+    ) -> Vec<u8>
     where
-        T: Clone,
+        T: Clone, // for self.hash_map.active_keys()
     {
         if self.is_empty() {
-            let mut out = vec![0u8; 8];
-            out[PREAMBLE_LONGS_BYTE] = PREAMBLE_LONGS_EMPTY;
-            out[SER_VER_BYTE] = SER_VER;
-            out[FAMILY_BYTE] = FAMILY_ID;
-            out[LG_MAX_MAP_SIZE_BYTE] = self.lg_max_map_size;
-            out[LG_CUR_MAP_SIZE_BYTE] = self.hash_map.lg_length();
-            out[FLAGS_BYTE] = EMPTY_FLAG_MASK;
-            return out;
+            let mut bytes = SketchBytes::with_capacity(8);
+            bytes.write_u8(PREAMBLE_LONGS_EMPTY);
+            bytes.write_u8(SERIAL_VERSION);
+            bytes.write_u8(FAMILY_ID);
+            bytes.write_u8(self.lg_max_map_size);
+            bytes.write_u8(self.hash_map.lg_length());
+            bytes.write_u8(EMPTY_FLAG_MASK);
+            return bytes.into_bytes();
         }
+
         let active_items = self.num_active_items();
         let values = self.hash_map.active_values();
         let keys = self.hash_map.active_keys();
-        let items_bytes = serialize_items(&keys);
         let total_bytes =
-            PREAMBLE_LONGS_NONEMPTY as usize * 8 + (active_items * 8) + items_bytes.len();
-        let mut out = vec![0u8; total_bytes];
-        out[PREAMBLE_LONGS_BYTE] = PREAMBLE_LONGS_NONEMPTY;
-        out[SER_VER_BYTE] = SER_VER;
-        out[FAMILY_BYTE] = FAMILY_ID;
-        out[LG_MAX_MAP_SIZE_BYTE] = self.lg_max_map_size;
-        out[LG_CUR_MAP_SIZE_BYTE] = self.hash_map.lg_length();
-        out[FLAGS_BYTE] = 0;
-        write_u32_le(&mut out, ACTIVE_ITEMS_INT, active_items as u32);
-        write_u64_le(&mut out, STREAM_WEIGHT_LONG, self.stream_weight);
-        write_u64_le(&mut out, OFFSET_LONG, self.offset);
+            PREAMBLE_LONGS_NONEMPTY as usize * 8 + (active_items * 8) + count_serialize_size(&keys);
 
-        let mut offset = PREAMBLE_LONGS_NONEMPTY as usize * 8;
+        let mut bytes = SketchBytes::with_capacity(total_bytes);
+        bytes.write_u8(PREAMBLE_LONGS_NONEMPTY);
+        bytes.write_u8(SERIAL_VERSION);
+        bytes.write_u8(FAMILY_ID);
+        bytes.write_u8(self.lg_max_map_size);
+        bytes.write_u8(self.hash_map.lg_length());
+        bytes.write_u8(0); // flags
+        bytes.write_u16_le(0); // unused
+
+        bytes.write_u32_le(active_items as u32);
+        bytes.write_u32_le(0); // unused
+        bytes.write_u64_le(self.stream_weight);
+        bytes.write_u64_le(self.offset);
+
         for value in values {
-            write_u64_le(&mut out, offset, value);
-            offset += 8;
+            bytes.write_u64_le(value);
         }
-        out[offset..offset + items_bytes.len()].copy_from_slice(&items_bytes);
-        out
+        serialize_items(&mut bytes, &keys);
+
+        bytes.into_bytes()
     }
 
     fn deserialize_inner(
         bytes: &[u8],
         deserialize_items: DeserializeItems<T>,
     ) -> Result<Self, Error> {
-        if bytes.len() < 8 {
-            return Err(Error::insufficient_data("preamble"));
+        fn make_error(tag: &'static str) -> impl FnOnce(std::io::Error) -> Error {
+            move |_| Error::insufficient_data(tag)
         }
-        let pre_longs = bytes[PREAMBLE_LONGS_BYTE] & 0x3f;
-        let ser_ver = bytes[SER_VER_BYTE];
-        let family = bytes[FAMILY_BYTE];
-        let lg_max = bytes[LG_MAX_MAP_SIZE_BYTE];
-        let lg_cur = bytes[LG_CUR_MAP_SIZE_BYTE];
-        let flags = bytes[FLAGS_BYTE];
-        let is_empty = (flags & EMPTY_FLAG_MASK) != 0;
-        if ser_ver != SER_VER {
-            return Err(Error::unsupported_serial_version(SER_VER, ser_ver));
+
+        let mut cursor = SketchSlice::new(bytes);
+        let pre_longs = cursor.read_u8().map_err(make_error("pre_longs"))?;
+        let pre_longs = pre_longs & 0x3F;
+        let serial_version = cursor.read_u8().map_err(make_error("serial_version"))?;
+        let family = cursor.read_u8().map_err(make_error("family"))?;
+        let lg_max = cursor.read_u8().map_err(make_error("lg_max_map_size"))?;
+        let lg_cur = cursor.read_u8().map_err(make_error("lg_cur_map_size"))?;
+        let flags = cursor.read_u8().map_err(make_error("flags"))?;
+        cursor.read_u16_le().map_err(make_error("<unused>"))?;
+
+        if serial_version != SERIAL_VERSION {
+            return Err(Error::unsupported_serial_version(
+                SERIAL_VERSION,
+                serial_version,
+            ));
         }
+
         if family != FAMILY_ID {
             return Err(Error::invalid_family(
                 FAMILY_ID,
@@ -386,51 +401,52 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
                 "FrequentItemsSketch",
             ));
         }
+
         if lg_cur > lg_max {
             return Err(Error::deserial("lg_cur_map_size exceeds lg_max_map_size"));
         }
+
+        let is_empty = (flags & EMPTY_FLAG_MASK) != 0;
         if is_empty {
-            if pre_longs != PREAMBLE_LONGS_EMPTY {
-                return Err(Error::invalid_preamble_longs(
+            return if pre_longs != PREAMBLE_LONGS_EMPTY {
+                Err(Error::invalid_preamble_longs(
                     PREAMBLE_LONGS_EMPTY,
                     pre_longs,
-                ));
-            }
-            return Ok(Self::with_lg_map_sizes(lg_max, lg_cur));
+                ))
+            } else {
+                Ok(Self::with_lg_map_sizes(lg_max, lg_cur))
+            };
         }
+
         if pre_longs != PREAMBLE_LONGS_NONEMPTY {
             return Err(Error::invalid_preamble_longs(
                 PREAMBLE_LONGS_NONEMPTY,
                 pre_longs,
             ));
         }
-        if bytes.len() < PREAMBLE_LONGS_NONEMPTY as usize * 8 {
-            return Err(Error::insufficient_data("full preamble"));
-        }
-        let active_items = read_u32_le(bytes, ACTIVE_ITEMS_INT) as usize;
-        let stream_weight = read_u64_le(bytes, STREAM_WEIGHT_LONG);
-        let offset_val = read_u64_le(bytes, OFFSET_LONG);
-        let values_offset = PREAMBLE_LONGS_NONEMPTY as usize * 8;
-        let values_bytes = active_items
-            .checked_mul(8)
-            .ok_or_else(|| Error::deserial("values size overflow"))?;
-        let items_offset = values_offset + values_bytes;
-        if bytes.len() < items_offset {
-            return Err(Error::insufficient_data("values"));
-        }
+
+        let active_items = cursor.read_u32_le().map_err(make_error("active_items"))?;
+        let active_items = active_items as usize;
+        cursor.read_u32_le().map_err(make_error("<unused>"))?;
+        let stream_weight = cursor.read_u64_le().map_err(make_error("stream_weight"))?;
+        let offset_val = cursor.read_u64_le().map_err(make_error("offset"))?;
+
         let mut values = Vec::with_capacity(active_items);
         for i in 0..active_items {
-            values.push(read_u64_le(bytes, values_offset + i * 8));
+            values.push(cursor.read_u64_le().map_err(|_| {
+                Error::insufficient_data(format!(
+                    "expected {active_items} weights, failed at index {i}"
+                ))
+            })?);
         }
-        let (items, consumed) = deserialize_items(&bytes[items_offset..], active_items)?;
+
+        let items = deserialize_items(cursor, active_items)?;
         if items.len() != active_items {
             return Err(Error::deserial(
                 "item count mismatch during deserialization",
             ));
         }
-        if consumed > bytes.len() - items_offset {
-            return Err(Error::insufficient_data("items"));
-        }
+
         let mut sketch = Self::with_lg_map_sizes(lg_max, lg_cur);
         for (item, value) in items.into_iter().zip(values) {
             sketch.update_with_count(item, value);
@@ -444,7 +460,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
 impl FrequentItemsSketch<i64> {
     /// Serializes this sketch into a byte vector.
     pub fn serialize(&self) -> Vec<u8> {
-        self.serialize_inner(serialize_i64_items)
+        self.serialize_inner(count_i64_items_bytes, serialize_i64_items)
     }
 
     /// Deserializes a sketch from bytes.
@@ -456,7 +472,7 @@ impl FrequentItemsSketch<i64> {
 impl FrequentItemsSketch<String> {
     /// Serializes this sketch into a byte vector.
     pub fn serialize(&self) -> Vec<u8> {
-        self.serialize_inner(serialize_string_items)
+        self.serialize_inner(count_string_items_bytes, serialize_string_items)
     }
 
     /// Deserializes a sketch from bytes.
