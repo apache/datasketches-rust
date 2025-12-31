@@ -75,8 +75,8 @@ impl BloomFilter {
             return false;
         }
 
-        let (h1, h2) = self.compute_hash(item);
-        self.check_bits(h1, h2)
+        let (h0, h1) = self.compute_hash(item);
+        self.check_bits(h0, h1)
     }
 
     /// Tests and inserts an item in a single operation.
@@ -97,9 +97,9 @@ impl BloomFilter {
     /// assert!(was_present); // Now it's in the set
     /// ```
     pub fn contains_and_insert<T: Hash>(&mut self, item: &T) -> bool {
-        let (h1, h2) = self.compute_hash(item);
-        let was_present = self.check_bits(h1, h2);
-        self.set_bits(h1, h2);
+        let (h0, h1) = self.compute_hash(item);
+        let was_present = self.check_bits(h0, h1);
+        self.set_bits(h0, h1);
         was_present
     }
 
@@ -120,8 +120,8 @@ impl BloomFilter {
     /// assert!(filter.contains(&"apple"));
     /// ```
     pub fn insert<T: Hash>(&mut self, item: T) {
-        let (h1, h2) = self.compute_hash(&item);
-        self.set_bits(h1, h2);
+        let (h0, h1) = self.compute_hash(&item);
+        self.set_bits(h0, h1);
     }
 
     /// Resets the filter to its initial empty state.
@@ -502,9 +502,9 @@ impl BloomFilter {
     }
 
     /// Checks if all k bits are set for the given hash values.
-    fn check_bits(&self, h1: u64, h2: u64) -> bool {
-        for i in 0..self.num_hashes {
-            let bit_index = self.compute_bit_index(h1, h2, i);
+    fn check_bits(&self, h0: u64, h1: u64) -> bool {
+        for i in 1..=self.num_hashes {
+            let bit_index = self.compute_bit_index(h0, h1, i);
             if !self.get_bit(bit_index) {
                 return false;
             }
@@ -513,19 +513,26 @@ impl BloomFilter {
     }
 
     /// Sets all k bits for the given hash values.
-    fn set_bits(&mut self, h1: u64, h2: u64) {
-        for i in 0..self.num_hashes {
-            let bit_index = self.compute_bit_index(h1, h2, i);
+    fn set_bits(&mut self, h0: u64, h1: u64) {
+        for i in 1..=self.num_hashes {
+            let bit_index = self.compute_bit_index(h0, h1, i);
             self.set_bit(bit_index);
         }
     }
 
     /// Computes a bit index using double hashing (Kirsch-Mitzenmacher).
-    /// Formula: (h1 + i * h2) mod capacity_bits
-    fn compute_bit_index(&self, h1: u64, h2: u64, i: u16) -> u64 {
+    ///
+    /// Formula (matching C++ implementation):
+    /// ```text
+    /// hash_index = ((h0 + i * h1) >> 1) % capacity_bits
+    /// ```
+    ///
+    /// The right shift by 1 improves bit distribution. The index `i` is 1-based.
+    fn compute_bit_index(&self, h0: u64, h1: u64, i: u16) -> u64 {
         // Use wrapping arithmetic to handle overflow
-        let hash = h1.wrapping_add(u64::from(i).wrapping_mul(h2));
-        hash % self.capacity_bits
+        let hash = h0.wrapping_add(u64::from(i).wrapping_mul(h1));
+        // Right shift by 1 (divide by 2) to improve distribution
+        (hash >> 1) % self.capacity_bits
     }
 
     /// Gets the value of a single bit.
