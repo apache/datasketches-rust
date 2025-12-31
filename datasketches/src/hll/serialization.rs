@@ -24,7 +24,7 @@
 pub const HLL_FAMILY_ID: u8 = 7;
 
 /// Current serialization version
-pub const SERIAL_VER: u8 = 1;
+pub const SERIAL_VERSION: u8 = 1;
 
 /// Flag indicating sketch is empty (no values inserted)
 pub const EMPTY_FLAG_MASK: u8 = 4;

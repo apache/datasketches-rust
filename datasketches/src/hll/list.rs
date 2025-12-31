@@ -110,7 +110,7 @@ impl List {
 
         // Write preamble
         bytes.write_u8(LIST_PREINTS);
-        bytes.write_u8(SERIAL_VER);
+        bytes.write_u8(SERIAL_VERSION);
         bytes.write_u8(HLL_FAMILY_ID);
         bytes.write_u8(lg_config_k);
         bytes.write_u8(lg_arr as u8);

@@ -241,9 +241,9 @@ impl HllSketch {
         }
 
         // Verify serialization version
-        if serial_version != SERIAL_VER {
+        if serial_version != SERIAL_VERSION {
             return Err(Error::unsupported_serial_version(
-                SERIAL_VER,
+                SERIAL_VERSION,
                 serial_version,
             ));
         }

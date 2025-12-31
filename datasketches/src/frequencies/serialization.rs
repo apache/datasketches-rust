@@ -20,7 +20,7 @@
 /// Family ID for frequency sketches.
 pub const FAMILY_ID: u8 = 10;
 /// Serialization version.
-pub const SER_VER: u8 = 1;
+pub const SERIAL_VERSION: u8 = 1;
 
 /// Preamble longs for empty sketch.
 pub const PREAMBLE_LONGS_EMPTY: u8 = 1;
