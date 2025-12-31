@@ -181,12 +181,13 @@ impl BloomFilter {
             "Cannot union incompatible Bloom filters"
         );
 
+        // Count bits during union operation (single pass)
+        let mut num_bits_set = 0;
         for (word, other_word) in self.bit_array.iter_mut().zip(&other.bit_array) {
             *word |= *other_word;
+            num_bits_set += word.count_ones() as u64;
         }
-
-        // Recount set bits (could be optimized)
-        self.recount_bits_set();
+        self.num_bits_set = num_bits_set;
     }
 
     /// Intersects this filter with another via bitwise AND.
@@ -224,11 +225,13 @@ impl BloomFilter {
             "Cannot intersect incompatible Bloom filters"
         );
 
+        // Count bits during intersect operation (single pass)
+        let mut num_bits_set = 0;
         for (word, other_word) in self.bit_array.iter_mut().zip(&other.bit_array) {
             *word &= *other_word;
+            num_bits_set += word.count_ones() as u64;
         }
-
-        self.recount_bits_set();
+        self.num_bits_set = num_bits_set;
     }
 
     /// Inverts all bits in the filter.
@@ -247,19 +250,26 @@ impl BloomFilter {
     /// // Now "apple" probably returns false, and most other items return true
     /// ```
     pub fn invert(&mut self) {
+        // Invert bits and count during operation (single pass)
+        let mut num_bits_set = 0;
         for word in &mut self.bit_array {
             *word = !*word;
+            num_bits_set += word.count_ones() as u64;
         }
 
         // Mask off excess bits in the last word
         let excess_bits = self.capacity_bits % 64;
         if excess_bits != 0 {
             let last_idx = self.bit_array.len() - 1;
+            let old_count = self.bit_array[last_idx].count_ones() as u64;
             let mask = (1u64 << excess_bits) - 1;
             self.bit_array[last_idx] &= mask;
+            let new_count = self.bit_array[last_idx].count_ones() as u64;
+            // Adjust count for masked-off bits
+            num_bits_set = num_bits_set - old_count + new_count;
         }
 
-        self.recount_bits_set();
+        self.num_bits_set = num_bits_set;
     }
 
     /// Returns whether the filter is empty (no items inserted).
@@ -470,7 +480,7 @@ impl BloomFilter {
         if is_empty {
             num_bits_set = 0;
         } else {
-            num_bits_set = cursor
+            let raw_num_bits_set = cursor
                 .read_u64_le()
                 .map_err(|_| Error::insufficient_data("num_bits_set"))?;
 
@@ -478,6 +488,15 @@ impl BloomFilter {
                 *word = cursor
                     .read_u64_le()
                     .map_err(|_| Error::insufficient_data("bit_array"))?;
+            }
+
+            // C++ uses 0xFFFFFFFFFFFFFFFF (-1 as i64) to indicate "dirty" state
+            // In this case, we need to recount the bits
+            const DIRTY_BITS_VALUE: u64 = 0xFFFFFFFFFFFFFFFF;
+            if raw_num_bits_set == DIRTY_BITS_VALUE {
+                num_bits_set = bit_array.iter().map(|w| w.count_ones() as u64).sum();
+            } else {
+                num_bits_set = raw_num_bits_set;
             }
         }
 
@@ -545,16 +564,16 @@ impl BloomFilter {
 
     /// Gets the value of a single bit.
     fn get_bit(&self, bit_index: u64) -> bool {
-        let word_index = (bit_index / 64) as usize;
-        let bit_offset = bit_index % 64;
+        let word_index = (bit_index >> 6) as usize; // Faster than / 64
+        let bit_offset = bit_index & 63;            // Faster than % 64
         let mask = 1u64 << bit_offset;
         (self.bit_array[word_index] & mask) != 0
     }
 
     /// Sets a single bit and updates the count if it wasn't already set.
     fn set_bit(&mut self, bit_index: u64) {
-        let word_index = (bit_index / 64) as usize;
-        let bit_offset = bit_index % 64;
+        let word_index = (bit_index >> 6) as usize; // Faster than / 64
+        let bit_offset = bit_index & 63;            // Faster than % 64
         let mask = 1u64 << bit_offset;
 
         if (self.bit_array[word_index] & mask) == 0 {
