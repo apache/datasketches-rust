@@ -97,7 +97,7 @@ impl BloomFilterBuilder {
     ///
     /// # Panics
     ///
-    /// Panics if parameters are invalid (see [`validate_params()`](Self::validate_params)).
+    /// Panics if parameters are invalid.
     ///
     /// # Examples
     ///

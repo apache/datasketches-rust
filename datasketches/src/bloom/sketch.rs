@@ -37,7 +37,7 @@ const EMPTY_FLAG_MASK: u8 = 1 << 2;
 /// - Tunable false positive rate
 /// - Constant space usage
 ///
-/// Use [`BloomFilterBuilder`] to construct instances.
+/// Use [`super::BloomFilterBuilder`] to construct instances.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BloomFilter {
     /// Hash seed for all hash functions
