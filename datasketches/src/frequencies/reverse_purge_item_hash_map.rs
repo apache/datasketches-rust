@@ -94,6 +94,36 @@ impl<T: Eq + Hash> ReversePurgeItemHashMap<T> {
         }
     }
 
+    /// Removes all keys with non-positive counts.
+    fn keep_only_positive_counts(&mut self) {
+        let len = self.keys.len();
+        let mut first_probe = len - 1;
+        while self.states[first_probe] > 0 {
+            first_probe -= 1;
+        }
+        for probe in (0..first_probe).rev() {
+            if self.states[probe] > 0 && self.values[probe] == 0 {
+                self.hash_delete(probe);
+                self.num_active -= 1;
+            }
+        }
+        for probe in (first_probe..len).rev() {
+            if self.states[probe] > 0 && self.values[probe] == 0 {
+                self.hash_delete(probe);
+                self.num_active -= 1;
+            }
+        }
+    }
+
+    /// Shifts all values by `adjust_amount`.
+    ///
+    /// This is used during purges to decrement counters.
+    fn adjust_all_values_by(&mut self, adjust_amount: u64) {
+        for value in self.values.iter_mut() {
+            *value = value.saturating_sub(adjust_amount);
+        }
+    }
+
     /// Purges the map by estimating the median count and removing non-positive entries.
     ///
     /// Returns the estimated median value that was subtracted from all counts.
@@ -110,42 +140,9 @@ impl<T: Eq + Hash> ReversePurgeItemHashMap<T> {
         let mid = samples.len() / 2;
         samples.select_nth_unstable(mid);
         let median = samples[mid];
-        self.subtract_and_keep_positive_only(median);
+        self.adjust_all_values_by(median);
+        self.keep_only_positive_counts();
         median
-    }
-
-    fn subtract_and_keep_positive_only(&mut self, adjust_amount: u64) {
-        // starting from the back, find the first empty cell,
-        // which establishes the high end of a cluster.
-        let mut first_probe = (1 << self.keys.len()) - 1;
-        while self.is_active(first_probe) {
-            first_probe -= 1;
-        }
-
-        // when we find the next non-empty cell, we know we are at the high end of a cluster
-        // work towards the front, delete any non-positive entries.
-        for probe in (0..first_probe).rev() {
-            if self.is_active(probe) {
-                self.values[probe] = self.values[probe].saturating_sub(adjust_amount);
-                if self.values[probe] == 0 {
-                    // does the work of deletion and moving higher items towards the front
-                    self.hash_delete(probe);
-                    self.num_active -= 1;
-                }
-            }
-        }
-
-        // now work on the first cluster that was skipped
-        for probe in (first_probe..self.keys.len()).rev() {
-            if self.is_active(probe) {
-                self.values[probe] = self.values[probe].saturating_sub(adjust_amount);
-                if self.values[probe] == 0 {
-                    // does the work of deletion and moving higher items towards the front
-                    self.hash_delete(probe);
-                    self.num_active -= 1;
-                }
-            }
-        }
     }
 
     /// Resizes the hash table to `new_size` (must be a power of two).

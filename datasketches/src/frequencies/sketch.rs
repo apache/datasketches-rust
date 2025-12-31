@@ -139,8 +139,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     /// This value is never negative and is guaranteed to be no larger than the true frequency.
     /// If the item is not tracked, the lower bound is zero.
     pub fn lower_bound(&self, item: &T) -> u64 {
-        let value = self.hash_map.get(item);
-        value.max(0)
+        self.hash_map.get(item)
     }
 
     /// Returns the guaranteed upper bound frequency for an item.
@@ -283,7 +282,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
                     item: item.clone(),
                     estimate: upper,
                     upper_bound: upper,
-                    lower_bound: lower.max(0) as u64,
+                    lower_bound: lower,
                 });
             }
         }

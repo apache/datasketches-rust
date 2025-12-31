@@ -97,12 +97,6 @@ pub fn write_u32_le(bytes: &mut [u8], offset: usize, value: u32) {
     bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
 }
 
-/// Write an i64 value to bytes at the given offset (little-endian).
-#[inline]
-pub fn write_i64_le(bytes: &mut [u8], offset: usize, value: i64) {
-    bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
-}
-
 /// Write an u64 value to bytes at the given offset (little-endian).
 #[inline]
 pub fn write_u64_le(bytes: &mut [u8], offset: usize, value: u64) {

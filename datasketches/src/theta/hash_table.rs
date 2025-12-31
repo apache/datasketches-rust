@@ -329,12 +329,10 @@ impl ThetaHashTable {
 fn starting_sub_multiple(lg_target: u8, lg_min: u8, lg_resize_factor: u8) -> u8 {
     if lg_target <= lg_min {
         lg_min
+    } else if lg_resize_factor == 0 {
+        lg_target
     } else {
-        if lg_resize_factor == 0 {
-            lg_target
-        } else {
-            ((lg_target - lg_min) % lg_resize_factor) + lg_min
-        }
+        ((lg_target - lg_min) % lg_resize_factor) + lg_min
     }
 }
 
