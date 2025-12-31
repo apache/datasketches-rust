@@ -22,12 +22,12 @@
 
 use std::hash::Hash;
 
+use crate::ResizeFactor;
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::theta::hash_table::DEFAULT_LG_K;
 use crate::theta::hash_table::MAX_LG_K;
 use crate::theta::hash_table::MAX_THETA;
 use crate::theta::hash_table::MIN_LG_K;
-use crate::theta::hash_table::ResizeFactor;
 use crate::theta::hash_table::ThetaHashTable;
 
 /// Mutable theta sketch for building from input data
@@ -131,7 +131,7 @@ impl Default for ThetaSketchBuilder {
     fn default() -> Self {
         Self {
             lg_k: DEFAULT_LG_K,
-            resize_factor: ResizeFactor::default(),
+            resize_factor: ResizeFactor::X8,
             sampling_probability: 1.0,
             seed: DEFAULT_UPDATE_SEED,
         }
@@ -139,7 +139,7 @@ impl Default for ThetaSketchBuilder {
 }
 
 impl ThetaSketchBuilder {
-    /// Set lg_k (log2 of nominal size k)
+    /// Set lg_k (log2 of nominal size k).
     ///
     /// # Panics
     ///
@@ -156,34 +156,33 @@ impl ThetaSketchBuilder {
         self
     }
 
-    /// Set resize factor
-    pub fn resize_factor(mut self, rf: ResizeFactor) -> Self {
-        self.resize_factor = rf;
+    /// Set resize factor.
+    pub fn resize_factor(mut self, factor: ResizeFactor) -> Self {
+        self.resize_factor = factor;
         self
     }
 
-    /// Set sampling probability p
+    /// Set sampling probability p.
     ///
     /// # Panics
     ///
     /// If p is not in range [0.0, 1.0]
-    pub fn sampling_probability(mut self, p: f32) -> Self {
+    pub fn sampling_probability(mut self, probability: f32) -> Self {
         assert!(
-            (0.0..=1.0).contains(&p),
-            "p must be in [0.0, 1.0], got {}",
-            p
+            (0.0..=1.0).contains(&probability),
+            "p must be in [0.0, 1.0], got {probability}"
         );
-        self.sampling_probability = p;
+        self.sampling_probability = probability;
         self
     }
 
-    /// Set hash seed
+    /// Set hash seed.
     pub fn seed(mut self, seed: u64) -> Self {
         self.seed = seed;
         self
     }
 
-    /// Build the ThetaSketch
+    /// Build the ThetaSketch.
     pub fn build(self) -> ThetaSketch {
         let table = ThetaHashTable::new(
             self.lg_k,

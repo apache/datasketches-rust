@@ -32,6 +32,5 @@
 mod hash_table;
 mod sketch;
 
-pub use self::hash_table::ResizeFactor;
 pub use self::sketch::ThetaSketch;
 pub use self::sketch::ThetaSketchBuilder;

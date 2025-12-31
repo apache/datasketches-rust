@@ -17,6 +17,7 @@
 
 use std::hash::Hash;
 
+use crate::ResizeFactor;
 use crate::hash::MurmurHash3X64128;
 
 /// Maximum theta value (signed max for compatibility with Java)
@@ -30,28 +31,6 @@ pub const MAX_LG_K: u8 = 26;
 
 /// Default log2 of K
 pub const DEFAULT_LG_K: u8 = 12;
-
-/// Hash table resize factor
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum ResizeFactor {
-    /// Resize by factor of 2
-    X2 = 2,
-    /// Resize by factor of 4
-    X4 = 4,
-    /// Resize by factor of 8
-    #[default]
-    X8 = 8,
-}
-
-impl ResizeFactor {
-    fn lg_value(&self) -> u8 {
-        match self {
-            ResizeFactor::X2 => 1,
-            ResizeFactor::X4 => 2,
-            ResizeFactor::X8 => 3,
-        }
-    }
-}
 
 /// Resize threshold (0.5 = 50% load factor)
 const RESIZE_THRESHOLD: f64 = 0.5;

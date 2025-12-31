@@ -39,3 +39,6 @@ pub mod theta;
 
 mod codec;
 mod hash;
+mod resize;
+
+pub use self::resize::ResizeFactor;
