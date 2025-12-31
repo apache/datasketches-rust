@@ -29,7 +29,6 @@ mod serde;
 mod serialization;
 mod sketch;
 
-pub use self::serde::ItemsSerde;
 pub use self::sketch::ErrorType;
 pub use self::sketch::FrequentItemsSketch;
 pub use self::sketch::Row;

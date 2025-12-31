@@ -23,16 +23,6 @@ use crate::error::Error;
 use crate::frequencies::serialization::read_i64_le;
 use crate::frequencies::serialization::read_u32_le;
 
-/// Built-in serializers for frequency sketch items.
-#[non_exhaustive]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ItemsSerde {
-    /// i64 items compatible with ArrayOfLongsSerDe in Java.
-    Int64,
-    /// UTF-8 strings compatible with ArrayOfStringsSerDe in Java.
-    String,
-}
-
 pub(crate) fn serialize_string_items(items: &[String]) -> Vec<u8> {
     let total_len: usize = items.iter().map(|item| 4 + item.len()).sum();
     let mut out = Vec::with_capacity(total_len);

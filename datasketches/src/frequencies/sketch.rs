@@ -20,9 +20,7 @@
 use std::hash::Hash;
 
 use crate::error::Error;
-use crate::error::ErrorKind;
 use crate::frequencies::reverse_purge_item_hash_map::ReversePurgeItemHashMap;
-use crate::frequencies::serde::ItemsSerde;
 use crate::frequencies::serde::deserialize_i64_items;
 use crate::frequencies::serde::deserialize_string_items;
 use crate::frequencies::serde::serialize_i64_items;
@@ -52,8 +50,8 @@ pub enum ErrorType {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Row<T> {
     item: T,
-    estimate: i64,
-    upper_bound: i64,
+    estimate: u64,
+    upper_bound: u64,
     lower_bound: u64,
 }
 
@@ -64,12 +62,12 @@ impl<T> Row<T> {
     }
 
     /// Returns the estimated frequency.
-    pub fn estimate(&self) -> i64 {
+    pub fn estimate(&self) -> u64 {
         self.estimate
     }
 
     /// Returns the upper bound for the frequency.
-    pub fn upper_bound(&self) -> i64 {
+    pub fn upper_bound(&self) -> u64 {
         self.upper_bound
     }
 
@@ -91,8 +89,8 @@ impl<T> Row<T> {
 pub struct FrequentItemsSketch<T> {
     lg_max_map_size: u8,
     cur_map_cap: usize,
-    offset: i64,
-    stream_weight: i64,
+    offset: u64,
+    stream_weight: u64,
     sample_size: usize,
     hash_map: ReversePurgeItemHashMap<T>,
 }
@@ -124,14 +122,14 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     /// Returns the total weight of the stream.
     ///
     /// This is the sum of all counts passed to `update` and `update_with_count`.
-    pub fn total_weight(&self) -> i64 {
+    pub fn total_weight(&self) -> u64 {
         self.stream_weight
     }
 
     /// Returns the estimated frequency for an item.
     ///
     /// If the item is tracked, this is `item_count + offset`. Otherwise it is zero.
-    pub fn estimate(&self, item: &T) -> i64 {
+    pub fn estimate(&self, item: &T) -> u64 {
         let value = self.hash_map.get(item);
         if value > 0 { value + self.offset } else { 0 }
     }
@@ -142,14 +140,14 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     /// If the item is not tracked, the lower bound is zero.
     pub fn lower_bound(&self, item: &T) -> u64 {
         let value = self.hash_map.get(item);
-        value.max(0) as u64
+        value.max(0)
     }
 
     /// Returns the guaranteed upper bound frequency for an item.
     ///
     /// This value is guaranteed to be no smaller than the true frequency.
     /// If the item is tracked, this is `item_count + offset`.
-    pub fn upper_bound(&self, item: &T) -> i64 {
+    pub fn upper_bound(&self, item: &T) -> u64 {
         self.hash_map.get(item) + self.offset
     }
 
@@ -158,7 +156,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     ///
     /// This is equivalent to the maximum distance between the upper bound and the lower bound
     /// for any item.
-    pub fn maximum_error(&self) -> i64 {
+    pub fn maximum_error(&self) -> u64 {
         self.offset
     }
 
@@ -213,7 +211,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     /// Panics if `count` is negative.
     ///
     /// A count of zero is a no-op.
-    pub fn update_with_count(&mut self, item: T, count: i64) {
+    pub fn update_with_count(&mut self, item: T, count: u64) {
         if count == 0 {
             return;
         }
@@ -266,7 +264,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     pub fn frequent_items_with_threshold(
         &self,
         error_type: ErrorType,
-        threshold: i64,
+        threshold: u64,
     ) -> Vec<Row<T>>
     where
         T: Clone,
@@ -357,12 +355,12 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
         out[LG_CUR_MAP_SIZE_BYTE] = self.hash_map.lg_length();
         out[FLAGS_BYTE] = 0;
         write_u32_le(&mut out, ACTIVE_ITEMS_INT, active_items as u32);
-        write_i64_le(&mut out, STREAM_WEIGHT_LONG, self.stream_weight);
-        write_i64_le(&mut out, OFFSET_LONG, self.offset);
+        write_u64_le(&mut out, STREAM_WEIGHT_LONG, self.stream_weight);
+        write_u64_le(&mut out, OFFSET_LONG, self.offset);
 
         let mut offset = PREAMBLE_LONGS_NONEMPTY as usize * 8;
         for value in values {
-            write_i64_le(&mut out, offset, value);
+            write_u64_le(&mut out, offset, value);
             offset += 8;
         }
         out[offset..offset + items_bytes.len()].copy_from_slice(&items_bytes);
@@ -415,8 +413,8 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
             return Err(Error::insufficient_data("full preamble"));
         }
         let active_items = read_u32_le(bytes, ACTIVE_ITEMS_INT) as usize;
-        let stream_weight = read_i64_le(bytes, STREAM_WEIGHT_LONG);
-        let offset_val = read_i64_le(bytes, OFFSET_LONG);
+        let stream_weight = read_u64_le(bytes, STREAM_WEIGHT_LONG);
+        let offset_val = read_u64_le(bytes, OFFSET_LONG);
         let values_offset = PREAMBLE_LONGS_NONEMPTY as usize * 8;
         let values_bytes = active_items
             .checked_mul(8)
@@ -427,7 +425,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
         }
         let mut values = Vec::with_capacity(active_items);
         for i in 0..active_items {
-            values.push(read_i64_le(bytes, values_offset + i * 8));
+            values.push(read_u64_le(bytes, values_offset + i * 8));
         }
         let (items, consumed) = deserialize_items(&bytes[items_offset..], active_items)?;
         if items.len() != active_items {
@@ -454,17 +452,9 @@ impl FrequentItemsSketch<i64> {
         self.serialize_inner(serialize_i64_items)
     }
 
-    /// Deserializes a sketch from bytes using the selected serializer.
-    ///
-    /// Returns an error if `serde` does not match the sketch item type.
-    pub fn deserialize(bytes: &[u8], serde: ItemsSerde) -> Result<Self, Error> {
-        match serde {
-            ItemsSerde::Int64 => Self::deserialize_inner(bytes, deserialize_i64_items),
-            ItemsSerde::String => Err(Error::new(
-                ErrorKind::InvalidArgument,
-                "ItemsSerde::String cannot deserialize i64 items",
-            )),
-        }
+    /// Deserializes a sketch from bytes.
+    pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
+        Self::deserialize_inner(bytes, deserialize_i64_items)
     }
 }
 
@@ -474,17 +464,9 @@ impl FrequentItemsSketch<String> {
         self.serialize_inner(serialize_string_items)
     }
 
-    /// Deserializes a sketch from bytes using the selected serializer.
-    ///
-    /// Returns an error if `serde` does not match the sketch item type.
-    pub fn deserialize(bytes: &[u8], serde: ItemsSerde) -> Result<Self, Error> {
-        match serde {
-            ItemsSerde::String => Self::deserialize_inner(bytes, deserialize_string_items),
-            ItemsSerde::Int64 => Err(Error::new(
-                ErrorKind::InvalidArgument,
-                "ItemsSerde::Int64 cannot deserialize String items",
-            )),
-        }
+    /// Deserializes a sketch from bytes.
+    pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
+        Self::deserialize_inner(bytes, deserialize_string_items)
     }
 }
 

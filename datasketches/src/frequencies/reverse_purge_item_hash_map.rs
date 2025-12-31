@@ -35,7 +35,7 @@ pub(super) struct ReversePurgeItemHashMap<T> {
     lg_length: u8,
     load_threshold: usize,
     keys: Vec<Option<T>>,
-    values: Vec<i64>,
+    values: Vec<u64>,
     states: Vec<u16>,
     num_active: usize,
 }
@@ -59,7 +59,7 @@ impl<T: Eq + Hash> ReversePurgeItemHashMap<T> {
     }
 
     /// Returns the value for `key`, or zero if the key is not present.
-    pub fn get(&self, key: &T) -> i64 {
+    pub fn get(&self, key: &T) -> u64 {
         let probe = self.hash_probe(key);
         if self.states[probe] > 0 {
             return self.values[probe];
@@ -68,7 +68,7 @@ impl<T: Eq + Hash> ReversePurgeItemHashMap<T> {
     }
 
     /// Adds `adjust_amount` to the value for `key`, inserting if absent.
-    pub fn adjust_or_put_value(&mut self, key: T, adjust_amount: i64) {
+    pub fn adjust_or_put_value(&mut self, key: T, adjust_amount: u64) {
         let mask = self.keys.len() - 1;
         let mut probe = (hash_item(&key) as usize) & mask;
         let mut drift: usize = 1;
@@ -94,40 +94,10 @@ impl<T: Eq + Hash> ReversePurgeItemHashMap<T> {
         }
     }
 
-    /// Removes all keys with non-positive counts.
-    pub fn keep_only_positive_counts(&mut self) {
-        let len = self.keys.len();
-        let mut first_probe = len - 1;
-        while self.states[first_probe] > 0 {
-            first_probe -= 1;
-        }
-        for probe in (0..first_probe).rev() {
-            if self.states[probe] > 0 && self.values[probe] <= 0 {
-                self.hash_delete(probe);
-                self.num_active -= 1;
-            }
-        }
-        for probe in (first_probe..len).rev() {
-            if self.states[probe] > 0 && self.values[probe] <= 0 {
-                self.hash_delete(probe);
-                self.num_active -= 1;
-            }
-        }
-    }
-
-    /// Shifts all values by `adjust_amount`.
-    ///
-    /// This is used during purges to decrement counters.
-    pub fn adjust_all_values_by(&mut self, adjust_amount: i64) {
-        for value in &mut self.values {
-            *value += adjust_amount;
-        }
-    }
-
     /// Purges the map by estimating the median count and removing non-positive entries.
     ///
     /// Returns the estimated median value that was subtracted from all counts.
-    pub fn purge(&mut self, sample_size: usize) -> i64 {
+    pub fn purge(&mut self, sample_size: usize) -> u64 {
         let limit = sample_size.min(self.num_active).min(MAX_SAMPLE_SIZE);
         let mut samples = Vec::with_capacity(limit);
         let mut i = 0usize;
@@ -140,9 +110,42 @@ impl<T: Eq + Hash> ReversePurgeItemHashMap<T> {
         let mid = samples.len() / 2;
         samples.select_nth_unstable(mid);
         let median = samples[mid];
-        self.adjust_all_values_by(-median);
-        self.keep_only_positive_counts();
+        self.subtract_and_keep_positive_only(median);
         median
+    }
+
+    fn subtract_and_keep_positive_only(&mut self, adjust_amount: u64) {
+        // starting from the back, find the first empty cell,
+        // which establishes the high end of a cluster.
+        let mut first_probe = (1 << self.keys.len()) - 1;
+        while self.is_active(first_probe) {
+            first_probe -= 1;
+        }
+
+        // when we find the next non-empty cell, we know we are at the high end of a cluster
+        // work towards the front, delete any non-positive entries.
+        for probe in (0..first_probe).rev() {
+            if self.is_active(probe) {
+                self.values[probe] = self.values[probe].saturating_sub(adjust_amount);
+                if self.values[probe] == 0 {
+                    // does the work of deletion and moving higher items towards the front
+                    self.hash_delete(probe);
+                    self.num_active -= 1;
+                }
+            }
+        }
+
+        // now work on the first cluster that was skipped
+        for probe in (first_probe..self.keys.len()).rev() {
+            if self.is_active(probe) {
+                self.values[probe] = self.values[probe].saturating_sub(adjust_amount);
+                if self.values[probe] == 0 {
+                    // does the work of deletion and moving higher items towards the front
+                    self.hash_delete(probe);
+                    self.num_active -= 1;
+                }
+            }
+        }
     }
 
     /// Resizes the hash table to `new_size` (must be a power of two).
@@ -206,7 +209,7 @@ impl<T: Eq + Hash> ReversePurgeItemHashMap<T> {
     }
 
     /// Returns the active values in the map.
-    pub fn active_values(&self) -> Vec<i64> {
+    pub fn active_values(&self) -> Vec<u64> {
         if self.num_active == 0 {
             return Vec::new();
         }
@@ -292,7 +295,7 @@ impl<'a, T> ReversePurgeItemIter<'a, T> {
 }
 
 impl<'a, T> Iterator for ReversePurgeItemIter<'a, T> {
-    type Item = (&'a T, i64);
+    type Item = (&'a T, u64);
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.count >= self.map.num_active {

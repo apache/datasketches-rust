@@ -480,20 +480,6 @@ fn test_longs_reset() {
 }
 
 #[test]
-#[should_panic(expected = "count may not be negative")]
-fn test_longs_negative_count_panics() {
-    let mut sketch: FrequentItemsSketch<i64> = FrequentItemsSketch::new(8);
-    sketch.update_with_count(1, -1);
-}
-
-#[test]
-#[should_panic(expected = "count may not be negative")]
-fn test_items_negative_count_panics() {
-    let mut sketch = FrequentItemsSketch::new(8);
-    sketch.update_with_count("a".to_string(), -1);
-}
-
-#[test]
 #[should_panic(expected = "value must be power of 2")]
 fn test_longs_invalid_map_size_panics() {
     FrequentItemsSketch::<i64>::new(6);
