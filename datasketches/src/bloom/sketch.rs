@@ -358,17 +358,20 @@ impl BloomFilter {
             };
         let mut bytes = SketchBytes::with_capacity(capacity);
 
-        // Preamble
-        bytes.write_u8(preamble_longs);
-        bytes.write_u8(SERIAL_VERSION);
-        bytes.write_u8(FAMILY_ID);
-        bytes.write_u8(0); // reserved
-        bytes.write_u8(0); // reserved
-        bytes.write_u8(if is_empty { EMPTY_FLAG_MASK } else { 0 });
-        bytes.write_u16_le(self.num_hashes);
+        // Preamble - matching C++ byte layout
+        bytes.write_u8(preamble_longs);         // Byte 0
+        bytes.write_u8(SERIAL_VERSION);         // Byte 1
+        bytes.write_u8(FAMILY_ID);              // Byte 2
+        bytes.write_u8(if is_empty { EMPTY_FLAG_MASK } else { 0 }); // Byte 3: flags
+        bytes.write_u16_le(self.num_hashes);    // Bytes 4-5
+        bytes.write_u16_le(0);                  // Bytes 6-7: unused
 
         bytes.write_u64_le(self.seed);
-        bytes.write_u64_le(self.capacity_bits);
+
+        // C++ format: int32_t num_longs (capacity in 64-bit words) + uint32_t unused
+        let num_longs = (self.capacity_bits / 64) as i32;
+        bytes.write_i32_le(num_longs);
+        bytes.write_u32_le(0); // unused
 
         if !is_empty {
             bytes.write_u64_le(self.num_bits_set);
@@ -415,6 +418,11 @@ impl BloomFilter {
             .read_u8()
             .map_err(|_| Error::insufficient_data("family_id"))?;
 
+        // C++ format byte 3: flags byte (directly after family_id, no reserved bytes)
+        let flags = cursor
+            .read_u8()
+            .map_err(|_| Error::insufficient_data("flags"))?;
+
         // Validate
         if family_id != FAMILY_ID {
             return Err(Error::invalid_family(FAMILY_ID, family_id, "BloomFilter"));
@@ -432,30 +440,30 @@ impl BloomFilter {
             ));
         }
 
-        // Skip reserved bytes
-        cursor
-            .read_u8()
-            .map_err(|_| Error::insufficient_data("reserved1"))?;
-        cursor
-            .read_u8()
-            .map_err(|_| Error::insufficient_data("reserved2"))?;
-
-        let flags = cursor
-            .read_u8()
-            .map_err(|_| Error::insufficient_data("flags"))?;
         let is_empty = (flags & EMPTY_FLAG_MASK) != 0;
 
+        // Bytes 4-5: num_hashes (u16)
         let num_hashes = cursor
             .read_u16_le()
             .map_err(|_| Error::insufficient_data("num_hashes"))?;
+        // Bytes 6-7: unused (u16)
+        let _unused = cursor
+            .read_u16_le()
+            .map_err(|_| Error::insufficient_data("unused_header"))?;
         let seed = cursor
             .read_u64_le()
             .map_err(|_| Error::insufficient_data("seed"))?;
-        let capacity_bits = cursor
-            .read_u64_le()
-            .map_err(|_| Error::insufficient_data("capacity_bits"))?;
 
-        let num_words = capacity_bits.div_ceil(64) as usize;
+        // C++ format: int32_t num_longs (capacity in 64-bit words) + uint32_t unused
+        let num_longs = cursor
+            .read_i32_le()
+            .map_err(|_| Error::insufficient_data("num_longs"))? as u64;
+        let _unused = cursor
+            .read_u32_le()
+            .map_err(|_| Error::insufficient_data("unused"))?;
+
+        let capacity_bits = num_longs * 64; // Convert longs to bits
+        let num_words = num_longs as usize;
         let mut bit_array = vec![0u64; num_words];
         let num_bits_set;
 
