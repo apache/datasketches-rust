@@ -120,7 +120,8 @@
 //! - Kirsch and Mitzenmacher (2008). "Less Hashing, Same Performance: Building a Better Bloom
 //!   Filter"
 
+mod builder;
 mod sketch;
 
+pub use self::builder::BloomFilterBuilder;
 pub use self::sketch::BloomFilter;
-pub use self::sketch::BloomFilterBuilder;
