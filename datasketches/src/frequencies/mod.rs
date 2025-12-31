@@ -25,7 +25,6 @@
 //! <https://apache.github.io/datasketches-java/9.0.0/org/apache/datasketches/frequencies/FrequentItemsSketch.html>
 
 mod reverse_purge_item_hash_map;
-mod serde;
 mod serialization;
 mod sketch;
 

@@ -23,12 +23,6 @@ use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
 use crate::error::Error;
 use crate::frequencies::reverse_purge_item_hash_map::ReversePurgeItemHashMap;
-use crate::frequencies::serde::count_i64_items_bytes;
-use crate::frequencies::serde::count_string_items_bytes;
-use crate::frequencies::serde::deserialize_i64_items;
-use crate::frequencies::serde::deserialize_string_items;
-use crate::frequencies::serde::serialize_i64_items;
-use crate::frequencies::serde::serialize_string_items;
 use crate::frequencies::serialization::*;
 
 type CountSerializeSize<T> = fn(&[T]) -> usize;
