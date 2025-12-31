@@ -141,10 +141,7 @@ impl BloomFilter {
     /// assert!(!filter.contains(&"apple"));
     /// ```
     pub fn reset(&mut self) {
-        for word in &mut self.bit_array {
-            *word = 0;
-        }
-        self.num_bits_set = 0;
+        self.bit_array.fill(0);
     }
 
     /// Merges another filter into this one via bitwise OR (union).
