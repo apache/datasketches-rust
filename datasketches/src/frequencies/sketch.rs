@@ -205,10 +205,6 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
 
     /// Updates the sketch with an item and count.
     ///
-    /// # Panics
-    ///
-    /// Panics if `count` is negative.
-    ///
     /// A count of zero is a no-op.
     pub fn update_with_count(&mut self, item: T, count: u64) {
         if count == 0 {
