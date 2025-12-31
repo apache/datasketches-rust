@@ -142,6 +142,7 @@ impl BloomFilter {
     /// ```
     pub fn reset(&mut self) {
         self.bit_array.fill(0);
+        self.num_bits_set = 0
     }
 
     /// Merges another filter into this one via bitwise OR (union).
