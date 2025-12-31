@@ -17,7 +17,8 @@
 
 //! Serialization helpers for frequent items sketches.
 
-use crate::codec::{SketchBytes, SketchSlice};
+use crate::codec::SketchBytes;
+use crate::codec::SketchSlice;
 use crate::error::Error;
 
 pub(crate) fn count_string_items_bytes(items: &[String]) -> usize {
@@ -44,7 +45,7 @@ pub(crate) fn deserialize_string_items(
             ))
         })?;
 
-        let mut slice = Vec::with_capacity(len as usize);
+        let mut slice = vec![0; len as usize];
         cursor.read_exact(&mut slice).map_err(|_| {
             Error::insufficient_data(format!(
                 "expected {num_items} string items, failed to read slice at index {i}"

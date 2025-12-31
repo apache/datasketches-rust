@@ -19,7 +19,8 @@ use std::cmp::Ordering;
 use std::convert::identity;
 use std::num::NonZeroU64;
 
-use crate::codec::{SketchBytes, SketchSlice};
+use crate::codec::SketchBytes;
+use crate::codec::SketchSlice;
 use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::tdigest::serialization::*;

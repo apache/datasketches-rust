@@ -17,15 +17,19 @@
 
 //! Frequent items sketch implementations.
 
-use crate::codec::{SketchBytes, SketchSlice};
+use std::hash::Hash;
+
+use crate::codec::SketchBytes;
+use crate::codec::SketchSlice;
 use crate::error::Error;
 use crate::frequencies::reverse_purge_item_hash_map::ReversePurgeItemHashMap;
+use crate::frequencies::serde::count_i64_items_bytes;
+use crate::frequencies::serde::count_string_items_bytes;
+use crate::frequencies::serde::deserialize_i64_items;
+use crate::frequencies::serde::deserialize_string_items;
 use crate::frequencies::serde::serialize_i64_items;
 use crate::frequencies::serde::serialize_string_items;
-use crate::frequencies::serde::{count_i64_items_bytes, deserialize_string_items};
-use crate::frequencies::serde::{count_string_items_bytes, deserialize_i64_items};
 use crate::frequencies::serialization::*;
-use std::hash::Hash;
 
 type CountSerializeSize<T> = fn(&[T]) -> usize;
 type SerializeItems<T> = fn(&mut SketchBytes, &[T]);
