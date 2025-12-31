@@ -44,7 +44,7 @@ pub enum ResizeFactor {
 }
 
 impl ResizeFactor {
-    pub fn lg_value(&self) -> u8 {
+    fn lg_value(&self) -> u8 {
         match self {
             ResizeFactor::X2 => 1,
             ResizeFactor::X4 => 2,
@@ -423,6 +423,17 @@ mod tests {
 
     #[test]
     fn test_resize() {
+        fn populate_values(table: &mut ThetaHashTable, count: usize) -> usize {
+            let mut inserted = 0;
+            for i in 0..count {
+                let hash = table.hash_and_screen(format!("value_{}", i));
+                if hash != 0 && table.try_insert(hash) {
+                    inserted += 1;
+                }
+            }
+            inserted
+        }
+
         {
             let mut table = ThetaHashTable::new(8, ResizeFactor::X2, 1.0, DEFAULT_UPDATE_SEED);
 
@@ -430,13 +441,7 @@ mod tests {
 
             // Insert enough values to trigger resize (50% threshold)
             // Capacity = 32 * 0.5 = 16
-            let mut inserted = 0;
-            for i in 0..20 {
-                let hash = table.hash_and_screen(format!("value_{}", i));
-                if hash != 0 && table.try_insert(hash) {
-                    inserted += 1;
-                }
-            }
+            let inserted = populate_values(&mut table, 20);
 
             // Table should have resized and all values should be inserted
             assert!(table.num_entries() > 0);
@@ -452,13 +457,7 @@ mod tests {
 
             // Insert enough values to trigger resize (50% threshold)
             // Capacity = 32 * 0.5 = 16
-            let mut inserted = 0;
-            for i in 0..20 {
-                let hash = table.hash_and_screen(format!("value_{}", i));
-                if hash != 0 && table.try_insert(hash) {
-                    inserted += 1;
-                }
-            }
+            let inserted = populate_values(&mut table, 20);
 
             // Table should have resized and all values should be inserted
             assert!(table.num_entries() > 0);

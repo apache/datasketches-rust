@@ -199,10 +199,11 @@ impl ThetaSketchBuilder {
 /// Canonicalize double value for compatibility with Java
 fn canonical_double(value: f64) -> i64 {
     if value.is_nan() {
-        0x7ff8000000000000i64 // Java's Double.doubleToLongBits() NaN value
+        // Java's Double.doubleToLongBits() NaN value
+        0x7ff8000000000000i64
     } else {
         // -0.0 + 0.0 == +0.0 under IEEE754 roundTiesToEven rounding mode,
-        // which Rust guarantees. Thus by adding a positive zero we
+        // which Rust guarantees. Thus, by adding a positive zero we
         // canonicalize signed zero without any branches in one instruction.
         (value + 0.0).to_bits() as i64
     }
