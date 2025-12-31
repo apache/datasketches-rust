@@ -44,7 +44,7 @@
 //!
 //! // Check membership
 //! assert!(filter.contains(&"apple")); // true - definitely inserted
-//! assert!(filter.contains(&"grape")); // false - never inserted (probably)
+//! assert!(!filter.contains(&"grape")); // false - never inserted (probably)
 //!
 //! // Get statistics
 //! println!("Capacity: {} bits", filter.capacity());
@@ -109,10 +109,10 @@
 //!
 //! # Implementation Details
 //!
-//! - Uses XXHash64 for hashing (compatible with datasketches-cpp)
+//! - Uses XXHash64 for hashing
 //! - Implements double hashing (Kirsch-Mitzenmacher method) for k hash functions
 //! - Bits packed efficiently in `u64` words
-//! - Compatible serialization format with datasketches-cpp (family ID: 21)
+//! - Compatible serialization format (family ID: 21)
 //!
 //! # References
 //!

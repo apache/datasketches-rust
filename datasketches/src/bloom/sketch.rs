@@ -23,10 +23,10 @@ use crate::codec::SketchSlice;
 use crate::error::Error;
 use crate::hash::XxHash64;
 
-// Serialization constants (compatible with datasketches-cpp)
+// Serialization constants
 const PREAMBLE_LONGS_EMPTY: u8 = 3;
 const PREAMBLE_LONGS_STANDARD: u8 = 4;
-const FAMILY_ID: u8 = 21; // Bloom filter family ID (same as C++)
+const FAMILY_ID: u8 = 21; // Bloom filter family ID
 const SERIAL_VERSION: u8 = 1;
 const EMPTY_FLAG_MASK: u8 = 1 << 2;
 
@@ -309,20 +309,20 @@ impl BloomFilter {
 
     /// Estimates the current false positive probability.
     ///
-    /// Based on the formula: `(1 - e^(-k*n/m))^k`
+    /// Uses the approximation: `load_factor^k`
     /// where:
+    /// - load_factor = fraction of bits set (bits_used / capacity)
     /// - k = num_hashes
-    /// - n = estimated insertions (from bits_used)
-    /// - m = capacity_bits
     ///
-    /// This is approximate and assumes uniform bit distribution.
+    /// This assumes uniform bit distribution and is more accurate than
+    /// trying to estimate insertion count from the load factor.
     pub fn estimated_fpp(&self) -> f64 {
         let k = self.num_hashes as f64;
         let load = self.load_factor();
 
-        // FPP ≈ (1 - e^(-k*load))^k
-        // Using load factor as approximation since exact insertion count is unknown
-        (1.0 - (-k * load).exp()).powf(k)
+        // FPP ≈ load^k
+        // This is the standard approximation when load factor is known directly
+        load.powf(k)
     }
 
     /// Checks if two filters are compatible for merging.
@@ -339,12 +339,12 @@ impl BloomFilter {
 
     /// Serializes the filter to a byte vector.
     ///
-    /// The format is compatible with datasketches-cpp and datasketches-java.
+    /// The format is compatible with other Apache DataSketches implementations.
     ///
     /// # Examples
     ///
     /// ```
-    /// # use datasketches::bloom::BloomFilterBuilder;
+    /// # use datasketches::bloom::{BloomFilter, BloomFilterBuilder};
     /// let mut filter = BloomFilterBuilder::with_accuracy(100, 0.01).build();
     /// filter.insert("test");
     ///
@@ -368,7 +368,7 @@ impl BloomFilter {
             };
         let mut bytes = SketchBytes::with_capacity(capacity);
 
-        // Preamble - matching C++ byte layout
+        // Preamble
         bytes.write_u8(preamble_longs); // Byte 0
         bytes.write_u8(SERIAL_VERSION); // Byte 1
         bytes.write_u8(FAMILY_ID); // Byte 2
@@ -378,7 +378,7 @@ impl BloomFilter {
 
         bytes.write_u64_le(self.seed);
 
-        // C++ format: int32_t num_longs (capacity in 64-bit words) + uint32_t unused
+        // Bit array capacity stored as number of 64-bit words (int32) + unused padding (uint32)
         let num_longs = (self.capacity_bits / 64) as i32;
         bytes.write_i32_le(num_longs);
         bytes.write_u32_le(0); // unused
@@ -407,7 +407,7 @@ impl BloomFilter {
     /// # Examples
     ///
     /// ```
-    /// # use datasketches::bloom::BloomFilterBuilder;
+    /// # use datasketches::bloom::{BloomFilter, BloomFilterBuilder};
     /// let original = BloomFilterBuilder::with_accuracy(100, 0.01).build();
     /// let bytes = original.serialize();
     ///
@@ -428,7 +428,7 @@ impl BloomFilter {
             .read_u8()
             .map_err(|_| Error::insufficient_data("family_id"))?;
 
-        // C++ format byte 3: flags byte (directly after family_id, no reserved bytes)
+        // Byte 3: flags byte (directly after family_id)
         let flags = cursor
             .read_u8()
             .map_err(|_| Error::insufficient_data("flags"))?;
@@ -464,7 +464,7 @@ impl BloomFilter {
             .read_u64_le()
             .map_err(|_| Error::insufficient_data("seed"))?;
 
-        // C++ format: int32_t num_longs (capacity in 64-bit words) + uint32_t unused
+        // Bit array capacity stored as number of 64-bit words (int32) + unused padding (uint32)
         let num_longs = cursor
             .read_i32_le()
             .map_err(|_| Error::insufficient_data("num_longs"))? as u64;
@@ -490,8 +490,7 @@ impl BloomFilter {
                     .map_err(|_| Error::insufficient_data("bit_array"))?;
             }
 
-            // C++ uses 0xFFFFFFFFFFFFFFFF (-1 as i64) to indicate "dirty" state
-            // In this case, we need to recount the bits
+            // Handle "dirty" state: 0xFFFFFFFFFFFFFFFF indicates bits need recounting
             const DIRTY_BITS_VALUE: u64 = 0xFFFFFFFFFFFFFFFF;
             if raw_num_bits_set == DIRTY_BITS_VALUE {
                 num_bits_set = bit_array.iter().map(|w| w.count_ones() as u64).sum();
@@ -511,7 +510,7 @@ impl BloomFilter {
 
     /// Computes the two base hash values using XXHash64.
     ///
-    /// This matches the C++ implementation's two-hash approach:
+    /// Uses a two-hash approach:
     /// - h0 = XXHash64(item, seed)
     /// - h1 = XXHash64(item, h0)
     fn compute_hash<T: Hash>(&self, item: &T) -> (u64, u64) {
@@ -520,7 +519,7 @@ impl BloomFilter {
         item.hash(&mut hasher);
         let h0 = hasher.finish();
 
-        // Second hash using h0 as the seed (matching C++ approach)
+        // Second hash using h0 as the seed
         let mut hasher = XxHash64::with_seed(h0);
         item.hash(&mut hasher);
         let h1 = hasher.finish();
@@ -549,16 +548,14 @@ impl BloomFilter {
 
     /// Computes a bit index using double hashing (Kirsch-Mitzenmacher).
     ///
-    /// Formula (matching C++ implementation):
+    /// Formula:
     /// ```text
     /// hash_index = ((h0 + i * h1) >> 1) % capacity_bits
     /// ```
     ///
     /// The right shift by 1 improves bit distribution. The index `i` is 1-based.
     fn compute_bit_index(&self, h0: u64, h1: u64, i: u16) -> u64 {
-        // Use wrapping arithmetic to handle overflow
         let hash = h0.wrapping_add(u64::from(i).wrapping_mul(h1));
-        // Right shift by 1 (divide by 2) to improve distribution
         (hash >> 1) % self.capacity_bits
     }
 
