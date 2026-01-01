@@ -91,6 +91,10 @@ impl Error {
 
 // Convenience constructors for deserialization errors
 impl Error {
+    pub(crate) fn invalid_argument(msg: impl Into<String>) -> Self {
+        Self::new(ErrorKind::InvalidArgument, msg)
+    }
+
     pub(crate) fn deserial(msg: impl Into<String>) -> Self {
         Self::new(ErrorKind::InvalidData, msg)
     }

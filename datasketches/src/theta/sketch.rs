@@ -23,6 +23,8 @@
 use std::hash::Hash;
 
 use crate::ResizeFactor;
+use crate::binomial_bounds;
+use crate::error::Error;
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::theta::hash_table::DEFAULT_LG_K;
 use crate::theta::hash_table::MAX_LG_K;
@@ -169,6 +171,89 @@ impl ThetaSketch {
     /// ```
     pub fn iter(&self) -> impl Iterator<Item = u64> + '_ {
         self.table.iter()
+    }
+
+    /// Returns the approximate lower error bound given the specified number of Standard Deviations.
+    ///
+    /// # Arguments
+    ///
+    /// * `num_std_devs` - The number of standard deviations from the mean for the tail bounds. Must
+    ///   be 1, 2, or 3, corresponding to approximately 67%, 95% and 99% confidence intervals.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(lb)` where `lb` is the approximate lower bound value.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `num_std_devs` is not 1, 2, or 3.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::theta::ThetaSketch;
+    ///
+    /// let mut sketch = ThetaSketch::builder().lg_k(12).build();
+    /// for i in 0..10000 {
+    ///     sketch.update(i);
+    /// }
+    ///
+    /// let estimate = sketch.estimate();
+    /// let lower_bound = sketch.lower_bound(2).unwrap();
+    /// let upper_bound = sketch.upper_bound(2).unwrap();
+    ///
+    /// assert!(lower_bound <= estimate);
+    /// assert!(estimate <= upper_bound);
+    /// ```
+    pub fn lower_bound(&self, num_std_devs: u32) -> Result<f64, Error> {
+        if !self.is_estimation_mode() {
+            return Ok(self.num_retained() as f64);
+        }
+        binomial_bounds::lower_bound(self.num_retained() as u64, self.theta(), num_std_devs)
+    }
+
+    /// Returns the approximate upper error bound given the specified number of Standard Deviations.
+    ///
+    /// # Arguments
+    ///
+    /// * `num_std_devs` - The number of standard deviations from the mean for the tail bounds. Must
+    ///   be 1, 2, or 3, corresponding to approximately 67%, 95% and 99% confidence intervals.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(ub)` where `ub` is the approximate upper bound value.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `num_std_devs` is not 1, 2, or 3.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::theta::ThetaSketch;
+    ///
+    /// let mut sketch = ThetaSketch::builder().lg_k(12).build();
+    /// for i in 0..10000 {
+    ///     sketch.update(i);
+    /// }
+    ///
+    /// let estimate = sketch.estimate();
+    /// let lower_bound = sketch.lower_bound(2).unwrap();
+    /// let upper_bound = sketch.upper_bound(2).unwrap();
+    ///
+    /// assert!(lower_bound <= estimate);
+    /// assert!(estimate <= upper_bound);
+    /// ```
+    pub fn upper_bound(&self, num_std_devs: u32) -> Result<f64, Error> {
+        if !self.is_estimation_mode() {
+            return Ok(self.num_retained() as f64);
+        }
+        binomial_bounds::upper_bound(
+            self.num_retained() as u64,
+            self.theta(),
+            num_std_devs,
+            self.is_empty(),
+        )
     }
 }
 

@@ -38,6 +38,7 @@ pub mod hll;
 pub mod tdigest;
 pub mod theta;
 
+mod binomial_bounds;
 mod codec;
 mod hash;
 mod resize;
