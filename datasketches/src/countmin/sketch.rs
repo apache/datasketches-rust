@@ -57,7 +57,7 @@ impl CountMinSketch {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```rust
     /// # use datasketches::countmin::CountMinSketch;
     /// let sketch = CountMinSketch::new(4, 128);
     /// assert_eq!(sketch.num_buckets(), 128);
@@ -75,7 +75,7 @@ impl CountMinSketch {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```rust
     /// # use datasketches::countmin::CountMinSketch;
     /// let sketch = CountMinSketch::with_seed(4, 64, 42);
     /// assert_eq!(sketch.seed(), 42);
@@ -146,7 +146,7 @@ impl CountMinSketch {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```rust
     /// # use datasketches::countmin::CountMinSketch;
     /// let mut sketch = CountMinSketch::new(4, 128);
     /// sketch.update("apple");
@@ -160,7 +160,7 @@ impl CountMinSketch {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```rust
     /// # use datasketches::countmin::CountMinSketch;
     /// let mut sketch = CountMinSketch::new(4, 128);
     /// sketch.update_with_weight("banana", 3);
@@ -184,7 +184,7 @@ impl CountMinSketch {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```rust
     /// # use datasketches::countmin::CountMinSketch;
     /// let mut sketch = CountMinSketch::new(4, 128);
     /// sketch.update_with_weight("pear", 2);
@@ -224,7 +224,7 @@ impl CountMinSketch {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```rust
     /// # use datasketches::countmin::CountMinSketch;
     /// let mut left = CountMinSketch::new(4, 128);
     /// let mut right = CountMinSketch::new(4, 128);
@@ -255,12 +255,13 @@ impl CountMinSketch {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```rust
     /// # use datasketches::countmin::CountMinSketch;
     /// # let mut sketch = CountMinSketch::new(4, 128);
     /// # sketch.update("apple");
     /// let bytes = sketch.serialize();
-    /// let _decoded = CountMinSketch::deserialize(&bytes).expect("valid bytes");
+    /// let decoded = CountMinSketch::deserialize(&bytes).unwrap();
+    /// assert!(decoded.estimate("apple") >= 1);
     /// ```
     pub fn serialize(&self) -> Vec<u8> {
         let header_size = PREAMBLE_LONGS_SHORT as usize * LONG_SIZE_BYTES;
@@ -297,12 +298,12 @@ impl CountMinSketch {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```rust
     /// # use datasketches::countmin::CountMinSketch;
     /// # let mut sketch = CountMinSketch::new(4, 64);
     /// # sketch.update("apple");
     /// # let bytes = sketch.serialize();
-    /// let decoded = CountMinSketch::deserialize(&bytes).expect("deserialize sketch");
+    /// let decoded = CountMinSketch::deserialize(&bytes).unwrap();
     /// assert!(decoded.estimate("apple") >= 1);
     /// ```
     pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
@@ -313,12 +314,12 @@ impl CountMinSketch {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```rust
     /// # use datasketches::countmin::CountMinSketch;
     /// # let mut sketch = CountMinSketch::with_seed(4, 64, 7);
     /// # sketch.update("apple");
     /// # let bytes = sketch.serialize();
-    /// let decoded = CountMinSketch::deserialize_with_seed(&bytes, 7).expect("deserialize sketch");
+    /// let decoded = CountMinSketch::deserialize_with_seed(&bytes, 7).unwrap();
     /// assert!(decoded.estimate("apple") >= 1);
     /// ```
     pub fn deserialize_with_seed(bytes: &[u8], seed: u64) -> Result<Self, Error> {

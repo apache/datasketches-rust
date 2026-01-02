@@ -540,7 +540,8 @@ impl FrequentItemsSketch<i64> {
     /// # let mut sketch = FrequentItemsSketch::<i64>::new(64);
     /// # sketch.update_with_count(7, 2);
     /// let bytes = sketch.serialize();
-    /// let _decoded = FrequentItemsSketch::<i64>::deserialize(&bytes).expect("valid bytes");
+    /// let decoded = FrequentItemsSketch::<i64>::deserialize(&bytes).unwrap();
+    /// assert!(decoded.estimate(&7) >= 2);
     /// ```
     pub fn serialize(&self) -> Vec<u8> {
         self.serialize_inner(count_i64_items_bytes, serialize_i64_items)
@@ -555,7 +556,7 @@ impl FrequentItemsSketch<i64> {
     /// # let mut sketch = FrequentItemsSketch::<i64>::new(64);
     /// # sketch.update_with_count(7, 2);
     /// # let bytes = sketch.serialize();
-    /// let decoded = FrequentItemsSketch::<i64>::deserialize(&bytes).expect("deserialize sketch");
+    /// let decoded = FrequentItemsSketch::<i64>::deserialize(&bytes).unwrap();
     /// assert!(decoded.estimate(&7) >= 2);
     /// ```
     pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
@@ -571,9 +572,11 @@ impl FrequentItemsSketch<String> {
     /// ```
     /// # use datasketches::frequencies::FrequentItemsSketch;
     /// # let mut sketch = FrequentItemsSketch::<String>::new(64);
-    /// # sketch.update_with_count("apple".into(), 2);
+    /// # let apple = "apple".to_string();
+    /// # sketch.update_with_count(apple.clone(), 2);
     /// let bytes = sketch.serialize();
-    /// let _decoded = FrequentItemsSketch::<String>::deserialize(&bytes).expect("valid bytes");
+    /// let decoded = FrequentItemsSketch::<String>::deserialize(&bytes).unwrap();
+    /// assert!(decoded.estimate(&apple) >= 2);
     /// ```
     pub fn serialize(&self) -> Vec<u8> {
         self.serialize_inner(count_string_items_bytes, serialize_string_items)
@@ -589,7 +592,7 @@ impl FrequentItemsSketch<String> {
     /// # let apple = "apple".to_string();
     /// # sketch.update_with_count(apple.clone(), 2);
     /// # let bytes = sketch.serialize();
-    /// let decoded = FrequentItemsSketch::<String>::deserialize(&bytes).expect("deserialize sketch");
+    /// let decoded = FrequentItemsSketch::<String>::deserialize(&bytes).unwrap();
     /// assert!(decoded.estimate(&apple) >= 2);
     /// ```
     pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {

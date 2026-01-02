@@ -251,7 +251,7 @@ impl HllSketch {
     /// # let mut sketch = HllSketch::new(10, HllType::Hll8);
     /// # sketch.update("apple");
     /// # let bytes = sketch.serialize();
-    /// let decoded = HllSketch::deserialize(&bytes).expect("deserialize sketch");
+    /// let decoded = HllSketch::deserialize(&bytes).unwrap();
     /// assert!(decoded.estimate() >= 1.0);
     /// ```
     pub fn deserialize(bytes: &[u8]) -> Result<HllSketch, Error> {
@@ -373,7 +373,8 @@ impl HllSketch {
     /// # let mut sketch = HllSketch::new(10, HllType::Hll8);
     /// # sketch.update("apple");
     /// let bytes = sketch.serialize();
-    /// let _decoded = HllSketch::deserialize(&bytes).expect("valid bytes");
+    /// let decoded = HllSketch::deserialize(&bytes).unwrap();
+    /// assert!(decoded.estimate() >= 1.0);
     /// ```
     pub fn serialize(&self) -> Vec<u8> {
         match &self.mode {

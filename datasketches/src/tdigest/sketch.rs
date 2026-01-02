@@ -95,7 +95,7 @@ impl TDigestMut {
     ///
     /// ```
     /// # use datasketches::tdigest::TDigestMut;
-    /// let sketch = TDigestMut::try_new(20).expect("valid k");
+    /// let sketch = TDigestMut::try_new(20).unwrap();
     /// assert_eq!(sketch.k(), 20);
     /// ```
     pub fn try_new(k: u16) -> Result<Self, Error> {
@@ -288,7 +288,7 @@ impl TDigestMut {
     /// # for value in [1.0, 2.0, 3.0] {
     /// #     sketch.update(value);
     /// # }
-    /// let cdf = sketch.cdf(&[1.5]).expect("non-empty");
+    /// let cdf = sketch.cdf(&[1.5]).unwrap();
     /// assert_eq!(cdf.len(), 2);
     /// ```
     pub fn cdf(&mut self, split_points: &[f64]) -> Option<Vec<f64>> {
@@ -311,7 +311,7 @@ impl TDigestMut {
     /// # for value in [1.0, 2.0, 3.0] {
     /// #     sketch.update(value);
     /// # }
-    /// let pmf = sketch.pmf(&[1.5]).expect("non-empty");
+    /// let pmf = sketch.pmf(&[1.5]).unwrap();
     /// assert_eq!(pmf.len(), 2);
     /// ```
     pub fn pmf(&mut self, split_points: &[f64]) -> Option<Vec<f64>> {
@@ -334,7 +334,7 @@ impl TDigestMut {
     /// # for value in [1.0, 2.0, 3.0] {
     /// #     sketch.update(value);
     /// # }
-    /// let rank = sketch.rank(2.0).expect("non-empty");
+    /// let rank = sketch.rank(2.0).unwrap();
     /// assert!((0.0..=1.0).contains(&rank));
     /// ```
     pub fn rank(&mut self, value: f64) -> Option<f64> {
@@ -367,7 +367,7 @@ impl TDigestMut {
     /// # for value in [1.0, 2.0, 3.0] {
     /// #     sketch.update(value);
     /// # }
-    /// let median = sketch.quantile(0.5).expect("non-empty");
+    /// let median = sketch.quantile(0.5).unwrap();
     /// assert!((1.0..=3.0).contains(&median));
     /// ```
     pub fn quantile(&mut self, rank: f64) -> Option<f64> {
@@ -389,7 +389,8 @@ impl TDigestMut {
     /// # let mut sketch = TDigestMut::new(100);
     /// # sketch.update(1.0);
     /// let bytes = sketch.serialize();
-    /// let _decoded = TDigestMut::deserialize(&bytes, false).expect("valid bytes");
+    /// let decoded = TDigestMut::deserialize(&bytes, false).unwrap();
+    /// assert_eq!(decoded.max_value(), Some(1.0));
     /// ```
     pub fn serialize(&mut self) -> Vec<u8> {
         self.compress();
@@ -481,7 +482,7 @@ impl TDigestMut {
     /// # sketch.update(1.0);
     /// # sketch.update(2.0);
     /// # let bytes = sketch.serialize();
-    /// let decoded = TDigestMut::deserialize(&bytes, false).expect("deserialize sketch");
+    /// let decoded = TDigestMut::deserialize(&bytes, false).unwrap();
     /// assert_eq!(decoded.max_value(), Some(2.0));
     /// ```
     pub fn deserialize(bytes: &[u8], is_f32: bool) -> Result<Self, Error> {
@@ -874,7 +875,7 @@ impl TDigest {
     /// #     sketch.update(value);
     /// # }
     /// let digest = sketch.freeze();
-    /// let cdf = digest.cdf(&[1.5]).expect("non-empty");
+    /// let cdf = digest.cdf(&[1.5]).unwrap();
     /// assert_eq!(cdf.len(), 2);
     /// ```
     pub fn cdf(&self, split_points: &[f64]) -> Option<Vec<f64>> {
@@ -910,7 +911,7 @@ impl TDigest {
     /// #     sketch.update(value);
     /// # }
     /// let digest = sketch.freeze();
-    /// let pmf = digest.pmf(&[1.5]).expect("non-empty");
+    /// let pmf = digest.pmf(&[1.5]).unwrap();
     /// assert_eq!(pmf.len(), 2);
     /// ```
     pub fn pmf(&self, split_points: &[f64]) -> Option<Vec<f64>> {
@@ -934,7 +935,7 @@ impl TDigest {
     /// #     sketch.update(value);
     /// # }
     /// let digest = sketch.freeze();
-    /// let rank = digest.rank(2.0).expect("non-empty");
+    /// let rank = digest.rank(2.0).unwrap();
     /// assert!((0.0..=1.0).contains(&rank));
     /// ```
     pub fn rank(&self, value: f64) -> Option<f64> {
@@ -959,7 +960,7 @@ impl TDigest {
     /// #     sketch.update(value);
     /// # }
     /// let digest = sketch.freeze();
-    /// let q = digest.quantile(0.5).expect("non-empty");
+    /// let q = digest.quantile(0.5).unwrap();
     /// assert!((1.0..=3.0).contains(&q));
     /// ```
     pub fn quantile(&self, rank: f64) -> Option<f64> {

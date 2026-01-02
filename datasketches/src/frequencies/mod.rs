@@ -44,7 +44,8 @@
 //! sketch.update_with_count(42, 2);
 //!
 //! let bytes = sketch.serialize();
-//! let _decoded = FrequentItemsSketch::<i64>::deserialize(&bytes).expect("valid bytes");
+//! let decoded = FrequentItemsSketch::<i64>::deserialize(&bytes).unwrap();
+//! assert!(decoded.estimate(&42) >= 2);
 //! ```
 
 mod reverse_purge_item_hash_map;
