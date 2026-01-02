@@ -54,6 +54,14 @@ impl CountMinSketch {
     ///
     /// Panics if `num_hashes` is 0, `num_buckets` is less than 3, or the
     /// total table size exceeds the supported limit.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use datasketches::countmin::CountMinSketch;
+    /// let sketch = CountMinSketch::new(4, 128);
+    /// assert_eq!(sketch.num_buckets(), 128);
+    /// ```
     pub fn new(num_hashes: u8, num_buckets: u32) -> Self {
         Self::with_seed(num_hashes, num_buckets, DEFAULT_UPDATE_SEED)
     }
@@ -64,6 +72,14 @@ impl CountMinSketch {
     ///
     /// Panics if `num_hashes` is 0, `num_buckets` is less than 3, or the
     /// total table size exceeds the supported limit.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use datasketches::countmin::CountMinSketch;
+    /// let sketch = CountMinSketch::with_seed(4, 64, 42);
+    /// assert_eq!(sketch.seed(), 42);
+    /// ```
     pub fn with_seed(num_hashes: u8, num_buckets: u32, seed: u64) -> Self {
         let entries = entries_for_config(num_hashes, num_buckets);
         Self::make(num_hashes, num_buckets, seed, entries)
@@ -127,11 +143,29 @@ impl CountMinSketch {
     }
 
     /// Updates the sketch with a single occurrence of the item.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use datasketches::countmin::CountMinSketch;
+    /// let mut sketch = CountMinSketch::new(4, 128);
+    /// sketch.update("apple");
+    /// assert!(sketch.estimate("apple") >= 1);
+    /// ```
     pub fn update<T: Hash>(&mut self, item: T) {
         self.update_with_weight(item, 1);
     }
 
     /// Updates the sketch with the given item and weight.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use datasketches::countmin::CountMinSketch;
+    /// let mut sketch = CountMinSketch::new(4, 128);
+    /// sketch.update_with_weight("banana", 3);
+    /// assert!(sketch.estimate("banana") >= 3);
+    /// ```
     pub fn update_with_weight<T: Hash>(&mut self, item: T, weight: i64) {
         if weight == 0 {
             return;
@@ -147,6 +181,15 @@ impl CountMinSketch {
     }
 
     /// Returns the estimated frequency of the given item.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use datasketches::countmin::CountMinSketch;
+    /// let mut sketch = CountMinSketch::new(4, 128);
+    /// sketch.update_with_weight("pear", 2);
+    /// assert!(sketch.estimate("pear") >= 2);
+    /// ```
     pub fn estimate<T: Hash>(&self, item: T) -> i64 {
         let num_buckets = self.num_buckets as usize;
         let mut min = i64::MAX;
@@ -178,6 +221,20 @@ impl CountMinSketch {
     /// # Panics
     ///
     /// Panics if the sketches have incompatible configurations.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use datasketches::countmin::CountMinSketch;
+    /// let mut left = CountMinSketch::new(4, 128);
+    /// let mut right = CountMinSketch::new(4, 128);
+    ///
+    /// left.update("apple");
+    /// right.update_with_weight("banana", 2);
+    ///
+    /// left.merge(&right);
+    /// assert!(left.estimate("banana") >= 2);
+    /// ```
     pub fn merge(&mut self, other: &CountMinSketch) {
         if std::ptr::eq(self, other) {
             panic!("Cannot merge a sketch with itself.");
@@ -195,6 +252,17 @@ impl CountMinSketch {
     }
 
     /// Serializes this sketch into the DataSketches Count-Min format.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use datasketches::countmin::CountMinSketch;
+    /// # let mut sketch = CountMinSketch::new(4, 128);
+    /// # sketch.update("apple");
+    /// let bytes = sketch.serialize();
+    /// let decoded = CountMinSketch::deserialize(&bytes).unwrap();
+    /// assert!(decoded.estimate("apple") >= 1);
+    /// ```
     pub fn serialize(&self) -> Vec<u8> {
         let header_size = PREAMBLE_LONGS_SHORT as usize * LONG_SIZE_BYTES;
         let payload_size = if self.is_empty() {
@@ -227,11 +295,33 @@ impl CountMinSketch {
     }
 
     /// Deserializes a sketch from bytes using the default seed.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use datasketches::countmin::CountMinSketch;
+    /// # let mut sketch = CountMinSketch::new(4, 64);
+    /// # sketch.update("apple");
+    /// # let bytes = sketch.serialize();
+    /// let decoded = CountMinSketch::deserialize(&bytes).unwrap();
+    /// assert!(decoded.estimate("apple") >= 1);
+    /// ```
     pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
         Self::deserialize_with_seed(bytes, DEFAULT_UPDATE_SEED)
     }
 
     /// Deserializes a sketch from bytes using the provided seed.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use datasketches::countmin::CountMinSketch;
+    /// # let mut sketch = CountMinSketch::with_seed(4, 64, 7);
+    /// # sketch.update("apple");
+    /// # let bytes = sketch.serialize();
+    /// let decoded = CountMinSketch::deserialize_with_seed(&bytes, 7).unwrap();
+    /// assert!(decoded.estimate("apple") >= 1);
+    /// ```
     pub fn deserialize_with_seed(bytes: &[u8], seed: u64) -> Result<Self, Error> {
         fn make_error(tag: &'static str) -> impl FnOnce(std::io::Error) -> Error {
             move |_| Error::insufficient_data(tag)

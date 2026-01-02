@@ -63,6 +63,14 @@ impl TDigestMut {
     /// # Panics
     ///
     /// Panics if k is less than 10
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use datasketches::tdigest::TDigestMut;
+    /// let sketch = TDigestMut::new(100);
+    /// assert_eq!(sketch.k(), 100);
+    /// ```
     pub fn new(k: u16) -> Self {
         Self::make(
             k,
@@ -82,6 +90,14 @@ impl TDigestMut {
     /// # Errors
     ///
     /// If k is less than 10, returns [`ErrorKind::InvalidArgument`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use datasketches::tdigest::TDigestMut;
+    /// let sketch = TDigestMut::try_new(20).unwrap();
+    /// assert_eq!(sketch.k(), 20);
+    /// ```
     pub fn try_new(k: u16) -> Result<Self, Error> {
         if k < 10 {
             return Err(Error::new(
@@ -134,6 +150,15 @@ impl TDigestMut {
     /// Update this TDigest with the given value.
     ///
     /// [f64::NAN], [f64::INFINITY], and [f64::NEG_INFINITY] values are ignored.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use datasketches::tdigest::TDigestMut;
+    /// let mut sketch = TDigestMut::new(100);
+    /// sketch.update(1.0);
+    /// assert!(sketch.total_weight() >= 1);
+    /// ```
     pub fn update(&mut self, value: f64) {
         if value.is_nan() || value.is_infinite() {
             return;
@@ -182,6 +207,18 @@ impl TDigestMut {
     }
 
     /// Merge the given TDigest into this one
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use datasketches::tdigest::TDigestMut;
+    /// let mut left = TDigestMut::new(100);
+    /// let mut right = TDigestMut::new(100);
+    /// left.update(1.0);
+    /// right.update(2.0);
+    /// left.merge(&right);
+    /// assert_eq!(left.total_weight(), 2);
+    /// ```
     pub fn merge(&mut self, other: &TDigestMut) {
         if other.is_empty() {
             return;
@@ -209,6 +246,16 @@ impl TDigestMut {
     }
 
     /// Freezes this TDigest into an immutable one.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use datasketches::tdigest::TDigestMut;
+    /// let mut sketch = TDigestMut::new(100);
+    /// sketch.update(1.0);
+    /// let frozen = sketch.freeze();
+    /// assert!(!frozen.is_empty());
+    /// ```
     pub fn freeze(mut self) -> TDigest {
         self.compress();
         TDigest {
@@ -232,6 +279,18 @@ impl TDigestMut {
     }
 
     /// See [`TDigest::cdf`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use datasketches::tdigest::TDigestMut;
+    /// # let mut sketch = TDigestMut::new(100);
+    /// # for value in [1.0, 2.0, 3.0] {
+    /// #     sketch.update(value);
+    /// # }
+    /// let cdf = sketch.cdf(&[1.5]).unwrap();
+    /// assert_eq!(cdf.len(), 2);
+    /// ```
     pub fn cdf(&mut self, split_points: &[f64]) -> Option<Vec<f64>> {
         check_split_points(split_points);
 
@@ -243,6 +302,18 @@ impl TDigestMut {
     }
 
     /// See [`TDigest::pmf`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use datasketches::tdigest::TDigestMut;
+    /// # let mut sketch = TDigestMut::new(100);
+    /// # for value in [1.0, 2.0, 3.0] {
+    /// #     sketch.update(value);
+    /// # }
+    /// let pmf = sketch.pmf(&[1.5]).unwrap();
+    /// assert_eq!(pmf.len(), 2);
+    /// ```
     pub fn pmf(&mut self, split_points: &[f64]) -> Option<Vec<f64>> {
         check_split_points(split_points);
 
@@ -254,6 +325,18 @@ impl TDigestMut {
     }
 
     /// See [`TDigest::rank`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use datasketches::tdigest::TDigestMut;
+    /// # let mut sketch = TDigestMut::new(100);
+    /// # for value in [1.0, 2.0, 3.0] {
+    /// #     sketch.update(value);
+    /// # }
+    /// let rank = sketch.rank(2.0).unwrap();
+    /// assert!((0.0..=1.0).contains(&rank));
+    /// ```
     pub fn rank(&mut self, value: f64) -> Option<f64> {
         assert!(!value.is_nan(), "value must not be NaN");
 
@@ -275,6 +358,18 @@ impl TDigestMut {
     }
 
     /// See [`TDigest::quantile`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use datasketches::tdigest::TDigestMut;
+    /// # let mut sketch = TDigestMut::new(100);
+    /// # for value in [1.0, 2.0, 3.0] {
+    /// #     sketch.update(value);
+    /// # }
+    /// let median = sketch.quantile(0.5).unwrap();
+    /// assert!((1.0..=3.0).contains(&median));
+    /// ```
     pub fn quantile(&mut self, rank: f64) -> Option<f64> {
         assert!((0.0..=1.0).contains(&rank), "rank must be in [0.0, 1.0]");
 
@@ -286,6 +381,17 @@ impl TDigestMut {
     }
 
     /// Serializes this TDigest to bytes.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use datasketches::tdigest::TDigestMut;
+    /// # let mut sketch = TDigestMut::new(100);
+    /// # sketch.update(1.0);
+    /// let bytes = sketch.serialize();
+    /// let decoded = TDigestMut::deserialize(&bytes, false).unwrap();
+    /// assert_eq!(decoded.max_value(), Some(1.0));
+    /// ```
     pub fn serialize(&mut self) -> Vec<u8> {
         self.compress();
 
@@ -367,6 +473,18 @@ impl TDigestMut {
     ///
     /// [^1]: This is to support reading the `tdigest<float>` format from the C++ implementation.
     /// [^2]: <https://github.com/tdunning/t-digest>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use datasketches::tdigest::TDigestMut;
+    /// # let mut sketch = TDigestMut::new(100);
+    /// # sketch.update(1.0);
+    /// # sketch.update(2.0);
+    /// # let bytes = sketch.serialize();
+    /// let decoded = TDigestMut::deserialize(&bytes, false).unwrap();
+    /// assert_eq!(decoded.max_value(), Some(2.0));
+    /// ```
     pub fn deserialize(bytes: &[u8], is_f32: bool) -> Result<Self, Error> {
         fn make_error(tag: &'static str) -> impl FnOnce(std::io::Error) -> Error {
             move |_| Error::insufficient_data(tag)
@@ -747,6 +865,19 @@ impl TDigest {
     ///
     /// Panics if `split_points` is not unique, not monotonically increasing, or contains `NaN`
     /// values.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use datasketches::tdigest::TDigestMut;
+    /// # let mut sketch = TDigestMut::new(100);
+    /// # for value in [1.0, 2.0, 3.0] {
+    /// #     sketch.update(value);
+    /// # }
+    /// let digest = sketch.freeze();
+    /// let cdf = digest.cdf(&[1.5]).unwrap();
+    /// assert_eq!(cdf.len(), 2);
+    /// ```
     pub fn cdf(&self, split_points: &[f64]) -> Option<Vec<f64>> {
         self.view().cdf(split_points)
     }
@@ -770,6 +901,19 @@ impl TDigest {
     ///
     /// Panics if `split_points` is not unique, not monotonically increasing, or contains `NaN`
     /// values.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use datasketches::tdigest::TDigestMut;
+    /// # let mut sketch = TDigestMut::new(100);
+    /// # for value in [1.0, 2.0, 3.0] {
+    /// #     sketch.update(value);
+    /// # }
+    /// let digest = sketch.freeze();
+    /// let pmf = digest.pmf(&[1.5]).unwrap();
+    /// assert_eq!(pmf.len(), 2);
+    /// ```
     pub fn pmf(&self, split_points: &[f64]) -> Option<Vec<f64>> {
         self.view().pmf(split_points)
     }
@@ -781,6 +925,19 @@ impl TDigest {
     /// # Panics
     ///
     /// Panics if the value is `NaN`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use datasketches::tdigest::TDigestMut;
+    /// # let mut sketch = TDigestMut::new(100);
+    /// # for value in [1.0, 2.0, 3.0] {
+    /// #     sketch.update(value);
+    /// # }
+    /// let digest = sketch.freeze();
+    /// let rank = digest.rank(2.0).unwrap();
+    /// assert!((0.0..=1.0).contains(&rank));
+    /// ```
     pub fn rank(&self, value: f64) -> Option<f64> {
         assert!(!value.is_nan(), "value must not be NaN");
         self.view().rank(value)
@@ -793,12 +950,37 @@ impl TDigest {
     /// # Panics
     ///
     /// Panics if rank is not in [0.0, 1.0].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use datasketches::tdigest::TDigestMut;
+    /// # let mut sketch = TDigestMut::new(100);
+    /// # for value in [1.0, 2.0, 3.0] {
+    /// #     sketch.update(value);
+    /// # }
+    /// let digest = sketch.freeze();
+    /// let q = digest.quantile(0.5).unwrap();
+    /// assert!((1.0..=3.0).contains(&q));
+    /// ```
     pub fn quantile(&self, rank: f64) -> Option<f64> {
         assert!((0.0..=1.0).contains(&rank), "rank must be in [0.0, 1.0]");
         self.view().quantile(rank)
     }
 
     /// Converts this immutable TDigest into a mutable one.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use datasketches::tdigest::TDigestMut;
+    /// # let mut sketch = TDigestMut::new(100);
+    /// # sketch.update(1.0);
+    /// # let digest = sketch.freeze();
+    /// let mut mutable = digest.unfreeze();
+    /// mutable.update(2.0);
+    /// assert_eq!(mutable.total_weight(), 2);
+    /// ```
     pub fn unfreeze(self) -> TDigestMut {
         TDigestMut::make(
             self.k,

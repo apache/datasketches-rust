@@ -61,6 +61,15 @@ impl HllSketch {
     /// # Panics
     ///
     /// If lg_config_k is not in range [4, 21]
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use datasketches::hll::HllSketch;
+    /// # use datasketches::hll::HllType;
+    /// let sketch = HllSketch::new(12, HllType::Hll8);
+    /// assert_eq!(sketch.lg_config_k(), 12);
+    /// ```
     pub fn new(lg_config_k: u8, hll_type: HllType) -> Self {
         assert!(
             (4..=21).contains(&lg_config_k),
@@ -134,6 +143,16 @@ impl HllSketch {
     ///
     /// This accepts any type that implements `Hash`. The value is hashed
     /// and converted to a coupon, which is then inserted into the sketch.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use datasketches::hll::HllSketch;
+    /// # use datasketches::hll::HllType;
+    /// let mut sketch = HllSketch::new(10, HllType::Hll8);
+    /// sketch.update("apple");
+    /// assert!(sketch.estimate() >= 1.0);
+    /// ```
     pub fn update<T: Hash>(&mut self, value: T) {
         let coupon = coupon(value);
         self.update_with_coupon(coupon);
@@ -174,6 +193,16 @@ impl HllSketch {
     }
 
     /// Get the current cardinality estimate
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use datasketches::hll::HllSketch;
+    /// # use datasketches::hll::HllType;
+    /// let mut sketch = HllSketch::new(10, HllType::Hll8);
+    /// sketch.update("apple");
+    /// assert!(sketch.estimate() >= 1.0);
+    /// ```
     pub fn estimate(&self) -> f64 {
         match &self.mode {
             Mode::List { list, .. } => list.container().estimate(),
@@ -213,6 +242,18 @@ impl HllSketch {
     }
 
     /// Deserializes an HLL sketch from bytes
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use datasketches::hll::HllSketch;
+    /// # use datasketches::hll::HllType;
+    /// # let mut sketch = HllSketch::new(10, HllType::Hll8);
+    /// # sketch.update("apple");
+    /// # let bytes = sketch.serialize();
+    /// let decoded = HllSketch::deserialize(&bytes).unwrap();
+    /// assert!(decoded.estimate() >= 1.0);
+    /// ```
     pub fn deserialize(bytes: &[u8]) -> Result<HllSketch, Error> {
         fn make_error(tag: &'static str) -> impl FnOnce(std::io::Error) -> Error {
             move |_| Error::insufficient_data(tag)
@@ -323,6 +364,18 @@ impl HllSketch {
     }
 
     /// Serializes the HLL sketch to bytes
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use datasketches::hll::HllSketch;
+    /// # use datasketches::hll::HllType;
+    /// # let mut sketch = HllSketch::new(10, HllType::Hll8);
+    /// # sketch.update("apple");
+    /// let bytes = sketch.serialize();
+    /// let decoded = HllSketch::deserialize(&bytes).unwrap();
+    /// assert!(decoded.estimate() >= 1.0);
+    /// ```
     pub fn serialize(&self) -> Vec<u8> {
         match &self.mode {
             Mode::List { list, hll_type } => list.serialize(self.lg_config_k, *hll_type),

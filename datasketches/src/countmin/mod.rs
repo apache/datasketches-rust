@@ -19,6 +19,25 @@
 //!
 //! The Count-Min sketch provides approximate frequency counts for streaming data
 //! with configurable relative error and confidence bounds.
+//!
+//! # Usage
+//!
+//! ```rust
+//! # use datasketches::countmin::CountMinSketch;
+//! let mut sketch = CountMinSketch::new(5, 256);
+//! sketch.update("apple");
+//! sketch.update_with_weight("banana", 3);
+//! assert!(sketch.estimate("banana") >= 3);
+//! ```
+//!
+//! # Configuration Helpers
+//!
+//! ```rust
+//! # use datasketches::countmin::CountMinSketch;
+//! let buckets = CountMinSketch::suggest_num_buckets(0.01);
+//! let hashes = CountMinSketch::suggest_num_hashes(0.99);
+//! let _sketch = CountMinSketch::new(hashes, buckets);
+//! ```
 
 mod serialization;
 
