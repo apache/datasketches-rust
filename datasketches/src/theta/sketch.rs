@@ -22,10 +22,10 @@
 
 use std::hash::Hash;
 
+use crate::NumStdDev;
 use crate::ResizeFactor;
 use crate::binomial_bounds;
 use crate::hash::DEFAULT_UPDATE_SEED;
-use crate::num_std_dev::NumStdDev;
 use crate::theta::hash_table::DEFAULT_LG_K;
 use crate::theta::hash_table::MAX_LG_K;
 use crate::theta::hash_table::MAX_THETA;
@@ -182,7 +182,7 @@ impl ThetaSketch {
     /// # Examples
     ///
     /// ```
-    /// use datasketches::num_std_dev::NumStdDev;
+    /// use datasketches::NumStdDev;
     /// use datasketches::theta::ThetaSketch;
     ///
     /// let mut sketch = ThetaSketch::builder().lg_k(12).build();
@@ -216,7 +216,7 @@ impl ThetaSketch {
     /// # Examples
     ///
     /// ```
-    /// use datasketches::num_std_dev::NumStdDev;
+    /// use datasketches::NumStdDev;
     /// use datasketches::theta::ThetaSketch;
     ///
     /// let mut sketch = ThetaSketch::builder().lg_k(12).build();
