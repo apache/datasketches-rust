@@ -32,12 +32,12 @@ use std::hash::Hash;
 
 use crate::hll::HllSketch;
 use crate::hll::HllType;
-use crate::hll::NumStdDev;
 use crate::hll::array4::Array4;
 use crate::hll::array6::Array6;
 use crate::hll::array8::Array8;
 use crate::hll::mode::Mode;
 use crate::hll::pack_coupon;
+use crate::num_std_dev::NumStdDev;
 
 /// An HLL Union for combining multiple HLL sketches.
 ///

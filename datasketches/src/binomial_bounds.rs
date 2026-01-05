@@ -16,14 +16,7 @@
 // under the License.
 
 use crate::error::Error;
-
-#[allow(clippy::excessive_precision)]
-const DELTA_OF_NUM_STD_DEVS: [f64; 4] = [
-    0.5000000000000000000, // = 0.5 (1 + erf(0))
-    0.1586553191586026479, // = 0.5 (1 + erf((-1/sqrt(2))))
-    0.0227502618904135701, // = 0.5 (1 + erf((-2/sqrt(2))))
-    0.0013498126861731796, // = 0.5 (1 + erf((-3/sqrt(2))))
-];
+use crate::num_std_dev::NumStdDev;
 
 #[rustfmt::skip]
 #[allow(clippy::excessive_precision)]
@@ -283,8 +276,7 @@ const UB_EQUIV_TABLE: [f64; 363] = [
 ///
 /// * `num_samples` - The number of samples in the sample set.
 /// * `theta` - The sampling probability. Must be in the range (0.0, 1.0].
-/// * `num_std_devs` - The number of standard deviations from the mean for the tail bounds. Must be
-///   1, 2, or 3.
+/// * `num_std_dev` - The number of standard deviations for confidence bounds.
 ///
 /// # Returns
 ///
@@ -292,22 +284,16 @@ const UB_EQUIV_TABLE: [f64; 363] = [
 ///
 /// # Errors
 ///
-/// Returns an error if:
-/// - `theta` is not in the range (0.0, 1.0]
-/// - `num_std_devs` is not 1, 2, or 3
-///
-/// # Examples
-///
-/// ```ignore
-/// let lb = lower_bound(100, 0.5, 2)?;
-/// assert!(lb <= 200.0); // estimate would be 100 / 0.5 = 200
-/// ```
-pub(crate) fn lower_bound(num_samples: u64, theta: f64, num_std_devs: u32) -> Result<f64, Error> {
+/// Returns an error if `theta` is not in the range (0.0, 1.0].
+pub(crate) fn lower_bound(
+    num_samples: u64,
+    theta: f64,
+    num_std_dev: NumStdDev,
+) -> Result<f64, Error> {
     check_theta(theta)?;
-    check_num_std_devs(num_std_devs)?;
 
     let estimate = num_samples as f64 / theta;
-    let lb = compute_approx_binomial_lower_bound(num_samples, theta, num_std_devs);
+    let lb = compute_approx_binomial_lower_bound(num_samples, theta, num_std_dev);
     Ok(estimate.min((num_samples as f64).max(lb)))
 }
 
@@ -317,8 +303,7 @@ pub(crate) fn lower_bound(num_samples: u64, theta: f64, num_std_devs: u32) -> Re
 ///
 /// * `num_samples` - The number of samples in the sample set.
 /// * `theta` - The sampling probability. Must be in the range (0.0, 1.0].
-/// * `num_std_devs` - The number of standard deviations from the mean for the tail bounds. Must be
-///   1, 2, or 3.
+/// * `num_std_dev` - The number of standard deviations for confidence bounds.
 /// * `no_data_seen` - This is normally false. However, in the case where you have zero samples and
 ///   a theta < 1.0, this flag enables the distinction between a virgin case when no actual data has
 ///   been seen and the case where the estimate may be zero but an upper error bound may still
@@ -330,30 +315,20 @@ pub(crate) fn lower_bound(num_samples: u64, theta: f64, num_std_devs: u32) -> Re
 ///
 /// # Errors
 ///
-/// Returns an error if:
-/// - `theta` is not in the range (0.0, 1.0]
-/// - `num_std_devs` is not 1, 2, or 3
-///
-/// # Examples
-///
-/// ```ignore
-/// let ub = upper_bound(100, 0.5, 2, false)?;
-/// assert!(ub >= 200.0); // estimate would be 100 / 0.5 = 200
-/// ```
+/// Returns an error if `theta` is not in the range (0.0, 1.0].
 pub(crate) fn upper_bound(
     num_samples: u64,
     theta: f64,
-    num_std_devs: u32,
+    num_std_dev: NumStdDev,
     no_data_seen: bool,
 ) -> Result<f64, Error> {
     if no_data_seen {
         return Ok(0.0);
     }
     check_theta(theta)?;
-    check_num_std_devs(num_std_devs)?;
 
     let estimate = num_samples as f64 / theta;
-    let ub = compute_approx_binomial_upper_bound(num_samples, theta, num_std_devs);
+    let ub = compute_approx_binomial_upper_bound(num_samples, theta, num_std_dev);
     Ok(estimate.max(ub))
 }
 
@@ -496,7 +471,11 @@ fn special_n_prime_f(num_samples: u64, p: f64, delta: f64) -> Result<u64, Error>
 
 /// Computes an approximation to the lower bound of a Frequentist confidence interval
 /// based on the tails of the Binomial distribution.
-fn compute_approx_binomial_lower_bound(num_samples: u64, theta: f64, num_std_devs: u32) -> f64 {
+fn compute_approx_binomial_lower_bound(
+    num_samples: u64,
+    theta: f64,
+    num_std_dev: NumStdDev,
+) -> f64 {
     if theta == 1.0 {
         return num_samples as f64;
     }
@@ -504,13 +483,13 @@ fn compute_approx_binomial_lower_bound(num_samples: u64, theta: f64, num_std_dev
         return 0.0;
     }
     if num_samples == 1 {
-        let delta = DELTA_OF_NUM_STD_DEVS[num_std_devs as usize];
+        let delta = num_std_dev.tail_probability();
         let raw_lb = (1.0 - delta).ln() / (1.0 - theta).ln();
         return raw_lb.floor(); // round down
     }
     if num_samples > 120 {
         // plenty of samples, so gaussian approximation to binomial distribution isn't too bad
-        let raw_lb = cont_classic_lb(num_samples, theta, num_std_devs as f64);
+        let raw_lb = cont_classic_lb(num_samples, theta, num_std_dev as u8 as f64);
         return raw_lb - 0.5; // fake round down
     }
     // at this point we know 2 <= num_samples <= 120
@@ -521,30 +500,34 @@ fn compute_approx_binomial_lower_bound(num_samples: u64, theta: f64, num_std_dev
     if theta < (num_samples as f64 / 360.0) {
         // empirically-determined threshold
         // here we use the Gaussian approximation, but with a modified num_std_devs
-        let index = 3 * num_samples as usize + (num_std_devs - 1) as usize;
+        let index = 3 * num_samples as usize + (num_std_dev as u8 - 1) as usize;
         let raw_lb = cont_classic_lb(num_samples, theta, LB_EQUIV_TABLE[index]);
         return raw_lb - 0.5; // fake round down
     }
     // This is the most difficult range to approximate; we will compute an "exact" LB.
     // We know that est <= 360, so specialNStar() shouldn't be ridiculously slow.
-    let delta = DELTA_OF_NUM_STD_DEVS[num_std_devs as usize];
+    let delta = num_std_dev.tail_probability();
     special_n_star(num_samples, theta, delta).unwrap_or(num_samples) as f64 // no need to round
 }
 
 /// Computes an approximation to the upper bound of a Frequentist confidence interval based
 /// on the tails of the Binomial distribution.
-fn compute_approx_binomial_upper_bound(num_samples: u64, theta: f64, num_std_devs: u32) -> f64 {
+fn compute_approx_binomial_upper_bound(
+    num_samples: u64,
+    theta: f64,
+    num_std_dev: NumStdDev,
+) -> f64 {
     if theta == 1.0 {
         return num_samples as f64;
     }
     if num_samples == 0 {
-        let delta = DELTA_OF_NUM_STD_DEVS[num_std_devs as usize];
+        let delta = num_std_dev.tail_probability();
         let raw_ub = delta.ln() / (1.0 - theta).ln();
         return raw_ub.ceil(); // round up
     }
     if num_samples > 120 {
         // plenty of samples, so gaussian approximation to binomial distribution isn't too bad
-        let raw_ub = cont_classic_ub(num_samples, theta, num_std_devs as f64);
+        let raw_ub = cont_classic_ub(num_samples, theta, num_std_dev as u8 as f64);
         return raw_ub + 0.5; // fake round up
     }
     // at this point we know 2 <= num_samples <= 120
@@ -555,13 +538,13 @@ fn compute_approx_binomial_upper_bound(num_samples: u64, theta: f64, num_std_dev
     if theta < (num_samples as f64 / 360.0) {
         // empirically-determined threshold
         // here we use the Gaussian approximation, but with a modified num_std_devs
-        let index = 3 * num_samples as usize + (num_std_devs - 1) as usize;
+        let index = 3 * num_samples as usize + (num_std_dev as u8 - 1) as usize;
         let raw_ub = cont_classic_ub(num_samples, theta, UB_EQUIV_TABLE[index]);
         return raw_ub + 0.5; // fake round up
     }
     // This is the most difficult range to approximate; we will compute an "exact" UB.
     // We know that est <= 360, so specialNPrimeF() shouldn't be ridiculously slow.
-    let delta = DELTA_OF_NUM_STD_DEVS[num_std_devs as usize];
+    let delta = num_std_dev.tail_probability();
     special_n_prime_f(num_samples, theta, delta).unwrap_or(num_samples + 1) as f64 // no need to round
 }
 
@@ -580,26 +563,11 @@ fn check_theta(theta: f64) -> Result<(), Error> {
     Ok(())
 }
 
-/// Validates that num_std_devs is 1, 2, or 3.
-///
-/// # Errors
-///
-/// Returns an error if num_std_devs is not 1, 2, or 3.
-fn check_num_std_devs(num_std_devs: u32) -> Result<(), Error> {
-    if !(1..=3).contains(&num_std_devs) {
-        return Err(Error::invalid_argument(format!(
-            "num_std_devs must be 1, 2 or 3: {}",
-            num_std_devs
-        )));
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn run_test_aux(max_num_samples: u64, ci: u32, min_p: f64) -> [f64; 5] {
+    fn run_test_aux(max_num_samples: u64, ci: NumStdDev, min_p: f64) -> [f64; 5] {
         let mut num_samples = 0u64;
         let mut sum1 = 0.0;
         let mut sum2 = 0.0;
@@ -711,13 +679,13 @@ mod tests {
     fn check_bounds() {
         let mut i = 0;
 
-        for ci in 1..=3 {
+        for ci in [NumStdDev::One, NumStdDev::Two, NumStdDev::Three] {
             let arr = run_test_aux(20, ci, 1e-3);
             for j in 0..5 {
                 let ratio = arr[j] / STD[i][j];
                 assert!(
                     (ratio - 1.0).abs() < TOL,
-                    "ci={}, j={}: expected {}, got {}, ratio={}",
+                    "ci={:?}, j={}: expected {}, got {}, ratio={}",
                     ci,
                     j,
                     STD[i][j],
@@ -728,13 +696,13 @@ mod tests {
             i += 1;
         }
 
-        for ci in 1..=3 {
+        for ci in [NumStdDev::One, NumStdDev::Two, NumStdDev::Three] {
             let arr = run_test_aux(200, ci, 1e-5);
             for j in 0..5 {
                 let ratio = arr[j] / STD[i][j];
                 assert!(
                     (ratio - 1.0) < TOL,
-                    "ci={}, j={}: expected {}, got {}, ratio={}",
+                    "ci={:?}, j={}: expected {}, got {}, ratio={}",
                     ci,
                     j,
                     STD[i][j],
@@ -745,42 +713,34 @@ mod tests {
             i += 1;
         }
 
-        // Comment for this larger test like Java
-        // for ci in 1..=3 {
-        //     let arr = run_test_aux(2000, ci, 1e-7);
-        //     for j in 0..5 {
-        //         let ratio = arr[j] / STD[i][j];
-        //         assert!(
-        //             (ratio - 1.0).abs() < TOL,
-        //             "ci={}, j={}: expected {}, got {}, ratio={}",
-        //             ci,
-        //             j,
-        //             STD[i][j],
-        //             arr[j],
-        //             ratio
-        //         );
-        //     }
-        //     i += 1;
-        // }
+        for ci in [NumStdDev::One, NumStdDev::Two, NumStdDev::Three] {
+            let arr = run_test_aux(2000, ci, 1e-7);
+            for j in 0..5 {
+                let ratio = arr[j] / STD[i][j];
+                assert!(
+                    (ratio - 1.0).abs() < TOL,
+                    "ci={:?}, j={}: expected {}, got {}, ratio={}",
+                    ci,
+                    j,
+                    STD[i][j],
+                    arr[j],
+                    ratio
+                );
+            }
+            i += 1;
+        }
     }
 
     #[test]
     fn check_check_args() {
         // Invalid theta values
-        assert!(lower_bound(10, 0.0, 1).is_err());
-        assert!(lower_bound(10, 1.01, 1).is_err());
-        assert!(lower_bound(10, -0.1, 1).is_err());
+        assert!(lower_bound(10, 0.0, NumStdDev::One).is_err());
+        assert!(lower_bound(10, 1.01, NumStdDev::One).is_err());
+        assert!(lower_bound(10, -0.1, NumStdDev::One).is_err());
 
-        assert!(upper_bound(10, 0.0, 1, false).is_err());
-        assert!(upper_bound(10, 1.01, 1, false).is_err());
-        assert!(upper_bound(10, -0.1, 1, false).is_err());
-
-        // Invalid num_std_devs values
-        assert!(lower_bound(10, 0.5, 0).is_err());
-        assert!(lower_bound(10, 0.5, 4).is_err());
-
-        assert!(upper_bound(10, 0.5, 0, false).is_err());
-        assert!(upper_bound(10, 0.5, 4, false).is_err());
+        assert!(upper_bound(10, 0.0, NumStdDev::One, false).is_err());
+        assert!(upper_bound(10, 1.01, NumStdDev::One, false).is_err());
+        assert!(upper_bound(10, -0.1, NumStdDev::One, false).is_err());
     }
 
     #[test]
@@ -788,26 +748,26 @@ mod tests {
         let n = 100;
         let theta = (2.0 - 1e-5) / 2.0; // Just below 1.0 - 1e-5 threshold
 
-        let result = lower_bound(n, theta, 1).unwrap();
+        let result = lower_bound(n, theta, NumStdDev::One).unwrap();
         assert_eq!(result, n as f64);
 
-        let result = upper_bound(n, theta, 1, false).unwrap();
+        let result = upper_bound(n, theta, NumStdDev::One, false).unwrap();
         assert_eq!(result, (n + 1) as f64);
     }
 
     #[test]
     fn check_no_data_seen_flag() {
         // When no_data_seen is true, upper bound should return 0.0
-        let result = upper_bound(0, 0.5, 1, true).unwrap();
+        let result = upper_bound(0, 0.5, NumStdDev::One, true).unwrap();
         assert_eq!(result, 0.0);
 
         // Even with non-zero samples, no_data_seen=true should return 0.0 for upper bound
-        let result = upper_bound(100, 0.5, 2, true).unwrap();
+        let result = upper_bound(100, 0.5, NumStdDev::Two, true).unwrap();
         assert_eq!(result, 0.0);
 
         // When no_data_seen is false with zero samples and theta < 1.0,
         // upper bound should be calculated normally and be greater than 0
-        let result = upper_bound(0, 0.5, 1, false).unwrap();
+        let result = upper_bound(0, 0.5, NumStdDev::One, false).unwrap();
         assert!(result > 0.0); // Upper bound should exist
     }
 }

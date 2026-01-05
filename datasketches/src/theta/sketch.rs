@@ -24,8 +24,8 @@ use std::hash::Hash;
 
 use crate::ResizeFactor;
 use crate::binomial_bounds;
-use crate::error::Error;
 use crate::hash::DEFAULT_UPDATE_SEED;
+use crate::num_std_dev::NumStdDev;
 use crate::theta::hash_table::DEFAULT_LG_K;
 use crate::theta::hash_table::MAX_LG_K;
 use crate::theta::hash_table::MAX_THETA;
@@ -177,20 +177,12 @@ impl ThetaSketch {
     ///
     /// # Arguments
     ///
-    /// * `num_std_devs` - The number of standard deviations from the mean for the tail bounds. Must
-    ///   be 1, 2, or 3, corresponding to approximately 67%, 95% and 99% confidence intervals.
-    ///
-    /// # Returns
-    ///
-    /// Returns `Ok(lb)` where `lb` is the approximate lower bound value.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if `num_std_devs` is not 1, 2, or 3.
+    /// * `num_std_dev` - The number of standard deviations for confidence bounds.
     ///
     /// # Examples
     ///
     /// ```
+    /// use datasketches::num_std_dev::NumStdDev;
     /// use datasketches::theta::ThetaSketch;
     ///
     /// let mut sketch = ThetaSketch::builder().lg_k(12).build();
@@ -199,37 +191,32 @@ impl ThetaSketch {
     /// }
     ///
     /// let estimate = sketch.estimate();
-    /// let lower_bound = sketch.lower_bound(2).unwrap();
-    /// let upper_bound = sketch.upper_bound(2).unwrap();
+    /// let lower_bound = sketch.lower_bound(NumStdDev::Two);
+    /// let upper_bound = sketch.upper_bound(NumStdDev::Two);
     ///
     /// assert!(lower_bound <= estimate);
     /// assert!(estimate <= upper_bound);
     /// ```
-    pub fn lower_bound(&self, num_std_devs: u32) -> Result<f64, Error> {
+    pub fn lower_bound(&self, num_std_dev: NumStdDev) -> f64 {
         if !self.is_estimation_mode() {
-            return Ok(self.num_retained() as f64);
+            return self.num_retained() as f64;
         }
-        binomial_bounds::lower_bound(self.num_retained() as u64, self.theta(), num_std_devs)
+        // This is safe because sampling_probability is guaranteed to be > 0,
+        // so theta will always be > 0, and binomial_bounds will never fail
+        binomial_bounds::lower_bound(self.num_retained() as u64, self.theta(), num_std_dev)
+            .expect("theta should always be valid")
     }
 
     /// Returns the approximate upper error bound given the specified number of Standard Deviations.
     ///
     /// # Arguments
     ///
-    /// * `num_std_devs` - The number of standard deviations from the mean for the tail bounds. Must
-    ///   be 1, 2, or 3, corresponding to approximately 67%, 95% and 99% confidence intervals.
-    ///
-    /// # Returns
-    ///
-    /// Returns `Ok(ub)` where `ub` is the approximate upper bound value.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if `num_std_devs` is not 1, 2, or 3.
+    /// * `num_std_dev` - The number of standard deviations for confidence bounds.
     ///
     /// # Examples
     ///
     /// ```
+    /// use datasketches::num_std_dev::NumStdDev;
     /// use datasketches::theta::ThetaSketch;
     ///
     /// let mut sketch = ThetaSketch::builder().lg_k(12).build();
@@ -238,22 +225,25 @@ impl ThetaSketch {
     /// }
     ///
     /// let estimate = sketch.estimate();
-    /// let lower_bound = sketch.lower_bound(2).unwrap();
-    /// let upper_bound = sketch.upper_bound(2).unwrap();
+    /// let lower_bound = sketch.lower_bound(NumStdDev::Two);
+    /// let upper_bound = sketch.upper_bound(NumStdDev::Two);
     ///
     /// assert!(lower_bound <= estimate);
     /// assert!(estimate <= upper_bound);
     /// ```
-    pub fn upper_bound(&self, num_std_devs: u32) -> Result<f64, Error> {
+    pub fn upper_bound(&self, num_std_dev: NumStdDev) -> f64 {
         if !self.is_estimation_mode() {
-            return Ok(self.num_retained() as f64);
+            return self.num_retained() as f64;
         }
+        // This is safe because sampling_probability is guaranteed to be > 0,
+        // so theta will always be > 0, and binomial_bounds will never fail
         binomial_bounds::upper_bound(
             self.num_retained() as u64,
             self.theta(),
-            num_std_devs,
+            num_std_dev,
             self.is_empty(),
         )
+        .expect("theta should always be valid")
     }
 }
 
@@ -311,9 +301,12 @@ impl ThetaSketchBuilder {
 
     /// Set sampling probability p.
     ///
+    /// The sampling probability controls the fraction of hashed values that are retained.
+    /// Must be greater than 0 to ensure valid theta values for bound calculations.
+    ///
     /// # Panics
     ///
-    /// If p is not in range [0.0, 1.0]
+    /// Panics if p is not in range (0.0, 1.0]
     ///
     /// # Examples
     ///
@@ -323,8 +316,8 @@ impl ThetaSketchBuilder {
     /// ```
     pub fn sampling_probability(mut self, probability: f32) -> Self {
         assert!(
-            (0.0..=1.0).contains(&probability),
-            "p must be in [0.0, 1.0], got {probability}"
+            (0.0..=1.0).contains(&probability) && probability > 0.0,
+            "sampling_probability must be in (0.0, 1.0], got {probability}"
         );
         self.sampling_probability = probability;
         self

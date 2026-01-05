@@ -355,7 +355,7 @@ mod tests {
         assert_ne!(hash1, hash2);
 
         // With low theta, some hashes should be filtered
-        table.theta = 0;
+        table.theta = 1;
         let hash3 = table.hash_and_screen("test3");
         assert_eq!(hash3, 0);
     }

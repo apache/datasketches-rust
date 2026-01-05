@@ -21,10 +21,10 @@
 //! cubic interpolation-based cardinality estimation and confidence bounds.
 
 use crate::hll::COUPON_RSE;
-use crate::hll::NumStdDev;
 use crate::hll::coupon_mapping::X_ARR;
 use crate::hll::coupon_mapping::Y_ARR;
 use crate::hll::cubic_interpolation::using_x_and_y_tables;
+use crate::num_std_dev::NumStdDev;
 
 /// Sentinel value indicating an empty coupon slot
 pub const COUPON_EMPTY: u32 = 0;

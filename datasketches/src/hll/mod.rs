@@ -77,7 +77,7 @@
 //! ```rust
 //! # use datasketches::hll::HllSketch;
 //! # use datasketches::hll::HllType;
-//! # use datasketches::hll::NumStdDev;
+//! # use datasketches::NumStdDev;
 //! let mut sketch = HllSketch::new(12, HllType::Hll8);
 //! sketch.update("apple");
 //! let upper = sketch.upper_bound(NumStdDev::Two);
@@ -124,7 +124,6 @@ mod serialization;
 mod sketch;
 mod union;
 
-pub use self::estimator::NumStdDev;
 pub use self::sketch::HllSketch;
 pub use self::union::HllUnion;
 

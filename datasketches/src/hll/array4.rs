@@ -24,10 +24,10 @@ use super::aux_map::AuxMap;
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
 use crate::error::Error;
-use crate::hll::NumStdDev;
 use crate::hll::estimator::HipEstimator;
 use crate::hll::get_slot;
 use crate::hll::get_value;
+use crate::num_std_dev::NumStdDev;
 
 const AUX_TOKEN: u8 = 15;
 

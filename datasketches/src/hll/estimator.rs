@@ -25,6 +25,7 @@
 use crate::hll::composite_interpolation;
 use crate::hll::cubic_interpolation;
 use crate::hll::harmonic_numbers;
+use crate::num_std_dev::NumStdDev;
 
 /// HIP estimator with KxQ registers for improved cardinality estimation
 ///
@@ -322,22 +323,6 @@ fn inv_pow2(value: u8) -> f64 {
     } else {
         f64::exp2(-(value as f64))
     }
-}
-
-/// Number of standard deviations for confidence bounds
-///
-/// This enum specifies the number of standard deviations to use when computing
-/// upper and lower bounds for cardinality estimates. Higher values provide wider
-/// confidence intervals with greater certainty that the true cardinality falls
-/// within the bounds.
-#[repr(u8)]
-pub enum NumStdDev {
-    /// One standard deviation (\~68% confidence interval)
-    One = 1,
-    /// Two standard deviations (\~95% confidence interval)
-    Two = 2,
-    /// Three standard deviations (\~99.7% confidence interval)
-    Three = 3,
 }
 
 /// Get relative error for HLL estimates

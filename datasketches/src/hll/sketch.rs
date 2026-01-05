@@ -25,7 +25,6 @@ use std::hash::Hash;
 use crate::codec::SketchSlice;
 use crate::error::Error;
 use crate::hll::HllType;
-use crate::hll::NumStdDev;
 use crate::hll::RESIZE_DENOMINATOR;
 use crate::hll::RESIZE_NUMERATOR;
 use crate::hll::array4::Array4;
@@ -37,6 +36,7 @@ use crate::hll::hash_set::HashSet;
 use crate::hll::list::List;
 use crate::hll::mode::Mode;
 use crate::hll::serialization::*;
+use crate::num_std_dev::NumStdDev;
 
 /// A HyperLogLog sketch.
 ///

@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use datasketches::NumStdDev;
 use datasketches::theta::ThetaSketch;
 
 #[test]
@@ -110,8 +111,8 @@ fn test_reset() {
     assert_eq!(sketch.theta(), 1.0);
     assert_eq!(sketch.num_retained(), 0);
     assert!(!sketch.is_estimation_mode());
-    assert_eq!(sketch.lower_bound(1).unwrap(), 0.0);
-    assert_eq!(sketch.upper_bound(1).unwrap(), 0.0);
+    assert_eq!(sketch.lower_bound(NumStdDev::One), 0.0);
+    assert_eq!(sketch.upper_bound(NumStdDev::One), 0.0);
 }
 
 #[test]
@@ -133,12 +134,12 @@ fn test_bounds_empty_sketch() {
     assert!(!sketch.is_estimation_mode());
     assert_eq!(sketch.theta(), 1.0);
     assert_eq!(sketch.estimate(), 0.0);
-    assert_eq!(sketch.lower_bound(1).unwrap(), 0.0);
-    assert_eq!(sketch.upper_bound(1).unwrap(), 0.0);
-    assert_eq!(sketch.lower_bound(2).unwrap(), 0.0);
-    assert_eq!(sketch.upper_bound(2).unwrap(), 0.0);
-    assert_eq!(sketch.lower_bound(3).unwrap(), 0.0);
-    assert_eq!(sketch.upper_bound(3).unwrap(), 0.0);
+    assert_eq!(sketch.lower_bound(NumStdDev::One), 0.0);
+    assert_eq!(sketch.upper_bound(NumStdDev::One), 0.0);
+    assert_eq!(sketch.lower_bound(NumStdDev::Two), 0.0);
+    assert_eq!(sketch.upper_bound(NumStdDev::Two), 0.0);
+    assert_eq!(sketch.lower_bound(NumStdDev::Three), 0.0);
+    assert_eq!(sketch.upper_bound(NumStdDev::Three), 0.0);
 }
 
 #[test]
@@ -151,8 +152,8 @@ fn test_bounds_exact_mode() {
     assert!(!sketch.is_estimation_mode());
     assert_eq!(sketch.theta(), 1.0);
     assert_eq!(sketch.estimate(), 2000.0);
-    assert_eq!(sketch.lower_bound(1).unwrap(), 2000.0);
-    assert_eq!(sketch.upper_bound(1).unwrap(), 2000.0);
+    assert_eq!(sketch.lower_bound(NumStdDev::One), 2000.0);
+    assert_eq!(sketch.upper_bound(NumStdDev::One), 2000.0);
 }
 
 #[test]
@@ -167,12 +168,12 @@ fn test_bounds_estimation_mode() {
     assert!(sketch.theta() < 1.0);
 
     let estimate = sketch.estimate();
-    let lower_bound_1 = sketch.lower_bound(1).unwrap();
-    let upper_bound_1 = sketch.upper_bound(1).unwrap();
-    let lower_bound_2 = sketch.lower_bound(2).unwrap();
-    let upper_bound_2 = sketch.upper_bound(2).unwrap();
-    let lower_bound_3 = sketch.lower_bound(3).unwrap();
-    let upper_bound_3 = sketch.upper_bound(3).unwrap();
+    let lower_bound_1 = sketch.lower_bound(NumStdDev::One);
+    let upper_bound_1 = sketch.upper_bound(NumStdDev::One);
+    let lower_bound_2 = sketch.lower_bound(NumStdDev::Two);
+    let upper_bound_2 = sketch.upper_bound(NumStdDev::Two);
+    let lower_bound_3 = sketch.lower_bound(NumStdDev::Three);
+    let upper_bound_3 = sketch.upper_bound(NumStdDev::Three);
 
     // Check estimate is within reasonable margin (2% to be safe)
     assert!(
@@ -213,33 +214,34 @@ fn test_bounds_with_sampling() {
     assert!(sketch.theta() < 1.0);
 
     let estimate = sketch.estimate();
-    let lower_bound = sketch.lower_bound(2).unwrap();
-    let upper_bound = sketch.upper_bound(2).unwrap();
+    let lower_bound = sketch.lower_bound(NumStdDev::Two);
+    let upper_bound = sketch.upper_bound(NumStdDev::Two);
 
     assert!(lower_bound <= estimate);
     assert!(estimate <= upper_bound);
 }
 
 #[test]
-fn test_bounds_invalid_num_std_devs() {
+fn test_bounds_all_num_std_devs() {
     let mut sketch = ThetaSketch::builder().lg_k(12).build();
     for i in 0..10000 {
         sketch.update(i);
     }
 
-    // Test invalid values
-    assert!(sketch.lower_bound(0).is_err());
-    assert!(sketch.lower_bound(4).is_err());
-    assert!(sketch.upper_bound(0).is_err());
-    assert!(sketch.upper_bound(4).is_err());
+    // Test all valid NumStdDev values work correctly
+    // These no longer return Result, so we just verify they return valid values
+    let lb1 = sketch.lower_bound(NumStdDev::One);
+    let lb2 = sketch.lower_bound(NumStdDev::Two);
+    let lb3 = sketch.lower_bound(NumStdDev::Three);
+    let ub1 = sketch.upper_bound(NumStdDev::One);
+    let ub2 = sketch.upper_bound(NumStdDev::Two);
+    let ub3 = sketch.upper_bound(NumStdDev::Three);
 
-    // Test valid values
-    assert!(sketch.lower_bound(1).is_ok());
-    assert!(sketch.lower_bound(2).is_ok());
-    assert!(sketch.lower_bound(3).is_ok());
-    assert!(sketch.upper_bound(1).is_ok());
-    assert!(sketch.upper_bound(2).is_ok());
-    assert!(sketch.upper_bound(3).is_ok());
+    // Verify the bounds are properly ordered
+    assert!(lb3 <= lb2);
+    assert!(lb2 <= lb1);
+    assert!(ub1 <= ub2);
+    assert!(ub2 <= ub3);
 }
 
 #[test]
@@ -255,6 +257,6 @@ fn test_bounds_empty_estimation_mode() {
     assert!(sketch.is_empty());
     assert!(sketch.is_estimation_mode());
     assert_eq!(sketch.estimate(), 0.0);
-    assert_eq!(sketch.lower_bound(1).unwrap(), 0.0);
-    assert_eq!(sketch.upper_bound(1).unwrap(), 0.0);
+    assert_eq!(sketch.lower_bound(NumStdDev::One), 0.0);
+    assert_eq!(sketch.upper_bound(NumStdDev::One), 0.0);
 }

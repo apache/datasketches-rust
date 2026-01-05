@@ -41,6 +41,8 @@ pub mod theta;
 mod binomial_bounds;
 mod codec;
 mod hash;
+pub mod num_std_dev;
 mod resize;
 
+pub use self::num_std_dev::NumStdDev;
 pub use self::resize::ResizeFactor;
