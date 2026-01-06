@@ -32,6 +32,7 @@ compile_error!("datasketches does not support big-endian targets");
 
 pub mod bloom;
 pub mod countmin;
+pub mod density;
 pub mod error;
 pub mod frequencies;
 pub mod hll;
