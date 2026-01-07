@@ -228,3 +228,12 @@ fn test_invalid_inputs() {
     }
     assert!(td.is_empty());
 }
+
+#[test]
+fn test_estimate_repeat_values() {
+    let mut tdigest = TDigestMut::default();
+    for _ in 0..20 {
+        tdigest.update(1.0);
+    }
+    assert_eq!(tdigest.quantile(0.9), Some(1.0));
+}
