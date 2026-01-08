@@ -47,7 +47,7 @@ pub enum NumStdDev {
 
 impl NumStdDev {
     /// Returns the tail probability (delta) for this confidence level
-    pub fn tail_probability(&self) -> f64 {
+    pub const fn tail_probability(&self) -> f64 {
         DELTA_OF_NUM_STD_DEVS[*self as usize]
     }
 }

@@ -15,8 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use crate::common::NumStdDev;
 use crate::error::Error;
-use crate::num_std_dev::NumStdDev;
 
 #[rustfmt::skip]
 #[allow(clippy::excessive_precision)]

@@ -77,7 +77,7 @@
 //! ```rust
 //! # use datasketches::hll::HllSketch;
 //! # use datasketches::hll::HllType;
-//! # use datasketches::NumStdDev;
+//! # use datasketches::common::NumStdDev;
 //! let mut sketch = HllSketch::new(12, HllType::Hll8);
 //! sketch.update("apple");
 //! let upper = sketch.upper_bound(NumStdDev::Two);

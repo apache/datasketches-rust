@@ -15,29 +15,13 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! # Apache® DataSketches™ Core Rust Library Component
-//!
-//! The Sketching Core Library provides a range of stochastic streaming algorithms and closely
-//! related Rust technologies that are particularly useful when integrating this technology into
-//! systems that must deal with massive data.
-//!
-//! This library is divided into modules that constitute distinct groups of functionality.
+//! Data structures and functions that may be used across all the sketch families.
 
-#![cfg_attr(docsrs, feature(doc_cfg))]
-#![deny(missing_docs)]
+// public common components for datasketches crate
+mod num_std_dev;
+mod resize;
+pub use self::num_std_dev::NumStdDev;
+pub use self::resize::ResizeFactor;
 
-// See https://github.com/apache/datasketches-rust/issues/28 for more information.
-#[cfg(target_endian = "big")]
-compile_error!("datasketches does not support big-endian targets");
-
-pub mod bloom;
-pub mod common;
-pub mod countmin;
-pub mod error;
-pub mod frequencies;
-pub mod hll;
-pub mod tdigest;
-pub mod theta;
-
-mod codec;
-mod hash;
+// private to datasketches crate
+pub(crate) mod binomial_bounds;

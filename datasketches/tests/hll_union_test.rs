@@ -27,7 +27,7 @@
 //!
 //! This mirrors the testing strategy used in hll_update_test.rs
 
-use datasketches::NumStdDev;
+use datasketches::common::NumStdDev;
 use datasketches::hll::HllSketch;
 use datasketches::hll::HllType;
 use datasketches::hll::HllUnion;

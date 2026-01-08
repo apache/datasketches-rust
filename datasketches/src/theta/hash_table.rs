@@ -17,7 +17,7 @@
 
 use std::hash::Hash;
 
-use crate::ResizeFactor;
+use crate::common::ResizeFactor;
 use crate::hash::MurmurHash3X64128;
 
 /// Maximum theta value (signed max for compatibility with Java)

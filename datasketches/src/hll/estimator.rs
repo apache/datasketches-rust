@@ -22,10 +22,10 @@
 //! This is more accurate than the standard HLL estimator, especially for
 //! moderate cardinalities.
 
+use crate::common::NumStdDev;
 use crate::hll::composite_interpolation;
 use crate::hll::cubic_interpolation;
 use crate::hll::harmonic_numbers;
-use crate::num_std_dev::NumStdDev;
 
 /// HIP estimator with KxQ registers for improved cardinality estimation
 ///
