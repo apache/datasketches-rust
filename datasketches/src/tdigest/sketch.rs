@@ -1175,7 +1175,7 @@ impl TDigestView<'_> {
                 }
                 let mut right_weight = 0.;
                 if self.centroids[i + 1].weight.get() == 1 {
-                    if weight_so_far + dw - weight < 0.5 {
+                    if weight_so_far + dw - weight <= 0.5 {
                         return Some(self.centroids[i + 1].mean);
                     }
                     right_weight = 0.5;

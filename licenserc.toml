@@ -17,4 +17,4 @@
 
 headerPath = "Apache-2.0-ASF.txt"
 
-includes = ['**/*.rs', '**/*.yml', '**/*.yaml', '**/*.toml']
+includes = ['**/*.py', '**/*.rs', '**/*.yml', '**/*.yaml', '**/*.toml']
