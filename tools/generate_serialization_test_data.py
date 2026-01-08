@@ -71,7 +71,15 @@ def generate_java_files(workspace_dir, project_dir):
 
     # 4. Clone repository
     repo_url = "https://github.com/apache/datasketches-java.git"
-    run_command(["git", "clone", repo_url, str(temp_dir)])
+    branch = "9.0.0" # FIXME: temporarily use fixed branch until mvn issue is resolved
+    run_command([
+        "git", "clone",
+        "--depth", "1",
+        "--branch", branch,
+        "--single-branch",
+        repo_url,
+        str(temp_dir)
+    ])
 
     # 5. Run Maven to generate files
     mvn_cmd = ["mvn", "test", "-P", "generate-java-files"]
@@ -125,7 +133,15 @@ def generate_cpp_files(workspace_dir, project_root):
 
     # 4. Clone repository
     repo_url = "https://github.com/apache/datasketches-cpp.git"
-    run_command(["git", "clone", repo_url, str(temp_dir)])
+    branch = "master"
+    run_command([
+        "git", "clone",
+        "--depth", "1",
+        "--branch", branch,
+        "--single-branch",
+        repo_url,
+        str(temp_dir)
+    ])
 
     # 5. Build and Run CMake
     build_dir = temp_dir / "build"
