@@ -168,7 +168,7 @@ def generate_cpp_files(workspace_dir, project_root):
     files_copied = 0
     # Search recursively in build directory for *_cpp.sk
     for file_path in build_dir.rglob("*_cpp.sk"):
-         # Avoid copying from CMakeFiles or other intermediate dirs if possible, but the pattern is specific enough
+        # Avoid copying from CMakeFiles or other intermediate dirs if possible, but the pattern is specific enough
         shutil.copy2(file_path, output_dir)
         print(f"Copied: {file_path.name}")
         files_copied += 1
