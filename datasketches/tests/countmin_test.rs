@@ -69,6 +69,54 @@ fn test_negative_weights() {
 }
 
 #[test]
+fn test_halve() {
+    let buckets = CountMinSketch::suggest_num_buckets(0.01);
+    let hashes = CountMinSketch::suggest_num_hashes(0.9);
+    let mut sketch = CountMinSketch::new(hashes, buckets);
+
+    for i in 0..1000usize {
+        for _ in 0..i {
+            sketch.update(i as u64);
+        }
+    }
+
+    for i in 0..1000usize {
+        assert!(sketch.estimate(i as u64) >= i as i64);
+    }
+
+    sketch.halve();
+
+    for i in 0..1000usize {
+        assert!(sketch.estimate(i as u64) >= (i as i64) / 2);
+    }
+}
+
+#[test]
+fn test_decay() {
+    let buckets = CountMinSketch::suggest_num_buckets(0.01);
+    let hashes = CountMinSketch::suggest_num_hashes(0.9);
+    let mut sketch = CountMinSketch::new(hashes, buckets);
+
+    for i in 0..1000usize {
+        for _ in 0..i {
+            sketch.update(i as u64);
+        }
+    }
+
+    for i in 0..1000usize {
+        assert!(sketch.estimate(i as u64) >= i as i64);
+    }
+
+    const FACTOR: f64 = 0.5;
+    sketch.decay(FACTOR);
+
+    for i in 0..1000usize {
+        let expected = ((i as f64) * FACTOR).floor() as i64;
+        assert!(sketch.estimate(i as u64) >= expected);
+    }
+}
+
+#[test]
 fn test_merge() {
     let mut left = CountMinSketch::new(3, 64);
     let mut right = CountMinSketch::new(3, 64);

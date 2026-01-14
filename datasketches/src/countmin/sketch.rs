@@ -180,6 +180,54 @@ impl CountMinSketch {
         }
     }
 
+    /// Divides every counter by two, truncating toward zero.
+    ///
+    /// Useful for exponential decay where counts represent recent activity.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use datasketches::countmin::CountMinSketch;
+    /// let mut sketch = CountMinSketch::new(4, 128);
+    /// sketch.update_with_weight("apple", 3);
+    /// sketch.halve();
+    /// assert!(sketch.estimate("apple") >= 1);
+    /// ```
+    pub fn halve(&mut self) {
+        self.counts.iter_mut().for_each(|c| *c /= 2);
+        self.total_weight /= 2;
+    }
+
+    /// Multiplies every counter by `decay` and truncates back into `i64`.
+    ///
+    /// Values are truncated toward zero after multiplication; choose `decay` in `(0, 1]`.
+    /// The total weight is scaled by the same factor to keep bounds consistent.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use datasketches::countmin::CountMinSketch;
+    /// let mut sketch = CountMinSketch::new(4, 128);
+    /// sketch.update_with_weight("apple", 3);
+    /// sketch.decay(0.5);
+    /// assert!(sketch.estimate("apple") >= 1);
+    /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if `decay` is not finite or is outside `(0, 1]`.
+    pub fn decay(&mut self, decay: f64) {
+        assert!(decay.is_finite(), "decay must be finite");
+        assert!(
+            decay > 0.0 && decay <= 1.0,
+            "decay must be within (0, 1]"
+        );
+        self.counts
+            .iter_mut()
+            .for_each(|c| *c = (*c as f64 * decay) as i64);
+        self.total_weight = (self.total_weight as f64 * decay) as i64;
+    }
+
     /// Returns the estimated frequency of the given item.
     ///
     /// # Examples
