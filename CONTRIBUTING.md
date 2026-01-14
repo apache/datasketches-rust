@@ -32,6 +32,91 @@ cargo version
 
 To keep code style consistent, run `cargo x lint --fix` to automatically fix any style issues before committing your changes.
 
+## Build and Test
+
+We recommend using `cargo x` as a single entrypoint (provided by the workspace `xtask` crate). If you do not have a `cargo x` alias, run the equivalent `cargo run -p x -- ...` command instead.
+
+Build:
+
+```shell
+cargo build --workspace
+```
+
+Test (equivalent to `cargo x test`):
+
+```shell
+cargo run -p x -- test
+# or
+cargo test --workspace --no-default-features
+```
+
+Lint (equivalent to `cargo x lint`):
+
+```shell
+cargo run -p x -- lint
+```
+
+If you want a local `cargo x` alias, add this to `.cargo/config.toml`:
+
+```toml
+[alias]
+x = "run -p x --"
+```
+
+## Manual workflow (without xtask)
+
+`cargo x lint` runs the following steps. Use these directly when you need more control or want to isolate failures:
+
+```shell
+cargo +nightly clippy --tests --all-features --all-targets --workspace -- -D warnings
+cargo +nightly fmt --all --check
+taplo format --check
+typos
+hawkeye check
+```
+
+Automatic fix commands:
+
+```shell
+cargo +nightly clippy --tests --all-features --all-targets --workspace --allow-staged --allow-dirty --fix
+cargo +nightly fmt --all
+taplo format
+hawkeye format --fail-if-updated=false
+```
+
+Install the extra tools with:
+
+```shell
+cargo install taplo-cli typos-cli hawkeye
+```
+
+## Serialization snapshots and test data generation
+
+Some tests depend on snapshot files under `datasketches/tests/serialization_test_data`. If they are missing, tests will fail. Regenerate them with:
+
+```shell
+python3 ./tools/generate_serialization_test_data.py --all
+```
+
+The script pulls `datasketches-java` and `datasketches-cpp` and writes files to:
+
+- `datasketches/tests/serialization_test_data/java_generated_files`
+- `datasketches/tests/serialization_test_data/cpp_generated_files`
+
+You can generate them separately:
+
+```shell
+python3 ./tools/generate_serialization_test_data.py --java
+python3 ./tools/generate_serialization_test_data.py --cpp
+```
+
+The script requires these commands on PATH (and network access):
+
+- Java data: `git`, `java`, `mvn`
+- C++ data: `git`, `cmake`, `ctest`
+
+The current `datasketches-java` generation flow requires JDK >= 25 and Maven >= 3.9.11, otherwise Maven Enforcer will fail.
+
 ## Code of Conduct
 
 We expect all community members to follow our [Code of Conduct](https://www.apache.org/foundation/policies/conduct.html).
