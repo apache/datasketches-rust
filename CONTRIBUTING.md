@@ -34,7 +34,7 @@ To keep code style consistent, run `cargo x lint --fix` to automatically fix any
 
 ## Build and Test
 
-We recommend using `cargo x` as a single entrypoint (provided by the workspace `xtask` crate). If you do not have a `cargo x` alias, run the equivalent `cargo run -p x -- ...` command instead.
+We recommend using `cargo x` as a single entrypoint (provided by the workspace `xtask` crate). This repo defines the `cargo x` alias in `.cargo/config.toml`, which maps to `cargo run --package x -- ...`.
 
 Build:
 
@@ -42,25 +42,18 @@ Build:
 cargo build --workspace
 ```
 
-Test (equivalent to `cargo x test`):
+Test:
 
 ```shell
-cargo run -p x -- test
+cargo x test
 # or
 cargo test --workspace --no-default-features
 ```
 
-Lint (equivalent to `cargo x lint`):
+Lint:
 
 ```shell
-cargo run -p x -- lint
-```
-
-If you want a local `cargo x` alias, add this to `.cargo/config.toml`:
-
-```toml
-[alias]
-x = "run -p x --"
+cargo x lint
 ```
 
 ## Manual workflow (without xtask)
