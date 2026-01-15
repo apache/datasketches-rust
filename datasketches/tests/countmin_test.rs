@@ -59,6 +59,47 @@ fn test_update_and_bounds() {
 }
 
 #[test]
+fn test_update_and_bounds_with_scaling() {
+    let mut sketch = CountMinSketch::with_seed(3, 128, 123);
+    sketch.update_with_weight("x", 10);
+
+    let estimate = sketch.estimate("x");
+    let upper = sketch.upper_bound("x");
+    let lower = sketch.lower_bound("x");
+    assert_eq!(estimate, 10);
+    assert!(lower <= estimate);
+    assert!(estimate <= upper);
+
+    let eps = sketch.relative_error();
+
+    sketch.halve();
+    let estimate = sketch.estimate("x");
+    let upper = sketch.upper_bound("x");
+    let lower = sketch.lower_bound("x");
+    assert_eq!(sketch.total_weight(), 5);
+    assert_eq!(estimate, 5);
+    assert!(lower <= estimate);
+    assert!(estimate <= upper);
+    assert_eq!(
+        upper,
+        estimate + (eps * sketch.total_weight() as f64) as i64
+    );
+
+    sketch.decay(0.5);
+    let estimate = sketch.estimate("x");
+    let upper = sketch.upper_bound("x");
+    let lower = sketch.lower_bound("x");
+    assert_eq!(sketch.total_weight(), 2);
+    assert_eq!(estimate, 2);
+    assert!(lower <= estimate);
+    assert!(estimate <= upper);
+    assert_eq!(
+        upper,
+        estimate + (eps * sketch.total_weight() as f64) as i64
+    );
+}
+
+#[test]
 fn test_negative_weights() {
     let mut sketch = CountMinSketch::with_seed(2, 32, 123);
     sketch.update_with_weight("y", -1);
@@ -66,6 +107,54 @@ fn test_negative_weights() {
     assert_eq!(sketch.estimate("y"), -1);
     sketch.update_with_weight("x", 2);
     assert_eq!(sketch.total_weight(), 3);
+}
+
+#[test]
+fn test_halve() {
+    let buckets = CountMinSketch::suggest_num_buckets(0.01);
+    let hashes = CountMinSketch::suggest_num_hashes(0.9);
+    let mut sketch = CountMinSketch::new(hashes, buckets);
+
+    for i in 0..1000usize {
+        for _ in 0..i {
+            sketch.update(i as u64);
+        }
+    }
+
+    for i in 0..1000usize {
+        assert!(sketch.estimate(i as u64) >= i as i64);
+    }
+
+    sketch.halve();
+
+    for i in 0..1000usize {
+        assert!(sketch.estimate(i as u64) >= (i as i64) / 2);
+    }
+}
+
+#[test]
+fn test_decay() {
+    let buckets = CountMinSketch::suggest_num_buckets(0.01);
+    let hashes = CountMinSketch::suggest_num_hashes(0.9);
+    let mut sketch = CountMinSketch::new(hashes, buckets);
+
+    for i in 0..1000usize {
+        for _ in 0..i {
+            sketch.update(i as u64);
+        }
+    }
+
+    for i in 0..1000usize {
+        assert!(sketch.estimate(i as u64) >= i as i64);
+    }
+
+    const FACTOR: f64 = 0.5;
+    sketch.decay(FACTOR);
+
+    for i in 0..1000usize {
+        let expected = ((i as f64) * FACTOR).floor() as i64;
+        assert!(sketch.estimate(i as u64) >= expected);
+    }
 }
 
 #[test]
