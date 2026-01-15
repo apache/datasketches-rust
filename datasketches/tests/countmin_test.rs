@@ -59,6 +59,47 @@ fn test_update_and_bounds() {
 }
 
 #[test]
+fn test_update_and_bounds_with_scaling() {
+    let mut sketch = CountMinSketch::with_seed(3, 128, 123);
+    sketch.update_with_weight("x", 10);
+
+    let estimate = sketch.estimate("x");
+    let upper = sketch.upper_bound("x");
+    let lower = sketch.lower_bound("x");
+    assert_eq!(estimate, 10);
+    assert!(lower <= estimate);
+    assert!(estimate <= upper);
+
+    let eps = sketch.relative_error();
+
+    sketch.halve();
+    let estimate = sketch.estimate("x");
+    let upper = sketch.upper_bound("x");
+    let lower = sketch.lower_bound("x");
+    assert_eq!(sketch.total_weight(), 5);
+    assert_eq!(estimate, 5);
+    assert!(lower <= estimate);
+    assert!(estimate <= upper);
+    assert_eq!(
+        upper,
+        estimate + (eps * sketch.total_weight() as f64) as i64
+    );
+
+    sketch.decay(0.5);
+    let estimate = sketch.estimate("x");
+    let upper = sketch.upper_bound("x");
+    let lower = sketch.lower_bound("x");
+    assert_eq!(sketch.total_weight(), 2);
+    assert_eq!(estimate, 2);
+    assert!(lower <= estimate);
+    assert!(estimate <= upper);
+    assert_eq!(
+        upper,
+        estimate + (eps * sketch.total_weight() as f64) as i64
+    );
+}
+
+#[test]
 fn test_negative_weights() {
     let mut sketch = CountMinSketch::with_seed(2, 32, 123);
     sketch.update_with_weight("y", -1);
