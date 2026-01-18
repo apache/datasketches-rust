@@ -217,7 +217,6 @@ impl CountMinSketch {
     ///
     /// Panics if `decay` is not finite or is outside `(0, 1]`.
     pub fn decay(&mut self, decay: f64) {
-        assert!(decay.is_finite(), "decay must be finite");
         assert!(decay > 0.0 && decay <= 1.0, "decay must be within (0, 1]");
         self.counts
             .iter_mut()
