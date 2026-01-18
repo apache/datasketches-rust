@@ -15,14 +15,12 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use std::cell::Cell;
-use std::io::Read;
 use std::io::Write;
-use std::time::SystemTime;
-use std::time::UNIX_EPOCH;
 
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
+use crate::common::RandomSource;
+use crate::common::XorShift64;
 use crate::density::serialization::DENSITY_FAMILY_ID;
 use crate::density::serialization::FLAGS_IS_EMPTY;
 use crate::density::serialization::PREAMBLE_INTS_LONG;
@@ -30,6 +28,9 @@ use crate::density::serialization::PREAMBLE_INTS_SHORT;
 use crate::density::serialization::SERIAL_VERSION;
 use crate::error::Error;
 use crate::error::ErrorKind;
+
+type SerializeValue<T> = fn(&mut SketchBytes, T);
+type DeserializeValue<T> = fn(&mut SketchSlice<'_>) -> std::io::Result<T>;
 
 /// Floating point types supported by the density sketch.
 pub trait DensityValue: Copy + PartialOrd + 'static {
@@ -60,17 +61,17 @@ impl DensityValue for f32 {
 }
 
 /// Kernel used to compute density contributions between points.
-pub trait DensityKernel<T: DensityValue> {
+pub trait DensityKernel {
     /// Returns the kernel evaluation for the two points.
-    fn evaluate(&self, left: &[T], right: &[T]) -> T;
+    fn evaluate<T: DensityValue>(&self, left: &[T], right: &[T]) -> T;
 }
 
 /// Gaussian kernel based on squared Euclidean distance.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct GaussianKernel;
 
-impl<T: DensityValue> DensityKernel<T> for GaussianKernel {
-    fn evaluate(&self, left: &[T], right: &[T]) -> T {
+impl DensityKernel for GaussianKernel {
+    fn evaluate<T: DensityValue>(&self, left: &[T], right: &[T]) -> T {
         let mut sum = 0.0f64;
         for (a, b) in left.iter().zip(right.iter()) {
             let diff = a.to_f64() - b.to_f64();
@@ -81,8 +82,13 @@ impl<T: DensityValue> DensityKernel<T> for GaussianKernel {
 }
 
 /// Density sketch for streaming density estimation.
-pub struct DensitySketch<T: DensityValue> {
-    kernel: Box<dyn DensityKernel<T>>,
+pub struct DensitySketch<
+    T: DensityValue,
+    K: DensityKernel = GaussianKernel,
+    R: RandomSource = XorShift64,
+> {
+    kernel: K,
+    rng: R,
     k: u16,
     dim: u32,
     num_retained: u32,
@@ -90,126 +96,107 @@ pub struct DensitySketch<T: DensityValue> {
     levels: Vec<Vec<Vec<T>>>,
 }
 
-impl<T: DensityValue> DensitySketch<T> {
+impl<T: DensityValue> DensitySketch<T, GaussianKernel, XorShift64> {
     /// Creates a new sketch using the Gaussian kernel.
     ///
     /// # Panics
     ///
     /// Panics if `k` is less than 2.
     pub fn new(k: u16, dim: u32) -> Self {
-        Self::with_kernel(k, dim, Box::new(GaussianKernel))
+        Self::with_kernel(k, dim, GaussianKernel)
+    }
+}
+
+impl DensitySketch<f32, GaussianKernel, XorShift64> {
+    /// Deserializes a sketch using the Gaussian kernel.
+    pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
+        Self::deserialize_with_kernel(bytes, GaussianKernel)
+    }
+}
+
+impl DensitySketch<f64, GaussianKernel, XorShift64> {
+    /// Deserializes a sketch using the Gaussian kernel.
+    pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
+        Self::deserialize_with_kernel(bytes, GaussianKernel)
+    }
+}
+
+impl<K: DensityKernel> DensitySketch<f32, K, XorShift64> {
+    /// Deserializes a sketch using the provided kernel.
+    pub fn deserialize_with_kernel(bytes: &[u8], kernel: K) -> Result<Self, Error> {
+        Self::deserialize_with_kernel_and_rng(bytes, kernel, XorShift64::default())
+    }
+}
+
+impl<K: DensityKernel> DensitySketch<f64, K, XorShift64> {
+    /// Deserializes a sketch using the provided kernel.
+    pub fn deserialize_with_kernel(bytes: &[u8], kernel: K) -> Result<Self, Error> {
+        Self::deserialize_with_kernel_and_rng(bytes, kernel, XorShift64::default())
+    }
+}
+
+impl<K: DensityKernel, R: RandomSource> DensitySketch<f32, K, R> {
+    /// Deserializes a sketch using the provided kernel and random source.
+    pub fn deserialize_with_kernel_and_rng(bytes: &[u8], kernel: K, rng: R) -> Result<Self, Error> {
+        deserialize_inner(bytes, kernel, rng, read_f32_value)
     }
 
+    /// Serializes the sketch to a byte vector.
+    pub fn serialize(&self) -> Vec<u8> {
+        serialize_inner(self, 4, write_f32_value)
+    }
+
+    /// Serializes the sketch to a writer.
+    pub fn serialize_to_writer(&self, writer: &mut dyn Write) -> std::io::Result<()> {
+        writer.write_all(&self.serialize())
+    }
+}
+
+impl<K: DensityKernel, R: RandomSource> DensitySketch<f64, K, R> {
+    /// Deserializes a sketch using the provided kernel and random source.
+    pub fn deserialize_with_kernel_and_rng(bytes: &[u8], kernel: K, rng: R) -> Result<Self, Error> {
+        deserialize_inner(bytes, kernel, rng, read_f64_value)
+    }
+
+    /// Serializes the sketch to a byte vector.
+    pub fn serialize(&self) -> Vec<u8> {
+        serialize_inner(self, 8, write_f64_value)
+    }
+
+    /// Serializes the sketch to a writer.
+    pub fn serialize_to_writer(&self, writer: &mut dyn Write) -> std::io::Result<()> {
+        writer.write_all(&self.serialize())
+    }
+}
+
+impl<T: DensityValue, K: DensityKernel> DensitySketch<T, K, XorShift64> {
     /// Creates a new sketch with a custom kernel.
     ///
     /// # Panics
     ///
     /// Panics if `k` is less than 2.
-    pub fn with_kernel(k: u16, dim: u32, kernel: Box<dyn DensityKernel<T>>) -> Self {
-        check_k(k);
+    pub fn with_kernel(k: u16, dim: u32, kernel: K) -> Self {
+        Self::with_kernel_and_rng(k, dim, kernel, XorShift64::default())
+    }
+}
+
+impl<T: DensityValue, K: DensityKernel, R: RandomSource> DensitySketch<T, K, R> {
+    /// Creates a new sketch with a custom kernel and random source.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `k` is less than 2.
+    pub fn with_kernel_and_rng(k: u16, dim: u32, kernel: K, rng: R) -> Self {
+        assert!(k >= 2, "k must be > 1. Found: {k}");
         Self {
             kernel,
+            rng,
             k,
             dim,
             num_retained: 0,
             n: 0,
             levels: vec![Vec::new()],
         }
-    }
-
-    /// Deserializes a sketch using the Gaussian kernel.
-    pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
-        Self::deserialize_with_kernel(bytes, Box::new(GaussianKernel))
-    }
-
-    /// Deserializes a sketch using the provided kernel.
-    pub fn deserialize_with_kernel(
-        bytes: &[u8],
-        kernel: Box<dyn DensityKernel<T>>,
-    ) -> Result<Self, Error> {
-        fn make_error(tag: &'static str) -> impl FnOnce(std::io::Error) -> Error {
-            move |_| Error::insufficient_data(tag)
-        }
-
-        let mut cursor = SketchSlice::new(bytes);
-        let preamble_ints = cursor.read_u8().map_err(make_error("preamble_ints"))?;
-        let serial_version = cursor.read_u8().map_err(make_error("serial_version"))?;
-        let family_id = cursor.read_u8().map_err(make_error("family_id"))?;
-        let flags = cursor.read_u8().map_err(make_error("flags"))?;
-        let k = cursor.read_u16_le().map_err(make_error("k"))?;
-        cursor.read_u16_le().map_err(make_error("unused"))?;
-        let dim = cursor.read_u32_le().map_err(make_error("dim"))?;
-
-        if family_id != DENSITY_FAMILY_ID {
-            return Err(Error::invalid_family(
-                DENSITY_FAMILY_ID,
-                family_id,
-                "DensitySketch",
-            ));
-        }
-        if serial_version != SERIAL_VERSION {
-            return Err(Error::unsupported_serial_version(
-                SERIAL_VERSION,
-                serial_version,
-            ));
-        }
-        validate_k(k)?;
-        check_header_validity(preamble_ints, flags)?;
-
-        let is_empty = (flags & FLAGS_IS_EMPTY) != 0;
-        if is_empty {
-            return Ok(Self::with_kernel(k, dim, kernel));
-        }
-
-        let num_retained = cursor.read_u32_le().map_err(make_error("num_retained"))?;
-        let n = cursor.read_u64_le().map_err(make_error("n"))?;
-
-        let mut levels = Vec::new();
-        let mut remaining = num_retained as i64;
-        while remaining > 0 {
-            let level_size = cursor.read_u32_le().map_err(make_error("level_size"))?;
-            let mut level = Vec::with_capacity(level_size as usize);
-            for _ in 0..level_size {
-                let mut point = Vec::with_capacity(dim as usize);
-                for _ in 0..dim {
-                    point.push(read_value(&mut cursor).map_err(make_error("point"))?);
-                }
-                level.push(point);
-            }
-            remaining -= level_size as i64;
-            levels.push(level);
-        }
-        if remaining != 0 {
-            return Err(Error::deserial(
-                "invalid number of retained points while decoding density sketch",
-            ));
-        }
-
-        Ok(Self {
-            kernel,
-            k,
-            dim,
-            num_retained,
-            n,
-            levels,
-        })
-    }
-
-    /// Deserializes a sketch from a reader using the Gaussian kernel.
-    pub fn deserialize_from_reader(reader: &mut dyn Read) -> Result<Self, Error> {
-        Self::deserialize_from_reader_with_kernel(reader, Box::new(GaussianKernel))
-    }
-
-    /// Deserializes a sketch from a reader using the provided kernel.
-    pub fn deserialize_from_reader_with_kernel(
-        reader: &mut dyn Read,
-        kernel: Box<dyn DensityKernel<T>>,
-    ) -> Result<Self, Error> {
-        let mut buf = Vec::new();
-        reader
-            .read_to_end(&mut buf)
-            .map_err(|err| Error::deserial(format!("error reading stream: {err}")))?;
-        Self::deserialize_with_kernel(&buf, kernel)
     }
 
     /// Returns the configured parameter k.
@@ -305,61 +292,12 @@ impl<T: DensityValue> DensitySketch<T> {
         let n = self.n as f64;
         let mut density = 0.0f64;
         for (height, level) in self.levels.iter().enumerate() {
-            let weight = match height {
-                0..=127 => 1u128 << height,
-                _ => panic!("level height too large"),
-            };
-            let height_weight = weight as f64;
+            let height_weight = weight_for_level(height) as f64;
             for p in level {
                 density += height_weight * self.kernel.evaluate(p, point).to_f64() / n;
             }
         }
         T::from_f64(density)
-    }
-
-    /// Serializes the sketch to a byte vector.
-    pub fn serialize(&self) -> Vec<u8> {
-        let preamble_ints = if self.is_empty() {
-            PREAMBLE_INTS_SHORT
-        } else {
-            PREAMBLE_INTS_LONG
-        };
-        let mut size_bytes = preamble_ints as usize * 4;
-        if !self.is_empty() {
-            for level in &self.levels {
-                size_bytes += 4 + (level.len() * self.dim as usize * std::mem::size_of::<T>());
-            }
-        }
-        let mut bytes = SketchBytes::with_capacity(size_bytes);
-        bytes.write_u8(preamble_ints);
-        bytes.write_u8(SERIAL_VERSION);
-        bytes.write_u8(DENSITY_FAMILY_ID);
-        let flags = if self.is_empty() { FLAGS_IS_EMPTY } else { 0 };
-        bytes.write_u8(flags);
-        bytes.write_u16_le(self.k);
-        bytes.write_u16_le(0);
-        bytes.write_u32_le(self.dim);
-
-        if self.is_empty() {
-            return bytes.into_bytes();
-        }
-
-        bytes.write_u32_le(self.num_retained);
-        bytes.write_u64_le(self.n);
-        for level in &self.levels {
-            bytes.write_u32_le(level.len() as u32);
-            for point in level {
-                for value in point {
-                    write_value(&mut bytes, *value);
-                }
-            }
-        }
-        bytes.into_bytes()
-    }
-
-    /// Serializes the sketch to a writer.
-    pub fn serialize_to_writer(&self, writer: &mut dyn Write) -> std::io::Result<()> {
-        writer.write_all(&self.serialize())
     }
 
     /// Returns an iterator over retained points with their weights.
@@ -388,20 +326,21 @@ impl<T: DensityValue> DensitySketch<T> {
         if level_len == 0 {
             return;
         }
-        shuffle(&mut self.levels[height]);
         let mut bits = vec![false; level_len];
-        bits[0] = random_bit();
-        for i in 1..level_len {
-            let mut delta = 0.0f64;
-            for (j, bit) in bits.iter().enumerate().take(i) {
-                let weight = if *bit { 1.0 } else { -1.0 };
-                delta += weight
-                    * self
-                        .kernel
-                        .evaluate(&self.levels[height][i], &self.levels[height][j])
-                        .to_f64();
+        {
+            let rng = &mut self.rng;
+            let level = &mut self.levels[height];
+            let kernel = &self.kernel;
+            shuffle_with_rng(rng, level);
+            bits[0] = random_bit(rng);
+            for i in 1..level_len {
+                let mut delta = 0.0f64;
+                for (j, bit) in bits.iter().enumerate().take(i) {
+                    let weight = if *bit { 1.0 } else { -1.0 };
+                    delta += weight * kernel.evaluate(&level[i], &level[j]).to_f64();
+                }
+                bits[i] = delta < 0.0;
             }
-            bits[i] = delta < 0.0;
         }
         let old_level = std::mem::take(&mut self.levels[height]);
         for (index, point) in old_level.into_iter().enumerate() {
@@ -417,9 +356,21 @@ impl<T: DensityValue> DensitySketch<T> {
 /// Borrowed view of a retained point and its weight.
 pub struct DensityItem<'a, T> {
     /// The retained point.
-    pub point: &'a [T],
+    point: &'a [T],
     /// The weight associated with the point.
-    pub weight: u64,
+    weight: u64,
+}
+
+impl<'a, T> DensityItem<'a, T> {
+    /// Returns the retained point.
+    pub fn point(&self) -> &'a [T] {
+        self.point
+    }
+
+    /// Returns the weight associated with the point.
+    pub fn weight(&self) -> u64 {
+        self.weight
+    }
 }
 
 /// Iterator over retained points and their weights.
@@ -436,10 +387,7 @@ impl<'a, T> Iterator for DensityIter<'a, T> {
         while self.level_index < self.levels.len() {
             let level = &self.levels[self.level_index];
             if self.item_index < level.len() {
-                let weight = match self.level_index {
-                    0..=63 => 1u64 << self.level_index,
-                    _ => panic!("level height too large"),
-                };
+                let weight = weight_for_level(self.level_index);
                 let item = DensityItem {
                     point: &level[self.item_index],
                     weight,
@@ -454,7 +402,9 @@ impl<'a, T> Iterator for DensityIter<'a, T> {
     }
 }
 
-impl<'a, T: DensityValue> IntoIterator for &'a DensitySketch<T> {
+impl<'a, T: DensityValue, K: DensityKernel, R: RandomSource> IntoIterator
+    for &'a DensitySketch<T, K, R>
+{
     type Item = DensityItem<'a, T>;
     type IntoIter = DensityIter<'a, T>;
 
@@ -463,89 +413,172 @@ impl<'a, T: DensityValue> IntoIterator for &'a DensitySketch<T> {
     }
 }
 
-fn check_k(k: u16) {
-    assert!(k >= 2, "k must be > 1. Found: {k}");
-}
-
-fn validate_k(k: u16) -> Result<(), Error> {
-    if k >= 2 {
-        Ok(())
-    } else {
-        Err(Error::new(
-            ErrorKind::InvalidArgument,
-            format!("k must be > 1. Found: {k}"),
-        ))
+fn weight_for_level(level: usize) -> u64 {
+    match level {
+        0..=63 => 1u64 << level,
+        _ => panic!("level height too large"),
     }
 }
 
-fn check_header_validity(preamble_ints: u8, flags: u8) -> Result<(), Error> {
-    let empty = (flags & FLAGS_IS_EMPTY) != 0;
-    if (empty && preamble_ints == PREAMBLE_INTS_SHORT)
-        || (!empty && preamble_ints == PREAMBLE_INTS_LONG)
-    {
-        return Ok(());
-    }
-    let expected = if empty {
-        PREAMBLE_INTS_SHORT
-    } else {
-        PREAMBLE_INTS_LONG
-    };
-    Err(Error::invalid_preamble_longs(expected, preamble_ints))
+fn random_bit<R: RandomSource>(rng: &mut R) -> bool {
+    rng.next_bool()
 }
 
-fn write_value<T: DensityValue>(bytes: &mut SketchBytes, value: T) {
-    if std::mem::size_of::<T>() == 4 {
-        bytes.write_f32_le(value.to_f64() as f32);
-    } else {
-        bytes.write_f64_le(value.to_f64());
-    }
-}
-
-fn read_value<T: DensityValue>(cursor: &mut SketchSlice<'_>) -> std::io::Result<T> {
-    if std::mem::size_of::<T>() == 4 {
-        cursor.read_f32_le().map(|v| T::from_f64(v as f64))
-    } else {
-        cursor.read_f64_le().map(T::from_f64)
-    }
-}
-
-thread_local! {
-    static RNG_STATE: Cell<u64> = Cell::new(seed_rng());
-}
-
-fn seed_rng() -> u64 {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-    let mut seed = nanos as u64 ^ (std::process::id() as u64);
-    if seed == 0 {
-        seed = 0x9e3779b97f4a7c15;
-    }
-    seed
-}
-
-fn next_u64() -> u64 {
-    RNG_STATE.with(|state| {
-        let mut x = state.get();
-        x ^= x << 13;
-        x ^= x >> 7;
-        x ^= x << 17;
-        state.set(x);
-        x
-    })
-}
-
-fn random_bit() -> bool {
-    (next_u64() & 1) != 0
-}
-
-fn shuffle<T>(slice: &mut [T]) {
+fn shuffle_with_rng<R: RandomSource, T>(rng: &mut R, slice: &mut [T]) {
     if slice.len() <= 1 {
         return;
     }
     for i in (1..slice.len()).rev() {
-        let j = (next_u64() % (i as u64 + 1)) as usize;
+        let j = (rng.next_u64() % (i as u64 + 1)) as usize;
         slice.swap(i, j);
     }
+}
+
+fn write_f32_value(bytes: &mut SketchBytes, value: f32) {
+    bytes.write_f32_le(value);
+}
+
+fn write_f64_value(bytes: &mut SketchBytes, value: f64) {
+    bytes.write_f64_le(value);
+}
+
+fn read_f32_value(cursor: &mut SketchSlice<'_>) -> std::io::Result<f32> {
+    cursor.read_f32_le()
+}
+
+fn read_f64_value(cursor: &mut SketchSlice<'_>) -> std::io::Result<f64> {
+    cursor.read_f64_le()
+}
+
+fn serialize_inner<T: DensityValue, K: DensityKernel, R: RandomSource>(
+    sketch: &DensitySketch<T, K, R>,
+    value_size: usize,
+    write_value: SerializeValue<T>,
+) -> Vec<u8> {
+    let preamble_ints = if sketch.is_empty() {
+        PREAMBLE_INTS_SHORT
+    } else {
+        PREAMBLE_INTS_LONG
+    };
+    let mut size_bytes = preamble_ints as usize * 4;
+    if !sketch.is_empty() {
+        for level in &sketch.levels {
+            size_bytes += 4 + (level.len() * sketch.dim as usize * value_size);
+        }
+    }
+    let mut bytes = SketchBytes::with_capacity(size_bytes);
+    bytes.write_u8(preamble_ints);
+    bytes.write_u8(SERIAL_VERSION);
+    bytes.write_u8(DENSITY_FAMILY_ID);
+    let flags = if sketch.is_empty() { FLAGS_IS_EMPTY } else { 0 };
+    bytes.write_u8(flags);
+    bytes.write_u16_le(sketch.k);
+    bytes.write_u16_le(0);
+    bytes.write_u32_le(sketch.dim);
+
+    if sketch.is_empty() {
+        return bytes.into_bytes();
+    }
+
+    bytes.write_u32_le(sketch.num_retained);
+    bytes.write_u64_le(sketch.n);
+    for level in &sketch.levels {
+        bytes.write_u32_le(level.len() as u32);
+        for point in level {
+            for value in point {
+                write_value(&mut bytes, *value);
+            }
+        }
+    }
+    bytes.into_bytes()
+}
+
+fn deserialize_inner<T: DensityValue, K: DensityKernel, R: RandomSource>(
+    bytes: &[u8],
+    kernel: K,
+    rng: R,
+    read_value: DeserializeValue<T>,
+) -> Result<DensitySketch<T, K, R>, Error> {
+    fn make_error(tag: &'static str) -> impl FnOnce(std::io::Error) -> Error {
+        move |_| Error::insufficient_data(tag)
+    }
+
+    let mut cursor = SketchSlice::new(bytes);
+    let preamble_ints = cursor.read_u8().map_err(make_error("preamble_ints"))?;
+    let serial_version = cursor.read_u8().map_err(make_error("serial_version"))?;
+    let family_id = cursor.read_u8().map_err(make_error("family_id"))?;
+    let flags = cursor.read_u8().map_err(make_error("flags"))?;
+    let k = cursor.read_u16_le().map_err(make_error("k"))?;
+    cursor.read_u16_le().map_err(make_error("unused"))?;
+    let dim = cursor.read_u32_le().map_err(make_error("dim"))?;
+
+    if family_id != DENSITY_FAMILY_ID {
+        return Err(Error::invalid_family(
+            DENSITY_FAMILY_ID,
+            family_id,
+            "DensitySketch",
+        ));
+    }
+    if serial_version != SERIAL_VERSION {
+        return Err(Error::unsupported_serial_version(
+            SERIAL_VERSION,
+            serial_version,
+        ));
+    }
+    if k < 2 {
+        return Err(Error::new(
+            ErrorKind::InvalidArgument,
+            format!("k must be > 1. Found: {k}"),
+        ));
+    }
+
+    let is_empty = (flags & FLAGS_IS_EMPTY) != 0;
+    let expected_preamble = if is_empty {
+        PREAMBLE_INTS_SHORT
+    } else {
+        PREAMBLE_INTS_LONG
+    };
+    if preamble_ints != expected_preamble {
+        return Err(Error::invalid_preamble_longs(
+            expected_preamble,
+            preamble_ints,
+        ));
+    }
+    if is_empty {
+        return Ok(DensitySketch::with_kernel_and_rng(k, dim, kernel, rng));
+    }
+
+    let num_retained = cursor.read_u32_le().map_err(make_error("num_retained"))?;
+    let n = cursor.read_u64_le().map_err(make_error("n"))?;
+
+    let mut levels = Vec::new();
+    let mut remaining = num_retained as i64;
+    while remaining > 0 {
+        let level_size = cursor.read_u32_le().map_err(make_error("level_size"))?;
+        let mut level = Vec::with_capacity(level_size as usize);
+        for _ in 0..level_size {
+            let mut point = Vec::with_capacity(dim as usize);
+            for _ in 0..dim {
+                point.push(read_value(&mut cursor).map_err(make_error("point"))?);
+            }
+            level.push(point);
+        }
+        remaining -= level_size as i64;
+        levels.push(level);
+    }
+    if remaining != 0 {
+        return Err(Error::deserial(
+            "invalid number of retained points while decoding density sketch",
+        ));
+    }
+
+    Ok(DensitySketch {
+        kernel,
+        rng,
+        k,
+        dim,
+        num_retained,
+        n,
+        levels,
+    })
 }

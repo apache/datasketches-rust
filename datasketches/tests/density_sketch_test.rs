@@ -19,6 +19,7 @@ use std::io::Cursor;
 
 use datasketches::density::DensityKernel;
 use datasketches::density::DensitySketch;
+use datasketches::density::DensityValue;
 
 #[test]
 #[should_panic(expected = "operation is undefined for an empty sketch")]
@@ -74,7 +75,7 @@ fn test_iterator() {
     let mut count = 0;
     for item in &sketch {
         count += 1;
-        assert_eq!(item.point.len(), sketch.dim() as usize);
+        assert_eq!(item.point().len(), sketch.dim() as usize);
     }
     assert_eq!(count as u32, sketch.num_retained());
 }
@@ -84,14 +85,18 @@ struct SphericalKernel {
     radius_squared: f32,
 }
 
-impl DensityKernel<f32> for SphericalKernel {
-    fn evaluate(&self, left: &[f32], right: &[f32]) -> f32 {
-        let mut sum = 0.0f32;
+impl DensityKernel for SphericalKernel {
+    fn evaluate<T: DensityValue>(&self, left: &[T], right: &[T]) -> T {
+        let mut sum = 0.0f64;
         for (a, b) in left.iter().zip(right.iter()) {
-            let diff = a - b;
+            let diff = a.to_f64() - b.to_f64();
             sum += diff * diff;
         }
-        if sum <= self.radius_squared { 1.0 } else { 0.0 }
+        if sum <= self.radius_squared as f64 {
+            T::from_f64(1.0)
+        } else {
+            T::from_f64(0.0)
+        }
     }
 }
 
@@ -100,7 +105,7 @@ fn test_custom_kernel() {
     let kernel = SphericalKernel {
         radius_squared: 0.25,
     };
-    let mut sketch: DensitySketch<f32> = DensitySketch::with_kernel(10, 3, Box::new(kernel));
+    let mut sketch: DensitySketch<f32, SphericalKernel> = DensitySketch::with_kernel(10, 3, kernel);
 
     sketch.update(vec![1.0, 1.0, 1.0]);
     assert_eq!(sketch.estimate(&[1.001, 1.001, 1.001]), 1.0);
@@ -115,7 +120,7 @@ fn test_custom_kernel() {
     let mut count = 0;
     for item in &sketch {
         count += 1;
-        assert_eq!(item.point.len(), sketch.dim() as usize);
+        assert_eq!(item.point().len(), sketch.dim() as usize);
     }
     assert_eq!(count as u32, sketch.num_retained());
 }
@@ -134,8 +139,8 @@ fn test_serialize_empty() {
 
     let mut cursor = Cursor::new(Vec::new());
     sketch.serialize_to_writer(&mut cursor).unwrap();
-    cursor.set_position(0);
-    let decoded = DensitySketch::<f64>::deserialize_from_reader(&mut cursor).unwrap();
+    let bytes = cursor.into_inner();
+    let decoded = DensitySketch::<f64>::deserialize(&bytes).unwrap();
     assert!(decoded.is_empty());
     assert!(!decoded.is_estimation_mode());
     assert_eq!(sketch.k(), decoded.k());
@@ -167,8 +172,8 @@ fn test_serialize_bytes() {
     let mut iter_left = sketch.iter();
     let mut iter_right = decoded.iter();
     while let (Some(left), Some(right)) = (iter_left.next(), iter_right.next()) {
-        assert_eq!(left.point[0], right.point[0]);
-        assert_eq!(left.weight, right.weight);
+        assert_eq!(left.point()[0], right.point()[0]);
+        assert_eq!(left.weight(), right.weight());
     }
 
     let n = 1031;
@@ -189,8 +194,8 @@ fn test_serialize_bytes() {
     let mut iter_left = sketch.iter();
     let mut iter_right = decoded.iter();
     while let (Some(left), Some(right)) = (iter_left.next(), iter_right.next()) {
-        assert_eq!(left.point[0], right.point[0]);
-        assert_eq!(left.weight, right.weight);
+        assert_eq!(left.point()[0], right.point()[0]);
+        assert_eq!(left.weight(), right.weight());
     }
 }
 
@@ -208,8 +213,8 @@ fn test_serialize_stream() {
 
     let mut cursor = Cursor::new(Vec::new());
     sketch.serialize_to_writer(&mut cursor).unwrap();
-    cursor.set_position(0);
-    let decoded = DensitySketch::<f32>::deserialize_from_reader(&mut cursor).unwrap();
+    let bytes = cursor.into_inner();
+    let decoded = DensitySketch::<f32>::deserialize(&bytes).unwrap();
     assert!(!decoded.is_empty());
     assert!(!decoded.is_estimation_mode());
     assert_eq!(sketch.k(), decoded.k());
@@ -219,10 +224,10 @@ fn test_serialize_stream() {
     let mut iter_left = sketch.iter();
     let mut iter_right = decoded.iter();
     while let (Some(left), Some(right)) = (iter_left.next(), iter_right.next()) {
-        assert_eq!(left.point[0], right.point[0]);
-        assert_eq!(left.weight, right.weight);
-        assert_eq!(left.point[1], right.point[1]);
-        assert_eq!(left.point[2], right.point[2]);
+        assert_eq!(left.point()[0], right.point()[0]);
+        assert_eq!(left.weight(), right.weight());
+        assert_eq!(left.point()[1], right.point()[1]);
+        assert_eq!(left.point()[2], right.point()[2]);
     }
 
     let n = 1031;
@@ -234,8 +239,8 @@ fn test_serialize_stream() {
 
     let mut cursor = Cursor::new(Vec::new());
     sketch.serialize_to_writer(&mut cursor).unwrap();
-    cursor.set_position(0);
-    let decoded = DensitySketch::<f32>::deserialize_from_reader(&mut cursor).unwrap();
+    let bytes = cursor.into_inner();
+    let decoded = DensitySketch::<f32>::deserialize(&bytes).unwrap();
     assert!(!decoded.is_empty());
     assert!(decoded.is_estimation_mode());
     assert_eq!(sketch.k(), decoded.k());
@@ -245,9 +250,9 @@ fn test_serialize_stream() {
     let mut iter_left = sketch.iter();
     let mut iter_right = decoded.iter();
     while let (Some(left), Some(right)) = (iter_left.next(), iter_right.next()) {
-        assert_eq!(left.point[0], right.point[0]);
-        assert_eq!(left.weight, right.weight);
-        assert_eq!(left.point[1], right.point[1]);
-        assert_eq!(left.point[2], right.point[2]);
+        assert_eq!(left.point()[0], right.point()[0]);
+        assert_eq!(left.weight(), right.weight());
+        assert_eq!(left.point()[1], right.point()[1]);
+        assert_eq!(left.point()[2], right.point()[2]);
     }
 }
