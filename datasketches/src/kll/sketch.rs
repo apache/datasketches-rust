@@ -42,6 +42,10 @@ use crate::codec::SketchSlice;
 use crate::error::Error;
 
 /// Trait implemented by item types supported by [`KllSketch`].
+///
+/// Implementations must provide a total ordering via `cmp`.
+/// For floating-point types, ensure `cmp` handles NaN consistently and `is_nan`
+/// returns true for values that should be ignored by updates.
 pub trait KllItem: Clone {
     /// Compare two items.
     fn cmp(a: &Self, b: &Self) -> Ordering;
@@ -67,7 +71,7 @@ pub(crate) trait KllSerde: KllItem {
 ///
 /// See the [kll module level documentation](crate::kll) for more.
 #[derive(Debug, Clone, PartialEq)]
-pub struct KllSketch<T: KllItem> {
+pub struct KllSketch<T> {
     k: u16,
     m: u8,
     min_k: u16,

@@ -43,6 +43,15 @@ mod sorted_view;
 
 pub use self::sketch::KllSketch;
 
+/// KLL sketch specialized for `f64`.
+pub type KllSketchF64 = KllSketch<f64>;
+/// KLL sketch specialized for `f32`.
+pub type KllSketchF32 = KllSketch<f32>;
+/// KLL sketch specialized for `i64`.
+pub type KllSketchI64 = KllSketch<i64>;
+/// KLL sketch specialized for `String`.
+pub type KllSketchString = KllSketch<String>;
+
 /// Default value of parameter k.
 pub const DEFAULT_K: u16 = 200;
 /// Default value of parameter m.
