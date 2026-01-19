@@ -129,7 +129,7 @@ impl CountMinSketch {
     ///
     /// # Panics
     ///
-    /// Panics if `confidence` is not in (0, 1].
+    /// Panics if `confidence` is not in [0, 1].
     pub fn suggest_num_hashes(confidence: f64) -> u8 {
         assert!(
             (0.0..=1.0).contains(&confidence),
