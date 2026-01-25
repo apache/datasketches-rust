@@ -15,10 +15,14 @@
 // specific language governing permissions and limitations
 // under the License.
 
-pub(super) const PREAMBLE_LONGS_SHORT: u8 = 2;
-pub(super) const SERIAL_VERSION: u8 = 1;
-pub(super) const COUNTMIN_FAMILY_ID: u8 = 18;
-pub(super) const FLAGS_IS_EMPTY: u8 = 1 << 0;
-pub(super) const LONG_SIZE_BYTES: usize = 8;
+use std::hash::Hasher;
 
-pub(super) use crate::common::compute_seed_hash;
+use crate::hash::MurmurHash3X64128;
+
+pub(crate) fn compute_seed_hash(seed: u64) -> u16 {
+    let mut hasher = MurmurHash3X64128::with_seed(0);
+    hasher.write(&seed.to_le_bytes());
+    let (h1, _) = hasher.finish128();
+    (h1 & 0xffff) as u16
+}
+
