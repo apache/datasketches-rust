@@ -355,7 +355,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
                 });
             }
         }
-        rows.sort_by(|a, b| b.estimate.cmp(&a.estimate));
+        rows.sort_by_key(|row| std::cmp::Reverse(row.estimate));
         rows
     }
 
