@@ -17,7 +17,6 @@
 
 use std::hash::Hash;
 use std::hash::Hasher;
-use std::mem::size_of;
 
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
@@ -33,21 +32,111 @@ use crate::hash::MurmurHash3X64128;
 
 const MAX_TABLE_ENTRIES: usize = 1 << 30;
 
+/// Value type used for counters and weights in a Count-Min sketch.
+///
+/// Only `i64` and `u64` are officially supported to match the DataSketches
+/// Count-Min binary format, which stores counters as 8-byte little-endian
+/// two's-complement values. Custom implementations must preserve that layout
+/// to remain interoperable.
+pub trait CountMinValue: Copy + Ord {
+    /// Zero value for counters and weights.
+    const ZERO: Self;
+    /// One value for unit updates.
+    const ONE: Self;
+    /// Maximum representable value for initializing minima.
+    const MAX: Self;
+
+    /// Adds with wrapping semantics.
+    fn wrapping_add(self, other: Self) -> Self;
+    /// Returns the absolute value for weight tracking.
+    fn abs(self) -> Self;
+    /// Converts into `f64` for bound computations.
+    fn to_f64(self) -> f64;
+    /// Converts from `f64` by truncating toward zero.
+    fn from_f64_trunc(value: f64) -> Self;
+    /// Serializes the value as little-endian bytes.
+    fn to_le_bytes(self) -> [u8; 8];
+    /// Deserializes the value from little-endian bytes.
+    fn from_le_bytes(bytes: [u8; 8]) -> Self;
+}
+
+impl CountMinValue for i64 {
+    const ZERO: Self = 0;
+    const ONE: Self = 1;
+    const MAX: Self = i64::MAX;
+
+    fn wrapping_add(self, other: Self) -> Self {
+        self.wrapping_add(other)
+    }
+
+    fn abs(self) -> Self {
+        if self >= 0 { self } else { self.wrapping_neg() }
+    }
+
+    fn to_f64(self) -> f64 {
+        self as f64
+    }
+
+    fn from_f64_trunc(value: f64) -> Self {
+        value.trunc() as i64
+    }
+
+    fn to_le_bytes(self) -> [u8; 8] {
+        self.to_le_bytes()
+    }
+
+    fn from_le_bytes(bytes: [u8; 8]) -> Self {
+        i64::from_le_bytes(bytes)
+    }
+}
+
+impl CountMinValue for u64 {
+    const ZERO: Self = 0;
+    const ONE: Self = 1;
+    const MAX: Self = u64::MAX;
+
+    fn wrapping_add(self, other: Self) -> Self {
+        self.wrapping_add(other)
+    }
+
+    fn abs(self) -> Self {
+        self
+    }
+
+    fn to_f64(self) -> f64 {
+        self as f64
+    }
+
+    fn from_f64_trunc(value: f64) -> Self {
+        value.trunc() as u64
+    }
+
+    fn to_le_bytes(self) -> [u8; 8] {
+        self.to_le_bytes()
+    }
+
+    fn from_le_bytes(bytes: [u8; 8]) -> Self {
+        u64::from_le_bytes(bytes)
+    }
+}
+
 /// Count-Min sketch for estimating item frequencies.
+///
+/// Only `i64` and `u64` counter types are supported.
 ///
 /// The sketch provides upper and lower bounds on estimated item frequencies
 /// with configurable relative error and confidence.
 #[derive(Debug, Clone, PartialEq)]
-pub struct CountMinSketch {
+pub struct CountMinSketch<T: CountMinValue> {
     num_hashes: u8,
     num_buckets: u32,
     seed: u64,
-    total_weight: i64,
-    counts: Vec<i64>,
+    total_weight: T,
+    counts: Vec<T>,
     hash_seeds: Vec<u64>,
 }
 
-impl CountMinSketch {
+impl<T: CountMinValue> CountMinSketch<T> {
     /// Creates a new Count-Min sketch with the default seed.
     ///
     /// # Panics
@@ -59,7 +148,7 @@ impl CountMinSketch {
     ///
     /// ```rust
     /// # use datasketches::countmin::CountMinSketch;
-    /// let sketch = CountMinSketch::new(4, 128);
+    /// let sketch = CountMinSketch::<i64>::new(4, 128);
     /// assert_eq!(sketch.num_buckets(), 128);
     /// ```
     pub fn new(num_hashes: u8, num_buckets: u32) -> Self {
@@ -77,7 +166,7 @@ impl CountMinSketch {
     ///
     /// ```rust
     /// # use datasketches::countmin::CountMinSketch;
-    /// let sketch = CountMinSketch::with_seed(4, 64, 42);
+    /// let sketch = CountMinSketch::<i64>::with_seed(4, 64, 42);
     /// assert_eq!(sketch.seed(), 42);
     /// ```
     pub fn with_seed(num_hashes: u8, num_buckets: u32, seed: u64) -> Self {
@@ -101,7 +190,7 @@ impl CountMinSketch {
     }
 
     /// Returns the total weight inserted into the sketch.
-    pub fn total_weight(&self) -> i64 {
+    pub fn total_weight(&self) -> T {
         self.total_weight
     }
 
@@ -112,7 +201,7 @@ impl CountMinSketch {
 
     /// Returns true if the sketch has not seen any updates.
     pub fn is_empty(&self) -> bool {
-        self.total_weight == 0
+        self.total_weight == T::ZERO
     }
 
     /// Suggests the number of buckets to achieve the given relative error.
@@ -148,12 +237,12 @@ impl CountMinSketch {
     ///
     /// ```rust
     /// # use datasketches::countmin::CountMinSketch;
-    /// let mut sketch = CountMinSketch::new(4, 128);
+    /// let mut sketch = CountMinSketch::<i64>::new(4, 128);
     /// sketch.update("apple");
     /// assert!(sketch.estimate("apple") >= 1);
     /// ```
-    pub fn update<T: Hash>(&mut self, item: T) {
-        self.update_with_weight(item, 1);
+    pub fn update<I: Hash>(&mut self, item: I) {
+        self.update_with_weight(item, T::ONE);
     }
 
     /// Updates the sketch with the given item and weight.
@@ -162,15 +251,15 @@ impl CountMinSketch {
     ///
     /// ```rust
     /// # use datasketches::countmin::CountMinSketch;
-    /// let mut sketch = CountMinSketch::new(4, 128);
+    /// let mut sketch = CountMinSketch::<i64>::new(4, 128);
     /// sketch.update_with_weight("banana", 3);
     /// assert!(sketch.estimate("banana") >= 3);
     /// ```
-    pub fn update_with_weight<T: Hash>(&mut self, item: T, weight: i64) {
-        if weight == 0 {
+    pub fn update_with_weight<I: Hash>(&mut self, item: I, weight: T) {
+        if weight == T::ZERO {
             return;
         }
-        let abs_weight = abs_i64(weight);
+        let abs_weight = weight.abs();
         self.total_weight = self.total_weight.wrapping_add(abs_weight);
         let num_buckets = self.num_buckets as usize;
         for (row, seed) in self.hash_seeds.iter().enumerate() {
@@ -180,63 +269,19 @@ impl CountMinSketch {
         }
     }
 
-    /// Divides every counter by two, truncating toward zero.
-    ///
-    /// Useful for exponential decay where counts represent recent activity.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// # use datasketches::countmin::CountMinSketch;
-    /// let mut sketch = CountMinSketch::new(4, 128);
-    /// sketch.update_with_weight("apple", 3);
-    /// sketch.halve();
-    /// assert!(sketch.estimate("apple") >= 1);
-    /// ```
-    pub fn halve(&mut self) {
-        self.counts.iter_mut().for_each(|c| *c /= 2);
-        self.total_weight /= 2;
-    }
-
-    /// Multiplies every counter by `decay` and truncates back into `i64`.
-    ///
-    /// Values are truncated toward zero after multiplication; choose `decay` in `(0, 1]`.
-    /// The total weight is scaled by the same factor to keep bounds consistent.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// # use datasketches::countmin::CountMinSketch;
-    /// let mut sketch = CountMinSketch::new(4, 128);
-    /// sketch.update_with_weight("apple", 3);
-    /// sketch.decay(0.5);
-    /// assert!(sketch.estimate("apple") >= 1);
-    /// ```
-    ///
-    /// # Panics
-    ///
-    /// Panics if `decay` is not finite or is outside `(0, 1]`.
-    pub fn decay(&mut self, decay: f64) {
-        assert!(decay > 0.0 && decay <= 1.0, "decay must be within (0, 1]");
-        self.counts
-            .iter_mut()
-            .for_each(|c| *c = (*c as f64 * decay) as i64);
-        self.total_weight = (self.total_weight as f64 * decay) as i64;
-    }
-
     /// Returns the estimated frequency of the given item.
     ///
     /// # Examples
     ///
     /// ```rust
     /// # use datasketches::countmin::CountMinSketch;
-    /// let mut sketch = CountMinSketch::new(4, 128);
+    /// let mut sketch = CountMinSketch::<i64>::new(4, 128);
     /// sketch.update_with_weight("pear", 2);
     /// assert!(sketch.estimate("pear") >= 2);
     /// ```
-    pub fn estimate<T: Hash>(&self, item: T) -> i64 {
+    pub fn estimate<I: Hash>(&self, item: I) -> T {
         let num_buckets = self.num_buckets as usize;
-        let mut min = i64::MAX;
+        let mut min = T::MAX;
         for (row, seed) in self.hash_seeds.iter().enumerate() {
             let bucket = self.bucket_index(&item, *seed);
             let index = row * num_buckets + bucket;
@@ -249,14 +294,14 @@ impl CountMinSketch {
     }
 
     /// Returns the lower bound on the true frequency of the given item.
-    pub fn lower_bound<T: Hash>(&self, item: T) -> i64 {
+    pub fn lower_bound<I: Hash>(&self, item: I) -> T {
         self.estimate(item)
     }
 
     /// Returns the upper bound on the true frequency of the given item.
-    pub fn upper_bound<T: Hash>(&self, item: T) -> i64 {
+    pub fn upper_bound<I: Hash>(&self, item: I) -> T {
         let estimate = self.estimate(item);
-        let error = (self.relative_error() * self.total_weight as f64) as i64;
+        let error = T::from_f64_trunc(self.relative_error() * self.total_weight.to_f64());
         estimate.wrapping_add(error)
     }
 
@@ -270,8 +315,8 @@ impl CountMinSketch {
     ///
     /// ```rust
     /// # use datasketches::countmin::CountMinSketch;
-    /// let mut left = CountMinSketch::new(4, 128);
-    /// let mut right = CountMinSketch::new(4, 128);
+    /// let mut left = CountMinSketch::<i64>::new(4, 128);
+    /// let mut right = CountMinSketch::<i64>::new(4, 128);
     ///
     /// left.update("apple");
     /// right.update_with_weight("banana", 2);
@@ -279,7 +324,7 @@ impl CountMinSketch {
     /// left.merge(&right);
     /// assert!(left.estimate("banana") >= 2);
     /// ```
-    pub fn merge(&mut self, other: &CountMinSketch) {
+    pub fn merge(&mut self, other: &CountMinSketch<T>) {
         if std::ptr::eq(self, other) {
             panic!("Cannot merge a sketch with itself.");
         }
@@ -301,18 +346,19 @@ impl CountMinSketch {
     ///
     /// ```rust
     /// # use datasketches::countmin::CountMinSketch;
-    /// # let mut sketch = CountMinSketch::new(4, 128);
+    /// # let mut sketch = CountMinSketch::<i64>::new(4, 128);
     /// # sketch.update("apple");
     /// let bytes = sketch.serialize();
-    /// let decoded = CountMinSketch::deserialize(&bytes).unwrap();
+    /// let decoded = CountMinSketch::<i64>::deserialize(&bytes).unwrap();
     /// assert!(decoded.estimate("apple") >= 1);
     /// ```
     pub fn serialize(&self) -> Vec<u8> {
         let header_size = PREAMBLE_LONGS_SHORT as usize * LONG_SIZE_BYTES;
+        let value_size = LONG_SIZE_BYTES;
         let payload_size = if self.is_empty() {
             0
         } else {
-            LONG_SIZE_BYTES + (self.counts.len() * size_of::<i64>())
+            value_size + (self.counts.len() * value_size)
         };
         let mut bytes = SketchBytes::with_capacity(header_size + payload_size);
 
@@ -331,9 +377,9 @@ impl CountMinSketch {
             return bytes.into_bytes();
         }
 
-        bytes.write_i64_le(self.total_weight);
+        bytes.write(&self.total_weight.to_le_bytes());
         for count in self.counts.iter().copied() {
-            bytes.write_i64_le(count);
+            bytes.write(&count.to_le_bytes());
         }
         bytes.into_bytes()
     }
@@ -344,10 +390,10 @@ impl CountMinSketch {
     ///
     /// ```rust
     /// # use datasketches::countmin::CountMinSketch;
-    /// # let mut sketch = CountMinSketch::new(4, 64);
+    /// # let mut sketch = CountMinSketch::<i64>::new(4, 64);
     /// # sketch.update("apple");
     /// # let bytes = sketch.serialize();
-    /// let decoded = CountMinSketch::deserialize(&bytes).unwrap();
+    /// let decoded = CountMinSketch::<i64>::deserialize(&bytes).unwrap();
     /// assert!(decoded.estimate("apple") >= 1);
     /// ```
     pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
@@ -360,15 +406,24 @@ impl CountMinSketch {
     ///
     /// ```rust
     /// # use datasketches::countmin::CountMinSketch;
-    /// # let mut sketch = CountMinSketch::with_seed(4, 64, 7);
+    /// # let mut sketch = CountMinSketch::<i64>::with_seed(4, 64, 7);
     /// # sketch.update("apple");
     /// # let bytes = sketch.serialize();
-    /// let decoded = CountMinSketch::deserialize_with_seed(&bytes, 7).unwrap();
+    /// let decoded = CountMinSketch::<i64>::deserialize_with_seed(&bytes, 7).unwrap();
     /// assert!(decoded.estimate("apple") >= 1);
     /// ```
     pub fn deserialize_with_seed(bytes: &[u8], seed: u64) -> Result<Self, Error> {
         fn make_error(tag: &'static str) -> impl FnOnce(std::io::Error) -> Error {
             move |_| Error::insufficient_data(tag)
+        }
+
+        fn read_value<T: CountMinValue>(
+            cursor: &mut SketchSlice<'_>,
+            tag: &'static str,
+        ) -> Result<T, Error> {
+            let mut buf = [0u8; 8];
+            cursor.read_exact(&mut buf).map_err(make_error(tag))?;
+            Ok(T::from_le_bytes(buf))
         }
 
         let mut cursor = SketchSlice::new(bytes);
@@ -416,31 +471,77 @@ impl CountMinSketch {
             return Ok(sketch);
         }
 
-        sketch.total_weight = cursor.read_i64_le().map_err(make_error("total_weight"))?;
+        sketch.total_weight = read_value(&mut cursor, "total_weight")?;
         for count in sketch.counts.iter_mut() {
-            *count = cursor.read_i64_le().map_err(make_error("counts"))?;
+            *count = read_value(&mut cursor, "counts")?;
         }
         Ok(sketch)
     }
 
     fn make(num_hashes: u8, num_buckets: u32, seed: u64, entries: usize) -> Self {
-        let counts = vec![0i64; entries];
+        let counts = vec![T::ZERO; entries];
         let hash_seeds = make_hash_seeds(seed, num_hashes);
         CountMinSketch {
             num_hashes,
             num_buckets,
             seed,
-            total_weight: 0,
+            total_weight: T::ZERO,
             counts,
             hash_seeds,
         }
     }
 
-    fn bucket_index<T: Hash>(&self, item: &T, seed: u64) -> usize {
+    fn bucket_index<I: Hash>(&self, item: &I, seed: u64) -> usize {
         let mut hasher = MurmurHash3X64128::with_seed(seed);
         item.hash(&mut hasher);
         let (h1, _) = hasher.finish128();
         (h1 % self.num_buckets as u64) as usize
+    }
+}
+
+impl CountMinSketch<u64> {
+    /// Divides every counter by two, truncating toward zero.
+    ///
+    /// Useful for exponential decay where counts represent recent activity.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use datasketches::countmin::CountMinSketch;
+    /// let mut sketch = CountMinSketch::<u64>::new(4, 128);
+    /// sketch.update_with_weight("apple", 3);
+    /// sketch.halve();
+    /// assert!(sketch.estimate("apple") >= 1);
+    /// ```
+    pub fn halve(&mut self) {
+        self.counts.iter_mut().for_each(|c| *c /= 2);
+        self.total_weight /= 2;
+    }
+
+    /// Multiplies every counter by `decay` and truncates back into `T`.
+    ///
+    /// Values are truncated toward zero after multiplication; choose `decay` in `(0, 1]`.
+    /// The total weight is scaled by the same factor to keep bounds consistent.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use datasketches::countmin::CountMinSketch;
+    /// let mut sketch = CountMinSketch::<u64>::new(4, 128);
+    /// sketch.update_with_weight("apple", 3);
+    /// sketch.decay(0.5);
+    /// assert!(sketch.estimate("apple") >= 1);
+    /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if `decay` is not finite or is outside `(0, 1]`.
+    pub fn decay(&mut self, decay: f64) {
+        assert!(decay > 0.0 && decay <= 1.0, "decay must be within (0, 1]");
+        self.counts
+            .iter_mut()
+            .for_each(|c| *c = (*c as f64 * decay) as u64);
+        self.total_weight = (self.total_weight as f64 * decay) as u64;
     }
 }
 
@@ -486,12 +587,4 @@ fn make_hash_seeds(seed: u64, num_hashes: u8) -> Vec<u64> {
         seeds.push(h1);
     }
     seeds
-}
-
-fn abs_i64(value: i64) -> i64 {
-    if value >= 0 {
-        value
-    } else {
-        value.wrapping_neg()
-    }
 }

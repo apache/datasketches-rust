@@ -24,7 +24,7 @@
 //!
 //! ```rust
 //! # use datasketches::countmin::CountMinSketch;
-//! let mut sketch = CountMinSketch::new(5, 256);
+//! let mut sketch = CountMinSketch::<i64>::new(5, 256);
 //! sketch.update("apple");
 //! sketch.update_with_weight("banana", 3);
 //! assert!(sketch.estimate("banana") >= 3);
@@ -34,12 +34,13 @@
 //!
 //! ```rust
 //! # use datasketches::countmin::CountMinSketch;
-//! let buckets = CountMinSketch::suggest_num_buckets(0.01);
-//! let hashes = CountMinSketch::suggest_num_hashes(0.99);
-//! let _sketch = CountMinSketch::new(hashes, buckets);
+//! let buckets = CountMinSketch::<i64>::suggest_num_buckets(0.01);
+//! let hashes = CountMinSketch::<i64>::suggest_num_hashes(0.99);
+//! let _sketch = CountMinSketch::<i64>::new(hashes, buckets);
 //! ```
 
 mod serialization;
 
 mod sketch;
 pub use self::sketch::CountMinSketch;
+pub use self::sketch::CountMinValue;
