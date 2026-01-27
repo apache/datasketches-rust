@@ -20,109 +20,21 @@ use std::hash::Hasher;
 
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
+use crate::countmin::CountMinValue;
 use crate::countmin::serialization::COUNTMIN_FAMILY_ID;
 use crate::countmin::serialization::FLAGS_IS_EMPTY;
 use crate::countmin::serialization::LONG_SIZE_BYTES;
 use crate::countmin::serialization::PREAMBLE_LONGS_SHORT;
 use crate::countmin::serialization::SERIAL_VERSION;
 use crate::countmin::serialization::compute_seed_hash;
+use crate::countmin::value::UnsignedCountValue;
 use crate::error::Error;
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::hash::MurmurHash3X64128;
 
 const MAX_TABLE_ENTRIES: usize = 1 << 30;
 
-/// Value type used for counters and weights in a Count-Min sketch.
-///
-/// Only `i64` and `u64` are officially supported to match the DataSketches
-/// Count-Min binary format, which stores counters as 8-byte little-endian
-/// two's-complement values. Custom implementations must preserve that layout
-/// to remain interoperable.
-pub trait CountMinValue: Copy + Ord {
-    /// Zero value for counters and weights.
-    const ZERO: Self;
-    /// One value for unit updates.
-    const ONE: Self;
-    /// Maximum representable value for initializing minima.
-    const MAX: Self;
-
-    /// Adds with wrapping semantics.
-    fn wrapping_add(self, other: Self) -> Self;
-    /// Returns the absolute value for weight tracking.
-    fn abs(self) -> Self;
-    /// Converts into `f64` for bound computations.
-    fn to_f64(self) -> f64;
-    /// Converts from `f64` by truncating toward zero.
-    fn from_f64_trunc(value: f64) -> Self;
-    /// Serializes the value as little-endian bytes.
-    fn to_le_bytes(self) -> [u8; 8];
-    /// Deserializes the value from little-endian bytes.
-    fn from_le_bytes(bytes: [u8; 8]) -> Self;
-}
-
-impl CountMinValue for i64 {
-    const ZERO: Self = 0;
-    const ONE: Self = 1;
-    const MAX: Self = i64::MAX;
-
-    fn wrapping_add(self, other: Self) -> Self {
-        self.wrapping_add(other)
-    }
-
-    fn abs(self) -> Self {
-        if self >= 0 { self } else { self.wrapping_neg() }
-    }
-
-    fn to_f64(self) -> f64 {
-        self as f64
-    }
-
-    fn from_f64_trunc(value: f64) -> Self {
-        value.trunc() as i64
-    }
-
-    fn to_le_bytes(self) -> [u8; 8] {
-        self.to_le_bytes()
-    }
-
-    fn from_le_bytes(bytes: [u8; 8]) -> Self {
-        i64::from_le_bytes(bytes)
-    }
-}
-
-impl CountMinValue for u64 {
-    const ZERO: Self = 0;
-    const ONE: Self = 1;
-    const MAX: Self = u64::MAX;
-
-    fn wrapping_add(self, other: Self) -> Self {
-        self.wrapping_add(other)
-    }
-
-    fn abs(self) -> Self {
-        self
-    }
-
-    fn to_f64(self) -> f64 {
-        self as f64
-    }
-
-    fn from_f64_trunc(value: f64) -> Self {
-        value.trunc() as u64
-    }
-
-    fn to_le_bytes(self) -> [u8; 8] {
-        self.to_le_bytes()
-    }
-
-    fn from_le_bytes(bytes: [u8; 8]) -> Self {
-        u64::from_le_bytes(bytes)
-    }
-}
-
 /// Count-Min sketch for estimating item frequencies.
-///
-/// Only `i64` and `u64` counter types are supported.
 ///
 /// The sketch provides upper and lower bounds on estimated item frequencies
 /// with configurable relative error and confidence.
@@ -301,7 +213,7 @@ impl<T: CountMinValue> CountMinSketch<T> {
     /// Returns the upper bound on the true frequency of the given item.
     pub fn upper_bound<I: Hash>(&self, item: I) -> T {
         let estimate = self.estimate(item);
-        let error = T::from_f64_trunc(self.relative_error() * self.total_weight.to_f64());
+        let error = T::from_f64(self.relative_error() * self.total_weight.to_f64());
         estimate.wrapping_add(error)
     }
 
@@ -377,9 +289,9 @@ impl<T: CountMinValue> CountMinSketch<T> {
             return bytes.into_bytes();
         }
 
-        bytes.write(&self.total_weight.to_le_bytes());
+        bytes.write(&self.total_weight.to_bits());
         for count in self.counts.iter().copied() {
-            bytes.write(&count.to_le_bytes());
+            bytes.write(&count.to_bits());
         }
         bytes.into_bytes()
     }
@@ -423,7 +335,7 @@ impl<T: CountMinValue> CountMinSketch<T> {
         ) -> Result<T, Error> {
             let mut buf = [0u8; 8];
             cursor.read_exact(&mut buf).map_err(make_error(tag))?;
-            Ok(T::from_le_bytes(buf))
+            T::try_from_bits(buf)
         }
 
         let mut cursor = SketchSlice::new(bytes);
@@ -499,7 +411,7 @@ impl<T: CountMinValue> CountMinSketch<T> {
     }
 }
 
-impl CountMinSketch<u64> {
+impl<T: UnsignedCountValue> CountMinSketch<T> {
     /// Divides every counter by two, truncating toward zero.
     ///
     /// Useful for exponential decay where counts represent recent activity.
@@ -514,8 +426,10 @@ impl CountMinSketch<u64> {
     /// assert!(sketch.estimate("apple") >= 1);
     /// ```
     pub fn halve(&mut self) {
-        self.counts.iter_mut().for_each(|c| *c /= 2);
-        self.total_weight /= 2;
+        for c in &mut self.counts {
+            *c = c.halve()
+        }
+        self.total_weight = self.total_weight.halve();
     }
 
     /// Multiplies every counter by `decay` and truncates back into `T`.
@@ -538,10 +452,10 @@ impl CountMinSketch<u64> {
     /// Panics if `decay` is not finite or is outside `(0, 1]`.
     pub fn decay(&mut self, decay: f64) {
         assert!(decay > 0.0 && decay <= 1.0, "decay must be within (0, 1]");
-        self.counts
-            .iter_mut()
-            .for_each(|c| *c = (*c as f64 * decay) as u64);
-        self.total_weight = (self.total_weight as f64 * decay) as u64;
+        for c in &mut self.counts {
+            *c = c.decay(decay)
+        }
+        self.total_weight = self.total_weight.decay(decay);
     }
 }
 

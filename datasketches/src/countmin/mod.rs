@@ -43,4 +43,6 @@ mod serialization;
 
 mod sketch;
 pub use self::sketch::CountMinSketch;
-pub use self::sketch::CountMinValue;
+
+mod value;
+pub use self::value::CountMinValue;
