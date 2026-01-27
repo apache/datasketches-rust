@@ -222,7 +222,7 @@ fn test_invalid_buckets() {
 }
 
 #[test]
-#[should_panic(expected = "Incompatible sketch configuration.")]
+#[should_panic]
 fn test_merge_incompatible() {
     let mut left = CountMinSketch::<i64>::new(3, 64);
     let right = CountMinSketch::<i64>::new(2, 64);

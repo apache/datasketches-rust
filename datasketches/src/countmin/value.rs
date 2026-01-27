@@ -33,13 +33,13 @@ pub trait CountMinValue: private::Sealed + Copy + Ord {
     /// Maximum representable value for initializing minima.
     const MAX: Self;
 
-    /// Adds with wrapping semantics.
-    fn wrapping_add(self, other: Self) -> Self;
+    /// Performs the + operation.
+    fn add(self, other: Self) -> Self;
 
-    /// Returns the absolute value for weight tracking.
+    /// Computes the absolute value of `self`.
     fn abs(self) -> Self;
 
-    /// Converts into `f64` for bound computations.
+    /// Converts into `f64`.
     fn to_f64(self) -> f64;
 
     /// Converts from `f64` by truncating toward zero.
@@ -71,13 +71,13 @@ macro_rules! impl_signed {
             const MAX: Self = $max;
 
             #[inline(always)]
-            fn wrapping_add(self, other: Self) -> Self {
-                self.wrapping_add(other)
+            fn add(self, other: Self) -> Self {
+                self + other
             }
 
             #[inline(always)]
             fn abs(self) -> Self {
-                if self >= 0 { self } else { self.wrapping_neg() }
+                if self >= 0 { self } else { -self }
             }
 
             #[inline(always)]
@@ -127,8 +127,8 @@ macro_rules! impl_unsigned {
             const MAX: Self = $max;
 
             #[inline(always)]
-            fn wrapping_add(self, other: Self) -> Self {
-                self.wrapping_add(other)
+            fn add(self, other: Self) -> Self {
+                self + other
             }
 
             #[inline(always)]
@@ -169,7 +169,7 @@ macro_rules! impl_unsigned {
         impl UnsignedCountMinValue for $name {
             #[inline(always)]
             fn halve(self) -> Self {
-                self / 2
+                self >> 1
             }
 
             #[inline(always)]

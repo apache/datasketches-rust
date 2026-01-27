@@ -172,12 +172,12 @@ impl<T: CountMinValue> CountMinSketch<T> {
             return;
         }
         let abs_weight = weight.abs();
-        self.total_weight = self.total_weight.wrapping_add(abs_weight);
+        self.total_weight = self.total_weight.add(abs_weight);
         let num_buckets = self.num_buckets as usize;
         for (row, seed) in self.hash_seeds.iter().enumerate() {
             let bucket = self.bucket_index(&item, *seed);
             let index = row * num_buckets + bucket;
-            self.counts[index] = self.counts[index].wrapping_add(weight);
+            self.counts[index] = self.counts[index].add(weight);
         }
     }
 
@@ -214,7 +214,7 @@ impl<T: CountMinValue> CountMinSketch<T> {
     pub fn upper_bound<I: Hash>(&self, item: I) -> T {
         let estimate = self.estimate(item);
         let error = T::from_f64(self.relative_error() * self.total_weight.to_f64());
-        estimate.wrapping_add(error)
+        estimate.add(error)
     }
 
     /// Merges another sketch into this one.
@@ -246,9 +246,9 @@ impl<T: CountMinValue> CountMinSketch<T> {
         assert_eq!(self.counts.len(), other.counts.len());
         let counts_len = self.counts.len();
         for i in 0..counts_len {
-            self.counts[i] = self.counts[i].wrapping_add(other.counts[i]);
+            self.counts[i] = self.counts[i].add(other.counts[i]);
         }
-        self.total_weight = self.total_weight.wrapping_add(other.total_weight);
+        self.total_weight = self.total_weight.add(other.total_weight);
     }
 
     /// Serializes this sketch into the DataSketches Count-Min format.
