@@ -46,3 +46,4 @@ pub use self::sketch::CountMinSketch;
 
 mod value;
 pub use self::value::CountMinValue;
+pub use self::value::UnsignedCountMinValue;

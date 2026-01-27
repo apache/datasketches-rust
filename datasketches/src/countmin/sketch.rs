@@ -21,13 +21,13 @@ use std::hash::Hasher;
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
 use crate::countmin::CountMinValue;
+use crate::countmin::UnsignedCountMinValue;
 use crate::countmin::serialization::COUNTMIN_FAMILY_ID;
 use crate::countmin::serialization::FLAGS_IS_EMPTY;
 use crate::countmin::serialization::LONG_SIZE_BYTES;
 use crate::countmin::serialization::PREAMBLE_LONGS_SHORT;
 use crate::countmin::serialization::SERIAL_VERSION;
 use crate::countmin::serialization::compute_seed_hash;
-use crate::countmin::value::UnsignedCountValue;
 use crate::error::Error;
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::hash::MurmurHash3X64128;
@@ -130,7 +130,7 @@ impl<T: CountMinValue> CountMinSketch<T> {
     ///
     /// # Panics
     ///
-    /// Panics if `confidence` is not in [0, 1].
+    /// Panics if `confidence` is not in `[0, 1]`.
     pub fn suggest_num_hashes(confidence: f64) -> u8 {
         assert!(
             (0.0..=1.0).contains(&confidence),
@@ -240,14 +240,13 @@ impl<T: CountMinValue> CountMinSketch<T> {
         if std::ptr::eq(self, other) {
             panic!("Cannot merge a sketch with itself.");
         }
-        if self.num_hashes != other.num_hashes
-            || self.num_buckets != other.num_buckets
-            || self.seed != other.seed
-        {
-            panic!("Incompatible sketch configuration.");
-        }
-        for (dst, src) in self.counts.iter_mut().zip(other.counts.iter()) {
-            *dst = dst.wrapping_add(*src);
+        assert_eq!(self.num_hashes, other.num_hashes);
+        assert_eq!(self.num_buckets, other.num_buckets);
+        assert_eq!(self.seed, other.seed);
+        assert_eq!(self.counts.len(), other.counts.len());
+        let counts_len = self.counts.len();
+        for i in 0..counts_len {
+            self.counts[i] = self.counts[i].wrapping_add(other.counts[i]);
         }
         self.total_weight = self.total_weight.wrapping_add(other.total_weight);
     }
@@ -289,9 +288,9 @@ impl<T: CountMinValue> CountMinSketch<T> {
             return bytes.into_bytes();
         }
 
-        bytes.write(&self.total_weight.to_bits());
-        for count in self.counts.iter().copied() {
-            bytes.write(&count.to_bits());
+        bytes.write(&self.total_weight.to_bytes());
+        for count in &self.counts {
+            bytes.write(&count.to_bytes());
         }
         bytes.into_bytes()
     }
@@ -333,9 +332,9 @@ impl<T: CountMinValue> CountMinSketch<T> {
             cursor: &mut SketchSlice<'_>,
             tag: &'static str,
         ) -> Result<T, Error> {
-            let mut buf = [0u8; 8];
-            cursor.read_exact(&mut buf).map_err(make_error(tag))?;
-            T::try_from_bits(buf)
+            let mut bs = [0u8; 8];
+            cursor.read_exact(&mut bs).map_err(make_error(tag))?;
+            T::try_from_bytes(bs)
         }
 
         let mut cursor = SketchSlice::new(bytes);
@@ -384,7 +383,7 @@ impl<T: CountMinValue> CountMinSketch<T> {
         }
 
         sketch.total_weight = read_value(&mut cursor, "total_weight")?;
-        for count in sketch.counts.iter_mut() {
+        for count in &mut sketch.counts {
             *count = read_value(&mut cursor, "counts")?;
         }
         Ok(sketch)
@@ -411,7 +410,7 @@ impl<T: CountMinValue> CountMinSketch<T> {
     }
 }
 
-impl<T: UnsignedCountValue> CountMinSketch<T> {
+impl<T: UnsignedCountMinValue> CountMinSketch<T> {
     /// Divides every counter by two, truncating toward zero.
     ///
     /// Useful for exponential decay where counts represent recent activity.

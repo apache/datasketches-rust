@@ -22,7 +22,7 @@ mod private {
     pub trait Sealed {}
 }
 
-/// Value type used for counters and weights in a Count-Min sketch.
+/// Value type supported in a Count-Min sketch.
 pub trait CountMinValue: private::Sealed + Copy + Ord {
     /// Zero value for counters and weights.
     const ZERO: Self;
@@ -45,15 +45,19 @@ pub trait CountMinValue: private::Sealed + Copy + Ord {
     /// Converts from `f64` by truncating toward zero.
     fn from_f64(value: f64) -> Self;
 
-    /// Returns the raw transmutation in 8 bits.
-    fn to_bits(self) -> [u8; 8];
+    /// Returns the raw transmutation in little-endian 8 bytes.
+    fn to_bytes(self) -> [u8; 8];
 
-    /// Constructs from the raw transmutation in 8 bits.
-    fn try_from_bits(bytes: [u8; 8]) -> Result<Self, Error>;
+    /// Constructs from the raw transmutation in little-endian 8 bytes.
+    fn try_from_bytes(bytes: [u8; 8]) -> Result<Self, Error>;
 }
 
-pub trait UnsignedCountValue: CountMinValue {
+/// Unsigned value type supported in a Count-Min sketch.
+pub trait UnsignedCountMinValue: CountMinValue {
+    /// Divides the value by two, truncating toward zero.
     fn halve(self) -> Self;
+
+    /// Multiplies the value by decay and truncates back into `T`.
     fn decay(self, decay: f64) -> Self;
 }
 
@@ -87,13 +91,13 @@ macro_rules! impl_signed {
             }
 
             #[inline(always)]
-            fn to_bits(self) -> [u8; 8] {
+            fn to_bytes(self) -> [u8; 8] {
                 let value = self as i64;
                 value.to_le_bytes()
             }
 
             #[inline(always)]
-            fn try_from_bits(bytes: [u8; 8]) -> Result<Self, Error> {
+            fn try_from_bytes(bytes: [u8; 8]) -> Result<Self, Error> {
                 let value = i64::from_le_bytes(bytes);
                 if value < $min as i64 || value > $max as i64 {
                     return Err(Error::deserial(format!(
@@ -143,13 +147,13 @@ macro_rules! impl_unsigned {
             }
 
             #[inline(always)]
-            fn to_bits(self) -> [u8; 8] {
+            fn to_bytes(self) -> [u8; 8] {
                 let value = self as u64;
                 value.to_le_bytes()
             }
 
             #[inline(always)]
-            fn try_from_bits(bytes: [u8; 8]) -> Result<Self, Error> {
+            fn try_from_bytes(bytes: [u8; 8]) -> Result<Self, Error> {
                 let value = u64::from_le_bytes(bytes);
                 if value > $max as u64 {
                     return Err(Error::deserial(format!(
@@ -162,7 +166,7 @@ macro_rules! impl_unsigned {
             }
         }
 
-        impl UnsignedCountValue for $name {
+        impl UnsignedCountMinValue for $name {
             #[inline(always)]
             fn halve(self) -> Self {
                 self / 2
