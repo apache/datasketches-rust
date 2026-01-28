@@ -19,6 +19,22 @@
 
 # Apache® DataSketches™ Core Rust Library Component
 
+[![Crates.io][crates-badge]][crates-url]
+[![Documentation][docs-badge]][docs-url]
+[![MSRV 1.85.0][msrv-badge]](https://www.whatrustisit.com)
+[![Apache 2.0 licensed][license-badge]][license-url]
+[![Build Status][actions-badge]][actions-url]
+
+[crates-badge]: https://img.shields.io/crates/v/datasketches.svg
+[crates-url]: https://crates.io/crates/datasketches
+[docs-badge]: https://img.shields.io/docsrs/datasketches
+[docs-url]: https://docs.rs/datasketches
+[msrv-badge]: https://img.shields.io/badge/MSRV-1.85.0-green?logo=rust
+[license-badge]: https://img.shields.io/crates/l/datasketches
+[license-url]: LICENSE
+[actions-badge]: https://github.com/apache/datasketches-rust/workflows/CI/badge.svg
+[actions-url]: https://github.com/apache/datasketches-rust/actions?query=workflow%3ACI
+
 > [!WARNING]
 >
 > This repository is under early development. Use it with caution!
