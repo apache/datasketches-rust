@@ -19,7 +19,10 @@ use std::hash::Hash;
 
 use crate::common::NumStdDev;
 use crate::common::canonical_double;
-use crate::cpc::estimator::Estimator;
+use crate::common::inv_pow2_table::INVERSE_POWERS_OF_2;
+use crate::cpc::estimator::{
+    hip_confidence_lb, hip_confidence_ub, icon_confidence_lb, icon_confidence_ub, icon_estimate,
+};
 use crate::cpc::pair_table::PairTable;
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::hash::MurmurHash3X64128;
@@ -39,14 +42,28 @@ pub struct CpcSketch {
     seed: u64,
 
     // sketch state
+    /// Part of a speed optimization.
+    first_interesting_column: u8,
     /// The number of coupons collected so far.
     num_coupons: u32,
-    /// This is part of a speed optimization.
-    first_interesting_column: u8,
-    /// Physical storage for the sketch data.
-    state: State,
-    /// The current estimator type and associated data.
-    estimator: Estimator,
+    /// Surprising values table in sparse mode.
+    surprising_value_table: Option<PairTable>,
+    /// Derivable from num_coupons, but made explicit for speed.
+    window_offset: u8,
+    /// Size K bytes in dense mode.
+    sliding_window: Vec<u8>,
+
+    // estimator state
+    /// Whether the sketch is a result of merging.
+    ///
+    /// If `false`, the HIP (Historical Inverse Probability) estimator is used.
+    /// If `true`, the ICON (Inter-Column Optimal) Estimator is fallback in use.
+    merge_flag: bool,
+    // the following variables are only valid in HIP estimator
+    /// A pre-calculated probability factor (`k * p`) used to compute the increment delta.
+    kxp: f64,
+    /// The accumulated cardinality estimate.
+    hip_est_accum: f64,
 }
 
 impl Default for CpcSketch {
@@ -71,13 +88,14 @@ impl CpcSketch {
         Self {
             lg_k,
             seed,
-            num_coupons: 0,
             first_interesting_column: 0,
-            state: State::Empty,
-            estimator: Estimator::Hip {
-                kxp: (1 << lg_k) as f64,
-                hip_estimate: 0.0,
-            },
+            num_coupons: 0,
+            surprising_value_table: None,
+            window_offset: 0,
+            sliding_window: vec![],
+            merge_flag: false,
+            kxp: (1 << lg_k) as f64,
+            hip_est_accum: 0.0,
         }
     }
 
@@ -88,20 +106,29 @@ impl CpcSketch {
 
     /// Returns the best estimate of the cardinality of the sketch.
     pub fn estimate(&self) -> f64 {
-        let (lg_k, num_coupons) = (self.lg_k, self.num_coupons);
-        self.estimator.estimate(lg_k, num_coupons)
+        if !self.merge_flag {
+            self.hip_est_accum
+        } else {
+            icon_estimate(self.lg_k, self.num_coupons)
+        }
     }
 
     /// Returns the best estimate of the lower bound of the confidence interval given `kappa`.
     pub fn lower_bound(&self, kappa: NumStdDev) -> f64 {
-        let (lg_k, num_coupons) = (self.lg_k, self.num_coupons);
-        self.estimator.lower_bound(lg_k, num_coupons, kappa)
+        if !self.merge_flag {
+            hip_confidence_lb(self.lg_k, self.num_coupons, self.hip_est_accum, kappa)
+        } else {
+            icon_confidence_lb(self.lg_k, self.num_coupons, kappa)
+        }
     }
 
     /// Returns the best estimate of the upper bound of the confidence interval given `kappa`.
     pub fn upper_bound(&self, kappa: NumStdDev) -> f64 {
-        let (lg_k, num_coupons) = (self.lg_k, self.num_coupons);
-        self.estimator.upper_bound(lg_k, num_coupons, kappa)
+        if !self.merge_flag {
+            hip_confidence_ub(self.lg_k, self.num_coupons, self.hip_est_accum, kappa)
+        } else {
+            icon_confidence_ub(self.lg_k, self.num_coupons, kappa)
+        }
     }
 
     /// Returns true if the sketch is empty.
@@ -148,26 +175,96 @@ impl CpcSketch {
             // important speed optimization
             return;
         }
-        // // window size is 0 until sketch is promoted from sparse to windowed
-        // if (sliding_window.size() == 0) {
-        //     update_sparse(row_col);
-        // } else {
-        //     update_windowed(row_col);
-        // }
-    }
-}
 
-#[derive(Debug, Clone)]
-enum State {
-    /// Empty storage state for EMPTY state.
-    Empty,
-    /// Sparse storage state for SPARSE state.
-    Sparse { surprising_value_table: PairTable },
-    /// Dense storage state for HYBRID/PINNED/SLIDING state.
-    Dense {
-        window_offset: u8,
-        sliding_window: Vec<u8>,
-    },
+        if self.num_coupons == 0 {
+            // promote EMPTY to SPARSE
+            self.surprising_value_table = Some(PairTable::new(2, 6 + self.lg_k));
+        }
+
+        if self.sliding_window.is_empty() {
+            self.update_sparse(row_col);
+        } else {
+            self.update_windowed(row_col);
+        }
+    }
+
+    fn mut_surprising_value_table(&mut self) -> &mut PairTable {
+        self.surprising_value_table
+            .as_mut()
+            .expect("surprising value table is not initialized")
+    }
+
+    fn update_hip(&mut self, row_col: u32) {
+        let k = 1 << self.lg_k;
+        let col = (row_col & 63) as usize;
+        let one_over_p = (k as f64) / self.kxp;
+        self.hip_est_accum += one_over_p;
+        self.kxp -= INVERSE_POWERS_OF_2[col + 1] // notice the "+1"
+    }
+
+    fn update_sparse(&mut self, row_col: u32) {
+        let k = 1 << self.lg_k;
+        let c32pre = (self.num_coupons as u64) << 5;
+        assert!(c32pre < 3 * k); // C < 3K/32, in other words, flavor == SPARSE
+        let is_novel = self.mut_surprising_value_table().maybe_insert(row_col);
+        if is_novel {
+            self.num_coupons += 1;
+            self.update_hip(row_col);
+            let c32post = (self.num_coupons as u64) << 5;
+            if c32post >= 3 * k {
+                self.promote_sparse_to_windowed();
+            }
+        }
+    }
+
+    fn promote_sparse_to_windowed(&mut self) {
+        todo!()
+    }
+
+    fn update_windowed(&mut self, row_col: u32) {
+        assert!(self.window_offset <= 56);
+        let k = 1 << self.lg_k;
+        let c32pre = (self.num_coupons as u64) << 5;
+        assert!(c32pre >= 3 * k); // C >= 3K/32, in other words flavor >= HYBRID
+        let c8pre = (self.num_coupons as u64) << 3;
+        let w8pre = (self.window_offset as u64) << 3;
+        assert!(c8pre < (27 + w8pre) * k); // C < (K * 27/8) + (K * windowOffset)
+
+        let mut is_novel = false; // novel if new coupon;
+        let col = (row_col & 63) as u8;
+        if col < self.window_offset {
+            // track the surprising 0's "before" the window
+            is_novel = self.mut_surprising_value_table().maybe_delete(row_col); // inverted logic
+        } else if col < self.window_offset + 8 {
+            // track the 8 bits inside the window
+            let row = (row_col >> 6) as usize;
+            let old_bits = self.sliding_window[row];
+            let new_bits = old_bits | (1 << (col - self.window_offset));
+            if old_bits != new_bits {
+                self.sliding_window[row] = new_bits;
+                is_novel = true;
+            }
+        } else {
+            // track the surprising 1's "after" the window
+            is_novel = self.mut_surprising_value_table().maybe_insert(row_col); // normal logic
+        }
+
+        if is_novel {
+            self.num_coupons += 1;
+            self.update_hip(row_col);
+            let c8post = (self.num_coupons as u64) << 3;
+            if c8post >= (27 + w8pre) * k {
+                self.move_window();
+                assert!((1..=56).contains(&self.window_offset));
+                let w8post = (self.window_offset as u64) << 3;
+                assert!(c8post < ((27 + w8post) * k)); // C < (K * 27/8) + (K * windowOffset)
+            }
+        }
+    }
+
+    fn move_window(&mut self) {
+        todo!()
+    }
 }
 
 impl CpcSketch {
@@ -218,3 +315,4 @@ impl CpcSketch {
         ((EMPIRICAL_MAX_SIZE_FACTOR * k as f64) as usize) + MAX_PREAMBLE_SIZE_BYTES
     }
 }
+

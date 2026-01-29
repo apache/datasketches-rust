@@ -15,48 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use std::f64::consts::LN_2;
-
 use crate::common::NumStdDev;
-
-#[derive(Debug, Clone)]
-pub(super) enum Estimator {
-    /// Default to HIP estimator.
-    ///
-    /// HIP estimator is fast and provides better accuracy.
-    Hip { kxp: f64, hip_estimate: f64 },
-    /// ICON estimator.
-    ///
-    /// Used after merges.
-    Icon,
-}
-
-impl Estimator {
-    pub fn estimate(&self, lg_k: u8, num_coupons: u32) -> f64 {
-        match self {
-            Estimator::Hip { hip_estimate, .. } => *hip_estimate,
-            Estimator::Icon => icon_estimate(lg_k, num_coupons),
-        }
-    }
-
-    pub fn lower_bound(&self, lg_k: u8, num_coupons: u32, kappa: NumStdDev) -> f64 {
-        match self {
-            Estimator::Hip { hip_estimate, .. } => {
-                hip_confidence_lb(lg_k, num_coupons, *hip_estimate, kappa)
-            }
-            Estimator::Icon => icon_confidence_lb(lg_k, num_coupons, kappa),
-        }
-    }
-
-    pub fn upper_bound(&self, lg_k: u8, num_coupons: u32, kappa: NumStdDev) -> f64 {
-        match self {
-            Estimator::Hip { hip_estimate, .. } => {
-                hip_confidence_ub(lg_k, num_coupons, *hip_estimate, kappa)
-            }
-            Estimator::Icon => icon_confidence_ub(lg_k, num_coupons, kappa),
-        }
-    }
-}
+use std::f64::consts::LN_2;
 
 const ICON_ERROR_CONSTANT: f64 = LN_2;
 
@@ -127,7 +87,7 @@ const HIP_HIGH_SIDE_DATA: [u16; 33] = [
     5880, 5914, 5953, // 14 1000297
 ];
 
-fn icon_confidence_lb(lg_k: u8, num_coupons: u32, kappa: NumStdDev) -> f64 {
+pub(super) fn icon_confidence_lb(lg_k: u8, num_coupons: u32, kappa: NumStdDev) -> f64 {
     if num_coupons == 0 {
         return 0.0;
     }
@@ -151,7 +111,7 @@ fn icon_confidence_lb(lg_k: u8, num_coupons: u32, kappa: NumStdDev) -> f64 {
     }
 }
 
-fn icon_confidence_ub(lg_k: u8, num_coupons: u32, kappa: NumStdDev) -> f64 {
+pub(super) fn icon_confidence_ub(lg_k: u8, num_coupons: u32, kappa: NumStdDev) -> f64 {
     if num_coupons == 0 {
         return 0.0;
     }
@@ -171,7 +131,12 @@ fn icon_confidence_ub(lg_k: u8, num_coupons: u32, kappa: NumStdDev) -> f64 {
     result.ceil() // slight widening of interval to be conservative
 }
 
-fn hip_confidence_lb(lg_k: u8, num_coupons: u32, hip_estimate: f64, kappa: NumStdDev) -> f64 {
+pub(super) fn hip_confidence_lb(
+    lg_k: u8,
+    num_coupons: u32,
+    hip_est_accum: f64,
+    kappa: NumStdDev,
+) -> f64 {
     if num_coupons == 0 {
         return 0.0;
     }
@@ -186,7 +151,7 @@ fn hip_confidence_lb(lg_k: u8, num_coupons: u32, hip_estimate: f64, kappa: NumSt
     }
     let rel = x / k.sqrt();
     let eps = (kappa as f64) * rel;
-    let result = hip_estimate / (1.0 + eps);
+    let result = hip_est_accum / (1.0 + eps);
     if result < (num_coupons as f64) {
         num_coupons as f64
     } else {
@@ -194,7 +159,12 @@ fn hip_confidence_lb(lg_k: u8, num_coupons: u32, hip_estimate: f64, kappa: NumSt
     }
 }
 
-fn hip_confidence_ub(lg_k: u8, num_coupons: u32, hip_estimate: f64, kappa: NumStdDev) -> f64 {
+pub(super) fn hip_confidence_ub(
+    lg_k: u8,
+    num_coupons: u32,
+    hip_est_accum: f64,
+    kappa: NumStdDev,
+) -> f64 {
     if num_coupons == 0 {
         return 0.0;
     }
@@ -209,7 +179,7 @@ fn hip_confidence_ub(lg_k: u8, num_coupons: u32, hip_estimate: f64, kappa: NumSt
     }
     let rel = x / k.sqrt();
     let eps = (kappa as f64) * rel;
-    let result = hip_estimate / (1.0 - eps);
+    let result = hip_est_accum / (1.0 - eps);
     result.ceil() // widening for coverage
 }
 
@@ -391,21 +361,21 @@ fn icon_exponential_approximation(k: f64, c: f64) -> f64 {
     0.7940236163830469 * k * 2f64.powf(c / k)
 }
 
-fn icon_estimate(lg_k: u8, c: u32) -> f64 {
+pub(super) fn icon_estimate(lg_k: u8, num_coupons: u32) -> f64 {
     let lg_k = lg_k as usize;
     assert!(
         (ICON_MIN_LOG_K..=ICON_MAX_LOG_K).contains(&lg_k),
         "lg_k out of range; got {lg_k}",
     );
 
-    match c {
+    match num_coupons {
         0 => return 0.0,
         1 => return 1.0,
         _ => {}
     }
 
     let k = (1 << lg_k) as f64;
-    let c = c as f64;
+    let c = num_coupons as f64;
 
     // Differing thresholds ensure that the approximated estimator is monotonically increasing.
     let threshold_factor = if lg_k < 14 { 5.7 } else { 5.6 };
