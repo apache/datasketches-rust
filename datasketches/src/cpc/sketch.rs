@@ -15,10 +15,14 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::hash::Hash;
+
 use crate::common::NumStdDev;
+use crate::common::canonical_double;
 use crate::cpc::estimator::Estimator;
 use crate::cpc::pair_table::PairTable;
 use crate::hash::DEFAULT_UPDATE_SEED;
+use crate::hash::MurmurHash3X64128;
 
 /// Default log2 of K.
 const DEFAULT_LG_K: u8 = 11;
@@ -40,7 +44,7 @@ pub struct CpcSketch {
     /// This is part of a speed optimization.
     first_interesting_column: u8,
     /// Physical storage for the sketch data.
-    storage: PhysicalStorage,
+    state: State,
     /// The current estimator type and associated data.
     estimator: Estimator,
 }
@@ -69,7 +73,7 @@ impl CpcSketch {
             seed,
             num_coupons: 0,
             first_interesting_column: 0,
-            storage: PhysicalStorage::Empty,
+            state: State::Empty,
             estimator: Estimator::Hip {
                 kxp: (1 << lg_k) as f64,
                 hip_estimate: 0.0,
@@ -99,10 +103,62 @@ impl CpcSketch {
         let (lg_k, num_coupons) = (self.lg_k, self.num_coupons);
         self.estimator.upper_bound(lg_k, num_coupons, kappa)
     }
+
+    /// Returns true if the sketch is empty.
+    pub fn is_empty(&self) -> bool {
+        self.num_coupons == 0
+    }
+
+    /// Update the sketch with a hashable value.
+    ///
+    /// For `f32`/`f64` values, use `update_f32`/`update_f64` instead.
+    pub fn update<T: Hash>(&mut self, value: T) {
+        let mut hasher = MurmurHash3X64128::with_seed(self.seed);
+        value.hash(&mut hasher);
+        let (h1, h2) = hasher.finish128();
+
+        let k = 1 << self.lg_k;
+        let col = h2.leading_zeros(); // 0 <= col <= 64
+        let col = if col > 63 { 63 } else { col as u8 }; // clip so that 0 <= col <= 63
+        let row = (h1 & (k - 1)) as u32;
+        let mut row_col = (row << 6) | (col as u32);
+        // To avoid the hash table's "empty" value, we change the row of the following pair.
+        // This case is extremely unlikely, but we might as well handle it.
+        if row_col == u32::MAX {
+            row_col ^= 1 << 6;
+        }
+        self.row_col_update(row_col);
+    }
+
+    /// Update the sketch with a f64 value.
+    pub fn update_f64(&mut self, value: f64) {
+        // Canonicalize double for compatibility with Java
+        let canonical = canonical_double(value);
+        self.update(canonical);
+    }
+
+    /// Update the sketch with a f32 value.
+    pub fn update_f32(&mut self, value: f32) {
+        self.update_f64(value as f64);
+    }
+
+    fn row_col_update(&mut self, row_col: u32) {
+        let col = (row_col & 63) as u8;
+        if col < self.first_interesting_column {
+            // important speed optimization
+            return;
+        }
+        // // window size is 0 until sketch is promoted from sparse to windowed
+        // if (sliding_window.size() == 0) {
+        //     update_sparse(row_col);
+        // } else {
+        //     update_windowed(row_col);
+        // }
+    }
 }
 
 #[derive(Debug, Clone)]
-enum PhysicalStorage {
+enum State {
     /// Empty storage state for EMPTY state.
     Empty,
     /// Sparse storage state for SPARSE state.
@@ -128,12 +184,13 @@ impl CpcSketch {
             "lg_k out of range; got {lg_k}",
         );
 
-        // These empirical values for the 99.9th percentile of size in bytes were measured using 100,000
-        // trials. The value for each trial is the maximum of 5*16=80 measurements that were equally
-        // spaced over values of the quantity C/K between 3.0 and 8.0. This table does not include the
-        // worst-case space for the preamble, which is added by the function.
-        const CPC_EMPIRICAL_SIZE_MAX_LGK: usize = 19;
-        const CPC_EMPIRICAL_MAX_SIZE_BYTES: [usize; 16] = [
+        // These empirical values for the 99.9th percentile of size in bytes were measured using
+        // 100,000 trials. The value for each trial is the maximum of 5*16=80 measurements
+        // that were equally spaced over values of the quantity C/K between 3.0 and 8.0.
+        // This table does not include the worst-case space for the preamble, which is added
+        // by the function.
+        const EMPIRICAL_SIZE_MAX_LGK: usize = 19;
+        const EMPIRICAL_MAX_SIZE_BYTES: [usize; 16] = [
             24,     // lg_k = 4
             36,     // lg_k = 5
             56,     // lg_k = 6
@@ -151,13 +208,13 @@ impl CpcSketch {
             157516, // lg_k = 18
             314656, // lg_k = 19
         ];
-        const CPC_EMPIRICAL_MAX_SIZE_FACTOR: f64 = 0.6; // 0.6 = 4.8 / 8.0
-        const CPC_MAX_PREAMBLE_SIZE_BYTES: usize = 40;
+        const EMPIRICAL_MAX_SIZE_FACTOR: f64 = 0.6; // 0.6 = 4.8 / 8.0
+        const MAX_PREAMBLE_SIZE_BYTES: usize = 40;
 
-        if lg_k <= CPC_EMPIRICAL_SIZE_MAX_LGK {
-            return CPC_EMPIRICAL_MAX_SIZE_BYTES[lg_k - MIN_LG_K] + CPC_MAX_PREAMBLE_SIZE_BYTES;
+        if lg_k <= EMPIRICAL_SIZE_MAX_LGK {
+            return EMPIRICAL_MAX_SIZE_BYTES[lg_k - MIN_LG_K] + MAX_PREAMBLE_SIZE_BYTES;
         }
         let k = 1usize << lg_k;
-        ((CPC_EMPIRICAL_MAX_SIZE_FACTOR * k as f64) as usize) + CPC_MAX_PREAMBLE_SIZE_BYTES
+        ((EMPIRICAL_MAX_SIZE_FACTOR * k as f64) as usize) + MAX_PREAMBLE_SIZE_BYTES
     }
 }
