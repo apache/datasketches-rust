@@ -17,7 +17,9 @@
 
 //! Compressed Probabilistic Counting sketch family.
 
-mod cpc_confidence;
-mod icon_estimator;
+mod estimator;
 mod kxp_byte_lookup;
 mod pair_table;
+mod sketch;
+
+pub use self::sketch::CpcSketch;
