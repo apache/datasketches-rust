@@ -25,6 +25,7 @@ use crate::cpc::estimator::hip_confidence_ub;
 use crate::cpc::estimator::icon_confidence_lb;
 use crate::cpc::estimator::icon_confidence_ub;
 use crate::cpc::estimator::icon_estimate;
+use crate::cpc::kxp_byte_lookup::KXP_BYTE_TABLE;
 use crate::cpc::pair_table::PairTable;
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::hash::MurmurHash3X64128;
@@ -297,7 +298,7 @@ impl CpcSketch {
 
     fn move_window(&mut self) {
         let new_offset = self.window_offset + 1;
-        assert!((0..=56).contains(&new_offset));
+        assert!(new_offset <= 56);
         assert_eq!(
             new_offset,
             determine_correct_offset(self.lg_k, self.num_coupons)
@@ -307,7 +308,9 @@ impl CpcSketch {
         let bit_matrix = self.build_bit_matrix();
 
         // refresh the KXP register on every 8th window shift.
-        // if ((new_offset & 0x7) == 0) refresh_kxp(bit_matrix.data());
+        if (new_offset & 0x7) == 0 {
+            self.refresh_kxp(&bit_matrix);
+        }
 
         self.mut_surprising_value_table().clear(); // the new number of surprises will be about the same
 
@@ -339,10 +342,37 @@ impl CpcSketch {
         }
     }
 
+    /// The KXP register is a double with roughly 50 bits of precision, but it might need roughly
+    /// 90 bits to track the value with perfect accuracy.
+    ///
+    /// Therefore, we recalculate KXP occasionally from the sketch's full bit_matrix so that it
+    /// will reflect changes that were previously outside the mantissa.
+    fn refresh_kxp(&mut self, bit_matrix: &[u64]) {
+        // for improved numerical accuracy, we separately sum the bytes of the u64's
+        let mut byte_sums = [0.0; 8];
+        for &bit in bit_matrix {
+            let mut word = bit;
+            for sum in byte_sums.iter_mut() {
+                let byte = (word & 0xFF) as usize;
+                *sum += KXP_BYTE_TABLE[byte];
+                word >>= 8;
+            }
+        }
+
+        let mut total = 0.0;
+        for i in (0..8).rev() {
+            // the reverse order is important
+            let factor = INVERSE_POWERS_OF_2[i * 8]; // pow (256.0, (-1.0 * ((double) j)))
+            total += factor * byte_sums[i];
+        }
+
+        self.kxp = total;
+    }
+
     fn build_bit_matrix(&self) -> Vec<u64> {
         let k = 1usize << self.lg_k;
         let offset = self.window_offset;
-        assert!((0..=56).contains(&offset));
+        assert!(offset <= 56);
 
         // Fill the matrix with default rows in which the "early zone" is filled with ones.
         // This is essential for the routine's O(k) time cost (as opposed to O(C)).
