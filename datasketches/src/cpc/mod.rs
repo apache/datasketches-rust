@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#![allow(dead_code)]
+
 //! Compressed Probabilistic Counting sketch family.
 
 mod estimator;
