@@ -113,3 +113,51 @@ enum PhysicalStorage {
         sliding_window: Vec<u8>,
     },
 }
+
+impl CpcSketch {
+    /// Returns the estimated maximum compressed serialized size of a sketch.
+    ///
+    /// The actual size of a compressed CPC sketch has a small random variance, but the following
+    /// empirically measured size should be large enough for at least 99.9 percent of sketches.
+    ///
+    /// For small values of `n` the size can be much smaller.
+    pub fn max_serialized_bytes(lg_k: u8) -> usize {
+        let lg_k = lg_k as usize;
+        assert!(
+            (MIN_LG_K..=MAX_LG_K).contains(&lg_k),
+            "lg_k out of range; got {lg_k}",
+        );
+
+        // These empirical values for the 99.9th percentile of size in bytes were measured using 100,000
+        // trials. The value for each trial is the maximum of 5*16=80 measurements that were equally
+        // spaced over values of the quantity C/K between 3.0 and 8.0. This table does not include the
+        // worst-case space for the preamble, which is added by the function.
+        const CPC_EMPIRICAL_SIZE_MAX_LGK: usize = 19;
+        const CPC_EMPIRICAL_MAX_SIZE_BYTES: [usize; 16] = [
+            24,     // lg_k = 4
+            36,     // lg_k = 5
+            56,     // lg_k = 6
+            100,    // lg_k = 7
+            180,    // lg_k = 8
+            344,    // lg_k = 9
+            660,    // lg_k = 10
+            1292,   // lg_k = 11
+            2540,   // lg_k = 12
+            5020,   // lg_k = 13
+            9968,   // lg_k = 14
+            19836,  // lg_k = 15
+            39532,  // lg_k = 16
+            78880,  // lg_k = 17
+            157516, // lg_k = 18
+            314656, // lg_k = 19
+        ];
+        const CPC_EMPIRICAL_MAX_SIZE_FACTOR: f64 = 0.6; // 0.6 = 4.8 / 8.0
+        const CPC_MAX_PREAMBLE_SIZE_BYTES: usize = 40;
+
+        if lg_k <= CPC_EMPIRICAL_SIZE_MAX_LGK {
+            return CPC_EMPIRICAL_MAX_SIZE_BYTES[lg_k - MIN_LG_K] + CPC_MAX_PREAMBLE_SIZE_BYTES;
+        }
+        let k = 1usize << lg_k;
+        ((CPC_EMPIRICAL_MAX_SIZE_FACTOR * k as f64) as usize) + CPC_MAX_PREAMBLE_SIZE_BYTES
+    }
+}
