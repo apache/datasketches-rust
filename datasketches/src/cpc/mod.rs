@@ -17,4 +17,5 @@
 
 //! Compressed Probabilistic Counting sketch family.
 
+mod icon_estimator;
 mod pair_table;
