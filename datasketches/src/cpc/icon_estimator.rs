@@ -179,7 +179,7 @@ const ICON_POLYNOMIAL_COEFFICIENTS: [f64; ICON_TABLE_SIZE] = [
     0.4588937864564729963, -0.08824617586088029375, 0.01147732114826570046, -0.00090384524860747295, 3.253252703695579795e-05,
 ];
 
-pub(super) fn evaluate_polynomial(coefficients: &[f64], start: usize, num: usize, x: f64) -> f64 {
+fn evaluate_polynomial(coefficients: &[f64], start: usize, num: usize, x: f64) -> f64 {
     let end = start + num - 1;
     let mut total = coefficients[end];
     for i in (start..end).rev() {
@@ -189,11 +189,11 @@ pub(super) fn evaluate_polynomial(coefficients: &[f64], start: usize, num: usize
     total
 }
 
-pub(super) fn icon_exponential_approximation(k: f64, c: f64) -> f64 {
+fn icon_exponential_approximation(k: f64, c: f64) -> f64 {
     0.7940236163830469 * k * 2f64.powf(c / k)
 }
 
-pub(super) fn compute_icon_estimate(lg_k: u8, c: u32) -> f64 {
+pub(super) fn icon_estimate(lg_k: u8, c: u32) -> f64 {
     let lg_k = lg_k as usize;
     assert!(
         (ICON_MIN_LOG_K..=ICON_MAX_LOG_K).contains(&lg_k),
