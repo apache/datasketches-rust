@@ -25,3 +25,4 @@ pub use self::resize::ResizeFactor;
 
 // private to datasketches crate
 pub(crate) mod binomial_bounds;
+pub(crate) mod inv_pow2_table;
