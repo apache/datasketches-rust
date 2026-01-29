@@ -26,13 +26,16 @@ github:
     - datasketches
   features:
     issues: true
-    projects: true
+    projects: false
     discussions: true
   enabled_merge_buttons:
     squash: true
     merge: false
     rebase: false
-  del_branch_on_merge: true
+  pull_requests:
+    allow_auto_merge: true
+    allow_update_branch: true
+    del_branch_on_merge: true
   protected_branches:
     main:
       required_status_checks:

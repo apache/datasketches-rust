@@ -161,15 +161,12 @@ impl fmt::Display for Error {
 
         if !self.context.is_empty() {
             write!(f, ", context: {{ ")?;
-            write!(
-                f,
-                "{}",
-                self.context
-                    .iter()
-                    .map(|(k, v)| format!("{k}: {v}"))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            )?;
+            for (i, (k, v)) in self.context.iter().enumerate() {
+                if i > 0 {
+                    write!(f, ", ")?;
+                }
+                write!(f, "{}: {}", k, v)?;
+            }
             write!(f, " }}")?;
         }
 
@@ -182,3 +179,24 @@ impl fmt::Display for Error {
 }
 
 impl std::error::Error for Error {}
+
+#[cfg(test)]
+mod tests {
+    use insta::assert_snapshot;
+
+    use super::*;
+
+    #[test]
+    fn test_format_consistency() {
+        let err = Error::new(ErrorKind::InvalidArgument, "something went wrong");
+        assert_snapshot!(err, @"InvalidArgument => something went wrong",);
+    }
+
+    #[test]
+    fn test_format_with_multiple_contexts() {
+        let err = Error::new(ErrorKind::InvalidData, "parsing failed")
+            .with_context("index", 42)
+            .with_context("file", "foo");
+        assert_snapshot!(err, @"InvalidData, context: { index: 42, file: foo } => parsing failed");
+    }
+}
