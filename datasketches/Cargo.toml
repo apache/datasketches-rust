@@ -34,10 +34,9 @@ keywords = ["sketch", "hyperloglog", "probabilistic"]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
-[dependencies]
-
 [dev-dependencies]
 googletest = { workspace = true }
+insta = { workspace = true }
 
 [lints]
 workspace = true
