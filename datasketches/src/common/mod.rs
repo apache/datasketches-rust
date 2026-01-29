@@ -20,8 +20,10 @@
 // public common components for datasketches crate
 mod num_std_dev;
 mod resize;
+mod seed_hash;
 pub use self::num_std_dev::NumStdDev;
 pub use self::resize::ResizeFactor;
 
 // private to datasketches crate
 pub(crate) mod binomial_bounds;
+pub(crate) use self::seed_hash::compute_seed_hash;
