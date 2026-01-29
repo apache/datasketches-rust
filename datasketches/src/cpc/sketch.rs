@@ -20,9 +20,11 @@ use std::hash::Hash;
 use crate::common::NumStdDev;
 use crate::common::canonical_double;
 use crate::common::inv_pow2_table::INVERSE_POWERS_OF_2;
-use crate::cpc::estimator::{
-    hip_confidence_lb, hip_confidence_ub, icon_confidence_lb, icon_confidence_ub, icon_estimate,
-};
+use crate::cpc::estimator::hip_confidence_lb;
+use crate::cpc::estimator::hip_confidence_ub;
+use crate::cpc::estimator::icon_confidence_lb;
+use crate::cpc::estimator::icon_confidence_ub;
+use crate::cpc::estimator::icon_estimate;
 use crate::cpc::pair_table::PairTable;
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::hash::MurmurHash3X64128;
@@ -191,7 +193,7 @@ impl CpcSketch {
     fn mut_surprising_value_table(&mut self) -> &mut PairTable {
         self.surprising_value_table
             .as_mut()
-            .expect("surprising value table is not initialized")
+            .expect("surprising value table must be initialized")
     }
 
     fn update_hip(&mut self, row_col: u32) {
@@ -218,7 +220,32 @@ impl CpcSketch {
     }
 
     fn promote_sparse_to_windowed(&mut self) {
-        todo!()
+        assert_eq!(self.window_offset, 0);
+
+        let k = 1 << self.lg_k;
+        let c32 = (self.num_coupons as u64) << 5;
+        assert!((c32 == (3 * k)) || ((self.lg_k == 4) && (c32 > (3 * k))));
+
+        self.sliding_window.resize(k as usize, 0);
+
+        let old_table = self
+            .surprising_value_table
+            .replace(PairTable::new(2, 6 + self.lg_k))
+            .expect("surprising value table must be initialized");
+        let old_slots = old_table.slots();
+        for &row_col in old_slots {
+            if row_col != u32::MAX {
+                let col = (row_col & 63) as u8;
+                if col < 8 {
+                    let row = (row_col >> 6) as usize;
+                    self.sliding_window[row] |= 1 << col;
+                } else {
+                    // cannot use must_insert(), because it doesn't provide for growth
+                    let is_novel = self.mut_surprising_value_table().maybe_insert(row_col);
+                    assert!(is_novel);
+                }
+            }
+        }
     }
 
     fn update_windowed(&mut self, row_col: u32) {
@@ -315,4 +342,3 @@ impl CpcSketch {
         ((EMPIRICAL_MAX_SIZE_FACTOR * k as f64) as usize) + MAX_PREAMBLE_SIZE_BYTES
     }
 }
-

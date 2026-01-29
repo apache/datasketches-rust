@@ -15,8 +15,9 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use crate::common::NumStdDev;
 use std::f64::consts::LN_2;
+
+use crate::common::NumStdDev;
 
 const ICON_ERROR_CONSTANT: f64 = LN_2;
 
