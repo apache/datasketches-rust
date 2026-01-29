@@ -161,15 +161,12 @@ impl fmt::Display for Error {
 
         if !self.context.is_empty() {
             write!(f, ", context: {{ ")?;
-            write!(
-                f,
-                "{}",
-                self.context
-                    .iter()
-                    .map(|(k, v)| format!("{k}: {v}"))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            )?;
+            for (i, (k, v)) in self.context.iter().enumerate() {
+                if i > 0 {
+                    write!(f, ", ")?;
+                }
+                write!(f, "{}: {}", k, v)?;
+            }
             write!(f, " }}")?;
         }
 
@@ -182,3 +179,38 @@ impl fmt::Display for Error {
 }
 
 impl std::error::Error for Error {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_format_consistency() {
+        // Case 1: Test basic error message
+        let err = Error::new(ErrorKind::InvalidArgument, "something went wrong");
+        assert_eq!(
+            format!("{}", err),
+            "InvalidArgument => something went wrong",
+            "Basic error formatting mismatch"
+        );
+    }
+
+    #[test]
+    fn test_format_with_multiple_contexts() {
+        // Case 2: Test with multiple contexts
+        // This validates the comma separation logic which is prone to regression
+        let err = Error::new(ErrorKind::InvalidData, "parsing failed")
+            .with_context("index", 42)
+            .with_context("file", "foo");
+
+        let output = format!("{}", err);
+
+        // Expected full string
+        let expected = "InvalidData, context: { index: 42, file: foo } => parsing failed";
+
+        assert_eq!(
+            output, expected,
+            "Formatted output with context does not match expectation"
+        );
+    }
+}
