@@ -161,15 +161,12 @@ impl fmt::Display for Error {
 
         if !self.context.is_empty() {
             write!(f, ", context: {{ ")?;
-            write!(
-                f,
-                "{}",
-                self.context
-                    .iter()
-                    .map(|(k, v)| format!("{k}: {v}"))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            )?;
+            for (i, (k, v)) in self.context.iter().enumerate() {
+                if i > 0 {
+                    write!(f, ", ")?;
+                }
+                write!(f, "{}: {}", k, v)?;
+            }
             write!(f, " }}")?;
         }
 
