@@ -28,6 +28,7 @@
 //! configurable accuracy and memory usage. The implementation supports:
 //!
 //! - **ThetaSketch**: Mutable sketch for building from input data
+//! - **CompactThetaSketch**: Immutable sketch for serialization and set operations
 //!
 //! # Usage
 //!
@@ -40,6 +41,8 @@
 
 mod hash_table;
 mod sketch;
+mod serialization;
 
+pub use self::sketch::CompactThetaSketch;
 pub use self::sketch::ThetaSketch;
 pub use self::sketch::ThetaSketchBuilder;
