@@ -71,10 +71,6 @@ impl PairTable {
         table
     }
 
-    pub fn lg_size(&self) -> u8 {
-        self.lg_size
-    }
-
     pub fn num_items(&self) -> u32 {
         self.num_items
     }

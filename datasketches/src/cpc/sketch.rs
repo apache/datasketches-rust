@@ -190,6 +190,12 @@ impl CpcSketch {
         }
     }
 
+    fn surprising_value_table(&self) -> &PairTable {
+        self.surprising_value_table
+            .as_ref()
+            .expect("surprising value table must be initialized")
+    }
+
     fn mut_surprising_value_table(&mut self) -> &mut PairTable {
         self.surprising_value_table
             .as_mut()
@@ -290,7 +296,83 @@ impl CpcSketch {
     }
 
     fn move_window(&mut self) {
-        todo!()
+        let new_offset = self.window_offset + 1;
+        assert!((0..=56).contains(&new_offset));
+        assert_eq!(
+            new_offset,
+            determine_correct_offset(self.lg_k, self.num_coupons)
+        );
+
+        // Construct the full-sized bit matrix that corresponds to the sketch
+        let bit_matrix = self.build_bit_matrix();
+
+        // refresh the KXP register on every 8th window shift.
+        // if ((new_offset & 0x7) == 0) refresh_kxp(bit_matrix.data());
+
+        self.mut_surprising_value_table().clear(); // the new number of surprises will be about the same
+
+        let mask_for_clearing_window = (0xFF << new_offset) ^ u64::MAX;
+        let mask_for_flipping_early_zone = (1u64 << new_offset) - 1;
+
+        let mut all_surprises_ored = 0u64;
+        for (i, &bit) in bit_matrix.iter().enumerate() {
+            let mut pattern = bit;
+            self.sliding_window[i] = ((pattern >> new_offset) & 0xff) as u8;
+            pattern &= mask_for_clearing_window;
+            // The following line converts surprising 0's to 1's in the "early zone",
+            // (and vice versa, which is essential for this procedure's O(k) time cost).
+            pattern ^= mask_for_flipping_early_zone;
+            all_surprises_ored |= pattern; // a cheap way to recalculate first_interesting_column
+            while pattern != 0 {
+                let col = pattern.trailing_zeros();
+                pattern ^= 1 << col; // erase the 1
+                let row_col = ((i as u32) << 6) | col;
+                let is_novel = self.mut_surprising_value_table().maybe_insert(row_col);
+                assert!(is_novel);
+            }
+        }
+
+        self.window_offset = new_offset;
+        self.first_interesting_column = all_surprises_ored.trailing_zeros() as u8;
+        if self.first_interesting_column > new_offset {
+            self.first_interesting_column = new_offset; // corner case
+        }
+    }
+
+    fn build_bit_matrix(&self) -> Vec<u64> {
+        let k = 1usize << self.lg_k;
+        let offset = self.window_offset;
+        assert!((0..=56).contains(&offset));
+
+        // Fill the matrix with default rows in which the "early zone" is filled with ones.
+        // This is essential for the routine's O(k) time cost (as opposed to O(C)).
+        let default_row = (1u64 << offset) - 1;
+
+        let mut matrix = vec![default_row; k];
+        if self.num_coupons == 0 {
+            return matrix;
+        }
+
+        if !self.sliding_window.is_empty() {
+            // In other words, we are in window mode, not sparse mode
+            for (i, bit) in matrix.iter_mut().enumerate() {
+                // set the window bits, trusting the sketch's current offset
+                *bit |= (self.sliding_window[i] as u64) << offset;
+            }
+        }
+
+        for &row_col in self.surprising_value_table().slots() {
+            if row_col != u32::MAX {
+                let col = (row_col & 63) as u8;
+                let row = (row_col >> 6) as usize;
+                // Flip the specified matrix bit from its default value.
+                // In the "early" zone the bit changes from 1 to 0.
+                // In the "late" zone the bit changes from 0 to 1.
+                matrix[row] ^= 1 << col;
+            }
+        }
+
+        matrix
     }
 }
 
@@ -340,5 +422,15 @@ impl CpcSketch {
         }
         let k = 1usize << lg_k;
         ((EMPIRICAL_MAX_SIZE_FACTOR * k as f64) as usize) + MAX_PREAMBLE_SIZE_BYTES
+    }
+}
+
+fn determine_correct_offset(lg_k: u8, num_coupons: u32) -> u8 {
+    let k = 1 << lg_k;
+    let tmp = ((num_coupons as i64) << 3) - (19 * k as i64);
+    if tmp < 0 {
+        0
+    } else {
+        (tmp >> (lg_k as i64 + 3)) as u8 // tmp / 8K
     }
 }
