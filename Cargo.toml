@@ -45,4 +45,6 @@ unused_must_use = "deny"
 
 [workspace.lints.clippy]
 dbg_macro = "deny"
+
 too_many_arguments = "allow"
+needless_range_loop = "allow"

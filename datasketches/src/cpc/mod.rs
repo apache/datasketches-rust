@@ -26,6 +26,7 @@ mod sketch;
 mod union;
 
 pub use self::sketch::CpcSketch;
+pub use self::union::CpcUnion;
 
 /// Default log2 of K.
 const DEFAULT_LG_K: u8 = 11;
@@ -35,6 +36,7 @@ const MIN_LG_K: usize = 4;
 const MAX_LG_K: usize = 26;
 
 #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
+#[expect(clippy::upper_case_acronyms)]
 enum Flavor {
     EMPTY,   //    0  == C <    1
     SPARSE,  //    1  <= C <   3K/32
@@ -70,7 +72,7 @@ fn determine_flavor(lg_k: u8, num_coupons: u32) -> Flavor {
 }
 
 fn determine_correct_offset(lg_k: u8, num_coupons: u32) -> u8 {
-    let k = 1i64 << lg_k;
+    let k = 1 << lg_k;
     let tmp = ((num_coupons as i64) << 3) - (19 * k); // 8C - 19K
     if tmp < 0 {
         0

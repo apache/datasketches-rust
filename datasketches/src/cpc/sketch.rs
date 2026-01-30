@@ -20,8 +20,13 @@ use std::hash::Hash;
 use crate::common::NumStdDev;
 use crate::common::canonical_double;
 use crate::common::inv_pow2_table::INVERSE_POWERS_OF_2;
+use crate::cpc::DEFAULT_LG_K;
+use crate::cpc::Flavor;
+use crate::cpc::MAX_LG_K;
 use crate::cpc::MIN_LG_K;
 use crate::cpc::count_bits_set_in_matrix;
+use crate::cpc::determine_correct_offset;
+use crate::cpc::determine_flavor;
 use crate::cpc::estimator::hip_confidence_lb;
 use crate::cpc::estimator::hip_confidence_ub;
 use crate::cpc::estimator::icon_confidence_lb;
@@ -29,8 +34,6 @@ use crate::cpc::estimator::icon_confidence_ub;
 use crate::cpc::estimator::icon_estimate;
 use crate::cpc::kxp_byte_lookup::KXP_BYTE_TABLE;
 use crate::cpc::pair_table::PairTable;
-use crate::cpc::{DEFAULT_LG_K, determine_correct_offset};
-use crate::cpc::{Flavor, MAX_LG_K, determine_flavor};
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::hash::MurmurHash3X64128;
 
@@ -309,6 +312,8 @@ impl CpcSketch {
             determine_correct_offset(self.lg_k, self.num_coupons)
         );
 
+        let k = 1 << self.lg_k;
+
         // Construct the full-sized bit matrix that corresponds to the sketch
         let bit_matrix = self.build_bit_matrix();
 
@@ -323,8 +328,8 @@ impl CpcSketch {
         let mask_for_flipping_early_zone = (1u64 << new_offset) - 1;
 
         let mut all_surprises_ored = 0u64;
-        for (i, &bit) in bit_matrix.iter().enumerate() {
-            let mut pattern = bit;
+        for i in 0..k {
+            let mut pattern = bit_matrix[i];
             self.sliding_window[i] = ((pattern >> new_offset) & 0xff) as u8;
             pattern &= mask_for_clearing_window;
             // The following line converts surprising 0's to 1's in the "early zone",
@@ -375,7 +380,7 @@ impl CpcSketch {
     }
 
     pub(super) fn build_bit_matrix(&self) -> Vec<u64> {
-        let k = 1usize << self.lg_k;
+        let k = 1 << self.lg_k;
         let offset = self.window_offset;
         assert!(offset <= 56);
 
@@ -390,9 +395,9 @@ impl CpcSketch {
 
         if !self.sliding_window.is_empty() {
             // In other words, we are in window mode, not sparse mode
-            for (i, bit) in matrix.iter_mut().enumerate() {
+            for i in 0..k {
                 // set the window bits, trusting the sketch's current offset
-                *bit |= (self.sliding_window[i] as u64) << offset;
+                matrix[i] |= (self.sliding_window[i] as u64) << offset;
             }
         }
 
@@ -455,7 +460,7 @@ impl CpcSketch {
         if lg_k <= EMPIRICAL_SIZE_MAX_LGK {
             return EMPIRICAL_MAX_SIZE_BYTES[lg_k - MIN_LG_K] + MAX_PREAMBLE_SIZE_BYTES;
         }
-        let k = 1usize << lg_k;
+        let k = 1 << lg_k;
         ((EMPIRICAL_MAX_SIZE_FACTOR * k as f64) as usize) + MAX_PREAMBLE_SIZE_BYTES
     }
 }
@@ -469,5 +474,12 @@ impl CpcSketch {
         let bit_matrix = self.build_bit_matrix();
         let num_bits_set = count_bits_set_in_matrix(&bit_matrix);
         num_bits_set == self.num_coupons
+    }
+
+    /// Returns the number of coupons in the sketch.
+    ///
+    /// This is primarily for testing and validation purposes.
+    pub fn num_coupons(&self) -> u32 {
+        self.num_coupons
     }
 }

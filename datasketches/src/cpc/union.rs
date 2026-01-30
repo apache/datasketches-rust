@@ -15,10 +15,12 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use crate::cpc::CpcSketch;
+use crate::cpc::DEFAULT_LG_K;
+use crate::cpc::Flavor;
 use crate::cpc::count_bits_set_in_matrix;
+use crate::cpc::determine_correct_offset;
 use crate::cpc::pair_table::PairTable;
-use crate::cpc::{CpcSketch, determine_correct_offset};
-use crate::cpc::{DEFAULT_LG_K, Flavor};
 use crate::hash::DEFAULT_UPDATE_SEED;
 
 /// The union (merge) operation for the CPC sketches.
@@ -105,14 +107,15 @@ impl CpcUnion {
                     all_surprises_ored |= pattern;
                     while pattern != 0 {
                         let col = pattern.trailing_zeros();
-                        pattern = pattern ^ (1u64 << col); // erase the 1
+                        pattern ^= 1u64 << col; // erase the 1
                         let row_col = ((i as u32) << 6) | col;
                         let is_novel = table.maybe_insert(row_col);
                         assert!(is_novel);
                     }
                 }
 
-                // at this point we could shrink an oversized hash table, but the relative waste isn't very big
+                // at this point we could shrink an oversized hash table, but the relative waste
+                // isn't very big
                 sketch.first_interesting_column = all_surprises_ored.trailing_zeros() as u8;
                 if sketch.first_interesting_column > offset {
                     sketch.first_interesting_column = offset; // corner case
@@ -129,6 +132,10 @@ impl CpcUnion {
     }
 
     /// Update this union with a CpcSketch.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the seed of the provided sketch does not match the seed of this union.
     pub fn update(&mut self, sketch: &CpcSketch) {
         assert_eq!(self.seed, sketch.seed());
 
@@ -214,7 +221,6 @@ impl CpcUnion {
                 assert_eq!(flavor, Flavor::SLIDING);
                 let src_matrix = sketch.build_bit_matrix();
                 or_matrix_into_matrix(old_matrix, self.lg_k, &src_matrix, sketch.lg_k());
-                return;
             }
         }
     }
@@ -247,7 +253,7 @@ impl CpcUnion {
             UnionState::BitMatrix(matrix) => {
                 let new_k = 1 << new_lg_k;
                 let mut new_matrix = vec![0; new_k];
-                or_matrix_into_matrix(&mut new_matrix, new_lg_k, &matrix, self.lg_k);
+                or_matrix_into_matrix(&mut new_matrix, new_lg_k, matrix, self.lg_k);
                 self.lg_k = new_lg_k;
                 self.state = UnionState::BitMatrix(new_matrix);
             }
@@ -315,7 +321,7 @@ fn walk_table_updating_sketch(sketch: &mut CpcSketch, table: &PairTable) {
     // downsamples when dst lgK < src LgK
     let dst_mask = (((1u64 << sketch.lg_k()) - 1) << 6) | 63;
     // Using a golden ratio stride fixes the snowplow effect.
-    let mut stride = (0.6180339887498949025 * (num_slots as f64)) as u32;
+    let mut stride = (0.6180339887498949 * (num_slots as f64)) as u32;
     assert!(stride >= 2);
     if stride == ((stride >> 1) << 1) {
         // force the stride to be odd
