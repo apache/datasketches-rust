@@ -49,11 +49,11 @@ pub struct CpcSketch {
     first_interesting_column: u8,
     /// The number of coupons collected so far.
     num_coupons: u32,
-    /// Surprising values table in sparse mode.
+    /// Sparse and surprising values.
     surprising_value_table: Option<PairTable>,
     /// Derivable from num_coupons, but made explicit for speed.
     window_offset: u8,
-    /// Size K bytes in dense mode.
+    /// Size K bytes in dense mode (flavor >= HYBRID).
     sliding_window: Vec<u8>,
 
     // estimator state
