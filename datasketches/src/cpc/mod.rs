@@ -23,8 +23,25 @@ mod estimator;
 mod kxp_byte_lookup;
 mod pair_table;
 mod sketch;
+mod union;
 
 pub use self::sketch::CpcSketch;
+
+/// Default log2 of K.
+const DEFAULT_LG_K: u8 = 11;
+/// Min log2 of K.
+const MIN_LG_K: usize = 4;
+/// Max log2 of K.
+const MAX_LG_K: usize = 26;
+
+#[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
+enum Flavor {
+    EMPTY,   //    0  == C <    1
+    SPARSE,  //    1  <= C <   3K/32
+    HYBRID,  // 3K/32 <= C <   K/2
+    PINNED,  //   K/2 <= C < 27K/8  [NB: 27/8 = 3 + 3/8]
+    SLIDING, // 27K/8 <= C
+}
 
 fn count_bits_set_in_matrix(matrix: &[u64]) -> u32 {
     let mut count = 0;
@@ -32,4 +49,32 @@ fn count_bits_set_in_matrix(matrix: &[u64]) -> u32 {
         count += word.count_ones();
     }
     count
+}
+
+fn determine_flavor(lg_k: u8, num_coupons: u32) -> Flavor {
+    let k = 1 << lg_k;
+    let c2 = num_coupons << 1;
+    let c8 = num_coupons << 3;
+    let c32 = num_coupons << 5;
+    if num_coupons == 0 {
+        Flavor::EMPTY
+    } else if c32 < (3 * k) {
+        Flavor::SPARSE
+    } else if c2 < k {
+        Flavor::HYBRID
+    } else if c8 < (27 * k) {
+        Flavor::PINNED
+    } else {
+        Flavor::SLIDING
+    }
+}
+
+fn determine_correct_offset(lg_k: u8, num_coupons: u32) -> u8 {
+    let k = 1i64 << lg_k;
+    let tmp = ((num_coupons as i64) << 3) - (19 * k); // 8C - 19K
+    if tmp < 0 {
+        0
+    } else {
+        (tmp >> (lg_k + 3)) as u8 // tmp / 8K
+    }
 }

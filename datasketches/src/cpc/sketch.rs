@@ -20,6 +20,7 @@ use std::hash::Hash;
 use crate::common::NumStdDev;
 use crate::common::canonical_double;
 use crate::common::inv_pow2_table::INVERSE_POWERS_OF_2;
+use crate::cpc::MIN_LG_K;
 use crate::cpc::count_bits_set_in_matrix;
 use crate::cpc::estimator::hip_confidence_lb;
 use crate::cpc::estimator::hip_confidence_ub;
@@ -28,15 +29,10 @@ use crate::cpc::estimator::icon_confidence_ub;
 use crate::cpc::estimator::icon_estimate;
 use crate::cpc::kxp_byte_lookup::KXP_BYTE_TABLE;
 use crate::cpc::pair_table::PairTable;
+use crate::cpc::{DEFAULT_LG_K, determine_correct_offset};
+use crate::cpc::{Flavor, MAX_LG_K, determine_flavor};
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::hash::MurmurHash3X64128;
-
-/// Default log2 of K.
-const DEFAULT_LG_K: u8 = 11;
-/// Min log2 of K.
-const MIN_LG_K: usize = 4;
-/// Max log2 of K.
-const MAX_LG_K: usize = 26;
 
 /// A Compressed Probabilistic Counting sketch.
 #[derive(Debug, Clone)]
@@ -47,22 +43,22 @@ pub struct CpcSketch {
 
     // sketch state
     /// Part of a speed optimization.
-    first_interesting_column: u8,
+    pub(super) first_interesting_column: u8,
     /// The number of coupons collected so far.
-    num_coupons: u32,
+    pub(super) num_coupons: u32,
     /// Sparse and surprising values.
-    surprising_value_table: Option<PairTable>,
+    pub(super) surprising_value_table: Option<PairTable>,
     /// Derivable from num_coupons, but made explicit for speed.
-    window_offset: u8,
+    pub(super) window_offset: u8,
     /// Size K bytes in dense mode (flavor >= HYBRID).
-    sliding_window: Vec<u8>,
+    pub(super) sliding_window: Vec<u8>,
 
     // estimator state
     /// Whether the sketch is a result of merging.
     ///
     /// If `false`, the HIP (Historical Inverse Probability) estimator is used.
     /// If `true`, the ICON (Inter-Column Optimal) Estimator is fallback in use.
-    merge_flag: bool,
+    pub(super) merge_flag: bool,
     // the following variables are only valid in HIP estimator
     /// A pre-calculated probability factor (`k * p`) used to compute the increment delta.
     kxp: f64,
@@ -173,7 +169,11 @@ impl CpcSketch {
         self.update_f64(value as f64);
     }
 
-    fn row_col_update(&mut self, row_col: u32) {
+    pub(super) fn flavor(&self) -> Flavor {
+        determine_flavor(self.lg_k, self.num_coupons)
+    }
+
+    pub(super) fn row_col_update(&mut self, row_col: u32) {
         let col = (row_col & 63) as u8;
         if col < self.first_interesting_column {
             // important speed optimization
@@ -192,13 +192,17 @@ impl CpcSketch {
         }
     }
 
-    fn surprising_value_table(&self) -> &PairTable {
+    pub(super) fn seed(&self) -> u64 {
+        self.seed
+    }
+
+    pub(super) fn surprising_value_table(&self) -> &PairTable {
         self.surprising_value_table
             .as_ref()
             .expect("surprising value table must be initialized")
     }
 
-    fn mut_surprising_value_table(&mut self) -> &mut PairTable {
+    pub(super) fn mut_surprising_value_table(&mut self) -> &mut PairTable {
         self.surprising_value_table
             .as_mut()
             .expect("surprising value table must be initialized")
@@ -370,7 +374,7 @@ impl CpcSketch {
         self.kxp = total;
     }
 
-    fn build_bit_matrix(&self) -> Vec<u64> {
+    pub(super) fn build_bit_matrix(&self) -> Vec<u64> {
         let k = 1usize << self.lg_k;
         let offset = self.window_offset;
         assert!(offset <= 56);
@@ -465,15 +469,5 @@ impl CpcSketch {
         let bit_matrix = self.build_bit_matrix();
         let num_bits_set = count_bits_set_in_matrix(&bit_matrix);
         num_bits_set == self.num_coupons
-    }
-}
-
-fn determine_correct_offset(lg_k: u8, num_coupons: u32) -> u8 {
-    let k = 1 << lg_k;
-    let tmp = ((num_coupons as i64) << 3) - (19 * k as i64);
-    if tmp < 0 {
-        0
-    } else {
-        (tmp >> (lg_k as i64 + 3)) as u8 // tmp / 8K
     }
 }
