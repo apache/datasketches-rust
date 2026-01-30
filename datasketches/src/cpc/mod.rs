@@ -25,3 +25,11 @@ mod pair_table;
 mod sketch;
 
 pub use self::sketch::CpcSketch;
+
+fn count_bits_set_in_matrix(matrix: &[u64]) -> u32 {
+    let mut count = 0;
+    for word in matrix {
+        count += word.count_ones();
+    }
+    count
+}

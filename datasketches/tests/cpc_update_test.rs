@@ -31,6 +31,7 @@ fn test_empty() {
     assert_eq!(sketch.estimate(), 0.0);
     assert_eq!(sketch.lower_bound(NumStdDev::One), 0.0);
     assert_eq!(sketch.upper_bound(NumStdDev::One), 0.0);
+    assert!(sketch.validate());
 }
 
 #[test]
@@ -41,6 +42,7 @@ fn test_one_value() {
     assert_eq!(sketch.estimate(), 1.0);
     assert_that!(sketch.estimate(), ge(sketch.lower_bound(NumStdDev::One)));
     assert_that!(sketch.estimate(), le(sketch.upper_bound(NumStdDev::One)));
+    assert!(sketch.validate());
 }
 
 #[test]
@@ -59,4 +61,5 @@ fn test_many_values() {
     );
     assert_that!(sketch.estimate(), ge(sketch.lower_bound(NumStdDev::One)));
     assert_that!(sketch.estimate(), le(sketch.upper_bound(NumStdDev::One)));
+    assert!(sketch.validate());
 }

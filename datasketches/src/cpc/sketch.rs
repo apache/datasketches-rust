@@ -20,6 +20,7 @@ use std::hash::Hash;
 use crate::common::NumStdDev;
 use crate::common::canonical_double;
 use crate::common::inv_pow2_table::INVERSE_POWERS_OF_2;
+use crate::cpc::count_bits_set_in_matrix;
 use crate::cpc::estimator::hip_confidence_lb;
 use crate::cpc::estimator::hip_confidence_ub;
 use crate::cpc::estimator::icon_confidence_lb;
@@ -452,6 +453,18 @@ impl CpcSketch {
         }
         let k = 1usize << lg_k;
         ((EMPIRICAL_MAX_SIZE_FACTOR * k as f64) as usize) + MAX_PREAMBLE_SIZE_BYTES
+    }
+}
+
+// testing methods
+impl CpcSketch {
+    /// Validate this sketch is valid.
+    ///
+    /// This method is typically used for debugging and testing purposes.
+    pub fn validate(&self) -> bool {
+        let bit_matrix = self.build_bit_matrix();
+        let num_bits_set = count_bits_set_in_matrix(&bit_matrix);
+        num_bits_set == self.num_coupons
     }
 }
 
