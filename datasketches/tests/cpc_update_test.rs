@@ -47,17 +47,14 @@ fn test_one_value() {
 
 #[test]
 fn test_many_values() {
-    const N: usize = 10000;
-    const N_F64: f64 = N as f64;
-
     let mut sketch = CpcSketch::new(11);
-    for i in 0..N {
+    for i in 0..10000 {
         sketch.update(i);
     }
     assert!(!sketch.is_empty());
     assert_that!(
         sketch.estimate(),
-        near(N_F64, RELATIVE_ERROR_FOR_LG_K_11 * N_F64)
+        near(10000.0, RELATIVE_ERROR_FOR_LG_K_11 * 10000.0)
     );
     assert_that!(sketch.estimate(), ge(sketch.lower_bound(NumStdDev::One)));
     assert_that!(sketch.estimate(), le(sketch.upper_bound(NumStdDev::One)));

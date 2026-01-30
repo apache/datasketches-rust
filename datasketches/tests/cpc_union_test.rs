@@ -103,3 +103,67 @@ fn test_large_values() {
         near(estimate, RELATIVE_ERROR_FOR_LG_K_11 * estimate)
     );
 }
+
+#[test]
+fn test_reduce_k_empty() {
+    let mut sketch = CpcSketch::new(11);
+    for i in 0..10000 {
+        sketch.update(i);
+    }
+    let mut union = CpcUnion::new(12);
+    union.update(&sketch);
+    let result = union.get_result();
+    assert_eq!(result.lg_k(), 11);
+    assert_that!(
+        result.estimate(),
+        near(10000.0, RELATIVE_ERROR_FOR_LG_K_11 * 10000.0)
+    );
+}
+
+#[test]
+fn test_reduce_k_sparse() {
+    let mut union = CpcUnion::new(12);
+
+    let mut sketch12 = CpcSketch::new(12);
+    for i in 0..100 {
+        sketch12.update(i);
+    }
+    union.update(&sketch12);
+
+    let mut sketch11 = CpcSketch::new(11);
+    for i in 0..1000 {
+        sketch11.update(i);
+    }
+    union.update(&sketch11);
+
+    let result = union.get_result();
+    assert_eq!(result.lg_k(), 11);
+    assert_that!(
+        result.estimate(),
+        near(1000.0, RELATIVE_ERROR_FOR_LG_K_11 * 10000.0)
+    );
+}
+
+#[test]
+fn test_reduce_k_window() {
+    let mut union = CpcUnion::new(12);
+
+    let mut sketch12 = CpcSketch::new(12);
+    for i in 0..500 {
+        sketch12.update(i);
+    }
+    union.update(&sketch12);
+
+    let mut sketch11 = CpcSketch::new(11);
+    for i in 0..1000 {
+        sketch11.update(i);
+    }
+    union.update(&sketch11);
+
+    let result = union.get_result();
+    assert_eq!(result.lg_k(), 11);
+    assert_that!(
+        result.estimate(),
+        near(1000.0, RELATIVE_ERROR_FOR_LG_K_11 * 10000.0)
+    );
+}
