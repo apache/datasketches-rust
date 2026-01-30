@@ -36,6 +36,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [dev-dependencies]
 googletest = { workspace = true }
+rand = { workspace = true }
 insta = { workspace = true }
 
 [lints]
