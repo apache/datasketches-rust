@@ -15,18 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! Data structures and functions that may be used across all the sketch families.
-
-// public common components for datasketches crate
-mod num_std_dev;
-mod resize;
-pub use self::num_std_dev::NumStdDev;
-pub use self::resize::ResizeFactor;
-
-pub mod random;
-
-pub use self::random::RandomSource;
-pub use self::random::XorShift64;
-
-// private to datasketches crate
-pub(crate) mod binomial_bounds;
+pub(super) const PREAMBLE_INTS_SHORT: u8 = 3;
+pub(super) const PREAMBLE_INTS_LONG: u8 = 6;
+pub(super) const SERIAL_VERSION: u8 = 1;
+pub(super) const DENSITY_FAMILY_ID: u8 = 19;
+pub(super) const FLAGS_IS_EMPTY: u8 = 1 << 2;

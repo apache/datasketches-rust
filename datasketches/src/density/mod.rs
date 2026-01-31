@@ -15,30 +15,27 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! # Apache® DataSketches™ Core Rust Library Component
+//! Density sketch implementation for density estimation from streaming data.
 //!
-//! The Sketching Core Library provides a range of stochastic streaming algorithms and closely
-//! related Rust technologies that are particularly useful when integrating this technology into
-//! systems that must deal with massive data.
+//! The sketch maintains a coreset of points using a compaction scheme and
+//! provides density estimates at query points via a kernel function.
 //!
-//! This library is divided into modules that constitute distinct groups of functionality.
+//! # Usage
+//!
+//! ```rust
+//! # use datasketches::density::DensitySketch;
+//! let mut sketch: DensitySketch<f64> = DensitySketch::new(10, 3);
+//! sketch.update(vec![0.0, 0.0, 0.0]);
+//! sketch.update(vec![1.0, 2.0, 3.0]);
+//! let estimate = sketch.estimate(&[0.0, 0.0, 0.0]);
+//! assert!(estimate > 0.0);
+//! ```
 
-#![cfg_attr(docsrs, feature(doc_cfg))]
-#![deny(missing_docs)]
+mod serialization;
+mod sketch;
 
-// See https://github.com/apache/datasketches-rust/issues/28 for more information.
-#[cfg(target_endian = "big")]
-compile_error!("datasketches does not support big-endian targets");
-
-pub mod bloom;
-pub mod common;
-pub mod countmin;
-pub mod density;
-pub mod error;
-pub mod frequencies;
-pub mod hll;
-pub mod tdigest;
-pub mod theta;
-
-mod codec;
-mod hash;
+pub use self::sketch::DensityItem;
+pub use self::sketch::DensityKernel;
+pub use self::sketch::DensitySketch;
+pub use self::sketch::DensityValue;
+pub use self::sketch::GaussianKernel;
