@@ -52,7 +52,6 @@ mod reverse_purge_item_hash_map;
 mod serialization;
 mod sketch;
 
-pub use self::serialization::FrequentItemValue;
 pub use self::sketch::ErrorType;
 pub use self::sketch::FrequentItemsSketch;
 pub use self::sketch::Row;

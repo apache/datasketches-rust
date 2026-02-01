@@ -15,11 +15,13 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#![allow(dead_code)]
+
 use std::io;
 use std::io::Cursor;
 use std::io::Read;
 
-pub struct SketchBytes {
+pub(crate) struct SketchBytes {
     bytes: Vec<u8>,
 }
 
@@ -111,7 +113,7 @@ impl SketchBytes {
     }
 }
 
-pub struct SketchSlice<'a> {
+pub(crate) struct SketchSlice<'a> {
     slice: Cursor<&'a [u8]>,
 }
 

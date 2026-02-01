@@ -18,7 +18,6 @@
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
 use crate::error::Error;
-use std::hash::Hash;
 
 /// Family ID for frequency sketches.
 pub const FAMILY_ID: u8 = 10;
@@ -33,69 +32,66 @@ pub const PREAMBLE_LONGS_NONEMPTY: u8 = 4;
 /// Empty flag mask (both bits for compatibility).
 pub const EMPTY_FLAG_MASK: u8 = 5;
 
-/// Trait for serializing and deserializing frequent item values.
-pub trait FrequentItemValue: Sized + Eq + Hash + Clone {
-    /// Returns the size in bytes required to serialize the given item.
-    fn serialize_size(item: &Self) -> usize;
-    /// Serializes the item into the given byte buffer.
-    fn serialize_value(&self, bytes: &mut SketchBytes);
-    /// Deserializes an item from the given byte cursor.
-    fn deserialize_value(cursor: &mut SketchSlice<'_>) -> Result<Self, Error>;
+pub(crate) fn count_string_items_bytes(items: &[String]) -> usize {
+    items.iter().map(|item| 4 + item.len()).sum()
 }
 
-impl FrequentItemValue for String {
-    fn serialize_size(item: &Self) -> usize {
-        size_of::<u32>() + item.len()
-    }
-
-    fn serialize_value(&self, bytes: &mut SketchBytes) {
-        let bs = self.as_bytes();
+pub(crate) fn serialize_string_items(bytes: &mut SketchBytes, items: &[String]) {
+    for item in items {
+        let bs = item.as_bytes();
         bytes.write_u32_le(bs.len() as u32);
         bytes.write(bs);
     }
+}
 
-    fn deserialize_value(cursor: &mut SketchSlice<'_>) -> Result<Self, Error> {
+pub(crate) fn deserialize_string_items(
+    mut cursor: SketchSlice<'_>,
+    num_items: usize,
+) -> Result<Vec<String>, Error> {
+    let mut items = Vec::with_capacity(num_items);
+    for i in 0..num_items {
         let len = cursor.read_u32_le().map_err(|_| {
-            Error::insufficient_data("failed to read string item length".to_string())
+            Error::insufficient_data(format!(
+                "expected {num_items} string items, failed to read len at index {i}"
+            ))
         })?;
 
         let mut slice = vec![0; len as usize];
         cursor.read_exact(&mut slice).map_err(|_| {
-            Error::insufficient_data("failed to read string item bytes".to_string())
+            Error::insufficient_data(format!(
+                "expected {num_items} string items, failed to read slice at index {i}"
+            ))
         })?;
 
-        String::from_utf8(slice)
-            .map_err(|_| Error::deserial("invalid UTF-8 string payload".to_string()))
+        let value = String::from_utf8(slice)
+            .map_err(|_| Error::deserial(format!("invalid UTF-8 string payload at index {i}")))?;
+        items.push(value);
+    }
+    Ok(items)
+}
+
+pub(crate) fn count_i64_items_bytes(items: &[i64]) -> usize {
+    items.len() * 8
+}
+
+pub(crate) fn serialize_i64_items(bytes: &mut SketchBytes, items: &[i64]) {
+    for item in items.iter().copied() {
+        bytes.write_i64_le(item);
     }
 }
 
-macro_rules! impl_primitive {
-    ($name:ty, $read:ident, $write:ident) => {
-        impl FrequentItemValue for $name {
-            fn serialize_size(_item: &Self) -> usize {
-                size_of::<$name>()
-            }
-
-            fn serialize_value(&self, bytes: &mut SketchBytes) {
-                bytes.$write(*self);
-            }
-
-            fn deserialize_value(cursor: &mut SketchSlice<'_>) -> Result<Self, Error> {
-                cursor.$read().map_err(|_| {
-                    Error::insufficient_data(
-                        concat!("failed to read ", stringify!($name), " item bytes").to_string(),
-                    )
-                })
-            }
-        }
-    };
+pub(crate) fn deserialize_i64_items(
+    mut cursor: SketchSlice<'_>,
+    num_items: usize,
+) -> Result<Vec<i64>, Error> {
+    let mut items = Vec::with_capacity(num_items);
+    for i in 0..num_items {
+        let value = cursor.read_i64_le().map_err(|_| {
+            Error::insufficient_data(format!(
+                "expected {num_items} i64 items, failed at index {i}"
+            ))
+        })?;
+        items.push(value);
+    }
+    Ok(items)
 }
-
-impl_primitive!(i8, read_i8, write_i8);
-impl_primitive!(u8, read_u8, write_u8);
-impl_primitive!(i16, read_i16_le, write_i16_le);
-impl_primitive!(u16, read_u16_le, write_u16_le);
-impl_primitive!(i32, read_i32_le, write_i32_le);
-impl_primitive!(u32, read_u32_le, write_u32_le);
-impl_primitive!(i64, read_i64_le, write_i64_le);
-impl_primitive!(u64, read_u64_le, write_u64_le);
