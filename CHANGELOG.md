@@ -13,6 +13,7 @@ All significant changes to this project will be documented in this file.
 
 * `CountMinSketch` with unsigned values now supports `halve` and `decay` operations.
 * `CpcSketch` and `CpcUnion` are now available for cardinality estimation.
+* `FrequentItemsSketch` now supports serde for `u64` value.
 
 ## v0.2.0 (2026-01-14)
 
