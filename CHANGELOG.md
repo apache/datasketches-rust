@@ -12,7 +12,7 @@ All significant changes to this project will be documented in this file.
 ### New features
 
 * `CountMinSketch` with unsigned values now supports `halve` and `decay` operations.
-* `CpcSketch` and `CpcUnion` is now available for cardinality estimation.
+* `CpcSketch` and `CpcUnion` are now available for cardinality estimation.
 
 ## v0.2.0 (2026-01-14)
 
