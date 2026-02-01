@@ -22,7 +22,6 @@ use std::num::NonZeroU64;
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
 use crate::error::Error;
-use crate::error::ErrorKind;
 use crate::tdigest::serialization::*;
 
 /// The default value of K if one is not specified.
@@ -100,10 +99,9 @@ impl TDigestMut {
     /// ```
     pub fn try_new(k: u16) -> Result<Self, Error> {
         if k < 10 {
-            return Err(Error::new(
-                ErrorKind::InvalidArgument,
-                format!("k must be at least 10, got {k}"),
-            ));
+            return Err(Error::invalid_argument(format!(
+                "k must be at least 10, got {k}"
+            )));
         }
 
         Ok(Self::make(

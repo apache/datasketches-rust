@@ -89,7 +89,7 @@ impl Error {
     }
 }
 
-// Convenience constructors for deserialization errors
+// Convenient constructors used within datasketches crate.
 impl Error {
     pub(crate) fn invalid_argument(msg: impl Into<String>) -> Self {
         Self::new(ErrorKind::InvalidArgument, msg)
