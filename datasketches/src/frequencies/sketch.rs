@@ -66,14 +66,12 @@ impl<T> Row<T> {
         self.estimate
     }
 
-    /// Returns the upper bound for the frequency.
+    /// Returns the guaranteed upper bound for the frequency.
     pub fn upper_bound(&self) -> u64 {
         self.upper_bound
     }
 
     /// Returns the guaranteed lower bound for the frequency.
-    ///
-    /// This value is never negative.
     pub fn lower_bound(&self) -> u64 {
         self.lower_bound
     }
@@ -115,7 +113,11 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     /// assert_eq!(sketch.num_active_items(), 2);
     /// ```
     pub fn new(max_map_size: usize) -> Self {
-        let lg_max_map_size = exact_log2(max_map_size);
+        assert!(
+            max_map_size.is_power_of_two(),
+            "max_map_size must be power of 2"
+        );
+        let lg_max_map_size = max_map_size.trailing_zeros() as u8;
         Self::with_lg_map_sizes(lg_max_map_size, LG_MIN_MAP_SIZE)
     }
 
@@ -155,16 +157,16 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
 
     /// Returns the guaranteed lower bound frequency for an item.
     ///
-    /// This value is never negative and is guaranteed to be no larger than the true frequency.
-    /// If the item is not tracked, the lower bound is zero.
+    /// This value is guaranteed to be no larger than the true frequency. If the item is not
+    /// tracked, the lower bound is zero.
     pub fn lower_bound(&self, item: &T) -> u64 {
         self.hash_map.get(item)
     }
 
     /// Returns the guaranteed upper bound frequency for an item.
     ///
-    /// This value is guaranteed to be no smaller than the true frequency.
-    /// If the item is tracked, this is `item_count + offset`.
+    /// This value is guaranteed to be no smaller than the true frequency. If the item is tracked,
+    /// this is `item_count + offset`.
     pub fn upper_bound(&self, item: &T) -> u64 {
         self.hash_map.get(item) + self.offset
     }
@@ -598,9 +600,4 @@ impl FrequentItemsSketch<String> {
     pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
         Self::deserialize_inner(bytes, deserialize_string_items)
     }
-}
-
-fn exact_log2(value: usize) -> u8 {
-    assert!(value.is_power_of_two(), "value must be power of 2");
-    value.trailing_zeros() as u8
 }
