@@ -45,7 +45,7 @@ use crate::hll::pack_coupon;
 /// the union of all input sketches. It automatically handles sketches with
 /// different configurations and modes.
 ///
-/// See the [hll module level documentation](crate::hll) for more.
+/// See the [module level documentation](super) for more.
 #[derive(Debug, Clone)]
 pub struct HllUnion {
     /// Maximum lg_k that this union can handle

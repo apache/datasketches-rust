@@ -38,6 +38,8 @@ use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::hash::MurmurHash3X64128;
 
 /// A Compressed Probabilistic Counting sketch.
+///
+/// See the [module level documentation](super) for more.
 #[derive(Debug, Clone)]
 pub struct CpcSketch {
     // immutable config variables
@@ -77,11 +79,19 @@ impl Default for CpcSketch {
 
 impl CpcSketch {
     /// Creates a new `CpcSketch` with the given `lg_k` and default seed.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `lg_k` is not in the range `[4, 16]`.
     pub fn new(lg_k: u8) -> Self {
         Self::with_seed(lg_k, DEFAULT_UPDATE_SEED)
     }
 
     /// Creates a new `CpcSketch` with the given `lg_k` and `seed`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `lg_k` is not in the range `[4, 16]`.
     pub fn with_seed(lg_k: u8, seed: u64) -> Self {
         assert!(
             (MIN_LG_K..=MAX_LG_K).contains(&(lg_k as usize)),
@@ -222,7 +232,7 @@ impl CpcSketch {
     fn update_sparse(&mut self, row_col: u32) {
         let k = 1 << self.lg_k;
         let c32pre = (self.num_coupons as u64) << 5;
-        assert!(c32pre < 3 * k); // C < 3K/32, in other words, flavor == SPARSE
+        debug_assert!(c32pre < 3 * k); // C < 3K/32, in other words, flavor == SPARSE
         let is_novel = self.mut_surprising_value_table().maybe_insert(row_col);
         if is_novel {
             self.num_coupons += 1;
@@ -235,11 +245,11 @@ impl CpcSketch {
     }
 
     fn promote_sparse_to_windowed(&mut self) {
-        assert_eq!(self.window_offset, 0);
+        debug_assert_eq!(self.window_offset, 0);
 
         let k = 1 << self.lg_k;
         let c32 = (self.num_coupons as u64) << 5;
-        assert!((c32 == (3 * k)) || ((self.lg_k == 4) && (c32 > (3 * k))));
+        debug_assert!((c32 == (3 * k)) || ((self.lg_k == 4) && (c32 > (3 * k))));
 
         self.sliding_window.resize(k as usize, 0);
 
@@ -257,20 +267,20 @@ impl CpcSketch {
                 } else {
                     // cannot use must_insert(), because it doesn't provide for growth
                     let is_novel = self.mut_surprising_value_table().maybe_insert(row_col);
-                    assert!(is_novel);
+                    debug_assert!(is_novel);
                 }
             }
         }
     }
 
     fn update_windowed(&mut self, row_col: u32) {
-        assert!(self.window_offset <= 56);
+        debug_assert!(self.window_offset <= 56);
         let k = 1 << self.lg_k;
         let c32pre = (self.num_coupons as u64) << 5;
-        assert!(c32pre >= 3 * k); // C >= 3K/32, in other words flavor >= HYBRID
+        debug_assert!(c32pre >= 3 * k); // C >= 3K/32, in other words flavor >= HYBRID
         let c8pre = (self.num_coupons as u64) << 3;
         let w8pre = (self.window_offset as u64) << 3;
-        assert!(c8pre < (27 + w8pre) * k); // C < (K * 27/8) + (K * windowOffset)
+        debug_assert!(c8pre < (27 + w8pre) * k); // C < (K * 27/8) + (K * windowOffset)
 
         let mut is_novel = false; // novel if new coupon;
         let col = (row_col & 63) as u8;
@@ -297,17 +307,17 @@ impl CpcSketch {
             let c8post = (self.num_coupons as u64) << 3;
             if c8post >= (27 + w8pre) * k {
                 self.move_window();
-                assert!((1..=56).contains(&self.window_offset));
+                debug_assert!((1..=56).contains(&self.window_offset));
                 let w8post = (self.window_offset as u64) << 3;
-                assert!(c8post < ((27 + w8post) * k)); // C < (K * 27/8) + (K * windowOffset)
+                debug_assert!(c8post < ((27 + w8post) * k)); // C < (K * 27/8) + (K * windowOffset)
             }
         }
     }
 
     fn move_window(&mut self) {
         let new_offset = self.window_offset + 1;
-        assert!(new_offset <= 56);
-        assert_eq!(
+        debug_assert!(new_offset <= 56);
+        debug_assert_eq!(
             new_offset,
             determine_correct_offset(self.lg_k, self.num_coupons)
         );
@@ -341,7 +351,7 @@ impl CpcSketch {
                 pattern ^= 1 << col; // erase the 1
                 let row_col = ((i as u32) << 6) | col;
                 let is_novel = self.mut_surprising_value_table().maybe_insert(row_col);
-                assert!(is_novel);
+                debug_assert!(is_novel);
             }
         }
 
@@ -382,7 +392,7 @@ impl CpcSketch {
     pub(super) fn build_bit_matrix(&self) -> Vec<u64> {
         let k = 1 << self.lg_k;
         let offset = self.window_offset;
-        assert!(offset <= 56);
+        debug_assert!(offset <= 56);
 
         // Fill the matrix with default rows in which the "early zone" is filled with ones.
         // This is essential for the routine's O(k) time cost (as opposed to O(C)).
@@ -423,6 +433,10 @@ impl CpcSketch {
     /// empirically measured size should be large enough for at least 99.9 percent of sketches.
     ///
     /// For small values of `n` the size can be much smaller.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `lg_k` is not in the range `[4, 26]`.
     pub fn max_serialized_bytes(lg_k: u8) -> usize {
         let lg_k = lg_k as usize;
         assert!(
@@ -469,7 +483,7 @@ impl CpcSketch {
 impl CpcSketch {
     /// Validate this sketch is valid.
     ///
-    /// This method is typically used for debugging and testing purposes.
+    /// This is primarily for testing and validation purposes.
     pub fn validate(&self) -> bool {
         let bit_matrix = self.build_bit_matrix();
         let num_bits_set = count_bits_set_in_matrix(&bit_matrix);

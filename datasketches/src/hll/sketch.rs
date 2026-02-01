@@ -40,7 +40,7 @@ use crate::hll::serialization::*;
 
 /// A HyperLogLog sketch.
 ///
-/// See the [hll module level documentation](crate::hll) for more.
+/// See the [module level documentation](super) for more.
 #[derive(Debug, Clone, PartialEq)]
 pub struct HllSketch {
     lg_config_k: u8,

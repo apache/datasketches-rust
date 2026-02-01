@@ -34,7 +34,7 @@ const DEFAULT_WEIGHT: NonZeroU64 = NonZeroU64::new(1).unwrap();
 
 /// T-Digest sketch for estimating quantiles and ranks.
 ///
-/// See the [tdigest module level documentation](crate::tdigest) for more.
+/// See the [module level documentation](super) for more.
 #[derive(Debug, Clone)]
 pub struct TDigestMut {
     k: u16,
@@ -788,7 +788,7 @@ impl TDigestMut {
 
 /// Immutable (frozen) T-Digest sketch for estimating quantiles and ranks.
 ///
-/// See the [module documentation](super) for more details.
+/// See the [module level documentation](super) for more.
 pub struct TDigest {
     k: u16,
 

@@ -15,6 +15,52 @@
 // specific language governing permissions and limitations
 // under the License.
 
+//! The merging logic is somewhat involved, so it will be summarized here.
+//!
+//! First, we compare the K values of the union and the source sketch.
+//!
+//! If `source.K < union.K`, we reduce the union's K to match, which requires downsampling the
+//! union's internal sketch.
+//!
+//! Here is how to perform the downsampling:
+//!
+//! If the union contains a bitMatrix, downsample it by row-wise ORing.
+//!
+//! If the union contains a sparse sketch, then create a new empty sketch, and walk the old target
+//! sketch updating the new one (with modulo). At the end, check whether the new target sketch is
+//! still in sparse mode (it might not be, because downsampling densifies the set of collected
+//! coupons). If it is NOT in sparse mode, immediately convert it to a bitMatrix.
+//!
+//! At this point, we have `source.K >= union.K`. (We won't keep mentioning this, but in all the
+//! following the source's row indices are used mod union.K while updating the union's sketch.
+//! That takes care of the situation where `source.K < union.K`.)
+//!
+//! Case A: union is Sparse and source is Sparse. We walk the source sketch updating the union's
+//! sketch. At the end, if the union's sketch is no longer in sparse mode, we convert it to a
+//! bitMatrix.
+//!
+//! Case B: union is bitMatrix and source is Sparse. We walk the source sketch, setting bits in the
+//! bitMatrix.
+//!
+//! In the remaining cases, we have flavor(source) > Sparse, so we immediately convert the union's
+//! sketch to a bitMatrix (even if the union contains very few coupons). Then:
+//!
+//! Case C: union is bitMatrix and source is Hybrid or Pinned. Then we OR the source's sliding
+//! window into the bitMatrix, and walk the source's table, setting bits in the bitMatrix.
+//!
+//! Case D: union is bitMatrix, and source is Sliding. Then we convert the source into a bitMatrix,
+//! and OR it into the union's bitMatrix. (Important note; merely walking the source wouldn't work
+//! because of the partially inverted Logic in the Sliding flavor, where the presence of coupons
+//! is sometimes indicated by the ABSENCE of row_col pairs in the surprises table.)
+//!
+//! How does [`CpcUnion::get_result`] work?
+//!
+//! If the union has an Accumulator state, make a copy of that sketch.
+//!
+//! If the union has a BitMatrix state, then we have to convert the bitMatrix back into a sketch,
+//! which requires doing some extra work to figure out the values of num_coupons, offset,
+//! first_interesting_column, and kxp.
+
 use crate::cpc::CpcSketch;
 use crate::cpc::DEFAULT_LG_K;
 use crate::cpc::Flavor;
@@ -42,11 +88,19 @@ impl Default for CpcUnion {
 
 impl CpcUnion {
     /// Creates a new `CpcUnion` with the given `lg_k` and default seed.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `lg_k` is not in the range `[4, 16]`.
     pub fn new(lg_k: u8) -> Self {
         Self::with_seed(lg_k, DEFAULT_UPDATE_SEED)
     }
 
     /// Creates a new `CpcUnion` with the given `lg_k` and `seed`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `lg_k` is not in the range `[4, 16]`.
     pub fn with_seed(lg_k: u8, seed: u64) -> Self {
         // We begin with the accumulator holding an EMPTY_MERGED sketch object.
         let sketch = CpcSketch::with_seed(lg_k, seed);
@@ -56,8 +110,8 @@ impl CpcUnion {
 
     /// Return the parameter lg_k.
     ///
-    /// Note that due to merging with source sketches that may have a lower value of LgK, this value
-    /// can be less than what the union object was configured with.
+    /// Note that due to merging with source sketches that may have a lower value of lg_k, this
+    /// value can be less than what the union object was configured with.
     pub fn lg_k(&self) -> u8 {
         self.lg_k
     }
@@ -121,7 +175,8 @@ impl CpcUnion {
                     sketch.first_interesting_column = offset; // corner case
                 }
 
-                // HIP-related fields will contain zeros, and that is okay since merge_flag is true
+                // HIP-related fields will contain zeros, and that is okay since merge_flag is true,
+                // and thus the HIP estimator will not be used.
                 sketch.sliding_window = sliding_window;
                 sketch.surprising_value_table = Some(table);
                 sketch.merge_flag = true;
