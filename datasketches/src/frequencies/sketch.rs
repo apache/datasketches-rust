@@ -546,7 +546,14 @@ impl FrequentItemsSketch<i64> {
     /// assert!(decoded.estimate(&7) >= 2);
     /// ```
     pub fn serialize(&self) -> Vec<u8> {
-        self.serialize_inner(count_i64_items_bytes, serialize_i64_items)
+        self.serialize_inner(
+            |items| items.iter().map(i64::serialize_size).sum(),
+            |bytes, items| {
+                for item in items {
+                    item.serialize_value(bytes);
+                }
+            },
+        )
     }
 
     /// Deserializes a sketch from bytes.
@@ -562,7 +569,70 @@ impl FrequentItemsSketch<i64> {
     /// assert!(decoded.estimate(&7) >= 2);
     /// ```
     pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
-        Self::deserialize_inner(bytes, deserialize_i64_items)
+        Self::deserialize_inner(bytes, |mut cursor, num_items| {
+            let mut items = Vec::with_capacity(num_items);
+            for i in 0..num_items {
+                let item = i64::deserialize_value(&mut cursor).map_err(|_| {
+                    Error::insufficient_data(format!(
+                        "expected {num_items} items, failed to read item at index {i}"
+                    ))
+                })?;
+                items.push(item);
+            }
+            Ok(items)
+        })
+    }
+}
+
+impl FrequentItemsSketch<u64> {
+    /// Serializes this sketch into a byte vector.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use datasketches::frequencies::FrequentItemsSketch;
+    /// # let mut sketch = FrequentItemsSketch::<i64>::new(64);
+    /// # sketch.update_with_count(7, 2);
+    /// let bytes = sketch.serialize();
+    /// let decoded = FrequentItemsSketch::<i64>::deserialize(&bytes).unwrap();
+    /// assert!(decoded.estimate(&7) >= 2);
+    /// ```
+    pub fn serialize(&self) -> Vec<u8> {
+        self.serialize_inner(
+            |items| items.iter().map(u64::serialize_size).sum(),
+            |bytes, items| {
+                for item in items {
+                    item.serialize_value(bytes);
+                }
+            },
+        )
+    }
+
+    /// Deserializes a sketch from bytes.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use datasketches::frequencies::FrequentItemsSketch;
+    /// # let mut sketch = FrequentItemsSketch::<u64>::new(64);
+    /// # sketch.update_with_count(7, 2);
+    /// # let bytes = sketch.serialize();
+    /// let decoded = FrequentItemsSketch::<u64>::deserialize(&bytes).unwrap();
+    /// assert!(decoded.estimate(&7) >= 2);
+    /// ```
+    pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
+        Self::deserialize_inner(bytes, |mut cursor, num_items| {
+            let mut items = Vec::with_capacity(num_items);
+            for i in 0..num_items {
+                let item = u64::deserialize_value(&mut cursor).map_err(|_| {
+                    Error::insufficient_data(format!(
+                        "expected {num_items} items, failed to read item at index {i}"
+                    ))
+                })?;
+                items.push(item);
+            }
+            Ok(items)
+        })
     }
 }
 
@@ -581,7 +651,14 @@ impl FrequentItemsSketch<String> {
     /// assert!(decoded.estimate(&apple) >= 2);
     /// ```
     pub fn serialize(&self) -> Vec<u8> {
-        self.serialize_inner(count_string_items_bytes, serialize_string_items)
+        self.serialize_inner(
+            |items| items.iter().map(String::serialize_size).sum(),
+            |bytes, items| {
+                for item in items {
+                    item.serialize_value(bytes);
+                }
+            },
+        )
     }
 
     /// Deserializes a sketch from bytes.
@@ -598,6 +675,17 @@ impl FrequentItemsSketch<String> {
     /// assert!(decoded.estimate(&apple) >= 2);
     /// ```
     pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
-        Self::deserialize_inner(bytes, deserialize_string_items)
+        Self::deserialize_inner(bytes, |mut cursor, num_items| {
+            let mut items = Vec::with_capacity(num_items);
+            for i in 0..num_items {
+                let item = String::deserialize_value(&mut cursor).map_err(|_| {
+                    Error::insufficient_data(format!(
+                        "expected {num_items} items, failed to read item at index {i}"
+                    ))
+                })?;
+                items.push(item);
+            }
+            Ok(items)
+        })
     }
 }
