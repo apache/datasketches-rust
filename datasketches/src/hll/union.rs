@@ -74,7 +74,7 @@ impl HllUnion {
     /// # use datasketches::hll::HllUnion;
     /// let mut union = HllUnion::new(10);
     /// union.update_value("apple");
-    /// let _result = union.get_result(HllType::Hll8);
+    /// let _result = union.to_sketch(HllType::Hll8);
     /// ```
     pub fn new(lg_max_k: u8) -> Self {
         assert!(
@@ -101,7 +101,7 @@ impl HllUnion {
     /// # use datasketches::hll::HllUnion;
     /// let mut union = HllUnion::new(10);
     /// union.update_value("apple");
-    /// let _result = union.get_result(HllType::Hll8);
+    /// let _result = union.to_sketch(HllType::Hll8);
     /// ```
     pub fn update_value<T: Hash>(&mut self, value: T) {
         self.gadget.update(value);
@@ -128,7 +128,7 @@ impl HllUnion {
     /// let mut union = HllUnion::new(10);
     /// union.update(&left);
     /// union.update(&right);
-    /// let result = union.get_result(HllType::Hll8);
+    /// let result = union.to_sketch(HllType::Hll8);
     /// assert!(result.estimate() >= 2.0);
     /// ```
     pub fn update(&mut self, sketch: &HllSketch) {
@@ -237,7 +237,7 @@ impl HllUnion {
         self.gadget = HllSketch::from_mode(final_lg_k, Mode::Array8(new_array));
     }
 
-    /// Get the union result as a new sketch
+    /// Get the union result as a new sketch.
     ///
     /// Returns a copy of the internal gadget sketch with the specified target HLL type.
     /// If the requested type differs from the gadget's type, conversion is performed.
@@ -253,10 +253,10 @@ impl HllUnion {
     /// # use datasketches::hll::HllUnion;
     /// let mut union = HllUnion::new(10);
     /// union.update_value("apple");
-    /// let result = union.get_result(HllType::Hll6);
+    /// let result = union.to_sketch(HllType::Hll6);
     /// assert!(result.estimate() >= 1.0);
     /// ```
-    pub fn get_result(&self, hll_type: HllType) -> HllSketch {
+    pub fn to_sketch(&self, hll_type: HllType) -> HllSketch {
         let gadget_type = self.gadget.target_type();
 
         if hll_type == gadget_type {

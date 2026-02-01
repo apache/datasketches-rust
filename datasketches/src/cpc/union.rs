@@ -53,7 +53,7 @@
 //! because of the partially inverted Logic in the Sliding flavor, where the presence of coupons
 //! is sometimes indicated by the ABSENCE of row_col pairs in the surprises table.)
 //!
-//! How does [`CpcUnion::get_result`] work?
+//! How does [`CpcUnion::to_sketch`] work?
 //!
 //! If the union has an Accumulator state, make a copy of that sketch.
 //!
@@ -116,8 +116,29 @@ impl CpcUnion {
         self.lg_k
     }
 
-    /// Returns the result of union operations as a CPC sketch.
-    pub fn get_result(&self) -> CpcSketch {
+    /// Get the union result as a new sketch.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use datasketches::cpc::CpcUnion;
+    /// # use datasketches::cpc::CpcSketch;
+    ///
+    /// let mut s1 = CpcSketch::new(12);
+    /// s1.update(&"apple");
+    ///
+    /// let mut s2 = CpcSketch::new(12);
+    /// s2.update(&"apple");
+    /// s2.update(&"banana");
+    ///
+    /// let mut union = CpcUnion::new(12);
+    /// union.update(&s1);
+    /// union.update(&s2);
+    ///
+    /// let result = union.to_sketch();
+    /// assert_eq!(result.estimate().trunc(), 2.0);
+    /// ```
+    pub fn to_sketch(&self) -> CpcSketch {
         match &self.state {
             UnionState::Accumulator(sketch) => {
                 if sketch.is_empty() {

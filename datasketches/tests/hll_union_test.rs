@@ -169,7 +169,7 @@ fn test_union_mixed_modes() {
     union.update(&sketch1);
     union.update(&sketch2);
 
-    let result = union.get_result(HllType::Hll8);
+    let result = union.to_sketch(HllType::Hll8);
     let estimate = result.estimate();
 
     // Should estimate ~10,003 unique values
@@ -205,9 +205,9 @@ fn test_union_mixed_hll_types() {
     union.update(&sketch3);
 
     // Test getting result in different types
-    let result4 = union.get_result(HllType::Hll4);
-    let result6 = union.get_result(HllType::Hll6);
-    let result8 = union.get_result(HllType::Hll8);
+    let result4 = union.to_sketch(HllType::Hll4);
+    let result6 = union.to_sketch(HllType::Hll6);
+    let result8 = union.to_sketch(HllType::Hll8);
 
     assert_eq!(result4.target_type(), HllType::Hll4);
     assert_eq!(result6.target_type(), HllType::Hll6);
@@ -257,7 +257,7 @@ fn test_union_lg_k_handling() {
     union.update(&sketch3);
     assert_eq!(union.lg_config_k(), 8, "Gadget should downsize to lg_k=8");
 
-    let result = union.get_result(HllType::Hll8);
+    let result = union.to_sketch(HllType::Hll8);
     let estimate = result.estimate();
 
     // Should estimate ~10,000 unique values (0-9,999)
@@ -276,7 +276,7 @@ fn test_union_lg_k_handling() {
     }
 
     union2.update(&sketch_high_precision);
-    let result2 = union2.get_result(HllType::Hll8);
+    let result2 = union2.to_sketch(HllType::Hll8);
     assert_eq!(result2.lg_config_k(), 10, "Result should be at lg_k=10");
 
     let estimate2 = result2.estimate();
@@ -459,7 +459,7 @@ fn test_union_associativity() {
     let mut union1 = HllUnion::new(12);
     union1.update(&sketch_a);
     union1.update(&sketch_b);
-    let ab_sketch = union1.get_result(HllType::Hll8);
+    let ab_sketch = union1.to_sketch(HllType::Hll8);
 
     let mut union2 = HllUnion::new(12);
     union2.update(&ab_sketch);
@@ -470,7 +470,7 @@ fn test_union_associativity() {
     let mut union3 = HllUnion::new(12);
     union3.update(&sketch_b);
     union3.update(&sketch_c);
-    let bc_sketch = union3.get_result(HllType::Hll8);
+    let bc_sketch = union3.to_sketch(HllType::Hll8);
 
     let mut union4 = HllUnion::new(12);
     union4.update(&sketch_a);

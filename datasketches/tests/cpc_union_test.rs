@@ -25,7 +25,7 @@ const RELATIVE_ERROR_FOR_LG_K_11: f64 = 0.02;
 #[test]
 fn test_empty() {
     let union = CpcUnion::new(11);
-    let sketch = union.get_result();
+    let sketch = union.to_sketch();
     assert!(sketch.is_empty());
     assert_eq!(sketch.estimate(), 0.0);
 }
@@ -37,13 +37,13 @@ fn test_two_values() {
     let mut union = CpcUnion::new(11);
     union.update(&sketch);
 
-    let result = union.get_result();
+    let result = union.to_sketch();
     assert!(!result.is_empty());
     assert_eq!(result.estimate(), 1.0);
 
     sketch.update(2);
     union.update(&sketch);
-    let result = union.get_result();
+    let result = union.to_sketch();
     assert!(!result.is_empty());
     assert_that!(
         sketch.estimate(),
@@ -60,7 +60,7 @@ fn test_custom_seed() {
 
     let mut union = CpcUnion::with_seed(11, 123);
     union.update(&sketch);
-    let result = union.get_result();
+    let result = union.to_sketch();
     assert!(!result.is_empty());
     assert_that!(
         result.estimate(),
@@ -94,7 +94,7 @@ fn test_large_values() {
         }
         union.update(&tmp);
     }
-    let result = union.get_result();
+    let result = union.to_sketch();
     assert!(!result.is_empty());
     assert_eq!(result.num_coupons(), union.num_coupons());
     let estimate = sketch.estimate();
@@ -112,7 +112,7 @@ fn test_reduce_k_empty() {
     }
     let mut union = CpcUnion::new(12);
     union.update(&sketch);
-    let result = union.get_result();
+    let result = union.to_sketch();
     assert_eq!(result.lg_k(), 11);
     assert_that!(
         result.estimate(),
@@ -136,7 +136,7 @@ fn test_reduce_k_sparse() {
     }
     union.update(&sketch11);
 
-    let result = union.get_result();
+    let result = union.to_sketch();
     assert_eq!(result.lg_k(), 11);
     assert_that!(
         result.estimate(),
@@ -160,7 +160,7 @@ fn test_reduce_k_window() {
     }
     union.update(&sketch11);
 
-    let result = union.get_result();
+    let result = union.to_sketch();
     assert_eq!(result.lg_k(), 11);
     assert_that!(
         result.estimate(),
