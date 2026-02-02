@@ -31,6 +31,9 @@ use crate::error::ErrorKind;
 
 type SerializeValue<T> = fn(&mut SketchBytes, T);
 type DeserializeValue<T> = fn(&mut SketchSlice<'_>) -> std::io::Result<T>;
+type Point<T> = Vec<T>;
+type Level<T> = Vec<Point<T>>;
+type Levels<T> = Vec<Level<T>>;
 
 /// Floating point types supported by the density sketch.
 pub trait DensityValue: Copy + PartialOrd + 'static {
@@ -40,25 +43,24 @@ pub trait DensityValue: Copy + PartialOrd + 'static {
     fn to_f64(self) -> f64;
 }
 
-impl DensityValue for f64 {
-    fn from_f64(value: f64) -> Self {
-        value
-    }
+macro_rules! impl_density_value {
+    ($name:ty, $from:expr, $to:expr) => {
+        impl DensityValue for $name {
+            #[inline(always)]
+            fn from_f64(value: f64) -> Self {
+                ($from)(value)
+            }
 
-    fn to_f64(self) -> f64 {
-        self
-    }
+            #[inline(always)]
+            fn to_f64(self) -> f64 {
+                ($to)(self)
+            }
+        }
+    };
 }
 
-impl DensityValue for f32 {
-    fn from_f64(value: f64) -> Self {
-        value as f32
-    }
-
-    fn to_f64(self) -> f64 {
-        self as f64
-    }
-}
+impl_density_value!(f64, |value: f64| value, |value: f64| value);
+impl_density_value!(f32, |value: f64| value as f32, |value: f32| value as f64);
 
 /// Kernel used to compute density contributions between points.
 pub trait DensityKernel {
@@ -93,7 +95,7 @@ pub struct DensitySketch<
     dim: u32,
     num_retained: u32,
     n: u64,
-    levels: Vec<Vec<Vec<T>>>,
+    levels: Levels<T>,
 }
 
 impl<T: DensityValue> DensitySketch<T, GaussianKernel, XorShift64> {
@@ -234,16 +236,9 @@ impl<T: DensityValue, K: DensityKernel, R: RandomSource> DensitySketch<T, K, R> 
     /// # Panics
     ///
     /// Panics if the point dimension does not match this sketch.
-    pub fn update(&mut self, point: Vec<T>) {
-        if point.len() != self.dim as usize {
-            panic!("dimension mismatch");
-        }
-        while self.num_retained >= self.k as u32 * self.levels.len() as u32 {
-            self.compact();
-        }
-        self.levels[0].push(point);
-        self.num_retained += 1;
-        self.n += 1;
+    pub fn update(&mut self, point: Point<T>) {
+        self.ensure_dim(point.len());
+        self.update_point(point);
     }
 
     /// Updates this sketch with a slice, copying the point into the sketch.
@@ -252,7 +247,8 @@ impl<T: DensityValue, K: DensityKernel, R: RandomSource> DensitySketch<T, K, R> 
     ///
     /// Panics if the point dimension does not match this sketch.
     pub fn update_slice(&mut self, point: &[T]) {
-        self.update(point.to_vec());
+        self.ensure_dim(point.len());
+        self.update_point(point.to_vec());
     }
 
     /// Merges another sketch into this one.
@@ -289,6 +285,7 @@ impl<T: DensityValue, K: DensityKernel, R: RandomSource> DensitySketch<T, K, R> 
         if self.is_empty() {
             panic!("operation is undefined for an empty sketch");
         }
+        self.ensure_dim(point.len());
         let n = self.n as f64;
         let mut density = 0.0f64;
         for (height, level) in self.levels.iter().enumerate() {
@@ -326,11 +323,11 @@ impl<T: DensityValue, K: DensityKernel, R: RandomSource> DensitySketch<T, K, R> 
         if level_len == 0 {
             return;
         }
-        let mut bits = vec![false; level_len];
-        {
+        let bits = {
             let rng = &mut self.rng;
             let level = &mut self.levels[height];
             let kernel = &self.kernel;
+            let mut bits = vec![false; level_len];
             shuffle_with_rng(rng, level);
             bits[0] = random_bit(rng);
             for i in 1..level_len {
@@ -341,7 +338,8 @@ impl<T: DensityValue, K: DensityKernel, R: RandomSource> DensitySketch<T, K, R> 
                 }
                 bits[i] = delta < 0.0;
             }
-        }
+            bits
+        };
         let old_level = std::mem::take(&mut self.levels[height]);
         for (index, point) in old_level.into_iter().enumerate() {
             if bits[index] {
@@ -350,6 +348,19 @@ impl<T: DensityValue, K: DensityKernel, R: RandomSource> DensitySketch<T, K, R> 
                 self.num_retained -= 1;
             }
         }
+    }
+
+    fn ensure_dim(&self, point_len: usize) {
+        ensure_dim(self.dim, point_len);
+    }
+
+    fn update_point(&mut self, point: Point<T>) {
+        while self.num_retained >= self.k as u32 * self.levels.len() as u32 {
+            self.compact();
+        }
+        self.levels[0].push(point);
+        self.num_retained += 1;
+        self.n += 1;
     }
 }
 
@@ -375,7 +386,7 @@ impl<'a, T> DensityItem<'a, T> {
 
 /// Iterator over retained points and their weights.
 pub struct DensityIter<'a, T> {
-    levels: &'a [Vec<Vec<T>>],
+    levels: &'a [Level<T>],
     level_index: usize,
     item_index: usize,
 }
@@ -431,6 +442,12 @@ fn shuffle_with_rng<R: RandomSource, T>(rng: &mut R, slice: &mut [T]) {
     for i in (1..slice.len()).rev() {
         let j = (rng.next_u64() % (i as u64 + 1)) as usize;
         slice.swap(i, j);
+    }
+}
+
+fn ensure_dim(expected_dim: u32, actual_len: usize) {
+    if actual_len != expected_dim as usize {
+        panic!("dimension mismatch");
     }
 }
 

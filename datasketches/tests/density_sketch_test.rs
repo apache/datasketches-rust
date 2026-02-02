@@ -37,6 +37,14 @@ fn test_dimension_mismatch() {
 }
 
 #[test]
+#[should_panic(expected = "dimension mismatch")]
+fn test_estimate_dimension_mismatch() {
+    let mut sketch: DensitySketch<f32> = DensitySketch::new(10, 3);
+    sketch.update(vec![0.0, 0.0, 0.0]);
+    let _ = sketch.estimate(&[0.0, 0.0]);
+}
+
+#[test]
 fn test_one_item() {
     let mut sketch: DensitySketch<f32> = DensitySketch::new(10, 3);
 

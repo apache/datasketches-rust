@@ -20,6 +20,11 @@
 //! The sketch maintains a coreset of points using a compaction scheme and
 //! provides density estimates at query points via a kernel function.
 //!
+//! # References
+//!
+//! - Zohar Karnin, Edo Liberty, "Discrepancy, Coresets, and Sketches in Machine Learning".
+//! - Apache DataSketches C++ density sketch implementation (density_sketch.hpp).
+//!
 //! # Usage
 //!
 //! ```rust
