@@ -99,7 +99,7 @@
 //! union.update(&left);
 //! union.update(&right);
 //!
-//! let result = union.get_result(HllType::Hll8);
+//! let result = union.to_sketch(HllType::Hll8);
 //! assert!(result.estimate() >= 2.0);
 //! ```
 

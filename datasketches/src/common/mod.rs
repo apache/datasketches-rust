@@ -30,3 +30,17 @@ pub use self::random::XorShift64;
 
 // private to datasketches crate
 pub(crate) mod binomial_bounds;
+pub(crate) mod inv_pow2_table;
+
+/// Canonicalize double value for compatibility with Java
+pub(crate) fn canonical_double(value: f64) -> u64 {
+    if value.is_nan() {
+        // Java's Double.doubleToLongBits() NaN value
+        0x7ff8000000000000u64
+    } else {
+        // -0.0 + 0.0 == +0.0 under IEEE754 roundTiesToEven rounding mode,
+        // which Rust guarantees. Thus, by adding a positive zero we
+        // canonicalize signed zero without any branches in one instruction.
+        (value + 0.0).to_bits()
+    }
+}

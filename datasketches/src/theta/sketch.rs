@@ -25,6 +25,7 @@ use std::hash::Hash;
 use crate::common::NumStdDev;
 use crate::common::ResizeFactor;
 use crate::common::binomial_bounds;
+use crate::common::canonical_double;
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::theta::hash_table::DEFAULT_LG_K;
 use crate::theta::hash_table::MAX_LG_K;
@@ -52,7 +53,9 @@ impl ThetaSketch {
         ThetaSketchBuilder::default()
     }
 
-    /// Update the sketch with a hashable value
+    /// Update the sketch with a hashable value.
+    ///
+    /// For `f32`/`f64` values, use `update_f32`/`update_f64` instead.
     ///
     /// # Examples
     ///
@@ -69,7 +72,7 @@ impl ThetaSketch {
         }
     }
 
-    /// Update the sketch with a f64 value
+    /// Update the sketch with a f64 value.
     ///
     /// # Examples
     ///
@@ -85,7 +88,7 @@ impl ThetaSketch {
         self.update(canonical);
     }
 
-    /// Update the sketch with a f32 value
+    /// Update the sketch with a f32 value.
     ///
     /// # Examples
     ///
@@ -354,18 +357,5 @@ impl ThetaSketchBuilder {
         );
 
         ThetaSketch { table }
-    }
-}
-
-/// Canonicalize double value for compatibility with Java
-fn canonical_double(value: f64) -> i64 {
-    if value.is_nan() {
-        // Java's Double.doubleToLongBits() NaN value
-        0x7ff8000000000000i64
-    } else {
-        // -0.0 + 0.0 == +0.0 under IEEE754 roundTiesToEven rounding mode,
-        // which Rust guarantees. Thus, by adding a positive zero we
-        // canonicalize signed zero without any branches in one instruction.
-        (value + 0.0).to_bits() as i64
     }
 }

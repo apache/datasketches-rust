@@ -22,7 +22,6 @@ use std::num::NonZeroU64;
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
 use crate::error::Error;
-use crate::error::ErrorKind;
 use crate::tdigest::serialization::*;
 
 /// The default value of K if one is not specified.
@@ -34,7 +33,7 @@ const DEFAULT_WEIGHT: NonZeroU64 = NonZeroU64::new(1).unwrap();
 
 /// T-Digest sketch for estimating quantiles and ranks.
 ///
-/// See the [tdigest module level documentation](crate::tdigest) for more.
+/// See the [module level documentation](super) for more.
 #[derive(Debug, Clone)]
 pub struct TDigestMut {
     k: u16,
@@ -100,10 +99,9 @@ impl TDigestMut {
     /// ```
     pub fn try_new(k: u16) -> Result<Self, Error> {
         if k < 10 {
-            return Err(Error::new(
-                ErrorKind::InvalidArgument,
-                format!("k must be at least 10, got {k}"),
-            ));
+            return Err(Error::invalid_argument(format!(
+                "k must be at least 10, got {k}"
+            )));
         }
 
         Ok(Self::make(
@@ -788,7 +786,7 @@ impl TDigestMut {
 
 /// Immutable (frozen) T-Digest sketch for estimating quantiles and ranks.
 ///
-/// See the [module documentation](super) for more details.
+/// See the [module level documentation](super) for more.
 pub struct TDigest {
     k: u16,
 

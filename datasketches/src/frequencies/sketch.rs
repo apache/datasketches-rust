@@ -66,14 +66,12 @@ impl<T> Row<T> {
         self.estimate
     }
 
-    /// Returns the upper bound for the frequency.
+    /// Returns the guaranteed upper bound for the frequency.
     pub fn upper_bound(&self) -> u64 {
         self.upper_bound
     }
 
     /// Returns the guaranteed lower bound for the frequency.
-    ///
-    /// This value is never negative.
     pub fn lower_bound(&self) -> u64 {
         self.lower_bound
     }
@@ -115,7 +113,11 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     /// assert_eq!(sketch.num_active_items(), 2);
     /// ```
     pub fn new(max_map_size: usize) -> Self {
-        let lg_max_map_size = exact_log2(max_map_size);
+        assert!(
+            max_map_size.is_power_of_two(),
+            "max_map_size must be power of 2"
+        );
+        let lg_max_map_size = max_map_size.trailing_zeros() as u8;
         Self::with_lg_map_sizes(lg_max_map_size, LG_MIN_MAP_SIZE)
     }
 
@@ -155,16 +157,16 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
 
     /// Returns the guaranteed lower bound frequency for an item.
     ///
-    /// This value is never negative and is guaranteed to be no larger than the true frequency.
-    /// If the item is not tracked, the lower bound is zero.
+    /// This value is guaranteed to be no larger than the true frequency. If the item is not
+    /// tracked, the lower bound is zero.
     pub fn lower_bound(&self, item: &T) -> u64 {
         self.hash_map.get(item)
     }
 
     /// Returns the guaranteed upper bound frequency for an item.
     ///
-    /// This value is guaranteed to be no smaller than the true frequency.
-    /// If the item is tracked, this is `item_count + offset`.
+    /// This value is guaranteed to be no smaller than the true frequency. If the item is tracked,
+    /// this is `item_count + offset`.
     pub fn upper_bound(&self, item: &T) -> u64 {
         self.hash_map.get(item) + self.offset
     }
@@ -355,7 +357,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
                 });
             }
         }
-        rows.sort_by(|a, b| b.estimate.cmp(&a.estimate));
+        rows.sort_by_key(|row| std::cmp::Reverse(row.estimate));
         rows
     }
 
@@ -544,7 +546,14 @@ impl FrequentItemsSketch<i64> {
     /// assert!(decoded.estimate(&7) >= 2);
     /// ```
     pub fn serialize(&self) -> Vec<u8> {
-        self.serialize_inner(count_i64_items_bytes, serialize_i64_items)
+        self.serialize_inner(
+            |items| items.iter().map(i64::serialize_size).sum(),
+            |bytes, items| {
+                for item in items {
+                    item.serialize_value(bytes);
+                }
+            },
+        )
     }
 
     /// Deserializes a sketch from bytes.
@@ -560,7 +569,70 @@ impl FrequentItemsSketch<i64> {
     /// assert!(decoded.estimate(&7) >= 2);
     /// ```
     pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
-        Self::deserialize_inner(bytes, deserialize_i64_items)
+        Self::deserialize_inner(bytes, |mut cursor, num_items| {
+            let mut items = Vec::with_capacity(num_items);
+            for i in 0..num_items {
+                let item = i64::deserialize_value(&mut cursor).map_err(|_| {
+                    Error::insufficient_data(format!(
+                        "expected {num_items} items, failed to read item at index {i}"
+                    ))
+                })?;
+                items.push(item);
+            }
+            Ok(items)
+        })
+    }
+}
+
+impl FrequentItemsSketch<u64> {
+    /// Serializes this sketch into a byte vector.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use datasketches::frequencies::FrequentItemsSketch;
+    /// # let mut sketch = FrequentItemsSketch::<i64>::new(64);
+    /// # sketch.update_with_count(7, 2);
+    /// let bytes = sketch.serialize();
+    /// let decoded = FrequentItemsSketch::<i64>::deserialize(&bytes).unwrap();
+    /// assert!(decoded.estimate(&7) >= 2);
+    /// ```
+    pub fn serialize(&self) -> Vec<u8> {
+        self.serialize_inner(
+            |items| items.iter().map(u64::serialize_size).sum(),
+            |bytes, items| {
+                for item in items {
+                    item.serialize_value(bytes);
+                }
+            },
+        )
+    }
+
+    /// Deserializes a sketch from bytes.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use datasketches::frequencies::FrequentItemsSketch;
+    /// # let mut sketch = FrequentItemsSketch::<u64>::new(64);
+    /// # sketch.update_with_count(7, 2);
+    /// # let bytes = sketch.serialize();
+    /// let decoded = FrequentItemsSketch::<u64>::deserialize(&bytes).unwrap();
+    /// assert!(decoded.estimate(&7) >= 2);
+    /// ```
+    pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
+        Self::deserialize_inner(bytes, |mut cursor, num_items| {
+            let mut items = Vec::with_capacity(num_items);
+            for i in 0..num_items {
+                let item = u64::deserialize_value(&mut cursor).map_err(|_| {
+                    Error::insufficient_data(format!(
+                        "expected {num_items} items, failed to read item at index {i}"
+                    ))
+                })?;
+                items.push(item);
+            }
+            Ok(items)
+        })
     }
 }
 
@@ -579,7 +651,14 @@ impl FrequentItemsSketch<String> {
     /// assert!(decoded.estimate(&apple) >= 2);
     /// ```
     pub fn serialize(&self) -> Vec<u8> {
-        self.serialize_inner(count_string_items_bytes, serialize_string_items)
+        self.serialize_inner(
+            |items| items.iter().map(String::serialize_size).sum(),
+            |bytes, items| {
+                for item in items {
+                    item.serialize_value(bytes);
+                }
+            },
+        )
     }
 
     /// Deserializes a sketch from bytes.
@@ -596,11 +675,17 @@ impl FrequentItemsSketch<String> {
     /// assert!(decoded.estimate(&apple) >= 2);
     /// ```
     pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
-        Self::deserialize_inner(bytes, deserialize_string_items)
+        Self::deserialize_inner(bytes, |mut cursor, num_items| {
+            let mut items = Vec::with_capacity(num_items);
+            for i in 0..num_items {
+                let item = String::deserialize_value(&mut cursor).map_err(|_| {
+                    Error::insufficient_data(format!(
+                        "expected {num_items} items, failed to read item at index {i}"
+                    ))
+                })?;
+                items.push(item);
+            }
+            Ok(items)
+        })
     }
-}
-
-fn exact_log2(value: usize) -> u8 {
-    assert!(value.is_power_of_two(), "value must be power of 2");
-    value.trailing_zeros() as u8
 }

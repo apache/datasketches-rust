@@ -480,13 +480,13 @@ fn test_longs_reset() {
 }
 
 #[test]
-#[should_panic(expected = "value must be power of 2")]
+#[should_panic(expected = "max_map_size must be power of 2")]
 fn test_longs_invalid_map_size_panics() {
     FrequentItemsSketch::<i64>::new(6);
 }
 
 #[test]
-#[should_panic(expected = "value must be power of 2")]
+#[should_panic(expected = "max_map_size must be power of 2")]
 fn test_items_invalid_map_size_panics() {
     let _ = FrequentItemsSketch::<String>::new(6);
 }

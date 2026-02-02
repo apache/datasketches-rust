@@ -33,7 +33,9 @@ datasketches = { path = "datasketches" }
 
 # Crates.io dependencies
 clap = { version = "4.5.20", features = ["derive"] }
+insta = { version = "1.46.1" }
 googletest = { version = "0.14.2" }
+rand = { version = "0.9.2" }
 which = { version = "8.0.0" }
 
 [workspace.lints.rust]
@@ -43,4 +45,6 @@ unused_must_use = "deny"
 
 [workspace.lints.clippy]
 dbg_macro = "deny"
+
 too_many_arguments = "allow"
+needless_range_loop = "allow"
