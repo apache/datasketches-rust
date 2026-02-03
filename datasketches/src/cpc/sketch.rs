@@ -449,7 +449,9 @@ impl CpcSketch {
         // that were equally spaced over values of the quantity C/K between 3.0 and 8.0.
         // This table does not include the worst-case space for the preamble, which is added
         // by the function.
+        const MAX_PREAMBLE_SIZE_BYTES: usize = 40;
         const EMPIRICAL_SIZE_MAX_LGK: usize = 19;
+        const EMPIRICAL_MAX_SIZE_FACTOR: f64 = 0.6; // 0.6 = 4.8 / 8.0
         static EMPIRICAL_MAX_SIZE_BYTES: [usize; 16] = [
             24,     // lg_k = 4
             36,     // lg_k = 5
@@ -468,8 +470,6 @@ impl CpcSketch {
             157516, // lg_k = 18
             314656, // lg_k = 19
         ];
-        const EMPIRICAL_MAX_SIZE_FACTOR: f64 = 0.6; // 0.6 = 4.8 / 8.0
-        const MAX_PREAMBLE_SIZE_BYTES: usize = 40;
 
         if lg_k <= EMPIRICAL_SIZE_MAX_LGK {
             return EMPIRICAL_MAX_SIZE_BYTES[lg_k - MIN_LG_K] + MAX_PREAMBLE_SIZE_BYTES;
