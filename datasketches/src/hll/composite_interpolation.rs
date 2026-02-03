@@ -28,7 +28,7 @@
 const NUM_X_VALUES: usize = 257;
 
 /// Y stride values for each lg_k (index 0 = lg_k 4, index 17 = lg_k 21)
-const Y_STRIDES: [u32; 18] = [
+static Y_STRIDES: [u32; 18] = [
     1, 2, 3, 5, 10, 20, 40, 80, 160, 320, 640, 1280, 2560, 5120, 10240, 20480, 40960, 81920,
 ];
 

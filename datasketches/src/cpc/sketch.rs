@@ -450,7 +450,7 @@ impl CpcSketch {
         // This table does not include the worst-case space for the preamble, which is added
         // by the function.
         const EMPIRICAL_SIZE_MAX_LGK: usize = 19;
-        const EMPIRICAL_MAX_SIZE_BYTES: [usize; 16] = [
+        static EMPIRICAL_MAX_SIZE_BYTES: [usize; 16] = [
             24,     // lg_k = 4
             36,     // lg_k = 5
             56,     // lg_k = 6

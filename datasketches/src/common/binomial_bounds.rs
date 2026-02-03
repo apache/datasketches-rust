@@ -20,7 +20,7 @@ use crate::error::Error;
 
 #[rustfmt::skip]
 #[allow(clippy::excessive_precision)]
-const LB_EQUIV_TABLE: [f64; 363] = [
+static LB_EQUIV_TABLE: [f64; 363] = [
     1.0, 2.0, 3.0, // fake values for k = 0
     0.78733703534118149, 3.14426768537558132, 13.56789685109913535, // k = 1
     0.94091379266077979, 2.64699271711145911, 6.29302733018320737, // k = 2
@@ -146,7 +146,7 @@ const LB_EQUIV_TABLE: [f64; 363] = [
 
 #[rustfmt::skip]
 #[allow(clippy::excessive_precision)]
-const UB_EQUIV_TABLE: [f64; 363] = [
+static UB_EQUIV_TABLE: [f64; 363] = [
     1.0, 2.0, 3.0, // fake values for k = 0
     0.99067760836669549, 1.75460517119302040, 2.48055626001627161, // k = 1
     0.99270518097577565, 1.78855957509907171, 2.53863835259832626, // k = 2
@@ -604,7 +604,7 @@ mod tests {
     }
 
     #[allow(clippy::excessive_precision)]
-    const STD: [[f64; 5]; 9] = [
+    static STD: [[f64; 5]; 9] = [
         // max_num_samples=20, ci=1,2,3, min_p=1e-3
         [
             7.083330682531043e+04,

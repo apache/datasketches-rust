@@ -21,7 +21,7 @@ use crate::common::NumStdDev;
 
 const ICON_ERROR_CONSTANT: f64 = LN_2;
 
-const ICON_LOW_SIDE_DATA: [u16; 33] = [
+static ICON_LOW_SIDE_DATA: [u16; 33] = [
     //1,    2,    3,   kappa
     //                 lgK num trials
     6037, 5720, 5328, // 4 1000000
@@ -37,7 +37,7 @@ const ICON_LOW_SIDE_DATA: [u16; 33] = [
     6919, 6897, 6842, // 14 1000297
 ];
 
-const ICON_HIGH_SIDE_DATA: [u16; 33] = [
+static ICON_HIGH_SIDE_DATA: [u16; 33] = [
     //1,    2,    3,   kappa
     //                 lgK num trials
     8031, 8559, 9309, // 4 1000000
@@ -56,7 +56,7 @@ const ICON_HIGH_SIDE_DATA: [u16; 33] = [
 #[allow(clippy::excessive_precision)]
 const HIP_ERROR_CONSTANT: f64 = 0.588705011257737332; // (LN_2 / 2.0).sqrt()
 
-const HIP_LOW_SIDE_DATA: [u16; 33] = [
+static HIP_LOW_SIDE_DATA: [u16; 33] = [
     //1,    2,    3,   kappa
     //                 lgK num trials
     5871, 5247, 4826, // 4 1000000
@@ -72,7 +72,7 @@ const HIP_LOW_SIDE_DATA: [u16; 33] = [
     5881, 5853, 5842, // 14 1000297
 ];
 
-const HIP_HIGH_SIDE_DATA: [u16; 33] = [
+static HIP_HIGH_SIDE_DATA: [u16; 33] = [
     //1,    2,    3,   kappa
     //                 lgK num trials
     5855, 6688, 7391, // 4 1000000
@@ -208,7 +208,7 @@ const ICON_TABLE_SIZE: usize =
 
 #[rustfmt::skip]
 #[allow(clippy::excessive_precision)]
-const ICON_POLYNOMIAL_COEFFICIENTS: [f64; ICON_TABLE_SIZE] = [
+static ICON_POLYNOMIAL_COEFFICIENTS: [f64; ICON_TABLE_SIZE] = [
     // log K = 4
     0.9895027971889700513, 0.3319496644645180128, 0.1242818722715769986, -0.03324149686026930256, -0.2985637298081619817,
     1.366555923595830002, -4.705499366260569971, 11.61506432505530029, -21.11254986175579873, 28.89421695078809904,

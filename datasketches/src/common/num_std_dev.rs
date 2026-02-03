@@ -21,7 +21,7 @@
 //! upper and lower bounds for sketch estimates.
 
 #[allow(clippy::excessive_precision)]
-const DELTA_OF_NUM_STD_DEVS: [f64; 4] = [
+static DELTA_OF_NUM_STD_DEVS: [f64; 4] = [
     0.5000000000000000000, // = 0.5 (1 + erf(0))
     0.1586553191586026479, // = 0.5 (1 + erf((-1/sqrt(2))))
     0.0227502618904135701, // = 0.5 (1 + erf((-2/sqrt(2))))

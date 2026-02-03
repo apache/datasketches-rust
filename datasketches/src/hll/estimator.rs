@@ -375,7 +375,7 @@ fn get_rel_err(lg_config_k: u8, upper_bound: bool, ooo: bool, num_std_dev: NumSt
 
 /// HIP (in-order) Lower Bound errors for lg_k 4-12, std_dev 1-3
 /// Q(.84134), Q(.97725), Q(.99865) quantiles
-const HIP_LB: [f64; 27] = [
+static HIP_LB: [f64; 27] = [
     0.207316195,
     0.502865572,
     0.882303765, //4
@@ -407,7 +407,7 @@ const HIP_LB: [f64; 27] = [
 
 /// HIP (in-order) Upper Bound errors for lg_k 4-12, std_dev 1-3
 /// Q(.15866), Q(.02275), Q(.00135) quantiles
-const HIP_UB: [f64; 27] = [
+static HIP_UB: [f64; 27] = [
     -0.207805347,
     -0.355574279,
     -0.475535095, //4
@@ -439,7 +439,7 @@ const HIP_UB: [f64; 27] = [
 
 /// Non-HIP (out-of-order) Lower Bound errors for lg_k 4-12, std_dev 1-3
 /// Q(.84134), Q(.97725), Q(.99865) quantiles
-const NON_HIP_LB: [f64; 27] = [
+static NON_HIP_LB: [f64; 27] = [
     0.254409839,
     0.682266712,
     1.304022158, //4
@@ -471,7 +471,7 @@ const NON_HIP_LB: [f64; 27] = [
 
 /// Non-HIP (out-of-order) Upper Bound errors for lg_k 4-12, std_dev 1-3
 /// Q(.15866), Q(.02275), Q(.00135) quantiles
-const NON_HIP_UB: [f64; 27] = [
+static NON_HIP_UB: [f64; 27] = [
     -0.256980172,
     -0.411905944,
     -0.52651057, // lg_k=4
