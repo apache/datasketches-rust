@@ -73,20 +73,46 @@ impl CompressedState {
         if !pairs.is_empty() {
             introspective_insertion_sort(&mut pairs);
         }
-        let num_pairs_from_table = pairs.len() as u32;
-        let num_pairs_from_window = source.num_coupons() - num_pairs_from_table;
+        let num_pairs_from_table = pairs.len();
+        let num_pairs_from_window = (source.num_coupons() as usize) - num_pairs_from_table;
 
-        let mut all_pairs = tricky_get_pairs_from_window(
-            &source.sliding_window,
-            k,
-            num_pairs_from_window,
-            num_pairs_from_table,
-        );
-        // u32_table<A>::merge(
-        //     pairs_from_table.data(), 0, pairs_from_table.size(),
-        //     all_pairs.data(), num_pairs_from_table, num_pairs_from_window,
-        //     all_pairs.data(), 0
-        // );  // note the overlapping subarray trick
+        let all_pairs_len = num_pairs_from_table + num_pairs_from_window;
+        let mut all_pairs = vec![0; all_pairs_len];
+        // tricky read pairs from sliding_window
+        {
+            // The empty space that this leaves at the beginning of the output array will be filled
+            // later.
+            let mut idx = num_pairs_from_table;
+            for row_index in 0..k {
+                let mut byte = source.sliding_window[row_index];
+                while byte != 0 {
+                    let col_index = byte.trailing_zeros();
+                    byte = byte ^ (1 << col_index); // erase the 1
+                    all_pairs[idx] = ((row_index << 6) as u32) | col_index;
+                    idx += 1;
+                }
+            }
+            assert_eq!(idx, all_pairs_len);
+        }
+        // two-way merge of pairs_from_table and pairs_from_window into all_pairs
+        {
+            let mut final_idx = 0;
+            let mut table_idx = 0;
+            let mut window_idx = num_pairs_from_table;
+
+            while final_idx < all_pairs_len {
+                if table_idx < num_pairs_from_table
+                    && (window_idx >= all_pairs_len || pairs[table_idx] <= all_pairs[window_idx])
+                {
+                    all_pairs[final_idx] = pairs[table_idx];
+                    table_idx += 1;
+                } else {
+                    all_pairs[final_idx] = all_pairs[window_idx];
+                    window_idx += 1;
+                }
+                final_idx += 1;
+            }
+        }
 
         self.compress_surprising_values(&all_pairs, source.lg_k());
     }
@@ -199,30 +225,6 @@ impl CompressedState {
 pub(super) struct UncompressedState {
     table: PairTable,
     window: Vec<u8>,
-}
-
-/// The empty space that this leaves at the beginning of the output array will be filled in later
-/// by the caller.
-fn tricky_get_pairs_from_window(
-    window: &[u8],
-    k: usize,
-    num_pairs_to_get: u32,
-    empty_space: u32,
-) -> Vec<u32> {
-    let output_length = empty_space + num_pairs_to_get;
-    let mut pairs = vec![0; output_length as usize];
-    let mut pair_index = empty_space;
-    for row_index in 0..k {
-        let mut byte = window[row_index];
-        while byte != 0 {
-            let col_index = byte.trailing_zeros();
-            byte = byte ^ (1 << col_index); // erase the 1
-            pairs[pair_index as usize] = ((row_index << 6) as u32) | col_index;
-            pair_index += 1;
-        }
-    }
-    assert_eq!(pair_index, output_length);
-    pairs
 }
 
 fn write_unary(
