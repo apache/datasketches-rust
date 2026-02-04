@@ -38,6 +38,7 @@ use crate::cpc::estimator::icon_estimate;
 use crate::cpc::kxp_byte_lookup::KXP_BYTE_TABLE;
 use crate::cpc::pair_table::PairTable;
 use crate::error::Error;
+use crate::error::ErrorKind;
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::hash::MurmurHash3X64128;
 use crate::hash::compute_seed_hash;
@@ -505,6 +506,11 @@ impl CpcSketch {
 
     /// Deserializes a CpcSketch from bytes.
     pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
+        Self::deserialize_with_seed(bytes, DEFAULT_UPDATE_SEED)
+    }
+
+    /// Deserializes a CpcSketch from bytes with the provided seed.
+    pub fn deserialize_with_seed(bytes: &[u8], seed: u64) -> Result<Self, Error> {
         fn make_error(tag: &'static str) -> impl FnOnce(std::io::Error) -> Error {
             move |_| Error::insufficient_data(tag)
         }
@@ -591,11 +597,21 @@ impl CpcSketch {
                 preamble_ints,
             ));
         }
+        if seed_hash != compute_seed_hash(seed) {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                format!(
+                    "seed hash mismatch: expected {}, got {}",
+                    compute_seed_hash(seed),
+                    seed_hash
+                ),
+            ));
+        }
 
         let uncompressed = compressed.uncompress(lg_k, num_coupons);
         Ok(CpcSketch {
             lg_k,
-            seed: seed_hash as u64,
+            seed,
             first_interesting_column,
             num_coupons,
             surprising_value_table: Some(uncompressed.table),

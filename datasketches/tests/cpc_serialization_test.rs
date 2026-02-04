@@ -43,6 +43,14 @@ fn test_sketch_file(path: PathBuf, expected_cardinality: usize) {
         )
     });
 
+    // CpcSketch serialization should be stable
+    assert_eq!(
+        bytes,
+        serialized_bytes,
+        "Serialized bytes differ after round-trip for {}",
+        path.display()
+    );
+
     // Verify estimates match after round-trip
     let estimate2 = sketch2.estimate();
     assert_eq!(
