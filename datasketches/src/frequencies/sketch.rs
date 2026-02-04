@@ -409,7 +409,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
             let mut bytes = SketchBytes::with_capacity(8);
             bytes.write_u8(PREAMBLE_LONGS_EMPTY);
             bytes.write_u8(SERIAL_VERSION);
-            bytes.write_u8(FAMILY_ID);
+            bytes.write_u8(FREQUENCY_FAMILY_ID);
             bytes.write_u8(self.lg_max_map_size);
             bytes.write_u8(self.hash_map.lg_length());
             bytes.write_u8(EMPTY_FLAG_MASK);
@@ -425,7 +425,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
         let mut bytes = SketchBytes::with_capacity(total_bytes);
         bytes.write_u8(PREAMBLE_LONGS_NONEMPTY);
         bytes.write_u8(SERIAL_VERSION);
-        bytes.write_u8(FAMILY_ID);
+        bytes.write_u8(FREQUENCY_FAMILY_ID);
         bytes.write_u8(self.lg_max_map_size);
         bytes.write_u8(self.hash_map.lg_length());
         bytes.write_u8(0); // flags
@@ -469,9 +469,9 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
             ));
         }
 
-        if family != FAMILY_ID {
+        if family != FREQUENCY_FAMILY_ID {
             return Err(Error::invalid_family(
-                FAMILY_ID,
+                FREQUENCY_FAMILY_ID,
                 family,
                 "FrequentItemsSketch",
             ));

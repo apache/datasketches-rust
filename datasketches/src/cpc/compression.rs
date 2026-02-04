@@ -30,13 +30,14 @@ use crate::cpc::determine_flavor;
 use crate::cpc::pair_table::PairTable;
 use crate::cpc::pair_table::introspective_insertion_sort;
 
+#[derive(Default)]
 pub(super) struct CompressedState {
-    table_data: Vec<u32>,
-    table_data_words: usize,
+    pub(super) table_data: Vec<u32>,
+    pub(super) table_data_words: usize,
     // can be different from the number of entries in the sketch in hybrid mode
-    table_num_entries: u32,
-    window_data: Vec<u32>,
-    window_data_words: usize,
+    pub(super) table_num_entries: u32,
+    pub(super) window_data: Vec<u32>,
+    pub(super) window_data_words: usize,
 }
 
 impl CompressedState {
@@ -351,15 +352,16 @@ impl CompressedState {
     }
 }
 
+#[derive(Default)]
 pub(super) struct UncompressedState {
-    table: PairTable,
-    window: Vec<u8>,
+    pub(super) table: Option<PairTable>,
+    pub(super) window: Vec<u8>,
 }
 
 impl UncompressedState {
     pub fn uncompress(&mut self, source: &CompressedState, lg_k: u8, num_coupons: u32) {
         match determine_flavor(lg_k, num_coupons) {
-            Flavor::EMPTY => self.table = PairTable::new(2, lg_k + 6),
+            Flavor::EMPTY => self.table = Some(PairTable::new(2, lg_k + 6)),
             Flavor::SPARSE => self.uncompress_sparse_flavor(source, lg_k),
             Flavor::HYBRID => self.uncompress_hybrid_flavor(source, lg_k),
             Flavor::PINNED => self.uncompress_pinned_flavor(source, lg_k, num_coupons),
@@ -378,7 +380,7 @@ impl UncompressedState {
             lg_k,
         );
 
-        self.table = PairTable::from_slots(lg_k, source.table_num_entries, pairs);
+        self.table = Some(PairTable::from_slots(lg_k, source.table_num_entries, pairs));
     }
 
     fn uncompress_hybrid_flavor(&mut self, source: &CompressedState, lg_k: u8) {
@@ -410,7 +412,7 @@ impl UncompressedState {
             }
         }
 
-        self.table = PairTable::from_slots(lg_k, next_true_pair, pairs)
+        self.table = Some(PairTable::from_slots(lg_k, next_true_pair, pairs));
     }
 
     fn uncompress_pinned_flavor(&mut self, source: &CompressedState, lg_k: u8, num_coupons: u32) {
@@ -425,7 +427,7 @@ impl UncompressedState {
         );
         let num_pairs = source.table_num_entries;
         if num_pairs == 0 {
-            self.table = PairTable::new(2, lg_k + 6);
+            self.table = Some(PairTable::new(2, lg_k + 6));
         } else {
             debug_assert!(!source.table_data.is_empty(), "table is expected");
             let mut pairs = uncompress_surprising_values(
@@ -444,7 +446,7 @@ impl UncompressedState {
                 );
                 pairs[i] += 8;
             }
-            self.table = PairTable::from_slots(lg_k, num_pairs, pairs);
+            self.table = Some(PairTable::from_slots(lg_k, num_pairs, pairs));
         }
     }
 
@@ -460,7 +462,7 @@ impl UncompressedState {
         );
         let num_pairs = source.table_num_entries;
         if num_pairs == 0 {
-            self.table = PairTable::new(2, lg_k + 6);
+            self.table = Some(PairTable::new(2, lg_k + 6));
         } else {
             debug_assert!(!source.table_data.is_empty(), "table is expected");
             let mut pairs = uncompress_surprising_values(
@@ -486,7 +488,7 @@ impl UncompressedState {
                 pairs[i] = (row << 6) | (col as u32);
             }
 
-            self.table = PairTable::from_slots(lg_k, num_pairs, pairs);
+            self.table = Some(PairTable::from_slots(lg_k, num_pairs, pairs));
         }
     }
 }

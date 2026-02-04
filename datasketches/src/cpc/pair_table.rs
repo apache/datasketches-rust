@@ -71,10 +71,6 @@ impl PairTable {
         table
     }
 
-    pub fn num_items(&self) -> u32 {
-        self.num_items
-    }
-
     pub fn slots(&self) -> &[u32] {
         &self.slots
     }

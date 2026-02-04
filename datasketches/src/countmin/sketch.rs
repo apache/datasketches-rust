@@ -27,10 +27,10 @@ use crate::countmin::serialization::FLAGS_IS_EMPTY;
 use crate::countmin::serialization::LONG_SIZE_BYTES;
 use crate::countmin::serialization::PREAMBLE_LONGS_SHORT;
 use crate::countmin::serialization::SERIAL_VERSION;
-use crate::countmin::serialization::compute_seed_hash;
 use crate::error::Error;
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::hash::MurmurHash3X64128;
+use crate::hash::compute_seed_hash;
 
 const MAX_TABLE_ENTRIES: usize = 1 << 30;
 

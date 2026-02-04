@@ -22,7 +22,7 @@ use crate::codec::SketchSlice;
 use crate::error::Error;
 
 /// Family ID for frequency sketches.
-pub const FAMILY_ID: u8 = 10;
+pub const FREQUENCY_FAMILY_ID: u8 = 10;
 /// Serialization version.
 pub const SERIAL_VERSION: u8 = 1;
 
