@@ -37,6 +37,7 @@
 //!
 //! For additional security this sketch can be configured with a user-specified hash seed.
 
+mod compression;
 mod estimator;
 mod kxp_byte_lookup;
 mod pair_table;
