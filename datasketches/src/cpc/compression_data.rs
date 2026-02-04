@@ -15,102 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use googletest::assert_that;
-    use googletest::prelude::container_eq;
-
-    #[test]
-    fn decoding_tables() {
-        let length_limited_unary_decoding_table65 =
-            make_decoding_table(&LENGTH_LIMITED_UNARY_ENCODING_TABLE65, 65);
-        validate_decoding_table(
-            &length_limited_unary_decoding_table65,
-            &LENGTH_LIMITED_UNARY_ENCODING_TABLE65,
-        );
-        assert_that!(
-            length_limited_unary_decoding_table65,
-            container_eq(LENGTH_LIMITED_UNARY_DECODING_TABLE65),
-        );
-
-        let mut decoding_tables_for_high_entropy_byte = vec![];
-        for i in 0..(16 + 6) {
-            decoding_tables_for_high_entropy_byte.push(make_decoding_table(
-                &ENCODING_TABLES_FOR_HIGH_ENTROPY_BYTE[i],
-                256,
-            ));
-            validate_decoding_table(
-                &decoding_tables_for_high_entropy_byte[i],
-                &ENCODING_TABLES_FOR_HIGH_ENTROPY_BYTE[i],
-            );
-        }
-        assert_that!(
-            decoding_tables_for_high_entropy_byte,
-            container_eq(DECODING_TABLES_FOR_HIGH_ENTROPY_BYTE),
-        );
-
-        let mut column_permutations_for_decoding = vec![];
-        for i in 0..16 {
-            column_permutations_for_decoding.push(make_inverse_permutation(
-                &COLUMN_PERMUTATIONS_FOR_ENCODING[i],
-                56,
-            ));
-        }
-        assert_that!(
-            column_permutations_for_decoding,
-            container_eq(COLUMN_PERMUTATIONS_FOR_DECODING),
-        );
-    }
-
-    fn make_decoding_table(encoding_table: &[u16], num_byte_values: u16) -> Vec<u16> {
-        assert_eq!(encoding_table.len(), num_byte_values as usize);
-        let mut decoding_table = vec![0; 4096];
-        for byte_value in 0..num_byte_values {
-            let encoding_entry = encoding_table[byte_value as usize];
-            let code_value = encoding_entry & 0xfff;
-            let code_length = encoding_entry >> 12;
-            let decoding_entry = (code_length << 8) | byte_value;
-            let garbage_length = 12 - code_length;
-            let num_copies = 1 << garbage_length;
-            for garbage_bits in 0..num_copies {
-                let extended_code_value = code_value | (garbage_bits << code_length);
-                decoding_table[(extended_code_value & 0xfff) as usize] = decoding_entry;
-            }
-        }
-        decoding_table
-    }
-
-    fn make_inverse_permutation(perm: &[u8], len: usize) -> Vec<u8> {
-        let mut inverse = vec![0; len];
-        for i in 0..len {
-            inverse[perm[i] as usize] = i as u8;
-        }
-        for i in 0..len {
-            assert_eq!(perm[inverse[i] as usize], i as u8);
-        }
-        inverse
-    }
-
-    fn validate_decoding_table(decoding_table: &[u16], encoding_table: &[u16]) {
-        for decode_this in 0..4096 {
-            let tmp_d = decoding_table[decode_this];
-            let decoded_byte = tmp_d & 0xff;
-            let decoded_length = tmp_d >> 8;
-
-            let tmp_e = encoding_table[decoded_byte as usize];
-            let encoded_bit_pattern = tmp_e & 0xfff;
-            let encoded_length = tmp_e >> 12;
-
-            assert_eq!(decoded_length, encoded_length);
-            assert_eq!(
-                encoded_bit_pattern,
-                (decode_this as u16) & ((1 << decoded_length) - 1)
-            );
-        }
-    }
-}
-
 /// Notice that there are only 65 symbols here, which is different from our usual 8->12 coding
 /// scheme which handles 256 symbols.
 pub(super) static LENGTH_LIMITED_UNARY_ENCODING_TABLE65: [u16; 65] = [
@@ -12055,3 +11959,100 @@ pub(super) static DECODING_TABLES_FOR_HIGH_ENTROPY_BYTE: [[u16; 4096]; 22] = [
         515, 1029, 769, 1555, 515, 1289, 775, 2598, 515, 1282, 769, 1831, 515, 1295, 775, 3327,
     ],
 ];
+
+#[cfg(test)]
+mod tests {
+    use googletest::assert_that;
+    use googletest::prelude::container_eq;
+
+    use super::*;
+
+    #[test]
+    fn decoding_tables() {
+        let length_limited_unary_decoding_table65 =
+            make_decoding_table(&LENGTH_LIMITED_UNARY_ENCODING_TABLE65, 65);
+        validate_decoding_table(
+            &length_limited_unary_decoding_table65,
+            &LENGTH_LIMITED_UNARY_ENCODING_TABLE65,
+        );
+        assert_that!(
+            length_limited_unary_decoding_table65,
+            container_eq(LENGTH_LIMITED_UNARY_DECODING_TABLE65),
+        );
+
+        let mut decoding_tables_for_high_entropy_byte = vec![];
+        for i in 0..(16 + 6) {
+            decoding_tables_for_high_entropy_byte.push(make_decoding_table(
+                &ENCODING_TABLES_FOR_HIGH_ENTROPY_BYTE[i],
+                256,
+            ));
+            validate_decoding_table(
+                &decoding_tables_for_high_entropy_byte[i],
+                &ENCODING_TABLES_FOR_HIGH_ENTROPY_BYTE[i],
+            );
+        }
+        assert_that!(
+            decoding_tables_for_high_entropy_byte,
+            container_eq(DECODING_TABLES_FOR_HIGH_ENTROPY_BYTE),
+        );
+
+        let mut column_permutations_for_decoding = vec![];
+        for i in 0..16 {
+            column_permutations_for_decoding.push(make_inverse_permutation(
+                &COLUMN_PERMUTATIONS_FOR_ENCODING[i],
+                56,
+            ));
+        }
+        assert_that!(
+            column_permutations_for_decoding,
+            container_eq(COLUMN_PERMUTATIONS_FOR_DECODING),
+        );
+    }
+
+    fn make_decoding_table(encoding_table: &[u16], num_byte_values: u16) -> Vec<u16> {
+        assert_eq!(encoding_table.len(), num_byte_values as usize);
+        let mut decoding_table = vec![0; 4096];
+        for byte_value in 0..num_byte_values {
+            let encoding_entry = encoding_table[byte_value as usize];
+            let code_value = encoding_entry & 0xfff;
+            let code_length = encoding_entry >> 12;
+            let decoding_entry = (code_length << 8) | byte_value;
+            let garbage_length = 12 - code_length;
+            let num_copies = 1 << garbage_length;
+            for garbage_bits in 0..num_copies {
+                let extended_code_value = code_value | (garbage_bits << code_length);
+                decoding_table[(extended_code_value & 0xfff) as usize] = decoding_entry;
+            }
+        }
+        decoding_table
+    }
+
+    fn make_inverse_permutation(perm: &[u8], len: usize) -> Vec<u8> {
+        let mut inverse = vec![0; len];
+        for i in 0..len {
+            inverse[perm[i] as usize] = i as u8;
+        }
+        for i in 0..len {
+            assert_eq!(perm[inverse[i] as usize], i as u8);
+        }
+        inverse
+    }
+
+    fn validate_decoding_table(decoding_table: &[u16], encoding_table: &[u16]) {
+        for decode_this in 0..4096 {
+            let tmp_d = decoding_table[decode_this];
+            let decoded_byte = tmp_d & 0xff;
+            let decoded_length = tmp_d >> 8;
+
+            let tmp_e = encoding_table[decoded_byte as usize];
+            let encoded_bit_pattern = tmp_e & 0xfff;
+            let encoded_length = tmp_e >> 12;
+
+            assert_eq!(decoded_length, encoded_length);
+            assert_eq!(
+                encoded_bit_pattern,
+                (decode_this as u16) & ((1 << decoded_length) - 1)
+            );
+        }
+    }
+}

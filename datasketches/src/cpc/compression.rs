@@ -15,10 +15,15 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use crate::cpc::compression_data::LENGTH_LIMITED_UNARY_ENCODING_TABLE65;
-use crate::cpc::pair_table::{PairTable, introspective_insertion_sort};
-use crate::cpc::{CpcSketch, Flavor};
 use std::cmp::Ordering;
+
+use crate::cpc::CpcSketch;
+use crate::cpc::Flavor;
+use crate::cpc::compression_data::COLUMN_PERMUTATIONS_FOR_ENCODING;
+use crate::cpc::compression_data::ENCODING_TABLES_FOR_HIGH_ENTROPY_BYTE;
+use crate::cpc::compression_data::LENGTH_LIMITED_UNARY_ENCODING_TABLE65;
+use crate::cpc::pair_table::PairTable;
+use crate::cpc::pair_table::introspective_insertion_sort;
 
 pub(super) struct CompressedState {
     table_data: Vec<u32>,
@@ -34,7 +39,6 @@ impl CompressedState {
         match source.flavor() {
             Flavor::EMPTY => {
                 // do nothing
-                return;
             }
             Flavor::SPARSE => {
                 self.compress_sparse_flavor(source);
@@ -87,7 +91,7 @@ impl CompressedState {
                 let mut byte = source.sliding_window[row_index];
                 while byte != 0 {
                     let col_index = byte.trailing_zeros();
-                    byte = byte ^ (1 << col_index); // erase the 1
+                    byte ^= 1 << col_index; // erase the 1
                     all_pairs[idx] = ((row_index << 6) as u32) | col_index;
                     idx += 1;
                 }
@@ -117,18 +121,63 @@ impl CompressedState {
         self.compress_surprising_values(&all_pairs, source.lg_k());
     }
 
-    fn compress_pinned_flavor(&mut self, source: &CpcSketch) {}
+    fn compress_pinned_flavor(&mut self, source: &CpcSketch) {
+        self.compress_sliding_window(&source.sliding_window, source.lg_k(), source.num_coupons());
+        let mut pairs = source.surprising_value_table().unwrapping_get_items();
+        if !pairs.is_empty() {
+            // Here we subtract 8 from the column indices. Because they are stored in the low 6 bits
+            // of each row_col pair, and because no column index is less than 8 for a "Pinned"
+            // sketch, we can simply subtract 8 from the pairs themselves.
 
-    fn compress_sliding_flavor(&mut self, source: &CpcSketch) {}
+            // shift the columns over by 8 positions before compressing (because of the window)
+            for pair in &mut pairs {
+                assert!(*pair & 63 >= 8, "pair column index is less than 8: {pair}");
+                *pair -= 8;
+            }
+
+            introspective_insertion_sort(&mut pairs);
+            self.compress_surprising_values(&pairs, source.lg_k());
+        }
+    }
+
+    // Complicated by the existence of both a left fringe and a right fringe.
+    fn compress_sliding_flavor(&mut self, source: &CpcSketch) {
+        self.compress_sliding_window(&source.sliding_window, source.lg_k(), source.num_coupons());
+        let mut pairs = source.surprising_value_table().unwrapping_get_items();
+        if !pairs.is_empty() {
+            // Here we apply a complicated transformation to the column indices, which
+            // changes the implied ordering of the pairs, so we must do it before sorting.
+
+            let pseudo_phase = determine_pseudo_phase(source.lg_k(), source.num_coupons());
+            let permutation = COLUMN_PERMUTATIONS_FOR_ENCODING[pseudo_phase as usize];
+            let offset = source.window_offset;
+            debug_assert!(offset <= 56);
+            for pair in &mut pairs {
+                let row_col = *pair;
+                let row = row_col >> 6;
+                let mut col = (row_col & 63) as u8;
+                // first rotate the columns into a canonical configuration:
+                //  new = ((old - (offset+8)) + 64) mod 64
+                col = (col + 56 - offset) & 63;
+                debug_assert!(col < 56);
+                // then apply the permutation
+                col = permutation[col as usize];
+                *pair = (row << 6) | (col as u32);
+            }
+
+            introspective_insertion_sort(&mut pairs);
+            self.compress_surprising_values(&pairs, source.lg_k());
+        }
+    }
 
     fn compress_surprising_values(&mut self, pairs: &[u32], lg_k: u8) {
         let k = 1 << lg_k;
         let num_pairs = pairs.len() as u32;
         let num_base_bits = golomb_choose_number_of_base_bits(k + num_pairs, num_pairs as u64);
         let table_len = safe_length_for_compressed_pair_buf(k, num_pairs, num_base_bits);
-        self.table_data.truncate(table_len);
+        self.table_data.resize(table_len, 0);
 
-        let compressed_surprising_values = self.low_level_compress_pairs(&pairs, num_base_bits);
+        let compressed_surprising_values = self.low_level_compress_pairs(pairs, num_base_bits);
 
         // At this point we could free the unused portion of the compression output buffer,
         // but it is not necessary if it is temporary
@@ -138,6 +187,81 @@ impl CompressedState {
         self.table_num_entries = num_pairs;
     }
 
+    fn compress_sliding_window(&mut self, window: &[u8], lg_k: u8, num_coupons: u32) {
+        let k = 1 << lg_k;
+        let window_buf_len = safe_length_for_compressed_window_buf(k);
+        self.window_data.resize(window_buf_len, 0);
+        let pseudo_phase = determine_pseudo_phase(lg_k, num_coupons);
+        let data_words = self.low_level_compress_bytes(
+            window,
+            k,
+            &ENCODING_TABLES_FOR_HIGH_ENTROPY_BYTE[pseudo_phase as usize],
+        );
+
+        // At this point we could free the unused portion of the compression output buffer,
+        // but it is not necessary if it is temporary
+        // Note: realloc caused strange timing spikes for lgK = 11 and 12.
+
+        self.window_data_words = data_words;
+    }
+
+    /// Returns the number of compressed words that were actually used.
+    ///
+    /// It is the caller's responsibility to ensure that the window_data is long enough.
+    fn low_level_compress_bytes(
+        &mut self,
+        byte_array: &[u8],
+        num_bytes_to_encode: u32,
+        encoding_table: &[u16],
+    ) -> usize {
+        // bits are packed into this first, then are flushed to window_data
+        let mut bitbuf = 0;
+        // number of bits currently in bitbuf; must be between 0 and 31
+        let mut bufbits = 0;
+        let mut next_word_index = 0;
+
+        for byte_index in 0..num_bytes_to_encode {
+            let code_info = encoding_table[byte_array[byte_index as usize] as usize];
+            let code_val = (code_info & 0xfff) as u64;
+            let code_len = (code_info >> 12) as u8;
+            bitbuf |= code_val << bufbits;
+            bufbits += code_len;
+            maybe_flush_bitbuf(
+                &mut bitbuf,
+                &mut bufbits,
+                &mut self.window_data,
+                &mut next_word_index,
+            );
+        }
+
+        // Pad the bitstream with 11 zero-bits so that the decompressor's 12-bit peek can't overrun
+        // its input.
+        bufbits += 11;
+        maybe_flush_bitbuf(
+            &mut bitbuf,
+            &mut bufbits,
+            &mut self.window_data,
+            &mut next_word_index,
+        );
+
+        if bufbits > 0 {
+            // We are done encoding now, so we flush the bit buffer.
+            debug_assert!(bufbits < 32);
+            self.window_data[next_word_index] = (bitbuf & 0xffffffff) as u32;
+            next_word_index += 1;
+
+            // not really necessary unset since no more use
+            //bitbuf = 0;
+            //bufbits = 0;
+        }
+
+        next_word_index
+    }
+
+    /// Returns the number of table_data actually used.
+    ///
+    /// Here "pairs" refers to row/column pairs that specify the positions of surprising values in
+    /// the bit matrix.
     fn low_level_compress_pairs(&mut self, pairs: &[u32], num_base_bits: u8) -> usize {
         let mut bitbuf = 0;
         let mut bufbits = 0;
@@ -165,9 +289,9 @@ impl CompressedState {
             predicted_col_index = col_index + 1;
 
             let code_info = LENGTH_LIMITED_UNARY_ENCODING_TABLE65[x_delta as usize];
-            let code_val = code_info & 0xfff;
+            let code_val = (code_info & 0xfff) as u64;
             let code_len = (code_info >> 12) as u8;
-            bitbuf |= (code_val << bufbits) as u64;
+            bitbuf |= code_val << bufbits;
             bufbits += code_len;
 
             maybe_flush_bitbuf(
@@ -213,7 +337,7 @@ impl CompressedState {
             self.table_data[next_word_index] = (bitbuf & 0xffffffff) as u32;
             next_word_index += 1;
 
-            // not really necessary unset
+            // not really necessary unset since no more use
             //bitbuf = 0;
             //bufbits = 0;
         }
@@ -225,6 +349,42 @@ impl CompressedState {
 pub(super) struct UncompressedState {
     table: PairTable,
     window: Vec<u8>,
+}
+
+fn determine_pseudo_phase(lg_k: u8, num_coupons: u32) -> u8 {
+    let k = 1 << lg_k;
+    // This mid-range logic produces pseudo-phases. They are used to select encoding tables.
+    // The thresholds were chosen by hand after looking at plots of measured compression.
+    if 1000 * num_coupons < 2375 * k {
+        if 4 * num_coupons < 3 * k {
+            // mid-range table
+            16
+        } else if 10 * num_coupons < 11 * k {
+            // mid-range table
+            16 + 1
+        } else if 100 * num_coupons < 132 * k {
+            // mid-range table
+            16 + 2
+        } else if 3 * num_coupons < 5 * k {
+            // mid-range table
+            16 + 3
+        } else if 1000 * num_coupons < 1965 * k {
+            // mid-range table
+            16 + 4
+        } else if 1000 * num_coupons < 2275 * k {
+            // mid-range table
+            16 + 5
+        } else {
+            // steady-state table employed before its actual phase
+            6
+        }
+    } else {
+        // This steady-state logic produces true phases. They are used to select
+        // encoding tables, and also column permutations for the "Sliding" flavor.
+        debug_assert!(lg_k >= 4);
+        let tmp = num_coupons >> (lg_k - 4);
+        (tmp & 15) as u8 // phase
+    }
 }
 
 fn write_unary(
@@ -263,6 +423,18 @@ fn maybe_flush_bitbuf(
         *bitbuf >>= 32;
         *bufbits -= 32;
     }
+}
+
+// Explanation of padding: we write
+// 1) xdelta (huffman, provides at least 1 bit, requires 12-bit lookahead)
+// 2) ydeltaGolombHi (unary, provides at least 1 bit, requires 8-bit lookahead)
+// 3) ydeltaGolombLo (straight B bits).
+// So the 12-bit lookahead is the tight constraint, but there are at least (2 + B) bits emitted,
+// so we would be safe with max (0, 10 - B) bits of padding at the end of the bitstream.
+fn safe_length_for_compressed_window_buf(k: u32) -> usize {
+    // 11 bits of padding, due to 12-bit lookahead, with 1 bit certainly present.
+    let bits = 12 * k + 11;
+    divide_longs_rounding_up(bits as usize, 32)
 }
 
 fn safe_length_for_compressed_pair_buf(k: u32, num_pairs: u32, num_base_bits: u8) -> usize {
