@@ -64,8 +64,8 @@ impl PairTable {
         // sorted pairs array. However, we are starting out with the correct final table size, so
         // the problem might not occur.
 
-        for slot in slots {
-            table.must_insert(slot);
+        for i in 0..num_items {
+            table.must_insert(slots[i as usize]);
         }
         table.num_items = num_items;
         table
@@ -143,7 +143,7 @@ impl PairTable {
     ///
     /// The result is nearly sorted, so make sure to use an efficient sort for that case.
     pub fn unwrapping_get_items(&self) -> Vec<u32> {
-        if self.slots.is_empty() {
+        if self.num_items == 0 {
             return vec![];
         }
 
