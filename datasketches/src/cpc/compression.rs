@@ -15,6 +15,22 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use crate::cpc::pair_table::PairTable;
+
+pub(super) struct CompressedState {
+    table_data: Vec<u32>,
+    table_data_words: u32,
+    // can be different from the number of entries in the sketch in hybrid mode
+    table_num_entries: u32,
+    window_data: Vec<u32>,
+    window_data_words: u32,
+}
+
+pub(super) struct UncompressedState {
+    table: PairTable,
+    window: Vec<u8>,
+}
+
 /// Notice that there are only 65 symbols here, which is different from our usual 8->12 coding
 /// scheme which handles 256 symbols.
 pub(super) static LENGTH_LIMITED_UNARY_ENCODING_TABLE65: [u16; 65] = [
