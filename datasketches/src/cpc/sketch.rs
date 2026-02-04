@@ -27,7 +27,6 @@ use crate::cpc::Flavor;
 use crate::cpc::MAX_LG_K;
 use crate::cpc::MIN_LG_K;
 use crate::cpc::compression::CompressedState;
-use crate::cpc::compression::UncompressedState;
 use crate::cpc::count_bits_set_in_matrix;
 use crate::cpc::determine_correct_offset;
 use crate::cpc::determine_flavor;
@@ -593,14 +592,13 @@ impl CpcSketch {
             ));
         }
 
-        let mut uncompressed = UncompressedState::default();
-        uncompressed.uncompress(&compressed, lg_k, num_coupons);
+        let uncompressed = compressed.uncompress(lg_k, num_coupons);
         Ok(CpcSketch {
             lg_k,
             seed: seed_hash as u64,
             first_interesting_column,
             num_coupons,
-            surprising_value_table: uncompressed.table,
+            surprising_value_table: Some(uncompressed.table),
             window_offset: determine_correct_offset(lg_k, num_coupons),
             sliding_window: uncompressed.window,
             merge_flag: !has_hip,

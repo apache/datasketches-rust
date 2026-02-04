@@ -352,87 +352,96 @@ impl CompressedState {
     }
 }
 
-#[derive(Default)]
 pub(super) struct UncompressedState {
-    pub(super) table: Option<PairTable>,
+    pub(super) table: PairTable,
     pub(super) window: Vec<u8>,
 }
 
-impl UncompressedState {
-    pub fn uncompress(&mut self, source: &CompressedState, lg_k: u8, num_coupons: u32) {
+impl CompressedState {
+    pub fn uncompress(&self, lg_k: u8, num_coupons: u32) -> UncompressedState {
         match determine_flavor(lg_k, num_coupons) {
-            Flavor::EMPTY => self.table = Some(PairTable::new(2, lg_k + 6)),
-            Flavor::SPARSE => self.uncompress_sparse_flavor(source, lg_k),
-            Flavor::HYBRID => self.uncompress_hybrid_flavor(source, lg_k),
-            Flavor::PINNED => self.uncompress_pinned_flavor(source, lg_k, num_coupons),
-            Flavor::SLIDING => self.uncompress_sliding_flavor(source, lg_k, num_coupons),
+            Flavor::EMPTY => UncompressedState {
+                table: PairTable::new(2, lg_k + 6),
+                window: vec![],
+            },
+            Flavor::SPARSE => self.uncompress_sparse_flavor(lg_k),
+            Flavor::HYBRID => self.uncompress_hybrid_flavor(lg_k),
+            Flavor::PINNED => self.uncompress_pinned_flavor(lg_k, num_coupons),
+            Flavor::SLIDING => self.uncompress_sliding_flavor(lg_k, num_coupons),
         }
     }
 
-    fn uncompress_sparse_flavor(&mut self, source: &CompressedState, lg_k: u8) {
-        debug_assert!(source.window_data.is_empty(), "window is not expected");
-        debug_assert!(!source.table_data.is_empty(), "table is expected");
+    fn uncompress_sparse_flavor(&self, lg_k: u8) -> UncompressedState {
+        debug_assert!(self.window_data.is_empty(), "window is not expected");
+        debug_assert!(!self.table_data.is_empty(), "table is expected");
 
         let pairs = uncompress_surprising_values(
-            &source.table_data,
-            source.table_data_words,
-            source.table_num_entries,
+            &self.table_data,
+            self.table_data_words,
+            self.table_num_entries,
             lg_k,
         );
 
-        self.table = Some(PairTable::from_slots(lg_k, source.table_num_entries, pairs));
+        UncompressedState {
+            table: PairTable::from_slots(lg_k, self.table_num_entries, pairs),
+            window: vec![],
+        }
     }
 
-    fn uncompress_hybrid_flavor(&mut self, source: &CompressedState, lg_k: u8) {
-        debug_assert!(source.window_data.is_empty(), "window is not expected");
-        debug_assert!(!source.table_data.is_empty(), "table is expected");
+    fn uncompress_hybrid_flavor(&self, lg_k: u8) -> UncompressedState {
+        debug_assert!(self.window_data.is_empty(), "window is not expected");
+        debug_assert!(!self.table_data.is_empty(), "table is expected");
 
         let mut pairs = uncompress_surprising_values(
-            &source.table_data,
-            source.table_data_words,
-            source.table_num_entries,
+            &self.table_data,
+            self.table_data_words,
+            self.table_num_entries,
             lg_k,
         );
 
         // In the hybrid flavor, some of these pairs actually belong in the window, so we will
         // separate them out, moving the "true" pairs to the bottom of the array.
         let k = 1 << lg_k;
-        self.window.resize(k, 0); // important: zero the memory
+        let mut window = vec![0u8; k]; // important: zero the memory
         let mut next_true_pair = 0;
-        for i in 0..source.table_num_entries {
+        for i in 0..self.table_num_entries {
             let row_col = pairs[i as usize];
             assert_ne!(row_col, u32::MAX);
             let col = row_col & 63;
             if col < 8 {
                 let row = row_col >> 6;
-                self.window[row as usize] |= 1 << col; // set the window bit
+                window[row as usize] |= 1 << col; // set the window bit
             } else {
                 pairs[next_true_pair as usize] = row_col;
                 next_true_pair += 1;
             }
         }
 
-        self.table = Some(PairTable::from_slots(lg_k, next_true_pair, pairs));
+        UncompressedState {
+            table: PairTable::from_slots(lg_k, next_true_pair, pairs),
+            window,
+        }
     }
 
-    fn uncompress_pinned_flavor(&mut self, source: &CompressedState, lg_k: u8, num_coupons: u32) {
-        debug_assert!(!source.window_data.is_empty(), "window is expected");
+    fn uncompress_pinned_flavor(&self, lg_k: u8, num_coupons: u32) -> UncompressedState {
+        debug_assert!(!self.window_data.is_empty(), "window is expected");
 
+        let mut window = vec![];
         uncompress_sliding_window(
-            &source.window_data,
-            source.window_data_words,
-            &mut self.window,
+            &self.window_data,
+            self.window_data_words,
+            &mut window,
             lg_k,
             num_coupons,
         );
-        let num_pairs = source.table_num_entries;
-        if num_pairs == 0 {
-            self.table = Some(PairTable::new(2, lg_k + 6));
+        let num_pairs = self.table_num_entries;
+        let table = if num_pairs == 0 {
+            PairTable::new(2, lg_k + 6)
         } else {
-            debug_assert!(!source.table_data.is_empty(), "table is expected");
+            debug_assert!(!self.table_data.is_empty(), "table is expected");
             let mut pairs = uncompress_surprising_values(
-                &source.table_data,
-                source.table_data_words,
+                &self.table_data,
+                self.table_data_words,
                 num_pairs,
                 lg_k,
             );
@@ -446,28 +455,30 @@ impl UncompressedState {
                 );
                 pairs[i] += 8;
             }
-            self.table = Some(PairTable::from_slots(lg_k, num_pairs, pairs));
-        }
+            PairTable::from_slots(lg_k, num_pairs, pairs)
+        };
+        UncompressedState { table, window }
     }
 
-    fn uncompress_sliding_flavor(&mut self, source: &CompressedState, lg_k: u8, num_coupons: u32) {
-        debug_assert!(!source.window_data.is_empty(), "window is expected");
+    fn uncompress_sliding_flavor(&self, lg_k: u8, num_coupons: u32) -> UncompressedState {
+        debug_assert!(!self.window_data.is_empty(), "window is expected");
 
+        let mut window = vec![];
         uncompress_sliding_window(
-            &source.window_data,
-            source.window_data_words,
-            &mut self.window,
+            &self.window_data,
+            self.window_data_words,
+            &mut window,
             lg_k,
             num_coupons,
         );
-        let num_pairs = source.table_num_entries;
-        if num_pairs == 0 {
-            self.table = Some(PairTable::new(2, lg_k + 6));
+        let num_pairs = self.table_num_entries;
+        let table = if num_pairs == 0 {
+            PairTable::new(2, lg_k + 6)
         } else {
-            debug_assert!(!source.table_data.is_empty(), "table is expected");
+            debug_assert!(!self.table_data.is_empty(), "table is expected");
             let mut pairs = uncompress_surprising_values(
-                &source.table_data,
-                source.table_data_words,
+                &self.table_data,
+                self.table_data_words,
                 num_pairs,
                 lg_k,
             );
@@ -488,8 +499,9 @@ impl UncompressedState {
                 pairs[i] = (row << 6) | (col as u32);
             }
 
-            self.table = Some(PairTable::from_slots(lg_k, num_pairs, pairs));
-        }
+            PairTable::from_slots(lg_k, num_pairs, pairs)
+        };
+        UncompressedState { table, window }
     }
 }
 
