@@ -434,14 +434,10 @@ impl CpcSketch {
 
 const SERIAL_VERSION: u8 = 1;
 const CPC_FAMILY_ID: u8 = 16;
-
-#[repr(u8)]
-enum Flags {
-    IsCompressed = 1,
-    HasHip = 2,
-    HasTable = 3,
-    HasWindow = 4,
-}
+const FLAG_COMPRESSED: u8 = 1;
+const FLAG_HAS_HIP: u8 = 2;
+const FLAG_HAS_TABLE: u8 = 3;
+const FLAG_HAS_WINDOW: u8 = 4;
 
 impl CpcSketch {
     /// Serializes this CpcSketch to bytes.
@@ -460,10 +456,10 @@ impl CpcSketch {
         bytes.write_u8(CPC_FAMILY_ID);
         bytes.write_u8(self.lg_k);
         bytes.write_u8(self.first_interesting_column);
-        let flags = (1 << Flags::IsCompressed as u8)
-            | (if has_hip { 1 } else { 0 } << Flags::HasHip as u8)
-            | (if has_table { 1 } else { 0 } << Flags::HasTable as u8)
-            | (if has_window { 1 } else { 0 } << Flags::HasWindow as u8);
+        let flags = (1 << FLAG_COMPRESSED)
+            | (if has_hip { 1 } else { 0 } << FLAG_HAS_HIP)
+            | (if has_table { 1 } else { 0 } << FLAG_HAS_TABLE)
+            | (if has_window { 1 } else { 0 } << FLAG_HAS_WINDOW);
         bytes.write_u8(flags);
         let seed_hash = compute_seed_hash(self.seed);
         bytes.write_u16_le(seed_hash);
@@ -536,9 +532,9 @@ impl CpcSketch {
 
         let flags = cursor.read_u8().map_err(make_error("flags"))?;
         let seed_hash = cursor.read_u16_le().map_err(make_error("seed_hash"))?;
-        let has_hip = flags & (1 << Flags::HasHip as u8) != 0;
-        let has_table = flags & (1 << Flags::HasTable as u8) != 0;
-        let has_window = flags & (1 << Flags::HasWindow as u8) != 0;
+        let has_hip = flags & (1 << FLAG_HAS_HIP) != 0;
+        let has_table = flags & (1 << FLAG_HAS_TABLE) != 0;
+        let has_window = flags & (1 << FLAG_HAS_WINDOW) != 0;
 
         let mut compressed = CompressedState::default();
         let mut num_coupons = 0;
