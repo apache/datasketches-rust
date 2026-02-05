@@ -49,9 +49,9 @@ pub use self::union::CpcUnion;
 /// Default log2 of K.
 const DEFAULT_LG_K: u8 = 11;
 /// Min log2 of K.
-const MIN_LG_K: usize = 4;
+const MIN_LG_K: u8 = 4;
 /// Max log2 of K.
-const MAX_LG_K: usize = 26;
+const MAX_LG_K: u8 = 26;
 
 #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
 #[expect(clippy::upper_case_acronyms)]

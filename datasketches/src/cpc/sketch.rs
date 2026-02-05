@@ -100,7 +100,7 @@ impl CpcSketch {
     /// Panics if `lg_k` is not in the range `[4, 16]`.
     pub fn with_seed(lg_k: u8, seed: u64) -> Self {
         assert!(
-            (MIN_LG_K..=MAX_LG_K).contains(&(lg_k as usize)),
+            (MIN_LG_K..=MAX_LG_K).contains(&lg_k),
             "lg_k out of range; got {lg_k}",
         );
 
@@ -532,6 +532,13 @@ impl CpcSketch {
 
         let flags = cursor.read_u8().map_err(make_error("flags"))?;
         let seed_hash = cursor.read_u16_le().map_err(make_error("seed_hash"))?;
+        let is_compressed = flags & (1 << FLAG_COMPRESSED) != 0;
+        if !is_compressed {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                "only compressed sketches are supported",
+            ));
+        }
         let has_hip = flags & (1 << FLAG_HAS_HIP) != 0;
         let has_table = flags & (1 << FLAG_HAS_TABLE) != 0;
         let has_window = flags & (1 << FLAG_HAS_WINDOW) != 0;
@@ -603,6 +610,18 @@ impl CpcSketch {
                 ),
             ));
         }
+        if !(MIN_LG_K..=MAX_LG_K).contains(&lg_k) {
+            return Err(Error::invalid_argument(format!(
+                "lg_k out of range; got {}",
+                lg_k
+            )));
+        }
+        if first_interesting_column > 63 {
+            return Err(Error::invalid_argument(format!(
+                "first_interesting_column out of range; got {}",
+                first_interesting_column
+            )));
+        }
 
         let uncompressed = compressed.uncompress(lg_k, num_coupons);
         Ok(CpcSketch {
@@ -658,7 +677,6 @@ impl CpcSketch {
     ///
     /// Panics if `lg_k` is not in the range `[4, 26]`.
     pub fn max_serialized_bytes(lg_k: u8) -> usize {
-        let lg_k = lg_k as usize;
         assert!(
             (MIN_LG_K..=MAX_LG_K).contains(&lg_k),
             "lg_k out of range; got {lg_k}",
@@ -670,7 +688,7 @@ impl CpcSketch {
         // This table does not include the worst-case space for the preamble, which is added
         // by the function.
         const MAX_PREAMBLE_SIZE_BYTES: usize = 40;
-        const EMPIRICAL_SIZE_MAX_LGK: usize = 19;
+        const EMPIRICAL_SIZE_MAX_LGK: u8 = 19;
         const EMPIRICAL_MAX_SIZE_FACTOR: f64 = 0.6; // 0.6 = 4.8 / 8.0
         static EMPIRICAL_MAX_SIZE_BYTES: [usize; 16] = [
             24,     // lg_k = 4
@@ -692,10 +710,11 @@ impl CpcSketch {
         ];
 
         if lg_k <= EMPIRICAL_SIZE_MAX_LGK {
-            return EMPIRICAL_MAX_SIZE_BYTES[lg_k - MIN_LG_K] + MAX_PREAMBLE_SIZE_BYTES;
+            EMPIRICAL_MAX_SIZE_BYTES[(lg_k - MIN_LG_K) as usize] + MAX_PREAMBLE_SIZE_BYTES
+        } else {
+            let k = 1 << lg_k;
+            ((EMPIRICAL_MAX_SIZE_FACTOR * k as f64) as usize) + MAX_PREAMBLE_SIZE_BYTES
         }
-        let k = 1 << lg_k;
-        ((EMPIRICAL_MAX_SIZE_FACTOR * k as f64) as usize) + MAX_PREAMBLE_SIZE_BYTES
     }
 }
 
