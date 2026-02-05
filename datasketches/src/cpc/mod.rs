@@ -54,13 +54,12 @@ const MIN_LG_K: u8 = 4;
 const MAX_LG_K: u8 = 26;
 
 #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
-#[expect(clippy::upper_case_acronyms)]
 enum Flavor {
-    EMPTY,   //    0  == C <    1
-    SPARSE,  //    1  <= C <   3K/32
-    HYBRID,  // 3K/32 <= C <   K/2
-    PINNED,  //   K/2 <= C < 27K/8  [NB: 27/8 = 3 + 3/8]
-    SLIDING, // 27K/8 <= C
+    Empty,   //    0  == C <    1
+    Sparse,  //    1  <= C <   3K/32
+    Hybrid,  // 3K/32 <= C <   K/2
+    Pinned,  //   K/2 <= C < 27K/8  [NB: 27/8 = 3 + 3/8]
+    Sliding, // 27K/8 <= C
 }
 
 fn count_bits_set_in_matrix(matrix: &[u64]) -> u32 {
@@ -77,15 +76,15 @@ fn determine_flavor(lg_k: u8, num_coupons: u32) -> Flavor {
     let c8 = num_coupons << 3;
     let c32 = num_coupons << 5;
     if num_coupons == 0 {
-        Flavor::EMPTY
+        Flavor::Empty
     } else if c32 < (3 * k) {
-        Flavor::SPARSE
+        Flavor::Sparse
     } else if c2 < k {
-        Flavor::HYBRID
+        Flavor::Hybrid
     } else if c8 < (27 * k) {
-        Flavor::PINNED
+        Flavor::Pinned
     } else {
-        Flavor::SLIDING
+        Flavor::Sliding
     }
 }
 

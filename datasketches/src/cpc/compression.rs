@@ -43,24 +43,24 @@ pub(super) struct CompressedState {
 impl CompressedState {
     pub fn compress(&mut self, source: &CpcSketch) {
         match source.flavor() {
-            Flavor::EMPTY => {
+            Flavor::Empty => {
                 // do nothing
             }
-            Flavor::SPARSE => {
+            Flavor::Sparse => {
                 self.compress_sparse_flavor(source);
                 debug_assert!(self.window_data.is_empty(), "window is not expected");
                 debug_assert!(!self.table_data.is_empty(), "table is expected");
             }
-            Flavor::HYBRID => {
+            Flavor::Hybrid => {
                 self.compress_hybrid_flavor(source);
                 debug_assert!(self.window_data.is_empty(), "window is not expected");
                 debug_assert!(!self.table_data.is_empty(), "table is expected");
             }
-            Flavor::PINNED => {
+            Flavor::Pinned => {
                 self.compress_pinned_flavor(source);
                 debug_assert!(!self.window_data.is_empty(), "window is expected");
             }
-            Flavor::SLIDING => {
+            Flavor::Sliding => {
                 self.compress_sliding_flavor(source);
                 debug_assert!(!self.window_data.is_empty(), "window is expected");
             }
@@ -360,14 +360,14 @@ pub(super) struct UncompressedState {
 impl CompressedState {
     pub fn uncompress(&self, lg_k: u8, num_coupons: u32) -> UncompressedState {
         match determine_flavor(lg_k, num_coupons) {
-            Flavor::EMPTY => UncompressedState {
+            Flavor::Empty => UncompressedState {
                 table: PairTable::new(2, lg_k + 6),
                 window: vec![],
             },
-            Flavor::SPARSE => self.uncompress_sparse_flavor(lg_k),
-            Flavor::HYBRID => self.uncompress_hybrid_flavor(lg_k),
-            Flavor::PINNED => self.uncompress_pinned_flavor(lg_k, num_coupons),
-            Flavor::SLIDING => self.uncompress_sliding_flavor(lg_k, num_coupons),
+            Flavor::Sparse => self.uncompress_sparse_flavor(lg_k),
+            Flavor::Hybrid => self.uncompress_hybrid_flavor(lg_k),
+            Flavor::Pinned => self.uncompress_pinned_flavor(lg_k, num_coupons),
+            Flavor::Sliding => self.uncompress_sliding_flavor(lg_k, num_coupons),
         }
     }
 
