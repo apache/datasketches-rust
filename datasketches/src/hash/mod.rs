@@ -39,15 +39,21 @@ pub(crate) const DEFAULT_UPDATE_SEED: u64 = 9001;
 
 /// Computes and checks the 16-bit seed hash from the given long seed.
 ///
-/// The seed hash may not be zero in order to maintain compatibility with older serialized
-/// versions that did not have this concept.
+/// The computed seed hash must not be zero in order to maintain compatibility with older
+/// serialized versions that did not have this concept.
+///
+/// # Panics
+///
+/// Panics if the computed seed hash is zero.
 pub(crate) fn compute_seed_hash(seed: u64) -> u16 {
     use std::hash::Hasher;
 
     let mut hasher = MurmurHash3X64128::with_seed(0);
     hasher.write(&seed.to_le_bytes());
     let (h1, _) = hasher.finish128();
-    (h1 & 0xffff) as u16
+    let seed_hash = (h1 & 0xffff) as u16;
+    assert_ne!(seed_hash, 0);
+    seed_hash
 }
 
 /// Reads an u64 from a byte slice in little-endian order.
