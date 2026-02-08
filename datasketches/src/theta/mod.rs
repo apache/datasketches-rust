@@ -39,6 +39,7 @@
 //! ```
 
 mod hash_table;
+mod serialization;
 mod sketch;
 
 pub use self::sketch::ThetaSketch;
