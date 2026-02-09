@@ -28,6 +28,7 @@
 //! configurable accuracy and memory usage. The implementation supports:
 //!
 //! - **ThetaSketch**: Mutable sketch for building from input data
+//! - **CompactThetaSketch**: Immutable sketch with compact memory layout
 //!
 //! # Usage
 //!
@@ -38,8 +39,13 @@
 //! assert!(sketch.estimate() >= 1.0);
 //! ```
 
+mod bit_pack;
 mod hash_table;
+mod serialization;
 mod sketch;
 
+pub use self::sketch::CompactThetaSketch;
 pub use self::sketch::ThetaSketch;
 pub use self::sketch::ThetaSketchBuilder;
+/// The default seed used for hashing in theta sketches.
+pub use crate::hash::DEFAULT_UPDATE_SEED;

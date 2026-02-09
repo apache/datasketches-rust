@@ -296,6 +296,10 @@ impl ThetaHashTable {
         self.lg_nom_size
     }
 
+    pub(crate) fn hash_seed(&self) -> u64 {
+        self.hash_seed
+    }
+
     /// Get stride for hash table probing
     fn get_stride(key: u64, lg_size: u8) -> usize {
         (2 * ((key >> (lg_size)) & STRIDE_MASK) + 1) as usize
