@@ -596,7 +596,7 @@ impl CpcSketch {
             make_preamble_ints(num_coupons, has_hip, has_table, has_window);
         if preamble_ints != expected_preamble_ints {
             return Err(Error::invalid_preamble_longs(
-                expected_preamble_ints,
+                std::slice::from_ref(&expected_preamble_ints),
                 preamble_ints,
             ));
         }

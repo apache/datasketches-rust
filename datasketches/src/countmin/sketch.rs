@@ -358,7 +358,7 @@ impl<T: CountMinValue> CountMinSketch<T> {
         }
         if preamble_longs != PREAMBLE_LONGS_SHORT {
             return Err(Error::invalid_preamble_longs(
-                PREAMBLE_LONGS_SHORT,
+                std::slice::from_ref(&PREAMBLE_LONGS_SHORT),
                 preamble_longs,
             ));
         }

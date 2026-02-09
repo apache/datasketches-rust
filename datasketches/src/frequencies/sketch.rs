@@ -478,7 +478,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
         if is_empty {
             return if pre_longs != PREAMBLE_LONGS_EMPTY {
                 Err(Error::invalid_preamble_longs(
-                    PREAMBLE_LONGS_EMPTY,
+                    std::slice::from_ref(&PREAMBLE_LONGS_EMPTY),
                     pre_longs,
                 ))
             } else {
@@ -488,7 +488,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
 
         if pre_longs != PREAMBLE_LONGS_NONEMPTY {
             return Err(Error::invalid_preamble_longs(
-                PREAMBLE_LONGS_NONEMPTY,
+                std::slice::from_ref(&PREAMBLE_LONGS_NONEMPTY),
                 pre_longs,
             ));
         }

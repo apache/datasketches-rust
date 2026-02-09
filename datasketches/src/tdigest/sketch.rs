@@ -521,7 +521,7 @@ impl TDigestMut {
         };
         if preamble_longs != expected_preamble_longs {
             return Err(Error::invalid_preamble_longs(
-                expected_preamble_longs,
+                std::slice::from_ref(&expected_preamble_longs),
                 preamble_longs,
             ));
         }

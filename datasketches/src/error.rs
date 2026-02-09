@@ -119,9 +119,10 @@ impl Error {
         ))
     }
 
-    pub(crate) fn invalid_preamble_longs(expected: u8, actual: u8) -> Self {
+    pub(crate) fn invalid_preamble_longs(expected: impl AsRef<[u8]>, actual: u8) -> Self {
         Self::deserial(format!(
-            "invalid preamble longs: expected {expected}, got {actual}"
+            "invalid preamble longs: expected {:?}, got {actual}",
+            expected.as_ref()
         ))
     }
 }
