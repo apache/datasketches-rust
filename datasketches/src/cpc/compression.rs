@@ -28,7 +28,6 @@ use crate::cpc::compression_data::LENGTH_LIMITED_UNARY_ENCODING_TABLE65;
 use crate::cpc::determine_correct_offset;
 use crate::cpc::determine_flavor;
 use crate::cpc::pair_table::PairTable;
-use crate::cpc::pair_table::introspective_insertion_sort;
 
 #[derive(Default)]
 pub(super) struct CompressedState {
@@ -70,7 +69,7 @@ impl CompressedState {
     fn compress_sparse_flavor(&mut self, source: &CpcSketch) {
         debug_assert!(source.sliding_window.is_empty());
         let mut pairs = source.surprising_value_table().unwrapping_get_items();
-        introspective_insertion_sort(&mut pairs);
+        pairs.sort_unstable();
         self.compress_surprising_values(&pairs, source.lg_k());
     }
 
@@ -80,9 +79,7 @@ impl CompressedState {
 
         let k = 1 << source.lg_k();
         let mut pairs = source.surprising_value_table().unwrapping_get_items();
-        if !pairs.is_empty() {
-            introspective_insertion_sort(&mut pairs);
-        }
+        pairs.sort_unstable();
         let num_pairs_from_table = pairs.len();
         let num_pairs_from_window = (source.num_coupons() as usize) - num_pairs_from_table;
 
@@ -141,7 +138,7 @@ impl CompressedState {
                 *pair -= 8;
             }
 
-            introspective_insertion_sort(&mut pairs);
+            pairs.sort_unstable();
             self.compress_surprising_values(&pairs, source.lg_k());
         }
     }
@@ -171,7 +168,7 @@ impl CompressedState {
                 *pair = (row << 6) | (col as u32);
             }
 
-            introspective_insertion_sort(&mut pairs);
+            pairs.sort_unstable();
             self.compress_surprising_values(&pairs, source.lg_k());
         }
     }
