@@ -15,31 +15,29 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! # Apache® DataSketches™ Core Rust Library Component
+//! Xor filter implementation for probabilistic set membership testing.
 //!
-//! The Sketching Core Library provides a range of stochastic streaming algorithms and closely
-//! related Rust technologies that are particularly useful when integrating this technology into
-//! systems that must deal with massive data.
+//! Xor filters are immutable, space-efficient structures with no false negatives.
+//! They are built from a set of distinct 64-bit keys and are optimized for fast lookups.
 //!
-//! This library is divided into modules that constitute distinct groups of functionality.
+//! # Usage
+//!
+//! ```rust
+//! use datasketches::xor::Xor8;
+//!
+//! let keys: Vec<u64> = (0..10_000).collect();
+//! let filter = Xor8::builder().build(&keys).unwrap();
+//!
+//! assert!(filter.contains(42));
+//! ```
+//!
+//! # Notes
+//!
+//! - The input keys must be distinct. Duplicate keys can cause construction to fail.
+//! - Xor filters are immutable once built.
 
-#![cfg_attr(docsrs, feature(doc_cfg))]
-#![deny(missing_docs)]
+mod builder;
+mod sketch;
 
-// See https://github.com/apache/datasketches-rust/issues/28 for more information.
-#[cfg(target_endian = "big")]
-compile_error!("datasketches does not support big-endian targets");
-
-pub mod bloom;
-pub mod common;
-pub mod countmin;
-pub mod cpc;
-pub mod error;
-pub mod frequencies;
-pub mod hll;
-pub mod tdigest;
-pub mod theta;
-pub mod xor;
-
-mod codec;
-mod hash;
+pub use self::builder::XorFilterBuilder;
+pub use self::sketch::Xor8;
