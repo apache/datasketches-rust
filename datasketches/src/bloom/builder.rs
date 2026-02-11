@@ -87,7 +87,7 @@ impl BloomFilterBuilder {
     ///
     /// # Panics
     ///
-    /// Panics if:
+    /// Panics if any of:
     /// - `num_bits` < MIN_NUM_BITS (64) or `num_bits` > MAX_NUM_BITS (~32 GB)
     /// - `num_hashes` < 1 or `num_hashes` > 100
     ///
