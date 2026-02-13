@@ -15,13 +15,14 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::hash::Hash;
+use std::hash::Hasher;
+
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
 use crate::codec::family::Family;
 use crate::error::Error;
 use crate::hash::XxHash64;
-use std::hash::Hash;
-use std::hash::Hasher;
 
 // Serialization constants
 const PREAMBLE_LONGS_EMPTY: u8 = 3;

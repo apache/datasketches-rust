@@ -18,10 +18,10 @@
 //! Codec utilities for datasketches crate.
 
 // public common codec utilities for datasketches crate
-mod encode;
 mod decode;
-pub use self::encode::SketchBytes;
+mod encode;
 pub use self::decode::SketchSlice;
+pub use self::encode::SketchBytes;
 
 // private to datasketches crate
 pub(crate) mod family;

@@ -16,9 +16,10 @@
 // under the License.
 
 use std::hash::Hash;
-use crate::codec::family::Family;
+
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
+use crate::codec::family::Family;
 use crate::common::NumStdDev;
 use crate::common::canonical_double;
 use crate::common::inv_pow2_table::INVERSE_POWERS_OF_2;

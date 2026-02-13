@@ -21,9 +21,9 @@
 //! This is sufficient for most HLL use cases without needing exception handling or
 //! cur_min optimization like Array4.
 
-use crate::codec::family::Family;
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
+use crate::codec::family::Family;
 use crate::common::NumStdDev;
 use crate::error::Error;
 use crate::hll::estimator::HipEstimator;

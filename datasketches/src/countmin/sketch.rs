@@ -15,6 +15,9 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::hash::Hash;
+use std::hash::Hasher;
+
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
 use crate::codec::family::Family;
@@ -28,8 +31,6 @@ use crate::error::Error;
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::hash::MurmurHash3X64128;
 use crate::hash::compute_seed_hash;
-use std::hash::Hash;
-use std::hash::Hasher;
 
 const MAX_TABLE_ENTRIES: usize = 1 << 30;
 
