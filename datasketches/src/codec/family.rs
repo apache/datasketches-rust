@@ -1,3 +1,5 @@
+use crate::error::Error;
+
 /// Defines the various families of sketch and set operation classes.
 ///
 /// A family defines a set of classes that share fundamental algorithms and behaviors. The classes
@@ -61,4 +63,14 @@ impl Family {
         min_pre_longs: 3,
         max_pre_longs: 4,
     };
+}
+
+impl Family {
+    pub fn validate_id(&self, family_id: u8) -> Result<(), Error> {
+        if family_id != self.id {
+            Err(Error::invalid_family(self.id, family_id, self.name))
+        } else {
+            Ok(())
+        }
+    }
 }

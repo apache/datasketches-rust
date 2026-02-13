@@ -20,6 +20,7 @@
 //! Uses open addressing with a custom stride function to handle collisions.
 //! Provides better performance than List when many coupons are stored.
 
+use crate::codec::family::Family;
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
 use crate::error::Error;
@@ -149,7 +150,7 @@ impl HashSet {
         // Write preamble
         bytes.write_u8(HASH_SET_PREINTS);
         bytes.write_u8(SERIAL_VERSION);
-        bytes.write_u8(HLL_FAMILY_ID);
+        bytes.write_u8(Family::HLL.id);
         bytes.write_u8(lg_config_k);
         bytes.write_u8(lg_arr as u8);
 

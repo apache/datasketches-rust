@@ -20,6 +20,7 @@
 //! Array8 is the simplest HLL array implementation, storing one byte per slot.
 //! This provides the maximum value range (0-255) with no bit-packing complexity.
 
+use crate::codec::family::Family;
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
 use crate::common::NumStdDev;
@@ -301,7 +302,7 @@ impl Array8 {
         // Write standard header
         bytes.write_u8(HLL_PREINTS);
         bytes.write_u8(SERIAL_VERSION);
-        bytes.write_u8(HLL_FAMILY_ID);
+        bytes.write_u8(Family::HLL.id);
         bytes.write_u8(lg_config_k);
         bytes.write_u8(0); // unused for HLL mode
 

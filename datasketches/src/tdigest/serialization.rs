@@ -18,7 +18,6 @@
 pub(super) const PREAMBLE_LONGS_EMPTY_OR_SINGLE: u8 = 1;
 pub(super) const PREAMBLE_LONGS_MULTIPLE: u8 = 2;
 pub(super) const SERIAL_VERSION: u8 = 1;
-pub(super) const TDIGEST_FAMILY_ID: u8 = 20;
 pub(super) const FLAGS_IS_EMPTY: u8 = 1 << 0;
 pub(super) const FLAGS_IS_SINGLE_VALUE: u8 = 1 << 1;
 pub(super) const FLAGS_REVERSE_MERGE: u8 = 1 << 2;

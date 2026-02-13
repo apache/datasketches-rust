@@ -20,6 +20,7 @@
 //! Array4 stores HLL register values using 4 bits per slot (2 slots per byte).
 //! When values exceed 4 bits after cur_min offset, they're stored in an auxiliary hash map.
 
+use crate::codec::family::Family;
 use super::aux_map::AuxMap;
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
@@ -376,7 +377,7 @@ impl Array4 {
         // Write standard header
         bytes.write_u8(HLL_PREINTS);
         bytes.write_u8(SERIAL_VERSION);
-        bytes.write_u8(HLL_FAMILY_ID);
+        bytes.write_u8(Family::HLL.id);
         bytes.write_u8(lg_config_k);
         bytes.write_u8(0); // unused for HLL mode
 

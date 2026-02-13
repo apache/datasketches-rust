@@ -15,18 +15,17 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use std::hash::Hash;
-use std::hash::Hasher;
-
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
+use crate::codec::family::Family;
 use crate::error::Error;
 use crate::hash::XxHash64;
+use std::hash::Hash;
+use std::hash::Hasher;
 
 // Serialization constants
 const PREAMBLE_LONGS_EMPTY: u8 = 3;
 const PREAMBLE_LONGS_STANDARD: u8 = 4;
-const BLOOM_FAMILY_ID: u8 = 21; // Bloom filter family ID
 const SERIAL_VERSION: u8 = 1;
 const EMPTY_FLAG_MASK: u8 = 1 << 2;
 
@@ -369,7 +368,7 @@ impl BloomFilter {
         // Preamble
         bytes.write_u8(preamble_longs); // Byte 0
         bytes.write_u8(SERIAL_VERSION); // Byte 1
-        bytes.write_u8(BLOOM_FAMILY_ID); // Byte 2
+        bytes.write_u8(Family::BLOOMFILTER.id); // Byte 2
         bytes.write_u8(if is_empty { EMPTY_FLAG_MASK } else { 0 }); // Byte 3: flags
         bytes.write_u16_le(self.num_hashes); // Bytes 4-5
         bytes.write_u16_le(0); // Bytes 6-7: unused
@@ -432,13 +431,7 @@ impl BloomFilter {
             .map_err(|_| Error::insufficient_data("flags"))?;
 
         // Validate
-        if family_id != BLOOM_FAMILY_ID {
-            return Err(Error::invalid_family(
-                BLOOM_FAMILY_ID,
-                family_id,
-                "BloomFilter",
-            ));
-        }
+        Family::BLOOMFILTER.validate_id(family_id)?;
         if serial_version != SERIAL_VERSION {
             return Err(Error::unsupported_serial_version(
                 SERIAL_VERSION,

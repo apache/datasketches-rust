@@ -17,6 +17,5 @@
 
 pub(super) const PREAMBLE_LONGS_SHORT: u8 = 2;
 pub(super) const SERIAL_VERSION: u8 = 1;
-pub(super) const COUNTMIN_FAMILY_ID: u8 = 18;
 pub(super) const FLAGS_IS_EMPTY: u8 = 1 << 0;
 pub(super) const LONG_SIZE_BYTES: usize = 8;

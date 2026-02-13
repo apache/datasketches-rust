@@ -20,9 +20,6 @@
 //! This module contains all constants related to the Apache DataSketches
 //! binary serialization format, shared across all sketch modes.
 
-/// Family ID for HLL sketches in DataSketches format
-pub const HLL_FAMILY_ID: u8 = 7;
-
 /// Current serialization version
 pub const SERIAL_VERSION: u8 = 1;
 

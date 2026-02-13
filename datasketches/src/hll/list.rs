@@ -20,6 +20,7 @@
 //! Provides sequential storage with linear search for duplicates.
 //! Efficient for small numbers of coupons before transitioning to HashSet.
 
+use crate::codec::family::Family;
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
 use crate::error::Error;
@@ -111,7 +112,7 @@ impl List {
         // Write preamble
         bytes.write_u8(LIST_PREINTS);
         bytes.write_u8(SERIAL_VERSION);
-        bytes.write_u8(HLL_FAMILY_ID);
+        bytes.write_u8(Family::HLL.id);
         bytes.write_u8(lg_config_k);
         bytes.write_u8(lg_arr as u8);
 

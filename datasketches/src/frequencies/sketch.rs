@@ -17,13 +17,13 @@
 
 //! Frequent items sketch implementations.
 
-use std::hash::Hash;
-
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
+use crate::codec::family::Family;
 use crate::error::Error;
 use crate::frequencies::reverse_purge_item_hash_map::ReversePurgeItemHashMap;
 use crate::frequencies::serialization::*;
+use std::hash::Hash;
 
 type CountSerializeSize<T> = fn(&[T]) -> usize;
 type SerializeItems<T> = fn(&mut SketchBytes, &[T]);
@@ -409,7 +409,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
             let mut bytes = SketchBytes::with_capacity(8);
             bytes.write_u8(PREAMBLE_LONGS_EMPTY);
             bytes.write_u8(SERIAL_VERSION);
-            bytes.write_u8(FREQUENCY_FAMILY_ID);
+            bytes.write_u8(Family::FREQUENCY.id);
             bytes.write_u8(self.lg_max_map_size);
             bytes.write_u8(self.hash_map.lg_length());
             bytes.write_u8(EMPTY_FLAG_MASK);
@@ -425,7 +425,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
         let mut bytes = SketchBytes::with_capacity(total_bytes);
         bytes.write_u8(PREAMBLE_LONGS_NONEMPTY);
         bytes.write_u8(SERIAL_VERSION);
-        bytes.write_u8(FREQUENCY_FAMILY_ID);
+        bytes.write_u8(Family::FREQUENCY.id);
         bytes.write_u8(self.lg_max_map_size);
         bytes.write_u8(self.hash_map.lg_length());
         bytes.write_u8(0); // flags
@@ -462,21 +462,13 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
         let flags = cursor.read_u8().map_err(make_error("flags"))?;
         cursor.read_u16_le().map_err(make_error("<unused>"))?;
 
+        Family::FREQUENCY.validate_id(family)?;
         if serial_version != SERIAL_VERSION {
             return Err(Error::unsupported_serial_version(
                 SERIAL_VERSION,
                 serial_version,
             ));
         }
-
-        if family != FREQUENCY_FAMILY_ID {
-            return Err(Error::invalid_family(
-                FREQUENCY_FAMILY_ID,
-                family,
-                "FrequentItemsSketch",
-            ));
-        }
-
         if lg_cur > lg_max {
             return Err(Error::deserial("lg_cur_map_size exceeds lg_max_map_size"));
         }
