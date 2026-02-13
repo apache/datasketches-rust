@@ -60,7 +60,7 @@ impl Family {
 
     /// CountMin Sketch
     pub const COUNTMIN: Family = Family {
-        id: 17,
+        id: 18,
         name: "COUNTMIN",
         min_pre_longs: 2,
         max_pre_longs: 2,
