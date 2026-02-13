@@ -25,8 +25,6 @@ use crate::error::Error;
 use crate::hash::XxHash64;
 
 // Serialization constants
-const PREAMBLE_LONGS_EMPTY: u8 = 3;
-const PREAMBLE_LONGS_STANDARD: u8 = 4;
 const SERIAL_VERSION: u8 = 1;
 const EMPTY_FLAG_MASK: u8 = 1 << 2;
 
@@ -353,9 +351,9 @@ impl BloomFilter {
     pub fn serialize(&self) -> Vec<u8> {
         let is_empty = self.is_empty();
         let preamble_longs = if is_empty {
-            PREAMBLE_LONGS_EMPTY
+            Family::BLOOMFILTER.min_pre_longs
         } else {
-            PREAMBLE_LONGS_STANDARD
+            Family::BLOOMFILTER.max_pre_longs
         };
 
         let capacity = 8 * preamble_longs as usize
@@ -439,14 +437,23 @@ impl BloomFilter {
                 serial_version,
             ));
         }
-        if preamble_longs != PREAMBLE_LONGS_EMPTY && preamble_longs != PREAMBLE_LONGS_STANDARD {
-            return Err(Error::invalid_preamble_longs(
-                PREAMBLE_LONGS_STANDARD,
-                preamble_longs,
-            ));
+        if !(Family::BLOOMFILTER.min_pre_longs..=Family::BLOOMFILTER.max_pre_longs)
+            .contains(&preamble_longs)
+        {
+            return Err(Error::deserial(format!(
+                "invalid preamble longs: expected [{}, {}], got {}",
+                Family::BLOOMFILTER.min_pre_longs,
+                Family::BLOOMFILTER.max_pre_longs,
+                preamble_longs
+            )));
         }
 
         let is_empty = (flags & EMPTY_FLAG_MASK) != 0;
+        if is_empty {
+            debug_assert_eq!(preamble_longs, Family::BLOOMFILTER.min_pre_longs);
+        } else {
+            debug_assert_eq!(preamble_longs, Family::BLOOMFILTER.max_pre_longs);
+        }
 
         // Bytes 4-5: num_hashes (u16)
         let num_hashes = cursor

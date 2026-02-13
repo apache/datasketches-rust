@@ -21,7 +21,6 @@ use crate::error::Error;
 ///
 /// A family defines a set of classes that share fundamental algorithms and behaviors. The classes
 /// within a family may still differ by how they are stored and accessed.
-#[allow(dead_code)] // min_pre_longs and max_pre_longs are not used yet
 pub struct Family {
     /// The byte ID for this family.
     pub id: u8,
