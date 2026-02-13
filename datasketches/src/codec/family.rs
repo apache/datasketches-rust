@@ -76,7 +76,7 @@ impl Family {
 
     /// Bloom Filter.
     pub const BLOOMFILTER: Family = Family {
-        id: 24,
+        id: 21,
         name: "BLOOMFILTER",
         min_pre_longs: 3,
         max_pre_longs: 4,
