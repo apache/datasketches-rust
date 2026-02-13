@@ -52,6 +52,7 @@ pub struct CpcSketch {
     // immutable config variables
     lg_k: u8,
     seed: u64,
+    seed_hash: u16,
 
     // sketch state
     /// Part of a speed optimization.
@@ -98,7 +99,7 @@ impl CpcSketch {
     ///
     /// # Panics
     ///
-    /// Panics if `lg_k` is not in the range `[4, 16]`.
+    /// Panics if `lg_k` is not in the range `[4, 16]`, or the computed seed hash is zero.
     pub fn with_seed(lg_k: u8, seed: u64) -> Self {
         assert!(
             (MIN_LG_K..=MAX_LG_K).contains(&lg_k),
@@ -108,6 +109,7 @@ impl CpcSketch {
         Self {
             lg_k,
             seed,
+            seed_hash: compute_seed_hash(seed),
             first_interesting_column: 0,
             num_coupons: 0,
             surprising_value_table: None,
@@ -461,8 +463,8 @@ impl CpcSketch {
             | (if has_table { 1 } else { 0 } << FLAG_HAS_TABLE)
             | (if has_window { 1 } else { 0 } << FLAG_HAS_WINDOW);
         bytes.write_u8(flags);
-        let seed_hash = compute_seed_hash(self.seed);
-        bytes.write_u16_le(seed_hash);
+        debug_assert_eq!(self.seed_hash, compute_seed_hash(self.seed));
+        bytes.write_u16_le(self.seed_hash);
         if !self.is_empty() {
             bytes.write_u32_le(self.num_coupons);
             if has_table && has_window {
@@ -625,6 +627,7 @@ impl CpcSketch {
         Ok(CpcSketch {
             lg_k,
             seed,
+            seed_hash,
             first_interesting_column,
             num_coupons,
             surprising_value_table: Some(uncompressed.table),

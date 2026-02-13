@@ -43,6 +43,7 @@ pub struct CountMinSketch<T: CountMinValue> {
     num_hashes: u8,
     num_buckets: u32,
     seed: u64,
+    seed_hash: u16,
     total_weight: T,
     counts: Vec<T>,
     hash_seeds: Vec<u64>,
@@ -71,8 +72,11 @@ impl<T: CountMinValue> CountMinSketch<T> {
     ///
     /// # Panics
     ///
-    /// Panics if `num_hashes` is 0, `num_buckets` is less than 3, or the
-    /// total table size exceeds the supported limit.
+    /// Panics if any of:
+    /// - `num_hashes` is 0
+    /// - `num_buckets` is less than 3
+    /// - the total table size exceeds the supported limit
+    /// - the computed seed hash is zero
     ///
     /// # Examples
     ///
@@ -281,7 +285,8 @@ impl<T: CountMinValue> CountMinSketch<T> {
 
         bytes.write_u32_le(self.num_buckets);
         bytes.write_u8(self.num_hashes);
-        bytes.write_u16_le(compute_seed_hash(self.seed));
+        debug_assert_eq!(self.seed_hash, compute_seed_hash(self.seed));
+        bytes.write_u16_le(self.seed_hash);
         bytes.write_u8(0);
 
         if self.is_empty() {
@@ -385,11 +390,13 @@ impl<T: CountMinValue> CountMinSketch<T> {
 
     fn make(num_hashes: u8, num_buckets: u32, seed: u64, entries: usize) -> Self {
         let counts = vec![T::ZERO; entries];
+        let seed_hash = compute_seed_hash(seed);
         let hash_seeds = make_hash_seeds(seed, num_hashes);
         CountMinSketch {
             num_hashes,
             num_buckets,
             seed,
+            seed_hash,
             total_weight: T::ZERO,
             counts,
             hash_seeds,
