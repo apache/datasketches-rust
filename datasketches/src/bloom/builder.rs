@@ -15,11 +15,12 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use crate::codec::family::Family;
 use super::BloomFilter;
 use crate::hash::DEFAULT_UPDATE_SEED;
 
-const MIN_NUM_BITS: u64 = 64;
-const MAX_NUM_BITS: u64 = (1u64 << 35) - 64; // ~32 GB - reasonable limit
+const MIN_NUM_BITS: u64 = 1;
+const MAX_NUM_BITS: u64 = (i32::MAX as u64 - Family::BLOOMFILTER.max_pre_longs as u64) * 64;
 
 /// Builder for creating [`BloomFilter`] instances.
 ///
@@ -88,7 +89,7 @@ impl BloomFilterBuilder {
     /// # Panics
     ///
     /// Panics if any of:
-    /// - `num_bits` < MIN_NUM_BITS (64) or `num_bits` > MAX_NUM_BITS (~32 GB)
+    /// - `num_bits` < MIN_NUM_BITS or `num_bits` > MAX_NUM_BITS
     /// - `num_hashes` < 1 or `num_hashes` > 100
     ///
     /// # Examples
