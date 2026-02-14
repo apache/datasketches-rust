@@ -35,10 +35,6 @@
 [actions-badge]: https://github.com/apache/datasketches-rust/workflows/CI/badge.svg
 [actions-url]: https://github.com/apache/datasketches-rust/actions?query=workflow%3ACI
 
-> [!WARNING]
->
-> This repository is under early development. Use it with caution!
-
 This is the core Rust component of the DataSketches library.  It contains a subset of the sketching algorithms and can be accessed directly from user applications.
 
 Note that we have parallel core library components for Java, C++, Python, and Go implementations of many of the same sketch algorithms:
