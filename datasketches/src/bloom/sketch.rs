@@ -449,11 +449,6 @@ impl BloomFilter {
         }
 
         let is_empty = (flags & EMPTY_FLAG_MASK) != 0;
-        if is_empty {
-            debug_assert_eq!(preamble_longs, Family::BLOOMFILTER.min_pre_longs);
-        } else {
-            debug_assert_eq!(preamble_longs, Family::BLOOMFILTER.max_pre_longs);
-        }
 
         // Bytes 4-5: num_hashes (u16)
         let num_hashes = cursor
