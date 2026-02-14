@@ -166,11 +166,20 @@ def generate_cpp_files(workspace_dir, project_root):
     output_dir.mkdir(parents=True, exist_ok=True)
 
     files_copied = 0
-    # Search recursively in build directory for *_cpp.sk
+
+    # Search recursively in build directory for standard C++ compatibility snapshots.
     for file_path in build_dir.rglob("*_cpp.sk"):
-        # Avoid copying from CMakeFiles or other intermediate dirs if possible, but the pattern is specific enough
         shutil.copy2(file_path, output_dir)
         print(f"Copied: {file_path.name}")
+        files_copied += 1
+
+    # Count-Min test binaries are produced as `count_min-*.bin`.
+    # Normalize names to match the repository snapshot convention.
+    for file_path in build_dir.rglob("count_min-*.bin"):
+        base_name = file_path.stem[len("count_min-"):].replace("-", "_")
+        output_name = f"countmin_{base_name}_cpp.sk"
+        shutil.copy2(file_path, output_dir / output_name)
+        print(f"Copied: {output_name} (from {file_path.name})")
         files_copied += 1
 
     if files_copied == 0:

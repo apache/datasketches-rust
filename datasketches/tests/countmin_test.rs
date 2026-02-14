@@ -16,6 +16,9 @@
 // under the License.
 
 use datasketches::countmin::CountMinSketch;
+use googletest::assert_that;
+use googletest::prelude::ge;
+use googletest::prelude::le;
 
 #[test]
 fn test_init_defaults() {
@@ -41,7 +44,7 @@ fn test_parameter_suggestions() {
 
     let buckets = CountMinSketch::<i64>::suggest_num_buckets(0.1);
     let sketch = CountMinSketch::<i64>::new(3, buckets);
-    assert!(sketch.relative_error() <= 0.1);
+    assert_that!(sketch.relative_error(), le(0.1));
 }
 
 #[test]
@@ -54,8 +57,8 @@ fn test_update_and_bounds() {
     let estimate = sketch.estimate("x");
     let upper = sketch.upper_bound("x");
     let lower = sketch.lower_bound("x");
-    assert!(lower <= estimate);
-    assert!(estimate <= upper);
+    assert_that!(estimate, ge(lower));
+    assert_that!(estimate, le(upper));
 }
 
 #[test]
@@ -67,8 +70,8 @@ fn test_update_and_bounds_with_scaling() {
     let upper = sketch.upper_bound("x");
     let lower = sketch.lower_bound("x");
     assert_eq!(estimate, 10);
-    assert!(lower <= estimate);
-    assert!(estimate <= upper);
+    assert_that!(estimate, ge(lower));
+    assert_that!(estimate, le(upper));
 
     let eps = sketch.relative_error();
 
@@ -78,8 +81,8 @@ fn test_update_and_bounds_with_scaling() {
     let lower = sketch.lower_bound("x");
     assert_eq!(sketch.total_weight(), 5);
     assert_eq!(estimate, 5);
-    assert!(lower <= estimate);
-    assert!(estimate <= upper);
+    assert_that!(estimate, ge(lower));
+    assert_that!(estimate, le(upper));
     assert_eq!(
         upper,
         estimate + (eps * sketch.total_weight() as f64) as u64
@@ -91,8 +94,8 @@ fn test_update_and_bounds_with_scaling() {
     let lower = sketch.lower_bound("x");
     assert_eq!(sketch.total_weight(), 2);
     assert_eq!(estimate, 2);
-    assert!(lower <= estimate);
-    assert!(estimate <= upper);
+    assert_that!(estimate, ge(lower));
+    assert_that!(estimate, le(upper));
     assert_eq!(
         upper,
         estimate + (eps * sketch.total_weight() as f64) as u64
@@ -122,13 +125,13 @@ fn test_halve() {
     }
 
     for i in 0..1000usize {
-        assert!(sketch.estimate(i as u64) >= i as u64);
+        assert_that!(sketch.estimate(i as u64), ge(i as u64));
     }
 
     sketch.halve();
 
     for i in 0..1000usize {
-        assert!(sketch.estimate(i as u64) >= (i as u64) / 2);
+        assert_that!(sketch.estimate(i as u64), ge((i as u64) / 2));
     }
 }
 
@@ -145,7 +148,7 @@ fn test_decay() {
     }
 
     for i in 0..1000usize {
-        assert!(sketch.estimate(i as u64) >= i as u64);
+        assert_that!(sketch.estimate(i as u64), ge(i as u64));
     }
 
     const FACTOR: f64 = 0.5;
@@ -153,7 +156,7 @@ fn test_decay() {
 
     for i in 0..1000usize {
         let expected = ((i as f64) * FACTOR).floor() as u64;
-        assert!(sketch.estimate(i as u64) >= expected);
+        assert_that!(sketch.estimate(i as u64), ge(expected));
     }
 }
 
@@ -170,8 +173,8 @@ fn test_merge() {
     }
     left.merge(&right);
     assert_eq!(left.total_weight(), 18);
-    assert!(left.estimate("a") >= 14);
-    assert!(left.estimate("b") >= 4);
+    assert_that!(left.estimate("a"), ge(14));
+    assert_that!(left.estimate("b"), ge(4));
 }
 
 #[test]
@@ -245,6 +248,6 @@ fn test_increment_multi_like_rust_count_min_sketch() {
         sketch.update(i % 100);
     }
     for key in 0..100u64 {
-        assert!(sketch.estimate(key) >= 9_000);
+        assert_that!(sketch.estimate(key), ge(9_000));
     }
 }
