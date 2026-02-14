@@ -296,6 +296,44 @@ impl ThetaHashTable {
         self.lg_nom_size
     }
 
+    /// Get the hash seed
+    pub fn seed(&self) -> u64 {
+        self.hash_seed
+    }
+
+    /// Create a hash table from deserialized entries
+    ///
+    /// This is used during deserialization to reconstruct the hash table.
+    pub fn from_entries(lg_nom_size: u8, seed: u64, theta: u64, entries: Vec<u64>) -> Self {
+        let lg_max_size = lg_nom_size + 1;
+        let lg_cur_size = lg_max_size; // Use max size for deserialized tables
+        let num_entries = entries.len();
+
+        // Rebuild hash table from compact entries
+        let table_size = 1usize << lg_cur_size;
+        let mut table_entries = vec![0u64; table_size];
+
+        for entry in &entries {
+            if *entry != 0 {
+                if let Some(idx) = Self::find_in_entries(&table_entries, *entry, lg_cur_size) {
+                    table_entries[idx] = *entry;
+                }
+            }
+        }
+
+        Self {
+            lg_cur_size,
+            lg_nom_size,
+            lg_max_size,
+            resize_factor: ResizeFactor::X8, // Default for deserialized
+            sampling_probability: 1.0,       // Unknown, assume 1.0
+            theta,
+            hash_seed: seed,
+            entries: table_entries,
+            num_entries,
+        }
+    }
+
     /// Get stride for hash table probing
     fn get_stride(key: u64, lg_size: u8) -> usize {
         (2 * ((key >> (lg_size)) & STRIDE_MASK) + 1) as usize

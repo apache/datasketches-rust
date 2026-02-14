@@ -22,16 +22,31 @@
 
 use std::hash::Hash;
 
+use crate::codec::SketchBytes;
+use crate::codec::SketchSlice;
 use crate::common::NumStdDev;
 use crate::common::ResizeFactor;
 use crate::common::binomial_bounds;
 use crate::common::canonical_double;
+use crate::error::Error;
+use crate::error::ErrorKind;
 use crate::hash::DEFAULT_UPDATE_SEED;
+use crate::hash::compute_seed_hash;
 use crate::theta::hash_table::DEFAULT_LG_K;
 use crate::theta::hash_table::MAX_LG_K;
 use crate::theta::hash_table::MAX_THETA;
 use crate::theta::hash_table::MIN_LG_K;
 use crate::theta::hash_table::ThetaHashTable;
+use crate::theta::serialization::FLAG_IS_COMPACT;
+use crate::theta::serialization::FLAG_IS_EMPTY;
+use crate::theta::serialization::FLAG_IS_ORDERED;
+use crate::theta::serialization::FLAG_IS_READ_ONLY;
+use crate::theta::serialization::HASH_SIZE_BYTES;
+use crate::theta::serialization::PREAMBLE_LONGS_EMPTY;
+use crate::theta::serialization::PREAMBLE_LONGS_ESTIMATION;
+use crate::theta::serialization::PREAMBLE_LONGS_EXACT;
+use crate::theta::serialization::SERIAL_VERSION;
+use crate::theta::serialization::THETA_FAMILY_ID;
 
 /// Mutable theta sketch for building from input data
 #[derive(Debug)]
@@ -247,6 +262,199 @@ impl ThetaSketch {
             self.is_empty(),
         )
         .expect("theta should always be valid")
+    }
+
+    /// Serialize the sketch to bytes in compact format.
+    ///
+    /// The serialized format is compatible with Java and C++ DataSketches
+    /// implementations.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use datasketches::theta::ThetaSketch;
+    /// let mut sketch = ThetaSketch::builder().build();
+    /// sketch.update("apple");
+    /// let bytes = sketch.serialize();
+    /// let restored = ThetaSketch::deserialize(&bytes).unwrap();
+    /// assert_eq!(sketch.estimate(), restored.estimate());
+    /// ```
+    pub fn serialize(&self) -> Vec<u8> {
+        // Determine preamble size based on state
+        let is_empty = self.is_empty();
+        let is_estimation_mode = self.is_estimation_mode();
+
+        let preamble_longs = if is_empty {
+            PREAMBLE_LONGS_EMPTY
+        } else if is_estimation_mode {
+            PREAMBLE_LONGS_ESTIMATION
+        } else {
+            PREAMBLE_LONGS_EXACT
+        };
+
+        let num_entries = self.num_retained();
+        let preamble_bytes = (preamble_longs as usize) * 8;
+        let data_bytes = num_entries * HASH_SIZE_BYTES;
+        let total_bytes = preamble_bytes + data_bytes;
+
+        let mut bytes = SketchBytes::with_capacity(total_bytes);
+
+        // Build flags byte
+        let mut flags: u8 = FLAG_IS_COMPACT | FLAG_IS_READ_ONLY | FLAG_IS_ORDERED;
+        if is_empty {
+            flags |= FLAG_IS_EMPTY;
+        }
+
+        // Write preamble (first 8 bytes always present)
+        bytes.write_u8(preamble_longs);
+        bytes.write_u8(SERIAL_VERSION);
+        bytes.write_u8(THETA_FAMILY_ID);
+        bytes.write_u8(self.lg_k());
+        bytes.write_u8(self.lg_k()); // lgArr = lgK for compact
+        bytes.write_u8(flags);
+        bytes.write_u16_le(compute_seed_hash(self.table.seed()));
+
+        // Write second 8 bytes if not empty (retained count + padding)
+        if !is_empty {
+            bytes.write_u32_le(num_entries as u32);
+            bytes.write_u32_le(0); // padding (p field, unused in compact)
+        }
+
+        // Write theta if in estimation mode
+        if is_estimation_mode {
+            bytes.write_u64_le(self.table.theta());
+        }
+
+        // Write sorted hash values
+        let mut entries: Vec<u64> = self.iter().collect();
+        entries.sort_unstable();
+        for entry in entries {
+            bytes.write_u64_le(entry);
+        }
+
+        bytes.into_bytes()
+    }
+
+    /// Deserialize a sketch from bytes.
+    ///
+    /// Uses the default seed (9001). For sketches created with a different seed,
+    /// use [`deserialize_with_seed`](Self::deserialize_with_seed).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the bytes are invalid or corrupted.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use datasketches::theta::ThetaSketch;
+    /// let mut sketch = ThetaSketch::builder().build();
+    /// sketch.update("apple");
+    /// let bytes = sketch.serialize();
+    /// let restored = ThetaSketch::deserialize(&bytes).unwrap();
+    /// assert_eq!(sketch.estimate(), restored.estimate());
+    /// ```
+    pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
+        Self::deserialize_with_seed(bytes, DEFAULT_UPDATE_SEED)
+    }
+
+    /// Deserialize a sketch from bytes with a specific seed.
+    ///
+    /// # Arguments
+    ///
+    /// * `bytes` - The serialized sketch bytes
+    /// * `seed` - The seed used during sketch creation
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The bytes are too short
+    /// - The format is invalid (wrong family ID, unsupported version)
+    /// - The seed hash doesn't match
+    pub fn deserialize_with_seed(bytes: &[u8], seed: u64) -> Result<Self, Error> {
+        fn make_error(tag: &'static str) -> impl FnOnce(std::io::Error) -> Error {
+            move |_| Error::insufficient_data(tag)
+        }
+
+        if bytes.len() < 8 {
+            return Err(Error::insufficient_data("preamble"));
+        }
+
+        let mut cursor = SketchSlice::new(bytes);
+
+        // Read first 8 bytes (always present)
+        let preamble_longs = cursor.read_u8().map_err(make_error("preamble_longs"))?;
+        let serial_version = cursor.read_u8().map_err(make_error("serial_version"))?;
+        let family_id = cursor.read_u8().map_err(make_error("family_id"))?;
+        let lg_k = cursor.read_u8().map_err(make_error("lg_k"))?;
+        let _lg_arr = cursor.read_u8().map_err(make_error("lg_arr"))?;
+        let flags = cursor.read_u8().map_err(make_error("flags"))?;
+        let stored_seed_hash = cursor.read_u16_le().map_err(make_error("seed_hash"))?;
+
+        // Validate format
+        if family_id != THETA_FAMILY_ID {
+            return Err(Error::invalid_family(
+                THETA_FAMILY_ID,
+                family_id,
+                "ThetaSketch",
+            ));
+        }
+        if serial_version != SERIAL_VERSION && serial_version != 1 && serial_version != 2 {
+            return Err(Error::unsupported_serial_version(
+                SERIAL_VERSION,
+                serial_version,
+            ));
+        }
+        if !(MIN_LG_K..=MAX_LG_K).contains(&lg_k) {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                format!("lg_k {} is out of range [{}, {}]", lg_k, MIN_LG_K, MAX_LG_K),
+            ));
+        }
+
+        // Validate seed hash
+        let expected_seed_hash = compute_seed_hash(seed);
+        if stored_seed_hash != expected_seed_hash {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                format!(
+                    "seed hash mismatch: expected 0x{:04X}, got 0x{:04X}",
+                    expected_seed_hash, stored_seed_hash
+                ),
+            ));
+        }
+
+        // Parse flags
+        let is_empty = (flags & FLAG_IS_EMPTY) != 0;
+        let _is_compact = (flags & FLAG_IS_COMPACT) != 0;
+
+        // Handle empty sketch
+        if is_empty {
+            return Ok(ThetaSketch::builder().lg_k(lg_k).seed(seed).build());
+        }
+
+        // Read retained count (bytes 8-11)
+        let num_entries = cursor.read_u32_le().map_err(make_error("num_entries"))? as usize;
+        let _padding = cursor.read_u32_le().map_err(make_error("padding"))?;
+
+        // Read theta if in estimation mode (preamble_longs >= 3)
+        let theta = if preamble_longs >= PREAMBLE_LONGS_ESTIMATION {
+            cursor.read_u64_le().map_err(make_error("theta"))?
+        } else {
+            MAX_THETA
+        };
+
+        // Read hash entries
+        let mut entries = Vec::with_capacity(num_entries);
+        for _ in 0..num_entries {
+            let hash = cursor.read_u64_le().map_err(make_error("hash_entry"))?;
+            entries.push(hash);
+        }
+
+        // Reconstruct the hash table
+        let table = ThetaHashTable::from_entries(lg_k, seed, theta, entries);
+
+        Ok(ThetaSketch { table })
     }
 }
 
