@@ -26,7 +26,9 @@ use crate::common::NumStdDev;
 use crate::common::ResizeFactor;
 use crate::common::binomial_bounds;
 use crate::common::canonical_double;
+use crate::error::Error;
 use crate::hash::DEFAULT_UPDATE_SEED;
+use crate::theta::compact::CompactThetaSketch;
 use crate::theta::hash_table::DEFAULT_LG_K;
 use crate::theta::hash_table::MAX_LG_K;
 use crate::theta::hash_table::MAX_THETA;
@@ -247,6 +249,92 @@ impl ThetaSketch {
             self.is_empty(),
         )
         .expect("theta should always be valid")
+    }
+
+    /// Convert to a compact, immutable form suitable for serialization.
+    ///
+    /// The compact form stores only the sorted hash values and theta,
+    /// making it smaller and suitable for storage or transmission.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::theta::ThetaSketch;
+    ///
+    /// let mut sketch = ThetaSketch::builder().build();
+    /// sketch.update("apple");
+    /// sketch.update("banana");
+    ///
+    /// let compact = sketch.compact();
+    /// assert_eq!(compact.num_retained(), sketch.num_retained());
+    /// assert_eq!(compact.estimate(), sketch.estimate());
+    /// ```
+    pub fn compact(&self) -> CompactThetaSketch {
+        let mut entries: Vec<u64> = self.table.iter().collect();
+        entries.sort_unstable();
+
+        CompactThetaSketch::new(
+            self.table.theta(),
+            entries,
+            self.table.seed_hash(),
+            self.is_empty(),
+        )
+    }
+
+    /// Serialize the sketch to bytes in compact format.
+    ///
+    /// This is equivalent to calling `self.compact().serialize()`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::theta::ThetaSketch;
+    ///
+    /// let mut sketch = ThetaSketch::builder().build();
+    /// sketch.update("test");
+    /// let bytes = sketch.serialize();
+    /// assert!(!bytes.is_empty());
+    /// ```
+    pub fn serialize(&self) -> Vec<u8> {
+        self.compact().serialize()
+    }
+
+    /// Deserialize a compact sketch from bytes.
+    ///
+    /// Returns a [`CompactThetaSketch`] since the serialized form is immutable.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::theta::ThetaSketch;
+    ///
+    /// let mut sketch = ThetaSketch::builder().build();
+    /// sketch.update("test");
+    /// let bytes = sketch.serialize();
+    ///
+    /// let restored = ThetaSketch::deserialize(&bytes).unwrap();
+    /// assert_eq!(sketch.estimate(), restored.estimate());
+    /// ```
+    pub fn deserialize(bytes: &[u8]) -> Result<CompactThetaSketch, Error> {
+        CompactThetaSketch::deserialize(bytes)
+    }
+
+    /// Deserialize a compact sketch from bytes with a specific seed.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::theta::ThetaSketch;
+    ///
+    /// let mut sketch = ThetaSketch::builder().seed(12345).build();
+    /// sketch.update("test");
+    /// let bytes = sketch.serialize();
+    ///
+    /// let restored = ThetaSketch::deserialize_with_seed(&bytes, 12345).unwrap();
+    /// assert_eq!(sketch.estimate(), restored.estimate());
+    /// ```
+    pub fn deserialize_with_seed(bytes: &[u8], seed: u64) -> Result<CompactThetaSketch, Error> {
+        CompactThetaSketch::deserialize_with_seed(bytes, seed)
     }
 }
 

@@ -19,6 +19,7 @@ use std::hash::Hash;
 
 use crate::common::ResizeFactor;
 use crate::hash::MurmurHash3X64128;
+use crate::hash::compute_seed_hash;
 
 /// Maximum theta value (signed max for compatibility with Java)
 pub const MAX_THETA: u64 = i64::MAX as u64;
@@ -59,6 +60,7 @@ pub(crate) struct ThetaHashTable {
     resize_factor: ResizeFactor,
     sampling_probability: f32,
     hash_seed: u64,
+    seed_hash: u16,
 
     theta: u64,
 
@@ -87,6 +89,7 @@ impl ThetaHashTable {
             sampling_probability,
             theta: starting_theta_from_sampling_probability(sampling_probability),
             hash_seed,
+            seed_hash: compute_seed_hash(hash_seed),
             entries,
             num_entries: 0,
         }
@@ -294,6 +297,11 @@ impl ThetaHashTable {
     /// Get log2 of nominal size
     pub fn lg_nom_size(&self) -> u8 {
         self.lg_nom_size
+    }
+
+    /// Get seed hash
+    pub fn seed_hash(&self) -> u16 {
+        self.seed_hash
     }
 
     /// Get stride for hash table probing

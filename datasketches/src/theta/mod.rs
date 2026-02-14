@@ -28,6 +28,7 @@
 //! configurable accuracy and memory usage. The implementation supports:
 //!
 //! - **ThetaSketch**: Mutable sketch for building from input data
+//! - **CompactThetaSketch**: Immutable sketch for serialization and set operations
 //!
 //! # Usage
 //!
@@ -37,9 +38,30 @@
 //! sketch.update("apple");
 //! assert!(sketch.estimate() >= 1.0);
 //! ```
+//!
+//! # Serialization
+//!
+//! Theta sketches can be serialized to a compact binary format that is compatible
+//! with the Java and C++ DataSketches implementations:
+//!
+//! ```rust
+//! # use datasketches::theta::{ThetaSketch, CompactThetaSketch};
+//! let mut sketch = ThetaSketch::builder().build();
+//! sketch.update("apple");
+//!
+//! // Serialize to bytes
+//! let bytes = sketch.serialize();
+//!
+//! // Deserialize
+//! let restored = CompactThetaSketch::deserialize(&bytes).unwrap();
+//! assert_eq!(sketch.estimate(), restored.estimate());
+//! ```
 
+mod compact;
 mod hash_table;
+mod serialization;
 mod sketch;
 
+pub use self::compact::CompactThetaSketch;
 pub use self::sketch::ThetaSketch;
 pub use self::sketch::ThetaSketchBuilder;
