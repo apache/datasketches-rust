@@ -89,7 +89,7 @@ impl TDigestMut {
     ///
     /// # Errors
     ///
-    /// If k is less than 10, returns [`ErrorKind::InvalidArgument`].
+    /// If k is less than 10.
     ///
     /// # Examples
     ///

@@ -23,7 +23,7 @@
 //!
 //! Currently, this module contains tables for common lg_k values (4-12). The full C++
 //! implementation has tables for lg_k 4-21. Additional tables can be found at:
-//! https://github.com/apache/datasketches-cpp/blob/5a055521/hll/include/CompositeInterpolationXTable-internal.hpp
+//! <https://github.com/apache/datasketches-cpp/blob/5a055521/hll/include/CompositeInterpolationXTable-internal.hpp>
 
 const NUM_X_VALUES: usize = 257;
 
