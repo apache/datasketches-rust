@@ -19,11 +19,6 @@ use super::BloomFilter;
 use crate::codec::family::Family;
 use crate::hash::DEFAULT_UPDATE_SEED;
 
-pub const MIN_NUM_BITS: u64 = 1;
-pub const MAX_NUM_BITS: u64 = (i32::MAX as u64 - Family::BLOOMFILTER.max_pre_longs as u64) * 64;
-pub const MIN_NUM_HASHES: u16 = 1;
-pub const MAX_NUM_HASHES: u16 = i16::MAX as u16;
-
 /// Builder for creating [`BloomFilter`] instances.
 ///
 /// Provides two construction modes:
@@ -38,6 +33,18 @@ pub struct BloomFilterBuilder {
 }
 
 impl BloomFilterBuilder {
+    /// Minimum allowed requested Bloom filter size, in bits.
+    pub const MIN_NUM_BITS: u64 = 1;
+    /// Maximum allowed requested Bloom filter size, in bits.
+    ///
+    /// Derived from serialization limits so the encoded sketch length fits in a signed 32-bit size
+    /// field.
+    pub const MAX_NUM_BITS: u64 = (i32::MAX as u64 - Family::BLOOMFILTER.max_pre_longs as u64) * 64;
+    /// Minimum allowed number of hash functions.
+    pub const MIN_NUM_HASHES: u16 = 1;
+    /// Maximum allowed number of hash functions.
+    pub const MAX_NUM_HASHES: u16 = i16::MAX as u16;
+
     /// Creates a builder with optimal parameters for a target accuracy.
     ///
     /// Automatically calculates the optimal number of bits and hash functions
@@ -94,8 +101,8 @@ impl BloomFilterBuilder {
     /// # Panics
     ///
     /// Panics if any of:
-    /// - `num_bits` < MIN_NUM_BITS or `num_bits` > MAX_NUM_BITS
-    /// - `num_hashes` < MIN_NUM_HASHES or `num_hashes` > MIN_NUM_HASHES
+    /// - `num_bits` < [`Self::MIN_NUM_BITS`] or `num_bits` > [`Self::MAX_NUM_BITS`]
+    /// - `num_hashes` < [`Self::MIN_NUM_HASHES`] or `num_hashes` > [`Self::MIN_NUM_HASHES`]
     ///
     /// # Examples
     ///
@@ -105,24 +112,18 @@ impl BloomFilterBuilder {
     /// ```
     pub fn with_size(num_bits: u64, num_hashes: u16) -> Self {
         assert!(
-            num_bits >= MIN_NUM_BITS,
-            "num_bits must be at least {}",
-            MIN_NUM_BITS
+            (Self::MIN_NUM_BITS..=Self::MAX_NUM_BITS).contains(&num_bits),
+            "num_bits must be between {} and {}, got {}",
+            Self::MIN_NUM_BITS,
+            Self::MAX_NUM_BITS,
+            num_bits,
         );
         assert!(
-            num_bits <= MAX_NUM_BITS,
-            "num_bits must not exceed {}",
-            MAX_NUM_BITS
-        );
-        assert!(
-            num_hashes >= MIN_NUM_HASHES,
-            "num_hashes must be at least {}",
-            MIN_NUM_HASHES
-        );
-        assert!(
-            num_hashes <= MAX_NUM_HASHES,
-            "num_hashes must not exceed {}",
-            MAX_NUM_HASHES
+            (Self::MIN_NUM_HASHES..=Self::MAX_NUM_HASHES).contains(&num_hashes),
+            "num_bits must be between {} and {}, got {}",
+            Self::MIN_NUM_HASHES,
+            Self::MAX_NUM_HASHES,
+            num_hashes
         );
 
         BloomFilterBuilder {
@@ -186,7 +187,7 @@ impl BloomFilterBuilder {
 
         let bits = (-n * p.ln() / ln2_squared).ceil() as u64;
 
-        bits.clamp(MIN_NUM_BITS, MAX_NUM_BITS)
+        bits.clamp(Self::MIN_NUM_BITS, Self::MAX_NUM_BITS)
     }
 
     /// Suggests optimal number of hash functions given max items and bit count.
@@ -207,7 +208,10 @@ impl BloomFilterBuilder {
 
         // Ceil to avoid selecting too few hashes.
         let k = (m / n * std::f64::consts::LN_2).ceil();
-        k.clamp(f64::from(MIN_NUM_HASHES), f64::from(MAX_NUM_HASHES)) as u16
+        k.clamp(
+            f64::from(Self::MIN_NUM_HASHES),
+            f64::from(Self::MAX_NUM_HASHES),
+        ) as u16
     }
 
     /// Suggests optimal number of hash functions from target FPP.
@@ -225,7 +229,9 @@ impl BloomFilterBuilder {
     pub fn suggest_num_hashes_from_fpp(fpp: f64) -> u16 {
         // Ceil to avoid selecting too few hashes.
         let k = -fpp.log2();
-        k.ceil()
-            .clamp(f64::from(MIN_NUM_HASHES), f64::from(MAX_NUM_HASHES)) as u16
+        k.ceil().clamp(
+            f64::from(Self::MIN_NUM_HASHES),
+            f64::from(Self::MAX_NUM_HASHES),
+        ) as u16
     }
 }
