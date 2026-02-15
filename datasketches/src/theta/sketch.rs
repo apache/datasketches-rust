@@ -24,6 +24,7 @@ use std::hash::Hash;
 
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
+use crate::codec::family::Family;
 use crate::common::NumStdDev;
 use crate::common::ResizeFactor;
 use crate::common::binomial_bounds;
@@ -431,7 +432,7 @@ impl CompactThetaSketch {
         let pre_longs = self.preamble_longs(false);
         bytes.write_u8(pre_longs);
         bytes.write_u8(serialization::UNCOMPRESSED_SERIAL_VERSION);
-        bytes.write_u8(serialization::THETA_FAMILY_ID);
+        bytes.write_u8(Family::THETA.id);
         bytes.write_u16_be(0); // unused for compact
 
         let mut flags = 0u8;
@@ -473,7 +474,7 @@ impl CompactThetaSketch {
 
         bytes.write_u8(pre_longs);
         bytes.write_u8(serialization::COMPRESSED_SERIAL_VERSION);
-        bytes.write_u8(serialization::THETA_FAMILY_ID);
+        bytes.write_u8(Family::THETA.id);
         bytes.write_u8(entry_bits);
         bytes.write_u8(num_entries_bytes);
 
@@ -564,12 +565,16 @@ impl CompactThetaSketch {
         let ser_ver = cursor.read_u8().map_err(make_error("serial_version"))?;
         let family_id = cursor.read_u8().map_err(make_error("family_id"))?;
 
-        if family_id != serialization::THETA_FAMILY_ID {
-            return Err(Error::invalid_family(
-                serialization::THETA_FAMILY_ID,
-                family_id,
-                "CompactThetaSketch",
-            ));
+        Family::THETA.validate_id(family_id)?;
+
+        // Validate pre_longs is within valid range for Theta sketch
+        if !(Family::THETA.min_pre_longs..=Family::THETA.max_pre_longs).contains(&pre_longs) {
+            return Err(Error::deserial(format!(
+                "invalid preamble longs: expected [{}, {}], got {}",
+                Family::THETA.min_pre_longs,
+                Family::THETA.max_pre_longs,
+                pre_longs,
+            )));
         }
 
         match ser_ver {

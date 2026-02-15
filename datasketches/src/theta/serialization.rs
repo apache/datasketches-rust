@@ -19,7 +19,6 @@
 
 pub(crate) const UNCOMPRESSED_SERIAL_VERSION: u8 = 3;
 pub(crate) const COMPRESSED_SERIAL_VERSION: u8 = 4;
-pub(crate) const THETA_FAMILY_ID: u8 = 3;
 
 pub(crate) const FLAGS_IS_READ_ONLY: u8 = 1 << 1;
 pub(crate) const FLAGS_IS_EMPTY: u8 = 1 << 2;
