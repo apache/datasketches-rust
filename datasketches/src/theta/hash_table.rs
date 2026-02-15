@@ -296,7 +296,8 @@ impl ThetaHashTable {
         self.lg_nom_size
     }
 
-    pub(crate) fn hash_seed(&self) -> u64 {
+    /// Get hash seed
+    pub fn hash_seed(&self) -> u64 {
         self.hash_seed
     }
 
