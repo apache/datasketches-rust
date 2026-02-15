@@ -375,7 +375,7 @@ impl CompactThetaSketch {
             return self.num_retained() as f64;
         }
         binomial_bounds::lower_bound(self.num_retained() as u64, self.theta(), num_std_dev)
-            .expect("theta should always be valid")
+            .expect("compact theta should always be valid")
     }
 
     /// Returns the approximate upper error bound given the specified number of Standard Deviations.
@@ -389,7 +389,7 @@ impl CompactThetaSketch {
             num_std_dev,
             self.is_empty(),
         )
-        .expect("theta should always be valid")
+        .expect("compact theta should always be valid")
     }
 
     fn preamble_longs(&self, compressed: bool) -> u8 {
