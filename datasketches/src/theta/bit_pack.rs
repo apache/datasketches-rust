@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-const BLOCK_WIDTH: usize = 8;
+pub(crate) const BLOCK_WIDTH: usize = 8;
 
 #[inline]
 fn low_bit_to_byte_mask(bits: u8) -> u8 {
@@ -159,8 +159,6 @@ impl<'a> BitUnpacker<'a> {
 
 #[inline]
 fn pack_bits_1(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(!bytes.is_empty());
     bytes[0] = ((((values[0]) & 0x1) << 7)
         | (((values[1]) & 0x1) << 6)
         | (((values[2]) & 0x1) << 5)
@@ -173,8 +171,6 @@ fn pack_bits_1(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn pack_bits_2(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 2);
     bytes[0] = ((((values[0]) & 0x3) << 6)
         | (((values[1]) & 0x3) << 4)
         | (((values[2]) & 0x3) << 2)
@@ -187,8 +183,6 @@ fn pack_bits_2(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn pack_bits_3(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 3);
     bytes[0] =
         ((((values[0]) & 0x7) << 5) | (((values[1]) & 0x7) << 2) | ((values[2] >> 1) & 0x3)) as u8;
     bytes[1] = ((((values[2]) & 0x1) << 7)
@@ -201,8 +195,6 @@ fn pack_bits_3(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn pack_bits_4(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 4);
     bytes[0] = ((((values[0]) & 0xf) << 4) | ((values[1]) & 0xf)) as u8;
     bytes[1] = ((((values[2]) & 0xf) << 4) | ((values[3]) & 0xf)) as u8;
     bytes[2] = ((((values[4]) & 0xf) << 4) | ((values[5]) & 0xf)) as u8;
@@ -211,8 +203,6 @@ fn pack_bits_4(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn pack_bits_5(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 5);
     bytes[0] = ((((values[0]) & 0x1f) << 3) | ((values[1] >> 2) & 0x7)) as u8;
     bytes[1] =
         ((((values[1]) & 0x3) << 6) | (((values[2]) & 0x1f) << 1) | ((values[3] >> 4) & 0x1)) as u8;
@@ -224,8 +214,6 @@ fn pack_bits_5(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn pack_bits_6(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 6);
     bytes[0] = ((((values[0]) & 0x3f) << 2) | ((values[1] >> 4) & 0x3)) as u8;
     bytes[1] = ((((values[1]) & 0xf) << 4) | ((values[2] >> 2) & 0xf)) as u8;
     bytes[2] = ((((values[2]) & 0x3) << 6) | ((values[3]) & 0x3f)) as u8;
@@ -236,8 +224,6 @@ fn pack_bits_6(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn pack_bits_7(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 7);
     bytes[0] = ((((values[0]) & 0x7f) << 1) | ((values[1] >> 6) & 0x1)) as u8;
     bytes[1] = ((((values[1]) & 0x3f) << 2) | ((values[2] >> 5) & 0x3)) as u8;
     bytes[2] = ((((values[2]) & 0x1f) << 3) | ((values[3] >> 4) & 0x7)) as u8;
@@ -249,8 +235,6 @@ fn pack_bits_7(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn pack_bits_8(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 8);
     bytes[0] = ((values[0]) & 0xff) as u8;
     bytes[1] = ((values[1]) & 0xff) as u8;
     bytes[2] = ((values[2]) & 0xff) as u8;
@@ -263,8 +247,6 @@ fn pack_bits_8(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn pack_bits_9(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 9);
     bytes[0] = ((values[0] >> 1) & 0xff) as u8;
     bytes[1] = ((((values[0]) & 0x1) << 7) | ((values[1] >> 2) & 0x7f)) as u8;
     bytes[2] = ((((values[1]) & 0x3) << 6) | ((values[2] >> 3) & 0x3f)) as u8;
@@ -278,8 +260,6 @@ fn pack_bits_9(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn pack_bits_10(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 10);
     bytes[0] = ((values[0] >> 2) & 0xff) as u8;
     bytes[1] = ((((values[0]) & 0x3) << 6) | ((values[1] >> 4) & 0x3f)) as u8;
     bytes[2] = ((((values[1]) & 0xf) << 4) | ((values[2] >> 6) & 0xf)) as u8;
@@ -294,8 +274,6 @@ fn pack_bits_10(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn pack_bits_11(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 11);
     bytes[0] = ((values[0] >> 3) & 0xff) as u8;
     bytes[1] = ((((values[0]) & 0x7) << 5) | ((values[1] >> 6) & 0x1f)) as u8;
     bytes[2] = ((((values[1]) & 0x3f) << 2) | ((values[2] >> 9) & 0x3)) as u8;
@@ -311,8 +289,6 @@ fn pack_bits_11(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn pack_bits_12(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 12);
     bytes[0] = ((values[0] >> 4) & 0xff) as u8;
     bytes[1] = ((((values[0]) & 0xf) << 4) | ((values[1] >> 8) & 0xf)) as u8;
     bytes[2] = ((values[1]) & 0xff) as u8;
@@ -329,8 +305,6 @@ fn pack_bits_12(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn pack_bits_13(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 13);
     bytes[0] = ((values[0] >> 5) & 0xff) as u8;
     bytes[1] = ((((values[0]) & 0x1f) << 3) | ((values[1] >> 10) & 0x7)) as u8;
     bytes[2] = ((values[1] >> 2) & 0xff) as u8;
@@ -348,8 +322,6 @@ fn pack_bits_13(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn pack_bits_14(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 14);
     bytes[0] = ((values[0] >> 6) & 0xff) as u8;
     bytes[1] = ((((values[0]) & 0x3f) << 2) | ((values[1] >> 12) & 0x3)) as u8;
     bytes[2] = ((values[1] >> 4) & 0xff) as u8;
@@ -368,8 +340,6 @@ fn pack_bits_14(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn pack_bits_15(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 15);
     bytes[0] = ((values[0] >> 7) & 0xff) as u8;
     bytes[1] = ((((values[0]) & 0x7f) << 1) | ((values[1] >> 14) & 0x1)) as u8;
     bytes[2] = ((values[1] >> 6) & 0xff) as u8;
@@ -389,8 +359,6 @@ fn pack_bits_15(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn pack_bits_16(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 16);
     bytes[0] = ((values[0] >> 8) & 0xff) as u8;
     bytes[1] = ((values[0]) & 0xff) as u8;
     bytes[2] = ((values[1] >> 8) & 0xff) as u8;
@@ -411,8 +379,6 @@ fn pack_bits_16(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn pack_bits_17(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 17);
     bytes[0] = ((values[0] >> 9) & 0xff) as u8;
     bytes[1] = ((values[0] >> 1) & 0xff) as u8;
     bytes[2] = ((((values[0]) & 0x1) << 7) | ((values[1] >> 10) & 0x7f)) as u8;
@@ -434,8 +400,6 @@ fn pack_bits_17(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn pack_bits_18(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 18);
     bytes[0] = ((values[0] >> 10) & 0xff) as u8;
     bytes[1] = ((values[0] >> 2) & 0xff) as u8;
     bytes[2] = ((((values[0]) & 0x3) << 6) | ((values[1] >> 12) & 0x3f)) as u8;
@@ -458,8 +422,6 @@ fn pack_bits_18(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn pack_bits_19(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 19);
     bytes[0] = ((values[0] >> 11) & 0xff) as u8;
     bytes[1] = ((values[0] >> 3) & 0xff) as u8;
     bytes[2] = ((((values[0]) & 0x7) << 5) | ((values[1] >> 14) & 0x1f)) as u8;
@@ -483,8 +445,6 @@ fn pack_bits_19(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn pack_bits_20(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 20);
     bytes[0] = ((values[0] >> 12) & 0xff) as u8;
     bytes[1] = ((values[0] >> 4) & 0xff) as u8;
     bytes[2] = ((((values[0]) & 0xf) << 4) | ((values[1] >> 16) & 0xf)) as u8;
@@ -509,8 +469,6 @@ fn pack_bits_20(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn pack_bits_21(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 21);
     bytes[0] = ((values[0] >> 13) & 0xff) as u8;
     bytes[1] = ((values[0] >> 5) & 0xff) as u8;
     bytes[2] = ((((values[0]) & 0x1f) << 3) | ((values[1] >> 18) & 0x7)) as u8;
@@ -536,8 +494,6 @@ fn pack_bits_21(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn pack_bits_22(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 22);
     bytes[0] = ((values[0] >> 14) & 0xff) as u8;
     bytes[1] = ((values[0] >> 6) & 0xff) as u8;
     bytes[2] = ((((values[0]) & 0x3f) << 2) | ((values[1] >> 20) & 0x3)) as u8;
@@ -564,8 +520,6 @@ fn pack_bits_22(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn pack_bits_23(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 23);
     bytes[0] = ((values[0] >> 15) & 0xff) as u8;
     bytes[1] = ((values[0] >> 7) & 0xff) as u8;
     bytes[2] = ((((values[0]) & 0x7f) << 1) | ((values[1] >> 22) & 0x1)) as u8;
@@ -593,8 +547,6 @@ fn pack_bits_23(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn pack_bits_24(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 24);
     bytes[0] = ((values[0] >> 16) & 0xff) as u8;
     bytes[1] = ((values[0] >> 8) & 0xff) as u8;
     bytes[2] = ((values[0]) & 0xff) as u8;
@@ -623,8 +575,6 @@ fn pack_bits_24(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn pack_bits_25(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 25);
     bytes[0] = ((values[0] >> 17) & 0xff) as u8;
     bytes[1] = ((values[0] >> 9) & 0xff) as u8;
     bytes[2] = ((values[0] >> 1) & 0xff) as u8;
@@ -654,8 +604,6 @@ fn pack_bits_25(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn pack_bits_26(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 26);
     bytes[0] = ((values[0] >> 18) & 0xff) as u8;
     bytes[1] = ((values[0] >> 10) & 0xff) as u8;
     bytes[2] = ((values[0] >> 2) & 0xff) as u8;
@@ -686,8 +634,6 @@ fn pack_bits_26(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn pack_bits_27(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 27);
     bytes[0] = ((values[0] >> 19) & 0xff) as u8;
     bytes[1] = ((values[0] >> 11) & 0xff) as u8;
     bytes[2] = ((values[0] >> 3) & 0xff) as u8;
@@ -719,8 +665,6 @@ fn pack_bits_27(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn pack_bits_28(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 28);
     bytes[0] = ((values[0] >> 20) & 0xff) as u8;
     bytes[1] = ((values[0] >> 12) & 0xff) as u8;
     bytes[2] = ((values[0] >> 4) & 0xff) as u8;
@@ -753,8 +697,6 @@ fn pack_bits_28(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn pack_bits_29(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 29);
     bytes[0] = ((values[0] >> 21) & 0xff) as u8;
     bytes[1] = ((values[0] >> 13) & 0xff) as u8;
     bytes[2] = ((values[0] >> 5) & 0xff) as u8;
@@ -788,8 +730,6 @@ fn pack_bits_29(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn pack_bits_30(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 30);
     bytes[0] = ((values[0] >> 22) & 0xff) as u8;
     bytes[1] = ((values[0] >> 14) & 0xff) as u8;
     bytes[2] = ((values[0] >> 6) & 0xff) as u8;
@@ -824,8 +764,6 @@ fn pack_bits_30(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn pack_bits_31(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 31);
     bytes[0] = ((values[0] >> 23) & 0xff) as u8;
     bytes[1] = ((values[0] >> 15) & 0xff) as u8;
     bytes[2] = ((values[0] >> 7) & 0xff) as u8;
@@ -861,8 +799,6 @@ fn pack_bits_31(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn pack_bits_32(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 32);
     bytes[0] = ((values[0] >> 24) & 0xff) as u8;
     bytes[1] = ((values[0] >> 16) & 0xff) as u8;
     bytes[2] = ((values[0] >> 8) & 0xff) as u8;
@@ -899,8 +835,6 @@ fn pack_bits_32(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn pack_bits_33(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 33);
     bytes[0] = ((values[0] >> 25) & 0xff) as u8;
     bytes[1] = ((values[0] >> 17) & 0xff) as u8;
     bytes[2] = ((values[0] >> 9) & 0xff) as u8;
@@ -938,8 +872,6 @@ fn pack_bits_33(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn pack_bits_34(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 34);
     bytes[0] = ((values[0] >> 26) & 0xff) as u8;
     bytes[1] = ((values[0] >> 18) & 0xff) as u8;
     bytes[2] = ((values[0] >> 10) & 0xff) as u8;
@@ -978,8 +910,6 @@ fn pack_bits_34(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn pack_bits_35(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 35);
     bytes[0] = ((values[0] >> 27) & 0xff) as u8;
     bytes[1] = ((values[0] >> 19) & 0xff) as u8;
     bytes[2] = ((values[0] >> 11) & 0xff) as u8;
@@ -1019,8 +949,6 @@ fn pack_bits_35(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn pack_bits_36(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 36);
     bytes[0] = ((values[0] >> 28) & 0xff) as u8;
     bytes[1] = ((values[0] >> 20) & 0xff) as u8;
     bytes[2] = ((values[0] >> 12) & 0xff) as u8;
@@ -1061,8 +989,6 @@ fn pack_bits_36(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn pack_bits_37(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 37);
     bytes[0] = ((values[0] >> 29) & 0xff) as u8;
     bytes[1] = ((values[0] >> 21) & 0xff) as u8;
     bytes[2] = ((values[0] >> 13) & 0xff) as u8;
@@ -1104,8 +1030,6 @@ fn pack_bits_37(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn pack_bits_38(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 38);
     bytes[0] = ((values[0] >> 30) & 0xff) as u8;
     bytes[1] = ((values[0] >> 22) & 0xff) as u8;
     bytes[2] = ((values[0] >> 14) & 0xff) as u8;
@@ -1148,8 +1072,6 @@ fn pack_bits_38(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn pack_bits_39(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 39);
     bytes[0] = ((values[0] >> 31) & 0xff) as u8;
     bytes[1] = ((values[0] >> 23) & 0xff) as u8;
     bytes[2] = ((values[0] >> 15) & 0xff) as u8;
@@ -1193,8 +1115,6 @@ fn pack_bits_39(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn pack_bits_40(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 40);
     bytes[0] = ((values[0] >> 32) & 0xff) as u8;
     bytes[1] = ((values[0] >> 24) & 0xff) as u8;
     bytes[2] = ((values[0] >> 16) & 0xff) as u8;
@@ -1239,8 +1159,6 @@ fn pack_bits_40(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn pack_bits_41(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 41);
     bytes[0] = ((values[0] >> 33) & 0xff) as u8;
     bytes[1] = ((values[0] >> 25) & 0xff) as u8;
     bytes[2] = ((values[0] >> 17) & 0xff) as u8;
@@ -1286,8 +1204,6 @@ fn pack_bits_41(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn pack_bits_42(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 42);
     bytes[0] = ((values[0] >> 34) & 0xff) as u8;
     bytes[1] = ((values[0] >> 26) & 0xff) as u8;
     bytes[2] = ((values[0] >> 18) & 0xff) as u8;
@@ -1334,8 +1250,6 @@ fn pack_bits_42(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn pack_bits_43(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 43);
     bytes[0] = ((values[0] >> 35) & 0xff) as u8;
     bytes[1] = ((values[0] >> 27) & 0xff) as u8;
     bytes[2] = ((values[0] >> 19) & 0xff) as u8;
@@ -1383,8 +1297,6 @@ fn pack_bits_43(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn pack_bits_44(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 44);
     bytes[0] = ((values[0] >> 36) & 0xff) as u8;
     bytes[1] = ((values[0] >> 28) & 0xff) as u8;
     bytes[2] = ((values[0] >> 20) & 0xff) as u8;
@@ -1433,8 +1345,6 @@ fn pack_bits_44(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn pack_bits_45(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 45);
     bytes[0] = ((values[0] >> 37) & 0xff) as u8;
     bytes[1] = ((values[0] >> 29) & 0xff) as u8;
     bytes[2] = ((values[0] >> 21) & 0xff) as u8;
@@ -1484,8 +1394,6 @@ fn pack_bits_45(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn pack_bits_46(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 46);
     bytes[0] = ((values[0] >> 38) & 0xff) as u8;
     bytes[1] = ((values[0] >> 30) & 0xff) as u8;
     bytes[2] = ((values[0] >> 22) & 0xff) as u8;
@@ -1536,8 +1444,6 @@ fn pack_bits_46(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn pack_bits_47(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 47);
     bytes[0] = ((values[0] >> 39) & 0xff) as u8;
     bytes[1] = ((values[0] >> 31) & 0xff) as u8;
     bytes[2] = ((values[0] >> 23) & 0xff) as u8;
@@ -1589,8 +1495,6 @@ fn pack_bits_47(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn pack_bits_48(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 48);
     bytes[0] = ((values[0] >> 40) & 0xff) as u8;
     bytes[1] = ((values[0] >> 32) & 0xff) as u8;
     bytes[2] = ((values[0] >> 24) & 0xff) as u8;
@@ -1643,8 +1547,6 @@ fn pack_bits_48(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn pack_bits_49(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 49);
     bytes[0] = ((values[0] >> 41) & 0xff) as u8;
     bytes[1] = ((values[0] >> 33) & 0xff) as u8;
     bytes[2] = ((values[0] >> 25) & 0xff) as u8;
@@ -1698,8 +1600,6 @@ fn pack_bits_49(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn pack_bits_50(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 50);
     bytes[0] = ((values[0] >> 42) & 0xff) as u8;
     bytes[1] = ((values[0] >> 34) & 0xff) as u8;
     bytes[2] = ((values[0] >> 26) & 0xff) as u8;
@@ -1754,8 +1654,6 @@ fn pack_bits_50(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn pack_bits_51(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 51);
     bytes[0] = ((values[0] >> 43) & 0xff) as u8;
     bytes[1] = ((values[0] >> 35) & 0xff) as u8;
     bytes[2] = ((values[0] >> 27) & 0xff) as u8;
@@ -1811,8 +1709,6 @@ fn pack_bits_51(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn pack_bits_52(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 52);
     bytes[0] = ((values[0] >> 44) & 0xff) as u8;
     bytes[1] = ((values[0] >> 36) & 0xff) as u8;
     bytes[2] = ((values[0] >> 28) & 0xff) as u8;
@@ -1869,8 +1765,6 @@ fn pack_bits_52(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn pack_bits_53(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 53);
     bytes[0] = ((values[0] >> 45) & 0xff) as u8;
     bytes[1] = ((values[0] >> 37) & 0xff) as u8;
     bytes[2] = ((values[0] >> 29) & 0xff) as u8;
@@ -1928,8 +1822,6 @@ fn pack_bits_53(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn pack_bits_54(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 54);
     bytes[0] = ((values[0] >> 46) & 0xff) as u8;
     bytes[1] = ((values[0] >> 38) & 0xff) as u8;
     bytes[2] = ((values[0] >> 30) & 0xff) as u8;
@@ -1988,8 +1880,6 @@ fn pack_bits_54(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn pack_bits_55(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 55);
     bytes[0] = ((values[0] >> 47) & 0xff) as u8;
     bytes[1] = ((values[0] >> 39) & 0xff) as u8;
     bytes[2] = ((values[0] >> 31) & 0xff) as u8;
@@ -2049,8 +1939,6 @@ fn pack_bits_55(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn pack_bits_56(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 56);
     bytes[0] = ((values[0] >> 48) & 0xff) as u8;
     bytes[1] = ((values[0] >> 40) & 0xff) as u8;
     bytes[2] = ((values[0] >> 32) & 0xff) as u8;
@@ -2111,8 +1999,6 @@ fn pack_bits_56(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn pack_bits_57(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 57);
     bytes[0] = ((values[0] >> 49) & 0xff) as u8;
     bytes[1] = ((values[0] >> 41) & 0xff) as u8;
     bytes[2] = ((values[0] >> 33) & 0xff) as u8;
@@ -2174,8 +2060,6 @@ fn pack_bits_57(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn pack_bits_58(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 58);
     bytes[0] = ((values[0] >> 50) & 0xff) as u8;
     bytes[1] = ((values[0] >> 42) & 0xff) as u8;
     bytes[2] = ((values[0] >> 34) & 0xff) as u8;
@@ -2238,8 +2122,6 @@ fn pack_bits_58(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn pack_bits_59(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 59);
     bytes[0] = ((values[0] >> 51) & 0xff) as u8;
     bytes[1] = ((values[0] >> 43) & 0xff) as u8;
     bytes[2] = ((values[0] >> 35) & 0xff) as u8;
@@ -2303,8 +2185,6 @@ fn pack_bits_59(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn pack_bits_60(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 60);
     bytes[0] = ((values[0] >> 52) & 0xff) as u8;
     bytes[1] = ((values[0] >> 44) & 0xff) as u8;
     bytes[2] = ((values[0] >> 36) & 0xff) as u8;
@@ -2369,8 +2249,6 @@ fn pack_bits_60(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn pack_bits_61(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 61);
     bytes[0] = ((values[0] >> 53) & 0xff) as u8;
     bytes[1] = ((values[0] >> 45) & 0xff) as u8;
     bytes[2] = ((values[0] >> 37) & 0xff) as u8;
@@ -2436,8 +2314,6 @@ fn pack_bits_61(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn pack_bits_62(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 62);
     bytes[0] = ((values[0] >> 54) & 0xff) as u8;
     bytes[1] = ((values[0] >> 46) & 0xff) as u8;
     bytes[2] = ((values[0] >> 38) & 0xff) as u8;
@@ -2504,8 +2380,6 @@ fn pack_bits_62(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn pack_bits_63(values: &[u64], bytes: &mut [u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 63);
     bytes[0] = ((values[0] >> 55) & 0xff) as u8;
     bytes[1] = ((values[0] >> 47) & 0xff) as u8;
     bytes[2] = ((values[0] >> 39) & 0xff) as u8;
@@ -2573,8 +2447,6 @@ fn pack_bits_63(values: &[u64], bytes: &mut [u8]) {
 
 #[inline]
 fn unpack_bits_1(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(!bytes.is_empty());
     values[0] = ((bytes[0] >> 7) & 0x1) as u64;
     values[1] = ((bytes[0] >> 6) & 0x1) as u64;
     values[2] = ((bytes[0] >> 5) & 0x1) as u64;
@@ -2587,8 +2459,6 @@ fn unpack_bits_1(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_2(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 2);
     values[0] = ((bytes[0] >> 6) & 0x3) as u64;
     values[1] = ((bytes[0] >> 4) & 0x3) as u64;
     values[2] = ((bytes[0] >> 2) & 0x3) as u64;
@@ -2601,8 +2471,6 @@ fn unpack_bits_2(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_3(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 3);
     values[0] = ((bytes[0] >> 5) & 0x7) as u64;
     values[1] = ((bytes[0] >> 2) & 0x7) as u64;
     values[2] = ((((bytes[0]) & 0x3) as u64) << 1) | (((bytes[1] >> 7) & 0x1) as u64);
@@ -2615,8 +2483,6 @@ fn unpack_bits_3(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_4(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 4);
     values[0] = ((bytes[0] >> 4) & 0xf) as u64;
     values[1] = ((bytes[0]) & 0xf) as u64;
     values[2] = ((bytes[1] >> 4) & 0xf) as u64;
@@ -2629,8 +2495,6 @@ fn unpack_bits_4(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_5(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 5);
     values[0] = ((bytes[0] >> 3) & 0x1f) as u64;
     values[1] = ((((bytes[0]) & 0x7) as u64) << 2) | (((bytes[1] >> 6) & 0x3) as u64);
     values[2] = ((bytes[1] >> 1) & 0x1f) as u64;
@@ -2643,8 +2507,6 @@ fn unpack_bits_5(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_6(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 6);
     values[0] = ((bytes[0] >> 2) & 0x3f) as u64;
     values[1] = ((((bytes[0]) & 0x3) as u64) << 4) | (((bytes[1] >> 4) & 0xf) as u64);
     values[2] = ((((bytes[1]) & 0xf) as u64) << 2) | (((bytes[2] >> 6) & 0x3) as u64);
@@ -2657,8 +2519,6 @@ fn unpack_bits_6(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_7(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 7);
     values[0] = ((bytes[0] >> 1) & 0x7f) as u64;
     values[1] = ((((bytes[0]) & 0x1) as u64) << 6) | (((bytes[1] >> 2) & 0x3f) as u64);
     values[2] = ((((bytes[1]) & 0x3) as u64) << 5) | (((bytes[2] >> 3) & 0x1f) as u64);
@@ -2671,8 +2531,6 @@ fn unpack_bits_7(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_8(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 8);
     values[0] = (bytes[0]) as u64;
     values[1] = (bytes[1]) as u64;
     values[2] = (bytes[2]) as u64;
@@ -2685,8 +2543,6 @@ fn unpack_bits_8(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_9(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 9);
     values[0] = (((bytes[0]) as u64) << 1) | (((bytes[1] >> 7) & 0x1) as u64);
     values[1] = ((((bytes[1]) & 0x7f) as u64) << 2) | (((bytes[2] >> 6) & 0x3) as u64);
     values[2] = ((((bytes[2]) & 0x3f) as u64) << 3) | (((bytes[3] >> 5) & 0x7) as u64);
@@ -2699,8 +2555,6 @@ fn unpack_bits_9(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_10(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 10);
     values[0] = (((bytes[0]) as u64) << 2) | (((bytes[1] >> 6) & 0x3) as u64);
     values[1] = ((((bytes[1]) & 0x3f) as u64) << 4) | (((bytes[2] >> 4) & 0xf) as u64);
     values[2] = ((((bytes[2]) & 0xf) as u64) << 6) | (((bytes[3] >> 2) & 0x3f) as u64);
@@ -2713,8 +2567,6 @@ fn unpack_bits_10(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_11(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 11);
     values[0] = (((bytes[0]) as u64) << 3) | (((bytes[1] >> 5) & 0x7) as u64);
     values[1] = ((((bytes[1]) & 0x1f) as u64) << 6) | (((bytes[2] >> 2) & 0x3f) as u64);
     values[2] = ((((bytes[2]) & 0x3) as u64) << 9)
@@ -2731,8 +2583,6 @@ fn unpack_bits_11(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_12(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 12);
     values[0] = (((bytes[0]) as u64) << 4) | (((bytes[1] >> 4) & 0xf) as u64);
     values[1] = ((((bytes[1]) & 0xf) as u64) << 8) | ((bytes[2]) as u64);
     values[2] = (((bytes[3]) as u64) << 4) | (((bytes[4] >> 4) & 0xf) as u64);
@@ -2745,8 +2595,6 @@ fn unpack_bits_12(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_13(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 13);
     values[0] = (((bytes[0]) as u64) << 5) | (((bytes[1] >> 3) & 0x1f) as u64);
     values[1] = ((((bytes[1]) & 0x7) as u64) << 10)
         | (((bytes[2]) as u64) << 2)
@@ -2767,8 +2615,6 @@ fn unpack_bits_13(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_14(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 14);
     values[0] = (((bytes[0]) as u64) << 6) | (((bytes[1] >> 2) & 0x3f) as u64);
     values[1] = ((((bytes[1]) & 0x3) as u64) << 12)
         | (((bytes[2]) as u64) << 4)
@@ -2789,8 +2635,6 @@ fn unpack_bits_14(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_15(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 15);
     values[0] = (((bytes[0]) as u64) << 7) | (((bytes[1] >> 1) & 0x7f) as u64);
     values[1] = ((((bytes[1]) & 0x1) as u64) << 14)
         | (((bytes[2]) as u64) << 6)
@@ -2815,8 +2659,6 @@ fn unpack_bits_15(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_16(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 16);
     values[0] = (((bytes[0]) as u64) << 8) | ((bytes[1]) as u64);
     values[1] = (((bytes[2]) as u64) << 8) | ((bytes[3]) as u64);
     values[2] = (((bytes[4]) as u64) << 8) | ((bytes[5]) as u64);
@@ -2829,8 +2671,6 @@ fn unpack_bits_16(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_17(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 17);
     values[0] =
         (((bytes[0]) as u64) << 9) | (((bytes[1]) as u64) << 1) | (((bytes[2] >> 7) & 0x1) as u64);
     values[1] = ((((bytes[2]) & 0x7f) as u64) << 10)
@@ -2857,8 +2697,6 @@ fn unpack_bits_17(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_18(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 18);
     values[0] =
         (((bytes[0]) as u64) << 10) | (((bytes[1]) as u64) << 2) | (((bytes[2] >> 6) & 0x3) as u64);
     values[1] = ((((bytes[2]) & 0x3f) as u64) << 12)
@@ -2884,8 +2722,6 @@ fn unpack_bits_18(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_19(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 19);
     values[0] =
         (((bytes[0]) as u64) << 11) | (((bytes[1]) as u64) << 3) | (((bytes[2] >> 5) & 0x7) as u64);
     values[1] = ((((bytes[2]) & 0x1f) as u64) << 14)
@@ -2914,8 +2750,6 @@ fn unpack_bits_19(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_20(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 20);
     values[0] =
         (((bytes[0]) as u64) << 12) | (((bytes[1]) as u64) << 4) | (((bytes[2] >> 4) & 0xf) as u64);
     values[1] =
@@ -2938,8 +2772,6 @@ fn unpack_bits_20(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_21(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 21);
     values[0] = (((bytes[0]) as u64) << 13)
         | (((bytes[1]) as u64) << 5)
         | (((bytes[2] >> 3) & 0x1f) as u64);
@@ -2971,8 +2803,6 @@ fn unpack_bits_21(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_22(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 22);
     values[0] = (((bytes[0]) as u64) << 14)
         | (((bytes[1]) as u64) << 6)
         | (((bytes[2] >> 2) & 0x3f) as u64);
@@ -3003,8 +2833,6 @@ fn unpack_bits_22(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_23(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 23);
     values[0] = (((bytes[0]) as u64) << 15)
         | (((bytes[1]) as u64) << 7)
         | (((bytes[2] >> 1) & 0x7f) as u64);
@@ -3038,8 +2866,6 @@ fn unpack_bits_23(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_24(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 24);
     values[0] = (((bytes[0]) as u64) << 16) | (((bytes[1]) as u64) << 8) | ((bytes[2]) as u64);
     values[1] = (((bytes[3]) as u64) << 16) | (((bytes[4]) as u64) << 8) | ((bytes[5]) as u64);
     values[2] = (((bytes[6]) as u64) << 16) | (((bytes[7]) as u64) << 8) | ((bytes[8]) as u64);
@@ -3052,8 +2878,6 @@ fn unpack_bits_24(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_25(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 25);
     values[0] = (((bytes[0]) as u64) << 17)
         | (((bytes[1]) as u64) << 9)
         | (((bytes[2]) as u64) << 1)
@@ -3090,8 +2914,6 @@ fn unpack_bits_25(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_26(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 26);
     values[0] = (((bytes[0]) as u64) << 18)
         | (((bytes[1]) as u64) << 10)
         | (((bytes[2]) as u64) << 2)
@@ -3128,8 +2950,6 @@ fn unpack_bits_26(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_27(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 27);
     values[0] = (((bytes[0]) as u64) << 19)
         | (((bytes[1]) as u64) << 11)
         | (((bytes[2]) as u64) << 3)
@@ -3168,8 +2988,6 @@ fn unpack_bits_27(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_28(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 28);
     values[0] = (((bytes[0]) as u64) << 20)
         | (((bytes[1]) as u64) << 12)
         | (((bytes[2]) as u64) << 4)
@@ -3206,8 +3024,6 @@ fn unpack_bits_28(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_29(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 29);
     values[0] = (((bytes[0]) as u64) << 21)
         | (((bytes[1]) as u64) << 13)
         | (((bytes[2]) as u64) << 5)
@@ -3248,8 +3064,6 @@ fn unpack_bits_29(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_30(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 30);
     values[0] = (((bytes[0]) as u64) << 22)
         | (((bytes[1]) as u64) << 14)
         | (((bytes[2]) as u64) << 6)
@@ -3290,8 +3104,6 @@ fn unpack_bits_30(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_31(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 31);
     values[0] = (((bytes[0]) as u64) << 23)
         | (((bytes[1]) as u64) << 15)
         | (((bytes[2]) as u64) << 7)
@@ -3334,8 +3146,6 @@ fn unpack_bits_31(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_32(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 32);
     values[0] = (((bytes[0]) as u64) << 24)
         | (((bytes[1]) as u64) << 16)
         | (((bytes[2]) as u64) << 8)
@@ -3372,8 +3182,6 @@ fn unpack_bits_32(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_33(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 33);
     values[0] = (((bytes[0]) as u64) << 25)
         | (((bytes[1]) as u64) << 17)
         | (((bytes[2]) as u64) << 9)
@@ -3418,8 +3226,6 @@ fn unpack_bits_33(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_34(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 34);
     values[0] = (((bytes[0]) as u64) << 26)
         | (((bytes[1]) as u64) << 18)
         | (((bytes[2]) as u64) << 10)
@@ -3464,8 +3270,6 @@ fn unpack_bits_34(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_35(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 35);
     values[0] = (((bytes[0]) as u64) << 27)
         | (((bytes[1]) as u64) << 19)
         | (((bytes[2]) as u64) << 11)
@@ -3512,8 +3316,6 @@ fn unpack_bits_35(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_36(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 36);
     values[0] = (((bytes[0]) as u64) << 28)
         | (((bytes[1]) as u64) << 20)
         | (((bytes[2]) as u64) << 12)
@@ -3558,8 +3360,6 @@ fn unpack_bits_36(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_37(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 37);
     values[0] = (((bytes[0]) as u64) << 29)
         | (((bytes[1]) as u64) << 21)
         | (((bytes[2]) as u64) << 13)
@@ -3608,8 +3408,6 @@ fn unpack_bits_37(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_38(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 38);
     values[0] = (((bytes[0]) as u64) << 30)
         | (((bytes[1]) as u64) << 22)
         | (((bytes[2]) as u64) << 14)
@@ -3658,8 +3456,6 @@ fn unpack_bits_38(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_39(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 39);
     values[0] = (((bytes[0]) as u64) << 31)
         | (((bytes[1]) as u64) << 23)
         | (((bytes[2]) as u64) << 15)
@@ -3710,8 +3506,6 @@ fn unpack_bits_39(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_40(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 40);
     values[0] = (((bytes[0]) as u64) << 32)
         | (((bytes[1]) as u64) << 24)
         | (((bytes[2]) as u64) << 16)
@@ -3756,8 +3550,6 @@ fn unpack_bits_40(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_41(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 41);
     values[0] = (((bytes[0]) as u64) << 33)
         | (((bytes[1]) as u64) << 25)
         | (((bytes[2]) as u64) << 17)
@@ -3810,8 +3602,6 @@ fn unpack_bits_41(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_42(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 42);
     values[0] = (((bytes[0]) as u64) << 34)
         | (((bytes[1]) as u64) << 26)
         | (((bytes[2]) as u64) << 18)
@@ -3864,8 +3654,6 @@ fn unpack_bits_42(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_43(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 43);
     values[0] = (((bytes[0]) as u64) << 35)
         | (((bytes[1]) as u64) << 27)
         | (((bytes[2]) as u64) << 19)
@@ -3920,8 +3708,6 @@ fn unpack_bits_43(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_44(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 44);
     values[0] = (((bytes[0]) as u64) << 36)
         | (((bytes[1]) as u64) << 28)
         | (((bytes[2]) as u64) << 20)
@@ -3974,8 +3760,6 @@ fn unpack_bits_44(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_45(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 45);
     values[0] = (((bytes[0]) as u64) << 37)
         | (((bytes[1]) as u64) << 29)
         | (((bytes[2]) as u64) << 21)
@@ -4032,8 +3816,6 @@ fn unpack_bits_45(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_46(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 46);
     values[0] = (((bytes[0]) as u64) << 38)
         | (((bytes[1]) as u64) << 30)
         | (((bytes[2]) as u64) << 22)
@@ -4090,8 +3872,6 @@ fn unpack_bits_46(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_47(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 47);
     values[0] = (((bytes[0]) as u64) << 39)
         | (((bytes[1]) as u64) << 31)
         | (((bytes[2]) as u64) << 23)
@@ -4150,8 +3930,6 @@ fn unpack_bits_47(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_48(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 48);
     values[0] = (((bytes[0]) as u64) << 40)
         | (((bytes[1]) as u64) << 32)
         | (((bytes[2]) as u64) << 24)
@@ -4204,8 +3982,6 @@ fn unpack_bits_48(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_49(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 49);
     values[0] = (((bytes[0]) as u64) << 41)
         | (((bytes[1]) as u64) << 33)
         | (((bytes[2]) as u64) << 25)
@@ -4266,8 +4042,6 @@ fn unpack_bits_49(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_50(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 50);
     values[0] = (((bytes[0]) as u64) << 42)
         | (((bytes[1]) as u64) << 34)
         | (((bytes[2]) as u64) << 26)
@@ -4328,8 +4102,6 @@ fn unpack_bits_50(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_51(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 51);
     values[0] = (((bytes[0]) as u64) << 43)
         | (((bytes[1]) as u64) << 35)
         | (((bytes[2]) as u64) << 27)
@@ -4392,8 +4164,6 @@ fn unpack_bits_51(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_52(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 52);
     values[0] = (((bytes[0]) as u64) << 44)
         | (((bytes[1]) as u64) << 36)
         | (((bytes[2]) as u64) << 28)
@@ -4454,8 +4224,6 @@ fn unpack_bits_52(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_53(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 53);
     values[0] = (((bytes[0]) as u64) << 45)
         | (((bytes[1]) as u64) << 37)
         | (((bytes[2]) as u64) << 29)
@@ -4520,8 +4288,6 @@ fn unpack_bits_53(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_54(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 54);
     values[0] = (((bytes[0]) as u64) << 46)
         | (((bytes[1]) as u64) << 38)
         | (((bytes[2]) as u64) << 30)
@@ -4586,8 +4352,6 @@ fn unpack_bits_54(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_55(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 55);
     values[0] = (((bytes[0]) as u64) << 47)
         | (((bytes[1]) as u64) << 39)
         | (((bytes[2]) as u64) << 31)
@@ -4654,8 +4418,6 @@ fn unpack_bits_55(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_56(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 56);
     values[0] = (((bytes[0]) as u64) << 48)
         | (((bytes[1]) as u64) << 40)
         | (((bytes[2]) as u64) << 32)
@@ -4716,8 +4478,6 @@ fn unpack_bits_56(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_57(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 57);
     values[0] = (((bytes[0]) as u64) << 49)
         | (((bytes[1]) as u64) << 41)
         | (((bytes[2]) as u64) << 33)
@@ -4786,8 +4546,6 @@ fn unpack_bits_57(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_58(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 58);
     values[0] = (((bytes[0]) as u64) << 50)
         | (((bytes[1]) as u64) << 42)
         | (((bytes[2]) as u64) << 34)
@@ -4856,8 +4614,6 @@ fn unpack_bits_58(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_59(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 59);
     values[0] = (((bytes[0]) as u64) << 51)
         | (((bytes[1]) as u64) << 43)
         | (((bytes[2]) as u64) << 35)
@@ -4928,8 +4684,6 @@ fn unpack_bits_59(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_60(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 60);
     values[0] = (((bytes[0]) as u64) << 52)
         | (((bytes[1]) as u64) << 44)
         | (((bytes[2]) as u64) << 36)
@@ -4998,8 +4752,6 @@ fn unpack_bits_60(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_61(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 61);
     values[0] = (((bytes[0]) as u64) << 53)
         | (((bytes[1]) as u64) << 45)
         | (((bytes[2]) as u64) << 37)
@@ -5072,8 +4824,6 @@ fn unpack_bits_61(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_62(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 62);
     values[0] = (((bytes[0]) as u64) << 54)
         | (((bytes[1]) as u64) << 46)
         | (((bytes[2]) as u64) << 38)
@@ -5146,8 +4896,6 @@ fn unpack_bits_62(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_63(values: &mut [u64], bytes: &[u8]) {
-    debug_assert!(values.len() >= BLOCK_WIDTH);
-    debug_assert!(bytes.len() >= 63);
     values[0] = (((bytes[0]) as u64) << 55)
         | (((bytes[1]) as u64) << 47)
         | (((bytes[2]) as u64) << 39)
@@ -5220,16 +4968,23 @@ fn unpack_bits_63(values: &mut [u64], bytes: &[u8]) {
         | ((bytes[62]) as u64);
 }
 
-/// Packs a block of 8 values using fully-expanded fixed-width bit packing.
+/// Packs a block of `BLOCK_WIDTH` values using fully-expanded fixed-width bit packing.
 ///
-/// `bits` must be in `1..=63`.
-pub(crate) fn pack_bits_block8(values: &[u64], bytes: &mut [u8], bits: u8) {
+/// # Panics
+///
+/// - Panics if `values.len()` is not equal to `BLOCK_WIDTH`.
+/// - Panics if `bits` is not in the range `1..=63`.
+/// - Panics if `bytes.len()` is less than `bits * BLOCK_WIDTH`.
+pub(crate) fn pack_bits_block(values: &[u64], bytes: &mut [u8], bits: u8) {
     assert_eq!(values.len(), BLOCK_WIDTH, "values length must be 8");
     assert!(
         (1..=63).contains(&bits),
         "wrong number of bits in pack_bits_block8: {bits}"
     );
-    assert!(bytes.len() >= bits as usize, "output buffer too small");
+    assert!(
+        bytes.len() < bits as usize * BLOCK_WIDTH,
+        "output buffer too small"
+    );
 
     match bits {
         1 => pack_bits_1(values, bytes),
@@ -5299,16 +5054,23 @@ pub(crate) fn pack_bits_block8(values: &[u64], bytes: &mut [u8], bits: u8) {
     }
 }
 
-/// Unpacks a block of 8 values using fully-expanded fixed-width bit unpacking.
+/// Unpacks a block of `BLOCK_WIDTH` values using fully-expanded fixed-width bit unpacking.
 ///
-/// `bits` must be in `1..=63`.
-pub(crate) fn unpack_bits_block8(values: &mut [u64], bytes: &[u8], bits: u8) {
+/// # Panics
+///
+/// - Panics if `values.len()` is not equal to `BLOCK_WIDTH`.
+/// - Panics if `bits` is not in the range `1..=63`.
+/// - Panics if `bytes.len()` is less than `bits * BLOCK_WIDTH`.
+pub(crate) fn unpack_bits_block(values: &mut [u64], bytes: &[u8], bits: u8) {
     assert_eq!(values.len(), BLOCK_WIDTH, "values length must be 8");
     assert!(
         (1..=63).contains(&bits),
         "wrong number of bits in unpack_bits_block8: {bits}"
     );
-    assert!(bytes.len() >= bits as usize, "input buffer too small");
+    assert!(
+        bytes.len() < bits as usize * BLOCK_WIDTH,
+        "input buffer too small"
+    );
 
     match bits {
         1 => unpack_bits_1(values, bytes),
@@ -5423,19 +5185,19 @@ mod tests {
         for _n in 0..10000 {
             for bits in 1u8..=63 {
                 let mask = (1u64 << bits) - 1;
-                let mut input = vec![0u64; 8];
+                let mut input = vec![0u64; BLOCK_WIDTH];
                 for item in &mut input {
                     *item = value & mask;
                     value = value.wrapping_add(IGOLDEN64);
                 }
 
                 let mut bytes = vec![0u8; bits as usize];
-                pack_bits_block8(&input, &mut bytes, bits);
+                pack_bits_block(&input, &mut bytes, bits);
 
-                let mut output = vec![0u64; 8];
-                unpack_bits_block8(&mut output, &bytes, bits);
+                let mut output = vec![0u64; BLOCK_WIDTH];
+                unpack_bits_block(&mut output, &bytes, bits);
 
-                for i in 0..8 {
+                for i in 0..BLOCK_WIDTH {
                     assert_eq!(input[i], output[i]);
                 }
             }
@@ -5448,7 +5210,7 @@ mod tests {
         for _m in 0..10000 {
             for bits in 1u8..=63 {
                 let mask = (1u64 << bits) - 1;
-                let mut input = vec![0u64; 8];
+                let mut input = vec![0u64; BLOCK_WIDTH];
                 for item in &mut input {
                     *item = value & mask;
                     value = value.wrapping_add(IGOLDEN64);
@@ -5456,14 +5218,14 @@ mod tests {
 
                 let mut bytes = vec![0u8; bits as usize];
                 let mut packer = BitPacker::new(&mut bytes);
-                for i in 0..8 {
+                for i in 0..BLOCK_WIDTH {
                     packer.pack_value(input[i], bits);
                 }
 
-                let mut output = vec![0u64; 8];
-                unpack_bits_block8(&mut output, &bytes, bits);
+                let mut output = vec![0u64; BLOCK_WIDTH];
+                unpack_bits_block(&mut output, &bytes, bits);
 
-                for i in 0..8 {
+                for i in 0..BLOCK_WIDTH {
                     assert_eq!(input[i], output[i]);
                 }
             }
@@ -5476,22 +5238,22 @@ mod tests {
         for _m in 0..10000 {
             for bits in 1u8..=63 {
                 let mask = (1u64 << bits) - 1;
-                let mut input = vec![0u64; 8];
+                let mut input = vec![0u64; BLOCK_WIDTH];
                 for item in &mut input {
                     *item = value & mask;
                     value = value.wrapping_add(IGOLDEN64);
                 }
 
                 let mut bytes = vec![0u8; bits as usize];
-                pack_bits_block8(&input, &mut bytes, bits);
+                pack_bits_block(&input, &mut bytes, bits);
 
-                let mut output = vec![0u64; 8];
+                let mut output = vec![0u64; BLOCK_WIDTH];
                 let mut unpacker = BitUnpacker::new(&bytes);
                 for item in &mut output {
                     *item = unpacker.unpack_value(bits);
                 }
 
-                for i in 0..8 {
+                for i in 0..BLOCK_WIDTH {
                     assert_eq!(input[i], output[i]);
                 }
             }
@@ -5580,17 +5342,17 @@ mod tests {
     #[test]
     #[should_panic(expected = "wrong number of bits in pack_bits_block8")]
     fn pack_bits_block8_rejects_zero_bits() {
-        let input = [0u64; 8];
+        let input = [0u64; BLOCK_WIDTH];
         let mut bytes = [0u8; 1];
-        pack_bits_block8(&input, &mut bytes, 0);
+        pack_bits_block(&input, &mut bytes, 0);
     }
 
     #[test]
     #[should_panic(expected = "wrong number of bits in unpack_bits_block8")]
     fn unpack_bits_block8_rejects_64_bits() {
-        let mut output = [0u64; 8];
+        let mut output = [0u64; BLOCK_WIDTH];
         let bytes = [0u8; 64];
-        unpack_bits_block8(&mut output, &bytes, 64);
+        unpack_bits_block(&mut output, &bytes, 64);
     }
 
     #[test]

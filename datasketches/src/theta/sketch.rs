@@ -33,10 +33,11 @@ use crate::common::canonical_double;
 use crate::error::Error;
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::hash::compute_seed_hash;
+use crate::theta::bit_pack::BLOCK_WIDTH;
 use crate::theta::bit_pack::BitPacker;
 use crate::theta::bit_pack::BitUnpacker;
-use crate::theta::bit_pack::pack_bits_block8;
-use crate::theta::bit_pack::unpack_bits_block8;
+use crate::theta::bit_pack::pack_bits_block;
+use crate::theta::bit_pack::unpack_bits_block;
 use crate::theta::hash_table::DEFAULT_LG_K;
 use crate::theta::hash_table::MAX_LG_K;
 use crate::theta::hash_table::MAX_THETA;
@@ -503,17 +504,17 @@ impl CompactThetaSketch {
         let mut previous = 0u64;
         let mut i = 0usize;
         let mut block = vec![0u8; entry_bits as usize];
-        while i + 7 < self.entries.len() {
-            let mut deltas = [0u64; 8];
-            for j in 0..8 {
+        while i + BLOCK_WIDTH <= self.entries.len() {
+            let mut deltas = [0u64; BLOCK_WIDTH];
+            for j in 0..BLOCK_WIDTH {
                 let entry = self.entries[i + j];
                 deltas[j] = entry - previous;
                 previous = entry;
             }
             block.fill(0);
-            pack_bits_block8(&deltas, &mut block, entry_bits);
+            pack_bits_block(&deltas, &mut block, entry_bits);
             bytes.write(&block);
-            i += 8;
+            i += BLOCK_WIDTH;
         }
 
         // pack extra deltas if fewer than 8 of them left
@@ -772,16 +773,16 @@ impl CompactThetaSketch {
             num_entries |= (entry_count_byte as usize) << ((i as usize) << 3);
         }
 
-        // unpack blocks of 8 deltas
+        // unpack blocks of BLOCK_WIDTH deltas
         let mut i = 0usize;
         let mut entries = vec![0u64; num_entries];
-        while i + 7 < num_entries {
+        while i + BLOCK_WIDTH <= num_entries {
             let mut block = vec![0u8; entry_bits as usize];
             cursor
                 .read_exact(&mut block)
-                .map_err(make_error("delta_block8"))?;
-            unpack_bits_block8(&mut entries[i..i + 8], &block, entry_bits);
-            i += 8;
+                .map_err(make_error("delta_block"))?;
+            unpack_bits_block(&mut entries[i..i + BLOCK_WIDTH], &block, entry_bits);
+            i += BLOCK_WIDTH;
         }
 
         // unpack extra deltas if fewer than 8 of them left
