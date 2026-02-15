@@ -113,16 +113,9 @@ impl Error {
         ))
     }
 
-    pub(crate) fn unsupported_serial_version(expected: u8, actual: u8) -> Self {
-        Self::deserial(format!(
-            "unsupported serial version: expected {expected}, got {actual}"
-        ))
-    }
-
-    pub(crate) fn invalid_preamble_longs(expected: impl AsRef<[u8]>, actual: u8) -> Self {
-        Self::deserial(format!(
-            "invalid preamble longs: expected {:?}, got {actual}",
-            expected.as_ref()
+    pub(crate) fn invalid_preamble_longs(expected: &[u8], actual: u8) -> Self {
+        Error::deserial(format!(
+            "invalid preamble longs: expected {expected:?}, got {actual}"
         ))
     }
 }

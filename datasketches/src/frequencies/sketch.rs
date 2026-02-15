@@ -22,6 +22,8 @@ use std::hash::Hash;
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
 use crate::codec::family::Family;
+use crate::codec::utility::ensure_preamble_longs_in;
+use crate::codec::utility::ensure_serial_version_is;
 use crate::error::Error;
 use crate::frequencies::reverse_purge_item_hash_map::ReversePurgeItemHashMap;
 use crate::frequencies::serialization::*;
@@ -141,7 +143,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
 
     /// Returns the estimated frequency for an item.
     ///
-    /// If the item is tracked, this is `item_count + offset`. Otherwise it is zero.
+    /// If the item is tracked, this is `item_count + offset`. Otherwise, it is zero.
     ///
     /// # Examples
     ///
@@ -464,35 +466,18 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
         cursor.read_u16_le().map_err(make_error("<unused>"))?;
 
         Family::FREQUENCY.validate_id(family)?;
-        if serial_version != SERIAL_VERSION {
-            return Err(Error::unsupported_serial_version(
-                SERIAL_VERSION,
-                serial_version,
-            ));
-        }
+        ensure_serial_version_is(SERIAL_VERSION, serial_version)?;
         if lg_cur > lg_max {
             return Err(Error::deserial("lg_cur_map_size exceeds lg_max_map_size"));
         }
 
         let is_empty = (flags & EMPTY_FLAG_MASK) != 0;
         if is_empty {
-            return if pre_longs != PREAMBLE_LONGS_EMPTY {
-                Err(Error::invalid_preamble_longs(
-                    std::slice::from_ref(&PREAMBLE_LONGS_EMPTY),
-                    pre_longs,
-                ))
-            } else {
-                Ok(Self::with_lg_map_sizes(lg_max, lg_cur))
-            };
+            ensure_preamble_longs_in(&[PREAMBLE_LONGS_EMPTY], pre_longs)?;
+            return Ok(Self::with_lg_map_sizes(lg_max, lg_cur));
         }
 
-        if pre_longs != PREAMBLE_LONGS_NONEMPTY {
-            return Err(Error::invalid_preamble_longs(
-                std::slice::from_ref(&PREAMBLE_LONGS_NONEMPTY),
-                pre_longs,
-            ));
-        }
-
+        ensure_preamble_longs_in(&[PREAMBLE_LONGS_NONEMPTY], pre_longs)?;
         let active_items = cursor.read_u32_le().map_err(make_error("active_items"))?;
         let active_items = active_items as usize;
         cursor.read_u32_le().map_err(make_error("<unused>"))?;

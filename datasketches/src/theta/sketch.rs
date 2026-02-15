@@ -25,6 +25,7 @@ use std::hash::Hash;
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
 use crate::codec::family::Family;
+use crate::codec::utility::ensure_preamble_longs_in_range;
 use crate::common::NumStdDev;
 use crate::common::ResizeFactor;
 use crate::common::binomial_bounds;
@@ -555,7 +556,7 @@ impl CompactThetaSketch {
     }
 
     /// Deserializes a compact theta sketch from bytes using the provided expected seed.
-    pub fn deserialize(bytes: &[u8], expected_seed: u64) -> Result<Self, crate::error::Error> {
+    pub fn deserialize(bytes: &[u8], expected_seed: u64) -> Result<Self, Error> {
         fn make_error(tag: &'static str) -> impl FnOnce(std::io::Error) -> Error {
             move |_| Error::insufficient_data(tag)
         }
@@ -568,14 +569,10 @@ impl CompactThetaSketch {
         Family::THETA.validate_id(family_id)?;
 
         // Validate pre_longs is within valid range for Theta sketch
-        if !(Family::THETA.min_pre_longs..=Family::THETA.max_pre_longs).contains(&pre_longs) {
-            return Err(Error::deserial(format!(
-                "invalid preamble longs: expected [{}, {}], got {}",
-                Family::THETA.min_pre_longs,
-                Family::THETA.max_pre_longs,
-                pre_longs,
-            )));
-        }
+        ensure_preamble_longs_in_range(
+            Family::THETA.min_pre_longs..=Family::THETA.max_pre_longs,
+            pre_longs,
+        )?;
 
         match ser_ver {
             1 => Self::deserialize_v1(cursor, expected_seed),
@@ -659,40 +656,41 @@ impl CompactThetaSketch {
             )));
         }
 
-        if pre_longs == 1 {
-            Ok(Self {
+        match pre_longs {
+            1 => Ok(Self {
                 entries: vec![],
                 theta: MAX_THETA,
                 seed_hash,
                 ordered: true,
                 empty: true,
-            })
-        } else if pre_longs == 2 {
-            let num_entries = cursor.read_u32_le().map_err(make_error("num_entries"))? as usize;
-            cursor.read_u32_le().map_err(make_error("<unused_u32>"))?;
-            let entries = Self::read_entries(&mut cursor, num_entries, MAX_THETA)?;
-            Ok(Self {
-                entries,
-                theta: MAX_THETA,
-                seed_hash,
-                ordered: true,
-                empty: true,
-            })
-        } else if pre_longs == 3 {
-            let num_entries = cursor.read_u32_le().map_err(make_error("num_entries"))? as usize;
-            cursor.read_u32_le().map_err(make_error("<unused_u32>"))?;
-            let theta = cursor.read_u64_le().map_err(make_error("theta_long"))?;
-            let empty = (num_entries == 0) && (theta == MAX_THETA);
-            let entries = Self::read_entries(&mut cursor, num_entries, theta)?;
-            Ok(Self {
-                entries,
-                theta,
-                seed_hash,
-                ordered: true,
-                empty,
-            })
-        } else {
-            Err(Error::invalid_preamble_longs([1, 2, 3], pre_longs))
+            }),
+            2 => {
+                let num_entries = cursor.read_u32_le().map_err(make_error("num_entries"))? as usize;
+                cursor.read_u32_le().map_err(make_error("<unused_u32>"))?;
+                let entries = Self::read_entries(&mut cursor, num_entries, MAX_THETA)?;
+                Ok(Self {
+                    entries,
+                    theta: MAX_THETA,
+                    seed_hash,
+                    ordered: true,
+                    empty: true,
+                })
+            }
+            3 => {
+                let num_entries = cursor.read_u32_le().map_err(make_error("num_entries"))? as usize;
+                cursor.read_u32_le().map_err(make_error("<unused_u32>"))?;
+                let theta = cursor.read_u64_le().map_err(make_error("theta_long"))?;
+                let empty = (num_entries == 0) && (theta == MAX_THETA);
+                let entries = Self::read_entries(&mut cursor, num_entries, theta)?;
+                Ok(Self {
+                    entries,
+                    theta,
+                    seed_hash,
+                    ordered: true,
+                    empty,
+                })
+            }
+            _ => Err(Error::invalid_preamble_longs(&[1, 2, 3], pre_longs)),
         }
     }
 
