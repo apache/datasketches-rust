@@ -302,7 +302,7 @@ pub(crate) fn lower_bound(
 /// # Arguments
 ///
 /// * `num_samples` - The number of samples in the sample set.
-/// * `theta` - The sampling probability. Must be in the range (0.0, 1.0].
+/// * `theta` - The sampling probability. Must be in the range `(0.0, 1.0]`.
 /// * `num_std_dev` - The number of standard deviations for confidence bounds.
 /// * `no_data_seen` - This is normally false. However, in the case where you have zero samples and
 ///   a theta < 1.0, this flag enables the distinction between a virgin case when no actual data has
@@ -315,7 +315,7 @@ pub(crate) fn lower_bound(
 ///
 /// # Errors
 ///
-/// Returns an error if `theta` is not in the range (0.0, 1.0].
+/// Returns an error if `theta` is not in the range `(0.0, 1.0]`.
 pub(crate) fn upper_bound(
     num_samples: u64,
     theta: f64,

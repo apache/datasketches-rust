@@ -21,6 +21,8 @@ use std::hash::Hasher;
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
 use crate::codec::family::Family;
+use crate::codec::utility::ensure_preamble_longs_in_range;
+use crate::codec::utility::ensure_serial_version_is;
 use crate::error::Error;
 use crate::hash::XxHash64;
 
@@ -412,22 +414,11 @@ impl BloomFilter {
 
         // Validate
         Family::BLOOMFILTER.validate_id(family_id)?;
-        if serial_version != SERIAL_VERSION {
-            return Err(Error::unsupported_serial_version(
-                SERIAL_VERSION,
-                serial_version,
-            ));
-        }
-        if !(Family::BLOOMFILTER.min_pre_longs..=Family::BLOOMFILTER.max_pre_longs)
-            .contains(&preamble_longs)
-        {
-            return Err(Error::deserial(format!(
-                "invalid preamble longs: expected [{}, {}], got {}",
-                Family::BLOOMFILTER.min_pre_longs,
-                Family::BLOOMFILTER.max_pre_longs,
-                preamble_longs
-            )));
-        }
+        ensure_serial_version_is(SERIAL_VERSION, serial_version)?;
+        ensure_preamble_longs_in_range(
+            Family::BLOOMFILTER.min_pre_longs..=Family::BLOOMFILTER.max_pre_longs,
+            preamble_longs,
+        )?;
 
         let is_empty = (flags & EMPTY_FLAG_MASK) != 0;
 

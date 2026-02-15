@@ -33,6 +33,14 @@ pub struct Family {
 }
 
 impl Family {
+    /// Theta Sketch for cardinality estimation.
+    pub const THETA: Family = Family {
+        id: 3,
+        name: "THETA",
+        min_pre_longs: 1,
+        max_pre_longs: 3,
+    };
+
     /// The HLL family of sketches.
     pub const HLL: Family = Family {
         id: 7,

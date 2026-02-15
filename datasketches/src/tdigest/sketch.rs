@@ -22,6 +22,8 @@ use std::num::NonZeroU64;
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
 use crate::codec::family::Family;
+use crate::codec::utility::ensure_preamble_longs_in;
+use crate::codec::utility::ensure_serial_version_is;
 use crate::error::Error;
 use crate::tdigest::serialization::*;
 
@@ -501,12 +503,7 @@ impl TDigestMut {
                 Err(err)
             };
         }
-        if serial_version != SERIAL_VERSION {
-            return Err(Error::unsupported_serial_version(
-                SERIAL_VERSION,
-                serial_version,
-            ));
-        }
+        ensure_serial_version_is(SERIAL_VERSION, serial_version)?;
         let k = cursor.read_u16_le().map_err(make_error("k"))?;
         if k < 10 {
             return Err(Error::deserial(format!("k must be at least 10, got {k}")));
@@ -519,12 +516,7 @@ impl TDigestMut {
         } else {
             PREAMBLE_LONGS_MULTIPLE
         };
-        if preamble_longs != expected_preamble_longs {
-            return Err(Error::invalid_preamble_longs(
-                expected_preamble_longs,
-                preamble_longs,
-            ));
-        }
+        ensure_preamble_longs_in(&[expected_preamble_longs], preamble_longs)?;
         cursor.read_u16_le().map_err(make_error("<unused>"))?; // unused
         if is_empty {
             return Ok(TDigestMut::new(k));

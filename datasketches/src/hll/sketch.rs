@@ -24,6 +24,7 @@ use std::hash::Hash;
 
 use crate::codec::SketchSlice;
 use crate::codec::family::Family;
+use crate::codec::utility::ensure_serial_version_is;
 use crate::common::NumStdDev;
 use crate::error::Error;
 use crate::hll::HllType;
@@ -281,12 +282,7 @@ impl HllSketch {
         Family::HLL.validate_id(family_id)?;
 
         // Verify serialization version
-        if serial_version != SERIAL_VERSION {
-            return Err(Error::unsupported_serial_version(
-                SERIAL_VERSION,
-                serial_version,
-            ));
-        }
+        ensure_serial_version_is(SERIAL_VERSION, serial_version)?;
 
         // Verify lg_k range (4-21 are valid)
         if !(4..=21).contains(&lg_config_k) {

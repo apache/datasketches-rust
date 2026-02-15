@@ -21,6 +21,8 @@ use std::hash::Hasher;
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
 use crate::codec::family::Family;
+use crate::codec::utility::ensure_preamble_longs_in;
+use crate::codec::utility::ensure_serial_version_is;
 use crate::countmin::CountMinValue;
 use crate::countmin::UnsignedCountMinValue;
 use crate::countmin::serialization::FLAGS_IS_EMPTY;
@@ -350,18 +352,8 @@ impl<T: CountMinValue> CountMinSketch<T> {
         cursor.read_u32_le().map_err(make_error("<unused>"))?;
 
         Family::COUNTMIN.validate_id(family_id)?;
-        if serial_version != SERIAL_VERSION {
-            return Err(Error::unsupported_serial_version(
-                SERIAL_VERSION,
-                serial_version,
-            ));
-        }
-        if preamble_longs != PREAMBLE_LONGS_SHORT {
-            return Err(Error::invalid_preamble_longs(
-                PREAMBLE_LONGS_SHORT,
-                preamble_longs,
-            ));
-        }
+        ensure_serial_version_is(SERIAL_VERSION, serial_version)?;
+        ensure_preamble_longs_in(&[PREAMBLE_LONGS_SHORT], preamble_longs)?;
 
         let num_buckets = cursor.read_u32_le().map_err(make_error("num_buckets"))?;
         let num_hashes = cursor.read_u8().map_err(make_error("num_hashes"))?;
