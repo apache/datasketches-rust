@@ -43,6 +43,9 @@ use crate::theta::hash_table::MAX_THETA;
 use crate::theta::hash_table::MIN_LG_K;
 use crate::theta::hash_table::ThetaHashTable;
 use crate::theta::serialization;
+use crate::theta::serialization::V2_PREAMBLE_EMPTY;
+use crate::theta::serialization::V2_PREAMBLE_ESTIMATE;
+use crate::theta::serialization::V2_PREAMBLE_PRECISE;
 
 /// Mutable theta sketch for building from input data
 #[derive(Debug)]
@@ -654,14 +657,14 @@ impl CompactThetaSketch {
         }
 
         match pre_longs {
-            1 => Ok(Self {
+            V2_PREAMBLE_EMPTY => Ok(Self {
                 entries: vec![],
                 theta: MAX_THETA,
                 seed_hash,
                 ordered: true,
                 empty: true,
             }),
-            2 => {
+            V2_PREAMBLE_PRECISE => {
                 let num_entries = cursor.read_u32_le().map_err(make_error("num_entries"))? as usize;
                 cursor.read_u32_le().map_err(make_error("<unused_u32>"))?;
                 let entries = Self::read_entries(&mut cursor, num_entries, MAX_THETA)?;
@@ -673,7 +676,7 @@ impl CompactThetaSketch {
                     empty: true,
                 })
             }
-            3 => {
+            V2_PREAMBLE_ESTIMATE => {
                 let num_entries = cursor.read_u32_le().map_err(make_error("num_entries"))? as usize;
                 cursor.read_u32_le().map_err(make_error("<unused_u32>"))?;
                 let theta = cursor.read_u64_le().map_err(make_error("theta_long"))?;
