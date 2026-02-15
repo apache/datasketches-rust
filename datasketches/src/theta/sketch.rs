@@ -222,7 +222,7 @@ impl ThetaSketch {
         CompactThetaSketch {
             entries,
             theta,
-            seed_hash: compute_seed_hash(self.table.hash_seed()),
+            seed_hash: self.table.seed_hash(),
             ordered,
             empty,
         }
@@ -960,6 +960,14 @@ mod tests {
         entries
     }
 
+    fn assert_theta_and_compact_equivalent_ordered(theta: &ThetaSketch, ordered: bool) {
+        let compact = theta.compact(ordered);
+        assert_theta_and_compact_equivalent(theta, &compact);
+        if compact.num_retained() > 1 {
+            assert_eq!(compact.is_ordered(), ordered);
+        }
+    }
+
     fn assert_theta_and_compact_equivalent(theta: &ThetaSketch, compact: &CompactThetaSketch) {
         assert_eq!(theta.is_empty(), compact.is_empty());
         assert_eq!(theta.is_estimation_mode(), compact.is_estimation_mode());
@@ -996,11 +1004,7 @@ mod tests {
         }
         assert!(!exact_theta.is_estimation_mode());
         for ordered in [false, true] {
-            let compact = exact_theta.compact(ordered);
-            assert_theta_and_compact_equivalent(&exact_theta, &compact);
-            if compact.num_retained() > 1 {
-                assert_eq!(compact.is_ordered(), ordered);
-            }
+            assert_theta_and_compact_equivalent_ordered(&exact_theta, ordered);
         }
 
         let mut estimation_theta = ThetaSketch::builder().lg_k(5).build();
@@ -1009,11 +1013,7 @@ mod tests {
         }
         assert!(estimation_theta.is_estimation_mode());
         for ordered in [false, true] {
-            let compact = estimation_theta.compact(ordered);
-            assert_theta_and_compact_equivalent(&estimation_theta, &compact);
-            if compact.num_retained() > 1 {
-                assert_eq!(compact.is_ordered(), ordered);
-            }
+            assert_theta_and_compact_equivalent_ordered(&estimation_theta, ordered);
         }
     }
 
