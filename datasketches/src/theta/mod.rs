@@ -47,5 +47,3 @@ mod sketch;
 pub use self::sketch::CompactThetaSketch;
 pub use self::sketch::ThetaSketch;
 pub use self::sketch::ThetaSketchBuilder;
-/// The default seed used for hashing in theta sketches.
-pub use crate::hash::DEFAULT_UPDATE_SEED;

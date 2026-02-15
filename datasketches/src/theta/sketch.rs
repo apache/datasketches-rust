@@ -555,8 +555,13 @@ impl CompactThetaSketch {
         bits.div_ceil(8) as u8
     }
 
+    /// Deserializes a compact theta sketch from bytes.
+    pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
+        Self::deserialize_with_seed(bytes, DEFAULT_UPDATE_SEED)
+    }
+
     /// Deserializes a compact theta sketch from bytes using the provided expected seed.
-    pub fn deserialize(bytes: &[u8], expected_seed: u64) -> Result<Self, Error> {
+    pub fn deserialize_with_seed(bytes: &[u8], seed: u64) -> Result<Self, Error> {
         fn make_error(tag: &'static str) -> impl FnOnce(std::io::Error) -> Error {
             move |_| Error::insufficient_data(tag)
         }
@@ -575,10 +580,10 @@ impl CompactThetaSketch {
         )?;
 
         match ser_ver {
-            1 => Self::deserialize_v1(cursor, expected_seed),
-            2 => Self::deserialize_v2(pre_longs, cursor, expected_seed),
-            3 => Self::deserialize_v3(pre_longs, cursor, expected_seed),
-            4 => Self::deserialize_v4(pre_longs, cursor, expected_seed),
+            1 => Self::deserialize_v1(cursor, seed),
+            2 => Self::deserialize_v2(pre_longs, cursor, seed),
+            3 => Self::deserialize_v3(pre_longs, cursor, seed),
+            4 => Self::deserialize_v4(pre_longs, cursor, seed),
             _ => Err(Error::deserial(format!(
                 "unsupported serial version: expected 1, 2, 3, or 4, got {ser_ver}",
             ))),
@@ -978,7 +983,7 @@ mod tests {
     fn assert_compressed_round_trip(theta: &ThetaSketch, compact: &CompactThetaSketch) {
         let bytes_v4 = compact.serialize_compressed();
         assert_eq!(bytes_v4[1], serialization::COMPRESSED_SERIAL_VERSION);
-        let decoded_v4 = CompactThetaSketch::deserialize(&bytes_v4, DEFAULT_UPDATE_SEED).unwrap();
+        let decoded_v4 = CompactThetaSketch::deserialize(&bytes_v4).unwrap();
         assert_compact_equivalent(compact, &decoded_v4);
         assert_theta_and_compact_equivalent(theta, &decoded_v4);
     }
@@ -1023,7 +1028,7 @@ mod tests {
         assert!(compact.is_estimation_mode());
 
         let bytes_v3 = compact.serialize();
-        let decoded_v3 = CompactThetaSketch::deserialize(&bytes_v3, DEFAULT_UPDATE_SEED).unwrap();
+        let decoded_v3 = CompactThetaSketch::deserialize(&bytes_v3).unwrap();
         assert_compact_equivalent(&compact, &decoded_v3);
         assert_theta_and_compact_equivalent(&theta, &decoded_v3);
     }
@@ -1078,7 +1083,7 @@ mod tests {
         theta.update("apple");
         let bytes = theta.compact(true).serialize();
 
-        let err = CompactThetaSketch::deserialize(&bytes, 8).unwrap_err();
+        let err = CompactThetaSketch::deserialize_with_seed(&bytes, 8).unwrap_err();
         assert_eq!(err.kind(), crate::error::ErrorKind::InvalidData);
         assert!(err.message().contains("incompatible seed hash"));
     }
@@ -1090,7 +1095,7 @@ mod tests {
         let mut bytes = theta.compact(true).serialize();
         bytes[2] = 0;
 
-        let err = CompactThetaSketch::deserialize(&bytes, DEFAULT_UPDATE_SEED).unwrap_err();
+        let err = CompactThetaSketch::deserialize(&bytes).unwrap_err();
         assert_eq!(err.kind(), crate::error::ErrorKind::InvalidData);
         assert!(err.message().contains("invalid family"));
     }
@@ -1102,7 +1107,7 @@ mod tests {
         let mut bytes = theta.compact(true).serialize();
         bytes[1] = 99;
 
-        let err = CompactThetaSketch::deserialize(&bytes, DEFAULT_UPDATE_SEED).unwrap_err();
+        let err = CompactThetaSketch::deserialize(&bytes).unwrap_err();
         assert_eq!(err.kind(), crate::error::ErrorKind::InvalidData);
         assert!(err.message().contains("unsupported serial version"));
     }
@@ -1116,7 +1121,7 @@ mod tests {
         let mut bytes = theta.compact(true).serialize();
         bytes.pop();
 
-        let err = CompactThetaSketch::deserialize(&bytes, DEFAULT_UPDATE_SEED).unwrap_err();
+        let err = CompactThetaSketch::deserialize(&bytes).unwrap_err();
         assert_eq!(err.kind(), crate::error::ErrorKind::InvalidData);
         assert!(err.message().contains("insufficient data"));
     }

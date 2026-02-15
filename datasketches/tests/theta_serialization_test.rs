@@ -22,7 +22,6 @@ use std::path::PathBuf;
 
 use common::serialization_test_data;
 use datasketches::theta::CompactThetaSketch;
-use datasketches::theta::DEFAULT_UPDATE_SEED;
 use googletest::assert_that;
 use googletest::prelude::near;
 
@@ -30,7 +29,7 @@ fn test_sketch_file(path: PathBuf, expected_cardinality: usize, use_compressed_r
     let expected = expected_cardinality as f64;
 
     let bytes = fs::read(&path).unwrap();
-    let sketch1 = CompactThetaSketch::deserialize(&bytes, DEFAULT_UPDATE_SEED).unwrap();
+    let sketch1 = CompactThetaSketch::deserialize(&bytes).unwrap();
     let estimate1 = sketch1.estimate();
     assert_that!(estimate1, near(expected, expected * 0.03));
 
@@ -40,14 +39,13 @@ fn test_sketch_file(path: PathBuf, expected_cardinality: usize, use_compressed_r
     } else {
         sketch1.serialize()
     };
-    let sketch2 = CompactThetaSketch::deserialize(&serialized_bytes, DEFAULT_UPDATE_SEED)
-        .unwrap_or_else(|err| {
-            panic!(
-                "Deserialization failed after round-trip for {}: {}",
-                path.display(),
-                err
-            )
-        });
+    let sketch2 = CompactThetaSketch::deserialize(&serialized_bytes).unwrap_or_else(|err| {
+        panic!(
+            "Deserialization failed after round-trip for {}: {}",
+            path.display(),
+            err
+        )
+    });
 
     // Theta snapshots from Java/C++ are not required to match byte-for-byte output
     // from this implementation. Verify our own serialization is stable instead.
