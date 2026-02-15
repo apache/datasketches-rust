@@ -18,130 +18,143 @@
 const BLOCK_WIDTH: usize = 8;
 
 #[inline]
-fn low_mask(bits: u8) -> u64 {
-    if bits == 64 {
-        u64::MAX
-    } else if bits == 0 {
-        0
+fn low_bit_to_byte_mask(bits: u8) -> u8 {
+    if bits >= u8::BITS as u8 {
+        u8::MAX
     } else {
-        (1u64 << bits) - 1
+        (1u8 << bits) - 1
     }
 }
 
-#[inline]
-fn byte_mask(bits: u8) -> u8 {
-    if bits == 0 {
-        0
-    } else {
-        ((1u16 << bits) - 1) as u8
-    }
-}
-
-/// Packs `bits` most-significant bits from `value` into `bytes` at the current
-/// `(byte_index, offset)` write position.
+/// Packs values into a byte buffer with arbitrary bit widths.
 ///
-/// Returns the new `(byte_index, offset)` write state.
-pub(crate) fn pack_bits(
-    value: u64,
-    mut bits: u8,
-    bytes: &mut [u8],
+/// # Panics
+///
+/// Panics if the buffer is too small to hold the packed values.
+/// The caller must ensure that `bytes` has enough capacity for
+/// the total number of bits to be packed.
+pub(crate) struct BitPacker<'a> {
+    bytes: &'a mut [u8],
     byte_index: usize,
-    offset: u8,
-) -> (usize, u8) {
-    assert!(offset < 8, "offset must be in [0, 7]");
-    assert!(bits <= 64, "bits must be in [0, 64]");
+    byte_bit_used: u8,
+}
 
-    let mut current_byte_index = byte_index;
-    let mut current_offset = offset;
+impl<'a> BitPacker<'a> {
+    pub fn new(bytes: &'a mut [u8]) -> Self {
+        BitPacker {
+            bytes,
+            byte_index: 0,
+            byte_bit_used: 0,
+        }
+    }
 
-    if current_offset > 0 {
-        let chunk_bits = 8 - current_offset;
-        let mask = byte_mask(chunk_bits);
-        assert!(
-            current_byte_index < bytes.len(),
-            "buffer too small for pack_bits"
-        );
+    /// Return used number of byte.
+    pub fn byte_used(&self) -> usize {
+        if self.byte_bit_used == 0 {
+            self.byte_index
+        } else {
+            self.byte_index + 1
+        }
+    }
 
-        if bits < chunk_bits {
-            bytes[current_byte_index] |=
-                (((value & low_mask(bits)) << (chunk_bits - bits)) as u8) & mask;
-            return (current_byte_index, current_offset + bits);
+    /// Packs `value` represent as `bits` of bit into `bytes`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if packing the value would exceed the buffer bounds.
+    pub fn pack_value(&mut self, value: u64, mut bits: u8) {
+        debug_assert!(self.byte_bit_used < 8, "offset must be in [0, 7]");
+
+        if self.byte_bit_used > 0 {
+            let remain_bits = 8 - self.byte_bit_used;
+            let remain_mask = low_bit_to_byte_mask(remain_bits);
+
+            // Fast path: there is enough space for remain byte to pack whole value.
+            if bits < remain_bits {
+                self.bytes[self.byte_index] |=
+                    ((value << (remain_bits - bits)) as u8) & remain_mask;
+                self.byte_bit_used += bits;
+                return;
+            }
+
+            // Pack highest remain_bits bit first.
+            self.bytes[self.byte_index] |= ((value >> (bits - remain_bits)) as u8) & remain_mask;
+            bits -= remain_bits;
+            self.byte_bit_used = 0;
+            self.byte_index += 1;
         }
 
-        bytes[current_byte_index] |= ((value >> (bits - chunk_bits)) as u8) & mask;
-        current_byte_index += 1;
-        bits -= chunk_bits;
-        current_offset = 0;
-    }
+        while bits >= 8 {
+            self.bytes[self.byte_index] = (value >> (bits - 8)) as u8;
+            self.byte_index += 1;
+            bits -= 8;
+        }
 
-    while bits >= 8 {
-        assert!(
-            current_byte_index < bytes.len(),
-            "buffer too small for pack_bits"
-        );
-        bytes[current_byte_index] = (value >> (bits - 8)) as u8;
-        current_byte_index += 1;
-        bits -= 8;
+        if bits > 0 {
+            self.bytes[self.byte_index] = (value << (8 - bits)) as u8;
+            self.byte_bit_used = bits;
+        }
     }
-
-    if bits > 0 {
-        assert!(
-            current_byte_index < bytes.len(),
-            "buffer too small for pack_bits"
-        );
-        bytes[current_byte_index] = (value << (8 - bits)) as u8;
-        return (current_byte_index, bits);
-    }
-
-    (current_byte_index, current_offset)
 }
 
-/// Unpacks `bits` bits from `bytes` at the current `(byte_index, offset)` read
-/// position.
+/// Unpacks values from a byte buffer with arbitrary bit widths.
 ///
-/// Returns `(value, (byte_index, offset))` as the new read state.
-pub(crate) fn unpack_bits(
-    mut bits: u8,
-    bytes: &[u8],
+/// # Panics
+///
+/// Panics if the buffer is too small to provide the requested bits.
+/// The caller must ensure that `bytes` has enough capacity for
+/// the total number of bits to be unpacked.
+pub(crate) struct BitUnpacker<'a> {
+    bytes: &'a [u8],
     byte_index: usize,
-    offset: u8,
-) -> (u64, (usize, u8)) {
-    assert!(offset < 8, "offset must be in [0, 7]");
-    assert!(bits <= 64, "bits must be in [0, 64]");
-    assert!(byte_index < bytes.len(), "buffer too small for unpack_bits");
+    byte_bit_used: u8,
+}
 
-    let mut current_byte_index = byte_index;
-    let avail_bits = 8 - offset;
-    let chunk_bits = avail_bits.min(bits);
-    let mask = byte_mask(chunk_bits);
-
-    let mut value = ((bytes[current_byte_index] >> (avail_bits - chunk_bits)) & mask) as u64;
-    if avail_bits == chunk_bits {
-        current_byte_index += 1;
-    }
-    let mut current_offset = (offset + chunk_bits) & 7;
-    bits -= chunk_bits;
-
-    while bits >= 8 {
-        assert!(
-            current_byte_index < bytes.len(),
-            "buffer too small for unpack_bits"
-        );
-        value = (value << 8) | bytes[current_byte_index] as u64;
-        current_byte_index += 1;
-        bits -= 8;
+impl<'a> BitUnpacker<'a> {
+    pub fn new(bytes: &'a [u8]) -> Self {
+        Self {
+            bytes,
+            byte_index: 0,
+            byte_bit_used: 0,
+        }
     }
 
-    if bits > 0 {
-        assert!(
-            current_byte_index < bytes.len(),
-            "buffer too small for unpack_bits"
-        );
-        value = (value << bits) | (bytes[current_byte_index] >> (8 - bits)) as u64;
-        current_offset = bits;
-    }
+    /// Unpack `value` represent as `bits` of bit from `bytes`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if unpacking the value would exceed the buffer bounds.
+    pub fn unpack_value(&mut self, mut bits: u8) -> u64 {
+        if bits == 0 {
+            return 0;
+        }
 
-    (value, (current_byte_index, current_offset))
+        let avail_bits = 8 - self.byte_bit_used;
+        let chunk_bits = avail_bits.min(bits);
+        let chunk_mask = low_bit_to_byte_mask(chunk_bits);
+
+        let mut value =
+            ((self.bytes[self.byte_index] >> (avail_bits - chunk_bits)) & chunk_mask) as u64;
+        // Use all remain bits for current byte.
+        if chunk_bits == avail_bits {
+            self.byte_index += 1;
+        }
+        self.byte_bit_used = (self.byte_bit_used + chunk_bits) & 7;
+        bits -= chunk_bits;
+
+        while bits >= 8 {
+            value = (value << 8) | self.bytes[self.byte_index] as u64;
+            self.byte_index += 1;
+            bits -= 8;
+        }
+
+        if bits > 0 {
+            value = (value << bits) | (self.bytes[self.byte_index] >> (8 - bits)) as u64;
+            self.byte_bit_used = bits;
+        }
+
+        value
+    }
 }
 
 #[inline]
@@ -5386,21 +5399,15 @@ mod tests {
                 }
 
                 let mut bytes = vec![0u8; n * std::mem::size_of::<u64>()];
-                let mut offset = 0u8;
-                let mut byte_index = 0usize;
+                let mut packer = BitPacker::new(&mut bytes);
                 for i in 0..n {
-                    (byte_index, offset) =
-                        pack_bits(input[i], bits, &mut bytes, byte_index, offset);
+                    packer.pack_value(input[i], bits);
                 }
 
                 let mut output = vec![0u64; n];
-                offset = 0;
-                let mut read_byte_index = 0usize;
+                let mut unpacker = BitUnpacker::new(&bytes);
                 for item in &mut output {
-                    let decoded;
-                    (decoded, (read_byte_index, offset)) =
-                        unpack_bits(bits, &bytes, read_byte_index, offset);
-                    *item = decoded;
+                    *item = unpacker.unpack_value(bits);
                 }
 
                 for i in 0..n {
@@ -5448,11 +5455,9 @@ mod tests {
                 }
 
                 let mut bytes = vec![0u8; bits as usize];
-                let mut offset = 0u8;
-                let mut byte_index = 0usize;
+                let mut packer = BitPacker::new(&mut bytes);
                 for i in 0..8 {
-                    (byte_index, offset) =
-                        pack_bits(input[i], bits, &mut bytes, byte_index, offset);
+                    packer.pack_value(input[i], bits);
                 }
 
                 let mut output = vec![0u64; 8];
@@ -5481,13 +5486,9 @@ mod tests {
                 pack_bits_block8(&input, &mut bytes, bits);
 
                 let mut output = vec![0u64; 8];
-                let mut offset = 0u8;
-                let mut read_byte_index = 0usize;
+                let mut unpacker = BitUnpacker::new(&bytes);
                 for item in &mut output {
-                    let decoded;
-                    (decoded, (read_byte_index, offset)) =
-                        unpack_bits(bits, &bytes, read_byte_index, offset);
-                    *item = decoded;
+                    *item = unpacker.unpack_value(bits);
                 }
 
                 for i in 0..8 {
@@ -5508,23 +5509,20 @@ mod tests {
         }
 
         let mut bytes = vec![0u8; n * std::mem::size_of::<u64>()];
-        let mut offset = 0u8;
-        let mut byte_index = 0usize;
+        let mut packer = BitPacker::new(&mut bytes);
         for &v in &input {
-            (byte_index, offset) = pack_bits(v, 64, &mut bytes, byte_index, offset);
+            packer.pack_value(v, 64);
         }
-        assert_eq!(byte_index, 64);
-        assert_eq!(offset, 0);
+        assert_eq!(packer.byte_index, 64);
+        assert_eq!(packer.byte_bit_used, 0);
 
         let mut output = vec![0u64; n];
-        let mut read_byte_index = 0usize;
+        let mut unpacker = BitUnpacker::new(&bytes);
         for item in &mut output {
-            let decoded;
-            (decoded, (read_byte_index, offset)) = unpack_bits(64, &bytes, read_byte_index, offset);
-            *item = decoded;
+            *item = unpacker.unpack_value(64);
         }
-        assert_eq!(read_byte_index, 64);
-        assert_eq!(offset, 0);
+        assert_eq!(unpacker.byte_index, 64);
+        assert_eq!(unpacker.byte_bit_used, 0);
         assert_eq!(input, output);
     }
 
@@ -5533,15 +5531,20 @@ mod tests {
         let mut bytes = vec![0xabu8; 8];
         let before = bytes.clone();
 
-        let (next_byte_index, next_offset) = pack_bits(0xdead_beef, 0, &mut bytes, 3, 5);
-        assert_eq!(next_byte_index, 3);
-        assert_eq!(next_offset, 5);
+        // Create packer starting at byte 3, bit 5 (simulating initial state)
+        let mut packer = BitPacker::new(&mut bytes);
+        // Pack 0 bits - should not change anything
+        packer.pack_value(0xdead_beef, 0);
+        // Since packer starts at 0, we just verify the bytes are unchanged
+        assert_eq!(packer.byte_index, 0);
+        assert_eq!(packer.byte_bit_used, 0);
         assert_eq!(bytes, before);
 
-        let (decoded, (read_byte_index, read_offset)) = unpack_bits(0, &bytes, 3, 5);
+        let mut unpacker = BitUnpacker::new(&bytes);
+        let decoded = unpacker.unpack_value(0);
         assert_eq!(decoded, 0);
-        assert_eq!(read_byte_index, 3);
-        assert_eq!(read_offset, 5);
+        assert_eq!(unpacker.byte_index, 0);
+        assert_eq!(unpacker.byte_bit_used, 0);
     }
 
     #[test]
@@ -5556,25 +5559,20 @@ mod tests {
             }
 
             let mut bytes = vec![0u8; bits as usize];
-            let mut byte_index = 0usize;
-            let mut offset = 0u8;
+            let mut packer = BitPacker::new(&mut bytes);
             for &v in &input {
-                (byte_index, offset) = pack_bits(v, bits, &mut bytes, byte_index, offset);
+                packer.pack_value(v, bits);
             }
-            assert_eq!(byte_index, bits as usize);
-            assert_eq!(offset, 0);
+            assert_eq!(packer.byte_index, bits as usize);
+            assert_eq!(packer.byte_bit_used, 0);
 
             let mut output = [0u64; 8];
-            let mut read_byte_index = 0usize;
-            let mut read_offset = 0u8;
+            let mut unpacker = BitUnpacker::new(&bytes);
             for item in &mut output {
-                let decoded;
-                (decoded, (read_byte_index, read_offset)) =
-                    unpack_bits(bits, &bytes, read_byte_index, read_offset);
-                *item = decoded;
+                *item = unpacker.unpack_value(bits);
             }
-            assert_eq!(read_byte_index, bits as usize);
-            assert_eq!(read_offset, 0);
+            assert_eq!(unpacker.byte_index, bits as usize);
+            assert_eq!(unpacker.byte_bit_used, 0);
             assert_eq!(input, output);
         }
     }
@@ -5593,5 +5591,33 @@ mod tests {
         let mut output = [0u64; 8];
         let bytes = [0u8; 64];
         unpack_bits_block8(&mut output, &bytes, 64);
+    }
+
+    #[test]
+    #[should_panic]
+    fn packer_panics_on_buffer_overflow() {
+        // Buffer is too small to hold 8 values of 8 bits each (needs 8 bytes)
+        let mut bytes = [0u8; 4];
+        let mut packer = BitPacker::new(&mut bytes);
+        // First 4 values fit (4 bytes)
+        for i in 0..4 {
+            packer.pack_value(i as u64, 8);
+        }
+        // This should panic - trying to write beyond buffer
+        packer.pack_value(0xdead_beef, 8);
+    }
+
+    #[test]
+    #[should_panic]
+    fn unpacker_panics_on_buffer_underflow() {
+        // Buffer only has 4 bytes, but we try to unpack 8 values of 8 bits each
+        let bytes = [0xabu8; 4];
+        let mut unpacker = BitUnpacker::new(&bytes);
+        // First 4 values succeed (4 bytes)
+        for _ in 0..4 {
+            unpacker.unpack_value(8);
+        }
+        // This should panic - trying to read beyond buffer
+        unpacker.unpack_value(8);
     }
 }

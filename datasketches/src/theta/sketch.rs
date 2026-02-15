@@ -33,9 +33,9 @@ use crate::common::canonical_double;
 use crate::error::Error;
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::hash::compute_seed_hash;
-use crate::theta::bit_pack::pack_bits;
+use crate::theta::bit_pack::BitPacker;
+use crate::theta::bit_pack::BitUnpacker;
 use crate::theta::bit_pack::pack_bits_block8;
-use crate::theta::bit_pack::unpack_bits;
 use crate::theta::bit_pack::unpack_bits_block8;
 use crate::theta::hash_table::DEFAULT_LG_K;
 use crate::theta::hash_table::MAX_LG_K;
@@ -516,23 +516,15 @@ impl CompactThetaSketch {
         // pack extra deltas if fewer than 8 of them left
         if i < self.entries.len() {
             let mut block = vec![0u8; entry_bits as usize];
-            let mut byte_index = 0;
-            let mut bit_index = 0;
-            let mut pack_delta_to_block = |delta: u64| {
-                (byte_index, bit_index) =
-                    pack_bits(delta, entry_bits, &mut block, byte_index, bit_index);
-            };
+            let mut packer = BitPacker::new(&mut block);
             while i < self.entries.len() {
                 let delta = self.entries[i] - previous;
                 previous = self.entries[i];
-                pack_delta_to_block(delta);
+                packer.pack_value(delta, entry_bits);
                 i += 1;
             }
-            if bit_index == 0 {
-                bytes.write(&block[0..byte_index]);
-            } else {
-                bytes.write(&block[0..byte_index + 1]);
-            }
+            let bytes_used = packer.byte_used();
+            bytes.write(&block[0..bytes_used]);
         }
 
         bytes.into_bytes()
@@ -799,16 +791,9 @@ impl CompactThetaSketch {
                 .read_exact(&mut tail)
                 .map_err(make_error("delta_tail"))?;
 
-            let mut byte_index = 0;
-            let mut bit_index = 0;
-            let mut unpack_next_delta = || {
-                let (delta, next_cursor) = unpack_bits(entry_bits, &tail, byte_index, bit_index);
-                (byte_index, bit_index) = next_cursor;
-                delta
-            };
-
+            let mut unpacker = BitUnpacker::new(&tail);
             for slot in entries.iter_mut().take(num_entries).skip(i) {
-                *slot = unpack_next_delta();
+                *slot = unpacker.unpack_value(entry_bits);
             }
         }
 
