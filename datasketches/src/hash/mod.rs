@@ -36,7 +36,7 @@ pub(crate) use self::xxhash::XxHash64;
 /// original source key value and the hashed bit string would be violated. Once you have developed
 /// a history of stored sketches you are stuck with it.
 /// The default seed used for hashing.
-pub const DEFAULT_UPDATE_SEED: u64 = 9001;
+pub(crate) const DEFAULT_UPDATE_SEED: u64 = 9001;
 
 /// Computes and checks the 16-bit seed hash from the given long seed.
 ///
