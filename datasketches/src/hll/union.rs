@@ -59,13 +59,13 @@ impl HllUnion {
     ///
     /// # Arguments
     ///
-    /// * `lg_max_k` - Maximum log2 of the number of buckets. Must be in [4, 21]. This determines
+    /// * `lg_max_k`: Maximum log2 of the number of buckets. Must be in `[4, 21]`. This determines
     ///   the maximum precision the union can handle. Input sketches with larger lg_k will be
     ///   down-sampled.
     ///
     /// # Panics
     ///
-    /// Panics if `lg_max_k` is not in the range [4, 21].
+    /// Panics if `lg_max_k` is not in the range `[4, 21]`.
     ///
     /// # Examples
     ///
@@ -244,7 +244,7 @@ impl HllUnion {
     ///
     /// # Arguments
     ///
-    /// * `hll_type` - The target HLL type for the result sketch (Hll4, Hll6, or Hll8)
+    /// * `hll_type`: The target HLL type for the result sketch (Hll4, Hll6, or Hll8)
     ///
     /// # Examples
     ///

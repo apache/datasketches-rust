@@ -54,15 +54,15 @@ impl HllSketch {
     ///
     /// # Arguments
     ///
-    /// * `lg_config_k` - Log2 of the number of buckets (K). Must be in [4, 21].
+    /// * `lg_config_k`: Log2 of the number of buckets (K). Must be in `[4, 21]`.
     ///   - lg_k=4: 16 buckets, ~26% relative error
     ///   - lg_k=12: 4096 buckets, ~1.6% relative error (common choice)
     ///   - lg_k=21: 2M buckets, ~0.4% relative error
-    /// * `hll_type` - Target HLL array type (Hll4, Hll6, or Hll8)
+    /// * `hll_type`: Target HLL array type (Hll4, Hll6, or Hll8)
     ///
     /// # Panics
     ///
-    /// If lg_config_k is not in range [4, 21]
+    /// If lg_config_k is not in range `[4, 21]`
     ///
     /// # Examples
     ///
@@ -94,8 +94,8 @@ impl HllSketch {
     ///
     /// # Arguments
     ///
-    /// * `lg_config_k` - Log2 of the number of buckets (K)
-    /// * `mode` - The mode to initialize the sketch with
+    /// * `lg_config_k`: Log2 of the number of buckets (K)
+    /// * `mode`: The mode to initialize the sketch with
     pub(super) fn from_mode(lg_config_k: u8, mode: Mode) -> Self {
         Self { lg_config_k, mode }
     }
