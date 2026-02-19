@@ -15,14 +15,16 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! Codec utilities for datasketches crate.
+//! Binary serialization format constants for Theta sketches.
 
-// public common codec utilities for datasketches crate
-mod decode;
-mod encode;
-pub use self::decode::SketchSlice;
-pub use self::encode::SketchBytes;
+pub(crate) const UNCOMPRESSED_SERIAL_VERSION: u8 = 3;
+pub(crate) const COMPRESSED_SERIAL_VERSION: u8 = 4;
 
-// private to datasketches crate
-pub(crate) mod family;
-pub(crate) mod utility;
+pub(crate) const V2_PREAMBLE_EMPTY: u8 = 1;
+pub(crate) const V2_PREAMBLE_PRECISE: u8 = 2;
+pub(crate) const V2_PREAMBLE_ESTIMATE: u8 = 3;
+
+pub(crate) const FLAGS_IS_READ_ONLY: u8 = 1 << 1;
+pub(crate) const FLAGS_IS_EMPTY: u8 = 1 << 2;
+pub(crate) const FLAGS_IS_COMPACT: u8 = 1 << 3;
+pub(crate) const FLAGS_IS_ORDERED: u8 = 1 << 4;

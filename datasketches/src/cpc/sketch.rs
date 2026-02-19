@@ -20,6 +20,8 @@ use std::hash::Hash;
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
 use crate::codec::family::Family;
+use crate::codec::utility::ensure_preamble_longs_in;
+use crate::codec::utility::ensure_serial_version_is;
 use crate::common::NumStdDev;
 use crate::common::canonical_double;
 use crate::common::inv_pow2_table::INVERSE_POWERS_OF_2;
@@ -518,12 +520,7 @@ impl CpcSketch {
         let serial_version = cursor.read_u8().map_err(make_error("serial_version"))?;
         let family_id = cursor.read_u8().map_err(make_error("family_id"))?;
         Family::CPC.validate_id(family_id)?;
-        if serial_version != SERIAL_VERSION {
-            return Err(Error::unsupported_serial_version(
-                SERIAL_VERSION,
-                serial_version,
-            ));
-        }
+        ensure_serial_version_is(SERIAL_VERSION, serial_version)?;
 
         let lg_k = cursor.read_u8().map_err(make_error("lg_k"))?;
         let first_interesting_column = cursor
@@ -594,12 +591,7 @@ impl CpcSketch {
 
         let expected_preamble_ints =
             make_preamble_ints(num_coupons, has_hip, has_table, has_window);
-        if preamble_ints != expected_preamble_ints {
-            return Err(Error::invalid_preamble_longs(
-                expected_preamble_ints,
-                preamble_ints,
-            ));
-        }
+        ensure_preamble_longs_in(&[expected_preamble_ints], preamble_ints)?;
         if seed_hash != compute_seed_hash(seed) {
             return Err(Error::new(
                 ErrorKind::InvalidData,
