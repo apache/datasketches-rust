@@ -102,7 +102,7 @@ impl BloomFilterBuilder {
     ///
     /// Panics if any of:
     /// * `num_bits` < [`Self::MIN_NUM_BITS`] or `num_bits` > [`Self::MAX_NUM_BITS`]
-    /// * `num_hashes` < [`Self::MIN_NUM_HASHES`] or `num_hashes` > [`Self::MIN_NUM_HASHES`]
+    /// * `num_hashes` < [`Self::MIN_NUM_HASHES`] or `num_hashes` > [`Self::MAX_NUM_HASHES`]
     ///
     /// # Examples
     ///
