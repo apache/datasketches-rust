@@ -296,7 +296,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
 
     /// Returns frequent items using the sketch maximum error as threshold.
     ///
-    /// This is equivalent to `frequent_items_with_threshold(self.maximum_error(), error_type)`.
+    /// This is equivalent to `frequent_items_with_threshold(error_type, self.maximum_error())`.
     ///
     /// # Examples
     ///
@@ -343,7 +343,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
         T: Clone,
     {
         let threshold = threshold.max(self.offset);
-        let mut rows = Vec::new();
+        let mut rows = vec![];
         for (item, count) in self.hash_map.iter() {
             let lower = count;
             let upper = count + self.offset;

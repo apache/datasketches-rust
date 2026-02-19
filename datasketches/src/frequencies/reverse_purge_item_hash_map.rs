@@ -192,7 +192,7 @@ impl<T: Eq + Hash> ReversePurgeItemHashMap<T> {
         T: Clone,
     {
         if self.num_active == 0 {
-            return Vec::new();
+            return vec![];
         }
         let mut keys = Vec::with_capacity(self.num_active);
         for i in 0..self.keys.len() {
@@ -208,7 +208,7 @@ impl<T: Eq + Hash> ReversePurgeItemHashMap<T> {
     /// Returns the active values in the map.
     pub fn active_values(&self) -> Vec<u64> {
         if self.num_active == 0 {
-            return Vec::new();
+            return vec![];
         }
         let mut values = Vec::with_capacity(self.num_active);
         for i in 0..self.values.len() {
