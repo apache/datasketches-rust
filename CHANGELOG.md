@@ -13,6 +13,7 @@ All significant changes to this project will be documented in this file.
 
 * `CountMinSketch` with unsigned values now supports `halve` and `decay` operations.
 * `CpcSketch` and `CpcUnion` are now available for cardinality estimation.
+* `CpcWrapper` is now available for read `CpcSketch`'s estimation from a serialized sketch without full deserialization.
 * `FrequentItemsSketch` now supports serde for any value implement `FrequentItemValue` (builtin supports for `i64`, `u64`, and `String`).
 * Expose `codec::SketchBytes`, `codec::SketchSlice`, and `FrequentItemValue` as public API.
 

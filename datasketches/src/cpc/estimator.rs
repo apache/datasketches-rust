@@ -88,7 +88,43 @@ static HIP_HIGH_SIDE_DATA: [u16; 33] = [
     5880, 5914, 5953, // 14 1000297
 ];
 
-pub(super) fn icon_confidence_lb(lg_k: u8, num_coupons: u32, kappa: NumStdDev) -> f64 {
+pub(super) fn estimate(merge_flag: bool, hip_est_accum: f64, lg_k: u8, num_coupons: u32) -> f64 {
+    if !merge_flag {
+        hip_est_accum
+    } else {
+        icon_estimate(lg_k, num_coupons)
+    }
+}
+
+pub(super) fn lower_bound(
+    merge_flag: bool,
+    hip_est_accum: f64,
+    lg_k: u8,
+    num_coupons: u32,
+    kappa: NumStdDev,
+) -> f64 {
+    if !merge_flag {
+        hip_confidence_lb(lg_k, num_coupons, hip_est_accum, kappa)
+    } else {
+        icon_confidence_lb(lg_k, num_coupons, kappa)
+    }
+}
+
+pub(super) fn upper_bound(
+    merge_flag: bool,
+    hip_est_accum: f64,
+    lg_k: u8,
+    num_coupons: u32,
+    kappa: NumStdDev,
+) -> f64 {
+    if !merge_flag {
+        hip_confidence_ub(lg_k, num_coupons, hip_est_accum, kappa)
+    } else {
+        icon_confidence_ub(lg_k, num_coupons, kappa)
+    }
+}
+
+fn icon_confidence_lb(lg_k: u8, num_coupons: u32, kappa: NumStdDev) -> f64 {
     if num_coupons == 0 {
         return 0.0;
     }
@@ -112,7 +148,7 @@ pub(super) fn icon_confidence_lb(lg_k: u8, num_coupons: u32, kappa: NumStdDev) -
     }
 }
 
-pub(super) fn icon_confidence_ub(lg_k: u8, num_coupons: u32, kappa: NumStdDev) -> f64 {
+fn icon_confidence_ub(lg_k: u8, num_coupons: u32, kappa: NumStdDev) -> f64 {
     if num_coupons == 0 {
         return 0.0;
     }
@@ -132,12 +168,7 @@ pub(super) fn icon_confidence_ub(lg_k: u8, num_coupons: u32, kappa: NumStdDev) -
     result.ceil() // slight widening of interval to be conservative
 }
 
-pub(super) fn hip_confidence_lb(
-    lg_k: u8,
-    num_coupons: u32,
-    hip_est_accum: f64,
-    kappa: NumStdDev,
-) -> f64 {
+fn hip_confidence_lb(lg_k: u8, num_coupons: u32, hip_est_accum: f64, kappa: NumStdDev) -> f64 {
     if num_coupons == 0 {
         return 0.0;
     }
@@ -160,12 +191,7 @@ pub(super) fn hip_confidence_lb(
     }
 }
 
-pub(super) fn hip_confidence_ub(
-    lg_k: u8,
-    num_coupons: u32,
-    hip_est_accum: f64,
-    kappa: NumStdDev,
-) -> f64 {
+fn hip_confidence_ub(lg_k: u8, num_coupons: u32, hip_est_accum: f64, kappa: NumStdDev) -> f64 {
     if num_coupons == 0 {
         return 0.0;
     }
@@ -362,7 +388,7 @@ fn icon_exponential_approximation(k: f64, c: f64) -> f64 {
     0.7940236163830469 * k * 2f64.powf(c / k)
 }
 
-pub(super) fn icon_estimate(lg_k: u8, num_coupons: u32) -> f64 {
+fn icon_estimate(lg_k: u8, num_coupons: u32) -> f64 {
     let lg_k = lg_k as usize;
     assert!(
         (ICON_MIN_LOG_K..=ICON_MAX_LOG_K).contains(&lg_k),

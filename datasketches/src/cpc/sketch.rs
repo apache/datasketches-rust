@@ -33,13 +33,17 @@ use crate::cpc::compression::CompressedState;
 use crate::cpc::count_bits_set_in_matrix;
 use crate::cpc::determine_correct_offset;
 use crate::cpc::determine_flavor;
-use crate::cpc::estimator::hip_confidence_lb;
-use crate::cpc::estimator::hip_confidence_ub;
-use crate::cpc::estimator::icon_confidence_lb;
-use crate::cpc::estimator::icon_confidence_ub;
-use crate::cpc::estimator::icon_estimate;
+use crate::cpc::estimator::estimate;
+use crate::cpc::estimator::lower_bound;
+use crate::cpc::estimator::upper_bound;
 use crate::cpc::kxp_byte_lookup::KXP_BYTE_TABLE;
 use crate::cpc::pair_table::PairTable;
+use crate::cpc::serialization::FLAG_COMPRESSED;
+use crate::cpc::serialization::FLAG_HAS_HIP;
+use crate::cpc::serialization::FLAG_HAS_TABLE;
+use crate::cpc::serialization::FLAG_HAS_WINDOW;
+use crate::cpc::serialization::SERIAL_VERSION;
+use crate::cpc::serialization::make_preamble_ints;
 use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::hash::DEFAULT_UPDATE_SEED;
@@ -130,29 +134,34 @@ impl CpcSketch {
 
     /// Returns the best estimate of the cardinality of the sketch.
     pub fn estimate(&self) -> f64 {
-        if !self.merge_flag {
-            self.hip_est_accum
-        } else {
-            icon_estimate(self.lg_k, self.num_coupons)
-        }
+        estimate(
+            self.merge_flag,
+            self.hip_est_accum,
+            self.lg_k,
+            self.num_coupons,
+        )
     }
 
     /// Returns the best estimate of the lower bound of the confidence interval given `kappa`.
     pub fn lower_bound(&self, kappa: NumStdDev) -> f64 {
-        if !self.merge_flag {
-            hip_confidence_lb(self.lg_k, self.num_coupons, self.hip_est_accum, kappa)
-        } else {
-            icon_confidence_lb(self.lg_k, self.num_coupons, kappa)
-        }
+        lower_bound(
+            self.merge_flag,
+            self.hip_est_accum,
+            self.lg_k,
+            self.num_coupons,
+            kappa,
+        )
     }
 
     /// Returns the best estimate of the upper bound of the confidence interval given `kappa`.
     pub fn upper_bound(&self, kappa: NumStdDev) -> f64 {
-        if !self.merge_flag {
-            hip_confidence_ub(self.lg_k, self.num_coupons, self.hip_est_accum, kappa)
-        } else {
-            icon_confidence_ub(self.lg_k, self.num_coupons, kappa)
-        }
+        upper_bound(
+            self.merge_flag,
+            self.hip_est_accum,
+            self.lg_k,
+            self.num_coupons,
+            kappa,
+        )
     }
 
     /// Returns true if the sketch is empty.
@@ -437,12 +446,6 @@ impl CpcSketch {
     }
 }
 
-const SERIAL_VERSION: u8 = 1;
-const FLAG_COMPRESSED: u8 = 1;
-const FLAG_HAS_HIP: u8 = 2;
-const FLAG_HAS_TABLE: u8 = 3;
-const FLAG_HAS_WINDOW: u8 = 4;
-
 impl CpcSketch {
     /// Serializes this CpcSketch to bytes.
     pub fn serialize(&self) -> Vec<u8> {
@@ -635,27 +638,6 @@ impl CpcSketch {
         bytes.write_f64_le(self.kxp);
         bytes.write_f64_le(self.hip_est_accum);
     }
-}
-
-fn make_preamble_ints(num_coupons: u32, has_hip: bool, has_table: bool, has_window: bool) -> u8 {
-    let mut preamble_ints = 2;
-    if num_coupons > 0 {
-        preamble_ints += 1; // number of coupons
-        if has_hip {
-            preamble_ints += 4; // HIP
-        }
-        if has_table {
-            preamble_ints += 1; // table data length
-            // number of values (if there is no window it is the same as number of coupons)
-            if has_window {
-                preamble_ints += 1;
-            }
-        }
-        if has_window {
-            preamble_ints += 1; // window length
-        }
-    }
-    preamble_ints
 }
 
 impl CpcSketch {
