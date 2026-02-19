@@ -23,10 +23,10 @@
 //!
 //! # Properties
 //!
-//! - **No false negatives**: If an item was inserted, `contains()` will always return `true`
-//! - **Possible false positives**: `contains()` may return `true` for items never inserted
-//! - **Fixed size**: Unlike typical sketches, Bloom filters do not resize automatically
-//! - **Linear space**: Size is proportional to the expected number of distinct items
+//! * **No false negatives**: If an item was inserted, `contains()` will always return `true`
+//! * **Possible false positives**: `contains()` may return `true` for items never inserted
+//! * **Fixed size**: Unlike typical sketches, Bloom filters do not resize automatically
+//! * **Linear space**: Size is proportional to the expected number of distinct items
 //!
 //! # Usage
 //!
@@ -109,15 +109,15 @@
 //!
 //! # Implementation Details
 //!
-//! - Uses XXHash64 for hashing
-//! - Implements double hashing (Kirsch-Mitzenmacher method) for k hash functions
-//! - Bits packed efficiently in `u64` words
-//! - Compatible serialization format (family ID: 21)
+//! * Uses XXHash64 for hashing
+//! * Implements double hashing (Kirsch-Mitzenmacher method) for k hash functions
+//! * Bits packed efficiently in `u64` words
+//! * Compatible serialization format (family ID: 21)
 //!
 //! # References
 //!
-//! - Bloom, Burton H. (1970). "Space/time trade-offs in hash coding with allowable errors"
-//! - Kirsch and Mitzenmacher (2008). "Less Hashing, Same Performance: Building a Better Bloom
+//! * Bloom, Burton H. (1970). "Space/time trade-offs in hash coding with allowable errors"
+//! * Kirsch and Mitzenmacher (2008). "Less Hashing, Same Performance: Building a Better Bloom
 //!   Filter"
 
 mod builder;

@@ -236,7 +236,7 @@ impl ThetaSketch {
     ///
     /// # Arguments
     ///
-    /// * `num_std_dev` - The number of standard deviations for confidence bounds.
+    /// * `num_std_dev`: The number of standard deviations for confidence bounds.
     ///
     /// # Examples
     ///
@@ -270,7 +270,7 @@ impl ThetaSketch {
     ///
     /// # Arguments
     ///
-    /// * `num_std_dev` - The number of standard deviations for confidence bounds.
+    /// * `num_std_dev`: The number of standard deviations for confidence bounds.
     ///
     /// # Examples
     ///

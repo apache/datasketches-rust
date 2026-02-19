@@ -33,9 +33,9 @@ const EMPTY_FLAG_MASK: u8 = 1 << 2;
 /// A Bloom filter for probabilistic set membership testing.
 ///
 /// Provides fast membership queries with:
-/// - No false negatives (inserted items always return `true`)
-/// - Tunable false positive rate
-/// - Constant space usage
+/// * No false negatives (inserted items always return `true`)
+/// * Tunable false positive rate
+/// * Constant space usage
 ///
 /// Use [`super::BloomFilterBuilder`] to construct instances.
 #[derive(Debug, Clone, PartialEq)]
@@ -54,8 +54,8 @@ impl BloomFilter {
     /// Tests whether an item is possibly in the set.
     ///
     /// Returns:
-    /// - `true`: Item was **possibly** inserted (or false positive)
-    /// - `false`: Item was **definitely not** inserted
+    /// * `true`: Item was **possibly** inserted (or false positive)
+    /// * `false`: Item was **definitely not** inserted
     ///
     /// # Examples
     ///
@@ -290,8 +290,8 @@ impl BloomFilter {
     ///
     /// Uses the approximation: `load_factor^k`
     /// where:
-    /// - load_factor = fraction of bits set (bits_used / capacity)
-    /// - k = num_hashes
+    /// * load_factor = fraction of bits set (bits_used / capacity)
+    /// * k = num_hashes
     ///
     /// This assumes uniform bit distribution and is more accurate than
     /// trying to estimate insertion count from the load factor.
@@ -307,9 +307,9 @@ impl BloomFilter {
     /// Checks if two filters are compatible for merging.
     ///
     /// Filters are compatible if they have the same:
-    /// - Capacity (number of bits)
-    /// - Number of hash functions
-    /// - Seed
+    /// * Capacity (number of bits)
+    /// * Number of hash functions
+    /// * Seed
     pub fn is_compatible(&self, other: &Self) -> bool {
         self.bit_array.len() == other.bit_array.len()
             && self.num_hashes == other.num_hashes
@@ -379,9 +379,9 @@ impl BloomFilter {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The data is truncated or corrupted
-    /// - The family ID doesn't match (not a Bloom filter)
-    /// - The serial version is unsupported
+    /// * The data is truncated or corrupted
+    /// * The family ID doesn't match (not a Bloom filter)
+    /// * The serial version is unsupported
     ///
     /// # Examples
     ///
@@ -501,8 +501,8 @@ impl BloomFilter {
     /// Computes the two base hash values using XXHash64.
     ///
     /// Uses a two-hash approach:
-    /// - h0 = XXHash64(item, seed)
-    /// - h1 = XXHash64(item, h0)
+    /// * h0 = XXHash64(item, seed)
+    /// * h1 = XXHash64(item, h0)
     fn compute_hash<T: Hash>(&self, item: &T) -> (u64, u64) {
         // First hash with the configured seed
         let mut hasher = XxHash64::with_seed(self.seed);

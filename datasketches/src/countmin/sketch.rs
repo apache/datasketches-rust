@@ -75,10 +75,10 @@ impl<T: CountMinValue> CountMinSketch<T> {
     /// # Panics
     ///
     /// Panics if any of:
-    /// - `num_hashes` is 0
-    /// - `num_buckets` is less than 3
-    /// - the total table size exceeds the supported limit
-    /// - the computed seed hash is zero
+    /// * `num_hashes` is 0
+    /// * `num_buckets` is less than 3
+    /// * the total table size exceeds the supported limit
+    /// * the computed seed hash is zero
     ///
     /// # Examples
     ///

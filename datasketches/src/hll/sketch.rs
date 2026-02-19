@@ -55,9 +55,9 @@ impl HllSketch {
     /// # Arguments
     ///
     /// * `lg_config_k`: Log2 of the number of buckets (K). Must be in `[4, 21]`.
-    ///   - lg_k=4: 16 buckets, ~26% relative error
-    ///   - lg_k=12: 4096 buckets, ~1.6% relative error (common choice)
-    ///   - lg_k=21: 2M buckets, ~0.4% relative error
+    /// * lg_k=4: 16 buckets, ~26% relative error
+    /// * lg_k=12: 4096 buckets, ~1.6% relative error (common choice)
+    /// * lg_k=21: 2M buckets, ~0.4% relative error
     /// * `hll_type`: Target HLL array type (Hll4, Hll6, or Hll8)
     ///
     /// # Panics

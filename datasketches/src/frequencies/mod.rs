@@ -29,14 +29,14 @@
 //! associated counts.
 //!
 //! This implementation provides the following capabilities:
-//! - Estimate the frequency of an item.
-//! - Return upper and lower bounds of any item, such that the true frequency is always between the
+//! * Estimate the frequency of an item.
+//! * Return upper and lower bounds of any item, such that the true frequency is always between the
 //!   upper and lower bounds.
-//! - Return a global maximum error that holds for all items in the stream.
-//! - Return an array of frequent items that qualify either [`ErrorType::NoFalsePositives`] or
+//! * Return a global maximum error that holds for all items in the stream.
+//! * Return an array of frequent items that qualify either [`ErrorType::NoFalsePositives`] or
 //!   [`ErrorType::NoFalseNegatives`].
-//! - Merge itself with another sketch created from this module.
-//! - Serialize to bytes, or deserialize from bytes, for storage or transmission.
+//! * Merge itself with another sketch created from this module.
+//! * Serialize to bytes, or deserialize from bytes, for storage or transmission.
 //!
 //! # Accuracy
 //!
@@ -66,12 +66,12 @@
 //!
 //! This code implements a variant of what is commonly known as the "Misra-Gries algorithm".
 //! Variants of it were discovered and rediscovered and redesigned several times over the years:
-//! - "Finding repeated elements", Misra, Gries, 1982
-//! - "Frequency estimation of Internet packet streams with limited space" Demaine, Lopez-Ortiz,
+//! * "Finding repeated elements", Misra, Gries, 1982
+//! * "Frequency estimation of Internet packet streams with limited space" Demaine, Lopez-Ortiz,
 //!   Munro, 2002
-//! - "A simple algorithm for finding frequent elements in streams and bags" Karp, Shenker,
+//! * "A simple algorithm for finding frequent elements in streams and bags" Karp, Shenker,
 //!   Papadimitriou, 2003
-//! - "Efficient Computation of Frequent and Top-k Elements in Data Streams" Metwally, Agrawal,
+//! * "Efficient Computation of Frequent and Top-k Elements in Data Streams" Metwally, Agrawal,
 //!   Abbadi, 2006
 //!
 //! # Examples

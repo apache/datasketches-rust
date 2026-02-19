@@ -187,8 +187,8 @@ impl Array8 {
     ///
     /// # Parameters
     ///
-    /// * `src` - Source register values (length must be 2^src_lg_k)
-    /// * `src_lg_k` - Log2 of source register count
+    /// * `src`: Source register values (length must be 2^src_lg_k)
+    /// * `src_lg_k`: Log2 of source register count
     ///
     /// # Panics
     ///

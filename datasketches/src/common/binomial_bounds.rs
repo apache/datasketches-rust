@@ -274,9 +274,9 @@ static UB_EQUIV_TABLE: [f64; 363] = [
 ///
 /// # Arguments
 ///
-/// * `num_samples` - The number of samples in the sample set.
-/// * `theta` - The sampling probability. Must be in the range (0.0, 1.0].
-/// * `num_std_dev` - The number of standard deviations for confidence bounds.
+/// * `num_samples`: The number of samples in the sample set.
+/// * `theta`: The sampling probability. Must be in the range (0.0, 1.0].
+/// * `num_std_dev`: The number of standard deviations for confidence bounds.
 ///
 /// # Returns
 ///
@@ -301,11 +301,11 @@ pub(crate) fn lower_bound(
 ///
 /// # Arguments
 ///
-/// * `num_samples` - The number of samples in the sample set.
-/// * `theta` - The sampling probability. Must be in the range `(0.0, 1.0]`.
-/// * `num_std_dev` - The number of standard deviations for confidence bounds.
-/// * `no_data_seen` - This is normally false. However, in the case where you have zero samples and
-///   a theta < 1.0, this flag enables the distinction between a virgin case when no actual data has
+/// * `num_samples`: The number of samples in the sample set.
+/// * `theta`: The sampling probability. Must be in the range `(0.0, 1.0]`.
+/// * `num_std_dev`: The number of standard deviations for confidence bounds.
+/// * `no_data_seen`: This is normally false. However, in the case where you have zero samples and a
+///   theta < 1.0, this flag enables the distinction between a virgin case when no actual data has
 ///   been seen and the case where the estimate may be zero but an upper error bound may still
 ///   exist.
 ///
@@ -367,16 +367,16 @@ fn cont_classic_ub(num_samples: u64, theta: f64, num_std_devs: f64) -> f64 {
 ///
 /// # Arguments
 ///
-/// * `num_samples` - The number of observed samples (k). Must be >= 1.
-/// * `p` - The sampling probability. Must satisfy: 0 < p < 1.
-/// * `delta` - The tail probability. Must satisfy: 0 < delta < 1.
+/// * `num_samples`: The number of observed samples (k). Must be >= 1.
+/// * `p`: The sampling probability. Must satisfy: 0 < p < 1.
+/// * `delta`: The tail probability. Must satisfy: 0 < delta < 1.
 ///
 /// # Invariants
 ///
-/// - `num_samples >= 1`
-/// - `0.0 < p < 1.0`
-/// - `0.0 < delta < 1.0`
-/// - `(num_samples / p) < 500.0` (enforced for performance and numerical stability)
+/// * `num_samples >= 1`
+/// * `0.0 < p < 1.0`
+/// * `0.0 < delta < 1.0`
+/// * `(num_samples / p) < 500.0` (enforced for performance and numerical stability)
 ///
 /// # Returns
 ///
@@ -413,15 +413,15 @@ fn special_n_star(num_samples: u64, p: f64, delta: f64) -> Result<u64, Error> {
 ///
 /// # Arguments
 ///
-/// * `num_samples` - The number of observed samples (k). Must be >= 1.
-/// * `p` - The sampling probability. Must satisfy: 0 < p < 1.
-/// * `delta` - The tail probability. Must satisfy: 0 < delta < 1.
+/// * `num_samples`: The number of observed samples (k). Must be >= 1.
+/// * `p`: The sampling probability. Must satisfy: 0 < p < 1.
+/// * `delta`: The tail probability. Must satisfy: 0 < delta < 1.
 ///
 /// # Invariants
 ///
-/// - `num_samples >= 1`
-/// - `0.0 < p < 1.0`
-/// - `0.0 < delta < 1.0`
+/// * `num_samples >= 1`
+/// * `0.0 < p < 1.0`
+/// * `0.0 < delta < 1.0`
 ///
 /// # Returns
 ///
@@ -452,14 +452,14 @@ fn special_n_prime_b(num_samples: u64, p: f64, delta: f64) -> Result<u64, Error>
 ///
 /// # Arguments
 ///
-/// * `num_samples` - The number of observed samples (k). Must be >= 1.
-/// * `p` - The sampling probability. Must satisfy: 0 < p < 1.
-/// * `delta` - The tail probability. Must satisfy: 0 < delta < 1.
+/// * `num_samples`: The number of observed samples (k). Must be >= 1.
+/// * `p`: The sampling probability. Must satisfy: 0 < p < 1.
+/// * `delta`: The tail probability. Must satisfy: 0 < delta < 1.
 ///
 /// # Invariants
 ///
-/// - `(num_samples / p) < 500.0` (enforced for performance)
-/// - A super-small delta could also make it slow.
+/// * `(num_samples / p) < 500.0` (enforced for performance)
+/// * A super-small delta could also make it slow.
 fn special_n_prime_f(num_samples: u64, p: f64, delta: f64) -> Result<u64, Error> {
     // Use a different algorithm if the following is true; this one will be too slow, or worse.
     if (num_samples as f64 / p) >= 500.0 {

@@ -27,8 +27,8 @@
 //! Theta sketches provide approximate distinct count (cardinality) estimation with
 //! configurable accuracy and memory usage. The implementation supports:
 //!
-//! - **ThetaSketch**: Mutable sketch for building from input data
-//! - **CompactThetaSketch**: Immutable sketch with compact memory layout
+//! * **ThetaSketch**: Mutable sketch for building from input data
+//! * **CompactThetaSketch**: Immutable sketch with compact memory layout
 //!
 //! # Usage
 //!

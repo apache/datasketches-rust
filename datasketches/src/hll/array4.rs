@@ -79,8 +79,8 @@ impl Array4 {
     /// Get the actual value at a slot (adjusted for cur_min and aux_map)
     ///
     /// Returns the true register value:
-    /// - If raw < 15: value = cur_min + raw
-    /// - If raw == 15 (AUX_TOKEN): value is in aux_map
+    /// * If raw < 15: value = cur_min + raw
+    /// * If raw == 15 (AUX_TOKEN): value is in aux_map
     pub(super) fn get(&self, slot: u32) -> u8 {
         let raw = self.get_raw(slot);
 

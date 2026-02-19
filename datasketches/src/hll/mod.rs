@@ -26,9 +26,9 @@
 //! This implementation follows the Apache DataSketches specification and supports multiple
 //! storage modes that automatically adapt based on cardinality:
 //!
-//! - **List mode**: Stores individual values for small cardinalities
-//! - **Set mode**: Uses a hash set for medium cardinalities
-//! - **HLL mode**: Uses compact arrays for large cardinalities
+//! * **List mode**: Stores individual values for small cardinalities
+//! * **Set mode**: Uses a hash set for medium cardinalities
+//! * **HLL mode**: Uses compact arrays for large cardinalities
 //!
 //! Mode transitions are automatic and transparent to the user. Each promotion preserves
 //! all previously observed values and maintains estimation accuracy.
@@ -44,9 +44,9 @@
 //!
 //! Three target HLL types are supported, trading precision for memory:
 //!
-//! - [`HllType::Hll4`]: 4 bits per bucket (most compact)
-//! - [`HllType::Hll6`]: 6 bits per bucket (balanced)
-//! - [`HllType::Hll8`]: 8 bits per bucket (highest precision)
+//! * [`HllType::Hll4`]: 4 bits per bucket (most compact)
+//! * [`HllType::Hll6`]: 6 bits per bucket (balanced)
+//! * [`HllType::Hll8`]: 8 bits per bucket (highest precision)
 //!
 //! # Union Operations
 //!
@@ -54,9 +54,9 @@
 //! It maintains an internal "gadget" sketch that accumulates the union of all input sketches
 //! and automatically handles:
 //!
-//! - Sketches with different `lg_k` precision levels (resizes/downsamples as needed)
-//! - Sketches in different modes (List, Set, or Array)
-//! - Sketches with different target HLL types
+//! * Sketches with different `lg_k` precision levels (resizes/downsamples as needed)
+//! * Sketches in different modes (List, Set, or Array)
+//! * Sketches with different target HLL types
 //!
 //! The union operation preserves cardinality estimation accuracy while enabling distributed
 //! computation patterns where sketches are built independently and merged later.
@@ -64,10 +64,10 @@
 //! # Serialization
 //!
 //! Sketches can be serialized and deserialized while preserving all state, including:
-//! - Current mode and HLL type
-//! - All observed values (coupons or register values)
-//! - HIP accumulator state for accurate estimation
-//! - Out-of-order flag for merged/deserialized sketches
+//! * Current mode and HLL type
+//! * All observed values (coupons or register values)
+//! * HIP accumulator state for accurate estimation
+//! * Out-of-order flag for merged/deserialized sketches
 //!
 //! The serialization format is compatible with Apache DataSketches implementations
 //! in Java and C++, enabling cross-platform sketch exchange.
