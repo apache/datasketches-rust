@@ -37,7 +37,7 @@ pub const DEFAULT_LG_K: u8 = 12;
 const RESIZE_THRESHOLD: f64 = 0.5;
 
 /// Rebuild threshold (15/16 = 93.75% load factor)
-const REBUILD_THRESHOLD: f64 = 15.0 / 16.0;
+pub(crate) const REBUILD_THRESHOLD: f64 = 15.0 / 16.0;
 
 /// Stride hash bits (7 bits for stride calculation)
 const STRIDE_HASH_BITS: u8 = 7;
@@ -61,10 +61,16 @@ pub(crate) struct ThetaHashTable {
     sampling_probability: f32,
     hash_seed: u64,
 
+    // Logical emptiness of the source set. This can be false even when `num_retained` is 0 (e.g.
+    // all updates screened by theta).
+    is_empty: bool,
+
     theta: u64,
 
     entries: Vec<u64>,
-    num_entries: usize,
+
+    // Number of retained non-zero hashes currently stored in `entries`.
+    num_retained: usize,
 }
 
 impl ThetaHashTable {
@@ -77,34 +83,58 @@ impl ThetaHashTable {
     ) -> Self {
         let lg_max_size = lg_nom_size + 1;
         let lg_cur_size = starting_sub_multiple(lg_max_size, MIN_LG_K, resize_factor.lg_value());
+        Self::new_with_state(
+            lg_cur_size,
+            lg_nom_size,
+            resize_factor,
+            sampling_probability,
+            starting_theta_from_sampling_probability(sampling_probability),
+            hash_seed,
+            true,
+        )
+    }
+
+    /// Create a table with explicit state.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `lg_cur_size > lg_nom_size + 1`. (`lg_nom_size + 1 == lg_max_size`)
+    pub fn new_with_state(
+        lg_cur_size: u8,
+        lg_nom_size: u8,
+        resize_factor: ResizeFactor,
+        sampling_probability: f32,
+        theta: u64,
+        hash_seed: u64,
+        is_empty: bool,
+    ) -> Self {
+        let lg_max_size = lg_nom_size + 1;
+        assert!(
+            lg_cur_size <= lg_max_size,
+            "lg_cur_size must be <= lg_nom_size + 1, got lg_cur_size={lg_cur_size}, lg_nom_size={lg_nom_size}"
+        );
         let size = if lg_cur_size > 0 { 1 << lg_cur_size } else { 0 };
         let entries = vec![0u64; size];
-
         Self {
             lg_cur_size,
             lg_nom_size,
             lg_max_size,
             resize_factor,
             sampling_probability,
-            theta: starting_theta_from_sampling_probability(sampling_probability),
             hash_seed,
+            is_empty,
+            theta,
             entries,
-            num_entries: 0,
+            num_retained: 0,
         }
     }
 
-    /// Hash and screen a value
-    ///
-    /// Returns the hash value if it passes the theta threshold, otherwise 0.
-    pub fn hash_and_screen<T: Hash>(&mut self, value: T) -> u64 {
+    /// Hash a value with the table seed and return the hash.
+    pub fn hash<T: Hash>(&self, value: T) -> u64 {
         let mut hasher = MurmurHash3X64128::with_seed(self.hash_seed);
         value.hash(&mut hasher);
         let (h1, _) = hasher.finish128();
-        let hash = h1 >> 1; // To make it compatible with Java version
-        if hash >= self.theta {
-            return 0; // hash == 0 is reserved for empty slots
-        }
-        hash
+        h1 >> 1 // To make it compatible with Java version
     }
 
     /// Find an entry in the hash table.
@@ -142,11 +172,21 @@ impl ThetaHashTable {
         }
     }
 
-    /// Insert a hash value into the table
+    /// Hashes and inserts a value into the table.
     ///
     /// Returns true if the value was inserted (new), false otherwise.
-    pub fn try_insert(&mut self, hash: u64) -> bool {
-        if hash == 0 {
+    pub fn try_insert<T: Hash>(&mut self, value: T) -> bool {
+        let hash = self.hash(value);
+        self.try_insert_hash(hash)
+    }
+
+    /// Inserts a pre-hashed value into the table.
+    ///
+    /// Returns true if the value was inserted (new), false otherwise.
+    pub fn try_insert_hash(&mut self, hash: u64) -> bool {
+        self.is_empty = false;
+
+        if hash == 0 || hash >= self.theta {
             return false;
         }
 
@@ -163,11 +203,11 @@ impl ThetaHashTable {
 
         assert_eq!(self.entries[index], 0, "Entry should be empty");
         self.entries[index] = hash;
-        self.num_entries += 1;
+        self.num_retained += 1;
 
         // Check if we need to resize or rebuild
         let capacity = self.get_capacity();
-        if self.num_entries > capacity {
+        if self.num_retained > capacity {
             if self.lg_cur_size <= self.lg_nom_size {
                 self.resize();
             } else {
@@ -242,13 +282,13 @@ impl ThetaHashTable {
             num_inserted, k as usize,
             "Number of inserted entries should be equal to k."
         );
-        self.num_entries = num_inserted;
+        self.num_retained = num_inserted;
         self.entries = new_entries;
     }
 
     /// Trim the table to nominal size k
     pub fn trim(&mut self) {
-        if self.num_entries > (1 << self.lg_nom_size) {
+        if self.num_retained > (1 << self.lg_nom_size) {
             self.rebuild();
         }
     }
@@ -267,14 +307,15 @@ impl ThetaHashTable {
             self.entries.resize(1 << init_lg_cur, 0);
         }
         self.entries.fill(0);
-        self.num_entries = 0;
+        self.num_retained = 0;
         self.theta = init_theta;
+        self.is_empty = true;
         self.lg_cur_size = init_lg_cur;
     }
 
-    /// Get number of entries
-    pub fn num_entries(&self) -> usize {
-        self.num_entries
+    /// Return number of retained entries
+    pub fn num_retained(&self) -> usize {
+        self.num_retained
     }
 
     /// Get theta
@@ -282,9 +323,9 @@ impl ThetaHashTable {
         self.theta
     }
 
-    /// Check if empty
+    /// Check if emptiness of the source set
     pub fn is_empty(&self) -> bool {
-        self.num_entries == 0
+        self.is_empty
     }
 
     /// Get iterator over entries
@@ -300,6 +341,55 @@ impl ThetaHashTable {
     /// Get the hash of the seed that was used to hash the input.
     pub fn seed_hash(&self) -> u16 {
         compute_seed_hash(self.hash_seed)
+    }
+
+    /// Returns true if the given hash exists in the table.
+    #[allow(dead_code)]
+    pub fn contains_hash(&self, hash: u64) -> bool {
+        if hash == 0 {
+            return false;
+        }
+        let Some(index) = self.find_in_curr_entries(hash) else {
+            return false;
+        };
+        self.entries[index] == hash
+    }
+
+    /// Set empty flag
+    #[allow(dead_code)]
+    pub fn set_empty(&mut self, is_empty: bool) {
+        self.is_empty = is_empty;
+    }
+
+    /// Get the hash seed used by this table.
+    #[allow(dead_code)]
+    pub fn hash_seed(&self) -> u64 {
+        self.hash_seed
+    }
+
+    /// Sets theta value.
+    #[allow(dead_code)]
+    pub fn set_theta(&mut self, theta: u64) {
+        assert!(
+            (1..=MAX_THETA).contains(&theta),
+            "theta must be in [1, {MAX_THETA}], got {theta}"
+        );
+        self.theta = theta;
+    }
+
+    /// Returns minimal lg_size where rebuild-capacity can hold `count`.
+    #[allow(dead_code)]
+    pub fn lg_size_from_count_for_rebuild(count: usize, load_factor: f64) -> u8 {
+        let log2 = |n: usize| {
+            if n == 0 { 0_u8 } else { n.ilog2() as u8 }
+        };
+        let log2_n = log2(count);
+        log2_n
+            + (if count > (((1u128 << ((log2_n as u32) + 1)) as f64) * load_factor) as usize {
+                2
+            } else {
+                1
+            })
     }
 
     /// Get stride for hash table probing
@@ -344,46 +434,43 @@ mod tests {
             starting_sub_multiple(8 + 1, MIN_LG_K, ResizeFactor::X8.lg_value())
         );
         assert_eq!(table.theta, starting_theta_from_sampling_probability(1.0));
-        assert_eq!(table.num_entries(), 0);
+        assert_eq!(table.num_retained(), 0);
         assert!(table.is_empty());
         assert_eq!(table.iter().count(), 0);
     }
 
     #[test]
-    fn test_hash_and_screen() {
+    fn test_hash_and_theta_screen_behavior() {
         let mut table = ThetaHashTable::new(8, ResizeFactor::X8, 1.0, DEFAULT_UPDATE_SEED);
 
-        // With MAX_THETA, all hashes should pass
-        let hash1 = table.hash_and_screen("test1");
-        let hash2 = table.hash_and_screen("test2");
+        // With MAX_THETA, hashes are computed normally.
+        let hash1 = table.hash("test1");
+        let hash2 = table.hash("test2");
         assert_ne!(hash1, 0);
         assert_ne!(hash2, 0);
         assert_ne!(hash1, hash2);
 
-        // With low theta, some hashes should be filtered
+        // With low theta, update should be screened out.
         table.theta = 1;
-        let hash3 = table.hash_and_screen("test3");
-        assert_eq!(hash3, 0);
+        assert!(!table.try_insert("test3"));
     }
 
     #[test]
     fn test_try_insert() {
         let mut table = ThetaHashTable::new(5, ResizeFactor::X8, 1.0, DEFAULT_UPDATE_SEED);
 
-        // Insert a hash value
-        let hash = table.hash_and_screen("test_value");
-        assert_ne!(hash, 0);
-        assert!(table.try_insert(hash));
-        assert_eq!(table.num_entries(), 1);
+        assert!(table.try_insert("test_value"));
+        assert_eq!(table.num_retained(), 1);
         assert!(!table.is_empty());
 
-        // Try to insert the same hash again (should fail)
-        assert!(!table.try_insert(hash));
-        assert_eq!(table.num_entries(), 1);
+        // Try to insert the same value again (should fail)
+        assert!(!table.try_insert("test_value"));
+        assert_eq!(table.num_retained(), 1);
 
-        // Try to insert 0 (should fail)
-        assert!(!table.try_insert(0));
-        assert_eq!(table.num_entries(), 1);
+        // Force screening and verify insertion fails
+        table.theta = 0;
+        assert!(!table.try_insert("screened"));
+        assert_eq!(table.num_retained(), 1);
     }
 
     #[test]
@@ -393,13 +480,12 @@ mod tests {
         // Insert multiple distinct values
         let mut inserted_count = 0;
         for i in 0..10 {
-            let hash = table.hash_and_screen(format!("value_{}", i));
-            if hash != 0 && table.try_insert(hash) {
+            if table.try_insert(format!("value_{}", i)) {
                 inserted_count += 1;
             }
         }
 
-        assert_eq!(table.num_entries(), inserted_count);
+        assert_eq!(table.num_retained(), inserted_count);
         assert!(!table.is_empty());
         assert_eq!(table.iter().count(), inserted_count);
     }
@@ -409,8 +495,7 @@ mod tests {
         fn populate_values(table: &mut ThetaHashTable, count: usize) -> usize {
             let mut inserted = 0;
             for i in 0..count {
-                let hash = table.hash_and_screen(format!("value_{}", i));
-                if hash != 0 && table.try_insert(hash) {
+                if table.try_insert(format!("value_{}", i)) {
                     inserted += 1;
                 }
             }
@@ -427,8 +512,8 @@ mod tests {
             let inserted = populate_values(&mut table, 20);
 
             // Table should have resized and all values should be inserted
-            assert!(table.num_entries() > 0);
-            assert_eq!(table.num_entries(), inserted);
+            assert!(table.num_retained() > 0);
+            assert_eq!(table.num_retained(), inserted);
             assert_eq!(table.entries.len(), 64);
         }
 
@@ -443,8 +528,8 @@ mod tests {
             let inserted = populate_values(&mut table, 20);
 
             // Table should have resized and all values should be inserted
-            assert!(table.num_entries() > 0);
-            assert_eq!(table.num_entries(), inserted);
+            assert!(table.num_retained() > 0);
+            assert_eq!(table.num_retained(), inserted);
             assert_eq!(table.entries.len(), 128);
         }
     }
@@ -459,10 +544,7 @@ mod tests {
 
         // Insert many values to trigger rebuild
         for i in 0..100 {
-            let hash = table.hash_and_screen(format!("value_{}", i));
-            if hash != 0 {
-                table.try_insert(hash);
-            }
+            let _ = table.try_insert(format!("value_{}", i));
         }
 
         // After rebuild, theta should be reduced (rebuild is called automatically during insert)
@@ -474,10 +556,7 @@ mod tests {
 
         // Continue to insert values to trigger rebuild again
         for i in 100..200 {
-            let hash = table.hash_and_screen(format!("value_{}", i));
-            if hash != 0 {
-                table.try_insert(hash);
-            }
+            let _ = table.try_insert(format!("value_{}", i));
         }
 
         assert_eq!(table.lg_cur_size, 6);
@@ -491,17 +570,14 @@ mod tests {
 
         // Insert more than k values
         for i in 0..100 {
-            let hash = table.hash_and_screen(format!("value_{}", i));
-            if hash != 0 {
-                table.try_insert(hash);
-            }
+            let _ = table.try_insert(format!("value_{}", i));
         }
 
-        let before_trim = table.num_entries();
+        let before_trim = table.num_retained();
         assert!(before_trim > 32);
 
         table.trim();
-        let after_trim = table.num_entries();
+        let after_trim = table.num_retained();
         assert!(after_trim <= 32);
         assert!(table.theta() < MAX_THETA);
     }
@@ -512,16 +588,13 @@ mod tests {
 
         // Insert fewer than k values
         for i in 0..10 {
-            let hash = table.hash_and_screen(format!("value_{}", i));
-            if hash != 0 {
-                table.try_insert(hash);
-            }
+            let _ = table.try_insert(format!("value_{}", i));
         }
 
-        let before_trim = table.num_entries();
+        let before_trim = table.num_retained();
         let before_theta = table.theta();
         table.trim();
-        let after_trim = table.num_entries();
+        let after_trim = table.num_retained();
 
         // Should not change if already <= k
         assert_eq!(before_trim, after_trim);
@@ -537,20 +610,17 @@ mod tests {
 
         // Insert some values
         for i in 0..10 {
-            let hash = table.hash_and_screen(format!("value_{}", i));
-            if hash != 0 {
-                table.try_insert(hash);
-            }
+            let _ = table.try_insert(format!("value_{}", i));
         }
 
         assert!(!table.is_empty());
-        assert!(table.num_entries() > 0);
+        assert!(table.num_retained() > 0);
 
         // Reset
         table.reset();
 
         assert!(table.is_empty());
-        assert_eq!(table.num_entries(), 0);
+        assert_eq!(table.num_retained(), 0);
         assert_eq!(table.theta(), init_theta);
         assert_eq!(table.lg_cur_size, init_lg_cur);
         assert_eq!(table.entries.len(), init_entries);
@@ -569,10 +639,7 @@ mod tests {
 
         // Insert some values
         for i in 0..10 {
-            let hash = table.hash_and_screen(format!("value_{}", i));
-            if hash != 0 {
-                table.try_insert(hash);
-            }
+            let _ = table.try_insert(format!("value_{}", i));
         }
 
         table.reset();
@@ -589,15 +656,15 @@ mod tests {
         // Insert some values
         let mut inserted_hashes = Vec::new();
         for i in 0..10 {
-            let hash = table.hash_and_screen(format!("value_{}", i));
-            if hash != 0 && table.try_insert(hash) {
+            let hash = table.hash(i);
+            if table.try_insert(i) {
                 inserted_hashes.push(hash);
             }
         }
 
         // Check iterator
         let iter_hashes: Vec<u64> = table.iter().collect();
-        assert_eq!(iter_hashes.len(), table.num_entries());
+        assert_eq!(iter_hashes.len(), table.num_retained());
         assert_eq!(iter_hashes.len(), inserted_hashes.len());
 
         // All inserted hashes should be in iterator
@@ -614,7 +681,7 @@ mod tests {
         let mut table = ThetaHashTable::new(8, ResizeFactor::X8, 1.0, DEFAULT_UPDATE_SEED);
 
         assert!(table.is_empty());
-        assert_eq!(table.num_entries(), 0);
+        assert_eq!(table.num_retained(), 0);
         assert_eq!(table.iter().count(), 0);
 
         // Trim on empty table should not panic
@@ -635,13 +702,12 @@ mod tests {
         let mut i = 0;
         let mut inserted_hashes = Vec::new();
         loop {
-            let hash = table.hash_and_screen(format!("value_{}", i));
+            let hash = table.hash(i);
             i += 1;
-            if hash != 0 {
-                table.try_insert(hash);
+            if table.try_insert(i - 1) {
                 inserted_hashes.push(hash);
             }
-            if table.num_entries() >= k as usize {
+            if table.num_retained() >= k as usize {
                 break;
             }
         }
@@ -649,23 +715,21 @@ mod tests {
         let rebuild_threshold = table.get_capacity();
 
         loop {
-            let hash = table.hash_and_screen(format!("value_{}", i));
+            let hash = table.hash(i);
             i += 1;
-            if hash != 0 {
-                table.try_insert(hash);
+            if table.try_insert(i - 1) {
                 inserted_hashes.push(hash);
             }
-            if table.num_entries() >= rebuild_threshold {
+            if table.num_retained() >= rebuild_threshold {
                 break;
             }
         }
 
         // trigger rebuild
         loop {
-            let hash = table.hash_and_screen(format!("value_{}", i));
+            let hash = table.hash(i);
             i += 1;
-            if hash != 0 {
-                table.try_insert(hash);
+            if table.try_insert(i - 1) {
                 inserted_hashes.push(hash);
                 break;
             }
