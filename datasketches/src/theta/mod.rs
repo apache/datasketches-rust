@@ -32,7 +32,7 @@
 //!
 //! # Usage
 //!
-//! ```rust
+//! ```
 //! # use datasketches::theta::ThetaSketch;
 //! let mut sketch = ThetaSketch::builder().build();
 //! sketch.update("apple");

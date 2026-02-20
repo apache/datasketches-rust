@@ -30,7 +30,7 @@
 //!
 //! # Usage
 //!
-//! ```rust
+//! ```
 //! use datasketches::bloom::BloomFilter;
 //! use datasketches::bloom::BloomFilterBuilder;
 //!
@@ -60,7 +60,7 @@
 //!
 //! Automatically calculates optimal size and hash functions:
 //!
-//! ```rust
+//! ```
 //! # use datasketches::bloom::BloomFilterBuilder;
 //! let filter = BloomFilterBuilder::with_accuracy(
 //!     10_000, // Expected max items
@@ -74,7 +74,7 @@
 //!
 //! Specify requested bit count and hash functions (rounded up to a multiple of 64 bits):
 //!
-//! ```rust
+//! ```
 //! # use datasketches::bloom::BloomFilterBuilder;
 //! let filter = BloomFilterBuilder::with_size(
 //!     95_851, // Number of bits
@@ -87,7 +87,7 @@
 //!
 //! Bloom filters support efficient set operations:
 //!
-//! ```rust
+//! ```
 //! # use datasketches::bloom::BloomFilterBuilder;
 //! let mut filter1 = BloomFilterBuilder::with_accuracy(100, 0.01).build();
 //! let mut filter2 = BloomFilterBuilder::with_accuracy(100, 0.01).build();

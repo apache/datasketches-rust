@@ -50,7 +50,7 @@
 //!
 //! # Usage
 //!
-//! ```rust
+//! ```
 //! # use datasketches::tdigest::TDigestMut;
 //! let mut sketch = TDigestMut::new(100);
 //! sketch.update(1.0);

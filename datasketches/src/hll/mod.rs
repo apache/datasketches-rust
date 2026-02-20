@@ -74,7 +74,7 @@
 //!
 //! # Usage
 //!
-//! ```rust
+//! ```
 //! # use datasketches::hll::HllSketch;
 //! # use datasketches::hll::HllType;
 //! # use datasketches::common::NumStdDev;
@@ -86,7 +86,7 @@
 //!
 //! # Union
 //!
-//! ```rust
+//! ```
 //! # use datasketches::hll::HllSketch;
 //! # use datasketches::hll::HllType;
 //! # use datasketches::hll::HllUnion;
