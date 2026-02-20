@@ -40,11 +40,14 @@ mod compression_data;
 mod estimator;
 mod kxp_byte_lookup;
 mod pair_table;
+mod serialization;
 mod sketch;
 mod union;
+mod wrapper;
 
 pub use self::sketch::CpcSketch;
 pub use self::union::CpcUnion;
+pub use self::wrapper::CpcWrapper;
 
 /// Default log2 of K.
 const DEFAULT_LG_K: u8 = 11;
