@@ -22,6 +22,7 @@
 
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
+use crate::codec::assert::insufficient_data;
 use crate::codec::family::Family;
 use crate::error::Error;
 use crate::hll::HllType;
@@ -95,7 +96,7 @@ impl HashSet {
         // Read coupon count from bytes 8-11
         let coupon_count = cursor
             .read_u32_le()
-            .map_err(|_| Error::insufficient_data("coupon_count"))?;
+            .map_err(insufficient_data("coupon_count"))?;
         let coupon_count = coupon_count as usize;
 
         if compact {

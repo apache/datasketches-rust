@@ -24,8 +24,9 @@ use std::hash::Hash;
 
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
+use crate::codec::assert::ensure_preamble_longs_in_range;
+use crate::codec::assert::insufficient_data;
 use crate::codec::family::Family;
-use crate::codec::utility::ensure_preamble_longs_in_range;
 use crate::common::NumStdDev;
 use crate::common::ResizeFactor;
 use crate::common::binomial_bounds;
@@ -558,14 +559,14 @@ impl CompactThetaSketch {
 
     /// Deserializes a compact theta sketch from bytes using the provided expected seed.
     pub fn deserialize_with_seed(bytes: &[u8], seed: u64) -> Result<Self, Error> {
-        fn make_error(tag: &'static str) -> impl FnOnce(std::io::Error) -> Error {
-            move |_| Error::insufficient_data(tag)
-        }
-
         let mut cursor = SketchSlice::new(bytes);
-        let pre_longs = cursor.read_u8().map_err(make_error("preamble_longs"))?;
-        let ser_ver = cursor.read_u8().map_err(make_error("serial_version"))?;
-        let family_id = cursor.read_u8().map_err(make_error("family_id"))?;
+        let pre_longs = cursor
+            .read_u8()
+            .map_err(insufficient_data("preamble_longs"))?;
+        let ser_ver = cursor
+            .read_u8()
+            .map_err(insufficient_data("serial_version"))?;
+        let family_id = cursor.read_u8().map_err(insufficient_data("family_id"))?;
 
         Family::THETA.validate_id(family_id)?;
 
@@ -593,9 +594,7 @@ impl CompactThetaSketch {
     ) -> Result<Vec<u64>, Error> {
         let mut entries = Vec::with_capacity(num_entries);
         for _ in 0..num_entries {
-            let hash = cursor
-                .read_u64_le()
-                .map_err(|_| Error::insufficient_data("entries"))?;
+            let hash = cursor.read_u64_le().map_err(insufficient_data("entries"))?;
             if hash == 0 || hash >= theta {
                 return Err(Error::deserial("corrupted: invalid retained hash value"));
             }
@@ -605,16 +604,20 @@ impl CompactThetaSketch {
     }
 
     fn deserialize_v1(mut cursor: SketchSlice<'_>, expected_seed: u64) -> Result<Self, Error> {
-        fn make_error(tag: &'static str) -> impl FnOnce(std::io::Error) -> Error {
-            move |_| Error::insufficient_data(tag)
-        }
-
         let seed_hash = compute_seed_hash(expected_seed);
-        cursor.read_u8().map_err(make_error("<unused>"))?;
-        cursor.read_u32_le().map_err(make_error("<unused_u32_0>"))?;
-        let num_entries = cursor.read_u32_le().map_err(make_error("num_entries"))? as usize;
-        cursor.read_u32_le().map_err(make_error("<unused_u32_1>"))?;
-        let theta = cursor.read_u64_le().map_err(make_error("theta_long"))?;
+        cursor.read_u8().map_err(insufficient_data("<unused>"))?;
+        cursor
+            .read_u32_le()
+            .map_err(insufficient_data("<unused_u32_0>"))?;
+        let num_entries = cursor
+            .read_u32_le()
+            .map_err(insufficient_data("num_entries"))? as usize;
+        cursor
+            .read_u32_le()
+            .map_err(insufficient_data("<unused_u32_1>"))?;
+        let theta = cursor
+            .read_u64_le()
+            .map_err(insufficient_data("theta_long"))?;
 
         let empty = num_entries == 0 && theta == MAX_THETA;
         if empty {
@@ -643,13 +646,13 @@ impl CompactThetaSketch {
         mut cursor: SketchSlice<'_>,
         expected_seed: u64,
     ) -> Result<Self, Error> {
-        fn make_error(tag: &'static str) -> impl FnOnce(std::io::Error) -> Error {
-            move |_| Error::insufficient_data(tag)
-        }
-
-        cursor.read_u8().map_err(make_error("<unused>"))?;
-        cursor.read_u16_le().map_err(make_error("<unused_u16>"))?;
-        let seed_hash = cursor.read_u16_le().map_err(make_error("seed_hash"))?;
+        cursor.read_u8().map_err(insufficient_data("<unused>"))?;
+        cursor
+            .read_u16_le()
+            .map_err(insufficient_data("<unused_u16>"))?;
+        let seed_hash = cursor
+            .read_u16_le()
+            .map_err(insufficient_data("seed_hash"))?;
         let expected_seed_hash = compute_seed_hash(expected_seed);
         if seed_hash != expected_seed_hash {
             return Err(Error::deserial(format!(
@@ -666,8 +669,13 @@ impl CompactThetaSketch {
                 empty: true,
             }),
             V2_PREAMBLE_PRECISE => {
-                let num_entries = cursor.read_u32_le().map_err(make_error("num_entries"))? as usize;
-                cursor.read_u32_le().map_err(make_error("<unused_u32>"))?;
+                let num_entries = cursor
+                    .read_u32_le()
+                    .map_err(insufficient_data("num_entries"))?
+                    as usize;
+                cursor
+                    .read_u32_le()
+                    .map_err(insufficient_data("<unused_u32>"))?;
                 let entries = Self::read_entries(&mut cursor, num_entries, MAX_THETA)?;
                 Ok(Self {
                     entries,
@@ -678,9 +686,16 @@ impl CompactThetaSketch {
                 })
             }
             V2_PREAMBLE_ESTIMATE => {
-                let num_entries = cursor.read_u32_le().map_err(make_error("num_entries"))? as usize;
-                cursor.read_u32_le().map_err(make_error("<unused_u32>"))?;
-                let theta = cursor.read_u64_le().map_err(make_error("theta_long"))?;
+                let num_entries = cursor
+                    .read_u32_le()
+                    .map_err(insufficient_data("num_entries"))?
+                    as usize;
+                cursor
+                    .read_u32_le()
+                    .map_err(insufficient_data("<unused_u32>"))?;
+                let theta = cursor
+                    .read_u64_le()
+                    .map_err(insufficient_data("theta_long"))?;
                 let empty = (num_entries == 0) && (theta == MAX_THETA);
                 let entries = Self::read_entries(&mut cursor, num_entries, theta)?;
                 Ok(Self {
@@ -700,12 +715,13 @@ impl CompactThetaSketch {
         mut cursor: SketchSlice<'_>,
         expected_seed: u64,
     ) -> Result<Self, Error> {
-        fn make_error(tag: &'static str) -> impl FnOnce(std::io::Error) -> Error {
-            move |_| Error::insufficient_data(tag)
-        }
-        cursor.read_u16_le().map_err(make_error("<unused_u32>"))?;
-        let flags = cursor.read_u8().map_err(make_error("flags"))?;
-        let seed_hash = cursor.read_u16_le().map_err(make_error("seed_hash"))?;
+        cursor
+            .read_u16_le()
+            .map_err(insufficient_data("<unused_u32>"))?;
+        let flags = cursor.read_u8().map_err(insufficient_data("flags"))?;
+        let seed_hash = cursor
+            .read_u16_le()
+            .map_err(insufficient_data("seed_hash"))?;
 
         let empty = (flags & serialization::FLAGS_IS_EMPTY) != 0;
         let mut theta = MAX_THETA;
@@ -721,10 +737,16 @@ impl CompactThetaSketch {
             if pre_longs == 1 {
                 num_entries = 1;
             } else {
-                num_entries = cursor.read_u32_le().map_err(make_error("num_entries"))?;
-                cursor.read_u32_le().map_err(make_error("<unused_u32>"))?;
+                num_entries = cursor
+                    .read_u32_le()
+                    .map_err(insufficient_data("num_entries"))?;
+                cursor
+                    .read_u32_le()
+                    .map_err(insufficient_data("<unused_u32>"))?;
                 if pre_longs > 2 {
-                    theta = cursor.read_u64_le().map_err(make_error("theta_long"))?;
+                    theta = cursor
+                        .read_u64_le()
+                        .map_err(insufficient_data("theta_long"))?;
                 }
             }
             entries = Self::read_entries(&mut cursor, num_entries as usize, theta)?;
@@ -744,13 +766,12 @@ impl CompactThetaSketch {
         mut cursor: SketchSlice<'_>,
         expected_seed: u64,
     ) -> Result<Self, Error> {
-        fn make_error(tag: &'static str) -> impl FnOnce(std::io::Error) -> Error {
-            move |_| Error::insufficient_data(tag)
-        }
-        let entry_bits = cursor.read_u8().map_err(make_error("entry_bits"))?;
-        let num_entries_bytes = cursor.read_u8().map_err(make_error("num_entries"))?;
-        let flags = cursor.read_u8().map_err(make_error("flags"))?;
-        let seed_hash = cursor.read_u16_le().map_err(make_error("seed_hash"))?;
+        let entry_bits = cursor.read_u8().map_err(insufficient_data("entry_bits"))?;
+        let num_entries_bytes = cursor.read_u8().map_err(insufficient_data("num_entries"))?;
+        let flags = cursor.read_u8().map_err(insufficient_data("flags"))?;
+        let seed_hash = cursor
+            .read_u16_le()
+            .map_err(insufficient_data("seed_hash"))?;
         let empty = (flags & serialization::FLAGS_IS_EMPTY) != 0;
         if !empty {
             let expected_seed_hash = compute_seed_hash(expected_seed);
@@ -761,7 +782,9 @@ impl CompactThetaSketch {
             }
         }
         let theta = if pre_longs > 1 {
-            cursor.read_u64_le().map_err(make_error("theta_long"))?
+            cursor
+                .read_u64_le()
+                .map_err(insufficient_data("theta_long"))?
         } else {
             MAX_THETA
         };
@@ -769,7 +792,9 @@ impl CompactThetaSketch {
         // unpack num_entries
         let mut num_entries = 0usize;
         for i in 0..num_entries_bytes {
-            let entry_count_byte = cursor.read_u8().map_err(make_error("num_entries_byte"))?;
+            let entry_count_byte = cursor
+                .read_u8()
+                .map_err(insufficient_data("num_entries_byte"))?;
             num_entries |= (entry_count_byte as usize) << ((i as usize) << 3);
         }
 
@@ -780,7 +805,7 @@ impl CompactThetaSketch {
             let mut block = vec![0u8; entry_bits as usize];
             cursor
                 .read_exact(&mut block)
-                .map_err(make_error("delta_block"))?;
+                .map_err(insufficient_data("delta_block"))?;
             unpack_bits_block(&mut entries[i..i + BLOCK_WIDTH], &block, entry_bits);
             i += BLOCK_WIDTH;
         }
@@ -793,7 +818,7 @@ impl CompactThetaSketch {
             let mut tail = vec![0u8; bytes_needed];
             cursor
                 .read_exact(&mut tail)
-                .map_err(make_error("delta_tail"))?;
+                .map_err(insufficient_data("delta_tail"))?;
 
             let mut unpacker = BitUnpacker::new(&tail);
             for slot in entries.iter_mut().take(num_entries).skip(i) {

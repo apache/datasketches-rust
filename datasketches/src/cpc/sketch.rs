@@ -19,9 +19,10 @@ use std::hash::Hash;
 
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
+use crate::codec::assert::ensure_preamble_longs_in;
+use crate::codec::assert::ensure_serial_version_is;
+use crate::codec::assert::insufficient_data;
 use crate::codec::family::Family;
-use crate::codec::utility::ensure_preamble_longs_in;
-use crate::codec::utility::ensure_serial_version_is;
 use crate::common::NumStdDev;
 use crate::common::canonical_double;
 use crate::common::inv_pow2_table::INVERSE_POWERS_OF_2;
@@ -514,24 +515,26 @@ impl CpcSketch {
 
     /// Deserializes a CpcSketch from bytes with the provided seed.
     pub fn deserialize_with_seed(bytes: &[u8], seed: u64) -> Result<Self, Error> {
-        fn make_error(tag: &'static str) -> impl FnOnce(std::io::Error) -> Error {
-            move |_| Error::insufficient_data(tag)
-        }
-
         let mut cursor = SketchSlice::new(bytes);
-        let preamble_ints = cursor.read_u8().map_err(make_error("preamble_ints"))?;
-        let serial_version = cursor.read_u8().map_err(make_error("serial_version"))?;
-        let family_id = cursor.read_u8().map_err(make_error("family_id"))?;
+        let preamble_ints = cursor
+            .read_u8()
+            .map_err(insufficient_data("preamble_ints"))?;
+        let serial_version = cursor
+            .read_u8()
+            .map_err(insufficient_data("serial_version"))?;
+        let family_id = cursor.read_u8().map_err(insufficient_data("family_id"))?;
         Family::CPC.validate_id(family_id)?;
         ensure_serial_version_is(SERIAL_VERSION, serial_version)?;
 
-        let lg_k = cursor.read_u8().map_err(make_error("lg_k"))?;
+        let lg_k = cursor.read_u8().map_err(insufficient_data("lg_k"))?;
         let first_interesting_column = cursor
             .read_u8()
-            .map_err(make_error("first_interesting_column"))?;
+            .map_err(insufficient_data("first_interesting_column"))?;
 
-        let flags = cursor.read_u8().map_err(make_error("flags"))?;
-        let seed_hash = cursor.read_u16_le().map_err(make_error("seed_hash"))?;
+        let flags = cursor.read_u8().map_err(insufficient_data("flags"))?;
+        let seed_hash = cursor
+            .read_u16_le()
+            .map_err(insufficient_data("seed_hash"))?;
         let is_compressed = flags & (1 << FLAG_COMPRESSED) != 0;
         if !is_compressed {
             return Err(Error::new(
@@ -549,41 +552,51 @@ impl CpcSketch {
         let mut hip_est_accum = 0.0;
 
         if has_table || has_window {
-            num_coupons = cursor.read_u32_le().map_err(make_error("num_coupons"))?;
+            num_coupons = cursor
+                .read_u32_le()
+                .map_err(insufficient_data("num_coupons"))?;
             if has_table && has_window {
                 compressed.table_num_entries = cursor
                     .read_u32_le()
-                    .map_err(make_error("table_num_entries"))?;
+                    .map_err(insufficient_data("table_num_entries"))?;
                 if has_hip {
-                    kxp = cursor.read_f64_le().map_err(make_error("kxp"))?;
-                    hip_est_accum = cursor.read_f64_le().map_err(make_error("hip_est_accum"))?;
+                    kxp = cursor.read_f64_le().map_err(insufficient_data("kxp"))?;
+                    hip_est_accum = cursor
+                        .read_f64_le()
+                        .map_err(insufficient_data("hip_est_accum"))?;
                 }
             }
             if has_table {
                 compressed.table_data_words = cursor
                     .read_u32_le()
-                    .map_err(make_error("table_data_words"))?
+                    .map_err(insufficient_data("table_data_words"))?
                     as usize;
             }
             if has_window {
                 compressed.window_data_words = cursor
                     .read_u32_le()
-                    .map_err(make_error("window_data_words"))?
+                    .map_err(insufficient_data("window_data_words"))?
                     as usize;
             }
             if has_hip && !(has_table && has_window) {
-                kxp = cursor.read_f64_le().map_err(make_error("kxp"))?;
-                hip_est_accum = cursor.read_f64_le().map_err(make_error("hip_est_accum"))?;
+                kxp = cursor.read_f64_le().map_err(insufficient_data("kxp"))?;
+                hip_est_accum = cursor
+                    .read_f64_le()
+                    .map_err(insufficient_data("hip_est_accum"))?;
             }
             if has_window {
                 for _ in 0..compressed.window_data_words {
-                    let word = cursor.read_u32_le().map_err(make_error("window_data"))?;
+                    let word = cursor
+                        .read_u32_le()
+                        .map_err(insufficient_data("window_data"))?;
                     compressed.window_data.push(word);
                 }
             }
             if has_table {
                 for _ in 0..compressed.table_data_words {
-                    let word = cursor.read_u32_le().map_err(make_error("table_data"))?;
+                    let word = cursor
+                        .read_u32_le()
+                        .map_err(insufficient_data("table_data"))?;
                     compressed.table_data.push(word);
                 }
             }

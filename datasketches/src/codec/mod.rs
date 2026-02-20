@@ -24,5 +24,5 @@ pub use self::decode::SketchSlice;
 pub use self::encode::SketchBytes;
 
 // private to datasketches crate
+pub(crate) mod assert;
 pub(crate) mod family;
-pub(crate) mod utility;

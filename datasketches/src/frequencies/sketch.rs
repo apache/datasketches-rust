@@ -21,9 +21,10 @@ use std::hash::Hash;
 
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
+use crate::codec::assert::ensure_preamble_longs_in;
+use crate::codec::assert::ensure_serial_version_is;
+use crate::codec::assert::insufficient_data;
 use crate::codec::family::Family;
-use crate::codec::utility::ensure_preamble_longs_in;
-use crate::codec::utility::ensure_serial_version_is;
 use crate::error::Error;
 use crate::frequencies::reverse_purge_item_hash_map::ReversePurgeItemHashMap;
 use crate::frequencies::serialization::*;
@@ -451,19 +452,23 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
         bytes: &[u8],
         deserialize_items: DeserializeItems<T>,
     ) -> Result<Self, Error> {
-        fn make_error(tag: &'static str) -> impl FnOnce(std::io::Error) -> Error {
-            move |_| Error::insufficient_data(tag)
-        }
-
         let mut cursor = SketchSlice::new(bytes);
-        let pre_longs = cursor.read_u8().map_err(make_error("pre_longs"))?;
+        let pre_longs = cursor.read_u8().map_err(insufficient_data("pre_longs"))?;
         let pre_longs = pre_longs & 0x3F;
-        let serial_version = cursor.read_u8().map_err(make_error("serial_version"))?;
-        let family = cursor.read_u8().map_err(make_error("family"))?;
-        let lg_max = cursor.read_u8().map_err(make_error("lg_max_map_size"))?;
-        let lg_cur = cursor.read_u8().map_err(make_error("lg_cur_map_size"))?;
-        let flags = cursor.read_u8().map_err(make_error("flags"))?;
-        cursor.read_u16_le().map_err(make_error("<unused>"))?;
+        let serial_version = cursor
+            .read_u8()
+            .map_err(insufficient_data("serial_version"))?;
+        let family = cursor.read_u8().map_err(insufficient_data("family"))?;
+        let lg_max = cursor
+            .read_u8()
+            .map_err(insufficient_data("lg_max_map_size"))?;
+        let lg_cur = cursor
+            .read_u8()
+            .map_err(insufficient_data("lg_cur_map_size"))?;
+        let flags = cursor.read_u8().map_err(insufficient_data("flags"))?;
+        cursor
+            .read_u16_le()
+            .map_err(insufficient_data("<unused>"))?;
 
         Family::FREQUENCY.validate_id(family)?;
         ensure_serial_version_is(SERIAL_VERSION, serial_version)?;
@@ -478,11 +483,17 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
         }
 
         ensure_preamble_longs_in(&[PREAMBLE_LONGS_NONEMPTY], pre_longs)?;
-        let active_items = cursor.read_u32_le().map_err(make_error("active_items"))?;
+        let active_items = cursor
+            .read_u32_le()
+            .map_err(insufficient_data("active_items"))?;
         let active_items = active_items as usize;
-        cursor.read_u32_le().map_err(make_error("<unused>"))?;
-        let stream_weight = cursor.read_u64_le().map_err(make_error("stream_weight"))?;
-        let offset_val = cursor.read_u64_le().map_err(make_error("offset"))?;
+        cursor
+            .read_u32_le()
+            .map_err(insufficient_data("<unused>"))?;
+        let stream_weight = cursor
+            .read_u64_le()
+            .map_err(insufficient_data("stream_weight"))?;
+        let offset_val = cursor.read_u64_le().map_err(insufficient_data("offset"))?;
 
         let mut values = Vec::with_capacity(active_items);
         for i in 0..active_items {

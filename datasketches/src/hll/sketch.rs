@@ -23,8 +23,9 @@
 use std::hash::Hash;
 
 use crate::codec::SketchSlice;
+use crate::codec::assert::ensure_serial_version_is;
+use crate::codec::assert::insufficient_data;
 use crate::codec::family::Family;
-use crate::codec::utility::ensure_serial_version_is;
 use crate::common::NumStdDev;
 use crate::error::Error;
 use crate::hll::HllType;
@@ -257,26 +258,26 @@ impl HllSketch {
     /// assert!(decoded.estimate() >= 1.0);
     /// ```
     pub fn deserialize(bytes: &[u8]) -> Result<HllSketch, Error> {
-        fn make_error(tag: &'static str) -> impl FnOnce(std::io::Error) -> Error {
-            move |_| Error::insufficient_data(tag)
-        }
-
         let mut cursor = SketchSlice::new(bytes);
 
         // Read and validate preamble
-        let preamble_ints = cursor.read_u8().map_err(make_error("preamble_ints"))?;
-        let serial_version = cursor.read_u8().map_err(make_error("serial_version"))?;
-        let family_id = cursor.read_u8().map_err(make_error("family_id"))?;
-        let lg_config_k = cursor.read_u8().map_err(make_error("lg_config_k"))?;
+        let preamble_ints = cursor
+            .read_u8()
+            .map_err(insufficient_data("preamble_ints"))?;
+        let serial_version = cursor
+            .read_u8()
+            .map_err(insufficient_data("serial_version"))?;
+        let family_id = cursor.read_u8().map_err(insufficient_data("family_id"))?;
+        let lg_config_k = cursor.read_u8().map_err(insufficient_data("lg_config_k"))?;
         // lg_arr used in List/Set modes
-        let lg_arr = cursor.read_u8().map_err(make_error("lg_arr"))?;
-        let flags = cursor.read_u8().map_err(make_error("flags"))?;
+        let lg_arr = cursor.read_u8().map_err(insufficient_data("lg_arr"))?;
+        let flags = cursor.read_u8().map_err(insufficient_data("flags"))?;
         // The contextual state byte:
         // * coupon count in LIST mode
         // * cur_min in HLL mode
         // * unused in SET mode
-        let state = cursor.read_u8().map_err(make_error("state"))?;
-        let mode_byte = cursor.read_u8().map_err(make_error("mode"))?;
+        let state = cursor.read_u8().map_err(insufficient_data("state"))?;
+        let mode_byte = cursor.read_u8().map_err(insufficient_data("mode"))?;
 
         // Verify family ID
         Family::HLL.validate_id(family_id)?;
