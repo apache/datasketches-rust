@@ -26,8 +26,12 @@ use crate::codec::assert::ensure_serial_version_is;
 use crate::codec::assert::insufficient_data;
 use crate::codec::family::Family;
 use crate::error::Error;
+use crate::frequencies::FrequentItemValue;
 use crate::frequencies::reverse_purge_item_hash_map::ReversePurgeItemHashMap;
-use crate::frequencies::serialization::*;
+use crate::frequencies::serialization::EMPTY_FLAG_MASK;
+use crate::frequencies::serialization::PREAMBLE_LONGS_EMPTY;
+use crate::frequencies::serialization::PREAMBLE_LONGS_NONEMPTY;
+use crate::frequencies::serialization::SERIAL_VERSION;
 
 type CountSerializeSize<T> = fn(&[T]) -> usize;
 type SerializeItems<T> = fn(&mut SketchBytes, &[T]);

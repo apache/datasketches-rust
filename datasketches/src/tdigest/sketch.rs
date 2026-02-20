@@ -26,7 +26,14 @@ use crate::codec::assert::ensure_serial_version_is;
 use crate::codec::assert::insufficient_data;
 use crate::codec::family::Family;
 use crate::error::Error;
-use crate::tdigest::serialization::*;
+use crate::tdigest::serialization::COMPAT_DOUBLE;
+use crate::tdigest::serialization::COMPAT_FLOAT;
+use crate::tdigest::serialization::FLAGS_IS_EMPTY;
+use crate::tdigest::serialization::FLAGS_IS_SINGLE_VALUE;
+use crate::tdigest::serialization::FLAGS_REVERSE_MERGE;
+use crate::tdigest::serialization::PREAMBLE_LONGS_EMPTY_OR_SINGLE;
+use crate::tdigest::serialization::PREAMBLE_LONGS_MULTIPLE;
+use crate::tdigest::serialization::SERIAL_VERSION;
 
 /// The default value of K if one is not specified.
 const DEFAULT_K: u16 = 200;

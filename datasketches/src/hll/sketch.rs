@@ -39,7 +39,21 @@ use crate::hll::coupon;
 use crate::hll::hash_set::HashSet;
 use crate::hll::list::List;
 use crate::hll::mode::Mode;
-use crate::hll::serialization::*;
+use crate::hll::serialization::COMPACT_FLAG_MASK;
+use crate::hll::serialization::CUR_MODE_HLL;
+use crate::hll::serialization::CUR_MODE_LIST;
+use crate::hll::serialization::CUR_MODE_SET;
+use crate::hll::serialization::EMPTY_FLAG_MASK;
+use crate::hll::serialization::HASH_SET_PREINTS;
+use crate::hll::serialization::HLL_PREINTS;
+use crate::hll::serialization::LIST_PREINTS;
+use crate::hll::serialization::OUT_OF_ORDER_FLAG_MASK;
+use crate::hll::serialization::SERIAL_VERSION;
+use crate::hll::serialization::TGT_HLL4;
+use crate::hll::serialization::TGT_HLL6;
+use crate::hll::serialization::TGT_HLL8;
+use crate::hll::serialization::extract_cur_mode;
+use crate::hll::serialization::extract_tgt_hll_type;
 
 /// A HyperLogLog sketch.
 ///

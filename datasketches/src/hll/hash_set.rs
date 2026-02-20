@@ -29,7 +29,12 @@ use crate::hll::HllType;
 use crate::hll::KEY_MASK_26;
 use crate::hll::container::COUPON_EMPTY;
 use crate::hll::container::Container;
-use crate::hll::serialization::*;
+use crate::hll::serialization::COMPACT_FLAG_MASK;
+use crate::hll::serialization::CUR_MODE_SET;
+use crate::hll::serialization::HASH_SET_PREINTS;
+use crate::hll::serialization::SERIAL_VERSION;
+use crate::hll::serialization::SET_PREAMBLE_SIZE;
+use crate::hll::serialization::encode_mode_byte;
 
 /// Hash set for efficient coupon storage with collision handling
 #[derive(Debug, Clone, PartialEq)]
