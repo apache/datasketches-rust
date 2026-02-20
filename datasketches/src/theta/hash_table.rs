@@ -343,55 +343,6 @@ impl ThetaHashTable {
         compute_seed_hash(self.hash_seed)
     }
 
-    /// Returns true if the given hash exists in the table.
-    #[allow(dead_code)]
-    pub fn contains_hash(&self, hash: u64) -> bool {
-        if hash == 0 {
-            return false;
-        }
-        let Some(index) = self.find_in_curr_entries(hash) else {
-            return false;
-        };
-        self.entries[index] == hash
-    }
-
-    /// Set empty flag
-    #[allow(dead_code)]
-    pub fn set_empty(&mut self, is_empty: bool) {
-        self.is_empty = is_empty;
-    }
-
-    /// Get the hash seed used by this table.
-    #[allow(dead_code)]
-    pub fn hash_seed(&self) -> u64 {
-        self.hash_seed
-    }
-
-    /// Sets theta value.
-    #[allow(dead_code)]
-    pub fn set_theta(&mut self, theta: u64) {
-        assert!(
-            (1..=MAX_THETA).contains(&theta),
-            "theta must be in [1, {MAX_THETA}], got {theta}"
-        );
-        self.theta = theta;
-    }
-
-    /// Returns minimal lg_size where rebuild-capacity can hold `count`.
-    #[allow(dead_code)]
-    pub fn lg_size_from_count_for_rebuild(count: usize, load_factor: f64) -> u8 {
-        let log2 = |n: usize| {
-            if n == 0 { 0_u8 } else { n.ilog2() as u8 }
-        };
-        let log2_n = log2(count);
-        log2_n
-            + (if count > (((1u128 << ((log2_n as u32) + 1)) as f64) * load_factor) as usize {
-                2
-            } else {
-                1
-            })
-    }
-
     /// Get stride for hash table probing
     fn get_stride(key: u64, lg_size: u8) -> usize {
         (2 * ((key >> (lg_size)) & STRIDE_MASK) + 1) as usize
