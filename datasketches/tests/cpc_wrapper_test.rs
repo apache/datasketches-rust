@@ -66,6 +66,20 @@ fn test_cpc_wrapper() {
 }
 
 #[test]
+fn test_is_empty() {
+    let empty_sketch = CpcSketch::new(10);
+    let empty_bytes = empty_sketch.serialize();
+    let empty_wrapper = CpcWrapper::new(&empty_bytes).unwrap();
+    assert_that!(empty_wrapper.is_empty(), eq(true));
+
+    let mut non_empty_sketch = CpcSketch::new(10);
+    non_empty_sketch.update(1u64);
+    let non_empty_bytes = non_empty_sketch.serialize();
+    let non_empty_wrapper = CpcWrapper::new(&non_empty_bytes).unwrap();
+    assert_that!(non_empty_wrapper.is_empty(), eq(false));
+}
+
+#[test]
 fn test_is_compressed() {
     let sketch = CpcSketch::new(10);
     let mut bytes = sketch.serialize();

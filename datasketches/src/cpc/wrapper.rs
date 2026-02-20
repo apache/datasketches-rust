@@ -44,7 +44,7 @@ pub struct CpcWrapper {
 }
 
 impl CpcWrapper {
-    /// Creates a new `CpcWrapper` from the given byte slice without copying.
+    /// Creates a new `CpcWrapper` from the given byte slice without copying bytes.
     pub fn new(bytes: &[u8]) -> Result<Self, Error> {
         fn make_error(tag: &'static str) -> impl FnOnce(std::io::Error) -> Error {
             move |_| Error::insufficient_data(tag)
@@ -105,12 +105,12 @@ impl CpcWrapper {
             if has_table {
                 cursor
                     .read_u32_le()
-                    .map_err(make_error("table_data_words"))? as usize;
+                    .map_err(make_error("table_data_words"))?;
             }
             if has_window {
                 cursor
                     .read_u32_le()
-                    .map_err(make_error("window_data_words"))? as usize;
+                    .map_err(make_error("window_data_words"))?;
             }
             if has_hip && !(has_table && has_window) {
                 cursor.read_f64_le().map_err(make_error("kxp"))?;
