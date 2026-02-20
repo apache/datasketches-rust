@@ -47,3 +47,4 @@ mod sketch;
 pub use self::sketch::CompactThetaSketch;
 pub use self::sketch::ThetaSketch;
 pub use self::sketch::ThetaSketchBuilder;
+pub use self::sketch::ThetaSketchView;
