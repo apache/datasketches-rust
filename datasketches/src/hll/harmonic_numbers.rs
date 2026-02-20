@@ -86,8 +86,8 @@ fn harmonic_number(n: usize) -> f64 {
 ///
 /// # Arguments
 ///
-/// * `bit_vector_length` - Total length of bit vector (k for HLL)
-/// * `num_bits_set` - Number of bits set (non-zero registers)
+/// * `bit_vector_length`: Total length of bit vector (k for HLL)
+/// * `num_bits_set`: Number of bits set (non-zero registers)
 ///
 /// # Returns
 ///

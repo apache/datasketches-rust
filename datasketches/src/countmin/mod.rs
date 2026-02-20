@@ -22,7 +22,7 @@
 //!
 //! # Usage
 //!
-//! ```rust
+//! ```
 //! # use datasketches::countmin::CountMinSketch;
 //! let mut sketch = CountMinSketch::<i64>::new(5, 256);
 //! sketch.update("apple");
@@ -32,7 +32,7 @@
 //!
 //! # Configuration Helpers
 //!
-//! ```rust
+//! ```
 //! # use datasketches::countmin::CountMinSketch;
 //! let buckets = CountMinSketch::<i64>::suggest_num_buckets(0.01);
 //! let hashes = CountMinSketch::<i64>::suggest_num_hashes(0.99);

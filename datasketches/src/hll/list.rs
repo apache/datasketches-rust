@@ -27,7 +27,13 @@ use crate::error::Error;
 use crate::hll::HllType;
 use crate::hll::container::COUPON_EMPTY;
 use crate::hll::container::Container;
-use crate::hll::serialization::*;
+use crate::hll::serialization::COMPACT_FLAG_MASK;
+use crate::hll::serialization::CUR_MODE_LIST;
+use crate::hll::serialization::EMPTY_FLAG_MASK;
+use crate::hll::serialization::LIST_PREAMBLE_SIZE;
+use crate::hll::serialization::LIST_PREINTS;
+use crate::hll::serialization::SERIAL_VERSION;
+use crate::hll::serialization::encode_mode_byte;
 
 /// List for sequential coupon storage with duplicate detection
 #[derive(Debug, Clone, PartialEq)]

@@ -21,12 +21,17 @@ use std::hash::Hash;
 
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
+use crate::codec::assert::ensure_preamble_longs_in;
+use crate::codec::assert::ensure_serial_version_is;
+use crate::codec::assert::insufficient_data;
 use crate::codec::family::Family;
-use crate::codec::utility::ensure_preamble_longs_in;
-use crate::codec::utility::ensure_serial_version_is;
 use crate::error::Error;
+use crate::frequencies::FrequentItemValue;
 use crate::frequencies::reverse_purge_item_hash_map::ReversePurgeItemHashMap;
-use crate::frequencies::serialization::*;
+use crate::frequencies::serialization::EMPTY_FLAG_MASK;
+use crate::frequencies::serialization::PREAMBLE_LONGS_EMPTY;
+use crate::frequencies::serialization::PREAMBLE_LONGS_NONEMPTY;
+use crate::frequencies::serialization::SERIAL_VERSION;
 
 type CountSerializeSize<T> = fn(&[T]) -> usize;
 type SerializeItems<T> = fn(&mut SketchBytes, &[T]);
@@ -85,7 +90,7 @@ impl<T> Row<T> {
 /// The sketch tracks approximate item frequencies and can return estimates with
 /// guaranteed upper and lower bounds.
 ///
-/// See [`crate::frequencies`] for an overview and error guarantees.
+/// See the [module level documentation](super) for an overview and error guarantees.
 #[derive(Debug, Clone)]
 pub struct FrequentItemsSketch<T> {
     lg_max_map_size: u8,
@@ -296,7 +301,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
 
     /// Returns frequent items using the sketch maximum error as threshold.
     ///
-    /// This is equivalent to `frequent_items_with_threshold(self.maximum_error(), error_type)`.
+    /// This is equivalent to `frequent_items_with_threshold(error_type, self.maximum_error())`.
     ///
     /// # Examples
     ///
@@ -343,7 +348,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
         T: Clone,
     {
         let threshold = threshold.max(self.offset);
-        let mut rows = Vec::new();
+        let mut rows = vec![];
         for (item, count) in self.hash_map.iter() {
             let lower = count;
             let upper = count + self.offset;
@@ -451,19 +456,23 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
         bytes: &[u8],
         deserialize_items: DeserializeItems<T>,
     ) -> Result<Self, Error> {
-        fn make_error(tag: &'static str) -> impl FnOnce(std::io::Error) -> Error {
-            move |_| Error::insufficient_data(tag)
-        }
-
         let mut cursor = SketchSlice::new(bytes);
-        let pre_longs = cursor.read_u8().map_err(make_error("pre_longs"))?;
+        let pre_longs = cursor.read_u8().map_err(insufficient_data("pre_longs"))?;
         let pre_longs = pre_longs & 0x3F;
-        let serial_version = cursor.read_u8().map_err(make_error("serial_version"))?;
-        let family = cursor.read_u8().map_err(make_error("family"))?;
-        let lg_max = cursor.read_u8().map_err(make_error("lg_max_map_size"))?;
-        let lg_cur = cursor.read_u8().map_err(make_error("lg_cur_map_size"))?;
-        let flags = cursor.read_u8().map_err(make_error("flags"))?;
-        cursor.read_u16_le().map_err(make_error("<unused>"))?;
+        let serial_version = cursor
+            .read_u8()
+            .map_err(insufficient_data("serial_version"))?;
+        let family = cursor.read_u8().map_err(insufficient_data("family"))?;
+        let lg_max = cursor
+            .read_u8()
+            .map_err(insufficient_data("lg_max_map_size"))?;
+        let lg_cur = cursor
+            .read_u8()
+            .map_err(insufficient_data("lg_cur_map_size"))?;
+        let flags = cursor.read_u8().map_err(insufficient_data("flags"))?;
+        cursor
+            .read_u16_le()
+            .map_err(insufficient_data("<unused>"))?;
 
         Family::FREQUENCY.validate_id(family)?;
         ensure_serial_version_is(SERIAL_VERSION, serial_version)?;
@@ -478,11 +487,17 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
         }
 
         ensure_preamble_longs_in(&[PREAMBLE_LONGS_NONEMPTY], pre_longs)?;
-        let active_items = cursor.read_u32_le().map_err(make_error("active_items"))?;
+        let active_items = cursor
+            .read_u32_le()
+            .map_err(insufficient_data("active_items"))?;
         let active_items = active_items as usize;
-        cursor.read_u32_le().map_err(make_error("<unused>"))?;
-        let stream_weight = cursor.read_u64_le().map_err(make_error("stream_weight"))?;
-        let offset_val = cursor.read_u64_le().map_err(make_error("offset"))?;
+        cursor
+            .read_u32_le()
+            .map_err(insufficient_data("<unused>"))?;
+        let stream_weight = cursor
+            .read_u64_le()
+            .map_err(insufficient_data("stream_weight"))?;
+        let offset_val = cursor.read_u64_le().map_err(insufficient_data("offset"))?;
 
         let mut values = Vec::with_capacity(active_items);
         for i in 0..active_items {
@@ -510,10 +525,12 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     }
 }
 
-impl FrequentItemsSketch<i64> {
+impl<T: FrequentItemValue> FrequentItemsSketch<T> {
     /// Serializes this sketch into a byte vector.
     ///
     /// # Examples
+    ///
+    /// Built-in support for `i64`:
     ///
     /// ```
     /// # use datasketches::frequencies::FrequentItemsSketch;
@@ -523,101 +540,8 @@ impl FrequentItemsSketch<i64> {
     /// let decoded = FrequentItemsSketch::<i64>::deserialize(&bytes).unwrap();
     /// assert!(decoded.estimate(&7) >= 2);
     /// ```
-    pub fn serialize(&self) -> Vec<u8> {
-        self.serialize_inner(
-            |items| items.iter().map(i64::serialize_size).sum(),
-            |bytes, items| {
-                for item in items {
-                    item.serialize_value(bytes);
-                }
-            },
-        )
-    }
-
-    /// Deserializes a sketch from bytes.
     ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use datasketches::frequencies::FrequentItemsSketch;
-    /// # let mut sketch = FrequentItemsSketch::<i64>::new(64);
-    /// # sketch.update_with_count(7, 2);
-    /// # let bytes = sketch.serialize();
-    /// let decoded = FrequentItemsSketch::<i64>::deserialize(&bytes).unwrap();
-    /// assert!(decoded.estimate(&7) >= 2);
-    /// ```
-    pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
-        Self::deserialize_inner(bytes, |mut cursor, num_items| {
-            let mut items = Vec::with_capacity(num_items);
-            for i in 0..num_items {
-                let item = i64::deserialize_value(&mut cursor).map_err(|_| {
-                    Error::insufficient_data(format!(
-                        "expected {num_items} items, failed to read item at index {i}"
-                    ))
-                })?;
-                items.push(item);
-            }
-            Ok(items)
-        })
-    }
-}
-
-impl FrequentItemsSketch<u64> {
-    /// Serializes this sketch into a byte vector.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use datasketches::frequencies::FrequentItemsSketch;
-    /// # let mut sketch = FrequentItemsSketch::<i64>::new(64);
-    /// # sketch.update_with_count(7, 2);
-    /// let bytes = sketch.serialize();
-    /// let decoded = FrequentItemsSketch::<i64>::deserialize(&bytes).unwrap();
-    /// assert!(decoded.estimate(&7) >= 2);
-    /// ```
-    pub fn serialize(&self) -> Vec<u8> {
-        self.serialize_inner(
-            |items| items.iter().map(u64::serialize_size).sum(),
-            |bytes, items| {
-                for item in items {
-                    item.serialize_value(bytes);
-                }
-            },
-        )
-    }
-
-    /// Deserializes a sketch from bytes.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use datasketches::frequencies::FrequentItemsSketch;
-    /// # let mut sketch = FrequentItemsSketch::<u64>::new(64);
-    /// # sketch.update_with_count(7, 2);
-    /// # let bytes = sketch.serialize();
-    /// let decoded = FrequentItemsSketch::<u64>::deserialize(&bytes).unwrap();
-    /// assert!(decoded.estimate(&7) >= 2);
-    /// ```
-    pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
-        Self::deserialize_inner(bytes, |mut cursor, num_items| {
-            let mut items = Vec::with_capacity(num_items);
-            for i in 0..num_items {
-                let item = u64::deserialize_value(&mut cursor).map_err(|_| {
-                    Error::insufficient_data(format!(
-                        "expected {num_items} items, failed to read item at index {i}"
-                    ))
-                })?;
-                items.push(item);
-            }
-            Ok(items)
-        })
-    }
-}
-
-impl FrequentItemsSketch<String> {
-    /// Serializes this sketch into a byte vector.
-    ///
-    /// # Examples
+    /// Built-in support for `String`:
     ///
     /// ```
     /// # use datasketches::frequencies::FrequentItemsSketch;
@@ -630,7 +554,7 @@ impl FrequentItemsSketch<String> {
     /// ```
     pub fn serialize(&self) -> Vec<u8> {
         self.serialize_inner(
-            |items| items.iter().map(String::serialize_size).sum(),
+            |items| items.iter().map(T::serialize_size).sum(),
             |bytes, items| {
                 for item in items {
                     item.serialize_value(bytes);
@@ -642,6 +566,19 @@ impl FrequentItemsSketch<String> {
     /// Deserializes a sketch from bytes.
     ///
     /// # Examples
+    ///
+    /// Built-in support for `i64`:
+    ///
+    /// ```
+    /// # use datasketches::frequencies::FrequentItemsSketch;
+    /// # let mut sketch = FrequentItemsSketch::<i64>::new(64);
+    /// # sketch.update_with_count(7, 2);
+    /// # let bytes = sketch.serialize();
+    /// let decoded = FrequentItemsSketch::<i64>::deserialize(&bytes).unwrap();
+    /// assert!(decoded.estimate(&7) >= 2);
+    /// ```
+    ///
+    /// Built-in support for `String`:
     ///
     /// ```
     /// # use datasketches::frequencies::FrequentItemsSketch;
@@ -656,7 +593,7 @@ impl FrequentItemsSketch<String> {
         Self::deserialize_inner(bytes, |mut cursor, num_items| {
             let mut items = Vec::with_capacity(num_items);
             for i in 0..num_items {
-                let item = String::deserialize_value(&mut cursor).map_err(|_| {
+                let item = T::deserialize_value(&mut cursor).map_err(|_| {
                     Error::insufficient_data(format!(
                         "expected {num_items} items, failed to read item at index {i}"
                     ))

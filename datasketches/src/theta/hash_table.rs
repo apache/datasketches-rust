@@ -605,7 +605,7 @@ mod tests {
         let mut table = ThetaHashTable::new(8, ResizeFactor::X8, 1.0, DEFAULT_UPDATE_SEED);
 
         // Insert some values
-        let mut inserted_hashes = Vec::new();
+        let mut inserted_hashes = vec![];
         for i in 0..10 {
             let hash = table.hash(i);
             if table.try_insert(i) {
@@ -651,7 +651,7 @@ mod tests {
 
         // Insert many values to trigger rebuild
         let mut i = 0;
-        let mut inserted_hashes = Vec::new();
+        let mut inserted_hashes = vec![];
         loop {
             let hash = table.hash(i);
             i += 1;

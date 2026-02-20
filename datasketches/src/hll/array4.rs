@@ -23,12 +23,22 @@
 use super::aux_map::AuxMap;
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
+use crate::codec::assert::insufficient_data;
 use crate::codec::family::Family;
 use crate::common::NumStdDev;
 use crate::error::Error;
 use crate::hll::estimator::HipEstimator;
 use crate::hll::get_slot;
 use crate::hll::get_value;
+use crate::hll::pack_coupon;
+use crate::hll::serialization::COUPON_SIZE_BYTES;
+use crate::hll::serialization::CUR_MODE_HLL;
+use crate::hll::serialization::HLL_PREAMBLE_SIZE;
+use crate::hll::serialization::HLL_PREINTS;
+use crate::hll::serialization::OUT_OF_ORDER_FLAG_MASK;
+use crate::hll::serialization::SERIAL_VERSION;
+use crate::hll::serialization::TGT_HLL4;
+use crate::hll::serialization::encode_mode_byte;
 
 const AUX_TOKEN: u8 = 15;
 
@@ -79,8 +89,8 @@ impl Array4 {
     /// Get the actual value at a slot (adjusted for cur_min and aux_map)
     ///
     /// Returns the true register value:
-    /// - If raw < 15: value = cur_min + raw
-    /// - If raw == 15 (AUX_TOKEN): value is in aux_map
+    /// * If raw < 15: value = cur_min + raw
+    /// * If raw == 15 (AUX_TOKEN): value is in aux_map
     pub(super) fn get(&self, slot: u32) -> u8 {
         let raw = self.get_raw(slot);
 
@@ -294,28 +304,29 @@ impl Array4 {
         compact: bool,
         ooo: bool,
     ) -> Result<Self, Error> {
-        use crate::hll::get_slot;
-        use crate::hll::get_value;
-
-        fn make_error(tag: &'static str) -> impl FnOnce(std::io::Error) -> Error {
-            move |_| Error::insufficient_data(tag)
-        }
-
         let num_bytes = 1 << (lg_config_k - 1); // k/2 bytes for 4-bit packing
 
         // Read HIP estimator values from preamble
-        let hip_accum = cursor.read_f64_le().map_err(make_error("hip_accum"))?;
-        let kxq0 = cursor.read_f64_le().map_err(make_error("kxq0"))?;
-        let kxq1 = cursor.read_f64_le().map_err(make_error("kxq1"))?;
+        let hip_accum = cursor
+            .read_f64_le()
+            .map_err(insufficient_data("hip_accum"))?;
+        let kxq0 = cursor.read_f64_le().map_err(insufficient_data("kxq0"))?;
+        let kxq1 = cursor.read_f64_le().map_err(insufficient_data("kxq1"))?;
 
         // Read num_at_cur_min and aux_count
-        let num_at_cur_min = cursor.read_u32_le().map_err(make_error("num_at_cur_min"))?;
-        let aux_count = cursor.read_u32_le().map_err(make_error("aux_count"))?;
+        let num_at_cur_min = cursor
+            .read_u32_le()
+            .map_err(insufficient_data("num_at_cur_min"))?;
+        let aux_count = cursor
+            .read_u32_le()
+            .map_err(insufficient_data("aux_count"))?;
 
         // Read packed 4-bit byte array
         let mut data = vec![0u8; num_bytes];
         if !compact {
-            cursor.read_exact(&mut data).map_err(make_error("data"))?;
+            cursor
+                .read_exact(&mut data)
+                .map_err(insufficient_data("data"))?;
         } else {
             cursor.advance(num_bytes as u64);
         }
@@ -358,9 +369,6 @@ impl Array4 {
     ///
     /// Produces full HLL preamble (40 bytes) followed by packed 4-bit data and optional aux map.
     pub fn serialize(&self, lg_config_k: u8) -> Vec<u8> {
-        use crate::hll::pack_coupon;
-        use crate::hll::serialization::*;
-
         let num_bytes = 1 << (lg_config_k - 1); // k/2 bytes for 4-bit packing
 
         // Collect aux map entries if present

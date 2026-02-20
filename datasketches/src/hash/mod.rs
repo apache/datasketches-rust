@@ -19,7 +19,6 @@ mod murmurhash;
 mod xxhash;
 
 pub(crate) use self::murmurhash::MurmurHash3X64128;
-#[allow(unused_imports)]
 pub(crate) use self::xxhash::XxHash64;
 
 /// The seed 9001 used in the sketch update methods is a prime number that was chosen very early

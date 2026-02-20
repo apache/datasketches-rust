@@ -20,9 +20,10 @@ use std::hash::Hasher;
 
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
+use crate::codec::assert::ensure_preamble_longs_in_range;
+use crate::codec::assert::ensure_serial_version_is;
+use crate::codec::assert::insufficient_data;
 use crate::codec::family::Family;
-use crate::codec::utility::ensure_preamble_longs_in_range;
-use crate::codec::utility::ensure_serial_version_is;
 use crate::error::Error;
 use crate::hash::XxHash64;
 
@@ -33,9 +34,9 @@ const EMPTY_FLAG_MASK: u8 = 1 << 2;
 /// A Bloom filter for probabilistic set membership testing.
 ///
 /// Provides fast membership queries with:
-/// - No false negatives (inserted items always return `true`)
-/// - Tunable false positive rate
-/// - Constant space usage
+/// * No false negatives (inserted items always return `true`)
+/// * Tunable false positive rate
+/// * Constant space usage
 ///
 /// Use [`super::BloomFilterBuilder`] to construct instances.
 #[derive(Debug, Clone, PartialEq)]
@@ -54,8 +55,8 @@ impl BloomFilter {
     /// Tests whether an item is possibly in the set.
     ///
     /// Returns:
-    /// - `true`: Item was **possibly** inserted (or false positive)
-    /// - `false`: Item was **definitely not** inserted
+    /// * `true`: Item was **possibly** inserted (or false positive)
+    /// * `false`: Item was **definitely not** inserted
     ///
     /// # Examples
     ///
@@ -290,8 +291,8 @@ impl BloomFilter {
     ///
     /// Uses the approximation: `load_factor^k`
     /// where:
-    /// - load_factor = fraction of bits set (bits_used / capacity)
-    /// - k = num_hashes
+    /// * load_factor = fraction of bits set (bits_used / capacity)
+    /// * k = num_hashes
     ///
     /// This assumes uniform bit distribution and is more accurate than
     /// trying to estimate insertion count from the load factor.
@@ -307,9 +308,9 @@ impl BloomFilter {
     /// Checks if two filters are compatible for merging.
     ///
     /// Filters are compatible if they have the same:
-    /// - Capacity (number of bits)
-    /// - Number of hash functions
-    /// - Seed
+    /// * Capacity (number of bits)
+    /// * Number of hash functions
+    /// * Seed
     pub fn is_compatible(&self, other: &Self) -> bool {
         self.bit_array.len() == other.bit_array.len()
             && self.num_hashes == other.num_hashes
@@ -379,9 +380,9 @@ impl BloomFilter {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The data is truncated or corrupted
-    /// - The family ID doesn't match (not a Bloom filter)
-    /// - The serial version is unsupported
+    /// * The data is truncated or corrupted
+    /// * The family ID doesn't match (not a Bloom filter)
+    /// * The serial version is unsupported
     ///
     /// # Examples
     ///
@@ -399,18 +400,14 @@ impl BloomFilter {
         // Read preamble
         let preamble_longs = cursor
             .read_u8()
-            .map_err(|_| Error::insufficient_data("preamble_longs"))?;
+            .map_err(insufficient_data("preamble_longs"))?;
         let serial_version = cursor
             .read_u8()
-            .map_err(|_| Error::insufficient_data("serial_version"))?;
-        let family_id = cursor
-            .read_u8()
-            .map_err(|_| Error::insufficient_data("family_id"))?;
+            .map_err(insufficient_data("serial_version"))?;
+        let family_id = cursor.read_u8().map_err(insufficient_data("family_id"))?;
 
         // Byte 3: flags byte (directly after family_id)
-        let flags = cursor
-            .read_u8()
-            .map_err(|_| Error::insufficient_data("flags"))?;
+        let flags = cursor.read_u8().map_err(insufficient_data("flags"))?;
 
         // Validate
         Family::BLOOMFILTER.validate_id(family_id)?;
@@ -425,7 +422,7 @@ impl BloomFilter {
         // Bytes 4-5: num_hashes (u16)
         let num_hashes = cursor
             .read_u16_le()
-            .map_err(|_| Error::insufficient_data("num_hashes"))?;
+            .map_err(insufficient_data("num_hashes"))?;
         if num_hashes == 0 || num_hashes > i16::MAX as u16 {
             return Err(Error::deserial(format!(
                 "invalid num_hashes: expected [1, {}], got {}",
@@ -436,18 +433,14 @@ impl BloomFilter {
         // Bytes 6-7: unused (u16)
         let _unused = cursor
             .read_u16_le()
-            .map_err(|_| Error::insufficient_data("unused_header"))?;
-        let seed = cursor
-            .read_u64_le()
-            .map_err(|_| Error::insufficient_data("seed"))?;
+            .map_err(insufficient_data("unused_header"))?;
+        let seed = cursor.read_u64_le().map_err(insufficient_data("seed"))?;
 
         // Bit array capacity is stored as number of 64-bit words (int32) + unused padding (uint32).
         let num_longs = cursor
             .read_i32_le()
-            .map_err(|_| Error::insufficient_data("num_longs"))?;
-        let _unused = cursor
-            .read_u32_le()
-            .map_err(|_| Error::insufficient_data("unused"))?;
+            .map_err(insufficient_data("num_longs"))?;
+        let _unused = cursor.read_u32_le().map_err(insufficient_data("unused"))?;
 
         if num_longs <= 0 {
             return Err(Error::deserial(format!(
@@ -465,12 +458,12 @@ impl BloomFilter {
         } else {
             let raw_num_bits_set = cursor
                 .read_u64_le()
-                .map_err(|_| Error::insufficient_data("num_bits_set"))?;
+                .map_err(insufficient_data("num_bits_set"))?;
 
             for word in &mut bit_array {
                 *word = cursor
                     .read_u64_le()
-                    .map_err(|_| Error::insufficient_data("bit_array"))?;
+                    .map_err(insufficient_data("bit_array"))?;
             }
 
             // Handle "dirty" state: 0xFFFFFFFFFFFFFFFF indicates bits need recounting
@@ -501,8 +494,8 @@ impl BloomFilter {
     /// Computes the two base hash values using XXHash64.
     ///
     /// Uses a two-hash approach:
-    /// - h0 = XXHash64(item, seed)
-    /// - h1 = XXHash64(item, h0)
+    /// * h0 = XXHash64(item, seed)
+    /// * h1 = XXHash64(item, h0)
     fn compute_hash<T: Hash>(&self, item: &T) -> (u64, u64) {
         // First hash with the configured seed
         let mut hasher = XxHash64::with_seed(self.seed);

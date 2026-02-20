@@ -22,9 +22,9 @@ use crate::hash::DEFAULT_UPDATE_SEED;
 /// Builder for creating [`BloomFilter`] instances.
 ///
 /// Provides two construction modes:
-/// - [`with_accuracy()`](Self::with_accuracy): Specify target items and false positive rate
+/// * [`with_accuracy()`](Self::with_accuracy): Specify target items and false positive rate
 ///   (recommended)
-/// - [`with_size()`](Self::with_size): Specify requested bit count and hash functions (manual)
+/// * [`with_size()`](Self::with_size): Specify requested bit count and hash functions (manual)
 #[derive(Debug, Clone)]
 pub struct BloomFilterBuilder {
     num_bits: u64,
@@ -52,8 +52,8 @@ impl BloomFilterBuilder {
     ///
     /// # Arguments
     ///
-    /// - `max_items`: Maximum expected number of distinct items
-    /// - `fpp`: Target false positive probability (e.g., 0.01 for 1%)
+    /// * `max_items`: Maximum expected number of distinct items
+    /// * `fpp`: Target false positive probability (e.g., 0.01 for 1%)
     ///
     /// # Panics
     ///
@@ -95,14 +95,14 @@ impl BloomFilterBuilder {
     ///
     /// # Arguments
     ///
-    /// - `num_bits`: Total number of bits in the filter
-    /// - `num_hashes`: Number of hash functions to use
+    /// * `num_bits`: Total number of bits in the filter
+    /// * `num_hashes`: Number of hash functions to use
     ///
     /// # Panics
     ///
     /// Panics if any of:
-    /// - `num_bits` < [`Self::MIN_NUM_BITS`] or `num_bits` > [`Self::MAX_NUM_BITS`]
-    /// - `num_hashes` < [`Self::MIN_NUM_HASHES`] or `num_hashes` > [`Self::MIN_NUM_HASHES`]
+    /// * `num_bits` < [`Self::MIN_NUM_BITS`] or `num_bits` > [`Self::MAX_NUM_BITS`]
+    /// * `num_hashes` < [`Self::MIN_NUM_HASHES`] or `num_hashes` > [`Self::MAX_NUM_HASHES`]
     ///
     /// # Examples
     ///

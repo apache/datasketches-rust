@@ -20,9 +20,10 @@ use std::hash::Hasher;
 
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
+use crate::codec::assert::ensure_preamble_longs_in;
+use crate::codec::assert::ensure_serial_version_is;
+use crate::codec::assert::insufficient_data;
 use crate::codec::family::Family;
-use crate::codec::utility::ensure_preamble_longs_in;
-use crate::codec::utility::ensure_serial_version_is;
 use crate::countmin::CountMinValue;
 use crate::countmin::UnsignedCountMinValue;
 use crate::countmin::serialization::FLAGS_IS_EMPTY;
@@ -61,7 +62,7 @@ impl<T: CountMinValue> CountMinSketch<T> {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```
     /// # use datasketches::countmin::CountMinSketch;
     /// let sketch = CountMinSketch::<i64>::new(4, 128);
     /// assert_eq!(sketch.num_buckets(), 128);
@@ -75,14 +76,14 @@ impl<T: CountMinValue> CountMinSketch<T> {
     /// # Panics
     ///
     /// Panics if any of:
-    /// - `num_hashes` is 0
-    /// - `num_buckets` is less than 3
-    /// - the total table size exceeds the supported limit
-    /// - the computed seed hash is zero
+    /// * `num_hashes` is 0
+    /// * `num_buckets` is less than 3
+    /// * the total table size exceeds the supported limit
+    /// * the computed seed hash is zero
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```
     /// # use datasketches::countmin::CountMinSketch;
     /// let sketch = CountMinSketch::<i64>::with_seed(4, 64, 42);
     /// assert_eq!(sketch.seed(), 42);
@@ -153,7 +154,7 @@ impl<T: CountMinValue> CountMinSketch<T> {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```
     /// # use datasketches::countmin::CountMinSketch;
     /// let mut sketch = CountMinSketch::<i64>::new(4, 128);
     /// sketch.update("apple");
@@ -167,7 +168,7 @@ impl<T: CountMinValue> CountMinSketch<T> {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```
     /// # use datasketches::countmin::CountMinSketch;
     /// let mut sketch = CountMinSketch::<i64>::new(4, 128);
     /// sketch.update_with_weight("banana", 3);
@@ -191,7 +192,7 @@ impl<T: CountMinValue> CountMinSketch<T> {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```
     /// # use datasketches::countmin::CountMinSketch;
     /// let mut sketch = CountMinSketch::<i64>::new(4, 128);
     /// sketch.update_with_weight("pear", 2);
@@ -231,7 +232,7 @@ impl<T: CountMinValue> CountMinSketch<T> {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```
     /// # use datasketches::countmin::CountMinSketch;
     /// let mut left = CountMinSketch::<i64>::new(4, 128);
     /// let mut right = CountMinSketch::<i64>::new(4, 128);
@@ -261,7 +262,7 @@ impl<T: CountMinValue> CountMinSketch<T> {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```
     /// # use datasketches::countmin::CountMinSketch;
     /// # let mut sketch = CountMinSketch::<i64>::new(4, 128);
     /// # sketch.update("apple");
@@ -306,7 +307,7 @@ impl<T: CountMinValue> CountMinSketch<T> {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```
     /// # use datasketches::countmin::CountMinSketch;
     /// # let mut sketch = CountMinSketch::<i64>::new(4, 64);
     /// # sketch.update("apple");
@@ -322,7 +323,7 @@ impl<T: CountMinValue> CountMinSketch<T> {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```
     /// # use datasketches::countmin::CountMinSketch;
     /// # let mut sketch = CountMinSketch::<i64>::with_seed(4, 64, 7);
     /// # sketch.update("apple");
@@ -331,34 +332,40 @@ impl<T: CountMinValue> CountMinSketch<T> {
     /// assert!(decoded.estimate("apple") >= 1);
     /// ```
     pub fn deserialize_with_seed(bytes: &[u8], seed: u64) -> Result<Self, Error> {
-        fn make_error(tag: &'static str) -> impl FnOnce(std::io::Error) -> Error {
-            move |_| Error::insufficient_data(tag)
-        }
-
         fn read_value<T: CountMinValue>(
             cursor: &mut SketchSlice<'_>,
             tag: &'static str,
         ) -> Result<T, Error> {
             let mut bs = [0u8; 8];
-            cursor.read_exact(&mut bs).map_err(make_error(tag))?;
+            cursor.read_exact(&mut bs).map_err(insufficient_data(tag))?;
             T::try_from_bytes(bs)
         }
 
         let mut cursor = SketchSlice::new(bytes);
-        let preamble_longs = cursor.read_u8().map_err(make_error("preamble_longs"))?;
-        let serial_version = cursor.read_u8().map_err(make_error("serial_version"))?;
-        let family_id = cursor.read_u8().map_err(make_error("family_id"))?;
-        let flags = cursor.read_u8().map_err(make_error("flags"))?;
-        cursor.read_u32_le().map_err(make_error("<unused>"))?;
+        let preamble_longs = cursor
+            .read_u8()
+            .map_err(insufficient_data("preamble_longs"))?;
+        let serial_version = cursor
+            .read_u8()
+            .map_err(insufficient_data("serial_version"))?;
+        let family_id = cursor.read_u8().map_err(insufficient_data("family_id"))?;
+        let flags = cursor.read_u8().map_err(insufficient_data("flags"))?;
+        cursor
+            .read_u32_le()
+            .map_err(insufficient_data("<unused>"))?;
 
         Family::COUNTMIN.validate_id(family_id)?;
         ensure_serial_version_is(SERIAL_VERSION, serial_version)?;
         ensure_preamble_longs_in(&[PREAMBLE_LONGS_SHORT], preamble_longs)?;
 
-        let num_buckets = cursor.read_u32_le().map_err(make_error("num_buckets"))?;
-        let num_hashes = cursor.read_u8().map_err(make_error("num_hashes"))?;
-        let seed_hash = cursor.read_u16_le().map_err(make_error("seed_hash"))?;
-        cursor.read_u8().map_err(make_error("unused8"))?;
+        let num_buckets = cursor
+            .read_u32_le()
+            .map_err(insufficient_data("num_buckets"))?;
+        let num_hashes = cursor.read_u8().map_err(insufficient_data("num_hashes"))?;
+        let seed_hash = cursor
+            .read_u16_le()
+            .map_err(insufficient_data("seed_hash"))?;
+        cursor.read_u8().map_err(insufficient_data("unused8"))?;
 
         let expected_seed_hash = compute_seed_hash(seed);
         if seed_hash != expected_seed_hash {
@@ -410,7 +417,7 @@ impl<T: UnsignedCountMinValue> CountMinSketch<T> {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```
     /// # use datasketches::countmin::CountMinSketch;
     /// let mut sketch = CountMinSketch::<u64>::new(4, 128);
     /// sketch.update_with_weight("apple", 3);
@@ -431,7 +438,7 @@ impl<T: UnsignedCountMinValue> CountMinSketch<T> {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```
     /// # use datasketches::countmin::CountMinSketch;
     /// let mut sketch = CountMinSketch::<u64>::new(4, 128);
     /// sketch.update_with_weight("apple", 3);

@@ -22,12 +22,20 @@
 
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
+use crate::codec::assert::insufficient_data;
 use crate::codec::family::Family;
 use crate::common::NumStdDev;
 use crate::error::Error;
 use crate::hll::estimator::HipEstimator;
 use crate::hll::get_slot;
 use crate::hll::get_value;
+use crate::hll::serialization::CUR_MODE_HLL;
+use crate::hll::serialization::HLL_PREAMBLE_SIZE;
+use crate::hll::serialization::HLL_PREINTS;
+use crate::hll::serialization::OUT_OF_ORDER_FLAG_MASK;
+use crate::hll::serialization::SERIAL_VERSION;
+use crate::hll::serialization::TGT_HLL8;
+use crate::hll::serialization::encode_mode_byte;
 
 /// Core Array8 data structure - one byte per slot, no packing
 #[derive(Debug, Clone, PartialEq)]
@@ -187,8 +195,8 @@ impl Array8 {
     ///
     /// # Parameters
     ///
-    /// * `src` - Source register values (length must be 2^src_lg_k)
-    /// * `src_lg_k` - Log2 of source register count
+    /// * `src`: Source register values (length must be 2^src_lg_k)
+    /// * `src_lg_k`: Log2 of source register count
     ///
     /// # Panics
     ///
@@ -251,25 +259,29 @@ impl Array8 {
         compact: bool,
         ooo: bool,
     ) -> Result<Self, Error> {
-        fn make_error(tag: &'static str) -> impl FnOnce(std::io::Error) -> Error {
-            move |_| Error::insufficient_data(tag)
-        }
-
         let k = 1usize << lg_config_k;
 
         // Read HIP estimator values from preamble
-        let hip_accum = cursor.read_f64_le().map_err(make_error("hip_accum"))?;
-        let kxq0 = cursor.read_f64_le().map_err(make_error("kxq0"))?;
-        let kxq1 = cursor.read_f64_le().map_err(make_error("kxq1"))?;
+        let hip_accum = cursor
+            .read_f64_le()
+            .map_err(insufficient_data("hip_accum"))?;
+        let kxq0 = cursor.read_f64_le().map_err(insufficient_data("kxq0"))?;
+        let kxq1 = cursor.read_f64_le().map_err(insufficient_data("kxq1"))?;
 
         // Read num_at_cur_min (for Array8, this is num_zeros since cur_min=0)
-        let num_zeros = cursor.read_u32_le().map_err(make_error("num_zeros"))?;
-        let _aux_count = cursor.read_u32_le().map_err(make_error("aux_count"))?; // always 0
+        let num_zeros = cursor
+            .read_u32_le()
+            .map_err(insufficient_data("num_zeros"))?;
+        let _aux_count = cursor
+            .read_u32_le()
+            .map_err(insufficient_data("aux_count"))?; // always 0
 
         // Read byte array from offset HLL_BYTE_ARR_START
         let mut data = vec![0u8; k];
         if !compact {
-            cursor.read_exact(&mut data).map_err(make_error("data"))?;
+            cursor
+                .read_exact(&mut data)
+                .map_err(insufficient_data("data"))?;
         } else {
             cursor.advance(k as u64);
         }
@@ -293,8 +305,6 @@ impl Array8 {
     ///
     /// Produces full HLL preamble (40 bytes) followed by k bytes of data.
     pub fn serialize(&self, lg_config_k: u8) -> Vec<u8> {
-        use crate::hll::serialization::*;
-
         let k = 1 << lg_config_k;
         let total_size = HLL_PREAMBLE_SIZE + k as usize;
         let mut bytes = SketchBytes::with_capacity(total_size);

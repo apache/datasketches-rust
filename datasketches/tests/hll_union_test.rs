@@ -18,12 +18,12 @@
 //! HyperLogLog Union Integration Tests
 //!
 //! These tests verify the public API behavior of HllUnion, focusing on:
-//! - Basic union operations
-//! - Mode transitions and mixed-mode unions
-//! - Different HLL types and lg_k values
-//! - Bounds and statistical properties
-//! - Mathematical properties (commutativity, associativity, idempotency)
-//! - Reset and reuse patterns
+//! * Basic union operations
+//! * Mode transitions and mixed-mode unions
+//! * Different HLL types and lg_k values
+//! * Bounds and statistical properties
+//! * Mathematical properties (commutativity, associativity, idempotency)
+//! * Reset and reuse patterns
 //!
 //! This mirrors the testing strategy used in hll_update_test.rs
 
