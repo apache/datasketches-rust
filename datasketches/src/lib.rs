@@ -35,6 +35,7 @@ pub mod codec;
 pub mod common;
 pub mod countmin;
 pub mod cpc;
+pub mod density;
 pub mod error;
 pub mod frequencies;
 pub mod hll;

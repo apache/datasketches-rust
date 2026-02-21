@@ -23,6 +23,11 @@ mod resize;
 pub use self::num_std_dev::NumStdDev;
 pub use self::resize::ResizeFactor;
 
+pub mod random;
+
+pub use self::random::RandomSource;
+pub use self::random::XorShift64;
+
 // private to datasketches crate
 pub(crate) mod binomial_bounds;
 pub(crate) mod inv_pow2_table;
