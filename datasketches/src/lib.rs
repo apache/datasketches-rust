@@ -38,6 +38,7 @@ pub mod cpc;
 pub mod error;
 pub mod frequencies;
 pub mod hll;
+pub mod kll;
 pub mod tdigest;
 pub mod theta;
 

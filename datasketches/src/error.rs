@@ -118,6 +118,12 @@ impl Error {
             "invalid preamble longs: expected {expected:?}, got {actual}"
         ))
     }
+
+    pub(crate) fn invalid_preamble_ints(expected: u8, actual: u8) -> Self {
+        Self::deserial(format!(
+            "invalid preamble ints: expected {expected}, got {actual}"
+        ))
+    }
 }
 
 impl fmt::Debug for Error {
