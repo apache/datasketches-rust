@@ -15,8 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use std::io::Cursor;
-
 use datasketches::density::DensityKernel;
 use datasketches::density::DensitySketch;
 use datasketches::density::DensityValue;
@@ -97,7 +95,7 @@ impl DensityKernel for SphericalKernel {
     fn evaluate<T: DensityValue>(&self, left: &[T], right: &[T]) -> T {
         let mut sum = 0.0f64;
         for (a, b) in left.iter().zip(right.iter()) {
-            let diff = a.to_f64() - b.to_f64();
+            let diff = a.as_f64() - b.as_f64();
             sum += diff * diff;
         }
         if sum <= self.radius_squared as f64 {
@@ -137,17 +135,6 @@ fn test_custom_kernel() {
 fn test_serialize_empty() {
     let sketch: DensitySketch<f64> = DensitySketch::new(10, 2);
     let bytes = sketch.serialize();
-    let decoded = DensitySketch::<f64>::deserialize(&bytes).unwrap();
-    assert!(decoded.is_empty());
-    assert!(!decoded.is_estimation_mode());
-    assert_eq!(sketch.k(), decoded.k());
-    assert_eq!(sketch.dim(), decoded.dim());
-    assert_eq!(sketch.n(), decoded.n());
-    assert_eq!(sketch.num_retained(), decoded.num_retained());
-
-    let mut cursor = Cursor::new(Vec::new());
-    sketch.serialize_to_writer(&mut cursor).unwrap();
-    let bytes = cursor.into_inner();
     let decoded = DensitySketch::<f64>::deserialize(&bytes).unwrap();
     assert!(decoded.is_empty());
     assert!(!decoded.is_estimation_mode());
@@ -208,7 +195,7 @@ fn test_serialize_bytes() {
 }
 
 #[test]
-fn test_serialize_stream() {
+fn test_serialize_f32() {
     let k = 10;
     let dim = 3;
     let mut sketch: DensitySketch<f32> = DensitySketch::new(k, dim);
@@ -219,9 +206,7 @@ fn test_serialize_stream() {
     }
     assert!(!sketch.is_estimation_mode());
 
-    let mut cursor = Cursor::new(Vec::new());
-    sketch.serialize_to_writer(&mut cursor).unwrap();
-    let bytes = cursor.into_inner();
+    let bytes = sketch.serialize();
     let decoded = DensitySketch::<f32>::deserialize(&bytes).unwrap();
     assert!(!decoded.is_empty());
     assert!(!decoded.is_estimation_mode());
@@ -245,9 +230,7 @@ fn test_serialize_stream() {
     }
     assert!(sketch.is_estimation_mode());
 
-    let mut cursor = Cursor::new(Vec::new());
-    sketch.serialize_to_writer(&mut cursor).unwrap();
-    let bytes = cursor.into_inner();
+    let bytes = sketch.serialize();
     let decoded = DensitySketch::<f32>::deserialize(&bytes).unwrap();
     assert!(!decoded.is_empty());
     assert!(decoded.is_estimation_mode());

@@ -15,22 +15,11 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use std::io::Write;
-
-use crate::codec::SketchBytes;
-use crate::codec::SketchSlice;
 use crate::common::RandomSource;
 use crate::common::XorShift64;
-use crate::density::serialization::DENSITY_FAMILY_ID;
-use crate::density::serialization::FLAGS_IS_EMPTY;
-use crate::density::serialization::PREAMBLE_INTS_LONG;
-use crate::density::serialization::PREAMBLE_INTS_SHORT;
-use crate::density::serialization::SERIAL_VERSION;
+use crate::density::serialization;
+use crate::density::serialization::SketchSerializationView;
 use crate::error::Error;
-use crate::error::ErrorKind;
-
-type SerializeValue<T> = fn(&mut SketchBytes, T);
-type DeserializeValue<T> = fn(&mut SketchSlice<'_>) -> std::io::Result<T>;
 type Point<T> = Vec<T>;
 type Level<T> = Vec<Point<T>>;
 type Levels<T> = Vec<Level<T>>;
@@ -40,7 +29,7 @@ pub trait DensityValue: Copy + PartialOrd + 'static {
     /// Converts from f64.
     fn from_f64(value: f64) -> Self;
     /// Converts to f64 for accumulation.
-    fn to_f64(self) -> f64;
+    fn as_f64(self) -> f64;
 }
 
 macro_rules! impl_density_value {
@@ -52,7 +41,7 @@ macro_rules! impl_density_value {
             }
 
             #[inline(always)]
-            fn to_f64(self) -> f64 {
+            fn as_f64(self) -> f64 {
                 ($to)(self)
             }
         }
@@ -76,7 +65,7 @@ impl DensityKernel for GaussianKernel {
     fn evaluate<T: DensityValue>(&self, left: &[T], right: &[T]) -> T {
         let mut sum = 0.0f64;
         for (a, b) in left.iter().zip(right.iter()) {
-            let diff = a.to_f64() - b.to_f64();
+            let diff = a.as_f64() - b.as_f64();
             sum += diff * diff;
         }
         T::from_f64((-sum).exp())
@@ -140,34 +129,42 @@ impl<K: DensityKernel> DensitySketch<f64, K, XorShift64> {
 impl<K: DensityKernel, R: RandomSource> DensitySketch<f32, K, R> {
     /// Deserializes a sketch using the provided kernel and random source.
     pub fn deserialize_with_kernel_and_rng(bytes: &[u8], kernel: K, rng: R) -> Result<Self, Error> {
-        deserialize_inner(bytes, kernel, rng, read_f32_value)
+        let decoded = serialization::deserialize_f32(bytes)?;
+        Ok(Self {
+            kernel,
+            rng,
+            k: decoded.k,
+            dim: decoded.dim,
+            num_retained: decoded.num_retained,
+            n: decoded.n,
+            levels: decoded.levels,
+        })
     }
 
     /// Serializes the sketch to a byte vector.
     pub fn serialize(&self) -> Vec<u8> {
-        serialize_inner(self, 4, write_f32_value)
-    }
-
-    /// Serializes the sketch to a writer.
-    pub fn serialize_to_writer(&self, writer: &mut dyn Write) -> std::io::Result<()> {
-        writer.write_all(&self.serialize())
+        serialization::serialize_f32(self)
     }
 }
 
 impl<K: DensityKernel, R: RandomSource> DensitySketch<f64, K, R> {
     /// Deserializes a sketch using the provided kernel and random source.
     pub fn deserialize_with_kernel_and_rng(bytes: &[u8], kernel: K, rng: R) -> Result<Self, Error> {
-        deserialize_inner(bytes, kernel, rng, read_f64_value)
+        let decoded = serialization::deserialize_f64(bytes)?;
+        Ok(Self {
+            kernel,
+            rng,
+            k: decoded.k,
+            dim: decoded.dim,
+            num_retained: decoded.num_retained,
+            n: decoded.n,
+            levels: decoded.levels,
+        })
     }
 
     /// Serializes the sketch to a byte vector.
     pub fn serialize(&self) -> Vec<u8> {
-        serialize_inner(self, 8, write_f64_value)
-    }
-
-    /// Serializes the sketch to a writer.
-    pub fn serialize_to_writer(&self, writer: &mut dyn Write) -> std::io::Result<()> {
-        writer.write_all(&self.serialize())
+        serialization::serialize_f64(self)
     }
 }
 
@@ -291,7 +288,7 @@ impl<T: DensityValue, K: DensityKernel, R: RandomSource> DensitySketch<T, K, R> 
         for (height, level) in self.levels.iter().enumerate() {
             let height_weight = weight_for_level(height) as f64;
             for p in level {
-                density += height_weight * self.kernel.evaluate(p, point).to_f64() / n;
+                density += height_weight * self.kernel.evaluate(p, point).as_f64() / n;
             }
         }
         T::from_f64(density)
@@ -334,9 +331,9 @@ impl<T: DensityValue, K: DensityKernel, R: RandomSource> DensitySketch<T, K, R> 
                 let mut delta = 0.0f64;
                 for (j, bit) in bits.iter().enumerate().take(i) {
                     let weight = if *bit { 1.0 } else { -1.0 };
-                    delta += weight * kernel.evaluate(&level[i], &level[j]).to_f64();
+                    delta += weight * kernel.evaluate(&level[i], &level[j]).as_f64();
                 }
-                bits[i] = delta < 0.0;
+                bits[i] = delta <= 0.0;
             }
             bits
         };
@@ -424,6 +421,34 @@ impl<'a, T: DensityValue, K: DensityKernel, R: RandomSource> IntoIterator
     }
 }
 
+impl<T: DensityValue, K: DensityKernel, R: RandomSource> SketchSerializationView<T>
+    for DensitySketch<T, K, R>
+{
+    fn is_empty(&self) -> bool {
+        self.num_retained == 0
+    }
+
+    fn k(&self) -> u16 {
+        self.k
+    }
+
+    fn dim(&self) -> u32 {
+        self.dim
+    }
+
+    fn num_retained(&self) -> u32 {
+        self.num_retained
+    }
+
+    fn n(&self) -> u64 {
+        self.n
+    }
+
+    fn levels(&self) -> &[Level<T>] {
+        &self.levels
+    }
+}
+
 fn weight_for_level(level: usize) -> u64 {
     match level {
         0..=63 => 1u64 << level,
@@ -449,153 +474,4 @@ fn ensure_dim(expected_dim: u32, actual_len: usize) {
     if actual_len != expected_dim as usize {
         panic!("dimension mismatch");
     }
-}
-
-fn write_f32_value(bytes: &mut SketchBytes, value: f32) {
-    bytes.write_f32_le(value);
-}
-
-fn write_f64_value(bytes: &mut SketchBytes, value: f64) {
-    bytes.write_f64_le(value);
-}
-
-fn read_f32_value(cursor: &mut SketchSlice<'_>) -> std::io::Result<f32> {
-    cursor.read_f32_le()
-}
-
-fn read_f64_value(cursor: &mut SketchSlice<'_>) -> std::io::Result<f64> {
-    cursor.read_f64_le()
-}
-
-fn serialize_inner<T: DensityValue, K: DensityKernel, R: RandomSource>(
-    sketch: &DensitySketch<T, K, R>,
-    value_size: usize,
-    write_value: SerializeValue<T>,
-) -> Vec<u8> {
-    let preamble_ints = if sketch.is_empty() {
-        PREAMBLE_INTS_SHORT
-    } else {
-        PREAMBLE_INTS_LONG
-    };
-    let mut size_bytes = preamble_ints as usize * 4;
-    if !sketch.is_empty() {
-        for level in &sketch.levels {
-            size_bytes += 4 + (level.len() * sketch.dim as usize * value_size);
-        }
-    }
-    let mut bytes = SketchBytes::with_capacity(size_bytes);
-    bytes.write_u8(preamble_ints);
-    bytes.write_u8(SERIAL_VERSION);
-    bytes.write_u8(DENSITY_FAMILY_ID);
-    let flags = if sketch.is_empty() { FLAGS_IS_EMPTY } else { 0 };
-    bytes.write_u8(flags);
-    bytes.write_u16_le(sketch.k);
-    bytes.write_u16_le(0);
-    bytes.write_u32_le(sketch.dim);
-
-    if sketch.is_empty() {
-        return bytes.into_bytes();
-    }
-
-    bytes.write_u32_le(sketch.num_retained);
-    bytes.write_u64_le(sketch.n);
-    for level in &sketch.levels {
-        bytes.write_u32_le(level.len() as u32);
-        for point in level {
-            for value in point {
-                write_value(&mut bytes, *value);
-            }
-        }
-    }
-    bytes.into_bytes()
-}
-
-fn deserialize_inner<T: DensityValue, K: DensityKernel, R: RandomSource>(
-    bytes: &[u8],
-    kernel: K,
-    rng: R,
-    read_value: DeserializeValue<T>,
-) -> Result<DensitySketch<T, K, R>, Error> {
-    fn make_error(tag: &'static str) -> impl FnOnce(std::io::Error) -> Error {
-        move |_| Error::insufficient_data(tag)
-    }
-
-    let mut cursor = SketchSlice::new(bytes);
-    let preamble_ints = cursor.read_u8().map_err(make_error("preamble_ints"))?;
-    let serial_version = cursor.read_u8().map_err(make_error("serial_version"))?;
-    let family_id = cursor.read_u8().map_err(make_error("family_id"))?;
-    let flags = cursor.read_u8().map_err(make_error("flags"))?;
-    let k = cursor.read_u16_le().map_err(make_error("k"))?;
-    cursor.read_u16_le().map_err(make_error("unused"))?;
-    let dim = cursor.read_u32_le().map_err(make_error("dim"))?;
-
-    if family_id != DENSITY_FAMILY_ID {
-        return Err(Error::invalid_family(
-            DENSITY_FAMILY_ID,
-            family_id,
-            "DensitySketch",
-        ));
-    }
-    if serial_version != SERIAL_VERSION {
-        return Err(Error::unsupported_serial_version(
-            SERIAL_VERSION,
-            serial_version,
-        ));
-    }
-    if k < 2 {
-        return Err(Error::new(
-            ErrorKind::InvalidArgument,
-            format!("k must be > 1. Found: {k}"),
-        ));
-    }
-
-    let is_empty = (flags & FLAGS_IS_EMPTY) != 0;
-    let expected_preamble = if is_empty {
-        PREAMBLE_INTS_SHORT
-    } else {
-        PREAMBLE_INTS_LONG
-    };
-    if preamble_ints != expected_preamble {
-        return Err(Error::invalid_preamble_longs(
-            expected_preamble,
-            preamble_ints,
-        ));
-    }
-    if is_empty {
-        return Ok(DensitySketch::with_kernel_and_rng(k, dim, kernel, rng));
-    }
-
-    let num_retained = cursor.read_u32_le().map_err(make_error("num_retained"))?;
-    let n = cursor.read_u64_le().map_err(make_error("n"))?;
-
-    let mut levels = Vec::new();
-    let mut remaining = num_retained as i64;
-    while remaining > 0 {
-        let level_size = cursor.read_u32_le().map_err(make_error("level_size"))?;
-        let mut level = Vec::with_capacity(level_size as usize);
-        for _ in 0..level_size {
-            let mut point = Vec::with_capacity(dim as usize);
-            for _ in 0..dim {
-                point.push(read_value(&mut cursor).map_err(make_error("point"))?);
-            }
-            level.push(point);
-        }
-        remaining -= level_size as i64;
-        levels.push(level);
-    }
-    if remaining != 0 {
-        return Err(Error::deserial(
-            "invalid number of retained points while decoding density sketch",
-        ));
-    }
-
-    Ok(DensitySketch {
-        kernel,
-        rng,
-        k,
-        dim,
-        num_retained,
-        n,
-        levels,
-    })
 }
