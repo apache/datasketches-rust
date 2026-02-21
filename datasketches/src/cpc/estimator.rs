@@ -21,7 +21,7 @@ use crate::common::NumStdDev;
 
 const ICON_ERROR_CONSTANT: f64 = LN_2;
 
-const ICON_LOW_SIDE_DATA: [u16; 33] = [
+static ICON_LOW_SIDE_DATA: [u16; 33] = [
     //1,    2,    3,   kappa
     //                 lgK num trials
     6037, 5720, 5328, // 4 1000000
@@ -37,7 +37,7 @@ const ICON_LOW_SIDE_DATA: [u16; 33] = [
     6919, 6897, 6842, // 14 1000297
 ];
 
-const ICON_HIGH_SIDE_DATA: [u16; 33] = [
+static ICON_HIGH_SIDE_DATA: [u16; 33] = [
     //1,    2,    3,   kappa
     //                 lgK num trials
     8031, 8559, 9309, // 4 1000000
@@ -56,7 +56,7 @@ const ICON_HIGH_SIDE_DATA: [u16; 33] = [
 #[allow(clippy::excessive_precision)]
 const HIP_ERROR_CONSTANT: f64 = 0.588705011257737332; // (LN_2 / 2.0).sqrt()
 
-const HIP_LOW_SIDE_DATA: [u16; 33] = [
+static HIP_LOW_SIDE_DATA: [u16; 33] = [
     //1,    2,    3,   kappa
     //                 lgK num trials
     5871, 5247, 4826, // 4 1000000
@@ -72,7 +72,7 @@ const HIP_LOW_SIDE_DATA: [u16; 33] = [
     5881, 5853, 5842, // 14 1000297
 ];
 
-const HIP_HIGH_SIDE_DATA: [u16; 33] = [
+static HIP_HIGH_SIDE_DATA: [u16; 33] = [
     //1,    2,    3,   kappa
     //                 lgK num trials
     5855, 6688, 7391, // 4 1000000
@@ -88,7 +88,43 @@ const HIP_HIGH_SIDE_DATA: [u16; 33] = [
     5880, 5914, 5953, // 14 1000297
 ];
 
-pub(super) fn icon_confidence_lb(lg_k: u8, num_coupons: u32, kappa: NumStdDev) -> f64 {
+pub(super) fn estimate(merge_flag: bool, hip_est_accum: f64, lg_k: u8, num_coupons: u32) -> f64 {
+    if !merge_flag {
+        hip_est_accum
+    } else {
+        icon_estimate(lg_k, num_coupons)
+    }
+}
+
+pub(super) fn lower_bound(
+    merge_flag: bool,
+    hip_est_accum: f64,
+    lg_k: u8,
+    num_coupons: u32,
+    kappa: NumStdDev,
+) -> f64 {
+    if !merge_flag {
+        hip_confidence_lb(lg_k, num_coupons, hip_est_accum, kappa)
+    } else {
+        icon_confidence_lb(lg_k, num_coupons, kappa)
+    }
+}
+
+pub(super) fn upper_bound(
+    merge_flag: bool,
+    hip_est_accum: f64,
+    lg_k: u8,
+    num_coupons: u32,
+    kappa: NumStdDev,
+) -> f64 {
+    if !merge_flag {
+        hip_confidence_ub(lg_k, num_coupons, hip_est_accum, kappa)
+    } else {
+        icon_confidence_ub(lg_k, num_coupons, kappa)
+    }
+}
+
+fn icon_confidence_lb(lg_k: u8, num_coupons: u32, kappa: NumStdDev) -> f64 {
     if num_coupons == 0 {
         return 0.0;
     }
@@ -112,7 +148,7 @@ pub(super) fn icon_confidence_lb(lg_k: u8, num_coupons: u32, kappa: NumStdDev) -
     }
 }
 
-pub(super) fn icon_confidence_ub(lg_k: u8, num_coupons: u32, kappa: NumStdDev) -> f64 {
+fn icon_confidence_ub(lg_k: u8, num_coupons: u32, kappa: NumStdDev) -> f64 {
     if num_coupons == 0 {
         return 0.0;
     }
@@ -132,12 +168,7 @@ pub(super) fn icon_confidence_ub(lg_k: u8, num_coupons: u32, kappa: NumStdDev) -
     result.ceil() // slight widening of interval to be conservative
 }
 
-pub(super) fn hip_confidence_lb(
-    lg_k: u8,
-    num_coupons: u32,
-    hip_est_accum: f64,
-    kappa: NumStdDev,
-) -> f64 {
+fn hip_confidence_lb(lg_k: u8, num_coupons: u32, hip_est_accum: f64, kappa: NumStdDev) -> f64 {
     if num_coupons == 0 {
         return 0.0;
     }
@@ -160,12 +191,7 @@ pub(super) fn hip_confidence_lb(
     }
 }
 
-pub(super) fn hip_confidence_ub(
-    lg_k: u8,
-    num_coupons: u32,
-    hip_est_accum: f64,
-    kappa: NumStdDev,
-) -> f64 {
+fn hip_confidence_ub(lg_k: u8, num_coupons: u32, hip_est_accum: f64, kappa: NumStdDev) -> f64 {
     if num_coupons == 0 {
         return 0.0;
     }
@@ -208,7 +234,7 @@ const ICON_TABLE_SIZE: usize =
 
 #[rustfmt::skip]
 #[allow(clippy::excessive_precision)]
-const ICON_POLYNOMIAL_COEFFICIENTS: [f64; ICON_TABLE_SIZE] = [
+static ICON_POLYNOMIAL_COEFFICIENTS: [f64; ICON_TABLE_SIZE] = [
     // log K = 4
     0.9895027971889700513, 0.3319496644645180128, 0.1242818722715769986, -0.03324149686026930256, -0.2985637298081619817,
     1.366555923595830002, -4.705499366260569971, 11.61506432505530029, -21.11254986175579873, 28.89421695078809904,
@@ -362,7 +388,7 @@ fn icon_exponential_approximation(k: f64, c: f64) -> f64 {
     0.7940236163830469 * k * 2f64.powf(c / k)
 }
 
-pub(super) fn icon_estimate(lg_k: u8, num_coupons: u32) -> f64 {
+fn icon_estimate(lg_k: u8, num_coupons: u32) -> f64 {
     let lg_k = lg_k as usize;
     assert!(
         (ICON_MIN_LOG_K..=ICON_MAX_LOG_K).contains(&lg_k),

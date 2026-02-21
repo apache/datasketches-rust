@@ -22,11 +22,18 @@
 
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
+use crate::codec::family::Family;
 use crate::error::Error;
 use crate::hll::HllType;
 use crate::hll::container::COUPON_EMPTY;
 use crate::hll::container::Container;
-use crate::hll::serialization::*;
+use crate::hll::serialization::COMPACT_FLAG_MASK;
+use crate::hll::serialization::CUR_MODE_LIST;
+use crate::hll::serialization::EMPTY_FLAG_MASK;
+use crate::hll::serialization::LIST_PREAMBLE_SIZE;
+use crate::hll::serialization::LIST_PREINTS;
+use crate::hll::serialization::SERIAL_VERSION;
+use crate::hll::serialization::encode_mode_byte;
 
 /// List for sequential coupon storage with duplicate detection
 #[derive(Debug, Clone, PartialEq)]
@@ -111,7 +118,7 @@ impl List {
         // Write preamble
         bytes.write_u8(LIST_PREINTS);
         bytes.write_u8(SERIAL_VERSION);
-        bytes.write_u8(HLL_FAMILY_ID);
+        bytes.write_u8(Family::HLL.id);
         bytes.write_u8(lg_config_k);
         bytes.write_u8(lg_arr as u8);
 

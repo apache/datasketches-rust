@@ -15,8 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#![allow(dead_code)]
-
 //! Compressed Probabilistic Counting sketch.
 //!
 //! This is a unique-counting sketch that implements the Compressed Probabilistic Counting (CPC,
@@ -37,30 +35,34 @@
 //!
 //! For additional security this sketch can be configured with a user-specified hash seed.
 
+mod compression;
+mod compression_data;
 mod estimator;
 mod kxp_byte_lookup;
 mod pair_table;
+mod serialization;
 mod sketch;
 mod union;
+mod wrapper;
 
 pub use self::sketch::CpcSketch;
 pub use self::union::CpcUnion;
+pub use self::wrapper::CpcWrapper;
 
 /// Default log2 of K.
 const DEFAULT_LG_K: u8 = 11;
 /// Min log2 of K.
-const MIN_LG_K: usize = 4;
+const MIN_LG_K: u8 = 4;
 /// Max log2 of K.
-const MAX_LG_K: usize = 26;
+const MAX_LG_K: u8 = 26;
 
 #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
-#[expect(clippy::upper_case_acronyms)]
 enum Flavor {
-    EMPTY,   //    0  == C <    1
-    SPARSE,  //    1  <= C <   3K/32
-    HYBRID,  // 3K/32 <= C <   K/2
-    PINNED,  //   K/2 <= C < 27K/8  [NB: 27/8 = 3 + 3/8]
-    SLIDING, // 27K/8 <= C
+    Empty,   //    0  == C <    1
+    Sparse,  //    1  <= C <   3K/32
+    Hybrid,  // 3K/32 <= C <   K/2
+    Pinned,  //   K/2 <= C < 27K/8  [NB: 27/8 = 3 + 3/8]
+    Sliding, // 27K/8 <= C
 }
 
 fn count_bits_set_in_matrix(matrix: &[u64]) -> u32 {
@@ -77,15 +79,15 @@ fn determine_flavor(lg_k: u8, num_coupons: u32) -> Flavor {
     let c8 = num_coupons << 3;
     let c32 = num_coupons << 5;
     if num_coupons == 0 {
-        Flavor::EMPTY
+        Flavor::Empty
     } else if c32 < (3 * k) {
-        Flavor::SPARSE
+        Flavor::Sparse
     } else if c2 < k {
-        Flavor::HYBRID
+        Flavor::Hybrid
     } else if c8 < (27 * k) {
-        Flavor::PINNED
+        Flavor::Pinned
     } else {
-        Flavor::SLIDING
+        Flavor::Sliding
     }
 }
 

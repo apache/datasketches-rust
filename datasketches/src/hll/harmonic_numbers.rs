@@ -24,7 +24,7 @@ const NUM_EXACT: usize = 25;
 const EULER_MASCHERONI: f64 = 0.577_215_664_901_532_9;
 
 /// Exact harmonic numbers H(n) for n = 0..24
-const EXACT_HARMONIC: [f64; NUM_EXACT] = [
+static EXACT_HARMONIC: [f64; NUM_EXACT] = [
     0.0,                        // H(0)
     1.0,                        // H(1)
     1.5,                        // H(2)
@@ -86,8 +86,8 @@ fn harmonic_number(n: usize) -> f64 {
 ///
 /// # Arguments
 ///
-/// * `bit_vector_length` - Total length of bit vector (k for HLL)
-/// * `num_bits_set` - Number of bits set (non-zero registers)
+/// * `bit_vector_length`: Total length of bit vector (k for HLL)
+/// * `num_bits_set`: Number of bits set (non-zero registers)
 ///
 /// # Returns
 ///

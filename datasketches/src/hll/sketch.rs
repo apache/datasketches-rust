@@ -23,6 +23,9 @@
 use std::hash::Hash;
 
 use crate::codec::SketchSlice;
+use crate::codec::assert::ensure_serial_version_is;
+use crate::codec::assert::insufficient_data;
+use crate::codec::family::Family;
 use crate::common::NumStdDev;
 use crate::error::Error;
 use crate::hll::HllType;
@@ -36,7 +39,21 @@ use crate::hll::coupon;
 use crate::hll::hash_set::HashSet;
 use crate::hll::list::List;
 use crate::hll::mode::Mode;
-use crate::hll::serialization::*;
+use crate::hll::serialization::COMPACT_FLAG_MASK;
+use crate::hll::serialization::CUR_MODE_HLL;
+use crate::hll::serialization::CUR_MODE_LIST;
+use crate::hll::serialization::CUR_MODE_SET;
+use crate::hll::serialization::EMPTY_FLAG_MASK;
+use crate::hll::serialization::HASH_SET_PREINTS;
+use crate::hll::serialization::HLL_PREINTS;
+use crate::hll::serialization::LIST_PREINTS;
+use crate::hll::serialization::OUT_OF_ORDER_FLAG_MASK;
+use crate::hll::serialization::SERIAL_VERSION;
+use crate::hll::serialization::TGT_HLL4;
+use crate::hll::serialization::TGT_HLL6;
+use crate::hll::serialization::TGT_HLL8;
+use crate::hll::serialization::extract_cur_mode;
+use crate::hll::serialization::extract_tgt_hll_type;
 
 /// A HyperLogLog sketch.
 ///
@@ -52,15 +69,15 @@ impl HllSketch {
     ///
     /// # Arguments
     ///
-    /// * `lg_config_k` - Log2 of the number of buckets (K). Must be in [4, 21].
-    ///   - lg_k=4: 16 buckets, ~26% relative error
-    ///   - lg_k=12: 4096 buckets, ~1.6% relative error (common choice)
-    ///   - lg_k=21: 2M buckets, ~0.4% relative error
-    /// * `hll_type` - Target HLL array type (Hll4, Hll6, or Hll8)
+    /// * `lg_config_k`: Log2 of the number of buckets (K). Must be in `[4, 21]`.
+    ///   * lg_k=4: 16 buckets, ~26% relative error
+    ///   * lg_k=12: 4096 buckets, ~1.6% relative error (common choice)
+    ///   * lg_k=21: 2M buckets, ~0.4% relative error
+    /// * `hll_type`: Target HLL array type (Hll4, Hll6, or Hll8)
     ///
     /// # Panics
     ///
-    /// If lg_config_k is not in range [4, 21]
+    /// If lg_config_k is not in range `[4, 21]`
     ///
     /// # Examples
     ///
@@ -92,8 +109,8 @@ impl HllSketch {
     ///
     /// # Arguments
     ///
-    /// * `lg_config_k` - Log2 of the number of buckets (K)
-    /// * `mode` - The mode to initialize the sketch with
+    /// * `lg_config_k`: Log2 of the number of buckets (K)
+    /// * `mode`: The mode to initialize the sketch with
     pub(super) fn from_mode(lg_config_k: u8, mode: Mode) -> Self {
         Self { lg_config_k, mode }
     }
@@ -255,39 +272,32 @@ impl HllSketch {
     /// assert!(decoded.estimate() >= 1.0);
     /// ```
     pub fn deserialize(bytes: &[u8]) -> Result<HllSketch, Error> {
-        fn make_error(tag: &'static str) -> impl FnOnce(std::io::Error) -> Error {
-            move |_| Error::insufficient_data(tag)
-        }
-
         let mut cursor = SketchSlice::new(bytes);
 
         // Read and validate preamble
-        let preamble_ints = cursor.read_u8().map_err(make_error("preamble_ints"))?;
-        let serial_version = cursor.read_u8().map_err(make_error("serial_version"))?;
-        let family_id = cursor.read_u8().map_err(make_error("family_id"))?;
-        let lg_config_k = cursor.read_u8().map_err(make_error("lg_config_k"))?;
+        let preamble_ints = cursor
+            .read_u8()
+            .map_err(insufficient_data("preamble_ints"))?;
+        let serial_version = cursor
+            .read_u8()
+            .map_err(insufficient_data("serial_version"))?;
+        let family_id = cursor.read_u8().map_err(insufficient_data("family_id"))?;
+        let lg_config_k = cursor.read_u8().map_err(insufficient_data("lg_config_k"))?;
         // lg_arr used in List/Set modes
-        let lg_arr = cursor.read_u8().map_err(make_error("lg_arr"))?;
-        let flags = cursor.read_u8().map_err(make_error("flags"))?;
+        let lg_arr = cursor.read_u8().map_err(insufficient_data("lg_arr"))?;
+        let flags = cursor.read_u8().map_err(insufficient_data("flags"))?;
         // The contextual state byte:
         // * coupon count in LIST mode
         // * cur_min in HLL mode
         // * unused in SET mode
-        let state = cursor.read_u8().map_err(make_error("state"))?;
-        let mode_byte = cursor.read_u8().map_err(make_error("mode"))?;
+        let state = cursor.read_u8().map_err(insufficient_data("state"))?;
+        let mode_byte = cursor.read_u8().map_err(insufficient_data("mode"))?;
 
         // Verify family ID
-        if family_id != HLL_FAMILY_ID {
-            return Err(Error::invalid_family(HLL_FAMILY_ID, family_id, "HLL"));
-        }
+        Family::HLL.validate_id(family_id)?;
 
         // Verify serialization version
-        if serial_version != SERIAL_VERSION {
-            return Err(Error::unsupported_serial_version(
-                SERIAL_VERSION,
-                serial_version,
-            ));
-        }
+        ensure_serial_version_is(SERIAL_VERSION, serial_version)?;
 
         // Verify lg_k range (4-21 are valid)
         if !(4..=21).contains(&lg_config_k) {

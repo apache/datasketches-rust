@@ -21,8 +21,19 @@ use std::num::NonZeroU64;
 
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
+use crate::codec::assert::ensure_preamble_longs_in;
+use crate::codec::assert::ensure_serial_version_is;
+use crate::codec::assert::insufficient_data;
+use crate::codec::family::Family;
 use crate::error::Error;
-use crate::tdigest::serialization::*;
+use crate::tdigest::serialization::COMPAT_DOUBLE;
+use crate::tdigest::serialization::COMPAT_FLOAT;
+use crate::tdigest::serialization::FLAGS_IS_EMPTY;
+use crate::tdigest::serialization::FLAGS_IS_SINGLE_VALUE;
+use crate::tdigest::serialization::FLAGS_REVERSE_MERGE;
+use crate::tdigest::serialization::PREAMBLE_LONGS_EMPTY_OR_SINGLE;
+use crate::tdigest::serialization::PREAMBLE_LONGS_MULTIPLE;
+use crate::tdigest::serialization::SERIAL_VERSION;
 
 /// The default value of K if one is not specified.
 const DEFAULT_K: u16 = 200;
@@ -88,7 +99,7 @@ impl TDigestMut {
     ///
     /// # Errors
     ///
-    /// If k is less than 10, returns [`ErrorKind::InvalidArgument`].
+    /// If k is less than 10.
     ///
     /// # Examples
     ///
@@ -428,7 +439,7 @@ impl TDigestMut {
             _ => PREAMBLE_LONGS_MULTIPLE,
         });
         bytes.write_u8(SERIAL_VERSION);
-        bytes.write_u8(TDIGEST_FAMILY_ID);
+        bytes.write_u8(Family::TDIGEST.id);
         bytes.write_u16_le(self.k);
         bytes.write_u8({
             let mut flags = 0;
@@ -484,37 +495,28 @@ impl TDigestMut {
     /// assert_eq!(decoded.max_value(), Some(2.0));
     /// ```
     pub fn deserialize(bytes: &[u8], is_f32: bool) -> Result<Self, Error> {
-        fn make_error(tag: &'static str) -> impl FnOnce(std::io::Error) -> Error {
-            move |_| Error::insufficient_data(tag)
-        }
-
         let mut cursor = SketchSlice::new(bytes);
 
-        let preamble_longs = cursor.read_u8().map_err(make_error("preamble_longs"))?;
-        let serial_version = cursor.read_u8().map_err(make_error("serial_version"))?;
-        let family_id = cursor.read_u8().map_err(make_error("family_id"))?;
-        if family_id != TDIGEST_FAMILY_ID {
+        let preamble_longs = cursor
+            .read_u8()
+            .map_err(insufficient_data("preamble_longs"))?;
+        let serial_version = cursor
+            .read_u8()
+            .map_err(insufficient_data("serial_version"))?;
+        let family_id = cursor.read_u8().map_err(insufficient_data("family_id"))?;
+        if let Err(err) = Family::TDIGEST.validate_id(family_id) {
             return if preamble_longs == 0 && serial_version == 0 && family_id == 0 {
                 Self::deserialize_compat(bytes)
             } else {
-                Err(Error::invalid_family(
-                    TDIGEST_FAMILY_ID,
-                    family_id,
-                    "TDigest",
-                ))
+                Err(err)
             };
         }
-        if serial_version != SERIAL_VERSION {
-            return Err(Error::unsupported_serial_version(
-                SERIAL_VERSION,
-                serial_version,
-            ));
-        }
-        let k = cursor.read_u16_le().map_err(make_error("k"))?;
+        ensure_serial_version_is(SERIAL_VERSION, serial_version)?;
+        let k = cursor.read_u16_le().map_err(insufficient_data("k"))?;
         if k < 10 {
             return Err(Error::deserial(format!("k must be at least 10, got {k}")));
         }
-        let flags = cursor.read_u8().map_err(make_error("flags"))?;
+        let flags = cursor.read_u8().map_err(insufficient_data("flags"))?;
         let is_empty = (flags & FLAGS_IS_EMPTY) != 0;
         let is_single_value = (flags & FLAGS_IS_SINGLE_VALUE) != 0;
         let expected_preamble_longs = if is_empty || is_single_value {
@@ -522,13 +524,10 @@ impl TDigestMut {
         } else {
             PREAMBLE_LONGS_MULTIPLE
         };
-        if preamble_longs != expected_preamble_longs {
-            return Err(Error::invalid_preamble_longs(
-                expected_preamble_longs,
-                preamble_longs,
-            ));
-        }
-        cursor.read_u16_le().map_err(make_error("<unused>"))?; // unused
+        ensure_preamble_longs_in(&[expected_preamble_longs], preamble_longs)?;
+        cursor
+            .read_u16_le()
+            .map_err(insufficient_data("<unused>"))?; // unused
         if is_empty {
             return Ok(TDigestMut::new(k));
         }
@@ -536,9 +535,13 @@ impl TDigestMut {
         let reverse_merge = (flags & FLAGS_REVERSE_MERGE) != 0;
         if is_single_value {
             let value = if is_f32 {
-                cursor.read_f32_le().map_err(make_error("single_value"))? as f64
+                cursor
+                    .read_f32_le()
+                    .map_err(insufficient_data("single_value"))? as f64
             } else {
-                cursor.read_f64_le().map_err(make_error("single_value"))?
+                cursor
+                    .read_f64_le()
+                    .map_err(insufficient_data("single_value"))?
             };
             check_non_nan(value, "single_value")?;
             check_finite(value, "single_value")?;
@@ -555,17 +558,21 @@ impl TDigestMut {
                 vec![],
             ));
         }
-        let num_centroids = cursor.read_u32_le().map_err(make_error("num_centroids"))? as usize;
-        let num_buffered = cursor.read_u32_le().map_err(make_error("num_buffered"))? as usize;
+        let num_centroids = cursor
+            .read_u32_le()
+            .map_err(insufficient_data("num_centroids"))? as usize;
+        let num_buffered = cursor
+            .read_u32_le()
+            .map_err(insufficient_data("num_buffered"))? as usize;
         let (min, max) = if is_f32 {
             (
-                cursor.read_f32_le().map_err(make_error("min"))? as f64,
-                cursor.read_f32_le().map_err(make_error("max"))? as f64,
+                cursor.read_f32_le().map_err(insufficient_data("min"))? as f64,
+                cursor.read_f32_le().map_err(insufficient_data("max"))? as f64,
             )
         } else {
             (
-                cursor.read_f64_le().map_err(make_error("min"))?,
-                cursor.read_f64_le().map_err(make_error("max"))?,
+                cursor.read_f64_le().map_err(insufficient_data("min"))?,
+                cursor.read_f64_le().map_err(insufficient_data("max"))?,
             )
         };
         check_non_nan(min, "min")?;
@@ -575,13 +582,13 @@ impl TDigestMut {
         for _ in 0..num_centroids {
             let (mean, weight) = if is_f32 {
                 (
-                    cursor.read_f32_le().map_err(make_error("mean"))? as f64,
-                    cursor.read_u32_le().map_err(make_error("weight"))? as u64,
+                    cursor.read_f32_le().map_err(insufficient_data("mean"))? as f64,
+                    cursor.read_u32_le().map_err(insufficient_data("weight"))? as u64,
                 )
             } else {
                 (
-                    cursor.read_f64_le().map_err(make_error("mean"))?,
-                    cursor.read_u64_le().map_err(make_error("weight"))?,
+                    cursor.read_f64_le().map_err(insufficient_data("mean"))?,
+                    cursor.read_u64_le().map_err(insufficient_data("weight"))?,
                 )
             };
             check_non_nan(mean, "centroid mean")?;
@@ -593,9 +600,13 @@ impl TDigestMut {
         let mut buffer = Vec::with_capacity(num_buffered);
         for _ in 0..num_buffered {
             let value = if is_f32 {
-                cursor.read_f32_le().map_err(make_error("buffered_value"))? as f64
+                cursor
+                    .read_f32_le()
+                    .map_err(insufficient_data("buffered_value"))? as f64
             } else {
-                cursor.read_f64_le().map_err(make_error("buffered_value"))?
+                cursor
+                    .read_f64_le()
+                    .map_err(insufficient_data("buffered_value"))?
             };
             check_non_nan(value, "buffered_value mean")?;
             check_finite(value, "buffered_value mean")?;
@@ -1251,15 +1262,24 @@ impl Centroid {
     fn add(&mut self, other: Centroid) {
         let (self_weight, other_weight) = (self.weight(), other.weight());
         let total_weight = self_weight + other_weight;
-        self.weight = self.weight.saturating_add(other.weight.get());
+        self.weight = self
+            .weight
+            .checked_add(other.weight.get())
+            .expect("weight overflow");
 
         let (self_mean, other_mean) = (self.mean, other.mean);
-        let ratio_self = self_weight / total_weight;
         let ratio_other = other_weight / total_weight;
-        self.mean = self_mean.mul_add(ratio_self, other_mean * ratio_other);
+        let delta = other_mean - self_mean;
+        self.mean = if delta.is_finite() {
+            delta.mul_add(ratio_other, self_mean)
+        } else {
+            let ratio_self = self_weight / total_weight;
+            self_mean.mul_add(ratio_self, other_mean * ratio_other)
+        };
+
         debug_assert!(
-            !self.mean.is_nan(),
-            "NaN values should never be present in centroids; self: {}, other: {}",
+            self.mean.is_finite(),
+            "Centroid's mean must be finite; self: {}, other: {}",
             self_mean,
             other_mean
         );

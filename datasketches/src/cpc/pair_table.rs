@@ -64,15 +64,11 @@ impl PairTable {
         // sorted pairs array. However, we are starting out with the correct final table size, so
         // the problem might not occur.
 
-        for slot in slots {
-            table.must_insert(slot);
+        for i in 0..num_items {
+            table.must_insert(slots[i as usize]);
         }
         table.num_items = num_items;
         table
-    }
-
-    pub fn num_items(&self) -> u32 {
-        self.num_items
     }
 
     pub fn slots(&self) -> &[u32] {
@@ -147,7 +143,7 @@ impl PairTable {
     ///
     /// The result is nearly sorted, so make sure to use an efficient sort for that case.
     pub fn unwrapping_get_items(&self) -> Vec<u32> {
-        if self.slots.is_empty() {
+        if self.num_items == 0 {
             return vec![];
         }
 
@@ -249,98 +245,5 @@ impl PairTable {
                 self.must_insert(slot);
             }
         }
-    }
-}
-
-/// This should be used pair with [`PairTable::unwrapping_get_items`].
-///
-/// In applications where the input array is already nearly sorted, insertion sort runs in linear
-/// time with a very small constant.
-///
-/// This introspective version of insertion sort protects against the quadratic cost of sorting bad
-/// input arrays. It keeps track of how much work has been done, and if that exceeds a constant
-/// times the array length, it switches to a different sorting algorithm.
-pub fn introspective_insertion_sort(a: &mut [u32]) {
-    let cost_limit = 8 * a.len();
-
-    let mut cost = 0;
-    for i in 1..a.len() {
-        let mut j = i;
-        let v = a[i];
-        while j >= 1 && v < a[j - 1] {
-            a[j] = a[j - 1];
-            j -= 1;
-        }
-        a[j] = v;
-        cost += i - j; // distance moved is a measure of work
-        if cost > cost_limit {
-            knuth_shell_sort3(a);
-            return;
-        }
-    }
-}
-
-fn knuth_shell_sort3(a: &mut [u32]) {
-    let len = a.len();
-
-    let mut h = 0;
-    while h < len / 9 {
-        h = 3 * h + 1;
-    }
-
-    while h > 0 {
-        for i in h..len {
-            let v = a[i];
-            let mut j = i;
-            while j >= h && v < a[j - h] {
-                a[j] = a[j - h];
-                j -= h;
-            }
-            a[j] = v;
-        }
-        h /= 3;
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_sort_1() {
-        let data = (0..10)
-            .map(|_| rand::random_range(0..10000))
-            .collect::<Vec<_>>();
-        let mut sorted = data.clone();
-        introspective_insertion_sort(&mut sorted);
-        assert!(
-            sorted.is_sorted(),
-            "data was not sorted correctly: origin={data:?}, sorted={sorted:?}"
-        );
-    }
-
-    #[test]
-    fn test_sort_2() {
-        let data = (0..10)
-            .map(|_| rand::random_range(0..10000) + 3_000_000_000)
-            .collect::<Vec<_>>();
-        let mut sorted = data.clone();
-        introspective_insertion_sort(&mut sorted);
-        assert!(
-            sorted.is_sorted(),
-            "data was not sorted correctly: origin={data:?}, sorted={sorted:?}"
-        );
-    }
-
-    #[test]
-    fn test_sort_3() {
-        let len = 20;
-        let data = (0..len).map(|i| len - i + 1).collect::<Vec<_>>();
-        let mut sorted = data.clone();
-        introspective_insertion_sort(&mut sorted);
-        assert!(
-            sorted.is_sorted(),
-            "data was not sorted correctly: origin={data:?}, sorted={sorted:?}"
-        );
     }
 }

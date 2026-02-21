@@ -23,11 +23,20 @@
 
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
+use crate::codec::assert::insufficient_data;
+use crate::codec::family::Family;
 use crate::common::NumStdDev;
 use crate::error::Error;
 use crate::hll::estimator::HipEstimator;
 use crate::hll::get_slot;
 use crate::hll::get_value;
+use crate::hll::serialization::CUR_MODE_HLL;
+use crate::hll::serialization::HLL_PREAMBLE_SIZE;
+use crate::hll::serialization::HLL_PREINTS;
+use crate::hll::serialization::OUT_OF_ORDER_FLAG_MASK;
+use crate::hll::serialization::SERIAL_VERSION;
+use crate::hll::serialization::TGT_HLL6;
+use crate::hll::serialization::encode_mode_byte;
 
 const VAL_MASK_6: u16 = 0x3F; // 6 bits: 0b0011_1111
 
@@ -176,26 +185,30 @@ impl Array6 {
         compact: bool,
         ooo: bool,
     ) -> Result<Self, Error> {
-        fn make_error(tag: &'static str) -> impl FnOnce(std::io::Error) -> Error {
-            move |_| Error::insufficient_data(tag)
-        }
-
         let k = 1 << lg_config_k;
         let num_bytes = num_bytes_for_k(k);
 
         // Read HIP estimator values from preamble
-        let hip_accum = cursor.read_f64_le().map_err(make_error("hip_accum"))?;
-        let kxq0 = cursor.read_f64_le().map_err(make_error("kxq0"))?;
-        let kxq1 = cursor.read_f64_le().map_err(make_error("kxq1"))?;
+        let hip_accum = cursor
+            .read_f64_le()
+            .map_err(insufficient_data("hip_accum"))?;
+        let kxq0 = cursor.read_f64_le().map_err(insufficient_data("kxq0"))?;
+        let kxq1 = cursor.read_f64_le().map_err(insufficient_data("kxq1"))?;
 
         // Read num_at_cur_min (for Array6, this is num_zeros since cur_min=0)
-        let num_zeros = cursor.read_u32_le().map_err(make_error("num_zeros"))?;
-        let _aux_count = cursor.read_u32_le().map_err(make_error("aux_count"))?; // always 0
+        let num_zeros = cursor
+            .read_u32_le()
+            .map_err(insufficient_data("num_zeros"))?;
+        let _aux_count = cursor
+            .read_u32_le()
+            .map_err(insufficient_data("aux_count"))?; // always 0
 
         // Read packed byte array from offset HLL_BYTE_ARR_START
         let mut data = vec![0u8; num_bytes];
         if !compact {
-            cursor.read_exact(&mut data).map_err(make_error("data"))?;
+            cursor
+                .read_exact(&mut data)
+                .map_err(insufficient_data("data"))?;
         } else {
             cursor.advance(num_bytes as u64);
         }
@@ -219,8 +232,6 @@ impl Array6 {
     ///
     /// Produces full HLL preamble (40 bytes) followed by packed 6-bit data.
     pub fn serialize(&self, lg_config_k: u8) -> Vec<u8> {
-        use crate::hll::serialization::*;
-
         let k = 1 << lg_config_k;
         let num_bytes = num_bytes_for_k(k);
         let total_size = HLL_PREAMBLE_SIZE + num_bytes;
@@ -229,7 +240,7 @@ impl Array6 {
         // Write standard header
         bytes.write_u8(HLL_PREINTS);
         bytes.write_u8(SERIAL_VERSION);
-        bytes.write_u8(HLL_FAMILY_ID);
+        bytes.write_u8(Family::HLL.id);
         bytes.write_u8(lg_config_k);
         bytes.write_u8(0); // unused for HLL mode
 

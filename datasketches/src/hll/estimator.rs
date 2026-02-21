@@ -33,9 +33,9 @@ use crate::hll::harmonic_numbers;
 /// allowing it to be composed into Array4, Array6, and Array8.
 ///
 /// The estimator supports two modes:
-/// - **In-order mode**: Uses HIP (Historical Inverse Probability) accumulator for accurate
+/// * **In-order mode**: Uses HIP (Historical Inverse Probability) accumulator for accurate
 ///   sequential updates
-/// - **Out-of-order mode**: Uses composite estimator (raw HLL + linear counting) after
+/// * **Out-of-order mode**: Uses composite estimator (raw HLL + linear counting) after
 ///   deserialization or merging
 #[derive(Debug, Clone, PartialEq)]
 pub struct HipEstimator {
@@ -71,8 +71,8 @@ impl HipEstimator {
     /// 2. Update KxQ registers (always)
     ///
     /// The KxQ registers are split for numerical precision:
-    /// - kxq0: sum of 1/2^v for v < 32
-    /// - kxq1: sum of 1/2^v for v >= 32
+    /// * kxq0: sum of 1/2^v for v < 32
+    /// * kxq1: sum of 1/2^v for v >= 32
     pub fn update(&mut self, lg_config_k: u8, old_value: u8, new_value: u8) {
         let k = (1 << lg_config_k) as f64;
 
@@ -109,9 +109,9 @@ impl HipEstimator {
     ///
     /// # Arguments
     ///
-    /// * `lg_config_k` - Log2 of number of registers (k)
-    /// * `cur_min` - Current minimum register value (for Array4, 0 for Array6/8)
-    /// * `num_at_cur_min` - Number of registers at cur_min value
+    /// * `lg_config_k`: Log2 of number of registers (k)
+    /// * `cur_min`: Current minimum register value (for Array4, 0 for Array6/8)
+    /// * `num_at_cur_min`: Number of registers at cur_min value
     pub fn estimate(&self, lg_config_k: u8, cur_min: u8, num_at_cur_min: u32) -> f64 {
         if self.out_of_order {
             self.get_composite_estimate(lg_config_k, cur_min, num_at_cur_min)
@@ -126,10 +126,10 @@ impl HipEstimator {
     ///
     /// # Arguments
     ///
-    /// * `lg_config_k` - Log2 of number of registers (k)
-    /// * `cur_min` - Current minimum register value (for Array4, 0 for Array6/8)
-    /// * `num_at_cur_min` - Number of registers at cur_min value
-    /// * `num_std_dev` - Number of standard deviations (1, 2, or 3)
+    /// * `lg_config_k`: Log2 of number of registers (k)
+    /// * `cur_min`: Current minimum register value (for Array4, 0 for Array6/8)
+    /// * `num_at_cur_min`: Number of registers at cur_min value
+    /// * `num_std_dev`: Number of standard deviations (1, 2, or 3)
     pub fn upper_bound(
         &self,
         lg_config_k: u8,
@@ -149,10 +149,10 @@ impl HipEstimator {
     ///
     /// # Arguments
     ///
-    /// * `lg_config_k` - Log2 of number of registers (k)
-    /// * `cur_min` - Current minimum register value (for Array4, 0 for Array6/8)
-    /// * `num_at_cur_min` - Number of registers at cur_min value
-    /// * `num_std_dev` - Number of standard deviations (1, 2, or 3)
+    /// * `lg_config_k`: Log2 of number of registers (k)
+    /// * `cur_min`: Current minimum register value (for Array4, 0 for Array6/8)
+    /// * `num_at_cur_min`: Number of registers at cur_min value
+    /// * `num_std_dev`: Number of standard deviations (1, 2, or 3)
     pub fn lower_bound(
         &self,
         lg_config_k: u8,
@@ -286,8 +286,8 @@ impl HipEstimator {
     /// Set the out-of-order flag
     ///
     /// This should be set to true when:
-    /// - Deserializing a sketch from bytes
-    /// - After a merge/union operation
+    /// * Deserializing a sketch from bytes
+    /// * After a merge/union operation
     pub fn set_out_of_order(&mut self, ooo: bool) {
         self.out_of_order = ooo;
         if ooo {
@@ -331,10 +331,10 @@ fn inv_pow2(value: u8) -> f64 {
 ///
 /// # Arguments
 ///
-/// * `lg_config_k` - Log2 of number of registers (must be 4-21)
-/// * `upper_bound` - Whether computing upper bound (vs lower bound)
-/// * `ooo` - Whether sketch is out-of-order (merged/deserialized)
-/// * `num_std_dev` - Number of standard deviations (1, 2, or 3)
+/// * `lg_config_k`: Log2 of number of registers (must be 4-21)
+/// * `upper_bound`: Whether computing upper bound (vs lower bound)
+/// * `ooo`: Whether sketch is out-of-order (merged/deserialized)
+/// * `num_std_dev`: Number of standard deviations (1, 2, or 3)
 ///
 /// # Returns
 ///
@@ -357,7 +357,7 @@ fn get_rel_err(lg_config_k: u8, upper_bound: bool, ooo: bool, num_std_dev: NumSt
         return sign * (num_std_dev as u8 as f64) * rse_factor / k.sqrt();
     }
 
-    // For lg_k <= 12, use empirically measured lookup tables
+    // For lg_k <= 12, use empirically measured lookup tables.
     // Tables are indexed by: ((lg_k - 4) * 3) + (num_std_dev - 1)
     let idx = ((lg_config_k as usize) - 4) * 3 + ((num_std_dev as usize) - 1);
 
@@ -375,7 +375,7 @@ fn get_rel_err(lg_config_k: u8, upper_bound: bool, ooo: bool, num_std_dev: NumSt
 
 /// HIP (in-order) Lower Bound errors for lg_k 4-12, std_dev 1-3
 /// Q(.84134), Q(.97725), Q(.99865) quantiles
-const HIP_LB: [f64; 27] = [
+static HIP_LB: [f64; 27] = [
     0.207316195,
     0.502865572,
     0.882303765, //4
@@ -407,7 +407,7 @@ const HIP_LB: [f64; 27] = [
 
 /// HIP (in-order) Upper Bound errors for lg_k 4-12, std_dev 1-3
 /// Q(.15866), Q(.02275), Q(.00135) quantiles
-const HIP_UB: [f64; 27] = [
+static HIP_UB: [f64; 27] = [
     -0.207805347,
     -0.355574279,
     -0.475535095, //4
@@ -439,7 +439,7 @@ const HIP_UB: [f64; 27] = [
 
 /// Non-HIP (out-of-order) Lower Bound errors for lg_k 4-12, std_dev 1-3
 /// Q(.84134), Q(.97725), Q(.99865) quantiles
-const NON_HIP_LB: [f64; 27] = [
+static NON_HIP_LB: [f64; 27] = [
     0.254409839,
     0.682266712,
     1.304022158, //4
@@ -471,7 +471,7 @@ const NON_HIP_LB: [f64; 27] = [
 
 /// Non-HIP (out-of-order) Upper Bound errors for lg_k 4-12, std_dev 1-3
 /// Q(.15866), Q(.02275), Q(.00135) quantiles
-const NON_HIP_UB: [f64; 27] = [
+static NON_HIP_UB: [f64; 27] = [
     -0.256980172,
     -0.411905944,
     -0.52651057, // lg_k=4

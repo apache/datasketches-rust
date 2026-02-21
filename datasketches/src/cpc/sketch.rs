@@ -17,6 +17,12 @@
 
 use std::hash::Hash;
 
+use crate::codec::SketchBytes;
+use crate::codec::SketchSlice;
+use crate::codec::assert::ensure_preamble_longs_in;
+use crate::codec::assert::ensure_serial_version_is;
+use crate::codec::assert::insufficient_data;
+use crate::codec::family::Family;
 use crate::common::NumStdDev;
 use crate::common::canonical_double;
 use crate::common::inv_pow2_table::INVERSE_POWERS_OF_2;
@@ -24,18 +30,26 @@ use crate::cpc::DEFAULT_LG_K;
 use crate::cpc::Flavor;
 use crate::cpc::MAX_LG_K;
 use crate::cpc::MIN_LG_K;
+use crate::cpc::compression::CompressedState;
 use crate::cpc::count_bits_set_in_matrix;
 use crate::cpc::determine_correct_offset;
 use crate::cpc::determine_flavor;
-use crate::cpc::estimator::hip_confidence_lb;
-use crate::cpc::estimator::hip_confidence_ub;
-use crate::cpc::estimator::icon_confidence_lb;
-use crate::cpc::estimator::icon_confidence_ub;
-use crate::cpc::estimator::icon_estimate;
+use crate::cpc::estimator::estimate;
+use crate::cpc::estimator::lower_bound;
+use crate::cpc::estimator::upper_bound;
 use crate::cpc::kxp_byte_lookup::KXP_BYTE_TABLE;
 use crate::cpc::pair_table::PairTable;
+use crate::cpc::serialization::FLAG_COMPRESSED;
+use crate::cpc::serialization::FLAG_HAS_HIP;
+use crate::cpc::serialization::FLAG_HAS_TABLE;
+use crate::cpc::serialization::FLAG_HAS_WINDOW;
+use crate::cpc::serialization::SERIAL_VERSION;
+use crate::cpc::serialization::make_preamble_ints;
+use crate::error::Error;
+use crate::error::ErrorKind;
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::hash::MurmurHash3X64128;
+use crate::hash::compute_seed_hash;
 
 /// A Compressed Probabilistic Counting sketch.
 ///
@@ -45,6 +59,7 @@ pub struct CpcSketch {
     // immutable config variables
     lg_k: u8,
     seed: u64,
+    seed_hash: u16,
 
     // sketch state
     /// Part of a speed optimization.
@@ -91,16 +106,17 @@ impl CpcSketch {
     ///
     /// # Panics
     ///
-    /// Panics if `lg_k` is not in the range `[4, 16]`.
+    /// Panics if `lg_k` is not in the range `[4, 16]`, or the computed seed hash is zero.
     pub fn with_seed(lg_k: u8, seed: u64) -> Self {
         assert!(
-            (MIN_LG_K..=MAX_LG_K).contains(&(lg_k as usize)),
+            (MIN_LG_K..=MAX_LG_K).contains(&lg_k),
             "lg_k out of range; got {lg_k}",
         );
 
         Self {
             lg_k,
             seed,
+            seed_hash: compute_seed_hash(seed),
             first_interesting_column: 0,
             num_coupons: 0,
             surprising_value_table: None,
@@ -119,29 +135,34 @@ impl CpcSketch {
 
     /// Returns the best estimate of the cardinality of the sketch.
     pub fn estimate(&self) -> f64 {
-        if !self.merge_flag {
-            self.hip_est_accum
-        } else {
-            icon_estimate(self.lg_k, self.num_coupons)
-        }
+        estimate(
+            self.merge_flag,
+            self.hip_est_accum,
+            self.lg_k,
+            self.num_coupons,
+        )
     }
 
     /// Returns the best estimate of the lower bound of the confidence interval given `kappa`.
     pub fn lower_bound(&self, kappa: NumStdDev) -> f64 {
-        if !self.merge_flag {
-            hip_confidence_lb(self.lg_k, self.num_coupons, self.hip_est_accum, kappa)
-        } else {
-            icon_confidence_lb(self.lg_k, self.num_coupons, kappa)
-        }
+        lower_bound(
+            self.merge_flag,
+            self.hip_est_accum,
+            self.lg_k,
+            self.num_coupons,
+            kappa,
+        )
     }
 
     /// Returns the best estimate of the upper bound of the confidence interval given `kappa`.
     pub fn upper_bound(&self, kappa: NumStdDev) -> f64 {
-        if !self.merge_flag {
-            hip_confidence_ub(self.lg_k, self.num_coupons, self.hip_est_accum, kappa)
-        } else {
-            icon_confidence_ub(self.lg_k, self.num_coupons, kappa)
-        }
+        upper_bound(
+            self.merge_flag,
+            self.hip_est_accum,
+            self.lg_k,
+            self.num_coupons,
+            kappa,
+        )
     }
 
     /// Returns true if the sketch is empty.
@@ -427,6 +448,212 @@ impl CpcSketch {
 }
 
 impl CpcSketch {
+    /// Serializes this CpcSketch to bytes.
+    pub fn serialize(&self) -> Vec<u8> {
+        let mut bytes = SketchBytes::with_capacity(256);
+
+        let mut compressed = CompressedState::default();
+        compressed.compress(self);
+
+        let has_hip = !self.merge_flag;
+        let has_table = !compressed.table_data.is_empty();
+        let has_window = !compressed.window_data.is_empty();
+        let preamble_ints = make_preamble_ints(self.num_coupons, has_hip, has_table, has_window);
+        bytes.write_u8(preamble_ints);
+        bytes.write_u8(SERIAL_VERSION);
+        bytes.write_u8(Family::CPC.id);
+        bytes.write_u8(self.lg_k);
+        bytes.write_u8(self.first_interesting_column);
+        let flags = (1 << FLAG_COMPRESSED)
+            | (if has_hip { 1 } else { 0 } << FLAG_HAS_HIP)
+            | (if has_table { 1 } else { 0 } << FLAG_HAS_TABLE)
+            | (if has_window { 1 } else { 0 } << FLAG_HAS_WINDOW);
+        bytes.write_u8(flags);
+        debug_assert_eq!(self.seed_hash, compute_seed_hash(self.seed));
+        bytes.write_u16_le(self.seed_hash);
+        if !self.is_empty() {
+            bytes.write_u32_le(self.num_coupons);
+            if has_table && has_window {
+                // if there is no window it is the same as number of coupons
+                bytes.write_u32_le(compressed.table_num_entries);
+                // HIP values can be in two different places in the sequence of fields
+                // this is the first HIP decision point
+                if has_hip {
+                    self.write_hip(&mut bytes);
+                }
+            }
+            if has_table {
+                debug_assert!(compressed.table_data_words <= u32::MAX as usize);
+                bytes.write_u32_le(compressed.table_data_words as u32);
+            }
+            if has_window {
+                debug_assert!(compressed.window_data_words <= u32::MAX as usize);
+                bytes.write_u32_le(compressed.window_data_words as u32);
+            }
+            // this is the second HIP decision point
+            if has_hip && !(has_table && has_window) {
+                self.write_hip(&mut bytes);
+            }
+            if has_window {
+                for i in 0..compressed.window_data_words {
+                    bytes.write_u32_le(compressed.window_data[i]);
+                }
+            }
+            if has_table {
+                for i in 0..compressed.table_data_words {
+                    bytes.write_u32_le(compressed.table_data[i]);
+                }
+            }
+        }
+        bytes.into_bytes()
+    }
+
+    /// Deserializes a CpcSketch from bytes.
+    pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
+        Self::deserialize_with_seed(bytes, DEFAULT_UPDATE_SEED)
+    }
+
+    /// Deserializes a CpcSketch from bytes with the provided seed.
+    pub fn deserialize_with_seed(bytes: &[u8], seed: u64) -> Result<Self, Error> {
+        let mut cursor = SketchSlice::new(bytes);
+        let preamble_ints = cursor
+            .read_u8()
+            .map_err(insufficient_data("preamble_ints"))?;
+        let serial_version = cursor
+            .read_u8()
+            .map_err(insufficient_data("serial_version"))?;
+        let family_id = cursor.read_u8().map_err(insufficient_data("family_id"))?;
+        Family::CPC.validate_id(family_id)?;
+        ensure_serial_version_is(SERIAL_VERSION, serial_version)?;
+
+        let lg_k = cursor.read_u8().map_err(insufficient_data("lg_k"))?;
+        let first_interesting_column = cursor
+            .read_u8()
+            .map_err(insufficient_data("first_interesting_column"))?;
+
+        let flags = cursor.read_u8().map_err(insufficient_data("flags"))?;
+        let seed_hash = cursor
+            .read_u16_le()
+            .map_err(insufficient_data("seed_hash"))?;
+        let is_compressed = flags & (1 << FLAG_COMPRESSED) != 0;
+        if !is_compressed {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                "only compressed sketches are supported",
+            ));
+        }
+        let has_hip = flags & (1 << FLAG_HAS_HIP) != 0;
+        let has_table = flags & (1 << FLAG_HAS_TABLE) != 0;
+        let has_window = flags & (1 << FLAG_HAS_WINDOW) != 0;
+
+        let mut compressed = CompressedState::default();
+        let mut num_coupons = 0;
+        let mut kxp = 0.0;
+        let mut hip_est_accum = 0.0;
+
+        if has_table || has_window {
+            num_coupons = cursor
+                .read_u32_le()
+                .map_err(insufficient_data("num_coupons"))?;
+            if has_table && has_window {
+                compressed.table_num_entries = cursor
+                    .read_u32_le()
+                    .map_err(insufficient_data("table_num_entries"))?;
+                if has_hip {
+                    kxp = cursor.read_f64_le().map_err(insufficient_data("kxp"))?;
+                    hip_est_accum = cursor
+                        .read_f64_le()
+                        .map_err(insufficient_data("hip_est_accum"))?;
+                }
+            }
+            if has_table {
+                compressed.table_data_words = cursor
+                    .read_u32_le()
+                    .map_err(insufficient_data("table_data_words"))?
+                    as usize;
+            }
+            if has_window {
+                compressed.window_data_words = cursor
+                    .read_u32_le()
+                    .map_err(insufficient_data("window_data_words"))?
+                    as usize;
+            }
+            if has_hip && !(has_table && has_window) {
+                kxp = cursor.read_f64_le().map_err(insufficient_data("kxp"))?;
+                hip_est_accum = cursor
+                    .read_f64_le()
+                    .map_err(insufficient_data("hip_est_accum"))?;
+            }
+            if has_window {
+                for _ in 0..compressed.window_data_words {
+                    let word = cursor
+                        .read_u32_le()
+                        .map_err(insufficient_data("window_data"))?;
+                    compressed.window_data.push(word);
+                }
+            }
+            if has_table {
+                for _ in 0..compressed.table_data_words {
+                    let word = cursor
+                        .read_u32_le()
+                        .map_err(insufficient_data("table_data"))?;
+                    compressed.table_data.push(word);
+                }
+            }
+            if !has_window {
+                compressed.table_num_entries = num_coupons;
+            }
+        }
+
+        let expected_preamble_ints =
+            make_preamble_ints(num_coupons, has_hip, has_table, has_window);
+        ensure_preamble_longs_in(&[expected_preamble_ints], preamble_ints)?;
+        if seed_hash != compute_seed_hash(seed) {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                format!(
+                    "seed hash mismatch: expected {}, got {}",
+                    compute_seed_hash(seed),
+                    seed_hash
+                ),
+            ));
+        }
+        if !(MIN_LG_K..=MAX_LG_K).contains(&lg_k) {
+            return Err(Error::invalid_argument(format!(
+                "lg_k out of range; got {}",
+                lg_k
+            )));
+        }
+        if first_interesting_column > 63 {
+            return Err(Error::invalid_argument(format!(
+                "first_interesting_column out of range; got {}",
+                first_interesting_column
+            )));
+        }
+
+        let uncompressed = compressed.uncompress(lg_k, num_coupons);
+        Ok(CpcSketch {
+            lg_k,
+            seed,
+            seed_hash,
+            first_interesting_column,
+            num_coupons,
+            surprising_value_table: Some(uncompressed.table),
+            window_offset: determine_correct_offset(lg_k, num_coupons),
+            sliding_window: uncompressed.window,
+            merge_flag: !has_hip,
+            kxp,
+            hip_est_accum,
+        })
+    }
+
+    fn write_hip(&self, bytes: &mut SketchBytes) {
+        bytes.write_f64_le(self.kxp);
+        bytes.write_f64_le(self.hip_est_accum);
+    }
+}
+
+impl CpcSketch {
     /// Returns the estimated maximum compressed serialized size of a sketch.
     ///
     /// The actual size of a compressed CPC sketch has a small random variance, but the following
@@ -438,7 +665,6 @@ impl CpcSketch {
     ///
     /// Panics if `lg_k` is not in the range `[4, 26]`.
     pub fn max_serialized_bytes(lg_k: u8) -> usize {
-        let lg_k = lg_k as usize;
         assert!(
             (MIN_LG_K..=MAX_LG_K).contains(&lg_k),
             "lg_k out of range; got {lg_k}",
@@ -449,8 +675,10 @@ impl CpcSketch {
         // that were equally spaced over values of the quantity C/K between 3.0 and 8.0.
         // This table does not include the worst-case space for the preamble, which is added
         // by the function.
-        const EMPIRICAL_SIZE_MAX_LGK: usize = 19;
-        const EMPIRICAL_MAX_SIZE_BYTES: [usize; 16] = [
+        const MAX_PREAMBLE_SIZE_BYTES: usize = 40;
+        const EMPIRICAL_SIZE_MAX_LGK: u8 = 19;
+        const EMPIRICAL_MAX_SIZE_FACTOR: f64 = 0.6; // 0.6 = 4.8 / 8.0
+        static EMPIRICAL_MAX_SIZE_BYTES: [usize; 16] = [
             24,     // lg_k = 4
             36,     // lg_k = 5
             56,     // lg_k = 6
@@ -468,14 +696,13 @@ impl CpcSketch {
             157516, // lg_k = 18
             314656, // lg_k = 19
         ];
-        const EMPIRICAL_MAX_SIZE_FACTOR: f64 = 0.6; // 0.6 = 4.8 / 8.0
-        const MAX_PREAMBLE_SIZE_BYTES: usize = 40;
 
         if lg_k <= EMPIRICAL_SIZE_MAX_LGK {
-            return EMPIRICAL_MAX_SIZE_BYTES[lg_k - MIN_LG_K] + MAX_PREAMBLE_SIZE_BYTES;
+            EMPIRICAL_MAX_SIZE_BYTES[(lg_k - MIN_LG_K) as usize] + MAX_PREAMBLE_SIZE_BYTES
+        } else {
+            let k = 1 << lg_k;
+            ((EMPIRICAL_MAX_SIZE_FACTOR * k as f64) as usize) + MAX_PREAMBLE_SIZE_BYTES
         }
-        let k = 1 << lg_k;
-        ((EMPIRICAL_MAX_SIZE_FACTOR * k as f64) as usize) + MAX_PREAMBLE_SIZE_BYTES
     }
 }
 

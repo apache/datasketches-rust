@@ -145,7 +145,7 @@ impl CpcUnion {
                     CpcSketch::with_seed(self.lg_k, self.seed)
                 } else {
                     let mut sketch = sketch.clone();
-                    assert_eq!(sketch.flavor(), Flavor::SPARSE);
+                    assert_eq!(sketch.flavor(), Flavor::Sparse);
                     sketch.merge_flag = true;
                     sketch
                 }
@@ -216,7 +216,7 @@ impl CpcUnion {
         assert_eq!(self.seed, sketch.seed());
 
         let flavor = sketch.flavor();
-        if flavor == Flavor::EMPTY {
+        if flavor == Flavor::Empty {
             return;
         }
 
@@ -225,7 +225,7 @@ impl CpcUnion {
         }
 
         // if source is past SPARSE mode, make sure that union is a bitMatrix.
-        if flavor > Flavor::SPARSE {
+        if flavor > Flavor::Sparse {
             if let UnionState::Accumulator(old_sketch) = &self.state {
                 // convert the accumulator to a bit matrix
                 let bit_matrix = old_sketch.build_bit_matrix();
@@ -236,9 +236,9 @@ impl CpcUnion {
         match &mut self.state {
             UnionState::Accumulator(old_sketch) => {
                 // [Case A] Sparse, bitMatrix == null, accumulator valid
-                if flavor == Flavor::SPARSE {
+                if flavor == Flavor::Sparse {
                     let old_flavor = old_sketch.flavor();
-                    if old_flavor != Flavor::SPARSE && old_flavor != Flavor::EMPTY {
+                    if old_flavor != Flavor::Sparse && old_flavor != Flavor::Empty {
                         unreachable!(
                             "unexpected old flavor in union accumulator: {:?}",
                             old_flavor
@@ -247,7 +247,7 @@ impl CpcUnion {
 
                     // The following partially fixes the snowplow problem provided that the K's
                     // are equal.
-                    if old_flavor == Flavor::EMPTY && self.lg_k == sketch.lg_k() {
+                    if old_flavor == Flavor::Empty && self.lg_k == sketch.lg_k() {
                         *old_sketch = sketch.clone();
                         return;
                     }
@@ -257,7 +257,7 @@ impl CpcUnion {
 
                     // if the accumulator has graduated beyond sparse, switch to a bit matrix
                     // representation
-                    if final_flavor > Flavor::SPARSE {
+                    if final_flavor > Flavor::Sparse {
                         let bit_matrix = old_sketch.build_bit_matrix();
                         self.state = UnionState::BitMatrix(bit_matrix);
                     }
@@ -271,13 +271,13 @@ impl CpcUnion {
                 unreachable!("unexpected flavor in union accumulator: {:?}", flavor);
             }
             UnionState::BitMatrix(old_matrix) => {
-                if flavor == Flavor::SPARSE {
+                if flavor == Flavor::Sparse {
                     // [Case B] Sparse, bitMatrix valid, accumulator == null
                     or_table_into_matrix(old_matrix, self.lg_k, sketch.surprising_value_table());
                     return;
                 }
 
-                if matches!(flavor, Flavor::HYBRID | Flavor::PINNED) {
+                if matches!(flavor, Flavor::Hybrid | Flavor::Pinned) {
                     // [Case C] Hybrid, bitMatrix valid, accumulator == null
                     // [Case C] Pinned, bitMatrix valid, accumulator == null
                     or_window_into_matrix(
@@ -294,7 +294,7 @@ impl CpcUnion {
                 // [Case D] Sliding, bitMatrix valid, accumulator == null
                 // SLIDING mode involves inverted logic, so we cannot just walk the source sketch.
                 // Instead, we convert it to a bitMatrix that can be ORed into the destination.
-                assert_eq!(flavor, Flavor::SLIDING);
+                assert_eq!(flavor, Flavor::Sliding);
                 let src_matrix = sketch.build_bit_matrix();
                 or_matrix_into_matrix(old_matrix, self.lg_k, &src_matrix, sketch.lg_k());
             }
@@ -315,8 +315,8 @@ impl CpcUnion {
 
                 let final_new_flavor = new_sketch.flavor();
                 // SV table had to have something in it
-                assert_ne!(final_new_flavor, Flavor::EMPTY);
-                if final_new_flavor == Flavor::SPARSE {
+                assert_ne!(final_new_flavor, Flavor::Empty);
+                if final_new_flavor == Flavor::Sparse {
                     self.lg_k = new_lg_k;
                     self.state = UnionState::Accumulator(new_sketch);
                     return;

@@ -15,13 +15,16 @@
 // specific language governing permissions and limitations
 // under the License.
 
-pub(super) const PREAMBLE_LONGS_EMPTY_OR_SINGLE: u8 = 1;
-pub(super) const PREAMBLE_LONGS_MULTIPLE: u8 = 2;
-pub(super) const SERIAL_VERSION: u8 = 1;
-pub(super) const FLAGS_IS_EMPTY: u8 = 1 << 0;
-pub(super) const FLAGS_IS_SINGLE_VALUE: u8 = 1 << 1;
-pub(super) const FLAGS_REVERSE_MERGE: u8 = 1 << 2;
-/// the format of the reference implementation is using double (f64) precision
-pub(super) const COMPAT_DOUBLE: u32 = 1;
-/// the format of the reference implementation is using float (f32) precision
-pub(super) const COMPAT_FLOAT: u32 = 2;
+//! Binary serialization format constants for Theta sketches.
+
+pub(crate) const UNCOMPRESSED_SERIAL_VERSION: u8 = 3;
+pub(crate) const COMPRESSED_SERIAL_VERSION: u8 = 4;
+
+pub(crate) const V2_PREAMBLE_EMPTY: u8 = 1;
+pub(crate) const V2_PREAMBLE_PRECISE: u8 = 2;
+pub(crate) const V2_PREAMBLE_ESTIMATE: u8 = 3;
+
+pub(crate) const FLAGS_IS_READ_ONLY: u8 = 1 << 1;
+pub(crate) const FLAGS_IS_EMPTY: u8 = 1 << 2;
+pub(crate) const FLAGS_IS_COMPACT: u8 = 1 << 3;
+pub(crate) const FLAGS_IS_ORDERED: u8 = 1 << 4;

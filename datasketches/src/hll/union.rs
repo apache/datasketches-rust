@@ -24,9 +24,9 @@
 //!
 //! The union maintains an internal "gadget" sketch that accumulates the union
 //! of all input sketches. It can handle sketches with:
-//! - Different lg_k values (automatically resizes as needed)
-//! - Different modes (List, Set, Array4/6/8)
-//! - Different target HLL types
+//! * Different lg_k values (automatically resizes as needed)
+//! * Different modes (List, Set, Array4/6/8)
+//! * Different target HLL types
 
 use std::hash::Hash;
 
@@ -59,13 +59,13 @@ impl HllUnion {
     ///
     /// # Arguments
     ///
-    /// * `lg_max_k` - Maximum log2 of the number of buckets. Must be in [4, 21]. This determines
+    /// * `lg_max_k`: Maximum log2 of the number of buckets. Must be in `[4, 21]`. This determines
     ///   the maximum precision the union can handle. Input sketches with larger lg_k will be
     ///   down-sampled.
     ///
     /// # Panics
     ///
-    /// Panics if `lg_max_k` is not in the range [4, 21].
+    /// Panics if `lg_max_k` is not in the range `[4, 21]`.
     ///
     /// # Examples
     ///
@@ -110,9 +110,9 @@ impl HllUnion {
     /// Update the union with another sketch
     ///
     /// Merges the input sketch into the union's internal gadget, handling:
-    /// - Sketches with different lg_k values (resizes/downsamples as needed)
-    /// - Sketches in different modes (List, Set, Array4/6/8)
-    /// - Sketches with different target HLL types
+    /// * Sketches with different lg_k values (resizes/downsamples as needed)
+    /// * Sketches in different modes (List, Set, Array4/6/8)
+    /// * Sketches with different target HLL types
     ///
     /// # Examples
     ///
@@ -244,7 +244,7 @@ impl HllUnion {
     ///
     /// # Arguments
     ///
-    /// * `hll_type` - The target HLL type for the result sketch (Hll4, Hll6, or Hll8)
+    /// * `hll_type`: The target HLL type for the result sketch (Hll4, Hll6, or Hll8)
     ///
     /// # Examples
     ///
@@ -401,9 +401,9 @@ fn merge_coupons_into_mode(dst: &mut Array8, src_mode: &Mode) {
 /// Merge an HLL array into an Array8
 ///
 /// Handles merging from Array4, Array6, or Array8 sources. Dispatches based on lg_k:
-/// - Same lg_k: optimized bulk merge
-/// - src lg_k > dst lg_k: downsample src into dst
-/// - src lg_k < dst lg_k: handled by caller (requires gadget replacement)
+/// * Same lg_k: optimized bulk merge
+/// * src lg_k > dst lg_k: downsample src into dst
+/// * src lg_k < dst lg_k: handled by caller (requires gadget replacement)
 fn merge_array_into_array8(dst_array8: &mut Array8, dst_lg_k: u8, src_mode: &Mode, src_lg_k: u8) {
     assert!(
         src_lg_k >= dst_lg_k,

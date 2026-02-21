@@ -66,6 +66,7 @@ impl CommandLint {
     fn run(self) {
         run_command(make_clippy_cmd(self.fix));
         run_command(make_format_cmd(self.fix));
+        run_command(make_docs_cmd());
         run_command(make_taplo_cmd(self.fix));
         run_command(make_typos_cmd());
         run_command(make_hawkeye_cmd(self.fix));
@@ -135,6 +136,20 @@ fn make_clippy_cmd(fix: bool) -> StdCommand {
     } else {
         cmd.args(["--", "-D", "warnings"]);
     }
+    cmd
+}
+
+fn make_docs_cmd() -> StdCommand {
+    let mut cmd = find_command("cargo");
+    cmd.env("RUSTFLAGS", "--cfg docsrs");
+    cmd.env("RUSTDOCFLAGS", "-D warnings");
+    cmd.args([
+        "+nightly",
+        "doc",
+        "--package",
+        "datasketches",
+        "--all-features",
+    ]);
     cmd
 }
 

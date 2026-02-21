@@ -20,9 +20,6 @@
 //! This module contains all constants related to the Apache DataSketches
 //! binary serialization format, shared across all sketch modes.
 
-/// Family ID for HLL sketches in DataSketches format
-pub const HLL_FAMILY_ID: u8 = 7;
-
 /// Current serialization version
 pub const SERIAL_VERSION: u8 = 1;
 
@@ -67,8 +64,8 @@ pub fn extract_tgt_hll_type(mode_byte: u8) -> u8 {
 ///
 /// # Arguments
 ///
-/// * `cur_mode` - 0 = LIST, 1 = SET, 2 = HLL
-/// * `tgt_type` - 0 = HLL4, 1 = HLL6, 2 = HLL8
+/// * `cur_mode`: 0 = LIST, 1 = SET, 2 = HLL
+/// * `tgt_type`: 0 = HLL4, 1 = HLL6, 2 = HLL8
 #[inline]
 pub fn encode_mode_byte(cur_mode: u8, tgt_type: u8) -> u8 {
     (cur_mode & 0x3) | ((tgt_type & 0x3) << 2)

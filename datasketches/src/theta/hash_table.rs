@@ -19,6 +19,7 @@ use std::hash::Hash;
 
 use crate::common::ResizeFactor;
 use crate::hash::MurmurHash3X64128;
+use crate::hash::compute_seed_hash;
 
 /// Maximum theta value (signed max for compatibility with Java)
 pub const MAX_THETA: u64 = i64::MAX as u64;
@@ -294,6 +295,11 @@ impl ThetaHashTable {
     /// Get log2 of nominal size
     pub fn lg_nom_size(&self) -> u8 {
         self.lg_nom_size
+    }
+
+    /// Get the hash of the seed that was used to hash the input.
+    pub fn seed_hash(&self) -> u16 {
+        compute_seed_hash(self.hash_seed)
     }
 
     /// Get stride for hash table probing
@@ -581,7 +587,7 @@ mod tests {
         let mut table = ThetaHashTable::new(8, ResizeFactor::X8, 1.0, DEFAULT_UPDATE_SEED);
 
         // Insert some values
-        let mut inserted_hashes = Vec::new();
+        let mut inserted_hashes = vec![];
         for i in 0..10 {
             let hash = table.hash_and_screen(format!("value_{}", i));
             if hash != 0 && table.try_insert(hash) {
@@ -627,7 +633,7 @@ mod tests {
 
         // Insert many values to trigger rebuild
         let mut i = 0;
-        let mut inserted_hashes = Vec::new();
+        let mut inserted_hashes = vec![];
         loop {
             let hash = table.hash_and_screen(format!("value_{}", i));
             i += 1;

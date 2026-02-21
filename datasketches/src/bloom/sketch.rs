@@ -20,22 +20,23 @@ use std::hash::Hasher;
 
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
+use crate::codec::assert::ensure_preamble_longs_in_range;
+use crate::codec::assert::ensure_serial_version_is;
+use crate::codec::assert::insufficient_data;
+use crate::codec::family::Family;
 use crate::error::Error;
 use crate::hash::XxHash64;
 
 // Serialization constants
-const PREAMBLE_LONGS_EMPTY: u8 = 3;
-const PREAMBLE_LONGS_STANDARD: u8 = 4;
-const FAMILY_ID: u8 = 21; // Bloom filter family ID
 const SERIAL_VERSION: u8 = 1;
 const EMPTY_FLAG_MASK: u8 = 1 << 2;
 
 /// A Bloom filter for probabilistic set membership testing.
 ///
 /// Provides fast membership queries with:
-/// - No false negatives (inserted items always return `true`)
-/// - Tunable false positive rate
-/// - Constant space usage
+/// * No false negatives (inserted items always return `true`)
+/// * Tunable false positive rate
+/// * Constant space usage
 ///
 /// Use [`super::BloomFilterBuilder`] to construct instances.
 #[derive(Debug, Clone, PartialEq)]
@@ -44,21 +45,18 @@ pub struct BloomFilter {
     pub(super) seed: u64,
     /// Number of hash functions to use (k)
     pub(super) num_hashes: u16,
-    /// Total number of bits in the filter (m)
-    pub(super) capacity_bits: u64,
     /// Count of bits set to 1 (for statistics)
     pub(super) num_bits_set: u64,
     /// Bit array packed into u64 words
-    /// Length = ceil(capacity_bits / 64)
-    pub(super) bit_array: Vec<u64>,
+    pub(super) bit_array: Box<[u64]>,
 }
 
 impl BloomFilter {
     /// Tests whether an item is possibly in the set.
     ///
     /// Returns:
-    /// - `true`: Item was **possibly** inserted (or false positive)
-    /// - `false`: Item was **definitely not** inserted
+    /// * `true`: Item was **possibly** inserted (or false positive)
+    /// * `false`: Item was **definitely not** inserted
     ///
     /// # Examples
     ///
@@ -248,26 +246,10 @@ impl BloomFilter {
     /// // Now "apple" probably returns false, and most other items return true
     /// ```
     pub fn invert(&mut self) {
-        // Invert bits and count during operation (single pass)
-        let mut num_bits_set = 0;
         for word in &mut self.bit_array {
             *word = !*word;
-            num_bits_set += word.count_ones() as u64;
         }
-
-        // Mask off excess bits in the last word
-        let excess_bits = self.capacity_bits % 64;
-        if excess_bits != 0 {
-            let last_idx = self.bit_array.len() - 1;
-            let old_count = self.bit_array[last_idx].count_ones() as u64;
-            let mask = (1u64 << excess_bits) - 1;
-            self.bit_array[last_idx] &= mask;
-            let new_count = self.bit_array[last_idx].count_ones() as u64;
-            // Adjust count for masked-off bits
-            num_bits_set = num_bits_set - old_count + new_count;
-        }
-
-        self.num_bits_set = num_bits_set;
+        self.num_bits_set = self.capacity() as u64 - self.num_bits_set;
     }
 
     /// Returns whether the filter is empty (no items inserted).
@@ -283,8 +265,8 @@ impl BloomFilter {
     }
 
     /// Returns the total number of bits in the filter (capacity).
-    pub fn capacity(&self) -> u64 {
-        self.capacity_bits
+    pub fn capacity(&self) -> usize {
+        self.bit_array.len() * 64
     }
 
     /// Returns the number of hash functions used.
@@ -302,15 +284,15 @@ impl BloomFilter {
     /// Values near 0.5 indicate the filter is approaching saturation.
     /// Values above 0.5 indicate degraded false positive rates.
     pub fn load_factor(&self) -> f64 {
-        self.num_bits_set as f64 / self.capacity_bits as f64
+        self.num_bits_set as f64 / self.capacity() as f64
     }
 
     /// Estimates the current false positive probability.
     ///
     /// Uses the approximation: `load_factor^k`
     /// where:
-    /// - load_factor = fraction of bits set (bits_used / capacity)
-    /// - k = num_hashes
+    /// * load_factor = fraction of bits set (bits_used / capacity)
+    /// * k = num_hashes
     ///
     /// This assumes uniform bit distribution and is more accurate than
     /// trying to estimate insertion count from the load factor.
@@ -326,11 +308,11 @@ impl BloomFilter {
     /// Checks if two filters are compatible for merging.
     ///
     /// Filters are compatible if they have the same:
-    /// - Capacity (number of bits)
-    /// - Number of hash functions
-    /// - Seed
-    pub fn is_compatible(&self, other: &BloomFilter) -> bool {
-        self.capacity_bits == other.capacity_bits
+    /// * Capacity (number of bits)
+    /// * Number of hash functions
+    /// * Seed
+    pub fn is_compatible(&self, other: &Self) -> bool {
+        self.bit_array.len() == other.bit_array.len()
             && self.num_hashes == other.num_hashes
             && self.seed == other.seed
     }
@@ -353,9 +335,9 @@ impl BloomFilter {
     pub fn serialize(&self) -> Vec<u8> {
         let is_empty = self.is_empty();
         let preamble_longs = if is_empty {
-            PREAMBLE_LONGS_EMPTY
+            Family::BLOOMFILTER.min_pre_longs
         } else {
-            PREAMBLE_LONGS_STANDARD
+            Family::BLOOMFILTER.max_pre_longs
         };
 
         let capacity = 8 * preamble_longs as usize
@@ -369,15 +351,15 @@ impl BloomFilter {
         // Preamble
         bytes.write_u8(preamble_longs); // Byte 0
         bytes.write_u8(SERIAL_VERSION); // Byte 1
-        bytes.write_u8(FAMILY_ID); // Byte 2
+        bytes.write_u8(Family::BLOOMFILTER.id); // Byte 2
         bytes.write_u8(if is_empty { EMPTY_FLAG_MASK } else { 0 }); // Byte 3: flags
         bytes.write_u16_le(self.num_hashes); // Bytes 4-5
         bytes.write_u16_le(0); // Bytes 6-7: unused
 
         bytes.write_u64_le(self.seed);
 
-        // Bit array capacity stored as number of 64-bit words (int32) + unused padding (uint32)
-        let num_longs = (self.capacity_bits / 64) as i32;
+        // Bit array capacity is stored as number of 64-bit words (int32) + unused padding (uint32).
+        let num_longs = self.bit_array.len() as i32;
         bytes.write_i32_le(num_longs);
         bytes.write_u32_le(0); // unused
 
@@ -398,9 +380,9 @@ impl BloomFilter {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The data is truncated or corrupted
-    /// - The family ID doesn't match (not a Bloom filter)
-    /// - The serial version is unsupported
+    /// * The data is truncated or corrupted
+    /// * The family ID doesn't match (not a Bloom filter)
+    /// * The serial version is unsupported
     ///
     /// # Examples
     ///
@@ -418,61 +400,57 @@ impl BloomFilter {
         // Read preamble
         let preamble_longs = cursor
             .read_u8()
-            .map_err(|_| Error::insufficient_data("preamble_longs"))?;
+            .map_err(insufficient_data("preamble_longs"))?;
         let serial_version = cursor
             .read_u8()
-            .map_err(|_| Error::insufficient_data("serial_version"))?;
-        let family_id = cursor
-            .read_u8()
-            .map_err(|_| Error::insufficient_data("family_id"))?;
+            .map_err(insufficient_data("serial_version"))?;
+        let family_id = cursor.read_u8().map_err(insufficient_data("family_id"))?;
 
         // Byte 3: flags byte (directly after family_id)
-        let flags = cursor
-            .read_u8()
-            .map_err(|_| Error::insufficient_data("flags"))?;
+        let flags = cursor.read_u8().map_err(insufficient_data("flags"))?;
 
         // Validate
-        if family_id != FAMILY_ID {
-            return Err(Error::invalid_family(FAMILY_ID, family_id, "BloomFilter"));
-        }
-        if serial_version != SERIAL_VERSION {
-            return Err(Error::unsupported_serial_version(
-                SERIAL_VERSION,
-                serial_version,
-            ));
-        }
-        if preamble_longs != PREAMBLE_LONGS_EMPTY && preamble_longs != PREAMBLE_LONGS_STANDARD {
-            return Err(Error::invalid_preamble_longs(
-                PREAMBLE_LONGS_STANDARD,
-                preamble_longs,
-            ));
-        }
+        Family::BLOOMFILTER.validate_id(family_id)?;
+        ensure_serial_version_is(SERIAL_VERSION, serial_version)?;
+        ensure_preamble_longs_in_range(
+            Family::BLOOMFILTER.min_pre_longs..=Family::BLOOMFILTER.max_pre_longs,
+            preamble_longs,
+        )?;
 
         let is_empty = (flags & EMPTY_FLAG_MASK) != 0;
 
         // Bytes 4-5: num_hashes (u16)
         let num_hashes = cursor
             .read_u16_le()
-            .map_err(|_| Error::insufficient_data("num_hashes"))?;
+            .map_err(insufficient_data("num_hashes"))?;
+        if num_hashes == 0 || num_hashes > i16::MAX as u16 {
+            return Err(Error::deserial(format!(
+                "invalid num_hashes: expected [1, {}], got {}",
+                i16::MAX,
+                num_hashes
+            )));
+        }
         // Bytes 6-7: unused (u16)
         let _unused = cursor
             .read_u16_le()
-            .map_err(|_| Error::insufficient_data("unused_header"))?;
-        let seed = cursor
-            .read_u64_le()
-            .map_err(|_| Error::insufficient_data("seed"))?;
+            .map_err(insufficient_data("unused_header"))?;
+        let seed = cursor.read_u64_le().map_err(insufficient_data("seed"))?;
 
-        // Bit array capacity stored as number of 64-bit words (int32) + unused padding (uint32)
+        // Bit array capacity is stored as number of 64-bit words (int32) + unused padding (uint32).
         let num_longs = cursor
             .read_i32_le()
-            .map_err(|_| Error::insufficient_data("num_longs"))? as u64;
-        let _unused = cursor
-            .read_u32_le()
-            .map_err(|_| Error::insufficient_data("unused"))?;
+            .map_err(insufficient_data("num_longs"))?;
+        let _unused = cursor.read_u32_le().map_err(insufficient_data("unused"))?;
 
-        let capacity_bits = num_longs * 64; // Convert longs to bits
+        if num_longs <= 0 {
+            return Err(Error::deserial(format!(
+                "invalid num_longs: expected at least 1, got {}",
+                num_longs
+            )));
+        }
+
         let num_words = num_longs as usize;
-        let mut bit_array = vec![0u64; num_words];
+        let mut bit_array = vec![0u64; num_words].into_boxed_slice();
         let num_bits_set;
 
         if is_empty {
@@ -480,12 +458,12 @@ impl BloomFilter {
         } else {
             let raw_num_bits_set = cursor
                 .read_u64_le()
-                .map_err(|_| Error::insufficient_data("num_bits_set"))?;
+                .map_err(insufficient_data("num_bits_set"))?;
 
             for word in &mut bit_array {
                 *word = cursor
                     .read_u64_le()
-                    .map_err(|_| Error::insufficient_data("bit_array"))?;
+                    .map_err(insufficient_data("bit_array"))?;
             }
 
             // Handle "dirty" state: 0xFFFFFFFFFFFFFFFF indicates bits need recounting
@@ -493,6 +471,14 @@ impl BloomFilter {
             if raw_num_bits_set == DIRTY_BITS_VALUE {
                 num_bits_set = bit_array.iter().map(|w| w.count_ones() as u64).sum();
             } else {
+                let raw_num_words_set = raw_num_bits_set.div_ceil(64) as usize;
+                if raw_num_words_set > num_words {
+                    return Err(Error::deserial(format!(
+                        "invalid num_bits_set: expected <= {}, got {}",
+                        num_words * 64,
+                        raw_num_bits_set
+                    )));
+                }
                 num_bits_set = raw_num_bits_set;
             }
         }
@@ -500,7 +486,6 @@ impl BloomFilter {
         Ok(BloomFilter {
             seed,
             num_hashes,
-            capacity_bits,
             num_bits_set,
             bit_array,
         })
@@ -509,8 +494,8 @@ impl BloomFilter {
     /// Computes the two base hash values using XXHash64.
     ///
     /// Uses a two-hash approach:
-    /// - h0 = XXHash64(item, seed)
-    /// - h1 = XXHash64(item, h0)
+    /// * h0 = XXHash64(item, seed)
+    /// * h1 = XXHash64(item, h0)
     fn compute_hash<T: Hash>(&self, item: &T) -> (u64, u64) {
         // First hash with the configured seed
         let mut hasher = XxHash64::with_seed(self.seed);
@@ -552,22 +537,22 @@ impl BloomFilter {
     /// ```
     ///
     /// The right shift by 1 improves bit distribution. The index `i` is 1-based.
-    fn compute_bit_index(&self, h0: u64, h1: u64, i: u16) -> u64 {
-        let hash = h0.wrapping_add(u64::from(i).wrapping_mul(h1));
-        (hash >> 1) % self.capacity_bits
+    fn compute_bit_index(&self, h0: u64, h1: u64, i: u16) -> usize {
+        let hash = h0.wrapping_add(u64::from(i).wrapping_mul(h1)) as usize;
+        (hash >> 1) % self.capacity()
     }
 
     /// Gets the value of a single bit.
-    fn get_bit(&self, bit_index: u64) -> bool {
-        let word_index = (bit_index >> 6) as usize; // Equivalent to bit_index / 64
+    fn get_bit(&self, bit_index: usize) -> bool {
+        let word_index = bit_index >> 6; // Equivalent to bit_index / 64
         let bit_offset = bit_index & 63; // Equivalent to bit_index % 64
         let mask = 1u64 << bit_offset;
         (self.bit_array[word_index] & mask) != 0
     }
 
     /// Sets a single bit and updates the count if it wasn't already set.
-    fn set_bit(&mut self, bit_index: u64) {
-        let word_index = (bit_index >> 6) as usize; // Equivalent to bit_index / 64
+    fn set_bit(&mut self, bit_index: usize) {
+        let word_index = bit_index >> 6; // Equivalent to bit_index / 64
         let bit_offset = bit_index & 63; // Equivalent to bit_index % 64
         let mask = 1u64 << bit_offset;
 
@@ -596,6 +581,13 @@ mod tests {
         let filter = BloomFilterBuilder::with_size(1024, 5).build();
         assert_eq!(filter.capacity(), 1024);
         assert_eq!(filter.num_hashes(), 5);
+    }
+
+    #[test]
+    fn test_builder_with_size_rounds_to_word_boundary() {
+        let filter = BloomFilterBuilder::with_size(1, 3).build();
+        assert_eq!(filter.capacity(), 64);
+        assert_eq!(filter.num_hashes(), 3);
     }
 
     #[test]

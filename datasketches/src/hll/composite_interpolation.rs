@@ -21,22 +21,22 @@
 //! cardinality estimates when the HLL sketch is in out-of-order mode
 //! (after deserialization or merging).
 //!
-//! NOTE: Currently this module contains tables for common lg_k values (4-12).
-//! The full C++ implementation has tables for lg_k 4-21. Additional tables
-//! can be added from datasketches-cpp/hll/include/CompositeInterpolationXTable-internal.hpp
+//! Currently, this module contains tables for common lg_k values (4-12). The full C++
+//! implementation has tables for lg_k 4-21. Additional tables can be found at:
+//! <https://github.com/apache/datasketches-cpp/blob/5a055521/hll/include/CompositeInterpolationXTable-internal.hpp>
 
 const NUM_X_VALUES: usize = 257;
 
 /// Y stride values for each lg_k (index 0 = lg_k 4, index 17 = lg_k 21)
-const Y_STRIDES: [u32; 18] = [
+static Y_STRIDES: [u32; 18] = [
     1, 2, 3, 5, 10, 20, 40, 80, 160, 320, 640, 1280, 2560, 5120, 10240, 20480, 40960, 81920,
 ];
 
-/// Get Y stride for a given lg_k
+/// Get Y stride for a given lg_k.
 ///
 /// # Panics
 ///
-/// If lg_k is not in range [4, 21]
+/// Panics if lg_k is not in range `[4, 21]`.
 pub fn get_y_stride(lg_k: u8) -> u32 {
     if !(4..=21).contains(&lg_k) {
         panic!("lg_k must be in range [4, 21], got: {}", lg_k);
@@ -49,13 +49,13 @@ pub const fn get_x_arr_length() -> usize {
     NUM_X_VALUES
 }
 
-/// Get X array for a given lg_k
+/// Get X array for a given lg_k.
 ///
 /// Returns a reference to the pre-computed X values for cubic interpolation.
 ///
 /// # Panics
 ///
-/// If lg_k is not in range [4, 21]
+/// Panics if lg_k is not in range `[4, 21]`.
 pub fn get_x_arr(lg_k: u8) -> &'static [f64; NUM_X_VALUES] {
     if !(4..=21).contains(&lg_k) {
         panic!("lg_k must be in range [4, 21], got: {}", lg_k);
@@ -63,8 +63,7 @@ pub fn get_x_arr(lg_k: u8) -> &'static [f64; NUM_X_VALUES] {
     &ARRAYS[(lg_k - 4) as usize]
 }
 
-// Arrays extracted from datasketches-cpp/hll/include/CompositeInterpolationXTable-internal.hpp
-
+/// This is extracted from https://github.com/apache/datasketches-cpp/blob/5a055521/hll/include/CompositeInterpolationXTable-internal.hpp#L54
 static ARRAYS: [[f64; NUM_X_VALUES]; 18] = [
     [
         10.767999803534,

@@ -23,14 +23,14 @@
 //!
 //! # Properties
 //!
-//! - **No false negatives**: If an item was inserted, `contains()` will always return `true`
-//! - **Possible false positives**: `contains()` may return `true` for items never inserted
-//! - **Fixed size**: Unlike typical sketches, Bloom filters do not resize automatically
-//! - **Linear space**: Size is proportional to the expected number of distinct items
+//! * **No false negatives**: If an item was inserted, `contains()` will always return `true`
+//! * **Possible false positives**: `contains()` may return `true` for items never inserted
+//! * **Fixed size**: Unlike typical sketches, Bloom filters do not resize automatically
+//! * **Linear space**: Size is proportional to the expected number of distinct items
 //!
 //! # Usage
 //!
-//! ```rust
+//! ```
 //! use datasketches::bloom::BloomFilter;
 //! use datasketches::bloom::BloomFilterBuilder;
 //!
@@ -60,7 +60,7 @@
 //!
 //! Automatically calculates optimal size and hash functions:
 //!
-//! ```rust
+//! ```
 //! # use datasketches::bloom::BloomFilterBuilder;
 //! let filter = BloomFilterBuilder::with_accuracy(
 //!     10_000, // Expected max items
@@ -72,9 +72,9 @@
 //!
 //! ## By Size (Manual)
 //!
-//! Specify exact bit count and hash functions:
+//! Specify requested bit count and hash functions (rounded up to a multiple of 64 bits):
 //!
-//! ```rust
+//! ```
 //! # use datasketches::bloom::BloomFilterBuilder;
 //! let filter = BloomFilterBuilder::with_size(
 //!     95_851, // Number of bits
@@ -87,7 +87,7 @@
 //!
 //! Bloom filters support efficient set operations:
 //!
-//! ```rust
+//! ```
 //! # use datasketches::bloom::BloomFilterBuilder;
 //! let mut filter1 = BloomFilterBuilder::with_accuracy(100, 0.01).build();
 //! let mut filter2 = BloomFilterBuilder::with_accuracy(100, 0.01).build();
@@ -109,15 +109,15 @@
 //!
 //! # Implementation Details
 //!
-//! - Uses XXHash64 for hashing
-//! - Implements double hashing (Kirsch-Mitzenmacher method) for k hash functions
-//! - Bits packed efficiently in `u64` words
-//! - Compatible serialization format (family ID: 21)
+//! * Uses XXHash64 for hashing
+//! * Implements double hashing (Kirsch-Mitzenmacher method) for k hash functions
+//! * Bits packed efficiently in `u64` words
+//! * Compatible serialization format (family ID: 21)
 //!
 //! # References
 //!
-//! - Bloom, Burton H. (1970). "Space/time trade-offs in hash coding with allowable errors"
-//! - Kirsch and Mitzenmacher (2008). "Less Hashing, Same Performance: Building a Better Bloom
+//! * Bloom, Burton H. (1970). "Space/time trade-offs in hash coding with allowable errors"
+//! * Kirsch and Mitzenmacher (2008). "Less Hashing, Same Performance: Building a Better Bloom
 //!   Filter"
 
 mod builder;

@@ -22,12 +22,19 @@
 
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
+use crate::codec::assert::insufficient_data;
+use crate::codec::family::Family;
 use crate::error::Error;
 use crate::hll::HllType;
 use crate::hll::KEY_MASK_26;
 use crate::hll::container::COUPON_EMPTY;
 use crate::hll::container::Container;
-use crate::hll::serialization::*;
+use crate::hll::serialization::COMPACT_FLAG_MASK;
+use crate::hll::serialization::CUR_MODE_SET;
+use crate::hll::serialization::HASH_SET_PREINTS;
+use crate::hll::serialization::SERIAL_VERSION;
+use crate::hll::serialization::SET_PREAMBLE_SIZE;
+use crate::hll::serialization::encode_mode_byte;
 
 /// Hash set for efficient coupon storage with collision handling
 #[derive(Debug, Clone, PartialEq)]
@@ -94,7 +101,7 @@ impl HashSet {
         // Read coupon count from bytes 8-11
         let coupon_count = cursor
             .read_u32_le()
-            .map_err(|_| Error::insufficient_data("coupon_count"))?;
+            .map_err(insufficient_data("coupon_count"))?;
         let coupon_count = coupon_count as usize;
 
         if compact {
@@ -149,7 +156,7 @@ impl HashSet {
         // Write preamble
         bytes.write_u8(HASH_SET_PREINTS);
         bytes.write_u8(SERIAL_VERSION);
-        bytes.write_u8(HLL_FAMILY_ID);
+        bytes.write_u8(Family::HLL.id);
         bytes.write_u8(lg_config_k);
         bytes.write_u8(lg_arr as u8);
 
