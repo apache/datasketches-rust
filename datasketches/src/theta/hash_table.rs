@@ -83,7 +83,7 @@ impl ThetaHashTable {
     ) -> Self {
         let lg_max_size = lg_nom_size + 1;
         let lg_cur_size = starting_sub_multiple(lg_max_size, MIN_LG_K, resize_factor.lg_value());
-        Self::new_with_state(
+        Self::from_raw_parts(
             lg_cur_size,
             lg_nom_size,
             resize_factor,
@@ -94,12 +94,12 @@ impl ThetaHashTable {
         )
     }
 
-    /// Create a table with explicit state.
+    /// Constructs a table from raw internal state.
     ///
     /// # Panics
     ///
     /// Panics if `lg_cur_size > lg_nom_size + 1`. (`lg_nom_size + 1 == lg_max_size`)
-    pub fn new_with_state(
+    pub fn from_raw_parts(
         lg_cur_size: u8,
         lg_nom_size: u8,
         resize_factor: ResizeFactor,
@@ -341,6 +341,50 @@ impl ThetaHashTable {
     /// Get the hash of the seed that was used to hash the input.
     pub fn seed_hash(&self) -> u16 {
         compute_seed_hash(self.hash_seed)
+    }
+
+    /// Returns true if the given hash exists in the table.
+    pub fn contains_hash(&self, hash: u64) -> bool {
+        if hash == 0 {
+            return false;
+        }
+        let Some(index) = self.find_in_curr_entries(hash) else {
+            return false;
+        };
+        self.entries[index] == hash
+    }
+
+    /// Set empty flag
+    pub fn set_empty(&mut self, is_empty: bool) {
+        self.is_empty = is_empty;
+    }
+
+    /// Get the hash seed used by this table.
+    pub fn hash_seed(&self) -> u64 {
+        self.hash_seed
+    }
+
+    /// Sets theta value.
+    pub fn set_theta(&mut self, theta: u64) {
+        assert!(
+            (1..=MAX_THETA).contains(&theta),
+            "theta must be in [1, {MAX_THETA}], got {theta}"
+        );
+        self.theta = theta;
+    }
+
+    /// Returns minimal lg_size where rebuild-capacity can hold `count`.
+    pub fn lg_size_from_count_for_rebuild(count: usize, load_factor: f64) -> u8 {
+        let log2 = |n: usize| {
+            if n == 0 { 0_u8 } else { n.ilog2() as u8 }
+        };
+        let log2_n = log2(count);
+        log2_n
+            + (if count > (((1u128 << ((log2_n as u32) + 1)) as f64) * load_factor) as usize {
+                2
+            } else {
+                1
+            })
     }
 
     /// Get stride for hash table probing
