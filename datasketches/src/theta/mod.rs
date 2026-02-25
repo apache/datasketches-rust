@@ -41,9 +41,12 @@
 
 mod bit_pack;
 mod hash_table;
+mod intersection;
 mod serialization;
 mod sketch;
 
+pub use self::intersection::ThetaIntersection;
 pub use self::sketch::CompactThetaSketch;
 pub use self::sketch::ThetaSketch;
 pub use self::sketch::ThetaSketchBuilder;
+pub use self::sketch::ThetaSketchView;
