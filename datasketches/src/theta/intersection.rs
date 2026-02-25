@@ -124,7 +124,7 @@ impl ThetaIntersection {
             for hash in sketch.iter() {
                 if !self.table.try_insert_hash(hash) {
                     return Err(Error::invalid_argument(
-                        "Insert entires from sketch fail, possibly corrupted input sketch",
+                        "Insert entries from sketch fail, possibly corrupted input sketch",
                     ));
                 }
             }
