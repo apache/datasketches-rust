@@ -400,16 +400,12 @@ impl CompactThetaSketch {
     fn preamble_longs(&self, compressed: bool) -> u8 {
         if compressed {
             if self.is_estimation_mode() { 2 } else { 1 }
+        } else if self.is_estimation_mode() {
+            3
+        } else if self.is_empty() || self.entries.len() == 1 {
+            1
         } else {
-            if self.is_estimation_mode() {
-                3
-            } else {
-                if self.is_empty() || self.entries.len() == 1 {
-                    1
-                } else {
-                    2
-                }
-            }
+            2
         }
     }
 
