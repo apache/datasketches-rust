@@ -4981,10 +4981,7 @@ pub(crate) fn pack_bits_block(values: &[u64], bytes: &mut [u8], bits: u8) {
         (1..=63).contains(&bits),
         "wrong number of bits in pack_bits_block8: {bits}"
     );
-    assert!(
-        bytes.len() >= bits as usize,
-        "output buffer too small"
-    );
+    assert!(bytes.len() >= bits as usize, "output buffer too small");
 
     match bits {
         1 => pack_bits_1(values, bytes),
@@ -5067,10 +5064,7 @@ pub(crate) fn unpack_bits_block(values: &mut [u64], bytes: &[u8], bits: u8) {
         (1..=63).contains(&bits),
         "wrong number of bits in unpack_bits_block8: {bits}"
     );
-    assert!(
-        bytes.len() >= bits as usize,
-        "input buffer too small"
-    );
+    assert!(bytes.len() >= bits as usize, "output buffer too small");
 
     match bits {
         1 => unpack_bits_1(values, bytes),
