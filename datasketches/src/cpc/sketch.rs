@@ -97,7 +97,7 @@ impl CpcSketch {
     ///
     /// # Panics
     ///
-    /// Panics if `lg_k` is not in the range `[4, 16]`.
+    /// Panics if `lg_k` is not in the range `[4, 26]`.
     pub fn new(lg_k: u8) -> Self {
         Self::with_seed(lg_k, DEFAULT_UPDATE_SEED)
     }
@@ -106,7 +106,7 @@ impl CpcSketch {
     ///
     /// # Panics
     ///
-    /// Panics if `lg_k` is not in the range `[4, 16]`, or the computed seed hash is zero.
+    /// Panics if `lg_k` is not in the range `[4, 26]`, or the computed seed hash is zero.
     pub fn with_seed(lg_k: u8, seed: u64) -> Self {
         assert!(
             (MIN_LG_K..=MAX_LG_K).contains(&lg_k),

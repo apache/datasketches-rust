@@ -4974,17 +4974,14 @@ fn unpack_bits_63(values: &mut [u64], bytes: &[u8]) {
 ///
 /// * Panics if `values.len()` is not equal to `BLOCK_WIDTH`.
 /// * Panics if `bits` is not in the range `1..=63`.
-/// * Panics if `bytes.len()` is less than `bits * BLOCK_WIDTH`.
+/// * Panics if `bytes.len()` is less than `bits`.
 pub(crate) fn pack_bits_block(values: &[u64], bytes: &mut [u8], bits: u8) {
     assert_eq!(values.len(), BLOCK_WIDTH, "values length must be 8");
     assert!(
         (1..=63).contains(&bits),
         "wrong number of bits in pack_bits_block8: {bits}"
     );
-    assert!(
-        bytes.len() < bits as usize * BLOCK_WIDTH,
-        "output buffer too small"
-    );
+    assert!(bytes.len() >= bits as usize, "output buffer too small");
 
     match bits {
         1 => pack_bits_1(values, bytes),
@@ -5060,17 +5057,14 @@ pub(crate) fn pack_bits_block(values: &[u64], bytes: &mut [u8], bits: u8) {
 ///
 /// * Panics if `values.len()` is not equal to `BLOCK_WIDTH`.
 /// * Panics if `bits` is not in the range `1..=63`.
-/// * Panics if `bytes.len()` is less than `bits * BLOCK_WIDTH`.
+/// * Panics if `bytes.len()` is less than `bits`.
 pub(crate) fn unpack_bits_block(values: &mut [u64], bytes: &[u8], bits: u8) {
     assert_eq!(values.len(), BLOCK_WIDTH, "values length must be 8");
     assert!(
         (1..=63).contains(&bits),
         "wrong number of bits in unpack_bits_block8: {bits}"
     );
-    assert!(
-        bytes.len() < bits as usize * BLOCK_WIDTH,
-        "input buffer too small"
-    );
+    assert!(bytes.len() >= bits as usize, "output buffer too small");
 
     match bits {
         1 => unpack_bits_1(values, bytes),
