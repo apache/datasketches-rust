@@ -999,7 +999,7 @@ impl ThetaSketchBuilder {
     ///
     /// # Panics
     ///
-    /// Panics if p is not in range (0.0, 1.0]
+    /// Panics if p is not in range `(0.0, 1.0]`
     ///
     /// # Examples
     ///

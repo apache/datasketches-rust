@@ -219,7 +219,7 @@ impl ThetaIntersection {
             self.is_valid,
             "ThetaIntersection::result() called before first update()"
         );
-        let mut hashes = self.table.iter().collect::<Vec<_>>();
+        let mut hashes: Vec<u64> = self.table.iter().collect();
         if ordered {
             hashes.sort_unstable();
         }

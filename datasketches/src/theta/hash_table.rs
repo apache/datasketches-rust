@@ -120,7 +120,7 @@ impl ThetaHashTable {
     }
 
     /// Hash a value with the table seed and return the hash.
-    pub fn hash<T: Hash>(&self, value: T) -> u64 {
+    fn hash<T: Hash>(&self, value: T) -> u64 {
         let mut hasher = MurmurHash3X64128::with_seed(self.hash_seed);
         value.hash(&mut hasher);
         let (h1, _) = hasher.finish128();
@@ -456,6 +456,7 @@ mod tests {
         table.theta = 0;
         assert!(!table.try_insert("screened"));
         assert_eq!(table.num_retained(), 1);
+        assert!(!table.is_empty());
     }
 
     #[test]
