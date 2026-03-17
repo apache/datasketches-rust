@@ -365,7 +365,7 @@ pub struct CompactThetaSketch {
 }
 
 impl CompactThetaSketch {
-    pub(crate) fn from_parts(
+    pub(super) fn from_parts(
         entries: Vec<u64>,
         theta: u64,
         seed_hash: u16,

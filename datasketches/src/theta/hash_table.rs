@@ -39,7 +39,7 @@ const STRIDE_MASK: u64 = (1 << STRIDE_HASH_BITS) - 1;
 ///   exceeds the threshold, it will rebuild the table: only keep the min 2^lg_nom_size entries and
 ///   update the theta to the k-th smallest entry.
 #[derive(Debug)]
-pub(crate) struct ThetaHashTable {
+pub(super) struct ThetaHashTable {
     lg_cur_size: u8,
     lg_nom_size: u8,
     lg_max_size: u8,

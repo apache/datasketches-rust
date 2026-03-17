@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-pub(crate) const BLOCK_WIDTH: usize = 8;
+pub(super) const BLOCK_WIDTH: usize = 8;
 
 #[inline]
 fn low_bit_to_byte_mask(bits: u8) -> u8 {
@@ -33,7 +33,7 @@ fn low_bit_to_byte_mask(bits: u8) -> u8 {
 /// Panics if the buffer is too small to hold the packed values.
 /// The caller must ensure that `bytes` has enough capacity for
 /// the total number of bits to be packed.
-pub(crate) struct BitPacker<'a> {
+pub(super) struct BitPacker<'a> {
     bytes: &'a mut [u8],
     byte_index: usize,
     byte_bit_used: u8,
@@ -104,7 +104,7 @@ impl<'a> BitPacker<'a> {
 /// Panics if the buffer is too small to provide the requested bits.
 /// The caller must ensure that `bytes` has enough capacity for
 /// the total number of bits to be unpacked.
-pub(crate) struct BitUnpacker<'a> {
+pub(super) struct BitUnpacker<'a> {
     bytes: &'a [u8],
     byte_index: usize,
     byte_bit_used: u8,
@@ -2531,2441 +2531,2431 @@ fn unpack_bits_7(values: &mut [u64], bytes: &[u8]) {
 
 #[inline]
 fn unpack_bits_8(values: &mut [u64], bytes: &[u8]) {
-    values[0] = (bytes[0]) as u64;
-    values[1] = (bytes[1]) as u64;
-    values[2] = (bytes[2]) as u64;
-    values[3] = (bytes[3]) as u64;
-    values[4] = (bytes[4]) as u64;
-    values[5] = (bytes[5]) as u64;
-    values[6] = (bytes[6]) as u64;
-    values[7] = (bytes[7]) as u64;
+    values[0] = bytes[0] as u64;
+    values[1] = bytes[1] as u64;
+    values[2] = bytes[2] as u64;
+    values[3] = bytes[3] as u64;
+    values[4] = bytes[4] as u64;
+    values[5] = bytes[5] as u64;
+    values[6] = bytes[6] as u64;
+    values[7] = bytes[7] as u64;
 }
 
 #[inline]
 fn unpack_bits_9(values: &mut [u64], bytes: &[u8]) {
-    values[0] = (((bytes[0]) as u64) << 1) | (((bytes[1] >> 7) & 0x1) as u64);
+    values[0] = ((bytes[0] as u64) << 1) | (((bytes[1] >> 7) & 0x1) as u64);
     values[1] = ((((bytes[1]) & 0x7f) as u64) << 2) | (((bytes[2] >> 6) & 0x3) as u64);
     values[2] = ((((bytes[2]) & 0x3f) as u64) << 3) | (((bytes[3] >> 5) & 0x7) as u64);
     values[3] = ((((bytes[3]) & 0x1f) as u64) << 4) | (((bytes[4] >> 4) & 0xf) as u64);
     values[4] = ((((bytes[4]) & 0xf) as u64) << 5) | (((bytes[5] >> 3) & 0x1f) as u64);
     values[5] = ((((bytes[5]) & 0x7) as u64) << 6) | (((bytes[6] >> 2) & 0x3f) as u64);
     values[6] = ((((bytes[6]) & 0x3) as u64) << 7) | (((bytes[7] >> 1) & 0x7f) as u64);
-    values[7] = ((((bytes[7]) & 0x1) as u64) << 8) | ((bytes[8]) as u64);
+    values[7] = ((((bytes[7]) & 0x1) as u64) << 8) | (bytes[8] as u64);
 }
 
 #[inline]
 fn unpack_bits_10(values: &mut [u64], bytes: &[u8]) {
-    values[0] = (((bytes[0]) as u64) << 2) | (((bytes[1] >> 6) & 0x3) as u64);
+    values[0] = ((bytes[0] as u64) << 2) | (((bytes[1] >> 6) & 0x3) as u64);
     values[1] = ((((bytes[1]) & 0x3f) as u64) << 4) | (((bytes[2] >> 4) & 0xf) as u64);
     values[2] = ((((bytes[2]) & 0xf) as u64) << 6) | (((bytes[3] >> 2) & 0x3f) as u64);
-    values[3] = ((((bytes[3]) & 0x3) as u64) << 8) | ((bytes[4]) as u64);
-    values[4] = (((bytes[5]) as u64) << 2) | (((bytes[6] >> 6) & 0x3) as u64);
+    values[3] = ((((bytes[3]) & 0x3) as u64) << 8) | (bytes[4] as u64);
+    values[4] = ((bytes[5] as u64) << 2) | (((bytes[6] >> 6) & 0x3) as u64);
     values[5] = ((((bytes[6]) & 0x3f) as u64) << 4) | (((bytes[7] >> 4) & 0xf) as u64);
     values[6] = ((((bytes[7]) & 0xf) as u64) << 6) | (((bytes[8] >> 2) & 0x3f) as u64);
-    values[7] = ((((bytes[8]) & 0x3) as u64) << 8) | ((bytes[9]) as u64);
+    values[7] = ((((bytes[8]) & 0x3) as u64) << 8) | (bytes[9] as u64);
 }
 
 #[inline]
 fn unpack_bits_11(values: &mut [u64], bytes: &[u8]) {
-    values[0] = (((bytes[0]) as u64) << 3) | (((bytes[1] >> 5) & 0x7) as u64);
+    values[0] = ((bytes[0] as u64) << 3) | (((bytes[1] >> 5) & 0x7) as u64);
     values[1] = ((((bytes[1]) & 0x1f) as u64) << 6) | (((bytes[2] >> 2) & 0x3f) as u64);
     values[2] = ((((bytes[2]) & 0x3) as u64) << 9)
-        | (((bytes[3]) as u64) << 1)
+        | ((bytes[3] as u64) << 1)
         | (((bytes[4] >> 7) & 0x1) as u64);
     values[3] = ((((bytes[4]) & 0x7f) as u64) << 4) | (((bytes[5] >> 4) & 0xf) as u64);
     values[4] = ((((bytes[5]) & 0xf) as u64) << 7) | (((bytes[6] >> 1) & 0x7f) as u64);
     values[5] = ((((bytes[6]) & 0x1) as u64) << 10)
-        | (((bytes[7]) as u64) << 2)
+        | ((bytes[7] as u64) << 2)
         | (((bytes[8] >> 6) & 0x3) as u64);
     values[6] = ((((bytes[8]) & 0x3f) as u64) << 5) | (((bytes[9] >> 3) & 0x1f) as u64);
-    values[7] = ((((bytes[9]) & 0x7) as u64) << 8) | ((bytes[10]) as u64);
+    values[7] = ((((bytes[9]) & 0x7) as u64) << 8) | (bytes[10] as u64);
 }
 
 #[inline]
 fn unpack_bits_12(values: &mut [u64], bytes: &[u8]) {
-    values[0] = (((bytes[0]) as u64) << 4) | (((bytes[1] >> 4) & 0xf) as u64);
-    values[1] = ((((bytes[1]) & 0xf) as u64) << 8) | ((bytes[2]) as u64);
-    values[2] = (((bytes[3]) as u64) << 4) | (((bytes[4] >> 4) & 0xf) as u64);
-    values[3] = ((((bytes[4]) & 0xf) as u64) << 8) | ((bytes[5]) as u64);
-    values[4] = (((bytes[6]) as u64) << 4) | (((bytes[7] >> 4) & 0xf) as u64);
-    values[5] = ((((bytes[7]) & 0xf) as u64) << 8) | ((bytes[8]) as u64);
-    values[6] = (((bytes[9]) as u64) << 4) | (((bytes[10] >> 4) & 0xf) as u64);
-    values[7] = ((((bytes[10]) & 0xf) as u64) << 8) | ((bytes[11]) as u64);
+    values[0] = ((bytes[0] as u64) << 4) | (((bytes[1] >> 4) & 0xf) as u64);
+    values[1] = ((((bytes[1]) & 0xf) as u64) << 8) | (bytes[2] as u64);
+    values[2] = ((bytes[3] as u64) << 4) | (((bytes[4] >> 4) & 0xf) as u64);
+    values[3] = ((((bytes[4]) & 0xf) as u64) << 8) | (bytes[5] as u64);
+    values[4] = ((bytes[6] as u64) << 4) | (((bytes[7] >> 4) & 0xf) as u64);
+    values[5] = ((((bytes[7]) & 0xf) as u64) << 8) | (bytes[8] as u64);
+    values[6] = ((bytes[9] as u64) << 4) | (((bytes[10] >> 4) & 0xf) as u64);
+    values[7] = ((((bytes[10]) & 0xf) as u64) << 8) | (bytes[11] as u64);
 }
 
 #[inline]
 fn unpack_bits_13(values: &mut [u64], bytes: &[u8]) {
-    values[0] = (((bytes[0]) as u64) << 5) | (((bytes[1] >> 3) & 0x1f) as u64);
+    values[0] = ((bytes[0] as u64) << 5) | (((bytes[1] >> 3) & 0x1f) as u64);
     values[1] = ((((bytes[1]) & 0x7) as u64) << 10)
-        | (((bytes[2]) as u64) << 2)
+        | ((bytes[2] as u64) << 2)
         | (((bytes[3] >> 6) & 0x3) as u64);
     values[2] = ((((bytes[3]) & 0x3f) as u64) << 7) | (((bytes[4] >> 1) & 0x7f) as u64);
     values[3] = ((((bytes[4]) & 0x1) as u64) << 12)
-        | (((bytes[5]) as u64) << 4)
+        | ((bytes[5] as u64) << 4)
         | (((bytes[6] >> 4) & 0xf) as u64);
     values[4] = ((((bytes[6]) & 0xf) as u64) << 9)
-        | (((bytes[7]) as u64) << 1)
+        | ((bytes[7] as u64) << 1)
         | (((bytes[8] >> 7) & 0x1) as u64);
     values[5] = ((((bytes[8]) & 0x7f) as u64) << 6) | (((bytes[9] >> 2) & 0x3f) as u64);
     values[6] = ((((bytes[9]) & 0x3) as u64) << 11)
-        | (((bytes[10]) as u64) << 3)
+        | ((bytes[10] as u64) << 3)
         | (((bytes[11] >> 5) & 0x7) as u64);
-    values[7] = ((((bytes[11]) & 0x1f) as u64) << 8) | ((bytes[12]) as u64);
+    values[7] = ((((bytes[11]) & 0x1f) as u64) << 8) | (bytes[12] as u64);
 }
 
 #[inline]
 fn unpack_bits_14(values: &mut [u64], bytes: &[u8]) {
-    values[0] = (((bytes[0]) as u64) << 6) | (((bytes[1] >> 2) & 0x3f) as u64);
+    values[0] = ((bytes[0] as u64) << 6) | (((bytes[1] >> 2) & 0x3f) as u64);
     values[1] = ((((bytes[1]) & 0x3) as u64) << 12)
-        | (((bytes[2]) as u64) << 4)
+        | ((bytes[2] as u64) << 4)
         | (((bytes[3] >> 4) & 0xf) as u64);
     values[2] = ((((bytes[3]) & 0xf) as u64) << 10)
-        | (((bytes[4]) as u64) << 2)
+        | ((bytes[4] as u64) << 2)
         | (((bytes[5] >> 6) & 0x3) as u64);
-    values[3] = ((((bytes[5]) & 0x3f) as u64) << 8) | ((bytes[6]) as u64);
-    values[4] = (((bytes[7]) as u64) << 6) | (((bytes[8] >> 2) & 0x3f) as u64);
+    values[3] = ((((bytes[5]) & 0x3f) as u64) << 8) | (bytes[6] as u64);
+    values[4] = ((bytes[7] as u64) << 6) | (((bytes[8] >> 2) & 0x3f) as u64);
     values[5] = ((((bytes[8]) & 0x3) as u64) << 12)
-        | (((bytes[9]) as u64) << 4)
+        | ((bytes[9] as u64) << 4)
         | (((bytes[10] >> 4) & 0xf) as u64);
     values[6] = ((((bytes[10]) & 0xf) as u64) << 10)
-        | (((bytes[11]) as u64) << 2)
+        | ((bytes[11] as u64) << 2)
         | (((bytes[12] >> 6) & 0x3) as u64);
-    values[7] = ((((bytes[12]) & 0x3f) as u64) << 8) | ((bytes[13]) as u64);
+    values[7] = ((((bytes[12]) & 0x3f) as u64) << 8) | (bytes[13] as u64);
 }
 
 #[inline]
 fn unpack_bits_15(values: &mut [u64], bytes: &[u8]) {
-    values[0] = (((bytes[0]) as u64) << 7) | (((bytes[1] >> 1) & 0x7f) as u64);
+    values[0] = ((bytes[0] as u64) << 7) | (((bytes[1] >> 1) & 0x7f) as u64);
     values[1] = ((((bytes[1]) & 0x1) as u64) << 14)
-        | (((bytes[2]) as u64) << 6)
+        | ((bytes[2] as u64) << 6)
         | (((bytes[3] >> 2) & 0x3f) as u64);
     values[2] = ((((bytes[3]) & 0x3) as u64) << 13)
-        | (((bytes[4]) as u64) << 5)
+        | ((bytes[4] as u64) << 5)
         | (((bytes[5] >> 3) & 0x1f) as u64);
     values[3] = ((((bytes[5]) & 0x7) as u64) << 12)
-        | (((bytes[6]) as u64) << 4)
+        | ((bytes[6] as u64) << 4)
         | (((bytes[7] >> 4) & 0xf) as u64);
     values[4] = ((((bytes[7]) & 0xf) as u64) << 11)
-        | (((bytes[8]) as u64) << 3)
+        | ((bytes[8] as u64) << 3)
         | (((bytes[9] >> 5) & 0x7) as u64);
     values[5] = ((((bytes[9]) & 0x1f) as u64) << 10)
-        | (((bytes[10]) as u64) << 2)
+        | ((bytes[10] as u64) << 2)
         | (((bytes[11] >> 6) & 0x3) as u64);
     values[6] = ((((bytes[11]) & 0x3f) as u64) << 9)
-        | (((bytes[12]) as u64) << 1)
+        | ((bytes[12] as u64) << 1)
         | (((bytes[13] >> 7) & 0x1) as u64);
-    values[7] = ((((bytes[13]) & 0x7f) as u64) << 8) | ((bytes[14]) as u64);
+    values[7] = ((((bytes[13]) & 0x7f) as u64) << 8) | (bytes[14] as u64);
 }
 
 #[inline]
 fn unpack_bits_16(values: &mut [u64], bytes: &[u8]) {
-    values[0] = (((bytes[0]) as u64) << 8) | ((bytes[1]) as u64);
-    values[1] = (((bytes[2]) as u64) << 8) | ((bytes[3]) as u64);
-    values[2] = (((bytes[4]) as u64) << 8) | ((bytes[5]) as u64);
-    values[3] = (((bytes[6]) as u64) << 8) | ((bytes[7]) as u64);
-    values[4] = (((bytes[8]) as u64) << 8) | ((bytes[9]) as u64);
-    values[5] = (((bytes[10]) as u64) << 8) | ((bytes[11]) as u64);
-    values[6] = (((bytes[12]) as u64) << 8) | ((bytes[13]) as u64);
-    values[7] = (((bytes[14]) as u64) << 8) | ((bytes[15]) as u64);
+    values[0] = ((bytes[0] as u64) << 8) | (bytes[1] as u64);
+    values[1] = ((bytes[2] as u64) << 8) | (bytes[3] as u64);
+    values[2] = ((bytes[4] as u64) << 8) | (bytes[5] as u64);
+    values[3] = ((bytes[6] as u64) << 8) | (bytes[7] as u64);
+    values[4] = ((bytes[8] as u64) << 8) | (bytes[9] as u64);
+    values[5] = ((bytes[10] as u64) << 8) | (bytes[11] as u64);
+    values[6] = ((bytes[12] as u64) << 8) | (bytes[13] as u64);
+    values[7] = ((bytes[14] as u64) << 8) | (bytes[15] as u64);
 }
 
 #[inline]
 fn unpack_bits_17(values: &mut [u64], bytes: &[u8]) {
     values[0] =
-        (((bytes[0]) as u64) << 9) | (((bytes[1]) as u64) << 1) | (((bytes[2] >> 7) & 0x1) as u64);
+        ((bytes[0] as u64) << 9) | ((bytes[1] as u64) << 1) | (((bytes[2] >> 7) & 0x1) as u64);
     values[1] = ((((bytes[2]) & 0x7f) as u64) << 10)
-        | (((bytes[3]) as u64) << 2)
+        | ((bytes[3] as u64) << 2)
         | (((bytes[4] >> 6) & 0x3) as u64);
     values[2] = ((((bytes[4]) & 0x3f) as u64) << 11)
-        | (((bytes[5]) as u64) << 3)
+        | ((bytes[5] as u64) << 3)
         | (((bytes[6] >> 5) & 0x7) as u64);
     values[3] = ((((bytes[6]) & 0x1f) as u64) << 12)
-        | (((bytes[7]) as u64) << 4)
+        | ((bytes[7] as u64) << 4)
         | (((bytes[8] >> 4) & 0xf) as u64);
     values[4] = ((((bytes[8]) & 0xf) as u64) << 13)
-        | (((bytes[9]) as u64) << 5)
+        | ((bytes[9] as u64) << 5)
         | (((bytes[10] >> 3) & 0x1f) as u64);
     values[5] = ((((bytes[10]) & 0x7) as u64) << 14)
-        | (((bytes[11]) as u64) << 6)
+        | ((bytes[11] as u64) << 6)
         | (((bytes[12] >> 2) & 0x3f) as u64);
     values[6] = ((((bytes[12]) & 0x3) as u64) << 15)
-        | (((bytes[13]) as u64) << 7)
+        | ((bytes[13] as u64) << 7)
         | (((bytes[14] >> 1) & 0x7f) as u64);
     values[7] =
-        ((((bytes[14]) & 0x1) as u64) << 16) | (((bytes[15]) as u64) << 8) | ((bytes[16]) as u64);
+        ((((bytes[14]) & 0x1) as u64) << 16) | ((bytes[15] as u64) << 8) | (bytes[16] as u64);
 }
 
 #[inline]
 fn unpack_bits_18(values: &mut [u64], bytes: &[u8]) {
     values[0] =
-        (((bytes[0]) as u64) << 10) | (((bytes[1]) as u64) << 2) | (((bytes[2] >> 6) & 0x3) as u64);
+        ((bytes[0] as u64) << 10) | ((bytes[1] as u64) << 2) | (((bytes[2] >> 6) & 0x3) as u64);
     values[1] = ((((bytes[2]) & 0x3f) as u64) << 12)
-        | (((bytes[3]) as u64) << 4)
+        | ((bytes[3] as u64) << 4)
         | (((bytes[4] >> 4) & 0xf) as u64);
     values[2] = ((((bytes[4]) & 0xf) as u64) << 14)
-        | (((bytes[5]) as u64) << 6)
+        | ((bytes[5] as u64) << 6)
         | (((bytes[6] >> 2) & 0x3f) as u64);
-    values[3] =
-        ((((bytes[6]) & 0x3) as u64) << 16) | (((bytes[7]) as u64) << 8) | ((bytes[8]) as u64);
-    values[4] = (((bytes[9]) as u64) << 10)
-        | (((bytes[10]) as u64) << 2)
-        | (((bytes[11] >> 6) & 0x3) as u64);
+    values[3] = ((((bytes[6]) & 0x3) as u64) << 16) | ((bytes[7] as u64) << 8) | (bytes[8] as u64);
+    values[4] =
+        ((bytes[9] as u64) << 10) | ((bytes[10] as u64) << 2) | (((bytes[11] >> 6) & 0x3) as u64);
     values[5] = ((((bytes[11]) & 0x3f) as u64) << 12)
-        | (((bytes[12]) as u64) << 4)
+        | ((bytes[12] as u64) << 4)
         | (((bytes[13] >> 4) & 0xf) as u64);
     values[6] = ((((bytes[13]) & 0xf) as u64) << 14)
-        | (((bytes[14]) as u64) << 6)
+        | ((bytes[14] as u64) << 6)
         | (((bytes[15] >> 2) & 0x3f) as u64);
     values[7] =
-        ((((bytes[15]) & 0x3) as u64) << 16) | (((bytes[16]) as u64) << 8) | ((bytes[17]) as u64);
+        ((((bytes[15]) & 0x3) as u64) << 16) | ((bytes[16] as u64) << 8) | (bytes[17] as u64);
 }
 
 #[inline]
 fn unpack_bits_19(values: &mut [u64], bytes: &[u8]) {
     values[0] =
-        (((bytes[0]) as u64) << 11) | (((bytes[1]) as u64) << 3) | (((bytes[2] >> 5) & 0x7) as u64);
+        ((bytes[0] as u64) << 11) | ((bytes[1] as u64) << 3) | (((bytes[2] >> 5) & 0x7) as u64);
     values[1] = ((((bytes[2]) & 0x1f) as u64) << 14)
-        | (((bytes[3]) as u64) << 6)
+        | ((bytes[3] as u64) << 6)
         | (((bytes[4] >> 2) & 0x3f) as u64);
     values[2] = ((((bytes[4]) & 0x3) as u64) << 17)
-        | (((bytes[5]) as u64) << 9)
-        | (((bytes[6]) as u64) << 1)
+        | ((bytes[5] as u64) << 9)
+        | ((bytes[6] as u64) << 1)
         | (((bytes[7] >> 7) & 0x1) as u64);
     values[3] = ((((bytes[7]) & 0x7f) as u64) << 12)
-        | (((bytes[8]) as u64) << 4)
+        | ((bytes[8] as u64) << 4)
         | (((bytes[9] >> 4) & 0xf) as u64);
     values[4] = ((((bytes[9]) & 0xf) as u64) << 15)
-        | (((bytes[10]) as u64) << 7)
+        | ((bytes[10] as u64) << 7)
         | (((bytes[11] >> 1) & 0x7f) as u64);
     values[5] = ((((bytes[11]) & 0x1) as u64) << 18)
-        | (((bytes[12]) as u64) << 10)
-        | (((bytes[13]) as u64) << 2)
+        | ((bytes[12] as u64) << 10)
+        | ((bytes[13] as u64) << 2)
         | (((bytes[14] >> 6) & 0x3) as u64);
     values[6] = ((((bytes[14]) & 0x3f) as u64) << 13)
-        | (((bytes[15]) as u64) << 5)
+        | ((bytes[15] as u64) << 5)
         | (((bytes[16] >> 3) & 0x1f) as u64);
     values[7] =
-        ((((bytes[16]) & 0x7) as u64) << 16) | (((bytes[17]) as u64) << 8) | ((bytes[18]) as u64);
+        ((((bytes[16]) & 0x7) as u64) << 16) | ((bytes[17] as u64) << 8) | (bytes[18] as u64);
 }
 
 #[inline]
 fn unpack_bits_20(values: &mut [u64], bytes: &[u8]) {
     values[0] =
-        (((bytes[0]) as u64) << 12) | (((bytes[1]) as u64) << 4) | (((bytes[2] >> 4) & 0xf) as u64);
-    values[1] =
-        ((((bytes[2]) & 0xf) as u64) << 16) | (((bytes[3]) as u64) << 8) | ((bytes[4]) as u64);
+        ((bytes[0] as u64) << 12) | ((bytes[1] as u64) << 4) | (((bytes[2] >> 4) & 0xf) as u64);
+    values[1] = ((((bytes[2]) & 0xf) as u64) << 16) | ((bytes[3] as u64) << 8) | (bytes[4] as u64);
     values[2] =
-        (((bytes[5]) as u64) << 12) | (((bytes[6]) as u64) << 4) | (((bytes[7] >> 4) & 0xf) as u64);
-    values[3] =
-        ((((bytes[7]) & 0xf) as u64) << 16) | (((bytes[8]) as u64) << 8) | ((bytes[9]) as u64);
-    values[4] = (((bytes[10]) as u64) << 12)
-        | (((bytes[11]) as u64) << 4)
-        | (((bytes[12] >> 4) & 0xf) as u64);
+        ((bytes[5] as u64) << 12) | ((bytes[6] as u64) << 4) | (((bytes[7] >> 4) & 0xf) as u64);
+    values[3] = ((((bytes[7]) & 0xf) as u64) << 16) | ((bytes[8] as u64) << 8) | (bytes[9] as u64);
+    values[4] =
+        ((bytes[10] as u64) << 12) | ((bytes[11] as u64) << 4) | (((bytes[12] >> 4) & 0xf) as u64);
     values[5] =
-        ((((bytes[12]) & 0xf) as u64) << 16) | (((bytes[13]) as u64) << 8) | ((bytes[14]) as u64);
-    values[6] = (((bytes[15]) as u64) << 12)
-        | (((bytes[16]) as u64) << 4)
-        | (((bytes[17] >> 4) & 0xf) as u64);
+        ((((bytes[12]) & 0xf) as u64) << 16) | ((bytes[13] as u64) << 8) | (bytes[14] as u64);
+    values[6] =
+        ((bytes[15] as u64) << 12) | ((bytes[16] as u64) << 4) | (((bytes[17] >> 4) & 0xf) as u64);
     values[7] =
-        ((((bytes[17]) & 0xf) as u64) << 16) | (((bytes[18]) as u64) << 8) | ((bytes[19]) as u64);
+        ((((bytes[17]) & 0xf) as u64) << 16) | ((bytes[18] as u64) << 8) | (bytes[19] as u64);
 }
 
 #[inline]
 fn unpack_bits_21(values: &mut [u64], bytes: &[u8]) {
-    values[0] = (((bytes[0]) as u64) << 13)
-        | (((bytes[1]) as u64) << 5)
-        | (((bytes[2] >> 3) & 0x1f) as u64);
+    values[0] =
+        ((bytes[0] as u64) << 13) | ((bytes[1] as u64) << 5) | (((bytes[2] >> 3) & 0x1f) as u64);
     values[1] = ((((bytes[2]) & 0x7) as u64) << 18)
-        | (((bytes[3]) as u64) << 10)
-        | (((bytes[4]) as u64) << 2)
+        | ((bytes[3] as u64) << 10)
+        | ((bytes[4] as u64) << 2)
         | (((bytes[5] >> 6) & 0x3) as u64);
     values[2] = ((((bytes[5]) & 0x3f) as u64) << 15)
-        | (((bytes[6]) as u64) << 7)
+        | ((bytes[6] as u64) << 7)
         | (((bytes[7] >> 1) & 0x7f) as u64);
     values[3] = ((((bytes[7]) & 0x1) as u64) << 20)
-        | (((bytes[8]) as u64) << 12)
-        | (((bytes[9]) as u64) << 4)
+        | ((bytes[8] as u64) << 12)
+        | ((bytes[9] as u64) << 4)
         | (((bytes[10] >> 4) & 0xf) as u64);
     values[4] = ((((bytes[10]) & 0xf) as u64) << 17)
-        | (((bytes[11]) as u64) << 9)
-        | (((bytes[12]) as u64) << 1)
+        | ((bytes[11] as u64) << 9)
+        | ((bytes[12] as u64) << 1)
         | (((bytes[13] >> 7) & 0x1) as u64);
     values[5] = ((((bytes[13]) & 0x7f) as u64) << 14)
-        | (((bytes[14]) as u64) << 6)
+        | ((bytes[14] as u64) << 6)
         | (((bytes[15] >> 2) & 0x3f) as u64);
     values[6] = ((((bytes[15]) & 0x3) as u64) << 19)
-        | (((bytes[16]) as u64) << 11)
-        | (((bytes[17]) as u64) << 3)
+        | ((bytes[16] as u64) << 11)
+        | ((bytes[17] as u64) << 3)
         | (((bytes[18] >> 5) & 0x7) as u64);
     values[7] =
-        ((((bytes[18]) & 0x1f) as u64) << 16) | (((bytes[19]) as u64) << 8) | ((bytes[20]) as u64);
+        ((((bytes[18]) & 0x1f) as u64) << 16) | ((bytes[19] as u64) << 8) | (bytes[20] as u64);
 }
 
 #[inline]
 fn unpack_bits_22(values: &mut [u64], bytes: &[u8]) {
-    values[0] = (((bytes[0]) as u64) << 14)
-        | (((bytes[1]) as u64) << 6)
-        | (((bytes[2] >> 2) & 0x3f) as u64);
+    values[0] =
+        ((bytes[0] as u64) << 14) | ((bytes[1] as u64) << 6) | (((bytes[2] >> 2) & 0x3f) as u64);
     values[1] = ((((bytes[2]) & 0x3) as u64) << 20)
-        | (((bytes[3]) as u64) << 12)
-        | (((bytes[4]) as u64) << 4)
+        | ((bytes[3] as u64) << 12)
+        | ((bytes[4] as u64) << 4)
         | (((bytes[5] >> 4) & 0xf) as u64);
     values[2] = ((((bytes[5]) & 0xf) as u64) << 18)
-        | (((bytes[6]) as u64) << 10)
-        | (((bytes[7]) as u64) << 2)
+        | ((bytes[6] as u64) << 10)
+        | ((bytes[7] as u64) << 2)
         | (((bytes[8] >> 6) & 0x3) as u64);
     values[3] =
-        ((((bytes[8]) & 0x3f) as u64) << 16) | (((bytes[9]) as u64) << 8) | ((bytes[10]) as u64);
-    values[4] = (((bytes[11]) as u64) << 14)
-        | (((bytes[12]) as u64) << 6)
-        | (((bytes[13] >> 2) & 0x3f) as u64);
+        ((((bytes[8]) & 0x3f) as u64) << 16) | ((bytes[9] as u64) << 8) | (bytes[10] as u64);
+    values[4] =
+        ((bytes[11] as u64) << 14) | ((bytes[12] as u64) << 6) | (((bytes[13] >> 2) & 0x3f) as u64);
     values[5] = ((((bytes[13]) & 0x3) as u64) << 20)
-        | (((bytes[14]) as u64) << 12)
-        | (((bytes[15]) as u64) << 4)
+        | ((bytes[14] as u64) << 12)
+        | ((bytes[15] as u64) << 4)
         | (((bytes[16] >> 4) & 0xf) as u64);
     values[6] = ((((bytes[16]) & 0xf) as u64) << 18)
-        | (((bytes[17]) as u64) << 10)
-        | (((bytes[18]) as u64) << 2)
+        | ((bytes[17] as u64) << 10)
+        | ((bytes[18] as u64) << 2)
         | (((bytes[19] >> 6) & 0x3) as u64);
     values[7] =
-        ((((bytes[19]) & 0x3f) as u64) << 16) | (((bytes[20]) as u64) << 8) | ((bytes[21]) as u64);
+        ((((bytes[19]) & 0x3f) as u64) << 16) | ((bytes[20] as u64) << 8) | (bytes[21] as u64);
 }
 
 #[inline]
 fn unpack_bits_23(values: &mut [u64], bytes: &[u8]) {
-    values[0] = (((bytes[0]) as u64) << 15)
-        | (((bytes[1]) as u64) << 7)
-        | (((bytes[2] >> 1) & 0x7f) as u64);
+    values[0] =
+        ((bytes[0] as u64) << 15) | ((bytes[1] as u64) << 7) | (((bytes[2] >> 1) & 0x7f) as u64);
     values[1] = ((((bytes[2]) & 0x1) as u64) << 22)
-        | (((bytes[3]) as u64) << 14)
-        | (((bytes[4]) as u64) << 6)
+        | ((bytes[3] as u64) << 14)
+        | ((bytes[4] as u64) << 6)
         | (((bytes[5] >> 2) & 0x3f) as u64);
     values[2] = ((((bytes[5]) & 0x3) as u64) << 21)
-        | (((bytes[6]) as u64) << 13)
-        | (((bytes[7]) as u64) << 5)
+        | ((bytes[6] as u64) << 13)
+        | ((bytes[7] as u64) << 5)
         | (((bytes[8] >> 3) & 0x1f) as u64);
     values[3] = ((((bytes[8]) & 0x7) as u64) << 20)
-        | (((bytes[9]) as u64) << 12)
-        | (((bytes[10]) as u64) << 4)
+        | ((bytes[9] as u64) << 12)
+        | ((bytes[10] as u64) << 4)
         | (((bytes[11] >> 4) & 0xf) as u64);
     values[4] = ((((bytes[11]) & 0xf) as u64) << 19)
-        | (((bytes[12]) as u64) << 11)
-        | (((bytes[13]) as u64) << 3)
+        | ((bytes[12] as u64) << 11)
+        | ((bytes[13] as u64) << 3)
         | (((bytes[14] >> 5) & 0x7) as u64);
     values[5] = ((((bytes[14]) & 0x1f) as u64) << 18)
-        | (((bytes[15]) as u64) << 10)
-        | (((bytes[16]) as u64) << 2)
+        | ((bytes[15] as u64) << 10)
+        | ((bytes[16] as u64) << 2)
         | (((bytes[17] >> 6) & 0x3) as u64);
     values[6] = ((((bytes[17]) & 0x3f) as u64) << 17)
-        | (((bytes[18]) as u64) << 9)
-        | (((bytes[19]) as u64) << 1)
+        | ((bytes[18] as u64) << 9)
+        | ((bytes[19] as u64) << 1)
         | (((bytes[20] >> 7) & 0x1) as u64);
     values[7] =
-        ((((bytes[20]) & 0x7f) as u64) << 16) | (((bytes[21]) as u64) << 8) | ((bytes[22]) as u64);
+        ((((bytes[20]) & 0x7f) as u64) << 16) | ((bytes[21] as u64) << 8) | (bytes[22] as u64);
 }
 
 #[inline]
 fn unpack_bits_24(values: &mut [u64], bytes: &[u8]) {
-    values[0] = (((bytes[0]) as u64) << 16) | (((bytes[1]) as u64) << 8) | ((bytes[2]) as u64);
-    values[1] = (((bytes[3]) as u64) << 16) | (((bytes[4]) as u64) << 8) | ((bytes[5]) as u64);
-    values[2] = (((bytes[6]) as u64) << 16) | (((bytes[7]) as u64) << 8) | ((bytes[8]) as u64);
-    values[3] = (((bytes[9]) as u64) << 16) | (((bytes[10]) as u64) << 8) | ((bytes[11]) as u64);
-    values[4] = (((bytes[12]) as u64) << 16) | (((bytes[13]) as u64) << 8) | ((bytes[14]) as u64);
-    values[5] = (((bytes[15]) as u64) << 16) | (((bytes[16]) as u64) << 8) | ((bytes[17]) as u64);
-    values[6] = (((bytes[18]) as u64) << 16) | (((bytes[19]) as u64) << 8) | ((bytes[20]) as u64);
-    values[7] = (((bytes[21]) as u64) << 16) | (((bytes[22]) as u64) << 8) | ((bytes[23]) as u64);
+    values[0] = ((bytes[0] as u64) << 16) | ((bytes[1] as u64) << 8) | (bytes[2] as u64);
+    values[1] = ((bytes[3] as u64) << 16) | ((bytes[4] as u64) << 8) | (bytes[5] as u64);
+    values[2] = ((bytes[6] as u64) << 16) | ((bytes[7] as u64) << 8) | (bytes[8] as u64);
+    values[3] = ((bytes[9] as u64) << 16) | ((bytes[10] as u64) << 8) | (bytes[11] as u64);
+    values[4] = ((bytes[12] as u64) << 16) | ((bytes[13] as u64) << 8) | (bytes[14] as u64);
+    values[5] = ((bytes[15] as u64) << 16) | ((bytes[16] as u64) << 8) | (bytes[17] as u64);
+    values[6] = ((bytes[18] as u64) << 16) | ((bytes[19] as u64) << 8) | (bytes[20] as u64);
+    values[7] = ((bytes[21] as u64) << 16) | ((bytes[22] as u64) << 8) | (bytes[23] as u64);
 }
 
 #[inline]
 fn unpack_bits_25(values: &mut [u64], bytes: &[u8]) {
-    values[0] = (((bytes[0]) as u64) << 17)
-        | (((bytes[1]) as u64) << 9)
-        | (((bytes[2]) as u64) << 1)
+    values[0] = ((bytes[0] as u64) << 17)
+        | ((bytes[1] as u64) << 9)
+        | ((bytes[2] as u64) << 1)
         | (((bytes[3] >> 7) & 0x1) as u64);
     values[1] = ((((bytes[3]) & 0x7f) as u64) << 18)
-        | (((bytes[4]) as u64) << 10)
-        | (((bytes[5]) as u64) << 2)
+        | ((bytes[4] as u64) << 10)
+        | ((bytes[5] as u64) << 2)
         | (((bytes[6] >> 6) & 0x3) as u64);
     values[2] = ((((bytes[6]) & 0x3f) as u64) << 19)
-        | (((bytes[7]) as u64) << 11)
-        | (((bytes[8]) as u64) << 3)
+        | ((bytes[7] as u64) << 11)
+        | ((bytes[8] as u64) << 3)
         | (((bytes[9] >> 5) & 0x7) as u64);
     values[3] = ((((bytes[9]) & 0x1f) as u64) << 20)
-        | (((bytes[10]) as u64) << 12)
-        | (((bytes[11]) as u64) << 4)
+        | ((bytes[10] as u64) << 12)
+        | ((bytes[11] as u64) << 4)
         | (((bytes[12] >> 4) & 0xf) as u64);
     values[4] = ((((bytes[12]) & 0xf) as u64) << 21)
-        | (((bytes[13]) as u64) << 13)
-        | (((bytes[14]) as u64) << 5)
+        | ((bytes[13] as u64) << 13)
+        | ((bytes[14] as u64) << 5)
         | (((bytes[15] >> 3) & 0x1f) as u64);
     values[5] = ((((bytes[15]) & 0x7) as u64) << 22)
-        | (((bytes[16]) as u64) << 14)
-        | (((bytes[17]) as u64) << 6)
+        | ((bytes[16] as u64) << 14)
+        | ((bytes[17] as u64) << 6)
         | (((bytes[18] >> 2) & 0x3f) as u64);
     values[6] = ((((bytes[18]) & 0x3) as u64) << 23)
-        | (((bytes[19]) as u64) << 15)
-        | (((bytes[20]) as u64) << 7)
+        | ((bytes[19] as u64) << 15)
+        | ((bytes[20] as u64) << 7)
         | (((bytes[21] >> 1) & 0x7f) as u64);
     values[7] = ((((bytes[21]) & 0x1) as u64) << 24)
-        | (((bytes[22]) as u64) << 16)
-        | (((bytes[23]) as u64) << 8)
-        | ((bytes[24]) as u64);
+        | ((bytes[22] as u64) << 16)
+        | ((bytes[23] as u64) << 8)
+        | (bytes[24] as u64);
 }
 
 #[inline]
 fn unpack_bits_26(values: &mut [u64], bytes: &[u8]) {
-    values[0] = (((bytes[0]) as u64) << 18)
-        | (((bytes[1]) as u64) << 10)
-        | (((bytes[2]) as u64) << 2)
+    values[0] = ((bytes[0] as u64) << 18)
+        | ((bytes[1] as u64) << 10)
+        | ((bytes[2] as u64) << 2)
         | (((bytes[3] >> 6) & 0x3) as u64);
     values[1] = ((((bytes[3]) & 0x3f) as u64) << 20)
-        | (((bytes[4]) as u64) << 12)
-        | (((bytes[5]) as u64) << 4)
+        | ((bytes[4] as u64) << 12)
+        | ((bytes[5] as u64) << 4)
         | (((bytes[6] >> 4) & 0xf) as u64);
     values[2] = ((((bytes[6]) & 0xf) as u64) << 22)
-        | (((bytes[7]) as u64) << 14)
-        | (((bytes[8]) as u64) << 6)
+        | ((bytes[7] as u64) << 14)
+        | ((bytes[8] as u64) << 6)
         | (((bytes[9] >> 2) & 0x3f) as u64);
     values[3] = ((((bytes[9]) & 0x3) as u64) << 24)
-        | (((bytes[10]) as u64) << 16)
-        | (((bytes[11]) as u64) << 8)
-        | ((bytes[12]) as u64);
-    values[4] = (((bytes[13]) as u64) << 18)
-        | (((bytes[14]) as u64) << 10)
-        | (((bytes[15]) as u64) << 2)
+        | ((bytes[10] as u64) << 16)
+        | ((bytes[11] as u64) << 8)
+        | (bytes[12] as u64);
+    values[4] = ((bytes[13] as u64) << 18)
+        | ((bytes[14] as u64) << 10)
+        | ((bytes[15] as u64) << 2)
         | (((bytes[16] >> 6) & 0x3) as u64);
     values[5] = ((((bytes[16]) & 0x3f) as u64) << 20)
-        | (((bytes[17]) as u64) << 12)
-        | (((bytes[18]) as u64) << 4)
+        | ((bytes[17] as u64) << 12)
+        | ((bytes[18] as u64) << 4)
         | (((bytes[19] >> 4) & 0xf) as u64);
     values[6] = ((((bytes[19]) & 0xf) as u64) << 22)
-        | (((bytes[20]) as u64) << 14)
-        | (((bytes[21]) as u64) << 6)
+        | ((bytes[20] as u64) << 14)
+        | ((bytes[21] as u64) << 6)
         | (((bytes[22] >> 2) & 0x3f) as u64);
     values[7] = ((((bytes[22]) & 0x3) as u64) << 24)
-        | (((bytes[23]) as u64) << 16)
-        | (((bytes[24]) as u64) << 8)
-        | ((bytes[25]) as u64);
+        | ((bytes[23] as u64) << 16)
+        | ((bytes[24] as u64) << 8)
+        | (bytes[25] as u64);
 }
 
 #[inline]
 fn unpack_bits_27(values: &mut [u64], bytes: &[u8]) {
-    values[0] = (((bytes[0]) as u64) << 19)
-        | (((bytes[1]) as u64) << 11)
-        | (((bytes[2]) as u64) << 3)
+    values[0] = ((bytes[0] as u64) << 19)
+        | ((bytes[1] as u64) << 11)
+        | ((bytes[2] as u64) << 3)
         | (((bytes[3] >> 5) & 0x7) as u64);
     values[1] = ((((bytes[3]) & 0x1f) as u64) << 22)
-        | (((bytes[4]) as u64) << 14)
-        | (((bytes[5]) as u64) << 6)
+        | ((bytes[4] as u64) << 14)
+        | ((bytes[5] as u64) << 6)
         | (((bytes[6] >> 2) & 0x3f) as u64);
     values[2] = ((((bytes[6]) & 0x3) as u64) << 25)
-        | (((bytes[7]) as u64) << 17)
-        | (((bytes[8]) as u64) << 9)
-        | (((bytes[9]) as u64) << 1)
+        | ((bytes[7] as u64) << 17)
+        | ((bytes[8] as u64) << 9)
+        | ((bytes[9] as u64) << 1)
         | (((bytes[10] >> 7) & 0x1) as u64);
     values[3] = ((((bytes[10]) & 0x7f) as u64) << 20)
-        | (((bytes[11]) as u64) << 12)
-        | (((bytes[12]) as u64) << 4)
+        | ((bytes[11] as u64) << 12)
+        | ((bytes[12] as u64) << 4)
         | (((bytes[13] >> 4) & 0xf) as u64);
     values[4] = ((((bytes[13]) & 0xf) as u64) << 23)
-        | (((bytes[14]) as u64) << 15)
-        | (((bytes[15]) as u64) << 7)
+        | ((bytes[14] as u64) << 15)
+        | ((bytes[15] as u64) << 7)
         | (((bytes[16] >> 1) & 0x7f) as u64);
     values[5] = ((((bytes[16]) & 0x1) as u64) << 26)
-        | (((bytes[17]) as u64) << 18)
-        | (((bytes[18]) as u64) << 10)
-        | (((bytes[19]) as u64) << 2)
+        | ((bytes[17] as u64) << 18)
+        | ((bytes[18] as u64) << 10)
+        | ((bytes[19] as u64) << 2)
         | (((bytes[20] >> 6) & 0x3) as u64);
     values[6] = ((((bytes[20]) & 0x3f) as u64) << 21)
-        | (((bytes[21]) as u64) << 13)
-        | (((bytes[22]) as u64) << 5)
+        | ((bytes[21] as u64) << 13)
+        | ((bytes[22] as u64) << 5)
         | (((bytes[23] >> 3) & 0x1f) as u64);
     values[7] = ((((bytes[23]) & 0x7) as u64) << 24)
-        | (((bytes[24]) as u64) << 16)
-        | (((bytes[25]) as u64) << 8)
-        | ((bytes[26]) as u64);
+        | ((bytes[24] as u64) << 16)
+        | ((bytes[25] as u64) << 8)
+        | (bytes[26] as u64);
 }
 
 #[inline]
 fn unpack_bits_28(values: &mut [u64], bytes: &[u8]) {
-    values[0] = (((bytes[0]) as u64) << 20)
-        | (((bytes[1]) as u64) << 12)
-        | (((bytes[2]) as u64) << 4)
+    values[0] = ((bytes[0] as u64) << 20)
+        | ((bytes[1] as u64) << 12)
+        | ((bytes[2] as u64) << 4)
         | (((bytes[3] >> 4) & 0xf) as u64);
     values[1] = ((((bytes[3]) & 0xf) as u64) << 24)
-        | (((bytes[4]) as u64) << 16)
-        | (((bytes[5]) as u64) << 8)
-        | ((bytes[6]) as u64);
-    values[2] = (((bytes[7]) as u64) << 20)
-        | (((bytes[8]) as u64) << 12)
-        | (((bytes[9]) as u64) << 4)
+        | ((bytes[4] as u64) << 16)
+        | ((bytes[5] as u64) << 8)
+        | (bytes[6] as u64);
+    values[2] = ((bytes[7] as u64) << 20)
+        | ((bytes[8] as u64) << 12)
+        | ((bytes[9] as u64) << 4)
         | (((bytes[10] >> 4) & 0xf) as u64);
     values[3] = ((((bytes[10]) & 0xf) as u64) << 24)
-        | (((bytes[11]) as u64) << 16)
-        | (((bytes[12]) as u64) << 8)
-        | ((bytes[13]) as u64);
-    values[4] = (((bytes[14]) as u64) << 20)
-        | (((bytes[15]) as u64) << 12)
-        | (((bytes[16]) as u64) << 4)
+        | ((bytes[11] as u64) << 16)
+        | ((bytes[12] as u64) << 8)
+        | (bytes[13] as u64);
+    values[4] = ((bytes[14] as u64) << 20)
+        | ((bytes[15] as u64) << 12)
+        | ((bytes[16] as u64) << 4)
         | (((bytes[17] >> 4) & 0xf) as u64);
     values[5] = ((((bytes[17]) & 0xf) as u64) << 24)
-        | (((bytes[18]) as u64) << 16)
-        | (((bytes[19]) as u64) << 8)
-        | ((bytes[20]) as u64);
-    values[6] = (((bytes[21]) as u64) << 20)
-        | (((bytes[22]) as u64) << 12)
-        | (((bytes[23]) as u64) << 4)
+        | ((bytes[18] as u64) << 16)
+        | ((bytes[19] as u64) << 8)
+        | (bytes[20] as u64);
+    values[6] = ((bytes[21] as u64) << 20)
+        | ((bytes[22] as u64) << 12)
+        | ((bytes[23] as u64) << 4)
         | (((bytes[24] >> 4) & 0xf) as u64);
     values[7] = ((((bytes[24]) & 0xf) as u64) << 24)
-        | (((bytes[25]) as u64) << 16)
-        | (((bytes[26]) as u64) << 8)
-        | ((bytes[27]) as u64);
+        | ((bytes[25] as u64) << 16)
+        | ((bytes[26] as u64) << 8)
+        | (bytes[27] as u64);
 }
 
 #[inline]
 fn unpack_bits_29(values: &mut [u64], bytes: &[u8]) {
-    values[0] = (((bytes[0]) as u64) << 21)
-        | (((bytes[1]) as u64) << 13)
-        | (((bytes[2]) as u64) << 5)
+    values[0] = ((bytes[0] as u64) << 21)
+        | ((bytes[1] as u64) << 13)
+        | ((bytes[2] as u64) << 5)
         | (((bytes[3] >> 3) & 0x1f) as u64);
     values[1] = ((((bytes[3]) & 0x7) as u64) << 26)
-        | (((bytes[4]) as u64) << 18)
-        | (((bytes[5]) as u64) << 10)
-        | (((bytes[6]) as u64) << 2)
+        | ((bytes[4] as u64) << 18)
+        | ((bytes[5] as u64) << 10)
+        | ((bytes[6] as u64) << 2)
         | (((bytes[7] >> 6) & 0x3) as u64);
     values[2] = ((((bytes[7]) & 0x3f) as u64) << 23)
-        | (((bytes[8]) as u64) << 15)
-        | (((bytes[9]) as u64) << 7)
+        | ((bytes[8] as u64) << 15)
+        | ((bytes[9] as u64) << 7)
         | (((bytes[10] >> 1) & 0x7f) as u64);
     values[3] = ((((bytes[10]) & 0x1) as u64) << 28)
-        | (((bytes[11]) as u64) << 20)
-        | (((bytes[12]) as u64) << 12)
-        | (((bytes[13]) as u64) << 4)
+        | ((bytes[11] as u64) << 20)
+        | ((bytes[12] as u64) << 12)
+        | ((bytes[13] as u64) << 4)
         | (((bytes[14] >> 4) & 0xf) as u64);
     values[4] = ((((bytes[14]) & 0xf) as u64) << 25)
-        | (((bytes[15]) as u64) << 17)
-        | (((bytes[16]) as u64) << 9)
-        | (((bytes[17]) as u64) << 1)
+        | ((bytes[15] as u64) << 17)
+        | ((bytes[16] as u64) << 9)
+        | ((bytes[17] as u64) << 1)
         | (((bytes[18] >> 7) & 0x1) as u64);
     values[5] = ((((bytes[18]) & 0x7f) as u64) << 22)
-        | (((bytes[19]) as u64) << 14)
-        | (((bytes[20]) as u64) << 6)
+        | ((bytes[19] as u64) << 14)
+        | ((bytes[20] as u64) << 6)
         | (((bytes[21] >> 2) & 0x3f) as u64);
     values[6] = ((((bytes[21]) & 0x3) as u64) << 27)
-        | (((bytes[22]) as u64) << 19)
-        | (((bytes[23]) as u64) << 11)
-        | (((bytes[24]) as u64) << 3)
+        | ((bytes[22] as u64) << 19)
+        | ((bytes[23] as u64) << 11)
+        | ((bytes[24] as u64) << 3)
         | (((bytes[25] >> 5) & 0x7) as u64);
     values[7] = ((((bytes[25]) & 0x1f) as u64) << 24)
-        | (((bytes[26]) as u64) << 16)
-        | (((bytes[27]) as u64) << 8)
-        | ((bytes[28]) as u64);
+        | ((bytes[26] as u64) << 16)
+        | ((bytes[27] as u64) << 8)
+        | (bytes[28] as u64);
 }
 
 #[inline]
 fn unpack_bits_30(values: &mut [u64], bytes: &[u8]) {
-    values[0] = (((bytes[0]) as u64) << 22)
-        | (((bytes[1]) as u64) << 14)
-        | (((bytes[2]) as u64) << 6)
+    values[0] = ((bytes[0] as u64) << 22)
+        | ((bytes[1] as u64) << 14)
+        | ((bytes[2] as u64) << 6)
         | (((bytes[3] >> 2) & 0x3f) as u64);
     values[1] = ((((bytes[3]) & 0x3) as u64) << 28)
-        | (((bytes[4]) as u64) << 20)
-        | (((bytes[5]) as u64) << 12)
-        | (((bytes[6]) as u64) << 4)
+        | ((bytes[4] as u64) << 20)
+        | ((bytes[5] as u64) << 12)
+        | ((bytes[6] as u64) << 4)
         | (((bytes[7] >> 4) & 0xf) as u64);
     values[2] = ((((bytes[7]) & 0xf) as u64) << 26)
-        | (((bytes[8]) as u64) << 18)
-        | (((bytes[9]) as u64) << 10)
-        | (((bytes[10]) as u64) << 2)
+        | ((bytes[8] as u64) << 18)
+        | ((bytes[9] as u64) << 10)
+        | ((bytes[10] as u64) << 2)
         | (((bytes[11] >> 6) & 0x3) as u64);
     values[3] = ((((bytes[11]) & 0x3f) as u64) << 24)
-        | (((bytes[12]) as u64) << 16)
-        | (((bytes[13]) as u64) << 8)
-        | ((bytes[14]) as u64);
-    values[4] = (((bytes[15]) as u64) << 22)
-        | (((bytes[16]) as u64) << 14)
-        | (((bytes[17]) as u64) << 6)
+        | ((bytes[12] as u64) << 16)
+        | ((bytes[13] as u64) << 8)
+        | (bytes[14] as u64);
+    values[4] = ((bytes[15] as u64) << 22)
+        | ((bytes[16] as u64) << 14)
+        | ((bytes[17] as u64) << 6)
         | (((bytes[18] >> 2) & 0x3f) as u64);
     values[5] = ((((bytes[18]) & 0x3) as u64) << 28)
-        | (((bytes[19]) as u64) << 20)
-        | (((bytes[20]) as u64) << 12)
-        | (((bytes[21]) as u64) << 4)
+        | ((bytes[19] as u64) << 20)
+        | ((bytes[20] as u64) << 12)
+        | ((bytes[21] as u64) << 4)
         | (((bytes[22] >> 4) & 0xf) as u64);
     values[6] = ((((bytes[22]) & 0xf) as u64) << 26)
-        | (((bytes[23]) as u64) << 18)
-        | (((bytes[24]) as u64) << 10)
-        | (((bytes[25]) as u64) << 2)
+        | ((bytes[23] as u64) << 18)
+        | ((bytes[24] as u64) << 10)
+        | ((bytes[25] as u64) << 2)
         | (((bytes[26] >> 6) & 0x3) as u64);
     values[7] = ((((bytes[26]) & 0x3f) as u64) << 24)
-        | (((bytes[27]) as u64) << 16)
-        | (((bytes[28]) as u64) << 8)
-        | ((bytes[29]) as u64);
+        | ((bytes[27] as u64) << 16)
+        | ((bytes[28] as u64) << 8)
+        | (bytes[29] as u64);
 }
 
 #[inline]
 fn unpack_bits_31(values: &mut [u64], bytes: &[u8]) {
-    values[0] = (((bytes[0]) as u64) << 23)
-        | (((bytes[1]) as u64) << 15)
-        | (((bytes[2]) as u64) << 7)
+    values[0] = ((bytes[0] as u64) << 23)
+        | ((bytes[1] as u64) << 15)
+        | ((bytes[2] as u64) << 7)
         | (((bytes[3] >> 1) & 0x7f) as u64);
     values[1] = ((((bytes[3]) & 0x1) as u64) << 30)
-        | (((bytes[4]) as u64) << 22)
-        | (((bytes[5]) as u64) << 14)
-        | (((bytes[6]) as u64) << 6)
+        | ((bytes[4] as u64) << 22)
+        | ((bytes[5] as u64) << 14)
+        | ((bytes[6] as u64) << 6)
         | (((bytes[7] >> 2) & 0x3f) as u64);
     values[2] = ((((bytes[7]) & 0x3) as u64) << 29)
-        | (((bytes[8]) as u64) << 21)
-        | (((bytes[9]) as u64) << 13)
-        | (((bytes[10]) as u64) << 5)
+        | ((bytes[8] as u64) << 21)
+        | ((bytes[9] as u64) << 13)
+        | ((bytes[10] as u64) << 5)
         | (((bytes[11] >> 3) & 0x1f) as u64);
     values[3] = ((((bytes[11]) & 0x7) as u64) << 28)
-        | (((bytes[12]) as u64) << 20)
-        | (((bytes[13]) as u64) << 12)
-        | (((bytes[14]) as u64) << 4)
+        | ((bytes[12] as u64) << 20)
+        | ((bytes[13] as u64) << 12)
+        | ((bytes[14] as u64) << 4)
         | (((bytes[15] >> 4) & 0xf) as u64);
     values[4] = ((((bytes[15]) & 0xf) as u64) << 27)
-        | (((bytes[16]) as u64) << 19)
-        | (((bytes[17]) as u64) << 11)
-        | (((bytes[18]) as u64) << 3)
+        | ((bytes[16] as u64) << 19)
+        | ((bytes[17] as u64) << 11)
+        | ((bytes[18] as u64) << 3)
         | (((bytes[19] >> 5) & 0x7) as u64);
     values[5] = ((((bytes[19]) & 0x1f) as u64) << 26)
-        | (((bytes[20]) as u64) << 18)
-        | (((bytes[21]) as u64) << 10)
-        | (((bytes[22]) as u64) << 2)
+        | ((bytes[20] as u64) << 18)
+        | ((bytes[21] as u64) << 10)
+        | ((bytes[22] as u64) << 2)
         | (((bytes[23] >> 6) & 0x3) as u64);
     values[6] = ((((bytes[23]) & 0x3f) as u64) << 25)
-        | (((bytes[24]) as u64) << 17)
-        | (((bytes[25]) as u64) << 9)
-        | (((bytes[26]) as u64) << 1)
+        | ((bytes[24] as u64) << 17)
+        | ((bytes[25] as u64) << 9)
+        | ((bytes[26] as u64) << 1)
         | (((bytes[27] >> 7) & 0x1) as u64);
     values[7] = ((((bytes[27]) & 0x7f) as u64) << 24)
-        | (((bytes[28]) as u64) << 16)
-        | (((bytes[29]) as u64) << 8)
-        | ((bytes[30]) as u64);
+        | ((bytes[28] as u64) << 16)
+        | ((bytes[29] as u64) << 8)
+        | (bytes[30] as u64);
 }
 
 #[inline]
 fn unpack_bits_32(values: &mut [u64], bytes: &[u8]) {
-    values[0] = (((bytes[0]) as u64) << 24)
-        | (((bytes[1]) as u64) << 16)
-        | (((bytes[2]) as u64) << 8)
-        | ((bytes[3]) as u64);
-    values[1] = (((bytes[4]) as u64) << 24)
-        | (((bytes[5]) as u64) << 16)
-        | (((bytes[6]) as u64) << 8)
-        | ((bytes[7]) as u64);
-    values[2] = (((bytes[8]) as u64) << 24)
-        | (((bytes[9]) as u64) << 16)
-        | (((bytes[10]) as u64) << 8)
-        | ((bytes[11]) as u64);
-    values[3] = (((bytes[12]) as u64) << 24)
-        | (((bytes[13]) as u64) << 16)
-        | (((bytes[14]) as u64) << 8)
-        | ((bytes[15]) as u64);
-    values[4] = (((bytes[16]) as u64) << 24)
-        | (((bytes[17]) as u64) << 16)
-        | (((bytes[18]) as u64) << 8)
-        | ((bytes[19]) as u64);
-    values[5] = (((bytes[20]) as u64) << 24)
-        | (((bytes[21]) as u64) << 16)
-        | (((bytes[22]) as u64) << 8)
-        | ((bytes[23]) as u64);
-    values[6] = (((bytes[24]) as u64) << 24)
-        | (((bytes[25]) as u64) << 16)
-        | (((bytes[26]) as u64) << 8)
-        | ((bytes[27]) as u64);
-    values[7] = (((bytes[28]) as u64) << 24)
-        | (((bytes[29]) as u64) << 16)
-        | (((bytes[30]) as u64) << 8)
-        | ((bytes[31]) as u64);
+    values[0] = ((bytes[0] as u64) << 24)
+        | ((bytes[1] as u64) << 16)
+        | ((bytes[2] as u64) << 8)
+        | (bytes[3] as u64);
+    values[1] = ((bytes[4] as u64) << 24)
+        | ((bytes[5] as u64) << 16)
+        | ((bytes[6] as u64) << 8)
+        | (bytes[7] as u64);
+    values[2] = ((bytes[8] as u64) << 24)
+        | ((bytes[9] as u64) << 16)
+        | ((bytes[10] as u64) << 8)
+        | (bytes[11] as u64);
+    values[3] = ((bytes[12] as u64) << 24)
+        | ((bytes[13] as u64) << 16)
+        | ((bytes[14] as u64) << 8)
+        | (bytes[15] as u64);
+    values[4] = ((bytes[16] as u64) << 24)
+        | ((bytes[17] as u64) << 16)
+        | ((bytes[18] as u64) << 8)
+        | (bytes[19] as u64);
+    values[5] = ((bytes[20] as u64) << 24)
+        | ((bytes[21] as u64) << 16)
+        | ((bytes[22] as u64) << 8)
+        | (bytes[23] as u64);
+    values[6] = ((bytes[24] as u64) << 24)
+        | ((bytes[25] as u64) << 16)
+        | ((bytes[26] as u64) << 8)
+        | (bytes[27] as u64);
+    values[7] = ((bytes[28] as u64) << 24)
+        | ((bytes[29] as u64) << 16)
+        | ((bytes[30] as u64) << 8)
+        | (bytes[31] as u64);
 }
 
 #[inline]
 fn unpack_bits_33(values: &mut [u64], bytes: &[u8]) {
-    values[0] = (((bytes[0]) as u64) << 25)
-        | (((bytes[1]) as u64) << 17)
-        | (((bytes[2]) as u64) << 9)
-        | (((bytes[3]) as u64) << 1)
+    values[0] = ((bytes[0] as u64) << 25)
+        | ((bytes[1] as u64) << 17)
+        | ((bytes[2] as u64) << 9)
+        | ((bytes[3] as u64) << 1)
         | (((bytes[4] >> 7) & 0x1) as u64);
     values[1] = ((((bytes[4]) & 0x7f) as u64) << 26)
-        | (((bytes[5]) as u64) << 18)
-        | (((bytes[6]) as u64) << 10)
-        | (((bytes[7]) as u64) << 2)
+        | ((bytes[5] as u64) << 18)
+        | ((bytes[6] as u64) << 10)
+        | ((bytes[7] as u64) << 2)
         | (((bytes[8] >> 6) & 0x3) as u64);
     values[2] = ((((bytes[8]) & 0x3f) as u64) << 27)
-        | (((bytes[9]) as u64) << 19)
-        | (((bytes[10]) as u64) << 11)
-        | (((bytes[11]) as u64) << 3)
+        | ((bytes[9] as u64) << 19)
+        | ((bytes[10] as u64) << 11)
+        | ((bytes[11] as u64) << 3)
         | (((bytes[12] >> 5) & 0x7) as u64);
     values[3] = ((((bytes[12]) & 0x1f) as u64) << 28)
-        | (((bytes[13]) as u64) << 20)
-        | (((bytes[14]) as u64) << 12)
-        | (((bytes[15]) as u64) << 4)
+        | ((bytes[13] as u64) << 20)
+        | ((bytes[14] as u64) << 12)
+        | ((bytes[15] as u64) << 4)
         | (((bytes[16] >> 4) & 0xf) as u64);
     values[4] = ((((bytes[16]) & 0xf) as u64) << 29)
-        | (((bytes[17]) as u64) << 21)
-        | (((bytes[18]) as u64) << 13)
-        | (((bytes[19]) as u64) << 5)
+        | ((bytes[17] as u64) << 21)
+        | ((bytes[18] as u64) << 13)
+        | ((bytes[19] as u64) << 5)
         | (((bytes[20] >> 3) & 0x1f) as u64);
     values[5] = ((((bytes[20]) & 0x7) as u64) << 30)
-        | (((bytes[21]) as u64) << 22)
-        | (((bytes[22]) as u64) << 14)
-        | (((bytes[23]) as u64) << 6)
+        | ((bytes[21] as u64) << 22)
+        | ((bytes[22] as u64) << 14)
+        | ((bytes[23] as u64) << 6)
         | (((bytes[24] >> 2) & 0x3f) as u64);
     values[6] = ((((bytes[24]) & 0x3) as u64) << 31)
-        | (((bytes[25]) as u64) << 23)
-        | (((bytes[26]) as u64) << 15)
-        | (((bytes[27]) as u64) << 7)
+        | ((bytes[25] as u64) << 23)
+        | ((bytes[26] as u64) << 15)
+        | ((bytes[27] as u64) << 7)
         | (((bytes[28] >> 1) & 0x7f) as u64);
     values[7] = ((((bytes[28]) & 0x1) as u64) << 32)
-        | (((bytes[29]) as u64) << 24)
-        | (((bytes[30]) as u64) << 16)
-        | (((bytes[31]) as u64) << 8)
-        | ((bytes[32]) as u64);
+        | ((bytes[29] as u64) << 24)
+        | ((bytes[30] as u64) << 16)
+        | ((bytes[31] as u64) << 8)
+        | (bytes[32] as u64);
 }
 
 #[inline]
 fn unpack_bits_34(values: &mut [u64], bytes: &[u8]) {
-    values[0] = (((bytes[0]) as u64) << 26)
-        | (((bytes[1]) as u64) << 18)
-        | (((bytes[2]) as u64) << 10)
-        | (((bytes[3]) as u64) << 2)
+    values[0] = ((bytes[0] as u64) << 26)
+        | ((bytes[1] as u64) << 18)
+        | ((bytes[2] as u64) << 10)
+        | ((bytes[3] as u64) << 2)
         | (((bytes[4] >> 6) & 0x3) as u64);
     values[1] = ((((bytes[4]) & 0x3f) as u64) << 28)
-        | (((bytes[5]) as u64) << 20)
-        | (((bytes[6]) as u64) << 12)
-        | (((bytes[7]) as u64) << 4)
+        | ((bytes[5] as u64) << 20)
+        | ((bytes[6] as u64) << 12)
+        | ((bytes[7] as u64) << 4)
         | (((bytes[8] >> 4) & 0xf) as u64);
     values[2] = ((((bytes[8]) & 0xf) as u64) << 30)
-        | (((bytes[9]) as u64) << 22)
-        | (((bytes[10]) as u64) << 14)
-        | (((bytes[11]) as u64) << 6)
+        | ((bytes[9] as u64) << 22)
+        | ((bytes[10] as u64) << 14)
+        | ((bytes[11] as u64) << 6)
         | (((bytes[12] >> 2) & 0x3f) as u64);
     values[3] = ((((bytes[12]) & 0x3) as u64) << 32)
-        | (((bytes[13]) as u64) << 24)
-        | (((bytes[14]) as u64) << 16)
-        | (((bytes[15]) as u64) << 8)
-        | ((bytes[16]) as u64);
-    values[4] = (((bytes[17]) as u64) << 26)
-        | (((bytes[18]) as u64) << 18)
-        | (((bytes[19]) as u64) << 10)
-        | (((bytes[20]) as u64) << 2)
+        | ((bytes[13] as u64) << 24)
+        | ((bytes[14] as u64) << 16)
+        | ((bytes[15] as u64) << 8)
+        | (bytes[16] as u64);
+    values[4] = ((bytes[17] as u64) << 26)
+        | ((bytes[18] as u64) << 18)
+        | ((bytes[19] as u64) << 10)
+        | ((bytes[20] as u64) << 2)
         | (((bytes[21] >> 6) & 0x3) as u64);
     values[5] = ((((bytes[21]) & 0x3f) as u64) << 28)
-        | (((bytes[22]) as u64) << 20)
-        | (((bytes[23]) as u64) << 12)
-        | (((bytes[24]) as u64) << 4)
+        | ((bytes[22] as u64) << 20)
+        | ((bytes[23] as u64) << 12)
+        | ((bytes[24] as u64) << 4)
         | (((bytes[25] >> 4) & 0xf) as u64);
     values[6] = ((((bytes[25]) & 0xf) as u64) << 30)
-        | (((bytes[26]) as u64) << 22)
-        | (((bytes[27]) as u64) << 14)
-        | (((bytes[28]) as u64) << 6)
+        | ((bytes[26] as u64) << 22)
+        | ((bytes[27] as u64) << 14)
+        | ((bytes[28] as u64) << 6)
         | (((bytes[29] >> 2) & 0x3f) as u64);
     values[7] = ((((bytes[29]) & 0x3) as u64) << 32)
-        | (((bytes[30]) as u64) << 24)
-        | (((bytes[31]) as u64) << 16)
-        | (((bytes[32]) as u64) << 8)
-        | ((bytes[33]) as u64);
+        | ((bytes[30] as u64) << 24)
+        | ((bytes[31] as u64) << 16)
+        | ((bytes[32] as u64) << 8)
+        | (bytes[33] as u64);
 }
 
 #[inline]
 fn unpack_bits_35(values: &mut [u64], bytes: &[u8]) {
-    values[0] = (((bytes[0]) as u64) << 27)
-        | (((bytes[1]) as u64) << 19)
-        | (((bytes[2]) as u64) << 11)
-        | (((bytes[3]) as u64) << 3)
+    values[0] = ((bytes[0] as u64) << 27)
+        | ((bytes[1] as u64) << 19)
+        | ((bytes[2] as u64) << 11)
+        | ((bytes[3] as u64) << 3)
         | (((bytes[4] >> 5) & 0x7) as u64);
     values[1] = ((((bytes[4]) & 0x1f) as u64) << 30)
-        | (((bytes[5]) as u64) << 22)
-        | (((bytes[6]) as u64) << 14)
-        | (((bytes[7]) as u64) << 6)
+        | ((bytes[5] as u64) << 22)
+        | ((bytes[6] as u64) << 14)
+        | ((bytes[7] as u64) << 6)
         | (((bytes[8] >> 2) & 0x3f) as u64);
     values[2] = ((((bytes[8]) & 0x3) as u64) << 33)
-        | (((bytes[9]) as u64) << 25)
-        | (((bytes[10]) as u64) << 17)
-        | (((bytes[11]) as u64) << 9)
-        | (((bytes[12]) as u64) << 1)
+        | ((bytes[9] as u64) << 25)
+        | ((bytes[10] as u64) << 17)
+        | ((bytes[11] as u64) << 9)
+        | ((bytes[12] as u64) << 1)
         | (((bytes[13] >> 7) & 0x1) as u64);
     values[3] = ((((bytes[13]) & 0x7f) as u64) << 28)
-        | (((bytes[14]) as u64) << 20)
-        | (((bytes[15]) as u64) << 12)
-        | (((bytes[16]) as u64) << 4)
+        | ((bytes[14] as u64) << 20)
+        | ((bytes[15] as u64) << 12)
+        | ((bytes[16] as u64) << 4)
         | (((bytes[17] >> 4) & 0xf) as u64);
     values[4] = ((((bytes[17]) & 0xf) as u64) << 31)
-        | (((bytes[18]) as u64) << 23)
-        | (((bytes[19]) as u64) << 15)
-        | (((bytes[20]) as u64) << 7)
+        | ((bytes[18] as u64) << 23)
+        | ((bytes[19] as u64) << 15)
+        | ((bytes[20] as u64) << 7)
         | (((bytes[21] >> 1) & 0x7f) as u64);
     values[5] = ((((bytes[21]) & 0x1) as u64) << 34)
-        | (((bytes[22]) as u64) << 26)
-        | (((bytes[23]) as u64) << 18)
-        | (((bytes[24]) as u64) << 10)
-        | (((bytes[25]) as u64) << 2)
+        | ((bytes[22] as u64) << 26)
+        | ((bytes[23] as u64) << 18)
+        | ((bytes[24] as u64) << 10)
+        | ((bytes[25] as u64) << 2)
         | (((bytes[26] >> 6) & 0x3) as u64);
     values[6] = ((((bytes[26]) & 0x3f) as u64) << 29)
-        | (((bytes[27]) as u64) << 21)
-        | (((bytes[28]) as u64) << 13)
-        | (((bytes[29]) as u64) << 5)
+        | ((bytes[27] as u64) << 21)
+        | ((bytes[28] as u64) << 13)
+        | ((bytes[29] as u64) << 5)
         | (((bytes[30] >> 3) & 0x1f) as u64);
     values[7] = ((((bytes[30]) & 0x7) as u64) << 32)
-        | (((bytes[31]) as u64) << 24)
-        | (((bytes[32]) as u64) << 16)
-        | (((bytes[33]) as u64) << 8)
-        | ((bytes[34]) as u64);
+        | ((bytes[31] as u64) << 24)
+        | ((bytes[32] as u64) << 16)
+        | ((bytes[33] as u64) << 8)
+        | (bytes[34] as u64);
 }
 
 #[inline]
 fn unpack_bits_36(values: &mut [u64], bytes: &[u8]) {
-    values[0] = (((bytes[0]) as u64) << 28)
-        | (((bytes[1]) as u64) << 20)
-        | (((bytes[2]) as u64) << 12)
-        | (((bytes[3]) as u64) << 4)
+    values[0] = ((bytes[0] as u64) << 28)
+        | ((bytes[1] as u64) << 20)
+        | ((bytes[2] as u64) << 12)
+        | ((bytes[3] as u64) << 4)
         | (((bytes[4] >> 4) & 0xf) as u64);
     values[1] = ((((bytes[4]) & 0xf) as u64) << 32)
-        | (((bytes[5]) as u64) << 24)
-        | (((bytes[6]) as u64) << 16)
-        | (((bytes[7]) as u64) << 8)
-        | ((bytes[8]) as u64);
-    values[2] = (((bytes[9]) as u64) << 28)
-        | (((bytes[10]) as u64) << 20)
-        | (((bytes[11]) as u64) << 12)
-        | (((bytes[12]) as u64) << 4)
+        | ((bytes[5] as u64) << 24)
+        | ((bytes[6] as u64) << 16)
+        | ((bytes[7] as u64) << 8)
+        | (bytes[8] as u64);
+    values[2] = ((bytes[9] as u64) << 28)
+        | ((bytes[10] as u64) << 20)
+        | ((bytes[11] as u64) << 12)
+        | ((bytes[12] as u64) << 4)
         | (((bytes[13] >> 4) & 0xf) as u64);
     values[3] = ((((bytes[13]) & 0xf) as u64) << 32)
-        | (((bytes[14]) as u64) << 24)
-        | (((bytes[15]) as u64) << 16)
-        | (((bytes[16]) as u64) << 8)
-        | ((bytes[17]) as u64);
-    values[4] = (((bytes[18]) as u64) << 28)
-        | (((bytes[19]) as u64) << 20)
-        | (((bytes[20]) as u64) << 12)
-        | (((bytes[21]) as u64) << 4)
+        | ((bytes[14] as u64) << 24)
+        | ((bytes[15] as u64) << 16)
+        | ((bytes[16] as u64) << 8)
+        | (bytes[17] as u64);
+    values[4] = ((bytes[18] as u64) << 28)
+        | ((bytes[19] as u64) << 20)
+        | ((bytes[20] as u64) << 12)
+        | ((bytes[21] as u64) << 4)
         | (((bytes[22] >> 4) & 0xf) as u64);
     values[5] = ((((bytes[22]) & 0xf) as u64) << 32)
-        | (((bytes[23]) as u64) << 24)
-        | (((bytes[24]) as u64) << 16)
-        | (((bytes[25]) as u64) << 8)
-        | ((bytes[26]) as u64);
-    values[6] = (((bytes[27]) as u64) << 28)
-        | (((bytes[28]) as u64) << 20)
-        | (((bytes[29]) as u64) << 12)
-        | (((bytes[30]) as u64) << 4)
+        | ((bytes[23] as u64) << 24)
+        | ((bytes[24] as u64) << 16)
+        | ((bytes[25] as u64) << 8)
+        | (bytes[26] as u64);
+    values[6] = ((bytes[27] as u64) << 28)
+        | ((bytes[28] as u64) << 20)
+        | ((bytes[29] as u64) << 12)
+        | ((bytes[30] as u64) << 4)
         | (((bytes[31] >> 4) & 0xf) as u64);
     values[7] = ((((bytes[31]) & 0xf) as u64) << 32)
-        | (((bytes[32]) as u64) << 24)
-        | (((bytes[33]) as u64) << 16)
-        | (((bytes[34]) as u64) << 8)
-        | ((bytes[35]) as u64);
+        | ((bytes[32] as u64) << 24)
+        | ((bytes[33] as u64) << 16)
+        | ((bytes[34] as u64) << 8)
+        | (bytes[35] as u64);
 }
 
 #[inline]
 fn unpack_bits_37(values: &mut [u64], bytes: &[u8]) {
-    values[0] = (((bytes[0]) as u64) << 29)
-        | (((bytes[1]) as u64) << 21)
-        | (((bytes[2]) as u64) << 13)
-        | (((bytes[3]) as u64) << 5)
+    values[0] = ((bytes[0] as u64) << 29)
+        | ((bytes[1] as u64) << 21)
+        | ((bytes[2] as u64) << 13)
+        | ((bytes[3] as u64) << 5)
         | (((bytes[4] >> 3) & 0x1f) as u64);
     values[1] = ((((bytes[4]) & 0x7) as u64) << 34)
-        | (((bytes[5]) as u64) << 26)
-        | (((bytes[6]) as u64) << 18)
-        | (((bytes[7]) as u64) << 10)
-        | (((bytes[8]) as u64) << 2)
+        | ((bytes[5] as u64) << 26)
+        | ((bytes[6] as u64) << 18)
+        | ((bytes[7] as u64) << 10)
+        | ((bytes[8] as u64) << 2)
         | (((bytes[9] >> 6) & 0x3) as u64);
     values[2] = ((((bytes[9]) & 0x3f) as u64) << 31)
-        | (((bytes[10]) as u64) << 23)
-        | (((bytes[11]) as u64) << 15)
-        | (((bytes[12]) as u64) << 7)
+        | ((bytes[10] as u64) << 23)
+        | ((bytes[11] as u64) << 15)
+        | ((bytes[12] as u64) << 7)
         | (((bytes[13] >> 1) & 0x7f) as u64);
     values[3] = ((((bytes[13]) & 0x1) as u64) << 36)
-        | (((bytes[14]) as u64) << 28)
-        | (((bytes[15]) as u64) << 20)
-        | (((bytes[16]) as u64) << 12)
-        | (((bytes[17]) as u64) << 4)
+        | ((bytes[14] as u64) << 28)
+        | ((bytes[15] as u64) << 20)
+        | ((bytes[16] as u64) << 12)
+        | ((bytes[17] as u64) << 4)
         | (((bytes[18] >> 4) & 0xf) as u64);
     values[4] = ((((bytes[18]) & 0xf) as u64) << 33)
-        | (((bytes[19]) as u64) << 25)
-        | (((bytes[20]) as u64) << 17)
-        | (((bytes[21]) as u64) << 9)
-        | (((bytes[22]) as u64) << 1)
+        | ((bytes[19] as u64) << 25)
+        | ((bytes[20] as u64) << 17)
+        | ((bytes[21] as u64) << 9)
+        | ((bytes[22] as u64) << 1)
         | (((bytes[23] >> 7) & 0x1) as u64);
     values[5] = ((((bytes[23]) & 0x7f) as u64) << 30)
-        | (((bytes[24]) as u64) << 22)
-        | (((bytes[25]) as u64) << 14)
-        | (((bytes[26]) as u64) << 6)
+        | ((bytes[24] as u64) << 22)
+        | ((bytes[25] as u64) << 14)
+        | ((bytes[26] as u64) << 6)
         | (((bytes[27] >> 2) & 0x3f) as u64);
     values[6] = ((((bytes[27]) & 0x3) as u64) << 35)
-        | (((bytes[28]) as u64) << 27)
-        | (((bytes[29]) as u64) << 19)
-        | (((bytes[30]) as u64) << 11)
-        | (((bytes[31]) as u64) << 3)
+        | ((bytes[28] as u64) << 27)
+        | ((bytes[29] as u64) << 19)
+        | ((bytes[30] as u64) << 11)
+        | ((bytes[31] as u64) << 3)
         | (((bytes[32] >> 5) & 0x7) as u64);
     values[7] = ((((bytes[32]) & 0x1f) as u64) << 32)
-        | (((bytes[33]) as u64) << 24)
-        | (((bytes[34]) as u64) << 16)
-        | (((bytes[35]) as u64) << 8)
-        | ((bytes[36]) as u64);
+        | ((bytes[33] as u64) << 24)
+        | ((bytes[34] as u64) << 16)
+        | ((bytes[35] as u64) << 8)
+        | (bytes[36] as u64);
 }
 
 #[inline]
 fn unpack_bits_38(values: &mut [u64], bytes: &[u8]) {
-    values[0] = (((bytes[0]) as u64) << 30)
-        | (((bytes[1]) as u64) << 22)
-        | (((bytes[2]) as u64) << 14)
-        | (((bytes[3]) as u64) << 6)
+    values[0] = ((bytes[0] as u64) << 30)
+        | ((bytes[1] as u64) << 22)
+        | ((bytes[2] as u64) << 14)
+        | ((bytes[3] as u64) << 6)
         | (((bytes[4] >> 2) & 0x3f) as u64);
     values[1] = ((((bytes[4]) & 0x3) as u64) << 36)
-        | (((bytes[5]) as u64) << 28)
-        | (((bytes[6]) as u64) << 20)
-        | (((bytes[7]) as u64) << 12)
-        | (((bytes[8]) as u64) << 4)
+        | ((bytes[5] as u64) << 28)
+        | ((bytes[6] as u64) << 20)
+        | ((bytes[7] as u64) << 12)
+        | ((bytes[8] as u64) << 4)
         | (((bytes[9] >> 4) & 0xf) as u64);
     values[2] = ((((bytes[9]) & 0xf) as u64) << 34)
-        | (((bytes[10]) as u64) << 26)
-        | (((bytes[11]) as u64) << 18)
-        | (((bytes[12]) as u64) << 10)
-        | (((bytes[13]) as u64) << 2)
+        | ((bytes[10] as u64) << 26)
+        | ((bytes[11] as u64) << 18)
+        | ((bytes[12] as u64) << 10)
+        | ((bytes[13] as u64) << 2)
         | (((bytes[14] >> 6) & 0x3) as u64);
     values[3] = ((((bytes[14]) & 0x3f) as u64) << 32)
-        | (((bytes[15]) as u64) << 24)
-        | (((bytes[16]) as u64) << 16)
-        | (((bytes[17]) as u64) << 8)
-        | ((bytes[18]) as u64);
-    values[4] = (((bytes[19]) as u64) << 30)
-        | (((bytes[20]) as u64) << 22)
-        | (((bytes[21]) as u64) << 14)
-        | (((bytes[22]) as u64) << 6)
+        | ((bytes[15] as u64) << 24)
+        | ((bytes[16] as u64) << 16)
+        | ((bytes[17] as u64) << 8)
+        | (bytes[18] as u64);
+    values[4] = ((bytes[19] as u64) << 30)
+        | ((bytes[20] as u64) << 22)
+        | ((bytes[21] as u64) << 14)
+        | ((bytes[22] as u64) << 6)
         | (((bytes[23] >> 2) & 0x3f) as u64);
     values[5] = ((((bytes[23]) & 0x3) as u64) << 36)
-        | (((bytes[24]) as u64) << 28)
-        | (((bytes[25]) as u64) << 20)
-        | (((bytes[26]) as u64) << 12)
-        | (((bytes[27]) as u64) << 4)
+        | ((bytes[24] as u64) << 28)
+        | ((bytes[25] as u64) << 20)
+        | ((bytes[26] as u64) << 12)
+        | ((bytes[27] as u64) << 4)
         | (((bytes[28] >> 4) & 0xf) as u64);
     values[6] = ((((bytes[28]) & 0xf) as u64) << 34)
-        | (((bytes[29]) as u64) << 26)
-        | (((bytes[30]) as u64) << 18)
-        | (((bytes[31]) as u64) << 10)
-        | (((bytes[32]) as u64) << 2)
+        | ((bytes[29] as u64) << 26)
+        | ((bytes[30] as u64) << 18)
+        | ((bytes[31] as u64) << 10)
+        | ((bytes[32] as u64) << 2)
         | (((bytes[33] >> 6) & 0x3) as u64);
     values[7] = ((((bytes[33]) & 0x3f) as u64) << 32)
-        | (((bytes[34]) as u64) << 24)
-        | (((bytes[35]) as u64) << 16)
-        | (((bytes[36]) as u64) << 8)
-        | ((bytes[37]) as u64);
+        | ((bytes[34] as u64) << 24)
+        | ((bytes[35] as u64) << 16)
+        | ((bytes[36] as u64) << 8)
+        | (bytes[37] as u64);
 }
 
 #[inline]
 fn unpack_bits_39(values: &mut [u64], bytes: &[u8]) {
-    values[0] = (((bytes[0]) as u64) << 31)
-        | (((bytes[1]) as u64) << 23)
-        | (((bytes[2]) as u64) << 15)
-        | (((bytes[3]) as u64) << 7)
+    values[0] = ((bytes[0] as u64) << 31)
+        | ((bytes[1] as u64) << 23)
+        | ((bytes[2] as u64) << 15)
+        | ((bytes[3] as u64) << 7)
         | (((bytes[4] >> 1) & 0x7f) as u64);
     values[1] = ((((bytes[4]) & 0x1) as u64) << 38)
-        | (((bytes[5]) as u64) << 30)
-        | (((bytes[6]) as u64) << 22)
-        | (((bytes[7]) as u64) << 14)
-        | (((bytes[8]) as u64) << 6)
+        | ((bytes[5] as u64) << 30)
+        | ((bytes[6] as u64) << 22)
+        | ((bytes[7] as u64) << 14)
+        | ((bytes[8] as u64) << 6)
         | (((bytes[9] >> 2) & 0x3f) as u64);
     values[2] = ((((bytes[9]) & 0x3) as u64) << 37)
-        | (((bytes[10]) as u64) << 29)
-        | (((bytes[11]) as u64) << 21)
-        | (((bytes[12]) as u64) << 13)
-        | (((bytes[13]) as u64) << 5)
+        | ((bytes[10] as u64) << 29)
+        | ((bytes[11] as u64) << 21)
+        | ((bytes[12] as u64) << 13)
+        | ((bytes[13] as u64) << 5)
         | (((bytes[14] >> 3) & 0x1f) as u64);
     values[3] = ((((bytes[14]) & 0x7) as u64) << 36)
-        | (((bytes[15]) as u64) << 28)
-        | (((bytes[16]) as u64) << 20)
-        | (((bytes[17]) as u64) << 12)
-        | (((bytes[18]) as u64) << 4)
+        | ((bytes[15] as u64) << 28)
+        | ((bytes[16] as u64) << 20)
+        | ((bytes[17] as u64) << 12)
+        | ((bytes[18] as u64) << 4)
         | (((bytes[19] >> 4) & 0xf) as u64);
     values[4] = ((((bytes[19]) & 0xf) as u64) << 35)
-        | (((bytes[20]) as u64) << 27)
-        | (((bytes[21]) as u64) << 19)
-        | (((bytes[22]) as u64) << 11)
-        | (((bytes[23]) as u64) << 3)
+        | ((bytes[20] as u64) << 27)
+        | ((bytes[21] as u64) << 19)
+        | ((bytes[22] as u64) << 11)
+        | ((bytes[23] as u64) << 3)
         | (((bytes[24] >> 5) & 0x7) as u64);
     values[5] = ((((bytes[24]) & 0x1f) as u64) << 34)
-        | (((bytes[25]) as u64) << 26)
-        | (((bytes[26]) as u64) << 18)
-        | (((bytes[27]) as u64) << 10)
-        | (((bytes[28]) as u64) << 2)
+        | ((bytes[25] as u64) << 26)
+        | ((bytes[26] as u64) << 18)
+        | ((bytes[27] as u64) << 10)
+        | ((bytes[28] as u64) << 2)
         | (((bytes[29] >> 6) & 0x3) as u64);
     values[6] = ((((bytes[29]) & 0x3f) as u64) << 33)
-        | (((bytes[30]) as u64) << 25)
-        | (((bytes[31]) as u64) << 17)
-        | (((bytes[32]) as u64) << 9)
-        | (((bytes[33]) as u64) << 1)
+        | ((bytes[30] as u64) << 25)
+        | ((bytes[31] as u64) << 17)
+        | ((bytes[32] as u64) << 9)
+        | ((bytes[33] as u64) << 1)
         | (((bytes[34] >> 7) & 0x1) as u64);
     values[7] = ((((bytes[34]) & 0x7f) as u64) << 32)
-        | (((bytes[35]) as u64) << 24)
-        | (((bytes[36]) as u64) << 16)
-        | (((bytes[37]) as u64) << 8)
-        | ((bytes[38]) as u64);
+        | ((bytes[35] as u64) << 24)
+        | ((bytes[36] as u64) << 16)
+        | ((bytes[37] as u64) << 8)
+        | (bytes[38] as u64);
 }
 
 #[inline]
 fn unpack_bits_40(values: &mut [u64], bytes: &[u8]) {
-    values[0] = (((bytes[0]) as u64) << 32)
-        | (((bytes[1]) as u64) << 24)
-        | (((bytes[2]) as u64) << 16)
-        | (((bytes[3]) as u64) << 8)
-        | ((bytes[4]) as u64);
-    values[1] = (((bytes[5]) as u64) << 32)
-        | (((bytes[6]) as u64) << 24)
-        | (((bytes[7]) as u64) << 16)
-        | (((bytes[8]) as u64) << 8)
-        | ((bytes[9]) as u64);
-    values[2] = (((bytes[10]) as u64) << 32)
-        | (((bytes[11]) as u64) << 24)
-        | (((bytes[12]) as u64) << 16)
-        | (((bytes[13]) as u64) << 8)
-        | ((bytes[14]) as u64);
-    values[3] = (((bytes[15]) as u64) << 32)
-        | (((bytes[16]) as u64) << 24)
-        | (((bytes[17]) as u64) << 16)
-        | (((bytes[18]) as u64) << 8)
-        | ((bytes[19]) as u64);
-    values[4] = (((bytes[20]) as u64) << 32)
-        | (((bytes[21]) as u64) << 24)
-        | (((bytes[22]) as u64) << 16)
-        | (((bytes[23]) as u64) << 8)
-        | ((bytes[24]) as u64);
-    values[5] = (((bytes[25]) as u64) << 32)
-        | (((bytes[26]) as u64) << 24)
-        | (((bytes[27]) as u64) << 16)
-        | (((bytes[28]) as u64) << 8)
-        | ((bytes[29]) as u64);
-    values[6] = (((bytes[30]) as u64) << 32)
-        | (((bytes[31]) as u64) << 24)
-        | (((bytes[32]) as u64) << 16)
-        | (((bytes[33]) as u64) << 8)
-        | ((bytes[34]) as u64);
-    values[7] = (((bytes[35]) as u64) << 32)
-        | (((bytes[36]) as u64) << 24)
-        | (((bytes[37]) as u64) << 16)
-        | (((bytes[38]) as u64) << 8)
-        | ((bytes[39]) as u64);
+    values[0] = ((bytes[0] as u64) << 32)
+        | ((bytes[1] as u64) << 24)
+        | ((bytes[2] as u64) << 16)
+        | ((bytes[3] as u64) << 8)
+        | (bytes[4] as u64);
+    values[1] = ((bytes[5] as u64) << 32)
+        | ((bytes[6] as u64) << 24)
+        | ((bytes[7] as u64) << 16)
+        | ((bytes[8] as u64) << 8)
+        | (bytes[9] as u64);
+    values[2] = ((bytes[10] as u64) << 32)
+        | ((bytes[11] as u64) << 24)
+        | ((bytes[12] as u64) << 16)
+        | ((bytes[13] as u64) << 8)
+        | (bytes[14] as u64);
+    values[3] = ((bytes[15] as u64) << 32)
+        | ((bytes[16] as u64) << 24)
+        | ((bytes[17] as u64) << 16)
+        | ((bytes[18] as u64) << 8)
+        | (bytes[19] as u64);
+    values[4] = ((bytes[20] as u64) << 32)
+        | ((bytes[21] as u64) << 24)
+        | ((bytes[22] as u64) << 16)
+        | ((bytes[23] as u64) << 8)
+        | (bytes[24] as u64);
+    values[5] = ((bytes[25] as u64) << 32)
+        | ((bytes[26] as u64) << 24)
+        | ((bytes[27] as u64) << 16)
+        | ((bytes[28] as u64) << 8)
+        | (bytes[29] as u64);
+    values[6] = ((bytes[30] as u64) << 32)
+        | ((bytes[31] as u64) << 24)
+        | ((bytes[32] as u64) << 16)
+        | ((bytes[33] as u64) << 8)
+        | (bytes[34] as u64);
+    values[7] = ((bytes[35] as u64) << 32)
+        | ((bytes[36] as u64) << 24)
+        | ((bytes[37] as u64) << 16)
+        | ((bytes[38] as u64) << 8)
+        | (bytes[39] as u64);
 }
 
 #[inline]
 fn unpack_bits_41(values: &mut [u64], bytes: &[u8]) {
-    values[0] = (((bytes[0]) as u64) << 33)
-        | (((bytes[1]) as u64) << 25)
-        | (((bytes[2]) as u64) << 17)
-        | (((bytes[3]) as u64) << 9)
-        | (((bytes[4]) as u64) << 1)
+    values[0] = ((bytes[0] as u64) << 33)
+        | ((bytes[1] as u64) << 25)
+        | ((bytes[2] as u64) << 17)
+        | ((bytes[3] as u64) << 9)
+        | ((bytes[4] as u64) << 1)
         | (((bytes[5] >> 7) & 0x1) as u64);
     values[1] = ((((bytes[5]) & 0x7f) as u64) << 34)
-        | (((bytes[6]) as u64) << 26)
-        | (((bytes[7]) as u64) << 18)
-        | (((bytes[8]) as u64) << 10)
-        | (((bytes[9]) as u64) << 2)
+        | ((bytes[6] as u64) << 26)
+        | ((bytes[7] as u64) << 18)
+        | ((bytes[8] as u64) << 10)
+        | ((bytes[9] as u64) << 2)
         | (((bytes[10] >> 6) & 0x3) as u64);
     values[2] = ((((bytes[10]) & 0x3f) as u64) << 35)
-        | (((bytes[11]) as u64) << 27)
-        | (((bytes[12]) as u64) << 19)
-        | (((bytes[13]) as u64) << 11)
-        | (((bytes[14]) as u64) << 3)
+        | ((bytes[11] as u64) << 27)
+        | ((bytes[12] as u64) << 19)
+        | ((bytes[13] as u64) << 11)
+        | ((bytes[14] as u64) << 3)
         | (((bytes[15] >> 5) & 0x7) as u64);
     values[3] = ((((bytes[15]) & 0x1f) as u64) << 36)
-        | (((bytes[16]) as u64) << 28)
-        | (((bytes[17]) as u64) << 20)
-        | (((bytes[18]) as u64) << 12)
-        | (((bytes[19]) as u64) << 4)
+        | ((bytes[16] as u64) << 28)
+        | ((bytes[17] as u64) << 20)
+        | ((bytes[18] as u64) << 12)
+        | ((bytes[19] as u64) << 4)
         | (((bytes[20] >> 4) & 0xf) as u64);
     values[4] = ((((bytes[20]) & 0xf) as u64) << 37)
-        | (((bytes[21]) as u64) << 29)
-        | (((bytes[22]) as u64) << 21)
-        | (((bytes[23]) as u64) << 13)
-        | (((bytes[24]) as u64) << 5)
+        | ((bytes[21] as u64) << 29)
+        | ((bytes[22] as u64) << 21)
+        | ((bytes[23] as u64) << 13)
+        | ((bytes[24] as u64) << 5)
         | (((bytes[25] >> 3) & 0x1f) as u64);
     values[5] = ((((bytes[25]) & 0x7) as u64) << 38)
-        | (((bytes[26]) as u64) << 30)
-        | (((bytes[27]) as u64) << 22)
-        | (((bytes[28]) as u64) << 14)
-        | (((bytes[29]) as u64) << 6)
+        | ((bytes[26] as u64) << 30)
+        | ((bytes[27] as u64) << 22)
+        | ((bytes[28] as u64) << 14)
+        | ((bytes[29] as u64) << 6)
         | (((bytes[30] >> 2) & 0x3f) as u64);
     values[6] = ((((bytes[30]) & 0x3) as u64) << 39)
-        | (((bytes[31]) as u64) << 31)
-        | (((bytes[32]) as u64) << 23)
-        | (((bytes[33]) as u64) << 15)
-        | (((bytes[34]) as u64) << 7)
+        | ((bytes[31] as u64) << 31)
+        | ((bytes[32] as u64) << 23)
+        | ((bytes[33] as u64) << 15)
+        | ((bytes[34] as u64) << 7)
         | (((bytes[35] >> 1) & 0x7f) as u64);
     values[7] = ((((bytes[35]) & 0x1) as u64) << 40)
-        | (((bytes[36]) as u64) << 32)
-        | (((bytes[37]) as u64) << 24)
-        | (((bytes[38]) as u64) << 16)
-        | (((bytes[39]) as u64) << 8)
-        | ((bytes[40]) as u64);
+        | ((bytes[36] as u64) << 32)
+        | ((bytes[37] as u64) << 24)
+        | ((bytes[38] as u64) << 16)
+        | ((bytes[39] as u64) << 8)
+        | (bytes[40] as u64);
 }
 
 #[inline]
 fn unpack_bits_42(values: &mut [u64], bytes: &[u8]) {
-    values[0] = (((bytes[0]) as u64) << 34)
-        | (((bytes[1]) as u64) << 26)
-        | (((bytes[2]) as u64) << 18)
-        | (((bytes[3]) as u64) << 10)
-        | (((bytes[4]) as u64) << 2)
+    values[0] = ((bytes[0] as u64) << 34)
+        | ((bytes[1] as u64) << 26)
+        | ((bytes[2] as u64) << 18)
+        | ((bytes[3] as u64) << 10)
+        | ((bytes[4] as u64) << 2)
         | (((bytes[5] >> 6) & 0x3) as u64);
     values[1] = ((((bytes[5]) & 0x3f) as u64) << 36)
-        | (((bytes[6]) as u64) << 28)
-        | (((bytes[7]) as u64) << 20)
-        | (((bytes[8]) as u64) << 12)
-        | (((bytes[9]) as u64) << 4)
+        | ((bytes[6] as u64) << 28)
+        | ((bytes[7] as u64) << 20)
+        | ((bytes[8] as u64) << 12)
+        | ((bytes[9] as u64) << 4)
         | (((bytes[10] >> 4) & 0xf) as u64);
     values[2] = ((((bytes[10]) & 0xf) as u64) << 38)
-        | (((bytes[11]) as u64) << 30)
-        | (((bytes[12]) as u64) << 22)
-        | (((bytes[13]) as u64) << 14)
-        | (((bytes[14]) as u64) << 6)
+        | ((bytes[11] as u64) << 30)
+        | ((bytes[12] as u64) << 22)
+        | ((bytes[13] as u64) << 14)
+        | ((bytes[14] as u64) << 6)
         | (((bytes[15] >> 2) & 0x3f) as u64);
     values[3] = ((((bytes[15]) & 0x3) as u64) << 40)
-        | (((bytes[16]) as u64) << 32)
-        | (((bytes[17]) as u64) << 24)
-        | (((bytes[18]) as u64) << 16)
-        | (((bytes[19]) as u64) << 8)
-        | ((bytes[20]) as u64);
-    values[4] = (((bytes[21]) as u64) << 34)
-        | (((bytes[22]) as u64) << 26)
-        | (((bytes[23]) as u64) << 18)
-        | (((bytes[24]) as u64) << 10)
-        | (((bytes[25]) as u64) << 2)
+        | ((bytes[16] as u64) << 32)
+        | ((bytes[17] as u64) << 24)
+        | ((bytes[18] as u64) << 16)
+        | ((bytes[19] as u64) << 8)
+        | (bytes[20] as u64);
+    values[4] = ((bytes[21] as u64) << 34)
+        | ((bytes[22] as u64) << 26)
+        | ((bytes[23] as u64) << 18)
+        | ((bytes[24] as u64) << 10)
+        | ((bytes[25] as u64) << 2)
         | (((bytes[26] >> 6) & 0x3) as u64);
     values[5] = ((((bytes[26]) & 0x3f) as u64) << 36)
-        | (((bytes[27]) as u64) << 28)
-        | (((bytes[28]) as u64) << 20)
-        | (((bytes[29]) as u64) << 12)
-        | (((bytes[30]) as u64) << 4)
+        | ((bytes[27] as u64) << 28)
+        | ((bytes[28] as u64) << 20)
+        | ((bytes[29] as u64) << 12)
+        | ((bytes[30] as u64) << 4)
         | (((bytes[31] >> 4) & 0xf) as u64);
     values[6] = ((((bytes[31]) & 0xf) as u64) << 38)
-        | (((bytes[32]) as u64) << 30)
-        | (((bytes[33]) as u64) << 22)
-        | (((bytes[34]) as u64) << 14)
-        | (((bytes[35]) as u64) << 6)
+        | ((bytes[32] as u64) << 30)
+        | ((bytes[33] as u64) << 22)
+        | ((bytes[34] as u64) << 14)
+        | ((bytes[35] as u64) << 6)
         | (((bytes[36] >> 2) & 0x3f) as u64);
     values[7] = ((((bytes[36]) & 0x3) as u64) << 40)
-        | (((bytes[37]) as u64) << 32)
-        | (((bytes[38]) as u64) << 24)
-        | (((bytes[39]) as u64) << 16)
-        | (((bytes[40]) as u64) << 8)
-        | ((bytes[41]) as u64);
+        | ((bytes[37] as u64) << 32)
+        | ((bytes[38] as u64) << 24)
+        | ((bytes[39] as u64) << 16)
+        | ((bytes[40] as u64) << 8)
+        | (bytes[41] as u64);
 }
 
 #[inline]
 fn unpack_bits_43(values: &mut [u64], bytes: &[u8]) {
-    values[0] = (((bytes[0]) as u64) << 35)
-        | (((bytes[1]) as u64) << 27)
-        | (((bytes[2]) as u64) << 19)
-        | (((bytes[3]) as u64) << 11)
-        | (((bytes[4]) as u64) << 3)
+    values[0] = ((bytes[0] as u64) << 35)
+        | ((bytes[1] as u64) << 27)
+        | ((bytes[2] as u64) << 19)
+        | ((bytes[3] as u64) << 11)
+        | ((bytes[4] as u64) << 3)
         | (((bytes[5] >> 5) & 0x7) as u64);
     values[1] = ((((bytes[5]) & 0x1f) as u64) << 38)
-        | (((bytes[6]) as u64) << 30)
-        | (((bytes[7]) as u64) << 22)
-        | (((bytes[8]) as u64) << 14)
-        | (((bytes[9]) as u64) << 6)
+        | ((bytes[6] as u64) << 30)
+        | ((bytes[7] as u64) << 22)
+        | ((bytes[8] as u64) << 14)
+        | ((bytes[9] as u64) << 6)
         | (((bytes[10] >> 2) & 0x3f) as u64);
     values[2] = ((((bytes[10]) & 0x3) as u64) << 41)
-        | (((bytes[11]) as u64) << 33)
-        | (((bytes[12]) as u64) << 25)
-        | (((bytes[13]) as u64) << 17)
-        | (((bytes[14]) as u64) << 9)
-        | (((bytes[15]) as u64) << 1)
+        | ((bytes[11] as u64) << 33)
+        | ((bytes[12] as u64) << 25)
+        | ((bytes[13] as u64) << 17)
+        | ((bytes[14] as u64) << 9)
+        | ((bytes[15] as u64) << 1)
         | (((bytes[16] >> 7) & 0x1) as u64);
     values[3] = ((((bytes[16]) & 0x7f) as u64) << 36)
-        | (((bytes[17]) as u64) << 28)
-        | (((bytes[18]) as u64) << 20)
-        | (((bytes[19]) as u64) << 12)
-        | (((bytes[20]) as u64) << 4)
+        | ((bytes[17] as u64) << 28)
+        | ((bytes[18] as u64) << 20)
+        | ((bytes[19] as u64) << 12)
+        | ((bytes[20] as u64) << 4)
         | (((bytes[21] >> 4) & 0xf) as u64);
     values[4] = ((((bytes[21]) & 0xf) as u64) << 39)
-        | (((bytes[22]) as u64) << 31)
-        | (((bytes[23]) as u64) << 23)
-        | (((bytes[24]) as u64) << 15)
-        | (((bytes[25]) as u64) << 7)
+        | ((bytes[22] as u64) << 31)
+        | ((bytes[23] as u64) << 23)
+        | ((bytes[24] as u64) << 15)
+        | ((bytes[25] as u64) << 7)
         | (((bytes[26] >> 1) & 0x7f) as u64);
     values[5] = ((((bytes[26]) & 0x1) as u64) << 42)
-        | (((bytes[27]) as u64) << 34)
-        | (((bytes[28]) as u64) << 26)
-        | (((bytes[29]) as u64) << 18)
-        | (((bytes[30]) as u64) << 10)
-        | (((bytes[31]) as u64) << 2)
+        | ((bytes[27] as u64) << 34)
+        | ((bytes[28] as u64) << 26)
+        | ((bytes[29] as u64) << 18)
+        | ((bytes[30] as u64) << 10)
+        | ((bytes[31] as u64) << 2)
         | (((bytes[32] >> 6) & 0x3) as u64);
     values[6] = ((((bytes[32]) & 0x3f) as u64) << 37)
-        | (((bytes[33]) as u64) << 29)
-        | (((bytes[34]) as u64) << 21)
-        | (((bytes[35]) as u64) << 13)
-        | (((bytes[36]) as u64) << 5)
+        | ((bytes[33] as u64) << 29)
+        | ((bytes[34] as u64) << 21)
+        | ((bytes[35] as u64) << 13)
+        | ((bytes[36] as u64) << 5)
         | (((bytes[37] >> 3) & 0x1f) as u64);
     values[7] = ((((bytes[37]) & 0x7) as u64) << 40)
-        | (((bytes[38]) as u64) << 32)
-        | (((bytes[39]) as u64) << 24)
-        | (((bytes[40]) as u64) << 16)
-        | (((bytes[41]) as u64) << 8)
-        | ((bytes[42]) as u64);
+        | ((bytes[38] as u64) << 32)
+        | ((bytes[39] as u64) << 24)
+        | ((bytes[40] as u64) << 16)
+        | ((bytes[41] as u64) << 8)
+        | (bytes[42] as u64);
 }
 
 #[inline]
 fn unpack_bits_44(values: &mut [u64], bytes: &[u8]) {
-    values[0] = (((bytes[0]) as u64) << 36)
-        | (((bytes[1]) as u64) << 28)
-        | (((bytes[2]) as u64) << 20)
-        | (((bytes[3]) as u64) << 12)
-        | (((bytes[4]) as u64) << 4)
+    values[0] = ((bytes[0] as u64) << 36)
+        | ((bytes[1] as u64) << 28)
+        | ((bytes[2] as u64) << 20)
+        | ((bytes[3] as u64) << 12)
+        | ((bytes[4] as u64) << 4)
         | (((bytes[5] >> 4) & 0xf) as u64);
     values[1] = ((((bytes[5]) & 0xf) as u64) << 40)
-        | (((bytes[6]) as u64) << 32)
-        | (((bytes[7]) as u64) << 24)
-        | (((bytes[8]) as u64) << 16)
-        | (((bytes[9]) as u64) << 8)
-        | ((bytes[10]) as u64);
-    values[2] = (((bytes[11]) as u64) << 36)
-        | (((bytes[12]) as u64) << 28)
-        | (((bytes[13]) as u64) << 20)
-        | (((bytes[14]) as u64) << 12)
-        | (((bytes[15]) as u64) << 4)
+        | ((bytes[6] as u64) << 32)
+        | ((bytes[7] as u64) << 24)
+        | ((bytes[8] as u64) << 16)
+        | ((bytes[9] as u64) << 8)
+        | (bytes[10] as u64);
+    values[2] = ((bytes[11] as u64) << 36)
+        | ((bytes[12] as u64) << 28)
+        | ((bytes[13] as u64) << 20)
+        | ((bytes[14] as u64) << 12)
+        | ((bytes[15] as u64) << 4)
         | (((bytes[16] >> 4) & 0xf) as u64);
     values[3] = ((((bytes[16]) & 0xf) as u64) << 40)
-        | (((bytes[17]) as u64) << 32)
-        | (((bytes[18]) as u64) << 24)
-        | (((bytes[19]) as u64) << 16)
-        | (((bytes[20]) as u64) << 8)
-        | ((bytes[21]) as u64);
-    values[4] = (((bytes[22]) as u64) << 36)
-        | (((bytes[23]) as u64) << 28)
-        | (((bytes[24]) as u64) << 20)
-        | (((bytes[25]) as u64) << 12)
-        | (((bytes[26]) as u64) << 4)
+        | ((bytes[17] as u64) << 32)
+        | ((bytes[18] as u64) << 24)
+        | ((bytes[19] as u64) << 16)
+        | ((bytes[20] as u64) << 8)
+        | (bytes[21] as u64);
+    values[4] = ((bytes[22] as u64) << 36)
+        | ((bytes[23] as u64) << 28)
+        | ((bytes[24] as u64) << 20)
+        | ((bytes[25] as u64) << 12)
+        | ((bytes[26] as u64) << 4)
         | (((bytes[27] >> 4) & 0xf) as u64);
     values[5] = ((((bytes[27]) & 0xf) as u64) << 40)
-        | (((bytes[28]) as u64) << 32)
-        | (((bytes[29]) as u64) << 24)
-        | (((bytes[30]) as u64) << 16)
-        | (((bytes[31]) as u64) << 8)
-        | ((bytes[32]) as u64);
-    values[6] = (((bytes[33]) as u64) << 36)
-        | (((bytes[34]) as u64) << 28)
-        | (((bytes[35]) as u64) << 20)
-        | (((bytes[36]) as u64) << 12)
-        | (((bytes[37]) as u64) << 4)
+        | ((bytes[28] as u64) << 32)
+        | ((bytes[29] as u64) << 24)
+        | ((bytes[30] as u64) << 16)
+        | ((bytes[31] as u64) << 8)
+        | (bytes[32] as u64);
+    values[6] = ((bytes[33] as u64) << 36)
+        | ((bytes[34] as u64) << 28)
+        | ((bytes[35] as u64) << 20)
+        | ((bytes[36] as u64) << 12)
+        | ((bytes[37] as u64) << 4)
         | (((bytes[38] >> 4) & 0xf) as u64);
     values[7] = ((((bytes[38]) & 0xf) as u64) << 40)
-        | (((bytes[39]) as u64) << 32)
-        | (((bytes[40]) as u64) << 24)
-        | (((bytes[41]) as u64) << 16)
-        | (((bytes[42]) as u64) << 8)
-        | ((bytes[43]) as u64);
+        | ((bytes[39] as u64) << 32)
+        | ((bytes[40] as u64) << 24)
+        | ((bytes[41] as u64) << 16)
+        | ((bytes[42] as u64) << 8)
+        | (bytes[43] as u64);
 }
 
 #[inline]
 fn unpack_bits_45(values: &mut [u64], bytes: &[u8]) {
-    values[0] = (((bytes[0]) as u64) << 37)
-        | (((bytes[1]) as u64) << 29)
-        | (((bytes[2]) as u64) << 21)
-        | (((bytes[3]) as u64) << 13)
-        | (((bytes[4]) as u64) << 5)
+    values[0] = ((bytes[0] as u64) << 37)
+        | ((bytes[1] as u64) << 29)
+        | ((bytes[2] as u64) << 21)
+        | ((bytes[3] as u64) << 13)
+        | ((bytes[4] as u64) << 5)
         | (((bytes[5] >> 3) & 0x1f) as u64);
     values[1] = ((((bytes[5]) & 0x7) as u64) << 42)
-        | (((bytes[6]) as u64) << 34)
-        | (((bytes[7]) as u64) << 26)
-        | (((bytes[8]) as u64) << 18)
-        | (((bytes[9]) as u64) << 10)
-        | (((bytes[10]) as u64) << 2)
+        | ((bytes[6] as u64) << 34)
+        | ((bytes[7] as u64) << 26)
+        | ((bytes[8] as u64) << 18)
+        | ((bytes[9] as u64) << 10)
+        | ((bytes[10] as u64) << 2)
         | (((bytes[11] >> 6) & 0x3) as u64);
     values[2] = ((((bytes[11]) & 0x3f) as u64) << 39)
-        | (((bytes[12]) as u64) << 31)
-        | (((bytes[13]) as u64) << 23)
-        | (((bytes[14]) as u64) << 15)
-        | (((bytes[15]) as u64) << 7)
+        | ((bytes[12] as u64) << 31)
+        | ((bytes[13] as u64) << 23)
+        | ((bytes[14] as u64) << 15)
+        | ((bytes[15] as u64) << 7)
         | (((bytes[16] >> 1) & 0x7f) as u64);
     values[3] = ((((bytes[16]) & 0x1) as u64) << 44)
-        | (((bytes[17]) as u64) << 36)
-        | (((bytes[18]) as u64) << 28)
-        | (((bytes[19]) as u64) << 20)
-        | (((bytes[20]) as u64) << 12)
-        | (((bytes[21]) as u64) << 4)
+        | ((bytes[17] as u64) << 36)
+        | ((bytes[18] as u64) << 28)
+        | ((bytes[19] as u64) << 20)
+        | ((bytes[20] as u64) << 12)
+        | ((bytes[21] as u64) << 4)
         | (((bytes[22] >> 4) & 0xf) as u64);
     values[4] = ((((bytes[22]) & 0xf) as u64) << 41)
-        | (((bytes[23]) as u64) << 33)
-        | (((bytes[24]) as u64) << 25)
-        | (((bytes[25]) as u64) << 17)
-        | (((bytes[26]) as u64) << 9)
-        | (((bytes[27]) as u64) << 1)
+        | ((bytes[23] as u64) << 33)
+        | ((bytes[24] as u64) << 25)
+        | ((bytes[25] as u64) << 17)
+        | ((bytes[26] as u64) << 9)
+        | ((bytes[27] as u64) << 1)
         | (((bytes[28] >> 7) & 0x1) as u64);
     values[5] = ((((bytes[28]) & 0x7f) as u64) << 38)
-        | (((bytes[29]) as u64) << 30)
-        | (((bytes[30]) as u64) << 22)
-        | (((bytes[31]) as u64) << 14)
-        | (((bytes[32]) as u64) << 6)
+        | ((bytes[29] as u64) << 30)
+        | ((bytes[30] as u64) << 22)
+        | ((bytes[31] as u64) << 14)
+        | ((bytes[32] as u64) << 6)
         | (((bytes[33] >> 2) & 0x3f) as u64);
     values[6] = ((((bytes[33]) & 0x3) as u64) << 43)
-        | (((bytes[34]) as u64) << 35)
-        | (((bytes[35]) as u64) << 27)
-        | (((bytes[36]) as u64) << 19)
-        | (((bytes[37]) as u64) << 11)
-        | (((bytes[38]) as u64) << 3)
+        | ((bytes[34] as u64) << 35)
+        | ((bytes[35] as u64) << 27)
+        | ((bytes[36] as u64) << 19)
+        | ((bytes[37] as u64) << 11)
+        | ((bytes[38] as u64) << 3)
         | (((bytes[39] >> 5) & 0x7) as u64);
     values[7] = ((((bytes[39]) & 0x1f) as u64) << 40)
-        | (((bytes[40]) as u64) << 32)
-        | (((bytes[41]) as u64) << 24)
-        | (((bytes[42]) as u64) << 16)
-        | (((bytes[43]) as u64) << 8)
-        | ((bytes[44]) as u64);
+        | ((bytes[40] as u64) << 32)
+        | ((bytes[41] as u64) << 24)
+        | ((bytes[42] as u64) << 16)
+        | ((bytes[43] as u64) << 8)
+        | (bytes[44] as u64);
 }
 
 #[inline]
 fn unpack_bits_46(values: &mut [u64], bytes: &[u8]) {
-    values[0] = (((bytes[0]) as u64) << 38)
-        | (((bytes[1]) as u64) << 30)
-        | (((bytes[2]) as u64) << 22)
-        | (((bytes[3]) as u64) << 14)
-        | (((bytes[4]) as u64) << 6)
+    values[0] = ((bytes[0] as u64) << 38)
+        | ((bytes[1] as u64) << 30)
+        | ((bytes[2] as u64) << 22)
+        | ((bytes[3] as u64) << 14)
+        | ((bytes[4] as u64) << 6)
         | (((bytes[5] >> 2) & 0x3f) as u64);
     values[1] = ((((bytes[5]) & 0x3) as u64) << 44)
-        | (((bytes[6]) as u64) << 36)
-        | (((bytes[7]) as u64) << 28)
-        | (((bytes[8]) as u64) << 20)
-        | (((bytes[9]) as u64) << 12)
-        | (((bytes[10]) as u64) << 4)
+        | ((bytes[6] as u64) << 36)
+        | ((bytes[7] as u64) << 28)
+        | ((bytes[8] as u64) << 20)
+        | ((bytes[9] as u64) << 12)
+        | ((bytes[10] as u64) << 4)
         | (((bytes[11] >> 4) & 0xf) as u64);
     values[2] = ((((bytes[11]) & 0xf) as u64) << 42)
-        | (((bytes[12]) as u64) << 34)
-        | (((bytes[13]) as u64) << 26)
-        | (((bytes[14]) as u64) << 18)
-        | (((bytes[15]) as u64) << 10)
-        | (((bytes[16]) as u64) << 2)
+        | ((bytes[12] as u64) << 34)
+        | ((bytes[13] as u64) << 26)
+        | ((bytes[14] as u64) << 18)
+        | ((bytes[15] as u64) << 10)
+        | ((bytes[16] as u64) << 2)
         | (((bytes[17] >> 6) & 0x3) as u64);
     values[3] = ((((bytes[17]) & 0x3f) as u64) << 40)
-        | (((bytes[18]) as u64) << 32)
-        | (((bytes[19]) as u64) << 24)
-        | (((bytes[20]) as u64) << 16)
-        | (((bytes[21]) as u64) << 8)
-        | ((bytes[22]) as u64);
-    values[4] = (((bytes[23]) as u64) << 38)
-        | (((bytes[24]) as u64) << 30)
-        | (((bytes[25]) as u64) << 22)
-        | (((bytes[26]) as u64) << 14)
-        | (((bytes[27]) as u64) << 6)
+        | ((bytes[18] as u64) << 32)
+        | ((bytes[19] as u64) << 24)
+        | ((bytes[20] as u64) << 16)
+        | ((bytes[21] as u64) << 8)
+        | (bytes[22] as u64);
+    values[4] = ((bytes[23] as u64) << 38)
+        | ((bytes[24] as u64) << 30)
+        | ((bytes[25] as u64) << 22)
+        | ((bytes[26] as u64) << 14)
+        | ((bytes[27] as u64) << 6)
         | (((bytes[28] >> 2) & 0x3f) as u64);
     values[5] = ((((bytes[28]) & 0x3) as u64) << 44)
-        | (((bytes[29]) as u64) << 36)
-        | (((bytes[30]) as u64) << 28)
-        | (((bytes[31]) as u64) << 20)
-        | (((bytes[32]) as u64) << 12)
-        | (((bytes[33]) as u64) << 4)
+        | ((bytes[29] as u64) << 36)
+        | ((bytes[30] as u64) << 28)
+        | ((bytes[31] as u64) << 20)
+        | ((bytes[32] as u64) << 12)
+        | ((bytes[33] as u64) << 4)
         | (((bytes[34] >> 4) & 0xf) as u64);
     values[6] = ((((bytes[34]) & 0xf) as u64) << 42)
-        | (((bytes[35]) as u64) << 34)
-        | (((bytes[36]) as u64) << 26)
-        | (((bytes[37]) as u64) << 18)
-        | (((bytes[38]) as u64) << 10)
-        | (((bytes[39]) as u64) << 2)
+        | ((bytes[35] as u64) << 34)
+        | ((bytes[36] as u64) << 26)
+        | ((bytes[37] as u64) << 18)
+        | ((bytes[38] as u64) << 10)
+        | ((bytes[39] as u64) << 2)
         | (((bytes[40] >> 6) & 0x3) as u64);
     values[7] = ((((bytes[40]) & 0x3f) as u64) << 40)
-        | (((bytes[41]) as u64) << 32)
-        | (((bytes[42]) as u64) << 24)
-        | (((bytes[43]) as u64) << 16)
-        | (((bytes[44]) as u64) << 8)
-        | ((bytes[45]) as u64);
+        | ((bytes[41] as u64) << 32)
+        | ((bytes[42] as u64) << 24)
+        | ((bytes[43] as u64) << 16)
+        | ((bytes[44] as u64) << 8)
+        | (bytes[45] as u64);
 }
 
 #[inline]
 fn unpack_bits_47(values: &mut [u64], bytes: &[u8]) {
-    values[0] = (((bytes[0]) as u64) << 39)
-        | (((bytes[1]) as u64) << 31)
-        | (((bytes[2]) as u64) << 23)
-        | (((bytes[3]) as u64) << 15)
-        | (((bytes[4]) as u64) << 7)
+    values[0] = ((bytes[0] as u64) << 39)
+        | ((bytes[1] as u64) << 31)
+        | ((bytes[2] as u64) << 23)
+        | ((bytes[3] as u64) << 15)
+        | ((bytes[4] as u64) << 7)
         | (((bytes[5] >> 1) & 0x7f) as u64);
     values[1] = ((((bytes[5]) & 0x1) as u64) << 46)
-        | (((bytes[6]) as u64) << 38)
-        | (((bytes[7]) as u64) << 30)
-        | (((bytes[8]) as u64) << 22)
-        | (((bytes[9]) as u64) << 14)
-        | (((bytes[10]) as u64) << 6)
+        | ((bytes[6] as u64) << 38)
+        | ((bytes[7] as u64) << 30)
+        | ((bytes[8] as u64) << 22)
+        | ((bytes[9] as u64) << 14)
+        | ((bytes[10] as u64) << 6)
         | (((bytes[11] >> 2) & 0x3f) as u64);
     values[2] = ((((bytes[11]) & 0x3) as u64) << 45)
-        | (((bytes[12]) as u64) << 37)
-        | (((bytes[13]) as u64) << 29)
-        | (((bytes[14]) as u64) << 21)
-        | (((bytes[15]) as u64) << 13)
-        | (((bytes[16]) as u64) << 5)
+        | ((bytes[12] as u64) << 37)
+        | ((bytes[13] as u64) << 29)
+        | ((bytes[14] as u64) << 21)
+        | ((bytes[15] as u64) << 13)
+        | ((bytes[16] as u64) << 5)
         | (((bytes[17] >> 3) & 0x1f) as u64);
     values[3] = ((((bytes[17]) & 0x7) as u64) << 44)
-        | (((bytes[18]) as u64) << 36)
-        | (((bytes[19]) as u64) << 28)
-        | (((bytes[20]) as u64) << 20)
-        | (((bytes[21]) as u64) << 12)
-        | (((bytes[22]) as u64) << 4)
+        | ((bytes[18] as u64) << 36)
+        | ((bytes[19] as u64) << 28)
+        | ((bytes[20] as u64) << 20)
+        | ((bytes[21] as u64) << 12)
+        | ((bytes[22] as u64) << 4)
         | (((bytes[23] >> 4) & 0xf) as u64);
     values[4] = ((((bytes[23]) & 0xf) as u64) << 43)
-        | (((bytes[24]) as u64) << 35)
-        | (((bytes[25]) as u64) << 27)
-        | (((bytes[26]) as u64) << 19)
-        | (((bytes[27]) as u64) << 11)
-        | (((bytes[28]) as u64) << 3)
+        | ((bytes[24] as u64) << 35)
+        | ((bytes[25] as u64) << 27)
+        | ((bytes[26] as u64) << 19)
+        | ((bytes[27] as u64) << 11)
+        | ((bytes[28] as u64) << 3)
         | (((bytes[29] >> 5) & 0x7) as u64);
     values[5] = ((((bytes[29]) & 0x1f) as u64) << 42)
-        | (((bytes[30]) as u64) << 34)
-        | (((bytes[31]) as u64) << 26)
-        | (((bytes[32]) as u64) << 18)
-        | (((bytes[33]) as u64) << 10)
-        | (((bytes[34]) as u64) << 2)
+        | ((bytes[30] as u64) << 34)
+        | ((bytes[31] as u64) << 26)
+        | ((bytes[32] as u64) << 18)
+        | ((bytes[33] as u64) << 10)
+        | ((bytes[34] as u64) << 2)
         | (((bytes[35] >> 6) & 0x3) as u64);
     values[6] = ((((bytes[35]) & 0x3f) as u64) << 41)
-        | (((bytes[36]) as u64) << 33)
-        | (((bytes[37]) as u64) << 25)
-        | (((bytes[38]) as u64) << 17)
-        | (((bytes[39]) as u64) << 9)
-        | (((bytes[40]) as u64) << 1)
+        | ((bytes[36] as u64) << 33)
+        | ((bytes[37] as u64) << 25)
+        | ((bytes[38] as u64) << 17)
+        | ((bytes[39] as u64) << 9)
+        | ((bytes[40] as u64) << 1)
         | (((bytes[41] >> 7) & 0x1) as u64);
     values[7] = ((((bytes[41]) & 0x7f) as u64) << 40)
-        | (((bytes[42]) as u64) << 32)
-        | (((bytes[43]) as u64) << 24)
-        | (((bytes[44]) as u64) << 16)
-        | (((bytes[45]) as u64) << 8)
-        | ((bytes[46]) as u64);
+        | ((bytes[42] as u64) << 32)
+        | ((bytes[43] as u64) << 24)
+        | ((bytes[44] as u64) << 16)
+        | ((bytes[45] as u64) << 8)
+        | (bytes[46] as u64);
 }
 
 #[inline]
 fn unpack_bits_48(values: &mut [u64], bytes: &[u8]) {
-    values[0] = (((bytes[0]) as u64) << 40)
-        | (((bytes[1]) as u64) << 32)
-        | (((bytes[2]) as u64) << 24)
-        | (((bytes[3]) as u64) << 16)
-        | (((bytes[4]) as u64) << 8)
-        | ((bytes[5]) as u64);
-    values[1] = (((bytes[6]) as u64) << 40)
-        | (((bytes[7]) as u64) << 32)
-        | (((bytes[8]) as u64) << 24)
-        | (((bytes[9]) as u64) << 16)
-        | (((bytes[10]) as u64) << 8)
-        | ((bytes[11]) as u64);
-    values[2] = (((bytes[12]) as u64) << 40)
-        | (((bytes[13]) as u64) << 32)
-        | (((bytes[14]) as u64) << 24)
-        | (((bytes[15]) as u64) << 16)
-        | (((bytes[16]) as u64) << 8)
-        | ((bytes[17]) as u64);
-    values[3] = (((bytes[18]) as u64) << 40)
-        | (((bytes[19]) as u64) << 32)
-        | (((bytes[20]) as u64) << 24)
-        | (((bytes[21]) as u64) << 16)
-        | (((bytes[22]) as u64) << 8)
-        | ((bytes[23]) as u64);
-    values[4] = (((bytes[24]) as u64) << 40)
-        | (((bytes[25]) as u64) << 32)
-        | (((bytes[26]) as u64) << 24)
-        | (((bytes[27]) as u64) << 16)
-        | (((bytes[28]) as u64) << 8)
-        | ((bytes[29]) as u64);
-    values[5] = (((bytes[30]) as u64) << 40)
-        | (((bytes[31]) as u64) << 32)
-        | (((bytes[32]) as u64) << 24)
-        | (((bytes[33]) as u64) << 16)
-        | (((bytes[34]) as u64) << 8)
-        | ((bytes[35]) as u64);
-    values[6] = (((bytes[36]) as u64) << 40)
-        | (((bytes[37]) as u64) << 32)
-        | (((bytes[38]) as u64) << 24)
-        | (((bytes[39]) as u64) << 16)
-        | (((bytes[40]) as u64) << 8)
-        | ((bytes[41]) as u64);
-    values[7] = (((bytes[42]) as u64) << 40)
-        | (((bytes[43]) as u64) << 32)
-        | (((bytes[44]) as u64) << 24)
-        | (((bytes[45]) as u64) << 16)
-        | (((bytes[46]) as u64) << 8)
-        | ((bytes[47]) as u64);
+    values[0] = ((bytes[0] as u64) << 40)
+        | ((bytes[1] as u64) << 32)
+        | ((bytes[2] as u64) << 24)
+        | ((bytes[3] as u64) << 16)
+        | ((bytes[4] as u64) << 8)
+        | (bytes[5] as u64);
+    values[1] = ((bytes[6] as u64) << 40)
+        | ((bytes[7] as u64) << 32)
+        | ((bytes[8] as u64) << 24)
+        | ((bytes[9] as u64) << 16)
+        | ((bytes[10] as u64) << 8)
+        | (bytes[11] as u64);
+    values[2] = ((bytes[12] as u64) << 40)
+        | ((bytes[13] as u64) << 32)
+        | ((bytes[14] as u64) << 24)
+        | ((bytes[15] as u64) << 16)
+        | ((bytes[16] as u64) << 8)
+        | (bytes[17] as u64);
+    values[3] = ((bytes[18] as u64) << 40)
+        | ((bytes[19] as u64) << 32)
+        | ((bytes[20] as u64) << 24)
+        | ((bytes[21] as u64) << 16)
+        | ((bytes[22] as u64) << 8)
+        | (bytes[23] as u64);
+    values[4] = ((bytes[24] as u64) << 40)
+        | ((bytes[25] as u64) << 32)
+        | ((bytes[26] as u64) << 24)
+        | ((bytes[27] as u64) << 16)
+        | ((bytes[28] as u64) << 8)
+        | (bytes[29] as u64);
+    values[5] = ((bytes[30] as u64) << 40)
+        | ((bytes[31] as u64) << 32)
+        | ((bytes[32] as u64) << 24)
+        | ((bytes[33] as u64) << 16)
+        | ((bytes[34] as u64) << 8)
+        | (bytes[35] as u64);
+    values[6] = ((bytes[36] as u64) << 40)
+        | ((bytes[37] as u64) << 32)
+        | ((bytes[38] as u64) << 24)
+        | ((bytes[39] as u64) << 16)
+        | ((bytes[40] as u64) << 8)
+        | (bytes[41] as u64);
+    values[7] = ((bytes[42] as u64) << 40)
+        | ((bytes[43] as u64) << 32)
+        | ((bytes[44] as u64) << 24)
+        | ((bytes[45] as u64) << 16)
+        | ((bytes[46] as u64) << 8)
+        | (bytes[47] as u64);
 }
 
 #[inline]
 fn unpack_bits_49(values: &mut [u64], bytes: &[u8]) {
-    values[0] = (((bytes[0]) as u64) << 41)
-        | (((bytes[1]) as u64) << 33)
-        | (((bytes[2]) as u64) << 25)
-        | (((bytes[3]) as u64) << 17)
-        | (((bytes[4]) as u64) << 9)
-        | (((bytes[5]) as u64) << 1)
+    values[0] = ((bytes[0] as u64) << 41)
+        | ((bytes[1] as u64) << 33)
+        | ((bytes[2] as u64) << 25)
+        | ((bytes[3] as u64) << 17)
+        | ((bytes[4] as u64) << 9)
+        | ((bytes[5] as u64) << 1)
         | (((bytes[6] >> 7) & 0x1) as u64);
     values[1] = ((((bytes[6]) & 0x7f) as u64) << 42)
-        | (((bytes[7]) as u64) << 34)
-        | (((bytes[8]) as u64) << 26)
-        | (((bytes[9]) as u64) << 18)
-        | (((bytes[10]) as u64) << 10)
-        | (((bytes[11]) as u64) << 2)
+        | ((bytes[7] as u64) << 34)
+        | ((bytes[8] as u64) << 26)
+        | ((bytes[9] as u64) << 18)
+        | ((bytes[10] as u64) << 10)
+        | ((bytes[11] as u64) << 2)
         | (((bytes[12] >> 6) & 0x3) as u64);
     values[2] = ((((bytes[12]) & 0x3f) as u64) << 43)
-        | (((bytes[13]) as u64) << 35)
-        | (((bytes[14]) as u64) << 27)
-        | (((bytes[15]) as u64) << 19)
-        | (((bytes[16]) as u64) << 11)
-        | (((bytes[17]) as u64) << 3)
+        | ((bytes[13] as u64) << 35)
+        | ((bytes[14] as u64) << 27)
+        | ((bytes[15] as u64) << 19)
+        | ((bytes[16] as u64) << 11)
+        | ((bytes[17] as u64) << 3)
         | (((bytes[18] >> 5) & 0x7) as u64);
     values[3] = ((((bytes[18]) & 0x1f) as u64) << 44)
-        | (((bytes[19]) as u64) << 36)
-        | (((bytes[20]) as u64) << 28)
-        | (((bytes[21]) as u64) << 20)
-        | (((bytes[22]) as u64) << 12)
-        | (((bytes[23]) as u64) << 4)
+        | ((bytes[19] as u64) << 36)
+        | ((bytes[20] as u64) << 28)
+        | ((bytes[21] as u64) << 20)
+        | ((bytes[22] as u64) << 12)
+        | ((bytes[23] as u64) << 4)
         | (((bytes[24] >> 4) & 0xf) as u64);
     values[4] = ((((bytes[24]) & 0xf) as u64) << 45)
-        | (((bytes[25]) as u64) << 37)
-        | (((bytes[26]) as u64) << 29)
-        | (((bytes[27]) as u64) << 21)
-        | (((bytes[28]) as u64) << 13)
-        | (((bytes[29]) as u64) << 5)
+        | ((bytes[25] as u64) << 37)
+        | ((bytes[26] as u64) << 29)
+        | ((bytes[27] as u64) << 21)
+        | ((bytes[28] as u64) << 13)
+        | ((bytes[29] as u64) << 5)
         | (((bytes[30] >> 3) & 0x1f) as u64);
     values[5] = ((((bytes[30]) & 0x7) as u64) << 46)
-        | (((bytes[31]) as u64) << 38)
-        | (((bytes[32]) as u64) << 30)
-        | (((bytes[33]) as u64) << 22)
-        | (((bytes[34]) as u64) << 14)
-        | (((bytes[35]) as u64) << 6)
+        | ((bytes[31] as u64) << 38)
+        | ((bytes[32] as u64) << 30)
+        | ((bytes[33] as u64) << 22)
+        | ((bytes[34] as u64) << 14)
+        | ((bytes[35] as u64) << 6)
         | (((bytes[36] >> 2) & 0x3f) as u64);
     values[6] = ((((bytes[36]) & 0x3) as u64) << 47)
-        | (((bytes[37]) as u64) << 39)
-        | (((bytes[38]) as u64) << 31)
-        | (((bytes[39]) as u64) << 23)
-        | (((bytes[40]) as u64) << 15)
-        | (((bytes[41]) as u64) << 7)
+        | ((bytes[37] as u64) << 39)
+        | ((bytes[38] as u64) << 31)
+        | ((bytes[39] as u64) << 23)
+        | ((bytes[40] as u64) << 15)
+        | ((bytes[41] as u64) << 7)
         | (((bytes[42] >> 1) & 0x7f) as u64);
     values[7] = ((((bytes[42]) & 0x1) as u64) << 48)
-        | (((bytes[43]) as u64) << 40)
-        | (((bytes[44]) as u64) << 32)
-        | (((bytes[45]) as u64) << 24)
-        | (((bytes[46]) as u64) << 16)
-        | (((bytes[47]) as u64) << 8)
-        | ((bytes[48]) as u64);
+        | ((bytes[43] as u64) << 40)
+        | ((bytes[44] as u64) << 32)
+        | ((bytes[45] as u64) << 24)
+        | ((bytes[46] as u64) << 16)
+        | ((bytes[47] as u64) << 8)
+        | (bytes[48] as u64);
 }
 
 #[inline]
 fn unpack_bits_50(values: &mut [u64], bytes: &[u8]) {
-    values[0] = (((bytes[0]) as u64) << 42)
-        | (((bytes[1]) as u64) << 34)
-        | (((bytes[2]) as u64) << 26)
-        | (((bytes[3]) as u64) << 18)
-        | (((bytes[4]) as u64) << 10)
-        | (((bytes[5]) as u64) << 2)
+    values[0] = ((bytes[0] as u64) << 42)
+        | ((bytes[1] as u64) << 34)
+        | ((bytes[2] as u64) << 26)
+        | ((bytes[3] as u64) << 18)
+        | ((bytes[4] as u64) << 10)
+        | ((bytes[5] as u64) << 2)
         | (((bytes[6] >> 6) & 0x3) as u64);
     values[1] = ((((bytes[6]) & 0x3f) as u64) << 44)
-        | (((bytes[7]) as u64) << 36)
-        | (((bytes[8]) as u64) << 28)
-        | (((bytes[9]) as u64) << 20)
-        | (((bytes[10]) as u64) << 12)
-        | (((bytes[11]) as u64) << 4)
+        | ((bytes[7] as u64) << 36)
+        | ((bytes[8] as u64) << 28)
+        | ((bytes[9] as u64) << 20)
+        | ((bytes[10] as u64) << 12)
+        | ((bytes[11] as u64) << 4)
         | (((bytes[12] >> 4) & 0xf) as u64);
     values[2] = ((((bytes[12]) & 0xf) as u64) << 46)
-        | (((bytes[13]) as u64) << 38)
-        | (((bytes[14]) as u64) << 30)
-        | (((bytes[15]) as u64) << 22)
-        | (((bytes[16]) as u64) << 14)
-        | (((bytes[17]) as u64) << 6)
+        | ((bytes[13] as u64) << 38)
+        | ((bytes[14] as u64) << 30)
+        | ((bytes[15] as u64) << 22)
+        | ((bytes[16] as u64) << 14)
+        | ((bytes[17] as u64) << 6)
         | (((bytes[18] >> 2) & 0x3f) as u64);
     values[3] = ((((bytes[18]) & 0x3) as u64) << 48)
-        | (((bytes[19]) as u64) << 40)
-        | (((bytes[20]) as u64) << 32)
-        | (((bytes[21]) as u64) << 24)
-        | (((bytes[22]) as u64) << 16)
-        | (((bytes[23]) as u64) << 8)
-        | ((bytes[24]) as u64);
-    values[4] = (((bytes[25]) as u64) << 42)
-        | (((bytes[26]) as u64) << 34)
-        | (((bytes[27]) as u64) << 26)
-        | (((bytes[28]) as u64) << 18)
-        | (((bytes[29]) as u64) << 10)
-        | (((bytes[30]) as u64) << 2)
+        | ((bytes[19] as u64) << 40)
+        | ((bytes[20] as u64) << 32)
+        | ((bytes[21] as u64) << 24)
+        | ((bytes[22] as u64) << 16)
+        | ((bytes[23] as u64) << 8)
+        | (bytes[24] as u64);
+    values[4] = ((bytes[25] as u64) << 42)
+        | ((bytes[26] as u64) << 34)
+        | ((bytes[27] as u64) << 26)
+        | ((bytes[28] as u64) << 18)
+        | ((bytes[29] as u64) << 10)
+        | ((bytes[30] as u64) << 2)
         | (((bytes[31] >> 6) & 0x3) as u64);
     values[5] = ((((bytes[31]) & 0x3f) as u64) << 44)
-        | (((bytes[32]) as u64) << 36)
-        | (((bytes[33]) as u64) << 28)
-        | (((bytes[34]) as u64) << 20)
-        | (((bytes[35]) as u64) << 12)
-        | (((bytes[36]) as u64) << 4)
+        | ((bytes[32] as u64) << 36)
+        | ((bytes[33] as u64) << 28)
+        | ((bytes[34] as u64) << 20)
+        | ((bytes[35] as u64) << 12)
+        | ((bytes[36] as u64) << 4)
         | (((bytes[37] >> 4) & 0xf) as u64);
     values[6] = ((((bytes[37]) & 0xf) as u64) << 46)
-        | (((bytes[38]) as u64) << 38)
-        | (((bytes[39]) as u64) << 30)
-        | (((bytes[40]) as u64) << 22)
-        | (((bytes[41]) as u64) << 14)
-        | (((bytes[42]) as u64) << 6)
+        | ((bytes[38] as u64) << 38)
+        | ((bytes[39] as u64) << 30)
+        | ((bytes[40] as u64) << 22)
+        | ((bytes[41] as u64) << 14)
+        | ((bytes[42] as u64) << 6)
         | (((bytes[43] >> 2) & 0x3f) as u64);
     values[7] = ((((bytes[43]) & 0x3) as u64) << 48)
-        | (((bytes[44]) as u64) << 40)
-        | (((bytes[45]) as u64) << 32)
-        | (((bytes[46]) as u64) << 24)
-        | (((bytes[47]) as u64) << 16)
-        | (((bytes[48]) as u64) << 8)
-        | ((bytes[49]) as u64);
+        | ((bytes[44] as u64) << 40)
+        | ((bytes[45] as u64) << 32)
+        | ((bytes[46] as u64) << 24)
+        | ((bytes[47] as u64) << 16)
+        | ((bytes[48] as u64) << 8)
+        | (bytes[49] as u64);
 }
 
 #[inline]
 fn unpack_bits_51(values: &mut [u64], bytes: &[u8]) {
-    values[0] = (((bytes[0]) as u64) << 43)
-        | (((bytes[1]) as u64) << 35)
-        | (((bytes[2]) as u64) << 27)
-        | (((bytes[3]) as u64) << 19)
-        | (((bytes[4]) as u64) << 11)
-        | (((bytes[5]) as u64) << 3)
+    values[0] = ((bytes[0] as u64) << 43)
+        | ((bytes[1] as u64) << 35)
+        | ((bytes[2] as u64) << 27)
+        | ((bytes[3] as u64) << 19)
+        | ((bytes[4] as u64) << 11)
+        | ((bytes[5] as u64) << 3)
         | (((bytes[6] >> 5) & 0x7) as u64);
     values[1] = ((((bytes[6]) & 0x1f) as u64) << 46)
-        | (((bytes[7]) as u64) << 38)
-        | (((bytes[8]) as u64) << 30)
-        | (((bytes[9]) as u64) << 22)
-        | (((bytes[10]) as u64) << 14)
-        | (((bytes[11]) as u64) << 6)
+        | ((bytes[7] as u64) << 38)
+        | ((bytes[8] as u64) << 30)
+        | ((bytes[9] as u64) << 22)
+        | ((bytes[10] as u64) << 14)
+        | ((bytes[11] as u64) << 6)
         | (((bytes[12] >> 2) & 0x3f) as u64);
     values[2] = ((((bytes[12]) & 0x3) as u64) << 49)
-        | (((bytes[13]) as u64) << 41)
-        | (((bytes[14]) as u64) << 33)
-        | (((bytes[15]) as u64) << 25)
-        | (((bytes[16]) as u64) << 17)
-        | (((bytes[17]) as u64) << 9)
-        | (((bytes[18]) as u64) << 1)
+        | ((bytes[13] as u64) << 41)
+        | ((bytes[14] as u64) << 33)
+        | ((bytes[15] as u64) << 25)
+        | ((bytes[16] as u64) << 17)
+        | ((bytes[17] as u64) << 9)
+        | ((bytes[18] as u64) << 1)
         | (((bytes[19] >> 7) & 0x1) as u64);
     values[3] = ((((bytes[19]) & 0x7f) as u64) << 44)
-        | (((bytes[20]) as u64) << 36)
-        | (((bytes[21]) as u64) << 28)
-        | (((bytes[22]) as u64) << 20)
-        | (((bytes[23]) as u64) << 12)
-        | (((bytes[24]) as u64) << 4)
+        | ((bytes[20] as u64) << 36)
+        | ((bytes[21] as u64) << 28)
+        | ((bytes[22] as u64) << 20)
+        | ((bytes[23] as u64) << 12)
+        | ((bytes[24] as u64) << 4)
         | (((bytes[25] >> 4) & 0xf) as u64);
     values[4] = ((((bytes[25]) & 0xf) as u64) << 47)
-        | (((bytes[26]) as u64) << 39)
-        | (((bytes[27]) as u64) << 31)
-        | (((bytes[28]) as u64) << 23)
-        | (((bytes[29]) as u64) << 15)
-        | (((bytes[30]) as u64) << 7)
+        | ((bytes[26] as u64) << 39)
+        | ((bytes[27] as u64) << 31)
+        | ((bytes[28] as u64) << 23)
+        | ((bytes[29] as u64) << 15)
+        | ((bytes[30] as u64) << 7)
         | (((bytes[31] >> 1) & 0x7f) as u64);
     values[5] = ((((bytes[31]) & 0x1) as u64) << 50)
-        | (((bytes[32]) as u64) << 42)
-        | (((bytes[33]) as u64) << 34)
-        | (((bytes[34]) as u64) << 26)
-        | (((bytes[35]) as u64) << 18)
-        | (((bytes[36]) as u64) << 10)
-        | (((bytes[37]) as u64) << 2)
+        | ((bytes[32] as u64) << 42)
+        | ((bytes[33] as u64) << 34)
+        | ((bytes[34] as u64) << 26)
+        | ((bytes[35] as u64) << 18)
+        | ((bytes[36] as u64) << 10)
+        | ((bytes[37] as u64) << 2)
         | (((bytes[38] >> 6) & 0x3) as u64);
     values[6] = ((((bytes[38]) & 0x3f) as u64) << 45)
-        | (((bytes[39]) as u64) << 37)
-        | (((bytes[40]) as u64) << 29)
-        | (((bytes[41]) as u64) << 21)
-        | (((bytes[42]) as u64) << 13)
-        | (((bytes[43]) as u64) << 5)
+        | ((bytes[39] as u64) << 37)
+        | ((bytes[40] as u64) << 29)
+        | ((bytes[41] as u64) << 21)
+        | ((bytes[42] as u64) << 13)
+        | ((bytes[43] as u64) << 5)
         | (((bytes[44] >> 3) & 0x1f) as u64);
     values[7] = ((((bytes[44]) & 0x7) as u64) << 48)
-        | (((bytes[45]) as u64) << 40)
-        | (((bytes[46]) as u64) << 32)
-        | (((bytes[47]) as u64) << 24)
-        | (((bytes[48]) as u64) << 16)
-        | (((bytes[49]) as u64) << 8)
-        | ((bytes[50]) as u64);
+        | ((bytes[45] as u64) << 40)
+        | ((bytes[46] as u64) << 32)
+        | ((bytes[47] as u64) << 24)
+        | ((bytes[48] as u64) << 16)
+        | ((bytes[49] as u64) << 8)
+        | (bytes[50] as u64);
 }
 
 #[inline]
 fn unpack_bits_52(values: &mut [u64], bytes: &[u8]) {
-    values[0] = (((bytes[0]) as u64) << 44)
-        | (((bytes[1]) as u64) << 36)
-        | (((bytes[2]) as u64) << 28)
-        | (((bytes[3]) as u64) << 20)
-        | (((bytes[4]) as u64) << 12)
-        | (((bytes[5]) as u64) << 4)
+    values[0] = ((bytes[0] as u64) << 44)
+        | ((bytes[1] as u64) << 36)
+        | ((bytes[2] as u64) << 28)
+        | ((bytes[3] as u64) << 20)
+        | ((bytes[4] as u64) << 12)
+        | ((bytes[5] as u64) << 4)
         | (((bytes[6] >> 4) & 0xf) as u64);
     values[1] = ((((bytes[6]) & 0xf) as u64) << 48)
-        | (((bytes[7]) as u64) << 40)
-        | (((bytes[8]) as u64) << 32)
-        | (((bytes[9]) as u64) << 24)
-        | (((bytes[10]) as u64) << 16)
-        | (((bytes[11]) as u64) << 8)
-        | ((bytes[12]) as u64);
-    values[2] = (((bytes[13]) as u64) << 44)
-        | (((bytes[14]) as u64) << 36)
-        | (((bytes[15]) as u64) << 28)
-        | (((bytes[16]) as u64) << 20)
-        | (((bytes[17]) as u64) << 12)
-        | (((bytes[18]) as u64) << 4)
+        | ((bytes[7] as u64) << 40)
+        | ((bytes[8] as u64) << 32)
+        | ((bytes[9] as u64) << 24)
+        | ((bytes[10] as u64) << 16)
+        | ((bytes[11] as u64) << 8)
+        | (bytes[12] as u64);
+    values[2] = ((bytes[13] as u64) << 44)
+        | ((bytes[14] as u64) << 36)
+        | ((bytes[15] as u64) << 28)
+        | ((bytes[16] as u64) << 20)
+        | ((bytes[17] as u64) << 12)
+        | ((bytes[18] as u64) << 4)
         | (((bytes[19] >> 4) & 0xf) as u64);
     values[3] = ((((bytes[19]) & 0xf) as u64) << 48)
-        | (((bytes[20]) as u64) << 40)
-        | (((bytes[21]) as u64) << 32)
-        | (((bytes[22]) as u64) << 24)
-        | (((bytes[23]) as u64) << 16)
-        | (((bytes[24]) as u64) << 8)
-        | ((bytes[25]) as u64);
-    values[4] = (((bytes[26]) as u64) << 44)
-        | (((bytes[27]) as u64) << 36)
-        | (((bytes[28]) as u64) << 28)
-        | (((bytes[29]) as u64) << 20)
-        | (((bytes[30]) as u64) << 12)
-        | (((bytes[31]) as u64) << 4)
+        | ((bytes[20] as u64) << 40)
+        | ((bytes[21] as u64) << 32)
+        | ((bytes[22] as u64) << 24)
+        | ((bytes[23] as u64) << 16)
+        | ((bytes[24] as u64) << 8)
+        | (bytes[25] as u64);
+    values[4] = ((bytes[26] as u64) << 44)
+        | ((bytes[27] as u64) << 36)
+        | ((bytes[28] as u64) << 28)
+        | ((bytes[29] as u64) << 20)
+        | ((bytes[30] as u64) << 12)
+        | ((bytes[31] as u64) << 4)
         | (((bytes[32] >> 4) & 0xf) as u64);
     values[5] = ((((bytes[32]) & 0xf) as u64) << 48)
-        | (((bytes[33]) as u64) << 40)
-        | (((bytes[34]) as u64) << 32)
-        | (((bytes[35]) as u64) << 24)
-        | (((bytes[36]) as u64) << 16)
-        | (((bytes[37]) as u64) << 8)
-        | ((bytes[38]) as u64);
-    values[6] = (((bytes[39]) as u64) << 44)
-        | (((bytes[40]) as u64) << 36)
-        | (((bytes[41]) as u64) << 28)
-        | (((bytes[42]) as u64) << 20)
-        | (((bytes[43]) as u64) << 12)
-        | (((bytes[44]) as u64) << 4)
+        | ((bytes[33] as u64) << 40)
+        | ((bytes[34] as u64) << 32)
+        | ((bytes[35] as u64) << 24)
+        | ((bytes[36] as u64) << 16)
+        | ((bytes[37] as u64) << 8)
+        | (bytes[38] as u64);
+    values[6] = ((bytes[39] as u64) << 44)
+        | ((bytes[40] as u64) << 36)
+        | ((bytes[41] as u64) << 28)
+        | ((bytes[42] as u64) << 20)
+        | ((bytes[43] as u64) << 12)
+        | ((bytes[44] as u64) << 4)
         | (((bytes[45] >> 4) & 0xf) as u64);
     values[7] = ((((bytes[45]) & 0xf) as u64) << 48)
-        | (((bytes[46]) as u64) << 40)
-        | (((bytes[47]) as u64) << 32)
-        | (((bytes[48]) as u64) << 24)
-        | (((bytes[49]) as u64) << 16)
-        | (((bytes[50]) as u64) << 8)
-        | ((bytes[51]) as u64);
+        | ((bytes[46] as u64) << 40)
+        | ((bytes[47] as u64) << 32)
+        | ((bytes[48] as u64) << 24)
+        | ((bytes[49] as u64) << 16)
+        | ((bytes[50] as u64) << 8)
+        | (bytes[51] as u64);
 }
 
 #[inline]
 fn unpack_bits_53(values: &mut [u64], bytes: &[u8]) {
-    values[0] = (((bytes[0]) as u64) << 45)
-        | (((bytes[1]) as u64) << 37)
-        | (((bytes[2]) as u64) << 29)
-        | (((bytes[3]) as u64) << 21)
-        | (((bytes[4]) as u64) << 13)
-        | (((bytes[5]) as u64) << 5)
+    values[0] = ((bytes[0] as u64) << 45)
+        | ((bytes[1] as u64) << 37)
+        | ((bytes[2] as u64) << 29)
+        | ((bytes[3] as u64) << 21)
+        | ((bytes[4] as u64) << 13)
+        | ((bytes[5] as u64) << 5)
         | (((bytes[6] >> 3) & 0x1f) as u64);
     values[1] = ((((bytes[6]) & 0x7) as u64) << 50)
-        | (((bytes[7]) as u64) << 42)
-        | (((bytes[8]) as u64) << 34)
-        | (((bytes[9]) as u64) << 26)
-        | (((bytes[10]) as u64) << 18)
-        | (((bytes[11]) as u64) << 10)
-        | (((bytes[12]) as u64) << 2)
+        | ((bytes[7] as u64) << 42)
+        | ((bytes[8] as u64) << 34)
+        | ((bytes[9] as u64) << 26)
+        | ((bytes[10] as u64) << 18)
+        | ((bytes[11] as u64) << 10)
+        | ((bytes[12] as u64) << 2)
         | (((bytes[13] >> 6) & 0x3) as u64);
     values[2] = ((((bytes[13]) & 0x3f) as u64) << 47)
-        | (((bytes[14]) as u64) << 39)
-        | (((bytes[15]) as u64) << 31)
-        | (((bytes[16]) as u64) << 23)
-        | (((bytes[17]) as u64) << 15)
-        | (((bytes[18]) as u64) << 7)
+        | ((bytes[14] as u64) << 39)
+        | ((bytes[15] as u64) << 31)
+        | ((bytes[16] as u64) << 23)
+        | ((bytes[17] as u64) << 15)
+        | ((bytes[18] as u64) << 7)
         | (((bytes[19] >> 1) & 0x7f) as u64);
     values[3] = ((((bytes[19]) & 0x1) as u64) << 52)
-        | (((bytes[20]) as u64) << 44)
-        | (((bytes[21]) as u64) << 36)
-        | (((bytes[22]) as u64) << 28)
-        | (((bytes[23]) as u64) << 20)
-        | (((bytes[24]) as u64) << 12)
-        | (((bytes[25]) as u64) << 4)
+        | ((bytes[20] as u64) << 44)
+        | ((bytes[21] as u64) << 36)
+        | ((bytes[22] as u64) << 28)
+        | ((bytes[23] as u64) << 20)
+        | ((bytes[24] as u64) << 12)
+        | ((bytes[25] as u64) << 4)
         | (((bytes[26] >> 4) & 0xf) as u64);
     values[4] = ((((bytes[26]) & 0xf) as u64) << 49)
-        | (((bytes[27]) as u64) << 41)
-        | (((bytes[28]) as u64) << 33)
-        | (((bytes[29]) as u64) << 25)
-        | (((bytes[30]) as u64) << 17)
-        | (((bytes[31]) as u64) << 9)
-        | (((bytes[32]) as u64) << 1)
+        | ((bytes[27] as u64) << 41)
+        | ((bytes[28] as u64) << 33)
+        | ((bytes[29] as u64) << 25)
+        | ((bytes[30] as u64) << 17)
+        | ((bytes[31] as u64) << 9)
+        | ((bytes[32] as u64) << 1)
         | (((bytes[33] >> 7) & 0x1) as u64);
     values[5] = ((((bytes[33]) & 0x7f) as u64) << 46)
-        | (((bytes[34]) as u64) << 38)
-        | (((bytes[35]) as u64) << 30)
-        | (((bytes[36]) as u64) << 22)
-        | (((bytes[37]) as u64) << 14)
-        | (((bytes[38]) as u64) << 6)
+        | ((bytes[34] as u64) << 38)
+        | ((bytes[35] as u64) << 30)
+        | ((bytes[36] as u64) << 22)
+        | ((bytes[37] as u64) << 14)
+        | ((bytes[38] as u64) << 6)
         | (((bytes[39] >> 2) & 0x3f) as u64);
     values[6] = ((((bytes[39]) & 0x3) as u64) << 51)
-        | (((bytes[40]) as u64) << 43)
-        | (((bytes[41]) as u64) << 35)
-        | (((bytes[42]) as u64) << 27)
-        | (((bytes[43]) as u64) << 19)
-        | (((bytes[44]) as u64) << 11)
-        | (((bytes[45]) as u64) << 3)
+        | ((bytes[40] as u64) << 43)
+        | ((bytes[41] as u64) << 35)
+        | ((bytes[42] as u64) << 27)
+        | ((bytes[43] as u64) << 19)
+        | ((bytes[44] as u64) << 11)
+        | ((bytes[45] as u64) << 3)
         | (((bytes[46] >> 5) & 0x7) as u64);
     values[7] = ((((bytes[46]) & 0x1f) as u64) << 48)
-        | (((bytes[47]) as u64) << 40)
-        | (((bytes[48]) as u64) << 32)
-        | (((bytes[49]) as u64) << 24)
-        | (((bytes[50]) as u64) << 16)
-        | (((bytes[51]) as u64) << 8)
-        | ((bytes[52]) as u64);
+        | ((bytes[47] as u64) << 40)
+        | ((bytes[48] as u64) << 32)
+        | ((bytes[49] as u64) << 24)
+        | ((bytes[50] as u64) << 16)
+        | ((bytes[51] as u64) << 8)
+        | (bytes[52] as u64);
 }
 
 #[inline]
 fn unpack_bits_54(values: &mut [u64], bytes: &[u8]) {
-    values[0] = (((bytes[0]) as u64) << 46)
-        | (((bytes[1]) as u64) << 38)
-        | (((bytes[2]) as u64) << 30)
-        | (((bytes[3]) as u64) << 22)
-        | (((bytes[4]) as u64) << 14)
-        | (((bytes[5]) as u64) << 6)
+    values[0] = ((bytes[0] as u64) << 46)
+        | ((bytes[1] as u64) << 38)
+        | ((bytes[2] as u64) << 30)
+        | ((bytes[3] as u64) << 22)
+        | ((bytes[4] as u64) << 14)
+        | ((bytes[5] as u64) << 6)
         | (((bytes[6] >> 2) & 0x3f) as u64);
     values[1] = ((((bytes[6]) & 0x3) as u64) << 52)
-        | (((bytes[7]) as u64) << 44)
-        | (((bytes[8]) as u64) << 36)
-        | (((bytes[9]) as u64) << 28)
-        | (((bytes[10]) as u64) << 20)
-        | (((bytes[11]) as u64) << 12)
-        | (((bytes[12]) as u64) << 4)
+        | ((bytes[7] as u64) << 44)
+        | ((bytes[8] as u64) << 36)
+        | ((bytes[9] as u64) << 28)
+        | ((bytes[10] as u64) << 20)
+        | ((bytes[11] as u64) << 12)
+        | ((bytes[12] as u64) << 4)
         | (((bytes[13] >> 4) & 0xf) as u64);
     values[2] = ((((bytes[13]) & 0xf) as u64) << 50)
-        | (((bytes[14]) as u64) << 42)
-        | (((bytes[15]) as u64) << 34)
-        | (((bytes[16]) as u64) << 26)
-        | (((bytes[17]) as u64) << 18)
-        | (((bytes[18]) as u64) << 10)
-        | (((bytes[19]) as u64) << 2)
+        | ((bytes[14] as u64) << 42)
+        | ((bytes[15] as u64) << 34)
+        | ((bytes[16] as u64) << 26)
+        | ((bytes[17] as u64) << 18)
+        | ((bytes[18] as u64) << 10)
+        | ((bytes[19] as u64) << 2)
         | (((bytes[20] >> 6) & 0x3) as u64);
     values[3] = ((((bytes[20]) & 0x3f) as u64) << 48)
-        | (((bytes[21]) as u64) << 40)
-        | (((bytes[22]) as u64) << 32)
-        | (((bytes[23]) as u64) << 24)
-        | (((bytes[24]) as u64) << 16)
-        | (((bytes[25]) as u64) << 8)
-        | ((bytes[26]) as u64);
-    values[4] = (((bytes[27]) as u64) << 46)
-        | (((bytes[28]) as u64) << 38)
-        | (((bytes[29]) as u64) << 30)
-        | (((bytes[30]) as u64) << 22)
-        | (((bytes[31]) as u64) << 14)
-        | (((bytes[32]) as u64) << 6)
+        | ((bytes[21] as u64) << 40)
+        | ((bytes[22] as u64) << 32)
+        | ((bytes[23] as u64) << 24)
+        | ((bytes[24] as u64) << 16)
+        | ((bytes[25] as u64) << 8)
+        | (bytes[26] as u64);
+    values[4] = ((bytes[27] as u64) << 46)
+        | ((bytes[28] as u64) << 38)
+        | ((bytes[29] as u64) << 30)
+        | ((bytes[30] as u64) << 22)
+        | ((bytes[31] as u64) << 14)
+        | ((bytes[32] as u64) << 6)
         | (((bytes[33] >> 2) & 0x3f) as u64);
     values[5] = ((((bytes[33]) & 0x3) as u64) << 52)
-        | (((bytes[34]) as u64) << 44)
-        | (((bytes[35]) as u64) << 36)
-        | (((bytes[36]) as u64) << 28)
-        | (((bytes[37]) as u64) << 20)
-        | (((bytes[38]) as u64) << 12)
-        | (((bytes[39]) as u64) << 4)
+        | ((bytes[34] as u64) << 44)
+        | ((bytes[35] as u64) << 36)
+        | ((bytes[36] as u64) << 28)
+        | ((bytes[37] as u64) << 20)
+        | ((bytes[38] as u64) << 12)
+        | ((bytes[39] as u64) << 4)
         | (((bytes[40] >> 4) & 0xf) as u64);
     values[6] = ((((bytes[40]) & 0xf) as u64) << 50)
-        | (((bytes[41]) as u64) << 42)
-        | (((bytes[42]) as u64) << 34)
-        | (((bytes[43]) as u64) << 26)
-        | (((bytes[44]) as u64) << 18)
-        | (((bytes[45]) as u64) << 10)
-        | (((bytes[46]) as u64) << 2)
+        | ((bytes[41] as u64) << 42)
+        | ((bytes[42] as u64) << 34)
+        | ((bytes[43] as u64) << 26)
+        | ((bytes[44] as u64) << 18)
+        | ((bytes[45] as u64) << 10)
+        | ((bytes[46] as u64) << 2)
         | (((bytes[47] >> 6) & 0x3) as u64);
     values[7] = ((((bytes[47]) & 0x3f) as u64) << 48)
-        | (((bytes[48]) as u64) << 40)
-        | (((bytes[49]) as u64) << 32)
-        | (((bytes[50]) as u64) << 24)
-        | (((bytes[51]) as u64) << 16)
-        | (((bytes[52]) as u64) << 8)
-        | ((bytes[53]) as u64);
+        | ((bytes[48] as u64) << 40)
+        | ((bytes[49] as u64) << 32)
+        | ((bytes[50] as u64) << 24)
+        | ((bytes[51] as u64) << 16)
+        | ((bytes[52] as u64) << 8)
+        | (bytes[53] as u64);
 }
 
 #[inline]
 fn unpack_bits_55(values: &mut [u64], bytes: &[u8]) {
-    values[0] = (((bytes[0]) as u64) << 47)
-        | (((bytes[1]) as u64) << 39)
-        | (((bytes[2]) as u64) << 31)
-        | (((bytes[3]) as u64) << 23)
-        | (((bytes[4]) as u64) << 15)
-        | (((bytes[5]) as u64) << 7)
+    values[0] = ((bytes[0] as u64) << 47)
+        | ((bytes[1] as u64) << 39)
+        | ((bytes[2] as u64) << 31)
+        | ((bytes[3] as u64) << 23)
+        | ((bytes[4] as u64) << 15)
+        | ((bytes[5] as u64) << 7)
         | (((bytes[6] >> 1) & 0x7f) as u64);
     values[1] = ((((bytes[6]) & 0x1) as u64) << 54)
-        | (((bytes[7]) as u64) << 46)
-        | (((bytes[8]) as u64) << 38)
-        | (((bytes[9]) as u64) << 30)
-        | (((bytes[10]) as u64) << 22)
-        | (((bytes[11]) as u64) << 14)
-        | (((bytes[12]) as u64) << 6)
+        | ((bytes[7] as u64) << 46)
+        | ((bytes[8] as u64) << 38)
+        | ((bytes[9] as u64) << 30)
+        | ((bytes[10] as u64) << 22)
+        | ((bytes[11] as u64) << 14)
+        | ((bytes[12] as u64) << 6)
         | (((bytes[13] >> 2) & 0x3f) as u64);
     values[2] = ((((bytes[13]) & 0x3) as u64) << 53)
-        | (((bytes[14]) as u64) << 45)
-        | (((bytes[15]) as u64) << 37)
-        | (((bytes[16]) as u64) << 29)
-        | (((bytes[17]) as u64) << 21)
-        | (((bytes[18]) as u64) << 13)
-        | (((bytes[19]) as u64) << 5)
+        | ((bytes[14] as u64) << 45)
+        | ((bytes[15] as u64) << 37)
+        | ((bytes[16] as u64) << 29)
+        | ((bytes[17] as u64) << 21)
+        | ((bytes[18] as u64) << 13)
+        | ((bytes[19] as u64) << 5)
         | (((bytes[20] >> 3) & 0x1f) as u64);
     values[3] = ((((bytes[20]) & 0x7) as u64) << 52)
-        | (((bytes[21]) as u64) << 44)
-        | (((bytes[22]) as u64) << 36)
-        | (((bytes[23]) as u64) << 28)
-        | (((bytes[24]) as u64) << 20)
-        | (((bytes[25]) as u64) << 12)
-        | (((bytes[26]) as u64) << 4)
+        | ((bytes[21] as u64) << 44)
+        | ((bytes[22] as u64) << 36)
+        | ((bytes[23] as u64) << 28)
+        | ((bytes[24] as u64) << 20)
+        | ((bytes[25] as u64) << 12)
+        | ((bytes[26] as u64) << 4)
         | (((bytes[27] >> 4) & 0xf) as u64);
     values[4] = ((((bytes[27]) & 0xf) as u64) << 51)
-        | (((bytes[28]) as u64) << 43)
-        | (((bytes[29]) as u64) << 35)
-        | (((bytes[30]) as u64) << 27)
-        | (((bytes[31]) as u64) << 19)
-        | (((bytes[32]) as u64) << 11)
-        | (((bytes[33]) as u64) << 3)
+        | ((bytes[28] as u64) << 43)
+        | ((bytes[29] as u64) << 35)
+        | ((bytes[30] as u64) << 27)
+        | ((bytes[31] as u64) << 19)
+        | ((bytes[32] as u64) << 11)
+        | ((bytes[33] as u64) << 3)
         | (((bytes[34] >> 5) & 0x7) as u64);
     values[5] = ((((bytes[34]) & 0x1f) as u64) << 50)
-        | (((bytes[35]) as u64) << 42)
-        | (((bytes[36]) as u64) << 34)
-        | (((bytes[37]) as u64) << 26)
-        | (((bytes[38]) as u64) << 18)
-        | (((bytes[39]) as u64) << 10)
-        | (((bytes[40]) as u64) << 2)
+        | ((bytes[35] as u64) << 42)
+        | ((bytes[36] as u64) << 34)
+        | ((bytes[37] as u64) << 26)
+        | ((bytes[38] as u64) << 18)
+        | ((bytes[39] as u64) << 10)
+        | ((bytes[40] as u64) << 2)
         | (((bytes[41] >> 6) & 0x3) as u64);
     values[6] = ((((bytes[41]) & 0x3f) as u64) << 49)
-        | (((bytes[42]) as u64) << 41)
-        | (((bytes[43]) as u64) << 33)
-        | (((bytes[44]) as u64) << 25)
-        | (((bytes[45]) as u64) << 17)
-        | (((bytes[46]) as u64) << 9)
-        | (((bytes[47]) as u64) << 1)
+        | ((bytes[42] as u64) << 41)
+        | ((bytes[43] as u64) << 33)
+        | ((bytes[44] as u64) << 25)
+        | ((bytes[45] as u64) << 17)
+        | ((bytes[46] as u64) << 9)
+        | ((bytes[47] as u64) << 1)
         | (((bytes[48] >> 7) & 0x1) as u64);
     values[7] = ((((bytes[48]) & 0x7f) as u64) << 48)
-        | (((bytes[49]) as u64) << 40)
-        | (((bytes[50]) as u64) << 32)
-        | (((bytes[51]) as u64) << 24)
-        | (((bytes[52]) as u64) << 16)
-        | (((bytes[53]) as u64) << 8)
-        | ((bytes[54]) as u64);
+        | ((bytes[49] as u64) << 40)
+        | ((bytes[50] as u64) << 32)
+        | ((bytes[51] as u64) << 24)
+        | ((bytes[52] as u64) << 16)
+        | ((bytes[53] as u64) << 8)
+        | (bytes[54] as u64);
 }
 
 #[inline]
 fn unpack_bits_56(values: &mut [u64], bytes: &[u8]) {
-    values[0] = (((bytes[0]) as u64) << 48)
-        | (((bytes[1]) as u64) << 40)
-        | (((bytes[2]) as u64) << 32)
-        | (((bytes[3]) as u64) << 24)
-        | (((bytes[4]) as u64) << 16)
-        | (((bytes[5]) as u64) << 8)
-        | ((bytes[6]) as u64);
-    values[1] = (((bytes[7]) as u64) << 48)
-        | (((bytes[8]) as u64) << 40)
-        | (((bytes[9]) as u64) << 32)
-        | (((bytes[10]) as u64) << 24)
-        | (((bytes[11]) as u64) << 16)
-        | (((bytes[12]) as u64) << 8)
-        | ((bytes[13]) as u64);
-    values[2] = (((bytes[14]) as u64) << 48)
-        | (((bytes[15]) as u64) << 40)
-        | (((bytes[16]) as u64) << 32)
-        | (((bytes[17]) as u64) << 24)
-        | (((bytes[18]) as u64) << 16)
-        | (((bytes[19]) as u64) << 8)
-        | ((bytes[20]) as u64);
-    values[3] = (((bytes[21]) as u64) << 48)
-        | (((bytes[22]) as u64) << 40)
-        | (((bytes[23]) as u64) << 32)
-        | (((bytes[24]) as u64) << 24)
-        | (((bytes[25]) as u64) << 16)
-        | (((bytes[26]) as u64) << 8)
-        | ((bytes[27]) as u64);
-    values[4] = (((bytes[28]) as u64) << 48)
-        | (((bytes[29]) as u64) << 40)
-        | (((bytes[30]) as u64) << 32)
-        | (((bytes[31]) as u64) << 24)
-        | (((bytes[32]) as u64) << 16)
-        | (((bytes[33]) as u64) << 8)
-        | ((bytes[34]) as u64);
-    values[5] = (((bytes[35]) as u64) << 48)
-        | (((bytes[36]) as u64) << 40)
-        | (((bytes[37]) as u64) << 32)
-        | (((bytes[38]) as u64) << 24)
-        | (((bytes[39]) as u64) << 16)
-        | (((bytes[40]) as u64) << 8)
-        | ((bytes[41]) as u64);
-    values[6] = (((bytes[42]) as u64) << 48)
-        | (((bytes[43]) as u64) << 40)
-        | (((bytes[44]) as u64) << 32)
-        | (((bytes[45]) as u64) << 24)
-        | (((bytes[46]) as u64) << 16)
-        | (((bytes[47]) as u64) << 8)
-        | ((bytes[48]) as u64);
-    values[7] = (((bytes[49]) as u64) << 48)
-        | (((bytes[50]) as u64) << 40)
-        | (((bytes[51]) as u64) << 32)
-        | (((bytes[52]) as u64) << 24)
-        | (((bytes[53]) as u64) << 16)
-        | (((bytes[54]) as u64) << 8)
-        | ((bytes[55]) as u64);
+    values[0] = ((bytes[0] as u64) << 48)
+        | ((bytes[1] as u64) << 40)
+        | ((bytes[2] as u64) << 32)
+        | ((bytes[3] as u64) << 24)
+        | ((bytes[4] as u64) << 16)
+        | ((bytes[5] as u64) << 8)
+        | (bytes[6] as u64);
+    values[1] = ((bytes[7] as u64) << 48)
+        | ((bytes[8] as u64) << 40)
+        | ((bytes[9] as u64) << 32)
+        | ((bytes[10] as u64) << 24)
+        | ((bytes[11] as u64) << 16)
+        | ((bytes[12] as u64) << 8)
+        | (bytes[13] as u64);
+    values[2] = ((bytes[14] as u64) << 48)
+        | ((bytes[15] as u64) << 40)
+        | ((bytes[16] as u64) << 32)
+        | ((bytes[17] as u64) << 24)
+        | ((bytes[18] as u64) << 16)
+        | ((bytes[19] as u64) << 8)
+        | (bytes[20] as u64);
+    values[3] = ((bytes[21] as u64) << 48)
+        | ((bytes[22] as u64) << 40)
+        | ((bytes[23] as u64) << 32)
+        | ((bytes[24] as u64) << 24)
+        | ((bytes[25] as u64) << 16)
+        | ((bytes[26] as u64) << 8)
+        | (bytes[27] as u64);
+    values[4] = ((bytes[28] as u64) << 48)
+        | ((bytes[29] as u64) << 40)
+        | ((bytes[30] as u64) << 32)
+        | ((bytes[31] as u64) << 24)
+        | ((bytes[32] as u64) << 16)
+        | ((bytes[33] as u64) << 8)
+        | (bytes[34] as u64);
+    values[5] = ((bytes[35] as u64) << 48)
+        | ((bytes[36] as u64) << 40)
+        | ((bytes[37] as u64) << 32)
+        | ((bytes[38] as u64) << 24)
+        | ((bytes[39] as u64) << 16)
+        | ((bytes[40] as u64) << 8)
+        | (bytes[41] as u64);
+    values[6] = ((bytes[42] as u64) << 48)
+        | ((bytes[43] as u64) << 40)
+        | ((bytes[44] as u64) << 32)
+        | ((bytes[45] as u64) << 24)
+        | ((bytes[46] as u64) << 16)
+        | ((bytes[47] as u64) << 8)
+        | (bytes[48] as u64);
+    values[7] = ((bytes[49] as u64) << 48)
+        | ((bytes[50] as u64) << 40)
+        | ((bytes[51] as u64) << 32)
+        | ((bytes[52] as u64) << 24)
+        | ((bytes[53] as u64) << 16)
+        | ((bytes[54] as u64) << 8)
+        | (bytes[55] as u64);
 }
 
 #[inline]
 fn unpack_bits_57(values: &mut [u64], bytes: &[u8]) {
-    values[0] = (((bytes[0]) as u64) << 49)
-        | (((bytes[1]) as u64) << 41)
-        | (((bytes[2]) as u64) << 33)
-        | (((bytes[3]) as u64) << 25)
-        | (((bytes[4]) as u64) << 17)
-        | (((bytes[5]) as u64) << 9)
-        | (((bytes[6]) as u64) << 1)
+    values[0] = ((bytes[0] as u64) << 49)
+        | ((bytes[1] as u64) << 41)
+        | ((bytes[2] as u64) << 33)
+        | ((bytes[3] as u64) << 25)
+        | ((bytes[4] as u64) << 17)
+        | ((bytes[5] as u64) << 9)
+        | ((bytes[6] as u64) << 1)
         | (((bytes[7] >> 7) & 0x1) as u64);
     values[1] = ((((bytes[7]) & 0x7f) as u64) << 50)
-        | (((bytes[8]) as u64) << 42)
-        | (((bytes[9]) as u64) << 34)
-        | (((bytes[10]) as u64) << 26)
-        | (((bytes[11]) as u64) << 18)
-        | (((bytes[12]) as u64) << 10)
-        | (((bytes[13]) as u64) << 2)
+        | ((bytes[8] as u64) << 42)
+        | ((bytes[9] as u64) << 34)
+        | ((bytes[10] as u64) << 26)
+        | ((bytes[11] as u64) << 18)
+        | ((bytes[12] as u64) << 10)
+        | ((bytes[13] as u64) << 2)
         | (((bytes[14] >> 6) & 0x3) as u64);
     values[2] = ((((bytes[14]) & 0x3f) as u64) << 51)
-        | (((bytes[15]) as u64) << 43)
-        | (((bytes[16]) as u64) << 35)
-        | (((bytes[17]) as u64) << 27)
-        | (((bytes[18]) as u64) << 19)
-        | (((bytes[19]) as u64) << 11)
-        | (((bytes[20]) as u64) << 3)
+        | ((bytes[15] as u64) << 43)
+        | ((bytes[16] as u64) << 35)
+        | ((bytes[17] as u64) << 27)
+        | ((bytes[18] as u64) << 19)
+        | ((bytes[19] as u64) << 11)
+        | ((bytes[20] as u64) << 3)
         | (((bytes[21] >> 5) & 0x7) as u64);
     values[3] = ((((bytes[21]) & 0x1f) as u64) << 52)
-        | (((bytes[22]) as u64) << 44)
-        | (((bytes[23]) as u64) << 36)
-        | (((bytes[24]) as u64) << 28)
-        | (((bytes[25]) as u64) << 20)
-        | (((bytes[26]) as u64) << 12)
-        | (((bytes[27]) as u64) << 4)
+        | ((bytes[22] as u64) << 44)
+        | ((bytes[23] as u64) << 36)
+        | ((bytes[24] as u64) << 28)
+        | ((bytes[25] as u64) << 20)
+        | ((bytes[26] as u64) << 12)
+        | ((bytes[27] as u64) << 4)
         | (((bytes[28] >> 4) & 0xf) as u64);
     values[4] = ((((bytes[28]) & 0xf) as u64) << 53)
-        | (((bytes[29]) as u64) << 45)
-        | (((bytes[30]) as u64) << 37)
-        | (((bytes[31]) as u64) << 29)
-        | (((bytes[32]) as u64) << 21)
-        | (((bytes[33]) as u64) << 13)
-        | (((bytes[34]) as u64) << 5)
+        | ((bytes[29] as u64) << 45)
+        | ((bytes[30] as u64) << 37)
+        | ((bytes[31] as u64) << 29)
+        | ((bytes[32] as u64) << 21)
+        | ((bytes[33] as u64) << 13)
+        | ((bytes[34] as u64) << 5)
         | (((bytes[35] >> 3) & 0x1f) as u64);
     values[5] = ((((bytes[35]) & 0x7) as u64) << 54)
-        | (((bytes[36]) as u64) << 46)
-        | (((bytes[37]) as u64) << 38)
-        | (((bytes[38]) as u64) << 30)
-        | (((bytes[39]) as u64) << 22)
-        | (((bytes[40]) as u64) << 14)
-        | (((bytes[41]) as u64) << 6)
+        | ((bytes[36] as u64) << 46)
+        | ((bytes[37] as u64) << 38)
+        | ((bytes[38] as u64) << 30)
+        | ((bytes[39] as u64) << 22)
+        | ((bytes[40] as u64) << 14)
+        | ((bytes[41] as u64) << 6)
         | (((bytes[42] >> 2) & 0x3f) as u64);
     values[6] = ((((bytes[42]) & 0x3) as u64) << 55)
-        | (((bytes[43]) as u64) << 47)
-        | (((bytes[44]) as u64) << 39)
-        | (((bytes[45]) as u64) << 31)
-        | (((bytes[46]) as u64) << 23)
-        | (((bytes[47]) as u64) << 15)
-        | (((bytes[48]) as u64) << 7)
+        | ((bytes[43] as u64) << 47)
+        | ((bytes[44] as u64) << 39)
+        | ((bytes[45] as u64) << 31)
+        | ((bytes[46] as u64) << 23)
+        | ((bytes[47] as u64) << 15)
+        | ((bytes[48] as u64) << 7)
         | (((bytes[49] >> 1) & 0x7f) as u64);
     values[7] = ((((bytes[49]) & 0x1) as u64) << 56)
-        | (((bytes[50]) as u64) << 48)
-        | (((bytes[51]) as u64) << 40)
-        | (((bytes[52]) as u64) << 32)
-        | (((bytes[53]) as u64) << 24)
-        | (((bytes[54]) as u64) << 16)
-        | (((bytes[55]) as u64) << 8)
-        | ((bytes[56]) as u64);
+        | ((bytes[50] as u64) << 48)
+        | ((bytes[51] as u64) << 40)
+        | ((bytes[52] as u64) << 32)
+        | ((bytes[53] as u64) << 24)
+        | ((bytes[54] as u64) << 16)
+        | ((bytes[55] as u64) << 8)
+        | (bytes[56] as u64);
 }
 
 #[inline]
 fn unpack_bits_58(values: &mut [u64], bytes: &[u8]) {
-    values[0] = (((bytes[0]) as u64) << 50)
-        | (((bytes[1]) as u64) << 42)
-        | (((bytes[2]) as u64) << 34)
-        | (((bytes[3]) as u64) << 26)
-        | (((bytes[4]) as u64) << 18)
-        | (((bytes[5]) as u64) << 10)
-        | (((bytes[6]) as u64) << 2)
+    values[0] = ((bytes[0] as u64) << 50)
+        | ((bytes[1] as u64) << 42)
+        | ((bytes[2] as u64) << 34)
+        | ((bytes[3] as u64) << 26)
+        | ((bytes[4] as u64) << 18)
+        | ((bytes[5] as u64) << 10)
+        | ((bytes[6] as u64) << 2)
         | (((bytes[7] >> 6) & 0x3) as u64);
     values[1] = ((((bytes[7]) & 0x3f) as u64) << 52)
-        | (((bytes[8]) as u64) << 44)
-        | (((bytes[9]) as u64) << 36)
-        | (((bytes[10]) as u64) << 28)
-        | (((bytes[11]) as u64) << 20)
-        | (((bytes[12]) as u64) << 12)
-        | (((bytes[13]) as u64) << 4)
+        | ((bytes[8] as u64) << 44)
+        | ((bytes[9] as u64) << 36)
+        | ((bytes[10] as u64) << 28)
+        | ((bytes[11] as u64) << 20)
+        | ((bytes[12] as u64) << 12)
+        | ((bytes[13] as u64) << 4)
         | (((bytes[14] >> 4) & 0xf) as u64);
     values[2] = ((((bytes[14]) & 0xf) as u64) << 54)
-        | (((bytes[15]) as u64) << 46)
-        | (((bytes[16]) as u64) << 38)
-        | (((bytes[17]) as u64) << 30)
-        | (((bytes[18]) as u64) << 22)
-        | (((bytes[19]) as u64) << 14)
-        | (((bytes[20]) as u64) << 6)
+        | ((bytes[15] as u64) << 46)
+        | ((bytes[16] as u64) << 38)
+        | ((bytes[17] as u64) << 30)
+        | ((bytes[18] as u64) << 22)
+        | ((bytes[19] as u64) << 14)
+        | ((bytes[20] as u64) << 6)
         | (((bytes[21] >> 2) & 0x3f) as u64);
     values[3] = ((((bytes[21]) & 0x3) as u64) << 56)
-        | (((bytes[22]) as u64) << 48)
-        | (((bytes[23]) as u64) << 40)
-        | (((bytes[24]) as u64) << 32)
-        | (((bytes[25]) as u64) << 24)
-        | (((bytes[26]) as u64) << 16)
-        | (((bytes[27]) as u64) << 8)
-        | ((bytes[28]) as u64);
-    values[4] = (((bytes[29]) as u64) << 50)
-        | (((bytes[30]) as u64) << 42)
-        | (((bytes[31]) as u64) << 34)
-        | (((bytes[32]) as u64) << 26)
-        | (((bytes[33]) as u64) << 18)
-        | (((bytes[34]) as u64) << 10)
-        | (((bytes[35]) as u64) << 2)
+        | ((bytes[22] as u64) << 48)
+        | ((bytes[23] as u64) << 40)
+        | ((bytes[24] as u64) << 32)
+        | ((bytes[25] as u64) << 24)
+        | ((bytes[26] as u64) << 16)
+        | ((bytes[27] as u64) << 8)
+        | (bytes[28] as u64);
+    values[4] = ((bytes[29] as u64) << 50)
+        | ((bytes[30] as u64) << 42)
+        | ((bytes[31] as u64) << 34)
+        | ((bytes[32] as u64) << 26)
+        | ((bytes[33] as u64) << 18)
+        | ((bytes[34] as u64) << 10)
+        | ((bytes[35] as u64) << 2)
         | (((bytes[36] >> 6) & 0x3) as u64);
     values[5] = ((((bytes[36]) & 0x3f) as u64) << 52)
-        | (((bytes[37]) as u64) << 44)
-        | (((bytes[38]) as u64) << 36)
-        | (((bytes[39]) as u64) << 28)
-        | (((bytes[40]) as u64) << 20)
-        | (((bytes[41]) as u64) << 12)
-        | (((bytes[42]) as u64) << 4)
+        | ((bytes[37] as u64) << 44)
+        | ((bytes[38] as u64) << 36)
+        | ((bytes[39] as u64) << 28)
+        | ((bytes[40] as u64) << 20)
+        | ((bytes[41] as u64) << 12)
+        | ((bytes[42] as u64) << 4)
         | (((bytes[43] >> 4) & 0xf) as u64);
     values[6] = ((((bytes[43]) & 0xf) as u64) << 54)
-        | (((bytes[44]) as u64) << 46)
-        | (((bytes[45]) as u64) << 38)
-        | (((bytes[46]) as u64) << 30)
-        | (((bytes[47]) as u64) << 22)
-        | (((bytes[48]) as u64) << 14)
-        | (((bytes[49]) as u64) << 6)
+        | ((bytes[44] as u64) << 46)
+        | ((bytes[45] as u64) << 38)
+        | ((bytes[46] as u64) << 30)
+        | ((bytes[47] as u64) << 22)
+        | ((bytes[48] as u64) << 14)
+        | ((bytes[49] as u64) << 6)
         | (((bytes[50] >> 2) & 0x3f) as u64);
     values[7] = ((((bytes[50]) & 0x3) as u64) << 56)
-        | (((bytes[51]) as u64) << 48)
-        | (((bytes[52]) as u64) << 40)
-        | (((bytes[53]) as u64) << 32)
-        | (((bytes[54]) as u64) << 24)
-        | (((bytes[55]) as u64) << 16)
-        | (((bytes[56]) as u64) << 8)
-        | ((bytes[57]) as u64);
+        | ((bytes[51] as u64) << 48)
+        | ((bytes[52] as u64) << 40)
+        | ((bytes[53] as u64) << 32)
+        | ((bytes[54] as u64) << 24)
+        | ((bytes[55] as u64) << 16)
+        | ((bytes[56] as u64) << 8)
+        | (bytes[57] as u64);
 }
 
 #[inline]
 fn unpack_bits_59(values: &mut [u64], bytes: &[u8]) {
-    values[0] = (((bytes[0]) as u64) << 51)
-        | (((bytes[1]) as u64) << 43)
-        | (((bytes[2]) as u64) << 35)
-        | (((bytes[3]) as u64) << 27)
-        | (((bytes[4]) as u64) << 19)
-        | (((bytes[5]) as u64) << 11)
-        | (((bytes[6]) as u64) << 3)
+    values[0] = ((bytes[0] as u64) << 51)
+        | ((bytes[1] as u64) << 43)
+        | ((bytes[2] as u64) << 35)
+        | ((bytes[3] as u64) << 27)
+        | ((bytes[4] as u64) << 19)
+        | ((bytes[5] as u64) << 11)
+        | ((bytes[6] as u64) << 3)
         | (((bytes[7] >> 5) & 0x7) as u64);
     values[1] = ((((bytes[7]) & 0x1f) as u64) << 54)
-        | (((bytes[8]) as u64) << 46)
-        | (((bytes[9]) as u64) << 38)
-        | (((bytes[10]) as u64) << 30)
-        | (((bytes[11]) as u64) << 22)
-        | (((bytes[12]) as u64) << 14)
-        | (((bytes[13]) as u64) << 6)
+        | ((bytes[8] as u64) << 46)
+        | ((bytes[9] as u64) << 38)
+        | ((bytes[10] as u64) << 30)
+        | ((bytes[11] as u64) << 22)
+        | ((bytes[12] as u64) << 14)
+        | ((bytes[13] as u64) << 6)
         | (((bytes[14] >> 2) & 0x3f) as u64);
     values[2] = ((((bytes[14]) & 0x3) as u64) << 57)
-        | (((bytes[15]) as u64) << 49)
-        | (((bytes[16]) as u64) << 41)
-        | (((bytes[17]) as u64) << 33)
-        | (((bytes[18]) as u64) << 25)
-        | (((bytes[19]) as u64) << 17)
-        | (((bytes[20]) as u64) << 9)
-        | (((bytes[21]) as u64) << 1)
+        | ((bytes[15] as u64) << 49)
+        | ((bytes[16] as u64) << 41)
+        | ((bytes[17] as u64) << 33)
+        | ((bytes[18] as u64) << 25)
+        | ((bytes[19] as u64) << 17)
+        | ((bytes[20] as u64) << 9)
+        | ((bytes[21] as u64) << 1)
         | (((bytes[22] >> 7) & 0x1) as u64);
     values[3] = ((((bytes[22]) & 0x7f) as u64) << 52)
-        | (((bytes[23]) as u64) << 44)
-        | (((bytes[24]) as u64) << 36)
-        | (((bytes[25]) as u64) << 28)
-        | (((bytes[26]) as u64) << 20)
-        | (((bytes[27]) as u64) << 12)
-        | (((bytes[28]) as u64) << 4)
+        | ((bytes[23] as u64) << 44)
+        | ((bytes[24] as u64) << 36)
+        | ((bytes[25] as u64) << 28)
+        | ((bytes[26] as u64) << 20)
+        | ((bytes[27] as u64) << 12)
+        | ((bytes[28] as u64) << 4)
         | (((bytes[29] >> 4) & 0xf) as u64);
     values[4] = ((((bytes[29]) & 0xf) as u64) << 55)
-        | (((bytes[30]) as u64) << 47)
-        | (((bytes[31]) as u64) << 39)
-        | (((bytes[32]) as u64) << 31)
-        | (((bytes[33]) as u64) << 23)
-        | (((bytes[34]) as u64) << 15)
-        | (((bytes[35]) as u64) << 7)
+        | ((bytes[30] as u64) << 47)
+        | ((bytes[31] as u64) << 39)
+        | ((bytes[32] as u64) << 31)
+        | ((bytes[33] as u64) << 23)
+        | ((bytes[34] as u64) << 15)
+        | ((bytes[35] as u64) << 7)
         | (((bytes[36] >> 1) & 0x7f) as u64);
     values[5] = ((((bytes[36]) & 0x1) as u64) << 58)
-        | (((bytes[37]) as u64) << 50)
-        | (((bytes[38]) as u64) << 42)
-        | (((bytes[39]) as u64) << 34)
-        | (((bytes[40]) as u64) << 26)
-        | (((bytes[41]) as u64) << 18)
-        | (((bytes[42]) as u64) << 10)
-        | (((bytes[43]) as u64) << 2)
+        | ((bytes[37] as u64) << 50)
+        | ((bytes[38] as u64) << 42)
+        | ((bytes[39] as u64) << 34)
+        | ((bytes[40] as u64) << 26)
+        | ((bytes[41] as u64) << 18)
+        | ((bytes[42] as u64) << 10)
+        | ((bytes[43] as u64) << 2)
         | (((bytes[44] >> 6) & 0x3) as u64);
     values[6] = ((((bytes[44]) & 0x3f) as u64) << 53)
-        | (((bytes[45]) as u64) << 45)
-        | (((bytes[46]) as u64) << 37)
-        | (((bytes[47]) as u64) << 29)
-        | (((bytes[48]) as u64) << 21)
-        | (((bytes[49]) as u64) << 13)
-        | (((bytes[50]) as u64) << 5)
+        | ((bytes[45] as u64) << 45)
+        | ((bytes[46] as u64) << 37)
+        | ((bytes[47] as u64) << 29)
+        | ((bytes[48] as u64) << 21)
+        | ((bytes[49] as u64) << 13)
+        | ((bytes[50] as u64) << 5)
         | (((bytes[51] >> 3) & 0x1f) as u64);
     values[7] = ((((bytes[51]) & 0x7) as u64) << 56)
-        | (((bytes[52]) as u64) << 48)
-        | (((bytes[53]) as u64) << 40)
-        | (((bytes[54]) as u64) << 32)
-        | (((bytes[55]) as u64) << 24)
-        | (((bytes[56]) as u64) << 16)
-        | (((bytes[57]) as u64) << 8)
-        | ((bytes[58]) as u64);
+        | ((bytes[52] as u64) << 48)
+        | ((bytes[53] as u64) << 40)
+        | ((bytes[54] as u64) << 32)
+        | ((bytes[55] as u64) << 24)
+        | ((bytes[56] as u64) << 16)
+        | ((bytes[57] as u64) << 8)
+        | (bytes[58] as u64);
 }
 
 #[inline]
 fn unpack_bits_60(values: &mut [u64], bytes: &[u8]) {
-    values[0] = (((bytes[0]) as u64) << 52)
-        | (((bytes[1]) as u64) << 44)
-        | (((bytes[2]) as u64) << 36)
-        | (((bytes[3]) as u64) << 28)
-        | (((bytes[4]) as u64) << 20)
-        | (((bytes[5]) as u64) << 12)
-        | (((bytes[6]) as u64) << 4)
+    values[0] = ((bytes[0] as u64) << 52)
+        | ((bytes[1] as u64) << 44)
+        | ((bytes[2] as u64) << 36)
+        | ((bytes[3] as u64) << 28)
+        | ((bytes[4] as u64) << 20)
+        | ((bytes[5] as u64) << 12)
+        | ((bytes[6] as u64) << 4)
         | (((bytes[7] >> 4) & 0xf) as u64);
     values[1] = ((((bytes[7]) & 0xf) as u64) << 56)
-        | (((bytes[8]) as u64) << 48)
-        | (((bytes[9]) as u64) << 40)
-        | (((bytes[10]) as u64) << 32)
-        | (((bytes[11]) as u64) << 24)
-        | (((bytes[12]) as u64) << 16)
-        | (((bytes[13]) as u64) << 8)
-        | ((bytes[14]) as u64);
-    values[2] = (((bytes[15]) as u64) << 52)
-        | (((bytes[16]) as u64) << 44)
-        | (((bytes[17]) as u64) << 36)
-        | (((bytes[18]) as u64) << 28)
-        | (((bytes[19]) as u64) << 20)
-        | (((bytes[20]) as u64) << 12)
-        | (((bytes[21]) as u64) << 4)
+        | ((bytes[8] as u64) << 48)
+        | ((bytes[9] as u64) << 40)
+        | ((bytes[10] as u64) << 32)
+        | ((bytes[11] as u64) << 24)
+        | ((bytes[12] as u64) << 16)
+        | ((bytes[13] as u64) << 8)
+        | (bytes[14] as u64);
+    values[2] = ((bytes[15] as u64) << 52)
+        | ((bytes[16] as u64) << 44)
+        | ((bytes[17] as u64) << 36)
+        | ((bytes[18] as u64) << 28)
+        | ((bytes[19] as u64) << 20)
+        | ((bytes[20] as u64) << 12)
+        | ((bytes[21] as u64) << 4)
         | (((bytes[22] >> 4) & 0xf) as u64);
     values[3] = ((((bytes[22]) & 0xf) as u64) << 56)
-        | (((bytes[23]) as u64) << 48)
-        | (((bytes[24]) as u64) << 40)
-        | (((bytes[25]) as u64) << 32)
-        | (((bytes[26]) as u64) << 24)
-        | (((bytes[27]) as u64) << 16)
-        | (((bytes[28]) as u64) << 8)
-        | ((bytes[29]) as u64);
-    values[4] = (((bytes[30]) as u64) << 52)
-        | (((bytes[31]) as u64) << 44)
-        | (((bytes[32]) as u64) << 36)
-        | (((bytes[33]) as u64) << 28)
-        | (((bytes[34]) as u64) << 20)
-        | (((bytes[35]) as u64) << 12)
-        | (((bytes[36]) as u64) << 4)
+        | ((bytes[23] as u64) << 48)
+        | ((bytes[24] as u64) << 40)
+        | ((bytes[25] as u64) << 32)
+        | ((bytes[26] as u64) << 24)
+        | ((bytes[27] as u64) << 16)
+        | ((bytes[28] as u64) << 8)
+        | (bytes[29] as u64);
+    values[4] = ((bytes[30] as u64) << 52)
+        | ((bytes[31] as u64) << 44)
+        | ((bytes[32] as u64) << 36)
+        | ((bytes[33] as u64) << 28)
+        | ((bytes[34] as u64) << 20)
+        | ((bytes[35] as u64) << 12)
+        | ((bytes[36] as u64) << 4)
         | (((bytes[37] >> 4) & 0xf) as u64);
     values[5] = ((((bytes[37]) & 0xf) as u64) << 56)
-        | (((bytes[38]) as u64) << 48)
-        | (((bytes[39]) as u64) << 40)
-        | (((bytes[40]) as u64) << 32)
-        | (((bytes[41]) as u64) << 24)
-        | (((bytes[42]) as u64) << 16)
-        | (((bytes[43]) as u64) << 8)
-        | ((bytes[44]) as u64);
-    values[6] = (((bytes[45]) as u64) << 52)
-        | (((bytes[46]) as u64) << 44)
-        | (((bytes[47]) as u64) << 36)
-        | (((bytes[48]) as u64) << 28)
-        | (((bytes[49]) as u64) << 20)
-        | (((bytes[50]) as u64) << 12)
-        | (((bytes[51]) as u64) << 4)
+        | ((bytes[38] as u64) << 48)
+        | ((bytes[39] as u64) << 40)
+        | ((bytes[40] as u64) << 32)
+        | ((bytes[41] as u64) << 24)
+        | ((bytes[42] as u64) << 16)
+        | ((bytes[43] as u64) << 8)
+        | (bytes[44] as u64);
+    values[6] = ((bytes[45] as u64) << 52)
+        | ((bytes[46] as u64) << 44)
+        | ((bytes[47] as u64) << 36)
+        | ((bytes[48] as u64) << 28)
+        | ((bytes[49] as u64) << 20)
+        | ((bytes[50] as u64) << 12)
+        | ((bytes[51] as u64) << 4)
         | (((bytes[52] >> 4) & 0xf) as u64);
     values[7] = ((((bytes[52]) & 0xf) as u64) << 56)
-        | (((bytes[53]) as u64) << 48)
-        | (((bytes[54]) as u64) << 40)
-        | (((bytes[55]) as u64) << 32)
-        | (((bytes[56]) as u64) << 24)
-        | (((bytes[57]) as u64) << 16)
-        | (((bytes[58]) as u64) << 8)
-        | ((bytes[59]) as u64);
+        | ((bytes[53] as u64) << 48)
+        | ((bytes[54] as u64) << 40)
+        | ((bytes[55] as u64) << 32)
+        | ((bytes[56] as u64) << 24)
+        | ((bytes[57] as u64) << 16)
+        | ((bytes[58] as u64) << 8)
+        | (bytes[59] as u64);
 }
 
 #[inline]
 fn unpack_bits_61(values: &mut [u64], bytes: &[u8]) {
-    values[0] = (((bytes[0]) as u64) << 53)
-        | (((bytes[1]) as u64) << 45)
-        | (((bytes[2]) as u64) << 37)
-        | (((bytes[3]) as u64) << 29)
-        | (((bytes[4]) as u64) << 21)
-        | (((bytes[5]) as u64) << 13)
-        | (((bytes[6]) as u64) << 5)
+    values[0] = ((bytes[0] as u64) << 53)
+        | ((bytes[1] as u64) << 45)
+        | ((bytes[2] as u64) << 37)
+        | ((bytes[3] as u64) << 29)
+        | ((bytes[4] as u64) << 21)
+        | ((bytes[5] as u64) << 13)
+        | ((bytes[6] as u64) << 5)
         | (((bytes[7] >> 3) & 0x1f) as u64);
     values[1] = ((((bytes[7]) & 0x7) as u64) << 58)
-        | (((bytes[8]) as u64) << 50)
-        | (((bytes[9]) as u64) << 42)
-        | (((bytes[10]) as u64) << 34)
-        | (((bytes[11]) as u64) << 26)
-        | (((bytes[12]) as u64) << 18)
-        | (((bytes[13]) as u64) << 10)
-        | (((bytes[14]) as u64) << 2)
+        | ((bytes[8] as u64) << 50)
+        | ((bytes[9] as u64) << 42)
+        | ((bytes[10] as u64) << 34)
+        | ((bytes[11] as u64) << 26)
+        | ((bytes[12] as u64) << 18)
+        | ((bytes[13] as u64) << 10)
+        | ((bytes[14] as u64) << 2)
         | (((bytes[15] >> 6) & 0x3) as u64);
     values[2] = ((((bytes[15]) & 0x3f) as u64) << 55)
-        | (((bytes[16]) as u64) << 47)
-        | (((bytes[17]) as u64) << 39)
-        | (((bytes[18]) as u64) << 31)
-        | (((bytes[19]) as u64) << 23)
-        | (((bytes[20]) as u64) << 15)
-        | (((bytes[21]) as u64) << 7)
+        | ((bytes[16] as u64) << 47)
+        | ((bytes[17] as u64) << 39)
+        | ((bytes[18] as u64) << 31)
+        | ((bytes[19] as u64) << 23)
+        | ((bytes[20] as u64) << 15)
+        | ((bytes[21] as u64) << 7)
         | (((bytes[22] >> 1) & 0x7f) as u64);
     values[3] = ((((bytes[22]) & 0x1) as u64) << 60)
-        | (((bytes[23]) as u64) << 52)
-        | (((bytes[24]) as u64) << 44)
-        | (((bytes[25]) as u64) << 36)
-        | (((bytes[26]) as u64) << 28)
-        | (((bytes[27]) as u64) << 20)
-        | (((bytes[28]) as u64) << 12)
-        | (((bytes[29]) as u64) << 4)
+        | ((bytes[23] as u64) << 52)
+        | ((bytes[24] as u64) << 44)
+        | ((bytes[25] as u64) << 36)
+        | ((bytes[26] as u64) << 28)
+        | ((bytes[27] as u64) << 20)
+        | ((bytes[28] as u64) << 12)
+        | ((bytes[29] as u64) << 4)
         | (((bytes[30] >> 4) & 0xf) as u64);
     values[4] = ((((bytes[30]) & 0xf) as u64) << 57)
-        | (((bytes[31]) as u64) << 49)
-        | (((bytes[32]) as u64) << 41)
-        | (((bytes[33]) as u64) << 33)
-        | (((bytes[34]) as u64) << 25)
-        | (((bytes[35]) as u64) << 17)
-        | (((bytes[36]) as u64) << 9)
-        | (((bytes[37]) as u64) << 1)
+        | ((bytes[31] as u64) << 49)
+        | ((bytes[32] as u64) << 41)
+        | ((bytes[33] as u64) << 33)
+        | ((bytes[34] as u64) << 25)
+        | ((bytes[35] as u64) << 17)
+        | ((bytes[36] as u64) << 9)
+        | ((bytes[37] as u64) << 1)
         | (((bytes[38] >> 7) & 0x1) as u64);
     values[5] = ((((bytes[38]) & 0x7f) as u64) << 54)
-        | (((bytes[39]) as u64) << 46)
-        | (((bytes[40]) as u64) << 38)
-        | (((bytes[41]) as u64) << 30)
-        | (((bytes[42]) as u64) << 22)
-        | (((bytes[43]) as u64) << 14)
-        | (((bytes[44]) as u64) << 6)
+        | ((bytes[39] as u64) << 46)
+        | ((bytes[40] as u64) << 38)
+        | ((bytes[41] as u64) << 30)
+        | ((bytes[42] as u64) << 22)
+        | ((bytes[43] as u64) << 14)
+        | ((bytes[44] as u64) << 6)
         | (((bytes[45] >> 2) & 0x3f) as u64);
     values[6] = ((((bytes[45]) & 0x3) as u64) << 59)
-        | (((bytes[46]) as u64) << 51)
-        | (((bytes[47]) as u64) << 43)
-        | (((bytes[48]) as u64) << 35)
-        | (((bytes[49]) as u64) << 27)
-        | (((bytes[50]) as u64) << 19)
-        | (((bytes[51]) as u64) << 11)
-        | (((bytes[52]) as u64) << 3)
+        | ((bytes[46] as u64) << 51)
+        | ((bytes[47] as u64) << 43)
+        | ((bytes[48] as u64) << 35)
+        | ((bytes[49] as u64) << 27)
+        | ((bytes[50] as u64) << 19)
+        | ((bytes[51] as u64) << 11)
+        | ((bytes[52] as u64) << 3)
         | (((bytes[53] >> 5) & 0x7) as u64);
     values[7] = ((((bytes[53]) & 0x1f) as u64) << 56)
-        | (((bytes[54]) as u64) << 48)
-        | (((bytes[55]) as u64) << 40)
-        | (((bytes[56]) as u64) << 32)
-        | (((bytes[57]) as u64) << 24)
-        | (((bytes[58]) as u64) << 16)
-        | (((bytes[59]) as u64) << 8)
-        | ((bytes[60]) as u64);
+        | ((bytes[54] as u64) << 48)
+        | ((bytes[55] as u64) << 40)
+        | ((bytes[56] as u64) << 32)
+        | ((bytes[57] as u64) << 24)
+        | ((bytes[58] as u64) << 16)
+        | ((bytes[59] as u64) << 8)
+        | (bytes[60] as u64);
 }
 
 #[inline]
 fn unpack_bits_62(values: &mut [u64], bytes: &[u8]) {
-    values[0] = (((bytes[0]) as u64) << 54)
-        | (((bytes[1]) as u64) << 46)
-        | (((bytes[2]) as u64) << 38)
-        | (((bytes[3]) as u64) << 30)
-        | (((bytes[4]) as u64) << 22)
-        | (((bytes[5]) as u64) << 14)
-        | (((bytes[6]) as u64) << 6)
+    values[0] = ((bytes[0] as u64) << 54)
+        | ((bytes[1] as u64) << 46)
+        | ((bytes[2] as u64) << 38)
+        | ((bytes[3] as u64) << 30)
+        | ((bytes[4] as u64) << 22)
+        | ((bytes[5] as u64) << 14)
+        | ((bytes[6] as u64) << 6)
         | (((bytes[7] >> 2) & 0x3f) as u64);
     values[1] = ((((bytes[7]) & 0x3) as u64) << 60)
-        | (((bytes[8]) as u64) << 52)
-        | (((bytes[9]) as u64) << 44)
-        | (((bytes[10]) as u64) << 36)
-        | (((bytes[11]) as u64) << 28)
-        | (((bytes[12]) as u64) << 20)
-        | (((bytes[13]) as u64) << 12)
-        | (((bytes[14]) as u64) << 4)
+        | ((bytes[8] as u64) << 52)
+        | ((bytes[9] as u64) << 44)
+        | ((bytes[10] as u64) << 36)
+        | ((bytes[11] as u64) << 28)
+        | ((bytes[12] as u64) << 20)
+        | ((bytes[13] as u64) << 12)
+        | ((bytes[14] as u64) << 4)
         | (((bytes[15] >> 4) & 0xf) as u64);
     values[2] = ((((bytes[15]) & 0xf) as u64) << 58)
-        | (((bytes[16]) as u64) << 50)
-        | (((bytes[17]) as u64) << 42)
-        | (((bytes[18]) as u64) << 34)
-        | (((bytes[19]) as u64) << 26)
-        | (((bytes[20]) as u64) << 18)
-        | (((bytes[21]) as u64) << 10)
-        | (((bytes[22]) as u64) << 2)
+        | ((bytes[16] as u64) << 50)
+        | ((bytes[17] as u64) << 42)
+        | ((bytes[18] as u64) << 34)
+        | ((bytes[19] as u64) << 26)
+        | ((bytes[20] as u64) << 18)
+        | ((bytes[21] as u64) << 10)
+        | ((bytes[22] as u64) << 2)
         | (((bytes[23] >> 6) & 0x3) as u64);
     values[3] = ((((bytes[23]) & 0x3f) as u64) << 56)
-        | (((bytes[24]) as u64) << 48)
-        | (((bytes[25]) as u64) << 40)
-        | (((bytes[26]) as u64) << 32)
-        | (((bytes[27]) as u64) << 24)
-        | (((bytes[28]) as u64) << 16)
-        | (((bytes[29]) as u64) << 8)
-        | ((bytes[30]) as u64);
-    values[4] = (((bytes[31]) as u64) << 54)
-        | (((bytes[32]) as u64) << 46)
-        | (((bytes[33]) as u64) << 38)
-        | (((bytes[34]) as u64) << 30)
-        | (((bytes[35]) as u64) << 22)
-        | (((bytes[36]) as u64) << 14)
-        | (((bytes[37]) as u64) << 6)
+        | ((bytes[24] as u64) << 48)
+        | ((bytes[25] as u64) << 40)
+        | ((bytes[26] as u64) << 32)
+        | ((bytes[27] as u64) << 24)
+        | ((bytes[28] as u64) << 16)
+        | ((bytes[29] as u64) << 8)
+        | (bytes[30] as u64);
+    values[4] = ((bytes[31] as u64) << 54)
+        | ((bytes[32] as u64) << 46)
+        | ((bytes[33] as u64) << 38)
+        | ((bytes[34] as u64) << 30)
+        | ((bytes[35] as u64) << 22)
+        | ((bytes[36] as u64) << 14)
+        | ((bytes[37] as u64) << 6)
         | (((bytes[38] >> 2) & 0x3f) as u64);
     values[5] = ((((bytes[38]) & 0x3) as u64) << 60)
-        | (((bytes[39]) as u64) << 52)
-        | (((bytes[40]) as u64) << 44)
-        | (((bytes[41]) as u64) << 36)
-        | (((bytes[42]) as u64) << 28)
-        | (((bytes[43]) as u64) << 20)
-        | (((bytes[44]) as u64) << 12)
-        | (((bytes[45]) as u64) << 4)
+        | ((bytes[39] as u64) << 52)
+        | ((bytes[40] as u64) << 44)
+        | ((bytes[41] as u64) << 36)
+        | ((bytes[42] as u64) << 28)
+        | ((bytes[43] as u64) << 20)
+        | ((bytes[44] as u64) << 12)
+        | ((bytes[45] as u64) << 4)
         | (((bytes[46] >> 4) & 0xf) as u64);
     values[6] = ((((bytes[46]) & 0xf) as u64) << 58)
-        | (((bytes[47]) as u64) << 50)
-        | (((bytes[48]) as u64) << 42)
-        | (((bytes[49]) as u64) << 34)
-        | (((bytes[50]) as u64) << 26)
-        | (((bytes[51]) as u64) << 18)
-        | (((bytes[52]) as u64) << 10)
-        | (((bytes[53]) as u64) << 2)
+        | ((bytes[47] as u64) << 50)
+        | ((bytes[48] as u64) << 42)
+        | ((bytes[49] as u64) << 34)
+        | ((bytes[50] as u64) << 26)
+        | ((bytes[51] as u64) << 18)
+        | ((bytes[52] as u64) << 10)
+        | ((bytes[53] as u64) << 2)
         | (((bytes[54] >> 6) & 0x3) as u64);
     values[7] = ((((bytes[54]) & 0x3f) as u64) << 56)
-        | (((bytes[55]) as u64) << 48)
-        | (((bytes[56]) as u64) << 40)
-        | (((bytes[57]) as u64) << 32)
-        | (((bytes[58]) as u64) << 24)
-        | (((bytes[59]) as u64) << 16)
-        | (((bytes[60]) as u64) << 8)
-        | ((bytes[61]) as u64);
+        | ((bytes[55] as u64) << 48)
+        | ((bytes[56] as u64) << 40)
+        | ((bytes[57] as u64) << 32)
+        | ((bytes[58] as u64) << 24)
+        | ((bytes[59] as u64) << 16)
+        | ((bytes[60] as u64) << 8)
+        | (bytes[61] as u64);
 }
 
 #[inline]
 fn unpack_bits_63(values: &mut [u64], bytes: &[u8]) {
-    values[0] = (((bytes[0]) as u64) << 55)
-        | (((bytes[1]) as u64) << 47)
-        | (((bytes[2]) as u64) << 39)
-        | (((bytes[3]) as u64) << 31)
-        | (((bytes[4]) as u64) << 23)
-        | (((bytes[5]) as u64) << 15)
-        | (((bytes[6]) as u64) << 7)
+    values[0] = ((bytes[0] as u64) << 55)
+        | ((bytes[1] as u64) << 47)
+        | ((bytes[2] as u64) << 39)
+        | ((bytes[3] as u64) << 31)
+        | ((bytes[4] as u64) << 23)
+        | ((bytes[5] as u64) << 15)
+        | ((bytes[6] as u64) << 7)
         | (((bytes[7] >> 1) & 0x7f) as u64);
     values[1] = ((((bytes[7]) & 0x1) as u64) << 62)
-        | (((bytes[8]) as u64) << 54)
-        | (((bytes[9]) as u64) << 46)
-        | (((bytes[10]) as u64) << 38)
-        | (((bytes[11]) as u64) << 30)
-        | (((bytes[12]) as u64) << 22)
-        | (((bytes[13]) as u64) << 14)
-        | (((bytes[14]) as u64) << 6)
+        | ((bytes[8] as u64) << 54)
+        | ((bytes[9] as u64) << 46)
+        | ((bytes[10] as u64) << 38)
+        | ((bytes[11] as u64) << 30)
+        | ((bytes[12] as u64) << 22)
+        | ((bytes[13] as u64) << 14)
+        | ((bytes[14] as u64) << 6)
         | (((bytes[15] >> 2) & 0x3f) as u64);
     values[2] = ((((bytes[15]) & 0x3) as u64) << 61)
-        | (((bytes[16]) as u64) << 53)
-        | (((bytes[17]) as u64) << 45)
-        | (((bytes[18]) as u64) << 37)
-        | (((bytes[19]) as u64) << 29)
-        | (((bytes[20]) as u64) << 21)
-        | (((bytes[21]) as u64) << 13)
-        | (((bytes[22]) as u64) << 5)
+        | ((bytes[16] as u64) << 53)
+        | ((bytes[17] as u64) << 45)
+        | ((bytes[18] as u64) << 37)
+        | ((bytes[19] as u64) << 29)
+        | ((bytes[20] as u64) << 21)
+        | ((bytes[21] as u64) << 13)
+        | ((bytes[22] as u64) << 5)
         | (((bytes[23] >> 3) & 0x1f) as u64);
     values[3] = ((((bytes[23]) & 0x7) as u64) << 60)
-        | (((bytes[24]) as u64) << 52)
-        | (((bytes[25]) as u64) << 44)
-        | (((bytes[26]) as u64) << 36)
-        | (((bytes[27]) as u64) << 28)
-        | (((bytes[28]) as u64) << 20)
-        | (((bytes[29]) as u64) << 12)
-        | (((bytes[30]) as u64) << 4)
+        | ((bytes[24] as u64) << 52)
+        | ((bytes[25] as u64) << 44)
+        | ((bytes[26] as u64) << 36)
+        | ((bytes[27] as u64) << 28)
+        | ((bytes[28] as u64) << 20)
+        | ((bytes[29] as u64) << 12)
+        | ((bytes[30] as u64) << 4)
         | (((bytes[31] >> 4) & 0xf) as u64);
     values[4] = ((((bytes[31]) & 0xf) as u64) << 59)
-        | (((bytes[32]) as u64) << 51)
-        | (((bytes[33]) as u64) << 43)
-        | (((bytes[34]) as u64) << 35)
-        | (((bytes[35]) as u64) << 27)
-        | (((bytes[36]) as u64) << 19)
-        | (((bytes[37]) as u64) << 11)
-        | (((bytes[38]) as u64) << 3)
+        | ((bytes[32] as u64) << 51)
+        | ((bytes[33] as u64) << 43)
+        | ((bytes[34] as u64) << 35)
+        | ((bytes[35] as u64) << 27)
+        | ((bytes[36] as u64) << 19)
+        | ((bytes[37] as u64) << 11)
+        | ((bytes[38] as u64) << 3)
         | (((bytes[39] >> 5) & 0x7) as u64);
     values[5] = ((((bytes[39]) & 0x1f) as u64) << 58)
-        | (((bytes[40]) as u64) << 50)
-        | (((bytes[41]) as u64) << 42)
-        | (((bytes[42]) as u64) << 34)
-        | (((bytes[43]) as u64) << 26)
-        | (((bytes[44]) as u64) << 18)
-        | (((bytes[45]) as u64) << 10)
-        | (((bytes[46]) as u64) << 2)
+        | ((bytes[40] as u64) << 50)
+        | ((bytes[41] as u64) << 42)
+        | ((bytes[42] as u64) << 34)
+        | ((bytes[43] as u64) << 26)
+        | ((bytes[44] as u64) << 18)
+        | ((bytes[45] as u64) << 10)
+        | ((bytes[46] as u64) << 2)
         | (((bytes[47] >> 6) & 0x3) as u64);
     values[6] = ((((bytes[47]) & 0x3f) as u64) << 57)
-        | (((bytes[48]) as u64) << 49)
-        | (((bytes[49]) as u64) << 41)
-        | (((bytes[50]) as u64) << 33)
-        | (((bytes[51]) as u64) << 25)
-        | (((bytes[52]) as u64) << 17)
-        | (((bytes[53]) as u64) << 9)
-        | (((bytes[54]) as u64) << 1)
+        | ((bytes[48] as u64) << 49)
+        | ((bytes[49] as u64) << 41)
+        | ((bytes[50] as u64) << 33)
+        | ((bytes[51] as u64) << 25)
+        | ((bytes[52] as u64) << 17)
+        | ((bytes[53] as u64) << 9)
+        | ((bytes[54] as u64) << 1)
         | (((bytes[55] >> 7) & 0x1) as u64);
     values[7] = ((((bytes[55]) & 0x7f) as u64) << 56)
-        | (((bytes[56]) as u64) << 48)
-        | (((bytes[57]) as u64) << 40)
-        | (((bytes[58]) as u64) << 32)
-        | (((bytes[59]) as u64) << 24)
-        | (((bytes[60]) as u64) << 16)
-        | (((bytes[61]) as u64) << 8)
-        | ((bytes[62]) as u64);
+        | ((bytes[56] as u64) << 48)
+        | ((bytes[57] as u64) << 40)
+        | ((bytes[58] as u64) << 32)
+        | ((bytes[59] as u64) << 24)
+        | ((bytes[60] as u64) << 16)
+        | ((bytes[61] as u64) << 8)
+        | (bytes[62] as u64);
 }
 
 /// Packs a block of `BLOCK_WIDTH` values using fully-expanded fixed-width bit packing.
@@ -4975,7 +4965,7 @@ fn unpack_bits_63(values: &mut [u64], bytes: &[u8]) {
 /// * Panics if `values.len()` is not equal to `BLOCK_WIDTH`.
 /// * Panics if `bits` is not in the range `1..=63`.
 /// * Panics if `bytes.len()` is less than `bits`.
-pub(crate) fn pack_bits_block(values: &[u64], bytes: &mut [u8], bits: u8) {
+pub(super) fn pack_bits_block(values: &[u64], bytes: &mut [u8], bits: u8) {
     assert_eq!(values.len(), BLOCK_WIDTH, "values length must be 8");
     assert!(
         (1..=63).contains(&bits),
@@ -5058,7 +5048,7 @@ pub(crate) fn pack_bits_block(values: &[u64], bytes: &mut [u8], bits: u8) {
 /// * Panics if `values.len()` is not equal to `BLOCK_WIDTH`.
 /// * Panics if `bits` is not in the range `1..=63`.
 /// * Panics if `bytes.len()` is less than `bits`.
-pub(crate) fn unpack_bits_block(values: &mut [u64], bytes: &[u8], bits: u8) {
+pub(super) fn unpack_bits_block(values: &mut [u64], bytes: &[u8], bits: u8) {
     assert_eq!(values.len(), BLOCK_WIDTH, "values length must be 8");
     assert!(
         (1..=63).contains(&bits),
@@ -5139,7 +5129,7 @@ mod tests {
     use super::*;
 
     // inverse golden ratio (0.618.. of max uint64_t)
-    const IGOLDEN64: u64 = 0x9e37_79b9_7f4a_7c13;
+    const INVERSE_GOLDEN_RATIO: u64 = 0x9e37_79b9_7f4a_7c13;
 
     #[test]
     fn pack_unpack_bits() {
@@ -5151,10 +5141,10 @@ mod tests {
                 let mut input = vec![0u64; n];
                 for item in &mut input {
                     *item = value & mask;
-                    value = value.wrapping_add(IGOLDEN64);
+                    value = value.wrapping_add(INVERSE_GOLDEN_RATIO);
                 }
 
-                let mut bytes = vec![0u8; n * std::mem::size_of::<u64>()];
+                let mut bytes = vec![0u8; n * size_of::<u64>()];
                 let mut packer = BitPacker::new(&mut bytes);
                 for i in 0..n {
                     packer.pack_value(input[i], bits);
@@ -5182,7 +5172,7 @@ mod tests {
                 let mut input = vec![0u64; BLOCK_WIDTH];
                 for item in &mut input {
                     *item = value & mask;
-                    value = value.wrapping_add(IGOLDEN64);
+                    value = value.wrapping_add(INVERSE_GOLDEN_RATIO);
                 }
 
                 let mut bytes = vec![0u8; bits as usize];
@@ -5207,7 +5197,7 @@ mod tests {
                 let mut input = vec![0u64; BLOCK_WIDTH];
                 for item in &mut input {
                     *item = value & mask;
-                    value = value.wrapping_add(IGOLDEN64);
+                    value = value.wrapping_add(INVERSE_GOLDEN_RATIO);
                 }
 
                 let mut bytes = vec![0u8; bits as usize];
@@ -5235,7 +5225,7 @@ mod tests {
                 let mut input = vec![0u64; BLOCK_WIDTH];
                 for item in &mut input {
                     *item = value & mask;
-                    value = value.wrapping_add(IGOLDEN64);
+                    value = value.wrapping_add(INVERSE_GOLDEN_RATIO);
                 }
 
                 let mut bytes = vec![0u8; bits as usize];
@@ -5261,10 +5251,10 @@ mod tests {
         let mut input = vec![0u64; n];
         for item in &mut input {
             *item = value;
-            value = value.wrapping_add(IGOLDEN64);
+            value = value.wrapping_add(INVERSE_GOLDEN_RATIO);
         }
 
-        let mut bytes = vec![0u8; n * std::mem::size_of::<u64>()];
+        let mut bytes = vec![0u8; n * size_of::<u64>()];
         let mut packer = BitPacker::new(&mut bytes);
         for &v in &input {
             packer.pack_value(v, 64);
@@ -5311,7 +5301,7 @@ mod tests {
             let mut input = [0u64; 8];
             for item in &mut input {
                 *item = value & mask;
-                value = value.wrapping_add(IGOLDEN64);
+                value = value.wrapping_add(INVERSE_GOLDEN_RATIO);
             }
 
             let mut bytes = vec![0u8; bits as usize];
