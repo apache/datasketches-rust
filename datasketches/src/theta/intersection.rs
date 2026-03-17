@@ -86,14 +86,15 @@ impl ThetaIntersection {
             )));
         }
 
-        self.table
-            .set_empty(self.table.is_empty() || sketch.is_empty());
-        let theta = if self.table.is_empty() {
+        if sketch.is_empty() {
+            self.table.set_empty(true);
+        }
+
+        self.table.set_theta(if self.table.is_empty() {
             MAX_THETA
         } else {
             self.table.theta().min(sketch.theta64())
-        };
-        self.table.set_theta(theta);
+        });
 
         if self.is_valid && self.table.num_retained() == 0 {
             return Ok(());

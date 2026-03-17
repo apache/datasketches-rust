@@ -49,11 +49,21 @@ use crate::theta::serialization::V2_PREAMBLE_EMPTY;
 use crate::theta::serialization::V2_PREAMBLE_ESTIMATE;
 use crate::theta::serialization::V2_PREAMBLE_PRECISE;
 
+mod private {
+    use super::*;
+
+    // Sealed trait to prevent external implementations of ThetaSketchView.
+    pub trait Sealed {}
+
+    impl Sealed for ThetaSketch {}
+    impl Sealed for CompactThetaSketch {}
+}
+
 /// Read-only view for Theta sketches.
 ///
 /// This trait provides a unified input abstraction for APIs that can accept either
 /// mutable [`ThetaSketch`] or immutable [`CompactThetaSketch`].
-pub trait ThetaSketchView {
+pub trait ThetaSketchView: private::Sealed {
     /// Returns the 16-bit seed hash.
     fn seed_hash(&self) -> u16;
 

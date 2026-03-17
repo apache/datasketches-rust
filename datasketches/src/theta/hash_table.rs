@@ -47,8 +47,12 @@ pub(super) struct ThetaHashTable {
     sampling_probability: f32,
     hash_seed: u64,
 
-    // Logical emptiness of the source set. This can be false even when `num_retained` is 0 (e.g.
-    // all updates screened by theta).
+    // Logical emptiness of the source set.
+    //
+    // * `false` if any update has been attempted (even if screened by theta)
+    // * `true` if no updates have been attempted.
+    //
+    // This can be false even when `num_retained` is 0.
     is_empty: bool,
 
     theta: u64,
