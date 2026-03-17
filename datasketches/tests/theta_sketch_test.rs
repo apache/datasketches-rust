@@ -260,3 +260,31 @@ fn test_bounds_empty_estimation_mode() {
     assert_eq!(sketch.lower_bound(NumStdDev::One), 0.0);
     assert_eq!(sketch.upper_bound(NumStdDev::One), 0.0);
 }
+
+#[test]
+fn test_compact_preserves_logical_non_empty_after_screened_update() {
+    let screened_value = (0u64..)
+        .find(|candidate| {
+            let mut sketch = ThetaSketch::builder()
+                .lg_k(12)
+                .sampling_probability(0.5)
+                .build();
+            sketch.update(*candidate);
+            !sketch.is_empty() && sketch.num_retained() == 0
+        })
+        .expect("failed to find a value screened out by the sampling theta");
+
+    let mut sketch = ThetaSketch::builder()
+        .lg_k(12)
+        .sampling_probability(0.5)
+        .build();
+    sketch.update(screened_value);
+
+    assert!(!sketch.is_empty());
+    assert_eq!(sketch.num_retained(), 0);
+
+    let compact = sketch.compact(false);
+    assert!(!compact.is_empty());
+    assert_eq!(compact.num_retained(), 0);
+    assert_eq!(compact.theta64(), sketch.theta64());
+}

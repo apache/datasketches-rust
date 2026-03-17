@@ -246,7 +246,7 @@ impl ThetaSketch {
     pub fn compact(&self, ordered: bool) -> CompactThetaSketch {
         let mut entries: Vec<u64> = self.iter().collect();
 
-        let empty = entries.is_empty();
+        let empty = self.is_empty();
         let theta = if empty {
             // Match Java's correctThetaOnCompact() behavior for never-updated sketches
             // initialized with p < 1.0.
