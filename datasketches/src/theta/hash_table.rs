@@ -20,24 +20,10 @@ use std::hash::Hash;
 use crate::common::ResizeFactor;
 use crate::hash::MurmurHash3X64128;
 use crate::hash::compute_seed_hash;
-
-/// Maximum theta value (signed max for compatibility with Java)
-pub const MAX_THETA: u64 = i64::MAX as u64;
-
-/// Minimum log2 of K
-pub const MIN_LG_K: u8 = 5;
-
-/// Maximum log2 of K
-pub const MAX_LG_K: u8 = 26;
-
-/// Default log2 of K
-pub const DEFAULT_LG_K: u8 = 12;
-
-/// Resize threshold (0.5 = 50% load factor)
-const RESIZE_THRESHOLD: f64 = 0.5;
-
-/// Rebuild threshold (15/16 = 93.75% load factor)
-pub(crate) const REBUILD_THRESHOLD: f64 = 15.0 / 16.0;
+use crate::theta::HASH_TABLE_REBUILD_THRESHOLD;
+use crate::theta::HASH_TABLE_RESIZE_THRESHOLD;
+use crate::theta::MAX_THETA;
+use crate::theta::MIN_LG_K;
 
 /// Stride hash bits (7 bits for stride calculation)
 const STRIDE_HASH_BITS: u8 = 7;
@@ -220,9 +206,9 @@ impl ThetaHashTable {
     /// Get capacity threshold
     fn get_capacity(&self) -> usize {
         let fraction = if self.lg_cur_size <= self.lg_nom_size {
-            RESIZE_THRESHOLD
+            HASH_TABLE_RESIZE_THRESHOLD
         } else {
-            REBUILD_THRESHOLD
+            HASH_TABLE_REBUILD_THRESHOLD
         };
         (fraction * self.entries.len() as f64) as usize
     }

@@ -19,9 +19,9 @@ use crate::common::ResizeFactor;
 use crate::error::Error;
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::theta::CompactThetaSketch;
+use crate::theta::HASH_TABLE_REBUILD_THRESHOLD;
+use crate::theta::MAX_THETA;
 use crate::theta::ThetaSketchView;
-use crate::theta::hash_table::MAX_THETA;
-use crate::theta::hash_table::REBUILD_THRESHOLD;
 use crate::theta::hash_table::ThetaHashTable;
 
 /// Stateful intersection operator for Theta sketches.
@@ -110,7 +110,7 @@ impl ThetaIntersection {
             self.is_valid = true;
             let lg_size = ThetaHashTable::lg_size_from_count_for_rebuild(
                 sketch.num_retained(),
-                REBUILD_THRESHOLD,
+                HASH_TABLE_REBUILD_THRESHOLD,
             );
             self.table = ThetaHashTable::from_raw_parts(
                 lg_size,
@@ -171,7 +171,7 @@ impl ThetaIntersection {
             } else {
                 let lg_size = ThetaHashTable::lg_size_from_count_for_rebuild(
                     matched_entries.len(),
-                    REBUILD_THRESHOLD,
+                    HASH_TABLE_REBUILD_THRESHOLD,
                 );
                 self.table = ThetaHashTable::from_raw_parts(
                     lg_size,
@@ -218,7 +218,7 @@ impl ThetaIntersection {
             self.is_valid,
             "ThetaIntersection::result() called before first update()"
         );
-        let mut hashes: Vec<u64> = self.table.iter().collect();
+        let mut hashes = self.table.iter().collect::<Vec<_>>();
         if ordered {
             hashes.sort_unstable();
         }
