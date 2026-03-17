@@ -91,7 +91,7 @@ impl CpcUnion {
     ///
     /// # Panics
     ///
-    /// Panics if `lg_k` is not in the range `[4, 16]`.
+    /// Panics if `lg_k` is not in the range `[4, 26]`.
     pub fn new(lg_k: u8) -> Self {
         Self::with_seed(lg_k, DEFAULT_UPDATE_SEED)
     }
@@ -100,7 +100,7 @@ impl CpcUnion {
     ///
     /// # Panics
     ///
-    /// Panics if `lg_k` is not in the range `[4, 16]`.
+    /// Panics if `lg_k` is not in the range `[4, 26]`.
     pub fn with_seed(lg_k: u8, seed: u64) -> Self {
         // We begin with the accumulator holding an EMPTY_MERGED sketch object.
         let sketch = CpcSketch::with_seed(lg_k, seed);

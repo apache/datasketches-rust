@@ -17,14 +17,14 @@
 
 //! Binary serialization format constants for Theta sketches.
 
-pub(crate) const UNCOMPRESSED_SERIAL_VERSION: u8 = 3;
-pub(crate) const COMPRESSED_SERIAL_VERSION: u8 = 4;
+pub(super) const UNCOMPRESSED_SERIAL_VERSION: u8 = 3;
+pub(super) const COMPRESSED_SERIAL_VERSION: u8 = 4;
 
-pub(crate) const V2_PREAMBLE_EMPTY: u8 = 1;
-pub(crate) const V2_PREAMBLE_PRECISE: u8 = 2;
-pub(crate) const V2_PREAMBLE_ESTIMATE: u8 = 3;
+pub(super) const V2_PREAMBLE_EMPTY: u8 = 1;
+pub(super) const V2_PREAMBLE_PRECISE: u8 = 2;
+pub(super) const V2_PREAMBLE_ESTIMATE: u8 = 3;
 
-pub(crate) const FLAGS_IS_READ_ONLY: u8 = 1 << 1;
-pub(crate) const FLAGS_IS_EMPTY: u8 = 1 << 2;
-pub(crate) const FLAGS_IS_COMPACT: u8 = 1 << 3;
-pub(crate) const FLAGS_IS_ORDERED: u8 = 1 << 4;
+pub(super) const FLAGS_IS_READ_ONLY: u8 = 1 << 1;
+pub(super) const FLAGS_IS_EMPTY: u8 = 1 << 2;
+pub(super) const FLAGS_IS_COMPACT: u8 = 1 << 3;
+pub(super) const FLAGS_IS_ORDERED: u8 = 1 << 4;

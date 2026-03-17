@@ -41,9 +41,25 @@
 
 mod bit_pack;
 mod hash_table;
+mod intersection;
 mod serialization;
 mod sketch;
 
+pub use self::intersection::ThetaIntersection;
 pub use self::sketch::CompactThetaSketch;
 pub use self::sketch::ThetaSketch;
 pub use self::sketch::ThetaSketchBuilder;
+pub use self::sketch::ThetaSketchView;
+
+/// Maximum theta value (signed max for compatibility with Java)
+const MAX_THETA: u64 = i64::MAX as u64;
+/// Minimum log2 of K
+const MIN_LG_K: u8 = 5;
+/// Maximum log2 of K
+const MAX_LG_K: u8 = 26;
+/// Default log2 of K
+const DEFAULT_LG_K: u8 = 12;
+/// Resize threshold (0.5 = 50% load factor)
+const HASH_TABLE_RESIZE_THRESHOLD: f64 = 0.5;
+/// Rebuild threshold (15/16 = 93.75% load factor)
+const HASH_TABLE_REBUILD_THRESHOLD: f64 = 15.0 / 16.0;
