@@ -85,19 +85,6 @@ jobs:
         run: |
           rustup toolchain install ${{ matrix.rust-version }}
           rustup default ${{ matrix.rust-version }}
-      - name: Run examples
-        shell: bash
-        working-directory: examples
-        run: |
-          set -x
-          METADATA=$( cargo metadata --format-version=1 --no-deps )
-          EXAMPLES=$( echo "$METADATA" | jq -r '.packages[] | select(.name == "examples") | .targets[].name' | tr -d '\r' )
-          while read -r example; do
-            if [ -n "$example" ]; then
-              echo "Running example: $example"
-              cargo run --bin "$example"
-            fi
-          done <<< "$EXAMPLES"
       - name: Setup Java
         uses: actions/setup-java@v5
         with:

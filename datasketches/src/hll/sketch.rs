@@ -178,7 +178,7 @@ impl HllSketch {
     /// Update the sketch with a raw coupon value
     ///
     /// Maintains all sketch invariants including mode transitions and estimator updates.
-    pub(super) fn update_with_coupon(&mut self, coupon: u32) {
+    pub fn update_with_coupon(&mut self, coupon: u32) {
         match &mut self.mode {
             Mode::List { list, hll_type } => {
                 list.update(coupon);
