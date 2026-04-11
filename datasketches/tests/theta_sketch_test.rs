@@ -39,14 +39,96 @@ fn test_update_various_types() {
     sketch.update("string");
     sketch.update(42i64);
     sketch.update(42u64);
-    sketch.update_f64(3.15);
-    sketch.update_f64(3.15);
-    sketch.update_f32(3.15);
-    sketch.update_f32(3.15);
+    sketch.update(3.15f64);
+    sketch.update(3.15f64);
+    sketch.update(3.15f32);
+    sketch.update(3.15f32);
     sketch.update([1u8, 2, 3]);
 
     assert!(!sketch.is_empty());
     assert_eq!(sketch.estimate(), 5.0);
+}
+
+#[test]
+fn test_scalar_integer_inputs_are_canonicalized() {
+    let mut i32_sketch = ThetaSketch::builder().build();
+    i32_sketch.update(42i32);
+
+    let mut i64_sketch = ThetaSketch::builder().build();
+    i64_sketch.update(42i64);
+
+    assert_eq!(i32_sketch.num_retained(), 1);
+    assert_eq!(i64_sketch.num_retained(), 1);
+    assert_eq!(i32_sketch.iter().next(), i64_sketch.iter().next());
+}
+
+#[test]
+fn test_unsigned_narrow_integer_inputs_follow_cpp_signed_path() {
+    let mut u32_sketch = ThetaSketch::builder().build();
+    u32_sketch.update(u32::MAX);
+
+    let mut signed_sketch = ThetaSketch::builder().build();
+    signed_sketch.update(-1i64);
+
+    let mut u64_sketch = ThetaSketch::builder().build();
+    u64_sketch.update(u32::MAX as u64);
+
+    assert_eq!(u32_sketch.iter().next(), signed_sketch.iter().next());
+    assert_ne!(u32_sketch.iter().next(), u64_sketch.iter().next());
+}
+
+#[test]
+fn test_string_hashes_as_raw_utf8_bytes() {
+    let mut string_sketch = ThetaSketch::builder().build();
+    string_sketch.update("hello");
+
+    let mut bytes_sketch = ThetaSketch::builder().build();
+    bytes_sketch.update("hello".as_bytes());
+
+    assert_eq!(string_sketch.iter().next(), bytes_sketch.iter().next());
+}
+
+#[test]
+fn test_byte_inputs_share_the_same_raw_bytes_hash_path() {
+    let mut array_sketch = ThetaSketch::builder().build();
+    array_sketch.update([1u8, 2, 3]);
+
+    let mut slice_sketch = ThetaSketch::builder().build();
+    slice_sketch.update([1u8, 2, 3].as_slice());
+
+    let mut vec_sketch = ThetaSketch::builder().build();
+    vec_sketch.update(vec![1u8, 2, 3]);
+
+    assert_eq!(array_sketch.iter().next(), slice_sketch.iter().next());
+    assert_eq!(slice_sketch.iter().next(), vec_sketch.iter().next());
+}
+
+#[test]
+fn test_float_inputs_match_java_cpp_canonicalization_rules() {
+    let mut f64_sketch = ThetaSketch::builder().build();
+    f64_sketch.update(1.5f64);
+
+    let mut f32_sketch = ThetaSketch::builder().build();
+    f32_sketch.update(1.5f32);
+
+    assert_eq!(f64_sketch.iter().next(), f32_sketch.iter().next());
+}
+
+#[test]
+fn test_default_integer_stream_matches_cpp_cardinality_estimate() {
+    let mut sketch = ThetaSketch::builder().build();
+    let n = 15000;
+
+    for i in 0..n {
+        sketch.update(i);
+    }
+
+    assert!(
+        (sketch.estimate() - n as f64).abs() <= n as f64 * 0.01,
+        "estimate {} is not within 1% of {}",
+        sketch.estimate(),
+        n
+    );
 }
 
 #[test]

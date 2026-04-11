@@ -125,11 +125,11 @@ impl CpcUnion {
     /// # use datasketches::cpc::CpcSketch;
     ///
     /// let mut s1 = CpcSketch::new(12);
-    /// s1.update(&"apple");
+    /// s1.update("apple");
     ///
     /// let mut s2 = CpcSketch::new(12);
-    /// s2.update(&"apple");
-    /// s2.update(&"banana");
+    /// s2.update("apple");
+    /// s2.update("banana");
     ///
     /// let mut union = CpcUnion::new(12);
     /// union.update(&s1);

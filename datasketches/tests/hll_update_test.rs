@@ -19,6 +19,11 @@ use datasketches::common::NumStdDev;
 use datasketches::hll::HllSketch;
 use datasketches::hll::HllType;
 
+fn assert_same_sketch_state(left: &HllSketch, right: &HllSketch) {
+    assert_eq!(left, right);
+    assert_eq!(left.serialize(), right.serialize());
+}
+
 #[test]
 fn test_basic_update() {
     let mut sketch = HllSketch::new(12, HllType::Hll8);
@@ -109,6 +114,54 @@ fn test_different_types() {
 
     let estimate = sketch.estimate();
     assert!(estimate >= 5.0, "Should have at least 5 distinct values");
+}
+
+#[test]
+fn test_scalar_integer_inputs_are_canonicalized() {
+    let mut i32_sketch = HllSketch::new(10, HllType::Hll8);
+    i32_sketch.update(42i32);
+
+    let mut i64_sketch = HllSketch::new(10, HllType::Hll8);
+    i64_sketch.update(42i64);
+
+    assert_same_sketch_state(&i32_sketch, &i64_sketch);
+}
+
+#[test]
+fn test_unsigned_narrow_integer_inputs_follow_cpp_signed_path() {
+    let mut u32_sketch = HllSketch::new(10, HllType::Hll8);
+    u32_sketch.update(u32::MAX);
+
+    let mut signed_sketch = HllSketch::new(10, HllType::Hll8);
+    signed_sketch.update(-1i64);
+
+    let mut u64_sketch = HllSketch::new(10, HllType::Hll8);
+    u64_sketch.update(u32::MAX as u64);
+
+    assert_same_sketch_state(&u32_sketch, &signed_sketch);
+    assert_ne!(u32_sketch.serialize(), u64_sketch.serialize());
+}
+
+#[test]
+fn test_string_hashes_as_raw_utf8_bytes() {
+    let mut string_sketch = HllSketch::new(10, HllType::Hll8);
+    string_sketch.update("hello");
+
+    let mut bytes_sketch = HllSketch::new(10, HllType::Hll8);
+    bytes_sketch.update("hello".as_bytes());
+
+    assert_same_sketch_state(&string_sketch, &bytes_sketch);
+}
+
+#[test]
+fn test_float_inputs_match_java_cpp_canonicalization_rules() {
+    let mut f64_sketch = HllSketch::new(10, HllType::Hll8);
+    f64_sketch.update(1.5f64);
+
+    let mut f32_sketch = HllSketch::new(10, HllType::Hll8);
+    f32_sketch.update(1.5f32);
+
+    assert_same_sketch_state(&f64_sketch, &f32_sketch);
 }
 
 #[test]

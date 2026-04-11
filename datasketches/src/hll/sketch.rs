@@ -20,14 +20,13 @@
 //! This module provides the main [`HllSketch`] struct, which is the primary interface
 //! for creating and using HLL sketches for cardinality estimation.
 
-use std::hash::Hash;
-
 use crate::codec::SketchSlice;
 use crate::codec::assert::ensure_serial_version_is;
 use crate::codec::assert::insufficient_data;
 use crate::codec::family::Family;
 use crate::common::NumStdDev;
 use crate::error::Error;
+use crate::hash::SketchHashable;
 use crate::hll::HllType;
 use crate::hll::RESIZE_DENOMINATOR;
 use crate::hll::RESIZE_NUMERATOR;
@@ -156,10 +155,9 @@ impl HllSketch {
         self.lg_config_k
     }
 
-    /// Update the sketch with a value
+    /// Update the sketch with a value that implements [`SketchHashable`].
     ///
-    /// This accepts any type that implements `Hash`. The value is hashed
-    /// and converted to a coupon, which is then inserted into the sketch.
+    /// The value is hashed and converted to a coupon, which is then inserted into the sketch.
     ///
     /// # Examples
     ///
@@ -170,7 +168,7 @@ impl HllSketch {
     /// sketch.update("apple");
     /// assert!(sketch.estimate() >= 1.0);
     /// ```
-    pub fn update<T: Hash>(&mut self, value: T) {
+    pub fn update<T: SketchHashable>(&mut self, value: T) {
         let coupon = coupon(value);
         self.update_with_coupon(coupon);
     }

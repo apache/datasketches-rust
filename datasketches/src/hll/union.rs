@@ -28,9 +28,8 @@
 //! * Different modes (List, Set, Array4/6/8)
 //! * Different target HLL types
 
-use std::hash::Hash;
-
 use crate::common::NumStdDev;
+use crate::hash::SketchHashable;
 use crate::hll::HllSketch;
 use crate::hll::HllType;
 use crate::hll::array4::Array4;
@@ -89,10 +88,9 @@ impl HllUnion {
         Self { lg_max_k, gadget }
     }
 
-    /// Update the union's gadget with a value
+    /// Update the union's gadget with a value that implements [`SketchHashable`].
     ///
-    /// This accepts any type that implements `Hash`. The value is hashed
-    /// and converted to a coupon, which is then inserted into the sketch.
+    /// The value is hashed and converted to a coupon, which is then inserted into the sketch.
     ///
     /// # Examples
     ///
@@ -103,7 +101,7 @@ impl HllUnion {
     /// union.update_value("apple");
     /// let _result = union.to_sketch(HllType::Hll8);
     /// ```
-    pub fn update_value<T: Hash>(&mut self, value: T) {
+    pub fn update_value<T: SketchHashable>(&mut self, value: T) {
         self.gadget.update(value);
     }
 

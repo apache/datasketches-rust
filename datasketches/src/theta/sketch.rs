@@ -20,8 +20,6 @@
 //! This module provides ThetaSketch (mutable) and CompactThetaSketch (immutable)
 //! for cardinality estimation.
 
-use std::hash::Hash;
-
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
 use crate::codec::assert::ensure_preamble_longs_in_range;
@@ -30,9 +28,9 @@ use crate::codec::family::Family;
 use crate::common::NumStdDev;
 use crate::common::ResizeFactor;
 use crate::common::binomial_bounds;
-use crate::common::canonical_double;
 use crate::error::Error;
 use crate::hash::DEFAULT_UPDATE_SEED;
+use crate::hash::SketchHashable;
 use crate::hash::compute_seed_hash;
 use crate::theta::DEFAULT_LG_K;
 use crate::theta::MAX_LG_K;
@@ -105,9 +103,7 @@ impl ThetaSketch {
         ThetaSketchBuilder::default()
     }
 
-    /// Update the sketch with a hashable value.
-    ///
-    /// For `f32`/`f64` values, use `update_f32`/`update_f64` instead.
+    /// Update the sketch with a value that implements [`SketchHashable`].
     ///
     /// # Examples
     ///
@@ -117,38 +113,8 @@ impl ThetaSketch {
     /// sketch.update("apple");
     /// assert!(sketch.estimate() >= 1.0);
     /// ```
-    pub fn update<T: Hash>(&mut self, value: T) {
-        self.table.try_insert(value);
-    }
-
-    /// Update the sketch with a f64 value.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use datasketches::theta::ThetaSketch;
-    /// let mut sketch = ThetaSketch::builder().build();
-    /// sketch.update_f64(1.0);
-    /// assert!(sketch.estimate() >= 1.0);
-    /// ```
-    pub fn update_f64(&mut self, value: f64) {
-        // Canonicalize double for compatibility with Java
-        let canonical = canonical_double(value);
-        self.update(canonical);
-    }
-
-    /// Update the sketch with a f32 value.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use datasketches::theta::ThetaSketch;
-    /// let mut sketch = ThetaSketch::builder().build();
-    /// sketch.update_f32(1.0);
-    /// assert!(sketch.estimate() >= 1.0);
-    /// ```
-    pub fn update_f32(&mut self, value: f32) {
-        self.update_f64(value as f64);
+    pub fn update<T: SketchHashable>(&mut self, value: T) {
+        self.table.try_insert(value.to_hashable());
     }
 
     /// Return cardinality estimate

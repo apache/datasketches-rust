@@ -106,6 +106,7 @@
 use std::hash::Hash;
 
 use crate::hash::MurmurHash3X64128;
+use crate::hash::SketchHashable;
 
 mod array4;
 mod array6;
@@ -178,9 +179,9 @@ fn pack_coupon(slot: u32, value: u8) -> u32 {
 }
 
 /// Generate a coupon from a hashable value.
-fn coupon<H: Hash>(v: H) -> u32 {
+fn coupon<H: SketchHashable>(v: H) -> u32 {
     let mut hasher = MurmurHash3X64128::default();
-    v.hash(&mut hasher);
+    v.to_hashable().hash(&mut hasher);
     let (lo, hi) = hasher.finish128();
 
     let addr26 = lo as u32 & KEY_MASK_26;

@@ -37,8 +37,7 @@ pub mod countmin;
 pub mod cpc;
 pub mod error;
 pub mod frequencies;
+pub mod hash;
 pub mod hll;
 pub mod tdigest;
 pub mod theta;
-
-mod hash;
