@@ -24,7 +24,6 @@ use crate::codec::assert::ensure_serial_version_is;
 use crate::codec::assert::insufficient_data;
 use crate::codec::family::Family;
 use crate::common::NumStdDev;
-use crate::common::canonical_double;
 use crate::common::inv_pow2_table::INVERSE_POWERS_OF_2;
 use crate::cpc::DEFAULT_LG_K;
 use crate::cpc::Flavor;
@@ -170,9 +169,28 @@ impl CpcSketch {
         self.num_coupons == 0
     }
 
-    /// Update the sketch with a hashable value.
+    /// Update the sketch with a hash value.
     ///
-    /// For `f32`/`f64` values, use `update_f32`/`update_f64` instead.
+    /// You may use `HashValue` for compatibility purpose. Read the
+    /// [module level documentation of `hash_value`](crate::hash_value)
+    /// for more details.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use datasketches::cpc::CpcSketch;
+    /// use datasketches::hash_value::HashValue;
+    ///
+    /// let mut sketch = CpcSketch::with_seed(11, 123);
+    /// sketch.update(1);
+    /// sketch.update(2);
+    /// sketch.update(3);
+    ///
+    /// let mut sketch = CpcSketch::with_seed(11, 123);
+    /// sketch.update(HashValue::canonical_f64(1.5));
+    /// sketch.update(HashValue::canonical_f64(2.5));
+    /// sketch.update(HashValue::canonical_f64(3.5));
+    /// ```
     pub fn update<T: Hash>(&mut self, value: T) {
         let mut hasher = MurmurHash3X64128::with_seed(self.seed);
         value.hash(&mut hasher);
@@ -189,18 +207,6 @@ impl CpcSketch {
             row_col ^= 1 << 6;
         }
         self.row_col_update(row_col);
-    }
-
-    /// Update the sketch with a f64 value.
-    pub fn update_f64(&mut self, value: f64) {
-        // Canonicalize double for compatibility with Java
-        let canonical = canonical_double(value);
-        self.update(canonical);
-    }
-
-    /// Update the sketch with a f32 value.
-    pub fn update_f32(&mut self, value: f32) {
-        self.update_f64(value as f64);
     }
 
     pub(super) fn flavor(&self) -> Flavor {

@@ -158,8 +158,12 @@ impl HllSketch {
 
     /// Update the sketch with a value.
     ///
-    /// Accepts any type that implements [`Hash`].  The value is hashed and converted to
+    /// Accepts any type that implements [`Hash`]. The value is hashed and converted to
     /// an internal coupon, which is then inserted into the sketch.
+    ///
+    /// You may use `HashValue` for compatibility purpose. Read the
+    /// [module level documentation of `hash_value`](crate::hash_value)
+    /// for more details.
     ///
     /// If you need to insert the same logical value into multiple sketches, consider
     /// pre-computing the coupon with [`Coupon::from_hash`] and calling

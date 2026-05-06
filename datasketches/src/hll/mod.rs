@@ -204,14 +204,18 @@ impl Coupon {
         self.0
     }
 
-    /// Compute the HLL coupon for a hashable value.
+    /// Compute the HLL coupon for a hash value.
+    ///
+    /// You may use `HashValue` for compatibility purpose. Read the
+    /// [module level documentation of `hash_value`](crate::hash_value)
+    /// for more details.
     ///
     /// Hashes `v` using MurmurHash3 128-bit and packs the result into a coupon:
     /// the low 26 bits of the low hash word become the slot index, and the
     /// leading-zero count of the high hash word (capped at 62, then plus one)
     /// becomes the 6-bit register value.
     #[inline(always)]
-    pub fn from_hash(v: impl Hash) -> Self {
+    pub fn from_hash<T: Hash>(v: T) -> Self {
         let mut hasher = MurmurHash3X64128::default();
         v.hash(&mut hasher);
         let (lo, hi) = hasher.finish128();
