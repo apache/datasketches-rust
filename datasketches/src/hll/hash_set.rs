@@ -25,9 +25,9 @@ use crate::codec::SketchSlice;
 use crate::codec::assert::insufficient_data;
 use crate::codec::family::Family;
 use crate::error::Error;
+use crate::hll::Coupon;
 use crate::hll::HllType;
 use crate::hll::KEY_MASK_26;
-use crate::hll::container::COUPON_EMPTY;
 use crate::hll::container::Container;
 use crate::hll::serialization::COMPACT_FLAG_MASK;
 use crate::hll::serialization::CUR_MODE_SET;
@@ -57,28 +57,28 @@ impl HashSet {
     }
 
     /// Insert coupon into hash set, ignoring duplicates
-    pub fn update(&mut self, coupon: u32) {
+    pub fn update(&mut self, coupon: Coupon) {
         let mask = (1 << self.container.lg_size()) - 1;
 
         // Initial probe position from low bits of coupon
-        let mut probe = coupon & mask;
+        let mut probe = coupon.raw() & mask;
         let starting_position = probe;
 
         loop {
-            let value = &mut self.container.coupons[probe as usize];
-            if value == &COUPON_EMPTY {
+            let slot = &mut self.container.coupons[probe as usize];
+            if slot.is_empty() {
                 // Found empty slot, insert new coupon
-                *value = coupon;
+                *slot = coupon;
                 self.container.len += 1;
                 break;
-            } else if value == &coupon {
+            } else if *slot == coupon {
                 // Duplicate found, nothing to do
                 break;
             }
 
             // Collision: compute stride and probe next position
             // Stride is always odd to ensure all slots are visited
-            let stride = ((coupon & KEY_MASK_26) >> self.container.lg_size()) | 1;
+            let stride = ((coupon.raw() & KEY_MASK_26) >> self.container.lg_size()) | 1;
             probe = (probe + stride) & mask;
             if probe == starting_position {
                 // Invariant: the caller (HllSketch) is responsible for
@@ -114,7 +114,7 @@ impl HashSet {
                         "expected {coupon_count} coupons, failed at index {i}"
                     ))
                 })?;
-                hash_set.update(coupon);
+                hash_set.update(Coupon(coupon));
             }
             Ok(hash_set)
         } else {
@@ -122,13 +122,14 @@ impl HashSet {
             let array_size = 1 << lg_arr;
 
             // Read entire hash table including empty slots
-            let mut coupons = vec![0u32; array_size];
+            let mut coupons = vec![Coupon::EMPTY; array_size];
             for (i, coupon) in coupons.iter_mut().enumerate() {
-                *coupon = cursor.read_u32_le().map_err(|_| {
+                let raw = cursor.read_u32_le().map_err(|_| {
                     Error::insufficient_data(format!(
                         "expected {array_size} coupons, failed at index {i}"
                     ))
                 })?;
+                *coupon = Coupon(raw);
             }
 
             Ok(Self {
@@ -179,22 +180,22 @@ impl HashSet {
         // Write coupons
         if compact {
             // Compact mode: collect non-empty coupons and sort for deterministic output
-            let mut coupons_vec: Vec<u32> = self
+            let mut coupons_vec: Vec<Coupon> = self
                 .container
                 .coupons
                 .iter()
-                .filter(|&&c| c != 0)
+                .filter(|&&c| !c.is_empty())
                 .copied()
                 .collect();
             coupons_vec.sort_unstable();
 
             for coupon in coupons_vec.iter().copied() {
-                bytes.write_u32_le(coupon);
+                bytes.write_u32_le(coupon.raw());
             }
         } else {
             // Non-compact mode: write entire hash table
             for coupon in self.container.coupons.iter().copied() {
-                bytes.write_u32_le(coupon);
+                bytes.write_u32_le(coupon.raw());
             }
         }
 

@@ -27,9 +27,8 @@ use crate::codec::assert::insufficient_data;
 use crate::codec::family::Family;
 use crate::common::NumStdDev;
 use crate::error::Error;
+use crate::hll::Coupon;
 use crate::hll::estimator::HipEstimator;
-use crate::hll::get_slot;
-use crate::hll::get_value;
 use crate::hll::serialization::CUR_MODE_HLL;
 use crate::hll::serialization::HLL_PREAMBLE_SIZE;
 use crate::hll::serialization::HLL_PREINTS;
@@ -124,10 +123,10 @@ impl Array6 {
     }
 
     /// Update with a coupon
-    pub fn update(&mut self, coupon: u32) {
+    pub fn update(&mut self, coupon: Coupon) {
         let mask = (1 << self.lg_config_k) - 1;
-        let slot = get_slot(coupon) & mask;
-        let new_value = get_value(coupon);
+        let slot = coupon.slot() & mask;
+        let new_value = coupon.value();
 
         let old_value = self.get_raw(slot);
 
@@ -285,8 +284,7 @@ fn num_bytes_for_k(k: u32) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hll::coupon;
-    use crate::hll::pack_coupon;
+    use crate::hll::Coupon;
 
     #[test]
     fn test_num_bytes_calculation() {
@@ -358,8 +356,7 @@ mod tests {
 
         // Add some unique values using real coupon hashing
         for i in 0..10_000u32 {
-            let coupon = coupon(i);
-            arr.update(coupon);
+            arr.update(Coupon::from_hash(i));
         }
 
         let estimate = arr.estimate();
@@ -392,8 +389,8 @@ mod tests {
         let mut arr = Array6::new(8); // 256 buckets
 
         // Test that values < 32 and >= 32 are handled correctly
-        arr.update(pack_coupon(0, 10)); // value < 32, goes to kxq0
-        arr.update(pack_coupon(1, 40)); // value >= 32, goes to kxq1
+        arr.update(Coupon::pack(0, 10)); // value < 32, goes to kxq0
+        arr.update(Coupon::pack(1, 40)); // value >= 32, goes to kxq1
 
         // Initial kxq0 = 256 (all zeros = 1.0 each)
         assert!(arr.estimator.kxq0() < 256.0, "kxq0 should have decreased");

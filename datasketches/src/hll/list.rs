@@ -24,8 +24,8 @@ use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
 use crate::codec::family::Family;
 use crate::error::Error;
+use crate::hll::Coupon;
 use crate::hll::HllType;
-use crate::hll::container::COUPON_EMPTY;
 use crate::hll::container::Container;
 use crate::hll::serialization::COMPACT_FLAG_MASK;
 use crate::hll::serialization::CUR_MODE_LIST;
@@ -56,14 +56,14 @@ impl List {
     }
 
     /// Insert coupon into list, ignoring duplicates
-    pub fn update(&mut self, coupon: u32) {
+    pub fn update(&mut self, coupon: Coupon) {
         for value in self.container.coupons.iter_mut() {
-            if value == &COUPON_EMPTY {
+            if value.is_empty() {
                 // Found empty slot, insert new coupon
                 *value = coupon;
                 self.container.len += 1;
                 break;
-            } else if value == &coupon {
+            } else if *value == coupon {
                 // Duplicate found, nothing to do
                 break;
             }
@@ -82,18 +82,23 @@ impl List {
         empty: bool,
         compact: bool,
     ) -> Result<Self, Error> {
-        // Compute array size
-        let array_size = if compact { coupon_count } else { 1 << lg_arr };
+        // Always allocate the full-sized array (1 << lg_arr) so Coupon::EMPTY sentinel
+        // slots are available for future update() calls. In compact format only
+        // coupon_count values are stored on disk, but memory must hold the full capacity
+        // so the linear scan in update() can find an empty slot to insert into.
+        let array_size = 1 << lg_arr;
+        let read_count = if compact { coupon_count } else { array_size };
 
-        // Read coupons
-        let mut coupons = vec![0u32; array_size];
+        // Read coupons into the front of the full-sized array; remaining slots stay Coupon::EMPTY.
+        let mut coupons = vec![Coupon::EMPTY; array_size];
         if !empty && coupon_count > 0 {
-            for (i, coupon) in coupons.iter_mut().enumerate() {
-                *coupon = cursor.read_u32_le().map_err(|_| {
+            for (i, coupon) in coupons.iter_mut().take(read_count).enumerate() {
+                let raw = cursor.read_u32_le().map_err(|_| {
                     Error::insufficient_data(format!(
                         "expect {coupon_count} coupons, failed at index {i}"
                     ))
                 })?;
+                *coupon = Coupon(raw);
             }
         }
 
@@ -142,10 +147,10 @@ impl List {
         if !empty {
             let mut write_idx = 0;
             for coupon in self.container.coupons.iter().copied() {
-                if compact && coupon == 0 {
+                if compact && coupon.is_empty() {
                     continue; // Skip empty coupons in compact mode
                 }
-                bytes.write_u32_le(coupon);
+                bytes.write_u32_le(coupon.raw());
                 write_idx += 1;
                 if write_idx >= array_size {
                     break;

@@ -27,10 +27,8 @@ use crate::codec::assert::insufficient_data;
 use crate::codec::family::Family;
 use crate::common::NumStdDev;
 use crate::error::Error;
+use crate::hll::Coupon;
 use crate::hll::estimator::HipEstimator;
-use crate::hll::get_slot;
-use crate::hll::get_value;
-use crate::hll::pack_coupon;
 use crate::hll::serialization::COUPON_SIZE_BYTES;
 use crate::hll::serialization::CUR_MODE_HLL;
 use crate::hll::serialization::HLL_PREAMBLE_SIZE;
@@ -130,10 +128,10 @@ impl Array4 {
         };
     }
 
-    pub fn update(&mut self, coupon: u32) {
+    pub fn update(&mut self, coupon: Coupon) {
         let mask = (1 << self.lg_config_k) - 1;
-        let slot = get_slot(coupon) & mask;
-        let new_value = get_value(coupon);
+        let slot = coupon.slot() & mask;
+        let new_value = coupon.value();
 
         // Quick rejection: if new value <= cur_min, no update needed
         if new_value <= self.cur_min {
@@ -341,8 +339,9 @@ impl Array4 {
                         "expected {aux_count} aux coupons, failed at index {i}",
                     ))
                 })?;
-                let slot = get_slot(coupon) & ((1 << lg_config_k) - 1);
-                let value = get_value(coupon);
+                let coupon = Coupon(coupon);
+                let slot = coupon.slot() & ((1 << lg_config_k) - 1);
+                let value = coupon.value();
                 aux.insert(slot, value);
             }
             aux_map = Some(aux);
@@ -418,8 +417,7 @@ impl Array4 {
 
         // Write aux map entries if present
         for (slot, value) in aux_entries.iter().copied() {
-            let coupon = pack_coupon(slot, value);
-            bytes.write_u32_le(coupon);
+            bytes.write_u32_le(Coupon::pack(slot, value).raw());
         }
 
         bytes.into_bytes()
@@ -429,8 +427,7 @@ impl Array4 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hll::coupon;
-    use crate::hll::pack_coupon;
+    use crate::hll::Coupon;
 
     #[test]
     fn test_get_set_raw() {
@@ -463,8 +460,7 @@ mod tests {
 
         // Add some unique values to different slots
         for i in 0..10_000u32 {
-            let coupon = coupon(i);
-            arr.update(coupon);
+            arr.update(Coupon::from_hash(i));
         }
 
         // Estimate should be positive and roughly in the ballpark
@@ -492,8 +488,8 @@ mod tests {
         let mut arr = Array4::new(8); // 256 buckets
 
         // Test that values < 32 and >= 32 are handled correctly
-        arr.update(pack_coupon(0, 10)); // value < 32, goes to kxq0
-        arr.update(pack_coupon(1, 40)); // value >= 32, goes to kxq1
+        arr.update(Coupon::pack(0, 10)); // value < 32, goes to kxq0
+        arr.update(Coupon::pack(1, 40)); // value >= 32, goes to kxq1
 
         // Verify registers were updated (not exact values, just check they changed)
         // kxq0 should have decreased (we removed a 0 and added a 10)

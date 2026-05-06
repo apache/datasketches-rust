@@ -5324,6 +5324,22 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "values length must be 8")]
+    fn pack_bits_block_rejects_invalid_values_len() {
+        let input = [0u64; BLOCK_WIDTH + 1];
+        let mut bytes = [0u8; 1];
+        pack_bits_block(&input, &mut bytes, 1);
+    }
+
+    #[test]
+    #[should_panic(expected = "values length must be 8")]
+    fn unpack_bits_block_rejects_invalid_values_len() {
+        let mut output = [0u64; BLOCK_WIDTH - 1];
+        let bytes = [0u8; 1];
+        unpack_bits_block(&mut output, &bytes, 1);
+    }
+
+    #[test]
     #[should_panic(expected = "wrong number of bits in pack_bits_block8")]
     fn pack_bits_block8_rejects_zero_bits() {
         let input = [0u64; BLOCK_WIDTH];
@@ -5337,6 +5353,22 @@ mod tests {
         let mut output = [0u64; BLOCK_WIDTH];
         let bytes = [0u8; 64];
         unpack_bits_block(&mut output, &bytes, 64);
+    }
+
+    #[test]
+    #[should_panic(expected = "output buffer too small")]
+    fn pack_bits_block_rejects_buffer_too_small() {
+        let input = [0u64; BLOCK_WIDTH];
+        let mut bytes = [0u8; 1];
+        pack_bits_block(&input, &mut bytes, 2);
+    }
+
+    #[test]
+    #[should_panic(expected = "output buffer too small")]
+    fn unpack_bits_block_rejects_buffer_too_small() {
+        let mut output = [0u64; BLOCK_WIDTH];
+        let bytes = [0u8; 1];
+        unpack_bits_block(&mut output, &bytes, 2);
     }
 
     #[test]

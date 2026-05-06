@@ -31,13 +31,13 @@
 use std::hash::Hash;
 
 use crate::common::NumStdDev;
+use crate::hll::Coupon;
 use crate::hll::HllSketch;
 use crate::hll::HllType;
 use crate::hll::array4::Array4;
 use crate::hll::array6::Array6;
 use crate::hll::array8::Array8;
 use crate::hll::mode::Mode;
-use crate::hll::pack_coupon;
 
 /// An HLL Union for combining multiple HLL sketches.
 ///
@@ -525,7 +525,7 @@ fn convert_array8_to_type(src: &Array8, lg_config_k: u8, target_type: HllType) -
                 let val = src.values()[slot];
                 if val > 0 {
                     let clamped_val = val.min(63);
-                    let coupon = pack_coupon(slot as u32, clamped_val);
+                    let coupon = Coupon::pack(slot as u32, clamped_val);
                     array6.update(coupon);
                 }
             }
@@ -543,7 +543,7 @@ fn convert_array8_to_type(src: &Array8, lg_config_k: u8, target_type: HllType) -
             for slot in 0..src.num_registers() {
                 let val = src.values()[slot];
                 if val > 0 {
-                    let coupon = pack_coupon(slot as u32, val);
+                    let coupon = Coupon::pack(slot as u32, val);
                     array4.update(coupon);
                 }
             }
@@ -564,7 +564,7 @@ fn copy_array46_via_coupons(dst: &mut Array8, num_registers: usize, get_value: i
     for slot in 0..num_registers {
         let val = get_value(slot as u32);
         if val > 0 {
-            let coupon = pack_coupon(slot as u32, val);
+            let coupon = Coupon::pack(slot as u32, val);
             dst.update(coupon);
         }
     }

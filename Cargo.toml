@@ -16,7 +16,7 @@
 # under the License.
 
 [workspace]
-members = ["datasketches", "examples", "xtask"]
+members = ["datasketches", "xtask"]
 resolver = "3"
 
 [workspace.package]

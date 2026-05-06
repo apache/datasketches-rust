@@ -22,20 +22,18 @@
 
 use crate::common::NumStdDev;
 use crate::hll::COUPON_RSE;
+use crate::hll::Coupon;
 use crate::hll::coupon_mapping::X_ARR;
 use crate::hll::coupon_mapping::Y_ARR;
 use crate::hll::cubic_interpolation::using_x_and_y_tables;
-
-/// Sentinel value indicating an empty coupon slot
-pub const COUPON_EMPTY: u32 = 0;
 
 /// Container for storing coupons with basic cardinality estimation
 #[derive(Debug, Clone)]
 pub struct Container {
     /// Log2 of container size
     lg_size: usize,
-    /// Array of coupon values (0 = empty)
-    pub coupons: Box<[u32]>,
+    /// Array of coupon values (Coupon::EMPTY = empty)
+    pub coupons: Box<[Coupon]>,
     /// Number of non-empty coupons
     pub len: usize,
 }
@@ -48,16 +46,16 @@ impl PartialEq for Container {
             return false;
         }
 
-        let mut coupons1: Vec<u32> = self
+        let mut coupons1: Vec<Coupon> = self
             .coupons
             .iter()
-            .filter(|&&c| c != COUPON_EMPTY)
+            .filter(|&&c| !c.is_empty())
             .copied()
             .collect();
-        let mut coupons2: Vec<u32> = other
+        let mut coupons2: Vec<Coupon> = other
             .coupons
             .iter()
-            .filter(|&&c| c != COUPON_EMPTY)
+            .filter(|&&c| !c.is_empty())
             .copied()
             .collect();
 
@@ -72,13 +70,13 @@ impl Container {
     pub fn new(lg_size: usize) -> Self {
         Self {
             lg_size,
-            coupons: vec![COUPON_EMPTY; 1 << lg_size].into_boxed_slice(),
+            coupons: vec![Coupon::EMPTY; 1 << lg_size].into_boxed_slice(),
             len: 0,
         }
     }
 
     /// Create container from existing coupons
-    pub fn from_coupons(lg_size: usize, coupons: Box<[u32]>, len: usize) -> Self {
+    pub fn from_coupons(lg_size: usize, coupons: Box<[Coupon]>, len: usize) -> Self {
         Self {
             lg_size,
             coupons,
@@ -134,7 +132,7 @@ impl Container {
     }
 
     /// Iterate over all non-empty coupons
-    pub fn iter(&self) -> impl Iterator<Item = u32> + '_ {
-        self.coupons.iter().filter(|&&c| c != COUPON_EMPTY).copied()
+    pub fn iter(&self) -> impl Iterator<Item = Coupon> + '_ {
+        self.coupons.iter().filter(|&&c| !c.is_empty()).copied()
     }
 }

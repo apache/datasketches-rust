@@ -28,6 +28,7 @@ use crate::codec::assert::insufficient_data;
 use crate::codec::family::Family;
 use crate::common::NumStdDev;
 use crate::error::Error;
+use crate::hll::Coupon;
 use crate::hll::HllType;
 use crate::hll::RESIZE_DENOMINATOR;
 use crate::hll::RESIZE_NUMERATOR;
@@ -35,7 +36,6 @@ use crate::hll::array4::Array4;
 use crate::hll::array6::Array6;
 use crate::hll::array8::Array8;
 use crate::hll::container::Container;
-use crate::hll::coupon;
 use crate::hll::hash_set::HashSet;
 use crate::hll::list::List;
 use crate::hll::mode::Mode;
@@ -156,10 +156,15 @@ impl HllSketch {
         self.lg_config_k
     }
 
-    /// Update the sketch with a value
+    /// Update the sketch with a value.
     ///
-    /// This accepts any type that implements `Hash`. The value is hashed
-    /// and converted to a coupon, which is then inserted into the sketch.
+    /// Accepts any type that implements [`Hash`].  The value is hashed and converted to
+    /// an internal coupon, which is then inserted into the sketch.
+    ///
+    /// If you need to insert the same logical value into multiple sketches, consider
+    /// pre-computing the coupon with [`Coupon::from_hash`] and calling
+    /// [`update_with_coupon`](Self::update_with_coupon) on each sketch to avoid
+    /// redundant hashing.
     ///
     /// # Examples
     ///
@@ -171,14 +176,29 @@ impl HllSketch {
     /// assert!(sketch.estimate() >= 1.0);
     /// ```
     pub fn update<T: Hash>(&mut self, value: T) {
-        let coupon = coupon(value);
-        self.update_with_coupon(coupon);
+        self.update_with_coupon(Coupon::from_hash(value));
     }
 
-    /// Update the sketch with a raw coupon value
+    /// Update the sketch with a pre-computed [`Coupon`].
     ///
-    /// Maintains all sketch invariants including mode transitions and estimator updates.
-    pub(super) fn update_with_coupon(&mut self, coupon: u32) {
+    /// A [`Coupon`] encodes both the HLL bucket index (low 26 bits) and the register
+    /// value (high 6 bits) derived from hashing an input.  Accepting a pre-computed
+    /// coupon makes it possible to pay the hashing cost once and fan the result out to
+    /// many independent sketches — see [`Coupon`] for a worked example.
+    ///
+    /// Handles all internal bookkeeping, including automatic mode transitions
+    /// (List → Set → HLL array) and estimator state updates.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use datasketches::hll::{HllSketch, HllType, Coupon};
+    /// let c = Coupon::from_hash("apple");
+    /// let mut sketch = HllSketch::new(10, HllType::Hll8);
+    /// sketch.update_with_coupon(c);
+    /// assert!(sketch.estimate() >= 1.0);
+    /// ```
+    pub fn update_with_coupon(&mut self, coupon: Coupon) {
         match &mut self.mode {
             Mode::List { list, hll_type } => {
                 list.update(coupon);

@@ -167,3 +167,15 @@ fn test_reduce_k_window() {
         near(1000.0, RELATIVE_ERROR_FOR_LG_K_11 * 10000.0)
     );
 }
+
+#[test]
+#[should_panic]
+fn test_lg_k_too_small() {
+    let _ = CpcSketch::new(3);
+}
+
+#[test]
+#[should_panic]
+fn test_lg_k_too_large() {
+    let _ = CpcSketch::new(27);
+}

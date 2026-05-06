@@ -20,28 +20,22 @@
 //! Stores slot-value pairs for values that don't fit in the 4-bit main array.
 //! Uses open addressing with stride-based probing for collision resolution.
 
+use crate::hll::Coupon;
 use crate::hll::RESIZE_DENOMINATOR;
 use crate::hll::RESIZE_NUMERATOR;
-use crate::hll::get_slot;
-use crate::hll::get_value;
-use crate::hll::pack_coupon;
-
-const ENTRY_EMPTY: u32 = 0;
 
 /// Open-addressing hash table for exception values (values >= 15)
 ///
 /// This hash map stores (slot_number, value) pairs where values have exceeded
 /// the 4-bit representation (after cur_min offset) in the main Array4.
 ///
-/// # Entry Encoding
-///
-/// Each entry is an u32 packed as: [value (upper 6 bits) | slot_no (lower 26 bits)]
-/// Empty entries are represented as 0.
+/// Each entry is a [`Coupon`] packed as: [value (upper 6 bits) | slot_no (lower 26 bits)].
+/// Empty entries are represented as [`Coupon::EMPTY`].
 #[derive(Debug, Clone)]
 pub struct AuxMap {
     lg_size: u8,
     lg_config_k: u8,
-    entries: Box<[u32]>,
+    entries: Box<[Coupon]>,
     count: u32,
 }
 
@@ -54,16 +48,16 @@ impl PartialEq for AuxMap {
         }
 
         // Collect and sort non-empty entries from both maps
-        let mut entries1: Vec<u32> = self
+        let mut entries1: Vec<Coupon> = self
             .entries
             .iter()
-            .filter(|&&e| e != ENTRY_EMPTY)
+            .filter(|&&e| !e.is_empty())
             .copied()
             .collect();
-        let mut entries2: Vec<u32> = other
+        let mut entries2: Vec<Coupon> = other
             .entries
             .iter()
-            .filter(|&&e| e != ENTRY_EMPTY)
+            .filter(|&&e| !e.is_empty())
             .copied()
             .collect();
 
@@ -95,7 +89,7 @@ impl AuxMap {
         Self {
             lg_size,
             lg_config_k,
-            entries: vec![ENTRY_EMPTY; 1 << lg_size].into_boxed_slice(),
+            entries: vec![Coupon::EMPTY; 1 << lg_size].into_boxed_slice(),
             count: 0,
         }
     }
@@ -110,7 +104,7 @@ impl AuxMap {
                 unreachable!("slot {} already exists in aux map", slot);
             }
             FindResult::Empty(idx) => {
-                self.entries[idx] = pack_coupon(slot, value);
+                self.entries[idx] = Coupon::pack(slot, value);
                 self.count += 1;
                 self.check_grow();
             }
@@ -122,7 +116,7 @@ impl AuxMap {
     /// Returns `None` if the slot is not found
     pub fn get(&self, slot: u32) -> Option<u8> {
         match self.find(slot) {
-            FindResult::Found(idx) => Some(get_value(self.entries[idx])),
+            FindResult::Found(idx) => Some(self.entries[idx].value()),
             FindResult::Empty(_) => None,
         }
     }
@@ -131,7 +125,7 @@ impl AuxMap {
     pub fn replace(&mut self, slot: u32, value: u8) {
         match self.find(slot) {
             FindResult::Found(idx) => {
-                self.entries[idx] = pack_coupon(slot, value);
+                self.entries[idx] = Coupon::pack(slot, value);
             }
             FindResult::Empty(_) => {
                 // Invariant: Array4 always check existence before replacing
@@ -154,11 +148,11 @@ impl AuxMap {
         loop {
             let entry = self.entries[probe as usize];
 
-            if entry == ENTRY_EMPTY {
+            if entry.is_empty() {
                 return FindResult::Empty(probe as usize);
             }
 
-            let entry_slot = get_slot(entry) & config_k_mask;
+            let entry_slot = entry.slot() & config_k_mask;
             if entry_slot == slot {
                 return FindResult::Found(probe as usize);
             }
@@ -189,19 +183,19 @@ impl AuxMap {
         let new_lg_size = self.lg_size + 1;
         let new_size = 1 << new_lg_size;
         let new_mask = (1 << new_lg_size) - 1;
-        let mut new_entries = vec![ENTRY_EMPTY; new_size].into_boxed_slice();
+        let mut new_entries = vec![Coupon::EMPTY; new_size].into_boxed_slice();
 
         // Rehash all entries into the larger table
         for &entry in self.entries.iter() {
-            if entry != ENTRY_EMPTY {
-                let slot = get_slot(entry);
+            if !entry.is_empty() {
+                let slot = entry.slot();
 
                 // Find position in new table
                 let mut probe = slot & new_mask;
                 let start_position = probe;
 
                 loop {
-                    if new_entries[probe as usize] == ENTRY_EMPTY {
+                    if new_entries[probe as usize].is_empty() {
                         new_entries[probe as usize] = entry;
                         break;
                     }
@@ -225,8 +219,8 @@ impl AuxMap {
     pub fn iter(&self) -> impl Iterator<Item = (u32, u8)> + '_ {
         let config_k_mask = (1 << self.lg_config_k) - 1;
         self.entries.iter().filter_map(move |&entry| {
-            if entry != ENTRY_EMPTY {
-                Some((get_slot(entry) & config_k_mask, get_value(entry)))
+            if !entry.is_empty() {
+                Some((entry.slot() & config_k_mask, entry.value()))
             } else {
                 None
             }
@@ -236,7 +230,7 @@ impl AuxMap {
 
 /// Iterator over AuxMap entries
 pub struct AuxMapIter {
-    entries: std::vec::IntoIter<u32>,
+    entries: std::vec::IntoIter<Coupon>,
     config_k_mask: u32,
 }
 
@@ -246,9 +240,9 @@ impl Iterator for AuxMapIter {
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             match self.entries.next() {
-                Some(entry) if entry != ENTRY_EMPTY => {
-                    let slot = get_slot(entry) & self.config_k_mask;
-                    let value = get_value(entry);
+                Some(entry) if !entry.is_empty() => {
+                    let slot = entry.slot() & self.config_k_mask;
+                    let value = entry.value();
                     return Some((slot, value));
                 }
                 Some(_) => continue, // Skip empty entries

@@ -22,6 +22,7 @@ use std::path::PathBuf;
 
 use common::serialization_test_data;
 use datasketches::hll::HllSketch;
+use datasketches::hll::HllType;
 
 fn test_sketch_file(path: PathBuf, expected_cardinality: usize, expected_lg_k: u8) {
     let expected = expected_cardinality as f64;
@@ -100,6 +101,33 @@ fn test_sketch_file(path: PathBuf, expected_cardinality: usize, expected_lg_k: u
         "Estimates differ after round-trip for {}",
         path.display()
     );
+}
+
+/// Reproducer for https://github.com/apache/datasketches-rust/issues/115
+///
+/// A compact-serialized List has no trailing COUPON_EMPTY (0) sentinels.
+/// Before the fix, update() would scan the fully-packed array, find no
+/// empty slot, and silently drop the new value.
+#[test]
+fn test_update_after_deserialize_list_mode() {
+    const LG_K: u8 = 11;
+    for hll_type in [HllType::Hll4, HllType::Hll6, HllType::Hll8] {
+        let mut sketch = HllSketch::new(LG_K, hll_type);
+        sketch.update(1u64);
+
+        // Round-trip through serialization (compact format, List mode)
+        let bytes = sketch.serialize();
+        let mut sketch = HllSketch::deserialize(&bytes).unwrap();
+
+        // This update was silently dropped before the fix
+        sketch.update(2u64);
+
+        let est = sketch.estimate();
+        assert!(
+            (est - 2.0).abs() < 0.1,
+            "{hll_type:?}: expected estimate close to 2.0 after update post-deserialize, got {est}"
+        );
+    }
 }
 
 #[test]
