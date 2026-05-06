@@ -22,7 +22,7 @@ impl<T: Hash> HashValue<T> {
 }
 
 impl HashValue<u64> {
-    /// Create a `HashValue` from a f64 value using the canonical mapping.
+    /// Create a `HashValue` from a `f64` value using the canonical mapping.
     #[inline(always)]
     pub fn canonical_f64(value: f64) -> Self {
         HashValue {
@@ -38,9 +38,22 @@ impl HashValue<u64> {
         }
     }
 
-    /// Create a `HashValue` from a f32 value using the canonical mapping.
+    /// Create a `HashValue` from a `f32` value using the canonical mapping.
     #[inline(always)]
     pub fn canonical_f32(value: f32) -> Self {
         HashValue::canonical_f64(value as f64)
+    }
+}
+
+impl HashValue<i64> {
+    /// Create a `HashValue` from an `i8` value by casting the value to `i64`.
+    ///
+    /// This canonical mapping ensures that the same hash value is produced for the same numeric
+    /// value, regardless of the original type. For example, `HashValue::canonical_i8(42)` will
+    /// produce the same hash value as `HashValue::from_hash(42i64)`.
+    ///
+    /// This is compatible with datasketches-cpp's behavior.
+    pub fn canonical_i8(value: i8) -> Self {
+        HashValue { value: value as i64 }
     }
 }
