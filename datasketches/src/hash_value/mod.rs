@@ -18,9 +18,13 @@
 //! Hashable value wrappers for sketches.
 //!
 //! Sketch update APIs accept any value that implements [`Hash`]. For most Rust values,
-//! passing the value directly is sufficient. This module provides [`Canonical`] wrappers for
-//! cases where the input must follow compatible canonicalization rules as other datasketches
-//! implementation.
+//! passing the value directly is sufficient. This module provides value wrappers for
+//! cases where the default implementation cannot meet needs.
+//!
+//! ## Canonical
+//!
+//! The [`Canonical`] wrapper can be used for cases where the input must follow compatible
+//! canonicalization rules as other datasketches implementation.
 //!
 //! Canonicalization is useful when the same logical value can have multiple Rust representations.
 //! For example, `f32` and `f64` floating-point inputs are canonicalized through the same `f64`
@@ -30,8 +34,24 @@
 //! prefix.
 //!
 //! Empty byte and string inputs have zero bytes to hash. datasketches-cpp skips empty strings
-//! before hashing, so check `Canonical::is_empty` before updating a sketch when that behavior
-//! matters.
+//! before hashing, so check `is_empty` before updating a sketch when that behavior matters.
+//!
+//! Read the docs of concrete canonical value wrapper for more details and examples.
+//!
+//! * [`canonical_f32`]
+//! * [`canonical_f64`]
+//! * [`canonical_i8`]
+//! * [`canonical_i16`]
+//! * [`canonical_i32`]
+//! * [`canonical_i64`]
+//! * [`canonical_slice`]
+//! * [`canonical_str`]
+//! * [`canonical_string`]
+//! * [`canonical_u8`]
+//! * [`canonical_u16`]
+//! * [`canonical_u32`]
+//! * [`canonical_u64`]
+//! * [`canonical_vec`]
 
 mod canonical;
 
