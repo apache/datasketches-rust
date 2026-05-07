@@ -73,7 +73,7 @@ pub trait ThetaSketchView: private::Sealed {
     fn is_empty(&self) -> bool;
 
     /// Returns an iterator over retained hash values.
-    fn iter<'a>(&'a self) -> impl Iterator<Item = u64> + 'a;
+    fn iter(&self) -> impl Iterator<Item = u64> + '_;
 
     /// Returns number of retained hash values.
     fn num_retained(&self) -> usize;
@@ -113,8 +113,8 @@ impl ThetaSketch {
     /// # Examples
     ///
     /// ```
-    /// use datasketches::theta::ThetaSketch;
     /// use datasketches::hash_value::HashValue;
+    /// use datasketches::theta::ThetaSketch;
     ///
     /// let mut sketch = ThetaSketch::builder().build();
     /// sketch.update("apple");
@@ -329,7 +329,7 @@ impl ThetaSketchView for ThetaSketch {
         ThetaSketch::is_empty(self)
     }
 
-    fn iter<'a>(&'a self) -> impl Iterator<Item = u64> + 'a {
+    fn iter(&self) -> impl Iterator<Item = u64> + '_ {
         ThetaSketch::iter(self)
     }
 
@@ -904,7 +904,7 @@ impl ThetaSketchView for CompactThetaSketch {
         CompactThetaSketch::is_empty(self)
     }
 
-    fn iter<'a>(&'a self) -> impl Iterator<Item = u64> + 'a {
+    fn iter(&self) -> impl Iterator<Item = u64> + '_ {
         CompactThetaSketch::iter(self)
     }
 

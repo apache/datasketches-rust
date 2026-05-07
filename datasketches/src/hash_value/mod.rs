@@ -1,6 +1,22 @@
 //! HashValue
 
-use std::hash::{Hash, Hasher};
+mod canonical;
+
+use std::hash::Hash;
+use std::hash::Hasher;
+
+pub use self::canonical::Canonical;
+pub use self::canonical::canonical_f32;
+pub use self::canonical::canonical_f64;
+
+#[doc(hidden)] // for doctest
+pub fn calculate_hash<T: Hash>(t: T) -> u64 {
+    use std::hash::DefaultHasher;
+
+    let mut s = DefaultHasher::new();
+    t.hash(&mut s);
+    s.finish()
+}
 
 /// HashValue
 #[derive(Eq, PartialEq, Clone, Copy, Debug)]
@@ -54,6 +70,8 @@ impl HashValue<i64> {
     ///
     /// This is compatible with datasketches-cpp's behavior.
     pub fn canonical_i8(value: i8) -> Self {
-        HashValue { value: value as i64 }
+        HashValue {
+            value: value as i64,
+        }
     }
 }
