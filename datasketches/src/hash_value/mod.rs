@@ -48,7 +48,7 @@
 //!
 //! [`natural_extend::NaturalExtend`] first widens signed values to `i64` and unsigned values to
 //! `u64`, and then hashes the resulting integers. This strategy is the same as how datasketches-cpp
-//! hashes short integers for `HllSketch` and `CpcSketch`.
+//! hashes short integers for `BloomFilter`.
 //!
 //! Read the docs of concrete value wrapper for more details and examples.
 //!
