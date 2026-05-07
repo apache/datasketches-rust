@@ -344,8 +344,8 @@ impl_canonical_number!(u64, canonical_u64, |v| v);
 /// Slice canonicalization hashes the raw bytes of the vector without Rust's slice length prefix.
 /// This matches the datasketches-cpp raw byte update path used by sketches.
 ///
-/// Empty byte vectors have zero bytes to hash. Use [`is_empty`](Canonical::<Vec<u8>>::is_empty) to
-/// skip empty values before updating a sketch if you need to mirror datasketches-cpp's empty slice
+/// Empty byte vectors have zero bytes to hash. Use [`Canonical::<Vec<u8>>::is_empty`] to skip
+/// empty values before updating a sketch if you need to mirror datasketches-cpp's empty slice
 /// behavior.
 ///
 /// # Examples
@@ -382,7 +382,7 @@ impl Hash for Canonical<Vec<u8>> {
 impl Canonical<Vec<u8>> {
     /// Returns `true` if this value has a length of zero bytes.
     ///
-    /// datasketches-cpp ignores empty strings before hashing. Check this method before
+    /// datasketches-cpp ignores empty slices before hashing. Check this method before
     /// updating a sketch when matching that behavior matters.
     ///
     /// # Examples
@@ -404,9 +404,8 @@ impl Canonical<Vec<u8>> {
 /// prefix. This matches the datasketches-cpp `std::string` update path, which hashes `c_str()` with
 /// the string length.
 ///
-/// Empty strings have zero bytes to hash. Use [`is_empty`](Canonical::<String>::is_empty) to skip
-/// empty values before updating a sketch if you need to mirror datasketches-cpp's empty string
-/// behavior.
+/// Empty strings have zero bytes to hash. Use [`Canonical::<String>::is_empty`] to skip empty
+/// values before updating a sketch if you need to mirror datasketches-cpp's empty string behavior.
 ///
 /// # Examples
 ///
@@ -463,9 +462,8 @@ impl Canonical<String> {
 /// Slice canonicalization hashes the raw bytes of the slice without Rust's slice length prefix.
 /// This matches the datasketches-cpp raw byte update path used by sketches.
 ///
-/// Empty byte slices have zero bytes to hash. Use [`is_empty`](Canonical::<&[u8]>::is_empty) to
-/// skip empty values before updating a sketch if you need to mirror datasketches-cpp's empty slice
-/// behavior.
+/// Empty byte slices have zero bytes to hash. Use [`Canonical::<&[u8]>::is_empty`] to skip empty
+/// values before updating a sketch if you need to mirror datasketches-cpp's empty slice behavior.
 ///
 /// # Examples
 ///
@@ -501,7 +499,7 @@ impl Hash for Canonical<&[u8]> {
 impl Canonical<&[u8]> {
     /// Returns `true` if this value has a length of zero bytes.
     ///
-    /// datasketches-cpp ignores empty strings before hashing. Check this method before
+    /// datasketches-cpp ignores empty slices before hashing. Check this method before
     /// updating a sketch when matching that behavior matters.
     ///
     /// # Examples
@@ -523,9 +521,8 @@ impl Canonical<&[u8]> {
 /// prefix. This matches the datasketches-cpp `std::string` update path, which hashes `c_str()` with
 /// the string length.
 ///
-/// Empty string slices have zero bytes to hash. Use [`is_empty`](Canonical::<&str>::is_empty) to
-/// skip empty values before updating a sketch if you need to mirror datasketches-cpp's empty string
-/// behavior.
+/// Empty string slices have zero bytes to hash. Use [`Canonical::<&str>::is_empty`] to skip empty
+/// values before updating a sketch if you need to mirror datasketches-cpp's empty string behavior.
 ///
 /// # Examples
 ///
