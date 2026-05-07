@@ -17,7 +17,9 @@
 
 //! Naturally extended integer hash value wrappers.
 //!
-//! Signed values are widened to `i64`; unsigned values are widened to `u64`.
+//! [`NaturalExtend`] widens signed values to `i64` and unsigned values to `u64`.
+//!
+//! This strategy is the same as how datasketches-cpp hashes integers for `BloomFilter`.
 
 use std::hash::Hash;
 use std::hash::Hasher;
@@ -27,7 +29,7 @@ use super::value::Value;
 
 /// An integer value wrapper that uses Rust's natural integer widening before hashing.
 ///
-/// This strategy is compatible with how datasketches-cpp's `BloomFilter` hashes integers.
+/// See the [module level documentation](super) for more.
 pub type NaturalExtend<T> = Value<T, NaturalExtendStrategy>;
 
 /// Hashing strategy for [`NaturalExtend`].
@@ -62,7 +64,10 @@ pub fn from_i8(v: i8) -> NaturalExtend<i8> {
 /// # use datasketches::hash_value::natural_extend::from_u8;
 /// # use datasketches::hash_value::sign_extend::from_u8 as signed_from_u8;
 /// assert_eq!(calculate_hash(from_u8(255)), calculate_hash(255u64));
-/// assert_ne!(calculate_hash(from_u8(255)), calculate_hash(signed_from_u8(255)));
+/// assert_ne!(
+///     calculate_hash(from_u8(255)),
+///     calculate_hash(signed_from_u8(255))
+/// );
 /// ```
 pub fn from_u8(v: u8) -> NaturalExtend<u8> {
     NaturalExtend::new(v)

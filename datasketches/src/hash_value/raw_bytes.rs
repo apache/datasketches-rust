@@ -17,8 +17,12 @@
 
 //! Raw byte and string hash value wrappers.
 //!
-//! [`RawBytes`] hashes byte and string values as raw bytes without Rust's slice or string length
+//! [`RawBytes`] hashes byte and string inputs as raw bytes without Rust's slice or string length
 //! prefix.
+//!
+//! Empty byte and string inputs have zero bytes to hash. Other datasketches implementations skip
+//! empty strings before hashing, so check `is_empty` before updating a sketch when that behavior
+//! matters.
 
 use std::hash::Hasher;
 
@@ -26,6 +30,8 @@ use super::value::HashStrategy;
 use super::value::Value;
 
 /// A byte or string value wrapper that hashes raw bytes.
+///
+/// See the [module level documentation](super) for more.
 pub type RawBytes<T> = Value<T, RawBytesStrategy>;
 
 /// Hashing strategy for [`RawBytes`].
@@ -45,7 +51,8 @@ pub struct RawBytesStrategy;
 ///     calculate_hash(from_vec(b"abc".to_vec())),
 ///     calculate_hash(from_slice(b"abc"))
 /// );
-/// assert!(from_vec(Vec::new()).is_empty());
+/// assert!(from_vec(vec![]).is_empty());
+/// assert!(!from_vec(b"abc".to_vec()).is_empty());
 /// ```
 pub fn from_vec(v: Vec<u8>) -> RawBytes<Vec<u8>> {
     RawBytes::new(v)
@@ -65,6 +72,7 @@ pub fn from_vec(v: Vec<u8>) -> RawBytes<Vec<u8>> {
 ///     calculate_hash(from_str("abc"))
 /// );
 /// assert!(from_string(String::new()).is_empty());
+/// assert!(!from_string("abc".to_string()).is_empty());
 /// ```
 pub fn from_string(v: String) -> RawBytes<String> {
     RawBytes::new(v)
@@ -83,8 +91,8 @@ pub fn from_string(v: String) -> RawBytes<String> {
 ///     calculate_hash(from_slice(b"abc")),
 ///     calculate_hash(from_vec(b"abc".to_vec()))
 /// );
-/// assert_ne!(calculate_hash(from_slice(b"ab")), calculate_hash(from_slice(b"abc")));
 /// assert!(from_slice(&[]).is_empty());
+/// assert!(!from_slice(b"abc").is_empty());
 /// ```
 pub fn from_slice(v: &[u8]) -> RawBytes<&[u8]> {
     RawBytes::new(v)
@@ -103,15 +111,33 @@ pub fn from_slice(v: &[u8]) -> RawBytes<&[u8]> {
 ///     calculate_hash(from_str("abc")),
 ///     calculate_hash(from_string("abc".to_owned()))
 /// );
-/// assert_ne!(calculate_hash(from_str("ab")), calculate_hash(from_str("abc")));
 /// assert!(from_str("").is_empty());
+/// assert!(!from_str("abc").is_empty());
 /// ```
 pub fn from_str(v: &str) -> RawBytes<&str> {
     RawBytes::new(v)
 }
 
-impl<T: AsRef<[u8]>> HashStrategy<T> for RawBytesStrategy {
-    fn hash<H: Hasher>(value: &T, state: &mut H) {
-        state.write(value.as_ref());
+impl HashStrategy<Vec<u8>> for RawBytesStrategy {
+    fn hash<H: Hasher>(value: &Vec<u8>, state: &mut H) {
+        state.write(value.as_slice());
+    }
+}
+
+impl HashStrategy<&[u8]> for RawBytesStrategy {
+    fn hash<H: Hasher>(value: &&[u8], state: &mut H) {
+        state.write(value);
+    }
+}
+
+impl HashStrategy<String> for RawBytesStrategy {
+    fn hash<H: Hasher>(value: &String, state: &mut H) {
+        state.write(value.as_bytes());
+    }
+}
+
+impl HashStrategy<&str> for RawBytesStrategy {
+    fn hash<H: Hasher>(value: &&str, state: &mut H) {
+        state.write(value.as_bytes());
     }
 }

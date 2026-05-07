@@ -17,8 +17,10 @@
 
 //! Sign-extended integer hash value wrappers.
 //!
-//! Values narrower than 64 bits are sign-extended to 64 bits, then hashed as `u64`. Unsigned
-//! narrow values are first interpreted as the signed integer of the same width.
+//! [`SignExtend`] first sign-extends values to 64-bits and then hashes the resulting integers.
+//!
+//! This strategy is the same as how datasketches-cpp hashes integers for `HllSketch` and
+//! `CpcSketch`.
 
 use std::hash::Hash;
 use std::hash::Hasher;
@@ -28,8 +30,7 @@ use super::value::Value;
 
 /// An integer value wrapper that sign-extends the value before hashing.
 ///
-/// This strategy is compatible with how datasketches-cpp's `HllSketch` and `CpcSketch` hash
-/// integers.
+/// See the [module level documentation](super) for more.
 pub type SignExtend<T> = Value<T, SignExtendStrategy>;
 
 /// Hashing strategy for [`SignExtend`].
@@ -72,7 +73,10 @@ pub fn from_i8(v: i8) -> SignExtend<i8> {
 /// # use datasketches::hash_value::natural_extend::from_u8 as natural_from_u8;
 /// # use datasketches::hash_value::sign_extend::{from_i8, from_u8};
 /// assert_eq!(calculate_hash(from_u8(255)), calculate_hash(from_i8(-1)));
-/// assert_ne!(calculate_hash(from_u8(255)), calculate_hash(natural_from_u8(255)));
+/// assert_ne!(
+///     calculate_hash(from_u8(255)),
+///     calculate_hash(natural_from_u8(255))
+/// );
 /// ```
 pub fn from_u8(v: u8) -> SignExtend<u8> {
     SignExtend::new(v)

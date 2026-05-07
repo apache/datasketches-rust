@@ -21,13 +21,13 @@
 //! passing the value directly is sufficient. This module provides value wrappers for
 //! cases where the default implementation does not match a sketch's compatibility rules.
 //!
-//! ## Canonical Float
+//! ## Floating-point Numbers
 //!
 //! [`canonical_float::CanonicalFloat`] maps `f32` and `f64` values through a canonical `f64` bit
 //! pattern before hashing. Signed zero values hash the same, all NaN values use one canonical NaN
 //! bit pattern, and equal `f32`/`f64` values hash the same.
 //!
-//! This strategy is compatible with how other datasketches hashes floating-point numbers.
+//! This strategy is the same as how other datasketches implementations hash floating-point numbers.
 //!
 //! Read the docs of concrete value wrapper for more details and examples.
 //!
@@ -36,14 +36,23 @@
 //!
 //! ## Integers
 //!
-//! datasketches-cpp uses more than one integer extension strategy. [`sign_extend::SignExtend`]
-//! first sign-extends values to 64 bits and then hashes the resulting `u64`.
-//! [`natural_extend::NaturalExtend`] widens signed values to `i64` and unsigned values to `u64`.
+//! [`sign_extend::SignExtend`] first sign-extends values to 64-bits and then hashes the resulting
+//! integers. This strategy is the same as how datasketches-cpp hashes integers for `HllSketch` and
+//! `CpcSketch`.
+//!
+//! Read the docs of concrete value wrapper for more details and examples.
 //!
 //! * [`sign_extend::from_i8`], [`sign_extend::from_u8`]
 //! * [`sign_extend::from_i16`], [`sign_extend::from_u16`]
 //! * [`sign_extend::from_i32`], [`sign_extend::from_u32`]
 //! * [`sign_extend::from_i64`], [`sign_extend::from_u64`]
+//!
+//! [`natural_extend::NaturalExtend`] widens signed values to `i64` and unsigned values to `u64`.
+//! This strategy is the same as how datasketches-cpp hashes integers for `HllSketch` and
+//! `CpcSketch`.
+//!
+//! Read the docs of concrete value wrapper for more details and examples.
+//!
 //! * [`natural_extend::from_i8`], [`natural_extend::from_u8`]
 //! * [`natural_extend::from_i16`], [`natural_extend::from_u16`]
 //! * [`natural_extend::from_i32`], [`natural_extend::from_u32`]
@@ -51,11 +60,14 @@
 //!
 //! ## Raw Bytes
 //!
-//! [`raw_bytes::RawBytes`] hashes byte and string inputs as raw bytes without Rust's slice or string
-//! length prefix.
+//! [`raw_bytes::RawBytes`] hashes byte and string inputs as raw bytes without Rust's slice or
+//! string length prefix.
 //!
-//! Empty byte and string inputs have zero bytes to hash. datasketches-cpp skips empty strings
-//! before hashing, so check `is_empty` before updating a sketch when that behavior matters.
+//! Empty byte and string inputs have zero bytes to hash. Other datasketches implementations skip
+//! empty strings before hashing, so check `is_empty` before updating a sketch when that behavior
+//! matters.
+//!
+//! Read the docs of concrete value wrapper for more details and examples.
 //!
 //! * [`raw_bytes::from_vec`]
 //! * [`raw_bytes::from_string`]
