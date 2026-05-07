@@ -1,3 +1,20 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
 use std::fmt;
 use std::hash::Hash;
 use std::hash::Hasher;
@@ -344,9 +361,8 @@ impl_canonical_number!(u64, canonical_u64, |v| v);
 /// Slice canonicalization hashes the raw bytes of the vector without Rust's slice length prefix.
 /// This matches the datasketches-cpp raw byte update path used by sketches.
 ///
-/// Empty byte vectors have zero bytes to hash. Use [`Canonical::<Vec<u8>>::is_empty`] to skip
-/// empty values before updating a sketch if you need to mirror datasketches-cpp's empty slice
-/// behavior.
+/// Empty byte vectors have zero bytes to hash. Use `is_empty` to skip empty values
+/// before updating a sketch if you need to mirror datasketches-cpp's empty slice behavior.
 ///
 /// # Examples
 ///
@@ -379,33 +395,14 @@ impl Hash for Canonical<Vec<u8>> {
     }
 }
 
-impl Canonical<Vec<u8>> {
-    /// Returns `true` if this value has a length of zero bytes.
-    ///
-    /// datasketches-cpp ignores empty slices before hashing. Check this method before
-    /// updating a sketch when matching that behavior matters.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use datasketches::hash_value::canonical_vec;
-    /// assert!(canonical_vec(Vec::new()).is_empty());
-    /// assert!(!canonical_vec(b"abc".to_vec()).is_empty());
-    /// ```
-    #[inline(always)]
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-}
-
 /// Create a canonical hashable value from a string.
 ///
 /// String canonicalization hashes the UTF-8 bytes of the string without Rust's string length
 /// prefix. This matches the datasketches-cpp `std::string` update path, which hashes `c_str()` with
 /// the string length.
 ///
-/// Empty strings have zero bytes to hash. Use [`Canonical::<String>::is_empty`] to skip empty
-/// values before updating a sketch if you need to mirror datasketches-cpp's empty string behavior.
+/// Empty strings have zero bytes to hash. Use `is_empty` to skip empty values before
+/// updating a sketch if you need to mirror datasketches-cpp's empty string behavior.
 ///
 /// # Examples
 ///
@@ -438,32 +435,13 @@ impl Hash for Canonical<String> {
     }
 }
 
-impl Canonical<String> {
-    /// Returns `true` if this value has a length of zero bytes.
-    ///
-    /// datasketches-cpp ignores empty strings before hashing. Check this method before
-    /// updating a sketch when matching that behavior matters.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use datasketches::hash_value::canonical_string;
-    /// assert!(canonical_string(String::new()).is_empty());
-    /// assert!(!canonical_string("abc".to_owned()).is_empty());
-    /// ```
-    #[inline(always)]
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-}
-
 /// Create a canonical hashable value from a byte slice.
 ///
 /// Slice canonicalization hashes the raw bytes of the slice without Rust's slice length prefix.
 /// This matches the datasketches-cpp raw byte update path used by sketches.
 ///
-/// Empty byte slices have zero bytes to hash. Use [`Canonical::<&[u8]>::is_empty`] to skip empty
-/// values before updating a sketch if you need to mirror datasketches-cpp's empty slice behavior.
+/// Empty byte slices have zero bytes to hash. Use `is_empty` to skip empty values
+/// before updating a sketch if you need to mirror datasketches-cpp's empty slice behavior.
 ///
 /// # Examples
 ///
@@ -496,33 +474,14 @@ impl Hash for Canonical<&[u8]> {
     }
 }
 
-impl Canonical<&[u8]> {
-    /// Returns `true` if this value has a length of zero bytes.
-    ///
-    /// datasketches-cpp ignores empty slices before hashing. Check this method before
-    /// updating a sketch when matching that behavior matters.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use datasketches::hash_value::canonical_slice;
-    /// assert!(canonical_slice(&[]).is_empty());
-    /// assert!(!canonical_slice(b"abc").is_empty());
-    /// ```
-    #[inline(always)]
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-}
-
 /// Create a canonical hashable value from a string slice.
 ///
 /// String canonicalization hashes the UTF-8 bytes of the string slice without Rust's string length
 /// prefix. This matches the datasketches-cpp `std::string` update path, which hashes `c_str()` with
 /// the string length.
 ///
-/// Empty string slices have zero bytes to hash. Use [`Canonical::<&str>::is_empty`] to skip empty
-/// values before updating a sketch if you need to mirror datasketches-cpp's empty string behavior.
+/// Empty string slices have zero bytes to hash. Use `is_empty` to skip empty values
+/// before updating a sketch if you need to mirror datasketches-cpp's empty string behavior.
 ///
 /// # Examples
 ///
@@ -552,24 +511,5 @@ impl<'a> From<&'a str> for Canonical<&'a str> {
 impl Hash for Canonical<&str> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         state.write(self.0.as_bytes());
-    }
-}
-
-impl Canonical<&str> {
-    /// Returns `true` if this value has a length of zero bytes.
-    ///
-    /// datasketches-cpp ignores empty strings before hashing. Check this method before
-    /// updating a sketch when matching that behavior matters.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use datasketches::hash_value::canonical_str;
-    /// assert!(canonical_str("").is_empty());
-    /// assert!(!canonical_str("abc").is_empty());
-    /// ```
-    #[inline(always)]
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
     }
 }
