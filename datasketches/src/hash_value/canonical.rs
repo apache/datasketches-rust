@@ -43,7 +43,7 @@ impl<T: fmt::Display> fmt::Display for Canonical<T> {
     }
 }
 
-macro_rules! impl_canonical_value {
+macro_rules! impl_canonical_number {
     ($t:ty, $ctor:ident, |$v:ident| $canonical:expr) => {
         impl From<$t> for Canonical<$t> {
             fn from(value: $t) -> Self {
@@ -53,7 +53,7 @@ macro_rules! impl_canonical_value {
 
         impl Hash for Canonical<$t> {
             fn hash<H: Hasher>(&self, state: &mut H) {
-                let $v = &self.0;
+                let $v = self.0;
                 let canonical = $canonical;
                 Hash::hash(&canonical, state);
             }
@@ -114,8 +114,8 @@ pub fn canonical_f64(v: f64) -> Canonical<f64> {
     Canonical(v)
 }
 
-impl_canonical_value!(f32, canonical_f32, |v| canonical_f64(*v as f64));
-impl_canonical_value!(f64, canonical_f64, |v| if v.is_nan() {
+impl_canonical_number!(f32, canonical_f32, |v| canonical_f64(v as f64));
+impl_canonical_number!(f64, canonical_f64, |v| if v.is_nan() {
     // Java's Double.doubleToLongBits() NaN value
     0x7ff8000000000000u64
 } else {
@@ -339,11 +339,11 @@ pub fn canonical_u64(v: u64) -> Canonical<u64> {
     Canonical(v)
 }
 
-impl_canonical_value!(i8, canonical_i8, |v| *v as i64);
-impl_canonical_value!(u8, canonical_u8, |v| (*v as i8) as i64);
-impl_canonical_value!(i16, canonical_i16, |v| *v as i64);
-impl_canonical_value!(u16, canonical_u16, |v| (*v as i16) as i64);
-impl_canonical_value!(i32, canonical_i32, |v| *v as i64);
-impl_canonical_value!(u32, canonical_u32, |v| (*v as i32) as i64);
-impl_canonical_value!(i64, canonical_i64, |v| *v);
-impl_canonical_value!(u64, canonical_u64, |v| *v);
+impl_canonical_number!(i8, canonical_i8, |v| v as i64);
+impl_canonical_number!(u8, canonical_u8, |v| (v as i8) as i64);
+impl_canonical_number!(i16, canonical_i16, |v| v as i64);
+impl_canonical_number!(u16, canonical_u16, |v| (v as i16) as i64);
+impl_canonical_number!(i32, canonical_i32, |v| v as i64);
+impl_canonical_number!(u32, canonical_u32, |v| (v as i32) as i64);
+impl_canonical_number!(i64, canonical_i64, |v| v);
+impl_canonical_number!(u64, canonical_u64, |v| v);
