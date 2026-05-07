@@ -15,9 +15,10 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! Floating-point hash value wrappers.
+//! Canonical floating-point hash value wrappers.
 //!
-//! [`Canonical`] maps `f32` and `f64` through the same canonical `f64` bit pattern before hashing.
+//! [`CanonicalFloat`] maps `f32` and `f64` through the same canonical `f64` bit pattern before
+//! hashing.
 
 use std::hash::Hash;
 use std::hash::Hasher;
@@ -27,36 +28,36 @@ use super::value::Value;
 
 /// A floating-point value wrapper that uses canonical floating-point hashing.
 ///
-/// The wrapper canonicalizes signed zero and NaN bit patterns, and hashes `f32` values through
-/// their `f64` representation.
-pub type Canonical<T> = Value<T, CanonicalStrategy>;
+/// See the [module level documentation](super) for more.
+pub type CanonicalFloat<T> = Value<T, CanonicalFloatStrategy>;
 
-/// Hashing strategy for [`Canonical`].
+/// Hashing strategy for [`CanonicalFloat`].
 #[doc(hidden)]
-pub struct CanonicalStrategy;
+pub struct CanonicalFloatStrategy;
 
 /// Create a canonical hashable value from a `f32` value.
 ///
-/// `f32` values are converted to `f64` before hashing, so `canonical_f32(5.0)` hashes the same as
-/// `canonical_f64(5.0)`. Signed zero values hash the same, and all NaN values use one canonical
+/// `f32` values are converted to `f64` before hashing, so `from_f32(5.0)` hashes the same as
+/// `from_f64(5.0)`. Signed zero values hash the same, and all NaN values use one canonical
 /// NaN bit pattern.
 ///
 /// # Examples
 ///
 /// ```
 /// # use datasketches::hash_value::calculate_hash;
-/// # use datasketches::hash_value::{canonical_f32, canonical_f64};
+/// # use datasketches::hash_value::canonical_float;
 /// assert_eq!(
-///     calculate_hash(canonical_f32(0.0)),
-///     calculate_hash(canonical_f32(-0.0))
+///     calculate_hash(canonical_float::from_f32(0.0)),
+///     calculate_hash(canonical_float::from_f32(-0.0))
 /// );
 /// assert_eq!(
-///     calculate_hash(canonical_f32(5.0)),
-///     calculate_hash(canonical_f64(5.0))
+///     calculate_hash(canonical_float::from_f32(5.0)),
+///     calculate_hash(canonical_float::from_f64(5.0))
 /// );
 /// ```
-pub fn canonical_f32(v: f32) -> Canonical<f32> {
-    Canonical::new(v)
+#[inline(always)]
+pub fn from_f32(v: f32) -> CanonicalFloat<f32> {
+    CanonicalFloat::new(v)
 }
 
 /// Create a canonical hashable value from a `f64` value.
@@ -67,39 +68,30 @@ pub fn canonical_f32(v: f32) -> Canonical<f32> {
 ///
 /// ```
 /// # use datasketches::hash_value::calculate_hash;
-/// # use datasketches::hash_value::{canonical_f32, canonical_f64};
+/// # use datasketches::hash_value::canonical_float;
 /// assert_eq!(
-///     calculate_hash(canonical_f64(0.0)),
-///     calculate_hash(canonical_f64(-0.0))
+///     calculate_hash(canonical_float::from_f64(0.0)),
+///     calculate_hash(canonical_float::from_f64(-0.0))
 /// );
 /// assert_eq!(
-///     calculate_hash(canonical_f32(5.0)),
-///     calculate_hash(canonical_f64(5.0))
+///     calculate_hash(canonical_float::from_f32(5.0)),
+///     calculate_hash(canonical_float::from_f64(5.0))
 /// );
 /// ```
-pub fn canonical_f64(v: f64) -> Canonical<f64> {
-    Canonical::new(v)
+#[inline(always)]
+pub fn from_f64(v: f64) -> CanonicalFloat<f64> {
+    CanonicalFloat::new(v)
 }
 
-impl From<f32> for Canonical<f32> {
-    fn from(value: f32) -> Self {
-        canonical_f32(value)
-    }
-}
-
-impl From<f64> for Canonical<f64> {
-    fn from(value: f64) -> Self {
-        canonical_f64(value)
-    }
-}
-
-impl HashStrategy<f32> for CanonicalStrategy {
+impl HashStrategy<f32> for CanonicalFloatStrategy {
     fn hash<H: Hasher>(value: &f32, state: &mut H) {
-        canonical_f64(*value as f64).hash(state);
+        let value = *value as f64;
+        let canonical_value = from_f64(value);
+        canonical_value.hash(state);
     }
 }
 
-impl HashStrategy<f64> for CanonicalStrategy {
+impl HashStrategy<f64> for CanonicalFloatStrategy {
     fn hash<H: Hasher>(value: &f64, state: &mut H) {
         let canonical = if value.is_nan() {
             // Java's Double.doubleToLongBits() NaN value.

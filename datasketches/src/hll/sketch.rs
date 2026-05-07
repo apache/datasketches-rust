@@ -180,7 +180,7 @@ impl HllSketch {
     /// assert!(sketch.estimate() >= 1.0);
     ///
     /// let mut sketch = HllSketch::new(10, HllType::Hll8);
-    /// sketch.update(hash_value::raw_str("apple"));
+    /// sketch.update(hash_value::raw_bytes::from_str("apple"));
     /// assert!(sketch.estimate() >= 1.0);
     /// ```
     pub fn update<T: Hash>(&mut self, value: T) {

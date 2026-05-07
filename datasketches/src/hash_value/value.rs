@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+//! Shared value wrapper and hashing strategy support.
+
 use std::fmt;
 use std::hash::Hash;
 use std::hash::Hasher;
@@ -33,6 +35,7 @@ pub struct Value<T, S> {
 
 impl<T, S> Value<T, S> {
     /// Create a value wrapper.
+    #[inline(always)]
     pub fn new(value: T) -> Self {
         Self {
             value,
@@ -41,6 +44,7 @@ impl<T, S> Value<T, S> {
     }
 
     /// Get the value out.
+    #[inline(always)]
     pub fn into_inner(self) -> T {
         self.value
     }

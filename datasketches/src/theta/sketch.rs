@@ -120,7 +120,7 @@ impl ThetaSketch {
     /// assert!(sketch.estimate() >= 1.0);
     ///
     /// let mut sketch = ThetaSketch::builder().build();
-    /// sketch.update(hash_value::raw_str("apple"));
+    /// sketch.update(hash_value::raw_bytes::from_str("apple"));
     /// assert!(sketch.estimate() >= 1.0);
     /// ```
     pub fn update<T: Hash>(&mut self, value: T) {
