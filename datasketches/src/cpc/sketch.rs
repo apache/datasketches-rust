@@ -169,10 +169,10 @@ impl CpcSketch {
         self.num_coupons == 0
     }
 
-    /// Update the sketch with a hash value.
+    /// Update the sketch with a hashable value.
     ///
-    /// You may use [`hash_value`](crate::hash_value) for generating canonical hash values, and/or
-    /// being compatible with other datasketches implementations.
+    /// You may use [`hash_value`](crate::hash_value) wrappers when matching other datasketches
+    /// implementations requires a specific value hashing strategy.
     ///
     /// # Examples
     ///
