@@ -17,9 +17,10 @@
 
 //! Naturally extended integer hash value wrappers.
 //!
-//! [`NaturalExtend`] widens signed values to `i64` and unsigned values to `u64`.
+//! [`NaturalExtend`] first widens signed values to `i64` and unsigned values to `u64`, and then
+//! hashes the resulting integers.
 //!
-//! This strategy is the same as how datasketches-cpp hashes integers for `BloomFilter`.
+//! This strategy is the same as how datasketches-cpp hashes short integers for `BloomFilter`.
 
 use std::hash::Hash;
 use std::hash::Hasher;
@@ -49,57 +50,89 @@ macro_rules! impl_natural_extend {
 }
 
 /// Create a naturally extended hashable value from an `i8` value.
+///
+/// # Examples
+///
+/// ```
+/// # use datasketches::hash_value::calculate_hash;
+/// # use datasketches::hash_value::natural_extend::from_i8;
+/// assert_eq!(calculate_hash(from_i8(-1)), calculate_hash(-1i64));
+/// assert_eq!(calculate_hash(from_i8(42)), calculate_hash(42i64));
+/// ```
 pub fn from_i8(v: i8) -> NaturalExtend<i8> {
     NaturalExtend::new(v)
 }
 
 /// Create a naturally extended hashable value from a `u8` value.
 ///
-/// `255u8` naturally extends like `255u64`, not like `-1i8`.
-///
 /// # Examples
 ///
 /// ```
 /// # use datasketches::hash_value::calculate_hash;
 /// # use datasketches::hash_value::natural_extend::from_u8;
-/// # use datasketches::hash_value::sign_extend::from_u8 as signed_from_u8;
 /// assert_eq!(calculate_hash(from_u8(255)), calculate_hash(255u64));
-/// assert_ne!(
-///     calculate_hash(from_u8(255)),
-///     calculate_hash(signed_from_u8(255))
-/// );
+/// assert_eq!(calculate_hash(from_u8(42)), calculate_hash(42u64));
 /// ```
 pub fn from_u8(v: u8) -> NaturalExtend<u8> {
     NaturalExtend::new(v)
 }
 
 /// Create a naturally extended hashable value from an `i16` value.
+///
+/// # Examples
+///
+/// ```
+/// # use datasketches::hash_value::calculate_hash;
+/// # use datasketches::hash_value::natural_extend::from_i16;
+/// assert_eq!(calculate_hash(from_i16(-1)), calculate_hash(-1i64));
+/// assert_eq!(calculate_hash(from_i16(42)), calculate_hash(42i64));
+/// ```
 pub fn from_i16(v: i16) -> NaturalExtend<i16> {
     NaturalExtend::new(v)
 }
 
 /// Create a naturally extended hashable value from a `u16` value.
+///
+/// # Examples
+///
+/// ```
+/// # use datasketches::hash_value::calculate_hash;
+/// # use datasketches::hash_value::natural_extend::from_u16;
+/// assert_eq!(calculate_hash(from_u16(65535)), calculate_hash(65535u64));
+/// assert_eq!(calculate_hash(from_u16(42)), calculate_hash(42u64));
+/// ```
 pub fn from_u16(v: u16) -> NaturalExtend<u16> {
     NaturalExtend::new(v)
 }
 
 /// Create a naturally extended hashable value from an `i32` value.
+///
+/// # Examples
+///
+/// ```
+/// # use datasketches::hash_value::calculate_hash;
+/// # use datasketches::hash_value::natural_extend::from_i32;
+/// assert_eq!(calculate_hash(from_i32(-1)), calculate_hash(-1i64));
+/// assert_eq!(calculate_hash(from_i32(42)), calculate_hash(42i64));
+/// ```
 pub fn from_i32(v: i32) -> NaturalExtend<i32> {
     NaturalExtend::new(v)
 }
 
 /// Create a naturally extended hashable value from a `u32` value.
+///
+/// # Examples
+///
+/// ```
+/// # use datasketches::hash_value::calculate_hash;
+/// # use datasketches::hash_value::natural_extend::from_u32;
+/// assert_eq!(
+///     calculate_hash(from_u32(4294967295)),
+///     calculate_hash(4294967295u64)
+/// );
+/// assert_eq!(calculate_hash(from_u32(42)), calculate_hash(42u64));
+/// ```
 pub fn from_u32(v: u32) -> NaturalExtend<u32> {
-    NaturalExtend::new(v)
-}
-
-/// Create a naturally extended hashable value from an `i64` value.
-pub fn from_i64(v: i64) -> NaturalExtend<i64> {
-    NaturalExtend::new(v)
-}
-
-/// Create a naturally extended hashable value from a `u64` value.
-pub fn from_u64(v: u64) -> NaturalExtend<u64> {
     NaturalExtend::new(v)
 }
 
@@ -109,5 +142,3 @@ impl_natural_extend!(i16, |v| v as i64);
 impl_natural_extend!(u16, |v| v as u64);
 impl_natural_extend!(i32, |v| v as i64);
 impl_natural_extend!(u32, |v| v as u64);
-impl_natural_extend!(i64, |v| v);
-impl_natural_extend!(u64, |v| v);

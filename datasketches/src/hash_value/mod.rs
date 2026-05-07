@@ -36,27 +36,25 @@
 //!
 //! ## Integers
 //!
-//! [`sign_extend::SignExtend`] first sign-extends values to 64-bits and then hashes the resulting
-//! integers. This strategy is the same as how datasketches-cpp hashes integers for `HllSketch` and
-//! `CpcSketch`.
+//! [`sign_extend::SignExtend`] first sign-extends values to 64-bits, and then hashes the resulting
+//! integers. This strategy is the same as how datasketches-cpp hashes short integers for
+//! `HllSketch` and `CpcSketch`.
 //!
 //! Read the docs of concrete value wrapper for more details and examples.
 //!
 //! * [`sign_extend::from_i8`], [`sign_extend::from_u8`]
 //! * [`sign_extend::from_i16`], [`sign_extend::from_u16`]
 //! * [`sign_extend::from_i32`], [`sign_extend::from_u32`]
-//! * [`sign_extend::from_i64`], [`sign_extend::from_u64`]
 //!
-//! [`natural_extend::NaturalExtend`] widens signed values to `i64` and unsigned values to `u64`.
-//! This strategy is the same as how datasketches-cpp hashes integers for `HllSketch` and
-//! `CpcSketch`.
+//! [`natural_extend::NaturalExtend`] first widens signed values to `i64` and unsigned values to
+//! `u64`, and then hashes the resulting integers. This strategy is the same as how datasketches-cpp
+//! hashes short integers for `HllSketch` and `CpcSketch`.
 //!
 //! Read the docs of concrete value wrapper for more details and examples.
 //!
 //! * [`natural_extend::from_i8`], [`natural_extend::from_u8`]
 //! * [`natural_extend::from_i16`], [`natural_extend::from_u16`]
 //! * [`natural_extend::from_i32`], [`natural_extend::from_u32`]
-//! * [`natural_extend::from_i64`], [`natural_extend::from_u64`]
 //!
 //! ## Raw Bytes
 //!

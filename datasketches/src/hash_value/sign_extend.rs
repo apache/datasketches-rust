@@ -19,7 +19,7 @@
 //!
 //! [`SignExtend`] first sign-extends values to 64-bits and then hashes the resulting integers.
 //!
-//! This strategy is the same as how datasketches-cpp hashes integers for `HllSketch` and
+//! This strategy is the same as how datasketches-cpp hashes short integers for `HllSketch` and
 //! `CpcSketch`.
 
 use std::hash::Hash;
@@ -57,6 +57,8 @@ macro_rules! impl_sign_extend {
 /// # use datasketches::hash_value::calculate_hash;
 /// # use datasketches::hash_value::sign_extend::{from_i8, from_u8};
 /// assert_eq!(calculate_hash(from_i8(-1)), calculate_hash(from_u8(255)));
+/// assert_eq!(calculate_hash(from_i8(-1)), calculate_hash(-1i64));
+/// assert_eq!(calculate_hash(from_i8(42)), calculate_hash(42i64));
 /// ```
 pub fn from_i8(v: i8) -> SignExtend<i8> {
     SignExtend::new(v)
@@ -70,45 +72,88 @@ pub fn from_i8(v: i8) -> SignExtend<i8> {
 ///
 /// ```
 /// # use datasketches::hash_value::calculate_hash;
-/// # use datasketches::hash_value::natural_extend::from_u8 as natural_from_u8;
 /// # use datasketches::hash_value::sign_extend::{from_i8, from_u8};
 /// assert_eq!(calculate_hash(from_u8(255)), calculate_hash(from_i8(-1)));
-/// assert_ne!(
-///     calculate_hash(from_u8(255)),
-///     calculate_hash(natural_from_u8(255))
-/// );
+/// assert_eq!(calculate_hash(from_u8(255)), calculate_hash(-1i64));
+/// assert_eq!(calculate_hash(from_u8(1)), calculate_hash(1i64));
 /// ```
 pub fn from_u8(v: u8) -> SignExtend<u8> {
     SignExtend::new(v)
 }
 
 /// Create a sign-extended hashable value from an `i16` value.
+///
+/// # Examples
+///
+/// ```
+/// # use datasketches::hash_value::calculate_hash;
+/// # use datasketches::hash_value::sign_extend::{from_i16, from_u16};
+/// assert_eq!(
+///     calculate_hash(from_i16(-1)),
+///     calculate_hash(from_u16(65535))
+/// );
+/// assert_eq!(calculate_hash(from_i16(-1)), calculate_hash(-1i64));
+/// assert_eq!(calculate_hash(from_i16(42)), calculate_hash(42i64));
+/// ```
 pub fn from_i16(v: i16) -> SignExtend<i16> {
     SignExtend::new(v)
 }
 
 /// Create a sign-extended hashable value from a `u16` value.
+///
+/// `65535u16` sign-extends like `-1i16`, not like `65535u64`.
+///
+/// # Examples
+///
+/// ```
+/// # use datasketches::hash_value::calculate_hash;
+/// # use datasketches::hash_value::sign_extend::{from_i16, from_u16};
+/// assert_eq!(
+///     calculate_hash(from_u16(65535)),
+///     calculate_hash(from_i16(-1))
+/// );
+/// assert_eq!(calculate_hash(from_u16(65535)), calculate_hash(-1i64));
+/// assert_eq!(calculate_hash(from_u16(42)), calculate_hash(42i64));
+/// ```
 pub fn from_u16(v: u16) -> SignExtend<u16> {
     SignExtend::new(v)
 }
 
 /// Create a sign-extended hashable value from an `i32` value.
+///
+/// # Examples
+///
+/// ```
+/// # use datasketches::hash_value::calculate_hash;
+/// # use datasketches::hash_value::sign_extend::{from_i32, from_u32};
+/// assert_eq!(
+///     calculate_hash(from_i32(-1)),
+///     calculate_hash(from_u32(4294967295))
+/// );
+/// assert_eq!(calculate_hash(from_i32(-1)), calculate_hash(-1i64));
+/// assert_eq!(calculate_hash(from_i32(42)), calculate_hash(42i64));
+/// ```
 pub fn from_i32(v: i32) -> SignExtend<i32> {
     SignExtend::new(v)
 }
 
 /// Create a sign-extended hashable value from a `u32` value.
+///
+/// `4294967295u32` sign-extends like `-1i32`, not like `4294967295u64`.
+///
+/// # Examples
+///
+/// ```
+/// # use datasketches::hash_value::calculate_hash;
+/// # use datasketches::hash_value::sign_extend::{from_i32, from_u32};
+/// assert_eq!(
+///     calculate_hash(from_u32(4294967295)),
+///     calculate_hash(from_i32(-1))
+/// );
+/// assert_eq!(calculate_hash(from_u32(4294967295)), calculate_hash(-1i64));
+/// assert_eq!(calculate_hash(from_u32(42)), calculate_hash(42i64));
+/// ```
 pub fn from_u32(v: u32) -> SignExtend<u32> {
-    SignExtend::new(v)
-}
-
-/// Create a sign-extended hashable value from an `i64` value.
-pub fn from_i64(v: i64) -> SignExtend<i64> {
-    SignExtend::new(v)
-}
-
-/// Create a sign-extended hashable value from a `u64` value.
-pub fn from_u64(v: u64) -> SignExtend<u64> {
     SignExtend::new(v)
 }
 
@@ -118,5 +163,3 @@ impl_sign_extend!(i16, |v| v as i64);
 impl_sign_extend!(u16, |v| (v as i16) as i64);
 impl_sign_extend!(i32, |v| v as i64);
 impl_sign_extend!(u32, |v| (v as i32) as i64);
-impl_sign_extend!(i64, |v| v);
-impl_sign_extend!(u64, |v| v);
