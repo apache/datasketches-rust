@@ -118,26 +118,19 @@ pub fn from_str(v: &str) -> RawBytes<&str> {
     RawBytes::new(v)
 }
 
-impl HashStrategy<Vec<u8>> for RawBytesStrategy {
-    fn hash<H: Hasher>(value: &Vec<u8>, state: &mut H) {
-        state.write(value.as_slice());
-    }
+macro_rules! impl_raw_bytes {
+    ($t:ty, |$v:ident| $as_slice:expr) => {
+        impl HashStrategy<$t> for RawBytesStrategy {
+            fn hash<H: Hasher>(value: &$t, state: &mut H) {
+                let $v = value;
+                let slice = $as_slice;
+                state.write(slice);
+            }
+        }
+    };
 }
 
-impl HashStrategy<&[u8]> for RawBytesStrategy {
-    fn hash<H: Hasher>(value: &&[u8], state: &mut H) {
-        state.write(value);
-    }
-}
-
-impl HashStrategy<String> for RawBytesStrategy {
-    fn hash<H: Hasher>(value: &String, state: &mut H) {
-        state.write(value.as_bytes());
-    }
-}
-
-impl HashStrategy<&str> for RawBytesStrategy {
-    fn hash<H: Hasher>(value: &&str, state: &mut H) {
-        state.write(value.as_bytes());
-    }
-}
+impl_raw_bytes!(Vec<u8>, |v| v.as_slice());
+impl_raw_bytes!(&[u8], |v| v);
+impl_raw_bytes!(String, |v| v.as_bytes());
+impl_raw_bytes!(&str, |v| v.as_bytes());

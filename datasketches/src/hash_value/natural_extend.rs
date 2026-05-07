@@ -37,18 +37,6 @@ pub type NaturalExtend<T> = Value<T, NaturalExtendStrategy>;
 #[doc(hidden)]
 pub struct NaturalExtendStrategy;
 
-macro_rules! impl_natural_extend {
-    ($t:ty, |$v:ident| $extended:expr) => {
-        impl HashStrategy<$t> for NaturalExtendStrategy {
-            fn hash<H: Hasher>(value: &$t, state: &mut H) {
-                let $v = *value;
-                let extended = $extended;
-                extended.hash(state);
-            }
-        }
-    };
-}
-
 /// Create a naturally extended hashable value from an `i8` value.
 ///
 /// # Examples
@@ -134,6 +122,18 @@ pub fn from_i32(v: i32) -> NaturalExtend<i32> {
 /// ```
 pub fn from_u32(v: u32) -> NaturalExtend<u32> {
     NaturalExtend::new(v)
+}
+
+macro_rules! impl_natural_extend {
+    ($t:ty, |$v:ident| $extended:expr) => {
+        impl HashStrategy<$t> for NaturalExtendStrategy {
+            fn hash<H: Hasher>(value: &$t, state: &mut H) {
+                let $v = *value;
+                let extended = $extended;
+                extended.hash(state);
+            }
+        }
+    };
 }
 
 impl_natural_extend!(i8, |v| v as i64);

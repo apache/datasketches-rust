@@ -37,18 +37,6 @@ pub type SignExtend<T> = Value<T, SignExtendStrategy>;
 #[doc(hidden)]
 pub struct SignExtendStrategy;
 
-macro_rules! impl_sign_extend {
-    ($t:ty, |$v:ident| $extended:expr) => {
-        impl HashStrategy<$t> for SignExtendStrategy {
-            fn hash<H: Hasher>(value: &$t, state: &mut H) {
-                let $v = *value;
-                let extended = $extended as u64;
-                extended.hash(state);
-            }
-        }
-    };
-}
-
 /// Create a sign-extended hashable value from an `i8` value.
 ///
 /// # Examples
@@ -155,6 +143,18 @@ pub fn from_i32(v: i32) -> SignExtend<i32> {
 /// ```
 pub fn from_u32(v: u32) -> SignExtend<u32> {
     SignExtend::new(v)
+}
+
+macro_rules! impl_sign_extend {
+    ($t:ty, |$v:ident| $extended:expr) => {
+        impl HashStrategy<$t> for SignExtendStrategy {
+            fn hash<H: Hasher>(value: &$t, state: &mut H) {
+                let $v = *value;
+                let extended = $extended as u64;
+                extended.hash(state);
+            }
+        }
+    };
 }
 
 impl_sign_extend!(i8, |v| v as i64);
