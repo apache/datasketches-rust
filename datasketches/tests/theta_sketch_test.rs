@@ -16,7 +16,7 @@
 // under the License.
 
 use datasketches::common::NumStdDev;
-use datasketches::hash_value::HashValue;
+use datasketches::hash_value;
 use datasketches::theta::ThetaSketch;
 
 #[test]
@@ -40,10 +40,10 @@ fn test_update_various_types() {
     sketch.update("string");
     sketch.update(42i64);
     sketch.update(42u64);
-    sketch.update(HashValue::canonical_f64(3.15));
-    sketch.update(HashValue::canonical_f64(3.15));
-    sketch.update(HashValue::canonical_f32(3.15));
-    sketch.update(HashValue::canonical_f32(3.15));
+    sketch.update(hash_value::canonical_f64(3.15));
+    sketch.update(hash_value::canonical_f64(3.15));
+    sketch.update(hash_value::canonical_f32(3.15));
+    sketch.update(hash_value::canonical_f32(3.15));
     sketch.update([1u8, 2, 3]);
 
     assert!(!sketch.is_empty());

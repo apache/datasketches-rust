@@ -206,9 +206,8 @@ impl Coupon {
 
     /// Compute the HLL coupon for a hash value.
     ///
-    /// You may use `HashValue` for compatibility purpose. Read the
-    /// [module level documentation of `hash_value`](crate::hash_value)
-    /// for more details.
+    /// You may use [`hash_value`](crate::hash_value) for generating canonical hash values, and/or
+    /// being compatible with other datasketches implementations.
     ///
     /// Hashes `v` using MurmurHash3 128-bit and packs the result into a coupon:
     /// the low 26 bits of the low hash word become the slot index, and the

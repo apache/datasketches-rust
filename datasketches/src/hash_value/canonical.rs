@@ -303,14 +303,8 @@ pub fn canonical_u32(v: u32) -> Canonical<u32> {
 /// ```
 /// # use datasketches::hash_value::calculate_hash;
 /// # use datasketches::hash_value::canonical_i64;
-/// assert_eq!(
-///     calculate_hash(canonical_i64(42)),
-///     calculate_hash(42i64)
-/// );
-/// assert_eq!(
-///     calculate_hash(canonical_i64(-1)),
-///     calculate_hash(-1i64)
-/// );
+/// assert_eq!(calculate_hash(canonical_i64(42)), calculate_hash(42i64));
+/// assert_eq!(calculate_hash(canonical_i64(-1)), calculate_hash(-1i64));
 /// ```
 pub fn canonical_i64(v: i64) -> Canonical<i64> {
     Canonical(v)
@@ -326,10 +320,7 @@ pub fn canonical_i64(v: i64) -> Canonical<i64> {
 /// ```
 /// # use datasketches::hash_value::calculate_hash;
 /// # use datasketches::hash_value::canonical_u64;
-/// assert_eq!(
-///     calculate_hash(canonical_u64(42)),
-///     calculate_hash(42u64)
-/// );
+/// assert_eq!(calculate_hash(canonical_u64(42)), calculate_hash(42u64));
 /// assert_eq!(
 ///     calculate_hash(canonical_u64(u64::MAX)),
 ///     calculate_hash(u64::MAX)

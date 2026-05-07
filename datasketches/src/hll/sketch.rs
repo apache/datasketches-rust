@@ -161,9 +161,8 @@ impl HllSketch {
     /// Accepts any type that implements [`Hash`]. The value is hashed and converted to
     /// an internal coupon, which is then inserted into the sketch.
     ///
-    /// You may use `HashValue` for compatibility purpose. Read the
-    /// [module level documentation of `hash_value`](crate::hash_value)
-    /// for more details.
+    /// You may use [`hash_value`](crate::hash_value) for generating canonical hash values, and/or
+    /// being compatible with other datasketches implementations.
     ///
     /// If you need to insert the same logical value into multiple sketches, consider
     /// pre-computing the coupon with [`Coupon::from_hash`] and calling
@@ -175,8 +174,13 @@ impl HllSketch {
     /// ```
     /// # use datasketches::hll::HllSketch;
     /// # use datasketches::hll::HllType;
+    /// # use datasketches::hash_value;
     /// let mut sketch = HllSketch::new(10, HllType::Hll8);
     /// sketch.update("apple");
+    /// assert!(sketch.estimate() >= 1.0);
+    ///
+    /// let mut sketch = HllSketch::new(10, HllType::Hll8);
+    /// sketch.update(hash_value::canonical_str("apple"));
     /// assert!(sketch.estimate() >= 1.0);
     /// ```
     pub fn update<T: Hash>(&mut self, value: T) {

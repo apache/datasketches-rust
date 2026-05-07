@@ -106,14 +106,13 @@ impl ThetaSketch {
 
     /// Update the sketch with a hash value.
     ///
-    /// You may use `HashValue` for compatibility purpose. Read the
-    /// [module level documentation of `hash_value`](crate::hash_value)
-    /// for more details.
+    /// You may use [`hash_value`](crate::hash_value) for generating canonical hash values, and/or
+    /// being compatible with other datasketches implementations.
     ///
     /// # Examples
     ///
     /// ```
-    /// use datasketches::hash_value::HashValue;
+    /// use datasketches::hash_value;
     /// use datasketches::theta::ThetaSketch;
     ///
     /// let mut sketch = ThetaSketch::builder().build();
@@ -121,7 +120,7 @@ impl ThetaSketch {
     /// assert!(sketch.estimate() >= 1.0);
     ///
     /// let mut sketch = ThetaSketch::builder().build();
-    /// sketch.update(HashValue::canonical_f64(3.5));
+    /// sketch.update(hash_value::canonical_str("apple"));
     /// assert!(sketch.estimate() >= 1.0);
     /// ```
     pub fn update<T: Hash>(&mut self, value: T) {
