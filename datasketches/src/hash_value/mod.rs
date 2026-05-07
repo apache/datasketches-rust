@@ -33,7 +33,7 @@
 //! ## Integers
 //!
 //! datasketches-cpp uses more than one integer extension strategy. [`integer::SignExtend`] first
-//! sign-extends values to 64 bits and then hashes the resulting `u64`. [`integer::Natural`] widens
+//! sign-extends values to 64 bits and then hashes the resulting `u64`. [`integer::NaturalExtend`] widens
 //! signed values to `i64` and unsigned values to `u64`.
 //!
 //! * [`sign_extend_i8`], [`sign_extend_u8`]
@@ -74,16 +74,16 @@ pub use self::bytes::raw_vec;
 pub use self::float::Canonical as CanonicalFloat;
 pub use self::float::canonical_f32;
 pub use self::float::canonical_f64;
-pub use self::integer::Natural;
+pub use self::integer::NaturalExtend;
 pub use self::integer::SignExtend;
-pub use self::integer::natural_i8;
-pub use self::integer::natural_i16;
-pub use self::integer::natural_i32;
-pub use self::integer::natural_i64;
-pub use self::integer::natural_u8;
-pub use self::integer::natural_u16;
-pub use self::integer::natural_u32;
-pub use self::integer::natural_u64;
+pub use self::integer::natural_extend_i8;
+pub use self::integer::natural_extend_i16;
+pub use self::integer::natural_extend_i32;
+pub use self::integer::natural_extend_i64;
+pub use self::integer::natural_extend_u8;
+pub use self::integer::natural_extend_u16;
+pub use self::integer::natural_extend_u32;
+pub use self::integer::natural_extend_u64;
 pub use self::integer::sign_extend_i8;
 pub use self::integer::sign_extend_i16;
 pub use self::integer::sign_extend_i32;

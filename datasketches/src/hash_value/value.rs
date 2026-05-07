@@ -24,8 +24,7 @@ use std::ops::DerefMut;
 
 /// A value wrapper that hashes its inner value with strategy `S`.
 ///
-/// Most users should prefer the strategy-specific constructors in [`super::float`],
-/// [`super::integer`], and [`super::bytes`].
+/// Most users should prefer the strategy-specific constructors.
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
 pub struct Value<T, S> {
     value: T,

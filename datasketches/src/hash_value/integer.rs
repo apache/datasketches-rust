@@ -30,20 +30,25 @@ use super::value::Value;
 ///
 /// Values narrower than 64 bits are sign-extended to 64 bits, then hashed as `u64`. Unsigned
 /// narrow values are first interpreted as the signed integer of the same width.
+///
+/// This strategy is compatible with how datasketches-cpp's `HllSketch` and `CpcSketch` hashes
+/// integers.
 pub type SignExtend<T> = Value<T, SignExtendStrategy>;
 
 /// An integer value wrapper that uses Rust's natural integer widening before hashing.
 ///
 /// Signed values are widened to `i64`; unsigned values are widened to `u64`.
-pub type Natural<T> = Value<T, NaturalStrategy>;
+///
+/// This strategy is compatible with how datasketches-cpp's `BloomFilter` hashes integers.
+pub type NaturalExtend<T> = Value<T, NaturalExtendStrategy>;
 
 /// Hashing strategy for [`SignExtend`].
 #[doc(hidden)]
 pub struct SignExtendStrategy;
 
-/// Hashing strategy for [`Natural`].
+/// Hashing strategy for [`NaturalExtend`].
 #[doc(hidden)]
-pub struct NaturalStrategy;
+pub struct NaturalExtendStrategy;
 
 macro_rules! impl_from {
     ($wrapper:ident, $ctor:ident, $t:ty) => {
@@ -67,9 +72,9 @@ macro_rules! impl_sign_extend {
     };
 }
 
-macro_rules! impl_natural {
+macro_rules! impl_natural_extend {
     ($t:ty, |$v:ident| $extended:expr) => {
-        impl HashStrategy<$t> for NaturalStrategy {
+        impl HashStrategy<$t> for NaturalExtendStrategy {
             fn hash<H: Hasher>(value: &$t, state: &mut H) {
                 let $v = *value;
                 let extended = $extended;
@@ -137,8 +142,8 @@ pub fn sign_extend_u64(v: u64) -> SignExtend<u64> {
 }
 
 /// Create a naturally extended hashable value from an `i8` value.
-pub fn natural_i8(v: i8) -> Natural<i8> {
-    Natural::new(v)
+pub fn natural_extend_i8(v: i8) -> NaturalExtend<i8> {
+    NaturalExtend::new(v)
 }
 
 /// Create a naturally extended hashable value from a `u8` value.
@@ -152,38 +157,38 @@ pub fn natural_i8(v: i8) -> Natural<i8> {
 /// assert_eq!(calculate_hash(natural_u8(255)), calculate_hash(255u64));
 /// assert_ne!(calculate_hash(natural_u8(255)), calculate_hash(sign_extend_u8(255)));
 /// ```
-pub fn natural_u8(v: u8) -> Natural<u8> {
-    Natural::new(v)
+pub fn natural_extend_u8(v: u8) -> NaturalExtend<u8> {
+    NaturalExtend::new(v)
 }
 
 /// Create a naturally extended hashable value from an `i16` value.
-pub fn natural_i16(v: i16) -> Natural<i16> {
-    Natural::new(v)
+pub fn natural_extend_i16(v: i16) -> NaturalExtend<i16> {
+    NaturalExtend::new(v)
 }
 
 /// Create a naturally extended hashable value from a `u16` value.
-pub fn natural_u16(v: u16) -> Natural<u16> {
-    Natural::new(v)
+pub fn natural_extend_u16(v: u16) -> NaturalExtend<u16> {
+    NaturalExtend::new(v)
 }
 
 /// Create a naturally extended hashable value from an `i32` value.
-pub fn natural_i32(v: i32) -> Natural<i32> {
-    Natural::new(v)
+pub fn natural_extend_i32(v: i32) -> NaturalExtend<i32> {
+    NaturalExtend::new(v)
 }
 
 /// Create a naturally extended hashable value from a `u32` value.
-pub fn natural_u32(v: u32) -> Natural<u32> {
-    Natural::new(v)
+pub fn natural_extend_u32(v: u32) -> NaturalExtend<u32> {
+    NaturalExtend::new(v)
 }
 
 /// Create a naturally extended hashable value from an `i64` value.
-pub fn natural_i64(v: i64) -> Natural<i64> {
-    Natural::new(v)
+pub fn natural_extend_i64(v: i64) -> NaturalExtend<i64> {
+    NaturalExtend::new(v)
 }
 
 /// Create a naturally extended hashable value from a `u64` value.
-pub fn natural_u64(v: u64) -> Natural<u64> {
-    Natural::new(v)
+pub fn natural_extend_u64(v: u64) -> NaturalExtend<u64> {
+    NaturalExtend::new(v)
 }
 
 impl_from!(SignExtend, sign_extend_i8, i8);
@@ -195,14 +200,14 @@ impl_from!(SignExtend, sign_extend_u32, u32);
 impl_from!(SignExtend, sign_extend_i64, i64);
 impl_from!(SignExtend, sign_extend_u64, u64);
 
-impl_from!(Natural, natural_i8, i8);
-impl_from!(Natural, natural_u8, u8);
-impl_from!(Natural, natural_i16, i16);
-impl_from!(Natural, natural_u16, u16);
-impl_from!(Natural, natural_i32, i32);
-impl_from!(Natural, natural_u32, u32);
-impl_from!(Natural, natural_i64, i64);
-impl_from!(Natural, natural_u64, u64);
+impl_from!(NaturalExtend, natural_extend_i8, i8);
+impl_from!(NaturalExtend, natural_extend_u8, u8);
+impl_from!(NaturalExtend, natural_extend_i16, i16);
+impl_from!(NaturalExtend, natural_extend_u16, u16);
+impl_from!(NaturalExtend, natural_extend_i32, i32);
+impl_from!(NaturalExtend, natural_extend_u32, u32);
+impl_from!(NaturalExtend, natural_extend_i64, i64);
+impl_from!(NaturalExtend, natural_extend_u64, u64);
 
 impl_sign_extend!(i8, |v| v as i64);
 impl_sign_extend!(u8, |v| (v as i8) as i64);
@@ -213,11 +218,11 @@ impl_sign_extend!(u32, |v| (v as i32) as i64);
 impl_sign_extend!(i64, |v| v);
 impl_sign_extend!(u64, |v| v);
 
-impl_natural!(i8, |v| v as i64);
-impl_natural!(u8, |v| v as u64);
-impl_natural!(i16, |v| v as i64);
-impl_natural!(u16, |v| v as u64);
-impl_natural!(i32, |v| v as i64);
-impl_natural!(u32, |v| v as u64);
-impl_natural!(i64, |v| v);
-impl_natural!(u64, |v| v);
+impl_natural_extend!(i8, |v| v as i64);
+impl_natural_extend!(u8, |v| v as u64);
+impl_natural_extend!(i16, |v| v as i64);
+impl_natural_extend!(u16, |v| v as u64);
+impl_natural_extend!(i32, |v| v as i64);
+impl_natural_extend!(u32, |v| v as u64);
+impl_natural_extend!(i64, |v| v);
+impl_natural_extend!(u64, |v| v);
