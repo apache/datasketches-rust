@@ -41,8 +41,8 @@ pub struct CanonicalFloatStrategy;
 /// Create a canonical hashable value from a `f32` value.
 ///
 /// `f32` values are converted to `f64` before hashing, so `from_f32(5.0)` hashes the same as
-/// `from_f64(5.0)`. Signed zero values hash the same, and all NaN values use one canonical
-/// NaN bit pattern.
+/// `from_f64(5.0)`, but `from_f32(3.5)` hashes differently from `from_f64(3.5)`. Signed zero
+/// values hash the same, and all NaN values use one canonical NaN bit pattern.
 ///
 /// # Examples
 ///

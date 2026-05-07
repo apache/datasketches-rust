@@ -40,6 +40,7 @@ fn test_update_various_types() {
     sketch.update("string");
     sketch.update(42i64);
     sketch.update(42u64);
+    // where floating-point numbers has different representations
     sketch.update(hash_value::canonical_float::from_f64(3.15));
     sketch.update(hash_value::canonical_float::from_f64(3.15));
     sketch.update(hash_value::canonical_float::from_f32(3.15));
@@ -48,6 +49,21 @@ fn test_update_various_types() {
 
     assert!(!sketch.is_empty());
     assert_eq!(sketch.estimate(), 5.0);
+
+    let mut sketch = ThetaSketch::builder().lg_k(12).build();
+
+    sketch.update("string");
+    sketch.update(42i64);
+    sketch.update(42u64);
+    // where floating-point numbers has the same representation
+    sketch.update(hash_value::canonical_float::from_f64(5.0));
+    sketch.update(hash_value::canonical_float::from_f64(5.0));
+    sketch.update(hash_value::canonical_float::from_f32(5.0));
+    sketch.update(hash_value::canonical_float::from_f32(5.0));
+    sketch.update([1u8, 2, 3]);
+
+    assert!(!sketch.is_empty());
+    assert_eq!(sketch.estimate(), 4.0);
 }
 
 #[test]
