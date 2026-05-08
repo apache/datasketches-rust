@@ -17,6 +17,7 @@
 
 //! Shared value wrapper and hashing strategy support.
 
+use std::cmp::Ordering;
 use std::fmt;
 use std::hash::Hash;
 use std::hash::Hasher;
@@ -27,7 +28,6 @@ use std::ops::DerefMut;
 /// A value wrapper that hashes its inner value with strategy `S`.
 ///
 /// Most users should prefer the strategy-specific constructors.
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
 pub struct Value<T, S> {
     value: T,
     strategy: PhantomData<fn() -> S>,
@@ -61,6 +61,34 @@ impl<T, S> Deref for Value<T, S> {
 impl<T, S> DerefMut for Value<T, S> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.value
+    }
+}
+
+impl<T: Clone, S> Clone for Value<T, S> {
+    fn clone(&self) -> Self {
+        Self::new(self.value.clone())
+    }
+}
+
+impl<T: Copy, S> Copy for Value<T, S> {}
+
+impl<T: PartialEq, S> PartialEq for Value<T, S> {
+    fn eq(&self, other: &Self) -> bool {
+        self.value == other.value
+    }
+}
+
+impl<T: Eq, S> Eq for Value<T, S> {}
+
+impl<T: PartialOrd, S> PartialOrd for Value<T, S> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.value.partial_cmp(&other.value)
+    }
+}
+
+impl<T: Ord, S> Ord for Value<T, S> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.value.cmp(&other.value)
     }
 }
 
