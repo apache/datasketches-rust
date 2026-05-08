@@ -162,7 +162,7 @@ impl HllSketch {
     /// an internal coupon, which is then inserted into the sketch.
     ///
     /// You may use [`hash_value`](crate::hash_value) wrappers when matching other datasketches
-    /// implementations requires a specific value hashing strategy.
+    /// implementations require a specific value hashing strategy.
     ///
     /// If you need to insert the same logical value into multiple sketches, consider
     /// pre-computing the coupon with [`Coupon::from_hash`] and calling

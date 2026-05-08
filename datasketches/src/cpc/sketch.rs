@@ -172,7 +172,7 @@ impl CpcSketch {
     /// Update the sketch with a hashable value.
     ///
     /// You may use [`hash_value`](crate::hash_value) wrappers when matching other datasketches
-    /// implementations requires a specific value hashing strategy.
+    /// implementations require a specific value hashing strategy.
     ///
     /// # Examples
     ///

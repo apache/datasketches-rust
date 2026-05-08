@@ -40,7 +40,7 @@ fn test_update_various_types() {
     sketch.update("string");
     sketch.update(42i64);
     sketch.update(42u64);
-    // where floating-point numbers has different representations
+    // where floating-point numbers have different representations
     sketch.update(hash_value::canonical_float::from_f64(3.15));
     sketch.update(hash_value::canonical_float::from_f64(3.15));
     sketch.update(hash_value::canonical_float::from_f32(3.15));
@@ -55,7 +55,7 @@ fn test_update_various_types() {
     sketch.update("string");
     sketch.update(42i64);
     sketch.update(42u64);
-    // where floating-point numbers has the same representation
+    // where floating-point numbers have the same representation
     sketch.update(hash_value::canonical_float::from_f64(5.0));
     sketch.update(hash_value::canonical_float::from_f64(5.0));
     sketch.update(hash_value::canonical_float::from_f32(5.0));

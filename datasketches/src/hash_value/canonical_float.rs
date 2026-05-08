@@ -40,9 +40,9 @@ pub struct CanonicalFloatStrategy;
 
 /// Create a canonical hashable value from a `f32` value.
 ///
-/// `f32` values are converted to `f64` before hashing, so `from_f32(5.0)` hashes the same as
-/// `from_f64(5.0)`, but `from_f32(3.5)` hashes differently from `from_f64(3.5)`. Signed zero
-/// values hash the same, and all NaN values use one canonical NaN bit pattern.
+/// `f32` values are converted to `f64` before hashing. Values that are not exactly representable
+/// in `f32` may hash differently from the corresponding `f64` value. Signed zero values hash the
+/// same, and all NaN values use one canonical NaN bit pattern.
 ///
 /// # Examples
 ///
@@ -56,6 +56,10 @@ pub struct CanonicalFloatStrategy;
 /// assert_eq!(
 ///     calculate_hash(canonical_float::from_f32(5.0)),
 ///     calculate_hash(canonical_float::from_f64(5.0))
+/// );
+/// assert_ne!(
+///     calculate_hash(canonical_float::from_f32(3.15)),
+///     calculate_hash(canonical_float::from_f64(3.15))
 /// );
 /// ```
 #[inline(always)]
@@ -79,6 +83,10 @@ pub fn from_f32(v: f32) -> CanonicalFloat<f32> {
 /// assert_eq!(
 ///     calculate_hash(canonical_float::from_f32(5.0)),
 ///     calculate_hash(canonical_float::from_f64(5.0))
+/// );
+/// assert_ne!(
+///     calculate_hash(canonical_float::from_f32(3.15)),
+///     calculate_hash(canonical_float::from_f64(3.15))
 /// );
 /// ```
 #[inline(always)]
