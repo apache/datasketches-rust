@@ -30,30 +30,30 @@
 #[cfg(target_endian = "big")]
 compile_error!("datasketches does not support big-endian targets");
 
+// sketches modules
+
 #[cfg(feature = "bloom")]
-#[cfg_attr(docsrs, doc(cfg(feature = "bloom")))]
 pub mod bloom;
-pub mod codec;
-pub mod common;
 #[cfg(feature = "countmin")]
-#[cfg_attr(docsrs, doc(cfg(feature = "countmin")))]
 pub mod countmin;
 #[cfg(feature = "cpc")]
-#[cfg_attr(docsrs, doc(cfg(feature = "cpc")))]
 pub mod cpc;
-pub mod error;
 #[cfg(feature = "frequencies")]
-#[cfg_attr(docsrs, doc(cfg(feature = "frequencies")))]
 pub mod frequencies;
-pub mod hash_value;
 #[cfg(feature = "hll")]
-#[cfg_attr(docsrs, doc(cfg(feature = "hll")))]
 pub mod hll;
 #[cfg(feature = "tdigest")]
-#[cfg_attr(docsrs, doc(cfg(feature = "tdigest")))]
 pub mod tdigest;
 #[cfg(feature = "theta")]
-#[cfg_attr(docsrs, doc(cfg(feature = "theta")))]
 pub mod theta;
+
+// common used modules
+
+pub mod codec;
+pub mod common;
+pub mod error;
+pub mod hash_value;
+
+// private internal modules
 
 mod hash;
