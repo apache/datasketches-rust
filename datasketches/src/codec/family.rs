@@ -34,6 +34,7 @@ pub struct Family {
 
 impl Family {
     /// Theta Sketch for cardinality estimation.
+    #[cfg(feature = "theta")]
     pub const THETA: Family = Family {
         id: 3,
         name: "THETA",
@@ -42,6 +43,7 @@ impl Family {
     };
 
     /// The HLL family of sketches.
+    #[cfg(feature = "hll")]
     pub const HLL: Family = Family {
         id: 7,
         name: "HLL",
@@ -50,6 +52,7 @@ impl Family {
     };
 
     /// The Frequency family of sketches.
+    #[cfg(feature = "frequencies")]
     pub const FREQUENCY: Family = Family {
         id: 10,
         name: "FREQUENCY",
@@ -58,6 +61,7 @@ impl Family {
     };
 
     /// Compressed Probabilistic Counting (CPC) Sketch.
+    #[cfg(feature = "cpc")]
     pub const CPC: Family = Family {
         id: 16,
         name: "CPC",
@@ -66,6 +70,7 @@ impl Family {
     };
 
     /// CountMin Sketch
+    #[cfg(feature = "countmin")]
     pub const COUNTMIN: Family = Family {
         id: 18,
         name: "COUNTMIN",
@@ -74,6 +79,7 @@ impl Family {
     };
 
     /// T-Digest for estimating quantiles and ranks.
+    #[cfg(feature = "tdigest")]
     pub const TDIGEST: Family = Family {
         id: 20,
         name: "TDIGEST",
@@ -82,6 +88,7 @@ impl Family {
     };
 
     /// Bloom Filter.
+    #[cfg(feature = "bloom")]
     pub const BLOOMFILTER: Family = Family {
         id: 21,
         name: "BLOOMFILTER",

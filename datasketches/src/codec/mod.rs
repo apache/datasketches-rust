@@ -23,6 +23,24 @@ mod encode;
 pub use self::decode::SketchSlice;
 pub use self::encode::SketchBytes;
 
-// private to datasketches crate
+// private internal modules
+#[cfg(any(
+    feature = "bloom",
+    feature = "countmin",
+    feature = "cpc",
+    feature = "frequencies",
+    feature = "hll",
+    feature = "tdigest",
+    feature = "theta"
+))]
 pub(crate) mod assert;
+#[cfg(any(
+    feature = "bloom",
+    feature = "countmin",
+    feature = "cpc",
+    feature = "frequencies",
+    feature = "hll",
+    feature = "tdigest",
+    feature = "theta"
+))]
 pub(crate) mod family;

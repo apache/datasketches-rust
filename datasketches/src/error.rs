@@ -91,28 +91,71 @@ impl Error {
 
 // Convenient constructors used within datasketches crate.
 impl Error {
+    #[cfg(feature = "theta")]
     pub(crate) fn invalid_argument(msg: impl Into<String>) -> Self {
         Self::new(ErrorKind::InvalidArgument, msg)
     }
 
+    #[cfg(any(
+        feature = "bloom",
+        feature = "countmin",
+        feature = "cpc",
+        feature = "frequencies",
+        feature = "hll",
+        feature = "tdigest",
+        feature = "theta"
+    ))]
     pub(crate) fn deserial(msg: impl Into<String>) -> Self {
         Self::new(ErrorKind::InvalidData, msg)
     }
 
+    #[cfg(any(
+        feature = "bloom",
+        feature = "countmin",
+        feature = "cpc",
+        feature = "frequencies",
+        feature = "hll",
+        feature = "tdigest",
+        feature = "theta"
+    ))]
     pub(crate) fn insufficient_data(msg: impl fmt::Display) -> Self {
         Self::deserial(format!("insufficient data: {msg}"))
     }
 
+    #[cfg(any(
+        feature = "bloom",
+        feature = "countmin",
+        feature = "cpc",
+        feature = "frequencies",
+        feature = "hll",
+        feature = "tdigest",
+        feature = "theta"
+    ))]
     pub(crate) fn insufficient_data_of(context: &'static str, msg: impl fmt::Display) -> Self {
         Self::deserial(format!("insufficient data ({context}): {msg}"))
     }
 
+    #[cfg(any(
+        feature = "bloom",
+        feature = "countmin",
+        feature = "cpc",
+        feature = "frequencies",
+        feature = "hll",
+        feature = "tdigest",
+        feature = "theta"
+    ))]
     pub(crate) fn invalid_family(expected: u8, actual: u8, name: &'static str) -> Self {
         Self::deserial(format!(
             "invalid family: expected {expected} ({name}), got {actual}"
         ))
     }
 
+    #[cfg(any(
+        feature = "countmin",
+        feature = "cpc",
+        feature = "frequencies",
+        feature = "tdigest"
+    ))]
     pub(crate) fn invalid_preamble_longs(expected: &[u8], actual: u8) -> Self {
         Error::deserial(format!(
             "invalid preamble longs: expected {expected:?}, got {actual}"

@@ -31,7 +31,6 @@
 compile_error!("datasketches does not support big-endian targets");
 
 // sketches modules
-
 #[cfg(feature = "bloom")]
 pub mod bloom;
 #[cfg(feature = "countmin")]
@@ -47,13 +46,11 @@ pub mod tdigest;
 #[cfg(feature = "theta")]
 pub mod theta;
 
-// common used modules
-
+// common modules
 pub mod codec;
 pub mod common;
 pub mod error;
 pub mod hash_value;
 
 // private internal modules
-
 mod hash;

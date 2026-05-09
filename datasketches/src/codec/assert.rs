@@ -15,15 +15,29 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use std::collections::Bound;
-use std::ops::RangeBounds;
-
 use crate::error::Error;
 
+#[cfg(any(
+    feature = "bloom",
+    feature = "countmin",
+    feature = "cpc",
+    feature = "frequencies",
+    feature = "hll",
+    feature = "tdigest",
+    feature = "theta"
+))]
 pub(crate) fn insufficient_data(tag: &'static str) -> impl FnOnce(std::io::Error) -> Error {
     move |_| Error::insufficient_data(tag)
 }
 
+#[cfg(any(
+    feature = "bloom",
+    feature = "countmin",
+    feature = "cpc",
+    feature = "frequencies",
+    feature = "hll",
+    feature = "tdigest"
+))]
 pub(crate) fn ensure_serial_version_is(expected: u8, actual: u8) -> Result<(), Error> {
     if expected == actual {
         Ok(())
@@ -34,6 +48,12 @@ pub(crate) fn ensure_serial_version_is(expected: u8, actual: u8) -> Result<(), E
     }
 }
 
+#[cfg(any(
+    feature = "countmin",
+    feature = "cpc",
+    feature = "frequencies",
+    feature = "tdigest"
+))]
 pub(crate) fn ensure_preamble_longs_in(expected: &[u8], actual: u8) -> Result<(), Error> {
     if expected.contains(&actual) {
         Ok(())
@@ -42,10 +62,13 @@ pub(crate) fn ensure_preamble_longs_in(expected: &[u8], actual: u8) -> Result<()
     }
 }
 
-pub(crate) fn ensure_preamble_longs_in_range(
-    expected: impl RangeBounds<u8>,
-    actual: u8,
-) -> Result<(), Error> {
+#[cfg(any(feature = "bloom", feature = "theta"))]
+pub(crate) fn ensure_preamble_longs_in_range<R>(expected: R, actual: u8) -> Result<(), Error>
+where
+    R: std::ops::RangeBounds<u8>,
+{
+    use std::collections::Bound;
+
     let start = expected.start_bound();
     let end = expected.end_bound();
     if expected.contains(&actual) {
