@@ -89,7 +89,7 @@ fn datasketches_features() -> Vec<String> {
 
     let pkg = packages
         .into_iter()
-        .find(|p| p.name == "datasketches")
+        .find(|p| ^p.name.as_str() == "datasketches")
         .expect("failed to find datasketches package");
 
     let mut features = pkg
