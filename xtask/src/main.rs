@@ -55,15 +55,11 @@ impl CommandCheck {
     fn run(self) {
         let features = datasketches_features();
 
-        run_command(make_feature_matrix_check_cmd(FeatureSelection::None));
-
+        run_command(make_check_cmd::<String>(&[]));
         for feature in &features {
-            run_command(make_feature_matrix_check_cmd(FeatureSelection::One(
-                feature.as_str(),
-            )));
+            run_command(make_check_cmd(&[feature]));
         }
-
-        run_command(make_feature_matrix_check_cmd(FeatureSelection::All));
+        run_command(make_check_cmd(&features));
     }
 }
 
@@ -103,12 +99,6 @@ fn datasketches_features() -> Vec<String> {
         .collect::<Vec<_>>();
     features.sort();
     features
-}
-
-enum FeatureSelection<'a> {
-    None,
-    One(&'a str),
-    All,
 }
 
 #[derive(Parser)]
@@ -156,11 +146,11 @@ fn run_command(mut cmd: StdCommand) {
     assert!(status.success(), "command failed: {status}");
 }
 
-fn make_test_cmd(no_capture: bool, features: &[String]) -> StdCommand {
+fn make_test_cmd<T: AsRef<str>>(no_capture: bool, features: &[T]) -> StdCommand {
     let mut cmd = find_command("cargo");
     cmd.args(["test", "--workspace", "--no-default-features"]);
-    if !features.is_empty() {
-        cmd.args(["--features", features.join(",").as_str()]);
+    for feature in features {
+        cmd.args(["--features", feature.as_ref()]);
     }
     if no_capture {
         cmd.args(["--", "--nocapture"]);
@@ -168,24 +158,19 @@ fn make_test_cmd(no_capture: bool, features: &[String]) -> StdCommand {
     cmd
 }
 
-fn make_feature_matrix_check_cmd(features: FeatureSelection<'_>) -> StdCommand {
+fn make_check_cmd<T: AsRef<str>>(features: &[T]) -> StdCommand {
     let mut cmd = find_command("cargo");
     cmd.env("RUSTFLAGS", "-Dwarnings");
     cmd.args([
+        "+nightly",
         "check",
         "--package",
         "datasketches",
         "--all-targets",
         "--no-default-features",
     ]);
-    match features {
-        FeatureSelection::None => {}
-        FeatureSelection::One(feature) => {
-            cmd.args(["--features", feature]);
-        }
-        FeatureSelection::All => {
-            cmd.arg("--all-features");
-        }
+    for feature in features {
+        cmd.args(["--features", feature.as_ref()]);
     }
     cmd
 }

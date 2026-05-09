@@ -32,9 +32,9 @@ mod murmurhash;
 ))]
 pub(crate) use self::murmurhash::MurmurHash3X64128;
 
-#[cfg(any(feature = "bloom"))]
+#[cfg(feature = "bloom")]
 mod xxhash;
-#[cfg(any(feature = "bloom"))]
+#[cfg(feature = "bloom")]
 pub(crate) use self::xxhash::XxHash64;
 
 /// The seed 9001 used in the sketch update methods is a prime number that was chosen very early
@@ -68,11 +68,7 @@ pub(crate) const DEFAULT_UPDATE_SEED: u64 = 9001;
 /// # Panics
 ///
 /// Panics if the computed seed hash is zero.
-#[cfg(any(
-    feature = "countmin",
-    feature = "cpc",
-    feature = "theta"
-))]
+#[cfg(any(feature = "countmin", feature = "cpc", feature = "theta"))]
 pub(crate) fn compute_seed_hash(seed: u64) -> u16 {
     use std::hash::Hasher;
 
