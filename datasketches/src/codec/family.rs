@@ -27,8 +27,10 @@ pub struct Family {
     /// The name for this family.
     pub name: &'static str,
     /// The minimum preamble size for this family in longs (8-bytes integer).
+    #[allow(dead_code)] // only some sketches need to check this field
     pub min_pre_longs: u8,
     /// The maximum preamble size for this family in longs (8-bytes integer).
+    #[allow(dead_code)] // only some sketches need to check this field
     pub max_pre_longs: u8,
 }
 
