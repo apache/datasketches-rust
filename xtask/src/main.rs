@@ -30,6 +30,7 @@ struct Command {
 impl Command {
     fn run(self) {
         match self.sub {
+            SubCommand::FeatureMatrix(cmd) => cmd.run(),
             SubCommand::Lint(cmd) => cmd.run(),
             SubCommand::Test(cmd) => cmd.run(),
         }
@@ -38,10 +39,34 @@ impl Command {
 
 #[derive(Subcommand)]
 enum SubCommand {
+    #[clap(
+        about = "Check datasketches under the no-feature, single-feature, and all-feature matrix."
+    )]
+    FeatureMatrix(CommandFeatureMatrix),
     #[clap(about = "Run format and clippy checks.")]
     Lint(CommandLint),
     #[clap(about = "Run unit tests.")]
     Test(CommandTest),
+}
+
+#[derive(Parser)]
+#[clap(name = "feature-matrix")]
+struct CommandFeatureMatrix {}
+
+impl CommandFeatureMatrix {
+    fn run(self) {
+        let features = datasketches_features();
+
+        run_command(make_feature_matrix_check_cmd(FeatureSelection::None));
+
+        for feature in &features {
+            run_command(make_feature_matrix_check_cmd(FeatureSelection::One(
+                feature.as_str(),
+            )));
+        }
+
+        run_command(make_feature_matrix_check_cmd(FeatureSelection::All));
+    }
 }
 
 #[derive(Parser)]
@@ -52,12 +77,12 @@ struct CommandTest {
 
 impl CommandTest {
     fn run(self) {
-        let features = sketches_features();
+        let features = datasketches_features();
         run_command(make_test_cmd(self.no_capture, &features));
     }
 }
 
-fn sketches_features() -> Vec<String> {
+fn datasketches_features() -> Vec<String> {
     use cargo_metadata::Metadata;
     use cargo_metadata::MetadataCommand;
 
@@ -73,7 +98,19 @@ fn sketches_features() -> Vec<String> {
         .find(|p| p.name == "datasketches")
         .expect("failed to find datasketches package");
 
-    pkg.features.into_keys().collect()
+    let mut features = pkg
+        .features
+        .into_keys()
+        .filter(|feature| feature != "default")
+        .collect::<Vec<_>>();
+    features.sort();
+    features
+}
+
+enum FeatureSelection<'a> {
+    None,
+    One(&'a str),
+    All,
 }
 
 #[derive(Parser)]
@@ -129,6 +166,28 @@ fn make_test_cmd(no_capture: bool, features: &[String]) -> StdCommand {
     }
     if no_capture {
         cmd.args(["--", "--nocapture"]);
+    }
+    cmd
+}
+
+fn make_feature_matrix_check_cmd(features: FeatureSelection<'_>) -> StdCommand {
+    let mut cmd = find_command("cargo");
+    cmd.env("RUSTFLAGS", "-Dwarnings");
+    cmd.args([
+        "check",
+        "--package",
+        "datasketches",
+        "--all-targets",
+        "--no-default-features",
+    ]);
+    match features {
+        FeatureSelection::None => {}
+        FeatureSelection::One(feature) => {
+            cmd.args(["--features", feature]);
+        }
+        FeatureSelection::All => {
+            cmd.arg("--all-features");
+        }
     }
     cmd
 }

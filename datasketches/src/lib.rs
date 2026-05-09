@@ -53,4 +53,12 @@ pub mod error;
 pub mod hash_value;
 
 // private internal modules
+#[cfg(any(
+    feature = "bloom",
+    feature = "countmin",
+    feature = "cpc",
+    feature = "frequencies",
+    feature = "hll",
+    feature = "theta"
+))]
 mod hash;
