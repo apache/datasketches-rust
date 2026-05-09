@@ -51,8 +51,27 @@ struct CommandTest {
 
 impl CommandTest {
     fn run(self) {
-        run_command(make_test_cmd(self.no_capture, &[]));
+        let features = get_sketch_features();
+        let features_refs: Vec<&str> = features.iter().map(|s| s.as_str()).collect();
+        run_command(make_test_cmd(self.no_capture, &features_refs));
     }
+}
+
+fn get_sketch_features() -> Vec<String> {
+    let metadata = cargo_metadata::MetadataCommand::new()
+        .manifest_path(std::path::Path::new(env!("CARGO_WORKSPACE_DIR")).join("Cargo.toml"))
+        .exec()
+        .expect("failed to get cargo metadata");
+    let pkg = metadata
+        .workspace_packages()
+        .into_iter()
+        .find(|pkg| pkg.name == "datasketches")
+        .expect("failed to find datasketches package");
+    pkg.features
+        .keys()
+        .filter(|&f| f != "default")
+        .cloned()
+        .collect()
 }
 
 #[derive(Parser)]
