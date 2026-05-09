@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::path::Path;
 use std::process::Command as StdCommand;
 
 use clap::Parser;
@@ -51,27 +52,29 @@ struct CommandTest {
 
 impl CommandTest {
     fn run(self) {
-        let features = get_sketch_features();
+        let features = sketches_features();
         let features_refs: Vec<&str> = features.iter().map(|s| s.as_str()).collect();
         run_command(make_test_cmd(self.no_capture, &features_refs));
     }
 }
 
-fn get_sketch_features() -> Vec<String> {
-    let metadata = cargo_metadata::MetadataCommand::new()
-        .manifest_path(std::path::Path::new(env!("CARGO_WORKSPACE_DIR")).join("Cargo.toml"))
+fn sketches_features() -> Vec<String> {
+    use cargo_metadata::Metadata;
+    use cargo_metadata::MetadataCommand;
+
+    let datasketches_manifest = Path::new(env!("CARGO_WORKSPACE_DIR")).join("Cargo.toml");
+
+    let Metadata { packages, .. } = MetadataCommand::new()
+        .manifest_path(datasketches_manifest)
         .exec()
         .expect("failed to get cargo metadata");
-    let pkg = metadata
-        .workspace_packages()
+
+    let pkg = packages
         .into_iter()
-        .find(|pkg| pkg.name == "datasketches")
+        .find(|p| p.name == "datasketches")
         .expect("failed to find datasketches package");
-    pkg.features
-        .keys()
-        .filter(|&f| f != "default")
-        .cloned()
-        .collect()
+
+    pkg.features.into_keys().collect()
 }
 
 #[derive(Parser)]
