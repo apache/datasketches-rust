@@ -89,7 +89,8 @@ impl Error {
     }
 }
 
-// Convenient constructors used within datasketches crate.
+// pub(crate) convenient constructors
+#[allow(dead_code)] // some constructors are only used for certain sketches
 impl Error {
     pub(crate) fn invalid_argument(msg: impl Into<String>) -> Self {
         Self::new(ErrorKind::InvalidArgument, msg)

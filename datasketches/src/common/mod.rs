@@ -17,12 +17,12 @@
 
 //! Data structures and functions that may be used across all the sketch families.
 
-// public common components for datasketches crate
 mod num_std_dev;
 mod resize;
 pub use self::num_std_dev::NumStdDev;
 pub use self::resize::ResizeFactor;
 
-// private to datasketches crate
+#[cfg(feature = "theta")]
 pub(crate) mod binomial_bounds;
+#[cfg(feature = "cpc")]
 pub(crate) mod inv_pow2_table;

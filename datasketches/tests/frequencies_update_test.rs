@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#![cfg(feature = "frequencies")]
+
 use datasketches::frequencies::ErrorType;
 use datasketches::frequencies::FrequentItemsSketch;
 

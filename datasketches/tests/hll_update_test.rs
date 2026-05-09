@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#![cfg(feature = "hll")]
+
 use datasketches::common::NumStdDev;
 use datasketches::hll::HllSketch;
 use datasketches::hll::HllType;

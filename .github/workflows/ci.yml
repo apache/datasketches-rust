@@ -52,8 +52,10 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: typos-cli,taplo-cli,hawkeye
-      - name: Check all
+      - name: Check linters
         run: cargo x lint
+      - name: Check feature matrix
+        run: cargo x check
 
   msrv:
     name: Resolve MSRV

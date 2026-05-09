@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#![cfg(feature = "hll")]
+
 //! HyperLogLog Union Integration Tests
 //!
 //! These tests verify the public API behavior of HllUnion, focusing on:
