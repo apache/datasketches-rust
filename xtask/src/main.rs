@@ -55,9 +55,9 @@ impl CommandCheck {
     fn run(self) {
         let features = datasketches_features();
 
-        run_command(make_check_cmd::<String>(&[]));
-        for feature in &features {
-            run_command(make_check_cmd(&[feature]));
+        run_command(make_check_cmd(&[]));
+        for feature in features.chunks(1) {
+            run_command(make_check_cmd(feature));
         }
         run_command(make_check_cmd(&features));
     }
@@ -146,11 +146,11 @@ fn run_command(mut cmd: StdCommand) {
     assert!(status.success(), "command failed: {status}");
 }
 
-fn make_test_cmd<T: AsRef<str>>(no_capture: bool, features: &[T]) -> StdCommand {
+fn make_test_cmd(no_capture: bool, features: &[String]) -> StdCommand {
     let mut cmd = find_command("cargo");
     cmd.args(["test", "--workspace", "--no-default-features"]);
     for feature in features {
-        cmd.args(["--features", feature.as_ref()]);
+        cmd.args(["--features", feature]);
     }
     if no_capture {
         cmd.args(["--", "--nocapture"]);
@@ -158,7 +158,7 @@ fn make_test_cmd<T: AsRef<str>>(no_capture: bool, features: &[T]) -> StdCommand 
     cmd
 }
 
-fn make_check_cmd<T: AsRef<str>>(features: &[T]) -> StdCommand {
+fn make_check_cmd(features: &[String]) -> StdCommand {
     let mut cmd = find_command("cargo");
     cmd.env("RUSTFLAGS", "-Dwarnings");
     cmd.args([
@@ -170,7 +170,7 @@ fn make_check_cmd<T: AsRef<str>>(features: &[T]) -> StdCommand {
         "--no-default-features",
     ]);
     for feature in features {
-        cmd.args(["--features", feature.as_ref()]);
+        cmd.args(["--features", feature]);
     }
     cmd
 }
