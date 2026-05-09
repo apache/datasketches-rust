@@ -53,8 +53,7 @@ struct CommandTest {
 impl CommandTest {
     fn run(self) {
         let features = sketches_features();
-        let features_refs: Vec<&str> = features.iter().map(|s| s.as_str()).collect();
-        run_command(make_test_cmd(self.no_capture, &features_refs));
+        run_command(make_test_cmd(self.no_capture, &features));
     }
 }
 
@@ -122,7 +121,7 @@ fn run_command(mut cmd: StdCommand) {
     assert!(status.success(), "command failed: {status}");
 }
 
-fn make_test_cmd(no_capture: bool, features: &[&str]) -> StdCommand {
+fn make_test_cmd(no_capture: bool, features: &[String]) -> StdCommand {
     let mut cmd = find_command("cargo");
     cmd.args(["test", "--workspace", "--no-default-features"]);
     if !features.is_empty() {
