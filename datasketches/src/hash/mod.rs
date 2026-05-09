@@ -15,14 +15,10 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#![allow(dead_code)]
-
 mod murmurhash;
-#[allow(unused_imports)]
 pub(crate) use self::murmurhash::MurmurHash3X64128;
 
 mod xxhash;
-#[allow(unused_imports)]
 pub(crate) use self::xxhash::XxHash64;
 
 /// The seed 9001 used in the sketch update methods is a prime number that was chosen very early
@@ -38,7 +34,6 @@ pub(crate) use self::xxhash::XxHash64;
 /// and seed are identical for both sketches, otherwise the assumed 1:1 relationship between the
 /// original source key value and the hashed bit string would be violated. Once you have developed
 /// a history of stored sketches you are stuck with it.
-#[allow(dead_code)]
 pub(crate) const DEFAULT_UPDATE_SEED: u64 = 9001;
 
 /// Computes and checks the 16-bit seed hash from the given long seed.
@@ -49,7 +44,6 @@ pub(crate) const DEFAULT_UPDATE_SEED: u64 = 9001;
 /// # Panics
 ///
 /// Panics if the computed seed hash is zero.
-#[allow(dead_code)]
 pub(crate) fn compute_seed_hash(seed: u64) -> u16 {
     use std::hash::Hasher;
 

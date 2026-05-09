@@ -93,6 +93,9 @@ jobs:
       - name: Prepare test data
         shell: bash
         run: ./tools/generate_serialization_test_data.py
+      - name: Check feature matrix
+        shell: bash
+        run: cargo x check
       - name: Run unit tests
         shell: bash
         run: cargo x test

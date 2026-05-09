@@ -21,7 +21,6 @@ use crate::error::Error;
 ///
 /// A family defines a set of classes that share fundamental algorithms and behaviors. The classes
 /// within a family may still differ by how they are stored and accessed.
-#[allow(dead_code)]
 pub struct Family {
     /// The byte ID for this family.
     pub id: u8,
@@ -33,7 +32,6 @@ pub struct Family {
     pub max_pre_longs: u8,
 }
 
-#[allow(dead_code)]
 impl Family {
     /// Theta Sketch for cardinality estimation.
     pub const THETA: Family = Family {

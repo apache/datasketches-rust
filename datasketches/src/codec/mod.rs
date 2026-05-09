@@ -17,13 +17,11 @@
 
 //! Codec utilities for datasketches crate.
 
-// public common codec utilities for datasketches crate
 mod decode;
 mod encode;
 pub use self::decode::SketchSlice;
 pub use self::encode::SketchBytes;
 
-// private internal modules
 #[cfg(any(
     feature = "bloom",
     feature = "countmin",
@@ -33,7 +31,9 @@ pub use self::encode::SketchBytes;
     feature = "tdigest",
     feature = "theta"
 ))]
+#[allow(dead_code)] // some utilities are only used for certain sketches
 pub(crate) mod assert;
+
 #[cfg(any(
     feature = "bloom",
     feature = "countmin",

@@ -30,7 +30,7 @@ struct Command {
 impl Command {
     fn run(self) {
         match self.sub {
-            SubCommand::FeatureMatrix(cmd) => cmd.run(),
+            SubCommand::Check(cmd) => cmd.run(),
             SubCommand::Lint(cmd) => cmd.run(),
             SubCommand::Test(cmd) => cmd.run(),
         }
@@ -39,10 +39,8 @@ impl Command {
 
 #[derive(Subcommand)]
 enum SubCommand {
-    #[clap(
-        about = "Check datasketches under the no-feature, single-feature, and all-feature matrix."
-    )]
-    FeatureMatrix(CommandFeatureMatrix),
+    #[clap(about = "Check datasketches under the feature matrix.")]
+    Check(CommandCheck),
     #[clap(about = "Run format and clippy checks.")]
     Lint(CommandLint),
     #[clap(about = "Run unit tests.")]
@@ -50,10 +48,10 @@ enum SubCommand {
 }
 
 #[derive(Parser)]
-#[clap(name = "feature-matrix")]
-struct CommandFeatureMatrix {}
+#[clap(name = "check")]
+struct CommandCheck {}
 
-impl CommandFeatureMatrix {
+impl CommandCheck {
     fn run(self) {
         let features = datasketches_features();
 
