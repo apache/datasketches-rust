@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#![cfg(feature = "countmin")]
+
 use datasketches::countmin::CountMinSketch;
 
 #[test]

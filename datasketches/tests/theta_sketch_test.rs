@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#![cfg(feature = "theta")]
+
 use datasketches::common::NumStdDev;
 use datasketches::hash_value;
 use datasketches::theta::ThetaSketch;
