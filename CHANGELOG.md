@@ -4,8 +4,6 @@ All significant changes to this project will be documented in this file.
 
 ## Unreleased
 
-## v0.3.0 (2026-05-11)
-
 ### Breaking changes
 
 * `CountMinSketch` now has a type parameter for the count type. Possible values are `u8` to `u64` and `i8` to `i64`.
