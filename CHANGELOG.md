@@ -9,6 +9,11 @@ All significant changes to this project will be documented in this file.
 * `CountMinSketch` now has a type parameter for the count type. Possible values are `u8` to `u64` and `i8` to `i64`.
 * `HllUnion::get_result` is renamed to `HllUnion::to_sketch`.
 * `update_f32` and `update_f64` are removed from `ThetaSketch`. Use `hash_value`'s wrapper instead.
+* All sketches are now gated by a feature flag. You need to enable the feature flag to use the sketch. For example, to use `CountMinSketch`, you need to enable the `countmin` feature.
+
+### Notable changes
+
+* The MSRV (Minimum Supported Rust Version) is now 1.86.0.
 
 ### New features
 
