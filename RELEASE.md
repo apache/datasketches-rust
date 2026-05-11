@@ -122,9 +122,9 @@ Testing (choose one or both):
 - From source: Download, verify signatures, cargo x test
 
 To verify signatures:
-  curl -O https://dist.apache.org/repos/dist/dev/datasketches/rust/0.3.0-rc.1/datasketches-rust-0.3.0-rc.1-src
-  curl -O https://dist.apache.org/repos/dist/dev/datasketches/rust/0.3.0-rc.1/datasketches-rust-0.3.0-rc.1-src.asc
-  gpg --verify datasketches-rust-0.3.0-rc.1-src.asc
+  ​curl -O https://dist.apache.org/repos/dist/dev/datasketches/rust/0.3.0-rc.1/apache-datasketches-rust-0.3.0-rc.1-src.zip
+​  curl -O https://dist.apache.org/repos/dist/dev/datasketches/rust/0.3.0-rc.1/apache-datasketches-rust-0.3.0-rc.1-src.zip.asc
+​  gpg --verify apache-datasketches-rust-0.3.0-rc.1-src.zip.asc
 
 Notable changes: [link to CHANGELOG or summary]
 
