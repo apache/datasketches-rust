@@ -18,9 +18,9 @@
 name: CI
 on:
   pull_request:
-    branches: [ main ]
+    branches: [main]
   push:
-    branches: [ main ]
+    branches: [main]
 
 # Concurrency strategy:
 #   github.workflow: distinguish this workflow from others
@@ -52,6 +52,8 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: typos-cli,taplo-cli,hawkeye
+      - name: Check lockfile
+        run: cargo update -w --locked --verbose
       - name: Check linters
         run: cargo x lint
       - name: Check feature matrix
@@ -75,7 +77,7 @@ jobs:
     needs: msrv
     strategy:
       matrix:
-        os: [ ubuntu-24.04, macos-14, windows-2022 ]
+        os: [ubuntu-24.04, macos-14, windows-2022]
         rust-version: ${{ fromJson(needs.msrv.outputs.rust-versions) }}
     runs-on: ${{ matrix.os }}
     steps:
@@ -90,8 +92,8 @@ jobs:
       - name: Setup Java
         uses: actions/setup-java@v5
         with:
-          java-version: '25'
-          distribution: 'temurin'
+          java-version: "25"
+          distribution: "temurin"
       - name: Prepare test data
         shell: bash
         run: ./tools/generate_serialization_test_data.py
