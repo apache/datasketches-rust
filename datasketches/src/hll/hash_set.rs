@@ -179,17 +179,7 @@ impl HashSet {
 
         // Write coupons
         if compact {
-            // Compact mode: collect non-empty coupons and sort for deterministic output
-            let mut coupons_vec: Vec<Coupon> = self
-                .container
-                .coupons
-                .iter()
-                .filter(|&&c| !c.is_empty())
-                .copied()
-                .collect();
-            coupons_vec.sort_unstable();
-
-            for coupon in coupons_vec.iter().copied() {
+            for coupon in self.container.iter() {
                 bytes.write_u32_le(coupon.raw());
             }
         } else {
