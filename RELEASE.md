@@ -155,15 +155,9 @@ After successful vote, send [VOTE-RESULT] email summarizing the outcome and proc
 cd ~/apache/dist/dev/datasketches/scripts
 ./moveDevToRelease.sh rust 0.3.0-rc.1 0.3.0
 
-# Update Cargo.toml to final release version (this is the only version commit!)
-cd /path/to/datasketches-rust
-git checkout main
-sed -i '' 's/version = ".*"/version = "0.3.0"/' datasketches/Cargo.toml
-git add datasketches/Cargo.toml
-git commit -m "chore: release 0.3.0"
-git push origin main
-
 # Create final release tag
+cd /path/to/datasketches-rust
+git checkout 0.3.0-rc.1
 git tag -a 0.3.0 -m "Release version 0.3.0"
 git push origin 0.3.0
 
@@ -184,11 +178,9 @@ Go to https://github.com/apache/datasketches-rust/releases and draft a new relea
    ./createDownloadsInclude.sh /path/to/datasketches-website
    ```
 
-2. **Clean up old releases** from dist (keep only latest):
+2. **Clean up old releases** from dist (keep only the latest):
    ```bash
-   cd ~/apache/dist/release/datasketches
-   svn rm rust/0.2.0
-   svn commit -m "Archive old release 0.2.0"
+   svn rm https://dist.apache.org/repos/dist/release/datasketches/rust/0.2.0/ -m "Archive old release datasketches-rust 0.2.0"
    ```
 
 3. **Send [ANNOUNCE] email** after 24 hours (allows mirror propagation):
