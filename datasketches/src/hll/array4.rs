@@ -29,6 +29,7 @@ use crate::common::NumStdDev;
 use crate::error::Error;
 use crate::hll::Coupon;
 use crate::hll::estimator::HipEstimator;
+use crate::hll::serialization::COMPACT_FLAG_MASK;
 use crate::hll::serialization::COUPON_SIZE_BYTES;
 use crate::hll::serialization::CUR_MODE_HLL;
 use crate::hll::serialization::HLL_PREAMBLE_SIZE;
@@ -388,8 +389,10 @@ impl Array4 {
         bytes.write_u8(lg_config_k);
         bytes.write_u8(0); // unused for HLL mode
 
-        // Write flags
-        let mut flags = 0u8;
+        // Write flags.
+        // COMPACT_FLAG_MASK is always set: aux map entries are written as a compact sequential
+        // list of populated entries only.
+        let mut flags = COMPACT_FLAG_MASK;
         if self.estimator.is_out_of_order() {
             flags |= OUT_OF_ORDER_FLAG_MASK;
         }
