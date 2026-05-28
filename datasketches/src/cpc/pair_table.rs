@@ -246,4 +246,9 @@ impl PairTable {
             }
         }
     }
+
+    /// Returns the size of the heap allocations in bytes
+    pub fn heap_size(&self) -> usize {
+        self.slots.len() * std::mem::size_of::<u32>()
+    }
 }
