@@ -80,6 +80,15 @@ impl Family {
         max_pre_longs: 5,
     };
 
+    /// Relative Error Quantiles (REQ) sketch.
+    #[cfg(feature = "req")]
+    pub const REQ: Family = Family {
+        id: 17,
+        name: "REQ",
+        min_pre_longs: 2,
+        max_pre_longs: 4,
+    };
+
     /// CountMin Sketch
     #[cfg(feature = "countmin")]
     pub const COUNTMIN: Family = Family {
