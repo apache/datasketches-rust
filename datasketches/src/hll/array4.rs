@@ -426,9 +426,14 @@ impl Array4 {
         bytes.into_bytes()
     }
 
-    /// Returns the size of the heap allocations in bytes
-    pub fn heap_size(&self) -> usize {
-        self.bytes.len() + self.aux_map.as_ref().map(|a| a.heap_size()).unwrap_or(0)
+    /// Returns the estimated size of the heap allocations in bytes
+    pub fn estimated_size(&self) -> usize {
+        self.bytes.len()
+            + self
+                .aux_map
+                .as_ref()
+                .map(|a| a.estimated_size())
+                .unwrap_or(0)
     }
 }
 

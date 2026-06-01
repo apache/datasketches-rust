@@ -136,8 +136,8 @@ impl Container {
         self.coupons.iter().filter(|&&c| !c.is_empty()).copied()
     }
 
-    /// Returns the size of the heap allocations in bytes
-    pub fn heap_size(&self) -> usize {
+    /// Returns the estimated size of the heap allocations in bytes
+    pub fn estimated_size(&self) -> usize {
         self.coupons.len() * std::mem::size_of::<Coupon>()
     }
 }

@@ -424,14 +424,14 @@ impl HllSketch {
         }
     }
 
-    /// Returns the size of the sketch in bytes
-    pub fn size(&self) -> usize {
+    /// Returns the estimated size of the sketch in bytes
+    pub fn estimated_size(&self) -> usize {
         let heap_size = match &self.mode {
-            Mode::List { list, .. } => list.container().heap_size(),
-            Mode::Set { set, .. } => set.container().heap_size(),
-            Mode::Array4(arr) => arr.heap_size(),
-            Mode::Array6(arr) => arr.heap_size(),
-            Mode::Array8(arr) => arr.heap_size(),
+            Mode::List { list, .. } => list.container().estimated_size(),
+            Mode::Set { set, .. } => set.container().estimated_size(),
+            Mode::Array4(arr) => arr.estimated_size(),
+            Mode::Array6(arr) => arr.estimated_size(),
+            Mode::Array8(arr) => arr.estimated_size(),
         };
 
         std::mem::size_of::<Self>() + heap_size
