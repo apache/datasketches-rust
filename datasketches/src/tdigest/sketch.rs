@@ -793,6 +793,13 @@ impl TDigestMut {
         self.reverse_merge = !self.reverse_merge;
         self.buffer.clear();
     }
+
+    /// Returns the estimated size of the sketch in bytes
+    pub fn estimated_size(&self) -> usize {
+        std::mem::size_of::<Self>()
+            + self.centroids.capacity() * std::mem::size_of::<Centroid>()
+            + self.buffer.capacity() * std::mem::size_of::<f64>()
+    }
 }
 
 /// Immutable (frozen) T-Digest sketch for estimating quantiles and ranks.
@@ -1000,6 +1007,11 @@ impl TDigest {
             self.centroids_weight,
             vec![],
         )
+    }
+
+    /// Returns the estimated size of the sketch in bytes
+    pub fn estimated_size(&self) -> usize {
+        std::mem::size_of::<Self>() + self.centroids.capacity() * std::mem::size_of::<Centroid>()
     }
 }
 
