@@ -226,6 +226,11 @@ impl AuxMap {
             }
         })
     }
+
+    /// Returns the estimated size of the heap allocations in bytes
+    pub fn estimated_size(&self) -> usize {
+        self.entries.len() * std::mem::size_of::<Coupon>()
+    }
 }
 
 /// Iterator over AuxMap entries

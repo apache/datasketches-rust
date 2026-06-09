@@ -313,6 +313,11 @@ impl ThetaSketch {
         )
         .expect("theta should always be valid")
     }
+
+    /// Returns the estimated size of the sketch in bytes
+    pub fn estimated_size(&self) -> usize {
+        std::mem::size_of::<Self>() + self.table.estimated_size()
+    }
 }
 
 impl ThetaSketchView for ThetaSketch {
@@ -887,6 +892,11 @@ impl CompactThetaSketch {
             ordered,
             empty,
         })
+    }
+
+    /// Returns the estimated size of the sketch in bytes
+    pub fn estimated_size(&self) -> usize {
+        std::mem::size_of::<Self>() + self.entries.capacity() * std::mem::size_of::<u64>()
     }
 }
 

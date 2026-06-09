@@ -423,6 +423,19 @@ impl HllSketch {
             Mode::Array8(arr) => arr.serialize(self.lg_config_k),
         }
     }
+
+    /// Returns the estimated size of the sketch in bytes
+    pub fn estimated_size(&self) -> usize {
+        let heap_size = match &self.mode {
+            Mode::List { list, .. } => list.container().estimated_size(),
+            Mode::Set { set, .. } => set.container().estimated_size(),
+            Mode::Array4(arr) => arr.estimated_size(),
+            Mode::Array6(arr) => arr.estimated_size(),
+            Mode::Array8(arr) => arr.estimated_size(),
+        };
+
+        std::mem::size_of::<Self>() + heap_size
+    }
 }
 
 fn promote_container_to_set(container: &Container, hll_type: HllType) -> Mode {

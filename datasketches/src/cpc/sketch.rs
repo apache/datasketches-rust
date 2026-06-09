@@ -450,6 +450,18 @@ impl CpcSketch {
 
         matrix
     }
+
+    /// Returns the estimated size of the sketch in bytes
+    pub fn estimated_size(&self) -> usize {
+        let heap_size = self.sliding_window.capacity()
+            + self
+                .surprising_value_table
+                .as_ref()
+                .map(|t| t.estimated_size())
+                .unwrap_or(0);
+
+        std::mem::size_of::<Self>() + heap_size
+    }
 }
 
 impl CpcSketch {
