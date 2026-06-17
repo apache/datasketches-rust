@@ -25,16 +25,29 @@ use crate::theta::HASH_TABLE_RESIZE_THRESHOLD;
 use crate::theta::MAX_THETA;
 use crate::theta::MIN_LG_K;
 use crate::theta::STRIDE_MASK;
+use crate::theta::starting_sub_multiple;
+use crate::theta::starting_theta_from_sampling_probability;
 
-/// Specific hash table for theta sketch
+/// A retained entry: a hash key together with its associated summary.
+#[derive(Debug)]
+struct TupleEntry<S> {
+    hash: u64,
+    summary: S,
+}
+
+/// Specific hash table for tuple sketch.
 ///
-/// It maintains an array capacity max to 2^lg_max_size:
+/// This is the Theta sketch hash table extended so that each retained key carries a user-defined
+/// summary. It maintains an array with capacity up to 2^lg_max_size:
 /// * Before it reaches the max capacity, it will extend the array based on resize_factor.
 /// * After it reaches the capacity bigger than 2^lg_nom_size, every time the number of entries
 ///   exceeds the threshold, it will rebuild the table: only keep the min 2^lg_nom_size entries and
 ///   update the theta to the k-th smallest entry.
+///
+/// Unlike the Theta hash table, when a key is inserted that already exists, the incoming update is
+/// merged into the existing summary rather than discarded.
 #[derive(Debug)]
-pub(super) struct ThetaHashTable {
+pub(super) struct TupleHashTable<S> {
     lg_cur_size: u8,
     lg_nom_size: u8,
     lg_max_size: u8,
@@ -52,13 +65,14 @@ pub(super) struct ThetaHashTable {
 
     theta: u64,
 
-    entries: Vec<u64>,
+    // Using `None` to represent zero value.
+    entries: Vec<Option<TupleEntry<S>>>,
 
     // Number of retained non-zero hashes currently stored in `entries`.
     num_retained: usize,
 }
 
-impl ThetaHashTable {
+impl<S> TupleHashTable<S> {
     /// Create a new hash table
     pub fn new(
         lg_nom_size: u8,
@@ -99,7 +113,7 @@ impl ThetaHashTable {
             "lg_cur_size must be <= lg_nom_size + 1, got lg_cur_size={lg_cur_size}, lg_nom_size={lg_nom_size}"
         );
         let size = if lg_cur_size > 0 { 1 << lg_cur_size } else { 0 };
-        let entries = vec![0u64; size];
+        let entries = std::iter::repeat_with(|| None).take(size).collect();
         Self {
             lg_cur_size,
             lg_nom_size,
@@ -134,7 +148,7 @@ impl ThetaHashTable {
     ///
     /// Returns the index of the entry if found, otherwise None. The entry may have been inserted or
     /// empty.
-    fn find_in_entries(entries: &[u64], key: u64, lg_size: u8) -> Option<usize> {
+    fn find_in_entries(entries: &[Option<TupleEntry<S>>], key: u64, lg_size: u8) -> Option<usize> {
         if entries.is_empty() {
             return None;
         }
@@ -146,9 +160,10 @@ impl ThetaHashTable {
         let loop_index = index;
 
         loop {
-            let probe = entries[index];
-            if probe == 0 || probe == key {
-                return Some(index);
+            match &entries[index] {
+                None => return Some(index),
+                Some(entry) if entry.hash == key => return Some(index),
+                _ => {}
             }
             index = (index + stride) & mask;
             if index == loop_index {
@@ -157,18 +172,37 @@ impl ThetaHashTable {
         }
     }
 
-    /// Hashes and inserts a value into the table.
+    /// Hashes a key and inserts or updates its summary via a single callback.
     ///
-    /// Returns true if the value was inserted (new), false otherwise.
-    pub fn try_insert<T: Hash>(&mut self, value: T) -> bool {
-        let hash = self.hash(value);
-        self.try_insert_hash(hash)
+    /// See [`upsert`](Self::upsert) for the callback contract. Returns true if a new entry was
+    /// created, false if the key already existed or the hash was screened out by theta.
+    pub fn update<T, F>(&mut self, key: T, f: F) -> bool
+    where
+        T: Hash,
+        F: FnOnce(Option<&mut S>) -> Option<S>,
+    {
+        let hash = self.hash(key);
+        self.upsert(hash, f)
     }
 
-    /// Inserts a pre-hashed value into the table.
+    /// Inserts or updates the summary slot for a pre-hashed key.
     ///
-    /// Returns true if the value was inserted (new), false otherwise.
-    pub fn try_insert_hash(&mut self, hash: u64) -> bool {
+    /// The callback `f` is invoked with the current summary for `hash`:
+    /// * `Some(existing)` if the key is already retained. The callback should modify it in place;
+    ///   its return value is ignored.
+    /// * `None` if the key is new. The callback returns `Some(summary)` to insert it, or `None` to
+    ///   decline insertion.
+    ///
+    /// Using a single callback ensures any captured update value is consumed exactly once, so it
+    /// works for both the update sketch (folding an update value) and set operations (merging an
+    /// incoming summary) without requiring the value to be `Copy` or `Clone`.
+    ///
+    /// Returns true if a new entry was created, false otherwise (existing key, declined insertion,
+    /// or a hash screened out by theta).
+    pub fn upsert<F>(&mut self, hash: u64, f: F) -> bool
+    where
+        F: FnOnce(Option<&mut S>) -> Option<S>,
+    {
         self.is_empty = false;
 
         if hash == 0 || hash >= self.theta {
@@ -181,13 +215,17 @@ impl ThetaHashTable {
             );
         };
 
-        // Already exists
-        if self.entries[index] == hash {
+        // Already exists: let the callback merge into the retained summary in place.
+        if let Some(entry) = self.entries[index].as_mut() {
+            f(Some(&mut entry.summary));
             return false;
         }
 
-        assert_eq!(self.entries[index], 0, "Entry should be empty");
-        self.entries[index] = hash;
+        // New key: the callback may decline by returning None.
+        let Some(summary) = f(None) else {
+            return false;
+        };
+        self.entries[index] = Some(TupleEntry { hash, summary });
         self.num_retained += 1;
 
         // Check if we need to resize or rebuild
@@ -221,18 +259,15 @@ impl ThetaHashTable {
         let new_size = 1 << new_lg_size;
 
         // Get new entries and rehash all entries
-        let mut new_entries = vec![0u64; new_size];
-        for &entry in &self.entries {
-            if entry != 0 {
-                let new_index = Self::find_in_entries(&new_entries, entry, new_lg_size);
-                if let Some(idx) = new_index {
-                    new_entries[idx] = entry;
-                } else {
-                    unreachable!(
-                        "find_in_entries should always return Some if the entry is not empty."
-                    );
-                }
-            }
+        let mut new_entries: Vec<Option<TupleEntry<S>>> =
+            std::iter::repeat_with(|| None).take(new_size).collect();
+        for entry in std::mem::take(&mut self.entries).into_iter().flatten() {
+            let Some(idx) = Self::find_in_entries(&new_entries, entry.hash, new_lg_size) else {
+                unreachable!(
+                    "find_in_entries should always return Some if the entry is not empty."
+                );
+            };
+            new_entries[idx] = Some(entry);
         }
 
         self.entries = new_entries;
@@ -242,19 +277,28 @@ impl ThetaHashTable {
     /// Rebuild the hash table:
     /// The number of entries will be reduced to the nominal size k.
     fn rebuild(&mut self) {
+        let k = 1usize << self.lg_nom_size;
+
         // Select the k-th smallest entry as new theta and keep the lesser entries.
-        self.entries.retain(|&e| e != 0);
-        let k = 1u64 << self.lg_nom_size;
-        let (lesser, kth, _) = self.entries.select_nth_unstable(k as usize);
-        self.theta = *kth;
+        let mut retained: Vec<TupleEntry<S>> = std::mem::take(&mut self.entries)
+            .into_iter()
+            .flatten()
+            .collect();
+        let kth_hash = {
+            let (_lesser, kth, _greater) = retained.select_nth_unstable_by_key(k, |e| e.hash);
+            kth.hash
+        };
+        self.theta = kth_hash;
+        retained.truncate(k);
 
         // Rebuild the table with the lesser entries.
         let size = 1 << self.lg_cur_size;
-        let mut new_entries = vec![0u64; size];
+        let mut new_entries: Vec<Option<TupleEntry<S>>> =
+            std::iter::repeat_with(|| None).take(size).collect();
         let mut num_inserted = 0;
-        for entry in lesser {
-            if let Some(idx) = Self::find_in_entries(&new_entries, *entry, self.lg_cur_size) {
-                new_entries[idx] = *entry;
+        for entry in retained {
+            if let Some(idx) = Self::find_in_entries(&new_entries, entry.hash, self.lg_cur_size) {
+                new_entries[idx] = Some(entry);
                 num_inserted += 1;
             } else {
                 unreachable!(
@@ -264,7 +308,7 @@ impl ThetaHashTable {
         }
 
         assert_eq!(
-            num_inserted, k as usize,
+            num_inserted, k,
             "Number of inserted entries should be equal to k."
         );
         self.num_retained = num_inserted;
@@ -288,10 +332,9 @@ impl ThetaHashTable {
         );
 
         // clear entries
-        if self.entries.len() != 1 << init_lg_cur {
-            self.entries.resize(1 << init_lg_cur, 0);
-        }
-        self.entries.fill(0);
+        let size = 1 << init_lg_cur;
+        self.entries.clear();
+        self.entries.resize_with(size, || None);
         self.num_retained = 0;
         self.theta = init_theta;
         self.is_empty = true;
@@ -313,9 +356,11 @@ impl ThetaHashTable {
         self.is_empty
     }
 
-    /// Get iterator over entries
-    pub fn iter(&self) -> impl Iterator<Item = u64> + '_ {
-        self.entries.iter().copied().filter(|&e| e != 0)
+    /// Get iterator over retained entries as `(hash, &summary)` pairs.
+    pub fn iter(&self) -> impl Iterator<Item = (u64, &S)> + '_ {
+        self.entries
+            .iter()
+            .filter_map(|slot| slot.as_ref().map(|entry| (entry.hash, &entry.summary)))
     }
 
     /// Get log2 of nominal size
@@ -328,15 +373,28 @@ impl ThetaHashTable {
         compute_seed_hash(self.hash_seed)
     }
 
-    /// Returns true if the given hash exists in the table.
-    pub fn contains_hash(&self, hash: u64) -> bool {
+    /// Returns a reference to the summary stored for `hash`, or `None` if the hash is not retained.
+    pub fn get(&self, hash: u64) -> Option<&S> {
         if hash == 0 {
-            return false;
+            return None;
         }
-        let Some(index) = self.find_in_curr_entries(hash) else {
-            return false;
-        };
-        self.entries[index] == hash
+        let index = self.find_in_curr_entries(hash)?;
+        match &self.entries[index] {
+            Some(entry) if entry.hash == hash => Some(&entry.summary),
+            _ => None,
+        }
+    }
+
+    /// Inserts a `(hash, summary)` pair, taking ownership of `summary`.
+    ///
+    /// Returns true if a new entry was created. Returns false (dropping `summary`) if the hash is
+    /// already retained or is screened out by theta. This is the summary-carrying analogue of the
+    /// Theta hash table's `try_insert_hash`.
+    pub fn try_insert(&mut self, hash: u64, summary: S) -> bool {
+        self.upsert(hash, |existing| match existing {
+            Some(_) => None,
+            None => Some(summary),
+        })
     }
 
     /// Set empty flag
@@ -379,29 +437,7 @@ impl ThetaHashTable {
 
     /// Returns the estimated size of the heap allocations in bytes
     pub fn estimated_size(&self) -> usize {
-        self.entries.capacity() * std::mem::size_of::<u64>()
-    }
-}
-
-/// Compute initial lg_size for hash table based on target lg_size, minimum lg_size, and resize
-/// factor. Make sure `lg_target = lg_init + n * lg_resize_factor`, where `n` is an integer and
-/// `lg_init >= lg_min`
-pub(crate) fn starting_sub_multiple(lg_target: u8, lg_min: u8, lg_resize_factor: u8) -> u8 {
-    if lg_target <= lg_min {
-        lg_min
-    } else if lg_resize_factor == 0 {
-        lg_target
-    } else {
-        ((lg_target - lg_min) % lg_resize_factor) + lg_min
-    }
-}
-
-/// Compute initial theta for hash table based on sampling probability.
-pub(crate) fn starting_theta_from_sampling_probability(sampling_probability: f32) -> u64 {
-    if sampling_probability < 1.0 {
-        (MAX_THETA as f64 * sampling_probability as f64) as u64
-    } else {
-        MAX_THETA
+        self.entries.capacity() * std::mem::size_of::<Option<TupleEntry<S>>>()
     }
 }
 
@@ -410,9 +446,26 @@ mod tests {
     use super::*;
     use crate::hash::DEFAULT_UPDATE_SEED;
 
+    /// Inserts a key with count-style summary semantics: a new key starts at 1, a repeated key
+    /// increments the retained count. Returns true if a new entry was created.
+    fn insert(table: &mut TupleHashTable<u64>, value: impl Hash) -> bool {
+        table.update(value, |existing| match existing {
+            Some(count) => {
+                *count += 1;
+                None
+            }
+            None => Some(1),
+        })
+    }
+
+    /// Collect retained `(hash, count)` pairs.
+    fn collect(table: &TupleHashTable<u64>) -> Vec<(u64, u64)> {
+        table.iter().map(|(hash, &count)| (hash, count)).collect()
+    }
+
     #[test]
     fn test_new_hash_table() {
-        let table = ThetaHashTable::new(8, ResizeFactor::X8, 1.0, DEFAULT_UPDATE_SEED);
+        let table = TupleHashTable::<u64>::new(8, ResizeFactor::X8, 1.0, DEFAULT_UPDATE_SEED);
 
         assert_eq!(
             table.lg_cur_size,
@@ -426,7 +479,7 @@ mod tests {
 
     #[test]
     fn test_hash_and_theta_screen_behavior() {
-        let mut table = ThetaHashTable::new(8, ResizeFactor::X8, 1.0, DEFAULT_UPDATE_SEED);
+        let mut table = TupleHashTable::<u64>::new(8, ResizeFactor::X8, 1.0, DEFAULT_UPDATE_SEED);
 
         // With MAX_THETA, hashes are computed normally.
         let hash1 = table.hash("test1");
@@ -437,36 +490,36 @@ mod tests {
 
         // With low theta, update should be screened out.
         table.theta = 1;
-        assert!(!table.try_insert("test3"));
+        assert!(!insert(&mut table, "test3"));
     }
 
     #[test]
-    fn test_try_insert() {
-        let mut table = ThetaHashTable::new(5, ResizeFactor::X8, 1.0, DEFAULT_UPDATE_SEED);
+    fn test_insert() {
+        let mut table = TupleHashTable::<u64>::new(5, ResizeFactor::X8, 1.0, DEFAULT_UPDATE_SEED);
 
-        assert!(table.try_insert("test_value"));
+        assert!(insert(&mut table, "test_value"));
         assert_eq!(table.num_retained(), 1);
         assert!(!table.is_empty());
 
-        // Try to insert the same value again (should fail)
-        assert!(!table.try_insert("test_value"));
+        // Insert the same value again: not a new entry, but the summary is merged.
+        assert!(!insert(&mut table, "test_value"));
         assert_eq!(table.num_retained(), 1);
+        assert_eq!(collect(&table), vec![(table.hash("test_value"), 2)]);
 
         // Force screening and verify insertion fails
         table.theta = 0;
-        assert!(!table.try_insert("screened"));
+        assert!(!insert(&mut table, "screened"));
         assert_eq!(table.num_retained(), 1);
         assert!(!table.is_empty());
     }
 
     #[test]
     fn test_insert_multiple_values() {
-        let mut table = ThetaHashTable::new(8, ResizeFactor::X8, 1.0, DEFAULT_UPDATE_SEED);
+        let mut table = TupleHashTable::<u64>::new(8, ResizeFactor::X8, 1.0, DEFAULT_UPDATE_SEED);
 
-        // Insert multiple distinct values
         let mut inserted_count = 0;
         for i in 0..10 {
-            if table.try_insert(format!("value_{}", i)) {
+            if insert(&mut table, format!("value_{}", i)) {
                 inserted_count += 1;
             }
         }
@@ -477,11 +530,23 @@ mod tests {
     }
 
     #[test]
+    fn test_summary_is_merged_on_collision() {
+        let mut table = TupleHashTable::<u64>::new(8, ResizeFactor::X8, 1.0, DEFAULT_UPDATE_SEED);
+
+        for _ in 0..5 {
+            insert(&mut table, "same_key");
+        }
+
+        assert_eq!(table.num_retained(), 1);
+        assert_eq!(collect(&table), vec![(table.hash("same_key"), 5)]);
+    }
+
+    #[test]
     fn test_resize() {
-        fn populate_values(table: &mut ThetaHashTable, count: usize) -> usize {
+        fn populate_values(table: &mut TupleHashTable<u64>, count: usize) -> usize {
             let mut inserted = 0;
             for i in 0..count {
-                if table.try_insert(format!("value_{}", i)) {
+                if insert(table, format!("value_{}", i)) {
                     inserted += 1;
                 }
             }
@@ -489,7 +554,8 @@ mod tests {
         }
 
         {
-            let mut table = ThetaHashTable::new(8, ResizeFactor::X2, 1.0, DEFAULT_UPDATE_SEED);
+            let mut table =
+                TupleHashTable::<u64>::new(8, ResizeFactor::X2, 1.0, DEFAULT_UPDATE_SEED);
 
             assert_eq!(table.entries.len(), 32);
 
@@ -497,23 +563,19 @@ mod tests {
             // Capacity = 32 * 0.5 = 16
             let inserted = populate_values(&mut table, 20);
 
-            // Table should have resized and all values should be inserted
             assert!(table.num_retained() > 0);
             assert_eq!(table.num_retained(), inserted);
             assert_eq!(table.entries.len(), 64);
         }
 
-        // Test different resize factors
         {
-            let mut table = ThetaHashTable::new(8, ResizeFactor::X4, 1.0, DEFAULT_UPDATE_SEED);
+            let mut table =
+                TupleHashTable::<u64>::new(8, ResizeFactor::X4, 1.0, DEFAULT_UPDATE_SEED);
 
             assert_eq!(table.entries.len(), 32);
 
-            // Insert enough values to trigger resize (50% threshold)
-            // Capacity = 32 * 0.5 = 16
             let inserted = populate_values(&mut table, 20);
 
-            // Table should have resized and all values should be inserted
             assert!(table.num_retained() > 0);
             assert_eq!(table.num_retained(), inserted);
             assert_eq!(table.entries.len(), 128);
@@ -522,7 +584,7 @@ mod tests {
 
     #[test]
     fn test_rebuild() {
-        let mut table = ThetaHashTable::new(5, ResizeFactor::X8, 1.0, DEFAULT_UPDATE_SEED);
+        let mut table = TupleHashTable::<u64>::new(5, ResizeFactor::X8, 1.0, DEFAULT_UPDATE_SEED);
 
         assert_eq!(table.lg_cur_size, 6);
         assert_eq!(table.entries.len(), 64);
@@ -530,10 +592,9 @@ mod tests {
 
         // Insert many values to trigger rebuild
         for i in 0..100 {
-            let _ = table.try_insert(format!("value_{}", i));
+            insert(&mut table, format!("value_{}", i));
         }
 
-        // After rebuild, theta should be reduced (rebuild is called automatically during insert)
         let new_theta = table.theta();
         assert!(
             new_theta < MAX_THETA,
@@ -542,7 +603,7 @@ mod tests {
 
         // Continue to insert values to trigger rebuild again
         for i in 100..200 {
-            let _ = table.try_insert(format!("value_{}", i));
+            insert(&mut table, format!("value_{}", i));
         }
 
         assert_eq!(table.lg_cur_size, 6);
@@ -552,11 +613,10 @@ mod tests {
 
     #[test]
     fn test_trim() {
-        let mut table = ThetaHashTable::new(5, ResizeFactor::X8, 1.0, DEFAULT_UPDATE_SEED);
+        let mut table = TupleHashTable::<u64>::new(5, ResizeFactor::X8, 1.0, DEFAULT_UPDATE_SEED);
 
-        // Insert more than k values
         for i in 0..100 {
-            let _ = table.try_insert(format!("value_{}", i));
+            insert(&mut table, format!("value_{}", i));
         }
 
         let before_trim = table.num_retained();
@@ -570,11 +630,10 @@ mod tests {
 
     #[test]
     fn test_trim_when_not_needed() {
-        let mut table = ThetaHashTable::new(8, ResizeFactor::X8, 1.0, DEFAULT_UPDATE_SEED);
+        let mut table = TupleHashTable::<u64>::new(8, ResizeFactor::X8, 1.0, DEFAULT_UPDATE_SEED);
 
-        // Insert fewer than k values
         for i in 0..10 {
-            let _ = table.try_insert(format!("value_{}", i));
+            insert(&mut table, format!("value_{}", i));
         }
 
         let before_trim = table.num_retained();
@@ -582,27 +641,24 @@ mod tests {
         table.trim();
         let after_trim = table.num_retained();
 
-        // Should not change if already <= k
         assert_eq!(before_trim, after_trim);
         assert_eq!(before_theta, table.theta());
     }
 
     #[test]
     fn test_reset() {
-        let mut table = ThetaHashTable::new(8, ResizeFactor::X8, 1.0, DEFAULT_UPDATE_SEED);
+        let mut table = TupleHashTable::<u64>::new(8, ResizeFactor::X8, 1.0, DEFAULT_UPDATE_SEED);
         let init_theta = table.theta();
         let init_lg_cur = table.lg_cur_size;
         let init_entries = table.entries.len();
 
-        // Insert some values
         for i in 0..10 {
-            let _ = table.try_insert(format!("value_{}", i));
+            insert(&mut table, format!("value_{}", i));
         }
 
         assert!(!table.is_empty());
         assert!(table.num_retained() > 0);
 
-        // Reset
         table.reset();
 
         assert!(table.is_empty());
@@ -615,7 +671,7 @@ mod tests {
 
     #[test]
     fn test_table_with_sampling() {
-        let mut table = ThetaHashTable::new(
+        let mut table = TupleHashTable::<u64>::new(
             8,
             ResizeFactor::X8,
             0.5, // sampling_probability = 0.5
@@ -623,48 +679,42 @@ mod tests {
         );
         assert_eq!(table.theta(), (MAX_THETA as f64 * 0.5) as u64);
 
-        // Insert some values
         for i in 0..10 {
-            let _ = table.try_insert(format!("value_{}", i));
+            insert(&mut table, format!("value_{}", i));
         }
 
         table.reset();
 
-        // With sampling_probability = 0.5, theta should be MAX_THETA * 0.5
         assert_eq!(table.theta(), (MAX_THETA as f64 * 0.5) as u64);
         assert!(table.is_empty());
     }
 
     #[test]
     fn test_iterator() {
-        let mut table = ThetaHashTable::new(8, ResizeFactor::X8, 1.0, DEFAULT_UPDATE_SEED);
+        let mut table = TupleHashTable::<u64>::new(8, ResizeFactor::X8, 1.0, DEFAULT_UPDATE_SEED);
 
-        // Insert some values
         let mut inserted_hashes = vec![];
         for i in 0..10 {
             let hash = table.hash(i);
-            if table.try_insert(i) {
+            if insert(&mut table, i) {
                 inserted_hashes.push(hash);
             }
         }
 
-        // Check iterator
-        let iter_hashes: Vec<u64> = table.iter().collect();
+        let iter_hashes: Vec<u64> = table.iter().map(|(hash, _)| hash).collect();
         assert_eq!(iter_hashes.len(), table.num_retained());
         assert_eq!(iter_hashes.len(), inserted_hashes.len());
 
-        // All inserted hashes should be in iterator
         for hash in &inserted_hashes {
             assert!(iter_hashes.contains(hash));
         }
 
-        // Iterator should not contain 0
         assert!(!iter_hashes.contains(&0));
     }
 
     #[test]
     fn test_empty_table_operations() {
-        let mut table = ThetaHashTable::new(8, ResizeFactor::X8, 1.0, DEFAULT_UPDATE_SEED);
+        let mut table = TupleHashTable::<u64>::new(8, ResizeFactor::X8, 1.0, DEFAULT_UPDATE_SEED);
 
         assert!(table.is_empty());
         assert_eq!(table.num_retained(), 0);
@@ -681,7 +731,7 @@ mod tests {
 
     #[test]
     fn test_rebuild_preserves_entries_less_than_kth() {
-        let mut table = ThetaHashTable::new(5, ResizeFactor::X8, 1.0, DEFAULT_UPDATE_SEED);
+        let mut table = TupleHashTable::<u64>::new(5, ResizeFactor::X8, 1.0, DEFAULT_UPDATE_SEED);
         let k = 1u64 << 5; // k = 32
 
         // Insert many values to trigger rebuild
@@ -690,7 +740,7 @@ mod tests {
         loop {
             let hash = table.hash(i);
             i += 1;
-            if table.try_insert(i - 1) {
+            if insert(&mut table, i - 1) {
                 inserted_hashes.push(hash);
             }
             if table.num_retained() >= k as usize {
@@ -703,7 +753,7 @@ mod tests {
         loop {
             let hash = table.hash(i);
             i += 1;
-            if table.try_insert(i - 1) {
+            if insert(&mut table, i - 1) {
                 inserted_hashes.push(hash);
             }
             if table.num_retained() >= rebuild_threshold {
@@ -715,7 +765,7 @@ mod tests {
         loop {
             let hash = table.hash(i);
             i += 1;
-            if table.try_insert(i - 1) {
+            if insert(&mut table, i - 1) {
                 inserted_hashes.push(hash);
                 break;
             }
@@ -724,7 +774,7 @@ mod tests {
         // assert all entries are less than kth
         inserted_hashes.sort();
         let kth = inserted_hashes[k as usize];
-        assert!(table.iter().all(|e| e < kth));
+        assert!(table.iter().all(|(hash, _)| hash < kth));
         assert_eq!(table.theta(), kth);
     }
 }
