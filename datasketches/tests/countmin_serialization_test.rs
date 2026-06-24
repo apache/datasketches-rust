@@ -53,17 +53,17 @@ fn assert_cpp_snapshot(
 
 #[test]
 fn test_deserialize_cpp_empty_snapshot() {
-    assert_cpp_snapshot("countmin_empty_cpp.sk", 9001, 1, 5, 0);
+    assert_cpp_snapshot("count_min-empty.bin", 9001, 1, 5, 0);
 }
 
 #[test]
 fn test_deserialize_cpp_non_empty_snapshot() {
-    assert_cpp_snapshot("countmin_non_empty_cpp.sk", 9001, 3, 1024, 2850);
+    assert_cpp_snapshot("count_min-non-empty.bin", 9001, 3, 1024, 2850);
 }
 
 #[test]
 fn test_deserialize_cpp_snapshot_with_wrong_seed() {
-    let path = serialization_test_data("cpp_generated_files", "countmin_non_empty_cpp.sk");
+    let path = serialization_test_data("cpp_generated_files", "count_min-non-empty.bin");
     let bytes = fs::read(&path).unwrap();
 
     let err = CountMinSketch::<u64>::deserialize_with_seed(&bytes, 9000).unwrap_err();
