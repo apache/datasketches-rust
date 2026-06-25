@@ -20,6 +20,7 @@
 //! This linear-probing hash map supports a reverse purge operation that removes
 //! keys with non-positive counts by scanning clusters from the back to the front.
 
+use std::borrow::Borrow;
 use std::hash::Hash;
 use std::hash::Hasher;
 
@@ -86,6 +87,43 @@ impl<T: Eq + Hash> ReversePurgeItemHashMap<T> {
         }
         if self.states[probe] == 0 {
             self.keys[probe] = Some(key);
+            self.values[probe] = adjust_amount;
+            self.states[probe] = drift as u16;
+            self.num_active += 1;
+        } else {
+            self.values[probe] += adjust_amount;
+        }
+    }
+
+    /// Adds `adjust_amount` to the value for a borrowed `key`, inserting if absent.
+    ///
+    /// Behaves like [`adjust_or_put_value`](Self::adjust_or_put_value) but takes
+    /// the key by reference and only allocates an owned key (via `key.to_owned()`)
+    /// on the insert path, so incrementing an already-present key is allocation
+    /// free. The `Borrow` contract guarantees the borrowed and owned forms hash
+    /// and compare identically, so lookups land on the same slot as the owned API.
+    pub fn adjust_or_put_value_borrowed<Q>(&mut self, key: &Q, adjust_amount: u64)
+    where
+        T: Borrow<Q>,
+        Q: Eq + Hash + ToOwned<Owned = T> + ?Sized,
+    {
+        let mask = self.keys.len() - 1;
+        let mut probe = (hash_item(key) as usize) & mask;
+        let mut drift: usize = 1;
+        while self.states[probe] != 0 {
+            let matches = self.keys[probe]
+                .as_ref()
+                .map(|existing| existing.borrow() == key)
+                .unwrap_or(false);
+            if matches {
+                break;
+            }
+            probe = (probe + 1) & mask;
+            drift += 1;
+            debug_assert!(drift < DRIFT_LIMIT, "drift limit exceeded");
+        }
+        if self.states[probe] == 0 {
+            self.keys[probe] = Some(key.to_owned());
             self.values[probe] = adjust_amount;
             self.states[probe] = drift as u16;
             self.num_active += 1;
@@ -312,7 +350,7 @@ impl<'a, T> Iterator for ReversePurgeItemIter<'a, T> {
 }
 
 #[inline]
-fn hash_item<T: Hash>(item: &T) -> u64 {
+fn hash_item<T: Hash + ?Sized>(item: &T) -> u64 {
     let mut hasher = MurmurHash3X64128::default();
     item.hash(&mut hasher);
     hasher.finish()

@@ -17,6 +17,7 @@
 
 //! Frequent items sketch implementations.
 
+use std::borrow::Borrow;
 use std::hash::Hash;
 
 use crate::codec::SketchBytes;
@@ -260,6 +261,57 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
         assert!(count > 0, "count may not be negative");
         self.stream_weight += count;
         self.hash_map.adjust_or_put_value(item, count);
+        self.maybe_resize_or_purge();
+    }
+
+    /// Updates the sketch with a borrowed item and a count of one.
+    ///
+    /// Equivalent to [`update`](Self::update) but takes the item by reference and
+    /// only allocates an owned item when it is newly inserted, so updating an
+    /// already-tracked item is allocation free.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use datasketches::frequencies::FrequentItemsSketch;
+    /// let mut sketch = FrequentItemsSketch::<String>::new(64);
+    /// sketch.update_borrowed("nginx");
+    /// sketch.update_borrowed("nginx"); // no allocation on the second hit
+    /// assert!(sketch.estimate(&"nginx".to_string()) >= 2);
+    /// ```
+    pub fn update_borrowed<Q>(&mut self, item: &Q)
+    where
+        T: Borrow<Q>,
+        Q: Eq + Hash + ToOwned<Owned = T> + ?Sized,
+    {
+        self.update_with_count_borrowed(item, 1);
+    }
+
+    /// Updates the sketch with a borrowed item and count.
+    ///
+    /// Equivalent to [`update_with_count`](Self::update_with_count) but takes the
+    /// item by reference and only allocates an owned item when it is newly
+    /// inserted. A count of zero is a no-op.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use datasketches::frequencies::FrequentItemsSketch;
+    /// let mut sketch = FrequentItemsSketch::<String>::new(64);
+    /// sketch.update_with_count_borrowed("gzip", 3);
+    /// assert!(sketch.estimate(&"gzip".to_string()) >= 3);
+    /// ```
+    pub fn update_with_count_borrowed<Q>(&mut self, item: &Q, count: u64)
+    where
+        T: Borrow<Q>,
+        Q: Eq + Hash + ToOwned<Owned = T> + ?Sized,
+    {
+        if count == 0 {
+            return;
+        }
+        assert!(count > 0, "count may not be negative");
+        self.stream_weight += count;
+        self.hash_map.adjust_or_put_value_borrowed(item, count);
         self.maybe_resize_or_purge();
     }
 
