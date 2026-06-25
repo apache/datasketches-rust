@@ -134,6 +134,10 @@ def generate_cpp_files(workspace_dir, project_root):
     # 4. Clone repository
     repo_url = "https://github.com/apache/datasketches-cpp.git"
     branch = "master"
+    # Temporary e2e checkout for apache/datasketches-cpp#505. After that PR is
+    # merged, pin this to the merged master commit and remove the extra fetch.
+    commit = "af4436280bdab53e0063268e92ff29b3fdcb1b07"
+    fetch_ref = "refs/pull/505/head"
     run_command([
         "git", "clone",
         "--depth", "1",
@@ -142,6 +146,8 @@ def generate_cpp_files(workspace_dir, project_root):
         repo_url,
         str(temp_dir)
     ])
+    run_command(["git", "fetch", "--depth", "1", "origin", fetch_ref], cwd=temp_dir)
+    run_command(["git", "checkout", "--detach", commit], cwd=temp_dir)
 
     # 5. Build and Run CMake
     build_dir = temp_dir / "build"
@@ -166,15 +172,15 @@ def generate_cpp_files(workspace_dir, project_root):
     output_dir.mkdir(parents=True, exist_ok=True)
 
     files_copied = 0
-    # Search recursively in build directory for *_cpp.sk
-    for file_path in build_dir.rglob("*_cpp.sk"):
-        # Avoid copying from CMakeFiles or other intermediate dirs if possible, but the pattern is specific enough
-        shutil.copy2(file_path, output_dir)
-        print(f"Copied: {file_path.name}")
-        files_copied += 1
+
+    for pattern in ("*_cpp.sk", "count_min-*.bin"):
+        for file_path in build_dir.rglob(pattern):
+            shutil.copy2(file_path, output_dir)
+            print(f"Copied: {file_path.name}")
+            files_copied += 1
 
     if files_copied == 0:
-        print("Warning: No *_cpp.sk files were found to copy.")
+        print("Warning: No C++ serialization snapshots were found to copy.")
     else:
         print(f"Successfully copied {files_copied} files.")
 
