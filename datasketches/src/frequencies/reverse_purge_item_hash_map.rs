@@ -60,7 +60,14 @@ impl<T: Eq + Hash> ReversePurgeItemHashMap<T> {
     }
 
     /// Returns the value for `key`, or zero if the key is not present.
-    pub fn get(&self, key: &T) -> u64 {
+    ///
+    /// The key may be any borrowed form of `T` (e.g. `&str` for a `String` map),
+    /// matching the `HashMap::get` convention.
+    pub fn get<Q>(&self, key: &Q) -> u64
+    where
+        T: Borrow<Q>,
+        Q: Eq + Hash + ?Sized,
+    {
         let probe = self.hash_probe(key);
         if self.states[probe] > 0 {
             return self.values[probe];
@@ -98,14 +105,14 @@ impl<T: Eq + Hash> ReversePurgeItemHashMap<T> {
     /// Adds `adjust_amount` to the value for a borrowed `key`, inserting if absent.
     ///
     /// Behaves like [`adjust_or_put_value`](Self::adjust_or_put_value) but takes
-    /// the key by reference and only allocates an owned key (via `key.to_owned()`)
+    /// the key by reference and only allocates an owned key (via `T: From<&Q>`)
     /// on the insert path, so incrementing an already-present key is allocation
     /// free. The `Borrow` contract guarantees the borrowed and owned forms hash
     /// and compare identically, so lookups land on the same slot as the owned API.
-    pub fn adjust_or_put_value_borrowed<Q>(&mut self, key: &Q, adjust_amount: u64)
+    pub fn adjust_or_put_value_borrowed<'a, Q>(&mut self, key: &'a Q, adjust_amount: u64)
     where
-        T: Borrow<Q>,
-        Q: Eq + Hash + ToOwned<Owned = T> + ?Sized,
+        T: Borrow<Q> + From<&'a Q>,
+        Q: Eq + Hash + ?Sized,
     {
         let mask = self.keys.len() - 1;
         let mut probe = (hash_item(key) as usize) & mask;
@@ -123,7 +130,7 @@ impl<T: Eq + Hash> ReversePurgeItemHashMap<T> {
             debug_assert!(drift < DRIFT_LIMIT, "drift limit exceeded");
         }
         if self.states[probe] == 0 {
-            self.keys[probe] = Some(key.to_owned());
+            self.keys[probe] = Some(key.into());
             self.values[probe] = adjust_amount;
             self.states[probe] = drift as u16;
             self.num_active += 1;
@@ -266,13 +273,17 @@ impl<T: Eq + Hash> ReversePurgeItemHashMap<T> {
         self.states[probe] > 0
     }
 
-    fn hash_probe(&self, key: &T) -> usize {
+    fn hash_probe<Q>(&self, key: &Q) -> usize
+    where
+        T: Borrow<Q>,
+        Q: Eq + Hash + ?Sized,
+    {
         let mask = self.keys.len() - 1;
         let mut probe = (hash_item(key) as usize) & mask;
         while self.states[probe] > 0 {
             let matches = self.keys[probe]
                 .as_ref()
-                .map(|existing| existing == key)
+                .map(|existing| existing.borrow() == key)
                 .unwrap_or(false);
             if matches {
                 break;
