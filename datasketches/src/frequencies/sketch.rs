@@ -159,7 +159,11 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     /// sketch.update_with_count(10, 2);
     /// assert!(sketch.estimate(&10) >= 2);
     /// ```
-    pub fn estimate(&self, item: &T) -> u64 {
+    pub fn estimate<Q>(&self, item: &Q) -> u64
+    where
+        T: Borrow<Q>,
+        Q: Eq + Hash + ?Sized,
+    {
         let value = self.hash_map.get(item);
         if value > 0 { value + self.offset } else { 0 }
     }
@@ -168,7 +172,11 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     ///
     /// This value is guaranteed to be no larger than the true frequency. If the item is not
     /// tracked, the lower bound is zero.
-    pub fn lower_bound(&self, item: &T) -> u64 {
+    pub fn lower_bound<Q>(&self, item: &Q) -> u64
+    where
+        T: Borrow<Q>,
+        Q: Eq + Hash + ?Sized,
+    {
         self.hash_map.get(item)
     }
 
@@ -176,7 +184,11 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     ///
     /// This value is guaranteed to be no smaller than the true frequency. If the item is tracked,
     /// this is `item_count + offset`.
-    pub fn upper_bound(&self, item: &T) -> u64 {
+    pub fn upper_bound<Q>(&self, item: &Q) -> u64
+    where
+        T: Borrow<Q>,
+        Q: Eq + Hash + ?Sized,
+    {
         self.hash_map.get(item) + self.offset
     }
 
@@ -277,12 +289,12 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     /// let mut sketch = FrequentItemsSketch::<String>::new(64);
     /// sketch.update_borrowed("nginx");
     /// sketch.update_borrowed("nginx"); // no allocation on the second hit
-    /// assert!(sketch.estimate(&"nginx".to_string()) >= 2);
+    /// assert!(sketch.estimate("nginx") >= 2);
     /// ```
-    pub fn update_borrowed<Q>(&mut self, item: &Q)
+    pub fn update_borrowed<'a, Q>(&mut self, item: &'a Q)
     where
-        T: Borrow<Q>,
-        Q: Eq + Hash + ToOwned<Owned = T> + ?Sized,
+        T: Borrow<Q> + From<&'a Q>,
+        Q: Eq + Hash + ?Sized,
     {
         self.update_with_count_borrowed(item, 1);
     }
@@ -299,12 +311,12 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     /// # use datasketches::frequencies::FrequentItemsSketch;
     /// let mut sketch = FrequentItemsSketch::<String>::new(64);
     /// sketch.update_with_count_borrowed("gzip", 3);
-    /// assert!(sketch.estimate(&"gzip".to_string()) >= 3);
+    /// assert!(sketch.estimate("gzip") >= 3);
     /// ```
-    pub fn update_with_count_borrowed<Q>(&mut self, item: &Q, count: u64)
+    pub fn update_with_count_borrowed<'a, Q>(&mut self, item: &'a Q, count: u64)
     where
-        T: Borrow<Q>,
-        Q: Eq + Hash + ToOwned<Owned = T> + ?Sized,
+        T: Borrow<Q> + From<&'a Q>,
+        Q: Eq + Hash + ?Sized,
     {
         if count == 0 {
             return;
