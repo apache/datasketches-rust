@@ -287,16 +287,16 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     /// ```
     /// # use datasketches::frequencies::FrequentItemsSketch;
     /// let mut sketch = FrequentItemsSketch::<String>::new(64);
-    /// sketch.update_borrowed("nginx");
-    /// sketch.update_borrowed("nginx"); // no allocation on the second hit
+    /// sketch.update_ref("nginx");
+    /// sketch.update_ref("nginx"); // no allocation on the second hit
     /// assert!(sketch.estimate("nginx") >= 2);
     /// ```
-    pub fn update_borrowed<'a, Q>(&mut self, item: &'a Q)
+    pub fn update_ref<Q>(&mut self, item: &Q)
     where
-        T: Borrow<Q> + From<&'a Q>,
-        Q: Eq + Hash + ?Sized,
+        T: Borrow<Q>,
+        Q: Eq + Hash + ToOwned<Owned = T> + ?Sized,
     {
-        self.update_with_count_borrowed(item, 1);
+        self.update_with_count_ref(item, 1);
     }
 
     /// Updates the sketch with a borrowed item and count.
@@ -310,20 +310,20 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     /// ```
     /// # use datasketches::frequencies::FrequentItemsSketch;
     /// let mut sketch = FrequentItemsSketch::<String>::new(64);
-    /// sketch.update_with_count_borrowed("gzip", 3);
+    /// sketch.update_with_count_ref("gzip", 3);
     /// assert!(sketch.estimate("gzip") >= 3);
     /// ```
-    pub fn update_with_count_borrowed<'a, Q>(&mut self, item: &'a Q, count: u64)
+    pub fn update_with_count_ref<Q>(&mut self, item: &Q, count: u64)
     where
-        T: Borrow<Q> + From<&'a Q>,
-        Q: Eq + Hash + ?Sized,
+        T: Borrow<Q>,
+        Q: Eq + Hash + ToOwned<Owned = T> + ?Sized,
     {
         if count == 0 {
             return;
         }
         assert!(count > 0, "count may not be negative");
         self.stream_weight += count;
-        self.hash_map.adjust_or_put_value_borrowed(item, count);
+        self.hash_map.adjust_or_put_value_ref(item, count);
         self.maybe_resize_or_purge();
     }
 
