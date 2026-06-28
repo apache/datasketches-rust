@@ -27,7 +27,7 @@ Rustup will read the `rust-toolchain.toml` file and set up everything else autom
 
 ```shell
 cargo version
-# cargo 1.85.0 (<hash> 2024-12-31)
+# cargo 1.86.0 (<hash> <date>)
 ```
 
 To keep code style consistent, run `cargo x lint --fix` to automatically fix any style issues before committing your changes.

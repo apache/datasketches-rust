@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#![cfg(feature = "density")]
+
 use datasketches::density::DensityKernel;
 use datasketches::density::DensitySketch;
 use datasketches::density::DensityValue;

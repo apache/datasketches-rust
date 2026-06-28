@@ -381,6 +381,11 @@ impl ThetaHashTable {
     fn get_stride(key: u64, lg_size: u8) -> usize {
         (2 * ((key >> (lg_size)) & STRIDE_MASK) + 1) as usize
     }
+
+    /// Returns the estimated size of the heap allocations in bytes
+    pub fn estimated_size(&self) -> usize {
+        self.entries.capacity() * std::mem::size_of::<u64>()
+    }
 }
 
 /// Compute initial lg_size for hash table based on target lg_size, minimum lg_size, and resize

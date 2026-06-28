@@ -30,7 +30,6 @@ use crate::codec::family::Family;
 use crate::common::NumStdDev;
 use crate::common::ResizeFactor;
 use crate::common::binomial_bounds;
-use crate::common::canonical_double;
 use crate::error::Error;
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::hash::compute_seed_hash;
@@ -74,7 +73,7 @@ pub trait ThetaSketchView: private::Sealed {
     fn is_empty(&self) -> bool;
 
     /// Returns an iterator over retained hash values.
-    fn iter<'a>(&'a self) -> impl Iterator<Item = u64> + 'a;
+    fn iter(&self) -> impl Iterator<Item = u64> + '_;
 
     /// Returns number of retained hash values.
     fn num_retained(&self) -> usize;
@@ -107,48 +106,25 @@ impl ThetaSketch {
 
     /// Update the sketch with a hashable value.
     ///
-    /// For `f32`/`f64` values, use `update_f32`/`update_f64` instead.
+    /// You may use [`hash_value`](crate::hash_value) wrappers when matching other datasketches
+    /// implementations require a specific value hashing strategy.
     ///
     /// # Examples
     ///
     /// ```
-    /// # use datasketches::theta::ThetaSketch;
+    /// use datasketches::hash_value;
+    /// use datasketches::theta::ThetaSketch;
+    ///
     /// let mut sketch = ThetaSketch::builder().build();
     /// sketch.update("apple");
+    /// assert!(sketch.estimate() >= 1.0);
+    ///
+    /// let mut sketch = ThetaSketch::builder().build();
+    /// sketch.update(hash_value::raw_bytes::from_str("apple"));
     /// assert!(sketch.estimate() >= 1.0);
     /// ```
     pub fn update<T: Hash>(&mut self, value: T) {
         self.table.try_insert(value);
-    }
-
-    /// Update the sketch with a f64 value.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use datasketches::theta::ThetaSketch;
-    /// let mut sketch = ThetaSketch::builder().build();
-    /// sketch.update_f64(1.0);
-    /// assert!(sketch.estimate() >= 1.0);
-    /// ```
-    pub fn update_f64(&mut self, value: f64) {
-        // Canonicalize double for compatibility with Java
-        let canonical = canonical_double(value);
-        self.update(canonical);
-    }
-
-    /// Update the sketch with a f32 value.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use datasketches::theta::ThetaSketch;
-    /// let mut sketch = ThetaSketch::builder().build();
-    /// sketch.update_f32(1.0);
-    /// assert!(sketch.estimate() >= 1.0);
-    /// ```
-    pub fn update_f32(&mut self, value: f32) {
-        self.update_f64(value as f64);
     }
 
     /// Return cardinality estimate
@@ -337,6 +313,11 @@ impl ThetaSketch {
         )
         .expect("theta should always be valid")
     }
+
+    /// Returns the estimated size of the sketch in bytes
+    pub fn estimated_size(&self) -> usize {
+        std::mem::size_of::<Self>() + self.table.estimated_size()
+    }
 }
 
 impl ThetaSketchView for ThetaSketch {
@@ -352,7 +333,7 @@ impl ThetaSketchView for ThetaSketch {
         ThetaSketch::is_empty(self)
     }
 
-    fn iter<'a>(&'a self) -> impl Iterator<Item = u64> + 'a {
+    fn iter(&self) -> impl Iterator<Item = u64> + '_ {
         ThetaSketch::iter(self)
     }
 
@@ -912,6 +893,11 @@ impl CompactThetaSketch {
             empty,
         })
     }
+
+    /// Returns the estimated size of the sketch in bytes
+    pub fn estimated_size(&self) -> usize {
+        std::mem::size_of::<Self>() + self.entries.capacity() * std::mem::size_of::<u64>()
+    }
 }
 
 impl ThetaSketchView for CompactThetaSketch {
@@ -927,7 +913,7 @@ impl ThetaSketchView for CompactThetaSketch {
         CompactThetaSketch::is_empty(self)
     }
 
-    fn iter<'a>(&'a self) -> impl Iterator<Item = u64> + 'a {
+    fn iter(&self) -> impl Iterator<Item = u64> + '_ {
         CompactThetaSketch::iter(self)
     }
 

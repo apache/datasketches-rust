@@ -29,6 +29,7 @@ use crate::common::NumStdDev;
 use crate::error::Error;
 use crate::hll::Coupon;
 use crate::hll::estimator::HipEstimator;
+use crate::hll::serialization::COMPACT_FLAG_MASK;
 use crate::hll::serialization::COUPON_SIZE_BYTES;
 use crate::hll::serialization::CUR_MODE_HLL;
 use crate::hll::serialization::HLL_PREAMBLE_SIZE;
@@ -230,10 +231,10 @@ impl Array4 {
             let mut new_aux = None;
 
             for (slot, old_actual_val) in old_aux.into_iter() {
-                debug_assert_ne!(
+                debug_assert_eq!(
                     self.get_raw(slot),
                     AUX_TOKEN,
-                    "AuxMap contains slow without AUX_TOKEN"
+                    "AuxMap contains slot != AUX_TOKEN"
                 );
 
                 let new_shifted = old_actual_val - new_cur_min;
@@ -388,8 +389,10 @@ impl Array4 {
         bytes.write_u8(lg_config_k);
         bytes.write_u8(0); // unused for HLL mode
 
-        // Write flags
-        let mut flags = 0u8;
+        // Write flags.
+        // COMPACT_FLAG_MASK is always set: aux map entries are written as a compact sequential
+        // list of populated entries only.
+        let mut flags = COMPACT_FLAG_MASK;
         if self.estimator.is_out_of_order() {
             flags |= OUT_OF_ORDER_FLAG_MASK;
         }
@@ -421,6 +424,16 @@ impl Array4 {
         }
 
         bytes.into_bytes()
+    }
+
+    /// Returns the estimated size of the heap allocations in bytes
+    pub fn estimated_size(&self) -> usize {
+        self.bytes.len()
+            + self
+                .aux_map
+                .as_ref()
+                .map(|a| a.estimated_size())
+                .unwrap_or(0)
     }
 }
 
@@ -502,5 +515,30 @@ mod tests {
             arr.estimator.kxq1() < 0.001,
             "kxq1 should be small (1/2^40 is tiny)"
         );
+    }
+
+    #[test]
+    fn test_shift_cur_min_rebuilds_aux_entry() {
+        let lg_config_k = 4;
+        let num_slots = 1_u32 << lg_config_k;
+        let mut arr = Array4::new(lg_config_k);
+
+        arr.update(Coupon::pack(0, 15));
+        assert_eq!(arr.get_raw(0), AUX_TOKEN);
+        assert_eq!(arr.aux_map.as_ref().and_then(|aux| aux.get(0)), Some(15));
+
+        for slot in 1..num_slots {
+            arr.update(Coupon::pack(slot, 1));
+        }
+
+        assert_eq!(arr.cur_min, 1);
+        assert_eq!(arr.num_at_cur_min, num_slots - 1);
+        assert_eq!(arr.get_raw(0), 14);
+        assert_eq!(arr.get(0), 15);
+        assert!(arr.aux_map.is_none());
+
+        for slot in 1..num_slots {
+            assert_eq!(arr.get(slot), 1);
+        }
     }
 }

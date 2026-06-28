@@ -41,7 +41,8 @@ github:
       required_status_checks:
         contexts:
           - Required
-      required_pull_request_reviews: {}
+      required_pull_request_reviews:
+        required_approving_review_count: 1
 
   dependabot_alerts:  true
   dependabot_updates: false

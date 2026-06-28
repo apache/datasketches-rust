@@ -71,7 +71,7 @@ def generate_java_files(workspace_dir, project_dir):
 
     # 4. Clone repository
     repo_url = "https://github.com/apache/datasketches-java.git"
-    branch = "9.0.0" # FIXME: temporarily use fixed branch until mvn issue is resolved
+    branch = "9.0.0"
     run_command([
         "git", "clone",
         "--depth", "1",
@@ -133,11 +133,11 @@ def generate_cpp_files(workspace_dir, project_root):
 
     # 4. Clone repository
     repo_url = "https://github.com/apache/datasketches-cpp.git"
-    branch = "master"
+    commit = "401423367055acdf7502e8ed3126730a08039d91"
     run_command([
         "git", "clone",
         "--depth", "1",
-        "--branch", branch,
+        "--revision", commit,
         "--single-branch",
         repo_url,
         str(temp_dir)
@@ -166,12 +166,12 @@ def generate_cpp_files(workspace_dir, project_root):
     output_dir.mkdir(parents=True, exist_ok=True)
 
     files_copied = 0
-    # Search recursively in build directory for *_cpp.sk
+
     for file_path in build_dir.rglob("*_cpp.sk"):
-        # Avoid copying from CMakeFiles or other intermediate dirs if possible, but the pattern is specific enough
         shutil.copy2(file_path, output_dir)
         print(f"Copied: {file_path.name}")
         files_copied += 1
+
 
     if files_copied == 0:
         print("Warning: No *_cpp.sk files were found to copy.")

@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#![cfg(feature = "bloom")]
+
 mod common;
 
 use std::fs;

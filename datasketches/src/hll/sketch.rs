@@ -158,8 +158,11 @@ impl HllSketch {
 
     /// Update the sketch with a value.
     ///
-    /// Accepts any type that implements [`Hash`].  The value is hashed and converted to
+    /// Accepts any type that implements [`Hash`]. The value is hashed and converted to
     /// an internal coupon, which is then inserted into the sketch.
+    ///
+    /// You may use [`hash_value`](crate::hash_value) wrappers when matching other datasketches
+    /// implementations require a specific value hashing strategy.
     ///
     /// If you need to insert the same logical value into multiple sketches, consider
     /// pre-computing the coupon with [`Coupon::from_hash`] and calling
@@ -171,8 +174,13 @@ impl HllSketch {
     /// ```
     /// # use datasketches::hll::HllSketch;
     /// # use datasketches::hll::HllType;
+    /// # use datasketches::hash_value;
     /// let mut sketch = HllSketch::new(10, HllType::Hll8);
     /// sketch.update("apple");
+    /// assert!(sketch.estimate() >= 1.0);
+    ///
+    /// let mut sketch = HllSketch::new(10, HllType::Hll8);
+    /// sketch.update(hash_value::raw_bytes::from_str("apple"));
     /// assert!(sketch.estimate() >= 1.0);
     /// ```
     pub fn update<T: Hash>(&mut self, value: T) {
@@ -414,6 +422,19 @@ impl HllSketch {
             Mode::Array6(arr) => arr.serialize(self.lg_config_k),
             Mode::Array8(arr) => arr.serialize(self.lg_config_k),
         }
+    }
+
+    /// Returns the estimated size of the sketch in bytes
+    pub fn estimated_size(&self) -> usize {
+        let heap_size = match &self.mode {
+            Mode::List { list, .. } => list.container().estimated_size(),
+            Mode::Set { set, .. } => set.container().estimated_size(),
+            Mode::Array4(arr) => arr.estimated_size(),
+            Mode::Array6(arr) => arr.estimated_size(),
+            Mode::Array8(arr) => arr.estimated_size(),
+        };
+
+        std::mem::size_of::<Self>() + heap_size
     }
 }
 

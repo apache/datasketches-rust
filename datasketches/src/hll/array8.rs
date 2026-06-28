@@ -344,6 +344,11 @@ impl Array8 {
 
         bytes.into_bytes()
     }
+
+    /// Returns the estimated size of the heap allocations in bytes
+    pub fn estimated_size(&self) -> usize {
+        self.bytes.len()
+    }
 }
 
 #[cfg(test)]

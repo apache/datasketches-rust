@@ -15,12 +15,15 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#![cfg(feature = "hll")]
+
 mod common;
 
 use std::fs;
 use std::path::PathBuf;
 
 use common::serialization_test_data;
+use datasketches::hash_value::natural_extend;
 use datasketches::hll::HllSketch;
 use datasketches::hll::HllType;
 
@@ -127,6 +130,61 @@ fn test_update_after_deserialize_list_mode() {
             (est - 2.0).abs() < 0.1,
             "{hll_type:?}: expected estimate close to 2.0 after update post-deserialize, got {est}"
         );
+    }
+}
+
+#[test]
+fn test_serialized_bytes_match_reference_files_for_coupon_modes() {
+    fn serialized_mode_name(bytes: &[u8]) -> &'static str {
+        // The HLL preamble stores current mode in the low two bits of byte 7.
+        match bytes[7] & 0x3 {
+            0 => "List",
+            1 => "Set",
+            2 => "HLL",
+            _ => "unknown",
+        }
+    }
+
+    for (hll_type, type_name) in [
+        (HllType::Hll4, "hll4"),
+        (HllType::Hll6, "hll6"),
+        (HllType::Hll8, "hll8"),
+    ] {
+        for (n, mode) in [(0_u32, "List"), (1, "List"), (10, "Set"), (100, "Set")] {
+            // Fixture generators use lg_k 12 and update the sketch with 0..n.
+            let mut sketch = HllSketch::new(12, hll_type);
+            for value in 0..n {
+                sketch.update(natural_extend::from_u32(value));
+            }
+
+            let bytes = sketch.serialize();
+            assert_eq!(
+                serialized_mode_name(&bytes),
+                mode,
+                "Rust {type_name} n{n} should serialize in {mode} mode"
+            );
+
+            for (dir, suffix) in [
+                ("java_generated_files", "java"),
+                ("cpp_generated_files", "cpp"),
+            ] {
+                let filename = format!("{type_name}_n{n}_{suffix}.sk");
+                let path = serialization_test_data(dir, &filename);
+                let expected = fs::read(&path).unwrap();
+                assert_eq!(
+                    serialized_mode_name(&expected),
+                    mode,
+                    "{} should be a {mode} mode fixture",
+                    path.display()
+                );
+                assert_eq!(
+                    bytes,
+                    expected,
+                    "Rust {type_name} n{n} {mode} bytes must match {}",
+                    path.display()
+                );
+            }
+        }
     }
 }
 

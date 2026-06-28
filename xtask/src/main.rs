@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::path::Path;
 use std::process::Command as StdCommand;
 
 use clap::Parser;
@@ -29,6 +30,7 @@ struct Command {
 impl Command {
     fn run(self) {
         match self.sub {
+            SubCommand::Check(cmd) => cmd.run(),
             SubCommand::Lint(cmd) => cmd.run(),
             SubCommand::Test(cmd) => cmd.run(),
         }
@@ -37,10 +39,28 @@ impl Command {
 
 #[derive(Subcommand)]
 enum SubCommand {
+    #[clap(about = "Check datasketches under the feature matrix.")]
+    Check(CommandCheck),
     #[clap(about = "Run format and clippy checks.")]
     Lint(CommandLint),
     #[clap(about = "Run unit tests.")]
     Test(CommandTest),
+}
+
+#[derive(Parser)]
+#[clap(name = "check")]
+struct CommandCheck {}
+
+impl CommandCheck {
+    fn run(self) {
+        let features = datasketches_features();
+
+        run_command(make_check_cmd(&[]));
+        for feature in features.chunks(1) {
+            run_command(make_check_cmd(feature));
+        }
+        run_command(make_check_cmd(&features));
+    }
 }
 
 #[derive(Parser)]
@@ -51,8 +71,34 @@ struct CommandTest {
 
 impl CommandTest {
     fn run(self) {
-        run_command(make_test_cmd(self.no_capture, &[]));
+        let features = datasketches_features();
+        run_command(make_test_cmd(self.no_capture, &features));
     }
+}
+
+fn datasketches_features() -> Vec<String> {
+    use cargo_metadata::Metadata;
+    use cargo_metadata::MetadataCommand;
+
+    let datasketches_manifest = Path::new(env!("CARGO_WORKSPACE_DIR")).join("Cargo.toml");
+
+    let Metadata { packages, .. } = MetadataCommand::new()
+        .manifest_path(datasketches_manifest)
+        .exec()
+        .expect("failed to get cargo metadata");
+
+    let pkg = packages
+        .into_iter()
+        .find(|p| p.name == "datasketches")
+        .expect("failed to find datasketches package");
+
+    let mut features = pkg
+        .features
+        .into_keys()
+        .filter(|feature| feature != "default")
+        .collect::<Vec<_>>();
+    features.sort();
+    features
 }
 
 #[derive(Parser)]
@@ -100,14 +146,31 @@ fn run_command(mut cmd: StdCommand) {
     assert!(status.success(), "command failed: {status}");
 }
 
-fn make_test_cmd(no_capture: bool, features: &[&str]) -> StdCommand {
+fn make_test_cmd(no_capture: bool, features: &[String]) -> StdCommand {
     let mut cmd = find_command("cargo");
     cmd.args(["test", "--workspace", "--no-default-features"]);
-    if !features.is_empty() {
-        cmd.args(["--features", features.join(",").as_str()]);
+    for feature in features {
+        cmd.args(["--features", feature]);
     }
     if no_capture {
         cmd.args(["--", "--nocapture"]);
+    }
+    cmd
+}
+
+fn make_check_cmd(features: &[String]) -> StdCommand {
+    let mut cmd = find_command("cargo");
+    cmd.env("RUSTFLAGS", "-Dwarnings");
+    cmd.args([
+        "+nightly",
+        "check",
+        "--package",
+        "datasketches",
+        "--all-targets",
+        "--no-default-features",
+    ]);
+    for feature in features {
+        cmd.args(["--features", feature]);
     }
     cmd
 }

@@ -17,7 +17,7 @@
 
 [package]
 name = "datasketches"
-version = "0.2.0"
+version = "0.3.0"
 
 edition.workspace = true
 homepage.workspace = true
@@ -33,6 +33,19 @@ keywords = ["sketch", "hyperloglog", "probabilistic"]
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
+
+[features]
+default = []
+
+# Each sketch has its own feature, so that users can opt in to only the sketches they need.
+bloom = []
+countmin = []
+cpc = []
+density = []
+frequencies = []
+hll = []
+tdigest = []
+theta = []
 
 [dev-dependencies]
 googletest = { workspace = true }

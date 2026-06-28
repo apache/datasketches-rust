@@ -49,8 +49,8 @@ CI validates every commit and ensures:
 ```bash
 # Simply tag the current commit as RC
 git checkout main
-git tag -a 0.3.0-RC1 -m "Release candidate 1 for 0.3.0"
-git push origin 0.3.0-RC1
+git tag -a 0.3.0-rc.1 -m "Release candidate 1 for 0.3.0"
+git push origin 0.3.0-rc.1
 ```
 
 ## Step 2: Publish Release Candidate to crates.io
@@ -86,7 +86,7 @@ cd ~/apache/dist/dev/datasketches/scripts
 ./bashDeployToDist.sh \
   /path/to/datasketches-rust \
   datasketches-rust \
-  0.3.0-RC1
+  0.3.0-rc.1
 ```
 
 This script will:
@@ -94,7 +94,7 @@ This script will:
 1. Create a source archive from the git tag
 2. Generate GPG signature (`.asc`)
 3. Generate SHA512 checksum (`.sha512`)
-4. Upload to https://dist.apache.org/repos/dist/dev/datasketches/rust/0.3.0-RC1/
+4. Upload to https://dist.apache.org/repos/dist/dev/datasketches/rust/0.3.0-rc.1/
 
 Verify the files are accessible at the URL above.
 
@@ -112,19 +112,19 @@ Hi everyone,
 I propose releasing Apache DataSketches Rust version 0.3.0.
 
 Source distribution:
-https://dist.apache.org/repos/dist/dev/datasketches/rust/0.3.0-RC1/
+https://dist.apache.org/repos/dist/dev/datasketches/rust/0.3.0-rc.1/
 
 GitHub tag:
-https://github.com/apache/datasketches-rust/releases/tag/0.3.0-RC1
+https://github.com/apache/datasketches-rust/releases/tag/0.3.0-rc.1
 
 Testing (choose one or both):
 - crates.io RC: cargo add datasketches@0.3.0-rc.1
 - From source: Download, verify signatures, cargo x test
 
 To verify signatures:
-  curl -O https://dist.apache.org/repos/dist/dev/datasketches/rust/0.3.0-RC1/datasketches-rust-0.3.0-RC1-src
-  curl -O https://dist.apache.org/repos/dist/dev/datasketches/rust/0.3.0-RC1/datasketches-rust-0.3.0-RC1-src.asc
-  gpg --verify datasketches-rust-0.3.0-RC1-src.asc
+  ​curl -O https://dist.apache.org/repos/dist/dev/datasketches/rust/0.3.0-rc.1/apache-datasketches-rust-0.3.0-rc.1-src.zip
+​  curl -O https://dist.apache.org/repos/dist/dev/datasketches/rust/0.3.0-rc.1/apache-datasketches-rust-0.3.0-rc.1-src.zip.asc
+​  gpg --verify apache-datasketches-rust-0.3.0-rc.1-src.zip.asc
 
 Notable changes: [link to CHANGELOG or summary]
 
@@ -141,9 +141,9 @@ Vote will remain open for at least 72 hours.
 
 ```bash
 # Fix the issues, commit to main, then tag the new RC
-git tag -a 0.3.0-RC2 -m "Release candidate 2 for 0.3.0"
-git push origin 0.3.0-RC2
-# Then repeat from Step 2 (with version 0.3.0-RC2)
+git tag -a 0.3.0-rc.2 -m "Release candidate 2 for 0.3.0"
+git push origin 0.3.0-rc.2
+# Then repeat from Step 2 (with version 0.3.0-rc.2)
 ```
 
 ## Step 5: Close Vote & Publish Release
@@ -153,17 +153,11 @@ After successful vote, send [VOTE-RESULT] email summarizing the outcome and proc
 ```bash
 # Move artifacts from dev to release
 cd ~/apache/dist/dev/datasketches/scripts
-./moveDevToRelease.sh rust 0.3.0-RC1 0.3.0
-
-# Update Cargo.toml to final release version (this is the only version commit!)
-cd /path/to/datasketches-rust
-git checkout main
-sed -i '' 's/version = ".*"/version = "0.3.0"/' datasketches/Cargo.toml
-git add datasketches/Cargo.toml
-git commit -m "chore: release 0.3.0"
-git push origin main
+./moveDevToRelease.sh rust 0.3.0-rc.1 0.3.0
 
 # Create final release tag
+cd /path/to/datasketches-rust
+git checkout 0.3.0-rc.1
 git tag -a 0.3.0 -m "Release version 0.3.0"
 git push origin 0.3.0
 
@@ -184,11 +178,9 @@ Go to https://github.com/apache/datasketches-rust/releases and draft a new relea
    ./createDownloadsInclude.sh /path/to/datasketches-website
    ```
 
-2. **Clean up old releases** from dist (keep only latest):
+2. **Clean up old releases** from dist (keep only the latest):
    ```bash
-   cd ~/apache/dist/release/datasketches
-   svn rm rust/0.2.0
-   svn commit -m "Archive old release 0.2.0"
+   svn rm https://dist.apache.org/repos/dist/release/datasketches/rust/0.2.0/ -m "Archive old release datasketches-rust 0.2.0"
    ```
 
 3. **Send [ANNOUNCE] email** after 24 hours (allows mirror propagation):
@@ -202,7 +194,7 @@ Go to https://github.com/apache/datasketches-rust/releases and draft a new relea
 **Need to yank a crate?**
 
 ```bash
-cargo yank --vers 0.3.0-RC1 datasketches
+cargo yank --vers 0.3.0-rc.1 datasketches
 ```
 
 Only for broken pre-releases. For released versions, publish a patch instead.

@@ -27,13 +27,16 @@ pub struct Family {
     /// The name for this family.
     pub name: &'static str,
     /// The minimum preamble size for this family in longs (8-bytes integer).
+    #[allow(dead_code)] // only some sketches need to check this field
     pub min_pre_longs: u8,
     /// The maximum preamble size for this family in longs (8-bytes integer).
+    #[allow(dead_code)] // only some sketches need to check this field
     pub max_pre_longs: u8,
 }
 
 impl Family {
     /// Theta Sketch for cardinality estimation.
+    #[cfg(feature = "theta")]
     pub const THETA: Family = Family {
         id: 3,
         name: "THETA",
@@ -42,6 +45,7 @@ impl Family {
     };
 
     /// The HLL family of sketches.
+    #[cfg(feature = "hll")]
     pub const HLL: Family = Family {
         id: 7,
         name: "HLL",
@@ -50,6 +54,7 @@ impl Family {
     };
 
     /// The Frequency family of sketches.
+    #[cfg(feature = "frequencies")]
     pub const FREQUENCY: Family = Family {
         id: 10,
         name: "FREQUENCY",
@@ -58,6 +63,7 @@ impl Family {
     };
 
     /// Compressed Probabilistic Counting (CPC) Sketch.
+    #[cfg(feature = "cpc")]
     pub const CPC: Family = Family {
         id: 16,
         name: "CPC",
@@ -66,6 +72,7 @@ impl Family {
     };
 
     /// CountMin Sketch
+    #[cfg(feature = "countmin")]
     pub const COUNTMIN: Family = Family {
         id: 18,
         name: "COUNTMIN",
@@ -74,6 +81,7 @@ impl Family {
     };
 
     /// Density sketch for streaming density estimation.
+    #[cfg(feature = "density")]
     pub const DENSITY: Family = Family {
         id: 19,
         name: "DENSITY",
@@ -82,6 +90,7 @@ impl Family {
     };
 
     /// T-Digest for estimating quantiles and ranks.
+    #[cfg(feature = "tdigest")]
     pub const TDIGEST: Family = Family {
         id: 20,
         name: "TDIGEST",
@@ -90,6 +99,7 @@ impl Family {
     };
 
     /// Bloom Filter.
+    #[cfg(feature = "bloom")]
     pub const BLOOMFILTER: Family = Family {
         id: 21,
         name: "BLOOMFILTER",

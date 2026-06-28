@@ -18,9 +18,9 @@
 name: CI
 on:
   pull_request:
-    branches: [ main ]
+    branches: [main]
   push:
-    branches: [ main ]
+    branches: [main]
 
 # Concurrency strategy:
 #   github.workflow: distinguish this workflow from others
@@ -52,8 +52,12 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: typos-cli,taplo-cli,hawkeye
-      - name: Check all
+      - name: Check lockfile
+        run: cargo update -w --locked --verbose
+      - name: Check linters
         run: cargo x lint
+      - name: Check feature matrix
+        run: cargo x check
 
   msrv:
     name: Resolve MSRV
@@ -73,23 +77,25 @@ jobs:
     needs: msrv
     strategy:
       matrix:
-        os: [ ubuntu-24.04, macos-14, windows-2022 ]
+        os: [ubuntu-24.04, macos-14, windows-2022]
         rust-version: ${{ fromJson(needs.msrv.outputs.rust-versions) }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
       - name: Delete rust-toolchain.toml
         run: rm rust-toolchain.toml
-      - uses: Swatinem/rust-cache@v2
       - name: Install toolchain
         run: |
           rustup toolchain install ${{ matrix.rust-version }}
           rustup default ${{ matrix.rust-version }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-bin: "false"
       - name: Setup Java
         uses: actions/setup-java@v5
         with:
-          java-version: '25'
-          distribution: 'temurin'
+          java-version: "25"
+          distribution: "temurin"
       - name: Prepare test data
         shell: bash
         run: ./tools/generate_serialization_test_data.py

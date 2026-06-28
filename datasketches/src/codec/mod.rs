@@ -17,12 +17,32 @@
 
 //! Codec utilities for datasketches crate.
 
-// public common codec utilities for datasketches crate
 mod decode;
 mod encode;
 pub use self::decode::SketchSlice;
 pub use self::encode::SketchBytes;
 
-// private to datasketches crate
+#[cfg(any(
+    feature = "bloom",
+    feature = "countmin",
+    feature = "cpc",
+    feature = "density",
+    feature = "frequencies",
+    feature = "hll",
+    feature = "tdigest",
+    feature = "theta"
+))]
+#[allow(dead_code)] // some utilities are only used for certain sketches
 pub(crate) mod assert;
+
+#[cfg(any(
+    feature = "bloom",
+    feature = "countmin",
+    feature = "cpc",
+    feature = "density",
+    feature = "frequencies",
+    feature = "hll",
+    feature = "tdigest",
+    feature = "theta"
+))]
 pub(crate) mod family;
