@@ -100,8 +100,8 @@ impl ThetaJaccardSimilarity {
         let mut intersection = ThetaIntersection::new(seed);
         intersection.update(sketch_a)?;
         intersection.update(sketch_b)?;
-        // Match the C++ implementation: intersect with the union to ensure that the
-        // final intersection sketch is a subset of the denominator sketch.
+        // Ensure the numerator sketch is a subset of the denominator sketch used by
+        // the ratio bounds calculation.
         intersection.update(&union)?;
         let intersection = intersection.result_with_ordered(false);
 
