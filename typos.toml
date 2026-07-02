@@ -16,8 +16,8 @@
 # under the License.
 
 [default.extend-words]
-# False-Positive Abbreviations
 "PREINTS" = "PREINTS"
+"htmp" = "htmp"
 
 [files]
 extend-exclude = []
