@@ -43,7 +43,7 @@ jobs:
     name: Check
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Delete rust-toolchain.toml
         run: rm rust-toolchain.toml
       - name: Install toolchain
@@ -65,7 +65,7 @@ jobs:
     outputs:
       rust-versions: ${{ steps.metadata.outputs.rust-versions }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - id: metadata
         run: |
           msrv=$(yq '.workspace.package.rust-version' Cargo.toml)
@@ -81,7 +81,7 @@ jobs:
         rust-version: ${{ fromJson(needs.msrv.outputs.rust-versions) }}
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Delete rust-toolchain.toml
         run: rm rust-toolchain.toml
       - name: Install toolchain

@@ -17,6 +17,7 @@
 
 //! Frequent items sketch implementations.
 
+use std::borrow::Borrow;
 use std::hash::Hash;
 
 use crate::codec::SketchBytes;
@@ -158,7 +159,11 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     /// sketch.update_with_count(10, 2);
     /// assert!(sketch.estimate(&10) >= 2);
     /// ```
-    pub fn estimate(&self, item: &T) -> u64 {
+    pub fn estimate<Q>(&self, item: &Q) -> u64
+    where
+        T: Borrow<Q>,
+        Q: Eq + Hash + ?Sized,
+    {
         let value = self.hash_map.get(item);
         if value > 0 { value + self.offset } else { 0 }
     }
@@ -167,7 +172,11 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     ///
     /// This value is guaranteed to be no larger than the true frequency. If the item is not
     /// tracked, the lower bound is zero.
-    pub fn lower_bound(&self, item: &T) -> u64 {
+    pub fn lower_bound<Q>(&self, item: &Q) -> u64
+    where
+        T: Borrow<Q>,
+        Q: Eq + Hash + ?Sized,
+    {
         self.hash_map.get(item)
     }
 
@@ -175,7 +184,11 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     ///
     /// This value is guaranteed to be no smaller than the true frequency. If the item is tracked,
     /// this is `item_count + offset`.
-    pub fn upper_bound(&self, item: &T) -> u64 {
+    pub fn upper_bound<Q>(&self, item: &Q) -> u64
+    where
+        T: Borrow<Q>,
+        Q: Eq + Hash + ?Sized,
+    {
         self.hash_map.get(item) + self.offset
     }
 
@@ -260,6 +273,57 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
         assert!(count > 0, "count may not be negative");
         self.stream_weight += count;
         self.hash_map.adjust_or_put_value(item, count);
+        self.maybe_resize_or_purge();
+    }
+
+    /// Updates the sketch with a borrowed item and a count of one.
+    ///
+    /// Equivalent to [`update`](Self::update) but takes the item by reference and
+    /// only allocates an owned item when it is newly inserted, so updating an
+    /// already-tracked item is allocation free.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use datasketches::frequencies::FrequentItemsSketch;
+    /// let mut sketch = FrequentItemsSketch::<String>::new(64);
+    /// sketch.update_ref("nginx");
+    /// sketch.update_ref("nginx"); // no allocation on the second hit
+    /// assert!(sketch.estimate("nginx") >= 2);
+    /// ```
+    pub fn update_ref<Q>(&mut self, item: &Q)
+    where
+        T: Borrow<Q>,
+        Q: Eq + Hash + ToOwned<Owned = T> + ?Sized,
+    {
+        self.update_with_count_ref(item, 1);
+    }
+
+    /// Updates the sketch with a borrowed item and count.
+    ///
+    /// Equivalent to [`update_with_count`](Self::update_with_count) but takes the
+    /// item by reference and only allocates an owned item when it is newly
+    /// inserted. A count of zero is a no-op.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use datasketches::frequencies::FrequentItemsSketch;
+    /// let mut sketch = FrequentItemsSketch::<String>::new(64);
+    /// sketch.update_with_count_ref("gzip", 3);
+    /// assert!(sketch.estimate("gzip") >= 3);
+    /// ```
+    pub fn update_with_count_ref<Q>(&mut self, item: &Q, count: u64)
+    where
+        T: Borrow<Q>,
+        Q: Eq + Hash + ToOwned<Owned = T> + ?Sized,
+    {
+        if count == 0 {
+            return;
+        }
+        assert!(count > 0, "count may not be negative");
+        self.stream_weight += count;
+        self.hash_map.adjust_or_put_value_ref(item, count);
         self.maybe_resize_or_purge();
     }
 
