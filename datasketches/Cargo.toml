@@ -45,6 +45,7 @@ frequencies = []
 hll = []
 tdigest = []
 theta = []
+tuple = ["theta"]
 
 [dev-dependencies]
 googletest = { workspace = true }
