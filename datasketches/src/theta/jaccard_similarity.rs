@@ -16,6 +16,10 @@
 // under the License.
 
 //! Jaccard similarity for Theta sketches.
+//!
+//! The Jaccard similarity index is `J(A, B) = |A intersection B| / |A union B|`.
+//! It measures how similar two sketches are: `1.0` means they are considered equal,
+//! `0.0` means they are disjoint, and `0.95` means the overlap is 95% of the union.
 
 use std::collections::BTreeSet;
 
@@ -31,7 +35,8 @@ const NUM_STD_DEVS: f64 = 2.0;
 /// Jaccard similarity result for two Theta sketches.
 ///
 /// The entries are lower bound, estimate, and upper bound, matching the C++
-/// `theta_jaccard_similarity::jaccard` result order.
+/// `theta_jaccard_similarity::jaccard` result order. The bounds use a 95.4%
+/// confidence interval, equivalent to +/- 2 standard deviations.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct JaccardSimilarity {
     /// Approximate lower bound for the Jaccard index.
@@ -58,8 +63,9 @@ pub struct ThetaJaccardSimilarity;
 impl ThetaJaccardSimilarity {
     /// Computes the Jaccard similarity index with the default update seed.
     ///
-    /// The Jaccard index is `|A intersection B| / |A union B|`. The returned value contains
-    /// lower bound, estimate, and upper bound.
+    /// The returned value contains lower bound, estimate, and upper bound. For very large
+    /// sketches, where the configured nominal entries are `2^25` or `2^26`, this method may
+    /// produce unstable results.
     pub fn jaccard<A: ThetaSketchView, B: ThetaSketchView>(
         sketch_a: &A,
         sketch_b: &B,
@@ -68,6 +74,10 @@ impl ThetaJaccardSimilarity {
     }
 
     /// Computes the Jaccard similarity index with an explicit update seed.
+    ///
+    /// The returned value contains lower bound, estimate, and upper bound. For very large
+    /// sketches, where the configured nominal entries are `2^25` or `2^26`, this method may
+    /// produce unstable results.
     ///
     /// Returns an error if a non-empty sketch was built with a different seed.
     pub fn jaccard_with_seed<A: ThetaSketchView, B: ThetaSketchView>(
@@ -90,6 +100,8 @@ impl ThetaJaccardSimilarity {
         let mut intersection = ThetaIntersection::new(seed);
         intersection.update(sketch_a)?;
         intersection.update(sketch_b)?;
+        // Match the C++ implementation: intersect with the union to ensure that the
+        // final intersection sketch is a subset of the denominator sketch.
         intersection.update(&union)?;
         let intersection = intersection.result_with_ordered(false);
 
