@@ -68,7 +68,7 @@ impl<T: Eq + Hash> ReversePurgeItemHashMap<T> {
         T: Borrow<Q>,
         Q: Eq + Hash + ?Sized,
     {
-        let probe = self.hash_probe(key);
+        let (probe, _) = self.find_probe_or_empty(key);
         if self.states[probe] > 0 {
             return self.values[probe];
         }
@@ -77,21 +77,7 @@ impl<T: Eq + Hash> ReversePurgeItemHashMap<T> {
 
     /// Adds `adjust_amount` to the value for `key`, inserting if absent.
     pub fn adjust_or_put_value(&mut self, key: T, adjust_amount: u64) {
-        let mask = self.keys.len() - 1;
-        let mut probe = (hash_item(&key) as usize) & mask;
-        let mut drift: usize = 1;
-        while self.states[probe] != 0 {
-            let matches = self.keys[probe]
-                .as_ref()
-                .map(|existing| existing == &key)
-                .unwrap_or(false);
-            if matches {
-                break;
-            }
-            probe = (probe + 1) & mask;
-            drift += 1;
-            debug_assert!(drift < DRIFT_LIMIT, "drift limit exceeded");
-        }
+        let (probe, drift) = self.find_probe_or_empty(&key);
         if self.states[probe] == 0 {
             self.keys[probe] = Some(key);
             self.values[probe] = adjust_amount;
@@ -103,33 +89,12 @@ impl<T: Eq + Hash> ReversePurgeItemHashMap<T> {
     }
 
     /// Adds `adjust_amount` to the value for a borrowed `key`, inserting if absent.
-    ///
-    /// Behaves like [`adjust_or_put_value`](Self::adjust_or_put_value) but takes
-    /// the key by reference and only allocates an owned key (via
-    /// `Q: ToOwned<Owned = T>`) on the insert path, so incrementing an
-    /// already-present key is allocation free. The `Borrow` contract guarantees
-    /// the borrowed and owned forms hash and compare identically, so lookups land
-    /// on the same slot as the owned API.
     pub fn adjust_or_put_value_ref<Q>(&mut self, key: &Q, adjust_amount: u64)
     where
         T: Borrow<Q>,
         Q: Eq + Hash + ToOwned<Owned = T> + ?Sized,
     {
-        let mask = self.keys.len() - 1;
-        let mut probe = (hash_item(key) as usize) & mask;
-        let mut drift: usize = 1;
-        while self.states[probe] != 0 {
-            let matches = self.keys[probe]
-                .as_ref()
-                .map(|existing| existing.borrow() == key)
-                .unwrap_or(false);
-            if matches {
-                break;
-            }
-            probe = (probe + 1) & mask;
-            drift += 1;
-            debug_assert!(drift < DRIFT_LIMIT, "drift limit exceeded");
-        }
+        let (probe, drift) = self.find_probe_or_empty(key);
         if self.states[probe] == 0 {
             self.keys[probe] = Some(key.to_owned());
             self.values[probe] = adjust_amount;
@@ -274,13 +239,14 @@ impl<T: Eq + Hash> ReversePurgeItemHashMap<T> {
         self.states[probe] > 0
     }
 
-    fn hash_probe<Q>(&self, key: &Q) -> usize
+    fn find_probe_or_empty<Q>(&self, key: &Q) -> (usize, usize)
     where
         T: Borrow<Q>,
         Q: Eq + Hash + ?Sized,
     {
         let mask = self.keys.len() - 1;
         let mut probe = (hash_item(key) as usize) & mask;
+        let mut drift: usize = 1;
         while self.states[probe] > 0 {
             let matches = self.keys[probe]
                 .as_ref()
@@ -290,8 +256,10 @@ impl<T: Eq + Hash> ReversePurgeItemHashMap<T> {
                 break;
             }
             probe = (probe + 1) & mask;
+            drift += 1;
+            debug_assert!(drift < DRIFT_LIMIT, "drift limit exceeded");
         }
-        probe
+        (probe, drift)
     }
 
     fn hash_delete(&mut self, mut delete_probe: usize) {

@@ -120,6 +120,34 @@ fn test_items_one_item() {
 }
 
 #[test]
+fn test_items_borrowed_key_updates_and_queries() {
+    let mut sketch = FrequentItemsSketch::<String>::new(16);
+
+    sketch.update_ref("alpha");
+    sketch.update_ref("alpha");
+    sketch.update_with_count_ref("beta", 3);
+    sketch.update_with_count_ref("ignored", 0);
+    for item in [
+        "gamma", "delta", "epsilon", "zeta", "eta", "theta", "iota", "kappa", "lambda", "mu",
+    ] {
+        sketch.update_ref(item);
+    }
+
+    assert!(!sketch.is_empty());
+    assert_eq!(sketch.total_weight(), 15);
+    assert_eq!(sketch.num_active_items(), 12);
+    assert_eq!(sketch.estimate("alpha"), 2);
+    assert_eq!(sketch.lower_bound("alpha"), 2);
+    assert_eq!(sketch.upper_bound("alpha"), 2);
+    assert_eq!(sketch.estimate("beta"), 3);
+    assert_eq!(sketch.estimate("ignored"), 0);
+    assert_eq!(sketch.estimate("missing"), 0);
+
+    let owned = "alpha".to_string();
+    assert_eq!(sketch.estimate(&owned), 2);
+}
+
+#[test]
 fn test_longs_several_items_no_resize_no_purge() {
     let mut sketch: FrequentItemsSketch<i64> = FrequentItemsSketch::new(8);
     sketch.update(1);
