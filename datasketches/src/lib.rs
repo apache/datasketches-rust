@@ -37,6 +37,8 @@ pub mod bloom;
 pub mod countmin;
 #[cfg(feature = "cpc")]
 pub mod cpc;
+#[cfg(feature = "density")]
+pub mod density;
 #[cfg(feature = "frequencies")]
 pub mod frequencies;
 #[cfg(feature = "hll")]

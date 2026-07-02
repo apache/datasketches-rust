@@ -80,6 +80,15 @@ impl Family {
         max_pre_longs: 2,
     };
 
+    /// Density sketch for streaming density estimation.
+    #[cfg(feature = "density")]
+    pub const DENSITY: Family = Family {
+        id: 19,
+        name: "DENSITY",
+        min_pre_longs: 3,
+        max_pre_longs: 6,
+    };
+
     /// T-Digest for estimating quantiles and ranks.
     #[cfg(feature = "tdigest")]
     pub const TDIGEST: Family = Family {
