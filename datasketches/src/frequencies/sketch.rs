@@ -478,13 +478,14 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
         T: Clone, // for self.hash_map.active_keys()
     {
         if self.is_empty() {
-            let mut bytes = SketchBytes::with_capacity(8);
+            let mut bytes = SketchBytes::with_capacity(PREAMBLE_LONGS_EMPTY as usize * 8);
             bytes.write_u8(PREAMBLE_LONGS_EMPTY);
             bytes.write_u8(SERIAL_VERSION);
             bytes.write_u8(Family::FREQUENCY.id);
             bytes.write_u8(self.lg_max_map_size);
             bytes.write_u8(self.hash_map.lg_length());
             bytes.write_u8(EMPTY_FLAG_MASK);
+            bytes.write_u16_le(0); // unused
             return bytes.into_bytes();
         }
 
