@@ -53,6 +53,31 @@ fn test_items_round_trip() {
 }
 
 #[test]
+fn test_empty_round_trip() {
+    let sketch = FrequentItemsSketch::<i64>::new(32);
+    let bytes = sketch.serialize();
+    // One preamble long, matching the Java and C++ empty encoding.
+    assert_eq!(bytes.len(), 8);
+    let restored = FrequentItemsSketch::<i64>::deserialize(&bytes).unwrap();
+    assert!(restored.is_empty());
+    assert_eq!(restored.total_weight(), 0);
+    assert_eq!(restored.maximum_error(), 0);
+}
+
+#[test]
+fn test_purged_to_empty_round_trip() {
+    // Saturating the map with count-1 items makes the purge median 1, which
+    // removes every counter and leaves a non-trivial sketch empty.
+    let mut sketch = FrequentItemsSketch::<i64>::new(32);
+    for i in 0..=(32 * 3 / 4) {
+        sketch.update(i);
+    }
+    assert!(sketch.is_empty());
+    let restored = FrequentItemsSketch::<i64>::deserialize(&sketch.serialize()).unwrap();
+    assert!(restored.is_empty());
+}
+
+#[test]
 fn test_java_frequent_longs_compatibility() {
     let test_cases = [0, 1, 10, 100, 1000, 10000, 100000, 1000000];
     for n in test_cases {
