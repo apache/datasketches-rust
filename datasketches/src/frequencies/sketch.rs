@@ -352,7 +352,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
         }
         let merged_total = self.stream_weight + other.stream_weight;
         for (item, count) in other.hash_map.iter() {
-            self.update_with_count(item.clone(), count);
+            self.update_with_count_ref(item, count);
         }
         self.offset += other.offset;
         self.stream_weight = merged_total;
