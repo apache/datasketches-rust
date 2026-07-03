@@ -34,8 +34,8 @@ use crate::frequencies::serialization::PREAMBLE_LONGS_EMPTY;
 use crate::frequencies::serialization::PREAMBLE_LONGS_NONEMPTY;
 use crate::frequencies::serialization::SERIAL_VERSION;
 
-type CountSerializeSize<T> = fn(&[T]) -> usize;
-type SerializeItems<T> = fn(&mut SketchBytes, &[T]);
+type CountSerializeSize<T> = fn(&T) -> usize;
+type SerializeItem<T> = fn(&mut SketchBytes, &T);
 type DeserializeItems<T> = fn(SketchSlice<'_>, usize) -> Result<Vec<T>, Error>;
 
 const LG_MIN_MAP_SIZE: u8 = 3;
@@ -472,11 +472,8 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     fn serialize_inner(
         &self,
         count_serialize_size: CountSerializeSize<T>,
-        serialize_items: SerializeItems<T>,
-    ) -> Vec<u8>
-    where
-        T: Clone, // for self.hash_map.active_keys()
-    {
+        serialize_item: SerializeItem<T>,
+    ) -> Vec<u8> {
         if self.is_empty() {
             let mut bytes = SketchBytes::with_capacity(PREAMBLE_LONGS_EMPTY as usize * 8);
             bytes.write_u8(PREAMBLE_LONGS_EMPTY);
@@ -490,12 +487,17 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
         }
 
         let active_items = self.num_active_items();
-        let values = self.hash_map.active_values();
-        let keys = self.hash_map.active_keys();
-        let total_bytes =
-            PREAMBLE_LONGS_NONEMPTY as usize * 8 + (active_items * 8) + count_serialize_size(&keys);
+        let active_entries = self.hash_map.active_entries();
 
-        let mut bytes = SketchBytes::with_capacity(total_bytes);
+        let mut bytes = SketchBytes::with_capacity({
+            let mut total_bytes = 0;
+            total_bytes += PREAMBLE_LONGS_NONEMPTY as usize * 8;
+            total_bytes += active_items * 8;
+            for (k, _) in &active_entries {
+                total_bytes += count_serialize_size(k);
+            }
+            total_bytes
+        });
         bytes.write_u8(PREAMBLE_LONGS_NONEMPTY);
         bytes.write_u8(SERIAL_VERSION);
         bytes.write_u8(Family::FREQUENCY.id);
@@ -509,10 +511,12 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
         bytes.write_u64_le(self.stream_weight);
         bytes.write_u64_le(self.offset);
 
-        for value in values {
-            bytes.write_u64_le(value);
+        for (_, v) in &active_entries {
+            bytes.write_u64_le(*v);
         }
-        serialize_items(&mut bytes, &keys);
+        for (k, _) in &active_entries {
+            serialize_item(&mut bytes, k);
+        }
 
         bytes.into_bytes()
     }
@@ -618,14 +622,7 @@ impl<T: FrequentItemValue> FrequentItemsSketch<T> {
     /// assert!(decoded.estimate(&apple) >= 2);
     /// ```
     pub fn serialize(&self) -> Vec<u8> {
-        self.serialize_inner(
-            |items| items.iter().map(T::serialize_size).sum(),
-            |bytes, items| {
-                for item in items {
-                    item.serialize_value(bytes);
-                }
-            },
-        )
+        self.serialize_inner(T::serialize_size, |bytes, item| item.serialize_value(bytes))
     }
 
     /// Deserializes a sketch from bytes.

@@ -22,8 +22,34 @@ mod common;
 use std::fs;
 
 use common::serialization_test_data;
+use datasketches::codec::SketchBytes;
+use datasketches::codec::SketchSlice;
+use datasketches::error::Error;
 use datasketches::error::ErrorKind;
+use datasketches::frequencies::FrequentItemValue;
 use datasketches::frequencies::FrequentItemsSketch;
+
+#[derive(Debug, PartialEq, Eq, Hash)]
+struct NonCloneSerializableItem(i64);
+
+impl FrequentItemValue for NonCloneSerializableItem {
+    fn serialize_size(_item: &Self) -> usize {
+        size_of::<i64>()
+    }
+
+    fn serialize_value(&self, bytes: &mut SketchBytes) {
+        bytes.write_i64_le(self.0);
+    }
+
+    fn deserialize_value(cursor: &mut SketchSlice<'_>) -> Result<Self, Error> {
+        cursor.read_i64_le().map(Self).map_err(|_| {
+            Error::new(
+                ErrorKind::InvalidData,
+                "failed to read non-clone item bytes",
+            )
+        })
+    }
+}
 
 #[test]
 fn test_longs_round_trip() {
@@ -50,6 +76,20 @@ fn test_items_round_trip() {
     assert_eq!(restored.total_weight(), sketch.total_weight());
     assert_eq!(restored.estimate(&"beta".to_string()), 5);
     assert_eq!(restored.maximum_error(), sketch.maximum_error());
+}
+
+#[test]
+fn test_non_clone_item_round_trip() {
+    let mut sketch = FrequentItemsSketch::<NonCloneSerializableItem>::new(32);
+    sketch.update_with_count(NonCloneSerializableItem(1), 2);
+    sketch.update_with_count(NonCloneSerializableItem(2), 5);
+
+    let bytes = sketch.serialize();
+    let restored = FrequentItemsSketch::<NonCloneSerializableItem>::deserialize(&bytes).unwrap();
+
+    assert_eq!(restored.total_weight(), sketch.total_weight());
+    assert_eq!(restored.estimate(&NonCloneSerializableItem(1)), 2);
+    assert_eq!(restored.estimate(&NonCloneSerializableItem(2)), 5);
 }
 
 #[test]
