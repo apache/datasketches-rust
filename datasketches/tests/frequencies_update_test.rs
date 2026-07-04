@@ -23,6 +23,23 @@ use datasketches::frequencies::FrequentItemsSketch;
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct TestItem(i32);
 
+#[derive(Debug, PartialEq, Eq, Hash)]
+struct NonCloneItem(i32);
+
+#[test]
+fn test_non_clone_items_update_and_query() {
+    let mut sketch = FrequentItemsSketch::<NonCloneItem>::new(8);
+
+    sketch.update(NonCloneItem(7));
+    sketch.update_with_count(NonCloneItem(11), 3);
+
+    assert_eq!(sketch.total_weight(), 4);
+    assert_eq!(sketch.num_active_items(), 2);
+    assert_eq!(sketch.estimate(&NonCloneItem(7)), 1);
+    assert_eq!(sketch.lower_bound(&NonCloneItem(11)), 3);
+    assert_eq!(sketch.upper_bound(&NonCloneItem(11)), 3);
+}
+
 #[test]
 fn test_longs_update_with_zero_count_is_noop() {
     let mut sketch: FrequentItemsSketch<i64> = FrequentItemsSketch::new(8);

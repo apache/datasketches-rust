@@ -7,6 +7,7 @@ All significant changes to this project will be documented in this file.
 ### New features
 
 * `FrequentItemsSketch` now supports borrowed-key updates via `update_ref` and `update_with_count_ref`, allowing sketches such as `FrequentItemsSketch<String>` to update from `&str` without allocating on existing-key hits. Frequency queries also accept borrowed key forms matching `Borrow<Q>`.
+* `FrequentItemsSketch` no longer requires item types to implement `Clone` for core updates, queries, and serialization. Custom `FrequentItemValue` implementations can now be non-`Clone`; APIs that return or merge owned items still require `Clone`.
 
 ### Bug fixes
 
