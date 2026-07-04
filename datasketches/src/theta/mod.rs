@@ -45,6 +45,7 @@ mod intersection;
 mod jaccard_similarity;
 mod serialization;
 mod sketch;
+mod union;
 
 pub use self::intersection::ThetaIntersection;
 pub use self::jaccard_similarity::JaccardSimilarity;

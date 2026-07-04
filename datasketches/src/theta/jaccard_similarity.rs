@@ -21,14 +21,12 @@
 //! It measures how similar two sketches are: `1.0` means they are considered equal,
 //! `0.0` means they are disjoint, and `0.95` means the overlap is 95% of the union.
 
-use std::collections::BTreeSet;
-
 use crate::error::Error;
 use crate::hash::DEFAULT_UPDATE_SEED;
-use crate::hash::compute_seed_hash;
 use crate::theta::CompactThetaSketch;
 use crate::theta::ThetaIntersection;
 use crate::theta::ThetaSketchView;
+use crate::theta::union::ThetaUnion;
 
 const NUM_STD_DEVS: f64 = 2.0;
 
@@ -92,7 +90,7 @@ impl ThetaJaccardSimilarity {
             return Ok(JaccardSimilarity::exact(0.0));
         }
 
-        let union = compute_union(sketch_a, sketch_b, seed)?;
+        let union = ThetaUnion::compute(sketch_a, sketch_b, seed)?;
         if identical_sets(sketch_a, sketch_b, &union) {
             return Ok(JaccardSimilarity::exact(1.0));
         }
@@ -107,41 +105,6 @@ impl ThetaJaccardSimilarity {
 
         ratio_bounds(&union, &intersection)
     }
-}
-
-fn compute_union<A: ThetaSketchView, B: ThetaSketchView>(
-    sketch_a: &A,
-    sketch_b: &B,
-    seed: u64,
-) -> Result<CompactThetaSketch, Error> {
-    let expected_seed_hash = compute_seed_hash(seed);
-    if !sketch_a.is_empty() && sketch_a.seed_hash() != expected_seed_hash {
-        return Err(Error::invalid_argument(format!(
-            "incompatible seed hash for sketch A: expected {}, got {}",
-            expected_seed_hash,
-            sketch_a.seed_hash()
-        )));
-    }
-    if !sketch_b.is_empty() && sketch_b.seed_hash() != expected_seed_hash {
-        return Err(Error::invalid_argument(format!(
-            "incompatible seed hash for sketch B: expected {}, got {}",
-            expected_seed_hash,
-            sketch_b.seed_hash()
-        )));
-    }
-
-    let theta = sketch_a.theta64().min(sketch_b.theta64());
-    let mut entries = BTreeSet::new();
-    entries.extend(sketch_a.iter().filter(|&hash| hash < theta));
-    entries.extend(sketch_b.iter().filter(|&hash| hash < theta));
-
-    Ok(CompactThetaSketch::from_parts(
-        entries.into_iter().collect(),
-        theta,
-        expected_seed_hash,
-        false,
-        false,
-    ))
 }
 
 fn identical_sets<A: ThetaSketchView, B: ThetaSketchView>(
