@@ -21,6 +21,7 @@
 //! It measures how similar two sketches are: `1.0` means they are considered equal,
 //! `0.0` means they are disjoint, and `0.95` means the overlap is 95% of the union.
 
+use crate::common::bounds_binomial_proportions;
 use crate::error::Error;
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::theta::CompactThetaSketch;
@@ -37,38 +38,22 @@ const NUM_STD_DEVS: f64 = 2.0;
 /// confidence interval, equivalent to +/- 2 standard deviations.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct JaccardSimilarity {
-    /// Approximate lower bound for the Jaccard index.
-    pub lower_bound: f64,
-    /// Estimate of the Jaccard index.
-    pub estimate: f64,
-    /// Approximate upper bound for the Jaccard index.
-    pub upper_bound: f64,
+    lower_bound: f64,
+    estimate: f64,
+    upper_bound: f64,
 }
 
 impl JaccardSimilarity {
-    fn exact(value: f64) -> Self {
-        Self {
-            lower_bound: value,
-            estimate: value,
-            upper_bound: value,
-        }
-    }
-}
-
-/// Computes Jaccard similarity between Theta sketches.
-pub struct ThetaJaccardSimilarity;
-
-impl ThetaJaccardSimilarity {
     /// Computes the Jaccard similarity index with the default update seed.
     ///
     /// The returned value contains lower bound, estimate, and upper bound. For very large
     /// sketches, where the configured nominal entries are `2^25` or `2^26`, this method may
     /// produce unstable results.
-    pub fn jaccard<A: ThetaSketchView, B: ThetaSketchView>(
+    pub fn between<A: ThetaSketchView, B: ThetaSketchView>(
         sketch_a: &A,
         sketch_b: &B,
-    ) -> Result<JaccardSimilarity, Error> {
-        Self::jaccard_with_seed(sketch_a, sketch_b, DEFAULT_UPDATE_SEED)
+    ) -> Result<Self, Error> {
+        Self::between_with_seed(sketch_a, sketch_b, DEFAULT_UPDATE_SEED)
     }
 
     /// Computes the Jaccard similarity index with an explicit update seed.
@@ -78,21 +63,21 @@ impl ThetaJaccardSimilarity {
     /// produce unstable results.
     ///
     /// Returns an error if a non-empty sketch was built with a different seed.
-    pub fn jaccard_with_seed<A: ThetaSketchView, B: ThetaSketchView>(
+    pub fn between_with_seed<A: ThetaSketchView, B: ThetaSketchView>(
         sketch_a: &A,
         sketch_b: &B,
         seed: u64,
-    ) -> Result<JaccardSimilarity, Error> {
+    ) -> Result<Self, Error> {
         if sketch_a.is_empty() && sketch_b.is_empty() {
-            return Ok(JaccardSimilarity::exact(1.0));
+            return Ok(Self::exact(1.0));
         }
         if sketch_a.is_empty() || sketch_b.is_empty() {
-            return Ok(JaccardSimilarity::exact(0.0));
+            return Ok(Self::exact(0.0));
         }
 
         let union = ThetaUnion::compute(sketch_a, sketch_b, seed)?;
         if identical_sets(sketch_a, sketch_b, &union) {
-            return Ok(JaccardSimilarity::exact(1.0));
+            return Ok(Self::exact(1.0));
         }
 
         let mut intersection = ThetaIntersection::new(seed);
@@ -104,6 +89,29 @@ impl ThetaJaccardSimilarity {
         let intersection = intersection.result_with_ordered(false);
 
         ratio_bounds(&union, &intersection)
+    }
+
+    /// Returns the approximate lower bound for the Jaccard index.
+    pub fn lower_bound(&self) -> f64 {
+        self.lower_bound
+    }
+
+    /// Returns the estimate of the Jaccard index.
+    pub fn estimate(&self) -> f64 {
+        self.estimate
+    }
+
+    /// Returns the approximate upper bound for the Jaccard index.
+    pub fn upper_bound(&self) -> f64 {
+        self.upper_bound
+    }
+
+    fn exact(value: f64) -> Self {
+        Self {
+            lower_bound: value,
+            estimate: value,
+            upper_bound: value,
+        }
     }
 }
 
@@ -161,11 +169,11 @@ fn lower_bound_for_b_over_a(a: u64, b: u64, f: f64) -> Result<f64, Error> {
     if f == 1.0 {
         return Ok(b as f64 / a as f64);
     }
-    Ok(approximate_lower_bound_on_p(
+    bounds_binomial_proportions::approximate_lower_bound_on_p(
         a,
         b,
         NUM_STD_DEVS * hacky_adjuster(f),
-    ))
+    )
 }
 
 fn upper_bound_for_b_over_a(a: u64, b: u64, f: f64) -> Result<f64, Error> {
@@ -176,11 +184,11 @@ fn upper_bound_for_b_over_a(a: u64, b: u64, f: f64) -> Result<f64, Error> {
     if f == 1.0 {
         return Ok(b as f64 / a as f64);
     }
-    Ok(approximate_upper_bound_on_p(
+    bounds_binomial_proportions::approximate_upper_bound_on_p(
         a,
         b,
         NUM_STD_DEVS * hacky_adjuster(f),
-    ))
+    )
 }
 
 fn check_ratio_inputs(a: u64, b: u64, f: f64) -> Result<(), Error> {
@@ -204,95 +212,4 @@ fn hacky_adjuster(f: f64) -> f64 {
     } else {
         tmp + (0.01 * (f - 0.5))
     }
-}
-
-fn approximate_lower_bound_on_p(n: u64, k: u64, num_std_devs: f64) -> f64 {
-    if n == 0 || k == 0 {
-        0.0
-    } else if k == 1 {
-        exact_lower_bound_on_p_k_eq_1(n, delta_of_num_stdevs(num_std_devs))
-    } else if k == n {
-        exact_lower_bound_on_p_k_eq_n(n, delta_of_num_stdevs(num_std_devs))
-    } else {
-        let x = abramowitz_stegun_formula_26p5p22((n - k) as f64 + 1.0, k as f64, -num_std_devs);
-        1.0 - x
-    }
-}
-
-fn approximate_upper_bound_on_p(n: u64, k: u64, num_std_devs: f64) -> f64 {
-    if n == 0 || k == n {
-        1.0
-    } else if k == n - 1 {
-        exact_upper_bound_on_p_k_eq_minusone(n, delta_of_num_stdevs(num_std_devs))
-    } else if k == 0 {
-        exact_upper_bound_on_p_k_eq_zero(n, delta_of_num_stdevs(num_std_devs))
-    } else {
-        let x = abramowitz_stegun_formula_26p5p22((n - k) as f64, k as f64 + 1.0, num_std_devs);
-        1.0 - x
-    }
-}
-
-fn delta_of_num_stdevs(kappa: f64) -> f64 {
-    normal_cdf(-kappa)
-}
-
-fn normal_cdf(x: f64) -> f64 {
-    0.5 * (1.0 + erf(x / 2.0_f64.sqrt()))
-}
-
-fn erf(x: f64) -> f64 {
-    if x < 0.0 {
-        -erf_of_nonneg(-x)
-    } else {
-        erf_of_nonneg(x)
-    }
-}
-
-fn erf_of_nonneg(x: f64) -> f64 {
-    let a1 = 0.0705230784;
-    let a2 = 0.0422820123;
-    let a3 = 0.0092705272;
-    let a4 = 0.0001520143;
-    let a5 = 0.0002765672;
-    let a6 = 0.0000430638;
-    let x2 = x * x;
-    let x3 = x2 * x;
-    let x4 = x2 * x2;
-    let x5 = x2 * x3;
-    let x6 = x3 * x3;
-    let sum = 1.0 + (a1 * x) + (a2 * x2) + (a3 * x3) + (a4 * x4) + (a5 * x5) + (a6 * x6);
-    let sum2 = sum * sum;
-    let sum4 = sum2 * sum2;
-    let sum8 = sum4 * sum4;
-    let sum16 = sum8 * sum8;
-    1.0 - (1.0 / sum16)
-}
-
-fn abramowitz_stegun_formula_26p5p22(a: f64, b: f64, yp: f64) -> f64 {
-    let b2m1 = (2.0 * b) - 1.0;
-    let a2m1 = (2.0 * a) - 1.0;
-    let lambda = ((yp * yp) - 3.0) / 6.0;
-    let htmp = (1.0 / a2m1) + (1.0 / b2m1);
-    let h = 2.0 / htmp;
-    let term1 = (yp * (h + lambda).sqrt()) / h;
-    let term2 = (1.0 / b2m1) - (1.0 / a2m1);
-    let term3 = (lambda + (5.0 / 6.0)) - (2.0 / (3.0 * h));
-    let w = term1 - (term2 * term3);
-    a / (a + (b * (2.0 * w).exp()))
-}
-
-fn exact_upper_bound_on_p_k_eq_zero(n: u64, delta: f64) -> f64 {
-    1.0 - delta.powf(1.0 / n as f64)
-}
-
-fn exact_lower_bound_on_p_k_eq_n(n: u64, delta: f64) -> f64 {
-    delta.powf(1.0 / n as f64)
-}
-
-fn exact_lower_bound_on_p_k_eq_1(n: u64, delta: f64) -> f64 {
-    1.0 - (1.0 - delta).powf(1.0 / n as f64)
-}
-
-fn exact_upper_bound_on_p_k_eq_minusone(n: u64, delta: f64) -> f64 {
-    (1.0 - delta).powf(1.0 / n as f64)
 }
