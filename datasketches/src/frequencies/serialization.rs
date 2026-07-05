@@ -33,7 +33,7 @@ pub const PREAMBLE_LONGS_NONEMPTY: u8 = 4;
 pub const EMPTY_FLAG_MASK: u8 = 5;
 
 /// Trait for serializing and deserializing frequent item values.
-pub trait FrequentItemValue: Sized + Eq + Hash + Clone {
+pub trait FrequentItemValue: Sized + Eq + Hash {
     /// Returns the size in bytes required to serialize the given item.
     fn serialize_size(item: &Self) -> usize;
     /// Serializes the item into the given byte buffer.

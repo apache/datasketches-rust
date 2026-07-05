@@ -197,37 +197,17 @@ impl<T: Eq + Hash> ReversePurgeItemHashMap<T> {
         self.num_active
     }
 
-    /// Returns the active keys in the map.
-    pub fn active_keys(&self) -> Vec<T>
-    where
-        T: Clone,
-    {
-        if self.num_active == 0 {
-            return vec![];
-        }
-        let mut keys = Vec::with_capacity(self.num_active);
+    /// Returns active keys and values in storage order.
+    pub fn active_entries(&self) -> Vec<(&T, u64)> {
+        let mut entries = Vec::with_capacity(self.num_active);
         for i in 0..self.keys.len() {
             if self.states[i] > 0 {
                 if let Some(key) = self.keys[i].as_ref() {
-                    keys.push(key.clone());
+                    entries.push((key, self.values[i]));
                 }
             }
         }
-        keys
-    }
-
-    /// Returns the active values in the map.
-    pub fn active_values(&self) -> Vec<u64> {
-        if self.num_active == 0 {
-            return vec![];
-        }
-        let mut values = Vec::with_capacity(self.num_active);
-        for i in 0..self.values.len() {
-            if self.states[i] > 0 {
-                values.push(self.values[i]);
-            }
-        }
-        values
+        entries
     }
 
     /// Returns an iterator over active keys and values.

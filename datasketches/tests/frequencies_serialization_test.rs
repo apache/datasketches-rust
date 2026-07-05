@@ -22,8 +22,34 @@ mod common;
 use std::fs;
 
 use common::serialization_test_data;
+use datasketches::codec::SketchBytes;
+use datasketches::codec::SketchSlice;
+use datasketches::error::Error;
 use datasketches::error::ErrorKind;
+use datasketches::frequencies::FrequentItemValue;
 use datasketches::frequencies::FrequentItemsSketch;
+
+#[derive(Debug, PartialEq, Eq, Hash)]
+struct NonCloneSerializableItem(i64);
+
+impl FrequentItemValue for NonCloneSerializableItem {
+    fn serialize_size(_item: &Self) -> usize {
+        size_of::<i64>()
+    }
+
+    fn serialize_value(&self, bytes: &mut SketchBytes) {
+        bytes.write_i64_le(self.0);
+    }
+
+    fn deserialize_value(cursor: &mut SketchSlice<'_>) -> Result<Self, Error> {
+        cursor.read_i64_le().map(Self).map_err(|_| {
+            Error::new(
+                ErrorKind::InvalidData,
+                "failed to read non-clone item bytes",
+            )
+        })
+    }
+}
 
 #[test]
 fn test_longs_round_trip() {
@@ -50,6 +76,45 @@ fn test_items_round_trip() {
     assert_eq!(restored.total_weight(), sketch.total_weight());
     assert_eq!(restored.estimate(&"beta".to_string()), 5);
     assert_eq!(restored.maximum_error(), sketch.maximum_error());
+}
+
+#[test]
+fn test_non_clone_item_round_trip() {
+    let mut sketch = FrequentItemsSketch::<NonCloneSerializableItem>::new(32);
+    sketch.update_with_count(NonCloneSerializableItem(1), 2);
+    sketch.update_with_count(NonCloneSerializableItem(2), 5);
+
+    let bytes = sketch.serialize();
+    let restored = FrequentItemsSketch::<NonCloneSerializableItem>::deserialize(&bytes).unwrap();
+
+    assert_eq!(restored.total_weight(), sketch.total_weight());
+    assert_eq!(restored.estimate(&NonCloneSerializableItem(1)), 2);
+    assert_eq!(restored.estimate(&NonCloneSerializableItem(2)), 5);
+}
+
+#[test]
+fn test_empty_round_trip() {
+    let sketch = FrequentItemsSketch::<i64>::new(32);
+    let bytes = sketch.serialize();
+    // One preamble long, matching the Java and C++ empty encoding.
+    assert_eq!(bytes.len(), 8);
+    let restored = FrequentItemsSketch::<i64>::deserialize(&bytes).unwrap();
+    assert!(restored.is_empty());
+    assert_eq!(restored.total_weight(), 0);
+    assert_eq!(restored.maximum_error(), 0);
+}
+
+#[test]
+fn test_purged_to_empty_round_trip() {
+    // Saturating the map with count-1 items makes the purge median 1, which
+    // removes every counter and leaves a non-trivial sketch empty.
+    let mut sketch = FrequentItemsSketch::<i64>::new(32);
+    for i in 0..=(32 * 3 / 4) {
+        sketch.update(i);
+    }
+    assert!(sketch.is_empty());
+    let restored = FrequentItemsSketch::<i64>::deserialize(&sketch.serialize()).unwrap();
+    assert!(restored.is_empty());
 }
 
 #[test]
