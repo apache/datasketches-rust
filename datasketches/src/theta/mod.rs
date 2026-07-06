@@ -44,12 +44,15 @@ mod hash_table;
 mod intersection;
 mod serialization;
 mod sketch;
+mod union;
 
 pub use self::intersection::ThetaIntersection;
 pub use self::sketch::CompactThetaSketch;
 pub use self::sketch::ThetaSketch;
 pub use self::sketch::ThetaSketchBuilder;
 pub use self::sketch::ThetaSketchView;
+pub use self::union::ThetaUnion;
+pub use self::union::ThetaUnionBuilder;
 
 /// Maximum theta value (signed max for compatibility with Java)
 const MAX_THETA: u64 = i64::MAX as u64;
