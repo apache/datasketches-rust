@@ -17,20 +17,12 @@
 
 use std::hash::Hash;
 
-use crate::common::ResizeFactor;
-use crate::hash::MurmurHash3X64128;
-use crate::hash::compute_seed_hash;
-use crate::theta::HASH_TABLE_REBUILD_THRESHOLD;
-use crate::theta::HASH_TABLE_RESIZE_THRESHOLD;
-use crate::theta::MAX_THETA;
-use crate::theta::MIN_LG_K;
-use crate::theta::STRIDE_MASK;
-use crate::theta::starting_sub_multiple;
-use crate::theta::starting_theta_from_sampling_probability;
+use crate::theta::RawHashTable;
+use crate::theta::RawHashTableEntry;
 
 /// A retained entry: a hash key together with its associated summary.
 #[derive(Debug)]
-struct TupleEntry<S> {
+pub(super) struct TupleEntry<S> {
     hash: u64,
     summary: S,
 }
@@ -46,132 +38,15 @@ struct TupleEntry<S> {
 ///
 /// Unlike the Theta hash table, when a key is inserted that already exists, the incoming update is
 /// merged into the existing summary rather than discarded.
-#[derive(Debug)]
-pub(super) struct TupleHashTable<S> {
-    lg_cur_size: u8,
-    lg_nom_size: u8,
-    lg_max_size: u8,
-    resize_factor: ResizeFactor,
-    sampling_probability: f32,
-    hash_seed: u64,
+pub(super) type TupleHashTable<S> = RawHashTable<TupleEntry<S>>;
 
-    // Logical emptiness of the source set.
-    //
-    // * `false` if any update has been attempted (even if screened by theta)
-    // * `true` if no updates have been attempted.
-    //
-    // This can be false even when `num_retained` is 0.
-    is_empty: bool,
-
-    theta: u64,
-
-    // Using `None` to represent zero value.
-    entries: Vec<Option<TupleEntry<S>>>,
-
-    // Number of retained non-zero hashes currently stored in `entries`.
-    num_retained: usize,
+impl<S> RawHashTableEntry for TupleEntry<S> {
+    fn hash(&self) -> u64 {
+        self.hash
+    }
 }
 
 impl<S> TupleHashTable<S> {
-    /// Create a new hash table
-    pub fn new(
-        lg_nom_size: u8,
-        resize_factor: ResizeFactor,
-        sampling_probability: f32,
-        hash_seed: u64,
-    ) -> Self {
-        let lg_max_size = lg_nom_size + 1;
-        let lg_cur_size = starting_sub_multiple(lg_max_size, MIN_LG_K, resize_factor.lg_value());
-        Self::from_raw_parts(
-            lg_cur_size,
-            lg_nom_size,
-            resize_factor,
-            sampling_probability,
-            starting_theta_from_sampling_probability(sampling_probability),
-            hash_seed,
-            true,
-        )
-    }
-
-    /// Constructs a table from raw internal state.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `lg_cur_size > lg_nom_size + 1`. (`lg_nom_size + 1 == lg_max_size`)
-    pub fn from_raw_parts(
-        lg_cur_size: u8,
-        lg_nom_size: u8,
-        resize_factor: ResizeFactor,
-        sampling_probability: f32,
-        theta: u64,
-        hash_seed: u64,
-        is_empty: bool,
-    ) -> Self {
-        let lg_max_size = lg_nom_size + 1;
-        assert!(
-            lg_cur_size <= lg_max_size,
-            "lg_cur_size must be <= lg_nom_size + 1, got lg_cur_size={lg_cur_size}, lg_nom_size={lg_nom_size}"
-        );
-        let size = if lg_cur_size > 0 { 1 << lg_cur_size } else { 0 };
-        let entries = std::iter::repeat_with(|| None).take(size).collect();
-        Self {
-            lg_cur_size,
-            lg_nom_size,
-            lg_max_size,
-            resize_factor,
-            sampling_probability,
-            hash_seed,
-            is_empty,
-            theta,
-            entries,
-            num_retained: 0,
-        }
-    }
-
-    /// Hash a value with the table seed and return the hash.
-    fn hash<T: Hash>(&self, value: T) -> u64 {
-        let mut hasher = MurmurHash3X64128::with_seed(self.hash_seed);
-        value.hash(&mut hasher);
-        let (h1, _) = hasher.finish128();
-        h1 >> 1 // To make it compatible with Java version
-    }
-
-    /// Find an entry in the hash table.
-    ///
-    /// Returns the index of the entry if found, otherwise None. The entry may have been inserted or
-    /// empty.
-    fn find_in_curr_entries(&self, key: u64) -> Option<usize> {
-        Self::find_in_entries(&self.entries, key, self.lg_cur_size)
-    }
-
-    /// Find index in a given entries.
-    ///
-    /// Returns the index of the entry if found, otherwise None. The entry may have been inserted or
-    /// empty.
-    fn find_in_entries(entries: &[Option<TupleEntry<S>>], key: u64, lg_size: u8) -> Option<usize> {
-        if entries.is_empty() {
-            return None;
-        }
-
-        let size = entries.len();
-        let mask = size - 1;
-        let stride = Self::get_stride(key, lg_size);
-        let mut index = (key as usize) & mask;
-        let loop_index = index;
-
-        loop {
-            match &entries[index] {
-                None => return Some(index),
-                Some(entry) if entry.hash == key => return Some(index),
-                _ => {}
-            }
-            index = (index + stride) & mask;
-            if index == loop_index {
-                return None;
-            }
-        }
-    }
-
     /// Hashes a key and inserts or updates its summary via a single callback.
     ///
     /// See [`upsert`](Self::upsert) for the callback contract. Returns true if a new entry was
@@ -203,186 +78,24 @@ impl<S> TupleHashTable<S> {
     where
         F: FnOnce(Option<&mut S>) -> Option<S>,
     {
-        self.is_empty = false;
-
-        if hash == 0 || hash >= self.theta {
-            return false;
-        }
-
-        let Some(index) = self.find_in_curr_entries(hash) else {
-            unreachable!(
-                "Resize or rebuild should be called to make sure it always can find the entry."
-            );
-        };
-
-        // Already exists: let the callback merge into the retained summary in place.
-        if let Some(entry) = self.entries[index].as_mut() {
-            f(Some(&mut entry.summary));
-            return false;
-        }
-
-        // New key: the callback may decline by returning None.
-        let Some(summary) = f(None) else {
-            return false;
-        };
-        self.entries[index] = Some(TupleEntry { hash, summary });
-        self.num_retained += 1;
-
-        // Check if we need to resize or rebuild
-        let capacity = self.get_capacity();
-        if self.num_retained > capacity {
-            if self.lg_cur_size <= self.lg_nom_size {
-                self.resize();
-            } else {
-                self.rebuild();
+        self.upsert_entry(hash, |existing| match existing {
+            Some(entry) => {
+                f(Some(&mut entry.summary));
+                None
             }
-        }
-        true
-    }
-
-    /// Get capacity threshold
-    fn get_capacity(&self) -> usize {
-        let fraction = if self.lg_cur_size <= self.lg_nom_size {
-            HASH_TABLE_RESIZE_THRESHOLD
-        } else {
-            HASH_TABLE_REBUILD_THRESHOLD
-        };
-        (fraction * self.entries.len() as f64) as usize
-    }
-
-    /// Resize the hash table
-    fn resize(&mut self) {
-        let new_lg_size = std::cmp::min(
-            self.lg_cur_size + self.resize_factor.lg_value(),
-            self.lg_max_size,
-        );
-        let new_size = 1 << new_lg_size;
-
-        // Get new entries and rehash all entries
-        let mut new_entries: Vec<Option<TupleEntry<S>>> =
-            std::iter::repeat_with(|| None).take(new_size).collect();
-        for entry in std::mem::take(&mut self.entries).into_iter().flatten() {
-            let Some(idx) = Self::find_in_entries(&new_entries, entry.hash, new_lg_size) else {
-                unreachable!(
-                    "find_in_entries should always return Some if the entry is not empty."
-                );
-            };
-            new_entries[idx] = Some(entry);
-        }
-
-        self.entries = new_entries;
-        self.lg_cur_size = new_lg_size;
-    }
-
-    /// Rebuild the hash table:
-    /// The number of entries will be reduced to the nominal size k.
-    fn rebuild(&mut self) {
-        let k = 1usize << self.lg_nom_size;
-
-        // Select the k-th smallest entry as new theta and keep the lesser entries.
-        let mut retained: Vec<TupleEntry<S>> = std::mem::take(&mut self.entries)
-            .into_iter()
-            .flatten()
-            .collect();
-        let kth_hash = {
-            let (_lesser, kth, _greater) = retained.select_nth_unstable_by_key(k, |e| e.hash);
-            kth.hash
-        };
-        self.theta = kth_hash;
-        retained.truncate(k);
-
-        // Rebuild the table with the lesser entries.
-        let size = 1 << self.lg_cur_size;
-        let mut new_entries: Vec<Option<TupleEntry<S>>> =
-            std::iter::repeat_with(|| None).take(size).collect();
-        let mut num_inserted = 0;
-        for entry in retained {
-            if let Some(idx) = Self::find_in_entries(&new_entries, entry.hash, self.lg_cur_size) {
-                new_entries[idx] = Some(entry);
-                num_inserted += 1;
-            } else {
-                unreachable!(
-                    "find_in_entries should always return Some if the entry is not empty."
-                );
-            }
-        }
-
-        assert_eq!(
-            num_inserted, k,
-            "Number of inserted entries should be equal to k."
-        );
-        self.num_retained = num_inserted;
-        self.entries = new_entries;
-    }
-
-    /// Trim the table to nominal size k
-    pub fn trim(&mut self) {
-        if self.num_retained > (1 << self.lg_nom_size) {
-            self.rebuild();
-        }
-    }
-
-    /// Reset the table to empty state
-    pub fn reset(&mut self) {
-        let init_theta = starting_theta_from_sampling_probability(self.sampling_probability);
-        let init_lg_cur = starting_sub_multiple(
-            self.lg_nom_size + 1,
-            MIN_LG_K,
-            self.resize_factor.lg_value(),
-        );
-
-        // clear entries
-        let size = 1 << init_lg_cur;
-        self.entries.clear();
-        self.entries.resize_with(size, || None);
-        self.num_retained = 0;
-        self.theta = init_theta;
-        self.is_empty = true;
-        self.lg_cur_size = init_lg_cur;
-    }
-
-    /// Return number of retained entries
-    pub fn num_retained(&self) -> usize {
-        self.num_retained
-    }
-
-    /// Get theta
-    pub fn theta(&self) -> u64 {
-        self.theta
-    }
-
-    /// Check if emptiness of the source set
-    pub fn is_empty(&self) -> bool {
-        self.is_empty
+            None => f(None).map(|summary| TupleEntry { hash, summary }),
+        })
     }
 
     /// Get iterator over retained entries as `(hash, &summary)` pairs.
     pub fn iter(&self) -> impl Iterator<Item = (u64, &S)> + '_ {
-        self.entries
-            .iter()
-            .filter_map(|slot| slot.as_ref().map(|entry| (entry.hash, &entry.summary)))
-    }
-
-    /// Get log2 of nominal size
-    pub fn lg_nom_size(&self) -> u8 {
-        self.lg_nom_size
-    }
-
-    /// Get the hash of the seed that was used to hash the input.
-    pub fn seed_hash(&self) -> u16 {
-        compute_seed_hash(self.hash_seed)
+        self.iter_entries()
+            .map(|entry| (entry.hash, &entry.summary))
     }
 
     /// Returns a reference to the summary stored for `hash`, or `None` if the hash is not retained.
     pub fn get(&self, hash: u64) -> Option<&S> {
-        if hash == 0 {
-            return None;
-        }
-        let index = self.find_in_curr_entries(hash)?;
-        match &self.entries[index] {
-            Some(entry) if entry.hash == hash => Some(&entry.summary),
-            _ => None,
-        }
+        self.get_entry(hash).map(|entry| &entry.summary)
     }
 
     /// Inserts a `(hash, summary)` pair, taking ownership of `summary`.
@@ -396,55 +109,17 @@ impl<S> TupleHashTable<S> {
             None => Some(summary),
         })
     }
-
-    /// Set empty flag
-    pub fn set_empty(&mut self, is_empty: bool) {
-        self.is_empty = is_empty;
-    }
-
-    /// Get the hash seed used by this table.
-    pub fn hash_seed(&self) -> u64 {
-        self.hash_seed
-    }
-
-    /// Sets theta value.
-    pub fn set_theta(&mut self, theta: u64) {
-        assert!(
-            (1..=MAX_THETA).contains(&theta),
-            "theta must be in [1, {MAX_THETA}], got {theta}"
-        );
-        self.theta = theta;
-    }
-
-    /// Returns minimal lg_size where rebuild-capacity can hold `count`.
-    pub fn lg_size_from_count_for_rebuild(count: usize, load_factor: f64) -> u8 {
-        let log2 = |n: usize| {
-            if n == 0 { 0_u8 } else { n.ilog2() as u8 }
-        };
-        let log2_n = log2(count);
-        log2_n
-            + (if count > (((1u128 << ((log2_n as u32) + 1)) as f64) * load_factor) as usize {
-                2
-            } else {
-                1
-            })
-    }
-
-    /// Get stride for hash table probing
-    fn get_stride(key: u64, lg_size: u8) -> usize {
-        (2 * ((key >> (lg_size)) & STRIDE_MASK) + 1) as usize
-    }
-
-    /// Returns the estimated size of the heap allocations in bytes
-    pub fn estimated_size(&self) -> usize {
-        self.entries.capacity() * std::mem::size_of::<Option<TupleEntry<S>>>()
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::ResizeFactor;
     use crate::hash::DEFAULT_UPDATE_SEED;
+    use crate::theta::MAX_THETA;
+    use crate::theta::MIN_LG_K;
+    use crate::theta::starting_sub_multiple;
+    use crate::theta::starting_theta_from_sampling_probability;
 
     /// Inserts a key with count-style summary semantics: a new key starts at 1, a repeated key
     /// increments the retained count. Returns true if a new entry was created.

@@ -42,16 +42,21 @@
 mod bit_pack;
 mod hash_table;
 mod intersection;
+mod raw_hash_table;
 mod serialization;
 mod sketch;
 
-// These helpers are re-exported only for the Tuple sketch, which reuses the Theta hash-table
-// sizing.
-#[cfg(feature = "tuple")]
+// These helpers are re-exported only for Tuple hash-table tests; production code uses the shared
+// raw table directly.
+#[cfg(all(feature = "tuple", test))]
 pub(crate) use self::hash_table::starting_sub_multiple;
-#[cfg(feature = "tuple")]
+#[cfg(all(feature = "tuple", test))]
 pub(crate) use self::hash_table::starting_theta_from_sampling_probability;
 pub use self::intersection::ThetaIntersection;
+#[cfg(feature = "tuple")]
+pub(crate) use self::raw_hash_table::RawHashTable;
+#[cfg(feature = "tuple")]
+pub(crate) use self::raw_hash_table::RawHashTableEntry;
 pub use self::sketch::CompactThetaSketch;
 pub use self::sketch::ThetaSketch;
 pub use self::sketch::ThetaSketchBuilder;
