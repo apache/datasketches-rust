@@ -38,6 +38,16 @@ impl SketchSlice<'_> {
         self.slice.set_position(pos + n);
     }
 
+    /// Returns the not-yet-read portion of the underlying slice.
+    ///
+    /// Useful for handing the remaining bytes to a variable-length decoder that reports how many
+    /// bytes it consumed; pair it with [`advance`](Self::advance).
+    pub fn remaining(&self) -> &[u8] {
+        let buf = self.slice.get_ref();
+        let pos = (self.slice.position() as usize).min(buf.len());
+        &buf[pos..]
+    }
+
     /// Reads exactly `buf.len()` bytes from the slice into `buf`.
     pub fn read_exact(&mut self, buf: &mut [u8]) -> io::Result<()> {
         self.slice.read_exact(buf)

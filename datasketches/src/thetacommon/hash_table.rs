@@ -20,6 +20,7 @@ use std::hash::Hash;
 use crate::common::ResizeFactor;
 use crate::hash::MurmurHash3X64128;
 use crate::hash::compute_seed_hash;
+use crate::thetacommon::RawCompactParts;
 use crate::thetacommon::RawHashTableEntry;
 use crate::thetacommon::constants::HASH_TABLE_REBUILD_THRESHOLD;
 use crate::thetacommon::constants::HASH_TABLE_RESIZE_THRESHOLD;
@@ -232,6 +233,33 @@ where
     /// Get iterator over retained entries.
     pub fn iter_entries(&self) -> impl Iterator<Item = &E> + '_ {
         self.entries.iter().filter_map(Option::as_ref)
+    }
+
+    /// Returns the retained entries and theta as raw compact-sketch parts.
+    ///
+    /// An empty table reports `MAX_THETA` rather than its current theta, matching Java's
+    /// `correctThetaOnCompact()` behavior for never-updated sketches initialized with p < 1.0.
+    /// Empty and single-entry exact-mode results are always marked ordered (Java/C++
+    /// compatibility).
+    pub fn to_compact_parts(&self, ordered: bool) -> RawCompactParts<E>
+    where
+        E: Clone,
+    {
+        let mut entries: Vec<E> = self.iter_entries().cloned().collect();
+        let empty = self.is_empty();
+        let theta = if empty { MAX_THETA } else { self.theta() };
+        let is_single = entries.len() == 1 && theta == MAX_THETA;
+        let ordered = ordered || empty || is_single;
+        if ordered && entries.len() > 1 {
+            entries.sort_unstable_by_key(RawHashTableEntry::hash);
+        }
+        RawCompactParts {
+            entries,
+            theta,
+            seed_hash: self.seed_hash(),
+            ordered,
+            empty,
+        }
     }
 
     /// Return number of all entries.

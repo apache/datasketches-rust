@@ -15,34 +15,18 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! Codec utilities for datasketches crate.
+//! Binary serialization format constants for Tuple sketches.
+//!
+//! The Tuple compact format reuses the uncompressed Theta layout (preamble, flags, theta) but uses
+//! the Tuple family id, carries a sketch-type byte, and stores the user summary bytes after each
+//! retained hash. See the C++/Java reference implementations for the on-disk format.
 
-mod decode;
-mod encode;
-pub use self::decode::SketchSlice;
-pub use self::encode::SketchBytes;
+/// Current serial version written by this implementation.
+pub(super) const SERIAL_VERSION: u8 = 3;
+/// Legacy serial version still accepted on read.
+pub(super) const SERIAL_VERSION_LEGACY: u8 = 1;
 
-#[cfg(any(
-    feature = "bloom",
-    feature = "countmin",
-    feature = "cpc",
-    feature = "frequencies",
-    feature = "hll",
-    feature = "tdigest",
-    feature = "theta",
-    feature = "tuple"
-))]
-#[allow(dead_code)] // some utilities are only used for certain sketches
-pub(crate) mod assert;
-
-#[cfg(any(
-    feature = "bloom",
-    feature = "countmin",
-    feature = "cpc",
-    feature = "frequencies",
-    feature = "hll",
-    feature = "tdigest",
-    feature = "theta",
-    feature = "tuple"
-))]
-pub(crate) mod family;
+/// Current sketch-type byte written by this implementation.
+pub(super) const SKETCH_TYPE: u8 = 1;
+/// Legacy sketch-type byte still accepted on read.
+pub(super) const SKETCH_TYPE_LEGACY: u8 = 5;
