@@ -42,6 +42,7 @@
 mod bit_pack;
 mod hash_table;
 mod intersection;
+mod raw_hash_table;
 mod serialization;
 mod sketch;
 mod union;
@@ -55,14 +56,18 @@ pub use self::union::ThetaUnion;
 pub use self::union::ThetaUnionBuilder;
 
 /// Maximum theta value (signed max for compatibility with Java)
-const MAX_THETA: u64 = i64::MAX as u64;
+pub(crate) const MAX_THETA: u64 = i64::MAX as u64;
 /// Minimum log2 of K
-const MIN_LG_K: u8 = 5;
+pub(crate) const MIN_LG_K: u8 = 5;
 /// Maximum log2 of K
-const MAX_LG_K: u8 = 26;
+pub(crate) const MAX_LG_K: u8 = 26;
 /// Default log2 of K
-const DEFAULT_LG_K: u8 = 12;
+pub(crate) const DEFAULT_LG_K: u8 = 12;
 /// Resize threshold (0.5 = 50% load factor)
-const HASH_TABLE_RESIZE_THRESHOLD: f64 = 0.5;
+pub(crate) const HASH_TABLE_RESIZE_THRESHOLD: f64 = 0.5;
 /// Rebuild threshold (15/16 = 93.75% load factor)
-const HASH_TABLE_REBUILD_THRESHOLD: f64 = 15.0 / 16.0;
+pub(crate) const HASH_TABLE_REBUILD_THRESHOLD: f64 = 15.0 / 16.0;
+/// Stride hash bits (7 bits for stride calculation)
+pub(crate) const STRIDE_HASH_BITS: u8 = 7;
+/// Stride mask
+pub(crate) const STRIDE_MASK: u64 = (1 << STRIDE_HASH_BITS) - 1;

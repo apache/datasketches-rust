@@ -16,20 +16,14 @@
 // under the License.
 
 use std::hash::Hash;
+use std::num::NonZeroU64;
 
-use crate::common::ResizeFactor;
-use crate::hash::MurmurHash3X64128;
-use crate::hash::compute_seed_hash;
-use crate::theta::HASH_TABLE_REBUILD_THRESHOLD;
-use crate::theta::HASH_TABLE_RESIZE_THRESHOLD;
-use crate::theta::MAX_THETA;
-use crate::theta::MIN_LG_K;
-
-/// Stride hash bits (7 bits for stride calculation)
-const STRIDE_HASH_BITS: u8 = 7;
-
-/// Stride mask
-const STRIDE_MASK: u64 = (1 << STRIDE_HASH_BITS) - 1;
+use crate::theta::raw_hash_table::RawHashTable;
+use crate::theta::raw_hash_table::RawHashTableEntry;
+#[cfg(test)]
+pub(crate) use crate::theta::raw_hash_table::starting_sub_multiple;
+#[cfg(test)]
+pub(crate) use crate::theta::raw_hash_table::starting_theta_from_sampling_probability;
 
 /// Specific hash table for theta sketch
 ///
@@ -38,130 +32,27 @@ const STRIDE_MASK: u64 = (1 << STRIDE_HASH_BITS) - 1;
 /// * After it reaches the capacity bigger than 2^lg_nom_size, every time the number of entries
 ///   exceeds the threshold, it will rebuild the table: only keep the min 2^lg_nom_size entries and
 ///   update the theta to the k-th smallest entry.
-#[derive(Debug)]
-pub(super) struct ThetaHashTable {
-    lg_cur_size: u8,
-    lg_nom_size: u8,
-    lg_max_size: u8,
-    resize_factor: ResizeFactor,
-    sampling_probability: f32,
-    hash_seed: u64,
+pub(super) type ThetaHashTable = RawHashTable<ThetaEntry>;
 
-    // Logical emptiness of the source set.
-    //
-    // * `false` if any update has been attempted (even if screened by theta)
-    // * `true` if no updates have been attempted.
-    //
-    // This can be false even when `num_retained` is 0.
-    is_empty: bool,
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct ThetaEntry {
+    hash: NonZeroU64,
+}
 
-    theta: u64,
+impl ThetaEntry {
+    fn new(hash: u64) -> Self {
+        let hash = NonZeroU64::new(hash).expect("hash must be non-zero");
+        Self { hash }
+    }
+}
 
-    entries: Vec<u64>,
-
-    // Number of retained non-zero hashes currently stored in `entries`.
-    num_retained: usize,
+impl RawHashTableEntry for ThetaEntry {
+    fn hash(&self) -> u64 {
+        self.hash.get()
+    }
 }
 
 impl ThetaHashTable {
-    /// Create a new hash table
-    pub fn new(
-        lg_nom_size: u8,
-        resize_factor: ResizeFactor,
-        sampling_probability: f32,
-        hash_seed: u64,
-    ) -> Self {
-        let lg_max_size = lg_nom_size + 1;
-        let lg_cur_size = starting_sub_multiple(lg_max_size, MIN_LG_K, resize_factor.lg_value());
-        Self::from_raw_parts(
-            lg_cur_size,
-            lg_nom_size,
-            resize_factor,
-            sampling_probability,
-            starting_theta_from_sampling_probability(sampling_probability),
-            hash_seed,
-            true,
-        )
-    }
-
-    /// Constructs a table from raw internal state.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `lg_cur_size > lg_nom_size + 1`. (`lg_nom_size + 1 == lg_max_size`)
-    pub fn from_raw_parts(
-        lg_cur_size: u8,
-        lg_nom_size: u8,
-        resize_factor: ResizeFactor,
-        sampling_probability: f32,
-        theta: u64,
-        hash_seed: u64,
-        is_empty: bool,
-    ) -> Self {
-        let lg_max_size = lg_nom_size + 1;
-        assert!(
-            lg_cur_size <= lg_max_size,
-            "lg_cur_size must be <= lg_nom_size + 1, got lg_cur_size={lg_cur_size}, lg_nom_size={lg_nom_size}"
-        );
-        let size = if lg_cur_size > 0 { 1 << lg_cur_size } else { 0 };
-        let entries = vec![0u64; size];
-        Self {
-            lg_cur_size,
-            lg_nom_size,
-            lg_max_size,
-            resize_factor,
-            sampling_probability,
-            hash_seed,
-            is_empty,
-            theta,
-            entries,
-            num_retained: 0,
-        }
-    }
-
-    /// Hash a value with the table seed and return the hash.
-    fn hash<T: Hash>(&self, value: T) -> u64 {
-        let mut hasher = MurmurHash3X64128::with_seed(self.hash_seed);
-        value.hash(&mut hasher);
-        let (h1, _) = hasher.finish128();
-        h1 >> 1 // To make it compatible with Java version
-    }
-
-    /// Find an entry in the hash table.
-    ///
-    /// Returns the index of the entry if found, otherwise None. The entry may have been inserted or
-    /// empty.
-    fn find_in_curr_entries(&self, key: u64) -> Option<usize> {
-        Self::find_in_entries(&self.entries, key, self.lg_cur_size)
-    }
-
-    /// Find index in a given entries.
-    ///
-    /// Returns the index of the entry if found, otherwise None. The entry may have been inserted or
-    /// empty.
-    fn find_in_entries(entries: &[u64], key: u64, lg_size: u8) -> Option<usize> {
-        if entries.is_empty() {
-            return None;
-        }
-
-        let size = entries.len();
-        let mask = size - 1;
-        let stride = Self::get_stride(key, lg_size);
-        let mut index = (key as usize) & mask;
-        let loop_index = index;
-
-        loop {
-            let probe = entries[index];
-            if probe == 0 || probe == key {
-                return Some(index);
-            }
-            index = (index + stride) & mask;
-            if index == loop_index {
-                return None;
-            }
-        }
-    }
-
     /// Hashes and inserts a value into the table.
     ///
     /// Returns true if the value was inserted (new), false otherwise.
@@ -174,246 +65,33 @@ impl ThetaHashTable {
     ///
     /// Returns true if the value was inserted (new), false otherwise.
     pub fn try_insert_hash(&mut self, hash: u64) -> bool {
-        self.is_empty = false;
-
-        if hash == 0 || hash >= self.theta {
-            return false;
-        }
-
-        let Some(index) = self.find_in_curr_entries(hash) else {
-            unreachable!(
-                "Resize or rebuild should be called to make sure it always can find the entry."
-            );
-        };
-
-        // Already exists
-        if self.entries[index] == hash {
-            return false;
-        }
-
-        assert_eq!(self.entries[index], 0, "Entry should be empty");
-        self.entries[index] = hash;
-        self.num_retained += 1;
-
-        // Check if we need to resize or rebuild
-        let capacity = self.get_capacity();
-        if self.num_retained > capacity {
-            if self.lg_cur_size <= self.lg_nom_size {
-                self.resize();
+        self.upsert_entry(hash, |existing| {
+            if existing.is_some() {
+                None
             } else {
-                self.rebuild();
+                Some(ThetaEntry::new(hash))
             }
-        }
-        true
+        })
     }
 
-    /// Get capacity threshold
-    fn get_capacity(&self) -> usize {
-        let fraction = if self.lg_cur_size <= self.lg_nom_size {
-            HASH_TABLE_RESIZE_THRESHOLD
-        } else {
-            HASH_TABLE_REBUILD_THRESHOLD
-        };
-        (fraction * self.entries.len() as f64) as usize
-    }
-
-    /// Resize the hash table
-    fn resize(&mut self) {
-        let new_lg_size = std::cmp::min(
-            self.lg_cur_size + self.resize_factor.lg_value(),
-            self.lg_max_size,
-        );
-        let new_size = 1 << new_lg_size;
-
-        // Get new entries and rehash all entries
-        let mut new_entries = vec![0u64; new_size];
-        for &entry in &self.entries {
-            if entry != 0 {
-                let new_index = Self::find_in_entries(&new_entries, entry, new_lg_size);
-                if let Some(idx) = new_index {
-                    new_entries[idx] = entry;
-                } else {
-                    unreachable!(
-                        "find_in_entries should always return Some if the entry is not empty."
-                    );
-                }
-            }
-        }
-
-        self.entries = new_entries;
-        self.lg_cur_size = new_lg_size;
-    }
-
-    /// Rebuild the hash table:
-    /// The number of entries will be reduced to the nominal size k.
-    fn rebuild(&mut self) {
-        // Select the k-th smallest entry as new theta and keep the lesser entries.
-        self.entries.retain(|&e| e != 0);
-        let k = 1u64 << self.lg_nom_size;
-        let (lesser, kth, _) = self.entries.select_nth_unstable(k as usize);
-        self.theta = *kth;
-
-        // Rebuild the table with the lesser entries.
-        let size = 1 << self.lg_cur_size;
-        let mut new_entries = vec![0u64; size];
-        let mut num_inserted = 0;
-        for entry in lesser {
-            if let Some(idx) = Self::find_in_entries(&new_entries, *entry, self.lg_cur_size) {
-                new_entries[idx] = *entry;
-                num_inserted += 1;
-            } else {
-                unreachable!(
-                    "find_in_entries should always return Some if the entry is not empty."
-                );
-            }
-        }
-
-        assert_eq!(
-            num_inserted, k as usize,
-            "Number of inserted entries should be equal to k."
-        );
-        self.num_retained = num_inserted;
-        self.entries = new_entries;
-    }
-
-    /// Trim the table to nominal size k
-    pub fn trim(&mut self) {
-        if self.num_retained > (1 << self.lg_nom_size) {
-            self.rebuild();
-        }
-    }
-
-    /// Reset the table to empty state
-    pub fn reset(&mut self) {
-        let init_theta = starting_theta_from_sampling_probability(self.sampling_probability);
-        let init_lg_cur = starting_sub_multiple(
-            self.lg_nom_size + 1,
-            MIN_LG_K,
-            self.resize_factor.lg_value(),
-        );
-
-        // clear entries
-        if self.entries.len() != 1 << init_lg_cur {
-            self.entries.resize(1 << init_lg_cur, 0);
-        }
-        self.entries.fill(0);
-        self.num_retained = 0;
-        self.theta = init_theta;
-        self.is_empty = true;
-        self.lg_cur_size = init_lg_cur;
-    }
-
-    /// Return number of retained entries
-    pub fn num_retained(&self) -> usize {
-        self.num_retained
-    }
-
-    /// Get theta
-    pub fn theta(&self) -> u64 {
-        self.theta
-    }
-
-    /// Check if emptiness of the source set
-    pub fn is_empty(&self) -> bool {
-        self.is_empty
-    }
-
-    /// Get iterator over entries
+    /// Get iterator over entries.
     pub fn iter(&self) -> impl Iterator<Item = u64> + '_ {
-        self.entries.iter().copied().filter(|&e| e != 0)
-    }
-
-    /// Get log2 of nominal size
-    pub fn lg_nom_size(&self) -> u8 {
-        self.lg_nom_size
-    }
-
-    /// Get the hash of the seed that was used to hash the input.
-    pub fn seed_hash(&self) -> u16 {
-        compute_seed_hash(self.hash_seed)
+        self.iter_entries().map(RawHashTableEntry::hash)
     }
 
     /// Returns true if the given hash exists in the table.
     pub fn contains_hash(&self, hash: u64) -> bool {
-        if hash == 0 {
-            return false;
-        }
-        let Some(index) = self.find_in_curr_entries(hash) else {
-            return false;
-        };
-        self.entries[index] == hash
-    }
-
-    /// Set empty flag
-    pub fn set_empty(&mut self, is_empty: bool) {
-        self.is_empty = is_empty;
-    }
-
-    /// Get the hash seed used by this table.
-    pub fn hash_seed(&self) -> u64 {
-        self.hash_seed
-    }
-
-    /// Sets theta value.
-    pub fn set_theta(&mut self, theta: u64) {
-        assert!(
-            (1..=MAX_THETA).contains(&theta),
-            "theta must be in [1, {MAX_THETA}], got {theta}"
-        );
-        self.theta = theta;
-    }
-
-    /// Returns minimal lg_size where rebuild-capacity can hold `count`.
-    pub fn lg_size_from_count_for_rebuild(count: usize, load_factor: f64) -> u8 {
-        let log2 = |n: usize| {
-            if n == 0 { 0_u8 } else { n.ilog2() as u8 }
-        };
-        let log2_n = log2(count);
-        log2_n
-            + (if count > (((1u128 << ((log2_n as u32) + 1)) as f64) * load_factor) as usize {
-                2
-            } else {
-                1
-            })
-    }
-
-    /// Get stride for hash table probing
-    fn get_stride(key: u64, lg_size: u8) -> usize {
-        (2 * ((key >> (lg_size)) & STRIDE_MASK) + 1) as usize
-    }
-
-    /// Returns the estimated size of the heap allocations in bytes
-    pub fn estimated_size(&self) -> usize {
-        self.entries.capacity() * std::mem::size_of::<u64>()
-    }
-}
-
-/// Compute initial lg_size for hash table based on target lg_size, minimum lg_size, and resize
-/// factor. Make sure `lg_target = lg_init + n * lg_resize_factor`, where `n` is an integer and
-/// `lg_init >= lg_min`
-fn starting_sub_multiple(lg_target: u8, lg_min: u8, lg_resize_factor: u8) -> u8 {
-    if lg_target <= lg_min {
-        lg_min
-    } else if lg_resize_factor == 0 {
-        lg_target
-    } else {
-        ((lg_target - lg_min) % lg_resize_factor) + lg_min
-    }
-}
-
-/// Compute initial theta for hash table based on sampling probability.
-fn starting_theta_from_sampling_probability(sampling_probability: f32) -> u64 {
-    if sampling_probability < 1.0 {
-        (MAX_THETA as f64 * sampling_probability as f64) as u64
-    } else {
-        MAX_THETA
+        self.get_entry(hash).is_some()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::ResizeFactor;
     use crate::hash::DEFAULT_UPDATE_SEED;
+    use crate::theta::MAX_THETA;
+    use crate::theta::MIN_LG_K;
 
     #[test]
     fn test_new_hash_table() {
