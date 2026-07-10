@@ -122,7 +122,8 @@ impl ThetaIntersection {
                 self.table.hash_seed(),
                 self.table.is_empty(),
             );
-            for hash in sketch.iter() {
+            for entry in sketch.iter() {
+                let hash = entry.hash();
                 if !self.table.try_insert_hash(hash) {
                     return Err(Error::invalid_argument(
                         "Insert entries from sketch fail, possibly corrupted input sketch",
@@ -139,7 +140,8 @@ impl ThetaIntersection {
             let max_matches = self.table.num_retained().min(sketch.num_retained());
             let mut matched_entries = Vec::with_capacity(max_matches);
             let mut count = 0;
-            for hash in sketch.iter() {
+            for entry in sketch.iter() {
+                let hash = entry.hash();
                 if hash < self.table.theta() {
                     if self.table.contains_hash(hash) {
                         if matched_entries.len() == max_matches {

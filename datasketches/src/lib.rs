@@ -54,3 +54,6 @@ pub mod hash_value;
 
 // private internal modules
 mod hash;
+/// Shared building blocks for Theta-family sketches.
+#[cfg(feature = "theta")]
+pub mod theta_common;

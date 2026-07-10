@@ -17,16 +17,18 @@
 
 use std::hash::Hash;
 
+use super::HASH_TABLE_REBUILD_THRESHOLD;
+use super::HASH_TABLE_RESIZE_THRESHOLD;
+use super::MAX_THETA;
+use super::MIN_LG_K;
+use super::STRIDE_MASK;
 use crate::common::ResizeFactor;
 use crate::hash::MurmurHash3X64128;
 use crate::hash::compute_seed_hash;
-use crate::theta::HASH_TABLE_REBUILD_THRESHOLD;
-use crate::theta::HASH_TABLE_RESIZE_THRESHOLD;
-use crate::theta::MAX_THETA;
-use crate::theta::MIN_LG_K;
-use crate::theta::STRIDE_MASK;
 
-pub(crate) trait RawHashTableEntry {
+/// An entry retained by a Theta-family hash table.
+pub trait RawHashTableEntry {
+    /// Return the hash used as this entry's key.
     fn hash(&self) -> u64;
 }
 

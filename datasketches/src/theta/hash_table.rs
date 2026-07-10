@@ -18,12 +18,12 @@
 use std::hash::Hash;
 use std::num::NonZeroU64;
 
-use crate::theta::raw_hash_table::RawHashTable;
-use crate::theta::raw_hash_table::RawHashTableEntry;
+use crate::theta_common::hash_table::RawHashTable;
+use crate::theta_common::hash_table::RawHashTableEntry;
 #[cfg(test)]
-pub(crate) use crate::theta::raw_hash_table::starting_sub_multiple;
+pub(crate) use crate::theta_common::hash_table::starting_sub_multiple;
 #[cfg(test)]
-pub(crate) use crate::theta::raw_hash_table::starting_theta_from_sampling_probability;
+pub(crate) use crate::theta_common::hash_table::starting_theta_from_sampling_probability;
 
 /// Specific hash table for theta sketch
 ///
@@ -34,15 +34,21 @@ pub(crate) use crate::theta::raw_hash_table::starting_theta_from_sampling_probab
 ///   update the theta to the k-th smallest entry.
 pub(super) type ThetaHashTable = RawHashTable<ThetaEntry>;
 
+/// A retained entry in a Theta sketch.
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct ThetaEntry {
+pub struct ThetaEntry {
     hash: NonZeroU64,
 }
 
 impl ThetaEntry {
-    fn new(hash: u64) -> Self {
+    pub(crate) fn new(hash: u64) -> Self {
         let hash = NonZeroU64::new(hash).expect("hash must be non-zero");
         Self { hash }
+    }
+
+    /// Return the hash used as this entry's key.
+    pub fn hash(&self) -> u64 {
+        self.hash.get()
     }
 }
 

@@ -21,16 +21,23 @@ use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::theta::CompactThetaSketch;
 use crate::theta::DEFAULT_LG_K;
 use crate::theta::MAX_LG_K;
-use crate::theta::MAX_THETA;
 use crate::theta::MIN_LG_K;
 use crate::theta::ThetaSketchView;
-use crate::theta::hash_table::ThetaHashTable;
+use crate::theta::hash_table::ThetaEntry;
+use crate::theta_common::union::RawThetaUnion;
+use crate::theta_common::union::RawThetaUnionPolicy;
 
 /// Stateful union operator for Theta sketches.
 #[derive(Debug)]
 pub struct ThetaUnion {
-    table: ThetaHashTable,
-    union_theta: u64,
+    raw: RawThetaUnion<ThetaEntry, NoopUnionPolicy>,
+}
+
+#[derive(Debug)]
+struct NoopUnionPolicy;
+
+impl RawThetaUnionPolicy<ThetaEntry> for NoopUnionPolicy {
+    fn merge(&self, _existing: &mut ThetaEntry, _incoming: ThetaEntry) {}
 }
 
 impl ThetaUnion {
@@ -48,31 +55,7 @@ impl ThetaUnion {
 
     /// Update this union with a given sketch.
     pub fn update<S: ThetaSketchView>(&mut self, sketch: &S) -> Result<(), Error> {
-        if sketch.is_empty() {
-            return Ok(());
-        }
-
-        if self.table.seed_hash() != sketch.seed_hash() {
-            return Err(Error::invalid_argument(format!(
-                "incompatible seed hash: expected {}, got {}",
-                self.table.seed_hash(),
-                sketch.seed_hash(),
-            )));
-        }
-
-        self.table.set_empty(false);
-        self.union_theta = self.union_theta.min(sketch.theta64());
-
-        for hash in sketch.iter() {
-            if hash < self.union_theta && hash < self.table.theta() {
-                self.table.try_insert_hash(hash);
-            } else if sketch.is_ordered() {
-                break;
-            }
-        }
-        self.union_theta = self.union_theta.min(self.table.theta());
-
-        Ok(())
+        self.raw.update(sketch)
     }
 
     /// Return this union in compact form.
@@ -84,47 +67,23 @@ impl ThetaUnion {
     ///
     /// If `ordered` is true, retained hash values are sorted in ascending order.
     pub fn result_with_ordered(&self, ordered: bool) -> CompactThetaSketch {
-        let empty = self.table.is_empty();
-        if empty {
-            return CompactThetaSketch::from_parts(
-                Vec::new(),
-                self.union_theta,
-                self.table.seed_hash(),
-                true,
-                true,
-            );
-        }
-
-        let mut theta = self.union_theta.min(self.table.theta());
-        let mut entries = if self.union_theta >= self.table.theta() {
-            self.table.iter().collect::<Vec<_>>()
-        } else {
-            self.table
-                .iter()
-                .filter(|&hash| hash < theta)
-                .collect::<Vec<_>>()
-        };
-
-        let nominal_num = 1usize << self.table.lg_nom_size();
-        if entries.len() > nominal_num {
-            let (_, kth, _) = entries.select_nth_unstable(nominal_num);
-            theta = *kth;
-            entries.truncate(nominal_num);
-        }
-
-        let ordered = ordered || (entries.len() == 1 && theta == MAX_THETA);
-
-        if ordered && entries.len() > 1 {
-            entries.sort_unstable();
-        }
-
-        CompactThetaSketch::from_parts(entries, theta, self.table.seed_hash(), ordered, false)
+        let result = self.raw.result(ordered);
+        CompactThetaSketch::from_parts(
+            result
+                .entries
+                .into_iter()
+                .map(|entry| entry.hash())
+                .collect(),
+            result.theta,
+            result.seed_hash,
+            result.ordered,
+            result.empty,
+        )
     }
 
     /// Reset the union to empty state.
     pub fn reset(&mut self) {
-        self.table.reset();
-        self.union_theta = self.table.theta();
+        self.raw.reset();
     }
 }
 
@@ -219,15 +178,14 @@ impl ThetaUnionBuilder {
     /// let _union = ThetaUnion::builder().lg_k(10).build();
     /// ```
     pub fn build(self) -> ThetaUnion {
-        let table = ThetaHashTable::new(
-            self.lg_k,
-            self.resize_factor,
-            self.sampling_probability,
-            self.seed,
-        );
         ThetaUnion {
-            union_theta: table.theta(),
-            table,
+            raw: RawThetaUnion::new(
+                self.lg_k,
+                self.resize_factor,
+                self.sampling_probability,
+                self.seed,
+                NoopUnionPolicy,
+            ),
         }
     }
 }
