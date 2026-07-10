@@ -46,12 +46,6 @@ mod serialization;
 mod sketch;
 mod union;
 
-pub(crate) use crate::theta_common::DEFAULT_LG_K;
-pub(crate) use crate::theta_common::HASH_TABLE_REBUILD_THRESHOLD;
-pub(crate) use crate::theta_common::MAX_LG_K;
-pub(crate) use crate::theta_common::MAX_THETA;
-pub(crate) use crate::theta_common::MIN_LG_K;
-
 pub use self::hash_table::ThetaEntry;
 pub use self::intersection::ThetaIntersection;
 pub use self::sketch::CompactThetaSketch;
@@ -60,3 +54,8 @@ pub use self::sketch::ThetaSketchBuilder;
 pub use self::sketch::ThetaSketchView;
 pub use self::union::ThetaUnion;
 pub use self::union::ThetaUnionBuilder;
+pub(crate) use crate::theta_common::DEFAULT_LG_K;
+pub(crate) use crate::theta_common::HASH_TABLE_REBUILD_THRESHOLD;
+pub(crate) use crate::theta_common::MAX_LG_K;
+pub(crate) use crate::theta_common::MAX_THETA;
+pub(crate) use crate::theta_common::MIN_LG_K;

@@ -45,13 +45,13 @@ fn assert_estimate_close(sketch: &CompactThetaSketch, expected: f64, tolerance: 
 fn test_empty_union() {
     let sketch = ThetaSketch::builder().build();
     let mut union = ThetaUnion::builder().build();
-    let result = union.result();
+    let result = union.to_sketch(true);
     assert_eq!(result.num_retained(), 0);
     assert!(result.is_empty());
     assert!(!result.is_estimation_mode());
 
     union.update(&sketch).unwrap();
-    let result = union.result();
+    let result = union.to_sketch(true);
     assert_eq!(result.num_retained(), 0);
     assert!(result.is_empty());
     assert!(!result.is_estimation_mode());
@@ -64,7 +64,7 @@ fn test_non_empty_no_retained_keys() {
 
     let mut union = ThetaUnion::builder().build();
     union.update(&sketch).unwrap();
-    let result = union.result();
+    let result = union.to_sketch(true);
     assert_eq!(result.num_retained(), 0);
     assert!(!result.is_empty());
     assert!(result.is_estimation_mode());
@@ -86,13 +86,13 @@ fn test_exact_mode_half_overlap() {
     let mut union = ThetaUnion::builder().build();
     union.update(&sketch1).unwrap();
     union.update(&sketch2).unwrap();
-    let result = union.result();
+    let result = union.to_sketch(true);
     assert!(!result.is_empty());
     assert!(!result.is_estimation_mode());
     assert_eq!(result.estimate(), 1500.0);
 
     union.reset();
-    let reset = union.result();
+    let reset = union.to_sketch(true);
     assert_eq!(reset.num_retained(), 0);
     assert!(reset.is_empty());
     assert!(!reset.is_estimation_mode());
@@ -115,7 +115,7 @@ fn test_exact_mode_half_overlap_compact() {
     let mut union = ThetaUnion::builder().build();
     union.update(&compact1).unwrap();
     union.update(&compact2).unwrap();
-    let result = union.result();
+    let result = union.to_sketch(true);
     assert!(!result.is_empty());
     assert!(!result.is_estimation_mode());
     assert_eq!(result.estimate(), 1500.0);
@@ -136,7 +136,7 @@ fn test_estimation_mode_half_overlap() {
     let mut union = ThetaUnion::builder().build();
     union.update(&sketch1).unwrap();
     union.update(&sketch2).unwrap();
-    let result = union.result();
+    let result = union.to_sketch(true);
     assert!(!result.is_empty());
     assert!(result.is_estimation_mode());
     assert!(
@@ -178,14 +178,14 @@ fn test_larger_k() {
     union1.update(&sketch2).unwrap();
     union1.update(&sketch1).unwrap();
     union1.update(&sketch3).unwrap();
-    let result1 = union1.result();
+    let result1 = union1.to_sketch(true);
     assert_eq!(result1.estimate(), sketch3.estimate());
 
     let mut union2 = ThetaUnion::builder().lg_k(16).build();
     union2.update(&sketch1).unwrap();
     union2.update(&sketch3).unwrap();
     union2.update(&sketch2).unwrap();
-    let result2 = union2.result();
+    let result2 = union2.to_sketch(true);
     assert_eq!(result2.estimate(), sketch3.estimate());
 }
 
@@ -200,7 +200,7 @@ fn test_exact_union_no_overlap() {
     union.update(&sketch1).unwrap();
     union.update(&sketch2).unwrap();
 
-    let result = union.result();
+    let result = union.to_sketch(true);
     assert!(!result.is_empty());
     assert!(!result.is_estimation_mode());
     assert_eq!(result.estimate(), k as f64);
@@ -217,7 +217,11 @@ fn test_estimation_union_no_overlap() {
     union.update(&sketch1).unwrap();
     union.update(&sketch2).unwrap();
 
-    assert_estimate_close(&union.result(), (4 * k) as f64, 0.05 * (4 * k) as f64);
+    assert_estimate_close(
+        &union.to_sketch(true),
+        (4 * k) as f64,
+        0.05 * (4 * k) as f64,
+    );
 }
 
 #[test]
@@ -231,7 +235,7 @@ fn test_exact_union_with_overlap() {
     union.update(&sketch1).unwrap();
     union.update(&sketch2).unwrap();
 
-    let result = union.result();
+    let result = union.to_sketch(true);
     assert!(!result.is_empty());
     assert!(!result.is_estimation_mode());
     assert_eq!(result.estimate(), k as f64);
@@ -255,11 +259,11 @@ fn test_ordered_and_unordered_compact_inputs() {
     unordered_union.update(&compact_unordered).unwrap();
 
     assert_eq!(
-        ordered_union.result().estimate(),
-        unordered_union.result().estimate()
+        ordered_union.to_sketch(true).estimate(),
+        unordered_union.to_sketch(true).estimate()
     );
     assert_estimate_close(
-        &ordered_union.result(),
+        &ordered_union.to_sketch(true),
         (4 * k) as f64,
         0.05 * (4 * k) as f64,
     );
@@ -274,8 +278,8 @@ fn test_result_ordering_forms_have_same_estimate() {
     union.update(&sketch1).unwrap();
     union.update(&sketch2).unwrap();
 
-    let unordered = union.result_with_ordered(false);
-    let ordered = union.result_with_ordered(true);
+    let unordered = union.to_sketch(false);
+    let ordered = union.to_sketch(true);
 
     assert!(!unordered.is_ordered());
     assert!(ordered.is_ordered());
@@ -298,7 +302,7 @@ fn test_multi_union() {
         union.update(&sketch).unwrap();
     }
 
-    assert_estimate_close(&union.result(), 180_391.0, 180_391.0 * 0.02);
+    assert_estimate_close(&union.to_sketch(true), 180_391.0, 180_391.0 * 0.02);
 }
 
 #[test]
@@ -311,8 +315,8 @@ fn test_result_does_not_reset_union() {
     let mut union = ThetaUnion::builder().lg_k(lg_k).build();
     union.update(&compact1).unwrap();
     union.update(&compact2).unwrap();
-    let first = union.result();
-    let second = union.result();
+    let first = union.to_sketch(true);
+    let second = union.to_sketch(true);
 
     assert_eq!(first.estimate(), second.estimate());
     assert!(!second.is_empty());
@@ -328,7 +332,7 @@ fn test_union_full_overlap() {
     let mut union = ThetaUnion::builder().lg_k(lg_k).build();
     union.update(&compact1).unwrap();
     union.update(&compact2).unwrap();
-    let result = union.result();
+    let result = union.to_sketch(true);
 
     assert_eq!(result.estimate(), k as f64);
 }
@@ -357,8 +361,8 @@ fn test_ordered_input_early_stop_matches_unordered_input() {
         unordered_union.update(&unordered2).unwrap();
 
         assert_eq!(
-            ordered_union.result().estimate(),
-            unordered_union.result().estimate()
+            ordered_union.to_sketch(true).estimate(),
+            unordered_union.to_sketch(true).estimate()
         );
     }
 }
@@ -373,7 +377,7 @@ fn test_union_cutback_to_k() {
     let mut union = ThetaUnion::builder().lg_k(lg_k).build();
     union.update(&compact1).unwrap();
     union.update(&compact2).unwrap();
-    let result = union.result();
+    let result = union.to_sketch(true);
 
     assert_estimate_close(&result, (6 * k) as f64, (6 * k) as f64 * 0.06);
     assert!(result.num_retained() <= k as usize);
@@ -390,17 +394,17 @@ fn test_union_empty_valid_rules() {
     let mut empty_union = ThetaUnion::builder().lg_k(5).build();
     empty_union.update(&empty1).unwrap();
     empty_union.update(&empty2).unwrap();
-    assert!(empty_union.result().is_empty());
+    assert!(empty_union.to_sketch(true).is_empty());
 
     let mut left_non_empty_union = ThetaUnion::builder().lg_k(5).build();
     left_non_empty_union.update(&one).unwrap();
     left_non_empty_union.update(&empty2).unwrap();
-    assert!(!left_non_empty_union.result().is_empty());
+    assert!(!left_non_empty_union.to_sketch(true).is_empty());
 
     let mut right_non_empty_union = ThetaUnion::builder().lg_k(5).build();
     right_non_empty_union.update(&empty1).unwrap();
     right_non_empty_union.update(&one).unwrap();
-    assert!(!right_non_empty_union.result().is_empty());
+    assert!(!right_non_empty_union.to_sketch(true).is_empty());
 }
 
 #[test]
@@ -411,7 +415,7 @@ fn test_trim_to_k() {
     let mut union = ThetaUnion::builder().lg_k(10).build();
     union.update(&hi_sketch).unwrap();
     union.update(&lo_sketch).unwrap();
-    let result = union.result();
+    let result = union.to_sketch(true);
 
     assert_eq!(result.num_retained(), 1024);
 }
@@ -422,7 +426,7 @@ fn test_builder_lg_k() {
     let mut union = ThetaUnion::builder().lg_k(10).build();
     union.update(&sketch).unwrap();
 
-    assert_eq!(union.result().estimate(), 1000.0);
+    assert_eq!(union.to_sketch(true).estimate(), 1000.0);
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -652,7 +656,7 @@ fn test_corner_case_union_states() {
         let mut union = ThetaUnion::builder().build();
         union.update(&sketch_a).unwrap();
         union.update(&sketch_b).unwrap();
-        let result = union.result();
+        let result = union.to_sketch(true);
 
         assert!(
             (result.theta() - expected_theta).abs() < 1e-6,
@@ -675,7 +679,7 @@ fn test_corner_case_union_states() {
         let mut union = ThetaUnion::builder().build();
         union.update(&compact_a).unwrap();
         union.update(&compact_b).unwrap();
-        let compact_result = union.result();
+        let compact_result = union.to_sketch(true);
 
         assert!((compact_result.theta() - expected_theta).abs() < 1e-6);
         assert_eq!(compact_result.num_retained(), expected_count);

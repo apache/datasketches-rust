@@ -202,24 +202,15 @@ impl ThetaIntersection {
         self.is_valid
     }
 
-    /// Returns the intersection result as a compact theta sketch (ordered).
-    ///
-    /// # Panics
-    ///
-    /// Panics if called before the first [`update`](Self::update).
-    pub fn result(&self) -> CompactThetaSketch {
-        self.result_with_ordered(true)
-    }
-
     /// Returns the intersection result as a compact theta sketch.
     ///
     /// # Panics
     ///
     /// Panics if called before the first [`update`](Self::update).
-    pub fn result_with_ordered(&self, ordered: bool) -> CompactThetaSketch {
+    pub fn to_sketch(&self, ordered: bool) -> CompactThetaSketch {
         assert!(
             self.is_valid,
-            "ThetaIntersection::result() called before first update()"
+            "ThetaIntersection::to_sketch() called before first update()"
         );
         let mut hashes: Vec<u64> = self.table.iter().collect();
         if ordered {

@@ -58,15 +58,8 @@ impl ThetaUnion {
         self.raw.update(sketch)
     }
 
-    /// Return this union in compact form.
-    pub fn result(&self) -> CompactThetaSketch {
-        self.result_with_ordered(true)
-    }
-
-    /// Return this union in compact form.
-    ///
-    /// If `ordered` is true, retained hash values are sorted in ascending order.
-    pub fn result_with_ordered(&self, ordered: bool) -> CompactThetaSketch {
+    /// Return this union as a compact sketch.
+    pub fn to_sketch(&self, ordered: bool) -> CompactThetaSketch {
         let result = self.raw.result(ordered);
         CompactThetaSketch::from_parts(
             result

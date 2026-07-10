@@ -19,7 +19,8 @@ pub(crate) mod hash_table;
 pub(crate) mod sketch_view;
 pub(crate) mod union;
 
-// Public because public view APIs expose this trait and its entry bound, e.g. `ThetaSketchView: RawThetaSketchView<ThetaEntry>`.
+// Public because public view APIs expose this trait and its entry bound, e.g. `ThetaSketchView:
+// RawThetaSketchView<ThetaEntry>`.
 pub use self::hash_table::RawHashTableEntry;
 pub use self::sketch_view::RawThetaSketchView;
 
