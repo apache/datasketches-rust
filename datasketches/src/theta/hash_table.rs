@@ -40,8 +40,9 @@ pub(crate) struct ThetaEntry {
 }
 
 impl ThetaEntry {
-    fn new(hash: u64) -> Option<Self> {
-        NonZeroU64::new(hash).map(|hash| Self { hash })
+    fn new(hash: u64) -> Self {
+        let hash = NonZeroU64::new(hash).expect("hash must be non-zero");
+        Self { hash }
     }
 }
 
@@ -68,7 +69,7 @@ impl ThetaHashTable {
             if existing.is_some() {
                 None
             } else {
-                Some(ThetaEntry::new(hash).expect("zero hashes are screened before insertion"))
+                Some(ThetaEntry::new(hash))
             }
         })
     }
