@@ -18,12 +18,12 @@
 use std::hash::Hash;
 use std::num::NonZeroU64;
 
-use super::raw_hash_table::RawHashTable;
-use super::raw_hash_table::RawHashTableEntry;
+use crate::theta::raw_hash_table::RawHashTable;
+use crate::theta::raw_hash_table::RawHashTableEntry;
 #[cfg(test)]
-pub(crate) use super::raw_hash_table::starting_sub_multiple;
+pub(crate) use crate::theta::raw_hash_table::starting_sub_multiple;
 #[cfg(test)]
-pub(crate) use super::raw_hash_table::starting_theta_from_sampling_probability;
+pub(crate) use crate::theta::raw_hash_table::starting_theta_from_sampling_probability;
 
 /// Specific hash table for theta sketch
 ///
