@@ -179,12 +179,12 @@ impl<T: CountMinValue> CountMinSketch<T> {
             return;
         }
         let abs_weight = weight.abs();
-        self.total_weight = self.total_weight.add(abs_weight);
+        self.total_weight = self.total_weight + abs_weight;
         let num_buckets = self.num_buckets as usize;
         for (row, seed) in self.hash_seeds.iter().enumerate() {
             let bucket = self.bucket_index(&item, *seed);
             let index = row * num_buckets + bucket;
-            self.counts[index] = self.counts[index].add(weight);
+            self.counts[index] = self.counts[index] + weight;
         }
     }
 
@@ -220,8 +220,8 @@ impl<T: CountMinValue> CountMinSketch<T> {
     /// Returns the upper bound on the true frequency of the given item.
     pub fn upper_bound<I: Hash>(&self, item: I) -> T {
         let estimate = self.estimate(item);
-        let error = T::from_f64(self.relative_error() * self.total_weight.to_f64());
-        estimate.add(error)
+        let error = self.total_weight.scale(self.relative_error());
+        estimate + error
     }
 
     /// Merges another sketch into this one.
@@ -253,9 +253,9 @@ impl<T: CountMinValue> CountMinSketch<T> {
         assert_eq!(self.counts.len(), other.counts.len());
         let counts_len = self.counts.len();
         for i in 0..counts_len {
-            self.counts[i] = self.counts[i].add(other.counts[i]);
+            self.counts[i] = self.counts[i] + other.counts[i];
         }
-        self.total_weight = self.total_weight.add(other.total_weight);
+        self.total_weight = self.total_weight + other.total_weight;
     }
 
     /// Serializes this sketch into the DataSketches Count-Min format.
@@ -452,9 +452,9 @@ impl<T: UnsignedCountMinValue> CountMinSketch<T> {
     pub fn decay(&mut self, decay: f64) {
         assert!(decay > 0.0 && decay <= 1.0, "decay must be within (0, 1]");
         for c in &mut self.counts {
-            *c = c.decay(decay)
+            *c = c.scale(decay)
         }
-        self.total_weight = self.total_weight.decay(decay);
+        self.total_weight = self.total_weight.scale(decay);
     }
 }
 
