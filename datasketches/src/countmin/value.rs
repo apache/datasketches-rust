@@ -17,63 +17,43 @@
 
 use crate::error::Error;
 
+/// Marker trait identifying the value types supported by
+/// [`CountMinSketch`](crate::countmin::CountMinSketch).
+pub trait CountMinValue: private::CountMinValue {}
+
+/// Marker trait identifying the unsigned value types supported by
+/// [`CountMinSketch`](crate::countmin::CountMinSketch).
+///
+/// This marker enables unsigned-only operations such as halving and decay.
+pub trait UnsignedCountMinValue: CountMinValue + private::UnsignedCountMinValue {}
+
 mod private {
-    // Sealed trait to prevent external implementations of CountMinValue.
-    pub trait Sealed {}
-}
+    use std::ops::Add;
 
-/// Value type supported in a Count-Min sketch.
-pub trait CountMinValue: private::Sealed + Copy + Ord {
-    /// Zero value for counters and weights.
-    const ZERO: Self;
+    use crate::error::Error;
 
-    /// One value for unit updates.
-    const ONE: Self;
+    pub trait CountMinValue: Sized + Copy + Ord + Add<Output = Self> {
+        const ZERO: Self;
+        const ONE: Self;
+        const MAX: Self;
 
-    /// Maximum representable value for initializing minima.
-    const MAX: Self;
+        fn abs(self) -> Self;
+        fn scale(self, factor: f64) -> Self;
+        fn to_bytes(self) -> [u8; 8];
+        fn try_from_bytes(bytes: [u8; 8]) -> Result<Self, Error>;
+    }
 
-    /// Performs the + operation.
-    fn add(self, other: Self) -> Self;
-
-    /// Computes the absolute value of `self`.
-    fn abs(self) -> Self;
-
-    /// Converts into `f64`.
-    fn to_f64(self) -> f64;
-
-    /// Converts from `f64` by truncating toward zero.
-    fn from_f64(value: f64) -> Self;
-
-    /// Returns the raw transmutation in little-endian 8 bytes.
-    fn to_bytes(self) -> [u8; 8];
-
-    /// Constructs from the raw transmutation in little-endian 8 bytes.
-    fn try_from_bytes(bytes: [u8; 8]) -> Result<Self, Error>;
-}
-
-/// Unsigned value type supported in a Count-Min sketch.
-pub trait UnsignedCountMinValue: CountMinValue {
-    /// Divides the value by two, truncating toward zero.
-    fn halve(self) -> Self;
-
-    /// Multiplies the value by decay and truncates back into `T`.
-    fn decay(self, decay: f64) -> Self;
+    pub trait UnsignedCountMinValue: CountMinValue {
+        fn halve(self) -> Self;
+    }
 }
 
 macro_rules! impl_signed {
     ($name:ty, $min:expr, $max:expr) => {
-        impl private::Sealed for $name {}
-
-        impl CountMinValue for $name {
+        impl private::CountMinValue for $name {
             const ZERO: Self = 0;
             const ONE: Self = 1;
             const MAX: Self = $max;
-
-            #[inline(always)]
-            fn add(self, other: Self) -> Self {
-                self + other
-            }
 
             #[inline(always)]
             fn abs(self) -> Self {
@@ -81,13 +61,8 @@ macro_rules! impl_signed {
             }
 
             #[inline(always)]
-            fn to_f64(self) -> f64 {
-                self as f64
-            }
-
-            #[inline(always)]
-            fn from_f64(value: f64) -> Self {
-                value.trunc() as $name
+            fn scale(self, factor: f64) -> Self {
+                ((self as f64) * factor).trunc() as $name
             }
 
             #[inline(always)]
@@ -109,6 +84,8 @@ macro_rules! impl_signed {
                 Ok(value as $name)
             }
         }
+
+        impl CountMinValue for $name {}
     };
 }
 
@@ -119,17 +96,10 @@ impl_signed!(i64, i64::MIN, i64::MAX);
 
 macro_rules! impl_unsigned {
     ($name:ty, $max:expr) => {
-        impl private::Sealed for $name {}
-
-        impl CountMinValue for $name {
+        impl private::CountMinValue for $name {
             const ZERO: Self = 0;
             const ONE: Self = 1;
             const MAX: Self = $max;
-
-            #[inline(always)]
-            fn add(self, other: Self) -> Self {
-                self + other
-            }
 
             #[inline(always)]
             fn abs(self) -> Self {
@@ -137,13 +107,8 @@ macro_rules! impl_unsigned {
             }
 
             #[inline(always)]
-            fn to_f64(self) -> f64 {
-                self as f64
-            }
-
-            #[inline(always)]
-            fn from_f64(value: f64) -> Self {
-                value.trunc() as $name
+            fn scale(self, factor: f64) -> Self {
+                ((self as f64) * factor).trunc() as $name
             }
 
             #[inline(always)]
@@ -166,18 +131,15 @@ macro_rules! impl_unsigned {
             }
         }
 
-        impl UnsignedCountMinValue for $name {
+        impl private::UnsignedCountMinValue for $name {
             #[inline(always)]
             fn halve(self) -> Self {
                 self >> 1
             }
-
-            #[inline(always)]
-            fn decay(self, decay: f64) -> Self {
-                let value = self.to_f64() * decay;
-                Self::from_f64(value)
-            }
         }
+
+        impl CountMinValue for $name {}
+        impl UnsignedCountMinValue for $name {}
     };
 }
 
