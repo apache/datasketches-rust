@@ -31,6 +31,7 @@ impl Command {
     fn run(self) {
         match self.sub {
             SubCommand::Check(cmd) => cmd.run(),
+            SubCommand::Docs(cmd) => cmd.run(),
             SubCommand::Lint(cmd) => cmd.run(),
             SubCommand::Test(cmd) => cmd.run(),
         }
@@ -41,7 +42,9 @@ impl Command {
 enum SubCommand {
     #[clap(about = "Check datasketches under the feature matrix.")]
     Check(CommandCheck),
-    #[clap(about = "Run format and clippy checks.")]
+    #[clap(about = "Generate documentation and open for preview")]
+    Docs(CommandDocs),
+    #[clap(about = "Run linter checks.")]
     Lint(CommandLint),
     #[clap(about = "Run unit tests.")]
     Test(CommandTest),
@@ -60,6 +63,16 @@ impl CommandCheck {
             run_command(make_check_cmd(feature));
         }
         run_command(make_check_cmd(&features));
+    }
+}
+
+#[derive(Parser)]
+#[clap(name = "docs")]
+struct CommandDocs {}
+
+impl CommandDocs {
+    fn run(self) {
+        run_command(make_docs_cmd(true));
     }
 }
 
@@ -112,7 +125,7 @@ impl CommandLint {
     fn run(self) {
         run_command(make_clippy_cmd(self.fix));
         run_command(make_format_cmd(self.fix));
-        run_command(make_docs_cmd());
+        run_command(make_docs_cmd(false));
         run_command(make_taplo_cmd(self.fix));
         run_command(make_typos_cmd());
         run_command(make_hawkeye_cmd(self.fix));
@@ -202,17 +215,20 @@ fn make_clippy_cmd(fix: bool) -> StdCommand {
     cmd
 }
 
-fn make_docs_cmd() -> StdCommand {
+fn make_docs_cmd(open: bool) -> StdCommand {
     let mut cmd = find_command("cargo");
-    cmd.env("RUSTFLAGS", "--cfg docsrs");
-    cmd.env("RUSTDOCFLAGS", "-D warnings");
+    cmd.env("RUSTDOCFLAGS", "--cfg docsrs -D warnings");
     cmd.args([
         "+nightly",
         "doc",
         "--package",
         "datasketches",
         "--all-features",
+        "--no-deps",
     ]);
+    if open {
+        cmd.args(["--open"]);
+    }
     cmd
 }
 

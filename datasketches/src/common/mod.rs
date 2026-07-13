@@ -24,5 +24,5 @@ pub use self::resize::ResizeFactor;
 
 #[cfg(feature = "theta")]
 pub(crate) mod binomial_bounds;
-#[cfg(feature = "cpc")]
+#[cfg(any(feature = "cpc", feature = "hll"))]
 pub(crate) mod inv_pow2_table;
