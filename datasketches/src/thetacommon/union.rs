@@ -17,13 +17,13 @@
 
 use crate::common::ResizeFactor;
 use crate::error::Error;
+use crate::thetacommon::RawHashTableEntry;
+use crate::thetacommon::RawThetaSketchView;
 use crate::thetacommon::constants::MAX_THETA;
 use crate::thetacommon::hash_table::RawHashTable;
-use crate::thetacommon::hash_table::RawHashTableEntry;
-use crate::thetacommon::sketch_view::RawThetaSketchView;
 
 /// Merges an incoming entry into an existing entry with the same hash.
-pub(crate) trait RawThetaUnionPolicy<E> {
+pub trait RawThetaUnionPolicy<E> {
     fn merge(&self, existing: &mut E, incoming: E);
 }
 
@@ -32,7 +32,7 @@ pub(crate) trait RawThetaUnionPolicy<E> {
 /// `E` is the retained entry type. Ordinary Theta entries only contain a hash, while tuple
 /// entries also carry a summary. `P` defines how equal-hash entries are combined.
 #[derive(Debug)]
-pub(crate) struct RawThetaUnion<E, P> {
+pub struct RawThetaUnion<E, P> {
     table: RawHashTable<E>,
     policy: P,
     union_theta: u64,
@@ -40,19 +40,19 @@ pub(crate) struct RawThetaUnion<E, P> {
 
 /// Raw compact-union state from which a sketch family creates its compact result type.
 #[derive(Debug)]
-pub(crate) struct RawThetaUnionResult<E> {
-    pub(crate) entries: Vec<E>,
-    pub(crate) theta: u64,
-    pub(crate) seed_hash: u16,
-    pub(crate) ordered: bool,
-    pub(crate) empty: bool,
+pub struct RawThetaUnionResult<E> {
+    pub entries: Vec<E>,
+    pub theta: u64,
+    pub seed_hash: u16,
+    pub ordered: bool,
+    pub empty: bool,
 }
 
 impl<E, P> RawThetaUnion<E, P>
 where
     E: RawHashTableEntry,
 {
-    pub(crate) fn new(
+    pub fn new(
         lg_k: u8,
         resize_factor: ResizeFactor,
         sampling_probability: f32,
@@ -68,7 +68,7 @@ where
     }
 
     /// Incorporate a sketch into the union.
-    pub(crate) fn update<S>(&mut self, sketch: &S) -> Result<(), Error>
+    pub fn update<S>(&mut self, sketch: &S) -> Result<(), Error>
     where
         S: RawThetaSketchView<E>,
         P: RawThetaUnionPolicy<E>,
@@ -86,7 +86,7 @@ where
         }
 
         self.table.set_empty(false);
-        self.union_theta = self.union_theta.min(sketch.theta64());
+        self.union_theta = self.union_theta.min(sketch.theta());
 
         for entry in sketch.iter() {
             let hash = entry.hash();
@@ -108,7 +108,7 @@ where
     }
 
     /// Return the current compact-union state.
-    pub(crate) fn result(&self, ordered: bool) -> RawThetaUnionResult<E>
+    pub fn result(&self, ordered: bool) -> RawThetaUnionResult<E>
     where
         E: Clone,
     {
@@ -155,7 +155,7 @@ where
     }
 
     /// Reset the union to its initial state.
-    pub(crate) fn reset(&mut self) {
+    pub fn reset(&mut self) {
         self.table.reset();
         self.union_theta = self.table.theta();
     }
@@ -165,7 +165,6 @@ where
 mod tests {
     use super::*;
     use crate::hash::DEFAULT_UPDATE_SEED;
-    use crate::thetacommon::sketch_view::RawThetaSketchView;
 
     #[derive(Clone, Debug, Eq, PartialEq)]
     struct TestEntry {
@@ -183,14 +182,12 @@ mod tests {
         entries: Vec<TestEntry>,
     }
 
-    impl crate::thetacommon::sketch_view::private::Sealed for TestSketch {}
-
     impl RawThetaSketchView<TestEntry> for TestSketch {
         fn seed_hash(&self) -> u16 {
             crate::hash::compute_seed_hash(DEFAULT_UPDATE_SEED)
         }
 
-        fn theta64(&self) -> u64 {
+        fn theta(&self) -> u64 {
             MAX_THETA
         }
 

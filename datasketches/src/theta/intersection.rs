@@ -93,7 +93,7 @@ impl ThetaIntersection {
         self.table.set_theta(if self.table.is_empty() {
             MAX_THETA
         } else {
-            self.table.theta().min(sketch.theta64())
+            self.table.theta().min(sketch.theta())
         });
 
         if self.is_valid && self.table.num_retained() == 0 {

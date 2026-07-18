@@ -15,15 +15,39 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! Data structures and functions that may be used across all the Theta/Tuple sketch families.
+//! Data structures and functions that may be used across all the Theta sketch family.
 
 pub(crate) mod binomial_bounds;
 pub(crate) mod constants;
 pub(crate) mod hash_table;
-pub(crate) mod sketch_view;
 pub(crate) mod union;
 
-// Public because public view APIs expose this trait and its entry bound, e.g. `ThetaSketchView:
-// RawThetaSketchView<ThetaEntry>`.
-pub use self::hash_table::RawHashTableEntry;
-pub use self::sketch_view::RawThetaSketchView;
+/// An entry retained by a Theta sketch family hash table.
+pub trait RawHashTableEntry {
+    /// Return the hash used as this entry's key.
+    fn hash(&self) -> u64;
+}
+
+/// Read-only input accepted by a raw Theta union.
+///
+/// This trait carries complete retained entries, so tuple unions can use the same state machine
+/// while merging their per-key summaries.
+pub trait RawThetaSketchView<E: RawHashTableEntry> {
+    /// Return the 16-bit seed hash.
+    fn seed_hash(&self) -> u16;
+
+    /// Return theta as a `u64` threshold.
+    fn theta(&self) -> u64;
+
+    /// Return whether this sketch has not received any updates.
+    fn is_empty(&self) -> bool;
+
+    /// Return whether retained entries are ordered by ascending hash.
+    fn is_ordered(&self) -> bool;
+
+    /// Return an iterator over retained entries.
+    fn iter(&self) -> impl Iterator<Item = E> + '_;
+
+    /// Return the number of retained entries.
+    fn num_retained(&self) -> usize;
+}

@@ -43,12 +43,12 @@ use crate::theta::serialization;
 use crate::theta::serialization::V2_PREAMBLE_EMPTY;
 use crate::theta::serialization::V2_PREAMBLE_ESTIMATE;
 use crate::theta::serialization::V2_PREAMBLE_PRECISE;
+use crate::thetacommon::RawThetaSketchView;
 use crate::thetacommon::binomial_bounds;
 use crate::thetacommon::constants::DEFAULT_LG_K;
 use crate::thetacommon::constants::MAX_LG_K;
 use crate::thetacommon::constants::MAX_THETA;
 use crate::thetacommon::constants::MIN_LG_K;
-use crate::thetacommon::sketch_view::RawThetaSketchView;
 
 /// Read-only view for Theta sketches.
 ///
@@ -58,14 +58,12 @@ pub trait ThetaSketchView: RawThetaSketchView<ThetaEntry> {}
 
 impl<T: RawThetaSketchView<ThetaEntry>> ThetaSketchView for T {}
 
-impl crate::thetacommon::sketch_view::private::Sealed for ThetaSketch {}
-
 impl RawThetaSketchView<ThetaEntry> for ThetaSketch {
     fn seed_hash(&self) -> u16 {
         ThetaSketch::seed_hash(self)
     }
 
-    fn theta64(&self) -> u64 {
+    fn theta(&self) -> u64 {
         ThetaSketch::theta64(self)
     }
 
@@ -880,14 +878,12 @@ impl CompactThetaSketch {
     }
 }
 
-impl crate::thetacommon::sketch_view::private::Sealed for CompactThetaSketch {}
-
 impl RawThetaSketchView<ThetaEntry> for CompactThetaSketch {
     fn seed_hash(&self) -> u16 {
         CompactThetaSketch::seed_hash(self)
     }
 
-    fn theta64(&self) -> u64 {
+    fn theta(&self) -> u64 {
         CompactThetaSketch::theta64(self)
     }
 
