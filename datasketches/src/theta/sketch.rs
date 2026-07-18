@@ -43,11 +43,11 @@ use crate::theta::serialization;
 use crate::theta::serialization::V2_PREAMBLE_EMPTY;
 use crate::theta::serialization::V2_PREAMBLE_ESTIMATE;
 use crate::theta::serialization::V2_PREAMBLE_PRECISE;
-use crate::thetacommon::DEFAULT_LG_K;
-use crate::thetacommon::MAX_LG_K;
-use crate::thetacommon::MAX_THETA;
-use crate::thetacommon::MIN_LG_K;
 use crate::thetacommon::binomial_bounds;
+use crate::thetacommon::constants::DEFAULT_LG_K;
+use crate::thetacommon::constants::MAX_LG_K;
+use crate::thetacommon::constants::MAX_THETA;
+use crate::thetacommon::constants::MIN_LG_K;
 use crate::thetacommon::sketch_view::RawThetaSketchView;
 
 /// Read-only view for Theta sketches.

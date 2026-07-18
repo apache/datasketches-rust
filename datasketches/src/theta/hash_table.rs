@@ -92,8 +92,8 @@ mod tests {
     use super::*;
     use crate::common::ResizeFactor;
     use crate::hash::DEFAULT_UPDATE_SEED;
-    use crate::thetacommon::MAX_THETA;
-    use crate::thetacommon::MIN_LG_K;
+    use crate::thetacommon::constants::MAX_THETA;
+    use crate::thetacommon::constants::MIN_LG_K;
     use crate::thetacommon::hash_table::starting_sub_multiple;
     use crate::thetacommon::hash_table::starting_theta_from_sampling_probability;
 

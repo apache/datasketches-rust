@@ -21,9 +21,9 @@ use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::theta::CompactThetaSketch;
 use crate::theta::ThetaSketchView;
 use crate::theta::hash_table::ThetaEntry;
-use crate::thetacommon::DEFAULT_LG_K;
-use crate::thetacommon::MAX_LG_K;
-use crate::thetacommon::MIN_LG_K;
+use crate::thetacommon::constants::DEFAULT_LG_K;
+use crate::thetacommon::constants::MAX_LG_K;
+use crate::thetacommon::constants::MIN_LG_K;
 use crate::thetacommon::union::RawThetaUnion;
 use crate::thetacommon::union::RawThetaUnionPolicy;
 

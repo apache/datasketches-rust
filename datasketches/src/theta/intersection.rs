@@ -21,8 +21,8 @@ use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::theta::CompactThetaSketch;
 use crate::theta::ThetaSketchView;
 use crate::theta::hash_table::ThetaHashTable;
-use crate::thetacommon::HASH_TABLE_REBUILD_THRESHOLD;
-use crate::thetacommon::MAX_THETA;
+use crate::thetacommon::constants::HASH_TABLE_REBUILD_THRESHOLD;
+use crate::thetacommon::constants::MAX_THETA;
 
 /// Stateful intersection operator for Theta sketches.
 ///

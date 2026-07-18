@@ -17,7 +17,7 @@
 
 use crate::common::ResizeFactor;
 use crate::error::Error;
-use crate::thetacommon::MAX_THETA;
+use crate::thetacommon::constants::MAX_THETA;
 use crate::thetacommon::hash_table::RawHashTable;
 use crate::thetacommon::hash_table::RawHashTableEntry;
 use crate::thetacommon::sketch_view::RawThetaSketchView;
