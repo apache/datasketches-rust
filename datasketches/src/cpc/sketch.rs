@@ -460,7 +460,7 @@ impl CpcSketch {
                 .map(|t| t.estimated_size())
                 .unwrap_or(0);
 
-        std::mem::size_of::<Self>() + heap_size
+        size_of::<Self>() + heap_size
     }
 }
 

@@ -45,6 +45,8 @@ pub mod hll;
 pub mod tdigest;
 #[cfg(feature = "theta")]
 pub mod theta;
+#[cfg(feature = "theta")]
+pub mod thetacommon;
 
 // common modules
 pub mod codec;

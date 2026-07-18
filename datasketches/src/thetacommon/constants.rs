@@ -15,12 +15,22 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! Data structures and functions that may be used across all the sketch families.
+/// Maximum theta value.
+///
+/// The value is `i64::MAX` to be compatible with datasketches-java.
+pub const MAX_THETA: u64 = i64::MAX as u64;
 
-mod num_std_dev;
-mod resize;
-pub use self::num_std_dev::NumStdDev;
-pub use self::resize::ResizeFactor;
+/// Minimum log2 of K.
+pub const MIN_LG_K: u8 = 5;
+/// Maximum log2 of K.
+pub const MAX_LG_K: u8 = 26;
+/// Default log2 of K.
+pub const DEFAULT_LG_K: u8 = 12;
 
-#[cfg(any(feature = "cpc", feature = "hll"))]
-pub(crate) mod inv_pow2_table;
+/// Resize threshold (0.5 = 50% load factor).
+pub const HASH_TABLE_RESIZE_THRESHOLD: f64 = 0.5;
+/// Rebuild threshold (15/16 = 93.75% load factor).
+pub const HASH_TABLE_REBUILD_THRESHOLD: f64 = 15.0 / 16.0;
+
+pub const STRIDE_HASH_BITS: u8 = 7;
+pub const STRIDE_MASK: u64 = (1 << STRIDE_HASH_BITS) - 1;

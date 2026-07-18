@@ -18,12 +18,8 @@
 use std::hash::Hash;
 use std::num::NonZeroU64;
 
-use crate::theta::raw_hash_table::RawHashTable;
-use crate::theta::raw_hash_table::RawHashTableEntry;
-#[cfg(test)]
-pub(crate) use crate::theta::raw_hash_table::starting_sub_multiple;
-#[cfg(test)]
-pub(crate) use crate::theta::raw_hash_table::starting_theta_from_sampling_probability;
+use crate::thetacommon::RawHashTableEntry;
+use crate::thetacommon::hash_table::RawHashTable;
 
 /// Specific hash table for theta sketch
 ///
@@ -34,15 +30,21 @@ pub(crate) use crate::theta::raw_hash_table::starting_theta_from_sampling_probab
 ///   update the theta to the k-th smallest entry.
 pub(super) type ThetaHashTable = RawHashTable<ThetaEntry>;
 
+/// A retained entry in a Theta sketch.
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct ThetaEntry {
+pub struct ThetaEntry {
     hash: NonZeroU64,
 }
 
 impl ThetaEntry {
-    fn new(hash: u64) -> Self {
+    pub(crate) fn new(hash: u64) -> Self {
         let hash = NonZeroU64::new(hash).expect("hash must be non-zero");
         Self { hash }
+    }
+
+    /// Return the hash used as this entry's key.
+    pub fn hash(&self) -> u64 {
+        self.hash.get()
     }
 }
 
@@ -90,18 +92,20 @@ mod tests {
     use super::*;
     use crate::common::ResizeFactor;
     use crate::hash::DEFAULT_UPDATE_SEED;
-    use crate::theta::MAX_THETA;
-    use crate::theta::MIN_LG_K;
+    use crate::thetacommon::constants::MAX_THETA;
+    use crate::thetacommon::constants::MIN_LG_K;
+    use crate::thetacommon::hash_table::starting_sub_multiple;
+    use crate::thetacommon::hash_table::starting_theta_from_sampling_probability;
 
     #[test]
     fn test_new_hash_table() {
         let table = ThetaHashTable::new(8, ResizeFactor::X8, 1.0, DEFAULT_UPDATE_SEED);
 
         assert_eq!(
-            table.lg_cur_size,
+            table.lg_cur_size(),
             starting_sub_multiple(8 + 1, MIN_LG_K, ResizeFactor::X8.lg_value())
         );
-        assert_eq!(table.theta, starting_theta_from_sampling_probability(1.0));
+        assert_eq!(table.theta(), starting_theta_from_sampling_probability(1.0));
         assert_eq!(table.num_retained(), 0);
         assert!(table.is_empty());
         assert_eq!(table.iter().count(), 0);
@@ -119,7 +123,7 @@ mod tests {
         assert_ne!(hash1, hash2);
 
         // With low theta, update should be screened out.
-        table.theta = 1;
+        table.set_theta(1);
         assert!(!table.try_insert("test3"));
     }
 
@@ -136,7 +140,7 @@ mod tests {
         assert_eq!(table.num_retained(), 1);
 
         // Force screening and verify insertion fails
-        table.theta = 0;
+        table.set_theta(1); // Set theta to a low value to screen out new entries
         assert!(!table.try_insert("screened"));
         assert_eq!(table.num_retained(), 1);
         assert!(!table.is_empty());
@@ -174,7 +178,7 @@ mod tests {
         {
             let mut table = ThetaHashTable::new(8, ResizeFactor::X2, 1.0, DEFAULT_UPDATE_SEED);
 
-            assert_eq!(table.entries.len(), 32);
+            assert_eq!(table.num_entries(), 32);
 
             // Insert enough values to trigger resize (50% threshold)
             // Capacity = 32 * 0.5 = 16
@@ -183,14 +187,14 @@ mod tests {
             // Table should have resized and all values should be inserted
             assert!(table.num_retained() > 0);
             assert_eq!(table.num_retained(), inserted);
-            assert_eq!(table.entries.len(), 64);
+            assert_eq!(table.num_entries(), 64);
         }
 
         // Test different resize factors
         {
             let mut table = ThetaHashTable::new(8, ResizeFactor::X4, 1.0, DEFAULT_UPDATE_SEED);
 
-            assert_eq!(table.entries.len(), 32);
+            assert_eq!(table.num_entries(), 32);
 
             // Insert enough values to trigger resize (50% threshold)
             // Capacity = 32 * 0.5 = 16
@@ -199,7 +203,7 @@ mod tests {
             // Table should have resized and all values should be inserted
             assert!(table.num_retained() > 0);
             assert_eq!(table.num_retained(), inserted);
-            assert_eq!(table.entries.len(), 128);
+            assert_eq!(table.num_entries(), 128);
         }
     }
 
@@ -207,9 +211,9 @@ mod tests {
     fn test_rebuild() {
         let mut table = ThetaHashTable::new(5, ResizeFactor::X8, 1.0, DEFAULT_UPDATE_SEED);
 
-        assert_eq!(table.lg_cur_size, 6);
-        assert_eq!(table.entries.len(), 64);
-        assert_eq!(table.theta, MAX_THETA);
+        assert_eq!(table.lg_cur_size(), 6);
+        assert_eq!(table.num_entries(), 64);
+        assert_eq!(table.theta(), MAX_THETA);
 
         // Insert many values to trigger rebuild
         for i in 0..100 {
@@ -228,9 +232,9 @@ mod tests {
             let _ = table.try_insert(format!("value_{}", i));
         }
 
-        assert_eq!(table.lg_cur_size, 6);
-        assert!(table.entries.len() >= 64);
-        assert!(table.theta < new_theta);
+        assert_eq!(table.lg_cur_size(), 6);
+        assert!(table.num_entries() >= 64);
+        assert!(table.theta() < new_theta);
     }
 
     #[test]
@@ -274,8 +278,8 @@ mod tests {
     fn test_reset() {
         let mut table = ThetaHashTable::new(8, ResizeFactor::X8, 1.0, DEFAULT_UPDATE_SEED);
         let init_theta = table.theta();
-        let init_lg_cur = table.lg_cur_size;
-        let init_entries = table.entries.len();
+        let init_lg_cur = table.lg_cur_size();
+        let init_entries = table.num_entries();
 
         // Insert some values
         for i in 0..10 {
@@ -291,8 +295,8 @@ mod tests {
         assert!(table.is_empty());
         assert_eq!(table.num_retained(), 0);
         assert_eq!(table.theta(), init_theta);
-        assert_eq!(table.lg_cur_size, init_lg_cur);
-        assert_eq!(table.entries.len(), init_entries);
+        assert_eq!(table.lg_cur_size(), init_lg_cur);
+        assert_eq!(table.num_entries(), init_entries);
         assert_eq!(table.iter().count(), 0);
     }
 

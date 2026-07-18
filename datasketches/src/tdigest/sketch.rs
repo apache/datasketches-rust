@@ -796,9 +796,9 @@ impl TDigestMut {
 
     /// Returns the estimated size of the sketch in bytes
     pub fn estimated_size(&self) -> usize {
-        std::mem::size_of::<Self>()
-            + self.centroids.capacity() * std::mem::size_of::<Centroid>()
-            + self.buffer.capacity() * std::mem::size_of::<f64>()
+        size_of::<Self>()
+            + self.centroids.capacity() * size_of::<Centroid>()
+            + self.buffer.capacity() * size_of::<f64>()
     }
 }
 
@@ -1011,7 +1011,7 @@ impl TDigest {
 
     /// Returns the estimated size of the sketch in bytes
     pub fn estimated_size(&self) -> usize {
-        std::mem::size_of::<Self>() + self.centroids.capacity() * std::mem::size_of::<Centroid>()
+        size_of::<Self>() + self.centroids.capacity() * size_of::<Centroid>()
     }
 }
 

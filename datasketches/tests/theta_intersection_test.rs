@@ -38,14 +38,14 @@ fn test_has_result_state_machine() {
     assert!(!i.has_result());
     i.update(&a).unwrap();
     assert!(i.has_result());
-    assert!(i.result().estimate() >= 1.0);
+    assert!(i.to_sketch(true).estimate() >= 1.0);
 }
 
 #[test]
 fn test_result_before_update_panics() {
     let i = ThetaIntersection::new(123);
     let result = std::panic::catch_unwind(|| {
-        let _ = i.result();
+        let _ = i.to_sketch(true);
     });
     assert!(result.is_err());
 }
@@ -64,7 +64,7 @@ fn test_update_accepts_compact_sketch() {
     i.update(&a.compact(true)).unwrap();
     i.update(&b).unwrap();
 
-    let r = i.result();
+    let r = i.to_sketch(true);
     assert!(r.estimate() == 1.0);
     assert!(r.is_ordered());
 
@@ -75,7 +75,7 @@ fn test_update_accepts_compact_sketch() {
 
     i.update(&c.compact(false)).unwrap();
 
-    let r = i.result_with_ordered(false);
+    let r = i.to_sketch(false);
     assert!(r.estimate() == 0.0);
     assert!(!r.is_ordered());
 }
@@ -87,7 +87,7 @@ fn test_seed_mismatch_behaviour_for_empty_sketch() {
 
     i.update(&empty_other_seed).unwrap();
     assert!(i.has_result());
-    let r = i.result();
+    let r = i.to_sketch(true);
     assert!(r.is_empty());
 }
 
@@ -111,12 +111,12 @@ fn test_terminal_empty_state_ignores_future_updates() {
     i.update(&empty).unwrap();
     i.update(&non_empty).unwrap();
 
-    let r = i.result();
+    let r = i.to_sketch(true);
     assert!(r.is_empty());
 }
 
 #[test]
-fn test_result_with_ordered_false_is_not_ordered() {
+fn test_to_sketch_unordered_is_not_ordered() {
     let mut a = ThetaSketch::builder().build();
     for i in 0..64 {
         a.update(i);
@@ -124,7 +124,7 @@ fn test_result_with_ordered_false_is_not_ordered() {
     let mut i = ThetaIntersection::new_with_default_seed();
     i.update(&a).unwrap();
 
-    let r = i.result_with_ordered(false);
+    let r = i.to_sketch(false);
     assert!(!r.is_ordered());
 }
 
@@ -134,14 +134,14 @@ fn test_empty_update_twice() {
     let mut i = ThetaIntersection::new_with_default_seed();
 
     i.update(&empty).unwrap();
-    let r1 = i.result();
+    let r1 = i.to_sketch(true);
     assert_eq!(r1.num_retained(), 0);
     assert!(r1.is_empty());
     assert!(!r1.is_estimation_mode());
     assert_eq!(r1.estimate(), 0.0);
 
     i.update(&empty).unwrap();
-    let r2 = i.result();
+    let r2 = i.to_sketch(true);
     assert_eq!(r2.num_retained(), 0);
     assert!(r2.is_empty());
     assert!(!r2.is_estimation_mode());
@@ -155,7 +155,7 @@ fn test_non_empty_no_retained_keys() {
 
     let mut i = ThetaIntersection::new_with_default_seed();
     i.update(&s).unwrap();
-    let r1 = i.result();
+    let r1 = i.to_sketch(true);
     assert_eq!(r1.num_retained(), 0);
     assert!(!r1.is_empty());
     assert!(r1.is_estimation_mode());
@@ -163,7 +163,7 @@ fn test_non_empty_no_retained_keys() {
     assert_eq!(r1.estimate(), 0.0);
 
     i.update(&s).unwrap();
-    let r2 = i.result();
+    let r2 = i.to_sketch(true);
     assert_eq!(r2.num_retained(), 0);
     assert!(!r2.is_empty());
     assert!(r2.is_estimation_mode());
@@ -179,7 +179,7 @@ fn test_exact_half_overlap_unordered() {
     let mut i = ThetaIntersection::new_with_default_seed();
     i.update(&s1).unwrap();
     i.update(&s2).unwrap();
-    let r = i.result();
+    let r = i.to_sketch(true);
 
     assert!(!r.is_empty());
     assert!(!r.is_estimation_mode());
@@ -194,7 +194,7 @@ fn test_exact_half_overlap_ordered() {
     let mut i = ThetaIntersection::new_with_default_seed();
     i.update(&s1.compact(true)).unwrap();
     i.update(&s2.compact(true)).unwrap();
-    let r = i.result();
+    let r = i.to_sketch(true);
 
     assert!(!r.is_empty());
     assert!(!r.is_estimation_mode());
@@ -209,7 +209,7 @@ fn test_exact_disjoint_unordered() {
     let mut i = ThetaIntersection::new_with_default_seed();
     i.update(&s1).unwrap();
     i.update(&s2).unwrap();
-    let r = i.result();
+    let r = i.to_sketch(true);
 
     assert!(r.is_empty());
     assert!(!r.is_estimation_mode());
@@ -224,7 +224,7 @@ fn test_exact_disjoint_ordered() {
     let mut i = ThetaIntersection::new_with_default_seed();
     i.update(&s1.compact(true)).unwrap();
     i.update(&s2.compact(true)).unwrap();
-    let r = i.result();
+    let r = i.to_sketch(true);
 
     assert!(r.is_empty());
     assert!(!r.is_estimation_mode());
@@ -239,7 +239,7 @@ fn test_estimation_half_overlap_unordered() {
     let mut i = ThetaIntersection::new_with_default_seed();
     i.update(&s1).unwrap();
     i.update(&s2).unwrap();
-    let r = i.result();
+    let r = i.to_sketch(true);
 
     assert!(!r.is_empty());
     assert!(r.is_estimation_mode());
@@ -254,7 +254,7 @@ fn test_estimation_half_overlap_ordered() {
     let mut i = ThetaIntersection::new_with_default_seed();
     i.update(&s1.compact(true)).unwrap();
     i.update(&s2.compact(true)).unwrap();
-    let r = i.result();
+    let r = i.to_sketch(true);
 
     assert!(!r.is_empty());
     assert!(r.is_estimation_mode());
@@ -271,7 +271,7 @@ fn test_estimation_half_overlap_ordered_deserialized_compact() {
     let mut i = ThetaIntersection::new_with_default_seed();
     i.update(&c1).unwrap();
     i.update(&c2).unwrap();
-    let r = i.result();
+    let r = i.to_sketch(true);
 
     assert!(!r.is_empty());
     assert!(r.is_estimation_mode());
@@ -286,7 +286,7 @@ fn test_estimation_disjoint_unordered() {
     let mut i = ThetaIntersection::new_with_default_seed();
     i.update(&s1).unwrap();
     i.update(&s2).unwrap();
-    let r = i.result();
+    let r = i.to_sketch(true);
 
     assert!(!r.is_empty());
     assert!(r.is_estimation_mode());
@@ -301,7 +301,7 @@ fn test_estimation_disjoint_ordered() {
     let mut i = ThetaIntersection::new_with_default_seed();
     i.update(&s1.compact(true)).unwrap();
     i.update(&s2.compact(true)).unwrap();
-    let r = i.result();
+    let r = i.to_sketch(true);
 
     assert!(!r.is_empty());
     assert!(r.is_estimation_mode());
