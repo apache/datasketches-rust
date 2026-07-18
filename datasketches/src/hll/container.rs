@@ -138,6 +138,6 @@ impl Container {
 
     /// Returns the estimated size of the heap allocations in bytes
     pub fn estimated_size(&self) -> usize {
-        self.coupons.len() * std::mem::size_of::<Coupon>()
+        self.coupons.len() * size_of::<Coupon>()
     }
 }

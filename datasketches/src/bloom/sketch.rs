@@ -564,7 +564,7 @@ impl BloomFilter {
 
     /// Returns the estimated size of the filter in bytes
     pub fn estimated_size(&self) -> usize {
-        std::mem::size_of::<Self>() + self.bit_array.len() * std::mem::size_of::<u64>()
+        size_of::<Self>() + self.bit_array.len() * size_of::<u64>()
     }
 }
 

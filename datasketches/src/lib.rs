@@ -45,6 +45,8 @@ pub mod hll;
 pub mod tdigest;
 #[cfg(feature = "theta")]
 pub mod theta;
+#[cfg(feature = "theta")]
+pub mod thetacommon;
 
 // common modules
 pub mod codec;
@@ -54,6 +56,3 @@ pub mod hash_value;
 
 // private internal modules
 mod hash;
-/// Shared building blocks for Theta-family sketches.
-#[cfg(feature = "theta")]
-pub mod thetacommon;

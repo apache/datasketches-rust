@@ -15,6 +15,9 @@
 // specific language governing permissions and limitations
 // under the License.
 
+//! Data structures and functions that may be used across all the Theta/Tuple sketch families.
+
+pub(crate) mod binomial_bounds;
 pub(crate) mod hash_table;
 pub(crate) mod sketch_view;
 pub(crate) mod union;

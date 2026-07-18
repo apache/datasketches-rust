@@ -284,7 +284,7 @@ where
 
     /// Returns the estimated size of the heap allocations in bytes.
     pub(crate) fn estimated_size(&self) -> usize {
-        self.entries.capacity() * std::mem::size_of::<Option<E>>()
+        self.entries.capacity() * size_of::<Option<E>>()
     }
 
     fn find_in_curr_entries(&self, key: u64) -> Option<usize> {

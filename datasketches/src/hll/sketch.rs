@@ -434,7 +434,7 @@ impl HllSketch {
             Mode::Array8(arr) => arr.estimated_size(),
         };
 
-        std::mem::size_of::<Self>() + heap_size
+        size_of::<Self>() + heap_size
     }
 }
 

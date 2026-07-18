@@ -29,7 +29,6 @@ use crate::codec::assert::insufficient_data;
 use crate::codec::family::Family;
 use crate::common::NumStdDev;
 use crate::common::ResizeFactor;
-use crate::common::binomial_bounds;
 use crate::error::Error;
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::hash::compute_seed_hash;
@@ -48,6 +47,7 @@ use crate::thetacommon::DEFAULT_LG_K;
 use crate::thetacommon::MAX_LG_K;
 use crate::thetacommon::MAX_THETA;
 use crate::thetacommon::MIN_LG_K;
+use crate::thetacommon::binomial_bounds;
 use crate::thetacommon::sketch_view::RawThetaSketchView;
 
 /// Read-only view for Theta sketches.
@@ -318,7 +318,7 @@ impl ThetaSketch {
 
     /// Returns the estimated size of the sketch in bytes
     pub fn estimated_size(&self) -> usize {
-        std::mem::size_of::<Self>() + self.table.estimated_size()
+        size_of::<Self>() + self.table.estimated_size()
     }
 }
 
@@ -876,7 +876,7 @@ impl CompactThetaSketch {
 
     /// Returns the estimated size of the sketch in bytes
     pub fn estimated_size(&self) -> usize {
-        std::mem::size_of::<Self>() + self.entries.capacity() * std::mem::size_of::<u64>()
+        size_of::<Self>() + self.entries.capacity() * size_of::<u64>()
     }
 }
 
