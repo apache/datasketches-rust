@@ -19,13 +19,13 @@ use crate::common::ResizeFactor;
 use crate::error::Error;
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::theta::CompactThetaSketch;
-use crate::theta::DEFAULT_LG_K;
-use crate::theta::MAX_LG_K;
-use crate::theta::MIN_LG_K;
 use crate::theta::ThetaSketchView;
 use crate::theta::hash_table::ThetaEntry;
-use crate::theta_common::union::RawThetaUnion;
-use crate::theta_common::union::RawThetaUnionPolicy;
+use crate::thetacommon::DEFAULT_LG_K;
+use crate::thetacommon::MAX_LG_K;
+use crate::thetacommon::MIN_LG_K;
+use crate::thetacommon::union::RawThetaUnion;
+use crate::thetacommon::union::RawThetaUnionPolicy;
 
 /// Stateful union operator for Theta sketches.
 #[derive(Debug)]

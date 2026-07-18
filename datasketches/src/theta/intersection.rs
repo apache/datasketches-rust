@@ -19,10 +19,10 @@ use crate::common::ResizeFactor;
 use crate::error::Error;
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::theta::CompactThetaSketch;
-use crate::theta::HASH_TABLE_REBUILD_THRESHOLD;
-use crate::theta::MAX_THETA;
 use crate::theta::ThetaSketchView;
 use crate::theta::hash_table::ThetaHashTable;
+use crate::thetacommon::HASH_TABLE_REBUILD_THRESHOLD;
+use crate::thetacommon::MAX_THETA;
 
 /// Stateful intersection operator for Theta sketches.
 ///

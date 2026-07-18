@@ -17,10 +17,10 @@
 
 use crate::common::ResizeFactor;
 use crate::error::Error;
-use crate::theta_common::MAX_THETA;
-use crate::theta_common::hash_table::RawHashTable;
-use crate::theta_common::hash_table::RawHashTableEntry;
-use crate::theta_common::sketch_view::RawThetaSketchView;
+use crate::thetacommon::MAX_THETA;
+use crate::thetacommon::hash_table::RawHashTable;
+use crate::thetacommon::hash_table::RawHashTableEntry;
+use crate::thetacommon::sketch_view::RawThetaSketchView;
 
 /// Merges an incoming entry into an existing entry with the same hash.
 pub(crate) trait RawThetaUnionPolicy<E> {
@@ -165,7 +165,7 @@ where
 mod tests {
     use super::*;
     use crate::hash::DEFAULT_UPDATE_SEED;
-    use crate::theta_common::sketch_view::RawThetaSketchView;
+    use crate::thetacommon::sketch_view::RawThetaSketchView;
 
     #[derive(Clone, Debug, Eq, PartialEq)]
     struct TestEntry {
@@ -183,7 +183,7 @@ mod tests {
         entries: Vec<TestEntry>,
     }
 
-    impl crate::theta_common::sketch_view::private::Sealed for TestSketch {}
+    impl crate::thetacommon::sketch_view::private::Sealed for TestSketch {}
 
     impl RawThetaSketchView<TestEntry> for TestSketch {
         fn seed_hash(&self) -> u16 {

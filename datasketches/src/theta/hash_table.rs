@@ -18,12 +18,8 @@
 use std::hash::Hash;
 use std::num::NonZeroU64;
 
-use crate::theta_common::hash_table::RawHashTable;
-use crate::theta_common::hash_table::RawHashTableEntry;
-#[cfg(test)]
-pub(crate) use crate::theta_common::hash_table::starting_sub_multiple;
-#[cfg(test)]
-pub(crate) use crate::theta_common::hash_table::starting_theta_from_sampling_probability;
+use crate::thetacommon::hash_table::RawHashTable;
+use crate::thetacommon::hash_table::RawHashTableEntry;
 
 /// Specific hash table for theta sketch
 ///
@@ -96,8 +92,10 @@ mod tests {
     use super::*;
     use crate::common::ResizeFactor;
     use crate::hash::DEFAULT_UPDATE_SEED;
-    use crate::theta::MAX_THETA;
-    use crate::theta::MIN_LG_K;
+    use crate::thetacommon::MAX_THETA;
+    use crate::thetacommon::MIN_LG_K;
+    use crate::thetacommon::hash_table::starting_sub_multiple;
+    use crate::thetacommon::hash_table::starting_theta_from_sampling_probability;
 
     #[test]
     fn test_new_hash_table() {

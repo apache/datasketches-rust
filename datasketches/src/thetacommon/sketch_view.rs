@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use crate::theta_common::hash_table::RawHashTableEntry;
+use crate::thetacommon::hash_table::RawHashTableEntry;
 
 pub(crate) mod private {
     pub(crate) trait Sealed {}

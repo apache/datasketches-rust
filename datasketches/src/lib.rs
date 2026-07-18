@@ -56,4 +56,4 @@ pub mod hash_value;
 mod hash;
 /// Shared building blocks for Theta-family sketches.
 #[cfg(feature = "theta")]
-pub mod theta_common;
+pub mod thetacommon;
