@@ -20,6 +20,7 @@
 pub(crate) mod binomial_bounds;
 pub(crate) mod constants;
 pub(crate) mod hash_table;
+#[cfg(feature = "theta")]
 pub(crate) mod union;
 
 /// An entry retained by a Theta sketch family hash table.
@@ -50,4 +51,14 @@ pub trait RawThetaSketchView<E: RawHashTableEntry> {
 
     /// Return the number of retained entries.
     fn num_retained(&self) -> usize;
+}
+
+/// Raw compact-sketch state from which a sketch family creates its compact result type.
+#[derive(Debug)]
+pub(crate) struct RawCompactParts<E> {
+    pub entries: Vec<E>,
+    pub theta: u64,
+    pub seed_hash: u16,
+    pub ordered: bool,
+    pub empty: bool,
 }

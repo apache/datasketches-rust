@@ -20,6 +20,7 @@ use std::hash::Hash;
 use crate::common::ResizeFactor;
 use crate::hash::MurmurHash3X64128;
 use crate::hash::compute_seed_hash;
+use crate::thetacommon::RawCompactParts;
 use crate::thetacommon::RawHashTableEntry;
 use crate::thetacommon::constants::HASH_TABLE_REBUILD_THRESHOLD;
 use crate::thetacommon::constants::HASH_TABLE_RESIZE_THRESHOLD;
@@ -31,6 +32,12 @@ use crate::thetacommon::constants::STRIDE_MASK;
 ///
 /// The entry type supplies the retained hash and any sketch-specific payload. The table owns all
 /// theta screening, probing, resizing, rebuilding, trimming, and logical-empty state.
+///
+/// It maintains an array with capacity up to 2^lg_max_size:
+/// * Before it reaches the max capacity, it will extend the array based on resize_factor.
+/// * After it reaches the capacity bigger than 2^lg_nom_size, every time the number of entries
+///   exceeds the threshold, it will rebuild the table: only keep the min 2^lg_nom_size entries and
+///   update the theta to the k-th smallest entry.
 #[derive(Debug)]
 pub struct RawHashTable<E> {
     lg_cur_size: u8,
@@ -125,6 +132,16 @@ where
 
     /// Inserts or updates the entry slot for a pre-hashed key.
     ///
+    /// The callback `f` is invoked with the current entry for `hash`:
+    /// * `Some(existing)` if the key is already retained. The callback should modify it in place;
+    ///   its return value is ignored.
+    /// * `None` if the key is new. The callback returns `Some(entry)` to insert it, or `None` to
+    ///   decline insertion.
+    ///
+    /// Using a single callback ensures any captured update value is consumed exactly once, so it
+    /// works for both the update sketch (folding an update value) and set operations (merging an
+    /// incoming entry) without requiring the value to be `Copy` or `Clone`.
+    ///
     /// Returns true if a new entry was created, false otherwise (existing key, declined insertion,
     /// or a hash screened out by theta).
     pub fn upsert_entry<F>(&mut self, hash: u64, f: F) -> bool
@@ -168,6 +185,7 @@ where
     }
 
     /// Returns a reference to the entry stored for `hash`, or `None` if the hash is not retained.
+    #[allow(dead_code)] // used by the set operations; tuple set operations arrive in follow-ups
     pub fn get_entry(&self, hash: u64) -> Option<&E> {
         if hash == 0 {
             return None;
@@ -234,6 +252,33 @@ where
         self.entries.iter().filter_map(Option::as_ref)
     }
 
+    /// Returns the retained entries and theta as raw compact-sketch parts.
+    ///
+    /// An empty table reports `MAX_THETA` rather than its current theta, matching Java's
+    /// `correctThetaOnCompact()` behavior for never-updated sketches initialized with p < 1.0.
+    /// Empty and single-entry exact-mode results are always marked ordered (Java/C++
+    /// compatibility).
+    pub fn to_compact_parts(&self, ordered: bool) -> RawCompactParts<E>
+    where
+        E: Clone,
+    {
+        let mut entries: Vec<E> = self.iter_entries().cloned().collect();
+        let empty = self.is_empty();
+        let theta = if empty { MAX_THETA } else { self.theta() };
+        let is_single = entries.len() == 1 && theta == MAX_THETA;
+        let ordered = ordered || empty || is_single;
+        if ordered && entries.len() > 1 {
+            entries.sort_unstable_by_key(RawHashTableEntry::hash);
+        }
+        RawCompactParts {
+            entries,
+            theta,
+            seed_hash: self.seed_hash(),
+            ordered,
+            empty,
+        }
+    }
+
     /// Return number of all entries.
     #[cfg(test)]
     pub fn num_entries(&self) -> usize {
@@ -257,16 +302,19 @@ where
     }
 
     /// Set empty flag.
+    #[allow(dead_code)] // used by the set operations; tuple set operations arrive in follow-ups
     pub fn set_empty(&mut self, is_empty: bool) {
         self.is_empty = is_empty;
     }
 
     /// Get the hash seed used by this table.
+    #[allow(dead_code)] // used by the set operations; tuple set operations arrive in follow-ups
     pub fn hash_seed(&self) -> u64 {
         self.hash_seed
     }
 
     /// Sets theta value.
+    #[allow(dead_code)] // used by the set operations and tests; tuple set operations arrive in follow-ups
     pub fn set_theta(&mut self, theta: u64) {
         assert!(
             (1..=MAX_THETA).contains(&theta),
@@ -276,6 +324,7 @@ where
     }
 
     /// Returns minimal lg_size where rebuild-capacity can hold `count`.
+    #[allow(dead_code)] // used by the set operations; tuple set operations arrive in follow-ups
     pub fn lg_size_from_count_for_rebuild(count: usize, load_factor: f64) -> u8 {
         let log2 = |n: usize| {
             if n == 0 { 0_u8 } else { n.ilog2() as u8 }

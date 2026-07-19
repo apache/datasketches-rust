@@ -17,6 +17,7 @@
 
 use crate::common::ResizeFactor;
 use crate::error::Error;
+use crate::thetacommon::RawCompactParts;
 use crate::thetacommon::RawHashTableEntry;
 use crate::thetacommon::RawThetaSketchView;
 use crate::thetacommon::constants::MAX_THETA;
@@ -36,16 +37,6 @@ pub struct RawThetaUnion<E, P> {
     table: RawHashTable<E>,
     policy: P,
     union_theta: u64,
-}
-
-/// Raw compact-union state from which a sketch family creates its compact result type.
-#[derive(Debug)]
-pub struct RawThetaUnionResult<E> {
-    pub entries: Vec<E>,
-    pub theta: u64,
-    pub seed_hash: u16,
-    pub ordered: bool,
-    pub empty: bool,
 }
 
 impl<E, P> RawThetaUnion<E, P>
@@ -108,12 +99,12 @@ where
     }
 
     /// Return the current compact-union state.
-    pub fn result(&self, ordered: bool) -> RawThetaUnionResult<E>
+    pub fn result(&self, ordered: bool) -> RawCompactParts<E>
     where
         E: Clone,
     {
         if self.table.is_empty() {
-            return RawThetaUnionResult {
+            return RawCompactParts {
                 entries: Vec::new(),
                 theta: self.union_theta,
                 seed_hash: self.table.seed_hash(),
@@ -145,7 +136,7 @@ where
             entries.sort_unstable_by_key(RawHashTableEntry::hash);
         }
 
-        RawThetaUnionResult {
+        RawCompactParts {
             entries,
             theta,
             seed_hash: self.table.seed_hash(),

@@ -45,8 +45,10 @@ pub mod hll;
 pub mod tdigest;
 #[cfg(feature = "theta")]
 pub mod theta;
-#[cfg(feature = "theta")]
+#[cfg(any(feature = "theta", feature = "tuple"))]
 pub mod thetacommon;
+#[cfg(feature = "tuple")]
+pub mod tuple;
 
 // common modules
 pub mod codec;

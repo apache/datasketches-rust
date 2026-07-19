@@ -20,7 +20,8 @@
     feature = "cpc",
     feature = "frequencies",
     feature = "hll",
-    feature = "theta"
+    feature = "theta",
+    feature = "tuple"
 ))]
 mod murmurhash;
 #[cfg(any(
@@ -28,7 +29,8 @@ mod murmurhash;
     feature = "cpc",
     feature = "frequencies",
     feature = "hll",
-    feature = "theta"
+    feature = "theta",
+    feature = "tuple"
 ))]
 pub(crate) use self::murmurhash::MurmurHash3X64128;
 
@@ -56,7 +58,8 @@ pub(crate) use self::xxhash::XxHash64;
     feature = "cpc",
     feature = "frequencies",
     feature = "hll",
-    feature = "theta"
+    feature = "theta",
+    feature = "tuple"
 ))]
 pub(crate) const DEFAULT_UPDATE_SEED: u64 = 9001;
 
@@ -68,7 +71,12 @@ pub(crate) const DEFAULT_UPDATE_SEED: u64 = 9001;
 /// # Panics
 ///
 /// Panics if the computed seed hash is zero.
-#[cfg(any(feature = "countmin", feature = "cpc", feature = "theta"))]
+#[cfg(any(
+    feature = "countmin",
+    feature = "cpc",
+    feature = "theta",
+    feature = "tuple"
+))]
 pub(crate) fn compute_seed_hash(seed: u64) -> u16 {
     use std::hash::Hasher;
 
@@ -91,7 +99,8 @@ pub(crate) fn compute_seed_hash(seed: u64) -> u16 {
     feature = "cpc",
     feature = "frequencies",
     feature = "hll",
-    feature = "theta"
+    feature = "theta",
+    feature = "tuple"
 ))]
 fn read_u64_le(bytes: &[u8]) -> u64 {
     let mut buf = [0u8; 8];
