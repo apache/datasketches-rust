@@ -20,6 +20,7 @@
 pub(crate) mod binomial_bounds;
 pub(crate) mod constants;
 pub(crate) mod hash_table;
+pub(crate) mod intersection;
 pub(crate) mod union;
 
 /// An entry retained by a Theta sketch family hash table.
