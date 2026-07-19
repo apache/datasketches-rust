@@ -39,12 +39,14 @@
 //! ```
 
 mod hash_table;
+mod intersection;
 mod policy;
 mod serialization;
 mod sketch;
 mod union;
 
 pub use self::hash_table::TupleEntry;
+pub use self::intersection::TupleIntersection;
 pub use self::policy::DefaultUnionPolicy;
 pub use self::policy::DefaultUpdatePolicy;
 pub use self::policy::SummaryCombinePolicy;
