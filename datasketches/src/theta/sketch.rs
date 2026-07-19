@@ -52,11 +52,47 @@ use crate::thetacommon::constants::MIN_LG_K;
 
 /// Read-only view for Theta sketches.
 ///
-/// This trait provides a unified input abstraction for APIs that can accept either
-/// mutable [`ThetaSketch`] or immutable [`CompactThetaSketch`].
-pub trait ThetaSketchView: RawThetaSketchView<ThetaEntry> {}
+/// Obtain one from [`ThetaSketch::as_view`] or [`CompactThetaSketch::as_view`].
+#[repr(transparent)]
+pub struct ThetaSketchView<V> {
+    pub(crate) inner: V,
+}
 
-impl<T: RawThetaSketchView<ThetaEntry>> ThetaSketchView for T {}
+#[allow(private_bounds)]
+impl<V> ThetaSketchView<V>
+where
+    V: RawThetaSketchView<ThetaEntry>,
+{
+    /// Return the 16-bit seed hash.
+    pub fn seed_hash(&self) -> u16 {
+        self.inner.seed_hash()
+    }
+
+    /// Return theta as a `u64` threshold.
+    pub fn theta(&self) -> u64 {
+        self.inner.theta()
+    }
+
+    /// Return whether the viewed sketch has not received any updates.
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
+
+    /// Return whether retained entries are ordered by ascending hash.
+    pub fn is_ordered(&self) -> bool {
+        self.inner.is_ordered()
+    }
+
+    /// Return an iterator over retained entries.
+    pub fn iter(&self) -> impl Iterator<Item = ThetaEntry> + '_ {
+        self.inner.iter()
+    }
+
+    /// Return the number of retained entries.
+    pub fn num_retained(&self) -> usize {
+        self.inner.num_retained()
+    }
+}
 
 impl RawThetaSketchView<ThetaEntry> for ThetaSketch {
     fn seed_hash(&self) -> u16 {
@@ -102,6 +138,11 @@ impl ThetaSketch {
     /// ```
     pub fn builder() -> ThetaSketchBuilder {
         ThetaSketchBuilder::default()
+    }
+
+    /// Return a read-only view accepted by Theta set operations.
+    pub fn as_view(&self) -> ThetaSketchView<&Self> {
+        ThetaSketchView { inner: self }
     }
 
     /// Update the sketch with a hashable value.
@@ -320,6 +361,12 @@ impl ThetaSketch {
     }
 }
 
+impl<'a> From<&'a ThetaSketch> for ThetaSketchView<&'a ThetaSketch> {
+    fn from(sketch: &'a ThetaSketch) -> Self {
+        sketch.as_view()
+    }
+}
+
 /// Compact (immutable) theta sketch.
 ///
 /// This is the serialized-friendly form of a theta sketch: a compact array of retained hash values
@@ -348,6 +395,11 @@ impl CompactThetaSketch {
             ordered,
             empty,
         }
+    }
+
+    /// Return a read-only view accepted by Theta set operations.
+    pub fn as_view(&self) -> ThetaSketchView<&Self> {
+        ThetaSketchView { inner: self }
     }
 
     /// Returns the cardinality estimate.
@@ -875,6 +927,12 @@ impl CompactThetaSketch {
     /// Returns the estimated size of the sketch in bytes
     pub fn estimated_size(&self) -> usize {
         size_of::<Self>() + self.entries.capacity() * size_of::<u64>()
+    }
+}
+
+impl<'a> From<&'a CompactThetaSketch> for ThetaSketchView<&'a CompactThetaSketch> {
+    fn from(sketch: &'a CompactThetaSketch) -> Self {
+        sketch.as_view()
     }
 }
 

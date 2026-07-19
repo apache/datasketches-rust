@@ -36,7 +36,7 @@ fn test_has_result_state_machine() {
 
     let mut i = ThetaIntersection::new_with_default_seed();
     assert!(!i.has_result());
-    i.update(&a).unwrap();
+    i.update(a.as_view()).unwrap();
     assert!(i.has_result());
     assert!(i.to_sketch(true).estimate() >= 1.0);
 }
@@ -61,8 +61,8 @@ fn test_update_accepts_compact_sketch() {
     b.update("z");
 
     let mut i = ThetaIntersection::new_with_default_seed();
-    i.update(&a.compact(true)).unwrap();
-    i.update(&b).unwrap();
+    i.update(a.compact(true).as_view()).unwrap();
+    i.update(b.as_view()).unwrap();
 
     let r = i.to_sketch(true);
     assert!(r.estimate() == 1.0);
@@ -73,7 +73,7 @@ fn test_update_accepts_compact_sketch() {
     c.update("b");
     c.update("c");
 
-    i.update(&c.compact(false)).unwrap();
+    i.update(c.compact(false).as_view()).unwrap();
 
     let r = i.to_sketch(false);
     assert!(r.estimate() == 0.0);
@@ -85,7 +85,7 @@ fn test_seed_mismatch_behaviour_for_empty_sketch() {
     let empty_other_seed = ThetaSketch::builder().seed(2).build();
     let mut i = ThetaIntersection::new(1);
 
-    i.update(&empty_other_seed).unwrap();
+    i.update(empty_other_seed.as_view()).unwrap();
     assert!(i.has_result());
     let r = i.to_sketch(true);
     assert!(r.is_empty());
@@ -97,7 +97,7 @@ fn test_seed_mismatch_behaviour() {
     one_other_seed.update("value");
     let mut i = ThetaIntersection::new(1);
 
-    assert!(i.update(&one_other_seed).is_err());
+    assert!(i.update(one_other_seed.as_view()).is_err());
 }
 
 #[test]
@@ -108,8 +108,8 @@ fn test_terminal_empty_state_ignores_future_updates() {
     non_empty.update("x");
 
     let mut i = ThetaIntersection::new_with_default_seed();
-    i.update(&empty).unwrap();
-    i.update(&non_empty).unwrap();
+    i.update(empty.as_view()).unwrap();
+    i.update(non_empty.as_view()).unwrap();
 
     let r = i.to_sketch(true);
     assert!(r.is_empty());
@@ -122,7 +122,7 @@ fn test_to_sketch_unordered_is_not_ordered() {
         a.update(i);
     }
     let mut i = ThetaIntersection::new_with_default_seed();
-    i.update(&a).unwrap();
+    i.update(a.as_view()).unwrap();
 
     let r = i.to_sketch(false);
     assert!(!r.is_ordered());
@@ -133,14 +133,14 @@ fn test_empty_update_twice() {
     let empty = ThetaSketch::builder().build();
     let mut i = ThetaIntersection::new_with_default_seed();
 
-    i.update(&empty).unwrap();
+    i.update(empty.as_view()).unwrap();
     let r1 = i.to_sketch(true);
     assert_eq!(r1.num_retained(), 0);
     assert!(r1.is_empty());
     assert!(!r1.is_estimation_mode());
     assert_eq!(r1.estimate(), 0.0);
 
-    i.update(&empty).unwrap();
+    i.update(empty.as_view()).unwrap();
     let r2 = i.to_sketch(true);
     assert_eq!(r2.num_retained(), 0);
     assert!(r2.is_empty());
@@ -154,7 +154,7 @@ fn test_non_empty_no_retained_keys() {
     s.update(1u64);
 
     let mut i = ThetaIntersection::new_with_default_seed();
-    i.update(&s).unwrap();
+    i.update(s.as_view()).unwrap();
     let r1 = i.to_sketch(true);
     assert_eq!(r1.num_retained(), 0);
     assert!(!r1.is_empty());
@@ -162,7 +162,7 @@ fn test_non_empty_no_retained_keys() {
     assert!((r1.theta() - 0.001).abs() < 1e-10);
     assert_eq!(r1.estimate(), 0.0);
 
-    i.update(&s).unwrap();
+    i.update(s.as_view()).unwrap();
     let r2 = i.to_sketch(true);
     assert_eq!(r2.num_retained(), 0);
     assert!(!r2.is_empty());
@@ -177,8 +177,8 @@ fn test_exact_half_overlap_unordered() {
     let s2 = sketch_with_range(500, 1000);
 
     let mut i = ThetaIntersection::new_with_default_seed();
-    i.update(&s1).unwrap();
-    i.update(&s2).unwrap();
+    i.update(s1.as_view()).unwrap();
+    i.update(s2.as_view()).unwrap();
     let r = i.to_sketch(true);
 
     assert!(!r.is_empty());
@@ -192,8 +192,8 @@ fn test_exact_half_overlap_ordered() {
     let s2 = sketch_with_range(500, 1000);
 
     let mut i = ThetaIntersection::new_with_default_seed();
-    i.update(&s1.compact(true)).unwrap();
-    i.update(&s2.compact(true)).unwrap();
+    i.update(s1.compact(true).as_view()).unwrap();
+    i.update(s2.compact(true).as_view()).unwrap();
     let r = i.to_sketch(true);
 
     assert!(!r.is_empty());
@@ -207,8 +207,8 @@ fn test_exact_disjoint_unordered() {
     let s2 = sketch_with_range(1000, 1000);
 
     let mut i = ThetaIntersection::new_with_default_seed();
-    i.update(&s1).unwrap();
-    i.update(&s2).unwrap();
+    i.update(s1.as_view()).unwrap();
+    i.update(s2.as_view()).unwrap();
     let r = i.to_sketch(true);
 
     assert!(r.is_empty());
@@ -222,8 +222,8 @@ fn test_exact_disjoint_ordered() {
     let s2 = sketch_with_range(1000, 1000);
 
     let mut i = ThetaIntersection::new_with_default_seed();
-    i.update(&s1.compact(true)).unwrap();
-    i.update(&s2.compact(true)).unwrap();
+    i.update(s1.compact(true).as_view()).unwrap();
+    i.update(s2.compact(true).as_view()).unwrap();
     let r = i.to_sketch(true);
 
     assert!(r.is_empty());
@@ -237,8 +237,8 @@ fn test_estimation_half_overlap_unordered() {
     let s2 = sketch_with_range(5000, 10000);
 
     let mut i = ThetaIntersection::new_with_default_seed();
-    i.update(&s1).unwrap();
-    i.update(&s2).unwrap();
+    i.update(s1.as_view()).unwrap();
+    i.update(s2.as_view()).unwrap();
     let r = i.to_sketch(true);
 
     assert!(!r.is_empty());
@@ -252,8 +252,8 @@ fn test_estimation_half_overlap_ordered() {
     let s2 = sketch_with_range(5000, 10000);
 
     let mut i = ThetaIntersection::new_with_default_seed();
-    i.update(&s1.compact(true)).unwrap();
-    i.update(&s2.compact(true)).unwrap();
+    i.update(s1.compact(true).as_view()).unwrap();
+    i.update(s2.compact(true).as_view()).unwrap();
     let r = i.to_sketch(true);
 
     assert!(!r.is_empty());
@@ -269,8 +269,8 @@ fn test_estimation_half_overlap_ordered_deserialized_compact() {
     let c2 = CompactThetaSketch::deserialize(&s2.compact(true).serialize()).unwrap();
 
     let mut i = ThetaIntersection::new_with_default_seed();
-    i.update(&c1).unwrap();
-    i.update(&c2).unwrap();
+    i.update(c1.as_view()).unwrap();
+    i.update(c2.as_view()).unwrap();
     let r = i.to_sketch(true);
 
     assert!(!r.is_empty());
@@ -284,8 +284,8 @@ fn test_estimation_disjoint_unordered() {
     let s2 = sketch_with_range(10000, 10000);
 
     let mut i = ThetaIntersection::new_with_default_seed();
-    i.update(&s1).unwrap();
-    i.update(&s2).unwrap();
+    i.update(s1.as_view()).unwrap();
+    i.update(s2.as_view()).unwrap();
     let r = i.to_sketch(true);
 
     assert!(!r.is_empty());
@@ -299,8 +299,8 @@ fn test_estimation_disjoint_ordered() {
     let s2 = sketch_with_range(10000, 10000);
 
     let mut i = ThetaIntersection::new_with_default_seed();
-    i.update(&s1.compact(true)).unwrap();
-    i.update(&s2.compact(true)).unwrap();
+    i.update(s1.compact(true).as_view()).unwrap();
+    i.update(s2.compact(true).as_view()).unwrap();
     let r = i.to_sketch(true);
 
     assert!(!r.is_empty());
@@ -314,5 +314,5 @@ fn test_seed_mismatch_non_empty_returns_error() {
     s.update(1u64);
 
     let mut i = ThetaIntersection::new(123);
-    assert!(i.update(&s).is_err());
+    assert!(i.update(s.as_view()).is_err());
 }

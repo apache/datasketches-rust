@@ -28,11 +28,11 @@ pub trait RawHashTableEntry {
     fn hash(&self) -> u64;
 }
 
-/// Read-only input accepted by a raw Theta union.
+/// Read-only input accepted by raw Theta algorithms.
 ///
 /// This trait carries complete retained entries, so tuple unions can use the same state machine
 /// while merging their per-key summaries.
-pub trait RawThetaSketchView<E: RawHashTableEntry> {
+pub(crate) trait RawThetaSketchView<E: RawHashTableEntry> {
     /// Return the 16-bit seed hash.
     fn seed_hash(&self) -> u16;
 
@@ -50,4 +50,34 @@ pub trait RawThetaSketchView<E: RawHashTableEntry> {
 
     /// Return the number of retained entries.
     fn num_retained(&self) -> usize;
+}
+
+impl<E, V> RawThetaSketchView<E> for &V
+where
+    E: RawHashTableEntry,
+    V: RawThetaSketchView<E> + ?Sized,
+{
+    fn seed_hash(&self) -> u16 {
+        (**self).seed_hash()
+    }
+
+    fn theta(&self) -> u64 {
+        (**self).theta()
+    }
+
+    fn is_empty(&self) -> bool {
+        (**self).is_empty()
+    }
+
+    fn is_ordered(&self) -> bool {
+        (**self).is_ordered()
+    }
+
+    fn iter(&self) -> impl Iterator<Item = E> + '_ {
+        (**self).iter()
+    }
+
+    fn num_retained(&self) -> usize {
+        (**self).num_retained()
+    }
 }

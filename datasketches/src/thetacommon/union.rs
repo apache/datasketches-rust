@@ -68,9 +68,9 @@ where
     }
 
     /// Incorporate a sketch into the union.
-    pub fn update<S>(&mut self, sketch: &S) -> Result<(), Error>
+    pub fn update<V>(&mut self, sketch: V) -> Result<(), Error>
     where
-        S: RawThetaSketchView<E>,
+        V: RawThetaSketchView<E>,
         P: RawThetaUnionPolicy<E>,
     {
         if sketch.is_empty() {
@@ -221,7 +221,7 @@ mod tests {
         let mut union =
             RawThetaUnion::new(5, ResizeFactor::X1, 1.0, DEFAULT_UPDATE_SEED, SumPolicy);
         union
-            .update(&TestSketch {
+            .update(TestSketch {
                 entries: vec![TestEntry {
                     hash: 1,
                     summary: 2,
@@ -229,7 +229,7 @@ mod tests {
             })
             .unwrap();
         union
-            .update(&TestSketch {
+            .update(TestSketch {
                 entries: vec![TestEntry {
                     hash: 1,
                     summary: 3,
