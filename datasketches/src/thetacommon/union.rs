@@ -17,10 +17,10 @@
 
 use crate::common::ResizeFactor;
 use crate::error::Error;
-use crate::thetacommon::RawCompactParts;
 use crate::thetacommon::RawHashTableEntry;
 use crate::thetacommon::RawThetaSketchView;
 use crate::thetacommon::constants::MAX_THETA;
+use crate::thetacommon::hash_table::RawCompactParts;
 use crate::thetacommon::hash_table::RawHashTable;
 
 /// Merges an incoming entry into an existing entry with the same hash.
@@ -98,16 +98,18 @@ where
         Ok(())
     }
 
-    /// Return the current compact-union state.
-    pub fn result(&self, ordered: bool) -> RawCompactParts<E>
+    /// Return the current compact-union state as raw compact-sketch parts.
+    pub fn to_compact_parts(&self, ordered: bool) -> RawCompactParts<E>
     where
         E: Clone,
     {
+        let seed_hash = self.table.seed_hash();
+
         if self.table.is_empty() {
             return RawCompactParts {
-                entries: Vec::new(),
+                entries: vec![],
                 theta: self.union_theta,
-                seed_hash: self.table.seed_hash(),
+                seed_hash,
                 ordered: true,
                 empty: true,
             };
@@ -139,7 +141,7 @@ where
         RawCompactParts {
             entries,
             theta,
-            seed_hash: self.table.seed_hash(),
+            seed_hash,
             ordered,
             empty: false,
         }
@@ -228,8 +230,9 @@ mod tests {
             })
             .unwrap();
 
+        let parts = union.to_compact_parts(true);
         assert_eq!(
-            union.result(true).entries,
+            parts.entries,
             vec![TestEntry {
                 hash: 1,
                 summary: 5,

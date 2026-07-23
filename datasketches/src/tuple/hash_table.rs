@@ -22,12 +22,11 @@ use crate::thetacommon::RawHashTableEntry;
 use crate::thetacommon::hash_table::RawHashTable;
 
 /// A retained entry in a Tuple sketch: a hash key together with its associated summary.
-///
-/// The hash is stored as [`NonZeroU64`] (hash 0 is screened out before insertion), so
-/// `Option<TupleEntry<S>>` keeps the niche and takes no more space than `TupleEntry<S>` itself —
-/// the same layout the Theta table gets from its `NonZeroU64` entry.
 #[derive(Debug, Clone)]
 pub struct TupleEntry<S> {
+    // Note that this field is stored as `NonZeroU64` (hash 0 is screened out before insertion),
+    // so `Option<TupleEntry<S>>` keeps the niche and takes no more space than `TupleEntry<S>`
+    // itself.
     hash: NonZeroU64,
     summary: S,
 }
@@ -99,7 +98,7 @@ impl<S> TupleHashTable<S> {
         })
     }
 
-    /// Get iterator over retained entries as `(hash, &summary)` pairs.
+    /// Returns an iterator over retained entries as `(hash, &summary)` pairs.
     pub fn iter(&self) -> impl Iterator<Item = (u64, &S)> + '_ {
         self.iter_entries()
             .map(|entry| (entry.hash.get(), &entry.summary))

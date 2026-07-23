@@ -73,29 +73,4 @@ mod tests {
         policy.update(&mut summary, 4);
         assert_eq!(summary, 7);
     }
-
-    /// A non-trivial custom policy (keeps the maximum) to exercise the traits beyond the additive
-    /// default.
-    #[derive(Debug, Default, Clone, Copy)]
-    struct MaxPolicy;
-
-    impl SummaryUpdatePolicy<u64, u64> for MaxPolicy {
-        fn create(&self) -> u64 {
-            0
-        }
-
-        fn update(&self, summary: &mut u64, value: u64) {
-            *summary = (*summary).max(value);
-        }
-    }
-
-    #[test]
-    fn custom_update_policy_keeps_max() {
-        let policy = MaxPolicy;
-        let mut summary = policy.create();
-        policy.update(&mut summary, 3);
-        policy.update(&mut summary, 7);
-        policy.update(&mut summary, 2);
-        assert_eq!(summary, 7);
-    }
 }

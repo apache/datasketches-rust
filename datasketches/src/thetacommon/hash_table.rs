@@ -20,13 +20,22 @@ use std::hash::Hash;
 use crate::common::ResizeFactor;
 use crate::hash::MurmurHash3X64128;
 use crate::hash::compute_seed_hash;
-use crate::thetacommon::RawCompactParts;
 use crate::thetacommon::RawHashTableEntry;
 use crate::thetacommon::constants::HASH_TABLE_REBUILD_THRESHOLD;
 use crate::thetacommon::constants::HASH_TABLE_RESIZE_THRESHOLD;
 use crate::thetacommon::constants::MAX_THETA;
 use crate::thetacommon::constants::MIN_LG_K;
 use crate::thetacommon::constants::STRIDE_MASK;
+
+/// Raw compact-sketch state from which a sketch family creates its compact result type.
+#[derive(Debug)]
+pub struct RawCompactParts<E> {
+    pub entries: Vec<E>,
+    pub theta: u64,
+    pub seed_hash: u16,
+    pub ordered: bool,
+    pub empty: bool,
+}
 
 /// Generic hash-table mechanics shared by Theta and Tuple sketches.
 ///

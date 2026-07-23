@@ -217,7 +217,7 @@ impl<S, P> TupleSketch<S, P> {
 
     /// Returns the estimated size of the sketch in bytes.
     pub fn estimated_size(&self) -> usize {
-        std::mem::size_of::<Self>() + self.table.estimated_size()
+        size_of::<Self>() + self.table.estimated_size()
     }
 }
 
@@ -386,7 +386,7 @@ impl<S> CompactTupleSketch<S> {
 
     /// Returns the estimated size of the sketch in bytes.
     pub fn estimated_size(&self) -> usize {
-        std::mem::size_of::<Self>() + self.entries.capacity() * std::mem::size_of::<TupleEntry<S>>()
+        size_of::<Self>() + self.entries.capacity() * size_of::<TupleEntry<S>>()
     }
 
     fn preamble_longs(&self) -> u8 {
@@ -519,7 +519,7 @@ impl<S> CompactTupleSketch<S> {
 
         if empty {
             return Ok(Self::from_parts(
-                Vec::new(),
+                vec![],
                 MAX_THETA,
                 seed_hash,
                 ordered,
