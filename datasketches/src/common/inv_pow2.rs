@@ -15,12 +15,21 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! Data structures and functions that may be used across all the sketch families.
+/// Compute 1 / 2^exp using the same bit construction as DataSketches Java.
+#[inline]
+pub(crate) fn inv_pow2(exp: u8) -> f64 {
+    f64::from_bits((1023 - exp as u64) << 52)
+}
 
-mod num_std_dev;
-mod resize;
-pub use self::num_std_dev::NumStdDev;
-pub use self::resize::ResizeFactor;
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-#[cfg(any(feature = "cpc", feature = "hll"))]
-pub(crate) mod inv_pow2;
+    #[test]
+    fn assert_inv_pow2() {
+        for i in 0..=255 {
+            let expected = 2f64.powf(-(i as f64));
+            assert_eq!(inv_pow2(i), expected);
+        }
+    }
+}
