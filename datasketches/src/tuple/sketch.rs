@@ -614,7 +614,7 @@ impl<S> Default for TupleSketchBuilder<S, DefaultUpdatePolicy> {
             resize_factor: ResizeFactor::X8,
             sampling_probability: 1.0,
             seed: DEFAULT_UPDATE_SEED,
-            policy: DefaultUpdatePolicy,
+            policy: DefaultUpdatePolicy::default(),
             _marker: PhantomData,
         }
     }
@@ -669,12 +669,13 @@ impl<S, P> TupleSketchBuilder<S, P> {
     /// use datasketches::tuple::SummaryUpdatePolicy;
     /// use datasketches::tuple::TupleSketch;
     ///
-    /// #[derive(Default)]
     /// struct MaxPolicy;
+    ///
     /// impl SummaryUpdatePolicy<u64, u64> for MaxPolicy {
     ///     fn create(&self) -> u64 {
     ///         0
     ///     }
+    ///
     ///     fn update(&self, summary: &mut u64, value: u64) {
     ///         *summary = (*summary).max(value);
     ///     }

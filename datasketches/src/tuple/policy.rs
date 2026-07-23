@@ -46,7 +46,7 @@ pub trait SummaryUpdatePolicy<S, U> {
 /// `default_tuple_update_policy` (which folds updates with `summary += update`). It is available
 /// for any summary type `S` and update type `U` where `S: Default + AddAssign<U>`.
 #[derive(Debug, Default, Clone, Copy)]
-pub struct DefaultUpdatePolicy;
+pub struct DefaultUpdatePolicy(());
 
 impl<S, U> SummaryUpdatePolicy<S, U> for DefaultUpdatePolicy
 where
@@ -67,7 +67,7 @@ mod tests {
 
     #[test]
     fn default_update_policy_update_accumulates() {
-        let policy = DefaultUpdatePolicy;
+        let policy = DefaultUpdatePolicy::default();
         let mut summary = 0u64;
         policy.update(&mut summary, 3);
         policy.update(&mut summary, 4);
