@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! Policies describing how summaries are created, updated, and combined.
+//! Policies describing how summaries are created and updated.
 //!
 //! A Tuple sketch keeps a user-defined summary `S` next to every retained key. The behavior of a
 //! summary is supplied externally through policy objects rather than baked into the summary type
@@ -23,54 +23,52 @@
 //! different behaviors and can carry per-instance configuration (such as the number of values in an
 //! array-of-doubles summary).
 
+use std::marker::PhantomData;
 use std::ops::AddAssign;
 
 /// Defines how a summary is created and how update values are folded into it.
 ///
-/// This is used by the update tuple sketch. `S` is the stored summary type and `U` is the type of
-/// the update value, which may be a borrowed type such as `&[f64]`.
-pub trait SummaryUpdatePolicy<S, U> {
+/// A policy determines both the stored summary type and the family of values accepted by
+/// [`update`](Self::update). The generic associated update type allows a policy to accept borrowed
+/// values, such as `&[f64]`, without putting a lifetime on the policy itself.
+pub trait SummaryUpdatePolicy {
+    /// Summary type retained alongside each key.
+    type Summary;
+
+    /// Update value accepted by this policy.
+    type Update<'a>;
+
     /// Creates a new summary for a key seen for the first time.
     ///
     /// The summary should be in its identity state; the first update value is folded in separately
     /// via [`update`](Self::update).
-    fn create(&self) -> S;
+    fn create(&self) -> Self::Summary;
 
     /// Folds an update value into an existing summary.
-    fn update(&self, summary: &mut S, value: U);
+    fn update(&self, summary: &mut Self::Summary, value: Self::Update<'_>);
 }
 
 /// Default update policy for summaries that are default-constructible and additive.
 ///
-/// This is the convenience policy used when no custom policy is supplied, equivalent to C++
-/// `default_tuple_update_policy` (which folds updates with `summary += update`). It is available
-/// for any summary type `S` and update type `U` where `S: Default + AddAssign<U>`.
+/// The summary type is selected when
+/// [`TupleSketchBuilder::build`](crate::tuple::TupleSketchBuilder::build) is called, and updates fold
+/// values with `summary += value`. The zero-sized type witness records that this concrete policy's
+/// associated summary is `S`.
 #[derive(Debug, Default, Clone, Copy)]
-pub struct DefaultUpdatePolicy(());
+pub struct DefaultUpdatePolicy<S>(PhantomData<fn() -> S>);
 
-impl<S, U> SummaryUpdatePolicy<S, U> for DefaultUpdatePolicy
+impl<S> SummaryUpdatePolicy for DefaultUpdatePolicy<S>
 where
-    S: Default + AddAssign<U>,
+    S: Default + AddAssign<S>,
 {
-    fn create(&self) -> S {
+    type Summary = S;
+    type Update<'a> = S;
+
+    fn create(&self) -> Self::Summary {
         S::default()
     }
 
-    fn update(&self, summary: &mut S, value: U) {
+    fn update(&self, summary: &mut Self::Summary, value: Self::Update<'_>) {
         *summary += value;
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn default_update_policy_update_accumulates() {
-        let policy = DefaultUpdatePolicy::default();
-        let mut summary = 0u64;
-        policy.update(&mut summary, 3);
-        policy.update(&mut summary, 4);
-        assert_eq!(summary, 7);
     }
 }

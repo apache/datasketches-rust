@@ -22,15 +22,16 @@
 //! mechanics (theta screening, resize, rebuild to nominal size k) mirror the Theta sketch, with the
 //! added requirement that colliding keys merge their summaries.
 //!
-//! The behavior of a summary (how to create and update it) is supplied externally through
-//! policy objects ([`SummaryUpdatePolicy`]) rather than being baked into the summary type.
+//! Custom summary behavior (how to create and update it) is supplied externally through policy
+//! objects ([`SummaryUpdatePolicy`]) rather than being baked into the summary type. Summaries that
+//! implement `Default` and `AddAssign` can use the built-in additive update mode.
 //!
 //! # Usage
 //!
 //! ```
 //! # use datasketches::tuple::TupleSketchBuilder;
-//! let mut sketch = TupleSketchBuilder::<u64>::default().build();
-//! sketch.update("apple", 1);
+//! let mut sketch = TupleSketchBuilder::default().build();
+//! sketch.update("apple", 1_u64);
 //! assert!(sketch.estimate() >= 1.0);
 //! ```
 

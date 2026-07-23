@@ -19,10 +19,10 @@
 //!
 //! This module provides [`TupleSketch`] (mutable) and [`CompactTupleSketch`] (immutable),
 //! the Tuple sketch analogues of the Theta sketch. Each retained key carries a user-defined summary
-//! whose behavior is supplied by a [`SummaryUpdatePolicy`].
+//! updated either by the built-in additive mode or by a custom [`SummaryUpdatePolicy`].
 
 use std::hash::Hash;
-use std::marker::PhantomData;
+use std::ops::AddAssign;
 
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
@@ -65,28 +65,33 @@ impl<S, T> TupleSketchView<S> for T where T: RawThetaSketchView<TupleEntry<S>> {
 
 /// Mutable Tuple sketch for building from input data.
 ///
-/// `S` is the summary type retained alongside each key, and `P` is the [`SummaryUpdatePolicy`] that
-/// defines how summaries are created and updated. For additive summaries the default
-/// [`DefaultUpdatePolicy`] is used.
+/// `P` defines how summaries are created and updated. The summary retained alongside each key is
+/// [`P::Summary`](SummaryUpdatePolicy::Summary).
 ///
 /// # Examples
 ///
 /// ```
 /// # use datasketches::tuple::TupleSketchBuilder;
-/// let mut sketch = TupleSketchBuilder::<u64>::default().build();
+/// let mut sketch = TupleSketchBuilder::default().build::<u64>();
 /// sketch.update("apple", 1);
 /// sketch.update("apple", 1);
 /// assert!(sketch.estimate() >= 1.0);
 /// assert_eq!(sketch.num_retained(), 1);
 /// ```
 #[derive(Debug)]
-pub struct TupleSketch<S, P = DefaultUpdatePolicy> {
-    table: TupleHashTable<S>,
+pub struct TupleSketch<P>
+where
+    P: SummaryUpdatePolicy,
+{
+    table: TupleHashTable<P::Summary>,
     policy: P,
 }
 
-impl<S, P> TupleSketch<S, P> {
-    /// Updates the sketch with a key and an update value.
+impl<P> TupleSketch<P>
+where
+    P: SummaryUpdatePolicy,
+{
+    /// Updates the sketch with a key and a value accepted by the policy.
     ///
     /// If the key is new, the policy creates a summary and folds in `value`; if the key already
     /// exists, `value` is folded into the retained summary. Updates screened out by theta do not
@@ -96,13 +101,10 @@ impl<S, P> TupleSketch<S, P> {
     ///
     /// ```
     /// # use datasketches::tuple::TupleSketchBuilder;
-    /// let mut sketch = TupleSketchBuilder::<u64>::default().build();
+    /// let mut sketch = TupleSketchBuilder::default().build::<u64>();
     /// sketch.update(42, 5);
     /// ```
-    pub fn update<U>(&mut self, key: impl Hash, value: U)
-    where
-        P: SummaryUpdatePolicy<S, U>,
-    {
+    pub fn update(&mut self, key: impl Hash, value: P::Update<'_>) {
         let policy = &self.policy;
         self.table.try_insert(key, |existing| match existing {
             Some(summary) => {
@@ -173,7 +175,7 @@ impl<S, P> TupleSketch<S, P> {
     }
 
     /// Returns an iterator over retained entries as `(hash, &summary)` pairs.
-    pub fn iter(&self) -> impl Iterator<Item = (u64, &S)> + '_ {
+    pub fn iter(&self) -> impl Iterator<Item = (u64, &P::Summary)> + '_ {
         self.table.iter()
     }
 
@@ -206,7 +208,11 @@ impl<S, P> TupleSketch<S, P> {
     }
 }
 
-impl<S: Clone, P> TupleSketch<S, P> {
+impl<P> TupleSketch<P>
+where
+    P: SummaryUpdatePolicy,
+    P::Summary: Clone,
+{
     /// Returns this sketch in compact (immutable) form.
     ///
     /// If `ordered` is true, retained entries are sorted by hash in ascending order.
@@ -215,12 +221,12 @@ impl<S: Clone, P> TupleSketch<S, P> {
     ///
     /// ```
     /// # use datasketches::tuple::TupleSketchBuilder;
-    /// let mut sketch = TupleSketchBuilder::<u64>::default().build();
+    /// let mut sketch = TupleSketchBuilder::default().build::<u64>();
     /// sketch.update("apple", 1);
     /// let compact = sketch.compact(true);
     /// assert_eq!(compact.num_retained(), 1);
     /// ```
-    pub fn compact(&self, ordered: bool) -> CompactTupleSketch<S> {
+    pub fn compact(&self, ordered: bool) -> CompactTupleSketch<P::Summary> {
         let parts = self.table.to_compact_parts(ordered);
         CompactTupleSketch::from_parts(
             parts.entries,
@@ -232,7 +238,11 @@ impl<S: Clone, P> TupleSketch<S, P> {
     }
 }
 
-impl<S: Clone, P> RawThetaSketchView<TupleEntry<S>> for TupleSketch<S, P> {
+impl<P> RawThetaSketchView<TupleEntry<P::Summary>> for TupleSketch<P>
+where
+    P: SummaryUpdatePolicy,
+    P::Summary: Clone,
+{
     fn seed_hash(&self) -> u16 {
         self.table.seed_hash()
     }
@@ -249,7 +259,7 @@ impl<S: Clone, P> RawThetaSketchView<TupleEntry<S>> for TupleSketch<S, P> {
         false
     }
 
-    fn iter(&self) -> impl Iterator<Item = TupleEntry<S>> + '_ {
+    fn iter(&self) -> impl Iterator<Item = TupleEntry<P::Summary>> + '_ {
         self.table
             .iter()
             .map(|(hash, summary)| TupleEntry::new(hash, summary.clone()))
@@ -394,7 +404,7 @@ impl<S> CompactTupleSketch<S> {
     ///
     /// ```
     /// # use datasketches::tuple::TupleSketchBuilder;
-    /// let mut sketch = TupleSketchBuilder::<u64>::default().build();
+    /// let mut sketch = TupleSketchBuilder::default().build::<u64>();
     /// sketch.update("apple", 1);
     /// let bytes = sketch.compact(true).serialize();
     /// assert!(!bytes.is_empty());
@@ -578,55 +588,34 @@ impl<S: Clone> RawThetaSketchView<TupleEntry<S>> for CompactTupleSketch<S> {
 }
 
 /// Builder for [`TupleSketch`].
+///
+/// The builder carries a custom update policy when one is supplied. With the built-in additive
+/// mode, a typed default policy is created by [`build`](Self::build), and its summary type can be
+/// inferred from a subsequent update. With a custom [`SummaryUpdatePolicy`], the policy's associated
+/// [`Summary`](SummaryUpdatePolicy::Summary) type determines the sketch summary.
 #[derive(Debug)]
-pub struct TupleSketchBuilder<S, P = DefaultUpdatePolicy> {
+pub struct TupleSketchBuilder<P = ()> {
     lg_k: u8,
     resize_factor: ResizeFactor,
     sampling_probability: f32,
     seed: u64,
     policy: P,
-    marker: PhantomData<fn() -> S>,
 }
 
-impl<S> Default for TupleSketchBuilder<S, DefaultUpdatePolicy> {
+impl Default for TupleSketchBuilder<()> {
     fn default() -> Self {
-        Self::with_policy(DefaultUpdatePolicy::default())
+        Self::new(())
     }
 }
 
-impl<S, P> TupleSketchBuilder<S, P> {
-    /// Creates a builder with the given policy.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use datasketches::tuple::SummaryUpdatePolicy;
-    /// use datasketches::tuple::TupleSketchBuilder;
-    ///
-    /// struct MaxPolicy;
-    ///
-    /// impl SummaryUpdatePolicy<u64, u64> for MaxPolicy {
-    ///     fn create(&self) -> u64 {
-    ///         0
-    ///     }
-    ///
-    ///     fn update(&self, summary: &mut u64, value: u64) {
-    ///         *summary = (*summary).max(value);
-    ///     }
-    /// }
-    ///
-    /// let mut sketch = TupleSketchBuilder::<u64, MaxPolicy>::with_policy(MaxPolicy).build();
-    /// sketch.update("k", 3);
-    /// sketch.update("k", 7);
-    /// ```
-    pub fn with_policy(policy: P) -> Self {
+impl<P> TupleSketchBuilder<P> {
+    fn new(policy: P) -> Self {
         Self {
             lg_k: DEFAULT_LG_K,
             resize_factor: ResizeFactor::X8,
             sampling_probability: 1.0,
             seed: DEFAULT_UPDATE_SEED,
             policy,
-            marker: PhantomData,
         }
     }
 
@@ -669,32 +658,86 @@ impl<S, P> TupleSketchBuilder<S, P> {
         self.seed = seed;
         self
     }
+}
 
-    /// Sets a custom update policy, changing the builder's policy type.
-    pub fn policy<P2>(self, policy: P2) -> TupleSketchBuilder<S, P2> {
-        TupleSketchBuilder {
-            lg_k: self.lg_k,
-            resize_factor: self.resize_factor,
-            sampling_probability: self.sampling_probability,
-            seed: self.seed,
-            policy,
-            marker: PhantomData,
-        }
-    }
-
-    /// Builds the [`TupleSketch`].
-    pub fn build(self) -> TupleSketch<S, P> {
-        let table = TupleHashTable::new(
+impl TupleSketchBuilder<()> {
+    /// Builds a [`TupleSketch`] using the built-in additive update mode.
+    ///
+    /// The summary type can be supplied explicitly with `build::<S>()`, inferred from the expected
+    /// result type, or inferred from a subsequent [`TupleSketch::update`] call.
+    pub fn build<S>(self) -> TupleSketch<DefaultUpdatePolicy<S>>
+    where
+        S: Default + AddAssign<S>,
+    {
+        build_tuple_sketch(
             self.lg_k,
             self.resize_factor,
             self.sampling_probability,
             self.seed,
-        );
-        TupleSketch {
-            table,
-            policy: self.policy,
-        }
+            DefaultUpdatePolicy::default(),
+        )
     }
+}
+
+impl<P> TupleSketchBuilder<P>
+where
+    P: SummaryUpdatePolicy,
+{
+    /// Creates a builder with the given policy.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::tuple::SummaryUpdatePolicy;
+    /// use datasketches::tuple::TupleSketchBuilder;
+    ///
+    /// struct MaxPolicy;
+    ///
+    /// impl SummaryUpdatePolicy for MaxPolicy {
+    ///     type Summary = u64;
+    ///     type Update<'a> = u64;
+    ///
+    ///     fn create(&self) -> Self::Summary {
+    ///         0
+    ///     }
+    ///
+    ///     fn update(&self, summary: &mut Self::Summary, value: Self::Update<'_>) {
+    ///         *summary = (*summary).max(value);
+    ///     }
+    /// }
+    ///
+    /// let mut sketch = TupleSketchBuilder::with_policy(MaxPolicy).build();
+    /// sketch.update("k", 3);
+    /// sketch.update("k", 7);
+    /// ```
+    pub fn with_policy(policy: P) -> Self {
+        Self::new(policy)
+    }
+
+    /// Builds a [`TupleSketch`] using the supplied policy.
+    pub fn build(self) -> TupleSketch<P> {
+        build_tuple_sketch(
+            self.lg_k,
+            self.resize_factor,
+            self.sampling_probability,
+            self.seed,
+            self.policy,
+        )
+    }
+}
+
+fn build_tuple_sketch<P>(
+    lg_k: u8,
+    resize_factor: ResizeFactor,
+    sampling_probability: f32,
+    seed: u64,
+    policy: P,
+) -> TupleSketch<P>
+where
+    P: SummaryUpdatePolicy,
+{
+    let table = TupleHashTable::new(lg_k, resize_factor, sampling_probability, seed);
+    TupleSketch { table, policy }
 }
 
 #[cfg(test)]
@@ -703,7 +746,10 @@ mod tests {
     use crate::error::ErrorKind;
     use crate::tuple::policy::SummaryUpdatePolicy;
 
-    fn sorted_updatable_entries(sketch: &TupleSketch<u64>) -> Vec<(u64, u64)> {
+    fn sorted_updatable_entries<P>(sketch: &TupleSketch<P>) -> Vec<(u64, u64)>
+    where
+        P: SummaryUpdatePolicy<Summary = u64>,
+    {
         let mut entries: Vec<(u64, u64)> = sketch.iter().map(|(h, &s)| (h, s)).collect();
         entries.sort_unstable();
         entries
@@ -715,10 +761,12 @@ mod tests {
         entries
     }
 
-    fn assert_updatable_and_compact_equivalent(
-        updatable: &TupleSketch<u64>,
+    fn assert_updatable_and_compact_equivalent<P>(
+        updatable: &TupleSketch<P>,
         compact: &CompactTupleSketch<u64>,
-    ) {
+    ) where
+        P: SummaryUpdatePolicy<Summary = u64>,
+    {
         assert_eq!(updatable.is_empty(), compact.is_empty());
         assert_eq!(updatable.is_estimation_mode(), compact.is_estimation_mode());
         assert_eq!(updatable.num_retained(), compact.num_retained());
@@ -733,7 +781,7 @@ mod tests {
 
     #[test]
     fn exact_mode_updatable_and_compact_equivalent() {
-        let mut sketch = TupleSketchBuilder::<u64>::default().lg_k(12).build();
+        let mut sketch = TupleSketchBuilder::default().lg_k(12).build::<u64>();
         for i in 0..2000 {
             sketch.update(i, 1u64);
         }
@@ -750,7 +798,7 @@ mod tests {
 
     #[test]
     fn estimation_mode_updatable_and_compact_equivalent() {
-        let mut sketch = TupleSketchBuilder::<u64>::default().lg_k(5).build();
+        let mut sketch = TupleSketchBuilder::default().lg_k(5).build::<u64>();
         for i in 0..5000 {
             sketch.update(i, 1u64);
         }
@@ -764,7 +812,7 @@ mod tests {
 
     #[test]
     fn summaries_accumulate_with_default_policy() {
-        let mut sketch = TupleSketchBuilder::<u64>::default().build();
+        let mut sketch = TupleSketchBuilder::default().build();
         for _ in 0..5 {
             sketch.update("same_key", 2u64);
         }
@@ -780,7 +828,7 @@ mod tests {
 
     #[test]
     fn empty_sketch_is_ordered_and_zero_estimate() {
-        let sketch = TupleSketchBuilder::<u64>::default().build();
+        let sketch = TupleSketchBuilder::default().build::<u64>();
         assert!(sketch.is_empty());
         assert_eq!(sketch.estimate(), 0.0);
 
@@ -793,7 +841,7 @@ mod tests {
 
     #[test]
     fn bounds_bracket_estimate_in_estimation_mode() {
-        let mut sketch = TupleSketchBuilder::<u64>::default().lg_k(12).build();
+        let mut sketch = TupleSketchBuilder::default().lg_k(12).build::<u64>();
         for i in 0..10000 {
             sketch.update(i, 1u64);
         }
@@ -807,32 +855,58 @@ mod tests {
     #[derive(Default)]
     struct MaxPolicy;
 
-    impl SummaryUpdatePolicy<u64, u64> for MaxPolicy {
-        fn create(&self) -> u64 {
+    impl SummaryUpdatePolicy for MaxPolicy {
+        type Summary = u64;
+        type Update<'a> = u64;
+
+        fn create(&self) -> Self::Summary {
             0
         }
 
-        fn update(&self, summary: &mut u64, value: u64) {
+        fn update(&self, summary: &mut Self::Summary, value: Self::Update<'_>) {
             *summary = (*summary).max(value);
         }
     }
 
     #[test]
     fn custom_policy_drives_summary_behavior() {
-        let mut sketch = TupleSketchBuilder::<u64, MaxPolicy>::with_policy(MaxPolicy).build();
+        let mut sketch = TupleSketchBuilder::with_policy(MaxPolicy).build();
         sketch.update("k", 3u64);
         sketch.update("k", 7u64);
         sketch.update("k", 2u64);
 
         assert_eq!(sketch.num_retained(), 1);
-        let entries = sorted_updatable_entries_generic(&sketch);
+        let entries = sorted_updatable_entries(&sketch);
         assert_eq!(entries[0].1, 7);
     }
 
-    fn sorted_updatable_entries_generic<P>(sketch: &TupleSketch<u64, P>) -> Vec<(u64, u64)> {
-        let mut entries: Vec<(u64, u64)> = sketch.iter().map(|(h, &s)| (h, s)).collect();
-        entries.sort_unstable();
-        entries
+    struct ArraySumPolicy {
+        num_values: usize,
+    }
+
+    impl SummaryUpdatePolicy for ArraySumPolicy {
+        type Summary = Vec<f64>;
+        type Update<'a> = &'a [f64];
+
+        fn create(&self) -> Self::Summary {
+            vec![0.0; self.num_values]
+        }
+
+        fn update(&self, summary: &mut Self::Summary, value: Self::Update<'_>) {
+            assert_eq!(value.len(), self.num_values);
+            for (summary, value) in summary.iter_mut().zip(value) {
+                *summary += value;
+            }
+        }
+    }
+
+    #[test]
+    fn custom_policy_accepts_borrowed_updates() {
+        let mut sketch = TupleSketchBuilder::with_policy(ArraySumPolicy { num_values: 2 }).build();
+        sketch.update("k", &[1.0, 2.0]);
+        sketch.update("k", &[3.0, 4.0]);
+
+        assert_eq!(sketch.iter().next().unwrap().1, &vec![4.0, 6.0]);
     }
 
     fn view_num_retained<V: TupleSketchView<u64>>(view: &V) -> usize {
@@ -849,7 +923,7 @@ mod tests {
 
     #[test]
     fn view_trait_accepts_both_sketch_types() {
-        let mut sketch = TupleSketchBuilder::<u64>::default().build();
+        let mut sketch = TupleSketchBuilder::default().build::<u64>();
         for i in 0..100 {
             sketch.update(i, 2u64);
         }
@@ -882,7 +956,7 @@ mod tests {
 
     #[test]
     fn serialize_round_trip_exact_mode() {
-        let mut sketch = TupleSketchBuilder::<u64>::default().lg_k(12).build();
+        let mut sketch = TupleSketchBuilder::default().lg_k(12).build::<u64>();
         for i in 0..2000 {
             sketch.update(i, 1u64);
         }
@@ -893,7 +967,7 @@ mod tests {
 
     #[test]
     fn serialize_round_trip_estimation_mode() {
-        let mut sketch = TupleSketchBuilder::<u64>::default().lg_k(5).build();
+        let mut sketch = TupleSketchBuilder::default().lg_k(5).build::<u64>();
         for i in 0..5000 {
             sketch.update(i, 3u64);
         }
@@ -905,7 +979,7 @@ mod tests {
 
     #[test]
     fn serialize_round_trip_empty() {
-        let sketch = TupleSketchBuilder::<u64>::default().build();
+        let sketch = TupleSketchBuilder::default().build::<u64>();
         let compact = sketch.compact(true);
         assert!(compact.is_empty());
         assert_compact_round_trip(&compact);
@@ -913,7 +987,7 @@ mod tests {
 
     #[test]
     fn serialize_round_trip_single_entry() {
-        let mut sketch = TupleSketchBuilder::<u64>::default().build();
+        let mut sketch = TupleSketchBuilder::default().build::<u64>();
         sketch.update("only", 42u64);
         let compact = sketch.compact(true);
         assert_eq!(compact.num_retained(), 1);
@@ -929,7 +1003,7 @@ mod tests {
 
     #[test]
     fn serialize_header_fields_match_tuple_format() {
-        let mut sketch = TupleSketchBuilder::<u64>::default().build();
+        let mut sketch = TupleSketchBuilder::default().build::<u64>();
         for i in 0..100 {
             sketch.update(i, 1u64);
         }
@@ -942,7 +1016,7 @@ mod tests {
 
     #[test]
     fn serialize_preserves_summaries() {
-        let mut sketch = TupleSketchBuilder::<u64>::default().build();
+        let mut sketch = TupleSketchBuilder::default().build::<u64>();
         for i in 0..50 {
             sketch.update(i, 1u64);
             sketch.update(i, 1u64); // each summary accumulates to 2
@@ -955,7 +1029,7 @@ mod tests {
 
     #[test]
     fn deserialize_rejects_wrong_family() {
-        let mut sketch = TupleSketchBuilder::<u64>::default().build();
+        let mut sketch = TupleSketchBuilder::default().build::<u64>();
         for i in 0..10 {
             sketch.update(i, 1u64);
         }
@@ -967,7 +1041,7 @@ mod tests {
 
     #[test]
     fn deserialize_rejects_seed_mismatch() {
-        let mut sketch = TupleSketchBuilder::<u64>::default().build();
+        let mut sketch = TupleSketchBuilder::default().build::<u64>();
         for i in 0..10 {
             sketch.update(i, 1u64);
         }
@@ -978,7 +1052,7 @@ mod tests {
 
     #[test]
     fn deserialize_rejects_truncated_summary() {
-        let mut sketch = TupleSketchBuilder::<u64>::default().build();
+        let mut sketch = TupleSketchBuilder::default().build::<u64>();
         for i in 0..100 {
             sketch.update(i, 1u64);
         }
