@@ -173,11 +173,11 @@ fn test_reduce_k_window() {
 #[test]
 #[should_panic]
 fn test_lg_k_too_small() {
-    let _ = CpcSketch::new(3);
+    CpcSketch::new(3);
 }
 
 #[test]
 #[should_panic]
 fn test_lg_k_too_large() {
-    let _ = CpcSketch::new(27);
+    CpcSketch::new(27);
 }

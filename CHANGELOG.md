@@ -4,6 +4,10 @@ All significant changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Breaking changes
+
+* Remove `ThetaSketch::builder`, `ThetaUnion::builder`, and `TupleSketch::builder`. Construct `ThetaSketchBuilder`, `ThetaUnionBuilder`, and `TupleSketchBuilder` with `Default::default` instead.
+
 ### New features
 
 * `FrequentItemsSketch` now supports borrowed-key updates via `update_ref` and `update_with_count_ref`, allowing sketches such as `FrequentItemsSketch<String>` to update from `&str` without allocating on existing-key hits. Frequency queries also accept borrowed key forms matching `Borrow<Q>`.

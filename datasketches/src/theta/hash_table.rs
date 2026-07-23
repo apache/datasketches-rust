@@ -217,7 +217,7 @@ mod tests {
 
         // Insert many values to trigger rebuild
         for i in 0..100 {
-            let _ = table.try_insert(format!("value_{}", i));
+            table.try_insert(format!("value_{i}"));
         }
 
         // After rebuild, theta should be reduced (rebuild is called automatically during insert)
@@ -229,7 +229,7 @@ mod tests {
 
         // Continue to insert values to trigger rebuild again
         for i in 100..200 {
-            let _ = table.try_insert(format!("value_{}", i));
+            table.try_insert(format!("value_{i}"));
         }
 
         assert_eq!(table.lg_cur_size(), 6);
@@ -243,7 +243,7 @@ mod tests {
 
         // Insert more than k values
         for i in 0..100 {
-            let _ = table.try_insert(format!("value_{}", i));
+            table.try_insert(format!("value_{i}"));
         }
 
         let before_trim = table.num_retained();
@@ -261,7 +261,7 @@ mod tests {
 
         // Insert fewer than k values
         for i in 0..10 {
-            let _ = table.try_insert(format!("value_{}", i));
+            table.try_insert(format!("value_{i}"));
         }
 
         let before_trim = table.num_retained();
@@ -283,7 +283,7 @@ mod tests {
 
         // Insert some values
         for i in 0..10 {
-            let _ = table.try_insert(format!("value_{}", i));
+            table.try_insert(format!("value_{i}"));
         }
 
         assert!(!table.is_empty());
@@ -312,7 +312,7 @@ mod tests {
 
         // Insert some values
         for i in 0..10 {
-            let _ = table.try_insert(format!("value_{}", i));
+            table.try_insert(format!("value_{i}"));
         }
 
         table.reset();
