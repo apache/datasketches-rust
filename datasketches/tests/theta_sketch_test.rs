@@ -36,6 +36,26 @@ fn test_basic_update() {
 }
 
 #[test]
+fn test_read_only_view_interface() {
+    let mut sketch = ThetaSketch::builder().lg_k(12).build();
+    sketch.update("value1");
+    sketch.update("value2");
+
+    let view = sketch.as_view();
+    assert_eq!(view.seed_hash(), sketch.seed_hash());
+    assert_eq!(view.theta(), sketch.theta64());
+    assert_eq!(view.is_empty(), sketch.is_empty());
+    assert!(!view.is_ordered());
+    assert_eq!(view.num_retained(), sketch.num_retained());
+    assert_eq!(view.iter().count(), sketch.num_retained());
+
+    let compact = sketch.compact(true);
+    let compact_view = compact.as_view();
+    assert!(compact_view.is_ordered());
+    assert_eq!(compact_view.iter().count(), compact.num_retained());
+}
+
+#[test]
 fn test_update_various_types() {
     let mut sketch = ThetaSketch::builder().lg_k(12).build();
 

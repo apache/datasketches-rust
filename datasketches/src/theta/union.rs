@@ -21,6 +21,7 @@ use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::theta::CompactThetaSketch;
 use crate::theta::ThetaSketchView;
 use crate::theta::hash_table::ThetaEntry;
+use crate::thetacommon::RawThetaSketchView;
 use crate::thetacommon::constants::DEFAULT_LG_K;
 use crate::thetacommon::constants::MAX_LG_K;
 use crate::thetacommon::constants::MIN_LG_K;
@@ -54,8 +55,12 @@ impl ThetaUnion {
     }
 
     /// Update this union with a given sketch.
-    pub fn update<S: ThetaSketchView>(&mut self, sketch: &S) -> Result<(), Error> {
-        self.raw.update(sketch)
+    #[allow(private_bounds)]
+    pub fn update<V>(&mut self, sketch: ThetaSketchView<V>) -> Result<(), Error>
+    where
+        V: RawThetaSketchView<ThetaEntry>,
+    {
+        self.raw.update(sketch.inner)
     }
 
     /// Return this union as a compact sketch.

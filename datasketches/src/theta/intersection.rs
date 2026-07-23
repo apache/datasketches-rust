@@ -20,7 +20,9 @@ use crate::error::Error;
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::theta::CompactThetaSketch;
 use crate::theta::ThetaSketchView;
+use crate::theta::hash_table::ThetaEntry;
 use crate::theta::hash_table::ThetaHashTable;
+use crate::thetacommon::RawThetaSketchView;
 use crate::thetacommon::constants::HASH_TABLE_REBUILD_THRESHOLD;
 use crate::thetacommon::constants::MAX_THETA;
 
@@ -61,7 +63,12 @@ impl ThetaIntersection {
     /// The intersection can be viewed as starting from the "universe" set,
     /// and every update can reduce the current set to leave the overlapping
     /// subset only.
-    pub fn update<S: ThetaSketchView>(&mut self, sketch: &S) -> Result<(), Error> {
+    #[allow(private_bounds)]
+    pub fn update<V>(&mut self, sketch: ThetaSketchView<V>) -> Result<(), Error>
+    where
+        V: RawThetaSketchView<ThetaEntry>,
+    {
+        let sketch = sketch.inner;
         let new_default_table = |table: &ThetaHashTable| {
             ThetaHashTable::from_raw_parts(
                 0,
