@@ -27,10 +27,26 @@ use crate::thetacommon::constants::MAX_THETA;
 use crate::thetacommon::constants::MIN_LG_K;
 use crate::thetacommon::constants::STRIDE_MASK;
 
+/// Raw compact-sketch state from which a sketch family creates its compact result type.
+#[derive(Debug)]
+pub struct RawCompactParts<E> {
+    pub entries: Vec<E>,
+    pub theta: u64,
+    pub seed_hash: u16,
+    pub ordered: bool,
+    pub empty: bool,
+}
+
 /// Generic hash-table mechanics shared by Theta and Tuple sketches.
 ///
 /// The entry type supplies the retained hash and any sketch-specific payload. The table owns all
 /// theta screening, probing, resizing, rebuilding, trimming, and logical-empty state.
+///
+/// It maintains an array with capacity up to 2^lg_max_size:
+/// * Before it reaches the max capacity, it will extend the array based on resize_factor.
+/// * After it reaches the capacity bigger than 2^lg_nom_size, every time the number of entries
+///   exceeds the threshold, it will rebuild the table: only keep the min 2^lg_nom_size entries and
+///   update the theta to the k-th smallest entry.
 #[derive(Debug)]
 pub struct RawHashTable<E> {
     lg_cur_size: u8,
@@ -124,6 +140,16 @@ where
     }
 
     /// Inserts or updates the entry slot for a pre-hashed key.
+    ///
+    /// The callback `f` is invoked with the current entry for `hash`:
+    /// * `Some(existing)` if the key is already retained. The callback should modify it in place;
+    ///   its return value is ignored.
+    /// * `None` if the key is new. The callback returns `Some(entry)` to insert it, or `None` to
+    ///   decline insertion.
+    ///
+    /// Using a single callback ensures any captured update value is consumed exactly once, so it
+    /// works for both the update sketch (folding an update value) and set operations (merging an
+    /// incoming entry) without requiring the value to be `Copy` or `Clone`.
     ///
     /// Returns true if a new entry was created, false otherwise (existing key, declined insertion,
     /// or a hash screened out by theta).
@@ -232,6 +258,33 @@ where
     /// Get iterator over retained entries.
     pub fn iter_entries(&self) -> impl Iterator<Item = &E> + '_ {
         self.entries.iter().filter_map(Option::as_ref)
+    }
+
+    /// Returns the retained entries and theta as raw compact-sketch parts.
+    ///
+    /// An empty table reports `MAX_THETA` rather than its current theta, matching Java's
+    /// `correctThetaOnCompact()` behavior for never-updated sketches initialized with p < 1.0.
+    /// Empty and single-entry exact-mode results are always marked ordered (Java/C++
+    /// compatibility).
+    pub fn to_compact_parts(&self, ordered: bool) -> RawCompactParts<E>
+    where
+        E: Clone,
+    {
+        let mut entries: Vec<E> = self.iter_entries().cloned().collect();
+        let empty = self.is_empty();
+        let theta = if empty { MAX_THETA } else { self.theta() };
+        let is_single = entries.len() == 1 && theta == MAX_THETA;
+        let ordered = ordered || empty || is_single;
+        if ordered && entries.len() > 1 {
+            entries.sort_unstable_by_key(RawHashTableEntry::hash);
+        }
+        RawCompactParts {
+            entries,
+            theta,
+            seed_hash: self.seed_hash(),
+            ordered,
+            empty,
+        }
     }
 
     /// Return number of all entries.

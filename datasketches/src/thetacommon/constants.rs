@@ -34,3 +34,13 @@ pub const HASH_TABLE_REBUILD_THRESHOLD: f64 = 15.0 / 16.0;
 
 pub const STRIDE_HASH_BITS: u8 = 7;
 pub const STRIDE_MASK: u64 = (1 << STRIDE_HASH_BITS) - 1;
+
+// Flag bits of the flags byte in the Theta-family wire format, shared by Theta and Tuple sketches.
+/// Flags byte bit: the sketch is read-only.
+pub const FLAGS_IS_READ_ONLY: u8 = 1 << 1;
+/// Flags byte bit: the sketch is logically empty.
+pub const FLAGS_IS_EMPTY: u8 = 1 << 2;
+/// Flags byte bit: the sketch is in compact form.
+pub const FLAGS_IS_COMPACT: u8 = 1 << 3;
+/// Flags byte bit: retained entries are ordered by ascending hash.
+pub const FLAGS_IS_ORDERED: u8 = 1 << 4;

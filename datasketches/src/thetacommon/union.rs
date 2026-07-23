@@ -20,6 +20,7 @@ use crate::error::Error;
 use crate::thetacommon::RawHashTableEntry;
 use crate::thetacommon::RawThetaSketchView;
 use crate::thetacommon::constants::MAX_THETA;
+use crate::thetacommon::hash_table::RawCompactParts;
 use crate::thetacommon::hash_table::RawHashTable;
 
 /// Merges an incoming entry into an existing entry with the same hash.
@@ -36,16 +37,6 @@ pub struct RawThetaUnion<E, P> {
     table: RawHashTable<E>,
     policy: P,
     union_theta: u64,
-}
-
-/// Raw compact-union state from which a sketch family creates its compact result type.
-#[derive(Debug)]
-pub struct RawThetaUnionResult<E> {
-    pub entries: Vec<E>,
-    pub theta: u64,
-    pub seed_hash: u16,
-    pub ordered: bool,
-    pub empty: bool,
 }
 
 impl<E, P> RawThetaUnion<E, P>
@@ -107,16 +98,18 @@ where
         Ok(())
     }
 
-    /// Return the current compact-union state.
-    pub fn result(&self, ordered: bool) -> RawThetaUnionResult<E>
+    /// Return the current compact-union state as raw compact-sketch parts.
+    pub fn to_compact_parts(&self, ordered: bool) -> RawCompactParts<E>
     where
         E: Clone,
     {
+        let seed_hash = self.table.seed_hash();
+
         if self.table.is_empty() {
-            return RawThetaUnionResult {
-                entries: Vec::new(),
+            return RawCompactParts {
+                entries: vec![],
                 theta: self.union_theta,
-                seed_hash: self.table.seed_hash(),
+                seed_hash,
                 ordered: true,
                 empty: true,
             };
@@ -145,10 +138,10 @@ where
             entries.sort_unstable_by_key(RawHashTableEntry::hash);
         }
 
-        RawThetaUnionResult {
+        RawCompactParts {
             entries,
             theta,
-            seed_hash: self.table.seed_hash(),
+            seed_hash,
             ordered,
             empty: false,
         }
@@ -237,8 +230,9 @@ mod tests {
             })
             .unwrap();
 
+        let parts = union.to_compact_parts(true);
         assert_eq!(
-            union.result(true).entries,
+            parts.entries,
             vec![TestEntry {
                 hash: 1,
                 summary: 5,

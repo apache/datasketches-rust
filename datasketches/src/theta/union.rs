@@ -60,17 +60,17 @@ impl ThetaUnion {
 
     /// Return this union as a compact sketch.
     pub fn to_sketch(&self, ordered: bool) -> CompactThetaSketch {
-        let result = self.raw.result(ordered);
+        let parts = self.raw.to_compact_parts(ordered);
         CompactThetaSketch::from_parts(
-            result
+            parts
                 .entries
                 .into_iter()
                 .map(|entry| entry.hash())
                 .collect(),
-            result.theta,
-            result.seed_hash,
-            result.ordered,
-            result.empty,
+            parts.theta,
+            parts.seed_hash,
+            parts.ordered,
+            parts.empty,
         )
     }
 

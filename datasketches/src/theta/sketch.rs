@@ -46,6 +46,10 @@ use crate::theta::serialization::V2_PREAMBLE_PRECISE;
 use crate::thetacommon::RawThetaSketchView;
 use crate::thetacommon::binomial_bounds;
 use crate::thetacommon::constants::DEFAULT_LG_K;
+use crate::thetacommon::constants::FLAGS_IS_COMPACT;
+use crate::thetacommon::constants::FLAGS_IS_EMPTY;
+use crate::thetacommon::constants::FLAGS_IS_ORDERED;
+use crate::thetacommon::constants::FLAGS_IS_READ_ONLY;
 use crate::thetacommon::constants::MAX_LG_K;
 use crate::thetacommon::constants::MAX_THETA;
 use crate::thetacommon::constants::MIN_LG_K;
@@ -220,25 +224,18 @@ impl ThetaSketch {
     /// assert_eq!(compact.num_retained(), 1);
     /// ```
     pub fn compact(&self, ordered: bool) -> CompactThetaSketch {
-        let mut entries: Vec<u64> = self.iter().map(|entry| entry.hash()).collect();
-
-        let empty = self.is_empty();
-        let theta = if empty {
-            // Match Java's correctThetaOnCompact() behavior for never-updated sketches
-            // initialized with p < 1.0.
-            MAX_THETA
-        } else {
-            self.table.theta()
-        };
-        let is_single = entries.len() == 1 && theta == MAX_THETA;
-        // Empty or Single-item sketches are always ordered (Java compatibility)
-        let ordered = ordered || empty || is_single;
-
-        if ordered && entries.len() > 1 {
-            entries.sort_unstable();
-        }
-
-        CompactThetaSketch::from_parts(entries, theta, self.table.seed_hash(), ordered, empty)
+        let parts = self.table.to_compact_parts(ordered);
+        CompactThetaSketch::from_parts(
+            parts
+                .entries
+                .into_iter()
+                .map(|entry| entry.hash())
+                .collect(),
+            parts.theta,
+            parts.seed_hash,
+            parts.ordered,
+            parts.empty,
+        )
     }
 
     /// Returns the approximate lower error bound given the specified number of Standard Deviations.
@@ -467,13 +464,13 @@ impl CompactThetaSketch {
         bytes.write_u16_be(0); // unused for compact
 
         let mut flags = 0u8;
-        flags |= serialization::FLAGS_IS_READ_ONLY;
-        flags |= serialization::FLAGS_IS_COMPACT;
+        flags |= FLAGS_IS_READ_ONLY;
+        flags |= FLAGS_IS_COMPACT;
         if self.is_empty() {
-            flags |= serialization::FLAGS_IS_EMPTY;
+            flags |= FLAGS_IS_EMPTY;
         }
         if self.is_ordered() {
-            flags |= serialization::FLAGS_IS_ORDERED;
+            flags |= FLAGS_IS_ORDERED;
         }
         bytes.write_u8(flags);
 
@@ -510,9 +507,9 @@ impl CompactThetaSketch {
         bytes.write_u8(num_entries_bytes);
 
         let mut flags = 0u8;
-        flags |= serialization::FLAGS_IS_READ_ONLY;
-        flags |= serialization::FLAGS_IS_COMPACT;
-        flags |= serialization::FLAGS_IS_ORDERED;
+        flags |= FLAGS_IS_READ_ONLY;
+        flags |= FLAGS_IS_COMPACT;
+        flags |= FLAGS_IS_ORDERED;
         bytes.write_u8(flags);
 
         bytes.write_u16_le(self.seed_hash);
@@ -748,7 +745,7 @@ impl CompactThetaSketch {
             .read_u16_le()
             .map_err(insufficient_data("seed_hash"))?;
 
-        let empty = (flags & serialization::FLAGS_IS_EMPTY) != 0;
+        let empty = (flags & FLAGS_IS_EMPTY) != 0;
         let mut theta = MAX_THETA;
         let num_entries;
         let mut entries = vec![];
@@ -776,7 +773,7 @@ impl CompactThetaSketch {
             }
             entries = Self::read_entries(&mut cursor, num_entries as usize, theta)?;
         }
-        let ordered = (flags & serialization::FLAGS_IS_ORDERED) != 0;
+        let ordered = (flags & FLAGS_IS_ORDERED) != 0;
         Ok(Self {
             entries,
             theta,
@@ -797,7 +794,7 @@ impl CompactThetaSketch {
         let seed_hash = cursor
             .read_u16_le()
             .map_err(insufficient_data("seed_hash"))?;
-        let empty = (flags & serialization::FLAGS_IS_EMPTY) != 0;
+        let empty = (flags & FLAGS_IS_EMPTY) != 0;
         if !empty {
             let expected_seed_hash = compute_seed_hash(expected_seed);
             if seed_hash != expected_seed_hash {
@@ -861,7 +858,7 @@ impl CompactThetaSketch {
             }
         }
 
-        let ordered = (flags & serialization::FLAGS_IS_ORDERED) != 0;
+        let ordered = (flags & FLAGS_IS_ORDERED) != 0;
 
         Ok(Self {
             entries,
