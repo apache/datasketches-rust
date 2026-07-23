@@ -185,7 +185,6 @@ where
     }
 
     /// Returns a reference to the entry stored for `hash`, or `None` if the hash is not retained.
-    #[allow(dead_code)] // used by the set operations; tuple set operations arrive in follow-ups
     pub fn get_entry(&self, hash: u64) -> Option<&E> {
         if hash == 0 {
             return None;
@@ -302,19 +301,16 @@ where
     }
 
     /// Set empty flag.
-    #[allow(dead_code)] // used by the set operations; tuple set operations arrive in follow-ups
     pub fn set_empty(&mut self, is_empty: bool) {
         self.is_empty = is_empty;
     }
 
     /// Get the hash seed used by this table.
-    #[allow(dead_code)] // used by the set operations; tuple set operations arrive in follow-ups
     pub fn hash_seed(&self) -> u64 {
         self.hash_seed
     }
 
     /// Sets theta value.
-    #[allow(dead_code)] // used by the set operations and tests; tuple set operations arrive in follow-ups
     pub fn set_theta(&mut self, theta: u64) {
         assert!(
             (1..=MAX_THETA).contains(&theta),
@@ -324,7 +320,6 @@ where
     }
 
     /// Returns minimal lg_size where rebuild-capacity can hold `count`.
-    #[allow(dead_code)] // used by the set operations; tuple set operations arrive in follow-ups
     pub fn lg_size_from_count_for_rebuild(count: usize, load_factor: f64) -> u8 {
         let log2 = |n: usize| {
             if n == 0 { 0_u8 } else { n.ilog2() as u8 }

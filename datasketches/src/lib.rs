@@ -46,6 +46,7 @@ pub mod tdigest;
 #[cfg(feature = "theta")]
 pub mod theta;
 #[cfg(any(feature = "theta", feature = "tuple"))]
+#[allow(dead_code)] // some utilities are only used for certain sketches
 pub mod thetacommon;
 #[cfg(feature = "tuple")]
 pub mod tuple;
