@@ -48,7 +48,10 @@ use crate::tuple::hash_table::TupleEntry;
 use crate::tuple::hash_table::TupleHashTable;
 use crate::tuple::policy::SummaryPolicy;
 use crate::tuple::policy::SummaryUpdatePolicy;
-use crate::tuple::serialization;
+use crate::tuple::serialization::SERIAL_VERSION;
+use crate::tuple::serialization::SERIAL_VERSION_LEGACY;
+use crate::tuple::serialization::SKETCH_TYPE;
+use crate::tuple::serialization::SKETCH_TYPE_LEGACY;
 use crate::tuple::serialization::TupleSummaryValue;
 
 /// Read-only view for Tuple sketches.
@@ -73,8 +76,8 @@ impl<S, T> TupleSketchView<S> for T where T: RawThetaSketchView<TupleEntry<S>> {
 ///
 /// ```
 /// # use datasketches::tuple::{DefaultUpdatePolicy, TupleSketchBuilder};
-/// let policy = DefaultUpdatePolicy::new(u64::default);
-/// let mut sketch = TupleSketchBuilder::with_policy(policy).build();
+/// let policy = DefaultUpdatePolicy::<u64>::default();
+/// let mut sketch = TupleSketchBuilder::new(policy).build();
 /// sketch.update("apple", 1);
 /// sketch.update("apple", 1);
 /// assert!(sketch.estimate() >= 1.0);
@@ -103,8 +106,8 @@ where
     ///
     /// ```
     /// # use datasketches::tuple::{DefaultUpdatePolicy, TupleSketchBuilder};
-    /// let policy = DefaultUpdatePolicy::new(u64::default);
-    /// let mut sketch = TupleSketchBuilder::with_policy(policy).build();
+    /// let policy = DefaultUpdatePolicy::<u64>::default();
+    /// let mut sketch = TupleSketchBuilder::new(policy).build();
     /// sketch.update(42, 5);
     /// ```
     pub fn update<U>(&mut self, key: impl Hash, value: U)
@@ -227,8 +230,8 @@ where
     ///
     /// ```
     /// # use datasketches::tuple::{DefaultUpdatePolicy, TupleSketchBuilder};
-    /// let policy = DefaultUpdatePolicy::new(u64::default);
-    /// let mut sketch = TupleSketchBuilder::with_policy(policy).build();
+    /// let policy = DefaultUpdatePolicy::<u64>::default();
+    /// let mut sketch = TupleSketchBuilder::new(policy).build();
     /// sketch.update("apple", 1);
     /// let compact = sketch.compact(true);
     /// assert_eq!(compact.num_retained(), 1);
@@ -411,8 +414,8 @@ impl<S> CompactTupleSketch<S> {
     ///
     /// ```
     /// # use datasketches::tuple::{DefaultUpdatePolicy, TupleSketchBuilder};
-    /// let policy = DefaultUpdatePolicy::new(u64::default);
-    /// let mut sketch = TupleSketchBuilder::with_policy(policy).build();
+    /// let policy = DefaultUpdatePolicy::<u64>::default();
+    /// let mut sketch = TupleSketchBuilder::new(policy).build();
     /// sketch.update("apple", 1);
     /// let bytes = sketch.compact(true).serialize();
     /// assert!(!bytes.is_empty());
@@ -430,9 +433,9 @@ impl<S> CompactTupleSketch<S> {
         let mut bytes = SketchBytes::with_capacity(8 * pre_longs as usize + entries_size);
 
         bytes.write_u8(pre_longs);
-        bytes.write_u8(serialization::SERIAL_VERSION);
+        bytes.write_u8(SERIAL_VERSION);
         bytes.write_u8(Family::TUPLE.id);
-        bytes.write_u8(serialization::SKETCH_TYPE);
+        bytes.write_u8(SKETCH_TYPE);
         bytes.write_u8(0); // unused
 
         let mut flags = FLAGS_IS_READ_ONLY | FLAGS_IS_COMPACT;
@@ -498,22 +501,16 @@ impl<S> CompactTupleSketch<S> {
             Family::TUPLE.min_pre_longs..=Family::TUPLE.max_pre_longs,
             pre_longs,
         )?;
-        if ser_ver != serialization::SERIAL_VERSION
-            && ser_ver != serialization::SERIAL_VERSION_LEGACY
-        {
+        if ser_ver != SERIAL_VERSION && ser_ver != SERIAL_VERSION_LEGACY {
             return Err(Error::deserial(format!(
                 "unsupported serial version: expected {} or {}, got {ser_ver}",
-                serialization::SERIAL_VERSION,
-                serialization::SERIAL_VERSION_LEGACY,
+                SERIAL_VERSION, SERIAL_VERSION_LEGACY,
             )));
         }
-        if sketch_type != serialization::SKETCH_TYPE
-            && sketch_type != serialization::SKETCH_TYPE_LEGACY
-        {
+        if sketch_type != SKETCH_TYPE && sketch_type != SKETCH_TYPE_LEGACY {
             return Err(Error::deserial(format!(
                 "unsupported sketch type: expected {} or {}, got {sketch_type}",
-                serialization::SKETCH_TYPE,
-                serialization::SKETCH_TYPE_LEGACY,
+                SKETCH_TYPE, SKETCH_TYPE_LEGACY,
             )));
         }
 
@@ -641,11 +638,11 @@ where
     ///     }
     /// }
     ///
-    /// let mut sketch = TupleSketchBuilder::with_policy(MaxPolicy).build();
+    /// let mut sketch = TupleSketchBuilder::new(MaxPolicy).build();
     /// sketch.update("k", 3);
     /// sketch.update("k", 7);
     /// ```
-    pub fn with_policy(policy: P) -> Self {
+    pub fn new(policy: P) -> Self {
         Self {
             lg_k: DEFAULT_LG_K,
             resize_factor: ResizeFactor::X8,
@@ -697,28 +694,16 @@ where
 
     /// Builds a [`TupleSketch`] using the supplied policy.
     pub fn build(self) -> TupleSketch<P> {
-        build_tuple_sketch(
-            self.lg_k,
-            self.resize_factor,
-            self.sampling_probability,
-            self.seed,
-            self.policy,
-        )
+        TupleSketch {
+            table: TupleHashTable::new(
+                self.lg_k,
+                self.resize_factor,
+                self.sampling_probability,
+                self.seed,
+            ),
+            policy: self.policy,
+        }
     }
-}
-
-fn build_tuple_sketch<P>(
-    lg_k: u8,
-    resize_factor: ResizeFactor,
-    sampling_probability: f32,
-    seed: u64,
-    policy: P,
-) -> TupleSketch<P>
-where
-    P: SummaryPolicy,
-{
-    let table = TupleHashTable::new(lg_k, resize_factor, sampling_probability, seed);
-    TupleSketch { table, policy }
 }
 
 #[cfg(test)]
@@ -764,8 +749,8 @@ mod tests {
 
     #[test]
     fn exact_mode_updatable_and_compact_equivalent() {
-        let policy = DefaultUpdatePolicy::new(u64::default);
-        let mut sketch = TupleSketchBuilder::with_policy(policy).lg_k(12).build();
+        let policy = DefaultUpdatePolicy::<u64>::default();
+        let mut sketch = TupleSketchBuilder::new(policy).lg_k(12).build();
         for i in 0..2000 {
             sketch.update(i, 1u64);
         }
@@ -782,8 +767,8 @@ mod tests {
 
     #[test]
     fn estimation_mode_updatable_and_compact_equivalent() {
-        let policy = DefaultUpdatePolicy::new(u64::default);
-        let mut sketch = TupleSketchBuilder::with_policy(policy).lg_k(5).build();
+        let policy = DefaultUpdatePolicy::<u64>::default();
+        let mut sketch = TupleSketchBuilder::new(policy).lg_k(5).build();
         for i in 0..5000 {
             sketch.update(i, 1u64);
         }
@@ -797,8 +782,8 @@ mod tests {
 
     #[test]
     fn summaries_accumulate_with_default_policy() {
-        let policy = DefaultUpdatePolicy::new(u64::default);
-        let mut sketch = TupleSketchBuilder::with_policy(policy).build();
+        let policy = DefaultUpdatePolicy::<u64>::default();
+        let mut sketch = TupleSketchBuilder::new(policy).build();
         for _ in 0..5 {
             sketch.update("same_key", 2u64);
         }
@@ -814,8 +799,8 @@ mod tests {
 
     #[test]
     fn default_policy_accepts_any_add_assign_rhs() {
-        let policy = DefaultUpdatePolicy::new(String::default);
-        let mut sketch = TupleSketchBuilder::with_policy(policy).build();
+        let policy = DefaultUpdatePolicy::<String>::default();
+        let mut sketch = TupleSketchBuilder::new(policy).build();
         sketch.update("k", "hello");
         sketch.update("k", " world");
 
@@ -824,8 +809,8 @@ mod tests {
 
     #[test]
     fn empty_sketch_is_ordered_and_zero_estimate() {
-        let policy = DefaultUpdatePolicy::new(u64::default);
-        let sketch = TupleSketchBuilder::with_policy(policy).build();
+        let policy = DefaultUpdatePolicy::<u64>::default();
+        let sketch = TupleSketchBuilder::new(policy).build();
         assert!(sketch.is_empty());
         assert_eq!(sketch.estimate(), 0.0);
 
@@ -838,8 +823,8 @@ mod tests {
 
     #[test]
     fn bounds_bracket_estimate_in_estimation_mode() {
-        let policy = DefaultUpdatePolicy::new(u64::default);
-        let mut sketch = TupleSketchBuilder::with_policy(policy).lg_k(12).build();
+        let policy = DefaultUpdatePolicy::<u64>::default();
+        let mut sketch = TupleSketchBuilder::new(policy).lg_k(12).build();
         for i in 0..10000 {
             sketch.update(i, 1u64);
         }
@@ -869,7 +854,7 @@ mod tests {
 
     #[test]
     fn custom_policy_drives_summary_behavior() {
-        let mut sketch = TupleSketchBuilder::with_policy(MaxPolicy).build();
+        let mut sketch = TupleSketchBuilder::new(MaxPolicy).build();
         sketch.update("k", 3u64);
         sketch.update("k", 7u64);
         sketch.update("k", 2u64);
@@ -906,7 +891,7 @@ mod tests {
 
     #[test]
     fn custom_policy_accepts_multiple_update_representations() {
-        let mut sketch = TupleSketchBuilder::with_policy(ArraySumPolicy { num_values: 2 }).build();
+        let mut sketch = TupleSketchBuilder::new(ArraySumPolicy { num_values: 2 }).build();
         sketch.update("k", &[1.0, 2.0]);
         sketch.update("k", vec![3.0, 4.0]);
 
@@ -927,8 +912,8 @@ mod tests {
 
     #[test]
     fn view_trait_accepts_both_sketch_types() {
-        let policy = DefaultUpdatePolicy::new(u64::default);
-        let mut sketch = TupleSketchBuilder::with_policy(policy).build();
+        let policy = DefaultUpdatePolicy::<u64>::default();
+        let mut sketch = TupleSketchBuilder::new(policy).build();
         for i in 0..100 {
             sketch.update(i, 2u64);
         }
@@ -961,8 +946,8 @@ mod tests {
 
     #[test]
     fn serialize_round_trip_exact_mode() {
-        let policy = DefaultUpdatePolicy::new(u64::default);
-        let mut sketch = TupleSketchBuilder::with_policy(policy).lg_k(12).build();
+        let policy = DefaultUpdatePolicy::<u64>::default();
+        let mut sketch = TupleSketchBuilder::new(policy).lg_k(12).build();
         for i in 0..2000 {
             sketch.update(i, 1u64);
         }
@@ -973,8 +958,8 @@ mod tests {
 
     #[test]
     fn serialize_round_trip_estimation_mode() {
-        let policy = DefaultUpdatePolicy::new(u64::default);
-        let mut sketch = TupleSketchBuilder::with_policy(policy).lg_k(5).build();
+        let policy = DefaultUpdatePolicy::<u64>::default();
+        let mut sketch = TupleSketchBuilder::new(policy).lg_k(5).build();
         for i in 0..5000 {
             sketch.update(i, 3u64);
         }
@@ -986,8 +971,8 @@ mod tests {
 
     #[test]
     fn serialize_round_trip_empty() {
-        let policy = DefaultUpdatePolicy::new(u64::default);
-        let sketch = TupleSketchBuilder::with_policy(policy).build();
+        let policy = DefaultUpdatePolicy::<u64>::default();
+        let sketch = TupleSketchBuilder::new(policy).build();
         let compact = sketch.compact(true);
         assert!(compact.is_empty());
         assert_compact_round_trip(&compact);
@@ -995,8 +980,8 @@ mod tests {
 
     #[test]
     fn serialize_round_trip_single_entry() {
-        let policy = DefaultUpdatePolicy::new(u64::default);
-        let mut sketch = TupleSketchBuilder::with_policy(policy).build();
+        let policy = DefaultUpdatePolicy::<u64>::default();
+        let mut sketch = TupleSketchBuilder::new(policy).build();
         sketch.update("only", 42u64);
         let compact = sketch.compact(true);
         assert_eq!(compact.num_retained(), 1);
@@ -1012,8 +997,8 @@ mod tests {
 
     #[test]
     fn serialize_header_fields_match_tuple_format() {
-        let policy = DefaultUpdatePolicy::new(u64::default);
-        let mut sketch = TupleSketchBuilder::with_policy(policy).build();
+        let policy = DefaultUpdatePolicy::<u64>::default();
+        let mut sketch = TupleSketchBuilder::new(policy).build();
         for i in 0..100 {
             sketch.update(i, 1u64);
         }
@@ -1026,8 +1011,8 @@ mod tests {
 
     #[test]
     fn serialize_preserves_summaries() {
-        let policy = DefaultUpdatePolicy::new(u64::default);
-        let mut sketch = TupleSketchBuilder::with_policy(policy).build();
+        let policy = DefaultUpdatePolicy::<u64>::default();
+        let mut sketch = TupleSketchBuilder::new(policy).build();
         for i in 0..50 {
             sketch.update(i, 1u64);
             sketch.update(i, 1u64); // each summary accumulates to 2
@@ -1040,8 +1025,8 @@ mod tests {
 
     #[test]
     fn deserialize_rejects_wrong_family() {
-        let policy = DefaultUpdatePolicy::new(u64::default);
-        let mut sketch = TupleSketchBuilder::with_policy(policy).build();
+        let policy = DefaultUpdatePolicy::<u64>::default();
+        let mut sketch = TupleSketchBuilder::new(policy).build();
         for i in 0..10 {
             sketch.update(i, 1u64);
         }
@@ -1053,8 +1038,8 @@ mod tests {
 
     #[test]
     fn deserialize_rejects_seed_mismatch() {
-        let policy = DefaultUpdatePolicy::new(u64::default);
-        let mut sketch = TupleSketchBuilder::with_policy(policy).build();
+        let policy = DefaultUpdatePolicy::<u64>::default();
+        let mut sketch = TupleSketchBuilder::new(policy).build();
         for i in 0..10 {
             sketch.update(i, 1u64);
         }
@@ -1065,8 +1050,8 @@ mod tests {
 
     #[test]
     fn deserialize_rejects_truncated_summary() {
-        let policy = DefaultUpdatePolicy::new(u64::default);
-        let mut sketch = TupleSketchBuilder::with_policy(policy).build();
+        let policy = DefaultUpdatePolicy::<u64>::default();
+        let mut sketch = TupleSketchBuilder::new(policy).build();
         for i in 0..100 {
             sketch.update(i, 1u64);
         }

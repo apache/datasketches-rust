@@ -953,7 +953,9 @@ impl ThetaSketchBuilder {
     ///
     /// ```
     /// # use datasketches::theta::ThetaSketchBuilder;
-    /// let _sketch = ThetaSketchBuilder::default().sampling_probability(0.5).build();
+    /// ThetaSketchBuilder::default()
+    ///     .sampling_probability(0.5)
+    ///     .build();
     /// ```
     pub fn sampling_probability(mut self, probability: f32) -> Self {
         assert!(

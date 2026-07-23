@@ -23,7 +23,7 @@
 //! different behaviors and can carry per-instance configuration (such as the number of values in an
 //! array-of-doubles summary).
 
-use std::fmt;
+use std::marker::PhantomData;
 use std::ops::AddAssign;
 
 /// Defines how summaries are created.
@@ -52,39 +52,25 @@ pub trait SummaryUpdatePolicy<U>: SummaryPolicy {
 ///
 /// The factory determines the summary type and creates its identity state. The policy accepts every
 /// update type `U` for which the summary implements [`AddAssign<U>`].
-#[derive(Clone, Copy)]
-pub struct DefaultUpdatePolicy<F> {
-    create: F,
+#[derive(Default, Debug, Clone, Copy)]
+pub struct DefaultUpdatePolicy<S> {
+    marker: PhantomData<fn() -> S>,
 }
 
-impl<F> DefaultUpdatePolicy<F> {
-    /// Creates an additive policy backed by the given summary factory.
-    pub fn new(create: F) -> Self {
-        Self { create }
-    }
-}
-
-impl<F> fmt::Debug for DefaultUpdatePolicy<F> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("DefaultUpdatePolicy")
-    }
-}
-
-impl<F, S> SummaryPolicy for DefaultUpdatePolicy<F>
+impl<S> SummaryPolicy for DefaultUpdatePolicy<S>
 where
-    F: Fn() -> S,
+    S: Default,
 {
     type Summary = S;
 
     fn create(&self) -> Self::Summary {
-        (self.create)()
+        S::default()
     }
 }
 
-impl<F, S, U> SummaryUpdatePolicy<U> for DefaultUpdatePolicy<F>
+impl<S, U> SummaryUpdatePolicy<U> for DefaultUpdatePolicy<S>
 where
-    F: Fn() -> S,
-    S: AddAssign<U>,
+    S: Default + AddAssign<U>,
 {
     fn update(&self, summary: &mut Self::Summary, value: U) {
         *summary += value;

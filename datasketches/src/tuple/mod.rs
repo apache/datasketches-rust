@@ -30,8 +30,8 @@
 //!
 //! ```
 //! # use datasketches::tuple::{DefaultUpdatePolicy, TupleSketchBuilder};
-//! let policy = DefaultUpdatePolicy::new(u64::default);
-//! let mut sketch = TupleSketchBuilder::with_policy(policy).build();
+//! let policy = DefaultUpdatePolicy::<u64>::default();
+//! let mut sketch = TupleSketchBuilder::new(policy).build();
 //! sketch.update("apple", 1_u64);
 //! assert!(sketch.estimate() >= 1.0);
 //! ```

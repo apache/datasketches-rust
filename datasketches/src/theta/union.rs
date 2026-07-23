@@ -99,7 +99,7 @@ impl ThetaUnionBuilder {
     ///
     /// ```
     /// # use datasketches::theta::ThetaUnionBuilder;
-    /// let _union = ThetaUnionBuilder::default().lg_k(12).build();
+    /// ThetaUnionBuilder::default().lg_k(12).build();
     /// ```
     pub fn lg_k(mut self, lg_k: u8) -> Self {
         assert!(
@@ -126,7 +126,9 @@ impl ThetaUnionBuilder {
     ///
     /// ```
     /// # use datasketches::theta::ThetaUnionBuilder;
-    /// let _union = ThetaUnionBuilder::default().sampling_probability(0.5).build();
+    /// ThetaUnionBuilder::default()
+    ///     .sampling_probability(0.5)
+    ///     .build();
     /// ```
     pub fn sampling_probability(mut self, p: f32) -> Self {
         assert!(
@@ -143,7 +145,7 @@ impl ThetaUnionBuilder {
     ///
     /// ```
     /// # use datasketches::theta::ThetaUnionBuilder;
-    /// let _union = ThetaUnionBuilder::default().seed(7).build();
+    /// ThetaUnionBuilder::default().seed(7).build();
     /// ```
     pub fn seed(mut self, seed: u64) -> Self {
         self.seed = seed;
@@ -156,7 +158,7 @@ impl ThetaUnionBuilder {
     ///
     /// ```
     /// # use datasketches::theta::ThetaUnionBuilder;
-    /// let _union = ThetaUnionBuilder::default().lg_k(10).build();
+    /// ThetaUnionBuilder::default().lg_k(10).build();
     /// ```
     pub fn build(self) -> ThetaUnion {
         ThetaUnion {
