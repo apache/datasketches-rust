@@ -28,8 +28,8 @@
 //! # Usage
 //!
 //! ```
-//! # use datasketches::tuple::TupleSketch;
-//! let mut sketch = TupleSketch::<u64>::builder().build();
+//! # use datasketches::tuple::TupleSketchBuilder;
+//! let mut sketch = TupleSketchBuilder::<u64>::default().build();
 //! sketch.update("apple", 1);
 //! assert!(sketch.estimate() >= 1.0);
 //! ```

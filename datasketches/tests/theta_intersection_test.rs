@@ -20,9 +20,10 @@
 use datasketches::theta::CompactThetaSketch;
 use datasketches::theta::ThetaIntersection;
 use datasketches::theta::ThetaSketch;
+use datasketches::theta::ThetaSketchBuilder;
 
 fn sketch_with_range(start: u64, count: u64) -> ThetaSketch {
-    let mut sketch = ThetaSketch::builder().build();
+    let mut sketch = ThetaSketchBuilder::default().build();
     for i in 0..count {
         sketch.update(start + i);
     }
@@ -31,7 +32,7 @@ fn sketch_with_range(start: u64, count: u64) -> ThetaSketch {
 
 #[test]
 fn test_has_result_state_machine() {
-    let mut a = ThetaSketch::builder().build();
+    let mut a = ThetaSketchBuilder::default().build();
     a.update("x");
 
     let mut i = ThetaIntersection::new_with_default_seed();
@@ -52,11 +53,11 @@ fn test_result_before_update_panics() {
 
 #[test]
 fn test_update_accepts_compact_sketch() {
-    let mut a = ThetaSketch::builder().build();
+    let mut a = ThetaSketchBuilder::default().build();
     a.update("x");
     a.update("y");
 
-    let mut b = ThetaSketch::builder().build();
+    let mut b = ThetaSketchBuilder::default().build();
     b.update("y");
     b.update("z");
 
@@ -68,7 +69,7 @@ fn test_update_accepts_compact_sketch() {
     assert!(r.estimate() == 1.0);
     assert!(r.is_ordered());
 
-    let mut c = ThetaSketch::builder().build();
+    let mut c = ThetaSketchBuilder::default().build();
     c.update("a");
     c.update("b");
     c.update("c");
@@ -82,7 +83,7 @@ fn test_update_accepts_compact_sketch() {
 
 #[test]
 fn test_seed_mismatch_behaviour_for_empty_sketch() {
-    let empty_other_seed = ThetaSketch::builder().seed(2).build();
+    let empty_other_seed = ThetaSketchBuilder::default().seed(2).build();
     let mut i = ThetaIntersection::new(1);
 
     i.update(&empty_other_seed).unwrap();
@@ -93,7 +94,7 @@ fn test_seed_mismatch_behaviour_for_empty_sketch() {
 
 #[test]
 fn test_seed_mismatch_behaviour() {
-    let mut one_other_seed = ThetaSketch::builder().seed(2).build();
+    let mut one_other_seed = ThetaSketchBuilder::default().seed(2).build();
     one_other_seed.update("value");
     let mut i = ThetaIntersection::new(1);
 
@@ -102,9 +103,9 @@ fn test_seed_mismatch_behaviour() {
 
 #[test]
 fn test_terminal_empty_state_ignores_future_updates() {
-    let empty = ThetaSketch::builder().build();
+    let empty = ThetaSketchBuilder::default().build();
 
-    let mut non_empty = ThetaSketch::builder().build();
+    let mut non_empty = ThetaSketchBuilder::default().build();
     non_empty.update("x");
 
     let mut i = ThetaIntersection::new_with_default_seed();
@@ -117,7 +118,7 @@ fn test_terminal_empty_state_ignores_future_updates() {
 
 #[test]
 fn test_to_sketch_unordered_is_not_ordered() {
-    let mut a = ThetaSketch::builder().build();
+    let mut a = ThetaSketchBuilder::default().build();
     for i in 0..64 {
         a.update(i);
     }
@@ -130,7 +131,7 @@ fn test_to_sketch_unordered_is_not_ordered() {
 
 #[test]
 fn test_empty_update_twice() {
-    let empty = ThetaSketch::builder().build();
+    let empty = ThetaSketchBuilder::default().build();
     let mut i = ThetaIntersection::new_with_default_seed();
 
     i.update(&empty).unwrap();
@@ -150,7 +151,9 @@ fn test_empty_update_twice() {
 
 #[test]
 fn test_non_empty_no_retained_keys() {
-    let mut s = ThetaSketch::builder().sampling_probability(0.001).build();
+    let mut s = ThetaSketchBuilder::default()
+        .sampling_probability(0.001)
+        .build();
     s.update(1u64);
 
     let mut i = ThetaIntersection::new_with_default_seed();
@@ -310,7 +313,7 @@ fn test_estimation_disjoint_ordered() {
 
 #[test]
 fn test_seed_mismatch_non_empty_returns_error() {
-    let mut s = ThetaSketch::builder().build();
+    let mut s = ThetaSketchBuilder::default().build();
     s.update(1u64);
 
     let mut i = ThetaIntersection::new(123);
