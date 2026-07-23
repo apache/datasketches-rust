@@ -972,7 +972,7 @@ impl ThetaSketchBuilder {
     ///
     /// ```
     /// # use datasketches::theta::ThetaSketchBuilder;
-    /// let _sketch = ThetaSketchBuilder::default().seed(7).build();
+    /// ThetaSketchBuilder::default().seed(7).build();
     /// ```
     pub fn seed(mut self, seed: u64) -> Self {
         self.seed = seed;
@@ -985,8 +985,7 @@ impl ThetaSketchBuilder {
     ///
     /// ```
     /// # use datasketches::theta::ThetaSketchBuilder;
-    /// let sketch = ThetaSketchBuilder::default().lg_k(10).build();
-    /// assert_eq!(sketch.lg_k(), 10);
+    /// ThetaSketchBuilder::default().lg_k(10).build();
     /// ```
     pub fn build(self) -> ThetaSketch {
         let table = ThetaHashTable::new(

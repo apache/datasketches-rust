@@ -36,7 +36,8 @@
 //! # use datasketches::countmin::CountMinSketch;
 //! let buckets = CountMinSketch::<i64>::suggest_num_buckets(0.01);
 //! let hashes = CountMinSketch::<i64>::suggest_num_hashes(0.99);
-//! let _sketch = CountMinSketch::<i64>::new(hashes, buckets);
+//! let sketch = CountMinSketch::<i64>::new(hashes, buckets);
+//! assert_eq!(sketch.estimate("apple"), 0);
 //! ```
 
 mod serialization;
