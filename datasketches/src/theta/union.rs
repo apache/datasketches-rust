@@ -41,18 +41,6 @@ impl RawThetaUnionPolicy<ThetaEntry> for NoopUnionPolicy {
 }
 
 impl ThetaUnion {
-    /// Create a new builder for ThetaUnion
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use datasketches::theta::ThetaUnion;
-    /// let _union = ThetaUnion::builder().lg_k(12).build();
-    /// ```
-    pub fn builder() -> ThetaUnionBuilder {
-        ThetaUnionBuilder::default()
-    }
-
     /// Update this union with a given sketch.
     pub fn update<S: ThetaSketchView>(&mut self, sketch: &S) -> Result<(), Error> {
         self.raw.update(sketch)
@@ -110,8 +98,8 @@ impl ThetaUnionBuilder {
     /// # Examples
     ///
     /// ```
-    /// # use datasketches::theta::ThetaUnion;
-    /// let _union = ThetaUnion::builder().lg_k(12).build();
+    /// # use datasketches::theta::ThetaUnionBuilder;
+    /// ThetaUnionBuilder::default().lg_k(12).build();
     /// ```
     pub fn lg_k(mut self, lg_k: u8) -> Self {
         assert!(
@@ -137,8 +125,10 @@ impl ThetaUnionBuilder {
     /// # Examples
     ///
     /// ```
-    /// # use datasketches::theta::ThetaUnion;
-    /// let _union = ThetaUnion::builder().sampling_probability(0.5).build();
+    /// # use datasketches::theta::ThetaUnionBuilder;
+    /// ThetaUnionBuilder::default()
+    ///     .sampling_probability(0.5)
+    ///     .build();
     /// ```
     pub fn sampling_probability(mut self, p: f32) -> Self {
         assert!(
@@ -154,8 +144,8 @@ impl ThetaUnionBuilder {
     /// # Examples
     ///
     /// ```
-    /// # use datasketches::theta::ThetaUnion;
-    /// let _union = ThetaUnion::builder().seed(7).build();
+    /// # use datasketches::theta::ThetaUnionBuilder;
+    /// ThetaUnionBuilder::default().seed(7).build();
     /// ```
     pub fn seed(mut self, seed: u64) -> Self {
         self.seed = seed;
@@ -167,8 +157,8 @@ impl ThetaUnionBuilder {
     /// # Examples
     ///
     /// ```
-    /// # use datasketches::theta::ThetaUnion;
-    /// let _union = ThetaUnion::builder().lg_k(10).build();
+    /// # use datasketches::theta::ThetaUnionBuilder;
+    /// ThetaUnionBuilder::default().lg_k(10).build();
     /// ```
     pub fn build(self) -> ThetaUnion {
         ThetaUnion {

@@ -33,8 +33,8 @@
 //! # Usage
 //!
 //! ```
-//! # use datasketches::theta::ThetaSketch;
-//! let mut sketch = ThetaSketch::builder().build();
+//! # use datasketches::theta::ThetaSketchBuilder;
+//! let mut sketch = ThetaSketchBuilder::default().build();
 //! sketch.update("apple");
 //! assert!(sketch.estimate() >= 1.0);
 //! ```
