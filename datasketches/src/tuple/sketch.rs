@@ -578,10 +578,6 @@ impl<S: Clone> RawThetaSketchView<TupleEntry<S>> for CompactTupleSketch<S> {
 }
 
 /// Builder for [`TupleSketch`].
-///
-/// The summary type `S` is a parameter of the builder (for example,
-/// `TupleSketchBuilder::<u64>::default()`), and the policy type `P` defaults to
-/// [`DefaultUpdatePolicy`]. Use [`policy`](Self::policy) to supply a custom policy.
 #[derive(Debug)]
 pub struct TupleSketchBuilder<S, P = DefaultUpdatePolicy> {
     lg_k: u8,
@@ -589,23 +585,51 @@ pub struct TupleSketchBuilder<S, P = DefaultUpdatePolicy> {
     sampling_probability: f32,
     seed: u64,
     policy: P,
-    _marker: PhantomData<fn() -> S>,
+    marker: PhantomData<fn() -> S>,
 }
 
 impl<S> Default for TupleSketchBuilder<S, DefaultUpdatePolicy> {
     fn default() -> Self {
+        Self::with_policy(DefaultUpdatePolicy::default())
+    }
+}
+
+impl<S, P> TupleSketchBuilder<S, P> {
+    /// Creates a builder with the given policy.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::tuple::SummaryUpdatePolicy;
+    /// use datasketches::tuple::TupleSketchBuilder;
+    ///
+    /// struct MaxPolicy;
+    ///
+    /// impl SummaryUpdatePolicy<u64, u64> for MaxPolicy {
+    ///     fn create(&self) -> u64 {
+    ///         0
+    ///     }
+    ///
+    ///     fn update(&self, summary: &mut u64, value: u64) {
+    ///         *summary = (*summary).max(value);
+    ///     }
+    /// }
+    ///
+    /// let mut sketch = TupleSketchBuilder::<u64, MaxPolicy>::with_policy(MaxPolicy).build();
+    /// sketch.update("k", 3);
+    /// sketch.update("k", 7);
+    /// ```
+    pub fn with_policy(policy: P) -> Self {
         Self {
             lg_k: DEFAULT_LG_K,
             resize_factor: ResizeFactor::X8,
             sampling_probability: 1.0,
             seed: DEFAULT_UPDATE_SEED,
-            policy: DefaultUpdatePolicy::default(),
-            _marker: PhantomData,
+            policy,
+            marker: PhantomData,
         }
     }
-}
 
-impl<S, P> TupleSketchBuilder<S, P> {
     /// Sets lg_k (log2 of the nominal size k).
     ///
     /// # Panics
@@ -647,29 +671,6 @@ impl<S, P> TupleSketchBuilder<S, P> {
     }
 
     /// Sets a custom update policy, changing the builder's policy type.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use datasketches::tuple::SummaryUpdatePolicy;
-    /// use datasketches::tuple::TupleSketchBuilder;
-    ///
-    /// struct MaxPolicy;
-    ///
-    /// impl SummaryUpdatePolicy<u64, u64> for MaxPolicy {
-    ///     fn create(&self) -> u64 {
-    ///         0
-    ///     }
-    ///
-    ///     fn update(&self, summary: &mut u64, value: u64) {
-    ///         *summary = (*summary).max(value);
-    ///     }
-    /// }
-    ///
-    /// let mut sketch = TupleSketchBuilder::<u64>::default().policy(MaxPolicy).build();
-    /// sketch.update("k", 3);
-    /// sketch.update("k", 7);
-    /// ```
     pub fn policy<P2>(self, policy: P2) -> TupleSketchBuilder<S, P2> {
         TupleSketchBuilder {
             lg_k: self.lg_k,
@@ -677,7 +678,7 @@ impl<S, P> TupleSketchBuilder<S, P> {
             sampling_probability: self.sampling_probability,
             seed: self.seed,
             policy,
-            _marker: PhantomData,
+            marker: PhantomData,
         }
     }
 
@@ -818,9 +819,7 @@ mod tests {
 
     #[test]
     fn custom_policy_drives_summary_behavior() {
-        let mut sketch = TupleSketchBuilder::<u64>::default()
-            .policy(MaxPolicy)
-            .build();
+        let mut sketch = TupleSketchBuilder::<u64, MaxPolicy>::with_policy(MaxPolicy).build();
         sketch.update("k", 3u64);
         sketch.update("k", 7u64);
         sketch.update("k", 2u64);
