@@ -23,7 +23,7 @@
 //! moderate cardinalities.
 
 use crate::common::NumStdDev;
-use crate::common::inv_pow2_table::INVERSE_POWERS_OF_2;
+use crate::common::inv_pow2::inv_pow2;
 use crate::hll::composite_interpolation;
 use crate::hll::cubic_interpolation;
 use crate::hll::harmonic_numbers;
@@ -91,16 +91,16 @@ impl HipEstimator {
     fn update_kxq(&mut self, old_value: u8, new_value: u8) {
         // Subtract old value contribution
         if old_value < 32 {
-            self.kxq0 -= INVERSE_POWERS_OF_2[old_value as usize];
+            self.kxq0 -= inv_pow2(old_value);
         } else {
-            self.kxq1 -= INVERSE_POWERS_OF_2[old_value as usize];
+            self.kxq1 -= inv_pow2(old_value);
         }
 
         // Add new value contribution
         if new_value < 32 {
-            self.kxq0 += INVERSE_POWERS_OF_2[new_value as usize];
+            self.kxq0 += inv_pow2(new_value);
         } else {
-            self.kxq1 += INVERSE_POWERS_OF_2[new_value as usize];
+            self.kxq1 += inv_pow2(new_value);
         }
     }
 

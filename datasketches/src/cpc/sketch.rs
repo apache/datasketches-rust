@@ -24,7 +24,7 @@ use crate::codec::assert::ensure_serial_version_is;
 use crate::codec::assert::insufficient_data;
 use crate::codec::family::Family;
 use crate::common::NumStdDev;
-use crate::common::inv_pow2_table::INVERSE_POWERS_OF_2;
+use crate::common::inv_pow2::inv_pow2;
 use crate::cpc::DEFAULT_LG_K;
 use crate::cpc::Flavor;
 use crate::cpc::MAX_LG_K;
@@ -252,7 +252,7 @@ impl CpcSketch {
         let col = (row_col & 63) as usize;
         let one_over_p = (k as f64) / self.kxp;
         self.hip_est_accum += one_over_p;
-        self.kxp -= INVERSE_POWERS_OF_2[col + 1] // notice the "+1"
+        self.kxp -= inv_pow2((col + 1) as u8) // notice the "+1"
     }
 
     fn update_sparse(&mut self, row_col: u32) {
@@ -408,7 +408,7 @@ impl CpcSketch {
         let mut total = 0.0;
         for i in (0..8).rev() {
             // the reverse order is important
-            let factor = INVERSE_POWERS_OF_2[i * 8]; // pow (256.0, (-1.0 * ((double) j)))
+            let factor = inv_pow2((i * 8) as u8); // pow (256.0, (-1.0 * ((double) j)))
             total += factor * byte_sums[i];
         }
 

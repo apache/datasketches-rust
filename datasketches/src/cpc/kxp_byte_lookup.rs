@@ -52,7 +52,7 @@ pub(super) static KXP_BYTE_TABLE: [f64; 256] = [
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::inv_pow2_table::INVERSE_POWERS_OF_2;
+    use crate::common::inv_pow2::inv_pow2;
 
     #[test]
     fn assert_kxp_byte_table() {
@@ -66,7 +66,7 @@ mod tests {
                 let bit = (byte >> col) & 1;
                 if bit == 0 {
                     // note the inverted logic
-                    computed += INVERSE_POWERS_OF_2[col + 1]; //note the "+1"
+                    computed += inv_pow2(col + 1); //note the "+1"
                 }
             }
 
