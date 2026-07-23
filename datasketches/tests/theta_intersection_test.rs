@@ -46,7 +46,7 @@ fn test_has_result_state_machine() {
 fn test_result_before_update_panics() {
     let i = ThetaIntersection::new(123);
     let result = std::panic::catch_unwind(|| {
-        let _ = i.to_sketch(true);
+        i.to_sketch(true);
     });
     assert!(result.is_err());
 }

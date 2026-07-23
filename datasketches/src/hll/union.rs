@@ -74,7 +74,8 @@ impl HllUnion {
     /// # use datasketches::hll::HllUnion;
     /// let mut union = HllUnion::new(10);
     /// union.update_value("apple");
-    /// let _result = union.to_sketch(HllType::Hll8);
+    /// let result = union.to_sketch(HllType::Hll8);
+    /// assert_eq!(result.estimate(), 1.0);
     /// ```
     pub fn new(lg_max_k: u8) -> Self {
         assert!(
@@ -101,7 +102,8 @@ impl HllUnion {
     /// # use datasketches::hll::HllUnion;
     /// let mut union = HllUnion::new(10);
     /// union.update_value("apple");
-    /// let _result = union.to_sketch(HllType::Hll8);
+    /// let result = union.to_sketch(HllType::Hll8);
+    /// assert_eq!(result.estimate(), 1.0);
     /// ```
     pub fn update_value<T: Hash>(&mut self, value: T) {
         self.gadget.update(value);
