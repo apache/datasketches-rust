@@ -116,21 +116,23 @@ mod tests {
     use crate::thetacommon::hash_table::starting_sub_multiple;
     use crate::thetacommon::hash_table::starting_theta_from_sampling_probability;
 
-    /// Inserts a key with count-style summary semantics: a new key starts at 1, a repeated key
-    /// increments the retained count. Returns true if a new entry was created.
-    fn insert(table: &mut TupleHashTable<u64>, value: impl Hash) -> bool {
-        table.try_insert(value, |existing| match existing {
-            Some(count) => {
-                *count += 1;
-                None
-            }
-            None => Some(1),
-        })
-    }
+    impl TupleHashTable<u64> {
+        /// Inserts a key with count-style summary semantics: a new key starts at 1, a repeated key
+        /// increments the retained count. Returns true if a new entry was created.
+        fn insert(&mut self, value: impl Hash) -> bool {
+            self.try_insert(value, |existing| match existing {
+                Some(count) => {
+                    *count += 1;
+                    None
+                }
+                None => Some(1),
+            })
+        }
 
-    /// Collect retained `(hash, count)` pairs.
-    fn collect(table: &TupleHashTable<u64>) -> Vec<(u64, u64)> {
-        table.iter().map(|(hash, &count)| (hash, count)).collect()
+        /// Returns the retained `(hash, count)` pairs.
+        fn pairs(&self) -> Vec<(u64, u64)> {
+            self.iter().map(|(hash, &count)| (hash, count)).collect()
+        }
     }
 
     #[test]
@@ -138,8 +140,8 @@ mod tests {
         // The NonZeroU64 hash gives Option<TupleEntry<S>> a niche, so table slots carry no
         // discriminant overhead on top of the entry itself.
         assert_eq!(
-            std::mem::size_of::<Option<TupleEntry<u64>>>(),
-            std::mem::size_of::<TupleEntry<u64>>()
+            size_of::<Option<TupleEntry<u64>>>(),
+            size_of::<TupleEntry<u64>>()
         );
     }
 
@@ -170,25 +172,25 @@ mod tests {
 
         // With low theta, update should be screened out.
         table.set_theta(1);
-        assert!(!insert(&mut table, "test3"));
+        assert!(!table.insert("test3"));
     }
 
     #[test]
     fn test_insert() {
         let mut table = TupleHashTable::<u64>::new(5, ResizeFactor::X8, 1.0, DEFAULT_UPDATE_SEED);
 
-        assert!(insert(&mut table, "test_value"));
+        assert!(table.insert("test_value"));
         assert_eq!(table.num_retained(), 1);
         assert!(!table.is_empty());
 
         // Insert the same value again: not a new entry, but the summary is merged.
-        assert!(!insert(&mut table, "test_value"));
+        assert!(!table.insert("test_value"));
         assert_eq!(table.num_retained(), 1);
-        assert_eq!(collect(&table), vec![(table.hash("test_value"), 2)]);
+        assert_eq!(table.pairs(), vec![(table.hash("test_value"), 2)]);
 
         // Force screening and verify insertion fails
         table.set_theta(1);
-        assert!(!insert(&mut table, "screened"));
+        assert!(!table.insert("screened"));
         assert_eq!(table.num_retained(), 1);
         assert!(!table.is_empty());
     }
@@ -199,7 +201,7 @@ mod tests {
 
         let mut inserted_count = 0;
         for i in 0..10 {
-            if insert(&mut table, format!("value_{}", i)) {
+            if table.insert(format!("value_{}", i)) {
                 inserted_count += 1;
             }
         }
@@ -214,11 +216,11 @@ mod tests {
         let mut table = TupleHashTable::<u64>::new(8, ResizeFactor::X8, 1.0, DEFAULT_UPDATE_SEED);
 
         for _ in 0..5 {
-            insert(&mut table, "same_key");
+            table.insert("same_key");
         }
 
         assert_eq!(table.num_retained(), 1);
-        assert_eq!(collect(&table), vec![(table.hash("same_key"), 5)]);
+        assert_eq!(table.pairs(), vec![(table.hash("same_key"), 5)]);
     }
 
     #[test]
@@ -226,7 +228,7 @@ mod tests {
         fn populate_values(table: &mut TupleHashTable<u64>, count: usize) -> usize {
             let mut inserted = 0;
             for i in 0..count {
-                if insert(table, format!("value_{}", i)) {
+                if table.insert(format!("value_{i}")) {
                     inserted += 1;
                 }
             }
@@ -272,7 +274,7 @@ mod tests {
 
         // Insert many values to trigger rebuild
         for i in 0..100 {
-            insert(&mut table, format!("value_{}", i));
+            table.insert(format!("value_{i}"));
         }
 
         let new_theta = table.theta();
@@ -283,7 +285,7 @@ mod tests {
 
         // Continue to insert values to trigger rebuild again
         for i in 100..200 {
-            insert(&mut table, format!("value_{}", i));
+            table.insert(format!("value_{i}"));
         }
 
         assert_eq!(table.lg_cur_size(), 6);
@@ -296,7 +298,7 @@ mod tests {
         let mut table = TupleHashTable::<u64>::new(5, ResizeFactor::X8, 1.0, DEFAULT_UPDATE_SEED);
 
         for i in 0..100 {
-            insert(&mut table, format!("value_{}", i));
+            table.insert(format!("value_{i}"));
         }
 
         let before_trim = table.num_retained();
@@ -313,7 +315,7 @@ mod tests {
         let mut table = TupleHashTable::<u64>::new(8, ResizeFactor::X8, 1.0, DEFAULT_UPDATE_SEED);
 
         for i in 0..10 {
-            insert(&mut table, format!("value_{}", i));
+            table.insert(format!("value_{i}"));
         }
 
         let before_trim = table.num_retained();
@@ -333,7 +335,7 @@ mod tests {
         let init_entries = table.num_entries();
 
         for i in 0..10 {
-            insert(&mut table, format!("value_{}", i));
+            table.insert(format!("value_{i}"));
         }
 
         assert!(!table.is_empty());
@@ -360,7 +362,7 @@ mod tests {
         assert_eq!(table.theta(), (MAX_THETA as f64 * 0.5) as u64);
 
         for i in 0..10 {
-            insert(&mut table, format!("value_{}", i));
+            table.insert(format!("value_{i}"));
         }
 
         table.reset();
@@ -376,7 +378,7 @@ mod tests {
         let mut inserted_hashes = vec![];
         for i in 0..10 {
             let hash = table.hash(i);
-            if insert(&mut table, i) {
+            if table.insert(i) {
                 inserted_hashes.push(hash);
             }
         }
@@ -420,7 +422,7 @@ mod tests {
         loop {
             let hash = table.hash(i);
             i += 1;
-            if insert(&mut table, i - 1) {
+            if table.insert(i - 1) {
                 inserted_hashes.push(hash);
             }
             if table.num_retained() >= k as usize {
@@ -433,7 +435,7 @@ mod tests {
         loop {
             let hash = table.hash(i);
             i += 1;
-            if insert(&mut table, i - 1) {
+            if table.insert(i - 1) {
                 inserted_hashes.push(hash);
             }
             if table.num_retained() >= rebuild_threshold {
@@ -445,7 +447,7 @@ mod tests {
         loop {
             let hash = table.hash(i);
             i += 1;
-            if insert(&mut table, i - 1) {
+            if table.insert(i - 1) {
                 inserted_hashes.push(hash);
                 break;
             }
