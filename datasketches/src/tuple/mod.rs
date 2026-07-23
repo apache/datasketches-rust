@@ -38,6 +38,7 @@
 //! assert!(sketch.estimate() >= 1.0);
 //! ```
 
+mod a_not_b;
 mod hash_table;
 mod intersection;
 mod policy;
@@ -45,6 +46,7 @@ mod serialization;
 mod sketch;
 mod union;
 
+pub use self::a_not_b::TupleAnotB;
 pub use self::hash_table::TupleEntry;
 pub use self::intersection::TupleIntersection;
 pub use self::policy::DefaultUnionPolicy;
