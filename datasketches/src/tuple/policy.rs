@@ -23,52 +23,70 @@
 //! different behaviors and can carry per-instance configuration (such as the number of values in an
 //! array-of-doubles summary).
 
-use std::marker::PhantomData;
+use std::fmt;
 use std::ops::AddAssign;
 
-/// Defines how a summary is created and how update values are folded into it.
-///
-/// A policy determines both the stored summary type and the family of values accepted by
-/// [`update`](Self::update). The generic associated update type allows a policy to accept borrowed
-/// values, such as `&[f64]`, without putting a lifetime on the policy itself.
-pub trait SummaryUpdatePolicy {
+/// Defines how summaries are created.
+pub trait SummaryPolicy {
     /// Summary type retained alongside each key.
     type Summary;
-
-    /// Update value accepted by this policy.
-    type Update<'a>;
 
     /// Creates a new summary for a key seen for the first time.
     ///
     /// The summary should be in its identity state; the first update value is folded in separately
-    /// via [`update`](Self::update).
+    /// via [`SummaryUpdatePolicy::update`].
     fn create(&self) -> Self::Summary;
-
-    /// Folds an update value into an existing summary.
-    fn update(&self, summary: &mut Self::Summary, value: Self::Update<'_>);
 }
 
-/// Default update policy for summaries that are default-constructible and additive.
+/// Defines how update values are folded into summaries.
 ///
-/// The summary type is selected when
-/// [`TupleSketchBuilder::build`](crate::tuple::TupleSketchBuilder::build) is called, and updates fold
-/// values with `summary += value`. The zero-sized type witness records that this concrete policy's
-/// associated summary is `S`.
-#[derive(Debug, Default, Clone, Copy)]
-pub struct DefaultUpdatePolicy<S>(PhantomData<fn() -> S>);
+/// A policy may implement this trait for multiple update types. For example, an array policy can
+/// accept slices, vectors, or other containers while retaining a single summary type defined by
+/// [`SummaryPolicy`].
+pub trait SummaryUpdatePolicy<U>: SummaryPolicy {
+    /// Folds an update value into an existing summary.
+    fn update(&self, summary: &mut Self::Summary, value: U);
+}
 
-impl<S> SummaryUpdatePolicy for DefaultUpdatePolicy<S>
+/// Built-in update policy for additive summaries.
+///
+/// The factory determines the summary type and creates its identity state. The policy accepts every
+/// update type `U` for which the summary implements [`AddAssign<U>`].
+#[derive(Clone, Copy)]
+pub struct DefaultUpdatePolicy<F> {
+    create: F,
+}
+
+impl<F> DefaultUpdatePolicy<F> {
+    /// Creates an additive policy backed by the given summary factory.
+    pub fn new(create: F) -> Self {
+        Self { create }
+    }
+}
+
+impl<F> fmt::Debug for DefaultUpdatePolicy<F> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("DefaultUpdatePolicy")
+    }
+}
+
+impl<F, S> SummaryPolicy for DefaultUpdatePolicy<F>
 where
-    S: Default + AddAssign<S>,
+    F: Fn() -> S,
 {
     type Summary = S;
-    type Update<'a> = S;
 
     fn create(&self) -> Self::Summary {
-        S::default()
+        (self.create)()
     }
+}
 
-    fn update(&self, summary: &mut Self::Summary, value: Self::Update<'_>) {
+impl<F, S, U> SummaryUpdatePolicy<U> for DefaultUpdatePolicy<F>
+where
+    F: Fn() -> S,
+    S: AddAssign<U>,
+{
+    fn update(&self, summary: &mut Self::Summary, value: U) {
         *summary += value;
     }
 }
