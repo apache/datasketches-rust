@@ -20,6 +20,7 @@ use std::num::NonZeroU64;
 
 use crate::thetacommon::RawHashTableEntry;
 use crate::thetacommon::hash_table::RawHashTable;
+use crate::thetacommon::intersection::RawThetaIntersectionPolicy;
 use crate::thetacommon::union::RawThetaUnionPolicy;
 use crate::tuple::SummaryCombinePolicy;
 
@@ -108,6 +109,12 @@ impl<S> TupleHashTable<S> {
 }
 
 impl<P: SummaryCombinePolicy> RawThetaUnionPolicy<TupleEntry<P::Summary>> for P {
+    fn merge(&self, existing: &mut TupleEntry<P::Summary>, incoming: TupleEntry<P::Summary>) {
+        self.combine(&mut existing.summary, &incoming.summary);
+    }
+}
+
+impl<P: SummaryCombinePolicy> RawThetaIntersectionPolicy<TupleEntry<P::Summary>> for P {
     fn merge(&self, existing: &mut TupleEntry<P::Summary>, incoming: TupleEntry<P::Summary>) {
         self.combine(&mut existing.summary, &incoming.summary);
     }

@@ -75,16 +75,6 @@ impl ThetaHashTable {
             }
         })
     }
-
-    /// Get iterator over entries.
-    pub fn iter(&self) -> impl Iterator<Item = u64> + '_ {
-        self.iter_entries().map(RawHashTableEntry::hash)
-    }
-
-    /// Returns true if the given hash exists in the table.
-    pub fn contains_hash(&self, hash: u64) -> bool {
-        self.get_entry(hash).is_some()
-    }
 }
 
 #[cfg(test)]
@@ -96,6 +86,13 @@ mod tests {
     use crate::thetacommon::constants::MIN_LG_K;
     use crate::thetacommon::hash_table::starting_sub_multiple;
     use crate::thetacommon::hash_table::starting_theta_from_sampling_probability;
+
+    impl ThetaHashTable {
+        /// Get iterator over entries.
+        pub fn iter(&self) -> impl Iterator<Item = u64> + '_ {
+            self.iter_entries().map(RawHashTableEntry::hash)
+        }
+    }
 
     #[test]
     fn test_new_hash_table() {
