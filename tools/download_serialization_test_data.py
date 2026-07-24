@@ -26,9 +26,7 @@ import urllib.request
 import zipfile
 from pathlib import Path, PurePosixPath
 
-TCK_ARCHIVE_URL = (
-    "https://github.com/apache/datasketches-tck/archive/refs/heads/main.zip"
-)
+TCK_ARCHIVE_URL = "https://github.com/apache/datasketches-tck/archive/0016a517/main.zip"
 OUTPUT_DIRS = {
     "java": "java_generated_files",
     "cpp": "cpp_generated_files",
@@ -37,16 +35,13 @@ OUTPUT_DIRS = {
 
 def download_archive(destination):
     print(f"Downloading serialization snapshots from {TCK_ARCHIVE_URL}", flush=True)
-    request = urllib.request.Request(
-        TCK_ARCHIVE_URL,
-        headers={"User-Agent": "apache-datasketches-rust"},
-    )
+    request = urllib.request.Request(TCK_ARCHIVE_URL)
     with urllib.request.urlopen(request, timeout=60) as response:
         with destination.open("wb") as output:
             shutil.copyfileobj(response, output)
 
 
-def install_snapshots(archive, project_dir, language):
+def extract_snapshots(archive, project_dir, language):
     source_parts = ("serialization", language, "snapshots")
     members = []
 
@@ -95,7 +90,7 @@ def install_snapshots(archive, project_dir, language):
             if temp_path is not None and temp_path.exists():
                 temp_path.unlink()
 
-    print(f"Installed {len(members)} {language} snapshots into {output_dir}")
+    print(f"Extracted {len(members)} {language} snapshots into {output_dir}")
 
 
 def main():
@@ -115,18 +110,15 @@ def main():
     if not languages:
         languages = list(OUTPUT_DIRS)
 
-    project_dir = Path(__file__).resolve().parent.parent / "datasketches"
+    repository_root = Path(__file__).resolve().parents[1]
+    project_dir = repository_root / "datasketches"
 
-    try:
-        with tempfile.TemporaryDirectory(prefix="datasketches-tck-") as temp_dir:
-            archive_path = Path(temp_dir) / "datasketches-tck.zip"
-            download_archive(archive_path)
-            with zipfile.ZipFile(archive_path) as archive:
-                for language in languages:
-                    install_snapshots(archive, project_dir, language)
-    except (OSError, RuntimeError, urllib.error.URLError, zipfile.BadZipFile) as error:
-        print(f"Error: {error}", file=sys.stderr)
-        return 1
+    with tempfile.TemporaryDirectory(prefix="datasketches-tck-") as temp_dir:
+        archive_path = Path(temp_dir) / "datasketches-tck.zip"
+        download_archive(archive_path)
+        with zipfile.ZipFile(archive_path) as archive:
+            for language in languages:
+                extract_snapshots(archive, project_dir, language)
 
     return 0
 

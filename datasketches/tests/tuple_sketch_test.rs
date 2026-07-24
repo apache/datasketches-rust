@@ -15,11 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! Behavioral tests for the Tuple sketch, mirroring `theta_sketch_test.rs`.
-//!
-//! Updates carry a `u64` summary combined with the default (additive) policy, so the distinct-count
-//! behavior matches the Theta sketch while the summaries accumulate alongside each key.
-
 #![cfg(feature = "tuple")]
 
 use datasketches::common::NumStdDev;

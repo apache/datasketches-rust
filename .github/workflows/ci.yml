@@ -93,7 +93,7 @@ jobs:
           cache-bin: "false"
       - name: Prepare test data
         shell: bash
-        run: ./tools/generate_serialization_test_data.py
+        run: ./tools/download_serialization_test_data.py
       - name: Run unit tests
         shell: bash
         run: cargo x test
