@@ -29,7 +29,7 @@ from pathlib import Path, PurePosixPath
 
 def download_archive(destination):
     archive_url = "https://github.com/apache/datasketches-tck/archive/0016a517/main.zip"
-    print(f"Downloading serialization snapshots from {archive_url}")
+print(f"Downloading serialization snapshots from {archive_url}", flush=True)
     request = urllib.request.Request(archive_url)
     with urllib.request.urlopen(request, timeout=60) as response:
         with destination.open("wb") as output:
