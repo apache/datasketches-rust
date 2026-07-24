@@ -17,189 +17,119 @@
 # specific language governing permissions and limitations
 # under the License.
 
-import os
-import subprocess
-import sys
-import shutil
 import argparse
-from pathlib import Path
+import shutil
+import sys
+import tempfile
+import urllib.error
+import urllib.request
+import zipfile
+from pathlib import Path, PurePosixPath
 
-def check_command_installed(command):
-    """Checks if a command is available in the system path."""
-    if shutil.which(command) is None:
-        print(f"Error: '{command}' is not installed or not in PATH.")
-        sys.exit(1)
-
-
-def run_command(command, cwd=None, shell=False):
-    """Runs a shell command, streaming output to stdout/stderr."""
-    cmd_str = ' '.join(command) if isinstance(command, list) else command
-    print(f"Running: {cmd_str}")
-    sys.stdout.flush() # Ensure 'Running' message appears before command output
-    try:
-        # Don't capture output; let it stream to sys.stdout/sys.stderr
-        subprocess.check_call(command, cwd=cwd, stderr=subprocess.STDOUT, shell=shell)
-    except subprocess.CalledProcessError as e:
-        print(f"Error running command: {e}")
-        print("--- OUTPUT ---")
-        print(e.stdout)
-        print("--- END OUTPUT ---")
-        sys.exit(1)
+TCK_ARCHIVE_URL = (
+    "https://github.com/apache/datasketches-tck/archive/refs/heads/main.zip"
+)
+OUTPUT_DIRS = {
+    "java": "java_generated_files",
+    "cpp": "cpp_generated_files",
+}
 
 
-def generate_java_files(workspace_dir, project_dir):
-    print("--- Generating Java Test Data ---")
+def download_archive(destination):
+    print(f"Downloading serialization snapshots from {TCK_ARCHIVE_URL}", flush=True)
+    request = urllib.request.Request(
+        TCK_ARCHIVE_URL,
+        headers={"User-Agent": "apache-datasketches-rust"},
+    )
+    with urllib.request.urlopen(request, timeout=60) as response:
+        with destination.open("wb") as output:
+            shutil.copyfileobj(response, output)
 
-    # 1. Check prerequisites
-    check_command_installed("git")
-    check_command_installed("java")
-    mvn_cmd_name = "mvn"
-    if os.name == 'nt':
-        mvn_cmd_name = "mvn.cmd"
-    check_command_installed(mvn_cmd_name)
 
-    # 2. Define paths
-    temp_dir = workspace_dir / "tmp_datasketches_java"
-    output_dir = project_dir / "tests" / "serialization_test_data" / "java_generated_files"
+def install_snapshots(archive, project_dir, language):
+    source_parts = ("serialization", language, "snapshots")
+    members = []
 
-    # 3. Setup temporary directory
-    if temp_dir.exists():
-        print(f"Removing existing temporary directory: {temp_dir}")
-        shutil.rmtree(temp_dir)
+    for member in archive.infolist():
+        path = PurePosixPath(member.filename)
+        if (
+            not member.is_dir()
+            and path.suffix == ".sk"
+            and path.parent.parts[-3:] == source_parts
+        ):
+            members.append((path.name, member))
 
-    temp_dir.mkdir()
+    if not members:
+        raise RuntimeError(f"no {language} snapshots found in the TCK archive")
 
-    # 4. Clone repository
-    repo_url = "https://github.com/apache/datasketches-java.git"
-    branch = "9.0.0"
-    run_command([
-        "git", "clone",
-        "--depth", "1",
-        "--branch", branch,
-        "--single-branch",
-        repo_url,
-        str(temp_dir)
-    ])
-
-    # 5. Run Maven to generate files
-    mvn_cmd = ["mvn", "test", "-P", "generate-java-files"]
-    use_shell = False
-    if os.name == 'nt': # Windows
-        mvn_cmd[0] = "mvn.cmd"
-        use_shell = True
-
-    run_command(mvn_cmd, cwd=temp_dir, shell=use_shell)
-
-    # 6. Copy generated files
-    generated_files_dir = temp_dir / "serialization_test_data" / "java_generated_files"
-
-    if not generated_files_dir.exists():
-        print(f"Error: Expected generated files directory not found at {generated_files_dir}")
-        sys.exit(1)
-
-    print(f"Copying files from {generated_files_dir} to {output_dir}")
+    output_dir = (
+        project_dir
+        / "tests"
+        / "serialization_test_data"
+        / OUTPUT_DIRS[language]
+    )
+    snapshot_root = output_dir.parent
+    if snapshot_root.is_symlink() or output_dir.is_symlink():
+        raise RuntimeError(f"snapshot output path cannot be a symbolic link: {output_dir}")
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    files_copied = 0
-    for file_path in generated_files_dir.glob("*.sk"):
-        shutil.copy2(file_path, output_dir)
-        print(f"Copied: {file_path.name}")
-        files_copied += 1
+    expected_files = {name for name, _ in members}
+    for existing_file in output_dir.glob("*.sk"):
+        if existing_file.name not in expected_files:
+            existing_file.unlink()
 
-    if files_copied == 0:
-        print("Warning: No .sk files were found to copy.")
-    else:
-        print(f"Successfully copied {files_copied} files.")
+    for name, member in members:
+        temp_path = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                dir=output_dir,
+                prefix=f".{name}.",
+                delete=False,
+            ) as output:
+                temp_path = Path(output.name)
+                source = archive.open(member)
+                with source:
+                    shutil.copyfileobj(source, output)
+            temp_path.replace(output_dir / name)
+        finally:
+            if temp_path is not None and temp_path.exists():
+                temp_path.unlink()
 
-
-def generate_cpp_files(workspace_dir, project_root):
-    print("--- Generating C++ Test Data ---")
-
-    # 1. Check prerequisites
-    check_command_installed("git")
-    check_command_installed("cmake")
-    check_command_installed("ctest")
-
-    # 2. Define paths
-    temp_dir = workspace_dir / "tmp_datasketches_cpp"
-    output_dir = project_root / "tests" / "serialization_test_data" / "cpp_generated_files"
-
-    # 3. Setup temporary directory
-    if temp_dir.exists():
-        print(f"Removing existing temporary directory: {temp_dir}")
-        shutil.rmtree(temp_dir)
-
-    temp_dir.mkdir()
-
-    # 4. Clone repository
-    repo_url = "https://github.com/apache/datasketches-cpp.git"
-    commit = "401423367055acdf7502e8ed3126730a08039d91"
-    run_command([
-        "git", "clone",
-        "--depth", "1",
-        "--revision", commit,
-        "--single-branch",
-        repo_url,
-        str(temp_dir)
-    ])
-
-    # 5. Build and Run CMake
-    build_dir = temp_dir / "build"
-    build_dir.mkdir(exist_ok=True)
-
-    # Configure: Add CMAKE_BUILD_TYPE for single-config generators (Ninja/Make)
-    run_command(["cmake", "..", "-DGENERATE=true", "-DCMAKE_BUILD_TYPE=Release"], cwd=build_dir)
-
-    # Build: Release config
-    run_command(["cmake", "--build", ".", "--config", "Release"], cwd=build_dir)
-
-    # Test: Use ctest which is more portable than 'cmake --target test' (VS uses RUN_TESTS)
-    # --output-on-failure helps debug if a specific test fails
-    run_command(["ctest", "-C", "Release", "--output-on-failure"], cwd=build_dir)
-
-    # 6. Copy generated files
-    # The instructions say: cp datasketches-cpp/build/*/test/*_cpp.sk serialization_test_data/cpp_generated_files
-    # We need to find where they are exactly.
-    # It seems they might be in build/test/ or subdirectories depending on generator.
-
-    print(f"Copying files to {output_dir}")
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    files_copied = 0
-
-    for file_path in build_dir.rglob("*_cpp.sk"):
-        shutil.copy2(file_path, output_dir)
-        print(f"Copied: {file_path.name}")
-        files_copied += 1
-
-
-    if files_copied == 0:
-        print("Warning: No *_cpp.sk files were found to copy.")
-    else:
-        print(f"Successfully copied {files_copied} files.")
+    print(f"Installed {len(members)} {language} snapshots into {output_dir}")
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Generate serialization test data for Java and/or C++.")
-    parser.add_argument("--java", action="store_true", help="Generate Java test data")
-    parser.add_argument("--cpp", action="store_true", help="Generate C++ test data")
-    parser.add_argument("--all", action="store_true", help="Generate both Java and C++ test data")
-
+    parser = argparse.ArgumentParser(
+        description="Download serialization test data from apache/datasketches-tck."
+    )
+    parser.add_argument("--java", action="store_true", help="Download Java test data")
+    parser.add_argument("--cpp", action="store_true", help="Download C++ test data")
+    parser.add_argument("--all", action="store_true", help="Download all test data")
     args = parser.parse_args()
 
-    # Default to all if no arguments provided
-    if not args.java and not args.cpp and not args.all:
-        args.all = True
-
-    tools_dir = Path(__file__).resolve().parent
-    workspace_dir = tools_dir.parent
-    project_dir = workspace_dir / "datasketches"
-
+    languages = []
     if args.java or args.all:
-        generate_java_files(workspace_dir, project_dir)
-
+        languages.append("java")
     if args.cpp or args.all:
-        generate_cpp_files(workspace_dir, project_dir)
+        languages.append("cpp")
+    if not languages:
+        languages = list(OUTPUT_DIRS)
+
+    project_dir = Path(__file__).resolve().parent.parent / "datasketches"
+
+    try:
+        with tempfile.TemporaryDirectory(prefix="datasketches-tck-") as temp_dir:
+            archive_path = Path(temp_dir) / "datasketches-tck.zip"
+            download_archive(archive_path)
+            with zipfile.ZipFile(archive_path) as archive:
+                for language in languages:
+                    install_snapshots(archive, project_dir, language)
+    except (OSError, RuntimeError, urllib.error.URLError, zipfile.BadZipFile) as error:
+        print(f"Error: {error}", file=sys.stderr)
+        return 1
+
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
