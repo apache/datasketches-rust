@@ -83,32 +83,28 @@ Install the extra tools with:
 cargo install taplo-cli typos-cli hawkeye
 ```
 
-## Serialization snapshots and test data generation
+## Serialization snapshots
 
-Some tests depend on snapshot files under `datasketches/tests/serialization_test_data`. If they are missing, tests will fail. Regenerate them with:
+Some tests depend on snapshot files under `datasketches/tests/serialization_test_data`. If they are missing, tests will fail. Download them with:
 
 ```shell
 python3 ./tools/generate_serialization_test_data.py --all
 ```
 
-The script pulls `datasketches-java` and `datasketches-cpp` and writes files to:
+The script downloads the latest snapshots from the `main` branch of
+[`apache/datasketches-tck`](https://github.com/apache/datasketches-tck) and writes them to:
 
 - `datasketches/tests/serialization_test_data/java_generated_files`
 - `datasketches/tests/serialization_test_data/cpp_generated_files`
 
-You can generate them separately:
+You can download them separately:
 
 ```shell
 python3 ./tools/generate_serialization_test_data.py --java
 python3 ./tools/generate_serialization_test_data.py --cpp
 ```
 
-The script requires these commands on PATH (and network access):
-
-- Java data: `git`, `java`, `mvn`
-- C++ data: `git`, `cmake`, `ctest`
-
-The current `datasketches-java` generation flow requires JDK >= 25 and Maven >= 3.9.11, otherwise Maven Enforcer will fail.
+The script requires Python 3 and network access.
 
 ## Code of Conduct
 
