@@ -51,6 +51,11 @@ impl<S> TupleEntry<S> {
     pub fn summary(&self) -> &S {
         &self.summary
     }
+
+    /// Returns a mutable reference to the summary stored in this entry.
+    pub(super) fn summary_mut(&mut self) -> &mut S {
+        &mut self.summary
+    }
 }
 
 /// Specific hash table for tuple sketch.
