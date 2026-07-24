@@ -29,24 +29,10 @@ use crate::thetacommon::constants::DEFAULT_LG_K;
 use crate::thetacommon::constants::MAX_LG_K;
 use crate::thetacommon::constants::MIN_LG_K;
 use crate::thetacommon::union::RawThetaUnion;
-use crate::thetacommon::union::RawThetaUnionPolicy;
 use crate::tuple::hash_table::TupleEntry;
 use crate::tuple::policy::SummaryCombinePolicy;
 use crate::tuple::sketch::CompactTupleSketch;
 use crate::tuple::sketch::TupleSketchView;
-
-/// Adapts a [`SummaryCombinePolicy`] to the raw union's entry-merge policy.
-#[derive(Debug)]
-struct CombinePolicyAdapter<P>(P);
-
-impl<P> RawThetaUnionPolicy<TupleEntry<P::Summary>> for CombinePolicyAdapter<P>
-where
-    P: SummaryCombinePolicy,
-{
-    fn merge(&self, existing: &mut TupleEntry<P::Summary>, incoming: TupleEntry<P::Summary>) {
-        self.0.combine(existing.summary_mut(), incoming.summary());
-    }
-}
 
 /// Union (set OR) of Tuple sketches.
 ///
@@ -79,7 +65,7 @@ pub struct TupleUnion<P>
 where
     P: SummaryCombinePolicy,
 {
-    raw: RawThetaUnion<TupleEntry<P::Summary>, CombinePolicyAdapter<P>>,
+    raw: RawThetaUnion<TupleEntry<P::Summary>, P>,
 }
 
 impl<P> TupleUnion<P>
@@ -217,7 +203,7 @@ where
                 self.resize_factor,
                 self.sampling_probability,
                 self.seed,
-                CombinePolicyAdapter(self.policy),
+                self.policy,
             ),
         }
     }
