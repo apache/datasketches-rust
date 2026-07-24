@@ -28,24 +28,10 @@
 use crate::error::Error;
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::thetacommon::intersection::RawThetaIntersection;
-use crate::thetacommon::intersection::RawThetaIntersectionPolicy;
 use crate::tuple::hash_table::TupleEntry;
 use crate::tuple::policy::SummaryCombinePolicy;
 use crate::tuple::sketch::CompactTupleSketch;
 use crate::tuple::sketch::TupleSketchView;
-
-/// Adapts a [`SummaryCombinePolicy`] to the raw intersection's entry-merge policy.
-#[derive(Debug)]
-struct CombinePolicyAdapter<P>(P);
-
-impl<P> RawThetaIntersectionPolicy<TupleEntry<P::Summary>> for CombinePolicyAdapter<P>
-where
-    P: SummaryCombinePolicy,
-{
-    fn merge(&self, existing: &mut TupleEntry<P::Summary>, incoming: TupleEntry<P::Summary>) {
-        self.0.combine(existing.summary_mut(), incoming.summary());
-    }
-}
 
 /// Stateful intersection operator for Tuple sketches.
 ///
@@ -102,7 +88,7 @@ pub struct TupleIntersection<P>
 where
     P: SummaryCombinePolicy,
 {
-    raw: RawThetaIntersection<TupleEntry<P::Summary>, CombinePolicyAdapter<P>>,
+    raw: RawThetaIntersection<TupleEntry<P::Summary>, P>,
 }
 
 impl<P> TupleIntersection<P>
@@ -112,7 +98,7 @@ where
     /// Creates a new intersection operator for the given `seed` and combine `policy`.
     pub fn new(seed: u64, policy: P) -> Self {
         Self {
-            raw: RawThetaIntersection::new(seed, CombinePolicyAdapter(policy)),
+            raw: RawThetaIntersection::new(seed, policy),
         }
     }
 
