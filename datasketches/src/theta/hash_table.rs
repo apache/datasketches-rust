@@ -77,13 +77,9 @@ impl ThetaHashTable {
     }
 
     /// Get iterator over entries.
+    #[cfg(test)]
     pub fn iter(&self) -> impl Iterator<Item = u64> + '_ {
         self.iter_entries().map(RawHashTableEntry::hash)
-    }
-
-    /// Returns true if the given hash exists in the table.
-    pub fn contains_hash(&self, hash: u64) -> bool {
-        self.get_entry(hash).is_some()
     }
 }
 
