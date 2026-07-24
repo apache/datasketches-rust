@@ -15,12 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! Behavioral tests for the Tuple intersection, mirroring `theta_intersection_test.rs`.
-//!
-//! Unlike Theta, a Tuple intersection requires an explicit [`SummaryCombinePolicy`] for keys that
-//! appear in more than one input. These tests use a `u64` summary and a summing policy, so the
-//! distinct-count behavior matches the Theta intersection.
-
 #![cfg(feature = "tuple")]
 
 use datasketches::tuple::CompactTupleSketch;
