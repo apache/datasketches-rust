@@ -24,7 +24,9 @@
 //!
 //! Custom summary behavior is supplied externally through policy objects: [`SummaryPolicy`]
 //! creates summaries, while [`SummaryUpdatePolicy`] folds update values into them. Summaries that
-//! implement `Default` and `AddAssign` can use [`DefaultUpdatePolicy`].
+//! implement `Default` and `AddAssign` can use [`DefaultUpdatePolicy`]. Set operations combine the
+//! summaries of shared keys through [`SummaryCombinePolicy`]; the union defaults to
+//! [`DefaultUnionPolicy`].
 //!
 //! # Usage
 //!
@@ -36,13 +38,20 @@
 //! assert!(sketch.estimate() >= 1.0);
 //! ```
 
+mod a_not_b;
 mod hash_table;
+mod intersection;
 mod policy;
 mod serialization;
 mod sketch;
+mod union;
 
+pub use self::a_not_b::TupleAnotB;
 pub use self::hash_table::TupleEntry;
+pub use self::intersection::TupleIntersection;
+pub use self::policy::DefaultUnionPolicy;
 pub use self::policy::DefaultUpdatePolicy;
+pub use self::policy::SummaryCombinePolicy;
 pub use self::policy::SummaryPolicy;
 pub use self::policy::SummaryUpdatePolicy;
 pub use self::serialization::TupleSummaryValue;
@@ -50,3 +59,5 @@ pub use self::sketch::CompactTupleSketch;
 pub use self::sketch::TupleSketch;
 pub use self::sketch::TupleSketchBuilder;
 pub use self::sketch::TupleSketchView;
+pub use self::union::TupleUnion;
+pub use self::union::TupleUnionBuilder;
