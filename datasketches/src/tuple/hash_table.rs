@@ -20,6 +20,8 @@ use std::num::NonZeroU64;
 
 use crate::thetacommon::RawHashTableEntry;
 use crate::thetacommon::hash_table::RawHashTable;
+use crate::thetacommon::union::RawThetaUnionPolicy;
+use crate::tuple::SummaryCombinePolicy;
 
 /// A retained entry in a Tuple sketch: a hash key together with its associated summary.
 #[derive(Debug, Clone)]
@@ -37,7 +39,7 @@ impl<S> TupleEntry<S> {
     /// # Panics
     ///
     /// Panics if `hash` is zero.
-    pub(crate) fn new(hash: u64, summary: S) -> Self {
+    pub(super) fn new(hash: u64, summary: S) -> Self {
         let hash = NonZeroU64::new(hash).expect("hash must be non-zero");
         Self { hash, summary }
     }
@@ -50,11 +52,6 @@ impl<S> TupleEntry<S> {
     /// Returns the summary stored in this entry.
     pub fn summary(&self) -> &S {
         &self.summary
-    }
-
-    /// Returns a mutable reference to the summary stored in this entry.
-    pub(super) fn summary_mut(&mut self) -> &mut S {
-        &mut self.summary
     }
 }
 
@@ -107,6 +104,12 @@ impl<S> TupleHashTable<S> {
     pub fn iter(&self) -> impl Iterator<Item = (u64, &S)> + '_ {
         self.iter_entries()
             .map(|entry| (entry.hash.get(), &entry.summary))
+    }
+}
+
+impl<P: SummaryCombinePolicy> RawThetaUnionPolicy<TupleEntry<P::Summary>> for P {
+    fn merge(&self, existing: &mut TupleEntry<P::Summary>, incoming: TupleEntry<P::Summary>) {
+        self.combine(&mut existing.summary, &incoming.summary);
     }
 }
 

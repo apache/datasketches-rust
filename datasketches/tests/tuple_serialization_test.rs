@@ -15,21 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! Cross-language compatibility tests for Tuple sketch serialization.
-//!
-//! The fixtures are produced by the upstream Java and C++ generators (see
-//! `tools/generate_serialization_test_data.py`):
-//!
-//! * Java: `TupleCrossLanguageTest.generateForCppIntegerSummary` writes `tuple_int_n{n}_java.sk`
-//!   using its `IntegerSummary`.
-//! * C++: `tuple_sketch_serialize_for_java.cpp` writes `tuple_int_n{n}_cpp.sk` using an `int`
-//!   summary.
-//!
-//! Both build a tuple sketch with `update(i, i)` for `i` in `0..n`, so the summary is a 4-byte
-//! little-endian signed integer — exactly what the `i32` [`TupleSummaryValue`] implementation
-//! reads. The `aod_*`/`aos_*` fixtures use Array-of-Doubles / Array-of-Strings summaries, which
-//! this crate does not implement, so they are intentionally not covered here.
-
 #![cfg(feature = "tuple")]
 
 mod common;
