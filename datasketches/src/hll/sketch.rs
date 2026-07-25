@@ -165,7 +165,7 @@ impl HllSketch {
     /// implementations require a specific value hashing strategy.
     ///
     /// If you need to insert the same logical value into multiple sketches, consider
-    /// pre-computing the coupon with [`Coupon::from_hash`] and calling
+    /// pre-computing the coupon with [`Coupon::from_value`] and calling
     /// [`update_with_coupon`](Self::update_with_coupon) on each sketch to avoid
     /// redundant hashing.
     ///
@@ -184,7 +184,7 @@ impl HllSketch {
     /// assert!(sketch.estimate() >= 1.0);
     /// ```
     pub fn update<T: Hash>(&mut self, value: T) {
-        self.update_with_coupon(Coupon::from_hash(value));
+        self.update_with_coupon(Coupon::from_value(value));
     }
 
     /// Update the sketch with a pre-computed [`Coupon`].
@@ -201,7 +201,7 @@ impl HllSketch {
     ///
     /// ```
     /// # use datasketches::hll::{HllSketch, HllType, Coupon};
-    /// let c = Coupon::from_hash("apple");
+    /// let c = Coupon::from_value("apple");
     /// let mut sketch = HllSketch::new(10, HllType::Hll8);
     /// sketch.update_with_coupon(c);
     /// assert!(sketch.estimate() >= 1.0);
