@@ -32,6 +32,12 @@ pub struct ThetaIntersection {
     raw: RawThetaIntersection<ThetaEntry, NoopIntersectionPolicy>,
 }
 
+impl Default for ThetaIntersection {
+    fn default() -> Self {
+        Self::with_seed(DEFAULT_UPDATE_SEED)
+    }
+}
+
 #[derive(Debug)]
 struct NoopIntersectionPolicy;
 
@@ -40,12 +46,6 @@ impl RawThetaIntersectionPolicy<ThetaEntry> for NoopIntersectionPolicy {
 }
 
 impl ThetaIntersection {
-    /// Creates a new intersection operator with the default seed.
-    #[allow(clippy::new_without_default)]
-    pub fn new() -> Self {
-        Self::with_seed(DEFAULT_UPDATE_SEED)
-    }
-
     /// Creates a new intersection operator for the given `seed`.
     pub fn with_seed(seed: u64) -> Self {
         Self {

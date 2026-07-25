@@ -44,7 +44,7 @@ fn test_basic_difference() {
     b.update("shared");
     b.update("only_b");
 
-    let a_not_b = ThetaAnotB::new();
+    let a_not_b = ThetaAnotB::default();
     let r = a_not_b.compute(&a, &b, true).unwrap();
 
     // "shared" is subtracted; only "only_a" survives.
@@ -58,7 +58,7 @@ fn test_accepts_updatable_and_compact_inputs() {
     let a = sketch_with_range(0, 1000);
     let b = sketch_with_range(500, 1000);
 
-    let a_not_b = ThetaAnotB::new();
+    let a_not_b = ThetaAnotB::default();
     let r = a_not_b.compute(&a.compact(true), &b, true).unwrap();
     assert_eq!(r.num_retained(), 500);
 
@@ -83,7 +83,7 @@ fn test_seed_mismatch_ignored_for_empty_inputs() {
     let empty_other_seed = ThetaSketchBuilder::default().seed(2).build();
     let good = sketch_with_range(0, 10);
 
-    let a_not_b = ThetaAnotB::new();
+    let a_not_b = ThetaAnotB::default();
 
     let r = a_not_b.compute(&empty_other_seed, &good, true).unwrap();
     assert!(r.is_empty());
@@ -97,7 +97,7 @@ fn test_empty_a_returns_empty() {
     let empty = ThetaSketchBuilder::default().build();
     let b = sketch_with_range(0, 1000);
 
-    let a_not_b = ThetaAnotB::new();
+    let a_not_b = ThetaAnotB::default();
     let r = a_not_b.compute(&empty, &b, true).unwrap();
 
     assert!(r.is_empty());
@@ -110,7 +110,7 @@ fn test_empty_b_returns_a() {
     let a = sketch_with_range(0, 1000);
     let empty = ThetaSketchBuilder::default().build();
 
-    let a_not_b = ThetaAnotB::new();
+    let a_not_b = ThetaAnotB::default();
     let r = a_not_b.compute(&a, &empty, true).unwrap();
 
     assert_eq!(r.num_retained(), 1000);
@@ -122,7 +122,7 @@ fn test_exact_partial_overlap_unordered() {
     let a = sketch_with_range(0, 1000);
     let b = sketch_with_range(500, 1000);
 
-    let a_not_b = ThetaAnotB::new();
+    let a_not_b = ThetaAnotB::default();
     let r = a_not_b.compute(&a, &b, true).unwrap();
 
     // Keys 0..500 survive (exact mode).
@@ -137,7 +137,7 @@ fn test_exact_partial_overlap_ordered() {
     let a = sketch_with_range(0, 1000);
     let b = sketch_with_range(500, 1000);
 
-    let a_not_b = ThetaAnotB::new();
+    let a_not_b = ThetaAnotB::default();
     let r = a_not_b
         .compute(&a.compact(true), &b.compact(true), true)
         .unwrap();
@@ -153,7 +153,7 @@ fn test_exact_disjoint_returns_a() {
     let a = sketch_with_range(0, 1000);
     let b = sketch_with_range(1000, 1000);
 
-    let a_not_b = ThetaAnotB::new();
+    let a_not_b = ThetaAnotB::default();
     let r = a_not_b.compute(&a, &b, true).unwrap();
 
     assert!(!r.is_estimation_mode());
@@ -166,7 +166,7 @@ fn test_exact_superset_b_returns_empty() {
     let a = sketch_with_range(0, 1000);
     let b = sketch_with_range(0, 2000);
 
-    let a_not_b = ThetaAnotB::new();
+    let a_not_b = ThetaAnotB::default();
     let r = a_not_b.compute(&a, &b, true).unwrap();
 
     assert!(r.is_empty());
@@ -179,7 +179,7 @@ fn test_result_ordering() {
     let a = sketch_with_range(0, 64);
     let empty = ThetaSketchBuilder::default().build();
 
-    let a_not_b = ThetaAnotB::new();
+    let a_not_b = ThetaAnotB::default();
 
     let r = a_not_b.compute(&a, &empty, true).unwrap();
     assert!(r.is_ordered());
@@ -193,7 +193,7 @@ fn test_estimation_partial_overlap_unordered() {
     let a = sketch_with_range(0, 10000);
     let b = sketch_with_range(5000, 10000);
 
-    let a_not_b = ThetaAnotB::new();
+    let a_not_b = ThetaAnotB::default();
     let r = a_not_b.compute(&a, &b, true).unwrap();
 
     // True difference size is 5000 (keys 0..5000).
@@ -207,7 +207,7 @@ fn test_estimation_partial_overlap_ordered() {
     let a = sketch_with_range(0, 10000);
     let b = sketch_with_range(5000, 10000);
 
-    let a_not_b = ThetaAnotB::new();
+    let a_not_b = ThetaAnotB::default();
     let r = a_not_b
         .compute(&a.compact(true), &b.compact(true), true)
         .unwrap();
@@ -224,7 +224,7 @@ fn test_estimation_partial_overlap_deserialized_compact() {
     let c1 = CompactThetaSketch::deserialize(&a.compact(true).serialize()).unwrap();
     let c2 = CompactThetaSketch::deserialize(&b.compact(true).serialize()).unwrap();
 
-    let a_not_b = ThetaAnotB::new();
+    let a_not_b = ThetaAnotB::default();
     let r = a_not_b.compute(&c1, &c2, true).unwrap();
 
     assert!(!r.is_empty());
@@ -237,7 +237,7 @@ fn test_estimation_disjoint_returns_a() {
     let a = sketch_with_range(0, 10000);
     let b = sketch_with_range(10000, 10000);
 
-    let a_not_b = ThetaAnotB::new();
+    let a_not_b = ThetaAnotB::default();
     let r = a_not_b.compute(&a, &b, true).unwrap();
 
     assert!(!r.is_empty());

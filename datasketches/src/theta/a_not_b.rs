@@ -43,7 +43,7 @@ use crate::thetacommon::a_not_b::RawThetaAnotB;
 /// let mut b = ThetaSketchBuilder::default().build();
 /// b.update("banana");
 ///
-/// let a_not_b = ThetaAnotB::new();
+/// let a_not_b = ThetaAnotB::default();
 /// let result = a_not_b.compute(&a, &b, true).unwrap();
 /// assert_eq!(result.num_retained(), 1); // only "apple" survives
 /// ```
@@ -52,13 +52,13 @@ pub struct ThetaAnotB {
     raw: RawThetaAnotB,
 }
 
-impl ThetaAnotB {
-    /// Creates a new set difference operator with the default seed.
-    #[allow(clippy::new_without_default)]
-    pub fn new() -> Self {
+impl Default for ThetaAnotB {
+    fn default() -> Self {
         Self::with_seed(DEFAULT_UPDATE_SEED)
     }
+}
 
+impl ThetaAnotB {
     /// Creates a new set difference operator for the given `seed`.
     pub fn with_seed(seed: u64) -> Self {
         Self {
