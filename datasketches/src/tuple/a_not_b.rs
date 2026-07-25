@@ -20,11 +20,11 @@
 //! [`TupleAnotB`] computes the set difference of two Tuple sketches: the keys retained in `A` that
 //! are not present in `B`. Surviving keys keep their summaries from `A` unchanged, so unlike the
 //! union and intersection this operation needs no combine policy. The logic lives in the shared
-//! raw operator (`RawAnotB`) that also drives the Theta a-not-B.
+//! raw operator (`RawThetaAnotB`) that also drives the Theta a-not-B.
 
 use crate::error::Error;
 use crate::hash::DEFAULT_UPDATE_SEED;
-use crate::thetacommon::a_not_b::RawAnotB;
+use crate::thetacommon::a_not_b::RawThetaAnotB;
 use crate::tuple::sketch::CompactTupleSketch;
 use crate::tuple::sketch::TupleSketchView;
 
@@ -52,7 +52,7 @@ use crate::tuple::sketch::TupleSketchView;
 /// ```
 #[derive(Debug, Clone, Copy)]
 pub struct TupleAnotB {
-    raw: RawAnotB,
+    raw: RawThetaAnotB,
 }
 
 impl TupleAnotB {
@@ -65,7 +65,7 @@ impl TupleAnotB {
     /// Creates a new set difference operator for the given `seed`.
     pub fn with_seed(seed: u64) -> Self {
         Self {
-            raw: RawAnotB::new(seed),
+            raw: RawThetaAnotB::new(seed),
         }
     }
 
