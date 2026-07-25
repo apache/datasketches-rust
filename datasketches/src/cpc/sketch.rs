@@ -142,25 +142,25 @@ impl CpcSketch {
         )
     }
 
-    /// Returns the best estimate of the lower bound of the confidence interval given `kappa`.
-    pub fn lower_bound(&self, kappa: NumStdDev) -> f64 {
+    /// Returns the best estimate of the lower bound of the confidence interval.
+    pub fn lower_bound(&self, num_std_dev: NumStdDev) -> f64 {
         lower_bound(
             self.merge_flag,
             self.hip_est_accum,
             self.lg_k,
             self.num_coupons,
-            kappa,
+            num_std_dev,
         )
     }
 
-    /// Returns the best estimate of the upper bound of the confidence interval given `kappa`.
-    pub fn upper_bound(&self, kappa: NumStdDev) -> f64 {
+    /// Returns the best estimate of the upper bound of the confidence interval.
+    pub fn upper_bound(&self, num_std_dev: NumStdDev) -> f64 {
         upper_bound(
             self.merge_flag,
             self.hip_est_accum,
             self.lg_k,
             self.num_coupons,
-            kappa,
+            num_std_dev,
         )
     }
 
