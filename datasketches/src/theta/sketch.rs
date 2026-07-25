@@ -537,7 +537,7 @@ impl CompactThetaSketch {
                 packer.pack_value(delta, entry_bits);
                 i += 1;
             }
-            let bytes_used = packer.byte_used();
+            let bytes_used = packer.bytes_used();
             bytes.write(&block[0..bytes_used]);
         }
 
