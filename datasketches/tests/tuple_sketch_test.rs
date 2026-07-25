@@ -17,12 +17,13 @@
 
 #![cfg(feature = "tuple")]
 
-mod common;
+#[path = "support/tuple_builder.rs"]
+mod tuple_builder;
 
 use datasketches::common::NumStdDev;
 use datasketches::hash_value;
 
-use crate::common::default_tuple_sketch_builder;
+use crate::tuple_builder::default_tuple_sketch_builder;
 
 #[test]
 fn test_basic_update() {

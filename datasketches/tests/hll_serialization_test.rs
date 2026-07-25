@@ -17,15 +17,16 @@
 
 #![cfg(feature = "hll")]
 
-mod common;
+#[path = "support/serialization_data.rs"]
+mod serialization_data;
 
 use std::fs;
 use std::path::PathBuf;
 
-use common::serialization_test_data;
 use datasketches::hash_value::natural_extend;
 use datasketches::hll::HllSketch;
 use datasketches::hll::HllType;
+use serialization_data::serialization_test_data;
 
 fn test_sketch_file(path: PathBuf, expected_cardinality: usize, expected_lg_k: u8) {
     let expected = expected_cardinality as f64;

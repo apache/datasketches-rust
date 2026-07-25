@@ -17,17 +17,18 @@
 
 #![cfg(feature = "frequencies")]
 
-mod common;
+#[path = "support/serialization_data.rs"]
+mod serialization_data;
 
 use std::fs;
 
-use common::serialization_test_data;
 use datasketches::codec::SketchBytes;
 use datasketches::codec::SketchSlice;
 use datasketches::error::Error;
 use datasketches::error::ErrorKind;
 use datasketches::frequencies::FrequentItemValue;
 use datasketches::frequencies::FrequentItemsSketch;
+use serialization_data::serialization_test_data;
 
 #[derive(Debug, PartialEq, Eq, Hash)]
 struct NonCloneSerializableItem(i64);

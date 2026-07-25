@@ -23,13 +23,16 @@
 
 #![cfg(feature = "tuple")]
 
-mod common;
+#[path = "support/tuple_builder.rs"]
+mod tuple_builder;
+#[path = "support/tuple_fixtures.rs"]
+mod tuple_fixtures;
 
 use datasketches::tuple::CompactTupleSketch;
 use datasketches::tuple::TupleAnotB;
 
-use crate::common::default_tuple_sketch_builder;
-use crate::common::tuple_sketch_with_range;
+use crate::tuple_builder::default_tuple_sketch_builder;
+use crate::tuple_fixtures::tuple_sketch_with_range;
 
 #[test]
 fn test_basic_difference_keeps_summaries_from_a() {
