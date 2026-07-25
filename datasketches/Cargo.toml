@@ -47,6 +47,11 @@ tdigest = []
 theta = []
 tuple = []
 
+[[test]]
+name = "tuple_test"
+path = "tests/tuple_test/main.rs"
+required-features = ["tuple"]
+
 [dev-dependencies]
 googletest = { workspace = true }
 insta = { workspace = true }

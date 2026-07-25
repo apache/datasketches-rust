@@ -15,20 +15,13 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#![cfg(feature = "tuple")]
-
-#[path = "support/tuple_builder.rs"]
-mod tuple_builder;
-#[path = "support/tuple_fixtures.rs"]
-mod tuple_fixtures;
-
 use datasketches::tuple::CompactTupleSketch;
 use datasketches::tuple::SummaryCombinePolicy;
 use datasketches::tuple::SummaryPolicy;
 use datasketches::tuple::TupleIntersection;
 
-use crate::tuple_builder::default_tuple_sketch_builder;
-use crate::tuple_fixtures::tuple_sketch_with_range;
+use super::default_tuple_sketch_builder;
+use super::tuple_sketch_with_range;
 
 #[derive(Debug, Default, Clone, Copy)]
 struct SumPolicy;

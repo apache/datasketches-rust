@@ -15,13 +15,21 @@
 // specific language governing permissions and limitations
 // under the License.
 
+//! Integration tests for tuple sketches and set operations.
+
+mod a_not_b;
+mod intersection;
+mod sketch;
+
 use datasketches::tuple::DefaultUpdatePolicy;
 use datasketches::tuple::TupleSketch;
+use datasketches::tuple::TupleSketchBuilder;
 
-use crate::tuple_builder::default_tuple_sketch_builder;
+fn default_tuple_sketch_builder() -> TupleSketchBuilder<DefaultUpdatePolicy<u64>> {
+    TupleSketchBuilder::new(DefaultUpdatePolicy::<u64>::default())
+}
 
-/// Builds a tuple sketch updated with keys `start..start + count`, each with summary 1.
-pub fn tuple_sketch_with_range(start: u64, count: u64) -> TupleSketch<DefaultUpdatePolicy<u64>> {
+fn tuple_sketch_with_range(start: u64, count: u64) -> TupleSketch<DefaultUpdatePolicy<u64>> {
     let mut sketch = default_tuple_sketch_builder().build();
     for i in 0..count {
         sketch.update(start + i, 1u64);
