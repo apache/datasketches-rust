@@ -40,7 +40,7 @@ pub trait RawThetaIntersectionPolicy<E> {
 pub struct RawThetaIntersection<E, P> {
     table: RawHashTable<E>,
     policy: P,
-    is_valid: bool,
+    has_result: bool,
 }
 
 impl<E, P> RawThetaIntersection<E, P>
@@ -50,7 +50,7 @@ where
     /// Creates a new intersection operator for the given `seed` and entry-merge `policy`.
     pub fn new(seed: u64, policy: P) -> Self {
         Self {
-            is_valid: false,
+            has_result: false,
             table: RawHashTable::from_raw_parts(
                 0,
                 0,
@@ -108,19 +108,19 @@ where
             self.table.theta().min(sketch.theta())
         });
 
-        if self.is_valid && self.table.num_retained() == 0 {
+        if self.has_result && self.table.num_retained() == 0 {
             return Ok(());
         }
 
         if sketch.num_retained() == 0 {
-            self.is_valid = true;
+            self.has_result = true;
             self.table = new_default_table(&self.table);
             return Ok(());
         }
 
         // first update, copy incoming entries
-        if !self.is_valid {
-            self.is_valid = true;
+        if !self.has_result {
+            self.has_result = true;
             let lg_size = RawHashTable::<E>::lg_size_from_count_for_rebuild(
                 sketch.num_retained(),
                 HASH_TABLE_REBUILD_THRESHOLD,
@@ -226,7 +226,7 @@ where
 
     /// Returns whether this operator has received at least one update.
     pub fn has_result(&self) -> bool {
-        self.is_valid
+        self.has_result
     }
 
     /// Return the current intersection state as raw compact-sketch parts.
