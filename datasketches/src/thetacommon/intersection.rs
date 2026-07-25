@@ -105,7 +105,7 @@ where
         self.table.set_theta(if self.table.is_empty() {
             MAX_THETA
         } else {
-            self.table.theta().min(sketch.theta())
+            self.table.theta().min(sketch.theta64())
         });
 
         if self.has_result && self.table.num_retained() == 0 {
@@ -285,7 +285,7 @@ mod tests {
             crate::hash::compute_seed_hash(DEFAULT_UPDATE_SEED)
         }
 
-        fn theta(&self) -> u64 {
+        fn theta64(&self) -> u64 {
             MAX_THETA
         }
 

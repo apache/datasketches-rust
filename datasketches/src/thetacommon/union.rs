@@ -77,7 +77,7 @@ where
         }
 
         self.table.set_empty(false);
-        self.union_theta = self.union_theta.min(sketch.theta());
+        self.union_theta = self.union_theta.min(sketch.theta64());
 
         for entry in sketch.iter() {
             let hash = entry.hash();
@@ -180,7 +180,7 @@ mod tests {
             crate::hash::compute_seed_hash(DEFAULT_UPDATE_SEED)
         }
 
-        fn theta(&self) -> u64 {
+        fn theta64(&self) -> u64 {
             MAX_THETA
         }
 

@@ -257,7 +257,7 @@ where
         self.table.seed_hash()
     }
 
-    fn theta(&self) -> u64 {
+    fn theta64(&self) -> u64 {
         self.table.theta()
     }
 
@@ -571,7 +571,7 @@ impl<S: Clone> RawThetaSketchView<TupleEntry<S>> for CompactTupleSketch<S> {
         self.seed_hash
     }
 
-    fn theta(&self) -> u64 {
+    fn theta64(&self) -> u64 {
         self.theta
     }
 
