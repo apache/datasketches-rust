@@ -18,14 +18,14 @@
 //! Theta sketch set difference (`A and not B`).
 //!
 //! [`ThetaAnotB`] computes the set difference of two Theta sketches: the keys retained in `A`
-//! that are not present in `B`. The logic lives in the shared raw operator (`RawAnotB`) that also
-//! drives the Tuple a-not-B; Theta entries carry no summary, so nothing needs to be combined.
+//! that are not present in `B`. The logic lives in the shared raw operator (`RawThetaAnotB`) that
+//! also drives the Tuple a-not-B; Theta entries carry no summary, so nothing needs to be combined.
 
 use crate::error::Error;
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::theta::CompactThetaSketch;
 use crate::theta::ThetaSketchView;
-use crate::thetacommon::a_not_b::RawAnotB;
+use crate::thetacommon::a_not_b::RawThetaAnotB;
 
 /// Set difference operator (`A and not B`) for Theta sketches.
 ///
@@ -43,26 +43,27 @@ use crate::thetacommon::a_not_b::RawAnotB;
 /// let mut b = ThetaSketchBuilder::default().build();
 /// b.update("banana");
 ///
-/// let a_not_b = ThetaAnotB::new_with_default_seed();
+/// let a_not_b = ThetaAnotB::default();
 /// let result = a_not_b.compute(&a, &b, true).unwrap();
 /// assert_eq!(result.num_retained(), 1); // only "apple" survives
 /// ```
 #[derive(Debug, Clone, Copy)]
 pub struct ThetaAnotB {
-    raw: RawAnotB,
+    raw: RawThetaAnotB,
+}
+
+impl Default for ThetaAnotB {
+    fn default() -> Self {
+        Self::with_seed(DEFAULT_UPDATE_SEED)
+    }
 }
 
 impl ThetaAnotB {
     /// Creates a new set difference operator for the given `seed`.
-    pub fn new(seed: u64) -> Self {
+    pub fn with_seed(seed: u64) -> Self {
         Self {
-            raw: RawAnotB::new(seed),
+            raw: RawThetaAnotB::new(seed),
         }
-    }
-
-    /// Creates a new set difference operator with the default seed.
-    pub fn new_with_default_seed() -> Self {
-        Self::new(DEFAULT_UPDATE_SEED)
     }
 
     /// Computes `a and not b`.

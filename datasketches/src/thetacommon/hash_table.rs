@@ -54,7 +54,7 @@ pub struct RawHashTable<E> {
     lg_max_size: u8,
     resize_factor: ResizeFactor,
     sampling_probability: f32,
-    hash_seed: u64,
+    seed: u64,
 
     // Logical emptiness of the source set.
     //
@@ -81,7 +81,7 @@ where
         lg_nom_size: u8,
         resize_factor: ResizeFactor,
         sampling_probability: f32,
-        hash_seed: u64,
+        seed: u64,
     ) -> Self {
         let lg_max_size = lg_nom_size + 1;
         let lg_cur_size = starting_sub_multiple(lg_max_size, MIN_LG_K, resize_factor.lg_value());
@@ -91,7 +91,7 @@ where
             resize_factor,
             sampling_probability,
             starting_theta_from_sampling_probability(sampling_probability),
-            hash_seed,
+            seed,
             true,
         )
     }
@@ -107,7 +107,7 @@ where
         resize_factor: ResizeFactor,
         sampling_probability: f32,
         theta: u64,
-        hash_seed: u64,
+        seed: u64,
         is_empty: bool,
     ) -> Self {
         let lg_max_size = lg_nom_size + 1;
@@ -123,7 +123,7 @@ where
             lg_max_size,
             resize_factor,
             sampling_probability,
-            hash_seed,
+            seed,
             is_empty,
             theta,
             entries,
@@ -133,7 +133,7 @@ where
 
     /// Hash a value with the table seed and return the hash.
     pub fn hash<T: Hash>(&self, value: T) -> u64 {
-        let mut hasher = MurmurHash3X64128::with_seed(self.hash_seed);
+        let mut hasher = MurmurHash3X64128::with_seed(self.seed);
         value.hash(&mut hasher);
         let (h1, _) = hasher.finish128();
         h1 >> 1 // To make it compatible with Java version
@@ -182,8 +182,8 @@ where
         self.num_retained += 1;
 
         // Check if we need to resize or rebuild.
-        let capacity = self.get_capacity();
-        if self.num_retained > capacity {
+        let capacity_threshold = self.capacity_threshold();
+        if self.num_retained > capacity_threshold {
             if self.lg_cur_size <= self.lg_nom_size {
                 self.resize();
             } else {
@@ -194,7 +194,7 @@ where
     }
 
     /// Returns a reference to the entry stored for `hash`, or `None` if the hash is not retained.
-    pub fn get_entry(&self, hash: u64) -> Option<&E> {
+    pub fn entry(&self, hash: u64) -> Option<&E> {
         if hash == 0 {
             return None;
         }
@@ -205,8 +205,8 @@ where
         }
     }
 
-    /// Get capacity threshold.
-    pub fn get_capacity(&self) -> usize {
+    /// Return the current resize or rebuild capacity threshold.
+    pub fn capacity_threshold(&self) -> usize {
         let fraction = if self.lg_cur_size <= self.lg_nom_size {
             HASH_TABLE_RESIZE_THRESHOLD
         } else {
@@ -306,7 +306,7 @@ where
 
     /// Get the hash of the seed that was used to hash the input.
     pub fn seed_hash(&self) -> u16 {
-        compute_seed_hash(self.hash_seed)
+        compute_seed_hash(self.seed)
     }
 
     /// Set empty flag.
@@ -314,9 +314,9 @@ where
         self.is_empty = is_empty;
     }
 
-    /// Get the hash seed used by this table.
-    pub fn hash_seed(&self) -> u64 {
-        self.hash_seed
+    /// Get the seed used by this table.
+    pub fn seed(&self) -> u64 {
+        self.seed
     }
 
     /// Sets theta value.

@@ -30,11 +30,11 @@ use crate::thetacommon::hash_table::RawCompactParts;
 /// entries also carry a summary. Surviving entries are moved from `A` unchanged, so unlike the
 /// union and intersection this operation needs no entry-merge policy.
 #[derive(Debug, Clone, Copy)]
-pub struct RawAnotB {
+pub struct RawThetaAnotB {
     seed_hash: u16,
 }
 
-impl RawAnotB {
+impl RawThetaAnotB {
     /// Creates a new set difference operator for the given `seed`.
     pub fn new(seed: u64) -> Self {
         Self {
@@ -66,7 +66,7 @@ impl RawAnotB {
         // A is non-empty, so its seed must be compatible.
         if a.seed_hash() != self.seed_hash {
             return Err(Error::invalid_argument(format!(
-                "A seed hash mismatch: expected {}, got {}",
+                "incompatible seed hash for A: expected {}, got {}",
                 self.seed_hash,
                 a.seed_hash()
             )));
@@ -82,7 +82,7 @@ impl RawAnotB {
         // B is non-empty, so its seed must be compatible.
         if b.seed_hash() != self.seed_hash {
             return Err(Error::invalid_argument(format!(
-                "B seed hash mismatch: expected {}, got {}",
+                "incompatible seed hash for B: expected {}, got {}",
                 self.seed_hash,
                 b.seed_hash()
             )));

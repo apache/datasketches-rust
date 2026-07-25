@@ -142,25 +142,25 @@ impl CpcSketch {
         )
     }
 
-    /// Returns the best estimate of the lower bound of the confidence interval given `kappa`.
-    pub fn lower_bound(&self, kappa: NumStdDev) -> f64 {
+    /// Returns the best estimate of the lower bound of the confidence interval.
+    pub fn lower_bound(&self, num_std_dev: NumStdDev) -> f64 {
         lower_bound(
             self.merge_flag,
             self.hip_est_accum,
             self.lg_k,
             self.num_coupons,
-            kappa,
+            num_std_dev,
         )
     }
 
-    /// Returns the best estimate of the upper bound of the confidence interval given `kappa`.
-    pub fn upper_bound(&self, kappa: NumStdDev) -> f64 {
+    /// Returns the best estimate of the upper bound of the confidence interval.
+    pub fn upper_bound(&self, num_std_dev: NumStdDev) -> f64 {
         upper_bound(
             self.merge_flag,
             self.hip_est_accum,
             self.lg_k,
             self.num_coupons,
-            kappa,
+            num_std_dev,
         )
     }
 
@@ -241,7 +241,7 @@ impl CpcSketch {
             .expect("surprising value table must be initialized")
     }
 
-    pub(super) fn mut_surprising_value_table(&mut self) -> &mut PairTable {
+    pub(super) fn surprising_value_table_mut(&mut self) -> &mut PairTable {
         self.surprising_value_table
             .as_mut()
             .expect("surprising value table must be initialized")
@@ -259,7 +259,7 @@ impl CpcSketch {
         let k = 1 << self.lg_k;
         let c32pre = (self.num_coupons as u64) << 5;
         debug_assert!(c32pre < 3 * k); // C < 3K/32, in other words, flavor == SPARSE
-        let is_novel = self.mut_surprising_value_table().maybe_insert(row_col);
+        let is_novel = self.surprising_value_table_mut().maybe_insert(row_col);
         if is_novel {
             self.num_coupons += 1;
             self.update_hip(row_col);
@@ -292,7 +292,7 @@ impl CpcSketch {
                     self.sliding_window[row] |= 1 << col;
                 } else {
                     // cannot use must_insert(), because it doesn't provide for growth
-                    let is_novel = self.mut_surprising_value_table().maybe_insert(row_col);
+                    let is_novel = self.surprising_value_table_mut().maybe_insert(row_col);
                     debug_assert!(is_novel);
                 }
             }
@@ -312,7 +312,7 @@ impl CpcSketch {
         let col = (row_col & 63) as u8;
         if col < self.window_offset {
             // track the surprising 0's "before" the window
-            is_novel = self.mut_surprising_value_table().maybe_delete(row_col); // inverted logic
+            is_novel = self.surprising_value_table_mut().maybe_delete(row_col); // inverted logic
         } else if col < self.window_offset + 8 {
             // track the 8 bits inside the window
             let row = (row_col >> 6) as usize;
@@ -324,7 +324,7 @@ impl CpcSketch {
             }
         } else {
             // track the surprising 1's "after" the window
-            is_novel = self.mut_surprising_value_table().maybe_insert(row_col); // normal logic
+            is_novel = self.surprising_value_table_mut().maybe_insert(row_col); // normal logic
         }
 
         if is_novel {
@@ -358,7 +358,7 @@ impl CpcSketch {
             self.refresh_kxp(&bit_matrix);
         }
 
-        self.mut_surprising_value_table().clear(); // the new number of surprises will be about the same
+        self.surprising_value_table_mut().clear(); // the new number of surprises will be about the same
 
         let mask_for_clearing_window = (0xFF << new_offset) ^ u64::MAX;
         let mask_for_flipping_early_zone = (1u64 << new_offset) - 1;
@@ -376,7 +376,7 @@ impl CpcSketch {
                 let col = pattern.trailing_zeros();
                 pattern ^= 1 << col; // erase the 1
                 let row_col = ((i as u32) << 6) | col;
-                let is_novel = self.mut_surprising_value_table().maybe_insert(row_col);
+                let is_novel = self.surprising_value_table_mut().maybe_insert(row_col);
                 debug_assert!(is_novel);
             }
         }
@@ -629,7 +629,7 @@ impl CpcSketch {
             return Err(Error::new(
                 ErrorKind::InvalidData,
                 format!(
-                    "seed hash mismatch: expected {}, got {}",
+                    "incompatible seed hash: expected {}, got {}",
                     compute_seed_hash(seed),
                     seed_hash
                 ),

@@ -30,10 +30,10 @@ pub trait RawHashTableEntry {
     fn hash(&self) -> u64;
 }
 
-/// Read-only input accepted by a raw Theta union.
+/// Read-only input accepted by raw Theta-family set operations.
 ///
-/// This trait carries complete retained entries, so tuple unions can use the same state machine
-/// while merging their per-key summaries.
+/// This trait carries complete retained entries, so Tuple union, intersection, and A-not-B
+/// operations can share the Theta-family state machines while preserving per-key summaries.
 pub trait RawThetaSketchView<E: RawHashTableEntry> {
     /// Return the 16-bit seed hash.
     fn seed_hash(&self) -> u16;

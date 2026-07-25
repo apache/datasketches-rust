@@ -382,7 +382,7 @@ mod tests {
             }
         }
 
-        let rebuild_threshold = table.get_capacity();
+        let rebuild_threshold = table.capacity_threshold();
 
         loop {
             let hash = table.hash(i);

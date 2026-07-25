@@ -45,7 +45,7 @@ fn test_has_result_state_machine() {
     let mut a = default_tuple_sketch_builder().build();
     a.update("x", 1u64);
 
-    let mut i = TupleIntersection::new_with_default_seed(SumPolicy);
+    let mut i = TupleIntersection::new(SumPolicy);
     assert!(!i.has_result());
     i.update(&a).unwrap();
     assert!(i.has_result());
@@ -54,7 +54,7 @@ fn test_has_result_state_machine() {
 
 #[test]
 fn test_result_before_update_panics() {
-    let i = TupleIntersection::new(123, SumPolicy);
+    let i = TupleIntersection::with_seed(SumPolicy, 123);
     let result = std::panic::catch_unwind(|| {
         let _ = i.to_sketch(true);
     });
@@ -71,7 +71,7 @@ fn test_update_accepts_compact_sketch() {
     b.update("y", 1u64);
     b.update("z", 1u64);
 
-    let mut i = TupleIntersection::new_with_default_seed(SumPolicy);
+    let mut i = TupleIntersection::new(SumPolicy);
     i.update(&a.compact(true)).unwrap();
     i.update(&b).unwrap();
 
@@ -94,7 +94,7 @@ fn test_update_accepts_compact_sketch() {
 #[test]
 fn test_seed_mismatch_behaviour_for_empty_sketch() {
     let empty_other_seed = default_tuple_sketch_builder().seed(2).build();
-    let mut i = TupleIntersection::new(1, SumPolicy);
+    let mut i = TupleIntersection::with_seed(SumPolicy, 1);
 
     i.update(&empty_other_seed).unwrap();
     assert!(i.has_result());
@@ -106,7 +106,7 @@ fn test_seed_mismatch_behaviour_for_empty_sketch() {
 fn test_seed_mismatch_behaviour() {
     let mut one_other_seed = default_tuple_sketch_builder().seed(2).build();
     one_other_seed.update("value", 1u64);
-    let mut i = TupleIntersection::new(1, SumPolicy);
+    let mut i = TupleIntersection::with_seed(SumPolicy, 1);
 
     assert!(i.update(&one_other_seed).is_err());
 }
@@ -118,7 +118,7 @@ fn test_terminal_empty_state_ignores_future_updates() {
     let mut non_empty = default_tuple_sketch_builder().build();
     non_empty.update("x", 1u64);
 
-    let mut i = TupleIntersection::new_with_default_seed(SumPolicy);
+    let mut i = TupleIntersection::new(SumPolicy);
     i.update(&empty).unwrap();
     i.update(&non_empty).unwrap();
 
@@ -132,7 +132,7 @@ fn test_to_sketch_unordered_is_not_ordered() {
     for i in 0..64 {
         a.update(i, 1u64);
     }
-    let mut i = TupleIntersection::new_with_default_seed(SumPolicy);
+    let mut i = TupleIntersection::new(SumPolicy);
     i.update(&a).unwrap();
 
     let r = i.to_sketch(false);
@@ -142,7 +142,7 @@ fn test_to_sketch_unordered_is_not_ordered() {
 #[test]
 fn test_empty_update_twice() {
     let empty = default_tuple_sketch_builder().build();
-    let mut i = TupleIntersection::new_with_default_seed(SumPolicy);
+    let mut i = TupleIntersection::new(SumPolicy);
 
     i.update(&empty).unwrap();
     let r1 = i.to_sketch(true);
@@ -166,7 +166,7 @@ fn test_non_empty_no_retained_keys() {
         .build();
     s.update(1u64, 1u64);
 
-    let mut i = TupleIntersection::new_with_default_seed(SumPolicy);
+    let mut i = TupleIntersection::new(SumPolicy);
     i.update(&s).unwrap();
     let r1 = i.to_sketch(true);
     assert_eq!(r1.num_retained(), 0);
@@ -189,7 +189,7 @@ fn test_exact_half_overlap_unordered() {
     let s1 = tuple_sketch_with_range(0, 1000);
     let s2 = tuple_sketch_with_range(500, 1000);
 
-    let mut i = TupleIntersection::new_with_default_seed(SumPolicy);
+    let mut i = TupleIntersection::new(SumPolicy);
     i.update(&s1).unwrap();
     i.update(&s2).unwrap();
     let r = i.to_sketch(true);
@@ -204,7 +204,7 @@ fn test_exact_half_overlap_ordered() {
     let s1 = tuple_sketch_with_range(0, 1000);
     let s2 = tuple_sketch_with_range(500, 1000);
 
-    let mut i = TupleIntersection::new_with_default_seed(SumPolicy);
+    let mut i = TupleIntersection::new(SumPolicy);
     i.update(&s1.compact(true)).unwrap();
     i.update(&s2.compact(true)).unwrap();
     let r = i.to_sketch(true);
@@ -219,7 +219,7 @@ fn test_exact_disjoint_unordered() {
     let s1 = tuple_sketch_with_range(0, 1000);
     let s2 = tuple_sketch_with_range(1000, 1000);
 
-    let mut i = TupleIntersection::new_with_default_seed(SumPolicy);
+    let mut i = TupleIntersection::new(SumPolicy);
     i.update(&s1).unwrap();
     i.update(&s2).unwrap();
     let r = i.to_sketch(true);
@@ -234,7 +234,7 @@ fn test_exact_disjoint_ordered() {
     let s1 = tuple_sketch_with_range(0, 1000);
     let s2 = tuple_sketch_with_range(1000, 1000);
 
-    let mut i = TupleIntersection::new_with_default_seed(SumPolicy);
+    let mut i = TupleIntersection::new(SumPolicy);
     i.update(&s1.compact(true)).unwrap();
     i.update(&s2.compact(true)).unwrap();
     let r = i.to_sketch(true);
@@ -249,7 +249,7 @@ fn test_estimation_half_overlap_unordered() {
     let s1 = tuple_sketch_with_range(0, 10000);
     let s2 = tuple_sketch_with_range(5000, 10000);
 
-    let mut i = TupleIntersection::new_with_default_seed(SumPolicy);
+    let mut i = TupleIntersection::new(SumPolicy);
     i.update(&s1).unwrap();
     i.update(&s2).unwrap();
     let r = i.to_sketch(true);
@@ -264,7 +264,7 @@ fn test_estimation_half_overlap_ordered() {
     let s1 = tuple_sketch_with_range(0, 10000);
     let s2 = tuple_sketch_with_range(5000, 10000);
 
-    let mut i = TupleIntersection::new_with_default_seed(SumPolicy);
+    let mut i = TupleIntersection::new(SumPolicy);
     i.update(&s1.compact(true)).unwrap();
     i.update(&s2.compact(true)).unwrap();
     let r = i.to_sketch(true);
@@ -281,7 +281,7 @@ fn test_estimation_half_overlap_ordered_deserialized_compact() {
     let c1 = CompactTupleSketch::<u64>::deserialize(&s1.compact(true).serialize()).unwrap();
     let c2 = CompactTupleSketch::<u64>::deserialize(&s2.compact(true).serialize()).unwrap();
 
-    let mut i = TupleIntersection::new_with_default_seed(SumPolicy);
+    let mut i = TupleIntersection::new(SumPolicy);
     i.update(&c1).unwrap();
     i.update(&c2).unwrap();
     let r = i.to_sketch(true);
@@ -296,7 +296,7 @@ fn test_estimation_disjoint_unordered() {
     let s1 = tuple_sketch_with_range(0, 10000);
     let s2 = tuple_sketch_with_range(10000, 10000);
 
-    let mut i = TupleIntersection::new_with_default_seed(SumPolicy);
+    let mut i = TupleIntersection::new(SumPolicy);
     i.update(&s1).unwrap();
     i.update(&s2).unwrap();
     let r = i.to_sketch(true);
@@ -311,7 +311,7 @@ fn test_estimation_disjoint_ordered() {
     let s1 = tuple_sketch_with_range(0, 10000);
     let s2 = tuple_sketch_with_range(10000, 10000);
 
-    let mut i = TupleIntersection::new_with_default_seed(SumPolicy);
+    let mut i = TupleIntersection::new(SumPolicy);
     i.update(&s1.compact(true)).unwrap();
     i.update(&s2.compact(true)).unwrap();
     let r = i.to_sketch(true);
@@ -326,6 +326,6 @@ fn test_seed_mismatch_non_empty_returns_error() {
     let mut s = default_tuple_sketch_builder().build();
     s.update(1u64, 1u64);
 
-    let mut i = TupleIntersection::new(123, SumPolicy);
+    let mut i = TupleIntersection::with_seed(SumPolicy, 123);
     assert!(i.update(&s).is_err());
 }

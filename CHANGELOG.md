@@ -7,6 +7,10 @@ All significant changes to this project will be documented in this file.
 ### Breaking changes
 
 * Remove `ThetaSketch::builder`, `ThetaUnion::builder`, and `TupleSketch::builder`. Construct `ThetaSketchBuilder`, `ThetaUnionBuilder`, and `TupleSketchBuilder` with `Default::default` instead.
+* Standardize Theta and Tuple set-operation constructors. Zero-configuration operators use
+  `Default::default()`, `TupleIntersection::new(policy)` uses the default seed, and `with_seed`
+  accepts a custom seed. This replaces the previous `new(seed)` and `new_with_default_seed`
+  methods.
 
 ### New features
 

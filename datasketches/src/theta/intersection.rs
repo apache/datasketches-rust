@@ -32,6 +32,12 @@ pub struct ThetaIntersection {
     raw: RawThetaIntersection<ThetaEntry, NoopIntersectionPolicy>,
 }
 
+impl Default for ThetaIntersection {
+    fn default() -> Self {
+        Self::with_seed(DEFAULT_UPDATE_SEED)
+    }
+}
+
 #[derive(Debug)]
 struct NoopIntersectionPolicy;
 
@@ -41,15 +47,10 @@ impl RawThetaIntersectionPolicy<ThetaEntry> for NoopIntersectionPolicy {
 
 impl ThetaIntersection {
     /// Creates a new intersection operator for the given `seed`.
-    pub fn new(seed: u64) -> Self {
+    pub fn with_seed(seed: u64) -> Self {
         Self {
             raw: RawThetaIntersection::new(seed, NoopIntersectionPolicy),
         }
-    }
-
-    /// Creates a new intersection operator with the default seed.
-    pub fn new_with_default_seed() -> Self {
-        Self::new(DEFAULT_UPDATE_SEED)
     }
 
     /// Updates the intersection with a given sketch.
