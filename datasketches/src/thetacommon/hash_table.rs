@@ -182,8 +182,8 @@ where
         self.num_retained += 1;
 
         // Check if we need to resize or rebuild.
-        let capacity = self.get_capacity();
-        if self.num_retained > capacity {
+        let capacity_threshold = self.capacity_threshold();
+        if self.num_retained > capacity_threshold {
             if self.lg_cur_size <= self.lg_nom_size {
                 self.resize();
             } else {
@@ -205,8 +205,8 @@ where
         }
     }
 
-    /// Get capacity threshold.
-    pub fn get_capacity(&self) -> usize {
+    /// Return the current resize or rebuild capacity threshold.
+    pub fn capacity_threshold(&self) -> usize {
         let fraction = if self.lg_cur_size <= self.lg_nom_size {
             HASH_TABLE_RESIZE_THRESHOLD
         } else {
