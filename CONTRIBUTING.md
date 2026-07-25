@@ -83,6 +83,12 @@ Install the extra tools with:
 cargo install taplo-cli typos-cli hawkeye
 ```
 
+## Naming conventions
+
+Use `seed` for the full 64-bit value supplied to a hash function. Use `seed_hash` only for the
+derived 16-bit fingerprint used to verify sketch compatibility or stored in a serialized sketch.
+Do not use `hash_seed` as a synonym for `seed`.
+
 ## Serialization snapshots
 
 Some tests depend on snapshot files under `datasketches/tests/serialization_test_data`. If they are missing, tests will fail. Download them with:
