@@ -39,6 +39,7 @@
 //! assert!(sketch.estimate() >= 1.0);
 //! ```
 
+mod a_not_b;
 mod bit_pack;
 mod hash_table;
 mod intersection;
@@ -46,6 +47,7 @@ mod serialization;
 mod sketch;
 mod union;
 
+pub use self::a_not_b::ThetaAnotB;
 pub use self::hash_table::ThetaEntry;
 pub use self::intersection::ThetaIntersection;
 pub use self::sketch::CompactThetaSketch;

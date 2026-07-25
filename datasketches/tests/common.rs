@@ -17,6 +17,13 @@
 
 use std::path::PathBuf;
 
+#[cfg(feature = "tuple")]
+use datasketches::tuple::DefaultUpdatePolicy;
+#[cfg(feature = "tuple")]
+use datasketches::tuple::TupleSketch;
+#[cfg(feature = "tuple")]
+use datasketches::tuple::TupleSketchBuilder;
+
 #[allow(dead_code)] // false-positive
 pub fn test_data(name: &str) -> PathBuf {
     const TEST_DATA_DIR: &str = "tests/test_data";
@@ -26,6 +33,7 @@ pub fn test_data(name: &str) -> PathBuf {
         .join(name)
 }
 
+#[allow(dead_code)] // not every test target uses all helpers
 pub fn serialization_test_data(sub_dir: &str, name: &str) -> PathBuf {
     const SERDE_TEST_DATA_DIR: &str = "tests/serialization_test_data";
 
@@ -49,4 +57,22 @@ pub fn serialization_test_data(sub_dir: &str, name: &str) -> PathBuf {
     }
 
     path
+}
+
+/// Returns a tuple sketch builder with the default additive `u64` summary policy.
+#[cfg(feature = "tuple")]
+#[allow(dead_code)] // not every test target uses all helpers
+pub fn default_tuple_sketch_builder() -> TupleSketchBuilder<DefaultUpdatePolicy<u64>> {
+    TupleSketchBuilder::new(DefaultUpdatePolicy::<u64>::default())
+}
+
+/// Builds a tuple sketch updated with keys `start..start + count`, each with summary 1.
+#[cfg(feature = "tuple")]
+#[allow(dead_code)] // not every test target uses all helpers
+pub fn tuple_sketch_with_range(start: u64, count: u64) -> TupleSketch<DefaultUpdatePolicy<u64>> {
+    let mut sketch = default_tuple_sketch_builder().build();
+    for i in 0..count {
+        sketch.update(start + i, 1u64);
+    }
+    sketch
 }

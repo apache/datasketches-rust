@@ -17,6 +17,7 @@
 
 //! Data structures and functions that may be used across all the Theta sketch family.
 
+pub(crate) mod a_not_b;
 pub(crate) mod binomial_bounds;
 pub(crate) mod constants;
 pub(crate) mod hash_table;
