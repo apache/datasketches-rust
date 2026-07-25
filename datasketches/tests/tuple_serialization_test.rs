@@ -17,15 +17,16 @@
 
 #![cfg(feature = "tuple")]
 
-mod common;
+#[path = "support/serialization_data.rs"]
+mod serialization_data;
 
 use std::fs;
 use std::path::PathBuf;
 
-use common::serialization_test_data;
 use datasketches::tuple::CompactTupleSketch;
 use googletest::assert_that;
 use googletest::prelude::near;
+use serialization_data::serialization_test_data;
 
 fn test_sketch_file(path: PathBuf, expected_cardinality: usize) {
     let expected = expected_cardinality as f64;

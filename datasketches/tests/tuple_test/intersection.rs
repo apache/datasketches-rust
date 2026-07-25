@@ -15,17 +15,13 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#![cfg(feature = "tuple")]
-
-mod common;
-
 use datasketches::tuple::CompactTupleSketch;
 use datasketches::tuple::SummaryCombinePolicy;
 use datasketches::tuple::SummaryPolicy;
 use datasketches::tuple::TupleIntersection;
 
-use crate::common::default_tuple_sketch_builder;
-use crate::common::tuple_sketch_with_range;
+use super::default_tuple_sketch_builder;
+use super::tuple_sketch_with_range;
 
 #[derive(Debug, Default, Clone, Copy)]
 struct SumPolicy;

@@ -17,17 +17,20 @@
 
 #![cfg(feature = "tdigest")]
 
-mod common;
+#[path = "support/reference_data.rs"]
+mod reference_data;
+#[path = "support/serialization_data.rs"]
+mod serialization_data;
 
 use std::fs;
 use std::path::PathBuf;
 
-use common::serialization_test_data;
-use common::test_data;
 use datasketches::tdigest::TDigestMut;
 use googletest::assert_that;
 use googletest::prelude::eq;
 use googletest::prelude::near;
+use reference_data::test_data;
+use serialization_data::serialization_test_data;
 
 fn test_sketch_file(path: PathBuf, n: u64, with_buffer: bool, is_f32: bool) {
     let bytes = fs::read(&path).unwrap();

@@ -17,13 +17,14 @@
 
 #![cfg(feature = "bloom")]
 
-mod common;
+#[path = "support/serialization_data.rs"]
+mod serialization_data;
 
 use std::fs;
 use std::path::PathBuf;
 
-use common::serialization_test_data;
 use datasketches::bloom::BloomFilter;
+use serialization_data::serialization_test_data;
 
 fn test_bloom_filter_file(path: PathBuf, expected_num_items: u64, expected_num_hashes: u16) {
     let bytes = fs::read(&path).unwrap();

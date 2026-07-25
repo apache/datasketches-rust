@@ -21,15 +21,11 @@
 //! summaries from `a`. These tests use a `u64` summary with the default additive update policy,
 //! so the distinct-count behavior matches a plain Theta a-not-B.
 
-#![cfg(feature = "tuple")]
-
-mod common;
-
 use datasketches::tuple::CompactTupleSketch;
 use datasketches::tuple::TupleAnotB;
 
-use crate::common::default_tuple_sketch_builder;
-use crate::common::tuple_sketch_with_range;
+use super::default_tuple_sketch_builder;
+use super::tuple_sketch_with_range;
 
 #[test]
 fn test_basic_difference_keeps_summaries_from_a() {

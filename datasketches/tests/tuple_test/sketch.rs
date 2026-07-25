@@ -15,14 +15,10 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#![cfg(feature = "tuple")]
-
-mod common;
-
 use datasketches::common::NumStdDev;
 use datasketches::hash_value;
 
-use crate::common::default_tuple_sketch_builder;
+use super::default_tuple_sketch_builder;
 
 #[test]
 fn test_basic_update() {
