@@ -629,7 +629,7 @@ impl CpcSketch {
             return Err(Error::new(
                 ErrorKind::InvalidData,
                 format!(
-                    "seed hash mismatch: expected {}, got {}",
+                    "incompatible seed hash: expected {}, got {}",
                     compute_seed_hash(seed),
                     seed_hash
                 ),

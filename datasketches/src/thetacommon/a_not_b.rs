@@ -66,7 +66,7 @@ impl RawAnotB {
         // A is non-empty, so its seed must be compatible.
         if a.seed_hash() != self.seed_hash {
             return Err(Error::invalid_argument(format!(
-                "A seed hash mismatch: expected {}, got {}",
+                "incompatible seed hash for A: expected {}, got {}",
                 self.seed_hash,
                 a.seed_hash()
             )));
@@ -82,7 +82,7 @@ impl RawAnotB {
         // B is non-empty, so its seed must be compatible.
         if b.seed_hash() != self.seed_hash {
             return Err(Error::invalid_argument(format!(
-                "B seed hash mismatch: expected {}, got {}",
+                "incompatible seed hash for B: expected {}, got {}",
                 self.seed_hash,
                 b.seed_hash()
             )));
