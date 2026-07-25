@@ -26,25 +26,19 @@ import urllib.request
 import zipfile
 from pathlib import Path, PurePosixPath
 
-TCK_ARCHIVE_URL = "https://github.com/apache/datasketches-tck/archive/0016a517/main.zip"
-OUTPUT_DIRS = {
-    "java": "java_generated_files",
-    "cpp": "cpp_generated_files",
-}
-
 
 def download_archive(destination):
-    print(f"Downloading serialization snapshots from {TCK_ARCHIVE_URL}", flush=True)
-    request = urllib.request.Request(TCK_ARCHIVE_URL)
+    archive_url = "https://github.com/apache/datasketches-tck/archive/0016a517/main.zip"
+    print(f"Downloading serialization snapshots from {archive_url}", flush=True)
+    request = urllib.request.Request(archive_url)
     with urllib.request.urlopen(request, timeout=60) as response:
         with destination.open("wb") as output:
             shutil.copyfileobj(response, output)
 
 
-def extract_snapshots(archive, project_dir, language):
+def extract_snapshots(archive, destination, language):
     source_parts = ("serialization", language, "snapshots")
     members = []
-
     for member in archive.infolist():
         path = PurePosixPath(member.filename)
         if (
@@ -53,23 +47,15 @@ def extract_snapshots(archive, project_dir, language):
             and path.parent.parts[-3:] == source_parts
         ):
             members.append((path.name, member))
-
     if not members:
         raise RuntimeError(f"no {language} snapshots found in the TCK archive")
 
-    output_dir = (
-        project_dir
-        / "tests"
-        / "serialization_test_data"
-        / OUTPUT_DIRS[language]
-    )
-    snapshot_root = output_dir.parent
-    if snapshot_root.is_symlink() or output_dir.is_symlink():
-        raise RuntimeError(f"snapshot output path cannot be a symbolic link: {output_dir}")
-    output_dir.mkdir(parents=True, exist_ok=True)
+    if destination.parent.is_symlink() or destination.is_symlink():
+        raise RuntimeError(f"snapshot output path cannot be a symbolic link: {destination}")
+    destination.mkdir(parents=True, exist_ok=True)
 
     expected_files = {name for name, _ in members}
-    for existing_file in output_dir.glob("*.sk"):
+    for existing_file in destination.glob("*.sk"):
         if existing_file.name not in expected_files:
             existing_file.unlink()
 
@@ -77,7 +63,7 @@ def extract_snapshots(archive, project_dir, language):
         temp_path = None
         try:
             with tempfile.NamedTemporaryFile(
-                dir=output_dir,
+                dir=destination,
                 prefix=f".{name}.",
                 delete=False,
             ) as output:
@@ -85,12 +71,12 @@ def extract_snapshots(archive, project_dir, language):
                 source = archive.open(member)
                 with source:
                     shutil.copyfileobj(source, output)
-            temp_path.replace(output_dir / name)
+            temp_path.replace(destination / name)
         finally:
             if temp_path is not None and temp_path.exists():
                 temp_path.unlink()
 
-    print(f"Extracted {len(members)} {language} snapshots into {output_dir}")
+    print(f"Extracted {len(members)} {language} snapshots into {destination}")
 
 
 def main():
@@ -102,26 +88,28 @@ def main():
     parser.add_argument("--all", action="store_true", help="Download all test data")
     args = parser.parse_args()
 
+    repository_root = Path(__file__).resolve().parents[1]
+    serialization_test_data = repository_root / "datasketches" / "tests" / "serialization_test_data"
+    generated_targets = {
+        "cpp": serialization_test_data / "cpp_generated_files",
+        "java": serialization_test_data / "java_generated_files",
+    }
+
     languages = []
     if args.java or args.all:
         languages.append("java")
     if args.cpp or args.all:
         languages.append("cpp")
     if not languages:
-        languages = list(OUTPUT_DIRS)
-
-    repository_root = Path(__file__).resolve().parents[1]
-    project_dir = repository_root / "datasketches"
+        languages = list(generated_targets)
 
     with tempfile.TemporaryDirectory(prefix="datasketches-tck-") as temp_dir:
         archive_path = Path(temp_dir) / "datasketches-tck.zip"
         download_archive(archive_path)
         with zipfile.ZipFile(archive_path) as archive:
             for language in languages:
-                extract_snapshots(archive, project_dir, language)
-
-    return 0
+                extract_snapshots(archive, generated_targets[language], language)
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()
