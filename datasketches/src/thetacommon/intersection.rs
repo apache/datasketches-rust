@@ -81,7 +81,7 @@ where
                 ResizeFactor::X1,
                 1.0,
                 table.theta(),
-                table.hash_seed(),
+                table.seed(),
                 table.is_empty(),
             )
         };
@@ -134,7 +134,7 @@ where
                 ResizeFactor::X1,
                 1.0,
                 self.table.theta(),
-                self.table.hash_seed(),
+                self.table.seed(),
                 self.table.is_empty(),
             );
             for entry in sketch.iter() {
@@ -205,7 +205,7 @@ where
                     ResizeFactor::X1,
                     1.0,
                     self.table.theta(),
-                    self.table.hash_seed(),
+                    self.table.seed(),
                     self.table.is_empty(),
                 );
                 for entry in matched_entries {
