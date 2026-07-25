@@ -161,7 +161,7 @@ where
             for entry in sketch.iter() {
                 let hash = entry.hash();
                 if hash < self.table.theta() {
-                    if let Some(existing) = self.table.get_entry(hash) {
+                    if let Some(existing) = self.table.entry(hash) {
                         if matched_entries.len() == max_matches {
                             return Err(Error::invalid_argument(
                                 "max matches exceeded, possibly corrupted input sketch",

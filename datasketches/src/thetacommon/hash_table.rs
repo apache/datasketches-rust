@@ -194,7 +194,7 @@ where
     }
 
     /// Returns a reference to the entry stored for `hash`, or `None` if the hash is not retained.
-    pub fn get_entry(&self, hash: u64) -> Option<&E> {
+    pub fn entry(&self, hash: u64) -> Option<&E> {
         if hash == 0 {
             return None;
         }
