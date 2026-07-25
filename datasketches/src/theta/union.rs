@@ -111,16 +111,16 @@ impl ThetaUnionBuilder {
     }
 
     /// Set resize factor.
-    pub fn resize_factor(mut self, resize_factor: ResizeFactor) -> Self {
-        self.resize_factor = resize_factor;
+    pub fn resize_factor(mut self, factor: ResizeFactor) -> Self {
+        self.resize_factor = factor;
         self
     }
 
-    /// Set sampling probability p.
+    /// Set sampling probability.
     ///
     /// # Panics
     ///
-    /// Panics if p is not in range `(0.0, 1.0]`
+    /// Panics if probability is not in range `(0.0, 1.0]`
     ///
     /// # Examples
     ///
@@ -130,12 +130,12 @@ impl ThetaUnionBuilder {
     ///     .sampling_probability(0.5)
     ///     .build();
     /// ```
-    pub fn sampling_probability(mut self, p: f32) -> Self {
+    pub fn sampling_probability(mut self, probability: f32) -> Self {
         assert!(
-            (0.0..=1.0).contains(&p) && p > 0.0,
-            "sampling_probability must be in (0.0, 1.0], got {p}"
+            (0.0..=1.0).contains(&probability) && probability > 0.0,
+            "sampling_probability must be in (0.0, 1.0], got {probability}"
         );
-        self.sampling_probability = p;
+        self.sampling_probability = probability;
         self
     }
 
