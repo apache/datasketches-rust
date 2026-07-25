@@ -46,7 +46,7 @@ use crate::tuple::sketch::TupleSketchView;
 /// let mut b = TupleSketchBuilder::new(update_policy).build();
 /// b.update("banana", 1);
 ///
-/// let a_not_b = TupleAnotB::new_with_default_seed();
+/// let a_not_b = TupleAnotB::new();
 /// let result = a_not_b.compute(&a, &b, true).unwrap();
 /// assert_eq!(result.num_retained(), 1); // only "apple" survives
 /// ```
@@ -56,16 +56,17 @@ pub struct TupleAnotB {
 }
 
 impl TupleAnotB {
+    /// Creates a new set difference operator with the default seed.
+    #[allow(clippy::new_without_default)]
+    pub fn new() -> Self {
+        Self::with_seed(DEFAULT_UPDATE_SEED)
+    }
+
     /// Creates a new set difference operator for the given `seed`.
-    pub fn new(seed: u64) -> Self {
+    pub fn with_seed(seed: u64) -> Self {
         Self {
             raw: RawAnotB::new(seed),
         }
-    }
-
-    /// Creates a new set difference operator with the default seed.
-    pub fn new_with_default_seed() -> Self {
-        Self::new(DEFAULT_UPDATE_SEED)
     }
 
     /// Computes `a and not b`.
@@ -128,9 +129,7 @@ mod tests {
             b.update(i, 1u64);
         }
 
-        let result = TupleAnotB::new_with_default_seed()
-            .compute(&a, &b, true)
-            .unwrap();
+        let result = TupleAnotB::new().compute(&a, &b, true).unwrap();
         // Keys 0..500 are only in A (exact mode).
         assert_eq!(result.num_retained(), 500);
         assert_eq!(result.estimate(), 500.0);
@@ -144,9 +143,7 @@ mod tests {
         let mut b = default_sketch_builder().build();
         b.update("shared", 99u64);
 
-        let result = TupleAnotB::new_with_default_seed()
-            .compute(&a, &b, true)
-            .unwrap();
+        let result = TupleAnotB::new().compute(&a, &b, true).unwrap();
         assert_eq!(result.num_retained(), 1);
         // The surviving key keeps A's summary; B's summary is never combined in.
         assert_eq!(result.iter().next().unwrap().1, &7);
@@ -160,9 +157,7 @@ mod tests {
         }
         let b = default_sketch_builder().build();
 
-        let result = TupleAnotB::new_with_default_seed()
-            .compute(&a, &b, true)
-            .unwrap();
+        let result = TupleAnotB::new().compute(&a, &b, true).unwrap();
         assert_eq!(result.num_retained(), 100);
         assert!(result.iter().all(|(_, &s)| s == 3));
     }
@@ -175,9 +170,7 @@ mod tests {
             b.update(i, 1u64);
         }
 
-        let result = TupleAnotB::new_with_default_seed()
-            .compute(&a, &b, true)
-            .unwrap();
+        let result = TupleAnotB::new().compute(&a, &b, true).unwrap();
         assert!(result.is_empty());
         assert_eq!(result.num_retained(), 0);
         assert_eq!(result.estimate(), 0.0);
@@ -194,9 +187,7 @@ mod tests {
             b.update(i, 1u64);
         }
 
-        let result = TupleAnotB::new_with_default_seed()
-            .compute(&a, &b, true)
-            .unwrap();
+        let result = TupleAnotB::new().compute(&a, &b, true).unwrap();
         assert_eq!(result.num_retained(), 0);
         assert_eq!(result.estimate(), 0.0);
     }
@@ -212,9 +203,7 @@ mod tests {
             b.update(i, 1u64);
         }
 
-        let result = TupleAnotB::new_with_default_seed()
-            .compute(&a, &b, true)
-            .unwrap();
+        let result = TupleAnotB::new().compute(&a, &b, true).unwrap();
         assert_eq!(result.num_retained(), 500);
     }
 
@@ -231,14 +220,12 @@ mod tests {
         let b_compact = b.compact(true);
 
         // a (updatable) not b (compact)
-        let result = TupleAnotB::new_with_default_seed()
-            .compute(&a, &b_compact, true)
-            .unwrap();
+        let result = TupleAnotB::new().compute(&a, &b_compact, true).unwrap();
         assert_eq!(result.num_retained(), 500);
 
         // a (compact) not b (compact)
         let a_compact = a.compact(true);
-        let result2 = TupleAnotB::new_with_default_seed()
+        let result2 = TupleAnotB::new()
             .compute(&a_compact, &b_compact, true)
             .unwrap();
         assert_eq!(result2.num_retained(), 500);
@@ -258,7 +245,7 @@ mod tests {
         }
         assert!(a.is_estimation_mode() && b.is_estimation_mode());
 
-        let op = TupleAnotB::new_with_default_seed();
+        let op = TupleAnotB::new();
         let unordered = op.compute(&a, &b, true).unwrap();
         let ordered = op
             .compute(&a.compact(true), &b.compact(true), true)
@@ -280,9 +267,7 @@ mod tests {
             b.update(i, 1u64);
         }
 
-        let result = TupleAnotB::new_with_default_seed()
-            .compute(&a, &b, true)
-            .unwrap();
+        let result = TupleAnotB::new().compute(&a, &b, true).unwrap();
         assert!(result.is_ordered());
         let entries = sorted_entries(&result);
         let iter_order: Vec<u64> = result.iter().map(|(h, _)| h).collect();
@@ -297,7 +282,7 @@ mod tests {
         let mut b = default_sketch_builder().seed(1).build();
         b.update(2, 1u64);
 
-        let err = TupleAnotB::new(2).compute(&a, &b, true).unwrap_err();
+        let err = TupleAnotB::with_seed(2).compute(&a, &b, true).unwrap_err();
         assert_eq!(err.kind(), ErrorKind::InvalidArgument);
     }
 
@@ -309,7 +294,7 @@ mod tests {
         a.update(1, 1u64);
         let b = default_sketch_builder().seed(1).build(); // empty
 
-        let err = TupleAnotB::new(2).compute(&a, &b, true).unwrap_err();
+        let err = TupleAnotB::with_seed(2).compute(&a, &b, true).unwrap_err();
         assert_eq!(err.kind(), ErrorKind::InvalidArgument);
     }
 
@@ -327,9 +312,7 @@ mod tests {
         // lowered by B).
         let b = default_sketch_builder().seed(999).build();
 
-        let result = TupleAnotB::new_with_default_seed()
-            .compute(&a, &b, true)
-            .unwrap();
+        let result = TupleAnotB::new().compute(&a, &b, true).unwrap();
         assert!(!result.is_empty());
         assert_eq!(result.num_retained(), 0);
         assert_eq!(result.theta64(), a.theta64());
@@ -346,9 +329,7 @@ mod tests {
             b.update(i, 1u64);
         }
 
-        let result = TupleAnotB::new_with_default_seed()
-            .compute(&a, &b, true)
-            .unwrap();
+        let result = TupleAnotB::new().compute(&a, &b, true).unwrap();
         assert!(result.is_estimation_mode());
         // True difference size is 25000 (keys 0..25000).
         let lower = result.lower_bound(NumStdDev::Three);

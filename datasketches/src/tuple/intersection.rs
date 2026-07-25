@@ -75,7 +75,7 @@ use crate::tuple::sketch::TupleSketchView;
 /// b.update("shared", 4);
 /// b.update("only_b", 1);
 ///
-/// let mut intersection = TupleIntersection::new_with_default_seed(SumPolicy);
+/// let mut intersection = TupleIntersection::new(SumPolicy);
 /// intersection.update(&a).unwrap();
 /// intersection.update(&b).unwrap();
 ///
@@ -95,16 +95,16 @@ impl<P> TupleIntersection<P>
 where
     P: SummaryCombinePolicy,
 {
-    /// Creates a new intersection operator for the given `seed` and combine `policy`.
-    pub fn new(seed: u64, policy: P) -> Self {
+    /// Creates a new intersection operator with the default seed and the given combine `policy`.
+    pub fn new(policy: P) -> Self {
+        Self::with_seed(policy, DEFAULT_UPDATE_SEED)
+    }
+
+    /// Creates a new intersection operator for the given combine `policy` and `seed`.
+    pub fn with_seed(policy: P, seed: u64) -> Self {
         Self {
             raw: RawThetaIntersection::new(seed, policy),
         }
-    }
-
-    /// Creates a new intersection operator with the default seed and the given combine `policy`.
-    pub fn new_with_default_seed(policy: P) -> Self {
-        Self::new(DEFAULT_UPDATE_SEED, policy)
     }
 
     /// Updates the intersection with a given sketch.
@@ -201,7 +201,7 @@ mod tests {
             b.update(i, 1u64);
         }
 
-        let mut intersection = TupleIntersection::new_with_default_seed(SumPolicy);
+        let mut intersection = TupleIntersection::new(SumPolicy);
         intersection.update(&a).unwrap();
         intersection.update(&b).unwrap();
 
@@ -221,7 +221,7 @@ mod tests {
         b.update("shared", 4u64);
         b.update("only_b", 200u64);
 
-        let mut intersection = TupleIntersection::new_with_default_seed(SumPolicy);
+        let mut intersection = TupleIntersection::new(SumPolicy);
         intersection.update(&a).unwrap();
         intersection.update(&b).unwrap();
 
@@ -241,11 +241,11 @@ mod tests {
             b.update(i, 1u64);
         }
 
-        let mut a_then_b = TupleIntersection::new_with_default_seed(SumPolicy);
+        let mut a_then_b = TupleIntersection::new(SumPolicy);
         a_then_b.update(&a).unwrap();
         a_then_b.update(&b).unwrap();
 
-        let mut b_then_a = TupleIntersection::new_with_default_seed(SumPolicy);
+        let mut b_then_a = TupleIntersection::new(SumPolicy);
         b_then_a.update(&b).unwrap();
         b_then_a.update(&a).unwrap();
 
@@ -267,7 +267,7 @@ mod tests {
         }
         let b_compact = b.compact(true);
 
-        let mut intersection = TupleIntersection::new_with_default_seed(SumPolicy);
+        let mut intersection = TupleIntersection::new(SumPolicy);
         intersection.update(&a).unwrap();
         intersection.update(&b_compact).unwrap();
 
@@ -285,7 +285,7 @@ mod tests {
             b.update(i, 1u64);
         }
 
-        let mut intersection = TupleIntersection::new_with_default_seed(SumPolicy);
+        let mut intersection = TupleIntersection::new(SumPolicy);
         intersection.update(&a).unwrap();
         intersection.update(&b).unwrap();
 
@@ -302,7 +302,7 @@ mod tests {
         }
         let empty = default_sketch_builder().build();
 
-        let mut intersection = TupleIntersection::new_with_default_seed(SumPolicy);
+        let mut intersection = TupleIntersection::new(SumPolicy);
         intersection.update(&a).unwrap();
         intersection.update(&empty).unwrap();
 
@@ -319,7 +319,7 @@ mod tests {
             a.update(i, 5u64);
         }
 
-        let mut intersection = TupleIntersection::new_with_default_seed(SumPolicy);
+        let mut intersection = TupleIntersection::new(SumPolicy);
         intersection.update(&a).unwrap();
 
         let result = intersection.to_sketch(true);
@@ -330,7 +330,7 @@ mod tests {
 
     #[test]
     fn has_result_reflects_first_update() {
-        let mut intersection = TupleIntersection::new_with_default_seed(SumPolicy);
+        let mut intersection = TupleIntersection::new(SumPolicy);
         assert!(!intersection.has_result());
 
         let mut a = default_sketch_builder().build();
@@ -342,7 +342,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "before first update")]
     fn result_before_update_panics() {
-        let intersection = TupleIntersection::new_with_default_seed(SumPolicy);
+        let intersection = TupleIntersection::new(SumPolicy);
         let _ = intersection.to_sketch(true);
     }
 
@@ -351,7 +351,7 @@ mod tests {
         let mut a = default_sketch_builder().seed(1).build();
         a.update(1, 1u64);
 
-        let mut intersection = TupleIntersection::new(2, SumPolicy);
+        let mut intersection = TupleIntersection::with_seed(SumPolicy, 2);
         let err = intersection.update(&a).unwrap_err();
         assert_eq!(err.kind(), crate::error::ErrorKind::InvalidArgument);
     }
@@ -367,7 +367,7 @@ mod tests {
             b.update(i, 1u64);
         }
 
-        let mut intersection = TupleIntersection::new_with_default_seed(SumPolicy);
+        let mut intersection = TupleIntersection::new(SumPolicy);
         intersection.update(&a).unwrap();
         intersection.update(&b).unwrap();
 
