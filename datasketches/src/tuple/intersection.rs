@@ -17,17 +17,17 @@
 
 //! Tuple sketch intersection.
 //!
-//! [`TupleIntersection`] computes the intersection (set AND) of Tuple sketches. It reuses the raw
-//! intersection state machine (`RawThetaIntersection`) that also drives the Theta intersection;
-//! the only Tuple-specific addition is that for each key retained in both the running result and
-//! the incoming sketch, the two summaries are combined with a [`SummaryCombinePolicy`].
+//! [`TupleIntersection`] computes the intersection (set AND) of Tuple sketches. It shares its state
+//! machine with the Theta intersection; the only Tuple-specific addition is that for each key
+//! retained in both the running result and the incoming sketch, the two summaries are combined
+//! with a [`SummaryCombinePolicy`].
 //!
 //! Unlike the union there is no default policy: how to combine the summaries of keys present in
 //! both inputs is application-specific, so a policy must always be supplied.
 
 use crate::error::Error;
 use crate::hash::DEFAULT_UPDATE_SEED;
-use crate::thetacommon::intersection::RawThetaIntersection;
+use crate::thetacommon::intersection::IntersectionState;
 use crate::tuple::hash_table::TupleEntry;
 use crate::tuple::policy::SummaryCombinePolicy;
 use crate::tuple::sketch::CompactTupleSketch;
@@ -88,7 +88,7 @@ pub struct TupleIntersection<P>
 where
     P: SummaryCombinePolicy,
 {
-    raw: RawThetaIntersection<TupleEntry<P::Summary>, P>,
+    state: IntersectionState<TupleEntry<P::Summary>, P>,
 }
 
 impl<P> TupleIntersection<P>
@@ -103,7 +103,7 @@ where
     /// Creates a new intersection operator for the given combine `policy` and `seed`.
     pub fn with_seed(policy: P, seed: u64) -> Self {
         Self {
-            raw: RawThetaIntersection::new(seed, policy),
+            state: IntersectionState::new(seed, policy),
         }
     }
 
@@ -122,12 +122,12 @@ where
         V: TupleSketchView<P::Summary>,
         P::Summary: Clone,
     {
-        self.raw.update(sketch)
+        self.state.update(sketch)
     }
 
     /// Returns whether this operator has received at least one update.
     pub fn has_result(&self) -> bool {
-        self.raw.has_result()
+        self.state.has_result()
     }
 
     /// Returns the intersection result as a compact Tuple sketch.
@@ -142,10 +142,10 @@ where
         P::Summary: Clone,
     {
         assert!(
-            self.raw.has_result(),
+            self.state.has_result(),
             "TupleIntersection::to_sketch() called before first update()"
         );
-        let parts = self.raw.result(ordered);
+        let parts = self.state.result(ordered);
         CompactTupleSketch::from_parts(
             parts.entries,
             parts.theta,

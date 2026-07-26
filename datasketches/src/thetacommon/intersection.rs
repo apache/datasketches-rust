@@ -17,18 +17,18 @@
 
 use crate::common::ResizeFactor;
 use crate::error::Error;
-use crate::thetacommon::RawHashTableEntry;
-use crate::thetacommon::RawThetaSketchView;
+use crate::thetacommon::RetainedEntry;
+use crate::thetacommon::ThetaFamilySketchView;
 use crate::thetacommon::constants::HASH_TABLE_REBUILD_THRESHOLD;
 use crate::thetacommon::constants::MAX_THETA;
-use crate::thetacommon::hash_table::RawCompactParts;
-use crate::thetacommon::hash_table::RawHashTable;
+use crate::thetacommon::hash_table::CompactSketchParts;
+use crate::thetacommon::hash_table::SketchHashTable;
 
 /// Merges an incoming entry into an existing entry with the same hash.
 ///
 /// For plain Theta entries there is nothing to merge (the entry is only a hash); tuple entries
 /// combine their summaries.
-pub trait RawThetaIntersectionPolicy<E> {
+pub trait IntersectionMergePolicy<E> {
     fn merge(&self, existing: &mut E, incoming: E);
 }
 
@@ -37,21 +37,21 @@ pub trait RawThetaIntersectionPolicy<E> {
 /// `E` is the retained entry type. `P` defines how equal-hash entries are combined; it is only
 /// exercised for keys present in both the running intersection and the incoming sketch.
 #[derive(Debug)]
-pub struct RawThetaIntersection<E, P> {
-    table: RawHashTable<E>,
+pub struct IntersectionState<E, P> {
+    table: SketchHashTable<E>,
     policy: P,
     has_result: bool,
 }
 
-impl<E, P> RawThetaIntersection<E, P>
+impl<E, P> IntersectionState<E, P>
 where
-    E: RawHashTableEntry,
+    E: RetainedEntry,
 {
     /// Creates a new intersection operator for the given `seed` and entry-merge `policy`.
     pub fn new(seed: u64, policy: P) -> Self {
         Self {
             has_result: false,
-            table: RawHashTable::from_raw_parts(
+            table: SketchHashTable::from_raw_parts(
                 0,
                 0,
                 ResizeFactor::X1,
@@ -70,12 +70,12 @@ where
     /// reduces the current set to the keys it shares with `sketch`.
     pub fn update<S>(&mut self, sketch: &S) -> Result<(), Error>
     where
-        S: RawThetaSketchView<E>,
+        S: ThetaFamilySketchView<Entry = E>,
         E: Clone,
-        P: RawThetaIntersectionPolicy<E>,
+        P: IntersectionMergePolicy<E>,
     {
-        let new_default_table = |table: &RawHashTable<E>| {
-            RawHashTable::from_raw_parts(
+        let new_default_table = |table: &SketchHashTable<E>| {
+            SketchHashTable::from_raw_parts(
                 0,
                 0,
                 ResizeFactor::X1,
@@ -121,14 +121,14 @@ where
         // first update, copy incoming entries
         if !self.has_result {
             self.has_result = true;
-            let lg_size = RawHashTable::<E>::lg_size_from_count_for_rebuild(
+            let lg_size = SketchHashTable::<E>::lg_size_from_count_for_rebuild(
                 sketch.num_retained(),
                 HASH_TABLE_REBUILD_THRESHOLD,
             );
             // num_retained >= 1 here (the zero case returned early above), so lg_size >= 1 and
             // lg_size - 1 below cannot underflow.
             debug_assert!(lg_size >= 1);
-            self.table = RawHashTable::from_raw_parts(
+            self.table = SketchHashTable::from_raw_parts(
                 lg_size,
                 lg_size - 1,
                 ResizeFactor::X1,
@@ -192,14 +192,14 @@ where
                     self.table.set_empty(true);
                 }
             } else {
-                let lg_size = RawHashTable::<E>::lg_size_from_count_for_rebuild(
+                let lg_size = SketchHashTable::<E>::lg_size_from_count_for_rebuild(
                     matched_entries.len(),
                     HASH_TABLE_REBUILD_THRESHOLD,
                 );
                 // matched_entries is non-empty here (the empty case is handled above), so
                 // lg_size >= 1 and lg_size - 1 below cannot underflow.
                 debug_assert!(lg_size >= 1);
-                self.table = RawHashTable::from_raw_parts(
+                self.table = SketchHashTable::from_raw_parts(
                     lg_size,
                     lg_size - 1,
                     ResizeFactor::X1,
@@ -229,16 +229,16 @@ where
         self.has_result
     }
 
-    /// Return the current intersection state as raw compact-sketch parts.
-    pub fn result(&self, ordered: bool) -> RawCompactParts<E>
+    /// Return the current intersection state as compact-sketch parts.
+    pub fn result(&self, ordered: bool) -> CompactSketchParts<E>
     where
         E: Clone,
     {
         let mut entries: Vec<E> = self.table.iter_entries().cloned().collect();
         if ordered {
-            entries.sort_unstable_by_key(RawHashTableEntry::hash);
+            entries.sort_unstable_by_key(RetainedEntry::hash);
         }
-        RawCompactParts {
+        CompactSketchParts {
             entries,
             theta: self.table.theta(),
             seed_hash: self.table.seed_hash(),
@@ -259,7 +259,7 @@ mod tests {
         summary: u64,
     }
 
-    impl RawHashTableEntry for TestEntry {
+    impl RetainedEntry for TestEntry {
         fn hash(&self) -> u64 {
             self.hash
         }
@@ -280,7 +280,9 @@ mod tests {
         }
     }
 
-    impl RawThetaSketchView<TestEntry> for TestSketch {
+    impl ThetaFamilySketchView for TestSketch {
+        type Entry = TestEntry;
+
         fn seed_hash(&self) -> u16 {
             crate::hash::compute_seed_hash(DEFAULT_UPDATE_SEED)
         }
@@ -308,7 +310,7 @@ mod tests {
 
     struct SumPolicy;
 
-    impl RawThetaIntersectionPolicy<TestEntry> for SumPolicy {
+    impl IntersectionMergePolicy<TestEntry> for SumPolicy {
         fn merge(&self, existing: &mut TestEntry, incoming: TestEntry) {
             existing.summary += incoming.summary;
         }
@@ -316,7 +318,7 @@ mod tests {
 
     #[test]
     fn first_update_copies_entries() {
-        let mut intersection = RawThetaIntersection::new(DEFAULT_UPDATE_SEED, SumPolicy);
+        let mut intersection = IntersectionState::new(DEFAULT_UPDATE_SEED, SumPolicy);
         assert!(!intersection.has_result());
 
         intersection
@@ -346,7 +348,7 @@ mod tests {
 
     #[test]
     fn second_update_keeps_matches_and_merges_with_policy() {
-        let mut intersection = RawThetaIntersection::new(DEFAULT_UPDATE_SEED, SumPolicy);
+        let mut intersection = IntersectionState::new(DEFAULT_UPDATE_SEED, SumPolicy);
         intersection
             .update(&TestSketch::of_hashes(&[1, 2, 3]))
             .unwrap();
@@ -372,7 +374,7 @@ mod tests {
 
     #[test]
     fn disjoint_second_update_empties_intersection() {
-        let mut intersection = RawThetaIntersection::new(DEFAULT_UPDATE_SEED, SumPolicy);
+        let mut intersection = IntersectionState::new(DEFAULT_UPDATE_SEED, SumPolicy);
         intersection
             .update(&TestSketch::of_hashes(&[1, 2, 3]))
             .unwrap();

@@ -25,16 +25,19 @@ pub(crate) mod intersection;
 pub(crate) mod union;
 
 /// An entry retained by a Theta sketch family hash table.
-pub trait RawHashTableEntry {
+pub trait RetainedEntry {
     /// Return the hash used as this entry's key.
     fn hash(&self) -> u64;
 }
 
-/// Read-only input accepted by raw Theta-family set operations.
+/// Read-only input accepted by Theta-family set operations.
 ///
 /// This trait carries complete retained entries, so Tuple union, intersection, and A-not-B
 /// operations can share the Theta-family state machines while preserving per-key summaries.
-pub trait RawThetaSketchView<E: RawHashTableEntry> {
+pub trait ThetaFamilySketchView {
+    /// The retained entry representation yielded by this view.
+    type Entry: RetainedEntry;
+
     /// Return the 16-bit seed hash.
     fn seed_hash(&self) -> u16;
 
@@ -48,7 +51,7 @@ pub trait RawThetaSketchView<E: RawHashTableEntry> {
     fn is_ordered(&self) -> bool;
 
     /// Return an iterator over retained entries.
-    fn iter(&self) -> impl Iterator<Item = E> + '_;
+    fn iter(&self) -> impl Iterator<Item = Self::Entry> + '_;
 
     /// Return the number of retained entries.
     fn num_retained(&self) -> usize;
