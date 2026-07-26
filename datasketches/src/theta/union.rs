@@ -24,31 +24,31 @@ use crate::theta::hash_table::ThetaEntry;
 use crate::thetacommon::constants::DEFAULT_LG_K;
 use crate::thetacommon::constants::MAX_LG_K;
 use crate::thetacommon::constants::MIN_LG_K;
-use crate::thetacommon::union::RawThetaUnion;
-use crate::thetacommon::union::RawThetaUnionPolicy;
+use crate::thetacommon::union::UnionMergePolicy;
+use crate::thetacommon::union::UnionState;
 
 /// Stateful union operator for Theta sketches.
 #[derive(Debug)]
 pub struct ThetaUnion {
-    raw: RawThetaUnion<ThetaEntry, NoopUnionPolicy>,
+    state: UnionState<ThetaEntry, NoopUnionPolicy>,
 }
 
 #[derive(Debug)]
 struct NoopUnionPolicy;
 
-impl RawThetaUnionPolicy<ThetaEntry> for NoopUnionPolicy {
+impl UnionMergePolicy<ThetaEntry> for NoopUnionPolicy {
     fn merge(&self, _existing: &mut ThetaEntry, _incoming: ThetaEntry) {}
 }
 
 impl ThetaUnion {
     /// Update this union with a given sketch.
     pub fn update<S: ThetaSketchView>(&mut self, sketch: &S) -> Result<(), Error> {
-        self.raw.update(sketch)
+        self.state.update(sketch)
     }
 
     /// Return this union as a compact sketch.
     pub fn to_sketch(&self, ordered: bool) -> CompactThetaSketch {
-        let parts = self.raw.to_compact_parts(ordered);
+        let parts = self.state.to_compact_parts(ordered);
         CompactThetaSketch::from_parts(
             parts
                 .entries
@@ -64,7 +64,7 @@ impl ThetaUnion {
 
     /// Reset the union to empty state.
     pub fn reset(&mut self) {
-        self.raw.reset();
+        self.state.reset();
     }
 }
 
@@ -162,7 +162,7 @@ impl ThetaUnionBuilder {
     /// ```
     pub fn build(self) -> ThetaUnion {
         ThetaUnion {
-            raw: RawThetaUnion::new(
+            state: UnionState::new(
                 self.lg_k,
                 self.resize_factor,
                 self.sampling_probability,

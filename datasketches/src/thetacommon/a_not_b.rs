@@ -19,22 +19,23 @@ use std::collections::HashSet;
 
 use crate::error::Error;
 use crate::hash::compute_seed_hash;
-use crate::thetacommon::RawHashTableEntry;
-use crate::thetacommon::RawThetaSketchView;
+use crate::thetacommon::RetainedEntry;
+use crate::thetacommon::ThetaFamilySketchView;
 use crate::thetacommon::constants::MAX_THETA;
-use crate::thetacommon::hash_table::RawCompactParts;
+use crate::thetacommon::hash_table::CompactSketchParts;
 
 /// Stateless set difference (`A and not B`) operator shared by Theta and Tuple sketches.
 ///
-/// `E` is the retained entry type. Ordinary Theta entries only contain a hash, while tuple
-/// entries also carry a summary. Surviving entries are moved from `A` unchanged, so unlike the
-/// union and intersection this operation needs no entry-merge policy.
+/// Ordinary Theta entries only contain a hash, while tuple entries also carry a summary.
+/// Surviving entries are moved from `A` unchanged, and `B` contributes only hashes, so unlike
+/// the union and intersection this operation needs neither matching entry types nor an
+/// entry-merge policy.
 #[derive(Debug, Clone, Copy)]
-pub struct RawThetaAnotB {
+pub struct ANotBOperator {
     seed_hash: u16,
 }
 
-impl RawThetaAnotB {
+impl ANotBOperator {
     /// Creates a new set difference operator for the given `seed`.
     pub fn new(seed: u64) -> Self {
         Self {
@@ -51,11 +52,15 @@ impl RawThetaAnotB {
     ///
     /// Returns an error if either non-trivial input has a seed hash that differs from this
     /// operator's seed.
-    pub fn compute<E, A, B>(&self, a: &A, b: &B, ordered: bool) -> Result<RawCompactParts<E>, Error>
+    pub fn compute<A, B>(
+        &self,
+        a: &A,
+        b: &B,
+        ordered: bool,
+    ) -> Result<CompactSketchParts<A::Entry>, Error>
     where
-        E: RawHashTableEntry,
-        A: RawThetaSketchView<E>,
-        B: RawThetaSketchView<E>,
+        A: ThetaFamilySketchView,
+        B: ThetaFamilySketchView,
     {
         // If A is empty the result is an (empty) copy of A. As with the union and intersection, an
         // empty input carries no keys, so its seed is not validated.
@@ -93,7 +98,7 @@ impl RawThetaAnotB {
         // mode (handled below).
         let mut is_empty = false;
 
-        let entries: Vec<E> = if b.num_retained() == 0 {
+        let entries: Vec<A::Entry> = if b.num_retained() == 0 {
             a.iter().filter(|entry| entry.hash() < theta).collect()
         } else if a.is_ordered() && b.is_ordered() {
             // Both inputs are sorted ascending by hash: merge-scan without a hash set. Only
@@ -150,10 +155,10 @@ impl RawThetaAnotB {
         let out_ordered = ordered || a.is_ordered();
         let mut entries = entries;
         if ordered && !a.is_ordered() && entries.len() > 1 {
-            entries.sort_unstable_by_key(RawHashTableEntry::hash);
+            entries.sort_unstable_by_key(RetainedEntry::hash);
         }
 
-        Ok(RawCompactParts {
+        Ok(CompactSketchParts {
             entries,
             theta,
             seed_hash: self.seed_hash,
@@ -163,17 +168,16 @@ impl RawThetaAnotB {
     }
 
     /// Builds compact parts that are a copy of the view `a`.
-    fn parts_from_view<E, V>(a: &V, ordered: bool) -> RawCompactParts<E>
+    fn parts_from_view<V>(a: &V, ordered: bool) -> CompactSketchParts<V::Entry>
     where
-        E: RawHashTableEntry,
-        V: RawThetaSketchView<E>,
+        V: ThetaFamilySketchView,
     {
-        let mut entries: Vec<E> = a.iter().collect();
+        let mut entries: Vec<V::Entry> = a.iter().collect();
         let out_ordered = ordered || a.is_ordered();
         if ordered && !a.is_ordered() && entries.len() > 1 {
-            entries.sort_unstable_by_key(RawHashTableEntry::hash);
+            entries.sort_unstable_by_key(RetainedEntry::hash);
         }
-        RawCompactParts {
+        CompactSketchParts {
             entries,
             theta: a.theta(),
             seed_hash: a.seed_hash(),

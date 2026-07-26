@@ -17,10 +17,10 @@
 
 //! Tuple sketch union.
 //!
-//! [`TupleUnion`] computes the union (set OR) of any number of Tuple sketches. It reuses the raw
-//! union state machine (`RawThetaUnion`) that also drives the Theta union; the only Tuple-specific
-//! behavior is that when an incoming key already exists in the union, the two summaries are
-//! combined with a [`SummaryCombinePolicy`] instead of one being dropped.
+//! [`TupleUnion`] computes the union (set OR) of any number of Tuple sketches. It shares its state
+//! machine with the Theta union; the only Tuple-specific behavior is that when an incoming key
+//! already exists in the union, the two summaries are combined with a [`SummaryCombinePolicy`]
+//! instead of one being dropped.
 
 use crate::common::ResizeFactor;
 use crate::error::Error;
@@ -28,7 +28,7 @@ use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::thetacommon::constants::DEFAULT_LG_K;
 use crate::thetacommon::constants::MAX_LG_K;
 use crate::thetacommon::constants::MIN_LG_K;
-use crate::thetacommon::union::RawThetaUnion;
+use crate::thetacommon::union::UnionState;
 use crate::tuple::hash_table::TupleEntry;
 use crate::tuple::policy::SummaryCombinePolicy;
 use crate::tuple::sketch::CompactTupleSketch;
@@ -65,7 +65,7 @@ pub struct TupleUnion<P>
 where
     P: SummaryCombinePolicy,
 {
-    raw: RawThetaUnion<TupleEntry<P::Summary>, P>,
+    state: UnionState<TupleEntry<P::Summary>, P>,
 }
 
 impl<P> TupleUnion<P>
@@ -86,7 +86,7 @@ where
     where
         V: TupleSketchView<P::Summary>,
     {
-        self.raw.update(sketch)
+        self.state.update(sketch)
     }
 
     /// Returns the union as a [`CompactTupleSketch`].
@@ -96,7 +96,7 @@ where
     where
         P::Summary: Clone,
     {
-        let result = self.raw.to_compact_parts(ordered);
+        let result = self.state.to_compact_parts(ordered);
         CompactTupleSketch::from_parts(
             result.entries,
             result.theta,
@@ -108,7 +108,7 @@ where
 
     /// Resets the union to its initial empty state.
     pub fn reset(&mut self) {
-        self.raw.reset();
+        self.state.reset();
     }
 }
 
@@ -198,7 +198,7 @@ where
     /// Builds the [`TupleUnion`].
     pub fn build(self) -> TupleUnion<P> {
         TupleUnion {
-            raw: RawThetaUnion::new(
+            state: UnionState::new(
                 self.lg_k,
                 self.resize_factor,
                 self.sampling_probability,

@@ -34,7 +34,7 @@ use crate::common::ResizeFactor;
 use crate::error::Error;
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::hash::compute_seed_hash;
-use crate::thetacommon::RawThetaSketchView;
+use crate::thetacommon::ThetaFamilySketchView;
 use crate::thetacommon::binomial_bounds;
 use crate::thetacommon::constants::DEFAULT_LG_K;
 use crate::thetacommon::constants::FLAGS_IS_COMPACT;
@@ -60,11 +60,11 @@ use crate::tuple::serialization::TupleSummaryValue;
 /// either a mutable [`TupleSketch`] or an immutable [`CompactTupleSketch`]. `S` is the
 /// summary type retained by the sketch.
 ///
-/// It is blanket-implemented for every [`RawThetaSketchView`] over [`TupleEntry`], so custom
-/// sketch-like inputs can be supplied by implementing that trait.
-pub trait TupleSketchView<S>: RawThetaSketchView<TupleEntry<S>> {}
+/// It is blanket-implemented for every [`ThetaFamilySketchView`] whose associated entry type is
+/// [`TupleEntry<S>`], so custom sketch-like inputs can be supplied by implementing that trait.
+pub trait TupleSketchView<S>: ThetaFamilySketchView<Entry = TupleEntry<S>> {}
 
-impl<S, T> TupleSketchView<S> for T where T: RawThetaSketchView<TupleEntry<S>> {}
+impl<S, T> TupleSketchView<S> for T where T: ThetaFamilySketchView<Entry = TupleEntry<S>> {}
 
 /// Mutable Tuple sketch for building from input data.
 ///
@@ -248,11 +248,13 @@ where
     }
 }
 
-impl<P> RawThetaSketchView<TupleEntry<P::Summary>> for TupleSketch<P>
+impl<P> ThetaFamilySketchView for TupleSketch<P>
 where
     P: SummaryPolicy,
     P::Summary: Clone,
 {
+    type Entry = TupleEntry<P::Summary>;
+
     fn seed_hash(&self) -> u16 {
         self.table.seed_hash()
     }
@@ -566,7 +568,9 @@ impl<S> CompactTupleSketch<S> {
     }
 }
 
-impl<S: Clone> RawThetaSketchView<TupleEntry<S>> for CompactTupleSketch<S> {
+impl<S: Clone> ThetaFamilySketchView for CompactTupleSketch<S> {
+    type Entry = TupleEntry<S>;
+
     fn seed_hash(&self) -> u16 {
         self.seed_hash
     }

@@ -20,16 +20,16 @@ use std::hash::Hash;
 use crate::common::ResizeFactor;
 use crate::hash::MurmurHash3X64128;
 use crate::hash::compute_seed_hash;
-use crate::thetacommon::RawHashTableEntry;
+use crate::thetacommon::RetainedEntry;
 use crate::thetacommon::constants::HASH_TABLE_REBUILD_THRESHOLD;
 use crate::thetacommon::constants::HASH_TABLE_RESIZE_THRESHOLD;
 use crate::thetacommon::constants::MAX_THETA;
 use crate::thetacommon::constants::MIN_LG_K;
 use crate::thetacommon::constants::STRIDE_MASK;
 
-/// Raw compact-sketch state from which a sketch family creates its compact result type.
+/// Compact-sketch state from which a sketch family creates its compact result type.
 #[derive(Debug)]
-pub struct RawCompactParts<E> {
+pub struct CompactSketchParts<E> {
     pub entries: Vec<E>,
     pub theta: u64,
     pub seed_hash: u16,
@@ -48,7 +48,7 @@ pub struct RawCompactParts<E> {
 ///   exceeds the threshold, it will rebuild the table: only keep the min 2^lg_nom_size entries and
 ///   update the theta to the k-th smallest entry.
 #[derive(Debug)]
-pub struct RawHashTable<E> {
+pub struct SketchHashTable<E> {
     lg_cur_size: u8,
     lg_nom_size: u8,
     lg_max_size: u8,
@@ -72,9 +72,9 @@ pub struct RawHashTable<E> {
     num_retained: usize,
 }
 
-impl<E> RawHashTable<E>
+impl<E> SketchHashTable<E>
 where
-    E: RawHashTableEntry,
+    E: RetainedEntry,
 {
     /// Create a new hash table.
     pub fn new(
@@ -260,13 +260,13 @@ where
         self.entries.iter().filter_map(Option::as_ref)
     }
 
-    /// Returns the retained entries and theta as raw compact-sketch parts.
+    /// Returns the retained entries and theta as compact-sketch parts.
     ///
     /// An empty table reports `MAX_THETA` rather than its current theta, matching Java's
     /// `correctThetaOnCompact()` behavior for never-updated sketches initialized with p < 1.0.
     /// Empty and single-entry exact-mode results are always marked ordered (Java/C++
     /// compatibility).
-    pub fn to_compact_parts(&self, ordered: bool) -> RawCompactParts<E>
+    pub fn to_compact_parts(&self, ordered: bool) -> CompactSketchParts<E>
     where
         E: Clone,
     {
@@ -276,9 +276,9 @@ where
         let is_single = entries.len() == 1 && theta == MAX_THETA;
         let ordered = ordered || empty || is_single;
         if ordered && entries.len() > 1 {
-            entries.sort_unstable_by_key(RawHashTableEntry::hash);
+            entries.sort_unstable_by_key(RetainedEntry::hash);
         }
-        RawCompactParts {
+        CompactSketchParts {
             entries,
             theta,
             seed_hash: self.seed_hash(),

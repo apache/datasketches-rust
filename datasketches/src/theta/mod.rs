@@ -47,7 +47,7 @@ mod serialization;
 mod sketch;
 mod union;
 
-pub use self::a_not_b::ThetaAnotB;
+pub use self::a_not_b::ThetaANotB;
 pub use self::hash_table::ThetaEntry;
 pub use self::intersection::ThetaIntersection;
 pub use self::sketch::CompactThetaSketch;
