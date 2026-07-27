@@ -93,7 +93,7 @@ impl ANotBOperator {
             )));
         }
 
-        let theta = a.theta().min(b.theta());
+        let theta = a.theta64().min(b.theta64());
         // A is non-empty here; the result only becomes empty if everything is subtracted in exact
         // mode (handled below).
         let mut is_empty = false;
@@ -179,7 +179,7 @@ impl ANotBOperator {
         }
         CompactSketchParts {
             entries,
-            theta: a.theta(),
+            theta: a.theta64(),
             seed_hash: a.seed_hash(),
             ordered: out_ordered,
             empty: a.is_empty(),

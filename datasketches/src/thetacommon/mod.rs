@@ -42,7 +42,7 @@ pub trait ThetaFamilySketchView {
     fn seed_hash(&self) -> u16;
 
     /// Return theta as a `u64` threshold.
-    fn theta(&self) -> u64;
+    fn theta64(&self) -> u64;
 
     /// Return whether this sketch has not received any updates.
     fn is_empty(&self) -> bool;

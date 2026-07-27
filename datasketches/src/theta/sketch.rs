@@ -69,7 +69,7 @@ impl ThetaFamilySketchView for ThetaSketch {
         ThetaSketch::seed_hash(self)
     }
 
-    fn theta(&self) -> u64 {
+    fn theta64(&self) -> u64 {
         ThetaSketch::theta64(self)
     }
 
@@ -871,7 +871,7 @@ impl ThetaFamilySketchView for CompactThetaSketch {
         CompactThetaSketch::seed_hash(self)
     }
 
-    fn theta(&self) -> u64 {
+    fn theta64(&self) -> u64 {
         CompactThetaSketch::theta64(self)
     }
 
