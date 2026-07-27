@@ -17,14 +17,14 @@
 
 use crate::common::ResizeFactor;
 use crate::error::Error;
-use crate::thetacommon::RawHashTableEntry;
-use crate::thetacommon::RawThetaSketchView;
+use crate::thetacommon::RetainedEntry;
+use crate::thetacommon::ThetaFamilySketchView;
 use crate::thetacommon::constants::MAX_THETA;
-use crate::thetacommon::hash_table::RawCompactParts;
-use crate::thetacommon::hash_table::RawHashTable;
+use crate::thetacommon::hash_table::CompactSketchParts;
+use crate::thetacommon::hash_table::SketchHashTable;
 
 /// Merges an incoming entry into an existing entry with the same hash.
-pub trait RawThetaUnionPolicy<E> {
+pub trait UnionMergePolicy<E> {
     fn merge(&self, existing: &mut E, incoming: E);
 }
 
@@ -33,15 +33,15 @@ pub trait RawThetaUnionPolicy<E> {
 /// `E` is the retained entry type. Ordinary Theta entries only contain a hash, while tuple
 /// entries also carry a summary. `P` defines how equal-hash entries are combined.
 #[derive(Debug)]
-pub struct RawThetaUnion<E, P> {
-    table: RawHashTable<E>,
+pub struct UnionState<E, P> {
+    table: SketchHashTable<E>,
     policy: P,
     union_theta: u64,
 }
 
-impl<E, P> RawThetaUnion<E, P>
+impl<E, P> UnionState<E, P>
 where
-    E: RawHashTableEntry,
+    E: RetainedEntry,
 {
     pub fn new(
         lg_k: u8,
@@ -50,7 +50,7 @@ where
         seed: u64,
         policy: P,
     ) -> Self {
-        let table = RawHashTable::new(lg_k, resize_factor, sampling_probability, seed);
+        let table = SketchHashTable::new(lg_k, resize_factor, sampling_probability, seed);
         Self {
             union_theta: table.theta(),
             table,
@@ -61,8 +61,8 @@ where
     /// Incorporate a sketch into the union.
     pub fn update<S>(&mut self, sketch: &S) -> Result<(), Error>
     where
-        S: RawThetaSketchView<E>,
-        P: RawThetaUnionPolicy<E>,
+        S: ThetaFamilySketchView<Entry = E>,
+        P: UnionMergePolicy<E>,
     {
         if sketch.is_empty() {
             return Ok(());
@@ -98,15 +98,15 @@ where
         Ok(())
     }
 
-    /// Return the current compact-union state as raw compact-sketch parts.
-    pub fn to_compact_parts(&self, ordered: bool) -> RawCompactParts<E>
+    /// Return the current compact-union state as compact-sketch parts.
+    pub fn to_compact_parts(&self, ordered: bool) -> CompactSketchParts<E>
     where
         E: Clone,
     {
         let seed_hash = self.table.seed_hash();
 
         if self.table.is_empty() {
-            return RawCompactParts {
+            return CompactSketchParts {
                 entries: vec![],
                 theta: self.union_theta,
                 seed_hash,
@@ -135,10 +135,10 @@ where
 
         let ordered = ordered || (entries.len() == 1 && theta == MAX_THETA);
         if ordered {
-            entries.sort_unstable_by_key(RawHashTableEntry::hash);
+            entries.sort_unstable_by_key(RetainedEntry::hash);
         }
 
-        RawCompactParts {
+        CompactSketchParts {
             entries,
             theta,
             seed_hash,
@@ -165,7 +165,7 @@ mod tests {
         summary: u64,
     }
 
-    impl RawHashTableEntry for TestEntry {
+    impl RetainedEntry for TestEntry {
         fn hash(&self) -> u64 {
             self.hash
         }
@@ -175,7 +175,9 @@ mod tests {
         entries: Vec<TestEntry>,
     }
 
-    impl RawThetaSketchView<TestEntry> for TestSketch {
+    impl ThetaFamilySketchView for TestSketch {
+        type Entry = TestEntry;
+
         fn seed_hash(&self) -> u16 {
             crate::hash::compute_seed_hash(DEFAULT_UPDATE_SEED)
         }
@@ -203,7 +205,7 @@ mod tests {
 
     struct SumPolicy;
 
-    impl RawThetaUnionPolicy<TestEntry> for SumPolicy {
+    impl UnionMergePolicy<TestEntry> for SumPolicy {
         fn merge(&self, existing: &mut TestEntry, incoming: TestEntry) {
             existing.summary += incoming.summary;
         }
@@ -211,8 +213,7 @@ mod tests {
 
     #[test]
     fn merges_equal_hash_entries_with_policy() {
-        let mut union =
-            RawThetaUnion::new(5, ResizeFactor::X1, 1.0, DEFAULT_UPDATE_SEED, SumPolicy);
+        let mut union = UnionState::new(5, ResizeFactor::X1, 1.0, DEFAULT_UPDATE_SEED, SumPolicy);
         union
             .update(&TestSketch {
                 entries: vec![TestEntry {

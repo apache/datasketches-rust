@@ -18,8 +18,8 @@
 use std::hash::Hash;
 use std::num::NonZeroU64;
 
-use crate::thetacommon::RawHashTableEntry;
-use crate::thetacommon::hash_table::RawHashTable;
+use crate::thetacommon::RetainedEntry;
+use crate::thetacommon::hash_table::SketchHashTable;
 
 /// Specific hash table for theta sketch
 ///
@@ -28,7 +28,7 @@ use crate::thetacommon::hash_table::RawHashTable;
 /// * After it reaches the capacity bigger than 2^lg_nom_size, every time the number of entries
 ///   exceeds the threshold, it will rebuild the table: only keep the min 2^lg_nom_size entries and
 ///   update the theta to the k-th smallest entry.
-pub(super) type ThetaHashTable = RawHashTable<ThetaEntry>;
+pub(super) type ThetaHashTable = SketchHashTable<ThetaEntry>;
 
 /// A retained entry in a Theta sketch.
 #[derive(Debug, Clone, Copy)]
@@ -48,7 +48,7 @@ impl ThetaEntry {
     }
 }
 
-impl RawHashTableEntry for ThetaEntry {
+impl RetainedEntry for ThetaEntry {
     fn hash(&self) -> u64 {
         self.hash.get()
     }
@@ -90,7 +90,7 @@ mod tests {
     impl ThetaHashTable {
         /// Get iterator over entries.
         pub fn iter(&self) -> impl Iterator<Item = u64> + '_ {
-            self.iter_entries().map(RawHashTableEntry::hash)
+            self.iter_entries().map(RetainedEntry::hash)
         }
     }
 

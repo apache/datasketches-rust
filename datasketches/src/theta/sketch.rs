@@ -43,7 +43,7 @@ use crate::theta::serialization;
 use crate::theta::serialization::V2_PREAMBLE_EMPTY;
 use crate::theta::serialization::V2_PREAMBLE_ESTIMATE;
 use crate::theta::serialization::V2_PREAMBLE_PRECISE;
-use crate::thetacommon::RawThetaSketchView;
+use crate::thetacommon::ThetaFamilySketchView;
 use crate::thetacommon::binomial_bounds;
 use crate::thetacommon::constants::DEFAULT_LG_K;
 use crate::thetacommon::constants::FLAGS_IS_COMPACT;
@@ -58,11 +58,13 @@ use crate::thetacommon::constants::MIN_LG_K;
 ///
 /// This trait provides a unified input abstraction for APIs that can accept either
 /// mutable [`ThetaSketch`] or immutable [`CompactThetaSketch`].
-pub trait ThetaSketchView: RawThetaSketchView<ThetaEntry> {}
+pub trait ThetaSketchView: ThetaFamilySketchView<Entry = ThetaEntry> {}
 
-impl<T: RawThetaSketchView<ThetaEntry>> ThetaSketchView for T {}
+impl<T: ThetaFamilySketchView<Entry = ThetaEntry>> ThetaSketchView for T {}
 
-impl RawThetaSketchView<ThetaEntry> for ThetaSketch {
+impl ThetaFamilySketchView for ThetaSketch {
+    type Entry = ThetaEntry;
+
     fn seed_hash(&self) -> u16 {
         ThetaSketch::seed_hash(self)
     }
@@ -862,7 +864,9 @@ impl CompactThetaSketch {
     }
 }
 
-impl RawThetaSketchView<ThetaEntry> for CompactThetaSketch {
+impl ThetaFamilySketchView for CompactThetaSketch {
+    type Entry = ThetaEntry;
+
     fn seed_hash(&self) -> u16 {
         CompactThetaSketch::seed_hash(self)
     }

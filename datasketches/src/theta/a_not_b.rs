@@ -17,15 +17,15 @@
 
 //! Theta sketch set difference (`A and not B`).
 //!
-//! [`ThetaAnotB`] computes the set difference of two Theta sketches: the keys retained in `A`
-//! that are not present in `B`. The logic lives in the shared raw operator (`RawThetaAnotB`) that
-//! also drives the Tuple a-not-B; Theta entries carry no summary, so nothing needs to be combined.
+//! [`ThetaANotB`] computes the set difference of two Theta sketches: the keys retained in `A`
+//! that are not present in `B`. It shares its set-difference implementation with Tuple a-not-B;
+//! Theta entries carry no summary, so nothing needs to be combined.
 
 use crate::error::Error;
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::theta::CompactThetaSketch;
 use crate::theta::ThetaSketchView;
-use crate::thetacommon::a_not_b::RawThetaAnotB;
+use crate::thetacommon::a_not_b::ANotBOperator;
 
 /// Set difference operator (`A and not B`) for Theta sketches.
 ///
@@ -35,7 +35,7 @@ use crate::thetacommon::a_not_b::RawThetaAnotB;
 /// # Examples
 ///
 /// ```
-/// # use datasketches::theta::{ThetaAnotB, ThetaSketchBuilder};
+/// # use datasketches::theta::{ThetaANotB, ThetaSketchBuilder};
 /// let mut a = ThetaSketchBuilder::default().build();
 /// a.update("apple");
 /// a.update("banana");
@@ -43,26 +43,26 @@ use crate::thetacommon::a_not_b::RawThetaAnotB;
 /// let mut b = ThetaSketchBuilder::default().build();
 /// b.update("banana");
 ///
-/// let a_not_b = ThetaAnotB::default();
+/// let a_not_b = ThetaANotB::default();
 /// let result = a_not_b.compute(&a, &b, true).unwrap();
 /// assert_eq!(result.num_retained(), 1); // only "apple" survives
 /// ```
 #[derive(Debug, Clone, Copy)]
-pub struct ThetaAnotB {
-    raw: RawThetaAnotB,
+pub struct ThetaANotB {
+    op: ANotBOperator,
 }
 
-impl Default for ThetaAnotB {
+impl Default for ThetaANotB {
     fn default() -> Self {
         Self::with_seed(DEFAULT_UPDATE_SEED)
     }
 }
 
-impl ThetaAnotB {
+impl ThetaANotB {
     /// Creates a new set difference operator for the given `seed`.
     pub fn with_seed(seed: u64) -> Self {
         Self {
-            raw: RawThetaAnotB::new(seed),
+            op: ANotBOperator::new(seed),
         }
     }
 
@@ -80,7 +80,7 @@ impl ThetaAnotB {
         A: ThetaSketchView,
         B: ThetaSketchView,
     {
-        let parts = self.raw.compute(a, b, ordered)?;
+        let parts = self.op.compute(a, b, ordered)?;
         Ok(CompactThetaSketch::from_parts(
             parts
                 .entries

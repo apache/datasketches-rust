@@ -20,8 +20,8 @@ use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::theta::CompactThetaSketch;
 use crate::theta::ThetaSketchView;
 use crate::theta::hash_table::ThetaEntry;
-use crate::thetacommon::intersection::RawThetaIntersection;
-use crate::thetacommon::intersection::RawThetaIntersectionPolicy;
+use crate::thetacommon::intersection::IntersectionMergePolicy;
+use crate::thetacommon::intersection::IntersectionState;
 
 /// Stateful intersection operator for Theta sketches.
 ///
@@ -29,7 +29,7 @@ use crate::thetacommon::intersection::RawThetaIntersectionPolicy;
 /// [`has_result`](Self::has_result) to check.
 #[derive(Debug)]
 pub struct ThetaIntersection {
-    raw: RawThetaIntersection<ThetaEntry, NoopIntersectionPolicy>,
+    state: IntersectionState<ThetaEntry, NoopIntersectionPolicy>,
 }
 
 impl Default for ThetaIntersection {
@@ -41,7 +41,7 @@ impl Default for ThetaIntersection {
 #[derive(Debug)]
 struct NoopIntersectionPolicy;
 
-impl RawThetaIntersectionPolicy<ThetaEntry> for NoopIntersectionPolicy {
+impl IntersectionMergePolicy<ThetaEntry> for NoopIntersectionPolicy {
     fn merge(&self, _existing: &mut ThetaEntry, _incoming: ThetaEntry) {}
 }
 
@@ -49,7 +49,7 @@ impl ThetaIntersection {
     /// Creates a new intersection operator for the given `seed`.
     pub fn with_seed(seed: u64) -> Self {
         Self {
-            raw: RawThetaIntersection::new(seed, NoopIntersectionPolicy),
+            state: IntersectionState::new(seed, NoopIntersectionPolicy),
         }
     }
 
@@ -59,12 +59,12 @@ impl ThetaIntersection {
     /// and every update can reduce the current set to leave the overlapping
     /// subset only.
     pub fn update<S: ThetaSketchView>(&mut self, sketch: &S) -> Result<(), Error> {
-        self.raw.update(sketch)
+        self.state.update(sketch)
     }
 
     /// Returns whether this operator has received at least one update.
     pub fn has_result(&self) -> bool {
-        self.raw.has_result()
+        self.state.has_result()
     }
 
     /// Returns the intersection result as a compact theta sketch.
@@ -74,10 +74,10 @@ impl ThetaIntersection {
     /// Panics if called before the first [`update`](Self::update).
     pub fn to_sketch(&self, ordered: bool) -> CompactThetaSketch {
         assert!(
-            self.raw.has_result(),
+            self.state.has_result(),
             "ThetaIntersection::to_sketch() called before first update()"
         );
-        let parts = self.raw.result(ordered);
+        let parts = self.state.result(ordered);
         CompactThetaSketch::from_parts(
             parts
                 .entries

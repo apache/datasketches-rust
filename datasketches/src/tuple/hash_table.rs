@@ -18,10 +18,10 @@
 use std::hash::Hash;
 use std::num::NonZeroU64;
 
-use crate::thetacommon::RawHashTableEntry;
-use crate::thetacommon::hash_table::RawHashTable;
-use crate::thetacommon::intersection::RawThetaIntersectionPolicy;
-use crate::thetacommon::union::RawThetaUnionPolicy;
+use crate::thetacommon::RetainedEntry;
+use crate::thetacommon::hash_table::SketchHashTable;
+use crate::thetacommon::intersection::IntersectionMergePolicy;
+use crate::thetacommon::union::UnionMergePolicy;
 use crate::tuple::SummaryCombinePolicy;
 
 /// A retained entry in a Tuple sketch: a hash key together with its associated summary.
@@ -61,9 +61,9 @@ impl<S> TupleEntry<S> {
 /// This is the Theta sketch hash table extended so that each retained key carries a user-defined
 /// summary. Unlike the Theta hash table, when a key is inserted that already exists, the incoming
 /// update is merged into the existing summary rather than discarded.
-pub(super) type TupleHashTable<S> = RawHashTable<TupleEntry<S>>;
+pub(super) type TupleHashTable<S> = SketchHashTable<TupleEntry<S>>;
 
-impl<S> RawHashTableEntry for TupleEntry<S> {
+impl<S> RetainedEntry for TupleEntry<S> {
     fn hash(&self) -> u64 {
         self.hash.get()
     }
@@ -108,13 +108,13 @@ impl<S> TupleHashTable<S> {
     }
 }
 
-impl<P: SummaryCombinePolicy> RawThetaUnionPolicy<TupleEntry<P::Summary>> for P {
+impl<P: SummaryCombinePolicy> UnionMergePolicy<TupleEntry<P::Summary>> for P {
     fn merge(&self, existing: &mut TupleEntry<P::Summary>, incoming: TupleEntry<P::Summary>) {
         self.combine(&mut existing.summary, &incoming.summary);
     }
 }
 
-impl<P: SummaryCombinePolicy> RawThetaIntersectionPolicy<TupleEntry<P::Summary>> for P {
+impl<P: SummaryCombinePolicy> IntersectionMergePolicy<TupleEntry<P::Summary>> for P {
     fn merge(&self, existing: &mut TupleEntry<P::Summary>, incoming: TupleEntry<P::Summary>) {
         self.combine(&mut existing.summary, &incoming.summary);
     }
