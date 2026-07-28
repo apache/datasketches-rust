@@ -21,6 +21,10 @@ use std::process::Command as StdCommand;
 use clap::Parser;
 use clap::Subcommand;
 
+mod test_data;
+
+use test_data::CommandTestData;
+
 #[derive(Parser)]
 struct Command {
     #[clap(subcommand)]
@@ -34,6 +38,7 @@ impl Command {
             SubCommand::Docs(cmd) => cmd.run(),
             SubCommand::Lint(cmd) => cmd.run(),
             SubCommand::Test(cmd) => cmd.run(),
+            SubCommand::TestData(cmd) => cmd.run(),
         }
     }
 }
@@ -48,6 +53,8 @@ enum SubCommand {
     Lint(CommandLint),
     #[clap(about = "Run unit tests.")]
     Test(CommandTest),
+    #[clap(about = "Prepare serialization compatibility test data.")]
+    TestData(CommandTestData),
 }
 
 #[derive(Parser)]
