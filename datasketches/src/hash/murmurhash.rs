@@ -187,6 +187,24 @@ mod tests {
     }
 
     #[test]
+    fn streaming_writes_match_single_write() {
+        let input: Vec<u8> = (0..=96).collect();
+        for len in 0..=input.len() {
+            let expected = murmurhash3_x64_128(&input[..len], 42);
+            for split in 0..=len {
+                let mut hasher = MurmurHash3X64128::with_seed(42);
+                hasher.write(&input[..split]);
+                hasher.write(&input[split..len]);
+                assert_eq!(
+                    hasher.finish128(),
+                    expected,
+                    "hash changed for input length {len} split at {split}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn test_remainder() {
         // remainder > 8
         let key = "The quick brown fox jumps over the lazy dog";

@@ -217,6 +217,24 @@ mod tests {
     }
 
     #[test]
+    fn streaming_writes_match_single_write() {
+        let input: Vec<u8> = (0..=96).collect();
+        for len in 0..=input.len() {
+            let expected = xxhash64(&input[..len], PRIME32);
+            for split in 0..=len {
+                let mut hasher = XxHash64::with_seed(PRIME32);
+                hasher.write(&input[..split]);
+                hasher.write(&input[split..len]);
+                assert_eq!(
+                    hasher.finish64(),
+                    expected,
+                    "hash changed for input length {len} split at {split}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn test_vectors_seed_zero() {
         let buf = fill_test_buffer(101);
         assert_eq!(xxhash64(&buf[..0], 0), 0xEF46DB3751D8E999);
