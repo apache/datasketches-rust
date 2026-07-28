@@ -15,8 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#![cfg(feature = "theta")]
-
 use datasketches::theta::CompactThetaSketch;
 use datasketches::theta::ThetaIntersection;
 use datasketches::theta::ThetaSketch;

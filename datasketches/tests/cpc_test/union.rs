@@ -15,8 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#![cfg(feature = "cpc")]
-
 use datasketches::cpc::CpcSketch;
 use datasketches::cpc::CpcUnion;
 use googletest::assert_that;

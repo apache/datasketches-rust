@@ -89,10 +89,10 @@ def main():
     args = parser.parse_args()
 
     repository_root = Path(__file__).resolve().parents[1]
-    serialization_test_data = repository_root / "datasketches" / "tests" / "serialization_test_data"
+    serde_tests = repository_root / "datasketches" / "tests" / "serde_tests"
     generated_targets = {
-        "cpp": serialization_test_data / "cpp_generated_files",
-        "java": serialization_test_data / "java_generated_files",
+        "cpp": serde_tests / "cpp_generated_files",
+        "java": serde_tests / "java_generated_files",
     }
 
     languages = []

@@ -20,8 +20,6 @@
 //!
 //! The result of `a and not b` retains the keys of `a` that are absent from `b`.
 
-#![cfg(feature = "theta")]
-
 use datasketches::theta::CompactThetaSketch;
 use datasketches::theta::ThetaANotB;
 use datasketches::theta::ThetaSketch;

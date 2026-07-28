@@ -15,18 +15,14 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#![cfg(feature = "tuple")]
-
-#[path = "support/serialization_data.rs"]
-mod serialization_data;
-
 use std::fs;
 use std::path::PathBuf;
 
 use datasketches::tuple::CompactTupleSketch;
 use googletest::assert_that;
 use googletest::prelude::near;
-use serialization_data::serialization_test_data;
+
+use crate::serialization_test_data;
 
 fn test_sketch_file(path: PathBuf, expected_cardinality: usize) {
     let expected = expected_cardinality as f64;

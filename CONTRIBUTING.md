@@ -47,7 +47,7 @@ Test:
 ```shell
 cargo x test
 # or
-cargo test --workspace --no-default-features
+cargo test --workspace --all-features
 ```
 
 Lint:
@@ -55,6 +55,31 @@ Lint:
 ```shell
 cargo x lint
 ```
+
+## Integration test layout
+
+Integration tests for the `datasketches` crate live under `datasketches/tests` and use two entry-point patterns.
+
+### Sketch behavior tests
+
+Non-serialization tests are grouped into one integration-test target per sketch. The target entry point is `datasketches/tests/<sketch>_test/main.rs`, with operation-specific modules such as `update.rs`, `union.rs`, or `intersection.rs` alongside it.
+
+Because these entry points are nested below `tests`, Cargo does not discover them automatically. Each new sketch target must also be registered in `datasketches/Cargo.toml` with its required feature:
+
+```toml
+[[test]]
+name = "tuple_test"
+path = "tests/tuple_test/main.rs"
+required-features = ["tuple"]
+```
+
+When adding a case to an existing sketch target, add it to the appropriate module and declare any new module from that target's `main.rs`; no Cargo manifest change is needed. Add another `[[test]]` entry only when introducing a new sketch target.
+
+### Serialization compatibility tests
+
+Cargo automatically discovers `datasketches/tests/serde_tests.rs`, which aggregates the sketch-specific modules under `datasketches/tests/serde_tests`. Each module is gated by its corresponding sketch feature in `serde_tests.rs`.
+
+To add serialization tests for another sketch, add `serde_tests/<sketch>.rs` and a feature-gated module declaration in `serde_tests.rs`. Do not add a separate `[[test]]` entry. Shared path handling belongs in `serde_tests.rs`, and serialization fixtures belong in the appropriate subdirectory under `serde_tests`.
 
 ## Manual workflow (without xtask)
 
@@ -85,23 +110,23 @@ cargo install taplo-cli typos-cli hawkeye
 
 ## Serialization snapshots
 
-Some tests depend on snapshot files under `datasketches/tests/serialization_test_data`. If they are missing, tests will fail. Download them with:
+Some tests depend on snapshot files under `datasketches/tests/serde_tests`. If they are missing, tests will fail. Download them with:
 
 ```shell
-python3 ./tools/download_serialization_test_data.py --all
+python3 ./tools/download_serde_tests_data.py --all
 ```
 
 The script downloads the latest snapshots from the `main` branch of
 [`apache/datasketches-tck`](https://github.com/apache/datasketches-tck) and writes them to:
 
-- `datasketches/tests/serialization_test_data/java_generated_files`
-- `datasketches/tests/serialization_test_data/cpp_generated_files`
+- `datasketches/tests/serde_tests/java_generated_files`
+- `datasketches/tests/serde_tests/cpp_generated_files`
 
 You can download them separately:
 
 ```shell
-python3 ./tools/download_serialization_test_data.py --java
-python3 ./tools/download_serialization_test_data.py --cpp
+python3 ./tools/download_serde_tests_data.py --java
+python3 ./tools/download_serde_tests_data.py --cpp
 ```
 
 The script requires Python 3 and network access.
