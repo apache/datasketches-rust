@@ -15,11 +15,22 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::collections::BTreeSet;
+use std::error::Error;
+use std::fs;
+use std::io;
+use std::io::Read;
+use std::io::Seek;
 use std::path::Path;
 use std::process::Command as StdCommand;
 use std::time::Duration;
+
 use clap::Parser;
 use clap::Subcommand;
+use tempfile::NamedTempFile;
+use zip::ZipArchive;
+
+type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
 fn main() {
     let cmd = Command::parse();
@@ -283,10 +294,19 @@ struct CommandPrepareTestData {
 
 impl CommandPrepareTestData {
     fn run(self) {
+        if let Err(error) = self.prepare() {
+            eprintln!("failed to prepare serialization test data: {error}");
+            std::process::exit(1);
+        }
+    }
+
+    fn prepare(self) -> Result<()> {
         const PINNED_COMMIT: &str = "0016a517";
 
-        let serde_tests = Path::new(env!("CARGO_WORKSPACE_DIR")).join("datasketches/tests/serde_tests");
-        let archive_url = format!("https://github.com/apache/datasketches-tck/archive/{PINNED_COMMIT}/main.zip");
+        let serde_tests =
+            Path::new(env!("CARGO_WORKSPACE_DIR")).join("datasketches/tests/serde_tests");
+        let archive_url =
+            format!("https://github.com/apache/datasketches-tck/archive/{PINNED_COMMIT}/main.zip");
 
         let all = self.all || !(self.java || self.cpp);
         let languages = [("java", all || self.java), ("cpp", all || self.cpp)];
@@ -301,7 +321,7 @@ impl CommandPrepareTestData {
         let mut reader = response.into_reader();
 
         let archive_file = NamedTempFile::new()?;
-        std::io::copy(&mut reader, &mut archive_file.as_file())?;
+        io::copy(&mut reader, &mut archive_file.as_file())?;
 
         let mut archive = ZipArchive::new(archive_file.reopen()?)?;
         for (language, selected) in languages {
@@ -312,6 +332,7 @@ impl CommandPrepareTestData {
             extract_snapshots(&mut archive, &destination, language)?;
         }
 
+        Ok(())
     }
 }
 
@@ -333,8 +354,8 @@ fn extract_snapshots<R: Read + Seek>(
         if member.is_dir()
             || path.extension().is_none_or(|extension| extension != "sk")
             || path
-            .parent()
-            .is_none_or(|parent| !parent.ends_with(&source_directory))
+                .parent()
+                .is_none_or(|parent| !parent.ends_with(&source_directory))
         {
             continue;
         }
@@ -361,8 +382,8 @@ fn extract_snapshots<R: Read + Seek>(
         let path = entry?.path();
         if path.extension().is_some_and(|extension| extension == "sk")
             && path
-            .file_name()
-            .is_some_and(|name| !expected_files.contains(name))
+                .file_name()
+                .is_some_and(|name| !expected_files.contains(name))
         {
             fs::remove_file(path)?;
         }
@@ -389,7 +410,7 @@ fn ensure_not_symlink(path: &Path) -> Result<()> {
             "snapshot output path cannot be a symbolic link: {}",
             path.display()
         )
-            .into());
+        .into());
     }
     Ok(())
 }
