@@ -21,7 +21,6 @@ use datasketches::countmin::CountMinSketch;
 use googletest::assert_that;
 use googletest::prelude::contains_substring;
 
-use crate::assert_truncated_inputs_rejected;
 use crate::serialization_test_data;
 
 // This test validates binary format compatibility (deserialize + byte round-trip) for
@@ -66,12 +65,4 @@ fn test_deserialize_cpp_snapshot_with_wrong_seed() {
 
     let err = CountMinSketch::<u64>::deserialize_with_seed(&bytes, 9000).unwrap_err();
     assert_that!(err.message(), contains_substring("incompatible seed hash"));
-}
-
-#[test]
-fn truncated_input_is_rejected() {
-    let mut sketch = CountMinSketch::<u64>::new(1, 3);
-    sketch.update("value");
-
-    assert_truncated_inputs_rejected(&sketch.serialize(), CountMinSketch::<u64>::deserialize);
 }

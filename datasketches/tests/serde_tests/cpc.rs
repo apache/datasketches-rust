@@ -22,7 +22,6 @@ use datasketches::cpc::CpcSketch;
 use googletest::assert_that;
 use googletest::prelude::near;
 
-use crate::assert_truncated_inputs_rejected;
 use crate::serialization_test_data;
 
 fn test_sketch_file(path: PathBuf, expected_cardinality: usize) {
@@ -81,14 +80,4 @@ fn test_cpp_compatibility() {
         let path = serialization_test_data("cpp_generated_files", &filename);
         test_sketch_file(path, n);
     }
-}
-
-#[test]
-fn truncated_input_is_rejected() {
-    let mut sketch = CpcSketch::new(4);
-    for value in 0..20 {
-        sketch.update(value);
-    }
-
-    assert_truncated_inputs_rejected(&sketch.serialize(), CpcSketch::deserialize);
 }

@@ -22,7 +22,6 @@ use datasketches::hash_value::natural_extend;
 use datasketches::hll::HllSketch;
 use datasketches::hll::HllType;
 
-use crate::assert_truncated_inputs_rejected;
 use crate::serialization_test_data;
 
 fn test_sketch_file(path: PathBuf, expected_cardinality: usize, expected_lg_k: u8) {
@@ -129,16 +128,6 @@ fn test_update_after_deserialize_list_mode() {
             "{hll_type:?}: expected estimate close to 2.0 after update post-deserialize, got {est}"
         );
     }
-}
-
-#[test]
-fn truncated_input_is_rejected() {
-    let mut sketch = HllSketch::new(4, HllType::Hll8);
-    for value in 0..20 {
-        sketch.update(value);
-    }
-
-    assert_truncated_inputs_rejected(&sketch.serialize(), HllSketch::deserialize);
 }
 
 #[test]

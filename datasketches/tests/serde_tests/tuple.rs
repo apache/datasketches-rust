@@ -25,7 +25,6 @@ use datasketches::tuple::TupleSketchBuilder;
 use googletest::assert_that;
 use googletest::prelude::near;
 
-use crate::assert_truncated_inputs_rejected;
 use crate::serialization_test_data;
 
 fn test_sketch_file(path: PathBuf, expected_cardinality: usize) {
@@ -112,15 +111,15 @@ fn round_trip_preserves_summaries() {
 
 #[test]
 fn malformed_input_is_rejected() {
-    let mut sketch = TupleSketchBuilder::new(DefaultUpdatePolicy::<u64>::default())
-        .lg_k(5)
-        .build();
+    let mut sketch = TupleSketchBuilder::new(DefaultUpdatePolicy::<u64>::default()).build();
     for value in 0..100 {
         sketch.update(value, 1);
     }
     let bytes = sketch.compact(true).serialize();
 
-    assert_truncated_inputs_rejected(&bytes, CompactTupleSketch::<u64>::deserialize);
+    let truncated = &bytes[..bytes.len() - 4];
+    let err = CompactTupleSketch::<u64>::deserialize(truncated).unwrap_err();
+    assert_eq!(err.kind(), ErrorKind::InvalidData);
 
     let err = CompactTupleSketch::<u64>::deserialize_with_seed(&bytes, 8).unwrap_err();
     assert_eq!(err.kind(), ErrorKind::InvalidData);

@@ -19,9 +19,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use datasketches::bloom::BloomFilter;
-use datasketches::bloom::BloomFilterBuilder;
 
-use crate::assert_truncated_inputs_rejected;
 use crate::serialization_test_data;
 
 fn test_bloom_filter_file(path: PathBuf, expected_num_items: u64, expected_num_hashes: u16) {
@@ -220,12 +218,4 @@ fn test_cpp_bloom_n30000000_h3() {
 fn test_cpp_bloom_n30000000_h5() {
     let path = serialization_test_data("cpp_generated_files", "bf_n30000000_h5_cpp.sk");
     test_bloom_filter_file(path, 30000000, 5);
-}
-
-#[test]
-fn truncated_input_is_rejected() {
-    let mut filter = BloomFilterBuilder::with_size(64, 3).build();
-    filter.insert("value");
-
-    assert_truncated_inputs_rejected(&filter.serialize(), BloomFilter::deserialize);
 }

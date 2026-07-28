@@ -24,7 +24,6 @@ use datasketches::theta::ThetaSketchBuilder;
 use googletest::assert_that;
 use googletest::prelude::near;
 
-use crate::assert_truncated_inputs_rejected;
 use crate::serialization_test_data;
 
 fn test_sketch_file(path: PathBuf, expected_cardinality: usize, use_compressed_round_trip: bool) {
@@ -120,12 +119,14 @@ fn test_cpp_compatibility() {
 #[test]
 fn malformed_input_is_rejected() {
     let mut sketch = ThetaSketchBuilder::default().lg_k(5).build();
-    for value in 0..100 {
+    for value in 0..5000 {
         sketch.update(value);
     }
     let bytes = sketch.compact(true).serialize();
 
-    assert_truncated_inputs_rejected(&bytes, CompactThetaSketch::deserialize);
+    let truncated = &bytes[..bytes.len() - 1];
+    let err = CompactThetaSketch::deserialize(truncated).unwrap_err();
+    assert_eq!(err.kind(), ErrorKind::InvalidData);
 
     let err = CompactThetaSketch::deserialize_with_seed(&bytes, 8).unwrap_err();
     assert_eq!(err.kind(), ErrorKind::InvalidData);

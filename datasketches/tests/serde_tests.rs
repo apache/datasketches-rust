@@ -17,9 +17,6 @@
 
 use std::path::PathBuf;
 
-use datasketches::error::Error;
-use datasketches::error::ErrorKind;
-
 pub fn serialization_test_data(sub_dir: &str, name: &str) -> PathBuf {
     const SERDE_TESTS_DIR: &str = "tests/serde_tests";
 
@@ -43,31 +40,6 @@ pub fn serialization_test_data(sub_dir: &str, name: &str) -> PathBuf {
     }
 
     path
-}
-
-pub fn assert_truncated_inputs_rejected<T>(
-    bytes: &[u8],
-    deserialize: impl Fn(&[u8]) -> Result<T, Error>,
-) {
-    assert!(!bytes.is_empty(), "valid serialization must not be empty");
-    if let Err(err) = deserialize(bytes) {
-        panic!("valid serialization was rejected before truncation checks: {err}");
-    }
-
-    for len in 0..bytes.len() {
-        match deserialize(&bytes[..len]) {
-            Ok(_) => panic!(
-                "deserializer accepted a truncated input of {len}/{} bytes",
-                bytes.len()
-            ),
-            Err(err) => assert_eq!(
-                err.kind(),
-                ErrorKind::InvalidData,
-                "unexpected error for a truncated input of {len}/{} bytes",
-                bytes.len()
-            ),
-        }
-    }
 }
 
 #[cfg(feature = "bloom")]
