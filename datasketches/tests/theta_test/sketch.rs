@@ -93,20 +93,27 @@ fn test_theta_reduction() {
 
 #[test]
 fn test_trim() {
+    let mut exact = ThetaSketchBuilder::default().lg_k(12).build();
     let mut sketch = ThetaSketchBuilder::default().lg_k(5).build();
 
-    // Insert many values
     for i in 0..1000 {
-        sketch.update(format!("value_{}", i));
+        exact.update(i);
+        sketch.update(i);
     }
+
+    let mut expected_hashes: Vec<_> = exact.iter().map(|entry| entry.hash()).collect();
+    expected_hashes.sort_unstable();
 
     let before_trim = sketch.num_retained();
     sketch.trim();
-    let after_trim = sketch.num_retained();
 
-    // After trim, should have approximately k entries
-    assert!(after_trim <= before_trim);
+    let mut retained_hashes: Vec<_> = sketch.iter().map(|entry| entry.hash()).collect();
+    retained_hashes.sort_unstable();
+
+    assert!(sketch.num_retained() <= before_trim);
     assert_eq!(sketch.num_retained(), 32);
+    assert_eq!(retained_hashes, expected_hashes[..32]);
+    assert_eq!(sketch.theta64(), expected_hashes[32]);
 }
 
 #[test]

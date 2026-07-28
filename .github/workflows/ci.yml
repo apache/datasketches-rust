@@ -94,7 +94,7 @@ jobs:
       - name: Prepare test data
         shell: bash
         run: cargo x prepare-testdata --all
-      - name: Run unit tests
+      - name: Run test suite
         shell: bash
         run: cargo x test
 

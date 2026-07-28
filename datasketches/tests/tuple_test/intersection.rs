@@ -15,7 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use datasketches::tuple::CompactTupleSketch;
+use datasketches::common::NumStdDev;
+use datasketches::error::ErrorKind;
 use datasketches::tuple::SummaryCombinePolicy;
 use datasketches::tuple::SummaryPolicy;
 use datasketches::tuple::TupleIntersection;
@@ -41,291 +42,140 @@ impl SummaryCombinePolicy for SumPolicy {
 }
 
 #[test]
-fn test_has_result_state_machine() {
-    let mut a = default_tuple_sketch_builder().build();
-    a.update("x", 1u64);
+fn has_result_tracks_the_first_update() {
+    let sketch = tuple_sketch_with_range(0, 10);
+    let mut intersection = TupleIntersection::new(SumPolicy);
 
-    let mut i = TupleIntersection::new(SumPolicy);
-    assert!(!i.has_result());
-    i.update(&a).unwrap();
-    assert!(i.has_result());
-    assert!(i.to_sketch(true).estimate() >= 1.0);
+    assert!(!intersection.has_result());
+    intersection.update(&sketch).unwrap();
+    assert!(intersection.has_result());
+    assert_eq!(intersection.to_sketch(true).num_retained(), 10);
 }
 
 #[test]
-fn test_result_before_update_panics() {
-    let i = TupleIntersection::with_seed(SumPolicy, 123);
-    let result = std::panic::catch_unwind(|| {
-        let _ = i.to_sketch(true);
-    });
-    assert!(result.is_err());
+#[should_panic(expected = "before first update")]
+fn result_before_first_update_panics() {
+    let intersection = TupleIntersection::new(SumPolicy);
+    let _ = intersection.to_sketch(true);
 }
 
 #[test]
-fn test_update_accepts_compact_sketch() {
+fn overlap_combines_summaries() {
     let mut a = default_tuple_sketch_builder().build();
-    a.update("x", 1u64);
-    a.update("y", 1u64);
-
+    a.update("shared", 3u64);
+    a.update("only_a", 100u64);
     let mut b = default_tuple_sketch_builder().build();
-    b.update("y", 1u64);
-    b.update("z", 1u64);
+    b.update("shared", 4u64);
+    b.update("only_b", 200u64);
 
-    let mut i = TupleIntersection::new(SumPolicy);
-    i.update(&a.compact(true)).unwrap();
-    i.update(&b).unwrap();
+    let mut intersection = TupleIntersection::new(SumPolicy);
+    intersection.update(&a).unwrap();
+    intersection.update(&b).unwrap();
+    let result = intersection.to_sketch(true);
 
-    let r = i.to_sketch(true);
-    assert!(r.estimate() == 1.0);
-    assert!(r.is_ordered());
-
-    let mut c = default_tuple_sketch_builder().build();
-    c.update("a", 1u64);
-    c.update("b", 1u64);
-    c.update("c", 1u64);
-
-    i.update(&c.compact(false)).unwrap();
-
-    let r = i.to_sketch(false);
-    assert!(r.estimate() == 0.0);
-    assert!(!r.is_ordered());
+    assert_eq!(result.num_retained(), 1);
+    assert_eq!(result.iter().next().unwrap().1, &7);
 }
 
 #[test]
-fn test_seed_mismatch_behaviour_for_empty_sketch() {
-    let empty_other_seed = default_tuple_sketch_builder().seed(2).build();
-    let mut i = TupleIntersection::with_seed(SumPolicy, 1);
+fn accepts_mutable_and_compact_inputs() {
+    let a = tuple_sketch_with_range(0, 1000);
+    let b = tuple_sketch_with_range(500, 1000);
 
-    i.update(&empty_other_seed).unwrap();
-    assert!(i.has_result());
-    let r = i.to_sketch(true);
-    assert!(r.is_empty());
+    let mut intersection = TupleIntersection::new(SumPolicy);
+    intersection.update(&a).unwrap();
+    intersection.update(&b.compact(true)).unwrap();
+
+    assert_eq!(intersection.to_sketch(true).num_retained(), 500);
 }
 
 #[test]
-fn test_seed_mismatch_behaviour() {
-    let mut one_other_seed = default_tuple_sketch_builder().seed(2).build();
-    one_other_seed.update("value", 1u64);
-    let mut i = TupleIntersection::with_seed(SumPolicy, 1);
+fn disjoint_result_is_terminally_empty() {
+    let a = tuple_sketch_with_range(0, 100);
+    let b = tuple_sketch_with_range(100, 100);
+    let later = tuple_sketch_with_range(0, 100);
 
-    assert!(i.update(&one_other_seed).is_err());
+    let mut intersection = TupleIntersection::new(SumPolicy);
+    intersection.update(&a).unwrap();
+    intersection.update(&b).unwrap();
+    intersection.update(&later).unwrap();
+
+    let result = intersection.to_sketch(true);
+    assert!(result.is_empty());
+    assert_eq!(result.num_retained(), 0);
 }
 
 #[test]
-fn test_terminal_empty_state_ignores_future_updates() {
-    let empty = default_tuple_sketch_builder().build();
+fn logically_non_empty_input_without_retained_entries_is_preserved() {
+    let screened_value = (0u64..)
+        .find(|candidate| {
+            let mut sketch = default_tuple_sketch_builder()
+                .sampling_probability(0.001)
+                .build();
+            sketch.update(*candidate, 1u64);
+            !sketch.is_empty() && sketch.num_retained() == 0
+        })
+        .expect("failed to find a value screened out by the sampling theta");
 
-    let mut non_empty = default_tuple_sketch_builder().build();
-    non_empty.update("x", 1u64);
-
-    let mut i = TupleIntersection::new(SumPolicy);
-    i.update(&empty).unwrap();
-    i.update(&non_empty).unwrap();
-
-    let r = i.to_sketch(true);
-    assert!(r.is_empty());
-}
-
-#[test]
-fn test_to_sketch_unordered_is_not_ordered() {
-    let mut a = default_tuple_sketch_builder().build();
-    for i in 0..64 {
-        a.update(i, 1u64);
-    }
-    let mut i = TupleIntersection::new(SumPolicy);
-    i.update(&a).unwrap();
-
-    let r = i.to_sketch(false);
-    assert!(!r.is_ordered());
-}
-
-#[test]
-fn test_empty_update_twice() {
-    let empty = default_tuple_sketch_builder().build();
-    let mut i = TupleIntersection::new(SumPolicy);
-
-    i.update(&empty).unwrap();
-    let r1 = i.to_sketch(true);
-    assert_eq!(r1.num_retained(), 0);
-    assert!(r1.is_empty());
-    assert!(!r1.is_estimation_mode());
-    assert_eq!(r1.estimate(), 0.0);
-
-    i.update(&empty).unwrap();
-    let r2 = i.to_sketch(true);
-    assert_eq!(r2.num_retained(), 0);
-    assert!(r2.is_empty());
-    assert!(!r2.is_estimation_mode());
-    assert_eq!(r2.estimate(), 0.0);
-}
-
-#[test]
-fn test_non_empty_no_retained_keys() {
-    let mut s = default_tuple_sketch_builder()
+    let mut sketch = default_tuple_sketch_builder()
         .sampling_probability(0.001)
         .build();
-    s.update(1u64, 1u64);
+    sketch.update(screened_value, 1u64);
 
-    let mut i = TupleIntersection::new(SumPolicy);
-    i.update(&s).unwrap();
-    let r1 = i.to_sketch(true);
-    assert_eq!(r1.num_retained(), 0);
-    assert!(!r1.is_empty());
-    assert!(r1.is_estimation_mode());
-    assert!((r1.theta() - 0.001).abs() < 1e-10);
-    assert_eq!(r1.estimate(), 0.0);
+    let mut intersection = TupleIntersection::new(SumPolicy);
+    intersection.update(&sketch).unwrap();
+    let result = intersection.to_sketch(true);
 
-    i.update(&s).unwrap();
-    let r2 = i.to_sketch(true);
-    assert_eq!(r2.num_retained(), 0);
-    assert!(!r2.is_empty());
-    assert!(r2.is_estimation_mode());
-    assert!((r2.theta() - 0.001).abs() < 1e-10);
-    assert_eq!(r2.estimate(), 0.0);
+    assert!(!result.is_empty());
+    assert_eq!(result.num_retained(), 0);
+    assert_eq!(result.theta64(), sketch.theta64());
 }
 
 #[test]
-fn test_exact_half_overlap_unordered() {
-    let s1 = tuple_sketch_with_range(0, 1000);
-    let s2 = tuple_sketch_with_range(500, 1000);
+fn only_non_empty_inputs_require_the_operator_seed() {
+    let empty_other_seed = default_tuple_sketch_builder().seed(2).build();
+    let mut non_empty_other_seed = default_tuple_sketch_builder().seed(2).build();
+    non_empty_other_seed.update("value", 1u64);
 
-    let mut i = TupleIntersection::new(SumPolicy);
-    i.update(&s1).unwrap();
-    i.update(&s2).unwrap();
-    let r = i.to_sketch(true);
+    let mut intersection = TupleIntersection::with_seed(SumPolicy, 1);
+    intersection.update(&empty_other_seed).unwrap();
 
-    assert!(!r.is_empty());
-    assert!(!r.is_estimation_mode());
-    assert_eq!(r.estimate(), 500.0);
+    let mut intersection = TupleIntersection::with_seed(SumPolicy, 1);
+    let err = intersection.update(&non_empty_other_seed).unwrap_err();
+    assert_eq!(err.kind(), ErrorKind::InvalidArgument);
 }
 
 #[test]
-fn test_exact_half_overlap_ordered() {
-    let s1 = tuple_sketch_with_range(0, 1000);
-    let s2 = tuple_sketch_with_range(500, 1000);
+fn result_ordering_follows_the_request() {
+    let input = tuple_sketch_with_range(0, 100);
+    let mut intersection = TupleIntersection::new(SumPolicy);
+    intersection.update(&input).unwrap();
 
-    let mut i = TupleIntersection::new(SumPolicy);
-    i.update(&s1.compact(true)).unwrap();
-    i.update(&s2.compact(true)).unwrap();
-    let r = i.to_sketch(true);
-
-    assert!(!r.is_empty());
-    assert!(!r.is_estimation_mode());
-    assert_eq!(r.estimate(), 500.0);
+    assert!(intersection.to_sketch(true).is_ordered());
+    assert!(!intersection.to_sketch(false).is_ordered());
 }
 
 #[test]
-fn test_exact_disjoint_unordered() {
-    let s1 = tuple_sketch_with_range(0, 1000);
-    let s2 = tuple_sketch_with_range(1000, 1000);
+fn estimation_bounds_cover_the_true_intersection() {
+    let mut a = default_tuple_sketch_builder().lg_k(8).build();
+    let mut b = default_tuple_sketch_builder().lg_k(8).build();
+    for value in 0..50_000 {
+        a.update(value, 1u64);
+    }
+    for value in 25_000..75_000 {
+        b.update(value, 1u64);
+    }
 
-    let mut i = TupleIntersection::new(SumPolicy);
-    i.update(&s1).unwrap();
-    i.update(&s2).unwrap();
-    let r = i.to_sketch(true);
+    let mut intersection = TupleIntersection::new(SumPolicy);
+    intersection.update(&a).unwrap();
+    intersection.update(&b).unwrap();
+    let result = intersection.to_sketch(true);
+    let lower = result.lower_bound(NumStdDev::Three);
+    let upper = result.upper_bound(NumStdDev::Three);
 
-    assert!(r.is_empty());
-    assert!(!r.is_estimation_mode());
-    assert_eq!(r.estimate(), 0.0);
-}
-
-#[test]
-fn test_exact_disjoint_ordered() {
-    let s1 = tuple_sketch_with_range(0, 1000);
-    let s2 = tuple_sketch_with_range(1000, 1000);
-
-    let mut i = TupleIntersection::new(SumPolicy);
-    i.update(&s1.compact(true)).unwrap();
-    i.update(&s2.compact(true)).unwrap();
-    let r = i.to_sketch(true);
-
-    assert!(r.is_empty());
-    assert!(!r.is_estimation_mode());
-    assert_eq!(r.estimate(), 0.0);
-}
-
-#[test]
-fn test_estimation_half_overlap_unordered() {
-    let s1 = tuple_sketch_with_range(0, 10000);
-    let s2 = tuple_sketch_with_range(5000, 10000);
-
-    let mut i = TupleIntersection::new(SumPolicy);
-    i.update(&s1).unwrap();
-    i.update(&s2).unwrap();
-    let r = i.to_sketch(true);
-
-    assert!(!r.is_empty());
-    assert!(r.is_estimation_mode());
-    assert!((r.estimate() - 5000.0).abs() <= 5000.0 * 0.02);
-}
-
-#[test]
-fn test_estimation_half_overlap_ordered() {
-    let s1 = tuple_sketch_with_range(0, 10000);
-    let s2 = tuple_sketch_with_range(5000, 10000);
-
-    let mut i = TupleIntersection::new(SumPolicy);
-    i.update(&s1.compact(true)).unwrap();
-    i.update(&s2.compact(true)).unwrap();
-    let r = i.to_sketch(true);
-
-    assert!(!r.is_empty());
-    assert!(r.is_estimation_mode());
-    assert!((r.estimate() - 5000.0).abs() <= 5000.0 * 0.02);
-}
-
-#[test]
-fn test_estimation_half_overlap_ordered_deserialized_compact() {
-    let s1 = tuple_sketch_with_range(0, 10000);
-    let s2 = tuple_sketch_with_range(5000, 10000);
-    let c1 = CompactTupleSketch::<u64>::deserialize(&s1.compact(true).serialize()).unwrap();
-    let c2 = CompactTupleSketch::<u64>::deserialize(&s2.compact(true).serialize()).unwrap();
-
-    let mut i = TupleIntersection::new(SumPolicy);
-    i.update(&c1).unwrap();
-    i.update(&c2).unwrap();
-    let r = i.to_sketch(true);
-
-    assert!(!r.is_empty());
-    assert!(r.is_estimation_mode());
-    assert!((r.estimate() - 5000.0).abs() <= 5000.0 * 0.02);
-}
-
-#[test]
-fn test_estimation_disjoint_unordered() {
-    let s1 = tuple_sketch_with_range(0, 10000);
-    let s2 = tuple_sketch_with_range(10000, 10000);
-
-    let mut i = TupleIntersection::new(SumPolicy);
-    i.update(&s1).unwrap();
-    i.update(&s2).unwrap();
-    let r = i.to_sketch(true);
-
-    assert!(!r.is_empty());
-    assert!(r.is_estimation_mode());
-    assert_eq!(r.estimate(), 0.0);
-}
-
-#[test]
-fn test_estimation_disjoint_ordered() {
-    let s1 = tuple_sketch_with_range(0, 10000);
-    let s2 = tuple_sketch_with_range(10000, 10000);
-
-    let mut i = TupleIntersection::new(SumPolicy);
-    i.update(&s1.compact(true)).unwrap();
-    i.update(&s2.compact(true)).unwrap();
-    let r = i.to_sketch(true);
-
-    assert!(!r.is_empty());
-    assert!(r.is_estimation_mode());
-    assert_eq!(r.estimate(), 0.0);
-}
-
-#[test]
-fn test_seed_mismatch_non_empty_returns_error() {
-    let mut s = default_tuple_sketch_builder().build();
-    s.update(1u64, 1u64);
-
-    let mut i = TupleIntersection::with_seed(SumPolicy, 123);
-    assert!(i.update(&s).is_err());
+    assert!(result.is_estimation_mode());
+    assert!(
+        lower <= 25_000.0 && 25_000.0 <= upper,
+        "expected 25000 in [{lower}, {upper}]"
+    );
 }

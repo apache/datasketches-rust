@@ -18,7 +18,9 @@
 use std::fs;
 use std::path::PathBuf;
 
+use datasketches::error::ErrorKind;
 use datasketches::theta::CompactThetaSketch;
+use datasketches::theta::ThetaSketchBuilder;
 use googletest::assert_that;
 use googletest::prelude::near;
 
@@ -112,4 +114,30 @@ fn test_cpp_compatibility() {
 
     let path = serialization_test_data("cpp_generated_files", "theta_non_empty_no_entries_cpp.sk");
     test_sketch_file(path, 0, false);
+}
+
+#[test]
+fn malformed_input_is_rejected() {
+    let mut sketch = ThetaSketchBuilder::default().lg_k(5).build();
+    for value in 0..5000 {
+        sketch.update(value);
+    }
+    let bytes = sketch.compact(true).serialize();
+
+    let truncated = &bytes[..bytes.len() - 1];
+    let err = CompactThetaSketch::deserialize(truncated).unwrap_err();
+    assert_eq!(err.kind(), ErrorKind::InvalidData);
+
+    let err = CompactThetaSketch::deserialize_with_seed(&bytes, 8).unwrap_err();
+    assert_eq!(err.kind(), ErrorKind::InvalidData);
+
+    let mut wrong_family = bytes.clone();
+    wrong_family[2] = 0;
+    let err = CompactThetaSketch::deserialize(&wrong_family).unwrap_err();
+    assert_eq!(err.kind(), ErrorKind::InvalidData);
+
+    let mut unsupported_version = bytes;
+    unsupported_version[1] = 99;
+    let err = CompactThetaSketch::deserialize(&unsupported_version).unwrap_err();
+    assert_eq!(err.kind(), ErrorKind::InvalidData);
 }

@@ -48,6 +48,11 @@ theta = []
 tuple = []
 
 [[test]]
+name = "bloom_test"
+path = "tests/bloom_test/main.rs"
+required-features = ["bloom"]
+
+[[test]]
 name = "countmin_test"
 path = "tests/countmin_test/main.rs"
 required-features = ["countmin"]
