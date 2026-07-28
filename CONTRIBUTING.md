@@ -42,12 +42,16 @@ Build:
 cargo build --workspace
 ```
 
+Prepare the cross-language serialization test data:
+
+```shell
+cargo x prepare-testdata
+```
+
 Test:
 
 ```shell
 cargo x test
-# or
-cargo test --workspace --all-features
 ```
 
 Lint:
@@ -110,26 +114,21 @@ cargo install taplo-cli typos-cli hawkeye
 
 ## Serialization snapshots
 
-Some tests depend on snapshot files under `datasketches/tests/serde_tests`. If they are missing, tests will fail. Download them with:
+Serialization compatibility tests use snapshots from a pinned revision of [`apache/datasketches-tck`](https://github.com/apache/datasketches-tck).
 
-```shell
-python3 ./tools/download_serde_tests_data.py --all
-```
-
-The script downloads the latest snapshots from the `main` branch of
-[`apache/datasketches-tck`](https://github.com/apache/datasketches-tck) and writes them to:
+The `cargo x prepare-testdata` command downloads the TCK archive and synchronizes its snapshots into:
 
 - `datasketches/tests/serde_tests/java_generated_files`
 - `datasketches/tests/serde_tests/cpp_generated_files`
 
-You can download them separately:
+You can synchronize them separately:
 
 ```shell
-python3 ./tools/download_serde_tests_data.py --java
-python3 ./tools/download_serde_tests_data.py --cpp
+cargo x prepare-testdata java
+cargo x prepare-testdata cpp
 ```
 
-The script requires Python 3 and network access.
+If no language is specified, all languages are prepared. These directories are not stored in Git. Run the command before the first test run and again whenever the pinned TCK revision changes. It requires network access and replaces the selected generated directories.
 
 ## Code of Conduct
 
