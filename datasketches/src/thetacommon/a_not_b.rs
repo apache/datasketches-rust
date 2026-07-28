@@ -102,10 +102,10 @@ impl ANotBOperator {
             a.iter().filter(|entry| entry.hash() < theta).collect()
         } else if a.is_ordered() && b.is_ordered() {
             // Both inputs are sorted ascending by hash: merge-scan without a hash set. Only
-            // b hashes below theta can exclude an a entry (a entries are all < theta), so
-            // unexamined b entries at or above theta are harmless.
+            // B hashes below theta can exclude an A entry (A entries are all < theta), so
+            // unexamined B entries at or above theta are harmless.
             let mut b_hashes = b.iter().map(|entry| entry.hash()).peekable();
-            let mut entries = Vec::new();
+            let mut entries = vec![];
             for entry in a.iter() {
                 let hash = entry.hash();
                 if hash >= theta {
@@ -134,7 +134,7 @@ impl ANotBOperator {
                 }
             }
 
-            let mut entries = Vec::new();
+            let mut entries = vec![];
             for entry in a.iter() {
                 let hash = entry.hash();
                 if hash < theta {

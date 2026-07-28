@@ -18,14 +18,13 @@
 use std::error::Error;
 use std::fs;
 use std::io;
-use std::io::Cursor;
 use std::path::Path;
 use std::process::Command as StdCommand;
 use std::time::Duration;
 
 use clap::Parser;
 use clap::Subcommand;
-use zip::ZipArchive;
+use zip::read::read_zipfile_from_stream;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -281,12 +280,12 @@ fn make_taplo_cmd(fix: bool) -> StdCommand {
 #[derive(Parser)]
 #[clap(name = "prepare-testdata")]
 struct CommandPrepareTestData {
-    #[arg(long, help = "Prepare Java test data.")]
-    java: bool,
-    #[arg(long, help = "Prepare C++ test data.")]
-    cpp: bool,
-    #[arg(long, help = "Prepare all test data.")]
-    all: bool,
+    #[arg(
+        value_name = "LANG",
+        value_parser = ["java", "cpp", "c++"],
+        help = "Languages to prepare (all by default)."
+    )]
+    langs: Vec<String>,
 }
 
 impl CommandPrepareTestData {
@@ -313,44 +312,9 @@ impl CommandPrepareTestData {
         let response = agent.get(&archive_url).call()?;
         let mut reader = response.into_reader();
 
-        let mut archive_bytes = Vec::new();
-        io::copy(&mut reader, &mut archive_bytes)?;
-
-        let mut archive = ZipArchive::new(Cursor::new(archive_bytes))?;
-        let mut snapshots = Vec::new();
+        let mut targets = vec![];
         for language in self.languages() {
             let source_directory = Path::new("serialization").join(language).join("snapshots");
-            let mut members = Vec::new();
-
-            for index in 0..archive.len() {
-                let member = archive.by_index(index)?;
-                let Some(path) = member.enclosed_name() else {
-                    continue;
-                };
-
-                if member.is_dir()
-                    || path.extension().is_none_or(|extension| extension != "sk")
-                    || path
-                        .parent()
-                        .is_none_or(|parent| !parent.ends_with(&source_directory))
-                {
-                    continue;
-                }
-
-                let name = path
-                    .file_name()
-                    .expect("snapshot path has a file name")
-                    .to_owned();
-                members.push((index, name));
-            }
-
-            if members.is_empty() {
-                return Err(format!("no {language} snapshots found in the TCK archive").into());
-            }
-            snapshots.push((language, members));
-        }
-
-        for (language, members) in snapshots {
             let destination = serde_tests.join(format!("{language}_generated_files"));
             if fs::exists(&destination)? {
                 println!(
@@ -360,14 +324,36 @@ impl CommandPrepareTestData {
                 fs::remove_dir_all(&destination)?;
             }
             fs::create_dir_all(&destination)?;
+            targets.push((language, source_directory, destination, 0_usize));
+        }
 
-            let count = members.len();
-            for (index, name) in members {
-                let mut source = archive.by_index(index)?;
-                let mut output = fs::File::create(destination.join(name))?;
-                io::copy(&mut source, &mut output)?;
+        // Note that read_zipfile_from_stream depends on GitHub Archive format. If GitHub changes
+        // the format, this code may break.
+        while let Some(mut member) = read_zipfile_from_stream(&mut reader)? {
+            let Some(path) = member.enclosed_name() else {
+                continue;
+            };
+            if member.is_dir() || path.extension().is_none_or(|extension| extension != "sk") {
+                continue;
             }
 
+            let Some((_, _, destination, count)) = targets.iter_mut().find(|target| {
+                path.parent()
+                    .is_some_and(|parent| parent.ends_with(&target.1))
+            }) else {
+                continue;
+            };
+
+            let name = path.file_name().expect("snapshot path has a file name");
+            let mut output = fs::File::create(destination.join(name))?;
+            io::copy(&mut member, &mut output)?;
+            *count += 1;
+        }
+
+        for (language, _, destination, count) in targets {
+            if count == 0 {
+                return Err(format!("no {language} snapshots found in the TCK archive").into());
+            }
             println!(
                 "Extracted {count} {language} snapshots into {}",
                 destination.display()
@@ -377,18 +363,21 @@ impl CommandPrepareTestData {
     }
 
     fn languages(&self) -> Vec<&'static str> {
-        let mut languages = vec![];
-        if self.all || self.cpp {
-            languages.push("cpp");
-        }
-        if self.all || self.java {
-            languages.push("java");
+        if self.langs.is_empty() {
+            return vec!["cpp", "java"];
         }
 
-        if languages.is_empty() {
-            vec!["cpp", "java"]
-        } else {
-            languages
+        let mut languages = vec![];
+        for language in &self.langs {
+            let language = match language.as_str() {
+                "java" => "java",
+                "cpp" | "c++" => "cpp",
+                _ => unreachable!("language is validated by clap"),
+            };
+            if !languages.contains(&language) {
+                languages.push(language);
+            }
         }
+        languages
     }
 }
