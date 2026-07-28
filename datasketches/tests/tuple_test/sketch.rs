@@ -182,8 +182,9 @@ fn assert_compact_preserves_state(
 fn compact_preserves_state_in_exact_and_estimation_modes() {
     for (lg_k, num_updates, expected_estimation_mode) in [(12, 2_000, false), (5, 5_000, true)] {
         let mut sketch = default_tuple_sketch_builder().lg_k(lg_k).build();
-        for value in 0..num_updates {
-            sketch.update(value, 1u64);
+        for key in 0..num_updates {
+            sketch.update(key, key + 1);
+            sketch.update(key, 10u64);
         }
         assert_eq!(sketch.is_estimation_mode(), expected_estimation_mode);
 
