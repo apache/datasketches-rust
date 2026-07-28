@@ -64,8 +64,9 @@ fn test_union_and_intersection() {
     let mut intersection = left.clone();
     intersection.intersect(&right);
     assert!(intersection.contains(&"shared"));
-    assert!(intersection.bits_used() < left_bits);
-    assert!(intersection.bits_used() <= right_bits);
+    let intersection_bits = intersection.bits_used();
+    assert!(intersection_bits <= left_bits);
+    assert!(intersection_bits <= right_bits);
 
     let mut union = left;
     union.union(&right);
