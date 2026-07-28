@@ -24,11 +24,11 @@ use googletest::prelude::near;
 
 use crate::serialization_test_data;
 
-fn test_sketch_file(path: PathBuf, expected_cardinality: usize) {
+fn test_sketch_file(path: PathBuf, expected_cardinality: usize, input_start: i64) {
     let expected = expected_cardinality as f64;
 
     let bytes = fs::read(&path).unwrap();
-    let sketch1 = CpcSketch::deserialize(&bytes).unwrap();
+    let mut sketch1 = CpcSketch::deserialize(&bytes).unwrap();
     let estimate1 = sketch1.estimate();
     assert_that!(estimate1, near(expected, expected * 0.02));
 
@@ -58,6 +58,29 @@ fn test_sketch_file(path: PathBuf, expected_cardinality: usize) {
         "Estimates differ after round-trip for {}",
         path.display()
     );
+
+    let coupons1 = sketch1.num_coupons();
+    let input_end = input_start + expected_cardinality as i64;
+    for value in input_start..input_end {
+        sketch1.update(value);
+    }
+    assert_eq!(
+        coupons1,
+        sketch1.num_coupons(),
+        "Coupon count changed after replaying input for {}",
+        path.display()
+    );
+    assert_eq!(
+        estimate1,
+        sketch1.estimate(),
+        "Estimate changed after replaying input for {}",
+        path.display()
+    );
+    assert!(
+        sketch1.validate(),
+        "Sketch became invalid after replaying input for {}",
+        path.display()
+    );
 }
 
 #[test]
@@ -67,7 +90,7 @@ fn test_java_compatibility() {
     for n in test_cases {
         let filename = format!("cpc_n{}_java.sk", n);
         let path = serialization_test_data("java_generated_files", &filename);
-        test_sketch_file(path, n);
+        test_sketch_file(path, n, 0);
     }
 }
 
@@ -78,6 +101,6 @@ fn test_cpp_compatibility() {
     for n in test_cases {
         let filename = format!("cpc_n{}_cpp.sk", n);
         let path = serialization_test_data("cpp_generated_files", &filename);
-        test_sketch_file(path, n);
+        test_sketch_file(path, n, 1);
     }
 }
