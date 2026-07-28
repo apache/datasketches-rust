@@ -52,8 +52,6 @@ Test:
 
 ```shell
 cargo x test
-# or
-cargo test --workspace --all-features
 ```
 
 Lint:
@@ -116,19 +114,16 @@ cargo install taplo-cli typos-cli hawkeye
 
 ## Serialization snapshots
 
-Serialization compatibility tests use Java and C++ snapshots from a pinned
-revision of [`apache/datasketches-tck`](https://github.com/apache/datasketches-tck).
-The `cargo x prepare-testdata` command downloads the TCK archive and synchronizes
-its snapshots into:
+Serialization compatibility tests use snapshots from a pinned revision of [`apache/datasketches-tck`](https://github.com/apache/datasketches-tck).
+
+The `cargo x prepare-testdata` command downloads the TCK archive and synchronizes its snapshots into:
 
 - `datasketches/tests/serde_tests/java_generated_files`
 - `datasketches/tests/serde_tests/cpp_generated_files`
 
-These directories are not stored in Git. Run the command before the first test
-run and again whenever the pinned TCK revision changes. It requires network
-access and removes stale `.sk` files when synchronizing the snapshots. Pass
-`--java` or `--cpp` to prepare one language, or pass `--all` (or no option) to
-prepare both.
+You can synchronize them separately:
+
+These directories are not stored in Git. Run the command before the first test run and again whenever the pinned TCK revision changes. It requires network access and removes stale `.sk` files when synchronizing the snapshots. Pass `--java` or `--cpp` to prepare one language, or pass `--all` (or no option) to prepare both.
 
 ## Code of Conduct
 

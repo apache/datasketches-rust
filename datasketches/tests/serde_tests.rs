@@ -29,8 +29,9 @@ pub fn serialization_test_data(sub_dir: &str, name: &str) -> PathBuf {
         panic!(
             r#"serialization test data file not found: {}
 
-            Run the following command from the project root to download the missing
-            serialization test data:
+            Please ensure test data files are present in the repository. Generally, you can
+            run the following commands from the project root to prepare the test data files
+            if they are missing:
 
             $ cargo x prepare-testdata --all
         "#,
