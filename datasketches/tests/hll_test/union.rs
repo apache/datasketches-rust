@@ -402,6 +402,29 @@ fn test_union_reset() {
     }
 }
 
+#[test]
+fn test_union_commutativity() {
+    let mut sketch_a = HllSketch::new(12, HllType::Hll8);
+    let mut sketch_b = HllSketch::new(12, HllType::Hll8);
+
+    for i in 0..1000 {
+        sketch_a.update(i);
+    }
+    for i in 500..1500 {
+        sketch_b.update(i);
+    }
+
+    let mut union_ab = HllUnion::new(12);
+    union_ab.update(&sketch_a);
+    union_ab.update(&sketch_b);
+
+    let mut union_b_then_a = HllUnion::new(12);
+    union_b_then_a.update(&sketch_b);
+    union_b_then_a.update(&sketch_a);
+
+    assert_eq!(union_ab.estimate(), union_b_then_a.estimate());
+}
+
 fn next_power_series_point(points_per_octave: i32, current: i64) -> i64 {
     let current = current.max(1);
     let mut generating_index =
