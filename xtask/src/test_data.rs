@@ -74,42 +74,31 @@ fn extract_snapshots<R: Read + Seek>(
     destination: &Path,
     language: &str,
 ) -> Result<()> {
-    let source_suffix = ["serialization", language, "snapshots"];
+    let source_directory = Path::new("serialization").join(language).join("snapshots");
     let mut members = Vec::new();
     let mut expected_files = BTreeSet::new();
 
     for index in 0..archive.len() {
         let member = archive.by_index(index)?;
-        let path = Path::new(member.name());
-        let parent_matches = path
-            .parent()
-            .map(|parent| {
-                parent
-                    .iter()
-                    .rev()
-                    .take(source_suffix.len())
-                    .zip(source_suffix.iter().rev())
-                    .all(|(actual, expected)| actual == *expected)
-                    && parent.iter().count() >= source_suffix.len()
-            })
-            .unwrap_or(false);
+        let Some(path) = member.enclosed_name() else {
+            continue;
+        };
 
-        if !member.is_dir()
-            && path.extension().is_some_and(|extension| extension == "sk")
-            && parent_matches
+        if member.is_dir()
+            || path.extension().is_none_or(|extension| extension != "sk")
+            || path
+                .parent()
+                .is_none_or(|parent| !parent.ends_with(&source_directory))
         {
-            let Some(name) = path.file_name().map(ToOwned::to_owned) else {
-                continue;
-            };
-            if !expected_files.insert(name.clone()) {
-                return Err(format!(
-                    "duplicate {language} snapshot in archive: {}",
-                    Path::new(&name).display()
-                )
-                .into());
-            }
-            members.push((index, name));
+            continue;
         }
+
+        let name = path
+            .file_name()
+            .expect("snapshot path has a file name")
+            .to_owned();
+        expected_files.insert(name.clone());
+        members.push((index, name));
     }
 
     if members.is_empty() {
