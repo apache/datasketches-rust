@@ -46,7 +46,7 @@ fn test_two_values() {
     let result = union.to_sketch();
     assert!(!result.is_empty());
     assert_that!(
-        sketch.estimate(),
+        result.estimate(),
         near(2.0, RELATIVE_ERROR_FOR_LG_K_11 * 2.0)
     );
 }
@@ -140,7 +140,7 @@ fn test_reduce_k_sparse() {
     assert_eq!(result.lg_k(), 11);
     assert_that!(
         result.estimate(),
-        near(1000.0, RELATIVE_ERROR_FOR_LG_K_11 * 10000.0)
+        near(1000.0, RELATIVE_ERROR_FOR_LG_K_11 * 1000.0)
     );
 }
 
@@ -164,7 +164,7 @@ fn test_reduce_k_window() {
     assert_eq!(result.lg_k(), 11);
     assert_that!(
         result.estimate(),
-        near(1000.0, RELATIVE_ERROR_FOR_LG_K_11 * 10000.0)
+        near(1000.0, RELATIVE_ERROR_FOR_LG_K_11 * 1000.0)
     );
 }
 

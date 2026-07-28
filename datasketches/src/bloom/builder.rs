@@ -120,7 +120,7 @@ impl BloomFilterBuilder {
         );
         assert!(
             (Self::MIN_NUM_HASHES..=Self::MAX_NUM_HASHES).contains(&num_hashes),
-            "num_bits must be between {} and {}, got {}",
+            "num_hashes must be between {} and {}, got {}",
             Self::MIN_NUM_HASHES,
             Self::MAX_NUM_HASHES,
             num_hashes

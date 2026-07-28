@@ -46,7 +46,7 @@ enum SubCommand {
     Docs(CommandDocs),
     #[clap(about = "Run linter checks.")]
     Lint(CommandLint),
-    #[clap(about = "Run unit tests.")]
+    #[clap(about = "Run the test suite.")]
     Test(CommandTest),
 }
 
