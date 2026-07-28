@@ -15,15 +15,14 @@
 // specific language governing permissions and limitations
 // under the License.
 
-mod support;
-
 use std::fs;
 use std::path::PathBuf;
 
 use datasketches::hash_value::natural_extend;
 use datasketches::hll::HllSketch;
 use datasketches::hll::HllType;
-use support::serialization_test_data;
+
+use crate::support::serialization_test_data;
 
 fn test_sketch_file(path: PathBuf, expected_cardinality: usize, expected_lg_k: u8) {
     let expected = expected_cardinality as f64;

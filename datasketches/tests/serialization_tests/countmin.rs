@@ -15,14 +15,13 @@
 // specific language governing permissions and limitations
 // under the License.
 
-mod support;
-
 use std::fs;
 
 use datasketches::countmin::CountMinSketch;
 use googletest::assert_that;
 use googletest::prelude::contains_substring;
-use support::serialization_test_data;
+
+use crate::support::serialization_test_data;
 
 // This test validates binary format compatibility (deserialize + byte round-trip) for
 // C++ Count-Min snapshots. It intentionally does not assert estimate equivalence against

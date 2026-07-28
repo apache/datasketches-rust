@@ -15,15 +15,14 @@
 // specific language governing permissions and limitations
 // under the License.
 
-mod support;
-
 use std::fs;
 use std::path::PathBuf;
 
 use datasketches::cpc::CpcSketch;
 use googletest::assert_that;
 use googletest::prelude::near;
-use support::serialization_test_data;
+
+use crate::support::serialization_test_data;
 
 fn test_sketch_file(path: PathBuf, expected_cardinality: usize) {
     let expected = expected_cardinality as f64;
