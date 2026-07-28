@@ -15,17 +15,16 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use std::collections::BTreeSet;
 use std::error::Error;
 use std::fs;
 use std::io;
+use std::io::Cursor;
 use std::path::Path;
 use std::process::Command as StdCommand;
 use std::time::Duration;
 
 use clap::Parser;
 use clap::Subcommand;
-use tempfile::NamedTempFile;
 use zip::ZipArchive;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
@@ -304,6 +303,34 @@ impl CommandPrepareTestData {
             Path::new(env!("CARGO_WORKSPACE_DIR")).join("datasketches/tests/serde_tests");
         let archive_url =
             format!("https://github.com/apache/datasketches-tck/archive/{REVISION}/main.zip");
+        let all = self.all || !(self.java || self.cpp);
+        let languages = [
+            (all || self.java).then_some("java"),
+            (all || self.cpp).then_some("cpp"),
+        ];
+
+        if fs::symlink_metadata(&serde_tests)?.file_type().is_symlink() {
+            return Err(format!(
+                "snapshot output path cannot be a symbolic link: {}",
+                serde_tests.display()
+            )
+            .into());
+        }
+        for &language in languages.iter().flatten() {
+            let destination = serde_tests.join(format!("{language}_generated_files"));
+            match fs::symlink_metadata(&destination) {
+                Ok(metadata) if metadata.file_type().is_symlink() => {
+                    return Err(format!(
+                        "snapshot output path cannot be a symbolic link: {}",
+                        destination.display()
+                    )
+                    .into());
+                }
+                Ok(_) => {}
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error.into()),
+            }
+        }
 
         println!("Downloading serialization snapshots from {archive_url}");
 
@@ -314,15 +341,14 @@ impl CommandPrepareTestData {
         let response = agent.get(&archive_url).call()?;
         let mut reader = response.into_reader();
 
-        let mut archive_file = NamedTempFile::new()?;
-        io::copy(&mut reader, archive_file.as_file_mut())?;
+        let mut archive_bytes = Vec::new();
+        io::copy(&mut reader, &mut archive_bytes)?;
 
-        let mut archive = ZipArchive::new(archive_file.reopen()?)?;
-        for language in self.languages() {
-            let destination = serde_tests.join(format!("{language}_generated_files"));
+        let mut archive = ZipArchive::new(Cursor::new(archive_bytes))?;
+        let mut snapshots = Vec::new();
+        for language in languages.into_iter().flatten() {
             let source_directory = Path::new("serialization").join(language).join("snapshots");
             let mut members = Vec::new();
-            let mut expected_files = BTreeSet::new();
 
             for index in 0..archive.len() {
                 let member = archive.by_index(index)?;
@@ -343,72 +369,39 @@ impl CommandPrepareTestData {
                     .file_name()
                     .expect("snapshot path has a file name")
                     .to_owned();
-                expected_files.insert(name.clone());
                 members.push((index, name));
             }
 
             if members.is_empty() {
                 return Err(format!("no {language} snapshots found in the TCK archive").into());
             }
+            snapshots.push((language, members));
+        }
 
-            ensure_not_symlink(&destination)?;
-            if let Some(parent) = &destination.parent() {
-                ensure_not_symlink(parent)?;
+        for (language, members) in snapshots {
+            let destination = serde_tests.join(format!("{language}_generated_files"));
+            if fs::exists(&destination)? {
+                println!(
+                    "Removing existing {language} snapshots from {}",
+                    destination.display()
+                );
+                fs::remove_dir_all(&destination)?;
             }
             fs::create_dir_all(&destination)?;
 
-            for entry in fs::read_dir(&destination)? {
-                let path = entry?.path();
-                if path.extension().is_some_and(|extension| extension == "sk")
-                    && path
-                        .file_name()
-                        .is_some_and(|name| !expected_files.contains(name))
-                {
-                    fs::remove_file(path)?;
-                }
-            }
-
+            let count = members.len();
             for (index, name) in members {
                 let mut source = archive.by_index(index)?;
-                let mut output = NamedTempFile::new_in(&destination)?;
+                let mut output = fs::File::create(destination.join(name))?;
                 io::copy(&mut source, &mut output)?;
-                output.persist(destination.join(&name))?;
             }
 
             println!(
                 "Extracted {} {language} snapshots into {}",
-                expected_files.len(),
+                count,
                 destination.display()
             );
         }
         Ok(())
-    }
-
-    fn languages(&self) -> Vec<&'static str> {
-        if self.all {
-            vec!["java", "cpp"]
-        } else {
-            let mut languages = Vec::new();
-            if self.java {
-                languages.push("java");
-            }
-            if self.cpp {
-                languages.push("cpp");
-            }
-            languages
-        }
-    }
-}
-
-fn ensure_not_symlink(path: &Path) -> Result<()> {
-    match fs::symlink_metadata(path) {
-        Ok(metadata) if metadata.file_type().is_symlink() => Err(format!(
-            "snapshot output path cannot be a symbolic link: {}",
-            path.display()
-        )
-        .into()),
-        Ok(_) => Ok(()),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(error.into()),
     }
 }

@@ -37,7 +37,6 @@ insta = { version = "1.46.1" }
 googletest = { version = "0.14.2" }
 cargo_metadata = { version = "0.23.1" }
 which = { version = "8.0.0" }
-tempfile = { version = "3.27.0" }
 ureq = { version = "2.12.1", default-features = false, features = [
   "proxy-from-env",
   "socks-proxy",
