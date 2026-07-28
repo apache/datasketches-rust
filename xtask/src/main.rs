@@ -19,7 +19,7 @@ use std::collections::BTreeSet;
 use std::error::Error;
 use std::fs;
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command as StdCommand;
 use std::time::Duration;
 
@@ -300,11 +300,11 @@ impl CommandPrepareTestData {
 
     fn prepare(self) -> Result<()> {
         const REVISION: &str = "0016a517cc87e13339298550afe8e6a7e961bf46";
-
         let serde_tests =
             Path::new(env!("CARGO_WORKSPACE_DIR")).join("datasketches/tests/serde_tests");
         let archive_url =
             format!("https://github.com/apache/datasketches-tck/archive/{REVISION}/main.zip");
+
         println!("Downloading serialization snapshots from {archive_url}");
 
         let agent = ureq::AgentBuilder::new()
