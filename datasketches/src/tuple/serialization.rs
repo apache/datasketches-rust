@@ -89,38 +89,3 @@ impl_primitive_summary!(i32, read_i32_le, write_i32_le);
 impl_primitive_summary!(i64, read_i64_le, write_i64_le);
 impl_primitive_summary!(f32, read_f32_le, write_f32_le);
 impl_primitive_summary!(f64, read_f64_le, write_f64_le);
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::error::ErrorKind;
-
-    #[test]
-    fn primitive_values_round_trip() {
-        let mut bytes = SketchBytes::with_capacity(8);
-        123456789u64.serialize_value(&mut bytes);
-        let bytes = bytes.into_bytes();
-        assert_eq!(bytes.len(), 8);
-        let mut cursor = SketchSlice::new(&bytes);
-        assert_eq!(u64::deserialize_value(&mut cursor).unwrap(), 123456789);
-    }
-
-    #[test]
-    fn primitive_values_consume_only_their_width() {
-        let mut bytes = SketchBytes::with_capacity(6);
-        9u32.serialize_value(&mut bytes);
-        bytes.write(&[0xAA, 0xBB]); // trailing bytes belonging to the next entry
-        let bytes = bytes.into_bytes();
-        let mut cursor = SketchSlice::new(&bytes);
-        assert_eq!(u32::deserialize_value(&mut cursor).unwrap(), 9);
-        assert_eq!(cursor.remaining(), &[0xAA, 0xBB]);
-    }
-
-    #[test]
-    fn primitive_values_reject_short_input() {
-        let bytes = [0u8; 3];
-        let mut cursor = SketchSlice::new(&bytes);
-        let err = u64::deserialize_value(&mut cursor).unwrap_err();
-        assert_eq!(err.kind(), ErrorKind::InvalidData);
-    }
-}

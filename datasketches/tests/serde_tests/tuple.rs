@@ -96,6 +96,21 @@ fn test_cpp_compatibility() {
 }
 
 #[test]
+fn round_trip_preserves_summaries() {
+    let mut sketch = TupleSketchBuilder::new(DefaultUpdatePolicy::<u64>::default()).build();
+    for value in 0..50 {
+        sketch.update(value, 1);
+        sketch.update(value, 2);
+    }
+
+    let restored =
+        CompactTupleSketch::<u64>::deserialize(&sketch.compact(true).serialize()).unwrap();
+
+    assert_eq!(restored.num_retained(), 50);
+    assert!(restored.iter().all(|(_, &summary)| summary == 3));
+}
+
+#[test]
 fn malformed_input_is_rejected() {
     let mut sketch = TupleSketchBuilder::new(DefaultUpdatePolicy::<u64>::default())
         .lg_k(5)

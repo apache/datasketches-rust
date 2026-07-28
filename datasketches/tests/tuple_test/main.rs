@@ -18,6 +18,7 @@
 mod a_not_b;
 mod intersection;
 mod sketch;
+mod union;
 
 use datasketches::tuple::DefaultUpdatePolicy;
 use datasketches::tuple::TupleSketch;
