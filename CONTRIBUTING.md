@@ -77,9 +77,9 @@ When adding a case to an existing sketch target, add it to the appropriate modul
 
 ### Serialization compatibility tests
 
-Cargo automatically discovers `datasketches/tests/serde_tests.rs`, which aggregates the sketch-specific modules under `datasketches/tests/serialization_tests`. Each module is gated by its corresponding sketch feature in `serde_tests.rs`.
+Cargo automatically discovers `datasketches/tests/serde_tests.rs`, which aggregates the sketch-specific modules under `datasketches/tests/serde_tests`. Each module is gated by its corresponding sketch feature in `serde_tests.rs`.
 
-To add serialization tests for another sketch, add `serialization_tests/<sketch>.rs` and a feature-gated module declaration in `serde_tests.rs`. Do not add a separate `[[test]]` entry. Shared path handling belongs in `serialization_tests/support.rs`, and serialization fixtures belong in the appropriate subdirectory under `serialization_tests`.
+To add serialization tests for another sketch, add `serde_tests/<sketch>.rs` and a feature-gated module declaration in `serde_tests.rs`. Do not add a separate `[[test]]` entry. Shared path handling belongs in `serde_tests.rs`, and serialization fixtures belong in the appropriate subdirectory under `serde_tests`.
 
 ## Manual workflow (without xtask)
 
@@ -110,23 +110,23 @@ cargo install taplo-cli typos-cli hawkeye
 
 ## Serialization snapshots
 
-Some tests depend on snapshot files under `datasketches/tests/serialization_tests`. If they are missing, tests will fail. Download them with:
+Some tests depend on snapshot files under `datasketches/tests/serde_tests`. If they are missing, tests will fail. Download them with:
 
 ```shell
-python3 ./tools/download_serialization_test_data.py --all
+python3 ./tools/download_serde_tests_data.py --all
 ```
 
 The script downloads the latest snapshots from the `main` branch of
 [`apache/datasketches-tck`](https://github.com/apache/datasketches-tck) and writes them to:
 
-- `datasketches/tests/serialization_tests/java_generated_files`
-- `datasketches/tests/serialization_tests/cpp_generated_files`
+- `datasketches/tests/serde_tests/java_generated_files`
+- `datasketches/tests/serde_tests/cpp_generated_files`
 
 You can download them separately:
 
 ```shell
-python3 ./tools/download_serialization_test_data.py --java
-python3 ./tools/download_serialization_test_data.py --cpp
+python3 ./tools/download_serde_tests_data.py --java
+python3 ./tools/download_serde_tests_data.py --cpp
 ```
 
 The script requires Python 3 and network access.

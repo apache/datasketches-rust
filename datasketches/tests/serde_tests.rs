@@ -15,41 +15,61 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! Serialization compatibility tests grouped by sketch.
+use std::path::PathBuf;
 
-// This target is also compiled without sketch features during feature-matrix checks.
-#[allow(dead_code)]
-#[path = "serialization_tests/support.rs"]
-mod support;
+pub fn serialization_test_data(sub_dir: &str, name: &str) -> PathBuf {
+    const SERDE_TESTS_DIR: &str = "tests/serde_tests";
+
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join(SERDE_TESTS_DIR)
+        .join(sub_dir)
+        .join(name);
+
+    if !path.exists() {
+        panic!(
+            r#"serialization test data file not found: {}
+
+            Please ensure test data files are present in the repository. Generally, you can
+            run the following commands from the project root to download the test data files
+            if they are missing:
+
+            $ ./tools/download_serde_tests_data.py
+        "#,
+            path.display(),
+        );
+    }
+
+    path
+}
 
 #[cfg(feature = "bloom")]
-#[path = "serialization_tests/bloom.rs"]
+#[path = "serde_tests/bloom.rs"]
 mod bloom;
 
 #[cfg(feature = "countmin")]
-#[path = "serialization_tests/countmin.rs"]
+#[path = "serde_tests/countmin.rs"]
 mod countmin;
 
 #[cfg(feature = "cpc")]
-#[path = "serialization_tests/cpc.rs"]
+#[path = "serde_tests/cpc.rs"]
 mod cpc;
 
 #[cfg(feature = "frequencies")]
-#[path = "serialization_tests/frequencies.rs"]
+#[path = "serde_tests/frequencies.rs"]
 mod frequencies;
 
 #[cfg(feature = "hll")]
-#[path = "serialization_tests/hll.rs"]
+#[path = "serde_tests/hll.rs"]
 mod hll;
 
 #[cfg(feature = "tdigest")]
-#[path = "serialization_tests/tdigest.rs"]
+#[path = "serde_tests/tdigest.rs"]
 mod tdigest;
 
 #[cfg(feature = "theta")]
-#[path = "serialization_tests/theta.rs"]
+#[path = "serde_tests/theta.rs"]
 mod theta;
 
 #[cfg(feature = "tuple")]
-#[path = "serialization_tests/tuple.rs"]
+#[path = "serde_tests/tuple.rs"]
 mod tuple;

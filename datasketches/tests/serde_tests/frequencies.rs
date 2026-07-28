@@ -24,7 +24,7 @@ use datasketches::error::ErrorKind;
 use datasketches::frequencies::FrequentItemValue;
 use datasketches::frequencies::FrequentItemsSketch;
 
-use crate::support::serialization_test_data;
+use crate::serialization_test_data;
 
 #[derive(Debug, PartialEq, Eq, Hash)]
 struct NonCloneSerializableItem(i64);

@@ -18,23 +18,33 @@
 use std::fs;
 use std::path::PathBuf;
 
-use datasketches::cpc::CpcSketch;
+use datasketches::tuple::CompactTupleSketch;
 use googletest::assert_that;
 use googletest::prelude::near;
 
-use crate::support::serialization_test_data;
+use crate::serialization_test_data;
 
 fn test_sketch_file(path: PathBuf, expected_cardinality: usize) {
     let expected = expected_cardinality as f64;
 
     let bytes = fs::read(&path).unwrap();
-    let sketch1 = CpcSketch::deserialize(&bytes).unwrap();
-    let estimate1 = sketch1.estimate();
-    assert_that!(estimate1, near(expected, expected * 0.02));
+    let sketch1 = CompactTupleSketch::<i32>::deserialize(&bytes)
+        .unwrap_or_else(|err| panic!("Deserialization failed for {}: {}", path.display(), err));
 
-    // Serialize and deserialize again to test round-trip
+    assert_eq!(
+        sketch1.is_empty(),
+        expected_cardinality == 0,
+        "Unexpected is_empty for {}",
+        path.display()
+    );
+
+    let estimate1 = sketch1.estimate();
+    assert_that!(estimate1, near(expected, expected * 0.03));
+
+    // Snapshots from Java/C++ are not required to match byte-for-byte output from this
+    // implementation. Verify our own serialization is stable across a round-trip instead.
     let serialized_bytes = sketch1.serialize();
-    let sketch2 = CpcSketch::deserialize(&serialized_bytes).unwrap_or_else(|err| {
+    let sketch2 = CompactTupleSketch::<i32>::deserialize(&serialized_bytes).unwrap_or_else(|err| {
         panic!(
             "Deserialization failed after round-trip for {}: {}",
             path.display(),
@@ -42,15 +52,14 @@ fn test_sketch_file(path: PathBuf, expected_cardinality: usize) {
         )
     });
 
-    // CpcSketch serialization should be stable
+    let serialized_bytes2 = sketch2.serialize();
     assert_eq!(
-        bytes,
         serialized_bytes,
-        "Serialized bytes differ after round-trip for {}",
+        serialized_bytes2,
+        "Serialized bytes are unstable after round-trip for {}",
         path.display()
     );
 
-    // Verify estimates match after round-trip
     let estimate2 = sketch2.estimate();
     assert_eq!(
         estimate1,
@@ -62,10 +71,10 @@ fn test_sketch_file(path: PathBuf, expected_cardinality: usize) {
 
 #[test]
 fn test_java_compatibility() {
-    let test_cases = [0, 100, 200, 2000, 20000];
+    let test_cases = [0, 1, 10, 100, 1000, 10_000, 100_000, 1_000_000];
 
     for n in test_cases {
-        let filename = format!("cpc_n{}_java.sk", n);
+        let filename = format!("tuple_int_n{}_java.sk", n);
         let path = serialization_test_data("java_generated_files", &filename);
         test_sketch_file(path, n);
     }
@@ -73,10 +82,10 @@ fn test_java_compatibility() {
 
 #[test]
 fn test_cpp_compatibility() {
-    let test_cases = [0, 100, 200, 2000, 20000];
+    let test_cases = [0, 1, 10, 100, 1000, 10_000, 100_000, 1_000_000];
 
     for n in test_cases {
-        let filename = format!("cpc_n{}_cpp.sk", n);
+        let filename = format!("tuple_int_n{}_cpp.sk", n);
         let path = serialization_test_data("cpp_generated_files", &filename);
         test_sketch_file(path, n);
     }

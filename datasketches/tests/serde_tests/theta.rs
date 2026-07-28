@@ -22,7 +22,7 @@ use datasketches::theta::CompactThetaSketch;
 use googletest::assert_that;
 use googletest::prelude::near;
 
-use crate::support::serialization_test_data;
+use crate::serialization_test_data;
 
 fn test_sketch_file(path: PathBuf, expected_cardinality: usize, use_compressed_round_trip: bool) {
     let expected = expected_cardinality as f64;

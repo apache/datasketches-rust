@@ -15,6 +15,4 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! Integration tests for Count-Min sketches.
-
 mod sketch;

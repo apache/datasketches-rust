@@ -15,6 +15,4 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! Integration tests for frequent-items sketches.
-
 mod update;

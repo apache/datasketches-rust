@@ -20,7 +20,7 @@ use std::path::PathBuf;
 
 use datasketches::bloom::BloomFilter;
 
-use crate::support::serialization_test_data;
+use crate::serialization_test_data;
 
 fn test_bloom_filter_file(path: PathBuf, expected_num_items: u64, expected_num_hashes: u16) {
     let bytes = fs::read(&path).unwrap();

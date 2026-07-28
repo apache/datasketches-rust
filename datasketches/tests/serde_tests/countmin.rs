@@ -21,7 +21,7 @@ use datasketches::countmin::CountMinSketch;
 use googletest::assert_that;
 use googletest::prelude::contains_substring;
 
-use crate::support::serialization_test_data;
+use crate::serialization_test_data;
 
 // This test validates binary format compatibility (deserialize + byte round-trip) for
 // C++ Count-Min snapshots. It intentionally does not assert estimate equivalence against
