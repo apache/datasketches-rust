@@ -320,7 +320,66 @@ impl CommandPrepareTestData {
         let mut archive = ZipArchive::new(archive_file.reopen()?)?;
         for language in self.languages() {
             let destination = serde_tests.join(format!("{language}_generated_files"));
-            extract_snapshots(&mut archive, &destination, language)?;
+            let source_directory = Path::new("serialization").join(language).join("snapshots");
+            let mut members = Vec::new();
+            let mut expected_files = BTreeSet::new();
+
+            for index in 0..archive.len() {
+                let member = archive.by_index(index)?;
+                let Some(path) = member.enclosed_name() else {
+                    continue;
+                };
+
+                if member.is_dir()
+                    || path.extension().is_none_or(|extension| extension != "sk")
+                    || path
+                        .parent()
+                        .is_none_or(|parent| !parent.ends_with(&source_directory))
+                {
+                    continue;
+                }
+
+                let name = path
+                    .file_name()
+                    .expect("snapshot path has a file name")
+                    .to_owned();
+                expected_files.insert(name.clone());
+                members.push((index, name));
+            }
+
+            if members.is_empty() {
+                return Err(format!("no {language} snapshots found in the TCK archive").into());
+            }
+
+            ensure_not_symlink(&destination)?;
+            if let Some(parent) = &destination.parent() {
+                ensure_not_symlink(parent)?;
+            }
+            fs::create_dir_all(&destination)?;
+
+            for entry in fs::read_dir(&destination)? {
+                let path = entry?.path();
+                if path.extension().is_some_and(|extension| extension == "sk")
+                    && path
+                        .file_name()
+                        .is_some_and(|name| !expected_files.contains(name))
+                {
+                    fs::remove_file(path)?;
+                }
+            }
+
+            for (index, name) in members {
+                let mut source = archive.by_index(index)?;
+                let mut output = NamedTempFile::new_in(&destination)?;
+                io::copy(&mut source, &mut output)?;
+                output.persist(destination.join(&name))?;
+            }
+
+            println!(
+                "Extracted {} {language} snapshots into {}",
+                expected_files.len(),
+                destination.display()
+            );
         }
         Ok(())
     }
@@ -339,74 +398,6 @@ impl CommandPrepareTestData {
             languages
         }
     }
-}
-
-fn extract_snapshots(
-    archive: &mut ZipArchive<fs::File>,
-    destination: &Path,
-    language: &str,
-) -> Result<()> {
-    let source_directory = Path::new("serialization").join(language).join("snapshots");
-    let mut members = Vec::new();
-    let mut expected_files = BTreeSet::new();
-
-    for index in 0..archive.len() {
-        let member = archive.by_index(index)?;
-        let Some(path) = member.enclosed_name() else {
-            continue;
-        };
-
-        if member.is_dir()
-            || path.extension().is_none_or(|extension| extension != "sk")
-            || path
-                .parent()
-                .is_none_or(|parent| !parent.ends_with(&source_directory))
-        {
-            continue;
-        }
-
-        let name = path
-            .file_name()
-            .expect("snapshot path has a file name")
-            .to_owned();
-        expected_files.insert(name.clone());
-        members.push((index, name));
-    }
-
-    if members.is_empty() {
-        return Err(format!("no {language} snapshots found in the TCK archive").into());
-    }
-
-    ensure_not_symlink(destination)?;
-    if let Some(parent) = destination.parent() {
-        ensure_not_symlink(parent)?;
-    }
-    fs::create_dir_all(destination)?;
-
-    for entry in fs::read_dir(destination)? {
-        let path = entry?.path();
-        if path.extension().is_some_and(|extension| extension == "sk")
-            && path
-                .file_name()
-                .is_some_and(|name| !expected_files.contains(name))
-        {
-            fs::remove_file(path)?;
-        }
-    }
-
-    for (index, name) in members {
-        let mut source = archive.by_index(index)?;
-        let mut output = NamedTempFile::new_in(destination)?;
-        io::copy(&mut source, &mut output)?;
-        output.persist(destination.join(&name))?;
-    }
-
-    println!(
-        "Extracted {} {language} snapshots into {}",
-        expected_files.len(),
-        destination.display()
-    );
-    Ok(())
 }
 
 fn ensure_not_symlink(path: &Path) -> Result<()> {
