@@ -45,7 +45,7 @@ cargo build --workspace
 Prepare the cross-language serialization test data:
 
 ```shell
-cargo x prepare-testdata --all
+cargo x prepare-testdata
 ```
 
 Test:
@@ -123,7 +123,12 @@ The `cargo x prepare-testdata` command downloads the TCK archive and synchronize
 
 You can synchronize them separately:
 
-These directories are not stored in Git. Run the command before the first test run and again whenever the pinned TCK revision changes. It requires network access and removes stale `.sk` files when synchronizing the snapshots. Pass `--java` or `--cpp` to prepare one language, or pass `--all` (or no option) to prepare both.
+```shell
+cargo x prepare-testdata java
+cargo x prepare-testdata cpp
+```
+
+If no language is specified, all languages are prepared. These directories are not stored in Git. Run the command before the first test run and again whenever the pinned TCK revision changes. It requires network access and replaces the selected generated directories.
 
 ## Code of Conduct
 
