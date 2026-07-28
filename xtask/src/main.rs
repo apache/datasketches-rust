@@ -17,13 +17,14 @@
 
 use std::path::Path;
 use std::process::Command as StdCommand;
-
+use std::time::Duration;
 use clap::Parser;
 use clap::Subcommand;
 
-mod test_data;
-
-use test_data::CommandPrepareTestData;
+fn main() {
+    let cmd = Command::parse();
+    cmd.run()
+}
 
 #[derive(Parser)]
 struct Command {
@@ -269,7 +270,126 @@ fn make_taplo_cmd(fix: bool) -> StdCommand {
     cmd
 }
 
-fn main() {
-    let cmd = Command::parse();
-    cmd.run()
+#[derive(Parser)]
+#[clap(name = "prepare-testdata")]
+struct CommandPrepareTestData {
+    #[arg(long, help = "Prepare Java test data.")]
+    java: bool,
+    #[arg(long, help = "Prepare C++ test data.")]
+    cpp: bool,
+    #[arg(long, help = "Prepare all test data.")]
+    all: bool,
+}
+
+impl CommandPrepareTestData {
+    fn run(self) {
+        const PINNED_COMMIT: &str = "0016a517";
+
+        let serde_tests = Path::new(env!("CARGO_WORKSPACE_DIR")).join("datasketches/tests/serde_tests");
+        let archive_url = format!("https://github.com/apache/datasketches-tck/archive/{PINNED_COMMIT}/main.zip");
+
+        let all = self.all || !(self.java || self.cpp);
+        let languages = [("java", all || self.java), ("cpp", all || self.cpp)];
+
+        println!("Downloading serialization snapshots from {archive_url}");
+
+        let agent = ureq::AgentBuilder::new()
+            .timeout_connect(Duration::from_secs(60))
+            .timeout_read(Duration::from_secs(60))
+            .build();
+        let response = agent.get(&archive_url).call()?;
+        let mut reader = response.into_reader();
+
+        let archive_file = NamedTempFile::new()?;
+        std::io::copy(&mut reader, &mut archive_file.as_file())?;
+
+        let mut archive = ZipArchive::new(archive_file.reopen()?)?;
+        for (language, selected) in languages {
+            if !selected {
+                continue;
+            }
+            let destination = serde_tests.join(format!("{language}_generated_files"));
+            extract_snapshots(&mut archive, &destination, language)?;
+        }
+
+    }
+}
+
+fn extract_snapshots<R: Read + Seek>(
+    archive: &mut ZipArchive<R>,
+    destination: &Path,
+    language: &str,
+) -> Result<()> {
+    let source_directory = Path::new("serialization").join(language).join("snapshots");
+    let mut members = Vec::new();
+    let mut expected_files = BTreeSet::new();
+
+    for index in 0..archive.len() {
+        let member = archive.by_index(index)?;
+        let Some(path) = member.enclosed_name() else {
+            continue;
+        };
+
+        if member.is_dir()
+            || path.extension().is_none_or(|extension| extension != "sk")
+            || path
+            .parent()
+            .is_none_or(|parent| !parent.ends_with(&source_directory))
+        {
+            continue;
+        }
+
+        let name = path
+            .file_name()
+            .expect("snapshot path has a file name")
+            .to_owned();
+        expected_files.insert(name.clone());
+        members.push((index, name));
+    }
+
+    if members.is_empty() {
+        return Err(format!("no {language} snapshots found in the TCK archive").into());
+    }
+
+    ensure_not_symlink(destination)?;
+    if let Some(parent) = destination.parent() {
+        ensure_not_symlink(parent)?;
+    }
+    fs::create_dir_all(destination)?;
+
+    for entry in fs::read_dir(destination)? {
+        let path = entry?.path();
+        if path.extension().is_some_and(|extension| extension == "sk")
+            && path
+            .file_name()
+            .is_some_and(|name| !expected_files.contains(name))
+        {
+            fs::remove_file(path)?;
+        }
+    }
+
+    for (index, name) in members {
+        let mut source = archive.by_index(index)?;
+        let mut output = NamedTempFile::new_in(destination)?;
+        io::copy(&mut source, &mut output)?;
+        output.persist(destination.join(&name))?;
+    }
+
+    println!(
+        "Extracted {} {language} snapshots into {}",
+        expected_files.len(),
+        destination.display()
+    );
+    Ok(())
+}
+
+fn ensure_not_symlink(path: &Path) -> Result<()> {
+    if fs::symlink_metadata(path).is_ok_and(|metadata| metadata.file_type().is_symlink()) {
+        return Err(format!(
+            "snapshot output path cannot be a symbolic link: {}",
+            path.display()
+        )
+            .into());
+    }
+    Ok(())
 }
