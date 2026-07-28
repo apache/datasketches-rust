@@ -303,34 +303,6 @@ impl CommandPrepareTestData {
             Path::new(env!("CARGO_WORKSPACE_DIR")).join("datasketches/tests/serde_tests");
         let archive_url =
             format!("https://github.com/apache/datasketches-tck/archive/{REVISION}/main.zip");
-        let all = self.all || !(self.java || self.cpp);
-        let languages = [
-            (all || self.java).then_some("java"),
-            (all || self.cpp).then_some("cpp"),
-        ];
-
-        if fs::symlink_metadata(&serde_tests)?.file_type().is_symlink() {
-            return Err(format!(
-                "snapshot output path cannot be a symbolic link: {}",
-                serde_tests.display()
-            )
-            .into());
-        }
-        for &language in languages.iter().flatten() {
-            let destination = serde_tests.join(format!("{language}_generated_files"));
-            match fs::symlink_metadata(&destination) {
-                Ok(metadata) if metadata.file_type().is_symlink() => {
-                    return Err(format!(
-                        "snapshot output path cannot be a symbolic link: {}",
-                        destination.display()
-                    )
-                    .into());
-                }
-                Ok(_) => {}
-                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-                Err(error) => return Err(error.into()),
-            }
-        }
 
         println!("Downloading serialization snapshots from {archive_url}");
 
@@ -346,7 +318,7 @@ impl CommandPrepareTestData {
 
         let mut archive = ZipArchive::new(Cursor::new(archive_bytes))?;
         let mut snapshots = Vec::new();
-        for language in languages.into_iter().flatten() {
+        for language in self.languages() {
             let source_directory = Path::new("serialization").join(language).join("snapshots");
             let mut members = Vec::new();
 
@@ -397,11 +369,26 @@ impl CommandPrepareTestData {
             }
 
             println!(
-                "Extracted {} {language} snapshots into {}",
-                count,
+                "Extracted {count} {language} snapshots into {}",
                 destination.display()
             );
         }
         Ok(())
+    }
+
+    fn languages(&self) -> Vec<&'static str> {
+        let mut languages = vec![];
+        if self.all || self.cpp {
+            languages.push("cpp");
+        }
+        if self.all || self.java {
+            languages.push("java");
+        }
+
+        if languages.is_empty() {
+            vec!["cpp", "java"]
+        } else {
+            languages
+        }
     }
 }
