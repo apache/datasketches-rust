@@ -93,7 +93,7 @@ jobs:
           cache-bin: "false"
       - name: Prepare test data
         shell: bash
-        run: ./tools/download_serde_tests_data.py
+        run: cargo x prepare-testdata
       - name: Run test suite
         shell: bash
         run: cargo x test
@@ -113,5 +113,5 @@ jobs:
               && "${{ needs.test.result }}" == "success" \
               ) ]]; then
             echo "Required jobs haven't been completed successfully."
-            exit -1
+            exit 1
           fi

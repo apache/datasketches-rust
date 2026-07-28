@@ -15,11 +15,23 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::error::Error;
+use std::fs;
+use std::io;
 use std::path::Path;
 use std::process::Command as StdCommand;
+use std::time::Duration;
 
 use clap::Parser;
 use clap::Subcommand;
+use zip::read::read_zipfile_from_stream;
+
+type Result<T> = std::result::Result<T, Box<dyn Error>>;
+
+fn main() {
+    let cmd = Command::parse();
+    cmd.run()
+}
 
 #[derive(Parser)]
 struct Command {
@@ -34,6 +46,7 @@ impl Command {
             SubCommand::Docs(cmd) => cmd.run(),
             SubCommand::Lint(cmd) => cmd.run(),
             SubCommand::Test(cmd) => cmd.run(),
+            SubCommand::PrepareTestData(cmd) => cmd.run(),
         }
     }
 }
@@ -48,6 +61,11 @@ enum SubCommand {
     Lint(CommandLint),
     #[clap(about = "Run the test suite.")]
     Test(CommandTest),
+    #[clap(
+        name = "prepare-testdata",
+        about = "Prepare serialization compatibility test data."
+    )]
+    PrepareTestData(CommandPrepareTestData),
 }
 
 #[derive(Parser)]
@@ -259,7 +277,107 @@ fn make_taplo_cmd(fix: bool) -> StdCommand {
     cmd
 }
 
-fn main() {
-    let cmd = Command::parse();
-    cmd.run()
+#[derive(Parser)]
+#[clap(name = "prepare-testdata")]
+struct CommandPrepareTestData {
+    #[arg(
+        value_name = "LANG",
+        value_parser = ["java", "cpp", "c++"],
+        help = "Languages to prepare (all by default)."
+    )]
+    langs: Vec<String>,
+}
+
+impl CommandPrepareTestData {
+    fn run(self) {
+        if let Err(error) = self.prepare() {
+            eprintln!("failed to prepare serialization test data: {error}");
+            std::process::exit(1);
+        }
+    }
+
+    fn prepare(self) -> Result<()> {
+        const REVISION: &str = "0016a517cc87e13339298550afe8e6a7e961bf46";
+        let serde_tests =
+            Path::new(env!("CARGO_WORKSPACE_DIR")).join("datasketches/tests/serde_tests");
+        let archive_url =
+            format!("https://github.com/apache/datasketches-tck/archive/{REVISION}/main.zip");
+
+        println!("Downloading serialization snapshots from {archive_url}");
+
+        let agent = ureq::AgentBuilder::new()
+            .timeout_connect(Duration::from_secs(60))
+            .timeout_read(Duration::from_secs(60))
+            .build();
+        let response = agent.get(&archive_url).call()?;
+        let mut reader = response.into_reader();
+
+        let mut targets = vec![];
+        for language in self.languages() {
+            let source_directory = Path::new("serialization").join(language).join("snapshots");
+            let destination = serde_tests.join(format!("{language}_generated_files"));
+            if fs::exists(&destination)? {
+                println!(
+                    "Removing existing {language} snapshots from {}",
+                    destination.display()
+                );
+                fs::remove_dir_all(&destination)?;
+            }
+            fs::create_dir_all(&destination)?;
+            targets.push((language, source_directory, destination, 0_usize));
+        }
+
+        // Note that read_zipfile_from_stream depends on GitHub Archive format. If GitHub changes
+        // the format, this code may break.
+        while let Some(mut member) = read_zipfile_from_stream(&mut reader)? {
+            let Some(path) = member.enclosed_name() else {
+                continue;
+            };
+            if member.is_dir() || path.extension().is_none_or(|extension| extension != "sk") {
+                continue;
+            }
+
+            let Some((_, _, destination, count)) = targets.iter_mut().find(|target| {
+                path.parent()
+                    .is_some_and(|parent| parent.ends_with(&target.1))
+            }) else {
+                continue;
+            };
+
+            let name = path.file_name().expect("snapshot path has a file name");
+            let mut output = fs::File::create(destination.join(name))?;
+            io::copy(&mut member, &mut output)?;
+            *count += 1;
+        }
+
+        for (language, _, destination, count) in targets {
+            if count == 0 {
+                return Err(format!("no {language} snapshots found in the TCK archive").into());
+            }
+            println!(
+                "Extracted {count} {language} snapshots into {}",
+                destination.display()
+            );
+        }
+        Ok(())
+    }
+
+    fn languages(&self) -> Vec<&'static str> {
+        if self.langs.is_empty() {
+            return vec!["cpp", "java"];
+        }
+
+        let mut languages = vec![];
+        for language in &self.langs {
+            let language = match language.as_str() {
+                "java" => "java",
+                "cpp" | "c++" => "cpp",
+                _ => unreachable!("language is validated by clap"),
+            };
+            if !languages.contains(&language) {
+                languages.push(language);
+            }
+        }
+        languages
+    }
 }

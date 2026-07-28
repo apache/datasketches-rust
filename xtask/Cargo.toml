@@ -32,7 +32,9 @@ release = false
 [dependencies]
 clap = { workspace = true }
 cargo_metadata = { workspace = true }
+ureq = { workspace = true }
 which = { workspace = true }
+zip = { workspace = true }
 
 [lints]
 workspace = true
