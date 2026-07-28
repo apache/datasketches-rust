@@ -19,9 +19,7 @@ use std::collections::BTreeSet;
 use std::error::Error;
 use std::fs;
 use std::io;
-use std::io::Read;
-use std::io::Seek;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command as StdCommand;
 use std::time::Duration;
 
@@ -301,16 +299,12 @@ impl CommandPrepareTestData {
     }
 
     fn prepare(self) -> Result<()> {
-        const PINNED_COMMIT: &str = "0016a517";
+        const REVISION: &str = "0016a517cc87e13339298550afe8e6a7e961bf46";
 
         let serde_tests =
             Path::new(env!("CARGO_WORKSPACE_DIR")).join("datasketches/tests/serde_tests");
         let archive_url =
-            format!("https://github.com/apache/datasketches-tck/archive/{PINNED_COMMIT}/main.zip");
-
-        let all = self.all || !(self.java || self.cpp);
-        let languages = [("java", all || self.java), ("cpp", all || self.cpp)];
-
+            format!("https://github.com/apache/datasketches-tck/archive/{REVISION}/main.zip");
         println!("Downloading serialization snapshots from {archive_url}");
 
         let agent = ureq::AgentBuilder::new()
@@ -320,24 +314,35 @@ impl CommandPrepareTestData {
         let response = agent.get(&archive_url).call()?;
         let mut reader = response.into_reader();
 
-        let archive_file = NamedTempFile::new()?;
-        io::copy(&mut reader, &mut archive_file.as_file())?;
+        let mut archive_file = NamedTempFile::new()?;
+        io::copy(&mut reader, archive_file.as_file_mut())?;
 
         let mut archive = ZipArchive::new(archive_file.reopen()?)?;
-        for (language, selected) in languages {
-            if !selected {
-                continue;
-            }
+        for language in self.languages() {
             let destination = serde_tests.join(format!("{language}_generated_files"));
             extract_snapshots(&mut archive, &destination, language)?;
         }
-
         Ok(())
+    }
+
+    fn languages(&self) -> Vec<&'static str> {
+        if self.all {
+            vec!["java", "cpp"]
+        } else {
+            let mut languages = Vec::new();
+            if self.java {
+                languages.push("java");
+            }
+            if self.cpp {
+                languages.push("cpp");
+            }
+            languages
+        }
     }
 }
 
-fn extract_snapshots<R: Read + Seek>(
-    archive: &mut ZipArchive<R>,
+fn extract_snapshots(
+    archive: &mut ZipArchive<fs::File>,
     destination: &Path,
     language: &str,
 ) -> Result<()> {
@@ -405,12 +410,14 @@ fn extract_snapshots<R: Read + Seek>(
 }
 
 fn ensure_not_symlink(path: &Path) -> Result<()> {
-    if fs::symlink_metadata(path).is_ok_and(|metadata| metadata.file_type().is_symlink()) {
-        return Err(format!(
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_symlink() => Err(format!(
             "snapshot output path cannot be a symbolic link: {}",
             path.display()
         )
-        .into());
+        .into()),
+        Ok(_) => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error.into()),
     }
-    Ok(())
 }
