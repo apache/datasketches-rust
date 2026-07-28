@@ -50,6 +50,9 @@ pub fn assert_truncated_inputs_rejected<T>(
     deserialize: impl Fn(&[u8]) -> Result<T, Error>,
 ) {
     assert!(!bytes.is_empty(), "valid serialization must not be empty");
+    if let Err(err) = deserialize(bytes) {
+        panic!("valid serialization was rejected before truncation checks: {err}");
+    }
 
     for len in 0..bytes.len() {
         match deserialize(&bytes[..len]) {
