@@ -15,12 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use std::path::PathBuf;
+//! Integration tests for t-digest sketches.
 
-pub fn test_data(name: &str) -> PathBuf {
-    const TEST_DATA_DIR: &str = "tests/test_data";
-
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join(TEST_DATA_DIR)
-        .join(name)
-}
+mod sketch;

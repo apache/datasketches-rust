@@ -85,7 +85,7 @@ cargo install taplo-cli typos-cli hawkeye
 
 ## Serialization snapshots
 
-Some tests depend on snapshot files under `datasketches/tests/serialization_test_data`. If they are missing, tests will fail. Download them with:
+Some tests depend on snapshot files under `datasketches/tests/serialization_tests`. If they are missing, tests will fail. Download them with:
 
 ```shell
 python3 ./tools/download_serialization_test_data.py --all
@@ -94,8 +94,8 @@ python3 ./tools/download_serialization_test_data.py --all
 The script downloads the latest snapshots from the `main` branch of
 [`apache/datasketches-tck`](https://github.com/apache/datasketches-tck) and writes them to:
 
-- `datasketches/tests/serialization_test_data/java_generated_files`
-- `datasketches/tests/serialization_test_data/cpp_generated_files`
+- `datasketches/tests/serialization_tests/java_generated_files`
+- `datasketches/tests/serialization_tests/cpp_generated_files`
 
 You can download them separately:
 

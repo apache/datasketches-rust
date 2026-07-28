@@ -15,8 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#![cfg(feature = "countmin")]
-
 use datasketches::countmin::CountMinSketch;
 use googletest::assert_that;
 use googletest::prelude::ge;

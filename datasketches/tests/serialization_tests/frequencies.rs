@@ -15,10 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#![cfg(feature = "frequencies")]
-
-#[path = "support/serialization_data.rs"]
-mod serialization_data;
+mod support;
 
 use std::fs;
 
@@ -28,7 +25,7 @@ use datasketches::error::Error;
 use datasketches::error::ErrorKind;
 use datasketches::frequencies::FrequentItemValue;
 use datasketches::frequencies::FrequentItemsSketch;
-use serialization_data::serialization_test_data;
+use support::serialization_test_data;
 
 #[derive(Debug, PartialEq, Eq, Hash)]
 struct NonCloneSerializableItem(i64);

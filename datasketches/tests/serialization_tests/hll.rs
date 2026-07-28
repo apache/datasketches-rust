@@ -15,10 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#![cfg(feature = "hll")]
-
-#[path = "support/serialization_data.rs"]
-mod serialization_data;
+mod support;
 
 use std::fs;
 use std::path::PathBuf;
@@ -26,7 +23,7 @@ use std::path::PathBuf;
 use datasketches::hash_value::natural_extend;
 use datasketches::hll::HllSketch;
 use datasketches::hll::HllType;
-use serialization_data::serialization_test_data;
+use support::serialization_test_data;
 
 fn test_sketch_file(path: PathBuf, expected_cardinality: usize, expected_lg_k: u8) {
     let expected = expected_cardinality as f64;

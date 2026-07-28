@@ -15,29 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use std::path::PathBuf;
+//! Integration tests for HLL sketches and unions.
 
-pub fn serialization_test_data(sub_dir: &str, name: &str) -> PathBuf {
-    const SERDE_TEST_DATA_DIR: &str = "tests/serialization_test_data";
-
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join(SERDE_TEST_DATA_DIR)
-        .join(sub_dir)
-        .join(name);
-
-    if !path.exists() {
-        panic!(
-            r#"serialization test data file not found: {}
-
-            Please ensure test data files are present in the repository. Generally, you can
-            run the following commands from the project root to download the test data files
-            if they are missing:
-
-            $ ./tools/download_serialization_test_data.py
-        "#,
-            path.display(),
-        );
-    }
-
-    path
-}
+mod union;
+mod update;

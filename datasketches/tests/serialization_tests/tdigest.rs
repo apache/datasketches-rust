@@ -15,12 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#![cfg(feature = "tdigest")]
-
-#[path = "support/reference_data.rs"]
-mod reference_data;
-#[path = "support/serialization_data.rs"]
-mod serialization_data;
+mod support;
 
 use std::fs;
 use std::path::PathBuf;
@@ -29,8 +24,7 @@ use datasketches::tdigest::TDigestMut;
 use googletest::assert_that;
 use googletest::prelude::eq;
 use googletest::prelude::near;
-use reference_data::test_data;
-use serialization_data::serialization_test_data;
+use support::serialization_test_data;
 
 fn test_sketch_file(path: PathBuf, n: u64, with_buffer: bool, is_f32: bool) {
     let bytes = fs::read(&path).unwrap();
@@ -97,7 +91,7 @@ fn test_deserialize_from_reference_implementation() {
         "tdigest_ref_k100_n10000_double.sk",
         "tdigest_ref_k100_n10000_float.sk",
     ] {
-        let path = test_data(filename);
+        let path = serialization_test_data("reference_files", filename);
         let bytes = fs::read(&path).unwrap();
         let td = TDigestMut::deserialize(&bytes, false).unwrap();
         let td = td.freeze();

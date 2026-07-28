@@ -48,8 +48,78 @@ theta = []
 tuple = []
 
 [[test]]
+name = "countmin_test"
+path = "tests/countmin_test/main.rs"
+required-features = ["countmin"]
+
+[[test]]
+name = "cpc_test"
+path = "tests/cpc_test/main.rs"
+required-features = ["cpc"]
+
+[[test]]
+name = "frequencies_test"
+path = "tests/frequencies_test/main.rs"
+required-features = ["frequencies"]
+
+[[test]]
+name = "hll_test"
+path = "tests/hll_test/main.rs"
+required-features = ["hll"]
+
+[[test]]
+name = "tdigest_test"
+path = "tests/tdigest_test/main.rs"
+required-features = ["tdigest"]
+
+[[test]]
+name = "theta_test"
+path = "tests/theta_test/main.rs"
+required-features = ["theta"]
+
+[[test]]
 name = "tuple_test"
 path = "tests/tuple_test/main.rs"
+required-features = ["tuple"]
+
+[[test]]
+name = "bloom_serialization_test"
+path = "tests/serialization_tests/bloom.rs"
+required-features = ["bloom"]
+
+[[test]]
+name = "countmin_serialization_test"
+path = "tests/serialization_tests/countmin.rs"
+required-features = ["countmin"]
+
+[[test]]
+name = "cpc_serialization_test"
+path = "tests/serialization_tests/cpc.rs"
+required-features = ["cpc"]
+
+[[test]]
+name = "frequencies_serialization_test"
+path = "tests/serialization_tests/frequencies.rs"
+required-features = ["frequencies"]
+
+[[test]]
+name = "hll_serialization_test"
+path = "tests/serialization_tests/hll.rs"
+required-features = ["hll"]
+
+[[test]]
+name = "tdigest_serialization_test"
+path = "tests/serialization_tests/tdigest.rs"
+required-features = ["tdigest"]
+
+[[test]]
+name = "theta_serialization_test"
+path = "tests/serialization_tests/theta.rs"
+required-features = ["theta"]
+
+[[test]]
+name = "tuple_serialization_test"
+path = "tests/serialization_tests/tuple.rs"
 required-features = ["tuple"]
 
 [dev-dependencies]
