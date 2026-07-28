@@ -24,6 +24,7 @@ use datasketches::error::ErrorKind;
 use datasketches::frequencies::FrequentItemValue;
 use datasketches::frequencies::FrequentItemsSketch;
 
+use crate::assert_truncated_inputs_rejected;
 use crate::serialization_test_data;
 
 #[derive(Debug, PartialEq, Eq, Hash)]
@@ -112,6 +113,14 @@ fn test_purged_to_empty_round_trip() {
     assert!(sketch.is_empty());
     let restored = FrequentItemsSketch::<i64>::deserialize(&sketch.serialize()).unwrap();
     assert!(restored.is_empty());
+}
+
+#[test]
+fn truncated_input_is_rejected() {
+    let mut sketch = FrequentItemsSketch::<i64>::new(8);
+    sketch.update_with_count(42, 3);
+
+    assert_truncated_inputs_rejected(&sketch.serialize(), FrequentItemsSketch::<i64>::deserialize);
 }
 
 #[test]

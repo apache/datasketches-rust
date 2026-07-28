@@ -18,10 +18,14 @@
 use std::fs;
 use std::path::PathBuf;
 
+use datasketches::error::ErrorKind;
 use datasketches::tuple::CompactTupleSketch;
+use datasketches::tuple::DefaultUpdatePolicy;
+use datasketches::tuple::TupleSketchBuilder;
 use googletest::assert_that;
 use googletest::prelude::near;
 
+use crate::assert_truncated_inputs_rejected;
 use crate::serialization_test_data;
 
 fn test_sketch_file(path: PathBuf, expected_cardinality: usize) {
@@ -89,4 +93,25 @@ fn test_cpp_compatibility() {
         let path = serialization_test_data("cpp_generated_files", &filename);
         test_sketch_file(path, n);
     }
+}
+
+#[test]
+fn malformed_input_is_rejected() {
+    let mut sketch = TupleSketchBuilder::new(DefaultUpdatePolicy::<u64>::default())
+        .lg_k(5)
+        .build();
+    for value in 0..100 {
+        sketch.update(value, 1);
+    }
+    let bytes = sketch.compact(true).serialize();
+
+    assert_truncated_inputs_rejected(&bytes, CompactTupleSketch::<u64>::deserialize);
+
+    let err = CompactTupleSketch::<u64>::deserialize_with_seed(&bytes, 8).unwrap_err();
+    assert_eq!(err.kind(), ErrorKind::InvalidData);
+
+    let mut wrong_family = bytes;
+    wrong_family[2] = 0;
+    let err = CompactTupleSketch::<u64>::deserialize(&wrong_family).unwrap_err();
+    assert_eq!(err.kind(), ErrorKind::InvalidData);
 }

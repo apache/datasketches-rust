@@ -713,7 +713,6 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::error::ErrorKind;
     use crate::tuple::policy::DefaultUpdatePolicy;
     use crate::tuple::policy::SummaryPolicy;
     use crate::tuple::policy::SummaryUpdatePolicy;
@@ -1025,43 +1024,5 @@ mod tests {
         let restored = CompactTupleSketch::<u64>::deserialize(&bytes).unwrap();
         assert_eq!(restored.num_retained(), 50);
         assert!(restored.iter().all(|(_, &s)| s == 2));
-    }
-
-    #[test]
-    fn deserialize_rejects_wrong_family() {
-        let policy = DefaultUpdatePolicy::<u64>::default();
-        let mut sketch = TupleSketchBuilder::new(policy).build();
-        for i in 0..10 {
-            sketch.update(i, 1u64);
-        }
-        let mut bytes = sketch.compact(true).serialize();
-        bytes[2] = 3; // pretend it is a THETA sketch
-        let err = CompactTupleSketch::<u64>::deserialize(&bytes).unwrap_err();
-        assert_eq!(err.kind(), ErrorKind::InvalidData);
-    }
-
-    #[test]
-    fn deserialize_rejects_seed_mismatch() {
-        let policy = DefaultUpdatePolicy::<u64>::default();
-        let mut sketch = TupleSketchBuilder::new(policy).build();
-        for i in 0..10 {
-            sketch.update(i, 1u64);
-        }
-        let bytes = sketch.compact(true).serialize();
-        let err = CompactTupleSketch::<u64>::deserialize_with_seed(&bytes, 999).unwrap_err();
-        assert_eq!(err.kind(), ErrorKind::InvalidData);
-    }
-
-    #[test]
-    fn deserialize_rejects_truncated_summary() {
-        let policy = DefaultUpdatePolicy::<u64>::default();
-        let mut sketch = TupleSketchBuilder::new(policy).build();
-        for i in 0..100 {
-            sketch.update(i, 1u64);
-        }
-        let bytes = sketch.compact(true).serialize();
-        let truncated = &bytes[..bytes.len() - 4]; // cut the last summary in half
-        let err = CompactTupleSketch::<u64>::deserialize(truncated).unwrap_err();
-        assert_eq!(err.kind(), ErrorKind::InvalidData);
     }
 }

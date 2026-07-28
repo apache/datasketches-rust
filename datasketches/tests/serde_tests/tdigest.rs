@@ -23,6 +23,7 @@ use googletest::assert_that;
 use googletest::prelude::eq;
 use googletest::prelude::near;
 
+use crate::assert_truncated_inputs_rejected;
 use crate::serialization_test_data;
 
 fn test_sketch_file(path: PathBuf, n: u64, with_buffer: bool, is_f32: bool) {
@@ -129,6 +130,16 @@ fn test_deserialize_from_java_snapshots() {
         let path = serialization_test_data("java_generated_files", &filename);
         test_sketch_file(path, n, false, false);
     }
+}
+
+#[test]
+fn truncated_input_is_rejected() {
+    let mut digest = TDigestMut::new(10);
+    digest.update(1.0);
+    digest.update(2.0);
+    let bytes = digest.serialize();
+
+    assert_truncated_inputs_rejected(&bytes, |bytes| TDigestMut::deserialize(bytes, false));
 }
 
 #[test]
