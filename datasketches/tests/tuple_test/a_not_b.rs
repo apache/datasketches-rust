@@ -67,7 +67,7 @@ fn accepts_mutable_and_compact_inputs() {
 }
 
 #[test]
-fn ordered_and_unordered_inputs_produce_the_same_result() {
+fn input_and_result_ordering_preserve_entries() {
     let mut a = default_tuple_sketch_builder().lg_k(8).build();
     let mut b = default_tuple_sketch_builder().lg_k(8).build();
     for value in 0..20_000 {
@@ -78,13 +78,28 @@ fn ordered_and_unordered_inputs_produce_the_same_result() {
     }
 
     let op = TupleANotB::default();
-    let unordered = op.compute(&a, &b, true).unwrap();
-    let ordered = op
+    let from_unordered_inputs = op.compute(&a, &b, true).unwrap();
+    let from_ordered_inputs = op
         .compute(&a.compact(true), &b.compact(true), true)
         .unwrap();
+    let unordered_result = op.compute(&a, &b, false).unwrap();
 
-    assert_eq!(unordered.theta64(), ordered.theta64());
-    assert_eq!(sorted_entries(&unordered), sorted_entries(&ordered));
+    assert!(from_unordered_inputs.is_ordered());
+    assert!(from_ordered_inputs.is_ordered());
+    assert!(!unordered_result.is_ordered());
+    assert_eq!(
+        from_unordered_inputs.theta64(),
+        from_ordered_inputs.theta64()
+    );
+    assert_eq!(from_unordered_inputs.theta64(), unordered_result.theta64());
+    assert_eq!(
+        sorted_entries(&from_unordered_inputs),
+        sorted_entries(&from_ordered_inputs)
+    );
+    assert_eq!(
+        sorted_entries(&from_unordered_inputs),
+        sorted_entries(&unordered_result)
+    );
 }
 
 #[test]
