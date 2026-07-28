@@ -17,8 +17,11 @@
 
 use datasketches::common::NumStdDev;
 use datasketches::hash_value;
+use datasketches::tuple::CompactTupleSketch;
+use datasketches::tuple::DefaultUpdatePolicy;
 use datasketches::tuple::SummaryPolicy;
 use datasketches::tuple::SummaryUpdatePolicy;
+use datasketches::tuple::TupleSketch;
 use datasketches::tuple::TupleSketchBuilder;
 
 use super::default_tuple_sketch_builder;
@@ -51,32 +54,48 @@ fn accepts_supported_hash_representations() {
     assert_eq!(sketch.estimate(), 4.0);
 }
 
-#[derive(Default)]
-struct MaxPolicy;
+#[test]
+fn default_update_policy_accepts_distinct_rhs_type() {
+    let mut sketch = TupleSketchBuilder::new(DefaultUpdatePolicy::<String>::default()).build();
+    sketch.update("key", "hello");
+    sketch.update("key", " world");
 
-impl SummaryPolicy for MaxPolicy {
-    type Summary = u64;
+    assert_eq!(sketch.iter().next().unwrap().1, "hello world");
+}
+
+struct ArraySumPolicy {
+    num_values: usize,
+}
+
+impl SummaryPolicy for ArraySumPolicy {
+    type Summary = Vec<f64>;
 
     fn create(&self) -> Self::Summary {
-        0
+        vec![0.0; self.num_values]
     }
 }
 
-impl SummaryUpdatePolicy<u64> for MaxPolicy {
-    fn update(&self, summary: &mut Self::Summary, value: u64) {
-        *summary = (*summary).max(value);
+impl<U> SummaryUpdatePolicy<U> for ArraySumPolicy
+where
+    U: AsRef<[f64]>,
+{
+    fn update(&self, summary: &mut Self::Summary, value: U) {
+        let value = value.as_ref();
+        assert_eq!(value.len(), self.num_values);
+        for (summary, value) in summary.iter_mut().zip(value) {
+            *summary += value;
+        }
     }
 }
 
 #[test]
-fn custom_update_policy_controls_retained_summaries() {
-    let mut sketch = TupleSketchBuilder::new(MaxPolicy).build();
-    sketch.update("key", 3);
-    sketch.update("key", 9);
-    sketch.update("key", 5);
+fn custom_update_policy_accepts_multiple_value_representations() {
+    let mut sketch = TupleSketchBuilder::new(ArraySumPolicy { num_values: 2 }).build();
+    sketch.update("key", &[1.0, 2.0]);
+    sketch.update("key", vec![3.0, 4.0]);
 
     assert_eq!(sketch.num_retained(), 1);
-    assert_eq!(sketch.iter().next().unwrap().1, &9);
+    assert_eq!(sketch.iter().next().unwrap().1.as_slice(), [4.0, 6.0]);
 }
 
 #[test]
@@ -135,6 +154,44 @@ fn empty_sampled_sketch_has_zero_bounds() {
     assert_eq!(sketch.estimate(), 0.0);
     assert_eq!(sketch.lower_bound(NumStdDev::Three), 0.0);
     assert_eq!(sketch.upper_bound(NumStdDev::Three), 0.0);
+}
+
+fn sorted_entries<'a>(entries: impl Iterator<Item = (u64, &'a u64)>) -> Vec<(u64, u64)> {
+    let mut entries: Vec<_> = entries.map(|(hash, &summary)| (hash, summary)).collect();
+    entries.sort_unstable();
+    entries
+}
+
+fn assert_compact_preserves_state(
+    updatable: &TupleSketch<DefaultUpdatePolicy<u64>>,
+    compact: &CompactTupleSketch<u64>,
+    ordered: bool,
+) {
+    assert_eq!(compact.is_estimation_mode(), updatable.is_estimation_mode());
+    assert_eq!(compact.theta64(), updatable.theta64());
+    assert_eq!(compact.seed_hash(), updatable.seed_hash());
+    assert_eq!(
+        sorted_entries(compact.iter()),
+        sorted_entries(updatable.iter())
+    );
+    assert_eq!(compact.estimate(), updatable.estimate());
+    assert_eq!(compact.is_ordered(), ordered);
+}
+
+#[test]
+fn compact_preserves_state_in_exact_and_estimation_modes() {
+    for (lg_k, num_updates, expected_estimation_mode) in [(12, 2_000, false), (5, 5_000, true)] {
+        let mut sketch = default_tuple_sketch_builder().lg_k(lg_k).build();
+        for value in 0..num_updates {
+            sketch.update(value, 1u64);
+        }
+        assert_eq!(sketch.is_estimation_mode(), expected_estimation_mode);
+
+        for ordered in [false, true] {
+            let compact = sketch.compact(ordered);
+            assert_compact_preserves_state(&sketch, &compact, ordered);
+        }
+    }
 }
 
 #[test]
