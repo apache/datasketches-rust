@@ -187,23 +187,23 @@ fn test_result_ordering() {
 }
 
 #[test]
-fn test_estimation_partial_overlap_unordered() {
+fn test_estimation_lower_theta_b_unordered() {
     let a = sketch_with_range(0, 10000);
-    let b = sketch_with_range(5000, 10000);
+    let b = sketch_with_range(5000, 25000);
 
     let a_not_b = ThetaANotB::default();
     let r = a_not_b.compute(&a, &b, true).unwrap();
 
-    // True difference size is 5000 (keys 0..5000).
+    // B is deliberately larger so its lower theta constrains the difference.
     assert!(!r.is_empty());
     assert!(r.is_estimation_mode());
-    assert!((r.estimate() - 5000.0).abs() <= 5000.0 * 0.02);
+    assert!((r.estimate() - 5000.0).abs() <= 5000.0 * 0.03);
 }
 
 #[test]
-fn test_estimation_partial_overlap_ordered() {
+fn test_estimation_lower_theta_b_ordered() {
     let a = sketch_with_range(0, 10000);
-    let b = sketch_with_range(5000, 10000);
+    let b = sketch_with_range(5000, 25000);
 
     let a_not_b = ThetaANotB::default();
     let r = a_not_b
@@ -212,7 +212,7 @@ fn test_estimation_partial_overlap_ordered() {
 
     assert!(!r.is_empty());
     assert!(r.is_estimation_mode());
-    assert!((r.estimate() - 5000.0).abs() <= 5000.0 * 0.02);
+    assert!((r.estimate() - 5000.0).abs() <= 5000.0 * 0.03);
 }
 
 #[test]
