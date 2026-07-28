@@ -287,18 +287,6 @@ where
         }
     }
 
-    /// Return number of all entries.
-    #[cfg(test)]
-    pub fn num_entries(&self) -> usize {
-        self.entries.len()
-    }
-
-    /// Get log2 of current size.
-    #[cfg(test)]
-    pub fn lg_cur_size(&self) -> u8 {
-        self.lg_cur_size
-    }
-
     /// Get log2 of nominal size.
     pub fn lg_nom_size(&self) -> u8 {
         self.lg_nom_size
