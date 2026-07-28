@@ -26,9 +26,13 @@ import urllib.request
 import zipfile
 from pathlib import Path, PurePosixPath
 
+TCK_REF = "0016a517"
+
 
 def download_archive(destination):
-    archive_url = "https://github.com/apache/datasketches-tck/archive/0016a517/main.zip"
+    archive_url = (
+        f"https://github.com/apache/datasketches-tck/archive/{TCK_REF}.zip"
+    )
     print(f"Downloading serialization snapshots from {archive_url}", flush=True)
     request = urllib.request.Request(archive_url)
     with urllib.request.urlopen(request, timeout=60) as response:

@@ -116,8 +116,11 @@ Some tests depend on snapshot files under `datasketches/tests/serde_tests`. If t
 python3 ./tools/download_serde_tests_data.py --all
 ```
 
-The script downloads the latest snapshots from the `main` branch of
-[`apache/datasketches-tck`](https://github.com/apache/datasketches-tck) and writes them to:
+The script downloads snapshots from the pinned
+[`apache/datasketches-tck`](https://github.com/apache/datasketches-tck) ref declared as `TCK_REF`
+in `tools/download_serde_tests_data.py`. Pinning the ref keeps local and CI compatibility tests
+reproducible. Update that constant explicitly when adopting a newer TCK snapshot set. The files are
+written to:
 
 - `datasketches/tests/serde_tests/java_generated_files`
 - `datasketches/tests/serde_tests/cpp_generated_files`
