@@ -94,7 +94,7 @@ jobs:
       - name: Prepare test data
         shell: bash
         run: ./tools/download_serde_tests_data.py
-      - name: Run unit tests
+      - name: Run test suite
         shell: bash
         run: cargo x test
 
