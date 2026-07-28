@@ -45,7 +45,7 @@ cargo build --workspace
 Prepare the cross-language serialization test data:
 
 ```shell
-cargo x test-data
+cargo x prepare-testdata --all
 ```
 
 Test:
@@ -118,15 +118,17 @@ cargo install taplo-cli typos-cli hawkeye
 
 Serialization compatibility tests use Java and C++ snapshots from a pinned
 revision of [`apache/datasketches-tck`](https://github.com/apache/datasketches-tck).
-The `cargo x test-data` command downloads the TCK archive and synchronizes its
-snapshots into:
+The `cargo x prepare-testdata` command downloads the TCK archive and synchronizes
+its snapshots into:
 
 - `datasketches/tests/serde_tests/java_generated_files`
 - `datasketches/tests/serde_tests/cpp_generated_files`
 
 These directories are not stored in Git. Run the command before the first test
 run and again whenever the pinned TCK revision changes. It requires network
-access and removes stale `.sk` files when synchronizing the snapshots.
+access and removes stale `.sk` files when synchronizing the snapshots. Pass
+`--java` or `--cpp` to prepare one language, or pass `--all` (or no option) to
+prepare both.
 
 ## Code of Conduct
 

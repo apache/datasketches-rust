@@ -23,7 +23,7 @@ use clap::Subcommand;
 
 mod test_data;
 
-use test_data::CommandTestData;
+use test_data::CommandPrepareTestData;
 
 #[derive(Parser)]
 struct Command {
@@ -38,7 +38,7 @@ impl Command {
             SubCommand::Docs(cmd) => cmd.run(),
             SubCommand::Lint(cmd) => cmd.run(),
             SubCommand::Test(cmd) => cmd.run(),
-            SubCommand::TestData(cmd) => cmd.run(),
+            SubCommand::PrepareTestData(cmd) => cmd.run(),
         }
     }
 }
@@ -53,8 +53,11 @@ enum SubCommand {
     Lint(CommandLint),
     #[clap(about = "Run unit tests.")]
     Test(CommandTest),
-    #[clap(about = "Prepare serialization compatibility test data.")]
-    TestData(CommandTestData),
+    #[clap(
+        name = "prepare-testdata",
+        about = "Prepare serialization compatibility test data."
+    )]
+    PrepareTestData(CommandPrepareTestData),
 }
 
 #[derive(Parser)]

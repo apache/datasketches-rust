@@ -33,10 +33,17 @@ const ARCHIVE_URL: &str = "https://github.com/apache/datasketches-tck/archive/00
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
 #[derive(Parser)]
-#[clap(name = "test-data")]
-pub(crate) struct CommandTestData {}
+#[clap(name = "prepare-testdata")]
+pub(crate) struct CommandPrepareTestData {
+    #[arg(long, help = "Prepare Java test data.")]
+    java: bool,
+    #[arg(long, help = "Prepare C++ test data.")]
+    cpp: bool,
+    #[arg(long, help = "Prepare all test data.")]
+    all: bool,
+}
 
-impl CommandTestData {
+impl CommandPrepareTestData {
     pub(crate) fn run(self) {
         if let Err(error) = self.prepare() {
             eprintln!("failed to prepare serialization test data: {error}");
@@ -47,6 +54,8 @@ impl CommandTestData {
     fn prepare(self) -> Result<()> {
         let repository_root = Path::new(env!("CARGO_WORKSPACE_DIR"));
         let serde_tests = repository_root.join("datasketches/tests/serde_tests");
+        let all = self.all || !(self.java || self.cpp);
+        let languages = [("java", all || self.java), ("cpp", all || self.cpp)];
 
         println!("Downloading serialization snapshots from {ARCHIVE_URL}");
         let agent = ureq::AgentBuilder::new()
@@ -60,7 +69,10 @@ impl CommandTestData {
         io::copy(&mut reader, &mut archive_file.as_file())?;
 
         let mut archive = ZipArchive::new(archive_file.reopen()?)?;
-        for language in ["cpp", "java"] {
+        for (language, selected) in languages {
+            if !selected {
+                continue;
+            }
             let destination = serde_tests.join(format!("{language}_generated_files"));
             extract_snapshots(&mut archive, &destination, language)?;
         }

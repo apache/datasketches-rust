@@ -32,7 +32,7 @@ pub fn serialization_test_data(sub_dir: &str, name: &str) -> PathBuf {
             Run the following command from the project root to download the missing
             serialization test data:
 
-            $ cargo x test-data
+            $ cargo x prepare-testdata --all
         "#,
             path.display(),
         );

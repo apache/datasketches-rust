@@ -93,7 +93,7 @@ jobs:
           cache-bin: "false"
       - name: Prepare test data
         shell: bash
-        run: cargo x test-data
+        run: cargo x prepare-testdata --all
       - name: Run unit tests
         shell: bash
         run: cargo x test
