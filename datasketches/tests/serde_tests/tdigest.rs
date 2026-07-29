@@ -18,12 +18,25 @@
 use std::fs;
 use std::path::PathBuf;
 
+use datasketches::error::ErrorKind;
 use datasketches::tdigest::TDigestMut;
 use googletest::assert_that;
 use googletest::prelude::eq;
 use googletest::prelude::near;
 
 use crate::serialization_test_data;
+
+fn assert_invalid_data(bytes: &[u8], is_f32: bool) {
+    let error = TDigestMut::deserialize(bytes, is_f32).unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::InvalidData);
+}
+
+fn serialize_multiple_values() -> Vec<u8> {
+    let mut tdigest = TDigestMut::default();
+    tdigest.update(0.0);
+    tdigest.update(1.0);
+    tdigest.serialize()
+}
 
 fn test_sketch_file(path: PathBuf, n: u64, with_buffer: bool, is_f32: bool) {
     let bytes = fs::read(&path).unwrap();
@@ -185,4 +198,66 @@ fn test_many_values() {
     assert_eq!(td.max_value(), deserialized_td.max_value());
     assert_eq!(td.rank(500.0), deserialized_td.rank(500.0));
     assert_eq!(td.quantile(0.5), deserialized_td.quantile(0.5));
+}
+
+#[test]
+fn test_deserialize_rejects_non_finite_extrema() {
+    let bytes = serialize_multiple_values();
+    for (offset, value) in [(16, f64::INFINITY), (24, f64::NEG_INFINITY)] {
+        let mut malformed = bytes.clone();
+        malformed[offset..offset + size_of::<f64>()].copy_from_slice(&value.to_le_bytes());
+        assert_invalid_data(&malformed, false);
+    }
+
+    for filename in [
+        "tdigest_ref_k100_n10000_double.sk",
+        "tdigest_ref_k100_n10000_float.sk",
+    ] {
+        let path = serialization_test_data("reference_files", filename);
+        let bytes = fs::read(path).unwrap();
+        for (offset, value) in [(4, f64::INFINITY), (12, f64::NEG_INFINITY)] {
+            let mut malformed = bytes.clone();
+            malformed[offset..offset + size_of::<f64>()].copy_from_slice(&value.to_be_bytes());
+            assert_invalid_data(&malformed, false);
+        }
+    }
+}
+
+#[test]
+fn test_deserialize_rejects_invalid_compat_weights() {
+    let path = serialization_test_data("reference_files", "tdigest_ref_k100_n10000_double.sk");
+    let bytes = fs::read(path).unwrap();
+    for value in [f64::INFINITY, f64::MAX] {
+        let mut malformed = bytes.clone();
+        malformed[32..40].copy_from_slice(&value.to_be_bytes());
+        assert_invalid_data(&malformed, false);
+    }
+
+    let path = serialization_test_data("reference_files", "tdigest_ref_k100_n10000_float.sk");
+    let mut bytes = fs::read(path).unwrap();
+    bytes[30..34].copy_from_slice(&f32::INFINITY.to_be_bytes());
+    assert_invalid_data(&bytes, false);
+}
+
+#[test]
+fn test_deserialize_rejects_total_weight_overflow() {
+    let bytes = serialize_multiple_values();
+    let mut overflowing_centroids = bytes.clone();
+    overflowing_centroids[40..48].copy_from_slice(&u64::MAX.to_le_bytes());
+    overflowing_centroids[56..64].copy_from_slice(&1_u64.to_le_bytes());
+    assert_invalid_data(&overflowing_centroids, false);
+
+    let mut overflowing_buffer = bytes;
+    overflowing_buffer[8..12].copy_from_slice(&1_u32.to_le_bytes());
+    overflowing_buffer[12..16].copy_from_slice(&1_u32.to_le_bytes());
+    overflowing_buffer[40..48].copy_from_slice(&u64::MAX.to_le_bytes());
+    overflowing_buffer.truncate(56);
+    assert_invalid_data(&overflowing_buffer, false);
+
+    let path = serialization_test_data("reference_files", "tdigest_ref_k100_n10000_double.sk");
+    let mut overflowing_compat = fs::read(path).unwrap();
+    let near_max = u64::MAX as f64 - 2_048.0;
+    overflowing_compat[32..40].copy_from_slice(&near_max.to_be_bytes());
+    overflowing_compat[48..56].copy_from_slice(&4_096_f64.to_be_bytes());
+    assert_invalid_data(&overflowing_compat, false);
 }
