@@ -1344,6 +1344,11 @@ fn check_compat_weight(value: f64, tag: &'static str) -> Result<NonZeroU64, Erro
             "malformed data: {tag} must be representable as a positive u64"
         )));
     }
+    if value.trunc() != value {
+        return Err(Error::deserial(format!(
+            "malformed data: {tag} must not have a fractional part"
+        )));
+    }
     check_nonzero(value as u64, tag)
 }
 
