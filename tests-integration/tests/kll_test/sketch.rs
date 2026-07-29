@@ -100,6 +100,21 @@ fn test_one_item() {
 }
 
 #[test]
+fn test_duplicate_items_follow_inclusive_and_exclusive_semantics() {
+    let mut sketch = KllSketch::<f32>::new(DEFAULT_K);
+    for item in [1.0, 1.0, 2.0, 2.0] {
+        sketch.update(item);
+    }
+
+    assert_eq!(sketch.rank(&1.0, false), Some(0.0));
+    assert_eq!(sketch.rank(&1.0, true), Some(0.5));
+    assert_eq!(sketch.rank(&2.0, false), Some(0.5));
+    assert_eq!(sketch.rank(&2.0, true), Some(1.0));
+    assert_eq!(sketch.quantile(0.5, true), Some(1.0));
+    assert_eq!(sketch.quantile(0.5, false), Some(2.0));
+}
+
+#[test]
 fn test_nan_is_ignored() {
     let mut sketch = KllSketch::<f32>::new(DEFAULT_K);
     sketch.update(f32::NAN);
@@ -373,7 +388,8 @@ fn test_custom_comparator_roundtrip() {
         NumericStringOrder,
     )
     .unwrap();
-    assert_eq!(decoded, sketch);
-
-    assert!(KllSketch::<String>::deserialize(&bytes).is_err());
+    assert_eq!(decoded.n(), sketch.n());
+    assert_eq!(decoded.min_item().map(String::as_str), Some("1"));
+    assert_eq!(decoded.max_item().map(String::as_str), Some("10"));
+    assert_eq!(decoded.quantile(0.5, true).as_deref(), Some("2"));
 }

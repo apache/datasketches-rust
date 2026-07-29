@@ -40,6 +40,7 @@ use super::sorted_view::build_sorted_view;
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
 use crate::codec::assert::ensure_serial_version_is;
+use crate::codec::assert::insufficient_data;
 use crate::codec::family::Family;
 use crate::error::Error;
 
@@ -76,7 +77,7 @@ impl<T: KllItem> KllComparator<T> for NaturalOrder {
     }
 }
 
-pub(crate) trait KllSerde: KllItem {
+trait KllSerde: KllItem {
     /// Minimum serialized size in bytes for one item.
     const MIN_SERIALIZED_SIZE: usize;
 
@@ -393,19 +394,19 @@ fn deserialize_with_serde<T: KllSerde, C: KllComparator<T>>(
     bytes: &[u8],
     comparator: C,
 ) -> Result<KllSketch<T, C>, Error> {
-    fn make_error(tag: &'static str) -> impl FnOnce(std::io::Error) -> Error {
-        move |_| Error::insufficient_data(tag)
-    }
-
     let mut cursor = SketchSlice::new(bytes);
 
-    let preamble_ints = cursor.read_u8().map_err(make_error("preamble_ints"))?;
-    let serial_version = cursor.read_u8().map_err(make_error("serial_version"))?;
-    let family_id = cursor.read_u8().map_err(make_error("family_id"))?;
-    let flags = cursor.read_u8().map_err(make_error("flags"))?;
-    let k = cursor.read_u16_le().map_err(make_error("k"))?;
-    let m = cursor.read_u8().map_err(make_error("m"))?;
-    let _unused = cursor.read_u8().map_err(make_error("unused"))?;
+    let preamble_ints = cursor
+        .read_u8()
+        .map_err(insufficient_data("preamble_ints"))?;
+    let serial_version = cursor
+        .read_u8()
+        .map_err(insufficient_data("serial_version"))?;
+    let family_id = cursor.read_u8().map_err(insufficient_data("family_id"))?;
+    let flags = cursor.read_u8().map_err(insufficient_data("flags"))?;
+    let k = cursor.read_u16_le().map_err(insufficient_data("k"))?;
+    let m = cursor.read_u8().map_err(insufficient_data("m"))?;
+    let _unused = cursor.read_u8().map_err(insufficient_data("unused"))?;
 
     if m != DEFAULT_M {
         return Err(Error::deserial(format!(
@@ -464,10 +465,10 @@ fn deserialize_with_serde<T: KllSerde, C: KllComparator<T>>(
     let (n, min_k, num_levels) = if is_single_item {
         (1u64, k, 1usize)
     } else {
-        let n = cursor.read_u64_le().map_err(make_error("n"))?;
-        let min_k = cursor.read_u16_le().map_err(make_error("min_k"))?;
-        let num_levels = cursor.read_u8().map_err(make_error("num_levels"))?;
-        let _unused = cursor.read_u8().map_err(make_error("unused2"))?;
+        let n = cursor.read_u64_le().map_err(insufficient_data("n"))?;
+        let min_k = cursor.read_u16_le().map_err(insufficient_data("min_k"))?;
+        let num_levels = cursor.read_u8().map_err(insufficient_data("num_levels"))?;
+        let _unused = cursor.read_u8().map_err(insufficient_data("unused2"))?;
         (n, min_k, num_levels as usize)
     };
 
@@ -494,7 +495,7 @@ fn deserialize_with_serde<T: KllSerde, C: KllComparator<T>>(
     let mut level_offsets = Vec::with_capacity(num_levels + 1);
     if !is_single_item {
         for _ in 0..num_levels {
-            let offset = cursor.read_u32_le().map_err(make_error("levels"))?;
+            let offset = cursor.read_u32_le().map_err(insufficient_data("levels"))?;
             level_offsets.push(offset);
         }
     } else {

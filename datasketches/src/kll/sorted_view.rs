@@ -21,7 +21,7 @@ use super::sketch::KllComparator;
 use super::sketch::KllItem;
 
 #[derive(Debug, Clone)]
-pub(crate) struct SortedView<T: KllItem, C: KllComparator<T>> {
+pub(super) struct SortedView<T: KllItem, C: KllComparator<T>> {
     comparator: C,
     entries: Vec<Entry<T>>,
     total_weight: u64,
@@ -48,7 +48,7 @@ impl<T: KllItem, C: KllComparator<T>> SortedView<T, C> {
         }
     }
 
-    pub fn rank(&self, item: &T, inclusive: bool) -> f64 {
+    pub(super) fn rank(&self, item: &T, inclusive: bool) -> f64 {
         if self.entries.is_empty() {
             return 0.0;
         }
@@ -66,7 +66,7 @@ impl<T: KllItem, C: KllComparator<T>> SortedView<T, C> {
         weight as f64 / self.total_weight as f64
     }
 
-    pub fn quantile(&self, rank: f64, inclusive: bool) -> T {
+    pub(super) fn quantile(&self, rank: f64, inclusive: bool) -> T {
         let weight = if inclusive {
             (rank * self.total_weight as f64).ceil() as u64
         } else {
@@ -85,7 +85,7 @@ impl<T: KllItem, C: KllComparator<T>> SortedView<T, C> {
         self.entries[idx].item.clone()
     }
 
-    pub fn cdf(&self, split_points: &[T], inclusive: bool) -> Vec<f64> {
+    pub(super) fn cdf(&self, split_points: &[T], inclusive: bool) -> Vec<f64> {
         check_split_points(split_points, &self.comparator);
         let mut ranks = Vec::with_capacity(split_points.len() + 1);
         for item in split_points {
@@ -95,7 +95,7 @@ impl<T: KllItem, C: KllComparator<T>> SortedView<T, C> {
         ranks
     }
 
-    pub fn pmf(&self, split_points: &[T], inclusive: bool) -> Vec<f64> {
+    pub(super) fn pmf(&self, split_points: &[T], inclusive: bool) -> Vec<f64> {
         let mut buckets = self.cdf(split_points, inclusive);
         for i in (1..buckets.len()).rev() {
             buckets[i] -= buckets[i - 1];
@@ -104,7 +104,7 @@ impl<T: KllItem, C: KllComparator<T>> SortedView<T, C> {
     }
 }
 
-pub(crate) fn build_sorted_view<T: KllItem, C: KllComparator<T>>(
+pub(super) fn build_sorted_view<T: KllItem, C: KllComparator<T>>(
     levels: &[Vec<T>],
     comparator: C,
 ) -> SortedView<T, C> {
