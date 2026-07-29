@@ -16,7 +16,7 @@
 // under the License.
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::Path;
 
 use datasketches::cpc::CpcSketch;
 use googletest::assert_that;
@@ -24,17 +24,15 @@ use googletest::prelude::near;
 
 use crate::serialization_test_data;
 
-fn test_sketch_file(path: PathBuf, expected_cardinality: usize) {
+fn test_sketch_file(path: &Path, expected_cardinality: usize) -> CpcSketch {
     let expected = expected_cardinality as f64;
 
-    let bytes = fs::read(&path).unwrap();
-    let sketch1 = CpcSketch::deserialize(&bytes).unwrap();
-    let estimate1 = sketch1.estimate();
-    assert_that!(estimate1, near(expected, expected * 0.02));
+    let bytes = fs::read(path).unwrap();
+    let sketch = CpcSketch::deserialize(&bytes).unwrap();
+    assert_that!(sketch.estimate(), near(expected, expected * 0.02));
 
-    // Serialize and deserialize again to test round-trip
-    let serialized_bytes = sketch1.serialize();
-    let sketch2 = CpcSketch::deserialize(&serialized_bytes).unwrap_or_else(|err| {
+    let serialized_bytes = sketch.serialize();
+    let round_trip = CpcSketch::deserialize(&serialized_bytes).unwrap_or_else(|err| {
         panic!(
             "Deserialization failed after round-trip for {}: {}",
             path.display(),
@@ -42,7 +40,6 @@ fn test_sketch_file(path: PathBuf, expected_cardinality: usize) {
         )
     });
 
-    // CpcSketch serialization should be stable
     assert_eq!(
         bytes,
         serialized_bytes,
@@ -50,12 +47,39 @@ fn test_sketch_file(path: PathBuf, expected_cardinality: usize) {
         path.display()
     );
 
-    // Verify estimates match after round-trip
-    let estimate2 = sketch2.estimate();
     assert_eq!(
-        estimate1,
-        estimate2,
+        sketch.estimate(),
+        round_trip.estimate(),
         "Estimates differ after round-trip for {}",
+        path.display()
+    );
+
+    sketch
+}
+
+fn test_sketch_replay(path: &Path, sketch: CpcSketch, inputs: impl Iterator<Item = usize>) {
+    let initial_estimate = sketch.estimate();
+    let initial_num_coupons = sketch.num_coupons();
+
+    let mut sketch = sketch;
+    for value in inputs {
+        sketch.update(value);
+    }
+    assert_eq!(
+        initial_num_coupons,
+        sketch.num_coupons(),
+        "Coupon count changed after replaying input for {}",
+        path.display()
+    );
+    assert_eq!(
+        initial_estimate,
+        sketch.estimate(),
+        "Estimate changed after replaying input for {}",
+        path.display()
+    );
+    assert!(
+        sketch.validate(),
+        "Sketch became invalid after replaying input for {}",
         path.display()
     );
 }
@@ -67,7 +91,8 @@ fn test_java_compatibility() {
     for n in test_cases {
         let filename = format!("cpc_n{}_java.sk", n);
         let path = serialization_test_data("java_generated_files", &filename);
-        test_sketch_file(path, n);
+        let sketch = test_sketch_file(&path, n);
+        test_sketch_replay(&path, sketch, 0..n);
     }
 }
 
@@ -78,6 +103,7 @@ fn test_cpp_compatibility() {
     for n in test_cases {
         let filename = format!("cpc_n{}_cpp.sk", n);
         let path = serialization_test_data("cpp_generated_files", &filename);
-        test_sketch_file(path, n);
+        let sketch = test_sketch_file(&path, n);
+        test_sketch_replay(&path, sketch, 1..=n);
     }
 }

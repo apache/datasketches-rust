@@ -415,27 +415,15 @@ fn test_union_commutativity() {
         sketch_b.update(i);
     }
 
-    // Union in order A, B
-    let mut union1 = HllUnion::new(12);
-    union1.update(&sketch_a);
-    union1.update(&sketch_b);
+    let mut union_1 = HllUnion::new(12); // A∪B
+    union_1.update(&sketch_a);
+    union_1.update(&sketch_b);
 
-    // Union in order B, A
-    let mut union2 = HllUnion::new(12);
-    union2.update(&sketch_b);
-    union2.update(&sketch_a);
+    let mut union_2 = HllUnion::new(12); // B∪A
+    union_2.update(&sketch_b);
+    union_2.update(&sketch_a);
 
-    let est1 = union1.estimate();
-    let est2 = union2.estimate();
-
-    let relative_diff = (est1 - est2).abs() / est1.max(est2);
-    assert!(
-        relative_diff < 0.001,
-        "Union not commutative: {} vs {} (diff: {:.4}%)",
-        est1,
-        est2,
-        relative_diff * 100.0
-    );
+    assert_eq!(union_1.estimate(), union_2.estimate());
 }
 
 #[test]
@@ -477,14 +465,7 @@ fn test_union_associativity() {
     union4.update(&bc_sketch);
     let est2 = union4.estimate();
 
-    let relative_diff = (est1 - est2).abs() / est1.max(est2);
-    assert!(
-        relative_diff < 0.01,
-        "Union not associative: {} vs {} (diff: {:.4}%)",
-        est1,
-        est2,
-        relative_diff * 100.0
-    );
+    assert_eq!(est1, est2);
 }
 
 #[test]
@@ -503,14 +484,64 @@ fn test_union_idempotency() {
     union.update(&sketch);
     let est2 = union.estimate();
 
-    let relative_diff = (est1 - est2).abs() / est1;
-    assert!(
-        relative_diff < 0.01,
-        "Union not idempotent: {} vs {} (diff: {:.4}%)",
-        est1,
-        est2,
-        relative_diff * 100.0
-    );
+    assert_eq!(est1, est2);
+}
+
+#[test]
+fn test_union_merge_order_regression() {
+    // Large fractional powers of two reproduce the reference implementation's merge-order case.
+    let points_per_octave = 1 << 17;
+
+    fn power_series_sketch(start: i64, points_per_octave: i32, limit: i64) -> HllSketch {
+        fn next_power_series_point(points_per_octave: i32, current: i64) -> i64 {
+            let current = current.max(1);
+            let mut generating_index =
+                ((current as f64).log2() * f64::from(points_per_octave)).round() as i32;
+            loop {
+                generating_index += 1;
+                let next = 2_f64
+                    .powf(f64::from(generating_index) / f64::from(points_per_octave))
+                    .round() as i64;
+                if next > current {
+                    return next;
+                }
+            }
+        }
+
+        let mut sketch = HllSketch::new(11, HllType::Hll8);
+        let mut value = start;
+        while value < limit {
+            sketch.update(value);
+            value = next_power_series_point(points_per_octave, value);
+        }
+        sketch
+    }
+
+    let a = power_series_sketch(1_i64 << 59, points_per_octave, 1_i64 << 60);
+    let b = power_series_sketch(1_i64 << 60, points_per_octave, 1_i64 << 61);
+    let c = power_series_sketch(1_i64 << 61, points_per_octave, 1_i64 << 62);
+    let sketches = [&a, &b, &c];
+
+    fn merge_estimate(sketches: &[&HllSketch; 3], order: [usize; 3]) -> f64 {
+        let mut union = HllUnion::new(11);
+        for index in order {
+            union.update(sketches[index]);
+        }
+        union.estimate()
+    }
+
+    let estimates = [
+        merge_estimate(&sketches, [0, 1, 2]),
+        merge_estimate(&sketches, [0, 2, 1]),
+        merge_estimate(&sketches, [1, 0, 2]),
+        merge_estimate(&sketches, [1, 2, 0]),
+        merge_estimate(&sketches, [2, 0, 1]),
+        merge_estimate(&sketches, [2, 1, 0]),
+    ];
+
+    for estimate in estimates.iter().skip(1) {
+        assert_eq!(*estimate, estimates[0]);
+    }
 }
 
 #[test]
