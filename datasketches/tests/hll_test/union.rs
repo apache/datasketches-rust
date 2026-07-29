@@ -418,11 +418,11 @@ fn test_union_commutativity() {
     union_ab.update(&sketch_a);
     union_ab.update(&sketch_b);
 
-    let mut union_b_then_a = HllUnion::new(12);
-    union_b_then_a.update(&sketch_b);
-    union_b_then_a.update(&sketch_a);
+    let mut union_ba = HllUnion::new(12);
+    union_ba.update(&sketch_b);
+    union_ba.update(&sketch_a);
 
-    assert_eq!(union_ab.estimate(), union_b_then_a.estimate());
+    assert_eq!(union_ab.estimate(), union_ba.estimate());
 }
 
 fn next_power_series_point(points_per_octave: i32, current: i64) -> i64 {
