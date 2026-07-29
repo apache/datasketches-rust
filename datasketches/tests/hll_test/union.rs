@@ -415,15 +415,15 @@ fn test_union_commutativity() {
         sketch_b.update(i);
     }
 
-    let mut union_ab = HllUnion::new(12);
-    union_ab.update(&sketch_a);
-    union_ab.update(&sketch_b);
+    let mut union_1 = HllUnion::new(12); // A∪B
+    union_1.update(&sketch_a);
+    union_1.update(&sketch_b);
 
-    let mut union_ba = HllUnion::new(12);
-    union_ba.update(&sketch_b);
-    union_ba.update(&sketch_a);
+    let mut union_2 = HllUnion::new(12); // B∪A
+    union_2.update(&sketch_b);
+    union_2.update(&sketch_a);
 
-    assert_eq!(union_ab.estimate(), union_ba.estimate());
+    assert_eq!(union_1.estimate(), union_2.estimate());
 }
 
 #[test]
@@ -486,7 +486,6 @@ fn test_union_idempotency() {
 
     assert_eq!(est1, est2);
 }
-
 
 #[test]
 fn test_union_merge_order_regression() {
