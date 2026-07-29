@@ -261,3 +261,24 @@ fn test_deserialize_rejects_total_weight_overflow() {
     overflowing_compat[48..56].copy_from_slice(&4_096_f64.to_be_bytes());
     assert_invalid_data(&overflowing_compat, false);
 }
+
+#[test]
+fn test_large_weights_produce_finite_extreme_quantile() {
+    let lower = f64::from_bits(f64::MAX.to_bits() - 1);
+    let mut tdigest = TDigestMut::default();
+    tdigest.update(lower);
+    tdigest.update(f64::MAX);
+    let mut bytes = tdigest.serialize();
+
+    // These valid weights retain a positive lower contribution even though its normalized ratio
+    // rounds away when interpolating between the two extreme values.
+    bytes[40..48].copy_from_slice(&((1_u64 << 52) - 1).to_le_bytes());
+    bytes[56..64].copy_from_slice(&(1_u64 << 52).to_le_bytes());
+
+    let mut tdigest = TDigestMut::deserialize(&bytes, false).unwrap();
+    let quantile = tdigest.quantile(0.25).unwrap();
+    assert!(
+        quantile.is_finite() && (lower..=f64::MAX).contains(&quantile),
+        "quantile must remain within its finite interpolation bounds, got {quantile}"
+    );
+}

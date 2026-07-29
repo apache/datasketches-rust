@@ -1375,5 +1375,12 @@ mod scale_function {
 
 fn weighted_average(x1: f64, w1: f64, x2: f64, w2: f64) -> f64 {
     let total_weight = w1 + w2;
-    x1 * (w1 / total_weight) + x2 * (w2 / total_weight)
+    let ratio = w2 / total_weight;
+    if x1.is_sign_positive() != x2.is_sign_positive() {
+        // Subtracting opposite-signed finite extremes can overflow.
+        x1 * (1. - ratio) + x2 * ratio
+    } else {
+        // Same-sign subtraction is finite and avoids summing two near-maximum terms.
+        (x2 - x1).mul_add(ratio, x1)
+    }
 }
