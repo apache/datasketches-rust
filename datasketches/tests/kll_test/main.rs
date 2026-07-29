@@ -15,36 +15,4 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! Codec utilities for datasketches crate.
-
-mod decode;
-mod encode;
-pub use self::decode::SketchSlice;
-pub use self::encode::SketchBytes;
-
-#[cfg(any(
-    feature = "bloom",
-    feature = "countmin",
-    feature = "cpc",
-    feature = "frequencies",
-    feature = "hll",
-    feature = "kll",
-    feature = "tdigest",
-    feature = "theta",
-    feature = "tuple",
-))]
-#[allow(dead_code)] // some utilities are only used for certain sketches
-pub(crate) mod assert;
-
-#[cfg(any(
-    feature = "bloom",
-    feature = "countmin",
-    feature = "cpc",
-    feature = "frequencies",
-    feature = "hll",
-    feature = "kll",
-    feature = "tdigest",
-    feature = "theta",
-    feature = "tuple",
-))]
-pub(crate) mod family;
+mod sketch;
