@@ -1347,6 +1347,7 @@ mod scale_function {
     }
 }
 
-const fn weighted_average(x1: f64, w1: f64, x2: f64, w2: f64) -> f64 {
-    (x1 * w1 + x2 * w2) / (w1 + w2)
+fn weighted_average(x1: f64, w1: f64, x2: f64, w2: f64) -> f64 {
+    let total_weight = w1 + w2;
+    x1 * (w1 / total_weight) + x2 * (w2 / total_weight)
 }
