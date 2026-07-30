@@ -577,6 +577,8 @@ impl TDigestMut {
         };
         check_non_nan(min, "min")?;
         check_non_nan(max, "max")?;
+        check_finite(min, "min")?;
+        check_finite(max, "max")?;
         let mut centroids = Vec::with_capacity(num_centroids);
         let mut centroids_weight = 0u64;
         for _ in 0..num_centroids {
@@ -594,9 +596,10 @@ impl TDigestMut {
             check_non_nan(mean, "centroid mean")?;
             check_finite(mean, "centroid")?;
             let weight = check_nonzero(weight, "centroid weight")?;
-            centroids_weight += weight.get();
+            centroids_weight = checked_weight_sum(centroids_weight, weight.get())?;
             centroids.push(Centroid { mean, weight });
         }
+        checked_weight_sum(centroids_weight, num_buffered as u64)?;
         let mut buffer = Vec::with_capacity(num_buffered);
         for _ in 0..num_buffered {
             let value = if is_f32 {
@@ -643,6 +646,8 @@ impl TDigestMut {
                 let max = cursor.read_f64_be().map_err(make_error("max"))?;
                 check_non_nan(min, "min in compat double format")?;
                 check_non_nan(max, "max in compat double format")?;
+                check_finite(min, "min in compat double format")?;
+                check_finite(max, "max in compat double format")?;
                 let k = cursor.read_f64_be().map_err(make_error("k"))? as u16;
                 if k < 10 {
                     return Err(Error::deserial(format!(
@@ -654,12 +659,13 @@ impl TDigestMut {
                 let mut total_weight = 0u64;
                 let mut centroids = Vec::with_capacity(num_centroids);
                 for _ in 0..num_centroids {
-                    let weight = cursor.read_f64_be().map_err(make_error("weight"))? as u64;
+                    let weight = cursor.read_f64_be().map_err(make_error("weight"))?;
                     let mean = cursor.read_f64_be().map_err(make_error("mean"))?;
-                    let weight = check_nonzero(weight, "centroid weight in compat double format")?;
+                    let weight =
+                        check_compat_weight(weight, "centroid weight in compat double format")?;
                     check_non_nan(mean, "centroid mean in compat double format")?;
                     check_finite(mean, "centroid mean in compat double format")?;
-                    total_weight += weight.get();
+                    total_weight = checked_weight_sum(total_weight, weight.get())?;
                     centroids.push(Centroid { mean, weight });
                 }
                 Ok(TDigestMut::make(
@@ -682,6 +688,8 @@ impl TDigestMut {
                 let max = cursor.read_f64_be().map_err(make_error("max"))?;
                 check_non_nan(min, "min in compat float format")?;
                 check_non_nan(max, "max in compat float format")?;
+                check_finite(min, "min in compat float format")?;
+                check_finite(max, "max in compat float format")?;
                 let k = cursor.read_f32_be().map_err(make_error("k"))? as u16;
                 if k < 10 {
                     return Err(Error::deserial(format!(
@@ -696,12 +704,13 @@ impl TDigestMut {
                 let mut total_weight = 0u64;
                 let mut centroids = Vec::with_capacity(num_centroids);
                 for _ in 0..num_centroids {
-                    let weight = cursor.read_f32_be().map_err(make_error("weight"))? as u64;
+                    let weight = cursor.read_f32_be().map_err(make_error("weight"))? as f64;
                     let mean = cursor.read_f32_be().map_err(make_error("mean"))? as f64;
-                    let weight = check_nonzero(weight, "centroid weight in compat float format")?;
+                    let weight =
+                        check_compat_weight(weight, "centroid weight in compat float format")?;
                     check_non_nan(mean, "centroid mean in compat float format")?;
                     check_finite(mean, "centroid mean in compat float format")?;
-                    total_weight += weight.get();
+                    total_weight = checked_weight_sum(total_weight, weight.get())?;
                     centroids.push(Centroid { mean, weight });
                 }
                 Ok(TDigestMut::make(
@@ -1327,6 +1336,28 @@ fn check_nonzero(value: u64, tag: &'static str) -> Result<NonZeroU64, Error> {
         .ok_or_else(|| Error::deserial(format!("malformed data: {tag} cannot be zero")))
 }
 
+fn check_compat_weight(value: f64, tag: &'static str) -> Result<NonZeroU64, Error> {
+    check_non_nan(value, tag)?;
+    check_finite(value, tag)?;
+    if !(1.0..u64::MAX as f64).contains(&value) {
+        return Err(Error::deserial(format!(
+            "malformed data: {tag} must be representable as a positive u64"
+        )));
+    }
+    if value.trunc() != value {
+        return Err(Error::deserial(format!(
+            "malformed data: {tag} must not have a fractional part"
+        )));
+    }
+    check_nonzero(value as u64, tag)
+}
+
+fn checked_weight_sum(total_weight: u64, weight: u64) -> Result<u64, Error> {
+    total_weight
+        .checked_add(weight)
+        .ok_or_else(|| Error::deserial("malformed data: total weight overflow"))
+}
+
 /// Generates cluster sizes proportional to `q*(1-q)`.
 ///
 /// The use of a normalizing function results in a strictly bounded number of clusters no matter
@@ -1347,6 +1378,14 @@ mod scale_function {
     }
 }
 
-const fn weighted_average(x1: f64, w1: f64, x2: f64, w2: f64) -> f64 {
-    (x1 * w1 + x2 * w2) / (w1 + w2)
+fn weighted_average(x1: f64, w1: f64, x2: f64, w2: f64) -> f64 {
+    let total_weight = w1 + w2;
+    let ratio = w2 / total_weight;
+    if x1.is_sign_positive() != x2.is_sign_positive() {
+        // Subtracting opposite-signed finite extremes can overflow.
+        x1 * (1. - ratio) + x2 * ratio
+    } else {
+        // Same-sign subtraction is finite and avoids summing two near-maximum terms.
+        (x2 - x1).mul_add(ratio, x1)
+    }
 }

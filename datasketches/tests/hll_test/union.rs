@@ -406,24 +406,26 @@ fn test_union_reset() {
 fn test_union_commutativity() {
     // Verify A∪B = B∪A
     let mut sketch_a = HllSketch::new(12, HllType::Hll8);
-    let mut sketch_b = HllSketch::new(12, HllType::Hll8);
-
     for i in 0..1000 {
         sketch_a.update(i);
     }
+
+    let mut sketch_b = HllSketch::new(12, HllType::Hll8);
     for i in 500..1500 {
         sketch_b.update(i);
     }
 
-    let mut union_1 = HllUnion::new(12); // A∪B
-    union_1.update(&sketch_a);
-    union_1.update(&sketch_b);
+    // A∪B
+    let mut union1 = HllUnion::new(12);
+    union1.update(&sketch_a);
+    union1.update(&sketch_b);
 
-    let mut union_2 = HllUnion::new(12); // B∪A
-    union_2.update(&sketch_b);
-    union_2.update(&sketch_a);
+    // B∪A
+    let mut union2 = HllUnion::new(12);
+    union2.update(&sketch_b);
+    union2.update(&sketch_a);
 
-    assert_eq!(union_1.estimate(), union_2.estimate());
+    assert_eq!(union1.estimate(), union2.estimate());
 }
 
 #[test]

@@ -230,6 +230,25 @@ fn test_invalid_inputs() {
 }
 
 #[test]
+fn test_extreme_values_produce_finite_quantiles() {
+    let mut tdigest = TDigestMut::default();
+    for i in 0..10_000 {
+        tdigest.update(if i % 2 == 0 { f64::MAX } else { -f64::MAX });
+    }
+
+    assert_eq!(tdigest.total_weight(), 10_000);
+    assert_eq!(tdigest.min_value(), Some(-f64::MAX));
+    assert_eq!(tdigest.max_value(), Some(f64::MAX));
+    for rank in [0.25, 0.5, 0.75] {
+        let quantile = tdigest.quantile(rank).unwrap();
+        assert!(
+            quantile.is_finite(),
+            "quantile at rank {rank} must be finite, got {quantile}"
+        );
+    }
+}
+
+#[test]
 fn test_estimate_repeat_values() {
     let mut tdigest = TDigestMut::default();
     for _ in 0..20 {
