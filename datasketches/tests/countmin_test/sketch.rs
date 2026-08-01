@@ -244,11 +244,11 @@ fn test_increment_single_key_like_rust_count_min_sketch() {
 #[test]
 fn test_estimated_size() {
     let mut sketch = CountMinSketch::<i64>::new(4, 128);
-    let counts_size = 4 * 128 * size_of::<i64>();
+    assert_eq!(sketch.estimated_size(), 4200);
 
     // The backing tables are allocated up front; updates do not grow the sketch.
     sketch.update("apple");
-    assert_that!(sketch.estimated_size(), ge(counts_size));
+    assert_eq!(sketch.estimated_size(), 4200);
 }
 
 #[test]
