@@ -24,7 +24,8 @@ use std::time::Duration;
 
 use clap::Parser;
 use clap::Subcommand;
-use zip::read::read_zipfile_from_stream;
+use flate2::read::GzDecoder;
+use tar::Archive;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -301,16 +302,24 @@ impl CommandPrepareTestData {
         let serde_tests =
             Path::new(env!("CARGO_WORKSPACE_DIR")).join("datasketches/tests/serde_tests");
         let archive_url =
-            format!("https://github.com/apache/datasketches-tck/archive/{REVISION}/main.zip");
+            format!("https://api.github.com/repos/apache/datasketches-tck/tarball/{REVISION}");
 
         println!("Downloading serialization snapshots from {archive_url}");
 
-        let agent = ureq::AgentBuilder::new()
-            .timeout_connect(Duration::from_secs(60))
-            .timeout_read(Duration::from_secs(60))
-            .build();
-        let response = agent.get(&archive_url).call()?;
-        let mut reader = response.into_reader();
+        let timeout = Some(Duration::from_secs(60));
+        let agent: ureq::Agent = ureq::Agent::config_builder()
+            .timeout_connect(timeout)
+            .timeout_recv_response(timeout)
+            .timeout_recv_body(timeout)
+            .build()
+            .into();
+        let response = agent
+            .get(&archive_url)
+            .header("Accept", "application/vnd.github+json")
+            .header("X-GitHub-Api-Version", "2026-03-10")
+            .call()?;
+        let (_, body) = response.into_parts();
+        let mut archive = Archive::new(GzDecoder::new(body.into_reader()));
 
         let mut targets = vec![];
         for language in self.languages() {
@@ -327,13 +336,12 @@ impl CommandPrepareTestData {
             targets.push((language, source_directory, destination, 0_usize));
         }
 
-        // Note that read_zipfile_from_stream depends on GitHub Archive format. If GitHub changes
-        // the format, this code may break.
-        while let Some(mut member) = read_zipfile_from_stream(&mut reader)? {
-            let Some(path) = member.enclosed_name() else {
-                continue;
-            };
-            if member.is_dir() || path.extension().is_none_or(|extension| extension != "sk") {
+        for member in archive.entries()? {
+            let mut member = member?;
+            let path = member.path()?;
+            if !member.header().entry_type().is_file()
+                || path.extension().is_none_or(|extension| extension != "sk")
+            {
                 continue;
             }
 

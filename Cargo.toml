@@ -32,17 +32,17 @@ rust-version = "1.86.0"
 datasketches = { path = "datasketches" }
 
 # Crates.io dependencies
-clap = { version = "4.5.20", features = ["derive"] }
-insta = { version = "1.46.1" }
-googletest = { version = "0.14.2" }
+clap = { version = "4.6.5", features = ["derive"] }
+insta = { version = "1.48.0" }
+googletest = { version = "0.14.3" }
 cargo_metadata = { version = "0.23.1" }
-which = { version = "8.0.0" }
-ureq = { version = "2.12.1", default-features = false, features = [
-  "proxy-from-env",
+which = { version = "8.0.5" }
+flate2 = { version = "1.1.9", default-features = false, features = ["zlib-rs"] }
+tar = { version = "0.4.46", default-features = false }
+ureq = { version = "3.3.0", default-features = false, features = [
+  "rustls",
   "socks-proxy",
-  "tls",
 ] }
-zip = { version = "2.4.2", default-features = false, features = ["deflate"] }
 
 [workspace.lints.rust]
 unknown_lints = "deny"
