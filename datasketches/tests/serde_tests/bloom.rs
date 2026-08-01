@@ -22,16 +22,6 @@ use datasketches::bloom::BloomFilter;
 
 use crate::serialization_test_data;
 
-const COMMON_TEST_CASES: [(u64, u16); 6] = [
-    (0, 3),
-    (0, 5),
-    (10_000, 3),
-    (10_000, 5),
-    (2_000_000, 3),
-    (2_000_000, 5),
-];
-const LARGE_TEST_CASES: [(u64, u16); 2] = [(30_000_000, 3), (30_000_000, 5)];
-
 fn test_bloom_filter_file(path: PathBuf, expected_num_items: u64, expected_num_hashes: u16) {
     let bytes = fs::read(&path).unwrap();
     let filter1 = BloomFilter::deserialize(&bytes).unwrap();
@@ -134,30 +124,54 @@ fn test_bloom_filter_file(path: PathBuf, expected_num_items: u64, expected_num_h
     }
 }
 
-fn test_compatibility(language: &str, test_cases: impl IntoIterator<Item = (u64, u16)>) {
-    let sub_dir = format!("{language}_generated_files");
-
-    for (n, num_hashes) in test_cases {
-        let filename = format!("bf_n{n}_h{num_hashes}_{language}.sk");
-        let path = serialization_test_data(&sub_dir, &filename);
+#[test]
+fn test_java_compatibility() {
+    for (n, num_hashes) in [
+        (0, 3),
+        (0, 5),
+        (10_000, 3),
+        (10_000, 5),
+        (2_000_000, 3),
+        (2_000_000, 5),
+        (30_000_000, 3),
+        (30_000_000, 5),
+    ] {
+        let filename = format!("bf_n{n}_h{num_hashes}_java.sk");
+        let path = serialization_test_data("java_generated_files", &filename);
         test_bloom_filter_file(path, n, num_hashes);
     }
 }
 
 #[test]
-fn test_java_compatibility() {
-    test_compatibility(
-        "java",
-        COMMON_TEST_CASES.into_iter().chain(LARGE_TEST_CASES),
-    );
-}
-
-#[test]
 fn test_cpp_compatibility() {
-    test_compatibility("cpp", COMMON_TEST_CASES.into_iter().chain(LARGE_TEST_CASES));
+    for (n, num_hashes) in [
+        (0, 3),
+        (0, 5),
+        (10_000, 3),
+        (10_000, 5),
+        (2_000_000, 3),
+        (2_000_000, 5),
+        (30_000_000, 3),
+        (30_000_000, 5),
+    ] {
+        let filename = format!("bf_n{n}_h{num_hashes}_cpp.sk");
+        let path = serialization_test_data("cpp_generated_files", &filename);
+        test_bloom_filter_file(path, n, num_hashes);
+    }
 }
 
 #[test]
 fn test_go_compatibility() {
-    test_compatibility("go", COMMON_TEST_CASES);
+    for (n, num_hashes) in [
+        (0, 3),
+        (0, 5),
+        (10_000, 3),
+        (10_000, 5),
+        (2_000_000, 3),
+        (2_000_000, 5),
+    ] {
+        let filename = format!("bf_n{n}_h{num_hashes}_go.sk");
+        let path = serialization_test_data("go_generated_files", &filename);
+        test_bloom_filter_file(path, n, num_hashes);
+    }
 }
