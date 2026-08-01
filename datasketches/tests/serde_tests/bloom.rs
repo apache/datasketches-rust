@@ -219,3 +219,19 @@ fn test_cpp_bloom_n30000000_h5() {
     let path = serialization_test_data("cpp_generated_files", "bf_n30000000_h5_cpp.sk");
     test_bloom_filter_file(path, 30000000, 5);
 }
+
+#[test]
+fn test_go_compatibility() {
+    for (n, num_hashes) in [
+        (0, 3),
+        (0, 5),
+        (10_000, 3),
+        (10_000, 5),
+        (2_000_000, 3),
+        (2_000_000, 5),
+    ] {
+        let filename = format!("bf_n{n}_h{num_hashes}_go.sk");
+        let path = serialization_test_data("go_generated_files", &filename);
+        test_bloom_filter_file(path, n, num_hashes);
+    }
+}

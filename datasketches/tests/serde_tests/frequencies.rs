@@ -264,3 +264,82 @@ fn test_cpp_frequent_strings_utf8() {
     assert_eq!(sketch.estimate(&"шщъыь".to_string()), 6);
     assert_eq!(sketch.estimate(&"эюя".to_string()), 7);
 }
+
+#[test]
+fn test_go_frequent_longs_compatibility() {
+    let test_cases = [0, 1, 10, 100, 1000, 10000, 100000, 1000000];
+    for n in test_cases {
+        let filename = format!("frequent_long_n{n}_go.sk");
+        let path = serialization_test_data("go_generated_files", &filename);
+        let bytes = fs::read(&path).unwrap();
+        let sketch = FrequentItemsSketch::<i64>::deserialize(&bytes).unwrap();
+        assert_eq!(sketch.is_empty(), n == 0);
+        if n > 10 {
+            assert!(sketch.maximum_error() > 0);
+        } else {
+            assert_eq!(sketch.maximum_error(), 0);
+        }
+        assert_eq!(sketch.total_weight(), n);
+    }
+}
+
+#[test]
+fn test_go_frequent_strings_compatibility() {
+    let test_cases = [0, 1, 10, 100, 1000, 10000, 100000, 1000000];
+    for n in test_cases {
+        let filename = format!("frequent_string_n{n}_go.sk");
+        let path = serialization_test_data("go_generated_files", &filename);
+        let bytes = fs::read(&path).unwrap();
+        let sketch = FrequentItemsSketch::<String>::deserialize(&bytes).unwrap();
+        assert_eq!(sketch.is_empty(), n == 0);
+        if n > 10 {
+            assert!(sketch.maximum_error() > 0);
+        } else {
+            assert_eq!(sketch.maximum_error(), 0);
+        }
+        assert_eq!(sketch.total_weight(), n);
+    }
+}
+
+#[test]
+fn test_go_frequent_strings_ascii() {
+    let path = serialization_test_data("go_generated_files", "frequent_string_ascii_go.sk");
+    let bytes = fs::read(&path).unwrap();
+    let sketch = FrequentItemsSketch::<String>::deserialize(&bytes).unwrap();
+    assert!(!sketch.is_empty());
+    assert_eq!(sketch.maximum_error(), 0);
+    assert_eq!(sketch.total_weight(), 10);
+    assert_eq!(
+        sketch.estimate(&"aaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string()),
+        1
+    );
+    assert_eq!(
+        sketch.estimate(&"bbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string()),
+        2
+    );
+    assert_eq!(
+        sketch.estimate(&"ccccccccccccccccccccccccccccc".to_string()),
+        3
+    );
+    assert_eq!(
+        sketch.estimate(&"ddddddddddddddddddddddddddddd".to_string()),
+        4
+    );
+}
+
+#[test]
+fn test_go_frequent_strings_utf8() {
+    let path = serialization_test_data("go_generated_files", "frequent_string_utf8_go.sk");
+    let bytes = fs::read(&path).unwrap();
+    let sketch = FrequentItemsSketch::<String>::deserialize(&bytes).unwrap();
+    assert!(!sketch.is_empty());
+    assert_eq!(sketch.maximum_error(), 0);
+    assert_eq!(sketch.total_weight(), 28);
+    assert_eq!(sketch.estimate(&"абвгд".to_string()), 1);
+    assert_eq!(sketch.estimate(&"еёжзи".to_string()), 2);
+    assert_eq!(sketch.estimate(&"йклмн".to_string()), 3);
+    assert_eq!(sketch.estimate(&"опрст".to_string()), 4);
+    assert_eq!(sketch.estimate(&"уфхцч".to_string()), 5);
+    assert_eq!(sketch.estimate(&"шщъыь".to_string()), 6);
+    assert_eq!(sketch.estimate(&"эюя".to_string()), 7);
+}

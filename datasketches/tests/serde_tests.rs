@@ -33,7 +33,7 @@ pub fn serialization_test_data(sub_dir: &str, name: &str) -> PathBuf {
             run the following commands from the project root to prepare the test data files
             if they are missing:
 
-            $ cargo x prepare-testdata --all
+            $ cargo x prepare-testdata
         "#,
             path.display(),
         );

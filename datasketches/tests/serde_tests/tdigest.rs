@@ -132,6 +132,21 @@ fn test_deserialize_from_java_snapshots() {
 }
 
 #[test]
+fn test_deserialize_from_go_snapshots() {
+    let ns = [0, 1, 10, 100, 1000, 10_000, 100_000, 1_000_000];
+    for n in ns {
+        let filename = format!("tdigest_double_n{n}_go.sk");
+        let path = serialization_test_data("go_generated_files", &filename);
+        test_sketch_file(path, n, false, false);
+    }
+    for n in ns {
+        let filename = format!("tdigest_double_buf_n{n}_go.sk");
+        let path = serialization_test_data("go_generated_files", &filename);
+        test_sketch_file(path, n, true, false);
+    }
+}
+
+#[test]
 fn test_empty() {
     let mut td = TDigestMut::new(100);
     assert!(td.is_empty());

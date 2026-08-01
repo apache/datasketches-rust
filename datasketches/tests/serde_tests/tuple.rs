@@ -44,7 +44,7 @@ fn test_sketch_file(path: PathBuf, expected_cardinality: usize) {
     let estimate1 = sketch1.estimate();
     assert_that!(estimate1, near(expected, expected * 0.03));
 
-    // Snapshots from Java/C++ are not required to match byte-for-byte output from this
+    // Snapshots from other implementations are not required to match byte-for-byte output from this
     // implementation. Verify our own serialization is stable across a round-trip instead.
     let serialized_bytes = sketch1.serialize();
     let sketch2 = CompactTupleSketch::<i32>::deserialize(&serialized_bytes).unwrap_or_else(|err| {
@@ -90,6 +90,17 @@ fn test_cpp_compatibility() {
     for n in test_cases {
         let filename = format!("tuple_int_n{}_cpp.sk", n);
         let path = serialization_test_data("cpp_generated_files", &filename);
+        test_sketch_file(path, n);
+    }
+}
+
+#[test]
+fn test_go_compatibility() {
+    let test_cases = [0, 1, 10, 100, 1000, 10_000, 100_000, 1_000_000];
+
+    for n in test_cases {
+        let filename = format!("tuple_int_n{n}_go.sk");
+        let path = serialization_test_data("go_generated_files", &filename);
         test_sketch_file(path, n);
     }
 }

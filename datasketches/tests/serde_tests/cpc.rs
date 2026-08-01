@@ -107,3 +107,15 @@ fn test_cpp_compatibility() {
         test_sketch_replay(&path, sketch, 1..=n);
     }
 }
+
+#[test]
+fn test_go_compatibility() {
+    let test_cases = [0, 100, 200, 2000, 20000];
+
+    for n in test_cases {
+        let filename = format!("cpc_n{n}_go.sk");
+        let path = serialization_test_data("go_generated_files", &filename);
+        let sketch = test_sketch_file(&path, n);
+        test_sketch_replay(&path, sketch, 0..n);
+    }
+}

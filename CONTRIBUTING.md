@@ -118,14 +118,16 @@ Serialization compatibility tests use snapshots from a pinned revision of [`apac
 
 The `cargo x prepare-testdata` command downloads the TCK archive and synchronizes its snapshots into:
 
-- `datasketches/tests/serde_tests/java_generated_files`
 - `datasketches/tests/serde_tests/cpp_generated_files`
+- `datasketches/tests/serde_tests/go_generated_files`
+- `datasketches/tests/serde_tests/java_generated_files`
 
 You can synchronize them separately:
 
 ```shell
-cargo x prepare-testdata java
 cargo x prepare-testdata cpp
+cargo x prepare-testdata go
+cargo x prepare-testdata java
 ```
 
 If no language is specified, all languages are prepared. These directories are not stored in Git. Run the command before the first test run and again whenever the pinned TCK revision changes. It requires network access and replaces the selected generated directories.
