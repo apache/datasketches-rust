@@ -48,7 +48,7 @@ fn test_sketch_file(path: PathBuf, expected_cardinality: usize, use_compressed_r
         )
     });
 
-    // Theta snapshots from Java/C++ are not required to match byte-for-byte output
+    // Theta snapshots from other implementations are not required to match byte-for-byte output
     // from this implementation. Verify our own serialization is stable instead.
     let serialized_bytes2 = if use_compressed_round_trip {
         sketch2.serialize_compressed()
@@ -113,6 +113,28 @@ fn test_cpp_compatibility() {
     }
 
     let path = serialization_test_data("cpp_generated_files", "theta_non_empty_no_entries_cpp.sk");
+    test_sketch_file(path, 0, false);
+}
+
+#[test]
+fn test_go_compatibility() {
+    let test_cases = [0, 1, 10, 100, 1000, 10_000, 100_000, 1_000_000];
+
+    for n in test_cases {
+        let filename = format!("theta_n{n}_go.sk");
+        let path = serialization_test_data("go_generated_files", &filename);
+        test_sketch_file(path, n, false);
+    }
+
+    let compressed_test_cases = [10, 100, 1000, 10_000, 100_000, 1_000_000];
+
+    for n in compressed_test_cases {
+        let filename = format!("theta_compressed_n{n}_go.sk");
+        let path = serialization_test_data("go_generated_files", &filename);
+        test_sketch_file(path, n, true);
+    }
+
+    let path = serialization_test_data("go_generated_files", "theta_non_empty_no_entries_go.sk");
     test_sketch_file(path, 0, false);
 }
 

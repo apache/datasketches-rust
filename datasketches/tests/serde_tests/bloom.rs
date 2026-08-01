@@ -125,97 +125,53 @@ fn test_bloom_filter_file(path: PathBuf, expected_num_items: u64, expected_num_h
 }
 
 #[test]
-fn test_java_bloom_n0_h3() {
-    let path = serialization_test_data("java_generated_files", "bf_n0_h3_java.sk");
-    test_bloom_filter_file(path, 0, 3);
+fn test_java_compatibility() {
+    for (n, num_hashes) in [
+        (0, 3),
+        (0, 5),
+        (10_000, 3),
+        (10_000, 5),
+        (2_000_000, 3),
+        (2_000_000, 5),
+        (30_000_000, 3),
+        (30_000_000, 5),
+    ] {
+        let filename = format!("bf_n{n}_h{num_hashes}_java.sk");
+        let path = serialization_test_data("java_generated_files", &filename);
+        test_bloom_filter_file(path, n, num_hashes);
+    }
 }
 
 #[test]
-fn test_java_bloom_n0_h5() {
-    let path = serialization_test_data("java_generated_files", "bf_n0_h5_java.sk");
-    test_bloom_filter_file(path, 0, 5);
+fn test_cpp_compatibility() {
+    for (n, num_hashes) in [
+        (0, 3),
+        (0, 5),
+        (10_000, 3),
+        (10_000, 5),
+        (2_000_000, 3),
+        (2_000_000, 5),
+        (30_000_000, 3),
+        (30_000_000, 5),
+    ] {
+        let filename = format!("bf_n{n}_h{num_hashes}_cpp.sk");
+        let path = serialization_test_data("cpp_generated_files", &filename);
+        test_bloom_filter_file(path, n, num_hashes);
+    }
 }
 
 #[test]
-fn test_java_bloom_n10000_h3() {
-    let path = serialization_test_data("java_generated_files", "bf_n10000_h3_java.sk");
-    test_bloom_filter_file(path, 10000, 3);
-}
-
-#[test]
-fn test_java_bloom_n10000_h5() {
-    let path = serialization_test_data("java_generated_files", "bf_n10000_h5_java.sk");
-    test_bloom_filter_file(path, 10000, 5);
-}
-
-#[test]
-fn test_java_bloom_n2000000_h3() {
-    let path = serialization_test_data("java_generated_files", "bf_n2000000_h3_java.sk");
-    test_bloom_filter_file(path, 2000000, 3);
-}
-
-#[test]
-fn test_java_bloom_n2000000_h5() {
-    let path = serialization_test_data("java_generated_files", "bf_n2000000_h5_java.sk");
-    test_bloom_filter_file(path, 2000000, 5);
-}
-
-#[test]
-fn test_java_bloom_n30000000_h3() {
-    let path = serialization_test_data("java_generated_files", "bf_n30000000_h3_java.sk");
-    test_bloom_filter_file(path, 30000000, 3);
-}
-
-#[test]
-fn test_java_bloom_n30000000_h5() {
-    let path = serialization_test_data("java_generated_files", "bf_n30000000_h5_java.sk");
-    test_bloom_filter_file(path, 30000000, 5);
-}
-
-#[test]
-fn test_cpp_bloom_n0_h3() {
-    let path = serialization_test_data("cpp_generated_files", "bf_n0_h3_cpp.sk");
-    test_bloom_filter_file(path, 0, 3);
-}
-
-#[test]
-fn test_cpp_bloom_n0_h5() {
-    let path = serialization_test_data("cpp_generated_files", "bf_n0_h5_cpp.sk");
-    test_bloom_filter_file(path, 0, 5);
-}
-
-#[test]
-fn test_cpp_bloom_n10000_h3() {
-    let path = serialization_test_data("cpp_generated_files", "bf_n10000_h3_cpp.sk");
-    test_bloom_filter_file(path, 10000, 3);
-}
-
-#[test]
-fn test_cpp_bloom_n10000_h5() {
-    let path = serialization_test_data("cpp_generated_files", "bf_n10000_h5_cpp.sk");
-    test_bloom_filter_file(path, 10000, 5);
-}
-
-#[test]
-fn test_cpp_bloom_n2000000_h3() {
-    let path = serialization_test_data("cpp_generated_files", "bf_n2000000_h3_cpp.sk");
-    test_bloom_filter_file(path, 2000000, 3);
-}
-
-#[test]
-fn test_cpp_bloom_n2000000_h5() {
-    let path = serialization_test_data("cpp_generated_files", "bf_n2000000_h5_cpp.sk");
-    test_bloom_filter_file(path, 2000000, 5);
-}
-
-#[test]
-fn test_cpp_bloom_n30000000_h3() {
-    let path = serialization_test_data("cpp_generated_files", "bf_n30000000_h3_cpp.sk");
-    test_bloom_filter_file(path, 30000000, 3);
-}
-
-#[test]
-fn test_cpp_bloom_n30000000_h5() {
-    let path = serialization_test_data("cpp_generated_files", "bf_n30000000_h5_cpp.sk");
-    test_bloom_filter_file(path, 30000000, 5);
+fn test_go_compatibility() {
+    for (n, num_hashes) in [
+        (0, 3),
+        (0, 5),
+        (10_000, 3),
+        (10_000, 5),
+        (2_000_000, 3),
+        (2_000_000, 5),
+    ] {
+        let filename = format!("bf_n{n}_h{num_hashes}_go.sk");
+        let path = serialization_test_data("go_generated_files", &filename);
+        test_bloom_filter_file(path, n, num_hashes);
+    }
 }

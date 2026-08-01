@@ -283,7 +283,7 @@ fn make_taplo_cmd(fix: bool) -> StdCommand {
 struct CommandPrepareTestData {
     #[arg(
         value_name = "LANG",
-        value_parser = ["java", "cpp", "c++"],
+        value_parser = ["java", "cpp", "c++", "go", "golang"],
         help = "Languages to prepare (all by default)."
     )]
     langs: Vec<String>,
@@ -298,7 +298,7 @@ impl CommandPrepareTestData {
     }
 
     fn prepare(self) -> Result<()> {
-        const REVISION: &str = "0016a517cc87e13339298550afe8e6a7e961bf46";
+        const REVISION: &str = "d363b12d293b395d90abb42677f9ea63178dbc0d";
         let serde_tests =
             Path::new(env!("CARGO_WORKSPACE_DIR")).join("datasketches/tests/serde_tests");
         let archive_url =
@@ -372,7 +372,7 @@ impl CommandPrepareTestData {
 
     fn languages(&self) -> Vec<&'static str> {
         if self.langs.is_empty() {
-            return vec!["cpp", "java"];
+            return vec!["cpp", "go", "java"];
         }
 
         let mut languages = vec![];
@@ -380,6 +380,7 @@ impl CommandPrepareTestData {
             let language = match language.as_str() {
                 "java" => "java",
                 "cpp" | "c++" => "cpp",
+                "go" | "golang" => "go",
                 _ => unreachable!("language is validated by clap"),
             };
             if !languages.contains(&language) {

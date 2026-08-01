@@ -164,6 +164,7 @@ fn test_serialized_bytes_match_reference_files_for_coupon_modes() {
             for (dir, suffix) in [
                 ("java_generated_files", "java"),
                 ("cpp_generated_files", "cpp"),
+                ("go_generated_files", "go"),
             ] {
                 let filename = format!("{type_name}_n{n}_{suffix}.sk");
                 let path = serialization_test_data(dir, &filename);
@@ -247,6 +248,39 @@ fn test_cpp_hll8_compatibility() {
     for n in test_cases {
         let filename = format!("hll8_n{}_cpp.sk", n);
         let path = serialization_test_data("cpp_generated_files", &filename);
+        test_sketch_file(path, n, 12);
+    }
+}
+
+#[test]
+fn test_go_hll4_compatibility() {
+    let test_cases = [0, 1, 10, 100, 1000, 10000, 100000, 1000000];
+
+    for n in test_cases {
+        let filename = format!("hll4_n{n}_go.sk");
+        let path = serialization_test_data("go_generated_files", &filename);
+        test_sketch_file(path, n, 12);
+    }
+}
+
+#[test]
+fn test_go_hll6_compatibility() {
+    let test_cases = [0, 1, 10, 100, 1000, 10000, 100000, 1000000];
+
+    for n in test_cases {
+        let filename = format!("hll6_n{n}_go.sk");
+        let path = serialization_test_data("go_generated_files", &filename);
+        test_sketch_file(path, n, 12);
+    }
+}
+
+#[test]
+fn test_go_hll8_compatibility() {
+    let test_cases = [0, 1, 10, 100, 1000, 10000, 100000, 1000000];
+
+    for n in test_cases {
+        let filename = format!("hll8_n{n}_go.sk");
+        let path = serialization_test_data("go_generated_files", &filename);
         test_sketch_file(path, n, 12);
     }
 }
