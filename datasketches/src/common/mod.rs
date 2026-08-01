@@ -22,9 +22,5 @@ mod resize;
 pub use self::num_std_dev::NumStdDev;
 pub use self::resize::ResizeFactor;
 
-#[cfg(feature = "theta")]
-pub(crate) mod binomial_bounds;
-#[cfg(feature = "theta")]
-pub(crate) mod bounds_binomial_proportions;
-#[cfg(feature = "cpc")]
-pub(crate) mod inv_pow2_table;
+#[cfg(any(feature = "cpc", feature = "hll"))]
+pub(crate) mod inv_pow2;

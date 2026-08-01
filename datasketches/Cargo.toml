@@ -45,6 +45,47 @@ frequencies = []
 hll = []
 tdigest = []
 theta = []
+tuple = []
+
+[[test]]
+name = "bloom_test"
+path = "tests/bloom_test/main.rs"
+required-features = ["bloom"]
+
+[[test]]
+name = "countmin_test"
+path = "tests/countmin_test/main.rs"
+required-features = ["countmin"]
+
+[[test]]
+name = "cpc_test"
+path = "tests/cpc_test/main.rs"
+required-features = ["cpc"]
+
+[[test]]
+name = "frequencies_test"
+path = "tests/frequencies_test/main.rs"
+required-features = ["frequencies"]
+
+[[test]]
+name = "hll_test"
+path = "tests/hll_test/main.rs"
+required-features = ["hll"]
+
+[[test]]
+name = "tdigest_test"
+path = "tests/tdigest_test/main.rs"
+required-features = ["tdigest"]
+
+[[test]]
+name = "theta_test"
+path = "tests/theta_test/main.rs"
+required-features = ["theta"]
+
+[[test]]
+name = "tuple_test"
+path = "tests/tuple_test/main.rs"
+required-features = ["tuple"]
 
 [dev-dependencies]
 googletest = { workspace = true }

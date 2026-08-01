@@ -197,6 +197,13 @@ impl<T: Eq + Hash> ReversePurgeItemHashMap<T> {
         self.num_active
     }
 
+    /// Returns the estimated size of the heap allocations in bytes.
+    pub fn estimated_size(&self) -> usize {
+        self.keys.capacity() * size_of::<Option<T>>()
+            + self.values.capacity() * size_of::<u64>()
+            + self.states.capacity() * size_of::<u16>()
+    }
+
     /// Returns active keys and values in storage order.
     pub fn active_entries(&self) -> Vec<(&T, u64)> {
         let mut entries = Vec::with_capacity(self.num_active);

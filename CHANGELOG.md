@@ -4,10 +4,19 @@ All significant changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Breaking changes
+
+* Remove `ThetaSketch::builder`, `ThetaUnion::builder`, and `TupleSketch::builder`. Construct `ThetaSketchBuilder`, `ThetaUnionBuilder`, and `TupleSketchBuilder` with `Default::default` instead.
+* Standardize Theta and Tuple set-operation constructors. Zero-configuration operators use
+  `Default::default()`, `TupleIntersection::new(policy)` uses the default seed, and `with_seed`
+  accepts a custom seed. This replaces the previous `new(seed)` and `new_with_default_seed`
+  methods.
+
 ### New features
 
 * `FrequentItemsSketch` now supports borrowed-key updates via `update_ref` and `update_with_count_ref`, allowing sketches such as `FrequentItemsSketch<String>` to update from `&str` without allocating on existing-key hits. Frequency queries also accept borrowed key forms matching `Borrow<Q>`.
 * `FrequentItemsSketch` no longer requires item types to implement `Clone` for core updates, queries, and serialization. Custom `FrequentItemValue` implementations can now be non-`Clone`; APIs that return or merge owned items still require `Clone`.
+* `CountMinSketch` and `FrequentItemsSketch` now expose `estimated_size()`, reporting the in-memory footprint of the sketch in bytes, following the other sketches.
 
 ### Bug fixes
 

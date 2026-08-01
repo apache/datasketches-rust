@@ -15,99 +15,160 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use std::collections::BTreeSet;
-
+use crate::common::ResizeFactor;
 use crate::error::Error;
-use crate::hash::compute_seed_hash;
+use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::theta::CompactThetaSketch;
 use crate::theta::ThetaSketchView;
+use crate::theta::hash_table::ThetaEntry;
+use crate::thetacommon::constants::DEFAULT_LG_K;
+use crate::thetacommon::constants::MAX_LG_K;
+use crate::thetacommon::constants::MIN_LG_K;
+use crate::thetacommon::union::UnionMergePolicy;
+use crate::thetacommon::union::UnionState;
 
-pub(super) struct ThetaUnion;
+/// Stateful union operator for Theta sketches.
+#[derive(Debug)]
+pub struct ThetaUnion {
+    state: UnionState<ThetaEntry, NoopUnionPolicy>,
+}
+
+#[derive(Debug)]
+struct NoopUnionPolicy;
+
+impl UnionMergePolicy<ThetaEntry> for NoopUnionPolicy {
+    fn merge(&self, _existing: &mut ThetaEntry, _incoming: ThetaEntry) {}
+}
 
 impl ThetaUnion {
-    pub(super) fn compute<A: ThetaSketchView, B: ThetaSketchView>(
-        sketch_a: &A,
-        sketch_b: &B,
-        seed: u64,
-    ) -> Result<CompactThetaSketch, Error> {
-        let seed_hash = compute_seed_hash(seed);
-        validate_seed_hash(sketch_a, seed_hash, "sketch A")?;
-        validate_seed_hash(sketch_b, seed_hash, "sketch B")?;
+    /// Update this union with a given sketch.
+    pub fn update<S: ThetaSketchView>(&mut self, sketch: &S) -> Result<(), Error> {
+        self.state.update(sketch)
+    }
 
-        let theta = sketch_a.theta64().min(sketch_b.theta64());
-        let mut entries = BTreeSet::new();
-        entries.extend(sketch_a.iter().filter(|&hash| hash < theta));
-        entries.extend(sketch_b.iter().filter(|&hash| hash < theta));
+    /// Return this union as a compact sketch.
+    pub fn to_sketch(&self, ordered: bool) -> CompactThetaSketch {
+        let parts = self.state.to_compact_parts(ordered);
+        CompactThetaSketch::from_parts(
+            parts
+                .entries
+                .into_iter()
+                .map(|entry| entry.hash())
+                .collect(),
+            parts.theta,
+            parts.seed_hash,
+            parts.ordered,
+            parts.empty,
+        )
+    }
 
-        Ok(CompactThetaSketch::from_parts(
-            entries.into_iter().collect(),
-            theta,
-            seed_hash,
-            false,
-            sketch_a.is_empty() && sketch_b.is_empty(),
-        ))
+    /// Reset the union to empty state.
+    pub fn reset(&mut self) {
+        self.state.reset();
     }
 }
 
-fn validate_seed_hash<S: ThetaSketchView>(
-    sketch: &S,
-    expected_seed_hash: u16,
-    label: &str,
-) -> Result<(), Error> {
-    if !sketch.is_empty() && sketch.seed_hash() != expected_seed_hash {
-        return Err(Error::invalid_argument(format!(
-            "incompatible seed hash for {label}: expected {}, got {}",
-            expected_seed_hash,
-            sketch.seed_hash()
-        )));
-    }
-    Ok(())
+/// Builder for [`ThetaUnion`].
+#[derive(Debug, Clone)]
+pub struct ThetaUnionBuilder {
+    lg_k: u8,
+    resize_factor: ResizeFactor,
+    sampling_probability: f32,
+    seed: u64,
 }
 
-#[cfg(test)]
-mod tests {
-    use crate::hash::DEFAULT_UPDATE_SEED;
-    use crate::theta::ThetaSketch;
-    use crate::theta::union::ThetaUnion;
-
-    fn sketch_with_range(start: u64, count: u64) -> ThetaSketch {
-        let mut sketch = ThetaSketch::builder().build();
-        for value in start..start + count {
-            sketch.update(value);
+impl Default for ThetaUnionBuilder {
+    fn default() -> Self {
+        Self {
+            lg_k: DEFAULT_LG_K,
+            resize_factor: ResizeFactor::X8,
+            sampling_probability: 1.0,
+            seed: DEFAULT_UPDATE_SEED,
         }
-        sketch
+    }
+}
+
+impl ThetaUnionBuilder {
+    /// Set lg_k (log2 of nominal size k).
+    ///
+    /// # Panics
+    ///
+    /// If lg_k is not in range [5, 26]
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use datasketches::theta::ThetaUnionBuilder;
+    /// ThetaUnionBuilder::default().lg_k(12).build();
+    /// ```
+    pub fn lg_k(mut self, lg_k: u8) -> Self {
+        assert!(
+            (MIN_LG_K..=MAX_LG_K).contains(&lg_k),
+            "lg_k must be in [{MIN_LG_K}, {MAX_LG_K}], got {lg_k}"
+        );
+        self.lg_k = lg_k;
+        self
     }
 
-    #[test]
-    fn exact_mode_half_overlap() {
-        let sketch_a = sketch_with_range(0, 1000);
-        let sketch_b = sketch_with_range(500, 1000);
-
-        let union = ThetaUnion::compute(&sketch_a, &sketch_b, DEFAULT_UPDATE_SEED).unwrap();
-
-        assert!(!union.is_empty());
-        assert!(!union.is_estimation_mode());
-        assert_eq!(union.estimate(), 1500.0);
+    /// Set resize factor.
+    pub fn resize_factor(mut self, factor: ResizeFactor) -> Self {
+        self.resize_factor = factor;
+        self
     }
 
-    #[test]
-    fn empty_inputs_produce_empty_union() {
-        let sketch_a = ThetaSketch::builder().build();
-        let sketch_b = ThetaSketch::builder().build();
-
-        let union = ThetaUnion::compute(&sketch_a, &sketch_b, DEFAULT_UPDATE_SEED).unwrap();
-
-        assert!(union.is_empty());
-        assert!(!union.is_estimation_mode());
-        assert_eq!(union.num_retained(), 0);
+    /// Set sampling probability.
+    ///
+    /// # Panics
+    ///
+    /// Panics if probability is not in range `(0.0, 1.0]`
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use datasketches::theta::ThetaUnionBuilder;
+    /// ThetaUnionBuilder::default()
+    ///     .sampling_probability(0.5)
+    ///     .build();
+    /// ```
+    pub fn sampling_probability(mut self, probability: f32) -> Self {
+        assert!(
+            (0.0..=1.0).contains(&probability) && probability > 0.0,
+            "sampling_probability must be in (0.0, 1.0], got {probability}"
+        );
+        self.sampling_probability = probability;
+        self
     }
 
-    #[test]
-    fn seed_mismatch_on_non_empty_sketch_returns_error() {
-        let mut sketch_a = ThetaSketch::builder().seed(123).build();
-        sketch_a.update(1u64);
-        let sketch_b = ThetaSketch::builder().build();
+    /// Set hash seed.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use datasketches::theta::ThetaUnionBuilder;
+    /// ThetaUnionBuilder::default().seed(7).build();
+    /// ```
+    pub fn seed(mut self, seed: u64) -> Self {
+        self.seed = seed;
+        self
+    }
 
-        assert!(ThetaUnion::compute(&sketch_a, &sketch_b, DEFAULT_UPDATE_SEED).is_err());
+    /// Build the ThetaUnion.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use datasketches::theta::ThetaUnionBuilder;
+    /// ThetaUnionBuilder::default().lg_k(10).build();
+    /// ```
+    pub fn build(self) -> ThetaUnion {
+        ThetaUnion {
+            state: UnionState::new(
+                self.lg_k,
+                self.resize_factor,
+                self.sampling_probability,
+                self.seed,
+                NoopUnionPolicy,
+            ),
+        }
     }
 }

@@ -32,8 +32,8 @@
 [msrv-badge]: https://img.shields.io/badge/MSRV-1.86.0-green?logo=rust
 [license-badge]: https://img.shields.io/crates/l/datasketches
 [license-url]: LICENSE
-[actions-badge]: https://github.com/apache/datasketches-rust/workflows/CI/badge.svg
-[actions-url]: https://github.com/apache/datasketches-rust/actions?query=workflow%3ACI
+[actions-badge]: https://github.com/apache/datasketches-rust/actions/workflows/ci.yml/badge.svg
+[actions-url]: https://github.com/apache/datasketches-rust/actions/workflows/ci.yml
 
 This is the core Rust component of the DataSketches library.  It contains a subset of the sketching algorithms and can be accessed directly from user applications.
 

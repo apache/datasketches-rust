@@ -53,6 +53,15 @@ impl Family {
         max_pre_longs: 1,
     };
 
+    /// Tuple Sketch for cardinality estimation with per-key summaries.
+    #[cfg(feature = "tuple")]
+    pub const TUPLE: Family = Family {
+        id: 9,
+        name: "TUPLE",
+        min_pre_longs: 1,
+        max_pre_longs: 3,
+    };
+
     /// The Frequency family of sketches.
     #[cfg(feature = "frequencies")]
     pub const FREQUENCY: Family = Family {

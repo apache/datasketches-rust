@@ -23,6 +23,7 @@
 //! moderate cardinalities.
 
 use crate::common::NumStdDev;
+use crate::common::inv_pow2::inv_pow2;
 use crate::hll::composite_interpolation;
 use crate::hll::cubic_interpolation;
 use crate::hll::harmonic_numbers;
@@ -310,18 +311,6 @@ impl HipEstimator {
     /// Set the kxq1 register directly
     pub fn set_kxq1(&mut self, value: f64) {
         self.kxq1 = value;
-    }
-}
-
-/// Compute 1 / 2^value (inverse power of 2)
-#[inline]
-fn inv_pow2(value: u8) -> f64 {
-    if value == 0 {
-        1.0
-    } else if value <= 63 {
-        1.0 / (1u64 << value) as f64
-    } else {
-        f64::exp2(-(value as f64))
     }
 }
 

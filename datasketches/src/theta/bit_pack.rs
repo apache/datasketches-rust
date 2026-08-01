@@ -48,8 +48,8 @@ impl<'a> BitPacker<'a> {
         }
     }
 
-    /// Return used number of byte.
-    pub fn byte_used(&self) -> usize {
+    /// Return the number of bytes used.
+    pub fn bytes_used(&self) -> usize {
         if self.byte_bit_used == 0 {
             self.byte_index
         } else {

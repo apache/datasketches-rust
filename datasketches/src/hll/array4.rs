@@ -473,7 +473,7 @@ mod tests {
 
         // Add some unique values to different slots
         for i in 0..10_000u32 {
-            arr.update(Coupon::from_hash(i));
+            arr.update(Coupon::from_value(i));
         }
 
         // Estimate should be positive and roughly in the ballpark

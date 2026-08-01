@@ -175,7 +175,7 @@ const RESIZE_DENOMINATOR: u32 = 4;
 ///
 /// ```
 /// # use datasketches::hll::{HllSketch, HllType, Coupon};
-/// let c = Coupon::from_hash("hello");
+/// let c = Coupon::from_value("hello");
 ///
 /// let mut sketch1 = HllSketch::new(10, HllType::Hll8);
 /// let mut sketch2 = HllSketch::new(12, HllType::Hll8);
@@ -209,14 +209,14 @@ impl Coupon {
     /// You may use [`hash_value`](crate::hash_value) wrappers when matching other datasketches
     /// implementations require a specific value hashing strategy.
     ///
-    /// Hashes `v` using MurmurHash3 128-bit and packs the result into a coupon:
+    /// Hashes `value` using MurmurHash3 128-bit and packs the result into a coupon:
     /// the low 26 bits of the low hash word become the slot index, and the
     /// leading-zero count of the high hash word (capped at 62, then plus one)
     /// becomes the 6-bit register value.
     #[inline(always)]
-    pub fn from_hash<T: Hash>(v: T) -> Self {
+    pub fn from_value<T: Hash>(value: T) -> Self {
         let mut hasher = MurmurHash3X64128::default();
-        v.hash(&mut hasher);
+        value.hash(&mut hasher);
         let (lo, hi) = hasher.finish128();
 
         let addr26 = lo as u32 & KEY_MASK_26;

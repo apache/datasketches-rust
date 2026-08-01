@@ -91,15 +91,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           cache-bin: "false"
-      - name: Setup Java
-        uses: actions/setup-java@v5
-        with:
-          java-version: "25"
-          distribution: "temurin"
       - name: Prepare test data
         shell: bash
-        run: ./tools/generate_serialization_test_data.py
-      - name: Run unit tests
+        run: cargo x prepare-testdata
+      - name: Run test suite
         shell: bash
         run: cargo x test
 
@@ -118,5 +113,5 @@ jobs:
               && "${{ needs.test.result }}" == "success" \
               ) ]]; then
             echo "Required jobs haven't been completed successfully."
-            exit -1
+            exit 1
           fi

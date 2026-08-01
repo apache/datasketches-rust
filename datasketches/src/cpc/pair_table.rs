@@ -249,6 +249,6 @@ impl PairTable {
 
     /// Returns the estimated size of the heap allocations in bytes
     pub fn estimated_size(&self) -> usize {
-        self.slots.capacity() * std::mem::size_of::<u32>()
+        self.slots.capacity() * size_of::<u32>()
     }
 }

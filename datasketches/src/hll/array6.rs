@@ -361,7 +361,7 @@ mod tests {
 
         // Add some unique values using real coupon hashing
         for i in 0..10_000u32 {
-            arr.update(Coupon::from_hash(i));
+            arr.update(Coupon::from_value(i));
         }
 
         let estimate = arr.estimate();

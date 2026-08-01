@@ -15,11 +15,24 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::error::Error;
+use std::fs;
+use std::io;
 use std::path::Path;
 use std::process::Command as StdCommand;
+use std::time::Duration;
 
 use clap::Parser;
 use clap::Subcommand;
+use flate2::read::GzDecoder;
+use tar::Archive;
+
+type Result<T> = std::result::Result<T, Box<dyn Error>>;
+
+fn main() {
+    let cmd = Command::parse();
+    cmd.run()
+}
 
 #[derive(Parser)]
 struct Command {
@@ -31,8 +44,10 @@ impl Command {
     fn run(self) {
         match self.sub {
             SubCommand::Check(cmd) => cmd.run(),
+            SubCommand::Docs(cmd) => cmd.run(),
             SubCommand::Lint(cmd) => cmd.run(),
             SubCommand::Test(cmd) => cmd.run(),
+            SubCommand::PrepareTestData(cmd) => cmd.run(),
         }
     }
 }
@@ -41,10 +56,17 @@ impl Command {
 enum SubCommand {
     #[clap(about = "Check datasketches under the feature matrix.")]
     Check(CommandCheck),
-    #[clap(about = "Run format and clippy checks.")]
+    #[clap(about = "Generate documentation and open for preview")]
+    Docs(CommandDocs),
+    #[clap(about = "Run linter checks.")]
     Lint(CommandLint),
-    #[clap(about = "Run unit tests.")]
+    #[clap(about = "Run the test suite.")]
     Test(CommandTest),
+    #[clap(
+        name = "prepare-testdata",
+        about = "Prepare serialization compatibility test data."
+    )]
+    PrepareTestData(CommandPrepareTestData),
 }
 
 #[derive(Parser)]
@@ -60,6 +82,16 @@ impl CommandCheck {
             run_command(make_check_cmd(feature));
         }
         run_command(make_check_cmd(&features));
+    }
+}
+
+#[derive(Parser)]
+#[clap(name = "docs")]
+struct CommandDocs {}
+
+impl CommandDocs {
+    fn run(self) {
+        run_command(make_docs_cmd(true));
     }
 }
 
@@ -112,7 +144,7 @@ impl CommandLint {
     fn run(self) {
         run_command(make_clippy_cmd(self.fix));
         run_command(make_format_cmd(self.fix));
-        run_command(make_docs_cmd());
+        run_command(make_docs_cmd(false));
         run_command(make_taplo_cmd(self.fix));
         run_command(make_typos_cmd());
         run_command(make_hawkeye_cmd(self.fix));
@@ -202,17 +234,20 @@ fn make_clippy_cmd(fix: bool) -> StdCommand {
     cmd
 }
 
-fn make_docs_cmd() -> StdCommand {
+fn make_docs_cmd(open: bool) -> StdCommand {
     let mut cmd = find_command("cargo");
-    cmd.env("RUSTFLAGS", "--cfg docsrs");
-    cmd.env("RUSTDOCFLAGS", "-D warnings");
+    cmd.env("RUSTDOCFLAGS", "--cfg docsrs -D warnings");
     cmd.args([
         "+nightly",
         "doc",
         "--package",
         "datasketches",
         "--all-features",
+        "--no-deps",
     ]);
+    if open {
+        cmd.args(["--open"]);
+    }
     cmd
 }
 
@@ -243,7 +278,115 @@ fn make_taplo_cmd(fix: bool) -> StdCommand {
     cmd
 }
 
-fn main() {
-    let cmd = Command::parse();
-    cmd.run()
+#[derive(Parser)]
+#[clap(name = "prepare-testdata")]
+struct CommandPrepareTestData {
+    #[arg(
+        value_name = "LANG",
+        value_parser = ["java", "cpp", "c++", "go", "golang"],
+        help = "Languages to prepare (all by default)."
+    )]
+    langs: Vec<String>,
+}
+
+impl CommandPrepareTestData {
+    fn run(self) {
+        if let Err(error) = self.prepare() {
+            eprintln!("failed to prepare serialization test data: {error}");
+            std::process::exit(1);
+        }
+    }
+
+    fn prepare(self) -> Result<()> {
+        const REVISION: &str = "d363b12d293b395d90abb42677f9ea63178dbc0d";
+        let serde_tests =
+            Path::new(env!("CARGO_WORKSPACE_DIR")).join("datasketches/tests/serde_tests");
+        let archive_url =
+            format!("https://api.github.com/repos/apache/datasketches-tck/tarball/{REVISION}");
+
+        println!("Downloading serialization snapshots from {archive_url}");
+
+        let timeout = Some(Duration::from_secs(60));
+        let agent: ureq::Agent = ureq::Agent::config_builder()
+            .timeout_connect(timeout)
+            .timeout_recv_response(timeout)
+            .timeout_recv_body(timeout)
+            .build()
+            .into();
+        let response = agent
+            .get(&archive_url)
+            .header("Accept", "application/vnd.github+json")
+            .header("X-GitHub-Api-Version", "2026-03-10")
+            .call()?;
+        let (_, body) = response.into_parts();
+        let mut archive = Archive::new(GzDecoder::new(body.into_reader()));
+
+        let mut targets = vec![];
+        for language in self.languages() {
+            let source_directory = Path::new("serialization").join(language).join("snapshots");
+            let destination = serde_tests.join(format!("{language}_generated_files"));
+            if fs::exists(&destination)? {
+                println!(
+                    "Removing existing {language} snapshots from {}",
+                    destination.display()
+                );
+                fs::remove_dir_all(&destination)?;
+            }
+            fs::create_dir_all(&destination)?;
+            targets.push((language, source_directory, destination, 0_usize));
+        }
+
+        for member in archive.entries()? {
+            let mut member = member?;
+            let path = member.path()?;
+            if !member.header().entry_type().is_file()
+                || path.extension().is_none_or(|extension| extension != "sk")
+            {
+                continue;
+            }
+
+            let Some((_, _, destination, count)) = targets.iter_mut().find(|target| {
+                path.parent()
+                    .is_some_and(|parent| parent.ends_with(&target.1))
+            }) else {
+                continue;
+            };
+
+            let name = path.file_name().expect("snapshot path has a file name");
+            let mut output = fs::File::create(destination.join(name))?;
+            io::copy(&mut member, &mut output)?;
+            *count += 1;
+        }
+
+        for (language, _, destination, count) in targets {
+            if count == 0 {
+                return Err(format!("no {language} snapshots found in the TCK archive").into());
+            }
+            println!(
+                "Extracted {count} {language} snapshots into {}",
+                destination.display()
+            );
+        }
+        Ok(())
+    }
+
+    fn languages(&self) -> Vec<&'static str> {
+        if self.langs.is_empty() {
+            return vec!["cpp", "go", "java"];
+        }
+
+        let mut languages = vec![];
+        for language in &self.langs {
+            let language = match language.as_str() {
+                "java" => "java",
+                "cpp" | "c++" => "cpp",
+                "go" | "golang" => "go",
+                _ => unreachable!("language is validated by clap"),
+            };
+            if !languages.contains(&language) {
+                languages.push(language);
+            }
+        }
+        languages
+    }
 }

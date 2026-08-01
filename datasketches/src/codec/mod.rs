@@ -29,7 +29,8 @@ pub use self::encode::SketchBytes;
     feature = "frequencies",
     feature = "hll",
     feature = "tdigest",
-    feature = "theta"
+    feature = "theta",
+    feature = "tuple",
 ))]
 #[allow(dead_code)] // some utilities are only used for certain sketches
 pub(crate) mod assert;
@@ -41,6 +42,7 @@ pub(crate) mod assert;
     feature = "frequencies",
     feature = "hll",
     feature = "tdigest",
-    feature = "theta"
+    feature = "theta",
+    feature = "tuple",
 ))]
 pub(crate) mod family;
