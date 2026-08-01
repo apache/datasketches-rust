@@ -535,3 +535,16 @@ fn test_longs_invalid_map_size_panics() {
 fn test_items_invalid_map_size_panics() {
     FrequentItemsSketch::<String>::new(6);
 }
+
+#[test]
+fn test_estimated_size() {
+    let mut sketch: FrequentItemsSketch<i64> = FrequentItemsSketch::new(64);
+    let empty_size = sketch.estimated_size();
+    assert!(empty_size > 0);
+
+    // The internal map grows from its starting size up to the maximum size.
+    for i in 0..100 {
+        sketch.update(i);
+    }
+    assert!(sketch.estimated_size() > empty_size);
+}
