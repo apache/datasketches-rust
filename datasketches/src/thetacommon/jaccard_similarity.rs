@@ -15,15 +15,16 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use std::collections::BTreeSet;
-
 use crate::common::ResizeFactor;
 use crate::error::Error;
 use crate::thetacommon::RetainedEntry;
 use crate::thetacommon::ThetaFamilySketchView;
 use crate::thetacommon::bounds_binomial_proportions;
-use crate::thetacommon::constants::DEFAULT_LG_K;
+use crate::thetacommon::constants::MAX_LG_K;
 use crate::thetacommon::constants::MAX_THETA;
+use crate::thetacommon::constants::MIN_LG_K;
+use crate::thetacommon::intersection::IntersectionMergePolicy;
+use crate::thetacommon::intersection::IntersectionState;
 use crate::thetacommon::union::UnionMergePolicy;
 use crate::thetacommon::union::UnionState;
 
@@ -37,10 +38,50 @@ pub(crate) struct RawThetaJaccardSimilarity {
 }
 
 #[derive(Debug)]
-struct NoopUnionPolicy;
+struct NoopMergePolicy;
 
-impl<E: RetainedEntry> UnionMergePolicy<E> for NoopUnionPolicy {
+impl<E: RetainedEntry> UnionMergePolicy<E> for NoopMergePolicy {
     fn merge(&self, _existing: &mut E, _incoming: E) {}
+}
+
+impl<E: RetainedEntry> IntersectionMergePolicy<E> for NoopMergePolicy {
+    fn merge(&self, _existing: &mut E, _incoming: E) {}
+}
+
+struct CompactSketchView<E> {
+    entries: Vec<E>,
+    theta: u64,
+    seed_hash: u16,
+    ordered: bool,
+    empty: bool,
+}
+
+impl<E: RetainedEntry + Clone> ThetaFamilySketchView for CompactSketchView<E> {
+    type Entry = E;
+
+    fn seed_hash(&self) -> u16 {
+        self.seed_hash
+    }
+
+    fn theta64(&self) -> u64 {
+        self.theta
+    }
+
+    fn is_empty(&self) -> bool {
+        self.empty
+    }
+
+    fn is_ordered(&self) -> bool {
+        self.ordered
+    }
+
+    fn iter(&self) -> impl Iterator<Item = E> + '_ {
+        self.entries.iter().cloned()
+    }
+
+    fn num_retained(&self) -> usize {
+        self.entries.len()
+    }
 }
 
 impl RawThetaJaccardSimilarity {
@@ -57,7 +98,13 @@ impl RawThetaJaccardSimilarity {
             return Ok(Self::exact(0.0));
         }
 
-        let mut union = UnionState::new(DEFAULT_LG_K, ResizeFactor::X8, 1.0, seed, NoopUnionPolicy);
+        let mut union = UnionState::new(
+            union_lg_k(sketch_a.num_retained(), sketch_b.num_retained()),
+            ResizeFactor::X8,
+            1.0,
+            seed,
+            NoopMergePolicy,
+        );
         union.update(sketch_a)?;
         union.update(sketch_b)?;
         let union = union.to_compact_parts(false);
@@ -70,18 +117,24 @@ impl RawThetaJaccardSimilarity {
             return Ok(Self::exact(1.0));
         }
 
-        let right_hashes: BTreeSet<_> = sketch_b
-            .iter()
-            .map(|entry| entry.hash())
-            .filter(|hash| *hash < union.theta)
-            .collect();
-        let intersection_count = sketch_a
-            .iter()
-            .map(|entry| entry.hash())
-            .filter(|hash| *hash < union.theta && right_hashes.contains(hash))
-            .count() as u64;
+        let union = CompactSketchView {
+            entries: union.entries,
+            theta: union.theta,
+            seed_hash: union.seed_hash,
+            ordered: union.ordered,
+            empty: union.empty,
+        };
+        let mut intersection = IntersectionState::new(seed, NoopMergePolicy);
+        intersection.update(sketch_a)?;
+        intersection.update(sketch_b)?;
+        intersection.update(&union)?;
+        let intersection = intersection.result(false);
 
-        Self::ratio_bounds(union.entries.len() as u64, intersection_count, union.theta)
+        Self::ratio_bounds(
+            union.num_retained() as u64,
+            intersection.entries.len() as u64,
+            union.theta64(),
+        )
     }
 
     fn exact(value: f64) -> Self {
@@ -140,4 +193,10 @@ fn sampling_adjuster(sampling_probability: f64) -> f64 {
     } else {
         adjustment + (0.01 * (sampling_probability - 0.5))
     }
+}
+
+fn union_lg_k(left_count: usize, right_count: usize) -> u8 {
+    let required_capacity = left_count.saturating_add(right_count).max(1);
+    let lg_k = usize::BITS - (required_capacity - 1).leading_zeros();
+    (lg_k as u8).clamp(MIN_LG_K, MAX_LG_K)
 }
