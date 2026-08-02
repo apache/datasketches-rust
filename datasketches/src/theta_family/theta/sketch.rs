@@ -44,6 +44,7 @@ use crate::theta::serialization::V2_PREAMBLE_EMPTY;
 use crate::theta::serialization::V2_PREAMBLE_ESTIMATE;
 use crate::theta::serialization::V2_PREAMBLE_PRECISE;
 use crate::thetacommon::ThetaFamilySketchView;
+use crate::thetacommon::ThetaKeySketchView;
 use crate::thetacommon::binomial_bounds;
 use crate::thetacommon::constants::DEFAULT_LG_K;
 use crate::thetacommon::constants::FLAGS_IS_COMPACT;
@@ -62,9 +63,7 @@ pub trait ThetaSketchView: ThetaFamilySketchView<Entry = ThetaEntry> {}
 
 impl<T: ThetaFamilySketchView<Entry = ThetaEntry>> ThetaSketchView for T {}
 
-impl ThetaFamilySketchView for ThetaSketch {
-    type Entry = ThetaEntry;
-
+impl ThetaKeySketchView for ThetaSketch {
     fn seed_hash(&self) -> u16 {
         ThetaSketch::seed_hash(self)
     }
@@ -81,12 +80,20 @@ impl ThetaFamilySketchView for ThetaSketch {
         false
     }
 
-    fn iter(&self) -> impl Iterator<Item = ThetaEntry> + '_ {
-        self.table.iter_entries().copied()
+    fn iter_hashes(&self) -> impl Iterator<Item = u64> + '_ {
+        self.table.iter_entries().map(ThetaEntry::hash)
     }
 
     fn num_retained(&self) -> usize {
         ThetaSketch::num_retained(self)
+    }
+}
+
+impl ThetaFamilySketchView for ThetaSketch {
+    type Entry = ThetaEntry;
+
+    fn iter(&self) -> impl Iterator<Item = ThetaEntry> + '_ {
+        self.table.iter_entries().copied()
     }
 }
 
@@ -864,9 +871,7 @@ impl CompactThetaSketch {
     }
 }
 
-impl ThetaFamilySketchView for CompactThetaSketch {
-    type Entry = ThetaEntry;
-
+impl ThetaKeySketchView for CompactThetaSketch {
     fn seed_hash(&self) -> u16 {
         CompactThetaSketch::seed_hash(self)
     }
@@ -883,12 +888,20 @@ impl ThetaFamilySketchView for CompactThetaSketch {
         CompactThetaSketch::is_ordered(self)
     }
 
-    fn iter(&self) -> impl Iterator<Item = ThetaEntry> + '_ {
-        self.entries.iter().copied().map(ThetaEntry::new)
+    fn iter_hashes(&self) -> impl Iterator<Item = u64> + '_ {
+        self.entries.iter().copied()
     }
 
     fn num_retained(&self) -> usize {
         CompactThetaSketch::num_retained(self)
+    }
+}
+
+impl ThetaFamilySketchView for CompactThetaSketch {
+    type Entry = ThetaEntry;
+
+    fn iter(&self) -> impl Iterator<Item = ThetaEntry> + '_ {
+        self.entries.iter().copied().map(ThetaEntry::new)
     }
 }
 

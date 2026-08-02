@@ -34,14 +34,11 @@ pub trait RetainedEntry {
     fn hash(&self) -> u64;
 }
 
-/// Read-only input accepted by Theta-family set operations.
+/// Read-only hash-key view shared by Theta-family sketches.
 ///
-/// This trait carries complete retained entries, so Tuple union, intersection, and A-not-B
-/// operations can share the Theta-family state machines while preserving per-key summaries.
-pub trait ThetaFamilySketchView {
-    /// The retained entry representation yielded by this view.
-    type Entry: RetainedEntry;
-
+/// Key-only operations use this interface without requiring access to, or cloning, payloads such
+/// as Tuple summaries.
+pub trait ThetaKeySketchView {
     /// Return the 16-bit seed hash.
     fn seed_hash(&self) -> u16;
 
@@ -54,16 +51,21 @@ pub trait ThetaFamilySketchView {
     /// Return whether retained entries are ordered by ascending hash.
     fn is_ordered(&self) -> bool;
 
-    /// Return an iterator over retained entries.
-    fn iter(&self) -> impl Iterator<Item = Self::Entry> + '_;
-
-    /// Return an iterator over retained hash keys without requiring callers to inspect payloads.
-    ///
-    /// Tuple sketches override this method so key-only operations do not clone summary values.
-    fn iter_hashes(&self) -> impl Iterator<Item = u64> + '_ {
-        self.iter().map(|entry| entry.hash())
-    }
+    /// Return an iterator over retained hash keys.
+    fn iter_hashes(&self) -> impl Iterator<Item = u64> + '_;
 
     /// Return the number of retained entries.
     fn num_retained(&self) -> usize;
+}
+
+/// Read-only retained-entry view accepted by Theta-family set operations.
+///
+/// This trait extends [`ThetaKeySketchView`] with complete retained entries, so operations such as
+/// union and intersection can preserve and combine Tuple summaries.
+pub trait ThetaFamilySketchView: ThetaKeySketchView {
+    /// The retained entry representation yielded by this view.
+    type Entry: RetainedEntry;
+
+    /// Return an iterator over retained entries.
+    fn iter(&self) -> impl Iterator<Item = Self::Entry> + '_;
 }
