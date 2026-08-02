@@ -15,10 +15,10 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use datasketches::theta::JaccardSimilarity;
 use datasketches::theta::ThetaJaccardSimilarity;
 use datasketches::theta::ThetaSketch;
 use datasketches::theta::ThetaSketchBuilder;
+use datasketches::thetacommon::JaccardSimilarity;
 
 fn assert_jaccard_exact(actual: JaccardSimilarity, expected: f64) {
     assert_eq!(actual.lower_bound(), expected);
