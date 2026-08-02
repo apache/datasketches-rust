@@ -15,43 +15,45 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! Jaccard similarity for Theta sketches.
+//! Jaccard similarity for Tuple sketches.
 
 use crate::error::Error;
 use crate::hash::DEFAULT_UPDATE_SEED;
-use crate::theta::ThetaSketchView;
 pub use crate::thetacommon::jaccard_similarity::JaccardSimilarity;
 use crate::thetacommon::jaccard_similarity::JaccardSimilarityOperator;
+use crate::tuple::TupleSketchView;
 
-/// Jaccard similarity operator for Theta sketches.
+/// Jaccard similarity operator for Tuple sketches.
 ///
-/// This is a stateless operator other than its configured hash seed. The returned
-/// [`JaccardSimilarity`] contains the estimate and its 95.4% confidence interval.
+/// Only retained hash keys participate in the similarity calculation. Summary values are ignored,
+/// so the two inputs may use different summary types. The returned [`JaccardSimilarity`] contains
+/// the estimate and its 95.4% confidence interval.
 ///
 /// # Examples
 ///
 /// ```
-/// # use datasketches::theta::{ThetaJaccardSimilarity, ThetaSketchBuilder};
-/// let mut a = ThetaSketchBuilder::default().build();
-/// let mut b = ThetaSketchBuilder::default().build();
-/// a.update("apple");
-/// b.update("apple");
+/// # use datasketches::tuple::{DefaultUpdatePolicy, TupleJaccardSimilarity, TupleSketchBuilder};
+/// let policy = DefaultUpdatePolicy::<u64>::default();
+/// let mut a = TupleSketchBuilder::new(policy).build();
+/// let mut b = TupleSketchBuilder::new(policy).build();
+/// a.update("apple", 1);
+/// b.update("apple", 2);
 ///
-/// let result = ThetaJaccardSimilarity::default().compute(&a, &b).unwrap();
+/// let result = TupleJaccardSimilarity::default().compute(&a, &b).unwrap();
 /// assert_eq!(result.estimate(), 1.0);
 /// ```
 #[derive(Clone, Copy, Debug)]
-pub struct ThetaJaccardSimilarity {
+pub struct TupleJaccardSimilarity {
     op: JaccardSimilarityOperator,
 }
 
-impl Default for ThetaJaccardSimilarity {
+impl Default for TupleJaccardSimilarity {
     fn default() -> Self {
         Self::with_seed(DEFAULT_UPDATE_SEED)
     }
 }
 
-impl ThetaJaccardSimilarity {
+impl TupleJaccardSimilarity {
     /// Creates a Jaccard similarity operator for the given `seed`.
     pub fn with_seed(seed: u64) -> Self {
         Self {
@@ -61,15 +63,21 @@ impl ThetaJaccardSimilarity {
 
     /// Computes the Jaccard similarity index for `sketch_a` and `sketch_b`.
     ///
+    /// Summary values do not participate in the comparison.
+    ///
     /// # Errors
     ///
     /// Returns an error if either non-empty sketch was built with a seed different from this
     /// operator's configured seed.
-    pub fn compute<A: ThetaSketchView, B: ThetaSketchView>(
+    pub fn compute<SA, SB, A, B>(
         &self,
         sketch_a: &A,
         sketch_b: &B,
-    ) -> Result<JaccardSimilarity, Error> {
+    ) -> Result<JaccardSimilarity, Error>
+    where
+        A: TupleSketchView<SA>,
+        B: TupleSketchView<SB>,
+    {
         self.op.compute(sketch_a, sketch_b)
     }
 }

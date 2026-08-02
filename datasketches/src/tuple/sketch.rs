@@ -277,6 +277,10 @@ where
             .map(|(hash, summary)| TupleEntry::new(hash, summary.clone()))
     }
 
+    fn iter_hashes(&self) -> impl Iterator<Item = u64> + '_ {
+        self.table.iter().map(|(hash, _summary)| hash)
+    }
+
     fn num_retained(&self) -> usize {
         self.table.num_retained()
     }
@@ -589,6 +593,10 @@ impl<S: Clone> ThetaFamilySketchView for CompactTupleSketch<S> {
 
     fn iter(&self) -> impl Iterator<Item = TupleEntry<S>> + '_ {
         self.entries.iter().cloned()
+    }
+
+    fn iter_hashes(&self) -> impl Iterator<Item = u64> + '_ {
+        self.entries.iter().map(TupleEntry::hash)
     }
 
     fn num_retained(&self) -> usize {

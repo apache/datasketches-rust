@@ -55,6 +55,13 @@ pub trait ThetaFamilySketchView {
     /// Return an iterator over retained entries.
     fn iter(&self) -> impl Iterator<Item = Self::Entry> + '_;
 
+    /// Return an iterator over retained hash keys without requiring callers to inspect payloads.
+    ///
+    /// Tuple sketches override this method so key-only operations do not clone summary values.
+    fn iter_hashes(&self) -> impl Iterator<Item = u64> + '_ {
+        self.iter().map(|entry| entry.hash())
+    }
+
     /// Return the number of retained entries.
     fn num_retained(&self) -> usize;
 }

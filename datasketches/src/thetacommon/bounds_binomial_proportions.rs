@@ -116,8 +116,8 @@ fn abramowitz_stegun_formula_26p5p22(a: f64, b: f64, yp: f64) -> f64 {
     let b2m1 = (2.0 * b) - 1.0;
     let a2m1 = (2.0 * a) - 1.0;
     let lambda = ((yp * yp) - 3.0) / 6.0;
-    let htmp = (1.0 / a2m1) + (1.0 / b2m1);
-    let h = 2.0 / htmp;
+    let reciprocal_sum = (1.0 / a2m1) + (1.0 / b2m1);
+    let h = 2.0 / reciprocal_sum;
     let term1 = (yp * (h + lambda).sqrt()) / h;
     let term2 = (1.0 / b2m1) - (1.0 / a2m1);
     let term3 = (lambda + (5.0 / 6.0)) - (2.0 / (3.0 * h));
@@ -157,5 +157,32 @@ mod tests {
         assert_eq!(approximate_upper_bound_on_p(0, 0, 2.0).unwrap(), 1.0);
         assert_eq!(approximate_lower_bound_on_p(10, 0, 2.0).unwrap(), 0.0);
         assert_eq!(approximate_upper_bound_on_p(10, 10, 2.0).unwrap(), 1.0);
+    }
+
+    #[test]
+    fn matches_cross_language_reference_vectors() {
+        const LOWER: [f64; 6] = [
+            0.0,
+            0.004592032688529923,
+            0.04725537386564205,
+            0.1396230607626959,
+            0.2735831034867167,
+            0.4692424353373485,
+        ];
+        const UPPER: [f64; 6] = [
+            0.5307575646626514,
+            0.7264168965132833,
+            0.860376939237304,
+            0.952744626134358,
+            0.9954079673114701,
+            1.0,
+        ];
+
+        for k in 0..=5 {
+            let lower = approximate_lower_bound_on_p(5, k, 2.0).unwrap();
+            let upper = approximate_upper_bound_on_p(5, k, 2.0).unwrap();
+            assert!((lower - LOWER[k as usize]).abs() < 1e-14);
+            assert!((upper - UPPER[k as usize]).abs() < 1e-14);
+        }
     }
 }
