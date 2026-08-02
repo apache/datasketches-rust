@@ -33,6 +33,7 @@ use crate::thetacommon::jaccard_similarity::JaccardSimilarityOperator;
 /// ```
 /// use datasketches::theta::ThetaJaccardSimilarity;
 /// use datasketches::theta::ThetaSketchBuilder;
+///
 /// let mut a = ThetaSketchBuilder::default().build();
 /// let mut b = ThetaSketchBuilder::default().build();
 /// a.update("apple");

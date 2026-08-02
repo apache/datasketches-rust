@@ -41,6 +41,7 @@ use crate::tuple::sketch::TupleSketchView;
 /// use datasketches::tuple::DefaultUpdatePolicy;
 /// use datasketches::tuple::TupleANotB;
 /// use datasketches::tuple::TupleSketchBuilder;
+///
 /// let update_policy = DefaultUpdatePolicy::<u64>::default();
 /// let mut a = TupleSketchBuilder::new(update_policy).build();
 /// a.update("apple", 1);

@@ -45,6 +45,7 @@ pub struct SignExtendStrategy;
 /// use datasketches::hash::value::calculate_hash;
 /// use datasketches::hash::value::sign_extend::from_i8;
 /// use datasketches::hash::value::sign_extend::from_u8;
+///
 /// assert_eq!(calculate_hash(from_i8(-1)), calculate_hash(from_u8(255)));
 /// assert_eq!(calculate_hash(from_i8(-1)), calculate_hash(-1i64));
 /// assert_eq!(calculate_hash(from_i8(42)), calculate_hash(42i64));
@@ -63,6 +64,7 @@ pub fn from_i8(v: i8) -> SignExtend<i8> {
 /// use datasketches::hash::value::calculate_hash;
 /// use datasketches::hash::value::sign_extend::from_i8;
 /// use datasketches::hash::value::sign_extend::from_u8;
+///
 /// assert_eq!(calculate_hash(from_u8(255)), calculate_hash(from_i8(-1)));
 /// assert_eq!(calculate_hash(from_u8(255)), calculate_hash(-1i64));
 /// assert_eq!(calculate_hash(from_u8(1)), calculate_hash(1i64));
@@ -79,6 +81,7 @@ pub fn from_u8(v: u8) -> SignExtend<u8> {
 /// use datasketches::hash::value::calculate_hash;
 /// use datasketches::hash::value::sign_extend::from_i16;
 /// use datasketches::hash::value::sign_extend::from_u16;
+///
 /// assert_eq!(
 ///     calculate_hash(from_i16(-1)),
 ///     calculate_hash(from_u16(65535))
@@ -100,6 +103,7 @@ pub fn from_i16(v: i16) -> SignExtend<i16> {
 /// use datasketches::hash::value::calculate_hash;
 /// use datasketches::hash::value::sign_extend::from_i16;
 /// use datasketches::hash::value::sign_extend::from_u16;
+///
 /// assert_eq!(
 ///     calculate_hash(from_u16(65535)),
 ///     calculate_hash(from_i16(-1))
@@ -119,6 +123,7 @@ pub fn from_u16(v: u16) -> SignExtend<u16> {
 /// use datasketches::hash::value::calculate_hash;
 /// use datasketches::hash::value::sign_extend::from_i32;
 /// use datasketches::hash::value::sign_extend::from_u32;
+///
 /// assert_eq!(
 ///     calculate_hash(from_i32(-1)),
 ///     calculate_hash(from_u32(4294967295))
@@ -140,6 +145,7 @@ pub fn from_i32(v: i32) -> SignExtend<i32> {
 /// use datasketches::hash::value::calculate_hash;
 /// use datasketches::hash::value::sign_extend::from_i32;
 /// use datasketches::hash::value::sign_extend::from_u32;
+///
 /// assert_eq!(
 ///     calculate_hash(from_u32(4294967295)),
 ///     calculate_hash(from_i32(-1))

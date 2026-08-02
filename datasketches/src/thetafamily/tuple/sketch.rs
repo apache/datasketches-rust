@@ -90,6 +90,7 @@ impl<S, T> TupleSketchView<S> for T where
 /// ```
 /// use datasketches::tuple::DefaultUpdatePolicy;
 /// use datasketches::tuple::TupleSketchBuilder;
+///
 /// let policy = DefaultUpdatePolicy::<u64>::default();
 /// let mut sketch = TupleSketchBuilder::new(policy).build();
 /// sketch.update("apple", 1);
@@ -121,6 +122,7 @@ where
     /// ```
     /// use datasketches::tuple::DefaultUpdatePolicy;
     /// use datasketches::tuple::TupleSketchBuilder;
+    ///
     /// let policy = DefaultUpdatePolicy::<u64>::default();
     /// let mut sketch = TupleSketchBuilder::new(policy).build();
     /// sketch.update(42, 5);
@@ -246,6 +248,7 @@ where
     /// ```
     /// use datasketches::tuple::DefaultUpdatePolicy;
     /// use datasketches::tuple::TupleSketchBuilder;
+    ///
     /// let policy = DefaultUpdatePolicy::<u64>::default();
     /// let mut sketch = TupleSketchBuilder::new(policy).build();
     /// sketch.update("apple", 1);
@@ -444,6 +447,7 @@ impl<S> CompactTupleSketch<S> {
     /// ```
     /// use datasketches::tuple::DefaultUpdatePolicy;
     /// use datasketches::tuple::TupleSketchBuilder;
+    ///
     /// let policy = DefaultUpdatePolicy::<u64>::default();
     /// let mut sketch = TupleSketchBuilder::new(policy).build();
     /// sketch.update("apple", 1);

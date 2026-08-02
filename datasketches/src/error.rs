@@ -52,6 +52,7 @@ impl fmt::Display for ErrorKind {
 /// ```
 /// use datasketches::error::Error;
 /// use datasketches::error::ErrorKind;
+///
 /// let err = Error::new(ErrorKind::InvalidArgument, "bad input");
 /// assert_eq!(err.kind(), ErrorKind::InvalidArgument);
 /// assert_eq!(err.message(), "bad input");

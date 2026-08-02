@@ -78,6 +78,7 @@ impl TDigestMut {
     ///
     /// ```
     /// use datasketches::tdigest::TDigestMut;
+    ///
     /// let sketch = TDigestMut::new(100);
     /// assert_eq!(sketch.k(), 100);
     /// ```
@@ -105,6 +106,7 @@ impl TDigestMut {
     ///
     /// ```
     /// use datasketches::tdigest::TDigestMut;
+    ///
     /// let sketch = TDigestMut::try_new(20).unwrap();
     /// assert_eq!(sketch.k(), 20);
     /// ```
@@ -164,6 +166,7 @@ impl TDigestMut {
     ///
     /// ```
     /// use datasketches::tdigest::TDigestMut;
+    ///
     /// let mut sketch = TDigestMut::new(100);
     /// sketch.update(1.0);
     /// assert!(sketch.total_weight() >= 1);
@@ -221,6 +224,7 @@ impl TDigestMut {
     ///
     /// ```
     /// use datasketches::tdigest::TDigestMut;
+    ///
     /// let mut left = TDigestMut::new(100);
     /// let mut right = TDigestMut::new(100);
     /// left.update(1.0);
@@ -260,6 +264,7 @@ impl TDigestMut {
     ///
     /// ```
     /// use datasketches::tdigest::TDigestMut;
+    ///
     /// let mut sketch = TDigestMut::new(100);
     /// sketch.update(1.0);
     /// let frozen = sketch.freeze();
@@ -293,6 +298,7 @@ impl TDigestMut {
     ///
     /// ```
     /// use datasketches::tdigest::TDigestMut;
+    ///
     /// let mut sketch = TDigestMut::new(100);
     /// for value in [1.0, 2.0, 3.0] {
     ///     sketch.update(value);
@@ -316,6 +322,7 @@ impl TDigestMut {
     ///
     /// ```
     /// use datasketches::tdigest::TDigestMut;
+    ///
     /// let mut sketch = TDigestMut::new(100);
     /// for value in [1.0, 2.0, 3.0] {
     ///     sketch.update(value);
@@ -339,6 +346,7 @@ impl TDigestMut {
     ///
     /// ```
     /// use datasketches::tdigest::TDigestMut;
+    ///
     /// let mut sketch = TDigestMut::new(100);
     /// for value in [1.0, 2.0, 3.0] {
     ///     sketch.update(value);
@@ -372,6 +380,7 @@ impl TDigestMut {
     ///
     /// ```
     /// use datasketches::tdigest::TDigestMut;
+    ///
     /// let mut sketch = TDigestMut::new(100);
     /// for value in [1.0, 2.0, 3.0] {
     ///     sketch.update(value);
@@ -395,6 +404,7 @@ impl TDigestMut {
     ///
     /// ```
     /// use datasketches::tdigest::TDigestMut;
+    ///
     /// let mut sketch = TDigestMut::new(100);
     /// sketch.update(1.0);
     /// let bytes = sketch.serialize();
@@ -487,6 +497,7 @@ impl TDigestMut {
     ///
     /// ```
     /// use datasketches::tdigest::TDigestMut;
+    ///
     /// let mut sketch = TDigestMut::new(100);
     /// sketch.update(1.0);
     /// sketch.update(2.0);
@@ -895,6 +906,7 @@ impl TDigest {
     ///
     /// ```
     /// use datasketches::tdigest::TDigestMut;
+    ///
     /// let mut sketch = TDigestMut::new(100);
     /// for value in [1.0, 2.0, 3.0] {
     ///     sketch.update(value);
@@ -931,6 +943,7 @@ impl TDigest {
     ///
     /// ```
     /// use datasketches::tdigest::TDigestMut;
+    ///
     /// let mut sketch = TDigestMut::new(100);
     /// for value in [1.0, 2.0, 3.0] {
     ///     sketch.update(value);
@@ -955,6 +968,7 @@ impl TDigest {
     ///
     /// ```
     /// use datasketches::tdigest::TDigestMut;
+    ///
     /// let mut sketch = TDigestMut::new(100);
     /// for value in [1.0, 2.0, 3.0] {
     ///     sketch.update(value);
@@ -980,6 +994,7 @@ impl TDigest {
     ///
     /// ```
     /// use datasketches::tdigest::TDigestMut;
+    ///
     /// let mut sketch = TDigestMut::new(100);
     /// for value in [1.0, 2.0, 3.0] {
     ///     sketch.update(value);
@@ -999,6 +1014,7 @@ impl TDigest {
     ///
     /// ```
     /// use datasketches::tdigest::TDigestMut;
+    ///
     /// let mut sketch = TDigestMut::new(100);
     /// sketch.update(1.0);
     /// let digest = sketch.freeze();

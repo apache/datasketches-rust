@@ -35,6 +35,7 @@ use crate::tuple::TupleKeySketchView;
 /// use datasketches::tuple::DefaultUpdatePolicy;
 /// use datasketches::tuple::TupleJaccardSimilarity;
 /// use datasketches::tuple::TupleSketchBuilder;
+///
 /// let policy = DefaultUpdatePolicy::<u64>::default();
 /// let mut a = TupleSketchBuilder::new(policy).build();
 /// let mut b = TupleSketchBuilder::new(policy).build();

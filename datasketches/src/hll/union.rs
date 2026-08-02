@@ -72,6 +72,7 @@ impl HllUnion {
     /// ```
     /// use datasketches::hll::HllType;
     /// use datasketches::hll::HllUnion;
+    ///
     /// let mut union = HllUnion::new(10);
     /// union.update_value("apple");
     /// let result = union.to_sketch(HllType::Hll8);
@@ -100,6 +101,7 @@ impl HllUnion {
     /// ```
     /// use datasketches::hll::HllType;
     /// use datasketches::hll::HllUnion;
+    ///
     /// let mut union = HllUnion::new(10);
     /// union.update_value("apple");
     /// let result = union.to_sketch(HllType::Hll8);
@@ -122,6 +124,7 @@ impl HllUnion {
     /// use datasketches::hll::HllSketch;
     /// use datasketches::hll::HllType;
     /// use datasketches::hll::HllUnion;
+    ///
     /// let mut left = HllSketch::new(10, HllType::Hll8);
     /// let mut right = HllSketch::new(10, HllType::Hll8);
     /// left.update("apple");
@@ -253,6 +256,7 @@ impl HllUnion {
     /// ```
     /// use datasketches::hll::HllType;
     /// use datasketches::hll::HllUnion;
+    ///
     /// let mut union = HllUnion::new(10);
     /// union.update_value("apple");
     /// let result = union.to_sketch(HllType::Hll6);

@@ -24,6 +24,7 @@
 //!
 //! ```
 //! use datasketches::countmin::CountMinSketch;
+//!
 //! let mut sketch = CountMinSketch::<i64>::new(5, 256);
 //! sketch.update("apple");
 //! sketch.update_with_weight("banana", 3);
@@ -34,6 +35,7 @@
 //!
 //! ```
 //! use datasketches::countmin::CountMinSketch;
+//!
 //! let buckets = CountMinSketch::<i64>::suggest_num_buckets(0.01);
 //! let hashes = CountMinSketch::<i64>::suggest_num_hashes(0.99);
 //! let sketch = CountMinSketch::<i64>::new(hashes, buckets);
