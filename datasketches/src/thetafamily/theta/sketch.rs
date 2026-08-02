@@ -106,13 +106,13 @@ pub struct ThetaSketch {
 impl ThetaSketch {
     /// Update the sketch with a hashable value.
     ///
-    /// You may use [`hash_value`](crate::hash_value) wrappers when matching other datasketches
-    /// implementations require a specific value hashing strategy.
+    /// You may use [`hash::value`](crate::hash::value) wrappers when another DataSketches
+    /// implementation requires a specific value hashing strategy.
     ///
     /// # Examples
     ///
     /// ```
-    /// use datasketches::hash_value;
+    /// use datasketches::hash::value;
     /// use datasketches::theta::ThetaSketchBuilder;
     ///
     /// let mut sketch = ThetaSketchBuilder::default().build();
@@ -120,7 +120,7 @@ impl ThetaSketch {
     /// assert!(sketch.estimate() >= 1.0);
     ///
     /// let mut sketch = ThetaSketchBuilder::default().build();
-    /// sketch.update(hash_value::raw_bytes::from_str("apple"));
+    /// sketch.update(value::raw_bytes::from_str("apple"));
     /// assert!(sketch.estimate() >= 1.0);
     /// ```
     pub fn update<T: Hash>(&mut self, value: T) {

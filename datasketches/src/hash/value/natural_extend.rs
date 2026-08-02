@@ -25,8 +25,8 @@
 use std::hash::Hash;
 use std::hash::Hasher;
 
-use super::value::HashStrategy;
-use super::value::Value;
+use super::HashStrategy;
+use super::Value;
 
 /// An integer value wrapper that uses Rust's natural integer widening before hashing.
 ///
@@ -42,8 +42,8 @@ pub struct NaturalExtendStrategy;
 /// # Examples
 ///
 /// ```
-/// # use datasketches::hash_value::calculate_hash;
-/// # use datasketches::hash_value::natural_extend::from_i8;
+/// # use datasketches::hash::value::calculate_hash;
+/// # use datasketches::hash::value::natural_extend::from_i8;
 /// assert_eq!(calculate_hash(from_i8(-1)), calculate_hash(-1i64));
 /// assert_eq!(calculate_hash(from_i8(42)), calculate_hash(42i64));
 /// ```
@@ -56,8 +56,8 @@ pub fn from_i8(v: i8) -> NaturalExtend<i8> {
 /// # Examples
 ///
 /// ```
-/// # use datasketches::hash_value::calculate_hash;
-/// # use datasketches::hash_value::natural_extend::from_u8;
+/// # use datasketches::hash::value::calculate_hash;
+/// # use datasketches::hash::value::natural_extend::from_u8;
 /// assert_eq!(calculate_hash(from_u8(255)), calculate_hash(255u64));
 /// assert_eq!(calculate_hash(from_u8(42)), calculate_hash(42u64));
 /// ```
@@ -70,8 +70,8 @@ pub fn from_u8(v: u8) -> NaturalExtend<u8> {
 /// # Examples
 ///
 /// ```
-/// # use datasketches::hash_value::calculate_hash;
-/// # use datasketches::hash_value::natural_extend::from_i16;
+/// # use datasketches::hash::value::calculate_hash;
+/// # use datasketches::hash::value::natural_extend::from_i16;
 /// assert_eq!(calculate_hash(from_i16(-1)), calculate_hash(-1i64));
 /// assert_eq!(calculate_hash(from_i16(42)), calculate_hash(42i64));
 /// ```
@@ -84,8 +84,8 @@ pub fn from_i16(v: i16) -> NaturalExtend<i16> {
 /// # Examples
 ///
 /// ```
-/// # use datasketches::hash_value::calculate_hash;
-/// # use datasketches::hash_value::natural_extend::from_u16;
+/// # use datasketches::hash::value::calculate_hash;
+/// # use datasketches::hash::value::natural_extend::from_u16;
 /// assert_eq!(calculate_hash(from_u16(65535)), calculate_hash(65535u64));
 /// assert_eq!(calculate_hash(from_u16(42)), calculate_hash(42u64));
 /// ```
@@ -98,8 +98,8 @@ pub fn from_u16(v: u16) -> NaturalExtend<u16> {
 /// # Examples
 ///
 /// ```
-/// # use datasketches::hash_value::calculate_hash;
-/// # use datasketches::hash_value::natural_extend::from_i32;
+/// # use datasketches::hash::value::calculate_hash;
+/// # use datasketches::hash::value::natural_extend::from_i32;
 /// assert_eq!(calculate_hash(from_i32(-1)), calculate_hash(-1i64));
 /// assert_eq!(calculate_hash(from_i32(42)), calculate_hash(42i64));
 /// ```
@@ -112,8 +112,8 @@ pub fn from_i32(v: i32) -> NaturalExtend<i32> {
 /// # Examples
 ///
 /// ```
-/// # use datasketches::hash_value::calculate_hash;
-/// # use datasketches::hash_value::natural_extend::from_u32;
+/// # use datasketches::hash::value::calculate_hash;
+/// # use datasketches::hash::value::natural_extend::from_u32;
 /// assert_eq!(
 ///     calculate_hash(from_u32(4294967295)),
 ///     calculate_hash(4294967295u64)

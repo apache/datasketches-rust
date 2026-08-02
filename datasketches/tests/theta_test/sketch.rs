@@ -16,7 +16,7 @@
 // under the License.
 
 use datasketches::common::NumStdDev;
-use datasketches::hash_value;
+use datasketches::hash::value;
 use datasketches::theta::ThetaSketchBuilder;
 
 #[test]
@@ -41,10 +41,10 @@ fn test_update_various_types() {
     sketch.update(42i64);
     sketch.update(42u64);
     // where floating-point numbers have different representations
-    sketch.update(hash_value::canonical_float::from_f64(3.15));
-    sketch.update(hash_value::canonical_float::from_f64(3.15));
-    sketch.update(hash_value::canonical_float::from_f32(3.15));
-    sketch.update(hash_value::canonical_float::from_f32(3.15));
+    sketch.update(value::canonical_float::from_f64(3.15));
+    sketch.update(value::canonical_float::from_f64(3.15));
+    sketch.update(value::canonical_float::from_f32(3.15));
+    sketch.update(value::canonical_float::from_f32(3.15));
     sketch.update([1u8, 2, 3]);
 
     assert!(!sketch.is_empty());
@@ -56,10 +56,10 @@ fn test_update_various_types() {
     sketch.update(42i64);
     sketch.update(42u64);
     // where floating-point numbers have the same representation
-    sketch.update(hash_value::canonical_float::from_f64(5.0));
-    sketch.update(hash_value::canonical_float::from_f64(5.0));
-    sketch.update(hash_value::canonical_float::from_f32(5.0));
-    sketch.update(hash_value::canonical_float::from_f32(5.0));
+    sketch.update(value::canonical_float::from_f64(5.0));
+    sketch.update(value::canonical_float::from_f64(5.0));
+    sketch.update(value::canonical_float::from_f32(5.0));
+    sketch.update(value::canonical_float::from_f32(5.0));
     sketch.update([1u8, 2, 3]);
 
     assert!(!sketch.is_empty());

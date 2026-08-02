@@ -6,6 +6,7 @@ All significant changes to this project will be documented in this file.
 
 ### Breaking changes
 
+* Move the `hash_value` module to `hash::value`.
 * Remove `ThetaSketch::builder`, `ThetaUnion::builder`, and `TupleSketch::builder`. Construct `ThetaSketchBuilder`, `ThetaUnionBuilder`, and `TupleSketchBuilder` with `Default::default` instead.
 * Standardize Theta and Tuple set-operation constructors. Zero-configuration operators use
   `Default::default()`, `TupleIntersection::new(policy)` uses the default seed, and `with_seed`

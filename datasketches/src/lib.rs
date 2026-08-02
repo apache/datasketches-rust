@@ -56,7 +56,4 @@ pub use self::thetafamily::tuple;
 pub mod codec;
 pub mod common;
 pub mod error;
-pub mod hash_value;
-
-// private internal modules
-mod hash;
+pub mod hash;
