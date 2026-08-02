@@ -19,10 +19,14 @@
 
 pub(crate) mod a_not_b;
 pub(crate) mod binomial_bounds;
+pub(crate) mod bounds_binomial_proportions;
 pub(crate) mod constants;
 pub(crate) mod hash_table;
 pub(crate) mod intersection;
+pub(crate) mod jaccard_similarity;
 pub(crate) mod union;
+
+pub use self::jaccard_similarity::JaccardSimilarity;
 
 /// An entry retained by a Theta sketch family hash table.
 pub trait RetainedEntry {
@@ -52,6 +56,13 @@ pub trait ThetaFamilySketchView {
 
     /// Return an iterator over retained entries.
     fn iter(&self) -> impl Iterator<Item = Self::Entry> + '_;
+
+    /// Return an iterator over retained hash keys without requiring callers to inspect payloads.
+    ///
+    /// Tuple sketches override this method so key-only operations do not clone summary values.
+    fn iter_hashes(&self) -> impl Iterator<Item = u64> + '_ {
+        self.iter().map(|entry| entry.hash())
+    }
 
     /// Return the number of retained entries.
     fn num_retained(&self) -> usize;
