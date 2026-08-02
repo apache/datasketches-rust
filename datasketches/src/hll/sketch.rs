@@ -82,8 +82,9 @@ impl HllSketch {
     /// # Examples
     ///
     /// ```
-    /// # use datasketches::hll::HllSketch;
-    /// # use datasketches::hll::HllType;
+    /// use datasketches::hll::HllSketch;
+    /// use datasketches::hll::HllType;
+    ///
     /// let sketch = HllSketch::new(12, HllType::Hll8);
     /// assert_eq!(sketch.lg_config_k(), 12);
     /// ```
@@ -172,15 +173,16 @@ impl HllSketch {
     /// # Examples
     ///
     /// ```
-    /// # use datasketches::hll::HllSketch;
-    /// # use datasketches::hll::HllType;
-    /// # use datasketches::hash::value;
+    /// use datasketches::hll::HllSketch;
+    /// use datasketches::hll::HllType;
+    /// use datasketches::hash::value::raw_bytes;
+    ///
     /// let mut sketch = HllSketch::new(10, HllType::Hll8);
     /// sketch.update("apple");
     /// assert!(sketch.estimate() >= 1.0);
     ///
     /// let mut sketch = HllSketch::new(10, HllType::Hll8);
-    /// sketch.update(value::raw_bytes::from_str("apple"));
+    /// sketch.update(raw_bytes::from_str("apple"));
     /// assert!(sketch.estimate() >= 1.0);
     /// ```
     pub fn update<T: Hash>(&mut self, value: T) {
@@ -200,7 +202,8 @@ impl HllSketch {
     /// # Examples
     ///
     /// ```
-    /// # use datasketches::hll::{HllSketch, HllType, Coupon};
+    /// use datasketches::hll::{HllSketch, HllType, Coupon};
+    ///
     /// let c = Coupon::from_value("apple");
     /// let mut sketch = HllSketch::new(10, HllType::Hll8);
     /// sketch.update_with_coupon(c);
@@ -242,8 +245,9 @@ impl HllSketch {
     /// # Examples
     ///
     /// ```
-    /// # use datasketches::hll::HllSketch;
-    /// # use datasketches::hll::HllType;
+    /// use datasketches::hll::HllSketch;
+    /// use datasketches::hll::HllType;
+    ///
     /// let mut sketch = HllSketch::new(10, HllType::Hll8);
     /// sketch.update("apple");
     /// assert!(sketch.estimate() >= 1.0);
@@ -291,11 +295,13 @@ impl HllSketch {
     /// # Examples
     ///
     /// ```
-    /// # use datasketches::hll::HllSketch;
-    /// # use datasketches::hll::HllType;
-    /// # let mut sketch = HllSketch::new(10, HllType::Hll8);
-    /// # sketch.update("apple");
-    /// # let bytes = sketch.serialize();
+    /// use datasketches::hll::HllSketch;
+    /// use datasketches::hll::HllType;
+    ///
+    /// let mut sketch = HllSketch::new(10, HllType::Hll8);
+    /// sketch.update("apple");
+    ///
+    /// let bytes = sketch.serialize();
     /// let decoded = HllSketch::deserialize(&bytes).unwrap();
     /// assert!(decoded.estimate() >= 1.0);
     /// ```
@@ -406,10 +412,12 @@ impl HllSketch {
     /// # Examples
     ///
     /// ```
-    /// # use datasketches::hll::HllSketch;
-    /// # use datasketches::hll::HllType;
-    /// # let mut sketch = HllSketch::new(10, HllType::Hll8);
-    /// # sketch.update("apple");
+    /// use datasketches::hll::HllSketch;
+    /// use datasketches::hll::HllType;
+    ///
+    /// let mut sketch = HllSketch::new(10, HllType::Hll8);
+    /// sketch.update("apple");
+    ///
     /// let bytes = sketch.serialize();
     /// let decoded = HllSketch::deserialize(&bytes).unwrap();
     /// assert!(decoded.estimate() >= 1.0);

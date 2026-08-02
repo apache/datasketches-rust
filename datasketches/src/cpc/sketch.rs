@@ -178,7 +178,7 @@ impl CpcSketch {
     ///
     /// ```rust
     /// use datasketches::cpc::CpcSketch;
-    /// use datasketches::hash::value;
+    /// use datasketches::hash::value::canonical_float;
     ///
     /// let mut sketch = CpcSketch::with_seed(11, 123);
     /// sketch.update(1);
@@ -186,9 +186,9 @@ impl CpcSketch {
     /// sketch.update(3);
     ///
     /// let mut sketch = CpcSketch::with_seed(11, 123);
-    /// sketch.update(value::canonical_float::from_f64(1.5));
-    /// sketch.update(value::canonical_float::from_f64(2.5));
-    /// sketch.update(value::canonical_float::from_f64(3.5));
+    /// sketch.update(canonical_float::from_f64(1.5));
+    /// sketch.update(canonical_float::from_f64(2.5));
+    /// sketch.update(canonical_float::from_f64(3.5));
     /// ```
     pub fn update<T: Hash>(&mut self, value: T) {
         let mut hasher = MurmurHash3X64128::with_seed(self.seed);

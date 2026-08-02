@@ -17,7 +17,7 @@
 
 use std::hash::Hasher;
 
-use crate::hash::DEFAULT_UPDATE_SEED;
+use crate::hash::{read_u64_le, DEFAULT_UPDATE_SEED};
 
 const C1: u64 = 0x87c37b91114253d5;
 const C2: u64 = 0x4cf5ad432745937f;
@@ -55,7 +55,7 @@ impl MurmurHash3X64128 {
         if rem > 0 {
             if rem > 8 {
                 // read k2 little endian
-                let mut k2 = super::read_u64_le(&self.buf[8..rem]);
+                let mut k2 = read_u64_le(&self.buf[8..rem]);
                 // mix k2
                 k2 = k2.wrapping_mul(C2);
                 k2 = k2.rotate_left(33);
@@ -65,7 +65,7 @@ impl MurmurHash3X64128 {
 
             // read k1 little endian
             let k1_len = rem.min(8);
-            let mut k1 = super::read_u64_le(&self.buf[..k1_len]);
+            let mut k1 = read_u64_le(&self.buf[..k1_len]);
             // mix k1
             k1 = k1.wrapping_mul(C1);
             k1 = k1.rotate_left(31);
@@ -135,8 +135,8 @@ impl Hasher for MurmurHash3X64128 {
             let wanted = 16 - self.buf_len;
             self.buf[self.buf_len..].copy_from_slice(&bytes[..wanted]);
 
-            let k1 = super::read_u64_le(&self.buf[0..8]);
-            let k2 = super::read_u64_le(&self.buf[8..16]);
+            let k1 = read_u64_le(&self.buf[0..8]);
+            let k2 = read_u64_le(&self.buf[8..16]);
             self.update(k1, k2);
 
             bytes = &bytes[wanted..];
@@ -152,8 +152,8 @@ impl Hasher for MurmurHash3X64128 {
             let lo = i << 4;
             let mi = lo + 8;
             let hi = mi + 8;
-            let k1 = super::read_u64_le(&bytes[lo..mi]);
-            let k2 = super::read_u64_le(&bytes[mi..hi]);
+            let k1 = read_u64_le(&bytes[lo..mi]);
+            let k2 = read_u64_le(&bytes[mi..hi]);
             self.update(k1, k2);
         }
 

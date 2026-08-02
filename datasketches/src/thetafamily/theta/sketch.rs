@@ -112,7 +112,7 @@ impl ThetaSketch {
     /// # Examples
     ///
     /// ```
-    /// use datasketches::hash::value;
+    /// use datasketches::hash::value::raw_bytes;
     /// use datasketches::theta::ThetaSketchBuilder;
     ///
     /// let mut sketch = ThetaSketchBuilder::default().build();
@@ -120,7 +120,7 @@ impl ThetaSketch {
     /// assert!(sketch.estimate() >= 1.0);
     ///
     /// let mut sketch = ThetaSketchBuilder::default().build();
-    /// sketch.update(value::raw_bytes::from_str("apple"));
+    /// sketch.update(raw_bytes::from_str("apple"));
     /// assert!(sketch.estimate() >= 1.0);
     /// ```
     pub fn update<T: Hash>(&mut self, value: T) {

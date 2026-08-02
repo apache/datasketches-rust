@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use crate::hash::read_u64_le;
 use std::hash::Hasher;
 
 const DEFAULT_SEED: u64 = 0;
@@ -76,7 +77,7 @@ impl XxHash64 {
         let mut idx = 0;
         let buf = &self.buffer[..self.buffer_len];
         while idx + 8 <= buf.len() {
-            let mut k1 = super::read_u64_le(&buf[idx..idx + 8]);
+            let mut k1 = read_u64_le(&buf[idx..idx + 8]);
             k1 = k1.wrapping_mul(P2);
             k1 = k1.rotate_left(31);
             k1 = k1.wrapping_mul(P1);
@@ -86,7 +87,7 @@ impl XxHash64 {
         }
 
         if idx + 4 <= buf.len() {
-            let k1 = super::read_u64_le(&buf[idx..idx + 4]);
+            let k1 = read_u64_le(&buf[idx..idx + 4]);
             hash ^= k1.wrapping_mul(P1);
             hash = hash.rotate_left(23).wrapping_mul(P2).wrapping_add(P3);
             idx += 4;
@@ -116,10 +117,10 @@ impl XxHash64 {
 
     #[inline]
     fn update(&mut self, chunk: &[u8]) {
-        self.v1 = round(self.v1, super::read_u64_le(&chunk[0..8]));
-        self.v2 = round(self.v2, super::read_u64_le(&chunk[8..16]));
-        self.v3 = round(self.v3, super::read_u64_le(&chunk[16..24]));
-        self.v4 = round(self.v4, super::read_u64_le(&chunk[24..32]));
+        self.v1 = round(self.v1, read_u64_le(&chunk[0..8]));
+        self.v2 = round(self.v2, read_u64_le(&chunk[8..16]));
+        self.v3 = round(self.v3, read_u64_le(&chunk[16..24]));
+        self.v4 = round(self.v4, read_u64_le(&chunk[24..32]));
     }
 }
 
