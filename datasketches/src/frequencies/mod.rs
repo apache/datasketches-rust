@@ -77,8 +77,9 @@
 //! # Examples
 //!
 //! ```
-//! # use datasketches::frequencies::ErrorType;
-//! # use datasketches::frequencies::FrequentItemsSketch;
+//! use datasketches::frequencies::ErrorType;
+//! use datasketches::frequencies::FrequentItemsSketch;
+//!
 //! let mut sketch = FrequentItemsSketch::<i64>::new(64);
 //! sketch.update_with_count(1, 3);
 //! sketch.update(2);
@@ -89,7 +90,8 @@
 //! # Serialization
 //!
 //! ```
-//! # use datasketches::frequencies::FrequentItemsSketch;
+//! use datasketches::frequencies::FrequentItemsSketch;
+//!
 //! let mut sketch = FrequentItemsSketch::<i64>::new(64);
 //! sketch.update_with_count(42, 2);
 //!

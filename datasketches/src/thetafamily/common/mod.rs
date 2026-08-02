@@ -19,7 +19,6 @@
 
 pub(crate) mod a_not_b;
 pub(crate) mod binomial_bounds;
-pub(crate) mod bounds_binomial_proportions;
 pub(crate) mod constants;
 pub(crate) mod hash_table;
 pub(crate) mod intersection;

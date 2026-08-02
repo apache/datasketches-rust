@@ -15,6 +15,10 @@
 // specific language governing permissions and limitations
 // under the License.
 
+//! Hashing support for sketches.
+
+pub mod value;
+
 #[cfg(any(
     feature = "countmin",
     feature = "cpc",

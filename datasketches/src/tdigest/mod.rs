@@ -51,7 +51,8 @@
 //! # Usage
 //!
 //! ```
-//! # use datasketches::tdigest::TDigestMut;
+//! use datasketches::tdigest::TDigestMut;
+//!
 //! let mut sketch = TDigestMut::new(100);
 //! sketch.update(1.0);
 //! sketch.update(2.0);

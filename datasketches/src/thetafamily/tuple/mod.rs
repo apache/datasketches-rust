@@ -31,7 +31,9 @@
 //! # Usage
 //!
 //! ```
-//! # use datasketches::tuple::{DefaultUpdatePolicy, TupleSketchBuilder};
+//! use datasketches::tuple::DefaultUpdatePolicy;
+//! use datasketches::tuple::TupleSketchBuilder;
+//!
 //! let policy = DefaultUpdatePolicy::<u64>::default();
 //! let mut sketch = TupleSketchBuilder::new(policy).build();
 //! sketch.update("apple", 1_u64);

@@ -21,7 +21,7 @@ use crate::hash::compute_seed_hash;
 use crate::thetacommon::RetainedEntry;
 use crate::thetacommon::ThetaFamilySketchView;
 use crate::thetacommon::ThetaKeySketchView;
-use crate::thetacommon::bounds_binomial_proportions;
+use crate::thetacommon::binomial_bounds;
 use crate::thetacommon::constants::MAX_LG_K;
 use crate::thetacommon::constants::MAX_THETA;
 use crate::thetacommon::constants::MIN_LG_K;
@@ -92,13 +92,13 @@ impl JaccardSimilarity {
 
         let adjustment = NUM_STD_DEVS * sampling_adjuster(sampling_probability);
         Ok(Self {
-            lower_bound: bounds_binomial_proportions::approximate_lower_bound_on_p(
+            lower_bound: binomial_bounds::approximate_lower_bound_on_p(
                 union_count,
                 intersection_count,
                 adjustment,
             )?,
             estimate: intersection_count as f64 / union_count as f64,
-            upper_bound: bounds_binomial_proportions::approximate_upper_bound_on_p(
+            upper_bound: binomial_bounds::approximate_upper_bound_on_p(
                 union_count,
                 intersection_count,
                 adjustment,

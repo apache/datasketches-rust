@@ -98,7 +98,8 @@ impl ThetaUnionBuilder {
     /// # Examples
     ///
     /// ```
-    /// # use datasketches::theta::ThetaUnionBuilder;
+    /// use datasketches::theta::ThetaUnionBuilder;
+    ///
     /// ThetaUnionBuilder::default().lg_k(12).build();
     /// ```
     pub fn lg_k(mut self, lg_k: u8) -> Self {
@@ -125,7 +126,8 @@ impl ThetaUnionBuilder {
     /// # Examples
     ///
     /// ```
-    /// # use datasketches::theta::ThetaUnionBuilder;
+    /// use datasketches::theta::ThetaUnionBuilder;
+    ///
     /// ThetaUnionBuilder::default()
     ///     .sampling_probability(0.5)
     ///     .build();
@@ -144,7 +146,8 @@ impl ThetaUnionBuilder {
     /// # Examples
     ///
     /// ```
-    /// # use datasketches::theta::ThetaUnionBuilder;
+    /// use datasketches::theta::ThetaUnionBuilder;
+    ///
     /// ThetaUnionBuilder::default().seed(7).build();
     /// ```
     pub fn seed(mut self, seed: u64) -> Self {
@@ -157,7 +160,8 @@ impl ThetaUnionBuilder {
     /// # Examples
     ///
     /// ```
-    /// # use datasketches::theta::ThetaUnionBuilder;
+    /// use datasketches::theta::ThetaUnionBuilder;
+    ///
     /// ThetaUnionBuilder::default().lg_k(10).build();
     /// ```
     pub fn build(self) -> ThetaUnion {

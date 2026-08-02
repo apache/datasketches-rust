@@ -15,54 +15,52 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! Tuple sketch set difference (`A and not B`).
+//! Theta sketch set difference (`A and not B`).
 //!
-//! [`TupleANotB`] computes the set difference of two Tuple sketches: the keys retained in `A` that
-//! are not present in `B`. Surviving keys keep their summaries from `A` unchanged, so unlike the
-//! union and intersection this operation needs no combine policy. It shares its set-difference
-//! implementation with Theta a-not-B.
+//! [`ThetaANotB`] computes the set difference of two Theta sketches: the keys retained in `A`
+//! that are not present in `B`. It shares its set-difference implementation with Tuple a-not-B;
+//! Theta entries carry no summary, so nothing needs to be combined.
 
 use crate::error::Error;
 use crate::hash::DEFAULT_UPDATE_SEED;
+use crate::theta::CompactThetaSketch;
+use crate::theta::ThetaSketchView;
 use crate::thetacommon::a_not_b::ANotBOperator;
-use crate::tuple::sketch::CompactTupleSketch;
-use crate::tuple::sketch::TupleKeySketchView;
-use crate::tuple::sketch::TupleSketchView;
 
-/// Set difference operator (`A and not B`) for Tuple sketches.
+/// Set difference operator (`A and not B`) for Theta sketches.
 ///
 /// This is a stateless operator (other than the seed): each call to [`compute`](Self::compute)
-/// takes two input sketches and returns a new [`CompactTupleSketch`]. Surviving keys carry their
-/// summaries straight from `A`.
+/// takes two input sketches and returns a new [`CompactThetaSketch`].
 ///
 /// # Examples
 ///
 /// ```
-/// # use datasketches::tuple::{DefaultUpdatePolicy, TupleANotB, TupleSketchBuilder};
-/// let update_policy = DefaultUpdatePolicy::<u64>::default();
-/// let mut a = TupleSketchBuilder::new(update_policy).build();
-/// a.update("apple", 1);
-/// a.update("banana", 1);
+/// use datasketches::theta::ThetaANotB;
+/// use datasketches::theta::ThetaSketchBuilder;
 ///
-/// let mut b = TupleSketchBuilder::new(update_policy).build();
-/// b.update("banana", 1);
+/// let mut a = ThetaSketchBuilder::default().build();
+/// a.update("apple");
+/// a.update("banana");
 ///
-/// let a_not_b = TupleANotB::default();
+/// let mut b = ThetaSketchBuilder::default().build();
+/// b.update("banana");
+///
+/// let a_not_b = ThetaANotB::default();
 /// let result = a_not_b.compute(&a, &b, true).unwrap();
 /// assert_eq!(result.num_retained(), 1); // only "apple" survives
 /// ```
 #[derive(Debug, Clone, Copy)]
-pub struct TupleANotB {
+pub struct ThetaANotB {
     op: ANotBOperator,
 }
 
-impl Default for TupleANotB {
+impl Default for ThetaANotB {
     fn default() -> Self {
         Self::with_seed(DEFAULT_UPDATE_SEED)
     }
 }
 
-impl TupleANotB {
+impl ThetaANotB {
     /// Creates a new set difference operator for the given `seed`.
     pub fn with_seed(seed: u64) -> Self {
         Self {
@@ -72,27 +70,25 @@ impl TupleANotB {
 
     /// Computes `a and not b`.
     ///
-    /// The result retains every key of `a` (below the combined theta) that is not present in `b`,
-    /// keeping the summaries from `a`. Summary values in `b` are ignored and need not be
-    /// cloneable. If `ordered` is true, the retained entries are sorted ascending by hash.
+    /// The result retains every key of `a` (below the combined theta) that is not present in `b`.
+    /// If `ordered` is true, the retained entries are sorted ascending by hash.
     ///
     /// # Errors
     ///
     /// Returns an error if either non-trivial input has a seed hash that differs from this
     /// operator's seed.
-    pub fn compute<S, A, B>(
-        &self,
-        a: &A,
-        b: &B,
-        ordered: bool,
-    ) -> Result<CompactTupleSketch<S>, Error>
+    pub fn compute<A, B>(&self, a: &A, b: &B, ordered: bool) -> Result<CompactThetaSketch, Error>
     where
-        A: TupleSketchView<S>,
-        B: TupleKeySketchView,
+        A: ThetaSketchView,
+        B: ThetaSketchView,
     {
         let parts = self.op.compute(a, b, ordered)?;
-        Ok(CompactTupleSketch::from_parts(
-            parts.entries,
+        Ok(CompactThetaSketch::from_parts(
+            parts
+                .entries
+                .into_iter()
+                .map(|entry| entry.hash())
+                .collect(),
             parts.theta,
             parts.seed_hash,
             parts.ordered,
