@@ -15,8 +15,9 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use crate::hash::read_u64_le;
 use std::hash::Hasher;
+
+use crate::hash::read_u64_le;
 
 const DEFAULT_SEED: u64 = 0;
 

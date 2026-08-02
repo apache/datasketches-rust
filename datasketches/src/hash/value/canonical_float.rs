@@ -47,8 +47,8 @@ pub struct CanonicalFloatStrategy;
 /// # Examples
 ///
 /// ```
-/// # use datasketches::hash::value::calculate_hash;
-/// # use datasketches::hash::value::canonical_float;
+/// use datasketches::hash::value::calculate_hash;
+/// use datasketches::hash::value::canonical_float;
 /// assert_eq!(
 ///     calculate_hash(canonical_float::from_f32(0.0)),
 ///     calculate_hash(canonical_float::from_f32(-0.0))
@@ -74,8 +74,8 @@ pub fn from_f32(v: f32) -> CanonicalFloat<f32> {
 /// # Examples
 ///
 /// ```
-/// # use datasketches::hash::value::calculate_hash;
-/// # use datasketches::hash::value::canonical_float;
+/// use datasketches::hash::value::calculate_hash;
+/// use datasketches::hash::value::canonical_float;
 /// assert_eq!(
 ///     calculate_hash(canonical_float::from_f64(0.0)),
 ///     calculate_hash(canonical_float::from_f64(-0.0))

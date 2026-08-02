@@ -17,7 +17,8 @@
 
 use std::hash::Hasher;
 
-use crate::hash::{read_u64_le, DEFAULT_UPDATE_SEED};
+use crate::hash::DEFAULT_UPDATE_SEED;
+use crate::hash::read_u64_le;
 
 const C1: u64 = 0x87c37b91114253d5;
 const C2: u64 = 0x4cf5ad432745937f;

@@ -32,7 +32,9 @@ use crate::tuple::TupleKeySketchView;
 /// # Examples
 ///
 /// ```
-/// # use datasketches::tuple::{DefaultUpdatePolicy, TupleJaccardSimilarity, TupleSketchBuilder};
+/// use datasketches::tuple::DefaultUpdatePolicy;
+/// use datasketches::tuple::TupleJaccardSimilarity;
+/// use datasketches::tuple::TupleSketchBuilder;
 /// let policy = DefaultUpdatePolicy::<u64>::default();
 /// let mut a = TupleSketchBuilder::new(policy).build();
 /// let mut b = TupleSketchBuilder::new(policy).build();

@@ -63,7 +63,7 @@ impl<T: CountMinValue> CountMinSketch<T> {
     /// # Examples
     ///
     /// ```
-    /// # use datasketches::countmin::CountMinSketch;
+    /// use datasketches::countmin::CountMinSketch;
     /// let sketch = CountMinSketch::<i64>::new(4, 128);
     /// assert_eq!(sketch.num_buckets(), 128);
     /// ```
@@ -84,7 +84,7 @@ impl<T: CountMinValue> CountMinSketch<T> {
     /// # Examples
     ///
     /// ```
-    /// # use datasketches::countmin::CountMinSketch;
+    /// use datasketches::countmin::CountMinSketch;
     /// let sketch = CountMinSketch::<i64>::with_seed(4, 64, 42);
     /// assert_eq!(sketch.seed(), 42);
     /// ```
@@ -155,7 +155,7 @@ impl<T: CountMinValue> CountMinSketch<T> {
     /// # Examples
     ///
     /// ```
-    /// # use datasketches::countmin::CountMinSketch;
+    /// use datasketches::countmin::CountMinSketch;
     /// let mut sketch = CountMinSketch::<i64>::new(4, 128);
     /// sketch.update("apple");
     /// assert!(sketch.estimate("apple") >= 1);
@@ -169,7 +169,7 @@ impl<T: CountMinValue> CountMinSketch<T> {
     /// # Examples
     ///
     /// ```
-    /// # use datasketches::countmin::CountMinSketch;
+    /// use datasketches::countmin::CountMinSketch;
     /// let mut sketch = CountMinSketch::<i64>::new(4, 128);
     /// sketch.update_with_weight("banana", 3);
     /// assert!(sketch.estimate("banana") >= 3);
@@ -193,7 +193,7 @@ impl<T: CountMinValue> CountMinSketch<T> {
     /// # Examples
     ///
     /// ```
-    /// # use datasketches::countmin::CountMinSketch;
+    /// use datasketches::countmin::CountMinSketch;
     /// let mut sketch = CountMinSketch::<i64>::new(4, 128);
     /// sketch.update_with_weight("pear", 2);
     /// assert!(sketch.estimate("pear") >= 2);
@@ -233,7 +233,7 @@ impl<T: CountMinValue> CountMinSketch<T> {
     /// # Examples
     ///
     /// ```
-    /// # use datasketches::countmin::CountMinSketch;
+    /// use datasketches::countmin::CountMinSketch;
     /// let mut left = CountMinSketch::<i64>::new(4, 128);
     /// let mut right = CountMinSketch::<i64>::new(4, 128);
     ///
@@ -263,9 +263,9 @@ impl<T: CountMinValue> CountMinSketch<T> {
     /// # Examples
     ///
     /// ```
-    /// # use datasketches::countmin::CountMinSketch;
-    /// # let mut sketch = CountMinSketch::<i64>::new(4, 128);
-    /// # sketch.update("apple");
+    /// use datasketches::countmin::CountMinSketch;
+    /// let mut sketch = CountMinSketch::<i64>::new(4, 128);
+    /// sketch.update("apple");
     /// let bytes = sketch.serialize();
     /// let decoded = CountMinSketch::<i64>::deserialize(&bytes).unwrap();
     /// assert!(decoded.estimate("apple") >= 1);
@@ -308,10 +308,10 @@ impl<T: CountMinValue> CountMinSketch<T> {
     /// # Examples
     ///
     /// ```
-    /// # use datasketches::countmin::CountMinSketch;
-    /// # let mut sketch = CountMinSketch::<i64>::new(4, 64);
-    /// # sketch.update("apple");
-    /// # let bytes = sketch.serialize();
+    /// use datasketches::countmin::CountMinSketch;
+    /// let mut sketch = CountMinSketch::<i64>::new(4, 64);
+    /// sketch.update("apple");
+    /// let bytes = sketch.serialize();
     /// let decoded = CountMinSketch::<i64>::deserialize(&bytes).unwrap();
     /// assert!(decoded.estimate("apple") >= 1);
     /// ```
@@ -324,10 +324,10 @@ impl<T: CountMinValue> CountMinSketch<T> {
     /// # Examples
     ///
     /// ```
-    /// # use datasketches::countmin::CountMinSketch;
-    /// # let mut sketch = CountMinSketch::<i64>::with_seed(4, 64, 7);
-    /// # sketch.update("apple");
-    /// # let bytes = sketch.serialize();
+    /// use datasketches::countmin::CountMinSketch;
+    /// let mut sketch = CountMinSketch::<i64>::with_seed(4, 64, 7);
+    /// sketch.update("apple");
+    /// let bytes = sketch.serialize();
     /// let decoded = CountMinSketch::<i64>::deserialize_with_seed(&bytes, 7).unwrap();
     /// assert!(decoded.estimate("apple") >= 1);
     /// ```
@@ -425,7 +425,7 @@ impl<T: UnsignedCountMinValue> CountMinSketch<T> {
     /// # Examples
     ///
     /// ```
-    /// # use datasketches::countmin::CountMinSketch;
+    /// use datasketches::countmin::CountMinSketch;
     /// let mut sketch = CountMinSketch::<u64>::new(4, 128);
     /// sketch.update_with_weight("apple", 3);
     /// sketch.halve();
@@ -446,7 +446,7 @@ impl<T: UnsignedCountMinValue> CountMinSketch<T> {
     /// # Examples
     ///
     /// ```
-    /// # use datasketches::countmin::CountMinSketch;
+    /// use datasketches::countmin::CountMinSketch;
     /// let mut sketch = CountMinSketch::<u64>::new(4, 128);
     /// sketch.update_with_weight("apple", 3);
     /// sketch.decay(0.5);

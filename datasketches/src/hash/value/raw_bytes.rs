@@ -45,8 +45,9 @@ pub struct RawBytesStrategy;
 /// # Examples
 ///
 /// ```
-/// # use datasketches::hash::value::calculate_hash;
-/// # use datasketches::hash::value::raw_bytes::{from_slice, from_vec};
+/// use datasketches::hash::value::calculate_hash;
+/// use datasketches::hash::value::raw_bytes::from_slice;
+/// use datasketches::hash::value::raw_bytes::from_vec;
 /// assert_eq!(
 ///     calculate_hash(from_vec(b"abc".to_vec())),
 ///     calculate_hash(from_slice(b"abc"))
@@ -65,8 +66,9 @@ pub fn from_vec(v: Vec<u8>) -> RawBytes<Vec<u8>> {
 /// # Examples
 ///
 /// ```
-/// # use datasketches::hash::value::calculate_hash;
-/// # use datasketches::hash::value::raw_bytes::{from_str, from_string};
+/// use datasketches::hash::value::calculate_hash;
+/// use datasketches::hash::value::raw_bytes::from_str;
+/// use datasketches::hash::value::raw_bytes::from_string;
 /// assert_eq!(
 ///     calculate_hash(from_string("abc".to_owned())),
 ///     calculate_hash(from_str("abc"))
@@ -85,8 +87,9 @@ pub fn from_string(v: String) -> RawBytes<String> {
 /// # Examples
 ///
 /// ```
-/// # use datasketches::hash::value::calculate_hash;
-/// # use datasketches::hash::value::raw_bytes::{from_slice, from_vec};
+/// use datasketches::hash::value::calculate_hash;
+/// use datasketches::hash::value::raw_bytes::from_slice;
+/// use datasketches::hash::value::raw_bytes::from_vec;
 /// assert_eq!(
 ///     calculate_hash(from_slice(b"abc")),
 ///     calculate_hash(from_vec(b"abc".to_vec()))
@@ -105,8 +108,9 @@ pub fn from_slice(v: &[u8]) -> RawBytes<&[u8]> {
 /// # Examples
 ///
 /// ```
-/// # use datasketches::hash::value::calculate_hash;
-/// # use datasketches::hash::value::raw_bytes::{from_str, from_string};
+/// use datasketches::hash::value::calculate_hash;
+/// use datasketches::hash::value::raw_bytes::from_str;
+/// use datasketches::hash::value::raw_bytes::from_string;
 /// assert_eq!(
 ///     calculate_hash(from_str("abc")),
 ///     calculate_hash(from_string("abc".to_owned()))

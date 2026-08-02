@@ -62,7 +62,7 @@ impl BloomFilterBuilder {
     /// # Examples
     ///
     /// ```
-    /// # use datasketches::bloom::BloomFilterBuilder;
+    /// use datasketches::bloom::BloomFilterBuilder;
     /// // Optimal for 10,000 items with 1% FPP
     /// let filter = BloomFilterBuilder::with_accuracy(10_000, 0.01)
     ///     .seed(42)
@@ -107,7 +107,7 @@ impl BloomFilterBuilder {
     /// # Examples
     ///
     /// ```
-    /// # use datasketches::bloom::BloomFilterBuilder;
+    /// use datasketches::bloom::BloomFilterBuilder;
     /// let filter = BloomFilterBuilder::with_size(10_000, 7).build();
     /// ```
     pub fn with_size(num_bits: u64, num_hashes: u16) -> Self {
@@ -140,7 +140,7 @@ impl BloomFilterBuilder {
     /// # Examples
     ///
     /// ```
-    /// # use datasketches::bloom::BloomFilterBuilder;
+    /// use datasketches::bloom::BloomFilterBuilder;
     /// let filter = BloomFilterBuilder::with_accuracy(100, 0.01)
     ///     .seed(12345)
     ///     .build();
@@ -176,7 +176,7 @@ impl BloomFilterBuilder {
     /// # Examples
     ///
     /// ```
-    /// # use datasketches::bloom::BloomFilterBuilder;
+    /// use datasketches::bloom::BloomFilterBuilder;
     /// let bits = BloomFilterBuilder::suggest_num_bits(1000, 0.01);
     /// assert!(bits > 9000 && bits < 10000); // ~9585 bits
     /// ```
@@ -198,7 +198,7 @@ impl BloomFilterBuilder {
     /// # Examples
     ///
     /// ```
-    /// # use datasketches::bloom::BloomFilterBuilder;
+    /// use datasketches::bloom::BloomFilterBuilder;
     /// let hashes = BloomFilterBuilder::suggest_num_hashes_from_accuracy(1000, 10000);
     /// assert_eq!(hashes, 7); // Optimal k ≈ 6.93
     /// ```
@@ -222,7 +222,7 @@ impl BloomFilterBuilder {
     /// # Examples
     ///
     /// ```
-    /// # use datasketches::bloom::BloomFilterBuilder;
+    /// use datasketches::bloom::BloomFilterBuilder;
     /// let hashes = BloomFilterBuilder::suggest_num_hashes_from_fpp(0.01);
     /// assert_eq!(hashes, 7); // -log2(0.01) ≈ 6.64
     /// ```

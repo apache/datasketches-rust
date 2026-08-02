@@ -75,9 +75,9 @@
 //! # Usage
 //!
 //! ```
-//! # use datasketches::hll::HllSketch;
-//! # use datasketches::hll::HllType;
-//! # use datasketches::common::NumStdDev;
+//! use datasketches::common::NumStdDev;
+//! use datasketches::hll::HllSketch;
+//! use datasketches::hll::HllType;
 //! let mut sketch = HllSketch::new(12, HllType::Hll8);
 //! sketch.update("apple");
 //! let upper = sketch.upper_bound(NumStdDev::Two);
@@ -87,9 +87,9 @@
 //! # Union
 //!
 //! ```
-//! # use datasketches::hll::HllSketch;
-//! # use datasketches::hll::HllType;
-//! # use datasketches::hll::HllUnion;
+//! use datasketches::hll::HllSketch;
+//! use datasketches::hll::HllType;
+//! use datasketches::hll::HllUnion;
 //! let mut left = HllSketch::new(10, HllType::Hll8);
 //! let mut right = HllSketch::new(10, HllType::Hll8);
 //! left.update("apple");
@@ -174,7 +174,9 @@ const RESIZE_DENOMINATOR: u32 = 4;
 /// # Examples
 ///
 /// ```
-/// # use datasketches::hll::{HllSketch, HllType, Coupon};
+/// use datasketches::hll::Coupon;
+/// use datasketches::hll::HllSketch;
+/// use datasketches::hll::HllType;
 /// let c = Coupon::from_value("hello");
 ///
 /// let mut sketch1 = HllSketch::new(10, HllType::Hll8);

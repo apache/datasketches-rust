@@ -132,9 +132,9 @@ impl ThetaSketch {
     /// # Examples
     ///
     /// ```
-    /// # use datasketches::theta::ThetaSketchBuilder;
-    /// # let mut sketch = ThetaSketchBuilder::default().build();
-    /// # sketch.update("apple");
+    /// use datasketches::theta::ThetaSketchBuilder;
+    /// let mut sketch = ThetaSketchBuilder::default().build();
+    /// sketch.update("apple");
     /// assert!(sketch.estimate() >= 1.0);
     /// ```
     pub fn estimate(&self) -> f64 {
@@ -196,9 +196,9 @@ impl ThetaSketch {
     /// # Examples
     ///
     /// ```
-    /// # use datasketches::theta::ThetaSketchBuilder;
-    /// # let mut sketch = ThetaSketchBuilder::default().build();
-    /// # sketch.update("apple");
+    /// use datasketches::theta::ThetaSketchBuilder;
+    /// let mut sketch = ThetaSketchBuilder::default().build();
+    /// sketch.update("apple");
     /// let mut iter = sketch.iter();
     /// assert!(iter.next().is_some());
     /// ```
@@ -213,7 +213,7 @@ impl ThetaSketch {
     /// # Examples
     ///
     /// ```
-    /// # use datasketches::theta::ThetaSketchBuilder;
+    /// use datasketches::theta::ThetaSketchBuilder;
     /// let mut sketch = ThetaSketchBuilder::default().build();
     /// sketch.update("apple");
     /// let compact = sketch.compact(true);
@@ -935,7 +935,7 @@ impl ThetaSketchBuilder {
     /// # Examples
     ///
     /// ```
-    /// # use datasketches::theta::ThetaSketchBuilder;
+    /// use datasketches::theta::ThetaSketchBuilder;
     /// let sketch = ThetaSketchBuilder::default().lg_k(12).build();
     /// assert_eq!(sketch.lg_k(), 12);
     /// ```
@@ -969,7 +969,7 @@ impl ThetaSketchBuilder {
     /// # Examples
     ///
     /// ```
-    /// # use datasketches::theta::ThetaSketchBuilder;
+    /// use datasketches::theta::ThetaSketchBuilder;
     /// ThetaSketchBuilder::default()
     ///     .sampling_probability(0.5)
     ///     .build();
@@ -988,7 +988,7 @@ impl ThetaSketchBuilder {
     /// # Examples
     ///
     /// ```
-    /// # use datasketches::theta::ThetaSketchBuilder;
+    /// use datasketches::theta::ThetaSketchBuilder;
     /// ThetaSketchBuilder::default().seed(7).build();
     /// ```
     pub fn seed(mut self, seed: u64) -> Self {
@@ -1001,7 +1001,7 @@ impl ThetaSketchBuilder {
     /// # Examples
     ///
     /// ```
-    /// # use datasketches::theta::ThetaSketchBuilder;
+    /// use datasketches::theta::ThetaSketchBuilder;
     /// ThetaSketchBuilder::default().lg_k(10).build();
     /// ```
     pub fn build(self) -> ThetaSketch {

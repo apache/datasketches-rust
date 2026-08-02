@@ -173,9 +173,9 @@ impl HllSketch {
     /// # Examples
     ///
     /// ```
+    /// use datasketches::hash::value::raw_bytes;
     /// use datasketches::hll::HllSketch;
     /// use datasketches::hll::HllType;
-    /// use datasketches::hash::value::raw_bytes;
     ///
     /// let mut sketch = HllSketch::new(10, HllType::Hll8);
     /// sketch.update("apple");
@@ -202,7 +202,9 @@ impl HllSketch {
     /// # Examples
     ///
     /// ```
-    /// use datasketches::hll::{HllSketch, HllType, Coupon};
+    /// use datasketches::hll::Coupon;
+    /// use datasketches::hll::HllSketch;
+    /// use datasketches::hll::HllType;
     ///
     /// let c = Coupon::from_value("apple");
     /// let mut sketch = HllSketch::new(10, HllType::Hll8);
