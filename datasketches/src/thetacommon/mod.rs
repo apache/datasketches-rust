@@ -26,6 +26,8 @@ pub(crate) mod intersection;
 pub(crate) mod jaccard_similarity;
 pub(crate) mod union;
 
+pub use self::jaccard_similarity::JaccardSimilarity;
+
 /// An entry retained by a Theta sketch family hash table.
 pub trait RetainedEntry {
     /// Return the hash used as this entry's key.

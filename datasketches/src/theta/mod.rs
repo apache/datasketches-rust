@@ -51,7 +51,6 @@ mod union;
 pub use self::a_not_b::ThetaANotB;
 pub use self::hash_table::ThetaEntry;
 pub use self::intersection::ThetaIntersection;
-pub use self::jaccard_similarity::JaccardSimilarity;
 pub use self::jaccard_similarity::ThetaJaccardSimilarity;
 pub use self::sketch::CompactThetaSketch;
 pub use self::sketch::ThetaSketch;

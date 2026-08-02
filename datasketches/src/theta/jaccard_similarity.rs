@@ -20,7 +20,7 @@
 use crate::error::Error;
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::theta::ThetaSketchView;
-pub use crate::thetacommon::jaccard_similarity::JaccardSimilarity;
+use crate::thetacommon::jaccard_similarity::JaccardSimilarity;
 use crate::thetacommon::jaccard_similarity::JaccardSimilarityOperator;
 
 /// Jaccard similarity operator for Theta sketches.

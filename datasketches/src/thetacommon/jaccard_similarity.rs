@@ -17,6 +17,7 @@
 
 use crate::common::ResizeFactor;
 use crate::error::Error;
+use crate::hash::compute_seed_hash;
 use crate::thetacommon::RetainedEntry;
 use crate::thetacommon::ThetaFamilySketchView;
 use crate::thetacommon::bounds_binomial_proportions;
@@ -226,6 +227,22 @@ impl JaccardSimilarityOperator {
         }
         if sketch_a.is_empty() || sketch_b.is_empty() {
             return Ok(JaccardSimilarity::exact(0.0));
+        }
+
+        let seed_hash = compute_seed_hash(self.seed);
+        if seed_hash != sketch_a.seed_hash() {
+            return Err(Error::invalid_argument(format!(
+                "incompatible seed hash: expected {}, got {}",
+                seed_hash,
+                sketch_a.seed_hash(),
+            )));
+        }
+        if seed_hash != sketch_b.seed_hash() {
+            return Err(Error::invalid_argument(format!(
+                "incompatible seed hash: expected {}, got {}",
+                seed_hash,
+                sketch_b.seed_hash(),
+            )));
         }
 
         let sketch_a = KeySketchView::new(sketch_a);

@@ -19,7 +19,7 @@
 
 use crate::error::Error;
 use crate::hash::DEFAULT_UPDATE_SEED;
-pub use crate::thetacommon::jaccard_similarity::JaccardSimilarity;
+use crate::thetacommon::jaccard_similarity::JaccardSimilarity;
 use crate::thetacommon::jaccard_similarity::JaccardSimilarityOperator;
 use crate::tuple::TupleSketchView;
 
