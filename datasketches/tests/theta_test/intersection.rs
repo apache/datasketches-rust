@@ -317,3 +317,13 @@ fn test_seed_mismatch_non_empty_returns_error() {
     let mut i = ThetaIntersection::with_seed(123);
     assert!(i.update(&s).is_err());
 }
+
+#[test]
+fn test_intersection_estimated_size() {
+    let mut intersection = ThetaIntersection::default();
+    let empty_size = intersection.estimated_size();
+
+    let sketch = sketch_with_range(0, 1000);
+    intersection.update(&sketch).unwrap();
+    assert!(intersection.estimated_size() > empty_size);
+}

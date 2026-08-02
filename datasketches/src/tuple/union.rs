@@ -110,6 +110,11 @@ where
     pub fn reset(&mut self) {
         self.state.reset();
     }
+
+    /// Returns the estimated size of the union in bytes.
+    pub fn estimated_size(&self) -> usize {
+        size_of::<Self>() + self.state.estimated_size()
+    }
 }
 
 /// Builder for [`TupleUnion`].

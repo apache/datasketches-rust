@@ -332,6 +332,12 @@ impl HllUnion {
     pub fn lower_bound(&self, num_std_dev: NumStdDev) -> f64 {
         self.gadget.lower_bound(num_std_dev)
     }
+
+    /// Returns the estimated size of the union in bytes.
+    pub fn estimated_size(&self) -> usize {
+        // The gadget's inline size is already covered by size_of::<Self>().
+        size_of::<Self>() - size_of::<HllSketch>() + self.gadget.estimated_size()
+    }
 }
 
 /// Convert a coupon mode (List or Set) to Hll8 target type

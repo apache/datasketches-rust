@@ -67,6 +67,11 @@ impl ThetaIntersection {
         self.state.has_result()
     }
 
+    /// Returns the estimated size of the intersection in bytes.
+    pub fn estimated_size(&self) -> usize {
+        size_of::<Self>() + self.state.estimated_size()
+    }
+
     /// Returns the intersection result as a compact theta sketch.
     ///
     /// # Panics

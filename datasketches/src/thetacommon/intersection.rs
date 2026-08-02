@@ -229,6 +229,11 @@ where
         self.has_result
     }
 
+    /// Returns the estimated size of the heap allocations in bytes.
+    pub fn estimated_size(&self) -> usize {
+        self.table.estimated_size()
+    }
+
     /// Return the current intersection state as compact-sketch parts.
     pub fn result(&self, ordered: bool) -> CompactSketchParts<E>
     where
