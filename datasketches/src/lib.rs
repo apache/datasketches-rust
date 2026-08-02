@@ -43,12 +43,14 @@ pub mod frequencies;
 pub mod hll;
 #[cfg(feature = "tdigest")]
 pub mod tdigest;
-#[cfg(feature = "theta")]
-pub mod theta;
 #[cfg(any(feature = "theta", feature = "tuple"))]
-pub mod thetacommon;
+mod theta_family;
+#[cfg(any(feature = "theta", feature = "tuple"))]
+pub use self::theta_family::common as thetacommon;
+#[cfg(feature = "theta")]
+pub use self::theta_family::theta;
 #[cfg(feature = "tuple")]
-pub mod tuple;
+pub use self::theta_family::tuple;
 
 // common modules
 pub mod codec;

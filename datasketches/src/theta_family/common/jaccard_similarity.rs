@@ -20,6 +20,7 @@ use crate::error::Error;
 use crate::hash::compute_seed_hash;
 use crate::thetacommon::RetainedEntry;
 use crate::thetacommon::ThetaFamilySketchView;
+use crate::thetacommon::ThetaKeySketchView;
 use crate::thetacommon::bounds_binomial_proportions;
 use crate::thetacommon::constants::MAX_LG_K;
 use crate::thetacommon::constants::MAX_THETA;
@@ -127,9 +128,7 @@ impl<'a, S> KeySketchView<'a, S> {
     }
 }
 
-impl<S: ThetaFamilySketchView> ThetaFamilySketchView for KeySketchView<'_, S> {
-    type Entry = KeyEntry;
-
+impl<S: ThetaKeySketchView> ThetaKeySketchView for KeySketchView<'_, S> {
     fn seed_hash(&self) -> u16 {
         self.sketch.seed_hash()
     }
@@ -146,12 +145,20 @@ impl<S: ThetaFamilySketchView> ThetaFamilySketchView for KeySketchView<'_, S> {
         self.sketch.is_ordered()
     }
 
-    fn iter(&self) -> impl Iterator<Item = KeyEntry> + '_ {
-        self.sketch.iter_hashes().map(|hash| KeyEntry { hash })
+    fn iter_hashes(&self) -> impl Iterator<Item = u64> + '_ {
+        self.sketch.iter_hashes()
     }
 
     fn num_retained(&self) -> usize {
         self.sketch.num_retained()
+    }
+}
+
+impl<S: ThetaKeySketchView> ThetaFamilySketchView for KeySketchView<'_, S> {
+    type Entry = KeyEntry;
+
+    fn iter(&self) -> impl Iterator<Item = KeyEntry> + '_ {
+        self.sketch.iter_hashes().map(|hash| KeyEntry { hash })
     }
 }
 
@@ -174,9 +181,7 @@ struct CompactKeySketchView {
     empty: bool,
 }
 
-impl ThetaFamilySketchView for CompactKeySketchView {
-    type Entry = KeyEntry;
-
+impl ThetaKeySketchView for CompactKeySketchView {
     fn seed_hash(&self) -> u16 {
         self.seed_hash
     }
@@ -193,12 +198,20 @@ impl ThetaFamilySketchView for CompactKeySketchView {
         self.ordered
     }
 
-    fn iter(&self) -> impl Iterator<Item = KeyEntry> + '_ {
-        self.entries.iter().copied()
+    fn iter_hashes(&self) -> impl Iterator<Item = u64> + '_ {
+        self.entries.iter().map(RetainedEntry::hash)
     }
 
     fn num_retained(&self) -> usize {
         self.entries.len()
+    }
+}
+
+impl ThetaFamilySketchView for CompactKeySketchView {
+    type Entry = KeyEntry;
+
+    fn iter(&self) -> impl Iterator<Item = KeyEntry> + '_ {
+        self.entries.iter().copied()
     }
 }
 
@@ -219,8 +232,8 @@ impl JaccardSimilarityOperator {
         sketch_b: &B,
     ) -> Result<JaccardSimilarity, Error>
     where
-        A: ThetaFamilySketchView,
-        B: ThetaFamilySketchView,
+        A: ThetaKeySketchView,
+        B: ThetaKeySketchView,
     {
         if sketch_a.is_empty() && sketch_b.is_empty() {
             return Ok(JaccardSimilarity::exact(1.0));

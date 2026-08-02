@@ -21,13 +21,13 @@ use crate::error::Error;
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::thetacommon::jaccard_similarity::JaccardSimilarity;
 use crate::thetacommon::jaccard_similarity::JaccardSimilarityOperator;
-use crate::tuple::TupleSketchView;
+use crate::tuple::TupleKeySketchView;
 
 /// Jaccard similarity operator for Tuple sketches.
 ///
 /// Only retained hash keys participate in the similarity calculation. Summary values are ignored,
-/// so the two inputs may use different summary types. The returned [`JaccardSimilarity`] contains
-/// the estimate and its 95.4% confidence interval.
+/// need not implement [`Clone`], and may have different types in the two inputs. The returned
+/// [`JaccardSimilarity`] contains the estimate and its 95.4% confidence interval.
 ///
 /// # Examples
 ///
@@ -69,14 +69,10 @@ impl TupleJaccardSimilarity {
     ///
     /// Returns an error if either non-empty sketch was built with a seed different from this
     /// operator's configured seed.
-    pub fn compute<SA, SB, A, B>(
-        &self,
-        sketch_a: &A,
-        sketch_b: &B,
-    ) -> Result<JaccardSimilarity, Error>
+    pub fn compute<A, B>(&self, sketch_a: &A, sketch_b: &B) -> Result<JaccardSimilarity, Error>
     where
-        A: TupleSketchView<SA>,
-        B: TupleSketchView<SB>,
+        A: TupleKeySketchView,
+        B: TupleKeySketchView,
     {
         self.op.compute(sketch_a, sketch_b)
     }

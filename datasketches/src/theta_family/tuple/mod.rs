@@ -58,6 +58,7 @@ pub use self::policy::SummaryPolicy;
 pub use self::policy::SummaryUpdatePolicy;
 pub use self::serialization::TupleSummaryValue;
 pub use self::sketch::CompactTupleSketch;
+pub use self::sketch::TupleKeySketchView;
 pub use self::sketch::TupleSketch;
 pub use self::sketch::TupleSketchBuilder;
 pub use self::sketch::TupleSketchView;

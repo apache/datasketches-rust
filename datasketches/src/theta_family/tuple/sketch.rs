@@ -35,6 +35,7 @@ use crate::error::Error;
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::hash::compute_seed_hash;
 use crate::thetacommon::ThetaFamilySketchView;
+use crate::thetacommon::ThetaKeySketchView;
 use crate::thetacommon::binomial_bounds;
 use crate::thetacommon::constants::DEFAULT_LG_K;
 use crate::thetacommon::constants::FLAGS_IS_COMPACT;
@@ -54,17 +55,29 @@ use crate::tuple::serialization::SKETCH_TYPE;
 use crate::tuple::serialization::SKETCH_TYPE_LEGACY;
 use crate::tuple::serialization::TupleSummaryValue;
 
-/// Read-only view for Tuple sketches.
+/// Read-only hash-key view for Tuple sketches.
+///
+/// This interface does not inspect summary values and therefore does not require them to implement
+/// [`Clone`].
+pub trait TupleKeySketchView: ThetaKeySketchView {}
+
+/// Read-only retained-entry view for Tuple sketches.
 ///
 /// This trait is the input abstraction for APIs (such as union and intersection) that accept
 /// either a mutable [`TupleSketch`] or an immutable [`CompactTupleSketch`]. `S` is the
 /// summary type retained by the sketch.
 ///
-/// It is blanket-implemented for every [`ThetaFamilySketchView`] whose associated entry type is
-/// [`TupleEntry<S>`], so custom sketch-like inputs can be supplied by implementing that trait.
-pub trait TupleSketchView<S>: ThetaFamilySketchView<Entry = TupleEntry<S>> {}
+/// It is blanket-implemented for every [`TupleKeySketchView`] that also implements
+/// [`ThetaFamilySketchView`] with [`TupleEntry<S>`] as its associated entry type.
+pub trait TupleSketchView<S>:
+    TupleKeySketchView + ThetaFamilySketchView<Entry = TupleEntry<S>>
+{
+}
 
-impl<S, T> TupleSketchView<S> for T where T: ThetaFamilySketchView<Entry = TupleEntry<S>> {}
+impl<S, T> TupleSketchView<S> for T where
+    T: TupleKeySketchView + ThetaFamilySketchView<Entry = TupleEntry<S>>
+{
+}
 
 /// Mutable Tuple sketch for building from input data.
 ///
@@ -248,13 +261,10 @@ where
     }
 }
 
-impl<P> ThetaFamilySketchView for TupleSketch<P>
+impl<P> ThetaKeySketchView for TupleSketch<P>
 where
     P: SummaryPolicy,
-    P::Summary: Clone,
 {
-    type Entry = TupleEntry<P::Summary>;
-
     fn seed_hash(&self) -> u16 {
         self.table.seed_hash()
     }
@@ -271,14 +281,28 @@ where
         false
     }
 
-    fn iter(&self) -> impl Iterator<Item = TupleEntry<P::Summary>> + '_ {
-        self.table
-            .iter()
-            .map(|(hash, summary)| TupleEntry::new(hash, summary.clone()))
+    fn iter_hashes(&self) -> impl Iterator<Item = u64> + '_ {
+        self.table.iter().map(|(hash, _)| hash)
     }
 
     fn num_retained(&self) -> usize {
         self.table.num_retained()
+    }
+}
+
+impl<P> TupleKeySketchView for TupleSketch<P> where P: SummaryPolicy {}
+
+impl<P> ThetaFamilySketchView for TupleSketch<P>
+where
+    P: SummaryPolicy,
+    P::Summary: Clone,
+{
+    type Entry = TupleEntry<P::Summary>;
+
+    fn iter(&self) -> impl Iterator<Item = TupleEntry<P::Summary>> + '_ {
+        self.table
+            .iter()
+            .map(|(hash, summary)| TupleEntry::new(hash, summary.clone()))
     }
 }
 
@@ -568,9 +592,7 @@ impl<S> CompactTupleSketch<S> {
     }
 }
 
-impl<S: Clone> ThetaFamilySketchView for CompactTupleSketch<S> {
-    type Entry = TupleEntry<S>;
-
+impl<S> ThetaKeySketchView for CompactTupleSketch<S> {
     fn seed_hash(&self) -> u16 {
         self.seed_hash
     }
@@ -587,12 +609,22 @@ impl<S: Clone> ThetaFamilySketchView for CompactTupleSketch<S> {
         self.ordered
     }
 
-    fn iter(&self) -> impl Iterator<Item = TupleEntry<S>> + '_ {
-        self.entries.iter().cloned()
+    fn iter_hashes(&self) -> impl Iterator<Item = u64> + '_ {
+        self.entries.iter().map(TupleEntry::hash)
     }
 
     fn num_retained(&self) -> usize {
         self.entries.len()
+    }
+}
+
+impl<S> TupleKeySketchView for CompactTupleSketch<S> {}
+
+impl<S: Clone> ThetaFamilySketchView for CompactTupleSketch<S> {
+    type Entry = TupleEntry<S>;
+
+    fn iter(&self) -> impl Iterator<Item = TupleEntry<S>> + '_ {
+        self.entries.iter().cloned()
     }
 }
 

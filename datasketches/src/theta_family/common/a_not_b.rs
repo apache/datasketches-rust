@@ -21,6 +21,7 @@ use crate::error::Error;
 use crate::hash::compute_seed_hash;
 use crate::thetacommon::RetainedEntry;
 use crate::thetacommon::ThetaFamilySketchView;
+use crate::thetacommon::ThetaKeySketchView;
 use crate::thetacommon::constants::MAX_THETA;
 use crate::thetacommon::hash_table::CompactSketchParts;
 
@@ -60,7 +61,7 @@ impl ANotBOperator {
     ) -> Result<CompactSketchParts<A::Entry>, Error>
     where
         A: ThetaFamilySketchView,
-        B: ThetaFamilySketchView,
+        B: ThetaKeySketchView,
     {
         // If A is empty the result is an (empty) copy of A. As with the union and intersection, an
         // empty input carries no keys, so its seed is not validated.
@@ -104,7 +105,7 @@ impl ANotBOperator {
             // Both inputs are sorted ascending by hash: merge-scan without a hash set. Only
             // B hashes below theta can exclude an A entry (A entries are all < theta), so
             // unexamined B entries at or above theta are harmless.
-            let mut b_hashes = b.iter().map(|entry| entry.hash()).peekable();
+            let mut b_hashes = b.iter_hashes().peekable();
             let mut entries = vec![];
             for entry in a.iter() {
                 let hash = entry.hash();
@@ -125,8 +126,7 @@ impl ANotBOperator {
             entries
         } else {
             let mut b_keys: HashSet<u64> = HashSet::with_capacity(b.num_retained());
-            for entry in b.iter() {
-                let hash = entry.hash();
+            for hash in b.iter_hashes() {
                 if hash < theta {
                     b_keys.insert(hash);
                 } else if b.is_ordered() {
