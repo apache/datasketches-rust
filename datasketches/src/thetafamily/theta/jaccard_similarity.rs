@@ -74,4 +74,20 @@ impl ThetaJaccardSimilarity {
     ) -> Result<JaccardSimilarity, Error> {
         self.op.compute(sketch_a, sketch_b)
     }
+
+    /// Returns whether the two sketches have exactly the same retained hashes and theta.
+    ///
+    /// This compares sketch state, not the original input populations.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if either non-empty sketch was built with a seed different from this
+    /// operator's configured seed.
+    pub fn exactly_equal<A: ThetaSketchView, B: ThetaSketchView>(
+        &self,
+        sketch_a: &A,
+        sketch_b: &B,
+    ) -> Result<bool, Error> {
+        self.op.exactly_equal(sketch_a, sketch_b)
+    }
 }

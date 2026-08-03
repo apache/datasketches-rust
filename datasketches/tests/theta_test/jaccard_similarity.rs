@@ -60,11 +60,28 @@ fn test_empty() {
     let sketch_a = ThetaSketchBuilder::default().build();
     let sketch_b = ThetaSketchBuilder::default().build();
 
-    let jaccard = ThetaJaccardSimilarity::default()
-        .compute(&sketch_a, &sketch_b)
-        .unwrap();
+    let operator = ThetaJaccardSimilarity::default();
+    let jaccard = operator.compute(&sketch_a, &sketch_b).unwrap();
 
     assert_jaccard_exact(jaccard, 1.0);
+    assert!(operator.exactly_equal(&sketch_a, &sketch_b).unwrap());
+}
+
+#[test]
+fn test_exactly_equal() {
+    let empty = ThetaSketchBuilder::default().build();
+    let sketch_a = sketch_with_range(0, 1000);
+    let sketch_b = sketch_with_range(0, 1000);
+    let sketch_c = sketch_with_range(1000, 1000);
+    let compact_a = sketch_a.compact(true);
+    let compact_b = sketch_b.compact(true);
+
+    let operator = ThetaJaccardSimilarity::default();
+    assert!(!operator.exactly_equal(&empty, &sketch_a).unwrap());
+    assert!(operator.exactly_equal(&sketch_a, &sketch_b).unwrap());
+    assert!(operator.exactly_equal(&sketch_a, &compact_b).unwrap());
+    assert!(operator.exactly_equal(&compact_a, &sketch_b).unwrap());
+    assert!(!operator.exactly_equal(&sketch_a, &sketch_c).unwrap());
 }
 
 #[test]
@@ -154,6 +171,11 @@ fn test_seed_mismatch() {
             .compute(&sketch_a, &sketch_b)
             .is_err()
     );
+    assert!(
+        ThetaJaccardSimilarity::default()
+            .exactly_equal(&sketch_a, &sketch_b)
+            .is_err()
+    );
 }
 
 #[test]
@@ -164,18 +186,25 @@ fn test_distinct_non_empty_sketches_with_no_retained_entries_are_uncertain() {
     let mut sketch_b = ThetaSketchBuilder::default()
         .sampling_probability(1e-12)
         .build();
+    let mut different_theta = ThetaSketchBuilder::default()
+        .sampling_probability(2e-12)
+        .build();
     sketch_a.update("apple");
     sketch_b.update("banana");
+    different_theta.update("orange");
 
     assert!(!sketch_a.is_empty());
     assert!(!sketch_b.is_empty());
     assert_eq!(sketch_a.num_retained(), 0);
     assert_eq!(sketch_b.num_retained(), 0);
+    assert_eq!(different_theta.num_retained(), 0);
 
-    let jaccard = ThetaJaccardSimilarity::default()
-        .compute(&sketch_a, &sketch_b)
-        .unwrap();
+    let operator = ThetaJaccardSimilarity::default();
+    let jaccard = operator.compute(&sketch_a, &sketch_b).unwrap();
     assert_eq!(jaccard.lower_bound(), 0.0);
     assert_eq!(jaccard.estimate(), 0.5);
     assert_eq!(jaccard.upper_bound(), 1.0);
+
+    assert!(operator.exactly_equal(&sketch_a, &sketch_b).unwrap());
+    assert!(!operator.exactly_equal(&sketch_a, &different_theta).unwrap());
 }

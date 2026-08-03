@@ -25,6 +25,7 @@ use crate::thetacommon::binomial_bounds;
 use crate::thetacommon::constants::MAX_LG_K;
 use crate::thetacommon::constants::MAX_THETA;
 use crate::thetacommon::constants::MIN_LG_K;
+use crate::thetacommon::hash_table::CompactSketchParts;
 use crate::thetacommon::intersection::IntersectionMergePolicy;
 use crate::thetacommon::intersection::IntersectionState;
 use crate::thetacommon::union::UnionMergePolicy;
@@ -242,44 +243,13 @@ impl JaccardSimilarityOperator {
             return Ok(JaccardSimilarity::exact(0.0));
         }
 
-        let seed_hash = compute_seed_hash(self.seed);
-        if seed_hash != sketch_a.seed_hash() {
-            return Err(Error::invalid_argument(format!(
-                "incompatible seed hash: expected {}, got {}",
-                seed_hash,
-                sketch_a.seed_hash(),
-            )));
-        }
-        if seed_hash != sketch_b.seed_hash() {
-            return Err(Error::invalid_argument(format!(
-                "incompatible seed hash: expected {}, got {}",
-                seed_hash,
-                sketch_b.seed_hash(),
-            )));
+        let union = self.compute_union(sketch_a, sketch_b)?;
+        if !union.entries.is_empty() && identical_sets(sketch_a, sketch_b, &union) {
+            return Ok(JaccardSimilarity::exact(1.0));
         }
 
         let sketch_a = KeySketchView::new(sketch_a);
         let sketch_b = KeySketchView::new(sketch_b);
-        let mut union = UnionState::new(
-            union_lg_k(sketch_a.num_retained(), sketch_b.num_retained()),
-            ResizeFactor::X8,
-            1.0,
-            self.seed,
-            NoopMergePolicy,
-        );
-        union.update(&sketch_a)?;
-        union.update(&sketch_b)?;
-        let union = union.to_compact_parts(false);
-
-        if !union.entries.is_empty()
-            && union.entries.len() == sketch_a.num_retained()
-            && union.entries.len() == sketch_b.num_retained()
-            && union.theta == sketch_a.theta64()
-            && union.theta == sketch_b.theta64()
-        {
-            return Ok(JaccardSimilarity::exact(1.0));
-        }
-
         let union = CompactKeySketchView {
             entries: union.entries,
             theta: union.theta,
@@ -299,6 +269,71 @@ impl JaccardSimilarityOperator {
             union.theta64(),
         )
     }
+
+    pub(crate) fn exactly_equal<A, B>(&self, sketch_a: &A, sketch_b: &B) -> Result<bool, Error>
+    where
+        A: ThetaKeySketchView,
+        B: ThetaKeySketchView,
+    {
+        if sketch_a.is_empty() && sketch_b.is_empty() {
+            return Ok(true);
+        }
+        if sketch_a.is_empty() || sketch_b.is_empty() {
+            return Ok(false);
+        }
+
+        let union = self.compute_union(sketch_a, sketch_b)?;
+        Ok(identical_sets(sketch_a, sketch_b, &union))
+    }
+
+    fn compute_union<A, B>(
+        &self,
+        sketch_a: &A,
+        sketch_b: &B,
+    ) -> Result<CompactSketchParts<KeyEntry>, Error>
+    where
+        A: ThetaKeySketchView,
+        B: ThetaKeySketchView,
+    {
+        self.validate_seed_hash(sketch_a)?;
+        self.validate_seed_hash(sketch_b)?;
+
+        let sketch_a = KeySketchView::new(sketch_a);
+        let sketch_b = KeySketchView::new(sketch_b);
+        let mut union = UnionState::new(
+            union_lg_k(sketch_a.num_retained(), sketch_b.num_retained()),
+            ResizeFactor::X8,
+            1.0,
+            self.seed,
+            NoopMergePolicy,
+        );
+        union.update(&sketch_a)?;
+        union.update(&sketch_b)?;
+        Ok(union.to_compact_parts(false))
+    }
+
+    fn validate_seed_hash<S: ThetaKeySketchView>(&self, sketch: &S) -> Result<(), Error> {
+        let expected = compute_seed_hash(self.seed);
+        if expected != sketch.seed_hash() {
+            return Err(Error::invalid_argument(format!(
+                "incompatible seed hash: expected {}, got {}",
+                expected,
+                sketch.seed_hash(),
+            )));
+        }
+        Ok(())
+    }
+}
+
+fn identical_sets<A, B>(sketch_a: &A, sketch_b: &B, union: &CompactSketchParts<KeyEntry>) -> bool
+where
+    A: ThetaKeySketchView,
+    B: ThetaKeySketchView,
+{
+    union.entries.len() == sketch_a.num_retained()
+        && union.entries.len() == sketch_b.num_retained()
+        && union.theta == sketch_a.theta64()
+        && union.theta == sketch_b.theta64()
 }
 
 fn sampling_adjuster(sampling_probability: f64) -> f64 {
