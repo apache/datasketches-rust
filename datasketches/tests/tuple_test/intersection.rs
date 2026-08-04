@@ -183,9 +183,9 @@ fn estimation_bounds_cover_the_true_intersection() {
 #[test]
 fn intersection_estimated_size_grows_with_updates() {
     let mut intersection = TupleIntersection::new(SumPolicy);
-    let empty_size = intersection.estimated_size();
+    assert_eq!(intersection.estimated_size(), 72);
 
     let sketch = tuple_sketch_with_range(0, 1000);
     intersection.update(&sketch).unwrap();
-    assert!(intersection.estimated_size() > empty_size);
+    assert_eq!(intersection.estimated_size(), 32840);
 }

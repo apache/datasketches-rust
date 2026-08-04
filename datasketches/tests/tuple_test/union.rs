@@ -155,9 +155,9 @@ fn estimation_bounds_cover_the_true_union() {
 #[test]
 fn union_estimated_size_grows_with_updates() {
     let mut union = default_union_builder().build();
-    let empty_size = union.estimated_size();
+    assert_eq!(union.estimated_size(), 2120);
 
     let sketch = tuple_sketch_with_range(0, 1000);
     union.update(&sketch).unwrap();
-    assert!(union.estimated_size() > empty_size);
+    assert_eq!(union.estimated_size(), 131144);
 }

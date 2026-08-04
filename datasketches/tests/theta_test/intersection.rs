@@ -321,9 +321,9 @@ fn test_seed_mismatch_non_empty_returns_error() {
 #[test]
 fn test_intersection_estimated_size() {
     let mut intersection = ThetaIntersection::default();
-    let empty_size = intersection.estimated_size();
+    assert_eq!(intersection.estimated_size(), 72);
 
     let sketch = sketch_with_range(0, 1000);
     intersection.update(&sketch).unwrap();
-    assert!(intersection.estimated_size() > empty_size);
+    assert_eq!(intersection.estimated_size(), 16456);
 }

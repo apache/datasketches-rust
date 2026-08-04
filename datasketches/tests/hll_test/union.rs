@@ -621,13 +621,12 @@ fn test_union_validation() {
 #[test]
 fn test_union_estimated_size() {
     let mut union = HllUnion::new(10);
-    let empty_size = union.estimated_size();
-    assert!(empty_size > 0);
+    assert_eq!(union.estimated_size(), 128);
 
     let mut sketch = HllSketch::new(10, HllType::Hll8);
     for i in 0..1000 {
         sketch.update(i);
     }
     union.update(&sketch);
-    assert!(union.estimated_size() > empty_size);
+    assert_eq!(union.estimated_size(), 1120);
 }

@@ -691,9 +691,9 @@ fn test_corner_case_union_states() {
 #[test]
 fn test_union_estimated_size() {
     let mut union = ThetaUnionBuilder::default().build();
-    let empty_size = union.estimated_size();
+    assert_eq!(union.estimated_size(), 1096);
 
     let sketch = sketch_with_range(12, 0, 1000);
     union.update(&sketch).unwrap();
-    assert!(union.estimated_size() > empty_size);
+    assert_eq!(union.estimated_size(), 65608);
 }
