@@ -18,6 +18,7 @@ All significant changes to this project will be documented in this file.
 * `FrequentItemsSketch` now supports borrowed-key updates via `update_ref` and `update_with_count_ref`, allowing sketches such as `FrequentItemsSketch<String>` to update from `&str` without allocating on existing-key hits. Frequency queries also accept borrowed key forms matching `Borrow<Q>`.
 * `FrequentItemsSketch` no longer requires item types to implement `Clone` for core updates, queries, and serialization. Custom `FrequentItemValue` implementations can now be non-`Clone`; APIs that return or merge owned items still require `Clone`.
 * `CountMinSketch` and `FrequentItemsSketch` now expose `estimated_size()`, reporting the in-memory footprint of the sketch in bytes, following the other sketches.
+* The stateful set operations `HllUnion`, `CpcUnion`, `ThetaUnion`, `ThetaIntersection`, `TupleUnion`, and `TupleIntersection` now expose `estimated_size()`, reporting the in-memory footprint of the operator's internal state in bytes.
 
 ### Bug fixes
 

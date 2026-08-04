@@ -617,3 +617,16 @@ fn test_union_validation() {
     union.reset();
     assert_eq!(union.lg_max_k(), 15, "lg_max_k should persist after reset");
 }
+
+#[test]
+fn test_union_estimated_size() {
+    let mut union = HllUnion::new(10);
+    assert_eq!(union.estimated_size(), 128);
+
+    let mut sketch = HllSketch::new(10, HllType::Hll8);
+    for i in 0..1000 {
+        sketch.update(i);
+    }
+    union.update(&sketch);
+    assert_eq!(union.estimated_size(), 1120);
+}

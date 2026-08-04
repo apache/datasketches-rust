@@ -179,3 +179,13 @@ fn estimation_bounds_cover_the_true_intersection() {
         "expected 25000 in [{lower}, {upper}]"
     );
 }
+
+#[test]
+fn intersection_estimated_size_grows_with_updates() {
+    let mut intersection = TupleIntersection::new(SumPolicy);
+    assert_eq!(intersection.estimated_size(), 72);
+
+    let sketch = tuple_sketch_with_range(0, 1000);
+    intersection.update(&sketch).unwrap();
+    assert_eq!(intersection.estimated_size(), 32840);
+}

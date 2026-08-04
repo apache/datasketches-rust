@@ -179,3 +179,16 @@ fn test_lg_k_too_small() {
 fn test_lg_k_too_large() {
     CpcSketch::new(27);
 }
+
+#[test]
+fn test_union_estimated_size() {
+    let mut union = CpcUnion::new(11);
+    assert_eq!(union.estimated_size(), 112);
+
+    let mut sketch = CpcSketch::new(11);
+    for i in 0..1000 {
+        sketch.update(i);
+    }
+    union.update(&sketch);
+    assert_eq!(union.estimated_size(), 16496);
+}

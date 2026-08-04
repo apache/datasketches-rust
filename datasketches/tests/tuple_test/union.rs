@@ -151,3 +151,13 @@ fn estimation_bounds_cover_the_true_union() {
         "expected 75000 in [{lower}, {upper}]"
     );
 }
+
+#[test]
+fn union_estimated_size_grows_with_updates() {
+    let mut union = default_union_builder().build();
+    assert_eq!(union.estimated_size(), 2120);
+
+    let sketch = tuple_sketch_with_range(0, 1000);
+    union.update(&sketch).unwrap();
+    assert_eq!(union.estimated_size(), 131144);
+}

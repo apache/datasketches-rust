@@ -152,6 +152,11 @@ where
         self.table.reset();
         self.union_theta = self.table.theta();
     }
+
+    /// Returns the estimated size of the heap allocations in bytes.
+    pub fn estimated_size(&self) -> usize {
+        self.table.estimated_size()
+    }
 }
 
 #[cfg(test)]
