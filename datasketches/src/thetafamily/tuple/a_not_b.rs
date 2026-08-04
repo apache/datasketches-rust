@@ -26,6 +26,7 @@ use crate::error::Error;
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::thetacommon::a_not_b::ANotBOperator;
 use crate::tuple::sketch::CompactTupleSketch;
+use crate::tuple::sketch::TupleKeySketchView;
 use crate::tuple::sketch::TupleSketchView;
 
 /// Set difference operator (`A and not B`) for Tuple sketches.
@@ -37,7 +38,10 @@ use crate::tuple::sketch::TupleSketchView;
 /// # Examples
 ///
 /// ```
-/// # use datasketches::tuple::{DefaultUpdatePolicy, TupleANotB, TupleSketchBuilder};
+/// use datasketches::tuple::DefaultUpdatePolicy;
+/// use datasketches::tuple::TupleANotB;
+/// use datasketches::tuple::TupleSketchBuilder;
+///
 /// let update_policy = DefaultUpdatePolicy::<u64>::default();
 /// let mut a = TupleSketchBuilder::new(update_policy).build();
 /// a.update("apple", 1);
@@ -72,8 +76,8 @@ impl TupleANotB {
     /// Computes `a and not b`.
     ///
     /// The result retains every key of `a` (below the combined theta) that is not present in `b`,
-    /// keeping the summaries from `a`. If `ordered` is true, the retained entries are sorted
-    /// ascending by hash.
+    /// keeping the summaries from `a`. Summary values in `b` are ignored and need not be
+    /// cloneable. If `ordered` is true, the retained entries are sorted ascending by hash.
     ///
     /// # Errors
     ///
@@ -87,7 +91,7 @@ impl TupleANotB {
     ) -> Result<CompactTupleSketch<S>, Error>
     where
         A: TupleSketchView<S>,
-        B: TupleSketchView<S>,
+        B: TupleKeySketchView,
     {
         let parts = self.op.compute(a, b, ordered)?;
         Ok(CompactTupleSketch::from_parts(

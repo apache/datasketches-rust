@@ -35,7 +35,9 @@ use crate::thetacommon::a_not_b::ANotBOperator;
 /// # Examples
 ///
 /// ```
-/// # use datasketches::theta::{ThetaANotB, ThetaSketchBuilder};
+/// use datasketches::theta::ThetaANotB;
+/// use datasketches::theta::ThetaSketchBuilder;
+///
 /// let mut a = ThetaSketchBuilder::default().build();
 /// a.update("apple");
 /// a.update("banana");

@@ -121,8 +121,8 @@ impl CpcUnion {
     /// # Examples
     ///
     /// ```
-    /// # use datasketches::cpc::CpcUnion;
-    /// # use datasketches::cpc::CpcSketch;
+    /// use datasketches::cpc::CpcSketch;
+    /// use datasketches::cpc::CpcUnion;
     ///
     /// let mut s1 = CpcSketch::new(12);
     /// s1.update(&"apple");

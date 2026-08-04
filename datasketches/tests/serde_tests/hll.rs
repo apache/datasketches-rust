@@ -18,7 +18,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use datasketches::hash_value::natural_extend;
+use datasketches::hash::value::natural_extend;
 use datasketches::hll::HllSketch;
 use datasketches::hll::HllType;
 

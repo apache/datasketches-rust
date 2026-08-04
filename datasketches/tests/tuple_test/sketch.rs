@@ -16,7 +16,7 @@
 // under the License.
 
 use datasketches::common::NumStdDev;
-use datasketches::hash_value;
+use datasketches::hash::value;
 use datasketches::tuple::CompactTupleSketch;
 use datasketches::tuple::DefaultUpdatePolicy;
 use datasketches::tuple::SummaryPolicy;
@@ -47,8 +47,8 @@ fn accepts_supported_hash_representations() {
     sketch.update("string", 1u64);
     sketch.update(42i64, 1u64);
     sketch.update(42u64, 1u64);
-    sketch.update(hash_value::canonical_float::from_f64(5.0), 1u64);
-    sketch.update(hash_value::canonical_float::from_f32(5.0), 1u64);
+    sketch.update(value::canonical_float::from_f64(5.0), 1u64);
+    sketch.update(value::canonical_float::from_f32(5.0), 1u64);
     sketch.update([1u8, 2, 3], 1u64);
 
     assert_eq!(sketch.estimate(), 4.0);

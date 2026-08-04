@@ -43,7 +43,11 @@ use crate::tuple::sketch::TupleSketchView;
 /// # Examples
 ///
 /// ```
-/// # use datasketches::tuple::{DefaultUnionPolicy, DefaultUpdatePolicy, TupleSketchBuilder, TupleUnionBuilder};
+/// use datasketches::tuple::DefaultUnionPolicy;
+/// use datasketches::tuple::DefaultUpdatePolicy;
+/// use datasketches::tuple::TupleSketchBuilder;
+/// use datasketches::tuple::TupleUnionBuilder;
+///
 /// let update_policy = DefaultUpdatePolicy::<u64>::default();
 /// let mut a = TupleSketchBuilder::new(update_policy).build();
 /// a.update("apple", 1);

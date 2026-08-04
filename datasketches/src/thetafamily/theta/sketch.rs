@@ -44,6 +44,7 @@ use crate::theta::serialization::V2_PREAMBLE_EMPTY;
 use crate::theta::serialization::V2_PREAMBLE_ESTIMATE;
 use crate::theta::serialization::V2_PREAMBLE_PRECISE;
 use crate::thetacommon::ThetaFamilySketchView;
+use crate::thetacommon::ThetaKeySketchView;
 use crate::thetacommon::binomial_bounds;
 use crate::thetacommon::constants::DEFAULT_LG_K;
 use crate::thetacommon::constants::FLAGS_IS_COMPACT;
@@ -62,9 +63,7 @@ pub trait ThetaSketchView: ThetaFamilySketchView<Entry = ThetaEntry> {}
 
 impl<T: ThetaFamilySketchView<Entry = ThetaEntry>> ThetaSketchView for T {}
 
-impl ThetaFamilySketchView for ThetaSketch {
-    type Entry = ThetaEntry;
-
+impl ThetaKeySketchView for ThetaSketch {
     fn seed_hash(&self) -> u16 {
         ThetaSketch::seed_hash(self)
     }
@@ -81,12 +80,20 @@ impl ThetaFamilySketchView for ThetaSketch {
         false
     }
 
-    fn iter(&self) -> impl Iterator<Item = ThetaEntry> + '_ {
-        self.table.iter_entries().copied()
+    fn iter_hashes(&self) -> impl Iterator<Item = u64> + '_ {
+        self.table.iter_entries().map(ThetaEntry::hash)
     }
 
     fn num_retained(&self) -> usize {
         ThetaSketch::num_retained(self)
+    }
+}
+
+impl ThetaFamilySketchView for ThetaSketch {
+    type Entry = ThetaEntry;
+
+    fn iter(&self) -> impl Iterator<Item = ThetaEntry> + '_ {
+        self.table.iter_entries().copied()
     }
 }
 
@@ -99,13 +106,13 @@ pub struct ThetaSketch {
 impl ThetaSketch {
     /// Update the sketch with a hashable value.
     ///
-    /// You may use [`hash_value`](crate::hash_value) wrappers when matching other datasketches
-    /// implementations require a specific value hashing strategy.
+    /// You may use [`hash::value`](crate::hash::value) wrappers when another DataSketches
+    /// implementation requires a specific value hashing strategy.
     ///
     /// # Examples
     ///
     /// ```
-    /// use datasketches::hash_value;
+    /// use datasketches::hash::value::raw_bytes;
     /// use datasketches::theta::ThetaSketchBuilder;
     ///
     /// let mut sketch = ThetaSketchBuilder::default().build();
@@ -113,7 +120,7 @@ impl ThetaSketch {
     /// assert!(sketch.estimate() >= 1.0);
     ///
     /// let mut sketch = ThetaSketchBuilder::default().build();
-    /// sketch.update(hash_value::raw_bytes::from_str("apple"));
+    /// sketch.update(raw_bytes::from_str("apple"));
     /// assert!(sketch.estimate() >= 1.0);
     /// ```
     pub fn update<T: Hash>(&mut self, value: T) {
@@ -125,9 +132,10 @@ impl ThetaSketch {
     /// # Examples
     ///
     /// ```
-    /// # use datasketches::theta::ThetaSketchBuilder;
-    /// # let mut sketch = ThetaSketchBuilder::default().build();
-    /// # sketch.update("apple");
+    /// use datasketches::theta::ThetaSketchBuilder;
+    ///
+    /// let mut sketch = ThetaSketchBuilder::default().build();
+    /// sketch.update("apple");
     /// assert!(sketch.estimate() >= 1.0);
     /// ```
     pub fn estimate(&self) -> f64 {
@@ -189,9 +197,10 @@ impl ThetaSketch {
     /// # Examples
     ///
     /// ```
-    /// # use datasketches::theta::ThetaSketchBuilder;
-    /// # let mut sketch = ThetaSketchBuilder::default().build();
-    /// # sketch.update("apple");
+    /// use datasketches::theta::ThetaSketchBuilder;
+    ///
+    /// let mut sketch = ThetaSketchBuilder::default().build();
+    /// sketch.update("apple");
     /// let mut iter = sketch.iter();
     /// assert!(iter.next().is_some());
     /// ```
@@ -206,7 +215,8 @@ impl ThetaSketch {
     /// # Examples
     ///
     /// ```
-    /// # use datasketches::theta::ThetaSketchBuilder;
+    /// use datasketches::theta::ThetaSketchBuilder;
+    ///
     /// let mut sketch = ThetaSketchBuilder::default().build();
     /// sketch.update("apple");
     /// let compact = sketch.compact(true);
@@ -864,9 +874,7 @@ impl CompactThetaSketch {
     }
 }
 
-impl ThetaFamilySketchView for CompactThetaSketch {
-    type Entry = ThetaEntry;
-
+impl ThetaKeySketchView for CompactThetaSketch {
     fn seed_hash(&self) -> u16 {
         CompactThetaSketch::seed_hash(self)
     }
@@ -883,12 +891,20 @@ impl ThetaFamilySketchView for CompactThetaSketch {
         CompactThetaSketch::is_ordered(self)
     }
 
-    fn iter(&self) -> impl Iterator<Item = ThetaEntry> + '_ {
-        self.entries.iter().copied().map(ThetaEntry::new)
+    fn iter_hashes(&self) -> impl Iterator<Item = u64> + '_ {
+        self.entries.iter().copied()
     }
 
     fn num_retained(&self) -> usize {
         CompactThetaSketch::num_retained(self)
+    }
+}
+
+impl ThetaFamilySketchView for CompactThetaSketch {
+    type Entry = ThetaEntry;
+
+    fn iter(&self) -> impl Iterator<Item = ThetaEntry> + '_ {
+        self.entries.iter().copied().map(ThetaEntry::new)
     }
 }
 
@@ -922,7 +938,8 @@ impl ThetaSketchBuilder {
     /// # Examples
     ///
     /// ```
-    /// # use datasketches::theta::ThetaSketchBuilder;
+    /// use datasketches::theta::ThetaSketchBuilder;
+    ///
     /// let sketch = ThetaSketchBuilder::default().lg_k(12).build();
     /// assert_eq!(sketch.lg_k(), 12);
     /// ```
@@ -956,7 +973,8 @@ impl ThetaSketchBuilder {
     /// # Examples
     ///
     /// ```
-    /// # use datasketches::theta::ThetaSketchBuilder;
+    /// use datasketches::theta::ThetaSketchBuilder;
+    ///
     /// ThetaSketchBuilder::default()
     ///     .sampling_probability(0.5)
     ///     .build();
@@ -975,7 +993,8 @@ impl ThetaSketchBuilder {
     /// # Examples
     ///
     /// ```
-    /// # use datasketches::theta::ThetaSketchBuilder;
+    /// use datasketches::theta::ThetaSketchBuilder;
+    ///
     /// ThetaSketchBuilder::default().seed(7).build();
     /// ```
     pub fn seed(mut self, seed: u64) -> Self {
@@ -988,7 +1007,8 @@ impl ThetaSketchBuilder {
     /// # Examples
     ///
     /// ```
-    /// # use datasketches::theta::ThetaSketchBuilder;
+    /// use datasketches::theta::ThetaSketchBuilder;
+    ///
     /// ThetaSketchBuilder::default().lg_k(10).build();
     /// ```
     pub fn build(self) -> ThetaSketch {

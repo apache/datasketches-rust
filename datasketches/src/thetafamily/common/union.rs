@@ -163,6 +163,7 @@ where
 mod tests {
     use super::*;
     use crate::hash::DEFAULT_UPDATE_SEED;
+    use crate::thetacommon::ThetaKeySketchView;
 
     #[derive(Clone, Debug, Eq, PartialEq)]
     struct TestEntry {
@@ -180,9 +181,7 @@ mod tests {
         entries: Vec<TestEntry>,
     }
 
-    impl ThetaFamilySketchView for TestSketch {
-        type Entry = TestEntry;
-
+    impl ThetaKeySketchView for TestSketch {
         fn seed_hash(&self) -> u16 {
             crate::hash::compute_seed_hash(DEFAULT_UPDATE_SEED)
         }
@@ -199,12 +198,20 @@ mod tests {
             false
         }
 
-        fn iter(&self) -> impl Iterator<Item = TestEntry> + '_ {
-            self.entries.iter().cloned()
+        fn iter_hashes(&self) -> impl Iterator<Item = u64> + '_ {
+            self.entries.iter().map(RetainedEntry::hash)
         }
 
         fn num_retained(&self) -> usize {
             self.entries.len()
+        }
+    }
+
+    impl ThetaFamilySketchView for TestSketch {
+        type Entry = TestEntry;
+
+        fn iter(&self) -> impl Iterator<Item = TestEntry> + '_ {
+            self.entries.iter().cloned()
         }
     }
 

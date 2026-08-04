@@ -33,7 +33,8 @@
 //! # Usage
 //!
 //! ```
-//! # use datasketches::theta::ThetaSketchBuilder;
+//! use datasketches::theta::ThetaSketchBuilder;
+//!
 //! let mut sketch = ThetaSketchBuilder::default().build();
 //! sketch.update("apple");
 //! assert!(sketch.estimate() >= 1.0);
@@ -43,6 +44,7 @@ mod a_not_b;
 mod bit_pack;
 mod hash_table;
 mod intersection;
+mod jaccard_similarity;
 mod serialization;
 mod sketch;
 mod union;
@@ -50,6 +52,7 @@ mod union;
 pub use self::a_not_b::ThetaANotB;
 pub use self::hash_table::ThetaEntry;
 pub use self::intersection::ThetaIntersection;
+pub use self::jaccard_similarity::ThetaJaccardSimilarity;
 pub use self::sketch::CompactThetaSketch;
 pub use self::sketch::ThetaSketch;
 pub use self::sketch::ThetaSketchBuilder;

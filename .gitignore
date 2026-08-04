@@ -36,3 +36,6 @@
 
 # Build artifacts
 **/target
+
+# Generated files
+*.sk

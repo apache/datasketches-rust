@@ -61,7 +61,8 @@ impl BloomFilter {
     /// # Examples
     ///
     /// ```
-    /// # use datasketches::bloom::BloomFilterBuilder;
+    /// use datasketches::bloom::BloomFilterBuilder;
+    ///
     /// let mut filter = BloomFilterBuilder::with_accuracy(100, 0.01).build();
     /// filter.insert("apple");
     ///
@@ -85,7 +86,8 @@ impl BloomFilter {
     /// # Examples
     ///
     /// ```
-    /// # use datasketches::bloom::BloomFilterBuilder;
+    /// use datasketches::bloom::BloomFilterBuilder;
+    ///
     /// let mut filter = BloomFilterBuilder::with_accuracy(100, 0.01).build();
     ///
     /// let was_present = filter.contains_and_insert(&"apple");
@@ -108,7 +110,8 @@ impl BloomFilter {
     /// # Examples
     ///
     /// ```
-    /// # use datasketches::bloom::BloomFilterBuilder;
+    /// use datasketches::bloom::BloomFilterBuilder;
+    ///
     /// let mut filter = BloomFilterBuilder::with_accuracy(100, 0.01).build();
     ///
     /// filter.insert("apple");
@@ -129,7 +132,8 @@ impl BloomFilter {
     /// # Examples
     ///
     /// ```
-    /// # use datasketches::bloom::BloomFilterBuilder;
+    /// use datasketches::bloom::BloomFilterBuilder;
+    ///
     /// let mut filter = BloomFilterBuilder::with_accuracy(100, 0.01).build();
     /// filter.insert("apple");
     /// assert!(!filter.is_empty());
@@ -156,7 +160,8 @@ impl BloomFilter {
     /// # Examples
     ///
     /// ```
-    /// # use datasketches::bloom::BloomFilterBuilder;
+    /// use datasketches::bloom::BloomFilterBuilder;
+    ///
     /// let mut f1 = BloomFilterBuilder::with_accuracy(100, 0.01)
     ///     .seed(123)
     ///     .build();
@@ -198,7 +203,8 @@ impl BloomFilter {
     /// # Examples
     ///
     /// ```
-    /// # use datasketches::bloom::BloomFilterBuilder;
+    /// use datasketches::bloom::BloomFilterBuilder;
+    ///
     /// let mut f1 = BloomFilterBuilder::with_accuracy(100, 0.01)
     ///     .seed(123)
     ///     .build();
@@ -238,7 +244,8 @@ impl BloomFilter {
     /// # Examples
     ///
     /// ```
-    /// # use datasketches::bloom::BloomFilterBuilder;
+    /// use datasketches::bloom::BloomFilterBuilder;
+    ///
     /// let mut filter = BloomFilterBuilder::with_accuracy(100, 0.01).build();
     /// filter.insert("apple");
     ///
@@ -324,7 +331,9 @@ impl BloomFilter {
     /// # Examples
     ///
     /// ```
-    /// # use datasketches::bloom::{BloomFilter, BloomFilterBuilder};
+    /// use datasketches::bloom::BloomFilter;
+    /// use datasketches::bloom::BloomFilterBuilder;
+    ///
     /// let mut filter = BloomFilterBuilder::with_accuracy(100, 0.01).build();
     /// filter.insert("test");
     ///
@@ -387,7 +396,9 @@ impl BloomFilter {
     /// # Examples
     ///
     /// ```
-    /// # use datasketches::bloom::{BloomFilter, BloomFilterBuilder};
+    /// use datasketches::bloom::BloomFilter;
+    /// use datasketches::bloom::BloomFilterBuilder;
+    ///
     /// let original = BloomFilterBuilder::with_accuracy(100, 0.01).build();
     /// let bytes = original.serialize();
     ///

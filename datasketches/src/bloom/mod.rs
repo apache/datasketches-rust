@@ -61,7 +61,8 @@
 //! Automatically calculates optimal size and hash functions:
 //!
 //! ```
-//! # use datasketches::bloom::BloomFilterBuilder;
+//! use datasketches::bloom::BloomFilterBuilder;
+//!
 //! let filter = BloomFilterBuilder::with_accuracy(
 //!     10_000, // Expected max items
 //!     0.01,   // Target false positive probability (1%)
@@ -75,7 +76,8 @@
 //! Specify requested bit count and hash functions (rounded up to a multiple of 64 bits):
 //!
 //! ```
-//! # use datasketches::bloom::BloomFilterBuilder;
+//! use datasketches::bloom::BloomFilterBuilder;
+//!
 //! let filter = BloomFilterBuilder::with_size(
 //!     95_851, // Number of bits
 //!     7,      // Number of hash functions
@@ -88,7 +90,8 @@
 //! Bloom filters support efficient set operations:
 //!
 //! ```
-//! # use datasketches::bloom::BloomFilterBuilder;
+//! use datasketches::bloom::BloomFilterBuilder;
+//!
 //! let mut filter1 = BloomFilterBuilder::with_accuracy(100, 0.01).build();
 //! let mut filter2 = BloomFilterBuilder::with_accuracy(100, 0.01).build();
 //!

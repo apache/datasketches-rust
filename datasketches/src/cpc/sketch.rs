@@ -171,14 +171,14 @@ impl CpcSketch {
 
     /// Update the sketch with a hashable value.
     ///
-    /// You may use [`hash_value`](crate::hash_value) wrappers when matching other datasketches
-    /// implementations require a specific value hashing strategy.
+    /// You may use [`hash::value`](crate::hash::value) wrappers when another DataSketches
+    /// implementation requires a specific value hashing strategy.
     ///
     /// # Examples
     ///
     /// ```rust
     /// use datasketches::cpc::CpcSketch;
-    /// use datasketches::hash_value;
+    /// use datasketches::hash::value::canonical_float;
     ///
     /// let mut sketch = CpcSketch::with_seed(11, 123);
     /// sketch.update(1);
@@ -186,9 +186,9 @@ impl CpcSketch {
     /// sketch.update(3);
     ///
     /// let mut sketch = CpcSketch::with_seed(11, 123);
-    /// sketch.update(hash_value::canonical_float::from_f64(1.5));
-    /// sketch.update(hash_value::canonical_float::from_f64(2.5));
-    /// sketch.update(hash_value::canonical_float::from_f64(3.5));
+    /// sketch.update(canonical_float::from_f64(1.5));
+    /// sketch.update(canonical_float::from_f64(2.5));
+    /// sketch.update(canonical_float::from_f64(3.5));
     /// ```
     pub fn update<T: Hash>(&mut self, value: T) {
         let mut hasher = MurmurHash3X64128::with_seed(self.seed);
