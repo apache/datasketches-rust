@@ -79,4 +79,23 @@ impl TupleJaccardSimilarity {
     {
         self.op.compute(sketch_a, sketch_b)
     }
+
+    /// Returns whether the two sketches are exactly equal.
+    ///
+    /// Two logically empty sketches compare equal, while exactly one logically empty sketch
+    /// compares unequal. Otherwise, the retained hash keys and theta must match. Summary values do
+    /// not participate in the comparison. This compares sketch state, not the original input
+    /// populations.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if both sketches are non-empty and either was built with a seed different
+    /// from this operator's configured seed.
+    pub fn exactly_equal<A, B>(&self, sketch_a: &A, sketch_b: &B) -> Result<bool, Error>
+    where
+        A: TupleKeySketchView,
+        B: TupleKeySketchView,
+    {
+        self.op.exactly_equal(sketch_a, sketch_b)
+    }
 }
