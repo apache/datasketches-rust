@@ -377,7 +377,11 @@ impl<T: CountMinValue> CountMinSketch<T> {
             .map_err(insufficient_data("seed_hash"))?;
         cursor.read_u8().map_err(insufficient_data("unused8"))?;
 
-        check_seed_hash(seed_hash, seed)?;
+        check_seed_hash(compute_seed_hash(seed), seed_hash, |expected, actual| {
+            Error::deserial(format!(
+                "incompatible seed hash: expected {expected}, got {actual}",
+            ))
+        })?;
 
         let entries = entries_for_config_checked(num_hashes, num_buckets)?;
         let mut sketch = Self::make(num_hashes, num_buckets, seed, entries);

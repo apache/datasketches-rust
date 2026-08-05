@@ -626,7 +626,12 @@ impl CpcSketch {
         let expected_preamble_ints =
             make_preamble_ints(num_coupons, has_hip, has_table, has_window);
         ensure_preamble_longs_in(&[expected_preamble_ints], preamble_ints)?;
-        check_seed_hash(seed_hash, seed)?;
+        check_seed_hash(compute_seed_hash(seed), seed_hash, |expected, actual| {
+            Error::new(
+                ErrorKind::InvalidData,
+                format!("incompatible seed hash: expected {expected}, got {actual}"),
+            )
+        })?;
         if !(MIN_LG_K..=MAX_LG_K).contains(&lg_k) {
             return Err(Error::invalid_argument(format!(
                 "lg_k out of range; got {}",
