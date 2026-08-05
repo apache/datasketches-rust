@@ -33,7 +33,7 @@ use crate::common::NumStdDev;
 use crate::common::ResizeFactor;
 use crate::error::Error;
 use crate::hash::DEFAULT_UPDATE_SEED;
-use crate::hash::compute_seed_hash;
+use crate::hash::check_seed_hash;
 use crate::thetacommon::ThetaFamilySketchView;
 use crate::thetacommon::ThetaKeySketchView;
 use crate::thetacommon::binomial_bounds;
@@ -561,12 +561,7 @@ impl<S> CompactTupleSketch<S> {
             ));
         }
 
-        let expected_seed_hash = compute_seed_hash(seed);
-        if seed_hash != expected_seed_hash {
-            return Err(Error::deserial(format!(
-                "incompatible seed hash: expected {expected_seed_hash}, got {seed_hash}",
-            )));
-        }
+        check_seed_hash(seed_hash, seed)?;
 
         let mut theta = MAX_THETA;
         let num_entries = if pre_longs == 1 {

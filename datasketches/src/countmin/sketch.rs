@@ -33,6 +33,7 @@ use crate::countmin::serialization::SERIAL_VERSION;
 use crate::error::Error;
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::hash::MurmurHash3X64128;
+use crate::hash::check_seed_hash;
 use crate::hash::compute_seed_hash;
 
 const MAX_TABLE_ENTRIES: usize = 1 << 30;
@@ -376,12 +377,7 @@ impl<T: CountMinValue> CountMinSketch<T> {
             .map_err(insufficient_data("seed_hash"))?;
         cursor.read_u8().map_err(insufficient_data("unused8"))?;
 
-        let expected_seed_hash = compute_seed_hash(seed);
-        if seed_hash != expected_seed_hash {
-            return Err(Error::deserial(format!(
-                "incompatible seed hash: expected {expected_seed_hash}, got {seed_hash}",
-            )));
-        }
+        check_seed_hash(seed_hash, seed)?;
 
         let entries = entries_for_config_checked(num_hashes, num_buckets)?;
         let mut sketch = Self::make(num_hashes, num_buckets, seed, entries);

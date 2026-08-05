@@ -92,6 +92,23 @@ pub(crate) fn compute_seed_hash(seed: u64) -> u16 {
     seed_hash
 }
 
+/// Checks that a serialized seed hash matches the hash computed from `seed`.
+#[cfg(any(
+    feature = "countmin",
+    feature = "cpc",
+    feature = "theta",
+    feature = "tuple",
+))]
+pub(crate) fn check_seed_hash(seed_hash: u16, seed: u64) -> Result<(), crate::error::Error> {
+    let expected_seed_hash = compute_seed_hash(seed);
+    if seed_hash != expected_seed_hash {
+        return Err(crate::error::Error::deserial(format!(
+            "incompatible seed hash: expected {expected_seed_hash}, got {seed_hash}",
+        )));
+    }
+    Ok(())
+}
+
 /// Reads an u64 from a byte slice in little-endian order.
 ///
 /// # Panics

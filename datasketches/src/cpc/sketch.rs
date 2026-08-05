@@ -48,6 +48,7 @@ use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::hash::MurmurHash3X64128;
+use crate::hash::check_seed_hash;
 use crate::hash::compute_seed_hash;
 
 /// A Compressed Probabilistic Counting sketch.
@@ -625,16 +626,7 @@ impl CpcSketch {
         let expected_preamble_ints =
             make_preamble_ints(num_coupons, has_hip, has_table, has_window);
         ensure_preamble_longs_in(&[expected_preamble_ints], preamble_ints)?;
-        if seed_hash != compute_seed_hash(seed) {
-            return Err(Error::new(
-                ErrorKind::InvalidData,
-                format!(
-                    "incompatible seed hash: expected {}, got {}",
-                    compute_seed_hash(seed),
-                    seed_hash
-                ),
-            ));
-        }
+        check_seed_hash(seed_hash, seed)?;
         if !(MIN_LG_K..=MAX_LG_K).contains(&lg_k) {
             return Err(Error::invalid_argument(format!(
                 "lg_k out of range; got {}",
