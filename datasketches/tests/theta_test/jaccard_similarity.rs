@@ -161,6 +161,7 @@ fn test_half_overlap_estimation_mode_custom_seed() {
 
 #[test]
 fn test_seed_mismatch() {
+    let empty = ThetaSketchBuilder::default().build();
     let mut sketch_a = ThetaSketchBuilder::default().build();
     sketch_a.update(1u64);
     let mut sketch_b = ThetaSketchBuilder::default().seed(123).build();
@@ -175,6 +176,11 @@ fn test_seed_mismatch() {
         ThetaJaccardSimilarity::default()
             .exactly_equal(&sketch_a, &sketch_b)
             .is_err()
+    );
+    assert!(
+        !ThetaJaccardSimilarity::default()
+            .exactly_equal(&empty, &sketch_b)
+            .unwrap()
     );
 }
 

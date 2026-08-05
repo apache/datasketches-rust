@@ -95,6 +95,7 @@ fn test_half_overlap_estimation_mode() {
 #[test]
 fn test_custom_seed_and_seed_mismatch() {
     let seed = 123;
+    let empty = default_tuple_sketch_builder().build();
     let mut sketch_a = TupleSketchBuilder::new(DefaultUpdatePolicy::<u64>::default())
         .seed(seed)
         .build();
@@ -119,6 +120,11 @@ fn test_custom_seed_and_seed_mismatch() {
         TupleJaccardSimilarity::default()
             .exactly_equal(&sketch_a, &sketch_b)
             .is_err()
+    );
+    assert!(
+        !TupleJaccardSimilarity::default()
+            .exactly_equal(&empty, &sketch_a)
+            .unwrap()
     );
 }
 
