@@ -325,6 +325,10 @@ impl JaccardSimilarityOperator {
     }
 }
 
+/// Returns whether both sketches have the same retained keys and theta.
+///
+/// When the union retains no additional keys and preserves both input theta values, each input
+/// contains exactly the same retained key set represented by the union.
 fn identical_sets<A, B>(sketch_a: &A, sketch_b: &B, union: &CompactSketchParts<KeyEntry>) -> bool
 where
     A: ThetaKeySketchView,
