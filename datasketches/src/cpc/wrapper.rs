@@ -78,10 +78,7 @@ impl CpcWrapper {
         let flags = cursor.read_u8().map_err(insufficient_data("flags"))?;
         let is_compressed = flags & (1 << FLAG_COMPRESSED) != 0;
         if !is_compressed {
-            return Err(Error::new(
-                ErrorKind::InvalidData,
-                "only compressed sketches are supported",
-            ));
+            return Err(Error::deserial("only compressed sketches are supported"));
         }
         let has_hip = flags & (1 << FLAG_HAS_HIP) != 0;
         let has_table = flags & (1 << FLAG_HAS_TABLE) != 0;
