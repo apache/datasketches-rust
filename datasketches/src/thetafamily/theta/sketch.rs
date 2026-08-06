@@ -30,6 +30,7 @@ use crate::codec::family::Family;
 use crate::common::NumStdDev;
 use crate::common::ResizeFactor;
 use crate::error::Error;
+use crate::error::ErrorKind;
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::hash::check_seed_hash;
 use crate::hash::compute_seed_hash;
@@ -678,11 +679,8 @@ impl CompactThetaSketch {
         check_seed_hash(
             compute_seed_hash(expected_seed),
             seed_hash,
-            |expected, actual| {
-                Error::deserial(format!(
-                    "incompatible seed hash: expected {expected}, got {actual}",
-                ))
-            },
+            "deserialized CompactThetaSketch v2",
+            ErrorKind::InvalidData,
         )?;
 
         match pre_longs {
@@ -756,11 +754,8 @@ impl CompactThetaSketch {
             check_seed_hash(
                 compute_seed_hash(expected_seed),
                 seed_hash,
-                |expected, actual| {
-                    Error::deserial(format!(
-                        "incompatible seed hash: expected {expected}, got {actual}",
-                    ))
-                },
+                "deserialized CompactThetaSketch v3",
+                ErrorKind::InvalidData,
             )?;
             if pre_longs == 1 {
                 num_entries = 1;
@@ -805,11 +800,8 @@ impl CompactThetaSketch {
             check_seed_hash(
                 compute_seed_hash(expected_seed),
                 seed_hash,
-                |expected, actual| {
-                    Error::deserial(format!(
-                        "incompatible seed hash: expected {expected}, got {actual}",
-                    ))
-                },
+                "deserialized CompactThetaSketch v4",
+                ErrorKind::InvalidData,
             )?;
         }
         let theta = if pre_longs > 1 {

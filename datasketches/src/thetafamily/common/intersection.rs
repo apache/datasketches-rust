@@ -17,6 +17,8 @@
 
 use crate::common::ResizeFactor;
 use crate::error::Error;
+use crate::error::ErrorKind;
+use crate::hash::check_seed_hash;
 use crate::thetacommon::RetainedEntry;
 use crate::thetacommon::ThetaFamilySketchView;
 use crate::thetacommon::constants::HASH_TABLE_REBUILD_THRESHOLD;
@@ -90,16 +92,15 @@ where
             return Ok(());
         }
 
-        if !sketch.is_empty() && sketch.seed_hash() != self.table.seed_hash() {
-            return Err(Error::invalid_argument(format!(
-                "incompatible seed hash: expected {}, got {}",
-                self.table.seed_hash(),
-                sketch.seed_hash()
-            )));
-        }
-
         if sketch.is_empty() {
             self.table.set_empty(true);
+        } else {
+            check_seed_hash(
+                self.table.seed_hash(),
+                sketch.seed_hash(),
+                "intersection update",
+                ErrorKind::InvalidArgument,
+            )?;
         }
 
         self.table.set_theta(if self.table.is_empty() {
@@ -257,6 +258,7 @@ where
 mod tests {
     use super::*;
     use crate::hash::DEFAULT_UPDATE_SEED;
+    use crate::hash::compute_seed_hash;
     use crate::thetacommon::ThetaKeySketchView;
 
     #[derive(Clone, Debug, Eq, PartialEq)]
@@ -288,7 +290,7 @@ mod tests {
 
     impl ThetaKeySketchView for TestSketch {
         fn seed_hash(&self) -> u16 {
-            crate::hash::compute_seed_hash(DEFAULT_UPDATE_SEED)
+            compute_seed_hash(DEFAULT_UPDATE_SEED)
         }
 
         fn theta64(&self) -> u64 {

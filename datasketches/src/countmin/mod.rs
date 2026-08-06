@@ -15,9 +15,9 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! Count-Min sketch implementation for frequency estimation.
+//! CountMin sketch implementation for frequency estimation.
 //!
-//! The Count-Min sketch provides approximate frequency counts for streaming data
+//! The CountMin sketch provides approximate frequency counts for streaming data
 //! with configurable relative error and confidence bounds.
 //!
 //! # Usage

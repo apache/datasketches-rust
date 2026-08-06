@@ -31,6 +31,7 @@ use crate::countmin::serialization::LONG_SIZE_BYTES;
 use crate::countmin::serialization::PREAMBLE_LONGS_SHORT;
 use crate::countmin::serialization::SERIAL_VERSION;
 use crate::error::Error;
+use crate::error::ErrorKind;
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::hash::MurmurHash3X64128;
 use crate::hash::check_seed_hash;
@@ -38,7 +39,7 @@ use crate::hash::compute_seed_hash;
 
 const MAX_TABLE_ENTRIES: usize = 1 << 30;
 
-/// Count-Min sketch for estimating item frequencies.
+/// CountMin sketch for estimating item frequencies.
 ///
 /// The sketch provides upper and lower bounds on estimated item frequencies
 /// with configurable relative error and confidence.
@@ -54,7 +55,7 @@ pub struct CountMinSketch<T: CountMinValue> {
 }
 
 impl<T: CountMinValue> CountMinSketch<T> {
-    /// Creates a new Count-Min sketch with the default seed.
+    /// Creates a new CountMin sketch with the default seed.
     ///
     /// # Panics
     ///
@@ -73,7 +74,7 @@ impl<T: CountMinValue> CountMinSketch<T> {
         Self::with_seed(num_hashes, num_buckets, DEFAULT_UPDATE_SEED)
     }
 
-    /// Creates a new Count-Min sketch with the provided seed.
+    /// Creates a new CountMin sketch with the provided seed.
     ///
     /// # Panics
     ///
@@ -265,7 +266,7 @@ impl<T: CountMinValue> CountMinSketch<T> {
         self.total_weight = self.total_weight + other.total_weight;
     }
 
-    /// Serializes this sketch into the DataSketches Count-Min format.
+    /// Serializes this sketch into the DataSketches CountMin format.
     ///
     /// # Examples
     ///
@@ -377,11 +378,12 @@ impl<T: CountMinValue> CountMinSketch<T> {
             .map_err(insufficient_data("seed_hash"))?;
         cursor.read_u8().map_err(insufficient_data("unused8"))?;
 
-        check_seed_hash(compute_seed_hash(seed), seed_hash, |expected, actual| {
-            Error::deserial(format!(
-                "incompatible seed hash: expected {expected}, got {actual}",
-            ))
-        })?;
+        check_seed_hash(
+            compute_seed_hash(seed),
+            seed_hash,
+            "deserialized CountMinSketch",
+            ErrorKind::InvalidData,
+        )?;
 
         let entries = entries_for_config_checked(num_hashes, num_buckets)?;
         let mut sketch = Self::make(num_hashes, num_buckets, seed, entries);

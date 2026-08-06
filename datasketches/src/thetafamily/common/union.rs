@@ -17,6 +17,8 @@
 
 use crate::common::ResizeFactor;
 use crate::error::Error;
+use crate::error::ErrorKind;
+use crate::hash::check_seed_hash;
 use crate::thetacommon::RetainedEntry;
 use crate::thetacommon::ThetaFamilySketchView;
 use crate::thetacommon::constants::MAX_THETA;
@@ -68,13 +70,12 @@ where
             return Ok(());
         }
 
-        if self.table.seed_hash() != sketch.seed_hash() {
-            return Err(Error::invalid_argument(format!(
-                "incompatible seed hash: expected {}, got {}",
-                self.table.seed_hash(),
-                sketch.seed_hash(),
-            )));
-        }
+        check_seed_hash(
+            self.table.seed_hash(),
+            sketch.seed_hash(),
+            "union update",
+            ErrorKind::InvalidArgument,
+        )?;
 
         self.table.set_empty(false);
         self.union_theta = self.union_theta.min(sketch.theta64());
@@ -163,6 +164,7 @@ where
 mod tests {
     use super::*;
     use crate::hash::DEFAULT_UPDATE_SEED;
+    use crate::hash::compute_seed_hash;
     use crate::thetacommon::ThetaKeySketchView;
 
     #[derive(Clone, Debug, Eq, PartialEq)]
@@ -183,7 +185,7 @@ mod tests {
 
     impl ThetaKeySketchView for TestSketch {
         fn seed_hash(&self) -> u16 {
-            crate::hash::compute_seed_hash(DEFAULT_UPDATE_SEED)
+            compute_seed_hash(DEFAULT_UPDATE_SEED)
         }
 
         fn theta64(&self) -> u64 {

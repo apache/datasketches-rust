@@ -17,6 +17,9 @@
 
 //! Hashing support for sketches.
 
+use crate::error::Error;
+use crate::error::ErrorKind;
+
 pub mod value;
 
 #[cfg(any(
@@ -99,13 +102,17 @@ pub(crate) fn compute_seed_hash(seed: u64) -> u16 {
     feature = "theta",
     feature = "tuple",
 ))]
-pub(crate) fn check_seed_hash<E>(
+pub(crate) fn check_seed_hash(
     expected: u16,
     actual: u16,
-    mismatch: impl FnOnce(u16, u16) -> E,
-) -> Result<(), E> {
+    name: &'static str,
+    kind: ErrorKind,
+) -> Result<(), Error> {
     if actual != expected {
-        return Err(mismatch(expected, actual));
+        return Err(Error::new(
+            kind,
+            format!("incompatible seed hash of {name}: expected {expected}, got {actual}"),
+        ));
     }
     Ok(())
 }

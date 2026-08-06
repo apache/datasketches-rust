@@ -32,6 +32,7 @@ use crate::codec::family::Family;
 use crate::common::NumStdDev;
 use crate::common::ResizeFactor;
 use crate::error::Error;
+use crate::error::ErrorKind;
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::hash::check_seed_hash;
 use crate::hash::compute_seed_hash;
@@ -562,11 +563,12 @@ impl<S> CompactTupleSketch<S> {
             ));
         }
 
-        check_seed_hash(compute_seed_hash(seed), seed_hash, |expected, actual| {
-            Error::deserial(format!(
-                "incompatible seed hash: expected {expected}, got {actual}",
-            ))
-        })?;
+        check_seed_hash(
+            compute_seed_hash(seed),
+            seed_hash,
+            "deserialized CompactTupleSketch",
+            ErrorKind::InvalidData,
+        )?;
 
         let mut theta = MAX_THETA;
         let num_entries = if pre_longs == 1 {
