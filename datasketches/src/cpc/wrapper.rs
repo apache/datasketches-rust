@@ -33,7 +33,6 @@ use crate::cpc::serialization::FLAG_HAS_WINDOW;
 use crate::cpc::serialization::SERIAL_VERSION;
 use crate::cpc::serialization::make_preamble_ints;
 use crate::error::Error;
-use crate::error::ErrorKind;
 
 /// A read-only view of a serialized image of a CpcSketch.
 #[derive(Debug, Clone)]
