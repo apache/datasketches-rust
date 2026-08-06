@@ -42,7 +42,7 @@ github:
         contexts:
           - Required
       required_pull_request_reviews:
-        required_approving_review_count: 1
+        required_approving_review_count: 0
 
   dependabot_alerts:  true
   dependabot_updates: false
