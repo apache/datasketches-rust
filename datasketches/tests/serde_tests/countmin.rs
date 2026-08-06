@@ -24,7 +24,7 @@ use googletest::prelude::contains_substring;
 use crate::serialization_test_data;
 
 // This test validates binary format compatibility (deserialize + byte round-trip) for
-// C++ Count-Min snapshots. It intentionally does not assert estimate equivalence against
+// C++ CountMin snapshots. It intentionally does not assert estimate equivalence against
 // original input keys because per-row hash seed derivation differs across implementations.
 fn assert_cpp_snapshot(
     filename: &str,

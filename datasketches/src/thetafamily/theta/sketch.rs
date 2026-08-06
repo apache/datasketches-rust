@@ -30,7 +30,9 @@ use crate::codec::family::Family;
 use crate::common::NumStdDev;
 use crate::common::ResizeFactor;
 use crate::error::Error;
+use crate::error::ErrorKind;
 use crate::hash::DEFAULT_UPDATE_SEED;
+use crate::hash::check_seed_hash;
 use crate::hash::compute_seed_hash;
 use crate::theta::bit_pack::BLOCK_WIDTH;
 use crate::theta::bit_pack::BitPacker;
@@ -674,12 +676,12 @@ impl CompactThetaSketch {
         let seed_hash = cursor
             .read_u16_le()
             .map_err(insufficient_data("seed_hash"))?;
-        let expected_seed_hash = compute_seed_hash(expected_seed);
-        if seed_hash != expected_seed_hash {
-            return Err(Error::deserial(format!(
-                "incompatible seed hash: expected {expected_seed_hash}, got {seed_hash}",
-            )));
-        }
+        check_seed_hash(
+            compute_seed_hash(expected_seed),
+            seed_hash,
+            "deserialized CompactThetaSketch v2",
+            ErrorKind::InvalidData,
+        )?;
 
         match pre_longs {
             V2_PREAMBLE_EMPTY => Ok(Self {
@@ -749,12 +751,12 @@ impl CompactThetaSketch {
         let num_entries;
         let mut entries = vec![];
         if !empty {
-            let expected_seed_hash = compute_seed_hash(expected_seed);
-            if seed_hash != expected_seed_hash {
-                return Err(Error::deserial(format!(
-                    "incompatible seed hash: expected {expected_seed_hash}, got {seed_hash}",
-                )));
-            }
+            check_seed_hash(
+                compute_seed_hash(expected_seed),
+                seed_hash,
+                "deserialized CompactThetaSketch v3",
+                ErrorKind::InvalidData,
+            )?;
             if pre_longs == 1 {
                 num_entries = 1;
             } else {
@@ -795,12 +797,12 @@ impl CompactThetaSketch {
             .map_err(insufficient_data("seed_hash"))?;
         let empty = (flags & FLAGS_IS_EMPTY) != 0;
         if !empty {
-            let expected_seed_hash = compute_seed_hash(expected_seed);
-            if seed_hash != expected_seed_hash {
-                return Err(Error::deserial(format!(
-                    "incompatible seed hash: expected {expected_seed_hash}, got {seed_hash}",
-                )));
-            }
+            check_seed_hash(
+                compute_seed_hash(expected_seed),
+                seed_hash,
+                "deserialized CompactThetaSketch v4",
+                ErrorKind::InvalidData,
+            )?;
         }
         let theta = if pre_longs > 1 {
             cursor

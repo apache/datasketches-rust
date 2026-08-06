@@ -36,12 +36,27 @@ mod murmurhash;
     feature = "theta",
     feature = "tuple",
 ))]
-pub(crate) use self::murmurhash::MurmurHash3X64128;
+pub(crate) use self::murmurhash::*;
 
 #[cfg(feature = "bloom")]
 mod xxhash;
 #[cfg(feature = "bloom")]
-pub(crate) use self::xxhash::XxHash64;
+pub(crate) use self::xxhash::*;
+
+#[cfg(any(
+    feature = "countmin",
+    feature = "cpc",
+    feature = "theta",
+    feature = "tuple",
+))]
+mod seed;
+#[cfg(any(
+    feature = "countmin",
+    feature = "cpc",
+    feature = "theta",
+    feature = "tuple",
+))]
+pub(crate) use self::seed::*;
 
 /// The seed 9001 used in the sketch update methods is a prime number that was chosen very early
 /// on in experimental testing.
@@ -66,31 +81,6 @@ pub(crate) use self::xxhash::XxHash64;
     feature = "tuple",
 ))]
 pub(crate) const DEFAULT_UPDATE_SEED: u64 = 9001;
-
-/// Computes and checks the 16-bit seed hash from the given long seed.
-///
-/// The computed seed hash must not be zero in order to maintain compatibility with older
-/// serialized versions that did not have this concept.
-///
-/// # Panics
-///
-/// Panics if the computed seed hash is zero.
-#[cfg(any(
-    feature = "countmin",
-    feature = "cpc",
-    feature = "theta",
-    feature = "tuple",
-))]
-pub(crate) fn compute_seed_hash(seed: u64) -> u16 {
-    use std::hash::Hasher;
-
-    let mut hasher = MurmurHash3X64128::with_seed(0);
-    hasher.write(&seed.to_le_bytes());
-    let (h1, _) = hasher.finish128();
-    let seed_hash = (h1 & 0xffff) as u16;
-    assert_ne!(seed_hash, 0);
-    seed_hash
-}
 
 /// Reads an u64 from a byte slice in little-endian order.
 ///

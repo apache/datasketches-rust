@@ -116,7 +116,7 @@ impl Error {
 
     pub(crate) fn invalid_preamble_longs(expected: &[u8], actual: u8) -> Self {
         Error::deserial(format!(
-            "invalid preamble longs: expected {expected:?}, got {actual}"
+            "invalid preamble longs: expected one of {expected:?}, got {actual}"
         ))
     }
 }

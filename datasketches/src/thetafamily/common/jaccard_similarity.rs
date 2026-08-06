@@ -17,6 +17,8 @@
 
 use crate::common::ResizeFactor;
 use crate::error::Error;
+use crate::error::ErrorKind;
+use crate::hash::check_seed_hash;
 use crate::hash::compute_seed_hash;
 use crate::thetacommon::RetainedEntry;
 use crate::thetacommon::ThetaFamilySketchView;
@@ -295,8 +297,9 @@ impl JaccardSimilarityOperator {
         A: ThetaKeySketchView,
         B: ThetaKeySketchView,
     {
-        self.validate_seed_hash(sketch_a)?;
-        self.validate_seed_hash(sketch_b)?;
+        let seed_hash = compute_seed_hash(self.seed);
+        check_seed_hash(seed_hash, sketch_a.seed_hash(), "A", ErrorKind::InvalidData)?;
+        check_seed_hash(seed_hash, sketch_b.seed_hash(), "B", ErrorKind::InvalidData)?;
 
         let sketch_a = KeySketchView::new(sketch_a);
         let sketch_b = KeySketchView::new(sketch_b);
@@ -310,18 +313,6 @@ impl JaccardSimilarityOperator {
         union.update(&sketch_a)?;
         union.update(&sketch_b)?;
         Ok(union.to_compact_parts(false))
-    }
-
-    fn validate_seed_hash<S: ThetaKeySketchView>(&self, sketch: &S) -> Result<(), Error> {
-        let expected = compute_seed_hash(self.seed);
-        if expected != sketch.seed_hash() {
-            return Err(Error::invalid_argument(format!(
-                "incompatible seed hash: expected {}, got {}",
-                expected,
-                sketch.seed_hash(),
-            )));
-        }
-        Ok(())
     }
 }
 

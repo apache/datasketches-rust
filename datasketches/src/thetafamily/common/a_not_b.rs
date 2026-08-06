@@ -18,6 +18,8 @@
 use std::collections::HashSet;
 
 use crate::error::Error;
+use crate::error::ErrorKind;
+use crate::hash::check_seed_hash;
 use crate::hash::compute_seed_hash;
 use crate::thetacommon::RetainedEntry;
 use crate::thetacommon::ThetaFamilySketchView;
@@ -70,13 +72,12 @@ impl ANotBOperator {
         }
 
         // A is non-empty, so its seed must be compatible.
-        if a.seed_hash() != self.seed_hash {
-            return Err(Error::invalid_argument(format!(
-                "incompatible seed hash for A: expected {}, got {}",
-                self.seed_hash,
-                a.seed_hash()
-            )));
-        }
+        check_seed_hash(
+            self.seed_hash,
+            a.seed_hash(),
+            "A",
+            ErrorKind::InvalidArgument,
+        )?;
 
         // An empty B subtracts nothing, so the result is simply a copy of A. This also covers the
         // "A is non-empty but has no retained keys" state: B's seed and theta must not influence
@@ -86,13 +87,12 @@ impl ANotBOperator {
         }
 
         // B is non-empty, so its seed must be compatible.
-        if b.seed_hash() != self.seed_hash {
-            return Err(Error::invalid_argument(format!(
-                "incompatible seed hash for B: expected {}, got {}",
-                self.seed_hash,
-                b.seed_hash()
-            )));
-        }
+        check_seed_hash(
+            self.seed_hash,
+            b.seed_hash(),
+            "B",
+            ErrorKind::InvalidArgument,
+        )?;
 
         let theta = a.theta64().min(b.theta64());
         // A is non-empty here; the result only becomes empty if everything is subtracted in exact
