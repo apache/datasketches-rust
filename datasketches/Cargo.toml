@@ -43,6 +43,7 @@ countmin = []
 cpc = []
 frequencies = []
 hll = []
+kll = []
 tdigest = []
 theta = []
 tuple = []
@@ -71,6 +72,11 @@ required-features = ["frequencies"]
 name = "hll_test"
 path = "tests/hll_test/main.rs"
 required-features = ["hll"]
+
+[[test]]
+name = "kll_test"
+path = "tests/kll_test/main.rs"
+required-features = ["kll"]
 
 [[test]]
 name = "tdigest_test"

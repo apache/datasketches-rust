@@ -41,6 +41,8 @@ pub mod cpc;
 pub mod frequencies;
 #[cfg(feature = "hll")]
 pub mod hll;
+#[cfg(feature = "kll")]
+pub mod kll;
 #[cfg(feature = "tdigest")]
 pub mod tdigest;
 #[cfg(any(feature = "theta", feature = "tuple"))]
