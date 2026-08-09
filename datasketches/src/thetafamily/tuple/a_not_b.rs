@@ -25,6 +25,7 @@
 use crate::error::Error;
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::thetacommon::a_not_b::ANotBOperator;
+use crate::tuple::hash_table::TupleEntry;
 use crate::tuple::sketch::CompactTupleSketch;
 use crate::tuple::sketch::TupleSketchView;
 
@@ -94,9 +95,14 @@ impl TupleANotB {
     {
         let a = a.into();
         let b = b.into();
-        let parts =
-            self.op
-                .compute(a.metadata(), a.entries(), b.metadata(), b.hashes(), ordered)?;
+        let parts = self.op.compute(
+            a.metadata(),
+            a.iter()
+                .map(|(hash, summary)| TupleEntry::new(hash, summary.clone())),
+            b.metadata(),
+            b.iter().map(|(hash, _)| hash),
+            ordered,
+        )?;
         Ok(CompactTupleSketch::from_parts(
             parts.entries,
             parts.theta,

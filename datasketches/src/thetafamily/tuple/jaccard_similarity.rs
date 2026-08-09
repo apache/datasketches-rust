@@ -19,8 +19,10 @@
 
 use crate::error::Error;
 use crate::hash::DEFAULT_UPDATE_SEED;
+use crate::thetacommon::SketchMetadata;
 use crate::thetacommon::jaccard_similarity::JaccardSimilarity;
 use crate::thetacommon::jaccard_similarity::JaccardSimilarityOperator;
+use crate::thetacommon::jaccard_similarity::JaccardSketch;
 use crate::tuple::TupleSketchView;
 
 /// Jaccard similarity operator for Tuple sketches.
@@ -48,6 +50,16 @@ use crate::tuple::TupleSketchView;
 #[derive(Clone, Copy, Debug)]
 pub struct TupleJaccardSimilarity {
     op: JaccardSimilarityOperator,
+}
+
+impl<S> JaccardSketch for TupleSketchView<'_, S> {
+    fn metadata(self) -> SketchMetadata {
+        TupleSketchView::metadata(self)
+    }
+
+    fn hashes(self) -> impl Iterator<Item = u64> {
+        self.iter().map(|(hash, _)| hash)
+    }
 }
 
 impl Default for TupleJaccardSimilarity {
@@ -81,14 +93,7 @@ impl TupleJaccardSimilarity {
         S: 'a,
         T: 'b,
     {
-        let sketch_a = sketch_a.into();
-        let sketch_b = sketch_b.into();
-        self.op.compute(
-            sketch_a.metadata(),
-            move || sketch_a.hashes(),
-            sketch_b.metadata(),
-            move || sketch_b.hashes(),
-        )
+        self.op.compute(sketch_a.into(), sketch_b.into())
     }
 
     /// Returns whether the two sketches are exactly equal.
@@ -111,13 +116,6 @@ impl TupleJaccardSimilarity {
         S: 'a,
         T: 'b,
     {
-        let sketch_a = sketch_a.into();
-        let sketch_b = sketch_b.into();
-        self.op.exactly_equal(
-            sketch_a.metadata(),
-            sketch_a.hashes(),
-            sketch_b.metadata(),
-            sketch_b.hashes(),
-        )
+        self.op.exactly_equal(sketch_a.into(), sketch_b.into())
     }
 }

@@ -75,19 +75,15 @@ use crate::thetacommon::hash_table::SketchHashTableIter;
 /// assert_eq!(view.num_retained(), 1);
 /// ```
 #[derive(Clone, Copy, Debug)]
-pub struct ThetaSketchView<'a> {
-    inner: ThetaSketchViewInner<'a>,
-}
+pub struct ThetaSketchView<'a>(ThetaSketchViewState<'a>);
 
 #[derive(Clone, Copy, Debug)]
-enum ThetaSketchViewInner<'a> {
+enum ThetaSketchViewState<'a> {
     Mutable(&'a ThetaSketch),
     Compact(&'a CompactThetaSketch),
 }
 
-struct ThetaSketchIter<'a>(ThetaSketchIterState<'a>);
-
-enum ThetaSketchIterState<'a> {
+enum ThetaSketchIter<'a> {
     Mutable(SketchHashTableIter<'a, ThetaEntry>),
     Compact(slice::Iter<'a, u64>),
 }
@@ -96,111 +92,93 @@ impl Iterator for ThetaSketchIter<'_> {
     type Item = ThetaEntry;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match &mut self.0 {
-            ThetaSketchIterState::Mutable(iter) => iter.next().copied(),
-            ThetaSketchIterState::Compact(iter) => iter.next().map(|&hash| ThetaEntry::new(hash)),
+        match self {
+            Self::Mutable(iter) => iter.next().copied(),
+            Self::Compact(iter) => iter.next().map(|&hash| ThetaEntry::new(hash)),
         }
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        match &self.0 {
-            ThetaSketchIterState::Mutable(iter) => iter.size_hint(),
-            ThetaSketchIterState::Compact(iter) => iter.size_hint(),
+        match self {
+            Self::Mutable(iter) => iter.size_hint(),
+            Self::Compact(iter) => iter.size_hint(),
         }
     }
 }
 
 impl<'a> ThetaSketchView<'a> {
-    fn into_iter(self) -> ThetaSketchIter<'a> {
-        match self.inner {
-            ThetaSketchViewInner::Mutable(sketch) => {
-                ThetaSketchIter(ThetaSketchIterState::Mutable(sketch.table.iter_entries()))
-            }
-            ThetaSketchViewInner::Compact(sketch) => {
-                ThetaSketchIter(ThetaSketchIterState::Compact(sketch.entries.iter()))
-            }
-        }
-    }
-
     /// Returns the 16-bit seed hash.
     pub fn seed_hash(&self) -> u16 {
-        match self.inner {
-            ThetaSketchViewInner::Mutable(sketch) => sketch.seed_hash(),
-            ThetaSketchViewInner::Compact(sketch) => sketch.seed_hash(),
+        match self.0 {
+            ThetaSketchViewState::Mutable(sketch) => sketch.seed_hash(),
+            ThetaSketchViewState::Compact(sketch) => sketch.seed_hash(),
         }
     }
 
     /// Returns theta as a `u64` threshold.
     pub fn theta64(&self) -> u64 {
-        match self.inner {
-            ThetaSketchViewInner::Mutable(sketch) => sketch.theta64(),
-            ThetaSketchViewInner::Compact(sketch) => sketch.theta64(),
+        match self.0 {
+            ThetaSketchViewState::Mutable(sketch) => sketch.theta64(),
+            ThetaSketchViewState::Compact(sketch) => sketch.theta64(),
         }
     }
 
     /// Returns whether the viewed sketch has not received any updates.
     pub fn is_empty(&self) -> bool {
-        match self.inner {
-            ThetaSketchViewInner::Mutable(sketch) => sketch.is_empty(),
-            ThetaSketchViewInner::Compact(sketch) => sketch.is_empty(),
+        match self.0 {
+            ThetaSketchViewState::Mutable(sketch) => sketch.is_empty(),
+            ThetaSketchViewState::Compact(sketch) => sketch.is_empty(),
         }
     }
 
     /// Returns whether retained entries are ordered by ascending hash.
     pub fn is_ordered(&self) -> bool {
-        match self.inner {
-            ThetaSketchViewInner::Mutable(_) => false,
-            ThetaSketchViewInner::Compact(sketch) => sketch.is_ordered(),
+        match self.0 {
+            ThetaSketchViewState::Mutable(_) => false,
+            ThetaSketchViewState::Compact(sketch) => sketch.is_ordered(),
         }
     }
 
     /// Returns an iterator over retained entries.
-    pub fn iter(&self) -> impl Iterator<Item = ThetaEntry> + 'a {
-        (*self).into_iter()
+    pub fn iter(self) -> impl Iterator<Item = ThetaEntry> + 'a {
+        match self.0 {
+            ThetaSketchViewState::Mutable(sketch) => {
+                ThetaSketchIter::Mutable(sketch.table.iter_entries())
+            }
+            ThetaSketchViewState::Compact(sketch) => {
+                ThetaSketchIter::Compact(sketch.entries.iter())
+            }
+        }
     }
 
     /// Returns the number of retained entries.
     pub fn num_retained(&self) -> usize {
-        match self.inner {
-            ThetaSketchViewInner::Mutable(sketch) => sketch.num_retained(),
-            ThetaSketchViewInner::Compact(sketch) => sketch.num_retained(),
+        match self.0 {
+            ThetaSketchViewState::Mutable(sketch) => sketch.num_retained(),
+            ThetaSketchViewState::Compact(sketch) => sketch.num_retained(),
         }
     }
-}
 
-impl<'a> ThetaSketchView<'a> {
     pub(crate) fn metadata(self) -> SketchMetadata {
-        SketchMetadata::new(
-            self.seed_hash(),
-            self.theta64(),
-            self.is_empty(),
-            self.is_ordered(),
-            self.num_retained(),
-        )
-    }
-
-    pub(crate) fn entries(self) -> impl Iterator<Item = ThetaEntry> + 'a {
-        self.into_iter()
-    }
-
-    pub(crate) fn hashes(self) -> impl Iterator<Item = u64> + 'a {
-        self.into_iter().map(|entry| entry.hash())
+        SketchMetadata {
+            seed_hash: self.seed_hash(),
+            theta: self.theta64(),
+            empty: self.is_empty(),
+            ordered: self.is_ordered(),
+            num_retained: self.num_retained(),
+        }
     }
 }
 
 impl<'a> From<&'a ThetaSketch> for ThetaSketchView<'a> {
     fn from(sketch: &'a ThetaSketch) -> Self {
-        Self {
-            inner: ThetaSketchViewInner::Mutable(sketch),
-        }
+        Self(ThetaSketchViewState::Mutable(sketch))
     }
 }
 
 impl<'a> From<&'a CompactThetaSketch> for ThetaSketchView<'a> {
     fn from(sketch: &'a CompactThetaSketch) -> Self {
-        Self {
-            inner: ThetaSketchViewInner::Compact(sketch),
-        }
+        Self(ThetaSketchViewState::Compact(sketch))
     }
 }
 

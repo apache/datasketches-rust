@@ -131,6 +131,12 @@ impl<E: RetainedEntry> IntersectionMergePolicy<E> for NoopMergePolicy {
     fn merge(&self, _existing: &mut E, _incoming: E) {}
 }
 
+pub(crate) trait JaccardSketch: Copy {
+    fn metadata(self) -> SketchMetadata;
+
+    fn hashes(self) -> impl Iterator<Item = u64>;
+}
+
 /// Configured Jaccard operator shared by Theta and Tuple public wrappers.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct JaccardSimilarityOperator {
@@ -142,19 +148,13 @@ impl JaccardSimilarityOperator {
         Self { seed }
     }
 
-    pub(crate) fn compute<A, B, IA, IB>(
-        &self,
-        metadata_a: SketchMetadata,
-        hashes_a: A,
-        metadata_b: SketchMetadata,
-        hashes_b: B,
-    ) -> Result<JaccardSimilarity, Error>
+    pub(crate) fn compute<A, B>(&self, sketch_a: A, sketch_b: B) -> Result<JaccardSimilarity, Error>
     where
-        A: Fn() -> IA,
-        B: Fn() -> IB,
-        IA: Iterator<Item = u64>,
-        IB: Iterator<Item = u64>,
+        A: JaccardSketch,
+        B: JaccardSketch,
     {
+        let metadata_a = sketch_a.metadata();
+        let metadata_b = sketch_b.metadata();
         if metadata_a.empty && metadata_b.empty {
             return Ok(JaccardSimilarity::exact(1.0));
         }
@@ -164,21 +164,21 @@ impl JaccardSimilarityOperator {
 
         let sketch_a_state = (metadata_a.num_retained, metadata_a.theta);
         let sketch_b_state = (metadata_b.num_retained, metadata_b.theta);
-        let union = self.compute_union(metadata_a, hashes_a(), metadata_b, hashes_b())?;
+        let union = self.compute_union(sketch_a, sketch_b)?;
         if !union.entries.is_empty() && identical_sets(sketch_a_state, sketch_b_state, &union) {
             return Ok(JaccardSimilarity::exact(1.0));
         }
 
         let mut intersection = IntersectionState::new(self.seed, NoopMergePolicy);
-        intersection.update(metadata_a, hashes_a().map(|hash| KeyEntry { hash }))?;
-        intersection.update(metadata_b, hashes_b().map(|hash| KeyEntry { hash }))?;
-        let union_metadata = SketchMetadata::new(
-            union.seed_hash,
-            union.theta,
-            union.empty,
-            union.ordered,
-            union.entries.len(),
-        );
+        intersection.update(metadata_a, sketch_a.hashes().map(|hash| KeyEntry { hash }))?;
+        intersection.update(metadata_b, sketch_b.hashes().map(|hash| KeyEntry { hash }))?;
+        let union_metadata = SketchMetadata {
+            seed_hash: union.seed_hash,
+            theta: union.theta,
+            empty: union.empty,
+            ordered: union.ordered,
+            num_retained: union.entries.len(),
+        };
         intersection.update(union_metadata, union.entries.iter().copied())?;
         let intersection = intersection.result(false);
 
@@ -189,17 +189,13 @@ impl JaccardSimilarityOperator {
         )
     }
 
-    pub(crate) fn exactly_equal<A, B>(
-        &self,
-        metadata_a: SketchMetadata,
-        hashes_a: A,
-        metadata_b: SketchMetadata,
-        hashes_b: B,
-    ) -> Result<bool, Error>
+    pub(crate) fn exactly_equal<A, B>(&self, sketch_a: A, sketch_b: B) -> Result<bool, Error>
     where
-        A: Iterator<Item = u64>,
-        B: Iterator<Item = u64>,
+        A: JaccardSketch,
+        B: JaccardSketch,
     {
+        let metadata_a = sketch_a.metadata();
+        let metadata_b = sketch_b.metadata();
         if metadata_a.empty && metadata_b.empty {
             return Ok(true);
         }
@@ -209,21 +205,21 @@ impl JaccardSimilarityOperator {
 
         let sketch_a_state = (metadata_a.num_retained, metadata_a.theta);
         let sketch_b_state = (metadata_b.num_retained, metadata_b.theta);
-        let union = self.compute_union(metadata_a, hashes_a, metadata_b, hashes_b)?;
+        let union = self.compute_union(sketch_a, sketch_b)?;
         Ok(identical_sets(sketch_a_state, sketch_b_state, &union))
     }
 
     fn compute_union<A, B>(
         &self,
-        metadata_a: SketchMetadata,
-        hashes_a: A,
-        metadata_b: SketchMetadata,
-        hashes_b: B,
+        sketch_a: A,
+        sketch_b: B,
     ) -> Result<CompactSketchParts<KeyEntry>, Error>
     where
-        A: Iterator<Item = u64>,
-        B: Iterator<Item = u64>,
+        A: JaccardSketch,
+        B: JaccardSketch,
     {
+        let metadata_a = sketch_a.metadata();
+        let metadata_b = sketch_b.metadata();
         let seed_hash = compute_seed_hash(self.seed);
         check_seed_hash(seed_hash, metadata_a.seed_hash, "A", ErrorKind::InvalidData)?;
         check_seed_hash(seed_hash, metadata_b.seed_hash, "B", ErrorKind::InvalidData)?;
@@ -235,8 +231,8 @@ impl JaccardSimilarityOperator {
             self.seed,
             NoopMergePolicy,
         );
-        union.update(metadata_a, hashes_a.map(|hash| KeyEntry { hash }))?;
-        union.update(metadata_b, hashes_b.map(|hash| KeyEntry { hash }))?;
+        union.update(metadata_a, sketch_a.hashes().map(|hash| KeyEntry { hash }))?;
+        union.update(metadata_b, sketch_b.hashes().map(|hash| KeyEntry { hash }))?;
         Ok(union.to_compact_parts(false))
     }
 }

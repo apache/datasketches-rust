@@ -75,19 +75,15 @@ use crate::tuple::serialization::TupleSummaryValue;
 /// assert_eq!(view.iter().next().unwrap().1, &1);
 /// ```
 #[derive(Debug)]
-pub struct TupleSketchView<'a, S> {
-    inner: TupleSketchViewInner<'a, S>,
-}
+pub struct TupleSketchView<'a, S>(TupleSketchViewState<'a, S>);
 
 #[derive(Debug)]
-enum TupleSketchViewInner<'a, S> {
+enum TupleSketchViewState<'a, S> {
     Mutable(&'a TupleHashTable<S>),
     Compact(&'a CompactTupleSketch<S>),
 }
 
-struct TupleSketchIter<'a, S>(TupleSketchIterState<'a, S>);
-
-enum TupleSketchIterState<'a, S> {
+enum TupleSketchIter<'a, S> {
     Mutable(SketchHashTableIter<'a, TupleEntry<S>>),
     Compact(slice::Iter<'a, TupleEntry<S>>),
 }
@@ -96,20 +92,16 @@ impl<'a, S> Iterator for TupleSketchIter<'a, S> {
     type Item = (u64, &'a S);
 
     fn next(&mut self) -> Option<Self::Item> {
-        match &mut self.0 {
-            TupleSketchIterState::Mutable(iter) => {
-                iter.next().map(|entry| (entry.hash(), entry.summary()))
-            }
-            TupleSketchIterState::Compact(iter) => {
-                iter.next().map(|entry| (entry.hash(), entry.summary()))
-            }
+        match self {
+            Self::Mutable(iter) => iter.next().map(|entry| (entry.hash(), entry.summary())),
+            Self::Compact(iter) => iter.next().map(|entry| (entry.hash(), entry.summary())),
         }
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        match &self.0 {
-            TupleSketchIterState::Mutable(iter) => iter.size_hint(),
-            TupleSketchIterState::Compact(iter) => iter.size_hint(),
+        match self {
+            Self::Mutable(iter) => iter.size_hint(),
+            Self::Compact(iter) => iter.size_hint(),
         }
     }
 }
@@ -122,101 +114,73 @@ impl<S> Clone for TupleSketchView<'_, S> {
 
 impl<S> Copy for TupleSketchView<'_, S> {}
 
-impl<S> Clone for TupleSketchViewInner<'_, S> {
+impl<S> Clone for TupleSketchViewState<'_, S> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<S> Copy for TupleSketchViewInner<'_, S> {}
+impl<S> Copy for TupleSketchViewState<'_, S> {}
 
 impl<'a, S> TupleSketchView<'a, S> {
-    fn into_iter(self) -> TupleSketchIter<'a, S> {
-        match self.inner {
-            TupleSketchViewInner::Mutable(table) => {
-                TupleSketchIter(TupleSketchIterState::Mutable(table.iter_entries()))
-            }
-            TupleSketchViewInner::Compact(sketch) => {
-                TupleSketchIter(TupleSketchIterState::Compact(sketch.entries.iter()))
-            }
-        }
-    }
-
     /// Returns the 16-bit seed hash.
     pub fn seed_hash(&self) -> u16 {
-        match self.inner {
-            TupleSketchViewInner::Mutable(table) => table.seed_hash(),
-            TupleSketchViewInner::Compact(sketch) => sketch.seed_hash(),
+        match self.0 {
+            TupleSketchViewState::Mutable(table) => table.seed_hash(),
+            TupleSketchViewState::Compact(sketch) => sketch.seed_hash(),
         }
     }
 
     /// Returns theta as a `u64` threshold.
     pub fn theta64(&self) -> u64 {
-        match self.inner {
-            TupleSketchViewInner::Mutable(table) => table.theta(),
-            TupleSketchViewInner::Compact(sketch) => sketch.theta64(),
+        match self.0 {
+            TupleSketchViewState::Mutable(table) => table.theta(),
+            TupleSketchViewState::Compact(sketch) => sketch.theta64(),
         }
     }
 
     /// Returns whether the viewed sketch has not received any updates.
     pub fn is_empty(&self) -> bool {
-        match self.inner {
-            TupleSketchViewInner::Mutable(table) => table.is_empty(),
-            TupleSketchViewInner::Compact(sketch) => sketch.is_empty(),
+        match self.0 {
+            TupleSketchViewState::Mutable(table) => table.is_empty(),
+            TupleSketchViewState::Compact(sketch) => sketch.is_empty(),
         }
     }
 
     /// Returns whether retained entries are ordered by ascending hash.
     pub fn is_ordered(&self) -> bool {
-        match self.inner {
-            TupleSketchViewInner::Mutable(_) => false,
-            TupleSketchViewInner::Compact(sketch) => sketch.is_ordered(),
+        match self.0 {
+            TupleSketchViewState::Mutable(_) => false,
+            TupleSketchViewState::Compact(sketch) => sketch.is_ordered(),
         }
     }
 
     /// Returns an iterator over retained hashes and borrowed summaries.
-    pub fn iter(&self) -> impl Iterator<Item = (u64, &'a S)> + 'a {
-        (*self).into_iter()
-    }
-
-    /// Returns an iterator over retained hash keys.
-    pub fn iter_hashes(&self) -> impl Iterator<Item = u64> + 'a {
-        self.iter().map(|(hash, _)| hash)
+    pub fn iter(self) -> impl Iterator<Item = (u64, &'a S)> + 'a {
+        match self.0 {
+            TupleSketchViewState::Mutable(table) => TupleSketchIter::Mutable(table.iter_entries()),
+            TupleSketchViewState::Compact(sketch) => {
+                TupleSketchIter::Compact(sketch.entries.iter())
+            }
+        }
     }
 
     /// Returns the number of retained entries.
     pub fn num_retained(&self) -> usize {
-        match self.inner {
-            TupleSketchViewInner::Mutable(table) => table.num_retained(),
-            TupleSketchViewInner::Compact(sketch) => sketch.num_retained(),
+        match self.0 {
+            TupleSketchViewState::Mutable(table) => table.num_retained(),
+            TupleSketchViewState::Compact(sketch) => sketch.num_retained(),
         }
     }
-}
 
-impl<'a, S> TupleSketchView<'a, S> {
     pub(crate) fn metadata(self) -> SketchMetadata {
-        SketchMetadata::new(
-            self.seed_hash(),
-            self.theta64(),
-            self.is_empty(),
-            self.is_ordered(),
-            self.num_retained(),
-        )
-    }
-
-    pub(crate) fn entries(self) -> impl Iterator<Item = TupleEntry<S>> + 'a
-    where
-        S: Clone + 'a,
-    {
-        self.into_iter()
-            .map(|(hash, summary)| TupleEntry::new(hash, summary.clone()))
-    }
-
-    pub(crate) fn hashes(self) -> impl Iterator<Item = u64> + 'a
-    where
-        S: 'a,
-    {
-        self.into_iter().map(|(hash, _)| hash)
+        SketchMetadata {
+            seed_hash: self.seed_hash(),
+            theta: self.theta64(),
+            empty: self.is_empty(),
+            ordered: self.is_ordered(),
+            num_retained: self.num_retained(),
+        }
     }
 }
 
@@ -225,17 +189,13 @@ where
     P: SummaryPolicy,
 {
     fn from(sketch: &'a TupleSketch<P>) -> Self {
-        Self {
-            inner: TupleSketchViewInner::Mutable(&sketch.table),
-        }
+        Self(TupleSketchViewState::Mutable(&sketch.table))
     }
 }
 
 impl<'a, S> From<&'a CompactTupleSketch<S>> for TupleSketchView<'a, S> {
     fn from(sketch: &'a CompactTupleSketch<S>) -> Self {
-        Self {
-            inner: TupleSketchViewInner::Compact(sketch),
-        }
+        Self(TupleSketchViewState::Compact(sketch))
     }
 }
 

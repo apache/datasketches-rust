@@ -35,27 +35,9 @@ pub(crate) trait RetainedEntry {
 /// Sketch properties inspected by Theta-family set operations.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct SketchMetadata {
-    pub(crate) seed_hash: u16,
-    pub(crate) theta: u64,
-    pub(crate) empty: bool,
-    pub(crate) ordered: bool,
-    pub(crate) num_retained: usize,
-}
-
-impl SketchMetadata {
-    pub(crate) fn new(
-        seed_hash: u16,
-        theta: u64,
-        empty: bool,
-        ordered: bool,
-        num_retained: usize,
-    ) -> Self {
-        Self {
-            seed_hash,
-            theta,
-            empty,
-            ordered,
-            num_retained,
-        }
-    }
+    pub seed_hash: u16,
+    pub theta: u64,
+    pub empty: bool,
+    pub ordered: bool,
+    pub num_retained: usize,
 }

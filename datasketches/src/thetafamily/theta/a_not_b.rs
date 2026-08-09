@@ -85,9 +85,13 @@ impl ThetaANotB {
     ) -> Result<CompactThetaSketch, Error> {
         let a = a.into();
         let b = b.into();
-        let parts =
-            self.op
-                .compute(a.metadata(), a.entries(), b.metadata(), b.hashes(), ordered)?;
+        let parts = self.op.compute(
+            a.metadata(),
+            a.iter(),
+            b.metadata(),
+            b.iter().map(|entry| entry.hash()),
+            ordered,
+        )?;
         Ok(CompactThetaSketch::from_parts(
             parts
                 .entries

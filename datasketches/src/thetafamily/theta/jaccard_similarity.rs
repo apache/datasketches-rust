@@ -20,8 +20,10 @@
 use crate::error::Error;
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::theta::ThetaSketchView;
+use crate::thetacommon::SketchMetadata;
 use crate::thetacommon::jaccard_similarity::JaccardSimilarity;
 use crate::thetacommon::jaccard_similarity::JaccardSimilarityOperator;
+use crate::thetacommon::jaccard_similarity::JaccardSketch;
 
 /// Jaccard similarity operator for Theta sketches.
 ///
@@ -45,6 +47,16 @@ use crate::thetacommon::jaccard_similarity::JaccardSimilarityOperator;
 #[derive(Clone, Copy, Debug)]
 pub struct ThetaJaccardSimilarity {
     op: JaccardSimilarityOperator,
+}
+
+impl JaccardSketch for ThetaSketchView<'_> {
+    fn metadata(self) -> SketchMetadata {
+        ThetaSketchView::metadata(self)
+    }
+
+    fn hashes(self) -> impl Iterator<Item = u64> {
+        self.iter().map(|entry| entry.hash())
+    }
 }
 
 impl Default for ThetaJaccardSimilarity {
@@ -72,14 +84,7 @@ impl ThetaJaccardSimilarity {
         sketch_a: impl Into<ThetaSketchView<'a>>,
         sketch_b: impl Into<ThetaSketchView<'b>>,
     ) -> Result<JaccardSimilarity, Error> {
-        let sketch_a = sketch_a.into();
-        let sketch_b = sketch_b.into();
-        self.op.compute(
-            sketch_a.metadata(),
-            move || sketch_a.hashes(),
-            sketch_b.metadata(),
-            move || sketch_b.hashes(),
-        )
+        self.op.compute(sketch_a.into(), sketch_b.into())
     }
 
     /// Returns whether the two sketches are exactly equal.
@@ -97,13 +102,6 @@ impl ThetaJaccardSimilarity {
         sketch_a: impl Into<ThetaSketchView<'a>>,
         sketch_b: impl Into<ThetaSketchView<'b>>,
     ) -> Result<bool, Error> {
-        let sketch_a = sketch_a.into();
-        let sketch_b = sketch_b.into();
-        self.op.exactly_equal(
-            sketch_a.metadata(),
-            sketch_a.hashes(),
-            sketch_b.metadata(),
-            sketch_b.hashes(),
-        )
+        self.op.exactly_equal(sketch_a.into(), sketch_b.into())
     }
 }

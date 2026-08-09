@@ -94,7 +94,12 @@ where
         P::Summary: Clone + 'a,
     {
         let sketch = sketch.into();
-        self.state.update(sketch.metadata(), sketch.entries())
+        self.state.update(
+            sketch.metadata(),
+            sketch
+                .iter()
+                .map(|(hash, summary)| TupleEntry::new(hash, summary.clone())),
+        )
     }
 
     /// Returns the union as a [`CompactTupleSketch`].
