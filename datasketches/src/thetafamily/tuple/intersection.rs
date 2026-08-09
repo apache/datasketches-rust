@@ -117,12 +117,14 @@ where
     ///
     /// Returns an error if `sketch` (when non-empty) has a different seed hash, or if the input
     /// appears corrupted (entry counts do not match what the sketch reports).
-    pub fn update<V>(&mut self, sketch: &V) -> Result<(), Error>
+    pub fn update<'a>(
+        &mut self,
+        sketch: impl Into<TupleSketchView<'a, P::Summary>>,
+    ) -> Result<(), Error>
     where
-        V: TupleSketchView<P::Summary>,
-        P::Summary: Clone,
+        P::Summary: Clone + 'a,
     {
-        self.state.update(sketch)
+        self.state.update(sketch.into().entries())
     }
 
     /// Returns whether this operator has received at least one update.

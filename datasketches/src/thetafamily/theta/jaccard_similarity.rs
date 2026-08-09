@@ -67,12 +67,15 @@ impl ThetaJaccardSimilarity {
     ///
     /// Returns an error if either non-empty sketch was built with a seed different from this
     /// operator's configured seed.
-    pub fn compute<A: ThetaSketchView, B: ThetaSketchView>(
+    pub fn compute<'a, 'b>(
         &self,
-        sketch_a: &A,
-        sketch_b: &B,
+        sketch_a: impl Into<ThetaSketchView<'a>>,
+        sketch_b: impl Into<ThetaSketchView<'b>>,
     ) -> Result<JaccardSimilarity, Error> {
-        self.op.compute(sketch_a, sketch_b)
+        let sketch_a = sketch_a.into();
+        let sketch_b = sketch_b.into();
+        self.op
+            .compute(move || sketch_a.hashes(), move || sketch_b.hashes())
     }
 
     /// Returns whether the two sketches are exactly equal.
@@ -85,11 +88,12 @@ impl ThetaJaccardSimilarity {
     ///
     /// Returns an error if both sketches are non-empty and either was built with a seed different
     /// from this operator's configured seed.
-    pub fn exactly_equal<A: ThetaSketchView, B: ThetaSketchView>(
+    pub fn exactly_equal<'a, 'b>(
         &self,
-        sketch_a: &A,
-        sketch_b: &B,
+        sketch_a: impl Into<ThetaSketchView<'a>>,
+        sketch_b: impl Into<ThetaSketchView<'b>>,
     ) -> Result<bool, Error> {
-        self.op.exactly_equal(sketch_a, sketch_b)
+        self.op
+            .exactly_equal(sketch_a.into().hashes(), sketch_b.into().hashes())
     }
 }

@@ -58,8 +58,8 @@ impl ThetaIntersection {
     /// The intersection can be viewed as starting from the "universe" set,
     /// and every update can reduce the current set to leave the overlapping
     /// subset only.
-    pub fn update<S: ThetaSketchView>(&mut self, sketch: &S) -> Result<(), Error> {
-        self.state.update(sketch)
+    pub fn update<'a>(&mut self, sketch: impl Into<ThetaSketchView<'a>>) -> Result<(), Error> {
+        self.state.update(sketch.into().entries())
     }
 
     /// Returns whether this operator has received at least one update.

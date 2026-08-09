@@ -42,8 +42,8 @@ impl UnionMergePolicy<ThetaEntry> for NoopUnionPolicy {
 
 impl ThetaUnion {
     /// Update this union with a given sketch.
-    pub fn update<S: ThetaSketchView>(&mut self, sketch: &S) -> Result<(), Error> {
-        self.state.update(sketch)
+    pub fn update<'a>(&mut self, sketch: impl Into<ThetaSketchView<'a>>) -> Result<(), Error> {
+        self.state.update(sketch.into().entries())
     }
 
     /// Return this union as a compact sketch.

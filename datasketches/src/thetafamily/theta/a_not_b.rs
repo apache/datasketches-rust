@@ -77,12 +77,15 @@ impl ThetaANotB {
     ///
     /// Returns an error if either non-trivial input has a seed hash that differs from this
     /// operator's seed.
-    pub fn compute<A, B>(&self, a: &A, b: &B, ordered: bool) -> Result<CompactThetaSketch, Error>
-    where
-        A: ThetaSketchView,
-        B: ThetaSketchView,
-    {
-        let parts = self.op.compute(a, b, ordered)?;
+    pub fn compute<'a, 'b>(
+        &self,
+        a: impl Into<ThetaSketchView<'a>>,
+        b: impl Into<ThetaSketchView<'b>>,
+        ordered: bool,
+    ) -> Result<CompactThetaSketch, Error> {
+        let parts = self
+            .op
+            .compute(a.into().entries(), b.into().hashes(), ordered)?;
         Ok(CompactThetaSketch::from_parts(
             parts
                 .entries

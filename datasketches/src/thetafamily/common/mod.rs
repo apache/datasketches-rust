@@ -27,62 +27,80 @@ pub(crate) mod union;
 
 pub use self::jaccard_similarity::JaccardSimilarity;
 
-pub(crate) mod sealed {
-    pub struct Token;
-}
-
-/// An entry retained by a Theta sketch family hash table.
-///
-/// This trait is sealed because the shared set-operation state machines rely on entry invariants
-/// maintained by the sketch implementations in this crate.
-pub trait RetainedEntry {
-    #[doc(hidden)]
-    fn __private(&self, _: sealed::Token);
-
-    /// Return the hash used as this entry's key.
+/// Minimal entry behavior required by the shared hash table and set-operation state machines.
+pub(crate) trait RetainedEntry {
     fn hash(&self) -> u64;
 }
 
-/// Read-only hash-key view shared by Theta-family sketches.
-///
-/// Key-only operations use this interface without requiring access to, or cloning, payloads such
-/// as Tuple summaries.
-///
-/// This trait is sealed because set operations rely on the reported metadata, retained count, and
-/// iterators describing the same sketch state.
-pub trait ThetaKeySketchView {
-    #[doc(hidden)]
-    fn __private(&self, _: sealed::Token);
-
-    /// Return the 16-bit seed hash.
-    fn seed_hash(&self) -> u16;
-
-    /// Return theta as a `u64` threshold.
-    fn theta64(&self) -> u64;
-
-    /// Return whether this sketch has not received any updates.
-    fn is_empty(&self) -> bool;
-
-    /// Return whether retained entries are ordered by ascending hash.
-    fn is_ordered(&self) -> bool;
-
-    /// Return an iterator over retained hash keys.
-    fn iter_hashes(&self) -> impl Iterator<Item = u64> + '_;
-
-    /// Return the number of retained entries.
-    fn num_retained(&self) -> usize;
+/// One-pass input assembled by a concrete sketch view and consumed by a shared algorithm.
+pub(crate) struct SketchInput<I> {
+    pub(crate) seed_hash: u16,
+    pub(crate) theta: u64,
+    pub(crate) empty: bool,
+    pub(crate) ordered: bool,
+    pub(crate) num_retained: usize,
+    pub(crate) entries: I,
 }
 
-/// Read-only retained-entry view accepted by Theta-family set operations.
-///
-/// This trait extends [`ThetaKeySketchView`] with complete retained entries, so operations such as
-/// union and intersection can preserve and combine Tuple summaries.
-///
-/// Like [`ThetaKeySketchView`], this trait is sealed and cannot be implemented outside this crate.
-pub trait ThetaFamilySketchView: ThetaKeySketchView {
-    /// The retained entry representation yielded by this view.
-    type Entry: RetainedEntry;
+impl<I> SketchInput<I> {
+    pub(crate) fn new(
+        seed_hash: u16,
+        theta: u64,
+        empty: bool,
+        ordered: bool,
+        num_retained: usize,
+        entries: I,
+    ) -> Self {
+        Self {
+            seed_hash,
+            theta,
+            empty,
+            ordered,
+            num_retained,
+            entries,
+        }
+    }
 
-    /// Return an iterator over retained entries.
-    fn iter(&self) -> impl Iterator<Item = Self::Entry> + '_;
+    pub(crate) fn map_entries<T, F>(self, f: F) -> SketchInput<impl Iterator<Item = T>>
+    where
+        I: Iterator,
+        F: FnMut(I::Item) -> T,
+    {
+        SketchInput::new(
+            self.seed_hash,
+            self.theta,
+            self.empty,
+            self.ordered,
+            self.num_retained,
+            self.entries.map(f),
+        )
+    }
+}
+
+/// Either of two concrete iterators without allocation or dynamic dispatch.
+pub(crate) enum EitherIter<L, R> {
+    Left(L),
+    Right(R),
+}
+
+impl<T, L, R> Iterator for EitherIter<L, R>
+where
+    L: Iterator<Item = T>,
+    R: Iterator<Item = T>,
+{
+    type Item = T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Left(iter) => iter.next(),
+            Self::Right(iter) => iter.next(),
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        match self {
+            Self::Left(iter) => iter.size_hint(),
+            Self::Right(iter) => iter.size_hint(),
+        }
+    }
 }

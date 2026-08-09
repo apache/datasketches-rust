@@ -22,8 +22,7 @@ use crate::error::ErrorKind;
 use crate::hash::check_seed_hash;
 use crate::hash::compute_seed_hash;
 use crate::thetacommon::RetainedEntry;
-use crate::thetacommon::ThetaFamilySketchView;
-use crate::thetacommon::ThetaKeySketchView;
+use crate::thetacommon::SketchInput;
 use crate::thetacommon::constants::MAX_THETA;
 use crate::thetacommon::hash_table::CompactSketchParts;
 
@@ -55,59 +54,63 @@ impl ANotBOperator {
     ///
     /// Returns an error if either non-trivial input has a seed hash that differs from this
     /// operator's seed.
-    pub fn compute<A, B>(
+    pub fn compute<E, A, B>(
         &self,
-        a: &A,
-        b: &B,
+        a: SketchInput<A>,
+        b: SketchInput<B>,
         ordered: bool,
-    ) -> Result<CompactSketchParts<A::Entry>, Error>
+    ) -> Result<CompactSketchParts<E>, Error>
     where
-        A: ThetaFamilySketchView,
-        B: ThetaKeySketchView,
+        E: RetainedEntry,
+        A: Iterator<Item = E>,
+        B: Iterator<Item = u64>,
     {
         // If A is empty the result is an (empty) copy of A. As with the union and intersection, an
         // empty input carries no keys, so its seed is not validated.
-        if a.is_empty() {
-            return Ok(Self::parts_from_view(a, ordered));
+        if a.empty {
+            return Ok(Self::parts_from_input(a, ordered));
         }
 
         // A is non-empty, so its seed must be compatible.
-        check_seed_hash(
-            self.seed_hash,
-            a.seed_hash(),
-            "A",
-            ErrorKind::InvalidArgument,
-        )?;
+        check_seed_hash(self.seed_hash, a.seed_hash, "A", ErrorKind::InvalidArgument)?;
 
         // An empty B subtracts nothing, so the result is simply a copy of A. This also covers the
         // "A is non-empty but has no retained keys" state: B's seed and theta must not influence
         // the result, so we return before touching them.
-        if b.is_empty() {
-            return Ok(Self::parts_from_view(a, ordered));
+        if b.empty {
+            return Ok(Self::parts_from_input(a, ordered));
         }
 
         // B is non-empty, so its seed must be compatible.
-        check_seed_hash(
-            self.seed_hash,
-            b.seed_hash(),
-            "B",
-            ErrorKind::InvalidArgument,
-        )?;
+        check_seed_hash(self.seed_hash, b.seed_hash, "B", ErrorKind::InvalidArgument)?;
 
-        let theta = a.theta64().min(b.theta64());
+        let SketchInput {
+            theta: a_theta,
+            ordered: a_ordered,
+            entries: a_entries,
+            ..
+        } = a;
+        let SketchInput {
+            theta: b_theta,
+            ordered: b_ordered,
+            num_retained: b_num_retained,
+            entries: b_entries,
+            ..
+        } = b;
+        let theta = a_theta.min(b_theta);
         // A is non-empty here; the result only becomes empty if everything is subtracted in exact
         // mode (handled below).
         let mut is_empty = false;
 
-        let entries: Vec<A::Entry> = if b.num_retained() == 0 {
-            a.iter().filter(|entry| entry.hash() < theta).collect()
-        } else if a.is_ordered() && b.is_ordered() {
+        let entries: Vec<E> = if b_num_retained == 0 {
+            a_entries.filter(|entry| entry.hash() < theta).collect()
+        } else if a_ordered && b_ordered {
             // Both inputs are sorted ascending by hash: merge-scan without a hash set. Only
             // B hashes below theta can exclude an A entry (A entries are all < theta), so
             // unexamined B entries at or above theta are harmless.
-            let mut b_hashes = b.iter_hashes().peekable();
+            let mut b_hashes = b_entries.peekable();
             let mut entries = vec![];
-            for entry in a.iter() {
+            for entry in a_entries {
                 let hash = entry.hash();
                 if hash >= theta {
                     break;
@@ -125,23 +128,23 @@ impl ANotBOperator {
             }
             entries
         } else {
-            let mut b_keys: HashSet<u64> = HashSet::with_capacity(b.num_retained());
-            for hash in b.iter_hashes() {
+            let mut b_keys: HashSet<u64> = HashSet::with_capacity(b_num_retained);
+            for hash in b_entries {
                 if hash < theta {
                     b_keys.insert(hash);
-                } else if b.is_ordered() {
+                } else if b_ordered {
                     break;
                 }
             }
 
             let mut entries = vec![];
-            for entry in a.iter() {
+            for entry in a_entries {
                 let hash = entry.hash();
                 if hash < theta {
                     if !b_keys.contains(&hash) {
                         entries.push(entry);
                     }
-                } else if a.is_ordered() {
+                } else if a_ordered {
                     break;
                 }
             }
@@ -152,9 +155,9 @@ impl ANotBOperator {
             is_empty = true;
         }
 
-        let out_ordered = ordered || a.is_ordered();
+        let out_ordered = ordered || a_ordered;
         let mut entries = entries;
-        if ordered && !a.is_ordered() && entries.len() > 1 {
+        if ordered && !a_ordered && entries.len() > 1 {
             entries.sort_unstable_by_key(RetainedEntry::hash);
         }
 
@@ -168,21 +171,22 @@ impl ANotBOperator {
     }
 
     /// Builds compact parts that are a copy of the view `a`.
-    fn parts_from_view<V>(a: &V, ordered: bool) -> CompactSketchParts<V::Entry>
+    fn parts_from_input<E, I>(a: SketchInput<I>, ordered: bool) -> CompactSketchParts<E>
     where
-        V: ThetaFamilySketchView,
+        E: RetainedEntry,
+        I: Iterator<Item = E>,
     {
-        let mut entries: Vec<V::Entry> = a.iter().collect();
-        let out_ordered = ordered || a.is_ordered();
-        if ordered && !a.is_ordered() && entries.len() > 1 {
+        let mut entries: Vec<E> = a.entries.collect();
+        let out_ordered = ordered || a.ordered;
+        if ordered && !a.ordered && entries.len() > 1 {
             entries.sort_unstable_by_key(RetainedEntry::hash);
         }
         CompactSketchParts {
             entries,
-            theta: a.theta64(),
-            seed_hash: a.seed_hash(),
+            theta: a.theta,
+            seed_hash: a.seed_hash,
             ordered: out_ordered,
-            empty: a.is_empty(),
+            empty: a.empty,
         }
     }
 }

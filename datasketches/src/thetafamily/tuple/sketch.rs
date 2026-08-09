@@ -36,8 +36,8 @@ use crate::error::ErrorKind;
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::hash::check_seed_hash;
 use crate::hash::compute_seed_hash;
-use crate::thetacommon::ThetaFamilySketchView;
-use crate::thetacommon::ThetaKeySketchView;
+use crate::thetacommon::EitherIter;
+use crate::thetacommon::SketchInput;
 use crate::thetacommon::binomial_bounds;
 use crate::thetacommon::constants::DEFAULT_LG_K;
 use crate::thetacommon::constants::FLAGS_IS_COMPACT;
@@ -47,7 +47,6 @@ use crate::thetacommon::constants::FLAGS_IS_READ_ONLY;
 use crate::thetacommon::constants::MAX_LG_K;
 use crate::thetacommon::constants::MAX_THETA;
 use crate::thetacommon::constants::MIN_LG_K;
-use crate::thetacommon::sealed;
 use crate::tuple::hash_table::TupleEntry;
 use crate::tuple::hash_table::TupleHashTable;
 use crate::tuple::policy::SummaryPolicy;
@@ -58,30 +57,169 @@ use crate::tuple::serialization::SKETCH_TYPE;
 use crate::tuple::serialization::SKETCH_TYPE_LEGACY;
 use crate::tuple::serialization::TupleSummaryValue;
 
-/// Read-only hash-key view for Tuple sketches.
+/// Read-only view of a mutable or compact Tuple sketch.
 ///
-/// This interface does not inspect summary values and therefore does not require them to implement
-/// [`Clone`].
+/// The view borrows the sketch without exposing its update policy. It can inspect keys without
+/// requiring `S: Clone`; set operations that retain summaries require `S: Clone` when invoked.
 ///
-/// This trait is sealed and cannot be implemented outside this crate.
-pub trait TupleKeySketchView: ThetaKeySketchView {}
-
-/// Read-only retained-entry view for Tuple sketches.
+/// # Examples
 ///
-/// This trait is the input abstraction for APIs (such as union and intersection) that accept
-/// either a mutable [`TupleSketch`] or an immutable [`CompactTupleSketch`]. `S` is the
-/// summary type retained by the sketch.
+/// ```
+/// use datasketches::tuple::DefaultUpdatePolicy;
+/// use datasketches::tuple::TupleSketchBuilder;
 ///
-/// This trait is sealed and cannot be implemented outside this crate. The mutable and compact
-/// Tuple sketch types implement it when `S: Clone`.
-pub trait TupleSketchView<S>:
-    TupleKeySketchView + ThetaFamilySketchView<Entry = TupleEntry<S>>
-{
+/// let mut sketch = TupleSketchBuilder::new(DefaultUpdatePolicy::<u64>::default()).build();
+/// sketch.update("apple", 1);
+/// let view = sketch.as_view();
+/// assert_eq!(view.iter().next().unwrap().1, &1);
+/// ```
+#[derive(Debug)]
+pub struct TupleSketchView<'a, S> {
+    inner: TupleSketchViewInner<'a, S>,
 }
 
-impl<S, T> TupleSketchView<S> for T where
-    T: TupleKeySketchView + ThetaFamilySketchView<Entry = TupleEntry<S>>
+#[derive(Debug)]
+enum TupleSketchViewInner<'a, S> {
+    Mutable(&'a TupleHashTable<S>),
+    Compact(&'a CompactTupleSketch<S>),
+}
+
+impl<S> Clone for TupleSketchView<'_, S> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<S> Copy for TupleSketchView<'_, S> {}
+
+impl<S> Clone for TupleSketchViewInner<'_, S> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<S> Copy for TupleSketchViewInner<'_, S> {}
+
+impl<S> TupleSketchView<'_, S> {
+    /// Returns the 16-bit seed hash.
+    pub fn seed_hash(&self) -> u16 {
+        match self.inner {
+            TupleSketchViewInner::Mutable(table) => table.seed_hash(),
+            TupleSketchViewInner::Compact(sketch) => sketch.seed_hash(),
+        }
+    }
+
+    /// Returns theta as a `u64` threshold.
+    pub fn theta64(&self) -> u64 {
+        match self.inner {
+            TupleSketchViewInner::Mutable(table) => table.theta(),
+            TupleSketchViewInner::Compact(sketch) => sketch.theta64(),
+        }
+    }
+
+    /// Returns whether the viewed sketch has not received any updates.
+    pub fn is_empty(&self) -> bool {
+        match self.inner {
+            TupleSketchViewInner::Mutable(table) => table.is_empty(),
+            TupleSketchViewInner::Compact(sketch) => sketch.is_empty(),
+        }
+    }
+
+    /// Returns whether retained entries are ordered by ascending hash.
+    pub fn is_ordered(&self) -> bool {
+        match self.inner {
+            TupleSketchViewInner::Mutable(_) => false,
+            TupleSketchViewInner::Compact(sketch) => sketch.is_ordered(),
+        }
+    }
+
+    /// Returns an iterator over retained hashes and borrowed summaries.
+    pub fn iter(&self) -> impl Iterator<Item = (u64, &S)> + '_ {
+        match self.inner {
+            TupleSketchViewInner::Mutable(table) => EitherIter::Left(table.iter()),
+            TupleSketchViewInner::Compact(sketch) => EitherIter::Right(sketch.iter()),
+        }
+    }
+
+    /// Returns an iterator over retained hash keys.
+    pub fn iter_hashes(&self) -> impl Iterator<Item = u64> + '_ {
+        self.iter().map(|(hash, _)| hash)
+    }
+
+    /// Returns the number of retained entries.
+    pub fn num_retained(&self) -> usize {
+        match self.inner {
+            TupleSketchViewInner::Mutable(table) => table.num_retained(),
+            TupleSketchViewInner::Compact(sketch) => sketch.num_retained(),
+        }
+    }
+}
+
+impl<'a, S> TupleSketchView<'a, S> {
+    pub(crate) fn entries(self) -> SketchInput<impl Iterator<Item = TupleEntry<S>> + 'a>
+    where
+        S: Clone + 'a,
+    {
+        let entries = match self.inner {
+            TupleSketchViewInner::Mutable(table) => EitherIter::Left(
+                table
+                    .iter()
+                    .map(|(hash, summary)| TupleEntry::new(hash, summary.clone())),
+            ),
+            TupleSketchViewInner::Compact(sketch) => {
+                EitherIter::Right(sketch.entries.iter().cloned())
+            }
+        };
+        SketchInput::new(
+            self.seed_hash(),
+            self.theta64(),
+            self.is_empty(),
+            self.is_ordered(),
+            self.num_retained(),
+            entries,
+        )
+    }
+
+    pub(crate) fn hashes(self) -> SketchInput<impl Iterator<Item = u64> + 'a>
+    where
+        S: 'a,
+    {
+        let entries = match self.inner {
+            TupleSketchViewInner::Mutable(table) => {
+                EitherIter::Left(table.iter().map(|(hash, _)| hash))
+            }
+            TupleSketchViewInner::Compact(sketch) => {
+                EitherIter::Right(sketch.entries.iter().map(TupleEntry::hash))
+            }
+        };
+        SketchInput::new(
+            self.seed_hash(),
+            self.theta64(),
+            self.is_empty(),
+            self.is_ordered(),
+            self.num_retained(),
+            entries,
+        )
+    }
+}
+
+impl<'a, P> From<&'a TupleSketch<P>> for TupleSketchView<'a, P::Summary>
+where
+    P: SummaryPolicy,
 {
+    fn from(sketch: &'a TupleSketch<P>) -> Self {
+        Self {
+            inner: TupleSketchViewInner::Mutable(&sketch.table),
+        }
+    }
+}
+
+impl<'a, S> From<&'a CompactTupleSketch<S>> for TupleSketchView<'a, S> {
+    fn from(sketch: &'a CompactTupleSketch<S>) -> Self {
+        Self {
+            inner: TupleSketchViewInner::Compact(sketch),
+        }
+    }
 }
 
 /// Mutable Tuple sketch for building from input data.
@@ -116,6 +254,11 @@ impl<P> TupleSketch<P>
 where
     P: SummaryPolicy,
 {
+    /// Returns a read-only view accepted by Tuple set operations.
+    pub fn as_view(&self) -> TupleSketchView<'_, P::Summary> {
+        self.into()
+    }
+
     /// Updates the sketch with a key and a value accepted by the policy.
     ///
     /// If the key is new, the policy creates a summary and folds in `value`; if the key already
@@ -272,53 +415,6 @@ where
     }
 }
 
-impl<P> ThetaKeySketchView for TupleSketch<P>
-where
-    P: SummaryPolicy,
-{
-    fn __private(&self, _: sealed::Token) {}
-
-    fn seed_hash(&self) -> u16 {
-        self.table.seed_hash()
-    }
-
-    fn theta64(&self) -> u64 {
-        self.table.theta()
-    }
-
-    fn is_empty(&self) -> bool {
-        self.table.is_empty()
-    }
-
-    fn is_ordered(&self) -> bool {
-        false
-    }
-
-    fn iter_hashes(&self) -> impl Iterator<Item = u64> + '_ {
-        self.table.iter().map(|(hash, _)| hash)
-    }
-
-    fn num_retained(&self) -> usize {
-        self.table.num_retained()
-    }
-}
-
-impl<P> TupleKeySketchView for TupleSketch<P> where P: SummaryPolicy {}
-
-impl<P> ThetaFamilySketchView for TupleSketch<P>
-where
-    P: SummaryPolicy,
-    P::Summary: Clone,
-{
-    type Entry = TupleEntry<P::Summary>;
-
-    fn iter(&self) -> impl Iterator<Item = TupleEntry<P::Summary>> + '_ {
-        self.table
-            .iter()
-            .map(|(hash, summary)| TupleEntry::new(hash, summary.clone()))
-    }
-}
-
 /// Compact (immutable) Tuple sketch.
 ///
 /// This is the serialization-friendly form: a compact array of retained [`TupleEntry`] values
@@ -348,6 +444,11 @@ impl<S> CompactTupleSketch<S> {
             ordered,
             empty,
         }
+    }
+
+    /// Returns a read-only view accepted by Tuple set operations.
+    pub fn as_view(&self) -> TupleSketchView<'_, S> {
+        self.into()
     }
 
     /// Returns the cardinality (distinct key count) estimate.
@@ -604,44 +705,6 @@ impl<S> CompactTupleSketch<S> {
         }
 
         Ok(Self::from_parts(entries, theta, seed_hash, ordered, false))
-    }
-}
-
-impl<S> ThetaKeySketchView for CompactTupleSketch<S> {
-    fn __private(&self, _: sealed::Token) {}
-
-    fn seed_hash(&self) -> u16 {
-        self.seed_hash
-    }
-
-    fn theta64(&self) -> u64 {
-        self.theta
-    }
-
-    fn is_empty(&self) -> bool {
-        self.empty
-    }
-
-    fn is_ordered(&self) -> bool {
-        self.ordered
-    }
-
-    fn iter_hashes(&self) -> impl Iterator<Item = u64> + '_ {
-        self.entries.iter().map(TupleEntry::hash)
-    }
-
-    fn num_retained(&self) -> usize {
-        self.entries.len()
-    }
-}
-
-impl<S> TupleKeySketchView for CompactTupleSketch<S> {}
-
-impl<S: Clone> ThetaFamilySketchView for CompactTupleSketch<S> {
-    type Entry = TupleEntry<S>;
-
-    fn iter(&self) -> impl Iterator<Item = TupleEntry<S>> + '_ {
-        self.entries.iter().cloned()
     }
 }
 

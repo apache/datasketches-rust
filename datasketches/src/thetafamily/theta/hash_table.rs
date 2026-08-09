@@ -20,7 +20,6 @@ use std::num::NonZeroU64;
 
 use crate::thetacommon::RetainedEntry;
 use crate::thetacommon::hash_table::SketchHashTable;
-use crate::thetacommon::sealed;
 
 /// Specific hash table for theta sketch
 ///
@@ -50,8 +49,6 @@ impl ThetaEntry {
 }
 
 impl RetainedEntry for ThetaEntry {
-    fn __private(&self, _: sealed::Token) {}
-
     fn hash(&self) -> u64 {
         self.hash.get()
     }
