@@ -21,7 +21,7 @@ use std::slice;
 use crate::common::ResizeFactor;
 use crate::hash::MurmurHash3X64128;
 use crate::hash::compute_seed_hash;
-use crate::thetacommon::RetainedEntry;
+use crate::thetacommon::SketchEntry;
 use crate::thetacommon::constants::HASH_TABLE_REBUILD_THRESHOLD;
 use crate::thetacommon::constants::HASH_TABLE_RESIZE_THRESHOLD;
 use crate::thetacommon::constants::MAX_THETA;
@@ -89,7 +89,7 @@ pub struct SketchHashTable<E> {
 
 impl<E> SketchHashTable<E>
 where
-    E: RetainedEntry,
+    E: SketchEntry,
 {
     /// Create a new hash table.
     pub fn new(
@@ -291,7 +291,7 @@ where
         let is_single = entries.len() == 1 && theta == MAX_THETA;
         let ordered = ordered || empty || is_single;
         if ordered && entries.len() > 1 {
-            entries.sort_unstable_by_key(RetainedEntry::hash);
+            entries.sort_unstable_by_key(SketchEntry::hash);
         }
         CompactSketchParts {
             entries,

@@ -20,10 +20,10 @@ use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::hash::check_seed_hash;
 use crate::hash::compute_seed_hash;
-use crate::thetacommon::OwnedEntrySketchView;
-use crate::thetacommon::RetainedEntry;
-use crate::thetacommon::SetOpProps;
-use crate::thetacommon::SetOperationSketchView;
+use crate::thetacommon::EntrySketch;
+use crate::thetacommon::KeySketch;
+use crate::thetacommon::SketchEntry;
+use crate::thetacommon::SketchScalars;
 use crate::thetacommon::binomial_bounds;
 use crate::thetacommon::constants::MAX_LG_K;
 use crate::thetacommon::constants::MAX_THETA;
@@ -116,7 +116,7 @@ struct KeyEntry {
     hash: u64,
 }
 
-impl RetainedEntry for KeyEntry {
+impl SketchEntry for KeyEntry {
     fn hash(&self) -> u64 {
         self.hash
     }
@@ -125,23 +125,23 @@ impl RetainedEntry for KeyEntry {
 #[derive(Clone, Copy, Debug)]
 struct NoopMergePolicy;
 
-impl<E: RetainedEntry> UnionMergePolicy<E> for NoopMergePolicy {
+impl<E: SketchEntry> UnionMergePolicy<E> for NoopMergePolicy {
     fn merge(&self, _existing: &mut E, _incoming: E) {}
 }
 
-impl<E: RetainedEntry> IntersectionMergePolicy<E> for NoopMergePolicy {
+impl<E: SketchEntry> IntersectionMergePolicy<E> for NoopMergePolicy {
     fn merge(&self, _existing: &mut E, _incoming: E) {}
 }
 
 #[derive(Clone, Copy, Debug)]
-struct KeySketch<S>(S);
+struct KeyEntries<S>(S);
 
-impl<S> SetOperationSketchView for KeySketch<S>
+impl<S> KeySketch for KeyEntries<S>
 where
-    S: SetOperationSketchView,
+    S: KeySketch,
 {
-    fn props(self) -> SetOpProps {
-        self.0.props()
+    fn scalars(self) -> SketchScalars {
+        self.0.scalars()
     }
 
     fn hashes(self) -> impl Iterator<Item = u64> {
@@ -149,9 +149,9 @@ where
     }
 }
 
-impl<S> OwnedEntrySketchView for KeySketch<S>
+impl<S> EntrySketch for KeyEntries<S>
 where
-    S: SetOperationSketchView,
+    S: KeySketch,
 {
     type Entry = KeyEntry;
 
@@ -162,21 +162,21 @@ where
 
 pub fn compute<A, B>(seed: u64, sketch_a: A, sketch_b: B) -> Result<JaccardSimilarity, Error>
 where
-    A: SetOperationSketchView,
-    B: SetOperationSketchView,
+    A: KeySketch,
+    B: KeySketch,
 {
-    let SetOpProps {
+    let SketchScalars {
         theta: a_theta,
         empty: a_empty,
         num_retained: a_num_retained,
         ..
-    } = sketch_a.props();
-    let SetOpProps {
+    } = sketch_a.scalars();
+    let SketchScalars {
         theta: b_theta,
         empty: b_empty,
         num_retained: b_num_retained,
         ..
-    } = sketch_b.props();
+    } = sketch_b.scalars();
     if a_empty && b_empty {
         return Ok(JaccardSimilarity::exact(1.0));
     }
@@ -192,8 +192,8 @@ where
     }
 
     let mut intersection = IntersectionState::new(seed, NoopMergePolicy);
-    intersection.update(KeySketch(sketch_a))?;
-    intersection.update(KeySketch(sketch_b))?;
+    intersection.update(KeyEntries(sketch_a))?;
+    intersection.update(KeyEntries(sketch_b))?;
     let intersection = intersection.result(false);
     let intersection_count = intersection
         .entries
@@ -210,21 +210,21 @@ where
 
 pub fn exactly_equal<A, B>(seed: u64, sketch_a: A, sketch_b: B) -> Result<bool, Error>
 where
-    A: SetOperationSketchView,
-    B: SetOperationSketchView,
+    A: KeySketch,
+    B: KeySketch,
 {
-    let SetOpProps {
+    let SketchScalars {
         theta: a_theta,
         empty: a_empty,
         num_retained: a_num_retained,
         ..
-    } = sketch_a.props();
-    let SetOpProps {
+    } = sketch_a.scalars();
+    let SketchScalars {
         theta: b_theta,
         empty: b_empty,
         num_retained: b_num_retained,
         ..
-    } = sketch_b.props();
+    } = sketch_b.scalars();
     if a_empty && b_empty {
         return Ok(true);
     }
@@ -244,19 +244,19 @@ fn compute_union<A, B>(
     sketch_b: B,
 ) -> Result<CompactSketchParts<KeyEntry>, Error>
 where
-    A: SetOperationSketchView,
-    B: SetOperationSketchView,
+    A: KeySketch,
+    B: KeySketch,
 {
-    let SetOpProps {
+    let SketchScalars {
         seed_hash: a_seed_hash,
         num_retained: a_num_retained,
         ..
-    } = sketch_a.props();
-    let SetOpProps {
+    } = sketch_a.scalars();
+    let SketchScalars {
         seed_hash: b_seed_hash,
         num_retained: b_num_retained,
         ..
-    } = sketch_b.props();
+    } = sketch_b.scalars();
     let seed_hash = compute_seed_hash(seed);
     check_seed_hash(seed_hash, a_seed_hash, "A", ErrorKind::InvalidData)?;
     check_seed_hash(seed_hash, b_seed_hash, "B", ErrorKind::InvalidData)?;
@@ -268,8 +268,8 @@ where
         seed,
         NoopMergePolicy,
     );
-    union.update(KeySketch(sketch_a))?;
-    union.update(KeySketch(sketch_b))?;
+    union.update(KeyEntries(sketch_a))?;
+    union.update(KeyEntries(sketch_b))?;
     Ok(union.to_compact_parts(false))
 }
 

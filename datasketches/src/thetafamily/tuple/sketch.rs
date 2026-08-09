@@ -37,9 +37,9 @@ use crate::error::ErrorKind;
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::hash::check_seed_hash;
 use crate::hash::compute_seed_hash;
-use crate::thetacommon::OwnedEntrySketchView;
-use crate::thetacommon::SetOpProps;
-use crate::thetacommon::SetOperationSketchView;
+use crate::thetacommon::EntrySketch;
+use crate::thetacommon::KeySketch;
+use crate::thetacommon::SketchScalars;
 use crate::thetacommon::binomial_bounds;
 use crate::thetacommon::constants::DEFAULT_LG_K;
 use crate::thetacommon::constants::FLAGS_IS_COMPACT;
@@ -176,9 +176,9 @@ impl<'a, S> TupleSketchView<'a, S> {
     }
 }
 
-impl<S> SetOperationSketchView for TupleSketchView<'_, S> {
-    fn props(self) -> SetOpProps {
-        SetOpProps {
+impl<S> KeySketch for TupleSketchView<'_, S> {
+    fn scalars(self) -> SketchScalars {
+        SketchScalars {
             seed_hash: self.seed_hash(),
             theta: self.theta64(),
             empty: self.is_empty(),
@@ -192,7 +192,7 @@ impl<S> SetOperationSketchView for TupleSketchView<'_, S> {
     }
 }
 
-impl<'a, S> OwnedEntrySketchView for TupleSketchView<'a, S>
+impl<'a, S> EntrySketch for TupleSketchView<'a, S>
 where
     S: Clone + 'a,
 {

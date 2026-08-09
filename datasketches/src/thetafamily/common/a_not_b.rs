@@ -20,10 +20,10 @@ use std::collections::HashSet;
 use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::hash::check_seed_hash;
-use crate::thetacommon::OwnedEntrySketchView;
-use crate::thetacommon::RetainedEntry;
-use crate::thetacommon::SetOpProps;
-use crate::thetacommon::SetOperationSketchView;
+use crate::thetacommon::EntrySketch;
+use crate::thetacommon::KeySketch;
+use crate::thetacommon::SketchEntry;
+use crate::thetacommon::SketchScalars;
 use crate::thetacommon::constants::MAX_THETA;
 use crate::thetacommon::hash_table::CompactSketchParts;
 
@@ -40,16 +40,16 @@ pub fn compute<A, B>(
     ordered: bool,
 ) -> Result<CompactSketchParts<A::Entry>, Error>
 where
-    A: OwnedEntrySketchView,
-    B: SetOperationSketchView,
+    A: EntrySketch,
+    B: KeySketch,
 {
-    let SetOpProps {
+    let SketchScalars {
         seed_hash: a_seed_hash,
         theta: a_theta,
         empty: a_empty,
         ordered: a_ordered,
         ..
-    } = a.props();
+    } = a.scalars();
 
     // If A is empty the result is an (empty) copy of A. As with the union and intersection, an
     // empty input carries no keys, so its seed is not validated.
@@ -60,13 +60,13 @@ where
     // A is non-empty, so its seed must be compatible.
     check_seed_hash(seed_hash, a_seed_hash, "A", ErrorKind::InvalidArgument)?;
 
-    let SetOpProps {
+    let SketchScalars {
         seed_hash: b_seed_hash,
         theta: b_theta,
         empty: b_empty,
         ordered: b_ordered,
         num_retained: b_num_retained,
-    } = b.props();
+    } = b.scalars();
 
     // An empty B subtracts nothing, so the result is simply a copy of A. This also covers the
     // "A is non-empty but has no retained keys" state: B's seed and theta must not influence
@@ -139,7 +139,7 @@ where
     let out_ordered = ordered || a_ordered;
     let mut entries = entries;
     if ordered && !a_ordered && entries.len() > 1 {
-        entries.sort_unstable_by_key(RetainedEntry::hash);
+        entries.sort_unstable_by_key(SketchEntry::hash);
     }
 
     Ok(CompactSketchParts {
@@ -153,19 +153,19 @@ where
 
 fn parts_from_sketch<S>(sketch: S, ordered: bool) -> CompactSketchParts<S::Entry>
 where
-    S: OwnedEntrySketchView,
+    S: EntrySketch,
 {
-    let SetOpProps {
+    let SketchScalars {
         seed_hash,
         theta,
         empty,
         ordered: input_ordered,
         ..
-    } = sketch.props();
+    } = sketch.scalars();
     let mut entries: Vec<S::Entry> = sketch.entries().collect();
     let out_ordered = ordered || input_ordered;
     if ordered && !input_ordered && entries.len() > 1 {
-        entries.sort_unstable_by_key(RetainedEntry::hash);
+        entries.sort_unstable_by_key(SketchEntry::hash);
     }
     CompactSketchParts {
         entries,

@@ -19,9 +19,9 @@ use crate::common::ResizeFactor;
 use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::hash::check_seed_hash;
-use crate::thetacommon::OwnedEntrySketchView;
-use crate::thetacommon::RetainedEntry;
-use crate::thetacommon::SetOpProps;
+use crate::thetacommon::EntrySketch;
+use crate::thetacommon::SketchEntry;
+use crate::thetacommon::SketchScalars;
 use crate::thetacommon::constants::MAX_THETA;
 use crate::thetacommon::hash_table::CompactSketchParts;
 use crate::thetacommon::hash_table::SketchHashTable;
@@ -44,7 +44,7 @@ pub struct UnionState<E, P> {
 
 impl<E, P> UnionState<E, P>
 where
-    E: RetainedEntry,
+    E: SketchEntry,
 {
     pub fn new(
         lg_k: u8,
@@ -64,16 +64,16 @@ where
     /// Incorporate a sketch into the union.
     pub fn update<S>(&mut self, sketch: S) -> Result<(), Error>
     where
-        S: OwnedEntrySketchView<Entry = E>,
+        S: EntrySketch<Entry = E>,
         P: UnionMergePolicy<E>,
     {
-        let SetOpProps {
+        let SketchScalars {
             seed_hash,
             theta,
             empty,
             ordered,
             ..
-        } = sketch.props();
+        } = sketch.scalars();
         if empty {
             return Ok(());
         }
@@ -144,7 +144,7 @@ where
 
         let ordered = ordered || (entries.len() == 1 && theta == MAX_THETA);
         if ordered {
-            entries.sort_unstable_by_key(RetainedEntry::hash);
+            entries.sort_unstable_by_key(SketchEntry::hash);
         }
 
         CompactSketchParts {

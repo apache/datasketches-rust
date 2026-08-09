@@ -27,26 +27,26 @@ pub(super) mod union;
 
 pub use self::jaccard_similarity::JaccardSimilarity;
 
-/// Minimal entry behavior required by the shared hash table and set-operation state machines.
-pub(super) trait RetainedEntry {
+/// Minimal entry behavior required by the shared hash table and set operations.
+pub(super) trait SketchEntry {
     fn hash(&self) -> u64;
 }
 
-pub(super) trait SetOperationSketchView: Copy {
-    fn props(self) -> SetOpProps;
+pub(super) trait KeySketch: Copy {
+    fn scalars(self) -> SketchScalars;
 
     fn hashes(self) -> impl Iterator<Item = u64>;
 }
 
-pub(super) trait OwnedEntrySketchView: SetOperationSketchView {
-    type Entry: RetainedEntry;
+pub(super) trait EntrySketch: KeySketch {
+    type Entry: SketchEntry;
 
     fn entries(self) -> impl Iterator<Item = Self::Entry>;
 }
 
-/// Sketch properties inspected by Theta-family set operations.
+/// Scalar sketch values inspected by Theta-family set operations.
 #[derive(Clone, Copy, Debug)]
-pub(super) struct SetOpProps {
+pub(super) struct SketchScalars {
     pub seed_hash: u16,
     pub theta: u64,
     pub empty: bool,

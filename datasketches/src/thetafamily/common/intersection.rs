@@ -19,9 +19,9 @@ use crate::common::ResizeFactor;
 use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::hash::check_seed_hash;
-use crate::thetacommon::OwnedEntrySketchView;
-use crate::thetacommon::RetainedEntry;
-use crate::thetacommon::SetOpProps;
+use crate::thetacommon::EntrySketch;
+use crate::thetacommon::SketchEntry;
+use crate::thetacommon::SketchScalars;
 use crate::thetacommon::constants::HASH_TABLE_REBUILD_THRESHOLD;
 use crate::thetacommon::constants::MAX_THETA;
 use crate::thetacommon::hash_table::CompactSketchParts;
@@ -48,7 +48,7 @@ pub struct IntersectionState<E, P> {
 
 impl<E, P> IntersectionState<E, P>
 where
-    E: RetainedEntry,
+    E: SketchEntry,
 {
     /// Creates a new intersection operator for the given `seed` and entry-merge `policy`.
     pub fn new(seed: u64, policy: P) -> Self {
@@ -73,17 +73,17 @@ where
     /// reduces the current set to the keys it shares with `sketch`.
     pub fn update<S>(&mut self, sketch: S) -> Result<(), Error>
     where
-        S: OwnedEntrySketchView<Entry = E>,
+        S: EntrySketch<Entry = E>,
         E: Clone,
         P: IntersectionMergePolicy<E>,
     {
-        let SetOpProps {
+        let SketchScalars {
             seed_hash,
             theta,
             empty,
             ordered,
             num_retained,
-        } = sketch.props();
+        } = sketch.scalars();
         let new_default_table = |table: &SketchHashTable<E>| {
             SketchHashTable::from_raw_parts(
                 0,
@@ -250,7 +250,7 @@ where
     {
         let mut entries: Vec<E> = self.table.iter_entries().cloned().collect();
         if ordered {
-            entries.sort_unstable_by_key(RetainedEntry::hash);
+            entries.sort_unstable_by_key(SketchEntry::hash);
         }
         CompactSketchParts {
             entries,

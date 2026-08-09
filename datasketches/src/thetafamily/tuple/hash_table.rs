@@ -18,7 +18,7 @@
 use std::hash::Hash;
 use std::num::NonZeroU64;
 
-use crate::thetacommon::RetainedEntry;
+use crate::thetacommon::SketchEntry;
 use crate::thetacommon::hash_table::SketchHashTable;
 use crate::thetacommon::intersection::IntersectionMergePolicy;
 use crate::thetacommon::union::UnionMergePolicy;
@@ -63,7 +63,7 @@ impl<S> TupleEntry<S> {
 /// update is merged into the existing summary rather than discarded.
 pub(super) type TupleHashTable<S> = SketchHashTable<TupleEntry<S>>;
 
-impl<S> RetainedEntry for TupleEntry<S> {
+impl<S> SketchEntry for TupleEntry<S> {
     fn hash(&self) -> u64 {
         self.hash.get()
     }
