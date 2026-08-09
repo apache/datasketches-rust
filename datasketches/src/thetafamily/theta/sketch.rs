@@ -814,7 +814,7 @@ impl CompactThetaSketch {
                     theta: MAX_THETA,
                     seed_hash,
                     ordered: true,
-                    empty: true,
+                    empty: num_entries == 0,
                 })
             }
             V2_PREAMBLE_ESTIMATE => {

@@ -18,6 +18,8 @@
 use std::fs;
 use std::path::PathBuf;
 
+use datasketches::codec::SketchBytes;
+use datasketches::common::NumStdDev;
 use datasketches::error::ErrorKind;
 use datasketches::theta::CompactThetaSketch;
 use datasketches::theta::ThetaSketchBuilder;
@@ -25,6 +27,24 @@ use googletest::assert_that;
 use googletest::prelude::near;
 
 use crate::serialization_test_data;
+
+fn serialize_v2_exact(entries: &[u64]) -> Vec<u8> {
+    let current = ThetaSketchBuilder::default().build().compact(true);
+    let current_bytes = current.serialize();
+    let mut bytes = SketchBytes::with_capacity((2 + entries.len()) * size_of::<u64>());
+    bytes.write_u8(2); // preamble longs
+    bytes.write_u8(2); // serialization version
+    bytes.write_u8(current_bytes[2]); // theta family ID
+    bytes.write_u8(0); // unused
+    bytes.write_u16_le(0); // unused
+    bytes.write_u16_le(current.seed_hash());
+    bytes.write_u32_le(entries.len() as u32);
+    bytes.write_u32_le(0); // unused
+    for &entry in entries {
+        bytes.write_u64_le(entry);
+    }
+    bytes.into_bytes()
+}
 
 fn test_sketch_file(path: PathBuf, expected_cardinality: usize, use_compressed_round_trip: bool) {
     let expected = expected_cardinality as f64;
@@ -162,4 +182,39 @@ fn malformed_input_is_rejected() {
     unsupported_version[1] = 99;
     let err = CompactThetaSketch::deserialize(&unsupported_version).unwrap_err();
     assert_eq!(err.kind(), ErrorKind::InvalidData);
+}
+
+#[test]
+fn test_v2_exact_non_empty_compatibility() {
+    let entries = [1, 7, 42];
+    let sketch = CompactThetaSketch::deserialize(&serialize_v2_exact(&entries)).unwrap();
+
+    assert!(!sketch.is_empty());
+    assert!(!sketch.is_estimation_mode());
+    assert!(sketch.is_ordered());
+    assert_eq!(sketch.num_retained(), entries.len());
+    assert_eq!(sketch.estimate(), entries.len() as f64);
+    assert_eq!(sketch.lower_bound(NumStdDev::One), entries.len() as f64);
+    assert_eq!(sketch.upper_bound(NumStdDev::One), entries.len() as f64);
+    assert_eq!(
+        sketch.iter().map(|entry| entry.hash()).collect::<Vec<_>>(),
+        entries
+    );
+
+    let restored = CompactThetaSketch::deserialize(&sketch.serialize()).unwrap();
+    assert!(!restored.is_empty());
+    assert_eq!(restored.num_retained(), entries.len());
+    assert_eq!(restored.estimate(), entries.len() as f64);
+}
+
+#[test]
+fn test_v2_exact_zero_entries_remains_empty() {
+    let sketch = CompactThetaSketch::deserialize(&serialize_v2_exact(&[])).unwrap();
+
+    assert!(sketch.is_empty());
+    assert!(!sketch.is_estimation_mode());
+    assert_eq!(sketch.num_retained(), 0);
+    assert_eq!(sketch.estimate(), 0.0);
+    assert_eq!(sketch.lower_bound(NumStdDev::One), 0.0);
+    assert_eq!(sketch.upper_bound(NumStdDev::One), 0.0);
 }
