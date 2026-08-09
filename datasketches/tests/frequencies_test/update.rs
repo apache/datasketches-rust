@@ -494,6 +494,26 @@ fn test_items_merge_empty_is_noop() {
 }
 
 #[test]
+fn test_merge_preserves_purged_empty_state() {
+    let mut purged: FrequentItemsSketch<i64> = FrequentItemsSketch::new(32);
+    for item in 0..=(32 * 3 / 4) {
+        purged.update(item);
+    }
+    assert!(purged.is_empty());
+    assert_eq!(purged.total_weight(), 25);
+    assert_eq!(purged.maximum_error(), 1);
+
+    let mut merged: FrequentItemsSketch<i64> = FrequentItemsSketch::new(32);
+    merged.merge(&purged);
+
+    assert!(merged.is_empty());
+    assert_eq!(merged.num_active_items(), 0);
+    assert_eq!(merged.total_weight(), purged.total_weight());
+    assert_eq!(merged.maximum_error(), purged.maximum_error());
+    assert_eq!(merged.upper_bound(&1000), purged.upper_bound(&1000));
+}
+
+#[test]
 fn test_row_equality_changes_with_updates() {
     let mut sketch: FrequentItemsSketch<i32> = FrequentItemsSketch::new(8);
     sketch.update(1);

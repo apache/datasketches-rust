@@ -104,14 +104,26 @@ fn test_empty_round_trip() {
 #[test]
 fn test_purged_to_empty_round_trip() {
     // Saturating the map with count-1 items makes the purge median 1, which
-    // removes every counter and leaves a non-trivial sketch empty.
+    // removes every counter while retaining stream and error state.
     let mut sketch = FrequentItemsSketch::<i64>::new(32);
     for i in 0..=(32 * 3 / 4) {
         sketch.update(i);
     }
     assert!(sketch.is_empty());
-    let restored = FrequentItemsSketch::<i64>::deserialize(&sketch.serialize()).unwrap();
+    assert_eq!(sketch.num_active_items(), 0);
+    assert_eq!(sketch.total_weight(), 25);
+    assert_eq!(sketch.maximum_error(), 1);
+    assert_eq!(sketch.upper_bound(&1000), 1);
+
+    let bytes = sketch.serialize();
+    assert_eq!(bytes.len(), 4 * size_of::<u64>());
+    let restored = FrequentItemsSketch::<i64>::deserialize(&bytes).unwrap();
     assert!(restored.is_empty());
+    assert_eq!(restored.num_active_items(), 0);
+    assert_eq!(restored.total_weight(), sketch.total_weight());
+    assert_eq!(restored.maximum_error(), sketch.maximum_error());
+    assert_eq!(restored.upper_bound(&1000), sketch.upper_bound(&1000));
+    assert_eq!(restored.serialize(), bytes);
 }
 
 #[test]
