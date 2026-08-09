@@ -37,7 +37,7 @@ use crate::error::ErrorKind;
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::hash::check_seed_hash;
 use crate::hash::compute_seed_hash;
-use crate::thetacommon::SketchHeader;
+use crate::thetacommon::SetOperationSketchProperties;
 use crate::thetacommon::binomial_bounds;
 use crate::thetacommon::constants::DEFAULT_LG_K;
 use crate::thetacommon::constants::FLAGS_IS_COMPACT;
@@ -173,8 +173,8 @@ impl<'a, S> TupleSketchView<'a, S> {
         }
     }
 
-    pub(crate) fn header(self) -> SketchHeader {
-        SketchHeader {
+    pub(crate) fn set_operation_properties(self) -> SetOperationSketchProperties {
+        SetOperationSketchProperties {
             seed_hash: self.seed_hash(),
             theta: self.theta64(),
             empty: self.is_empty(),

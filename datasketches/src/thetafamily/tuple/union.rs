@@ -95,7 +95,7 @@ where
     {
         let sketch = sketch.into();
         self.state.update(
-            sketch.header(),
+            sketch.set_operation_properties(),
             sketch
                 .iter()
                 .map(|(hash, summary)| TupleEntry::new(hash, summary.clone())),

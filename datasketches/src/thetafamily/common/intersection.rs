@@ -20,7 +20,7 @@ use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::hash::check_seed_hash;
 use crate::thetacommon::RetainedEntry;
-use crate::thetacommon::SketchHeader;
+use crate::thetacommon::SetOperationSketchProperties;
 use crate::thetacommon::constants::HASH_TABLE_REBUILD_THRESHOLD;
 use crate::thetacommon::constants::MAX_THETA;
 use crate::thetacommon::hash_table::CompactSketchParts;
@@ -70,19 +70,23 @@ where
     ///
     /// The intersection can be viewed as starting from the "universe" set, and every update
     /// reduces the current set to the keys it shares with `sketch`.
-    pub fn update<I>(&mut self, header: SketchHeader, entries: I) -> Result<(), Error>
+    pub fn update<I>(
+        &mut self,
+        properties: SetOperationSketchProperties,
+        entries: I,
+    ) -> Result<(), Error>
     where
         I: Iterator<Item = E>,
         E: Clone,
         P: IntersectionMergePolicy<E>,
     {
-        let SketchHeader {
+        let SetOperationSketchProperties {
             seed_hash,
             theta,
             empty,
             ordered,
             num_retained,
-        } = header;
+        } = properties;
         let new_default_table = |table: &SketchHashTable<E>| {
             SketchHashTable::from_raw_parts(
                 0,

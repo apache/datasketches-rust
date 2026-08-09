@@ -46,7 +46,7 @@ use crate::theta::serialization;
 use crate::theta::serialization::V2_PREAMBLE_EMPTY;
 use crate::theta::serialization::V2_PREAMBLE_ESTIMATE;
 use crate::theta::serialization::V2_PREAMBLE_PRECISE;
-use crate::thetacommon::SketchHeader;
+use crate::thetacommon::SetOperationSketchProperties;
 use crate::thetacommon::binomial_bounds;
 use crate::thetacommon::constants::DEFAULT_LG_K;
 use crate::thetacommon::constants::FLAGS_IS_COMPACT;
@@ -159,8 +159,8 @@ impl<'a> ThetaSketchView<'a> {
         }
     }
 
-    pub(crate) fn header(self) -> SketchHeader {
-        SketchHeader {
+    pub(crate) fn set_operation_properties(self) -> SetOperationSketchProperties {
+        SetOperationSketchProperties {
             seed_hash: self.seed_hash(),
             theta: self.theta64(),
             empty: self.is_empty(),

@@ -33,7 +33,7 @@ pub(crate) trait RetainedEntry {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct SketchHeader {
+pub(crate) struct SetOperationSketchProperties {
     pub seed_hash: u16,
     pub theta: u64,
     pub empty: bool,

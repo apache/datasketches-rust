@@ -20,7 +20,7 @@
 use crate::error::Error;
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::theta::ThetaSketchView;
-use crate::thetacommon::SketchHeader;
+use crate::thetacommon::SetOperationSketchProperties;
 use crate::thetacommon::jaccard_similarity::JaccardSimilarity;
 use crate::thetacommon::jaccard_similarity::JaccardSimilarityOperator;
 use crate::thetacommon::jaccard_similarity::JaccardSketch;
@@ -50,8 +50,8 @@ pub struct ThetaJaccardSimilarity {
 }
 
 impl JaccardSketch for ThetaSketchView<'_> {
-    fn header(self) -> SketchHeader {
-        ThetaSketchView::header(self)
+    fn set_operation_properties(self) -> SetOperationSketchProperties {
+        ThetaSketchView::set_operation_properties(self)
     }
 
     fn hashes(self) -> impl Iterator<Item = u64> {

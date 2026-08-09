@@ -96,10 +96,10 @@ impl TupleANotB {
         let a = a.into();
         let b = b.into();
         let parts = self.op.compute(
-            a.header(),
+            a.set_operation_properties(),
             a.iter()
                 .map(|(hash, summary)| TupleEntry::new(hash, summary.clone())),
-            b.header(),
+            b.set_operation_properties(),
             b.iter().map(|(hash, _)| hash),
             ordered,
         )?;

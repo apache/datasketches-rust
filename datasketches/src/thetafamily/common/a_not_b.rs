@@ -22,7 +22,7 @@ use crate::error::ErrorKind;
 use crate::hash::check_seed_hash;
 use crate::hash::compute_seed_hash;
 use crate::thetacommon::RetainedEntry;
-use crate::thetacommon::SketchHeader;
+use crate::thetacommon::SetOperationSketchProperties;
 use crate::thetacommon::constants::MAX_THETA;
 use crate::thetacommon::hash_table::CompactSketchParts;
 
@@ -56,9 +56,9 @@ impl ANotBOperator {
     /// operator's seed.
     pub fn compute<E, A, B>(
         &self,
-        a_header: SketchHeader,
+        a_properties: SetOperationSketchProperties,
         a_entries: A,
-        b_header: SketchHeader,
+        b_properties: SetOperationSketchProperties,
         b_entries: B,
         ordered: bool,
     ) -> Result<CompactSketchParts<E>, Error>
@@ -69,14 +69,14 @@ impl ANotBOperator {
     {
         // If A is empty the result is an (empty) copy of A. As with the union and intersection, an
         // empty input carries no keys, so its seed is not validated.
-        if a_header.empty {
-            return Ok(Self::parts_from_entries(a_header, a_entries, ordered));
+        if a_properties.empty {
+            return Ok(Self::parts_from_entries(a_properties, a_entries, ordered));
         }
 
         // A is non-empty, so its seed must be compatible.
         check_seed_hash(
             self.seed_hash,
-            a_header.seed_hash,
+            a_properties.seed_hash,
             "A",
             ErrorKind::InvalidArgument,
         )?;
@@ -84,29 +84,29 @@ impl ANotBOperator {
         // An empty B subtracts nothing, so the result is simply a copy of A. This also covers the
         // "A is non-empty but has no retained keys" state: B's seed and theta must not influence
         // the result, so we return before touching them.
-        if b_header.empty {
-            return Ok(Self::parts_from_entries(a_header, a_entries, ordered));
+        if b_properties.empty {
+            return Ok(Self::parts_from_entries(a_properties, a_entries, ordered));
         }
 
         // B is non-empty, so its seed must be compatible.
         check_seed_hash(
             self.seed_hash,
-            b_header.seed_hash,
+            b_properties.seed_hash,
             "B",
             ErrorKind::InvalidArgument,
         )?;
 
-        let SketchHeader {
+        let SetOperationSketchProperties {
             theta: a_theta,
             ordered: a_ordered,
             ..
-        } = a_header;
-        let SketchHeader {
+        } = a_properties;
+        let SetOperationSketchProperties {
             theta: b_theta,
             ordered: b_ordered,
             num_retained: b_num_retained,
             ..
-        } = b_header;
+        } = b_properties;
         let theta = a_theta.min(b_theta);
         // A is non-empty here; the result only becomes empty if everything is subtracted in exact
         // mode (handled below).
@@ -182,7 +182,7 @@ impl ANotBOperator {
 
     /// Builds compact parts that are a copy of the view `a`.
     fn parts_from_entries<E, I>(
-        header: SketchHeader,
+        properties: SetOperationSketchProperties,
         entries: I,
         ordered: bool,
     ) -> CompactSketchParts<E>
@@ -191,16 +191,16 @@ impl ANotBOperator {
         I: Iterator<Item = E>,
     {
         let mut entries: Vec<E> = entries.collect();
-        let out_ordered = ordered || header.ordered;
-        if ordered && !header.ordered && entries.len() > 1 {
+        let out_ordered = ordered || properties.ordered;
+        if ordered && !properties.ordered && entries.len() > 1 {
             entries.sort_unstable_by_key(RetainedEntry::hash);
         }
         CompactSketchParts {
             entries,
-            theta: header.theta,
-            seed_hash: header.seed_hash,
+            theta: properties.theta,
+            seed_hash: properties.seed_hash,
             ordered: out_ordered,
-            empty: header.empty,
+            empty: properties.empty,
         }
     }
 }
