@@ -23,6 +23,7 @@
 //! implementations.
 
 use std::hash::Hash;
+use std::slice;
 
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
@@ -36,8 +37,7 @@ use crate::error::ErrorKind;
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::hash::check_seed_hash;
 use crate::hash::compute_seed_hash;
-use crate::thetacommon::EitherIter;
-use crate::thetacommon::SketchInput;
+use crate::thetacommon::SketchMetadata;
 use crate::thetacommon::binomial_bounds;
 use crate::thetacommon::constants::DEFAULT_LG_K;
 use crate::thetacommon::constants::FLAGS_IS_COMPACT;
@@ -47,6 +47,7 @@ use crate::thetacommon::constants::FLAGS_IS_READ_ONLY;
 use crate::thetacommon::constants::MAX_LG_K;
 use crate::thetacommon::constants::MAX_THETA;
 use crate::thetacommon::constants::MIN_LG_K;
+use crate::thetacommon::hash_table::SketchHashTableIter;
 use crate::tuple::hash_table::TupleEntry;
 use crate::tuple::hash_table::TupleHashTable;
 use crate::tuple::policy::SummaryPolicy;
@@ -84,6 +85,35 @@ enum TupleSketchViewInner<'a, S> {
     Compact(&'a CompactTupleSketch<S>),
 }
 
+struct TupleSketchIter<'a, S>(TupleSketchIterState<'a, S>);
+
+enum TupleSketchIterState<'a, S> {
+    Mutable(SketchHashTableIter<'a, TupleEntry<S>>),
+    Compact(slice::Iter<'a, TupleEntry<S>>),
+}
+
+impl<'a, S> Iterator for TupleSketchIter<'a, S> {
+    type Item = (u64, &'a S);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match &mut self.0 {
+            TupleSketchIterState::Mutable(iter) => {
+                iter.next().map(|entry| (entry.hash(), entry.summary()))
+            }
+            TupleSketchIterState::Compact(iter) => {
+                iter.next().map(|entry| (entry.hash(), entry.summary()))
+            }
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        match &self.0 {
+            TupleSketchIterState::Mutable(iter) => iter.size_hint(),
+            TupleSketchIterState::Compact(iter) => iter.size_hint(),
+        }
+    }
+}
+
 impl<S> Clone for TupleSketchView<'_, S> {
     fn clone(&self) -> Self {
         *self
@@ -100,7 +130,18 @@ impl<S> Clone for TupleSketchViewInner<'_, S> {
 
 impl<S> Copy for TupleSketchViewInner<'_, S> {}
 
-impl<S> TupleSketchView<'_, S> {
+impl<'a, S> TupleSketchView<'a, S> {
+    fn into_iter(self) -> TupleSketchIter<'a, S> {
+        match self.inner {
+            TupleSketchViewInner::Mutable(table) => {
+                TupleSketchIter(TupleSketchIterState::Mutable(table.iter_entries()))
+            }
+            TupleSketchViewInner::Compact(sketch) => {
+                TupleSketchIter(TupleSketchIterState::Compact(sketch.entries.iter()))
+            }
+        }
+    }
+
     /// Returns the 16-bit seed hash.
     pub fn seed_hash(&self) -> u16 {
         match self.inner {
@@ -134,15 +175,12 @@ impl<S> TupleSketchView<'_, S> {
     }
 
     /// Returns an iterator over retained hashes and borrowed summaries.
-    pub fn iter(&self) -> impl Iterator<Item = (u64, &S)> + '_ {
-        match self.inner {
-            TupleSketchViewInner::Mutable(table) => EitherIter::Left(table.iter()),
-            TupleSketchViewInner::Compact(sketch) => EitherIter::Right(sketch.iter()),
-        }
+    pub fn iter(&self) -> impl Iterator<Item = (u64, &'a S)> + 'a {
+        (*self).into_iter()
     }
 
     /// Returns an iterator over retained hash keys.
-    pub fn iter_hashes(&self) -> impl Iterator<Item = u64> + '_ {
+    pub fn iter_hashes(&self) -> impl Iterator<Item = u64> + 'a {
         self.iter().map(|(hash, _)| hash)
     }
 
@@ -156,50 +194,29 @@ impl<S> TupleSketchView<'_, S> {
 }
 
 impl<'a, S> TupleSketchView<'a, S> {
-    pub(crate) fn entries(self) -> SketchInput<impl Iterator<Item = TupleEntry<S>> + 'a>
-    where
-        S: Clone + 'a,
-    {
-        let entries = match self.inner {
-            TupleSketchViewInner::Mutable(table) => EitherIter::Left(
-                table
-                    .iter()
-                    .map(|(hash, summary)| TupleEntry::new(hash, summary.clone())),
-            ),
-            TupleSketchViewInner::Compact(sketch) => {
-                EitherIter::Right(sketch.entries.iter().cloned())
-            }
-        };
-        SketchInput::new(
+    pub(crate) fn metadata(self) -> SketchMetadata {
+        SketchMetadata::new(
             self.seed_hash(),
             self.theta64(),
             self.is_empty(),
             self.is_ordered(),
             self.num_retained(),
-            entries,
         )
     }
 
-    pub(crate) fn hashes(self) -> SketchInput<impl Iterator<Item = u64> + 'a>
+    pub(crate) fn entries(self) -> impl Iterator<Item = TupleEntry<S>> + 'a
+    where
+        S: Clone + 'a,
+    {
+        self.into_iter()
+            .map(|(hash, summary)| TupleEntry::new(hash, summary.clone()))
+    }
+
+    pub(crate) fn hashes(self) -> impl Iterator<Item = u64> + 'a
     where
         S: 'a,
     {
-        let entries = match self.inner {
-            TupleSketchViewInner::Mutable(table) => {
-                EitherIter::Left(table.iter().map(|(hash, _)| hash))
-            }
-            TupleSketchViewInner::Compact(sketch) => {
-                EitherIter::Right(sketch.entries.iter().map(TupleEntry::hash))
-            }
-        };
-        SketchInput::new(
-            self.seed_hash(),
-            self.theta64(),
-            self.is_empty(),
-            self.is_ordered(),
-            self.num_retained(),
-            entries,
-        )
+        self.into_iter().map(|(hash, _)| hash)
     }
 }
 

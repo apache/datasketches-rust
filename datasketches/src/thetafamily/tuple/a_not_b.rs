@@ -92,9 +92,11 @@ impl TupleANotB {
         S: Clone + 'a,
         T: 'b,
     {
-        let parts = self
-            .op
-            .compute(a.into().entries(), b.into().hashes(), ordered)?;
+        let a = a.into();
+        let b = b.into();
+        let parts =
+            self.op
+                .compute(a.metadata(), a.entries(), b.metadata(), b.hashes(), ordered)?;
         Ok(CompactTupleSketch::from_parts(
             parts.entries,
             parts.theta,

@@ -83,8 +83,12 @@ impl TupleJaccardSimilarity {
     {
         let sketch_a = sketch_a.into();
         let sketch_b = sketch_b.into();
-        self.op
-            .compute(move || sketch_a.hashes(), move || sketch_b.hashes())
+        self.op.compute(
+            sketch_a.metadata(),
+            move || sketch_a.hashes(),
+            sketch_b.metadata(),
+            move || sketch_b.hashes(),
+        )
     }
 
     /// Returns whether the two sketches are exactly equal.
@@ -107,7 +111,13 @@ impl TupleJaccardSimilarity {
         S: 'a,
         T: 'b,
     {
-        self.op
-            .exactly_equal(sketch_a.into().hashes(), sketch_b.into().hashes())
+        let sketch_a = sketch_a.into();
+        let sketch_b = sketch_b.into();
+        self.op.exactly_equal(
+            sketch_a.metadata(),
+            sketch_a.hashes(),
+            sketch_b.metadata(),
+            sketch_b.hashes(),
+        )
     }
 }

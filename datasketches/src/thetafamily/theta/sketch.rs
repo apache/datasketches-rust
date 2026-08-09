@@ -21,6 +21,7 @@
 //! for cardinality estimation.
 
 use std::hash::Hash;
+use std::slice;
 
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
@@ -45,8 +46,7 @@ use crate::theta::serialization;
 use crate::theta::serialization::V2_PREAMBLE_EMPTY;
 use crate::theta::serialization::V2_PREAMBLE_ESTIMATE;
 use crate::theta::serialization::V2_PREAMBLE_PRECISE;
-use crate::thetacommon::EitherIter;
-use crate::thetacommon::SketchInput;
+use crate::thetacommon::SketchMetadata;
 use crate::thetacommon::binomial_bounds;
 use crate::thetacommon::constants::DEFAULT_LG_K;
 use crate::thetacommon::constants::FLAGS_IS_COMPACT;
@@ -56,6 +56,7 @@ use crate::thetacommon::constants::FLAGS_IS_READ_ONLY;
 use crate::thetacommon::constants::MAX_LG_K;
 use crate::thetacommon::constants::MAX_THETA;
 use crate::thetacommon::constants::MIN_LG_K;
+use crate::thetacommon::hash_table::SketchHashTableIter;
 
 /// Read-only view for Theta sketches.
 ///
@@ -84,7 +85,43 @@ enum ThetaSketchViewInner<'a> {
     Compact(&'a CompactThetaSketch),
 }
 
-impl ThetaSketchView<'_> {
+struct ThetaSketchIter<'a>(ThetaSketchIterState<'a>);
+
+enum ThetaSketchIterState<'a> {
+    Mutable(SketchHashTableIter<'a, ThetaEntry>),
+    Compact(slice::Iter<'a, u64>),
+}
+
+impl Iterator for ThetaSketchIter<'_> {
+    type Item = ThetaEntry;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match &mut self.0 {
+            ThetaSketchIterState::Mutable(iter) => iter.next().copied(),
+            ThetaSketchIterState::Compact(iter) => iter.next().map(|&hash| ThetaEntry::new(hash)),
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        match &self.0 {
+            ThetaSketchIterState::Mutable(iter) => iter.size_hint(),
+            ThetaSketchIterState::Compact(iter) => iter.size_hint(),
+        }
+    }
+}
+
+impl<'a> ThetaSketchView<'a> {
+    fn into_iter(self) -> ThetaSketchIter<'a> {
+        match self.inner {
+            ThetaSketchViewInner::Mutable(sketch) => {
+                ThetaSketchIter(ThetaSketchIterState::Mutable(sketch.table.iter_entries()))
+            }
+            ThetaSketchViewInner::Compact(sketch) => {
+                ThetaSketchIter(ThetaSketchIterState::Compact(sketch.entries.iter()))
+            }
+        }
+    }
+
     /// Returns the 16-bit seed hash.
     pub fn seed_hash(&self) -> u16 {
         match self.inner {
@@ -118,11 +155,8 @@ impl ThetaSketchView<'_> {
     }
 
     /// Returns an iterator over retained entries.
-    pub fn iter(&self) -> impl Iterator<Item = ThetaEntry> + '_ {
-        match self.inner {
-            ThetaSketchViewInner::Mutable(sketch) => EitherIter::Left(sketch.iter()),
-            ThetaSketchViewInner::Compact(sketch) => EitherIter::Right(sketch.iter()),
-        }
+    pub fn iter(&self) -> impl Iterator<Item = ThetaEntry> + 'a {
+        (*self).into_iter()
     }
 
     /// Returns the number of retained entries.
@@ -135,23 +169,22 @@ impl ThetaSketchView<'_> {
 }
 
 impl<'a> ThetaSketchView<'a> {
-    pub(crate) fn entries(self) -> SketchInput<impl Iterator<Item = ThetaEntry> + 'a> {
-        let entries = match self.inner {
-            ThetaSketchViewInner::Mutable(sketch) => EitherIter::Left(sketch.iter()),
-            ThetaSketchViewInner::Compact(sketch) => EitherIter::Right(sketch.iter()),
-        };
-        SketchInput::new(
+    pub(crate) fn metadata(self) -> SketchMetadata {
+        SketchMetadata::new(
             self.seed_hash(),
             self.theta64(),
             self.is_empty(),
             self.is_ordered(),
             self.num_retained(),
-            entries,
         )
     }
 
-    pub(crate) fn hashes(self) -> SketchInput<impl Iterator<Item = u64> + 'a> {
-        self.entries().map_entries(|entry| entry.hash())
+    pub(crate) fn entries(self) -> impl Iterator<Item = ThetaEntry> + 'a {
+        self.into_iter()
+    }
+
+    pub(crate) fn hashes(self) -> impl Iterator<Item = u64> + 'a {
+        self.into_iter().map(|entry| entry.hash())
     }
 }
 

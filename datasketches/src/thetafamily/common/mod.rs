@@ -32,24 +32,23 @@ pub(crate) trait RetainedEntry {
     fn hash(&self) -> u64;
 }
 
-/// One-pass input assembled by a concrete sketch view and consumed by a shared algorithm.
-pub(crate) struct SketchInput<I> {
+/// Sketch properties inspected by Theta-family set operations.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct SketchMetadata {
     pub(crate) seed_hash: u16,
     pub(crate) theta: u64,
     pub(crate) empty: bool,
     pub(crate) ordered: bool,
     pub(crate) num_retained: usize,
-    pub(crate) entries: I,
 }
 
-impl<I> SketchInput<I> {
+impl SketchMetadata {
     pub(crate) fn new(
         seed_hash: u16,
         theta: u64,
         empty: bool,
         ordered: bool,
         num_retained: usize,
-        entries: I,
     ) -> Self {
         Self {
             seed_hash,
@@ -57,50 +56,6 @@ impl<I> SketchInput<I> {
             empty,
             ordered,
             num_retained,
-            entries,
-        }
-    }
-
-    pub(crate) fn map_entries<T, F>(self, f: F) -> SketchInput<impl Iterator<Item = T>>
-    where
-        I: Iterator,
-        F: FnMut(I::Item) -> T,
-    {
-        SketchInput::new(
-            self.seed_hash,
-            self.theta,
-            self.empty,
-            self.ordered,
-            self.num_retained,
-            self.entries.map(f),
-        )
-    }
-}
-
-/// Either of two concrete iterators without allocation or dynamic dispatch.
-pub(crate) enum EitherIter<L, R> {
-    Left(L),
-    Right(R),
-}
-
-impl<T, L, R> Iterator for EitherIter<L, R>
-where
-    L: Iterator<Item = T>,
-    R: Iterator<Item = T>,
-{
-    type Item = T;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self {
-            Self::Left(iter) => iter.next(),
-            Self::Right(iter) => iter.next(),
-        }
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        match self {
-            Self::Left(iter) => iter.size_hint(),
-            Self::Right(iter) => iter.size_hint(),
         }
     }
 }

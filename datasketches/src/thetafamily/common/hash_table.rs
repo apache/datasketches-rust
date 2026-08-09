@@ -16,6 +16,7 @@
 // under the License.
 
 use std::hash::Hash;
+use std::slice;
 
 use crate::common::ResizeFactor;
 use crate::hash::MurmurHash3X64128;
@@ -35,6 +36,20 @@ pub struct CompactSketchParts<E> {
     pub seed_hash: u16,
     pub ordered: bool,
     pub empty: bool,
+}
+
+pub(crate) struct SketchHashTableIter<'a, E>(slice::Iter<'a, Option<E>>);
+
+impl<'a, E> Iterator for SketchHashTableIter<'a, E> {
+    type Item = &'a E;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.find_map(Option::as_ref)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (0, self.0.size_hint().1)
+    }
 }
 
 /// Generic hash-table mechanics shared by Theta and Tuple sketches.
@@ -256,8 +271,8 @@ where
     }
 
     /// Get iterator over retained entries.
-    pub fn iter_entries(&self) -> impl Iterator<Item = &E> + '_ {
-        self.entries.iter().filter_map(Option::as_ref)
+    pub fn iter_entries(&self) -> SketchHashTableIter<'_, E> {
+        SketchHashTableIter(self.entries.iter())
     }
 
     /// Returns the retained entries and theta as compact-sketch parts.

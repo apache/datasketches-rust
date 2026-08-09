@@ -20,7 +20,7 @@ use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::hash::check_seed_hash;
 use crate::thetacommon::RetainedEntry;
-use crate::thetacommon::SketchInput;
+use crate::thetacommon::SketchMetadata;
 use crate::thetacommon::constants::MAX_THETA;
 use crate::thetacommon::hash_table::CompactSketchParts;
 use crate::thetacommon::hash_table::SketchHashTable;
@@ -61,19 +61,18 @@ where
     }
 
     /// Incorporate a sketch into the union.
-    pub fn update<I>(&mut self, sketch: SketchInput<I>) -> Result<(), Error>
+    pub fn update<I>(&mut self, metadata: SketchMetadata, entries: I) -> Result<(), Error>
     where
         I: Iterator<Item = E>,
         P: UnionMergePolicy<E>,
     {
-        let SketchInput {
+        let SketchMetadata {
             seed_hash,
             theta,
             empty,
             ordered,
-            entries,
             ..
-        } = sketch;
+        } = metadata;
         if empty {
             return Ok(());
         }
