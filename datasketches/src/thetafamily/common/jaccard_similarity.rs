@@ -160,11 +160,7 @@ where
     }
 }
 
-pub(in crate::thetafamily) fn compute<A, B>(
-    seed: u64,
-    sketch_a: A,
-    sketch_b: B,
-) -> Result<JaccardSimilarity, Error>
+pub fn compute<A, B>(seed: u64, sketch_a: A, sketch_b: B) -> Result<JaccardSimilarity, Error>
 where
     A: SetOperationSketchView,
     B: SetOperationSketchView,
@@ -212,11 +208,7 @@ where
     )
 }
 
-pub(in crate::thetafamily) fn exactly_equal<A, B>(
-    seed: u64,
-    sketch_a: A,
-    sketch_b: B,
-) -> Result<bool, Error>
+pub fn exactly_equal<A, B>(seed: u64, sketch_a: A, sketch_b: B) -> Result<bool, Error>
 where
     A: SetOperationSketchView,
     B: SetOperationSketchView,

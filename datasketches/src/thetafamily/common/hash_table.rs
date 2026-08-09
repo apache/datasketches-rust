@@ -38,7 +38,7 @@ pub struct CompactSketchParts<E> {
     pub empty: bool,
 }
 
-pub(crate) struct SketchHashTableIter<'a, E>(slice::Iter<'a, Option<E>>);
+pub struct SketchHashTableIter<'a, E>(slice::Iter<'a, Option<E>>);
 
 impl<'a, E> Iterator for SketchHashTableIter<'a, E> {
     type Item = &'a E;

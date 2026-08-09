@@ -17,28 +17,28 @@
 
 //! Data structures and functions that may be used across all the Theta sketch family.
 
-pub(crate) mod a_not_b;
-pub(crate) mod binomial_bounds;
-pub(crate) mod constants;
-pub(crate) mod hash_table;
-pub(crate) mod intersection;
-pub(crate) mod jaccard_similarity;
-pub(crate) mod union;
+pub(super) mod a_not_b;
+pub(super) mod binomial_bounds;
+pub(super) mod constants;
+pub(super) mod hash_table;
+pub(super) mod intersection;
+pub(super) mod jaccard_similarity;
+pub(super) mod union;
 
 pub use self::jaccard_similarity::JaccardSimilarity;
 
 /// Minimal entry behavior required by the shared hash table and set-operation state machines.
-pub(crate) trait RetainedEntry {
+pub(super) trait RetainedEntry {
     fn hash(&self) -> u64;
 }
 
-pub(crate) trait SetOperationSketchView: Copy {
+pub(super) trait SetOperationSketchView: Copy {
     fn props(self) -> SetOpProps;
 
     fn hashes(self) -> impl Iterator<Item = u64>;
 }
 
-pub(crate) trait OwnedEntrySketchView: SetOperationSketchView {
+pub(super) trait OwnedEntrySketchView: SetOperationSketchView {
     type Entry: RetainedEntry;
 
     fn entries(self) -> impl Iterator<Item = Self::Entry>;
@@ -46,7 +46,7 @@ pub(crate) trait OwnedEntrySketchView: SetOperationSketchView {
 
 /// Sketch properties inspected by Theta-family set operations.
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct SetOpProps {
+pub(super) struct SetOpProps {
     pub seed_hash: u16,
     pub theta: u64,
     pub empty: bool,

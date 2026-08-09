@@ -285,11 +285,7 @@ static UB_EQUIV_TABLE: [f64; 363] = [
 /// # Errors
 ///
 /// Returns an error if `theta` is not in the range `(0.0, 1.0]`.
-pub(crate) fn lower_bound(
-    num_samples: u64,
-    theta: f64,
-    num_std_dev: NumStdDev,
-) -> Result<f64, Error> {
+pub fn lower_bound(num_samples: u64, theta: f64, num_std_dev: NumStdDev) -> Result<f64, Error> {
     if theta <= 0.0 || theta > 1.0 {
         return Err(Error::invalid_argument(format!(
             "theta must be in the range (0.0, 1.0], got {theta}"
@@ -320,7 +316,7 @@ pub(crate) fn lower_bound(
 /// # Errors
 ///
 /// Returns an error if `theta` is not in the range `(0.0, 1.0]`.
-pub(crate) fn upper_bound(
+pub fn upper_bound(
     num_samples: u64,
     theta: f64,
     num_std_dev: NumStdDev,
@@ -342,11 +338,7 @@ pub(crate) fn upper_bound(
 }
 
 /// Computes an approximate lower bound for an unknown binomial proportion.
-pub(crate) fn approximate_lower_bound_on_p(
-    n: u64,
-    k: u64,
-    num_std_devs: f64,
-) -> Result<f64, Error> {
+pub fn approximate_lower_bound_on_p(n: u64, k: u64, num_std_devs: f64) -> Result<f64, Error> {
     check_proportion_inputs(n, k)?;
     if n == 0 || k == 0 {
         Ok(0.0)
@@ -367,11 +359,7 @@ pub(crate) fn approximate_lower_bound_on_p(
 }
 
 /// Computes an approximate upper bound for an unknown binomial proportion.
-pub(crate) fn approximate_upper_bound_on_p(
-    n: u64,
-    k: u64,
-    num_std_devs: f64,
-) -> Result<f64, Error> {
+pub fn approximate_upper_bound_on_p(n: u64, k: u64, num_std_devs: f64) -> Result<f64, Error> {
     check_proportion_inputs(n, k)?;
     if n == 0 || k == n {
         Ok(1.0)

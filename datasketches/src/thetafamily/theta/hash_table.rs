@@ -37,7 +37,7 @@ pub struct ThetaEntry {
 }
 
 impl ThetaEntry {
-    pub(crate) fn new(hash: u64) -> Self {
+    pub(super) fn new(hash: u64) -> Self {
         let hash = NonZeroU64::new(hash).expect("hash must be non-zero");
         Self { hash }
     }

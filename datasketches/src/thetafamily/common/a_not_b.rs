@@ -33,7 +33,7 @@ use crate::thetacommon::hash_table::CompactSketchParts;
 /// Surviving entries are moved from `A` unchanged, and `B` contributes only hashes, so unlike
 /// the union and intersection this operation needs neither matching entry types nor an
 /// entry-merge policy.
-pub(in crate::thetafamily) fn compute<A, B>(
+pub fn compute<A, B>(
     seed_hash: u16,
     a: A,
     b: B,
