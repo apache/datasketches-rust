@@ -18,7 +18,7 @@
 use std::hash::Hash;
 use std::num::NonZeroU64;
 
-use crate::thetacommon::RetainedEntry;
+use crate::thetacommon::SketchEntry;
 use crate::thetacommon::hash_table::SketchHashTable;
 
 /// Specific hash table for theta sketch
@@ -37,7 +37,7 @@ pub struct ThetaEntry {
 }
 
 impl ThetaEntry {
-    pub(crate) fn new(hash: u64) -> Self {
+    pub(super) fn new(hash: u64) -> Self {
         let hash = NonZeroU64::new(hash).expect("hash must be non-zero");
         Self { hash }
     }
@@ -48,7 +48,7 @@ impl ThetaEntry {
     }
 }
 
-impl RetainedEntry for ThetaEntry {
+impl SketchEntry for ThetaEntry {
     fn hash(&self) -> u64 {
         self.hash.get()
     }

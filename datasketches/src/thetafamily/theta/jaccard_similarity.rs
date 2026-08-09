@@ -20,8 +20,8 @@
 use crate::error::Error;
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::theta::ThetaSketchView;
+use crate::thetacommon::jaccard_similarity;
 use crate::thetacommon::jaccard_similarity::JaccardSimilarity;
-use crate::thetacommon::jaccard_similarity::JaccardSimilarityOperator;
 
 /// Jaccard similarity operator for Theta sketches.
 ///
@@ -44,7 +44,7 @@ use crate::thetacommon::jaccard_similarity::JaccardSimilarityOperator;
 /// ```
 #[derive(Clone, Copy, Debug)]
 pub struct ThetaJaccardSimilarity {
-    op: JaccardSimilarityOperator,
+    seed: u64,
 }
 
 impl Default for ThetaJaccardSimilarity {
@@ -56,9 +56,7 @@ impl Default for ThetaJaccardSimilarity {
 impl ThetaJaccardSimilarity {
     /// Creates a Jaccard similarity operator for the given `seed`.
     pub fn with_seed(seed: u64) -> Self {
-        Self {
-            op: JaccardSimilarityOperator::new(seed),
-        }
+        Self { seed }
     }
 
     /// Computes the Jaccard similarity index for `sketch_a` and `sketch_b`.
@@ -67,12 +65,12 @@ impl ThetaJaccardSimilarity {
     ///
     /// Returns an error if either non-empty sketch was built with a seed different from this
     /// operator's configured seed.
-    pub fn compute<A: ThetaSketchView, B: ThetaSketchView>(
+    pub fn compute<'a, 'b>(
         &self,
-        sketch_a: &A,
-        sketch_b: &B,
+        sketch_a: impl Into<ThetaSketchView<'a>>,
+        sketch_b: impl Into<ThetaSketchView<'b>>,
     ) -> Result<JaccardSimilarity, Error> {
-        self.op.compute(sketch_a, sketch_b)
+        jaccard_similarity::compute(self.seed, sketch_a.into(), sketch_b.into())
     }
 
     /// Returns whether the two sketches are exactly equal.
@@ -85,11 +83,11 @@ impl ThetaJaccardSimilarity {
     ///
     /// Returns an error if both sketches are non-empty and either was built with a seed different
     /// from this operator's configured seed.
-    pub fn exactly_equal<A: ThetaSketchView, B: ThetaSketchView>(
+    pub fn exactly_equal<'a, 'b>(
         &self,
-        sketch_a: &A,
-        sketch_b: &B,
+        sketch_a: impl Into<ThetaSketchView<'a>>,
+        sketch_b: impl Into<ThetaSketchView<'b>>,
     ) -> Result<bool, Error> {
-        self.op.exactly_equal(sketch_a, sketch_b)
+        jaccard_similarity::exactly_equal(self.seed, sketch_a.into(), sketch_b.into())
     }
 }

@@ -24,9 +24,9 @@
 
 use crate::error::Error;
 use crate::hash::DEFAULT_UPDATE_SEED;
-use crate::thetacommon::a_not_b::ANotBOperator;
+use crate::hash::compute_seed_hash;
+use crate::thetacommon::a_not_b;
 use crate::tuple::sketch::CompactTupleSketch;
-use crate::tuple::sketch::TupleKeySketchView;
 use crate::tuple::sketch::TupleSketchView;
 
 /// Set difference operator (`A and not B`) for Tuple sketches.
@@ -56,7 +56,7 @@ use crate::tuple::sketch::TupleSketchView;
 /// ```
 #[derive(Debug, Clone, Copy)]
 pub struct TupleANotB {
-    op: ANotBOperator,
+    seed_hash: u16,
 }
 
 impl Default for TupleANotB {
@@ -69,7 +69,7 @@ impl TupleANotB {
     /// Creates a new set difference operator for the given `seed`.
     pub fn with_seed(seed: u64) -> Self {
         Self {
-            op: ANotBOperator::new(seed),
+            seed_hash: compute_seed_hash(seed),
         }
     }
 
@@ -83,17 +83,19 @@ impl TupleANotB {
     ///
     /// Returns an error if either non-trivial input has a seed hash that differs from this
     /// operator's seed.
-    pub fn compute<S, A, B>(
+    pub fn compute<'a, 'b, S, T>(
         &self,
-        a: &A,
-        b: &B,
+        a: impl Into<TupleSketchView<'a, S>>,
+        b: impl Into<TupleSketchView<'b, T>>,
         ordered: bool,
     ) -> Result<CompactTupleSketch<S>, Error>
     where
-        A: TupleSketchView<S>,
-        B: TupleKeySketchView,
+        S: Clone + 'a,
+        T: 'b,
     {
-        let parts = self.op.compute(a, b, ordered)?;
+        let a = a.into();
+        let b = b.into();
+        let parts = a_not_b::compute(self.seed_hash, a, b, ordered)?;
         Ok(CompactTupleSketch::from_parts(
             parts.entries,
             parts.theta,

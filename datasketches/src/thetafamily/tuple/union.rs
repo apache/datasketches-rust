@@ -79,17 +79,21 @@ where
     /// Merges a sketch into the union.
     ///
     /// Accepts either an [`TupleSketch`](crate::tuple::TupleSketch) or a
-    /// [`CompactTupleSketch`] through the shared [`TupleSketchView`] trait. Keys present in both
-    /// the running union and `sketch` have their summaries combined via the union policy.
+    /// [`CompactTupleSketch`] through [`TupleSketchView`]. Keys present in both the running union
+    /// and `sketch` have their summaries combined via the union policy.
     ///
     /// # Errors
     ///
     /// Returns an error if `sketch` was built with a different seed than this union (its seed hash
     /// does not match).
-    pub fn update<V>(&mut self, sketch: &V) -> Result<(), Error>
+    pub fn update<'a>(
+        &mut self,
+        sketch: impl Into<TupleSketchView<'a, P::Summary>>,
+    ) -> Result<(), Error>
     where
-        V: TupleSketchView<P::Summary>,
+        P::Summary: Clone + 'a,
     {
+        let sketch = sketch.into();
         self.state.update(sketch)
     }
 

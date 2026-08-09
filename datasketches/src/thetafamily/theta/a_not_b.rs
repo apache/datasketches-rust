@@ -23,9 +23,10 @@
 
 use crate::error::Error;
 use crate::hash::DEFAULT_UPDATE_SEED;
+use crate::hash::compute_seed_hash;
 use crate::theta::CompactThetaSketch;
 use crate::theta::ThetaSketchView;
-use crate::thetacommon::a_not_b::ANotBOperator;
+use crate::thetacommon::a_not_b;
 
 /// Set difference operator (`A and not B`) for Theta sketches.
 ///
@@ -51,7 +52,7 @@ use crate::thetacommon::a_not_b::ANotBOperator;
 /// ```
 #[derive(Debug, Clone, Copy)]
 pub struct ThetaANotB {
-    op: ANotBOperator,
+    seed_hash: u16,
 }
 
 impl Default for ThetaANotB {
@@ -64,7 +65,7 @@ impl ThetaANotB {
     /// Creates a new set difference operator for the given `seed`.
     pub fn with_seed(seed: u64) -> Self {
         Self {
-            op: ANotBOperator::new(seed),
+            seed_hash: compute_seed_hash(seed),
         }
     }
 
@@ -77,12 +78,15 @@ impl ThetaANotB {
     ///
     /// Returns an error if either non-trivial input has a seed hash that differs from this
     /// operator's seed.
-    pub fn compute<A, B>(&self, a: &A, b: &B, ordered: bool) -> Result<CompactThetaSketch, Error>
-    where
-        A: ThetaSketchView,
-        B: ThetaSketchView,
-    {
-        let parts = self.op.compute(a, b, ordered)?;
+    pub fn compute<'a, 'b>(
+        &self,
+        a: impl Into<ThetaSketchView<'a>>,
+        b: impl Into<ThetaSketchView<'b>>,
+        ordered: bool,
+    ) -> Result<CompactThetaSketch, Error> {
+        let a = a.into();
+        let b = b.into();
+        let parts = a_not_b::compute(self.seed_hash, a, b, ordered)?;
         Ok(CompactThetaSketch::from_parts(
             parts
                 .entries

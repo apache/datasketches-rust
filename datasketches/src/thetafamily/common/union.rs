@@ -19,8 +19,9 @@ use crate::common::ResizeFactor;
 use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::hash::check_seed_hash;
-use crate::thetacommon::RetainedEntry;
-use crate::thetacommon::ThetaFamilySketchView;
+use crate::thetacommon::EntrySketch;
+use crate::thetacommon::SketchEntry;
+use crate::thetacommon::SketchScalars;
 use crate::thetacommon::constants::MAX_THETA;
 use crate::thetacommon::hash_table::CompactSketchParts;
 use crate::thetacommon::hash_table::SketchHashTable;
@@ -43,7 +44,7 @@ pub struct UnionState<E, P> {
 
 impl<E, P> UnionState<E, P>
 where
-    E: RetainedEntry,
+    E: SketchEntry,
 {
     pub fn new(
         lg_k: u8,
@@ -61,26 +62,33 @@ where
     }
 
     /// Incorporate a sketch into the union.
-    pub fn update<S>(&mut self, sketch: &S) -> Result<(), Error>
+    pub fn update<S>(&mut self, sketch: S) -> Result<(), Error>
     where
-        S: ThetaFamilySketchView<Entry = E>,
+        S: EntrySketch<Entry = E>,
         P: UnionMergePolicy<E>,
     {
-        if sketch.is_empty() {
+        let SketchScalars {
+            seed_hash,
+            theta,
+            empty,
+            ordered,
+            ..
+        } = sketch.scalars();
+        if empty {
             return Ok(());
         }
 
         check_seed_hash(
             self.table.seed_hash(),
-            sketch.seed_hash(),
+            seed_hash,
             "union update",
             ErrorKind::InvalidArgument,
         )?;
 
         self.table.set_empty(false);
-        self.union_theta = self.union_theta.min(sketch.theta64());
+        self.union_theta = self.union_theta.min(theta);
 
-        for entry in sketch.iter() {
+        for entry in sketch.entries() {
             let hash = entry.hash();
             if hash < self.union_theta && hash < self.table.theta() {
                 self.table.upsert_entry(hash, |existing| match existing {
@@ -90,7 +98,7 @@ where
                     }
                     None => Some(entry),
                 });
-            } else if sketch.is_ordered() {
+            } else if ordered {
                 break;
             }
         }
@@ -136,7 +144,7 @@ where
 
         let ordered = ordered || (entries.len() == 1 && theta == MAX_THETA);
         if ordered {
-            entries.sort_unstable_by_key(RetainedEntry::hash);
+            entries.sort_unstable_by_key(SketchEntry::hash);
         }
 
         CompactSketchParts {
@@ -157,101 +165,5 @@ where
     /// Returns the estimated size of the heap allocations in bytes.
     pub fn estimated_size(&self) -> usize {
         self.table.estimated_size()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::hash::DEFAULT_UPDATE_SEED;
-    use crate::hash::compute_seed_hash;
-    use crate::thetacommon::ThetaKeySketchView;
-
-    #[derive(Clone, Debug, Eq, PartialEq)]
-    struct TestEntry {
-        hash: u64,
-        summary: u64,
-    }
-
-    impl RetainedEntry for TestEntry {
-        fn hash(&self) -> u64 {
-            self.hash
-        }
-    }
-
-    struct TestSketch {
-        entries: Vec<TestEntry>,
-    }
-
-    impl ThetaKeySketchView for TestSketch {
-        fn seed_hash(&self) -> u16 {
-            compute_seed_hash(DEFAULT_UPDATE_SEED)
-        }
-
-        fn theta64(&self) -> u64 {
-            MAX_THETA
-        }
-
-        fn is_empty(&self) -> bool {
-            false
-        }
-
-        fn is_ordered(&self) -> bool {
-            false
-        }
-
-        fn iter_hashes(&self) -> impl Iterator<Item = u64> + '_ {
-            self.entries.iter().map(RetainedEntry::hash)
-        }
-
-        fn num_retained(&self) -> usize {
-            self.entries.len()
-        }
-    }
-
-    impl ThetaFamilySketchView for TestSketch {
-        type Entry = TestEntry;
-
-        fn iter(&self) -> impl Iterator<Item = TestEntry> + '_ {
-            self.entries.iter().cloned()
-        }
-    }
-
-    struct SumPolicy;
-
-    impl UnionMergePolicy<TestEntry> for SumPolicy {
-        fn merge(&self, existing: &mut TestEntry, incoming: TestEntry) {
-            existing.summary += incoming.summary;
-        }
-    }
-
-    #[test]
-    fn merges_equal_hash_entries_with_policy() {
-        let mut union = UnionState::new(5, ResizeFactor::X1, 1.0, DEFAULT_UPDATE_SEED, SumPolicy);
-        union
-            .update(&TestSketch {
-                entries: vec![TestEntry {
-                    hash: 1,
-                    summary: 2,
-                }],
-            })
-            .unwrap();
-        union
-            .update(&TestSketch {
-                entries: vec![TestEntry {
-                    hash: 1,
-                    summary: 3,
-                }],
-            })
-            .unwrap();
-
-        let parts = union.to_compact_parts(true);
-        assert_eq!(
-            parts.entries,
-            vec![TestEntry {
-                hash: 1,
-                summary: 5,
-            }]
-        );
     }
 }

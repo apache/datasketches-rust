@@ -21,6 +21,7 @@
 //! for cardinality estimation.
 
 use std::hash::Hash;
+use std::slice;
 
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
@@ -45,8 +46,9 @@ use crate::theta::serialization;
 use crate::theta::serialization::V2_PREAMBLE_EMPTY;
 use crate::theta::serialization::V2_PREAMBLE_ESTIMATE;
 use crate::theta::serialization::V2_PREAMBLE_PRECISE;
-use crate::thetacommon::ThetaFamilySketchView;
-use crate::thetacommon::ThetaKeySketchView;
+use crate::thetacommon::EntrySketch;
+use crate::thetacommon::KeySketch;
+use crate::thetacommon::SketchScalars;
 use crate::thetacommon::binomial_bounds;
 use crate::thetacommon::constants::DEFAULT_LG_K;
 use crate::thetacommon::constants::FLAGS_IS_COMPACT;
@@ -56,46 +58,143 @@ use crate::thetacommon::constants::FLAGS_IS_READ_ONLY;
 use crate::thetacommon::constants::MAX_LG_K;
 use crate::thetacommon::constants::MAX_THETA;
 use crate::thetacommon::constants::MIN_LG_K;
+use crate::thetacommon::hash_table::SketchHashTableIter;
 
 /// Read-only view for Theta sketches.
 ///
-/// This trait provides a unified input abstraction for APIs that can accept either
-/// mutable [`ThetaSketch`] or immutable [`CompactThetaSketch`].
-pub trait ThetaSketchView: ThetaFamilySketchView<Entry = ThetaEntry> {}
+/// The view borrows either a mutable [`ThetaSketch`] or immutable [`CompactThetaSketch`] and is
+/// accepted by Theta set operations. Create one with [`ThetaSketch::as_view`],
+/// [`CompactThetaSketch::as_view`], or the corresponding `From` conversion.
+///
+/// # Examples
+///
+/// ```
+/// use datasketches::theta::ThetaSketchBuilder;
+///
+/// let mut sketch = ThetaSketchBuilder::default().build();
+/// sketch.update("apple");
+/// let view = sketch.as_view();
+/// assert_eq!(view.num_retained(), 1);
+/// ```
+#[derive(Clone, Copy, Debug)]
+pub struct ThetaSketchView<'a>(ThetaSketchViewState<'a>);
 
-impl<T: ThetaFamilySketchView<Entry = ThetaEntry>> ThetaSketchView for T {}
+#[derive(Clone, Copy, Debug)]
+enum ThetaSketchViewState<'a> {
+    Mutable(&'a ThetaSketch),
+    Compact(&'a CompactThetaSketch),
+}
 
-impl ThetaKeySketchView for ThetaSketch {
-    fn seed_hash(&self) -> u16 {
-        ThetaSketch::seed_hash(self)
+enum ThetaSketchIter<'a> {
+    Mutable(SketchHashTableIter<'a, ThetaEntry>),
+    Compact(slice::Iter<'a, u64>),
+}
+
+impl Iterator for ThetaSketchIter<'_> {
+    type Item = ThetaEntry;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Mutable(iter) => iter.next().copied(),
+            Self::Compact(iter) => iter.next().map(|&hash| ThetaEntry::new(hash)),
+        }
     }
 
-    fn theta64(&self) -> u64 {
-        ThetaSketch::theta64(self)
-    }
-
-    fn is_empty(&self) -> bool {
-        ThetaSketch::is_empty(self)
-    }
-
-    fn is_ordered(&self) -> bool {
-        false
-    }
-
-    fn iter_hashes(&self) -> impl Iterator<Item = u64> + '_ {
-        self.table.iter_entries().map(ThetaEntry::hash)
-    }
-
-    fn num_retained(&self) -> usize {
-        ThetaSketch::num_retained(self)
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        match self {
+            Self::Mutable(iter) => iter.size_hint(),
+            Self::Compact(iter) => iter.size_hint(),
+        }
     }
 }
 
-impl ThetaFamilySketchView for ThetaSketch {
+impl<'a> ThetaSketchView<'a> {
+    /// Returns the 16-bit seed hash.
+    pub fn seed_hash(&self) -> u16 {
+        match self.0 {
+            ThetaSketchViewState::Mutable(sketch) => sketch.seed_hash(),
+            ThetaSketchViewState::Compact(sketch) => sketch.seed_hash(),
+        }
+    }
+
+    /// Returns theta as a `u64` threshold.
+    pub fn theta64(&self) -> u64 {
+        match self.0 {
+            ThetaSketchViewState::Mutable(sketch) => sketch.theta64(),
+            ThetaSketchViewState::Compact(sketch) => sketch.theta64(),
+        }
+    }
+
+    /// Returns whether the viewed sketch has not received any updates.
+    pub fn is_empty(&self) -> bool {
+        match self.0 {
+            ThetaSketchViewState::Mutable(sketch) => sketch.is_empty(),
+            ThetaSketchViewState::Compact(sketch) => sketch.is_empty(),
+        }
+    }
+
+    /// Returns whether retained entries are ordered by ascending hash.
+    pub fn is_ordered(&self) -> bool {
+        match self.0 {
+            ThetaSketchViewState::Mutable(_) => false,
+            ThetaSketchViewState::Compact(sketch) => sketch.is_ordered(),
+        }
+    }
+
+    /// Returns an iterator over retained entries.
+    pub fn iter(self) -> impl Iterator<Item = ThetaEntry> + 'a {
+        match self.0 {
+            ThetaSketchViewState::Mutable(sketch) => {
+                ThetaSketchIter::Mutable(sketch.table.iter_entries())
+            }
+            ThetaSketchViewState::Compact(sketch) => {
+                ThetaSketchIter::Compact(sketch.entries.iter())
+            }
+        }
+    }
+
+    /// Returns the number of retained entries.
+    pub fn num_retained(&self) -> usize {
+        match self.0 {
+            ThetaSketchViewState::Mutable(sketch) => sketch.num_retained(),
+            ThetaSketchViewState::Compact(sketch) => sketch.num_retained(),
+        }
+    }
+}
+
+impl KeySketch for ThetaSketchView<'_> {
+    fn scalars(self) -> SketchScalars {
+        SketchScalars {
+            seed_hash: self.seed_hash(),
+            theta: self.theta64(),
+            empty: self.is_empty(),
+            ordered: self.is_ordered(),
+            num_retained: self.num_retained(),
+        }
+    }
+
+    fn hashes(self) -> impl Iterator<Item = u64> {
+        self.iter().map(|entry| entry.hash())
+    }
+}
+
+impl EntrySketch for ThetaSketchView<'_> {
     type Entry = ThetaEntry;
 
-    fn iter(&self) -> impl Iterator<Item = ThetaEntry> + '_ {
-        self.table.iter_entries().copied()
+    fn entries(self) -> impl Iterator<Item = Self::Entry> {
+        self.iter()
+    }
+}
+
+impl<'a> From<&'a ThetaSketch> for ThetaSketchView<'a> {
+    fn from(sketch: &'a ThetaSketch) -> Self {
+        Self(ThetaSketchViewState::Mutable(sketch))
+    }
+}
+
+impl<'a> From<&'a CompactThetaSketch> for ThetaSketchView<'a> {
+    fn from(sketch: &'a CompactThetaSketch) -> Self {
+        Self(ThetaSketchViewState::Compact(sketch))
     }
 }
 
@@ -106,6 +205,11 @@ pub struct ThetaSketch {
 }
 
 impl ThetaSketch {
+    /// Returns a read-only view accepted by Theta set operations.
+    pub fn as_view(&self) -> ThetaSketchView<'_> {
+        self.into()
+    }
+
     /// Update the sketch with a hashable value.
     ///
     /// You may use [`hash::value`](crate::hash::value) wrappers when another DataSketches
@@ -346,6 +450,11 @@ impl CompactThetaSketch {
             ordered,
             empty,
         }
+    }
+
+    /// Returns a read-only view accepted by Theta set operations.
+    pub fn as_view(&self) -> ThetaSketchView<'_> {
+        self.into()
     }
 
     /// Returns the cardinality estimate.
@@ -873,40 +982,6 @@ impl CompactThetaSketch {
     /// Returns the estimated size of the sketch in bytes
     pub fn estimated_size(&self) -> usize {
         size_of::<Self>() + self.entries.capacity() * size_of::<u64>()
-    }
-}
-
-impl ThetaKeySketchView for CompactThetaSketch {
-    fn seed_hash(&self) -> u16 {
-        CompactThetaSketch::seed_hash(self)
-    }
-
-    fn theta64(&self) -> u64 {
-        CompactThetaSketch::theta64(self)
-    }
-
-    fn is_empty(&self) -> bool {
-        CompactThetaSketch::is_empty(self)
-    }
-
-    fn is_ordered(&self) -> bool {
-        CompactThetaSketch::is_ordered(self)
-    }
-
-    fn iter_hashes(&self) -> impl Iterator<Item = u64> + '_ {
-        self.entries.iter().copied()
-    }
-
-    fn num_retained(&self) -> usize {
-        CompactThetaSketch::num_retained(self)
-    }
-}
-
-impl ThetaFamilySketchView for CompactThetaSketch {
-    type Entry = ThetaEntry;
-
-    fn iter(&self) -> impl Iterator<Item = ThetaEntry> + '_ {
-        self.entries.iter().copied().map(ThetaEntry::new)
     }
 }
 

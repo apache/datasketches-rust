@@ -19,9 +19,9 @@
 
 use crate::error::Error;
 use crate::hash::DEFAULT_UPDATE_SEED;
+use crate::thetacommon::jaccard_similarity;
 use crate::thetacommon::jaccard_similarity::JaccardSimilarity;
-use crate::thetacommon::jaccard_similarity::JaccardSimilarityOperator;
-use crate::tuple::TupleKeySketchView;
+use crate::tuple::TupleSketchView;
 
 /// Jaccard similarity operator for Tuple sketches.
 ///
@@ -47,7 +47,7 @@ use crate::tuple::TupleKeySketchView;
 /// ```
 #[derive(Clone, Copy, Debug)]
 pub struct TupleJaccardSimilarity {
-    op: JaccardSimilarityOperator,
+    seed: u64,
 }
 
 impl Default for TupleJaccardSimilarity {
@@ -59,9 +59,7 @@ impl Default for TupleJaccardSimilarity {
 impl TupleJaccardSimilarity {
     /// Creates a Jaccard similarity operator for the given `seed`.
     pub fn with_seed(seed: u64) -> Self {
-        Self {
-            op: JaccardSimilarityOperator::new(seed),
-        }
+        Self { seed }
     }
 
     /// Computes the Jaccard similarity index for `sketch_a` and `sketch_b`.
@@ -72,12 +70,16 @@ impl TupleJaccardSimilarity {
     ///
     /// Returns an error if either non-empty sketch was built with a seed different from this
     /// operator's configured seed.
-    pub fn compute<A, B>(&self, sketch_a: &A, sketch_b: &B) -> Result<JaccardSimilarity, Error>
+    pub fn compute<'a, 'b, S, T>(
+        &self,
+        sketch_a: impl Into<TupleSketchView<'a, S>>,
+        sketch_b: impl Into<TupleSketchView<'b, T>>,
+    ) -> Result<JaccardSimilarity, Error>
     where
-        A: TupleKeySketchView,
-        B: TupleKeySketchView,
+        S: 'a,
+        T: 'b,
     {
-        self.op.compute(sketch_a, sketch_b)
+        jaccard_similarity::compute(self.seed, sketch_a.into(), sketch_b.into())
     }
 
     /// Returns whether the two sketches are exactly equal.
@@ -91,11 +93,15 @@ impl TupleJaccardSimilarity {
     ///
     /// Returns an error if both sketches are non-empty and either was built with a seed different
     /// from this operator's configured seed.
-    pub fn exactly_equal<A, B>(&self, sketch_a: &A, sketch_b: &B) -> Result<bool, Error>
+    pub fn exactly_equal<'a, 'b, S, T>(
+        &self,
+        sketch_a: impl Into<TupleSketchView<'a, S>>,
+        sketch_b: impl Into<TupleSketchView<'b, T>>,
+    ) -> Result<bool, Error>
     where
-        A: TupleKeySketchView,
-        B: TupleKeySketchView,
+        S: 'a,
+        T: 'b,
     {
-        self.op.exactly_equal(sketch_a, sketch_b)
+        jaccard_similarity::exactly_equal(self.seed, sketch_a.into(), sketch_b.into())
     }
 }

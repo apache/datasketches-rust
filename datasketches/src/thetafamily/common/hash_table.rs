@@ -16,11 +16,12 @@
 // under the License.
 
 use std::hash::Hash;
+use std::slice;
 
 use crate::common::ResizeFactor;
 use crate::hash::MurmurHash3X64128;
 use crate::hash::compute_seed_hash;
-use crate::thetacommon::RetainedEntry;
+use crate::thetacommon::SketchEntry;
 use crate::thetacommon::constants::HASH_TABLE_REBUILD_THRESHOLD;
 use crate::thetacommon::constants::HASH_TABLE_RESIZE_THRESHOLD;
 use crate::thetacommon::constants::MAX_THETA;
@@ -35,6 +36,20 @@ pub struct CompactSketchParts<E> {
     pub seed_hash: u16,
     pub ordered: bool,
     pub empty: bool,
+}
+
+pub struct SketchHashTableIter<'a, E>(slice::Iter<'a, Option<E>>);
+
+impl<'a, E> Iterator for SketchHashTableIter<'a, E> {
+    type Item = &'a E;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.find_map(Option::as_ref)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (0, self.0.size_hint().1)
+    }
 }
 
 /// Generic hash-table mechanics shared by Theta and Tuple sketches.
@@ -74,7 +89,7 @@ pub struct SketchHashTable<E> {
 
 impl<E> SketchHashTable<E>
 where
-    E: RetainedEntry,
+    E: SketchEntry,
 {
     /// Create a new hash table.
     pub fn new(
@@ -256,8 +271,8 @@ where
     }
 
     /// Get iterator over retained entries.
-    pub fn iter_entries(&self) -> impl Iterator<Item = &E> + '_ {
-        self.entries.iter().filter_map(Option::as_ref)
+    pub fn iter_entries(&self) -> SketchHashTableIter<'_, E> {
+        SketchHashTableIter(self.entries.iter())
     }
 
     /// Returns the retained entries and theta as compact-sketch parts.
@@ -276,7 +291,7 @@ where
         let is_single = entries.len() == 1 && theta == MAX_THETA;
         let ordered = ordered || empty || is_single;
         if ordered && entries.len() > 1 {
-            entries.sort_unstable_by_key(RetainedEntry::hash);
+            entries.sort_unstable_by_key(SketchEntry::hash);
         }
         CompactSketchParts {
             entries,

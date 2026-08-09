@@ -17,54 +17,39 @@
 
 //! Data structures and functions that may be used across all the Theta sketch family.
 
-pub(crate) mod a_not_b;
-pub(crate) mod binomial_bounds;
-pub(crate) mod constants;
-pub(crate) mod hash_table;
-pub(crate) mod intersection;
-pub(crate) mod jaccard_similarity;
-pub(crate) mod union;
+pub(super) mod a_not_b;
+pub(super) mod binomial_bounds;
+pub(super) mod constants;
+pub(super) mod hash_table;
+pub(super) mod intersection;
+pub(super) mod jaccard_similarity;
+pub(super) mod union;
 
 pub use self::jaccard_similarity::JaccardSimilarity;
 
-/// An entry retained by a Theta sketch family hash table.
-pub trait RetainedEntry {
-    /// Return the hash used as this entry's key.
+/// Minimal entry behavior required by the shared hash table and set operations.
+pub(super) trait SketchEntry {
     fn hash(&self) -> u64;
 }
 
-/// Read-only hash-key view shared by Theta-family sketches.
-///
-/// Key-only operations use this interface without requiring access to, or cloning, payloads such
-/// as Tuple summaries.
-pub trait ThetaKeySketchView {
-    /// Return the 16-bit seed hash.
-    fn seed_hash(&self) -> u16;
+pub(super) trait KeySketch: Copy {
+    fn scalars(self) -> SketchScalars;
 
-    /// Return theta as a `u64` threshold.
-    fn theta64(&self) -> u64;
-
-    /// Return whether this sketch has not received any updates.
-    fn is_empty(&self) -> bool;
-
-    /// Return whether retained entries are ordered by ascending hash.
-    fn is_ordered(&self) -> bool;
-
-    /// Return an iterator over retained hash keys.
-    fn iter_hashes(&self) -> impl Iterator<Item = u64> + '_;
-
-    /// Return the number of retained entries.
-    fn num_retained(&self) -> usize;
+    fn hashes(self) -> impl Iterator<Item = u64>;
 }
 
-/// Read-only retained-entry view accepted by Theta-family set operations.
-///
-/// This trait extends [`ThetaKeySketchView`] with complete retained entries, so operations such as
-/// union and intersection can preserve and combine Tuple summaries.
-pub trait ThetaFamilySketchView: ThetaKeySketchView {
-    /// The retained entry representation yielded by this view.
-    type Entry: RetainedEntry;
+pub(super) trait EntrySketch: KeySketch {
+    type Entry: SketchEntry;
 
-    /// Return an iterator over retained entries.
-    fn iter(&self) -> impl Iterator<Item = Self::Entry> + '_;
+    fn entries(self) -> impl Iterator<Item = Self::Entry>;
+}
+
+/// Scalar sketch values inspected by Theta-family set operations.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct SketchScalars {
+    pub seed_hash: u16,
+    pub theta: u64,
+    pub empty: bool,
+    pub ordered: bool,
+    pub num_retained: usize,
 }
