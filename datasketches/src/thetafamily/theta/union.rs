@@ -44,7 +44,7 @@ impl ThetaUnion {
     /// Update this union with a given sketch.
     pub fn update<'a>(&mut self, sketch: impl Into<ThetaSketchView<'a>>) -> Result<(), Error> {
         let sketch = sketch.into();
-        self.state.update(sketch.metadata(), sketch.iter())
+        self.state.update(sketch.header(), sketch.iter())
     }
 
     /// Return this union as a compact sketch.

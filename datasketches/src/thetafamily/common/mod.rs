@@ -32,9 +32,8 @@ pub(crate) trait RetainedEntry {
     fn hash(&self) -> u64;
 }
 
-/// Sketch properties inspected by Theta-family set operations.
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct SketchMetadata {
+pub(crate) struct SketchHeader {
     pub seed_hash: u16,
     pub theta: u64,
     pub empty: bool,

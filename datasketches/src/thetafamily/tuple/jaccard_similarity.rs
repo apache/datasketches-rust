@@ -19,7 +19,7 @@
 
 use crate::error::Error;
 use crate::hash::DEFAULT_UPDATE_SEED;
-use crate::thetacommon::SketchMetadata;
+use crate::thetacommon::SketchHeader;
 use crate::thetacommon::jaccard_similarity::JaccardSimilarity;
 use crate::thetacommon::jaccard_similarity::JaccardSimilarityOperator;
 use crate::thetacommon::jaccard_similarity::JaccardSketch;
@@ -53,8 +53,8 @@ pub struct TupleJaccardSimilarity {
 }
 
 impl<S> JaccardSketch for TupleSketchView<'_, S> {
-    fn metadata(self) -> SketchMetadata {
-        TupleSketchView::metadata(self)
+    fn header(self) -> SketchHeader {
+        TupleSketchView::header(self)
     }
 
     fn hashes(self) -> impl Iterator<Item = u64> {

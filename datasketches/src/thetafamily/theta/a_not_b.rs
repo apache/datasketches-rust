@@ -86,9 +86,9 @@ impl ThetaANotB {
         let a = a.into();
         let b = b.into();
         let parts = self.op.compute(
-            a.metadata(),
+            a.header(),
             a.iter(),
-            b.metadata(),
+            b.header(),
             b.iter().map(|entry| entry.hash()),
             ordered,
         )?;
