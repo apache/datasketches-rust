@@ -21,7 +21,7 @@ use crate::error::ErrorKind;
 use crate::hash::check_seed_hash;
 use crate::thetacommon::OwnedEntrySketchView;
 use crate::thetacommon::RetainedEntry;
-use crate::thetacommon::SetOperationSketchProperties;
+use crate::thetacommon::SetOpProps;
 use crate::thetacommon::constants::HASH_TABLE_REBUILD_THRESHOLD;
 use crate::thetacommon::constants::MAX_THETA;
 use crate::thetacommon::hash_table::CompactSketchParts;
@@ -78,7 +78,7 @@ where
         P: IntersectionMergePolicy<E>,
     {
         let properties = sketch.properties();
-        let SetOperationSketchProperties {
+        let SetOpProps {
             seed_hash,
             theta,
             empty,

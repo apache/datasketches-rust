@@ -47,7 +47,7 @@ use crate::theta::serialization::V2_PREAMBLE_EMPTY;
 use crate::theta::serialization::V2_PREAMBLE_ESTIMATE;
 use crate::theta::serialization::V2_PREAMBLE_PRECISE;
 use crate::thetacommon::OwnedEntrySketchView;
-use crate::thetacommon::SetOperationSketchProperties;
+use crate::thetacommon::SetOpProps;
 use crate::thetacommon::SetOperationSketchView;
 use crate::thetacommon::binomial_bounds;
 use crate::thetacommon::constants::DEFAULT_LG_K;
@@ -163,8 +163,8 @@ impl<'a> ThetaSketchView<'a> {
 }
 
 impl SetOperationSketchView for ThetaSketchView<'_> {
-    fn properties(self) -> SetOperationSketchProperties {
-        SetOperationSketchProperties {
+    fn properties(self) -> SetOpProps {
+        SetOpProps {
             seed_hash: self.seed_hash(),
             theta: self.theta64(),
             empty: self.is_empty(),

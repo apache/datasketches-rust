@@ -33,7 +33,7 @@ pub(crate) trait RetainedEntry {
 }
 
 pub(crate) trait SetOperationSketchView: Copy {
-    fn properties(self) -> SetOperationSketchProperties;
+    fn properties(self) -> SetOpProps;
 
     fn hashes(self) -> impl Iterator<Item = u64>;
 }
@@ -44,8 +44,9 @@ pub(crate) trait OwnedEntrySketchView: SetOperationSketchView {
     fn entries(self) -> impl Iterator<Item = Self::Entry>;
 }
 
+/// Sketch properties inspected by Theta-family set operations.
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct SetOperationSketchProperties {
+pub(crate) struct SetOpProps {
     pub seed_hash: u16,
     pub theta: u64,
     pub empty: bool,

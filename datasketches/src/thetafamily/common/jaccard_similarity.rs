@@ -22,7 +22,7 @@ use crate::hash::check_seed_hash;
 use crate::hash::compute_seed_hash;
 use crate::thetacommon::OwnedEntrySketchView;
 use crate::thetacommon::RetainedEntry;
-use crate::thetacommon::SetOperationSketchProperties;
+use crate::thetacommon::SetOpProps;
 use crate::thetacommon::SetOperationSketchView;
 use crate::thetacommon::binomial_bounds;
 use crate::thetacommon::constants::MAX_LG_K;
@@ -140,7 +140,7 @@ impl<S> SetOperationSketchView for KeySketch<S>
 where
     S: SetOperationSketchView,
 {
-    fn properties(self) -> SetOperationSketchProperties {
+    fn properties(self) -> SetOpProps {
         self.0.properties()
     }
 

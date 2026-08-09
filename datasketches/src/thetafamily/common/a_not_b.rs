@@ -23,7 +23,7 @@ use crate::hash::check_seed_hash;
 use crate::hash::compute_seed_hash;
 use crate::thetacommon::OwnedEntrySketchView;
 use crate::thetacommon::RetainedEntry;
-use crate::thetacommon::SetOperationSketchProperties;
+use crate::thetacommon::SetOpProps;
 use crate::thetacommon::SetOperationSketchView;
 use crate::thetacommon::constants::MAX_THETA;
 use crate::thetacommon::hash_table::CompactSketchParts;
@@ -98,12 +98,12 @@ impl ANotBOperator {
             ErrorKind::InvalidArgument,
         )?;
 
-        let SetOperationSketchProperties {
+        let SetOpProps {
             theta: a_theta,
             ordered: a_ordered,
             ..
         } = a_properties;
-        let SetOperationSketchProperties {
+        let SetOpProps {
             theta: b_theta,
             ordered: b_ordered,
             num_retained: b_num_retained,
