@@ -47,6 +47,7 @@ use crate::thetacommon::constants::FLAGS_IS_READ_ONLY;
 use crate::thetacommon::constants::MAX_LG_K;
 use crate::thetacommon::constants::MAX_THETA;
 use crate::thetacommon::constants::MIN_LG_K;
+use crate::thetacommon::sealed;
 use crate::tuple::hash_table::TupleEntry;
 use crate::tuple::hash_table::TupleHashTable;
 use crate::tuple::policy::SummaryPolicy;
@@ -61,6 +62,8 @@ use crate::tuple::serialization::TupleSummaryValue;
 ///
 /// This interface does not inspect summary values and therefore does not require them to implement
 /// [`Clone`].
+///
+/// This trait is sealed and cannot be implemented outside this crate.
 pub trait TupleKeySketchView: ThetaKeySketchView {}
 
 /// Read-only retained-entry view for Tuple sketches.
@@ -69,8 +72,8 @@ pub trait TupleKeySketchView: ThetaKeySketchView {}
 /// either a mutable [`TupleSketch`] or an immutable [`CompactTupleSketch`]. `S` is the
 /// summary type retained by the sketch.
 ///
-/// It is blanket-implemented for every [`TupleKeySketchView`] that also implements
-/// [`ThetaFamilySketchView`] with [`TupleEntry<S>`] as its associated entry type.
+/// This trait is sealed and cannot be implemented outside this crate. The mutable and compact
+/// Tuple sketch types implement it when `S: Clone`.
 pub trait TupleSketchView<S>:
     TupleKeySketchView + ThetaFamilySketchView<Entry = TupleEntry<S>>
 {
@@ -273,6 +276,8 @@ impl<P> ThetaKeySketchView for TupleSketch<P>
 where
     P: SummaryPolicy,
 {
+    fn __private(&self, _: sealed::Token) {}
+
     fn seed_hash(&self) -> u16 {
         self.table.seed_hash()
     }
@@ -603,6 +608,8 @@ impl<S> CompactTupleSketch<S> {
 }
 
 impl<S> ThetaKeySketchView for CompactTupleSketch<S> {
+    fn __private(&self, _: sealed::Token) {}
+
     fn seed_hash(&self) -> u16 {
         self.seed_hash
     }

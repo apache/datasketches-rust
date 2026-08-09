@@ -56,16 +56,21 @@ use crate::thetacommon::constants::FLAGS_IS_READ_ONLY;
 use crate::thetacommon::constants::MAX_LG_K;
 use crate::thetacommon::constants::MAX_THETA;
 use crate::thetacommon::constants::MIN_LG_K;
+use crate::thetacommon::sealed;
 
 /// Read-only view for Theta sketches.
 ///
 /// This trait provides a unified input abstraction for APIs that can accept either
 /// mutable [`ThetaSketch`] or immutable [`CompactThetaSketch`].
+///
+/// This trait is sealed and cannot be implemented outside this crate.
 pub trait ThetaSketchView: ThetaFamilySketchView<Entry = ThetaEntry> {}
 
 impl<T: ThetaFamilySketchView<Entry = ThetaEntry>> ThetaSketchView for T {}
 
 impl ThetaKeySketchView for ThetaSketch {
+    fn __private(&self, _: sealed::Token) {}
+
     fn seed_hash(&self) -> u16 {
         ThetaSketch::seed_hash(self)
     }
@@ -877,6 +882,8 @@ impl CompactThetaSketch {
 }
 
 impl ThetaKeySketchView for CompactThetaSketch {
+    fn __private(&self, _: sealed::Token) {}
+
     fn seed_hash(&self) -> u16 {
         CompactThetaSketch::seed_hash(self)
     }

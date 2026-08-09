@@ -21,6 +21,7 @@ use std::num::NonZeroU64;
 use crate::thetacommon::RetainedEntry;
 use crate::thetacommon::hash_table::SketchHashTable;
 use crate::thetacommon::intersection::IntersectionMergePolicy;
+use crate::thetacommon::sealed;
 use crate::thetacommon::union::UnionMergePolicy;
 use crate::tuple::SummaryCombinePolicy;
 
@@ -64,6 +65,8 @@ impl<S> TupleEntry<S> {
 pub(super) type TupleHashTable<S> = SketchHashTable<TupleEntry<S>>;
 
 impl<S> RetainedEntry for TupleEntry<S> {
+    fn __private(&self, _: sealed::Token) {}
+
     fn hash(&self) -> u64 {
         self.hash.get()
     }

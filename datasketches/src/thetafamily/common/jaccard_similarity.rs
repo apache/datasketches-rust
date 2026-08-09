@@ -30,6 +30,7 @@ use crate::thetacommon::constants::MIN_LG_K;
 use crate::thetacommon::hash_table::CompactSketchParts;
 use crate::thetacommon::intersection::IntersectionMergePolicy;
 use crate::thetacommon::intersection::IntersectionState;
+use crate::thetacommon::sealed;
 use crate::thetacommon::union::UnionMergePolicy;
 use crate::thetacommon::union::UnionState;
 
@@ -116,6 +117,8 @@ struct KeyEntry {
 }
 
 impl RetainedEntry for KeyEntry {
+    fn __private(&self, _: sealed::Token) {}
+
     fn hash(&self) -> u64 {
         self.hash
     }
@@ -132,6 +135,8 @@ impl<'a, S> KeySketchView<'a, S> {
 }
 
 impl<S: ThetaKeySketchView> ThetaKeySketchView for KeySketchView<'_, S> {
+    fn __private(&self, _: sealed::Token) {}
+
     fn seed_hash(&self) -> u16 {
         self.sketch.seed_hash()
     }
@@ -185,6 +190,8 @@ struct CompactKeySketchView {
 }
 
 impl ThetaKeySketchView for CompactKeySketchView {
+    fn __private(&self, _: sealed::Token) {}
+
     fn seed_hash(&self) -> u16 {
         self.seed_hash
     }

@@ -27,8 +27,18 @@ pub(crate) mod union;
 
 pub use self::jaccard_similarity::JaccardSimilarity;
 
+pub(crate) mod sealed {
+    pub struct Token;
+}
+
 /// An entry retained by a Theta sketch family hash table.
+///
+/// This trait is sealed because the shared set-operation state machines rely on entry invariants
+/// maintained by the sketch implementations in this crate.
 pub trait RetainedEntry {
+    #[doc(hidden)]
+    fn __private(&self, _: sealed::Token);
+
     /// Return the hash used as this entry's key.
     fn hash(&self) -> u64;
 }
@@ -37,7 +47,13 @@ pub trait RetainedEntry {
 ///
 /// Key-only operations use this interface without requiring access to, or cloning, payloads such
 /// as Tuple summaries.
+///
+/// This trait is sealed because set operations rely on the reported metadata, retained count, and
+/// iterators describing the same sketch state.
 pub trait ThetaKeySketchView {
+    #[doc(hidden)]
+    fn __private(&self, _: sealed::Token);
+
     /// Return the 16-bit seed hash.
     fn seed_hash(&self) -> u16;
 
@@ -61,6 +77,8 @@ pub trait ThetaKeySketchView {
 ///
 /// This trait extends [`ThetaKeySketchView`] with complete retained entries, so operations such as
 /// union and intersection can preserve and combine Tuple summaries.
+///
+/// Like [`ThetaKeySketchView`], this trait is sealed and cannot be implemented outside this crate.
 pub trait ThetaFamilySketchView: ThetaKeySketchView {
     /// The retained entry representation yielded by this view.
     type Entry: RetainedEntry;

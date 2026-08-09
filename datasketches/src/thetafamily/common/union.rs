@@ -174,6 +174,8 @@ mod tests {
     }
 
     impl RetainedEntry for TestEntry {
+        fn __private(&self, _: crate::thetacommon::sealed::Token) {}
+
         fn hash(&self) -> u64 {
             self.hash
         }
@@ -184,6 +186,8 @@ mod tests {
     }
 
     impl ThetaKeySketchView for TestSketch {
+        fn __private(&self, _: crate::thetacommon::sealed::Token) {}
+
         fn seed_hash(&self) -> u16 {
             compute_seed_hash(DEFAULT_UPDATE_SEED)
         }
