@@ -163,7 +163,7 @@ impl<'a> ThetaSketchView<'a> {
 }
 
 impl SetOperationSketchView for ThetaSketchView<'_> {
-    fn properties(self) -> SetOpProps {
+    fn props(self) -> SetOpProps {
         SetOpProps {
             seed_hash: self.seed_hash(),
             theta: self.theta64(),

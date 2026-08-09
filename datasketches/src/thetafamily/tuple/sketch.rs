@@ -177,7 +177,7 @@ impl<'a, S> TupleSketchView<'a, S> {
 }
 
 impl<S> SetOperationSketchView for TupleSketchView<'_, S> {
-    fn properties(self) -> SetOpProps {
+    fn props(self) -> SetOpProps {
         SetOpProps {
             seed_hash: self.seed_hash(),
             theta: self.theta64(),

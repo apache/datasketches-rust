@@ -33,7 +33,7 @@ pub(crate) trait RetainedEntry {
 }
 
 pub(crate) trait SetOperationSketchView: Copy {
-    fn properties(self) -> SetOpProps;
+    fn props(self) -> SetOpProps;
 
     fn hashes(self) -> impl Iterator<Item = u64>;
 }

@@ -140,8 +140,8 @@ impl<S> SetOperationSketchView for KeySketch<S>
 where
     S: SetOperationSketchView,
 {
-    fn properties(self) -> SetOpProps {
-        self.0.properties()
+    fn props(self) -> SetOpProps {
+        self.0.props()
     }
 
     fn hashes(self) -> impl Iterator<Item = u64> {
@@ -160,111 +160,125 @@ where
     }
 }
 
-/// Configured Jaccard operator shared by Theta and Tuple public wrappers.
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct JaccardSimilarityOperator {
+pub(in crate::thetafamily) fn compute<A, B>(
     seed: u64,
+    sketch_a: A,
+    sketch_b: B,
+) -> Result<JaccardSimilarity, Error>
+where
+    A: SetOperationSketchView,
+    B: SetOperationSketchView,
+{
+    let SetOpProps {
+        theta: a_theta,
+        empty: a_empty,
+        num_retained: a_num_retained,
+        ..
+    } = sketch_a.props();
+    let SetOpProps {
+        theta: b_theta,
+        empty: b_empty,
+        num_retained: b_num_retained,
+        ..
+    } = sketch_b.props();
+    if a_empty && b_empty {
+        return Ok(JaccardSimilarity::exact(1.0));
+    }
+    if a_empty || b_empty {
+        return Ok(JaccardSimilarity::exact(0.0));
+    }
+
+    let sketch_a_state = (a_num_retained, a_theta);
+    let sketch_b_state = (b_num_retained, b_theta);
+    let union = compute_union(seed, sketch_a, sketch_b)?;
+    if !union.entries.is_empty() && identical_sets(sketch_a_state, sketch_b_state, &union) {
+        return Ok(JaccardSimilarity::exact(1.0));
+    }
+
+    let mut intersection = IntersectionState::new(seed, NoopMergePolicy);
+    intersection.update(KeySketch(sketch_a))?;
+    intersection.update(KeySketch(sketch_b))?;
+    let intersection = intersection.result(false);
+    let intersection_count = intersection
+        .entries
+        .iter()
+        .filter(|entry| entry.hash < union.theta)
+        .count();
+
+    JaccardSimilarity::ratio_bounds(
+        union.entries.len() as u64,
+        intersection_count as u64,
+        union.theta,
+    )
 }
 
-impl JaccardSimilarityOperator {
-    pub(crate) fn new(seed: u64) -> Self {
-        Self { seed }
+pub(in crate::thetafamily) fn exactly_equal<A, B>(
+    seed: u64,
+    sketch_a: A,
+    sketch_b: B,
+) -> Result<bool, Error>
+where
+    A: SetOperationSketchView,
+    B: SetOperationSketchView,
+{
+    let SetOpProps {
+        theta: a_theta,
+        empty: a_empty,
+        num_retained: a_num_retained,
+        ..
+    } = sketch_a.props();
+    let SetOpProps {
+        theta: b_theta,
+        empty: b_empty,
+        num_retained: b_num_retained,
+        ..
+    } = sketch_b.props();
+    if a_empty && b_empty {
+        return Ok(true);
+    }
+    if a_empty || b_empty {
+        return Ok(false);
     }
 
-    pub(crate) fn compute<A, B>(&self, sketch_a: A, sketch_b: B) -> Result<JaccardSimilarity, Error>
-    where
-        A: SetOperationSketchView,
-        B: SetOperationSketchView,
-    {
-        let a_properties = sketch_a.properties();
-        let b_properties = sketch_b.properties();
-        if a_properties.empty && b_properties.empty {
-            return Ok(JaccardSimilarity::exact(1.0));
-        }
-        if a_properties.empty || b_properties.empty {
-            return Ok(JaccardSimilarity::exact(0.0));
-        }
+    let sketch_a_state = (a_num_retained, a_theta);
+    let sketch_b_state = (b_num_retained, b_theta);
+    let union = compute_union(seed, sketch_a, sketch_b)?;
+    Ok(identical_sets(sketch_a_state, sketch_b_state, &union))
+}
 
-        let sketch_a_state = (a_properties.num_retained, a_properties.theta);
-        let sketch_b_state = (b_properties.num_retained, b_properties.theta);
-        let union = self.compute_union(sketch_a, sketch_b)?;
-        if !union.entries.is_empty() && identical_sets(sketch_a_state, sketch_b_state, &union) {
-            return Ok(JaccardSimilarity::exact(1.0));
-        }
+fn compute_union<A, B>(
+    seed: u64,
+    sketch_a: A,
+    sketch_b: B,
+) -> Result<CompactSketchParts<KeyEntry>, Error>
+where
+    A: SetOperationSketchView,
+    B: SetOperationSketchView,
+{
+    let SetOpProps {
+        seed_hash: a_seed_hash,
+        num_retained: a_num_retained,
+        ..
+    } = sketch_a.props();
+    let SetOpProps {
+        seed_hash: b_seed_hash,
+        num_retained: b_num_retained,
+        ..
+    } = sketch_b.props();
+    let seed_hash = compute_seed_hash(seed);
+    check_seed_hash(seed_hash, a_seed_hash, "A", ErrorKind::InvalidData)?;
+    check_seed_hash(seed_hash, b_seed_hash, "B", ErrorKind::InvalidData)?;
 
-        let mut intersection = IntersectionState::new(self.seed, NoopMergePolicy);
-        intersection.update(KeySketch(sketch_a))?;
-        intersection.update(KeySketch(sketch_b))?;
-        let intersection = intersection.result(false);
-        let intersection_count = intersection
-            .entries
-            .iter()
-            .filter(|entry| entry.hash < union.theta)
-            .count();
-
-        JaccardSimilarity::ratio_bounds(
-            union.entries.len() as u64,
-            intersection_count as u64,
-            union.theta,
-        )
-    }
-
-    pub(crate) fn exactly_equal<A, B>(&self, sketch_a: A, sketch_b: B) -> Result<bool, Error>
-    where
-        A: SetOperationSketchView,
-        B: SetOperationSketchView,
-    {
-        let a_properties = sketch_a.properties();
-        let b_properties = sketch_b.properties();
-        if a_properties.empty && b_properties.empty {
-            return Ok(true);
-        }
-        if a_properties.empty || b_properties.empty {
-            return Ok(false);
-        }
-
-        let sketch_a_state = (a_properties.num_retained, a_properties.theta);
-        let sketch_b_state = (b_properties.num_retained, b_properties.theta);
-        let union = self.compute_union(sketch_a, sketch_b)?;
-        Ok(identical_sets(sketch_a_state, sketch_b_state, &union))
-    }
-
-    fn compute_union<A, B>(
-        &self,
-        sketch_a: A,
-        sketch_b: B,
-    ) -> Result<CompactSketchParts<KeyEntry>, Error>
-    where
-        A: SetOperationSketchView,
-        B: SetOperationSketchView,
-    {
-        let a_properties = sketch_a.properties();
-        let b_properties = sketch_b.properties();
-        let seed_hash = compute_seed_hash(self.seed);
-        check_seed_hash(
-            seed_hash,
-            a_properties.seed_hash,
-            "A",
-            ErrorKind::InvalidData,
-        )?;
-        check_seed_hash(
-            seed_hash,
-            b_properties.seed_hash,
-            "B",
-            ErrorKind::InvalidData,
-        )?;
-
-        let mut union = UnionState::new(
-            union_lg_k(a_properties.num_retained, b_properties.num_retained),
-            ResizeFactor::X8,
-            1.0,
-            self.seed,
-            NoopMergePolicy,
-        );
-        union.update(KeySketch(sketch_a))?;
-        union.update(KeySketch(sketch_b))?;
-        Ok(union.to_compact_parts(false))
-    }
+    let mut union = UnionState::new(
+        union_lg_k(a_num_retained, b_num_retained),
+        ResizeFactor::X8,
+        1.0,
+        seed,
+        NoopMergePolicy,
+    );
+    union.update(KeySketch(sketch_a))?;
+    union.update(KeySketch(sketch_b))?;
+    Ok(union.to_compact_parts(false))
 }
 
 /// Returns whether both sketches have the same retained keys and theta.

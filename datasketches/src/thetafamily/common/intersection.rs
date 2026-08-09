@@ -77,14 +77,13 @@ where
         E: Clone,
         P: IntersectionMergePolicy<E>,
     {
-        let properties = sketch.properties();
         let SetOpProps {
             seed_hash,
             theta,
             empty,
             ordered,
             num_retained,
-        } = properties;
+        } = sketch.props();
         let new_default_table = |table: &SketchHashTable<E>| {
             SketchHashTable::from_raw_parts(
                 0,

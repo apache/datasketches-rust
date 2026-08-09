@@ -67,14 +67,13 @@ where
         S: OwnedEntrySketchView<Entry = E>,
         P: UnionMergePolicy<E>,
     {
-        let properties = sketch.properties();
         let SetOpProps {
             seed_hash,
             theta,
             empty,
             ordered,
             ..
-        } = properties;
+        } = sketch.props();
         if empty {
             return Ok(());
         }

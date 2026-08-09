@@ -24,7 +24,8 @@
 
 use crate::error::Error;
 use crate::hash::DEFAULT_UPDATE_SEED;
-use crate::thetacommon::a_not_b::ANotBOperator;
+use crate::hash::compute_seed_hash;
+use crate::thetacommon::a_not_b;
 use crate::tuple::sketch::CompactTupleSketch;
 use crate::tuple::sketch::TupleSketchView;
 
@@ -55,7 +56,7 @@ use crate::tuple::sketch::TupleSketchView;
 /// ```
 #[derive(Debug, Clone, Copy)]
 pub struct TupleANotB {
-    op: ANotBOperator,
+    seed_hash: u16,
 }
 
 impl Default for TupleANotB {
@@ -68,7 +69,7 @@ impl TupleANotB {
     /// Creates a new set difference operator for the given `seed`.
     pub fn with_seed(seed: u64) -> Self {
         Self {
-            op: ANotBOperator::new(seed),
+            seed_hash: compute_seed_hash(seed),
         }
     }
 
@@ -94,7 +95,7 @@ impl TupleANotB {
     {
         let a = a.into();
         let b = b.into();
-        let parts = self.op.compute(a, b, ordered)?;
+        let parts = a_not_b::compute(self.seed_hash, a, b, ordered)?;
         Ok(CompactTupleSketch::from_parts(
             parts.entries,
             parts.theta,
