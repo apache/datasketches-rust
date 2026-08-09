@@ -19,6 +19,7 @@ use crate::common::ResizeFactor;
 use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::hash::check_seed_hash;
+use crate::thetacommon::OwnedEntrySketchView;
 use crate::thetacommon::RetainedEntry;
 use crate::thetacommon::SetOperationSketchProperties;
 use crate::thetacommon::constants::HASH_TABLE_REBUILD_THRESHOLD;
@@ -70,16 +71,13 @@ where
     ///
     /// The intersection can be viewed as starting from the "universe" set, and every update
     /// reduces the current set to the keys it shares with `sketch`.
-    pub fn update<I>(
-        &mut self,
-        properties: SetOperationSketchProperties,
-        entries: I,
-    ) -> Result<(), Error>
+    pub fn update<S>(&mut self, sketch: S) -> Result<(), Error>
     where
-        I: Iterator<Item = E>,
+        S: OwnedEntrySketchView<Entry = E>,
         E: Clone,
         P: IntersectionMergePolicy<E>,
     {
+        let properties = sketch.properties();
         let SetOperationSketchProperties {
             seed_hash,
             theta,
@@ -149,7 +147,7 @@ where
                 self.table.seed(),
                 self.table.is_empty(),
             );
-            for entry in entries {
+            for entry in sketch.entries() {
                 let hash = entry.hash();
                 if !self.table.upsert_entry(hash, |existing| match existing {
                     Some(_) => None,
@@ -170,7 +168,7 @@ where
             let max_matches = self.table.num_retained().min(num_retained);
             let mut matched_entries = Vec::with_capacity(max_matches);
             let mut count = 0;
-            for entry in entries {
+            for entry in sketch.entries() {
                 let hash = entry.hash();
                 if hash < self.table.theta() {
                     if let Some(existing) = self.table.entry(hash) {

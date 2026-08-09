@@ -32,6 +32,18 @@ pub(crate) trait RetainedEntry {
     fn hash(&self) -> u64;
 }
 
+pub(crate) trait SetOperationSketchView: Copy {
+    fn properties(self) -> SetOperationSketchProperties;
+
+    fn hashes(self) -> impl Iterator<Item = u64>;
+}
+
+pub(crate) trait OwnedEntrySketchView: SetOperationSketchView {
+    type Entry: RetainedEntry;
+
+    fn entries(self) -> impl Iterator<Item = Self::Entry>;
+}
+
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct SetOperationSketchProperties {
     pub seed_hash: u16,

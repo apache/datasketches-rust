@@ -20,8 +20,10 @@ use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::hash::check_seed_hash;
 use crate::hash::compute_seed_hash;
+use crate::thetacommon::OwnedEntrySketchView;
 use crate::thetacommon::RetainedEntry;
 use crate::thetacommon::SetOperationSketchProperties;
+use crate::thetacommon::SetOperationSketchView;
 use crate::thetacommon::binomial_bounds;
 use crate::thetacommon::constants::MAX_LG_K;
 use crate::thetacommon::constants::MAX_THETA;
@@ -131,10 +133,31 @@ impl<E: RetainedEntry> IntersectionMergePolicy<E> for NoopMergePolicy {
     fn merge(&self, _existing: &mut E, _incoming: E) {}
 }
 
-pub(crate) trait JaccardSketch: Copy {
-    fn set_operation_properties(self) -> SetOperationSketchProperties;
+#[derive(Clone, Copy, Debug)]
+struct KeySketch<S>(S);
 
-    fn hashes(self) -> impl Iterator<Item = u64>;
+impl<S> SetOperationSketchView for KeySketch<S>
+where
+    S: SetOperationSketchView,
+{
+    fn properties(self) -> SetOperationSketchProperties {
+        self.0.properties()
+    }
+
+    fn hashes(self) -> impl Iterator<Item = u64> {
+        self.0.hashes()
+    }
+}
+
+impl<S> OwnedEntrySketchView for KeySketch<S>
+where
+    S: SetOperationSketchView,
+{
+    type Entry = KeyEntry;
+
+    fn entries(self) -> impl Iterator<Item = Self::Entry> {
+        self.0.hashes().map(|hash| KeyEntry { hash })
+    }
 }
 
 /// Configured Jaccard operator shared by Theta and Tuple public wrappers.
@@ -150,11 +173,11 @@ impl JaccardSimilarityOperator {
 
     pub(crate) fn compute<A, B>(&self, sketch_a: A, sketch_b: B) -> Result<JaccardSimilarity, Error>
     where
-        A: JaccardSketch,
-        B: JaccardSketch,
+        A: SetOperationSketchView,
+        B: SetOperationSketchView,
     {
-        let a_properties = sketch_a.set_operation_properties();
-        let b_properties = sketch_b.set_operation_properties();
+        let a_properties = sketch_a.properties();
+        let b_properties = sketch_b.properties();
         if a_properties.empty && b_properties.empty {
             return Ok(JaccardSimilarity::exact(1.0));
         }
@@ -170,38 +193,29 @@ impl JaccardSimilarityOperator {
         }
 
         let mut intersection = IntersectionState::new(self.seed, NoopMergePolicy);
-        intersection.update(
-            a_properties,
-            sketch_a.hashes().map(|hash| KeyEntry { hash }),
-        )?;
-        intersection.update(
-            b_properties,
-            sketch_b.hashes().map(|hash| KeyEntry { hash }),
-        )?;
-        let union_properties = SetOperationSketchProperties {
-            seed_hash: union.seed_hash,
-            theta: union.theta,
-            empty: union.empty,
-            ordered: union.ordered,
-            num_retained: union.entries.len(),
-        };
-        intersection.update(union_properties, union.entries.iter().copied())?;
+        intersection.update(KeySketch(sketch_a))?;
+        intersection.update(KeySketch(sketch_b))?;
         let intersection = intersection.result(false);
+        let intersection_count = intersection
+            .entries
+            .iter()
+            .filter(|entry| entry.hash < union.theta)
+            .count();
 
         JaccardSimilarity::ratio_bounds(
             union.entries.len() as u64,
-            intersection.entries.len() as u64,
+            intersection_count as u64,
             union.theta,
         )
     }
 
     pub(crate) fn exactly_equal<A, B>(&self, sketch_a: A, sketch_b: B) -> Result<bool, Error>
     where
-        A: JaccardSketch,
-        B: JaccardSketch,
+        A: SetOperationSketchView,
+        B: SetOperationSketchView,
     {
-        let a_properties = sketch_a.set_operation_properties();
-        let b_properties = sketch_b.set_operation_properties();
+        let a_properties = sketch_a.properties();
+        let b_properties = sketch_b.properties();
         if a_properties.empty && b_properties.empty {
             return Ok(true);
         }
@@ -221,11 +235,11 @@ impl JaccardSimilarityOperator {
         sketch_b: B,
     ) -> Result<CompactSketchParts<KeyEntry>, Error>
     where
-        A: JaccardSketch,
-        B: JaccardSketch,
+        A: SetOperationSketchView,
+        B: SetOperationSketchView,
     {
-        let a_properties = sketch_a.set_operation_properties();
-        let b_properties = sketch_b.set_operation_properties();
+        let a_properties = sketch_a.properties();
+        let b_properties = sketch_b.properties();
         let seed_hash = compute_seed_hash(self.seed);
         check_seed_hash(
             seed_hash,
@@ -247,14 +261,8 @@ impl JaccardSimilarityOperator {
             self.seed,
             NoopMergePolicy,
         );
-        union.update(
-            a_properties,
-            sketch_a.hashes().map(|hash| KeyEntry { hash }),
-        )?;
-        union.update(
-            b_properties,
-            sketch_b.hashes().map(|hash| KeyEntry { hash }),
-        )?;
+        union.update(KeySketch(sketch_a))?;
+        union.update(KeySketch(sketch_b))?;
         Ok(union.to_compact_parts(false))
     }
 }

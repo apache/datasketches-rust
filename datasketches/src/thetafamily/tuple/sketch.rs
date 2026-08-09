@@ -37,7 +37,9 @@ use crate::error::ErrorKind;
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::hash::check_seed_hash;
 use crate::hash::compute_seed_hash;
+use crate::thetacommon::OwnedEntrySketchView;
 use crate::thetacommon::SetOperationSketchProperties;
+use crate::thetacommon::SetOperationSketchView;
 use crate::thetacommon::binomial_bounds;
 use crate::thetacommon::constants::DEFAULT_LG_K;
 use crate::thetacommon::constants::FLAGS_IS_COMPACT;
@@ -172,8 +174,10 @@ impl<'a, S> TupleSketchView<'a, S> {
             TupleSketchViewState::Compact(sketch) => sketch.num_retained(),
         }
     }
+}
 
-    pub(crate) fn set_operation_properties(self) -> SetOperationSketchProperties {
+impl<S> SetOperationSketchView for TupleSketchView<'_, S> {
+    fn properties(self) -> SetOperationSketchProperties {
         SetOperationSketchProperties {
             seed_hash: self.seed_hash(),
             theta: self.theta64(),
@@ -181,6 +185,22 @@ impl<'a, S> TupleSketchView<'a, S> {
             ordered: self.is_ordered(),
             num_retained: self.num_retained(),
         }
+    }
+
+    fn hashes(self) -> impl Iterator<Item = u64> {
+        self.iter().map(|(hash, _)| hash)
+    }
+}
+
+impl<'a, S> OwnedEntrySketchView for TupleSketchView<'a, S>
+where
+    S: Clone + 'a,
+{
+    type Entry = TupleEntry<S>;
+
+    fn entries(self) -> impl Iterator<Item = Self::Entry> {
+        self.iter()
+            .map(|(hash, summary)| TupleEntry::new(hash, summary.clone()))
     }
 }
 

@@ -60,8 +60,7 @@ impl ThetaIntersection {
     /// subset only.
     pub fn update<'a>(&mut self, sketch: impl Into<ThetaSketchView<'a>>) -> Result<(), Error> {
         let sketch = sketch.into();
-        self.state
-            .update(sketch.set_operation_properties(), sketch.iter())
+        self.state.update(sketch)
     }
 
     /// Returns whether this operator has received at least one update.

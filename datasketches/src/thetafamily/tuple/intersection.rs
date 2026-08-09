@@ -125,12 +125,7 @@ where
         P::Summary: Clone + 'a,
     {
         let sketch = sketch.into();
-        self.state.update(
-            sketch.set_operation_properties(),
-            sketch
-                .iter()
-                .map(|(hash, summary)| TupleEntry::new(hash, summary.clone())),
-        )
+        self.state.update(sketch)
     }
 
     /// Returns whether this operator has received at least one update.

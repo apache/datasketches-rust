@@ -19,10 +19,8 @@
 
 use crate::error::Error;
 use crate::hash::DEFAULT_UPDATE_SEED;
-use crate::thetacommon::SetOperationSketchProperties;
 use crate::thetacommon::jaccard_similarity::JaccardSimilarity;
 use crate::thetacommon::jaccard_similarity::JaccardSimilarityOperator;
-use crate::thetacommon::jaccard_similarity::JaccardSketch;
 use crate::tuple::TupleSketchView;
 
 /// Jaccard similarity operator for Tuple sketches.
@@ -50,16 +48,6 @@ use crate::tuple::TupleSketchView;
 #[derive(Clone, Copy, Debug)]
 pub struct TupleJaccardSimilarity {
     op: JaccardSimilarityOperator,
-}
-
-impl<S> JaccardSketch for TupleSketchView<'_, S> {
-    fn set_operation_properties(self) -> SetOperationSketchProperties {
-        TupleSketchView::set_operation_properties(self)
-    }
-
-    fn hashes(self) -> impl Iterator<Item = u64> {
-        self.iter().map(|(hash, _)| hash)
-    }
 }
 
 impl Default for TupleJaccardSimilarity {

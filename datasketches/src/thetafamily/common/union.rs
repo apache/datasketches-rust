@@ -19,6 +19,7 @@ use crate::common::ResizeFactor;
 use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::hash::check_seed_hash;
+use crate::thetacommon::OwnedEntrySketchView;
 use crate::thetacommon::RetainedEntry;
 use crate::thetacommon::SetOperationSketchProperties;
 use crate::thetacommon::constants::MAX_THETA;
@@ -61,15 +62,12 @@ where
     }
 
     /// Incorporate a sketch into the union.
-    pub fn update<I>(
-        &mut self,
-        properties: SetOperationSketchProperties,
-        entries: I,
-    ) -> Result<(), Error>
+    pub fn update<S>(&mut self, sketch: S) -> Result<(), Error>
     where
-        I: Iterator<Item = E>,
+        S: OwnedEntrySketchView<Entry = E>,
         P: UnionMergePolicy<E>,
     {
+        let properties = sketch.properties();
         let SetOperationSketchProperties {
             seed_hash,
             theta,
@@ -91,7 +89,7 @@ where
         self.table.set_empty(false);
         self.union_theta = self.union_theta.min(theta);
 
-        for entry in entries {
+        for entry in sketch.entries() {
             let hash = entry.hash();
             if hash < self.union_theta && hash < self.table.theta() {
                 self.table.upsert_entry(hash, |existing| match existing {

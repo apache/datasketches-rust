@@ -46,7 +46,9 @@ use crate::theta::serialization;
 use crate::theta::serialization::V2_PREAMBLE_EMPTY;
 use crate::theta::serialization::V2_PREAMBLE_ESTIMATE;
 use crate::theta::serialization::V2_PREAMBLE_PRECISE;
+use crate::thetacommon::OwnedEntrySketchView;
 use crate::thetacommon::SetOperationSketchProperties;
+use crate::thetacommon::SetOperationSketchView;
 use crate::thetacommon::binomial_bounds;
 use crate::thetacommon::constants::DEFAULT_LG_K;
 use crate::thetacommon::constants::FLAGS_IS_COMPACT;
@@ -158,8 +160,10 @@ impl<'a> ThetaSketchView<'a> {
             ThetaSketchViewState::Compact(sketch) => sketch.num_retained(),
         }
     }
+}
 
-    pub(crate) fn set_operation_properties(self) -> SetOperationSketchProperties {
+impl SetOperationSketchView for ThetaSketchView<'_> {
+    fn properties(self) -> SetOperationSketchProperties {
         SetOperationSketchProperties {
             seed_hash: self.seed_hash(),
             theta: self.theta64(),
@@ -167,6 +171,18 @@ impl<'a> ThetaSketchView<'a> {
             ordered: self.is_ordered(),
             num_retained: self.num_retained(),
         }
+    }
+
+    fn hashes(self) -> impl Iterator<Item = u64> {
+        self.iter().map(|entry| entry.hash())
+    }
+}
+
+impl OwnedEntrySketchView for ThetaSketchView<'_> {
+    type Entry = ThetaEntry;
+
+    fn entries(self) -> impl Iterator<Item = Self::Entry> {
+        self.iter()
     }
 }
 
