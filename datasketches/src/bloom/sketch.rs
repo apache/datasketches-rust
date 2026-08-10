@@ -471,13 +471,13 @@ impl BloomFilter {
                 .read_u64_le()
                 .map_err(insufficient_data("num_bits_set"))?;
 
+            let mut counted_bits_set = 0;
             for word in &mut bit_array {
                 *word = cursor
                     .read_u64_le()
                     .map_err(insufficient_data("bit_array"))?;
+                counted_bits_set += word.count_ones() as u64;
             }
-
-            let counted_bits_set = bit_array.iter().map(|word| word.count_ones() as u64).sum();
 
             // Handle "dirty" state: 0xFFFFFFFFFFFFFFFF indicates bits need recounting.
             const DIRTY_BITS_VALUE: u64 = 0xFFFFFFFFFFFFFFFF;
