@@ -471,23 +471,22 @@ impl BloomFilter {
                 .read_u64_le()
                 .map_err(insufficient_data("num_bits_set"))?;
 
+            let mut counted_bits_set = 0;
             for word in &mut bit_array {
                 *word = cursor
                     .read_u64_le()
                     .map_err(insufficient_data("bit_array"))?;
+                counted_bits_set += word.count_ones() as u64;
             }
 
-            // Handle "dirty" state: 0xFFFFFFFFFFFFFFFF indicates bits need recounting
+            // Handle "dirty" state: 0xFFFFFFFFFFFFFFFF indicates bits need recounting.
             const DIRTY_BITS_VALUE: u64 = 0xFFFFFFFFFFFFFFFF;
             if raw_num_bits_set == DIRTY_BITS_VALUE {
-                num_bits_set = bit_array.iter().map(|w| w.count_ones() as u64).sum();
+                num_bits_set = counted_bits_set;
             } else {
-                let raw_num_words_set = raw_num_bits_set.div_ceil(64) as usize;
-                if raw_num_words_set > num_words {
+                if raw_num_bits_set != counted_bits_set {
                     return Err(Error::deserial(format!(
-                        "invalid num_bits_set: expected <= {}, got {}",
-                        num_words * 64,
-                        raw_num_bits_set
+                        "invalid num_bits_set: expected {counted_bits_set}, got {raw_num_bits_set}",
                     )));
                 }
                 num_bits_set = raw_num_bits_set;

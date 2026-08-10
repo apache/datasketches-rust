@@ -19,6 +19,8 @@ use std::fs;
 use std::path::PathBuf;
 
 use datasketches::bloom::BloomFilter;
+use datasketches::bloom::BloomFilterBuilder;
+use datasketches::error::ErrorKind;
 
 use crate::serialization_test_data;
 
@@ -174,4 +176,41 @@ fn test_go_compatibility() {
         let path = serialization_test_data("go_generated_files", &filename);
         test_bloom_filter_file(path, n, num_hashes);
     }
+}
+
+#[test]
+fn test_inconsistent_num_bits_set_is_rejected() {
+    const NUM_BITS_SET_OFFSET: usize = 24;
+
+    let mut filter = BloomFilterBuilder::with_accuracy(100, 0.01).build();
+    filter.insert("apple");
+    filter.insert("banana");
+    let actual_bits_set = filter.bits_used();
+    assert!(actual_bits_set > 1);
+
+    for serialized_count in [0, actual_bits_set - 1, actual_bits_set + 1] {
+        let mut bytes = filter.serialize();
+        bytes[NUM_BITS_SET_OFFSET..NUM_BITS_SET_OFFSET + size_of::<u64>()]
+            .copy_from_slice(&serialized_count.to_le_bytes());
+
+        let err = BloomFilter::deserialize(&bytes).unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::InvalidData);
+    }
+}
+
+#[test]
+fn test_dirty_num_bits_set_is_recomputed() {
+    const NUM_BITS_SET_OFFSET: usize = 24;
+
+    let mut filter = BloomFilterBuilder::with_accuracy(100, 0.01).build();
+    filter.insert("apple");
+    filter.insert("banana");
+    let mut bytes = filter.serialize();
+    bytes[NUM_BITS_SET_OFFSET..NUM_BITS_SET_OFFSET + size_of::<u64>()]
+        .copy_from_slice(&u64::MAX.to_le_bytes());
+
+    let restored = BloomFilter::deserialize(&bytes).unwrap();
+    assert_eq!(restored.bits_used(), filter.bits_used());
+    assert!(restored.contains(&"apple"));
+    assert!(restored.contains(&"banana"));
 }
