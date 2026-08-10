@@ -127,6 +127,46 @@ fn test_purged_to_empty_round_trip() {
 }
 
 #[test]
+fn test_zero_stream_weight_does_not_discard_other_state() {
+    // Simulate a wrapped stream weight or an inconsistent but accepted serialized image.
+    const STREAM_WEIGHT_OFFSET: usize = 2 * size_of::<u64>();
+
+    let mut active_sketch = FrequentItemsSketch::<i64>::new(32);
+    active_sketch.update_with_count(7, 3);
+    let mut active_bytes = active_sketch.serialize();
+    active_bytes[STREAM_WEIGHT_OFFSET..STREAM_WEIGHT_OFFSET + size_of::<u64>()].fill(0);
+
+    let active_restored = FrequentItemsSketch::<i64>::deserialize(&active_bytes).unwrap();
+    assert_eq!(active_restored.total_weight(), 0);
+    assert_eq!(active_restored.num_active_items(), 1);
+    assert_eq!(active_restored.estimate(&7), 3);
+    assert_eq!(active_restored.serialize(), active_bytes);
+
+    let mut active_merged = FrequentItemsSketch::<i64>::new(32);
+    active_merged.merge(&active_restored);
+    assert_eq!(active_merged.num_active_items(), 1);
+    assert_eq!(active_merged.estimate(&7), 3);
+
+    let mut purged_sketch = FrequentItemsSketch::<i64>::new(32);
+    for item in 0..=(32 * 3 / 4) {
+        purged_sketch.update(item);
+    }
+    let mut purged_bytes = purged_sketch.serialize();
+    purged_bytes[STREAM_WEIGHT_OFFSET..STREAM_WEIGHT_OFFSET + size_of::<u64>()].fill(0);
+
+    let purged_restored = FrequentItemsSketch::<i64>::deserialize(&purged_bytes).unwrap();
+    assert_eq!(purged_restored.total_weight(), 0);
+    assert_eq!(purged_restored.num_active_items(), 0);
+    assert_eq!(purged_restored.maximum_error(), 1);
+    assert_eq!(purged_restored.serialize(), purged_bytes);
+
+    let mut purged_merged = FrequentItemsSketch::<i64>::new(32);
+    purged_merged.merge(&purged_restored);
+    assert_eq!(purged_merged.num_active_items(), 0);
+    assert_eq!(purged_merged.maximum_error(), 1);
+}
+
+#[test]
 fn test_java_frequent_longs_compatibility() {
     let test_cases = [0, 1, 10, 100, 1000, 10000, 100000, 1000000];
     for n in test_cases {
