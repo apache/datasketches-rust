@@ -131,9 +131,17 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
         Self::with_lg_map_sizes(lg_max_map_size, LG_MIN_MAP_SIZE)
     }
 
-    /// Returns true if the sketch is empty.
+    /// Returns true if the sketch has no active items.
+    ///
+    /// A purge can remove all active items while retaining a non-zero total weight and
+    /// maximum error. Use [`Self::total_weight`] to distinguish that state from a newly created
+    /// or reset sketch.
     pub fn is_empty(&self) -> bool {
         self.hash_map.num_active() == 0
+    }
+
+    fn is_initial_state(&self) -> bool {
+        self.stream_weight == 0 && self.offset == 0 && self.hash_map.num_active() == 0
     }
 
     /// Returns the number of active items being tracked.
@@ -359,7 +367,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     where
         T: Clone,
     {
-        if other.is_empty() {
+        if other.is_initial_state() {
             return;
         }
         let merged_total = self.stream_weight + other.stream_weight;
@@ -488,7 +496,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
         count_serialize_size: CountSerializeSize<T>,
         serialize_item: SerializeItem<T>,
     ) -> Vec<u8> {
-        if self.is_empty() {
+        if self.is_initial_state() {
             let mut bytes = SketchBytes::with_capacity(PREAMBLE_LONGS_EMPTY as usize * 8);
             bytes.write_u8(PREAMBLE_LONGS_EMPTY);
             bytes.write_u8(SERIAL_VERSION);
