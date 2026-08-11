@@ -23,10 +23,11 @@
 //! in Data Streams"](https://arxiv.org/abs/1705.07001) by Daniel Anderson, Pryce Bevan, Kevin Lang,
 //! Edo Liberty, Lee Rhodes, and Justin Thaler.
 //!
-//! This sketch is useful for tracking approximate frequencies of items of type `T` that implements
-//! [`FrequentItemValue`], with optional associated counts (`T` item, `u64` count) that are members
-//! of a multiset of such items. The true frequency of an item is defined to be the sum of
-//! associated counts.
+//! This sketch tracks approximate frequencies of items of type `T` that implement [`Eq`] and
+//! [`Hash`](std::hash::Hash), with optional associated counts (`T` item, `u64` count) that are
+//! members of a multiset. The true frequency of an item is the sum of its associated counts. Core
+//! updates and queries do not require [`FrequentItemValue`]; that trait is required only by the
+//! built-in serialization and deserialization methods.
 //!
 //! This implementation provides the following capabilities:
 //! * Estimate the frequency of an item.
@@ -88,6 +89,10 @@
 //! ```
 //!
 //! # Serialization
+//!
+//! The built-in serialization methods are available when the item type implements
+//! [`FrequentItemValue`]. Sketches whose items implement only [`Eq`] and [`Hash`](std::hash::Hash)
+//! can still use all core update and query operations.
 //!
 //! ```
 //! use datasketches::frequencies::FrequentItemsSketch;

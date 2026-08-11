@@ -43,8 +43,8 @@
 //! filter.insert(42_u64);
 //!
 //! // Check membership
-//! assert!(filter.contains(&"apple")); // true - definitely inserted
-//! assert!(!filter.contains(&"grape")); // false - never inserted (probably)
+//! assert!(filter.contains(&"apple")); // true - possibly present (and known to be inserted here)
+//! assert!(!filter.contains(&"grape")); // false - definitely not present
 //!
 //! // Get statistics
 //! println!("Capacity: {} bits", filter.capacity());

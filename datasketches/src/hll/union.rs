@@ -45,6 +45,12 @@ use crate::hll::mode::Mode;
 /// the union of all input sketches. It automatically handles sketches with
 /// different configurations and modes.
 ///
+/// Coupon-mode inputs are replayed into the current gadget without reducing its `lg_k`. An
+/// array-mode input with a smaller `lg_k` reduces the gadget to that value; larger array inputs are
+/// downsampled to the gadget's current configuration. Once reduced, the effective `lg_k` remains
+/// lower until [`reset`](Self::reset), so estimates and bounds reflect the reduced register count.
+/// The requested [`HllType`] changes only the result representation, not its statistical accuracy.
+///
 /// See the [module level documentation](super) for more.
 #[derive(Debug, Clone)]
 pub struct HllUnion {
@@ -114,7 +120,7 @@ impl HllUnion {
     /// Update the union with another sketch
     ///
     /// Merges the input sketch into the union's internal gadget, handling:
-    /// * Sketches with different lg_k values (resizes/downsamples as needed)
+    /// * Sketches with different `lg_k` values (resizes/downsamples as needed)
     /// * Sketches in different modes (List, Set, Array4/6/8)
     /// * Sketches with different target HLL types
     ///
