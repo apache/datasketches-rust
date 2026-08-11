@@ -136,19 +136,15 @@ pub use self::union::HllUnion;
 /// See [module level documentation](self) for more details.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HllType {
-    /// Uses a 4-bit field per HLL bucket and for large counts may require the use of a
-    /// small internal auxiliary array for storing statistical exceptions, which are rare.
-    /// For the values of lgConfigK > 13 (K = 8192), this additional array adds about 3%
-    /// to the overall storage.
+    /// Uses 4 bits per HLL bucket and has the smallest storage footprint.
     ///
-    /// It is generally the slowest in terms of update time, but has the smallest storage
-    /// footprint of about K/2 * 1.03 bytes.
+    /// It is generally the slowest representation to update.
     Hll4,
-    /// Uses a 6-bit field per HLL bucket. It is generally the next fastest in terms
-    /// of update time with a storage footprint of about 3/4 * K bytes.
+    /// Uses 6 bits per HLL bucket and provides a middle ground for storage and update speed.
     Hll6,
-    /// Uses an 8-bit byte per HLL bucket. It is generally the fastest in terms of update
-    /// time but has the largest storage footprint of about K bytes.
+    /// Uses 8 bits per HLL bucket and has the largest storage footprint.
+    ///
+    /// It is generally the fastest representation to update.
     Hll8,
 }
 
@@ -211,7 +207,7 @@ impl Coupon {
         self.0
     }
 
-    /// Compute the HLL coupon for a hashable value.
+    /// Computes the HLL coupon for a hashable value.
     ///
     /// You may use [`hash::value`](crate::hash::value) wrappers when another DataSketches
     /// implementation requires a specific value hashing strategy.

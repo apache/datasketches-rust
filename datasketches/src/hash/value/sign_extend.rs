@@ -37,7 +37,7 @@ pub type SignExtend<T> = Value<T, SignExtendStrategy>;
 #[doc(hidden)]
 pub struct SignExtendStrategy;
 
-/// Create a sign-extended hashable value from an `i8` value.
+/// Creates a sign-extended hashable value from an `i8` value.
 ///
 /// # Examples
 ///
@@ -54,7 +54,7 @@ pub fn from_i8(v: i8) -> SignExtend<i8> {
     SignExtend::new(v)
 }
 
-/// Create a sign-extended hashable value from a `u8` value.
+/// Creates a sign-extended hashable value from a `u8` value.
 ///
 /// `255u8` sign-extends like `-1i8`, not like `255u64`.
 ///
@@ -73,7 +73,7 @@ pub fn from_u8(v: u8) -> SignExtend<u8> {
     SignExtend::new(v)
 }
 
-/// Create a sign-extended hashable value from an `i16` value.
+/// Creates a sign-extended hashable value from an `i16` value.
 ///
 /// # Examples
 ///
@@ -93,7 +93,7 @@ pub fn from_i16(v: i16) -> SignExtend<i16> {
     SignExtend::new(v)
 }
 
-/// Create a sign-extended hashable value from a `u16` value.
+/// Creates a sign-extended hashable value from a `u16` value.
 ///
 /// `65535u16` sign-extends like `-1i16`, not like `65535u64`.
 ///
@@ -115,7 +115,7 @@ pub fn from_u16(v: u16) -> SignExtend<u16> {
     SignExtend::new(v)
 }
 
-/// Create a sign-extended hashable value from an `i32` value.
+/// Creates a sign-extended hashable value from an `i32` value.
 ///
 /// # Examples
 ///
@@ -135,7 +135,7 @@ pub fn from_i32(v: i32) -> SignExtend<i32> {
     SignExtend::new(v)
 }
 
-/// Create a sign-extended hashable value from a `u32` value.
+/// Creates a sign-extended hashable value from a `u32` value.
 ///
 /// `4294967295u32` sign-extends like `-1i32`, not like `4294967295u64`.
 ///

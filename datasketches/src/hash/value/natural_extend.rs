@@ -37,7 +37,7 @@ pub type NaturalExtend<T> = Value<T, NaturalExtendStrategy>;
 #[doc(hidden)]
 pub struct NaturalExtendStrategy;
 
-/// Create a naturally extended hashable value from an `i8` value.
+/// Creates a naturally extended hashable value from an `i8` value.
 ///
 /// # Examples
 ///
@@ -52,7 +52,7 @@ pub fn from_i8(v: i8) -> NaturalExtend<i8> {
     NaturalExtend::new(v)
 }
 
-/// Create a naturally extended hashable value from a `u8` value.
+/// Creates a naturally extended hashable value from a `u8` value.
 ///
 /// # Examples
 ///
@@ -67,7 +67,7 @@ pub fn from_u8(v: u8) -> NaturalExtend<u8> {
     NaturalExtend::new(v)
 }
 
-/// Create a naturally extended hashable value from an `i16` value.
+/// Creates a naturally extended hashable value from an `i16` value.
 ///
 /// # Examples
 ///
@@ -82,7 +82,7 @@ pub fn from_i16(v: i16) -> NaturalExtend<i16> {
     NaturalExtend::new(v)
 }
 
-/// Create a naturally extended hashable value from a `u16` value.
+/// Creates a naturally extended hashable value from a `u16` value.
 ///
 /// # Examples
 ///
@@ -97,7 +97,7 @@ pub fn from_u16(v: u16) -> NaturalExtend<u16> {
     NaturalExtend::new(v)
 }
 
-/// Create a naturally extended hashable value from an `i32` value.
+/// Creates a naturally extended hashable value from an `i32` value.
 ///
 /// # Examples
 ///
@@ -112,7 +112,7 @@ pub fn from_i32(v: i32) -> NaturalExtend<i32> {
     NaturalExtend::new(v)
 }
 
-/// Create a naturally extended hashable value from a `u32` value.
+/// Creates a naturally extended hashable value from a `u32` value.
 ///
 /// # Examples
 ///

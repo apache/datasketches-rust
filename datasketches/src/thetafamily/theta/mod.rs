@@ -20,15 +20,15 @@
 //! Theta sketch is a generalization of the Kth Minimum Value (KMV) sketch that uses
 //! a hash table to store retained entries and a theta parameter (sampling threshold)
 //! to control memory usage. When the hash table reaches capacity, theta is reduced
-//! to maintain the nominal size k.
+//! to maintain the capacity configured by `lg_k`.
 //!
 //! # Overview
 //!
 //! Theta sketches provide approximate distinct count (cardinality) estimation with
 //! configurable accuracy and memory usage. The implementation supports:
 //!
-//! * **ThetaSketch**: Mutable sketch for building from input data
-//! * **CompactThetaSketch**: Immutable sketch with compact memory layout
+//! * [`ThetaSketch`]: Mutable sketch for building from input data.
+//! * [`CompactThetaSketch`]: Immutable sketch with a compact memory layout.
 //!
 //! # Usage
 //!

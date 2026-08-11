@@ -66,13 +66,13 @@ impl Default for TDigestMut {
 }
 
 impl TDigestMut {
-    /// Creates a tdigest instance with the given value of k.
+    /// Creates a mutable t-digest with the given `k` value.
     ///
     /// The fallible version of this method is [`TDigestMut::try_new`].
     ///
     /// # Panics
     ///
-    /// Panics if k is less than 10
+    /// Panics if `k` is less than `10`.
     ///
     /// # Examples
     ///
@@ -94,13 +94,13 @@ impl TDigestMut {
         )
     }
 
-    /// Creates a tdigest instance with the given value of k.
+    /// Creates a mutable t-digest with the given `k` value.
     ///
     /// The panicking version of this method is [`TDigestMut::new`].
     ///
     /// # Errors
     ///
-    /// If k is less than 10.
+    /// Returns an error if `k` is less than `10`.
     ///
     /// # Examples
     ///
@@ -158,7 +158,7 @@ impl TDigestMut {
         }
     }
 
-    /// Update this TDigest with the given value.
+    /// Updates this t-digest with the given value.
     ///
     /// [f64::NAN], [f64::INFINITY], and [f64::NEG_INFINITY] values are ignored.
     ///
@@ -185,17 +185,17 @@ impl TDigestMut {
         self.max = self.max.max(value);
     }
 
-    /// Returns parameter k (compression) that was used to configure this TDigest.
+    /// Returns the compression parameter `k` used to configure this t-digest.
     pub fn k(&self) -> u16 {
         self.k
     }
 
-    /// Returns true if TDigest has not seen any data.
+    /// Returns `true` if this t-digest has not seen any data.
     pub fn is_empty(&self) -> bool {
         self.centroids.is_empty() && self.buffer.is_empty()
     }
 
-    /// Returns minimum value seen by TDigest; `None` if TDigest is empty.
+    /// Returns the minimum value seen by this t-digest, or `None` if it is empty.
     pub fn min_value(&self) -> Option<f64> {
         if self.is_empty() {
             None
@@ -204,7 +204,7 @@ impl TDigestMut {
         }
     }
 
-    /// Returns maximum value seen by TDigest; `None` if TDigest is empty.
+    /// Returns the maximum value seen by this t-digest, or `None` if it is empty.
     pub fn max_value(&self) -> Option<f64> {
         if self.is_empty() {
             None
@@ -213,12 +213,12 @@ impl TDigestMut {
         }
     }
 
-    /// Returns total weight.
+    /// Returns the total weight.
     pub fn total_weight(&self) -> u64 {
         self.centroids_weight + self.buffer.len() as u64
     }
 
-    /// Merge the given TDigest into this one
+    /// Merges the given t-digest into this one.
     ///
     /// # Examples
     ///
@@ -258,7 +258,7 @@ impl TDigestMut {
         self.do_merge(tmp, self.buffer.len() as u64 + other.total_weight())
     }
 
-    /// Freezes this TDigest into an immutable one.
+    /// Converts this mutable t-digest into an immutable one.
     ///
     /// # Examples
     ///
@@ -292,7 +292,7 @@ impl TDigestMut {
         }
     }
 
-    /// See [`TDigest::cdf`].
+    /// Returns the cumulative distribution approximation described by [`TDigest::cdf`].
     ///
     /// # Examples
     ///
@@ -316,7 +316,7 @@ impl TDigestMut {
         self.view().cdf(split_points)
     }
 
-    /// See [`TDigest::pmf`].
+    /// Returns the probability mass approximation described by [`TDigest::pmf`].
     ///
     /// # Examples
     ///
@@ -340,7 +340,7 @@ impl TDigestMut {
         self.view().pmf(split_points)
     }
 
-    /// See [`TDigest::rank`].
+    /// Returns the normalized rank described by [`TDigest::rank`].
     ///
     /// # Examples
     ///
@@ -374,7 +374,7 @@ impl TDigestMut {
         self.view().rank(value)
     }
 
-    /// See [`TDigest::quantile`].
+    /// Returns the quantile described by [`TDigest::quantile`].
     ///
     /// # Examples
     ///
@@ -398,7 +398,7 @@ impl TDigestMut {
         self.view().quantile(rank)
     }
 
-    /// Serializes this TDigest to bytes.
+    /// Serializes this mutable t-digest to bytes.
     ///
     /// # Examples
     ///
@@ -483,7 +483,7 @@ impl TDigestMut {
         bytes.into_bytes()
     }
 
-    /// Deserializes a TDigest from bytes.
+    /// Deserializes a mutable t-digest from bytes.
     ///
     /// Supports reading compact format with (float, int) centroids as opposed to (double, long) to
     /// represent (mean, weight). [^1]
@@ -814,7 +814,7 @@ impl TDigestMut {
         self.buffer.clear();
     }
 
-    /// Returns the estimated size of the sketch in bytes
+    /// Returns the estimated size of the sketch in bytes.
     pub fn estimated_size(&self) -> usize {
         size_of::<Self>()
             + self.centroids.capacity() * size_of::<Centroid>()
@@ -837,17 +837,17 @@ pub struct TDigest {
 }
 
 impl TDigest {
-    /// Returns parameter k (compression) that was used to configure this TDigest.
+    /// Returns the compression parameter `k` used to configure this t-digest.
     pub fn k(&self) -> u16 {
         self.k
     }
 
-    /// Returns true if TDigest has not seen any data.
+    /// Returns `true` if this t-digest has not seen any data.
     pub fn is_empty(&self) -> bool {
         self.centroids.is_empty()
     }
 
-    /// Returns minimum value seen by TDigest; `None` if TDigest is empty.
+    /// Returns the minimum value seen by this t-digest, or `None` if it is empty.
     pub fn min_value(&self) -> Option<f64> {
         if self.is_empty() {
             None
@@ -856,7 +856,7 @@ impl TDigest {
         }
     }
 
-    /// Returns maximum value seen by TDigest; `None` if TDigest is empty.
+    /// Returns the maximum value seen by this t-digest, or `None` if it is empty.
     pub fn max_value(&self) -> Option<f64> {
         if self.is_empty() {
             None
@@ -865,7 +865,7 @@ impl TDigest {
         }
     }
 
-    /// Returns total weight.
+    /// Returns the total weight.
     pub fn total_weight(&self) -> u64 {
         self.centroids_weight
     }
@@ -895,7 +895,7 @@ impl TDigest {
     /// This can be viewed as array of ranks of the given split points plus one more value that
     /// is always 1.
     ///
-    /// Returns `None` if TDigest is empty.
+    /// Returns `None` if this t-digest is empty.
     ///
     /// # Panics
     ///
@@ -932,7 +932,7 @@ impl TDigest {
     /// An array of m+1 doubles each of which is an approximation to the fraction of the input
     /// stream values (the mass) that fall into one of those intervals.
     ///
-    /// Returns `None` if TDigest is empty.
+    /// Returns `None` if this t-digest is empty.
     ///
     /// # Panics
     ///
@@ -956,9 +956,9 @@ impl TDigest {
         self.view().pmf(split_points)
     }
 
-    /// Compute approximate normalized rank (from 0 to 1 inclusive) of the given value.
+    /// Computes the approximate normalized rank in `[0.0, 1.0]` of the given value.
     ///
-    /// Returns `None` if TDigest is empty.
+    /// Returns `None` if this t-digest is empty.
     ///
     /// # Panics
     ///
@@ -982,13 +982,13 @@ impl TDigest {
         self.view().rank(value)
     }
 
-    /// Compute approximate quantile value corresponding to the given normalized rank.
+    /// Computes the approximate quantile for the given normalized rank.
     ///
-    /// Returns `None` if TDigest is empty.
+    /// Returns `None` if this t-digest is empty.
     ///
     /// # Panics
     ///
-    /// Panics if rank is not in [0.0, 1.0].
+    /// Panics if `rank` is outside `[0.0, 1.0]`.
     ///
     /// # Examples
     ///
@@ -1008,7 +1008,7 @@ impl TDigest {
         self.view().quantile(rank)
     }
 
-    /// Converts this immutable TDigest into a mutable one.
+    /// Converts this immutable t-digest into a mutable one.
     ///
     /// # Examples
     ///
@@ -1034,7 +1034,7 @@ impl TDigest {
         )
     }
 
-    /// Returns the estimated size of the sketch in bytes
+    /// Returns the estimated size of the sketch in bytes.
     pub fn estimated_size(&self) -> usize {
         size_of::<Self>() + self.centroids.capacity() * size_of::<Centroid>()
     }

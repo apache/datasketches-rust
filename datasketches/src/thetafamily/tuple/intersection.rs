@@ -140,7 +140,7 @@ where
 
     /// Returns the intersection result as a compact Tuple sketch.
     ///
-    /// If `ordered` is true, retained entries are sorted ascending by hash.
+    /// If `ordered` is `true`, retained entries are sorted ascending by hash.
     ///
     /// # Panics
     ///

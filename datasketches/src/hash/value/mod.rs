@@ -29,7 +29,7 @@
 //!
 //! This strategy is the same as how other datasketches implementations hash floating-point numbers.
 //!
-//! Read the docs of concrete value wrapper for more details and examples.
+//! The concrete wrapper documentation provides more details and examples.
 //!
 //! * [`canonical_float::from_f32`]
 //! * [`canonical_float::from_f64`]
@@ -40,7 +40,7 @@
 //! integers. This strategy is the same as how datasketches-cpp hashes short integers for
 //! `HllSketch` and `CpcSketch`.
 //!
-//! Read the docs of concrete value wrapper for more details and examples.
+//! The concrete wrapper documentation provides more details and examples.
 //!
 //! * [`sign_extend::from_i8`], [`sign_extend::from_u8`]
 //! * [`sign_extend::from_i16`], [`sign_extend::from_u16`]
@@ -50,7 +50,7 @@
 //! `u64`, and then hashes the resulting integers. This strategy is the same as how datasketches-cpp
 //! hashes short integers for `BloomFilter`.
 //!
-//! Read the docs of concrete value wrapper for more details and examples.
+//! The concrete wrapper documentation provides more details and examples.
 //!
 //! * [`natural_extend::from_i8`], [`natural_extend::from_u8`]
 //! * [`natural_extend::from_i16`], [`natural_extend::from_u16`]
@@ -65,7 +65,7 @@
 //! empty strings before hashing, so check `is_empty` before updating a sketch when that behavior
 //! matters.
 //!
-//! Read the docs of concrete value wrapper for more details and examples.
+//! The concrete wrapper documentation provides more details and examples.
 //!
 //! * [`raw_bytes::from_vec`]
 //! * [`raw_bytes::from_string`]

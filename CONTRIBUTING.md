@@ -60,6 +60,12 @@ Lint:
 cargo x lint
 ```
 
+## Public API documentation
+
+- Describe types with noun phrases and API behavior with third-person present-tense verbs such as `Creates`, `Updates`, and `Returns`.
+- End summary sentences with punctuation, and format Rust identifiers, literals, and numeric ranges as inline code.
+- Put contract sections and compatibility notes before examples. When applicable, order sections as `# Errors`, `# Panics`, and `# Examples`. Include only sections that describe an actual contract.
+
 ## Integration test layout
 
 Integration tests for the `datasketches` crate live under `datasketches/tests` and use two entry-point patterns.

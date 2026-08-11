@@ -52,12 +52,12 @@ impl BloomFilterBuilder {
     ///
     /// # Arguments
     ///
-    /// * `max_items`: Maximum expected number of distinct items
-    /// * `fpp`: Target false positive probability (e.g., 0.01 for 1%)
+    /// * `max_items`: Maximum expected number of distinct items.
+    /// * `fpp`: Target false positive probability (for example, `0.01` for `1%`).
     ///
     /// # Panics
     ///
-    /// Panics if `max_items` is 0 or `fpp` is not in (0.0, 1.0].
+    /// Panics if `max_items` is `0` or `fpp` is outside `(0.0, 1.0]`.
     ///
     /// # Examples
     ///
@@ -96,14 +96,14 @@ impl BloomFilterBuilder {
     ///
     /// # Arguments
     ///
-    /// * `num_bits`: Total number of bits in the filter
-    /// * `num_hashes`: Number of hash functions to use
+    /// * `num_bits`: Total number of bits in the filter.
+    /// * `num_hashes`: Number of hash functions to use.
     ///
     /// # Panics
     ///
     /// Panics if any of:
-    /// * `num_bits` < [`Self::MIN_NUM_BITS`] or `num_bits` > [`Self::MAX_NUM_BITS`]
-    /// * `num_hashes` < [`Self::MIN_NUM_HASHES`] or `num_hashes` > [`Self::MAX_NUM_HASHES`]
+    /// * `num_bits < Self::MIN_NUM_BITS` or `num_bits > Self::MAX_NUM_BITS`.
+    /// * `num_hashes < Self::MIN_NUM_HASHES` or `num_hashes > Self::MAX_NUM_HASHES`.
     ///
     /// # Examples
     ///

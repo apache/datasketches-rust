@@ -34,7 +34,7 @@ use crate::cpc::serialization::SERIAL_VERSION;
 use crate::cpc::serialization::make_preamble_ints;
 use crate::error::Error;
 
-/// A read-only view of a serialized image of a CpcSketch.
+/// A read-only view of a serialized `CpcSketch` image.
 #[derive(Debug, Clone)]
 pub struct CpcWrapper {
     lg_k: u8,
@@ -131,7 +131,7 @@ impl CpcWrapper {
         })
     }
 
-    /// Return the parameter lg_k.
+    /// Returns the configured `lg_k`.
     pub fn lg_k(&self) -> u8 {
         self.lg_k
     }
@@ -168,7 +168,7 @@ impl CpcWrapper {
         )
     }
 
-    /// Returns true if the sketch is empty.
+    /// Returns `true` if the sketch is empty.
     pub fn is_empty(&self) -> bool {
         self.num_coupons == 0
     }

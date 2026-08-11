@@ -69,7 +69,7 @@ use crate::cpc::determine_correct_offset;
 use crate::cpc::pair_table::PairTable;
 use crate::hash::DEFAULT_UPDATE_SEED;
 
-/// The union (merge) operation for the CPC sketches.
+/// Union operator for CPC sketches.
 #[derive(Debug, Clone)]
 pub struct CpcUnion {
     // immutable config variables
@@ -108,15 +108,15 @@ impl CpcUnion {
         Self { lg_k, seed, state }
     }
 
-    /// Return the parameter lg_k.
+    /// Returns the current `lg_k`.
     ///
-    /// Note that due to merging with source sketches that may have a lower value of lg_k, this
+    /// Note that due to merging with source sketches that may have a lower `lg_k`, this
     /// value can be less than what the union object was configured with.
     pub fn lg_k(&self) -> u8 {
         self.lg_k
     }
 
-    /// Get the union result as a new sketch.
+    /// Returns the union result as a new sketch.
     ///
     /// # Examples
     ///
@@ -207,7 +207,7 @@ impl CpcUnion {
         }
     }
 
-    /// Update this union with a CpcSketch.
+    /// Updates this union with a `CpcSketch`.
     ///
     /// # Panics
     ///

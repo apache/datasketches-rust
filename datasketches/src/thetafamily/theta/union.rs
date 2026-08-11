@@ -41,13 +41,13 @@ impl UnionMergePolicy<ThetaEntry> for NoopUnionPolicy {
 }
 
 impl ThetaUnion {
-    /// Update this union with a given sketch.
+    /// Updates this union with the given sketch.
     pub fn update<'a>(&mut self, sketch: impl Into<ThetaSketchView<'a>>) -> Result<(), Error> {
         let sketch = sketch.into();
         self.state.update(sketch)
     }
 
-    /// Return this union as a compact sketch.
+    /// Returns this union as a compact sketch.
     pub fn to_sketch(&self, ordered: bool) -> CompactThetaSketch {
         let parts = self.state.to_compact_parts(ordered);
         CompactThetaSketch::from_parts(
@@ -63,7 +63,7 @@ impl ThetaUnion {
         )
     }
 
-    /// Reset the union to empty state.
+    /// Resets the union to its empty state.
     pub fn reset(&mut self) {
         self.state.reset();
     }
@@ -95,11 +95,11 @@ impl Default for ThetaUnionBuilder {
 }
 
 impl ThetaUnionBuilder {
-    /// Set lg_k (log2 of nominal size k).
+    /// Sets `lg_k`, the base-2 logarithm of the nominal capacity.
     ///
     /// # Panics
     ///
-    /// If lg_k is not in range [5, 26]
+    /// Panics if `lg_k` is outside `[5, 26]`.
     ///
     /// # Examples
     ///
@@ -117,17 +117,17 @@ impl ThetaUnionBuilder {
         self
     }
 
-    /// Set resize factor.
+    /// Sets the resize factor.
     pub fn resize_factor(mut self, factor: ResizeFactor) -> Self {
         self.resize_factor = factor;
         self
     }
 
-    /// Set sampling probability.
+    /// Sets the sampling probability.
     ///
     /// # Panics
     ///
-    /// Panics if probability is not in range `(0.0, 1.0]`
+    /// Panics if `probability` is outside `(0.0, 1.0]`.
     ///
     /// # Examples
     ///
@@ -147,7 +147,7 @@ impl ThetaUnionBuilder {
         self
     }
 
-    /// Set hash seed.
+    /// Sets the hash seed.
     ///
     /// # Examples
     ///
@@ -161,7 +161,7 @@ impl ThetaUnionBuilder {
         self
     }
 
-    /// Build the ThetaUnion.
+    /// Builds the [`ThetaUnion`].
     ///
     /// # Examples
     ///

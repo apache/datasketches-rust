@@ -65,19 +65,19 @@ pub struct HllSketch {
 }
 
 impl HllSketch {
-    /// Create a new HLL sketch
+    /// Creates a new HLL sketch.
     ///
     /// # Arguments
     ///
-    /// * `lg_config_k`: Log2 of the number of buckets (K). Must be in `[4, 21]`.
-    ///   * lg_k=4: 16 buckets, ~26% relative error
-    ///   * lg_k=12: 4096 buckets, ~1.6% relative error (common choice)
-    ///   * lg_k=21: 2M buckets, ~0.4% relative error
-    /// * `hll_type`: Target HLL array type (Hll4, Hll6, or Hll8)
+    /// * `lg_config_k`: The `lg_k` value in `[4, 21]`, which controls the number of buckets.
+    ///   * `lg_k = 4`: 16 buckets, ~26% relative error.
+    ///   * `lg_k = 12`: 4096 buckets, ~1.6% relative error (common choice).
+    ///   * `lg_k = 21`: 2M buckets, ~0.4% relative error.
+    /// * `hll_type`: Target HLL array type (`Hll4`, `Hll6`, or `Hll8`).
     ///
     /// # Panics
     ///
-    /// If lg_config_k is not in range `[4, 21]`
+    /// Panics if `lg_config_k` is outside `[4, 21]`.
     ///
     /// # Examples
     ///
@@ -130,7 +130,7 @@ impl HllSketch {
         &mut self.mode
     }
 
-    /// Check if the sketch is empty (no values have been added)
+    /// Returns `true` if no values have been added to the sketch.
     pub fn is_empty(&self) -> bool {
         match &self.mode {
             Mode::List { list, .. } => list.container().is_empty(),
@@ -141,7 +141,7 @@ impl HllSketch {
         }
     }
 
-    /// Get the target HLL type for this sketch
+    /// Returns the target HLL type for this sketch.
     pub fn target_type(&self) -> HllType {
         match &self.mode {
             Mode::List { hll_type, .. } => *hll_type,
@@ -152,12 +152,12 @@ impl HllSketch {
         }
     }
 
-    /// Get the configured lg_config_k
+    /// Returns the configured `lg_k`.
     pub fn lg_config_k(&self) -> u8 {
         self.lg_config_k
     }
 
-    /// Update the sketch with a value.
+    /// Updates the sketch with a value.
     ///
     /// Accepts any type that implements [`Hash`]. The value is hashed and converted to
     /// an internal coupon, which is then inserted into the sketch.
@@ -189,15 +189,15 @@ impl HllSketch {
         self.update_with_coupon(Coupon::from_value(value));
     }
 
-    /// Update the sketch with a pre-computed [`Coupon`].
+    /// Updates the sketch with a pre-computed [`Coupon`].
     ///
     /// A [`Coupon`] encodes both the HLL bucket index (low 26 bits) and the register
     /// value (high 6 bits) derived from hashing an input.  Accepting a pre-computed
     /// coupon makes it possible to pay the hashing cost once and fan the result out to
     /// many independent sketches — see [`Coupon`] for a worked example.
     ///
-    /// Handles all internal bookkeeping, including automatic mode transitions
-    /// (List → Set → HLL array) and estimator state updates.
+    /// All internal bookkeeping, including representation transitions and estimator state updates,
+    /// is handled automatically.
     ///
     /// # Examples
     ///
@@ -242,7 +242,7 @@ impl HllSketch {
         }
     }
 
-    /// Get the current cardinality estimate
+    /// Returns the current cardinality estimate.
     ///
     /// # Examples
     ///
@@ -264,10 +264,9 @@ impl HllSketch {
         }
     }
 
-    /// Get upper bound for cardinality estimate
+    /// Returns the upper confidence bound for the cardinality estimate.
     ///
-    /// Returns the upper confidence bound for the cardinality estimate based on
-    /// the number of standard deviations requested.
+    /// The bound is based on the requested number of standard deviations.
     pub fn upper_bound(&self, num_std_dev: NumStdDev) -> f64 {
         match &self.mode {
             Mode::List { list, .. } => list.container().upper_bound(num_std_dev),
@@ -278,10 +277,9 @@ impl HllSketch {
         }
     }
 
-    /// Get lower bound for cardinality estimate
+    /// Returns the lower confidence bound for the cardinality estimate.
     ///
-    /// Returns the lower confidence bound for the cardinality estimate based on
-    /// the number of standard deviations requested.
+    /// The bound is based on the requested number of standard deviations.
     pub fn lower_bound(&self, num_std_dev: NumStdDev) -> f64 {
         match &self.mode {
             Mode::List { list, .. } => list.container().lower_bound(num_std_dev),
@@ -292,7 +290,7 @@ impl HllSketch {
         }
     }
 
-    /// Deserializes an HLL sketch from bytes
+    /// Deserializes an HLL sketch from bytes.
     ///
     /// # Examples
     ///
@@ -409,7 +407,7 @@ impl HllSketch {
         Ok(HllSketch { lg_config_k, mode })
     }
 
-    /// Serializes the HLL sketch to bytes
+    /// Serializes the HLL sketch to bytes.
     ///
     /// # Examples
     ///
@@ -434,7 +432,7 @@ impl HllSketch {
         }
     }
 
-    /// Returns the estimated size of the sketch in bytes
+    /// Returns the estimated size of the sketch in bytes.
     pub fn estimated_size(&self) -> usize {
         let heap_size = match &self.mode {
             Mode::List { list, .. } => list.container().estimated_size(),

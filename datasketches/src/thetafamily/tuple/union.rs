@@ -99,7 +99,7 @@ where
 
     /// Returns the union as a [`CompactTupleSketch`].
     ///
-    /// If `ordered` is true, retained entries are sorted ascending by hash.
+    /// If `ordered` is `true`, retained entries are sorted ascending by hash.
     pub fn to_sketch(&self, ordered: bool) -> CompactTupleSketch<P::Summary>
     where
         P::Summary: Clone,
@@ -168,11 +168,11 @@ where
         }
     }
 
-    /// Sets lg_k (log2 of the nominal size k).
+    /// Sets `lg_k`, the base-2 logarithm of the nominal capacity.
     ///
     /// # Panics
     ///
-    /// Panics if lg_k is not in range [5, 26].
+    /// Panics if `lg_k` is outside `[5, 26]`.
     pub fn lg_k(mut self, lg_k: u8) -> Self {
         assert!(
             (MIN_LG_K..=MAX_LG_K).contains(&lg_k),
@@ -188,11 +188,11 @@ where
         self
     }
 
-    /// Sets the sampling probability p.
+    /// Sets the sampling probability.
     ///
     /// # Panics
     ///
-    /// Panics if p is not in range `(0.0, 1.0]`.
+    /// Panics if `probability` is outside `(0.0, 1.0]`.
     pub fn sampling_probability(mut self, probability: f32) -> Self {
         assert!(
             (0.0..=1.0).contains(&probability) && probability > 0.0,

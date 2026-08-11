@@ -28,7 +28,7 @@ static DELTA_OF_NUM_STD_DEVS: [f64; 4] = [
     0.0013498126861731796, // = 0.5 (1 + erf((-3/sqrt(2))))
 ];
 
-/// Number of standard deviations for confidence bounds
+/// Number of standard deviations for confidence bounds.
 ///
 /// This enum specifies the number of standard deviations to use when computing
 /// upper and lower bounds for cardinality estimates. Higher values provide wider
@@ -37,21 +37,21 @@ static DELTA_OF_NUM_STD_DEVS: [f64; 4] = [
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum NumStdDev {
-    /// One standard deviation (\~68% confidence interval)
+    /// One standard deviation (\~68% confidence interval).
     One = 1,
-    /// Two standard deviations (\~95% confidence interval)
+    /// Two standard deviations (\~95% confidence interval).
     Two = 2,
-    /// Three standard deviations (\~99.7% confidence interval)
+    /// Three standard deviations (\~99.7% confidence interval).
     Three = 3,
 }
 
 impl NumStdDev {
-    /// Returns the tail probability (delta) for this confidence level
+    /// Returns the tail probability (delta) for this confidence level.
     pub const fn tail_probability(&self) -> f64 {
         DELTA_OF_NUM_STD_DEVS[*self as usize]
     }
 
-    /// Returns the number of standard deviations as an `u8`.
+    /// Returns the number of standard deviations as a `u8`.
     pub const fn as_u8(&self) -> u8 {
         *self as u8
     }

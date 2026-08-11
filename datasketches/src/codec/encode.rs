@@ -21,14 +21,14 @@ pub struct SketchBytes {
 }
 
 impl SketchBytes {
-    /// Constructs an empty `SketchBytes` with at least the specified capacity.
+    /// Creates an empty `SketchBytes` with at least the specified capacity.
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
             bytes: Vec::with_capacity(capacity),
         }
     }
 
-    /// Consumes the `SketchBytes` and returns the underlying `Vec<u8>`.
+    /// Returns the underlying `Vec<u8>`, consuming the `SketchBytes`.
     pub fn into_bytes(self) -> Vec<u8> {
         self.bytes
     }

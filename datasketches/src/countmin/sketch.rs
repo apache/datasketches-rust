@@ -59,7 +59,7 @@ impl<T: CountMinValue> CountMinSketch<T> {
     ///
     /// # Panics
     ///
-    /// Panics if `num_hashes` is 0, `num_buckets` is less than 3, or the
+    /// Panics if `num_hashes` is `0`, `num_buckets` is less than `3`, or the
     /// total table size exceeds the supported limit.
     ///
     /// # Examples
@@ -79,10 +79,10 @@ impl<T: CountMinValue> CountMinSketch<T> {
     /// # Panics
     ///
     /// Panics if any of:
-    /// * `num_hashes` is 0
-    /// * `num_buckets` is less than 3
-    /// * the total table size exceeds the supported limit
-    /// * the computed seed hash is zero
+    /// * `num_hashes` is `0`.
+    /// * `num_buckets` is less than `3`.
+    /// * The total table size exceeds the supported limit.
+    /// * The computed seed hash is zero.
     ///
     /// # Examples
     ///
@@ -122,7 +122,7 @@ impl<T: CountMinValue> CountMinSketch<T> {
         std::f64::consts::E / self.num_buckets as f64
     }
 
-    /// Returns true if the sketch has not seen any updates.
+    /// Returns `true` if the sketch has not seen any updates.
     pub fn is_empty(&self) -> bool {
         self.total_weight == T::ZERO
     }
@@ -455,6 +455,10 @@ impl<T: UnsignedCountMinValue> CountMinSketch<T> {
     /// Values are truncated toward zero after multiplication; choose `decay` in `(0, 1]`.
     /// The total weight is scaled by the same factor to keep bounds consistent.
     ///
+    /// # Panics
+    ///
+    /// Panics if `decay` is not finite or is outside `(0, 1]`.
+    ///
     /// # Examples
     ///
     /// ```
@@ -465,10 +469,6 @@ impl<T: UnsignedCountMinValue> CountMinSketch<T> {
     /// sketch.decay(0.5);
     /// assert!(sketch.estimate("apple") >= 1);
     /// ```
-    ///
-    /// # Panics
-    ///
-    /// Panics if `decay` is not finite or is outside `(0, 1]`.
     pub fn decay(&mut self, decay: f64) {
         assert!(decay > 0.0 && decay <= 1.0, "decay must be within (0, 1]");
         for c in &mut self.counts {

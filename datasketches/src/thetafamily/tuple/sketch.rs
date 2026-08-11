@@ -300,12 +300,12 @@ where
         num_retained / theta
     }
 
-    /// Returns theta as a fraction (0.0 to 1.0).
+    /// Returns theta as a fraction in `[0.0, 1.0]`.
     pub fn theta(&self) -> f64 {
         self.table.theta() as f64 / MAX_THETA as f64
     }
 
-    /// Returns theta as `u64`.
+    /// Returns theta as a `u64`.
     pub fn theta64(&self) -> u64 {
         self.table.theta()
     }
@@ -315,12 +315,12 @@ where
         self.table.seed_hash()
     }
 
-    /// Returns true if the sketch is empty.
+    /// Returns `true` if the sketch is empty.
     pub fn is_empty(&self) -> bool {
         self.table.is_empty()
     }
 
-    /// Returns true if the sketch is in estimation mode.
+    /// Returns `true` if the sketch is in estimation mode.
     pub fn is_estimation_mode(&self) -> bool {
         self.table.theta() < MAX_THETA
     }
@@ -330,12 +330,12 @@ where
         self.table.num_retained()
     }
 
-    /// Returns lg_k (log2 of the nominal size k).
+    /// Returns the configured `lg_k`.
     pub fn lg_k(&self) -> u8 {
         self.table.lg_nom_size()
     }
 
-    /// Trims the sketch to the nominal size k.
+    /// Trims the sketch to the capacity configured by `lg_k`.
     pub fn trim(&mut self) {
         self.table.trim();
     }
@@ -384,9 +384,9 @@ where
     P: SummaryPolicy,
     P::Summary: Clone,
 {
-    /// Returns this sketch in compact (immutable) form.
+    /// Returns this sketch in compact, immutable form.
     ///
-    /// If `ordered` is true, retained entries are sorted by hash in ascending order.
+    /// If `ordered` is `true`, retained entries are sorted by hash in ascending order.
     ///
     /// # Examples
     ///
@@ -471,12 +471,12 @@ impl<S> CompactTupleSketch<S> {
         self.theta
     }
 
-    /// Returns true if the sketch is empty.
+    /// Returns `true` if the sketch is empty.
     pub fn is_empty(&self) -> bool {
         self.empty
     }
 
-    /// Returns true if the sketch is in estimation mode.
+    /// Returns `true` if the sketch is in estimation mode.
     pub fn is_estimation_mode(&self) -> bool {
         self.theta < MAX_THETA
     }
@@ -486,7 +486,7 @@ impl<S> CompactTupleSketch<S> {
         self.entries.len()
     }
 
-    /// Returns true if retained entries are ordered (sorted ascending by hash).
+    /// Returns `true` if retained entries are ordered (sorted ascending by hash).
     pub fn is_ordered(&self) -> bool {
         self.ordered
     }
@@ -765,11 +765,11 @@ where
         }
     }
 
-    /// Sets lg_k (log2 of the nominal size k).
+    /// Sets `lg_k`, the base-2 logarithm of the nominal capacity.
     ///
     /// # Panics
     ///
-    /// Panics if lg_k is not in range [5, 26].
+    /// Panics if `lg_k` is outside `[5, 26]`.
     pub fn lg_k(mut self, lg_k: u8) -> Self {
         assert!(
             (MIN_LG_K..=MAX_LG_K).contains(&lg_k),
@@ -785,11 +785,11 @@ where
         self
     }
 
-    /// Sets the sampling probability p.
+    /// Sets the sampling probability.
     ///
     /// # Panics
     ///
-    /// Panics if p is not in range `(0.0, 1.0]`.
+    /// Panics if `probability` is outside `(0.0, 1.0]`.
     pub fn sampling_probability(mut self, probability: f32) -> Self {
         assert!(
             (0.0..=1.0).contains(&probability) && probability > 0.0,

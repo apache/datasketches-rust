@@ -52,11 +52,10 @@ pub struct BloomFilter {
 }
 
 impl BloomFilter {
-    /// Tests whether an item is possibly in the set.
+    /// Returns `true` if an item is possibly in the set.
     ///
-    /// Returns:
-    /// * `true`: Item was **possibly** inserted (or false positive)
-    /// * `false`: Item was **definitely not** inserted
+    /// A `false` result means the item was definitely not inserted; a `true` result may be a false
+    /// positive.
     ///
     /// # Examples
     ///
@@ -78,9 +77,8 @@ impl BloomFilter {
         self.check_bits(h0, h1)
     }
 
-    /// Tests and inserts an item in a single operation.
+    /// Returns `true` if an item was possibly present before inserting it.
     ///
-    /// Returns whether the item was possibly already in the set before insertion.
     /// This is more efficient than calling `contains()` then `insert()` separately.
     ///
     /// # Examples
@@ -294,7 +292,7 @@ impl BloomFilter {
         self.num_bits_set as f64 / self.capacity() as f64
     }
 
-    /// Estimates the current false positive probability.
+    /// Returns the estimated current false positive probability.
     ///
     /// Uses the approximation: `load_factor^k`
     /// where:
@@ -312,7 +310,7 @@ impl BloomFilter {
         load.powf(k)
     }
 
-    /// Checks if two filters are compatible for merging.
+    /// Returns `true` if two filters are compatible for merging.
     ///
     /// Filters are compatible if they have the same:
     /// * Capacity (number of bits)
@@ -389,9 +387,9 @@ impl BloomFilter {
     /// # Errors
     ///
     /// Returns an error if:
-    /// * The data is truncated or corrupted
-    /// * The family ID doesn't match (not a Bloom filter)
-    /// * The serial version is unsupported
+    /// * The data is truncated or corrupted.
+    /// * The family ID does not identify a Bloom filter.
+    /// * The serial version is unsupported.
     ///
     /// # Examples
     ///
@@ -572,7 +570,7 @@ impl BloomFilter {
         }
     }
 
-    /// Returns the estimated size of the filter in bytes
+    /// Returns the estimated size of the filter in bytes.
     pub fn estimated_size(&self) -> usize {
         size_of::<Self>() + self.bit_array.len() * size_of::<u64>()
     }

@@ -77,7 +77,7 @@ impl TupleANotB {
     ///
     /// The result retains every key of `a` (below the combined theta) that is not present in `b`,
     /// keeping the summaries from `a`. Summary values in `b` are ignored and need not be
-    /// cloneable. If `ordered` is true, the retained entries are sorted ascending by hash.
+    /// cloneable. If `ordered` is `true`, the retained entries are sorted ascending by hash.
     ///
     /// # Errors
     ///

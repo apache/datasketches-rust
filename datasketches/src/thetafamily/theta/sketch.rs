@@ -198,7 +198,7 @@ impl<'a> From<&'a CompactThetaSketch> for ThetaSketchView<'a> {
     }
 }
 
-/// Mutable theta sketch for building from input data
+/// Mutable theta sketch for building from input data.
 #[derive(Debug)]
 pub struct ThetaSketch {
     table: ThetaHashTable,
@@ -210,7 +210,7 @@ impl ThetaSketch {
         self.into()
     }
 
-    /// Update the sketch with a hashable value.
+    /// Updates the sketch with a hashable value.
     ///
     /// You may use [`hash::value`](crate::hash::value) wrappers when another DataSketches
     /// implementation requires a specific value hashing strategy.
@@ -233,7 +233,7 @@ impl ThetaSketch {
         self.table.try_insert(value);
     }
 
-    /// Return cardinality estimate
+    /// Returns the cardinality estimate.
     ///
     /// # Examples
     ///
@@ -253,52 +253,52 @@ impl ThetaSketch {
         num_retained / theta
     }
 
-    /// Return theta as a fraction (0.0 to 1.0)
+    /// Returns theta as a fraction in `[0.0, 1.0]`.
     pub fn theta(&self) -> f64 {
         self.table.theta() as f64 / MAX_THETA as f64
     }
 
-    /// Return theta as u64
+    /// Returns theta as a `u64`.
     pub fn theta64(&self) -> u64 {
         self.table.theta()
     }
 
-    /// Return 16-bit seed hash.
+    /// Returns the 16-bit seed hash.
     pub fn seed_hash(&self) -> u16 {
         self.table.seed_hash()
     }
 
-    /// Check if sketch is empty
+    /// Returns `true` if the sketch is empty.
     pub fn is_empty(&self) -> bool {
         self.table.is_empty()
     }
 
-    /// Check if sketch is in estimation mode
+    /// Returns `true` if the sketch is in estimation mode.
     pub fn is_estimation_mode(&self) -> bool {
         self.table.theta() < MAX_THETA
     }
 
-    /// Return number of retained entries
+    /// Returns the number of retained entries.
     pub fn num_retained(&self) -> usize {
         self.table.num_retained()
     }
 
-    /// Return lg_k
+    /// Returns the configured `lg_k`.
     pub fn lg_k(&self) -> u8 {
         self.table.lg_nom_size()
     }
 
-    /// Trim the sketch to nominal size k
+    /// Trims the sketch to the capacity configured by `lg_k`.
     pub fn trim(&mut self) {
         self.table.trim();
     }
 
-    /// Reset the sketch to empty state
+    /// Resets the sketch to its empty state.
     pub fn reset(&mut self) {
         self.table.reset();
     }
 
-    /// Return iterator over retained entries.
+    /// Returns an iterator over retained entries.
     ///
     /// # Examples
     ///
@@ -314,9 +314,9 @@ impl ThetaSketch {
         self.table.iter_entries().copied()
     }
 
-    /// Return this sketch in compact (immutable) form.
+    /// Returns this sketch in compact, immutable form.
     ///
-    /// If `ordered` is true, retained hash values are sorted in ascending order.
+    /// If `ordered` is `true`, retained hash values are sorted in ascending order.
     ///
     /// # Examples
     ///
@@ -343,7 +343,7 @@ impl ThetaSketch {
         )
     }
 
-    /// Returns the approximate lower error bound given the specified number of Standard Deviations.
+    /// Returns the approximate lower error bound for the specified number of standard deviations.
     ///
     /// # Arguments
     ///
@@ -377,7 +377,7 @@ impl ThetaSketch {
             .expect("theta should always be valid")
     }
 
-    /// Returns the approximate upper error bound given the specified number of Standard Deviations.
+    /// Returns the approximate upper error bound for the specified number of standard deviations.
     ///
     /// # Arguments
     ///
@@ -416,7 +416,7 @@ impl ThetaSketch {
         .expect("theta should always be valid")
     }
 
-    /// Returns the estimated size of the sketch in bytes
+    /// Returns the estimated size of the sketch in bytes.
     pub fn estimated_size(&self) -> usize {
         size_of::<Self>() + self.table.estimated_size()
     }
@@ -470,22 +470,22 @@ impl CompactThetaSketch {
         num_retained / theta
     }
 
-    /// Returns theta as a fraction (0.0 to 1.0).
+    /// Returns theta as a fraction in `[0.0, 1.0]`.
     pub fn theta(&self) -> f64 {
         self.theta as f64 / MAX_THETA as f64
     }
 
-    /// Returns theta as u64.
+    /// Returns theta as a `u64`.
     pub fn theta64(&self) -> u64 {
         self.theta
     }
 
-    /// Returns true if this sketch is empty.
+    /// Returns `true` if this sketch is empty.
     pub fn is_empty(&self) -> bool {
         self.empty
     }
 
-    /// Returns true if this sketch is in estimation mode.
+    /// Returns `true` if this sketch is in estimation mode.
     pub fn is_estimation_mode(&self) -> bool {
         self.theta < MAX_THETA
     }
@@ -495,7 +495,7 @@ impl CompactThetaSketch {
         self.entries.len()
     }
 
-    /// Returns true if retained entries are ordered (sorted ascending).
+    /// Returns `true` if retained entries are ordered (sorted ascending).
     pub fn is_ordered(&self) -> bool {
         self.ordered
     }
@@ -505,12 +505,12 @@ impl CompactThetaSketch {
         self.seed_hash
     }
 
-    /// Return iterator over retained entries.
+    /// Returns an iterator over retained entries.
     pub fn iter(&self) -> impl Iterator<Item = ThetaEntry> + '_ {
         self.entries.iter().copied().map(ThetaEntry::new)
     }
 
-    /// Returns the approximate lower error bound given the specified number of Standard Deviations.
+    /// Returns the approximate lower error bound for the specified number of standard deviations.
     pub fn lower_bound(&self, num_std_dev: NumStdDev) -> f64 {
         if !self.is_estimation_mode() {
             return self.num_retained() as f64;
@@ -519,7 +519,7 @@ impl CompactThetaSketch {
             .expect("compact theta should always be valid")
     }
 
-    /// Returns the approximate upper error bound given the specified number of Standard Deviations.
+    /// Returns the approximate upper error bound for the specified number of standard deviations.
     pub fn upper_bound(&self, num_std_dev: NumStdDev) -> f64 {
         if !self.is_estimation_mode() {
             return self.num_retained() as f64;
@@ -979,13 +979,13 @@ impl CompactThetaSketch {
         })
     }
 
-    /// Returns the estimated size of the sketch in bytes
+    /// Returns the estimated size of the sketch in bytes.
     pub fn estimated_size(&self) -> usize {
         size_of::<Self>() + self.entries.capacity() * size_of::<u64>()
     }
 }
 
-/// Builder for ThetaSketch
+/// Builder for [`ThetaSketch`].
 #[derive(Debug)]
 pub struct ThetaSketchBuilder {
     lg_k: u8,
@@ -1006,11 +1006,11 @@ impl Default for ThetaSketchBuilder {
 }
 
 impl ThetaSketchBuilder {
-    /// Set lg_k (log2 of nominal size k).
+    /// Sets `lg_k`, the base-2 logarithm of the nominal capacity.
     ///
     /// # Panics
     ///
-    /// If lg_k is not in range [5, 26]
+    /// Panics if `lg_k` is outside `[5, 26]`.
     ///
     /// # Examples
     ///
@@ -1032,20 +1032,20 @@ impl ThetaSketchBuilder {
         self
     }
 
-    /// Set resize factor.
+    /// Sets the resize factor.
     pub fn resize_factor(mut self, factor: ResizeFactor) -> Self {
         self.resize_factor = factor;
         self
     }
 
-    /// Set sampling probability p.
+    /// Sets the sampling probability.
     ///
     /// The sampling probability controls the fraction of hashed values that are retained.
-    /// Must be greater than 0 to ensure valid theta values for bound calculations.
+    /// It must be greater than `0.0` to ensure valid theta values for bound calculations.
     ///
     /// # Panics
     ///
-    /// Panics if p is not in range `(0.0, 1.0]`
+    /// Panics if `probability` is outside `(0.0, 1.0]`.
     ///
     /// # Examples
     ///
@@ -1065,7 +1065,7 @@ impl ThetaSketchBuilder {
         self
     }
 
-    /// Set hash seed.
+    /// Sets the hash seed.
     ///
     /// # Examples
     ///
@@ -1079,7 +1079,7 @@ impl ThetaSketchBuilder {
         self
     }
 
-    /// Build the ThetaSketch.
+    /// Builds the [`ThetaSketch`].
     ///
     /// # Examples
     ///

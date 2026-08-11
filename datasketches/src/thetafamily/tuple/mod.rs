@@ -17,10 +17,10 @@
 
 //! Tuple sketch implementation.
 //!
-//! A Tuple sketch is an extension of the Theta sketch: in addition to the retained
-//! hash values it keeps a user-defined summary associated with every retained key. The hash table
-//! mechanics (theta screening, resize, rebuild to nominal size k) mirror the Theta sketch, with the
-//! added requirement that colliding keys merge their summaries.
+//! A Tuple sketch is an extension of the Theta sketch: in addition to the retained hash values it
+//! keeps a user-defined summary associated with every retained key. The hash table mechanics
+//! (theta screening, resize, rebuild to the capacity configured by `lg_k`) mirror the Theta sketch,
+//! with the added requirement that colliding keys merge their summaries.
 //!
 //! Custom summary behavior is supplied externally through policy objects: [`SummaryPolicy`]
 //! creates summaries, while [`SummaryUpdatePolicy`] folds update values into them. Summaries that

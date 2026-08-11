@@ -39,7 +39,7 @@ use crate::hll::array6::Array6;
 use crate::hll::array8::Array8;
 use crate::hll::mode::Mode;
 
-/// An HLL Union for combining multiple HLL sketches.
+/// An HLL union for combining multiple HLL sketches.
 ///
 /// The union accumulates the distinct values represented by all input sketches and automatically
 /// handles sketches with different configurations.
@@ -59,17 +59,16 @@ pub struct HllUnion {
 }
 
 impl HllUnion {
-    /// Create a new HLL Union
+    /// Creates a new HLL union.
     ///
     /// # Arguments
     ///
-    /// * `lg_max_k`: Maximum log2 of the number of buckets. Must be in `[4, 21]`. This determines
-    ///   the maximum precision the union can handle. Input sketches with larger lg_k will be
-    ///   down-sampled.
+    /// * `lg_max_k`: Maximum `lg_k` in `[4, 21]`. This determines the maximum precision the union
+    ///   can handle. Input sketches with a larger `lg_k` are downsampled.
     ///
     /// # Panics
     ///
-    /// Panics if `lg_max_k` is not in the range `[4, 21]`.
+    /// Panics if `lg_max_k` is outside `[4, 21]`.
     ///
     /// # Examples
     ///
@@ -95,7 +94,7 @@ impl HllUnion {
         Self { lg_max_k, gadget }
     }
 
-    /// Update the union's gadget with a value
+    /// Updates the union with a hashable value.
     ///
     /// This accepts any type that implements `Hash`. The value is hashed
     /// and converted to a coupon, which is then inserted into the sketch.
@@ -115,12 +114,10 @@ impl HllUnion {
         self.gadget.update(value);
     }
 
-    /// Update the union with another sketch
+    /// Updates the union with another sketch.
     ///
-    /// Merges the input sketch into the union's internal gadget, handling:
-    /// * Sketches with different `lg_k` values (resizes/downsamples as needed)
-    /// * Sketches in different modes (List, Set, Array4/6/8)
-    /// * Sketches with different target HLL types
+    /// The input is merged while accommodating different `lg_k` configurations and target HLL
+    /// types. The union's effective `lg_k` may decrease as a result.
     ///
     /// # Examples
     ///
@@ -246,14 +243,14 @@ impl HllUnion {
         self.gadget = HllSketch::from_mode(final_lg_k, Mode::Array8(new_array));
     }
 
-    /// Get the union result as a new sketch.
+    /// Returns the union result as a new sketch.
     ///
-    /// Returns a copy of the internal gadget sketch with the specified target HLL type.
-    /// If the requested type differs from the gadget's type, conversion is performed.
+    /// The returned sketch uses the specified target HLL type. If the requested type differs from
+    /// the current representation, the result is converted.
     ///
     /// # Arguments
     ///
-    /// * `hll_type`: The target HLL type for the result sketch (Hll4, Hll6, or Hll8)
+    /// * `hll_type`: Target HLL type for the result sketch (`Hll4`, `Hll6`, or `Hll8`).
     ///
     /// # Examples
     ///
@@ -297,46 +294,43 @@ impl HllUnion {
         }
     }
 
-    /// Get the current lg_config_k of the internal gadget
+    /// Returns the union's current effective `lg_k`.
     pub fn lg_config_k(&self) -> u8 {
         self.gadget.lg_config_k()
     }
 
-    /// Get the maximum lg_k this union can handle
+    /// Returns the maximum configured `lg_k`.
     pub fn lg_max_k(&self) -> u8 {
         self.lg_max_k
     }
 
-    /// Check if the union is empty
+    /// Returns `true` if the union is empty.
     pub fn is_empty(&self) -> bool {
         self.gadget.is_empty()
     }
 
-    /// Reset the union to its initial empty state
+    /// Resets the union to its initial empty state.
     ///
-    /// Clears all data from the internal gadget, allowing the union to be reused
-    /// for a new set of operations.
+    /// This clears all accumulated data so the union can be reused.
     pub fn reset(&mut self) {
         self.gadget = HllSketch::new(self.lg_max_k, HllType::Hll8);
     }
 
-    /// Get the current cardinality estimate of the union
+    /// Returns the union's current cardinality estimate.
     pub fn estimate(&self) -> f64 {
         self.gadget.estimate()
     }
 
-    /// Get upper bound for cardinality estimate of the union
+    /// Returns the upper confidence bound for the union's cardinality estimate.
     ///
-    /// Returns the upper confidence bound for the cardinality estimate based on
-    /// the number of standard deviations requested.
+    /// The bound is based on the requested number of standard deviations.
     pub fn upper_bound(&self, num_std_dev: NumStdDev) -> f64 {
         self.gadget.upper_bound(num_std_dev)
     }
 
-    /// Get lower bound for cardinality estimate of the union
+    /// Returns the lower confidence bound for the union's cardinality estimate.
     ///
-    /// Returns the lower confidence bound for the cardinality estimate based on
-    /// the number of standard deviations requested.
+    /// The bound is based on the requested number of standard deviations.
     pub fn lower_bound(&self, num_std_dev: NumStdDev) -> f64 {
         self.gadget.lower_bound(num_std_dev)
     }
