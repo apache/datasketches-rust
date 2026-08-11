@@ -42,24 +42,26 @@
 //!
 //! # HLL Types
 //!
-//! Three target HLL types are supported, trading precision for memory:
+//! The three target HLL types are isomorphic representations of the same registers. Given the
+//! same `lg_k` and input, they produce identical estimates and error distributions; they trade
+//! memory layout and update performance, not statistical precision:
 //!
 //! * [`HllType::Hll4`]: 4 bits per bucket (most compact)
-//! * [`HllType::Hll6`]: 6 bits per bucket (balanced)
-//! * [`HllType::Hll8`]: 8 bits per bucket (highest precision)
+//! * [`HllType::Hll6`]: 6 bits per bucket (fixed-size middle ground)
+//! * [`HllType::Hll8`]: 8 bits per bucket (largest and simplest representation)
 //!
 //! # Union Operations
 //!
 //! The [`HllUnion`] type enables combining multiple HLL sketches into a unified estimate.
-//! It maintains an internal "gadget" sketch that accumulates the union of all input sketches
-//! and automatically handles:
+//! It accumulates the distinct values represented by all input sketches and automatically handles:
 //!
-//! * Sketches with different `lg_k` precision levels (resizes/downsamples as needed)
-//! * Sketches in different modes (List, Set, or Array)
+//! * Sketches with different `lg_k` configurations (resizes/downsamples as needed)
 //! * Sketches with different target HLL types
 //!
-//! The union operation preserves cardinality estimation accuracy while enabling distributed
-//! computation patterns where sketches are built independently and merged later.
+//! The result's accuracy is determined by its final effective `lg_k`. Merging sketches with
+//! different configurations may reduce this value. Once reduced, it remains lower until the union
+//! is reset. A lower effective `lg_k` widens the error distribution; converting among HLL target
+//! types does not change accuracy.
 //!
 //! # Serialization
 //!

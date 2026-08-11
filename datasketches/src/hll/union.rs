@@ -41,9 +41,13 @@ use crate::hll::mode::Mode;
 
 /// An HLL Union for combining multiple HLL sketches.
 ///
-/// The union maintains an internal sketch (the "gadget") that accumulates
-/// the union of all input sketches. It automatically handles sketches with
-/// different configurations and modes.
+/// The union accumulates the distinct values represented by all input sketches and automatically
+/// handles sketches with different configurations.
+///
+/// Merging sketches with different configurations may reduce the union's effective `lg_k`. Once
+/// reduced, it remains lower until [`reset`](Self::reset), so estimates and bounds reflect the
+/// reduced register count. The requested [`HllType`] changes only the result representation, not
+/// its statistical accuracy.
 ///
 /// See the [module level documentation](super) for more.
 #[derive(Debug, Clone)]
@@ -114,7 +118,7 @@ impl HllUnion {
     /// Update the union with another sketch
     ///
     /// Merges the input sketch into the union's internal gadget, handling:
-    /// * Sketches with different lg_k values (resizes/downsamples as needed)
+    /// * Sketches with different `lg_k` values (resizes/downsamples as needed)
     /// * Sketches in different modes (List, Set, Array4/6/8)
     /// * Sketches with different target HLL types
     ///

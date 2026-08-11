@@ -68,8 +68,9 @@ impl TupleJaccardSimilarity {
     ///
     /// # Errors
     ///
-    /// Returns an error if either non-empty sketch was built with a seed different from this
-    /// operator's configured seed.
+    /// Returns an error if both sketches are logically non-empty and either was built with a seed
+    /// different from this operator's configured seed. Empty-input fast paths return an exact
+    /// result without checking seed compatibility.
     pub fn compute<'a, 'b, S, T>(
         &self,
         sketch_a: impl Into<TupleSketchView<'a, S>>,
