@@ -23,6 +23,7 @@ All significant changes to this project will be documented in this file.
 ### Bug fixes
 
 * `FrequentItemsSketch::serialize` now writes the full 8-byte preamble for an empty sketch, matching the Java and C++ encoding. Empty sketches previously serialized to 6 bytes, which `FrequentItemsSketch::deserialize` rejected with an insufficient-data error.
+* `CpcSketch` and `CpcWrapper` now classify out-of-range fields in serialized images as `InvalidData` rather than `InvalidArgument`.
 
 ## v0.3.0 (2026-05-18)
 

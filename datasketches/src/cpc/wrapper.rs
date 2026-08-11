@@ -62,13 +62,10 @@ impl CpcWrapper {
             .read_u8()
             .map_err(insufficient_data("first_interesting_column"))?;
         if !(MIN_LG_K..=MAX_LG_K).contains(&lg_k) {
-            return Err(Error::invalid_argument(format!(
-                "lg_k out of range; got {}",
-                lg_k
-            )));
+            return Err(Error::deserial(format!("lg_k out of range; got {}", lg_k)));
         }
         if first_interesting_column > 63 {
-            return Err(Error::invalid_argument(format!(
+            return Err(Error::deserial(format!(
                 "first_interesting_column out of range; got {}",
                 first_interesting_column
             )));
