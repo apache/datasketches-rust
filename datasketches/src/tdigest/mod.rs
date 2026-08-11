@@ -23,9 +23,9 @@
 //! The implementation in this library has a few differences from the reference implementation
 //! associated with that paper:
 //!
-//! * Merge does not modify the input
-//! * Deserialization similar to other sketches in this library, although reading the reference
-//!   implementation format is supported
+//! * Merging does not modify the input.
+//! * Deserialization is similar to other sketches in this library, although reading the reference
+//!   implementation format is supported.
 //!
 //! Unlike all other algorithms in the library, t-digest is empirical and has no mathematical
 //! basis for estimating its error and its results are dependent on the input data. However,

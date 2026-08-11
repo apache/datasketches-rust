@@ -60,6 +60,13 @@ Lint:
 cargo x lint
 ```
 
+## Public API documentation
+
+- Describe types with noun phrases and API behavior with third-person present-tense verbs such as `Creates`, `Updates`, and `Returns`.
+- End summary sentences with punctuation, and format Rust identifiers, literals, and numeric ranges as inline code.
+- Use `lg_k` for the algorithm parameter in prose. Use a different name only when referring to an exact Rust identifier or an external serialization format.
+- When applicable, order sections as `# Examples`, `# Errors`, and `# Panics`, followed by compatibility notes. Include only sections that describe an actual contract.
+
 ## Integration test layout
 
 Integration tests for the `datasketches` crate live under `datasketches/tests` and use two entry-point patterns.

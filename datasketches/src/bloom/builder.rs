@@ -52,12 +52,8 @@ impl BloomFilterBuilder {
     ///
     /// # Arguments
     ///
-    /// * `max_items`: Maximum expected number of distinct items
-    /// * `fpp`: Target false positive probability (e.g., 0.01 for 1%)
-    ///
-    /// # Panics
-    ///
-    /// Panics if `max_items` is 0 or `fpp` is not in (0.0, 1.0].
+    /// * `max_items`: Maximum expected number of distinct items.
+    /// * `fpp`: Target false positive probability (for example, `0.01` for `1%`).
     ///
     /// # Examples
     ///
@@ -69,6 +65,10 @@ impl BloomFilterBuilder {
     ///     .seed(42)
     ///     .build();
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if `max_items` is `0` or `fpp` is outside `(0.0, 1.0]`.
     pub fn with_accuracy(max_items: u64, fpp: f64) -> Self {
         assert!(max_items > 0, "max_items must be greater than 0");
         assert!(
@@ -96,14 +96,8 @@ impl BloomFilterBuilder {
     ///
     /// # Arguments
     ///
-    /// * `num_bits`: Total number of bits in the filter
-    /// * `num_hashes`: Number of hash functions to use
-    ///
-    /// # Panics
-    ///
-    /// Panics if any of:
-    /// * `num_bits` < [`Self::MIN_NUM_BITS`] or `num_bits` > [`Self::MAX_NUM_BITS`]
-    /// * `num_hashes` < [`Self::MIN_NUM_HASHES`] or `num_hashes` > [`Self::MAX_NUM_HASHES`]
+    /// * `num_bits`: Total number of bits in the filter.
+    /// * `num_hashes`: Number of hash functions to use.
     ///
     /// # Examples
     ///
@@ -112,6 +106,12 @@ impl BloomFilterBuilder {
     ///
     /// let filter = BloomFilterBuilder::with_size(10_000, 7).build();
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if any of:
+    /// * `num_bits < Self::MIN_NUM_BITS` or `num_bits > Self::MAX_NUM_BITS`.
+    /// * `num_hashes < Self::MIN_NUM_HASHES` or `num_hashes > Self::MAX_NUM_HASHES`.
     pub fn with_size(num_bits: u64, num_hashes: u16) -> Self {
         assert!(
             (Self::MIN_NUM_BITS..=Self::MAX_NUM_BITS).contains(&num_bits),

@@ -38,7 +38,7 @@ pub type RawBytes<T> = Value<T, RawBytesStrategy>;
 #[doc(hidden)]
 pub struct RawBytesStrategy;
 
-/// Create a raw-byte hashable value from a byte vector.
+/// Creates a raw-byte hashable value from a byte vector.
 ///
 /// This hashes the vector contents without Rust's slice length prefix.
 ///
@@ -60,7 +60,7 @@ pub fn from_vec(v: Vec<u8>) -> RawBytes<Vec<u8>> {
     RawBytes::new(v)
 }
 
-/// Create a raw-byte hashable value from a string.
+/// Creates a raw-byte hashable value from a string.
 ///
 /// This hashes the UTF-8 bytes of the string without Rust's string length prefix.
 ///
@@ -82,7 +82,7 @@ pub fn from_string(v: String) -> RawBytes<String> {
     RawBytes::new(v)
 }
 
-/// Create a raw-byte hashable value from a byte slice.
+/// Creates a raw-byte hashable value from a byte slice.
 ///
 /// This hashes the slice contents without Rust's slice length prefix.
 ///
@@ -104,7 +104,7 @@ pub fn from_slice(v: &[u8]) -> RawBytes<&[u8]> {
     RawBytes::new(v)
 }
 
-/// Create a raw-byte hashable value from a string slice.
+/// Creates a raw-byte hashable value from a string slice.
 ///
 /// This hashes the UTF-8 bytes of the string slice without Rust's string length prefix.
 ///

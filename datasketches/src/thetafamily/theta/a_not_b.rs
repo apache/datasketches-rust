@@ -72,7 +72,7 @@ impl ThetaANotB {
     /// Computes `a and not b`.
     ///
     /// The result retains every key of `a` (below the combined theta) that is not present in `b`.
-    /// If `ordered` is true, the retained entries are sorted ascending by hash.
+    /// If `ordered` is `true`, the retained entries are sorted ascending by hash.
     ///
     /// # Errors
     ///

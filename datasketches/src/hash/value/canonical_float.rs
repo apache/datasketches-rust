@@ -38,7 +38,7 @@ pub type CanonicalFloat<T> = Value<T, CanonicalFloatStrategy>;
 #[doc(hidden)]
 pub struct CanonicalFloatStrategy;
 
-/// Create a canonical hashable value from a `f32` value.
+/// Creates a canonical hashable value from an `f32` value.
 ///
 /// `f32` values are converted to `f64` before hashing. Values that are not exactly representable
 /// in `f32` may hash differently from the corresponding `f64` value. Signed zero values hash the
@@ -68,7 +68,7 @@ pub fn from_f32(v: f32) -> CanonicalFloat<f32> {
     CanonicalFloat::new(v)
 }
 
-/// Create a canonical hashable value from a `f64` value.
+/// Creates a canonical hashable value from an `f64` value.
 ///
 /// Signed zero values hash the same, and all NaN values use one canonical NaN bit pattern.
 ///

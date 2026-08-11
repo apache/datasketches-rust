@@ -42,7 +42,7 @@ impl ThetaEntry {
         Self { hash }
     }
 
-    /// Return the hash used as this entry's key.
+    /// Returns the hash used as this entry's key.
     pub fn hash(&self) -> u64 {
         self.hash.get()
     }
@@ -57,7 +57,7 @@ impl SketchEntry for ThetaEntry {
 impl ThetaHashTable {
     /// Hashes and inserts a value into the table.
     ///
-    /// Returns true if the value was inserted (new), false otherwise.
+    /// Returns `true` if the value was inserted, or `false` otherwise.
     pub fn try_insert<T: Hash>(&mut self, value: T) -> bool {
         let hash = self.hash(value);
         self.try_insert_hash(hash)
@@ -65,7 +65,7 @@ impl ThetaHashTable {
 
     /// Inserts a pre-hashed value into the table.
     ///
-    /// Returns true if the value was inserted (new), false otherwise.
+    /// Returns `true` if the value was inserted, or `false` otherwise.
     pub fn try_insert_hash(&mut self, hash: u64) -> bool {
         self.upsert_entry(hash, |existing| {
             if existing.is_some() {

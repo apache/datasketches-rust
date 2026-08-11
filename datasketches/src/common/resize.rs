@@ -15,23 +15,22 @@
 // specific language governing permissions and limitations
 // under the License.
 
-/// For the Families that accept this configuration parameter, it controls the size multiple that
-/// affects how fast the internal cache grows, when more space is required.
+/// Controls internal cache growth for sketch families that support resizing.
 ///
-/// For Theta Sketches, the Resize Factor is a dynamic, speed performance vs. memory size tradeoff.
-/// The sketches created on-heap and configured with a Resize Factor of > X1 start out with an
-/// internal hash table size that is the smallest submultiple of the target Nominal Entries
+/// For Theta sketches, the resize factor provides a dynamic trade-off between update speed and
+/// memory use. Sketches configured with a resize factor greater than `X1` start with an internal
+/// hash table size that is the smallest submultiple of the target nominal entries
 /// and larger than the minimum required hash table size for that sketch.
 ///
-/// When the sketch needs to be resized larger, then the Resize Factor is used as a multiplier of
+/// When the sketch needs to grow, the resize factor is used as a multiplier for
 /// the current sketch cache array size.
 ///
-/// "X1" means no resizing is allowed and the sketch will be initialized at full size.
+/// `X1` means no resizing is allowed and the sketch will be initialized at full size.
 ///
-/// "X2" means the internal cache will start very small and double in size until the target size is
+/// `X2` means the internal cache will start very small and double in size until the target size is
 /// reached.
 ///
-/// Similarly, "X4" is a factor of 4 and "X8" is a factor of 8.
+/// Similarly, `X4` is a factor of `4` and `X8` is a factor of `8`.
 ///
 /// # Examples
 ///
@@ -44,18 +43,18 @@
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ResizeFactor {
-    /// Do not resize. Sketch will be configured to full size.
+    /// Does not resize; configures the sketch at full size.
     X1,
-    /// Resize by factor of 2
+    /// Resizes by a factor of `2`.
     X2,
-    /// Resize by factor of 4
+    /// Resizes by a factor of `4`.
     X4,
-    /// Resize by factor of 8
+    /// Resizes by a factor of `8`.
     X8,
 }
 
 impl ResizeFactor {
-    /// Returns the Log-base 2 of the Resize Factor
+    /// Returns the base-2 logarithm of the resize factor.
     pub fn lg_value(self) -> u8 {
         match self {
             ResizeFactor::X1 => 0,

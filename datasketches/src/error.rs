@@ -15,22 +15,22 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! Error types for datasketches operations
+//! Error types for DataSketches operations.
 
 use std::fmt;
 
-/// ErrorKind is all kinds of Error of datasketches.
+/// Categories of errors returned by DataSketches operations.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum ErrorKind {
     /// The argument provided is invalid.
     InvalidArgument,
-    /// The sketch data deserializing is malformed.
+    /// The serialized sketch data is malformed.
     InvalidData,
 }
 
 impl ErrorKind {
-    /// Convert this error kind instance into static str.
+    /// Converts this error kind into a static string.
     pub const fn into_static(self) -> &'static str {
         match self {
             ErrorKind::InvalidArgument => "InvalidArgument",
@@ -45,7 +45,7 @@ impl fmt::Display for ErrorKind {
     }
 }
 
-/// Error is the error struct returned by all datasketches functions.
+/// Error returned by a DataSketches operation.
 ///
 /// # Examples
 ///
@@ -64,7 +64,7 @@ pub struct Error {
 }
 
 impl Error {
-    /// Create a new Error with error kind and message.
+    /// Creates a new `Error` with the given kind and message.
     pub fn new(kind: ErrorKind, message: impl Into<String>) -> Self {
         Self {
             kind,
@@ -73,18 +73,18 @@ impl Error {
         }
     }
 
-    /// Add more context in error.
+    /// Adds context to the error.
     pub fn with_context(mut self, key: &'static str, value: impl ToString) -> Self {
         self.context.push((key, value.to_string()));
         self
     }
 
-    /// Return error's kind.
+    /// Returns the error kind.
     pub fn kind(&self) -> ErrorKind {
         self.kind
     }
 
-    /// Return error's message.
+    /// Returns the error message.
     pub fn message(&self) -> &str {
         self.message.as_str()
     }

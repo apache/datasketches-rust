@@ -47,9 +47,9 @@ const LOAD_FACTOR_DENOMINATOR: usize = 4;
 /// Error guarantees for frequent item queries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ErrorType {
-    /// Include items if upper bound exceeds threshold (no false negatives).
+    /// Includes items if the upper bound exceeds the threshold (no false negatives).
     NoFalseNegatives,
-    /// Include items if lower bound exceeds threshold (no false positives).
+    /// Includes items if the lower bound exceeds the threshold (no false positives).
     NoFalsePositives,
 }
 
@@ -108,10 +108,6 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     /// The maximum map capacity is `0.75 * max_map_size`, and the internal map grows
     /// from a small starting size up to the maximum as needed.
     ///
-    /// # Panics
-    ///
-    /// Panics if `max_map_size` is not a power of two.
-    ///
     /// # Examples
     ///
     /// ```
@@ -122,6 +118,10 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     /// sketch.update(2);
     /// assert_eq!(sketch.num_active_items(), 2);
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if `max_map_size` is not a power of two.
     pub fn new(max_map_size: usize) -> Self {
         assert!(
             max_map_size.is_power_of_two(),
@@ -131,7 +131,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
         Self::with_lg_map_sizes(lg_max_map_size, LG_MIN_MAP_SIZE)
     }
 
-    /// Returns true if the sketch has no active items.
+    /// Returns `true` if the sketch has no active items.
     ///
     /// A purge can remove all active items while retaining a non-zero total weight and
     /// maximum error. Use [`Self::total_weight`] to distinguish that state from a newly created
@@ -211,12 +211,12 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
         self.offset
     }
 
-    /// Returns epsilon for this sketch.
+    /// Returns the epsilon error parameter for this sketch.
     pub fn epsilon(&self) -> f64 {
         Self::epsilon_for_lg(self.lg_max_map_size)
     }
 
-    /// Returns epsilon for a sketch configured with `lg_max_map_size`.
+    /// Returns the epsilon error parameter for the given `lg_max_map_size`.
     pub fn epsilon_for_lg(lg_max_map_size: u8) -> f64 {
         EPSILON_FACTOR / (1u64 << lg_max_map_size) as f64
     }
@@ -240,12 +240,12 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
         self.cur_map_cap
     }
 
-    /// Returns the configured log2 maximum map size.
+    /// Returns the configured `lg_max_map_size`.
     pub fn lg_max_map_size(&self) -> u8 {
         self.lg_max_map_size
     }
 
-    /// Returns the current map size in log2.
+    /// Returns the current `lg_cur_map_size`.
     pub fn lg_cur_map_size(&self) -> u8 {
         self.hash_map.lg_length()
     }

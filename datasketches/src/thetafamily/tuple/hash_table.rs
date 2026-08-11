@@ -45,7 +45,7 @@ impl<S> TupleEntry<S> {
         Self { hash, summary }
     }
 
-    /// Return the hash used as this entry's key.
+    /// Returns the hash used as this entry's key.
     pub fn hash(&self) -> u64 {
         self.hash.get()
     }
@@ -72,9 +72,9 @@ impl<S> SketchEntry for TupleEntry<S> {
 impl<S> TupleHashTable<S> {
     /// Hashes a key and inserts or updates its summary via a single callback.
     ///
-    /// See [`try_insert_hash`](Self::try_insert_hash) for the callback contract. Returns true if a
-    /// new entry was created, false if the key already existed or the hash was screened out by
-    /// theta.
+    /// See [`try_insert_hash`](Self::try_insert_hash) for the callback contract. Returns `true` if
+    /// a new entry was created, or `false` if the key already existed or the hash was screened
+    /// out by theta.
     pub fn try_insert<T, F>(&mut self, key: T, f: F) -> bool
     where
         T: Hash,
@@ -86,8 +86,8 @@ impl<S> TupleHashTable<S> {
 
     /// Inserts or updates the summary slot for a pre-hashed key.
     ///
-    /// Returns true if a new entry was created, false otherwise (existing key, declined insertion,
-    /// or a hash screened out by theta).
+    /// Returns `true` if a new entry was created, or `false` otherwise (existing key, declined
+    /// insertion, or a hash screened out by theta).
     pub fn try_insert_hash<F>(&mut self, hash: u64, f: F) -> bool
     where
         F: FnOnce(Option<&mut S>) -> Option<S>,

@@ -27,15 +27,15 @@
 //! [`Hash`](std::hash::Hash), with optional associated counts (`T` item, `u64` count) that are
 //! members of a multiset. The true frequency of an item is the sum of its associated counts.
 //!
-//! This implementation provides the following capabilities:
-//! * Estimate the frequency of an item.
-//! * Return upper and lower bounds of any item, such that the true frequency is always between the
-//!   upper and lower bounds.
-//! * Return a global maximum error that holds for all items in the stream.
-//! * Return an array of frequent items that qualify either [`ErrorType::NoFalsePositives`] or
+//! This implementation:
+//! * Estimates the frequency of an item.
+//! * Returns upper and lower bounds for any item, such that the true frequency is always between
+//!   the upper and lower bounds.
+//! * Returns a global maximum error that holds for all items in the stream.
+//! * Returns an array of frequent items that qualify either [`ErrorType::NoFalsePositives`] or
 //!   [`ErrorType::NoFalseNegatives`].
-//! * Merge itself with another sketch created from this module.
-//! * Serialize to bytes, or deserialize from bytes, for storage or transmission.
+//! * Merges itself with another sketch created from this module.
+//! * Serializes to bytes and deserializes from bytes for storage or transmission.
 //!
 //! # Accuracy
 //!

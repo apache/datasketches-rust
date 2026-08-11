@@ -128,7 +128,7 @@ impl CpcSketch {
         }
     }
 
-    /// Return the parameter lg_k.
+    /// Returns the configured `lg_k`.
     pub fn lg_k(&self) -> u8 {
         self.lg_k
     }
@@ -165,12 +165,12 @@ impl CpcSketch {
         )
     }
 
-    /// Returns true if the sketch is empty.
+    /// Returns `true` if the sketch is empty.
     pub fn is_empty(&self) -> bool {
         self.num_coupons == 0
     }
 
-    /// Update the sketch with a hashable value.
+    /// Updates the sketch with a hashable value.
     ///
     /// You may use [`hash::value`](crate::hash::value) wrappers when another DataSketches
     /// implementation requires a specific value hashing strategy.
@@ -452,7 +452,7 @@ impl CpcSketch {
         matrix
     }
 
-    /// Returns the estimated size of the sketch in bytes
+    /// Returns the estimated size of the sketch in bytes.
     pub fn estimated_size(&self) -> usize {
         let heap_size = self.sliding_window.capacity()
             + self
@@ -466,7 +466,7 @@ impl CpcSketch {
 }
 
 impl CpcSketch {
-    /// Serializes this CpcSketch to bytes.
+    /// Serializes this `CpcSketch` to bytes.
     pub fn serialize(&self) -> Vec<u8> {
         let mut bytes = SketchBytes::with_capacity(256);
 
@@ -526,12 +526,12 @@ impl CpcSketch {
         bytes.into_bytes()
     }
 
-    /// Deserializes a CpcSketch from bytes.
+    /// Deserializes a `CpcSketch` from bytes.
     pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
         Self::deserialize_with_seed(bytes, DEFAULT_UPDATE_SEED)
     }
 
-    /// Deserializes a CpcSketch from bytes with the provided seed.
+    /// Deserializes a `CpcSketch` from bytes with the provided seed.
     pub fn deserialize_with_seed(bytes: &[u8], seed: u64) -> Result<Self, Error> {
         let mut cursor = SketchSlice::new(bytes);
         let preamble_ints = cursor
@@ -716,7 +716,7 @@ impl CpcSketch {
 
 // testing methods
 impl CpcSketch {
-    /// Validate this sketch is valid.
+    /// Returns `true` if the sketch's internal state is valid.
     ///
     /// This is primarily for testing and validation purposes.
     pub fn validate(&self) -> bool {

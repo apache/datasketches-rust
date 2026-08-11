@@ -57,11 +57,6 @@ pub struct CountMinSketch<T: CountMinValue> {
 impl<T: CountMinValue> CountMinSketch<T> {
     /// Creates a new CountMin sketch with the default seed.
     ///
-    /// # Panics
-    ///
-    /// Panics if `num_hashes` is 0, `num_buckets` is less than 3, or the
-    /// total table size exceeds the supported limit.
-    ///
     /// # Examples
     ///
     /// ```
@@ -70,19 +65,16 @@ impl<T: CountMinValue> CountMinSketch<T> {
     /// let sketch = CountMinSketch::<i64>::new(4, 128);
     /// assert_eq!(sketch.num_buckets(), 128);
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if `num_hashes` is `0`, `num_buckets` is less than `3`, or the
+    /// total table size exceeds the supported limit.
     pub fn new(num_hashes: u8, num_buckets: u32) -> Self {
         Self::with_seed(num_hashes, num_buckets, DEFAULT_UPDATE_SEED)
     }
 
     /// Creates a new CountMin sketch with the provided seed.
-    ///
-    /// # Panics
-    ///
-    /// Panics if any of:
-    /// * `num_hashes` is 0
-    /// * `num_buckets` is less than 3
-    /// * the total table size exceeds the supported limit
-    /// * the computed seed hash is zero
     ///
     /// # Examples
     ///
@@ -92,6 +84,14 @@ impl<T: CountMinValue> CountMinSketch<T> {
     /// let sketch = CountMinSketch::<i64>::with_seed(4, 64, 42);
     /// assert_eq!(sketch.seed(), 42);
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if any of:
+    /// * `num_hashes` is `0`.
+    /// * `num_buckets` is less than `3`.
+    /// * The total table size exceeds the supported limit.
+    /// * The computed seed hash is zero.
     pub fn with_seed(num_hashes: u8, num_buckets: u32, seed: u64) -> Self {
         let entries = entries_for_config(num_hashes, num_buckets);
         Self::make(num_hashes, num_buckets, seed, entries)
@@ -122,7 +122,7 @@ impl<T: CountMinValue> CountMinSketch<T> {
         std::f64::consts::E / self.num_buckets as f64
     }
 
-    /// Returns true if the sketch has not seen any updates.
+    /// Returns `true` if the sketch has not seen any updates.
     pub fn is_empty(&self) -> bool {
         self.total_weight == T::ZERO
     }
@@ -233,10 +233,6 @@ impl<T: CountMinValue> CountMinSketch<T> {
 
     /// Merges another sketch into this one.
     ///
-    /// # Panics
-    ///
-    /// Panics if the sketches have incompatible configurations.
-    ///
     /// # Examples
     ///
     /// ```
@@ -251,6 +247,10 @@ impl<T: CountMinValue> CountMinSketch<T> {
     /// left.merge(&right);
     /// assert!(left.estimate("banana") >= 2);
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if the sketches have incompatible configurations.
     pub fn merge(&mut self, other: &CountMinSketch<T>) {
         if std::ptr::eq(self, other) {
             panic!("Cannot merge a sketch with itself.");
