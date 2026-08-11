@@ -194,7 +194,7 @@ where
     let mut intersection = IntersectionState::new(seed, NoopMergePolicy);
     intersection.update(KeyEntries(sketch_a))?;
     intersection.update(KeyEntries(sketch_b))?;
-    let intersection = intersection.result(false);
+    let intersection = intersection.to_compact_parts(false);
     let intersection_count = intersection
         .entries
         .iter()

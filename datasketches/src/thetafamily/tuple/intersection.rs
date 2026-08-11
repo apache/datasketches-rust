@@ -153,7 +153,7 @@ where
             self.state.has_result(),
             "TupleIntersection::to_sketch() called before first update()"
         );
-        let parts = self.state.result(ordered);
+        let parts = self.state.to_compact_parts(ordered);
         CompactTupleSketch::from_parts(
             parts.entries,
             parts.theta,

@@ -243,8 +243,8 @@ where
         self.table.estimated_size()
     }
 
-    /// Return the current intersection state as compact-sketch parts.
-    pub fn result(&self, ordered: bool) -> CompactSketchParts<E>
+    /// Returns the current intersection state as compact-sketch parts.
+    pub fn to_compact_parts(&self, ordered: bool) -> CompactSketchParts<E>
     where
         E: Clone,
     {

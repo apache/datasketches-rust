@@ -83,7 +83,7 @@ impl ThetaIntersection {
             self.state.has_result(),
             "ThetaIntersection::to_sketch() called before first update()"
         );
-        let parts = self.state.result(ordered);
+        let parts = self.state.to_compact_parts(ordered);
         CompactThetaSketch::from_parts(
             parts
                 .entries
