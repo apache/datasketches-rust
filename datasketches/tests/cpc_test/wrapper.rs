@@ -19,6 +19,7 @@ use datasketches::common::NumStdDev;
 use datasketches::cpc::CpcSketch;
 use datasketches::cpc::CpcUnion;
 use datasketches::cpc::CpcWrapper;
+use datasketches::error::ErrorKind;
 use googletest::assert_that;
 use googletest::prelude::contains_substring;
 use googletest::prelude::eq;
@@ -89,4 +90,26 @@ fn test_is_compressed() {
         err.message(),
         contains_substring("only compressed sketches are supported")
     );
+}
+
+#[test]
+fn test_invalid_image_fields_are_invalid_data() {
+    let original = CpcSketch::new(10).serialize();
+
+    for (index, value, field) in [
+        (3, 3, "lg_k"),
+        (3, 27, "lg_k"),
+        (4, 64, "first_interesting_column"),
+    ] {
+        let mut bytes = original.clone();
+        bytes[index] = value;
+
+        let sketch_err = CpcSketch::deserialize(&bytes).unwrap_err();
+        assert_that!(sketch_err.kind(), eq(ErrorKind::InvalidData));
+        assert_that!(sketch_err.message(), contains_substring(field));
+
+        let wrapper_err = CpcWrapper::new(&bytes).unwrap_err();
+        assert_that!(wrapper_err.kind(), eq(ErrorKind::InvalidData));
+        assert_that!(wrapper_err.message(), contains_substring(field));
+    }
 }
