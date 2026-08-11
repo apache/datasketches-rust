@@ -1008,6 +1008,10 @@ impl Default for ThetaSketchBuilder {
 impl ThetaSketchBuilder {
     /// Sets `lg_k`, the base-2 logarithm of the nominal capacity.
     ///
+    /// # Panics
+    ///
+    /// Panics if `lg_k` is outside `[5, 26]`.
+    ///
     /// # Examples
     ///
     /// ```
@@ -1016,10 +1020,6 @@ impl ThetaSketchBuilder {
     /// let sketch = ThetaSketchBuilder::default().lg_k(12).build();
     /// assert_eq!(sketch.lg_k(), 12);
     /// ```
-    ///
-    /// # Panics
-    ///
-    /// Panics if `lg_k` is outside `[5, 26]`.
     pub fn lg_k(mut self, lg_k: u8) -> Self {
         assert!(
             (MIN_LG_K..=MAX_LG_K).contains(&lg_k),
@@ -1043,6 +1043,10 @@ impl ThetaSketchBuilder {
     /// The sampling probability controls the fraction of hashed values that are retained.
     /// It must be greater than `0.0` to ensure valid theta values for bound calculations.
     ///
+    /// # Panics
+    ///
+    /// Panics if `probability` is outside `(0.0, 1.0]`.
+    ///
     /// # Examples
     ///
     /// ```
@@ -1052,10 +1056,6 @@ impl ThetaSketchBuilder {
     ///     .sampling_probability(0.5)
     ///     .build();
     /// ```
-    ///
-    /// # Panics
-    ///
-    /// Panics if `probability` is outside `(0.0, 1.0]`.
     pub fn sampling_probability(mut self, probability: f32) -> Self {
         assert!(
             (0.0..=1.0).contains(&probability) && probability > 0.0,

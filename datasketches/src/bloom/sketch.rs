@@ -150,6 +150,11 @@ impl BloomFilter {
     /// After merging, this filter will recognize items from either filter
     /// (plus any false positives from either).
     ///
+    /// # Panics
+    ///
+    /// Panics if the filters are not compatible (different size, hashes, or seed).
+    /// Use [`is_compatible()`](Self::is_compatible) to check first.
+    ///
     /// # Examples
     ///
     /// ```
@@ -169,11 +174,6 @@ impl BloomFilter {
     /// assert!(f1.contains(&"a"));
     /// assert!(f1.contains(&"b"));
     /// ```
-    ///
-    /// # Panics
-    ///
-    /// Panics if the filters are not compatible (different size, hashes, or seed).
-    /// Use [`is_compatible()`](Self::is_compatible) to check first.
     pub fn union(&mut self, other: &BloomFilter) {
         assert!(
             self.is_compatible(other),
@@ -193,6 +193,10 @@ impl BloomFilter {
     ///
     /// After intersection, this filter will recognize only items present in both
     /// filters (plus false positives).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the filters are not compatible (different size, hashes, or seed).
     ///
     /// # Examples
     ///
@@ -215,10 +219,6 @@ impl BloomFilter {
     /// assert!(f1.contains(&"b")); // In both
     /// // "a" and "c" likely return false now
     /// ```
-    ///
-    /// # Panics
-    ///
-    /// Panics if the filters are not compatible (different size, hashes, or seed).
     pub fn intersect(&mut self, other: &BloomFilter) {
         assert!(
             self.is_compatible(other),
@@ -324,6 +324,8 @@ impl BloomFilter {
 
     /// Serializes the filter to a byte vector.
     ///
+    /// The format is compatible with other Apache DataSketches implementations.
+    ///
     /// # Examples
     ///
     /// ```
@@ -337,8 +339,6 @@ impl BloomFilter {
     /// let restored = BloomFilter::deserialize(&bytes).unwrap();
     /// assert!(restored.contains(&"test"));
     /// ```
-    ///
-    /// The format is compatible with other Apache DataSketches implementations.
     pub fn serialize(&self) -> Vec<u8> {
         let is_empty = self.is_empty();
         let preamble_longs = if is_empty {
@@ -384,6 +384,13 @@ impl BloomFilter {
 
     /// Deserializes a filter from bytes.
     ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// * The data is truncated or corrupted.
+    /// * The family ID does not identify a Bloom filter.
+    /// * The serial version is unsupported.
+    ///
     /// # Examples
     ///
     /// ```
@@ -396,13 +403,6 @@ impl BloomFilter {
     /// let restored = BloomFilter::deserialize(&bytes).unwrap();
     /// assert_eq!(original, restored);
     /// ```
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// * The data is truncated or corrupted.
-    /// * The family ID does not identify a Bloom filter.
-    /// * The serial version is unsupported.
     pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
         let mut cursor = SketchSlice::new(bytes);
 

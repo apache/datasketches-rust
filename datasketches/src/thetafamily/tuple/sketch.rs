@@ -543,6 +543,10 @@ impl<S> CompactTupleSketch<S> {
 
     /// Serializes this sketch into the compact Tuple binary format.
     ///
+    /// Each summary is encoded by its [`TupleSummaryValue`] implementation. The layout matches the
+    /// Java/C++ Tuple sketches, so the output can be read by those implementations given a
+    /// compatible summary encoding.
+    ///
     /// # Examples
     ///
     /// ```
@@ -555,10 +559,6 @@ impl<S> CompactTupleSketch<S> {
     /// let bytes = sketch.compact(true).serialize();
     /// assert!(!bytes.is_empty());
     /// ```
-    ///
-    /// Each summary is encoded by its [`TupleSummaryValue`] implementation. The layout matches the
-    /// Java/C++ Tuple sketches, so the output can be read by those implementations given a
-    /// compatible summary encoding.
     pub fn serialize(&self) -> Vec<u8>
     where
         S: TupleSummaryValue,

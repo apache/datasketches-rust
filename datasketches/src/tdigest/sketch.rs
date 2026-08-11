@@ -70,6 +70,10 @@ impl TDigestMut {
     ///
     /// The fallible version of this method is [`TDigestMut::try_new`].
     ///
+    /// # Panics
+    ///
+    /// Panics if `k` is less than `10`.
+    ///
     /// # Examples
     ///
     /// ```
@@ -78,10 +82,6 @@ impl TDigestMut {
     /// let sketch = TDigestMut::new(100);
     /// assert_eq!(sketch.k(), 100);
     /// ```
-    ///
-    /// # Panics
-    ///
-    /// Panics if `k` is less than `10`.
     pub fn new(k: u16) -> Self {
         Self::make(
             k,
@@ -98,6 +98,10 @@ impl TDigestMut {
     ///
     /// The panicking version of this method is [`TDigestMut::new`].
     ///
+    /// # Errors
+    ///
+    /// Returns an error if `k` is less than `10`.
+    ///
     /// # Examples
     ///
     /// ```
@@ -106,10 +110,6 @@ impl TDigestMut {
     /// let sketch = TDigestMut::try_new(20).unwrap();
     /// assert_eq!(sketch.k(), 20);
     /// ```
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if `k` is less than `10`.
     pub fn try_new(k: u16) -> Result<Self, Error> {
         if k < 10 {
             return Err(Error::invalid_argument(format!(
@@ -485,6 +485,14 @@ impl TDigestMut {
 
     /// Deserializes a mutable t-digest from bytes.
     ///
+    /// Supports reading compact format with (float, int) centroids as opposed to (double, long) to
+    /// represent (mean, weight). [^1]
+    ///
+    /// Supports reading format of the reference implementation (auto-detected) [^2].
+    ///
+    /// [^1]: This is to support reading the `tdigest<float>` format from the C++ implementation.
+    /// [^2]: <https://github.com/tdunning/t-digest>
+    ///
     /// # Examples
     ///
     /// ```
@@ -497,14 +505,6 @@ impl TDigestMut {
     /// let decoded = TDigestMut::deserialize(&bytes, false).unwrap();
     /// assert_eq!(decoded.max_value(), Some(2.0));
     /// ```
-    ///
-    /// Supports reading compact format with (float, int) centroids as opposed to (double, long) to
-    /// represent (mean, weight). [^1]
-    ///
-    /// Supports reading format of the reference implementation (auto-detected) [^2].
-    ///
-    /// [^1]: This is to support reading the `tdigest<float>` format from the C++ implementation.
-    /// [^2]: <https://github.com/tdunning/t-digest>
     pub fn deserialize(bytes: &[u8], is_f32: bool) -> Result<Self, Error> {
         let mut cursor = SketchSlice::new(bytes);
 
@@ -897,6 +897,11 @@ impl TDigest {
     ///
     /// Returns `None` if this t-digest is empty.
     ///
+    /// # Panics
+    ///
+    /// Panics if `split_points` is not unique, not monotonically increasing, or contains `NaN`
+    /// values.
+    ///
     /// # Examples
     ///
     /// ```
@@ -910,11 +915,6 @@ impl TDigest {
     /// let cdf = digest.cdf(&[1.5]).unwrap();
     /// assert_eq!(cdf.len(), 2);
     /// ```
-    ///
-    /// # Panics
-    ///
-    /// Panics if `split_points` is not unique, not monotonically increasing, or contains `NaN`
-    /// values.
     pub fn cdf(&self, split_points: &[f64]) -> Option<Vec<f64>> {
         self.view().cdf(split_points)
     }
@@ -934,6 +934,11 @@ impl TDigest {
     ///
     /// Returns `None` if this t-digest is empty.
     ///
+    /// # Panics
+    ///
+    /// Panics if `split_points` is not unique, not monotonically increasing, or contains `NaN`
+    /// values.
+    ///
     /// # Examples
     ///
     /// ```
@@ -947,11 +952,6 @@ impl TDigest {
     /// let pmf = digest.pmf(&[1.5]).unwrap();
     /// assert_eq!(pmf.len(), 2);
     /// ```
-    ///
-    /// # Panics
-    ///
-    /// Panics if `split_points` is not unique, not monotonically increasing, or contains `NaN`
-    /// values.
     pub fn pmf(&self, split_points: &[f64]) -> Option<Vec<f64>> {
         self.view().pmf(split_points)
     }
@@ -959,6 +959,10 @@ impl TDigest {
     /// Computes the approximate normalized rank in `[0.0, 1.0]` of the given value.
     ///
     /// Returns `None` if this t-digest is empty.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the value is `NaN`.
     ///
     /// # Examples
     ///
@@ -973,10 +977,6 @@ impl TDigest {
     /// let rank = digest.rank(2.0).unwrap();
     /// assert!((0.0..=1.0).contains(&rank));
     /// ```
-    ///
-    /// # Panics
-    ///
-    /// Panics if the value is `NaN`.
     pub fn rank(&self, value: f64) -> Option<f64> {
         assert!(!value.is_nan(), "value must not be NaN");
         self.view().rank(value)
@@ -985,6 +985,10 @@ impl TDigest {
     /// Computes the approximate quantile for the given normalized rank.
     ///
     /// Returns `None` if this t-digest is empty.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `rank` is outside `[0.0, 1.0]`.
     ///
     /// # Examples
     ///
@@ -999,10 +1003,6 @@ impl TDigest {
     /// let q = digest.quantile(0.5).unwrap();
     /// assert!((1.0..=3.0).contains(&q));
     /// ```
-    ///
-    /// # Panics
-    ///
-    /// Panics if `rank` is outside `[0.0, 1.0]`.
     pub fn quantile(&self, rank: f64) -> Option<f64> {
         assert!((0.0..=1.0).contains(&rank), "rank must be in [0.0, 1.0]");
         self.view().quantile(rank)

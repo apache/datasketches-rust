@@ -66,6 +66,10 @@ impl HllUnion {
     /// * `lg_max_k`: Maximum `lg_k` in `[4, 21]`. This determines the maximum precision the union
     ///   can handle. Input sketches with a larger `lg_k` are downsampled.
     ///
+    /// # Panics
+    ///
+    /// Panics if `lg_max_k` is outside `[4, 21]`.
+    ///
     /// # Examples
     ///
     /// ```
@@ -77,10 +81,6 @@ impl HllUnion {
     /// let result = union.to_sketch(HllType::Hll8);
     /// assert_eq!(result.estimate(), 1.0);
     /// ```
-    ///
-    /// # Panics
-    ///
-    /// Panics if `lg_max_k` is outside `[4, 21]`.
     pub fn new(lg_max_k: u8) -> Self {
         assert!(
             (4..=21).contains(&lg_max_k),

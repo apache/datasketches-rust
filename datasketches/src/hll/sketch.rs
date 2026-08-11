@@ -75,6 +75,10 @@ impl HllSketch {
     ///   * `lg_k = 21`: 2M buckets, ~0.4% relative error.
     /// * `hll_type`: Target HLL array type (`Hll4`, `Hll6`, or `Hll8`).
     ///
+    /// # Panics
+    ///
+    /// Panics if `lg_config_k` is outside `[4, 21]`.
+    ///
     /// # Examples
     ///
     /// ```
@@ -84,10 +88,6 @@ impl HllSketch {
     /// let sketch = HllSketch::new(12, HllType::Hll8);
     /// assert_eq!(sketch.lg_config_k(), 12);
     /// ```
-    ///
-    /// # Panics
-    ///
-    /// Panics if `lg_config_k` is outside `[4, 21]`.
     pub fn new(lg_config_k: u8, hll_type: HllType) -> Self {
         assert!(
             (4..=21).contains(&lg_config_k),

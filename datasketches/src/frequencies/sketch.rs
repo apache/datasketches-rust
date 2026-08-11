@@ -108,6 +108,10 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     /// The maximum map capacity is `0.75 * max_map_size`, and the internal map grows
     /// from a small starting size up to the maximum as needed.
     ///
+    /// # Panics
+    ///
+    /// Panics if `max_map_size` is not a power of two.
+    ///
     /// # Examples
     ///
     /// ```
@@ -118,10 +122,6 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     /// sketch.update(2);
     /// assert_eq!(sketch.num_active_items(), 2);
     /// ```
-    ///
-    /// # Panics
-    ///
-    /// Panics if `max_map_size` is not a power of two.
     pub fn new(max_map_size: usize) -> Self {
         assert!(
             max_map_size.is_power_of_two(),

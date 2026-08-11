@@ -57,6 +57,11 @@ pub struct CountMinSketch<T: CountMinValue> {
 impl<T: CountMinValue> CountMinSketch<T> {
     /// Creates a new CountMin sketch with the default seed.
     ///
+    /// # Panics
+    ///
+    /// Panics if `num_hashes` is `0`, `num_buckets` is less than `3`, or the
+    /// total table size exceeds the supported limit.
+    ///
     /// # Examples
     ///
     /// ```
@@ -65,16 +70,19 @@ impl<T: CountMinValue> CountMinSketch<T> {
     /// let sketch = CountMinSketch::<i64>::new(4, 128);
     /// assert_eq!(sketch.num_buckets(), 128);
     /// ```
-    ///
-    /// # Panics
-    ///
-    /// Panics if `num_hashes` is `0`, `num_buckets` is less than `3`, or the
-    /// total table size exceeds the supported limit.
     pub fn new(num_hashes: u8, num_buckets: u32) -> Self {
         Self::with_seed(num_hashes, num_buckets, DEFAULT_UPDATE_SEED)
     }
 
     /// Creates a new CountMin sketch with the provided seed.
+    ///
+    /// # Panics
+    ///
+    /// Panics if any of:
+    /// * `num_hashes` is `0`.
+    /// * `num_buckets` is less than `3`.
+    /// * The total table size exceeds the supported limit.
+    /// * The computed seed hash is zero.
     ///
     /// # Examples
     ///
@@ -84,14 +92,6 @@ impl<T: CountMinValue> CountMinSketch<T> {
     /// let sketch = CountMinSketch::<i64>::with_seed(4, 64, 42);
     /// assert_eq!(sketch.seed(), 42);
     /// ```
-    ///
-    /// # Panics
-    ///
-    /// Panics if any of:
-    /// * `num_hashes` is `0`.
-    /// * `num_buckets` is less than `3`.
-    /// * The total table size exceeds the supported limit.
-    /// * The computed seed hash is zero.
     pub fn with_seed(num_hashes: u8, num_buckets: u32, seed: u64) -> Self {
         let entries = entries_for_config(num_hashes, num_buckets);
         Self::make(num_hashes, num_buckets, seed, entries)
@@ -233,6 +233,10 @@ impl<T: CountMinValue> CountMinSketch<T> {
 
     /// Merges another sketch into this one.
     ///
+    /// # Panics
+    ///
+    /// Panics if the sketches have incompatible configurations.
+    ///
     /// # Examples
     ///
     /// ```
@@ -247,10 +251,6 @@ impl<T: CountMinValue> CountMinSketch<T> {
     /// left.merge(&right);
     /// assert!(left.estimate("banana") >= 2);
     /// ```
-    ///
-    /// # Panics
-    ///
-    /// Panics if the sketches have incompatible configurations.
     pub fn merge(&mut self, other: &CountMinSketch<T>) {
         if std::ptr::eq(self, other) {
             panic!("Cannot merge a sketch with itself.");
@@ -455,6 +455,10 @@ impl<T: UnsignedCountMinValue> CountMinSketch<T> {
     /// Values are truncated toward zero after multiplication; choose `decay` in `(0, 1]`.
     /// The total weight is scaled by the same factor to keep bounds consistent.
     ///
+    /// # Panics
+    ///
+    /// Panics if `decay` is not finite or is outside `(0, 1]`.
+    ///
     /// # Examples
     ///
     /// ```
@@ -465,10 +469,6 @@ impl<T: UnsignedCountMinValue> CountMinSketch<T> {
     /// sketch.decay(0.5);
     /// assert!(sketch.estimate("apple") >= 1);
     /// ```
-    ///
-    /// # Panics
-    ///
-    /// Panics if `decay` is not finite or is outside `(0, 1]`.
     pub fn decay(&mut self, decay: f64) {
         assert!(decay > 0.0 && decay <= 1.0, "decay must be within (0, 1]");
         for c in &mut self.counts {
