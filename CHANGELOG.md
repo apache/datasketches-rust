@@ -7,22 +7,29 @@ All significant changes to this project will be documented in this file.
 ### Breaking changes
 
 * Move the `hash_value` module to `hash::value`.
-* Remove `ThetaSketch::builder`, `ThetaUnion::builder`, and `TupleSketch::builder`. Construct `ThetaSketchBuilder`, `ThetaUnionBuilder`, and `TupleSketchBuilder` with `Default::default` instead.
-* Standardize Theta and Tuple set-operation constructors. Zero-configuration operators use
-  `Default::default()`, `TupleIntersection::new(policy)` uses the default seed, and `with_seed`
-  accepts a custom seed. This replaces the previous `new(seed)` and `new_with_default_seed`
-  methods.
+* Rename `Coupon::from_hash` to `Coupon::from_value` to reflect that the method hashes the supplied value itself.
+* Remove `ThetaSketch::builder`; construct `ThetaSketchBuilder` with `Default::default` instead.
+* Replace the sealed `ThetaSketchView` trait with a concrete borrowed `ThetaSketchView<'a>`. Call `as_view()` when a view value is needed; Theta set operations continue to accept references to mutable and compact sketches directly.
+* Change `ThetaSketch` and `CompactThetaSketch` iterators to yield `ThetaEntry` instead of raw `u64` hashes. Call `ThetaEntry::hash` to access a retained hash.
+* Replace `ThetaIntersection::new(seed)` and `new_with_default_seed()` with `with_seed(seed)` and `Default::default()`, respectively. Replace `result()` and `result_with_ordered(ordered)` with `to_sketch(ordered)`.
+* Make `CountMinValue` and `UnsignedCountMinValue` marker traits. Their previously exposed numeric constants and helper methods have been removed; use the corresponding primitive integer operations and conversions directly.
 
 ### New features
 
+* Add Tuple sketches behind the `tuple` feature, including custom summary update and combination policies, serialization, compact sketches, union, intersection, A-not-B, Jaccard similarity, and exact sketch-state equality checks that ignore summary values.
+* Add Theta union, A-not-B, Jaccard similarity, and exact sketch-state equality checks.
 * `FrequentItemsSketch` now supports borrowed-key updates via `update_ref` and `update_with_count_ref`, allowing sketches such as `FrequentItemsSketch<String>` to update from `&str` without allocating on existing-key hits. Frequency queries also accept borrowed key forms matching `Borrow<Q>`.
 * `FrequentItemsSketch` no longer requires item types to implement `Clone` for core updates, queries, and serialization. Custom `FrequentItemValue` implementations can now be non-`Clone`; APIs that return or merge owned items still require `Clone`.
-* `CountMinSketch` and `FrequentItemsSketch` now expose `estimated_size()`, reporting the in-memory footprint of the sketch in bytes, following the other sketches.
-* The stateful set operations `HllUnion`, `CpcUnion`, `ThetaUnion`, `ThetaIntersection`, `TupleUnion`, and `TupleIntersection` now expose `estimated_size()`, reporting the in-memory footprint of the operator's internal state in bytes.
+* Add `estimated_size()` to `BloomFilter`, `CountMinSketch`, `CpcSketch`, `FrequentItemsSketch`, `HllSketch`, `TDigestMut`, `TDigest`, mutable and compact Theta and Tuple sketches, and the stateful `HllUnion`, `CpcUnion`, `ThetaUnion`, `ThetaIntersection`, `TupleUnion`, and `TupleIntersection` operators.
 
 ### Bug fixes
 
+* HLL serialization now emits the compact auxiliary-map flag required for Java to read HLL4 images and matches Java and C++ coupon ordering for compact Set images.
 * `FrequentItemsSketch::serialize` now writes the full 8-byte preamble for an empty sketch, matching the Java and C++ encoding. Empty sketches previously serialized to 6 bytes, which `FrequentItemsSketch::deserialize` rejected with an insufficient-data error.
+* `FrequentItemsSketch` now preserves total weight and error state across serialization and merge when a purge removes every active item.
+* T-Digest interpolation now keeps quantiles finite for extreme finite inputs. Deserialization rejects non-finite extrema, invalid centroid weights, and total-weight overflow as invalid data instead of allowing invalid state or panicking.
+* Legacy Theta version 2 exact images with retained entries now deserialize as non-empty sketches and preserve their entries and exact estimates.
+* Bloom filter deserialization now rejects inconsistent cached bit counts, preventing malformed images from hiding populated bits and violating the no-false-negative guarantee.
 * `CpcSketch` and `CpcWrapper` now classify out-of-range fields in serialized images as `InvalidData` rather than `InvalidArgument`.
 
 ## v0.3.0 (2026-05-18)
