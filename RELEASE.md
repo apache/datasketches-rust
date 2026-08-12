@@ -19,9 +19,72 @@
 
 # Release Process for Rust Components
 
-This document describes the manual process for releasing Apache DataSketches Rust. The examples use `0.4.0` as the release version and `0.4.0-rc.1` as the first release candidate.
+This document describes the manual process for releasing Apache DataSketches Rust. The signed source archive in the Apache distribution repository is the artifact approved by the PMC. The crates.io package and GitHub release are additional distribution channels.
 
-The signed source archive in the Apache distribution repository is the artifact approved by the PMC. The crates.io package and GitHub release are additional distribution channels.
+## Release terminology and variables
+
+The release process uses:
+
+- `release_version`: the final version proposed for release.
+- `previous_release_version`: the final version superseded by this release.
+- `rc_version`: the release candidate and voting round suffix, such as `rc.1`.
+- `release_candidate_version`: the candidate tag and `dist/dev` directory, formed as `${release_version}-${rc_version}`.
+- `artifact_name`: the final-version source archive name. The RC suffix belongs in the tag and staging directory, not the archive name.
+
+Set the release-specific values once in the shell used for the release. Replace every placeholder before continuing:
+
+```bash
+set -euo pipefail
+
+release_version="X.Y.Z"
+previous_release_version="A.B.C"
+rc_version="rc.N"
+signing_key_fingerprint="<40-character primary key fingerprint without spaces>"
+
+if [[ ! "$release_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "invalid release_version: $release_version" >&2
+  exit 1
+fi
+if [[ ! "$previous_release_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "invalid previous_release_version: $previous_release_version" >&2
+  exit 1
+fi
+if [[ ! "$rc_version" =~ ^rc\.[1-9][0-9]*$ ]]; then
+  echo "invalid rc_version: $rc_version" >&2
+  exit 1
+fi
+if [[ ! "$signing_key_fingerprint" =~ ^[0-9A-Fa-f]{40}$ ]]; then
+  echo "invalid signing key fingerprint" >&2
+  exit 1
+fi
+if [[ "$release_version" == "$previous_release_version" ]]; then
+  echo "release and previous release versions must differ" >&2
+  exit 1
+fi
+
+signing_key_fingerprint="$(
+  printf '%s' "$signing_key_fingerprint" | tr '[:lower:]' '[:upper:]'
+)"
+rc_number="${rc_version#rc.}"
+release_candidate_version="${release_version}-${rc_version}"
+artifact_stem="apache-datasketches-rust-${release_version}-src"
+artifact_name="${artifact_stem}.zip"
+archive_root="$artifact_stem"
+dist_dev_base_url="https://dist.apache.org/repos/dist/dev/datasketches/rust"
+dist_release_base_url="https://dist.apache.org/repos/dist/release/datasketches/rust"
+candidate_url="${dist_dev_base_url}/${release_candidate_version}"
+
+printf '%s\n' \
+  "release_version=$release_version" \
+  "previous_release_version=$previous_release_version" \
+  "release_candidate_version=$release_candidate_version" \
+  "artifact_name=$artifact_name" \
+  "signing_key_fingerprint=$signing_key_fingerprint"
+
+gpg --list-secret-keys "$signing_key_fingerprint"
+```
+
+Run this block again if a later step starts in another shell. Increment `rc_version` and recompute the derived values when preparing another candidate.
 
 ## What CI validates
 
@@ -47,8 +110,8 @@ CI does not run on every push to `main` or on release tags. Complete the local r
 
 Create a release-preparation pull request that:
 
-1. Changes the `datasketches` package version in `datasketches/Cargo.toml` and `Cargo.lock` to `0.4.0`.
-2. Changes the `Unreleased` heading in `CHANGELOG.md` to `v0.4.0` and finalizes its user-facing entries.
+1. Changes the `datasketches` package version in `datasketches/Cargo.toml` and `Cargo.lock` to the value of `release_version`.
+2. Changes the `Unreleased` heading in `CHANGELOG.md` to `v${release_version}` without a date and finalizes its user-facing entries.
 3. Passes the complete local release checks:
 
 ```bash
@@ -65,36 +128,35 @@ After the pull request is merged, update the local checkout and record the exact
 ```bash
 git switch main
 git pull --ff-only origin main
-git status --short
-git rev-parse HEAD
+test -z "$(git status --porcelain)"
+release_commit="$(git rev-parse HEAD)"
+printf 'release_commit=%s\n' "$release_commit"
 ```
 
-The status output must be empty. Do not add release changes after creating the release candidate; fixes require a new candidate.
+Do not add release changes after creating the release candidate. Fixes require a new candidate.
 
 ## Step 2: Create the release candidate tag
 
 Confirm that the release version and changelog are present in the candidate commit:
 
 ```bash
-git grep 'version = "0.4.0"' -- datasketches/Cargo.toml Cargo.lock
-git grep '^## v0.4.0$' -- CHANGELOG.md
-git status --short
+git grep -F "version = \"${release_version}\"" -- datasketches/Cargo.toml Cargo.lock
+git grep -Fx "## v${release_version}" -- CHANGELOG.md
+test -z "$(git status --porcelain)"
+
+release_commit="$(git rev-parse HEAD)"
+git tag -a "$release_candidate_version" "$release_commit" \
+  -m "Release candidate $rc_number for $release_version"
+git push origin "$release_candidate_version"
 ```
 
-Create and push an annotated tag:
-
-```bash
-git tag -a 0.4.0-rc.1 -m "Release candidate 1 for 0.4.0"
-git push origin 0.4.0-rc.1
-```
-
-Never move or reuse a release candidate tag after it has been pushed.
+Never move or reuse a release candidate tag after it has been pushed. A later commit on `main` does not invalidate an existing candidate by itself.
 
 ## Step 3: Publish the release candidate to crates.io
 
 The crates.io pre-release is a convenience package for community testing. It is not the source artifact submitted for the ASF release vote.
 
-Temporarily change the package version in `datasketches/Cargo.toml` from `0.4.0` to `0.4.0-rc.1`, then let Cargo update the workspace lockfile:
+Temporarily change the package version in `datasketches/Cargo.toml` from the value of `release_version` to the value of `release_candidate_version`, then let Cargo update the workspace lockfile:
 
 ```bash
 cargo check -p datasketches
@@ -108,84 +170,134 @@ Only the package version and its `Cargo.lock` entry should differ from the relea
 
 ```bash
 git restore datasketches/Cargo.toml Cargo.lock
-git status --short
+test -z "$(git status --porcelain)"
+cargo info "datasketches@$release_candidate_version"
 ```
 
-The status output must be empty. Verify that `0.4.0-rc.1` is available from <https://crates.io/crates/datasketches>.
+## Step 4: Build, sign, and stage the source distribution
 
-## Step 4: Create the signed source distribution
-
-Use the shared DataSketches packaging script:
+Build the source archive directly from the immutable RC tag. The release does not depend on the shared DataSketches deployment script and does not add generated `git.properties` metadata.
 
 ```bash
-cd /path/to/datasketches-dist-scripts
-./bashDeployToDist.sh \
-  /absolute/path/to/datasketches-rust \
-  datasketches-rust \
-  0.4.0-rc.1
+release_work_dir="$(mktemp -d)"
+artifact_dir="${release_work_dir}/artifacts"
+source_check_dir="${release_work_dir}/source-check"
+dist_work_dir="${release_work_dir}/dist-dev"
+
+mkdir -p "$artifact_dir" "$source_check_dir"
+
+test "$(git cat-file -t "$release_candidate_version")" = "tag"
+candidate_commit="$(git rev-parse "${release_candidate_version}^{commit}")"
+printf 'candidate_commit=%s\n' "$candidate_commit"
+
+git archive \
+  --format=zip \
+  --prefix="${archive_root}/" \
+  --output="${artifact_dir}/${artifact_name}" \
+  "$release_candidate_version"
+
+(
+  cd "$artifact_dir"
+  gpg \
+    --local-user "$signing_key_fingerprint" \
+    --armor \
+    --detach-sign \
+    --digest-algo SHA512 \
+    "$artifact_name"
+  shasum -a 512 "$artifact_name" > "${artifact_name}.sha512"
+  shasum -a 512 --check "${artifact_name}.sha512"
+  gpg --verify "${artifact_name}.asc" "$artifact_name"
+  unzip -t "$artifact_name"
+)
+
+unzip -q "${artifact_dir}/${artifact_name}" -d "$source_check_dir"
+test -f "${source_check_dir}/${archive_root}/LICENSE"
+test -f "${source_check_dir}/${archive_root}/NOTICE"
+test -f "${source_check_dir}/${archive_root}/Cargo.toml"
+test -f "${source_check_dir}/${archive_root}/Cargo.lock"
+test -f "${source_check_dir}/${archive_root}/CHANGELOG.md"
+
+file_count="$(find "$artifact_dir" -maxdepth 1 -type f | wc -l | tr -d ' ')"
+test "$file_count" = "3"
+find "$artifact_dir" -maxdepth 1 -type f -print | sort
 ```
 
-The script revision used for the release must correctly support dotted RC tags. Before approving its SVN commit, verify that its summary contains exactly:
+Stage the three reviewed files in a shallow SVN working copy. Review `svn status` before committing:
 
-```text
-FileVersion (String) : 0.4.0
-ZipName (File)       : apache-datasketches-rust-0.4.0-src.zip
-LeafDir (target)     : 0.4.0-rc.1
-RemoteSvnBasePath    : https://dist.apache.org/repos/dist/dev/datasketches
+```bash
+svn checkout --depth empty "$dist_dev_base_url" "$dist_work_dir"
+mkdir "${dist_work_dir}/${release_candidate_version}"
+cp "${artifact_dir}/"* "${dist_work_dir}/${release_candidate_version}/"
+svn add "${dist_work_dir}/${release_candidate_version}"
+svn status "$dist_work_dir"
+
+read -r -p "Type $release_candidate_version to upload this candidate: " confirmation
+test "$confirmation" = "$release_candidate_version"
+
+svn commit "${dist_work_dir}/${release_candidate_version}" \
+  -m "Prepare datasketches-rust $release_candidate_version"
+svn ls "${dist_dev_base_url}/${release_candidate_version}/"
 ```
 
-If any value differs, answer `N` and stop. In particular, do not publish a candidate whose source archive filename contains the RC suffix or whose target is `dist/release`.
-
-The candidate directory must contain exactly:
-
-```text
-apache-datasketches-rust-0.4.0-src.zip
-apache-datasketches-rust-0.4.0-src.zip.asc
-apache-datasketches-rust-0.4.0-src.zip.sha512
-```
-
-at:
-
-<https://dist.apache.org/repos/dist/dev/datasketches/rust/0.4.0-rc.1/>
+Do not claim the candidate is uploaded until SVN returns a committed revision and the final `svn ls` shows exactly the archive, signature, and checksum.
 
 ## Step 5: Verify the staged candidate
 
-Verify the files downloaded from `dist/dev` rather than the local files used to create them:
+Verify files downloaded from `dist/dev` rather than the local files used to create them:
 
 ```bash
-verify_dir=$(mktemp -d)
-cd "$verify_dir"
+verify_dir="$(mktemp -d)"
+verify_gnupg_home="${verify_dir}/gnupg"
+mkdir -m 700 "$verify_gnupg_home"
 
-curl -O https://dist.apache.org/repos/dist/dev/datasketches/KEYS
-curl -O https://dist.apache.org/repos/dist/dev/datasketches/rust/0.4.0-rc.1/apache-datasketches-rust-0.4.0-src.zip
-curl -O https://dist.apache.org/repos/dist/dev/datasketches/rust/0.4.0-rc.1/apache-datasketches-rust-0.4.0-src.zip.asc
-curl -O https://dist.apache.org/repos/dist/dev/datasketches/rust/0.4.0-rc.1/apache-datasketches-rust-0.4.0-src.zip.sha512
+(
+  cd "$verify_dir"
 
-shasum -a 512 --check apache-datasketches-rust-0.4.0-src.zip.sha512
-gpg --import KEYS
-gpg --show-keys --with-fingerprint KEYS
-gpg --verify \
-  apache-datasketches-rust-0.4.0-src.zip.asc \
-  apache-datasketches-rust-0.4.0-src.zip
+  curl --fail --location --remote-name \
+    https://downloads.apache.org/datasketches/KEYS
+  curl --fail --location --remote-name "${candidate_url}/${artifact_name}"
+  curl --fail --location --remote-name "${candidate_url}/${artifact_name}.asc"
+  curl --fail --location --remote-name "${candidate_url}/${artifact_name}.sha512"
 
-unzip apache-datasketches-rust-0.4.0-src.zip
-cd apache-datasketches-rust-0.4.0-src
+  shasum -a 512 --check "${artifact_name}.sha512"
+  GNUPGHOME="$verify_gnupg_home" gpg --import KEYS
+  GNUPGHOME="$verify_gnupg_home" \
+    gpg --with-colons --fingerprint "$signing_key_fingerprint" |
+    awk -F: '$1 ~ /^f[p]r$/ { print $10 }' |
+    grep -Fx -- "$signing_key_fingerprint"
 
-cargo x prepare-testdata
-cargo x lint
-cargo x check
-cargo x test
-cargo package --list -p datasketches
-cargo publish --dry-run --locked -p datasketches
+  gpg_status="$(
+    GNUPGHOME="$verify_gnupg_home" \
+      gpg --status-fd 1 --verify "${artifact_name}.asc" "$artifact_name" 2>&1
+  )"
+  printf '%s\n' "$gpg_status"
+  signature_fingerprint="$(
+    printf '%s\n' "$gpg_status" |
+      awk '$1 == "[GNUPG:]" && $2 == "VALIDSIG" {
+        print NF >= 12 && $12 != "" ? $12 : $3
+      }'
+  )"
+  test "$signature_fingerprint" = "$signing_key_fingerprint"
+
+  unzip "$artifact_name"
+  cd "$archive_root"
+
+  cargo x prepare-testdata
+  cargo x lint
+  cargo x check
+  cargo x test
+  cargo package --list -p datasketches
+  cargo publish --dry-run --locked -p datasketches
+)
 ```
 
-Confirm that the signing fingerprint matches the fingerprint stated in the vote email. Also inspect the archive for `LICENSE`, `NOTICE`, unexpected binary files, and the expected source version.
+The commands verify both that `signing_key_fingerprint` is present in `KEYS` and that the archive was signed by that exact key. Also inspect the archive for `LICENSE`, `NOTICE`, unexpected binary files, and the expected source version.
 
 ## Step 6: Send the release vote
 
 Send the vote to `dev@datasketches.apache.org`.
 
-**Subject:** `[VOTE] Release Apache DataSketches Rust 0.4.0 (RC1)`
+**Subject:** `[VOTE] Release Apache DataSketches Rust ${release_version} (RC${rc_number})`
 
 Include:
 
@@ -197,35 +309,55 @@ Include:
 - Verification and test instructions.
 - An explicit closing date, time, and time zone at least 72 hours after the vote starts.
 
-Example:
+Derive the immutable commit and checksum from the tag and staged files:
+
+```bash
+candidate_commit="$(git rev-parse "${release_candidate_version}^{commit}")"
+checksum_line="$(
+  curl --fail --location "${candidate_url}/${artifact_name}.sha512"
+)"
+artifact_sha512="${checksum_line%% *}"
+if [[ ! "$artifact_sha512" =~ ^[0-9A-Fa-f]{128}$ ]]; then
+  echo "invalid staged SHA-512 checksum" >&2
+  exit 1
+fi
+printf '%s\n' \
+  "candidate_commit=$candidate_commit" \
+  "artifact_sha512=$artifact_sha512"
+```
+
+Populate this template with the values derived above:
 
 ```text
 Hi everyone,
 
-I propose releasing Apache DataSketches Rust version 0.4.0.
+I propose releasing Apache DataSketches Rust version ${release_version}.
 
 The release candidate is based on commit:
-<40-character commit SHA>
+${candidate_commit}
 
 Source distribution:
-https://dist.apache.org/repos/dist/dev/datasketches/rust/0.4.0-rc.1/
+https://dist.apache.org/repos/dist/dev/datasketches/rust/${release_candidate_version}/
 
 Git tag:
-https://github.com/apache/datasketches-rust/tree/0.4.0-rc.1
+https://github.com/apache/datasketches-rust/tree/${release_candidate_version}
 
 Changelog:
-https://github.com/apache/datasketches-rust/blob/0.4.0-rc.1/CHANGELOG.md
+https://github.com/apache/datasketches-rust/blob/${release_candidate_version}/CHANGELOG.md
 
 Signing key fingerprint:
-<full fingerprint>
+${signing_key_fingerprint}
+
+SHA-512:
+${artifact_sha512}  ${artifact_name}
 
 Testing:
-- crates.io RC: cargo add datasketches@0.4.0-rc.1
+- crates.io RC: cargo add datasketches@${release_candidate_version}
 - source: verify the checksum and signature, then run the release checks
 
 Verification:
-  shasum -a 512 --check apache-datasketches-rust-0.4.0-src.zip.sha512
-  gpg --verify apache-datasketches-rust-0.4.0-src.zip.asc apache-datasketches-rust-0.4.0-src.zip
+  shasum -a 512 --check ${artifact_name}.sha512
+  gpg --verify ${artifact_name}.asc ${artifact_name}
 
 The vote will remain open until <YYYY-MM-DD HH:MM UTC>, at least 72 hours.
 
@@ -239,16 +371,16 @@ A release requires at least three explicit binding `+1` votes from PMC members a
 ### If the vote is cancelled
 
 1. Send a `[CANCEL][VOTE]` message with the reason.
-2. Remove the failed candidate from `dist/dev`:
+2. Confirm and remove the failed candidate from `dist/dev`:
 
    ```bash
-   svn rm \
-     https://dist.apache.org/repos/dist/dev/datasketches/rust/0.4.0-rc.1 \
-     -m "Remove failed datasketches-rust 0.4.0 RC1"
+   svn ls "${dist_dev_base_url}/${release_candidate_version}/"
+   svn rm "${dist_dev_base_url}/${release_candidate_version}" \
+     -m "Remove failed datasketches-rust $release_candidate_version"
    ```
 
 3. Fix the problem through a new pull request.
-4. Create a new immutable tag such as `0.4.0-rc.2` and repeat from the crates.io RC step.
+4. Increment `rc_version`, recompute the derived variables, create a new immutable tag, and repeat from the crates.io RC step.
 5. Yank a broken crates.io pre-release if leaving it selectable would harm testers.
 
 ## Step 7: Publish an approved release
@@ -258,45 +390,66 @@ Send a `[RESULT][VOTE]` message that lists the binding and non-binding vote tota
 Move the exact approved artifacts from `dist/dev` to `dist/release` without rebuilding or renaming them:
 
 ```bash
+svn ls "${dist_dev_base_url}/${release_candidate_version}/"
+if svn ls "${dist_release_base_url}/${release_version}/" >/dev/null 2>&1; then
+  echo "release destination already exists" >&2
+  exit 1
+fi
+
 svn mv \
-  https://dist.apache.org/repos/dist/dev/datasketches/rust/0.4.0-rc.1 \
-  https://dist.apache.org/repos/dist/release/datasketches/rust/0.4.0 \
-  -m "Release datasketches-rust 0.4.0"
+  "${dist_dev_base_url}/${release_candidate_version}" \
+  "${dist_release_base_url}/${release_version}" \
+  -m "Release datasketches-rust $release_version"
+
+svn ls "${dist_release_base_url}/${release_version}/"
+if svn ls "${dist_dev_base_url}/${release_candidate_version}/" >/dev/null 2>&1; then
+  echo "dev candidate directory still exists" >&2
+  exit 1
+fi
 ```
 
 Create the final tag from the approved RC commit:
 
 ```bash
-git switch --detach 0.4.0-rc.1
-git tag -a 0.4.0 -m "Release version 0.4.0"
-git push origin 0.4.0
+candidate_commit="$(git rev-parse "${release_candidate_version}^{commit}")"
+git switch --detach "$candidate_commit"
+test -z "$(git status --porcelain)"
+
+git tag -a "$release_version" "$candidate_commit" \
+  -m "Release version $release_version"
+git push origin "$release_version"
 ```
 
 Publish the final crate from that clean tag:
 
 ```bash
-git status --short
+test -z "$(git status --porcelain)"
 cargo publish --dry-run --locked -p datasketches
 cargo publish --locked -p datasketches
+cargo info "datasketches@$release_version"
 ```
-
-The status output must be empty. Verify `0.4.0` on crates.io.
 
 ## Step 8: Create the GitHub release
 
-Create a GitHub release from the `0.4.0` tag. Use the `v0.4.0` changelog section for the release notes and link to the Apache DataSketches download page for the official source archive.
+Create a GitHub release from the `release_version` tag. Use the matching changelog section for the release notes and link to the Apache DataSketches download page for the official source archive.
 
 Do not describe GitHub-generated source archives as the official Apache source distribution.
 
 ## Step 9: Update downloads and announce
 
-1. Confirm that the new files are available under <https://downloads.apache.org/datasketches/rust/0.4.0/>.
-2. Remove the superseded release from `dist/release`. It remains available from the Apache archive:
+1. Confirm that the new source archive is available:
 
    ```bash
-   svn rm \
-     https://dist.apache.org/repos/dist/release/datasketches/rust/0.3.0 \
-     -m "Archive old release datasketches-rust 0.3.0"
+   curl --fail --head \
+     "https://downloads.apache.org/datasketches/rust/${release_version}/${artifact_name}"
+   ```
+
+2. List current releases, then remove `previous_release_version` from `dist/release`. It remains available from the Apache archive:
+
+   ```bash
+   svn ls "$dist_release_base_url"
+   svn rm "${dist_release_base_url}/${previous_release_version}" \
+     -m "Archive old release datasketches-rust $previous_release_version"
    ```
 
 3. Regenerate the website download table only after removing the old release, because the generator includes every Rust version still present in `dist/release`:
@@ -309,27 +462,33 @@ Do not describe GitHub-generated source archives as the official Apache source d
 4. Review the generated `_includes/downloadsInclude.txt`, submit the website change, and verify the download, signature, checksum, and `KEYS` links after it is published.
 5. Wait at least one hour after the release first appears on `downloads.apache.org` before announcing it.
 6. Send a plain-text announcement from an `@apache.org` address to `dev@datasketches.apache.org` and `announce@apache.org`. Include a short project description and links to the project download page, changelog, crates.io, docs.rs, and GitHub release.
-7. Submit a post-release pull request that adds a new empty `Unreleased` section above `v0.4.0`, then close the release tracking issue.
+7. Submit a post-release pull request that adds the actual release date to the `v${release_version}` changelog heading and adds a new empty `Unreleased` section above it, then close the release tracking issue.
 
 ## Troubleshooting
 
 ### Yank a broken pre-release
 
 ```bash
-cargo yank --vers 0.4.0-rc.1 datasketches
+cargo yank --vers "$release_candidate_version" datasketches
 ```
 
 Do not yank a final release merely because a newer version exists; publish a corrective release instead.
 
 ### GPG issues
 
-- Confirm that the signing key is present in the DataSketches `KEYS` file and that its full fingerprint is correct.
-- Confirm that `gpg-agent` is running.
+- Confirm that `signing_key_fingerprint` is present in the DataSketches `KEYS` file and identifies an available secret key.
 - Pass both the signature and source archive to `gpg --verify`.
+- Do not rely on whichever signing key GPG happens to select by default.
+
+### SVN authentication issues
+
+- Do not claim an upload or move succeeded until SVN returns a committed revision and `svn ls` confirms the remote state.
+- If a remote `svn mv` hangs on an interactive credential prompt, use a shallow working copy and commit a local `svn move` instead.
+- Never put SVN credentials in this document, shell history, issue text, or release notes.
 
 ### crates.io publish failures
 
 - Confirm that the package version is not already published.
 - Confirm that `cargo login` is current.
 - Inspect `cargo package --list -p datasketches`.
-- Run the publish command from a clean checkout of the intended tag.
+- Run final publish commands from a clean checkout of the approved tag.
