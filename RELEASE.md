@@ -176,13 +176,14 @@ cargo info "datasketches@$release_candidate_version"
 
 ## Step 4: Build, sign, and stage the source distribution
 
-Build the source archive directly from the immutable RC tag. The release does not depend on the shared DataSketches deployment script and does not add generated `git.properties` metadata.
+Build the source archive directly from the immutable RC tag. The release does not depend on the shared DataSketches deployment script and does not add generated `git.properties` metadata. Run all four subsections in the same shell; if that shell is interrupted, restart Step 4.
+
+### Build the source archive
 
 ```bash
 release_work_dir="$(mktemp -d)"
 artifact_dir="${release_work_dir}/artifacts"
 source_check_dir="${release_work_dir}/source-check"
-dist_work_dir="${release_work_dir}/dist-dev"
 
 mkdir -p "$artifact_dir" "$source_check_dir"
 
@@ -195,7 +196,11 @@ git archive \
   --prefix="${archive_root}/" \
   --output="${artifact_dir}/${artifact_name}" \
   "$release_candidate_version"
+```
 
+### Sign the archive and create its checksum
+
+```bash
 (
   cd "$artifact_dir"
   gpg \
@@ -205,6 +210,14 @@ git archive \
     --digest-algo SHA512 \
     "$artifact_name"
   shasum -a 512 "$artifact_name" > "${artifact_name}.sha512"
+)
+```
+
+### Verify the local artifacts
+
+```bash
+(
+  cd "$artifact_dir"
   shasum -a 512 --check "${artifact_name}.sha512"
   gpg --verify "${artifact_name}.asc" "$artifact_name"
   unzip -t "$artifact_name"
@@ -217,29 +230,43 @@ test -f "${source_check_dir}/${archive_root}/Cargo.toml"
 test -f "${source_check_dir}/${archive_root}/Cargo.lock"
 test -f "${source_check_dir}/${archive_root}/CHANGELOG.md"
 
-file_count="$(find "$artifact_dir" -maxdepth 1 -type f | wc -l | tr -d ' ')"
-test "$file_count" = "3"
-find "$artifact_dir" -maxdepth 1 -type f -print | sort
+expected_artifacts="$(
+  printf '%s\n' \
+    "$artifact_name" \
+    "${artifact_name}.asc" \
+    "${artifact_name}.sha512" |
+    sort
+)"
+local_artifacts="$(
+  find "$artifact_dir" -mindepth 1 -maxdepth 1 -exec basename {} \; |
+    sort
+)"
+printf '%s\n' "$local_artifacts"
+test "$local_artifacts" = "$expected_artifacts"
 ```
 
-Stage the three reviewed files in a shallow SVN working copy. Review `svn status` before committing:
+### Upload the candidate with `svn import`
+
+Import the reviewed directory directly into the exact candidate URL. Because the directory was checked against `expected_artifacts`, no other files are included.
 
 ```bash
-svn checkout --depth empty "$dist_dev_base_url" "$dist_work_dir"
-mkdir "${dist_work_dir}/${release_candidate_version}"
-cp "${artifact_dir}/"* "${dist_work_dir}/${release_candidate_version}/"
-svn add "${dist_work_dir}/${release_candidate_version}"
-svn status "$dist_work_dir"
+if svn ls "${candidate_url}/" >/dev/null 2>&1; then
+  echo "candidate destination already exists" >&2
+  exit 1
+fi
 
 read -r -p "Type $release_candidate_version to upload this candidate: " confirmation
 test "$confirmation" = "$release_candidate_version"
 
-svn commit "${dist_work_dir}/${release_candidate_version}" \
+svn import "$artifact_dir" "$candidate_url" \
   -m "Prepare datasketches-rust $release_candidate_version"
-svn ls "${dist_dev_base_url}/${release_candidate_version}/"
+
+remote_artifacts="$(svn ls "${candidate_url}/" | sort)"
+printf '%s\n' "$remote_artifacts"
+test "$remote_artifacts" = "$expected_artifacts"
 ```
 
-Do not claim the candidate is uploaded until SVN returns a committed revision and the final `svn ls` shows exactly the archive, signature, and checksum.
+Do not claim the candidate is uploaded until `svn import` returns a committed revision and the remote listing exactly matches the three local artifacts.
 
 ## Step 5: Verify the staged candidate
 
