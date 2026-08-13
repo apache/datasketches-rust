@@ -85,7 +85,7 @@ gpg --list-secret-keys "$signing_key_fingerprint"
 if ! gpg --batch --with-colons --list-secret-keys "$signing_key_fingerprint" |
   awk -F: '$1 == "uid" { print $10 }' |
   grep -F '@apache.org' >/dev/null; then
-  echo "signing key $signing_key_fingerprint has no @apache.org user ID" >&2
+  echo "signing key $signing_key_fingerprint has no user ID containing an @apache.org email address" >&2
   exit 1
 fi
 ```
@@ -303,7 +303,7 @@ mkdir -m 700 "$verify_gnupg_home"
     gpg --with-colons --list-keys "$signing_key_fingerprint" |
     awk -F: '$1 == "uid" { print $10 }' |
     grep -F '@apache.org' >/dev/null; then
-    echo "KEYS entry for $signing_key_fingerprint has no @apache.org user ID" >&2
+    echo "KEYS entry for $signing_key_fingerprint has no user ID containing an @apache.org email address" >&2
     exit 1
   fi
 
