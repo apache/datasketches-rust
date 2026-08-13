@@ -82,6 +82,9 @@ printf '%s\n' \
   "signing_key_fingerprint=$signing_key_fingerprint"
 
 gpg --list-secret-keys "$signing_key_fingerprint"
+gpg --batch --with-colons --list-secret-keys "$signing_key_fingerprint" |
+  awk -F: '$1 == "uid" && $10 ~ /@apache\.org/ { found = 1 }
+    END { exit !found }'
 ```
 
 Run this block again if a later step starts in another shell. Increment `rc_version` and recompute the derived values when preparing another candidate.
@@ -101,7 +104,7 @@ CI does not run on every push to `main` or on release tags. Complete the local r
 ## Prerequisites
 
 1. **crates.io access**: Run `cargo login` with an account authorized to publish `datasketches`.
-2. **GPG setup**: Use an Apache code-signing key that is present in the DataSketches `KEYS` file.
+2. **GPG setup**: Use an Apache code-signing key that is present in the DataSketches `KEYS` file and has a user ID containing an `@apache.org` email address.
 3. **SVN access**: Confirm that the release manager can write to `dist/dev` and that a PMC member can write to `dist/release`.
 4. **Release tools**: Install Git, GPG, SVN, `unzip`, and the tools required by `cargo x lint`.
 5. **Clean checkout**: Start from a current checkout of `main` with no local changes.
@@ -111,7 +114,7 @@ CI does not run on every push to `main` or on release tags. Complete the local r
 Create a release-preparation pull request that:
 
 1. Changes the `datasketches` package version in `datasketches/Cargo.toml` and `Cargo.lock` to the value of `release_version`.
-2. Changes the `Unreleased` heading in `CHANGELOG.md` to `v${release_version}` without a date and finalizes its user-facing entries.
+2. Adds a `v${release_version}` section without a date immediately below `Unreleased` in `CHANGELOG.md` and finalizes its user-facing entries.
 3. Passes the complete local release checks:
 
 ```bash
@@ -292,6 +295,10 @@ mkdir -m 700 "$verify_gnupg_home"
     gpg --with-colons --fingerprint "$signing_key_fingerprint" |
     awk -F: '$1 ~ /^f[p]r$/ { print $10 }' |
     grep -Fx -- "$signing_key_fingerprint"
+  GNUPGHOME="$verify_gnupg_home" \
+    gpg --with-colons --list-keys "$signing_key_fingerprint" |
+    awk -F: '$1 == "uid" && $10 ~ /@apache\.org/ { found = 1 }
+      END { exit !found }'
 
   gpg_status="$(
     GNUPGHOME="$verify_gnupg_home" \
@@ -301,7 +308,7 @@ mkdir -m 700 "$verify_gnupg_home"
   signature_fingerprint="$(
     printf '%s\n' "$gpg_status" |
       awk '$1 == "[GNUPG:]" && $2 == "VALIDSIG" {
-        print NF >= 12 && $12 != "" ? $12 : $3
+        if (NF >= 12 && $12 != "") print $12; else print $3
       }'
   )"
   test "$signature_fingerprint" = "$signing_key_fingerprint"
@@ -489,7 +496,7 @@ Do not describe GitHub-generated source archives as the official Apache source d
 4. Review the generated `_includes/downloadsInclude.txt`, submit the website change, and verify the download, signature, checksum, and `KEYS` links after it is published.
 5. Wait at least one hour after the release first appears on `downloads.apache.org` before announcing it.
 6. Send a plain-text announcement from an `@apache.org` address to `dev@datasketches.apache.org` and `announce@apache.org`. Include a short project description and links to the project download page, changelog, crates.io, docs.rs, and GitHub release.
-7. Submit a post-release pull request that adds the actual release date to the `v${release_version}` changelog heading and adds a new empty `Unreleased` section above it, then close the release tracking issue.
+7. Submit a post-release pull request that adds the actual release date to the `v${release_version}` changelog heading, then close the release tracking issue.
 
 ## Troubleshooting
 
