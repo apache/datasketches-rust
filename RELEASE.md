@@ -278,6 +278,7 @@ Verify files downloaded from `dist/dev` rather than the local files used to crea
 ```bash
 verify_dir="$(mktemp -d)"
 verify_gnupg_home="${verify_dir}/gnupg"
+verify_cargo_target_dir="${verify_dir}/cargo-target"
 mkdir -m 700 "$verify_gnupg_home"
 
 (
@@ -315,13 +316,14 @@ mkdir -m 700 "$verify_gnupg_home"
 
   unzip "$artifact_name"
   cd "$archive_root"
+  export CARGO_TARGET_DIR="$verify_cargo_target_dir"
 
+  cargo package --list -p datasketches
+  cargo publish --dry-run --locked -p datasketches
   cargo x prepare-testdata
   cargo x lint
   cargo x check
   cargo x test
-  cargo package --list -p datasketches
-  cargo publish --dry-run --locked -p datasketches
 )
 ```
 
