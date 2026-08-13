@@ -19,7 +19,7 @@
 
 # Release Process for Rust Components
 
-This document describes the manual process for releasing Apache DataSketches Rust. The signed source archive in the Apache distribution repository is the artifact approved by the PMC. The crates.io package and GitHub release are additional distribution channels.
+This document describes the manual process for releasing Apache DataSketches Rust. The signed source archive in the Apache distribution repository is the artifact approved by the PMC. The crates.io package is an additional distribution channel.
 
 ## Release terminology and variables
 
@@ -82,9 +82,12 @@ printf '%s\n' \
   "signing_key_fingerprint=$signing_key_fingerprint"
 
 gpg --list-secret-keys "$signing_key_fingerprint"
-gpg --batch --with-colons --list-secret-keys "$signing_key_fingerprint" |
-  awk -F: '$1 == "uid" && $10 ~ /@apache\.org/ { found = 1 }
-    END { exit !found }'
+if ! gpg --batch --with-colons --list-secret-keys "$signing_key_fingerprint" |
+  awk -F: '$1 == "uid" { print $10 }' |
+  grep -F '@apache.org' >/dev/null; then
+  echo "signing key $signing_key_fingerprint has no @apache.org user ID" >&2
+  exit 1
+fi
 ```
 
 Run this block again if a later step starts in another shell. Increment `rc_version` and recompute the derived values when preparing another candidate.
@@ -296,10 +299,13 @@ mkdir -m 700 "$verify_gnupg_home"
     gpg --with-colons --fingerprint "$signing_key_fingerprint" |
     awk -F: '$1 ~ /^f[p]r$/ { print $10 }' |
     grep -Fx -- "$signing_key_fingerprint"
-  GNUPGHOME="$verify_gnupg_home" \
+  if ! GNUPGHOME="$verify_gnupg_home" \
     gpg --with-colons --list-keys "$signing_key_fingerprint" |
-    awk -F: '$1 == "uid" && $10 ~ /@apache\.org/ { found = 1 }
-      END { exit !found }'
+    awk -F: '$1 == "uid" { print $10 }' |
+    grep -F '@apache.org' >/dev/null; then
+    echo "KEYS entry for $signing_key_fingerprint has no @apache.org user ID" >&2
+    exit 1
+  fi
 
   gpg_status="$(
     GNUPGHOME="$verify_gnupg_home" \
@@ -465,13 +471,7 @@ cargo publish --locked -p datasketches
 cargo info "datasketches@$release_version"
 ```
 
-## Step 8: Create the GitHub release
-
-Create a GitHub release from the `release_version` tag. Use the matching changelog section for the release notes and link to the Apache DataSketches download page for the official source archive.
-
-Do not describe GitHub-generated source archives as the official Apache source distribution.
-
-## Step 9: Update downloads and announce
+## Step 8: Update downloads and announce
 
 1. Confirm that the new source archive is available:
 
@@ -497,7 +497,7 @@ Do not describe GitHub-generated source archives as the official Apache source d
 
 4. Review the generated `_includes/downloadsInclude.txt`, submit the website change, and verify the download, signature, checksum, and `KEYS` links after it is published.
 5. Wait at least one hour after the release first appears on `downloads.apache.org` before announcing it.
-6. Send a plain-text announcement from an `@apache.org` address to `dev@datasketches.apache.org` and `announce@apache.org`. Include a short project description and links to the project download page, changelog, crates.io, docs.rs, and GitHub release.
+6. Send a plain-text announcement from an `@apache.org` address to `dev@datasketches.apache.org` and `announce@apache.org`. Include a short project description and links to the project download page, changelog, crates.io, and docs.rs.
 7. Submit a post-release pull request that adds the actual release date to the `v${release_version}` changelog heading, then close the release tracking issue.
 
 ## Troubleshooting
