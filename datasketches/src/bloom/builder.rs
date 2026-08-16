@@ -154,10 +154,6 @@ impl BloomFilterBuilder {
     }
 
     /// Builds the Bloom filter.
-    ///
-    /// # Panics
-    ///
-    /// Panics if neither `with_accuracy()` nor `with_size()` was called.
     pub fn build(self) -> BloomFilter {
         let num_hashes = self.num_hashes;
         let num_words = self.num_bits.div_ceil(64) as usize;

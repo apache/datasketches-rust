@@ -38,6 +38,8 @@ const EMPTY_FLAG_MASK: u8 = 1 << 2;
 /// * Tunable false positive rate
 /// * Constant space usage
 ///
+/// These guarantees hold until [`invert()`](Self::invert) is called; see its documentation.
+///
 /// Use [`super::BloomFilterBuilder`] to construct instances.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BloomFilter {
@@ -236,8 +238,11 @@ impl BloomFilter {
 
     /// Inverts all bits in the filter.
     ///
-    /// This approximately inverts the notion of set membership, though the false
-    /// positive guarantees no longer hold in a well-defined way.
+    /// This approximately inverts the notion of set membership. After inversion, neither the
+    /// no-false-negative nor the false-positive guarantee holds: inserted items may return
+    /// `false` from [`contains()`](Self::contains), and [`is_empty()`](Self::is_empty),
+    /// [`bits_used()`](Self::bits_used), and [`load_factor()`](Self::load_factor) describe the
+    /// raw bit state rather than the inserted items.
     ///
     /// # Examples
     ///
@@ -257,7 +262,10 @@ impl BloomFilter {
         self.num_bits_set = self.capacity() as u64 - self.num_bits_set;
     }
 
-    /// Returns whether the filter is empty (no items inserted).
+    /// Returns whether no bits are set in the filter.
+    ///
+    /// In normal operation this means no items were inserted. After
+    /// [`invert()`](Self::invert) it reports the raw bit state instead.
     pub fn is_empty(&self) -> bool {
         self.num_bits_set == 0
     }

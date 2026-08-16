@@ -28,6 +28,9 @@
 //! * **Fixed size**: Unlike typical sketches, Bloom filters do not resize automatically
 //! * **Linear space**: Size is proportional to the expected number of distinct items
 //!
+//! These guarantees describe normal operation. After [`invert()`](BloomFilter::invert) neither
+//! the no-false-negative nor the false-positive guarantee holds; see its documentation.
+//!
 //! # Usage
 //!
 //! ```
