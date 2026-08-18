@@ -22,11 +22,12 @@
 use std::fs;
 use std::path::PathBuf;
 
-use crate::serialization_test_data;
 use datasketches::req::RankAccuracy;
 use datasketches::req::ReqSketch;
 use datasketches::req::ReqValue;
 use datasketches::req::SearchCriteria;
+
+use crate::serialization_test_data;
 
 // ---------- Rust ↔ Rust round-trip ----------
 
