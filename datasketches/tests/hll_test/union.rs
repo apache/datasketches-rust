@@ -32,6 +32,47 @@ use datasketches::hll::HllSketch;
 use datasketches::hll::HllType;
 use datasketches::hll::HllUnion;
 
+const HLL_TYPES: [HllType; 3] = [HllType::Hll4, HllType::Hll6, HllType::Hll8];
+
+fn make_hll_sketch(hll_type: HllType, lg_config_k: u8, start: u64, end: u64) -> HllSketch {
+    let mut sketch = HllSketch::new(lg_config_k, hll_type);
+    for value in start..end {
+        sketch.update(value);
+    }
+    sketch
+}
+
+fn assert_estimate_within(estimate: f64, expected: f64, relative_error: f64) {
+    let actual_relative_error = (estimate - expected).abs() / expected;
+    assert!(
+        actual_relative_error <= relative_error,
+        "Expected estimate within {:.1}% of {}, got {} ({:.1}% error)",
+        relative_error * 100.0,
+        expected,
+        estimate,
+        actual_relative_error * 100.0,
+    );
+}
+
+fn serialize_flat_union(first: &HllSketch, second: &HllSketch, third: &HllSketch) -> Vec<u8> {
+    let mut union = HllUnion::new(8);
+    union.update(first);
+    union.update(second);
+    union.update(third);
+    union.to_sketch(HllType::Hll8).serialize()
+}
+
+fn serialize_nested_union(first: &HllSketch, second: &HllSketch, third: &HllSketch) -> Vec<u8> {
+    let mut prefix = HllUnion::new(8);
+    prefix.update(first);
+    prefix.update(second);
+
+    let mut union = HllUnion::new(8);
+    union.update(&prefix.to_sketch(HllType::Hll8));
+    union.update(third);
+    union.to_sketch(HllType::Hll8).serialize()
+}
+
 #[test]
 fn test_union_basic_operations() {
     let mut union = HllUnion::new(12);
@@ -285,6 +326,80 @@ fn test_union_lg_k_handling() {
         "Downsampling should still estimate ~5000, got {}",
         estimate2
     );
+}
+
+// Regression coverage for https://github.com/apache/datasketches-cpp/pull/512.
+#[test]
+fn test_union_downsampling_merge_is_not_empty() {
+    for hll_type in HLL_TYPES {
+        let sketch = make_hll_sketch(hll_type, 15, 0, 100_000);
+        let mut union = HllUnion::new(8);
+        union.update(&sketch);
+
+        assert!(!union.is_empty(), "{hll_type:?} union should not be empty");
+    }
+}
+
+#[test]
+fn test_union_mixed_lg_k_estimate_is_merge_order_independent() {
+    const N: u64 = 100_000;
+
+    for hll_type in HLL_TYPES {
+        let a = make_hll_sketch(hll_type, 15, 0, N);
+        let b = make_hll_sketch(hll_type, 8, N, 2 * N);
+        let expected = 2.0 * N as f64;
+
+        let mut larger_first = HllUnion::new(8);
+        larger_first.update(&a);
+        larger_first.update(&b);
+        let larger_first_estimate = larger_first.estimate();
+        assert_estimate_within(larger_first_estimate, expected, 0.1);
+
+        let mut smaller_first = HllUnion::new(8);
+        smaller_first.update(&b);
+        smaller_first.update(&a);
+        let smaller_first_estimate = smaller_first.estimate();
+        assert_estimate_within(smaller_first_estimate, expected, 0.1);
+        assert_eq!(
+            larger_first_estimate, smaller_first_estimate,
+            "{hll_type:?} estimate should be merge-order independent",
+        );
+    }
+}
+
+#[test]
+fn test_union_scalar_update_after_downsampling_merge() {
+    const N: u64 = 100_000;
+
+    for hll_type in HLL_TYPES {
+        let sketch = make_hll_sketch(hll_type, 15, 0, N);
+        let mut union = HllUnion::new(8);
+        union.update(&sketch);
+        for value in N..2 * N {
+            union.update_value(value);
+        }
+
+        assert_estimate_within(union.estimate(), 2.0 * N as f64, 0.1);
+    }
+}
+
+#[test]
+fn test_union_serialization_is_grouping_independent() {
+    const N: u64 = 100_000;
+
+    for hll_type in HLL_TYPES {
+        let a = make_hll_sketch(hll_type, 15, 0, N);
+        let b = make_hll_sketch(hll_type, 8, N, 2 * N);
+        let c = make_hll_sketch(hll_type, 11, N / 2, N + N / 2);
+
+        for (first, second, third) in [(&b, &c, &a), (&a, &c, &b), (&a, &b, &c)] {
+            assert_eq!(
+                serialize_nested_union(first, second, third),
+                serialize_flat_union(first, second, third),
+                "{hll_type:?} serialization should be grouping independent",
+            );
+        }
+    }
 }
 
 #[test]
