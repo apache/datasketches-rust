@@ -109,7 +109,7 @@ Automatic fix commands:
 cargo +nightly clippy --tests --all-features --all-targets --workspace --allow-staged --allow-dirty --fix
 cargo +nightly fmt --all
 taplo format
-hawkeye format --fail-if-updated=false
+hawkeye format
 ```
 
 Install the extra tools with:
