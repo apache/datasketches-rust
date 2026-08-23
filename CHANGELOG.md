@@ -4,6 +4,10 @@ All significant changes to this project will be documented in this file.
 
 ## Unreleased
 
+### New features
+
+* Add immutable xor filters behind the `xor` feature, with 8- and 16-bit fingerprints, pre-hashed input APIs, and compatible serialization.
+
 ## v0.4.0 (2026-08-18)
 
 ### Breaking changes

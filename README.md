@@ -73,6 +73,7 @@ Enable multiple algorithms by listing their features together, such as `features
 | `tdigest` | `TDigestMut`, `TDigest` | Quantile and rank estimation, with high accuracy near distribution tails. |
 | `theta` | `ThetaSketch` and set operations | Distinct counts, set expressions, and Jaccard similarity. |
 | `tuple` | `TupleSketch` and set operations | Theta-style keys with user-defined summaries attached to retained entries. |
+| `xor` | `XorFilter`, `XorFilterBuilder` | Compact immutable probabilistic set membership with 8- or 16-bit fingerprints. |
 
 See the [API documentation](https://docs.rs/datasketches) for configuration, accuracy guarantees, serialization, and examples for each algorithm.
 

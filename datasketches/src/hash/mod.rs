@@ -38,9 +38,9 @@ mod murmurhash;
 ))]
 pub(crate) use self::murmurhash::*;
 
-#[cfg(feature = "bloom")]
+#[cfg(any(feature = "bloom", feature = "xor"))]
 mod xxhash;
-#[cfg(feature = "bloom")]
+#[cfg(any(feature = "bloom", feature = "xor"))]
 pub(crate) use self::xxhash::*;
 
 #[cfg(any(
@@ -95,6 +95,7 @@ pub(crate) const DEFAULT_UPDATE_SEED: u64 = 9001;
     feature = "hll",
     feature = "theta",
     feature = "tuple",
+    feature = "xor",
 ))]
 fn read_u64_le(bytes: &[u8]) -> u64 {
     let mut buf = [0u8; 8];

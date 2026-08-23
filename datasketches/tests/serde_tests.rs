@@ -73,3 +73,7 @@ mod theta;
 #[cfg(feature = "tuple")]
 #[path = "serde_tests/tuple.rs"]
 mod tuple;
+
+#[cfg(feature = "xor")]
+#[path = "serde_tests/xor.rs"]
+mod xor;

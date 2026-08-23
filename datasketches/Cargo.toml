@@ -46,6 +46,7 @@ hll = []
 tdigest = []
 theta = []
 tuple = []
+xor = []
 
 [[test]]
 name = "bloom_test"
@@ -86,6 +87,11 @@ required-features = ["theta"]
 name = "tuple_test"
 path = "tests/tuple_test/main.rs"
 required-features = ["tuple"]
+
+[[test]]
+name = "xor_test"
+path = "tests/xor_test/main.rs"
+required-features = ["xor"]
 
 [dev-dependencies]
 googletest = { workspace = true }
