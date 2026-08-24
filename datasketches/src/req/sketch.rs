@@ -145,8 +145,7 @@ impl<T: ReqValue> ReqSketch<T> {
     /// Updates the sketch with a new item.
     ///
     /// NaN inputs are silently ignored for floating-point types, matching the behavior
-    /// of the Java reference implementation (`checkNaNUpdate`). This is intentional and
-    /// documented in the cross-language differences doc.
+    /// of the Java reference implementation (`checkNaNUpdate`). This is intentional.
     pub fn update(&mut self, item: T) {
         if item.is_nan() {
             return;
@@ -804,8 +803,8 @@ impl<T: ReqValue> ReqSketchBuilder<T> {
     }
 
     /// Sets the rank accuracy.
-    pub fn rank_accuracy(mut self, ra: RankAccuracy) -> Self {
-        self.rank_accuracy = ra;
+    pub fn rank_accuracy(mut self, rank_accuracy: RankAccuracy) -> Self {
+        self.rank_accuracy = rank_accuracy;
         self
     }
 

@@ -20,6 +20,7 @@
 //! Each level in the REQ sketch uses a compactor to maintain a bounded set of items
 //! with deterministic compaction when capacity is exceeded.
 
+use super::MIN_K;
 use super::RankAccuracy;
 use super::value::ReqValue;
 use crate::error::Error;
@@ -284,12 +285,12 @@ where
     // Private helper methods
 
     fn ensure_enough_sections(&mut self) -> bool {
-        let ssr = self.section_size_raw / (2.0_f32).sqrt();
+        let ssr = self.section_size_raw / std::f32::consts::SQRT_2;
         let ne = nearest_even(ssr);
 
-        const MIN_K: u32 = 4; // matches datasketches-cpp
-
-        if self.num_sections <= 64 && self.state >= (1u64 << (self.num_sections - 1)) && ne >= MIN_K
+        if self.num_sections <= 64
+            && self.state >= (1u64 << (self.num_sections - 1))
+            && ne >= u32::from(MIN_K)
         {
             self.section_size_raw = ssr;
             self.section_size = ne;

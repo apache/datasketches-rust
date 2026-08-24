@@ -15,8 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#![cfg(feature = "req")]
-
 //! Serialization round-trip and cross-language compatibility tests for ReqSketch.
 
 use std::fs;

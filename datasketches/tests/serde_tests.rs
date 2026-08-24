@@ -62,6 +62,10 @@ mod frequencies;
 #[path = "serde_tests/hll.rs"]
 mod hll;
 
+#[cfg(feature = "req")]
+#[path = "serde_tests/req.rs"]
+mod req;
+
 #[cfg(feature = "tdigest")]
 #[path = "serde_tests/tdigest.rs"]
 mod tdigest;

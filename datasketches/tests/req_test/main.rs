@@ -15,40 +15,12 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use std::path::PathBuf;
-
-fn serialization_test_data(sub_dir: &str, name: &str) -> PathBuf {
-    const SERDE_TESTS_DIR: &str = "tests/serde_tests";
-
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join(SERDE_TESTS_DIR)
-        .join(sub_dir)
-        .join(name);
-
-    if !path.exists() {
-        panic!(
-            r#"serialization test data file not found: {}
-
-            Please ensure test data files are present in the repository. Generally, you can
-            run the following commands from the project root to prepare the test data files
-            if they are missing:
-
-            $ cargo x prepare-testdata
-        "#,
-            path.display(),
-        );
-    }
-
-    path
-}
-
 mod accuracy;
 mod bounds;
 mod core;
 mod merge;
 mod property;
 mod query;
-mod serialization;
 mod sorted_view_api;
 mod structure;
 mod union;

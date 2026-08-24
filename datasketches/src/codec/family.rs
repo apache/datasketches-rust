@@ -85,8 +85,8 @@ impl Family {
     pub const REQ: Family = Family {
         id: 17,
         name: "REQ",
-        min_pre_longs: 2,
-        max_pre_longs: 4,
+        min_pre_longs: 1,
+        max_pre_longs: 2,
     };
 
     /// CountMin Sketch
