@@ -60,6 +60,12 @@ Lint:
 cargo x lint
 ```
 
+Run the t-digest microbenchmarks, including allocation statistics:
+
+```shell
+cargo bench -p datasketches --features tdigest --bench tdigest
+```
+
 ## Public API documentation
 
 - Describe types with noun phrases and API behavior with third-person present-tense verbs such as `Creates`, `Updates`, and `Returns`.
