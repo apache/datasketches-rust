@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::mem::size_of;
+
 use datasketches::tdigest::TDigestMut;
 use googletest::assert_that;
 use googletest::prelude::eq;
@@ -73,6 +75,61 @@ fn test_maximum_k() {
     let tdigest = tdigest.freeze();
     assert_eq!(tdigest.k(), u16::MAX);
     assert_eq!(tdigest.quantile(0.5), Some(1.0));
+}
+
+#[test]
+fn test_estimated_size_releases_initial_staging_after_compression() {
+    const K: u16 = 200;
+    const TARGET_CENTROIDS: usize = 410;
+    const MAX_UNMERGED: usize = TARGET_CENTROIDS * 4;
+
+    let inline_size = size_of::<TDigestMut>();
+    let mut tdigest = TDigestMut::new(K);
+    assert_eq!(tdigest.estimated_size(), inline_size);
+
+    for value in 0..MAX_UNMERGED {
+        tdigest.update(value as f64);
+    }
+    let size_before_compression = tdigest.estimated_size();
+    assert!(size_before_compression > inline_size);
+    tdigest.rank(0.5);
+    // Unit-weight centroids are twice the size of staged f64 values. Allow that representation
+    // change while guarding against retaining both backing allocations after compression.
+    assert!(tdigest.estimated_size() <= size_before_compression * 2 + inline_size);
+
+    for value in MAX_UNMERGED..10_000 {
+        tdigest.update(value as f64);
+    }
+    let size_before_compression = tdigest.estimated_size();
+    tdigest.rank(0.5);
+    assert!(tdigest.estimated_size() <= size_before_compression);
+
+    let mut left = TDigestMut::new(K);
+    for value in 0..8 {
+        left.update(value as f64);
+    }
+    let mut right = TDigestMut::new(K);
+    for value in 0..MAX_UNMERGED {
+        right.update(value as f64);
+    }
+    let right_size = right.estimated_size();
+    left.merge(&right);
+    assert_eq!(left.total_weight(), (MAX_UNMERGED + 8) as u64);
+    assert_eq!(right.total_weight(), MAX_UNMERGED as u64);
+    assert_eq!(right.estimated_size(), right_size);
+
+    let mut full_left = TDigestMut::new(K);
+    for value in 0..MAX_UNMERGED {
+        full_left.update(value as f64);
+    }
+    let combined_size = full_left.estimated_size() + right_size;
+    full_left.merge(&right);
+    assert_eq!(full_left.total_weight(), (MAX_UNMERGED * 2) as u64);
+    assert!(full_left.estimated_size() <= combined_size + combined_size / 2);
+
+    let mutable_size = full_left.estimated_size();
+    let frozen = full_left.freeze();
+    assert!(frozen.estimated_size() <= mutable_size);
 }
 
 #[test]

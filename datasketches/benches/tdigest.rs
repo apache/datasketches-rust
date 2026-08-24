@@ -88,8 +88,34 @@ fn partial_digest_lifecycle_by_k(bencher: Bencher, k: u16) {
 }
 
 #[divan::bench]
-fn compress(bencher: Bencher) {
+fn compress_initial_buffer(bencher: Bencher) {
     // The default k=200 digest buffers 1,640 values before automatic compression.
+    let values = values(1_640);
+    let digest = build_mut_digest(&values);
+
+    bencher
+        .counter(ItemsCount::new(values.len()))
+        .with_inputs(|| digest.clone())
+        .bench_local_values(|mut digest| black_box(digest.rank(0.5)));
+}
+
+#[divan::bench]
+fn compress_unmerged_tail(bencher: Bencher) {
+    let values = values(3_280);
+    let mut digest = build_mut_digest(&values[..1_640]);
+    black_box(digest.rank(0.5));
+    for &value in &values[1_640..] {
+        digest.update(value);
+    }
+
+    bencher
+        .counter(ItemsCount::new(1_640_usize))
+        .with_inputs(|| digest.clone())
+        .bench_local_values(|mut digest| black_box(digest.rank(0.5)));
+}
+
+#[divan::bench]
+fn freeze_initial_buffer(bencher: Bencher) {
     let values = values(1_640);
     let digest = build_mut_digest(&values);
 
@@ -109,6 +135,20 @@ fn merge(bencher: Bencher) {
 
     bencher
         .counter(ItemsCount::new(values.len()))
+        .with_inputs(|| left.clone())
+        .bench_local_values(|mut left| {
+            left.merge(black_box(&right));
+            black_box(left)
+        });
+}
+
+#[divan::bench(args = [8, 1_640])]
+fn unmerged_merge(bencher: Bencher, left_rows: usize) {
+    let left = build_mut_digest(&values(left_rows));
+    let right = build_mut_digest(&values(1_640));
+
+    bencher
+        .counter(ItemsCount::new(left_rows + 1_640))
         .with_inputs(|| left.clone())
         .bench_local_values(|mut left| {
             left.merge(black_box(&right));
