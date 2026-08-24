@@ -39,6 +39,8 @@ use crate::tdigest::serialization::SERIAL_VERSION;
 const DEFAULT_K: u16 = 200;
 /// Multiplier for buffer size relative to centroids capacity.
 const BUFFER_MULTIPLIER: usize = 4;
+/// Buffer capacity allocated by the first update to a digest.
+const INITIAL_BUFFER_CAPACITY: usize = 8;
 /// Default weight for single values.
 const DEFAULT_WEIGHT: NonZeroU64 = NonZeroU64::new(1).unwrap();
 
@@ -134,17 +136,14 @@ impl TDigestMut {
         reverse_merge: bool,
         min: f64,
         max: f64,
-        mut centroids: Vec<Centroid>,
+        centroids: Vec<Centroid>,
         centroids_weight: u64,
-        mut buffer: Vec<f64>,
+        buffer: Vec<f64>,
     ) -> Self {
         assert!(k >= 10, "k must be at least 10");
 
         let fudge = if k < 30 { 30 } else { 10 };
         let centroids_capacity = (k as usize * 2) + fudge;
-
-        centroids.reserve(centroids_capacity);
-        buffer.reserve(centroids_capacity * BUFFER_MULTIPLIER);
 
         TDigestMut {
             k,
@@ -172,12 +171,30 @@ impl TDigestMut {
     /// assert!(sketch.total_weight() >= 1);
     /// ```
     pub fn update(&mut self, value: f64) {
-        if value.is_nan() || value.is_infinite() {
+        if !value.is_finite() {
             return;
         }
 
-        if self.buffer.len() == self.centroids_capacity * BUFFER_MULTIPLIER {
+        let full_buffer_capacity = self.centroids_capacity * BUFFER_MULTIPLIER;
+        if self.buffer.len() == full_buffer_capacity {
             self.compress();
+        }
+        if self.buffer.len() == self.buffer.capacity() {
+            let target_capacity = if self.buffer.capacity() == 0 {
+                INITIAL_BUFFER_CAPACITY
+            } else if self.buffer.capacity() == INITIAL_BUFFER_CAPACITY {
+                // Once a digest outgrows a tiny group, skip an extra allocator round trip while
+                // keeping the first allocation small.
+                (INITIAL_BUFFER_CAPACITY * BUFFER_MULTIPLIER * BUFFER_MULTIPLIER)
+                    .min(full_buffer_capacity)
+            } else {
+                self.buffer
+                    .capacity()
+                    .saturating_mul(BUFFER_MULTIPLIER)
+                    .min(full_buffer_capacity)
+            };
+            self.buffer
+                .reserve_exact(target_capacity.saturating_sub(self.buffer.len()));
         }
 
         self.buffer.push(value);
@@ -237,9 +254,10 @@ impl TDigestMut {
             return;
         }
 
-        let mut tmp = Vec::with_capacity(
-            self.centroids.len() + self.buffer.len() + other.centroids.len() + other.buffer.len(),
-        );
+        let additional_centroids = self.buffer.len() + other.centroids.len() + other.buffer.len();
+        let mut tmp = std::mem::take(&mut self.centroids);
+        let num_existing_centroids = tmp.len();
+        tmp.reserve(additional_centroids);
         for &v in &self.buffer {
             tmp.push(Centroid {
                 mean: v,
@@ -255,6 +273,9 @@ impl TDigestMut {
         for &c in &other.centroids {
             tmp.push(c);
         }
+        // Preserve the original insertion order for equal means because t-digest requires a stable
+        // sort: buffered values, the other digest's centroids, then this digest's centroids.
+        tmp.rotate_left(num_existing_centroids);
         self.do_merge(tmp, self.buffer.len() as u64 + other.total_weight())
     }
 
@@ -747,13 +768,25 @@ impl TDigestMut {
         if self.buffer.is_empty() {
             return;
         }
-        let mut tmp = Vec::with_capacity(self.buffer.len() + self.centroids.len());
+        let mut tmp = std::mem::take(&mut self.centroids);
+        let full_buffer_capacity = self.centroids_capacity * BUFFER_MULTIPLIER;
+        let required_capacity = tmp.len() + self.buffer.len();
+        let target_capacity = if self.buffer.len() == full_buffer_capacity {
+            required_capacity.max(full_buffer_capacity + self.centroids_capacity)
+        } else {
+            required_capacity
+        };
+        tmp.reserve_exact(target_capacity.saturating_sub(tmp.len()));
+        let num_buffered = self.buffer.len();
         for &v in &self.buffer {
             tmp.push(Centroid {
                 mean: v,
                 weight: DEFAULT_WEIGHT,
             });
         }
+        // Preserve the original insertion order for equal means because t-digest requires a stable
+        // sort: buffered values before existing centroids.
+        tmp.rotate_right(num_buffered);
         self.do_merge(tmp, self.buffer.len() as u64)
     }
 
@@ -762,32 +795,29 @@ impl TDigestMut {
     /// # Contract
     ///
     /// * `buffer` must have at least one centroid.
-    /// * `buffer` is generated from `self.buffer`, and thus:
-    ///     * No `NAN` values are present in `buffer`.
-    ///     * We should clear `self.buffer` after merging.
+    /// * `buffer` contains all existing centroids and values from `self.buffer`.
+    /// * No `NAN` values are present in `buffer`.
+    /// * We should clear `self.buffer` after merging.
     fn do_merge(&mut self, mut buffer: Vec<Centroid>, weight: u64) {
-        buffer.extend(std::mem::take(&mut self.centroids));
         buffer.sort_by(centroid_cmp);
         if self.reverse_merge {
             buffer.reverse();
         }
         self.centroids_weight += weight;
 
-        let mut num_centroids = 0;
+        let mut num_centroids = 1;
         let len = buffer.len();
-        self.centroids.push(buffer[0]);
-        num_centroids += 1;
+        let centroids_weight = self.centroids_weight as f64;
+        let normalizer = scale_function::normalizer((2 * self.k) as f64, centroids_weight);
         let mut current = 1;
         let mut weight_so_far = 0.;
         while current < len {
             let c = buffer[current];
-            let proposed_weight = self.centroids[num_centroids - 1].weight() + c.weight();
+            let proposed_weight = buffer[num_centroids - 1].weight() + c.weight();
             let mut add_this = false;
             if (current != 1) && (current != (len - 1)) {
-                let centroids_weight = self.centroids_weight as f64;
                 let q0 = weight_so_far / centroids_weight;
                 let q2 = (weight_so_far + proposed_weight) / centroids_weight;
-                let normalizer = scale_function::normalizer((2 * self.k) as f64, centroids_weight);
                 add_this = proposed_weight
                     <= (centroids_weight
                         * scale_function::max(q0, normalizer)
@@ -795,21 +825,23 @@ impl TDigestMut {
             }
             if add_this {
                 // merge into existing centroid
-                self.centroids[num_centroids - 1].add(c);
+                buffer[num_centroids - 1].add(c);
             } else {
                 // copy to a new centroid
-                weight_so_far += self.centroids[num_centroids - 1].weight();
-                self.centroids.push(c);
+                weight_so_far += buffer[num_centroids - 1].weight();
+                buffer[num_centroids] = c;
                 num_centroids += 1;
             }
             current += 1;
         }
 
+        buffer.truncate(num_centroids);
         if self.reverse_merge {
-            self.centroids.reverse();
+            buffer.reverse();
         }
-        self.min = self.min.min(self.centroids[0].mean);
-        self.max = self.max.max(self.centroids[num_centroids - 1].mean);
+        self.min = self.min.min(buffer[0].mean);
+        self.max = self.max.max(buffer[num_centroids - 1].mean);
+        self.centroids = buffer;
         self.reverse_merge = !self.reverse_merge;
         self.buffer.clear();
     }
