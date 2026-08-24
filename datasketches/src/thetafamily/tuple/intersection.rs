@@ -79,7 +79,7 @@ use crate::tuple::sketch::TupleSketchView;
 /// intersection.update(&a).unwrap();
 /// intersection.update(&b).unwrap();
 ///
-/// let result = intersection.to_sketch(true).expect("after update");
+/// let result = intersection.to_sketch(true).unwrap();
 /// assert_eq!(result.num_retained(), 1); // only "shared"
 /// assert_eq!(result.iter().next().unwrap().1, &7); // 3 + 4
 /// ```
