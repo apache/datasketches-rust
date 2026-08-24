@@ -95,7 +95,9 @@ impl TDigestBuffer {
                 centroids,
                 unmerged_tail_len: 0,
             } => centroids,
-            _ => unreachable!("t-digest buffer must be compressed before reading centroids"),
+            _ => unreachable!(
+                "t-digest buffer must be compressed before reading centroids: {self:?}"
+            ),
         }
     }
 
@@ -106,11 +108,13 @@ impl TDigestBuffer {
                 centroids,
                 unmerged_tail_len: 0,
             } => centroids,
-            _ => unreachable!("t-digest buffer must be compressed before reading centroids"),
+            _ => unreachable!(
+                "t-digest buffer must be compressed before reading centroids: {self:?}"
+            ),
         }
     }
 
-    fn estimated_heap_size(&self) -> usize {
+    fn estimated_size(&self) -> usize {
         match self {
             TDigestBuffer::Staging(values) => values.capacity() * size_of::<f64>(),
             TDigestBuffer::Centroids { centroids, .. } => {
@@ -1093,7 +1097,7 @@ impl TDigestMut {
 
     /// Returns the estimated size of the sketch in bytes.
     pub fn estimated_size(&self) -> usize {
-        size_of::<Self>() + self.buffer.estimated_heap_size()
+        size_of::<Self>() + self.buffer.estimated_size()
     }
 }
 
