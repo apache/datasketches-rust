@@ -60,10 +60,10 @@ Lint:
 cargo x lint
 ```
 
-Run the t-digest microbenchmarks, including allocation statistics:
+Benchmark:
 
 ```shell
-cargo bench -p datasketches --features tdigest --bench tdigest
+cargo x bench
 ```
 
 ## Public API documentation
