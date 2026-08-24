@@ -60,6 +60,12 @@ Lint:
 cargo x lint
 ```
 
+Benchmark:
+
+```shell
+cargo x bench
+```
+
 ## Public API documentation
 
 - Describe types with noun phrases and API behavior with third-person present-tense verbs such as `Creates`, `Updates`, and `Returns`.

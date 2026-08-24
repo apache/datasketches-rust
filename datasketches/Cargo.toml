@@ -87,7 +87,14 @@ name = "tuple_test"
 path = "tests/tuple_test/main.rs"
 required-features = ["tuple"]
 
+[[bench]]
+name = "tdigest"
+path = "benches/tdigest.rs"
+required-features = ["tdigest"]
+harness = false
+
 [dev-dependencies]
+divan = { workspace = true }
 googletest = { workspace = true }
 insta = { workspace = true }
 

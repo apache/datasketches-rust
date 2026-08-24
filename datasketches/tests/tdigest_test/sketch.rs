@@ -66,6 +66,16 @@ fn test_one_value() {
 }
 
 #[test]
+fn test_maximum_k() {
+    let mut tdigest = TDigestMut::new(u16::MAX);
+    tdigest.update(1.0);
+
+    let tdigest = tdigest.freeze();
+    assert_eq!(tdigest.k(), u16::MAX);
+    assert_eq!(tdigest.quantile(0.5), Some(1.0));
+}
+
+#[test]
 fn test_many_values() {
     let n = 10000;
 
