@@ -75,16 +75,15 @@ impl ThetaIntersection {
 
     /// Returns the intersection result as a compact theta sketch.
     ///
-    /// # Panics
-    ///
-    /// Panics if called before the first [`update`](Self::update).
-    pub fn to_sketch(&self, ordered: bool) -> CompactThetaSketch {
-        assert!(
-            self.state.has_result(),
-            "ThetaIntersection::to_sketch() called before first update()"
-        );
+    /// Returns `None` if called before the first [`update`](Self::update).
+    /// Absence of a result is part of the public state machine; use
+    /// [`has_result`](Self::has_result) or this `Option` return instead of panicking (#192).
+    pub fn to_sketch(&self, ordered: bool) -> Option<CompactThetaSketch> {
+        if !self.state.has_result() {
+            return None;
+        }
         let parts = self.state.to_compact_parts(ordered);
-        CompactThetaSketch::from_parts(
+        Some(CompactThetaSketch::from_parts(
             parts
                 .entries
                 .into_iter()
@@ -94,6 +93,6 @@ impl ThetaIntersection {
             parts.seed_hash,
             parts.ordered,
             parts.empty,
-        )
+        ))
     }
 }

@@ -79,7 +79,7 @@ use crate::tuple::sketch::TupleSketchView;
 /// intersection.update(&a).unwrap();
 /// intersection.update(&b).unwrap();
 ///
-/// let result = intersection.to_sketch(true);
+/// let result = intersection.to_sketch(true).expect("after update");
 /// assert_eq!(result.num_retained(), 1); // only "shared"
 /// assert_eq!(result.iter().next().unwrap().1, &7); // 3 + 4
 /// ```
@@ -142,24 +142,22 @@ where
     ///
     /// If `ordered` is `true`, retained entries are sorted ascending by hash.
     ///
-    /// # Panics
-    ///
-    /// Panics if called before the first [`update`](Self::update).
-    pub fn to_sketch(&self, ordered: bool) -> CompactTupleSketch<P::Summary>
+    /// Returns `None` if called before the first [`update`](Self::update).
+    /// Absence of a result is part of the public state machine (#192).
+    pub fn to_sketch(&self, ordered: bool) -> Option<CompactTupleSketch<P::Summary>>
     where
         P::Summary: Clone,
     {
-        assert!(
-            self.state.has_result(),
-            "TupleIntersection::to_sketch() called before first update()"
-        );
+        if !self.state.has_result() {
+            return None;
+        }
         let parts = self.state.to_compact_parts(ordered);
-        CompactTupleSketch::from_parts(
+        Some(CompactTupleSketch::from_parts(
             parts.entries,
             parts.theta,
             parts.seed_hash,
             parts.ordered,
             parts.empty,
-        )
+        ))
     }
 }
