@@ -54,7 +54,7 @@ fn has_result_tracks_the_first_update() {
 
 #[test]
 fn result_before_first_update_returns_none() {
-    let intersection = TupleIntersection::<IdentityPolicy>::new();
+    let intersection = TupleIntersection::new(SumPolicy);
     assert!(intersection.to_sketch(true).is_none());
 }
 
