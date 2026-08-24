@@ -794,10 +794,12 @@ impl TDigestMut {
     ///
     /// # Contract
     ///
-    /// * `buffer` must have at least one centroid.
-    /// * `buffer` contains all existing centroids and values from `self.buffer`.
-    /// * No `NAN` values are present in `buffer`.
-    /// * We should clear `self.buffer` after merging.
+    /// * `buffer` must contain at least one centroid.
+    /// * `buffer` contains every centroid to be merged, including all centroids previously stored
+    ///   in `self`.
+    /// * `weight` is the total weight not yet included in `self.centroids_weight`.
+    /// * Every centroid mean in `buffer` is finite.
+    /// * `self.buffer` is cleared before returning.
     fn do_merge(&mut self, mut buffer: Vec<Centroid>, weight: u64) {
         buffer.sort_by(centroid_cmp);
         if self.reverse_merge {
@@ -808,7 +810,7 @@ impl TDigestMut {
         let mut num_centroids = 1;
         let len = buffer.len();
         let centroids_weight = self.centroids_weight as f64;
-        let normalizer = scale_function::normalizer((2 * self.k) as f64, centroids_weight);
+        let normalizer = scale_function::normalizer(2.0 * f64::from(self.k), centroids_weight);
         let mut current = 1;
         let mut weight_so_far = 0.;
         while current < len {
