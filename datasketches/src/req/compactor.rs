@@ -22,103 +22,9 @@
 
 use super::MIN_K;
 use super::RankAccuracy;
+use super::nearest_even_section_size;
 use super::value::ReqValue;
 use crate::error::Error;
-
-pub(super) const INIT_NUM_SECTIONS: u8 = 3;
-// The next threshold after 96 sections would be 2^95, beyond a u64 state.
-const MAX_NUM_SECTIONS: u8 = 96;
-
-fn nearest_even(value: f32) -> u32 {
-    ((value / 2.0).round() as u32) << 1
-}
-
-fn cpp_next_section_size(section_size_raw: f32) -> Option<f32> {
-    let next = section_size_raw / std::f32::consts::SQRT_2;
-    (nearest_even(next) >= u32::from(MIN_K)).then_some(next)
-}
-
-fn java_next_section_size(section_size_raw: f32) -> Option<f32> {
-    if nearest_even(section_size_raw) <= u32::from(MIN_K) {
-        return None;
-    }
-    let next = (f64::from(section_size_raw) / std::f64::consts::SQRT_2) as f32;
-    (nearest_even(next) >= u32::from(MIN_K)).then_some(next)
-}
-
-fn section_doublings(num_sections: u8) -> Option<u32> {
-    let mut sections = INIT_NUM_SECTIONS;
-    let mut doublings = 0;
-    while sections <= MAX_NUM_SECTIONS {
-        if sections == num_sections {
-            return Some(doublings);
-        }
-        sections <<= 1;
-        doublings += 1;
-    }
-    None
-}
-
-/// Checks whether a serialized section configuration can be produced by the
-/// C++ or Java REQ schedule, including a sketch continued in another language.
-fn is_reachable_section_config(
-    k: u16,
-    state: u64,
-    section_size_raw: f32,
-    num_sections: u8,
-) -> bool {
-    let Some(doublings) = section_doublings(num_sections) else {
-        return false;
-    };
-
-    if doublings > 0 {
-        let previous_sections = num_sections >> 1;
-        if state < (1u64 << (previous_sections - 1)) {
-            return false;
-        }
-    }
-
-    // C++ divides by an f32 sqrt(2), while Java divides by an f64 sqrt(2) and
-    // casts back to f32. A sketch may cross languages between doublings, so
-    // enumerate the small set of values produced by either operation at every
-    // step instead of imposing one implementation's schedule on the wire.
-    let mut candidates = vec![k as f32];
-    for _ in 0..doublings {
-        let mut next = Vec::with_capacity(candidates.len() * 2);
-        for candidate in candidates {
-            if let Some(value) = cpp_next_section_size(candidate) {
-                if !next.contains(&value) {
-                    next.push(value);
-                }
-            }
-            if let Some(value) = java_next_section_size(candidate) {
-                if !next.contains(&value) {
-                    next.push(value);
-                }
-            }
-        }
-        candidates = next;
-    }
-
-    if !candidates
-        .iter()
-        .any(|candidate| candidate.to_bits() == section_size_raw.to_bits())
-    {
-        return false;
-    }
-
-    // A configuration may remain below the C++ schedule when Java has stopped
-    // at MIN_K. Otherwise every implementation would already have doubled it.
-    if num_sections < MAX_NUM_SECTIONS
-        && state >= (1u64 << (num_sections - 1))
-        && cpp_next_section_size(section_size_raw).is_some()
-        && java_next_section_size(section_size_raw).is_some()
-    {
-        return false;
-    }
-
-    true
-}
 
 fn validate_deserialized_items<T: ReqValue>(items: &[T], sorted: bool) -> Result<(), Error> {
     if items.iter().any(ReqValue::is_nan) {
@@ -178,8 +84,8 @@ where
     /// * `rank_accuracy` - Rank accuracy configuration
     pub(super) fn new(lg_weight: u8, k: u16, rank_accuracy: RankAccuracy) -> Self {
         let section_size_raw = k as f32;
-        let section_size = nearest_even(section_size_raw);
-        let num_sections = INIT_NUM_SECTIONS;
+        let section_size = nearest_even_section_size(section_size_raw);
+        let num_sections = super::INITIAL_SECTIONS_PER_COMPACTOR;
 
         let nominal: usize = (2 * section_size * num_sections as u32) as usize;
 
@@ -396,20 +302,27 @@ where
         1u64 << self.lg_weight
     }
 
-    pub(super) fn state(&self) -> u64 {
-        self.state
-    }
-
     // Private helper methods
 
     fn ensure_enough_sections(&mut self) -> bool {
-        if self.num_sections < MAX_NUM_SECTIONS && self.state >= (1u64 << (self.num_sections - 1)) {
-            if let Some(next) = cpp_next_section_size(self.section_size_raw) {
-                self.section_size_raw = next;
-                self.section_size = nearest_even(next);
-                self.num_sections <<= 1; // Double the sections
-                return true;
-            }
+        let Some(threshold) = self
+            .num_sections
+            .checked_sub(1)
+            .and_then(|shift| 1u64.checked_shl(u32::from(shift)))
+        else {
+            return false;
+        };
+        let Some(num_sections) = self.num_sections.checked_mul(2) else {
+            return false;
+        };
+        let section_size_raw = self.section_size_raw / std::f32::consts::SQRT_2;
+        let section_size = nearest_even_section_size(section_size_raw);
+
+        if self.state >= threshold && section_size >= u32::from(MIN_K) {
+            self.section_size_raw = section_size_raw;
+            self.section_size = section_size;
+            self.num_sections = num_sections;
+            return true;
         }
         false
     }
@@ -493,16 +406,14 @@ where
             .read_u32_le()
             .map_err(insufficient_data("compactor.num_items"))?;
 
-        if lg_weight != expected_lg_weight {
-            return Err(Error::deserial(format!(
-                "REQ compactor lg_weight {lg_weight} does not match level {expected_lg_weight}"
-            )));
-        }
-        if !is_reachable_section_config(k, state, section_size_raw, num_sections) {
-            return Err(Error::deserial(format!(
-                "REQ compactor section configuration is not reachable (k={k}, state={state}, section_size_raw={section_size_raw}, num_sections={num_sections})"
-            )));
-        }
+        super::serialization::validate_compactor_state(
+            k,
+            expected_lg_weight,
+            state,
+            section_size_raw,
+            lg_weight,
+            num_sections,
+        )?;
 
         // Don't trust `num_items` for the allocation: a malformed length could request
         // a multi-gigabyte reservation before the per-item reads below fail. The buffer
@@ -569,7 +480,7 @@ where
             is_sorted,
             state,
             scratch_buffer: Vec::new(),
-            section_size: nearest_even(section_size_raw),
+            section_size: nearest_even_section_size(section_size_raw),
             num_sections,
             lg_weight,
             rank_accuracy,
@@ -587,6 +498,11 @@ where
     /// Returns the level (log weight) of this compactor. Test-only accessor.
     pub(super) fn lg_weight(&self) -> u8 {
         self.lg_weight
+    }
+
+    /// Returns the current state for deterministic compaction. Test-only accessor.
+    pub(super) fn state(&self) -> u64 {
+        self.state
     }
 }
 
@@ -626,15 +542,15 @@ mod tests {
     }
 
     #[test]
-    fn test_nearest_even() {
-        assert_eq!(nearest_even(0.0), 0); // 0/2=0, round(0)=0, 0<<1=0
-        assert_eq!(nearest_even(1.0), 2); // 1/2=0.5, round(0.5)=1, 1<<1=2
-        assert_eq!(nearest_even(2.0), 2); // 2/2=1, round(1)=1, 1<<1=2
-        assert_eq!(nearest_even(3.0), 4); // 3/2=1.5, round(1.5)=2, 2<<1=4
-        assert_eq!(nearest_even(4.0), 4); // 4/2=2, round(2)=2, 2<<1=4
-        assert_eq!(nearest_even(4.6), 4); // 4.6/2=2.3, round(2.3)=2, 2<<1=4
-        assert_eq!(nearest_even(5.6), 6); // 5.6/2=2.8, round(2.8)=3, 3<<1=6
-        assert_eq!(nearest_even(13.0), 14); // 13/2=6.5, round(6.5)=7, 7<<1=14
+    fn test_nearest_even_section_size() {
+        assert_eq!(nearest_even_section_size(0.0), 0); // 0/2=0, round(0)=0, 0<<1=0
+        assert_eq!(nearest_even_section_size(1.0), 2); // 1/2=0.5, round(0.5)=1, 1<<1=2
+        assert_eq!(nearest_even_section_size(2.0), 2); // 2/2=1, round(1)=1, 1<<1=2
+        assert_eq!(nearest_even_section_size(3.0), 4); // 3/2=1.5, round(1.5)=2, 2<<1=4
+        assert_eq!(nearest_even_section_size(4.0), 4); // 4/2=2, round(2)=2, 2<<1=4
+        assert_eq!(nearest_even_section_size(4.6), 4); // 4.6/2=2.3, round(2.3)=2, 2<<1=4
+        assert_eq!(nearest_even_section_size(5.6), 6); // 5.6/2=2.8, round(2.8)=3, 3<<1=6
+        assert_eq!(nearest_even_section_size(13.0), 14); // 13/2=6.5, round(6.5)=7, 7<<1=14
     }
 
     #[test]

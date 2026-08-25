@@ -31,6 +31,14 @@ mod sorted_view;
 mod union;
 mod value;
 
+/// Number of sections in a newly created compactor. The section count and size
+/// determine its capacity and compaction range; the count doubles as its state grows.
+const INITIAL_SECTIONS_PER_COMPACTOR: u8 = 3;
+
+fn nearest_even_section_size(value: f32) -> u32 {
+    ((value / 2.0).round() as u32) << 1
+}
+
 pub use self::iter::ReqSketchIterator;
 pub use self::sketch::ReqSketch;
 pub use self::sketch::ReqSketchBuilder;

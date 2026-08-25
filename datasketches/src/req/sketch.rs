@@ -360,7 +360,7 @@ impl<T: ReqValue> ReqSketch<T> {
 
     const FIXED_RSE_FACTOR: f64 = 0.084;
     fn relative_rse_factor() -> f64 {
-        (0.0512 / super::compactor::INIT_NUM_SECTIONS as f64).sqrt()
+        (0.0512 / super::INITIAL_SECTIONS_PER_COMPACTOR as f64).sqrt()
     }
 
     fn compute_rank_lower_bound(
@@ -409,7 +409,7 @@ impl<T: ReqValue> ReqSketch<T> {
         n: u64,
         hra: bool,
     ) -> bool {
-        let base_cap = k as u64 * super::compactor::INIT_NUM_SECTIONS as u64;
+        let base_cap = k as u64 * super::INITIAL_SECTIONS_PER_COMPACTOR as u64;
         if num_levels == 1 || n <= base_cap {
             return true;
         }
@@ -726,51 +726,24 @@ impl<T: ReqValue> ReqSketch<T> {
             ));
         }
 
-        if compactors
-            .last()
-            .is_some_and(|compactor| compactor.state() != 0)
-        {
-            return Err(Error::deserial(
-                "REQ sketch's highest compactor must not have compacted",
-            ));
-        }
-
-        let mut weighted_count = 0u64;
-        let mut retained_count = 0u32;
-        let mut nominal_capacity = 0u32;
-        for compactor in &compactors {
-            let weight = compactor.weight();
-            let contribution = (compactor.num_items() as u64)
-                .checked_mul(weight)
-                .ok_or_else(|| Error::deserial("REQ retained weighted count overflow"))?;
-            weighted_count = weighted_count
-                .checked_add(contribution)
-                .ok_or_else(|| Error::deserial("REQ retained weighted count overflow"))?;
-
-            let minimum_n = compactor
-                .state()
-                .checked_mul(2)
-                .and_then(|count| count.checked_mul(weight))
-                .ok_or_else(|| Error::deserial("REQ compactor state exceeds stream length"))?;
-            if minimum_n > n {
-                return Err(Error::deserial("REQ compactor state exceeds stream length"));
-            }
-
-            retained_count = retained_count
-                .checked_add(compactor.num_items())
-                .ok_or_else(|| Error::deserial("REQ retained count overflow"))?;
-            nominal_capacity = nominal_capacity
-                .checked_add(compactor.nominal_capacity())
-                .ok_or_else(|| Error::deserial("REQ nominal capacity overflow"))?;
-        }
+        let (retained_count, nominal_capacity, weighted_count) = compactors
+            .iter()
+            .try_fold(
+                (0u32, 0u32, 0u64),
+                |(retained, capacity, weighted), compactor| {
+                    Some((
+                        retained.checked_add(compactor.num_items())?,
+                        capacity.checked_add(compactor.nominal_capacity())?,
+                        weighted.checked_add(
+                            (compactor.num_items() as u64).checked_mul(compactor.weight())?,
+                        )?,
+                    ))
+                },
+            )
+            .ok_or_else(|| Error::deserial("REQ compactor totals overflow"))?;
         if weighted_count != n {
             return Err(Error::deserial(format!(
                 "REQ retained weighted count {weighted_count} does not match n {n}"
-            )));
-        }
-        if retained_count >= nominal_capacity {
-            return Err(Error::deserial(format!(
-                "REQ retained count {retained_count} is not below nominal capacity {nominal_capacity}"
             )));
         }
 

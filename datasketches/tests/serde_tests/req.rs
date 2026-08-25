@@ -371,7 +371,7 @@ fn deserialize_rejects_capacity_changing_float_drift() {
 }
 
 #[test]
-fn deserialize_rejects_state_that_exceeds_n() {
+fn deserialize_rejects_state_that_cannot_advance() {
     let mut bytes = estimation_image(12, 1_000);
     let compactor = ESTIMATION_COMPACTOR_OFFSET;
     bytes[compactor + STATE_OFFSET..compactor + STATE_OFFSET + 8]
@@ -413,11 +413,8 @@ fn deserialize_rejects_invalid_extrema_and_raw_nan() {
 }
 
 #[test]
-fn deserialize_rejects_noncanonical_exact_mode_and_capacity() {
+fn deserialize_rejects_noncanonical_exact_mode() {
     assert_invalid_data(&exact_image(12, &[1.0]));
-
-    let items: Vec<f32> = (0..72).map(|item| item as f32).collect();
-    assert_invalid_data(&exact_image(12, &items));
 }
 
 #[test]
