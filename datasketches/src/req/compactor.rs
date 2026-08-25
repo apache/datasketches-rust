@@ -140,10 +140,17 @@ where
 
     /// Merges items from another compactor into this one.
     pub(super) fn merge(&mut self, other: &Self) {
+        debug_assert_eq!(self.lg_weight, other.lg_weight);
         self.state |= other.state;
-        self.items.extend_from_slice(&other.items);
         if !other.items.is_empty() {
-            self.is_sorted = false;
+            self.sort();
+            if other.is_sorted {
+                self.merge_sorted(&other.items);
+            } else {
+                let mut other_items = other.items.clone();
+                other_items.sort_unstable_by(|a, b| a.total_cmp(b));
+                self.merge_sorted(&other_items);
+            }
         }
         // OR-ing the schedule counters can advance state past several doubling
         // thresholds at once. Loop until no more doublings are needed (C++:

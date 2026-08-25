@@ -231,6 +231,31 @@ fn deserialize_truncated_raw_items() {
     assert_that!(result, err(anything()));
 }
 
+#[test]
+fn merge_preserves_order_across_serde_round_trip() {
+    let mut high = ReqSketch::<f64>::new();
+    let mut low = ReqSketch::<f64>::new();
+
+    for value in 1000..=1072 {
+        high.update(value as f64);
+    }
+    for value in 0..=72 {
+        low.update(value as f64);
+    }
+
+    high.merge(&low).unwrap();
+    let restored = ReqSketch::<f64>::deserialize(&high.serialize()).unwrap();
+    let view = restored.sorted_view();
+
+    for value in 0..=1072 {
+        let value = value as f64;
+        assert_eq!(
+            restored.rank(&value, SearchCriteria::Inclusive).unwrap(),
+            view.rank(&value, SearchCriteria::Inclusive).unwrap(),
+        );
+    }
+}
+
 // ---------- Deserialize hardening: malformed compactor fields ----------
 //
 // A non-empty, non-raw, single-level sketch carries a full 20-byte compactor
