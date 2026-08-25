@@ -107,7 +107,7 @@ divan = { workspace = true }
 approx = { workspace = true }
 googletest = { workspace = true }
 insta = { workspace = true }
-proptest = { workspace = true }
+quickcheck = { workspace = true }
 
 [lints]
 workspace = true
