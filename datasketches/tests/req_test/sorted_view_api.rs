@@ -15,8 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#![cfg(feature = "req")]
-
 //! Tests for the user-managed SortedView API (ported from reqsketch-rs #25):
 //! distribution queries take `&self`, and `sorted_view()` returns an owned
 //! snapshot instead of relying on an internal cache.

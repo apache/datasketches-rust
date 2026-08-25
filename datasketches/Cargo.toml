@@ -106,7 +106,7 @@ rand = { workspace = true, optional = true }
 divan = { workspace = true }
 googletest = { workspace = true }
 insta = { workspace = true }
-proptest = { workspace = true }
+quickcheck = { workspace = true }
 
 [lints]
 workspace = true

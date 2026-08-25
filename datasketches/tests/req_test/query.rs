@@ -15,8 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#![cfg(feature = "req")]
-
 //! Rank, quantile, PMF, and CDF behavior for ReqSketch.
 
 use datasketches::error::Error;

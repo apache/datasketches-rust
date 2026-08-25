@@ -15,8 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#![cfg(feature = "req")]
-
 //! Core ReqSketch construction and update behavior.
 
 use datasketches::error::Error;

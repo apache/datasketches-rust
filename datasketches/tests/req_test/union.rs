@@ -15,8 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#![cfg(feature = "req")]
-
 //! Integration tests for ReqUnion.
 
 use datasketches::req::RankAccuracy;

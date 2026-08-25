@@ -15,8 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#![cfg(feature = "req")]
-
 //! End-to-end accuracy checks for ReqSketch.
 
 use datasketches::error::Error;
