@@ -465,3 +465,62 @@ fn test_deserialize_accepts_valid_lg_map_sizes() {
     assert!(restored.is_empty());
     assert_eq!(restored.lg_max_map_size(), 10);
 }
+
+// Builds a minimal non-empty (four-preamble-long) header. The caller supplies
+// `lg_max`, `lg_cur`, and `active_items`; no item payload is appended, so this
+// is only useful for exercising the header-consistency guards that run before
+// the payload is read.
+fn nonempty_header(lg_max: u8, lg_cur: u8, active_items: u32) -> Vec<u8> {
+    let mut bytes = SketchBytes::with_capacity(24);
+    bytes.write_u8(FREQ_PREAMBLE_LONGS_NONEMPTY);
+    bytes.write_u8(FREQ_SERIAL_VERSION);
+    bytes.write_u8(FREQ_FAMILY_ID);
+    bytes.write_u8(lg_max);
+    bytes.write_u8(lg_cur);
+    bytes.write_u8(0); // flags (not empty)
+    bytes.write_u16_le(0);
+    bytes.write_u32_le(active_items);
+    bytes.write_u32_le(0); // unused
+    bytes.write_u64_le(0); // stream_weight
+    bytes.write_u64_le(0); // offset
+    bytes.into_bytes()
+}
+
+// Regression for tisonkun's report on #224: the accepted boundary
+// `(lg_max, lg_cur) = (30, 30)` on an *empty* header still drove
+// `ReversePurgeItemHashMap::new(1 << 30)` (~1e9 slots, multi-GB) before any
+// payload was read. An empty sketch holds nothing, so it must now build its map
+// at the minimum size and deserialize cheaply instead of attempting the
+// allocation. If the fix regressed, this test would OOM/hang rather than fail.
+#[test]
+fn test_deserialize_empty_header_does_not_over_allocate() {
+    let bytes = [1u8, 1, 10, 30, 30, 5, 0, 0];
+    let restored = FrequentItemsSketch::<i64>::deserialize(&bytes).unwrap();
+    assert!(restored.is_empty());
+    assert_eq!(restored.num_active_items(), 0);
+    assert_eq!(restored.lg_max_map_size(), 30);
+}
+
+// A non-empty header whose `lg_cur_map_size` is too small to hold the claimed
+// `active_items` under the load factor is corrupt: a map of `1 << 3` slots has
+// capacity 6, so it can never hold 100 active items. Reject it instead of
+// trusting the header.
+#[test]
+fn test_deserialize_rejects_lg_cur_inconsistent_with_num_active() {
+    let bytes = nonempty_header(10, 3, 100);
+    let result = FrequentItemsSketch::<i64>::deserialize(&bytes);
+    assert_that!(result, err(anything()));
+    assert_eq!(result.unwrap_err().kind(), ErrorKind::InvalidData);
+}
+
+// A non-empty header claiming a huge `active_items` that the remaining bytes
+// cannot possibly contain must be rejected before any capacity is reserved from
+// that count, so a corrupt header cannot drive a multi-GB `Vec` allocation.
+#[test]
+fn test_deserialize_rejects_num_active_exceeding_payload() {
+    // 700_000_000 <= capacity implied by lg_cur = 30, so it clears the capacity
+    // guard, but there are no item bytes for it, so the length guard rejects it.
+    let bytes = nonempty_header(30, 30, 700_000_000);
+    let result = FrequentItemsSketch::<i64>::deserialize(&bytes);
+    assert_that!(result, err(anything()));
+}

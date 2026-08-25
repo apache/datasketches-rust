@@ -596,7 +596,14 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
         let is_empty = (flags & EMPTY_FLAG_MASK) != 0;
         if is_empty {
             ensure_preamble_longs_in(&[PREAMBLE_LONGS_EMPTY], pre_longs)?;
-            return Ok(Self::with_lg_map_sizes(lg_max, lg_cur));
+            // An empty sketch holds no items, so its backing map only needs the
+            // minimum size regardless of the header's `lg_cur_map_size`. Sizing
+            // the map from the header here is what let an 8-byte empty header
+            // claiming `lg_cur = 30` drive a `1 << 30`-slot allocation. Mirror
+            // the Java/C++ reference, which builds the empty sketch at
+            // `LG_MIN_MAP_SIZE`; the map still grows lazily toward `lg_max` as
+            // items are added later.
+            return Ok(Self::with_lg_map_sizes(lg_max, LG_MIN_MAP_SIZE));
         }
 
         ensure_preamble_longs_in(&[PREAMBLE_LONGS_NONEMPTY], pre_longs)?;
@@ -604,6 +611,18 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
             .read_u32_le()
             .map_err(insufficient_data("active_items"))?;
         let active_items = active_items as usize;
+        // The serialized map of `1 << lg_cur` slots must actually be able to hold
+        // the claimed active items under the load factor; every valid sketch
+        // resizes or purges before `num_active` exceeds this. Reject a header
+        // whose `lg_cur_map_size` is inconsistent with `num_active` rather than
+        // trusting it to size the map.
+        let cur_map_cap = (1usize << lg_cur) * LOAD_FACTOR_NUMERATOR / LOAD_FACTOR_DENOMINATOR;
+        if active_items > cur_map_cap {
+            return Err(Error::deserial(format!(
+                "active_items ({active_items}) exceeds the capacity implied by \
+                 lg_cur_map_size ({lg_cur}): at most {cur_map_cap}"
+            )));
+        }
         cursor
             .read_u32_le()
             .map_err(insufficient_data("<unused>"))?;
@@ -611,6 +630,20 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
             .read_u64_le()
             .map_err(insufficient_data("stream_weight"))?;
         let offset_val = cursor.read_u64_le().map_err(insufficient_data("offset"))?;
+
+        // Bound `active_items` by what the remaining bytes can actually contain
+        // (each active item carries at least its 8-byte weight) before reserving
+        // any capacity from it, so a corrupt count cannot drive a huge `Vec`
+        // allocation ahead of the payload that is really present.
+        let min_payload = active_items
+            .checked_mul(8)
+            .filter(|needed| *needed <= cursor.remaining().len());
+        if min_payload.is_none() {
+            return Err(Error::insufficient_data(format!(
+                "active_items ({active_items}) exceeds the remaining {} bytes",
+                cursor.remaining().len()
+            )));
+        }
 
         let mut values = Vec::with_capacity(active_items);
         for i in 0..active_items {
