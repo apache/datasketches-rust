@@ -560,8 +560,13 @@ impl<T: ReqValue> ReqSketch<T> {
         out.into_bytes()
     }
 
-    /// Deserialize a sketch from bytes produced by [`Self::serialize`] or by the
-    /// C++/Java reference implementations.
+    /// Deserializes a sketch from bytes produced by [`Self::serialize`] or by the
+    /// C++ and Java reference implementations.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the bytes are truncated or the image violates REQ
+    /// serialized-state invariants.
     pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
         use super::compactor::Compactor;
         use super::serialization::FLAG_IS_EMPTY;

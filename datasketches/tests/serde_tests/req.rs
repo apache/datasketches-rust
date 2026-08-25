@@ -348,6 +348,24 @@ fn write_compactor(buf: &mut Vec<u8>, lg_weight: u8, items: &[f32]) {
     }
 }
 
+fn two_level_image(n: u64, min: f32, max: f32, level0: &[f32], level1: &[f32]) -> Vec<u8> {
+    let mut bytes = vec![4u8, 1, 17, FLAG_HRA, 12, 0, 2, 0];
+    bytes.extend_from_slice(&n.to_le_bytes());
+    bytes.extend_from_slice(&min.to_le_bytes());
+    bytes.extend_from_slice(&max.to_le_bytes());
+    write_compactor(&mut bytes, 0, level0);
+    write_compactor(&mut bytes, 1, level1);
+    bytes
+}
+
+fn raw_items_image(flags: u8, items: &[f32]) -> Vec<u8> {
+    let mut bytes = vec![2u8, 1, 17, flags, 12, 0, 1, items.len() as u8];
+    for &item in items {
+        bytes.extend_from_slice(&item.to_le_bytes());
+    }
+    bytes
+}
+
 #[test]
 fn single_level_image_is_valid_baseline() {
     // Control: five non-raw items is the canonical one-level image. Serializers
@@ -386,6 +404,10 @@ fn single_level_image_is_valid_baseline() {
         ReqSketch::<f32>::deserialize(&unsorted_no_claim),
         ok(anything())
     );
+    let one_raw = raw_items_image(FLAG_HRA | FLAG_RAW_ITEMS, &[1.0]);
+    assert_that!(ReqSketch::<f32>::deserialize(&one_raw), ok(anything()));
+    let four_raw = raw_items_image(FLAG_HRA | FLAG_RAW_ITEMS, &[1.0, 2.0, 3.0, 4.0]);
+    assert_that!(ReqSketch::<f32>::deserialize(&four_raw), ok(anything()));
 }
 
 #[test]
@@ -464,20 +486,48 @@ fn deserialize_rejects_false_sorted_claim() {
 
 #[test]
 fn deserialize_rejects_false_sorted_claim_raw_items() {
-    let mut bytes = vec![
-        2u8,
-        1,
-        17,
+    let bytes = raw_items_image(
         FLAG_HRA | FLAG_RAW_ITEMS | FLAG_LEVEL_ZERO_SORTED,
-        12,
-        0,
-        1,
-        2,
-    ];
-    for item in [2.0f32, 1.0] {
-        bytes.extend_from_slice(&item.to_le_bytes());
-    }
+        &[2.0, 1.0],
+    );
     assert_invalid_data_containing(&bytes, "claimed sorted");
+}
+
+#[test]
+fn deserialize_rejects_false_sorted_claim_higher_level() {
+    // Higher levels are always deserialized as sorted. Unsorted level-1 items
+    // isolate that branch from the level-zero flag.
+    let bytes = two_level_image(7, 1.0, 4.0, &[1.0, 2.0, 3.0], &[4.0, 3.0]);
+    assert_invalid_data_containing(&bytes, "claimed sorted");
+}
+
+#[test]
+fn deserialize_rejects_non_raw_exact_mode() {
+    // Serializers use RAW_ITEMS for one-level sketches with n ≤ 4. A one-item
+    // non-raw image isolates the post-n RAW_ITEMS consistency check.
+    let bytes = single_level_image(12, FLAG_HRA, 0, 12.0, 0, 3, 1, &[1.0]);
+    assert_invalid_data_containing(&bytes, "RAW_ITEMS flag is inconsistent");
+}
+
+#[test]
+fn deserialize_rejects_nan_item() {
+    let bytes = single_level_image(
+        12,
+        FLAG_HRA,
+        0,
+        12.0,
+        0,
+        3,
+        5,
+        &[1.0, 2.0, f32::NAN, 4.0, 5.0],
+    );
+    assert_invalid_data_containing(&bytes, "NaN item");
+}
+
+#[test]
+fn deserialize_rejects_nan_raw_item() {
+    let bytes = raw_items_image(FLAG_HRA | FLAG_RAW_ITEMS, &[f32::NAN]);
+    assert_invalid_data_containing(&bytes, "NaN item");
 }
 
 #[test]
@@ -499,24 +549,33 @@ fn deserialize_rejects_retained_at_or_above_capacity() {
 fn deserialize_rejects_weighted_count_mismatch() {
     // Two levels: 3 items at weight 1 plus 1 item at weight 2 → weighted count 5.
     // Lying n isolates the mismatch branch.
-    let mut bytes = vec![4u8, 1, 17, FLAG_HRA, 12, 0, 2, 0];
-    bytes.extend_from_slice(&99u64.to_le_bytes());
-    bytes.extend_from_slice(&1.0f32.to_le_bytes());
-    bytes.extend_from_slice(&4.0f32.to_le_bytes());
-    write_compactor(&mut bytes, 0, &[1.0, 2.0, 3.0]);
-    write_compactor(&mut bytes, 1, &[4.0]);
+    let bytes = two_level_image(99, 1.0, 4.0, &[1.0, 2.0, 3.0], &[4.0]);
     assert_invalid_data_containing(&bytes, "does not match n");
 }
 
 #[test]
 fn deserialize_accepts_matching_two_level_weighted_count() {
-    let mut bytes = vec![4u8, 1, 17, FLAG_HRA, 12, 0, 2, 0];
-    bytes.extend_from_slice(&5u64.to_le_bytes());
-    bytes.extend_from_slice(&1.0f32.to_le_bytes());
-    bytes.extend_from_slice(&4.0f32.to_le_bytes());
-    write_compactor(&mut bytes, 0, &[1.0, 2.0, 3.0]);
-    write_compactor(&mut bytes, 1, &[4.0]);
+    let bytes = two_level_image(5, 1.0, 4.0, &[1.0, 2.0, 3.0], &[4.0]);
     assert_that!(ReqSketch::<f32>::deserialize(&bytes), ok(anything()));
+}
+
+#[test]
+fn deserialize_rejects_nan_min_item() {
+    let bytes = two_level_image(5, f32::NAN, 4.0, &[1.0, 2.0, 3.0], &[4.0]);
+    assert_invalid_data_containing(&bytes, "min or max item is NaN");
+}
+
+#[test]
+fn deserialize_rejects_min_greater_than_max() {
+    let bytes = two_level_image(5, 4.0, 1.0, &[1.0, 2.0, 3.0], &[4.0]);
+    assert_invalid_data_containing(&bytes, "min item is greater than max item");
+}
+
+#[test]
+fn deserialize_rejects_item_outside_min_max() {
+    // min=2 excludes the retained 1.0, isolating the range check from min>max.
+    let bytes = two_level_image(5, 2.0, 4.0, &[1.0, 2.0, 3.0], &[4.0]);
+    assert_invalid_data_containing(&bytes, "outside the serialized min/max range");
 }
 
 #[test]
