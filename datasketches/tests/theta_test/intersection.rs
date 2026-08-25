@@ -41,7 +41,7 @@ fn test_has_result_state_machine() {
 }
 
 #[test]
-fn test_result_before_update_panics() {
+fn test_result_before_first_update_returns_none() {
     let i = ThetaIntersection::with_seed(123);
     assert!(i.to_sketch(true).is_none());
 }

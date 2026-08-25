@@ -25,8 +25,9 @@ use crate::thetacommon::intersection::IntersectionState;
 
 /// Stateful intersection operator for Theta sketches.
 ///
-/// Before the first [`update`](Self::update), the result is undefined; use
-/// [`has_result`](Self::has_result) to check.
+/// A newly created operator has no result. [`has_result`](Self::has_result) returns `false` and
+/// [`to_sketch`](Self::to_sketch) returns `None` until the first successful
+/// [`update`](Self::update).
 #[derive(Debug)]
 pub struct ThetaIntersection {
     state: IntersectionState<ThetaEntry, NoopIntersectionPolicy>,
@@ -63,7 +64,7 @@ impl ThetaIntersection {
         self.state.update(sketch)
     }
 
-    /// Returns whether this operator has received at least one update.
+    /// Returns `true` after the first successful [`update`](Self::update).
     pub fn has_result(&self) -> bool {
         self.state.has_result()
     }
@@ -73,11 +74,12 @@ impl ThetaIntersection {
         size_of::<Self>() + self.state.estimated_size()
     }
 
-    /// Returns the intersection result as a compact theta sketch.
+    /// Returns the current intersection as a compact theta sketch.
     ///
-    /// Returns `None` if called before the first [`update`](Self::update).
-    /// Absence of a result is part of the public state machine; use
-    /// [`has_result`](Self::has_result) or this `Option` return instead of panicking (#192).
+    /// Returns `None` until the first successful [`update`](Self::update). After that, returns
+    /// `Some` even when the intersection is empty.
+    ///
+    /// If `ordered` is `true`, retained hashes are sorted in ascending order.
     pub fn to_sketch(&self, ordered: bool) -> Option<CompactThetaSketch> {
         if !self.state.has_result() {
             return None;
