@@ -165,7 +165,7 @@ impl<T: ReqValue> ReqSketch<T> {
         self.n += 1;
         self.num_retained += 1;
 
-        if self.num_retained == self.max_nom_size {
+        if self.num_retained >= self.max_nom_size {
             self.compress();
         }
     }
@@ -606,19 +606,19 @@ impl<T: ReqValue> ReqSketch<T> {
             RankAccuracy::LowRank
         };
         if !(MIN_K..=MAX_K).contains(&k) || k % 2 != 0 {
-            return Err(Error::invalid_argument(format!(
+            return Err(Error::deserial(format!(
                 "k {k} is not a valid REQ k value"
             )));
         }
 
         if is_empty {
             if num_levels != 0 {
-                return Err(Error::invalid_argument(format!(
+                return Err(Error::deserial(format!(
                     "empty REQ sketch must have 0 levels, got {num_levels}"
                 )));
             }
             if num_raw_items != 0 {
-                return Err(Error::invalid_argument(format!(
+                return Err(Error::deserial(format!(
                     "empty REQ sketch must have 0 raw items, got {num_raw_items}"
                 )));
             }
@@ -626,24 +626,24 @@ impl<T: ReqValue> ReqSketch<T> {
         }
 
         if num_levels == 0 {
-            return Err(Error::invalid_argument(
+            return Err(Error::deserial(
                 "non-empty REQ sketch must have at least one level",
             ));
         }
 
         if raw_items {
             if num_levels != 1 {
-                return Err(Error::invalid_argument(format!(
+                return Err(Error::deserial(format!(
                     "raw-items REQ sketch must have exactly 1 level, got {num_levels}"
                 )));
             }
             if num_raw_items == 0 || num_raw_items as u64 > RAW_ITEMS_THRESHOLD {
-                return Err(Error::invalid_argument(format!(
+                return Err(Error::deserial(format!(
                     "raw-items REQ sketch must contain 1..={RAW_ITEMS_THRESHOLD} items, got {num_raw_items}"
                 )));
             }
         } else if num_raw_items != 0 {
-            return Err(Error::invalid_argument(format!(
+            return Err(Error::deserial(format!(
                 "non-raw REQ sketch must have 0 raw items, got {num_raw_items}"
             )));
         }
@@ -705,15 +705,34 @@ impl<T: ReqValue> ReqSketch<T> {
         }
 
         if n == 0 || min_item.is_none() || max_item.is_none() {
-            return Err(Error::invalid_argument(
-                "non-empty REQ sketch contains no items",
-            ));
+            return Err(Error::deserial("non-empty REQ sketch contains no items"));
         }
 
-        let weighted_count = Self::retained_weighted_count(&compactors)?;
+        let mut weighted_count = 0u64;
+        let mut retained_count = 0u32;
+        let mut total_nominal_capacity = 0u32;
+        for c in &compactors {
+            let contrib = (c.num_items() as u64)
+                .checked_mul(c.weight())
+                .ok_or_else(|| Error::deserial("REQ retained weighted count overflow"))?;
+            weighted_count = weighted_count
+                .checked_add(contrib)
+                .ok_or_else(|| Error::deserial("REQ retained weighted count overflow"))?;
+            retained_count = retained_count
+                .checked_add(c.num_items())
+                .ok_or_else(|| Error::deserial("REQ retained count overflow"))?;
+            total_nominal_capacity = total_nominal_capacity
+                .checked_add(c.nominal_capacity())
+                .ok_or_else(|| Error::deserial("REQ total nominal capacity overflow"))?;
+        }
         if weighted_count != n {
             return Err(Error::deserial(format!(
                 "REQ retained weighted count {weighted_count} does not match n {n}"
+            )));
+        }
+        if retained_count >= total_nominal_capacity {
+            return Err(Error::deserial(format!(
+                "REQ retained count {retained_count} is not below total nominal capacity {total_nominal_capacity}"
             )));
         }
 
@@ -728,19 +747,6 @@ impl<T: ReqValue> ReqSketch<T> {
     }
 
     // --- Internal ---
-
-    fn retained_weighted_count(compactors: &[Compactor<T>]) -> Result<u64, Error> {
-        let mut total = 0u64;
-        for c in compactors {
-            let contrib = (c.num_items() as u64)
-                .checked_mul(c.weight())
-                .ok_or_else(|| Error::deserial("REQ retained weighted count overflow"))?;
-            total = total
-                .checked_add(contrib)
-                .ok_or_else(|| Error::deserial("REQ retained weighted count overflow"))?;
-        }
-        Ok(total)
-    }
 
     pub(super) fn grow(&mut self) {
         let level = self.compactors.len() as u8;

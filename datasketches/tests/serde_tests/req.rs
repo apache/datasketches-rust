@@ -309,9 +309,7 @@ fn deserialize_rejects_out_of_range_section_size() {
 #[test]
 fn deserialize_rejects_undersized_section_size() {
     // `section_size_raw = 0.0` is in `0..=MAX_K` but rounds to `section_size = 0`,
-    // so `nominal_capacity` is 0. `ReqSketch::update` compresses only when
-    // `num_retained == max_nom_size`, which never hits 0 after a non-empty
-    // deserialize, so later updates would retain items without bound.
+    // so `nominal_capacity` is 0. That is not a schedule-produced size.
     let bytes = single_level_image(0.0, 0, 3, 1, &[1.0]);
     let result = ReqSketch::<f32>::deserialize(&bytes);
     assert_that!(result, err(anything()));
@@ -356,6 +354,33 @@ fn deserialize_rejects_level0_lg_weight_mismatch() {
     // A level-0 compactor with lg_weight = 63 and one item used to deserialize,
     // then rank() returned ~9.22e18 instead of a value in [0.0, 1.0].
     let bytes = single_level_image(12.0, 63, 3, 1, &[1.0]);
+    let result = ReqSketch::<f32>::deserialize(&bytes);
+    assert_that!(result, err(anything()));
+    assert_eq!(
+        result.unwrap_err().kind(),
+        ErrorKind::InvalidData,
+        "wrong error kind"
+    );
+}
+
+#[test]
+fn deserialize_rejects_retained_at_or_above_capacity() {
+    // Level-0 capacity for k=12, num_sections=3 is 2 * 12 * 3 = 72.
+    // `update()` compresses when num_retained meets max_nom_size. An image that
+    // already sits at or above capacity would skip compact after the next
+    // equality-only update. Reject both boundaries at deserialize.
+    let at_capacity: Vec<f32> = (0..72).map(|i| i as f32).collect();
+    let bytes = single_level_image(12.0, 0, 3, 72, &at_capacity);
+    let result = ReqSketch::<f32>::deserialize(&bytes);
+    assert_that!(result, err(anything()));
+    assert_eq!(
+        result.unwrap_err().kind(),
+        ErrorKind::InvalidData,
+        "wrong error kind"
+    );
+
+    let over_capacity: Vec<f32> = (0..73).map(|i| i as f32).collect();
+    let bytes = single_level_image(12.0, 0, 3, 73, &over_capacity);
     let result = ReqSketch::<f32>::deserialize(&bytes);
     assert_that!(result, err(anything()));
     assert_eq!(
