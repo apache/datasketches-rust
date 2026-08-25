@@ -248,52 +248,70 @@ fn test_serialized_bytes_stable_for_full_and_merged_digests() {
 }
 
 #[test]
-fn test_update_normalizes_overfull_deserialized_buffer() {
-    // Native v1 decoders accept the buffer count encoded in the image even when it exceeds the
-    // producer's normal update threshold. Construct that noncanonical input explicitly here.
-    let values = (0..201).map(f64::from).collect::<Vec<_>>();
-    let mut bytes = Vec::with_capacity(32 + values.len() * std::mem::size_of::<f64>());
-    bytes.extend_from_slice(&[2, 1, 20]); // preamble longs, serial version, family
-    bytes.extend_from_slice(&10_u16.to_le_bytes());
-    bytes.extend_from_slice(&[0, 0, 0]); // flags and unused bytes
-    bytes.extend_from_slice(&0_u32.to_le_bytes()); // num centroids
-    bytes.extend_from_slice(&(values.len() as u32).to_le_bytes());
-    bytes.extend_from_slice(&0_f64.to_le_bytes()); // min
-    bytes.extend_from_slice(&200_f64.to_le_bytes()); // max
-    for value in values {
-        bytes.extend_from_slice(&value.to_le_bytes());
+fn test_updates_normalize_overfull_deserialized_staging_buffer() {
+    let path = serialization_test_data("cpp_generated_files", "tdigest_double_buf_n10_cpp.sk");
+    let mut bytes = fs::read(path).unwrap();
+    assert_eq!(&bytes[8..12], &0_u32.to_le_bytes()); // num centroids
+    assert_eq!(&bytes[12..16], &10_u32.to_le_bytes()); // num buffered
+
+    // k=100 normally compresses at 840 buffered values. Extend a real C++ staging image just past
+    // that producer threshold while keeping every added value within the recorded min/max range.
+    bytes[12..16].copy_from_slice(&841_u32.to_le_bytes());
+    for _ in 0..831 {
+        bytes.extend_from_slice(&10_f64.to_le_bytes());
     }
 
-    // Exercise the same overfull tail after a compressed prefix has already been established.
-    let mut mixed_bytes = bytes[..32].to_vec();
-    mixed_bytes[8..12].copy_from_slice(&1_u32.to_le_bytes());
-    mixed_bytes[16..24].copy_from_slice(&(-1_f64).to_le_bytes());
-    mixed_bytes.extend_from_slice(&(-1_f64).to_le_bytes()); // centroid mean
-    mixed_bytes.extend_from_slice(&2_u64.to_le_bytes()); // centroid weight
-    mixed_bytes.extend_from_slice(&bytes[32..]);
-
-    for (image, expected_weight, expected_min) in
-        [(&bytes, 10_000, 0.0), (&mixed_bytes, 10_002, -1.0)]
-    {
-        let mut tdigest = TDigestMut::deserialize(image, false).unwrap();
-        for value in 201..10_000 {
-            tdigest.update(f64::from(value));
-        }
-
-        assert_eq!(tdigest.total_weight(), expected_weight);
-        assert_eq!(tdigest.min_value(), Some(expected_min));
-        assert_eq!(tdigest.max_value(), Some(9_999.0));
-        // An overfull image must not disable future compression and let the update buffer grow
-        // with every subsequent value.
-        assert!(tdigest.estimated_size() < 16_384);
-        let serialized = tdigest.serialize();
-        assert_eq!(&serialized[12..16], &0_u32.to_le_bytes());
-
-        let roundtrip = TDigestMut::deserialize(&serialized, false).unwrap();
-        assert_eq!(roundtrip.total_weight(), expected_weight);
-        assert_eq!(roundtrip.min_value(), Some(expected_min));
-        assert_eq!(roundtrip.max_value(), Some(9_999.0));
+    let mut tdigest = TDigestMut::deserialize(&bytes, false).unwrap();
+    for _ in 0..10_000 {
+        tdigest.update(10.0);
     }
+
+    assert_eq!(tdigest.total_weight(), 10_841);
+    assert_eq!(tdigest.min_value(), Some(1.0));
+    assert_eq!(tdigest.max_value(), Some(10.0));
+    // The overfull image must not disable future compression and let the staging buffer grow with
+    // every subsequent value.
+    assert!(tdigest.estimated_size() < 32_768);
+    let serialized = tdigest.serialize();
+    assert_eq!(&serialized[12..16], &0_u32.to_le_bytes());
+
+    let roundtrip = TDigestMut::deserialize(&serialized, false).unwrap();
+    assert_eq!(roundtrip.total_weight(), 10_841);
+    assert_eq!(roundtrip.min_value(), Some(1.0));
+    assert_eq!(roundtrip.max_value(), Some(10.0));
+}
+
+#[test]
+fn test_updates_normalize_overfull_deserialized_centroid_tail() {
+    let path = serialization_test_data("cpp_generated_files", "tdigest_double_buf_n1000_cpp.sk");
+    let mut bytes = fs::read(path).unwrap();
+    assert_eq!(&bytes[8..12], &89_u32.to_le_bytes()); // num centroids
+    assert_eq!(&bytes[12..16], &160_u32.to_le_bytes()); // num buffered
+
+    // Extend the buffered tail of a real mixed C++ image just past the k=100 producer threshold.
+    bytes[12..16].copy_from_slice(&841_u32.to_le_bytes());
+    for _ in 0..681 {
+        bytes.extend_from_slice(&1_000_f64.to_le_bytes());
+    }
+
+    let mut tdigest = TDigestMut::deserialize(&bytes, false).unwrap();
+    for _ in 0..10_000 {
+        tdigest.update(1_000.0);
+    }
+
+    assert_eq!(tdigest.total_weight(), 11_681);
+    assert_eq!(tdigest.min_value(), Some(1.0));
+    assert_eq!(tdigest.max_value(), Some(1_000.0));
+    // The overfull image must not disable future compression and let the centroid tail grow with
+    // every subsequent value.
+    assert!(tdigest.estimated_size() < 32_768);
+    let serialized = tdigest.serialize();
+    assert_eq!(&serialized[12..16], &0_u32.to_le_bytes());
+
+    let roundtrip = TDigestMut::deserialize(&serialized, false).unwrap();
+    assert_eq!(roundtrip.total_weight(), 11_681);
+    assert_eq!(roundtrip.min_value(), Some(1.0));
+    assert_eq!(roundtrip.max_value(), Some(1_000.0));
 }
 
 #[test]
