@@ -39,16 +39,37 @@ type SerializeItem<T> = fn(&mut SketchBytes, &T);
 type DeserializeItems<T> = fn(SketchSlice<'_>, usize) -> Result<Vec<T>, Error>;
 
 const LG_MIN_MAP_SIZE: u8 = 3;
-// Largest `lg_max_map_size` accepted when deserializing. A hash map of `1 << lg`
-// slots must be allocatable, so `lg` has to stay below the width of `usize`
-// (otherwise `1usize << lg` overflows) and within a sane memory budget. The cap
-// mirrors CountMin's `MAX_TABLE_ENTRIES` (`1 << 30`) and rejects corrupt headers
-// before they reach the shift/allocation in `with_lg_map_sizes`.
+// Java represents map sizes as positive `int` powers of two, while the C++
+// implementation uses 32-bit table indices. Keep Rust configurations within
+// the same cross-language range.
 const LG_MAX_MAP_SIZE: u8 = 30;
+const MAX_MAP_SIZE: usize = 1usize << LG_MAX_MAP_SIZE;
 const SAMPLE_SIZE: usize = 1024;
 const EPSILON_FACTOR: f64 = 3.5;
 const LOAD_FACTOR_NUMERATOR: usize = 3;
 const LOAD_FACTOR_DENOMINATOR: usize = 4;
+
+fn map_capacity_for_lg(lg_map_size: u8) -> usize {
+    debug_assert!(lg_map_size <= LG_MAX_MAP_SIZE);
+    (1usize << lg_map_size) * LOAD_FACTOR_NUMERATOR / LOAD_FACTOR_DENOMINATOR
+}
+
+fn validate_lg_map_sizes(lg_max: u8, lg_cur: u8) -> Result<(), Error> {
+    if lg_cur < LG_MIN_MAP_SIZE {
+        return Err(Error::deserial(format!(
+            "lg_cur_map_size must be at least {LG_MIN_MAP_SIZE}, got {lg_cur}"
+        )));
+    }
+    if lg_max > LG_MAX_MAP_SIZE {
+        return Err(Error::deserial(format!(
+            "lg_max_map_size must be at most {LG_MAX_MAP_SIZE}, got {lg_max}"
+        )));
+    }
+    if lg_cur > lg_max {
+        return Err(Error::deserial("lg_cur_map_size exceeds lg_max_map_size"));
+    }
+    Ok(())
+}
 
 /// Error guarantees for frequent item queries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -116,7 +137,8 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     ///
     /// # Panics
     ///
-    /// Panics if `max_map_size` is not a power of two.
+    /// Panics if `max_map_size` is not a power of two or exceeds `2^30`, the
+    /// maximum supported by the cross-language format implementations.
     ///
     /// # Examples
     ///
@@ -132,6 +154,10 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
         assert!(
             max_map_size.is_power_of_two(),
             "max_map_size must be power of 2"
+        );
+        assert!(
+            max_map_size <= MAX_MAP_SIZE,
+            "max_map_size must not exceed {MAX_MAP_SIZE}"
         );
         let lg_max_map_size = max_map_size.trailing_zeros() as u8;
         Self::with_lg_map_sizes(lg_max_map_size, LG_MIN_MAP_SIZE)
@@ -236,7 +262,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     ///
     /// This is `0.75 * max_map_size`.
     pub fn maximum_map_capacity(&self) -> usize {
-        (1usize << self.lg_max_map_size) * LOAD_FACTOR_NUMERATOR / LOAD_FACTOR_DENOMINATOR
+        map_capacity_for_lg(self.lg_max_map_size)
     }
 
     /// Returns the current map capacity.
@@ -480,12 +506,16 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
         let lg_max = lg_max_map_size.max(LG_MIN_MAP_SIZE);
         let lg_cur = lg_cur_map_size.max(LG_MIN_MAP_SIZE);
         assert!(
+            lg_max <= LG_MAX_MAP_SIZE,
+            "lg_max_map_size must not exceed {LG_MAX_MAP_SIZE}"
+        );
+        assert!(
             lg_cur <= lg_max,
             "lg_cur_map_size must not exceed lg_max_map_size"
         );
         let map = ReversePurgeItemHashMap::new(1usize << lg_cur);
         let cur_map_cap = map.capacity();
-        let max_map_cap = (1usize << lg_max) * LOAD_FACTOR_NUMERATOR / LOAD_FACTOR_DENOMINATOR;
+        let max_map_cap = map_capacity_for_lg(lg_max);
         let sample_size = SAMPLE_SIZE.min(max_map_cap);
         Self {
             lg_max_map_size: lg_max,
@@ -573,36 +603,13 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
 
         Family::FREQUENCY.validate_id(family)?;
         ensure_serial_version_is(SERIAL_VERSION, serial_version)?;
-        // Validate the map-size fields before they are used to size (and shift by)
-        // the backing hash map. Without these bounds a corrupt header can drive
-        // `1usize << lg_max` in `with_lg_map_sizes` past the width of `usize`,
-        // panicking in debug builds ("attempt to shift left with overflow") and
-        // requesting an absurd allocation in release builds. Mirrors the C++
-        // reference `check_size`, plus an upper bound Rust needs for memory safety.
-        if lg_cur < LG_MIN_MAP_SIZE {
-            return Err(Error::deserial(format!(
-                "lg_cur_map_size must be at least {LG_MIN_MAP_SIZE}, got {lg_cur}"
-            )));
-        }
-        if lg_max > LG_MAX_MAP_SIZE {
-            return Err(Error::deserial(format!(
-                "lg_max_map_size must be at most {LG_MAX_MAP_SIZE}, got {lg_max}"
-            )));
-        }
-        if lg_cur > lg_max {
-            return Err(Error::deserial("lg_cur_map_size exceeds lg_max_map_size"));
-        }
+        validate_lg_map_sizes(lg_max, lg_cur)?;
 
         let is_empty = (flags & EMPTY_FLAG_MASK) != 0;
         if is_empty {
             ensure_preamble_longs_in(&[PREAMBLE_LONGS_EMPTY], pre_longs)?;
-            // An empty sketch holds no items, so its backing map only needs the
-            // minimum size regardless of the header's `lg_cur_map_size`. Sizing
-            // the map from the header here is what let an 8-byte empty header
-            // claiming `lg_cur = 30` drive a `1 << 30`-slot allocation. Mirror
-            // the Java/C++ reference, which builds the empty sketch at
-            // `LG_MIN_MAP_SIZE`; the map still grows lazily toward `lg_max` as
-            // items are added later.
+            // Java also restores empty images at the minimum size. `lg_cur` does
+            // not carry item state here and must not control an eager allocation.
             return Ok(Self::with_lg_map_sizes(lg_max, LG_MIN_MAP_SIZE));
         }
 
@@ -611,12 +618,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
             .read_u32_le()
             .map_err(insufficient_data("active_items"))?;
         let active_items = active_items as usize;
-        // The serialized map of `1 << lg_cur` slots must actually be able to hold
-        // the claimed active items under the load factor; every valid sketch
-        // resizes or purges before `num_active` exceeds this. Reject a header
-        // whose `lg_cur_map_size` is inconsistent with `num_active` rather than
-        // trusting it to size the map.
-        let cur_map_cap = (1usize << lg_cur) * LOAD_FACTOR_NUMERATOR / LOAD_FACTOR_DENOMINATOR;
+        let cur_map_cap = map_capacity_for_lg(lg_cur);
         if active_items > cur_map_cap {
             return Err(Error::deserial(format!(
                 "active_items ({active_items}) exceeds the capacity implied by \
@@ -631,14 +633,10 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
             .map_err(insufficient_data("stream_weight"))?;
         let offset_val = cursor.read_u64_le().map_err(insufficient_data("offset"))?;
 
-        // Bound `active_items` by what the remaining bytes can actually contain
-        // (each active item carries at least its 8-byte weight) before reserving
-        // any capacity from it, so a corrupt count cannot drive a huge `Vec`
-        // allocation ahead of the payload that is really present.
-        let min_payload = active_items
-            .checked_mul(8)
-            .filter(|needed| *needed <= cursor.remaining().len());
-        if min_payload.is_none() {
+        // Each active item has an eight-byte weight before its encoded key. Check
+        // that lower bound before trusting the count for `Vec` preallocation.
+        let weight_bytes = active_items.checked_mul(size_of::<u64>());
+        if !weight_bytes.is_some_and(|needed| needed <= cursor.remaining().len()) {
             return Err(Error::insufficient_data(format!(
                 "active_items ({active_items}) exceeds the remaining {} bytes",
                 cursor.remaining().len()

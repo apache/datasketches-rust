@@ -457,13 +457,16 @@ fn test_deserialize_rejects_undersized_lg_cur_map_size() {
     assert_that!(result, err(anything()));
 }
 
-// A well-formed empty header at the exact upper bound must still deserialize.
+// The largest supported configuration must remain cheap while the sketch is
+// empty and round-trip through the public constructor and serializer.
 #[test]
-fn test_deserialize_accepts_valid_lg_map_sizes() {
-    let bytes = empty_header(10, 3);
+fn test_maximum_map_size_empty_round_trip() {
+    let sketch = FrequentItemsSketch::<i64>::new(1usize << 30);
+    let bytes = sketch.serialize();
     let restored = FrequentItemsSketch::<i64>::deserialize(&bytes).unwrap();
     assert!(restored.is_empty());
-    assert_eq!(restored.lg_max_map_size(), 10);
+    assert_eq!(restored.lg_max_map_size(), 30);
+    assert_eq!(restored.lg_cur_map_size(), 3);
 }
 
 // Builds a minimal non-empty (four-preamble-long) header. The caller supplies
@@ -471,7 +474,7 @@ fn test_deserialize_accepts_valid_lg_map_sizes() {
 // is only useful for exercising the header-consistency guards that run before
 // the payload is read.
 fn nonempty_header(lg_max: u8, lg_cur: u8, active_items: u32) -> Vec<u8> {
-    let mut bytes = SketchBytes::with_capacity(24);
+    let mut bytes = SketchBytes::with_capacity(32);
     bytes.write_u8(FREQ_PREAMBLE_LONGS_NONEMPTY);
     bytes.write_u8(FREQ_SERIAL_VERSION);
     bytes.write_u8(FREQ_FAMILY_ID);
@@ -494,11 +497,12 @@ fn nonempty_header(lg_max: u8, lg_cur: u8, active_items: u32) -> Vec<u8> {
 // allocation. If the fix regressed, this test would OOM/hang rather than fail.
 #[test]
 fn test_deserialize_empty_header_does_not_over_allocate() {
-    let bytes = [1u8, 1, 10, 30, 30, 5, 0, 0];
+    let bytes = empty_header(30, 30);
     let restored = FrequentItemsSketch::<i64>::deserialize(&bytes).unwrap();
     assert!(restored.is_empty());
     assert_eq!(restored.num_active_items(), 0);
     assert_eq!(restored.lg_max_map_size(), 30);
+    assert_eq!(restored.lg_cur_map_size(), 3);
 }
 
 // A non-empty header whose `lg_cur_map_size` is too small to hold the claimed

@@ -18,7 +18,7 @@ All significant changes to this project will be documented in this file.
 
 ### Bug fixes
 
-* `FrequentItemsSketch::deserialize` now rejects headers whose `lg_max_map_size` or `lg_cur_map_size` fields are out of range instead of panicking (debug builds) or requesting an oversized allocation (release builds) on corrupt input. It also bounds the initial backing-map allocation to the payload: an empty header builds the map at the minimum size instead of honoring `lg_cur_map_size` (so an 8-byte empty header claiming `lg_cur = 30` no longer drives a `1 << 30`-slot allocation), and a non-empty header is rejected when `active_items` is inconsistent with `lg_cur_map_size` or with the remaining serialized bytes.
+* Frequent-items map sizes are now limited consistently to the cross-language maximum of `2^30`: `FrequentItemsSketch::new` rejects larger configurations, and `deserialize` returns `InvalidData` for out-of-range or inconsistent header fields instead of panicking on corrupt input. Empty images restore the minimum backing map instead of allocating from `lg_cur_map_size`, and non-empty images validate `active_items` against the declared map capacity and remaining payload before preallocating their counters.
 * T-Digest compression now handles `k = u16::MAX` without overflowing the scale normalization input.
 * T-Digest deserialization now validates declared payload lengths before allocating. Updating a deserialized digest whose unmerged buffer already exceeds the compression threshold now compresses it instead of allowing the buffer to grow without bound.
 
