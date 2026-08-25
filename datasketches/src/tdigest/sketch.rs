@@ -126,7 +126,7 @@ impl TDigestBuffer {
 
 /// T-Digest sketch for estimating quantiles and ranks.
 ///
-/// See the [module level documentation](crate::tdigest) for more.
+/// See the [module level documentation](super) for more.
 #[derive(Debug, Clone)]
 pub struct TDigestMut {
     k: u16,
@@ -1100,7 +1100,7 @@ impl TDigestMut {
 
 /// Immutable (frozen) T-Digest sketch for estimating quantiles and ranks.
 ///
-/// See the [module level documentation](crate::tdigest) for more.
+/// See the [module level documentation](super) for more.
 pub struct TDigest {
     k: u16,
 

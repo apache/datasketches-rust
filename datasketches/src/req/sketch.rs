@@ -33,7 +33,7 @@ use crate::req::value::ReqValue;
 
 /// A Relative Error Quantiles sketch for approximate quantile estimation.
 ///
-/// See the [module-level documentation](crate::req) for background.
+/// See the [module-level documentation](super) for background.
 #[derive(Debug, Clone)]
 pub struct ReqSketch<T: ReqValue> {
     pub(super) k: u16,

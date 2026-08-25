@@ -91,7 +91,7 @@ impl<T> Row<T> {
 /// The sketch tracks approximate item frequencies and can return estimates with
 /// guaranteed upper and lower bounds.
 ///
-/// See the [module level documentation](crate::frequencies) for an overview and error guarantees.
+/// See the [module level documentation](super) for an overview and error guarantees.
 #[derive(Debug, Clone)]
 pub struct FrequentItemsSketch<T> {
     lg_max_map_size: u8,

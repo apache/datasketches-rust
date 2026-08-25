@@ -30,7 +30,7 @@ use crate::hash::value::Value;
 
 /// An integer value wrapper that uses Rust's natural integer widening before hashing.
 ///
-/// See the [module level documentation](crate::hash::value) for more.
+/// See the [module level documentation](super) for more.
 pub type NaturalExtend<T> = Value<T, NaturalExtendStrategy>;
 
 /// Hashing strategy for [`NaturalExtend`].

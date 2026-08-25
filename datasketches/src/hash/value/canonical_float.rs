@@ -31,7 +31,7 @@ use crate::hash::value::Value;
 
 /// A floating-point value wrapper that uses canonical floating-point hashing.
 ///
-/// See the [module level documentation](crate::hash::value) for more.
+/// See the [module level documentation](super) for more.
 pub type CanonicalFloat<T> = Value<T, CanonicalFloatStrategy>;
 
 /// Hashing strategy for [`CanonicalFloat`].
