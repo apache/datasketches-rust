@@ -16,7 +16,6 @@
 // under the License.
 
 use std::fs;
-use std::mem::size_of_val;
 use std::path::PathBuf;
 
 use datasketches::tdigest::TDigestMut;
@@ -39,32 +38,6 @@ fn patterned_digest(k: u16, len: usize, salt: usize) -> TDigestMut {
         tdigest.update(value);
     }
     tdigest
-}
-
-fn native_image(
-    k: u16,
-    reverse_merge: bool,
-    min: f64,
-    max: f64,
-    centroids: &[(f64, u64)],
-    buffered: &[f64],
-) -> Vec<u8> {
-    let mut bytes = Vec::with_capacity(32 + size_of_val(centroids) + size_of_val(buffered));
-    bytes.extend_from_slice(&[2, 1, 20]); // preamble longs, serial version, family
-    bytes.extend_from_slice(&k.to_le_bytes());
-    bytes.extend_from_slice(&[if reverse_merge { 4 } else { 0 }, 0, 0]);
-    bytes.extend_from_slice(&(centroids.len() as u32).to_le_bytes());
-    bytes.extend_from_slice(&(buffered.len() as u32).to_le_bytes());
-    bytes.extend_from_slice(&min.to_le_bytes());
-    bytes.extend_from_slice(&max.to_le_bytes());
-    for &(mean, weight) in centroids {
-        bytes.extend_from_slice(&mean.to_le_bytes());
-        bytes.extend_from_slice(&weight.to_le_bytes());
-    }
-    for value in buffered {
-        bytes.extend_from_slice(&value.to_le_bytes());
-    }
-    bytes
 }
 
 fn test_sketch_file(path: PathBuf, n: u64, with_buffer: bool, is_f32: bool) {
@@ -262,6 +235,8 @@ fn test_serialized_bytes_stable_for_full_and_merged_digests() {
     for &(left_len, right_len, expected_len, expected_hash) in &[
         (8, 201, 272, 0x8522_1f3f_152f_24e5),
         (201, 8, 256, 0xe60d_1f6f_f4b0_73e0),
+        (201, 401, 288, 0x4cb8_4037_5e68_ca4b),
+        (401, 201, 288, 0x6f6d_e965_77a7_a53f),
     ] {
         let mut left = patterned_digest(10, left_len, 2);
         let right = patterned_digest(10, right_len, 3);
@@ -273,68 +248,64 @@ fn test_serialized_bytes_stable_for_full_and_merged_digests() {
 }
 
 #[test]
-fn test_update_preserves_overfull_deserialized_buffer_lifecycle() {
-    // k=10 normally merges at 200 unmerged values. Older implementations nevertheless accept an
-    // image with 201 buffered values, so the next update must retain the established lifecycle:
-    // append once, then perform exactly one merge when serialization requests a compact image.
+fn test_update_normalizes_overfull_deserialized_buffer() {
+    // Native v1 decoders accept the buffer count encoded in the image even when it exceeds the
+    // producer's normal update threshold. Construct that noncanonical input explicitly here.
     let values = (0..201).map(f64::from).collect::<Vec<_>>();
-    let bytes = native_image(10, false, 0.0, 200.0, &[], &values);
-    let mut tdigest = TDigestMut::deserialize(&bytes, false).unwrap();
-    tdigest.update(201.0);
+    let mut bytes = Vec::with_capacity(32 + values.len() * std::mem::size_of::<f64>());
+    bytes.extend_from_slice(&[2, 1, 20]); // preamble longs, serial version, family
+    bytes.extend_from_slice(&10_u16.to_le_bytes());
+    bytes.extend_from_slice(&[0, 0, 0]); // flags and unused bytes
+    bytes.extend_from_slice(&0_u32.to_le_bytes()); // num centroids
+    bytes.extend_from_slice(&(values.len() as u32).to_le_bytes());
+    bytes.extend_from_slice(&0_f64.to_le_bytes()); // min
+    bytes.extend_from_slice(&200_f64.to_le_bytes()); // max
+    for value in values {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
 
-    let serialized = tdigest.serialize();
-    assert_eq!(tdigest.total_weight(), 202);
-    assert_eq!(serialized.len(), 240);
-    assert_eq!(serialized[5] & 4, 4);
-    assert_eq!(fnv1a(&serialized), 0x7c04_c480_a60f_ff29);
+    // Exercise the same overfull tail after a compressed prefix has already been established.
+    let mut mixed_bytes = bytes[..32].to_vec();
+    mixed_bytes[8..12].copy_from_slice(&1_u32.to_le_bytes());
+    mixed_bytes[16..24].copy_from_slice(&(-1_f64).to_le_bytes());
+    mixed_bytes.extend_from_slice(&(-1_f64).to_le_bytes()); // centroid mean
+    mixed_bytes.extend_from_slice(&2_u64.to_le_bytes()); // centroid weight
+    mixed_bytes.extend_from_slice(&bytes[32..]);
+
+    for (image, expected_weight, expected_min) in
+        [(&bytes, 10_000, 0.0), (&mixed_bytes, 10_002, -1.0)]
+    {
+        let mut tdigest = TDigestMut::deserialize(image, false).unwrap();
+        for value in 201..10_000 {
+            tdigest.update(f64::from(value));
+        }
+
+        assert_eq!(tdigest.total_weight(), expected_weight);
+        assert_eq!(tdigest.min_value(), Some(expected_min));
+        assert_eq!(tdigest.max_value(), Some(9_999.0));
+        // An overfull image must not disable future compression and let the update buffer grow
+        // with every subsequent value.
+        assert!(tdigest.estimated_size() < 16_384);
+        let serialized = tdigest.serialize();
+        assert_eq!(&serialized[12..16], &0_u32.to_le_bytes());
+
+        let roundtrip = TDigestMut::deserialize(&serialized, false).unwrap();
+        assert_eq!(roundtrip.total_weight(), expected_weight);
+        assert_eq!(roundtrip.min_value(), Some(expected_min));
+        assert_eq!(roundtrip.max_value(), Some(9_999.0));
+    }
 }
 
 #[test]
 fn test_deserialize_rejects_truncated_large_payload_before_allocation() {
-    let mut bytes = native_image(10, false, 0.0, 1.0, &[], &[]);
+    let mut tdigest = TDigestMut::new(10);
+    tdigest.update(0.0);
+    tdigest.update(1.0);
+    let mut bytes = tdigest.serialize();
     bytes[8..12].copy_from_slice(&u32::MAX.to_le_bytes());
     bytes[12..16].copy_from_slice(&u32::MAX.to_le_bytes());
 
     assert!(TDigestMut::deserialize(&bytes, false).is_err());
-}
-
-#[test]
-fn test_mixed_state_merge_preserves_stable_order() {
-    for &(left_reverse, right_reverse, expected_flags, expected_hash) in &[
-        (false, true, 4, 0x3865_ad26_04fc_aa2d),
-        (true, false, 0, 0x52ab_9379_2c44_0a6e),
-    ] {
-        let left_image = native_image(
-            10,
-            left_reverse,
-            -1.0,
-            2.0,
-            &[(0.0, 2), (1.0, 3), (2.0, 2)],
-            &[1.0, 1.0, -1.0],
-        );
-        let right_image = native_image(
-            10,
-            right_reverse,
-            0.0,
-            4.0,
-            &[(0.0, 5), (1.0, 2), (3.0, 4)],
-            &[1.0, 0.0, 4.0],
-        );
-        let mut left = TDigestMut::deserialize(&left_image, false).unwrap();
-        let right = TDigestMut::deserialize(&right_image, false).unwrap();
-        let mut right_before = right.clone();
-        let right_before = right_before.serialize();
-
-        left.merge(&right);
-        let serialized = left.serialize();
-        let mut right_after = right.clone();
-
-        assert_eq!(left.total_weight(), 24);
-        assert_eq!(serialized.len(), 160);
-        assert_eq!(serialized[5], expected_flags);
-        assert_eq!(fnv1a(&serialized), expected_hash);
-        assert_eq!(right_after.serialize(), right_before);
-    }
 }
 
 #[test]

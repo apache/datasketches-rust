@@ -269,9 +269,7 @@ impl TDigestMut {
 
         let max_unmerged = self.max_unmerged();
         if let TDigestBuffer::Staging(values) = &mut self.buffer {
-            // Compress only at the exact threshold for compatibility with deserialized images
-            // whose buffered section is already over the normal update-path limit.
-            if values.len() != max_unmerged {
+            if values.len() < max_unmerged {
                 if values.len() == values.capacity() {
                     let target_capacity = if values.capacity() == 0 {
                         INITIAL_UNMERGED_CAPACITY
@@ -299,9 +297,8 @@ impl TDigestMut {
 
         if matches!(
             &self.buffer,
-            TDigestBuffer::Centroids { unmerged_tail_len, .. } if *unmerged_tail_len == max_unmerged
+            TDigestBuffer::Centroids { unmerged_tail_len, .. } if *unmerged_tail_len >= max_unmerged
         ) {
-            // The same equality check preserves the lifecycle of accepted overfull mixed images.
             self.compress();
         }
 
