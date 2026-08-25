@@ -24,7 +24,7 @@ use crate::error::Error;
 
 /// Combines multiple [`ReqSketch`]es into a single result.
 ///
-/// Internally wraps a `ReqSketch` configured for union semantics. 
+/// Internally wraps a `ReqSketch` configured for union semantics.
 #[derive(Debug, Clone)]
 pub struct ReqUnion<T: ReqValue> {
     inner: ReqSketch<T>,
