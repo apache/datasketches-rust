@@ -282,6 +282,22 @@ fn deserialize_rejects_out_of_range_section_size() {
 }
 
 #[test]
+fn deserialize_rejects_undersized_section_size() {
+    // `section_size_raw = 0.0` is in `0..=MAX_K` but rounds to `section_size = 0`,
+    // so `nominal_capacity` is 0. `ReqSketch::update` compresses only when
+    // `num_retained == max_nom_size`, which never hits 0 after a non-empty
+    // deserialize, so later updates would retain items without bound.
+    let bytes = single_level_image(0.0, 0, 3, 1, &[1.0]);
+    let result = ReqSketch::<f32>::deserialize(&bytes);
+    assert_that!(result, err(anything()));
+    assert_eq!(
+        result.unwrap_err().kind(),
+        ErrorKind::InvalidData,
+        "wrong error kind"
+    );
+}
+
+#[test]
 fn deserialize_rejects_oversized_lg_weight() {
     // lg_weight >= 64 makes the per-item weight `1u64 << lg_weight` overflow.
     let bytes = single_level_image(12.0, 64, 3, 1, &[1.0]);

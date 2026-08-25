@@ -407,11 +407,16 @@ where
 
         // Validate the wire-controlled fields before they feed capacity/weight
         // arithmetic. A legitimate compactor always satisfies these bounds
-        // (`section_size` derives from k ≤ MAX_K and only shrinks; `lg_weight` is the
-        // level index; `num_sections` follows the doubling schedule from
-        // `INIT_NUM_SECTIONS`), so rejecting anything else keeps `nominal_capacity`,
-        // `weight`, and `ensure_enough_sections` from overflowing on crafted input.
-        if !(0.0..=super::MAX_K as f32).contains(&section_size_raw) {
+        // (`section_size` derives from k ≤ MAX_K and only shrinks while
+        // `nearest_even` stays ≥ MIN_K; `lg_weight` is the level index;
+        // `num_sections` follows the doubling schedule from `INIT_NUM_SECTIONS`),
+        // so rejecting anything else keeps `nominal_capacity`, `weight`, and
+        // `ensure_enough_sections` from overflowing on crafted input.
+        // A rounded size below MIN_K yields `nominal_capacity == 0` for size 0,
+        // and `ReqSketch::update` only compresses when `num_retained == max_nom_size`.
+        if !(0.0..=super::MAX_K as f32).contains(&section_size_raw)
+            || nearest_even(section_size_raw) < u32::from(MIN_K)
+        {
             return Err(Error::deserial(format!(
                 "REQ compactor section_size {section_size_raw} out of range"
             )));
