@@ -23,6 +23,11 @@ use datasketches::req::RankAccuracy;
 use datasketches::req::ReqSketch;
 use datasketches::req::ReqUnion;
 use datasketches::req::SearchCriteria;
+use googletest::assert_that;
+use googletest::prelude::anything;
+use googletest::prelude::err;
+use googletest::prelude::near;
+use googletest::prelude::ok;
 
 #[test]
 fn union_equivalent_to_chained_merge() {
@@ -61,8 +66,8 @@ fn union_equivalent_to_chained_merge() {
         .quantile(0.5, SearchCriteria::Inclusive)
         .expect("quantile should succeed");
 
-    assert!((q_union - true_median).abs() <= tolerance);
-    assert!((q_merge - true_median).abs() <= tolerance);
+    assert_that!(q_union, near(true_median, tolerance));
+    assert_that!(q_merge, near(true_median, tolerance));
 }
 
 #[test]
@@ -88,8 +93,14 @@ fn reset_clears_union_state() {
 
 #[test]
 fn try_new_validates_k() {
-    assert!(ReqUnion::<f64>::try_new(3, RankAccuracy::HighRank).is_err());
-    assert!(ReqUnion::<f64>::try_new(12, RankAccuracy::HighRank).is_ok());
+    assert_that!(
+        ReqUnion::<f64>::try_new(3, RankAccuracy::HighRank),
+        err(anything())
+    );
+    assert_that!(
+        ReqUnion::<f64>::try_new(12, RankAccuracy::HighRank),
+        ok(anything())
+    );
 }
 
 #[test]

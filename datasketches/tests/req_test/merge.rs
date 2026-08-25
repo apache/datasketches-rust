@@ -22,6 +22,10 @@
 use datasketches::req::RankAccuracy;
 use datasketches::req::ReqSketch;
 use datasketches::req::SearchCriteria;
+use googletest::assert_that;
+use googletest::prelude::anything;
+use googletest::prelude::err;
+use googletest::prelude::near;
 
 #[test]
 fn merge_into_empty_preserves_source_distribution() {
@@ -57,10 +61,10 @@ fn merge_into_empty_preserves_source_distribution() {
         .rank(&500.0, SearchCriteria::Inclusive)
         .expect("rank should succeed");
 
-    assert!((q25 - 250.0).abs() / 250.0 <= 0.01);
-    assert!((q50 - 500.0).abs() / 500.0 <= 0.01);
-    assert!((q75 - 750.0).abs() / 750.0 <= 0.01);
-    assert!((r50 - 0.5).abs() / 0.5 <= 0.01);
+    assert_that!(q25, near(250.0, 250.0 * 0.01));
+    assert_that!(q50, near(500.0, 500.0 * 0.01));
+    assert_that!(q75, near(750.0, 750.0 * 0.01));
+    assert_that!(r50, near(0.5, 0.5 * 0.01));
 }
 
 #[test]
@@ -100,10 +104,10 @@ fn merge_two_ranges_preserves_distribution() {
         .rank(&1000.0, SearchCriteria::Inclusive)
         .expect("rank should succeed");
 
-    assert!((q25 - 500.0).abs() / 500.0 <= 0.02);
-    assert!((q50 - 1000.0).abs() / 1000.0 <= 0.01);
-    assert!((q75 - 1500.0).abs() / 1500.0 <= 0.01);
-    assert!((r50 - 0.5).abs() / 0.5 <= 0.01);
+    assert_that!(q25, near(500.0, 500.0 * 0.02));
+    assert_that!(q50, near(1000.0, 1000.0 * 0.01));
+    assert_that!(q75, near(1500.0, 1500.0 * 0.01));
+    assert_that!(r50, near(0.5, 0.5 * 0.01));
 }
 
 #[test]
@@ -115,7 +119,7 @@ fn merge_rejects_incompatible_accuracy_modes() {
         .expect("build should succeed");
 
     high_rank.update(1.0);
-    assert!(high_rank.merge(&low_rank).is_err());
+    assert_that!(high_rank.merge(&low_rank), err(anything()));
 }
 
 #[test]
@@ -137,5 +141,5 @@ fn many_small_merges_preserve_count_bounds_and_median() {
     let median = sketch
         .quantile(0.5, SearchCriteria::Inclusive)
         .expect("quantile should succeed");
-    assert!((median - 4999.5).abs() < 500.0);
+    assert_that!(median, near(4999.5, 500.0));
 }

@@ -25,7 +25,10 @@ use datasketches::theta::ThetaANotB;
 use datasketches::theta::ThetaSketch;
 use datasketches::theta::ThetaSketchBuilder;
 use googletest::assert_that;
+use googletest::prelude::anything;
+use googletest::prelude::err;
 use googletest::prelude::lt;
+use googletest::prelude::near;
 
 fn sketch_with_range(start: u64, count: u64) -> ThetaSketch {
     let mut sketch = ThetaSketchBuilder::default().build();
@@ -73,8 +76,14 @@ fn test_seed_mismatch_returns_error() {
     let good = sketch_with_range(0, 10);
 
     let a_not_b = ThetaANotB::with_seed(1);
-    assert!(a_not_b.compute(&one_other_seed, &good, true).is_err());
-    assert!(a_not_b.compute(&good, &one_other_seed, true).is_err());
+    assert_that!(
+        a_not_b.compute(&one_other_seed, &good, true),
+        err(anything())
+    );
+    assert_that!(
+        a_not_b.compute(&good, &one_other_seed, true),
+        err(anything())
+    );
 }
 
 #[test]
@@ -201,7 +210,7 @@ fn test_estimation_lower_theta_b_unordered() {
     assert!(!r.is_empty());
     assert!(r.is_estimation_mode());
     assert_eq!(r.theta64(), b.theta64());
-    assert!((r.estimate() - 5000.0).abs() <= 5000.0 * 0.03);
+    assert_that!(r.estimate(), near(5000.0, 5000.0 * 0.03));
 }
 
 #[test]
@@ -218,7 +227,7 @@ fn test_estimation_lower_theta_b_ordered() {
     assert!(!r.is_empty());
     assert!(r.is_estimation_mode());
     assert_eq!(r.theta64(), b.theta64());
-    assert!((r.estimate() - 5000.0).abs() <= 5000.0 * 0.03);
+    assert_that!(r.estimate(), near(5000.0, 5000.0 * 0.03));
 }
 
 #[test]
@@ -233,7 +242,7 @@ fn test_estimation_partial_overlap_deserialized_compact() {
 
     assert!(!r.is_empty());
     assert!(r.is_estimation_mode());
-    assert!((r.estimate() - 5000.0).abs() <= 5000.0 * 0.02);
+    assert_that!(r.estimate(), near(5000.0, 5000.0 * 0.02));
 }
 
 #[test]
@@ -246,5 +255,5 @@ fn test_estimation_disjoint_returns_a() {
 
     assert!(!r.is_empty());
     assert!(r.is_estimation_mode());
-    assert!((r.estimate() - 10000.0).abs() <= 10000.0 * 0.02);
+    assert_that!(r.estimate(), near(10000.0, 10000.0 * 0.02));
 }

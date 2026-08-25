@@ -31,6 +31,13 @@ use datasketches::common::NumStdDev;
 use datasketches::hll::HllSketch;
 use datasketches::hll::HllType;
 use datasketches::hll::HllUnion;
+use googletest::assert_that;
+use googletest::prelude::all;
+use googletest::prelude::ge;
+use googletest::prelude::gt;
+use googletest::prelude::le;
+use googletest::prelude::lt;
+use googletest::prelude::near;
 
 const HLL_TYPES: [HllType; 3] = [HllType::Hll4, HllType::Hll6, HllType::Hll8];
 
@@ -44,8 +51,9 @@ fn make_hll_sketch(hll_type: HllType, lg_config_k: u8, start: u64, end: u64) -> 
 
 fn assert_estimate_within(estimate: f64, expected: f64, relative_error: f64) {
     let actual_relative_error = (estimate - expected).abs() / expected;
-    assert!(
-        actual_relative_error <= relative_error,
+    assert_that!(
+        actual_relative_error,
+        le(relative_error),
         "Expected estimate within {:.1}% of {}, got {} ({:.1}% error)",
         relative_error * 100.0,
         expected,
@@ -102,10 +110,10 @@ fn test_union_basic_operations() {
 
     // Should estimate ~900 unique values (0-899)
     let estimate = union.estimate();
-    assert!(
-        estimate > 800.0 && estimate < 1000.0,
-        "Expected estimate around 900, got {}",
-        estimate
+    assert_that!(
+        estimate,
+        all!(gt(800.0), lt(1000.0)),
+        "Expected estimate around 900"
     );
     assert!(!union.is_empty());
 
@@ -118,7 +126,7 @@ fn test_union_basic_operations() {
     union.update_value("hello");
     union.update_value(42i32);
     union.update_value(vec![1, 2, 3]);
-    assert!(union.estimate() > estimate_before);
+    assert_that!(union.estimate(), gt(estimate_before));
 
     // Test duplicate handling - same sketch added multiple times
     let mut dup_union = HllUnion::new(12);
@@ -130,10 +138,10 @@ fn test_union_basic_operations() {
         dup_union.update(&sketch);
     }
     let dup_estimate = dup_union.estimate();
-    assert!(
-        (dup_estimate - 100.0).abs() < 20.0,
-        "Duplicates should not inflate estimate, got {}",
-        dup_estimate
+    assert_that!(
+        dup_estimate,
+        near(100.0, 20.0),
+        "Duplicates should not inflate estimate"
     );
 }
 
@@ -156,11 +164,7 @@ fn test_union_mode_transitions() {
     union.update(&sketch2);
 
     let estimate = union.estimate();
-    assert!(
-        (estimate - 15.0).abs() < 5.0,
-        "List mode: expected estimate around 15, got {}",
-        estimate
-    );
+    assert_that!(estimate, near(15.0, 5.0), "List mode estimate");
 
     // Trigger Set mode promotion
     let mut sketch3 = HllSketch::new(12, HllType::Hll8);
@@ -170,11 +174,7 @@ fn test_union_mode_transitions() {
     union.update(&sketch3);
 
     let estimate = union.estimate();
-    assert!(
-        (estimate - 600.0).abs() < 100.0,
-        "Set mode: estimate should be close to 600, got {}",
-        estimate
-    );
+    assert_that!(estimate, near(600.0, 100.0), "Set mode estimate");
 
     // Trigger HLL mode promotion
     let mut sketch4 = HllSketch::new(12, HllType::Hll8);
@@ -184,10 +184,10 @@ fn test_union_mode_transitions() {
     union.update(&sketch4);
 
     let estimate = union.estimate();
-    assert!(
-        estimate > 9_000.0 && estimate < 11_000.0,
-        "HLL mode: expected estimate around 10000, got {}",
-        estimate
+    assert_that!(
+        estimate,
+        all!(gt(9_000.0), lt(11_000.0)),
+        "HLL mode estimate"
     );
 }
 
@@ -214,10 +214,10 @@ fn test_union_mixed_modes() {
     let estimate = result.estimate();
 
     // Should estimate ~10,003 unique values
-    assert!(
-        estimate > 9_500.0 && estimate < 10_500.0,
-        "Expected estimate around 10000, got {}",
-        estimate
+    assert_that!(
+        estimate,
+        all!(gt(9_500.0), lt(10_500.0)),
+        "Expected estimate around 10000"
     );
 }
 
@@ -260,11 +260,10 @@ fn test_union_mixed_hll_types() {
         (result6.estimate(), "Hll6"),
         (result8.estimate(), "Hll8"),
     ] {
-        assert!(
-            result > 6_000.0 && result < 8_000.0,
-            "{}: expected estimate around 7000, got {}",
-            type_name,
-            result
+        assert_that!(
+            result,
+            all!(gt(6_000.0), lt(8_000.0)),
+            "{type_name}: expected estimate around 7000"
         );
     }
 }
@@ -303,10 +302,10 @@ fn test_union_lg_k_handling() {
 
     // Should estimate ~10,000 unique values (0-9,999)
     // Lower precision means higher error tolerance
-    assert!(
-        estimate > 8_000.0 && estimate < 12_000.0,
-        "Expected estimate around 10000, got {}",
-        estimate
+    assert_that!(
+        estimate,
+        all!(gt(8_000.0), lt(12_000.0)),
+        "Expected estimate around 10000"
     );
 
     // Test downsampling: union at lower precision than sketch
@@ -321,10 +320,10 @@ fn test_union_lg_k_handling() {
     assert_eq!(result2.lg_config_k(), 10, "Result should be at lg_k=10");
 
     let estimate2 = result2.estimate();
-    assert!(
-        estimate2 > 4_000.0 && estimate2 < 6_000.0,
-        "Downsampling should still estimate ~5000, got {}",
-        estimate2
+    assert_that!(
+        estimate2,
+        all!(gt(4_000.0), lt(6_000.0)),
+        "Downsampled estimate"
     );
 }
 
@@ -410,9 +409,9 @@ fn test_union_bounds() {
     assert_eq!(union.estimate(), 0.0);
     let empty_lower = union.lower_bound(NumStdDev::Two);
     let empty_upper = union.upper_bound(NumStdDev::Two);
-    assert!(empty_lower >= 0.0, "Lower bound should be non-negative");
-    assert!(empty_upper >= 0.0, "Upper bound should be non-negative");
-    assert!(empty_lower <= empty_upper);
+    assert_that!(empty_lower, ge(0.0), "Lower bound should be non-negative");
+    assert_that!(empty_upper, ge(0.0), "Upper bound should be non-negative");
+    assert_that!(empty_lower, le(empty_upper));
 
     // Add sketches
     let mut sketch1 = HllSketch::new(12, HllType::Hll8);
@@ -437,18 +436,18 @@ fn test_union_bounds() {
     let lower3 = union.lower_bound(NumStdDev::Three);
 
     // Basic sanity checks
-    assert!(lower1 <= estimate);
-    assert!(estimate <= upper1);
+    assert_that!(estimate, ge(lower1));
+    assert_that!(estimate, le(upper1));
 
     // Bounds should widen with more standard deviations
-    assert!(lower2 <= lower1);
-    assert!(upper1 <= upper2);
-    assert!(lower3 <= lower2);
-    assert!(upper2 <= upper3);
+    assert_that!(lower2, le(lower1));
+    assert_that!(upper1, le(upper2));
+    assert_that!(lower3, le(lower2));
+    assert_that!(upper2, le(upper3));
 
     // Bounds should be reasonable
-    assert!(lower3 > estimate * 0.5);
-    assert!(upper3 < estimate * 1.5);
+    assert_that!(lower3, gt(estimate * 0.5));
+    assert_that!(upper3, lt(estimate * 1.5));
 
     // Test that smaller lg_k has wider bounds (higher RSE)
     let mut union_small = HllUnion::new(8);
@@ -475,8 +474,9 @@ fn test_union_bounds() {
         - union_large.lower_bound(NumStdDev::Two))
         / est_large;
 
-    assert!(
-        width_small > width_large,
+    assert_that!(
+        width_small,
+        gt(width_large),
         "Smaller union should have wider confidence interval: {} vs {}",
         width_small,
         width_large
@@ -494,7 +494,7 @@ fn test_union_reset() {
 
     union.update(&sketch);
     assert!(!union.is_empty());
-    assert!(union.estimate() > 900.0);
+    assert_that!(union.estimate(), gt(900.0));
 
     // Reset should clear all state
     union.reset();
@@ -689,8 +689,9 @@ fn test_union_large_cardinality() {
     let relative_error = (estimate - 200_000.0).abs() / 200_000.0;
 
     // For lg_k=14, relative error should be ~1.04%
-    assert!(
-        relative_error < 0.05,
+    assert_that!(
+        relative_error,
+        lt(0.05),
         "Relative error should be < 5%, got {:.2}%",
         relative_error * 100.0
     );

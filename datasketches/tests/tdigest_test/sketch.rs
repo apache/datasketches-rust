@@ -20,6 +20,7 @@ use std::mem::size_of;
 use datasketches::tdigest::TDigestMut;
 use googletest::assert_that;
 use googletest::prelude::eq;
+use googletest::prelude::is_finite;
 use googletest::prelude::near;
 
 #[test]
@@ -308,10 +309,7 @@ fn test_extreme_values_produce_finite_quantiles() {
     assert_eq!(tdigest.max_value(), Some(f64::MAX));
     for rank in [0.25, 0.5, 0.75] {
         let quantile = tdigest.quantile(rank).unwrap();
-        assert!(
-            quantile.is_finite(),
-            "quantile at rank {rank} must be finite, got {quantile}"
-        );
+        assert_that!(quantile, is_finite(), "quantile at rank {rank}");
     }
 }
 

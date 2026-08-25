@@ -20,6 +20,10 @@ use datasketches::error::ErrorKind;
 use datasketches::tuple::SummaryCombinePolicy;
 use datasketches::tuple::SummaryPolicy;
 use datasketches::tuple::TupleIntersection;
+use googletest::assert_that;
+use googletest::prelude::all;
+use googletest::prelude::ge;
+use googletest::prelude::le;
 
 use super::default_tuple_sketch_builder;
 use super::tuple_sketch_with_range;
@@ -173,10 +177,7 @@ fn estimation_bounds_cover_the_true_intersection() {
     let upper = result.upper_bound(NumStdDev::Three);
 
     assert!(result.is_estimation_mode());
-    assert!(
-        lower <= 25_000.0 && 25_000.0 <= upper,
-        "expected 25000 in [{lower}, {upper}]"
-    );
+    assert_that!(25_000.0, all!(ge(lower), le(upper)));
 }
 
 #[test]

@@ -18,6 +18,12 @@
 use datasketches::common::NumStdDev;
 use datasketches::hash::value::canonical_float;
 use datasketches::theta::ThetaSketchBuilder;
+use googletest::assert_that;
+use googletest::prelude::ge;
+use googletest::prelude::gt;
+use googletest::prelude::le;
+use googletest::prelude::lt;
+use googletest::prelude::near;
 
 #[test]
 fn test_basic_update() {
@@ -88,7 +94,7 @@ fn test_theta_reduction() {
     }
 
     assert!(sketch.is_estimation_mode()); // Should be in estimation mode
-    assert!(sketch.theta() < 1.0);
+    assert_that!(sketch.theta(), lt(1.0));
 }
 
 #[test]
@@ -110,7 +116,7 @@ fn test_trim() {
     let mut retained_hashes: Vec<_> = sketch.iter().map(|entry| entry.hash()).collect();
     retained_hashes.sort_unstable();
 
-    assert!(sketch.num_retained() <= before_trim);
+    assert_that!(sketch.num_retained(), le(before_trim));
     assert_eq!(sketch.num_retained(), 32);
     assert_eq!(retained_hashes, expected_hashes[..32]);
     assert_eq!(sketch.theta64(), expected_hashes[32]);
@@ -126,8 +132,8 @@ fn test_reset() {
     }
     assert!(!sketch.is_empty());
     assert!(sketch.is_estimation_mode());
-    assert!(sketch.num_retained() > 32);
-    assert!(sketch.theta() < 1.0);
+    assert_that!(sketch.num_retained(), gt(32));
+    assert_that!(sketch.theta(), lt(1.0));
 
     sketch.reset();
     assert!(sketch.is_empty());
@@ -189,7 +195,7 @@ fn test_bounds_estimation_mode() {
     }
     assert!(!sketch.is_empty());
     assert!(sketch.is_estimation_mode());
-    assert!(sketch.theta() < 1.0);
+    assert_that!(sketch.theta(), lt(1.0));
 
     let estimate = sketch.estimate();
     let lower_bound_1 = sketch.lower_bound(NumStdDev::One);
@@ -200,26 +206,21 @@ fn test_bounds_estimation_mode() {
     let upper_bound_3 = sketch.upper_bound(NumStdDev::Three);
 
     // Check estimate is within reasonable margin (2% to be safe)
-    assert!(
-        (estimate - n as f64).abs() < n as f64 * 0.02,
-        "estimate {} is not within 2% of {}",
-        estimate,
-        n
-    );
+    assert_that!(estimate, near(n as f64, n as f64 * 0.02));
 
     // Check bounds are in correct order
-    assert!(lower_bound_1 < estimate);
-    assert!(estimate < upper_bound_1);
-    assert!(lower_bound_2 < estimate);
-    assert!(estimate < upper_bound_2);
-    assert!(lower_bound_3 < estimate);
-    assert!(estimate < upper_bound_3);
+    assert_that!(estimate, gt(lower_bound_1));
+    assert_that!(estimate, lt(upper_bound_1));
+    assert_that!(estimate, gt(lower_bound_2));
+    assert_that!(estimate, lt(upper_bound_2));
+    assert_that!(estimate, gt(lower_bound_3));
+    assert_that!(estimate, lt(upper_bound_3));
 
     // Check that wider confidence intervals are indeed wider
-    assert!(lower_bound_3 < lower_bound_2);
-    assert!(lower_bound_2 < lower_bound_1);
-    assert!(upper_bound_1 < upper_bound_2);
-    assert!(upper_bound_2 < upper_bound_3);
+    assert_that!(lower_bound_3, lt(lower_bound_2));
+    assert_that!(lower_bound_2, lt(lower_bound_1));
+    assert_that!(upper_bound_1, lt(upper_bound_2));
+    assert_that!(upper_bound_2, lt(upper_bound_3));
 }
 
 #[test]
@@ -235,14 +236,14 @@ fn test_bounds_with_sampling() {
 
     assert!(!sketch.is_empty());
     assert!(sketch.is_estimation_mode());
-    assert!(sketch.theta() < 1.0);
+    assert_that!(sketch.theta(), lt(1.0));
 
     let estimate = sketch.estimate();
     let lower_bound = sketch.lower_bound(NumStdDev::Two);
     let upper_bound = sketch.upper_bound(NumStdDev::Two);
 
-    assert!(lower_bound <= estimate);
-    assert!(estimate <= upper_bound);
+    assert_that!(estimate, ge(lower_bound));
+    assert_that!(estimate, le(upper_bound));
 }
 
 #[test]
@@ -262,10 +263,10 @@ fn test_bounds_all_num_std_devs() {
     let ub3 = sketch.upper_bound(NumStdDev::Three);
 
     // Verify the bounds are properly ordered
-    assert!(lb3 <= lb2);
-    assert!(lb2 <= lb1);
-    assert!(ub1 <= ub2);
-    assert!(ub2 <= ub3);
+    assert_that!(lb3, le(lb2));
+    assert_that!(lb2, le(lb1));
+    assert_that!(ub1, le(ub2));
+    assert_that!(ub2, le(ub3));
 }
 
 #[test]

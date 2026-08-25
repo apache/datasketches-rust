@@ -273,6 +273,14 @@ where
 
 #[cfg(test)]
 mod tests {
+    use googletest::assert_that;
+    use googletest::prelude::all;
+    use googletest::prelude::anything;
+    use googletest::prelude::err;
+    use googletest::prelude::ge;
+    use googletest::prelude::le;
+    use googletest::prelude::near;
+
     use super::*;
 
     fn create_test_view() -> SortedView<i32> {
@@ -293,16 +301,16 @@ mod tests {
         let view = create_test_view();
 
         // Test exact matches
-        assert!((view.rank(&1, SearchCriteria::Inclusive)? - 0.2).abs() < 1e-10);
-        assert!((view.rank(&1, SearchCriteria::Exclusive)? - 0.0).abs() < 1e-10);
+        assert_that!(view.rank(&1, SearchCriteria::Inclusive)?, near(0.2, 1e-10));
+        assert_that!(view.rank(&1, SearchCriteria::Exclusive)?, near(0.0, 1e-10));
 
         // Test values between items
-        assert!((view.rank(&2, SearchCriteria::Inclusive)? - 0.2).abs() < 1e-10);
-        assert!((view.rank(&6, SearchCriteria::Inclusive)? - 0.6).abs() < 1e-10);
+        assert_that!(view.rank(&2, SearchCriteria::Inclusive)?, near(0.2, 1e-10));
+        assert_that!(view.rank(&6, SearchCriteria::Inclusive)?, near(0.6, 1e-10));
 
         // Test edge cases
-        assert!((view.rank(&0, SearchCriteria::Inclusive)? - 0.0).abs() < 1e-10);
-        assert!((view.rank(&10, SearchCriteria::Inclusive)? - 1.0).abs() < 1e-10);
+        assert_that!(view.rank(&0, SearchCriteria::Inclusive)?, near(0.0, 1e-10));
+        assert_that!(view.rank(&10, SearchCriteria::Inclusive)?, near(1.0, 1e-10));
         Ok(())
     }
 
@@ -316,13 +324,13 @@ mod tests {
 
         // Test middle values
         let median = view.quantile(0.5, SearchCriteria::Inclusive)?;
-        assert!((3..=7).contains(&median)); // Should be around the middle (values are 1,3,5,7,9)
+        assert_that!(median, all!(ge(3), le(7))); // Should be around the middle (values are 1,3,5,7,9)
 
         // Test various ranks
         let q25 = view.quantile(0.25, SearchCriteria::Inclusive)?;
         let q75 = view.quantile(0.75, SearchCriteria::Inclusive)?;
-        assert!(q25 <= median);
-        assert!(median <= q75);
+        assert_that!(q25, le(median));
+        assert_that!(median, le(q75));
         Ok(())
     }
 
@@ -336,7 +344,7 @@ mod tests {
 
         // Sum should be approximately 1.0
         let sum: f64 = pmf.iter().sum();
-        assert!((sum - 1.0).abs() < 1e-10);
+        assert_that!(sum, near(1.0, 1e-10));
         Ok(())
     }
 
@@ -350,11 +358,11 @@ mod tests {
 
         // CDF should be monotonically increasing
         for i in 1..cdf.len() {
-            assert!(cdf[i] >= cdf[i - 1]);
+            assert_that!(cdf[i], ge(cdf[i - 1]));
         }
 
         // Last value should be 1.0
-        assert!((cdf[cdf.len() - 1] - 1.0).abs() < 1e-10);
+        assert_that!(cdf[cdf.len() - 1], near(1.0, 1e-10));
         Ok(())
     }
 
@@ -366,7 +374,10 @@ mod tests {
         assert_eq!(view.total_weight(), 0);
 
         // Operations on empty view should return errors
-        assert!(view.rank(&5, SearchCriteria::Inclusive).is_err());
-        assert!(view.quantile(0.5, SearchCriteria::Inclusive).is_err());
+        assert_that!(view.rank(&5, SearchCriteria::Inclusive), err(anything()));
+        assert_that!(
+            view.quantile(0.5, SearchCriteria::Inclusive),
+            err(anything())
+        );
     }
 }

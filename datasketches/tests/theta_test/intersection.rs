@@ -19,6 +19,12 @@ use datasketches::theta::CompactThetaSketch;
 use datasketches::theta::ThetaIntersection;
 use datasketches::theta::ThetaSketch;
 use datasketches::theta::ThetaSketchBuilder;
+use googletest::assert_that;
+use googletest::prelude::anything;
+use googletest::prelude::err;
+use googletest::prelude::ge;
+use googletest::prelude::near;
+use googletest::prelude::none;
 
 fn sketch_with_range(start: u64, count: u64) -> ThetaSketch {
     let mut sketch = ThetaSketchBuilder::default().build();
@@ -37,13 +43,13 @@ fn test_has_result_state_machine() {
     assert!(!i.has_result());
     i.update(&a).unwrap();
     assert!(i.has_result());
-    assert!(i.to_sketch(true).unwrap().estimate() >= 1.0);
+    assert_that!(i.to_sketch(true).unwrap().estimate(), ge(1.0));
 }
 
 #[test]
 fn test_result_before_first_update_returns_none() {
     let i = ThetaIntersection::with_seed(123);
-    assert!(i.to_sketch(true).is_none());
+    assert_that!(i.to_sketch(true), none());
 }
 
 #[test]
@@ -61,7 +67,7 @@ fn test_update_accepts_compact_sketch() {
     i.update(&b).unwrap();
 
     let r = i.to_sketch(true).unwrap();
-    assert!(r.estimate() == 1.0);
+    assert_eq!(r.estimate(), 1.0);
     assert!(r.is_ordered());
 
     let mut c = ThetaSketchBuilder::default().build();
@@ -72,7 +78,7 @@ fn test_update_accepts_compact_sketch() {
     i.update(&c.compact(false)).unwrap();
 
     let r = i.to_sketch(false).unwrap();
-    assert!(r.estimate() == 0.0);
+    assert_eq!(r.estimate(), 0.0);
     assert!(!r.is_ordered());
 }
 
@@ -93,7 +99,7 @@ fn test_seed_mismatch_behaviour() {
     one_other_seed.update("value");
     let mut i = ThetaIntersection::with_seed(1);
 
-    assert!(i.update(&one_other_seed).is_err());
+    assert_that!(i.update(&one_other_seed), err(anything()));
 }
 
 #[test]
@@ -157,7 +163,7 @@ fn test_non_empty_no_retained_keys() {
     assert_eq!(r1.num_retained(), 0);
     assert!(!r1.is_empty());
     assert!(r1.is_estimation_mode());
-    assert!((r1.theta() - 0.001).abs() < 1e-10);
+    assert_that!(r1.theta(), near(0.001, 1e-10));
     assert_eq!(r1.estimate(), 0.0);
 
     i.update(&s).unwrap();
@@ -165,7 +171,7 @@ fn test_non_empty_no_retained_keys() {
     assert_eq!(r2.num_retained(), 0);
     assert!(!r2.is_empty());
     assert!(r2.is_estimation_mode());
-    assert!((r2.theta() - 0.001).abs() < 1e-10);
+    assert_that!(r2.theta(), near(0.001, 1e-10));
     assert_eq!(r2.estimate(), 0.0);
 }
 
@@ -241,7 +247,7 @@ fn test_estimation_half_overlap_unordered() {
 
     assert!(!r.is_empty());
     assert!(r.is_estimation_mode());
-    assert!((r.estimate() - 5000.0).abs() <= 5000.0 * 0.02);
+    assert_that!(r.estimate(), near(5000.0, 5000.0 * 0.02));
 }
 
 #[test]
@@ -256,7 +262,7 @@ fn test_estimation_half_overlap_ordered() {
 
     assert!(!r.is_empty());
     assert!(r.is_estimation_mode());
-    assert!((r.estimate() - 5000.0).abs() <= 5000.0 * 0.02);
+    assert_that!(r.estimate(), near(5000.0, 5000.0 * 0.02));
 }
 
 #[test]
@@ -273,7 +279,7 @@ fn test_estimation_half_overlap_ordered_deserialized_compact() {
 
     assert!(!r.is_empty());
     assert!(r.is_estimation_mode());
-    assert!((r.estimate() - 5000.0).abs() <= 5000.0 * 0.02);
+    assert_that!(r.estimate(), near(5000.0, 5000.0 * 0.02));
 }
 
 #[test]
@@ -312,7 +318,7 @@ fn test_seed_mismatch_non_empty_returns_error() {
     s.update(1u64);
 
     let mut i = ThetaIntersection::with_seed(123);
-    assert!(i.update(&s).is_err());
+    assert_that!(i.update(&s), err(anything()));
 }
 
 #[test]

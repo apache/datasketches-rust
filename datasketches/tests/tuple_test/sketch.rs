@@ -23,6 +23,10 @@ use datasketches::tuple::SummaryPolicy;
 use datasketches::tuple::SummaryUpdatePolicy;
 use datasketches::tuple::TupleSketch;
 use datasketches::tuple::TupleSketchBuilder;
+use googletest::assert_that;
+use googletest::prelude::gt;
+use googletest::prelude::le;
+use googletest::prelude::lt;
 
 use super::default_tuple_sketch_builder;
 
@@ -137,10 +141,10 @@ fn bounds_cover_exact_and_estimation_results() {
     let upper_three = estimated.upper_bound(NumStdDev::Three);
 
     assert!(estimated.is_estimation_mode());
-    assert!(lower_three <= lower_one);
-    assert!(lower_one < estimate);
-    assert!(estimate < upper_one);
-    assert!(upper_one <= upper_three);
+    assert_that!(lower_three, le(lower_one));
+    assert_that!(estimate, gt(lower_one));
+    assert_that!(estimate, lt(upper_one));
+    assert_that!(upper_one, le(upper_three));
 }
 
 #[test]

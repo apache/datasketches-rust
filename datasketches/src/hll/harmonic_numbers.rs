@@ -104,18 +104,23 @@ pub fn bitmap_estimate(bit_vector_length: u32, num_bits_set: u32) -> f64 {
 
 #[cfg(test)]
 mod tests {
+    use googletest::assert_that;
+    use googletest::prelude::gt;
+    use googletest::prelude::lt;
+    use googletest::prelude::near;
+
     use super::*;
 
     #[test]
     fn test_exact_harmonic_numbers() {
         // H(1) = 1
-        assert!((harmonic_number(1) - 1.0).abs() < 1e-10);
+        assert_that!(harmonic_number(1), near(1.0, 1e-10));
 
         // H(2) = 1 + 1/2 = 1.5
-        assert!((harmonic_number(2) - 1.5).abs() < 1e-10);
+        assert_that!(harmonic_number(2), near(1.5, 1e-10));
 
         // H(3) = 1 + 1/2 + 1/3 = 11/6
-        assert!((harmonic_number(3) - 11.0 / 6.0).abs() < 1e-10);
+        assert_that!(harmonic_number(3), near(11.0 / 6.0, 1e-10));
 
         // H(10) should be exact from table
         let expected = 1.0
@@ -128,7 +133,7 @@ mod tests {
             + 1.0 / 8.0
             + 1.0 / 9.0
             + 1.0 / 10.0;
-        assert!((harmonic_number(10) - expected).abs() < 1e-10);
+        assert_that!(harmonic_number(10), near(expected, 1e-10));
     }
 
     #[test]
@@ -139,14 +144,14 @@ mod tests {
         let approx = (n as f64).ln() + EULER_MASCHERONI + 1.0 / (2.0 * n as f64);
 
         // Should be close (within 0.1%)
-        assert!((h_n - approx).abs() / h_n < 0.001);
+        assert_that!(h_n, near(approx, h_n * 0.001));
     }
 
     #[test]
     fn test_bitmap_estimate_empty() {
         // No bits set = estimate should be near 0
         let est = bitmap_estimate(1024, 0);
-        assert!(est.abs() < 1e-6);
+        assert_that!(est, near(0.0, 1e-6));
     }
 
     #[test]
@@ -156,11 +161,11 @@ mod tests {
         let est = bitmap_estimate(k, k);
 
         // With all slots hit, estimate should be >> k
-        assert!(est > k as f64);
+        assert_that!(est, gt(k as f64));
 
         // H(k) - H(0) = H(k), so estimate = k * H(k)
         let expected = k as f64 * harmonic_number(k as usize);
-        assert!((est - expected).abs() < 1e-6);
+        assert_that!(est, near(expected, 1e-6));
     }
 
     #[test]
@@ -170,7 +175,7 @@ mod tests {
         let est = bitmap_estimate(k, k / 2);
 
         // Should be between 0 and k * H(k)
-        assert!(est > 0.0);
-        assert!(est < k as f64 * harmonic_number(k as usize));
+        assert_that!(est, gt(0.0));
+        assert_that!(est, lt(k as f64 * harmonic_number(k as usize)));
     }
 }

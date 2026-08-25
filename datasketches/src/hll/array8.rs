@@ -353,6 +353,11 @@ impl Array8 {
 
 #[cfg(test)]
 mod tests {
+    use googletest::assert_that;
+    use googletest::prelude::gt;
+    use googletest::prelude::is_finite;
+    use googletest::prelude::lt;
+
     use super::*;
     use crate::hll::Coupon;
 
@@ -426,12 +431,12 @@ mod tests {
         let estimate = arr.estimate();
 
         // Sanity checks
-        assert!(estimate > 0.0, "Estimate should be positive");
-        assert!(estimate.is_finite(), "Estimate should be finite");
+        assert_that!(estimate, gt(0.0), "Estimate should be positive");
+        assert_that!(estimate, is_finite(), "Estimate should be finite");
 
         // Rough bounds for 10K unique items (very loose)
-        assert!(estimate > 1_000.0, "Estimate seems too low");
-        assert!(estimate < 100_000.0, "Estimate seems too high");
+        assert_that!(estimate, gt(1_000.0), "Estimate seems too low");
+        assert_that!(estimate, lt(100_000.0), "Estimate seems too high");
     }
 
     #[test]
@@ -477,12 +482,17 @@ mod tests {
         arr.update(Coupon::pack(1, 50)); // value >= 32, goes to kxq1
 
         // Initial kxq0 = 256 (all zeros = 1.0 each)
-        assert!(arr.estimator.kxq0() < 256.0, "kxq0 should have decreased");
+        assert_that!(
+            arr.estimator.kxq0(),
+            lt(256.0),
+            "kxq0 should have decreased"
+        );
 
         // kxq1 should have a positive value (from 1/2^50)
-        assert!(arr.estimator.kxq1() > 0.0, "kxq1 should be positive");
-        assert!(
-            arr.estimator.kxq1() < 1e-10,
+        assert_that!(arr.estimator.kxq1(), gt(0.0), "kxq1 should be positive");
+        assert_that!(
+            arr.estimator.kxq1(),
+            lt(1e-10),
             "kxq1 should be very small (1/2^50 ≈ 8.9e-16)"
         );
     }

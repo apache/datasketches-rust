@@ -104,7 +104,6 @@ rand = { workspace = true, optional = true }
 
 [dev-dependencies]
 divan = { workspace = true }
-approx = { workspace = true }
 googletest = { workspace = true }
 insta = { workspace = true }
 proptest = { workspace = true }

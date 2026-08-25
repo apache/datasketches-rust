@@ -25,6 +25,14 @@ use datasketches::error::ErrorKind;
 use datasketches::req::ReqSketch;
 use datasketches::req::SearchCriteria;
 use datasketches::req::SortedView;
+use googletest::assert_that;
+use googletest::prelude::all;
+use googletest::prelude::anything;
+use googletest::prelude::contains_substring;
+use googletest::prelude::err;
+use googletest::prelude::ge;
+use googletest::prelude::lt;
+use googletest::prelude::near;
 
 fn populated_sketch(n: u64) -> ReqSketch<f64> {
     let mut sketch = ReqSketch::new();
@@ -85,14 +93,23 @@ fn sorted_view_on_empty_sketch_is_an_empty_view() {
     assert_eq!(view.len(), 0);
     assert_eq!(view.total_weight(), 0);
     // Queries on the empty view still report an error.
-    assert!(view.quantile(0.5, SearchCriteria::Inclusive).is_err());
+    assert_that!(
+        view.quantile(0.5, SearchCriteria::Inclusive),
+        err(anything())
+    );
 }
 
 #[test]
 fn empty_sketch_pmf_cdf_report_error() {
     let sketch: ReqSketch<f64> = ReqSketch::new();
-    assert!(sketch.pmf(&[1.0], SearchCriteria::Inclusive).is_err());
-    assert!(sketch.cdf(&[1.0], SearchCriteria::Inclusive).is_err());
+    assert_that!(
+        sketch.pmf(&[1.0], SearchCriteria::Inclusive),
+        err(anything())
+    );
+    assert_that!(
+        sketch.cdf(&[1.0], SearchCriteria::Inclusive),
+        err(anything())
+    );
 }
 
 #[test]
@@ -100,19 +117,22 @@ fn view_rank_is_primary_query_name() {
     let sketch = populated_sketch(10);
     let view = sketch.sorted_view();
     let r = view.rank(&5.0, SearchCriteria::Inclusive).expect("rank");
-    assert!((r - 0.6).abs() < 1e-10, "rank of 5.0 in 0..10, got {r}");
+    assert_that!(r, near(0.6, 1e-10), "rank of 5.0 in 0..10");
 }
 
 #[test]
 fn nan_query_items_are_rejected() {
     let sketch = populated_sketch(100);
-    let err = sketch
+    let error = sketch
         .rank(&f64::NAN, SearchCriteria::Inclusive)
         .unwrap_err();
-    assert_eq!(err.kind(), ErrorKind::InvalidArgument);
+    assert_eq!(error.kind(), ErrorKind::InvalidArgument);
 
     let view = sketch.sorted_view();
-    assert!(view.rank(&f64::NAN, SearchCriteria::Inclusive).is_err());
+    assert_that!(
+        view.rank(&f64::NAN, SearchCriteria::Inclusive),
+        err(anything())
+    );
 }
 
 #[test]
@@ -120,21 +140,13 @@ fn error_precedence_empty_before_invalid_rank() {
     // On an empty sketch the emptiness is reported before the out-of-range rank.
     let empty: ReqSketch<f64> = ReqSketch::new();
     let empty_err = empty.quantile(2.0, SearchCriteria::Inclusive).unwrap_err();
-    assert!(
-        empty_err.message().contains("empty"),
-        "expected emptiness error, got: {}",
-        empty_err.message()
-    );
+    assert_that!(empty_err.message(), contains_substring("empty"));
 
     // On a populated sketch the out-of-range rank is reported.
     let sketch = populated_sketch(10);
     let range_err = sketch.quantile(2.0, SearchCriteria::Inclusive).unwrap_err();
     assert_eq!(range_err.kind(), ErrorKind::InvalidArgument);
-    assert!(
-        range_err.message().contains("must be in"),
-        "expected range error, got: {}",
-        range_err.message()
-    );
+    assert_that!(range_err.message(), contains_substring("must be in"));
 }
 
 #[test]
@@ -160,6 +172,6 @@ fn concurrent_readers_share_the_sketch() {
         .collect();
     for handle in handles {
         let q = handle.join().expect("thread");
-        assert!((0.0..1_000.0).contains(&q));
+        assert_that!(q, all!(ge(0.0), lt(1_000.0)));
     }
 }

@@ -19,10 +19,15 @@
 
 //! Rank, quantile, PMF, and CDF behavior for ReqSketch.
 
-use approx::assert_relative_eq;
 use datasketches::error::Error;
 use datasketches::req::ReqSketch;
 use datasketches::req::SearchCriteria;
+use googletest::assert_that;
+use googletest::prelude::all;
+use googletest::prelude::ge;
+use googletest::prelude::le;
+use googletest::prelude::lt;
+use googletest::prelude::near;
 
 #[test]
 fn exact_mode_rank_quantile_pmf_and_cdf_match_reference() {
@@ -36,42 +41,38 @@ fn exact_mode_rank_quantile_pmf_and_cdf_match_reference() {
     assert_eq!(sketch.num_retained(), 10);
 
     for (value, expected) in [(1.0, 0.0), (2.0, 0.1), (6.0, 0.5), (9.0, 0.8), (10.0, 0.9)] {
-        assert_relative_eq!(
+        assert_that!(
             sketch
                 .rank(&value, SearchCriteria::Exclusive)
                 .expect("rank should succeed"),
-            expected,
-            epsilon = 1e-6
+            near(expected, 1e-6)
         );
     }
 
     for (value, expected) in [(1.0, 0.1), (2.0, 0.2), (5.0, 0.5), (9.0, 0.9), (10.0, 1.0)] {
-        assert_relative_eq!(
+        assert_that!(
             sketch
                 .rank(&value, SearchCriteria::Inclusive)
                 .expect("rank should succeed"),
-            expected,
-            epsilon = 1e-6
+            near(expected, 1e-6)
         );
     }
 
     for (rank, expected) in [(0.0, 1.0), (0.1, 2.0), (0.5, 6.0), (0.9, 10.0), (1.0, 10.0)] {
-        assert_relative_eq!(
+        assert_that!(
             sketch
                 .quantile(rank, SearchCriteria::Exclusive)
                 .expect("quantile should succeed"),
-            expected,
-            epsilon = 1e-6
+            near(expected, 1e-6)
         );
     }
 
     for (rank, expected) in [(0.0, 1.0), (0.1, 1.0), (0.5, 5.0), (0.9, 9.0), (1.0, 10.0)] {
-        assert_relative_eq!(
+        assert_that!(
             sketch
                 .quantile(rank, SearchCriteria::Inclusive)
                 .expect("quantile should succeed"),
-            expected,
-            epsilon = 1e-6
+            near(expected, 1e-6)
         );
     }
 
@@ -79,18 +80,18 @@ fn exact_mode_rank_quantile_pmf_and_cdf_match_reference() {
     let cdf = sketch
         .cdf(&splits, SearchCriteria::Exclusive)
         .expect("cdf should succeed");
-    assert_relative_eq!(cdf[0], 0.1, epsilon = 1e-6);
-    assert_relative_eq!(cdf[1], 0.5, epsilon = 1e-6);
-    assert_relative_eq!(cdf[2], 0.8, epsilon = 1e-6);
-    assert_relative_eq!(cdf[3], 1.0, epsilon = 1e-6);
+    assert_that!(cdf[0], near(0.1, 1e-6));
+    assert_that!(cdf[1], near(0.5, 1e-6));
+    assert_that!(cdf[2], near(0.8, 1e-6));
+    assert_that!(cdf[3], near(1.0, 1e-6));
 
     let pmf = sketch
         .pmf(&splits, SearchCriteria::Exclusive)
         .expect("pmf should succeed");
-    assert_relative_eq!(pmf[0], 0.1, epsilon = 1e-6);
-    assert_relative_eq!(pmf[1], 0.4, epsilon = 1e-6);
-    assert_relative_eq!(pmf[2], 0.3, epsilon = 1e-6);
-    assert_relative_eq!(pmf[3], 0.2, epsilon = 1e-6);
+    assert_that!(pmf[0], near(0.1, 1e-6));
+    assert_that!(pmf[1], near(0.4, 1e-6));
+    assert_that!(pmf[2], near(0.3, 1e-6));
+    assert_that!(pmf[3], near(0.2, 1e-6));
 }
 
 #[test]
@@ -108,14 +109,14 @@ fn pmf_and_cdf_are_consistent() {
         .cdf(&split_points, SearchCriteria::Inclusive)
         .expect("cdf should succeed");
 
-    assert_relative_eq!(pmf.iter().sum::<f64>(), 1.0, epsilon = 1e-10);
+    assert_that!(pmf.iter().sum::<f64>(), near(1.0, 1e-10));
 
     let mut cumulative = 0.0;
     for i in 0..pmf.len() {
         cumulative += pmf[i];
-        assert_relative_eq!(cdf[i], cumulative, epsilon = 1e-10);
+        assert_that!(cdf[i], near(cumulative, 1e-10));
     }
-    assert_relative_eq!(cdf[cdf.len() - 1], 1.0, epsilon = 1e-10);
+    assert_that!(cdf[cdf.len() - 1], near(1.0, 1e-10));
 }
 
 #[test]
@@ -132,8 +133,8 @@ fn rank_is_monotonic_and_bounded() {
         let rank = sketch
             .rank(&value, SearchCriteria::Inclusive)
             .expect("rank should succeed");
-        assert!(rank >= last_rank, "ranks should be monotonic");
-        assert!((0.0..=1.0).contains(&rank), "rank should be in [0,1]");
+        assert_that!(rank, ge(last_rank), "ranks should be monotonic");
+        assert_that!(rank, all!(ge(0.0), le(1.0)), "rank should be in [0,1]");
         last_rank = rank;
     }
 }
@@ -150,7 +151,7 @@ fn quantiles_are_monotonic() -> Result<(), Error> {
 
     for rank in ranks {
         let quantile = sketch.quantile(rank, SearchCriteria::Inclusive)?;
-        assert!(quantile >= previous);
+        assert_that!(quantile, ge(previous));
         previous = quantile;
     }
 
@@ -168,7 +169,7 @@ fn rank_quantile_round_trip_is_consistent() -> Result<(), Error> {
         let quantile = sketch.quantile(target_rank, SearchCriteria::Inclusive)?;
         let recovered_rank = sketch.rank(&quantile, SearchCriteria::Inclusive)?;
         let error = (recovered_rank - target_rank).abs() / target_rank;
-        assert!(error < 0.2);
+        assert_that!(error, lt(0.2));
     }
 
     Ok(())
@@ -185,9 +186,9 @@ fn search_criteria_rank_consistency() -> Result<(), Error> {
         let inclusive_rank = sketch.rank(&value, SearchCriteria::Inclusive)?;
         let exclusive_rank = sketch.rank(&value, SearchCriteria::Exclusive)?;
 
-        assert!(exclusive_rank <= inclusive_rank);
-        assert!((0.0..=1.0).contains(&inclusive_rank));
-        assert!((0.0..=1.0).contains(&exclusive_rank));
+        assert_that!(exclusive_rank, le(inclusive_rank));
+        assert_that!(inclusive_rank, all!(ge(0.0), le(1.0)));
+        assert_that!(exclusive_rank, all!(ge(0.0), le(1.0)));
     }
 
     Ok(())

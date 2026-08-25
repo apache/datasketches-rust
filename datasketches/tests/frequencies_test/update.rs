@@ -17,6 +17,11 @@
 
 use datasketches::frequencies::ErrorType;
 use datasketches::frequencies::FrequentItemsSketch;
+use googletest::assert_that;
+use googletest::prelude::ge;
+use googletest::prelude::gt;
+use googletest::prelude::le;
+use googletest::prelude::near;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct TestItem(i32);
@@ -68,13 +73,13 @@ fn test_capacity_and_epsilon_helpers() {
 
     let epsilon = FrequentItemsSketch::<i64>::epsilon_for_lg(10);
     let expected = 3.5 / 1024.0;
-    assert!((epsilon - expected).abs() < 1e-12);
+    assert_that!(epsilon, near(expected, 1e-12));
 
     let apriori = FrequentItemsSketch::<i64>::apriori_error(10, 10_000);
-    assert!((apriori - expected * 10_000.0).abs() < 1e-9);
+    assert_that!(apriori, near(expected * 10_000.0, 1e-9));
 
     let items: FrequentItemsSketch<i32> = FrequentItemsSketch::new(1024);
-    assert!((items.epsilon() - expected).abs() < 1e-12);
+    assert_that!(items.epsilon(), near(expected, 1e-12));
     assert_eq!(items.current_map_capacity(), 6);
     assert_eq!(items.maximum_map_capacity(), 768);
     assert_eq!(items.lg_max_map_size(), 10);
@@ -262,7 +267,7 @@ fn test_longs_estimation_mode() {
 
     assert!(!sketch.is_empty());
     assert_eq!(sketch.total_weight(), 35);
-    assert!(sketch.maximum_error() > 0);
+    assert_that!(sketch.maximum_error(), gt(0));
 
     let items = sketch.frequent_items(ErrorType::NoFalsePositives);
     assert_eq!(items.len(), 2);
@@ -272,8 +277,8 @@ fn test_longs_estimation_mode() {
     assert_eq!(items[1].estimate(), 10);
 
     let items = sketch.frequent_items(ErrorType::NoFalseNegatives);
-    assert!(items.len() >= 2);
-    assert!(items.len() <= 12);
+    assert_that!(items.len(), ge(2));
+    assert_that!(items.len(), le(12));
 }
 
 #[test]
@@ -290,7 +295,7 @@ fn test_items_estimation_mode() {
 
     assert!(!sketch.is_empty());
     assert_eq!(sketch.total_weight(), 35);
-    assert!(sketch.maximum_error() > 0);
+    assert_that!(sketch.maximum_error(), gt(0));
 
     let items = sketch.frequent_items(ErrorType::NoFalsePositives);
     assert_eq!(items.len(), 2);
@@ -300,8 +305,8 @@ fn test_items_estimation_mode() {
     assert_eq!(items[1].estimate(), 10);
 
     let items = sketch.frequent_items(ErrorType::NoFalseNegatives);
-    assert!(items.len() >= 2);
-    assert!(items.len() <= 12);
+    assert_that!(items.len(), ge(2));
+    assert_that!(items.len(), le(12));
 }
 
 #[test]
@@ -369,26 +374,26 @@ fn test_longs_merge_estimation_mode() {
     for item in 2..=14 {
         sketch1.update(item);
     }
-    assert!(sketch1.maximum_error() > 0);
+    assert_that!(sketch1.maximum_error(), gt(0));
 
     let mut sketch2: FrequentItemsSketch<i64> = FrequentItemsSketch::new(16);
     for item in 8..=20 {
         sketch2.update(item);
     }
     sketch2.update_with_count(21, 11);
-    assert!(sketch2.maximum_error() > 0);
+    assert_that!(sketch2.maximum_error(), gt(0));
 
     sketch1.merge(&sketch2);
     assert!(!sketch1.is_empty());
     assert_eq!(sketch1.total_weight(), 46);
-    assert!(sketch1.num_active_items() >= 2);
+    assert_that!(sketch1.num_active_items(), ge(2));
 
     let items = sketch1.frequent_items_with_threshold(ErrorType::NoFalsePositives, 2);
     assert_eq!(items.len(), 2);
     assert_eq!(items[0].item(), &21);
-    assert!(items[0].estimate() >= 11);
+    assert_that!(items[0].estimate(), ge(11));
     assert_eq!(items[1].item(), &1);
-    assert!(items[1].estimate() >= 9);
+    assert_that!(items[1].estimate(), ge(9));
 }
 
 #[test]
@@ -398,26 +403,26 @@ fn test_items_merge_estimation_mode() {
     for item in 2..=14 {
         sketch1.update(item);
     }
-    assert!(sketch1.maximum_error() > 0);
+    assert_that!(sketch1.maximum_error(), gt(0));
 
     let mut sketch2: FrequentItemsSketch<i32> = FrequentItemsSketch::new(16);
     for item in 8..=20 {
         sketch2.update(item);
     }
     sketch2.update_with_count(21, 11);
-    assert!(sketch2.maximum_error() > 0);
+    assert_that!(sketch2.maximum_error(), gt(0));
 
     sketch1.merge(&sketch2);
     assert!(!sketch1.is_empty());
     assert_eq!(sketch1.total_weight(), 46);
-    assert!(sketch1.num_active_items() >= 2);
+    assert_that!(sketch1.num_active_items(), ge(2));
 
     let items = sketch1.frequent_items_with_threshold(ErrorType::NoFalsePositives, 2);
     assert_eq!(items.len(), 2);
     assert_eq!(items[0].item(), &21);
-    assert!(items[0].estimate() >= 11);
+    assert_that!(items[0].estimate(), ge(11));
     assert_eq!(items[1].item(), &1);
-    assert!(items[1].estimate() >= 9);
+    assert_that!(items[1].estimate(), ge(9));
 }
 
 #[test]
