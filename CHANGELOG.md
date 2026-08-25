@@ -4,6 +4,23 @@ All significant changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Breaking changes
+
+* Change `ThetaIntersection::to_sketch` and `TupleIntersection::to_sketch` to return `Option`. Callers must handle `None` before the first successful update; after that, the methods return `Some` even when the intersection is empty.
+
+### New features
+
+* Add Relative Error Quantiles (REQ) sketches behind the `req` feature, including configurable high- or low-rank accuracy, rank, quantile, PMF, and CDF queries, merging and unions, and C++/Java-compatible serialization.
+
+### Performance improvements
+
+* Reduce T-Digest allocation overhead and retained memory across updates, compression, merges, serialization, deserialization, and freezing while preserving the serialized format.
+
+### Bug fixes
+
+* T-Digest compression now handles `k = u16::MAX` without overflowing the scale normalization input.
+* T-Digest deserialization now validates declared payload lengths before allocating. Updating a deserialized digest whose unmerged buffer already exceeds the compression threshold now compresses it instead of allowing the buffer to grow without bound.
+
 ## v0.4.0 (2026-08-18)
 
 ### Breaking changes
