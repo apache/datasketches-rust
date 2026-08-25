@@ -15,8 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#![cfg(feature = "req")]
-
 //! Property-based ReqSketch tests.
 
 use datasketches::req::ReqSketch;

@@ -15,8 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#![cfg(feature = "req")]
-
 //! Public iterator behavior for ReqSketch.
 
 use datasketches::req::ReqSketch;
