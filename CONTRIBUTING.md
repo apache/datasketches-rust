@@ -72,6 +72,14 @@ cargo x bench
 - End summary sentences with punctuation, and format Rust identifiers, literals, and numeric ranges as inline code.
 - Put contract sections and compatibility notes before examples. When applicable, order sections as `# Errors`, `# Panics`, and `# Examples`. Include only sections that describe an actual contract.
 
+## Changelog
+
+- Update `CHANGELOG.md` in the same pull request for significant user-visible changes. Compare the final behavior with the latest release tag rather than recording the sequence of commits that produced it.
+- Include public API migrations, new capabilities, correctness or compatibility changes, and meaningful performance improvements. Exclude tests, internal refactors, documentation, CI, tooling, and dependency maintenance unless they change supported or observable behavior.
+- Keep the permanent `## Unreleased` section at the top. Group entries under user-facing categories consistent with earlier releases, and add only categories that contain entries.
+- Write one bullet for each coherent behavior. Combine related commits, describe the observable impact, and give the required migration for breaking changes. Do not include pull request numbers, issue numbers, discarded intermediate APIs, or implementation history.
+- During release preparation, insert `## vX.Y.Z` without a date immediately below `## Unreleased` and move the accumulated entries into it. Add the actual UTC release date in `YYYY-MM-DD` format after the release; do not guess it in advance or remove `## Unreleased`.
+
 ## Integration test layout
 
 Integration tests for the `datasketches` crate live under `datasketches/tests` and use two entry-point patterns.
