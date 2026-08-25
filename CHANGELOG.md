@@ -20,6 +20,7 @@ All significant changes to this project will be documented in this file.
 
 * T-Digest compression now handles `k = u16::MAX` without overflowing the scale normalization input.
 * T-Digest deserialization now validates declared payload lengths before allocating. Updating a deserialized digest whose unmerged buffer already exceeds the compression threshold now compresses it instead of allowing the buffer to grow without bound.
+* REQ deserialization now rejects compactors whose section count is not on the REQ doubling schedule, whose `lg_weight` does not match the enclosing level, or whose retained weighted count disagrees with `n`.
 
 ## v0.4.0 (2026-08-18)
 

@@ -673,6 +673,12 @@ impl<T: ReqValue> ReqSketch<T> {
             for i in 0..num_levels {
                 let level_sorted = if i == 0 { is_level_zero_sorted } else { true };
                 let c = Compactor::<T>::deserialize(&mut cursor, rank_accuracy, level_sorted)?;
+                if c.lg_weight() != i {
+                    return Err(Error::deserial(format!(
+                        "REQ compactor lg_weight {} does not match level {i}",
+                        c.lg_weight()
+                    )));
+                }
                 compactors.push(c);
             }
         }
@@ -704,6 +710,13 @@ impl<T: ReqValue> ReqSketch<T> {
             ));
         }
 
+        let weighted_count = Self::retained_weighted_count(&compactors)?;
+        if weighted_count != n {
+            return Err(Error::deserial(format!(
+                "REQ retained weighted count {weighted_count} does not match n {n}"
+            )));
+        }
+
         let mut sketch = ReqSketch::try_new(k, rank_accuracy)?;
         sketch.n = n;
         sketch.min_item = min_item;
@@ -715,6 +728,19 @@ impl<T: ReqValue> ReqSketch<T> {
     }
 
     // --- Internal ---
+
+    fn retained_weighted_count(compactors: &[Compactor<T>]) -> Result<u64, Error> {
+        let mut total = 0u64;
+        for c in compactors {
+            let contrib = (c.num_items() as u64)
+                .checked_mul(c.weight())
+                .ok_or_else(|| Error::deserial("REQ retained weighted count overflow"))?;
+            total = total
+                .checked_add(contrib)
+                .ok_or_else(|| Error::deserial("REQ retained weighted count overflow"))?;
+        }
+        Ok(total)
+    }
 
     pub(super) fn grow(&mut self) {
         let level = self.compactors.len() as u8;

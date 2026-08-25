@@ -29,6 +29,28 @@ fn nearest_even(value: f32) -> u32 {
     ((value / 2.0).round() as u32) << 1
 }
 
+/// Initial number of sections in a new compactor. Matches C++/Java
+/// `INIT_NUMBER_OF_SECTIONS`. Doubles in [`Compactor::ensure_enough_sections`]
+/// while `num_sections <= MAX_NUM_SECTIONS_FOR_DOUBLING`.
+const INIT_NUM_SECTIONS: u8 = 3;
+/// `ensure_enough_sections` stops doubling once `num_sections` exceeds this bound
+/// so that `1u64 << (num_sections - 1)` stays in range. The reachable schedule is
+/// therefore 3, 6, 12, 24, 48, 96.
+const MAX_NUM_SECTIONS_FOR_DOUBLING: u8 = 64;
+
+fn is_valid_num_sections(num_sections: u8) -> bool {
+    let mut n = INIT_NUM_SECTIONS;
+    loop {
+        if n == num_sections {
+            return true;
+        }
+        if n > MAX_NUM_SECTIONS_FOR_DOUBLING {
+            return false;
+        }
+        n <<= 1;
+    }
+}
+
 /// A compactor maintains items at a specific level of the REQ sketch.
 ///
 /// When the compactor reaches its nominal capacity, it performs compaction
@@ -72,7 +94,7 @@ where
     pub(super) fn new(lg_weight: u8, k: u16, rank_accuracy: RankAccuracy) -> Self {
         let section_size_raw = k as f32;
         let section_size = nearest_even(section_size_raw);
-        let num_sections = 3u8;
+        let num_sections = INIT_NUM_SECTIONS;
 
         let nominal: usize = (2 * section_size * num_sections as u32) as usize;
 
@@ -282,13 +304,18 @@ where
         1u64 << self.lg_weight
     }
 
+    /// Returns the level (log weight) of this compactor.
+    pub(super) fn lg_weight(&self) -> u8 {
+        self.lg_weight
+    }
+
     // Private helper methods
 
     fn ensure_enough_sections(&mut self) -> bool {
         let ssr = self.section_size_raw / std::f32::consts::SQRT_2;
         let ne = nearest_even(ssr);
 
-        if self.num_sections <= 64
+        if self.num_sections <= MAX_NUM_SECTIONS_FOR_DOUBLING
             && self.state >= (1u64 << (self.num_sections - 1))
             && ne >= u32::from(MIN_K)
         {
@@ -381,17 +408,26 @@ where
         // Validate the wire-controlled fields before they feed capacity/weight
         // arithmetic. A legitimate compactor always satisfies these bounds
         // (`section_size` derives from k ≤ MAX_K and only shrinks; `lg_weight` is the
-        // level index), so rejecting anything else keeps `nominal_capacity` and
-        // `weight` from overflowing on crafted input.
+        // level index; `num_sections` follows the doubling schedule from
+        // `INIT_NUM_SECTIONS`), so rejecting anything else keeps `nominal_capacity`,
+        // `weight`, and `ensure_enough_sections` from overflowing on crafted input.
         if !(0.0..=super::MAX_K as f32).contains(&section_size_raw) {
-            return Err(Error::invalid_argument(format!(
+            return Err(Error::deserial(format!(
                 "REQ compactor section_size {section_size_raw} out of range"
             )));
         }
         // `weight()` computes `1u64 << lg_weight`, which overflows once lg_weight ≥ 64.
         if lg_weight >= 64 {
-            return Err(Error::invalid_argument(format!(
+            return Err(Error::deserial(format!(
                 "REQ compactor lg_weight {lg_weight} exceeds maximum"
+            )));
+        }
+        // `ensure_enough_sections` assumes a nonzero `num_sections` from the doubling
+        // schedule that starts at `INIT_NUM_SECTIONS`. Reject anything the schedule
+        // cannot produce, including `num_sections = 0` which underflows the shift.
+        if !is_valid_num_sections(num_sections) {
+            return Err(Error::deserial(format!(
+                "REQ compactor num_sections {num_sections} is not a valid section-schedule value"
             )));
         }
 
@@ -473,11 +509,6 @@ impl<T> Compactor<T>
 where
     T: Clone + ReqValue,
 {
-    /// Returns the level (log weight) of this compactor. Test-only accessor.
-    pub(super) fn lg_weight(&self) -> u8 {
-        self.lg_weight
-    }
-
     /// Returns the current state for deterministic compaction. Test-only accessor.
     pub(super) fn state(&self) -> u64 {
         self.state
