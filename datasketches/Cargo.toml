@@ -43,6 +43,7 @@ countmin = []
 cpc = []
 frequencies = []
 hll = []
+req = ["dep:rand"]
 tdigest = []
 theta = []
 tuple = []
@@ -73,6 +74,11 @@ path = "tests/hll_test/main.rs"
 required-features = ["hll"]
 
 [[test]]
+name = "req_test"
+path = "tests/req_test/main.rs"
+required-features = ["req"]
+
+[[test]]
 name = "tdigest_test"
 path = "tests/tdigest_test/main.rs"
 required-features = ["tdigest"]
@@ -93,10 +99,15 @@ path = "benches/tdigest.rs"
 required-features = ["tdigest"]
 harness = false
 
+[dependencies]
+rand = { workspace = true, optional = true }
+
 [dev-dependencies]
 divan = { workspace = true }
+approx = { workspace = true }
 googletest = { workspace = true }
 insta = { workspace = true }
+proptest = { workspace = true }
 
 [lints]
 workspace = true
