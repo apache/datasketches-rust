@@ -165,7 +165,7 @@ impl<T: ReqValue> ReqSketch<T> {
         self.n += 1;
         self.num_retained += 1;
 
-        if self.num_retained == self.max_nom_size {
+        if self.num_retained >= self.max_nom_size {
             self.compress();
         }
     }
@@ -359,10 +359,8 @@ impl<T: ReqValue> ReqSketch<T> {
     }
 
     const FIXED_RSE_FACTOR: f64 = 0.084;
-    const INIT_NUM_SECTIONS: u8 = 3;
-
     fn relative_rse_factor() -> f64 {
-        (0.0512 / Self::INIT_NUM_SECTIONS as f64).sqrt()
+        (0.0512 / super::INITIAL_SECTIONS_PER_COMPACTOR as f64).sqrt()
     }
 
     fn compute_rank_lower_bound(
@@ -411,7 +409,7 @@ impl<T: ReqValue> ReqSketch<T> {
         n: u64,
         hra: bool,
     ) -> bool {
-        let base_cap = k as u64 * Self::INIT_NUM_SECTIONS as u64;
+        let base_cap = k as u64 * super::INITIAL_SECTIONS_PER_COMPACTOR as u64;
         if num_levels == 1 || n <= base_cap {
             return true;
         }
@@ -563,6 +561,11 @@ impl<T: ReqValue> ReqSketch<T> {
 
     /// Deserialize a sketch from bytes produced by [`Self::serialize`] or by the
     /// C++/Java reference implementations.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the input is truncated or contains an inconsistent
+    /// REQ serialized state.
     pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
         use super::compactor::Compactor;
         use super::serialization::FLAG_IS_EMPTY;
@@ -606,19 +609,17 @@ impl<T: ReqValue> ReqSketch<T> {
             RankAccuracy::LowRank
         };
         if !(MIN_K..=MAX_K).contains(&k) || k % 2 != 0 {
-            return Err(Error::invalid_argument(format!(
-                "k {k} is not a valid REQ k value"
-            )));
+            return Err(Error::deserial(format!("k {k} is not a valid REQ k value")));
         }
 
         if is_empty {
             if num_levels != 0 {
-                return Err(Error::invalid_argument(format!(
+                return Err(Error::deserial(format!(
                     "empty REQ sketch must have 0 levels, got {num_levels}"
                 )));
             }
             if num_raw_items != 0 {
-                return Err(Error::invalid_argument(format!(
+                return Err(Error::deserial(format!(
                     "empty REQ sketch must have 0 raw items, got {num_raw_items}"
                 )));
             }
@@ -626,24 +627,29 @@ impl<T: ReqValue> ReqSketch<T> {
         }
 
         if num_levels == 0 {
-            return Err(Error::invalid_argument(
+            return Err(Error::deserial(
                 "non-empty REQ sketch must have at least one level",
+            ));
+        }
+        if num_levels > 64 {
+            return Err(Error::deserial(
+                "REQ sketch cannot have more than 64 levels",
             ));
         }
 
         if raw_items {
             if num_levels != 1 {
-                return Err(Error::invalid_argument(format!(
+                return Err(Error::deserial(format!(
                     "raw-items REQ sketch must have exactly 1 level, got {num_levels}"
                 )));
             }
             if num_raw_items == 0 || num_raw_items as u64 > RAW_ITEMS_THRESHOLD {
-                return Err(Error::invalid_argument(format!(
+                return Err(Error::deserial(format!(
                     "raw-items REQ sketch must contain 1..={RAW_ITEMS_THRESHOLD} items, got {num_raw_items}"
                 )));
             }
         } else if num_raw_items != 0 {
-            return Err(Error::invalid_argument(format!(
+            return Err(Error::deserial(format!(
                 "non-raw REQ sketch must have 0 raw items, got {num_raw_items}"
             )));
         }
@@ -656,6 +662,16 @@ impl<T: ReqValue> ReqSketch<T> {
             n = cursor.read_u64_le().map_err(insufficient_data("n"))?;
             min_item = Some(T::deserialize_value(&mut cursor)?);
             max_item = Some(T::deserialize_value(&mut cursor)?);
+            let min = min_item.as_ref().unwrap();
+            let max = max_item.as_ref().unwrap();
+            if min.is_nan() || max.is_nan() {
+                return Err(Error::deserial("REQ sketch min or max item is NaN"));
+            }
+            if min.total_cmp(max).is_gt() {
+                return Err(Error::deserial(
+                    "REQ sketch min item is greater than max item",
+                ));
+            }
         }
 
         let mut compactors: Vec<Compactor<T>> = Vec::with_capacity(num_levels as usize);
@@ -667,12 +683,13 @@ impl<T: ReqValue> ReqSketch<T> {
                 items.push(T::deserialize_value(&mut cursor)?);
             }
             let c =
-                Compactor::<T>::raw_items_compactor(k, rank_accuracy, items, is_level_zero_sorted);
+                Compactor::<T>::raw_items_compactor(k, rank_accuracy, items, is_level_zero_sorted)?;
             compactors.push(c);
         } else {
             for i in 0..num_levels {
-                let level_sorted = if i == 0 { is_level_zero_sorted } else { true };
-                let c = Compactor::<T>::deserialize(&mut cursor, rank_accuracy, level_sorted)?;
+                let level_sorted = i > 0 || is_level_zero_sorted;
+                let c =
+                    Compactor::<T>::deserialize(&mut cursor, k, i, rank_accuracy, level_sorted)?;
                 compactors.push(c);
             }
         }
@@ -699,9 +716,43 @@ impl<T: ReqValue> ReqSketch<T> {
         }
 
         if n == 0 || min_item.is_none() || max_item.is_none() {
-            return Err(Error::invalid_argument(
-                "non-empty REQ sketch contains no items",
+            return Err(Error::deserial("non-empty REQ sketch contains no items"));
+        }
+
+        let expected_raw_items = num_levels == 1 && n <= RAW_ITEMS_THRESHOLD;
+        if raw_items != expected_raw_items {
+            return Err(Error::deserial(
+                "REQ sketch RAW_ITEMS flag is inconsistent with num_levels and n",
             ));
+        }
+
+        if compactors.iter().any(|compactor| {
+            compactor
+                .minimum_stream_length()
+                .is_none_or(|minimum_n| minimum_n > n)
+        }) {
+            return Err(Error::deserial("REQ compactor state exceeds stream length"));
+        }
+
+        let (retained_count, nominal_capacity, weighted_count) = compactors
+            .iter()
+            .try_fold(
+                (0u32, 0u32, 0u64),
+                |(retained, capacity, weighted), compactor| {
+                    Some((
+                        retained.checked_add(compactor.num_items())?,
+                        capacity.checked_add(compactor.nominal_capacity())?,
+                        weighted.checked_add(
+                            (compactor.num_items() as u64).checked_mul(compactor.weight())?,
+                        )?,
+                    ))
+                },
+            )
+            .ok_or_else(|| Error::deserial("REQ compactor totals overflow"))?;
+        if weighted_count != n {
+            return Err(Error::deserial(format!(
+                "REQ retained weighted count {weighted_count} does not match n {n}"
+            )));
         }
 
         let mut sketch = ReqSketch::try_new(k, rank_accuracy)?;
@@ -709,8 +760,8 @@ impl<T: ReqValue> ReqSketch<T> {
         sketch.min_item = min_item;
         sketch.max_item = max_item;
         sketch.compactors = compactors;
-        sketch.update_max_nom_size();
-        sketch.update_num_retained();
+        sketch.max_nom_size = nominal_capacity;
+        sketch.num_retained = retained_count;
         Ok(sketch)
     }
 

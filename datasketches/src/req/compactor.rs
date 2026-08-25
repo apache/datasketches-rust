@@ -22,11 +22,24 @@
 
 use super::MIN_K;
 use super::RankAccuracy;
+use super::nearest_even_section_size;
 use super::value::ReqValue;
 use crate::error::Error;
 
-fn nearest_even(value: f32) -> u32 {
-    ((value / 2.0).round() as u32) << 1
+fn validate_deserialized_items<T: ReqValue>(items: &[T], sorted: bool) -> Result<(), Error> {
+    if items.iter().any(ReqValue::is_nan) {
+        return Err(Error::deserial("REQ compactor contains a NaN item"));
+    }
+    if sorted
+        && !items
+            .windows(2)
+            .all(|items| items[0].total_cmp(&items[1]).is_le())
+    {
+        return Err(Error::deserial(
+            "REQ compactor claims to be sorted but its items are not",
+        ));
+    }
+    Ok(())
 }
 
 /// A compactor maintains items at a specific level of the REQ sketch.
@@ -71,8 +84,8 @@ where
     /// * `rank_accuracy` - Rank accuracy configuration
     pub(super) fn new(lg_weight: u8, k: u16, rank_accuracy: RankAccuracy) -> Self {
         let section_size_raw = k as f32;
-        let section_size = nearest_even(section_size_raw);
-        let num_sections = 3u8;
+        let section_size = nearest_even_section_size(section_size_raw);
+        let num_sections = super::INITIAL_SECTIONS_PER_COMPACTOR;
 
         let nominal: usize = (2 * section_size * num_sections as u32) as usize;
 
@@ -289,23 +302,38 @@ where
         1u64 << self.lg_weight
     }
 
+    /// Returns the minimum stream length implied by this compactor's state.
+    ///
+    /// Each compaction removes at least two items of this level's weight. Merging
+    /// states with bitwise OR cannot make the result larger than their sum, so the
+    /// same lower bound holds for both updated and merged sketches.
+    pub(super) fn minimum_stream_length(&self) -> Option<u64> {
+        self.state.checked_mul(2)?.checked_mul(self.weight())
+    }
+
     // Private helper methods
 
     fn ensure_enough_sections(&mut self) -> bool {
-        let ssr = self.section_size_raw / std::f32::consts::SQRT_2;
-        let ne = nearest_even(ssr);
+        let Some(threshold) = self
+            .num_sections
+            .checked_sub(1)
+            .and_then(|shift| 1u64.checked_shl(u32::from(shift)))
+        else {
+            return false;
+        };
+        let Some(num_sections) = self.num_sections.checked_mul(2) else {
+            return false;
+        };
+        let section_size_raw = self.section_size_raw / std::f32::consts::SQRT_2;
+        let section_size = nearest_even_section_size(section_size_raw);
 
-        if self.num_sections <= 64
-            && self.state >= (1u64 << (self.num_sections - 1))
-            && ne >= u32::from(MIN_K)
-        {
-            self.section_size_raw = ssr;
-            self.section_size = ne;
-            self.num_sections <<= 1; // Double the sections
-            true
-        } else {
-            false
+        if self.state >= threshold && section_size >= u32::from(MIN_K) {
+            self.section_size_raw = section_size_raw;
+            self.section_size = section_size;
+            self.num_sections = num_sections;
+            return true;
         }
+        false
     }
 
     #[inline(always)]
@@ -362,8 +390,10 @@ where
     /// Deserialize a compactor (preamble + items) from the byte cursor.
     pub(super) fn deserialize(
         cursor: &mut crate::codec::SketchSlice<'_>,
+        k: u16,
+        expected_lg_weight: u8,
         rank_accuracy: super::RankAccuracy,
-        is_level_zero_sorted: bool,
+        sorted: bool,
     ) -> Result<Self, crate::error::Error> {
         use crate::codec::assert::insufficient_data;
         let state = cursor
@@ -385,22 +415,14 @@ where
             .read_u32_le()
             .map_err(insufficient_data("compactor.num_items"))?;
 
-        // Validate the wire-controlled fields before they feed capacity/weight
-        // arithmetic. A legitimate compactor always satisfies these bounds
-        // (`section_size` derives from k ≤ MAX_K and only shrinks; `lg_weight` is the
-        // level index), so rejecting anything else keeps `nominal_capacity` and
-        // `weight` from overflowing on crafted input.
-        if !(0.0..=super::MAX_K as f32).contains(&section_size_raw) {
-            return Err(Error::invalid_argument(format!(
-                "REQ compactor section_size {section_size_raw} out of range"
-            )));
-        }
-        // `weight()` computes `1u64 << lg_weight`, which overflows once lg_weight ≥ 64.
-        if lg_weight >= 64 {
-            return Err(Error::invalid_argument(format!(
-                "REQ compactor lg_weight {lg_weight} exceeds maximum"
-            )));
-        }
+        super::serialization::validate_compactor_state(
+            k,
+            expected_lg_weight,
+            state,
+            section_size_raw,
+            lg_weight,
+            num_sections,
+        )?;
 
         // Don't trust `num_items` for the allocation: a malformed length could request
         // a multi-gigabyte reservation before the per-item reads below fail. The buffer
@@ -411,6 +433,7 @@ where
         for _ in 0..num_items {
             items.push(T::deserialize_value(cursor)?);
         }
+        validate_deserialized_items(&items, sorted)?;
 
         Ok(Compactor::from_serialized_state(
             lg_weight,
@@ -418,7 +441,7 @@ where
             num_sections,
             state,
             items,
-            is_level_zero_sorted,
+            sorted,
             rank_accuracy,
         ))
     }
@@ -435,14 +458,15 @@ where
         rank_accuracy: super::RankAccuracy,
         items: Vec<T>,
         is_sorted: bool,
-    ) -> Self {
+    ) -> Result<Self, Error> {
+        validate_deserialized_items(&items, is_sorted)?;
         let mut c = Self::new(0, k, rank_accuracy);
         for item in items {
             c.append(item);
         }
         // append() may have flipped is_sorted off; restore the wire flag verbatim.
         c.is_sorted = is_sorted;
-        c
+        Ok(c)
     }
 
     /// Reconstruct a Compactor from deserialized state.
@@ -465,7 +489,7 @@ where
             is_sorted,
             state,
             scratch_buffer: Vec::new(),
-            section_size: nearest_even(section_size_raw),
+            section_size: nearest_even_section_size(section_size_raw),
             num_sections,
             lg_weight,
             rank_accuracy,
@@ -527,15 +551,15 @@ mod tests {
     }
 
     #[test]
-    fn test_nearest_even() {
-        assert_eq!(nearest_even(0.0), 0); // 0/2=0, round(0)=0, 0<<1=0
-        assert_eq!(nearest_even(1.0), 2); // 1/2=0.5, round(0.5)=1, 1<<1=2
-        assert_eq!(nearest_even(2.0), 2); // 2/2=1, round(1)=1, 1<<1=2
-        assert_eq!(nearest_even(3.0), 4); // 3/2=1.5, round(1.5)=2, 2<<1=4
-        assert_eq!(nearest_even(4.0), 4); // 4/2=2, round(2)=2, 2<<1=4
-        assert_eq!(nearest_even(4.6), 4); // 4.6/2=2.3, round(2.3)=2, 2<<1=4
-        assert_eq!(nearest_even(5.6), 6); // 5.6/2=2.8, round(2.8)=3, 3<<1=6
-        assert_eq!(nearest_even(13.0), 14); // 13/2=6.5, round(6.5)=7, 7<<1=14
+    fn test_nearest_even_section_size() {
+        assert_eq!(nearest_even_section_size(0.0), 0); // 0/2=0, round(0)=0, 0<<1=0
+        assert_eq!(nearest_even_section_size(1.0), 2); // 1/2=0.5, round(0.5)=1, 1<<1=2
+        assert_eq!(nearest_even_section_size(2.0), 2); // 2/2=1, round(1)=1, 1<<1=2
+        assert_eq!(nearest_even_section_size(3.0), 4); // 3/2=1.5, round(1.5)=2, 2<<1=4
+        assert_eq!(nearest_even_section_size(4.0), 4); // 4/2=2, round(2)=2, 2<<1=4
+        assert_eq!(nearest_even_section_size(4.6), 4); // 4.6/2=2.3, round(2.3)=2, 2<<1=4
+        assert_eq!(nearest_even_section_size(5.6), 6); // 5.6/2=2.8, round(2.8)=3, 3<<1=6
+        assert_eq!(nearest_even_section_size(13.0), 14); // 13/2=6.5, round(6.5)=7, 7<<1=14
     }
 
     #[test]
@@ -571,7 +595,8 @@ mod tests {
         let raw = bytes.into_bytes();
 
         let mut cursor = SketchSlice::new(&raw);
-        let c2 = Compactor::<f32>::deserialize(&mut cursor, RankAccuracy::HighRank, true).unwrap();
+        let c2 = Compactor::<f32>::deserialize(&mut cursor, 12, 0, RankAccuracy::HighRank, true)
+            .unwrap();
 
         assert_eq!(c.num_items(), c2.num_items());
         assert_eq!(c.lg_weight(), c2.lg_weight());
