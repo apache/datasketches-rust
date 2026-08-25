@@ -32,7 +32,6 @@ rust-version = "1.86.0"
 datasketches = { path = "datasketches" }
 
 # Crates.io dependencies
-approx = { version = "0.5" }
 clap = { version = "4.6.5", features = ["derive"] }
 divan = { version = "0.1.21" }
 googletest = { version = "0.14.3" }

@@ -21,6 +21,12 @@ use std::path::PathBuf;
 use datasketches::hash::value::natural_extend;
 use datasketches::hll::HllSketch;
 use datasketches::hll::HllType;
+use googletest::assert_that;
+use googletest::prelude::all;
+use googletest::prelude::ge;
+use googletest::prelude::le;
+use googletest::prelude::lt;
+use googletest::prelude::near;
 
 use crate::serialization_test_data;
 
@@ -48,23 +54,15 @@ fn test_sketch_file(path: PathBuf, expected_cardinality: usize, expected_lg_k: u
         let lower_bound = expected * (1.0 - error_margin);
         let upper_bound = expected * (1.0 + error_margin);
 
-        assert!(
-            estimate1 >= lower_bound && estimate1 <= upper_bound,
-            "Estimate {} outside bounds [{}, {}] for expected {} in {}",
+        assert_that!(
             estimate1,
-            lower_bound,
-            upper_bound,
-            expected,
+            all!(ge(lower_bound), le(upper_bound)),
+            "path: {}",
             path.display()
         );
     } else {
         // For n=0, estimate should be very close to 0
-        assert!(
-            estimate1 < 1.0,
-            "Expected near-zero estimate for empty sketch, got {} in {}",
-            estimate1,
-            path.display()
-        );
+        assert_that!(estimate1, lt(1.0), "path: {}", path.display());
     }
 
     // Serialize and deserialize again to test round-trip
@@ -123,10 +121,7 @@ fn test_update_after_deserialize_list_mode() {
         sketch.update(2u64);
 
         let est = sketch.estimate();
-        assert!(
-            (est - 2.0).abs() < 0.1,
-            "{hll_type:?}: expected estimate close to 2.0 after update post-deserialize, got {est}"
-        );
+        assert_that!(est, near(2.0, 0.1), "hll_type: {hll_type:?}");
     }
 }
 
@@ -309,6 +304,6 @@ fn test_estimate_accuracy() {
         println!("{:<12} {:<12.0} {:<10.3}", expected, estimate, error_pct,);
 
         // All estimates should be within 2% error
-        assert!(error_pct < 2., "Error too high: {:.3}%", error_pct);
+        assert_that!(error_pct, lt(2.));
     }
 }

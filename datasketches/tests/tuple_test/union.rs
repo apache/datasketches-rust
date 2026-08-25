@@ -21,6 +21,10 @@ use datasketches::tuple::DefaultUnionPolicy;
 use datasketches::tuple::SummaryCombinePolicy;
 use datasketches::tuple::SummaryPolicy;
 use datasketches::tuple::TupleUnionBuilder;
+use googletest::assert_that;
+use googletest::prelude::all;
+use googletest::prelude::ge;
+use googletest::prelude::le;
 
 use super::default_tuple_sketch_builder;
 use super::tuple_sketch_with_range;
@@ -146,10 +150,7 @@ fn estimation_bounds_cover_the_true_union() {
     let upper = result.upper_bound(NumStdDev::Three);
 
     assert!(result.is_estimation_mode());
-    assert!(
-        lower <= 75_000.0 && 75_000.0 <= upper,
-        "expected 75000 in [{lower}, {upper}]"
-    );
+    assert_that!(75_000.0, all!(ge(lower), le(upper)));
 }
 
 #[test]

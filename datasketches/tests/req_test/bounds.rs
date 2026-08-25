@@ -23,6 +23,11 @@ use datasketches::error::Error;
 use datasketches::req::RankAccuracy;
 use datasketches::req::ReqSketch;
 use datasketches::req::SearchCriteria;
+use googletest::assert_that;
+use googletest::prelude::all;
+use googletest::prelude::ge;
+use googletest::prelude::le;
+use googletest::prelude::lt;
 
 #[test]
 fn bounds_are_nested_and_in_unit_interval() {
@@ -48,13 +53,15 @@ fn bounds_are_nested_and_in_unit_interval() {
             .collect();
 
         for (lower, upper) in &bounds {
-            assert!(lower <= upper);
-            assert!((0.0..=1.0).contains(lower));
-            assert!((0.0..=1.0).contains(upper));
+            assert_that!(*lower, le(*upper));
+            assert_that!(*lower, all!(ge(0.0), le(1.0)));
+            assert_that!(*upper, all!(ge(0.0), le(1.0)));
         }
 
-        assert!(bounds[1].0 <= bounds[0].0 && bounds[0].1 <= bounds[1].1);
-        assert!(bounds[2].0 <= bounds[1].0 && bounds[1].1 <= bounds[2].1);
+        assert_that!(bounds[1].0, le(bounds[0].0));
+        assert_that!(bounds[0].1, le(bounds[1].1));
+        assert_that!(bounds[2].0, le(bounds[1].0));
+        assert_that!(bounds[1].1, le(bounds[2].1));
     }
 }
 
@@ -75,14 +82,7 @@ fn theoretical_error_bounds_cover_uniform_quantiles() -> Result<(), Error> {
         let estimated_rank = sketch.rank(&true_quantile, SearchCriteria::Inclusive)?;
         let lower = sketch.rank_lower_bound(rank, 3);
         let upper = sketch.rank_upper_bound(rank, 3);
-        assert!(
-            estimated_rank >= lower && estimated_rank <= upper,
-            "rank {} estimate {:.6} outside [{:.6}, {:.6}]",
-            rank,
-            estimated_rank,
-            lower,
-            upper
-        );
+        assert_that!(estimated_rank, all!(ge(lower), le(upper)), "rank: {rank}");
     }
 
     Ok(())
@@ -109,9 +109,9 @@ fn hra_and_lra_bounds_are_tighter_at_their_target_end() -> Result<(), Error> {
             (rank - lra.rank_lower_bound(rank, 2)).max(lra.rank_upper_bound(rank, 2) - rank);
 
         if rank >= 0.75 {
-            assert!(hra_error <= lra_error);
+            assert_that!(hra_error, le(lra_error));
         } else if rank <= 0.25 {
-            assert!(lra_error <= hra_error);
+            assert_that!(lra_error, le(hra_error));
         }
     }
 
@@ -131,7 +131,7 @@ fn exact_mode_bounds_are_tight() {
     for rank in [0.1, 0.25, 0.5, 0.75, 0.9] {
         let lower = sketch.rank_lower_bound(rank, 2);
         let upper = sketch.rank_upper_bound(rank, 2);
-        assert!((upper - lower) / 2.0 < 0.05);
+        assert_that!((upper - lower) / 2.0, lt(0.05));
     }
 }
 
@@ -160,12 +160,12 @@ fn high_rank_accuracy_matches_tight_thresholds() {
             0.02
         };
 
-        assert!(abs_error <= max_abs_error);
+        assert_that!(abs_error, le(max_abs_error));
     }
 
     for rank in [0.9, 0.99, 0.999] {
         let lower = sketch.rank_lower_bound(rank, 3);
         let upper = sketch.rank_upper_bound(rank, 3);
-        assert!(rank >= lower && rank <= upper);
+        assert_that!(rank, all!(ge(lower), le(upper)));
     }
 }

@@ -22,6 +22,8 @@
 use datasketches::error::Error;
 use datasketches::req::ReqSketch;
 use datasketches::req::SearchCriteria;
+use googletest::assert_that;
+use googletest::prelude::le;
 
 #[test]
 fn rank_space_error_is_bounded() -> Result<(), Error> {
@@ -40,13 +42,7 @@ fn rank_space_error_is_bounded() -> Result<(), Error> {
         let abs_rank_error = (estimated_rank - rank).abs();
         let max_abs_rank_error = if rank >= 0.9 { 0.01 } else { 0.02 };
 
-        assert!(
-            abs_rank_error <= max_abs_rank_error,
-            "rank {} abs error {:.4} > {:.4}",
-            rank,
-            abs_rank_error,
-            max_abs_rank_error
-        );
+        assert_that!(abs_rank_error, le(max_abs_rank_error), "rank: {rank}");
     }
 
     assert!(!sketch.is_empty());

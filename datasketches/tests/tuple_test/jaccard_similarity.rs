@@ -19,6 +19,10 @@ use datasketches::thetacommon::JaccardSimilarity;
 use datasketches::tuple::DefaultUpdatePolicy;
 use datasketches::tuple::TupleJaccardSimilarity;
 use datasketches::tuple::TupleSketchBuilder;
+use googletest::assert_that;
+use googletest::prelude::anything;
+use googletest::prelude::err;
+use googletest::prelude::near;
 
 use crate::default_tuple_sketch_builder;
 use crate::tuple_sketch_with_range;
@@ -30,10 +34,7 @@ fn assert_jaccard_exact(actual: JaccardSimilarity, expected: f64) {
 }
 
 fn assert_close(actual: f64, expected: f64, margin: f64) {
-    assert!(
-        (actual - expected).abs() <= margin,
-        "actual={actual}, expected={expected}, margin={margin}"
-    );
+    assert_that!(actual, near(expected, margin));
 }
 
 fn assert_jaccard_estimate(actual: JaccardSimilarity, expected: f64) {
@@ -111,15 +112,13 @@ fn test_custom_seed_and_seed_mismatch() {
     let jaccard = operator.compute(&sketch_a, &sketch_b).unwrap();
     assert_jaccard_exact(jaccard, 1.0);
     assert!(operator.exactly_equal(&sketch_a, &sketch_b).unwrap());
-    assert!(
-        TupleJaccardSimilarity::default()
-            .compute(&sketch_a, &sketch_b)
-            .is_err()
+    assert_that!(
+        TupleJaccardSimilarity::default().compute(&sketch_a, &sketch_b),
+        err(anything())
     );
-    assert!(
-        TupleJaccardSimilarity::default()
-            .exactly_equal(&sketch_a, &sketch_b)
-            .is_err()
+    assert_that!(
+        TupleJaccardSimilarity::default().exactly_equal(&sketch_a, &sketch_b),
+        err(anything())
     );
     assert!(
         !TupleJaccardSimilarity::default()

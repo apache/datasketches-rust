@@ -16,6 +16,10 @@
 // under the License.
 
 use datasketches::bloom::BloomFilterBuilder;
+use googletest::assert_that;
+use googletest::prelude::ge;
+use googletest::prelude::gt;
+use googletest::prelude::le;
 
 const NUM_BITS: u64 = 65_536;
 const NUM_HASHES: u16 = 5;
@@ -38,9 +42,9 @@ fn test_membership_statistics_and_reset() {
 
     assert!(!filter.contains_and_insert(&"apple"));
     assert!(filter.contains_and_insert(&"apple"));
-    assert!(filter.bits_used() > 0);
-    assert!(filter.load_factor() > 0.0);
-    assert!(filter.estimated_fpp() > 0.0);
+    assert_that!(filter.bits_used(), gt(0));
+    assert_that!(filter.load_factor(), gt(0.0));
+    assert_that!(filter.estimated_fpp(), gt(0.0));
 
     filter.reset();
     assert!(filter.is_empty());
@@ -65,16 +69,16 @@ fn test_union_and_intersection() {
     intersection.intersect(&right);
     assert!(intersection.contains(&"shared"));
     let intersection_bits = intersection.bits_used();
-    assert!(intersection_bits <= left_bits);
-    assert!(intersection_bits <= right_bits);
+    assert_that!(intersection_bits, le(left_bits));
+    assert_that!(intersection_bits, le(right_bits));
 
     let mut union = left;
     union.union(&right);
     assert!(union.contains(&"shared"));
     assert!(union.contains(&"left"));
     assert!(union.contains(&"right"));
-    assert!(union.bits_used() >= left_bits);
-    assert!(union.bits_used() >= right_bits);
+    assert_that!(union.bits_used(), ge(left_bits));
+    assert_that!(union.bits_used(), ge(right_bits));
 }
 
 #[test]

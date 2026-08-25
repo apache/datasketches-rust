@@ -1102,6 +1102,10 @@ impl ThetaSketchBuilder {
 
 #[cfg(test)]
 mod tests {
+    use googletest::assert_that;
+    use googletest::prelude::gt;
+    use googletest::prelude::near;
+
     use super::*;
 
     fn sorted_theta_entries(sketch: &ThetaSketch) -> Vec<u64> {
@@ -1130,7 +1134,7 @@ mod tests {
         assert_eq!(theta.num_retained(), compact.num_retained());
         assert_eq!(theta.theta64(), compact.theta64());
         assert_eq!(sorted_theta_entries(theta), sorted_compact_entries(compact));
-        assert!((theta.estimate() - compact.estimate()).abs() <= 1e-12);
+        assert_that!(theta.estimate(), near(compact.estimate(), 1e-12));
     }
 
     fn assert_compact_equivalent(a: &CompactThetaSketch, b: &CompactThetaSketch) {
@@ -1141,7 +1145,7 @@ mod tests {
         assert_eq!(a.theta64(), b.theta64());
         assert_eq!(a.seed_hash(), b.seed_hash());
         assert_eq!(sorted_compact_entries(a), sorted_compact_entries(b));
-        assert!((a.estimate() - b.estimate()).abs() <= 1e-12);
+        assert_that!(a.estimate(), near(b.estimate(), 1e-12));
     }
 
     fn assert_compressed_round_trip(theta: &ThetaSketch, compact: &CompactThetaSketch) {
@@ -1212,7 +1216,7 @@ mod tests {
         }
 
         let compact = theta.compact(true);
-        assert!(compact.num_retained() > 255);
+        assert_that!(compact.num_retained(), gt(255));
         assert!(!compact.is_estimation_mode());
         assert!(compact.is_ordered());
 

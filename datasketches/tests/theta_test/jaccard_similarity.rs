@@ -19,6 +19,10 @@ use datasketches::theta::ThetaJaccardSimilarity;
 use datasketches::theta::ThetaSketch;
 use datasketches::theta::ThetaSketchBuilder;
 use datasketches::thetacommon::JaccardSimilarity;
+use googletest::assert_that;
+use googletest::prelude::anything;
+use googletest::prelude::err;
+use googletest::prelude::near;
 
 fn assert_jaccard_exact(actual: JaccardSimilarity, expected: f64) {
     assert_eq!(actual.lower_bound(), expected);
@@ -27,10 +31,7 @@ fn assert_jaccard_exact(actual: JaccardSimilarity, expected: f64) {
 }
 
 fn assert_close(actual: f64, expected: f64, margin: f64) {
-    assert!(
-        (actual - expected).abs() <= margin,
-        "actual={actual}, expected={expected}, margin={margin}"
-    );
+    assert_that!(actual, near(expected, margin));
 }
 
 fn assert_jaccard_estimate(actual: JaccardSimilarity, expected: f64) {
@@ -167,15 +168,13 @@ fn test_seed_mismatch() {
     let mut sketch_b = ThetaSketchBuilder::default().seed(123).build();
     sketch_b.update(1u64);
 
-    assert!(
-        ThetaJaccardSimilarity::default()
-            .compute(&sketch_a, &sketch_b)
-            .is_err()
+    assert_that!(
+        ThetaJaccardSimilarity::default().compute(&sketch_a, &sketch_b),
+        err(anything())
     );
-    assert!(
-        ThetaJaccardSimilarity::default()
-            .exactly_equal(&sketch_a, &sketch_b)
-            .is_err()
+    assert_that!(
+        ThetaJaccardSimilarity::default().exactly_equal(&sketch_a, &sketch_b),
+        err(anything())
     );
     assert!(
         !ThetaJaccardSimilarity::default()

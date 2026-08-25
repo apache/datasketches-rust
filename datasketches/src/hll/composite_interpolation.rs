@@ -4748,6 +4748,10 @@ static ARRAYS: [[f64; NUM_X_VALUES]; 18] = [
 
 #[cfg(test)]
 mod tests {
+    use googletest::assert_that;
+    use googletest::prelude::gt;
+    use googletest::prelude::near;
+
     use super::*;
 
     #[test]
@@ -4787,8 +4791,8 @@ mod tests {
         assert_eq!(x_arr.len(), 257);
 
         // Check first few values match the C++ data
-        assert!((x_arr[0] - 10.767999803534).abs() < 1e-6);
-        assert!((x_arr[1] - 11.237701481774).abs() < 1e-6);
+        assert_that!(x_arr[0], near(10.767999803534, 1e-6));
+        assert_that!(x_arr[1], near(11.237701481774, 1e-6));
     }
 
     #[test]
@@ -4796,11 +4800,7 @@ mod tests {
         // X array should be strictly increasing
         let x_arr = get_x_arr(8);
         for i in 1..x_arr.len() {
-            assert!(
-                x_arr[i] > x_arr[i - 1],
-                "X array should be monotonically increasing at index {}",
-                i
-            );
+            assert_that!(x_arr[i], gt(x_arr[i - 1]), "index: {i}");
         }
     }
 }

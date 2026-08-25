@@ -21,6 +21,8 @@ use std::path::PathBuf;
 use datasketches::bloom::BloomFilter;
 use datasketches::bloom::BloomFilterBuilder;
 use datasketches::error::ErrorKind;
+use googletest::assert_that;
+use googletest::prelude::gt;
 
 use crate::serialization_test_data;
 
@@ -50,10 +52,7 @@ fn test_bloom_filter_file(path: PathBuf, expected_num_items: u64, expected_num_h
             "Filter should not be empty for n={}",
             expected_num_items
         );
-        assert!(
-            filter1.bits_used() > 0,
-            "Non-empty filter should have bits set"
-        );
+        assert_that!(filter1.bits_used(), gt(0));
     }
 
     // Verify the items that were inserted (integers 0 to n/10-1)
@@ -186,7 +185,7 @@ fn test_inconsistent_num_bits_set_is_rejected() {
     filter.insert("apple");
     filter.insert("banana");
     let actual_bits_set = filter.bits_used();
-    assert!(actual_bits_set > 1);
+    assert_that!(actual_bits_set, gt(1));
 
     for serialized_count in [0, actual_bits_set - 1, actual_bits_set + 1] {
         let mut bytes = filter.serialize();

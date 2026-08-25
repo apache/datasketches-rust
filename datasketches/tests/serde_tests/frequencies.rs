@@ -23,6 +23,9 @@ use datasketches::error::Error;
 use datasketches::error::ErrorKind;
 use datasketches::frequencies::FrequentItemValue;
 use datasketches::frequencies::FrequentItemsSketch;
+use googletest::assert_that;
+use googletest::prelude::contains_substring;
+use googletest::prelude::gt;
 
 use crate::serialization_test_data;
 
@@ -176,7 +179,7 @@ fn test_java_frequent_longs_compatibility() {
         let sketch = FrequentItemsSketch::<i64>::deserialize(&bytes).unwrap();
         assert_eq!(sketch.is_empty(), n == 0);
         if n > 10 {
-            assert!(sketch.maximum_error() > 0);
+            assert_that!(sketch.maximum_error(), gt(0));
         } else {
             assert_eq!(sketch.maximum_error(), 0);
         }
@@ -238,17 +241,14 @@ fn test_cpp_frequent_longs_compatibility() {
         if cfg!(windows) {
             if let Err(err) = sketch {
                 assert_eq!(err.kind(), ErrorKind::InvalidData);
-                assert!(
-                    err.message().contains("insufficient data"),
-                    "expected insufficient data error, got: {err}"
-                );
+                assert_that!(err.message(), contains_substring("insufficient data"));
                 continue;
             }
         }
         let sketch = sketch.unwrap();
         assert_eq!(sketch.is_empty(), n == 0);
         if n > 10 {
-            assert!(sketch.maximum_error() > 0);
+            assert_that!(sketch.maximum_error(), gt(0));
         } else {
             assert_eq!(sketch.maximum_error(), 0);
         }
@@ -266,7 +266,7 @@ fn test_cpp_frequent_strings_compatibility() {
         let sketch = FrequentItemsSketch::<String>::deserialize(&bytes).unwrap();
         assert_eq!(sketch.is_empty(), n == 0);
         if n > 10 {
-            assert!(sketch.maximum_error() > 0);
+            assert_that!(sketch.maximum_error(), gt(0));
         } else {
             assert_eq!(sketch.maximum_error(), 0);
         }
@@ -327,7 +327,7 @@ fn test_go_frequent_longs_compatibility() {
         let sketch = FrequentItemsSketch::<i64>::deserialize(&bytes).unwrap();
         assert_eq!(sketch.is_empty(), n == 0);
         if n > 10 {
-            assert!(sketch.maximum_error() > 0);
+            assert_that!(sketch.maximum_error(), gt(0));
         } else {
             assert_eq!(sketch.maximum_error(), 0);
         }
@@ -345,7 +345,7 @@ fn test_go_frequent_strings_compatibility() {
         let sketch = FrequentItemsSketch::<String>::deserialize(&bytes).unwrap();
         assert_eq!(sketch.is_empty(), n == 0);
         if n > 10 {
-            assert!(sketch.maximum_error() > 0);
+            assert_that!(sketch.maximum_error(), gt(0));
         } else {
             assert_eq!(sketch.maximum_error(), 0);
         }

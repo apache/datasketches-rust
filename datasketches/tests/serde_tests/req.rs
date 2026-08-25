@@ -24,6 +24,10 @@ use datasketches::req::RankAccuracy;
 use datasketches::req::ReqSketch;
 use datasketches::req::ReqValue;
 use datasketches::req::SearchCriteria;
+use googletest::assert_that;
+use googletest::prelude::anything;
+use googletest::prelude::err;
+use googletest::prelude::ok;
 
 use crate::serialization_test_data;
 
@@ -85,11 +89,7 @@ fn deserialize_truncated_preamble() {
     for n in 0..8usize {
         let bytes = vec![0u8; n];
         let result = ReqSketch::<f32>::deserialize(&bytes);
-        assert!(
-            result.is_err(),
-            "deserialize succeeded with {} bytes (expected error)",
-            n
-        );
+        assert_that!(result, err(anything()), "preamble length: {n}");
     }
 }
 
@@ -107,7 +107,7 @@ fn deserialize_wrong_family_id() {
         0u8, // num_raw_items
     ];
     let result = ReqSketch::<f32>::deserialize(&bytes);
-    assert!(result.is_err(), "deserialize accepted wrong family id");
+    assert_that!(result, err(anything()));
     let err = result.unwrap_err();
     assert_eq!(
         err.kind(),
@@ -126,7 +126,7 @@ fn deserialize_wrong_serial_version() {
         12u8, 0u8, 0u8, 0u8,
     ];
     let result = ReqSketch::<f32>::deserialize(&bytes);
-    assert!(result.is_err(), "deserialize accepted wrong serial version");
+    assert_that!(result, err(anything()));
 }
 
 #[test]
@@ -134,10 +134,7 @@ fn deserialize_invalid_preamble_ints() {
     // preamble_ints must be 2 (exact) or 4 (estimation). Try 3.
     let bytes = [3u8, 1, 17, 4, 12, 0, 0, 0];
     let result = ReqSketch::<f32>::deserialize(&bytes);
-    assert!(
-        result.is_err(),
-        "deserialize accepted invalid preamble_ints=3"
-    );
+    assert_that!(result, err(anything()));
 }
 
 #[test]
@@ -152,10 +149,7 @@ fn deserialize_rejects_non_empty_zero_levels() {
         0u8,
     ];
     let result = ReqSketch::<f32>::deserialize(&bytes);
-    assert!(
-        result.is_err(),
-        "deserialize accepted non-empty sketch with zero levels"
-    );
+    assert_that!(result, err(anything()));
 }
 
 #[test]
@@ -166,9 +160,9 @@ fn deserialize_rejects_inconsistent_raw_items_header() {
         12, 0, 1u8, // num_levels
         0u8, // invalid raw item count
     ];
-    assert!(
-        ReqSketch::<f32>::deserialize(&raw_with_no_items).is_err(),
-        "deserialize accepted raw-items sketch with no raw items"
+    assert_that!(
+        ReqSketch::<f32>::deserialize(&raw_with_no_items),
+        err(anything())
     );
 
     let raw_with_two_levels = [
@@ -176,9 +170,9 @@ fn deserialize_rejects_inconsistent_raw_items_header() {
         12, 0, 2u8, // invalid for raw-items sketches
         1u8,
     ];
-    assert!(
-        ReqSketch::<f32>::deserialize(&raw_with_two_levels).is_err(),
-        "deserialize accepted raw-items sketch with multiple levels"
+    assert_that!(
+        ReqSketch::<f32>::deserialize(&raw_with_two_levels),
+        err(anything())
     );
 }
 
@@ -191,24 +185,18 @@ fn deserialize_odd_k() {
         0u8, 0u8,
     ];
     let result = ReqSketch::<f32>::deserialize(&bytes);
-    assert!(result.is_err(), "deserialize accepted odd k=11");
+    assert_that!(result, err(anything()));
 }
 
 #[test]
 fn deserialize_k_out_of_range() {
     // k must be in [4, 1024]. Try k=2 (too small).
     let bytes_small = [2u8, 1, 17, 4, 2, 0, 0, 0];
-    assert!(
-        ReqSketch::<f32>::deserialize(&bytes_small).is_err(),
-        "accepted k=2"
-    );
+    assert_that!(ReqSketch::<f32>::deserialize(&bytes_small), err(anything()));
 
     // k=2048 (too large): little-endian 2048 = [0x00, 0x08]
     let bytes_big = [2u8, 1, 17, 4, 0, 8, 0, 0];
-    assert!(
-        ReqSketch::<f32>::deserialize(&bytes_big).is_err(),
-        "accepted k=2048"
-    );
+    assert_that!(ReqSketch::<f32>::deserialize(&bytes_big), err(anything()));
 }
 
 #[test]
@@ -226,10 +214,7 @@ fn deserialize_truncated_estimation_mode() {
               * no payload — truncated */
     ];
     let result = ReqSketch::<f32>::deserialize(&bytes);
-    assert!(
-        result.is_err(),
-        "deserialize accepted truncated estimation-mode bytes"
-    );
+    assert_that!(result, err(anything()));
 }
 
 #[test]
@@ -243,7 +228,7 @@ fn deserialize_truncated_raw_items() {
         0u8, 0, 0x80, 0x3f, // 1.0_f32 (only 1 of the 3 promised items)
     ];
     let result = ReqSketch::<f32>::deserialize(&bytes);
-    assert!(result.is_err(), "deserialize accepted truncated raw_items");
+    assert_that!(result, err(anything()));
 }
 
 // ---------- Deserialize hardening: malformed compactor fields ----------
@@ -286,30 +271,21 @@ fn single_level_image_is_valid_baseline() {
     // Control: the builder with well-formed fields round-trips, so the malformed
     // variants below isolate exactly one bad field.
     let bytes = single_level_image(12.0, 0, 3, 1, &[1.0]);
-    assert!(
-        ReqSketch::<f32>::deserialize(&bytes).is_ok(),
-        "baseline single-level image should deserialize"
-    );
+    assert_that!(ReqSketch::<f32>::deserialize(&bytes), ok(anything()));
 }
 
 #[test]
 fn deserialize_rejects_out_of_range_section_size() {
     // A garbage section_size_raw drives the `nominal_capacity` arithmetic to overflow.
     let bytes = single_level_image(1e30, 0, 3, 1, &[1.0]);
-    assert!(
-        ReqSketch::<f32>::deserialize(&bytes).is_err(),
-        "deserialize accepted out-of-range section_size_raw"
-    );
+    assert_that!(ReqSketch::<f32>::deserialize(&bytes), err(anything()));
 }
 
 #[test]
 fn deserialize_rejects_oversized_lg_weight() {
     // lg_weight >= 64 makes the per-item weight `1u64 << lg_weight` overflow.
     let bytes = single_level_image(12.0, 64, 3, 1, &[1.0]);
-    assert!(
-        ReqSketch::<f32>::deserialize(&bytes).is_err(),
-        "deserialize accepted lg_weight = 64"
-    );
+    assert_that!(ReqSketch::<f32>::deserialize(&bytes), err(anything()));
 }
 
 #[test]
@@ -317,10 +293,7 @@ fn deserialize_rejects_oversized_compactor_num_items() {
     // num_items claims billions of items while only one is supplied: deserialize
     // must fail gracefully without attempting a multi-gigabyte allocation.
     let bytes = single_level_image(12.0, 0, 3, u32::MAX, &[1.0]);
-    assert!(
-        ReqSketch::<f32>::deserialize(&bytes).is_err(),
-        "deserialize accepted oversized num_items"
-    );
+    assert_that!(ReqSketch::<f32>::deserialize(&bytes), err(anything()));
 }
 
 // ---------- Cross-language compatibility ----------

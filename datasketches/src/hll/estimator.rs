@@ -492,6 +492,10 @@ static NON_HIP_UB: [f64; 27] = [
 
 #[cfg(test)]
 mod tests {
+    use googletest::assert_that;
+    use googletest::prelude::gt;
+    use googletest::prelude::lt;
+
     use super::*;
 
     #[test]
@@ -512,10 +516,10 @@ mod tests {
         est.update(8, 0, 10);
 
         // HIP should have increased
-        assert!(est.hip_accum() > 0.0);
+        assert_that!(est.hip_accum(), gt(0.0));
 
         // kxq0 should have changed (10 < 32)
-        assert!(est.kxq0() < 256.0);
+        assert_that!(est.kxq0(), lt(256.0));
         assert_eq!(est.kxq1(), 0.0); // kxq1 unchanged
     }
 
@@ -528,7 +532,7 @@ mod tests {
         let kxq0_after_10 = est.kxq0();
         let kxq1_after_10 = est.kxq1();
 
-        assert!(kxq0_after_10 < 256.0);
+        assert_that!(kxq0_after_10, lt(256.0));
         assert_eq!(kxq1_after_10, 0.0);
 
         // Update from 10 to 50 (crosses the 32 boundary)
@@ -536,8 +540,8 @@ mod tests {
         let kxq0_after_50 = est.kxq0();
         let kxq1_after_50 = est.kxq1();
 
-        assert!(kxq0_after_50 < kxq0_after_10); // Removed 1/2^10 from kxq0 (decreases kxq0)
-        assert!(kxq1_after_50 > 0.0); // Added 1/2^50 to kxq1
+        assert_that!(kxq0_after_50, lt(kxq0_after_10)); // Removed 1/2^10 from kxq0 (decreases kxq0)
+        assert_that!(kxq1_after_50, gt(0.0)); // Added 1/2^50 to kxq1
     }
 
     #[test]
@@ -547,7 +551,7 @@ mod tests {
         // Normal update
         est.update(8, 0, 5);
         let hip_normal = est.hip_accum();
-        assert!(hip_normal > 0.0);
+        assert_that!(hip_normal, gt(0.0));
 
         // Set out-of-order
         est.set_out_of_order(true);

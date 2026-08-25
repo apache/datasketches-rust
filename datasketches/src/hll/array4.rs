@@ -439,6 +439,12 @@ impl Array4 {
 
 #[cfg(test)]
 mod tests {
+    use googletest::assert_that;
+    use googletest::prelude::gt;
+    use googletest::prelude::is_finite;
+    use googletest::prelude::lt;
+    use googletest::prelude::none;
+
     use super::*;
     use crate::hll::Coupon;
 
@@ -480,20 +486,14 @@ mod tests {
         // (not exact, but should be non-zero and not NaN/Inf)
         let estimate = arr.estimate();
 
-        assert!(estimate > 0.0, "Estimate should be positive");
-        assert!(estimate.is_finite(), "Estimate should be finite");
-        assert!(estimate < 100_000.0, "Estimate should be reasonable");
+        assert_that!(estimate, gt(0.0));
+        assert_that!(estimate, is_finite());
+        assert_that!(estimate, lt(100_000.0));
 
         // Rough sanity check: with 100 updates to different slots,
         // estimate should be in a reasonable range (very loose bounds)
-        assert!(
-            estimate > 1_000.0,
-            "Estimate seems too low for 10_000 updates"
-        );
-        assert!(
-            estimate < 100_000.0,
-            "Estimate seems too high for 10_000 updates"
-        );
+        assert_that!(estimate, gt(1_000.0));
+        assert_that!(estimate, lt(100_000.0));
     }
 
     #[test]
@@ -507,14 +507,11 @@ mod tests {
         // Verify registers were updated (not exact values, just check they changed)
         // kxq0 should have decreased (we removed a 0 and added a 10)
         // Initial kxq0 = 256 (all zeros = 1.0 each)
-        assert!(arr.estimator.kxq0() < 256.0, "kxq0 should have decreased");
+        assert_that!(arr.estimator.kxq0(), lt(256.0));
 
         // kxq1 should have a small positive value (from 1/2^40)
-        assert!(arr.estimator.kxq1() > 0.0, "kxq1 should be positive");
-        assert!(
-            arr.estimator.kxq1() < 0.001,
-            "kxq1 should be small (1/2^40 is tiny)"
-        );
+        assert_that!(arr.estimator.kxq1(), gt(0.0));
+        assert_that!(arr.estimator.kxq1(), lt(0.001));
     }
 
     #[test]
@@ -535,7 +532,7 @@ mod tests {
         assert_eq!(arr.num_at_cur_min, num_slots - 1);
         assert_eq!(arr.get_raw(0), 14);
         assert_eq!(arr.get(0), 15);
-        assert!(arr.aux_map.is_none());
+        assert_that!(arr.aux_map, none());
 
         for slot in 1..num_slots {
             assert_eq!(arr.get(slot), 1);

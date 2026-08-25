@@ -23,6 +23,8 @@ use datasketches::tuple::CompactTupleSketch;
 use datasketches::tuple::DefaultUpdatePolicy;
 use datasketches::tuple::TupleSketchBuilder;
 use googletest::assert_that;
+use googletest::prelude::each;
+use googletest::prelude::eq;
 use googletest::prelude::near;
 
 use crate::serialization_test_data;
@@ -117,7 +119,8 @@ fn round_trip_preserves_summaries() {
         CompactTupleSketch::<u64>::deserialize(&sketch.compact(true).serialize()).unwrap();
 
     assert_eq!(restored.num_retained(), 50);
-    assert!(restored.iter().all(|(_, &summary)| summary == 3));
+    let summaries: Vec<_> = restored.iter().map(|(_, &summary)| summary).collect();
+    assert_that!(summaries, each(eq(&3)));
 }
 
 #[test]

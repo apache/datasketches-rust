@@ -19,11 +19,21 @@
 
 //! Core ReqSketch construction and update behavior.
 
-use approx::assert_relative_eq;
 use datasketches::error::Error;
 use datasketches::req::RankAccuracy;
 use datasketches::req::ReqSketch;
 use datasketches::req::SearchCriteria;
+use googletest::assert_that;
+use googletest::prelude::all;
+use googletest::prelude::anything;
+use googletest::prelude::approx_eq;
+use googletest::prelude::err;
+use googletest::prelude::ge;
+use googletest::prelude::le;
+use googletest::prelude::lt;
+use googletest::prelude::near;
+use googletest::prelude::none;
+use googletest::prelude::ok;
 
 #[test]
 fn empty_sketch_has_default_state_and_rejects_queries() {
@@ -34,13 +44,25 @@ fn empty_sketch_has_default_state_and_rejects_queries() {
     assert!(!sketch.is_estimation_mode());
     assert_eq!(sketch.n(), 0);
     assert_eq!(sketch.num_retained(), 0);
-    assert!(sketch.min_item().is_none());
-    assert!(sketch.max_item().is_none());
+    assert_that!(sketch.min_item(), none());
+    assert_that!(sketch.max_item(), none());
 
-    assert!(sketch.rank(&0.0, SearchCriteria::Inclusive).is_err());
-    assert!(sketch.quantile(0.5, SearchCriteria::Inclusive).is_err());
-    assert!(sketch.pmf(&[0.0], SearchCriteria::Inclusive).is_err());
-    assert!(sketch.cdf(&[0.0], SearchCriteria::Inclusive).is_err());
+    assert_that!(
+        sketch.rank(&0.0, SearchCriteria::Inclusive),
+        err(anything())
+    );
+    assert_that!(
+        sketch.quantile(0.5, SearchCriteria::Inclusive),
+        err(anything())
+    );
+    assert_that!(
+        sketch.pmf(&[0.0], SearchCriteria::Inclusive),
+        err(anything())
+    );
+    assert_that!(
+        sketch.cdf(&[0.0], SearchCriteria::Inclusive),
+        err(anything())
+    );
 }
 
 #[test]
@@ -55,37 +77,37 @@ fn single_value_hra_answers_exactly() {
     assert_eq!(sketch.min_item(), Some(&1.0));
     assert_eq!(sketch.max_item(), Some(&1.0));
 
-    assert_relative_eq!(
+    assert_that!(
         sketch
             .rank(&1.0, SearchCriteria::Exclusive)
             .expect("rank should succeed"),
-        0.0
+        approx_eq(0.0)
     );
-    assert_relative_eq!(
+    assert_that!(
         sketch
             .rank(&1.0, SearchCriteria::Inclusive)
             .expect("rank should succeed"),
-        1.0
+        approx_eq(1.0)
     );
-    assert_relative_eq!(
+    assert_that!(
         sketch
             .rank(&1.1, SearchCriteria::Exclusive)
             .expect("rank should succeed"),
-        1.0
+        approx_eq(1.0)
     );
-    assert_relative_eq!(
+    assert_that!(
         sketch
             .rank(&f32::INFINITY, SearchCriteria::Inclusive)
             .expect("rank should succeed"),
-        1.0
+        approx_eq(1.0)
     );
 
     for rank in [0.0, 0.5, 1.0] {
-        assert_relative_eq!(
+        assert_that!(
             sketch
                 .quantile(rank, SearchCriteria::Exclusive)
                 .expect("quantile should succeed"),
-            1.0
+            approx_eq(1.0)
         );
     }
 }
@@ -119,29 +141,29 @@ fn repeated_values_respect_search_criteria() {
     assert_eq!(sketch.n(), 6);
     assert_eq!(sketch.num_retained(), 6);
 
-    assert_relative_eq!(
+    assert_that!(
         sketch
             .rank(&1.0, SearchCriteria::Exclusive)
             .expect("rank should succeed"),
-        0.0
+        approx_eq(0.0)
     );
-    assert_relative_eq!(
+    assert_that!(
         sketch
             .rank(&1.0, SearchCriteria::Inclusive)
             .expect("rank should succeed"),
-        0.5
+        approx_eq(0.5)
     );
-    assert_relative_eq!(
+    assert_that!(
         sketch
             .rank(&2.0, SearchCriteria::Exclusive)
             .expect("rank should succeed"),
-        0.5
+        approx_eq(0.5)
     );
-    assert_relative_eq!(
+    assert_that!(
         sketch
             .rank(&2.0, SearchCriteria::Inclusive)
             .expect("rank should succeed"),
-        1.0
+        approx_eq(1.0)
     );
 }
 
@@ -157,7 +179,7 @@ fn estimation_mode_compresses_and_keeps_min_max() {
     assert!(!sketch.is_empty());
     assert!(sketch.is_estimation_mode());
     assert_eq!(sketch.n(), n);
-    assert!(sketch.num_retained() < n as u32);
+    assert_that!(sketch.num_retained(), lt(n as u32));
     assert_eq!(sketch.min_item(), Some(&0.0));
     assert_eq!(sketch.max_item(), Some(&((n - 1) as f32)));
 
@@ -171,9 +193,9 @@ fn estimation_mode_compresses_and_keeps_min_max() {
         .rank(&(n as f32), SearchCriteria::Exclusive)
         .expect("rank should succeed");
 
-    assert!((r0 - 0.0).abs() <= 1e-3);
-    assert!((rmid - 0.5).abs() <= 0.01);
-    assert!((rmax - 1.0).abs() <= 1e-3);
+    assert_that!(r0, near(0.0, 1e-3));
+    assert_that!(rmid, near(0.5, 0.01));
+    assert_that!(rmax, near(1.0, 1e-3));
 }
 
 #[test]
@@ -220,7 +242,7 @@ fn small_edge_cases_answer_reasonably() -> Result<(), Error> {
     two_values.update(1.0);
     two_values.update(100.0);
     let median = two_values.quantile(0.5, SearchCriteria::Inclusive)?;
-    assert!((1.0..=100.0).contains(&median));
+    assert_that!(median, all!(ge(1.0), le(100.0)));
 
     let mut duplicates = ReqSketch::new();
     for _ in 0..100 {
@@ -234,10 +256,22 @@ fn small_edge_cases_answer_reasonably() -> Result<(), Error> {
 #[test]
 fn constructors_validate_k() {
     // k must be even and within the supported range; both constructors enforce it.
-    assert!(ReqSketch::<f64>::try_new(0, RankAccuracy::HighRank).is_err());
-    assert!(ReqSketch::<f64>::try_new(3, RankAccuracy::HighRank).is_err()); // odd
-    assert!(ReqSketch::<f64>::try_new(4096, RankAccuracy::HighRank).is_err()); // too large
-    assert!(ReqSketch::<f64>::try_new(12, RankAccuracy::HighRank).is_ok());
-    assert!(ReqSketch::<f64>::builder().k(5).is_err()); // odd via builder
-    assert!(ReqSketch::<f64>::builder().k(12).is_ok());
+    assert_that!(
+        ReqSketch::<f64>::try_new(0, RankAccuracy::HighRank),
+        err(anything())
+    );
+    assert_that!(
+        ReqSketch::<f64>::try_new(3, RankAccuracy::HighRank),
+        err(anything())
+    ); // odd
+    assert_that!(
+        ReqSketch::<f64>::try_new(4096, RankAccuracy::HighRank),
+        err(anything())
+    ); // too large
+    assert_that!(
+        ReqSketch::<f64>::try_new(12, RankAccuracy::HighRank),
+        ok(anything())
+    );
+    assert_that!(ReqSketch::<f64>::builder().k(5), err(anything())); // odd via builder
+    assert_that!(ReqSketch::<f64>::builder().k(12), ok(anything()));
 }

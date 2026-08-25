@@ -19,6 +19,11 @@ use datasketches::theta::CompactThetaSketch;
 use datasketches::theta::ThetaSketch;
 use datasketches::theta::ThetaSketchBuilder;
 use datasketches::theta::ThetaUnionBuilder;
+use googletest::assert_that;
+use googletest::prelude::anything;
+use googletest::prelude::err;
+use googletest::prelude::le;
+use googletest::prelude::near;
 
 fn sketch_with_range(lg_k: u8, start: i64, count: i64) -> ThetaSketch {
     let mut sketch = ThetaSketchBuilder::default().lg_k(lg_k).build();
@@ -29,12 +34,10 @@ fn sketch_with_range(lg_k: u8, start: i64, count: i64) -> ThetaSketch {
 }
 
 fn assert_estimate_close(sketch: &CompactThetaSketch, expected: f64, tolerance: f64) {
-    assert!(
-        (sketch.estimate() - expected).abs() <= tolerance,
-        "estimate={}, expected={}, tolerance={}, theta={}, retained={}",
+    assert_that!(
         sketch.estimate(),
-        expected,
-        tolerance,
+        near(expected, tolerance),
+        "theta={}, retained={}",
         sketch.theta(),
         sketch.num_retained()
     );
@@ -69,7 +72,7 @@ fn test_non_empty_no_retained_keys() {
     assert_eq!(result.num_retained(), 0);
     assert!(!result.is_empty());
     assert!(result.is_estimation_mode());
-    assert!((result.theta() - 0.001).abs() < 1e-10);
+    assert_that!(result.theta(), near(0.001, 1e-10));
 }
 
 #[test]
@@ -140,10 +143,10 @@ fn test_estimation_mode_half_overlap() {
     let result = union.to_sketch(true);
     assert!(!result.is_empty());
     assert!(result.is_estimation_mode());
-    assert!(
-        (result.estimate() - 15000.0).abs() <= 15000.0 * 0.01,
-        "estimate={}, theta={}, retained={}",
+    assert_that!(
         result.estimate(),
+        near(15000.0, 15000.0 * 0.01),
+        "theta={}, retained={}",
         result.theta(),
         result.num_retained()
     );
@@ -155,7 +158,7 @@ fn test_seed_mismatch() {
     sketch.update(1u64);
 
     let mut union = ThetaUnionBuilder::default().seed(123).build();
-    assert!(union.update(&sketch).is_err());
+    assert_that!(union.update(&sketch), err(anything()));
 }
 
 #[test]
@@ -381,7 +384,7 @@ fn test_union_cutback_to_k() {
     let result = union.to_sketch(true);
 
     assert_estimate_close(&result, (6 * k) as f64, (6 * k) as f64 * 0.06);
-    assert!(result.num_retained() <= k as usize);
+    assert_that!(result.num_retained(), le(k as usize));
 }
 
 #[test]
@@ -659,10 +662,10 @@ fn test_corner_case_union_states() {
         union.update(&sketch_b).unwrap();
         let result = union.to_sketch(true);
 
-        assert!(
-            (result.theta() - expected_theta).abs() < 1e-6,
-            "state_a={state_a:?}, state_b={state_b:?}, theta={}",
-            result.theta()
+        assert_that!(
+            result.theta(),
+            near(expected_theta, 1e-6),
+            "state_a={state_a:?}, state_b={state_b:?}"
         );
         assert_eq!(
             result.num_retained(),
@@ -682,7 +685,7 @@ fn test_corner_case_union_states() {
         union.update(&compact_b).unwrap();
         let compact_result = union.to_sketch(true);
 
-        assert!((compact_result.theta() - expected_theta).abs() < 1e-6);
+        assert_that!(compact_result.theta(), near(expected_theta, 1e-6));
         assert_eq!(compact_result.num_retained(), expected_count);
         assert_eq!(compact_result.is_empty(), expected_empty);
     }

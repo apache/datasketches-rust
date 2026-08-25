@@ -20,7 +20,11 @@ use std::path::PathBuf;
 
 use datasketches::tdigest::TDigestMut;
 use googletest::assert_that;
+use googletest::prelude::all;
 use googletest::prelude::eq;
+use googletest::prelude::ge;
+use googletest::prelude::is_finite;
+use googletest::prelude::le;
 use googletest::prelude::near;
 
 use crate::serialization_test_data;
@@ -341,8 +345,5 @@ fn test_large_weights_produce_finite_extreme_quantile() {
 
     let mut tdigest = TDigestMut::deserialize(&bytes, false).unwrap();
     let quantile = tdigest.quantile(0.25).unwrap();
-    assert!(
-        quantile.is_finite() && (lower..=f64::MAX).contains(&quantile),
-        "quantile must remain within its finite interpolation bounds, got {quantile}"
-    );
+    assert_that!(quantile, all!(is_finite(), ge(lower), le(f64::MAX)));
 }

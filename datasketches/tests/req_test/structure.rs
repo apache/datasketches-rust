@@ -20,6 +20,13 @@
 //! Public iterator behavior for ReqSketch.
 
 use datasketches::req::ReqSketch;
+use googletest::assert_that;
+use googletest::prelude::each;
+use googletest::prelude::eq;
+use googletest::prelude::ge;
+use googletest::prelude::gt;
+use googletest::prelude::le;
+use googletest::prelude::predicate;
 
 #[test]
 fn iterator_weights_sum_to_n_and_items_are_in_range() {
@@ -32,9 +39,9 @@ fn iterator_weights_sum_to_n_and_items_are_in_range() {
     assert_eq!(total_weight, sketch.n());
 
     for (item, weight) in sketch.iter() {
-        assert!(weight >= 1);
-        assert!(item >= *sketch.min_item().expect("non-empty sketch"));
-        assert!(item <= *sketch.max_item().expect("non-empty sketch"));
+        assert_that!(weight, ge(1));
+        assert_that!(item, ge(*sketch.min_item().expect("non-empty sketch")));
+        assert_that!(item, le(*sketch.max_item().expect("non-empty sketch")));
     }
 }
 
@@ -48,7 +55,8 @@ fn small_sketch_iterator_reports_unit_weights() {
 
     let items: Vec<(f64, u64)> = sketch.iter().collect();
     assert_eq!(items.len(), 10);
-    assert!(items.iter().all(|&(_, weight)| weight == 1));
+    let weights: Vec<_> = items.iter().map(|&(_, weight)| weight).collect();
+    assert_that!(weights, each(eq(&1)));
 }
 
 #[test]
@@ -67,11 +75,15 @@ fn compaction_promotes_surviving_items_to_higher_weights() {
     }
 
     let max_weight = sketch.iter().map(|(_, weight)| weight).max().unwrap();
-    assert!(
-        max_weight > 1,
-        "expected promoted items, got max weight {max_weight}"
-    );
+    assert_that!(max_weight, gt(1));
 
     // Every weight is a power of two (2^level).
-    assert!(sketch.iter().all(|(_, weight)| weight.is_power_of_two()));
+    let weights: Vec<_> = sketch.iter().map(|(_, weight)| weight).collect();
+    assert_that!(
+        weights,
+        each(
+            predicate(|weight: &u64| weight.is_power_of_two())
+                .with_description("is a power of two", "is not a power of two")
+        )
+    );
 }
