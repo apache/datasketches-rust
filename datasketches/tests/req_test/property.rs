@@ -32,7 +32,6 @@ fn prop_quantile_rank_consistency() {
 
         let mut sketch = ReqSketch::new();
         for value in values {
-            let value = value as f64 / u64::MAX as f64 * 1000.0;
             sketch.update(value);
         }
 
@@ -79,17 +78,13 @@ fn prop_sketch_bounds() {
             return TestResult::discard();
         }
 
-        let values: Vec<_> = values
-            .into_iter()
-            .map(|value| (value as f64 / i64::MAX as f64 * 1000.0).clamp(-1000.0, 1000.0))
-            .collect();
         let mut sketch = ReqSketch::new();
         for value in &values {
             sketch.update(*value);
         }
 
-        let true_min = values.iter().fold(f64::INFINITY, |a, &b| a.min(b));
-        let true_max = values.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
+        let true_min = values.iter().copied().min().expect("values are non-empty");
+        let true_max = values.iter().copied().max().expect("values are non-empty");
 
         assert_eq!(sketch.min_item(), Some(&true_min));
         assert_eq!(sketch.max_item(), Some(&true_max));
@@ -119,19 +114,25 @@ fn prop_sketch_bounds() {
 
 #[test]
 fn prop_rank_monotonicity() {
-    fn property(values: Vec<u64>) -> TestResult {
+    fn property(values: Vec<u32>) -> TestResult {
         if !(10..100).contains(&values.len()) {
             return TestResult::discard();
         }
 
         let mut sketch = ReqSketch::new();
         for value in values {
-            let value = value as f64 / u64::MAX as f64 * 1000.0;
             sketch.update(value);
         }
 
         let mut last_rank = -1.0;
-        for value in [0.0, 100.0, 200.0, 500.0, 800.0, 1000.0] {
+        for value in [
+            0,
+            u32::MAX / 10,
+            u32::MAX / 5,
+            u32::MAX / 2,
+            (u32::MAX / 5) * 4,
+            u32::MAX,
+        ] {
             let rank = sketch
                 .rank(&value, SearchCriteria::Inclusive)
                 .expect("rank should succeed");
@@ -147,5 +148,5 @@ fn prop_rank_monotonicity() {
         .tests(256)
         .min_tests_passed(256)
         .rng(Gen::new(100))
-        .quickcheck(property as fn(Vec<u64>) -> TestResult);
+        .quickcheck(property as fn(Vec<u32>) -> TestResult);
 }
