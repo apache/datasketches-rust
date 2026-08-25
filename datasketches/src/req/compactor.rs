@@ -50,6 +50,11 @@ fn apply_section_schedule(k: u16, state: u64) -> (f32, u8) {
     (section_size_raw, num_sections)
 }
 
+/// Java's successive `section_size_raw /= sqrt(2)` can land up to 2 ULPs from
+/// the C++/Rust replay (observed on the pinned TCK fixtures). Capacity still
+/// matches because `nearest_even` is unchanged across that gap.
+const SECTION_SIZE_RAW_ULP_TOLERANCE: u32 = 2;
+
 fn is_reachable_section_config(
     k: u16,
     state: u64,
@@ -57,7 +62,9 @@ fn is_reachable_section_config(
     num_sections: u8,
 ) -> bool {
     let (expected_raw, expected_sections) = apply_section_schedule(k, state);
-    expected_sections == num_sections && expected_raw.to_bits() == section_size_raw.to_bits()
+    expected_sections == num_sections
+        && expected_raw.to_bits().abs_diff(section_size_raw.to_bits())
+            <= SECTION_SIZE_RAW_ULP_TOLERANCE
 }
 
 fn items_are_nondecreasing<T: ReqValue>(items: &[T]) -> bool {
