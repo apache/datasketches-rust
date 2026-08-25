@@ -121,11 +121,14 @@ where
         debug_assert_eq!(self.lg_weight, other.lg_weight);
         self.state |= other.state;
         if !other.items.is_empty() {
-            // make sure both items are sorted.
             self.sort();
-            let mut other_items = other.items.clone();
-            other_items.sort_unstable_by(|a, b| a.total_cmp(b));
-            self.merge_sorted(&other_items);
+            if other.is_sorted {
+                self.merge_sorted(&other.items);
+            } else {
+                let mut other_items = other.items.clone();
+                other_items.sort_unstable_by(|a, b| a.total_cmp(b));
+                self.merge_sorted(&other_items);
+            }
         }
         // OR-ing the schedule counters can advance state past several doubling
         // thresholds at once. Loop until no more doublings are needed (C++:
