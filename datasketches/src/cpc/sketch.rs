@@ -53,7 +53,7 @@ use crate::hash::compute_seed_hash;
 
 /// A Compressed Probabilistic Counting sketch.
 ///
-/// See the [module level documentation](super) for more.
+/// See the [module level documentation](crate::cpc) for more.
 #[derive(Debug, Clone)]
 pub struct CpcSketch {
     // immutable config variables

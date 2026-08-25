@@ -17,12 +17,12 @@
 
 //! REQ sketch wire format — constants and helpers shared by sketch + compactor serdes.
 
-use super::INITIAL_SECTIONS_PER_COMPACTOR;
-use super::MIN_K;
-use super::nearest_even_section_size;
 use crate::codec::assert::ensure_preamble_longs_in;
 use crate::codec::assert::ensure_serial_version_is;
 use crate::error::Error;
+use crate::req::INITIAL_SECTIONS_PER_COMPACTOR;
+use crate::req::MIN_K;
+use crate::req::nearest_even_section_size;
 
 pub(super) const SERIAL_VERSION: u8 = 1;
 pub(super) const PREAMBLE_INTS_EXACT: u8 = 2;

@@ -25,12 +25,12 @@
 use std::hash::Hash;
 use std::hash::Hasher;
 
-use super::HashStrategy;
-use super::Value;
+use crate::hash::value::HashStrategy;
+use crate::hash::value::Value;
 
 /// An integer value wrapper that sign-extends the value before hashing.
 ///
-/// See the [module level documentation](super) for more.
+/// See the [module level documentation](crate::hash::value) for more.
 pub type SignExtend<T> = Value<T, SignExtendStrategy>;
 
 /// Hashing strategy for [`SignExtend`].

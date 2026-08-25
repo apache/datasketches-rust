@@ -26,12 +26,12 @@
 
 use std::hash::Hasher;
 
-use super::HashStrategy;
-use super::Value;
+use crate::hash::value::HashStrategy;
+use crate::hash::value::Value;
 
 /// A byte or string value wrapper that hashes raw bytes.
 ///
-/// See the [module level documentation](super) for more.
+/// See the [module level documentation](crate::hash::value) for more.
 pub type RawBytes<T> = Value<T, RawBytesStrategy>;
 
 /// Hashing strategy for [`RawBytes`].

@@ -19,20 +19,21 @@
 
 use std::fmt;
 
-use super::DEFAULT_K;
-use super::MAX_K;
-use super::MIN_K;
-use super::RankAccuracy;
-use super::SearchCriteria;
-use super::compactor::Compactor;
-use super::iter::ReqSketchIterator;
-use super::sorted_view::SortedView;
-use super::value::ReqValue;
 use crate::error::Error;
+use crate::req::DEFAULT_K;
+use crate::req::INITIAL_SECTIONS_PER_COMPACTOR;
+use crate::req::MAX_K;
+use crate::req::MIN_K;
+use crate::req::RankAccuracy;
+use crate::req::SearchCriteria;
+use crate::req::compactor::Compactor;
+use crate::req::iter::ReqSketchIterator;
+use crate::req::sorted_view::SortedView;
+use crate::req::value::ReqValue;
 
 /// A Relative Error Quantiles sketch for approximate quantile estimation.
 ///
-/// See the [module-level documentation](super) for background.
+/// See the [module-level documentation](crate::req) for background.
 #[derive(Debug, Clone)]
 pub struct ReqSketch<T: ReqValue> {
     pub(super) k: u16,
@@ -360,7 +361,7 @@ impl<T: ReqValue> ReqSketch<T> {
 
     const FIXED_RSE_FACTOR: f64 = 0.084;
     fn relative_rse_factor() -> f64 {
-        (0.0512 / super::INITIAL_SECTIONS_PER_COMPACTOR as f64).sqrt()
+        (0.0512 / INITIAL_SECTIONS_PER_COMPACTOR as f64).sqrt()
     }
 
     fn compute_rank_lower_bound(
@@ -409,7 +410,7 @@ impl<T: ReqValue> ReqSketch<T> {
         n: u64,
         hra: bool,
     ) -> bool {
-        let base_cap = k as u64 * super::INITIAL_SECTIONS_PER_COMPACTOR as u64;
+        let base_cap = k as u64 * INITIAL_SECTIONS_PER_COMPACTOR as u64;
         if num_levels == 1 || n <= base_cap {
             return true;
         }
@@ -454,10 +455,10 @@ impl<T: ReqValue> ReqSketch<T> {
     }
 
     pub(super) fn flags_byte(&self) -> u8 {
-        use super::serialization::FLAG_IS_EMPTY;
-        use super::serialization::FLAG_IS_HIGH_RANK;
-        use super::serialization::FLAG_IS_LEVEL_ZERO_SORTED;
-        use super::serialization::FLAG_RAW_ITEMS;
+        use crate::req::serialization::FLAG_IS_EMPTY;
+        use crate::req::serialization::FLAG_IS_HIGH_RANK;
+        use crate::req::serialization::FLAG_IS_LEVEL_ZERO_SORTED;
+        use crate::req::serialization::FLAG_RAW_ITEMS;
         let mut flags = 0u8;
         if self.is_empty() {
             flags |= FLAG_IS_EMPTY;
@@ -475,7 +476,7 @@ impl<T: ReqValue> ReqSketch<T> {
     }
 
     pub(super) fn is_raw_items(&self) -> bool {
-        use super::serialization::RAW_ITEMS_THRESHOLD;
+        use crate::req::serialization::RAW_ITEMS_THRESHOLD;
         self.n <= RAW_ITEMS_THRESHOLD && self.compactors.len() == 1
     }
 
@@ -510,11 +511,11 @@ impl<T: ReqValue> ReqSketch<T> {
 
     /// Serialize the sketch into a `Vec<u8>` matching the C++/Java REQ wire format.
     pub fn serialize(&self) -> Vec<u8> {
-        use super::serialization::PREAMBLE_INTS_ESTIMATION;
-        use super::serialization::PREAMBLE_INTS_EXACT;
-        use super::serialization::SERIAL_VERSION;
         use crate::codec::SketchBytes;
         use crate::codec::family::Family;
+        use crate::req::serialization::PREAMBLE_INTS_ESTIMATION;
+        use crate::req::serialization::PREAMBLE_INTS_EXACT;
+        use crate::req::serialization::SERIAL_VERSION;
 
         let mut out = SketchBytes::with_capacity(self.serialized_size_bytes());
         let preamble_ints = if self.is_estimation_mode() {
@@ -567,17 +568,17 @@ impl<T: ReqValue> ReqSketch<T> {
     /// Returns an error if the input is truncated or contains an inconsistent
     /// REQ serialized state.
     pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
-        use super::compactor::Compactor;
-        use super::serialization::FLAG_IS_EMPTY;
-        use super::serialization::FLAG_IS_HIGH_RANK;
-        use super::serialization::FLAG_IS_LEVEL_ZERO_SORTED;
-        use super::serialization::FLAG_RAW_ITEMS;
-        use super::serialization::RAW_ITEMS_THRESHOLD;
-        use super::serialization::check_preamble_ints;
-        use super::serialization::check_serial_version;
         use crate::codec::SketchSlice;
         use crate::codec::assert::insufficient_data;
         use crate::codec::family::Family;
+        use crate::req::compactor::Compactor;
+        use crate::req::serialization::FLAG_IS_EMPTY;
+        use crate::req::serialization::FLAG_IS_HIGH_RANK;
+        use crate::req::serialization::FLAG_IS_LEVEL_ZERO_SORTED;
+        use crate::req::serialization::FLAG_RAW_ITEMS;
+        use crate::req::serialization::RAW_ITEMS_THRESHOLD;
+        use crate::req::serialization::check_preamble_ints;
+        use crate::req::serialization::check_serial_version;
 
         let mut cursor = SketchSlice::new(bytes);
         let preamble_ints = cursor

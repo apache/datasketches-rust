@@ -24,8 +24,8 @@ use googletest::prelude::all;
 use googletest::prelude::ge;
 use googletest::prelude::le;
 
-use super::default_tuple_sketch_builder;
-use super::tuple_sketch_with_range;
+use crate::default_tuple_sketch_builder;
+use crate::tuple_sketch_with_range;
 
 fn sorted_entries(sketch: &CompactTupleSketch<u64>) -> Vec<(u64, u64)> {
     let mut entries: Vec<_> = sketch

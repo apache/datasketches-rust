@@ -25,8 +25,8 @@ use googletest::prelude::all;
 use googletest::prelude::ge;
 use googletest::prelude::le;
 
-use super::default_tuple_sketch_builder;
-use super::tuple_sketch_with_range;
+use crate::default_tuple_sketch_builder;
+use crate::tuple_sketch_with_range;
 
 #[derive(Debug, Default, Clone, Copy)]
 struct SumPolicy;

@@ -26,12 +26,12 @@
 use std::hash::Hash;
 use std::hash::Hasher;
 
-use super::HashStrategy;
-use super::Value;
+use crate::hash::value::HashStrategy;
+use crate::hash::value::Value;
 
 /// A floating-point value wrapper that uses canonical floating-point hashing.
 ///
-/// See the [module level documentation](super) for more.
+/// See the [module level documentation](crate::hash::value) for more.
 pub type CanonicalFloat<T> = Value<T, CanonicalFloatStrategy>;
 
 /// Hashing strategy for [`CanonicalFloat`].

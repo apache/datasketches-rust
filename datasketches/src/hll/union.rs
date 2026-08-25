@@ -49,7 +49,7 @@ use crate::hll::mode::Mode;
 /// reduced register count. The requested [`HllType`] changes only the result representation, not
 /// its statistical accuracy.
 ///
-/// See the [module level documentation](super) for more.
+/// See the [module level documentation](crate::hll) for more.
 #[derive(Debug, Clone)]
 pub struct HllUnion {
     /// Maximum lg_k that this union can handle
