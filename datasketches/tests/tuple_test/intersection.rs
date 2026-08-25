@@ -49,14 +49,13 @@ fn has_result_tracks_the_first_update() {
     assert!(!intersection.has_result());
     intersection.update(&sketch).unwrap();
     assert!(intersection.has_result());
-    assert_eq!(intersection.to_sketch(true).num_retained(), 10);
+    assert_eq!(intersection.to_sketch(true).unwrap().num_retained(), 10);
 }
 
 #[test]
-#[should_panic(expected = "before first update")]
-fn result_before_first_update_panics() {
+fn result_before_first_update_returns_none() {
     let intersection = TupleIntersection::new(SumPolicy);
-    let _ = intersection.to_sketch(true);
+    assert!(intersection.to_sketch(true).is_none());
 }
 
 #[test]
@@ -71,7 +70,7 @@ fn overlap_combines_summaries() {
     let mut intersection = TupleIntersection::new(SumPolicy);
     intersection.update(&a).unwrap();
     intersection.update(&b).unwrap();
-    let result = intersection.to_sketch(true);
+    let result = intersection.to_sketch(true).unwrap();
 
     assert_eq!(result.num_retained(), 1);
     assert_eq!(result.iter().next().unwrap().1, &7);
@@ -86,7 +85,7 @@ fn accepts_mutable_and_compact_inputs() {
     intersection.update(&a).unwrap();
     intersection.update(&b.compact(true)).unwrap();
 
-    assert_eq!(intersection.to_sketch(true).num_retained(), 500);
+    assert_eq!(intersection.to_sketch(true).unwrap().num_retained(), 500);
 }
 
 #[test]
@@ -100,7 +99,7 @@ fn disjoint_result_is_terminally_empty() {
     intersection.update(&b).unwrap();
     intersection.update(&later).unwrap();
 
-    let result = intersection.to_sketch(true);
+    let result = intersection.to_sketch(true).unwrap();
     assert!(result.is_empty());
     assert_eq!(result.num_retained(), 0);
 }
@@ -124,7 +123,7 @@ fn logically_non_empty_input_without_retained_entries_is_preserved() {
 
     let mut intersection = TupleIntersection::new(SumPolicy);
     intersection.update(&sketch).unwrap();
-    let result = intersection.to_sketch(true);
+    let result = intersection.to_sketch(true).unwrap();
 
     assert!(!result.is_empty());
     assert_eq!(result.num_retained(), 0);
@@ -151,8 +150,8 @@ fn result_ordering_follows_the_request() {
     let mut intersection = TupleIntersection::new(SumPolicy);
     intersection.update(&input).unwrap();
 
-    assert!(intersection.to_sketch(true).is_ordered());
-    assert!(!intersection.to_sketch(false).is_ordered());
+    assert!(intersection.to_sketch(true).unwrap().is_ordered());
+    assert!(!intersection.to_sketch(false).unwrap().is_ordered());
 }
 
 #[test]
@@ -169,7 +168,7 @@ fn estimation_bounds_cover_the_true_intersection() {
     let mut intersection = TupleIntersection::new(SumPolicy);
     intersection.update(&a).unwrap();
     intersection.update(&b).unwrap();
-    let result = intersection.to_sketch(true);
+    let result = intersection.to_sketch(true).unwrap();
     let lower = result.lower_bound(NumStdDev::Three);
     let upper = result.upper_bound(NumStdDev::Three);
 

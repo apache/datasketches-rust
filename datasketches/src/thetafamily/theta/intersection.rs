@@ -25,8 +25,9 @@ use crate::thetacommon::intersection::IntersectionState;
 
 /// Stateful intersection operator for Theta sketches.
 ///
-/// Before the first [`update`](Self::update), the result is undefined; use
-/// [`has_result`](Self::has_result) to check.
+/// A newly created operator has no result. [`has_result`](Self::has_result) returns `false` and
+/// [`to_sketch`](Self::to_sketch) returns `None` until the first successful
+/// [`update`](Self::update).
 #[derive(Debug)]
 pub struct ThetaIntersection {
     state: IntersectionState<ThetaEntry, NoopIntersectionPolicy>,
@@ -63,7 +64,7 @@ impl ThetaIntersection {
         self.state.update(sketch)
     }
 
-    /// Returns whether this operator has received at least one update.
+    /// Returns `true` after the first successful [`update`](Self::update).
     pub fn has_result(&self) -> bool {
         self.state.has_result()
     }
@@ -73,18 +74,18 @@ impl ThetaIntersection {
         size_of::<Self>() + self.state.estimated_size()
     }
 
-    /// Returns the intersection result as a compact theta sketch.
+    /// Returns the current intersection as a compact theta sketch.
     ///
-    /// # Panics
+    /// Returns `None` until the first successful [`update`](Self::update). After that, returns
+    /// `Some` even when the intersection is empty.
     ///
-    /// Panics if called before the first [`update`](Self::update).
-    pub fn to_sketch(&self, ordered: bool) -> CompactThetaSketch {
-        assert!(
-            self.state.has_result(),
-            "ThetaIntersection::to_sketch() called before first update()"
-        );
+    /// If `ordered` is `true`, retained hashes are sorted in ascending order.
+    pub fn to_sketch(&self, ordered: bool) -> Option<CompactThetaSketch> {
+        if !self.state.has_result() {
+            return None;
+        }
         let parts = self.state.to_compact_parts(ordered);
-        CompactThetaSketch::from_parts(
+        Some(CompactThetaSketch::from_parts(
             parts
                 .entries
                 .into_iter()
@@ -94,6 +95,6 @@ impl ThetaIntersection {
             parts.seed_hash,
             parts.ordered,
             parts.empty,
-        )
+        ))
     }
 }
