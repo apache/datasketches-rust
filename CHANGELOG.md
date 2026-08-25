@@ -18,6 +18,7 @@ All significant changes to this project will be documented in this file.
 
 ### Bug fixes
 
+* `FrequentItemsSketch::deserialize` now rejects headers whose `lg_max_map_size` or `lg_cur_map_size` fields are out of range instead of panicking (debug builds) or requesting an oversized allocation (release builds) on corrupt input.
 * T-Digest compression now handles `k = u16::MAX` without overflowing the scale normalization input.
 * T-Digest deserialization now validates declared payload lengths before allocating. Updating a deserialized digest whose unmerged buffer already exceeds the compression threshold now compresses it instead of allowing the buffer to grow without bound.
 

@@ -39,6 +39,12 @@ type SerializeItem<T> = fn(&mut SketchBytes, &T);
 type DeserializeItems<T> = fn(SketchSlice<'_>, usize) -> Result<Vec<T>, Error>;
 
 const LG_MIN_MAP_SIZE: u8 = 3;
+// Largest `lg_max_map_size` accepted when deserializing. A hash map of `1 << lg`
+// slots must be allocatable, so `lg` has to stay below the width of `usize`
+// (otherwise `1usize << lg` overflows) and within a sane memory budget. The cap
+// mirrors CountMin's `MAX_TABLE_ENTRIES` (`1 << 30`) and rejects corrupt headers
+// before they reach the shift/allocation in `with_lg_map_sizes`.
+const LG_MAX_MAP_SIZE: u8 = 30;
 const SAMPLE_SIZE: usize = 1024;
 const EPSILON_FACTOR: f64 = 3.5;
 const LOAD_FACTOR_NUMERATOR: usize = 3;
@@ -567,6 +573,22 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
 
         Family::FREQUENCY.validate_id(family)?;
         ensure_serial_version_is(SERIAL_VERSION, serial_version)?;
+        // Validate the map-size fields before they are used to size (and shift by)
+        // the backing hash map. Without these bounds a corrupt header can drive
+        // `1usize << lg_max` in `with_lg_map_sizes` past the width of `usize`,
+        // panicking in debug builds ("attempt to shift left with overflow") and
+        // requesting an absurd allocation in release builds. Mirrors the C++
+        // reference `check_size`, plus an upper bound Rust needs for memory safety.
+        if lg_cur < LG_MIN_MAP_SIZE {
+            return Err(Error::deserial(format!(
+                "lg_cur_map_size must be at least {LG_MIN_MAP_SIZE}, got {lg_cur}"
+            )));
+        }
+        if lg_max > LG_MAX_MAP_SIZE {
+            return Err(Error::deserial(format!(
+                "lg_max_map_size must be at most {LG_MAX_MAP_SIZE}, got {lg_max}"
+            )));
+        }
         if lg_cur > lg_max {
             return Err(Error::deserial("lg_cur_map_size exceeds lg_max_map_size"));
         }
