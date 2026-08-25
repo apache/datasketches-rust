@@ -302,6 +302,15 @@ where
         1u64 << self.lg_weight
     }
 
+    /// Returns the minimum stream length implied by this compactor's state.
+    ///
+    /// Each compaction removes at least two items of this level's weight. Merging
+    /// states with bitwise OR cannot make the result larger than their sum, so the
+    /// same lower bound holds for both updated and merged sketches.
+    pub(super) fn minimum_stream_length(&self) -> Option<u64> {
+        self.state.checked_mul(2)?.checked_mul(self.weight())
+    }
+
     // Private helper methods
 
     fn ensure_enough_sections(&mut self) -> bool {

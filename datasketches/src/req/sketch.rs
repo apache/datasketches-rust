@@ -726,6 +726,14 @@ impl<T: ReqValue> ReqSketch<T> {
             ));
         }
 
+        if compactors.iter().any(|compactor| {
+            compactor
+                .minimum_stream_length()
+                .is_none_or(|minimum_n| minimum_n > n)
+        }) {
+            return Err(Error::deserial("REQ compactor state exceeds stream length"));
+        }
+
         let (retained_count, nominal_capacity, weighted_count) = compactors
             .iter()
             .try_fold(

@@ -126,9 +126,6 @@ pub(super) fn validate_compactor_state(
             "REQ compactor lg_weight {lg_weight} does not match level {expected_lg_weight}"
         )));
     }
-    if state == u64::MAX {
-        return Err(Error::deserial("REQ compactor state cannot advance"));
-    }
     if !has_reachable_section_configuration(k, state, section_size_raw, num_sections) {
         return Err(Error::deserial(format!(
             "REQ compactor section configuration is not reachable (k={k}, state={state}, section_size_raw={section_size_raw}, num_sections={num_sections})"

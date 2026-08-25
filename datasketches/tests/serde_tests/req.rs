@@ -371,19 +371,42 @@ fn deserialize_rejects_capacity_changing_float_drift() {
 }
 
 #[test]
-fn deserialize_rejects_state_that_cannot_advance() {
+fn deserialize_rejects_state_inconsistent_with_stream_length() {
     let mut bytes = estimation_image(12, 1_000);
     let compactor = ESTIMATION_COMPACTOR_OFFSET;
+    let state = 501u64;
     bytes[compactor + STATE_OFFSET..compactor + STATE_OFFSET + 8]
-        .copy_from_slice(&u64::MAX.to_le_bytes());
+        .copy_from_slice(&state.to_le_bytes());
     let mut raw = 12.0f32;
-    for _ in 0..4 {
+    for _ in 0..2 {
         raw /= std::f32::consts::SQRT_2;
     }
     bytes[compactor + SECTION_SIZE_RAW_OFFSET..compactor + SECTION_SIZE_RAW_OFFSET + 4]
         .copy_from_slice(&raw.to_le_bytes());
-    bytes[compactor + NUM_SECTIONS_OFFSET] = 48;
+    bytes[compactor + NUM_SECTIONS_OFFSET] = 12;
     assert_invalid_data(&bytes);
+}
+
+#[test]
+fn deserialize_rejects_complementary_states_that_overflow_on_merge() {
+    let items: Vec<f32> = (0..192).map(|item| item as f32).collect();
+    let mut raw = 12.0f32;
+    for _ in 0..4 {
+        raw /= std::f32::consts::SQRT_2;
+    }
+
+    let states = [0xAAAA_AAAA_AAAA_AAAAu64, 0x5555_5555_5555_5555u64];
+    assert_eq!(states[0] | states[1], u64::MAX);
+    for state in states {
+        let mut bytes = exact_image(12, &items);
+        let compactor = EXACT_COMPACTOR_OFFSET;
+        bytes[compactor + STATE_OFFSET..compactor + STATE_OFFSET + 8]
+            .copy_from_slice(&state.to_le_bytes());
+        bytes[compactor + SECTION_SIZE_RAW_OFFSET..compactor + SECTION_SIZE_RAW_OFFSET + 4]
+            .copy_from_slice(&raw.to_le_bytes());
+        bytes[compactor + NUM_SECTIONS_OFFSET] = 48;
+        assert_invalid_data(&bytes);
+    }
 }
 
 #[test]
