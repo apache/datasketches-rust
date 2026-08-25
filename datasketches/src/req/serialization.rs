@@ -25,12 +25,6 @@ pub(super) const SERIAL_VERSION: u8 = 1;
 pub(super) const PREAMBLE_INTS_EXACT: u8 = 2;
 pub(super) const PREAMBLE_INTS_ESTIMATION: u8 = 4;
 pub(super) const RAW_ITEMS_THRESHOLD: u64 = 4;
-/// Initial number of sections in a new compactor. Matches C++/Java
-/// `INIT_NUMBER_OF_SECTIONS`.
-pub(super) const INIT_NUM_SECTIONS: u8 = 3;
-/// Doubling in `ensure_enough_sections` proceeds only while `num_sections` is
-/// at most this bound, so `1u64 << (num_sections - 1)` stays in range.
-pub(super) const MAX_NUM_SECTIONS_FOR_DOUBLING: u8 = 64;
 
 /// Flag bits — match the C++ enum order: RESERVED1, RESERVED2, IS_EMPTY, IS_HIGH_RANK, RAW_ITEMS,
 /// IS_LEVEL_ZERO_SORTED.

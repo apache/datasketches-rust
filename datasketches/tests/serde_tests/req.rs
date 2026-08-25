@@ -53,9 +53,9 @@ where
 
 #[test]
 fn round_trip_f64_matrix() {
-    for &k in &[4u16, 12, 1024] {
+    for &k in &[4u16, 6, 10, 12, 1024] {
         for &ra in &[RankAccuracy::HighRank, RankAccuracy::LowRank] {
-            for &n in &[0u64, 1, 4, 5, 100, 10_000] {
+            for &n in &[0u64, 1, 4, 5, 100, 1_250, 2_562, 10_000, 100_000] {
                 round_trip_one::<f64>(k, ra, n, |i| i as f64);
             }
         }
@@ -258,339 +258,174 @@ fn merge_preserves_order_across_serde_round_trip() {
 
 // ---------- Deserialize hardening: malformed compactor fields ----------
 //
-// A non-empty, non-raw, single-level sketch carries a full 20-byte compactor
-// preamble whose `section_size_raw`, `lg_weight`, and `num_items` fields are read
-// straight off the wire. Serializers use RAW_ITEMS for one-level sketches with
-// n ≤ 4, so the canonical non-raw baseline uses five items and mutates exactly
-// one invariant in each malformed case.
+const EXACT_COMPACTOR_OFFSET: usize = 8;
+const ESTIMATION_COMPACTOR_OFFSET: usize = 24;
+const STATE_OFFSET: usize = 0;
+const SECTION_SIZE_RAW_OFFSET: usize = 8;
+const LG_WEIGHT_OFFSET: usize = 12;
+const NUM_SECTIONS_OFFSET: usize = 13;
+const NUM_ITEMS_OFFSET: usize = 16;
+const FLAG_LEVEL_ZERO_SORTED: u8 = 1 << 5;
 
-const FIVE_ITEMS: [f32; 5] = [1.0, 2.0, 3.0, 4.0, 5.0];
-const FLAG_HRA: u8 = 8;
-const FLAG_RAW_ITEMS: u8 = 16;
-const FLAG_LEVEL_ZERO_SORTED: u8 = 32;
+fn exact_image(k: u16, items: &[f32]) -> Vec<u8> {
+    let mut bytes = vec![2u8, 1, 17, 8];
+    bytes.extend_from_slice(&k.to_le_bytes());
+    bytes.extend_from_slice(&[1, 0]);
+    bytes.extend_from_slice(&0u64.to_le_bytes());
+    bytes.extend_from_slice(&(k as f32).to_le_bytes());
+    bytes.extend_from_slice(&[0, 3, 0, 0]);
+    bytes.extend_from_slice(&(items.len() as u32).to_le_bytes());
+    for item in items {
+        bytes.extend_from_slice(&item.to_le_bytes());
+    }
+    bytes
+}
+
+fn estimation_image(k: u16, n: u64) -> Vec<u8> {
+    let mut sketch = ReqSketch::<f32>::try_new(k, RankAccuracy::HighRank).unwrap();
+    for item in 1..=n {
+        sketch.update(item as f32);
+    }
+    let bytes = sketch.serialize();
+    assert!(bytes[6] > 1);
+    bytes
+}
+
+fn read_u64(bytes: &[u8], offset: usize) -> u64 {
+    u64::from_le_bytes(bytes[offset..offset + 8].try_into().unwrap())
+}
 
 fn assert_invalid_data(bytes: &[u8]) {
-    let err = match ReqSketch::<f32>::deserialize(bytes) {
-        Ok(_) => panic!("expected InvalidData, deserialize succeeded"),
-        Err(err) => err,
-    };
-    assert_eq!(
-        err.kind(),
-        ErrorKind::InvalidData,
-        "wrong error kind: {:?}",
-        err.kind()
-    );
-}
-
-fn assert_invalid_data_containing(bytes: &[u8], needle: &str) {
-    let err = match ReqSketch::<f32>::deserialize(bytes) {
-        Ok(_) => panic!("expected InvalidData, deserialize succeeded"),
-        Err(err) => err,
-    };
-    assert_eq!(
-        err.kind(),
-        ErrorKind::InvalidData,
-        "wrong error kind: {:?}",
-        err.kind()
-    );
-    assert!(
-        err.message().contains(needle),
-        "expected message to contain {needle:?}, got {:?}",
-        err.message()
-    );
-}
-
-/// Builds a non-empty, non-raw, single-level (`num_levels = 1`) REQ sketch image
-/// with a fully specified compactor preamble, so an individual field can be made
-/// malformed in isolation. With valid inputs the result deserializes successfully
-/// (see `single_level_image_is_valid_baseline`).
-fn single_level_image(
-    k: u16,
-    flags: u8,
-    state: u64,
-    section_size_raw: f32,
-    lg_weight: u8,
-    num_sections: u8,
-    num_items: u32,
-    items: &[f32],
-) -> Vec<u8> {
-    // Preamble (8 bytes): preamble_ints = 2 (EXACT, since num_levels == 1),
-    // serial_version = 1, family = 17 (REQ).
-    let mut b = vec![2u8, 1, 17, flags];
-    b.extend_from_slice(&k.to_le_bytes());
-    b.push(1); // num_levels
-    b.push(0); // num_raw_items
-    b.extend_from_slice(&state.to_le_bytes());
-    b.extend_from_slice(&section_size_raw.to_le_bytes());
-    b.push(lg_weight);
-    b.push(num_sections);
-    b.extend_from_slice(&0u16.to_le_bytes()); // padding
-    b.extend_from_slice(&num_items.to_le_bytes());
-    for &item in items {
-        b.extend_from_slice(&item.to_le_bytes());
-    }
-    b
-}
-
-fn canonical_five_item_image() -> Vec<u8> {
-    single_level_image(12, FLAG_HRA, 0, 12.0, 0, 3, 5, &FIVE_ITEMS)
-}
-
-fn write_compactor(buf: &mut Vec<u8>, lg_weight: u8, items: &[f32]) {
-    buf.extend_from_slice(&0u64.to_le_bytes());
-    buf.extend_from_slice(&12.0f32.to_le_bytes());
-    buf.push(lg_weight);
-    buf.push(3);
-    buf.extend_from_slice(&0u16.to_le_bytes());
-    buf.extend_from_slice(&(items.len() as u32).to_le_bytes());
-    for &item in items {
-        buf.extend_from_slice(&item.to_le_bytes());
-    }
-}
-
-fn two_level_image(n: u64, min: f32, max: f32, level0: &[f32], level1: &[f32]) -> Vec<u8> {
-    let mut bytes = vec![4u8, 1, 17, FLAG_HRA, 12, 0, 2, 0];
-    bytes.extend_from_slice(&n.to_le_bytes());
-    bytes.extend_from_slice(&min.to_le_bytes());
-    bytes.extend_from_slice(&max.to_le_bytes());
-    write_compactor(&mut bytes, 0, level0);
-    write_compactor(&mut bytes, 1, level1);
-    bytes
-}
-
-fn raw_items_image(flags: u8, items: &[f32]) -> Vec<u8> {
-    let mut bytes = vec![2u8, 1, 17, flags, 12, 0, 1, items.len() as u8];
-    for &item in items {
-        bytes.extend_from_slice(&item.to_le_bytes());
-    }
-    bytes
+    let error = ReqSketch::<f32>::deserialize(bytes).unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::InvalidData);
 }
 
 #[test]
-fn single_level_image_is_valid_baseline() {
-    // Control: five non-raw items is the canonical one-level image. Serializers
-    // use RAW_ITEMS for n ≤ 4, so a one-item non-raw image is not a valid baseline.
-    assert_that!(
-        ReqSketch::<f32>::deserialize(&canonical_five_item_image()),
-        ok(anything())
-    );
-    let k4 = single_level_image(4, FLAG_HRA, 0, 4.0, 0, 3, 5, &FIVE_ITEMS);
-    assert_that!(ReqSketch::<f32>::deserialize(&k4), ok(anything()));
-    let doubled = single_level_image(
-        12,
-        FLAG_HRA,
-        4,
-        12.0 / std::f32::consts::SQRT_2,
-        0,
-        6,
-        5,
-        &FIVE_ITEMS,
-    );
-    assert_that!(ReqSketch::<f32>::deserialize(&doubled), ok(anything()));
-    let sorted_claim = single_level_image(
-        12,
-        FLAG_HRA | FLAG_LEVEL_ZERO_SORTED,
-        0,
-        12.0,
-        0,
-        3,
-        5,
-        &FIVE_ITEMS,
-    );
-    assert_that!(ReqSketch::<f32>::deserialize(&sorted_claim), ok(anything()));
-    let unsorted_no_claim =
-        single_level_image(12, FLAG_HRA, 0, 12.0, 0, 3, 5, &[3.0, 4.0, 5.0, 1.0, 2.0]);
-    assert_that!(
-        ReqSketch::<f32>::deserialize(&unsorted_no_claim),
-        ok(anything())
-    );
-    let one_raw = raw_items_image(FLAG_HRA | FLAG_RAW_ITEMS, &[1.0]);
-    assert_that!(ReqSketch::<f32>::deserialize(&one_raw), ok(anything()));
-    let four_raw = raw_items_image(FLAG_HRA | FLAG_RAW_ITEMS, &[1.0, 2.0, 3.0, 4.0]);
-    assert_that!(ReqSketch::<f32>::deserialize(&four_raw), ok(anything()));
-}
-
-#[test]
-fn deserialize_rejects_out_of_range_section_size() {
-    // A garbage section_size_raw is not reachable from k under the doubling schedule.
-    let bytes = single_level_image(12, FLAG_HRA, 0, 1e30, 0, 3, 5, &FIVE_ITEMS);
-    assert_invalid_data_containing(&bytes, "not reachable");
-}
-
-#[test]
-fn deserialize_rejects_undersized_section_size() {
-    // `section_size_raw = 0.0` is in `0..=MAX_K` but is not produced by the schedule.
-    let bytes = single_level_image(12, FLAG_HRA, 0, 0.0, 0, 3, 5, &FIVE_ITEMS);
-    assert_invalid_data_containing(&bytes, "not reachable");
-}
-
-#[test]
-fn deserialize_rejects_k_section_size_mismatch() {
-    // k=4 with section_size_raw=1024 used to be accepted because each field was
-    // checked only against global MAX_K, yielding capacity 6144 instead of 24.
-    let bytes = single_level_image(4, FLAG_HRA, 0, 1024.0, 0, 3, 5, &FIVE_ITEMS);
-    assert_invalid_data_containing(&bytes, "not reachable");
-}
-
-#[test]
-fn deserialize_rejects_oversized_lg_weight() {
-    // lg_weight must equal the enclosing level index (0 here).
-    let bytes = single_level_image(12, FLAG_HRA, 0, 12.0, 64, 3, 5, &FIVE_ITEMS);
-    assert_invalid_data_containing(&bytes, "does not match level");
-}
-
-#[test]
-fn deserialize_rejects_oversized_compactor_num_items() {
-    // num_items claims billions of items while only five are supplied: deserialize
-    // must fail gracefully without attempting a multi-gigabyte allocation.
-    let bytes = single_level_image(12, FLAG_HRA, 0, 12.0, 0, 3, u32::MAX, &FIVE_ITEMS);
-    assert_invalid_data(&bytes);
-}
-
-#[test]
-fn deserialize_rejects_zero_num_sections() {
-    // A single-level image with num_sections = 0 used to deserialize, then
-    // ReqSketch::merge panicked at `1u64 << (self.num_sections - 1)`.
-    let bytes = single_level_image(12, FLAG_HRA, 0, 12.0, 0, 0, 5, &FIVE_ITEMS);
-    assert_invalid_data_containing(&bytes, "not reachable");
-}
-
-#[test]
-fn deserialize_rejects_nonzero_invalid_num_sections() {
-    // num_sections = 1 is on neither the initial value (3) nor the doubling schedule.
-    let bytes = single_level_image(12, FLAG_HRA, 0, 12.0, 0, 1, 5, &FIVE_ITEMS);
-    assert_invalid_data_containing(&bytes, "not reachable");
-}
-
-#[test]
-fn deserialize_rejects_level0_lg_weight_mismatch() {
-    // A level-0 compactor with lg_weight = 63 used to deserialize, then rank()
-    // returned ~9.22e18 instead of a value in [0.0, 1.0].
-    let bytes = single_level_image(12, FLAG_HRA, 0, 12.0, 63, 3, 5, &FIVE_ITEMS);
-    assert_invalid_data_containing(&bytes, "does not match level");
-}
-
-#[test]
-fn deserialize_rejects_false_sorted_claim() {
-    // IS_LEVEL_ZERO_SORTED with unsorted items makes rank() disagree with sorted_view().
-    let mut bytes = vec![2u8, 1, 17, FLAG_HRA | FLAG_LEVEL_ZERO_SORTED, 12, 0, 1, 0];
-    bytes.extend_from_slice(&0u64.to_le_bytes());
-    bytes.extend_from_slice(&12.0f32.to_le_bytes());
-    bytes.extend_from_slice(&[0, 3, 0, 0]);
-    bytes.extend_from_slice(&5u32.to_le_bytes());
-    for item in [3.0f32, 4.0, 5.0, 1.0, 2.0] {
-        bytes.extend_from_slice(&item.to_le_bytes());
-    }
-    assert_invalid_data_containing(&bytes, "claimed sorted");
-}
-
-#[test]
-fn deserialize_rejects_false_sorted_claim_raw_items() {
-    let bytes = raw_items_image(
-        FLAG_HRA | FLAG_RAW_ITEMS | FLAG_LEVEL_ZERO_SORTED,
-        &[2.0, 1.0],
-    );
-    assert_invalid_data_containing(&bytes, "claimed sorted");
-}
-
-#[test]
-fn deserialize_rejects_false_sorted_claim_higher_level() {
-    // Higher levels are always deserialized as sorted. Unsorted level-1 items
-    // isolate that branch from the level-zero flag.
-    let bytes = two_level_image(7, 1.0, 4.0, &[1.0, 2.0, 3.0], &[4.0, 3.0]);
-    assert_invalid_data_containing(&bytes, "claimed sorted");
-}
-
-#[test]
-fn deserialize_rejects_non_raw_exact_mode() {
-    // Serializers use RAW_ITEMS for one-level sketches with n ≤ 4. A one-item
-    // non-raw image isolates the post-n RAW_ITEMS consistency check.
-    let bytes = single_level_image(12, FLAG_HRA, 0, 12.0, 0, 3, 1, &[1.0]);
-    assert_invalid_data_containing(&bytes, "RAW_ITEMS flag is inconsistent");
-}
-
-#[test]
-fn deserialize_rejects_nan_item() {
-    let bytes = single_level_image(
-        12,
-        FLAG_HRA,
-        0,
-        12.0,
-        0,
-        3,
-        5,
-        &[1.0, 2.0, f32::NAN, 4.0, 5.0],
-    );
-    assert_invalid_data_containing(&bytes, "NaN item");
-}
-
-#[test]
-fn deserialize_rejects_nan_raw_item() {
-    let bytes = raw_items_image(FLAG_HRA | FLAG_RAW_ITEMS, &[f32::NAN]);
-    assert_invalid_data_containing(&bytes, "NaN item");
-}
-
-#[test]
-fn deserialize_rejects_retained_at_or_above_capacity() {
-    // Level-0 capacity for k=12, num_sections=3 is 2 * 12 * 3 = 72.
-    // `update()` compresses when num_retained meets max_nom_size. An image that
-    // already sits at or above capacity would skip compact after the next
-    // equality-only update. Reject both boundaries at deserialize.
-    let at_capacity: Vec<f32> = (0..72).map(|i| i as f32).collect();
-    let bytes = single_level_image(12, FLAG_HRA, 0, 12.0, 0, 3, 72, &at_capacity);
-    assert_invalid_data_containing(&bytes, "not below total nominal capacity");
-
-    let over_capacity: Vec<f32> = (0..73).map(|i| i as f32).collect();
-    let bytes = single_level_image(12, FLAG_HRA, 0, 12.0, 0, 3, 73, &over_capacity);
-    assert_invalid_data_containing(&bytes, "not below total nominal capacity");
-}
-
-#[test]
-fn deserialize_rejects_weighted_count_mismatch() {
-    // Two levels: 3 items at weight 1 plus 1 item at weight 2 → weighted count 5.
-    // Lying n isolates the mismatch branch.
-    let bytes = two_level_image(99, 1.0, 4.0, &[1.0, 2.0, 3.0], &[4.0]);
-    assert_invalid_data_containing(&bytes, "does not match n");
-}
-
-#[test]
-fn deserialize_accepts_matching_two_level_weighted_count() {
-    let bytes = two_level_image(5, 1.0, 4.0, &[1.0, 2.0, 3.0], &[4.0]);
+fn canonical_exact_image_is_valid() {
+    let bytes = exact_image(12, &[1.0, 2.0, 3.0, 4.0, 5.0]);
     assert_that!(ReqSketch::<f32>::deserialize(&bytes), ok(anything()));
 }
 
 #[test]
-fn deserialize_rejects_nan_min_item() {
-    let bytes = two_level_image(5, f32::NAN, 4.0, &[1.0, 2.0, 3.0], &[4.0]);
-    assert_invalid_data_containing(&bytes, "min or max item is NaN");
+fn deserialize_rejects_issue_218_states() {
+    let mut zero_sections = exact_image(12, &[1.0, 2.0, 3.0, 4.0, 5.0]);
+    zero_sections[EXACT_COMPACTOR_OFFSET + NUM_SECTIONS_OFFSET] = 0;
+    assert_invalid_data(&zero_sections);
+
+    let mut wrong_weight = exact_image(12, &[1.0, 2.0, 3.0, 4.0, 5.0]);
+    wrong_weight[EXACT_COMPACTOR_OFFSET + LG_WEIGHT_OFFSET] = 63;
+    assert_invalid_data(&wrong_weight);
 }
 
 #[test]
-fn deserialize_rejects_min_greater_than_max() {
-    let bytes = two_level_image(5, 4.0, 1.0, &[1.0, 2.0, 3.0], &[4.0]);
-    assert_invalid_data_containing(&bytes, "min item is greater than max item");
+fn deserialize_rejects_inconsistent_weighted_count() {
+    let mut bytes = estimation_image(12, 1_000);
+    bytes[8..16].copy_from_slice(&1_001u64.to_le_bytes());
+    assert_invalid_data(&bytes);
 }
 
 #[test]
-fn deserialize_rejects_item_outside_min_max() {
-    // min=2 excludes the retained 1.0, isolating the range check from min>max.
-    let bytes = two_level_image(5, 2.0, 4.0, &[1.0, 2.0, 3.0], &[4.0]);
-    assert_invalid_data_containing(&bytes, "outside the serialized min/max range");
+fn deserialize_rejects_unreachable_section_configuration() {
+    let mut invalid_raw = exact_image(12, &[1.0, 2.0, 3.0, 4.0, 5.0]);
+    invalid_raw[EXACT_COMPACTOR_OFFSET + SECTION_SIZE_RAW_OFFSET
+        ..EXACT_COMPACTOR_OFFSET + SECTION_SIZE_RAW_OFFSET + 4]
+        .copy_from_slice(&0.0f32.to_le_bytes());
+    assert_invalid_data(&invalid_raw);
+
+    let mut invalid_sections = exact_image(12, &[1.0, 2.0, 3.0, 4.0, 5.0]);
+    invalid_sections[EXACT_COMPACTOR_OFFSET + NUM_SECTIONS_OFFSET] = 6;
+    assert_invalid_data(&invalid_sections);
 }
 
 #[test]
-fn deserialize_rejects_weighted_count_overflow() {
-    // 64 compactors with lg_weight equal to the level index. Two items at
-    // level 63 make `num_items * 2^lg_weight` overflow u64.
-    let mut bytes = vec![4u8, 1, 17, FLAG_HRA, 12, 0, 64, 0];
-    bytes.extend_from_slice(&2u64.to_le_bytes());
-    bytes.extend_from_slice(&1.0f32.to_le_bytes());
-    bytes.extend_from_slice(&2.0f32.to_le_bytes());
-    for level in 0u8..64 {
-        let items: &[f32] = if level == 63 { &[1.0, 2.0] } else { &[] };
-        write_compactor(&mut bytes, level, items);
+fn deserialize_accepts_java_minimum_section_schedule() {
+    let mut bytes = estimation_image(6, 1_250);
+    let compactor = ESTIMATION_COMPACTOR_OFFSET;
+    assert_eq!(read_u64(&bytes, compactor + STATE_OFFSET), 32);
+
+    let java_raw = (6.0 / std::f64::consts::SQRT_2) as f32;
+    bytes[compactor + SECTION_SIZE_RAW_OFFSET..compactor + SECTION_SIZE_RAW_OFFSET + 4]
+        .copy_from_slice(&java_raw.to_le_bytes());
+    bytes[compactor + NUM_SECTIONS_OFFSET] = 6;
+
+    let mut sketch = ReqSketch::<f32>::deserialize(&bytes).unwrap();
+    for item in 1_251..=2_500 {
+        sketch.update(item as f32);
     }
-    assert_invalid_data_containing(&bytes, "weighted count overflow");
+    let continued = sketch.serialize();
+    assert_that!(ReqSketch::<f32>::deserialize(&continued), ok(anything()));
+}
+
+#[test]
+fn deserialize_rejects_capacity_changing_float_drift() {
+    let mut bytes = estimation_image(10, 2_562);
+    let raw_offset = ESTIMATION_COMPACTOR_OFFSET + SECTION_SIZE_RAW_OFFSET;
+    let raw_bits = u32::from_le_bytes(bytes[raw_offset..raw_offset + 4].try_into().unwrap());
+    assert_eq!(read_u64(&bytes, ESTIMATION_COMPACTOR_OFFSET), 32);
+    assert_eq!(f32::from_bits(raw_bits), 5.0);
+    assert_eq!(bytes[ESTIMATION_COMPACTOR_OFFSET + NUM_SECTIONS_OFFSET], 12);
+
+    // One ULP below 5.0 rounds to a section size of 4 rather than 6.
+    bytes[raw_offset..raw_offset + 4].copy_from_slice(&(raw_bits - 1).to_le_bytes());
+    assert_invalid_data(&bytes);
+}
+
+#[test]
+fn deserialize_rejects_state_that_exceeds_n() {
+    let mut bytes = estimation_image(12, 1_000);
+    let compactor = ESTIMATION_COMPACTOR_OFFSET;
+    bytes[compactor + STATE_OFFSET..compactor + STATE_OFFSET + 8]
+        .copy_from_slice(&u64::MAX.to_le_bytes());
+    let mut raw = 12.0f32;
+    for _ in 0..4 {
+        raw /= std::f32::consts::SQRT_2;
+    }
+    bytes[compactor + SECTION_SIZE_RAW_OFFSET..compactor + SECTION_SIZE_RAW_OFFSET + 4]
+        .copy_from_slice(&raw.to_le_bytes());
+    bytes[compactor + NUM_SECTIONS_OFFSET] = 48;
+    assert_invalid_data(&bytes);
+}
+
+#[test]
+fn deserialize_rejects_false_sorted_claim_and_nan() {
+    let mut unsorted = exact_image(12, &[3.0, 4.0, 5.0, 1.0, 2.0]);
+    unsorted[3] |= FLAG_LEVEL_ZERO_SORTED;
+    assert_invalid_data(&unsorted);
+
+    let nan = exact_image(12, &[1.0, 2.0, f32::NAN, 4.0, 5.0]);
+    assert_invalid_data(&nan);
+}
+
+#[test]
+fn deserialize_rejects_invalid_extrema_and_raw_nan() {
+    let mut nan_min = estimation_image(12, 1_000);
+    nan_min[16..20].copy_from_slice(&f32::NAN.to_le_bytes());
+    assert_invalid_data(&nan_min);
+
+    let mut reversed = estimation_image(12, 1_000);
+    reversed[16..20].copy_from_slice(&2.0f32.to_le_bytes());
+    reversed[20..24].copy_from_slice(&1.0f32.to_le_bytes());
+    assert_invalid_data(&reversed);
+
+    let mut raw_nan = vec![2u8, 1, 17, 8 | 16, 12, 0, 1, 1];
+    raw_nan.extend_from_slice(&f32::NAN.to_le_bytes());
+    assert_invalid_data(&raw_nan);
+}
+
+#[test]
+fn deserialize_rejects_noncanonical_exact_mode_and_capacity() {
+    assert_invalid_data(&exact_image(12, &[1.0]));
+
+    let items: Vec<f32> = (0..72).map(|item| item as f32).collect();
+    assert_invalid_data(&exact_image(12, &items));
+}
+
+#[test]
+fn deserialize_rejects_oversized_compactor_num_items() {
+    let mut bytes = exact_image(12, &[1.0, 2.0, 3.0, 4.0, 5.0]);
+    let offset = EXACT_COMPACTOR_OFFSET + NUM_ITEMS_OFFSET;
+    bytes[offset..offset + 4].copy_from_slice(&u32::MAX.to_le_bytes());
+    assert_invalid_data(&bytes);
 }
 
 // ---------- Cross-language compatibility ----------

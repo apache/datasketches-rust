@@ -22,65 +22,115 @@
 
 use super::MIN_K;
 use super::RankAccuracy;
-use super::serialization::INIT_NUM_SECTIONS;
-use super::serialization::MAX_NUM_SECTIONS_FOR_DOUBLING;
 use super::value::ReqValue;
 use crate::error::Error;
+
+pub(super) const INIT_NUM_SECTIONS: u8 = 3;
+// The next threshold after 96 sections would be 2^95, beyond a u64 state.
+const MAX_NUM_SECTIONS: u8 = 96;
 
 fn nearest_even(value: f32) -> u32 {
     ((value / 2.0).round() as u32) << 1
 }
 
-/// Replays the REQ section schedule from `k` under `state`.
-///
-/// A new compactor starts at `section_size_raw = k` and `num_sections = 3`, then
-/// doubles sections (and divides raw size by `sqrt(2)`) whenever
-/// `ensure_enough_sections` would fire. Serialized compactors must match the
-/// fully-applied result; pending doublings are applied before serialize.
-fn apply_section_schedule(k: u16, state: u64) -> (f32, u8) {
-    let mut section_size_raw = k as f32;
-    let mut num_sections = INIT_NUM_SECTIONS;
-    while num_sections <= MAX_NUM_SECTIONS_FOR_DOUBLING
-        && state >= (1u64 << (num_sections - 1))
-        && nearest_even(section_size_raw / std::f32::consts::SQRT_2) >= u32::from(MIN_K)
-    {
-        section_size_raw /= std::f32::consts::SQRT_2;
-        num_sections <<= 1;
-    }
-    (section_size_raw, num_sections)
+fn cpp_next_section_size(section_size_raw: f32) -> Option<f32> {
+    let next = section_size_raw / std::f32::consts::SQRT_2;
+    (nearest_even(next) >= u32::from(MIN_K)).then_some(next)
 }
 
-/// Java's successive `section_size_raw /= sqrt(2)` can land up to 2 ULPs from
-/// the C++/Rust replay (observed on the pinned TCK fixtures). Capacity still
-/// matches because `nearest_even` is unchanged across that gap.
-const SECTION_SIZE_RAW_ULP_TOLERANCE: u32 = 2;
+fn java_next_section_size(section_size_raw: f32) -> Option<f32> {
+    if nearest_even(section_size_raw) <= u32::from(MIN_K) {
+        return None;
+    }
+    let next = (f64::from(section_size_raw) / std::f64::consts::SQRT_2) as f32;
+    (nearest_even(next) >= u32::from(MIN_K)).then_some(next)
+}
 
+fn section_doublings(num_sections: u8) -> Option<u32> {
+    let mut sections = INIT_NUM_SECTIONS;
+    let mut doublings = 0;
+    while sections <= MAX_NUM_SECTIONS {
+        if sections == num_sections {
+            return Some(doublings);
+        }
+        sections <<= 1;
+        doublings += 1;
+    }
+    None
+}
+
+/// Checks whether a serialized section configuration can be produced by the
+/// C++ or Java REQ schedule, including a sketch continued in another language.
 fn is_reachable_section_config(
     k: u16,
     state: u64,
     section_size_raw: f32,
     num_sections: u8,
 ) -> bool {
-    let (expected_raw, expected_sections) = apply_section_schedule(k, state);
-    expected_sections == num_sections
-        && expected_raw.to_bits().abs_diff(section_size_raw.to_bits())
-            <= SECTION_SIZE_RAW_ULP_TOLERANCE
+    let Some(doublings) = section_doublings(num_sections) else {
+        return false;
+    };
+
+    if doublings > 0 {
+        let previous_sections = num_sections >> 1;
+        if state < (1u64 << (previous_sections - 1)) {
+            return false;
+        }
+    }
+
+    // C++ divides by an f32 sqrt(2), while Java divides by an f64 sqrt(2) and
+    // casts back to f32. A sketch may cross languages between doublings, so
+    // enumerate the small set of values produced by either operation at every
+    // step instead of imposing one implementation's schedule on the wire.
+    let mut candidates = vec![k as f32];
+    for _ in 0..doublings {
+        let mut next = Vec::with_capacity(candidates.len() * 2);
+        for candidate in candidates {
+            if let Some(value) = cpp_next_section_size(candidate) {
+                if !next.contains(&value) {
+                    next.push(value);
+                }
+            }
+            if let Some(value) = java_next_section_size(candidate) {
+                if !next.contains(&value) {
+                    next.push(value);
+                }
+            }
+        }
+        candidates = next;
+    }
+
+    if !candidates
+        .iter()
+        .any(|candidate| candidate.to_bits() == section_size_raw.to_bits())
+    {
+        return false;
+    }
+
+    // A configuration may remain below the C++ schedule when Java has stopped
+    // at MIN_K. Otherwise every implementation would already have doubled it.
+    if num_sections < MAX_NUM_SECTIONS
+        && state >= (1u64 << (num_sections - 1))
+        && cpp_next_section_size(section_size_raw).is_some()
+        && java_next_section_size(section_size_raw).is_some()
+    {
+        return false;
+    }
+
+    true
 }
 
-fn items_are_nondecreasing<T: ReqValue>(items: &[T]) -> bool {
-    items.windows(2).all(|w| w[0].total_cmp(&w[1]).is_le())
-}
-
-fn validate_deserialized_items<T: ReqValue>(
-    items: &[T],
-    declared_sorted: bool,
-) -> Result<(), Error> {
+fn validate_deserialized_items<T: ReqValue>(items: &[T], sorted: bool) -> Result<(), Error> {
     if items.iter().any(ReqValue::is_nan) {
         return Err(Error::deserial("REQ compactor contains a NaN item"));
     }
-    if declared_sorted && !items_are_nondecreasing(items) {
+    if sorted
+        && !items
+            .windows(2)
+            .all(|items| items[0].total_cmp(&items[1]).is_le())
+    {
         return Err(Error::deserial(
-            "REQ compactor claimed sorted but items are not nondecreasing",
+            "REQ compactor claims to be sorted but its items are not",
         ));
     }
     Ok(())
@@ -346,23 +396,22 @@ where
         1u64 << self.lg_weight
     }
 
+    pub(super) fn state(&self) -> u64 {
+        self.state
+    }
+
     // Private helper methods
 
     fn ensure_enough_sections(&mut self) -> bool {
-        let ssr = self.section_size_raw / std::f32::consts::SQRT_2;
-        let ne = nearest_even(ssr);
-
-        if self.num_sections <= MAX_NUM_SECTIONS_FOR_DOUBLING
-            && self.state >= (1u64 << (self.num_sections - 1))
-            && ne >= u32::from(MIN_K)
-        {
-            self.section_size_raw = ssr;
-            self.section_size = ne;
-            self.num_sections <<= 1; // Double the sections
-            true
-        } else {
-            false
+        if self.num_sections < MAX_NUM_SECTIONS && self.state >= (1u64 << (self.num_sections - 1)) {
+            if let Some(next) = cpp_next_section_size(self.section_size_raw) {
+                self.section_size_raw = next;
+                self.section_size = nearest_even(next);
+                self.num_sections <<= 1; // Double the sections
+                return true;
+            }
         }
+        false
     }
 
     #[inline(always)]
@@ -422,7 +471,7 @@ where
         k: u16,
         expected_lg_weight: u8,
         rank_accuracy: super::RankAccuracy,
-        declared_sorted: bool,
+        sorted: bool,
     ) -> Result<Self, crate::error::Error> {
         use crate::codec::assert::insufficient_data;
         let state = cursor
@@ -451,7 +500,7 @@ where
         }
         if !is_reachable_section_config(k, state, section_size_raw, num_sections) {
             return Err(Error::deserial(format!(
-                "REQ compactor section config (k={k}, state={state}, section_size_raw={section_size_raw}, num_sections={num_sections}) is not reachable"
+                "REQ compactor section configuration is not reachable (k={k}, state={state}, section_size_raw={section_size_raw}, num_sections={num_sections})"
             )));
         }
 
@@ -464,7 +513,7 @@ where
         for _ in 0..num_items {
             items.push(T::deserialize_value(cursor)?);
         }
-        validate_deserialized_items(&items, declared_sorted)?;
+        validate_deserialized_items(&items, sorted)?;
 
         Ok(Compactor::from_serialized_state(
             lg_weight,
@@ -472,7 +521,7 @@ where
             num_sections,
             state,
             items,
-            declared_sorted,
+            sorted,
             rank_accuracy,
         ))
     }
@@ -495,8 +544,7 @@ where
         for item in items {
             c.append(item);
         }
-        // append() may have flipped is_sorted off; restore the wire flag after
-        // validating that a true flag matches the actual order.
+        // append() may have flipped is_sorted off; restore the wire flag verbatim.
         c.is_sorted = is_sorted;
         Ok(c)
     }
@@ -536,9 +584,9 @@ impl<T> Compactor<T>
 where
     T: Clone + ReqValue,
 {
-    /// Returns the current state for deterministic compaction. Test-only accessor.
-    pub(super) fn state(&self) -> u64 {
-        self.state
+    /// Returns the level (log weight) of this compactor. Test-only accessor.
+    pub(super) fn lg_weight(&self) -> u8 {
+        self.lg_weight
     }
 }
 
@@ -552,7 +600,7 @@ mod tests {
     #[test]
     fn test_new_compactor() {
         let compactor: Compactor<i32> = Compactor::new(0, 12, RankAccuracy::HighRank);
-        assert_eq!(compactor.lg_weight, 0);
+        assert_eq!(compactor.lg_weight(), 0);
         assert_eq!(compactor.num_items(), 0);
         assert!(compactor.is_sorted());
         assert_eq!(compactor.weight(), 1);
@@ -626,7 +674,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(c.num_items(), c2.num_items());
-        assert_eq!(c.lg_weight, c2.lg_weight);
+        assert_eq!(c.lg_weight(), c2.lg_weight());
         assert_eq!(c.state(), c2.state());
         let xs: Vec<f32> = c.iter().copied().collect();
         let ys: Vec<f32> = c2.iter().copied().collect();
