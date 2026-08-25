@@ -339,11 +339,6 @@ where
         1u64 << self.lg_weight
     }
 
-    /// Returns the level (log weight) of this compactor.
-    pub(super) fn lg_weight(&self) -> u8 {
-        self.lg_weight
-    }
-
     // Private helper methods
 
     fn ensure_enough_sections(&mut self) -> bool {
@@ -550,7 +545,7 @@ mod tests {
     #[test]
     fn test_new_compactor() {
         let compactor: Compactor<i32> = Compactor::new(0, 12, RankAccuracy::HighRank);
-        assert_eq!(compactor.lg_weight(), 0);
+        assert_eq!(compactor.lg_weight, 0);
         assert_eq!(compactor.num_items(), 0);
         assert!(compactor.is_sorted());
         assert_eq!(compactor.weight(), 1);
@@ -624,7 +619,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(c.num_items(), c2.num_items());
-        assert_eq!(c.lg_weight(), c2.lg_weight());
+        assert_eq!(c.lg_weight, c2.lg_weight);
         assert_eq!(c.state(), c2.state());
         let xs: Vec<f32> = c.iter().copied().collect();
         let ys: Vec<f32> = c2.iter().copied().collect();
