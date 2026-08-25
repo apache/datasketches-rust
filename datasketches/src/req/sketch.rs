@@ -606,9 +606,7 @@ impl<T: ReqValue> ReqSketch<T> {
             RankAccuracy::LowRank
         };
         if !(MIN_K..=MAX_K).contains(&k) || k % 2 != 0 {
-            return Err(Error::deserial(format!(
-                "k {k} is not a valid REQ k value"
-            )));
+            return Err(Error::deserial(format!("k {k} is not a valid REQ k value")));
         }
 
         if is_empty {
