@@ -49,6 +49,7 @@ impl Command {
             SubCommand::Lint(cmd) => cmd.run(),
             SubCommand::Test(cmd) => cmd.run(),
             SubCommand::PrepareTestData(cmd) => cmd.run(),
+            SubCommand::GenerateSnapshots(cmd) => cmd.run(),
         }
     }
 }
@@ -70,6 +71,11 @@ enum SubCommand {
         about = "Prepare serialization compatibility test data."
     )]
     PrepareTestData(CommandPrepareTestData),
+    #[clap(
+        name = "generate-snapshots",
+        about = "Generate deterministic Rust serialization snapshots."
+    )]
+    GenerateSnapshots(CommandGenerateSnapshots),
 }
 
 #[derive(Parser)]
@@ -406,5 +412,17 @@ impl CommandPrepareTestData {
             }
         }
         languages
+    }
+}
+
+#[derive(Parser)]
+#[clap(name = "generate-snapshots")]
+struct CommandGenerateSnapshots {}
+
+impl CommandGenerateSnapshots {
+    fn run(self) {
+        let mut command = find_command("cargo");
+        command.args(["run", "--package", "snapshot_generator", "--"]);
+        run_command(command);
     }
 }

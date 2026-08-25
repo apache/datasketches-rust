@@ -48,6 +48,16 @@ Prepare the cross-language serialization test data:
 cargo x prepare-testdata
 ```
 
+Generate deterministic snapshots from the Rust implementations:
+
+```shell
+cargo x generate-snapshots
+```
+
+The command writes local files under `serialization/rust/snapshots`. These
+generated files are ignored by Git, so the command can be rerun without
+changing the working tree.
+
 Test:
 
 ```shell
