@@ -70,6 +70,7 @@ Enable multiple algorithms by listing their features together, such as `features
 | `cpc` | `CpcSketch`, `CpcUnion`, `CpcWrapper` | Highly compact distinct-count estimation and unions. |
 | `frequencies` | `FrequentItemsSketch` | Heavy-hitter discovery with upper and lower frequency bounds. |
 | `hll` | `HllSketch`, `HllUnion` | Fast distinct-count estimation and unions. |
+| `req` | `ReqSketch`, `ReqUnion` | Relative-error quantile, rank, PMF, and CDF queries with configurable high- or low-rank accuracy. |
 | `tdigest` | `TDigestMut`, `TDigest` | Quantile and rank estimation, with high accuracy near distribution tails. |
 | `theta` | `ThetaSketch` and set operations | Distinct counts, set expressions, and Jaccard similarity. |
 | `tuple` | `TupleSketch` and set operations | Theta-style keys with user-defined summaries attached to retained entries. |
