@@ -639,7 +639,54 @@ impl CpcSketch {
             )));
         }
 
-        let uncompressed = compressed.uncompress(lg_k, num_coupons);
+        // The coupon space of a sketch has `k * 64` cells (`k` rows of 64 columns each), so a
+        // valid sketch can never report more coupons than that. Rejecting larger values keeps the
+        // flavor arithmetic below from overflowing on corrupt input.
+        if (num_coupons as u64) > 64 * (1u64 << lg_k) {
+            return Err(Error::deserial(format!(
+                "num_coupons ({}) exceeds coupon space for lg_k = {}",
+                num_coupons, lg_k
+            )));
+        }
+
+        // A valid sketch stores a sliding window exactly for the pinned and sliding flavors, and
+        // stores its coupons in the surprising-value table for the sparse and hybrid flavors. The
+        // flavor is fully determined by `lg_k` and `num_coupons`, so the flags must agree with it.
+        let flavor = determine_flavor(lg_k, num_coupons);
+        let window_expected = matches!(flavor, Flavor::Pinned | Flavor::Sliding);
+        if has_window != window_expected {
+            return Err(Error::deserial(format!(
+                "sliding-window flag ({}) is inconsistent with the {:?} flavor",
+                has_window, flavor
+            )));
+        }
+        if matches!(flavor, Flavor::Sparse | Flavor::Hybrid) && !has_table {
+            return Err(Error::deserial(format!(
+                "table flag is unset but required for the {:?} flavor",
+                flavor
+            )));
+        }
+
+        // The number of stored table entries can never exceed the number of coupons.
+        if compressed.table_num_entries > num_coupons {
+            return Err(Error::deserial(format!(
+                "table_num_entries ({}) exceeds num_coupons ({})",
+                compressed.table_num_entries, num_coupons
+            )));
+        }
+        // A pair requires at least one bit to encode, so the declared number of table entries can
+        // never exceed the number of bits available in the table data. This also bounds the size
+        // of the allocation made while decoding, rejecting corrupt inputs that claim an enormous
+        // entry count backed by only a few data words.
+        if (compressed.table_num_entries as usize) > compressed.table_data_words.saturating_mul(32)
+        {
+            return Err(Error::deserial(format!(
+                "table_num_entries ({}) exceeds capacity of table data ({} words)",
+                compressed.table_num_entries, compressed.table_data_words
+            )));
+        }
+
+        let uncompressed = compressed.uncompress(lg_k, num_coupons)?;
         Ok(CpcSketch {
             lg_k,
             seed,
