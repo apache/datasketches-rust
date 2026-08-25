@@ -22,6 +22,8 @@
 
 use super::MIN_K;
 use super::RankAccuracy;
+use super::serialization::INIT_NUM_SECTIONS;
+use super::serialization::MAX_NUM_SECTIONS_FOR_DOUBLING;
 use super::value::ReqValue;
 use crate::error::Error;
 
@@ -29,26 +31,52 @@ fn nearest_even(value: f32) -> u32 {
     ((value / 2.0).round() as u32) << 1
 }
 
-/// Initial number of sections in a new compactor. Matches C++/Java
-/// `INIT_NUMBER_OF_SECTIONS`. Doubles in [`Compactor::ensure_enough_sections`]
-/// while `num_sections <= MAX_NUM_SECTIONS_FOR_DOUBLING`.
-const INIT_NUM_SECTIONS: u8 = 3;
-/// `ensure_enough_sections` stops doubling once `num_sections` exceeds this bound
-/// so that `1u64 << (num_sections - 1)` stays in range. The reachable schedule is
-/// therefore 3, 6, 12, 24, 48, 96.
-const MAX_NUM_SECTIONS_FOR_DOUBLING: u8 = 64;
-
-fn is_valid_num_sections(num_sections: u8) -> bool {
-    let mut n = INIT_NUM_SECTIONS;
-    loop {
-        if n == num_sections {
-            return true;
-        }
-        if n > MAX_NUM_SECTIONS_FOR_DOUBLING {
-            return false;
-        }
-        n <<= 1;
+/// Replays the REQ section schedule from `k` under `state`.
+///
+/// A new compactor starts at `section_size_raw = k` and `num_sections = 3`, then
+/// doubles sections (and divides raw size by `sqrt(2)`) whenever
+/// `ensure_enough_sections` would fire. Serialized compactors must match the
+/// fully-applied result; pending doublings are applied before serialize.
+fn apply_section_schedule(k: u16, state: u64) -> (f32, u8) {
+    let mut section_size_raw = k as f32;
+    let mut num_sections = INIT_NUM_SECTIONS;
+    while num_sections <= MAX_NUM_SECTIONS_FOR_DOUBLING
+        && state >= (1u64 << (num_sections - 1))
+        && nearest_even(section_size_raw / std::f32::consts::SQRT_2) >= u32::from(MIN_K)
+    {
+        section_size_raw /= std::f32::consts::SQRT_2;
+        num_sections <<= 1;
     }
+    (section_size_raw, num_sections)
+}
+
+fn is_reachable_section_config(
+    k: u16,
+    state: u64,
+    section_size_raw: f32,
+    num_sections: u8,
+) -> bool {
+    let (expected_raw, expected_sections) = apply_section_schedule(k, state);
+    expected_sections == num_sections && expected_raw.to_bits() == section_size_raw.to_bits()
+}
+
+fn items_are_nondecreasing<T: ReqValue>(items: &[T]) -> bool {
+    items.windows(2).all(|w| w[0].total_cmp(&w[1]).is_le())
+}
+
+fn validate_deserialized_items<T: ReqValue>(
+    items: &[T],
+    declared_sorted: bool,
+) -> Result<(), Error> {
+    if items.iter().any(ReqValue::is_nan) {
+        return Err(Error::deserial("REQ compactor contains a NaN item"));
+    }
+    if declared_sorted && !items_are_nondecreasing(items) {
+        return Err(Error::deserial(
+            "REQ compactor claimed sorted but items are not nondecreasing",
+        ));
+    }
+    Ok(())
 }
 
 /// A compactor maintains items at a specific level of the REQ sketch.
@@ -389,8 +417,10 @@ where
     /// Deserialize a compactor (preamble + items) from the byte cursor.
     pub(super) fn deserialize(
         cursor: &mut crate::codec::SketchSlice<'_>,
+        k: u16,
+        expected_lg_weight: u8,
         rank_accuracy: super::RankAccuracy,
-        is_level_zero_sorted: bool,
+        declared_sorted: bool,
     ) -> Result<Self, crate::error::Error> {
         use crate::codec::assert::insufficient_data;
         let state = cursor
@@ -412,32 +442,14 @@ where
             .read_u32_le()
             .map_err(insufficient_data("compactor.num_items"))?;
 
-        // Validate the wire-controlled fields before they feed capacity/weight
-        // arithmetic. A legitimate compactor always satisfies these bounds
-        // (`section_size` derives from k ≤ MAX_K and only shrinks while
-        // `nearest_even` stays ≥ MIN_K; `lg_weight` is the level index;
-        // `num_sections` follows the doubling schedule from `INIT_NUM_SECTIONS`),
-        // so rejecting anything else keeps `nominal_capacity`, `weight`, and
-        // `ensure_enough_sections` from overflowing on crafted input.
-        if !(0.0..=super::MAX_K as f32).contains(&section_size_raw)
-            || nearest_even(section_size_raw) < u32::from(MIN_K)
-        {
+        if lg_weight != expected_lg_weight {
             return Err(Error::deserial(format!(
-                "REQ compactor section_size {section_size_raw} out of range"
+                "REQ compactor lg_weight {lg_weight} does not match level {expected_lg_weight}"
             )));
         }
-        // `weight()` computes `1u64 << lg_weight`, which overflows once lg_weight ≥ 64.
-        if lg_weight >= 64 {
+        if !is_reachable_section_config(k, state, section_size_raw, num_sections) {
             return Err(Error::deserial(format!(
-                "REQ compactor lg_weight {lg_weight} exceeds maximum"
-            )));
-        }
-        // `ensure_enough_sections` assumes a nonzero `num_sections` from the doubling
-        // schedule that starts at `INIT_NUM_SECTIONS`. Reject anything the schedule
-        // cannot produce, including `num_sections = 0` which underflows the shift.
-        if !is_valid_num_sections(num_sections) {
-            return Err(Error::deserial(format!(
-                "REQ compactor num_sections {num_sections} is not a valid section-schedule value"
+                "REQ compactor section config (k={k}, state={state}, section_size_raw={section_size_raw}, num_sections={num_sections}) is not reachable"
             )));
         }
 
@@ -450,6 +462,7 @@ where
         for _ in 0..num_items {
             items.push(T::deserialize_value(cursor)?);
         }
+        validate_deserialized_items(&items, declared_sorted)?;
 
         Ok(Compactor::from_serialized_state(
             lg_weight,
@@ -457,7 +470,7 @@ where
             num_sections,
             state,
             items,
-            is_level_zero_sorted,
+            declared_sorted,
             rank_accuracy,
         ))
     }
@@ -474,14 +487,16 @@ where
         rank_accuracy: super::RankAccuracy,
         items: Vec<T>,
         is_sorted: bool,
-    ) -> Self {
+    ) -> Result<Self, Error> {
+        validate_deserialized_items(&items, is_sorted)?;
         let mut c = Self::new(0, k, rank_accuracy);
         for item in items {
             c.append(item);
         }
-        // append() may have flipped is_sorted off; restore the wire flag verbatim.
+        // append() may have flipped is_sorted off; restore the wire flag after
+        // validating that a true flag matches the actual order.
         c.is_sorted = is_sorted;
-        c
+        Ok(c)
     }
 
     /// Reconstruct a Compactor from deserialized state.
@@ -605,7 +620,8 @@ mod tests {
         let raw = bytes.into_bytes();
 
         let mut cursor = SketchSlice::new(&raw);
-        let c2 = Compactor::<f32>::deserialize(&mut cursor, RankAccuracy::HighRank, true).unwrap();
+        let c2 = Compactor::<f32>::deserialize(&mut cursor, 12, 0, RankAccuracy::HighRank, true)
+            .unwrap();
 
         assert_eq!(c.num_items(), c2.num_items());
         assert_eq!(c.lg_weight(), c2.lg_weight());

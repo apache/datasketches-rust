@@ -260,14 +260,54 @@ fn merge_preserves_order_across_serde_round_trip() {
 //
 // A non-empty, non-raw, single-level sketch carries a full 20-byte compactor
 // preamble whose `section_size_raw`, `lg_weight`, and `num_items` fields are read
-// straight off the wire. Without bounds checks these crafted values either panic
-// (arithmetic overflow) or trigger an unbounded allocation in `Compactor::deserialize`.
+// straight off the wire. Serializers use RAW_ITEMS for one-level sketches with
+// n ≤ 4, so the canonical non-raw baseline uses five items and mutates exactly
+// one invariant in each malformed case.
+
+const FIVE_ITEMS: [f32; 5] = [1.0, 2.0, 3.0, 4.0, 5.0];
+const FLAG_HRA: u8 = 8;
+const FLAG_RAW_ITEMS: u8 = 16;
+const FLAG_LEVEL_ZERO_SORTED: u8 = 32;
+
+fn assert_invalid_data(bytes: &[u8]) {
+    let err = match ReqSketch::<f32>::deserialize(bytes) {
+        Ok(_) => panic!("expected InvalidData, deserialize succeeded"),
+        Err(err) => err,
+    };
+    assert_eq!(
+        err.kind(),
+        ErrorKind::InvalidData,
+        "wrong error kind: {:?}",
+        err.kind()
+    );
+}
+
+fn assert_invalid_data_containing(bytes: &[u8], needle: &str) {
+    let err = match ReqSketch::<f32>::deserialize(bytes) {
+        Ok(_) => panic!("expected InvalidData, deserialize succeeded"),
+        Err(err) => err,
+    };
+    assert_eq!(
+        err.kind(),
+        ErrorKind::InvalidData,
+        "wrong error kind: {:?}",
+        err.kind()
+    );
+    assert!(
+        err.message().contains(needle),
+        "expected message to contain {needle:?}, got {:?}",
+        err.message()
+    );
+}
 
 /// Builds a non-empty, non-raw, single-level (`num_levels = 1`) REQ sketch image
 /// with a fully specified compactor preamble, so an individual field can be made
 /// malformed in isolation. With valid inputs the result deserializes successfully
 /// (see `single_level_image_is_valid_baseline`).
 fn single_level_image(
+    k: u16,
+    flags: u8,
+    state: u64,
     section_size_raw: f32,
     lg_weight: u8,
     num_sections: u8,
@@ -275,11 +315,12 @@ fn single_level_image(
     items: &[f32],
 ) -> Vec<u8> {
     // Preamble (8 bytes): preamble_ints = 2 (EXACT, since num_levels == 1),
-    // serial_version = 1, family = 17 (REQ), flags = 8 (IS_HIGH_RANK: not empty,
-    // not raw), k = 12 (u16 LE), num_levels = 1, num_raw_items = 0.
-    let mut b = vec![2u8, 1, 17, 8, 12, 0, 1, 0];
-    // Compactor preamble (20 bytes).
-    b.extend_from_slice(&0u64.to_le_bytes()); // state
+    // serial_version = 1, family = 17 (REQ).
+    let mut b = vec![2u8, 1, 17, flags];
+    b.extend_from_slice(&k.to_le_bytes());
+    b.push(1); // num_levels
+    b.push(0); // num_raw_items
+    b.extend_from_slice(&state.to_le_bytes());
     b.extend_from_slice(&section_size_raw.to_le_bytes());
     b.push(lg_weight);
     b.push(num_sections);
@@ -291,76 +332,152 @@ fn single_level_image(
     b
 }
 
+fn canonical_five_item_image() -> Vec<u8> {
+    single_level_image(12, FLAG_HRA, 0, 12.0, 0, 3, 5, &FIVE_ITEMS)
+}
+
+fn write_compactor(buf: &mut Vec<u8>, lg_weight: u8, items: &[f32]) {
+    buf.extend_from_slice(&0u64.to_le_bytes());
+    buf.extend_from_slice(&12.0f32.to_le_bytes());
+    buf.push(lg_weight);
+    buf.push(3);
+    buf.extend_from_slice(&0u16.to_le_bytes());
+    buf.extend_from_slice(&(items.len() as u32).to_le_bytes());
+    for &item in items {
+        buf.extend_from_slice(&item.to_le_bytes());
+    }
+}
+
 #[test]
 fn single_level_image_is_valid_baseline() {
-    // Control: the builder with well-formed fields round-trips, so the malformed
-    // variants below isolate exactly one bad field.
-    let bytes = single_level_image(12.0, 0, 3, 1, &[1.0]);
-    assert_that!(ReqSketch::<f32>::deserialize(&bytes), ok(anything()));
-}
-
-#[test]
-fn deserialize_rejects_out_of_range_section_size() {
-    // A garbage section_size_raw drives the `nominal_capacity` arithmetic to overflow.
-    let bytes = single_level_image(1e30, 0, 3, 1, &[1.0]);
-    assert_that!(ReqSketch::<f32>::deserialize(&bytes), err(anything()));
-}
-
-#[test]
-fn deserialize_rejects_undersized_section_size() {
-    // `section_size_raw = 0.0` is in `0..=MAX_K` but rounds to `section_size = 0`,
-    // so `nominal_capacity` is 0. That is not a schedule-produced size.
-    let bytes = single_level_image(0.0, 0, 3, 1, &[1.0]);
-    let result = ReqSketch::<f32>::deserialize(&bytes);
-    assert_that!(result, err(anything()));
-    assert_eq!(
-        result.unwrap_err().kind(),
-        ErrorKind::InvalidData,
-        "wrong error kind"
+    // Control: five non-raw items is the canonical one-level image. Serializers
+    // use RAW_ITEMS for n ≤ 4, so a one-item non-raw image is not a valid baseline.
+    assert_that!(
+        ReqSketch::<f32>::deserialize(&canonical_five_item_image()),
+        ok(anything())
+    );
+    let k4 = single_level_image(4, FLAG_HRA, 0, 4.0, 0, 3, 5, &FIVE_ITEMS);
+    assert_that!(ReqSketch::<f32>::deserialize(&k4), ok(anything()));
+    let doubled = single_level_image(
+        12,
+        FLAG_HRA,
+        4,
+        12.0 / std::f32::consts::SQRT_2,
+        0,
+        6,
+        5,
+        &FIVE_ITEMS,
+    );
+    assert_that!(ReqSketch::<f32>::deserialize(&doubled), ok(anything()));
+    let sorted_claim = single_level_image(
+        12,
+        FLAG_HRA | FLAG_LEVEL_ZERO_SORTED,
+        0,
+        12.0,
+        0,
+        3,
+        5,
+        &FIVE_ITEMS,
+    );
+    assert_that!(ReqSketch::<f32>::deserialize(&sorted_claim), ok(anything()));
+    let unsorted_no_claim =
+        single_level_image(12, FLAG_HRA, 0, 12.0, 0, 3, 5, &[3.0, 4.0, 5.0, 1.0, 2.0]);
+    assert_that!(
+        ReqSketch::<f32>::deserialize(&unsorted_no_claim),
+        ok(anything())
     );
 }
 
 #[test]
+fn deserialize_rejects_out_of_range_section_size() {
+    // A garbage section_size_raw is not reachable from k under the doubling schedule.
+    let bytes = single_level_image(12, FLAG_HRA, 0, 1e30, 0, 3, 5, &FIVE_ITEMS);
+    assert_invalid_data_containing(&bytes, "not reachable");
+}
+
+#[test]
+fn deserialize_rejects_undersized_section_size() {
+    // `section_size_raw = 0.0` is in `0..=MAX_K` but is not produced by the schedule.
+    let bytes = single_level_image(12, FLAG_HRA, 0, 0.0, 0, 3, 5, &FIVE_ITEMS);
+    assert_invalid_data_containing(&bytes, "not reachable");
+}
+
+#[test]
+fn deserialize_rejects_k_section_size_mismatch() {
+    // k=4 with section_size_raw=1024 used to be accepted because each field was
+    // checked only against global MAX_K, yielding capacity 6144 instead of 24.
+    let bytes = single_level_image(4, FLAG_HRA, 0, 1024.0, 0, 3, 5, &FIVE_ITEMS);
+    assert_invalid_data_containing(&bytes, "not reachable");
+}
+
+#[test]
 fn deserialize_rejects_oversized_lg_weight() {
-    // lg_weight >= 64 makes the per-item weight `1u64 << lg_weight` overflow.
-    let bytes = single_level_image(12.0, 64, 3, 1, &[1.0]);
-    assert_that!(ReqSketch::<f32>::deserialize(&bytes), err(anything()));
+    // lg_weight must equal the enclosing level index (0 here).
+    let bytes = single_level_image(12, FLAG_HRA, 0, 12.0, 64, 3, 5, &FIVE_ITEMS);
+    assert_invalid_data_containing(&bytes, "does not match level");
 }
 
 #[test]
 fn deserialize_rejects_oversized_compactor_num_items() {
-    // num_items claims billions of items while only one is supplied: deserialize
+    // num_items claims billions of items while only five are supplied: deserialize
     // must fail gracefully without attempting a multi-gigabyte allocation.
-    let bytes = single_level_image(12.0, 0, 3, u32::MAX, &[1.0]);
-    assert_that!(ReqSketch::<f32>::deserialize(&bytes), err(anything()));
+    let bytes = single_level_image(12, FLAG_HRA, 0, 12.0, 0, 3, u32::MAX, &FIVE_ITEMS);
+    assert_invalid_data(&bytes);
 }
 
 #[test]
 fn deserialize_rejects_zero_num_sections() {
     // A single-level image with num_sections = 0 used to deserialize, then
     // ReqSketch::merge panicked at `1u64 << (self.num_sections - 1)`.
-    let bytes = single_level_image(12.0, 0, 0, 1, &[1.0]);
-    let result = ReqSketch::<f32>::deserialize(&bytes);
-    assert_that!(result, err(anything()));
-    assert_eq!(
-        result.unwrap_err().kind(),
-        ErrorKind::InvalidData,
-        "wrong error kind"
-    );
+    let bytes = single_level_image(12, FLAG_HRA, 0, 12.0, 0, 0, 5, &FIVE_ITEMS);
+    assert_invalid_data_containing(&bytes, "not reachable");
+}
+
+#[test]
+fn deserialize_rejects_nonzero_invalid_num_sections() {
+    // num_sections = 1 is on neither the initial value (3) nor the doubling schedule.
+    let bytes = single_level_image(12, FLAG_HRA, 0, 12.0, 0, 1, 5, &FIVE_ITEMS);
+    assert_invalid_data_containing(&bytes, "not reachable");
 }
 
 #[test]
 fn deserialize_rejects_level0_lg_weight_mismatch() {
-    // A level-0 compactor with lg_weight = 63 and one item used to deserialize,
-    // then rank() returned ~9.22e18 instead of a value in [0.0, 1.0].
-    let bytes = single_level_image(12.0, 63, 3, 1, &[1.0]);
-    let result = ReqSketch::<f32>::deserialize(&bytes);
-    assert_that!(result, err(anything()));
-    assert_eq!(
-        result.unwrap_err().kind(),
-        ErrorKind::InvalidData,
-        "wrong error kind"
-    );
+    // A level-0 compactor with lg_weight = 63 used to deserialize, then rank()
+    // returned ~9.22e18 instead of a value in [0.0, 1.0].
+    let bytes = single_level_image(12, FLAG_HRA, 0, 12.0, 63, 3, 5, &FIVE_ITEMS);
+    assert_invalid_data_containing(&bytes, "does not match level");
+}
+
+#[test]
+fn deserialize_rejects_false_sorted_claim() {
+    // IS_LEVEL_ZERO_SORTED with unsorted items makes rank() disagree with sorted_view().
+    let mut bytes = vec![2u8, 1, 17, FLAG_HRA | FLAG_LEVEL_ZERO_SORTED, 12, 0, 1, 0];
+    bytes.extend_from_slice(&0u64.to_le_bytes());
+    bytes.extend_from_slice(&12.0f32.to_le_bytes());
+    bytes.extend_from_slice(&[0, 3, 0, 0]);
+    bytes.extend_from_slice(&5u32.to_le_bytes());
+    for item in [3.0f32, 4.0, 5.0, 1.0, 2.0] {
+        bytes.extend_from_slice(&item.to_le_bytes());
+    }
+    assert_invalid_data_containing(&bytes, "claimed sorted");
+}
+
+#[test]
+fn deserialize_rejects_false_sorted_claim_raw_items() {
+    let mut bytes = vec![
+        2u8,
+        1,
+        17,
+        FLAG_HRA | FLAG_RAW_ITEMS | FLAG_LEVEL_ZERO_SORTED,
+        12,
+        0,
+        1,
+        2,
+    ];
+    for item in [2.0f32, 1.0] {
+        bytes.extend_from_slice(&item.to_le_bytes());
+    }
+    assert_invalid_data_containing(&bytes, "claimed sorted");
 }
 
 #[test]
@@ -370,24 +487,51 @@ fn deserialize_rejects_retained_at_or_above_capacity() {
     // already sits at or above capacity would skip compact after the next
     // equality-only update. Reject both boundaries at deserialize.
     let at_capacity: Vec<f32> = (0..72).map(|i| i as f32).collect();
-    let bytes = single_level_image(12.0, 0, 3, 72, &at_capacity);
-    let result = ReqSketch::<f32>::deserialize(&bytes);
-    assert_that!(result, err(anything()));
-    assert_eq!(
-        result.unwrap_err().kind(),
-        ErrorKind::InvalidData,
-        "wrong error kind"
-    );
+    let bytes = single_level_image(12, FLAG_HRA, 0, 12.0, 0, 3, 72, &at_capacity);
+    assert_invalid_data_containing(&bytes, "not below total nominal capacity");
 
     let over_capacity: Vec<f32> = (0..73).map(|i| i as f32).collect();
-    let bytes = single_level_image(12.0, 0, 3, 73, &over_capacity);
-    let result = ReqSketch::<f32>::deserialize(&bytes);
-    assert_that!(result, err(anything()));
-    assert_eq!(
-        result.unwrap_err().kind(),
-        ErrorKind::InvalidData,
-        "wrong error kind"
-    );
+    let bytes = single_level_image(12, FLAG_HRA, 0, 12.0, 0, 3, 73, &over_capacity);
+    assert_invalid_data_containing(&bytes, "not below total nominal capacity");
+}
+
+#[test]
+fn deserialize_rejects_weighted_count_mismatch() {
+    // Two levels: 3 items at weight 1 plus 1 item at weight 2 → weighted count 5.
+    // Lying n isolates the mismatch branch.
+    let mut bytes = vec![4u8, 1, 17, FLAG_HRA, 12, 0, 2, 0];
+    bytes.extend_from_slice(&99u64.to_le_bytes());
+    bytes.extend_from_slice(&1.0f32.to_le_bytes());
+    bytes.extend_from_slice(&4.0f32.to_le_bytes());
+    write_compactor(&mut bytes, 0, &[1.0, 2.0, 3.0]);
+    write_compactor(&mut bytes, 1, &[4.0]);
+    assert_invalid_data_containing(&bytes, "does not match n");
+}
+
+#[test]
+fn deserialize_accepts_matching_two_level_weighted_count() {
+    let mut bytes = vec![4u8, 1, 17, FLAG_HRA, 12, 0, 2, 0];
+    bytes.extend_from_slice(&5u64.to_le_bytes());
+    bytes.extend_from_slice(&1.0f32.to_le_bytes());
+    bytes.extend_from_slice(&4.0f32.to_le_bytes());
+    write_compactor(&mut bytes, 0, &[1.0, 2.0, 3.0]);
+    write_compactor(&mut bytes, 1, &[4.0]);
+    assert_that!(ReqSketch::<f32>::deserialize(&bytes), ok(anything()));
+}
+
+#[test]
+fn deserialize_rejects_weighted_count_overflow() {
+    // 64 compactors with lg_weight equal to the level index. Two items at
+    // level 63 make `num_items * 2^lg_weight` overflow u64.
+    let mut bytes = vec![4u8, 1, 17, FLAG_HRA, 12, 0, 64, 0];
+    bytes.extend_from_slice(&2u64.to_le_bytes());
+    bytes.extend_from_slice(&1.0f32.to_le_bytes());
+    bytes.extend_from_slice(&2.0f32.to_le_bytes());
+    for level in 0u8..64 {
+        let items: &[f32] = if level == 63 { &[1.0, 2.0] } else { &[] };
+        write_compactor(&mut bytes, level, items);
+    }
+    assert_invalid_data_containing(&bytes, "weighted count overflow");
 }
 
 // ---------- Cross-language compatibility ----------

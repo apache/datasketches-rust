@@ -359,10 +359,9 @@ impl<T: ReqValue> ReqSketch<T> {
     }
 
     const FIXED_RSE_FACTOR: f64 = 0.084;
-    const INIT_NUM_SECTIONS: u8 = 3;
 
     fn relative_rse_factor() -> f64 {
-        (0.0512 / Self::INIT_NUM_SECTIONS as f64).sqrt()
+        (0.0512 / super::serialization::INIT_NUM_SECTIONS as f64).sqrt()
     }
 
     fn compute_rank_lower_bound(
@@ -411,7 +410,7 @@ impl<T: ReqValue> ReqSketch<T> {
         n: u64,
         hra: bool,
     ) -> bool {
-        let base_cap = k as u64 * Self::INIT_NUM_SECTIONS as u64;
+        let base_cap = k as u64 * super::serialization::INIT_NUM_SECTIONS as u64;
         if num_levels == 1 || n <= base_cap {
             return true;
         }
@@ -628,6 +627,11 @@ impl<T: ReqValue> ReqSketch<T> {
                 "non-empty REQ sketch must have at least one level",
             ));
         }
+        if num_levels > 64 {
+            return Err(Error::deserial(
+                "REQ sketch has more than 64 compactors, which would overflow weighted-count arithmetic",
+            ));
+        }
 
         if raw_items {
             if num_levels != 1 {
@@ -654,6 +658,16 @@ impl<T: ReqValue> ReqSketch<T> {
             n = cursor.read_u64_le().map_err(insufficient_data("n"))?;
             min_item = Some(T::deserialize_value(&mut cursor)?);
             max_item = Some(T::deserialize_value(&mut cursor)?);
+            let mn = min_item.as_ref().unwrap();
+            let mx = max_item.as_ref().unwrap();
+            if mn.is_nan() || mx.is_nan() {
+                return Err(Error::deserial("REQ sketch min or max item is NaN"));
+            }
+            if mn.total_cmp(mx).is_gt() {
+                return Err(Error::deserial(
+                    "REQ sketch min item is greater than max item",
+                ));
+            }
         }
 
         let mut compactors: Vec<Compactor<T>> = Vec::with_capacity(num_levels as usize);
@@ -664,20 +678,22 @@ impl<T: ReqValue> ReqSketch<T> {
             for _ in 0..num_raw_items {
                 items.push(T::deserialize_value(&mut cursor)?);
             }
-            let c =
-                Compactor::<T>::raw_items_compactor(k, rank_accuracy, items, is_level_zero_sorted);
-            compactors.push(c);
+            compactors.push(Compactor::<T>::raw_items_compactor(
+                k,
+                rank_accuracy,
+                items,
+                is_level_zero_sorted,
+            )?);
         } else {
             for i in 0..num_levels {
-                let level_sorted = if i == 0 { is_level_zero_sorted } else { true };
-                let c = Compactor::<T>::deserialize(&mut cursor, rank_accuracy, level_sorted)?;
-                if c.lg_weight() != i {
-                    return Err(Error::deserial(format!(
-                        "REQ compactor lg_weight {} does not match level {i}",
-                        c.lg_weight()
-                    )));
-                }
-                compactors.push(c);
+                let level_sorted = i > 0 || is_level_zero_sorted;
+                compactors.push(Compactor::<T>::deserialize(
+                    &mut cursor,
+                    k,
+                    i,
+                    rank_accuracy,
+                    level_sorted,
+                )?);
             }
         }
 
@@ -704,6 +720,27 @@ impl<T: ReqValue> ReqSketch<T> {
 
         if n == 0 || min_item.is_none() || max_item.is_none() {
             return Err(Error::deserial("non-empty REQ sketch contains no items"));
+        }
+
+        let expected_raw_items = num_levels == 1 && n <= RAW_ITEMS_THRESHOLD;
+        if raw_items != expected_raw_items {
+            return Err(Error::deserial(
+                "REQ sketch RAW_ITEMS flag is inconsistent with num_levels and n",
+            ));
+        }
+
+        if num_levels > 1 {
+            let mn = min_item.as_ref().unwrap();
+            let mx = max_item.as_ref().unwrap();
+            for c in &compactors {
+                for item in c.iter() {
+                    if item.total_cmp(mn).is_lt() || item.total_cmp(mx).is_gt() {
+                        return Err(Error::deserial(
+                            "REQ retained item is outside the serialized min/max range",
+                        ));
+                    }
+                }
+            }
         }
 
         let mut weighted_count = 0u64;
