@@ -82,15 +82,7 @@ fn theoretical_error_bounds_cover_uniform_quantiles() -> Result<(), Error> {
         let estimated_rank = sketch.rank(&true_quantile, SearchCriteria::Inclusive)?;
         let lower = sketch.rank_lower_bound(rank, 3);
         let upper = sketch.rank_upper_bound(rank, 3);
-        assert_that!(
-            estimated_rank,
-            all!(ge(lower), le(upper)),
-            "rank {} estimate {:.6} outside [{:.6}, {:.6}]",
-            rank,
-            estimated_rank,
-            lower,
-            upper
-        );
+        assert_that!(estimated_rank, all!(ge(lower), le(upper)), "rank: {rank}");
     }
 
     Ok(())

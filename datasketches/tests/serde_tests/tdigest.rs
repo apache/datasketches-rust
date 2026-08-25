@@ -345,9 +345,5 @@ fn test_large_weights_produce_finite_extreme_quantile() {
 
     let mut tdigest = TDigestMut::deserialize(&bytes, false).unwrap();
     let quantile = tdigest.quantile(0.25).unwrap();
-    assert_that!(
-        quantile,
-        all!(is_finite(), ge(lower), le(f64::MAX)),
-        "quantile must remain within its finite interpolation bounds, got {quantile}"
-    );
+    assert_that!(quantile, all!(is_finite(), ge(lower), le(f64::MAX)));
 }

@@ -794,11 +794,7 @@ mod tests {
 
         fn assert_approx_equal(ci: NumStdDev, j: usize, expected: f64, actual: f64) {
             let ratio = actual / expected;
-            assert_that!(
-                ratio,
-                near(1.0, TOL),
-                "ci={ci:?}, j={j}: expected {expected}, got {actual}, ratio={ratio}",
-            );
+            assert_that!(ratio, near(1.0, TOL), "ci={ci:?}, j={j}",);
         }
 
         for ci in [NumStdDev::One, NumStdDev::Two, NumStdDev::Three] {

@@ -52,11 +52,7 @@ fn test_bloom_filter_file(path: PathBuf, expected_num_items: u64, expected_num_h
             "Filter should not be empty for n={}",
             expected_num_items
         );
-        assert_that!(
-            filter1.bits_used(),
-            gt(0),
-            "Non-empty filter should have bits set"
-        );
+        assert_that!(filter1.bits_used(), gt(0));
     }
 
     // Verify the items that were inserted (integers 0 to n/10-1)

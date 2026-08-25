@@ -4800,12 +4800,7 @@ mod tests {
         // X array should be strictly increasing
         let x_arr = get_x_arr(8);
         for i in 1..x_arr.len() {
-            assert_that!(
-                x_arr[i],
-                gt(x_arr[i - 1]),
-                "X array should be monotonically increasing at index {}",
-                i
-            );
+            assert_that!(x_arr[i], gt(x_arr[i - 1]), "index: {i}");
         }
     }
 }

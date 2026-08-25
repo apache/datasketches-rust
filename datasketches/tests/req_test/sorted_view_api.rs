@@ -117,7 +117,7 @@ fn view_rank_is_primary_query_name() {
     let sketch = populated_sketch(10);
     let view = sketch.sorted_view();
     let r = view.rank(&5.0, SearchCriteria::Inclusive).expect("rank");
-    assert_that!(r, near(0.6, 1e-10), "rank of 5.0 in 0..10");
+    assert_that!(r, near(0.6, 1e-10));
 }
 
 #[test]

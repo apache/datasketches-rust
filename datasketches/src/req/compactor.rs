@@ -599,11 +599,6 @@ mod tests {
 
         a.merge(&b);
 
-        assert_that!(
-            a.num_sections,
-            ge(12),
-            "merge must loop ensure_enough_sections; got num_sections={} (single-call would yield 6)",
-            a.num_sections
-        );
+        assert_that!(a.num_sections, ge(12));
     }
 }

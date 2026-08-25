@@ -75,7 +75,7 @@ fn compaction_promotes_surviving_items_to_higher_weights() {
     }
 
     let max_weight = sketch.iter().map(|(_, weight)| weight).max().unwrap();
-    assert_that!(max_weight, gt(1), "expected promoted items");
+    assert_that!(max_weight, gt(1));
 
     // Every weight is a power of two (2^level).
     let weights: Vec<_> = sketch.iter().map(|(_, weight)| weight).collect();

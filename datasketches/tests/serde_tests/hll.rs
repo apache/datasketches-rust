@@ -57,22 +57,12 @@ fn test_sketch_file(path: PathBuf, expected_cardinality: usize, expected_lg_k: u
         assert_that!(
             estimate1,
             all!(ge(lower_bound), le(upper_bound)),
-            "Estimate {} outside bounds [{}, {}] for expected {} in {}",
-            estimate1,
-            lower_bound,
-            upper_bound,
-            expected,
+            "path: {}",
             path.display()
         );
     } else {
         // For n=0, estimate should be very close to 0
-        assert_that!(
-            estimate1,
-            lt(1.0),
-            "Expected near-zero estimate for empty sketch, got {} in {}",
-            estimate1,
-            path.display()
-        );
+        assert_that!(estimate1, lt(1.0), "path: {}", path.display());
     }
 
     // Serialize and deserialize again to test round-trip
@@ -131,11 +121,7 @@ fn test_update_after_deserialize_list_mode() {
         sketch.update(2u64);
 
         let est = sketch.estimate();
-        assert_that!(
-            est,
-            near(2.0, 0.1),
-            "{hll_type:?}: estimate after deserialization"
-        );
+        assert_that!(est, near(2.0, 0.1), "hll_type: {hll_type:?}");
     }
 }
 
@@ -318,6 +304,6 @@ fn test_estimate_accuracy() {
         println!("{:<12} {:<12.0} {:<10.3}", expected, estimate, error_pct,);
 
         // All estimates should be within 2% error
-        assert_that!(error_pct, lt(2.), "Estimate error percentage");
+        assert_that!(error_pct, lt(2.));
     }
 }

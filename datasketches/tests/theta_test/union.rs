@@ -37,10 +37,7 @@ fn assert_estimate_close(sketch: &CompactThetaSketch, expected: f64, tolerance: 
     assert_that!(
         sketch.estimate(),
         near(expected, tolerance),
-        "estimate={}, expected={}, tolerance={}, theta={}, retained={}",
-        sketch.estimate(),
-        expected,
-        tolerance,
+        "theta={}, retained={}",
         sketch.theta(),
         sketch.num_retained()
     );
@@ -149,8 +146,7 @@ fn test_estimation_mode_half_overlap() {
     assert_that!(
         result.estimate(),
         near(15000.0, 15000.0 * 0.01),
-        "estimate={}, theta={}, retained={}",
-        result.estimate(),
+        "theta={}, retained={}",
         result.theta(),
         result.num_retained()
     );
@@ -669,8 +665,7 @@ fn test_corner_case_union_states() {
         assert_that!(
             result.theta(),
             near(expected_theta, 1e-6),
-            "state_a={state_a:?}, state_b={state_b:?}, theta={}",
-            result.theta()
+            "state_a={state_a:?}, state_b={state_b:?}"
         );
         assert_eq!(
             result.num_retained(),

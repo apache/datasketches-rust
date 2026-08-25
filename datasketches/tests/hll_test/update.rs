@@ -39,11 +39,7 @@ fn test_basic_update() {
     }
 
     let estimate = sketch.estimate();
-    assert_that!(
-        estimate,
-        gt(0.0),
-        "Estimate should be positive after updates"
-    );
+    assert_that!(estimate, gt(0.0));
     assert_that!(estimate, near(100.0, 20.0));
 }
 
@@ -58,7 +54,7 @@ fn test_list_to_set_promotion() {
     }
 
     let estimate = sketch.estimate();
-    assert_that!(estimate, near(600.0, 100.0), "Estimate after promotion");
+    assert_that!(estimate, near(600.0, 100.0));
 }
 
 #[test]
@@ -72,11 +68,7 @@ fn test_set_to_hll_promotion() {
     }
 
     let estimate = sketch.estimate();
-    assert_that!(
-        estimate,
-        near(1000.0, 150.0),
-        "Estimate after full promotion"
-    );
+    assert_that!(estimate, near(1000.0, 150.0));
 }
 
 #[test]
@@ -92,11 +84,7 @@ fn test_duplicate_handling() {
 
     // Estimate should reflect ~100 unique values, not 1000
     let estimate = sketch.estimate();
-    assert_that!(
-        estimate,
-        near(100.0, 20.0),
-        "Duplicates should not inflate estimate"
-    );
+    assert_that!(estimate, near(100.0, 20.0));
 }
 
 #[test]
@@ -111,7 +99,7 @@ fn test_different_types() {
     sketch.update(vec![1, 2, 3]);
 
     let estimate = sketch.estimate();
-    assert_that!(estimate, ge(5.0), "Should have at least 5 distinct values");
+    assert_that!(estimate, ge(5.0));
 }
 
 #[test]
@@ -123,7 +111,7 @@ fn test_hll4_type() {
     }
 
     let estimate = sketch.estimate();
-    assert_that!(estimate, near(1000.0, 200.0), "HLL4 estimate");
+    assert_that!(estimate, near(1000.0, 200.0));
 }
 
 #[test]
@@ -135,7 +123,7 @@ fn test_hll6_type() {
     }
 
     let estimate = sketch.estimate();
-    assert_that!(estimate, near(1000.0, 200.0), "HLL6 estimate");
+    assert_that!(estimate, near(1000.0, 200.0));
 }
 
 #[test]
@@ -160,10 +148,7 @@ fn test_serialization_roundtrip_after_updates() {
     assert_that!(
         relative_error,
         lt(0.05),
-        "Estimates should match after serialization (< 5% error), got {} vs {} ({:.2}% error)",
-        estimate1,
-        estimate2,
-        relative_error * 100.0
+        "estimate1={estimate1}, estimate2={estimate2}"
     );
 }
 
@@ -180,12 +165,7 @@ fn test_large_cardinality() {
     let relative_error = (estimate - 100_000.0).abs() / 100_000.0;
 
     // For lg_k=14, relative error should be ~1.04%
-    assert_that!(
-        relative_error,
-        lt(0.05),
-        "Relative error should be < 5% for large cardinality, got {:.2}%",
-        relative_error * 100.0
-    );
+    assert_that!(relative_error, lt(0.05));
 }
 
 #[test]
@@ -242,46 +222,18 @@ fn test_bounds_basic() {
     let lower3 = sketch.lower_bound(NumStdDev::Three);
 
     // Basic sanity checks
-    assert_that!(estimate, ge(lower1), "Lower bound should be <= estimate");
-    assert_that!(estimate, le(upper1), "Estimate should be <= upper bound");
+    assert_that!(estimate, ge(lower1));
+    assert_that!(estimate, le(upper1));
 
     // Bounds should widen with more standard deviations
-    assert_that!(
-        lower2,
-        le(lower1),
-        "2-sigma lower should be <= 1-sigma lower"
-    );
-    assert_that!(
-        upper1,
-        le(upper2),
-        "1-sigma upper should be <= 2-sigma upper"
-    );
-    assert_that!(
-        lower3,
-        le(lower2),
-        "3-sigma lower should be <= 2-sigma lower"
-    );
-    assert_that!(
-        upper2,
-        le(upper3),
-        "2-sigma upper should be <= 3-sigma upper"
-    );
+    assert_that!(lower2, le(lower1));
+    assert_that!(upper1, le(upper2));
+    assert_that!(lower3, le(lower2));
+    assert_that!(upper2, le(upper3));
 
     // Bounds should be reasonable (within 50% for 3-sigma)
-    assert_that!(
-        lower3,
-        gt(estimate * 0.5),
-        "3-sigma lower bound seems too low: {} vs estimate {}",
-        lower3,
-        estimate
-    );
-    assert_that!(
-        upper3,
-        lt(estimate * 1.5),
-        "3-sigma upper bound seems too high: {} vs estimate {}",
-        upper3,
-        estimate
-    );
+    assert_that!(lower3, gt(estimate * 0.5));
+    assert_that!(upper3, lt(estimate * 1.5));
 }
 
 #[test]
@@ -294,7 +246,7 @@ fn test_bounds_all_modes() {
     let estimate = sketch.estimate();
     let upper = sketch.upper_bound(NumStdDev::Two);
     let lower = sketch.lower_bound(NumStdDev::Two);
-    assert_that!(estimate, all!(ge(lower), le(upper)), "LIST mode bounds");
+    assert_that!(estimate, all!(ge(lower), le(upper)), "mode: LIST");
 
     // Test Set mode (medium cardinality)
     for i in 10..100 {
@@ -303,7 +255,7 @@ fn test_bounds_all_modes() {
     let estimate = sketch.estimate();
     let upper = sketch.upper_bound(NumStdDev::Two);
     let lower = sketch.lower_bound(NumStdDev::Two);
-    assert_that!(estimate, all!(ge(lower), le(upper)), "SET mode bounds");
+    assert_that!(estimate, all!(ge(lower), le(upper)), "mode: SET");
 
     // Test HLL mode (large cardinality)
     for i in 100..5000 {
@@ -312,7 +264,7 @@ fn test_bounds_all_modes() {
     let estimate = sketch.estimate();
     let upper = sketch.upper_bound(NumStdDev::Two);
     let lower = sketch.lower_bound(NumStdDev::Two);
-    assert_that!(estimate, all!(ge(lower), le(upper)), "HLL mode bounds");
+    assert_that!(estimate, all!(ge(lower), le(upper)), "mode: HLL");
 }
 
 #[test]
@@ -339,13 +291,7 @@ fn test_bounds_different_lg_k() {
     let width_large = (upper_large - lower_large) / est_large;
 
     // Smaller sketch should have wider relative confidence interval
-    assert_that!(
-        width_small,
-        gt(width_large),
-        "Smaller sketch should have wider confidence interval: {} vs {}",
-        width_small,
-        width_large
-    );
+    assert_that!(width_small, gt(width_large));
 }
 
 #[test]
@@ -357,7 +303,7 @@ fn test_bounds_empty_sketch() {
     let lower = sketch.lower_bound(NumStdDev::Two);
 
     assert_eq!(estimate, 0.0, "Empty sketch should have 0 estimate");
-    assert_that!(lower, ge(0.0), "Lower bound should be non-negative");
-    assert_that!(upper, ge(0.0), "Upper bound should be non-negative");
-    assert_that!(lower, le(upper), "Lower bound should be <= upper bound");
+    assert_that!(lower, ge(0.0));
+    assert_that!(upper, ge(0.0));
+    assert_that!(lower, le(upper));
 }

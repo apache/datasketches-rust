@@ -133,8 +133,8 @@ fn rank_is_monotonic_and_bounded() {
         let rank = sketch
             .rank(&value, SearchCriteria::Inclusive)
             .expect("rank should succeed");
-        assert_that!(rank, ge(last_rank), "ranks should be monotonic");
-        assert_that!(rank, all!(ge(0.0), le(1.0)), "rank should be in [0,1]");
+        assert_that!(rank, ge(last_rank));
+        assert_that!(rank, all!(ge(0.0), le(1.0)));
         last_rank = rank;
     }
 }
