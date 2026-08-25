@@ -25,6 +25,7 @@ use crate::req::INITIAL_SECTIONS_PER_COMPACTOR;
 use crate::req::MIN_K;
 use crate::req::RankAccuracy;
 use crate::req::nearest_even_section_size;
+use crate::req::serialization::validate_compactor_state;
 use crate::req::value::ReqValue;
 
 fn validate_deserialized_items<T: ReqValue>(items: &[T], sorted: bool) -> Result<(), Error> {
@@ -416,7 +417,7 @@ where
             .read_u32_le()
             .map_err(insufficient_data("compactor.num_items"))?;
 
-        crate::req::serialization::validate_compactor_state(
+        validate_compactor_state(
             k,
             expected_lg_weight,
             state,

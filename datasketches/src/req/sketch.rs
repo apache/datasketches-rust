@@ -19,6 +19,10 @@
 
 use std::fmt;
 
+use crate::codec::SketchBytes;
+use crate::codec::SketchSlice;
+use crate::codec::assert::insufficient_data;
+use crate::codec::family::Family;
 use crate::error::Error;
 use crate::req::DEFAULT_K;
 use crate::req::INITIAL_SECTIONS_PER_COMPACTOR;
@@ -28,6 +32,16 @@ use crate::req::RankAccuracy;
 use crate::req::SearchCriteria;
 use crate::req::compactor::Compactor;
 use crate::req::iter::ReqSketchIterator;
+use crate::req::serialization::FLAG_IS_EMPTY;
+use crate::req::serialization::FLAG_IS_HIGH_RANK;
+use crate::req::serialization::FLAG_IS_LEVEL_ZERO_SORTED;
+use crate::req::serialization::FLAG_RAW_ITEMS;
+use crate::req::serialization::PREAMBLE_INTS_ESTIMATION;
+use crate::req::serialization::PREAMBLE_INTS_EXACT;
+use crate::req::serialization::RAW_ITEMS_THRESHOLD;
+use crate::req::serialization::SERIAL_VERSION;
+use crate::req::serialization::check_preamble_ints;
+use crate::req::serialization::check_serial_version;
 use crate::req::sorted_view::SortedView;
 use crate::req::value::ReqValue;
 
@@ -455,10 +469,6 @@ impl<T: ReqValue> ReqSketch<T> {
     }
 
     pub(super) fn flags_byte(&self) -> u8 {
-        use crate::req::serialization::FLAG_IS_EMPTY;
-        use crate::req::serialization::FLAG_IS_HIGH_RANK;
-        use crate::req::serialization::FLAG_IS_LEVEL_ZERO_SORTED;
-        use crate::req::serialization::FLAG_RAW_ITEMS;
         let mut flags = 0u8;
         if self.is_empty() {
             flags |= FLAG_IS_EMPTY;
@@ -476,7 +486,6 @@ impl<T: ReqValue> ReqSketch<T> {
     }
 
     pub(super) fn is_raw_items(&self) -> bool {
-        use crate::req::serialization::RAW_ITEMS_THRESHOLD;
         self.n <= RAW_ITEMS_THRESHOLD && self.compactors.len() == 1
     }
 
@@ -511,12 +520,6 @@ impl<T: ReqValue> ReqSketch<T> {
 
     /// Serialize the sketch into a `Vec<u8>` matching the C++/Java REQ wire format.
     pub fn serialize(&self) -> Vec<u8> {
-        use crate::codec::SketchBytes;
-        use crate::codec::family::Family;
-        use crate::req::serialization::PREAMBLE_INTS_ESTIMATION;
-        use crate::req::serialization::PREAMBLE_INTS_EXACT;
-        use crate::req::serialization::SERIAL_VERSION;
-
         let mut out = SketchBytes::with_capacity(self.serialized_size_bytes());
         let preamble_ints = if self.is_estimation_mode() {
             PREAMBLE_INTS_ESTIMATION
@@ -568,18 +571,6 @@ impl<T: ReqValue> ReqSketch<T> {
     /// Returns an error if the input is truncated or contains an inconsistent
     /// REQ serialized state.
     pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
-        use crate::codec::SketchSlice;
-        use crate::codec::assert::insufficient_data;
-        use crate::codec::family::Family;
-        use crate::req::compactor::Compactor;
-        use crate::req::serialization::FLAG_IS_EMPTY;
-        use crate::req::serialization::FLAG_IS_HIGH_RANK;
-        use crate::req::serialization::FLAG_IS_LEVEL_ZERO_SORTED;
-        use crate::req::serialization::FLAG_RAW_ITEMS;
-        use crate::req::serialization::RAW_ITEMS_THRESHOLD;
-        use crate::req::serialization::check_preamble_ints;
-        use crate::req::serialization::check_serial_version;
-
         let mut cursor = SketchSlice::new(bytes);
         let preamble_ints = cursor
             .read_u8()
