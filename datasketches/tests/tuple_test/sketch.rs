@@ -28,7 +28,7 @@ use googletest::prelude::gt;
 use googletest::prelude::le;
 use googletest::prelude::lt;
 
-use super::default_tuple_sketch_builder;
+use crate::default_tuple_sketch_builder;
 
 #[test]
 fn updates_distinct_keys_and_accumulates_summaries() {

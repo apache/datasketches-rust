@@ -17,14 +17,14 @@
 
 //! Sorted view implementation for efficient quantile queries.
 
-use super::SearchCriteria;
-use super::value::ReqValue;
 use crate::error::Error;
+use crate::req::SearchCriteria;
+use crate::req::value::ReqValue;
 
-/// An owned, sorted snapshot of a [`ReqSketch`](super::ReqSketch)'s items with
+/// An owned, sorted snapshot of a [`ReqSketch`](crate::req::ReqSketch)'s items with
 /// their cumulative weights.
 ///
-/// Obtain one with [`ReqSketch::sorted_view`](super::ReqSketch::sorted_view).
+/// Obtain one with [`ReqSketch::sorted_view`](crate::req::ReqSketch::sorted_view).
 /// The view is independent of the sketch: it can be queried (and sent to other
 /// threads) while the sketch keeps receiving updates, and it keeps answering
 /// from the state it was taken at. Building it costs `O(retained · log retained)`;

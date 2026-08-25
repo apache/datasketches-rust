@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! Trait for types storable in a [`ReqSketch`](super::ReqSketch).
+//! Trait for types storable in a [`ReqSketch`](crate::req::ReqSketch).
 
 use std::cmp::Ordering;
 
@@ -23,7 +23,7 @@ use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
 use crate::error::Error;
 
-/// Trait for types that can be stored in a [`ReqSketch`](super::ReqSketch).
+/// Trait for types that can be stored in a [`ReqSketch`](crate::req::ReqSketch).
 ///
 /// Provides total ordering (so floating-point types with NaN are well-defined under
 /// sketch operations) and binary serialization compatible with the Apache DataSketches

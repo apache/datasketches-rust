@@ -20,7 +20,6 @@
 //! Array4 stores HLL register values using 4 bits per slot (2 slots per byte).
 //! When values exceed 4 bits after cur_min offset, they're stored in an auxiliary hash map.
 
-use super::aux_map::AuxMap;
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
 use crate::codec::assert::insufficient_data;
@@ -28,6 +27,7 @@ use crate::codec::family::Family;
 use crate::common::NumStdDev;
 use crate::error::Error;
 use crate::hll::Coupon;
+use crate::hll::aux_map::AuxMap;
 use crate::hll::estimator::HipEstimator;
 use crate::hll::serialization::COMPACT_FLAG_MASK;
 use crate::hll::serialization::COUPON_SIZE_BYTES;

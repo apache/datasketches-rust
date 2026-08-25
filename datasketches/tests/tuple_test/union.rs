@@ -26,8 +26,8 @@ use googletest::prelude::all;
 use googletest::prelude::ge;
 use googletest::prelude::le;
 
-use super::default_tuple_sketch_builder;
-use super::tuple_sketch_with_range;
+use crate::default_tuple_sketch_builder;
+use crate::tuple_sketch_with_range;
 
 fn default_union_builder() -> TupleUnionBuilder<DefaultUnionPolicy<u64>> {
     TupleUnionBuilder::new(DefaultUnionPolicy::<u64>::default())

@@ -17,8 +17,8 @@
 
 //! Iterator implementations for REQ sketch inspection.
 
-use super::compactor::Compactor;
-use super::value::ReqValue;
+use crate::req::compactor::Compactor;
+use crate::req::value::ReqValue;
 
 /// Iterator over (item, weight) pairs in a REQ sketch.
 ///
