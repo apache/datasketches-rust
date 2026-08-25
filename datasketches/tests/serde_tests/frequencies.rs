@@ -24,7 +24,9 @@ use datasketches::error::ErrorKind;
 use datasketches::frequencies::FrequentItemValue;
 use datasketches::frequencies::FrequentItemsSketch;
 use googletest::assert_that;
+use googletest::prelude::anything;
 use googletest::prelude::contains_substring;
+use googletest::prelude::err;
 use googletest::prelude::gt;
 
 use crate::serialization_test_data;
@@ -394,4 +396,135 @@ fn test_go_frequent_strings_utf8() {
     assert_eq!(sketch.estimate(&"уфхцч".to_string()), 5);
     assert_eq!(sketch.estimate(&"шщъыь".to_string()), 6);
     assert_eq!(sketch.estimate(&"эюя".to_string()), 7);
+}
+
+// Header field constants for the DataSketches frequent-items format.
+const FREQ_SERIAL_VERSION: u8 = 1;
+const FREQ_FAMILY_ID: u8 = 10;
+const FREQ_PREAMBLE_LONGS_EMPTY: u8 = 1;
+const FREQ_PREAMBLE_LONGS_NONEMPTY: u8 = 4;
+const FREQ_EMPTY_FLAG_MASK: u8 = 5;
+
+fn empty_header(lg_max: u8, lg_cur: u8) -> Vec<u8> {
+    let mut bytes = SketchBytes::with_capacity(8);
+    bytes.write_u8(FREQ_PREAMBLE_LONGS_EMPTY);
+    bytes.write_u8(FREQ_SERIAL_VERSION);
+    bytes.write_u8(FREQ_FAMILY_ID);
+    bytes.write_u8(lg_max);
+    bytes.write_u8(lg_cur);
+    bytes.write_u8(FREQ_EMPTY_FLAG_MASK);
+    bytes.write_u16_le(0);
+    bytes.into_bytes()
+}
+
+// Regression: a corrupt header must never panic (or trigger an oversized
+// allocation) inside `with_lg_map_sizes`; deserialize must reject it cleanly.
+// Before the fix, `lg_max_map_size = 222` drove `1usize << lg_max` past the
+// width of `usize`, panicking with "attempt to shift left with overflow" in
+// debug builds.
+#[test]
+fn test_deserialize_rejects_out_of_range_lg_max_map_size() {
+    let bytes = empty_header(222, 5);
+    let result = FrequentItemsSketch::<i64>::deserialize(&bytes);
+    assert_that!(result, err(anything()));
+    assert_eq!(result.unwrap_err().kind(), ErrorKind::InvalidData);
+}
+
+#[test]
+fn test_deserialize_rejects_out_of_range_lg_max_map_size_nonempty() {
+    let mut bytes = SketchBytes::with_capacity(16);
+    bytes.write_u8(FREQ_PREAMBLE_LONGS_NONEMPTY);
+    bytes.write_u8(FREQ_SERIAL_VERSION);
+    bytes.write_u8(FREQ_FAMILY_ID);
+    bytes.write_u8(200); // lg_max_map_size, out of range
+    bytes.write_u8(3); // lg_cur_map_size
+    bytes.write_u8(0); // flags (not empty)
+    bytes.write_u16_le(0);
+    bytes.write_u32_le(0); // active_items
+    bytes.write_u32_le(0);
+    bytes.write_u64_le(0); // stream_weight
+    bytes.write_u64_le(0); // offset
+    let result = FrequentItemsSketch::<i64>::deserialize(&bytes.into_bytes());
+    assert_that!(result, err(anything()));
+}
+
+// `lg_cur_map_size` below the documented minimum is also corruption; the C++
+// reference `check_size` rejects it, so the Rust port must too.
+#[test]
+fn test_deserialize_rejects_undersized_lg_cur_map_size() {
+    let bytes = empty_header(10, 1);
+    let result = FrequentItemsSketch::<i64>::deserialize(&bytes);
+    assert_that!(result, err(anything()));
+}
+
+// The largest supported configuration must remain cheap while the sketch is
+// empty and round-trip through the public constructor and serializer.
+#[test]
+fn test_maximum_map_size_empty_round_trip() {
+    let sketch = FrequentItemsSketch::<i64>::new(1usize << 30);
+    let bytes = sketch.serialize();
+    let restored = FrequentItemsSketch::<i64>::deserialize(&bytes).unwrap();
+    assert!(restored.is_empty());
+    assert_eq!(restored.lg_max_map_size(), 30);
+    assert_eq!(restored.lg_cur_map_size(), 3);
+}
+
+// Builds a minimal non-empty (four-preamble-long) header. The caller supplies
+// `lg_max`, `lg_cur`, and `active_items`; no item payload is appended, so this
+// is only useful for exercising the header-consistency guards that run before
+// the payload is read.
+fn nonempty_header(lg_max: u8, lg_cur: u8, active_items: u32) -> Vec<u8> {
+    let mut bytes = SketchBytes::with_capacity(32);
+    bytes.write_u8(FREQ_PREAMBLE_LONGS_NONEMPTY);
+    bytes.write_u8(FREQ_SERIAL_VERSION);
+    bytes.write_u8(FREQ_FAMILY_ID);
+    bytes.write_u8(lg_max);
+    bytes.write_u8(lg_cur);
+    bytes.write_u8(0); // flags (not empty)
+    bytes.write_u16_le(0);
+    bytes.write_u32_le(active_items);
+    bytes.write_u32_le(0); // unused
+    bytes.write_u64_le(0); // stream_weight
+    bytes.write_u64_le(0); // offset
+    bytes.into_bytes()
+}
+
+// Regression for tisonkun's report on #224: the accepted boundary
+// `(lg_max, lg_cur) = (30, 30)` on an *empty* header still drove
+// `ReversePurgeItemHashMap::new(1 << 30)` (~1e9 slots, multi-GB) before any
+// payload was read. An empty sketch holds nothing, so it must now build its map
+// at the minimum size and deserialize cheaply instead of attempting the
+// allocation. If the fix regressed, this test would OOM/hang rather than fail.
+#[test]
+fn test_deserialize_empty_header_does_not_over_allocate() {
+    let bytes = empty_header(30, 30);
+    let restored = FrequentItemsSketch::<i64>::deserialize(&bytes).unwrap();
+    assert!(restored.is_empty());
+    assert_eq!(restored.num_active_items(), 0);
+    assert_eq!(restored.lg_max_map_size(), 30);
+    assert_eq!(restored.lg_cur_map_size(), 3);
+}
+
+// A non-empty header whose `lg_cur_map_size` is too small to hold the claimed
+// `active_items` under the load factor is corrupt: a map of `1 << 3` slots has
+// capacity 6, so it can never hold 100 active items. Reject it instead of
+// trusting the header.
+#[test]
+fn test_deserialize_rejects_lg_cur_inconsistent_with_num_active() {
+    let bytes = nonempty_header(10, 3, 100);
+    let result = FrequentItemsSketch::<i64>::deserialize(&bytes);
+    assert_that!(result, err(anything()));
+    assert_eq!(result.unwrap_err().kind(), ErrorKind::InvalidData);
+}
+
+// A non-empty header claiming a huge `active_items` that the remaining bytes
+// cannot possibly contain must be rejected before any capacity is reserved from
+// that count, so a corrupt header cannot drive a multi-GB `Vec` allocation.
+#[test]
+fn test_deserialize_rejects_num_active_exceeding_payload() {
+    // 700_000_000 <= capacity implied by lg_cur = 30, so it clears the capacity
+    // guard, but there are no item bytes for it, so the length guard rejects it.
+    let bytes = nonempty_header(30, 30, 700_000_000);
+    let result = FrequentItemsSketch::<i64>::deserialize(&bytes);
+    assert_that!(result, err(anything()));
 }
