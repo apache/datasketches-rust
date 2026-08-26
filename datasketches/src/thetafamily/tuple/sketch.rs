@@ -689,6 +689,15 @@ impl<S> CompactTupleSketch<S> {
             n
         };
 
+        let required_hash_bytes = num_entries
+            .checked_mul(size_of::<u64>())
+            .ok_or_else(|| Error::deserial("Tuple entry payload length overflows"))?;
+        if required_hash_bytes > cursor.remaining().len() {
+            return Err(Error::insufficient_data(format!(
+                "Tuple entry hashes require at least {required_hash_bytes} bytes, got {}",
+                cursor.remaining().len()
+            )));
+        }
         let mut entries = Vec::with_capacity(num_entries);
         for _ in 0..num_entries {
             let hash = cursor
