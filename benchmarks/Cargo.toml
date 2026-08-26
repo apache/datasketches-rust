@@ -16,44 +16,20 @@
 # under the License.
 
 [package]
-name = "datasketches"
-version = "0.4.0"
+name = "benchmarks"
+publish = false
 
 edition.workspace = true
-homepage.workspace = true
-license.workspace = true
-readme.workspace = true
-repository.workspace = true
 rust-version.workspace = true
 
-categories = ["data-structures", "algorithms"]
-description = "A software library of stochastic streaming algorithms (a.k.a. sketches)"
-keywords = ["sketch", "hyperloglog", "probabilistic"]
-
-[package.metadata.docs.rs]
-all-features = true
-rustdoc-args = ["--cfg", "docsrs"]
-
-[features]
-default = []
-
-# Each sketch has its own feature, so that users can opt in to only the sketches they need.
-bloom = []
-countmin = []
-cpc = []
-frequencies = []
-hll = []
-req = ["dep:rand"]
-tdigest = []
-theta = []
-tuple = []
-
-[dependencies]
-rand = { workspace = true, optional = true }
-
 [dev-dependencies]
-googletest = { workspace = true }
-insta = { workspace = true }
+datasketches = { workspace = true, features = ["cpc", "tdigest"] }
+divan = { workspace = true }
+
+[[bench]]
+harness = false
+name = "benchmarks"
+path = "main.rs"
 
 [lints]
 workspace = true

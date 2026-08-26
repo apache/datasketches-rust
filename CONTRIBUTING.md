@@ -66,6 +66,14 @@ Benchmark:
 cargo x bench
 ```
 
+Benchmarks live in the standalone `benchmarks` crate. Files are grouped first by sketch and then by workload, for example `benchmarks/cpc/serde.rs` and `benchmarks/tdigest/update.rs`. Keep distinct workloads in separate modules so Divan reports stable names such as `cpc::serde::serialize`.
+
+To run only one sketch or workload, pass a Divan filter directly:
+
+```shell
+cargo bench --package benchmarks --bench benchmarks -- cpc::serde
+```
+
 ## Public API documentation
 
 - Describe types with noun phrases and API behavior with third-person present-tense verbs such as `Creates`, `Updates`, and `Returns`.

@@ -192,7 +192,7 @@ fn run_command(mut cmd: StdCommand) {
 
 fn make_bench_cmd() -> StdCommand {
     let mut cmd = find_command("cargo");
-    cmd.args(["bench", "--workspace", "--all-features", "--bench", "*"]);
+    cmd.args(["bench", "--package", "benchmarks", "--bench", "benchmarks"]);
     cmd
 }
 
