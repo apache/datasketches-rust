@@ -268,6 +268,41 @@ impl TDigestMut {
         }
 
         let max_unmerged = self.max_unmerged();
+        self.update_finite(value, max_unmerged);
+    }
+
+    /// Updates this t-digest with the given values.
+    ///
+    /// [f64::NAN], [f64::INFINITY], and [f64::NEG_INFINITY] values are ignored.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::tdigest::TDigestMut;
+    ///
+    /// let mut sketch = TDigestMut::new(100);
+    /// sketch.update_slice(&[1.0, 2.0, f64::NAN]);
+    /// assert_eq!(sketch.total_weight(), 2);
+    /// ```
+    pub fn update_slice(&mut self, values: &[f64]) {
+        let finite_values = values.iter().filter(|value| value.is_finite()).count();
+        if finite_values == 0 {
+            return;
+        }
+
+        let max_unmerged = self.max_unmerged();
+        if let TDigestBuffer::Staging(staged) = &mut self.buffer {
+            staged.reserve_exact(finite_values.min(max_unmerged.saturating_sub(staged.len())));
+        }
+        for &value in values {
+            if value.is_finite() {
+                self.update_finite(value, max_unmerged);
+            }
+        }
+    }
+
+    fn update_finite(&mut self, value: f64, max_unmerged: usize) {
+        debug_assert!(value.is_finite());
         if let TDigestBuffer::Staging(values) = &mut self.buffer {
             if values.len() < max_unmerged {
                 if values.len() == values.capacity() {
@@ -385,6 +420,34 @@ impl TDigestMut {
     /// ```
     pub fn merge(&mut self, other: &TDigestMut) {
         if other.is_empty() {
+            return;
+        }
+
+        let sorted_merge_buffer = match (&mut self.buffer, &other.buffer) {
+            (
+                TDigestBuffer::Staging(values),
+                TDigestBuffer::Centroids {
+                    centroids,
+                    unmerged_tail_len: 0,
+                },
+            ) if values.is_empty() && centroids_are_sorted(centroids) => Some(centroids.clone()),
+            (
+                TDigestBuffer::Centroids {
+                    centroids: self_centroids,
+                    unmerged_tail_len: 0,
+                },
+                TDigestBuffer::Centroids {
+                    centroids: other_centroids,
+                    unmerged_tail_len: 0,
+                },
+            ) if centroids_are_sorted(self_centroids) && centroids_are_sorted(other_centroids) => {
+                merge_sorted_centroids(self_centroids, other_centroids);
+                Some(std::mem::take(self_centroids))
+            }
+            _ => None,
+        };
+        if let Some(centroids) = sorted_merge_buffer {
+            self.compress_sorted_centroids(centroids, other.total_weight());
             return;
         }
 
@@ -1028,6 +1091,12 @@ impl TDigestMut {
     fn compress_centroids(&mut self, mut centroids: Vec<Centroid>, additional_weight: u64) {
         debug_assert!(!centroids.is_empty());
         centroids.sort_by(centroid_cmp);
+        self.compress_sorted_centroids(centroids, additional_weight);
+    }
+
+    fn compress_sorted_centroids(&mut self, mut centroids: Vec<Centroid>, additional_weight: u64) {
+        debug_assert!(!centroids.is_empty());
+        debug_assert!(centroids_are_sorted(&centroids));
         if self.reverse_merge {
             centroids.reverse();
         }
@@ -1544,6 +1613,40 @@ fn centroid_cmp(a: &Centroid, b: &Centroid) -> Ordering {
     match a.mean.partial_cmp(&b.mean) {
         Some(order) => order,
         None => unreachable!("NaN values should never be present in centroids"),
+    }
+}
+
+fn centroids_are_sorted(centroids: &[Centroid]) -> bool {
+    centroids
+        .windows(2)
+        .all(|pair| centroid_cmp(&pair[0], &pair[1]) != Ordering::Greater)
+}
+
+fn merge_sorted_centroids(left: &mut Vec<Centroid>, right: &[Centroid]) {
+    debug_assert!(!right.is_empty());
+    debug_assert!(centroids_are_sorted(left));
+    debug_assert!(centroids_are_sorted(right));
+
+    let mut left_index = left.len();
+    let mut right_index = right.len();
+    let mut output_index = left_index + right_index;
+    left.reserve(right.len());
+    left.resize(output_index, right[0]);
+
+    while left_index > 0 && right_index > 0 {
+        let left_centroid = left[left_index - 1];
+        let right_centroid = right[right_index - 1];
+        output_index -= 1;
+        if centroid_cmp(&left_centroid, &right_centroid) != Ordering::Less {
+            left_index -= 1;
+            left[output_index] = left_centroid;
+        } else {
+            right_index -= 1;
+            left[output_index] = right_centroid;
+        }
+    }
+    if right_index > 0 {
+        left[..right_index].copy_from_slice(&right[..right_index]);
     }
 }
 

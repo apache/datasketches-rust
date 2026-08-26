@@ -26,6 +26,7 @@ use super::support::SMALL_ROWS_PER_PARTIAL;
 use super::support::build_mut_digest;
 use super::support::partial_digests;
 use super::support::partial_digests_with;
+use super::support::serialized_partial_digests;
 use super::support::values;
 
 #[divan::bench]
@@ -98,5 +99,41 @@ fn partials(bencher: Bencher) {
                 merged.merge(black_box(partial));
             }
             black_box(merged)
+        });
+}
+
+#[divan::bench(args = [SMALL_ROWS_PER_PARTIAL, ROWS_PER_PARTIAL])]
+fn serialized_partials(bencher: Bencher, rows_per_partial: usize) {
+    let partials = serialized_partial_digests(64, rows_per_partial);
+
+    bencher
+        .counter(ItemsCount::new(64 * rows_per_partial))
+        .bench_local(|| {
+            let mut merged = TDigestMut::default();
+            for partial in black_box(&partials) {
+                let partial = TDigestMut::deserialize(partial, false).unwrap();
+                merged.merge(&partial);
+            }
+            black_box(merged.quantile(0.5))
+        });
+}
+
+#[divan::bench]
+fn serialized_overlapping_partials(bencher: Bencher) {
+    let values = values(64 * ROWS_PER_PARTIAL);
+    let partials = values
+        .chunks_exact(ROWS_PER_PARTIAL)
+        .map(|values| build_mut_digest(values).serialize())
+        .collect::<Vec<_>>();
+
+    bencher
+        .counter(ItemsCount::new(values.len()))
+        .bench_local(|| {
+            let mut merged = TDigestMut::default();
+            for partial in black_box(&partials) {
+                let partial = TDigestMut::deserialize(partial, false).unwrap();
+                merged.merge(&partial);
+            }
+            black_box(merged.quantile(0.5))
         });
 }

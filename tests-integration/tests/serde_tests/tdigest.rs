@@ -249,6 +249,17 @@ fn test_serialized_bytes_stable_for_full_and_merged_digests() {
         assert_eq!(bytes.len(), expected_len);
         assert_eq!(fnv1a(&bytes), expected_hash);
     }
+
+    let mut left = patterned_digest(10, 199, 2);
+    let left = left.serialize();
+    let mut left = TDigestMut::deserialize(&left, false).unwrap();
+    let mut right = patterned_digest(10, 199, 3);
+    let right = right.serialize();
+    let right = TDigestMut::deserialize(&right, false).unwrap();
+    left.merge(&right);
+    let bytes = left.serialize();
+    assert_eq!(bytes.len(), 272);
+    assert_eq!(fnv1a(&bytes), 0x5759_0428_c175_88ab);
 }
 
 #[test]

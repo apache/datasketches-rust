@@ -182,6 +182,28 @@ fn test_many_values() {
 }
 
 #[test]
+fn test_update_slice_matches_scalar_updates() {
+    let values = (0..1_000)
+        .map(|index| match index % 101 {
+            0 => f64::NAN,
+            1 => f64::INFINITY,
+            2 => f64::NEG_INFINITY,
+            _ => ((index * 37) % 211) as f64 - 105.0,
+        })
+        .collect::<Vec<_>>();
+
+    let mut scalar = TDigestMut::new(10);
+    for &value in &values {
+        scalar.update(value);
+    }
+    let mut batch = TDigestMut::new(10);
+    batch.update_slice(&values);
+
+    assert_eq!(batch.total_weight(), scalar.total_weight());
+    assert_eq!(batch.serialize(), scalar.serialize());
+}
+
+#[test]
 fn test_rank_two_values() {
     let mut tdigest = TDigestMut::new(100);
     tdigest.update(1.0);
