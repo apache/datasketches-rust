@@ -20,7 +20,6 @@ use std::path::PathBuf;
 
 use datasketches::bloom::BloomFilter;
 use datasketches::bloom::BloomFilterBuilder;
-use datasketches::error::ErrorKind;
 use googletest::assert_that;
 use googletest::prelude::gt;
 
@@ -178,7 +177,7 @@ fn test_go_compatibility() {
 }
 
 #[test]
-fn test_inconsistent_num_bits_set_is_rejected() {
+fn test_cached_num_bits_set_is_recomputed() {
     const NUM_BITS_SET_OFFSET: usize = 24;
 
     let mut filter = BloomFilterBuilder::with_accuracy(100, 0.01).build();
@@ -187,29 +186,27 @@ fn test_inconsistent_num_bits_set_is_rejected() {
     let actual_bits_set = filter.bits_used();
     assert_that!(actual_bits_set, gt(1));
 
-    for serialized_count in [0, actual_bits_set - 1, actual_bits_set + 1] {
+    for serialized_count in [0, actual_bits_set - 1, actual_bits_set + 1, u64::MAX] {
         let mut bytes = filter.serialize();
         bytes[NUM_BITS_SET_OFFSET..NUM_BITS_SET_OFFSET + size_of::<u64>()]
             .copy_from_slice(&serialized_count.to_le_bytes());
 
-        let err = BloomFilter::deserialize(&bytes).unwrap_err();
-        assert_eq!(err.kind(), ErrorKind::InvalidData);
+        let restored = BloomFilter::deserialize(&bytes).unwrap();
+        assert_eq!(restored.bits_used(), actual_bits_set);
+        assert!(restored.contains(&"apple"));
+        assert!(restored.contains(&"banana"));
     }
 }
 
 #[test]
-fn test_dirty_num_bits_set_is_recomputed() {
-    const NUM_BITS_SET_OFFSET: usize = 24;
+fn test_nonempty_payload_length_is_checked_before_allocating() {
+    const NUM_LONGS_OFFSET: usize = 16;
 
     let mut filter = BloomFilterBuilder::with_accuracy(100, 0.01).build();
     filter.insert("apple");
-    filter.insert("banana");
     let mut bytes = filter.serialize();
-    bytes[NUM_BITS_SET_OFFSET..NUM_BITS_SET_OFFSET + size_of::<u64>()]
-        .copy_from_slice(&u64::MAX.to_le_bytes());
+    bytes[NUM_LONGS_OFFSET..NUM_LONGS_OFFSET + size_of::<i32>()]
+        .copy_from_slice(&i32::MAX.to_le_bytes());
 
-    let restored = BloomFilter::deserialize(&bytes).unwrap();
-    assert_eq!(restored.bits_used(), filter.bits_used());
-    assert!(restored.contains(&"apple"));
-    assert!(restored.contains(&"banana"));
+    assert!(BloomFilter::deserialize(&bytes).is_err());
 }

@@ -18,6 +18,7 @@ All significant changes to this project will be documented in this file.
 
 ### Bug fixes
 
+* Bloom filter deserialization now derives the cached bit count from the bit array and validates non-empty payload sizes before allocating, preserving correct membership metadata without rejecting otherwise readable images.
 * Frequent-items map sizes are now limited consistently to the cross-language maximum of `2^30`: `FrequentItemsSketch::new` rejects larger configurations, and `deserialize` returns `InvalidData` for out-of-range or inconsistent header fields instead of panicking on corrupt input. Empty images restore the minimum backing map instead of allocating from `lg_cur_map_size`, and non-empty images validate `active_items` against the declared map capacity and remaining payload before preallocating their counters.
 * T-Digest compression now handles `k = u16::MAX` without overflowing the scale normalization input.
 * T-Digest deserialization now validates declared payload lengths before allocating. Updating a deserialized digest whose unmerged buffer already exceeds the compression threshold now compresses it instead of allowing the buffer to grow without bound.
