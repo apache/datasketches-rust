@@ -177,7 +177,7 @@ fn test_go_compatibility() {
 }
 
 #[test]
-fn test_cached_num_bits_set_is_recomputed() {
+fn test_cached_num_bits_set_is_validated_or_recomputed() {
     const NUM_BITS_SET_OFFSET: usize = 24;
 
     let mut filter = BloomFilterBuilder::with_accuracy(100, 0.01).build();
@@ -186,16 +186,21 @@ fn test_cached_num_bits_set_is_recomputed() {
     let actual_bits_set = filter.bits_used();
     assert_that!(actual_bits_set, gt(1));
 
-    for serialized_count in [0, actual_bits_set - 1, actual_bits_set + 1, u64::MAX] {
+    for serialized_count in [0, actual_bits_set - 1, actual_bits_set + 1] {
         let mut bytes = filter.serialize();
         bytes[NUM_BITS_SET_OFFSET..NUM_BITS_SET_OFFSET + size_of::<u64>()]
             .copy_from_slice(&serialized_count.to_le_bytes());
 
-        let restored = BloomFilter::deserialize(&bytes).unwrap();
-        assert_eq!(restored.bits_used(), actual_bits_set);
-        assert!(restored.contains(&"apple"));
-        assert!(restored.contains(&"banana"));
+        assert!(BloomFilter::deserialize(&bytes).is_err());
     }
+
+    let mut dirty = filter.serialize();
+    dirty[NUM_BITS_SET_OFFSET..NUM_BITS_SET_OFFSET + size_of::<u64>()]
+        .copy_from_slice(&u64::MAX.to_le_bytes());
+    let restored = BloomFilter::deserialize(&dirty).unwrap();
+    assert_eq!(restored.bits_used(), actual_bits_set);
+    assert!(restored.contains(&"apple"));
+    assert!(restored.contains(&"banana"));
 }
 
 #[test]

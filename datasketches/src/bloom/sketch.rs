@@ -482,7 +482,7 @@ impl BloomFilter {
         let num_bits_set = if is_empty {
             0
         } else {
-            let _serialized_num_bits_set = cursor
+            let serialized_num_bits_set = cursor
                 .read_u64_le()
                 .map_err(insufficient_data("num_bits_set"))?;
 
@@ -492,6 +492,11 @@ impl BloomFilter {
                     .read_u64_le()
                     .map_err(insufficient_data("bit_array"))?;
                 count += word.count_ones() as u64;
+            }
+            if serialized_num_bits_set != u64::MAX && serialized_num_bits_set != count {
+                return Err(Error::deserial(format!(
+                    "invalid num_bits_set: expected {count}, got {serialized_num_bits_set}"
+                )));
             }
             count
         };
