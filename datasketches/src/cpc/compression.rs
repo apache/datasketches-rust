@@ -593,6 +593,11 @@ fn low_level_uncompress_pairs(
             .filter(|&column| column < 64)
             .ok_or_else(|| Error::deserial("CPC pair column index is out of range"))?;
         let row_col = (row_index << 6) | col_index;
+        if row_col == u32::MAX {
+            return Err(Error::deserial(
+                "CPC pair uses the reserved empty-table sentinel",
+            ));
+        }
         pairs[pair_index as usize] = row_col;
         predicted_row_index = row_index;
         predicted_col_index = col_index + 1;
@@ -836,11 +841,30 @@ fn floor_log2_of_long(x: u64) -> u8 {
 
 #[cfg(test)]
 mod tests {
+    use super::CompressedState;
     use super::determine_pseudo_phase;
+    use super::uncompress_surprising_values;
 
     #[test]
     fn pseudo_phase_handles_maximum_lg_k() {
         assert!(determine_pseudo_phase(26, 1 << 25) < 22);
         assert!(determine_pseudo_phase(26, u32::MAX) < 22);
+    }
+
+    #[test]
+    fn pair_decoder_rejects_empty_table_sentinel() {
+        let mut compressed = CompressedState::default();
+        compressed.compress_surprising_values(&[u32::MAX], 26);
+
+        let error = uncompress_surprising_values(
+            &compressed.table_data,
+            compressed.table_data_words,
+            1,
+            26,
+        );
+        assert_eq!(
+            error.unwrap_err().message(),
+            "CPC pair uses the reserved empty-table sentinel"
+        );
     }
 }
