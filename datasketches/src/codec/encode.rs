@@ -33,6 +33,18 @@ impl SketchBytes {
         self.bytes
     }
 
+    /// Returns the number of bytes written so far.
+    #[cfg(feature = "cpc")]
+    pub(crate) fn len(&self) -> usize {
+        self.bytes.len()
+    }
+
+    /// Overwrites a previously written 32-bit unsigned integer in little-endian byte order.
+    #[cfg(feature = "cpc")]
+    pub(crate) fn overwrite_u32_le(&mut self, offset: usize, n: u32) {
+        self.bytes[offset..offset + size_of::<u32>()].copy_from_slice(&n.to_le_bytes());
+    }
+
     /// Writes the given byte slice to the `SketchBytes`.
     pub fn write(&mut self, buf: &[u8]) {
         self.bytes.extend_from_slice(buf);

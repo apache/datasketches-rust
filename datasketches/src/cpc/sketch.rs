@@ -29,7 +29,8 @@ use crate::cpc::DEFAULT_LG_K;
 use crate::cpc::Flavor;
 use crate::cpc::MAX_LG_K;
 use crate::cpc::MIN_LG_K;
-use crate::cpc::compression::CompressedState;
+use crate::cpc::compression::decode_payload;
+use crate::cpc::compression::encode_payload;
 use crate::cpc::count_bits_set_in_matrix;
 use crate::cpc::determine_correct_offset;
 use crate::cpc::determine_flavor;
@@ -470,12 +471,15 @@ impl CpcSketch {
     pub fn serialize(&self) -> Vec<u8> {
         let mut bytes = SketchBytes::with_capacity(256);
 
-        let mut compressed = CompressedState::default();
-        compressed.compress(self);
-
+        let flavor = self.flavor();
         let has_hip = !self.merge_flag;
-        let has_table = !compressed.table_data.is_empty();
-        let has_window = !compressed.window_data.is_empty();
+        let has_window = matches!(flavor, Flavor::Pinned | Flavor::Sliding);
+        let table_num_entries = match flavor {
+            Flavor::Empty => 0,
+            Flavor::Sparse | Flavor::Hybrid => self.num_coupons,
+            Flavor::Pinned | Flavor::Sliding => self.surprising_value_table().len(),
+        };
+        let has_table = table_num_entries > 0;
         let preamble_ints = make_preamble_ints(self.num_coupons, has_hip, has_table, has_window);
         bytes.write_u8(preamble_ints);
         bytes.write_u8(SERIAL_VERSION);
@@ -493,34 +497,37 @@ impl CpcSketch {
             bytes.write_u32_le(self.num_coupons);
             if has_table && has_window {
                 // if there is no window it is the same as number of coupons
-                bytes.write_u32_le(compressed.table_num_entries);
+                bytes.write_u32_le(table_num_entries);
                 // HIP values can be in two different places in the sequence of fields
                 // this is the first HIP decision point
                 if has_hip {
                     self.write_hip(&mut bytes);
                 }
             }
-            if has_table {
-                debug_assert!(compressed.table_data_words <= u32::MAX as usize);
-                bytes.write_u32_le(compressed.table_data_words as u32);
-            }
-            if has_window {
-                debug_assert!(compressed.window_data_words <= u32::MAX as usize);
-                bytes.write_u32_le(compressed.window_data_words as u32);
-            }
+            let table_words_offset = has_table.then(|| {
+                let offset = bytes.len();
+                bytes.write_u32_le(0);
+                offset
+            });
+            let window_words_offset = has_window.then(|| {
+                let offset = bytes.len();
+                bytes.write_u32_le(0);
+                offset
+            });
             // this is the second HIP decision point
             if has_hip && !(has_table && has_window) {
                 self.write_hip(&mut bytes);
             }
-            if has_window {
-                for i in 0..compressed.window_data_words {
-                    bytes.write_u32_le(compressed.window_data[i]);
-                }
+            let (table_words, window_words) = encode_payload(self, &mut bytes);
+            debug_assert_eq!(has_table, table_words > 0);
+            debug_assert_eq!(has_window, window_words > 0);
+            debug_assert!(table_words <= u32::MAX as usize);
+            debug_assert!(window_words <= u32::MAX as usize);
+            if let Some(offset) = table_words_offset {
+                bytes.overwrite_u32_le(offset, table_words as u32);
             }
-            if has_table {
-                for i in 0..compressed.table_data_words {
-                    bytes.write_u32_le(compressed.table_data[i]);
-                }
+            if let Some(offset) = window_words_offset {
+                bytes.overwrite_u32_le(offset, window_words as u32);
             }
         }
         bytes.into_bytes()
@@ -561,8 +568,10 @@ impl CpcSketch {
         let has_table = flags & (1 << FLAG_HAS_TABLE) != 0;
         let has_window = flags & (1 << FLAG_HAS_WINDOW) != 0;
 
-        let mut compressed = CompressedState::default();
         let mut num_coupons = 0;
+        let mut table_num_entries = 0;
+        let mut table_data_words = 0;
+        let mut window_data_words = 0;
         let mut kxp = 0.0;
         let mut hip_est_accum = 0.0;
 
@@ -571,7 +580,7 @@ impl CpcSketch {
                 .read_u32_le()
                 .map_err(insufficient_data("num_coupons"))?;
             if has_table && has_window {
-                compressed.table_num_entries = cursor
+                table_num_entries = cursor
                     .read_u32_le()
                     .map_err(insufficient_data("table_num_entries"))?;
                 if has_hip {
@@ -582,13 +591,13 @@ impl CpcSketch {
                 }
             }
             if has_table {
-                compressed.table_data_words = cursor
+                table_data_words = cursor
                     .read_u32_le()
                     .map_err(insufficient_data("table_data_words"))?
                     as usize;
             }
             if has_window {
-                compressed.window_data_words = cursor
+                window_data_words = cursor
                     .read_u32_le()
                     .map_err(insufficient_data("window_data_words"))?
                     as usize;
@@ -599,24 +608,8 @@ impl CpcSketch {
                     .read_f64_le()
                     .map_err(insufficient_data("hip_est_accum"))?;
             }
-            if has_window {
-                for _ in 0..compressed.window_data_words {
-                    let word = cursor
-                        .read_u32_le()
-                        .map_err(insufficient_data("window_data"))?;
-                    compressed.window_data.push(word);
-                }
-            }
-            if has_table {
-                for _ in 0..compressed.table_data_words {
-                    let word = cursor
-                        .read_u32_le()
-                        .map_err(insufficient_data("table_data"))?;
-                    compressed.table_data.push(word);
-                }
-            }
             if !has_window {
-                compressed.table_num_entries = num_coupons;
+                table_num_entries = num_coupons;
             }
         }
 
@@ -668,41 +661,60 @@ impl CpcSketch {
         }
 
         // The number of stored table entries can never exceed the number of coupons.
-        if compressed.table_num_entries > num_coupons {
+        if table_num_entries > num_coupons {
             return Err(Error::deserial(format!(
                 "table_num_entries ({}) exceeds num_coupons ({})",
-                compressed.table_num_entries, num_coupons
+                table_num_entries, num_coupons
             )));
         }
         // A pair requires at least one bit to encode, so the declared number of table entries can
         // never exceed the number of bits available in the table data. This also bounds the size
         // of the allocation made while decoding, rejecting corrupt inputs that claim an enormous
         // entry count backed by only a few data words.
-        if (compressed.table_num_entries as usize) > compressed.table_data_words.saturating_mul(32)
-        {
+        if (table_num_entries as usize) > table_data_words.saturating_mul(32) {
             return Err(Error::deserial(format!(
                 "table_num_entries ({}) exceeds capacity of table data ({} words)",
-                compressed.table_num_entries, compressed.table_data_words
+                table_num_entries, table_data_words
             )));
         }
         let k = 1usize << lg_k;
-        if has_window && compressed.window_data_words.saturating_mul(32) < k {
+        if has_window && window_data_words.saturating_mul(32) < k {
             return Err(Error::deserial(format!(
                 "window data ({} words) is too short for lg_k = {lg_k}",
-                compressed.window_data_words
+                window_data_words
             )));
         }
 
-        let uncompressed = compressed.uncompress(lg_k, num_coupons)?;
+        let window_data_bytes = window_data_words.checked_mul(4).ok_or_else(|| {
+            Error::deserial("CPC window data word count overflows payload length")
+        })?;
+        let table_data_bytes = table_data_words
+            .checked_mul(4)
+            .ok_or_else(|| Error::deserial("CPC table data word count overflows payload length"))?;
+        let payload_bytes = window_data_bytes
+            .checked_add(table_data_bytes)
+            .ok_or_else(|| Error::deserial("CPC payload length overflows"))?;
+        let payload = cursor
+            .remaining()
+            .get(..payload_bytes)
+            .ok_or_else(|| Error::deserial("insufficient data for CPC compressed payload"))?;
+        let (window_data, table_data) = payload.split_at(window_data_bytes);
+        let (table, window) = decode_payload(
+            lg_k,
+            num_coupons,
+            table_num_entries,
+            table_data,
+            window_data,
+        )?;
         Ok(CpcSketch {
             lg_k,
             seed,
             seed_hash,
             first_interesting_column,
             num_coupons,
-            surprising_value_table: Some(uncompressed.table),
+            surprising_value_table: Some(table),
             window_offset: determine_correct_offset(lg_k, num_coupons),
-            sliding_window: uncompressed.window,
+            sliding_window: window,
             merge_flag: !has_hip,
             kxp,
             hip_est_accum,
