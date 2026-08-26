@@ -268,40 +268,6 @@ impl TDigestMut {
         }
 
         let max_unmerged = self.max_unmerged();
-        self.update_finite(value, max_unmerged);
-    }
-
-    /// Updates this t-digest with the given values.
-    ///
-    /// [f64::NAN], [f64::INFINITY], and [f64::NEG_INFINITY] values are ignored.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use datasketches::tdigest::TDigestMut;
-    ///
-    /// let mut sketch = TDigestMut::new(100);
-    /// sketch.update_slice(&[1.0, 2.0, f64::NAN]);
-    /// assert_eq!(sketch.total_weight(), 2);
-    /// ```
-    pub fn update_slice(&mut self, values: &[f64]) {
-        let max_unmerged = self.max_unmerged();
-        if let TDigestBuffer::Staging(staged) = &mut self.buffer {
-            let finite_values = values.iter().filter(|value| value.is_finite()).count();
-            if finite_values == 0 {
-                return;
-            }
-            staged.reserve_exact(finite_values.min(max_unmerged.saturating_sub(staged.len())));
-        }
-        for &value in values {
-            if value.is_finite() {
-                self.update_finite(value, max_unmerged);
-            }
-        }
-    }
-
-    fn update_finite(&mut self, value: f64, max_unmerged: usize) {
-        debug_assert!(value.is_finite());
         if let TDigestBuffer::Staging(values) = &mut self.buffer {
             if values.len() < max_unmerged {
                 if values.len() == values.capacity() {

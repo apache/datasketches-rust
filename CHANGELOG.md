@@ -14,7 +14,7 @@ All significant changes to this project will be documented in this file.
 
 ### Performance improvements
 
-* Reduce T-Digest allocation overhead and retained memory across updates, compression, merges, serialization, deserialization, and freezing; add batched slice updates, linearly merge sorted centroid buffers, and decode validated native payloads directly while preserving the serialized format.
+* Reduce T-Digest allocation overhead and retained memory across updates, compression, merges, serialization, deserialization, and freezing; linearly merge sorted centroid buffers and decode validated native payloads directly while preserving the serialized format.
 * Reduce CPC serialization and deserialization allocations by encoding directly into the output buffer and decoding directly from the input payload.
 
 ### Bug fixes
