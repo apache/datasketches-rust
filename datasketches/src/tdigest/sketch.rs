@@ -693,10 +693,13 @@ impl TDigestMut {
             .read_u8()
             .map_err(insufficient_data("serial_version"))?;
         let family_id = cursor.read_u8().map_err(insufficient_data("family_id"))?;
-        if preamble_longs == 0 && serial_version == 0 && family_id == 0 {
-            return Self::deserialize_compat(bytes);
+        if let Err(err) = Family::TDIGEST.validate_id(family_id) {
+            return if preamble_longs == 0 && serial_version == 0 && family_id == 0 {
+                Self::deserialize_compat(bytes)
+            } else {
+                Err(err)
+            };
         }
-        Family::TDIGEST.validate_id(family_id)?;
         ensure_serial_version_is(SERIAL_VERSION, serial_version)?;
         let k = cursor.read_u16_le().map_err(insufficient_data("k"))?;
         if k < 10 {
@@ -892,18 +895,11 @@ impl TDigestMut {
                 }
                 let num_centroids =
                     cursor.read_u32_be().map_err(make_error("num_centroids"))? as usize;
-                let record_bytes = size_of::<f64>() * 2;
-                let payload = checked_compat_centroid_payload(
-                    cursor.remaining(),
-                    num_centroids,
-                    record_bytes,
-                    "compat double format",
-                )?;
                 let mut total_weight = 0u64;
                 let mut centroids = Vec::with_capacity(num_centroids);
-                for bytes in payload.chunks_exact(record_bytes) {
-                    let weight = f64::from_be_bytes(bytes[..8].try_into().unwrap());
-                    let mean = f64::from_be_bytes(bytes[8..].try_into().unwrap());
+                for _ in 0..num_centroids {
+                    let weight = cursor.read_f64_be().map_err(make_error("weight"))?;
+                    let mean = cursor.read_f64_be().map_err(make_error("mean"))?;
                     let weight =
                         check_compat_weight(weight, "centroid weight in compat double format")?;
                     check_non_nan(mean, "centroid mean in compat double format")?;
@@ -946,18 +942,11 @@ impl TDigestMut {
                 cursor.read_u32_be().map_err(make_error("<unused>"))?;
                 let num_centroids =
                     cursor.read_u16_be().map_err(make_error("num_centroids"))? as usize;
-                let record_bytes = size_of::<f32>() * 2;
-                let payload = checked_compat_centroid_payload(
-                    cursor.remaining(),
-                    num_centroids,
-                    record_bytes,
-                    "compat float format",
-                )?;
                 let mut total_weight = 0u64;
                 let mut centroids = Vec::with_capacity(num_centroids);
-                for bytes in payload.chunks_exact(record_bytes) {
-                    let weight = f32::from_be_bytes(bytes[..4].try_into().unwrap()) as f64;
-                    let mean = f32::from_be_bytes(bytes[4..].try_into().unwrap()) as f64;
+                for _ in 0..num_centroids {
+                    let weight = cursor.read_f32_be().map_err(make_error("weight"))? as f64;
+                    let mean = cursor.read_f32_be().map_err(make_error("mean"))? as f64;
                     let weight =
                         check_compat_weight(weight, "centroid weight in compat float format")?;
                     check_non_nan(mean, "centroid mean in compat float format")?;
@@ -1651,28 +1640,6 @@ fn check_compat_weight(value: f64, tag: &'static str) -> Result<NonZeroU64, Erro
         )));
     }
     check_nonzero(value as u64, tag)
-}
-
-fn checked_compat_centroid_payload<'a>(
-    bytes: &'a [u8],
-    num_centroids: usize,
-    record_bytes: usize,
-    context: &'static str,
-) -> Result<&'a [u8], Error> {
-    let required_bytes = num_centroids.checked_mul(record_bytes).ok_or_else(|| {
-        Error::deserial(format!(
-            "TDigest {context} payload size exceeds the supported size"
-        ))
-    })?;
-    bytes.get(..required_bytes).ok_or_else(|| {
-        Error::insufficient_data_of(
-            context,
-            format!(
-                "centroid payload requires {required_bytes} bytes, got {}",
-                bytes.len()
-            ),
-        )
-    })
 }
 
 fn checked_weight_sum(total_weight: u64, weight: u64) -> Result<u64, Error> {

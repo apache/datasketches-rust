@@ -33,13 +33,6 @@ use super::support::serialized_partial_digests_with;
 use super::support::serialized_state_shape;
 use super::support::values;
 
-const COMPAT_DOUBLE: &[u8] = include_bytes!(
-    "../../tests-integration/tests/serde_tests/reference_files/tdigest_ref_k100_n10000_double.sk"
-);
-const COMPAT_FLOAT: &[u8] = include_bytes!(
-    "../../tests-integration/tests/serde_tests/reference_files/tdigest_ref_k100_n10000_float.sk"
-);
-
 #[divan::bench(args = [1, 2, 8, 32, 64, 128])]
 fn small_lifecycle(bencher: Bencher, rows: usize) {
     let values = values(rows);
@@ -141,23 +134,5 @@ fn deserialize_partial_groups(bencher: Bencher) {
                 .map(|bytes| TDigestMut::deserialize(bytes, false).unwrap())
                 .collect::<Vec<_>>();
             black_box(digests)
-        });
-}
-
-#[divan::bench]
-fn deserialize_compat_double(bencher: Bencher) {
-    bencher
-        .counter(BytesCount::new(COMPAT_DOUBLE.len()))
-        .bench_local(|| {
-            black_box(TDigestMut::deserialize(black_box(COMPAT_DOUBLE), false).unwrap())
-        });
-}
-
-#[divan::bench]
-fn deserialize_compat_float(bencher: Bencher) {
-    bencher
-        .counter(BytesCount::new(COMPAT_FLOAT.len()))
-        .bench_local(|| {
-            black_box(TDigestMut::deserialize(black_box(COMPAT_FLOAT), false).unwrap())
         });
 }

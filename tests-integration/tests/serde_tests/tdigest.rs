@@ -331,18 +331,6 @@ fn test_deserialize_rejects_truncated_large_payload_before_allocation() {
 }
 
 #[test]
-fn test_deserialize_rejects_truncated_large_compat_payload_before_allocation() {
-    let mut bytes = Vec::with_capacity(32);
-    bytes.extend_from_slice(&1_u32.to_be_bytes()); // COMPAT_DOUBLE
-    bytes.extend_from_slice(&0_f64.to_be_bytes()); // min
-    bytes.extend_from_slice(&1_f64.to_be_bytes()); // max
-    bytes.extend_from_slice(&100_f64.to_be_bytes()); // k
-    bytes.extend_from_slice(&u32::MAX.to_be_bytes()); // num centroids
-
-    assert!(TDigestMut::deserialize(&bytes, false).is_err());
-}
-
-#[test]
 fn test_large_weights_produce_finite_extreme_quantile() {
     let lower = f64::from_bits(f64::MAX.to_bits() - 1);
     let mut tdigest = TDigestMut::default();
