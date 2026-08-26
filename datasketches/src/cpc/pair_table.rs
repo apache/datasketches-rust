@@ -86,10 +86,6 @@ impl PairTable {
         &self.slots
     }
 
-    pub fn len(&self) -> u32 {
-        self.num_items
-    }
-
     pub fn clear(&mut self) {
         self.slots.fill(u32::MAX);
         self.num_items = 0;
