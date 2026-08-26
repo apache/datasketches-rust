@@ -693,13 +693,10 @@ impl TDigestMut {
             .read_u8()
             .map_err(insufficient_data("serial_version"))?;
         let family_id = cursor.read_u8().map_err(insufficient_data("family_id"))?;
-        if let Err(err) = Family::TDIGEST.validate_id(family_id) {
-            return if preamble_longs == 0 && serial_version == 0 && family_id == 0 {
-                Self::deserialize_compat(bytes)
-            } else {
-                Err(err)
-            };
+        if preamble_longs == 0 && serial_version == 0 && family_id == 0 {
+            return Self::deserialize_compat(bytes);
         }
+        Family::TDIGEST.validate_id(family_id)?;
         ensure_serial_version_is(SERIAL_VERSION, serial_version)?;
         let k = cursor.read_u16_le().map_err(insufficient_data("k"))?;
         if k < 10 {
@@ -775,32 +772,32 @@ impl TDigestMut {
         } else {
             (size_of::<f64>() + size_of::<u64>(), size_of::<f64>())
         };
-        let required_payload_bytes = num_centroids
+        let centroid_payload_bytes = num_centroids
             .checked_mul(centroid_bytes)
-            .and_then(|bytes| {
-                num_buffered
-                    .checked_mul(buffered_value_bytes)
-                    .and_then(|buffered_bytes| bytes.checked_add(buffered_bytes))
-            })
             .ok_or_else(|| Error::deserial("TDigest payload size exceeds the supported size"))?;
-        if cursor.remaining().len() < required_payload_bytes {
+        let buffered_payload_bytes = num_buffered
+            .checked_mul(buffered_value_bytes)
+            .ok_or_else(|| Error::deserial("TDigest payload size exceeds the supported size"))?;
+        let required_payload_bytes = centroid_payload_bytes
+            .checked_add(buffered_payload_bytes)
+            .ok_or_else(|| Error::deserial("TDigest payload size exceeds the supported size"))?;
+        let remaining = cursor.remaining();
+        if remaining.len() < required_payload_bytes {
             return Err(Error::insufficient_data(format!(
                 "TDigest payload requires {required_payload_bytes} bytes, got {}",
-                cursor.remaining().len()
+                remaining.len()
             )));
         }
+        // Check the whole payload once so fixed-width records can be decoded without per-field I/O.
+        let (centroid_payload, buffered_payload) =
+            remaining[..required_payload_bytes].split_at(centroid_payload_bytes);
         if num_centroids == 0 {
-            checked_weight_sum(0, num_buffered as u64)?;
             let mut initial_buffer = Vec::with_capacity(num_buffered);
-            for _ in 0..num_buffered {
+            for bytes in buffered_payload.chunks_exact(buffered_value_bytes) {
                 let value = if is_f32 {
-                    cursor
-                        .read_f32_le()
-                        .map_err(insufficient_data("buffered_value"))? as f64
+                    f32::from_le_bytes(bytes.try_into().unwrap()) as f64
                 } else {
-                    cursor
-                        .read_f64_le()
-                        .map_err(insufficient_data("buffered_value"))?
+                    f64::from_le_bytes(bytes.try_into().unwrap())
                 };
                 check_non_nan(value, "buffered_value mean")?;
                 check_finite(value, "buffered_value mean")?;
@@ -820,16 +817,16 @@ impl TDigestMut {
         })?;
         let mut centroids = Vec::with_capacity(stored_centroids);
         let mut compressed_weight = 0u64;
-        for _ in 0..num_centroids {
+        for bytes in centroid_payload.chunks_exact(centroid_bytes) {
             let (mean, weight) = if is_f32 {
                 (
-                    cursor.read_f32_le().map_err(insufficient_data("mean"))? as f64,
-                    cursor.read_u32_le().map_err(insufficient_data("weight"))? as u64,
+                    f32::from_le_bytes(bytes[..4].try_into().unwrap()) as f64,
+                    u32::from_le_bytes(bytes[4..].try_into().unwrap()) as u64,
                 )
             } else {
                 (
-                    cursor.read_f64_le().map_err(insufficient_data("mean"))?,
-                    cursor.read_u64_le().map_err(insufficient_data("weight"))?,
+                    f64::from_le_bytes(bytes[..8].try_into().unwrap()),
+                    u64::from_le_bytes(bytes[8..].try_into().unwrap()),
                 )
             };
             check_non_nan(mean, "centroid mean")?;
@@ -839,15 +836,11 @@ impl TDigestMut {
             centroids.push(Centroid { mean, weight });
         }
         checked_weight_sum(compressed_weight, num_buffered as u64)?;
-        for _ in 0..num_buffered {
+        for bytes in buffered_payload.chunks_exact(buffered_value_bytes) {
             let value = if is_f32 {
-                cursor
-                    .read_f32_le()
-                    .map_err(insufficient_data("buffered_value"))? as f64
+                f32::from_le_bytes(bytes.try_into().unwrap()) as f64
             } else {
-                cursor
-                    .read_f64_le()
-                    .map_err(insufficient_data("buffered_value"))?
+                f64::from_le_bytes(bytes.try_into().unwrap())
             };
             check_non_nan(value, "buffered_value mean")?;
             check_finite(value, "buffered_value mean")?;
@@ -899,11 +892,18 @@ impl TDigestMut {
                 }
                 let num_centroids =
                     cursor.read_u32_be().map_err(make_error("num_centroids"))? as usize;
+                let record_bytes = size_of::<f64>() * 2;
+                let payload = checked_compat_centroid_payload(
+                    cursor.remaining(),
+                    num_centroids,
+                    record_bytes,
+                    "compat double format",
+                )?;
                 let mut total_weight = 0u64;
                 let mut centroids = Vec::with_capacity(num_centroids);
-                for _ in 0..num_centroids {
-                    let weight = cursor.read_f64_be().map_err(make_error("weight"))?;
-                    let mean = cursor.read_f64_be().map_err(make_error("mean"))?;
+                for bytes in payload.chunks_exact(record_bytes) {
+                    let weight = f64::from_be_bytes(bytes[..8].try_into().unwrap());
+                    let mean = f64::from_be_bytes(bytes[8..].try_into().unwrap());
                     let weight =
                         check_compat_weight(weight, "centroid weight in compat double format")?;
                     check_non_nan(mean, "centroid mean in compat double format")?;
@@ -946,11 +946,18 @@ impl TDigestMut {
                 cursor.read_u32_be().map_err(make_error("<unused>"))?;
                 let num_centroids =
                     cursor.read_u16_be().map_err(make_error("num_centroids"))? as usize;
+                let record_bytes = size_of::<f32>() * 2;
+                let payload = checked_compat_centroid_payload(
+                    cursor.remaining(),
+                    num_centroids,
+                    record_bytes,
+                    "compat float format",
+                )?;
                 let mut total_weight = 0u64;
                 let mut centroids = Vec::with_capacity(num_centroids);
-                for _ in 0..num_centroids {
-                    let weight = cursor.read_f32_be().map_err(make_error("weight"))? as f64;
-                    let mean = cursor.read_f32_be().map_err(make_error("mean"))? as f64;
+                for bytes in payload.chunks_exact(record_bytes) {
+                    let weight = f32::from_be_bytes(bytes[..4].try_into().unwrap()) as f64;
+                    let mean = f32::from_be_bytes(bytes[4..].try_into().unwrap()) as f64;
                     let weight =
                         check_compat_weight(weight, "centroid weight in compat float format")?;
                     check_non_nan(mean, "centroid mean in compat float format")?;
@@ -1644,6 +1651,28 @@ fn check_compat_weight(value: f64, tag: &'static str) -> Result<NonZeroU64, Erro
         )));
     }
     check_nonzero(value as u64, tag)
+}
+
+fn checked_compat_centroid_payload<'a>(
+    bytes: &'a [u8],
+    num_centroids: usize,
+    record_bytes: usize,
+    context: &'static str,
+) -> Result<&'a [u8], Error> {
+    let required_bytes = num_centroids.checked_mul(record_bytes).ok_or_else(|| {
+        Error::deserial(format!(
+            "TDigest {context} payload size exceeds the supported size"
+        ))
+    })?;
+    bytes.get(..required_bytes).ok_or_else(|| {
+        Error::insufficient_data_of(
+            context,
+            format!(
+                "centroid payload requires {required_bytes} bytes, got {}",
+                bytes.len()
+            ),
+        )
+    })
 }
 
 fn checked_weight_sum(total_weight: u64, weight: u64) -> Result<u64, Error> {
