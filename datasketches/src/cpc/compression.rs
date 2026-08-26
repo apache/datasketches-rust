@@ -28,6 +28,7 @@ use crate::cpc::compression_data::LENGTH_LIMITED_UNARY_ENCODING_TABLE65;
 use crate::cpc::determine_correct_offset;
 use crate::cpc::determine_flavor;
 use crate::cpc::pair_table::PairTable;
+use crate::error::Error;
 
 #[derive(Default)]
 pub(super) struct CompressedState {
@@ -355,12 +356,12 @@ pub(super) struct UncompressedState {
 }
 
 impl CompressedState {
-    pub fn uncompress(&self, lg_k: u8, num_coupons: u32) -> UncompressedState {
+    pub fn uncompress(&self, lg_k: u8, num_coupons: u32) -> Result<UncompressedState, Error> {
         match determine_flavor(lg_k, num_coupons) {
-            Flavor::Empty => UncompressedState {
+            Flavor::Empty => Ok(UncompressedState {
                 table: PairTable::new(2, lg_k + 6),
                 window: vec![],
-            },
+            }),
             Flavor::Sparse => self.uncompress_sparse_flavor(lg_k),
             Flavor::Hybrid => self.uncompress_hybrid_flavor(lg_k),
             Flavor::Pinned => self.uncompress_pinned_flavor(lg_k, num_coupons),
@@ -368,33 +369,31 @@ impl CompressedState {
         }
     }
 
-    fn uncompress_sparse_flavor(&self, lg_k: u8) -> UncompressedState {
+    fn uncompress_sparse_flavor(&self, lg_k: u8) -> Result<UncompressedState, Error> {
         debug_assert!(self.window_data.is_empty(), "window is not expected");
-        debug_assert!(!self.table_data.is_empty(), "table is expected");
 
         let pairs = uncompress_surprising_values(
             &self.table_data,
             self.table_data_words,
             self.table_num_entries,
             lg_k,
-        );
+        )?;
 
-        UncompressedState {
-            table: PairTable::from_slots(lg_k, self.table_num_entries, pairs),
+        Ok(UncompressedState {
+            table: PairTable::from_slots(lg_k, self.table_num_entries, pairs)?,
             window: vec![],
-        }
+        })
     }
 
-    fn uncompress_hybrid_flavor(&self, lg_k: u8) -> UncompressedState {
+    fn uncompress_hybrid_flavor(&self, lg_k: u8) -> Result<UncompressedState, Error> {
         debug_assert!(self.window_data.is_empty(), "window is not expected");
-        debug_assert!(!self.table_data.is_empty(), "table is expected");
 
         let mut pairs = uncompress_surprising_values(
             &self.table_data,
             self.table_data_words,
             self.table_num_entries,
             lg_k,
-        );
+        )?;
 
         // In the hybrid flavor, some of these pairs actually belong in the window, so we will
         // separate them out, moving the "true" pairs to the bottom of the array.
@@ -403,7 +402,6 @@ impl CompressedState {
         let mut next_true_pair = 0;
         for i in 0..self.table_num_entries {
             let row_col = pairs[i as usize];
-            assert_ne!(row_col, u32::MAX);
             let col = row_col & 63;
             if col < 8 {
                 let row = row_col >> 6;
@@ -414,15 +412,17 @@ impl CompressedState {
             }
         }
 
-        UncompressedState {
-            table: PairTable::from_slots(lg_k, next_true_pair, pairs),
+        Ok(UncompressedState {
+            table: PairTable::from_slots(lg_k, next_true_pair, pairs)?,
             window,
-        }
+        })
     }
 
-    fn uncompress_pinned_flavor(&self, lg_k: u8, num_coupons: u32) -> UncompressedState {
-        debug_assert!(!self.window_data.is_empty(), "window is expected");
-
+    fn uncompress_pinned_flavor(
+        &self,
+        lg_k: u8,
+        num_coupons: u32,
+    ) -> Result<UncompressedState, Error> {
         let mut window = vec![];
         uncompress_sliding_window(
             &self.window_data,
@@ -430,36 +430,38 @@ impl CompressedState {
             &mut window,
             lg_k,
             num_coupons,
-        );
+        )?;
         let num_pairs = self.table_num_entries;
         let table = if num_pairs == 0 {
             PairTable::new(2, lg_k + 6)
         } else {
-            debug_assert!(!self.table_data.is_empty(), "table is expected");
             let mut pairs = uncompress_surprising_values(
                 &self.table_data,
                 self.table_data_words,
                 num_pairs,
                 lg_k,
-            );
+            )?;
             // undo the compressor's 8-column shift
             for i in 0..num_pairs {
                 let i = i as usize;
-                assert!(
-                    (pairs[i] & 63) < 56,
-                    "pair column index is invalid: {}",
-                    pairs[i]
-                );
+                if (pairs[i] & 63) >= 56 {
+                    return Err(Error::deserial(format!(
+                        "CPC pinned table pair column index is invalid: {}",
+                        pairs[i]
+                    )));
+                }
                 pairs[i] += 8;
             }
-            PairTable::from_slots(lg_k, num_pairs, pairs)
+            PairTable::from_slots(lg_k, num_pairs, pairs)?
         };
-        UncompressedState { table, window }
+        Ok(UncompressedState { table, window })
     }
 
-    fn uncompress_sliding_flavor(&self, lg_k: u8, num_coupons: u32) -> UncompressedState {
-        debug_assert!(!self.window_data.is_empty(), "window is expected");
-
+    fn uncompress_sliding_flavor(
+        &self,
+        lg_k: u8,
+        num_coupons: u32,
+    ) -> Result<UncompressedState, Error> {
         let mut window = vec![];
         uncompress_sliding_window(
             &self.window_data,
@@ -467,38 +469,46 @@ impl CompressedState {
             &mut window,
             lg_k,
             num_coupons,
-        );
+        )?;
         let num_pairs = self.table_num_entries;
         let table = if num_pairs == 0 {
             PairTable::new(2, lg_k + 6)
         } else {
-            debug_assert!(!self.table_data.is_empty(), "table is expected");
             let mut pairs = uncompress_surprising_values(
                 &self.table_data,
                 self.table_data_words,
                 num_pairs,
                 lg_k,
-            );
+            )?;
             let pseudo_phase = determine_pseudo_phase(lg_k, num_coupons);
             let permutation = &COLUMN_PERMUTATIONS_FOR_DECODING[pseudo_phase as usize];
             let offset = determine_correct_offset(lg_k, num_coupons);
-            assert!(offset <= 56, "offset is invalid: {offset}");
+            if offset > 56 {
+                return Err(Error::deserial(format!(
+                    "CPC sliding window offset is invalid: {offset}"
+                )));
+            }
 
             for i in 0..num_pairs {
                 let i = i as usize;
                 let row_col = pairs[i];
                 let row = row_col >> 6;
-                let mut col = (row_col & 63) as u8;
+                let col = (row_col & 63) as usize;
                 // first undo the permutation
-                col = permutation[col as usize];
+                if col >= permutation.len() {
+                    return Err(Error::deserial(format!(
+                        "CPC sliding table pair column index is invalid: {}",
+                        pairs[i]
+                    )));
+                }
+                let mut col = permutation[col];
                 // then undo the rotation: old = (new + (offset+8)) mod 64
                 col = (col + (offset + 8)) & 63;
                 pairs[i] = (row << 6) | (col as u32);
             }
-
-            PairTable::from_slots(lg_k, num_pairs, pairs)
+            PairTable::from_slots(lg_k, num_pairs, pairs)?
         };
-        UncompressedState { table, window }
+        Ok(UncompressedState { table, window })
     }
 }
 
@@ -507,12 +517,15 @@ fn uncompress_surprising_values(
     data_words: usize,
     num_pairs: u32,
     lg_k: u8,
-) -> Vec<u32> {
+) -> Result<Vec<u32>, Error> {
+    if num_pairs == 0 {
+        return Ok(vec![]);
+    }
     let k = 1 << lg_k;
     let mut pairs = vec![0; num_pairs as usize];
     let num_base_bits = golomb_choose_number_of_base_bits(k + num_pairs, num_pairs as u64);
-    low_level_uncompress_pairs(&mut pairs, num_pairs, num_base_bits, data, data_words);
-    pairs
+    low_level_uncompress_pairs(&mut pairs, num_pairs, k, num_base_bits, data, data_words)?;
+    Ok(pairs)
 }
 
 fn uncompress_sliding_window(
@@ -521,7 +534,7 @@ fn uncompress_sliding_window(
     window: &mut Vec<u8>,
     lg_k: u8,
     num_coupons: u32,
-) {
+) -> Result<(), Error> {
     let k = 1 << lg_k;
     window.resize(k, 0);
     let pseudo_phase = determine_pseudo_phase(lg_k, num_coupons);
@@ -531,22 +544,21 @@ fn uncompress_sliding_window(
         data,
         data_words,
         &DECODING_TABLES_FOR_HIGH_ENTROPY_BYTE[pseudo_phase as usize],
-    );
+    )
 }
 
 fn low_level_uncompress_pairs(
     pairs: &mut [u32],
     num_pairs_to_decode: u32,
+    k: u32,
     num_base_bits: u8,
     compressed_words: &[u32],
     num_compressed_words: usize,
-) {
-    let mut word_index = 0;
-    let mut bitbuf = 0;
-    let mut bufbits = 0;
+) -> Result<(), Error> {
+    let mut bits = BitReader::new(compressed_words, num_compressed_words)?;
     let golomb_lo_mask = (1 << num_base_bits) - 1;
     let mut predicted_row_index = 0u32;
-    let mut predicted_col_index = 0u8;
+    let mut predicted_col_index = 0u32;
 
     // for each pair we need to read:
     // x_delta (12-bit length-limited unary)
@@ -554,51 +566,38 @@ fn low_level_uncompress_pairs(
     // y_delta_lo (basebits)
 
     for pair_index in 0..num_pairs_to_decode {
-        // ensure 12 bits in bit buffer
-        maybe_fill_bitbuf(
-            &mut bitbuf,
-            &mut bufbits,
-            compressed_words,
-            &mut word_index,
-            12,
-        );
-        let peek12 = bitbuf & 0xfff;
+        let peek12 = bits.peek(12)?;
         let lookup = LENGTH_LIMITED_UNARY_DECODING_TABLE65[peek12 as usize];
         let code_word_length = (lookup >> 8) as u8;
-        let x_delta = (lookup & 0xff) as u8;
-        bitbuf >>= code_word_length;
-        bufbits -= code_word_length;
+        let x_delta = u32::from((lookup & 0xff) as u8);
+        bits.consume(code_word_length);
 
-        let golomb_hi = read_unary(compressed_words, &mut word_index, &mut bitbuf, &mut bufbits);
-        // ensure num_base_bits in the bit buffer
-        maybe_fill_bitbuf(
-            &mut bitbuf,
-            &mut bufbits,
-            compressed_words,
-            &mut word_index,
-            num_base_bits,
-        );
-        let golomb_lo = bitbuf & golomb_lo_mask;
-        bitbuf >>= num_base_bits;
-        bufbits -= num_base_bits;
-        let y_delta = ((golomb_hi << num_base_bits) | golomb_lo) as u32;
+        let golomb_hi = bits.read_unary()?;
+        let golomb_lo = bits.read(num_base_bits)? & golomb_lo_mask;
+        let y_delta = golomb_hi
+            .checked_shl(u32::from(num_base_bits))
+            .and_then(|high| high.checked_add(golomb_lo))
+            .and_then(|delta| u32::try_from(delta).ok())
+            .ok_or_else(|| Error::deserial("CPC pair row delta overflows"))?;
 
         // Now that we have x_delta and y_delta, we can compute the pair's row and column
         if y_delta > 0 {
             predicted_col_index = 0;
         }
-        let row_index = predicted_row_index + y_delta;
-        let col_index = predicted_col_index + x_delta;
-        let row_col = (row_index << 6) | (col_index as u32);
+        let row_index = predicted_row_index
+            .checked_add(y_delta)
+            .filter(|&row| row < k)
+            .ok_or_else(|| Error::deserial("CPC pair row index is out of range"))?;
+        let col_index = predicted_col_index
+            .checked_add(x_delta)
+            .filter(|&column| column < 64)
+            .ok_or_else(|| Error::deserial("CPC pair column index is out of range"))?;
+        let row_col = (row_index << 6) | col_index;
         pairs[pair_index as usize] = row_col;
         predicted_row_index = row_index;
         predicted_col_index = col_index + 1;
     }
-
-    debug_assert!(
-        word_index <= num_compressed_words,
-        "word_index: {word_index}, num_compressed_words: {num_compressed_words}",
-    );
+    Ok(())
 }
 
 fn low_level_uncompress_bytes(
@@ -607,39 +606,96 @@ fn low_level_uncompress_bytes(
     compressed_words: &[u32],
     num_compressed_words: usize,
     decoding_table: &[u16],
-) {
-    let mut word_index = 0;
-    let mut bitbuf = 0;
-    let mut bufbits = 0;
+) -> Result<(), Error> {
+    let mut bits = BitReader::new(compressed_words, num_compressed_words)?;
 
     for byte_index in 0..num_bytes_to_decode {
-        // ensure 12 bits in bit buffer
-        maybe_fill_bitbuf(
-            &mut bitbuf,
-            &mut bufbits,
-            compressed_words,
-            &mut word_index,
-            12,
-        );
         // These 12 bits will include an entire Huffman codeword.
-        let peek12 = bitbuf & 0xfff;
+        let peek12 = bits.peek(12)?;
         let lookup = decoding_table[peek12 as usize];
         let code_word_length = (lookup >> 8) as u8;
         let decoded_byte = (lookup & 0xff) as u8;
         byte_array[byte_index as usize] = decoded_byte;
-        bitbuf >>= code_word_length;
-        bufbits -= code_word_length;
+        bits.consume(code_word_length);
+    }
+    Ok(())
+}
+
+struct BitReader<'a> {
+    words: &'a [u32],
+    next_word: usize,
+    buffer: u64,
+    buffered_bits: u8,
+}
+
+impl<'a> BitReader<'a> {
+    fn new(words: &'a [u32], num_words: usize) -> Result<Self, Error> {
+        let words = words
+            .get(..num_words)
+            .ok_or_else(|| Error::deserial("CPC compressed word count exceeds payload"))?;
+        Ok(Self {
+            words,
+            next_word: 0,
+            buffer: 0,
+            buffered_bits: 0,
+        })
     }
 
-    // Buffer over-run should be impossible unless there is a bug.
-    debug_assert!(
-        word_index <= num_compressed_words,
-        "word_index: {word_index}, num_compressed_words: {num_compressed_words}",
-    );
+    fn fill(&mut self, needed: u8) -> Result<(), Error> {
+        if self.buffered_bits < needed {
+            let word = self
+                .words
+                .get(self.next_word)
+                .ok_or_else(|| Error::deserial("CPC compressed stream is truncated"))?;
+            self.buffer |= u64::from(*word) << self.buffered_bits;
+            self.next_word += 1;
+            self.buffered_bits += 32;
+        }
+        Ok(())
+    }
+
+    fn peek(&mut self, count: u8) -> Result<u64, Error> {
+        self.fill(count)?;
+        Ok(self.buffer & ((1u64 << count) - 1))
+    }
+
+    fn consume(&mut self, count: u8) {
+        debug_assert!(count <= self.buffered_bits);
+        self.buffer >>= count;
+        self.buffered_bits -= count;
+    }
+
+    fn read(&mut self, count: u8) -> Result<u64, Error> {
+        if count == 0 {
+            return Ok(0);
+        }
+        let value = self.peek(count)?;
+        self.consume(count);
+        Ok(value)
+    }
+
+    fn read_unary(&mut self) -> Result<u64, Error> {
+        let mut value = 0u64;
+        loop {
+            let byte = self.peek(8)?;
+            let zeros = byte.trailing_zeros() as u8;
+            if zeros < 8 {
+                self.consume(zeros + 1);
+                return value
+                    .checked_add(u64::from(zeros))
+                    .ok_or_else(|| Error::deserial("CPC unary value overflows"));
+            }
+            value = value
+                .checked_add(8)
+                .ok_or_else(|| Error::deserial("CPC unary value overflows"))?;
+            self.consume(8);
+        }
+    }
 }
 
 fn determine_pseudo_phase(lg_k: u8, num_coupons: u32) -> u8 {
-    let k = 1 << lg_k;
+    let k = 1u64 << lg_k;
+    let num_coupons = u64::from(num_coupons);
     // This mid-range logic produces pseudo-phases. They are used to select encoding tables.
     // The thresholds were chosen by hand after looking at plots of measured compression.
     if 1000 * num_coupons < 2375 * k {
@@ -698,31 +754,6 @@ fn write_unary(
     maybe_flush_bitbuf(bitbuf, bufbits, compressed_words, next_word_index);
 }
 
-fn read_unary(
-    compressed_words: &[u32],
-    next_word_index: &mut usize,
-    bitbuf: &mut u64,
-    bufbits: &mut u8,
-) -> u64 {
-    let mut subtotal = 0u64;
-    loop {
-        // ensure 8 bits in bit buffer
-        maybe_fill_bitbuf(bitbuf, bufbits, compressed_words, next_word_index, 8);
-        // These 8 bits include either all or part of the Unary codeword
-        let peek8 = *bitbuf & 0xff;
-        let trailing_zeros = peek8.trailing_zeros() as u8;
-        if trailing_zeros < 8 {
-            *bufbits -= 1 + trailing_zeros;
-            *bitbuf >>= 1 + trailing_zeros;
-            return subtotal + trailing_zeros as u64;
-        }
-        // The codeword was partial, so read some more
-        subtotal += 8;
-        *bufbits -= 8;
-        *bitbuf >>= 8;
-    }
-}
-
 fn maybe_flush_bitbuf(
     bitbuf: &mut u64,
     bufbits: &mut u8,
@@ -734,20 +765,6 @@ fn maybe_flush_bitbuf(
         *word_index += 1;
         *bitbuf >>= 32;
         *bufbits -= 32;
-    }
-}
-
-fn maybe_fill_bitbuf(
-    bitbuf: &mut u64,
-    bufbits: &mut u8,
-    words: &[u32],
-    word_index: &mut usize,
-    minbits: u8,
-) {
-    if *bufbits < minbits {
-        *bitbuf |= (words[*word_index] as u64) << *bufbits;
-        *word_index += 1;
-        *bufbits += 32;
     }
 }
 
@@ -814,5 +831,16 @@ fn floor_log2_of_long(x: u64) -> u8 {
                 y <<= 1;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::determine_pseudo_phase;
+
+    #[test]
+    fn pseudo_phase_handles_maximum_lg_k() {
+        assert!(determine_pseudo_phase(26, 1 << 25) < 22);
+        assert!(determine_pseudo_phase(26, u32::MAX) < 22);
     }
 }

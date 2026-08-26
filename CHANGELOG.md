@@ -22,6 +22,7 @@ All significant changes to this project will be documented in this file.
 * Frequent-items map sizes are now limited consistently to the cross-language maximum of `2^30`: `FrequentItemsSketch::new` rejects larger configurations, and `deserialize` returns `InvalidData` for out-of-range or inconsistent header fields instead of panicking on corrupt input. Empty images restore the minimum backing map instead of allocating from `lg_cur_map_size`, and non-empty images validate `active_items` against the declared map capacity and remaining payload before preallocating their counters.
 * T-Digest compression now handles `k = u16::MAX` without overflowing the scale normalization input.
 * T-Digest deserialization now validates declared payload lengths before allocating. Updating a deserialized digest whose unmerged buffer already exceeds the compression threshold now compresses it instead of allowing the buffer to grow without bound.
+* CPC deserialization now rejects malformed or corrupt input with an error instead of panicking. Previously, corrupt bytes could trigger an index-out-of-bounds, a failed assertion, or an arithmetic overflow while decompressing the stream; the deserializer now validates the header fields against the sketch flavor and bounds-checks the decompressor, while leaving valid sketches byte-for-byte compatible with the Java, C++, and Go implementations.
 
 ## v0.4.0 (2026-08-18)
 
