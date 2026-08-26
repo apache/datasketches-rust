@@ -285,13 +285,12 @@ impl TDigestMut {
     /// assert_eq!(sketch.total_weight(), 2);
     /// ```
     pub fn update_slice(&mut self, values: &[f64]) {
-        let finite_values = values.iter().filter(|value| value.is_finite()).count();
-        if finite_values == 0 {
-            return;
-        }
-
         let max_unmerged = self.max_unmerged();
         if let TDigestBuffer::Staging(staged) = &mut self.buffer {
+            let finite_values = values.iter().filter(|value| value.is_finite()).count();
+            if finite_values == 0 {
+                return;
+            }
             staged.reserve_exact(finite_values.min(max_unmerged.saturating_sub(staged.len())));
         }
         for &value in values {
@@ -1637,6 +1636,8 @@ fn merge_sorted_centroids(left: &mut Vec<Centroid>, right: &[Centroid]) {
         let left_centroid = left[left_index - 1];
         let right_centroid = right[right_index - 1];
         output_index -= 1;
+        // Taking the left side on ties while filling backward keeps the right side first in the
+        // final order, matching the fallback path's rotate followed by a stable sort.
         if centroid_cmp(&left_centroid, &right_centroid) != Ordering::Less {
             left_index -= 1;
             left[output_index] = left_centroid;
