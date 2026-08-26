@@ -33,6 +33,7 @@ use crate::hll::HllType;
 use crate::hll::RESIZE_DENOMINATOR;
 use crate::hll::RESIZE_NUMERATOR;
 use crate::hll::array4::Array4;
+use crate::hll::array4::AuxFormat;
 use crate::hll::array6::Array6;
 use crate::hll::array8::Array8;
 use crate::hll::container::Container;
@@ -402,13 +403,13 @@ impl HllSketch {
 
                     match hll_type {
                         HllType::Hll4 => {
-                            let cur_min = state;
-                            Array4::deserialize(cursor, cur_min, lg_config_k, compact, ooo)
+                            let aux = AuxFormat::from_header(compact, lg_arr);
+                            Array4::deserialize(cursor, state, lg_config_k, aux, ooo)
                                 .map(Mode::Array4)?
                         }
-                        HllType::Hll6 => Array6::deserialize(cursor, lg_config_k, compact, ooo)
+                        HllType::Hll6 => Array6::deserialize_registers(cursor, lg_config_k, ooo)
                             .map(Mode::Array6)?,
-                        HllType::Hll8 => Array8::deserialize(cursor, lg_config_k, compact, ooo)
+                        HllType::Hll8 => Array8::deserialize_registers(cursor, lg_config_k, ooo)
                             .map(Mode::Array8)?,
                     }
                 }

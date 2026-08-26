@@ -166,6 +166,41 @@ fn hll_mode_round_trip_preserves_registers_and_rejects_truncation() {
 }
 
 #[test]
+fn hll4_updatable_aux_table_matches_compact_image() {
+    let path = serialization_test_data("java_generated_files", "hll4_n100000_java.sk");
+    let compact = fs::read(path).unwrap();
+    let lg_k = compact[3];
+    let lg_arr = compact[4];
+    let aux_count = u32::from_le_bytes(compact[36..40].try_into().unwrap()) as usize;
+    let aux_start = 40 + (1usize << lg_k) / 2;
+    assert!(aux_count > 0);
+
+    let mut aux_table = vec![0_u32; 1usize << lg_arr];
+    let table_mask = aux_table.len() as u32 - 1;
+    for bytes in compact[aux_start..aux_start + aux_count * size_of::<u32>()].chunks_exact(4) {
+        let coupon = u32::from_le_bytes(bytes.try_into().unwrap());
+        let slot = coupon & ((1_u32 << 26) - 1);
+        let stride = (slot >> lg_arr) | 1;
+        let mut probe = slot & table_mask;
+        while aux_table[probe as usize] != 0 {
+            probe = (probe + stride) & table_mask;
+        }
+        aux_table[probe as usize] = coupon;
+    }
+
+    let mut updatable = compact[..aux_start].to_vec();
+    updatable[5] &= !8; // clear the compact flag
+    for coupon in aux_table {
+        updatable.extend_from_slice(&coupon.to_le_bytes());
+    }
+
+    assert_eq!(
+        HllSketch::deserialize(&updatable).unwrap(),
+        HllSketch::deserialize(&compact).unwrap()
+    );
+}
+
+#[test]
 fn test_serialized_bytes_match_reference_files_for_coupon_modes() {
     fn serialized_mode_name(bytes: &[u8]) -> &'static str {
         // The HLL preamble stores current mode in the low two bits of byte 7.

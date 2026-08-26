@@ -252,10 +252,9 @@ impl Array8 {
     /// Deserialize Array8 from HLL mode bytes
     ///
     /// Expects full HLL preamble (40 bytes) followed by k bytes of data.
-    pub fn deserialize(
+    pub fn deserialize_registers(
         mut cursor: SketchSlice,
         lg_config_k: u8,
-        _compact: bool,
         ooo: bool,
     ) -> Result<Self, Error> {
         let k = 1usize << lg_config_k;
