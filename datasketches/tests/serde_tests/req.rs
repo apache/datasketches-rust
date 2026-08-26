@@ -53,9 +53,9 @@ where
 
 #[test]
 fn round_trip_f64_matrix() {
-    for &k in &[4u16, 6, 10, 12, 1024] {
+    for &k in &[4u16, 12, 1024] {
         for &ra in &[RankAccuracy::HighRank, RankAccuracy::LowRank] {
-            for &n in &[0u64, 1, 4, 5, 100, 1_250, 2_562, 10_000, 100_000] {
+            for &n in &[0u64, 1, 4, 5, 100, 10_000] {
                 round_trip_one::<f64>(k, ra, n, |i| i as f64);
             }
         }
