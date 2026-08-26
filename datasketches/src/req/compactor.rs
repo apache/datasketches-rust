@@ -20,11 +20,13 @@
 //! Each level in the REQ sketch uses a compactor to maintain a bounded set of items
 //! with deterministic compaction when capacity is exceeded.
 
-use super::MIN_K;
-use super::RankAccuracy;
-use super::nearest_even_section_size;
-use super::value::ReqValue;
 use crate::error::Error;
+use crate::req::INITIAL_SECTIONS_PER_COMPACTOR;
+use crate::req::MIN_K;
+use crate::req::RankAccuracy;
+use crate::req::nearest_even_section_size;
+use crate::req::serialization::validate_compactor_state;
+use crate::req::value::ReqValue;
 
 fn validate_deserialized_items<T: ReqValue>(items: &[T], sorted: bool) -> Result<(), Error> {
     if items.iter().any(ReqValue::is_nan) {
@@ -85,7 +87,7 @@ where
     pub(super) fn new(lg_weight: u8, k: u16, rank_accuracy: RankAccuracy) -> Self {
         let section_size_raw = k as f32;
         let section_size = nearest_even_section_size(section_size_raw);
-        let num_sections = super::INITIAL_SECTIONS_PER_COMPACTOR;
+        let num_sections = INITIAL_SECTIONS_PER_COMPACTOR;
 
         let nominal: usize = (2 * section_size * num_sections as u32) as usize;
 
@@ -152,7 +154,7 @@ where
     /// Counts the items at-or-below (`inclusive`) or strictly below `item`.
     ///
     /// Uses binary search when this compactor is sorted, and a linear scan
-    /// otherwise. This lets [`ReqSketch::rank`](super::ReqSketch::rank) sum
+    /// otherwise. This lets [`ReqSketch::rank`](crate::req::ReqSketch::rank) sum
     /// per-level weights directly without first building a sorted view.
     pub(super) fn count_below(&self, item: &T, inclusive: bool) -> usize {
         if self.is_sorted {
@@ -392,7 +394,7 @@ where
         cursor: &mut crate::codec::SketchSlice<'_>,
         k: u16,
         expected_lg_weight: u8,
-        rank_accuracy: super::RankAccuracy,
+        rank_accuracy: RankAccuracy,
         sorted: bool,
     ) -> Result<Self, crate::error::Error> {
         use crate::codec::assert::insufficient_data;
@@ -415,7 +417,7 @@ where
             .read_u32_le()
             .map_err(insufficient_data("compactor.num_items"))?;
 
-        super::serialization::validate_compactor_state(
+        validate_compactor_state(
             k,
             expected_lg_weight,
             state,
@@ -455,7 +457,7 @@ where
     /// so faithful round-trip requires preserving whatever the input said.
     pub(super) fn raw_items_compactor(
         k: u16,
-        rank_accuracy: super::RankAccuracy,
+        rank_accuracy: RankAccuracy,
         items: Vec<T>,
         is_sorted: bool,
     ) -> Result<Self, Error> {
@@ -482,7 +484,7 @@ where
         state: u64,
         items: Vec<T>,
         is_sorted: bool,
-        rank_accuracy: super::RankAccuracy,
+        rank_accuracy: RankAccuracy,
     ) -> Self {
         Self {
             items,

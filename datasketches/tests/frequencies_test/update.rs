@@ -562,6 +562,12 @@ fn test_items_invalid_map_size_panics() {
 }
 
 #[test]
+#[should_panic(expected = "max_map_size must not exceed")]
+fn test_map_size_above_cross_language_limit_panics() {
+    FrequentItemsSketch::<i64>::new(1usize << 31);
+}
+
+#[test]
 fn test_estimated_size() {
     let mut sketch: FrequentItemsSketch<i64> = FrequentItemsSketch::new(64);
     assert_eq!(sketch.estimated_size(), 344);

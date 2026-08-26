@@ -26,8 +26,8 @@
 
 use std::hash::Hasher;
 
-use super::HashStrategy;
-use super::Value;
+use crate::hash::value::HashStrategy;
+use crate::hash::value::Value;
 
 /// A byte or string value wrapper that hashes raw bytes.
 ///

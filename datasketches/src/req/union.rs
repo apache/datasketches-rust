@@ -17,10 +17,10 @@
 
 //! REQ union — combines REQ sketches into a single result.
 
-use super::RankAccuracy;
-use super::sketch::ReqSketch;
-use super::value::ReqValue;
 use crate::error::Error;
+use crate::req::RankAccuracy;
+use crate::req::sketch::ReqSketch;
+use crate::req::value::ReqValue;
 
 /// Combines multiple [`ReqSketch`]es into a single result.
 ///

@@ -26,8 +26,8 @@
 use std::hash::Hash;
 use std::hash::Hasher;
 
-use super::HashStrategy;
-use super::Value;
+use crate::hash::value::HashStrategy;
+use crate::hash::value::Value;
 
 /// A floating-point value wrapper that uses canonical floating-point hashing.
 ///
