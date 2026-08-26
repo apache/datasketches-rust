@@ -33,6 +33,7 @@ use crate::hll::HllType;
 use crate::hll::RESIZE_DENOMINATOR;
 use crate::hll::RESIZE_NUMERATOR;
 use crate::hll::array4::Array4;
+use crate::hll::array4::AuxFormat;
 use crate::hll::array6::Array6;
 use crate::hll::array8::Array8;
 use crate::hll::container::Container;
@@ -364,6 +365,11 @@ impl HllSketch {
                         )));
                     }
 
+                    if lg_arr != 3 {
+                        return Err(Error::deserial(format!(
+                            "LIST mode lg_arr: expected 3, got {lg_arr}"
+                        )));
+                    }
                     let lg_arr = lg_arr as usize;
                     let coupon_count = state as usize;
                     let list = List::deserialize(cursor, lg_arr, coupon_count, empty, compact)?;
@@ -377,6 +383,12 @@ impl HllSketch {
                         )));
                     }
 
+                    let max_lg_arr = lg_config_k.saturating_sub(3);
+                    if !(5..=max_lg_arr).contains(&lg_arr) {
+                        return Err(Error::deserial(format!(
+                            "SET mode lg_arr must be in [5, {max_lg_arr}], got {lg_arr}"
+                        )));
+                    }
                     let lg_arr = lg_arr as usize;
                     let set = HashSet::deserialize(cursor, lg_arr, compact)?;
                     Mode::Set { set, hll_type }
@@ -391,13 +403,13 @@ impl HllSketch {
 
                     match hll_type {
                         HllType::Hll4 => {
-                            let cur_min = state;
-                            Array4::deserialize(cursor, cur_min, lg_config_k, compact, ooo)
+                            let aux = AuxFormat::from_header(compact, lg_arr);
+                            Array4::deserialize(cursor, state, lg_config_k, aux, ooo)
                                 .map(Mode::Array4)?
                         }
-                        HllType::Hll6 => Array6::deserialize(cursor, lg_config_k, compact, ooo)
+                        HllType::Hll6 => Array6::deserialize_registers(cursor, lg_config_k, ooo)
                             .map(Mode::Array6)?,
-                        HllType::Hll8 => Array8::deserialize(cursor, lg_config_k, compact, ooo)
+                        HllType::Hll8 => Array8::deserialize_registers(cursor, lg_config_k, ooo)
                             .map(Mode::Array8)?,
                     }
                 }

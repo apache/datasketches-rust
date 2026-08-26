@@ -143,3 +143,16 @@ fn malformed_input_is_rejected() {
     let err = CompactTupleSketch::<u64>::deserialize(&wrong_family).unwrap_err();
     assert_eq!(err.kind(), ErrorKind::InvalidData);
 }
+
+#[test]
+fn declared_entry_payload_is_checked_before_allocating() {
+    let mut sketch = TupleSketchBuilder::new(DefaultUpdatePolicy::<u64>::default()).build();
+    for value in 0..100 {
+        sketch.update(value, 1);
+    }
+    let mut bytes = sketch.compact(true).serialize();
+    assert!(bytes[0] > 1);
+    bytes[8..12].copy_from_slice(&u32::MAX.to_le_bytes());
+
+    assert!(CompactTupleSketch::<u64>::deserialize(&bytes).is_err());
+}

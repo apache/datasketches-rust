@@ -41,6 +41,22 @@ use crate::hll::serialization::encode_mode_byte;
 
 const AUX_TOKEN: u8 = 15;
 
+#[derive(Clone, Copy)]
+pub(super) enum AuxFormat {
+    Compact,
+    Updatable { lg_arr: u8 },
+}
+
+impl AuxFormat {
+    pub(super) fn from_header(compact: bool, lg_arr: u8) -> Self {
+        if compact {
+            Self::Compact
+        } else {
+            Self::Updatable { lg_arr }
+        }
+    }
+}
+
 /// Core Array4 data structure - stores 4-bit values efficiently
 #[derive(Debug, Clone, PartialEq)]
 pub struct Array4 {
@@ -300,10 +316,11 @@ impl Array4 {
         mut cursor: SketchSlice,
         cur_min: u8,
         lg_config_k: u8,
-        compact: bool,
+        aux_format: AuxFormat,
         ooo: bool,
     ) -> Result<Self, Error> {
-        let num_bytes = 1 << (lg_config_k - 1); // k/2 bytes for 4-bit packing
+        let k = 1usize << lg_config_k;
+        let num_bytes = 1usize << (lg_config_k - 1); // k/2 bytes for 4-bit packing
 
         // Read HIP estimator values from preamble
         let hip_accum = cursor
@@ -319,31 +336,70 @@ impl Array4 {
         let aux_count = cursor
             .read_u32_le()
             .map_err(insufficient_data("aux_count"))?;
+        if num_at_cur_min as usize > k || aux_count as usize > k {
+            return Err(Error::deserial(
+                "HLL4 register or auxiliary count exceeds k",
+            ));
+        }
+        let (aux_slots, compact) = match aux_format {
+            AuxFormat::Compact => (aux_count as usize, true),
+            AuxFormat::Updatable { lg_arr } => {
+                let slots = if aux_count == 0 {
+                    0
+                } else {
+                    1usize
+                        .checked_shl(u32::from(lg_arr))
+                        .ok_or_else(|| Error::deserial(format!("invalid HLL4 lg_arr: {lg_arr}")))?
+                };
+                (slots, false)
+            }
+        };
+        let required_bytes = aux_slots
+            .checked_mul(COUPON_SIZE_BYTES)
+            .and_then(|aux_bytes| num_bytes.checked_add(aux_bytes))
+            .ok_or_else(|| Error::deserial("HLL4 payload length overflows"))?;
+        if required_bytes > cursor.remaining().len() {
+            return Err(Error::insufficient_data(format!(
+                "HLL4 payload requires {required_bytes} bytes, got {}",
+                cursor.remaining().len()
+            )));
+        }
 
         // Read packed 4-bit byte array
         let mut data = vec![0u8; num_bytes];
-        if !compact {
-            cursor
-                .read_exact(&mut data)
-                .map_err(insufficient_data("data"))?;
-        } else {
-            cursor.advance(num_bytes as u64);
-        }
+        cursor
+            .read_exact(&mut data)
+            .map_err(insufficient_data("data"))?;
 
         // Read aux map if present
         let mut aux_map = None;
         if aux_count > 0 {
             let mut aux = AuxMap::new(lg_config_k);
-            for i in 0..aux_count {
+            let mut decoded_count = 0;
+            for i in 0..aux_slots {
                 let coupon = cursor.read_u32_le().map_err(|_| {
                     Error::insufficient_data(format!(
-                        "expected {aux_count} aux coupons, failed at index {i}",
+                        "expected {aux_slots} HLL4 auxiliary slots, failed at index {i}",
                     ))
                 })?;
                 let coupon = Coupon(coupon);
+                if coupon.is_empty() && !compact {
+                    continue;
+                }
                 let slot = coupon.slot() & ((1 << lg_config_k) - 1);
                 let value = coupon.value();
+                if coupon.is_empty() || aux.get(slot).is_some() {
+                    return Err(Error::deserial(
+                        "HLL4 auxiliary entries must be non-empty and unique",
+                    ));
+                }
                 aux.insert(slot, value);
+                decoded_count += 1;
+            }
+            if decoded_count != aux_count as usize {
+                return Err(Error::deserial(format!(
+                    "HLL4 auxiliary count is {aux_count}, decoded {decoded_count}"
+                )));
             }
             aux_map = Some(aux);
         }

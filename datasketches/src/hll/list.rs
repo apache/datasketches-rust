@@ -86,8 +86,25 @@ impl List {
         // slots are available for future update() calls. In compact format only
         // coupon_count values are stored on disk, but memory must hold the full capacity
         // so the linear scan in update() can find an empty slot to insert into.
-        let array_size = 1 << lg_arr;
+        let array_size = 1usize << lg_arr;
+        if coupon_count > array_size {
+            return Err(Error::deserial(format!(
+                "LIST mode coupon count {coupon_count} exceeds capacity {array_size}"
+            )));
+        }
+        if empty != (coupon_count == 0) {
+            return Err(Error::deserial(
+                "LIST mode empty flag and coupon count disagree",
+            ));
+        }
         let read_count = if compact { coupon_count } else { array_size };
+        let required_bytes = read_count * size_of::<u32>();
+        if !empty && required_bytes > cursor.remaining().len() {
+            return Err(Error::insufficient_data(format!(
+                "LIST mode coupons require {required_bytes} bytes, got {}",
+                cursor.remaining().len()
+            )));
+        }
 
         // Read coupons into the front of the full-sized array; remaining slots stay Coupon::EMPTY.
         let mut coupons = vec![Coupon::EMPTY; array_size];

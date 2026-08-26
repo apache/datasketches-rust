@@ -466,36 +466,40 @@ impl BloomFilter {
         }
 
         let num_words = num_longs as usize;
+        if !is_empty {
+            let payload_bytes = num_words
+                .checked_add(1)
+                .and_then(|words| words.checked_mul(size_of::<u64>()))
+                .ok_or_else(|| Error::deserial("Bloom filter payload length overflows"))?;
+            if payload_bytes > cursor.remaining().len() {
+                return Err(Error::insufficient_data(format!(
+                    "Bloom filter payload requires {payload_bytes} bytes, got {}",
+                    cursor.remaining().len()
+                )));
+            }
+        }
         let mut bit_array = vec![0u64; num_words].into_boxed_slice();
-        let num_bits_set;
-
-        if is_empty {
-            num_bits_set = 0;
+        let num_bits_set = if is_empty {
+            0
         } else {
-            let raw_num_bits_set = cursor
+            let serialized_num_bits_set = cursor
                 .read_u64_le()
                 .map_err(insufficient_data("num_bits_set"))?;
 
-            let mut counted_bits_set = 0;
+            let mut count = 0;
             for word in &mut bit_array {
                 *word = cursor
                     .read_u64_le()
                     .map_err(insufficient_data("bit_array"))?;
-                counted_bits_set += word.count_ones() as u64;
+                count += word.count_ones() as u64;
             }
-
-            // Handle "dirty" state: u64::MAX (all bits set to 1) indicates bits need recounting.
-            if raw_num_bits_set == u64::MAX {
-                num_bits_set = counted_bits_set;
-            } else {
-                if raw_num_bits_set != counted_bits_set {
-                    return Err(Error::deserial(format!(
-                        "invalid num_bits_set: expected {counted_bits_set}, got {raw_num_bits_set}",
-                    )));
-                }
-                num_bits_set = raw_num_bits_set;
+            if serialized_num_bits_set != u64::MAX && serialized_num_bits_set != count {
+                return Err(Error::deserial(format!(
+                    "invalid num_bits_set: expected {count}, got {serialized_num_bits_set}"
+                )));
             }
-        }
+            count
+        };
 
         Ok(BloomFilter {
             seed,
