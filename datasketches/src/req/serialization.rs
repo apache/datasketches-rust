@@ -42,75 +42,21 @@ fn section_growth_threshold(num_sections: u8) -> Option<u64> {
         .and_then(|shift| 1u64.checked_shl(u32::from(shift)))
 }
 
-fn reachable_section_doublings(state: u64, num_sections: u8) -> Option<u32> {
+fn has_reachable_section_count(state: u64, num_sections: u8) -> bool {
     let mut sections = INITIAL_SECTIONS_PER_COMPACTOR;
-    let mut doublings = 0;
     while sections < num_sections {
-        if state < section_growth_threshold(sections)? {
-            return None;
+        let Some(threshold) = section_growth_threshold(sections) else {
+            return false;
+        };
+        if state < threshold {
+            return false;
         }
-        sections = sections.checked_mul(2)?;
-        doublings += 1;
+        let Some(next) = sections.checked_mul(2) else {
+            return false;
+        };
+        sections = next;
     }
-    (sections == num_sections).then_some(doublings)
-}
-
-fn compatible_next_section_sizes(section_size_raw: f32) -> [Option<f32>; 2] {
-    let single_precision = section_size_raw / std::f32::consts::SQRT_2;
-    let widened = (f64::from(section_size_raw) / std::f64::consts::SQRT_2) as f32;
-    [
-        (nearest_even_section_size(single_precision) >= u32::from(MIN_K))
-            .then_some(single_precision),
-        (nearest_even_section_size(section_size_raw) > u32::from(MIN_K)
-            && nearest_even_section_size(widened) >= u32::from(MIN_K))
-        .then_some(widened),
-    ]
-}
-
-fn has_reachable_section_configuration(
-    k: u16,
-    state: u64,
-    section_size_raw: f32,
-    num_sections: u8,
-) -> bool {
-    let Some(doublings) = reachable_section_doublings(state, num_sections) else {
-        return false;
-    };
-
-    // The wire format exposes the running floating-point section size. C++
-    // updates it in single precision, while Java divides in double precision
-    // before narrowing to f32. Accept either result at every step so a sketch
-    // can be deserialized and continued in another implementation.
-    let mut candidates = vec![k as f32];
-    for _ in 0..doublings {
-        let mut next = Vec::with_capacity(candidates.len() * 2);
-        for candidate in candidates {
-            for value in compatible_next_section_sizes(candidate)
-                .into_iter()
-                .flatten()
-            {
-                if !next.contains(&value) {
-                    next.push(value);
-                }
-            }
-        }
-        candidates = next;
-    }
-    if !candidates
-        .iter()
-        .any(|candidate| candidate.to_bits() == section_size_raw.to_bits())
-    {
-        return false;
-    }
-
-    // If every compatible producer would already have doubled the section
-    // count at this state, the serialized configuration is stale.
-    section_growth_threshold(num_sections).is_none_or(|threshold| {
-        state < threshold
-            || compatible_next_section_sizes(section_size_raw)
-                .iter()
-                .any(Option::is_none)
-    })
+    sections == num_sections
 }
 
 pub(super) fn validate_compactor_state(
@@ -126,9 +72,13 @@ pub(super) fn validate_compactor_state(
             "REQ compactor lg_weight {lg_weight} does not match level {expected_lg_weight}"
         )));
     }
-    if !has_reachable_section_configuration(k, state, section_size_raw, num_sections) {
+    let section_size = nearest_even_section_size(section_size_raw);
+    if !section_size_raw.is_finite()
+        || !(u32::from(MIN_K)..=u32::from(k)).contains(&section_size)
+        || !has_reachable_section_count(state, num_sections)
+    {
         return Err(Error::deserial(format!(
-            "REQ compactor section configuration is not reachable (k={k}, state={state}, section_size_raw={section_size_raw}, num_sections={num_sections})"
+            "REQ compactor layout is invalid (k={k}, state={state}, section_size_raw={section_size_raw}, num_sections={num_sections})"
         )));
     }
     Ok(())

@@ -357,7 +357,7 @@ fn deserialize_accepts_java_minimum_section_schedule() {
 }
 
 #[test]
-fn deserialize_rejects_capacity_changing_float_drift() {
+fn deserialize_accepts_safe_section_size_drift() {
     let mut bytes = estimation_image(10, 2_562);
     let raw_offset = ESTIMATION_COMPACTOR_OFFSET + SECTION_SIZE_RAW_OFFSET;
     let raw_bits = u32::from_le_bytes(bytes[raw_offset..raw_offset + 4].try_into().unwrap());
@@ -367,11 +367,16 @@ fn deserialize_rejects_capacity_changing_float_drift() {
 
     // One ULP below 5.0 rounds to a section size of 4 rather than 6.
     bytes[raw_offset..raw_offset + 4].copy_from_slice(&(raw_bits - 1).to_le_bytes());
-    assert_invalid_data(&bytes);
+    let mut sketch = ReqSketch::<f32>::deserialize(&bytes).unwrap();
+    sketch.update(2_563.0);
+    assert_that!(
+        ReqSketch::<f32>::deserialize(&sketch.serialize()),
+        ok(anything())
+    );
 }
 
 #[test]
-fn deserialize_rejects_state_inconsistent_with_stream_length() {
+fn deserialize_accepts_opaque_compactor_state() {
     let mut bytes = estimation_image(12, 1_000);
     let compactor = ESTIMATION_COMPACTOR_OFFSET;
     let state = 501u64;
@@ -384,11 +389,16 @@ fn deserialize_rejects_state_inconsistent_with_stream_length() {
     bytes[compactor + SECTION_SIZE_RAW_OFFSET..compactor + SECTION_SIZE_RAW_OFFSET + 4]
         .copy_from_slice(&raw.to_le_bytes());
     bytes[compactor + NUM_SECTIONS_OFFSET] = 12;
-    assert_invalid_data(&bytes);
+    let mut sketch = ReqSketch::<f32>::deserialize(&bytes).unwrap();
+    sketch.update(1_001.0);
+    assert_that!(
+        ReqSketch::<f32>::deserialize(&sketch.serialize()),
+        ok(anything())
+    );
 }
 
 #[test]
-fn deserialize_rejects_complementary_states_that_overflow_on_merge() {
+fn complementary_compactor_states_do_not_overflow_on_merge() {
     let items: Vec<f32> = (0..192).map(|item| item as f32).collect();
     let mut raw = 12.0f32;
     for _ in 0..4 {
@@ -397,7 +407,7 @@ fn deserialize_rejects_complementary_states_that_overflow_on_merge() {
 
     let states = [0xAAAA_AAAA_AAAA_AAAAu64, 0x5555_5555_5555_5555u64];
     assert_eq!(states[0] | states[1], u64::MAX);
-    for state in states {
+    let mut sketches = states.map(|state| {
         let mut bytes = exact_image(12, &items);
         let compactor = EXACT_COMPACTOR_OFFSET;
         bytes[compactor + STATE_OFFSET..compactor + STATE_OFFSET + 8]
@@ -405,15 +415,24 @@ fn deserialize_rejects_complementary_states_that_overflow_on_merge() {
         bytes[compactor + SECTION_SIZE_RAW_OFFSET..compactor + SECTION_SIZE_RAW_OFFSET + 4]
             .copy_from_slice(&raw.to_le_bytes());
         bytes[compactor + NUM_SECTIONS_OFFSET] = 48;
-        assert_invalid_data(&bytes);
-    }
+        ReqSketch::<f32>::deserialize(&bytes).unwrap()
+    });
+    let (left, right) = sketches.split_at_mut(1);
+    left[0].merge(&right[0]).unwrap();
 }
 
 #[test]
-fn deserialize_rejects_false_sorted_claim_and_nan() {
+fn deserialize_normalizes_false_sorted_claim_and_rejects_nan() {
     let mut unsorted = exact_image(12, &[3.0, 4.0, 5.0, 1.0, 2.0]);
     unsorted[3] |= FLAG_LEVEL_ZERO_SORTED;
-    assert_invalid_data(&unsorted);
+    let sketch = ReqSketch::<f32>::deserialize(&unsorted).unwrap();
+    assert_eq!(
+        sketch.rank(&2.0, SearchCriteria::Inclusive).unwrap(),
+        sketch
+            .sorted_view()
+            .rank(&2.0, SearchCriteria::Inclusive)
+            .unwrap(),
+    );
 
     let nan = exact_image(12, &[1.0, 2.0, f32::NAN, 4.0, 5.0]);
     assert_invalid_data(&nan);

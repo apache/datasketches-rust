@@ -28,20 +28,19 @@ use crate::req::nearest_even_section_size;
 use crate::req::serialization::validate_compactor_state;
 use crate::req::value::ReqValue;
 
-fn validate_deserialized_items<T: ReqValue>(items: &[T], sorted: bool) -> Result<(), Error> {
-    if items.iter().any(ReqValue::is_nan) {
-        return Err(Error::deserial("REQ compactor contains a NaN item"));
+fn normalized_sort_state<T: ReqValue>(items: &[T], claimed_sorted: bool) -> Result<bool, Error> {
+    let mut previous: Option<&T> = None;
+    let mut sorted = claimed_sorted;
+    for item in items {
+        if item.is_nan() {
+            return Err(Error::deserial("REQ compactor contains a NaN item"));
+        }
+        if sorted && previous.is_some_and(|previous| previous.total_cmp(item).is_gt()) {
+            sorted = false;
+        }
+        previous = Some(item);
     }
-    if sorted
-        && !items
-            .windows(2)
-            .all(|items| items[0].total_cmp(&items[1]).is_le())
-    {
-        return Err(Error::deserial(
-            "REQ compactor claims to be sorted but its items are not",
-        ));
-    }
-    Ok(())
+    Ok(sorted)
 }
 
 /// A compactor maintains items at a specific level of the REQ sketch.
@@ -285,7 +284,7 @@ where
         self.items.truncate(self.items.len() - removed);
 
         // Update state, then ensure enough sections (C++ order)
-        self.state += 1;
+        self.state = self.state.wrapping_add(1);
         self.ensure_enough_sections();
     }
 
@@ -302,15 +301,6 @@ where
     /// Returns the weight (2^lg_weight) for items in this compactor.
     pub(super) fn weight(&self) -> u64 {
         1u64 << self.lg_weight
-    }
-
-    /// Returns the minimum stream length implied by this compactor's state.
-    ///
-    /// Each compaction removes at least two items of this level's weight. Merging
-    /// states with bitwise OR cannot make the result larger than their sum, so the
-    /// same lower bound holds for both updated and merged sketches.
-    pub(super) fn minimum_stream_length(&self) -> Option<u64> {
-        self.state.checked_mul(2)?.checked_mul(self.weight())
     }
 
     // Private helper methods
@@ -435,7 +425,7 @@ where
         for _ in 0..num_items {
             items.push(T::deserialize_value(cursor)?);
         }
-        validate_deserialized_items(&items, sorted)?;
+        let sorted = normalized_sort_state(&items, sorted)?;
 
         Ok(Compactor::from_serialized_state(
             lg_weight,
@@ -461,7 +451,7 @@ where
         items: Vec<T>,
         is_sorted: bool,
     ) -> Result<Self, Error> {
-        validate_deserialized_items(&items, is_sorted)?;
+        let is_sorted = normalized_sort_state(&items, is_sorted)?;
         let mut c = Self::new(0, k, rank_accuracy);
         for item in items {
             c.append(item);
