@@ -82,28 +82,19 @@ cargo x bench
 
 ## Integration test layout
 
-Integration tests for the `datasketches` crate live under `datasketches/tests` and use two entry-point patterns.
+End-to-end tests live in the standalone `tests-integration` crate, which depends on `datasketches` with every sketch feature enabled. Unit tests that require private implementation access remain next to the library code.
 
 ### Sketch behavior tests
 
-Non-serialization tests are grouped into one integration-test target per sketch. The target entry point is `datasketches/tests/<sketch>_test/main.rs`, with operation-specific modules such as `update.rs`, `union.rs`, or `intersection.rs` alongside it.
+Non-serialization tests are grouped into one integration-test target per sketch. The target entry point is `tests-integration/tests/<sketch>_test/main.rs`, with operation-specific modules such as `update.rs`, `union.rs`, or `intersection.rs` alongside it. Cargo discovers these directory-style targets automatically.
 
-Because these entry points are nested below `tests`, Cargo does not discover them automatically. Each new sketch target must also be registered in `datasketches/Cargo.toml` with its required feature:
-
-```toml
-[[test]]
-name = "tuple_test"
-path = "tests/tuple_test/main.rs"
-required-features = ["tuple"]
-```
-
-When adding a case to an existing sketch target, add it to the appropriate module and declare any new module from that target's `main.rs`; no Cargo manifest change is needed. Add another `[[test]]` entry only when introducing a new sketch target.
+When adding a case to an existing sketch target, add it to the appropriate module and declare any new module from that target's `main.rs`. To add a sketch target, create its directory and `main.rs`; no Cargo manifest entry or feature gate is needed because `tests-integration` enables every sketch feature.
 
 ### Serialization compatibility tests
 
-Cargo automatically discovers `datasketches/tests/serde_tests.rs`, which aggregates the sketch-specific modules under `datasketches/tests/serde_tests`. Each module is gated by its corresponding sketch feature in `serde_tests.rs`.
+Cargo automatically discovers `tests-integration/tests/serde_tests.rs`, which aggregates the sketch-specific modules under `tests-integration/tests/serde_tests`.
 
-To add serialization tests for another sketch, add `serde_tests/<sketch>.rs` and a feature-gated module declaration in `serde_tests.rs`. Do not add a separate `[[test]]` entry. Shared path handling belongs in `serde_tests.rs`, and serialization fixtures belong in the appropriate subdirectory under `serde_tests`.
+To add serialization tests for another sketch, add `serde_tests/<sketch>.rs` and its module declaration in `serde_tests.rs`. Shared path handling belongs in `serde_tests.rs`, and serialization fixtures belong in the appropriate subdirectory under `serde_tests`.
 
 ## Manual workflow (without xtask)
 
@@ -138,9 +129,9 @@ Serialization compatibility tests use snapshots from a pinned revision of [`apac
 
 The `cargo x prepare-testdata` command downloads the TCK archive and synchronizes its snapshots into:
 
-- `datasketches/tests/serde_tests/cpp_generated_files`
-- `datasketches/tests/serde_tests/go_generated_files`
-- `datasketches/tests/serde_tests/java_generated_files`
+- `tests-integration/tests/serde_tests/cpp_generated_files`
+- `tests-integration/tests/serde_tests/go_generated_files`
+- `tests-integration/tests/serde_tests/java_generated_files`
 
 You can synchronize them separately:
 

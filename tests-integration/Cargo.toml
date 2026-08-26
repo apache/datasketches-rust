@@ -16,51 +16,33 @@
 # under the License.
 
 [package]
-name = "datasketches"
-version = "0.4.0"
+name = "tests-integration"
+publish = false
 
 edition.workspace = true
-homepage.workspace = true
-license.workspace = true
-readme.workspace = true
-repository.workspace = true
 rust-version.workspace = true
 
-categories = ["data-structures", "algorithms"]
-description = "A software library of stochastic streaming algorithms (a.k.a. sketches)"
-keywords = ["sketch", "hyperloglog", "probabilistic"]
-
-[package.metadata.docs.rs]
-all-features = true
-rustdoc-args = ["--cfg", "docsrs"]
-
-[features]
-default = []
-
-# Each sketch has its own feature, so that users can opt in to only the sketches they need.
-bloom = []
-countmin = []
-cpc = []
-frequencies = []
-hll = []
-req = ["dep:rand"]
-tdigest = []
-theta = []
-tuple = []
-
-[[bench]]
-name = "tdigest"
-path = "benches/tdigest.rs"
-required-features = ["tdigest"]
-harness = false
-
-[dependencies]
-rand = { workspace = true, optional = true }
-
 [dev-dependencies]
-divan = { workspace = true }
+datasketches = { workspace = true, features = [
+  "bloom",
+  "countmin",
+  "cpc",
+  "frequencies",
+  "hll",
+  "req",
+  "tdigest",
+  "theta",
+  "tuple",
+] }
 googletest = { workspace = true }
 insta = { workspace = true }
+quickcheck = { workspace = true }
+
+[lib]
+bench = false
+doc = false
+doctest = false
+test = false
 
 [lints]
 workspace = true

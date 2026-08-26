@@ -318,7 +318,7 @@ impl CommandPrepareTestData {
     fn prepare(self) -> Result<()> {
         const REVISION: &str = "d363b12d293b395d90abb42677f9ea63178dbc0d";
         let serde_tests =
-            Path::new(env!("CARGO_WORKSPACE_DIR")).join("datasketches/tests/serde_tests");
+            Path::new(env!("CARGO_WORKSPACE_DIR")).join("tests-integration/tests/serde_tests");
         let archive_url =
             format!("https://api.github.com/repos/apache/datasketches-tck/tarball/{REVISION}");
 
