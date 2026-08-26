@@ -185,6 +185,29 @@ fn malformed_input_is_rejected() {
 }
 
 #[test]
+fn declared_entry_payload_is_checked_before_allocating() {
+    let mut uncompressed = serialize_v2_exact(&[1]);
+    uncompressed[8..12].copy_from_slice(&u32::MAX.to_le_bytes());
+    assert!(CompactThetaSketch::deserialize(&uncompressed).is_err());
+
+    let mut sketch = ThetaSketchBuilder::default().lg_k(5).build();
+    for value in 0..5000 {
+        sketch.update(value);
+    }
+    let compressed = sketch.compact(true).serialize_compressed();
+
+    let mut invalid_entry_width = compressed.clone();
+    invalid_entry_width[3] = 64;
+    assert!(CompactThetaSketch::deserialize(&invalid_entry_width).is_err());
+
+    let mut oversized_entry_count = compressed;
+    let count_offset = usize::from(oversized_entry_count[0]) * size_of::<u64>();
+    oversized_entry_count[4] = 4;
+    oversized_entry_count[count_offset..count_offset + size_of::<u32>()].fill(u8::MAX);
+    assert!(CompactThetaSketch::deserialize(&oversized_entry_count).is_err());
+}
+
+#[test]
 fn test_v2_exact_non_empty_compatibility() {
     let entries = [1, 7, 42];
     let sketch = CompactThetaSketch::deserialize(&serialize_v2_exact(&entries)).unwrap();

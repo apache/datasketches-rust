@@ -724,6 +724,15 @@ impl CompactThetaSketch {
         num_entries: usize,
         theta: u64,
     ) -> Result<Vec<u64>, Error> {
+        let required_bytes = num_entries
+            .checked_mul(size_of::<u64>())
+            .ok_or_else(|| Error::deserial("Theta entry payload length overflows"))?;
+        if required_bytes > cursor.remaining().len() {
+            return Err(Error::insufficient_data(format!(
+                "Theta entries require {required_bytes} bytes, got {}",
+                cursor.remaining().len()
+            )));
+        }
         let mut entries = Vec::with_capacity(num_entries);
         for _ in 0..num_entries {
             let hash = cursor.read_u64_le().map_err(insufficient_data("entries"))?;
@@ -900,6 +909,11 @@ impl CompactThetaSketch {
     ) -> Result<Self, Error> {
         let entry_bits = cursor.read_u8().map_err(insufficient_data("entry_bits"))?;
         let num_entries_bytes = cursor.read_u8().map_err(insufficient_data("num_entries"))?;
+        if num_entries_bytes > size_of::<u32>() as u8 {
+            return Err(Error::deserial(format!(
+                "Theta entry count uses too many bytes: {num_entries_bytes}"
+            )));
+        }
         let flags = cursor.read_u8().map_err(insufficient_data("flags"))?;
         let seed_hash = cursor
             .read_u16_le()
@@ -928,6 +942,22 @@ impl CompactThetaSketch {
                 .read_u8()
                 .map_err(insufficient_data("num_entries_byte"))?;
             num_entries |= (entry_count_byte as usize) << ((i as usize) << 3);
+        }
+        if num_entries > 0 && !(1..=63).contains(&entry_bits) {
+            return Err(Error::deserial(format!(
+                "Theta entry width must be in [1, 63], got {entry_bits}"
+            )));
+        }
+        let required_bytes = num_entries
+            .checked_mul(entry_bits as usize)
+            .and_then(|bits| bits.checked_add(7))
+            .map(|bits| bits / 8)
+            .ok_or_else(|| Error::deserial("Theta compressed payload length overflows"))?;
+        if required_bytes > cursor.remaining().len() {
+            return Err(Error::insufficient_data(format!(
+                "Theta compressed entries require {required_bytes} bytes, got {}",
+                cursor.remaining().len()
+            )));
         }
 
         // unpack blocks of BLOCK_WIDTH deltas
@@ -961,7 +991,9 @@ impl CompactThetaSketch {
         // undo deltas
         let mut previous = 0;
         for e in &mut entries {
-            *e += previous;
+            *e = e
+                .checked_add(previous)
+                .ok_or_else(|| Error::deserial("Theta entry delta overflows"))?;
             previous = *e;
             if *e == 0 || *e >= theta {
                 return Err(Error::deserial("corrupted: invalid retained hash value"));
