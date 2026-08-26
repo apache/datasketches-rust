@@ -42,38 +42,29 @@ pub fn serialization_test_data(sub_dir: &str, name: &str) -> PathBuf {
     path
 }
 
-#[cfg(feature = "bloom")]
 #[path = "serde_tests/bloom.rs"]
 mod bloom;
 
-#[cfg(feature = "countmin")]
 #[path = "serde_tests/countmin.rs"]
 mod countmin;
 
-#[cfg(feature = "cpc")]
 #[path = "serde_tests/cpc.rs"]
 mod cpc;
 
-#[cfg(feature = "frequencies")]
 #[path = "serde_tests/frequencies.rs"]
 mod frequencies;
 
-#[cfg(feature = "hll")]
 #[path = "serde_tests/hll.rs"]
 mod hll;
 
-#[cfg(feature = "req")]
 #[path = "serde_tests/req.rs"]
 mod req;
 
-#[cfg(feature = "tdigest")]
 #[path = "serde_tests/tdigest.rs"]
 mod tdigest;
 
-#[cfg(feature = "theta")]
 #[path = "serde_tests/theta.rs"]
 mod theta;
 
-#[cfg(feature = "tuple")]
 #[path = "serde_tests/tuple.rs"]
 mod tuple;

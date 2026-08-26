@@ -80,6 +80,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
+name = "benchmarks"
+version = "0.0.0"
+dependencies = [
+ "datasketches",
+ "divan",
+]
+
+[[package]]
 name = "bitflags"
 version = "2.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -233,10 +241,8 @@ dependencies = [
 name = "datasketches"
 version = "0.4.0"
 dependencies = [
- "divan",
  "googletest",
  "insta",
- "quickcheck",
  "rand",
 ]
 
@@ -766,6 +772,16 @@ checksum = "230a1b821ccbd75b185820a1f1ff7b14d21da1e442e22c0863ea5f08771a8874"
 dependencies = [
  "rustix",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "tests-integration"
+version = "0.0.0"
+dependencies = [
+ "datasketches",
+ "googletest",
+ "insta",
+ "quickcheck",
 ]
 
 [[package]]
