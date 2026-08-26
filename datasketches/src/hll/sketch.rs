@@ -364,6 +364,11 @@ impl HllSketch {
                         )));
                     }
 
+                    if lg_arr != 3 {
+                        return Err(Error::deserial(format!(
+                            "LIST mode lg_arr: expected 3, got {lg_arr}"
+                        )));
+                    }
                     let lg_arr = lg_arr as usize;
                     let coupon_count = state as usize;
                     let list = List::deserialize(cursor, lg_arr, coupon_count, empty, compact)?;
@@ -377,6 +382,12 @@ impl HllSketch {
                         )));
                     }
 
+                    let max_lg_arr = lg_config_k.saturating_sub(3);
+                    if !(5..=max_lg_arr).contains(&lg_arr) {
+                        return Err(Error::deserial(format!(
+                            "SET mode lg_arr must be in [5, {max_lg_arr}], got {lg_arr}"
+                        )));
+                    }
                     let lg_arr = lg_arr as usize;
                     let set = HashSet::deserialize(cursor, lg_arr, compact)?;
                     Mode::Set { set, hll_type }

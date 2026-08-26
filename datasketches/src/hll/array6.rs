@@ -181,7 +181,7 @@ impl Array6 {
     pub fn deserialize(
         mut cursor: SketchSlice,
         lg_config_k: u8,
-        compact: bool,
+        _compact: bool,
         ooo: bool,
     ) -> Result<Self, Error> {
         let k = 1 << lg_config_k;
@@ -198,19 +198,26 @@ impl Array6 {
         let num_zeros = cursor
             .read_u32_le()
             .map_err(insufficient_data("num_zeros"))?;
-        let _aux_count = cursor
+        let aux_count = cursor
             .read_u32_le()
-            .map_err(insufficient_data("aux_count"))?; // always 0
+            .map_err(insufficient_data("aux_count"))?;
+        if num_zeros > k || aux_count != 0 {
+            return Err(Error::deserial(
+                "HLL6 zero count must not exceed k and auxiliary count must be zero",
+            ));
+        }
+        if num_bytes > cursor.remaining().len() {
+            return Err(Error::insufficient_data(format!(
+                "HLL6 payload requires {num_bytes} bytes, got {}",
+                cursor.remaining().len()
+            )));
+        }
 
         // Read packed byte array from offset HLL_BYTE_ARR_START
         let mut data = vec![0u8; num_bytes];
-        if !compact {
-            cursor
-                .read_exact(&mut data)
-                .map_err(insufficient_data("data"))?;
-        } else {
-            cursor.advance(num_bytes as u64);
-        }
+        cursor
+            .read_exact(&mut data)
+            .map_err(insufficient_data("data"))?;
 
         // Create estimator and restore state
         let mut estimator = HipEstimator::new(lg_config_k);

@@ -300,9 +300,10 @@ impl Array4 {
         mut cursor: SketchSlice,
         cur_min: u8,
         lg_config_k: u8,
-        compact: bool,
+        _compact: bool,
         ooo: bool,
     ) -> Result<Self, Error> {
+        let k = 1usize << lg_config_k;
         let num_bytes = 1 << (lg_config_k - 1); // k/2 bytes for 4-bit packing
 
         // Read HIP estimator values from preamble
@@ -319,16 +320,24 @@ impl Array4 {
         let aux_count = cursor
             .read_u32_le()
             .map_err(insufficient_data("aux_count"))?;
+        if num_at_cur_min as usize > k || aux_count as usize > k {
+            return Err(Error::deserial(
+                "HLL4 register or auxiliary count exceeds k",
+            ));
+        }
+        let required_bytes = num_bytes + aux_count as usize * COUPON_SIZE_BYTES;
+        if required_bytes > cursor.remaining().len() {
+            return Err(Error::insufficient_data(format!(
+                "HLL4 payload requires {required_bytes} bytes, got {}",
+                cursor.remaining().len()
+            )));
+        }
 
         // Read packed 4-bit byte array
         let mut data = vec![0u8; num_bytes];
-        if !compact {
-            cursor
-                .read_exact(&mut data)
-                .map_err(insufficient_data("data"))?;
-        } else {
-            cursor.advance(num_bytes as u64);
-        }
+        cursor
+            .read_exact(&mut data)
+            .map_err(insufficient_data("data"))?;
 
         // Read aux map if present
         let mut aux_map = None;
@@ -343,6 +352,11 @@ impl Array4 {
                 let coupon = Coupon(coupon);
                 let slot = coupon.slot() & ((1 << lg_config_k) - 1);
                 let value = coupon.value();
+                if coupon.is_empty() || aux.get(slot).is_some() {
+                    return Err(Error::deserial(
+                        "HLL4 auxiliary entries must be non-empty and unique",
+                    ));
+                }
                 aux.insert(slot, value);
             }
             aux_map = Some(aux);

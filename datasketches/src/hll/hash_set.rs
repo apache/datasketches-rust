@@ -103,6 +103,20 @@ impl HashSet {
             .read_u32_le()
             .map_err(insufficient_data("coupon_count"))?;
         let coupon_count = coupon_count as usize;
+        let array_size = 1usize << lg_arr;
+        if coupon_count >= array_size {
+            return Err(Error::deserial(format!(
+                "SET mode coupon count {coupon_count} must be below capacity {array_size}"
+            )));
+        }
+        let read_count = if compact { coupon_count } else { array_size };
+        let required_bytes = read_count * size_of::<u32>();
+        if required_bytes > cursor.remaining().len() {
+            return Err(Error::insufficient_data(format!(
+                "SET mode coupons require {required_bytes} bytes, got {}",
+                cursor.remaining().len()
+            )));
+        }
 
         if compact {
             // Compact mode: only couponCount coupons are stored
@@ -116,11 +130,12 @@ impl HashSet {
                 })?;
                 hash_set.update(Coupon(coupon));
             }
+            if hash_set.container.len() != coupon_count {
+                return Err(Error::deserial("SET mode contains duplicate coupons"));
+            }
             Ok(hash_set)
         } else {
             // Non-compact mode: full hash table with empty slots
-            let array_size = 1 << lg_arr;
-
             // Read entire hash table including empty slots
             let mut coupons = vec![Coupon::EMPTY; array_size];
             for (i, coupon) in coupons.iter_mut().enumerate() {
@@ -130,6 +145,11 @@ impl HashSet {
                     ))
                 })?;
                 *coupon = Coupon(raw);
+            }
+            if coupons.iter().filter(|coupon| !coupon.is_empty()).count() != coupon_count {
+                return Err(Error::deserial(
+                    "SET mode coupon count does not match occupied slots",
+                ));
             }
 
             Ok(Self {
