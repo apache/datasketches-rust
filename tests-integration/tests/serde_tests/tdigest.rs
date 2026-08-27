@@ -260,6 +260,17 @@ fn test_serialized_bytes_stable_for_full_and_merged_digests() {
     let bytes = left.serialize();
     assert_eq!(bytes.len(), 272);
     assert_eq!(fnv1a(&bytes), 0x5759_0428_c175_88ab);
+
+    let mut merged = TDigestMut::default();
+    for salt in 0..64 {
+        let mut partial = patterned_digest(200, 64, salt);
+        let partial = partial.serialize();
+        let partial = TDigestMut::deserialize(&partial, false).unwrap();
+        merged.merge(&partial);
+    }
+    let bytes = merged.serialize();
+    assert_eq!(bytes.len(), 3_632);
+    assert_eq!(fnv1a(&bytes), 0xef41_ab1e_7e9f_400a);
 }
 
 #[test]
