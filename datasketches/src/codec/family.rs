@@ -77,7 +77,7 @@ impl Family {
         id: 15,
         name: "KLL",
         min_pre_longs: 1,
-        max_pre_longs: 3,
+        max_pre_longs: 2,
     };
 
     /// Compressed Probabilistic Counting (CPC) Sketch.
