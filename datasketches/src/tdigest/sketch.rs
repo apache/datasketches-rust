@@ -87,23 +87,27 @@ impl TDigestBuffer {
         }
     }
 
+    /// Converts a buffer with unmerged values into the centroid input expected by compression.
+    ///
+    /// The result is not sorted by mean. Staged values become unit-weight centroids, while a
+    /// centroid-backed buffer is rotated from `[compressed | unmerged]` to
+    /// `[unmerged | compressed]`. This order ensures that the subsequent stable sort keeps new
+    /// values before existing centroids when their means are equal.
     fn into_centroids_for_compression(self) -> Vec<Centroid> {
         debug_assert_ne!(self.unmerged_len(), 0);
         match self {
-            TDigestBuffer::Staging(values) => {
-                let mut centroids = Vec::with_capacity(values.len());
-                centroids.extend(values.into_iter().map(|mean| Centroid {
+            TDigestBuffer::Staging(values) => values
+                .into_iter()
+                .map(|mean| Centroid {
                     mean,
                     weight: DEFAULT_WEIGHT,
-                }));
-                centroids
-            }
+                })
+                .collect(),
             TDigestBuffer::Centroids {
                 mut centroids,
                 unmerged_tail_len,
             } => {
                 let compressed_prefix_len = centroids.len() - unmerged_tail_len;
-                // A stable sort must see unmerged values before existing centroids on ties.
                 centroids.rotate_left(compressed_prefix_len);
                 centroids
             }
