@@ -249,17 +249,28 @@ fn test_serialized_bytes_stable_for_full_and_merged_digests() {
         assert_eq!(bytes.len(), expected_len);
         assert_eq!(fnv1a(&bytes), expected_hash);
     }
+
+    let mut left = patterned_digest(10, 199, 2);
+    let left = left.serialize();
+    let mut left = TDigestMut::deserialize(&left, false).unwrap();
+    let mut right = patterned_digest(10, 199, 3);
+    let right = right.serialize();
+    let right = TDigestMut::deserialize(&right, false).unwrap();
+    left.merge(&right);
+    let bytes = left.serialize();
+    assert_eq!(bytes.len(), 272);
+    assert_eq!(fnv1a(&bytes), 0x5759_0428_c175_88ab);
 }
 
 #[test]
-fn test_updates_normalize_overfull_deserialized_staging_buffer() {
+fn test_updates_normalize_overfull_deserialized_buffer_without_centroids() {
     let path = serialization_test_data("cpp_generated_files", "tdigest_double_buf_n10_cpp.sk");
     let mut bytes = fs::read(path).unwrap();
     assert_eq!(&bytes[8..12], &0_u32.to_le_bytes()); // num centroids
     assert_eq!(&bytes[12..16], &10_u32.to_le_bytes()); // num buffered
 
-    // k=100 normally compresses at 840 buffered values. Extend a real C++ staging image just past
-    // that producer threshold while keeping every added value within the recorded min/max range.
+    // k=100 normally compresses at 840 buffered values. Extend a real C++ image without centroids
+    // just past that producer threshold while keeping every value within the recorded min/max.
     bytes[12..16].copy_from_slice(&841_u32.to_le_bytes());
     for _ in 0..831 {
         bytes.extend_from_slice(&10_f64.to_le_bytes());
@@ -273,7 +284,7 @@ fn test_updates_normalize_overfull_deserialized_staging_buffer() {
     assert_eq!(tdigest.total_weight(), 10_841);
     assert_eq!(tdigest.min_value(), Some(1.0));
     assert_eq!(tdigest.max_value(), Some(10.0));
-    // The overfull image must not disable future compression and let the staging buffer grow with
+    // The overfull image must not disable future compression and let the buffered tail grow with
     // every subsequent value.
     assert!(tdigest.estimated_size() < 32_768);
     let serialized = tdigest.serialize();
@@ -286,7 +297,7 @@ fn test_updates_normalize_overfull_deserialized_staging_buffer() {
 }
 
 #[test]
-fn test_updates_normalize_overfull_deserialized_centroid_tail() {
+fn test_updates_normalize_overfull_deserialized_mixed_buffer() {
     let path = serialization_test_data("cpp_generated_files", "tdigest_double_buf_n1000_cpp.sk");
     let mut bytes = fs::read(path).unwrap();
     assert_eq!(&bytes[8..12], &89_u32.to_le_bytes()); // num centroids

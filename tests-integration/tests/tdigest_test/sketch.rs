@@ -79,7 +79,7 @@ fn test_maximum_k() {
 }
 
 #[test]
-fn test_estimated_size_releases_initial_staging_after_compression() {
+fn test_estimated_size_reuses_buffer_after_compression() {
     const K: u16 = 200;
     const TARGET_CENTROIDS: usize = 410;
     const MAX_UNMERGED: usize = TARGET_CENTROIDS * 4;
@@ -94,9 +94,7 @@ fn test_estimated_size_releases_initial_staging_after_compression() {
     let size_before_compression = tdigest.estimated_size();
     assert!(size_before_compression > inline_size);
     tdigest.rank(0.5);
-    // Unit-weight centroids are twice the size of staged f64 values. Allow that representation
-    // change while guarding against retaining both backing allocations after compression.
-    assert!(tdigest.estimated_size() <= size_before_compression * 2 + inline_size);
+    assert!(tdigest.estimated_size() <= size_before_compression);
 
     for value in MAX_UNMERGED..10_000 {
         tdigest.update(value as f64);
