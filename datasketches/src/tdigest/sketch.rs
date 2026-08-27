@@ -388,30 +388,9 @@ impl TDigestMut {
             return;
         }
 
-        let sorted_merge_buffer = match (&mut self.buffer, &other.buffer) {
-            (
-                TDigestBuffer::Staging(values),
-                TDigestBuffer::Centroids {
-                    centroids,
-                    unmerged_tail_len: 0,
-                },
-            ) if values.is_empty() && centroids_are_sorted(centroids) => Some(centroids.clone()),
-            (
-                TDigestBuffer::Centroids {
-                    centroids: self_centroids,
-                    unmerged_tail_len: 0,
-                },
-                TDigestBuffer::Centroids {
-                    centroids: other_centroids,
-                    unmerged_tail_len: 0,
-                },
-            ) if centroids_are_sorted(self_centroids) && centroids_are_sorted(other_centroids) => {
-                merge_sorted_centroids(self_centroids, other_centroids);
-                Some(std::mem::take(self_centroids))
-            }
-            _ => None,
-        };
-        if let Some(centroids) = sorted_merge_buffer {
+        // Avoid a general stable sort when both centroid buffers are already fully compressed.
+        if let Some(centroids) = try_merge_sorted_centroid_buffers(&mut self.buffer, &other.buffer)
+        {
             self.compress_sorted_centroids(centroids, other.total_weight());
             return;
         }
@@ -1585,6 +1564,35 @@ fn centroids_are_sorted(centroids: &[Centroid]) -> bool {
     centroids
         .windows(2)
         .all(|pair| centroid_cmp(&pair[0], &pair[1]) != Ordering::Greater)
+}
+
+fn try_merge_sorted_centroid_buffers(
+    left: &mut TDigestBuffer,
+    right: &TDigestBuffer,
+) -> Option<Vec<Centroid>> {
+    match (left, right) {
+        (
+            TDigestBuffer::Staging(values),
+            TDigestBuffer::Centroids {
+                centroids,
+                unmerged_tail_len: 0,
+            },
+        ) if values.is_empty() && centroids_are_sorted(centroids) => Some(centroids.clone()),
+        (
+            TDigestBuffer::Centroids {
+                centroids: left_centroids,
+                unmerged_tail_len: 0,
+            },
+            TDigestBuffer::Centroids {
+                centroids: right_centroids,
+                unmerged_tail_len: 0,
+            },
+        ) if centroids_are_sorted(left_centroids) && centroids_are_sorted(right_centroids) => {
+            merge_sorted_centroids(left_centroids, right_centroids);
+            Some(std::mem::take(left_centroids))
+        }
+        _ => None,
+    }
 }
 
 fn merge_sorted_centroids(left: &mut Vec<Centroid>, right: &[Centroid]) {
