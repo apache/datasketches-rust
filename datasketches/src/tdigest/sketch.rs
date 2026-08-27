@@ -87,6 +87,102 @@ impl TDigestBuffer {
         }
     }
 
+    fn into_centroids_for_compression(self) -> Vec<Centroid> {
+        debug_assert_ne!(self.unmerged_len(), 0);
+        match self {
+            TDigestBuffer::Staging(values) => {
+                let mut centroids = Vec::with_capacity(values.len());
+                centroids.extend(values.into_iter().map(|mean| Centroid {
+                    mean,
+                    weight: DEFAULT_WEIGHT,
+                }));
+                centroids
+            }
+            TDigestBuffer::Centroids {
+                mut centroids,
+                unmerged_tail_len,
+            } => {
+                let compressed_prefix_len = centroids.len() - unmerged_tail_len;
+                // A stable sort must see unmerged values before existing centroids on ties.
+                centroids.rotate_left(compressed_prefix_len);
+                centroids
+            }
+        }
+    }
+
+    /// Combines this buffer with a non-empty borrowed buffer in stable mean order.
+    fn into_merged_centroids(self, other: &TDigestBuffer) -> Vec<Centroid> {
+        debug_assert!(!other.is_empty(), "an empty right-hand buffer is a no-op");
+        match (self, other) {
+            (
+                TDigestBuffer::Staging(values),
+                TDigestBuffer::Centroids {
+                    centroids,
+                    unmerged_tail_len: 0,
+                },
+            ) if values.is_empty() && centroids_are_sorted(centroids) => {
+                // `other` is borrowed, so an empty left buffer must copy its centroids.
+                centroids.clone()
+            }
+            (
+                TDigestBuffer::Centroids {
+                    centroids: mut left_centroids,
+                    unmerged_tail_len: 0,
+                },
+                TDigestBuffer::Centroids {
+                    centroids: right_centroids,
+                    unmerged_tail_len: 0,
+                },
+            ) if centroids_are_sorted(&left_centroids) && centroids_are_sorted(right_centroids) => {
+                merge_sorted_centroids(&mut left_centroids, right_centroids);
+                left_centroids
+            }
+            (left, right) => left.into_merged_centroids_fallback(right),
+        }
+    }
+
+    fn into_merged_centroids_fallback(self, other: &TDigestBuffer) -> Vec<Centroid> {
+        let (mut centroids, compressed_prefix_len) = match self {
+            TDigestBuffer::Staging(values) => {
+                let mut centroids = Vec::with_capacity(values.len() + other.len());
+                centroids.extend(values.into_iter().map(|mean| Centroid {
+                    mean,
+                    weight: DEFAULT_WEIGHT,
+                }));
+                (centroids, 0)
+            }
+            TDigestBuffer::Centroids {
+                mut centroids,
+                unmerged_tail_len,
+            } => {
+                let compressed_prefix_len = centroids.len() - unmerged_tail_len;
+                centroids.reserve(other.len());
+                (centroids, compressed_prefix_len)
+            }
+        };
+        match other {
+            TDigestBuffer::Staging(values) => {
+                centroids.extend(values.iter().copied().map(|mean| Centroid {
+                    mean,
+                    weight: DEFAULT_WEIGHT,
+                }));
+            }
+            TDigestBuffer::Centroids {
+                centroids: other_centroids,
+                unmerged_tail_len,
+            } => {
+                let other_prefix_len = other_centroids.len() - unmerged_tail_len;
+                centroids.extend_from_slice(&other_centroids[other_prefix_len..]);
+                centroids.extend_from_slice(&other_centroids[..other_prefix_len]);
+            }
+        }
+        // Preserve the stable tie order: left unmerged, right unmerged and compressed, then the
+        // left compressed prefix.
+        centroids.rotate_left(compressed_prefix_len);
+        centroids.sort_by(centroid_cmp);
+        centroids
+    }
+
     /// Returns compressed centroids after the caller has processed staged values.
     fn compressed_centroids(&self) -> &[Centroid] {
         match self {
@@ -388,54 +484,9 @@ impl TDigestMut {
             return;
         }
 
-        // Avoid a general stable sort when both centroid buffers are already fully compressed.
-        if let Some(centroids) = try_merge_sorted_centroid_buffers(&mut self.buffer, &other.buffer)
-        {
-            self.compress_sorted_centroids(centroids, other.total_weight());
-            return;
-        }
-
-        let buffer = std::mem::take(&mut self.buffer);
-        let (mut merge_buffer, existing_prefix_len, self_unmerged_weight) = match buffer {
-            TDigestBuffer::Staging(values) => {
-                let self_unmerged_weight = values.len() as u64;
-                let mut merge_buffer = Vec::with_capacity(values.len() + other.buffer.len());
-                merge_buffer.extend(values.into_iter().map(|mean| Centroid {
-                    mean,
-                    weight: DEFAULT_WEIGHT,
-                }));
-                (merge_buffer, 0, self_unmerged_weight)
-            }
-            TDigestBuffer::Centroids {
-                mut centroids,
-                unmerged_tail_len,
-            } => {
-                let existing_prefix_len = centroids.len() - unmerged_tail_len;
-                centroids.reserve(other.buffer.len());
-                (centroids, existing_prefix_len, unmerged_tail_len as u64)
-            }
-        };
-        match &other.buffer {
-            TDigestBuffer::Staging(values) => {
-                merge_buffer.extend(values.iter().copied().map(|mean| Centroid {
-                    mean,
-                    weight: DEFAULT_WEIGHT,
-                }));
-            }
-            TDigestBuffer::Centroids {
-                centroids,
-                unmerged_tail_len,
-            } => {
-                let other_prefix_len = centroids.len() - unmerged_tail_len;
-                merge_buffer.extend_from_slice(&centroids[other_prefix_len..]);
-                merge_buffer.extend_from_slice(&centroids[..other_prefix_len]);
-            }
-        }
-        // Preserve the original insertion order for equal means because t-digest requires a stable
-        // sort: this digest's buffered/unmerged values, the other digest's buffered/unmerged values
-        // and compressed centroids, then this digest's compressed centroids.
-        merge_buffer.rotate_left(existing_prefix_len);
-        self.compress_centroids(merge_buffer, self_unmerged_weight + other.total_weight())
+        let self_unmerged_weight = self.buffer.unmerged_len() as u64;
+        let centroids = std::mem::take(&mut self.buffer).into_merged_centroids(&other.buffer);
+        self.compress_sorted_centroids(centroids, self_unmerged_weight + other.total_weight())
     }
 
     /// Converts this mutable t-digest into an immutable one.
@@ -983,43 +1034,17 @@ impl TDigestMut {
 
     /// Processes unmerged values and merges centroids if needed.
     fn compress(&mut self) {
-        let buffer = std::mem::take(&mut self.buffer);
-        match buffer {
-            TDigestBuffer::Staging(values) if values.is_empty() => {
-                self.buffer = TDigestBuffer::Staging(values);
-            }
-            TDigestBuffer::Staging(values) => {
-                debug_assert_eq!(self.compressed_weight, 0);
-                let weight = values.len() as u64;
-                let mut centroids = Vec::with_capacity(values.len());
-                centroids.extend(values.into_iter().map(|mean| Centroid {
-                    mean,
-                    weight: DEFAULT_WEIGHT,
-                }));
-                self.compress_centroids(centroids, weight);
-            }
-            TDigestBuffer::Centroids {
-                centroids,
-                unmerged_tail_len: 0,
-            } => {
-                // Preserve compact deserialized images verbatim, including images with more
-                // centroids than this implementation would normally produce.
-                self.buffer = TDigestBuffer::Centroids {
-                    centroids,
-                    unmerged_tail_len: 0,
-                };
-            }
-            TDigestBuffer::Centroids {
-                mut centroids,
-                unmerged_tail_len,
-            } => {
-                let compressed_prefix_len = centroids.len() - unmerged_tail_len;
-                // Preserve the original insertion order for equal means because t-digest requires
-                // a stable sort: unmerged values before existing centroids.
-                centroids.rotate_left(compressed_prefix_len);
-                self.compress_centroids(centroids, unmerged_tail_len as u64);
-            }
+        let additional_weight = self.buffer.unmerged_len() as u64;
+        if additional_weight == 0 {
+            // Also preserves fully compressed deserialized images verbatim.
+            return;
         }
+        if matches!(&self.buffer, TDigestBuffer::Staging(_)) {
+            debug_assert_eq!(self.compressed_weight, 0);
+        }
+
+        let centroids = std::mem::take(&mut self.buffer).into_centroids_for_compression();
+        self.compress_centroids(centroids, additional_weight);
     }
 
     /// Compresses the given centroids into this t-digest.
@@ -1564,35 +1589,6 @@ fn centroids_are_sorted(centroids: &[Centroid]) -> bool {
     centroids
         .windows(2)
         .all(|pair| centroid_cmp(&pair[0], &pair[1]) != Ordering::Greater)
-}
-
-fn try_merge_sorted_centroid_buffers(
-    left: &mut TDigestBuffer,
-    right: &TDigestBuffer,
-) -> Option<Vec<Centroid>> {
-    match (left, right) {
-        (
-            TDigestBuffer::Staging(values),
-            TDigestBuffer::Centroids {
-                centroids,
-                unmerged_tail_len: 0,
-            },
-        ) if values.is_empty() && centroids_are_sorted(centroids) => Some(centroids.clone()),
-        (
-            TDigestBuffer::Centroids {
-                centroids: left_centroids,
-                unmerged_tail_len: 0,
-            },
-            TDigestBuffer::Centroids {
-                centroids: right_centroids,
-                unmerged_tail_len: 0,
-            },
-        ) if centroids_are_sorted(left_centroids) && centroids_are_sorted(right_centroids) => {
-            merge_sorted_centroids(left_centroids, right_centroids);
-            Some(std::mem::take(left_centroids))
-        }
-        _ => None,
-    }
 }
 
 fn merge_sorted_centroids(left: &mut Vec<Centroid>, right: &[Centroid]) {
