@@ -41,6 +41,9 @@ const DEFAULT_K: u16 = 200;
 const UNMERGED_MULTIPLIER: usize = 4;
 /// Unmerged-value capacity allocated by the first update to a digest.
 const INITIAL_UNMERGED_CAPACITY: usize = 8;
+/// Largest unit-weight digest deferred by merge; larger inputs retain eager compression to bound
+/// temporary memory.
+const MAX_DEFERRED_UNIT_CENTROIDS: usize = 32;
 /// Default weight for single values.
 const DEFAULT_WEIGHT: NonZeroU64 = NonZeroU64::new(1).unwrap();
 
@@ -114,6 +117,19 @@ impl TDigestBuffer {
         let compressed_prefix_len = self.compressed_prefix_len();
         self.centroids.rotate_left(compressed_prefix_len);
         self.centroids
+    }
+
+    /// Defers unit-weight centroids in the unmerged tail, preserving stable compression order.
+    fn defer_unit_centroids(&mut self, other: &TDigestBuffer) {
+        let other_prefix_len = other.compressed_prefix_len();
+        self.centroids.reserve(other.len());
+        // Match the eager merge order: newer unmerged values precede older compressed centroids
+        // when their means are equal.
+        self.centroids
+            .extend_from_slice(&other.centroids[other_prefix_len..]);
+        self.centroids
+            .extend_from_slice(&other.centroids[..other_prefix_len]);
+        self.unmerged_tail_len += other.len();
     }
 
     /// Combines this buffer with a non-empty borrowed buffer in stable mean order.
@@ -362,9 +378,30 @@ impl TDigestMut {
             return;
         }
 
+        if other.buffer.len() <= MAX_DEFERRED_UNIT_CENTROIDS
+            && other.total_weight() == other.buffer.len() as u64
+        {
+            self.defer_unit_weight_merge(other);
+            return;
+        }
+
         let self_unmerged_weight = self.buffer.unmerged_len() as u64;
         let centroids = std::mem::take(&mut self.buffer).into_merged_centroids(&other.buffer);
-        self.compress_sorted_centroids(centroids, self_unmerged_weight + other.total_weight())
+        self.compress_sorted_centroids(centroids, self_unmerged_weight + other.total_weight());
+    }
+
+    // Keep this specialized path out of the eager merge loop under whole-program optimization.
+    #[inline(never)]
+    fn defer_unit_weight_merge(&mut self, other: &TDigestMut) {
+        // Centroid weights are positive integers, so one centroid per unit of total weight proves
+        // that every centroid is equivalent to a raw update. Deferring small inputs avoids
+        // compressing the accumulator once per merge.
+        self.buffer.defer_unit_centroids(&other.buffer);
+        self.min = self.min.min(other.min);
+        self.max = self.max.max(other.max);
+        if self.buffer.unmerged_len() >= self.max_unmerged() {
+            self.compress();
+        }
     }
 
     /// Converts this mutable t-digest into an immutable one.
@@ -970,6 +1007,17 @@ impl TDigestMut {
     /// Returns the estimated size of the sketch in bytes.
     pub fn estimated_size(&self) -> usize {
         size_of::<Self>() + self.buffer.estimated_size()
+    }
+}
+
+impl Extend<f64> for TDigestMut {
+    fn extend<T>(&mut self, values: T)
+    where
+        T: IntoIterator<Item = f64>,
+    {
+        for value in values {
+            self.update(value);
+        }
     }
 }
 

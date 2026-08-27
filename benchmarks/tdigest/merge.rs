@@ -102,7 +102,7 @@ fn partials(bencher: Bencher) {
         });
 }
 
-#[divan::bench(args = [SMALL_ROWS_PER_PARTIAL, ROWS_PER_PARTIAL])]
+#[divan::bench(args = [SMALL_ROWS_PER_PARTIAL, 32, ROWS_PER_PARTIAL])]
 fn serialized_partials(bencher: Bencher, rows_per_partial: usize) {
     let partials = serialized_partial_digests(64, rows_per_partial);
 
@@ -118,11 +118,11 @@ fn serialized_partials(bencher: Bencher, rows_per_partial: usize) {
         });
 }
 
-#[divan::bench]
-fn serialized_overlapping_partials(bencher: Bencher) {
-    let values = values(64 * ROWS_PER_PARTIAL);
+#[divan::bench(args = [SMALL_ROWS_PER_PARTIAL, 32, ROWS_PER_PARTIAL])]
+fn serialized_overlapping_partials(bencher: Bencher, rows_per_partial: usize) {
+    let values = values(64 * rows_per_partial);
     let partials = values
-        .chunks_exact(ROWS_PER_PARTIAL)
+        .chunks_exact(rows_per_partial)
         .map(|values| build_mut_digest(values).serialize())
         .collect::<Vec<_>>();
 

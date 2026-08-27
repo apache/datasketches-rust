@@ -37,6 +37,17 @@ fn update(bencher: Bencher, len: usize) {
         .bench_local(|| build_digest(black_box(&values)));
 }
 
+#[divan::bench(args = [1_000, 100_000])]
+fn extend(bencher: Bencher, len: usize) {
+    let values = values(len);
+
+    bencher.counter(ItemsCount::new(len)).bench_local(|| {
+        let mut digest = TDigestMut::default();
+        digest.extend(black_box(&values).iter().copied());
+        black_box(digest.freeze())
+    });
+}
+
 #[divan::bench]
 fn small_partial_groups_update(bencher: Bencher) {
     bencher
