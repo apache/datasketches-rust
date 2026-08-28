@@ -130,6 +130,11 @@ impl Array4 {
         self.estimator.hip_accum()
     }
 
+    /// Returns whether the HIP accumulator has been invalidated by a bulk operation
+    pub(super) fn is_out_of_order(&self) -> bool {
+        self.estimator.is_out_of_order()
+    }
+
     /// Set raw 4-bit value in slot
     #[inline]
     fn put_raw(&mut self, slot: u32, value: u8) {

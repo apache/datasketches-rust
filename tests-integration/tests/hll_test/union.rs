@@ -562,13 +562,15 @@ fn test_union_idempotency() {
 
     let mut union = HllUnion::new(12).unwrap();
     union.update(&sketch);
-    let est1 = union.estimate();
+    assert_eq!(union.estimate(), sketch.estimate());
 
     // Union with itself
     union.update(&sketch);
     let est2 = union.estimate();
+    assert_estimate_within(est2, sketch.estimate(), 0.02);
 
-    assert_eq!(est1, est2);
+    union.update(&sketch);
+    assert_eq!(union.estimate(), est2);
 }
 
 #[test]
@@ -707,4 +709,50 @@ fn test_union_estimated_size() {
     }
     union.update(&sketch);
     assert_eq!(union.estimated_size(), 1120);
+}
+
+#[test]
+fn test_union_of_single_sketch_reproduces_its_estimate_and_bounds() {
+    for hll_type in HLL_TYPES {
+        let sketch = make_hll_sketch(hll_type, 8, 0, 1_000);
+        let mut union = HllUnion::new(10).unwrap();
+        union.update(&sketch);
+
+        assert_eq!(union.estimate(), sketch.estimate(), "{hll_type:?} estimate");
+        assert_eq!(
+            union.to_sketch(HllType::Hll8).estimate(),
+            sketch.estimate(),
+            "{hll_type:?} result estimate",
+        );
+
+        for num_std_dev in [NumStdDev::One, NumStdDev::Two, NumStdDev::Three] {
+            assert_eq!(
+                union.lower_bound(num_std_dev),
+                sketch.lower_bound(num_std_dev),
+                "{hll_type:?} lower bound at {num_std_dev:?}",
+            );
+            assert_eq!(
+                union.upper_bound(num_std_dev),
+                sketch.upper_bound(num_std_dev),
+                "{hll_type:?} upper bound at {num_std_dev:?}",
+            );
+        }
+    }
+}
+
+#[test]
+fn test_union_of_single_sketch_reproduces_its_estimate_when_downsampling() {
+    for hll_type in HLL_TYPES {
+        let sketch = make_hll_sketch(hll_type, 12, 0, 10_000);
+        let mut union = HllUnion::new(8).unwrap();
+        union.update(&sketch);
+
+        assert_eq!(union.lg_config_k(), 8, "{hll_type:?} lg_config_k");
+        assert_eq!(union.estimate(), sketch.estimate(), "{hll_type:?} estimate");
+        assert_eq!(
+            union.to_sketch(HllType::Hll8).estimate(),
+            sketch.estimate(),
+            "{hll_type:?} result estimate",
+        );
+    }
 }

@@ -436,6 +436,20 @@ fn get_array_hip_accum(mode: &Mode) -> f64 {
     }
 }
 
+/// Extract the out-of-order flag from an array mode
+fn get_array_out_of_order(mode: &Mode) -> bool {
+    match mode {
+        Mode::Array8(src) => src.is_out_of_order(),
+        Mode::Array6(src) => src.is_out_of_order(),
+        Mode::Array4(src) => src.is_out_of_order(),
+        Mode::List { .. } | Mode::Set { .. } => {
+            unreachable!(
+                "get_array_out_of_order called with non-array mode; List/Set not supported"
+            );
+        }
+    }
+}
+
 /// Merge Array4/Array6 into Array8 by iterating registers
 fn merge_array46_same_lgk(dst: &mut Array8, num_registers: usize, get_value: impl Fn(u32) -> u8) {
     for slot in 0..num_registers {
@@ -578,11 +592,13 @@ fn copy_array46_via_coupons(dst: &mut Array8, num_registers: usize, get_value: i
 /// Copy or downsample a source array to create a new Array8
 ///
 /// Directly copies if src_lg_k <= tgt_lg_k, downsamples otherwise.
-/// Result is marked as out-of-order and HIP accumulator is preserved.
+/// The source HIP accumulator and its out-of-order flag both carry over.
 fn copy_or_downsample(src_mode: &Mode, src_lg_k: u8, tgt_lg_k: u8) -> Array8 {
-    if src_lg_k <= tgt_lg_k {
+    let src_hip = get_array_hip_accum(src_mode);
+    let src_out_of_order = get_array_out_of_order(src_mode);
+
+    let mut result = if src_lg_k <= tgt_lg_k {
         let mut result = Array8::new(src_lg_k);
-        let src_hip = get_array_hip_accum(src_mode);
 
         match src_mode {
             Mode::Array8(src) => {
@@ -601,12 +617,15 @@ fn copy_or_downsample(src_mode: &Mode, src_lg_k: u8, tgt_lg_k: u8) -> Array8 {
             }
         }
 
-        result.set_hip_accum(src_hip);
         result
     } else {
         // Downsample from src to tgt
         let mut result = Array8::new(tgt_lg_k);
         merge_array_with_downsample(&mut result, tgt_lg_k, src_mode, src_lg_k);
         result
-    }
+    };
+
+    result.set_out_of_order(src_out_of_order);
+    result.set_hip_accum(src_hip);
+    result
 }

@@ -124,6 +124,11 @@ impl Array8 {
         self.estimator.set_hip_accum(value);
     }
 
+    /// Sets whether the HIP accumulator is valid
+    pub(super) fn set_out_of_order(&mut self, out_of_order: bool) {
+        self.estimator.set_out_of_order(out_of_order);
+    }
+
     /// Check if the sketch is empty (all slots are zero)
     pub fn is_empty(&self) -> bool {
         self.num_zeros == (1 << self.lg_config_k)
@@ -142,6 +147,11 @@ impl Array8 {
     /// Get the current HIP accumulator value
     pub(super) fn hip_accum(&self) -> f64 {
         self.estimator.hip_accum()
+    }
+
+    /// Returns whether the HIP accumulator has been invalidated by a bulk operation
+    pub(super) fn is_out_of_order(&self) -> bool {
+        self.estimator.is_out_of_order()
     }
 
     /// Directly set a register value

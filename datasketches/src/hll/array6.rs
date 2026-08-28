@@ -96,6 +96,11 @@ impl Array6 {
         self.estimator.hip_accum()
     }
 
+    /// Returns whether the HIP accumulator has been invalidated by a bulk operation
+    pub(super) fn is_out_of_order(&self) -> bool {
+        self.estimator.is_out_of_order()
+    }
+
     /// Set value in a slot (6-bit value)
     ///
     /// Uses read-modify-write on 16-bit window to preserve surrounding bits.
