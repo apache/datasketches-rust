@@ -33,14 +33,11 @@
 //! # Usage
 //!
 //! ```
-//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! use datasketches::theta::ThetaSketchBuilder;
 //!
-//! let mut sketch = ThetaSketchBuilder::new().build()?;
+//! let mut sketch = ThetaSketchBuilder::new().build().unwrap();
 //! sketch.update("apple");
 //! assert!(sketch.estimate() >= 1.0);
-//! # Ok(())
-//! # }
 //! ```
 
 mod a_not_b;

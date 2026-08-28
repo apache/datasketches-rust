@@ -66,16 +66,15 @@ use crate::tuple::serialization::TupleSummaryValue;
 /// # Examples
 ///
 /// ```
-/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// use datasketches::tuple::DefaultUpdatePolicy;
 /// use datasketches::tuple::TupleSketchBuilder;
 ///
-/// let mut sketch = TupleSketchBuilder::new(DefaultUpdatePolicy::<u64>::default()).build()?;
+/// let mut sketch = TupleSketchBuilder::new(DefaultUpdatePolicy::<u64>::default())
+///     .build()
+///     .unwrap();
 /// sketch.update("apple", 1);
 /// let view = sketch.as_view();
-/// assert_eq!(view.iter().next().expect("sketch contains one entry").1, &1);
-/// # Ok(())
-/// # }
+/// assert_eq!(view.iter().next().unwrap().1, &1);
 /// ```
 #[derive(Debug)]
 pub struct TupleSketchView<'a, S>(TupleSketchViewState<'a, S>);
@@ -229,18 +228,15 @@ impl<'a, S> From<&'a CompactTupleSketch<S>> for TupleSketchView<'a, S> {
 /// # Examples
 ///
 /// ```
-/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// use datasketches::tuple::DefaultUpdatePolicy;
 /// use datasketches::tuple::TupleSketchBuilder;
 ///
 /// let policy = DefaultUpdatePolicy::<u64>::default();
-/// let mut sketch = TupleSketchBuilder::new(policy).build()?;
+/// let mut sketch = TupleSketchBuilder::new(policy).build().unwrap();
 /// sketch.update("apple", 1);
 /// sketch.update("apple", 1);
 /// assert!(sketch.estimate() >= 1.0);
 /// assert_eq!(sketch.num_retained(), 1);
-/// # Ok(())
-/// # }
 /// ```
 #[derive(Debug)]
 pub struct TupleSketch<P>
@@ -269,15 +265,12 @@ where
     /// # Examples
     ///
     /// ```
-    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::tuple::DefaultUpdatePolicy;
     /// use datasketches::tuple::TupleSketchBuilder;
     ///
     /// let policy = DefaultUpdatePolicy::<u64>::default();
-    /// let mut sketch = TupleSketchBuilder::new(policy).build()?;
+    /// let mut sketch = TupleSketchBuilder::new(policy).build().unwrap();
     /// sketch.update(42, 5);
-    /// # Ok(())
-    /// # }
     /// ```
     pub fn update<U>(&mut self, key: impl Hash, value: U)
     where
@@ -398,17 +391,14 @@ where
     /// # Examples
     ///
     /// ```
-    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::tuple::DefaultUpdatePolicy;
     /// use datasketches::tuple::TupleSketchBuilder;
     ///
     /// let policy = DefaultUpdatePolicy::<u64>::default();
-    /// let mut sketch = TupleSketchBuilder::new(policy).build()?;
+    /// let mut sketch = TupleSketchBuilder::new(policy).build().unwrap();
     /// sketch.update("apple", 1);
     /// let compact = sketch.compact(true);
     /// assert_eq!(compact.num_retained(), 1);
-    /// # Ok(())
-    /// # }
     /// ```
     pub fn compact(&self, ordered: bool) -> CompactTupleSketch<P::Summary> {
         let parts = self.table.to_compact_parts(ordered);
@@ -560,17 +550,14 @@ impl<S> CompactTupleSketch<S> {
     /// # Examples
     ///
     /// ```
-    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::tuple::DefaultUpdatePolicy;
     /// use datasketches::tuple::TupleSketchBuilder;
     ///
     /// let policy = DefaultUpdatePolicy::<u64>::default();
-    /// let mut sketch = TupleSketchBuilder::new(policy).build()?;
+    /// let mut sketch = TupleSketchBuilder::new(policy).build().unwrap();
     /// sketch.update("apple", 1);
     /// let bytes = sketch.compact(true).serialize();
     /// assert!(!bytes.is_empty());
-    /// # Ok(())
-    /// # }
     /// ```
     pub fn serialize(&self) -> Vec<u8>
     where
@@ -757,7 +744,6 @@ where
     /// # Examples
     ///
     /// ```
-    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::tuple::SummaryPolicy;
     /// use datasketches::tuple::SummaryUpdatePolicy;
     /// use datasketches::tuple::TupleSketchBuilder;
@@ -778,11 +764,9 @@ where
     ///     }
     /// }
     ///
-    /// let mut sketch = TupleSketchBuilder::new(MaxPolicy).build()?;
+    /// let mut sketch = TupleSketchBuilder::new(MaxPolicy).build().unwrap();
     /// sketch.update("k", 3);
     /// sketch.update("k", 7);
-    /// # Ok(())
-    /// # }
     /// ```
     pub fn new(policy: P) -> Self {
         Self {

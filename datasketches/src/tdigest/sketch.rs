@@ -203,13 +203,10 @@ impl TDigestMut {
     /// # Examples
     ///
     /// ```
-    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::tdigest::TDigestMut;
     ///
-    /// let sketch = TDigestMut::new(100)?;
+    /// let sketch = TDigestMut::new(100).unwrap();
     /// assert_eq!(sketch.k(), 100);
-    /// # Ok(())
-    /// # }
     /// ```
     pub fn new(k: u16) -> Result<Self, Error> {
         if k < 10 {
@@ -270,14 +267,11 @@ impl TDigestMut {
     /// # Examples
     ///
     /// ```
-    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::tdigest::TDigestMut;
     ///
-    /// let mut sketch = TDigestMut::new(100)?;
+    /// let mut sketch = TDigestMut::new(100).unwrap();
     /// sketch.update(1.0);
     /// assert!(sketch.total_weight() >= 1);
-    /// # Ok(())
-    /// # }
     /// ```
     pub fn update(&mut self, value: f64) {
         if !value.is_finite() {
@@ -331,17 +325,14 @@ impl TDigestMut {
     /// # Examples
     ///
     /// ```
-    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::tdigest::TDigestMut;
     ///
-    /// let mut left = TDigestMut::new(100)?;
-    /// let mut right = TDigestMut::new(100)?;
+    /// let mut left = TDigestMut::new(100).unwrap();
+    /// let mut right = TDigestMut::new(100).unwrap();
     /// left.update(1.0);
     /// right.update(2.0);
     /// left.merge(&right);
     /// assert_eq!(left.total_weight(), 2);
-    /// # Ok(())
-    /// # }
     /// ```
     pub fn merge(&mut self, other: &TDigestMut) {
         if other.is_empty() {
@@ -358,15 +349,12 @@ impl TDigestMut {
     /// # Examples
     ///
     /// ```
-    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::tdigest::TDigestMut;
     ///
-    /// let mut sketch = TDigestMut::new(100)?;
+    /// let mut sketch = TDigestMut::new(100).unwrap();
     /// sketch.update(1.0);
     /// let frozen = sketch.freeze();
     /// assert!(!frozen.is_empty());
-    /// # Ok(())
-    /// # }
     /// ```
     pub fn freeze(mut self) -> TDigest {
         self.compress();
@@ -399,17 +387,14 @@ impl TDigestMut {
     /// # Examples
     ///
     /// ```
-    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::tdigest::TDigestMut;
     ///
-    /// let mut sketch = TDigestMut::new(100)?;
+    /// let mut sketch = TDigestMut::new(100).unwrap();
     /// for value in [1.0, 2.0, 3.0] {
     ///     sketch.update(value);
     /// }
-    /// let cdf = sketch.cdf(&[1.5]).expect("digest is non-empty");
+    /// let cdf = sketch.cdf(&[1.5]).unwrap();
     /// assert_eq!(cdf.len(), 2);
-    /// # Ok(())
-    /// # }
     /// ```
     pub fn cdf(&mut self, split_points: &[f64]) -> Option<Vec<f64>> {
         check_split_points(split_points);
@@ -426,17 +411,14 @@ impl TDigestMut {
     /// # Examples
     ///
     /// ```
-    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::tdigest::TDigestMut;
     ///
-    /// let mut sketch = TDigestMut::new(100)?;
+    /// let mut sketch = TDigestMut::new(100).unwrap();
     /// for value in [1.0, 2.0, 3.0] {
     ///     sketch.update(value);
     /// }
-    /// let pmf = sketch.pmf(&[1.5]).expect("digest is non-empty");
+    /// let pmf = sketch.pmf(&[1.5]).unwrap();
     /// assert_eq!(pmf.len(), 2);
-    /// # Ok(())
-    /// # }
     /// ```
     pub fn pmf(&mut self, split_points: &[f64]) -> Option<Vec<f64>> {
         check_split_points(split_points);
@@ -453,17 +435,14 @@ impl TDigestMut {
     /// # Examples
     ///
     /// ```
-    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::tdigest::TDigestMut;
     ///
-    /// let mut sketch = TDigestMut::new(100)?;
+    /// let mut sketch = TDigestMut::new(100).unwrap();
     /// for value in [1.0, 2.0, 3.0] {
     ///     sketch.update(value);
     /// }
-    /// let rank = sketch.rank(2.0).expect("digest is non-empty");
+    /// let rank = sketch.rank(2.0).unwrap();
     /// assert!((0.0..=1.0).contains(&rank));
-    /// # Ok(())
-    /// # }
     /// ```
     pub fn rank(&mut self, value: f64) -> Option<f64> {
         assert!(!value.is_nan(), "value must not be NaN");
@@ -490,17 +469,14 @@ impl TDigestMut {
     /// # Examples
     ///
     /// ```
-    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::tdigest::TDigestMut;
     ///
-    /// let mut sketch = TDigestMut::new(100)?;
+    /// let mut sketch = TDigestMut::new(100).unwrap();
     /// for value in [1.0, 2.0, 3.0] {
     ///     sketch.update(value);
     /// }
-    /// let median = sketch.quantile(0.5).expect("digest is non-empty");
+    /// let median = sketch.quantile(0.5).unwrap();
     /// assert!((1.0..=3.0).contains(&median));
-    /// # Ok(())
-    /// # }
     /// ```
     pub fn quantile(&mut self, rank: f64) -> Option<f64> {
         assert!((0.0..=1.0).contains(&rank), "rank must be in [0.0, 1.0]");
@@ -517,16 +493,13 @@ impl TDigestMut {
     /// # Examples
     ///
     /// ```
-    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::tdigest::TDigestMut;
     ///
-    /// let mut sketch = TDigestMut::new(100)?;
+    /// let mut sketch = TDigestMut::new(100).unwrap();
     /// sketch.update(1.0);
     /// let bytes = sketch.serialize();
-    /// let decoded = TDigestMut::deserialize(&bytes, false)?;
+    /// let decoded = TDigestMut::deserialize(&bytes, false).unwrap();
     /// assert_eq!(decoded.max_value(), Some(1.0));
-    /// # Ok(())
-    /// # }
     /// ```
     pub fn serialize(&mut self) -> Vec<u8> {
         self.compress();
@@ -614,17 +587,14 @@ impl TDigestMut {
     /// # Examples
     ///
     /// ```
-    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::tdigest::TDigestMut;
     ///
-    /// let mut sketch = TDigestMut::new(100)?;
+    /// let mut sketch = TDigestMut::new(100).unwrap();
     /// sketch.update(1.0);
     /// sketch.update(2.0);
     /// let bytes = sketch.serialize();
-    /// let decoded = TDigestMut::deserialize(&bytes, false)?;
+    /// let decoded = TDigestMut::deserialize(&bytes, false).unwrap();
     /// assert_eq!(decoded.max_value(), Some(2.0));
-    /// # Ok(())
-    /// # }
     /// ```
     pub fn deserialize(bytes: &[u8], is_f32: bool) -> Result<Self, Error> {
         let mut cursor = SketchSlice::new(bytes);
@@ -1063,18 +1033,15 @@ impl TDigest {
     /// # Examples
     ///
     /// ```
-    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::tdigest::TDigestMut;
     ///
-    /// let mut sketch = TDigestMut::new(100)?;
+    /// let mut sketch = TDigestMut::new(100).unwrap();
     /// for value in [1.0, 2.0, 3.0] {
     ///     sketch.update(value);
     /// }
     /// let digest = sketch.freeze();
-    /// let cdf = digest.cdf(&[1.5]).expect("digest is non-empty");
+    /// let cdf = digest.cdf(&[1.5]).unwrap();
     /// assert_eq!(cdf.len(), 2);
-    /// # Ok(())
-    /// # }
     /// ```
     pub fn cdf(&self, split_points: &[f64]) -> Option<Vec<f64>> {
         self.view().cdf(split_points)
@@ -1103,18 +1070,15 @@ impl TDigest {
     /// # Examples
     ///
     /// ```
-    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::tdigest::TDigestMut;
     ///
-    /// let mut sketch = TDigestMut::new(100)?;
+    /// let mut sketch = TDigestMut::new(100).unwrap();
     /// for value in [1.0, 2.0, 3.0] {
     ///     sketch.update(value);
     /// }
     /// let digest = sketch.freeze();
-    /// let pmf = digest.pmf(&[1.5]).expect("digest is non-empty");
+    /// let pmf = digest.pmf(&[1.5]).unwrap();
     /// assert_eq!(pmf.len(), 2);
-    /// # Ok(())
-    /// # }
     /// ```
     pub fn pmf(&self, split_points: &[f64]) -> Option<Vec<f64>> {
         self.view().pmf(split_points)
@@ -1131,18 +1095,15 @@ impl TDigest {
     /// # Examples
     ///
     /// ```
-    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::tdigest::TDigestMut;
     ///
-    /// let mut sketch = TDigestMut::new(100)?;
+    /// let mut sketch = TDigestMut::new(100).unwrap();
     /// for value in [1.0, 2.0, 3.0] {
     ///     sketch.update(value);
     /// }
     /// let digest = sketch.freeze();
-    /// let rank = digest.rank(2.0).expect("digest is non-empty");
+    /// let rank = digest.rank(2.0).unwrap();
     /// assert!((0.0..=1.0).contains(&rank));
-    /// # Ok(())
-    /// # }
     /// ```
     pub fn rank(&self, value: f64) -> Option<f64> {
         assert!(!value.is_nan(), "value must not be NaN");
@@ -1160,18 +1121,15 @@ impl TDigest {
     /// # Examples
     ///
     /// ```
-    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::tdigest::TDigestMut;
     ///
-    /// let mut sketch = TDigestMut::new(100)?;
+    /// let mut sketch = TDigestMut::new(100).unwrap();
     /// for value in [1.0, 2.0, 3.0] {
     ///     sketch.update(value);
     /// }
     /// let digest = sketch.freeze();
-    /// let q = digest.quantile(0.5).expect("digest is non-empty");
+    /// let q = digest.quantile(0.5).unwrap();
     /// assert!((1.0..=3.0).contains(&q));
-    /// # Ok(())
-    /// # }
     /// ```
     pub fn quantile(&self, rank: f64) -> Option<f64> {
         assert!((0.0..=1.0).contains(&rank), "rank must be in [0.0, 1.0]");
@@ -1183,17 +1141,14 @@ impl TDigest {
     /// # Examples
     ///
     /// ```
-    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::tdigest::TDigestMut;
     ///
-    /// let mut sketch = TDigestMut::new(100)?;
+    /// let mut sketch = TDigestMut::new(100).unwrap();
     /// sketch.update(1.0);
     /// let digest = sketch.freeze();
     /// let mut mutable = digest.unfreeze();
     /// mutable.update(2.0);
     /// assert_eq!(mutable.total_weight(), 2);
-    /// # Ok(())
-    /// # }
     /// ```
     pub fn unfreeze(self) -> TDigestMut {
         TDigestMut::make(

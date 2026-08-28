@@ -67,15 +67,12 @@ use crate::thetacommon::hash_table::SketchHashTableIter;
 /// # Examples
 ///
 /// ```
-/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// use datasketches::theta::ThetaSketchBuilder;
 ///
-/// let mut sketch = ThetaSketchBuilder::new().build()?;
+/// let mut sketch = ThetaSketchBuilder::new().build().unwrap();
 /// sketch.update("apple");
 /// let view = sketch.as_view();
 /// assert_eq!(view.num_retained(), 1);
-/// # Ok(())
-/// # }
 /// ```
 #[derive(Clone, Copy, Debug)]
 pub struct ThetaSketchView<'a>(ThetaSketchViewState<'a>);
@@ -219,19 +216,16 @@ impl ThetaSketch {
     /// # Examples
     ///
     /// ```
-    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::hash::value::raw_bytes;
     /// use datasketches::theta::ThetaSketchBuilder;
     ///
-    /// let mut sketch = ThetaSketchBuilder::new().build()?;
+    /// let mut sketch = ThetaSketchBuilder::new().build().unwrap();
     /// sketch.update("apple");
     /// assert!(sketch.estimate() >= 1.0);
     ///
-    /// let mut sketch = ThetaSketchBuilder::new().build()?;
+    /// let mut sketch = ThetaSketchBuilder::new().build().unwrap();
     /// sketch.update(raw_bytes::from_str("apple"));
     /// assert!(sketch.estimate() >= 1.0);
-    /// # Ok(())
-    /// # }
     /// ```
     pub fn update<T: Hash>(&mut self, value: T) {
         self.table.try_insert(value);
@@ -242,14 +236,11 @@ impl ThetaSketch {
     /// # Examples
     ///
     /// ```
-    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::theta::ThetaSketchBuilder;
     ///
-    /// let mut sketch = ThetaSketchBuilder::new().build()?;
+    /// let mut sketch = ThetaSketchBuilder::new().build().unwrap();
     /// sketch.update("apple");
     /// assert!(sketch.estimate() >= 1.0);
-    /// # Ok(())
-    /// # }
     /// ```
     pub fn estimate(&self) -> f64 {
         if self.is_empty() {
@@ -310,15 +301,12 @@ impl ThetaSketch {
     /// # Examples
     ///
     /// ```
-    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::theta::ThetaSketchBuilder;
     ///
-    /// let mut sketch = ThetaSketchBuilder::new().build()?;
+    /// let mut sketch = ThetaSketchBuilder::new().build().unwrap();
     /// sketch.update("apple");
     /// let mut iter = sketch.iter();
     /// assert!(iter.next().is_some());
-    /// # Ok(())
-    /// # }
     /// ```
     pub fn iter(&self) -> impl Iterator<Item = ThetaEntry> + '_ {
         self.table.iter_entries().copied()
@@ -331,15 +319,12 @@ impl ThetaSketch {
     /// # Examples
     ///
     /// ```
-    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::theta::ThetaSketchBuilder;
     ///
-    /// let mut sketch = ThetaSketchBuilder::new().build()?;
+    /// let mut sketch = ThetaSketchBuilder::new().build().unwrap();
     /// sketch.update("apple");
     /// let compact = sketch.compact(true);
     /// assert_eq!(compact.num_retained(), 1);
-    /// # Ok(())
-    /// # }
     /// ```
     pub fn compact(&self, ordered: bool) -> CompactThetaSketch {
         let parts = self.table.to_compact_parts(ordered);
@@ -365,11 +350,10 @@ impl ThetaSketch {
     /// # Examples
     ///
     /// ```
-    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::common::NumStdDev;
     /// use datasketches::theta::ThetaSketchBuilder;
     ///
-    /// let mut sketch = ThetaSketchBuilder::new().lg_k(12).build()?;
+    /// let mut sketch = ThetaSketchBuilder::new().lg_k(12).build().unwrap();
     /// for i in 0..10000 {
     ///     sketch.update(i);
     /// }
@@ -380,8 +364,6 @@ impl ThetaSketch {
     ///
     /// assert!(lower_bound <= estimate);
     /// assert!(estimate <= upper_bound);
-    /// # Ok(())
-    /// # }
     /// ```
     pub fn lower_bound(&self, num_std_dev: NumStdDev) -> f64 {
         if !self.is_estimation_mode() {
@@ -402,11 +384,10 @@ impl ThetaSketch {
     /// # Examples
     ///
     /// ```
-    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::common::NumStdDev;
     /// use datasketches::theta::ThetaSketchBuilder;
     ///
-    /// let mut sketch = ThetaSketchBuilder::new().lg_k(12).build()?;
+    /// let mut sketch = ThetaSketchBuilder::new().lg_k(12).build().unwrap();
     /// for i in 0..10000 {
     ///     sketch.update(i);
     /// }
@@ -417,8 +398,6 @@ impl ThetaSketch {
     ///
     /// assert!(lower_bound <= estimate);
     /// assert!(estimate <= upper_bound);
-    /// # Ok(())
-    /// # }
     /// ```
     pub fn upper_bound(&self, num_std_dev: NumStdDev) -> f64 {
         if !self.is_estimation_mode() {
@@ -1074,13 +1053,10 @@ impl ThetaSketchBuilder {
     /// # Examples
     ///
     /// ```
-    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::theta::ThetaSketchBuilder;
     ///
-    /// let sketch = ThetaSketchBuilder::new().lg_k(12).build()?;
+    /// let sketch = ThetaSketchBuilder::new().lg_k(12).build().unwrap();
     /// assert_eq!(sketch.lg_k(), 12);
-    /// # Ok(())
-    /// # }
     /// ```
     pub fn lg_k(mut self, lg_k: u8) -> Self {
         self.lg_k = lg_k;
@@ -1101,14 +1077,12 @@ impl ThetaSketchBuilder {
     /// # Examples
     ///
     /// ```
-    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::theta::ThetaSketchBuilder;
     ///
     /// ThetaSketchBuilder::new()
     ///     .sampling_probability(0.5)
-    ///     .build()?;
-    /// # Ok(())
-    /// # }
+    ///     .build()
+    ///     .unwrap();
     /// ```
     pub fn sampling_probability(mut self, probability: f32) -> Self {
         self.sampling_probability = probability;
@@ -1120,12 +1094,9 @@ impl ThetaSketchBuilder {
     /// # Examples
     ///
     /// ```
-    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::theta::ThetaSketchBuilder;
     ///
-    /// ThetaSketchBuilder::new().seed(7).build()?;
-    /// # Ok(())
-    /// # }
+    /// ThetaSketchBuilder::new().seed(7).build().unwrap();
     /// ```
     pub fn seed(mut self, seed: u64) -> Self {
         self.seed = seed;
@@ -1142,12 +1113,9 @@ impl ThetaSketchBuilder {
     /// # Examples
     ///
     /// ```
-    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::theta::ThetaSketchBuilder;
     ///
-    /// ThetaSketchBuilder::new().lg_k(10).build()?;
-    /// # Ok(())
-    /// # }
+    /// ThetaSketchBuilder::new().lg_k(10).build().unwrap();
     /// ```
     pub fn build(self) -> Result<ThetaSketch, Error> {
         let table = ThetaHashTable::new(

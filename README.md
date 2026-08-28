@@ -51,15 +51,12 @@ Then build a sketch and query its distinct-count estimate:
 use datasketches::hll::HllSketch;
 use datasketches::hll::HllType;
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut sketch = HllSketch::new(12, HllType::Hll8)?;
-    for user in ["alice", "bob", "alice", "carol"] {
-        sketch.update(user);
-    }
-
-    assert!(sketch.estimate() >= 3.0);
-    Ok(())
+let mut sketch = HllSketch::new(12, HllType::Hll8).unwrap();
+for user in ["alice", "bob", "alice", "carol"] {
+    sketch.update(user);
 }
+
+assert!(sketch.estimate() >= 3.0);
 ```
 
 Enable multiple algorithms by listing their features together, such as `features = ["hll", "theta"]` in `Cargo.toml`.

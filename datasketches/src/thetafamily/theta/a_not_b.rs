@@ -37,23 +37,19 @@ use crate::thetacommon::a_not_b;
 /// # Examples
 ///
 /// ```
-/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// use datasketches::theta::ThetaANotB;
 /// use datasketches::theta::ThetaSketchBuilder;
 ///
-/// let mut a = ThetaSketchBuilder::new().build()?;
+/// let mut a = ThetaSketchBuilder::new().build().unwrap();
 /// a.update("apple");
 /// a.update("banana");
 ///
-/// let mut b = ThetaSketchBuilder::new().build()?;
+/// let mut b = ThetaSketchBuilder::new().build().unwrap();
 /// b.update("banana");
 ///
 /// let a_not_b = ThetaANotB::default();
-/// let result = a_not_b.compute(&a, &b, true)?;
-/// // Only "apple" survives.
-/// assert_eq!(result.num_retained(), 1);
-/// # Ok(())
-/// # }
+/// let result = a_not_b.compute(&a, &b, true).unwrap();
+/// assert_eq!(result.num_retained(), 1); // only "apple" survives
 /// ```
 #[derive(Debug, Clone, Copy)]
 pub struct ThetaANotB {

@@ -33,19 +33,16 @@ use crate::thetacommon::jaccard_similarity::JaccardSimilarity;
 /// # Examples
 ///
 /// ```
-/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// use datasketches::theta::ThetaJaccardSimilarity;
 /// use datasketches::theta::ThetaSketchBuilder;
 ///
-/// let mut a = ThetaSketchBuilder::new().build()?;
-/// let mut b = ThetaSketchBuilder::new().build()?;
+/// let mut a = ThetaSketchBuilder::new().build().unwrap();
+/// let mut b = ThetaSketchBuilder::new().build().unwrap();
 /// a.update("apple");
 /// b.update("apple");
 ///
-/// let result = ThetaJaccardSimilarity::default().compute(&a, &b)?;
+/// let result = ThetaJaccardSimilarity::default().compute(&a, &b).unwrap();
 /// assert_eq!(result.estimate(), 1.0);
-/// # Ok(())
-/// # }
 /// ```
 #[derive(Clone, Copy, Debug)]
 pub struct ThetaJaccardSimilarity {

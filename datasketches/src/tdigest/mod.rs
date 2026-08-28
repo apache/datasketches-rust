@@ -51,17 +51,14 @@
 //! # Usage
 //!
 //! ```
-//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! use datasketches::tdigest::TDigestMut;
 //!
-//! let mut sketch = TDigestMut::new(100)?;
+//! let mut sketch = TDigestMut::new(100).unwrap();
 //! sketch.update(1.0);
 //! sketch.update(2.0);
-//! let median = sketch.quantile(0.5).expect("digest is non-empty");
+//! let median = sketch.quantile(0.5).unwrap();
 //! let frozen = sketch.freeze();
 //! assert!(frozen.rank(2.0).is_some());
-//! # Ok(())
-//! # }
 //! ```
 
 mod serialization;

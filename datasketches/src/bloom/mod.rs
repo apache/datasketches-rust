@@ -34,12 +34,13 @@
 //! # Usage
 //!
 //! ```
-//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! use datasketches::bloom::BloomFilter;
 //! use datasketches::bloom::BloomFilterBuilder;
 //!
 //! // Create a filter optimized for 1000 items with 1% false positive rate
-//! let mut filter = BloomFilterBuilder::with_accuracy(1000, 0.01).build()?;
+//! let mut filter = BloomFilterBuilder::with_accuracy(1000, 0.01)
+//!     .build()
+//!     .unwrap();
 //!
 //! // Insert items
 //! filter.insert("apple");
@@ -54,8 +55,6 @@
 //! println!("Capacity: {} bits", filter.capacity());
 //! println!("Bits used: {}", filter.bits_used());
 //! println!("Est. FPP: {:.4}%", filter.estimated_fpp() * 100.0);
-//! # Ok(())
-//! # }
 //! ```
 //!
 //! # Creating Filters
@@ -67,7 +66,6 @@
 //! Automatically calculates optimal size and hash functions:
 //!
 //! ```
-//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! use datasketches::bloom::BloomFilterBuilder;
 //!
 //! let filter = BloomFilterBuilder::with_accuracy(
@@ -75,9 +73,8 @@
 //!     0.01,   // Target false positive probability (1%)
 //! )
 //! .seed(9001) // Optional: custom seed
-//! .build()?;
-//! # Ok(())
-//! # }
+//! .build()
+//! .unwrap();
 //! ```
 //!
 //! ## By Size (Manual)
@@ -85,16 +82,14 @@
 //! Specify requested bit count and hash functions (rounded up to a multiple of 64 bits):
 //!
 //! ```
-//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! use datasketches::bloom::BloomFilterBuilder;
 //!
 //! let filter = BloomFilterBuilder::with_size(
 //!     95_851, // Number of bits
 //!     7,      // Number of hash functions
 //! )
-//! .build()?;
-//! # Ok(())
-//! # }
+//! .build()
+//! .unwrap();
 //! ```
 //!
 //! # Set Operations
@@ -102,11 +97,14 @@
 //! Bloom filters support efficient set operations:
 //!
 //! ```
-//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! use datasketches::bloom::BloomFilterBuilder;
 //!
-//! let mut filter1 = BloomFilterBuilder::with_accuracy(100, 0.01).build()?;
-//! let mut filter2 = BloomFilterBuilder::with_accuracy(100, 0.01).build()?;
+//! let mut filter1 = BloomFilterBuilder::with_accuracy(100, 0.01)
+//!     .build()
+//!     .unwrap();
+//! let mut filter2 = BloomFilterBuilder::with_accuracy(100, 0.01)
+//!     .build()
+//!     .unwrap();
 //!
 //! filter1.insert("a");
 //! filter2.insert("b");
@@ -121,8 +119,6 @@
 //!
 //! // Invert: approximately inverts set membership
 //! // filter1.invert();
-//! # Ok(())
-//! # }
 //! ```
 //!
 //! # Implementation Details
