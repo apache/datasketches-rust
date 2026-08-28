@@ -28,13 +28,11 @@ mod iter;
 mod serialization;
 mod sketch;
 mod sorted_view;
-mod union;
 mod value;
 
 pub use self::iter::ReqSketchIterator;
 pub use self::sketch::ReqSketch;
 pub use self::sorted_view::SortedView;
-pub use self::union::ReqUnion;
 pub use self::value::ReqValue;
 
 /// Default value of `k` if not specified. Roughly 1% relative error at 95% confidence.

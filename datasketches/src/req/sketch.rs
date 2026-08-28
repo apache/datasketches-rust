@@ -269,6 +269,24 @@ impl<T: ReqValue> ReqSketch<T> {
     /// # Errors
     ///
     /// Returns an error if the two sketches have different `rank_accuracy`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::req::ReqSketch;
+    ///
+    /// let mut first = ReqSketch::default();
+    /// first.update(1.0_f64);
+    ///
+    /// let mut second = ReqSketch::default();
+    /// second.update(2.0_f64);
+    ///
+    /// let mut combined = ReqSketch::default();
+    /// combined.merge(&first).unwrap();
+    /// combined.merge(&second).unwrap();
+    ///
+    /// assert_eq!(combined.n(), 2);
+    /// ```
     pub fn merge(&mut self, other: &Self) -> Result<(), Error> {
         if self.rank_accuracy != other.rank_accuracy {
             return Err(Error::invalid_argument(
