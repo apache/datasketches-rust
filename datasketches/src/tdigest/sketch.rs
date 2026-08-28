@@ -35,14 +35,61 @@ use crate::tdigest::serialization::PREAMBLE_LONGS_EMPTY_OR_SINGLE;
 use crate::tdigest::serialization::PREAMBLE_LONGS_MULTIPLE;
 use crate::tdigest::serialization::SERIAL_VERSION;
 
-/// The default value of K if one is not specified.
-const DEFAULT_K: u16 = 200;
 /// Multiplier for unmerged values relative to the target number of centroids.
 const UNMERGED_MULTIPLIER: usize = 4;
 /// Unmerged-value capacity allocated by the first update to a digest.
 const INITIAL_UNMERGED_CAPACITY: usize = 8;
 /// Default weight for single values.
 const DEFAULT_WEIGHT: NonZeroU64 = NonZeroU64::new(1).unwrap();
+
+#[derive(Debug, Clone, Copy)]
+struct K(u16);
+
+impl K {
+    const MIN: u16 = 10;
+
+    fn new(value: u16) -> Result<Self, String> {
+        if value < Self::MIN {
+            return Err(format!("k must be at least {}, got {value}", Self::MIN));
+        }
+
+        Ok(Self(value))
+    }
+
+    fn get(self) -> u16 {
+        self.0
+    }
+}
+
+impl Default for K {
+    fn default() -> Self {
+        Self(200)
+    }
+}
+
+impl PartialEq<u16> for K {
+    fn eq(&self, other: &u16) -> bool {
+        self.0 == *other
+    }
+}
+
+impl PartialOrd<u16> for K {
+    fn partial_cmp(&self, other: &u16) -> Option<Ordering> {
+        self.0.partial_cmp(other)
+    }
+}
+
+impl From<K> for usize {
+    fn from(k: K) -> Self {
+        Self::from(k.get())
+    }
+}
+
+impl From<K> for f64 {
+    fn from(k: K) -> Self {
+        Self::from(k.get())
+    }
+}
 
 // Centroids are stored as `[compressed prefix | unmerged unit-weight tail]`. Carrying a unit weight
 // for each unmerged value lets updates, compression, and merge reuse one allocation instead of
@@ -168,7 +215,7 @@ impl TDigestBuffer {
 /// See the [module level documentation](super) for more.
 #[derive(Debug, Clone)]
 pub struct TDigestMut {
-    k: u16,
+    k: K,
 
     reverse_merge: bool,
     min: f64,
@@ -182,14 +229,7 @@ pub struct TDigestMut {
 
 impl Default for TDigestMut {
     fn default() -> Self {
-        Self::make(
-            DEFAULT_K,
-            false,
-            f64::INFINITY,
-            f64::NEG_INFINITY,
-            TDigestBuffer::default(),
-            0,
-        )
+        Self::from_nominal_k(K::default())
     }
 }
 
@@ -209,31 +249,30 @@ impl TDigestMut {
     /// assert_eq!(sketch.k(), 100);
     /// ```
     pub fn new(k: u16) -> Result<Self, Error> {
-        if k < 10 {
-            return Err(Error::invalid_argument(format!(
-                "k must be at least 10, got {k}"
-            )));
-        }
+        let k = K::new(k).map_err(Error::invalid_argument)?;
 
-        Ok(Self::make(
+        Ok(Self::from_nominal_k(k))
+    }
+
+    fn from_nominal_k(k: K) -> Self {
+        Self::make(
             k,
             false,
             f64::INFINITY,
             f64::NEG_INFINITY,
             TDigestBuffer::default(),
             0,
-        ))
+        )
     }
 
     fn make(
-        k: u16,
+        k: K,
         reverse_merge: bool,
         min: f64,
         max: f64,
         buffer: TDigestBuffer,
         compressed_weight: u64,
     ) -> Self {
-        debug_assert!(k >= 10, "k must be at least 10");
         debug_assert!(buffer.unmerged_tail_len <= buffer.centroids.len());
         debug_assert!(buffer.compressed_prefix_len() != 0 || compressed_weight == 0);
 
@@ -289,7 +328,7 @@ impl TDigestMut {
 
     /// Returns the compression parameter `k` used to configure this t-digest.
     pub fn k(&self) -> u16 {
-        self.k
+        self.k.get()
     }
 
     /// Returns `true` if this t-digest has not seen any data.
@@ -541,7 +580,7 @@ impl TDigestMut {
         });
         bytes.write_u8(SERIAL_VERSION);
         bytes.write_u8(Family::TDIGEST.id);
-        bytes.write_u16_le(self.k);
+        bytes.write_u16_le(self.k.get());
         bytes.write_u8({
             let mut flags = 0;
             if self.is_empty() {
@@ -615,9 +654,7 @@ impl TDigestMut {
         }
         ensure_serial_version_is(SERIAL_VERSION, serial_version)?;
         let k = cursor.read_u16_le().map_err(insufficient_data("k"))?;
-        if k < 10 {
-            return Err(Error::deserial(format!("k must be at least 10, got {k}")));
-        }
+        let k = K::new(k).map_err(Error::deserial)?;
         let flags = cursor.read_u8().map_err(insufficient_data("flags"))?;
         let is_empty = (flags & FLAGS_IS_EMPTY) != 0;
         let is_single_value = (flags & FLAGS_IS_SINGLE_VALUE) != 0;
@@ -631,7 +668,7 @@ impl TDigestMut {
             .read_u16_le()
             .map_err(insufficient_data("<unused>"))?; // unused
         if is_empty {
-            return TDigestMut::new(k);
+            return Ok(Self::from_nominal_k(k));
         }
 
         let reverse_merge = (flags & FLAGS_REVERSE_MERGE) != 0;
@@ -777,11 +814,7 @@ impl TDigestMut {
                 check_finite(min, "min in compat double format")?;
                 check_finite(max, "max in compat double format")?;
                 let k = cursor.read_f64_be().map_err(make_error("k"))? as u16;
-                if k < 10 {
-                    return Err(Error::deserial(format!(
-                        "k must be at least 10 in compat double format, got {k}"
-                    )));
-                }
+                let k = K::new(k).map_err(Error::deserial)?;
                 let num_centroids =
                     cursor.read_u32_be().map_err(make_error("num_centroids"))? as usize;
                 let mut total_weight = 0u64;
@@ -818,11 +851,7 @@ impl TDigestMut {
                 check_finite(min, "min in compat float format")?;
                 check_finite(max, "max in compat float format")?;
                 let k = cursor.read_f32_be().map_err(make_error("k"))? as u16;
-                if k < 10 {
-                    return Err(Error::deserial(format!(
-                        "k must be at least 10 in compat float format, got {k}"
-                    )));
-                }
+                let k = K::new(k).map_err(Error::deserial)?;
                 // reference implementation stores capacities of the array of centroids and the
                 // buffer as shorts they can be derived from k in the constructor
                 cursor.read_u32_be().map_err(make_error("<unused>"))?;
@@ -954,7 +983,7 @@ impl TDigestMut {
 ///
 /// See the [module level documentation](super) for more.
 pub struct TDigest {
-    k: u16,
+    k: K,
 
     reverse_merge: bool,
     min: f64,
@@ -967,7 +996,7 @@ pub struct TDigest {
 impl TDigest {
     /// Returns the compression parameter `k` used to configure this t-digest.
     pub fn k(&self) -> u16 {
-        self.k
+        self.k.get()
     }
 
     /// Returns `true` if this t-digest has not seen any data.
