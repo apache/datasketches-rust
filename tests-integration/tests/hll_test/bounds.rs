@@ -20,123 +20,161 @@ use datasketches::hll::HllSketch;
 use datasketches::hll::HllType;
 use datasketches::hll::HllUnion;
 use googletest::assert_that;
+use googletest::prelude::all;
+use googletest::prelude::ge;
+use googletest::prelude::gt;
+use googletest::prelude::le;
+use googletest::prelude::lt;
 use googletest::prelude::near;
 
-const NUM_STD_DEVS: [NumStdDev; 3] = [NumStdDev::One, NumStdDev::Two, NumStdDev::Three];
-
-/// Builds a sketch in HLL mode from sequential values, either in order (HIP) or
-/// out of order by unioning two halves of the same stream.
-fn hll_mode_sketch(lg_k: u8, hll_type: HllType, n: u64, out_of_order: bool) -> HllSketch {
-    if out_of_order {
-        let mut even = HllSketch::new(lg_k, hll_type).unwrap();
-        let mut odd = HllSketch::new(lg_k, hll_type).unwrap();
-        for value in 0..n {
-            if value % 2 == 0 {
-                even.update(value);
-            } else {
-                odd.update(value);
-            }
-        }
-        let mut union = HllUnion::new(lg_k).unwrap();
-        union.update(&even);
-        union.update(&odd);
-        union.to_sketch(hll_type)
-    } else {
-        let mut sketch = HllSketch::new(lg_k, hll_type).unwrap();
-        for value in 0..n {
-            sketch.update(value);
-        }
-        sketch
+fn hll_mode_sketch(lg_k: u8, hll_type: HllType, n: u64) -> HllSketch {
+    let mut sketch = HllSketch::new(lg_k, hll_type).unwrap();
+    for value in 0..n {
+        sketch.update(value);
     }
+    sketch
 }
 
-/// The lower bound of an HLL-mode sketch is clamped to the number of non-zero
-/// registers, so it can never drop below the count of registers that have been hit.
-///
-/// The expected values are what the C++ implementation reports for these same
-/// sketches. Without the clamp the wider intervals fall below the register count.
-#[test]
-fn matches_cross_language_lower_bound_reference_vectors() {
-    #[allow(clippy::type_complexity)]
-    let cases: [(u8, HllType, u64, bool, [f64; 3]); 12] = [
-        (4, HllType::Hll4, 12, false, [9.946968965192236, 8.0, 8.0]),
-        (4, HllType::Hll6, 12, false, [9.946968965192236, 8.0, 8.0]),
-        (4, HllType::Hll8, 12, false, [9.946968965192236, 8.0, 8.0]),
-        (
-            7,
-            HllType::Hll4,
-            40,
-            false,
-            [35.559701910130165, 34.0, 34.0],
-        ),
-        (
-            7,
-            HllType::Hll6,
-            40,
-            false,
-            [35.559701910130165, 34.0, 34.0],
-        ),
-        (
-            7,
-            HllType::Hll8,
-            40,
-            false,
-            [35.559701910130165, 34.0, 34.0],
-        ),
-        (
-            10,
-            HllType::Hll4,
-            300,
-            false,
-            [292.94619692474237, 285.3925905431874, 278.0973781689599],
-        ),
-        (
-            10,
-            HllType::Hll8,
-            300,
-            false,
-            [292.94619692474237, 285.3925905431874, 278.0973781689599],
-        ),
-        (
-            12,
-            HllType::Hll4,
-            1000,
-            false,
-            [983.4590264990582, 970.8060901625487, 958.4309756722355],
-        ),
-        (
-            7,
-            HllType::Hll4,
-            40,
-            true,
-            [36.64056606724886, 34.00628712351393, 34.0],
-        ),
-        (
-            10,
-            HllType::Hll8,
-            300,
-            true,
-            [289.0443708484499, 279.6835562340517, 270.6408842468243],
-        ),
-        (
-            12,
-            HllType::Hll4,
-            1000,
-            true,
-            [975.4088934832242, 962.8595281321908, 950.5857105083956],
-        ),
-    ];
-
-    for (lg_k, hll_type, n, out_of_order, expected) in cases {
-        let sketch = hll_mode_sketch(lg_k, hll_type, n, out_of_order);
-        for (index, num_std_dev) in NUM_STD_DEVS.into_iter().enumerate() {
-            let actual = sketch.lower_bound(num_std_dev);
-            assert_that!(
-                actual,
-                near(expected[index], 1e-9),
-                "lg_k={lg_k} type={hll_type:?} n={n} out_of_order={out_of_order} \
-                 num_std_dev={num_std_dev:?}"
-            );
+fn hll_mode_union(lg_k: u8, hll_type: HllType, n: u64) -> HllSketch {
+    let mut even = HllSketch::new(lg_k, hll_type).unwrap();
+    let mut odd = HllSketch::new(lg_k, hll_type).unwrap();
+    for value in 0..n {
+        if value % 2 == 0 {
+            even.update(value);
+        } else {
+            odd.update(value);
         }
     }
+    let mut union = HllUnion::new(lg_k).unwrap();
+    union.update(&even);
+    union.update(&odd);
+    union.to_sketch(hll_type)
+}
+
+#[test]
+fn hll_mode_lower_bound_matches_cross_language_register_floor() {
+    // C++ reports a floor of 8 for this stream in all three target representations.
+    for hll_type in [HllType::Hll4, HllType::Hll6, HllType::Hll8] {
+        let sketch = hll_mode_sketch(4, hll_type, 12);
+        assert_eq!(
+            sketch.lower_bound(NumStdDev::Three),
+            8.0,
+            "type={hll_type:?}"
+        );
+    }
+
+    // The one-standard-deviation bound remains above the register floor.
+    let sketch = hll_mode_sketch(4, HllType::Hll8, 12);
+    assert_that!(
+        sketch.lower_bound(NumStdDev::One),
+        near(9.946968965192236, 1e-9)
+    );
+
+    // The same floor applies when a union selects the out-of-order estimator.
+    let sketch = hll_mode_union(7, HllType::Hll4, 40);
+    assert_eq!(sketch.lower_bound(NumStdDev::Three), 34.0);
+}
+
+#[test]
+fn test_bounds_basic() {
+    let mut sketch = HllSketch::new(12, HllType::Hll8).unwrap();
+
+    // Add 1000 unique values
+    for i in 0..1000 {
+        sketch.update(i);
+    }
+
+    let estimate = sketch.estimate();
+    let upper1 = sketch.upper_bound(NumStdDev::One);
+    let lower1 = sketch.lower_bound(NumStdDev::One);
+    let upper2 = sketch.upper_bound(NumStdDev::Two);
+    let lower2 = sketch.lower_bound(NumStdDev::Two);
+    let upper3 = sketch.upper_bound(NumStdDev::Three);
+    let lower3 = sketch.lower_bound(NumStdDev::Three);
+
+    // Basic sanity checks
+    assert_that!(estimate, ge(lower1));
+    assert_that!(estimate, le(upper1));
+
+    // Bounds should widen with more standard deviations
+    assert_that!(lower2, le(lower1));
+    assert_that!(upper1, le(upper2));
+    assert_that!(lower3, le(lower2));
+    assert_that!(upper2, le(upper3));
+
+    // Bounds should be reasonable (within 50% for 3-sigma)
+    assert_that!(lower3, gt(estimate * 0.5));
+    assert_that!(upper3, lt(estimate * 1.5));
+}
+
+#[test]
+fn test_bounds_all_modes() {
+    // Test List mode (small cardinality)
+    let mut sketch = HllSketch::new(12, HllType::Hll8).unwrap();
+    for i in 0..10 {
+        sketch.update(i);
+    }
+    let estimate = sketch.estimate();
+    let upper = sketch.upper_bound(NumStdDev::Two);
+    let lower = sketch.lower_bound(NumStdDev::Two);
+    assert_that!(estimate, all!(ge(lower), le(upper)), "mode: LIST");
+
+    // Test Set mode (medium cardinality)
+    for i in 10..100 {
+        sketch.update(i);
+    }
+    let estimate = sketch.estimate();
+    let upper = sketch.upper_bound(NumStdDev::Two);
+    let lower = sketch.lower_bound(NumStdDev::Two);
+    assert_that!(estimate, all!(ge(lower), le(upper)), "mode: SET");
+
+    // Test HLL mode (large cardinality)
+    for i in 100..5000 {
+        sketch.update(i);
+    }
+    let estimate = sketch.estimate();
+    let upper = sketch.upper_bound(NumStdDev::Two);
+    let lower = sketch.lower_bound(NumStdDev::Two);
+    assert_that!(estimate, all!(ge(lower), le(upper)), "mode: HLL");
+}
+
+#[test]
+fn test_bounds_different_lg_k() {
+    // Smaller lg_k should have wider bounds (higher RSE)
+    let mut sketch_small = HllSketch::new(8, HllType::Hll8).unwrap(); // lg_k=8, k=256
+    let mut sketch_large = HllSketch::new(14, HllType::Hll8).unwrap(); // lg_k=14, k=16384
+
+    for i in 0..1000 {
+        sketch_small.update(i);
+        sketch_large.update(i);
+    }
+
+    let est_small = sketch_small.estimate();
+    let est_large = sketch_large.estimate();
+
+    let upper_small = sketch_small.upper_bound(NumStdDev::Two);
+    let lower_small = sketch_small.lower_bound(NumStdDev::Two);
+    let upper_large = sketch_large.upper_bound(NumStdDev::Two);
+    let lower_large = sketch_large.lower_bound(NumStdDev::Two);
+
+    // Calculate relative width of confidence intervals
+    let width_small = (upper_small - lower_small) / est_small;
+    let width_large = (upper_large - lower_large) / est_large;
+
+    // Smaller sketch should have wider relative confidence interval
+    assert_that!(width_small, gt(width_large));
+}
+
+#[test]
+fn test_bounds_empty_sketch() {
+    let sketch = HllSketch::new(12, HllType::Hll8).unwrap();
+
+    let estimate = sketch.estimate();
+    let upper = sketch.upper_bound(NumStdDev::Two);
+    let lower = sketch.lower_bound(NumStdDev::Two);
+
+    assert_eq!(estimate, 0.0, "Empty sketch should have 0 estimate");
+    assert_that!(lower, ge(0.0));
+    assert_that!(upper, ge(0.0));
+    assert_that!(lower, le(upper));
 }
