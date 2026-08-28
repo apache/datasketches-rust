@@ -148,6 +148,12 @@ impl HipEstimator {
     ///
     /// Returns the lower confidence bound for the cardinality estimate.
     ///
+    /// The bounds are not symmetric. Every non-zero register was set by at least one
+    /// distinct item, so the number of non-zero registers is a hard floor on the
+    /// distinct count and the lower bound is clamped to it. When `cur_min` is `0` that
+    /// count is `k - num_at_cur_min`; otherwise every register has been hit and the
+    /// distinct count is at least `k`. The upper bound has no such floor.
+    ///
     /// # Arguments
     ///
     /// * `lg_config_k`: Log2 of number of registers (k)
@@ -163,8 +169,14 @@ impl HipEstimator {
     ) -> f64 {
         let estimate = self.estimate(lg_config_k, cur_min, num_at_cur_min);
         let rse = get_rel_err(lg_config_k, false, self.out_of_order, num_std_dev);
+        let config_k = 1u32 << lg_config_k;
+        let num_non_zeros = if cur_min == 0 {
+            config_k.saturating_sub(num_at_cur_min)
+        } else {
+            config_k
+        };
         // RSE is positive for lower bounds, so (1 + rse) > 1, making bound < estimate
-        estimate / (1.0 + rse)
+        (estimate / (1.0 + rse)).max(f64::from(num_non_zeros))
     }
 
     /// Get raw HLL estimate using standard HyperLogLog formula
@@ -493,10 +505,45 @@ static NON_HIP_UB: [f64; 27] = [
 #[cfg(test)]
 mod tests {
     use googletest::assert_that;
+    use googletest::prelude::ge;
     use googletest::prelude::gt;
     use googletest::prelude::lt;
 
     use super::*;
+
+    #[test]
+    fn lower_bound_is_clamped_to_the_non_zero_register_count() {
+        for lg_config_k in 4u8..=16 {
+            let config_k = 1u32 << lg_config_k;
+            let mut est = HipEstimator::new(lg_config_k);
+            // Hit a quarter of the registers, leaving the rest at zero.
+            let num_hit = config_k / 4;
+            for register in 0..num_hit {
+                est.update(lg_config_k, 0, 1 + (register % 20) as u8);
+            }
+            let num_at_cur_min = config_k - num_hit;
+            for num_std_dev in [NumStdDev::One, NumStdDev::Two, NumStdDev::Three] {
+                let lower = est.lower_bound(lg_config_k, 0, num_at_cur_min, num_std_dev);
+                assert_that!(
+                    lower,
+                    ge(f64::from(num_hit)),
+                    "lg_config_k={lg_config_k} num_std_dev={num_std_dev:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn lower_bound_is_clamped_to_config_k_when_every_register_is_hit() {
+        let lg_config_k = 10u8;
+        let config_k = 1u32 << lg_config_k;
+        let est = HipEstimator::new(lg_config_k);
+        // A non-zero cur_min means no register is empty, so the floor is the full k.
+        for num_std_dev in [NumStdDev::One, NumStdDev::Two, NumStdDev::Three] {
+            let lower = est.lower_bound(lg_config_k, 1, 0, num_std_dev);
+            assert_that!(lower, ge(f64::from(config_k)), "{num_std_dev:?}");
+        }
+    }
 
     #[test]
     fn test_estimator_initialization() {
