@@ -8,6 +8,7 @@ All significant changes to this project will be documented in this file.
 
 * `ThetaIntersection::to_sketch` and `TupleIntersection::to_sketch` now return `Option`. Callers must handle `None` until the intersection receives its first successful update.
 * `BloomFilterBuilder`, `ThetaSketchBuilder`, `ThetaUnionBuilder`, `TupleSketchBuilder`, and `TupleUnionBuilder` now validate their configuration when `build` is called, and `build` returns `Result`. Callers must propagate or handle construction errors.
+* `BloomFilterBuilder::{MIN_NUM_BITS, MAX_NUM_BITS, MIN_NUM_HASHES, MAX_NUM_HASHES}` are no longer public. Callers should pass configurations to `build` and handle `InvalidArgument` instead of prevalidating against these constants.
 * Fallible sketch and operator constructors now return `Result` directly from `new` or `with_seed`. `ReqSketch`, `ReqUnion`, and `TDigestMut` no longer provide `try_new`, and the Count-Min parameter suggestion methods also return `Result`.
 
 ### New features

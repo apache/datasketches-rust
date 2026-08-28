@@ -19,7 +19,6 @@
 
 use datasketches::error::Error;
 use datasketches::error::ErrorKind;
-use datasketches::req::DEFAULT_K;
 use datasketches::req::RankAccuracy;
 use datasketches::req::ReqSketch;
 use datasketches::req::SearchCriteria;
@@ -113,7 +112,7 @@ fn single_value_hra_answers_exactly() {
 
 #[test]
 fn single_value_lra_preserves_configuration() {
-    let mut sketch = ReqSketch::<f32>::new(DEFAULT_K, RankAccuracy::LowRank).unwrap();
+    let mut sketch = ReqSketch::<f32>::new(12, RankAccuracy::LowRank).unwrap();
     sketch.update(1.0f32);
 
     assert_eq!(sketch.rank_accuracy(), RankAccuracy::LowRank);

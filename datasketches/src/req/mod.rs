@@ -38,11 +38,11 @@ pub use self::union::ReqUnion;
 pub use self::value::ReqValue;
 
 /// Default value of `k` if not specified. Roughly 1% relative error at 95% confidence.
-pub const DEFAULT_K: u16 = 12;
+const DEFAULT_K: u16 = 12;
 /// Minimum allowed value of `k`.
-pub const MIN_K: u16 = 4;
+const MIN_K: u16 = 4;
 /// Maximum allowed value of `k`.
-pub const MAX_K: u16 = 1024;
+const MAX_K: u16 = 1024;
 
 /// Selects which tail of the rank domain the sketch optimizes for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

@@ -626,16 +626,16 @@ enum BloomFilterBuilderMode {
 
 impl BloomFilterBuilder {
     /// Minimum allowed requested Bloom filter size, in bits.
-    pub const MIN_NUM_BITS: u64 = 1;
+    const MIN_NUM_BITS: u64 = 1;
     /// Maximum allowed requested Bloom filter size, in bits.
     ///
     /// Derived from serialization limits so the encoded sketch length fits in a signed 32-bit size
     /// field.
-    pub const MAX_NUM_BITS: u64 = (i32::MAX as u64 - Family::BLOOMFILTER.max_pre_longs as u64) * 64;
+    const MAX_NUM_BITS: u64 = (i32::MAX as u64 - Family::BLOOMFILTER.max_pre_longs as u64) * 64;
     /// Minimum allowed number of hash functions.
-    pub const MIN_NUM_HASHES: u16 = 1;
+    const MIN_NUM_HASHES: u16 = 1;
     /// Maximum allowed number of hash functions.
-    pub const MAX_NUM_HASHES: u16 = i16::MAX as u16;
+    const MAX_NUM_HASHES: u16 = i16::MAX as u16;
 
     /// Creates a builder with optimal parameters for a target accuracy.
     ///
