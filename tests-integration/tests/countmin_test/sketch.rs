@@ -16,13 +16,14 @@
 // under the License.
 
 use datasketches::countmin::CountMinSketch;
+use datasketches::error::ErrorKind;
 use googletest::assert_that;
 use googletest::prelude::ge;
 use googletest::prelude::le;
 
 #[test]
 fn test_init_defaults() {
-    let sketch = CountMinSketch::<i64>::new(3, 5);
+    let sketch = CountMinSketch::<i64>::new(3, 5).unwrap();
     assert_eq!(sketch.num_hashes(), 3);
     assert_eq!(sketch.num_buckets(), 5);
     assert_eq!(sketch.seed(), 9001);
@@ -33,23 +34,69 @@ fn test_init_defaults() {
 
 #[test]
 fn test_parameter_suggestions() {
-    assert_eq!(CountMinSketch::<i64>::suggest_num_buckets(0.2), 14);
-    assert_eq!(CountMinSketch::<i64>::suggest_num_buckets(0.1), 28);
-    assert_eq!(CountMinSketch::<i64>::suggest_num_buckets(0.05), 55);
-    assert_eq!(CountMinSketch::<i64>::suggest_num_buckets(0.01), 272);
+    assert_eq!(CountMinSketch::<i64>::suggest_num_buckets(2.0).unwrap(), 3);
+    assert_eq!(CountMinSketch::<i64>::suggest_num_buckets(0.2).unwrap(), 14);
+    assert_eq!(CountMinSketch::<i64>::suggest_num_buckets(0.1).unwrap(), 28);
+    assert_eq!(
+        CountMinSketch::<i64>::suggest_num_buckets(0.05).unwrap(),
+        55
+    );
+    assert_eq!(
+        CountMinSketch::<i64>::suggest_num_buckets(0.01).unwrap(),
+        272
+    );
 
-    assert_eq!(CountMinSketch::<i64>::suggest_num_hashes(0.682689492), 2);
-    assert_eq!(CountMinSketch::<i64>::suggest_num_hashes(0.954499736), 4);
-    assert_eq!(CountMinSketch::<i64>::suggest_num_hashes(0.997300204), 6);
+    assert_eq!(
+        CountMinSketch::<i64>::suggest_num_hashes(0.682689492).unwrap(),
+        2
+    );
+    assert_eq!(CountMinSketch::<i64>::suggest_num_hashes(0.0).unwrap(), 1);
+    assert_eq!(
+        CountMinSketch::<i64>::suggest_num_hashes(0.954499736).unwrap(),
+        4
+    );
+    assert_eq!(
+        CountMinSketch::<i64>::suggest_num_hashes(0.997300204).unwrap(),
+        6
+    );
 
-    let buckets = CountMinSketch::<i64>::suggest_num_buckets(0.1);
-    let sketch = CountMinSketch::<i64>::new(3, buckets);
+    let buckets = CountMinSketch::<i64>::suggest_num_buckets(2.0).unwrap();
+    let hashes = CountMinSketch::<i64>::suggest_num_hashes(0.0).unwrap();
+    CountMinSketch::<i64>::new(hashes, buckets).unwrap();
+
+    let buckets_for_error = CountMinSketch::<i64>::suggest_num_buckets(0.1).unwrap();
+    let sketch = CountMinSketch::<i64>::new(3, buckets_for_error).unwrap();
     assert_that!(sketch.relative_error(), le(0.1));
+
+    assert_eq!(
+        CountMinSketch::<i64>::suggest_num_buckets(f64::NAN)
+            .unwrap_err()
+            .kind(),
+        ErrorKind::InvalidArgument
+    );
+    assert_eq!(
+        CountMinSketch::<i64>::suggest_num_buckets(0.0)
+            .unwrap_err()
+            .kind(),
+        ErrorKind::InvalidArgument
+    );
+    assert_eq!(
+        CountMinSketch::<i64>::suggest_num_buckets(f64::MIN_POSITIVE)
+            .unwrap_err()
+            .kind(),
+        ErrorKind::InvalidArgument
+    );
+    assert_eq!(
+        CountMinSketch::<i64>::suggest_num_hashes(1.1)
+            .unwrap_err()
+            .kind(),
+        ErrorKind::InvalidArgument
+    );
 }
 
 #[test]
 fn test_update_and_bounds() {
-    let mut sketch = CountMinSketch::<i64>::with_seed(3, 128, 123);
+    let mut sketch = CountMinSketch::<i64>::with_seed(3, 128, 123).unwrap();
     sketch.update("x");
     sketch.update_with_weight("x", 9);
     assert_eq!(sketch.estimate("x"), 10);
@@ -63,7 +110,7 @@ fn test_update_and_bounds() {
 
 #[test]
 fn test_update_and_bounds_with_scaling() {
-    let mut sketch = CountMinSketch::<u64>::with_seed(3, 128, 123);
+    let mut sketch = CountMinSketch::<u64>::with_seed(3, 128, 123).unwrap();
     sketch.update_with_weight("x", 10);
 
     let estimate = sketch.estimate("x");
@@ -104,7 +151,7 @@ fn test_update_and_bounds_with_scaling() {
 
 #[test]
 fn test_negative_weights() {
-    let mut sketch = CountMinSketch::<i64>::with_seed(2, 32, 123);
+    let mut sketch = CountMinSketch::<i64>::with_seed(2, 32, 123).unwrap();
     sketch.update_with_weight("y", -1);
     assert_eq!(sketch.total_weight(), 1);
     assert_eq!(sketch.estimate("y"), -1);
@@ -114,9 +161,9 @@ fn test_negative_weights() {
 
 #[test]
 fn test_halve() {
-    let buckets = CountMinSketch::<u64>::suggest_num_buckets(0.01);
-    let hashes = CountMinSketch::<u64>::suggest_num_hashes(0.9);
-    let mut sketch = CountMinSketch::<u64>::new(hashes, buckets);
+    let buckets = CountMinSketch::<u64>::suggest_num_buckets(0.01).unwrap();
+    let hashes = CountMinSketch::<u64>::suggest_num_hashes(0.9).unwrap();
+    let mut sketch = CountMinSketch::<u64>::new(hashes, buckets).unwrap();
 
     for i in 0..1000usize {
         for _ in 0..i {
@@ -137,9 +184,9 @@ fn test_halve() {
 
 #[test]
 fn test_decay() {
-    let buckets = CountMinSketch::<u64>::suggest_num_buckets(0.01);
-    let hashes = CountMinSketch::<u64>::suggest_num_hashes(0.9);
-    let mut sketch = CountMinSketch::<u64>::new(hashes, buckets);
+    let buckets = CountMinSketch::<u64>::suggest_num_buckets(0.01).unwrap();
+    let hashes = CountMinSketch::<u64>::suggest_num_hashes(0.9).unwrap();
+    let mut sketch = CountMinSketch::<u64>::new(hashes, buckets).unwrap();
 
     for i in 0..1000usize {
         for _ in 0..i {
@@ -162,8 +209,8 @@ fn test_decay() {
 
 #[test]
 fn test_merge() {
-    let mut left = CountMinSketch::<i64>::new(3, 64);
-    let mut right = CountMinSketch::<i64>::new(3, 64);
+    let mut left = CountMinSketch::<i64>::new(3, 64).unwrap();
+    let mut right = CountMinSketch::<i64>::new(3, 64).unwrap();
     for _ in 0..10 {
         left.update("a");
     }
@@ -179,7 +226,7 @@ fn test_merge() {
 
 #[test]
 fn test_serialize_deserialize_empty() {
-    let sketch = CountMinSketch::<i64>::with_seed(2, 5, 123);
+    let sketch = CountMinSketch::<i64>::with_seed(2, 5, 123).unwrap();
     let bytes = sketch.serialize();
     let decoded = CountMinSketch::<i64>::deserialize_with_seed(&bytes, 123).unwrap();
     assert!(decoded.is_empty());
@@ -190,7 +237,7 @@ fn test_serialize_deserialize_empty() {
 
 #[test]
 fn test_serialize_deserialize_non_empty() {
-    let mut sketch = CountMinSketch::<i64>::with_seed(3, 32, 123);
+    let mut sketch = CountMinSketch::<i64>::with_seed(3, 32, 123).unwrap();
     for i in 0..100i64 {
         sketch.update(i);
     }
@@ -202,7 +249,7 @@ fn test_serialize_deserialize_non_empty() {
 
 #[test]
 fn test_serialize_deserialize_non_empty_u64() {
-    let mut sketch = CountMinSketch::<u64>::with_seed(3, 32, 123);
+    let mut sketch = CountMinSketch::<u64>::with_seed(3, 32, 123).unwrap();
     for i in 0..100u64 {
         sketch.update(i);
     }
@@ -213,28 +260,28 @@ fn test_serialize_deserialize_non_empty_u64() {
 }
 
 #[test]
-#[should_panic(expected = "num_hashes must be at least 1")]
-fn test_invalid_hashes() {
-    CountMinSketch::<i64>::new(0, 5);
+fn test_invalid_hashes_return_error() {
+    let error = CountMinSketch::<i64>::new(0, 5).unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::InvalidArgument);
 }
 
 #[test]
-#[should_panic(expected = "num_buckets must be at least 3")]
-fn test_invalid_buckets() {
-    CountMinSketch::<i64>::new(1, 2);
+fn test_invalid_buckets_return_error() {
+    let error = CountMinSketch::<i64>::new(1, 2).unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::InvalidArgument);
 }
 
 #[test]
 #[should_panic]
 fn test_merge_incompatible() {
-    let mut left = CountMinSketch::<i64>::new(3, 64);
-    let right = CountMinSketch::<i64>::new(2, 64);
+    let mut left = CountMinSketch::<i64>::new(3, 64).unwrap();
+    let right = CountMinSketch::<i64>::new(2, 64).unwrap();
     left.merge(&right);
 }
 
 #[test]
 fn test_increment_single_key_like_rust_count_min_sketch() {
-    let mut sketch = CountMinSketch::<i64>::new(4, 32);
+    let mut sketch = CountMinSketch::<i64>::new(4, 32).unwrap();
     for _ in 0..300 {
         sketch.update("key");
     }
@@ -243,7 +290,7 @@ fn test_increment_single_key_like_rust_count_min_sketch() {
 
 #[test]
 fn test_estimated_size() {
-    let mut sketch = CountMinSketch::<i64>::new(4, 128);
+    let mut sketch = CountMinSketch::<i64>::new(4, 128).unwrap();
     assert_eq!(sketch.estimated_size(), 4200);
 
     // The backing tables are allocated up front; updates do not grow the sketch.
@@ -253,7 +300,7 @@ fn test_estimated_size() {
 
 #[test]
 fn test_increment_multi_like_rust_count_min_sketch() {
-    let mut sketch = CountMinSketch::<i64>::new(6, 128);
+    let mut sketch = CountMinSketch::<i64>::new(6, 128).unwrap();
     for i in 0..1_000_000u64 {
         sketch.update(i % 100);
     }

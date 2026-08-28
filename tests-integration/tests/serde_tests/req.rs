@@ -37,7 +37,7 @@ fn round_trip_one<T>(k: u16, ra: RankAccuracy, n: u64, make_item: impl Fn(u64) -
 where
     T: ReqValue + std::fmt::Debug + PartialEq,
 {
-    let mut a: ReqSketch<T> = ReqSketch::try_new(k, ra).unwrap();
+    let mut a: ReqSketch<T> = ReqSketch::new(k, ra).unwrap();
     for i in 0..n {
         a.update(make_item(i));
     }
@@ -281,7 +281,7 @@ fn exact_image(k: u16, items: &[f32]) -> Vec<u8> {
 }
 
 fn estimation_image(k: u16, n: u64) -> Vec<u8> {
-    let mut sketch = ReqSketch::<f32>::try_new(k, RankAccuracy::HighRank).unwrap();
+    let mut sketch = ReqSketch::<f32>::new(k, RankAccuracy::HighRank).unwrap();
     for item in 1..=n {
         sketch.update(item as f32);
     }

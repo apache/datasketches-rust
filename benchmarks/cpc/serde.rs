@@ -48,7 +48,7 @@ fn deserialize(bencher: Bencher, items: u64) {
 }
 
 fn sketch(items: u64) -> CpcSketch {
-    let mut sketch = CpcSketch::new(LG_K);
+    let mut sketch = CpcSketch::new(LG_K).unwrap();
     for value in 0..items {
         sketch.update(value);
     }

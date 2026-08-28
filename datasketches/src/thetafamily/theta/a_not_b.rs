@@ -22,6 +22,7 @@
 //! Theta entries carry no summary, so nothing needs to be combined.
 
 use crate::error::Error;
+use crate::error::ErrorKind;
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::hash::compute_seed_hash;
 use crate::theta::CompactThetaSketch;
@@ -57,16 +58,20 @@ pub struct ThetaANotB {
 
 impl Default for ThetaANotB {
     fn default() -> Self {
-        Self::with_seed(DEFAULT_UPDATE_SEED)
+        Self::with_seed(DEFAULT_UPDATE_SEED).unwrap()
     }
 }
 
 impl ThetaANotB {
     /// Creates a new set difference operator for the given `seed`.
-    pub fn with_seed(seed: u64) -> Self {
-        Self {
-            seed_hash: compute_seed_hash(seed),
-        }
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the computed seed hash is zero.
+    pub fn with_seed(seed: u64) -> Result<Self, Error> {
+        Ok(Self {
+            seed_hash: compute_seed_hash(seed, ErrorKind::InvalidArgument)?,
+        })
     }
 
     /// Computes `a and not b`.

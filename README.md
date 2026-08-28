@@ -51,7 +51,7 @@ Then build a sketch and query its distinct-count estimate:
 use datasketches::hll::HllSketch;
 use datasketches::hll::HllType;
 
-let mut sketch = HllSketch::new(12, HllType::Hll8);
+let mut sketch = HllSketch::new(12, HllType::Hll8).unwrap();
 for user in ["alice", "bob", "alice", "carol"] {
     sketch.update(user);
 }

@@ -76,9 +76,9 @@ impl HllSketch {
     ///   * `lg_k = 21`: 2M buckets, ~0.4% relative error.
     /// * `hll_type`: Target HLL array type (`Hll4`, `Hll6`, or `Hll8`).
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if `lg_config_k` is outside `[4, 21]`.
+    /// Returns an error if `lg_config_k` is outside `[4, 21]`.
     ///
     /// # Examples
     ///
@@ -86,22 +86,22 @@ impl HllSketch {
     /// use datasketches::hll::HllSketch;
     /// use datasketches::hll::HllType;
     ///
-    /// let sketch = HllSketch::new(12, HllType::Hll8);
+    /// let sketch = HllSketch::new(12, HllType::Hll8).unwrap();
     /// assert_eq!(sketch.lg_config_k(), 12);
     /// ```
-    pub fn new(lg_config_k: u8, hll_type: HllType) -> Self {
-        assert!(
-            (4..=21).contains(&lg_config_k),
-            "lg_config_k must be in [4, 21], got {}",
-            lg_config_k
-        );
+    pub fn new(lg_config_k: u8, hll_type: HllType) -> Result<Self, Error> {
+        if !(4..=21).contains(&lg_config_k) {
+            return Err(Error::invalid_argument(format!(
+                "lg_config_k must be in [4, 21], got {lg_config_k}"
+            )));
+        }
 
         let list = List::default();
 
-        Self {
+        Ok(Self {
             lg_config_k,
             mode: Mode::List { list, hll_type },
-        }
+        })
     }
 
     /// Create an HLL sketch directly from a Mode
@@ -178,11 +178,11 @@ impl HllSketch {
     /// use datasketches::hll::HllSketch;
     /// use datasketches::hll::HllType;
     ///
-    /// let mut sketch = HllSketch::new(10, HllType::Hll8);
+    /// let mut sketch = HllSketch::new(10, HllType::Hll8).unwrap();
     /// sketch.update("apple");
     /// assert!(sketch.estimate() >= 1.0);
     ///
-    /// let mut sketch = HllSketch::new(10, HllType::Hll8);
+    /// let mut sketch = HllSketch::new(10, HllType::Hll8).unwrap();
     /// sketch.update(raw_bytes::from_str("apple"));
     /// assert!(sketch.estimate() >= 1.0);
     /// ```
@@ -208,7 +208,7 @@ impl HllSketch {
     /// use datasketches::hll::HllType;
     ///
     /// let c = Coupon::from_value("apple");
-    /// let mut sketch = HllSketch::new(10, HllType::Hll8);
+    /// let mut sketch = HllSketch::new(10, HllType::Hll8).unwrap();
     /// sketch.update_with_coupon(c);
     /// assert!(sketch.estimate() >= 1.0);
     /// ```
@@ -251,7 +251,7 @@ impl HllSketch {
     /// use datasketches::hll::HllSketch;
     /// use datasketches::hll::HllType;
     ///
-    /// let mut sketch = HllSketch::new(10, HllType::Hll8);
+    /// let mut sketch = HllSketch::new(10, HllType::Hll8).unwrap();
     /// sketch.update("apple");
     /// assert!(sketch.estimate() >= 1.0);
     /// ```
@@ -299,7 +299,7 @@ impl HllSketch {
     /// use datasketches::hll::HllSketch;
     /// use datasketches::hll::HllType;
     ///
-    /// let mut sketch = HllSketch::new(10, HllType::Hll8);
+    /// let mut sketch = HllSketch::new(10, HllType::Hll8).unwrap();
     /// sketch.update("apple");
     ///
     /// let bytes = sketch.serialize();
@@ -427,7 +427,7 @@ impl HllSketch {
     /// use datasketches::hll::HllSketch;
     /// use datasketches::hll::HllType;
     ///
-    /// let mut sketch = HllSketch::new(10, HllType::Hll8);
+    /// let mut sketch = HllSketch::new(10, HllType::Hll8).unwrap();
     /// sketch.update("apple");
     ///
     /// let bytes = sketch.serialize();

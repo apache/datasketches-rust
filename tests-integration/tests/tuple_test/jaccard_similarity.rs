@@ -114,7 +114,7 @@ fn test_custom_seed_and_seed_mismatch() {
         sketch_b.update(value, 2u64);
     }
 
-    let operator = TupleJaccardSimilarity::with_seed(seed);
+    let operator = TupleJaccardSimilarity::with_seed(seed).unwrap();
     let jaccard = operator.compute(&sketch_a, &sketch_b).unwrap();
     assert_jaccard_exact(jaccard, 1.0);
     assert!(operator.exactly_equal(&sketch_a, &sketch_b).unwrap());

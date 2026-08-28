@@ -614,12 +614,14 @@ impl<S> CompactTupleSketch<S> {
     ///
     /// # Errors
     ///
-    /// Returns an error if the bytes are truncated, the family/serial version/sketch type are
-    /// unexpected, the seed hash does not match (for non-empty sketches), or an entry is corrupted.
+    /// Returns `InvalidData` if the bytes are truncated, the family/serial version/sketch type are
+    /// unexpected, the seed hash does not match, the supplied seed computes to the reserved zero
+    /// seed hash, or an entry is corrupted.
     pub fn deserialize_with_seed(bytes: &[u8], seed: u64) -> Result<Self, Error>
     where
         S: TupleSummaryValue,
     {
+        let expected_seed_hash = compute_seed_hash(seed, ErrorKind::InvalidData)?;
         let mut cursor = SketchSlice::new(bytes);
         let pre_longs = cursor
             .read_u8()
@@ -667,7 +669,7 @@ impl<S> CompactTupleSketch<S> {
         }
 
         check_seed_hash(
-            compute_seed_hash(seed),
+            expected_seed_hash,
             seed_hash,
             "deserialized CompactTupleSketch",
             ErrorKind::InvalidData,
@@ -804,11 +806,11 @@ where
     ///
     /// # Errors
     ///
-    /// Returns an error if `lg_k` is outside `[5, 26]` or `sampling_probability` is outside
-    /// `(0.0, 1.0]`.
+    /// Returns an error if `lg_k` is outside `[5, 26]`, `sampling_probability` is outside
+    /// `(0.0, 1.0]`, or the computed seed hash is zero.
     pub fn build(self) -> Result<TupleSketch<P>, Error> {
         Ok(TupleSketch {
-            table: TupleHashTable::try_new(
+            table: TupleHashTable::new(
                 self.lg_k,
                 self.resize_factor,
                 self.sampling_probability,

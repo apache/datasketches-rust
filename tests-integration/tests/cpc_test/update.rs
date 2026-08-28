@@ -26,7 +26,7 @@ const RELATIVE_ERROR_FOR_LG_K_11: f64 = 0.02;
 
 #[test]
 fn test_empty() {
-    let sketch = CpcSketch::new(11);
+    let sketch = CpcSketch::new(11).unwrap();
     assert!(sketch.is_empty());
     assert_eq!(sketch.estimate(), 0.0);
     assert_eq!(sketch.lower_bound(NumStdDev::One), 0.0);
@@ -36,7 +36,7 @@ fn test_empty() {
 
 #[test]
 fn test_one_value() {
-    let mut sketch = CpcSketch::new(11);
+    let mut sketch = CpcSketch::new(11).unwrap();
     sketch.update(1);
     assert!(!sketch.is_empty());
     assert_eq!(sketch.estimate(), 1.0);
@@ -47,7 +47,7 @@ fn test_one_value() {
 
 #[test]
 fn test_many_values() {
-    let mut sketch = CpcSketch::new(11);
+    let mut sketch = CpcSketch::new(11).unwrap();
     for i in 0..10000 {
         sketch.update(i);
     }

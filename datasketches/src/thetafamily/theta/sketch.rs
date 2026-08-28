@@ -688,7 +688,13 @@ impl CompactThetaSketch {
     }
 
     /// Deserializes a compact theta sketch from bytes using the provided expected seed.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidData` if the image is malformed, its seed hash does not match `seed`, or
+    /// `seed` itself computes to the reserved zero seed hash.
     pub fn deserialize_with_seed(bytes: &[u8], seed: u64) -> Result<Self, Error> {
+        let expected_seed_hash = compute_seed_hash(seed, ErrorKind::InvalidData)?;
         let mut cursor = SketchSlice::new(bytes);
         let pre_longs = cursor
             .read_u8()
@@ -707,10 +713,10 @@ impl CompactThetaSketch {
         )?;
 
         match ser_ver {
-            1 => Self::deserialize_v1(cursor, seed),
-            2 => Self::deserialize_v2(pre_longs, cursor, seed),
-            3 => Self::deserialize_v3(pre_longs, cursor, seed),
-            4 => Self::deserialize_v4(pre_longs, cursor, seed),
+            1 => Self::deserialize_v1(cursor, expected_seed_hash),
+            2 => Self::deserialize_v2(pre_longs, cursor, expected_seed_hash),
+            3 => Self::deserialize_v3(pre_longs, cursor, expected_seed_hash),
+            4 => Self::deserialize_v4(pre_longs, cursor, expected_seed_hash),
             _ => Err(Error::deserial(format!(
                 "unsupported serial version: expected 1, 2, 3, or 4, got {ser_ver}",
             ))),
@@ -742,8 +748,8 @@ impl CompactThetaSketch {
         Ok(entries)
     }
 
-    fn deserialize_v1(mut cursor: SketchSlice<'_>, expected_seed: u64) -> Result<Self, Error> {
-        let seed_hash = compute_seed_hash(expected_seed);
+    fn deserialize_v1(mut cursor: SketchSlice<'_>, expected_seed_hash: u16) -> Result<Self, Error> {
+        let seed_hash = expected_seed_hash;
         cursor.read_u8().map_err(insufficient_data("<unused>"))?;
         cursor
             .read_u32_le()
@@ -783,7 +789,7 @@ impl CompactThetaSketch {
     fn deserialize_v2(
         pre_longs: u8,
         mut cursor: SketchSlice<'_>,
-        expected_seed: u64,
+        expected_seed_hash: u16,
     ) -> Result<Self, Error> {
         cursor.read_u8().map_err(insufficient_data("<unused>"))?;
         cursor
@@ -793,7 +799,7 @@ impl CompactThetaSketch {
             .read_u16_le()
             .map_err(insufficient_data("seed_hash"))?;
         check_seed_hash(
-            compute_seed_hash(expected_seed),
+            expected_seed_hash,
             seed_hash,
             "deserialized CompactThetaSketch v2",
             ErrorKind::InvalidData,
@@ -852,7 +858,7 @@ impl CompactThetaSketch {
     fn deserialize_v3(
         pre_longs: u8,
         mut cursor: SketchSlice<'_>,
-        expected_seed: u64,
+        expected_seed_hash: u16,
     ) -> Result<Self, Error> {
         cursor
             .read_u16_le()
@@ -868,7 +874,7 @@ impl CompactThetaSketch {
         let mut entries = vec![];
         if !empty {
             check_seed_hash(
-                compute_seed_hash(expected_seed),
+                expected_seed_hash,
                 seed_hash,
                 "deserialized CompactThetaSketch v3",
                 ErrorKind::InvalidData,
@@ -903,7 +909,7 @@ impl CompactThetaSketch {
     fn deserialize_v4(
         pre_longs: u8,
         mut cursor: SketchSlice<'_>,
-        expected_seed: u64,
+        expected_seed_hash: u16,
     ) -> Result<Self, Error> {
         let entry_bits = cursor.read_u8().map_err(insufficient_data("entry_bits"))?;
         let num_entries_bytes = cursor.read_u8().map_err(insufficient_data("num_entries"))?;
@@ -919,7 +925,7 @@ impl CompactThetaSketch {
         let empty = (flags & FLAGS_IS_EMPTY) != 0;
         if !empty {
             check_seed_hash(
-                compute_seed_hash(expected_seed),
+                expected_seed_hash,
                 seed_hash,
                 "deserialized CompactThetaSketch v4",
                 ErrorKind::InvalidData,
@@ -1097,8 +1103,8 @@ impl ThetaSketchBuilder {
     ///
     /// # Errors
     ///
-    /// Returns an error if `lg_k` is outside `[5, 26]` or `sampling_probability` is outside
-    /// `(0.0, 1.0]`.
+    /// Returns an error if `lg_k` is outside `[5, 26]`, `sampling_probability` is outside
+    /// `(0.0, 1.0]`, or the computed seed hash is zero.
     ///
     /// # Examples
     ///
@@ -1108,7 +1114,7 @@ impl ThetaSketchBuilder {
     /// ThetaSketchBuilder::default().lg_k(10).build().unwrap();
     /// ```
     pub fn build(self) -> Result<ThetaSketch, Error> {
-        let table = ThetaHashTable::try_new(
+        let table = ThetaHashTable::new(
             self.lg_k,
             self.resize_factor,
             self.sampling_probability,

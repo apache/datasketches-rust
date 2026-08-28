@@ -6,8 +6,9 @@ All significant changes to this project will be documented in this file.
 
 ### Breaking changes
 
-* Change `ThetaIntersection::to_sketch` and `TupleIntersection::to_sketch` to return `Option`. Callers must handle `None` before the first successful update; after that, the methods return `Some` even when the intersection is empty.
-* Change `BloomFilterBuilder`, `ThetaSketchBuilder`, `ThetaUnionBuilder`, `TupleSketchBuilder`, and `TupleUnionBuilder` to validate their configuration in `build`, which now returns `Result`. Callers must handle construction errors instead of relying on builder setters or constructors to panic.
+* `ThetaIntersection::to_sketch` and `TupleIntersection::to_sketch` now return `Option`. Callers must handle `None` until the intersection receives its first successful update.
+* `BloomFilterBuilder`, `ThetaSketchBuilder`, `ThetaUnionBuilder`, `TupleSketchBuilder`, and `TupleUnionBuilder` now validate their configuration when `build` is called, and `build` returns `Result`. Callers must propagate or handle construction errors.
+* Fallible sketch and operator constructors now return `Result` directly from `new` or `with_seed`. `ReqSketch`, `ReqUnion`, and `TDigestMut` no longer provide `try_new`, and the Count-Min parameter suggestion methods also return `Result`.
 
 ### New features
 
@@ -15,19 +16,20 @@ All significant changes to this project will be documented in this file.
 
 ### Performance improvements
 
-* Reduce T-Digest allocation overhead and retained memory across updates, compression, merges, serialization, deserialization, and freezing; linearly merge sorted centroid buffers and decode validated native payloads directly while preserving the serialized format.
-* Reduce CPC serialization and deserialization allocations by encoding directly into the output buffer and decoding directly from the input payload.
+* Speed up T-Digest workloads that deserialize and merge many Rust-generated partial states, while reducing temporary allocations and retained memory.
+* Reduce CPC serialization and deserialization allocations for nontrivial sketches. Local benchmarks show faster processing for larger sketches and roughly unchanged serialization performance for small sparse sketches.
 
 ### Bug fixes
 
-* Bloom filter deserialization now validates clean cached bit counts against the bit array, reconstructs dirty counts, and checks non-empty payload sizes before allocating.
-* Frequent-items map sizes are now limited consistently to the cross-language maximum of `2^30`: `FrequentItemsSketch::new` rejects larger configurations, and `deserialize` returns `InvalidData` for out-of-range or inconsistent header fields instead of panicking on corrupt input. Empty images restore the minimum backing map instead of allocating from `lg_cur_map_size`, and non-empty images validate `active_items` against the declared map capacity and remaining payload before preallocating their counters.
-* T-Digest compression now handles `k = u16::MAX` without overflowing the scale normalization input.
-* T-Digest deserialization now validates declared payload lengths before allocating. Updating a deserialized digest whose unmerged buffer already exceeds the compression threshold now compresses it instead of allowing the buffer to grow without bound.
-* HLL deserialization now preserves HLL4 registers from compact images and validates mode capacities and payload sizes before shifting or allocating.
-* Theta deserialization now validates declared entry counts and compressed widths against the remaining payload before allocating or unpacking them.
-* Tuple deserialization now validates the declared entry count against the remaining hash payload before allocating.
-* CPC deserialization now rejects malformed or corrupt input with an error instead of panicking. Previously, corrupt bytes could trigger an index-out-of-bounds, a failed assertion, or an arithmetic overflow while decompressing the stream; the deserializer now validates the header fields against the sketch flavor and bounds-checks the decompressor, while leaving valid sketches byte-for-byte compatible with the Java, C++, and Go implementations.
+* Count-Min parameter suggestions now return constructor-valid values and reject relative-error targets that require more buckets than the sketch supports.
+* Bloom filter deserialization now rejects malformed images with inconsistent counts or payload lengths, while valid images with a dirty cached count are restored correctly.
+* `FrequentItemsSketch` now enforces the cross-language map-size limit of `2^30` consistently. Oversized construction returns `InvalidArgument`, and malformed or oversized serialized images return `InvalidData` instead of panicking or attempting excessive allocation.
+* T-Digest compression now supports `k = u16::MAX` without overflowing.
+* T-Digest rejects truncated serialized payloads before allocating, and updating a deserialized digest no longer allows its buffered state to grow without bound.
+* Compact HLL4 images now restore all register values correctly.
+* HLL, Theta, and Tuple deserializers now return `InvalidData` for malformed payload sizes and entry counts instead of risking oversized allocations or decoding failures.
+* Malformed CPC images now return `InvalidData` instead of panicking.
+* Seeded deserializers now return `InvalidData` rather than panicking when the caller supplies a seed whose hash is the reserved zero value.
 
 ## v0.4.0 (2026-08-18)
 

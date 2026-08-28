@@ -81,7 +81,7 @@
 //! use datasketches::hll::HllSketch;
 //! use datasketches::hll::HllType;
 //!
-//! let mut sketch = HllSketch::new(12, HllType::Hll8);
+//! let mut sketch = HllSketch::new(12, HllType::Hll8).unwrap();
 //! sketch.update("apple");
 //! let upper = sketch.upper_bound(NumStdDev::Two);
 //! assert!(upper >= sketch.estimate());
@@ -94,12 +94,12 @@
 //! use datasketches::hll::HllType;
 //! use datasketches::hll::HllUnion;
 //!
-//! let mut left = HllSketch::new(10, HllType::Hll8);
-//! let mut right = HllSketch::new(10, HllType::Hll8);
+//! let mut left = HllSketch::new(10, HllType::Hll8).unwrap();
+//! let mut right = HllSketch::new(10, HllType::Hll8).unwrap();
 //! left.update("apple");
 //! right.update("banana");
 //!
-//! let mut union = HllUnion::new(10);
+//! let mut union = HllUnion::new(10).unwrap();
 //! union.update(&left);
 //! union.update(&right);
 //!
@@ -180,8 +180,8 @@ const RESIZE_DENOMINATOR: u32 = 4;
 ///
 /// let c = Coupon::from_value("hello");
 ///
-/// let mut sketch1 = HllSketch::new(10, HllType::Hll8);
-/// let mut sketch2 = HllSketch::new(12, HllType::Hll8);
+/// let mut sketch1 = HllSketch::new(10, HllType::Hll8).unwrap();
+/// let mut sketch2 = HllSketch::new(12, HllType::Hll8).unwrap();
 /// sketch1.update_with_coupon(c);
 /// sketch2.update_with_coupon(c);
 ///

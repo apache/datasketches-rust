@@ -110,7 +110,7 @@ fn test_sketch_file(path: PathBuf, expected_cardinality: usize, expected_lg_k: u
 fn test_update_after_deserialize_list_mode() {
     const LG_K: u8 = 11;
     for hll_type in [HllType::Hll4, HllType::Hll6, HllType::Hll8] {
-        let mut sketch = HllSketch::new(LG_K, hll_type);
+        let mut sketch = HllSketch::new(LG_K, hll_type).unwrap();
         sketch.update(1u64);
 
         // Round-trip through serialization (compact format, List mode)
@@ -127,7 +127,7 @@ fn test_update_after_deserialize_list_mode() {
 
 #[test]
 fn coupon_mode_sizes_are_validated_before_allocating() {
-    let mut list = HllSketch::new(12, HllType::Hll8);
+    let mut list = HllSketch::new(12, HllType::Hll8).unwrap();
     list.update(1_u64);
     let mut invalid_list_size = list.serialize();
     invalid_list_size[4] = u8::MAX;
@@ -137,7 +137,7 @@ fn coupon_mode_sizes_are_validated_before_allocating() {
     invalid_list_count[6] = u8::MAX;
     assert!(HllSketch::deserialize(&invalid_list_count).is_err());
 
-    let mut set = HllSketch::new(12, HllType::Hll8);
+    let mut set = HllSketch::new(12, HllType::Hll8).unwrap();
     for value in 0..10 {
         set.update(value);
     }
@@ -153,7 +153,7 @@ fn coupon_mode_sizes_are_validated_before_allocating() {
 #[test]
 fn hll_mode_round_trip_preserves_registers_and_rejects_truncation() {
     for hll_type in [HllType::Hll4, HllType::Hll6, HllType::Hll8] {
-        let mut sketch = HllSketch::new(12, hll_type);
+        let mut sketch = HllSketch::new(12, hll_type).unwrap();
         for value in 0..10_000 {
             sketch.update(value);
         }
@@ -219,7 +219,7 @@ fn test_serialized_bytes_match_reference_files_for_coupon_modes() {
     ] {
         for (n, mode) in [(0_u32, "List"), (1, "List"), (10, "Set"), (100, "Set")] {
             // Fixture generators use lg_k 12 and update the sketch with 0..n.
-            let mut sketch = HllSketch::new(12, hll_type);
+            let mut sketch = HllSketch::new(12, hll_type).unwrap();
             for value in 0..n {
                 sketch.update(natural_extend::from_u32(value));
             }

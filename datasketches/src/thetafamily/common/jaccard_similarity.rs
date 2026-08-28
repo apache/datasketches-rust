@@ -191,7 +191,7 @@ where
         return Ok(JaccardSimilarity::exact(1.0));
     }
 
-    let mut intersection = IntersectionState::new(seed, NoopMergePolicy);
+    let mut intersection = IntersectionState::new(seed, NoopMergePolicy)?;
     intersection.update(KeyEntries(sketch_a))?;
     intersection.update(KeyEntries(sketch_b))?;
     let intersection = intersection.to_compact_parts(false);
@@ -257,7 +257,7 @@ where
         num_retained: b_num_retained,
         ..
     } = sketch_b.scalars();
-    let seed_hash = compute_seed_hash(seed);
+    let seed_hash = compute_seed_hash(seed, ErrorKind::InvalidArgument)?;
     check_seed_hash(seed_hash, a_seed_hash, "A", ErrorKind::InvalidData)?;
     check_seed_hash(seed_hash, b_seed_hash, "B", ErrorKind::InvalidData)?;
 
@@ -267,7 +267,7 @@ where
         1.0,
         seed,
         NoopMergePolicy,
-    );
+    )?;
     union.update(KeyEntries(sketch_a))?;
     union.update(KeyEntries(sketch_b))?;
     Ok(union.to_compact_parts(false))

@@ -18,7 +18,6 @@
 //! REQ union — combines REQ sketches into a single result.
 
 use crate::error::Error;
-use crate::req::DEFAULT_K;
 use crate::req::RankAccuracy;
 use crate::req::sketch::ReqSketch;
 use crate::req::value::ReqValue;
@@ -33,34 +32,21 @@ pub struct ReqUnion<T: ReqValue> {
 
 impl<T: ReqValue> Default for ReqUnion<T> {
     fn default() -> Self {
-        Self::new(DEFAULT_K, RankAccuracy::HighRank)
+        Self {
+            inner: ReqSketch::default(),
+        }
     }
 }
 
 impl<T: ReqValue> ReqUnion<T> {
     /// Creates a new union with the given `k` and rank accuracy.
     ///
-    /// The fallible version of this method is [`ReqUnion::try_new`].
-    ///
-    /// # Panics
-    ///
-    /// Panics if `k` is invalid (see [`ReqSketch::new`]).
-    pub fn new(k: u16, rank_accuracy: RankAccuracy) -> Self {
-        Self {
-            inner: ReqSketch::new(k, rank_accuracy),
-        }
-    }
-
-    /// Creates a new union with the given `k` and rank accuracy.
-    ///
-    /// The panicking version of this method is [`ReqUnion::new`].
-    ///
     /// # Errors
     ///
-    /// Returns an error if `k` is invalid (see [`ReqSketch::try_new`]).
-    pub fn try_new(k: u16, rank_accuracy: RankAccuracy) -> Result<Self, Error> {
+    /// Returns an error if `k` is invalid (see [`ReqSketch::new`]).
+    pub fn new(k: u16, rank_accuracy: RankAccuracy) -> Result<Self, Error> {
         Ok(Self {
-            inner: ReqSketch::try_new(k, rank_accuracy)?,
+            inner: ReqSketch::new(k, rank_accuracy)?,
         })
     }
 

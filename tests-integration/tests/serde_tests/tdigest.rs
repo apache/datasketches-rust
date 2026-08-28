@@ -36,7 +36,7 @@ fn fnv1a(bytes: &[u8]) -> u64 {
 }
 
 fn patterned_digest(k: u16, len: usize, salt: usize) -> TDigestMut {
-    let mut tdigest = TDigestMut::new(k);
+    let mut tdigest = TDigestMut::new(k).unwrap();
     for index in 0..len {
         let value = (((index * 37 + salt * 17) % 101) as f64) - 50.0;
         tdigest.update(value);
@@ -167,7 +167,7 @@ fn test_deserialize_from_go_snapshots() {
 
 #[test]
 fn test_empty() {
-    let mut td = TDigestMut::new(100);
+    let mut td = TDigestMut::new(100).unwrap();
     assert!(td.is_empty());
 
     let bytes = td.serialize();
@@ -201,7 +201,7 @@ fn test_single_value() {
 
 #[test]
 fn test_many_values() {
-    let mut td = TDigestMut::new(100);
+    let mut td = TDigestMut::new(100).unwrap();
     for i in 0..1000 {
         td.update(i as f64);
     }
@@ -331,7 +331,7 @@ fn test_updates_normalize_overfull_deserialized_mixed_buffer() {
 
 #[test]
 fn test_deserialize_rejects_truncated_large_payload_before_allocation() {
-    let mut tdigest = TDigestMut::new(10);
+    let mut tdigest = TDigestMut::new(10).unwrap();
     tdigest.update(0.0);
     tdigest.update(1.0);
     let mut bytes = tdigest.serialize();

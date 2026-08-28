@@ -113,7 +113,7 @@ fn single_value_hra_answers_exactly() {
 
 #[test]
 fn single_value_lra_preserves_configuration() {
-    let mut sketch = ReqSketch::<f32>::new(DEFAULT_K, RankAccuracy::LowRank);
+    let mut sketch = ReqSketch::<f32>::new(DEFAULT_K, RankAccuracy::LowRank).unwrap();
     sketch.update(1.0f32);
 
     assert_eq!(sketch.rank_accuracy(), RankAccuracy::LowRank);
@@ -250,22 +250,16 @@ fn small_edge_cases_answer_reasonably() -> Result<(), Error> {
 }
 
 #[test]
-fn try_new_validates_k() {
+fn new_validates_k() {
     assert_that!(
-        ReqSketch::<f64>::try_new(0, RankAccuracy::HighRank),
+        ReqSketch::<f64>::new(0, RankAccuracy::HighRank),
         err(anything())
     );
-    let error = ReqSketch::<f64>::try_new(3, RankAccuracy::HighRank).unwrap_err();
+    let error = ReqSketch::<f64>::new(3, RankAccuracy::HighRank).unwrap_err();
     assert_eq!(error.kind(), ErrorKind::InvalidArgument);
     assert_that!(
-        ReqSketch::<f64>::try_new(4096, RankAccuracy::HighRank),
+        ReqSketch::<f64>::new(4096, RankAccuracy::HighRank),
         err(anything())
     );
-    assert!(ReqSketch::<f64>::try_new(12, RankAccuracy::HighRank).is_ok());
-}
-
-#[test]
-#[should_panic(expected = "k must be even")]
-fn new_panics_on_invalid_k() {
-    let _ = ReqSketch::<f64>::new(5, RankAccuracy::HighRank);
+    assert!(ReqSketch::<f64>::new(12, RankAccuracy::HighRank).is_ok());
 }

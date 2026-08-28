@@ -35,7 +35,7 @@ pub struct ThetaIntersection {
 
 impl Default for ThetaIntersection {
     fn default() -> Self {
-        Self::with_seed(DEFAULT_UPDATE_SEED)
+        Self::with_seed(DEFAULT_UPDATE_SEED).unwrap()
     }
 }
 
@@ -48,10 +48,14 @@ impl IntersectionMergePolicy<ThetaEntry> for NoopIntersectionPolicy {
 
 impl ThetaIntersection {
     /// Creates a new intersection operator for the given `seed`.
-    pub fn with_seed(seed: u64) -> Self {
-        Self {
-            state: IntersectionState::new(seed, NoopIntersectionPolicy),
-        }
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the computed seed hash is zero.
+    pub fn with_seed(seed: u64) -> Result<Self, Error> {
+        Ok(Self {
+            state: IntersectionState::new(seed, NoopIntersectionPolicy)?,
+        })
     }
 
     /// Updates the intersection with a given sketch.

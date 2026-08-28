@@ -150,7 +150,7 @@ fn test_half_overlap_estimation_mode_custom_seed() {
     let sketch_a = sketch_with_range_and_seed(0, 10000, seed);
     let sketch_b = sketch_with_range_and_seed(5000, 10000, seed);
 
-    let operator = ThetaJaccardSimilarity::with_seed(seed);
+    let operator = ThetaJaccardSimilarity::with_seed(seed).unwrap();
     let jaccard = operator.compute(&sketch_a, &sketch_b).unwrap();
     assert_jaccard_estimate(jaccard, 0.33);
 

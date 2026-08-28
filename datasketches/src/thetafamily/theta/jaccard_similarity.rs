@@ -18,7 +18,9 @@
 //! Jaccard similarity for Theta sketches.
 
 use crate::error::Error;
+use crate::error::ErrorKind;
 use crate::hash::DEFAULT_UPDATE_SEED;
+use crate::hash::compute_seed_hash;
 use crate::theta::ThetaSketchView;
 use crate::thetacommon::jaccard_similarity;
 use crate::thetacommon::jaccard_similarity::JaccardSimilarity;
@@ -49,14 +51,19 @@ pub struct ThetaJaccardSimilarity {
 
 impl Default for ThetaJaccardSimilarity {
     fn default() -> Self {
-        Self::with_seed(DEFAULT_UPDATE_SEED)
+        Self::with_seed(DEFAULT_UPDATE_SEED).unwrap()
     }
 }
 
 impl ThetaJaccardSimilarity {
     /// Creates a Jaccard similarity operator for the given `seed`.
-    pub fn with_seed(seed: u64) -> Self {
-        Self { seed }
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the computed seed hash is zero.
+    pub fn with_seed(seed: u64) -> Result<Self, Error> {
+        compute_seed_hash(seed, ErrorKind::InvalidArgument)?;
+        Ok(Self { seed })
     }
 
     /// Computes the Jaccard similarity index for `sketch_a` and `sketch_b`.

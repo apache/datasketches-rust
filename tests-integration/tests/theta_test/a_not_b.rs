@@ -75,7 +75,7 @@ fn test_seed_mismatch_returns_error() {
     one_other_seed.update("value");
     let good = sketch_with_range(0, 10);
 
-    let a_not_b = ThetaANotB::with_seed(1);
+    let a_not_b = ThetaANotB::with_seed(1).unwrap();
     assert_that!(
         a_not_b.compute(&one_other_seed, &good, true),
         err(anything())
