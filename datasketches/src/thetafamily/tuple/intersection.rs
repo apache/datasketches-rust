@@ -45,6 +45,7 @@ use crate::tuple::sketch::TupleSketchView;
 /// # Examples
 ///
 /// ```
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// use datasketches::tuple::DefaultUpdatePolicy;
 /// use datasketches::tuple::SummaryCombinePolicy;
 /// use datasketches::tuple::SummaryPolicy;
@@ -68,21 +69,32 @@ use crate::tuple::sketch::TupleSketchView;
 /// }
 ///
 /// let update_policy = DefaultUpdatePolicy::<u64>::default();
-/// let mut a = TupleSketchBuilder::new(update_policy).build().unwrap();
+/// let mut a = TupleSketchBuilder::new(update_policy).build()?;
 /// a.update("shared", 3);
 /// a.update("only_a", 1);
 ///
-/// let mut b = TupleSketchBuilder::new(update_policy).build().unwrap();
+/// let mut b = TupleSketchBuilder::new(update_policy).build()?;
 /// b.update("shared", 4);
 /// b.update("only_b", 1);
 ///
 /// let mut intersection = TupleIntersection::new(SumPolicy);
-/// intersection.update(&a).unwrap();
-/// intersection.update(&b).unwrap();
+/// intersection.update(&a)?;
+/// intersection.update(&b)?;
 ///
-/// let result = intersection.to_sketch(true).unwrap();
+/// let result = intersection
+///     .to_sketch(true)
+///     .expect("intersection has been updated");
 /// assert_eq!(result.num_retained(), 1); // only "shared"
-/// assert_eq!(result.iter().next().unwrap().1, &7); // 3 + 4
+/// assert_eq!(
+///     result
+///         .iter()
+///         .next()
+///         .expect("result contains the shared entry")
+///         .1,
+///     &7
+/// );
+/// # Ok(())
+/// # }
 /// ```
 #[derive(Debug)]
 pub struct TupleIntersection<P>

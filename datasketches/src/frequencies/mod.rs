@@ -76,14 +76,17 @@
 //! # Examples
 //!
 //! ```
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! use datasketches::frequencies::ErrorType;
 //! use datasketches::frequencies::FrequentItemsSketch;
 //!
-//! let mut sketch = FrequentItemsSketch::<i64>::new(64).unwrap();
+//! let mut sketch = FrequentItemsSketch::<i64>::new(64)?;
 //! sketch.update_with_count(1, 3);
 //! sketch.update(2);
 //! let rows = sketch.frequent_items(ErrorType::NoFalseNegatives);
 //! assert!(rows.iter().any(|row| *row.item() == 1));
+//! # Ok(())
+//! # }
 //! ```
 //!
 //! # Serialization
@@ -92,14 +95,17 @@
 //! [`FrequentItemValue`].
 //!
 //! ```
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! use datasketches::frequencies::FrequentItemsSketch;
 //!
-//! let mut sketch = FrequentItemsSketch::<i64>::new(64).unwrap();
+//! let mut sketch = FrequentItemsSketch::<i64>::new(64)?;
 //! sketch.update_with_count(42, 2);
 //!
 //! let bytes = sketch.serialize();
-//! let decoded = FrequentItemsSketch::<i64>::deserialize(&bytes).unwrap();
+//! let decoded = FrequentItemsSketch::<i64>::deserialize(&bytes)?;
 //! assert!(decoded.estimate(&42) >= 2);
+//! # Ok(())
+//! # }
 //! ```
 
 mod reverse_purge_item_hash_map;

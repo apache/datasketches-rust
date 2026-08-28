@@ -39,21 +39,25 @@ use crate::tuple::sketch::TupleSketchView;
 /// # Examples
 ///
 /// ```
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// use datasketches::tuple::DefaultUpdatePolicy;
 /// use datasketches::tuple::TupleANotB;
 /// use datasketches::tuple::TupleSketchBuilder;
 ///
 /// let update_policy = DefaultUpdatePolicy::<u64>::default();
-/// let mut a = TupleSketchBuilder::new(update_policy).build().unwrap();
+/// let mut a = TupleSketchBuilder::new(update_policy).build()?;
 /// a.update("apple", 1);
 /// a.update("banana", 1);
 ///
-/// let mut b = TupleSketchBuilder::new(update_policy).build().unwrap();
+/// let mut b = TupleSketchBuilder::new(update_policy).build()?;
 /// b.update("banana", 1);
 ///
 /// let a_not_b = TupleANotB::default();
-/// let result = a_not_b.compute(&a, &b, true).unwrap();
-/// assert_eq!(result.num_retained(), 1); // only "apple" survives
+/// let result = a_not_b.compute(&a, &b, true)?;
+/// // Only "apple" survives.
+/// assert_eq!(result.num_retained(), 1);
+/// # Ok(())
+/// # }
 /// ```
 #[derive(Debug, Clone, Copy)]
 pub struct TupleANotB {

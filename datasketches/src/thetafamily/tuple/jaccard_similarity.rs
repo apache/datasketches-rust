@@ -34,18 +34,21 @@ use crate::tuple::TupleSketchView;
 /// # Examples
 ///
 /// ```
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// use datasketches::tuple::DefaultUpdatePolicy;
 /// use datasketches::tuple::TupleJaccardSimilarity;
 /// use datasketches::tuple::TupleSketchBuilder;
 ///
 /// let policy = DefaultUpdatePolicy::<u64>::default();
-/// let mut a = TupleSketchBuilder::new(policy).build().unwrap();
-/// let mut b = TupleSketchBuilder::new(policy).build().unwrap();
+/// let mut a = TupleSketchBuilder::new(policy).build()?;
+/// let mut b = TupleSketchBuilder::new(policy).build()?;
 /// a.update("apple", 1);
 /// b.update("apple", 2);
 ///
-/// let result = TupleJaccardSimilarity::default().compute(&a, &b).unwrap();
+/// let result = TupleJaccardSimilarity::default().compute(&a, &b)?;
 /// assert_eq!(result.estimate(), 1.0);
+/// # Ok(())
+/// # }
 /// ```
 #[derive(Clone, Copy, Debug)]
 pub struct TupleJaccardSimilarity {

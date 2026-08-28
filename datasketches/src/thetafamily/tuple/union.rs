@@ -41,28 +41,30 @@ use crate::tuple::sketch::TupleSketchView;
 /// # Examples
 ///
 /// ```
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// use datasketches::tuple::DefaultUnionPolicy;
 /// use datasketches::tuple::DefaultUpdatePolicy;
 /// use datasketches::tuple::TupleSketchBuilder;
 /// use datasketches::tuple::TupleUnionBuilder;
 ///
 /// let update_policy = DefaultUpdatePolicy::<u64>::default();
-/// let mut a = TupleSketchBuilder::new(update_policy).build().unwrap();
+/// let mut a = TupleSketchBuilder::new(update_policy).build()?;
 /// a.update("apple", 1);
 /// a.update("banana", 1);
 ///
-/// let mut b = TupleSketchBuilder::new(update_policy).build().unwrap();
+/// let mut b = TupleSketchBuilder::new(update_policy).build()?;
 /// b.update("banana", 1);
 /// b.update("cherry", 1);
 ///
-/// let mut union = TupleUnionBuilder::new(DefaultUnionPolicy::<u64>::default())
-///     .build()
-///     .unwrap();
-/// union.update(&a).unwrap();
-/// union.update(&b).unwrap();
+/// let mut union = TupleUnionBuilder::new(DefaultUnionPolicy::<u64>::default()).build()?;
+/// union.update(&a)?;
+/// union.update(&b)?;
 ///
 /// let result = union.to_sketch(true);
-/// assert_eq!(result.num_retained(), 3); // apple, banana, cherry
+/// // apple, banana, and cherry
+/// assert_eq!(result.num_retained(), 3);
+/// # Ok(())
+/// # }
 /// ```
 #[derive(Debug)]
 pub struct TupleUnion<P>
@@ -153,13 +155,15 @@ where
     /// # Examples
     ///
     /// ```
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::tuple::DefaultUnionPolicy;
     /// use datasketches::tuple::TupleUnionBuilder;
     ///
     /// let union = TupleUnionBuilder::new(DefaultUnionPolicy::<u64>::default())
     ///     .lg_k(12)
-    ///     .build()
-    ///     .unwrap();
+    ///     .build()?;
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn new(policy: P) -> Self {
         Self {

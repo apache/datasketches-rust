@@ -31,13 +31,16 @@
 //! # Usage
 //!
 //! ```
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! use datasketches::tuple::DefaultUpdatePolicy;
 //! use datasketches::tuple::TupleSketchBuilder;
 //!
 //! let policy = DefaultUpdatePolicy::<u64>::default();
-//! let mut sketch = TupleSketchBuilder::new(policy).build().unwrap();
+//! let mut sketch = TupleSketchBuilder::new(policy).build()?;
 //! sketch.update("apple", 1_u64);
 //! assert!(sketch.estimate() >= 1.0);
+//! # Ok(())
+//! # }
 //! ```
 
 mod a_not_b;

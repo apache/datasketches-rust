@@ -74,13 +74,16 @@ impl HllUnion {
     /// # Examples
     ///
     /// ```
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::hll::HllType;
     /// use datasketches::hll::HllUnion;
     ///
-    /// let mut union = HllUnion::new(10).unwrap();
+    /// let mut union = HllUnion::new(10)?;
     /// union.update_value("apple");
     /// let result = union.to_sketch(HllType::Hll8);
     /// assert_eq!(result.estimate(), 1.0);
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn new(lg_max_k: u8) -> Result<Self, Error> {
         // Start with an empty gadget at lg_max_k using Hll8
@@ -97,13 +100,16 @@ impl HllUnion {
     /// # Examples
     ///
     /// ```
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::hll::HllType;
     /// use datasketches::hll::HllUnion;
     ///
-    /// let mut union = HllUnion::new(10).unwrap();
+    /// let mut union = HllUnion::new(10)?;
     /// union.update_value("apple");
     /// let result = union.to_sketch(HllType::Hll8);
     /// assert_eq!(result.estimate(), 1.0);
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn update_value<T: Hash>(&mut self, value: T) {
         self.gadget.update(value);
@@ -117,20 +123,23 @@ impl HllUnion {
     /// # Examples
     ///
     /// ```
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::hll::HllSketch;
     /// use datasketches::hll::HllType;
     /// use datasketches::hll::HllUnion;
     ///
-    /// let mut left = HllSketch::new(10, HllType::Hll8).unwrap();
-    /// let mut right = HllSketch::new(10, HllType::Hll8).unwrap();
+    /// let mut left = HllSketch::new(10, HllType::Hll8)?;
+    /// let mut right = HllSketch::new(10, HllType::Hll8)?;
     /// left.update("apple");
     /// right.update("banana");
     ///
-    /// let mut union = HllUnion::new(10).unwrap();
+    /// let mut union = HllUnion::new(10)?;
     /// union.update(&left);
     /// union.update(&right);
     /// let result = union.to_sketch(HllType::Hll8);
     /// assert!(result.estimate() >= 2.0);
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn update(&mut self, sketch: &HllSketch) {
         if sketch.is_empty() {
@@ -250,13 +259,16 @@ impl HllUnion {
     /// # Examples
     ///
     /// ```
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::hll::HllType;
     /// use datasketches::hll::HllUnion;
     ///
-    /// let mut union = HllUnion::new(10).unwrap();
+    /// let mut union = HllUnion::new(10)?;
     /// union.update_value("apple");
     /// let result = union.to_sketch(HllType::Hll6);
     /// assert!(result.estimate() >= 1.0);
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn to_sketch(&self, hll_type: HllType) -> HllSketch {
         let gadget_type = self.gadget.target_type();

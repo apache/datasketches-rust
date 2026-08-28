@@ -83,11 +83,14 @@ impl HllSketch {
     /// # Examples
     ///
     /// ```
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::hll::HllSketch;
     /// use datasketches::hll::HllType;
     ///
-    /// let sketch = HllSketch::new(12, HllType::Hll8).unwrap();
+    /// let sketch = HllSketch::new(12, HllType::Hll8)?;
     /// assert_eq!(sketch.lg_config_k(), 12);
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn new(lg_config_k: u8, hll_type: HllType) -> Result<Self, Error> {
         if !(4..=21).contains(&lg_config_k) {
@@ -174,17 +177,20 @@ impl HllSketch {
     /// # Examples
     ///
     /// ```
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::hash::value::raw_bytes;
     /// use datasketches::hll::HllSketch;
     /// use datasketches::hll::HllType;
     ///
-    /// let mut sketch = HllSketch::new(10, HllType::Hll8).unwrap();
+    /// let mut sketch = HllSketch::new(10, HllType::Hll8)?;
     /// sketch.update("apple");
     /// assert!(sketch.estimate() >= 1.0);
     ///
-    /// let mut sketch = HllSketch::new(10, HllType::Hll8).unwrap();
+    /// let mut sketch = HllSketch::new(10, HllType::Hll8)?;
     /// sketch.update(raw_bytes::from_str("apple"));
     /// assert!(sketch.estimate() >= 1.0);
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn update<T: Hash>(&mut self, value: T) {
         self.update_with_coupon(Coupon::from_value(value));
@@ -203,14 +209,17 @@ impl HllSketch {
     /// # Examples
     ///
     /// ```
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::hll::Coupon;
     /// use datasketches::hll::HllSketch;
     /// use datasketches::hll::HllType;
     ///
     /// let c = Coupon::from_value("apple");
-    /// let mut sketch = HllSketch::new(10, HllType::Hll8).unwrap();
+    /// let mut sketch = HllSketch::new(10, HllType::Hll8)?;
     /// sketch.update_with_coupon(c);
     /// assert!(sketch.estimate() >= 1.0);
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn update_with_coupon(&mut self, coupon: Coupon) {
         match &mut self.mode {
@@ -248,12 +257,15 @@ impl HllSketch {
     /// # Examples
     ///
     /// ```
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::hll::HllSketch;
     /// use datasketches::hll::HllType;
     ///
-    /// let mut sketch = HllSketch::new(10, HllType::Hll8).unwrap();
+    /// let mut sketch = HllSketch::new(10, HllType::Hll8)?;
     /// sketch.update("apple");
     /// assert!(sketch.estimate() >= 1.0);
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn estimate(&self) -> f64 {
         match &self.mode {
@@ -296,15 +308,18 @@ impl HllSketch {
     /// # Examples
     ///
     /// ```
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::hll::HllSketch;
     /// use datasketches::hll::HllType;
     ///
-    /// let mut sketch = HllSketch::new(10, HllType::Hll8).unwrap();
+    /// let mut sketch = HllSketch::new(10, HllType::Hll8)?;
     /// sketch.update("apple");
     ///
     /// let bytes = sketch.serialize();
-    /// let decoded = HllSketch::deserialize(&bytes).unwrap();
+    /// let decoded = HllSketch::deserialize(&bytes)?;
     /// assert!(decoded.estimate() >= 1.0);
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn deserialize(bytes: &[u8]) -> Result<HllSketch, Error> {
         let mut cursor = SketchSlice::new(bytes);
@@ -424,15 +439,18 @@ impl HllSketch {
     /// # Examples
     ///
     /// ```
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::hll::HllSketch;
     /// use datasketches::hll::HllType;
     ///
-    /// let mut sketch = HllSketch::new(10, HllType::Hll8).unwrap();
+    /// let mut sketch = HllSketch::new(10, HllType::Hll8)?;
     /// sketch.update("apple");
     ///
     /// let bytes = sketch.serialize();
-    /// let decoded = HllSketch::deserialize(&bytes).unwrap();
+    /// let decoded = HllSketch::deserialize(&bytes)?;
     /// assert!(decoded.estimate() >= 1.0);
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn serialize(&self) -> Vec<u8> {
         match &self.mode {

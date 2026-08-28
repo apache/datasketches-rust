@@ -104,9 +104,12 @@ impl ThetaUnionBuilder {
     /// # Examples
     ///
     /// ```
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::theta::ThetaUnionBuilder;
     ///
-    /// ThetaUnionBuilder::new().lg_k(12).build().unwrap();
+    /// ThetaUnionBuilder::new().lg_k(12).build()?;
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn lg_k(mut self, lg_k: u8) -> Self {
         self.lg_k = lg_k;
@@ -124,12 +127,12 @@ impl ThetaUnionBuilder {
     /// # Examples
     ///
     /// ```
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::theta::ThetaUnionBuilder;
     ///
-    /// ThetaUnionBuilder::new()
-    ///     .sampling_probability(0.5)
-    ///     .build()
-    ///     .unwrap();
+    /// ThetaUnionBuilder::new().sampling_probability(0.5).build()?;
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn sampling_probability(mut self, probability: f32) -> Self {
         self.sampling_probability = probability;
@@ -141,9 +144,12 @@ impl ThetaUnionBuilder {
     /// # Examples
     ///
     /// ```
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::theta::ThetaUnionBuilder;
     ///
-    /// ThetaUnionBuilder::new().seed(7).build().unwrap();
+    /// ThetaUnionBuilder::new().seed(7).build()?;
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn seed(mut self, seed: u64) -> Self {
         self.seed = seed;
@@ -160,9 +166,12 @@ impl ThetaUnionBuilder {
     /// # Examples
     ///
     /// ```
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::theta::ThetaUnionBuilder;
     ///
-    /// ThetaUnionBuilder::new().lg_k(10).build().unwrap();
+    /// ThetaUnionBuilder::new().lg_k(10).build()?;
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn build(self) -> Result<ThetaUnion, Error> {
         Ok(ThetaUnion {

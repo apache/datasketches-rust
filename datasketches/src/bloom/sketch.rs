@@ -61,15 +61,17 @@ impl BloomFilter {
     /// # Examples
     ///
     /// ```
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::bloom::BloomFilterBuilder;
     ///
-    /// let mut filter = BloomFilterBuilder::with_accuracy(100, 0.01)
-    ///     .build()
-    ///     .unwrap();
+    /// let mut filter = BloomFilterBuilder::with_accuracy(100, 0.01).build()?;
     /// filter.insert("apple");
     ///
     /// assert!(filter.contains(&"apple")); // true - possibly present (and known to be inserted here)
-    /// assert!(!filter.contains(&"grape")); // false - definitely not present
+    /// // A value that was never inserted is usually reported as absent.
+    /// assert!(!filter.contains(&"grape"));
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn contains<T: Hash>(&self, item: &T) -> bool {
         if self.is_empty() {
@@ -87,17 +89,19 @@ impl BloomFilter {
     /// # Examples
     ///
     /// ```
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::bloom::BloomFilterBuilder;
     ///
-    /// let mut filter = BloomFilterBuilder::with_accuracy(100, 0.01)
-    ///     .build()
-    ///     .unwrap();
+    /// let mut filter = BloomFilterBuilder::with_accuracy(100, 0.01).build()?;
     ///
     /// let was_present = filter.contains_and_insert(&"apple");
     /// assert!(!was_present); // First insertion
     ///
     /// let was_present = filter.contains_and_insert(&"apple");
-    /// assert!(was_present); // Now it's in the set
+    /// // The second lookup observes the inserted value.
+    /// assert!(was_present);
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn contains_and_insert<T: Hash>(&mut self, item: &T) -> bool {
         let (h0, h1) = self.compute_hash(item);
@@ -113,17 +117,18 @@ impl BloomFilter {
     /// # Examples
     ///
     /// ```
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::bloom::BloomFilterBuilder;
     ///
-    /// let mut filter = BloomFilterBuilder::with_accuracy(100, 0.01)
-    ///     .build()
-    ///     .unwrap();
+    /// let mut filter = BloomFilterBuilder::with_accuracy(100, 0.01).build()?;
     ///
     /// filter.insert("apple");
     /// filter.insert(42_u64);
     /// filter.insert(&[1, 2, 3]);
     ///
     /// assert!(filter.contains(&"apple"));
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn insert<T: Hash>(&mut self, item: T) {
         let (h0, h1) = self.compute_hash(&item);
@@ -137,17 +142,18 @@ impl BloomFilter {
     /// # Examples
     ///
     /// ```
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::bloom::BloomFilterBuilder;
     ///
-    /// let mut filter = BloomFilterBuilder::with_accuracy(100, 0.01)
-    ///     .build()
-    ///     .unwrap();
+    /// let mut filter = BloomFilterBuilder::with_accuracy(100, 0.01).build()?;
     /// filter.insert("apple");
     /// assert!(!filter.is_empty());
     ///
     /// filter.reset();
     /// assert!(filter.is_empty());
     /// assert!(!filter.contains(&"apple"));
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn reset(&mut self) {
         self.bit_array.fill(0);
@@ -167,16 +173,15 @@ impl BloomFilter {
     /// # Examples
     ///
     /// ```
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::bloom::BloomFilterBuilder;
     ///
     /// let mut f1 = BloomFilterBuilder::with_accuracy(100, 0.01)
     ///     .seed(123)
-    ///     .build()
-    ///     .unwrap();
+    ///     .build()?;
     /// let mut f2 = BloomFilterBuilder::with_accuracy(100, 0.01)
     ///     .seed(123)
-    ///     .build()
-    ///     .unwrap();
+    ///     .build()?;
     ///
     /// f1.insert("a");
     /// f2.insert("b");
@@ -184,6 +189,8 @@ impl BloomFilter {
     /// f1.union(&f2);
     /// assert!(f1.contains(&"a"));
     /// assert!(f1.contains(&"b"));
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn union(&mut self, other: &BloomFilter) {
         assert!(
@@ -212,16 +219,15 @@ impl BloomFilter {
     /// # Examples
     ///
     /// ```
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::bloom::BloomFilterBuilder;
     ///
     /// let mut f1 = BloomFilterBuilder::with_accuracy(100, 0.01)
     ///     .seed(123)
-    ///     .build()
-    ///     .unwrap();
+    ///     .build()?;
     /// let mut f2 = BloomFilterBuilder::with_accuracy(100, 0.01)
     ///     .seed(123)
-    ///     .build()
-    ///     .unwrap();
+    ///     .build()?;
     ///
     /// f1.insert("a");
     /// f1.insert("b");
@@ -231,6 +237,8 @@ impl BloomFilter {
     /// f1.intersect(&f2);
     /// assert!(f1.contains(&"b")); // In both
     /// // "a" and "c" likely return false now
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn intersect(&mut self, other: &BloomFilter) {
         assert!(
@@ -258,15 +266,16 @@ impl BloomFilter {
     /// # Examples
     ///
     /// ```
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::bloom::BloomFilterBuilder;
     ///
-    /// let mut filter = BloomFilterBuilder::with_accuracy(100, 0.01)
-    ///     .build()
-    ///     .unwrap();
+    /// let mut filter = BloomFilterBuilder::with_accuracy(100, 0.01).build()?;
     /// filter.insert("apple");
     ///
     /// filter.invert();
     /// // Now "apple" probably returns false, and most other items return true
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn invert(&mut self) {
         for word in &mut self.bit_array {
@@ -350,17 +359,18 @@ impl BloomFilter {
     /// # Examples
     ///
     /// ```
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::bloom::BloomFilter;
     /// use datasketches::bloom::BloomFilterBuilder;
     ///
-    /// let mut filter = BloomFilterBuilder::with_accuracy(100, 0.01)
-    ///     .build()
-    ///     .unwrap();
+    /// let mut filter = BloomFilterBuilder::with_accuracy(100, 0.01).build()?;
     /// filter.insert("test");
     ///
     /// let bytes = filter.serialize();
-    /// let restored = BloomFilter::deserialize(&bytes).unwrap();
+    /// let restored = BloomFilter::deserialize(&bytes)?;
     /// assert!(restored.contains(&"test"));
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn serialize(&self) -> Vec<u8> {
         let is_empty = self.is_empty();
@@ -417,16 +427,17 @@ impl BloomFilter {
     /// # Examples
     ///
     /// ```
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::bloom::BloomFilter;
     /// use datasketches::bloom::BloomFilterBuilder;
     ///
-    /// let original = BloomFilterBuilder::with_accuracy(100, 0.01)
-    ///     .build()
-    ///     .unwrap();
+    /// let original = BloomFilterBuilder::with_accuracy(100, 0.01).build()?;
     /// let bytes = original.serialize();
     ///
-    /// let restored = BloomFilter::deserialize(&bytes).unwrap();
+    /// let restored = BloomFilter::deserialize(&bytes)?;
     /// assert_eq!(original, restored);
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
         let mut cursor = SketchSlice::new(bytes);
@@ -651,13 +662,15 @@ impl BloomFilterBuilder {
     /// # Examples
     ///
     /// ```
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::bloom::BloomFilterBuilder;
     ///
     /// // Optimal for 10,000 items with 1% FPP
     /// let filter = BloomFilterBuilder::with_accuracy(10_000, 0.01)
     ///     .seed(42)
-    ///     .build()
-    ///     .unwrap();
+    ///     .build()?;
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn with_accuracy(max_items: u64, fpp: f64) -> Self {
         BloomFilterBuilder {
@@ -683,9 +696,12 @@ impl BloomFilterBuilder {
     /// # Examples
     ///
     /// ```
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::bloom::BloomFilterBuilder;
     ///
-    /// let filter = BloomFilterBuilder::with_size(10_000, 7).build().unwrap();
+    /// let filter = BloomFilterBuilder::with_size(10_000, 7).build()?;
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn with_size(num_bits: u64, num_hashes: u16) -> Self {
         BloomFilterBuilder {
@@ -704,12 +720,14 @@ impl BloomFilterBuilder {
     /// # Examples
     ///
     /// ```
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::bloom::BloomFilterBuilder;
     ///
     /// let filter = BloomFilterBuilder::with_accuracy(100, 0.01)
     ///     .seed(12345)
-    ///     .build()
-    ///     .unwrap();
+    ///     .build()?;
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn seed(mut self, seed: u64) -> Self {
         self.seed = seed;

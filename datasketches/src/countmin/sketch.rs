@@ -65,10 +65,13 @@ impl<T: CountMinValue> CountMinSketch<T> {
     /// # Examples
     ///
     /// ```
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::countmin::CountMinSketch;
     ///
-    /// let sketch = CountMinSketch::<i64>::new(4, 128).unwrap();
+    /// let sketch = CountMinSketch::<i64>::new(4, 128)?;
     /// assert_eq!(sketch.num_buckets(), 128);
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn new(num_hashes: u8, num_buckets: u32) -> Result<Self, Error> {
         Self::with_seed(num_hashes, num_buckets, DEFAULT_UPDATE_SEED)
@@ -87,10 +90,13 @@ impl<T: CountMinValue> CountMinSketch<T> {
     /// # Examples
     ///
     /// ```
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::countmin::CountMinSketch;
     ///
-    /// let sketch = CountMinSketch::<i64>::with_seed(4, 64, 42).unwrap();
+    /// let sketch = CountMinSketch::<i64>::with_seed(4, 64, 42)?;
     /// assert_eq!(sketch.seed(), 42);
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn with_seed(num_hashes: u8, num_buckets: u32, seed: u64) -> Result<Self, Error> {
         let entries = entries_for_config(num_hashes, num_buckets)?;
@@ -180,11 +186,14 @@ impl<T: CountMinValue> CountMinSketch<T> {
     /// # Examples
     ///
     /// ```
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::countmin::CountMinSketch;
     ///
-    /// let mut sketch = CountMinSketch::<i64>::new(4, 128).unwrap();
+    /// let mut sketch = CountMinSketch::<i64>::new(4, 128)?;
     /// sketch.update("apple");
     /// assert!(sketch.estimate("apple") >= 1);
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn update<I: Hash>(&mut self, item: I) {
         self.update_with_weight(item, T::ONE);
@@ -195,11 +204,14 @@ impl<T: CountMinValue> CountMinSketch<T> {
     /// # Examples
     ///
     /// ```
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::countmin::CountMinSketch;
     ///
-    /// let mut sketch = CountMinSketch::<i64>::new(4, 128).unwrap();
+    /// let mut sketch = CountMinSketch::<i64>::new(4, 128)?;
     /// sketch.update_with_weight("banana", 3);
     /// assert!(sketch.estimate("banana") >= 3);
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn update_with_weight<I: Hash>(&mut self, item: I, weight: T) {
         if weight == T::ZERO {
@@ -220,11 +232,14 @@ impl<T: CountMinValue> CountMinSketch<T> {
     /// # Examples
     ///
     /// ```
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::countmin::CountMinSketch;
     ///
-    /// let mut sketch = CountMinSketch::<i64>::new(4, 128).unwrap();
+    /// let mut sketch = CountMinSketch::<i64>::new(4, 128)?;
     /// sketch.update_with_weight("pear", 2);
     /// assert!(sketch.estimate("pear") >= 2);
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn estimate<I: Hash>(&self, item: I) -> T {
         let num_buckets = self.num_buckets as usize;
@@ -261,16 +276,19 @@ impl<T: CountMinValue> CountMinSketch<T> {
     /// # Examples
     ///
     /// ```
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::countmin::CountMinSketch;
     ///
-    /// let mut left = CountMinSketch::<i64>::new(4, 128).unwrap();
-    /// let mut right = CountMinSketch::<i64>::new(4, 128).unwrap();
+    /// let mut left = CountMinSketch::<i64>::new(4, 128)?;
+    /// let mut right = CountMinSketch::<i64>::new(4, 128)?;
     ///
     /// left.update("apple");
     /// right.update_with_weight("banana", 2);
     ///
     /// left.merge(&right);
     /// assert!(left.estimate("banana") >= 2);
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn merge(&mut self, other: &CountMinSketch<T>) {
         if std::ptr::eq(self, other) {
@@ -292,13 +310,16 @@ impl<T: CountMinValue> CountMinSketch<T> {
     /// # Examples
     ///
     /// ```
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::countmin::CountMinSketch;
     ///
-    /// let mut sketch = CountMinSketch::<i64>::new(4, 128).unwrap();
+    /// let mut sketch = CountMinSketch::<i64>::new(4, 128)?;
     /// sketch.update("apple");
     /// let bytes = sketch.serialize();
-    /// let decoded = CountMinSketch::<i64>::deserialize(&bytes).unwrap();
+    /// let decoded = CountMinSketch::<i64>::deserialize(&bytes)?;
     /// assert!(decoded.estimate("apple") >= 1);
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn serialize(&self) -> Vec<u8> {
         let header_size = PREAMBLE_LONGS_SHORT as usize * LONG_SIZE_BYTES;
@@ -342,13 +363,16 @@ impl<T: CountMinValue> CountMinSketch<T> {
     /// # Examples
     ///
     /// ```
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::countmin::CountMinSketch;
     ///
-    /// let mut sketch = CountMinSketch::<i64>::new(4, 64).unwrap();
+    /// let mut sketch = CountMinSketch::<i64>::new(4, 64)?;
     /// sketch.update("apple");
     /// let bytes = sketch.serialize();
-    /// let decoded = CountMinSketch::<i64>::deserialize(&bytes).unwrap();
+    /// let decoded = CountMinSketch::<i64>::deserialize(&bytes)?;
     /// assert!(decoded.estimate("apple") >= 1);
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
         Self::deserialize_with_seed(bytes, DEFAULT_UPDATE_SEED)
@@ -364,13 +388,16 @@ impl<T: CountMinValue> CountMinSketch<T> {
     /// # Examples
     ///
     /// ```
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::countmin::CountMinSketch;
     ///
-    /// let mut sketch = CountMinSketch::<i64>::with_seed(4, 64, 7).unwrap();
+    /// let mut sketch = CountMinSketch::<i64>::with_seed(4, 64, 7)?;
     /// sketch.update("apple");
     /// let bytes = sketch.serialize();
-    /// let decoded = CountMinSketch::<i64>::deserialize_with_seed(&bytes, 7).unwrap();
+    /// let decoded = CountMinSketch::<i64>::deserialize_with_seed(&bytes, 7)?;
     /// assert!(decoded.estimate("apple") >= 1);
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn deserialize_with_seed(bytes: &[u8], seed: u64) -> Result<Self, Error> {
         fn read_value<T: CountMinValue>(
@@ -466,12 +493,15 @@ impl<T: UnsignedCountMinValue> CountMinSketch<T> {
     /// # Examples
     ///
     /// ```
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::countmin::CountMinSketch;
     ///
-    /// let mut sketch = CountMinSketch::<u64>::new(4, 128).unwrap();
+    /// let mut sketch = CountMinSketch::<u64>::new(4, 128)?;
     /// sketch.update_with_weight("apple", 3);
     /// sketch.halve();
     /// assert!(sketch.estimate("apple") >= 1);
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn halve(&mut self) {
         for c in &mut self.counts {
@@ -492,12 +522,15 @@ impl<T: UnsignedCountMinValue> CountMinSketch<T> {
     /// # Examples
     ///
     /// ```
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::countmin::CountMinSketch;
     ///
-    /// let mut sketch = CountMinSketch::<u64>::new(4, 128).unwrap();
+    /// let mut sketch = CountMinSketch::<u64>::new(4, 128)?;
     /// sketch.update_with_weight("apple", 3);
     /// sketch.decay(0.5);
     /// assert!(sketch.estimate("apple") >= 1);
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn decay(&mut self, decay: f64) {
         assert!(decay > 0.0 && decay <= 1.0, "decay must be within (0, 1]");

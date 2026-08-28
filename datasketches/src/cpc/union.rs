@@ -122,22 +122,25 @@ impl CpcUnion {
     /// # Examples
     ///
     /// ```
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use datasketches::cpc::CpcSketch;
     /// use datasketches::cpc::CpcUnion;
     ///
-    /// let mut s1 = CpcSketch::new(12).unwrap();
+    /// let mut s1 = CpcSketch::new(12)?;
     /// s1.update(&"apple");
     ///
-    /// let mut s2 = CpcSketch::new(12).unwrap();
+    /// let mut s2 = CpcSketch::new(12)?;
     /// s2.update(&"apple");
     /// s2.update(&"banana");
     ///
-    /// let mut union = CpcUnion::new(12).unwrap();
+    /// let mut union = CpcUnion::new(12)?;
     /// union.update(&s1);
     /// union.update(&s2);
     ///
     /// let result = union.to_sketch();
     /// assert_eq!(result.estimate().trunc(), 2.0);
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn to_sketch(&self) -> CpcSketch {
         match &self.state {
