@@ -69,7 +69,7 @@ use crate::thetacommon::hash_table::SketchHashTableIter;
 /// ```
 /// use datasketches::theta::ThetaSketchBuilder;
 ///
-/// let mut sketch = ThetaSketchBuilder::new().build().unwrap();
+/// let mut sketch = ThetaSketchBuilder::default().build().unwrap();
 /// sketch.update("apple");
 /// let view = sketch.as_view();
 /// assert_eq!(view.num_retained(), 1);
@@ -219,11 +219,11 @@ impl ThetaSketch {
     /// use datasketches::hash::value::raw_bytes;
     /// use datasketches::theta::ThetaSketchBuilder;
     ///
-    /// let mut sketch = ThetaSketchBuilder::new().build().unwrap();
+    /// let mut sketch = ThetaSketchBuilder::default().build().unwrap();
     /// sketch.update("apple");
     /// assert!(sketch.estimate() >= 1.0);
     ///
-    /// let mut sketch = ThetaSketchBuilder::new().build().unwrap();
+    /// let mut sketch = ThetaSketchBuilder::default().build().unwrap();
     /// sketch.update(raw_bytes::from_str("apple"));
     /// assert!(sketch.estimate() >= 1.0);
     /// ```
@@ -238,7 +238,7 @@ impl ThetaSketch {
     /// ```
     /// use datasketches::theta::ThetaSketchBuilder;
     ///
-    /// let mut sketch = ThetaSketchBuilder::new().build().unwrap();
+    /// let mut sketch = ThetaSketchBuilder::default().build().unwrap();
     /// sketch.update("apple");
     /// assert!(sketch.estimate() >= 1.0);
     /// ```
@@ -303,7 +303,7 @@ impl ThetaSketch {
     /// ```
     /// use datasketches::theta::ThetaSketchBuilder;
     ///
-    /// let mut sketch = ThetaSketchBuilder::new().build().unwrap();
+    /// let mut sketch = ThetaSketchBuilder::default().build().unwrap();
     /// sketch.update("apple");
     /// let mut iter = sketch.iter();
     /// assert!(iter.next().is_some());
@@ -321,7 +321,7 @@ impl ThetaSketch {
     /// ```
     /// use datasketches::theta::ThetaSketchBuilder;
     ///
-    /// let mut sketch = ThetaSketchBuilder::new().build().unwrap();
+    /// let mut sketch = ThetaSketchBuilder::default().build().unwrap();
     /// sketch.update("apple");
     /// let compact = sketch.compact(true);
     /// assert_eq!(compact.num_retained(), 1);
@@ -353,7 +353,7 @@ impl ThetaSketch {
     /// use datasketches::common::NumStdDev;
     /// use datasketches::theta::ThetaSketchBuilder;
     ///
-    /// let mut sketch = ThetaSketchBuilder::new().lg_k(12).build().unwrap();
+    /// let mut sketch = ThetaSketchBuilder::default().lg_k(12).build().unwrap();
     /// for i in 0..10000 {
     ///     sketch.update(i);
     /// }
@@ -387,7 +387,7 @@ impl ThetaSketch {
     /// use datasketches::common::NumStdDev;
     /// use datasketches::theta::ThetaSketchBuilder;
     ///
-    /// let mut sketch = ThetaSketchBuilder::new().lg_k(12).build().unwrap();
+    /// let mut sketch = ThetaSketchBuilder::default().lg_k(12).build().unwrap();
     /// for i in 0..10000 {
     ///     sketch.update(i);
     /// }
@@ -1034,13 +1034,6 @@ pub struct ThetaSketchBuilder {
 
 impl Default for ThetaSketchBuilder {
     fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl ThetaSketchBuilder {
-    /// Creates a builder with the default Theta sketch configuration.
-    pub fn new() -> Self {
         Self {
             lg_k: DEFAULT_LG_K,
             resize_factor: ResizeFactor::X8,
@@ -1048,6 +1041,9 @@ impl ThetaSketchBuilder {
             seed: DEFAULT_UPDATE_SEED,
         }
     }
+}
+
+impl ThetaSketchBuilder {
     /// Sets `lg_k`, the base-2 logarithm of the nominal capacity.
     ///
     /// # Examples
@@ -1055,7 +1051,7 @@ impl ThetaSketchBuilder {
     /// ```
     /// use datasketches::theta::ThetaSketchBuilder;
     ///
-    /// let sketch = ThetaSketchBuilder::new().lg_k(12).build().unwrap();
+    /// let sketch = ThetaSketchBuilder::default().lg_k(12).build().unwrap();
     /// assert_eq!(sketch.lg_k(), 12);
     /// ```
     pub fn lg_k(mut self, lg_k: u8) -> Self {
@@ -1079,7 +1075,7 @@ impl ThetaSketchBuilder {
     /// ```
     /// use datasketches::theta::ThetaSketchBuilder;
     ///
-    /// ThetaSketchBuilder::new()
+    /// ThetaSketchBuilder::default()
     ///     .sampling_probability(0.5)
     ///     .build()
     ///     .unwrap();
@@ -1096,7 +1092,7 @@ impl ThetaSketchBuilder {
     /// ```
     /// use datasketches::theta::ThetaSketchBuilder;
     ///
-    /// ThetaSketchBuilder::new().seed(7).build().unwrap();
+    /// ThetaSketchBuilder::default().seed(7).build().unwrap();
     /// ```
     pub fn seed(mut self, seed: u64) -> Self {
         self.seed = seed;
@@ -1115,7 +1111,7 @@ impl ThetaSketchBuilder {
     /// ```
     /// use datasketches::theta::ThetaSketchBuilder;
     ///
-    /// ThetaSketchBuilder::new().lg_k(10).build().unwrap();
+    /// ThetaSketchBuilder::default().lg_k(10).build().unwrap();
     /// ```
     pub fn build(self) -> Result<ThetaSketch, Error> {
         let table = ThetaHashTable::new(

@@ -35,7 +35,7 @@
 //! ```
 //! use datasketches::theta::ThetaSketchBuilder;
 //!
-//! let mut sketch = ThetaSketchBuilder::new().build().unwrap();
+//! let mut sketch = ThetaSketchBuilder::default().build().unwrap();
 //! sketch.update("apple");
 //! assert!(sketch.estimate() >= 1.0);
 //! ```

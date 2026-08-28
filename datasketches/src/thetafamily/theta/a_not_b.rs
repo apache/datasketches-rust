@@ -40,11 +40,11 @@ use crate::thetacommon::a_not_b;
 /// use datasketches::theta::ThetaANotB;
 /// use datasketches::theta::ThetaSketchBuilder;
 ///
-/// let mut a = ThetaSketchBuilder::new().build().unwrap();
+/// let mut a = ThetaSketchBuilder::default().build().unwrap();
 /// a.update("apple");
 /// a.update("banana");
 ///
-/// let mut b = ThetaSketchBuilder::new().build().unwrap();
+/// let mut b = ThetaSketchBuilder::default().build().unwrap();
 /// b.update("banana");
 ///
 /// let a_not_b = ThetaANotB::default();
