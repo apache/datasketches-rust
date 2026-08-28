@@ -21,6 +21,8 @@ use std::cmp::Ordering;
 
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
+use crate::common::float::canonical_cmp_f32;
+use crate::common::float::canonical_cmp_f64;
 use crate::error::Error;
 
 /// Trait for types that can be stored in a [`ReqSketch`](crate::req::ReqSketch).
@@ -32,8 +34,7 @@ pub trait ReqValue: Sized + Clone + PartialOrd {
     /// Total ordering used for sketch operations (sort, compaction, rank, quantile).
     ///
     /// For integer types this is equivalent to [`Ord::cmp`]. For floating-point types
-    /// this delegates to [`f32::total_cmp`] / [`f64::total_cmp`] so NaN comparisons are
-    /// deterministic.
+    /// signed zeros compare equal, all NaNs compare equal, and NaNs sort after other values.
     fn total_cmp(&self, other: &Self) -> Ordering;
 
     /// Returns true if this value is the floating-point NaN sentinel.
@@ -122,10 +123,10 @@ impl_req_value_primitive!(i64, read_i64_le, write_i64_le, Ord::cmp);
 impl_req_value_primitive!(u32, read_u32_le, write_u32_le, Ord::cmp);
 impl_req_value_primitive!(u64, read_u64_le, write_u64_le, Ord::cmp);
 impl_req_value_primitive!(f32, read_f32_le, write_f32_le,
-    |a: &f32, b: &f32| if let Some(o) = a.partial_cmp(b) { o } else { f32::total_cmp(a, b) },
+    canonical_cmp_f32,
     nan: |x: &f32| f32::is_nan(*x));
 impl_req_value_primitive!(f64, read_f64_le, write_f64_le,
-    |a: &f64, b: &f64| if let Some(o) = a.partial_cmp(b) { o } else { f64::total_cmp(a, b) },
+    canonical_cmp_f64,
     nan: |x: &f64| f64::is_nan(*x));
 
 #[cfg(test)]
@@ -173,13 +174,43 @@ mod tests {
     }
 
     #[test]
-    fn total_cmp_handles_nan_for_floats() {
-        // Pure NaN comparisons under PartialOrd return None; total_cmp must give a definite
-        // Ordering.
-        let nan = f64::NAN;
-        let one = 1.0_f64;
-        assert_ne!(<f64 as ReqValue>::total_cmp(&nan, &one), Ordering::Equal);
-        assert_eq!(<f64 as ReqValue>::total_cmp(&nan, &nan), Ordering::Equal);
+    fn total_cmp_for_f32_uses_canonical_order() {
+        let positive_nan = f32::from_bits(0x7fc00001);
+        let negative_nan = f32::from_bits(0xffc00002);
+
+        assert_eq!(<f32 as ReqValue>::total_cmp(&-0.0, &0.0), Ordering::Equal);
+        assert_eq!(
+            <f32 as ReqValue>::total_cmp(&positive_nan, &negative_nan),
+            Ordering::Equal
+        );
+        assert_eq!(
+            <f32 as ReqValue>::total_cmp(&positive_nan, &f32::INFINITY),
+            Ordering::Greater
+        );
+        assert_eq!(
+            <f32 as ReqValue>::total_cmp(&f32::INFINITY, &positive_nan),
+            Ordering::Less
+        );
+    }
+
+    #[test]
+    fn total_cmp_for_f64_uses_canonical_order() {
+        let positive_nan = f64::from_bits(0x7ff8000000000001);
+        let negative_nan = f64::from_bits(0xfff8000000000002);
+
+        assert_eq!(<f64 as ReqValue>::total_cmp(&-0.0, &0.0), Ordering::Equal);
+        assert_eq!(
+            <f64 as ReqValue>::total_cmp(&positive_nan, &negative_nan),
+            Ordering::Equal
+        );
+        assert_eq!(
+            <f64 as ReqValue>::total_cmp(&positive_nan, &f64::INFINITY),
+            Ordering::Greater
+        );
+        assert_eq!(
+            <f64 as ReqValue>::total_cmp(&f64::INFINITY, &positive_nan),
+            Ordering::Less
+        );
     }
 
     #[test]

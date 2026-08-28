@@ -191,3 +191,19 @@ fn search_criteria_rank_consistency() -> Result<(), Error> {
 
     Ok(())
 }
+
+#[test]
+fn signed_zeros_share_rank_and_cannot_be_distinct_splits() -> Result<(), Error> {
+    let mut sketch = ReqSketch::default();
+    sketch.update(-0.0_f64);
+    sketch.update(0.0_f64);
+
+    for value in [-0.0, 0.0] {
+        assert_eq!(sketch.rank(&value, SearchCriteria::Exclusive)?, 0.0);
+        assert_eq!(sketch.rank(&value, SearchCriteria::Inclusive)?, 1.0);
+    }
+
+    assert!(sketch.pmf(&[-0.0, 0.0], SearchCriteria::Inclusive).is_err());
+
+    Ok(())
+}
