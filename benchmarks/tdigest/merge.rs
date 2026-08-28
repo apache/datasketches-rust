@@ -94,7 +94,7 @@ fn partials(bencher: Bencher) {
     bencher
         .counter(ItemsCount::new(64 * ROWS_PER_PARTIAL))
         .bench_local(|| {
-            let mut merged = TDigestMut::new(DEFAULT_DIGEST_K);
+            let mut merged = TDigestMut::new(DEFAULT_DIGEST_K).unwrap();
             for partial in &partials {
                 merged.merge(black_box(partial));
             }

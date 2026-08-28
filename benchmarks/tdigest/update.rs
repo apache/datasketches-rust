@@ -79,7 +79,7 @@ fn partial_groups_update(bencher: Bencher) {
         .counter(ItemsCount::new(PARTIAL_GROUPS * ROWS_PER_PARTIAL))
         .bench_local(|| {
             let mut digests = (0..PARTIAL_GROUPS)
-                .map(|_| TDigestMut::new(DEFAULT_DIGEST_K))
+                .map(|_| TDigestMut::new(DEFAULT_DIGEST_K).unwrap())
                 .collect::<Vec<_>>();
             for (group, digest) in digests.iter_mut().enumerate() {
                 for row in 0..ROWS_PER_PARTIAL {
@@ -98,8 +98,8 @@ fn partial_groups_update_two_states(bencher: Bencher) {
             let mut digests = (0..PARTIAL_GROUPS)
                 .map(|_| {
                     (
-                        TDigestMut::new(DEFAULT_DIGEST_K),
-                        TDigestMut::new(DEFAULT_DIGEST_K),
+                        TDigestMut::new(DEFAULT_DIGEST_K).unwrap(),
+                        TDigestMut::new(DEFAULT_DIGEST_K).unwrap(),
                     )
                 })
                 .collect::<Vec<_>>();
