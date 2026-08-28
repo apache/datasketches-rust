@@ -55,9 +55,7 @@ use crate::thetacommon::constants::FLAGS_IS_COMPACT;
 use crate::thetacommon::constants::FLAGS_IS_EMPTY;
 use crate::thetacommon::constants::FLAGS_IS_ORDERED;
 use crate::thetacommon::constants::FLAGS_IS_READ_ONLY;
-use crate::thetacommon::constants::MAX_LG_K;
 use crate::thetacommon::constants::MAX_THETA;
-use crate::thetacommon::constants::MIN_LG_K;
 use crate::thetacommon::hash_table::SketchHashTableIter;
 
 /// Read-only view for Theta sketches.
@@ -71,7 +69,7 @@ use crate::thetacommon::hash_table::SketchHashTableIter;
 /// ```
 /// use datasketches::theta::ThetaSketchBuilder;
 ///
-/// let mut sketch = ThetaSketchBuilder::default().build();
+/// let mut sketch = ThetaSketchBuilder::default().build().unwrap();
 /// sketch.update("apple");
 /// let view = sketch.as_view();
 /// assert_eq!(view.num_retained(), 1);
@@ -221,11 +219,11 @@ impl ThetaSketch {
     /// use datasketches::hash::value::raw_bytes;
     /// use datasketches::theta::ThetaSketchBuilder;
     ///
-    /// let mut sketch = ThetaSketchBuilder::default().build();
+    /// let mut sketch = ThetaSketchBuilder::default().build().unwrap();
     /// sketch.update("apple");
     /// assert!(sketch.estimate() >= 1.0);
     ///
-    /// let mut sketch = ThetaSketchBuilder::default().build();
+    /// let mut sketch = ThetaSketchBuilder::default().build().unwrap();
     /// sketch.update(raw_bytes::from_str("apple"));
     /// assert!(sketch.estimate() >= 1.0);
     /// ```
@@ -240,7 +238,7 @@ impl ThetaSketch {
     /// ```
     /// use datasketches::theta::ThetaSketchBuilder;
     ///
-    /// let mut sketch = ThetaSketchBuilder::default().build();
+    /// let mut sketch = ThetaSketchBuilder::default().build().unwrap();
     /// sketch.update("apple");
     /// assert!(sketch.estimate() >= 1.0);
     /// ```
@@ -305,7 +303,7 @@ impl ThetaSketch {
     /// ```
     /// use datasketches::theta::ThetaSketchBuilder;
     ///
-    /// let mut sketch = ThetaSketchBuilder::default().build();
+    /// let mut sketch = ThetaSketchBuilder::default().build().unwrap();
     /// sketch.update("apple");
     /// let mut iter = sketch.iter();
     /// assert!(iter.next().is_some());
@@ -323,7 +321,7 @@ impl ThetaSketch {
     /// ```
     /// use datasketches::theta::ThetaSketchBuilder;
     ///
-    /// let mut sketch = ThetaSketchBuilder::default().build();
+    /// let mut sketch = ThetaSketchBuilder::default().build().unwrap();
     /// sketch.update("apple");
     /// let compact = sketch.compact(true);
     /// assert_eq!(compact.num_retained(), 1);
@@ -355,7 +353,7 @@ impl ThetaSketch {
     /// use datasketches::common::NumStdDev;
     /// use datasketches::theta::ThetaSketchBuilder;
     ///
-    /// let mut sketch = ThetaSketchBuilder::default().lg_k(12).build();
+    /// let mut sketch = ThetaSketchBuilder::default().lg_k(12).build().unwrap();
     /// for i in 0..10000 {
     ///     sketch.update(i);
     /// }
@@ -389,7 +387,7 @@ impl ThetaSketch {
     /// use datasketches::common::NumStdDev;
     /// use datasketches::theta::ThetaSketchBuilder;
     ///
-    /// let mut sketch = ThetaSketchBuilder::default().lg_k(12).build();
+    /// let mut sketch = ThetaSketchBuilder::default().lg_k(12).build().unwrap();
     /// for i in 0..10000 {
     ///     sketch.update(i);
     /// }
@@ -1018,6 +1016,8 @@ impl CompactThetaSketch {
 }
 
 /// Builder for [`ThetaSketch`].
+///
+/// Configuration is stored without validation and checked when [`build()`](Self::build) is called.
 #[derive(Debug)]
 pub struct ThetaSketchBuilder {
     lg_k: u8,
@@ -1040,26 +1040,15 @@ impl Default for ThetaSketchBuilder {
 impl ThetaSketchBuilder {
     /// Sets `lg_k`, the base-2 logarithm of the nominal capacity.
     ///
-    /// # Panics
-    ///
-    /// Panics if `lg_k` is outside `[5, 26]`.
-    ///
     /// # Examples
     ///
     /// ```
     /// use datasketches::theta::ThetaSketchBuilder;
     ///
-    /// let sketch = ThetaSketchBuilder::default().lg_k(12).build();
+    /// let sketch = ThetaSketchBuilder::default().lg_k(12).build().unwrap();
     /// assert_eq!(sketch.lg_k(), 12);
     /// ```
     pub fn lg_k(mut self, lg_k: u8) -> Self {
-        assert!(
-            (MIN_LG_K..=MAX_LG_K).contains(&lg_k),
-            "lg_k must be in [{}, {}], got {}",
-            MIN_LG_K,
-            MAX_LG_K,
-            lg_k
-        );
         self.lg_k = lg_k;
         self
     }
@@ -1075,10 +1064,6 @@ impl ThetaSketchBuilder {
     /// The sampling probability controls the fraction of hashed values that are retained.
     /// It must be greater than `0.0` to ensure valid theta values for bound calculations.
     ///
-    /// # Panics
-    ///
-    /// Panics if `probability` is outside `(0.0, 1.0]`.
-    ///
     /// # Examples
     ///
     /// ```
@@ -1086,13 +1071,10 @@ impl ThetaSketchBuilder {
     ///
     /// ThetaSketchBuilder::default()
     ///     .sampling_probability(0.5)
-    ///     .build();
+    ///     .build()
+    ///     .unwrap();
     /// ```
     pub fn sampling_probability(mut self, probability: f32) -> Self {
-        assert!(
-            (0.0..=1.0).contains(&probability) && probability > 0.0,
-            "sampling_probability must be in (0.0, 1.0], got {probability}"
-        );
         self.sampling_probability = probability;
         self
     }
@@ -1104,7 +1086,7 @@ impl ThetaSketchBuilder {
     /// ```
     /// use datasketches::theta::ThetaSketchBuilder;
     ///
-    /// ThetaSketchBuilder::default().seed(7).build();
+    /// ThetaSketchBuilder::default().seed(7).build().unwrap();
     /// ```
     pub fn seed(mut self, seed: u64) -> Self {
         self.seed = seed;
@@ -1113,22 +1095,27 @@ impl ThetaSketchBuilder {
 
     /// Builds the [`ThetaSketch`].
     ///
+    /// # Errors
+    ///
+    /// Returns an error if `lg_k` is outside `[5, 26]` or `sampling_probability` is outside
+    /// `(0.0, 1.0]`.
+    ///
     /// # Examples
     ///
     /// ```
     /// use datasketches::theta::ThetaSketchBuilder;
     ///
-    /// ThetaSketchBuilder::default().lg_k(10).build();
+    /// ThetaSketchBuilder::default().lg_k(10).build().unwrap();
     /// ```
-    pub fn build(self) -> ThetaSketch {
-        let table = ThetaHashTable::new(
+    pub fn build(self) -> Result<ThetaSketch, Error> {
+        let table = ThetaHashTable::try_new(
             self.lg_k,
             self.resize_factor,
             self.sampling_probability,
             self.seed,
-        );
+        )?;
 
-        ThetaSketch { table }
+        Ok(ThetaSketch { table })
     }
 }
 
@@ -1190,7 +1177,7 @@ mod tests {
 
     #[test]
     fn theta_and_compact_theta_equivalent() {
-        let mut exact_theta = ThetaSketchBuilder::default().lg_k(12).build();
+        let mut exact_theta = ThetaSketchBuilder::default().lg_k(12).build().unwrap();
         for i in 0..2000 {
             exact_theta.update(i);
         }
@@ -1199,7 +1186,7 @@ mod tests {
             assert_theta_and_compact_equivalent_ordered(&exact_theta, ordered);
         }
 
-        let mut estimation_theta = ThetaSketchBuilder::default().lg_k(5).build();
+        let mut estimation_theta = ThetaSketchBuilder::default().lg_k(5).build().unwrap();
         for i in 0..5000 {
             estimation_theta.update(i);
         }
@@ -1211,7 +1198,7 @@ mod tests {
 
     #[test]
     fn compact_theta_serialize_deserialize_round_trip_equivalent_to_compact_and_theta() {
-        let mut theta = ThetaSketchBuilder::default().lg_k(5).build();
+        let mut theta = ThetaSketchBuilder::default().lg_k(5).build().unwrap();
         for i in 0..5000 {
             theta.update(i);
         }
@@ -1227,7 +1214,7 @@ mod tests {
 
     #[test]
     fn compact_theta_serialize_compressed_round_trip_tail_entries() {
-        let mut theta = ThetaSketchBuilder::default().lg_k(12).build();
+        let mut theta = ThetaSketchBuilder::default().lg_k(12).build().unwrap();
         for i in 0..13 {
             theta.update(i);
         }
@@ -1242,7 +1229,7 @@ mod tests {
 
     #[test]
     fn compact_theta_serialize_compressed_round_trip_more_than_255_entries() {
-        let mut theta = ThetaSketchBuilder::default().lg_k(12).build();
+        let mut theta = ThetaSketchBuilder::default().lg_k(12).build().unwrap();
         for i in 0..300 {
             theta.update(i);
         }
@@ -1257,7 +1244,7 @@ mod tests {
 
     #[test]
     fn compact_theta_serialize_compressed_round_trip_estimation_mode() {
-        let mut theta = ThetaSketchBuilder::default().lg_k(5).build();
+        let mut theta = ThetaSketchBuilder::default().lg_k(5).build().unwrap();
         for i in 0..5000 {
             theta.update(i);
         }

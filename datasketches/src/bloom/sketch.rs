@@ -63,7 +63,9 @@ impl BloomFilter {
     /// ```
     /// use datasketches::bloom::BloomFilterBuilder;
     ///
-    /// let mut filter = BloomFilterBuilder::with_accuracy(100, 0.01).build();
+    /// let mut filter = BloomFilterBuilder::with_accuracy(100, 0.01)
+    ///     .build()
+    ///     .unwrap();
     /// filter.insert("apple");
     ///
     /// assert!(filter.contains(&"apple")); // true - possibly present (and known to be inserted here)
@@ -87,7 +89,9 @@ impl BloomFilter {
     /// ```
     /// use datasketches::bloom::BloomFilterBuilder;
     ///
-    /// let mut filter = BloomFilterBuilder::with_accuracy(100, 0.01).build();
+    /// let mut filter = BloomFilterBuilder::with_accuracy(100, 0.01)
+    ///     .build()
+    ///     .unwrap();
     ///
     /// let was_present = filter.contains_and_insert(&"apple");
     /// assert!(!was_present); // First insertion
@@ -111,7 +115,9 @@ impl BloomFilter {
     /// ```
     /// use datasketches::bloom::BloomFilterBuilder;
     ///
-    /// let mut filter = BloomFilterBuilder::with_accuracy(100, 0.01).build();
+    /// let mut filter = BloomFilterBuilder::with_accuracy(100, 0.01)
+    ///     .build()
+    ///     .unwrap();
     ///
     /// filter.insert("apple");
     /// filter.insert(42_u64);
@@ -133,7 +139,9 @@ impl BloomFilter {
     /// ```
     /// use datasketches::bloom::BloomFilterBuilder;
     ///
-    /// let mut filter = BloomFilterBuilder::with_accuracy(100, 0.01).build();
+    /// let mut filter = BloomFilterBuilder::with_accuracy(100, 0.01)
+    ///     .build()
+    ///     .unwrap();
     /// filter.insert("apple");
     /// assert!(!filter.is_empty());
     ///
@@ -163,10 +171,12 @@ impl BloomFilter {
     ///
     /// let mut f1 = BloomFilterBuilder::with_accuracy(100, 0.01)
     ///     .seed(123)
-    ///     .build();
+    ///     .build()
+    ///     .unwrap();
     /// let mut f2 = BloomFilterBuilder::with_accuracy(100, 0.01)
     ///     .seed(123)
-    ///     .build();
+    ///     .build()
+    ///     .unwrap();
     ///
     /// f1.insert("a");
     /// f2.insert("b");
@@ -206,10 +216,12 @@ impl BloomFilter {
     ///
     /// let mut f1 = BloomFilterBuilder::with_accuracy(100, 0.01)
     ///     .seed(123)
-    ///     .build();
+    ///     .build()
+    ///     .unwrap();
     /// let mut f2 = BloomFilterBuilder::with_accuracy(100, 0.01)
     ///     .seed(123)
-    ///     .build();
+    ///     .build()
+    ///     .unwrap();
     ///
     /// f1.insert("a");
     /// f1.insert("b");
@@ -248,7 +260,9 @@ impl BloomFilter {
     /// ```
     /// use datasketches::bloom::BloomFilterBuilder;
     ///
-    /// let mut filter = BloomFilterBuilder::with_accuracy(100, 0.01).build();
+    /// let mut filter = BloomFilterBuilder::with_accuracy(100, 0.01)
+    ///     .build()
+    ///     .unwrap();
     /// filter.insert("apple");
     ///
     /// filter.invert();
@@ -339,7 +353,9 @@ impl BloomFilter {
     /// use datasketches::bloom::BloomFilter;
     /// use datasketches::bloom::BloomFilterBuilder;
     ///
-    /// let mut filter = BloomFilterBuilder::with_accuracy(100, 0.01).build();
+    /// let mut filter = BloomFilterBuilder::with_accuracy(100, 0.01)
+    ///     .build()
+    ///     .unwrap();
     /// filter.insert("test");
     ///
     /// let bytes = filter.serialize();
@@ -404,7 +420,9 @@ impl BloomFilter {
     /// use datasketches::bloom::BloomFilter;
     /// use datasketches::bloom::BloomFilterBuilder;
     ///
-    /// let original = BloomFilterBuilder::with_accuracy(100, 0.01).build();
+    /// let original = BloomFilterBuilder::with_accuracy(100, 0.01)
+    ///     .build()
+    ///     .unwrap();
     /// let bytes = original.serialize();
     ///
     /// let restored = BloomFilter::deserialize(&bytes).unwrap();
@@ -592,11 +610,18 @@ impl BloomFilter {
 /// * [`with_accuracy()`](Self::with_accuracy): Specify target items and false positive rate
 ///   (recommended)
 /// * [`with_size()`](Self::with_size): Specify requested bit count and hash functions (manual)
+///
+/// Configuration is stored without validation and checked when [`build()`](Self::build) is called.
 #[derive(Debug, Clone)]
 pub struct BloomFilterBuilder {
-    num_bits: u64,
-    num_hashes: u16,
+    mode: BloomFilterBuilderMode,
     seed: u64,
+}
+
+#[derive(Debug, Clone)]
+enum BloomFilterBuilderMode {
+    Accuracy { max_items: u64, fpp: f64 },
+    Size { num_bits: u64, num_hashes: u16 },
 }
 
 impl BloomFilterBuilder {
@@ -616,15 +641,12 @@ impl BloomFilterBuilder {
     ///
     /// Automatically calculates the optimal number of bits and hash functions
     /// to achieve the desired false positive probability for a given number of items.
+    /// The parameters are validated when [`build()`](Self::build) is called.
     ///
     /// # Arguments
     ///
     /// * `max_items`: Maximum expected number of distinct items.
     /// * `fpp`: Target false positive probability (for example, `0.01` for `1%`).
-    ///
-    /// # Panics
-    ///
-    /// Panics if `max_items` is `0` or `fpp` is outside `(0.0, 1.0]`.
     ///
     /// # Examples
     ///
@@ -634,21 +656,12 @@ impl BloomFilterBuilder {
     /// // Optimal for 10,000 items with 1% FPP
     /// let filter = BloomFilterBuilder::with_accuracy(10_000, 0.01)
     ///     .seed(42)
-    ///     .build();
+    ///     .build()
+    ///     .unwrap();
     /// ```
     pub fn with_accuracy(max_items: u64, fpp: f64) -> Self {
-        assert!(max_items > 0, "max_items must be greater than 0");
-        assert!(
-            fpp > 0.0 && fpp <= 1.0,
-            "fpp must be between 0.0 and 1.0 (inclusive of 1.0)"
-        );
-
-        let num_bits = Self::suggest_num_bits(max_items, fpp);
-        let num_hashes = Self::suggest_num_hashes_from_accuracy(max_items, num_bits);
-
         BloomFilterBuilder {
-            num_bits,
-            num_hashes,
+            mode: BloomFilterBuilderMode::Accuracy { max_items, fpp },
             seed: DEFAULT_UPDATE_SEED,
         }
     }
@@ -657,6 +670,7 @@ impl BloomFilterBuilder {
     ///
     /// Use this when you want precise control over the requested filter size,
     /// or when working with pre-calculated parameters.
+    /// The parameters are validated when [`build()`](Self::build) is called.
     ///
     /// The underlying storage is word-based, so the actual capacity is rounded
     /// up to the next multiple of 64 bits.
@@ -666,38 +680,19 @@ impl BloomFilterBuilder {
     /// * `num_bits`: Total number of bits in the filter.
     /// * `num_hashes`: Number of hash functions to use.
     ///
-    /// # Panics
-    ///
-    /// Panics if any of:
-    /// * `num_bits < Self::MIN_NUM_BITS` or `num_bits > Self::MAX_NUM_BITS`.
-    /// * `num_hashes < Self::MIN_NUM_HASHES` or `num_hashes > Self::MAX_NUM_HASHES`.
-    ///
     /// # Examples
     ///
     /// ```
     /// use datasketches::bloom::BloomFilterBuilder;
     ///
-    /// let filter = BloomFilterBuilder::with_size(10_000, 7).build();
+    /// let filter = BloomFilterBuilder::with_size(10_000, 7).build().unwrap();
     /// ```
     pub fn with_size(num_bits: u64, num_hashes: u16) -> Self {
-        assert!(
-            (Self::MIN_NUM_BITS..=Self::MAX_NUM_BITS).contains(&num_bits),
-            "num_bits must be between {} and {}, got {}",
-            Self::MIN_NUM_BITS,
-            Self::MAX_NUM_BITS,
-            num_bits,
-        );
-        assert!(
-            (Self::MIN_NUM_HASHES..=Self::MAX_NUM_HASHES).contains(&num_hashes),
-            "num_hashes must be between {} and {}, got {}",
-            Self::MIN_NUM_HASHES,
-            Self::MAX_NUM_HASHES,
-            num_hashes
-        );
-
         BloomFilterBuilder {
-            num_bits,
-            num_hashes,
+            mode: BloomFilterBuilderMode::Size {
+                num_bits,
+                num_hashes,
+            },
             seed: DEFAULT_UPDATE_SEED,
         }
     }
@@ -713,7 +708,8 @@ impl BloomFilterBuilder {
     ///
     /// let filter = BloomFilterBuilder::with_accuracy(100, 0.01)
     ///     .seed(12345)
-    ///     .build();
+    ///     .build()
+    ///     .unwrap();
     /// ```
     pub fn seed(mut self, seed: u64) -> Self {
         self.seed = seed;
@@ -721,17 +717,58 @@ impl BloomFilterBuilder {
     }
 
     /// Builds the Bloom filter.
-    pub fn build(self) -> BloomFilter {
-        let num_hashes = self.num_hashes;
-        let num_words = self.num_bits.div_ceil(64) as usize;
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the configured accuracy or size parameters are outside their supported
+    /// ranges.
+    pub fn build(self) -> Result<BloomFilter, Error> {
+        let (num_bits, num_hashes) = match self.mode {
+            BloomFilterBuilderMode::Accuracy { max_items, fpp } => {
+                if max_items == 0 {
+                    return Err(Error::invalid_argument("max_items must be greater than 0"));
+                }
+                if !(fpp > 0.0 && fpp <= 1.0) {
+                    return Err(Error::invalid_argument(
+                        "fpp must be between 0.0 and 1.0 (inclusive of 1.0)",
+                    ));
+                }
+                let num_bits = Self::suggest_num_bits(max_items, fpp);
+                let num_hashes = Self::suggest_num_hashes_from_accuracy(max_items, num_bits);
+                (num_bits, num_hashes)
+            }
+            BloomFilterBuilderMode::Size {
+                num_bits,
+                num_hashes,
+            } => {
+                if !(Self::MIN_NUM_BITS..=Self::MAX_NUM_BITS).contains(&num_bits) {
+                    return Err(Error::invalid_argument(format!(
+                        "num_bits must be between {} and {}, got {}",
+                        Self::MIN_NUM_BITS,
+                        Self::MAX_NUM_BITS,
+                        num_bits
+                    )));
+                }
+                if !(Self::MIN_NUM_HASHES..=Self::MAX_NUM_HASHES).contains(&num_hashes) {
+                    return Err(Error::invalid_argument(format!(
+                        "num_hashes must be between {} and {}, got {}",
+                        Self::MIN_NUM_HASHES,
+                        Self::MAX_NUM_HASHES,
+                        num_hashes
+                    )));
+                }
+                (num_bits, num_hashes)
+            }
+        };
+        let num_words = num_bits.div_ceil(64) as usize;
         let bit_array = vec![0u64; num_words].into_boxed_slice();
 
-        BloomFilter {
+        Ok(BloomFilter {
             seed: self.seed,
             num_hashes,
             num_bits_set: 0,
             bit_array,
-        }
+        })
     }
 
     /// Suggests optimal number of bits given max items and target FPP.

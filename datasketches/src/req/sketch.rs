@@ -74,6 +74,11 @@ impl<T: ReqValue> ReqSketch<T> {
     ///
     /// Panics if `k` is odd or outside `[4, 1024]`.
     pub fn new(k: u16, rank_accuracy: RankAccuracy) -> Self {
+        assert!(
+            (MIN_K..=MAX_K).contains(&k),
+            "k must be in [{MIN_K}, {MAX_K}], got {k}"
+        );
+        assert_eq!(k % 2, 0, "k must be even, got {k}");
         Self::make(k, rank_accuracy)
     }
 
@@ -734,12 +739,11 @@ impl<T: ReqValue> ReqSketch<T> {
     }
 
     fn make(k: u16, rank_accuracy: RankAccuracy) -> Self {
-        assert!(
+        debug_assert!(
             (MIN_K..=MAX_K).contains(&k),
             "k must be in [{MIN_K}, {MAX_K}], got {k}"
         );
-        assert_eq!(k % 2, 0, "k must be even, got {k}");
-
+        debug_assert_eq!(k % 2, 0, "k must be even, got {k}");
         let mut sketch = Self {
             k,
             rank_accuracy,

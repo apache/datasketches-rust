@@ -19,11 +19,13 @@ use std::hash::Hash;
 use std::slice;
 
 use crate::common::ResizeFactor;
+use crate::error::Error;
 use crate::hash::MurmurHash3X64128;
 use crate::hash::compute_seed_hash;
 use crate::thetacommon::SketchEntry;
 use crate::thetacommon::constants::HASH_TABLE_REBUILD_THRESHOLD;
 use crate::thetacommon::constants::HASH_TABLE_RESIZE_THRESHOLD;
+use crate::thetacommon::constants::MAX_LG_K;
 use crate::thetacommon::constants::MAX_THETA;
 use crate::thetacommon::constants::MIN_LG_K;
 use crate::thetacommon::constants::STRIDE_MASK;
@@ -91,8 +93,60 @@ impl<E> SketchHashTable<E>
 where
     E: SketchEntry,
 {
-    /// Create a new hash table.
+    /// Creates a new hash table.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `lg_nom_size` is outside `[5, 26]` or `sampling_probability` is outside
+    /// `(0.0, 1.0]`.
     pub fn new(
+        lg_nom_size: u8,
+        resize_factor: ResizeFactor,
+        sampling_probability: f32,
+        seed: u64,
+    ) -> Self {
+        assert!(
+            (MIN_LG_K..=MAX_LG_K).contains(&lg_nom_size),
+            "lg_k must be in [{MIN_LG_K}, {MAX_LG_K}], got {lg_nom_size}"
+        );
+        assert!(
+            sampling_probability > 0.0 && sampling_probability <= 1.0,
+            "sampling_probability must be in (0.0, 1.0], got {sampling_probability}"
+        );
+        Self::make(lg_nom_size, resize_factor, sampling_probability, seed)
+    }
+
+    /// Creates a new hash table after validating its configuration.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `lg_nom_size` is outside `[5, 26]` or `sampling_probability` is outside
+    /// `(0.0, 1.0]`.
+    pub fn try_new(
+        lg_nom_size: u8,
+        resize_factor: ResizeFactor,
+        sampling_probability: f32,
+        seed: u64,
+    ) -> Result<Self, Error> {
+        if !(MIN_LG_K..=MAX_LG_K).contains(&lg_nom_size) {
+            return Err(Error::invalid_argument(format!(
+                "lg_k must be in [{MIN_LG_K}, {MAX_LG_K}], got {lg_nom_size}"
+            )));
+        }
+        if !(sampling_probability > 0.0 && sampling_probability <= 1.0) {
+            return Err(Error::invalid_argument(format!(
+                "sampling_probability must be in (0.0, 1.0], got {sampling_probability}"
+            )));
+        }
+        Ok(Self::make(
+            lg_nom_size,
+            resize_factor,
+            sampling_probability,
+            seed,
+        ))
+    }
+
+    fn make(
         lg_nom_size: u8,
         resize_factor: ResizeFactor,
         sampling_probability: f32,

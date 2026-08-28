@@ -29,7 +29,7 @@ use googletest::prelude::near;
 use crate::serialization_test_data;
 
 fn serialize_v2_exact(entries: &[u64]) -> Vec<u8> {
-    let current = ThetaSketchBuilder::default().build().compact(true);
+    let current = ThetaSketchBuilder::default().build().unwrap().compact(true);
     let current_bytes = current.serialize();
     let mut bytes = SketchBytes::with_capacity((2 + entries.len()) * size_of::<u64>());
     bytes.write_u8(2); // preamble longs
@@ -160,7 +160,7 @@ fn test_go_compatibility() {
 
 #[test]
 fn malformed_input_is_rejected() {
-    let mut sketch = ThetaSketchBuilder::default().lg_k(5).build();
+    let mut sketch = ThetaSketchBuilder::default().lg_k(5).build().unwrap();
     for value in 0..5000 {
         sketch.update(value);
     }
@@ -190,7 +190,7 @@ fn declared_entry_payload_is_checked_before_allocating() {
     uncompressed[8..12].copy_from_slice(&u32::MAX.to_le_bytes());
     assert!(CompactThetaSketch::deserialize(&uncompressed).is_err());
 
-    let mut sketch = ThetaSketchBuilder::default().lg_k(5).build();
+    let mut sketch = ThetaSketchBuilder::default().lg_k(5).build().unwrap();
     for value in 0..5000 {
         sketch.update(value);
     }

@@ -68,11 +68,11 @@ use crate::tuple::sketch::TupleSketchView;
 /// }
 ///
 /// let update_policy = DefaultUpdatePolicy::<u64>::default();
-/// let mut a = TupleSketchBuilder::new(update_policy).build();
+/// let mut a = TupleSketchBuilder::new(update_policy).build().unwrap();
 /// a.update("shared", 3);
 /// a.update("only_a", 1);
 ///
-/// let mut b = TupleSketchBuilder::new(update_policy).build();
+/// let mut b = TupleSketchBuilder::new(update_policy).build().unwrap();
 /// b.update("shared", 4);
 /// b.update("only_b", 1);
 ///

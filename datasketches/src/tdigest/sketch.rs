@@ -204,6 +204,7 @@ impl TDigestMut {
     /// assert_eq!(sketch.k(), 100);
     /// ```
     pub fn new(k: u16) -> Self {
+        assert!(k >= 10, "k must be at least 10, got {k}");
         Self::make(
             k,
             false,
@@ -255,7 +256,7 @@ impl TDigestMut {
         buffer: TDigestBuffer,
         compressed_weight: u64,
     ) -> Self {
-        assert!(k >= 10, "k must be at least 10");
+        debug_assert!(k >= 10, "k must be at least 10");
         debug_assert!(buffer.unmerged_tail_len <= buffer.centroids.len());
         debug_assert!(buffer.compressed_prefix_len() != 0 || compressed_weight == 0);
 

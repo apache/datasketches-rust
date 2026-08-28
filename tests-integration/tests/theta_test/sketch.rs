@@ -16,6 +16,7 @@
 // under the License.
 
 use datasketches::common::NumStdDev;
+use datasketches::error::ErrorKind;
 use datasketches::hash::value::canonical_float;
 use datasketches::theta::ThetaSketchBuilder;
 use googletest::assert_that;
@@ -26,8 +27,20 @@ use googletest::prelude::lt;
 use googletest::prelude::near;
 
 #[test]
+fn builder_validates_configuration_at_build() {
+    let error = ThetaSketchBuilder::default().lg_k(4).build().unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::InvalidArgument);
+
+    let error = ThetaSketchBuilder::default()
+        .sampling_probability(f32::NAN)
+        .build()
+        .unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::InvalidArgument);
+}
+
+#[test]
 fn test_basic_update() {
-    let mut sketch = ThetaSketchBuilder::default().lg_k(12).build();
+    let mut sketch = ThetaSketchBuilder::default().lg_k(12).build().unwrap();
     assert!(sketch.is_empty());
     assert_eq!(sketch.estimate(), 0.0);
 
@@ -41,7 +54,7 @@ fn test_basic_update() {
 
 #[test]
 fn test_update_various_types() {
-    let mut sketch = ThetaSketchBuilder::default().lg_k(12).build();
+    let mut sketch = ThetaSketchBuilder::default().lg_k(12).build().unwrap();
 
     sketch.update("string");
     sketch.update(42i64);
@@ -56,7 +69,7 @@ fn test_update_various_types() {
     assert!(!sketch.is_empty());
     assert_eq!(sketch.estimate(), 5.0);
 
-    let mut sketch = ThetaSketchBuilder::default().lg_k(12).build();
+    let mut sketch = ThetaSketchBuilder::default().lg_k(12).build().unwrap();
 
     sketch.update("string");
     sketch.update(42i64);
@@ -74,7 +87,7 @@ fn test_update_various_types() {
 
 #[test]
 fn test_duplicate_updates() {
-    let mut sketch = ThetaSketchBuilder::default().lg_k(12).build();
+    let mut sketch = ThetaSketchBuilder::default().lg_k(12).build().unwrap();
 
     for _ in 0..100 {
         sketch.update("same_value");
@@ -85,7 +98,7 @@ fn test_duplicate_updates() {
 
 #[test]
 fn test_theta_reduction() {
-    let mut sketch = ThetaSketchBuilder::default().lg_k(5).build(); // Small k to trigger theta reduction
+    let mut sketch = ThetaSketchBuilder::default().lg_k(5).build().unwrap(); // Small k to trigger theta reduction
     assert!(!sketch.is_estimation_mode()); // Should be in estimation mode
 
     // Insert many values to trigger theta reduction
@@ -99,8 +112,8 @@ fn test_theta_reduction() {
 
 #[test]
 fn test_trim() {
-    let mut exact = ThetaSketchBuilder::default().lg_k(12).build();
-    let mut sketch = ThetaSketchBuilder::default().lg_k(5).build();
+    let mut exact = ThetaSketchBuilder::default().lg_k(12).build().unwrap();
+    let mut sketch = ThetaSketchBuilder::default().lg_k(5).build().unwrap();
 
     for i in 0..1000 {
         exact.update(i);
@@ -124,7 +137,7 @@ fn test_trim() {
 
 #[test]
 fn test_reset() {
-    let mut sketch = ThetaSketchBuilder::default().lg_k(5).build();
+    let mut sketch = ThetaSketchBuilder::default().lg_k(5).build().unwrap();
 
     // Insert many values
     for i in 0..1000 {
@@ -147,7 +160,7 @@ fn test_reset() {
 
 #[test]
 fn test_iterator() {
-    let mut sketch = ThetaSketchBuilder::default().lg_k(12).build();
+    let mut sketch = ThetaSketchBuilder::default().lg_k(12).build().unwrap();
 
     sketch.update("value1");
     sketch.update("value2");
@@ -159,7 +172,7 @@ fn test_iterator() {
 
 #[test]
 fn test_bounds_empty_sketch() {
-    let sketch = ThetaSketchBuilder::default().lg_k(12).build();
+    let sketch = ThetaSketchBuilder::default().lg_k(12).build().unwrap();
     assert!(sketch.is_empty());
     assert!(!sketch.is_estimation_mode());
     assert_eq!(sketch.theta(), 1.0);
@@ -174,7 +187,7 @@ fn test_bounds_empty_sketch() {
 
 #[test]
 fn test_bounds_exact_mode() {
-    let mut sketch = ThetaSketchBuilder::default().lg_k(12).build();
+    let mut sketch = ThetaSketchBuilder::default().lg_k(12).build().unwrap();
     for i in 0..2000 {
         sketch.update(i);
     }
@@ -188,7 +201,7 @@ fn test_bounds_exact_mode() {
 
 #[test]
 fn test_bounds_estimation_mode() {
-    let mut sketch = ThetaSketchBuilder::default().lg_k(12).build();
+    let mut sketch = ThetaSketchBuilder::default().lg_k(12).build().unwrap();
     let n = 10000;
     for i in 0..n {
         sketch.update(i);
@@ -228,7 +241,8 @@ fn test_bounds_with_sampling() {
     let mut sketch = ThetaSketchBuilder::default()
         .lg_k(12)
         .sampling_probability(0.5)
-        .build();
+        .build()
+        .unwrap();
 
     for i in 0..1000 {
         sketch.update(i);
@@ -248,7 +262,7 @@ fn test_bounds_with_sampling() {
 
 #[test]
 fn test_bounds_all_num_std_devs() {
-    let mut sketch = ThetaSketchBuilder::default().lg_k(12).build();
+    let mut sketch = ThetaSketchBuilder::default().lg_k(12).build().unwrap();
     for i in 0..10000 {
         sketch.update(i);
     }
@@ -275,7 +289,8 @@ fn test_bounds_empty_estimation_mode() {
     let sketch = ThetaSketchBuilder::default()
         .lg_k(12)
         .sampling_probability(0.1)
-        .build();
+        .build()
+        .unwrap();
 
     // The sketch is empty but theta < 1.0, so it's in estimation mode
     // However, when empty, both bounds should return 0.0 per Java implementation
@@ -293,7 +308,8 @@ fn test_compact_preserves_logical_non_empty_after_screened_update() {
             let mut sketch = ThetaSketchBuilder::default()
                 .lg_k(12)
                 .sampling_probability(0.5)
-                .build();
+                .build()
+                .unwrap();
             sketch.update(*candidate);
             !sketch.is_empty() && sketch.num_retained() == 0
         })
@@ -302,7 +318,8 @@ fn test_compact_preserves_logical_non_empty_after_screened_update() {
     let mut sketch = ThetaSketchBuilder::default()
         .lg_k(12)
         .sampling_probability(0.5)
-        .build();
+        .build()
+        .unwrap();
     sketch.update(screened_value);
 
     assert!(!sketch.is_empty());

@@ -31,7 +31,7 @@ use googletest::prelude::lt;
 use googletest::prelude::near;
 
 fn sketch_with_range(start: u64, count: u64) -> ThetaSketch {
-    let mut sketch = ThetaSketchBuilder::default().build();
+    let mut sketch = ThetaSketchBuilder::default().build().unwrap();
     for i in 0..count {
         sketch.update(start + i);
     }
@@ -40,10 +40,10 @@ fn sketch_with_range(start: u64, count: u64) -> ThetaSketch {
 
 #[test]
 fn test_basic_difference() {
-    let mut a = ThetaSketchBuilder::default().build();
+    let mut a = ThetaSketchBuilder::default().build().unwrap();
     a.update("shared");
     a.update("only_a");
-    let mut b = ThetaSketchBuilder::default().build();
+    let mut b = ThetaSketchBuilder::default().build().unwrap();
     b.update("shared");
     b.update("only_b");
 
@@ -71,7 +71,7 @@ fn test_accepts_updatable_and_compact_inputs() {
 
 #[test]
 fn test_seed_mismatch_returns_error() {
-    let mut one_other_seed = ThetaSketchBuilder::default().seed(2).build();
+    let mut one_other_seed = ThetaSketchBuilder::default().seed(2).build().unwrap();
     one_other_seed.update("value");
     let good = sketch_with_range(0, 10);
 
@@ -89,7 +89,7 @@ fn test_seed_mismatch_returns_error() {
 #[test]
 fn test_seed_mismatch_ignored_for_empty_inputs() {
     // Empty inputs carry no keys, so their seeds are not validated.
-    let empty_other_seed = ThetaSketchBuilder::default().seed(2).build();
+    let empty_other_seed = ThetaSketchBuilder::default().seed(2).build().unwrap();
     let good = sketch_with_range(0, 10);
 
     let a_not_b = ThetaANotB::default();
@@ -103,7 +103,7 @@ fn test_seed_mismatch_ignored_for_empty_inputs() {
 
 #[test]
 fn test_empty_a_returns_empty() {
-    let empty = ThetaSketchBuilder::default().build();
+    let empty = ThetaSketchBuilder::default().build().unwrap();
     let b = sketch_with_range(0, 1000);
 
     let a_not_b = ThetaANotB::default();
@@ -117,7 +117,7 @@ fn test_empty_a_returns_empty() {
 #[test]
 fn test_empty_b_returns_a() {
     let a = sketch_with_range(0, 1000);
-    let empty = ThetaSketchBuilder::default().build();
+    let empty = ThetaSketchBuilder::default().build().unwrap();
 
     let a_not_b = ThetaANotB::default();
     let r = a_not_b.compute(&a, &empty, true).unwrap();
@@ -186,7 +186,7 @@ fn test_exact_superset_b_returns_empty() {
 #[test]
 fn test_result_ordering() {
     let a = sketch_with_range(0, 64);
-    let empty = ThetaSketchBuilder::default().build();
+    let empty = ThetaSketchBuilder::default().build().unwrap();
 
     let a_not_b = ThetaANotB::default();
 

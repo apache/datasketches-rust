@@ -7,6 +7,7 @@ All significant changes to this project will be documented in this file.
 ### Breaking changes
 
 * Change `ThetaIntersection::to_sketch` and `TupleIntersection::to_sketch` to return `Option`. Callers must handle `None` before the first successful update; after that, the methods return `Some` even when the intersection is empty.
+* Change `BloomFilterBuilder`, `ThetaSketchBuilder`, `ThetaUnionBuilder`, `TupleSketchBuilder`, and `TupleUnionBuilder` to validate their configuration in `build`, which now returns `Result`. Callers must handle construction errors instead of relying on builder setters or constructors to panic.
 
 ### New features
 

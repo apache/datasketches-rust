@@ -41,7 +41,7 @@ fn assert_jaccard_estimate(actual: JaccardSimilarity, expected: f64) {
 }
 
 fn sketch_with_range(start: u64, count: u64) -> ThetaSketch {
-    let mut sketch = ThetaSketchBuilder::default().build();
+    let mut sketch = ThetaSketchBuilder::default().build().unwrap();
     for value in start..start + count {
         sketch.update(value);
     }
@@ -49,7 +49,7 @@ fn sketch_with_range(start: u64, count: u64) -> ThetaSketch {
 }
 
 fn sketch_with_range_and_seed(start: u64, count: u64, seed: u64) -> ThetaSketch {
-    let mut sketch = ThetaSketchBuilder::default().seed(seed).build();
+    let mut sketch = ThetaSketchBuilder::default().seed(seed).build().unwrap();
     for value in start..start + count {
         sketch.update(value);
     }
@@ -58,8 +58,8 @@ fn sketch_with_range_and_seed(start: u64, count: u64, seed: u64) -> ThetaSketch 
 
 #[test]
 fn test_empty() {
-    let sketch_a = ThetaSketchBuilder::default().build();
-    let sketch_b = ThetaSketchBuilder::default().build();
+    let sketch_a = ThetaSketchBuilder::default().build().unwrap();
+    let sketch_b = ThetaSketchBuilder::default().build().unwrap();
 
     let operator = ThetaJaccardSimilarity::default();
     let jaccard = operator.compute(&sketch_a, &sketch_b).unwrap();
@@ -70,7 +70,7 @@ fn test_empty() {
 
 #[test]
 fn test_exactly_equal() {
-    let empty = ThetaSketchBuilder::default().build();
+    let empty = ThetaSketchBuilder::default().build().unwrap();
     let sketch_a = sketch_with_range(0, 1000);
     let sketch_b = sketch_with_range(0, 1000);
     let sketch_c = sketch_with_range(1000, 1000);
@@ -162,10 +162,10 @@ fn test_half_overlap_estimation_mode_custom_seed() {
 
 #[test]
 fn test_seed_mismatch() {
-    let empty = ThetaSketchBuilder::default().build();
-    let mut sketch_a = ThetaSketchBuilder::default().build();
+    let empty = ThetaSketchBuilder::default().build().unwrap();
+    let mut sketch_a = ThetaSketchBuilder::default().build().unwrap();
     sketch_a.update(1u64);
-    let mut sketch_b = ThetaSketchBuilder::default().seed(123).build();
+    let mut sketch_b = ThetaSketchBuilder::default().seed(123).build().unwrap();
     sketch_b.update(1u64);
 
     assert_that!(
@@ -187,13 +187,16 @@ fn test_seed_mismatch() {
 fn test_distinct_non_empty_sketches_with_no_retained_entries_are_uncertain() {
     let mut sketch_a = ThetaSketchBuilder::default()
         .sampling_probability(1e-12)
-        .build();
+        .build()
+        .unwrap();
     let mut sketch_b = ThetaSketchBuilder::default()
         .sampling_probability(1e-12)
-        .build();
+        .build()
+        .unwrap();
     let mut different_theta = ThetaSketchBuilder::default()
         .sampling_probability(2e-12)
-        .build();
+        .build()
+        .unwrap();
     sketch_a.update("apple");
     sketch_b.update("banana");
     different_theta.update("orange");
