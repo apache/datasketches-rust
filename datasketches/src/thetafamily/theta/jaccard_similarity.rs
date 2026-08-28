@@ -34,8 +34,8 @@ use crate::thetacommon::jaccard_similarity::JaccardSimilarity;
 /// use datasketches::theta::ThetaJaccardSimilarity;
 /// use datasketches::theta::ThetaSketchBuilder;
 ///
-/// let mut a = ThetaSketchBuilder::default().build();
-/// let mut b = ThetaSketchBuilder::default().build();
+/// let mut a = ThetaSketchBuilder::default().build().unwrap();
+/// let mut b = ThetaSketchBuilder::default().build().unwrap();
 /// a.update("apple");
 /// b.update("apple");
 ///

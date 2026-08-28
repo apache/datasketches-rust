@@ -38,7 +38,9 @@
 //! use datasketches::bloom::BloomFilterBuilder;
 //!
 //! // Create a filter optimized for 1000 items with 1% false positive rate
-//! let mut filter = BloomFilterBuilder::with_accuracy(1000, 0.01).build();
+//! let mut filter = BloomFilterBuilder::with_accuracy(1000, 0.01)
+//!     .build()
+//!     .unwrap();
 //!
 //! // Insert items
 //! filter.insert("apple");
@@ -71,7 +73,8 @@
 //!     0.01,   // Target false positive probability (1%)
 //! )
 //! .seed(9001) // Optional: custom seed
-//! .build();
+//! .build()
+//! .unwrap();
 //! ```
 //!
 //! ## By Size (Manual)
@@ -85,7 +88,8 @@
 //!     95_851, // Number of bits
 //!     7,      // Number of hash functions
 //! )
-//! .build();
+//! .build()
+//! .unwrap();
 //! ```
 //!
 //! # Set Operations
@@ -95,8 +99,12 @@
 //! ```
 //! use datasketches::bloom::BloomFilterBuilder;
 //!
-//! let mut filter1 = BloomFilterBuilder::with_accuracy(100, 0.01).build();
-//! let mut filter2 = BloomFilterBuilder::with_accuracy(100, 0.01).build();
+//! let mut filter1 = BloomFilterBuilder::with_accuracy(100, 0.01)
+//!     .build()
+//!     .unwrap();
+//! let mut filter2 = BloomFilterBuilder::with_accuracy(100, 0.01)
+//!     .build()
+//!     .unwrap();
 //!
 //! filter1.insert("a");
 //! filter2.insert("b");

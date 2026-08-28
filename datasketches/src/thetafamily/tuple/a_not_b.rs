@@ -43,11 +43,11 @@ use crate::tuple::sketch::TupleSketchView;
 /// use datasketches::tuple::TupleSketchBuilder;
 ///
 /// let update_policy = DefaultUpdatePolicy::<u64>::default();
-/// let mut a = TupleSketchBuilder::new(update_policy).build();
+/// let mut a = TupleSketchBuilder::new(update_policy).build().unwrap();
 /// a.update("apple", 1);
 /// a.update("banana", 1);
 ///
-/// let mut b = TupleSketchBuilder::new(update_policy).build();
+/// let mut b = TupleSketchBuilder::new(update_policy).build().unwrap();
 /// b.update("banana", 1);
 ///
 /// let a_not_b = TupleANotB::default();

@@ -22,8 +22,6 @@ use crate::theta::CompactThetaSketch;
 use crate::theta::ThetaSketchView;
 use crate::theta::hash_table::ThetaEntry;
 use crate::thetacommon::constants::DEFAULT_LG_K;
-use crate::thetacommon::constants::MAX_LG_K;
-use crate::thetacommon::constants::MIN_LG_K;
 use crate::thetacommon::union::UnionMergePolicy;
 use crate::thetacommon::union::UnionState;
 
@@ -75,6 +73,8 @@ impl ThetaUnion {
 }
 
 /// Builder for [`ThetaUnion`].
+///
+/// Configuration is stored without validation and checked when [`build()`](Self::build) is called.
 #[derive(Debug, Clone)]
 pub struct ThetaUnionBuilder {
     lg_k: u8,
@@ -97,22 +97,14 @@ impl Default for ThetaUnionBuilder {
 impl ThetaUnionBuilder {
     /// Sets `lg_k`, the base-2 logarithm of the nominal capacity.
     ///
-    /// # Panics
-    ///
-    /// Panics if `lg_k` is outside `[5, 26]`.
-    ///
     /// # Examples
     ///
     /// ```
     /// use datasketches::theta::ThetaUnionBuilder;
     ///
-    /// ThetaUnionBuilder::default().lg_k(12).build();
+    /// ThetaUnionBuilder::default().lg_k(12).build().unwrap();
     /// ```
     pub fn lg_k(mut self, lg_k: u8) -> Self {
-        assert!(
-            (MIN_LG_K..=MAX_LG_K).contains(&lg_k),
-            "lg_k must be in [{MIN_LG_K}, {MAX_LG_K}], got {lg_k}"
-        );
         self.lg_k = lg_k;
         self
     }
@@ -125,10 +117,6 @@ impl ThetaUnionBuilder {
 
     /// Sets the sampling probability.
     ///
-    /// # Panics
-    ///
-    /// Panics if `probability` is outside `(0.0, 1.0]`.
-    ///
     /// # Examples
     ///
     /// ```
@@ -136,13 +124,10 @@ impl ThetaUnionBuilder {
     ///
     /// ThetaUnionBuilder::default()
     ///     .sampling_probability(0.5)
-    ///     .build();
+    ///     .build()
+    ///     .unwrap();
     /// ```
     pub fn sampling_probability(mut self, probability: f32) -> Self {
-        assert!(
-            (0.0..=1.0).contains(&probability) && probability > 0.0,
-            "sampling_probability must be in (0.0, 1.0], got {probability}"
-        );
         self.sampling_probability = probability;
         self
     }
@@ -154,7 +139,7 @@ impl ThetaUnionBuilder {
     /// ```
     /// use datasketches::theta::ThetaUnionBuilder;
     ///
-    /// ThetaUnionBuilder::default().seed(7).build();
+    /// ThetaUnionBuilder::default().seed(7).build().unwrap();
     /// ```
     pub fn seed(mut self, seed: u64) -> Self {
         self.seed = seed;
@@ -163,22 +148,27 @@ impl ThetaUnionBuilder {
 
     /// Builds the [`ThetaUnion`].
     ///
+    /// # Errors
+    ///
+    /// Returns an error if `lg_k` is outside `[5, 26]` or `sampling_probability` is outside
+    /// `(0.0, 1.0]`.
+    ///
     /// # Examples
     ///
     /// ```
     /// use datasketches::theta::ThetaUnionBuilder;
     ///
-    /// ThetaUnionBuilder::default().lg_k(10).build();
+    /// ThetaUnionBuilder::default().lg_k(10).build().unwrap();
     /// ```
-    pub fn build(self) -> ThetaUnion {
-        ThetaUnion {
-            state: UnionState::new(
+    pub fn build(self) -> Result<ThetaUnion, Error> {
+        Ok(ThetaUnion {
+            state: UnionState::try_new(
                 self.lg_k,
                 self.resize_factor,
                 self.sampling_probability,
                 self.seed,
                 NoopUnionPolicy,
-            ),
-        }
+            )?,
+        })
     }
 }

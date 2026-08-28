@@ -16,6 +16,7 @@
 // under the License.
 
 use datasketches::bloom::BloomFilterBuilder;
+use datasketches::error::ErrorKind;
 use googletest::assert_that;
 use googletest::prelude::ge;
 use googletest::prelude::gt;
@@ -29,6 +30,7 @@ fn filter() -> datasketches::bloom::BloomFilter {
     BloomFilterBuilder::with_size(NUM_BITS, NUM_HASHES)
         .seed(SEED)
         .build()
+        .unwrap()
 }
 
 #[test]
@@ -103,13 +105,16 @@ fn test_compatibility_checks_all_configuration() {
 
     let different_seed = BloomFilterBuilder::with_size(NUM_BITS, NUM_HASHES)
         .seed(SEED + 1)
-        .build();
+        .build()
+        .unwrap();
     let different_size = BloomFilterBuilder::with_size(NUM_BITS * 2, NUM_HASHES)
         .seed(SEED)
-        .build();
+        .build()
+        .unwrap();
     let different_hashes = BloomFilterBuilder::with_size(NUM_BITS, NUM_HASHES + 1)
         .seed(SEED)
-        .build();
+        .build()
+        .unwrap();
 
     assert!(!baseline.is_compatible(&different_seed));
     assert!(!baseline.is_compatible(&different_size));
@@ -122,7 +127,8 @@ fn test_union_rejects_incompatible_filters() {
     let mut left = filter();
     let right = BloomFilterBuilder::with_size(NUM_BITS, NUM_HASHES)
         .seed(SEED + 1)
-        .build();
+        .build()
+        .unwrap();
     left.union(&right);
 }
 
@@ -132,36 +138,41 @@ fn test_intersection_rejects_incompatible_filters() {
     let mut left = filter();
     let right = BloomFilterBuilder::with_size(NUM_BITS, NUM_HASHES)
         .seed(SEED + 1)
-        .build();
+        .build()
+        .unwrap();
     left.intersect(&right);
 }
 
 #[test]
 fn test_requested_size_rounds_to_word_boundary() {
-    let filter = BloomFilterBuilder::with_size(65, 3).build();
+    let filter = BloomFilterBuilder::with_size(65, 3).build().unwrap();
     assert_eq!(filter.capacity(), 128);
 }
 
 #[test]
-#[should_panic(expected = "max_items must be greater than 0")]
-fn test_accuracy_builder_rejects_zero_items() {
-    BloomFilterBuilder::with_accuracy(0, 0.01);
+fn test_accuracy_builder_rejects_zero_items_at_build() {
+    let error = BloomFilterBuilder::with_accuracy(0, 0.01)
+        .build()
+        .unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::InvalidArgument);
 }
 
 #[test]
-#[should_panic(expected = "fpp must be between")]
-fn test_accuracy_builder_rejects_invalid_probability() {
-    BloomFilterBuilder::with_accuracy(100, 1.5);
+fn test_accuracy_builder_rejects_invalid_probability_at_build() {
+    let error = BloomFilterBuilder::with_accuracy(100, 1.5)
+        .build()
+        .unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::InvalidArgument);
 }
 
 #[test]
-#[should_panic(expected = "num_bits must be between")]
-fn test_size_builder_rejects_zero_bits() {
-    BloomFilterBuilder::with_size(0, 3);
+fn test_size_builder_rejects_zero_bits_at_build() {
+    let error = BloomFilterBuilder::with_size(0, 3).build().unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::InvalidArgument);
 }
 
 #[test]
-#[should_panic(expected = "num_hashes must be between")]
-fn test_size_builder_rejects_zero_hashes() {
-    BloomFilterBuilder::with_size(128, 0);
+fn test_size_builder_rejects_zero_hashes_at_build() {
+    let error = BloomFilterBuilder::with_size(128, 0).build().unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::InvalidArgument);
 }

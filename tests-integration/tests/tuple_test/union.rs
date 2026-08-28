@@ -34,15 +34,27 @@ fn default_union_builder() -> TupleUnionBuilder<DefaultUnionPolicy<u64>> {
 }
 
 #[test]
+fn builder_validates_configuration_at_build() {
+    let error = default_union_builder().lg_k(27).build().unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::InvalidArgument);
+
+    let error = default_union_builder()
+        .sampling_probability(-0.1)
+        .build()
+        .unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::InvalidArgument);
+}
+
+#[test]
 fn union_combines_overlapping_summaries() {
-    let mut a = default_tuple_sketch_builder().build();
+    let mut a = default_tuple_sketch_builder().build().unwrap();
     a.update("shared", 3u64);
     a.update("only_a", 1u64);
-    let mut b = default_tuple_sketch_builder().build();
+    let mut b = default_tuple_sketch_builder().build().unwrap();
     b.update("shared", 4u64);
     b.update("only_b", 1u64);
 
-    let mut union = default_union_builder().build();
+    let mut union = default_union_builder().build().unwrap();
     union.update(&a).unwrap();
     union.update(&b).unwrap();
     let result = union.to_sketch(true);
@@ -58,7 +70,7 @@ fn accepts_mutable_and_compact_inputs() {
     let a = tuple_sketch_with_range(0, 500);
     let b = tuple_sketch_with_range(250, 500);
 
-    let mut union = default_union_builder().build();
+    let mut union = default_union_builder().build().unwrap();
     union.update(&a).unwrap();
     union.update(&b.compact(true)).unwrap();
 
@@ -68,7 +80,7 @@ fn accepts_mutable_and_compact_inputs() {
 #[test]
 fn reset_restores_the_initial_empty_state() {
     let input = tuple_sketch_with_range(0, 100);
-    let mut union = default_union_builder().build();
+    let mut union = default_union_builder().build().unwrap();
 
     assert!(union.to_sketch(true).is_empty());
     union.update(&input).unwrap();
@@ -82,9 +94,9 @@ fn reset_restores_the_initial_empty_state() {
 
 #[test]
 fn non_empty_input_requires_the_union_seed() {
-    let mut input = default_tuple_sketch_builder().seed(1).build();
+    let mut input = default_tuple_sketch_builder().seed(1).build().unwrap();
     input.update("value", 1u64);
-    let mut union = default_union_builder().seed(2).build();
+    let mut union = default_union_builder().seed(2).build().unwrap();
 
     let err = union.update(&input).unwrap_err();
     assert_eq!(err.kind(), ErrorKind::InvalidArgument);
@@ -109,12 +121,12 @@ impl SummaryCombinePolicy for MaxPolicy {
 
 #[test]
 fn custom_combine_policy_controls_overlapping_summaries() {
-    let mut a = default_tuple_sketch_builder().build();
+    let mut a = default_tuple_sketch_builder().build().unwrap();
     a.update("shared", 3u64);
-    let mut b = default_tuple_sketch_builder().build();
+    let mut b = default_tuple_sketch_builder().build().unwrap();
     b.update("shared", 9u64);
 
-    let mut union = TupleUnionBuilder::new(MaxPolicy).build();
+    let mut union = TupleUnionBuilder::new(MaxPolicy).build().unwrap();
     union.update(&a).unwrap();
     union.update(&b).unwrap();
 
@@ -124,7 +136,7 @@ fn custom_combine_policy_controls_overlapping_summaries() {
 #[test]
 fn result_ordering_follows_the_request() {
     let input = tuple_sketch_with_range(0, 100);
-    let mut union = default_union_builder().build();
+    let mut union = default_union_builder().build().unwrap();
     union.update(&input).unwrap();
 
     assert!(union.to_sketch(true).is_ordered());
@@ -133,8 +145,8 @@ fn result_ordering_follows_the_request() {
 
 #[test]
 fn estimation_bounds_cover_the_true_union() {
-    let mut a = default_tuple_sketch_builder().lg_k(8).build();
-    let mut b = default_tuple_sketch_builder().lg_k(8).build();
+    let mut a = default_tuple_sketch_builder().lg_k(8).build().unwrap();
+    let mut b = default_tuple_sketch_builder().lg_k(8).build().unwrap();
     for value in 0..50_000 {
         a.update(value, 1u64);
     }
@@ -142,7 +154,7 @@ fn estimation_bounds_cover_the_true_union() {
         b.update(value, 1u64);
     }
 
-    let mut union = default_union_builder().lg_k(8).build();
+    let mut union = default_union_builder().lg_k(8).build().unwrap();
     union.update(&a).unwrap();
     union.update(&b).unwrap();
     let result = union.to_sketch(true);
@@ -155,7 +167,7 @@ fn estimation_bounds_cover_the_true_union() {
 
 #[test]
 fn union_estimated_size_grows_with_updates() {
-    let mut union = default_union_builder().build();
+    let mut union = default_union_builder().build().unwrap();
     assert_eq!(union.estimated_size(), 2120);
 
     let sketch = tuple_sketch_with_range(0, 1000);

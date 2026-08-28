@@ -45,8 +45,8 @@ fn assert_jaccard_estimate(actual: JaccardSimilarity, expected: f64) {
 
 #[test]
 fn test_empty() {
-    let sketch_a = default_tuple_sketch_builder().build();
-    let sketch_b = default_tuple_sketch_builder().build();
+    let sketch_a = default_tuple_sketch_builder().build().unwrap();
+    let sketch_b = default_tuple_sketch_builder().build().unwrap();
 
     let operator = TupleJaccardSimilarity::default();
     let jaccard = operator.compute(&sketch_a, &sketch_b).unwrap();
@@ -57,8 +57,12 @@ fn test_empty() {
 
 #[test]
 fn test_summary_values_and_types_do_not_affect_similarity() {
-    let mut sketch_a = TupleSketchBuilder::new(DefaultUpdatePolicy::<u64>::default()).build();
-    let mut sketch_b = TupleSketchBuilder::new(DefaultUpdatePolicy::<i64>::default()).build();
+    let mut sketch_a = TupleSketchBuilder::new(DefaultUpdatePolicy::<u64>::default())
+        .build()
+        .unwrap();
+    let mut sketch_b = TupleSketchBuilder::new(DefaultUpdatePolicy::<i64>::default())
+        .build()
+        .unwrap();
     for key in 0..1000 {
         sketch_a.update(key, 1u64);
         sketch_b.update(key, -7i64);
@@ -96,13 +100,15 @@ fn test_half_overlap_estimation_mode() {
 #[test]
 fn test_custom_seed_and_seed_mismatch() {
     let seed = 123;
-    let empty = default_tuple_sketch_builder().build();
+    let empty = default_tuple_sketch_builder().build().unwrap();
     let mut sketch_a = TupleSketchBuilder::new(DefaultUpdatePolicy::<u64>::default())
         .seed(seed)
-        .build();
+        .build()
+        .unwrap();
     let mut sketch_b = TupleSketchBuilder::new(DefaultUpdatePolicy::<u64>::default())
         .seed(seed)
-        .build();
+        .build()
+        .unwrap();
     for value in 0..1000 {
         sketch_a.update(value, 1u64);
         sketch_b.update(value, 2u64);
@@ -131,10 +137,12 @@ fn test_custom_seed_and_seed_mismatch() {
 fn test_distinct_non_empty_sketches_with_no_retained_entries_are_uncertain() {
     let mut sketch_a = default_tuple_sketch_builder()
         .sampling_probability(1e-12)
-        .build();
+        .build()
+        .unwrap();
     let mut sketch_b = default_tuple_sketch_builder()
         .sampling_probability(1e-12)
-        .build();
+        .build()
+        .unwrap();
     sketch_a.update("apple", 1u64);
     sketch_b.update("banana", 1u64);
 

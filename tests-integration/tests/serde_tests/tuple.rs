@@ -109,7 +109,9 @@ fn test_go_compatibility() {
 
 #[test]
 fn round_trip_preserves_summaries() {
-    let mut sketch = TupleSketchBuilder::new(DefaultUpdatePolicy::<u64>::default()).build();
+    let mut sketch = TupleSketchBuilder::new(DefaultUpdatePolicy::<u64>::default())
+        .build()
+        .unwrap();
     for value in 0..50 {
         sketch.update(value, 1);
         sketch.update(value, 2);
@@ -125,7 +127,9 @@ fn round_trip_preserves_summaries() {
 
 #[test]
 fn malformed_input_is_rejected() {
-    let mut sketch = TupleSketchBuilder::new(DefaultUpdatePolicy::<u64>::default()).build();
+    let mut sketch = TupleSketchBuilder::new(DefaultUpdatePolicy::<u64>::default())
+        .build()
+        .unwrap();
     for value in 0..100 {
         sketch.update(value, 1);
     }
@@ -146,7 +150,9 @@ fn malformed_input_is_rejected() {
 
 #[test]
 fn declared_entry_payload_is_checked_before_allocating() {
-    let mut sketch = TupleSketchBuilder::new(DefaultUpdatePolicy::<u64>::default()).build();
+    let mut sketch = TupleSketchBuilder::new(DefaultUpdatePolicy::<u64>::default())
+        .build()
+        .unwrap();
     for value in 0..100 {
         sketch.update(value, 1);
     }

@@ -37,8 +37,8 @@ use crate::tuple::TupleSketchView;
 /// use datasketches::tuple::TupleSketchBuilder;
 ///
 /// let policy = DefaultUpdatePolicy::<u64>::default();
-/// let mut a = TupleSketchBuilder::new(policy).build();
-/// let mut b = TupleSketchBuilder::new(policy).build();
+/// let mut a = TupleSketchBuilder::new(policy).build().unwrap();
+/// let mut b = TupleSketchBuilder::new(policy).build().unwrap();
 /// a.update("apple", 1);
 /// b.update("apple", 2);
 ///

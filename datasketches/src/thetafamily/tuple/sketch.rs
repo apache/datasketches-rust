@@ -46,9 +46,7 @@ use crate::thetacommon::constants::FLAGS_IS_COMPACT;
 use crate::thetacommon::constants::FLAGS_IS_EMPTY;
 use crate::thetacommon::constants::FLAGS_IS_ORDERED;
 use crate::thetacommon::constants::FLAGS_IS_READ_ONLY;
-use crate::thetacommon::constants::MAX_LG_K;
 use crate::thetacommon::constants::MAX_THETA;
-use crate::thetacommon::constants::MIN_LG_K;
 use crate::thetacommon::hash_table::SketchHashTableIter;
 use crate::tuple::hash_table::TupleEntry;
 use crate::tuple::hash_table::TupleHashTable;
@@ -71,7 +69,9 @@ use crate::tuple::serialization::TupleSummaryValue;
 /// use datasketches::tuple::DefaultUpdatePolicy;
 /// use datasketches::tuple::TupleSketchBuilder;
 ///
-/// let mut sketch = TupleSketchBuilder::new(DefaultUpdatePolicy::<u64>::default()).build();
+/// let mut sketch = TupleSketchBuilder::new(DefaultUpdatePolicy::<u64>::default())
+///     .build()
+///     .unwrap();
 /// sketch.update("apple", 1);
 /// let view = sketch.as_view();
 /// assert_eq!(view.iter().next().unwrap().1, &1);
@@ -232,7 +232,7 @@ impl<'a, S> From<&'a CompactTupleSketch<S>> for TupleSketchView<'a, S> {
 /// use datasketches::tuple::TupleSketchBuilder;
 ///
 /// let policy = DefaultUpdatePolicy::<u64>::default();
-/// let mut sketch = TupleSketchBuilder::new(policy).build();
+/// let mut sketch = TupleSketchBuilder::new(policy).build().unwrap();
 /// sketch.update("apple", 1);
 /// sketch.update("apple", 1);
 /// assert!(sketch.estimate() >= 1.0);
@@ -269,7 +269,7 @@ where
     /// use datasketches::tuple::TupleSketchBuilder;
     ///
     /// let policy = DefaultUpdatePolicy::<u64>::default();
-    /// let mut sketch = TupleSketchBuilder::new(policy).build();
+    /// let mut sketch = TupleSketchBuilder::new(policy).build().unwrap();
     /// sketch.update(42, 5);
     /// ```
     pub fn update<U>(&mut self, key: impl Hash, value: U)
@@ -395,7 +395,7 @@ where
     /// use datasketches::tuple::TupleSketchBuilder;
     ///
     /// let policy = DefaultUpdatePolicy::<u64>::default();
-    /// let mut sketch = TupleSketchBuilder::new(policy).build();
+    /// let mut sketch = TupleSketchBuilder::new(policy).build().unwrap();
     /// sketch.update("apple", 1);
     /// let compact = sketch.compact(true);
     /// assert_eq!(compact.num_retained(), 1);
@@ -554,7 +554,7 @@ impl<S> CompactTupleSketch<S> {
     /// use datasketches::tuple::TupleSketchBuilder;
     ///
     /// let policy = DefaultUpdatePolicy::<u64>::default();
-    /// let mut sketch = TupleSketchBuilder::new(policy).build();
+    /// let mut sketch = TupleSketchBuilder::new(policy).build().unwrap();
     /// sketch.update("apple", 1);
     /// let bytes = sketch.compact(true).serialize();
     /// assert!(!bytes.is_empty());
@@ -719,6 +719,8 @@ impl<S> CompactTupleSketch<S> {
 /// Every builder carries a concrete [`SummaryPolicy`]. Use
 /// [`DefaultUpdatePolicy`](crate::tuple::DefaultUpdatePolicy) for default-constructed additive
 /// summaries, or supply a custom policy.
+///
+/// Configuration is stored without validation and checked when [`build()`](Self::build) is called.
 #[derive(Debug)]
 pub struct TupleSketchBuilder<P>
 where
@@ -760,7 +762,7 @@ where
     ///     }
     /// }
     ///
-    /// let mut sketch = TupleSketchBuilder::new(MaxPolicy).build();
+    /// let mut sketch = TupleSketchBuilder::new(MaxPolicy).build().unwrap();
     /// sketch.update("k", 3);
     /// sketch.update("k", 7);
     /// ```
@@ -775,15 +777,7 @@ where
     }
 
     /// Sets `lg_k`, the base-2 logarithm of the nominal capacity.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `lg_k` is outside `[5, 26]`.
     pub fn lg_k(mut self, lg_k: u8) -> Self {
-        assert!(
-            (MIN_LG_K..=MAX_LG_K).contains(&lg_k),
-            "lg_k must be in [{MIN_LG_K}, {MAX_LG_K}], got {lg_k}"
-        );
         self.lg_k = lg_k;
         self
     }
@@ -795,15 +789,7 @@ where
     }
 
     /// Sets the sampling probability.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `probability` is outside `(0.0, 1.0]`.
     pub fn sampling_probability(mut self, probability: f32) -> Self {
-        assert!(
-            (0.0..=1.0).contains(&probability) && probability > 0.0,
-            "sampling_probability must be in (0.0, 1.0], got {probability}"
-        );
         self.sampling_probability = probability;
         self
     }
@@ -815,15 +801,20 @@ where
     }
 
     /// Builds a [`TupleSketch`] using the supplied policy.
-    pub fn build(self) -> TupleSketch<P> {
-        TupleSketch {
-            table: TupleHashTable::new(
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `lg_k` is outside `[5, 26]` or `sampling_probability` is outside
+    /// `(0.0, 1.0]`.
+    pub fn build(self) -> Result<TupleSketch<P>, Error> {
+        Ok(TupleSketch {
+            table: TupleHashTable::try_new(
                 self.lg_k,
                 self.resize_factor,
                 self.sampling_probability,
                 self.seed,
-            ),
+            )?,
             policy: self.policy,
-        }
+        })
     }
 }

@@ -61,6 +61,22 @@ where
         }
     }
 
+    /// Creates union state after validating the shared hash-table configuration.
+    pub fn try_new(
+        lg_k: u8,
+        resize_factor: ResizeFactor,
+        sampling_probability: f32,
+        seed: u64,
+        policy: P,
+    ) -> Result<Self, Error> {
+        let table = SketchHashTable::try_new(lg_k, resize_factor, sampling_probability, seed)?;
+        Ok(Self {
+            union_theta: table.theta(),
+            table,
+            policy,
+        })
+    }
+
     /// Incorporate a sketch into the union.
     pub fn update<S>(&mut self, sketch: S) -> Result<(), Error>
     where
