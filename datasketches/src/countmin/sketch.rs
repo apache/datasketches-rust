@@ -138,14 +138,23 @@ impl<T: CountMinValue> CountMinSketch<T> {
     ///
     /// # Errors
     ///
-    /// Returns an error if `relative_error` is negative or not finite.
+    /// Returns an error if `relative_error` is not finite, is not greater than zero, or would
+    /// require more buckets than the sketch supports.
     pub fn suggest_num_buckets(relative_error: f64) -> Result<u32, Error> {
-        if !relative_error.is_finite() || relative_error < 0.0 {
+        if !relative_error.is_finite() || relative_error <= 0.0 {
             return Err(Error::invalid_argument(
-                "relative_error must be finite and at least 0",
+                "relative_error must be finite and greater than 0",
             ));
         }
-        Ok((std::f64::consts::E / relative_error).ceil() as u32)
+
+        let num_buckets = (std::f64::consts::E / relative_error).ceil();
+        if num_buckets >= MAX_TABLE_ENTRIES as f64 {
+            return Err(Error::invalid_argument(format!(
+                "relative_error requires {num_buckets} buckets, but fewer than {MAX_TABLE_ENTRIES} are supported"
+            )));
+        }
+
+        Ok((num_buckets as u32).max(3))
     }
 
     /// Suggests the number of hashes to achieve the given confidence.
@@ -163,7 +172,7 @@ impl<T: CountMinValue> CountMinSketch<T> {
             return Ok(127);
         }
         let hashes = (1.0 / (1.0 - confidence)).ln().ceil();
-        Ok(hashes.min(127.0) as u8)
+        Ok(hashes.clamp(1.0, 127.0) as u8)
     }
 
     /// Updates the sketch with a single occurrence of the item.

@@ -34,6 +34,7 @@ fn test_init_defaults() {
 
 #[test]
 fn test_parameter_suggestions() {
+    assert_eq!(CountMinSketch::<i64>::suggest_num_buckets(2.0).unwrap(), 3);
     assert_eq!(CountMinSketch::<i64>::suggest_num_buckets(0.2).unwrap(), 14);
     assert_eq!(CountMinSketch::<i64>::suggest_num_buckets(0.1).unwrap(), 28);
     assert_eq!(
@@ -49,6 +50,7 @@ fn test_parameter_suggestions() {
         CountMinSketch::<i64>::suggest_num_hashes(0.682689492).unwrap(),
         2
     );
+    assert_eq!(CountMinSketch::<i64>::suggest_num_hashes(0.0).unwrap(), 1);
     assert_eq!(
         CountMinSketch::<i64>::suggest_num_hashes(0.954499736).unwrap(),
         4
@@ -58,12 +60,28 @@ fn test_parameter_suggestions() {
         6
     );
 
-    let buckets = CountMinSketch::<i64>::suggest_num_buckets(0.1).unwrap();
-    let sketch = CountMinSketch::<i64>::new(3, buckets).unwrap();
+    let buckets = CountMinSketch::<i64>::suggest_num_buckets(2.0).unwrap();
+    let hashes = CountMinSketch::<i64>::suggest_num_hashes(0.0).unwrap();
+    CountMinSketch::<i64>::new(hashes, buckets).unwrap();
+
+    let buckets_for_error = CountMinSketch::<i64>::suggest_num_buckets(0.1).unwrap();
+    let sketch = CountMinSketch::<i64>::new(3, buckets_for_error).unwrap();
     assert_that!(sketch.relative_error(), le(0.1));
 
     assert_eq!(
         CountMinSketch::<i64>::suggest_num_buckets(f64::NAN)
+            .unwrap_err()
+            .kind(),
+        ErrorKind::InvalidArgument
+    );
+    assert_eq!(
+        CountMinSketch::<i64>::suggest_num_buckets(0.0)
+            .unwrap_err()
+            .kind(),
+        ErrorKind::InvalidArgument
+    );
+    assert_eq!(
+        CountMinSketch::<i64>::suggest_num_buckets(f64::MIN_POSITIVE)
             .unwrap_err()
             .kind(),
         ErrorKind::InvalidArgument

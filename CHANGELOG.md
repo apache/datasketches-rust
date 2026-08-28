@@ -21,6 +21,7 @@ All significant changes to this project will be documented in this file.
 
 ### Bug fixes
 
+* Count-Min parameter suggestions now return constructor-valid values and reject relative-error targets that require more buckets than the sketch supports.
 * Bloom filter deserialization now rejects malformed images with inconsistent counts or payload lengths, while valid images with a dirty cached count are restored correctly.
 * `FrequentItemsSketch` now enforces the cross-language map-size limit of `2^30` consistently. Oversized construction returns `InvalidArgument`, and malformed or oversized serialized images return `InvalidData` instead of panicking or attempting excessive allocation.
 * T-Digest compression now supports `k = u16::MAX` without overflowing.
