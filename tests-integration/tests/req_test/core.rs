@@ -21,6 +21,7 @@ use datasketches::error::Error;
 use datasketches::error::ErrorKind;
 use datasketches::req::RankAccuracy;
 use datasketches::req::ReqSketch;
+use datasketches::req::ReqSketchBuilder;
 use datasketches::req::SearchCriteria;
 use googletest::assert_that;
 use googletest::prelude::all;
@@ -35,7 +36,7 @@ use googletest::prelude::none;
 
 #[test]
 fn empty_sketch_has_default_state_and_rejects_queries() {
-    let sketch: ReqSketch<f32> = ReqSketch::new();
+    let sketch: ReqSketch<f32> = ReqSketch::default();
 
     assert_eq!(sketch.k(), 12);
     assert!(sketch.is_empty());
@@ -65,7 +66,7 @@ fn empty_sketch_has_default_state_and_rejects_queries() {
 
 #[test]
 fn single_value_hra_answers_exactly() {
-    let mut sketch = ReqSketch::new();
+    let mut sketch = ReqSketch::default();
     sketch.update(1.0f32);
 
     assert!(!sketch.is_empty());
@@ -112,8 +113,10 @@ fn single_value_hra_answers_exactly() {
 
 #[test]
 fn single_value_lra_preserves_configuration() {
-    let mut sketch: ReqSketch<f32> =
-        ReqSketch::try_new(12, RankAccuracy::LowRank).expect("construction should succeed");
+    let mut sketch = ReqSketchBuilder::<f32>::default()
+        .rank_accuracy(RankAccuracy::LowRank)
+        .build()
+        .expect("construction should succeed");
     sketch.update(1.0f32);
 
     assert_eq!(sketch.rank_accuracy(), RankAccuracy::LowRank);
@@ -125,7 +128,7 @@ fn single_value_lra_preserves_configuration() {
 
 #[test]
 fn repeated_values_respect_search_criteria() {
-    let mut sketch = ReqSketch::new();
+    let mut sketch = ReqSketch::default();
     for _ in 0..3 {
         sketch.update(1.0f32);
     }
@@ -165,7 +168,7 @@ fn repeated_values_respect_search_criteria() {
 
 #[test]
 fn estimation_mode_compresses_and_keeps_min_max() {
-    let mut sketch = ReqSketch::new();
+    let mut sketch = ReqSketch::default();
     let n = 100_000;
 
     for i in 0..n {
@@ -196,7 +199,7 @@ fn estimation_mode_compresses_and_keeps_min_max() {
 
 #[test]
 fn nan_updates_are_silently_skipped_for_f64() {
-    let mut sketch: ReqSketch<f64> = ReqSketch::new();
+    let mut sketch: ReqSketch<f64> = ReqSketch::default();
     sketch.update(f64::NAN);
     sketch.update(f64::NAN);
     assert!(sketch.is_empty());
@@ -212,7 +215,7 @@ fn nan_updates_are_silently_skipped_for_f64() {
 
 #[test]
 fn nan_updates_are_silently_skipped_for_f32() {
-    let mut sketch: ReqSketch<f32> = ReqSketch::new();
+    let mut sketch: ReqSketch<f32> = ReqSketch::default();
     sketch.update(f32::NAN);
     assert!(sketch.is_empty());
     assert_eq!(sketch.n(), 0);
@@ -230,17 +233,17 @@ fn nan_updates_are_silently_skipped_for_f32() {
 
 #[test]
 fn small_edge_cases_answer_reasonably() -> Result<(), Error> {
-    let mut single = ReqSketch::new();
+    let mut single = ReqSketch::default();
     single.update(42.0);
     assert_eq!(single.quantile(0.5, SearchCriteria::Inclusive)?, 42.0);
 
-    let mut two_values = ReqSketch::new();
+    let mut two_values = ReqSketch::default();
     two_values.update(1.0);
     two_values.update(100.0);
     let median = two_values.quantile(0.5, SearchCriteria::Inclusive)?;
     assert_that!(median, all!(ge(1.0), le(100.0)));
 
-    let mut duplicates = ReqSketch::new();
+    let mut duplicates = ReqSketch::default();
     for _ in 0..100 {
         duplicates.update(42.0);
     }
@@ -262,4 +265,31 @@ fn try_new_validates_k() {
         err(anything())
     );
     assert!(ReqSketch::<f64>::try_new(12, RankAccuracy::HighRank).is_ok());
+}
+
+#[test]
+fn new_and_builder_preserve_configuration() {
+    let sketch = ReqSketch::<f64>::new(16, RankAccuracy::LowRank);
+    assert_eq!(sketch.k(), 16);
+    assert_eq!(sketch.rank_accuracy(), RankAccuracy::LowRank);
+
+    let sketch = ReqSketchBuilder::<f64>::default()
+        .k(20)
+        .rank_accuracy(RankAccuracy::LowRank)
+        .build()
+        .expect("construction should succeed");
+    assert_eq!(sketch.k(), 20);
+    assert_eq!(sketch.rank_accuracy(), RankAccuracy::LowRank);
+}
+
+#[test]
+#[should_panic(expected = "k must be even")]
+fn new_panics_on_invalid_k() {
+    let _ = ReqSketch::<f64>::new(5, RankAccuracy::HighRank);
+}
+
+#[test]
+fn builder_validates_k_at_build() {
+    let builder = ReqSketchBuilder::<f64>::default().k(5);
+    assert_that!(builder.build(), err(anything()));
 }

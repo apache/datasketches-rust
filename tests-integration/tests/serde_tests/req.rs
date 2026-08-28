@@ -232,8 +232,8 @@ fn deserialize_truncated_raw_items() {
 
 #[test]
 fn merge_preserves_order_across_serde_round_trip() {
-    let mut high = ReqSketch::<f64>::new();
-    let mut low = ReqSketch::<f64>::new();
+    let mut high = ReqSketch::<f64>::default();
+    let mut low = ReqSketch::<f64>::default();
 
     for value in 1000..=1072 {
         high.update(value as f64);

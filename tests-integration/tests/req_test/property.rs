@@ -30,7 +30,7 @@ fn prop_quantile_rank_consistency() {
             return TestResult::discard();
         }
 
-        let mut sketch = ReqSketch::new();
+        let mut sketch = ReqSketch::default();
         for value in values {
             sketch.update(value);
         }
@@ -78,7 +78,7 @@ fn prop_sketch_bounds() {
             return TestResult::discard();
         }
 
-        let mut sketch = ReqSketch::new();
+        let mut sketch = ReqSketch::default();
         for value in &values {
             sketch.update(*value);
         }
@@ -119,7 +119,7 @@ fn prop_rank_monotonicity() {
             return TestResult::discard();
         }
 
-        let mut sketch = ReqSketch::new();
+        let mut sketch = ReqSketch::default();
         for value in values {
             sketch.update(value);
         }

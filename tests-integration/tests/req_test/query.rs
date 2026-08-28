@@ -29,7 +29,7 @@ use googletest::prelude::near;
 
 #[test]
 fn exact_mode_rank_quantile_pmf_and_cdf_match_reference() {
-    let mut sketch = ReqSketch::new();
+    let mut sketch = ReqSketch::default();
     for i in 1..=10 {
         sketch.update(i as f32);
     }
@@ -94,7 +94,7 @@ fn exact_mode_rank_quantile_pmf_and_cdf_match_reference() {
 
 #[test]
 fn pmf_and_cdf_are_consistent() {
-    let mut sketch = ReqSketch::new();
+    let mut sketch = ReqSketch::default();
     for i in 0..1000 {
         sketch.update(i as f64);
     }
@@ -119,7 +119,7 @@ fn pmf_and_cdf_are_consistent() {
 
 #[test]
 fn rank_is_monotonic_and_bounded() {
-    let mut sketch = ReqSketch::new();
+    let mut sketch = ReqSketch::default();
     for i in 0..10_000 {
         sketch.update(i as f64);
     }
@@ -139,7 +139,7 @@ fn rank_is_monotonic_and_bounded() {
 
 #[test]
 fn quantiles_are_monotonic() -> Result<(), Error> {
-    let mut sketch = ReqSketch::new();
+    let mut sketch = ReqSketch::default();
     for i in 0..10_000 {
         sketch.update(i as f64);
     }
@@ -158,7 +158,7 @@ fn quantiles_are_monotonic() -> Result<(), Error> {
 
 #[test]
 fn rank_quantile_round_trip_is_consistent() -> Result<(), Error> {
-    let mut sketch = ReqSketch::new();
+    let mut sketch = ReqSketch::default();
     for i in 0..10_000 {
         sketch.update(i as f64);
     }
@@ -175,7 +175,7 @@ fn rank_quantile_round_trip_is_consistent() -> Result<(), Error> {
 
 #[test]
 fn search_criteria_rank_consistency() -> Result<(), Error> {
-    let mut sketch = ReqSketch::new();
+    let mut sketch = ReqSketch::default();
     for i in 0..1000 {
         sketch.update(i as f64);
     }
