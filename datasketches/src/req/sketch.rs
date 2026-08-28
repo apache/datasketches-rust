@@ -61,25 +61,33 @@ pub struct ReqSketch<T: ReqValue> {
     pub(super) max_item: Option<T>,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct ValidatedReqConfig {
+    k: u16,
+    rank_accuracy: RankAccuracy,
+}
+
+impl ValidatedReqConfig {
+    const DEFAULT: Self = Self {
+        k: DEFAULT_K,
+        rank_accuracy: RankAccuracy::HighRank,
+    };
+
+    fn validate(k: u16, rank_accuracy: RankAccuracy) -> Result<Self, String> {
+        if !(MIN_K..=MAX_K).contains(&k) {
+            return Err(format!("k must be in [{MIN_K}, {MAX_K}], got {k}"));
+        }
+        if k % 2 != 0 {
+            return Err(format!("k must be even, got {k}"));
+        }
+        Ok(Self { k, rank_accuracy })
+    }
+}
+
 impl<T: ReqValue> ReqSketch<T> {
     /// Creates a new sketch with default parameters (`k = 12`, `RankAccuracy::HighRank`).
     pub fn new() -> Self {
-        let mut s = Self {
-            k: DEFAULT_K,
-            rank_accuracy: RankAccuracy::HighRank,
-            n: 0,
-            max_nom_size: 0,
-            num_retained: 0,
-            compactors: Vec::new(),
-            promotion_buf: Vec::with_capacity(DEFAULT_K as usize),
-            min_item: None,
-            max_item: None,
-        };
-        // C++ parity: an empty sketch has a level-0 compactor present from the start.
-        // This makes is_raw_items() and flags_byte() byte-compatible with the C++/Java
-        // wire format for the empty case.
-        s.grow();
-        s
+        Self::from_config(ValidatedReqConfig::DEFAULT)
     }
 
     /// Creates a new sketch with the given `k` and rank accuracy.
@@ -88,33 +96,9 @@ impl<T: ReqValue> ReqSketch<T> {
     ///
     /// Returns an error if `k` is odd or outside `[MIN_K, MAX_K]`.
     pub fn try_new(k: u16, rank_accuracy: RankAccuracy) -> Result<Self, Error> {
-        if !(MIN_K..=MAX_K).contains(&k) {
-            return Err(Error::invalid_argument(format!(
-                "k must be in [{}, {}], got {k}",
-                MIN_K, MAX_K
-            )));
-        }
-        if k % 2 != 0 {
-            return Err(Error::invalid_argument(format!("k must be even, got {k}")));
-        }
-        let mut s = Self {
-            k,
-            rank_accuracy,
-            n: 0,
-            max_nom_size: 0,
-            num_retained: 0,
-            compactors: Vec::new(),
-            promotion_buf: Vec::with_capacity(k as usize),
-            min_item: None,
-            max_item: None,
-        };
-        s.grow();
-        Ok(s)
-    }
-
-    /// Returns a builder for chained configuration.
-    pub fn builder() -> ReqSketchBuilder<T> {
-        ReqSketchBuilder::new()
+        let config =
+            ValidatedReqConfig::validate(k, rank_accuracy).map_err(Error::invalid_argument)?;
+        Ok(Self::from_config(config))
     }
 
     /// Returns the configured `k` parameter.
@@ -600,9 +584,7 @@ impl<T: ReqValue> ReqSketch<T> {
         } else {
             RankAccuracy::LowRank
         };
-        if !(MIN_K..=MAX_K).contains(&k) || k % 2 != 0 {
-            return Err(Error::deserial(format!("k {k} is not a valid REQ k value")));
-        }
+        let config = ValidatedReqConfig::validate(k, rank_accuracy).map_err(Error::deserial)?;
 
         if is_empty {
             if num_levels != 0 {
@@ -615,7 +597,7 @@ impl<T: ReqValue> ReqSketch<T> {
                     "empty REQ sketch must have 0 raw items, got {num_raw_items}"
                 )));
             }
-            return ReqSketch::try_new(k, rank_accuracy);
+            return Ok(Self::from_config(config));
         }
 
         if num_levels == 0 {
@@ -738,8 +720,7 @@ impl<T: ReqValue> ReqSketch<T> {
                 "REQ retained weighted count {weighted_count} does not match n {n}"
             )));
         }
-
-        let mut sketch = ReqSketch::try_new(k, rank_accuracy)?;
+        let mut sketch = Self::from_config(config);
         sketch.n = n;
         sketch.min_item = min_item;
         sketch.max_item = max_item;
@@ -750,6 +731,25 @@ impl<T: ReqValue> ReqSketch<T> {
     }
 
     // --- Internal ---
+
+    fn from_config(config: ValidatedReqConfig) -> Self {
+        let mut sketch = Self {
+            k: config.k,
+            rank_accuracy: config.rank_accuracy,
+            n: 0,
+            max_nom_size: 0,
+            num_retained: 0,
+            compactors: Vec::new(),
+            promotion_buf: Vec::with_capacity(config.k as usize),
+            min_item: None,
+            max_item: None,
+        };
+        // C++ parity: an empty sketch has a level-0 compactor present from the start.
+        // This makes is_raw_items() and flags_byte() byte-compatible with the C++/Java
+        // wire format for the empty case.
+        sketch.grow();
+        sketch
+    }
 
     pub(super) fn grow(&mut self) {
         let level = self.compactors.len() as u8;
@@ -791,61 +791,6 @@ impl<T: ReqValue> ReqSketch<T> {
 impl<T: ReqValue> Default for ReqSketch<T> {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-/// Builder for [`ReqSketch`].
-#[derive(Debug, Clone)]
-pub struct ReqSketchBuilder<T: ReqValue> {
-    k: u16,
-    rank_accuracy: RankAccuracy,
-    _marker: std::marker::PhantomData<T>,
-}
-
-impl<T: ReqValue> Default for ReqSketchBuilder<T> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl<T: ReqValue> ReqSketchBuilder<T> {
-    /// Creates a new builder with default parameters.
-    pub fn new() -> Self {
-        Self {
-            k: DEFAULT_K,
-            rank_accuracy: RankAccuracy::HighRank,
-            _marker: std::marker::PhantomData,
-        }
-    }
-
-    /// Sets the `k` parameter.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if `k` is odd or outside `[MIN_K, MAX_K]`.
-    pub fn k(mut self, k: u16) -> Result<Self, Error> {
-        if !(MIN_K..=MAX_K).contains(&k) {
-            return Err(Error::invalid_argument(format!(
-                "k must be in [{}, {}], got {k}",
-                MIN_K, MAX_K
-            )));
-        }
-        if k % 2 != 0 {
-            return Err(Error::invalid_argument(format!("k must be even, got {k}")));
-        }
-        self.k = k;
-        Ok(self)
-    }
-
-    /// Sets the rank accuracy.
-    pub fn rank_accuracy(mut self, rank_accuracy: RankAccuracy) -> Self {
-        self.rank_accuracy = rank_accuracy;
-        self
-    }
-
-    /// Builds the sketch.
-    pub fn build(self) -> Result<ReqSketch<T>, Error> {
-        ReqSketch::try_new(self.k, self.rank_accuracy)
     }
 }
 

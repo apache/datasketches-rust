@@ -25,7 +25,6 @@ use googletest::assert_that;
 use googletest::prelude::anything;
 use googletest::prelude::err;
 use googletest::prelude::near;
-use googletest::prelude::ok;
 
 #[test]
 fn union_equivalent_to_chained_merge() {
@@ -95,10 +94,7 @@ fn try_new_validates_k() {
         ReqUnion::<f64>::try_new(3, RankAccuracy::HighRank),
         err(anything())
     );
-    assert_that!(
-        ReqUnion::<f64>::try_new(12, RankAccuracy::HighRank),
-        ok(anything())
-    );
+    assert!(ReqUnion::<f64>::try_new(12, RankAccuracy::HighRank).is_ok());
 }
 
 #[test]

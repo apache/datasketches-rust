@@ -41,7 +41,6 @@ fn nearest_even_section_size(value: f32) -> u32 {
 
 pub use self::iter::ReqSketchIterator;
 pub use self::sketch::ReqSketch;
-pub use self::sketch::ReqSketchBuilder;
 pub use self::sorted_view::SortedView;
 pub use self::union::ReqUnion;
 pub use self::value::ReqValue;

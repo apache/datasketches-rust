@@ -27,16 +27,10 @@ use googletest::prelude::near;
 
 #[test]
 fn merge_into_empty_preserves_source_distribution() {
-    let mut target: ReqSketch<f32> = ReqSketch::builder()
-        .k(40)
-        .expect("valid k")
-        .build()
-        .expect("build should succeed");
-    let mut source: ReqSketch<f32> = ReqSketch::builder()
-        .k(40)
-        .expect("valid k")
-        .build()
-        .expect("build should succeed");
+    let mut target: ReqSketch<f32> =
+        ReqSketch::try_new(40, RankAccuracy::HighRank).expect("construction should succeed");
+    let mut source: ReqSketch<f32> =
+        ReqSketch::try_new(40, RankAccuracy::HighRank).expect("construction should succeed");
 
     for i in 0..1000 {
         source.update(i as f32);
@@ -67,16 +61,10 @@ fn merge_into_empty_preserves_source_distribution() {
 
 #[test]
 fn merge_two_ranges_preserves_distribution() {
-    let mut left: ReqSketch<f32> = ReqSketch::builder()
-        .k(100)
-        .expect("valid k")
-        .build()
-        .expect("build should succeed");
-    let mut right: ReqSketch<f32> = ReqSketch::builder()
-        .k(100)
-        .expect("valid k")
-        .build()
-        .expect("build should succeed");
+    let mut left: ReqSketch<f32> =
+        ReqSketch::try_new(100, RankAccuracy::HighRank).expect("construction should succeed");
+    let mut right: ReqSketch<f32> =
+        ReqSketch::try_new(100, RankAccuracy::HighRank).expect("construction should succeed");
 
     for i in 0..1000 {
         left.update(i as f32);
@@ -111,10 +99,8 @@ fn merge_two_ranges_preserves_distribution() {
 #[test]
 fn merge_rejects_incompatible_accuracy_modes() {
     let mut high_rank = ReqSketch::new();
-    let low_rank: ReqSketch<f32> = ReqSketch::builder()
-        .rank_accuracy(RankAccuracy::LowRank)
-        .build()
-        .expect("build should succeed");
+    let low_rank: ReqSketch<f32> =
+        ReqSketch::try_new(12, RankAccuracy::LowRank).expect("construction should succeed");
 
     high_rank.update(1.0);
     assert_that!(high_rank.merge(&low_rank), err(anything()));

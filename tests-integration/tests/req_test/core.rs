@@ -18,6 +18,7 @@
 //! Core ReqSketch construction and update behavior.
 
 use datasketches::error::Error;
+use datasketches::error::ErrorKind;
 use datasketches::req::RankAccuracy;
 use datasketches::req::ReqSketch;
 use datasketches::req::SearchCriteria;
@@ -31,7 +32,6 @@ use googletest::prelude::le;
 use googletest::prelude::lt;
 use googletest::prelude::near;
 use googletest::prelude::none;
-use googletest::prelude::ok;
 
 #[test]
 fn empty_sketch_has_default_state_and_rejects_queries() {
@@ -112,10 +112,8 @@ fn single_value_hra_answers_exactly() {
 
 #[test]
 fn single_value_lra_preserves_configuration() {
-    let mut sketch: ReqSketch<f32> = ReqSketch::builder()
-        .rank_accuracy(RankAccuracy::LowRank)
-        .build()
-        .expect("build should succeed");
+    let mut sketch: ReqSketch<f32> =
+        ReqSketch::try_new(12, RankAccuracy::LowRank).expect("construction should succeed");
     sketch.update(1.0f32);
 
     assert_eq!(sketch.rank_accuracy(), RankAccuracy::LowRank);
@@ -252,24 +250,16 @@ fn small_edge_cases_answer_reasonably() -> Result<(), Error> {
 }
 
 #[test]
-fn constructors_validate_k() {
-    // k must be even and within the supported range; both constructors enforce it.
+fn try_new_validates_k() {
     assert_that!(
         ReqSketch::<f64>::try_new(0, RankAccuracy::HighRank),
         err(anything())
     );
-    assert_that!(
-        ReqSketch::<f64>::try_new(3, RankAccuracy::HighRank),
-        err(anything())
-    ); // odd
+    let error = ReqSketch::<f64>::try_new(3, RankAccuracy::HighRank).unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::InvalidArgument);
     assert_that!(
         ReqSketch::<f64>::try_new(4096, RankAccuracy::HighRank),
         err(anything())
-    ); // too large
-    assert_that!(
-        ReqSketch::<f64>::try_new(12, RankAccuracy::HighRank),
-        ok(anything())
     );
-    assert_that!(ReqSketch::<f64>::builder().k(5), err(anything())); // odd via builder
-    assert_that!(ReqSketch::<f64>::builder().k(12), ok(anything()));
+    assert!(ReqSketch::<f64>::try_new(12, RankAccuracy::HighRank).is_ok());
 }
