@@ -61,35 +61,17 @@ pub struct ReqSketch<T: ReqValue> {
 
 impl<T: ReqValue> Default for ReqSketch<T> {
     fn default() -> Self {
-        Self::new(DEFAULT_K, RankAccuracy::HighRank)
+        Self::make(DEFAULT_K, RankAccuracy::HighRank)
     }
 }
 
 impl<T: ReqValue> ReqSketch<T> {
     /// Creates a new sketch with the given `k` and rank accuracy.
     ///
-    /// The fallible version of this method is [`ReqSketch::try_new`].
-    ///
-    /// # Panics
-    ///
-    /// Panics if `k` is odd or outside `[4, 1024]`.
-    pub fn new(k: u16, rank_accuracy: RankAccuracy) -> Self {
-        assert!(
-            (MIN_K..=MAX_K).contains(&k),
-            "k must be in [{MIN_K}, {MAX_K}], got {k}"
-        );
-        assert_eq!(k % 2, 0, "k must be even, got {k}");
-        Self::make(k, rank_accuracy)
-    }
-
-    /// Creates a new sketch with the given `k` and rank accuracy.
-    ///
-    /// The panicking version of this method is [`ReqSketch::new`].
-    ///
     /// # Errors
     ///
     /// Returns an error if `k` is odd or outside `[4, 1024]`.
-    pub fn try_new(k: u16, rank_accuracy: RankAccuracy) -> Result<Self, Error> {
+    pub fn new(k: u16, rank_accuracy: RankAccuracy) -> Result<Self, Error> {
         if !(MIN_K..=MAX_K).contains(&k) {
             return Err(Error::invalid_argument(format!(
                 "k must be in [{MIN_K}, {MAX_K}], got {k}"

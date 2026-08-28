@@ -67,6 +67,7 @@ use crate::cpc::Flavor;
 use crate::cpc::count_bits_set_in_matrix;
 use crate::cpc::determine_correct_offset;
 use crate::cpc::pair_table::PairTable;
+use crate::error::Error;
 use crate::hash::DEFAULT_UPDATE_SEED;
 
 /// Union operator for CPC sketches.
@@ -82,30 +83,30 @@ pub struct CpcUnion {
 
 impl Default for CpcUnion {
     fn default() -> Self {
-        Self::new(DEFAULT_LG_K)
+        Self::new(DEFAULT_LG_K).expect("the default CPC union configuration must be valid")
     }
 }
 
 impl CpcUnion {
     /// Creates a new `CpcUnion` with the given `lg_k` and default seed.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if `lg_k` is not in the range `[4, 26]`.
-    pub fn new(lg_k: u8) -> Self {
+    /// Returns an error if `lg_k` is not in the range `[4, 26]`.
+    pub fn new(lg_k: u8) -> Result<Self, Error> {
         Self::with_seed(lg_k, DEFAULT_UPDATE_SEED)
     }
 
     /// Creates a new `CpcUnion` with the given `lg_k` and `seed`.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if `lg_k` is not in the range `[4, 26]`.
-    pub fn with_seed(lg_k: u8, seed: u64) -> Self {
+    /// Returns an error if `lg_k` is not in the range `[4, 26]`, or the computed seed hash is zero.
+    pub fn with_seed(lg_k: u8, seed: u64) -> Result<Self, Error> {
         // We begin with the accumulator holding an EMPTY_MERGED sketch object.
-        let sketch = CpcSketch::with_seed(lg_k, seed);
+        let sketch = CpcSketch::with_seed(lg_k, seed)?;
         let state = UnionState::Accumulator(sketch);
-        Self { lg_k, seed, state }
+        Ok(Self { lg_k, seed, state })
     }
 
     /// Returns the current `lg_k`.
@@ -124,14 +125,14 @@ impl CpcUnion {
     /// use datasketches::cpc::CpcSketch;
     /// use datasketches::cpc::CpcUnion;
     ///
-    /// let mut s1 = CpcSketch::new(12);
+    /// let mut s1 = CpcSketch::new(12).unwrap();
     /// s1.update(&"apple");
     ///
-    /// let mut s2 = CpcSketch::new(12);
+    /// let mut s2 = CpcSketch::new(12).unwrap();
     /// s2.update(&"apple");
     /// s2.update(&"banana");
     ///
-    /// let mut union = CpcUnion::new(12);
+    /// let mut union = CpcUnion::new(12).unwrap();
     /// union.update(&s1);
     /// union.update(&s2);
     ///
@@ -143,6 +144,7 @@ impl CpcUnion {
             UnionState::Accumulator(sketch) => {
                 if sketch.is_empty() {
                     CpcSketch::with_seed(self.lg_k, self.seed)
+                        .expect("a CPC union must retain a valid configuration")
                 } else {
                     let mut sketch = sketch.clone();
                     assert_eq!(sketch.flavor(), Flavor::Sparse);
@@ -153,7 +155,8 @@ impl CpcUnion {
             UnionState::BitMatrix(matrix) => {
                 let lg_k = self.lg_k;
 
-                let mut sketch = CpcSketch::with_seed(lg_k, self.seed);
+                let mut sketch = CpcSketch::with_seed(lg_k, self.seed)
+                    .expect("a CPC union must retain a valid configuration");
                 let num_coupons = count_bits_set_in_matrix(matrix);
                 sketch.num_coupons = num_coupons;
                 let offset = determine_correct_offset(lg_k, num_coupons);
@@ -306,11 +309,15 @@ impl CpcUnion {
             UnionState::Accumulator(sketch) => {
                 if sketch.is_empty() {
                     self.lg_k = new_lg_k;
-                    self.state = UnionState::Accumulator(CpcSketch::with_seed(new_lg_k, self.seed));
+                    self.state = UnionState::Accumulator(
+                        CpcSketch::with_seed(new_lg_k, self.seed)
+                            .expect("a CPC union must retain a valid configuration"),
+                    );
                     return;
                 }
 
-                let mut new_sketch = CpcSketch::with_seed(new_lg_k, self.seed);
+                let mut new_sketch = CpcSketch::with_seed(new_lg_k, self.seed)
+                    .expect("a CPC union must retain a valid configuration");
                 walk_table_updating_sketch(&mut new_sketch, sketch.surprising_value_table());
 
                 let final_new_flavor = new_sketch.flavor();

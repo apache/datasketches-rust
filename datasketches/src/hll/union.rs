@@ -31,6 +31,7 @@
 use std::hash::Hash;
 
 use crate::common::NumStdDev;
+use crate::error::Error;
 use crate::hll::Coupon;
 use crate::hll::HllSketch;
 use crate::hll::HllType;
@@ -66,9 +67,9 @@ impl HllUnion {
     /// * `lg_max_k`: Maximum `lg_k` in `[4, 21]`. This determines the maximum precision the union
     ///   can handle. Input sketches with a larger `lg_k` are downsampled.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if `lg_max_k` is outside `[4, 21]`.
+    /// Returns an error if `lg_max_k` is outside `[4, 21]`.
     ///
     /// # Examples
     ///
@@ -76,22 +77,16 @@ impl HllUnion {
     /// use datasketches::hll::HllType;
     /// use datasketches::hll::HllUnion;
     ///
-    /// let mut union = HllUnion::new(10);
+    /// let mut union = HllUnion::new(10).unwrap();
     /// union.update_value("apple");
     /// let result = union.to_sketch(HllType::Hll8);
     /// assert_eq!(result.estimate(), 1.0);
     /// ```
-    pub fn new(lg_max_k: u8) -> Self {
-        assert!(
-            (4..=21).contains(&lg_max_k),
-            "lg_max_k must be in [4, 21], got {}",
-            lg_max_k
-        );
-
+    pub fn new(lg_max_k: u8) -> Result<Self, Error> {
         // Start with an empty gadget at lg_max_k using Hll8
-        let gadget = HllSketch::new(lg_max_k, HllType::Hll8);
+        let gadget = HllSketch::new(lg_max_k, HllType::Hll8)?;
 
-        Self { lg_max_k, gadget }
+        Ok(Self { lg_max_k, gadget })
     }
 
     /// Updates the union with a hashable value.
@@ -105,7 +100,7 @@ impl HllUnion {
     /// use datasketches::hll::HllType;
     /// use datasketches::hll::HllUnion;
     ///
-    /// let mut union = HllUnion::new(10);
+    /// let mut union = HllUnion::new(10).unwrap();
     /// union.update_value("apple");
     /// let result = union.to_sketch(HllType::Hll8);
     /// assert_eq!(result.estimate(), 1.0);
@@ -126,12 +121,12 @@ impl HllUnion {
     /// use datasketches::hll::HllType;
     /// use datasketches::hll::HllUnion;
     ///
-    /// let mut left = HllSketch::new(10, HllType::Hll8);
-    /// let mut right = HllSketch::new(10, HllType::Hll8);
+    /// let mut left = HllSketch::new(10, HllType::Hll8).unwrap();
+    /// let mut right = HllSketch::new(10, HllType::Hll8).unwrap();
     /// left.update("apple");
     /// right.update("banana");
     ///
-    /// let mut union = HllUnion::new(10);
+    /// let mut union = HllUnion::new(10).unwrap();
     /// union.update(&left);
     /// union.update(&right);
     /// let result = union.to_sketch(HllType::Hll8);
@@ -258,7 +253,7 @@ impl HllUnion {
     /// use datasketches::hll::HllType;
     /// use datasketches::hll::HllUnion;
     ///
-    /// let mut union = HllUnion::new(10);
+    /// let mut union = HllUnion::new(10).unwrap();
     /// union.update_value("apple");
     /// let result = union.to_sketch(HllType::Hll6);
     /// assert!(result.estimate() >= 1.0);
@@ -313,7 +308,8 @@ impl HllUnion {
     ///
     /// This clears all accumulated data so the union can be reused.
     pub fn reset(&mut self) {
-        self.gadget = HllSketch::new(self.lg_max_k, HllType::Hll8);
+        self.gadget = HllSketch::new(self.lg_max_k, HllType::Hll8)
+            .expect("an existing HLL union must have a valid lg_max_k");
     }
 
     /// Returns the union's current cardinality estimate.

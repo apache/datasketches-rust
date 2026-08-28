@@ -19,6 +19,7 @@ use crate::common::ResizeFactor;
 use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::hash::check_seed_hash;
+use crate::hash::compute_seed_hash;
 use crate::thetacommon::EntrySketch;
 use crate::thetacommon::SketchEntry;
 use crate::thetacommon::SketchScalars;
@@ -51,8 +52,9 @@ where
     E: SketchEntry,
 {
     /// Creates a new intersection operator for the given `seed` and entry-merge `policy`.
-    pub fn new(seed: u64, policy: P) -> Self {
-        Self {
+    pub fn new(seed: u64, policy: P) -> Result<Self, Error> {
+        let seed_hash = compute_seed_hash(seed, ErrorKind::InvalidArgument)?;
+        Ok(Self {
             has_result: false,
             table: SketchHashTable::from_raw_parts(
                 0,
@@ -61,10 +63,11 @@ where
                 1.0,
                 MAX_THETA,
                 seed,
+                seed_hash,
                 false,
             ),
             policy,
-        }
+        })
     }
 
     /// Updates the intersection with a given sketch.
@@ -92,6 +95,7 @@ where
                 1.0,
                 table.theta(),
                 table.seed(),
+                table.seed_hash(),
                 table.is_empty(),
             )
         };
@@ -144,6 +148,7 @@ where
                 1.0,
                 self.table.theta(),
                 self.table.seed(),
+                self.table.seed_hash(),
                 self.table.is_empty(),
             );
             for entry in sketch.entries() {
@@ -215,6 +220,7 @@ where
                     1.0,
                     self.table.theta(),
                     self.table.seed(),
+                    self.table.seed_hash(),
                     self.table.is_empty(),
                 );
                 for entry in matched_entries {

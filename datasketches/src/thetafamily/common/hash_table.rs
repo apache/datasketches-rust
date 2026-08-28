@@ -20,6 +20,7 @@ use std::slice;
 
 use crate::common::ResizeFactor;
 use crate::error::Error;
+use crate::error::ErrorKind;
 use crate::hash::MurmurHash3X64128;
 use crate::hash::compute_seed_hash;
 use crate::thetacommon::SketchEntry;
@@ -72,6 +73,7 @@ pub struct SketchHashTable<E> {
     resize_factor: ResizeFactor,
     sampling_probability: f32,
     seed: u64,
+    seed_hash: u16,
 
     // Logical emptiness of the source set.
     //
@@ -95,34 +97,11 @@ where
 {
     /// Creates a new hash table.
     ///
-    /// # Panics
-    ///
-    /// Panics if `lg_nom_size` is outside `[5, 26]` or `sampling_probability` is outside
-    /// `(0.0, 1.0]`.
-    pub fn new(
-        lg_nom_size: u8,
-        resize_factor: ResizeFactor,
-        sampling_probability: f32,
-        seed: u64,
-    ) -> Self {
-        assert!(
-            (MIN_LG_K..=MAX_LG_K).contains(&lg_nom_size),
-            "lg_k must be in [{MIN_LG_K}, {MAX_LG_K}], got {lg_nom_size}"
-        );
-        assert!(
-            sampling_probability > 0.0 && sampling_probability <= 1.0,
-            "sampling_probability must be in (0.0, 1.0], got {sampling_probability}"
-        );
-        Self::make(lg_nom_size, resize_factor, sampling_probability, seed)
-    }
-
-    /// Creates a new hash table after validating its configuration.
-    ///
     /// # Errors
     ///
-    /// Returns an error if `lg_nom_size` is outside `[5, 26]` or `sampling_probability` is outside
-    /// `(0.0, 1.0]`.
-    pub fn try_new(
+    /// Returns an error if `lg_nom_size` is outside `[5, 26]`, `sampling_probability` is outside
+    /// `(0.0, 1.0]`, or the computed seed hash is zero.
+    pub fn new(
         lg_nom_size: u8,
         resize_factor: ResizeFactor,
         sampling_probability: f32,
@@ -138,31 +117,19 @@ where
                 "sampling_probability must be in (0.0, 1.0], got {sampling_probability}"
             )));
         }
-        Ok(Self::make(
-            lg_nom_size,
-            resize_factor,
-            sampling_probability,
-            seed,
-        ))
-    }
-
-    fn make(
-        lg_nom_size: u8,
-        resize_factor: ResizeFactor,
-        sampling_probability: f32,
-        seed: u64,
-    ) -> Self {
+        let seed_hash = compute_seed_hash(seed, ErrorKind::InvalidArgument)?;
         let lg_max_size = lg_nom_size + 1;
         let lg_cur_size = starting_sub_multiple(lg_max_size, MIN_LG_K, resize_factor.lg_value());
-        Self::from_raw_parts(
+        Ok(Self::from_raw_parts(
             lg_cur_size,
             lg_nom_size,
             resize_factor,
             sampling_probability,
             starting_theta_from_sampling_probability(sampling_probability),
             seed,
+            seed_hash,
             true,
-        )
+        ))
     }
 
     /// Constructs a table from raw internal state.
@@ -177,6 +144,7 @@ where
         sampling_probability: f32,
         theta: u64,
         seed: u64,
+        seed_hash: u16,
         is_empty: bool,
     ) -> Self {
         let lg_max_size = lg_nom_size + 1;
@@ -193,6 +161,7 @@ where
             resize_factor,
             sampling_probability,
             seed,
+            seed_hash,
             is_empty,
             theta,
             entries,
@@ -363,7 +332,7 @@ where
 
     /// Get the hash of the seed that was used to hash the input.
     pub fn seed_hash(&self) -> u16 {
-        compute_seed_hash(self.seed)
+        self.seed_hash
     }
 
     /// Set empty flag.

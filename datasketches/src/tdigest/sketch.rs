@@ -182,31 +182,8 @@ pub struct TDigestMut {
 
 impl Default for TDigestMut {
     fn default() -> Self {
-        TDigestMut::new(DEFAULT_K)
-    }
-}
-
-impl TDigestMut {
-    /// Creates a mutable t-digest with the given `k` value.
-    ///
-    /// The fallible version of this method is [`TDigestMut::try_new`].
-    ///
-    /// # Panics
-    ///
-    /// Panics if `k` is less than `10`.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use datasketches::tdigest::TDigestMut;
-    ///
-    /// let sketch = TDigestMut::new(100);
-    /// assert_eq!(sketch.k(), 100);
-    /// ```
-    pub fn new(k: u16) -> Self {
-        assert!(k >= 10, "k must be at least 10, got {k}");
         Self::make(
-            k,
+            DEFAULT_K,
             false,
             f64::INFINITY,
             f64::NEG_INFINITY,
@@ -214,10 +191,10 @@ impl TDigestMut {
             0,
         )
     }
+}
 
+impl TDigestMut {
     /// Creates a mutable t-digest with the given `k` value.
-    ///
-    /// The panicking version of this method is [`TDigestMut::new`].
     ///
     /// # Errors
     ///
@@ -228,10 +205,10 @@ impl TDigestMut {
     /// ```
     /// use datasketches::tdigest::TDigestMut;
     ///
-    /// let sketch = TDigestMut::try_new(20).unwrap();
-    /// assert_eq!(sketch.k(), 20);
+    /// let sketch = TDigestMut::new(100).unwrap();
+    /// assert_eq!(sketch.k(), 100);
     /// ```
-    pub fn try_new(k: u16) -> Result<Self, Error> {
+    pub fn new(k: u16) -> Result<Self, Error> {
         if k < 10 {
             return Err(Error::invalid_argument(format!(
                 "k must be at least 10, got {k}"
@@ -292,7 +269,7 @@ impl TDigestMut {
     /// ```
     /// use datasketches::tdigest::TDigestMut;
     ///
-    /// let mut sketch = TDigestMut::new(100);
+    /// let mut sketch = TDigestMut::new(100).unwrap();
     /// sketch.update(1.0);
     /// assert!(sketch.total_weight() >= 1);
     /// ```
@@ -350,8 +327,8 @@ impl TDigestMut {
     /// ```
     /// use datasketches::tdigest::TDigestMut;
     ///
-    /// let mut left = TDigestMut::new(100);
-    /// let mut right = TDigestMut::new(100);
+    /// let mut left = TDigestMut::new(100).unwrap();
+    /// let mut right = TDigestMut::new(100).unwrap();
     /// left.update(1.0);
     /// right.update(2.0);
     /// left.merge(&right);
@@ -374,7 +351,7 @@ impl TDigestMut {
     /// ```
     /// use datasketches::tdigest::TDigestMut;
     ///
-    /// let mut sketch = TDigestMut::new(100);
+    /// let mut sketch = TDigestMut::new(100).unwrap();
     /// sketch.update(1.0);
     /// let frozen = sketch.freeze();
     /// assert!(!frozen.is_empty());
@@ -412,7 +389,7 @@ impl TDigestMut {
     /// ```
     /// use datasketches::tdigest::TDigestMut;
     ///
-    /// let mut sketch = TDigestMut::new(100);
+    /// let mut sketch = TDigestMut::new(100).unwrap();
     /// for value in [1.0, 2.0, 3.0] {
     ///     sketch.update(value);
     /// }
@@ -436,7 +413,7 @@ impl TDigestMut {
     /// ```
     /// use datasketches::tdigest::TDigestMut;
     ///
-    /// let mut sketch = TDigestMut::new(100);
+    /// let mut sketch = TDigestMut::new(100).unwrap();
     /// for value in [1.0, 2.0, 3.0] {
     ///     sketch.update(value);
     /// }
@@ -460,7 +437,7 @@ impl TDigestMut {
     /// ```
     /// use datasketches::tdigest::TDigestMut;
     ///
-    /// let mut sketch = TDigestMut::new(100);
+    /// let mut sketch = TDigestMut::new(100).unwrap();
     /// for value in [1.0, 2.0, 3.0] {
     ///     sketch.update(value);
     /// }
@@ -494,7 +471,7 @@ impl TDigestMut {
     /// ```
     /// use datasketches::tdigest::TDigestMut;
     ///
-    /// let mut sketch = TDigestMut::new(100);
+    /// let mut sketch = TDigestMut::new(100).unwrap();
     /// for value in [1.0, 2.0, 3.0] {
     ///     sketch.update(value);
     /// }
@@ -518,7 +495,7 @@ impl TDigestMut {
     /// ```
     /// use datasketches::tdigest::TDigestMut;
     ///
-    /// let mut sketch = TDigestMut::new(100);
+    /// let mut sketch = TDigestMut::new(100).unwrap();
     /// sketch.update(1.0);
     /// let bytes = sketch.serialize();
     /// let decoded = TDigestMut::deserialize(&bytes, false).unwrap();
@@ -612,7 +589,7 @@ impl TDigestMut {
     /// ```
     /// use datasketches::tdigest::TDigestMut;
     ///
-    /// let mut sketch = TDigestMut::new(100);
+    /// let mut sketch = TDigestMut::new(100).unwrap();
     /// sketch.update(1.0);
     /// sketch.update(2.0);
     /// let bytes = sketch.serialize();
@@ -654,7 +631,7 @@ impl TDigestMut {
             .read_u16_le()
             .map_err(insufficient_data("<unused>"))?; // unused
         if is_empty {
-            return Ok(TDigestMut::new(k));
+            return TDigestMut::new(k);
         }
 
         let reverse_merge = (flags & FLAGS_REVERSE_MERGE) != 0;
@@ -1058,7 +1035,7 @@ impl TDigest {
     /// ```
     /// use datasketches::tdigest::TDigestMut;
     ///
-    /// let mut sketch = TDigestMut::new(100);
+    /// let mut sketch = TDigestMut::new(100).unwrap();
     /// for value in [1.0, 2.0, 3.0] {
     ///     sketch.update(value);
     /// }
@@ -1095,7 +1072,7 @@ impl TDigest {
     /// ```
     /// use datasketches::tdigest::TDigestMut;
     ///
-    /// let mut sketch = TDigestMut::new(100);
+    /// let mut sketch = TDigestMut::new(100).unwrap();
     /// for value in [1.0, 2.0, 3.0] {
     ///     sketch.update(value);
     /// }
@@ -1120,7 +1097,7 @@ impl TDigest {
     /// ```
     /// use datasketches::tdigest::TDigestMut;
     ///
-    /// let mut sketch = TDigestMut::new(100);
+    /// let mut sketch = TDigestMut::new(100).unwrap();
     /// for value in [1.0, 2.0, 3.0] {
     ///     sketch.update(value);
     /// }
@@ -1146,7 +1123,7 @@ impl TDigest {
     /// ```
     /// use datasketches::tdigest::TDigestMut;
     ///
-    /// let mut sketch = TDigestMut::new(100);
+    /// let mut sketch = TDigestMut::new(100).unwrap();
     /// for value in [1.0, 2.0, 3.0] {
     ///     sketch.update(value);
     /// }
@@ -1166,7 +1143,7 @@ impl TDigest {
     /// ```
     /// use datasketches::tdigest::TDigestMut;
     ///
-    /// let mut sketch = TDigestMut::new(100);
+    /// let mut sketch = TDigestMut::new(100).unwrap();
     /// sketch.update(1.0);
     /// let digest = sketch.freeze();
     /// let mut mutable = digest.unfreeze();

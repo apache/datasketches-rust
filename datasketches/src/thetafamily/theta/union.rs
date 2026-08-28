@@ -85,6 +85,13 @@ pub struct ThetaUnionBuilder {
 
 impl Default for ThetaUnionBuilder {
     fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ThetaUnionBuilder {
+    /// Creates a builder with the default Theta union configuration.
+    pub fn new() -> Self {
         Self {
             lg_k: DEFAULT_LG_K,
             resize_factor: ResizeFactor::X8,
@@ -92,9 +99,6 @@ impl Default for ThetaUnionBuilder {
             seed: DEFAULT_UPDATE_SEED,
         }
     }
-}
-
-impl ThetaUnionBuilder {
     /// Sets `lg_k`, the base-2 logarithm of the nominal capacity.
     ///
     /// # Examples
@@ -102,7 +106,7 @@ impl ThetaUnionBuilder {
     /// ```
     /// use datasketches::theta::ThetaUnionBuilder;
     ///
-    /// ThetaUnionBuilder::default().lg_k(12).build().unwrap();
+    /// ThetaUnionBuilder::new().lg_k(12).build().unwrap();
     /// ```
     pub fn lg_k(mut self, lg_k: u8) -> Self {
         self.lg_k = lg_k;
@@ -122,7 +126,7 @@ impl ThetaUnionBuilder {
     /// ```
     /// use datasketches::theta::ThetaUnionBuilder;
     ///
-    /// ThetaUnionBuilder::default()
+    /// ThetaUnionBuilder::new()
     ///     .sampling_probability(0.5)
     ///     .build()
     ///     .unwrap();
@@ -139,7 +143,7 @@ impl ThetaUnionBuilder {
     /// ```
     /// use datasketches::theta::ThetaUnionBuilder;
     ///
-    /// ThetaUnionBuilder::default().seed(7).build().unwrap();
+    /// ThetaUnionBuilder::new().seed(7).build().unwrap();
     /// ```
     pub fn seed(mut self, seed: u64) -> Self {
         self.seed = seed;
@@ -150,19 +154,19 @@ impl ThetaUnionBuilder {
     ///
     /// # Errors
     ///
-    /// Returns an error if `lg_k` is outside `[5, 26]` or `sampling_probability` is outside
-    /// `(0.0, 1.0]`.
+    /// Returns an error if `lg_k` is outside `[5, 26]`, `sampling_probability` is outside
+    /// `(0.0, 1.0]`, or the computed seed hash is zero.
     ///
     /// # Examples
     ///
     /// ```
     /// use datasketches::theta::ThetaUnionBuilder;
     ///
-    /// ThetaUnionBuilder::default().lg_k(10).build().unwrap();
+    /// ThetaUnionBuilder::new().lg_k(10).build().unwrap();
     /// ```
     pub fn build(self) -> Result<ThetaUnion, Error> {
         Ok(ThetaUnion {
-            state: UnionState::try_new(
+            state: UnionState::new(
                 self.lg_k,
                 self.resize_factor,
                 self.sampling_probability,

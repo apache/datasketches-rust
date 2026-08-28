@@ -94,35 +94,36 @@ pub struct CpcSketch {
 
 impl Default for CpcSketch {
     fn default() -> Self {
-        Self::new(DEFAULT_LG_K)
+        Self::new(DEFAULT_LG_K).expect("the default CPC configuration must be valid")
     }
 }
 
 impl CpcSketch {
     /// Creates a new `CpcSketch` with the given `lg_k` and default seed.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if `lg_k` is not in the range `[4, 26]`.
-    pub fn new(lg_k: u8) -> Self {
+    /// Returns an error if `lg_k` is not in the range `[4, 26]`.
+    pub fn new(lg_k: u8) -> Result<Self, Error> {
         Self::with_seed(lg_k, DEFAULT_UPDATE_SEED)
     }
 
     /// Creates a new `CpcSketch` with the given `lg_k` and `seed`.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if `lg_k` is not in the range `[4, 26]`, or the computed seed hash is zero.
-    pub fn with_seed(lg_k: u8, seed: u64) -> Self {
-        assert!(
-            (MIN_LG_K..=MAX_LG_K).contains(&lg_k),
-            "lg_k out of range; got {lg_k}",
-        );
+    /// Returns an error if `lg_k` is not in the range `[4, 26]`, or the computed seed hash is zero.
+    pub fn with_seed(lg_k: u8, seed: u64) -> Result<Self, Error> {
+        if !(MIN_LG_K..=MAX_LG_K).contains(&lg_k) {
+            return Err(Error::invalid_argument(format!(
+                "lg_k must be in [{MIN_LG_K}, {MAX_LG_K}], got {lg_k}"
+            )));
+        }
 
-        Self {
+        Ok(Self {
             lg_k,
             seed,
-            seed_hash: compute_seed_hash(seed),
+            seed_hash: compute_seed_hash(seed, ErrorKind::InvalidArgument)?,
             first_interesting_column: 0,
             num_coupons: 0,
             surprising_value_table: None,
@@ -131,7 +132,7 @@ impl CpcSketch {
             merge_flag: false,
             kxp: (1 << lg_k) as f64,
             hip_est_accum: 0.0,
-        }
+        })
     }
 
     /// Returns the configured `lg_k`.
@@ -187,12 +188,12 @@ impl CpcSketch {
     /// use datasketches::cpc::CpcSketch;
     /// use datasketches::hash::value::canonical_float;
     ///
-    /// let mut sketch = CpcSketch::with_seed(11, 123);
+    /// let mut sketch = CpcSketch::with_seed(11, 123).unwrap();
     /// sketch.update(1);
     /// sketch.update(2);
     /// sketch.update(3);
     ///
-    /// let mut sketch = CpcSketch::with_seed(11, 123);
+    /// let mut sketch = CpcSketch::with_seed(11, 123).unwrap();
     /// sketch.update(canonical_float::from_f64(1.5));
     /// sketch.update(canonical_float::from_f64(2.5));
     /// sketch.update(canonical_float::from_f64(3.5));
@@ -571,7 +572,11 @@ impl CpcSketch {
             | (if has_table { 1 } else { 0 } << FLAG_HAS_TABLE)
             | (if has_window { 1 } else { 0 } << FLAG_HAS_WINDOW);
         bytes.write_u8(flags);
-        debug_assert_eq!(self.seed_hash, compute_seed_hash(self.seed));
+        debug_assert_eq!(
+            self.seed_hash,
+            compute_seed_hash(self.seed, ErrorKind::InvalidArgument)
+                .expect("a CPC sketch must retain a valid seed")
+        );
         bytes.write_u16_le(self.seed_hash);
         if !self.is_empty() {
             bytes.write_u32_le(self.num_coupons);
@@ -607,6 +612,11 @@ impl CpcSketch {
     }
 
     /// Deserializes a `CpcSketch` from bytes with the provided seed.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidData` if the image is malformed, its seed hash does not match `seed`, or
+    /// `seed` itself computes to the reserved zero seed hash.
     pub fn deserialize_with_seed(bytes: &[u8], seed: u64) -> Result<Self, Error> {
         let mut cursor = SketchSlice::new(bytes);
         let preamble_ints = cursor
@@ -685,7 +695,7 @@ impl CpcSketch {
             make_preamble_ints(num_coupons, has_hip, has_table, has_window);
         ensure_preamble_longs_in(&[expected_preamble_ints], preamble_ints)?;
         check_seed_hash(
-            compute_seed_hash(seed),
+            compute_seed_hash(seed, ErrorKind::InvalidData)?,
             seed_hash,
             "deserialized CpcSketch",
             ErrorKind::InvalidData,

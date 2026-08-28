@@ -69,7 +69,7 @@ use crate::thetacommon::hash_table::SketchHashTableIter;
 /// ```
 /// use datasketches::theta::ThetaSketchBuilder;
 ///
-/// let mut sketch = ThetaSketchBuilder::default().build().unwrap();
+/// let mut sketch = ThetaSketchBuilder::new().build().unwrap();
 /// sketch.update("apple");
 /// let view = sketch.as_view();
 /// assert_eq!(view.num_retained(), 1);
@@ -219,11 +219,11 @@ impl ThetaSketch {
     /// use datasketches::hash::value::raw_bytes;
     /// use datasketches::theta::ThetaSketchBuilder;
     ///
-    /// let mut sketch = ThetaSketchBuilder::default().build().unwrap();
+    /// let mut sketch = ThetaSketchBuilder::new().build().unwrap();
     /// sketch.update("apple");
     /// assert!(sketch.estimate() >= 1.0);
     ///
-    /// let mut sketch = ThetaSketchBuilder::default().build().unwrap();
+    /// let mut sketch = ThetaSketchBuilder::new().build().unwrap();
     /// sketch.update(raw_bytes::from_str("apple"));
     /// assert!(sketch.estimate() >= 1.0);
     /// ```
@@ -238,7 +238,7 @@ impl ThetaSketch {
     /// ```
     /// use datasketches::theta::ThetaSketchBuilder;
     ///
-    /// let mut sketch = ThetaSketchBuilder::default().build().unwrap();
+    /// let mut sketch = ThetaSketchBuilder::new().build().unwrap();
     /// sketch.update("apple");
     /// assert!(sketch.estimate() >= 1.0);
     /// ```
@@ -303,7 +303,7 @@ impl ThetaSketch {
     /// ```
     /// use datasketches::theta::ThetaSketchBuilder;
     ///
-    /// let mut sketch = ThetaSketchBuilder::default().build().unwrap();
+    /// let mut sketch = ThetaSketchBuilder::new().build().unwrap();
     /// sketch.update("apple");
     /// let mut iter = sketch.iter();
     /// assert!(iter.next().is_some());
@@ -321,7 +321,7 @@ impl ThetaSketch {
     /// ```
     /// use datasketches::theta::ThetaSketchBuilder;
     ///
-    /// let mut sketch = ThetaSketchBuilder::default().build().unwrap();
+    /// let mut sketch = ThetaSketchBuilder::new().build().unwrap();
     /// sketch.update("apple");
     /// let compact = sketch.compact(true);
     /// assert_eq!(compact.num_retained(), 1);
@@ -353,7 +353,7 @@ impl ThetaSketch {
     /// use datasketches::common::NumStdDev;
     /// use datasketches::theta::ThetaSketchBuilder;
     ///
-    /// let mut sketch = ThetaSketchBuilder::default().lg_k(12).build().unwrap();
+    /// let mut sketch = ThetaSketchBuilder::new().lg_k(12).build().unwrap();
     /// for i in 0..10000 {
     ///     sketch.update(i);
     /// }
@@ -387,7 +387,7 @@ impl ThetaSketch {
     /// use datasketches::common::NumStdDev;
     /// use datasketches::theta::ThetaSketchBuilder;
     ///
-    /// let mut sketch = ThetaSketchBuilder::default().lg_k(12).build().unwrap();
+    /// let mut sketch = ThetaSketchBuilder::new().lg_k(12).build().unwrap();
     /// for i in 0..10000 {
     ///     sketch.update(i);
     /// }
@@ -688,7 +688,13 @@ impl CompactThetaSketch {
     }
 
     /// Deserializes a compact theta sketch from bytes using the provided expected seed.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidData` if the image is malformed, its seed hash does not match `seed`, or
+    /// `seed` itself computes to the reserved zero seed hash.
     pub fn deserialize_with_seed(bytes: &[u8], seed: u64) -> Result<Self, Error> {
+        let expected_seed_hash = compute_seed_hash(seed, ErrorKind::InvalidData)?;
         let mut cursor = SketchSlice::new(bytes);
         let pre_longs = cursor
             .read_u8()
@@ -707,10 +713,10 @@ impl CompactThetaSketch {
         )?;
 
         match ser_ver {
-            1 => Self::deserialize_v1(cursor, seed),
-            2 => Self::deserialize_v2(pre_longs, cursor, seed),
-            3 => Self::deserialize_v3(pre_longs, cursor, seed),
-            4 => Self::deserialize_v4(pre_longs, cursor, seed),
+            1 => Self::deserialize_v1(cursor, expected_seed_hash),
+            2 => Self::deserialize_v2(pre_longs, cursor, expected_seed_hash),
+            3 => Self::deserialize_v3(pre_longs, cursor, expected_seed_hash),
+            4 => Self::deserialize_v4(pre_longs, cursor, expected_seed_hash),
             _ => Err(Error::deserial(format!(
                 "unsupported serial version: expected 1, 2, 3, or 4, got {ser_ver}",
             ))),
@@ -742,8 +748,8 @@ impl CompactThetaSketch {
         Ok(entries)
     }
 
-    fn deserialize_v1(mut cursor: SketchSlice<'_>, expected_seed: u64) -> Result<Self, Error> {
-        let seed_hash = compute_seed_hash(expected_seed);
+    fn deserialize_v1(mut cursor: SketchSlice<'_>, expected_seed_hash: u16) -> Result<Self, Error> {
+        let seed_hash = expected_seed_hash;
         cursor.read_u8().map_err(insufficient_data("<unused>"))?;
         cursor
             .read_u32_le()
@@ -783,7 +789,7 @@ impl CompactThetaSketch {
     fn deserialize_v2(
         pre_longs: u8,
         mut cursor: SketchSlice<'_>,
-        expected_seed: u64,
+        expected_seed_hash: u16,
     ) -> Result<Self, Error> {
         cursor.read_u8().map_err(insufficient_data("<unused>"))?;
         cursor
@@ -793,7 +799,7 @@ impl CompactThetaSketch {
             .read_u16_le()
             .map_err(insufficient_data("seed_hash"))?;
         check_seed_hash(
-            compute_seed_hash(expected_seed),
+            expected_seed_hash,
             seed_hash,
             "deserialized CompactThetaSketch v2",
             ErrorKind::InvalidData,
@@ -852,7 +858,7 @@ impl CompactThetaSketch {
     fn deserialize_v3(
         pre_longs: u8,
         mut cursor: SketchSlice<'_>,
-        expected_seed: u64,
+        expected_seed_hash: u16,
     ) -> Result<Self, Error> {
         cursor
             .read_u16_le()
@@ -868,7 +874,7 @@ impl CompactThetaSketch {
         let mut entries = vec![];
         if !empty {
             check_seed_hash(
-                compute_seed_hash(expected_seed),
+                expected_seed_hash,
                 seed_hash,
                 "deserialized CompactThetaSketch v3",
                 ErrorKind::InvalidData,
@@ -903,7 +909,7 @@ impl CompactThetaSketch {
     fn deserialize_v4(
         pre_longs: u8,
         mut cursor: SketchSlice<'_>,
-        expected_seed: u64,
+        expected_seed_hash: u16,
     ) -> Result<Self, Error> {
         let entry_bits = cursor.read_u8().map_err(insufficient_data("entry_bits"))?;
         let num_entries_bytes = cursor.read_u8().map_err(insufficient_data("num_entries"))?;
@@ -919,7 +925,7 @@ impl CompactThetaSketch {
         let empty = (flags & FLAGS_IS_EMPTY) != 0;
         if !empty {
             check_seed_hash(
-                compute_seed_hash(expected_seed),
+                expected_seed_hash,
                 seed_hash,
                 "deserialized CompactThetaSketch v4",
                 ErrorKind::InvalidData,
@@ -1028,6 +1034,13 @@ pub struct ThetaSketchBuilder {
 
 impl Default for ThetaSketchBuilder {
     fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ThetaSketchBuilder {
+    /// Creates a builder with the default Theta sketch configuration.
+    pub fn new() -> Self {
         Self {
             lg_k: DEFAULT_LG_K,
             resize_factor: ResizeFactor::X8,
@@ -1035,9 +1048,6 @@ impl Default for ThetaSketchBuilder {
             seed: DEFAULT_UPDATE_SEED,
         }
     }
-}
-
-impl ThetaSketchBuilder {
     /// Sets `lg_k`, the base-2 logarithm of the nominal capacity.
     ///
     /// # Examples
@@ -1045,7 +1055,7 @@ impl ThetaSketchBuilder {
     /// ```
     /// use datasketches::theta::ThetaSketchBuilder;
     ///
-    /// let sketch = ThetaSketchBuilder::default().lg_k(12).build().unwrap();
+    /// let sketch = ThetaSketchBuilder::new().lg_k(12).build().unwrap();
     /// assert_eq!(sketch.lg_k(), 12);
     /// ```
     pub fn lg_k(mut self, lg_k: u8) -> Self {
@@ -1069,7 +1079,7 @@ impl ThetaSketchBuilder {
     /// ```
     /// use datasketches::theta::ThetaSketchBuilder;
     ///
-    /// ThetaSketchBuilder::default()
+    /// ThetaSketchBuilder::new()
     ///     .sampling_probability(0.5)
     ///     .build()
     ///     .unwrap();
@@ -1086,7 +1096,7 @@ impl ThetaSketchBuilder {
     /// ```
     /// use datasketches::theta::ThetaSketchBuilder;
     ///
-    /// ThetaSketchBuilder::default().seed(7).build().unwrap();
+    /// ThetaSketchBuilder::new().seed(7).build().unwrap();
     /// ```
     pub fn seed(mut self, seed: u64) -> Self {
         self.seed = seed;
@@ -1097,18 +1107,18 @@ impl ThetaSketchBuilder {
     ///
     /// # Errors
     ///
-    /// Returns an error if `lg_k` is outside `[5, 26]` or `sampling_probability` is outside
-    /// `(0.0, 1.0]`.
+    /// Returns an error if `lg_k` is outside `[5, 26]`, `sampling_probability` is outside
+    /// `(0.0, 1.0]`, or the computed seed hash is zero.
     ///
     /// # Examples
     ///
     /// ```
     /// use datasketches::theta::ThetaSketchBuilder;
     ///
-    /// ThetaSketchBuilder::default().lg_k(10).build().unwrap();
+    /// ThetaSketchBuilder::new().lg_k(10).build().unwrap();
     /// ```
     pub fn build(self) -> Result<ThetaSketch, Error> {
-        let table = ThetaHashTable::try_new(
+        let table = ThetaHashTable::new(
             self.lg_k,
             self.resize_factor,
             self.sampling_probability,

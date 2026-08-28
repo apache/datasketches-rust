@@ -99,13 +99,18 @@ where
     /// Creates a new intersection operator with the default seed and the given combine `policy`.
     pub fn new(policy: P) -> Self {
         Self::with_seed(policy, DEFAULT_UPDATE_SEED)
+            .expect("the default Tuple intersection seed must be valid")
     }
 
     /// Creates a new intersection operator for the given combine `policy` and `seed`.
-    pub fn with_seed(policy: P, seed: u64) -> Self {
-        Self {
-            state: IntersectionState::new(seed, policy),
-        }
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the computed seed hash is zero.
+    pub fn with_seed(policy: P, seed: u64) -> Result<Self, Error> {
+        Ok(Self {
+            state: IntersectionState::new(seed, policy)?,
+        })
     }
 
     /// Updates the intersection with a given sketch.

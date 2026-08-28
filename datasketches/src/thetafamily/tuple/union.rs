@@ -199,11 +199,11 @@ where
     ///
     /// # Errors
     ///
-    /// Returns an error if `lg_k` is outside `[5, 26]` or `sampling_probability` is outside
-    /// `(0.0, 1.0]`.
+    /// Returns an error if `lg_k` is outside `[5, 26]`, `sampling_probability` is outside
+    /// `(0.0, 1.0]`, or the computed seed hash is zero.
     pub fn build(self) -> Result<TupleUnion<P>, Error> {
         Ok(TupleUnion {
-            state: UnionState::try_new(
+            state: UnionState::new(
                 self.lg_k,
                 self.resize_factor,
                 self.sampling_probability,
