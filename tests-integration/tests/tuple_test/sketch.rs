@@ -28,6 +28,7 @@ use googletest::assert_that;
 use googletest::prelude::gt;
 use googletest::prelude::le;
 use googletest::prelude::lt;
+use tests_integration::ZERO_HASH_SEED;
 
 use crate::default_tuple_sketch_builder;
 
@@ -38,6 +39,12 @@ fn builder_validates_configuration_at_build() {
 
     let error = default_tuple_sketch_builder()
         .sampling_probability(f32::INFINITY)
+        .build()
+        .unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::InvalidArgument);
+
+    let error = default_tuple_sketch_builder()
+        .seed(ZERO_HASH_SEED)
         .build()
         .unwrap_err();
     assert_eq!(error.kind(), ErrorKind::InvalidArgument);

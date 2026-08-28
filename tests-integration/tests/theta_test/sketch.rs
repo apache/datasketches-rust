@@ -25,6 +25,7 @@ use googletest::prelude::gt;
 use googletest::prelude::le;
 use googletest::prelude::lt;
 use googletest::prelude::near;
+use tests_integration::ZERO_HASH_SEED;
 
 #[test]
 fn builder_validates_configuration_at_build() {
@@ -33,6 +34,12 @@ fn builder_validates_configuration_at_build() {
 
     let error = ThetaSketchBuilder::default()
         .sampling_probability(f32::NAN)
+        .build()
+        .unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::InvalidArgument);
+
+    let error = ThetaSketchBuilder::default()
+        .seed(ZERO_HASH_SEED)
         .build()
         .unwrap_err();
     assert_eq!(error.kind(), ErrorKind::InvalidArgument);

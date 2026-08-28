@@ -25,7 +25,7 @@ use googletest::prelude::near;
 
 #[test]
 fn test_empty() {
-    let mut tdigest = TDigestMut::new(10);
+    let mut tdigest = TDigestMut::new(10).unwrap();
     assert!(tdigest.is_empty());
     assert_eq!(tdigest.k(), 10);
     assert_eq!(tdigest.total_weight(), 0);
@@ -38,7 +38,7 @@ fn test_empty() {
     assert_eq!(tdigest.pmf(&split_points), None);
     assert_eq!(tdigest.cdf(&split_points), None);
 
-    let tdigest = TDigestMut::new(10).freeze();
+    let tdigest = TDigestMut::new(10).unwrap().freeze();
     assert!(tdigest.is_empty());
     assert_eq!(tdigest.k(), 10);
     assert_eq!(tdigest.total_weight(), 0);
@@ -54,7 +54,7 @@ fn test_empty() {
 
 #[test]
 fn test_one_value() {
-    let mut tdigest = TDigestMut::new(100);
+    let mut tdigest = TDigestMut::new(100).unwrap();
     tdigest.update(1.0);
     assert_eq!(tdigest.k(), 100);
     assert_eq!(tdigest.total_weight(), 1);
@@ -70,7 +70,7 @@ fn test_one_value() {
 
 #[test]
 fn test_maximum_k() {
-    let mut tdigest = TDigestMut::new(u16::MAX);
+    let mut tdigest = TDigestMut::new(u16::MAX).unwrap();
     tdigest.update(1.0);
 
     let tdigest = tdigest.freeze();
@@ -85,7 +85,7 @@ fn test_estimated_size_reuses_buffer_after_compression() {
     const MAX_UNMERGED: usize = TARGET_CENTROIDS * 4;
 
     let inline_size = size_of::<TDigestMut>();
-    let mut tdigest = TDigestMut::new(K);
+    let mut tdigest = TDigestMut::new(K).unwrap();
     assert_eq!(tdigest.estimated_size(), inline_size);
 
     for value in 0..MAX_UNMERGED {
@@ -103,11 +103,11 @@ fn test_estimated_size_reuses_buffer_after_compression() {
     tdigest.rank(0.5);
     assert!(tdigest.estimated_size() <= size_before_compression);
 
-    let mut left = TDigestMut::new(K);
+    let mut left = TDigestMut::new(K).unwrap();
     for value in 0..8 {
         left.update(value as f64);
     }
-    let mut right = TDigestMut::new(K);
+    let mut right = TDigestMut::new(K).unwrap();
     for value in 0..MAX_UNMERGED {
         right.update(value as f64);
     }
@@ -117,7 +117,7 @@ fn test_estimated_size_reuses_buffer_after_compression() {
     assert_eq!(right.total_weight(), MAX_UNMERGED as u64);
     assert_eq!(right.estimated_size(), right_size);
 
-    let mut full_left = TDigestMut::new(K);
+    let mut full_left = TDigestMut::new(K).unwrap();
     for value in 0..MAX_UNMERGED {
         full_left.update(value as f64);
     }
@@ -181,7 +181,7 @@ fn test_many_values() {
 
 #[test]
 fn test_rank_two_values() {
-    let mut tdigest = TDigestMut::new(100);
+    let mut tdigest = TDigestMut::new(100).unwrap();
     tdigest.update(1.0);
     tdigest.update(2.0);
     assert_eq!(tdigest.rank(0.99), Some(0.0));
@@ -195,7 +195,7 @@ fn test_rank_two_values() {
 
 #[test]
 fn test_rank_repeated_values() {
-    let mut tdigest = TDigestMut::new(100);
+    let mut tdigest = TDigestMut::new(100).unwrap();
     tdigest.update(1.0);
     tdigest.update(1.0);
     tdigest.update(1.0);
@@ -207,7 +207,7 @@ fn test_rank_repeated_values() {
 
 #[test]
 fn test_repeated_blocks() {
-    let mut tdigest = TDigestMut::new(100);
+    let mut tdigest = TDigestMut::new(100).unwrap();
     tdigest.update(1.0);
     tdigest.update(2.0);
     tdigest.update(2.0);
@@ -221,10 +221,10 @@ fn test_repeated_blocks() {
 
 #[test]
 fn test_merge_small() {
-    let mut td1 = TDigestMut::new(10);
+    let mut td1 = TDigestMut::new(10).unwrap();
     td1.update(1.0);
     td1.update(2.0);
-    let mut td2 = TDigestMut::new(10);
+    let mut td2 = TDigestMut::new(10).unwrap();
     td2.update(2.0);
     td2.update(3.0);
     td1.merge(&td2);
@@ -242,8 +242,8 @@ fn test_merge_small() {
 fn test_merge_large() {
     let n = 10000;
 
-    let mut td1 = TDigestMut::new(10);
-    let mut td2 = TDigestMut::new(10);
+    let mut td1 = TDigestMut::new(10).unwrap();
+    let mut td2 = TDigestMut::new(10).unwrap();
     let sup = n / 2;
     for i in 0..sup {
         td1.update(i as f64);
@@ -266,25 +266,25 @@ fn test_merge_large() {
 fn test_invalid_inputs() {
     let n = 100;
 
-    let mut td = TDigestMut::new(10);
+    let mut td = TDigestMut::new(10).unwrap();
     for _ in 0..n {
         td.update(f64::NAN);
     }
     assert!(td.is_empty());
 
-    let mut td = TDigestMut::new(10);
+    let mut td = TDigestMut::new(10).unwrap();
     for _ in 0..n {
         td.update(f64::INFINITY);
     }
     assert!(td.is_empty());
 
-    let mut td = TDigestMut::new(10);
+    let mut td = TDigestMut::new(10).unwrap();
     for _ in 0..n {
         td.update(f64::NEG_INFINITY);
     }
     assert!(td.is_empty());
 
-    let mut td = TDigestMut::new(10);
+    let mut td = TDigestMut::new(10).unwrap();
     for i in 0..n {
         if i % 2 == 0 {
             td.update(f64::INFINITY);

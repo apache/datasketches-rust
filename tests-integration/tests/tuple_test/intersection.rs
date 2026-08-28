@@ -142,10 +142,10 @@ fn only_non_empty_inputs_require_the_operator_seed() {
     let mut non_empty_other_seed = default_tuple_sketch_builder().seed(2).build().unwrap();
     non_empty_other_seed.update("value", 1u64);
 
-    let mut intersection = TupleIntersection::with_seed(SumPolicy, 1);
+    let mut intersection = TupleIntersection::with_seed(SumPolicy, 1).unwrap();
     intersection.update(&empty_other_seed).unwrap();
 
-    let mut intersection = TupleIntersection::with_seed(SumPolicy, 1);
+    let mut intersection = TupleIntersection::with_seed(SumPolicy, 1).unwrap();
     let err = intersection.update(&non_empty_other_seed).unwrap_err();
     assert_eq!(err.kind(), ErrorKind::InvalidArgument);
 }

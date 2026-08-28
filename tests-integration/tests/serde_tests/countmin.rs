@@ -18,8 +18,10 @@
 use std::fs;
 
 use datasketches::countmin::CountMinSketch;
+use datasketches::error::ErrorKind;
 use googletest::assert_that;
 use googletest::prelude::contains_substring;
+use tests_integration::ZERO_HASH_SEED;
 
 use crate::serialization_test_data;
 
@@ -65,4 +67,16 @@ fn test_deserialize_cpp_snapshot_with_wrong_seed() {
 
     let err = CountMinSketch::<u64>::deserialize_with_seed(&bytes, 9000).unwrap_err();
     assert_that!(err.message(), contains_substring("incompatible seed hash"));
+}
+
+#[test]
+fn zero_seed_hash_uses_the_callers_error_kind() {
+    let constructor_error = CountMinSketch::<u64>::with_seed(3, 5, ZERO_HASH_SEED).unwrap_err();
+    assert_eq!(constructor_error.kind(), ErrorKind::InvalidArgument);
+
+    let path = serialization_test_data("cpp_generated_files", "count_min_empty_cpp.sk");
+    let bytes = fs::read(&path).unwrap();
+    let deserialization_error =
+        CountMinSketch::<u64>::deserialize_with_seed(&bytes, ZERO_HASH_SEED).unwrap_err();
+    assert_eq!(deserialization_error.kind(), ErrorKind::InvalidData);
 }

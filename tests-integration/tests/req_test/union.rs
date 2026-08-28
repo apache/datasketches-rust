@@ -89,12 +89,12 @@ fn reset_clears_union_state() {
 }
 
 #[test]
-fn try_new_validates_k() {
+fn new_validates_k() {
     assert_that!(
-        ReqUnion::<f64>::try_new(3, RankAccuracy::HighRank),
+        ReqUnion::<f64>::new(3, RankAccuracy::HighRank),
         err(anything())
     );
-    assert!(ReqUnion::<f64>::try_new(12, RankAccuracy::HighRank).is_ok());
+    assert!(ReqUnion::<f64>::new(12, RankAccuracy::HighRank).is_ok());
 }
 
 #[test]
@@ -107,7 +107,7 @@ fn empty_union_uses_default_configuration() {
 #[test]
 fn union_keeps_default_k_when_merging_mismatched_sketch() {
     // The union retains its own k even when fed a sketch built with a different k.
-    let mut other = ReqSketch::<f64>::new(16, RankAccuracy::HighRank);
+    let mut other = ReqSketch::<f64>::new(16, RankAccuracy::HighRank).unwrap();
     for i in 0..50 {
         other.update(i as f64);
     }

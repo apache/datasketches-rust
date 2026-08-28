@@ -28,6 +28,7 @@
 //! This mirrors the testing strategy used in hll_update_test.rs
 
 use datasketches::common::NumStdDev;
+use datasketches::error::ErrorKind;
 use datasketches::hll::HllSketch;
 use datasketches::hll::HllType;
 use datasketches::hll::HllUnion;
@@ -42,7 +43,7 @@ use googletest::prelude::near;
 const HLL_TYPES: [HllType; 3] = [HllType::Hll4, HllType::Hll6, HllType::Hll8];
 
 fn make_hll_sketch(hll_type: HllType, lg_config_k: u8, start: u64, end: u64) -> HllSketch {
-    let mut sketch = HllSketch::new(lg_config_k, hll_type);
+    let mut sketch = HllSketch::new(lg_config_k, hll_type).unwrap();
     for value in start..end {
         sketch.update(value);
     }
@@ -59,7 +60,7 @@ fn assert_estimate_within(estimate: f64, expected: f64, relative_error: f64) {
 }
 
 fn serialize_flat_union(first: &HllSketch, second: &HllSketch, third: &HllSketch) -> Vec<u8> {
-    let mut union = HllUnion::new(8);
+    let mut union = HllUnion::new(8).unwrap();
     union.update(first);
     union.update(second);
     union.update(third);
@@ -67,11 +68,11 @@ fn serialize_flat_union(first: &HllSketch, second: &HllSketch, third: &HllSketch
 }
 
 fn serialize_nested_union(first: &HllSketch, second: &HllSketch, third: &HllSketch) -> Vec<u8> {
-    let mut prefix = HllUnion::new(8);
+    let mut prefix = HllUnion::new(8).unwrap();
     prefix.update(first);
     prefix.update(second);
 
-    let mut union = HllUnion::new(8);
+    let mut union = HllUnion::new(8).unwrap();
     union.update(&prefix.to_sketch(HllType::Hll8));
     union.update(third);
     union.to_sketch(HllType::Hll8).serialize()
@@ -79,24 +80,24 @@ fn serialize_nested_union(first: &HllSketch, second: &HllSketch, third: &HllSket
 
 #[test]
 fn test_union_basic_operations() {
-    let mut union = HllUnion::new(12);
+    let mut union = HllUnion::new(12).unwrap();
 
     // Empty union
     assert!(union.is_empty());
     assert_eq!(union.estimate(), 0.0);
 
     // Update with empty sketch should not change state
-    let empty_sketch = HllSketch::new(12, HllType::Hll8);
+    let empty_sketch = HllSketch::new(12, HllType::Hll8).unwrap();
     union.update(&empty_sketch);
     assert!(union.is_empty());
 
     // Create sketches with overlapping values
-    let mut sketch1 = HllSketch::new(12, HllType::Hll8);
+    let mut sketch1 = HllSketch::new(12, HllType::Hll8).unwrap();
     for i in 0..500 {
         sketch1.update(i);
     }
 
-    let mut sketch2 = HllSketch::new(12, HllType::Hll8);
+    let mut sketch2 = HllSketch::new(12, HllType::Hll8).unwrap();
     for i in 400..900 {
         sketch2.update(i);
     }
@@ -121,8 +122,8 @@ fn test_union_basic_operations() {
     assert_that!(union.estimate(), gt(estimate_before));
 
     // Test duplicate handling - same sketch added multiple times
-    let mut dup_union = HllUnion::new(12);
-    let mut sketch = HllSketch::new(12, HllType::Hll8);
+    let mut dup_union = HllUnion::new(12).unwrap();
+    let mut sketch = HllSketch::new(12, HllType::Hll8).unwrap();
     for i in 0..100 {
         sketch.update(i);
     }
@@ -135,15 +136,15 @@ fn test_union_basic_operations() {
 
 #[test]
 fn test_union_mode_transitions() {
-    let mut union = HllUnion::new(12);
+    let mut union = HllUnion::new(12).unwrap();
 
     // Start with List mode (small cardinality)
-    let mut sketch1 = HllSketch::new(12, HllType::Hll8);
+    let mut sketch1 = HllSketch::new(12, HllType::Hll8).unwrap();
     for i in 0..10 {
         sketch1.update(i);
     }
 
-    let mut sketch2 = HllSketch::new(12, HllType::Hll8);
+    let mut sketch2 = HllSketch::new(12, HllType::Hll8).unwrap();
     for i in 5..15 {
         sketch2.update(i);
     }
@@ -155,7 +156,7 @@ fn test_union_mode_transitions() {
     assert_that!(estimate, near(15.0, 5.0));
 
     // Trigger Set mode promotion
-    let mut sketch3 = HllSketch::new(12, HllType::Hll8);
+    let mut sketch3 = HllSketch::new(12, HllType::Hll8).unwrap();
     for i in 0..600 {
         sketch3.update(i);
     }
@@ -165,7 +166,7 @@ fn test_union_mode_transitions() {
     assert_that!(estimate, near(600.0, 100.0));
 
     // Trigger HLL mode promotion
-    let mut sketch4 = HllSketch::new(12, HllType::Hll8);
+    let mut sketch4 = HllSketch::new(12, HllType::Hll8).unwrap();
     for i in 500..10_000 {
         sketch4.update(i);
     }
@@ -177,16 +178,16 @@ fn test_union_mode_transitions() {
 
 #[test]
 fn test_union_mixed_modes() {
-    let mut union = HllUnion::new(12);
+    let mut union = HllUnion::new(12).unwrap();
 
     // Small sketch (List mode)
-    let mut sketch1 = HllSketch::new(12, HllType::Hll8);
+    let mut sketch1 = HllSketch::new(12, HllType::Hll8).unwrap();
     sketch1.update("a");
     sketch1.update("b");
     sketch1.update("c");
 
     // Large sketch (Array mode)
-    let mut sketch2 = HllSketch::new(12, HllType::Hll8);
+    let mut sketch2 = HllSketch::new(12, HllType::Hll8).unwrap();
     for i in 0..10_000 {
         sketch2.update(i);
     }
@@ -203,20 +204,20 @@ fn test_union_mixed_modes() {
 
 #[test]
 fn test_union_mixed_hll_types() {
-    let mut union = HllUnion::new(12);
+    let mut union = HllUnion::new(12).unwrap();
 
     // Mix Hll4, Hll6, and Hll8 sketches
-    let mut sketch1 = HllSketch::new(12, HllType::Hll4);
+    let mut sketch1 = HllSketch::new(12, HllType::Hll4).unwrap();
     for i in 0..3_000 {
         sketch1.update(i);
     }
 
-    let mut sketch2 = HllSketch::new(12, HllType::Hll6);
+    let mut sketch2 = HllSketch::new(12, HllType::Hll6).unwrap();
     for i in 2_000..5_000 {
         sketch2.update(i);
     }
 
-    let mut sketch3 = HllSketch::new(12, HllType::Hll8);
+    let mut sketch3 = HllSketch::new(12, HllType::Hll8).unwrap();
     for i in 4_000..7_000 {
         sketch3.update(i);
     }
@@ -251,10 +252,10 @@ fn test_union_mixed_hll_types() {
 #[test]
 fn test_union_lg_k_handling() {
     // Test multiple downsizing operations: 12 → 10 → 8
-    let mut union = HllUnion::new(12);
+    let mut union = HllUnion::new(12).unwrap();
 
     // Start with lg_k=12
-    let mut sketch1 = HllSketch::new(12, HllType::Hll8);
+    let mut sketch1 = HllSketch::new(12, HllType::Hll8).unwrap();
     for i in 0..5_000 {
         sketch1.update(i);
     }
@@ -262,7 +263,7 @@ fn test_union_lg_k_handling() {
     assert_eq!(union.lg_config_k(), 12);
 
     // Add sketch with lg_k=10 (triggers downsizing)
-    let mut sketch2 = HllSketch::new(10, HllType::Hll8);
+    let mut sketch2 = HllSketch::new(10, HllType::Hll8).unwrap();
     for i in 4_000..8_000 {
         sketch2.update(i);
     }
@@ -270,7 +271,7 @@ fn test_union_lg_k_handling() {
     assert_eq!(union.lg_config_k(), 10, "Gadget should downsize to lg_k=10");
 
     // Add sketch with lg_k=8 (triggers another downsizing)
-    let mut sketch3 = HllSketch::new(8, HllType::Hll8);
+    let mut sketch3 = HllSketch::new(8, HllType::Hll8).unwrap();
     for i in 7_000..10_000 {
         sketch3.update(i);
     }
@@ -285,8 +286,8 @@ fn test_union_lg_k_handling() {
     assert_that!(estimate, all!(gt(8_000.0), lt(12_000.0)));
 
     // Test downsampling: union at lower precision than sketch
-    let mut union2 = HllUnion::new(10);
-    let mut sketch_high_precision = HllSketch::new(12, HllType::Hll8);
+    let mut union2 = HllUnion::new(10).unwrap();
+    let mut sketch_high_precision = HllSketch::new(12, HllType::Hll8).unwrap();
     for i in 0..5_000 {
         sketch_high_precision.update(i);
     }
@@ -304,7 +305,7 @@ fn test_union_lg_k_handling() {
 fn test_union_downsampling_merge_is_not_empty() {
     for hll_type in HLL_TYPES {
         let sketch = make_hll_sketch(hll_type, 15, 0, 100_000);
-        let mut union = HllUnion::new(8);
+        let mut union = HllUnion::new(8).unwrap();
         union.update(&sketch);
 
         assert!(!union.is_empty(), "{hll_type:?} union should not be empty");
@@ -320,13 +321,13 @@ fn test_union_mixed_lg_k_estimate_is_merge_order_independent() {
         let b = make_hll_sketch(hll_type, 8, N, 2 * N);
         let expected = 2.0 * N as f64;
 
-        let mut larger_first = HllUnion::new(8);
+        let mut larger_first = HllUnion::new(8).unwrap();
         larger_first.update(&a);
         larger_first.update(&b);
         let larger_first_estimate = larger_first.estimate();
         assert_estimate_within(larger_first_estimate, expected, 0.1);
 
-        let mut smaller_first = HllUnion::new(8);
+        let mut smaller_first = HllUnion::new(8).unwrap();
         smaller_first.update(&b);
         smaller_first.update(&a);
         let smaller_first_estimate = smaller_first.estimate();
@@ -344,7 +345,7 @@ fn test_union_scalar_update_after_downsampling_merge() {
 
     for hll_type in HLL_TYPES {
         let sketch = make_hll_sketch(hll_type, 15, 0, N);
-        let mut union = HllUnion::new(8);
+        let mut union = HllUnion::new(8).unwrap();
         union.update(&sketch);
         for value in N..2 * N {
             union.update_value(value);
@@ -375,7 +376,7 @@ fn test_union_serialization_is_grouping_independent() {
 
 #[test]
 fn test_union_bounds() {
-    let mut union = HllUnion::new(12);
+    let mut union = HllUnion::new(12).unwrap();
 
     // Empty union
     assert_eq!(union.estimate(), 0.0);
@@ -386,12 +387,12 @@ fn test_union_bounds() {
     assert_that!(empty_lower, le(empty_upper));
 
     // Add sketches
-    let mut sketch1 = HllSketch::new(12, HllType::Hll8);
+    let mut sketch1 = HllSketch::new(12, HllType::Hll8).unwrap();
     for i in 0..500 {
         sketch1.update(i);
     }
 
-    let mut sketch2 = HllSketch::new(12, HllType::Hll8);
+    let mut sketch2 = HllSketch::new(12, HllType::Hll8).unwrap();
     for i in 400..900 {
         sketch2.update(i);
     }
@@ -422,11 +423,11 @@ fn test_union_bounds() {
     assert_that!(upper3, lt(estimate * 1.5));
 
     // Test that smaller lg_k has wider bounds (higher RSE)
-    let mut union_small = HllUnion::new(8);
-    let mut union_large = HllUnion::new(14);
+    let mut union_small = HllUnion::new(8).unwrap();
+    let mut union_large = HllUnion::new(14).unwrap();
 
-    let mut sketch_small = HllSketch::new(8, HllType::Hll8);
-    let mut sketch_large = HllSketch::new(14, HllType::Hll8);
+    let mut sketch_small = HllSketch::new(8, HllType::Hll8).unwrap();
+    let mut sketch_large = HllSketch::new(14, HllType::Hll8).unwrap();
 
     for i in 0..1000 {
         sketch_small.update(i);
@@ -451,9 +452,9 @@ fn test_union_bounds() {
 
 #[test]
 fn test_union_reset() {
-    let mut union = HllUnion::new(12);
+    let mut union = HllUnion::new(12).unwrap();
 
-    let mut sketch = HllSketch::new(12, HllType::Hll8);
+    let mut sketch = HllSketch::new(12, HllType::Hll8).unwrap();
     for i in 0..1000 {
         sketch.update(i);
     }
@@ -470,7 +471,7 @@ fn test_union_reset() {
 
     // Reuse after reset - multiple iterations
     for iteration in 0..3 {
-        let mut sketch = HllSketch::new(12, HllType::Hll8);
+        let mut sketch = HllSketch::new(12, HllType::Hll8).unwrap();
         for i in (iteration * 100)..((iteration + 1) * 100) {
             sketch.update(i);
         }
@@ -486,23 +487,23 @@ fn test_union_reset() {
 #[test]
 fn test_union_commutativity() {
     // Verify A∪B = B∪A
-    let mut sketch_a = HllSketch::new(12, HllType::Hll8);
+    let mut sketch_a = HllSketch::new(12, HllType::Hll8).unwrap();
     for i in 0..1000 {
         sketch_a.update(i);
     }
 
-    let mut sketch_b = HllSketch::new(12, HllType::Hll8);
+    let mut sketch_b = HllSketch::new(12, HllType::Hll8).unwrap();
     for i in 500..1500 {
         sketch_b.update(i);
     }
 
     // A∪B
-    let mut union1 = HllUnion::new(12);
+    let mut union1 = HllUnion::new(12).unwrap();
     union1.update(&sketch_a);
     union1.update(&sketch_b);
 
     // B∪A
-    let mut union2 = HllUnion::new(12);
+    let mut union2 = HllUnion::new(12).unwrap();
     union2.update(&sketch_b);
     union2.update(&sketch_a);
 
@@ -512,9 +513,9 @@ fn test_union_commutativity() {
 #[test]
 fn test_union_associativity() {
     // Verify (A∪B)∪C = A∪(B∪C)
-    let mut sketch_a = HllSketch::new(12, HllType::Hll8);
-    let mut sketch_b = HllSketch::new(12, HllType::Hll8);
-    let mut sketch_c = HllSketch::new(12, HllType::Hll8);
+    let mut sketch_a = HllSketch::new(12, HllType::Hll8).unwrap();
+    let mut sketch_b = HllSketch::new(12, HllType::Hll8).unwrap();
+    let mut sketch_c = HllSketch::new(12, HllType::Hll8).unwrap();
 
     for i in 0..1000 {
         sketch_a.update(i);
@@ -527,23 +528,23 @@ fn test_union_associativity() {
     }
 
     // Compute (A∪B)∪C
-    let mut union1 = HllUnion::new(12);
+    let mut union1 = HllUnion::new(12).unwrap();
     union1.update(&sketch_a);
     union1.update(&sketch_b);
     let ab_sketch = union1.to_sketch(HllType::Hll8);
 
-    let mut union2 = HllUnion::new(12);
+    let mut union2 = HllUnion::new(12).unwrap();
     union2.update(&ab_sketch);
     union2.update(&sketch_c);
     let est1 = union2.estimate();
 
     // Compute A∪(B∪C)
-    let mut union3 = HllUnion::new(12);
+    let mut union3 = HllUnion::new(12).unwrap();
     union3.update(&sketch_b);
     union3.update(&sketch_c);
     let bc_sketch = union3.to_sketch(HllType::Hll8);
 
-    let mut union4 = HllUnion::new(12);
+    let mut union4 = HllUnion::new(12).unwrap();
     union4.update(&sketch_a);
     union4.update(&bc_sketch);
     let est2 = union4.estimate();
@@ -554,12 +555,12 @@ fn test_union_associativity() {
 #[test]
 fn test_union_idempotency() {
     // Verify A∪A = A
-    let mut sketch = HllSketch::new(12, HllType::Hll8);
+    let mut sketch = HllSketch::new(12, HllType::Hll8).unwrap();
     for i in 0..1000 {
         sketch.update(i);
     }
 
-    let mut union = HllUnion::new(12);
+    let mut union = HllUnion::new(12).unwrap();
     union.update(&sketch);
     let est1 = union.estimate();
 
@@ -591,7 +592,7 @@ fn test_union_merge_order_regression() {
             }
         }
 
-        let mut sketch = HllSketch::new(11, HllType::Hll8);
+        let mut sketch = HllSketch::new(11, HllType::Hll8).unwrap();
         let mut value = start;
         while value < limit {
             sketch.update(value);
@@ -606,7 +607,7 @@ fn test_union_merge_order_regression() {
     let sketches = [&a, &b, &c];
 
     fn merge_estimate(sketches: &[&HllSketch; 3], order: [usize; 3]) -> f64 {
-        let mut union = HllUnion::new(11);
+        let mut union = HllUnion::new(11).unwrap();
         for index in order {
             union.update(sketches[index]);
         }
@@ -629,20 +630,20 @@ fn test_union_merge_order_regression() {
 
 #[test]
 fn test_union_large_cardinality() {
-    let mut union = HllUnion::new(14);
+    let mut union = HllUnion::new(14).unwrap();
 
     // Create three large sketches with overlap
-    let mut sketch1 = HllSketch::new(14, HllType::Hll8);
+    let mut sketch1 = HllSketch::new(14, HllType::Hll8).unwrap();
     for i in 0..100_000 {
         sketch1.update(i);
     }
 
-    let mut sketch2 = HllSketch::new(14, HllType::Hll8);
+    let mut sketch2 = HllSketch::new(14, HllType::Hll8).unwrap();
     for i in 50_000..150_000 {
         sketch2.update(i);
     }
 
-    let mut sketch3 = HllSketch::new(14, HllType::Hll8);
+    let mut sketch3 = HllSketch::new(14, HllType::Hll8).unwrap();
     for i in 100_000..200_000 {
         sketch3.update(i);
     }
@@ -659,22 +660,22 @@ fn test_union_large_cardinality() {
 }
 
 #[test]
-#[should_panic(expected = "lg_max_k must be in [4, 21]")]
-fn test_union_invalid_lg_k_low() {
-    HllUnion::new(3);
+fn test_union_invalid_lg_k_low_returns_error() {
+    let error = HllUnion::new(3).unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::InvalidArgument);
 }
 
 #[test]
-#[should_panic(expected = "lg_max_k must be in [4, 21]")]
-fn test_union_invalid_lg_k_high() {
-    HllUnion::new(22);
+fn test_union_invalid_lg_k_high_returns_error() {
+    let error = HllUnion::new(22).unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::InvalidArgument);
 }
 
 #[test]
 fn test_union_validation() {
     // Test valid boundaries
-    let union_min = HllUnion::new(4);
-    let union_max = HllUnion::new(21);
+    let union_min = HllUnion::new(4).unwrap();
+    let union_max = HllUnion::new(21).unwrap();
 
     assert_eq!(union_min.lg_max_k(), 4);
     assert_eq!(union_max.lg_max_k(), 21);
@@ -682,8 +683,8 @@ fn test_union_validation() {
     assert!(union_max.is_empty());
 
     // Test lg_max_k is preserved
-    let mut union = HllUnion::new(15);
-    let mut sketch = HllSketch::new(12, HllType::Hll8);
+    let mut union = HllUnion::new(15).unwrap();
+    let mut sketch = HllSketch::new(12, HllType::Hll8).unwrap();
     for i in 0..1000 {
         sketch.update(i);
     }
@@ -697,10 +698,10 @@ fn test_union_validation() {
 
 #[test]
 fn test_union_estimated_size() {
-    let mut union = HllUnion::new(10);
+    let mut union = HllUnion::new(10).unwrap();
     assert_eq!(union.estimated_size(), 128);
 
-    let mut sketch = HllSketch::new(10, HllType::Hll8);
+    let mut sketch = HllSketch::new(10, HllType::Hll8).unwrap();
     for i in 0..1000 {
         sketch.update(i);
     }

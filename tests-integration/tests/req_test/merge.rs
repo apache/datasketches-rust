@@ -27,8 +27,8 @@ use googletest::prelude::near;
 
 #[test]
 fn merge_into_empty_preserves_source_distribution() {
-    let mut target: ReqSketch<f32> = ReqSketch::new(40, RankAccuracy::HighRank);
-    let mut source: ReqSketch<f32> = ReqSketch::new(40, RankAccuracy::HighRank);
+    let mut target: ReqSketch<f32> = ReqSketch::new(40, RankAccuracy::HighRank).unwrap();
+    let mut source: ReqSketch<f32> = ReqSketch::new(40, RankAccuracy::HighRank).unwrap();
 
     for i in 0..1000 {
         source.update(i as f32);
@@ -59,8 +59,8 @@ fn merge_into_empty_preserves_source_distribution() {
 
 #[test]
 fn merge_two_ranges_preserves_distribution() {
-    let mut left: ReqSketch<f32> = ReqSketch::new(100, RankAccuracy::HighRank);
-    let mut right: ReqSketch<f32> = ReqSketch::new(100, RankAccuracy::HighRank);
+    let mut left: ReqSketch<f32> = ReqSketch::new(100, RankAccuracy::HighRank).unwrap();
+    let mut right: ReqSketch<f32> = ReqSketch::new(100, RankAccuracy::HighRank).unwrap();
 
     for i in 0..1000 {
         left.update(i as f32);
@@ -95,7 +95,7 @@ fn merge_two_ranges_preserves_distribution() {
 #[test]
 fn merge_rejects_incompatible_accuracy_modes() {
     let mut high_rank = ReqSketch::default();
-    let low_rank: ReqSketch<f32> = ReqSketch::new(12, RankAccuracy::LowRank);
+    let low_rank: ReqSketch<f32> = ReqSketch::new(12, RankAccuracy::LowRank).unwrap();
 
     high_rank.update(1.0);
     assert_that!(high_rank.merge(&low_rank), err(anything()));

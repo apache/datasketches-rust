@@ -25,6 +25,7 @@ use datasketches::theta::CompactThetaSketch;
 use datasketches::theta::ThetaSketchBuilder;
 use googletest::assert_that;
 use googletest::prelude::near;
+use tests_integration::ZERO_HASH_SEED;
 
 use crate::serialization_test_data;
 
@@ -171,6 +172,9 @@ fn malformed_input_is_rejected() {
     assert_eq!(err.kind(), ErrorKind::InvalidData);
 
     let err = CompactThetaSketch::deserialize_with_seed(&bytes, 8).unwrap_err();
+    assert_eq!(err.kind(), ErrorKind::InvalidData);
+
+    let err = CompactThetaSketch::deserialize_with_seed(&bytes, ZERO_HASH_SEED).unwrap_err();
     assert_eq!(err.kind(), ErrorKind::InvalidData);
 
     let mut wrong_family = bytes.clone();
