@@ -25,12 +25,11 @@ use googletest::assert_that;
 use googletest::prelude::anything;
 use googletest::prelude::err;
 use googletest::prelude::near;
-use googletest::prelude::ok;
 
 #[test]
 fn union_equivalent_to_chained_merge() {
     let make = |range: std::ops::Range<u64>| -> ReqSketch<f64> {
-        let mut sketch = ReqSketch::new();
+        let mut sketch = ReqSketch::default();
         for i in range {
             sketch.update(i as f64);
         }
@@ -40,13 +39,13 @@ fn union_equivalent_to_chained_merge() {
     let s2 = make(1000..2000);
     let s3 = make(2000..3000);
 
-    let mut union: ReqUnion<f64> = ReqUnion::new();
+    let mut union: ReqUnion<f64> = ReqUnion::default();
     union.merge(&s1).expect("merge should succeed");
     union.merge(&s2).expect("merge should succeed");
     union.merge(&s3).expect("merge should succeed");
     let union_result = union.to_sketch();
 
-    let mut via_merge: ReqSketch<f64> = ReqSketch::new();
+    let mut via_merge: ReqSketch<f64> = ReqSketch::default();
     via_merge.merge(&s1).expect("merge should succeed");
     via_merge.merge(&s2).expect("merge should succeed");
     via_merge.merge(&s3).expect("merge should succeed");
@@ -70,18 +69,18 @@ fn union_equivalent_to_chained_merge() {
 
 #[test]
 fn empty_union_returns_empty_sketch() {
-    let union: ReqUnion<f64> = ReqUnion::new();
+    let union: ReqUnion<f64> = ReqUnion::default();
     assert!(union.to_sketch().is_empty());
 }
 
 #[test]
 fn reset_clears_union_state() {
-    let mut sketch: ReqSketch<f64> = ReqSketch::new();
+    let mut sketch: ReqSketch<f64> = ReqSketch::default();
     for i in 0..100 {
         sketch.update(i as f64);
     }
 
-    let mut union: ReqUnion<f64> = ReqUnion::new();
+    let mut union: ReqUnion<f64> = ReqUnion::default();
     union.merge(&sketch).expect("merge should succeed");
     assert!(!union.is_empty());
 
@@ -95,15 +94,12 @@ fn try_new_validates_k() {
         ReqUnion::<f64>::try_new(3, RankAccuracy::HighRank),
         err(anything())
     );
-    assert_that!(
-        ReqUnion::<f64>::try_new(12, RankAccuracy::HighRank),
-        ok(anything())
-    );
+    assert!(ReqUnion::<f64>::try_new(12, RankAccuracy::HighRank).is_ok());
 }
 
 #[test]
 fn empty_union_uses_default_configuration() {
-    let union: ReqUnion<f64> = ReqUnion::new();
+    let union: ReqUnion<f64> = ReqUnion::default();
     assert_eq!(union.k(), 12);
     assert_eq!(union.rank_accuracy(), RankAccuracy::HighRank);
 }
@@ -111,12 +107,12 @@ fn empty_union_uses_default_configuration() {
 #[test]
 fn union_keeps_default_k_when_merging_mismatched_sketch() {
     // The union retains its own k even when fed a sketch built with a different k.
-    let mut other = ReqSketch::<f64>::try_new(16, RankAccuracy::HighRank).expect("valid k");
+    let mut other = ReqSketch::<f64>::new(16, RankAccuracy::HighRank);
     for i in 0..50 {
         other.update(i as f64);
     }
 
-    let mut union: ReqUnion<f64> = ReqUnion::new();
+    let mut union: ReqUnion<f64> = ReqUnion::default();
     union.merge(&other).expect("merge should succeed");
 
     let result = union.to_sketch();

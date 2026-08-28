@@ -247,7 +247,6 @@ impl TDigestMut {
         ))
     }
 
-    // for deserialization
     fn make(
         k: u16,
         reverse_merge: bool,

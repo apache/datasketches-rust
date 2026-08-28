@@ -29,12 +29,7 @@ use googletest::prelude::lt;
 
 #[test]
 fn bounds_are_nested_and_in_unit_interval() {
-    let mut sketch = ReqSketch::builder()
-        .k(12)
-        .expect("valid k")
-        .rank_accuracy(RankAccuracy::HighRank)
-        .build()
-        .expect("build should succeed");
+    let mut sketch = ReqSketch::new(12, RankAccuracy::HighRank);
 
     for i in 0..50_000 {
         sketch.update(i as f64);
@@ -65,7 +60,7 @@ fn bounds_are_nested_and_in_unit_interval() {
 
 #[test]
 fn theoretical_error_bounds_cover_uniform_quantiles() -> Result<(), Error> {
-    let mut sketch = ReqSketch::new();
+    let mut sketch = ReqSketch::default();
     let n = 50_000;
 
     for i in 0..n {
@@ -89,12 +84,8 @@ fn theoretical_error_bounds_cover_uniform_quantiles() -> Result<(), Error> {
 #[test]
 fn hra_and_lra_bounds_are_tighter_at_their_target_end() -> Result<(), Error> {
     for rank in [0.05, 0.25, 0.5, 0.75, 0.95] {
-        let mut hra = ReqSketch::builder()
-            .rank_accuracy(RankAccuracy::HighRank)
-            .build()?;
-        let mut lra = ReqSketch::builder()
-            .rank_accuracy(RankAccuracy::LowRank)
-            .build()?;
+        let mut hra = ReqSketch::new(12, RankAccuracy::HighRank);
+        let mut lra = ReqSketch::new(12, RankAccuracy::LowRank);
 
         for i in 0..10_000 {
             hra.update(i as f64);
@@ -118,7 +109,7 @@ fn hra_and_lra_bounds_are_tighter_at_their_target_end() -> Result<(), Error> {
 
 #[test]
 fn exact_mode_bounds_are_tight() {
-    let mut sketch = ReqSketch::new();
+    let mut sketch = ReqSketch::default();
 
     for i in 0..20 {
         sketch.update(i as f64);
@@ -135,7 +126,7 @@ fn exact_mode_bounds_are_tight() {
 
 #[test]
 fn high_rank_accuracy_matches_tight_thresholds() {
-    let mut sketch = ReqSketch::new();
+    let mut sketch = ReqSketch::default();
     let n = 50_000;
 
     for i in 0..n {

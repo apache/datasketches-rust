@@ -25,7 +25,7 @@ use googletest::prelude::le;
 
 #[test]
 fn rank_space_error_is_bounded() -> Result<(), Error> {
-    let mut sketch = ReqSketch::new();
+    let mut sketch = ReqSketch::default();
     let n = 50_000;
 
     for i in 0..n {

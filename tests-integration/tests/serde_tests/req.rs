@@ -184,19 +184,18 @@ fn deserialize_odd_k() {
         11u8, 0u8, // k=11 (odd)
         0u8, 0u8,
     ];
-    let result = ReqSketch::<f32>::deserialize(&bytes);
-    assert_that!(result, err(anything()));
+    assert_invalid_data(&bytes);
 }
 
 #[test]
 fn deserialize_k_out_of_range() {
     // k must be in [4, 1024]. Try k=2 (too small).
     let bytes_small = [2u8, 1, 17, 4, 2, 0, 0, 0];
-    assert_that!(ReqSketch::<f32>::deserialize(&bytes_small), err(anything()));
+    assert_invalid_data(&bytes_small);
 
     // k=2048 (too large): little-endian 2048 = [0x00, 0x08]
     let bytes_big = [2u8, 1, 17, 4, 0, 8, 0, 0];
-    assert_that!(ReqSketch::<f32>::deserialize(&bytes_big), err(anything()));
+    assert_invalid_data(&bytes_big);
 }
 
 #[test]
@@ -233,8 +232,8 @@ fn deserialize_truncated_raw_items() {
 
 #[test]
 fn merge_preserves_order_across_serde_round_trip() {
-    let mut high = ReqSketch::<f64>::new();
-    let mut low = ReqSketch::<f64>::new();
+    let mut high = ReqSketch::<f64>::default();
+    let mut low = ReqSketch::<f64>::default();
 
     for value in 1000..=1072 {
         high.update(value as f64);

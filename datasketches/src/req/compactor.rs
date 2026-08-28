@@ -480,7 +480,7 @@ where
             items,
             is_sorted,
             state,
-            scratch_buffer: Vec::new(),
+            scratch_buffer: vec![],
             section_size: nearest_even_section_size(section_size_raw),
             num_sections,
             lg_weight,

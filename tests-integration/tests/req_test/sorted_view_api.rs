@@ -33,7 +33,7 @@ use googletest::prelude::lt;
 use googletest::prelude::near;
 
 fn populated_sketch(n: u64) -> ReqSketch<f64> {
-    let mut sketch = ReqSketch::new();
+    let mut sketch = ReqSketch::default();
     for i in 0..n {
         sketch.update(i as f64);
     }
@@ -85,7 +85,7 @@ fn sorted_view_is_an_owned_snapshot() {
 
 #[test]
 fn sorted_view_on_empty_sketch_is_an_empty_view() {
-    let sketch: ReqSketch<f64> = ReqSketch::new();
+    let sketch: ReqSketch<f64> = ReqSketch::default();
     let view = sketch.sorted_view();
     assert!(view.is_empty());
     assert_eq!(view.len(), 0);
@@ -99,7 +99,7 @@ fn sorted_view_on_empty_sketch_is_an_empty_view() {
 
 #[test]
 fn empty_sketch_pmf_cdf_report_error() {
-    let sketch: ReqSketch<f64> = ReqSketch::new();
+    let sketch: ReqSketch<f64> = ReqSketch::default();
     assert_that!(
         sketch.pmf(&[1.0], SearchCriteria::Inclusive),
         err(anything())
@@ -136,7 +136,7 @@ fn nan_query_items_are_rejected() {
 #[test]
 fn error_precedence_empty_before_invalid_rank() {
     // On an empty sketch the emptiness is reported before the out-of-range rank.
-    let empty: ReqSketch<f64> = ReqSketch::new();
+    let empty: ReqSketch<f64> = ReqSketch::default();
     let empty_err = empty.quantile(2.0, SearchCriteria::Inclusive).unwrap_err();
     assert_that!(empty_err.message(), contains_substring("empty"));
 
