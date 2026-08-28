@@ -20,7 +20,6 @@
 use datasketches::req::RankAccuracy;
 use datasketches::req::ReqSketch;
 use datasketches::req::ReqUnion;
-use datasketches::req::ReqUnionBuilder;
 use datasketches::req::SearchCriteria;
 use googletest::assert_that;
 use googletest::prelude::anything;
@@ -96,25 +95,6 @@ fn try_new_validates_k() {
         err(anything())
     );
     assert!(ReqUnion::<f64>::try_new(12, RankAccuracy::HighRank).is_ok());
-    assert_that!(
-        ReqUnionBuilder::<f64>::default().k(3).build(),
-        err(anything())
-    );
-}
-
-#[test]
-fn new_and_builder_preserve_configuration() {
-    let union = ReqUnion::<f64>::new(16, RankAccuracy::LowRank);
-    assert_eq!(union.k(), 16);
-    assert_eq!(union.rank_accuracy(), RankAccuracy::LowRank);
-
-    let union = ReqUnionBuilder::<f64>::default()
-        .k(20)
-        .rank_accuracy(RankAccuracy::LowRank)
-        .build()
-        .expect("construction should succeed");
-    assert_eq!(union.k(), 20);
-    assert_eq!(union.rank_accuracy(), RankAccuracy::LowRank);
 }
 
 #[test]

@@ -17,8 +17,6 @@
 
 //! REQ sketch — generic over `T: ReqValue`.
 
-use std::fmt;
-
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
 use crate::codec::assert::insufficient_data;
@@ -50,46 +48,51 @@ use crate::req::value::ReqValue;
 /// See the [module-level documentation](super) for background.
 #[derive(Debug, Clone)]
 pub struct ReqSketch<T: ReqValue> {
-    pub(super) k: u16,
-    pub(super) rank_accuracy: RankAccuracy,
-    pub(super) n: u64,
-    pub(super) max_nom_size: u32,
-    pub(super) num_retained: u32,
-    pub(super) compactors: Vec<Compactor<T>>,
-    pub(super) promotion_buf: Vec<T>,
-    pub(super) min_item: Option<T>,
-    pub(super) max_item: Option<T>,
+    k: u16,
+    rank_accuracy: RankAccuracy,
+    n: u64,
+    max_nom_size: u32,
+    num_retained: u32,
+    compactors: Vec<Compactor<T>>,
+    promotion_buf: Vec<T>,
+    min_item: Option<T>,
+    max_item: Option<T>,
 }
 
-fn validate_k(k: u16) -> Result<(), String> {
-    if !(MIN_K..=MAX_K).contains(&k) {
-        return Err(format!("k must be in [{MIN_K}, {MAX_K}], got {k}"));
+impl<T: ReqValue> Default for ReqSketch<T> {
+    fn default() -> Self {
+        Self::new(DEFAULT_K, RankAccuracy::HighRank)
     }
-    if k % 2 != 0 {
-        return Err(format!("k must be even, got {k}"));
-    }
-    Ok(())
 }
 
 impl<T: ReqValue> ReqSketch<T> {
     /// Creates a new sketch with the given `k` and rank accuracy.
     ///
-    /// The fallible version of this method is [`Self::try_new`].
+    /// The fallible version of this method is [`ReqSketch::try_new`].
     ///
     /// # Panics
     ///
-    /// Panics if `k` is odd or outside `[MIN_K, MAX_K]`.
+    /// Panics if `k` is odd or outside `[4, 1024]`.
     pub fn new(k: u16, rank_accuracy: RankAccuracy) -> Self {
-        Self::try_new(k, rank_accuracy).unwrap_or_else(|error| panic!("{error}"))
+        Self::make(k, rank_accuracy)
     }
 
     /// Creates a new sketch with the given `k` and rank accuracy.
     ///
+    /// The panicking version of this method is [`ReqSketch::new`].
+    ///
     /// # Errors
     ///
-    /// Returns an error if `k` is odd or outside `[MIN_K, MAX_K]`.
+    /// Returns an error if `k` is odd or outside `[4, 1024]`.
     pub fn try_new(k: u16, rank_accuracy: RankAccuracy) -> Result<Self, Error> {
-        validate_k(k).map_err(Error::invalid_argument)?;
+        if !(MIN_K..=MAX_K).contains(&k) {
+            return Err(Error::invalid_argument(format!(
+                "k must be in [{MIN_K}, {MAX_K}], got {k}"
+            )));
+        }
+        if k % 2 != 0 {
+            return Err(Error::invalid_argument(format!("k must be even, got {k}")));
+        }
         Ok(Self::make(k, rank_accuracy))
     }
 
@@ -576,7 +579,15 @@ impl<T: ReqValue> ReqSketch<T> {
         } else {
             RankAccuracy::LowRank
         };
-        validate_k(k).map_err(Error::deserial)?;
+
+        if !(MIN_K..=MAX_K).contains(&k) {
+            return Err(Error::deserial(format!(
+                "k must be in [{MIN_K}, {MAX_K}], got {k}"
+            )));
+        }
+        if k % 2 != 0 {
+            return Err(Error::deserial(format!("k must be even, got {k}")));
+        }
 
         if is_empty {
             if num_levels != 0 {
@@ -722,16 +733,20 @@ impl<T: ReqValue> ReqSketch<T> {
         Ok(sketch)
     }
 
-    // --- Internal ---
-
     fn make(k: u16, rank_accuracy: RankAccuracy) -> Self {
+        assert!(
+            (MIN_K..=MAX_K).contains(&k),
+            "k must be in [{MIN_K}, {MAX_K}], got {k}"
+        );
+        assert_eq!(k % 2, 0, "k must be even, got {k}");
+
         let mut sketch = Self {
             k,
             rank_accuracy,
             n: 0,
             max_nom_size: 0,
             num_retained: 0,
-            compactors: Vec::new(),
+            compactors: vec![],
             promotion_buf: Vec::with_capacity(k as usize),
             min_item: None,
             max_item: None,
@@ -743,14 +758,14 @@ impl<T: ReqValue> ReqSketch<T> {
         sketch
     }
 
-    pub(super) fn grow(&mut self) {
+    fn grow(&mut self) {
         let level = self.compactors.len() as u8;
         let compactor = Compactor::new(level, self.k, self.rank_accuracy);
         self.compactors.push(compactor);
         self.update_max_nom_size();
     }
 
-    pub(super) fn compress(&mut self) {
+    fn compress(&mut self) {
         for h in 0..self.compactors.len() {
             if self.compactors[h].num_items() >= self.compactors[h].nominal_capacity() {
                 if h == 0 {
@@ -771,75 +786,11 @@ impl<T: ReqValue> ReqSketch<T> {
         }
     }
 
-    pub(super) fn update_max_nom_size(&mut self) {
+    fn update_max_nom_size(&mut self) {
         self.max_nom_size = self.compactors.iter().map(|c| c.nominal_capacity()).sum();
     }
 
-    pub(super) fn update_num_retained(&mut self) {
+    fn update_num_retained(&mut self) {
         self.num_retained = self.compactors.iter().map(|c| c.num_items()).sum();
-    }
-}
-
-impl<T: ReqValue> Default for ReqSketch<T> {
-    fn default() -> Self {
-        Self::new(DEFAULT_K, RankAccuracy::HighRank)
-    }
-}
-
-/// Builder for [`ReqSketch`].
-#[derive(Debug, Clone)]
-pub struct ReqSketchBuilder<T: ReqValue> {
-    k: u16,
-    rank_accuracy: RankAccuracy,
-    _marker: std::marker::PhantomData<T>,
-}
-
-impl<T: ReqValue> Default for ReqSketchBuilder<T> {
-    fn default() -> Self {
-        Self {
-            k: DEFAULT_K,
-            rank_accuracy: RankAccuracy::HighRank,
-            _marker: std::marker::PhantomData,
-        }
-    }
-}
-
-impl<T: ReqValue> ReqSketchBuilder<T> {
-    /// Sets the `k` parameter.
-    pub fn k(mut self, k: u16) -> Self {
-        self.k = k;
-        self
-    }
-
-    /// Sets the rank accuracy.
-    pub fn rank_accuracy(mut self, rank_accuracy: RankAccuracy) -> Self {
-        self.rank_accuracy = rank_accuracy;
-        self
-    }
-
-    /// Builds the sketch.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if `k` is odd or outside `[MIN_K, MAX_K]`.
-    pub fn build(self) -> Result<ReqSketch<T>, Error> {
-        ReqSketch::try_new(self.k, self.rank_accuracy)
-    }
-}
-
-impl<T: ReqValue + fmt::Display> fmt::Display for ReqSketch<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "REQ Sketch Summary:")?;
-        writeln!(f, "  k                : {}", self.k)?;
-        writeln!(f, "  rank accuracy    : {:?}", self.rank_accuracy)?;
-        writeln!(f, "  n                : {}", self.n)?;
-        writeln!(f, "  num retained     : {}", self.num_retained)?;
-        writeln!(f, "  num levels       : {}", self.compactors.len())?;
-        writeln!(f, "  estimation mode  : {}", self.is_estimation_mode())?;
-        if let (Some(min), Some(max)) = (&self.min_item, &self.max_item) {
-            writeln!(f, "  min item         : {min}")?;
-            writeln!(f, "  max item         : {max}")?;
-        }
-        Ok(())
     }
 }

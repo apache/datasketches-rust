@@ -31,27 +31,29 @@ pub struct ReqUnion<T: ReqValue> {
     inner: ReqSketch<T>,
 }
 
-/// Builder for [`ReqUnion`].
-#[derive(Debug, Clone)]
-pub struct ReqUnionBuilder<T: ReqValue> {
-    k: u16,
-    rank_accuracy: RankAccuracy,
-    _marker: std::marker::PhantomData<T>,
+impl<T: ReqValue> Default for ReqUnion<T> {
+    fn default() -> Self {
+        Self::new(DEFAULT_K, RankAccuracy::HighRank)
+    }
 }
 
 impl<T: ReqValue> ReqUnion<T> {
     /// Creates a new union with the given `k` and rank accuracy.
     ///
-    /// The fallible version of this method is [`Self::try_new`].
+    /// The fallible version of this method is [`ReqUnion::try_new`].
     ///
     /// # Panics
     ///
     /// Panics if `k` is invalid (see [`ReqSketch::new`]).
     pub fn new(k: u16, rank_accuracy: RankAccuracy) -> Self {
-        Self::try_new(k, rank_accuracy).unwrap_or_else(|error| panic!("{error}"))
+        Self {
+            inner: ReqSketch::new(k, rank_accuracy),
+        }
     }
 
     /// Creates a new union with the given `k` and rank accuracy.
+    ///
+    /// The panicking version of this method is [`ReqUnion::new`].
     ///
     /// # Errors
     ///
@@ -97,44 +99,5 @@ impl<T: ReqValue> ReqUnion<T> {
     /// Resets the union to empty.
     pub fn reset(&mut self) {
         self.inner.reset();
-    }
-}
-
-impl<T: ReqValue> Default for ReqUnion<T> {
-    fn default() -> Self {
-        Self::new(DEFAULT_K, RankAccuracy::HighRank)
-    }
-}
-
-impl<T: ReqValue> Default for ReqUnionBuilder<T> {
-    fn default() -> Self {
-        Self {
-            k: DEFAULT_K,
-            rank_accuracy: RankAccuracy::HighRank,
-            _marker: std::marker::PhantomData,
-        }
-    }
-}
-
-impl<T: ReqValue> ReqUnionBuilder<T> {
-    /// Sets the `k` parameter.
-    pub fn k(mut self, k: u16) -> Self {
-        self.k = k;
-        self
-    }
-
-    /// Sets the rank accuracy.
-    pub fn rank_accuracy(mut self, rank_accuracy: RankAccuracy) -> Self {
-        self.rank_accuracy = rank_accuracy;
-        self
-    }
-
-    /// Builds the union.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if `k` is invalid (see [`ReqUnion::try_new`]).
-    pub fn build(self) -> Result<ReqUnion<T>, Error> {
-        ReqUnion::try_new(self.k, self.rank_accuracy)
     }
 }

@@ -53,8 +53,8 @@ where
     pub(super) fn new(mut weighted_items: Vec<(T, u64)>) -> Self {
         if weighted_items.is_empty() {
             return Self {
-                items: Vec::new(),
-                cumulative_weights: Vec::new(),
+                items: vec![],
+                cumulative_weights: vec![],
                 total_weight: 0,
             };
         }
