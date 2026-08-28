@@ -58,7 +58,7 @@ pub struct ThetaANotB {
 
 impl Default for ThetaANotB {
     fn default() -> Self {
-        Self::with_seed(DEFAULT_UPDATE_SEED).expect("the default Theta A-not-B seed must be valid")
+        Self::with_seed(DEFAULT_UPDATE_SEED).unwrap()
     }
 }
 

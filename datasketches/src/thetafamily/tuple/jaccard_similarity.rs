@@ -54,7 +54,7 @@ pub struct TupleJaccardSimilarity {
 
 impl Default for TupleJaccardSimilarity {
     fn default() -> Self {
-        Self::with_seed(DEFAULT_UPDATE_SEED).expect("the default Tuple Jaccard seed must be valid")
+        Self::with_seed(DEFAULT_UPDATE_SEED).unwrap()
     }
 }
 

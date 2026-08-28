@@ -51,7 +51,7 @@ pub struct ThetaJaccardSimilarity {
 
 impl Default for ThetaJaccardSimilarity {
     fn default() -> Self {
-        Self::with_seed(DEFAULT_UPDATE_SEED).expect("the default Theta Jaccard seed must be valid")
+        Self::with_seed(DEFAULT_UPDATE_SEED).unwrap()
     }
 }
 

@@ -98,8 +98,7 @@ where
 {
     /// Creates a new intersection operator with the default seed and the given combine `policy`.
     pub fn new(policy: P) -> Self {
-        Self::with_seed(policy, DEFAULT_UPDATE_SEED)
-            .expect("the default Tuple intersection seed must be valid")
+        Self::with_seed(policy, DEFAULT_UPDATE_SEED).unwrap()
     }
 
     /// Creates a new intersection operator for the given combine `policy` and `seed`.

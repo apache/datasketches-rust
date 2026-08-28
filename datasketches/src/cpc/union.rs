@@ -83,7 +83,7 @@ pub struct CpcUnion {
 
 impl Default for CpcUnion {
     fn default() -> Self {
-        Self::new(DEFAULT_LG_K).expect("the default CPC union configuration must be valid")
+        Self::new(DEFAULT_LG_K).unwrap()
     }
 }
 
@@ -143,8 +143,7 @@ impl CpcUnion {
         match &self.state {
             UnionState::Accumulator(sketch) => {
                 if sketch.is_empty() {
-                    CpcSketch::with_seed(self.lg_k, self.seed)
-                        .expect("a CPC union must retain a valid configuration")
+                    CpcSketch::with_seed(self.lg_k, self.seed).unwrap()
                 } else {
                     let mut sketch = sketch.clone();
                     assert_eq!(sketch.flavor(), Flavor::Sparse);
@@ -155,8 +154,7 @@ impl CpcUnion {
             UnionState::BitMatrix(matrix) => {
                 let lg_k = self.lg_k;
 
-                let mut sketch = CpcSketch::with_seed(lg_k, self.seed)
-                    .expect("a CPC union must retain a valid configuration");
+                let mut sketch = CpcSketch::with_seed(lg_k, self.seed).unwrap();
                 let num_coupons = count_bits_set_in_matrix(matrix);
                 sketch.num_coupons = num_coupons;
                 let offset = determine_correct_offset(lg_k, num_coupons);
@@ -309,15 +307,12 @@ impl CpcUnion {
             UnionState::Accumulator(sketch) => {
                 if sketch.is_empty() {
                     self.lg_k = new_lg_k;
-                    self.state = UnionState::Accumulator(
-                        CpcSketch::with_seed(new_lg_k, self.seed)
-                            .expect("a CPC union must retain a valid configuration"),
-                    );
+                    self.state =
+                        UnionState::Accumulator(CpcSketch::with_seed(new_lg_k, self.seed).unwrap());
                     return;
                 }
 
-                let mut new_sketch = CpcSketch::with_seed(new_lg_k, self.seed)
-                    .expect("a CPC union must retain a valid configuration");
+                let mut new_sketch = CpcSketch::with_seed(new_lg_k, self.seed).unwrap();
                 walk_table_updating_sketch(&mut new_sketch, sketch.surprising_value_table());
 
                 let final_new_flavor = new_sketch.flavor();

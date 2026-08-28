@@ -320,8 +320,7 @@ impl<T: CountMinValue> CountMinSketch<T> {
         bytes.write_u8(self.num_hashes);
         debug_assert_eq!(
             self.seed_hash,
-            compute_seed_hash(self.seed, ErrorKind::InvalidArgument)
-                .expect("a CountMin sketch must retain a valid seed")
+            compute_seed_hash(self.seed, ErrorKind::InvalidArgument).unwrap()
         );
         bytes.write_u16_le(self.seed_hash);
         bytes.write_u8(0);

@@ -62,7 +62,7 @@ pub struct TupleANotB {
 
 impl Default for TupleANotB {
     fn default() -> Self {
-        Self::with_seed(DEFAULT_UPDATE_SEED).expect("the default Tuple A-not-B seed must be valid")
+        Self::with_seed(DEFAULT_UPDATE_SEED).unwrap()
     }
 }
 

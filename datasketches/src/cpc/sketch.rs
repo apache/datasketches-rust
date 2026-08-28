@@ -94,7 +94,7 @@ pub struct CpcSketch {
 
 impl Default for CpcSketch {
     fn default() -> Self {
-        Self::new(DEFAULT_LG_K).expect("the default CPC configuration must be valid")
+        Self::new(DEFAULT_LG_K).unwrap()
     }
 }
 
@@ -574,8 +574,7 @@ impl CpcSketch {
         bytes.write_u8(flags);
         debug_assert_eq!(
             self.seed_hash,
-            compute_seed_hash(self.seed, ErrorKind::InvalidArgument)
-                .expect("a CPC sketch must retain a valid seed")
+            compute_seed_hash(self.seed, ErrorKind::InvalidArgument).unwrap()
         );
         bytes.write_u16_le(self.seed_hash);
         if !self.is_empty() {

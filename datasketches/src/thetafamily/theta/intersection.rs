@@ -35,8 +35,7 @@ pub struct ThetaIntersection {
 
 impl Default for ThetaIntersection {
     fn default() -> Self {
-        Self::with_seed(DEFAULT_UPDATE_SEED)
-            .expect("the default Theta intersection seed must be valid")
+        Self::with_seed(DEFAULT_UPDATE_SEED).unwrap()
     }
 }
 

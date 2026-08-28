@@ -308,8 +308,7 @@ impl HllUnion {
     ///
     /// This clears all accumulated data so the union can be reused.
     pub fn reset(&mut self) {
-        self.gadget = HllSketch::new(self.lg_max_k, HllType::Hll8)
-            .expect("an existing HLL union must have a valid lg_max_k");
+        self.gadget = HllSketch::new(self.lg_max_k, HllType::Hll8).unwrap();
     }
 
     /// Returns the union's current cardinality estimate.
