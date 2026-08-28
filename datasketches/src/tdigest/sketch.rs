@@ -78,6 +78,22 @@ impl TDigestBuffer {
         self.centroids.len() - self.unmerged_tail_len
     }
 
+    fn is_fully_compressed_and_sorted(&self) -> bool {
+        self.unmerged_tail_len == 0 && centroids_are_sorted(&self.centroids)
+    }
+
+    fn sorted_range_overlaps(&self, other: &TDigestBuffer) -> bool {
+        self.centroids
+            .first()
+            .zip(other.centroids.last())
+            .is_some_and(|(first, last)| first.mean <= last.mean)
+            && other
+                .centroids
+                .first()
+                .zip(self.centroids.last())
+                .is_some_and(|(first, last)| first.mean <= last.mean)
+    }
+
     fn push_unmerged(&mut self, value: f64, max_unmerged: usize) {
         debug_assert!(self.unmerged_tail_len < max_unmerged);
         if self.centroids.len() == self.centroids.capacity() {
@@ -119,15 +135,6 @@ impl TDigestBuffer {
     /// Combines this buffer with a non-empty borrowed buffer in stable mean order.
     fn into_merged_centroids(mut self, other: &TDigestBuffer) -> Vec<Centroid> {
         debug_assert!(!other.is_empty(), "an empty right-hand buffer is a no-op");
-        if self.unmerged_tail_len == 0
-            && other.unmerged_tail_len == 0
-            && centroids_are_sorted(&self.centroids)
-            && centroids_are_sorted(&other.centroids)
-        {
-            merge_sorted_centroids(&mut self.centroids, &other.centroids);
-            return self.centroids;
-        }
-
         let compressed_prefix_len = self.compressed_prefix_len();
         self.centroids.reserve(other.len());
         let other_prefix_len = other.compressed_prefix_len();
@@ -363,8 +370,27 @@ impl TDigestMut {
         }
 
         let self_unmerged_weight = self.buffer.unmerged_len() as u64;
-        let centroids = std::mem::take(&mut self.buffer).into_merged_centroids(&other.buffer);
-        self.compress_sorted_centroids(centroids, self_unmerged_weight + other.total_weight())
+        let buffer = std::mem::take(&mut self.buffer);
+        let additional_weight = self_unmerged_weight + other.total_weight();
+        if buffer.is_fully_compressed_and_sorted() && other.buffer.is_fully_compressed_and_sorted()
+        {
+            if self.reverse_merge && buffer.sorted_range_overlaps(&other.buffer) {
+                self.merge_and_compress_sorted_centroids(
+                    buffer.centroids,
+                    &other.buffer.centroids,
+                    additional_weight,
+                );
+            } else {
+                // Materializing first is cheaper for disjoint runs and is required when
+                // compression traverses forward.
+                let mut centroids = buffer.centroids;
+                merge_sorted_centroids(&mut centroids, &other.buffer.centroids);
+                self.compress_sorted_centroids(centroids, additional_weight);
+            }
+        } else {
+            let centroids = buffer.into_merged_centroids(&other.buffer);
+            self.compress_sorted_centroids(centroids, additional_weight);
+        }
     }
 
     /// Converts this mutable t-digest into an immutable one.
@@ -915,42 +941,76 @@ impl TDigestMut {
         }
         self.compressed_weight += additional_weight;
 
-        let mut num_centroids = 1;
         let len = centroids.len();
-        let compressed_weight = self.compressed_weight as f64;
-        let normalizer = scale_function::normalizer(2.0 * f64::from(self.k), compressed_weight);
-        let mut current = 1;
-        let mut weight_so_far = 0.;
-        while current < len {
-            let c = centroids[current];
-            let proposed_weight = centroids[num_centroids - 1].weight() + c.weight();
-            let mut add_this = false;
-            if (current != 1) && (current != (len - 1)) {
-                let q0 = weight_so_far / compressed_weight;
-                let q2 = (weight_so_far + proposed_weight) / compressed_weight;
-                add_this = proposed_weight
-                    <= (compressed_weight
-                        * scale_function::max(q0, normalizer)
-                            .min(scale_function::max(q2, normalizer)));
+        let mut compression =
+            CentroidCompression::new(centroids[0], self.k, self.compressed_weight);
+        let mut output_len = 0;
+        for current in 1..len {
+            if let Some(centroid) =
+                compression.push(centroids[current], current != 1 && current != len - 1)
+            {
+                centroids[output_len] = centroid;
+                output_len += 1;
             }
-            if add_this {
-                // merge into existing centroid
-                centroids[num_centroids - 1].add(c);
-            } else {
-                // copy to a new centroid
-                weight_so_far += centroids[num_centroids - 1].weight();
-                centroids[num_centroids] = c;
-                num_centroids += 1;
-            }
-            current += 1;
         }
+        centroids[output_len] = compression.finish();
+        output_len += 1;
 
-        centroids.truncate(num_centroids);
+        centroids.truncate(output_len);
         if self.reverse_merge {
             centroids.reverse();
         }
+        self.store_compressed_centroids(centroids);
+    }
+
+    /// Compresses the descending merge of two sorted centroid buffers into `left`.
+    ///
+    /// Completed centroids are written backward into the unused tail, so unread input in `left`
+    /// is never overwritten and no materialized merged buffer is needed.
+    fn merge_and_compress_sorted_centroids(
+        &mut self,
+        mut left: Vec<Centroid>,
+        right: &[Centroid],
+        additional_weight: u64,
+    ) {
+        debug_assert!(self.reverse_merge);
+        debug_assert!(!left.is_empty());
+        debug_assert!(!right.is_empty());
+        debug_assert!(centroids_are_sorted(&left));
+        debug_assert!(centroids_are_sorted(right));
+
+        let left_len = left.len();
+        let len = left_len + right.len();
+        left.reserve(right.len());
+        left.resize(len, right[0]);
+
+        self.compressed_weight += additional_weight;
+        let mut left_index = left_len;
+        let mut right_index = right.len();
+        let first = take_next_descending(&left, &mut left_index, right, &mut right_index);
+        let mut compression = CentroidCompression::new(first, self.k, self.compressed_weight);
+        let mut output_index = len;
+        for current in 1..len {
+            let next = take_next_descending(&left, &mut left_index, right, &mut right_index);
+            if let Some(centroid) = compression.push(next, current != 1 && current != len - 1) {
+                output_index -= 1;
+                left[output_index] = centroid;
+            }
+        }
+        output_index -= 1;
+        left[output_index] = compression.finish();
+
+        let output_len = len - output_index;
+        left.copy_within(output_index..len, 0);
+        left.truncate(output_len);
+        self.store_compressed_centroids(left);
+    }
+
+    fn store_compressed_centroids(&mut self, mut centroids: Vec<Centroid>) {
+        debug_assert!(!centroids.is_empty());
+        debug_assert!(centroids_are_sorted(&centroids));
         self.min = self.min.min(centroids[0].mean);
-        self.max = self.max.max(centroids[num_centroids - 1].mean);
+        self.max = self.max.max(centroids[centroids.len() - 1].mean);
         self.reverse_merge = !self.reverse_merge;
         self.reduce_retained_capacity(&mut centroids);
         self.buffer = TDigestBuffer::new(centroids, 0);
@@ -1456,6 +1516,74 @@ fn merge_sorted_centroids(left: &mut Vec<Centroid>, right: &[Centroid]) {
     }
     if right_index > 0 {
         left[..right_index].copy_from_slice(&right[..right_index]);
+    }
+}
+
+struct CentroidCompression {
+    current: Centroid,
+    weight_so_far: f64,
+    total_weight: f64,
+    normalizer: f64,
+}
+
+impl CentroidCompression {
+    #[inline(always)]
+    fn new(current: Centroid, k: u16, total_weight: u64) -> Self {
+        let total_weight = total_weight as f64;
+        CentroidCompression {
+            current,
+            weight_so_far: 0.0,
+            total_weight,
+            normalizer: scale_function::normalizer(2.0 * f64::from(k), total_weight),
+        }
+    }
+
+    /// Adds the next centroid and returns the completed centroid, if any.
+    #[inline(always)]
+    fn push(&mut self, next: Centroid, is_interior: bool) -> Option<Centroid> {
+        let proposed_weight = self.current.weight() + next.weight();
+        let can_merge = is_interior
+            && proposed_weight
+                <= self.total_weight
+                    * scale_function::max(self.weight_so_far / self.total_weight, self.normalizer)
+                        .min(scale_function::max(
+                            (self.weight_so_far + proposed_weight) / self.total_weight,
+                            self.normalizer,
+                        ));
+        if can_merge {
+            self.current.add(next);
+            None
+        } else {
+            let completed = self.current;
+            self.weight_so_far += completed.weight();
+            self.current = next;
+            Some(completed)
+        }
+    }
+
+    #[inline(always)]
+    fn finish(self) -> Centroid {
+        self.current
+    }
+}
+
+#[inline]
+fn take_next_descending(
+    left: &[Centroid],
+    left_index: &mut usize,
+    right: &[Centroid],
+    right_index: &mut usize,
+) -> Centroid {
+    // Reversing the stable ascending merge puts left-hand ties first.
+    if *left_index > 0
+        && (*right_index == 0
+            || centroid_cmp(&left[*left_index - 1], &right[*right_index - 1]) != Ordering::Less)
+    {
+        *left_index -= 1;
+        left[*left_index]
+    } else {
+        *right_index -= 1;
+        right[*right_index]
     }
 }
 
