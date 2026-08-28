@@ -148,6 +148,9 @@ impl HipEstimator {
     ///
     /// Returns the lower confidence bound for the cardinality estimate.
     ///
+    /// Each non-zero register requires a distinct item, so their count is a hard floor
+    /// for the lower bound. If `cur_min` is non-zero, all `k` registers are non-zero.
+    ///
     /// # Arguments
     ///
     /// * `lg_config_k`: Log2 of number of registers (k)
@@ -163,8 +166,14 @@ impl HipEstimator {
     ) -> f64 {
         let estimate = self.estimate(lg_config_k, cur_min, num_at_cur_min);
         let rse = get_rel_err(lg_config_k, false, self.out_of_order, num_std_dev);
+        let config_k = 1u32 << lg_config_k;
+        let num_nonzero_registers = if cur_min == 0 {
+            config_k - num_at_cur_min
+        } else {
+            config_k
+        };
         // RSE is positive for lower bounds, so (1 + rse) > 1, making bound < estimate
-        estimate / (1.0 + rse)
+        (estimate / (1.0 + rse)).max(f64::from(num_nonzero_registers))
     }
 
     /// Get raw HLL estimate using standard HyperLogLog formula
@@ -497,6 +506,34 @@ mod tests {
     use googletest::prelude::lt;
 
     use super::*;
+
+    #[test]
+    fn lower_bound_is_clamped_to_the_non_zero_register_count() {
+        let lg_config_k = 4;
+        let mut estimator = HipEstimator::new(lg_config_k);
+        for _ in 0..8 {
+            estimator.update(lg_config_k, 0, 1);
+        }
+
+        assert_eq!(
+            estimator.lower_bound(lg_config_k, 0, 8, NumStdDev::Three),
+            8.0
+        );
+    }
+
+    #[test]
+    fn lower_bound_is_clamped_to_config_k_when_every_register_is_hit() {
+        let lg_config_k = 4;
+        let mut estimator = HipEstimator::new(lg_config_k);
+        for _ in 0..16 {
+            estimator.update(lg_config_k, 0, 1);
+        }
+
+        assert_eq!(
+            estimator.lower_bound(lg_config_k, 1, 16, NumStdDev::Three),
+            16.0
+        );
+    }
 
     #[test]
     fn test_estimator_initialization() {
