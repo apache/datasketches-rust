@@ -80,6 +80,12 @@ cargo bench --package benchmarks --bench benchmarks -- cpc::serde
 - End summary sentences with punctuation, and format Rust identifiers, literals, and numeric ranges as inline code.
 - Put contract sections and compatibility notes before examples. When applicable, order sections as `# Errors`, `# Panics`, and `# Examples`. Include only sections that describe an actual contract.
 
+## Visibility
+
+- Let module visibility define the boundary for implementation items. Inside a private module, use `pub` when an item must be available outside its defining module. Inside a `pub(crate)` module, use `pub` when the item should be available wherever that module is visible. Do not repeat an enclosing restriction when it adds no narrower boundary.
+- Keep items private when they are used only by their defining module and its descendants.
+- For items reachable through a public module or a re-exported public type, use the narrowest visibility that supports their internal callers. Reserve unrestricted `pub` for intentional public API.
+
 ## Changelog
 
 - Update `CHANGELOG.md` in the same pull request for significant user-visible changes. Compare the final behavior with the latest release tag rather than recording the sequence of commits that produced it.

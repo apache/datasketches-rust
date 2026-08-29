@@ -249,7 +249,7 @@ impl CpcSketch {
             .expect("surprising value table must be initialized")
     }
 
-    pub(super) fn surprising_value_table_mut(&mut self) -> &mut PairTable {
+    fn surprising_value_table_mut(&mut self) -> &mut PairTable {
         self.surprising_value_table
             .as_mut()
             .expect("surprising value table must be initialized")

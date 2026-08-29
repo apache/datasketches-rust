@@ -27,7 +27,7 @@ use crate::hash::MurmurHash3X64128;
 /// # Errors
 ///
 /// Returns an error of `error_kind` if the computed seed hash is zero.
-pub(crate) fn compute_seed_hash(seed: u64, error_kind: ErrorKind) -> Result<u16, Error> {
+pub fn compute_seed_hash(seed: u64, error_kind: ErrorKind) -> Result<u16, Error> {
     use std::hash::Hasher;
 
     let mut hasher = MurmurHash3X64128::with_seed(0);
@@ -44,7 +44,7 @@ pub(crate) fn compute_seed_hash(seed: u64, error_kind: ErrorKind) -> Result<u16,
 }
 
 /// Checks that an actual seed hash matches the expected seed hash.
-pub(crate) fn check_seed_hash(
+pub fn check_seed_hash(
     expected: u16,
     actual: u16,
     name: &'static str,

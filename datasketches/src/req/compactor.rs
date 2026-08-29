@@ -33,7 +33,7 @@ use crate::req::value::ReqValue;
 /// When the compactor reaches its nominal capacity, it performs compaction
 /// by keeping approximately half the items and promoting the rest to the next level.
 #[derive(Debug, Clone)]
-pub(super) struct Compactor<T> {
+pub struct Compactor<T> {
     /// Current items in the compactor
     items: Vec<T>,
     /// Whether items are currently sorted
@@ -68,7 +68,7 @@ where
     /// * `lg_weight` - The level (log weight) of this compactor
     /// * `k` - The k parameter from the parent sketch
     /// * `rank_accuracy` - Rank accuracy configuration
-    pub(super) fn new(lg_weight: u8, k: u16, rank_accuracy: RankAccuracy) -> Self {
+    pub fn new(lg_weight: u8, k: u16, rank_accuracy: RankAccuracy) -> Self {
         let section_size_raw = k as f32;
         let section_size = nearest_even_section_size(section_size_raw);
         let num_sections = INITIAL_SECTIONS_PER_COMPACTOR;
@@ -92,23 +92,23 @@ where
     }
 
     /// Returns the number of items currently in this compactor.
-    pub(super) fn num_items(&self) -> u32 {
+    pub fn num_items(&self) -> u32 {
         self.items.len() as u32
     }
 
     /// Returns the nominal capacity of this compactor.
-    pub(super) fn nominal_capacity(&self) -> u32 {
+    pub fn nominal_capacity(&self) -> u32 {
         2 * self.section_size * self.num_sections as u32
     }
 
     /// Returns whether the items are currently sorted.
-    pub(super) fn is_sorted(&self) -> bool {
+    pub fn is_sorted(&self) -> bool {
         self.is_sorted
     }
 
     /// Appends an item to this compactor.
     #[inline(always)]
-    pub(super) fn append(&mut self, item: T) {
+    pub fn append(&mut self, item: T) {
         self.items.push(item);
         if self.items.len() > 1 {
             self.is_sorted = false;
@@ -116,7 +116,7 @@ where
     }
 
     /// Merges items from another compactor into this one.
-    pub(super) fn merge(&mut self, other: &Self) {
+    pub fn merge(&mut self, other: &Self) {
         debug_assert_eq!(self.lg_weight, other.lg_weight);
         self.state |= other.state;
         if !other.items.is_empty() {
@@ -140,7 +140,7 @@ where
     /// Uses binary search when this compactor is sorted, and a linear scan
     /// otherwise. This lets [`ReqSketch::rank`](crate::req::ReqSketch::rank) sum
     /// per-level weights directly without first building a sorted view.
-    pub(super) fn count_below(&self, item: &T, inclusive: bool) -> usize {
+    pub fn count_below(&self, item: &T, inclusive: bool) -> usize {
         if self.is_sorted {
             if inclusive {
                 self.items.partition_point(|x| x <= item)
@@ -159,7 +159,7 @@ where
     /// Merges sorted items into this compactor using scratch buffer to avoid allocation.
     /// Both this compactor's items and the input must be sorted.
     #[inline(always)]
-    pub(super) fn merge_sorted(&mut self, items: &[T]) {
+    pub fn merge_sorted(&mut self, items: &[T]) {
         if items.is_empty() {
             return;
         }
@@ -208,7 +208,7 @@ where
 
     /// Sorts the items in this compactor if not already sorted.
     #[inline(always)]
-    pub(super) fn sort(&mut self) {
+    pub fn sort(&mut self) {
         if !self.is_sorted {
             // Use unstable sort for better performance (stable not needed for REQ sketch)
             self.items.sort_unstable();
@@ -220,7 +220,7 @@ where
     /// Writes promoted items into `out` and removes the compacted range in-place via `copy_within +
     /// truncate`.
     #[inline(always)]
-    pub(super) fn compact_into(&mut self, _rank_accuracy: RankAccuracy, out: &mut Vec<T>) {
+    pub fn compact_into(&mut self, _rank_accuracy: RankAccuracy, out: &mut Vec<T>) {
         if self.items.is_empty() {
             out.clear();
             return;
@@ -271,17 +271,17 @@ where
     }
 
     /// Returns an iterator over the items in this compactor.
-    pub(super) fn iter(&self) -> impl Iterator<Item = &T> {
+    pub fn iter(&self) -> impl Iterator<Item = &T> {
         self.items.iter()
     }
 
     /// Returns a slice of items for zero-allocation iteration.
-    pub(super) fn items_slice(&self) -> &[T] {
+    pub fn items_slice(&self) -> &[T] {
         &self.items
     }
 
     /// Returns the weight (2^lg_weight) for items in this compactor.
-    pub(super) fn weight(&self) -> u64 {
+    pub fn weight(&self) -> u64 {
         1u64 << self.lg_weight
     }
 
@@ -349,7 +349,7 @@ where
     }
 
     /// Serialize this compactor (preamble + items) into the byte buffer.
-    pub(super) fn serialize_into(&self, bytes: &mut crate::codec::SketchBytes)
+    pub fn serialize_into(&self, bytes: &mut crate::codec::SketchBytes)
     where
         T: ReqValue,
     {
@@ -365,7 +365,7 @@ where
     }
 
     /// Deserialize a compactor (preamble + items) from the byte cursor.
-    pub(super) fn deserialize(
+    pub fn deserialize(
         cursor: &mut crate::codec::SketchSlice<'_>,
         k: u16,
         expected_lg_weight: u8,
@@ -432,7 +432,7 @@ where
     /// helper synthesises a fresh compactor and seeds it with the deserialized items.
     /// A false wire flag stays false for byte-stable C++/Java round trips; a true flag
     /// is cleared if the items are not actually sorted.
-    pub(super) fn raw_items_compactor(
+    pub fn raw_items_compactor(
         k: u16,
         rank_accuracy: RankAccuracy,
         items: Vec<T>,
@@ -451,7 +451,7 @@ where
     /// buffer) is reset; the deterministic `state` counter and the persistent
     /// configuration (`lg_weight`, `section_size_raw`, `num_sections`) are preserved
     /// from the wire data.
-    pub(super) fn from_serialized_state(
+    fn from_serialized_state(
         lg_weight: u8,
         section_size_raw: f32,
         num_sections: u8,
@@ -476,21 +476,6 @@ where
 }
 
 #[cfg(test)]
-impl<T> Compactor<T>
-where
-    T: Clone + Ord,
-{
-    /// Returns the level (log weight) of this compactor. Test-only accessor.
-    pub(super) fn lg_weight(&self) -> u8 {
-        self.lg_weight
-    }
-
-    /// Returns the current state for deterministic compaction. Test-only accessor.
-    pub(super) fn state(&self) -> u64 {
-        self.state
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use googletest::assert_that;
@@ -502,7 +487,7 @@ mod tests {
     #[test]
     fn test_new_compactor() {
         let compactor: Compactor<i32> = Compactor::new(0, 12, RankAccuracy::HighRank);
-        assert_eq!(compactor.lg_weight(), 0);
+        assert_eq!(compactor.lg_weight, 0);
         assert_eq!(compactor.num_items(), 0);
         assert!(compactor.is_sorted());
         assert_eq!(compactor.weight(), 1);
@@ -582,8 +567,8 @@ mod tests {
         .unwrap();
 
         assert_eq!(c.num_items(), c2.num_items());
-        assert_eq!(c.lg_weight(), c2.lg_weight());
-        assert_eq!(c.state(), c2.state());
+        assert_eq!(c.lg_weight, c2.lg_weight);
+        assert_eq!(c.state, c2.state);
         let xs: Vec<ReqFloat<f32>> = c.iter().copied().collect();
         let ys: Vec<ReqFloat<f32>> = c2.iter().copied().collect();
         assert_eq!(xs, ys);

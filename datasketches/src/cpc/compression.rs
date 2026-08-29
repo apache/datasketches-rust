@@ -24,7 +24,7 @@ use crate::cpc::compression_data::LENGTH_LIMITED_UNARY_DECODING_TABLE65;
 use crate::cpc::compression_data::LENGTH_LIMITED_UNARY_ENCODING_TABLE65;
 use crate::error::Error;
 
-pub(super) fn encode_pairs(pairs: &[u32], lg_k: u8, output: &mut SketchBytes) -> usize {
+pub fn encode_pairs(pairs: &[u32], lg_k: u8, output: &mut SketchBytes) -> usize {
     let num_pairs = pairs.len() as u32;
     let num_base_bits =
         golomb_choose_number_of_base_bits((1 << lg_k) + num_pairs, u64::from(num_pairs));
@@ -57,12 +57,7 @@ pub(super) fn encode_pairs(pairs: &[u32], lg_k: u8, output: &mut SketchBytes) ->
     bits.finish()
 }
 
-pub(super) fn encode_window(
-    window: &[u8],
-    lg_k: u8,
-    num_coupons: u32,
-    output: &mut SketchBytes,
-) -> usize {
+pub fn encode_window(window: &[u8], lg_k: u8, num_coupons: u32, output: &mut SketchBytes) -> usize {
     let pseudo_phase = determine_pseudo_phase(lg_k, num_coupons);
     let encoding_table = &ENCODING_TABLES_FOR_HIGH_ENTROPY_BYTE[pseudo_phase as usize];
     let mut bits = BitWriter::new(output);
@@ -130,7 +125,7 @@ impl<'a> BitWriter<'a> {
     }
 }
 
-pub(super) fn decode_pairs(data: &[u8], num_pairs: u32, lg_k: u8) -> Result<Vec<u32>, Error> {
+pub fn decode_pairs(data: &[u8], num_pairs: u32, lg_k: u8) -> Result<Vec<u32>, Error> {
     if num_pairs == 0 {
         return Ok(vec![]);
     }
@@ -187,7 +182,7 @@ pub(super) fn decode_pairs(data: &[u8], num_pairs: u32, lg_k: u8) -> Result<Vec<
     Ok(pairs)
 }
 
-pub(super) fn decode_window(data: &[u8], lg_k: u8, num_coupons: u32) -> Result<Vec<u8>, Error> {
+pub fn decode_window(data: &[u8], lg_k: u8, num_coupons: u32) -> Result<Vec<u8>, Error> {
     let mut window = vec![0; 1 << lg_k];
     let pseudo_phase = determine_pseudo_phase(lg_k, num_coupons);
     let decoding_table = &DECODING_TABLES_FOR_HIGH_ENTROPY_BYTE[pseudo_phase as usize];
@@ -274,7 +269,7 @@ impl<'a> BitReader<'a> {
     }
 }
 
-pub(super) fn determine_pseudo_phase(lg_k: u8, num_coupons: u32) -> u8 {
+pub fn determine_pseudo_phase(lg_k: u8, num_coupons: u32) -> u8 {
     let k = 1u64 << lg_k;
     let num_coupons = u64::from(num_coupons);
     // This mid-range logic produces pseudo-phases. They are used to select encoding tables.

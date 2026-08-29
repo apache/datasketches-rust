@@ -32,7 +32,7 @@ const MAX_SAMPLE_SIZE: usize = 1024;
 
 /// Linear-probing hash map for (item, count) pairs with reverse purge support.
 #[derive(Debug, Clone)]
-pub(super) struct ReversePurgeItemHashMap<T> {
+pub struct ReversePurgeItemHashMap<T> {
     lg_length: u8,
     load_threshold: usize,
     keys: Vec<Option<T>>,

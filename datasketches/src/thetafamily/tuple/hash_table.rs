@@ -61,7 +61,7 @@ impl<S> TupleEntry<S> {
 /// This is the Theta sketch hash table extended so that each retained key carries a user-defined
 /// summary. Unlike the Theta hash table, when a key is inserted that already exists, the incoming
 /// update is merged into the existing summary rather than discarded.
-pub(super) type TupleHashTable<S> = SketchHashTable<TupleEntry<S>>;
+pub type TupleHashTable<S> = SketchHashTable<TupleEntry<S>>;
 
 impl<S> SketchEntry for TupleEntry<S> {
     fn hash(&self) -> u64 {

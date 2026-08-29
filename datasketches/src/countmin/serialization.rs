@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-pub(super) const PREAMBLE_LONGS_SHORT: u8 = 2;
-pub(super) const SERIAL_VERSION: u8 = 1;
-pub(super) const FLAGS_IS_EMPTY: u8 = 1 << 0;
-pub(super) const LONG_SIZE_BYTES: usize = 8;
+pub const PREAMBLE_LONGS_SHORT: u8 = 2;
+pub const SERIAL_VERSION: u8 = 1;
+pub const FLAGS_IS_EMPTY: u8 = 1 << 0;
+pub const LONG_SIZE_BYTES: usize = 8;

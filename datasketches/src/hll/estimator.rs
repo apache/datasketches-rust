@@ -28,7 +28,7 @@ use crate::hll::harmonic_numbers;
 
 /// Selects the estimate that is valid for the current register history.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(super) enum EstimateState {
+pub enum EstimateState {
     /// The register updates have a known order, so the HIP accumulator is valid.
     Hip(f64),
     /// A bulk merge lost the update order, so the estimate must come from the registers.
@@ -61,12 +61,7 @@ impl Estimator {
     }
 
     /// Restores estimator fields from an HLL serialization preamble.
-    pub(super) fn from_serialized(
-        hip_accum: f64,
-        kxq0: f64,
-        kxq1: f64,
-        out_of_order: bool,
-    ) -> Self {
+    pub fn from_serialized(hip_accum: f64, kxq0: f64, kxq1: f64, out_of_order: bool) -> Self {
         let estimate_state = if out_of_order {
             EstimateState::Composite
         } else {
@@ -325,22 +320,22 @@ impl Estimator {
     }
 
     /// Returns the estimate state independently from register-derived KxQ values.
-    pub(super) fn estimate_state(&self) -> EstimateState {
+    pub fn estimate_state(&self) -> EstimateState {
         self.estimate_state
     }
 
     /// Restores estimate state after copying or transforming the same logical sketch.
-    pub(super) fn restore_estimate_state(&mut self, state: EstimateState) {
+    pub fn restore_estimate_state(&mut self, state: EstimateState) {
         self.estimate_state = state;
     }
 
     /// Invalidates HIP after registers from independent histories are merged.
-    pub(super) fn invalidate_hip(&mut self) {
+    pub fn invalidate_hip(&mut self) {
         self.estimate_state = EstimateState::Composite;
     }
 
     /// Replaces register-derived KxQ values after a bulk register operation.
-    pub(super) fn restore_kxq(&mut self, kxq0: f64, kxq1: f64) {
+    pub fn restore_kxq(&mut self, kxq0: f64, kxq1: f64) {
         self.kxq0 = kxq0;
         self.kxq1 = kxq1;
     }

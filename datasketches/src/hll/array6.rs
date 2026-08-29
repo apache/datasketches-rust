@@ -82,17 +82,17 @@ impl Array6 {
 
     /// Get the unpacked 6-bit value (0-63) at the given slot
     #[inline]
-    pub(super) fn get(&self, slot: u32) -> u8 {
+    pub fn get(&self, slot: u32) -> u8 {
         self.get_raw(slot)
     }
 
     /// Get the number of registers (K = 2^lg_config_k)
-    pub(super) fn num_registers(&self) -> usize {
+    pub fn num_registers(&self) -> usize {
         1 << self.lg_config_k
     }
 
     /// Returns the estimate state independently from register-derived cached values.
-    pub(super) fn estimate_state(&self) -> EstimateState {
+    pub fn estimate_state(&self) -> EstimateState {
         self.estimator.estimate_state()
     }
 
@@ -164,7 +164,7 @@ impl Array6 {
     }
 
     /// Restores estimate state after copying or transforming the same logical sketch.
-    pub(super) fn restore_estimate_state(&mut self, state: EstimateState) {
+    pub fn restore_estimate_state(&mut self, state: EstimateState) {
         self.estimator.restore_estimate_state(state);
     }
 
