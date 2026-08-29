@@ -40,7 +40,7 @@ pub(super) enum EstimateState {
 /// Sequential updates use HIP. Bulk merges use the composite estimator because register values do
 /// not retain update order. Both modes maintain KxQ as a cache derived from the current registers.
 #[derive(Debug, Clone, PartialEq)]
-pub(super) struct Estimator {
+pub struct Estimator {
     /// Estimate selected by the register history.
     estimate_state: EstimateState,
     /// KxQ register for values < 32 (larger inverse powers)
