@@ -15,25 +15,23 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use datasketches::req::ReqFloat;
+use datasketches::req::ReqSketch;
+use datasketches::req::SearchCriteria;
 
-type ReqF32 = ReqFloat<f32>;
-type ReqF64 = ReqFloat<f64>;
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct Reading(i32);
 
-fn req_f32(value: f32) -> ReqF32 {
-    ReqF32::new(value).unwrap()
+#[test]
+fn custom_items_do_not_need_serialization() {
+    let mut sketch = ReqSketch::default();
+    sketch.update(Reading(30));
+    sketch.update(Reading(10));
+    sketch.update(Reading(20));
+
+    assert_eq!(sketch.min_item(), Some(&Reading(10)));
+    assert_eq!(sketch.max_item(), Some(&Reading(30)));
+    assert_eq!(
+        sketch.quantile(0.5, SearchCriteria::Inclusive).unwrap(),
+        Reading(20)
+    );
 }
-
-fn req_f64(value: f64) -> ReqF64 {
-    ReqF64::new(value).unwrap()
-}
-
-mod accuracy;
-mod bounds;
-mod core;
-mod generic;
-mod merge;
-mod property;
-mod query;
-mod sorted_view_api;
-mod structure;

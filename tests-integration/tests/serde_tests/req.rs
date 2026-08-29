@@ -21,6 +21,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use datasketches::req::RankAccuracy;
+use datasketches::req::ReqFloat;
 use datasketches::req::ReqSketch;
 use datasketches::req::ReqValue;
 use datasketches::req::SearchCriteria;
@@ -31,11 +32,22 @@ use googletest::prelude::ok;
 
 use crate::serialization_test_data;
 
+type ReqF32 = ReqFloat<f32>;
+type ReqF64 = ReqFloat<f64>;
+
+fn req_f32(value: f32) -> ReqF32 {
+    ReqFloat::<f32>::new(value).unwrap()
+}
+
+fn req_f64(value: f64) -> ReqF64 {
+    ReqFloat::<f64>::new(value).unwrap()
+}
+
 // ---------- Rust ↔ Rust round-trip ----------
 
 fn round_trip_one<T>(k: u16, ra: RankAccuracy, n: u64, make_item: impl Fn(u64) -> T)
 where
-    T: ReqValue + std::fmt::Debug + PartialEq,
+    T: Clone + Ord + ReqValue + std::fmt::Debug,
 {
     let mut a: ReqSketch<T> = ReqSketch::new(k, ra).unwrap();
     for i in 0..n {
@@ -56,7 +68,7 @@ fn round_trip_f64_matrix() {
     for &k in &[4u16, 12, 1024] {
         for &ra in &[RankAccuracy::HighRank, RankAccuracy::LowRank] {
             for &n in &[0u64, 1, 4, 5, 100, 10_000] {
-                round_trip_one::<f64>(k, ra, n, |i| i as f64);
+                round_trip_one::<ReqF64>(k, ra, n, |i| req_f64(i as f64));
             }
         }
     }
@@ -65,7 +77,7 @@ fn round_trip_f64_matrix() {
 #[test]
 fn round_trip_f32_basic() {
     for &n in &[0u64, 1, 4, 5, 1000] {
-        round_trip_one::<f32>(12, RankAccuracy::HighRank, n, |i| i as f32);
+        round_trip_one::<ReqF32>(12, RankAccuracy::HighRank, n, |i| req_f32(i as f32));
     }
 }
 
@@ -88,7 +100,7 @@ fn deserialize_truncated_preamble() {
     // Less than 8 bytes — can't even read the fixed preamble.
     for n in 0..8usize {
         let bytes = vec![0u8; n];
-        let result = ReqSketch::<f32>::deserialize(&bytes);
+        let result = ReqSketch::<ReqF32>::deserialize(&bytes);
         assert_that!(result, err(anything()), "preamble length: {n}");
     }
 }
@@ -106,7 +118,7 @@ fn deserialize_wrong_family_id() {
         0u8, // num_levels
         0u8, // num_raw_items
     ];
-    let result = ReqSketch::<f32>::deserialize(&bytes);
+    let result = ReqSketch::<ReqF32>::deserialize(&bytes);
     assert_that!(result, err(anything()));
     let err = result.unwrap_err();
     assert_eq!(
@@ -125,7 +137,7 @@ fn deserialize_wrong_serial_version() {
         17u8, 4u8, // IS_EMPTY
         12u8, 0u8, 0u8, 0u8,
     ];
-    let result = ReqSketch::<f32>::deserialize(&bytes);
+    let result = ReqSketch::<ReqF32>::deserialize(&bytes);
     assert_that!(result, err(anything()));
 }
 
@@ -133,7 +145,7 @@ fn deserialize_wrong_serial_version() {
 fn deserialize_invalid_preamble_ints() {
     // preamble_ints must be 2 (exact) or 4 (estimation). Try 3.
     let bytes = [3u8, 1, 17, 4, 12, 0, 0, 0];
-    let result = ReqSketch::<f32>::deserialize(&bytes);
+    let result = ReqSketch::<ReqF32>::deserialize(&bytes);
     assert_that!(result, err(anything()));
 }
 
@@ -148,7 +160,7 @@ fn deserialize_rejects_non_empty_zero_levels() {
         0u8, // num_levels=0 is invalid for non-empty sketches
         0u8,
     ];
-    let result = ReqSketch::<f32>::deserialize(&bytes);
+    let result = ReqSketch::<ReqF32>::deserialize(&bytes);
     assert_that!(result, err(anything()));
 }
 
@@ -161,7 +173,7 @@ fn deserialize_rejects_inconsistent_raw_items_header() {
         0u8, // invalid raw item count
     ];
     assert_that!(
-        ReqSketch::<f32>::deserialize(&raw_with_no_items),
+        ReqSketch::<ReqF32>::deserialize(&raw_with_no_items),
         err(anything())
     );
 
@@ -171,7 +183,7 @@ fn deserialize_rejects_inconsistent_raw_items_header() {
         1u8,
     ];
     assert_that!(
-        ReqSketch::<f32>::deserialize(&raw_with_two_levels),
+        ReqSketch::<ReqF32>::deserialize(&raw_with_two_levels),
         err(anything())
     );
 }
@@ -212,7 +224,7 @@ fn deserialize_truncated_estimation_mode() {
         0u8, /* num_raw_items
               * no payload — truncated */
     ];
-    let result = ReqSketch::<f32>::deserialize(&bytes);
+    let result = ReqSketch::<ReqF32>::deserialize(&bytes);
     assert_that!(result, err(anything()));
 }
 
@@ -226,28 +238,28 @@ fn deserialize_truncated_raw_items() {
         3u8, // num_raw_items=3 (but only 1 f32 supplied)
         0u8, 0, 0x80, 0x3f, // 1.0_f32 (only 1 of the 3 promised items)
     ];
-    let result = ReqSketch::<f32>::deserialize(&bytes);
+    let result = ReqSketch::<ReqF32>::deserialize(&bytes);
     assert_that!(result, err(anything()));
 }
 
 #[test]
 fn merge_preserves_order_across_serde_round_trip() {
-    let mut high = ReqSketch::<f64>::default();
-    let mut low = ReqSketch::<f64>::default();
+    let mut high = ReqSketch::<ReqF64>::default();
+    let mut low = ReqSketch::<ReqF64>::default();
 
     for value in 1000..=1072 {
-        high.update(value as f64);
+        high.update(req_f64(value as f64));
     }
     for value in 0..=72 {
-        low.update(value as f64);
+        low.update(req_f64(value as f64));
     }
 
     high.merge(&low).unwrap();
-    let restored = ReqSketch::<f64>::deserialize(&high.serialize()).unwrap();
+    let restored = ReqSketch::<ReqF64>::deserialize(&high.serialize()).unwrap();
     let view = restored.sorted_view();
 
     for value in 0..=1072 {
-        let value = value as f64;
+        let value = req_f64(value as f64);
         assert_eq!(
             restored.rank(&value, SearchCriteria::Inclusive).unwrap(),
             view.rank(&value, SearchCriteria::Inclusive).unwrap(),
@@ -281,9 +293,9 @@ fn exact_image(k: u16, items: &[f32]) -> Vec<u8> {
 }
 
 fn estimation_image(k: u16, n: u64) -> Vec<u8> {
-    let mut sketch = ReqSketch::<f32>::new(k, RankAccuracy::HighRank).unwrap();
+    let mut sketch = ReqSketch::<ReqF32>::new(k, RankAccuracy::HighRank).unwrap();
     for item in 1..=n {
-        sketch.update(item as f32);
+        sketch.update(req_f32(item as f32));
     }
     let bytes = sketch.serialize();
     assert!(bytes[6] > 1);
@@ -295,14 +307,14 @@ fn read_u64(bytes: &[u8], offset: usize) -> u64 {
 }
 
 fn assert_invalid_data(bytes: &[u8]) {
-    let error = ReqSketch::<f32>::deserialize(bytes).unwrap_err();
+    let error = ReqSketch::<ReqF32>::deserialize(bytes).unwrap_err();
     assert_eq!(error.kind(), ErrorKind::InvalidData);
 }
 
 #[test]
 fn canonical_exact_image_is_valid() {
     let bytes = exact_image(12, &[1.0, 2.0, 3.0, 4.0, 5.0]);
-    assert_that!(ReqSketch::<f32>::deserialize(&bytes), ok(anything()));
+    assert_that!(ReqSketch::<ReqF32>::deserialize(&bytes), ok(anything()));
 }
 
 #[test]
@@ -347,12 +359,12 @@ fn deserialize_accepts_java_minimum_section_schedule() {
         .copy_from_slice(&java_raw.to_le_bytes());
     bytes[compactor + NUM_SECTIONS_OFFSET] = 6;
 
-    let mut sketch = ReqSketch::<f32>::deserialize(&bytes).unwrap();
+    let mut sketch = ReqSketch::<ReqF32>::deserialize(&bytes).unwrap();
     for item in 1_251..=2_500 {
-        sketch.update(item as f32);
+        sketch.update(req_f32(item as f32));
     }
     let continued = sketch.serialize();
-    assert_that!(ReqSketch::<f32>::deserialize(&continued), ok(anything()));
+    assert_that!(ReqSketch::<ReqF32>::deserialize(&continued), ok(anything()));
 }
 
 #[test]
@@ -366,10 +378,10 @@ fn deserialize_accepts_safe_section_size_drift() {
 
     // One ULP below 5.0 rounds to a section size of 4 rather than 6.
     bytes[raw_offset..raw_offset + 4].copy_from_slice(&(raw_bits - 1).to_le_bytes());
-    let mut sketch = ReqSketch::<f32>::deserialize(&bytes).unwrap();
-    sketch.update(2_563.0);
+    let mut sketch = ReqSketch::<ReqF32>::deserialize(&bytes).unwrap();
+    sketch.update(req_f32(2_563.0));
     assert_that!(
-        ReqSketch::<f32>::deserialize(&sketch.serialize()),
+        ReqSketch::<ReqF32>::deserialize(&sketch.serialize()),
         ok(anything())
     );
 }
@@ -388,10 +400,10 @@ fn deserialize_accepts_opaque_compactor_state() {
     bytes[compactor + SECTION_SIZE_RAW_OFFSET..compactor + SECTION_SIZE_RAW_OFFSET + 4]
         .copy_from_slice(&raw.to_le_bytes());
     bytes[compactor + NUM_SECTIONS_OFFSET] = 12;
-    let mut sketch = ReqSketch::<f32>::deserialize(&bytes).unwrap();
-    sketch.update(1_001.0);
+    let mut sketch = ReqSketch::<ReqF32>::deserialize(&bytes).unwrap();
+    sketch.update(req_f32(1_001.0));
     assert_that!(
-        ReqSketch::<f32>::deserialize(&sketch.serialize()),
+        ReqSketch::<ReqF32>::deserialize(&sketch.serialize()),
         ok(anything())
     );
 }
@@ -414,7 +426,7 @@ fn complementary_compactor_states_do_not_overflow_on_merge() {
         bytes[compactor + SECTION_SIZE_RAW_OFFSET..compactor + SECTION_SIZE_RAW_OFFSET + 4]
             .copy_from_slice(&raw.to_le_bytes());
         bytes[compactor + NUM_SECTIONS_OFFSET] = 48;
-        ReqSketch::<f32>::deserialize(&bytes).unwrap()
+        ReqSketch::<ReqF32>::deserialize(&bytes).unwrap()
     });
     let (left, right) = sketches.split_at_mut(1);
     left[0].merge(&right[0]).unwrap();
@@ -424,12 +436,14 @@ fn complementary_compactor_states_do_not_overflow_on_merge() {
 fn deserialize_normalizes_false_sorted_claim_and_rejects_nan() {
     let mut unsorted = exact_image(12, &[3.0, 4.0, 5.0, 1.0, 2.0]);
     unsorted[3] |= FLAG_LEVEL_ZERO_SORTED;
-    let sketch = ReqSketch::<f32>::deserialize(&unsorted).unwrap();
+    let sketch = ReqSketch::<ReqF32>::deserialize(&unsorted).unwrap();
     assert_eq!(
-        sketch.rank(&2.0, SearchCriteria::Inclusive).unwrap(),
+        sketch
+            .rank(&req_f32(2.0), SearchCriteria::Inclusive)
+            .unwrap(),
         sketch
             .sorted_view()
-            .rank(&2.0, SearchCriteria::Inclusive)
+            .rank(&req_f32(2.0), SearchCriteria::Inclusive)
             .unwrap(),
     );
 
@@ -475,7 +489,7 @@ fn deserialize_rejects_oversized_compactor_num_items() {
 fn validate_cross_language_fixture(path: PathBuf, expected_n: u64) {
     let bytes =
         fs::read(&path).unwrap_or_else(|e| panic!("failed to read {}: {e}", path.display()));
-    let sketch = ReqSketch::<f32>::deserialize(&bytes)
+    let sketch = ReqSketch::<ReqF32>::deserialize(&bytes)
         .unwrap_or_else(|e| panic!("deserialize failed for {}: {e}", path.display()));
 
     assert_eq!(sketch.n(), expected_n, "n mismatch on {}", path.display());
@@ -483,8 +497,14 @@ fn validate_cross_language_fixture(path: PathBuf, expected_n: u64) {
     assert_eq!(sketch.rank_accuracy(), RankAccuracy::HighRank);
 
     if expected_n > 0 {
-        assert_eq!(sketch.min_item().copied(), Some(1.0_f32));
-        assert_eq!(sketch.max_item().copied(), Some(expected_n as f32));
+        assert_eq!(
+            sketch.min_item().copied().map(ReqFloat::into_inner),
+            Some(1.0)
+        );
+        assert_eq!(
+            sketch.max_item().copied().map(ReqFloat::into_inner),
+            Some(expected_n as f32)
+        );
         let _ = sketch.quantile(0.5, SearchCriteria::Inclusive).unwrap();
     }
 

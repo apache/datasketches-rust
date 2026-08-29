@@ -17,11 +17,37 @@
 
 //! Relative Error Quantiles (REQ) sketch.
 //!
-//! Provides approximate quantile estimation with relative error guarantees, especially
-//! useful for streaming scenarios needing bounded memory. Based on the paper
-//! [Relative Error Streaming Quantiles](https://arxiv.org/abs/2004.01668) by Cormode,
-//! Karnin, Liberty, Thaler and Veselý, and on the Apache DataSketches C++ reference
-//! implementation.
+//! [`ReqSketch`] provides bounded-memory rank, quantile, PMF, and CDF estimates with
+//! configurable relative accuracy at either end of the rank domain. It is based on
+//! [Relative Error Streaming Quantiles](https://arxiv.org/abs/2004.01668) and the Apache
+//! DataSketches C++ implementation.
+//!
+//! # Item ordering
+//!
+//! The REQ paper defines input items as coming from a totally ordered universe. Accordingly,
+//! sketch items must implement [`Ord`]. Rust's `f32` and `f64` do not implement `Ord` because NaN
+//! is unordered; wrap floating-point items in [`ReqFloat`], whose constructor rejects NaN. Signed
+//! zeros compare equal and infinities retain their usual numerical order.
+//!
+//! Custom item types need only [`Clone`] and [`Ord`] for in-memory use. Serialization additionally
+//! requires [`ReqValue`].
+//!
+//! # Example
+//!
+//! ```
+//! use datasketches::req::ReqFloat;
+//! use datasketches::req::ReqSketch;
+//! use datasketches::req::SearchCriteria;
+//!
+//! let mut sketch = ReqSketch::default();
+//! for value in [1.0, 2.0, 3.0] {
+//!     sketch.update(ReqFloat::<f64>::new(value)?);
+//! }
+//!
+//! let median = sketch.quantile(0.5, SearchCriteria::Inclusive)?;
+//! assert_eq!(median.into_inner(), 2.0);
+//! # Ok::<(), datasketches::error::Error>(())
+//! ```
 
 mod compactor;
 mod iter;
@@ -33,6 +59,7 @@ mod value;
 pub use self::iter::ReqSketchIterator;
 pub use self::sketch::ReqSketch;
 pub use self::sorted_view::SortedView;
+pub use self::value::ReqFloat;
 pub use self::value::ReqValue;
 
 /// Default value of `k` if not specified. Roughly 1% relative error at 95% confidence.
@@ -52,13 +79,13 @@ pub enum RankAccuracy {
     LowRank,
 }
 
-/// Whether queries include the weight of the search item.
+/// Selects the rank definition used by rank, quantile, PMF, and CDF queries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SearchCriteria {
-    /// Include the weight of the search item in the result.
+    /// Define rank as the fraction of values less than or equal to the boundary.
     #[default]
     Inclusive,
-    /// Exclude the weight of the search item from the result.
+    /// Define rank as the fraction of values strictly less than the boundary.
     Exclusive,
 }
 

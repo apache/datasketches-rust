@@ -27,12 +27,15 @@ use googletest::prelude::ge;
 use googletest::prelude::le;
 use googletest::prelude::lt;
 
+use super::ReqF64;
+use super::req_f64;
+
 #[test]
 fn bounds_are_nested_and_in_unit_interval() {
-    let mut sketch = ReqSketch::new(12, RankAccuracy::HighRank).unwrap();
+    let mut sketch: ReqSketch<ReqF64> = ReqSketch::new(12, RankAccuracy::HighRank).unwrap();
 
     for i in 0..50_000 {
-        sketch.update(i as f64);
+        sketch.update(req_f64(i as f64));
     }
 
     for rank in [0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99, 0.999] {
@@ -60,18 +63,18 @@ fn bounds_are_nested_and_in_unit_interval() {
 
 #[test]
 fn theoretical_error_bounds_cover_uniform_quantiles() -> Result<(), Error> {
-    let mut sketch = ReqSketch::default();
+    let mut sketch: ReqSketch<ReqF64> = ReqSketch::default();
     let n = 50_000;
 
     for i in 0..n {
-        sketch.update(i as f64);
+        sketch.update(req_f64(i as f64));
     }
 
     for rank in [
         0.01, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.4, 0.5, 0.6, 0.7, 0.75, 0.8, 0.85, 0.9, 0.92,
         0.95, 0.97, 0.98, 0.99, 0.995, 0.999,
     ] {
-        let true_quantile = rank * (n - 1) as f64;
+        let true_quantile = req_f64(rank * (n - 1) as f64);
         let estimated_rank = sketch.rank(&true_quantile, SearchCriteria::Inclusive)?;
         let lower = sketch.rank_lower_bound(rank, 3);
         let upper = sketch.rank_upper_bound(rank, 3);
@@ -84,12 +87,12 @@ fn theoretical_error_bounds_cover_uniform_quantiles() -> Result<(), Error> {
 #[test]
 fn hra_and_lra_bounds_are_tighter_at_their_target_end() -> Result<(), Error> {
     for rank in [0.05, 0.25, 0.5, 0.75, 0.95] {
-        let mut hra = ReqSketch::new(12, RankAccuracy::HighRank).unwrap();
-        let mut lra = ReqSketch::new(12, RankAccuracy::LowRank).unwrap();
+        let mut hra: ReqSketch<ReqF64> = ReqSketch::new(12, RankAccuracy::HighRank).unwrap();
+        let mut lra: ReqSketch<ReqF64> = ReqSketch::new(12, RankAccuracy::LowRank).unwrap();
 
         for i in 0..10_000 {
-            hra.update(i as f64);
-            lra.update(i as f64);
+            hra.update(req_f64(i as f64));
+            lra.update(req_f64(i as f64));
         }
 
         let hra_error =
@@ -109,10 +112,10 @@ fn hra_and_lra_bounds_are_tighter_at_their_target_end() -> Result<(), Error> {
 
 #[test]
 fn exact_mode_bounds_are_tight() {
-    let mut sketch = ReqSketch::default();
+    let mut sketch: ReqSketch<ReqF64> = ReqSketch::default();
 
     for i in 0..20 {
-        sketch.update(i as f64);
+        sketch.update(req_f64(i as f64));
     }
 
     assert!(!sketch.is_estimation_mode());
@@ -126,17 +129,17 @@ fn exact_mode_bounds_are_tight() {
 
 #[test]
 fn high_rank_accuracy_matches_tight_thresholds() {
-    let mut sketch = ReqSketch::default();
+    let mut sketch: ReqSketch<ReqF64> = ReqSketch::default();
     let n = 50_000;
 
     for i in 0..n {
-        sketch.update(i as f64);
+        sketch.update(req_f64(i as f64));
     }
 
     assert_eq!(sketch.n(), n as u64);
 
     for rank in [0.5, 0.9, 0.95, 0.99, 0.999] {
-        let true_quantile = rank * (n - 1) as f64;
+        let true_quantile = req_f64(rank * (n - 1) as f64);
         let estimated_rank = sketch
             .rank(&true_quantile, SearchCriteria::Inclusive)
             .expect("rank should succeed");
