@@ -18,7 +18,6 @@
 //! Iterator implementations for REQ sketch inspection.
 
 use crate::req::compactor::Compactor;
-use crate::req::value::ReqValue;
 
 /// Iterator over (item, weight) pairs in a REQ sketch.
 ///
@@ -26,14 +25,14 @@ use crate::req::value::ReqValue;
 /// which depend on the level of the compactor they're stored in.
 ///
 /// Zero-allocation implementation that works directly with slices.
-pub struct ReqSketchIterator<'a, T: ReqValue> {
+pub struct ReqSketchIterator<'a, T> {
     compactors: &'a [Compactor<T>],
     current_level: usize,
     current_level_iter: Option<std::slice::Iter<'a, T>>,
     current_weight: u64,
 }
 
-impl<'a, T: ReqValue> ReqSketchIterator<'a, T> {
+impl<'a, T: Clone + Ord> ReqSketchIterator<'a, T> {
     /// Creates a new iterator over the compactors.
     pub(super) fn new(compactors: &'a [Compactor<T>]) -> Self {
         let mut iter = Self {
@@ -65,7 +64,7 @@ impl<'a, T: ReqValue> ReqSketchIterator<'a, T> {
     }
 }
 
-impl<T: ReqValue> Iterator for ReqSketchIterator<'_, T> {
+impl<T: Clone + Ord> Iterator for ReqSketchIterator<'_, T> {
     type Item = (T, u64);
 
     fn next(&mut self) -> Option<Self::Item> {

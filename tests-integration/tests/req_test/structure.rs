@@ -26,11 +26,14 @@ use googletest::prelude::gt;
 use googletest::prelude::le;
 use googletest::prelude::predicate;
 
+use super::ReqF64;
+use super::req_f64;
+
 #[test]
 fn iterator_weights_sum_to_n_and_items_are_in_range() {
-    let mut sketch = ReqSketch::default();
+    let mut sketch: ReqSketch<ReqF64> = ReqSketch::default();
     for i in 0..1000 {
-        sketch.update(i as f64);
+        sketch.update(req_f64(i as f64));
     }
 
     let total_weight: u64 = sketch.iter().map(|(_, weight)| weight).sum();
@@ -46,12 +49,12 @@ fn iterator_weights_sum_to_n_and_items_are_in_range() {
 #[test]
 fn small_sketch_iterator_reports_unit_weights() {
     // Below the compaction threshold every retained item still has weight 1.
-    let mut sketch = ReqSketch::default();
+    let mut sketch: ReqSketch<ReqF64> = ReqSketch::default();
     for i in 0..10 {
-        sketch.update(i as f64);
+        sketch.update(req_f64(i as f64));
     }
 
-    let items: Vec<(f64, u64)> = sketch.iter().collect();
+    let items: Vec<(ReqF64, u64)> = sketch.iter().collect();
     assert_eq!(items.len(), 10);
     let weights: Vec<_> = items.iter().map(|&(_, weight)| weight).collect();
     assert_that!(weights, each(eq(&1)));
@@ -59,7 +62,7 @@ fn small_sketch_iterator_reports_unit_weights() {
 
 #[test]
 fn empty_sketch_iterator_yields_nothing() {
-    let sketch: ReqSketch<i32> = ReqSketch::default();
+    let sketch: ReqSketch<ReqF64> = ReqSketch::default();
     assert_eq!(sketch.iter().count(), 0);
 }
 
@@ -67,9 +70,9 @@ fn empty_sketch_iterator_yields_nothing() {
 fn compaction_promotes_surviving_items_to_higher_weights() {
     // After enough updates to trigger compaction, surviving items are promoted up a
     // level at double weight, so the maximum item weight exceeds 1.
-    let mut sketch = ReqSketch::default();
+    let mut sketch: ReqSketch<ReqF64> = ReqSketch::default();
     for i in 0..100_000 {
-        sketch.update(i as f64);
+        sketch.update(req_f64(i as f64));
     }
 
     let max_weight = sketch.iter().map(|(_, weight)| weight).max().unwrap();

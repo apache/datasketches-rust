@@ -19,10 +19,8 @@
 
 use crate::error::Error;
 use crate::req::SearchCriteria;
-use crate::req::value::ReqValue;
 
-/// An owned, sorted snapshot of a [`ReqSketch`](crate::req::ReqSketch)'s items with
-/// their cumulative weights.
+/// An owned, sorted snapshot of a [`ReqSketch`](crate::req::ReqSketch).
 ///
 /// Obtain one with [`ReqSketch::sorted_view`](crate::req::ReqSketch::sorted_view).
 /// The view is independent of the sketch: it can be queried (and sent to other
@@ -42,7 +40,7 @@ pub struct SortedView<T> {
 
 impl<T> SortedView<T>
 where
-    T: ReqValue,
+    T: Clone + Ord,
 {
     /// Creates a new sorted view from weighted items.
     ///
@@ -60,7 +58,7 @@ where
         }
 
         // Sort by item value - use unstable sort for better performance
-        weighted_items.sort_unstable_by(|a, b| a.0.total_cmp(&b.0));
+        weighted_items.sort_unstable_by(|a, b| a.0.cmp(&b.0));
 
         let mut items: Vec<T> = Vec::with_capacity(weighted_items.len());
         let mut cumulative_weights = Vec::with_capacity(weighted_items.len());
@@ -68,7 +66,7 @@ where
 
         for (item, weight) in weighted_items {
             if let Some(last) = items.last() {
-                if matches!(last.total_cmp(&item), std::cmp::Ordering::Equal) {
+                if last == &item {
                     cumulative_weight += weight;
                     let last_idx = cumulative_weights.len() - 1;
                     cumulative_weights[last_idx] = cumulative_weight;
@@ -102,27 +100,20 @@ where
         self.total_weight
     }
 
-    /// Returns the approximate normalized rank of the given item in `[0.0, 1.0]`.
-    ///
-    /// # Arguments
-    /// * `item` - The item to find the rank for
-    /// * `criteria` - Whether to include the item's weight in the rank
+    /// Returns the approximate normalized rank of `item` in `[0.0, 1.0]`.
     ///
     /// # Errors
-    /// Returns an error if the view is empty or `item` is NaN.
+    ///
+    /// Returns an error if the view is empty.
     pub fn rank(&self, item: &T, criteria: SearchCriteria) -> Result<f64, Error> {
         if self.is_empty() {
             return Err(Error::invalid_argument("sketch is empty"));
         }
-        if item.is_nan() {
-            return Err(Error::invalid_argument("query item is NaN"));
-        }
-
         match criteria {
             SearchCriteria::Inclusive => {
                 // Find the last position where items[i] <= item
                 // partition_point finds first index where predicate is false
-                let pos = self.items.partition_point(|x| x.total_cmp(item).is_le());
+                let pos = self.items.partition_point(|x| x <= item);
                 if pos == 0 {
                     Ok(0.0)
                 } else {
@@ -131,7 +122,7 @@ where
             }
             SearchCriteria::Exclusive => {
                 // Find the last position where items[i] < item
-                let pos = self.items.partition_point(|x| x.total_cmp(item).is_lt());
+                let pos = self.items.partition_point(|x| x < item);
                 if pos == 0 {
                     Ok(0.0)
                 } else {
@@ -141,14 +132,11 @@ where
         }
     }
 
-    /// Returns the approximate quantile for the given normalized rank.
+    /// Returns the approximate quantile at the given normalized rank.
     ///
-    /// # Arguments
-    /// * `rank` - A normalized rank in [0.0, 1.0]
-    /// * `criteria` - Search criteria for quantile selection
+    /// # Errors
     ///
-    /// # Returns
-    /// The item at approximately the given rank
+    /// Returns an error if the view is empty or `rank` is outside `[0.0, 1.0]`.
     pub fn quantile(&self, rank: f64, criteria: SearchCriteria) -> Result<T, Error> {
         if self.is_empty() {
             return Err(Error::invalid_argument("sketch is empty"));
@@ -199,14 +187,13 @@ where
         Ok(self.items[index].clone())
     }
 
-    /// Returns the Probability Mass Function (PMF) for the given split points.
+    /// Returns the probability mass function (PMF) over the given split points.
     ///
-    /// # Arguments
-    /// * `split_points` - Array of split points that divide the domain
-    /// * `criteria` - Search criteria for boundary handling
+    /// The result contains one more value than `split_points`.
     ///
-    /// # Returns
-    /// Array of probabilities for each interval defined by the split points
+    /// # Errors
+    ///
+    /// Returns an error if the view is empty or the split points are not strictly increasing.
     pub fn pmf(&self, split_points: &[T], criteria: SearchCriteria) -> Result<Vec<f64>, Error> {
         if self.is_empty() {
             return Err(Error::invalid_argument("sketch is empty"));
@@ -229,14 +216,13 @@ where
         Ok(result)
     }
 
-    /// Returns the Cumulative Distribution Function (CDF) for the given split points.
+    /// Returns the cumulative distribution function (CDF) over the given split points.
     ///
-    /// # Arguments
-    /// * `split_points` - Array of split points that divide the domain
-    /// * `criteria` - Search criteria for boundary handling
+    /// The result contains one more value than `split_points` and ends at `1.0`.
     ///
-    /// # Returns
-    /// Array of cumulative probabilities at each split point
+    /// # Errors
+    ///
+    /// Returns an error if the view is empty or the split points are not strictly increasing.
     pub fn cdf(&self, split_points: &[T], criteria: SearchCriteria) -> Result<Vec<f64>, Error> {
         if self.is_empty() {
             return Err(Error::invalid_argument("sketch is empty"));
@@ -256,16 +242,11 @@ where
         Ok(result)
     }
 
-    // Private helper methods
-
     fn validate_split_points(&self, split_points: &[T]) -> Result<(), Error> {
-        // Check that split points are monotonically increasing
-        for i in 1..split_points.len() {
-            if split_points[i - 1].total_cmp(&split_points[i]).is_ge() {
-                return Err(Error::invalid_argument(
-                    "Split points must be unique and monotonically increasing".to_string(),
-                ));
-            }
+        if split_points.windows(2).any(|pair| pair[0] >= pair[1]) {
+            return Err(Error::invalid_argument(
+                "Split points must be unique and monotonically increasing".to_string(),
+            ));
         }
         Ok(())
     }

@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! REQ sketch — generic over `T: ReqValue`.
+//! Generic REQ sketch implementation.
 
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
@@ -45,9 +45,9 @@ use crate::req::value::ReqValue;
 
 /// A Relative Error Quantiles sketch for approximate quantile estimation.
 ///
-/// See the [module-level documentation](super) for background.
+/// See the [module level documentation](super) for item ordering and floating-point requirements.
 #[derive(Debug, Clone)]
-pub struct ReqSketch<T: ReqValue> {
+pub struct ReqSketch<T> {
     k: u16,
     rank_accuracy: RankAccuracy,
     n: u64,
@@ -59,14 +59,22 @@ pub struct ReqSketch<T: ReqValue> {
     max_item: Option<T>,
 }
 
-impl<T: ReqValue> Default for ReqSketch<T> {
+impl<T> Default for ReqSketch<T>
+where
+    T: Clone + Ord,
+{
     fn default() -> Self {
         Self::make(DEFAULT_K, RankAccuracy::HighRank)
     }
 }
 
-impl<T: ReqValue> ReqSketch<T> {
-    /// Creates a new sketch with the given `k` and rank accuracy.
+impl<T> ReqSketch<T>
+where
+    T: Clone + Ord,
+{
+    /// Creates a sketch with the given `k` and rank-accuracy mode.
+    ///
+    /// Larger `k` improves accuracy at the cost of retained memory.
     ///
     /// # Errors
     ///
@@ -93,7 +101,7 @@ impl<T: ReqValue> ReqSketch<T> {
         self.rank_accuracy
     }
 
-    /// Returns the total number of items observed (matches C++ `get_n`).
+    /// Returns the total number of items observed.
     pub fn n(&self) -> u64 {
         self.n
     }
@@ -124,21 +132,15 @@ impl<T: ReqValue> ReqSketch<T> {
     }
 
     /// Updates the sketch with a new item.
-    ///
-    /// NaN inputs are silently ignored for floating-point types, matching the behavior
-    /// of the Java reference implementation (`checkNaNUpdate`). This is intentional.
     pub fn update(&mut self, item: T) {
-        if item.is_nan() {
-            return;
-        }
         match &mut self.min_item {
             None => self.min_item = Some(item.clone()),
-            Some(cur) if item.total_cmp(cur).is_lt() => *cur = item.clone(),
+            Some(cur) if item.cmp(cur).is_lt() => *cur = item.clone(),
             _ => {}
         }
         match &mut self.max_item {
             None => self.max_item = Some(item.clone()),
-            Some(cur) if item.total_cmp(cur).is_gt() => *cur = item.clone(),
+            Some(cur) if item.cmp(cur).is_gt() => *cur = item.clone(),
             _ => {}
         }
 
@@ -174,13 +176,11 @@ impl<T: ReqValue> ReqSketch<T> {
     /// [`SortedView::rank`] on [`Self::sorted_view`].
     ///
     /// # Errors
-    /// Returns an error if the sketch is empty or `item` is NaN.
+    ///
+    /// Returns an error if the sketch is empty.
     pub fn rank(&self, item: &T, criteria: SearchCriteria) -> Result<f64, Error> {
         if self.is_empty() {
             return Err(Error::invalid_argument("sketch is empty"));
-        }
-        if item.is_nan() {
-            return Err(Error::invalid_argument("query item is NaN"));
         }
         let inclusive = matches!(criteria, SearchCriteria::Inclusive);
         let weight: u64 = self
@@ -195,6 +195,10 @@ impl<T: ReqValue> ReqSketch<T> {
     ///
     /// Builds a transient [`SortedView`] internally. For repeated quantile
     /// queries, take one snapshot with [`Self::sorted_view`] and query it.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the sketch is empty or `rank` is outside `[0.0, 1.0]`.
     pub fn quantile(&self, rank: f64, criteria: SearchCriteria) -> Result<T, Error> {
         if self.is_empty() {
             return Err(Error::invalid_argument("sketch is empty"));
@@ -210,6 +214,10 @@ impl<T: ReqValue> ReqSketch<T> {
     /// Returns approximate quantiles for the given normalized ranks.
     ///
     /// The sorted view is built once and shared across all ranks.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the sketch is empty or any rank is outside `[0.0, 1.0]`.
     pub fn quantiles(&self, ranks: &[f64], criteria: SearchCriteria) -> Result<Vec<T>, Error> {
         if self.is_empty() {
             return Err(Error::invalid_argument("sketch is empty"));
@@ -227,6 +235,10 @@ impl<T: ReqValue> ReqSketch<T> {
     }
 
     /// Returns the Probability Mass Function over the given split points.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the sketch is empty or the split points are not strictly increasing.
     pub fn pmf(&self, split_points: &[T], criteria: SearchCriteria) -> Result<Vec<f64>, Error> {
         if self.is_empty() {
             return Err(Error::invalid_argument("sketch is empty"));
@@ -235,6 +247,10 @@ impl<T: ReqValue> ReqSketch<T> {
     }
 
     /// Returns the Cumulative Distribution Function over the given split points.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the sketch is empty or the split points are not strictly increasing.
     pub fn cdf(&self, split_points: &[T], criteria: SearchCriteria) -> Result<Vec<f64>, Error> {
         if self.is_empty() {
             return Err(Error::invalid_argument("sketch is empty"));
@@ -269,6 +285,26 @@ impl<T: ReqValue> ReqSketch<T> {
     /// # Errors
     ///
     /// Returns an error if the two sketches have different `rank_accuracy`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::req::ReqFloat;
+    /// use datasketches::req::ReqSketch;
+    ///
+    /// let mut first = ReqSketch::default();
+    /// first.update(ReqFloat::<f64>::new(1.0)?);
+    ///
+    /// let mut second = ReqSketch::default();
+    /// second.update(ReqFloat::<f64>::new(2.0)?);
+    ///
+    /// let mut combined = ReqSketch::default();
+    /// combined.merge(&first).unwrap();
+    /// combined.merge(&second).unwrap();
+    ///
+    /// assert_eq!(combined.n(), 2);
+    /// # Ok::<(), datasketches::error::Error>(())
+    /// ```
     pub fn merge(&mut self, other: &Self) -> Result<(), Error> {
         if self.rank_accuracy != other.rank_accuracy {
             return Err(Error::invalid_argument(
@@ -285,14 +321,14 @@ impl<T: ReqValue> ReqSketch<T> {
         if let Some(m) = &other.min_item {
             match &self.min_item {
                 None => self.min_item = Some(m.clone()),
-                Some(cur) if m.total_cmp(cur).is_lt() => self.min_item = Some(m.clone()),
+                Some(cur) if m.cmp(cur).is_lt() => self.min_item = Some(m.clone()),
                 _ => {}
             }
         }
         if let Some(m) = &other.max_item {
             match &self.max_item {
                 None => self.max_item = Some(m.clone()),
-                Some(cur) if m.total_cmp(cur).is_gt() => self.max_item = Some(m.clone()),
+                Some(cur) if m.cmp(cur).is_gt() => self.max_item = Some(m.clone()),
                 _ => {}
             }
         }
@@ -455,8 +491,11 @@ impl<T: ReqValue> ReqSketch<T> {
         self.n <= RAW_ITEMS_THRESHOLD && self.compactors.len() == 1
     }
 
-    /// Number of bytes required to serialize the sketch.
-    pub fn serialized_size_bytes(&self) -> usize {
+    /// Returns the number of bytes required to serialize the sketch.
+    pub fn serialized_size_bytes(&self) -> usize
+    where
+        T: ReqValue,
+    {
         // Fixed sketch preamble: 8 bytes (preamble_ints, serial_version, family,
         // flags, k(2), num_levels, num_raw_items).
         let mut size = 8usize;
@@ -484,8 +523,11 @@ impl<T: ReqValue> ReqSketch<T> {
         size
     }
 
-    /// Serialize the sketch into a `Vec<u8>` matching the C++/Java REQ wire format.
-    pub fn serialize(&self) -> Vec<u8> {
+    /// Serializes the sketch using the C++/Java-compatible REQ wire format.
+    pub fn serialize(&self) -> Vec<u8>
+    where
+        T: ReqValue,
+    {
         let mut out = SketchBytes::with_capacity(self.serialized_size_bytes());
         let preamble_ints = if self.is_estimation_mode() {
             PREAMBLE_INTS_ESTIMATION
@@ -536,7 +578,10 @@ impl<T: ReqValue> ReqSketch<T> {
     ///
     /// Returns an error if the input is truncated or contains an inconsistent
     /// REQ serialized state.
-    pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
+    pub fn deserialize(bytes: &[u8]) -> Result<Self, Error>
+    where
+        T: ReqValue,
+    {
         let mut cursor = SketchSlice::new(bytes);
         let preamble_ints = cursor
             .read_u8()
@@ -628,10 +673,7 @@ impl<T: ReqValue> ReqSketch<T> {
             max_item = Some(T::deserialize_value(&mut cursor)?);
             let min = min_item.as_ref().unwrap();
             let max = max_item.as_ref().unwrap();
-            if min.is_nan() || max.is_nan() {
-                return Err(Error::deserial("REQ sketch min or max item is NaN"));
-            }
-            if min.total_cmp(max).is_gt() {
+            if min > max {
                 return Err(Error::deserial(
                     "REQ sketch min item is greater than max item",
                 ));
@@ -647,7 +689,7 @@ impl<T: ReqValue> ReqSketch<T> {
                 items.push(T::deserialize_value(&mut cursor)?);
             }
             let c =
-                Compactor::<T>::raw_items_compactor(k, rank_accuracy, items, is_level_zero_sorted)?;
+                Compactor::<T>::raw_items_compactor(k, rank_accuracy, items, is_level_zero_sorted);
             compactors.push(c);
         } else {
             for i in 0..num_levels {
@@ -667,10 +709,10 @@ impl<T: ReqValue> ReqSketch<T> {
                 let mut mn = first.clone();
                 let mut mx = first.clone();
                 for x in iter {
-                    if x.total_cmp(&mn).is_lt() {
+                    if x < &mn {
                         mn = x.clone();
                     }
-                    if x.total_cmp(&mx).is_gt() {
+                    if x > &mx {
                         mx = x.clone();
                     }
                 }

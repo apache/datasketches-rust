@@ -27,11 +27,14 @@ use googletest::prelude::le;
 use googletest::prelude::lt;
 use googletest::prelude::near;
 
+use super::ReqF64;
+use super::req_f64;
+
 #[test]
 fn exact_mode_rank_quantile_pmf_and_cdf_match_reference() {
-    let mut sketch = ReqSketch::default();
+    let mut sketch: ReqSketch<ReqF64> = ReqSketch::default();
     for i in 1..=10 {
-        sketch.update(i as f32);
+        sketch.update(req_f64(i as f64));
     }
 
     assert!(!sketch.is_estimation_mode());
@@ -41,7 +44,7 @@ fn exact_mode_rank_quantile_pmf_and_cdf_match_reference() {
     for (value, expected) in [(1.0, 0.0), (2.0, 0.1), (6.0, 0.5), (9.0, 0.8), (10.0, 0.9)] {
         assert_that!(
             sketch
-                .rank(&value, SearchCriteria::Exclusive)
+                .rank(&req_f64(value), SearchCriteria::Exclusive)
                 .expect("rank should succeed"),
             near(expected, 1e-6)
         );
@@ -50,31 +53,31 @@ fn exact_mode_rank_quantile_pmf_and_cdf_match_reference() {
     for (value, expected) in [(1.0, 0.1), (2.0, 0.2), (5.0, 0.5), (9.0, 0.9), (10.0, 1.0)] {
         assert_that!(
             sketch
-                .rank(&value, SearchCriteria::Inclusive)
+                .rank(&req_f64(value), SearchCriteria::Inclusive)
                 .expect("rank should succeed"),
             near(expected, 1e-6)
         );
     }
 
     for (rank, expected) in [(0.0, 1.0), (0.1, 2.0), (0.5, 6.0), (0.9, 10.0), (1.0, 10.0)] {
-        assert_that!(
-            sketch
+        assert_eq!(
+            *sketch
                 .quantile(rank, SearchCriteria::Exclusive)
                 .expect("quantile should succeed"),
-            near(expected, 1e-6)
+            expected
         );
     }
 
     for (rank, expected) in [(0.0, 1.0), (0.1, 1.0), (0.5, 5.0), (0.9, 9.0), (1.0, 10.0)] {
-        assert_that!(
-            sketch
+        assert_eq!(
+            *sketch
                 .quantile(rank, SearchCriteria::Inclusive)
                 .expect("quantile should succeed"),
-            near(expected, 1e-6)
+            expected
         );
     }
 
-    let splits = [2.0, 6.0, 9.0];
+    let splits = [2.0, 6.0, 9.0].map(req_f64);
     let cdf = sketch
         .cdf(&splits, SearchCriteria::Exclusive)
         .expect("cdf should succeed");
@@ -94,12 +97,12 @@ fn exact_mode_rank_quantile_pmf_and_cdf_match_reference() {
 
 #[test]
 fn pmf_and_cdf_are_consistent() {
-    let mut sketch = ReqSketch::default();
+    let mut sketch: ReqSketch<ReqF64> = ReqSketch::default();
     for i in 0..1000 {
-        sketch.update(i as f64);
+        sketch.update(req_f64(i as f64));
     }
 
-    let split_points = [100.0, 300.0, 500.0, 700.0, 900.0];
+    let split_points = [100.0, 300.0, 500.0, 700.0, 900.0].map(req_f64);
     let pmf = sketch
         .pmf(&split_points, SearchCriteria::Inclusive)
         .expect("pmf should succeed");
@@ -119,12 +122,12 @@ fn pmf_and_cdf_are_consistent() {
 
 #[test]
 fn rank_is_monotonic_and_bounded() {
-    let mut sketch = ReqSketch::default();
+    let mut sketch: ReqSketch<ReqF64> = ReqSketch::default();
     for i in 0..10_000 {
-        sketch.update(i as f64);
+        sketch.update(req_f64(i as f64));
     }
 
-    let test_values: Vec<f64> = (0..10_000).step_by(1000).map(|i| i as f64).collect();
+    let test_values = (0..10_000).step_by(1000).map(|value| req_f64(value as f64));
     let mut last_rank = 0.0;
 
     for value in test_values {
@@ -139,9 +142,9 @@ fn rank_is_monotonic_and_bounded() {
 
 #[test]
 fn quantiles_are_monotonic() -> Result<(), Error> {
-    let mut sketch = ReqSketch::default();
+    let mut sketch: ReqSketch<ReqF64> = ReqSketch::default();
     for i in 0..10_000 {
-        sketch.update(i as f64);
+        sketch.update(req_f64(i as f64));
     }
 
     let ranks = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9];
@@ -149,8 +152,8 @@ fn quantiles_are_monotonic() -> Result<(), Error> {
 
     for rank in ranks {
         let quantile = sketch.quantile(rank, SearchCriteria::Inclusive)?;
-        assert_that!(quantile, ge(previous));
-        previous = quantile;
+        assert_that!(*quantile, ge(previous));
+        previous = *quantile;
     }
 
     Ok(())
@@ -158,9 +161,9 @@ fn quantiles_are_monotonic() -> Result<(), Error> {
 
 #[test]
 fn rank_quantile_round_trip_is_consistent() -> Result<(), Error> {
-    let mut sketch = ReqSketch::default();
+    let mut sketch: ReqSketch<ReqF64> = ReqSketch::default();
     for i in 0..10_000 {
-        sketch.update(i as f64);
+        sketch.update(req_f64(i as f64));
     }
 
     for target_rank in [0.1, 0.25, 0.5, 0.75, 0.9] {
@@ -175,12 +178,12 @@ fn rank_quantile_round_trip_is_consistent() -> Result<(), Error> {
 
 #[test]
 fn search_criteria_rank_consistency() -> Result<(), Error> {
-    let mut sketch = ReqSketch::default();
+    let mut sketch: ReqSketch<ReqF64> = ReqSketch::default();
     for i in 0..1000 {
-        sketch.update(i as f64);
+        sketch.update(req_f64(i as f64));
     }
 
-    for value in [100.0, 250.0, 500.0, 750.0] {
+    for value in [100.0, 250.0, 500.0, 750.0].map(req_f64) {
         let inclusive_rank = sketch.rank(&value, SearchCriteria::Inclusive)?;
         let exclusive_rank = sketch.rank(&value, SearchCriteria::Exclusive)?;
 
@@ -188,6 +191,28 @@ fn search_criteria_rank_consistency() -> Result<(), Error> {
         assert_that!(inclusive_rank, all!(ge(0.0), le(1.0)));
         assert_that!(exclusive_rank, all!(ge(0.0), le(1.0)));
     }
+
+    Ok(())
+}
+
+#[test]
+fn signed_zeros_share_rank_and_cannot_be_distinct_splits() -> Result<(), Error> {
+    let mut sketch: ReqSketch<ReqF64> = ReqSketch::default();
+    let negative_zero = req_f64(-0.0);
+    let positive_zero = req_f64(0.0);
+    sketch.update(negative_zero);
+    sketch.update(positive_zero);
+
+    for value in [negative_zero, positive_zero] {
+        assert_eq!(sketch.rank(&value, SearchCriteria::Exclusive)?, 0.0);
+        assert_eq!(sketch.rank(&value, SearchCriteria::Inclusive)?, 1.0);
+    }
+
+    assert!(
+        sketch
+            .pmf(&[negative_zero, positive_zero], SearchCriteria::Inclusive)
+            .is_err()
+    );
 
     Ok(())
 }
