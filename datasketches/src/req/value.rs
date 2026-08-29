@@ -18,9 +18,11 @@
 //! Trait for types storable in a [`ReqSketch`](crate::req::ReqSketch).
 
 use std::cmp::Ordering;
+use std::mem::size_of;
 
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
+use crate::codec::assert::insufficient_data;
 use crate::error::Error;
 
 /// Trait for types that can be stored in a [`ReqSketch`](crate::req::ReqSketch).
@@ -50,78 +52,141 @@ pub trait ReqValue: Sized + Clone + PartialOrd {
     fn deserialize_value(cursor: &mut SketchSlice<'_>) -> Result<Self, Error>;
 }
 
-macro_rules! impl_req_value_primitive {
-    // Form with explicit is_nan body (for float types).
-    ($t:ty, $read:ident, $write:ident, $cmp:expr, nan: $nan:expr) => {
-        impl ReqValue for $t {
-            #[inline(always)]
-            fn compare(&self, other: &Self) -> Ordering {
-                $cmp(self, other)
-            }
+impl ReqValue for i32 {
+    #[inline(always)]
+    fn compare(&self, other: &Self) -> Ordering {
+        self.cmp(other)
+    }
 
-            fn serialize_size(_item: &Self) -> usize {
-                std::mem::size_of::<$t>()
-            }
+    fn serialize_size(_item: &Self) -> usize {
+        size_of::<Self>()
+    }
 
-            fn serialize_value(&self, bytes: &mut SketchBytes) {
-                bytes.$write(*self);
-            }
+    fn serialize_value(&self, bytes: &mut SketchBytes) {
+        bytes.write_i32_le(*self);
+    }
 
-            fn deserialize_value(cursor: &mut SketchSlice<'_>) -> Result<Self, Error> {
-                cursor.$read().map_err(|_| {
-                    Error::insufficient_data(concat!(
-                        "failed to read ",
-                        stringify!($t),
-                        " from REQ sketch"
-                    ))
-                })
-            }
-
-            #[inline(always)]
-            fn is_nan(&self) -> bool {
-                $nan(self)
-            }
-        }
-    };
-    // Form without is_nan (for integer types — default returns false).
-    ($t:ty, $read:ident, $write:ident, $cmp:expr) => {
-        impl ReqValue for $t {
-            #[inline(always)]
-            fn compare(&self, other: &Self) -> Ordering {
-                $cmp(self, other)
-            }
-
-            fn serialize_size(_item: &Self) -> usize {
-                std::mem::size_of::<$t>()
-            }
-
-            fn serialize_value(&self, bytes: &mut SketchBytes) {
-                bytes.$write(*self);
-            }
-
-            fn deserialize_value(cursor: &mut SketchSlice<'_>) -> Result<Self, Error> {
-                cursor.$read().map_err(|_| {
-                    Error::insufficient_data(concat!(
-                        "failed to read ",
-                        stringify!($t),
-                        " from REQ sketch"
-                    ))
-                })
-            }
-        }
-    };
+    fn deserialize_value(cursor: &mut SketchSlice<'_>) -> Result<Self, Error> {
+        cursor
+            .read_i32_le()
+            .map_err(insufficient_data("failed to read i32 from REQ sketch"))
+    }
 }
 
-impl_req_value_primitive!(i32, read_i32_le, write_i32_le, Ord::cmp);
-impl_req_value_primitive!(i64, read_i64_le, write_i64_le, Ord::cmp);
-impl_req_value_primitive!(u32, read_u32_le, write_u32_le, Ord::cmp);
-impl_req_value_primitive!(u64, read_u64_le, write_u64_le, Ord::cmp);
-impl_req_value_primitive!(f32, read_f32_le, write_f32_le,
-    |left: &f32, right: &f32| left.partial_cmp(right).expect("REQ values must not be NaN"),
-    nan: |x: &f32| f32::is_nan(*x));
-impl_req_value_primitive!(f64, read_f64_le, write_f64_le,
-    |left: &f64, right: &f64| left.partial_cmp(right).expect("REQ values must not be NaN"),
-    nan: |x: &f64| f64::is_nan(*x));
+impl ReqValue for i64 {
+    #[inline(always)]
+    fn compare(&self, other: &Self) -> Ordering {
+        self.cmp(other)
+    }
+
+    fn serialize_size(_item: &Self) -> usize {
+        size_of::<Self>()
+    }
+
+    fn serialize_value(&self, bytes: &mut SketchBytes) {
+        bytes.write_i64_le(*self);
+    }
+
+    fn deserialize_value(cursor: &mut SketchSlice<'_>) -> Result<Self, Error> {
+        cursor
+            .read_i64_le()
+            .map_err(insufficient_data("failed to read i64 from REQ sketch"))
+    }
+}
+
+impl ReqValue for u32 {
+    #[inline(always)]
+    fn compare(&self, other: &Self) -> Ordering {
+        self.cmp(other)
+    }
+
+    fn serialize_size(_item: &Self) -> usize {
+        size_of::<Self>()
+    }
+
+    fn serialize_value(&self, bytes: &mut SketchBytes) {
+        bytes.write_u32_le(*self);
+    }
+
+    fn deserialize_value(cursor: &mut SketchSlice<'_>) -> Result<Self, Error> {
+        cursor
+            .read_u32_le()
+            .map_err(insufficient_data("failed to read u32 from REQ sketch"))
+    }
+}
+
+impl ReqValue for u64 {
+    #[inline(always)]
+    fn compare(&self, other: &Self) -> Ordering {
+        self.cmp(other)
+    }
+
+    fn serialize_size(_item: &Self) -> usize {
+        size_of::<Self>()
+    }
+
+    fn serialize_value(&self, bytes: &mut SketchBytes) {
+        bytes.write_u64_le(*self);
+    }
+
+    fn deserialize_value(cursor: &mut SketchSlice<'_>) -> Result<Self, Error> {
+        cursor
+            .read_u64_le()
+            .map_err(insufficient_data("failed to read u64 from REQ sketch"))
+    }
+}
+
+impl ReqValue for f32 {
+    #[inline(always)]
+    fn compare(&self, other: &Self) -> Ordering {
+        self.partial_cmp(other).unwrap()
+    }
+
+    #[inline(always)]
+    fn is_nan(&self) -> bool {
+        f32::is_nan(*self)
+    }
+
+    fn serialize_size(_item: &Self) -> usize {
+        size_of::<Self>()
+    }
+
+    fn serialize_value(&self, bytes: &mut SketchBytes) {
+        bytes.write_f32_le(*self);
+    }
+
+    fn deserialize_value(cursor: &mut SketchSlice<'_>) -> Result<Self, Error> {
+        cursor
+            .read_f32_le()
+            .map_err(insufficient_data("failed to read f32 from REQ sketch"))
+    }
+}
+
+impl ReqValue for f64 {
+    #[inline(always)]
+    fn compare(&self, other: &Self) -> Ordering {
+        self.partial_cmp(other).unwrap()
+    }
+
+    #[inline(always)]
+    fn is_nan(&self) -> bool {
+        f64::is_nan(*self)
+    }
+
+    fn serialize_size(_item: &Self) -> usize {
+        size_of::<Self>()
+    }
+
+    fn serialize_value(&self, bytes: &mut SketchBytes) {
+        bytes.write_f64_le(*self);
+    }
+
+    fn deserialize_value(cursor: &mut SketchSlice<'_>) -> Result<Self, Error> {
+        cursor
+            .read_f64_le()
+            .map_err(insufficient_data("failed to read f64 from REQ sketch"))
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -186,7 +251,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "REQ values must not be NaN")]
+    #[should_panic]
     fn compare_for_floats_rejects_nan() {
         <f64 as ReqValue>::compare(&f64::NAN, &0.0);
     }
