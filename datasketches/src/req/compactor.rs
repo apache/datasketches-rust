@@ -476,7 +476,6 @@ where
 }
 
 #[cfg(test)]
-#[cfg(test)]
 mod tests {
     use googletest::assert_that;
     use googletest::prelude::ge;
