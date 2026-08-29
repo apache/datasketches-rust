@@ -15,10 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use std::cell::Cell;
-use std::time::SystemTime;
-use std::time::UNIX_EPOCH;
-
 const POWERS_OF_THREE: [u64; 31] = [
     1,
     3,
@@ -100,27 +96,4 @@ pub(super) fn sum_the_sample_weights(level_sizes: &[usize]) -> u64 {
         weight <<= 1;
     }
     total
-}
-
-fn seed() -> u64 {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-    nanos as u64
-}
-
-pub(super) fn random_bit() -> u32 {
-    thread_local! {
-        static RNG_STATE: Cell<u64> = Cell::new(seed());
-    }
-
-    RNG_STATE.with(|state| {
-        let mut x = state.get();
-        x ^= x << 13;
-        x ^= x >> 7;
-        x ^= x << 17;
-        state.set(x);
-        (x & 1) as u32
-    })
 }
