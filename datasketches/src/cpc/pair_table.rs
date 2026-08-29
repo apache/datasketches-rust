@@ -27,7 +27,7 @@ const DOWNSIZE_DENOMINATOR: u32 = 4;
 /// This table stores `(row, col)` pairs and uses linear probing for collision resolution. It is
 /// optimized for scenarios where the cardinality of entries is low.
 #[derive(Debug, Clone)]
-pub(super) struct PairTable {
+pub struct PairTable {
     /// log2 of number of slots
     lg_size: u8,
     num_valid_bits: u8,

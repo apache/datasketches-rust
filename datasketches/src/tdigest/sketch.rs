@@ -1544,15 +1544,15 @@ fn checked_weight_sum(total_weight: u64, weight: u64) -> Result<u64, Error> {
 ///
 /// Corresponds to K_2 in the reference implementation
 mod scale_function {
-    pub(super) fn max(q: f64, normalizer: f64) -> f64 {
+    pub fn max(q: f64, normalizer: f64) -> f64 {
         q * (1. - q) / normalizer
     }
 
-    pub(super) fn normalizer(compression: f64, n: f64) -> f64 {
+    pub fn normalizer(compression: f64, n: f64) -> f64 {
         compression / z(compression, n)
     }
 
-    pub(super) fn z(compression: f64, n: f64) -> f64 {
+    pub fn z(compression: f64, n: f64) -> f64 {
         4. * (n / compression).ln() + 24.
     }
 }

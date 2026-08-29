@@ -470,7 +470,7 @@ where
             .sum()
     }
 
-    pub(super) fn flags_byte(&self) -> u8 {
+    fn flags_byte(&self) -> u8 {
         let mut flags = 0u8;
         if self.is_empty() {
             flags |= FLAG_IS_EMPTY;
@@ -487,7 +487,7 @@ where
         flags
     }
 
-    pub(super) fn is_raw_items(&self) -> bool {
+    fn is_raw_items(&self) -> bool {
         self.n <= RAW_ITEMS_THRESHOLD && self.compactors.len() == 1
     }
 

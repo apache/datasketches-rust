@@ -123,22 +123,22 @@ impl Array8 {
     }
 
     /// Get read access to register values (one byte per register)
-    pub(super) fn values(&self) -> &[u8] {
+    pub fn values(&self) -> &[u8] {
         &self.bytes
     }
 
     /// Get the number of registers (K = 2^lg_config_k)
-    pub(super) fn num_registers(&self) -> usize {
+    pub fn num_registers(&self) -> usize {
         1 << self.lg_config_k
     }
 
     /// Returns the estimate state independently from register-derived cached values.
-    pub(super) fn estimate_state(&self) -> EstimateState {
+    pub fn estimate_state(&self) -> EstimateState {
         self.estimator.estimate_state()
     }
 
     /// Restores estimate state after copying or transforming the same logical sketch.
-    pub(super) fn restore_estimate_state(&mut self, state: EstimateState) {
+    pub fn restore_estimate_state(&mut self, state: EstimateState) {
         self.estimator.restore_estimate_state(state);
     }
 
@@ -146,7 +146,7 @@ impl Array8 {
     ///
     /// This bypasses the normal update path and directly modifies the register.
     /// Caller must call rebuild_estimator_from_registers() after all modifications.
-    pub(super) fn set_register(&mut self, slot: usize, value: u8) {
+    pub fn set_register(&mut self, slot: usize, value: u8) {
         self.bytes[slot] = value;
     }
 
@@ -154,7 +154,7 @@ impl Array8 {
     ///
     /// Recomputes num_zeros, kxq0, and kxq1, then switches to composite estimation.
     /// Should be called after bulk register modifications.
-    pub(super) fn rebuild_estimator_from_registers(&mut self) {
+    pub fn rebuild_estimator_from_registers(&mut self) {
         self.rebuild_cached_values();
         self.estimator.invalidate_hip();
     }
@@ -167,7 +167,7 @@ impl Array8 {
     /// # Panics
     ///
     /// Panics if src length doesn't match self length (different lg_k).
-    pub(super) fn merge_array_same_lgk(&mut self, src: &[u8]) {
+    pub fn merge_array_same_lgk(&mut self, src: &[u8]) {
         assert_eq!(
             src.len(),
             self.bytes.len(),
@@ -198,7 +198,7 @@ impl Array8 {
     /// # Panics
     ///
     /// Panics if src_lg_k <= self.lg_config_k (not downsampling).
-    pub(super) fn merge_array_with_downsample(&mut self, src: &[u8], src_lg_k: u8) {
+    pub fn merge_array_with_downsample(&mut self, src: &[u8], src_lg_k: u8) {
         assert!(
             src_lg_k > self.lg_config_k,
             "Source lg_k must be greater than destination lg_k for downsampling"

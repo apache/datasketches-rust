@@ -17,7 +17,7 @@
 
 /// Compute 1 / 2^exp using the same bit construction as DataSketches Java.
 #[inline]
-pub(crate) fn inv_pow2(exp: u8) -> f64 {
+pub fn inv_pow2(exp: u8) -> f64 {
     f64::from_bits((1023 - exp as u64) << 52)
 }
 

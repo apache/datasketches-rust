@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-pub(super) const BLOCK_WIDTH: usize = 8;
+pub const BLOCK_WIDTH: usize = 8;
 
 #[inline]
 fn low_bit_to_byte_mask(bits: u8) -> u8 {
@@ -33,7 +33,7 @@ fn low_bit_to_byte_mask(bits: u8) -> u8 {
 /// Panics if the buffer is too small to hold the packed values.
 /// The caller must ensure that `bytes` has enough capacity for
 /// the total number of bits to be packed.
-pub(super) struct BitPacker<'a> {
+pub struct BitPacker<'a> {
     bytes: &'a mut [u8],
     byte_index: usize,
     byte_bit_used: u8,
@@ -104,7 +104,7 @@ impl<'a> BitPacker<'a> {
 /// Panics if the buffer is too small to provide the requested bits.
 /// The caller must ensure that `bytes` has enough capacity for
 /// the total number of bits to be unpacked.
-pub(super) struct BitUnpacker<'a> {
+pub struct BitUnpacker<'a> {
     bytes: &'a [u8],
     byte_index: usize,
     byte_bit_used: u8,
@@ -4965,7 +4965,7 @@ fn unpack_bits_63(values: &mut [u64], bytes: &[u8]) {
 /// * Panics if `values.len()` is not equal to `BLOCK_WIDTH`.
 /// * Panics if `bits` is not in the range `1..=63`.
 /// * Panics if `bytes.len()` is less than `bits`.
-pub(super) fn pack_bits_block(values: &[u64], bytes: &mut [u8], bits: u8) {
+pub fn pack_bits_block(values: &[u64], bytes: &mut [u8], bits: u8) {
     assert_eq!(values.len(), BLOCK_WIDTH, "values length must be 8");
     assert!(
         (1..=63).contains(&bits),
@@ -5048,7 +5048,7 @@ pub(super) fn pack_bits_block(values: &[u64], bytes: &mut [u8], bits: u8) {
 /// * Panics if `values.len()` is not equal to `BLOCK_WIDTH`.
 /// * Panics if `bits` is not in the range `1..=63`.
 /// * Panics if `bytes.len()` is less than `bits`.
-pub(super) fn unpack_bits_block(values: &mut [u64], bytes: &[u8], bits: u8) {
+pub fn unpack_bits_block(values: &mut [u64], bytes: &[u8], bits: u8) {
     assert_eq!(values.len(), BLOCK_WIDTH, "values length must be 8");
     assert!(
         (1..=63).contains(&bits),

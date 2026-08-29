@@ -24,17 +24,17 @@ use crate::req::INITIAL_SECTIONS_PER_COMPACTOR;
 use crate::req::MIN_K;
 use crate::req::nearest_even_section_size;
 
-pub(super) const SERIAL_VERSION: u8 = 1;
-pub(super) const PREAMBLE_INTS_EXACT: u8 = 2;
-pub(super) const PREAMBLE_INTS_ESTIMATION: u8 = 4;
-pub(super) const RAW_ITEMS_THRESHOLD: u64 = 4;
+pub const SERIAL_VERSION: u8 = 1;
+pub const PREAMBLE_INTS_EXACT: u8 = 2;
+pub const PREAMBLE_INTS_ESTIMATION: u8 = 4;
+pub const RAW_ITEMS_THRESHOLD: u64 = 4;
 
 /// Flag bits — match the C++ enum order: RESERVED1, RESERVED2, IS_EMPTY, IS_HIGH_RANK, RAW_ITEMS,
 /// IS_LEVEL_ZERO_SORTED.
-pub(super) const FLAG_IS_EMPTY: u8 = 1 << 2;
-pub(super) const FLAG_IS_HIGH_RANK: u8 = 1 << 3;
-pub(super) const FLAG_RAW_ITEMS: u8 = 1 << 4;
-pub(super) const FLAG_IS_LEVEL_ZERO_SORTED: u8 = 1 << 5;
+pub const FLAG_IS_EMPTY: u8 = 1 << 2;
+pub const FLAG_IS_HIGH_RANK: u8 = 1 << 3;
+pub const FLAG_RAW_ITEMS: u8 = 1 << 4;
+pub const FLAG_IS_LEVEL_ZERO_SORTED: u8 = 1 << 5;
 
 fn section_growth_threshold(num_sections: u8) -> Option<u64> {
     num_sections
@@ -59,7 +59,7 @@ fn has_reachable_section_count(state: u64, num_sections: u8) -> bool {
     sections == num_sections
 }
 
-pub(super) fn validate_compactor_state(
+pub fn validate_compactor_state(
     k: u16,
     expected_lg_weight: u8,
     state: u64,
@@ -84,11 +84,11 @@ pub(super) fn validate_compactor_state(
     Ok(())
 }
 
-pub(super) fn check_serial_version(actual: u8) -> Result<(), Error> {
+pub fn check_serial_version(actual: u8) -> Result<(), Error> {
     ensure_serial_version_is(SERIAL_VERSION, actual)
 }
 
-pub(super) fn check_preamble_ints(actual: u8, num_levels: u8) -> Result<(), Error> {
+pub fn check_preamble_ints(actual: u8, num_levels: u8) -> Result<(), Error> {
     let expected = if num_levels > 1 {
         PREAMBLE_INTS_ESTIMATION
     } else {
