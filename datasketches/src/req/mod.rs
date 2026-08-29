@@ -24,16 +24,20 @@
 //! implementation.
 
 mod compactor;
+mod item_codec;
 mod iter;
+mod order;
 mod serialization;
 mod sketch;
 mod sorted_view;
-mod value;
 
+pub use self::item_codec::DefaultReqItemCodec;
+pub use self::item_codec::ReqItemCodec;
 pub use self::iter::ReqSketchIterator;
+pub use self::order::DefaultReqOrder;
+pub use self::order::ReqOrder;
 pub use self::sketch::ReqSketch;
 pub use self::sorted_view::SortedView;
-pub use self::value::ReqValue;
 
 /// Default value of `k` if not specified. Roughly 1% relative error at 95% confidence.
 const DEFAULT_K: u16 = 12;

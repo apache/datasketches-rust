@@ -18,6 +18,7 @@
 mod accuracy;
 mod bounds;
 mod core;
+mod generic;
 mod merge;
 mod property;
 mod query;
