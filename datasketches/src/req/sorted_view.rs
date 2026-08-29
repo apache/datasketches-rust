@@ -60,7 +60,7 @@ where
         }
 
         // Sort by item value - use unstable sort for better performance
-        weighted_items.sort_unstable_by(|a, b| a.0.total_cmp(&b.0));
+        weighted_items.sort_unstable_by(|a, b| a.0.compare(&b.0));
 
         let mut items: Vec<T> = Vec::with_capacity(weighted_items.len());
         let mut cumulative_weights = Vec::with_capacity(weighted_items.len());
@@ -68,7 +68,7 @@ where
 
         for (item, weight) in weighted_items {
             if let Some(last) = items.last() {
-                if matches!(last.total_cmp(&item), std::cmp::Ordering::Equal) {
+                if matches!(last.compare(&item), std::cmp::Ordering::Equal) {
                     cumulative_weight += weight;
                     let last_idx = cumulative_weights.len() - 1;
                     cumulative_weights[last_idx] = cumulative_weight;
@@ -122,7 +122,7 @@ where
             SearchCriteria::Inclusive => {
                 // Find the last position where items[i] <= item
                 // partition_point finds first index where predicate is false
-                let pos = self.items.partition_point(|x| x.total_cmp(item).is_le());
+                let pos = self.items.partition_point(|x| x.compare(item).is_le());
                 if pos == 0 {
                     Ok(0.0)
                 } else {
@@ -131,7 +131,7 @@ where
             }
             SearchCriteria::Exclusive => {
                 // Find the last position where items[i] < item
-                let pos = self.items.partition_point(|x| x.total_cmp(item).is_lt());
+                let pos = self.items.partition_point(|x| x.compare(item).is_lt());
                 if pos == 0 {
                     Ok(0.0)
                 } else {
@@ -259,9 +259,11 @@ where
     // Private helper methods
 
     fn validate_split_points(&self, split_points: &[T]) -> Result<(), Error> {
-        // Check that split points are monotonically increasing
-        for i in 1..split_points.len() {
-            if split_points[i - 1].total_cmp(&split_points[i]).is_ge() {
+        for (i, split_point) in split_points.iter().enumerate() {
+            if split_point.is_nan() {
+                return Err(Error::invalid_argument("Split points must not be NaN"));
+            }
+            if i > 0 && split_points[i - 1].compare(split_point).is_ge() {
                 return Err(Error::invalid_argument(
                     "Split points must be unique and monotonically increasing".to_string(),
                 ));

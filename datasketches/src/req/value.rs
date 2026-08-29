@@ -18,23 +18,20 @@
 //! Trait for types storable in a [`ReqSketch`](crate::req::ReqSketch).
 
 use std::cmp::Ordering;
+use std::mem::size_of;
 
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
+use crate::codec::assert::insufficient_data;
 use crate::error::Error;
 
 /// Trait for types that can be stored in a [`ReqSketch`](crate::req::ReqSketch).
 ///
-/// Provides total ordering (so floating-point types with NaN are well-defined under
-/// sketch operations) and binary serialization compatible with the Apache DataSketches
+/// Provides ordering and binary serialization compatible with the Apache DataSketches
 /// REQ wire format used by the C++ and Java reference implementations.
 pub trait ReqValue: Sized + Clone + PartialOrd {
-    /// Total ordering used for sketch operations (sort, compaction, rank, quantile).
-    ///
-    /// For integer types this is equivalent to [`Ord::cmp`]. For floating-point types
-    /// this delegates to [`f32::total_cmp`] / [`f64::total_cmp`] so NaN comparisons are
-    /// deterministic.
-    fn total_cmp(&self, other: &Self) -> Ordering;
+    /// Compares two values. See each implementation for its ordering semantics.
+    fn compare(&self, other: &Self) -> Ordering;
 
     /// Returns true if this value is the floating-point NaN sentinel.
     ///
@@ -55,78 +52,141 @@ pub trait ReqValue: Sized + Clone + PartialOrd {
     fn deserialize_value(cursor: &mut SketchSlice<'_>) -> Result<Self, Error>;
 }
 
-macro_rules! impl_req_value_primitive {
-    // Form with explicit is_nan body (for float types).
-    ($t:ty, $read:ident, $write:ident, $cmp:expr, nan: $nan:expr) => {
-        impl ReqValue for $t {
-            #[inline(always)]
-            fn total_cmp(&self, other: &Self) -> Ordering {
-                $cmp(self, other)
-            }
+impl ReqValue for i32 {
+    #[inline(always)]
+    fn compare(&self, other: &Self) -> Ordering {
+        self.cmp(other)
+    }
 
-            fn serialize_size(_item: &Self) -> usize {
-                std::mem::size_of::<$t>()
-            }
+    fn serialize_size(_item: &Self) -> usize {
+        size_of::<Self>()
+    }
 
-            fn serialize_value(&self, bytes: &mut SketchBytes) {
-                bytes.$write(*self);
-            }
+    fn serialize_value(&self, bytes: &mut SketchBytes) {
+        bytes.write_i32_le(*self);
+    }
 
-            fn deserialize_value(cursor: &mut SketchSlice<'_>) -> Result<Self, Error> {
-                cursor.$read().map_err(|_| {
-                    Error::insufficient_data(concat!(
-                        "failed to read ",
-                        stringify!($t),
-                        " from REQ sketch"
-                    ))
-                })
-            }
-
-            #[inline(always)]
-            fn is_nan(&self) -> bool {
-                $nan(self)
-            }
-        }
-    };
-    // Form without is_nan (for integer types — default returns false).
-    ($t:ty, $read:ident, $write:ident, $cmp:expr) => {
-        impl ReqValue for $t {
-            #[inline(always)]
-            fn total_cmp(&self, other: &Self) -> Ordering {
-                $cmp(self, other)
-            }
-
-            fn serialize_size(_item: &Self) -> usize {
-                std::mem::size_of::<$t>()
-            }
-
-            fn serialize_value(&self, bytes: &mut SketchBytes) {
-                bytes.$write(*self);
-            }
-
-            fn deserialize_value(cursor: &mut SketchSlice<'_>) -> Result<Self, Error> {
-                cursor.$read().map_err(|_| {
-                    Error::insufficient_data(concat!(
-                        "failed to read ",
-                        stringify!($t),
-                        " from REQ sketch"
-                    ))
-                })
-            }
-        }
-    };
+    fn deserialize_value(cursor: &mut SketchSlice<'_>) -> Result<Self, Error> {
+        cursor
+            .read_i32_le()
+            .map_err(insufficient_data("failed to read i32 from REQ sketch"))
+    }
 }
 
-impl_req_value_primitive!(i32, read_i32_le, write_i32_le, Ord::cmp);
-impl_req_value_primitive!(i64, read_i64_le, write_i64_le, Ord::cmp);
-impl_req_value_primitive!(u32, read_u32_le, write_u32_le, Ord::cmp);
-impl_req_value_primitive!(u64, read_u64_le, write_u64_le, Ord::cmp);
-impl_req_value_primitive!(f32, read_f32_le, write_f32_le,
-    |a: &f32, b: &f32| if let Some(o) = a.partial_cmp(b) { o } else { f32::total_cmp(a, b) },
-    nan: |x: &f32| f32::is_nan(*x));
-impl_req_value_primitive!(f64, read_f64_le, write_f64_le,
-    |a: &f64, b: &f64| if let Some(o) = a.partial_cmp(b) { o } else { f64::total_cmp(a, b) },
-    nan: |x: &f64| f64::is_nan(*x));
+impl ReqValue for i64 {
+    #[inline(always)]
+    fn compare(&self, other: &Self) -> Ordering {
+        self.cmp(other)
+    }
+
+    fn serialize_size(_item: &Self) -> usize {
+        size_of::<Self>()
+    }
+
+    fn serialize_value(&self, bytes: &mut SketchBytes) {
+        bytes.write_i64_le(*self);
+    }
+
+    fn deserialize_value(cursor: &mut SketchSlice<'_>) -> Result<Self, Error> {
+        cursor
+            .read_i64_le()
+            .map_err(insufficient_data("failed to read i64 from REQ sketch"))
+    }
+}
+
+impl ReqValue for u32 {
+    #[inline(always)]
+    fn compare(&self, other: &Self) -> Ordering {
+        self.cmp(other)
+    }
+
+    fn serialize_size(_item: &Self) -> usize {
+        size_of::<Self>()
+    }
+
+    fn serialize_value(&self, bytes: &mut SketchBytes) {
+        bytes.write_u32_le(*self);
+    }
+
+    fn deserialize_value(cursor: &mut SketchSlice<'_>) -> Result<Self, Error> {
+        cursor
+            .read_u32_le()
+            .map_err(insufficient_data("failed to read u32 from REQ sketch"))
+    }
+}
+
+impl ReqValue for u64 {
+    #[inline(always)]
+    fn compare(&self, other: &Self) -> Ordering {
+        self.cmp(other)
+    }
+
+    fn serialize_size(_item: &Self) -> usize {
+        size_of::<Self>()
+    }
+
+    fn serialize_value(&self, bytes: &mut SketchBytes) {
+        bytes.write_u64_le(*self);
+    }
+
+    fn deserialize_value(cursor: &mut SketchSlice<'_>) -> Result<Self, Error> {
+        cursor
+            .read_u64_le()
+            .map_err(insufficient_data("failed to read u64 from REQ sketch"))
+    }
+}
+
+impl ReqValue for f32 {
+    #[inline(always)]
+    fn compare(&self, other: &Self) -> Ordering {
+        self.partial_cmp(other).unwrap()
+    }
+
+    #[inline(always)]
+    fn is_nan(&self) -> bool {
+        f32::is_nan(*self)
+    }
+
+    fn serialize_size(_item: &Self) -> usize {
+        size_of::<Self>()
+    }
+
+    fn serialize_value(&self, bytes: &mut SketchBytes) {
+        bytes.write_f32_le(*self);
+    }
+
+    fn deserialize_value(cursor: &mut SketchSlice<'_>) -> Result<Self, Error> {
+        cursor
+            .read_f32_le()
+            .map_err(insufficient_data("failed to read f32 from REQ sketch"))
+    }
+}
+
+impl ReqValue for f64 {
+    #[inline(always)]
+    fn compare(&self, other: &Self) -> Ordering {
+        self.partial_cmp(other).unwrap()
+    }
+
+    #[inline(always)]
+    fn is_nan(&self) -> bool {
+        f64::is_nan(*self)
+    }
+
+    fn serialize_size(_item: &Self) -> usize {
+        size_of::<Self>()
+    }
+
+    fn serialize_value(&self, bytes: &mut SketchBytes) {
+        bytes.write_f64_le(*self);
+    }
+
+    fn deserialize_value(cursor: &mut SketchSlice<'_>) -> Result<Self, Error> {
+        cursor
+            .read_f64_le()
+            .map_err(insufficient_data("failed to read f64 from REQ sketch"))
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -173,19 +233,33 @@ mod tests {
     }
 
     #[test]
-    fn total_cmp_handles_nan_for_floats() {
-        // Pure NaN comparisons under PartialOrd return None; total_cmp must give a definite
-        // Ordering.
-        let nan = f64::NAN;
-        let one = 1.0_f64;
-        assert_ne!(<f64 as ReqValue>::total_cmp(&nan, &one), Ordering::Equal);
-        assert_eq!(<f64 as ReqValue>::total_cmp(&nan, &nan), Ordering::Equal);
+    fn compare_for_f32_uses_numeric_order() {
+        assert_eq!(<f32 as ReqValue>::compare(&-0.0, &0.0), Ordering::Equal);
+        assert_eq!(
+            <f32 as ReqValue>::compare(&f32::NEG_INFINITY, &f32::INFINITY),
+            Ordering::Less
+        );
     }
 
     #[test]
-    fn total_cmp_for_integers_matches_ord() {
-        assert_eq!(<i64 as ReqValue>::total_cmp(&3, &5), Ordering::Less);
-        assert_eq!(<i64 as ReqValue>::total_cmp(&5, &5), Ordering::Equal);
-        assert_eq!(<i64 as ReqValue>::total_cmp(&7, &5), Ordering::Greater);
+    fn compare_for_f64_uses_numeric_order() {
+        assert_eq!(<f64 as ReqValue>::compare(&-0.0, &0.0), Ordering::Equal);
+        assert_eq!(
+            <f64 as ReqValue>::compare(&f64::NEG_INFINITY, &f64::INFINITY),
+            Ordering::Less
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn compare_for_floats_rejects_nan() {
+        <f64 as ReqValue>::compare(&f64::NAN, &0.0);
+    }
+
+    #[test]
+    fn compare_for_integers_matches_ord() {
+        assert_eq!(<i64 as ReqValue>::compare(&3, &5), Ordering::Less);
+        assert_eq!(<i64 as ReqValue>::compare(&5, &5), Ordering::Equal);
+        assert_eq!(<i64 as ReqValue>::compare(&7, &5), Ordering::Greater);
     }
 }

@@ -119,17 +119,37 @@ fn view_rank_is_primary_query_name() {
 }
 
 #[test]
-fn nan_query_items_are_rejected() {
+fn nan_query_items_and_split_points_are_rejected() {
     let sketch = populated_sketch(100);
     let error = sketch
         .rank(&f64::NAN, SearchCriteria::Inclusive)
         .unwrap_err();
     assert_eq!(error.kind(), ErrorKind::InvalidArgument);
+    assert_eq!(
+        sketch
+            .pmf(&[f64::NAN], SearchCriteria::Inclusive)
+            .unwrap_err()
+            .kind(),
+        ErrorKind::InvalidArgument
+    );
+    assert_eq!(
+        sketch
+            .cdf(&[50.0, f64::NAN], SearchCriteria::Inclusive)
+            .unwrap_err()
+            .kind(),
+        ErrorKind::InvalidArgument
+    );
 
     let view = sketch.sorted_view();
     assert_that!(
         view.rank(&f64::NAN, SearchCriteria::Inclusive),
         err(anything())
+    );
+    assert_eq!(
+        view.pmf(&[f64::NAN], SearchCriteria::Inclusive)
+            .unwrap_err()
+            .kind(),
+        ErrorKind::InvalidArgument
     );
 }
 
