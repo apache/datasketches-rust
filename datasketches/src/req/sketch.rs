@@ -45,8 +45,7 @@ use crate::req::value::ReqValue;
 
 /// A Relative Error Quantiles sketch for approximate quantile estimation.
 ///
-/// See the [module-level documentation](crate::req) for item-ordering and floating-point
-/// requirements.
+/// See the [module level documentation](super) for item ordering and floating-point requirements.
 #[derive(Debug, Clone)]
 pub struct ReqSketch<T> {
     k: u16,
