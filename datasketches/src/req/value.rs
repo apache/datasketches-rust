@@ -18,18 +18,25 @@
 //! REQ item types and serialization.
 
 use std::cmp::Ordering;
+use std::fmt;
 use std::mem::size_of;
+use std::ops::Deref;
 
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
 use crate::codec::assert::insufficient_data;
 use crate::error::Error;
 
-/// A non-NaN floating-point value with numerical total ordering.
+/// A non-NaN floating-point adapter for [`ReqSketch`](crate::req::ReqSketch).
 ///
-/// Signed zeros compare equal. Infinities retain their usual numerical order.
+/// REQ requires a totally ordered item domain, while primitive floats are unordered in the
+/// presence of NaN. Construction therefore rejects NaN. Other values retain their numerical
+/// order: signed zeros compare equal and infinities are allowed.
+///
+/// The inner float is available through [`into_inner`](Self::into_inner) or immutable
+/// dereferencing.
 #[repr(transparent)]
-#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, PartialEq, PartialOrd)]
 pub struct ReqFloat<T>(T);
 
 impl<T> ReqFloat<T> {
@@ -37,6 +44,26 @@ impl<T> ReqFloat<T> {
     #[inline(always)]
     pub fn into_inner(self) -> T {
         self.0
+    }
+}
+
+impl<T> Deref for ReqFloat<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<T: fmt::Debug> fmt::Debug for ReqFloat<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl<T: fmt::Display> fmt::Display for ReqFloat<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
     }
 }
 
@@ -90,7 +117,12 @@ impl Ord for ReqFloat<f64> {
     }
 }
 
-/// Serialization support for values stored in a REQ sketch.
+/// Binary serialization for REQ items.
+///
+/// This trait is not required for in-memory sketch operations. Implement it only when a custom
+/// item type must be used with [`ReqSketch::serialize`](crate::req::ReqSketch::serialize) and
+/// [`ReqSketch::deserialize`](crate::req::ReqSketch::deserialize). The encoded form must preserve
+/// the item's ordering across a round trip.
 pub trait ReqValue: Sized {
     /// Returns the serialized size of `item` in bytes.
     fn serialize_size(item: &Self) -> usize;

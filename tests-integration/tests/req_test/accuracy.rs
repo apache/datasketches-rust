@@ -23,13 +23,16 @@ use datasketches::req::SearchCriteria;
 use googletest::assert_that;
 use googletest::prelude::le;
 
+use super::ReqF64;
+use super::req_f64;
+
 #[test]
 fn rank_space_error_is_bounded() -> Result<(), Error> {
-    let mut sketch = ReqSketch::default();
+    let mut sketch: ReqSketch<ReqF64> = ReqSketch::default();
     let n = 50_000;
 
     for i in 0..n {
-        sketch.update(i);
+        sketch.update(req_f64(i as f64));
     }
 
     assert_eq!(sketch.n(), n as u64);

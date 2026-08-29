@@ -45,8 +45,8 @@ use crate::req::value::ReqValue;
 
 /// A Relative Error Quantiles sketch for approximate quantile estimation.
 ///
-/// Items must implement [`Ord`], matching the totally ordered data universe assumed by the REQ
-/// algorithm. Use [`super::ReqFloat`] for non-NaN `f32` and `f64` values.
+/// See the [module-level documentation](crate::req) for item-ordering and floating-point
+/// requirements.
 #[derive(Debug, Clone)]
 pub struct ReqSketch<T> {
     k: u16,
@@ -73,7 +73,9 @@ impl<T> ReqSketch<T>
 where
     T: Clone + Ord,
 {
-    /// Creates a sketch with the given configuration.
+    /// Creates a sketch with the given `k` and rank-accuracy mode.
+    ///
+    /// Larger `k` improves accuracy at the cost of retained memory.
     ///
     /// # Errors
     ///
@@ -100,7 +102,7 @@ where
         self.rank_accuracy
     }
 
-    /// Returns the total number of items observed (matches C++ `get_n`).
+    /// Returns the total number of items observed.
     pub fn n(&self) -> u64 {
         self.n
     }
@@ -175,6 +177,7 @@ where
     /// [`SortedView::rank`] on [`Self::sorted_view`].
     ///
     /// # Errors
+    ///
     /// Returns an error if the sketch is empty.
     pub fn rank(&self, item: &T, criteria: SearchCriteria) -> Result<f64, Error> {
         if self.is_empty() {
@@ -193,6 +196,10 @@ where
     ///
     /// Builds a transient [`SortedView`] internally. For repeated quantile
     /// queries, take one snapshot with [`Self::sorted_view`] and query it.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the sketch is empty or `rank` is outside `[0.0, 1.0]`.
     pub fn quantile(&self, rank: f64, criteria: SearchCriteria) -> Result<T, Error> {
         if self.is_empty() {
             return Err(Error::invalid_argument("sketch is empty"));
@@ -208,6 +215,10 @@ where
     /// Returns approximate quantiles for the given normalized ranks.
     ///
     /// The sorted view is built once and shared across all ranks.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the sketch is empty or any rank is outside `[0.0, 1.0]`.
     pub fn quantiles(&self, ranks: &[f64], criteria: SearchCriteria) -> Result<Vec<T>, Error> {
         if self.is_empty() {
             return Err(Error::invalid_argument("sketch is empty"));
@@ -225,6 +236,10 @@ where
     }
 
     /// Returns the Probability Mass Function over the given split points.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the sketch is empty or the split points are not strictly increasing.
     pub fn pmf(&self, split_points: &[T], criteria: SearchCriteria) -> Result<Vec<f64>, Error> {
         if self.is_empty() {
             return Err(Error::invalid_argument("sketch is empty"));
@@ -233,6 +248,10 @@ where
     }
 
     /// Returns the Cumulative Distribution Function over the given split points.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the sketch is empty or the split points are not strictly increasing.
     pub fn cdf(&self, split_points: &[T], criteria: SearchCriteria) -> Result<Vec<f64>, Error> {
         if self.is_empty() {
             return Err(Error::invalid_argument("sketch is empty"));
@@ -271,19 +290,21 @@ where
     /// # Examples
     ///
     /// ```
+    /// use datasketches::req::ReqFloat;
     /// use datasketches::req::ReqSketch;
     ///
     /// let mut first = ReqSketch::default();
-    /// first.update(1_i64);
+    /// first.update(ReqFloat::<f64>::new(1.0)?);
     ///
     /// let mut second = ReqSketch::default();
-    /// second.update(2_i64);
+    /// second.update(ReqFloat::<f64>::new(2.0)?);
     ///
     /// let mut combined = ReqSketch::default();
     /// combined.merge(&first).unwrap();
     /// combined.merge(&second).unwrap();
     ///
     /// assert_eq!(combined.n(), 2);
+    /// # Ok::<(), datasketches::error::Error>(())
     /// ```
     pub fn merge(&mut self, other: &Self) -> Result<(), Error> {
         if self.rank_accuracy != other.rank_accuracy {
@@ -471,7 +492,7 @@ where
         self.n <= RAW_ITEMS_THRESHOLD && self.compactors.len() == 1
     }
 
-    /// Number of bytes required to serialize the sketch.
+    /// Returns the number of bytes required to serialize the sketch.
     pub fn serialized_size_bytes(&self) -> usize
     where
         T: ReqValue,
@@ -503,7 +524,7 @@ where
         size
     }
 
-    /// Serialize the sketch into a `Vec<u8>` matching the C++/Java REQ wire format.
+    /// Serializes the sketch using the C++/Java-compatible REQ wire format.
     pub fn serialize(&self) -> Vec<u8>
     where
         T: ReqValue,
