@@ -21,21 +21,15 @@ use std::cmp::Ordering;
 
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
-use crate::common::float::canonical_cmp_f32;
-use crate::common::float::canonical_cmp_f64;
 use crate::error::Error;
 
 /// Trait for types that can be stored in a [`ReqSketch`](crate::req::ReqSketch).
 ///
-/// Provides total ordering (so floating-point types with NaN are well-defined under
-/// sketch operations) and binary serialization compatible with the Apache DataSketches
+/// Provides ordering and binary serialization compatible with the Apache DataSketches
 /// REQ wire format used by the C++ and Java reference implementations.
 pub trait ReqValue: Sized + Clone + PartialOrd {
-    /// Total ordering used for sketch operations (sort, compaction, rank, quantile).
-    ///
-    /// For integer types this is equivalent to [`Ord::cmp`]. For floating-point types
-    /// signed zeros compare equal, all NaNs compare equal, and NaNs sort after other values.
-    fn total_cmp(&self, other: &Self) -> Ordering;
+    /// Compares two values. See each implementation for its ordering semantics.
+    fn compare(&self, other: &Self) -> Ordering;
 
     /// Returns true if this value is the floating-point NaN sentinel.
     ///
@@ -61,7 +55,7 @@ macro_rules! impl_req_value_primitive {
     ($t:ty, $read:ident, $write:ident, $cmp:expr, nan: $nan:expr) => {
         impl ReqValue for $t {
             #[inline(always)]
-            fn total_cmp(&self, other: &Self) -> Ordering {
+            fn compare(&self, other: &Self) -> Ordering {
                 $cmp(self, other)
             }
 
@@ -93,7 +87,7 @@ macro_rules! impl_req_value_primitive {
     ($t:ty, $read:ident, $write:ident, $cmp:expr) => {
         impl ReqValue for $t {
             #[inline(always)]
-            fn total_cmp(&self, other: &Self) -> Ordering {
+            fn compare(&self, other: &Self) -> Ordering {
                 $cmp(self, other)
             }
 
@@ -123,10 +117,10 @@ impl_req_value_primitive!(i64, read_i64_le, write_i64_le, Ord::cmp);
 impl_req_value_primitive!(u32, read_u32_le, write_u32_le, Ord::cmp);
 impl_req_value_primitive!(u64, read_u64_le, write_u64_le, Ord::cmp);
 impl_req_value_primitive!(f32, read_f32_le, write_f32_le,
-    canonical_cmp_f32,
+    |left: &f32, right: &f32| left.partial_cmp(right).expect("REQ values must not be NaN"),
     nan: |x: &f32| f32::is_nan(*x));
 impl_req_value_primitive!(f64, read_f64_le, write_f64_le,
-    canonical_cmp_f64,
+    |left: &f64, right: &f64| left.partial_cmp(right).expect("REQ values must not be NaN"),
     nan: |x: &f64| f64::is_nan(*x));
 
 #[cfg(test)]
@@ -174,49 +168,33 @@ mod tests {
     }
 
     #[test]
-    fn total_cmp_for_f32_uses_canonical_order() {
-        let positive_nan = f32::from_bits(0x7fc00001);
-        let negative_nan = f32::from_bits(0xffc00002);
-
-        assert_eq!(<f32 as ReqValue>::total_cmp(&-0.0, &0.0), Ordering::Equal);
+    fn compare_for_f32_uses_numeric_order() {
+        assert_eq!(<f32 as ReqValue>::compare(&-0.0, &0.0), Ordering::Equal);
         assert_eq!(
-            <f32 as ReqValue>::total_cmp(&positive_nan, &negative_nan),
-            Ordering::Equal
-        );
-        assert_eq!(
-            <f32 as ReqValue>::total_cmp(&positive_nan, &f32::INFINITY),
-            Ordering::Greater
-        );
-        assert_eq!(
-            <f32 as ReqValue>::total_cmp(&f32::INFINITY, &positive_nan),
+            <f32 as ReqValue>::compare(&f32::NEG_INFINITY, &f32::INFINITY),
             Ordering::Less
         );
     }
 
     #[test]
-    fn total_cmp_for_f64_uses_canonical_order() {
-        let positive_nan = f64::from_bits(0x7ff8000000000001);
-        let negative_nan = f64::from_bits(0xfff8000000000002);
-
-        assert_eq!(<f64 as ReqValue>::total_cmp(&-0.0, &0.0), Ordering::Equal);
+    fn compare_for_f64_uses_numeric_order() {
+        assert_eq!(<f64 as ReqValue>::compare(&-0.0, &0.0), Ordering::Equal);
         assert_eq!(
-            <f64 as ReqValue>::total_cmp(&positive_nan, &negative_nan),
-            Ordering::Equal
-        );
-        assert_eq!(
-            <f64 as ReqValue>::total_cmp(&positive_nan, &f64::INFINITY),
-            Ordering::Greater
-        );
-        assert_eq!(
-            <f64 as ReqValue>::total_cmp(&f64::INFINITY, &positive_nan),
+            <f64 as ReqValue>::compare(&f64::NEG_INFINITY, &f64::INFINITY),
             Ordering::Less
         );
     }
 
     #[test]
-    fn total_cmp_for_integers_matches_ord() {
-        assert_eq!(<i64 as ReqValue>::total_cmp(&3, &5), Ordering::Less);
-        assert_eq!(<i64 as ReqValue>::total_cmp(&5, &5), Ordering::Equal);
-        assert_eq!(<i64 as ReqValue>::total_cmp(&7, &5), Ordering::Greater);
+    #[should_panic(expected = "REQ values must not be NaN")]
+    fn compare_for_floats_rejects_nan() {
+        <f64 as ReqValue>::compare(&f64::NAN, &0.0);
+    }
+
+    #[test]
+    fn compare_for_integers_matches_ord() {
+        assert_eq!(<i64 as ReqValue>::compare(&3, &5), Ordering::Less);
+        assert_eq!(<i64 as ReqValue>::compare(&5, &5), Ordering::Equal);
+        assert_eq!(<i64 as ReqValue>::compare(&7, &5), Ordering::Greater);
     }
 }

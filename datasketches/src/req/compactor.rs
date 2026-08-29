@@ -35,7 +35,7 @@ fn normalized_sort_state<T: ReqValue>(items: &[T], claimed_sorted: bool) -> Resu
         if item.is_nan() {
             return Err(Error::deserial("REQ compactor contains a NaN item"));
         }
-        if sorted && previous.is_some_and(|previous| previous.total_cmp(item).is_gt()) {
+        if sorted && previous.is_some_and(|previous| previous.compare(item).is_gt()) {
             sorted = false;
         }
         previous = Some(item);
@@ -140,7 +140,7 @@ where
                 self.merge_sorted(&other.items);
             } else {
                 let mut other_items = other.items.clone();
-                other_items.sort_unstable_by(|a, b| a.total_cmp(b));
+                other_items.sort_unstable_by(|a, b| a.compare(b));
                 self.merge_sorted(&other_items);
             }
         }
@@ -158,15 +158,15 @@ where
     pub(super) fn count_below(&self, item: &T, inclusive: bool) -> usize {
         if self.is_sorted {
             if inclusive {
-                self.items.partition_point(|x| x.total_cmp(item).is_le())
+                self.items.partition_point(|x| x.compare(item).is_le())
             } else {
-                self.items.partition_point(|x| x.total_cmp(item).is_lt())
+                self.items.partition_point(|x| x.compare(item).is_lt())
             }
         } else {
             self.items
                 .iter()
                 .filter(|x| {
-                    let ord = x.total_cmp(item);
+                    let ord = x.compare(item);
                     if inclusive { ord.is_le() } else { ord.is_lt() }
                 })
                 .count()
@@ -201,7 +201,7 @@ where
 
         // Two-pointer merge into scratch buffer
         while i < a.len() && j < b.len() {
-            if a[i].total_cmp(&b[j]).is_le() {
+            if a[i].compare(&b[j]).is_le() {
                 self.scratch_buffer.push(a[i].clone());
                 i += 1;
             } else {
@@ -229,7 +229,7 @@ where
     pub(super) fn sort(&mut self) {
         if !self.is_sorted {
             // Use unstable sort for better performance (stable not needed for REQ sketch)
-            self.items.sort_unstable_by(|a, b| a.total_cmp(b));
+            self.items.sort_unstable_by(|a, b| a.compare(b));
             self.is_sorted = true;
         }
     }

@@ -133,12 +133,12 @@ impl<T: ReqValue> ReqSketch<T> {
         }
         match &mut self.min_item {
             None => self.min_item = Some(item.clone()),
-            Some(cur) if item.total_cmp(cur).is_lt() => *cur = item.clone(),
+            Some(cur) if item.compare(cur).is_lt() => *cur = item.clone(),
             _ => {}
         }
         match &mut self.max_item {
             None => self.max_item = Some(item.clone()),
-            Some(cur) if item.total_cmp(cur).is_gt() => *cur = item.clone(),
+            Some(cur) if item.compare(cur).is_gt() => *cur = item.clone(),
             _ => {}
         }
 
@@ -285,14 +285,14 @@ impl<T: ReqValue> ReqSketch<T> {
         if let Some(m) = &other.min_item {
             match &self.min_item {
                 None => self.min_item = Some(m.clone()),
-                Some(cur) if m.total_cmp(cur).is_lt() => self.min_item = Some(m.clone()),
+                Some(cur) if m.compare(cur).is_lt() => self.min_item = Some(m.clone()),
                 _ => {}
             }
         }
         if let Some(m) = &other.max_item {
             match &self.max_item {
                 None => self.max_item = Some(m.clone()),
-                Some(cur) if m.total_cmp(cur).is_gt() => self.max_item = Some(m.clone()),
+                Some(cur) if m.compare(cur).is_gt() => self.max_item = Some(m.clone()),
                 _ => {}
             }
         }
@@ -631,7 +631,7 @@ impl<T: ReqValue> ReqSketch<T> {
             if min.is_nan() || max.is_nan() {
                 return Err(Error::deserial("REQ sketch min or max item is NaN"));
             }
-            if min.total_cmp(max).is_gt() {
+            if min.compare(max).is_gt() {
                 return Err(Error::deserial(
                     "REQ sketch min item is greater than max item",
                 ));
@@ -667,10 +667,10 @@ impl<T: ReqValue> ReqSketch<T> {
                 let mut mn = first.clone();
                 let mut mx = first.clone();
                 for x in iter {
-                    if x.total_cmp(&mn).is_lt() {
+                    if x.compare(&mn).is_lt() {
                         mn = x.clone();
                     }
-                    if x.total_cmp(&mx).is_gt() {
+                    if x.compare(&mx).is_gt() {
                         mx = x.clone();
                     }
                 }

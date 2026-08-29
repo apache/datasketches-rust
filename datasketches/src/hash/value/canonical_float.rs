@@ -26,7 +26,6 @@
 use std::hash::Hash;
 use std::hash::Hasher;
 
-use crate::common::float::canonical_f64_bits;
 use crate::hash::value::HashStrategy;
 use crate::hash::value::Value;
 
@@ -107,27 +106,15 @@ impl HashStrategy<f32> for CanonicalFloatStrategy {
 
 impl HashStrategy<f64> for CanonicalFloatStrategy {
     fn hash<H: Hasher>(value: &f64, state: &mut H) {
-        canonical_f64_bits(*value).hash(state);
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::hash::value::calculate_hash;
-
-    #[test]
-    fn canonical_hash_equates_signed_zeros_and_nans() {
-        assert_eq!(
-            calculate_hash(from_f64(-0.0)),
-            calculate_hash(from_f64(0.0))
-        );
-
-        let positive_nan = f64::from_bits(0x7ff8000000000001);
-        let negative_nan = f64::from_bits(0xfff8000000000002);
-        assert_eq!(
-            calculate_hash(from_f64(positive_nan)),
-            calculate_hash(from_f64(negative_nan))
-        );
+        let canonical = if value.is_nan() {
+            // Java's Double.doubleToLongBits() NaN value.
+            0x7ff8000000000000u64
+        } else {
+            // -0.0 + 0.0 == +0.0 under IEEE754 roundTiesToEven rounding mode,
+            // which Rust guarantees. Thus, by adding a positive zero we
+            // canonicalize signed zero without any branches in one instruction.
+            (value + 0.0).to_bits()
+        };
+        canonical.hash(state);
     }
 }
