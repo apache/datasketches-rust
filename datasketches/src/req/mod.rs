@@ -78,6 +78,6 @@ fn compare<T: PartialOrd>(left: &T, right: &T) -> Ordering {
 }
 
 #[inline(always)]
-fn is_valid<T: PartialOrd>(item: &T) -> bool {
+fn is_self_comparable<T: PartialOrd>(item: &T) -> bool {
     item.partial_cmp(item).is_some()
 }

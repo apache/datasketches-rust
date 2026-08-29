@@ -25,7 +25,7 @@ use crate::req::INITIAL_SECTIONS_PER_COMPACTOR;
 use crate::req::MIN_K;
 use crate::req::RankAccuracy;
 use crate::req::compare;
-use crate::req::is_valid;
+use crate::req::is_self_comparable;
 use crate::req::nearest_even_section_size;
 use crate::req::serialization::validate_compactor_state;
 use crate::req::value::ReqValue;
@@ -34,8 +34,8 @@ fn normalized_sort_state<T: PartialOrd>(items: &[T], claimed_sorted: bool) -> Re
     let mut previous: Option<&T> = None;
     let mut sorted = claimed_sorted;
     for item in items {
-        if !is_valid(item) {
-            return Err(Error::deserial("REQ compactor contains an unordered item"));
+        if !is_self_comparable(item) {
+            return Err(Error::deserial("REQ compactor item is self-incomparable"));
         }
         if sorted && previous.is_some_and(|previous| compare(previous, item).is_gt()) {
             sorted = false;

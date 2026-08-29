@@ -20,7 +20,7 @@
 use crate::error::Error;
 use crate::req::SearchCriteria;
 use crate::req::compare;
-use crate::req::is_valid;
+use crate::req::is_self_comparable;
 
 /// An owned, sorted snapshot of a [`ReqSketch`](crate::req::ReqSketch)'s items with
 /// their cumulative weights.
@@ -110,13 +110,13 @@ where
     /// * `criteria` - Whether to include the item's weight in the rank
     ///
     /// # Errors
-    /// Returns an error if the view is empty or `item` is unordered.
+    /// Returns an error if the view is empty or `item` is not comparable with itself.
     pub fn rank(&self, item: &T, criteria: SearchCriteria) -> Result<f64, Error> {
         if self.is_empty() {
             return Err(Error::invalid_argument("sketch is empty"));
         }
-        if !is_valid(item) {
-            return Err(Error::invalid_argument("query item is unordered"));
+        if !is_self_comparable(item) {
+            return Err(Error::invalid_argument("query item is self-incomparable"));
         }
 
         match criteria {
@@ -261,8 +261,8 @@ where
 
     fn validate_split_points(&self, split_points: &[T]) -> Result<(), Error> {
         for (i, split_point) in split_points.iter().enumerate() {
-            if !is_valid(split_point) {
-                return Err(Error::invalid_argument("split point is unordered"));
+            if !is_self_comparable(split_point) {
+                return Err(Error::invalid_argument("split point is self-incomparable"));
             }
             if i > 0 && compare(&split_points[i - 1], split_point).is_ge() {
                 return Err(Error::invalid_argument(

@@ -30,7 +30,7 @@ use crate::req::RankAccuracy;
 use crate::req::SearchCriteria;
 use crate::req::compactor::Compactor;
 use crate::req::compare;
-use crate::req::is_valid;
+use crate::req::is_self_comparable;
 use crate::req::iter::ReqSketchIterator;
 use crate::req::serialization::FLAG_IS_EMPTY;
 use crate::req::serialization::FLAG_IS_HIGH_RANK;
@@ -47,8 +47,9 @@ use crate::req::value::ReqValue;
 
 /// A Relative Error Quantiles sketch for approximate quantile estimation.
 ///
-/// Items must define a total order through [`PartialOrd`]. Self-unordered values such as NaN are
-/// ignored on update. Use a newtype to select a different ordering for the same underlying value.
+/// [`PartialOrd::partial_cmp`] must return `Some` for every pair of self-comparable values used
+/// with a sketch. Values that are not comparable with themselves, such as NaN, are ignored on
+/// update. Use a newtype to select a different ordering for the same underlying value.
 #[derive(Debug, Clone)]
 pub struct ReqSketch<T> {
     k: u16,
@@ -134,9 +135,9 @@ where
 
     /// Updates the sketch with a new item.
     ///
-    /// Self-unordered items such as NaN are silently ignored.
+    /// Items that are not comparable with themselves, such as NaN, are silently ignored.
     pub fn update(&mut self, item: T) {
-        if !is_valid(&item) {
+        if !is_self_comparable(&item) {
             return;
         }
         match &mut self.min_item {
@@ -182,13 +183,13 @@ where
     /// [`SortedView::rank`] on [`Self::sorted_view`].
     ///
     /// # Errors
-    /// Returns an error if the sketch is empty or `item` is unordered.
+    /// Returns an error if the sketch is empty or `item` is not comparable with itself.
     pub fn rank(&self, item: &T, criteria: SearchCriteria) -> Result<f64, Error> {
         if self.is_empty() {
             return Err(Error::invalid_argument("sketch is empty"));
         }
-        if !is_valid(item) {
-            return Err(Error::invalid_argument("query item is unordered"));
+        if !is_self_comparable(item) {
+            return Err(Error::invalid_argument("query item is self-incomparable"));
         }
         let inclusive = matches!(criteria, SearchCriteria::Inclusive);
         let weight: u64 = self
@@ -663,8 +664,8 @@ where
             max_item = Some(T::deserialize_value(&mut cursor)?);
             let min = min_item.as_ref().unwrap();
             let max = max_item.as_ref().unwrap();
-            if !is_valid(min) || !is_valid(max) {
-                return Err(Error::deserial("REQ sketch min or max item is unordered"));
+            if !is_self_comparable(min) || !is_self_comparable(max) {
+                return Err(Error::deserial("REQ min or max is self-incomparable"));
             }
             if compare(min, max).is_gt() {
                 return Err(Error::deserial(
