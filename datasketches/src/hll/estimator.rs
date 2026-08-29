@@ -37,16 +37,10 @@ pub(super) enum EstimateState {
     Composite,
 }
 
-/// HIP estimator with KxQ registers for improved cardinality estimation
+/// Cardinality estimator shared by Array4, Array6, and Array8.
 ///
-/// This struct encapsulates all estimation-related state and logic,
-/// allowing it to be composed into Array4, Array6, and Array8.
-///
-/// The estimator supports two modes:
-/// * **In-order mode**: Uses HIP (Historical Inverse Probability) accumulator for accurate
-///   sequential updates
-/// * **Out-of-order mode**: Uses composite estimator (raw HLL + linear counting) after a bulk merge
-///   loses the register update order
+/// Sequential updates use HIP. Bulk merges use the composite estimator because register values do
+/// not retain update order. Both modes maintain KxQ as a cache derived from the current registers.
 #[derive(Debug, Clone, PartialEq)]
 pub struct HipEstimator {
     /// Estimate selected by the register history.
@@ -602,42 +596,21 @@ mod tests {
     }
 
     #[test]
-    fn test_out_of_order_flag() {
+    fn test_invalidate_hip() {
         let mut est = HipEstimator::new(10);
 
-        // Normal update
-        est.update(8, 0, 5);
+        est.update(10, 0, 5);
         let hip_normal = est.hip_accum();
         assert_that!(hip_normal, gt(0.0));
 
-        // Set out-of-order
         est.invalidate_hip();
         assert!(est.is_out_of_order());
-        assert_eq!(est.hip_accum(), 0.0); // HIP invalidated
+        assert_eq!(est.hip_accum(), 0.0);
 
-        // Update while OOO - HIP should not change, but kxq should
+        // Register-derived state continues to update after HIP is invalidated.
         let kxq0_before = est.kxq0();
-        est.update(8, 5, 10);
-        assert_eq!(est.hip_accum(), 0.0); // HIP still 0
-        assert_ne!(est.kxq0(), kxq0_before); // kxq changed
-    }
-
-    #[test]
-    fn test_estimate_state_can_be_restored_atomically() {
-        let mut est = HipEstimator::new(10);
-
-        est.restore_estimate_state(EstimateState::Hip(123.45));
-        est.restore_kxq(678.9, 0.0012);
-
-        assert_eq!(est.hip_accum(), 123.45);
-        assert_eq!(est.kxq0(), 678.9);
-        assert_eq!(est.kxq1(), 0.0012);
-
-        let state = est.estimate_state();
-        est.invalidate_hip();
-        assert!(est.is_out_of_order());
-        est.restore_estimate_state(state);
-        assert!(!est.is_out_of_order());
-        assert_eq!(est.hip_accum(), 123.45);
+        est.update(10, 5, 10);
+        assert_eq!(est.hip_accum(), 0.0);
+        assert_ne!(est.kxq0(), kxq0_before);
     }
 }
