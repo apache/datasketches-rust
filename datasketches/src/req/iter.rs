@@ -32,7 +32,7 @@ pub struct ReqSketchIterator<'a, T> {
     current_weight: u64,
 }
 
-impl<'a, T: Clone> ReqSketchIterator<'a, T> {
+impl<'a, T: Clone + PartialOrd> ReqSketchIterator<'a, T> {
     /// Creates a new iterator over the compactors.
     pub(super) fn new(compactors: &'a [Compactor<T>]) -> Self {
         let mut iter = Self {
@@ -64,7 +64,7 @@ impl<'a, T: Clone> ReqSketchIterator<'a, T> {
     }
 }
 
-impl<T: Clone> Iterator for ReqSketchIterator<'_, T> {
+impl<T: Clone + PartialOrd> Iterator for ReqSketchIterator<'_, T> {
     type Item = (T, u64);
 
     fn next(&mut self) -> Option<Self::Item> {

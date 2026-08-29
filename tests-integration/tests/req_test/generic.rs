@@ -15,59 +15,23 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use std::cmp::Ordering;
-
-use datasketches::codec::SketchBytes;
-use datasketches::codec::SketchSlice;
-use datasketches::error::Error;
-use datasketches::error::ErrorKind;
-use datasketches::req::ReqItemCodec;
-use datasketches::req::ReqOrder;
 use datasketches::req::ReqSketch;
+use datasketches::req::SearchCriteria;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, PartialOrd)]
 struct Reading(i32);
 
-struct ReadingOrder;
-
-impl ReqOrder<Reading> for ReadingOrder {
-    fn compare(left: &Reading, right: &Reading) -> Ordering {
-        left.0.cmp(&right.0)
-    }
-}
-
-struct ReadingCodec;
-
-impl ReqItemCodec<Reading> for ReadingCodec {
-    fn serialized_size(&self, _item: &Reading) -> usize {
-        size_of::<i32>()
-    }
-
-    fn serialize(&self, item: &Reading, bytes: &mut SketchBytes) {
-        bytes.write_i32_le(item.0);
-    }
-
-    fn deserialize(&self, cursor: &mut SketchSlice<'_>) -> Result<Reading, Error> {
-        cursor
-            .read_i32_le()
-            .map(Reading)
-            .map_err(|error| Error::new(ErrorKind::InvalidData, error.to_string()))
-    }
-}
-
 #[test]
-fn custom_item_round_trip() {
-    let mut sketch = ReqSketch::<Reading, ReadingOrder>::with_order();
-    for value in 0..100 {
-        sketch.update(Reading(value));
-    }
+fn custom_items_do_not_need_serialization() {
+    let mut sketch = ReqSketch::default();
+    sketch.update(Reading(30));
+    sketch.update(Reading(10));
+    sketch.update(Reading(20));
 
-    let bytes = sketch.serialize_with(&ReadingCodec);
-    let restored =
-        ReqSketch::<Reading, ReadingOrder>::deserialize_with(&bytes, &ReadingCodec).unwrap();
-
-    assert_eq!(restored.n(), sketch.n());
-    assert_eq!(restored.min_item(), sketch.min_item());
-    assert_eq!(restored.max_item(), sketch.max_item());
-    assert_eq!(restored.serialize_with(&ReadingCodec), bytes);
+    assert_eq!(sketch.min_item(), Some(&Reading(10)));
+    assert_eq!(sketch.max_item(), Some(&Reading(30)));
+    assert_eq!(
+        sketch.quantile(0.5, SearchCriteria::Inclusive).unwrap(),
+        Reading(20)
+    );
 }

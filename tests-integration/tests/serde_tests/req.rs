@@ -20,12 +20,9 @@
 use std::fs;
 use std::path::PathBuf;
 
-use datasketches::req::DefaultReqItemCodec;
-use datasketches::req::DefaultReqOrder;
 use datasketches::req::RankAccuracy;
-use datasketches::req::ReqItemCodec;
-use datasketches::req::ReqOrder;
 use datasketches::req::ReqSketch;
+use datasketches::req::ReqValue;
 use datasketches::req::SearchCriteria;
 use googletest::assert_that;
 use googletest::prelude::anything;
@@ -38,9 +35,7 @@ use crate::serialization_test_data;
 
 fn round_trip_one<T>(k: u16, ra: RankAccuracy, n: u64, make_item: impl Fn(u64) -> T)
 where
-    T: Clone + std::fmt::Debug + PartialEq,
-    DefaultReqOrder: ReqOrder<T>,
-    DefaultReqItemCodec: ReqItemCodec<T>,
+    T: Clone + PartialOrd + ReqValue + std::fmt::Debug,
 {
     let mut a: ReqSketch<T> = ReqSketch::new(k, ra).unwrap();
     for i in 0..n {

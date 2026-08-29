@@ -17,8 +17,6 @@
 
 //! Generic REQ sketch implementation.
 
-use std::marker::PhantomData;
-
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
 use crate::codec::assert::insufficient_data;
@@ -31,6 +29,8 @@ use crate::req::MIN_K;
 use crate::req::RankAccuracy;
 use crate::req::SearchCriteria;
 use crate::req::compactor::Compactor;
+use crate::req::compare;
+use crate::req::is_valid;
 use crate::req::iter::ReqSketchIterator;
 use crate::req::serialization::FLAG_IS_EMPTY;
 use crate::req::serialization::FLAG_IS_HIGH_RANK;
@@ -43,19 +43,16 @@ use crate::req::serialization::SERIAL_VERSION;
 use crate::req::serialization::check_preamble_ints;
 use crate::req::serialization::check_serial_version;
 use crate::req::sorted_view::SortedView;
-use crate::req::value::DefaultReqItemCodec;
-use crate::req::value::DefaultReqOrder;
-use crate::req::value::ReqItemCodec;
-use crate::req::value::ReqOrder;
+use crate::req::value::ReqValue;
 
 /// A Relative Error Quantiles sketch for approximate quantile estimation.
 ///
-/// `O` defines the item ordering. Serialization uses a separate [`ReqItemCodec`].
+/// Items must define a total order through [`PartialOrd`]. Self-unordered values such as NaN are
+/// ignored on update. Use a newtype to select a different ordering for the same underlying value.
 #[derive(Debug, Clone)]
-pub struct ReqSketch<T, O = DefaultReqOrder> {
+pub struct ReqSketch<T> {
     k: u16,
     rank_accuracy: RankAccuracy,
-    order: PhantomData<fn() -> O>,
     n: u64,
     max_nom_size: u32,
     num_retained: u32,
@@ -67,41 +64,23 @@ pub struct ReqSketch<T, O = DefaultReqOrder> {
 
 impl<T> Default for ReqSketch<T>
 where
-    T: Clone,
-    DefaultReqOrder: ReqOrder<T>,
+    T: Clone + PartialOrd,
 {
     fn default() -> Self {
-        Self::with_order()
+        Self::make(DEFAULT_K, RankAccuracy::HighRank)
     }
 }
 
 impl<T> ReqSketch<T>
 where
-    T: Clone,
-    DefaultReqOrder: ReqOrder<T>,
+    T: Clone + PartialOrd,
 {
-    /// Creates a new sketch with the given configuration.
-    pub fn new(k: u16, rank_accuracy: RankAccuracy) -> Result<Self, Error> {
-        Self::new_with_order(k, rank_accuracy)
-    }
-}
-
-impl<T, O> ReqSketch<T, O>
-where
-    T: Clone,
-    O: ReqOrder<T>,
-{
-    /// Creates a sketch with the default configuration and ordering `O`.
-    pub fn with_order() -> Self {
-        Self::make(DEFAULT_K, RankAccuracy::HighRank)
-    }
-
-    /// Creates a sketch with the given configuration and ordering `O`.
+    /// Creates a sketch with the given configuration.
     ///
     /// # Errors
     ///
     /// Returns an error if `k` is odd or outside `[4, 1024]`.
-    pub fn new_with_order(k: u16, rank_accuracy: RankAccuracy) -> Result<Self, Error> {
+    pub fn new(k: u16, rank_accuracy: RankAccuracy) -> Result<Self, Error> {
         if !(MIN_K..=MAX_K).contains(&k) {
             return Err(Error::invalid_argument(format!(
                 "k must be in [{MIN_K}, {MAX_K}], got {k}"
@@ -155,20 +134,19 @@ where
 
     /// Updates the sketch with a new item.
     ///
-    /// Items rejected by the sketch's ordering are silently ignored. The default
-    /// floating-point ordering rejects NaN.
+    /// Self-unordered items such as NaN are silently ignored.
     pub fn update(&mut self, item: T) {
-        if !O::accepts(&item) {
+        if !is_valid(&item) {
             return;
         }
         match &mut self.min_item {
             None => self.min_item = Some(item.clone()),
-            Some(cur) if O::compare(&item, cur).is_lt() => *cur = item.clone(),
+            Some(cur) if compare(&item, cur).is_lt() => *cur = item.clone(),
             _ => {}
         }
         match &mut self.max_item {
             None => self.max_item = Some(item.clone()),
-            Some(cur) if O::compare(&item, cur).is_gt() => *cur = item.clone(),
+            Some(cur) if compare(&item, cur).is_gt() => *cur = item.clone(),
             _ => {}
         }
 
@@ -204,21 +182,19 @@ where
     /// [`SortedView::rank`] on [`Self::sorted_view`].
     ///
     /// # Errors
-    /// Returns an error if the sketch is empty or its ordering rejects `item`.
+    /// Returns an error if the sketch is empty or `item` is unordered.
     pub fn rank(&self, item: &T, criteria: SearchCriteria) -> Result<f64, Error> {
         if self.is_empty() {
             return Err(Error::invalid_argument("sketch is empty"));
         }
-        if !O::accepts(item) {
-            return Err(Error::invalid_argument(
-                "query item is rejected by the sketch ordering",
-            ));
+        if !is_valid(item) {
+            return Err(Error::invalid_argument("query item is unordered"));
         }
         let inclusive = matches!(criteria, SearchCriteria::Inclusive);
         let weight: u64 = self
             .compactors
             .iter()
-            .map(|c| c.count_below::<O>(item, inclusive) as u64 * c.weight())
+            .map(|c| c.count_below(item, inclusive) as u64 * c.weight())
             .sum();
         Ok(weight as f64 / self.n as f64)
     }
@@ -285,7 +261,7 @@ where
     /// then `O(log retained)`. Prefer taking one view for repeated queries over
     /// calling [`Self::quantile`]/[`Self::pmf`]/[`Self::cdf`], which each build a
     /// transient view.
-    pub fn sorted_view(&self) -> SortedView<T, O> {
+    pub fn sorted_view(&self) -> SortedView<T> {
         let mut weighted_items = Vec::with_capacity(self.num_retained as usize);
         for compactor in &self.compactors {
             let weight = compactor.weight();
@@ -300,7 +276,7 @@ where
     ///
     /// # Errors
     ///
-    /// Returns an error if the two sketches have different rank-accuracy settings.
+    /// Returns an error if the two sketches have different `rank_accuracy`.
     ///
     /// # Examples
     ///
@@ -325,6 +301,7 @@ where
                 "sketches must have the same rank_accuracy",
             ));
         }
+
         if other.is_empty() {
             return Ok(());
         }
@@ -334,14 +311,14 @@ where
         if let Some(m) = &other.min_item {
             match &self.min_item {
                 None => self.min_item = Some(m.clone()),
-                Some(cur) if O::compare(m, cur).is_lt() => self.min_item = Some(m.clone()),
+                Some(cur) if compare(m, cur).is_lt() => self.min_item = Some(m.clone()),
                 _ => {}
             }
         }
         if let Some(m) = &other.max_item {
             match &self.max_item {
                 None => self.max_item = Some(m.clone()),
-                Some(cur) if O::compare(m, cur).is_gt() => self.max_item = Some(m.clone()),
+                Some(cur) if compare(m, cur).is_gt() => self.max_item = Some(m.clone()),
                 _ => {}
             }
         }
@@ -351,7 +328,7 @@ where
         }
 
         for (i, other_c) in other.compactors.iter().enumerate() {
-            self.compactors[i].merge::<O>(other_c);
+            self.compactors[i].merge(other_c);
         }
 
         self.update_max_nom_size();
@@ -504,10 +481,10 @@ where
         self.n <= RAW_ITEMS_THRESHOLD && self.compactors.len() == 1
     }
 
-    /// Returns the number of bytes required to serialize the sketch with `codec`.
-    pub fn serialized_size_bytes_with<C>(&self, codec: &C) -> usize
+    /// Number of bytes required to serialize the sketch.
+    pub fn serialized_size_bytes(&self) -> usize
     where
-        C: ReqItemCodec<T>,
+        T: ReqValue,
     {
         // Fixed sketch preamble: 8 bytes (preamble_ints, serial_version, family,
         // flags, k(2), num_levels, num_raw_items).
@@ -517,31 +494,31 @@ where
         }
         if self.is_estimation_mode() {
             size += 8; // n
-            size += codec.serialized_size(self.min_item.as_ref().unwrap());
-            size += codec.serialized_size(self.max_item.as_ref().unwrap());
+            size += T::serialize_size(self.min_item.as_ref().unwrap());
+            size += T::serialize_size(self.max_item.as_ref().unwrap());
         }
         if self.is_raw_items() {
             for item in self.compactors[0].iter() {
-                size += codec.serialized_size(item);
+                size += T::serialize_size(item);
             }
         } else {
             for c in &self.compactors {
                 // 20-byte compactor preamble + items
                 size += 20;
                 for item in c.iter() {
-                    size += codec.serialized_size(item);
+                    size += T::serialize_size(item);
                 }
             }
         }
         size
     }
 
-    /// Serializes the sketch with `codec`.
-    pub fn serialize_with<C>(&self, codec: &C) -> Vec<u8>
+    /// Serialize the sketch into a `Vec<u8>` matching the C++/Java REQ wire format.
+    pub fn serialize(&self) -> Vec<u8>
     where
-        C: ReqItemCodec<T>,
+        T: ReqValue,
     {
-        let mut out = SketchBytes::with_capacity(self.serialized_size_bytes_with(codec));
+        let mut out = SketchBytes::with_capacity(self.serialized_size_bytes());
         let preamble_ints = if self.is_estimation_mode() {
             PREAMBLE_INTS_ESTIMATION
         } else {
@@ -567,34 +544,33 @@ where
 
         if self.is_estimation_mode() {
             out.write_u64_le(self.n);
-            codec.serialize(self.min_item.as_ref().unwrap(), &mut out);
-            codec.serialize(self.max_item.as_ref().unwrap(), &mut out);
+            self.min_item.as_ref().unwrap().serialize_value(&mut out);
+            self.max_item.as_ref().unwrap().serialize_value(&mut out);
         }
 
         if self.is_raw_items() {
             for item in self.compactors[0].iter() {
-                codec.serialize(item, &mut out);
+                item.serialize_value(&mut out);
             }
         } else {
             for c in &self.compactors {
-                c.serialize_into(&mut out, codec);
+                c.serialize_into(&mut out);
             }
         }
 
         out.into_bytes()
     }
 
-    /// Deserializes a sketch with the supplied item codec.
-    ///
-    /// The wire format records neither `O` nor the codec; callers must select matching types.
+    /// Deserialize a sketch from bytes produced by [`Self::serialize`] or by the
+    /// C++/Java reference implementations.
     ///
     /// # Errors
     ///
     /// Returns an error if the input is truncated or contains an inconsistent
     /// REQ serialized state.
-    pub fn deserialize_with<C>(bytes: &[u8], codec: &C) -> Result<Self, Error>
+    pub fn deserialize(bytes: &[u8]) -> Result<Self, Error>
     where
-        C: ReqItemCodec<T>,
+        T: ReqValue,
     {
         let mut cursor = SketchSlice::new(bytes);
         let preamble_ints = cursor
@@ -683,16 +659,14 @@ where
 
         if num_levels > 1 {
             n = cursor.read_u64_le().map_err(insufficient_data("n"))?;
-            min_item = Some(codec.deserialize(&mut cursor)?);
-            max_item = Some(codec.deserialize(&mut cursor)?);
+            min_item = Some(T::deserialize_value(&mut cursor)?);
+            max_item = Some(T::deserialize_value(&mut cursor)?);
             let min = min_item.as_ref().unwrap();
             let max = max_item.as_ref().unwrap();
-            if !O::accepts(min) || !O::accepts(max) {
-                return Err(Error::deserial(
-                    "REQ sketch min or max item is rejected by its ordering",
-                ));
+            if !is_valid(min) || !is_valid(max) {
+                return Err(Error::deserial("REQ sketch min or max item is unordered"));
             }
-            if O::compare(min, max).is_gt() {
+            if compare(min, max).is_gt() {
                 return Err(Error::deserial(
                     "REQ sketch min item is greater than max item",
                 ));
@@ -705,26 +679,16 @@ where
             // Single compactor at level 0; items follow directly.
             let mut items = Vec::with_capacity(num_raw_items as usize);
             for _ in 0..num_raw_items {
-                items.push(codec.deserialize(&mut cursor)?);
+                items.push(T::deserialize_value(&mut cursor)?);
             }
-            let c = Compactor::<T>::raw_items_compactor::<O>(
-                k,
-                rank_accuracy,
-                items,
-                is_level_zero_sorted,
-            )?;
+            let c =
+                Compactor::<T>::raw_items_compactor(k, rank_accuracy, items, is_level_zero_sorted)?;
             compactors.push(c);
         } else {
             for i in 0..num_levels {
                 let level_sorted = i > 0 || is_level_zero_sorted;
-                let c = Compactor::<T>::deserialize::<O, C>(
-                    &mut cursor,
-                    k,
-                    i,
-                    rank_accuracy,
-                    level_sorted,
-                    codec,
-                )?;
+                let c =
+                    Compactor::<T>::deserialize(&mut cursor, k, i, rank_accuracy, level_sorted)?;
                 compactors.push(c);
             }
         }
@@ -738,10 +702,10 @@ where
                 let mut mn = first.clone();
                 let mut mx = first.clone();
                 for x in iter {
-                    if O::compare(x, &mn).is_lt() {
+                    if compare(x, &mn).is_lt() {
                         mn = x.clone();
                     }
-                    if O::compare(x, &mx).is_gt() {
+                    if compare(x, &mx).is_gt() {
                         mx = x.clone();
                     }
                 }
@@ -800,7 +764,6 @@ where
         let mut sketch = Self {
             k,
             rank_accuracy,
-            order: PhantomData,
             n: 0,
             max_nom_size: 0,
             num_retained: 0,
@@ -827,16 +790,16 @@ where
         for h in 0..self.compactors.len() {
             if self.compactors[h].num_items() >= self.compactors[h].nominal_capacity() {
                 if h == 0 {
-                    self.compactors[0].sort::<O>();
+                    self.compactors[0].sort();
                 }
                 if h + 1 >= self.compactors.len() {
                     self.grow();
                 }
                 self.promotion_buf.clear();
-                self.compactors[h].compact_into::<O>(self.rank_accuracy, &mut self.promotion_buf);
+                self.compactors[h].compact_into(self.rank_accuracy, &mut self.promotion_buf);
                 if !self.promotion_buf.is_empty() {
-                    self.compactors[h + 1].sort::<O>();
-                    self.compactors[h + 1].merge_sorted::<O>(&self.promotion_buf);
+                    self.compactors[h + 1].sort();
+                    self.compactors[h + 1].merge_sorted(&self.promotion_buf);
                 }
                 self.update_max_nom_size();
                 self.update_num_retained();
@@ -850,33 +813,5 @@ where
 
     fn update_num_retained(&mut self) {
         self.num_retained = self.compactors.iter().map(|c| c.num_items()).sum();
-    }
-}
-
-impl<T, O> ReqSketch<T, O>
-where
-    T: Clone,
-    O: ReqOrder<T>,
-    DefaultReqItemCodec: ReqItemCodec<T>,
-{
-    /// Returns the number of bytes required to serialize the sketch with the default item codec.
-    pub fn serialized_size_bytes(&self) -> usize {
-        self.serialized_size_bytes_with(&DefaultReqItemCodec)
-    }
-
-    /// Serializes the sketch with the default item codec.
-    ///
-    /// For `f32`, this produces the C++/Java-compatible REQ wire format.
-    pub fn serialize(&self) -> Vec<u8> {
-        self.serialize_with(&DefaultReqItemCodec)
-    }
-
-    /// Deserializes a sketch with the default item codec.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the input is truncated or contains an inconsistent REQ serialized state.
-    pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
-        Self::deserialize_with(bytes, &DefaultReqItemCodec)
     }
 }
