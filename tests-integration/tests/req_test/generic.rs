@@ -18,7 +18,7 @@
 use datasketches::req::ReqSketch;
 use datasketches::req::SearchCriteria;
 
-#[derive(Clone, Debug, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 struct Reading(i32);
 
 #[test]

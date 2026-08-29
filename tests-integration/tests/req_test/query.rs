@@ -18,6 +18,7 @@
 //! Rank, quantile, PMF, and CDF behavior for ReqSketch.
 
 use datasketches::error::Error;
+use datasketches::req::ReqFloat;
 use datasketches::req::ReqSketch;
 use datasketches::req::SearchCriteria;
 use googletest::assert_that;
@@ -31,14 +32,14 @@ use googletest::prelude::near;
 fn exact_mode_rank_quantile_pmf_and_cdf_match_reference() {
     let mut sketch = ReqSketch::default();
     for i in 1..=10 {
-        sketch.update(i as f32);
+        sketch.update(i);
     }
 
     assert!(!sketch.is_estimation_mode());
     assert_eq!(sketch.n(), 10);
     assert_eq!(sketch.num_retained(), 10);
 
-    for (value, expected) in [(1.0, 0.0), (2.0, 0.1), (6.0, 0.5), (9.0, 0.8), (10.0, 0.9)] {
+    for (value, expected) in [(1, 0.0), (2, 0.1), (6, 0.5), (9, 0.8), (10, 0.9)] {
         assert_that!(
             sketch
                 .rank(&value, SearchCriteria::Exclusive)
@@ -47,7 +48,7 @@ fn exact_mode_rank_quantile_pmf_and_cdf_match_reference() {
         );
     }
 
-    for (value, expected) in [(1.0, 0.1), (2.0, 0.2), (5.0, 0.5), (9.0, 0.9), (10.0, 1.0)] {
+    for (value, expected) in [(1, 0.1), (2, 0.2), (5, 0.5), (9, 0.9), (10, 1.0)] {
         assert_that!(
             sketch
                 .rank(&value, SearchCriteria::Inclusive)
@@ -56,25 +57,25 @@ fn exact_mode_rank_quantile_pmf_and_cdf_match_reference() {
         );
     }
 
-    for (rank, expected) in [(0.0, 1.0), (0.1, 2.0), (0.5, 6.0), (0.9, 10.0), (1.0, 10.0)] {
-        assert_that!(
+    for (rank, expected) in [(0.0, 1), (0.1, 2), (0.5, 6), (0.9, 10), (1.0, 10)] {
+        assert_eq!(
             sketch
                 .quantile(rank, SearchCriteria::Exclusive)
                 .expect("quantile should succeed"),
-            near(expected, 1e-6)
+            expected
         );
     }
 
-    for (rank, expected) in [(0.0, 1.0), (0.1, 1.0), (0.5, 5.0), (0.9, 9.0), (1.0, 10.0)] {
-        assert_that!(
+    for (rank, expected) in [(0.0, 1), (0.1, 1), (0.5, 5), (0.9, 9), (1.0, 10)] {
+        assert_eq!(
             sketch
                 .quantile(rank, SearchCriteria::Inclusive)
                 .expect("quantile should succeed"),
-            near(expected, 1e-6)
+            expected
         );
     }
 
-    let splits = [2.0, 6.0, 9.0];
+    let splits = [2, 6, 9];
     let cdf = sketch
         .cdf(&splits, SearchCriteria::Exclusive)
         .expect("cdf should succeed");
@@ -96,10 +97,10 @@ fn exact_mode_rank_quantile_pmf_and_cdf_match_reference() {
 fn pmf_and_cdf_are_consistent() {
     let mut sketch = ReqSketch::default();
     for i in 0..1000 {
-        sketch.update(i as f64);
+        sketch.update(i);
     }
 
-    let split_points = [100.0, 300.0, 500.0, 700.0, 900.0];
+    let split_points = [100, 300, 500, 700, 900];
     let pmf = sketch
         .pmf(&split_points, SearchCriteria::Inclusive)
         .expect("pmf should succeed");
@@ -121,10 +122,10 @@ fn pmf_and_cdf_are_consistent() {
 fn rank_is_monotonic_and_bounded() {
     let mut sketch = ReqSketch::default();
     for i in 0..10_000 {
-        sketch.update(i as f64);
+        sketch.update(i);
     }
 
-    let test_values: Vec<f64> = (0..10_000).step_by(1000).map(|i| i as f64).collect();
+    let test_values: Vec<i32> = (0..10_000).step_by(1000).collect();
     let mut last_rank = 0.0;
 
     for value in test_values {
@@ -141,11 +142,11 @@ fn rank_is_monotonic_and_bounded() {
 fn quantiles_are_monotonic() -> Result<(), Error> {
     let mut sketch = ReqSketch::default();
     for i in 0..10_000 {
-        sketch.update(i as f64);
+        sketch.update(i);
     }
 
     let ranks = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9];
-    let mut previous = 0.0;
+    let mut previous = 0;
 
     for rank in ranks {
         let quantile = sketch.quantile(rank, SearchCriteria::Inclusive)?;
@@ -160,7 +161,7 @@ fn quantiles_are_monotonic() -> Result<(), Error> {
 fn rank_quantile_round_trip_is_consistent() -> Result<(), Error> {
     let mut sketch = ReqSketch::default();
     for i in 0..10_000 {
-        sketch.update(i as f64);
+        sketch.update(i);
     }
 
     for target_rank in [0.1, 0.25, 0.5, 0.75, 0.9] {
@@ -177,10 +178,10 @@ fn rank_quantile_round_trip_is_consistent() -> Result<(), Error> {
 fn search_criteria_rank_consistency() -> Result<(), Error> {
     let mut sketch = ReqSketch::default();
     for i in 0..1000 {
-        sketch.update(i as f64);
+        sketch.update(i);
     }
 
-    for value in [100.0, 250.0, 500.0, 750.0] {
+    for value in [100, 250, 500, 750] {
         let inclusive_rank = sketch.rank(&value, SearchCriteria::Inclusive)?;
         let exclusive_rank = sketch.rank(&value, SearchCriteria::Exclusive)?;
 
@@ -195,15 +196,21 @@ fn search_criteria_rank_consistency() -> Result<(), Error> {
 #[test]
 fn signed_zeros_share_rank_and_cannot_be_distinct_splits() -> Result<(), Error> {
     let mut sketch = ReqSketch::default();
-    sketch.update(-0.0_f64);
-    sketch.update(0.0_f64);
+    let negative_zero = ReqFloat::<f64>::new(-0.0)?;
+    let positive_zero = ReqFloat::<f64>::new(0.0)?;
+    sketch.update(negative_zero);
+    sketch.update(positive_zero);
 
-    for value in [-0.0, 0.0] {
+    for value in [negative_zero, positive_zero] {
         assert_eq!(sketch.rank(&value, SearchCriteria::Exclusive)?, 0.0);
         assert_eq!(sketch.rank(&value, SearchCriteria::Inclusive)?, 1.0);
     }
 
-    assert!(sketch.pmf(&[-0.0, 0.0], SearchCriteria::Inclusive).is_err());
+    assert!(
+        sketch
+            .pmf(&[negative_zero, positive_zero], SearchCriteria::Inclusive)
+            .is_err()
+    );
 
     Ok(())
 }

@@ -24,26 +24,9 @@ use crate::error::Error;
 use crate::req::INITIAL_SECTIONS_PER_COMPACTOR;
 use crate::req::MIN_K;
 use crate::req::RankAccuracy;
-use crate::req::compare;
-use crate::req::is_self_comparable;
 use crate::req::nearest_even_section_size;
 use crate::req::serialization::validate_compactor_state;
 use crate::req::value::ReqValue;
-
-fn normalized_sort_state<T: PartialOrd>(items: &[T], claimed_sorted: bool) -> Result<bool, Error> {
-    let mut previous: Option<&T> = None;
-    let mut sorted = claimed_sorted;
-    for item in items {
-        if !is_self_comparable(item) {
-            return Err(Error::deserial("REQ compactor item is self-incomparable"));
-        }
-        if sorted && previous.is_some_and(|previous| compare(previous, item).is_gt()) {
-            sorted = false;
-        }
-        previous = Some(item);
-    }
-    Ok(sorted)
-}
 
 /// A compactor maintains items at a specific level of the REQ sketch.
 ///
@@ -77,7 +60,7 @@ pub(super) struct Compactor<T> {
 
 impl<T> Compactor<T>
 where
-    T: Clone + PartialOrd,
+    T: Clone + Ord,
 {
     /// Creates a new compactor for the given level.
     ///
@@ -142,7 +125,7 @@ where
                 self.merge_sorted(&other.items);
             } else {
                 let mut other_items = other.items.clone();
-                other_items.sort_unstable_by(compare);
+                other_items.sort_unstable();
                 self.merge_sorted(&other_items);
             }
         }
@@ -160,17 +143,14 @@ where
     pub(super) fn count_below(&self, item: &T, inclusive: bool) -> usize {
         if self.is_sorted {
             if inclusive {
-                self.items.partition_point(|x| compare(x, item).is_le())
+                self.items.partition_point(|x| x <= item)
             } else {
-                self.items.partition_point(|x| compare(x, item).is_lt())
+                self.items.partition_point(|x| x < item)
             }
         } else {
             self.items
                 .iter()
-                .filter(|x| {
-                    let ord = compare(*x, item);
-                    if inclusive { ord.is_le() } else { ord.is_lt() }
-                })
+                .filter(|x| if inclusive { *x <= item } else { *x < item })
                 .count()
         }
     }
@@ -203,7 +183,7 @@ where
 
         // Two-pointer merge into scratch buffer
         while i < a.len() && j < b.len() {
-            if compare(&a[i], &b[j]).is_le() {
+            if a[i] <= b[j] {
                 self.scratch_buffer.push(a[i].clone());
                 i += 1;
             } else {
@@ -231,7 +211,7 @@ where
     pub(super) fn sort(&mut self) {
         if !self.is_sorted {
             // Use unstable sort for better performance (stable not needed for REQ sketch)
-            self.items.sort_unstable_by(compare);
+            self.items.sort_unstable();
             self.is_sorted = true;
         }
     }
@@ -391,7 +371,7 @@ where
         expected_lg_weight: u8,
         rank_accuracy: RankAccuracy,
         sorted: bool,
-    ) -> Result<Self, crate::error::Error>
+    ) -> Result<Self, Error>
     where
         T: ReqValue,
     {
@@ -433,7 +413,7 @@ where
         for _ in 0..num_items {
             items.push(T::deserialize_value(cursor)?);
         }
-        let sorted = normalized_sort_state(&items, sorted)?;
+        let sorted = sorted && items.is_sorted();
 
         Ok(Compactor::from_serialized_state(
             lg_weight,
@@ -450,23 +430,19 @@ where
     ///
     /// The wire format omits the compactor preamble for tiny sketches (n ≤ 4); this
     /// helper synthesises a fresh compactor and seeds it with the deserialized items.
-    /// `is_sorted` is taken verbatim from the wire — both C++ and Java produce valid
-    /// sketches but disagree on this flag for n=1 (C++ sets true, Java sets false),
-    /// so faithful round-trip requires preserving whatever the input said.
+    /// A false wire flag stays false for byte-stable C++/Java round trips; a true flag
+    /// is cleared if the items are not actually sorted.
     pub(super) fn raw_items_compactor(
         k: u16,
         rank_accuracy: RankAccuracy,
         items: Vec<T>,
         is_sorted: bool,
-    ) -> Result<Self, Error> {
-        let is_sorted = normalized_sort_state(&items, is_sorted)?;
+    ) -> Self {
+        let is_sorted = is_sorted && items.is_sorted();
         let mut c = Self::new(0, k, rank_accuracy);
-        for item in items {
-            c.append(item);
-        }
-        // append() may have flipped is_sorted off; restore the wire flag verbatim.
+        c.items = items;
         c.is_sorted = is_sorted;
-        Ok(c)
+        c
     }
 
     /// Reconstruct a Compactor from deserialized state.
@@ -502,7 +478,7 @@ where
 #[cfg(test)]
 impl<T> Compactor<T>
 where
-    T: Clone + PartialOrd,
+    T: Clone + Ord,
 {
     /// Returns the level (log weight) of this compactor. Test-only accessor.
     pub(super) fn lg_weight(&self) -> u8 {
@@ -521,6 +497,7 @@ mod tests {
     use googletest::prelude::ge;
 
     use super::*;
+    use crate::req::ReqFloat;
 
     #[test]
     fn test_new_compactor() {
@@ -584,9 +561,9 @@ mod tests {
         use crate::codec::SketchBytes;
         use crate::codec::SketchSlice;
 
-        let mut c: Compactor<f32> = Compactor::new(0, 12, RankAccuracy::HighRank);
+        let mut c: Compactor<ReqFloat<f32>> = Compactor::new(0, 12, RankAccuracy::HighRank);
         for i in 0..30 {
-            c.append(i as f32);
+            c.append(ReqFloat::<f32>::new(i as f32).unwrap());
         }
         c.sort();
 
@@ -595,14 +572,20 @@ mod tests {
         let raw = bytes.into_bytes();
 
         let mut cursor = SketchSlice::new(&raw);
-        let c2 = Compactor::<f32>::deserialize(&mut cursor, 12, 0, RankAccuracy::HighRank, true)
-            .unwrap();
+        let c2 = Compactor::<ReqFloat<f32>>::deserialize(
+            &mut cursor,
+            12,
+            0,
+            RankAccuracy::HighRank,
+            true,
+        )
+        .unwrap();
 
         assert_eq!(c.num_items(), c2.num_items());
         assert_eq!(c.lg_weight(), c2.lg_weight());
         assert_eq!(c.state(), c2.state());
-        let xs: Vec<f32> = c.iter().copied().collect();
-        let ys: Vec<f32> = c2.iter().copied().collect();
+        let xs: Vec<ReqFloat<f32>> = c.iter().copied().collect();
+        let ys: Vec<ReqFloat<f32>> = c2.iter().copied().collect();
         assert_eq!(xs, ys);
     }
 
@@ -623,8 +606,8 @@ mod tests {
         //   - state=0xFFFF >= (1<<11)=2048 ✓ → num_sections=24, ssr≈4.24
         //   - state=0xFFFF >= (1<<23)=8388608 ✗ → stop
         // Expected: num_sections == 24 with the fix; == 6 with only one call.
-        let mut a: Compactor<f64> = Compactor::new(0, 12, RankAccuracy::HighRank);
-        let mut b: Compactor<f64> = Compactor::new(0, 12, RankAccuracy::HighRank);
+        let mut a: Compactor<i32> = Compactor::new(0, 12, RankAccuracy::HighRank);
+        let mut b: Compactor<i32> = Compactor::new(0, 12, RankAccuracy::HighRank);
         b.state = 0xFFFF;
 
         assert_eq!(a.num_sections, 3, "default num_sections sanity");

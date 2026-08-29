@@ -29,7 +29,7 @@ fn rank_space_error_is_bounded() -> Result<(), Error> {
     let n = 50_000;
 
     for i in 0..n {
-        sketch.update(i as f64);
+        sketch.update(i);
     }
 
     assert_eq!(sketch.n(), n as u64);

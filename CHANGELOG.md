@@ -13,7 +13,7 @@ All significant changes to this project will be documented in this file.
 
 ### New features
 
-* Add Relative Error Quantiles (REQ) sketches behind the `req` feature, including configurable high- or low-rank accuracy, rank, quantile, PMF, and CDF queries, merging, custom item types, and C++/Java-compatible serialization.
+* Add Relative Error Quantiles (REQ) sketches behind the `req` feature, including configurable high- or low-rank accuracy, rank, quantile, PMF, and CDF queries, merging, totally ordered custom item types, the `ReqFloat` adapter for non-NaN floating-point values, and C++/Java-compatible serialization.
 
 ### Performance improvements
 

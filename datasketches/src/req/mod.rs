@@ -23,8 +23,6 @@
 //! Karnin, Liberty, Thaler and Veselý, and on the Apache DataSketches C++ reference
 //! implementation.
 
-use std::cmp::Ordering;
-
 mod compactor;
 mod iter;
 mod serialization;
@@ -35,6 +33,7 @@ mod value;
 pub use self::iter::ReqSketchIterator;
 pub use self::sketch::ReqSketch;
 pub use self::sorted_view::SortedView;
+pub use self::value::ReqFloat;
 pub use self::value::ReqValue;
 
 /// Default value of `k` if not specified. Roughly 1% relative error at 95% confidence.
@@ -70,14 +69,4 @@ const INITIAL_SECTIONS_PER_COMPACTOR: u8 = 3;
 
 fn nearest_even_section_size(value: f32) -> u32 {
     ((value / 2.0).round() as u32) << 1
-}
-
-#[inline(always)]
-fn compare<T: PartialOrd>(left: &T, right: &T) -> Ordering {
-    left.partial_cmp(right).unwrap()
-}
-
-#[inline(always)]
-fn is_self_comparable<T: PartialOrd>(item: &T) -> bool {
-    item.partial_cmp(item).is_some()
 }

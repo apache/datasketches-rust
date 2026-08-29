@@ -19,8 +19,6 @@
 
 use crate::error::Error;
 use crate::req::SearchCriteria;
-use crate::req::compare;
-use crate::req::is_self_comparable;
 
 /// An owned, sorted snapshot of a [`ReqSketch`](crate::req::ReqSketch)'s items with
 /// their cumulative weights.
@@ -43,7 +41,7 @@ pub struct SortedView<T> {
 
 impl<T> SortedView<T>
 where
-    T: Clone + PartialOrd,
+    T: Clone + Ord,
 {
     /// Creates a new sorted view from weighted items.
     ///
@@ -61,7 +59,7 @@ where
         }
 
         // Sort by item value - use unstable sort for better performance
-        weighted_items.sort_unstable_by(|a, b| compare(&a.0, &b.0));
+        weighted_items.sort_unstable_by(|a, b| a.0.cmp(&b.0));
 
         let mut items: Vec<T> = Vec::with_capacity(weighted_items.len());
         let mut cumulative_weights = Vec::with_capacity(weighted_items.len());
@@ -69,7 +67,7 @@ where
 
         for (item, weight) in weighted_items {
             if let Some(last) = items.last() {
-                if matches!(compare(last, &item), std::cmp::Ordering::Equal) {
+                if last == &item {
                     cumulative_weight += weight;
                     let last_idx = cumulative_weights.len() - 1;
                     cumulative_weights[last_idx] = cumulative_weight;
@@ -110,20 +108,16 @@ where
     /// * `criteria` - Whether to include the item's weight in the rank
     ///
     /// # Errors
-    /// Returns an error if the view is empty or `item` is not comparable with itself.
+    /// Returns an error if the view is empty.
     pub fn rank(&self, item: &T, criteria: SearchCriteria) -> Result<f64, Error> {
         if self.is_empty() {
             return Err(Error::invalid_argument("sketch is empty"));
         }
-        if !is_self_comparable(item) {
-            return Err(Error::invalid_argument("query item is self-incomparable"));
-        }
-
         match criteria {
             SearchCriteria::Inclusive => {
                 // Find the last position where items[i] <= item
                 // partition_point finds first index where predicate is false
-                let pos = self.items.partition_point(|x| compare(x, item).is_le());
+                let pos = self.items.partition_point(|x| x <= item);
                 if pos == 0 {
                     Ok(0.0)
                 } else {
@@ -132,7 +126,7 @@ where
             }
             SearchCriteria::Exclusive => {
                 // Find the last position where items[i] < item
-                let pos = self.items.partition_point(|x| compare(x, item).is_lt());
+                let pos = self.items.partition_point(|x| x < item);
                 if pos == 0 {
                     Ok(0.0)
                 } else {
@@ -260,15 +254,10 @@ where
     // Private helper methods
 
     fn validate_split_points(&self, split_points: &[T]) -> Result<(), Error> {
-        for (i, split_point) in split_points.iter().enumerate() {
-            if !is_self_comparable(split_point) {
-                return Err(Error::invalid_argument("split point is self-incomparable"));
-            }
-            if i > 0 && compare(&split_points[i - 1], split_point).is_ge() {
-                return Err(Error::invalid_argument(
-                    "Split points must be unique and monotonically increasing".to_string(),
-                ));
-            }
+        if split_points.windows(2).any(|pair| pair[0] >= pair[1]) {
+            return Err(Error::invalid_argument(
+                "Split points must be unique and monotonically increasing".to_string(),
+            ));
         }
         Ok(())
     }

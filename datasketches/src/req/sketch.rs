@@ -29,8 +29,6 @@ use crate::req::MIN_K;
 use crate::req::RankAccuracy;
 use crate::req::SearchCriteria;
 use crate::req::compactor::Compactor;
-use crate::req::compare;
-use crate::req::is_self_comparable;
 use crate::req::iter::ReqSketchIterator;
 use crate::req::serialization::FLAG_IS_EMPTY;
 use crate::req::serialization::FLAG_IS_HIGH_RANK;
@@ -47,9 +45,8 @@ use crate::req::value::ReqValue;
 
 /// A Relative Error Quantiles sketch for approximate quantile estimation.
 ///
-/// [`PartialOrd::partial_cmp`] must return `Some` for every pair of self-comparable values used
-/// with a sketch. Values that are not comparable with themselves, such as NaN, are ignored on
-/// update. Use a newtype to select a different ordering for the same underlying value.
+/// Items must implement [`Ord`], matching the totally ordered data universe assumed by the REQ
+/// algorithm. Use [`super::ReqFloat`] for non-NaN `f32` and `f64` values.
 #[derive(Debug, Clone)]
 pub struct ReqSketch<T> {
     k: u16,
@@ -65,7 +62,7 @@ pub struct ReqSketch<T> {
 
 impl<T> Default for ReqSketch<T>
 where
-    T: Clone + PartialOrd,
+    T: Clone + Ord,
 {
     fn default() -> Self {
         Self::make(DEFAULT_K, RankAccuracy::HighRank)
@@ -74,7 +71,7 @@ where
 
 impl<T> ReqSketch<T>
 where
-    T: Clone + PartialOrd,
+    T: Clone + Ord,
 {
     /// Creates a sketch with the given configuration.
     ///
@@ -134,20 +131,15 @@ where
     }
 
     /// Updates the sketch with a new item.
-    ///
-    /// Items that are not comparable with themselves, such as NaN, are silently ignored.
     pub fn update(&mut self, item: T) {
-        if !is_self_comparable(&item) {
-            return;
-        }
         match &mut self.min_item {
             None => self.min_item = Some(item.clone()),
-            Some(cur) if compare(&item, cur).is_lt() => *cur = item.clone(),
+            Some(cur) if item.cmp(cur).is_lt() => *cur = item.clone(),
             _ => {}
         }
         match &mut self.max_item {
             None => self.max_item = Some(item.clone()),
-            Some(cur) if compare(&item, cur).is_gt() => *cur = item.clone(),
+            Some(cur) if item.cmp(cur).is_gt() => *cur = item.clone(),
             _ => {}
         }
 
@@ -183,13 +175,10 @@ where
     /// [`SortedView::rank`] on [`Self::sorted_view`].
     ///
     /// # Errors
-    /// Returns an error if the sketch is empty or `item` is not comparable with itself.
+    /// Returns an error if the sketch is empty.
     pub fn rank(&self, item: &T, criteria: SearchCriteria) -> Result<f64, Error> {
         if self.is_empty() {
             return Err(Error::invalid_argument("sketch is empty"));
-        }
-        if !is_self_comparable(item) {
-            return Err(Error::invalid_argument("query item is self-incomparable"));
         }
         let inclusive = matches!(criteria, SearchCriteria::Inclusive);
         let weight: u64 = self
@@ -285,10 +274,10 @@ where
     /// use datasketches::req::ReqSketch;
     ///
     /// let mut first = ReqSketch::default();
-    /// first.update(1.0_f64);
+    /// first.update(1_i64);
     ///
     /// let mut second = ReqSketch::default();
-    /// second.update(2.0_f64);
+    /// second.update(2_i64);
     ///
     /// let mut combined = ReqSketch::default();
     /// combined.merge(&first).unwrap();
@@ -312,14 +301,14 @@ where
         if let Some(m) = &other.min_item {
             match &self.min_item {
                 None => self.min_item = Some(m.clone()),
-                Some(cur) if compare(m, cur).is_lt() => self.min_item = Some(m.clone()),
+                Some(cur) if m.cmp(cur).is_lt() => self.min_item = Some(m.clone()),
                 _ => {}
             }
         }
         if let Some(m) = &other.max_item {
             match &self.max_item {
                 None => self.max_item = Some(m.clone()),
-                Some(cur) if compare(m, cur).is_gt() => self.max_item = Some(m.clone()),
+                Some(cur) if m.cmp(cur).is_gt() => self.max_item = Some(m.clone()),
                 _ => {}
             }
         }
@@ -664,10 +653,7 @@ where
             max_item = Some(T::deserialize_value(&mut cursor)?);
             let min = min_item.as_ref().unwrap();
             let max = max_item.as_ref().unwrap();
-            if !is_self_comparable(min) || !is_self_comparable(max) {
-                return Err(Error::deserial("REQ min or max is self-incomparable"));
-            }
-            if compare(min, max).is_gt() {
+            if min > max {
                 return Err(Error::deserial(
                     "REQ sketch min item is greater than max item",
                 ));
@@ -683,7 +669,7 @@ where
                 items.push(T::deserialize_value(&mut cursor)?);
             }
             let c =
-                Compactor::<T>::raw_items_compactor(k, rank_accuracy, items, is_level_zero_sorted)?;
+                Compactor::<T>::raw_items_compactor(k, rank_accuracy, items, is_level_zero_sorted);
             compactors.push(c);
         } else {
             for i in 0..num_levels {
@@ -703,10 +689,10 @@ where
                 let mut mn = first.clone();
                 let mut mx = first.clone();
                 for x in iter {
-                    if compare(x, &mn).is_lt() {
+                    if x < &mn {
                         mn = x.clone();
                     }
-                    if compare(x, &mx).is_gt() {
+                    if x > &mx {
                         mx = x.clone();
                     }
                 }

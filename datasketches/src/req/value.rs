@@ -15,14 +15,80 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! REQ item serialization.
+//! REQ item types and serialization.
 
+use std::cmp::Ordering;
 use std::mem::size_of;
 
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
 use crate::codec::assert::insufficient_data;
 use crate::error::Error;
+
+/// A non-NaN floating-point value with numerical total ordering.
+///
+/// Signed zeros compare equal. Infinities retain their usual numerical order.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
+pub struct ReqFloat<T>(T);
+
+impl<T> ReqFloat<T> {
+    /// Returns the wrapped floating-point value.
+    #[inline(always)]
+    pub fn into_inner(self) -> T {
+        self.0
+    }
+}
+
+impl ReqFloat<f32> {
+    /// Creates a non-NaN value.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `value` is NaN.
+    #[inline(always)]
+    pub fn new(value: f32) -> Result<Self, Error> {
+        if value.is_nan() {
+            Err(Error::invalid_argument("REQ float must not be NaN"))
+        } else {
+            Ok(Self(value))
+        }
+    }
+}
+
+impl Eq for ReqFloat<f32> {}
+
+impl Ord for ReqFloat<f32> {
+    #[inline(always)]
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.0.partial_cmp(&other.0).unwrap()
+    }
+}
+
+impl ReqFloat<f64> {
+    /// Creates a non-NaN value.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `value` is NaN.
+    #[inline(always)]
+    pub fn new(value: f64) -> Result<Self, Error> {
+        if value.is_nan() {
+            Err(Error::invalid_argument("REQ float must not be NaN"))
+        } else {
+            Ok(Self(value))
+        }
+    }
+}
+
+impl Eq for ReqFloat<f64> {}
+
+impl Ord for ReqFloat<f64> {
+    #[inline(always)]
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.0.partial_cmp(&other.0).unwrap()
+    }
+}
 
 /// Serialization support for values stored in a REQ sketch.
 pub trait ReqValue: Sized {
@@ -100,34 +166,36 @@ impl ReqValue for u64 {
     }
 }
 
-impl ReqValue for f32 {
+impl ReqValue for ReqFloat<f32> {
     fn serialize_size(_item: &Self) -> usize {
         size_of::<Self>()
     }
 
     fn serialize_value(&self, bytes: &mut SketchBytes) {
-        bytes.write_f32_le(*self);
+        bytes.write_f32_le(self.0);
     }
 
     fn deserialize_value(cursor: &mut SketchSlice<'_>) -> Result<Self, Error> {
-        cursor
+        let value = cursor
             .read_f32_le()
-            .map_err(insufficient_data("failed to read f32 from REQ sketch"))
+            .map_err(insufficient_data("failed to read f32 from REQ sketch"))?;
+        Self::new(value).map_err(|_| Error::deserial("REQ float must not be NaN"))
     }
 }
 
-impl ReqValue for f64 {
+impl ReqValue for ReqFloat<f64> {
     fn serialize_size(_item: &Self) -> usize {
         size_of::<Self>()
     }
 
     fn serialize_value(&self, bytes: &mut SketchBytes) {
-        bytes.write_f64_le(*self);
+        bytes.write_f64_le(self.0);
     }
 
     fn deserialize_value(cursor: &mut SketchSlice<'_>) -> Result<Self, Error> {
-        cursor
+        let value = cursor
             .read_f64_le()
-            .map_err(insufficient_data("failed to read f64 from REQ sketch"))
+            .map_err(insufficient_data("failed to read f64 from REQ sketch"))?;
+        Self::new(value).map_err(|_| Error::deserial("REQ float must not be NaN"))
     }
 }
