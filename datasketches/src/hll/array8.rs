@@ -27,6 +27,7 @@ use crate::codec::family::Family;
 use crate::common::NumStdDev;
 use crate::error::Error;
 use crate::hll::Coupon;
+use crate::hll::estimator::EstimateState;
 use crate::hll::estimator::HipEstimator;
 use crate::hll::serialization::CUR_MODE_HLL;
 use crate::hll::serialization::HLL_PREAMBLE_SIZE;
@@ -117,18 +118,6 @@ impl Array8 {
             .lower_bound(self.lg_config_k, 0, self.num_zeros, num_std_dev)
     }
 
-    /// Set the HIP accumulator value
-    ///
-    /// This is used when promoting from coupon modes to carry forward the estimate
-    pub fn set_hip_accum(&mut self, value: f64) {
-        self.estimator.set_hip_accum(value);
-    }
-
-    /// Sets whether the HIP accumulator is valid
-    pub(super) fn set_out_of_order(&mut self, out_of_order: bool) {
-        self.estimator.set_out_of_order(out_of_order);
-    }
-
     /// Check if the sketch is empty (all slots are zero)
     pub fn is_empty(&self) -> bool {
         self.num_zeros == (1 << self.lg_config_k)
@@ -144,14 +133,14 @@ impl Array8 {
         1 << self.lg_config_k
     }
 
-    /// Get the current HIP accumulator value
-    pub(super) fn hip_accum(&self) -> f64 {
-        self.estimator.hip_accum()
+    /// Returns the estimate state independently from register-derived cached values.
+    pub(super) fn estimate_state(&self) -> EstimateState {
+        self.estimator.estimate_state()
     }
 
-    /// Returns whether the HIP accumulator has been invalidated by a bulk operation
-    pub(super) fn is_out_of_order(&self) -> bool {
-        self.estimator.is_out_of_order()
+    /// Restores estimate state after copying or transforming the same logical sketch.
+    pub(super) fn restore_estimate_state(&mut self, state: EstimateState) {
+        self.estimator.restore_estimate_state(state);
     }
 
     /// Directly set a register value
@@ -168,7 +157,7 @@ impl Array8 {
     /// Should be called after bulk register modifications.
     pub(super) fn rebuild_estimator_from_registers(&mut self) {
         self.rebuild_cached_values();
-        self.estimator.set_out_of_order(true);
+        self.estimator.invalidate_hip();
     }
 
     /// Merge another Array8 with the same lg_k
@@ -191,7 +180,7 @@ impl Array8 {
         }
 
         self.rebuild_cached_values();
-        self.estimator.set_out_of_order(true);
+        self.estimator.invalidate_hip();
     }
 
     /// Merge an array with larger lg_k (downsampling)
@@ -229,7 +218,7 @@ impl Array8 {
         }
 
         self.rebuild_cached_values();
-        self.estimator.set_out_of_order(true);
+        self.estimator.invalidate_hip();
     }
 
     /// Rebuild cached values after bulk modifications
@@ -255,8 +244,7 @@ impl Array8 {
             }
         }
 
-        self.estimator.set_kxq0(kxq0_sum);
-        self.estimator.set_kxq1(kxq1_sum);
+        self.estimator.restore_kxq(kxq0_sum, kxq1_sum);
     }
 
     /// Deserialize Array8 from HLL mode bytes
@@ -301,12 +289,7 @@ impl Array8 {
             .read_exact(&mut data)
             .map_err(insufficient_data("data"))?;
 
-        // Create estimator and restore state
-        let mut estimator = HipEstimator::new(lg_config_k);
-        estimator.set_hip_accum(hip_accum);
-        estimator.set_kxq0(kxq0);
-        estimator.set_kxq1(kxq1);
-        estimator.set_out_of_order(ooo);
+        let estimator = HipEstimator::from_serialized(hip_accum, kxq0, kxq1, ooo);
 
         Ok(Self {
             lg_config_k,

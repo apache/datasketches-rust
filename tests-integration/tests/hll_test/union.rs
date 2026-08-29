@@ -235,6 +235,21 @@ fn test_union_mixed_hll_types() {
     assert_eq!(result6.target_type(), HllType::Hll6);
     assert_eq!(result8.target_type(), HllType::Hll8);
 
+    // Target types change only the register encoding, not the estimator state.
+    for result in [&result4, &result6] {
+        assert_eq!(result.estimate(), result8.estimate());
+        for num_std_dev in [NumStdDev::One, NumStdDev::Two, NumStdDev::Three] {
+            assert_eq!(
+                result.lower_bound(num_std_dev),
+                result8.lower_bound(num_std_dev),
+            );
+            assert_eq!(
+                result.upper_bound(num_std_dev),
+                result8.upper_bound(num_std_dev),
+            );
+        }
+    }
+
     // Should estimate ~7,000 unique values (0-6,999)
     for (result, type_name) in [
         (result4.estimate(), "Hll4"),

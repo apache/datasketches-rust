@@ -28,6 +28,7 @@ use crate::common::NumStdDev;
 use crate::error::Error;
 use crate::hll::Coupon;
 use crate::hll::aux_map::AuxMap;
+use crate::hll::estimator::EstimateState;
 use crate::hll::estimator::HipEstimator;
 use crate::hll::serialization::COMPACT_FLAG_MASK;
 use crate::hll::serialization::COUPON_SIZE_BYTES;
@@ -125,14 +126,9 @@ impl Array4 {
         1 << self.lg_config_k
     }
 
-    /// Get the current HIP accumulator value
-    pub(super) fn hip_accum(&self) -> f64 {
-        self.estimator.hip_accum()
-    }
-
-    /// Returns whether the HIP accumulator has been invalidated by a bulk operation
-    pub(super) fn is_out_of_order(&self) -> bool {
-        self.estimator.is_out_of_order()
+    /// Returns the estimate state independently from register-derived cached values.
+    pub(super) fn estimate_state(&self) -> EstimateState {
+        self.estimator.estimate_state()
     }
 
     /// Set raw 4-bit value in slot
@@ -302,11 +298,9 @@ impl Array4 {
         )
     }
 
-    /// Set the HIP accumulator value
-    ///
-    /// This is used when promoting from coupon modes to carry forward the estimate
-    pub fn set_hip_accum(&mut self, value: f64) {
-        self.estimator.set_hip_accum(value);
+    /// Restores estimate state after copying or transforming the same logical sketch.
+    pub(super) fn restore_estimate_state(&mut self, state: EstimateState) {
+        self.estimator.restore_estimate_state(state);
     }
 
     /// Check if the sketch is empty (all slots are zero)
@@ -409,12 +403,7 @@ impl Array4 {
             aux_map = Some(aux);
         }
 
-        // Create estimator and restore state
-        let mut estimator = HipEstimator::new(lg_config_k);
-        estimator.set_hip_accum(hip_accum);
-        estimator.set_kxq0(kxq0);
-        estimator.set_kxq1(kxq1);
-        estimator.set_out_of_order(ooo);
+        let estimator = HipEstimator::from_serialized(hip_accum, kxq0, kxq1, ooo);
 
         Ok(Self {
             lg_config_k,

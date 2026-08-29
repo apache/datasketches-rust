@@ -37,6 +37,7 @@ use crate::hll::array4::AuxFormat;
 use crate::hll::array6::Array6;
 use crate::hll::array8::Array8;
 use crate::hll::container::Container;
+use crate::hll::estimator::EstimateState;
 use crate::hll::hash_set::HashSet;
 use crate::hll::list::List;
 use crate::hll::mode::Mode;
@@ -487,7 +488,7 @@ fn promote_container_to_array(container: &Container, hll_type: HllType, lg_confi
             for coupon in container.iter() {
                 array.update(coupon);
             }
-            array.set_hip_accum(container.estimate());
+            array.restore_estimate_state(EstimateState::Hip(container.estimate()));
             Mode::Array4(array)
         }
         HllType::Hll6 => {
@@ -495,7 +496,7 @@ fn promote_container_to_array(container: &Container, hll_type: HllType, lg_confi
             for coupon in container.iter() {
                 array.update(coupon);
             }
-            array.set_hip_accum(container.estimate());
+            array.restore_estimate_state(EstimateState::Hip(container.estimate()));
             Mode::Array6(array)
         }
         HllType::Hll8 => {
@@ -503,7 +504,7 @@ fn promote_container_to_array(container: &Container, hll_type: HllType, lg_confi
             for coupon in container.iter() {
                 array.update(coupon);
             }
-            array.set_hip_accum(container.estimate());
+            array.restore_estimate_state(EstimateState::Hip(container.estimate()));
             Mode::Array8(array)
         }
     }

@@ -38,6 +38,7 @@ use crate::hll::HllType;
 use crate::hll::array4::Array4;
 use crate::hll::array6::Array6;
 use crate::hll::array8::Array8;
+use crate::hll::estimator::EstimateState;
 use crate::hll::mode::Mode;
 
 /// An HLL union for combining multiple HLL sketches.
@@ -424,27 +425,15 @@ fn merge_array_into_array8(dst_array8: &mut Array8, dst_lg_k: u8, src_mode: &Mod
     }
 }
 
-/// Extract HIP accumulator from an array mode
-fn get_array_hip_accum(mode: &Mode) -> f64 {
+/// Extract estimate state from an array mode.
+fn get_array_estimate_state(mode: &Mode) -> EstimateState {
     match mode {
-        Mode::Array8(src) => src.hip_accum(),
-        Mode::Array6(src) => src.hip_accum(),
-        Mode::Array4(src) => src.hip_accum(),
-        Mode::List { .. } | Mode::Set { .. } => {
-            unreachable!("get_array_hip_accum called with non-array mode; List/Set not supported");
-        }
-    }
-}
-
-/// Extract the out-of-order flag from an array mode
-fn get_array_out_of_order(mode: &Mode) -> bool {
-    match mode {
-        Mode::Array8(src) => src.is_out_of_order(),
-        Mode::Array6(src) => src.is_out_of_order(),
-        Mode::Array4(src) => src.is_out_of_order(),
+        Mode::Array8(src) => src.estimate_state(),
+        Mode::Array6(src) => src.estimate_state(),
+        Mode::Array4(src) => src.estimate_state(),
         Mode::List { .. } | Mode::Set { .. } => {
             unreachable!(
-                "get_array_out_of_order called with non-array mode; List/Set not supported"
+                "get_array_estimate_state called with non-array mode; List/Set not supported"
             );
         }
     }
@@ -534,8 +523,9 @@ fn merge_array_with_downsample(dst: &mut Array8, dst_lg_k: u8, src_mode: &Mode, 
 /// Convert Array8 to a different HLL type
 ///
 /// Creates a new sketch with the requested type by copying register values
-/// from the Array8 source. Preserves the HIP accumulator.
+/// from the Array8 source. Preserves the estimate state.
 fn convert_array8_to_type(src: &Array8, lg_config_k: u8, target_type: HllType) -> HllSketch {
+    let estimate_state = src.estimate_state();
     match target_type {
         HllType::Hll8 => HllSketch::from_mode(lg_config_k, Mode::Array8(src.clone())),
         HllType::Hll6 => {
@@ -548,12 +538,7 @@ fn convert_array8_to_type(src: &Array8, lg_config_k: u8, target_type: HllType) -
                     array6.update(coupon);
                 }
             }
-
-            let src_est = src.estimate();
-            let arr6_est = array6.estimate();
-            if src_est > arr6_est {
-                array6.set_hip_accum(src_est);
-            }
+            array6.restore_estimate_state(estimate_state);
 
             HllSketch::from_mode(lg_config_k, Mode::Array6(array6))
         }
@@ -566,12 +551,7 @@ fn convert_array8_to_type(src: &Array8, lg_config_k: u8, target_type: HllType) -
                     array4.update(coupon);
                 }
             }
-
-            let src_est = src.estimate();
-            let arr4_est = array4.estimate();
-            if src_est > arr4_est {
-                array4.set_hip_accum(src_est);
-            }
+            array4.restore_estimate_state(estimate_state);
 
             HllSketch::from_mode(lg_config_k, Mode::Array4(array4))
         }
@@ -592,10 +572,9 @@ fn copy_array46_via_coupons(dst: &mut Array8, num_registers: usize, get_value: i
 /// Copy or downsample a source array to create a new Array8
 ///
 /// Directly copies if src_lg_k <= tgt_lg_k, downsamples otherwise.
-/// The source HIP accumulator and its out-of-order flag both carry over.
+/// The source estimate state carries over because the result represents the same logical sketch.
 fn copy_or_downsample(src_mode: &Mode, src_lg_k: u8, tgt_lg_k: u8) -> Array8 {
-    let src_hip = get_array_hip_accum(src_mode);
-    let src_out_of_order = get_array_out_of_order(src_mode);
+    let estimate_state = get_array_estimate_state(src_mode);
 
     let mut result = if src_lg_k <= tgt_lg_k {
         let mut result = Array8::new(src_lg_k);
@@ -625,7 +604,6 @@ fn copy_or_downsample(src_mode: &Mode, src_lg_k: u8, tgt_lg_k: u8) -> Array8 {
         result
     };
 
-    result.set_out_of_order(src_out_of_order);
-    result.set_hip_accum(src_hip);
+    result.restore_estimate_state(estimate_state);
     result
 }

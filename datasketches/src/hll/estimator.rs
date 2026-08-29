@@ -28,6 +28,15 @@ use crate::hll::composite_interpolation;
 use crate::hll::cubic_interpolation;
 use crate::hll::harmonic_numbers;
 
+/// Selects the estimate that is valid for the current register history.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(super) enum EstimateState {
+    /// The register updates have a known order, so the HIP accumulator is valid.
+    Hip(f64),
+    /// A bulk merge lost the update order, so the estimate must come from the registers.
+    Composite,
+}
+
 /// HIP estimator with KxQ registers for improved cardinality estimation
 ///
 /// This struct encapsulates all estimation-related state and logic,
@@ -36,18 +45,16 @@ use crate::hll::harmonic_numbers;
 /// The estimator supports two modes:
 /// * **In-order mode**: Uses HIP (Historical Inverse Probability) accumulator for accurate
 ///   sequential updates
-/// * **Out-of-order mode**: Uses composite estimator (raw HLL + linear counting) after
-///   deserialization or merging
+/// * **Out-of-order mode**: Uses composite estimator (raw HLL + linear counting) after a bulk merge
+///   loses the register update order
 #[derive(Debug, Clone, PartialEq)]
 pub struct HipEstimator {
-    /// HIP estimator accumulator
-    hip_accum: f64,
+    /// Estimate selected by the register history.
+    estimate_state: EstimateState,
     /// KxQ register for values < 32 (larger inverse powers)
     kxq0: f64,
     /// KxQ register for values >= 32 (tiny inverse powers)
     kxq1: f64,
-    /// Out-of-order flag: when true, HIP updates are skipped
-    out_of_order: bool,
 }
 
 impl HipEstimator {
@@ -55,10 +62,28 @@ impl HipEstimator {
     pub fn new(lg_config_k: u8) -> Self {
         let k = 1 << lg_config_k;
         Self {
-            hip_accum: 0.0,
+            estimate_state: EstimateState::Hip(0.0),
             kxq0: k as f64, // All registers start at 0, so kxq0 = k * (1/2^0) = k
             kxq1: 0.0,
-            out_of_order: false,
+        }
+    }
+
+    /// Restores estimator fields from an HLL serialization preamble.
+    pub(super) fn from_serialized(
+        hip_accum: f64,
+        kxq0: f64,
+        kxq1: f64,
+        out_of_order: bool,
+    ) -> Self {
+        let estimate_state = if out_of_order {
+            EstimateState::Composite
+        } else {
+            EstimateState::Hip(hip_accum)
+        };
+        Self {
+            estimate_state,
+            kxq0,
+            kxq1,
         }
     }
 
@@ -68,7 +93,7 @@ impl HipEstimator {
     ///
     /// # Algorithm
     ///
-    /// 1. Update HIP accumulator (unless out-of-order)
+    /// 1. Update the HIP accumulator when it remains valid
     /// 2. Update KxQ registers (always)
     ///
     /// The KxQ registers are split for numerical precision:
@@ -77,13 +102,12 @@ impl HipEstimator {
     pub fn update(&mut self, lg_config_k: u8, old_value: u8, new_value: u8) {
         let k = (1 << lg_config_k) as f64;
 
-        // Update HIP accumulator FIRST (unless out-of-order)
-        // When out-of-order (from deserialization or merge), HIP is invalid
-        if !self.out_of_order {
-            self.hip_accum += k / (self.kxq0 + self.kxq1);
+        // Update HIP accumulator FIRST when the register history is still available.
+        if let EstimateState::Hip(hip_accum) = &mut self.estimate_state {
+            *hip_accum += k / (self.kxq0 + self.kxq1);
         }
 
-        // Always update KxQ registers (regardless of OOO flag)
+        // Always update KxQ because it depends only on the current registers.
         self.update_kxq(old_value, new_value);
     }
 
@@ -106,7 +130,7 @@ impl HipEstimator {
 
     /// Get the current cardinality estimate
     ///
-    /// Dispatches to either HIP or composite estimator based on out-of-order flag.
+    /// Dispatches to the estimate selected by the register history.
     ///
     /// # Arguments
     ///
@@ -114,10 +138,11 @@ impl HipEstimator {
     /// * `cur_min`: Current minimum register value (for Array4, 0 for Array6/8)
     /// * `num_at_cur_min`: Number of registers at cur_min value
     pub fn estimate(&self, lg_config_k: u8, cur_min: u8, num_at_cur_min: u32) -> f64 {
-        if self.out_of_order {
-            self.get_composite_estimate(lg_config_k, cur_min, num_at_cur_min)
-        } else {
-            self.hip_accum
+        match self.estimate_state {
+            EstimateState::Hip(hip_accum) => hip_accum,
+            EstimateState::Composite => {
+                self.get_composite_estimate(lg_config_k, cur_min, num_at_cur_min)
+            }
         }
     }
 
@@ -139,7 +164,7 @@ impl HipEstimator {
         num_std_dev: NumStdDev,
     ) -> f64 {
         let estimate = self.estimate(lg_config_k, cur_min, num_at_cur_min);
-        let rse = get_rel_err(lg_config_k, true, self.out_of_order, num_std_dev);
+        let rse = get_rel_err(lg_config_k, true, self.is_out_of_order(), num_std_dev);
         // RSE is negative for upper bounds, so (1 + rse) < 1, making bound > estimate
         estimate / (1.0 + rse)
     }
@@ -165,7 +190,7 @@ impl HipEstimator {
         num_std_dev: NumStdDev,
     ) -> f64 {
         let estimate = self.estimate(lg_config_k, cur_min, num_at_cur_min);
-        let rse = get_rel_err(lg_config_k, false, self.out_of_order, num_std_dev);
+        let rse = get_rel_err(lg_config_k, false, self.is_out_of_order(), num_std_dev);
         let config_k = 1u32 << lg_config_k;
         let num_nonzero_registers = if cur_min == 0 {
             config_k - num_at_cur_min
@@ -275,7 +300,10 @@ impl HipEstimator {
 
     /// Get the HIP accumulator value
     pub fn hip_accum(&self) -> f64 {
-        self.hip_accum
+        match self.estimate_state {
+            EstimateState::Hip(hip_accum) => hip_accum,
+            EstimateState::Composite => 0.0,
+        }
     }
 
     /// Get the kxq0 register value
@@ -290,36 +318,28 @@ impl HipEstimator {
 
     /// Check if this estimator is in out-of-order mode
     pub fn is_out_of_order(&self) -> bool {
-        self.out_of_order
+        matches!(self.estimate_state, EstimateState::Composite)
     }
 
-    /// Set the out-of-order flag
-    ///
-    /// This should be set to true when:
-    /// * Deserializing a sketch from bytes
-    /// * After a merge/union operation
-    pub fn set_out_of_order(&mut self, ooo: bool) {
-        self.out_of_order = ooo;
-        if ooo {
-            // When going out-of-order, invalidate HIP accumulator
-            // (it will be recomputed if needed via composite estimator)
-            self.hip_accum = 0.0;
-        }
+    /// Returns the estimate state independently from register-derived KxQ values.
+    pub(super) fn estimate_state(&self) -> EstimateState {
+        self.estimate_state
     }
 
-    /// Set the HIP accumulator directly
-    pub fn set_hip_accum(&mut self, value: f64) {
-        self.hip_accum = value;
+    /// Restores estimate state after copying or transforming the same logical sketch.
+    pub(super) fn restore_estimate_state(&mut self, state: EstimateState) {
+        self.estimate_state = state;
     }
 
-    /// Set the kxq0 register directly
-    pub fn set_kxq0(&mut self, value: f64) {
-        self.kxq0 = value;
+    /// Invalidates HIP after registers from independent histories are merged.
+    pub(super) fn invalidate_hip(&mut self) {
+        self.estimate_state = EstimateState::Composite;
     }
 
-    /// Set the kxq1 register directly
-    pub fn set_kxq1(&mut self, value: f64) {
-        self.kxq1 = value;
+    /// Replaces register-derived KxQ values after a bulk register operation.
+    pub(super) fn restore_kxq(&mut self, kxq0: f64, kxq1: f64) {
+        self.kxq0 = kxq0;
+        self.kxq1 = kxq1;
     }
 }
 
@@ -591,7 +611,7 @@ mod tests {
         assert_that!(hip_normal, gt(0.0));
 
         // Set out-of-order
-        est.set_out_of_order(true);
+        est.invalidate_hip();
         assert!(est.is_out_of_order());
         assert_eq!(est.hip_accum(), 0.0); // HIP invalidated
 
@@ -603,15 +623,21 @@ mod tests {
     }
 
     #[test]
-    fn test_setters() {
+    fn test_estimate_state_can_be_restored_atomically() {
         let mut est = HipEstimator::new(10);
 
-        est.set_hip_accum(123.45);
-        est.set_kxq0(678.9);
-        est.set_kxq1(0.0012);
+        est.restore_estimate_state(EstimateState::Hip(123.45));
+        est.restore_kxq(678.9, 0.0012);
 
         assert_eq!(est.hip_accum(), 123.45);
         assert_eq!(est.kxq0(), 678.9);
         assert_eq!(est.kxq1(), 0.0012);
+
+        let state = est.estimate_state();
+        est.invalidate_hip();
+        assert!(est.is_out_of_order());
+        est.restore_estimate_state(state);
+        assert!(!est.is_out_of_order());
+        assert_eq!(est.hip_accum(), 123.45);
     }
 }
