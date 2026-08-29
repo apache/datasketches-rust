@@ -187,7 +187,7 @@ where
     let sketch_a_state = (a_num_retained, a_theta);
     let sketch_b_state = (b_num_retained, b_theta);
     let union = compute_union(seed, sketch_a, sketch_b)?;
-    if !union.entries.is_empty() && identical_sets(sketch_a_state, sketch_b_state, &union) {
+    if identical_sets(sketch_a_state, sketch_b_state, &union) {
         return Ok(JaccardSimilarity::exact(1.0));
     }
 
