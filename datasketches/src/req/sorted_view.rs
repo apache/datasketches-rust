@@ -17,6 +17,8 @@
 
 //! Sorted view implementation for efficient quantile queries.
 
+use std::marker::PhantomData;
+
 use crate::error::Error;
 use crate::req::DefaultReqOrder;
 use crate::req::ReqOrder;
@@ -39,8 +41,7 @@ pub struct SortedView<T, O = DefaultReqOrder> {
     cumulative_weights: Vec<u64>,
     /// Total weight of all items
     total_weight: u64,
-    /// Ordering used by the source sketch
-    order: O,
+    order: PhantomData<fn() -> O>,
 }
 
 impl<T, O> SortedView<T, O>
@@ -54,18 +55,18 @@ where
     /// * `weighted_items` - Vector of (item, weight) pairs
     ///
     /// The items will be sorted and cumulative weights computed.
-    pub(super) fn new(mut weighted_items: Vec<(T, u64)>, order: O) -> Self {
+    pub(super) fn new(mut weighted_items: Vec<(T, u64)>) -> Self {
         if weighted_items.is_empty() {
             return Self {
                 items: vec![],
                 cumulative_weights: vec![],
                 total_weight: 0,
-                order,
+                order: PhantomData,
             };
         }
 
         // Sort by item value - use unstable sort for better performance
-        weighted_items.sort_unstable_by(|a, b| order.compare(&a.0, &b.0));
+        weighted_items.sort_unstable_by(|a, b| O::compare(&a.0, &b.0));
 
         let mut items: Vec<T> = Vec::with_capacity(weighted_items.len());
         let mut cumulative_weights = Vec::with_capacity(weighted_items.len());
@@ -73,7 +74,7 @@ where
 
         for (item, weight) in weighted_items {
             if let Some(last) = items.last() {
-                if matches!(order.compare(last, &item), std::cmp::Ordering::Equal) {
+                if matches!(O::compare(last, &item), std::cmp::Ordering::Equal) {
                     cumulative_weight += weight;
                     let last_idx = cumulative_weights.len() - 1;
                     cumulative_weights[last_idx] = cumulative_weight;
@@ -89,7 +90,7 @@ where
             items,
             cumulative_weights,
             total_weight: cumulative_weight,
-            order,
+            order: PhantomData,
         }
     }
 
@@ -120,7 +121,7 @@ where
         if self.is_empty() {
             return Err(Error::invalid_argument("sketch is empty"));
         }
-        if !self.order.accepts(item) {
+        if !O::accepts(item) {
             return Err(Error::invalid_argument(
                 "query item is rejected by the sketch ordering",
             ));
@@ -130,9 +131,7 @@ where
             SearchCriteria::Inclusive => {
                 // Find the last position where items[i] <= item
                 // partition_point finds first index where predicate is false
-                let pos = self
-                    .items
-                    .partition_point(|x| self.order.compare(x, item).is_le());
+                let pos = self.items.partition_point(|x| O::compare(x, item).is_le());
                 if pos == 0 {
                     Ok(0.0)
                 } else {
@@ -141,9 +140,7 @@ where
             }
             SearchCriteria::Exclusive => {
                 // Find the last position where items[i] < item
-                let pos = self
-                    .items
-                    .partition_point(|x| self.order.compare(x, item).is_lt());
+                let pos = self.items.partition_point(|x| O::compare(x, item).is_lt());
                 if pos == 0 {
                     Ok(0.0)
                 } else {
@@ -272,17 +269,12 @@ where
 
     fn validate_split_points(&self, split_points: &[T]) -> Result<(), Error> {
         for (i, split_point) in split_points.iter().enumerate() {
-            if !self.order.accepts(split_point) {
+            if !O::accepts(split_point) {
                 return Err(Error::invalid_argument(
                     "split point is rejected by the sketch ordering",
                 ));
             }
-            if i > 0
-                && self
-                    .order
-                    .compare(&split_points[i - 1], split_point)
-                    .is_ge()
-            {
+            if i > 0 && O::compare(&split_points[i - 1], split_point).is_ge() {
                 return Err(Error::invalid_argument(
                     "Split points must be unique and monotonically increasing".to_string(),
                 ));
@@ -306,7 +298,7 @@ mod tests {
 
     fn create_test_view() -> SortedView<i32> {
         let weighted_items = vec![(1, 1), (3, 1), (5, 1), (7, 1), (9, 1)];
-        SortedView::new(weighted_items, DefaultReqOrder)
+        SortedView::new(weighted_items)
     }
 
     #[test]
@@ -389,7 +381,7 @@ mod tests {
 
     #[test]
     fn test_empty_view() {
-        let view: SortedView<i32> = SortedView::new(vec![], DefaultReqOrder);
+        let view: SortedView<i32> = SortedView::new(vec![]);
         assert!(view.is_empty());
         assert_eq!(view.len(), 0);
         assert_eq!(view.total_weight(), 0);

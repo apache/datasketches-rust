@@ -24,24 +24,24 @@ use crate::error::Error;
 use crate::req::INITIAL_SECTIONS_PER_COMPACTOR;
 use crate::req::MIN_K;
 use crate::req::RankAccuracy;
-use crate::req::item_codec::ReqItemCodec;
 use crate::req::nearest_even_section_size;
-use crate::req::order::ReqOrder;
 use crate::req::serialization::validate_compactor_state;
+use crate::req::value::ReqItemCodec;
+use crate::req::value::ReqOrder;
 
-fn normalized_sort_state<T, O>(items: &[T], claimed_sorted: bool, order: &O) -> Result<bool, Error>
+fn normalized_sort_state<T, O>(items: &[T], claimed_sorted: bool) -> Result<bool, Error>
 where
     O: ReqOrder<T>,
 {
     let mut previous: Option<&T> = None;
     let mut sorted = claimed_sorted;
     for item in items {
-        if !order.accepts(item) {
+        if !O::accepts(item) {
             return Err(Error::deserial(
                 "REQ compactor contains an item rejected by its ordering",
             ));
         }
-        if sorted && previous.is_some_and(|previous| order.compare(previous, item).is_gt()) {
+        if sorted && previous.is_some_and(|previous| O::compare(previous, item).is_gt()) {
             sorted = false;
         }
         previous = Some(item);
@@ -137,20 +137,20 @@ where
     }
 
     /// Merges items from another compactor into this one.
-    pub(super) fn merge<O>(&mut self, other: &Self, order: &O)
+    pub(super) fn merge<O>(&mut self, other: &Self)
     where
         O: ReqOrder<T>,
     {
         debug_assert_eq!(self.lg_weight, other.lg_weight);
         self.state |= other.state;
         if !other.items.is_empty() {
-            self.sort(order);
+            self.sort::<O>();
             if other.is_sorted {
-                self.merge_sorted(&other.items, order);
+                self.merge_sorted::<O>(&other.items);
             } else {
                 let mut other_items = other.items.clone();
-                other_items.sort_unstable_by(|a, b| order.compare(a, b));
-                self.merge_sorted(&other_items, order);
+                other_items.sort_unstable_by(O::compare);
+                self.merge_sorted::<O>(&other_items);
             }
         }
         // OR-ing the schedule counters can advance state past several doubling
@@ -164,23 +164,21 @@ where
     /// Uses binary search when this compactor is sorted, and a linear scan
     /// otherwise. This lets [`ReqSketch::rank`](crate::req::ReqSketch::rank) sum
     /// per-level weights directly without first building a sorted view.
-    pub(super) fn count_below<O>(&self, item: &T, inclusive: bool, order: &O) -> usize
+    pub(super) fn count_below<O>(&self, item: &T, inclusive: bool) -> usize
     where
         O: ReqOrder<T>,
     {
         if self.is_sorted {
             if inclusive {
-                self.items
-                    .partition_point(|x| order.compare(x, item).is_le())
+                self.items.partition_point(|x| O::compare(x, item).is_le())
             } else {
-                self.items
-                    .partition_point(|x| order.compare(x, item).is_lt())
+                self.items.partition_point(|x| O::compare(x, item).is_lt())
             }
         } else {
             self.items
                 .iter()
                 .filter(|x| {
-                    let ord = order.compare(x, item);
+                    let ord = O::compare(x, item);
                     if inclusive { ord.is_le() } else { ord.is_lt() }
                 })
                 .count()
@@ -191,7 +189,7 @@ where
     /// Merges sorted items into this compactor using scratch buffer to avoid allocation.
     /// Both this compactor's items and the input must be sorted.
     #[inline(always)]
-    pub(super) fn merge_sorted<O>(&mut self, items: &[T], order: &O)
+    pub(super) fn merge_sorted<O>(&mut self, items: &[T])
     where
         O: ReqOrder<T>,
     {
@@ -218,7 +216,7 @@ where
 
         // Two-pointer merge into scratch buffer
         while i < a.len() && j < b.len() {
-            if order.compare(&a[i], &b[j]).is_le() {
+            if O::compare(&a[i], &b[j]).is_le() {
                 self.scratch_buffer.push(a[i].clone());
                 i += 1;
             } else {
@@ -243,13 +241,13 @@ where
 
     /// Sorts the items in this compactor if not already sorted.
     #[inline(always)]
-    pub(super) fn sort<O>(&mut self, order: &O)
+    pub(super) fn sort<O>(&mut self)
     where
         O: ReqOrder<T>,
     {
         if !self.is_sorted {
             // Use unstable sort for better performance (stable not needed for REQ sketch)
-            self.items.sort_unstable_by(|a, b| order.compare(a, b));
+            self.items.sort_unstable_by(O::compare);
             self.is_sorted = true;
         }
     }
@@ -258,12 +256,8 @@ where
     /// Writes promoted items into `out` and removes the compacted range in-place via `copy_within +
     /// truncate`.
     #[inline(always)]
-    pub(super) fn compact_into<O>(
-        &mut self,
-        _rank_accuracy: RankAccuracy,
-        out: &mut Vec<T>,
-        order: &O,
-    ) where
+    pub(super) fn compact_into<O>(&mut self, _rank_accuracy: RankAccuracy, out: &mut Vec<T>)
+    where
         O: ReqOrder<T>,
     {
         if self.items.is_empty() {
@@ -272,7 +266,7 @@ where
         }
 
         // Sort entire buffer (C++ sorts full buffer before compaction)
-        self.sort(order);
+        self.sort::<O>();
 
         // Calculate sections to compact based on state
         let secs_to_compact =
@@ -416,7 +410,6 @@ where
         expected_lg_weight: u8,
         rank_accuracy: RankAccuracy,
         sorted: bool,
-        order: &O,
         codec: &C,
     ) -> Result<Self, crate::error::Error>
     where
@@ -461,7 +454,7 @@ where
         for _ in 0..num_items {
             items.push(codec.deserialize(cursor)?);
         }
-        let sorted = normalized_sort_state(&items, sorted, order)?;
+        let sorted = normalized_sort_state::<T, O>(&items, sorted)?;
 
         Ok(Compactor::from_serialized_state(
             lg_weight,
@@ -486,12 +479,11 @@ where
         rank_accuracy: RankAccuracy,
         items: Vec<T>,
         is_sorted: bool,
-        order: &O,
     ) -> Result<Self, Error>
     where
         O: ReqOrder<T>,
     {
-        let is_sorted = normalized_sort_state(&items, is_sorted, order)?;
+        let is_sorted = normalized_sort_state::<T, O>(&items, is_sorted)?;
         let mut c = Self::new(0, k, rank_accuracy);
         for item in items {
             c.append(item);
@@ -568,7 +560,6 @@ mod tests {
     #[test]
     fn test_append_and_sort() {
         let mut compactor = Compactor::new(0, 12, RankAccuracy::HighRank);
-        let order = DefaultReqOrder;
 
         compactor.append(5);
         assert_eq!(compactor.num_items(), 1);
@@ -578,7 +569,7 @@ mod tests {
         assert_eq!(compactor.num_items(), 2);
         assert!(!compactor.is_sorted()); // Multiple items, not sorted
 
-        compactor.sort(&order);
+        compactor.sort::<DefaultReqOrder>();
         assert!(compactor.is_sorted());
 
         let items: Vec<&i32> = compactor.iter().collect();
@@ -600,15 +591,14 @@ mod tests {
     #[test]
     fn test_merge_sorted() {
         let mut compactor = Compactor::new(0, 12, RankAccuracy::HighRank);
-        let order = DefaultReqOrder;
 
         compactor.append(1);
         compactor.append(3);
         compactor.append(5);
-        compactor.sort(&order);
+        compactor.sort::<DefaultReqOrder>();
 
         let other_items = vec![2, 4, 6];
-        compactor.merge_sorted(&other_items, &order);
+        compactor.merge_sorted::<DefaultReqOrder>(&other_items);
 
         assert!(compactor.is_sorted());
         let items: Vec<&i32> = compactor.iter().collect();
@@ -621,25 +611,23 @@ mod tests {
         use crate::codec::SketchSlice;
 
         let mut c: Compactor<f32> = Compactor::new(0, 12, RankAccuracy::HighRank);
-        let order = DefaultReqOrder;
         let codec = DefaultReqItemCodec;
         for i in 0..30 {
             c.append(i as f32);
         }
-        c.sort(&order);
+        c.sort::<DefaultReqOrder>();
 
         let mut bytes = SketchBytes::with_capacity(256);
         c.serialize_into(&mut bytes, &codec);
         let raw = bytes.into_bytes();
 
         let mut cursor = SketchSlice::new(&raw);
-        let c2 = Compactor::<f32>::deserialize(
+        let c2 = Compactor::<f32>::deserialize::<DefaultReqOrder, _>(
             &mut cursor,
             12,
             0,
             RankAccuracy::HighRank,
             true,
-            &order,
             &codec,
         )
         .unwrap();
@@ -671,12 +659,11 @@ mod tests {
         // Expected: num_sections == 24 with the fix; == 6 with only one call.
         let mut a: Compactor<f64> = Compactor::new(0, 12, RankAccuracy::HighRank);
         let mut b: Compactor<f64> = Compactor::new(0, 12, RankAccuracy::HighRank);
-        let order = DefaultReqOrder;
         b.state = 0xFFFF;
 
         assert_eq!(a.num_sections, 3, "default num_sections sanity");
 
-        a.merge(&b, &order);
+        a.merge::<DefaultReqOrder>(&b);
 
         assert_that!(a.num_sections, ge(12));
     }
