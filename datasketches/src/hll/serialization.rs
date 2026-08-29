@@ -29,7 +29,7 @@ pub const EMPTY_FLAG_MASK: u8 = 4;
 ///
 /// HLL register arrays have the same layout in compact and updatable images.
 pub const COMPACT_FLAG_MASK: u8 = 8;
-/// Flag indicating out-of-order mode (HIP estimator invalid)
+/// Flag indicating that HIP history is unavailable and composite estimation is required.
 pub const OUT_OF_ORDER_FLAG_MASK: u8 = 16;
 
 /// Preamble size for LIST mode (8 bytes = 2 ints)

@@ -28,7 +28,7 @@ use crate::common::NumStdDev;
 use crate::error::Error;
 use crate::hll::Coupon;
 use crate::hll::estimator::EstimateState;
-use crate::hll::estimator::HipEstimator;
+use crate::hll::estimator::Estimator;
 use crate::hll::serialization::CUR_MODE_HLL;
 use crate::hll::serialization::HLL_PREAMBLE_SIZE;
 use crate::hll::serialization::HLL_PREINTS;
@@ -45,8 +45,7 @@ pub struct Array8 {
     bytes: Box<[u8]>,
     /// Count of slots with value 0
     num_zeros: u32,
-    /// HIP estimator for cardinality estimation
-    estimator: HipEstimator,
+    estimator: Estimator,
 }
 
 impl Array8 {
@@ -57,7 +56,7 @@ impl Array8 {
             lg_config_k,
             bytes: vec![0u8; k as usize].into_boxed_slice(),
             num_zeros: k,
-            estimator: HipEstimator::new(lg_config_k),
+            estimator: Estimator::new(lg_config_k),
         }
     }
 
@@ -100,7 +99,7 @@ impl Array8 {
         }
     }
 
-    /// Get the current cardinality estimate using HIP estimator
+    /// Returns the current cardinality estimate.
     pub fn estimate(&self) -> f64 {
         // Array8 doesn't use cur_min (always 0), so num_at_cur_min = num_zeros
         self.estimator.estimate(self.lg_config_k, 0, self.num_zeros)
@@ -153,7 +152,7 @@ impl Array8 {
 
     /// Rebuild estimator state from current register values
     ///
-    /// Recomputes num_zeros, kxq0, kxq1, and marks estimator as out-of-order.
+    /// Recomputes num_zeros, kxq0, and kxq1, then switches to composite estimation.
     /// Should be called after bulk register modifications.
     pub(super) fn rebuild_estimator_from_registers(&mut self) {
         self.rebuild_cached_values();
@@ -162,8 +161,8 @@ impl Array8 {
 
     /// Merge another Array8 with the same lg_k
     ///
-    /// Performs register-by-register max merge. Marks estimator as
-    /// out-of-order since HIP cannot be maintained during bulk operations.
+    /// Performs register-by-register max merge. HIP is invalidated because the register update
+    /// order is unavailable.
     ///
     /// # Panics
     ///
@@ -257,7 +256,7 @@ impl Array8 {
     ) -> Result<Self, Error> {
         let k = 1usize << lg_config_k;
 
-        // Read HIP estimator values from preamble
+        // Read estimator values from preamble
         let hip_accum = cursor
             .read_f64_le()
             .map_err(insufficient_data("hip_accum"))?;
@@ -289,7 +288,7 @@ impl Array8 {
             .read_exact(&mut data)
             .map_err(insufficient_data("data"))?;
 
-        let estimator = HipEstimator::from_serialized(hip_accum, kxq0, kxq1, ooo);
+        let estimator = Estimator::from_serialized(hip_accum, kxq0, kxq1, ooo);
 
         Ok(Self {
             lg_config_k,
@@ -316,7 +315,7 @@ impl Array8 {
 
         // Write flags
         let mut flags = 0u8;
-        if self.estimator.is_out_of_order() {
+        if self.estimator.uses_composite_estimate() {
             flags |= OUT_OF_ORDER_FLAG_MASK;
         }
         bytes.write_u8(flags);
@@ -327,7 +326,7 @@ impl Array8 {
         // Mode byte: HLL mode with HLL8 type
         bytes.write_u8(encode_mode_byte(CUR_MODE_HLL, TGT_HLL8));
 
-        // Write HIP estimator values
+        // Write estimator values
         bytes.write_f64_le(self.estimator.hip_accum());
         bytes.write_f64_le(self.estimator.kxq0());
         bytes.write_f64_le(self.estimator.kxq1());
@@ -530,8 +529,8 @@ mod tests {
         assert_eq!(dst.get(2), 35, "dst[2] updated to larger value");
         assert_eq!(dst.get(3), 40, "dst[3] got new value");
 
-        // Verify estimator marked as OOO
-        assert!(dst.estimator.is_out_of_order());
+        // Bulk merges require composite estimation.
+        assert!(dst.estimator.uses_composite_estimate());
 
         // Verify num_zeros updated (should be 12: 16 - 4 non-zero)
         assert_eq!(dst.num_zeros, 12);
@@ -560,8 +559,8 @@ mod tests {
         assert_eq!(dst.get(0), 25, "dst[0] = max(10, 15, 25)");
         assert_eq!(dst.get(1), 30, "dst[1] = max(20, 18, 30)");
 
-        // Verify estimator marked as OOO
-        assert!(dst.estimator.is_out_of_order());
+        // Bulk merges require composite estimation.
+        assert!(dst.estimator.uses_composite_estimate());
     }
 
     #[test]

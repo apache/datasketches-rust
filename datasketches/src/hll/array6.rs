@@ -29,7 +29,7 @@ use crate::common::NumStdDev;
 use crate::error::Error;
 use crate::hll::Coupon;
 use crate::hll::estimator::EstimateState;
-use crate::hll::estimator::HipEstimator;
+use crate::hll::estimator::Estimator;
 use crate::hll::serialization::CUR_MODE_HLL;
 use crate::hll::serialization::HLL_PREAMBLE_SIZE;
 use crate::hll::serialization::HLL_PREINTS;
@@ -48,8 +48,7 @@ pub struct Array6 {
     bytes: Box<[u8]>,
     /// Count of slots with value 0
     num_zeros: u32,
-    /// HIP estimator for cardinality estimation
-    estimator: HipEstimator,
+    estimator: Estimator,
 }
 
 impl Array6 {
@@ -61,7 +60,7 @@ impl Array6 {
             lg_config_k,
             bytes: vec![0u8; num_bytes].into_boxed_slice(),
             num_zeros: k,
-            estimator: HipEstimator::new(lg_config_k),
+            estimator: Estimator::new(lg_config_k),
         }
     }
 
@@ -146,7 +145,7 @@ impl Array6 {
         }
     }
 
-    /// Get the current cardinality estimate using HIP estimator
+    /// Returns the current cardinality estimate.
     pub fn estimate(&self) -> f64 {
         // Array6 doesn't use cur_min (always 0), so num_at_cur_min = num_zeros
         self.estimator.estimate(self.lg_config_k, 0, self.num_zeros)
@@ -185,7 +184,7 @@ impl Array6 {
         let k = 1 << lg_config_k;
         let num_bytes = num_bytes_for_k(k);
 
-        // Read HIP estimator values from preamble
+        // Read estimator values from preamble
         let hip_accum = cursor
             .read_f64_le()
             .map_err(insufficient_data("hip_accum"))?;
@@ -217,7 +216,7 @@ impl Array6 {
             .read_exact(&mut data)
             .map_err(insufficient_data("data"))?;
 
-        let estimator = HipEstimator::from_serialized(hip_accum, kxq0, kxq1, ooo);
+        let estimator = Estimator::from_serialized(hip_accum, kxq0, kxq1, ooo);
 
         Ok(Self {
             lg_config_k,
@@ -245,7 +244,7 @@ impl Array6 {
 
         // Write flags
         let mut flags = 0u8;
-        if self.estimator.is_out_of_order() {
+        if self.estimator.uses_composite_estimate() {
             flags |= OUT_OF_ORDER_FLAG_MASK;
         }
         bytes.write_u8(flags);
@@ -256,7 +255,7 @@ impl Array6 {
         // Mode byte: HLL mode with HLL6 type
         bytes.write_u8(encode_mode_byte(CUR_MODE_HLL, TGT_HLL6));
 
-        // Write HIP estimator values
+        // Write estimator values
         bytes.write_f64_le(self.estimator.hip_accum());
         bytes.write_f64_le(self.estimator.kxq0());
         bytes.write_f64_le(self.estimator.kxq1());

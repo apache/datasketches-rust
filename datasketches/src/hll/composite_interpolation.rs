@@ -15,11 +15,10 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! Composite interpolation tables for HLL out-of-order estimation
+//! Composite interpolation tables for HLL estimation.
 //!
-//! These tables are used with cubic interpolation to provide accurate
-//! cardinality estimates when the HLL sketch is in out-of-order mode
-//! (after deserialization or merging).
+//! These tables correct raw HyperLogLog estimates when the register update history is unavailable,
+//! such as after merging independent sketches.
 //!
 //! Currently, this module contains tables for common lg_k values (4-12). The full C++
 //! implementation has tables for lg_k 4-21. Additional tables can be found at:

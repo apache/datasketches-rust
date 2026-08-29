@@ -15,12 +15,10 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! HIP (Historical Inverse Probability) Estimator for HyperLogLog
+//! Cardinality estimation for HLL-mode sketches.
 //!
-//! The HIP estimator provides improved cardinality estimation by maintaining
-//! an accumulator that tracks the historical sequence of register updates.
-//! This is more accurate than the standard HLL estimator, especially for
-//! moderate cardinalities.
+//! Sequential register updates use HIP (Historical Inverse Probability). Bulk merges use the
+//! composite estimator because register values do not retain their update order.
 
 use crate::common::NumStdDev;
 use crate::common::inv_pow2::inv_pow2;
@@ -42,7 +40,7 @@ pub(super) enum EstimateState {
 /// Sequential updates use HIP. Bulk merges use the composite estimator because register values do
 /// not retain update order. Both modes maintain KxQ as a cache derived from the current registers.
 #[derive(Debug, Clone, PartialEq)]
-pub struct HipEstimator {
+pub(super) struct Estimator {
     /// Estimate selected by the register history.
     estimate_state: EstimateState,
     /// KxQ register for values < 32 (larger inverse powers)
@@ -51,8 +49,8 @@ pub struct HipEstimator {
     kxq1: f64,
 }
 
-impl HipEstimator {
-    /// Create a new HIP estimator for a sketch with 2^lg_config_k registers
+impl Estimator {
+    /// Creates an estimator for a sketch with 2^lg_config_k registers.
     pub fn new(lg_config_k: u8) -> Self {
         let k = 1 << lg_config_k;
         Self {
@@ -135,7 +133,7 @@ impl HipEstimator {
         match self.estimate_state {
             EstimateState::Hip(hip_accum) => hip_accum,
             EstimateState::Composite => {
-                self.get_composite_estimate(lg_config_k, cur_min, num_at_cur_min)
+                self.composite_estimate(lg_config_k, cur_min, num_at_cur_min)
             }
         }
     }
@@ -158,7 +156,12 @@ impl HipEstimator {
         num_std_dev: NumStdDev,
     ) -> f64 {
         let estimate = self.estimate(lg_config_k, cur_min, num_at_cur_min);
-        let rse = get_rel_err(lg_config_k, true, self.is_out_of_order(), num_std_dev);
+        let rse = relative_error(
+            lg_config_k,
+            true,
+            self.uses_composite_estimate(),
+            num_std_dev,
+        );
         // RSE is negative for upper bounds, so (1 + rse) < 1, making bound > estimate
         estimate / (1.0 + rse)
     }
@@ -184,7 +187,12 @@ impl HipEstimator {
         num_std_dev: NumStdDev,
     ) -> f64 {
         let estimate = self.estimate(lg_config_k, cur_min, num_at_cur_min);
-        let rse = get_rel_err(lg_config_k, false, self.is_out_of_order(), num_std_dev);
+        let rse = relative_error(
+            lg_config_k,
+            false,
+            self.uses_composite_estimate(),
+            num_std_dev,
+        );
         let config_k = 1u32 << lg_config_k;
         let num_nonzero_registers = if cur_min == 0 {
             config_k - num_at_cur_min
@@ -200,7 +208,7 @@ impl HipEstimator {
     /// Formula: correctionFactor * k^2 / (kxq0 + kxq1)
     ///
     /// Uses lg_k-specific correction factors for small k.
-    fn get_raw_estimate(&self, lg_config_k: u8) -> f64 {
+    fn raw_estimate(&self, lg_config_k: u8) -> f64 {
         let k = (1 << lg_config_k) as f64;
 
         // Correction factors from empirical analysis
@@ -217,7 +225,7 @@ impl HipEstimator {
     /// Get linear counting (bitmap) estimate for small cardinalities
     ///
     /// Uses harmonic numbers to estimate based on empty registers.
-    fn get_bitmap_estimate(&self, lg_config_k: u8, cur_min: u8, num_at_cur_min: u32) -> f64 {
+    fn bitmap_estimate(&self, lg_config_k: u8, cur_min: u8, num_at_cur_min: u32) -> f64 {
         let k = 1 << lg_config_k;
 
         // Number of unhit (empty) buckets
@@ -234,11 +242,11 @@ impl HipEstimator {
 
     /// Get composite estimate (blends raw HLL and linear counting)
     ///
-    /// This is the primary estimator used when in out-of-order mode.
-    /// It uses cubic interpolation on raw HLL estimate, then blends
+    /// This estimate is used when the register update history is unavailable.
+    /// It uses cubic interpolation on the raw HLL estimate, then blends
     /// with linear counting for small cardinalities.
-    fn get_composite_estimate(&self, lg_config_k: u8, cur_min: u8, num_at_cur_min: u32) -> f64 {
-        let raw_est = self.get_raw_estimate(lg_config_k);
+    fn composite_estimate(&self, lg_config_k: u8, cur_min: u8, num_at_cur_min: u32) -> f64 {
+        let raw_estimate = self.raw_estimate(lg_config_k);
 
         // Get composite interpolation table
         let x_arr = composite_interpolation::get_x_arr(lg_config_k);
@@ -246,35 +254,36 @@ impl HipEstimator {
         let y_stride = composite_interpolation::get_y_stride(lg_config_k) as f64;
 
         // Handle edge cases
-        if raw_est < x_arr[0] {
+        if raw_estimate < x_arr[0] {
             return 0.0;
         }
 
         let x_arr_len_m1 = x_arr_len - 1;
 
         // Above interpolation range: extrapolate linearly
-        if raw_est > x_arr[x_arr_len_m1] {
+        if raw_estimate > x_arr[x_arr_len_m1] {
             let final_y = y_stride * (x_arr_len_m1 as f64);
             let factor = final_y / x_arr[x_arr_len_m1];
-            return raw_est * factor;
+            return raw_estimate * factor;
         }
 
         // Interpolate using cubic interpolation
-        let adj_est = cubic_interpolation::using_x_arr_and_y_stride(x_arr, y_stride, raw_est);
+        let adjusted_estimate =
+            cubic_interpolation::using_x_arr_and_y_stride(x_arr, y_stride, raw_estimate);
 
         // Avoid linear counting if estimate is high
         // (threshold: 3*k ensures we're above potential linear counting instability)
         let k = 1 << lg_config_k;
-        if adj_est > (3 * k) as f64 {
-            return adj_est;
+        if adjusted_estimate > (3 * k) as f64 {
+            return adjusted_estimate;
         }
 
         // Get linear counting estimate
-        let lin_est = self.get_bitmap_estimate(lg_config_k, cur_min, num_at_cur_min);
+        let linear_estimate = self.bitmap_estimate(lg_config_k, cur_min, num_at_cur_min);
 
         // Blend estimates based on crossover threshold
         // Use average to reduce bias from threshold comparison
-        let avg_est = (adj_est + lin_est) / 2.0;
+        let average_estimate = (adjusted_estimate + linear_estimate) / 2.0;
 
         // Crossover thresholds (empirically determined)
         let crossover = match lg_config_k {
@@ -285,10 +294,10 @@ impl HipEstimator {
 
         let threshold = crossover * (k as f64);
 
-        if avg_est > threshold {
-            adj_est
+        if average_estimate > threshold {
+            adjusted_estimate
         } else {
-            lin_est
+            linear_estimate
         }
     }
 
@@ -310,8 +319,8 @@ impl HipEstimator {
         self.kxq1
     }
 
-    /// Check if this estimator is in out-of-order mode
-    pub fn is_out_of_order(&self) -> bool {
+    /// Returns whether estimates are derived from registers rather than HIP history.
+    pub fn uses_composite_estimate(&self) -> bool {
         matches!(self.estimate_state, EstimateState::Composite)
     }
 
@@ -345,22 +354,27 @@ impl HipEstimator {
 ///
 /// * `lg_config_k`: Log2 of number of registers (must be 4-21)
 /// * `upper_bound`: Whether computing upper bound (vs lower bound)
-/// * `ooo`: Whether sketch is out-of-order (merged/deserialized)
+/// * `composite`: Whether the estimate is derived from registers rather than HIP history
 /// * `num_std_dev`: Number of standard deviations (1, 2, or 3)
 ///
 /// # Returns
 ///
 /// Relative error factor to apply to estimate
-fn get_rel_err(lg_config_k: u8, upper_bound: bool, ooo: bool, num_std_dev: NumStdDev) -> f64 {
+fn relative_error(
+    lg_config_k: u8,
+    upper_bound: bool,
+    composite: bool,
+    num_std_dev: NumStdDev,
+) -> f64 {
     // For lg_k > 12, use analytical formula with RSE factors
     if lg_config_k > 12 {
         // RSE factors from Apache DataSketches C++ implementation
         // HLL_HIP_RSE_FACTOR = sqrt(ln(2)) ≈ 0.8325546
         // HLL_NON_HIP_RSE_FACTOR = sqrt((3 * ln(2)) - 1) ≈ 1.03896
-        let rse_factor = if ooo {
-            1.03896 // Non-HIP (out-of-order)
+        let rse_factor = if composite {
+            1.03896 // Composite
         } else {
-            0.8325546 // HIP (in-order)
+            0.8325546 // HIP
         };
 
         let k = (1 << lg_config_k) as f64;
@@ -373,8 +387,8 @@ fn get_rel_err(lg_config_k: u8, upper_bound: bool, ooo: bool, num_std_dev: NumSt
     // Tables are indexed by: ((lg_k - 4) * 3) + (num_std_dev - 1)
     let idx = ((lg_config_k as usize) - 4) * 3 + ((num_std_dev as usize) - 1);
 
-    // Select the appropriate table based on ooo and upper_bound flags
-    match (ooo, upper_bound) {
+    // Select the appropriate table based on estimator and bound direction.
+    match (composite, upper_bound) {
         (false, false) => HIP_LB[idx],    // Case 0: HIP, Lower Bound
         (false, true) => HIP_UB[idx],     // Case 1: HIP, Upper Bound
         (true, false) => NON_HIP_LB[idx], // Case 2: Non-HIP, Lower Bound
@@ -449,7 +463,7 @@ static HIP_UB: [f64; 27] = [
     -0.037896952, //12
 ];
 
-/// Non-HIP (out-of-order) Lower Bound errors for lg_k 4-12, std_dev 1-3
+/// Composite (non-HIP) lower-bound errors for lg_k 4-12, std_dev 1-3.
 /// Q(.84134), Q(.97725), Q(.99865) quantiles
 static NON_HIP_LB: [f64; 27] = [
     0.254409839,
@@ -481,7 +495,7 @@ static NON_HIP_LB: [f64; 27] = [
     0.049677541, //12
 ];
 
-/// Non-HIP (out-of-order) Upper Bound errors for lg_k 4-12, std_dev 1-3
+/// Composite (non-HIP) upper-bound errors for lg_k 4-12, std_dev 1-3.
 /// Q(.15866), Q(.02275), Q(.00135) quantiles
 static NON_HIP_UB: [f64; 27] = [
     -0.256980172,
@@ -524,7 +538,7 @@ mod tests {
     #[test]
     fn lower_bound_is_clamped_to_the_non_zero_register_count() {
         let lg_config_k = 4;
-        let mut estimator = HipEstimator::new(lg_config_k);
+        let mut estimator = Estimator::new(lg_config_k);
         for _ in 0..8 {
             estimator.update(lg_config_k, 0, 1);
         }
@@ -538,7 +552,7 @@ mod tests {
     #[test]
     fn lower_bound_is_clamped_to_config_k_when_every_register_is_hit() {
         let lg_config_k = 4;
-        let mut estimator = HipEstimator::new(lg_config_k);
+        let mut estimator = Estimator::new(lg_config_k);
         for _ in 0..16 {
             estimator.update(lg_config_k, 0, 1);
         }
@@ -551,17 +565,17 @@ mod tests {
 
     #[test]
     fn test_estimator_initialization() {
-        let est = HipEstimator::new(10); // 1024 registers
+        let est = Estimator::new(10); // 1024 registers
 
         assert_eq!(est.hip_accum(), 0.0);
         assert_eq!(est.kxq0(), 1024.0); // All zeros = 1.0 each
         assert_eq!(est.kxq1(), 0.0);
-        assert!(!est.is_out_of_order());
+        assert!(!est.uses_composite_estimate());
     }
 
     #[test]
     fn test_estimator_update() {
-        let mut est = HipEstimator::new(8); // 256 registers
+        let mut est = Estimator::new(8); // 256 registers
 
         // Update from 0 to 10
         est.update(8, 0, 10);
@@ -576,7 +590,7 @@ mod tests {
 
     #[test]
     fn test_kxq_split() {
-        let mut est = HipEstimator::new(8);
+        let mut est = Estimator::new(8);
 
         // Update to value < 32 (goes to kxq0)
         est.update(8, 0, 10);
@@ -597,14 +611,14 @@ mod tests {
 
     #[test]
     fn test_invalidate_hip() {
-        let mut est = HipEstimator::new(10);
+        let mut est = Estimator::new(10);
 
         est.update(10, 0, 5);
         let hip_normal = est.hip_accum();
         assert_that!(hip_normal, gt(0.0));
 
         est.invalidate_hip();
-        assert!(est.is_out_of_order());
+        assert!(est.uses_composite_estimate());
         assert_eq!(est.hip_accum(), 0.0);
 
         // Register-derived state continues to update after HIP is invalidated.
