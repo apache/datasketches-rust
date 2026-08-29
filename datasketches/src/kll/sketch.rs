@@ -23,7 +23,6 @@ use super::MAX_K;
 use super::MIN_K;
 use super::helper::compute_total_capacity;
 use super::helper::level_capacity;
-use super::helper::random_bit;
 use super::helper::sum_the_sample_weights;
 use super::serialization::DATA_START;
 use super::serialization::DATA_START_SINGLE_ITEM;
@@ -766,7 +765,7 @@ impl<T: KllItem, C: KllComparator<T>> KllSketch<T, C> {
         }
 
         let use_up = above.is_empty();
-        let promoted = downsample(current, random_bit(), use_up);
+        let promoted = downsample(current, rand::random::<bool>(), use_up);
         if above.is_empty() {
             above = promoted;
         } else {
@@ -910,10 +909,10 @@ fn normalized_rank_error(k: u16, pmf: bool) -> f64 {
     }
 }
 
-fn downsample<T: KllItem>(items: Vec<T>, offset: u32, use_up: bool) -> Vec<T> {
+fn downsample<T: KllItem>(items: Vec<T>, offset: bool, use_up: bool) -> Vec<T> {
     let len = items.len();
     debug_assert!(len % 2 == 0, "length must be even");
-    let offset = (offset & 1) as usize;
+    let offset = usize::from(offset);
     let parity = if use_up {
         (len - 1 - offset) % 2
     } else {
@@ -986,7 +985,7 @@ fn general_compress<T: KllItem, C: KllComparator<T>>(
             }
 
             let use_up = above.is_empty();
-            let promoted = downsample(current, random_bit(), use_up);
+            let promoted = downsample(current, rand::random::<bool>(), use_up);
             let promoted_len = promoted.len();
             if above.is_empty() {
                 above = promoted;
