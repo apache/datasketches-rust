@@ -15,18 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! HyperLogLog Union Integration Tests
-//!
-//! These tests verify the public API behavior of HllUnion, focusing on:
-//! * Basic union operations
-//! * Mode transitions and mixed-mode unions
-//! * Different HLL types and lg_k values
-//! * Bounds and statistical properties
-//! * Mathematical properties (commutativity, associativity, idempotency)
-//! * Reset and reuse patterns
-//!
-//! This mirrors the testing strategy used in hll_update_test.rs
-
 use datasketches::common::NumStdDev;
 use datasketches::error::ErrorKind;
 use datasketches::hll::HllSketch;
@@ -57,6 +45,28 @@ fn assert_estimate_within(estimate: f64, expected: f64, relative_error: f64) {
         le(relative_error),
         "expected={expected}, estimate={estimate}"
     );
+}
+
+fn assert_same_estimate_and_bounds(actual: &HllSketch, expected: &HllSketch) {
+    let actual_type = actual.target_type();
+    let expected_type = expected.target_type();
+    assert_eq!(
+        actual.estimate(),
+        expected.estimate(),
+        "{actual_type:?} and {expected_type:?} estimates",
+    );
+    for num_std_dev in [NumStdDev::One, NumStdDev::Two, NumStdDev::Three] {
+        assert_eq!(
+            actual.lower_bound(num_std_dev),
+            expected.lower_bound(num_std_dev),
+            "{actual_type:?} and {expected_type:?} lower bounds at {num_std_dev:?}",
+        );
+        assert_eq!(
+            actual.upper_bound(num_std_dev),
+            expected.upper_bound(num_std_dev),
+            "{actual_type:?} and {expected_type:?} upper bounds at {num_std_dev:?}",
+        );
+    }
 }
 
 fn serialize_flat_union(first: &HllSketch, second: &HllSketch, third: &HllSketch) -> Vec<u8> {
@@ -234,6 +244,10 @@ fn test_union_mixed_hll_types() {
     assert_eq!(result4.target_type(), HllType::Hll4);
     assert_eq!(result6.target_type(), HllType::Hll6);
     assert_eq!(result8.target_type(), HllType::Hll8);
+
+    // Target types change only the register encoding.
+    assert_same_estimate_and_bounds(&result4, &result8);
+    assert_same_estimate_and_bounds(&result6, &result8);
 
     // Should estimate ~7,000 unique values (0-6,999)
     for (result, type_name) in [
@@ -553,22 +567,19 @@ fn test_union_associativity() {
 }
 
 #[test]
-fn test_union_idempotency() {
-    // Verify A∪A = A
-    let mut sketch = HllSketch::new(12, HllType::Hll8).unwrap();
-    for i in 0..1000 {
-        sketch.update(i);
-    }
+fn test_union_repeated_input_is_stable() {
+    let sketch = make_hll_sketch(HllType::Hll8, 12, 0, 1_000);
 
     let mut union = HllUnion::new(12).unwrap();
     union.update(&sketch);
-    let est1 = union.estimate();
+    assert_eq!(union.estimate(), sketch.estimate());
 
-    // Union with itself
     union.update(&sketch);
-    let est2 = union.estimate();
+    let merged_estimate = union.estimate();
+    assert_estimate_within(merged_estimate, sketch.estimate(), 0.02);
 
-    assert_eq!(est1, est2);
+    union.update(&sketch);
+    assert_eq!(union.estimate(), merged_estimate);
 }
 
 #[test]
@@ -707,4 +718,30 @@ fn test_union_estimated_size() {
     }
     union.update(&sketch);
     assert_eq!(union.estimated_size(), 1120);
+}
+
+#[test]
+fn test_single_hll_input_preserves_estimate_and_bounds() {
+    for hll_type in HLL_TYPES {
+        let sketch = make_hll_sketch(hll_type, 8, 0, 1_000);
+        let mut union = HllUnion::new(10).unwrap();
+        union.update(&sketch);
+
+        assert_eq!(union.estimate(), sketch.estimate(), "{hll_type:?} estimate");
+        for target_type in HLL_TYPES {
+            assert_same_estimate_and_bounds(&union.to_sketch(target_type), &sketch);
+        }
+    }
+}
+
+#[test]
+fn test_downsampling_single_hll_input_preserves_estimate() {
+    for hll_type in HLL_TYPES {
+        let sketch = make_hll_sketch(hll_type, 12, 0, 10_000);
+        let mut union = HllUnion::new(8).unwrap();
+        union.update(&sketch);
+
+        assert_eq!(union.lg_config_k(), 8, "{hll_type:?} lg_config_k");
+        assert_eq!(union.estimate(), sketch.estimate(), "{hll_type:?} estimate");
+    }
 }

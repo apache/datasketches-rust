@@ -29,6 +29,7 @@ All significant changes to this project will be documented in this file.
 * T-Digest rejects truncated serialized payloads before allocating, and updating a deserialized digest no longer allows its buffered state to grow without bound.
 * Compact HLL4 images now restore all register values correctly.
 * `HllSketch::lower_bound` now uses the number of non-zero registers as a floor in HLL mode, matching Java, C++, and Go and avoiding a bound below the distinct count already proven by register hits.
+* `HllUnion` now keeps a single HLL-mode input's estimate stable when copying or downsampling it and keeps confidence bounds consistent across HLL4, HLL6, and HLL8 result types, matching Java and C++.
 * HLL, Theta, and Tuple deserializers now return `InvalidData` for malformed payload sizes and entry counts instead of risking oversized allocations or decoding failures.
 * Malformed CPC images now return `InvalidData` instead of panicking.
 * Seeded deserializers now return `InvalidData` rather than panicking when the caller supplies a seed whose hash is the reserved zero value.

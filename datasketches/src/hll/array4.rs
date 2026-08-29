@@ -28,7 +28,8 @@ use crate::common::NumStdDev;
 use crate::error::Error;
 use crate::hll::Coupon;
 use crate::hll::aux_map::AuxMap;
-use crate::hll::estimator::HipEstimator;
+use crate::hll::estimator::EstimateState;
+use crate::hll::estimator::Estimator;
 use crate::hll::serialization::COMPACT_FLAG_MASK;
 use crate::hll::serialization::COUPON_SIZE_BYTES;
 use crate::hll::serialization::CUR_MODE_HLL;
@@ -70,8 +71,7 @@ pub struct Array4 {
     num_at_cur_min: u32,
     /// Exception table for values >= 15 after cur_min offset
     aux_map: Option<AuxMap>,
-    /// HIP estimator for cardinality estimation
-    estimator: HipEstimator,
+    estimator: Estimator,
 }
 
 impl Array4 {
@@ -84,7 +84,7 @@ impl Array4 {
             cur_min: 0,
             num_at_cur_min,
             aux_map: None,
-            estimator: HipEstimator::new(lg_config_k),
+            estimator: Estimator::new(lg_config_k),
         }
     }
 
@@ -125,9 +125,9 @@ impl Array4 {
         1 << self.lg_config_k
     }
 
-    /// Get the current HIP accumulator value
-    pub(super) fn hip_accum(&self) -> f64 {
-        self.estimator.hip_accum()
+    /// Returns the estimate state independently from register-derived cached values.
+    pub(super) fn estimate_state(&self) -> EstimateState {
+        self.estimator.estimate_state()
     }
 
     /// Set raw 4-bit value in slot
@@ -270,7 +270,7 @@ impl Array4 {
         self.num_at_cur_min = num_at_new;
     }
 
-    /// Get the current cardinality estimate using HIP estimator
+    /// Returns the current cardinality estimate.
     pub fn estimate(&self) -> f64 {
         // Array4 tracks cur_min and num_at_cur_min dynamically
         self.estimator
@@ -297,11 +297,9 @@ impl Array4 {
         )
     }
 
-    /// Set the HIP accumulator value
-    ///
-    /// This is used when promoting from coupon modes to carry forward the estimate
-    pub fn set_hip_accum(&mut self, value: f64) {
-        self.estimator.set_hip_accum(value);
+    /// Restores estimate state after copying or transforming the same logical sketch.
+    pub(super) fn restore_estimate_state(&mut self, state: EstimateState) {
+        self.estimator.restore_estimate_state(state);
     }
 
     /// Check if the sketch is empty (all slots are zero)
@@ -322,7 +320,7 @@ impl Array4 {
         let k = 1usize << lg_config_k;
         let num_bytes = 1usize << (lg_config_k - 1); // k/2 bytes for 4-bit packing
 
-        // Read HIP estimator values from preamble
+        // Read estimator values from preamble
         let hip_accum = cursor
             .read_f64_le()
             .map_err(insufficient_data("hip_accum"))?;
@@ -404,12 +402,7 @@ impl Array4 {
             aux_map = Some(aux);
         }
 
-        // Create estimator and restore state
-        let mut estimator = HipEstimator::new(lg_config_k);
-        estimator.set_hip_accum(hip_accum);
-        estimator.set_kxq0(kxq0);
-        estimator.set_kxq1(kxq1);
-        estimator.set_out_of_order(ooo);
+        let estimator = Estimator::from_serialized(hip_accum, kxq0, kxq1, ooo);
 
         Ok(Self {
             lg_config_k,
@@ -449,7 +442,7 @@ impl Array4 {
         // COMPACT_FLAG_MASK is always set: aux map entries are written as a compact sequential
         // list of populated entries only.
         let mut flags = COMPACT_FLAG_MASK;
-        if self.estimator.is_out_of_order() {
+        if self.estimator.uses_composite_estimate() {
             flags |= OUT_OF_ORDER_FLAG_MASK;
         }
         bytes.write_u8(flags);
@@ -460,7 +453,7 @@ impl Array4 {
         // Mode byte: HLL mode with HLL4 type
         bytes.write_u8(encode_mode_byte(CUR_MODE_HLL, TGT_HLL4));
 
-        // Write HIP estimator values
+        // Write estimator values
         bytes.write_f64_le(self.estimator.hip_accum());
         bytes.write_f64_le(self.estimator.kxq0());
         bytes.write_f64_le(self.estimator.kxq1());

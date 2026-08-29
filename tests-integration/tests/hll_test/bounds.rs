@@ -70,7 +70,7 @@ fn hll_mode_lower_bound_matches_cross_language_register_floor() {
         near(9.946968965192236, 1e-9)
     );
 
-    // The same floor applies when a union selects the out-of-order estimator.
+    // The same floor applies when a union selects the composite estimator.
     let sketch = hll_mode_union(7, HllType::Hll4, 40);
     assert_eq!(sketch.lower_bound(NumStdDev::Three), 34.0);
 }
