@@ -37,6 +37,7 @@ All significant changes to this project will be documented in this file.
 
 ### Bug fixes
 
+* Bloom filter accuracy construction now rejects targets that exceed the maximum serialized filter size instead of silently reducing capacity and violating the requested false-positive probability.
 * Frequent-items counters, stream weights, error offsets, and reported upper bounds now saturate at `u64::MAX` instead of panicking in debug builds or wrapping in release builds.
 * Count-Min updates, merges, and upper bounds now saturate at the configured counter type's limits instead of panicking in debug builds or wrapping in release builds. The minimum signed weight is handled without overflow.
 * T-Digest CDF and PMF queries now accept an empty split-point slice and return the single all-values bin instead of panicking.

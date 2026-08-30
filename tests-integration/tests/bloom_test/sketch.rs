@@ -192,3 +192,14 @@ fn test_parameter_suggestions_validate_inputs() {
             .all(|error| error.kind() == ErrorKind::InvalidArgument)
     );
 }
+
+#[test]
+fn test_accuracy_builder_rejects_unrepresentable_target() {
+    let error = BloomFilterBuilder::suggest_num_bits(u64::MAX, 0.01).unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::InvalidArgument);
+
+    let error = BloomFilterBuilder::with_accuracy(u64::MAX, 0.01)
+        .build()
+        .unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::InvalidArgument);
+}

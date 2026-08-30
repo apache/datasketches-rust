@@ -727,7 +727,8 @@ impl BloomFilterBuilder {
     /// # Errors
     ///
     /// Returns an error if the configured accuracy or size parameters are outside their supported
-    /// ranges.
+    /// ranges, or if the requested accuracy requires a filter larger than the serialized format
+    /// supports.
     pub fn build(self) -> Result<BloomFilter, Error> {
         let (num_bits, num_hashes) = match self.mode {
             BloomFilterBuilderMode::Accuracy { max_items, fpp } => {
@@ -776,7 +777,8 @@ impl BloomFilterBuilder {
     ///
     /// # Errors
     ///
-    /// Returns an error if `max_items` is zero or `fpp` is outside `(0.0, 1.0]`.
+    /// Returns an error if `max_items` is zero, `fpp` is outside `(0.0, 1.0]`, or the target
+    /// accuracy requires a filter larger than the serialized format supports.
     ///
     /// # Examples
     ///
@@ -798,9 +800,15 @@ impl BloomFilterBuilder {
         let p = fpp;
         let ln2_squared = std::f64::consts::LN_2 * std::f64::consts::LN_2;
 
-        let bits = (-n * p.ln() / ln2_squared).ceil() as u64;
+        let bits = (-n * p.ln() / ln2_squared).ceil();
+        if bits > Self::MAX_NUM_BITS as f64 {
+            return Err(Error::invalid_argument(format!(
+                "target accuracy requires {bits:.0} bits, but at most {} are supported",
+                Self::MAX_NUM_BITS
+            )));
+        }
 
-        Ok(bits.clamp(Self::MIN_NUM_BITS, Self::MAX_NUM_BITS))
+        Ok((bits as u64).max(Self::MIN_NUM_BITS))
     }
 
     /// Suggests optimal number of hash functions given max items and bit count.
