@@ -503,75 +503,14 @@ impl TDigestMut {
     /// ```
     pub fn serialize(&mut self) -> Vec<u8> {
         self.compress();
-        let centroids = self.buffer.compressed_centroids();
-
-        let mut total_size = 0;
-        if self.is_empty() || self.is_single_value() {
-            // 1 byte preamble
-            // + 1 byte serial version
-            // + 1 byte family
-            // + 2 bytes k
-            // + 1 byte flags
-            // + 2 bytes unused
-            total_size += size_of::<u64>();
-        } else {
-            // all of the above
-            // + 4 bytes num centroids
-            // + 4 bytes num buffered
-            total_size += size_of::<u64>() * 2;
-        }
-        if self.is_empty() {
-            // nothing more
-        } else if self.is_single_value() {
-            // + 8 bytes single value
-            total_size += size_of::<f64>();
-        } else {
-            // + 8 bytes min
-            // + 8 bytes max
-            total_size += size_of::<f64>() * 2;
-            // + (8+8) bytes per centroid
-            total_size += centroids.len() * (size_of::<f64>() + size_of::<u64>());
-        }
-
-        let mut bytes = SketchBytes::with_capacity(total_size);
-        bytes.write_u8(match self.total_weight() {
-            0 => PREAMBLE_LONGS_EMPTY_OR_SINGLE,
-            1 => PREAMBLE_LONGS_EMPTY_OR_SINGLE,
-            _ => PREAMBLE_LONGS_MULTIPLE,
-        });
-        bytes.write_u8(SERIAL_VERSION);
-        bytes.write_u8(Family::TDIGEST.id);
-        bytes.write_u16_le(self.k);
-        bytes.write_u8({
-            let mut flags = 0;
-            if self.is_empty() {
-                flags |= FLAGS_IS_EMPTY;
-            }
-            if self.is_single_value() {
-                flags |= FLAGS_IS_SINGLE_VALUE;
-            }
-            if self.reverse_merge {
-                flags |= FLAGS_REVERSE_MERGE;
-            }
-            flags
-        });
-        bytes.write_u16_le(0); // unused
-        if self.is_empty() {
-            return bytes.into_bytes();
-        }
-        if self.is_single_value() {
-            bytes.write_f64_le(self.min);
-            return bytes.into_bytes();
-        }
-        bytes.write_u32_le(centroids.len() as u32);
-        bytes.write_u32_le(0); // unused
-        bytes.write_f64_le(self.min);
-        bytes.write_f64_le(self.max);
-        for centroid in centroids {
-            bytes.write_f64_le(centroid.mean);
-            bytes.write_u64_le(centroid.weight.get());
-        }
-        bytes.into_bytes()
+        serialize_compressed(
+            self.k,
+            self.reverse_merge,
+            self.min,
+            self.max,
+            self.buffer.compressed_centroids(),
+            self.compressed_weight,
+        )
     }
 
     /// Deserializes a mutable t-digest from the standard double-precision format.
@@ -862,10 +801,6 @@ impl TDigestMut {
         }
     }
 
-    fn is_single_value(&self) -> bool {
-        self.total_weight() == 1
-    }
-
     /// Processes unmerged values and merges centroids if needed.
     fn compress(&mut self) {
         let additional_weight = self.buffer.unmerged_len() as u64;
@@ -959,6 +894,71 @@ impl TDigestMut {
     }
 }
 
+fn serialize_compressed(
+    k: u16,
+    reverse_merge: bool,
+    min: f64,
+    max: f64,
+    centroids: &[Centroid],
+    total_weight: u64,
+) -> Vec<u8> {
+    let is_empty = centroids.is_empty();
+    let is_single_value = total_weight == 1;
+    let mut total_size = if is_empty || is_single_value {
+        // Preamble, serial version, family, k, flags, and two unused bytes.
+        size_of::<u64>()
+    } else {
+        // The short header plus centroid and buffered-value counts.
+        size_of::<u64>() * 2
+    };
+    if is_single_value {
+        total_size += size_of::<f64>();
+    } else if !is_empty {
+        total_size += size_of::<f64>() * 2;
+        total_size += centroids.len() * (size_of::<f64>() + size_of::<u64>());
+    }
+
+    let mut bytes = SketchBytes::with_capacity(total_size);
+    bytes.write_u8(if is_empty || is_single_value {
+        PREAMBLE_LONGS_EMPTY_OR_SINGLE
+    } else {
+        PREAMBLE_LONGS_MULTIPLE
+    });
+    bytes.write_u8(SERIAL_VERSION);
+    bytes.write_u8(Family::TDIGEST.id);
+    bytes.write_u16_le(k);
+    bytes.write_u8({
+        let mut flags = 0;
+        if is_empty {
+            flags |= FLAGS_IS_EMPTY;
+        }
+        if is_single_value {
+            flags |= FLAGS_IS_SINGLE_VALUE;
+        }
+        if reverse_merge {
+            flags |= FLAGS_REVERSE_MERGE;
+        }
+        flags
+    });
+    bytes.write_u16_le(0); // unused
+    if is_empty {
+        return bytes.into_bytes();
+    }
+    if is_single_value {
+        bytes.write_f64_le(min);
+        return bytes.into_bytes();
+    }
+    bytes.write_u32_le(centroids.len() as u32);
+    bytes.write_u32_le(0); // no buffered values
+    bytes.write_f64_le(min);
+    bytes.write_f64_le(max);
+    for centroid in centroids {
+        bytes.write_f64_le(centroid.mean);
+        bytes.write_u64_le(centroid.weight.get());
+    }
+    bytes.into_bytes()
+}
+
 /// Immutable (frozen) T-Digest sketch for estimating quantiles and ranks.
 ///
 /// See the [module level documentation](super) for more.
@@ -1005,6 +1005,46 @@ impl TDigest {
     /// Returns the total weight.
     pub fn total_weight(&self) -> u64 {
         self.centroids_weight
+    }
+
+    /// Serializes this immutable t-digest to bytes.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::tdigest::TDigest;
+    /// use datasketches::tdigest::TDigestMut;
+    ///
+    /// let mut sketch = TDigestMut::new(100).unwrap();
+    /// sketch.update(1.0);
+    /// let digest = sketch.freeze();
+    /// let bytes = digest.serialize();
+    /// let decoded = TDigest::deserialize(&bytes).unwrap();
+    /// assert_eq!(decoded.max_value(), Some(1.0));
+    /// ```
+    pub fn serialize(&self) -> Vec<u8> {
+        serialize_compressed(
+            self.k,
+            self.reverse_merge,
+            self.min,
+            self.max,
+            &self.centroids,
+            self.centroids_weight,
+        )
+    }
+
+    /// Deserializes an immutable t-digest from the standard double-precision format.
+    ///
+    /// The format of the [reference implementation](https://github.com/tdunning/t-digest) is
+    /// auto-detected. Use [`deserialize_f32()`](Self::deserialize_f32) for the compact
+    /// DataSketches C++ `tdigest<float>` format.
+    pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
+        Ok(TDigestMut::deserialize(bytes)?.freeze())
+    }
+
+    /// Deserializes an immutable t-digest from the compact single-precision DataSketches format.
+    pub fn deserialize_f32(bytes: &[u8]) -> Result<Self, Error> {
+        Ok(TDigestMut::deserialize_f32(bytes)?.freeze())
     }
 
     fn view(&self) -> TDigestView<'_> {

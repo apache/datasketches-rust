@@ -18,6 +18,7 @@
 use std::fs;
 use std::path::PathBuf;
 
+use datasketches::tdigest::TDigest;
 use datasketches::tdigest::TDigestMut;
 use googletest::assert_that;
 use googletest::prelude::all;
@@ -224,6 +225,21 @@ fn test_many_values() {
     assert_eq!(td.max_value(), deserialized_td.max_value());
     assert_eq!(td.rank(500.0), deserialized_td.rank(500.0));
     assert_eq!(td.quantile(0.5), deserialized_td.quantile(0.5));
+}
+
+#[test]
+fn test_frozen_roundtrip() {
+    let tdigest = patterned_digest(100, 1000, 7);
+    let expected = tdigest.freeze();
+
+    let bytes = expected.serialize();
+    let actual = TDigest::deserialize(&bytes).unwrap();
+
+    assert_eq!(actual.k(), expected.k());
+    assert_eq!(actual.total_weight(), expected.total_weight());
+    assert_eq!(actual.min_value(), expected.min_value());
+    assert_eq!(actual.max_value(), expected.max_value());
+    assert_eq!(actual.quantile(0.5), expected.quantile(0.5));
 }
 
 #[test]
