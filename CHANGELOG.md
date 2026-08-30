@@ -47,6 +47,8 @@ All significant changes to this project will be documented in this file.
 * HLL, Theta, and Tuple deserializers now return `InvalidData` for malformed payload sizes and entry counts instead of risking oversized allocations or decoding failures.
 * Malformed CPC images now return `InvalidData` instead of panicking.
 * Seeded deserializers now return `InvalidData` rather than panicking when the caller supplies a seed whose hash is the reserved zero value.
+* T-Digest `quantile` now interpolates toward the nearer of the two bracketing centroids, so results rise with the requested rank. Every digest built from `update` or `merge` previously returned some non-monotonic quantiles, and mean rank error over uniform streams improves by roughly 20x. Results now differ from the current C++, Java, and Go ports, which share the defect.
+* T-Digest `quantile` no longer returns values above `max_value()`, and `rank`, `cdf`, and `pmf` now scale the left tail by the total weight, so ranks stay within `[0, 1]` and PMF masses stay non-negative. These branches are reachable only for deserialized digests whose first or last centroid carries more than unit weight, including images from the reference implementation.
 
 ## v0.4.0 (2026-08-18)
 

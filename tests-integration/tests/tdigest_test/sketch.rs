@@ -332,3 +332,72 @@ fn test_estimate_repeat_values() {
     }
     assert_eq!(tdigest.quantile(0.9), Some(1.0));
 }
+
+/// Builds a digest whose centroids carry the given weights.
+///
+/// Compression never merges the extreme centroids, so digests built through `update` and `merge`
+/// always keep unit-weight tails. Heavier tails arrive only through deserialization, including the
+/// reference implementation format, and they select the tail interpolation branches.
+fn deserialize_with_centroids(k: u16, min: f64, max: f64, centroids: &[(f64, u64)]) -> TDigestMut {
+    const PREAMBLE_LONGS: u8 = 2;
+    const SERIAL_VERSION: u8 = 1;
+    const FAMILY_TDIGEST: u8 = 20;
+
+    let mut bytes = vec![PREAMBLE_LONGS, SERIAL_VERSION, FAMILY_TDIGEST];
+    bytes.extend_from_slice(&k.to_le_bytes());
+    bytes.push(0); // flags
+    bytes.extend_from_slice(&0u16.to_le_bytes()); // unused
+    bytes.extend_from_slice(&(centroids.len() as u32).to_le_bytes());
+    bytes.extend_from_slice(&0u32.to_le_bytes()); // buffered values
+    bytes.extend_from_slice(&min.to_le_bytes());
+    bytes.extend_from_slice(&max.to_le_bytes());
+    for (mean, weight) in centroids {
+        bytes.extend_from_slice(&mean.to_le_bytes());
+        bytes.extend_from_slice(&weight.to_le_bytes());
+    }
+    TDigestMut::deserialize(&bytes).unwrap()
+}
+
+#[test]
+fn test_quantile_moves_toward_the_nearer_bracketing_centroid() {
+    let mut tdigest =
+        deserialize_with_centroids(100, -1.0, 21.0, &[(0.0, 4), (10.0, 4), (20.0, 4)]);
+
+    assert_eq!(tdigest.total_weight(), 12);
+    // Ranks 2/12 and 6/12 sit exactly on the two centroids bracketing the first interval.
+    assert_that!(tdigest.quantile(2.0 / 12.0).unwrap(), near(0.0, 1e-12));
+    assert_that!(tdigest.quantile(3.0 / 12.0).unwrap(), near(2.5, 1e-12));
+    assert_that!(tdigest.quantile(4.0 / 12.0).unwrap(), near(5.0, 1e-12));
+    assert_that!(tdigest.quantile(5.0 / 12.0).unwrap(), near(7.5, 1e-12));
+    assert_that!(tdigest.quantile(6.0 / 12.0).unwrap(), near(10.0, 1e-12));
+}
+
+#[test]
+fn test_quantile_right_tail_stays_within_max() {
+    let mut tdigest =
+        deserialize_with_centroids(100, 0.0, 100.0, &[(10.0, 10), (50.0, 10), (90.0, 10)]);
+
+    assert_eq!(tdigest.max_value(), Some(100.0));
+    assert_that!(tdigest.quantile(0.9).unwrap(), near(95.0, 1e-12));
+    assert_that!(tdigest.quantile(29.0 / 30.0).unwrap(), near(100.0, 1e-12));
+    // Mirrors the left tail, which interpolates from min up to the first centroid mean.
+    assert_that!(tdigest.quantile(1.0 / 30.0).unwrap(), near(0.0, 1e-12));
+    assert_that!(tdigest.quantile(5.0 / 30.0).unwrap(), near(10.0, 1e-12));
+}
+
+#[test]
+fn test_rank_left_tail_is_a_fraction_of_the_total_weight() {
+    let mut tdigest =
+        deserialize_with_centroids(100, 0.0, 100.0, &[(10.0, 10), (50.0, 10), (90.0, 10)]);
+
+    assert_that!(tdigest.rank(5.0).unwrap(), near(0.1, 1e-12));
+    assert_that!(tdigest.rank(10.0).unwrap(), near(5.0 / 30.0, 1e-12));
+    // The right tail is the mirror image and pins the scale the left tail must match.
+    assert_that!(tdigest.rank(95.0).unwrap(), near(0.9, 1e-12));
+    assert_that!(tdigest.rank(90.0).unwrap(), near(25.0 / 30.0, 1e-12));
+
+    let pmf = tdigest.pmf(&[5.0, 95.0]).unwrap();
+    assert_that!(pmf[0], near(0.1, 1e-12));
+    assert_that!(pmf[1], near(0.8, 1e-12));
+    assert_that!(pmf[2], near(0.1, 1e-12));
+}
