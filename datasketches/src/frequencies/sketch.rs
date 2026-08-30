@@ -140,7 +140,6 @@ impl<T> Row<T> {
 ///
 /// The sketch tracks approximate item frequencies and can return estimates with
 /// guaranteed upper and lower bounds.
-/// Count arithmetic saturates at [`u64::MAX`].
 ///
 /// See the [module level documentation](super) for an overview and error guarantees.
 #[derive(Debug, Clone)]
@@ -197,7 +196,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
         self.hash_map.num_active()
     }
 
-    /// Returns the total weight of the stream, saturated at [`u64::MAX`].
+    /// Returns the total weight of the stream.
     ///
     /// This is the sum of all counts passed to `update` and `update_with_count`.
     pub fn total_weight(&self) -> u64 {
@@ -223,11 +222,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
         Q: Eq + Hash + ?Sized,
     {
         let value = self.hash_map.get(item);
-        if value > 0 {
-            value.saturating_add(self.offset)
-        } else {
-            0
-        }
+        if value > 0 { value + self.offset } else { 0 }
     }
 
     /// Returns the guaranteed lower bound frequency for an item.
@@ -251,7 +246,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
         T: Borrow<Q>,
         Q: Eq + Hash + ?Sized,
     {
-        self.hash_map.get(item).saturating_add(self.offset)
+        self.hash_map.get(item) + self.offset
     }
 
     /// Returns an upper bound on the maximum error of [`FrequentItemsSketch::estimate`]
@@ -370,7 +365,8 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
         if count == 0 {
             return;
         }
-        self.stream_weight = self.stream_weight.saturating_add(count);
+        assert!(count > 0, "count may not be negative");
+        self.stream_weight += count;
         self.hash_map.adjust_or_put_value(item, count);
         self.maybe_resize_or_purge();
     }
@@ -422,7 +418,8 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
         if count == 0 {
             return;
         }
-        self.stream_weight = self.stream_weight.saturating_add(count);
+        assert!(count > 0, "count may not be negative");
+        self.stream_weight += count;
         self.hash_map.adjust_or_put_value_ref(item, count);
         self.maybe_resize_or_purge();
     }
@@ -451,11 +448,11 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
         if other.is_initial_state() {
             return;
         }
-        let merged_total = self.stream_weight.saturating_add(other.stream_weight);
+        let merged_total = self.stream_weight + other.stream_weight;
         for (item, count) in other.hash_map.iter() {
             self.update_with_count_ref(item, count);
         }
-        self.offset = self.offset.saturating_add(other.offset);
+        self.offset += other.offset;
         self.stream_weight = merged_total;
     }
 
@@ -518,7 +515,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
         let mut rows = vec![];
         for (item, count) in self.hash_map.iter() {
             let lower = count;
-            let upper = count.saturating_add(self.offset);
+            let upper = count + self.offset;
             let include = match error_type {
                 ErrorType::NoFalseNegatives => upper > threshold,
                 ErrorType::NoFalsePositives => lower > threshold,
@@ -543,7 +540,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
                 self.cur_map_cap = self.hash_map.capacity();
             } else {
                 let delta = self.hash_map.purge(self.sample_size);
-                self.offset = self.offset.saturating_add(delta);
+                self.offset += delta;
                 if self.hash_map.num_active() > self.maximum_map_capacity() {
                     panic!("purge did not reduce number of active items");
                 }

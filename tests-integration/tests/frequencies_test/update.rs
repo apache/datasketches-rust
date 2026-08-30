@@ -65,33 +65,6 @@ fn test_items_update_with_zero_count_is_noop() {
 }
 
 #[test]
-fn test_count_arithmetic_saturates() {
-    let mut sketch = FrequentItemsSketch::new(8).unwrap();
-    for item in 0..7 {
-        sketch.update(item);
-    }
-    assert_eq!(sketch.maximum_error(), 1);
-
-    sketch.update_with_count(99, u64::MAX);
-    sketch.update_ref(&99);
-
-    let mut other = FrequentItemsSketch::new(8).unwrap();
-    other.update(99);
-    sketch.merge(&other);
-
-    assert_eq!(sketch.total_weight(), u64::MAX);
-    assert_eq!(sketch.lower_bound(&99), u64::MAX);
-    assert_eq!(sketch.estimate(&99), u64::MAX);
-    assert_eq!(sketch.upper_bound(&99), u64::MAX);
-
-    let rows = sketch.frequent_items(ErrorType::NoFalseNegatives);
-    assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0].estimate(), u64::MAX);
-    assert_eq!(rows[0].upper_bound(), u64::MAX);
-    assert_eq!(rows[0].lower_bound(), u64::MAX);
-}
-
-#[test]
 fn test_capacity_and_epsilon_helpers() {
     let longs: FrequentItemsSketch<i64> = FrequentItemsSketch::new(8).unwrap();
     assert_eq!(longs.current_map_capacity(), 6);
