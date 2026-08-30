@@ -77,7 +77,7 @@ fn overlap_combines_summaries() {
     let result = intersection.to_sketch(true).unwrap();
 
     assert_eq!(result.num_retained(), 1);
-    assert_eq!(result.iter().next().unwrap().1, &7);
+    assert_eq!(result.iter().next().unwrap().summary(), &7);
 }
 
 #[test]

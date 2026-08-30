@@ -122,7 +122,7 @@ fn round_trip_preserves_summaries() {
         CompactTupleSketch::<u64>::deserialize(&sketch.compact(true).serialize()).unwrap();
 
     assert_eq!(restored.num_retained(), 50);
-    let summaries: Vec<_> = restored.iter().map(|(_, &summary)| summary).collect();
+    let summaries: Vec<_> = restored.iter().map(|entry| *entry.summary()).collect();
     assert_that!(summaries, each(eq(&3)));
 }
 

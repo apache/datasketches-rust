@@ -74,7 +74,7 @@ use crate::tuple::serialization::TupleSummaryValue;
 ///     .unwrap();
 /// sketch.update("apple", 1);
 /// let view = sketch.as_view();
-/// assert_eq!(view.iter().next().unwrap().1, &1);
+/// assert_eq!(view.iter().next().unwrap().summary(), &1);
 /// ```
 #[derive(Debug)]
 pub struct TupleSketchView<'a, S>(TupleSketchViewState<'a, S>);
@@ -91,12 +91,12 @@ enum TupleSketchIter<'a, S> {
 }
 
 impl<'a, S> Iterator for TupleSketchIter<'a, S> {
-    type Item = (u64, &'a S);
+    type Item = &'a TupleEntry<S>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self {
-            Self::Mutable(iter) => iter.next().map(|entry| (entry.hash(), entry.summary())),
-            Self::Compact(iter) => iter.next().map(|entry| (entry.hash(), entry.summary())),
+            Self::Mutable(iter) => iter.next(),
+            Self::Compact(iter) => iter.next(),
         }
     }
 
@@ -157,8 +157,8 @@ impl<'a, S> TupleSketchView<'a, S> {
         }
     }
 
-    /// Returns an iterator over retained hashes and borrowed summaries.
-    pub fn iter(self) -> impl Iterator<Item = (u64, &'a S)> + 'a {
+    /// Returns an iterator over retained entries.
+    pub fn iter(self) -> impl Iterator<Item = &'a TupleEntry<S>> + 'a {
         match self.0 {
             TupleSketchViewState::Mutable(table) => TupleSketchIter::Mutable(table.iter_entries()),
             TupleSketchViewState::Compact(sketch) => {
@@ -188,7 +188,7 @@ impl<S> KeySketch for TupleSketchView<'_, S> {
     }
 
     fn hashes(self) -> impl Iterator<Item = u64> {
-        self.iter().map(|(hash, _)| hash)
+        self.iter().map(TupleEntry::hash)
     }
 }
 
@@ -199,8 +199,7 @@ where
     type Entry = TupleEntry<S>;
 
     fn entries(self) -> impl Iterator<Item = Self::Entry> {
-        self.iter()
-            .map(|(hash, summary)| TupleEntry::new(hash, summary.clone()))
+        self.iter().cloned()
     }
 }
 
@@ -345,8 +344,8 @@ where
         self.table.reset();
     }
 
-    /// Returns an iterator over retained entries as `(hash, &summary)` pairs.
-    pub fn iter(&self) -> impl Iterator<Item = (u64, &P::Summary)> + '_ {
+    /// Returns an iterator over retained entries.
+    pub fn iter(&self) -> impl Iterator<Item = &TupleEntry<P::Summary>> + '_ {
         self.table.iter()
     }
 
@@ -495,11 +494,9 @@ impl<S> CompactTupleSketch<S> {
         self.seed_hash
     }
 
-    /// Returns an iterator over retained entries as `(hash, &summary)` pairs.
-    pub fn iter(&self) -> impl Iterator<Item = (u64, &S)> + '_ {
-        self.entries
-            .iter()
-            .map(|entry| (entry.hash(), entry.summary()))
+    /// Returns an iterator over retained entries.
+    pub fn iter(&self) -> impl Iterator<Item = &TupleEntry<S>> + '_ {
+        self.entries.iter()
     }
 
     /// Returns the approximate lower error bound given the number of standard deviations.

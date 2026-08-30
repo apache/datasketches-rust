@@ -82,7 +82,7 @@ use crate::tuple::sketch::TupleSketchView;
 ///
 /// let result = intersection.to_sketch(true).unwrap();
 /// assert_eq!(result.num_retained(), 1); // only "shared"
-/// assert_eq!(result.iter().next().unwrap().1, &7); // 3 + 4
+/// assert_eq!(result.iter().next().unwrap().summary(), &7); // 3 + 4
 /// ```
 #[derive(Debug)]
 pub struct TupleIntersection<P>
