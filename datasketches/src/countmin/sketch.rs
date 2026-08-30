@@ -134,6 +134,26 @@ impl<T: CountMinValue> CountMinSketch<T> {
         self.total_weight == T::ZERO
     }
 
+    /// Resets this sketch to its initial empty state.
+    ///
+    /// Clears all counters while preserving the table allocation and configuration.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::countmin::CountMinSketch;
+    ///
+    /// let mut sketch = CountMinSketch::<i64>::new(4, 128).unwrap();
+    /// sketch.update("apple");
+    /// sketch.reset();
+    /// assert!(sketch.is_empty());
+    /// assert_eq!(sketch.estimate("apple"), 0);
+    /// ```
+    pub fn reset(&mut self) {
+        self.counts.fill(T::ZERO);
+        self.total_weight = T::ZERO;
+    }
+
     /// Suggests the number of buckets to achieve the given relative error.
     ///
     /// # Errors
