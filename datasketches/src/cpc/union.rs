@@ -133,8 +133,8 @@ impl CpcUnion {
     /// s2.update(&"banana");
     ///
     /// let mut union = CpcUnion::new(12).unwrap();
-    /// union.update(&s1);
-    /// union.update(&s2);
+    /// union.update(&s1).unwrap();
+    /// union.update(&s2).unwrap();
     ///
     /// let result = union.to_sketch();
     /// assert_eq!(result.estimate().trunc(), 2.0);
@@ -210,15 +210,21 @@ impl CpcUnion {
 
     /// Updates this union with a `CpcSketch`.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if the seed of the provided sketch does not match the seed of this union.
-    pub fn update(&mut self, sketch: &CpcSketch) {
-        assert_eq!(self.seed, sketch.seed());
+    /// Returns an error if the seed of the provided sketch does not match the seed of this union.
+    pub fn update(&mut self, sketch: &CpcSketch) -> Result<(), Error> {
+        if self.seed != sketch.seed() {
+            return Err(Error::invalid_argument(format!(
+                "CPC sketch seed must match union seed: expected {}, got {}",
+                self.seed,
+                sketch.seed()
+            )));
+        }
 
         let flavor = sketch.flavor();
         if flavor == Flavor::Empty {
-            return;
+            return Ok(());
         }
 
         if sketch.lg_k() < self.lg_k {
@@ -250,7 +256,7 @@ impl CpcUnion {
                     // are equal.
                     if old_flavor == Flavor::Empty && self.lg_k == sketch.lg_k() {
                         *old_sketch = sketch.clone();
-                        return;
+                        return Ok(());
                     }
 
                     walk_table_updating_sketch(old_sketch, sketch.surprising_value_table());
@@ -263,7 +269,7 @@ impl CpcUnion {
                         self.state = UnionState::BitMatrix(bit_matrix);
                     }
 
-                    return;
+                    return Ok(());
                 }
 
                 // If flavor is past SPARSE mode, the state must have been converted to bitMatrix.
@@ -275,7 +281,7 @@ impl CpcUnion {
                 if flavor == Flavor::Sparse {
                     // [Case B] Sparse, bitMatrix valid, accumulator == null
                     or_table_into_matrix(old_matrix, self.lg_k, sketch.surprising_value_table());
-                    return;
+                    return Ok(());
                 }
 
                 if matches!(flavor, Flavor::Hybrid | Flavor::Pinned) {
@@ -289,7 +295,7 @@ impl CpcUnion {
                         sketch.lg_k(),
                     );
                     or_table_into_matrix(old_matrix, self.lg_k, sketch.surprising_value_table());
-                    return;
+                    return Ok(());
                 }
 
                 // [Case D] Sliding, bitMatrix valid, accumulator == null
@@ -300,6 +306,7 @@ impl CpcUnion {
                 or_matrix_into_matrix(old_matrix, self.lg_k, &src_matrix, sketch.lg_k());
             }
         }
+        Ok(())
     }
 
     fn reduce_k(&mut self, new_lg_k: u8) {

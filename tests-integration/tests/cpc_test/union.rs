@@ -36,14 +36,14 @@ fn test_two_values() {
     let mut sketch = CpcSketch::new(11).unwrap();
     sketch.update(1);
     let mut union = CpcUnion::new(11).unwrap();
-    union.update(&sketch);
+    union.update(&sketch).unwrap();
 
     let result = union.to_sketch();
     assert!(!result.is_empty());
     assert_eq!(result.estimate(), 1.0);
 
     sketch.update(2);
-    union.update(&sketch);
+    union.update(&sketch).unwrap();
     let result = union.to_sketch();
     assert!(!result.is_empty());
     assert_that!(
@@ -60,7 +60,7 @@ fn test_custom_seed() {
     sketch.update(3);
 
     let mut union = CpcUnion::with_seed(11, 123).unwrap();
-    union.update(&sketch);
+    union.update(&sketch).unwrap();
     let result = union.to_sketch();
     assert!(!result.is_empty());
     assert_that!(
@@ -70,7 +70,6 @@ fn test_custom_seed() {
 }
 
 #[test]
-#[should_panic]
 fn test_custom_seed_mismatch() {
     let mut sketch = CpcSketch::with_seed(11, 123).unwrap();
     sketch.update(1);
@@ -78,7 +77,8 @@ fn test_custom_seed_mismatch() {
     sketch.update(3);
 
     let mut union = CpcUnion::with_seed(11, 234).unwrap();
-    union.update(&sketch);
+    let error = union.update(&sketch).unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::InvalidArgument);
 }
 
 #[test]
@@ -93,7 +93,7 @@ fn test_sliding_union_matches_single_sketch() {
             tmp.update(key);
             key += 1;
         }
-        union.update(&tmp);
+        union.update(&tmp).unwrap();
     }
     let result = union.to_sketch();
     assert!(!result.is_empty());
@@ -113,7 +113,7 @@ fn test_reduce_k_empty() {
         sketch.update(i);
     }
     let mut union = CpcUnion::new(12).unwrap();
-    union.update(&sketch);
+    union.update(&sketch).unwrap();
     let result = union.to_sketch();
     assert_eq!(result.lg_k(), 11);
     assert_that!(
@@ -130,13 +130,13 @@ fn test_reduce_k_sparse() {
     for i in 0..100 {
         sketch12.update(i);
     }
-    union.update(&sketch12);
+    union.update(&sketch12).unwrap();
 
     let mut sketch11 = CpcSketch::new(11).unwrap();
     for i in 0..1000 {
         sketch11.update(i);
     }
-    union.update(&sketch11);
+    union.update(&sketch11).unwrap();
 
     let result = union.to_sketch();
     assert_eq!(result.lg_k(), 11);
@@ -154,13 +154,13 @@ fn test_reduce_k_window() {
     for i in 0..500 {
         sketch12.update(i);
     }
-    union.update(&sketch12);
+    union.update(&sketch12).unwrap();
 
     let mut sketch11 = CpcSketch::new(11).unwrap();
     for i in 0..1000 {
         sketch11.update(i);
     }
-    union.update(&sketch11);
+    union.update(&sketch11).unwrap();
 
     let result = union.to_sketch();
     assert_eq!(result.lg_k(), 11);
@@ -191,6 +191,6 @@ fn test_union_estimated_size() {
     for i in 0..1000 {
         sketch.update(i);
     }
-    union.update(&sketch);
+    union.update(&sketch).unwrap();
     assert_eq!(union.estimated_size(), 16496);
 }

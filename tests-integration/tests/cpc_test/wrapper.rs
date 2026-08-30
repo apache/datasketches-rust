@@ -51,8 +51,8 @@ fn test_cpc_wrapper() {
     assert_that!(concat_wrapper.upper_bound(NumStdDev::Two), eq(dst_ub));
 
     let mut union = CpcUnion::new(lg_k).unwrap();
-    union.update(&sk1);
-    union.update(&sk2);
+    union.update(&sk1).unwrap();
+    union.update(&sk2).unwrap();
     let merged = union.to_sketch();
     let merged_est = merged.estimate();
     let merged_lb = merged.lower_bound(NumStdDev::Two);
