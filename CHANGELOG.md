@@ -37,6 +37,7 @@ All significant changes to this project will be documented in this file.
 
 ### Bug fixes
 
+* Count-Min updates, merges, and upper bounds now saturate at the configured counter type's limits instead of panicking in debug builds or wrapping in release builds. The minimum signed weight is handled without overflow.
 * T-Digest CDF and PMF queries now accept an empty split-point slice and return the single all-values bin instead of panicking.
 * Count-Min parameter suggestions now return constructor-valid values and reject relative-error targets that require more buckets than the sketch supports.
 * Bloom filter deserialization now rejects malformed images with inconsistent counts or payload lengths, while valid images with a dirty cached count are restored correctly.

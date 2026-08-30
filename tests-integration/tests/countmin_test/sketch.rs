@@ -160,6 +160,29 @@ fn test_negative_weights() {
 }
 
 #[test]
+fn test_arithmetic_saturates_at_value_bounds() {
+    let mut unsigned = CountMinSketch::<u8>::new(2, 8).unwrap();
+    unsigned.update_with_weight("x", 250);
+    unsigned.update_with_weight("x", 10);
+    assert_eq!(unsigned.estimate("x"), u8::MAX);
+    assert_eq!(unsigned.total_weight(), u8::MAX);
+    assert_eq!(unsigned.upper_bound("x"), u8::MAX);
+
+    let mut left = CountMinSketch::<u8>::new(2, 8).unwrap();
+    left.update_with_weight("x", 250);
+    let mut right = CountMinSketch::<u8>::new(2, 8).unwrap();
+    right.update_with_weight("x", 10);
+    left.merge(&right).unwrap();
+    assert_eq!(left.estimate("x"), u8::MAX);
+    assert_eq!(left.total_weight(), u8::MAX);
+
+    let mut signed = CountMinSketch::<i8>::new(2, 8).unwrap();
+    signed.update_with_weight("x", i8::MIN);
+    assert_eq!(signed.estimate("x"), i8::MIN);
+    assert_eq!(signed.total_weight(), i8::MAX);
+}
+
+#[test]
 fn test_halve() {
     let buckets = CountMinSketch::<u64>::suggest_num_buckets(0.01).unwrap();
     let hashes = CountMinSketch::<u64>::suggest_num_hashes(0.9).unwrap();

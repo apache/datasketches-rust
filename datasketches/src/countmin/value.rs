@@ -28,16 +28,15 @@ pub trait CountMinValue: private::CountMinValue {}
 pub trait UnsignedCountMinValue: CountMinValue + private::UnsignedCountMinValue {}
 
 mod private {
-    use std::ops::Add;
-
     use crate::error::Error;
 
-    pub trait CountMinValue: Sized + Copy + Ord + Add<Output = Self> {
+    pub trait CountMinValue: Sized + Copy + Ord {
         const ZERO: Self;
         const ONE: Self;
         const MAX: Self;
 
-        fn abs(self) -> Self;
+        fn saturating_abs(self) -> Self;
+        fn saturating_add(self, other: Self) -> Self;
         fn scale(self, factor: f64) -> Self;
         fn to_bytes(self) -> [u8; 8];
         fn try_from_bytes(bytes: [u8; 8]) -> Result<Self, Error>;
@@ -56,8 +55,13 @@ macro_rules! impl_signed {
             const MAX: Self = $max;
 
             #[inline(always)]
-            fn abs(self) -> Self {
-                if self >= 0 { self } else { -self }
+            fn saturating_abs(self) -> Self {
+                <$name>::saturating_abs(self)
+            }
+
+            #[inline(always)]
+            fn saturating_add(self, other: Self) -> Self {
+                <$name>::saturating_add(self, other)
             }
 
             #[inline(always)]
@@ -102,8 +106,13 @@ macro_rules! impl_unsigned {
             const MAX: Self = $max;
 
             #[inline(always)]
-            fn abs(self) -> Self {
+            fn saturating_abs(self) -> Self {
                 self
+            }
+
+            #[inline(always)]
+            fn saturating_add(self, other: Self) -> Self {
+                <$name>::saturating_add(self, other)
             }
 
             #[inline(always)]
