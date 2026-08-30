@@ -159,10 +159,11 @@ impl BloomFilter {
     /// After merging, this filter will recognize items from either filter
     /// (plus any false positives from either).
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if the filters are not compatible (different size, hashes, or seed).
-    /// Use [`is_compatible()`](Self::is_compatible) to check first.
+    /// Returns an error if the filters are not compatible (different size, number of hashes, or
+    /// seed). Use [`is_compatible()`](Self::is_compatible) to check first when an error is not
+    /// expected.
     ///
     /// # Examples
     ///
@@ -181,15 +182,16 @@ impl BloomFilter {
     /// f1.insert("a");
     /// f2.insert("b");
     ///
-    /// f1.union(&f2);
+    /// f1.union(&f2).unwrap();
     /// assert!(f1.contains(&"a"));
     /// assert!(f1.contains(&"b"));
     /// ```
-    pub fn union(&mut self, other: &BloomFilter) {
-        assert!(
-            self.is_compatible(other),
-            "Cannot union incompatible Bloom filters"
-        );
+    pub fn union(&mut self, other: &BloomFilter) -> Result<(), Error> {
+        if !self.is_compatible(other) {
+            return Err(Error::invalid_argument(
+                "Bloom filters must have matching capacity, number of hashes, and seed",
+            ));
+        }
 
         // Count bits during union operation (single pass)
         let mut num_bits_set = 0;
@@ -198,6 +200,7 @@ impl BloomFilter {
             num_bits_set += word.count_ones() as u64;
         }
         self.num_bits_set = num_bits_set;
+        Ok(())
     }
 
     /// Intersects this filter with another via bitwise AND.
@@ -205,9 +208,10 @@ impl BloomFilter {
     /// After intersection, this filter will recognize only items present in both
     /// filters (plus false positives).
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if the filters are not compatible (different size, hashes, or seed).
+    /// Returns an error if the filters are not compatible (different size, number of hashes, or
+    /// seed).
     ///
     /// # Examples
     ///
@@ -228,15 +232,16 @@ impl BloomFilter {
     /// f2.insert("b");
     /// f2.insert("c");
     ///
-    /// f1.intersect(&f2);
+    /// f1.intersect(&f2).unwrap();
     /// assert!(f1.contains(&"b")); // In both
     /// // "a" and "c" likely return false now
     /// ```
-    pub fn intersect(&mut self, other: &BloomFilter) {
-        assert!(
-            self.is_compatible(other),
-            "Cannot intersect incompatible Bloom filters"
-        );
+    pub fn intersect(&mut self, other: &BloomFilter) -> Result<(), Error> {
+        if !self.is_compatible(other) {
+            return Err(Error::invalid_argument(
+                "Bloom filters must have matching capacity, number of hashes, and seed",
+            ));
+        }
 
         // Count bits during intersect operation (single pass)
         let mut num_bits_set = 0;
@@ -245,6 +250,7 @@ impl BloomFilter {
             num_bits_set += word.count_ones() as u64;
         }
         self.num_bits_set = num_bits_set;
+        Ok(())
     }
 
     /// Inverts all bits in the filter.

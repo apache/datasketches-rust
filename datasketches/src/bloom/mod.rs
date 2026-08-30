@@ -110,12 +110,12 @@
 //! filter2.insert("b");
 //!
 //! // Union: recognizes items from either filter
-//! filter1.union(&filter2);
+//! filter1.union(&filter2).unwrap();
 //! assert!(filter1.contains(&"a"));
 //! assert!(filter1.contains(&"b"));
 //!
 //! // Intersect: recognizes only items in both filters
-//! // filter1.intersect(&filter2);
+//! // filter1.intersect(&filter2).unwrap();
 //!
 //! // Invert: approximately inverts set membership
 //! // filter1.invert();

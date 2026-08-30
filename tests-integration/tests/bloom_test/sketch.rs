@@ -68,14 +68,14 @@ fn test_union_and_intersection() {
     let right_bits = right.bits_used();
 
     let mut intersection = left.clone();
-    intersection.intersect(&right);
+    intersection.intersect(&right).unwrap();
     assert!(intersection.contains(&"shared"));
     let intersection_bits = intersection.bits_used();
     assert_that!(intersection_bits, le(left_bits));
     assert_that!(intersection_bits, le(right_bits));
 
     let mut union = left;
-    union.union(&right);
+    union.union(&right).unwrap();
     assert!(union.contains(&"shared"));
     assert!(union.contains(&"left"));
     assert!(union.contains(&"right"));
@@ -122,25 +122,25 @@ fn test_compatibility_checks_all_configuration() {
 }
 
 #[test]
-#[should_panic(expected = "Cannot union incompatible Bloom filters")]
 fn test_union_rejects_incompatible_filters() {
     let mut left = filter();
     let right = BloomFilterBuilder::with_size(NUM_BITS, NUM_HASHES)
         .seed(SEED + 1)
         .build()
         .unwrap();
-    left.union(&right);
+    let error = left.union(&right).unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::InvalidArgument);
 }
 
 #[test]
-#[should_panic(expected = "Cannot intersect incompatible Bloom filters")]
 fn test_intersection_rejects_incompatible_filters() {
     let mut left = filter();
     let right = BloomFilterBuilder::with_size(NUM_BITS, NUM_HASHES)
         .seed(SEED + 1)
         .build()
         .unwrap();
-    left.intersect(&right);
+    let error = left.intersect(&right).unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::InvalidArgument);
 }
 
 #[test]
