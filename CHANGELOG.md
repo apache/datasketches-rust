@@ -43,6 +43,7 @@ All significant changes to this project will be documented in this file.
 * Compact HLL4 images now restore all register values correctly.
 * `HllSketch::lower_bound` now uses the number of non-zero registers as a floor in HLL mode, matching Java, C++, and Go and avoiding a bound below the distinct count already proven by register hits.
 * `HllUnion` now keeps a single HLL-mode input's estimate stable when copying or downsampling it and keeps confidence bounds consistent across HLL4, HLL6, and HLL8 result types, matching Java and C++.
+* `ThetaJaccardSimilarity` and `TupleJaccardSimilarity` now report an exact similarity of `1.0` for two non-empty sketches that share a theta and retain no entries, matching Java and C++ and agreeing with `exactly_equal` on the same pair. Such pairs, which arise from a low sampling probability, previously returned the uncertain `{0.0, 0.5, 1.0}` interval, so a sketch was not similar to itself.
 * HLL, Theta, and Tuple deserializers now return `InvalidData` for malformed payload sizes and entry counts instead of risking oversized allocations or decoding failures.
 * Malformed CPC images now return `InvalidData` instead of panicking.
 * Seeded deserializers now return `InvalidData` rather than panicking when the caller supplies a seed whose hash is the reserved zero value.
