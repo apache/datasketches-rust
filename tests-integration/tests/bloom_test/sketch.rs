@@ -176,3 +176,19 @@ fn test_size_builder_rejects_zero_hashes_at_build() {
     let error = BloomFilterBuilder::with_size(128, 0).build().unwrap_err();
     assert_eq!(error.kind(), ErrorKind::InvalidArgument);
 }
+
+#[test]
+fn test_parameter_suggestions_validate_inputs() {
+    let errors = [
+        BloomFilterBuilder::suggest_num_bits(0, 0.01).unwrap_err(),
+        BloomFilterBuilder::suggest_num_bits(1000, f64::NAN).unwrap_err(),
+        BloomFilterBuilder::suggest_num_hashes_from_accuracy(0, 10_000).unwrap_err(),
+        BloomFilterBuilder::suggest_num_hashes_from_accuracy(1000, 0).unwrap_err(),
+        BloomFilterBuilder::suggest_num_hashes_from_fpp(0.0).unwrap_err(),
+    ];
+    assert!(
+        errors
+            .iter()
+            .all(|error| error.kind() == ErrorKind::InvalidArgument)
+    );
+}

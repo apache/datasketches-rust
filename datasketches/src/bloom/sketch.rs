@@ -731,16 +731,8 @@ impl BloomFilterBuilder {
     pub fn build(self) -> Result<BloomFilter, Error> {
         let (num_bits, num_hashes) = match self.mode {
             BloomFilterBuilderMode::Accuracy { max_items, fpp } => {
-                if max_items == 0 {
-                    return Err(Error::invalid_argument("max_items must be greater than 0"));
-                }
-                if !(fpp > 0.0 && fpp <= 1.0) {
-                    return Err(Error::invalid_argument(
-                        "fpp must be between 0.0 and 1.0 (inclusive of 1.0)",
-                    ));
-                }
-                let num_bits = Self::suggest_num_bits(max_items, fpp);
-                let num_hashes = Self::suggest_num_hashes_from_accuracy(max_items, num_bits);
+                let num_bits = Self::suggest_num_bits(max_items, fpp)?;
+                let num_hashes = Self::suggest_num_hashes_from_accuracy(max_items, num_bits)?;
                 (num_bits, num_hashes)
             }
             BloomFilterBuilderMode::Size {
@@ -782,22 +774,33 @@ impl BloomFilterBuilder {
     /// Formula: `m = -n * ln(p) / (ln(2)^2)`
     /// where n = max_items, p = fpp
     ///
+    /// # Errors
+    ///
+    /// Returns an error if `max_items` is zero or `fpp` is outside `(0.0, 1.0]`.
+    ///
     /// # Examples
     ///
     /// ```
     /// use datasketches::bloom::BloomFilterBuilder;
     ///
-    /// let bits = BloomFilterBuilder::suggest_num_bits(1000, 0.01);
+    /// let bits = BloomFilterBuilder::suggest_num_bits(1000, 0.01).unwrap();
     /// assert!(bits > 9000 && bits < 10000); // ~9585 bits
     /// ```
-    pub fn suggest_num_bits(max_items: u64, fpp: f64) -> u64 {
+    pub fn suggest_num_bits(max_items: u64, fpp: f64) -> Result<u64, Error> {
+        if max_items == 0 {
+            return Err(Error::invalid_argument("max_items must be greater than 0"));
+        }
+        if !(fpp > 0.0 && fpp <= 1.0) {
+            return Err(Error::invalid_argument("fpp must be in (0.0, 1.0]"));
+        }
+
         let n = max_items as f64;
         let p = fpp;
         let ln2_squared = std::f64::consts::LN_2 * std::f64::consts::LN_2;
 
         let bits = (-n * p.ln() / ln2_squared).ceil() as u64;
 
-        bits.clamp(Self::MIN_NUM_BITS, Self::MAX_NUM_BITS)
+        Ok(bits.clamp(Self::MIN_NUM_BITS, Self::MAX_NUM_BITS))
     }
 
     /// Suggests optimal number of hash functions given max items and bit count.
@@ -805,24 +808,40 @@ impl BloomFilterBuilder {
     /// Formula: `k = (m/n) * ln(2)`
     /// where m = num_bits, n = max_items
     ///
+    /// # Errors
+    ///
+    /// Returns an error if `max_items` is zero or `num_bits` is outside the supported range.
+    ///
     /// # Examples
     ///
     /// ```
     /// use datasketches::bloom::BloomFilterBuilder;
     ///
-    /// let hashes = BloomFilterBuilder::suggest_num_hashes_from_accuracy(1000, 10000);
+    /// let hashes = BloomFilterBuilder::suggest_num_hashes_from_accuracy(1000, 10000).unwrap();
     /// assert_eq!(hashes, 7); // Optimal k ≈ 6.93
     /// ```
-    pub fn suggest_num_hashes_from_accuracy(max_items: u64, num_bits: u64) -> u16 {
+    pub fn suggest_num_hashes_from_accuracy(max_items: u64, num_bits: u64) -> Result<u16, Error> {
+        if max_items == 0 {
+            return Err(Error::invalid_argument("max_items must be greater than 0"));
+        }
+        if !(Self::MIN_NUM_BITS..=Self::MAX_NUM_BITS).contains(&num_bits) {
+            return Err(Error::invalid_argument(format!(
+                "num_bits must be between {} and {}, got {}",
+                Self::MIN_NUM_BITS,
+                Self::MAX_NUM_BITS,
+                num_bits
+            )));
+        }
+
         let m = num_bits as f64;
         let n = max_items as f64;
 
         // Ceil to avoid selecting too few hashes.
         let k = (m / n * std::f64::consts::LN_2).ceil();
-        k.clamp(
+        Ok(k.clamp(
             f64::from(Self::MIN_NUM_HASHES),
             f64::from(Self::MAX_NUM_HASHES),
-        ) as u16
+        ) as u16)
     }
 
     /// Suggests optimal number of hash functions from target FPP.
@@ -830,20 +849,28 @@ impl BloomFilterBuilder {
     /// Formula: `k = -log2(p)`
     /// where p = fpp
     ///
+    /// # Errors
+    ///
+    /// Returns an error if `fpp` is outside `(0.0, 1.0]`.
+    ///
     /// # Examples
     ///
     /// ```
     /// use datasketches::bloom::BloomFilterBuilder;
     ///
-    /// let hashes = BloomFilterBuilder::suggest_num_hashes_from_fpp(0.01);
+    /// let hashes = BloomFilterBuilder::suggest_num_hashes_from_fpp(0.01).unwrap();
     /// assert_eq!(hashes, 7); // -log2(0.01) ≈ 6.64
     /// ```
-    pub fn suggest_num_hashes_from_fpp(fpp: f64) -> u16 {
+    pub fn suggest_num_hashes_from_fpp(fpp: f64) -> Result<u16, Error> {
+        if !(fpp > 0.0 && fpp <= 1.0) {
+            return Err(Error::invalid_argument("fpp must be in (0.0, 1.0]"));
+        }
+
         // Ceil to avoid selecting too few hashes.
         let k = -fpp.log2();
-        k.ceil().clamp(
+        Ok(k.ceil().clamp(
             f64::from(Self::MIN_NUM_HASHES),
             f64::from(Self::MAX_NUM_HASHES),
-        ) as u16
+        ) as u16)
     }
 }
