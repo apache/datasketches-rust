@@ -84,7 +84,7 @@ impl<T: Eq + Hash> ReversePurgeItemHashMap<T> {
             self.states[probe] = drift as u16;
             self.num_active += 1;
         } else {
-            self.values[probe] += adjust_amount;
+            self.values[probe] = self.values[probe].saturating_add(adjust_amount);
         }
     }
 
@@ -101,7 +101,7 @@ impl<T: Eq + Hash> ReversePurgeItemHashMap<T> {
             self.states[probe] = drift as u16;
             self.num_active += 1;
         } else {
-            self.values[probe] += adjust_amount;
+            self.values[probe] = self.values[probe].saturating_add(adjust_amount);
         }
     }
 
