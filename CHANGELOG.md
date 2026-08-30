@@ -15,6 +15,7 @@ All significant changes to this project will be documented in this file.
 * Replace `FrequentItemsSketch::epsilon_for_lg` with the fallible `epsilon_for_max_map_size`, and change `apriori_error` to accept the same maximum map size plus an unsigned stream weight. These helpers now match the constructor's units, and `max_map_size` exposes the configured value.
 * Replace the `is_f32` flag on `TDigestMut::deserialize` with separate `deserialize` and `deserialize_f32` entry points, making the serialized precision explicit at the call site.
 * Remove `CpcUnion::num_coupons`, which exposed internal union state solely for tests. Inspect the resulting `CpcSketch` when diagnostics are needed.
+* Remove the hidden REQ diagnostic methods `level_info`, `total_nominal_capacity`, `total_retained_items`, and `computed_total_weight`; they exposed implementation details and had no supported caller contract.
 * `ThetaIntersection::to_sketch` and `TupleIntersection::to_sketch` now return `Option`. Callers must handle `None` until the intersection receives its first successful update.
 * `BloomFilterBuilder`, `ThetaSketchBuilder`, `ThetaUnionBuilder`, `TupleSketchBuilder`, and `TupleUnionBuilder` now validate their configuration when `build` is called, and `build` returns `Result`. Callers must propagate or handle construction errors.
 * `BloomFilterBuilder::{MIN_NUM_BITS, MAX_NUM_BITS, MIN_NUM_HASHES, MAX_NUM_HASHES}` are no longer public. Callers should pass configurations to `build` and handle `InvalidArgument` instead of prevalidating against these constants.
