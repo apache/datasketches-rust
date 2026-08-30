@@ -551,15 +551,11 @@ fn test_longs_reset() {
 }
 
 #[test]
-fn test_longs_invalid_map_size_returns_error() {
-    let error = FrequentItemsSketch::<i64>::new(6).unwrap_err();
-    assert_eq!(error.kind(), ErrorKind::InvalidArgument);
-}
-
-#[test]
-fn test_items_invalid_map_size_returns_error() {
-    let error = FrequentItemsSketch::<String>::new(6).unwrap_err();
-    assert_eq!(error.kind(), ErrorKind::InvalidArgument);
+fn test_invalid_map_size_returns_error() {
+    for max_map_size in [1, 2, 4, 6] {
+        let error = FrequentItemsSketch::<i64>::new(max_map_size).unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::InvalidArgument);
+    }
 }
 
 #[test]

@@ -39,6 +39,7 @@ type SerializeItem<T> = fn(&mut SketchBytes, &T);
 type DeserializeItems<T> = fn(SketchSlice<'_>, usize) -> Result<Vec<T>, Error>;
 
 const LG_MIN_MAP_SIZE: u8 = 3;
+const MIN_MAP_SIZE: usize = 1usize << LG_MIN_MAP_SIZE;
 // Java represents map sizes as positive `int` powers of two, while the C++
 // implementation uses 32-bit table indices. Keep Rust configurations within
 // the same cross-language range.
@@ -137,8 +138,8 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     ///
     /// # Errors
     ///
-    /// Returns an error if `max_map_size` is not a power of two or exceeds `2^30`, the maximum
-    /// supported by the cross-language format implementations.
+    /// Returns an error if `max_map_size` is not a power of two in the range `[8, 2^30]`. The upper
+    /// bound is the maximum supported by the cross-language format implementations.
     ///
     /// # Examples
     ///
@@ -153,6 +154,11 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     pub fn new(max_map_size: usize) -> Result<Self, Error> {
         if !max_map_size.is_power_of_two() {
             return Err(Error::invalid_argument("max_map_size must be a power of 2"));
+        }
+        if max_map_size < MIN_MAP_SIZE {
+            return Err(Error::invalid_argument(format!(
+                "max_map_size must be at least {MIN_MAP_SIZE}"
+            )));
         }
         if max_map_size > MAX_MAP_SIZE {
             return Err(Error::invalid_argument(format!(
