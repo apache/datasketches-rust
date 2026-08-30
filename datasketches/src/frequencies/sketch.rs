@@ -39,12 +39,12 @@ type SerializeItem<T> = fn(&mut SketchBytes, &T);
 type DeserializeItems<T> = fn(SketchSlice<'_>, usize) -> Result<Vec<T>, Error>;
 
 const LG_MIN_MAP_SIZE: u8 = 3;
-const MIN_MAP_SIZE: usize = 1usize << LG_MIN_MAP_SIZE;
+const MIN_MAP_SIZE: usize = 1 << LG_MIN_MAP_SIZE;
 // Java represents map sizes as positive `int` powers of two, while the C++
 // implementation uses 32-bit table indices. Keep Rust configurations within
 // the same cross-language range.
 const LG_MAX_MAP_SIZE: u8 = 30;
-const MAX_MAP_SIZE: usize = 1usize << LG_MAX_MAP_SIZE;
+const MAX_MAP_SIZE: usize = 1 << LG_MAX_MAP_SIZE;
 const SAMPLE_SIZE: usize = 1024;
 const EPSILON_FACTOR: f64 = 3.5;
 const LOAD_FACTOR_NUMERATOR: usize = 3;
@@ -52,7 +52,7 @@ const LOAD_FACTOR_DENOMINATOR: usize = 4;
 
 fn map_capacity_for_lg(lg_map_size: u8) -> usize {
     debug_assert!(lg_map_size <= LG_MAX_MAP_SIZE);
-    (1usize << lg_map_size) * LOAD_FACTOR_NUMERATOR / LOAD_FACTOR_DENOMINATOR
+    (1 << lg_map_size) * LOAD_FACTOR_NUMERATOR / LOAD_FACTOR_DENOMINATOR
 }
 
 fn lg_for_max_map_size(max_map_size: usize) -> Result<u8, Error> {
@@ -320,7 +320,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
 
     /// Returns the configured maximum map size.
     pub fn max_map_size(&self) -> usize {
-        1usize << self.lg_max_map_size
+        1 << self.lg_max_map_size
     }
 
     /// Returns the configured `lg_max_map_size`.
@@ -562,7 +562,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
             lg_cur <= lg_max,
             "lg_cur_map_size must not exceed lg_max_map_size"
         );
-        let map = ReversePurgeItemHashMap::new(1usize << lg_cur);
+        let map = ReversePurgeItemHashMap::new(1 << lg_cur);
         let cur_map_cap = map.capacity();
         let max_map_cap = map_capacity_for_lg(lg_max);
         let sample_size = SAMPLE_SIZE.min(max_map_cap);
