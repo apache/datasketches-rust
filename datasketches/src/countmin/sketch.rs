@@ -205,13 +205,13 @@ impl<T: CountMinValue> CountMinSketch<T> {
         if weight == T::ZERO {
             return;
         }
-        let abs_weight = weight.saturating_abs();
-        self.total_weight = self.total_weight.saturating_add(abs_weight);
+        let abs_weight = weight.abs();
+        self.total_weight = self.total_weight + abs_weight;
         let num_buckets = self.num_buckets as usize;
         for (row, seed) in self.hash_seeds.iter().enumerate() {
             let bucket = self.bucket_index(&item, *seed);
             let index = row * num_buckets + bucket;
-            self.counts[index] = self.counts[index].saturating_add(weight);
+            self.counts[index] = self.counts[index] + weight;
         }
     }
 
@@ -249,7 +249,7 @@ impl<T: CountMinValue> CountMinSketch<T> {
     pub fn upper_bound<I: Hash>(&self, item: I) -> T {
         let estimate = self.estimate(item);
         let error = self.total_weight.scale(self.relative_error());
-        estimate.saturating_add(error)
+        estimate + error
     }
 
     /// Merges another sketch into this one.
@@ -282,9 +282,9 @@ impl<T: CountMinValue> CountMinSketch<T> {
             ));
         }
         for (count, other_count) in self.counts.iter_mut().zip(&other.counts) {
-            *count = count.saturating_add(*other_count);
+            *count = *count + *other_count;
         }
-        self.total_weight = self.total_weight.saturating_add(other.total_weight);
+        self.total_weight = self.total_weight + other.total_weight;
         Ok(())
     }
 
