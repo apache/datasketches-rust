@@ -159,10 +159,19 @@ fn test_accuracy_builder_rejects_zero_items_at_build() {
 
 #[test]
 fn test_accuracy_builder_rejects_invalid_probability_at_build() {
-    let error = BloomFilterBuilder::with_accuracy(100, 1.5)
-        .build()
-        .unwrap_err();
-    assert_eq!(error.kind(), ErrorKind::InvalidArgument);
+    for fpp in [0.0, 1.5, f64::NAN] {
+        let error = BloomFilterBuilder::with_accuracy(100, fpp)
+            .build()
+            .unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::InvalidArgument);
+    }
+}
+
+#[test]
+fn test_accuracy_builder_accepts_one_probability() {
+    let filter = BloomFilterBuilder::with_accuracy(100, 1.0).build().unwrap();
+    assert_eq!(filter.capacity(), 64);
+    assert_eq!(filter.num_hashes(), 1);
 }
 
 #[test]
@@ -178,26 +187,7 @@ fn test_size_builder_rejects_zero_hashes_at_build() {
 }
 
 #[test]
-fn test_parameter_suggestions_validate_inputs() {
-    let errors = [
-        BloomFilterBuilder::suggest_num_bits(0, 0.01).unwrap_err(),
-        BloomFilterBuilder::suggest_num_bits(1000, f64::NAN).unwrap_err(),
-        BloomFilterBuilder::suggest_num_hashes_from_accuracy(0, 10_000).unwrap_err(),
-        BloomFilterBuilder::suggest_num_hashes_from_accuracy(1000, 0).unwrap_err(),
-        BloomFilterBuilder::suggest_num_hashes_from_fpp(0.0).unwrap_err(),
-    ];
-    assert!(
-        errors
-            .iter()
-            .all(|error| error.kind() == ErrorKind::InvalidArgument)
-    );
-}
-
-#[test]
 fn test_accuracy_builder_rejects_unrepresentable_target() {
-    let error = BloomFilterBuilder::suggest_num_bits(u64::MAX, 0.01).unwrap_err();
-    assert_eq!(error.kind(), ErrorKind::InvalidArgument);
-
     let error = BloomFilterBuilder::with_accuracy(u64::MAX, 0.01)
         .build()
         .unwrap_err();

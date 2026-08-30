@@ -63,7 +63,8 @@
 //!
 //! ## By Accuracy (Recommended)
 //!
-//! Automatically calculates optimal size and hash functions:
+//! Derive the size and hash-function count from an expected distinct-item count and a target
+//! false-positive probability:
 //!
 //! ```
 //! use datasketches::bloom::BloomFilterBuilder;
@@ -76,6 +77,12 @@
 //! .build()
 //! .unwrap();
 //! ```
+//!
+//! `max_items` is a sizing assumption, not an insertion limit. The filter continues accepting
+//! distinct items beyond that count, but its false-positive probability can then exceed the target.
+//! Accuracy inputs are validated by `build`: `max_items` must be positive, `fpp` must be in
+//! `(0.0, 1.0]`, and the requested target must fit the serialized Bloom filter format. An `fpp` of
+//! `1.0` is accepted and creates the smallest allocation: 64 bits and one hash function.
 //!
 //! ## By Size (Manual)
 //!
@@ -91,6 +98,10 @@
 //! .build()
 //! .unwrap();
 //! ```
+//!
+//! Manual construction requires a positive bit count supported by the serialized format and a
+//! hash-function count in `1..=32767`. The requested bit count is rounded up to a multiple of 64,
+//! which is the value returned by [`BloomFilter::capacity`].
 //!
 //! # Set Operations
 //!

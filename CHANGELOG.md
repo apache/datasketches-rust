@@ -9,7 +9,7 @@ All significant changes to this project will be documented in this file.
 * `BloomFilter::union` and `BloomFilter::intersect` now return `Result`. Callers must handle incompatible filter configurations instead of relying on a panic.
 * `CountMinSketch::merge` now returns `Result`. Callers must handle incompatible sketch configurations instead of relying on a panic.
 * `CpcUnion::update` now returns `Result`. Callers must handle seed mismatches instead of relying on a panic.
-* `BloomFilterBuilder::suggest_num_bits`, `suggest_num_hashes_from_accuracy`, and `suggest_num_hashes_from_fpp` now return `Result` and reject invalid sizing inputs instead of silently clamping them.
+* Remove `BloomFilterBuilder::suggest_num_bits`, `suggest_num_hashes_from_accuracy`, and `suggest_num_hashes_from_fpp`. Use `with_accuracy(...).build()` for target-based sizing or `with_size(...).build()` for an explicit precomputed configuration.
 * `CpcSketch::max_serialized_bytes` now returns `Result` and reports an invalid `lg_k` instead of panicking.
 * `FrequentItemsSketch::new` now rejects map sizes below the minimum of 8 instead of silently rounding them up.
 * Replace `FrequentItemsSketch::epsilon_for_lg` with the fallible `epsilon_for_max_map_size`, and change `apriori_error` to accept the same maximum map size plus an unsigned stream weight. These helpers now match the constructor's units, and `max_map_size` exposes the configured value.
