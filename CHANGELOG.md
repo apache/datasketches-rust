@@ -8,6 +8,7 @@ All significant changes to this project will be documented in this file.
 
 * `BloomFilter::union` and `BloomFilter::intersect` now return `Result`. Callers must handle incompatible filter configurations instead of relying on a panic.
 * `CountMinSketch::merge` now returns `Result`. Callers must handle incompatible sketch configurations instead of relying on a panic.
+* `CountMinSketch::{suggest_num_buckets, suggest_num_hashes}` now return `Result`. Callers must handle invalid or unsupported targets; successful suggestions are valid inputs to `CountMinSketch::new`.
 * `CpcUnion::update` now returns `Result`. Callers must handle seed mismatches instead of relying on a panic.
 * Remove `BloomFilterBuilder::suggest_num_bits`, `suggest_num_hashes_from_accuracy`, and `suggest_num_hashes_from_fpp`. Use `with_accuracy(...).build()` for target-based sizing or `with_size(...).build()` for an explicit precomputed configuration.
 * `CpcSketch::max_serialized_bytes` now returns `Result` and reports an invalid `lg_k` instead of panicking.
@@ -19,7 +20,7 @@ All significant changes to this project will be documented in this file.
 * `ThetaIntersection::to_sketch` and `TupleIntersection::to_sketch` now return `Option`. Callers must handle `None` until the intersection receives its first successful update.
 * `BloomFilterBuilder`, `ThetaSketchBuilder`, `ThetaUnionBuilder`, `TupleSketchBuilder`, and `TupleUnionBuilder` now validate their configuration when `build` is called, and `build` returns `Result`. Callers must propagate or handle construction errors.
 * `BloomFilterBuilder::{MIN_NUM_BITS, MAX_NUM_BITS, MIN_NUM_HASHES, MAX_NUM_HASHES}` are no longer public. Callers should pass configurations to `build` and handle `InvalidArgument` instead of prevalidating against these constants.
-* Fallible sketch and operator constructors now return `Result` directly from `new` or `with_seed`. `TDigestMut` no longer provides `try_new`, and the Count-Min parameter suggestion methods also return `Result`.
+* Fallible sketch and operator constructors now return `Result` directly from `new` or `with_seed`. `TDigestMut` no longer provides `try_new`.
 
 ### New features
 
@@ -35,7 +36,6 @@ All significant changes to this project will be documented in this file.
 
 * Bloom filter accuracy construction now rejects targets that exceed the maximum serialized filter size instead of silently reducing capacity and violating the requested false-positive probability.
 * T-Digest CDF and PMF queries now accept an empty split-point slice and return the single all-values bin instead of panicking.
-* Count-Min parameter suggestions now return constructor-valid values and reject relative-error targets that require more buckets than the sketch supports.
 * Bloom filter deserialization now rejects malformed images with inconsistent counts or payload lengths, while valid images with a dirty cached count are restored correctly.
 * `FrequentItemsSketch` now enforces the cross-language map-size limit of `2^30` consistently. Oversized construction returns `InvalidArgument`, and malformed or oversized serialized images return `InvalidData` instead of panicking or attempting excessive allocation.
 * T-Digest compression now supports `k = u16::MAX` without overflowing.
