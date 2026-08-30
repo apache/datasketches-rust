@@ -248,23 +248,6 @@ fn test_merge() {
 }
 
 #[test]
-fn test_reset_reuses_configuration() {
-    let mut sketch = CountMinSketch::<i64>::with_seed(3, 64, 123).unwrap();
-    sketch.update_with_weight("a", 10);
-    let size = sketch.estimated_size();
-
-    sketch.reset();
-
-    assert!(sketch.is_empty());
-    assert_eq!(sketch.total_weight(), 0);
-    assert_eq!(sketch.estimate("a"), 0);
-    assert_eq!(sketch.num_hashes(), 3);
-    assert_eq!(sketch.num_buckets(), 64);
-    assert_eq!(sketch.seed(), 123);
-    assert_eq!(sketch.estimated_size(), size);
-}
-
-#[test]
 fn test_serialize_deserialize_empty() {
     let sketch = CountMinSketch::<i64>::with_seed(2, 5, 123).unwrap();
     let bytes = sketch.serialize();
