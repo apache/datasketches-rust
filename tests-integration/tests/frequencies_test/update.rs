@@ -69,20 +69,27 @@ fn test_capacity_and_epsilon_helpers() {
     let longs: FrequentItemsSketch<i64> = FrequentItemsSketch::new(8).unwrap();
     assert_eq!(longs.current_map_capacity(), 6);
     assert_eq!(longs.maximum_map_capacity(), 6);
+    assert_eq!(longs.max_map_size(), 8);
     assert_eq!(longs.lg_cur_map_size(), 3);
     assert_eq!(longs.lg_max_map_size(), 3);
 
-    let epsilon = FrequentItemsSketch::<i64>::epsilon_for_lg(10);
+    let epsilon = FrequentItemsSketch::<i64>::epsilon_for_max_map_size(1024).unwrap();
     let expected = 3.5 / 1024.0;
     assert_that!(epsilon, near(expected, 1e-12));
 
-    let apriori = FrequentItemsSketch::<i64>::apriori_error(10, 10_000);
+    let apriori = FrequentItemsSketch::<i64>::apriori_error(1024, 10_000).unwrap();
     assert_that!(apriori, near(expected * 10_000.0, 1e-9));
+
+    let invalid_epsilon = FrequentItemsSketch::<i64>::epsilon_for_max_map_size(6).unwrap_err();
+    assert_eq!(invalid_epsilon.kind(), ErrorKind::InvalidArgument);
+    let invalid_apriori = FrequentItemsSketch::<i64>::apriori_error(4, 10_000).unwrap_err();
+    assert_eq!(invalid_apriori.kind(), ErrorKind::InvalidArgument);
 
     let items: FrequentItemsSketch<i32> = FrequentItemsSketch::new(1024).unwrap();
     assert_that!(items.epsilon(), near(expected, 1e-12));
     assert_eq!(items.current_map_capacity(), 6);
     assert_eq!(items.maximum_map_capacity(), 768);
+    assert_eq!(items.max_map_size(), 1024);
     assert_eq!(items.lg_max_map_size(), 10);
 }
 
