@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-pub mod common;
+pub(crate) mod common;
 #[cfg(feature = "theta")]
 pub mod theta;
 #[cfg(feature = "tuple")]

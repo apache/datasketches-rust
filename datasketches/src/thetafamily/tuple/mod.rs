@@ -65,3 +65,4 @@ pub use self::sketch::TupleSketchBuilder;
 pub use self::sketch::TupleSketchView;
 pub use self::union::TupleUnion;
 pub use self::union::TupleUnionBuilder;
+pub use crate::thetafamily::common::JaccardSimilarity;

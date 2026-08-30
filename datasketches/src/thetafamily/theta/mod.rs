@@ -59,3 +59,4 @@ pub use self::sketch::ThetaSketchBuilder;
 pub use self::sketch::ThetaSketchView;
 pub use self::union::ThetaUnion;
 pub use self::union::ThetaUnionBuilder;
+pub use crate::thetafamily::common::JaccardSimilarity;

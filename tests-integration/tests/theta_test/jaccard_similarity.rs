@@ -15,10 +15,10 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use datasketches::theta::JaccardSimilarity;
 use datasketches::theta::ThetaJaccardSimilarity;
 use datasketches::theta::ThetaSketch;
 use datasketches::theta::ThetaSketchBuilder;
-use datasketches::thetacommon::JaccardSimilarity;
 use googletest::assert_that;
 use googletest::prelude::anything;
 use googletest::prelude::err;
