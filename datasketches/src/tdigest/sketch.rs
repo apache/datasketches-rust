@@ -1021,7 +1021,7 @@ impl TDigest {
     /// stream given the split points. The value at array position j of the returned CDF array
     /// is the sum of the returned values in positions 0 through j of the returned PMF array.
     /// This can be viewed as array of ranks of the given split points plus one more value that
-    /// is always 1.
+    /// is always 1. An empty `split_points` slice returns the single value `[1.0]`.
     ///
     /// Returns `None` if this t-digest is empty.
     ///
@@ -1059,6 +1059,7 @@ impl TDigest {
     ///
     /// An array of m+1 doubles each of which is an approximation to the fraction of the input
     /// stream values (the mass) that fall into one of those intervals.
+    /// An empty `split_points` slice returns the single value `[1.0]`.
     ///
     /// Returns `None` if this t-digest is empty.
     ///
@@ -1380,15 +1381,10 @@ impl TDigestView<'_> {
 /// They must be unique, monotonically increasing and not NaN.
 #[track_caller]
 fn check_split_points(split_points: &[f64]) {
-    let len = split_points.len();
-    if len == 1 && split_points[0].is_nan() {
+    if split_points.iter().any(|split_point| split_point.is_nan()) {
         panic!("split_points must not contain NaN values: {split_points:?}");
     }
-    for i in 0..len - 1 {
-        if split_points[i] < split_points[i + 1] {
-            // we must use this positive condition because NaN comparisons are always false
-            continue;
-        }
+    if !split_points.windows(2).all(|pair| pair[0] < pair[1]) {
         panic!("split_points must be unique and monotonically increasing: {split_points:?}");
     }
 }
