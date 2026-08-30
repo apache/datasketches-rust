@@ -880,14 +880,15 @@ impl CpcSketch {
     ///
     /// For small values of `n` the size can be much smaller.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if `lg_k` is not in the range `[4, 26]`.
-    pub fn max_serialized_bytes(lg_k: u8) -> usize {
-        assert!(
-            (MIN_LG_K..=MAX_LG_K).contains(&lg_k),
-            "lg_k out of range; got {lg_k}",
-        );
+    /// Returns an error if `lg_k` is not in the range `[4, 26]`.
+    pub fn max_serialized_bytes(lg_k: u8) -> Result<usize, Error> {
+        if !(MIN_LG_K..=MAX_LG_K).contains(&lg_k) {
+            return Err(Error::invalid_argument(format!(
+                "lg_k must be in [{MIN_LG_K}, {MAX_LG_K}], got {lg_k}"
+            )));
+        }
 
         // These empirical values for the 99.9th percentile of size in bytes were measured using
         // 100,000 trials. The value for each trial is the maximum of 5*16=80 measurements
@@ -916,12 +917,13 @@ impl CpcSketch {
             314656, // lg_k = 19
         ];
 
-        if lg_k <= EMPIRICAL_SIZE_MAX_LGK {
+        let max_bytes = if lg_k <= EMPIRICAL_SIZE_MAX_LGK {
             EMPIRICAL_MAX_SIZE_BYTES[(lg_k - MIN_LG_K) as usize] + MAX_PREAMBLE_SIZE_BYTES
         } else {
             let k = 1 << lg_k;
             ((EMPIRICAL_MAX_SIZE_FACTOR * k as f64) as usize) + MAX_PREAMBLE_SIZE_BYTES
-        }
+        };
+        Ok(max_bytes)
     }
 }
 
