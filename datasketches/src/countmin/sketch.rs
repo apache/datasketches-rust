@@ -254,9 +254,9 @@ impl<T: CountMinValue> CountMinSketch<T> {
 
     /// Merges another sketch into this one.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if the sketches have incompatible configurations.
+    /// Returns an error if the sketches have different numbers of hashes, bucket counts, or seeds.
     ///
     /// # Examples
     ///
@@ -269,22 +269,23 @@ impl<T: CountMinValue> CountMinSketch<T> {
     /// left.update("apple");
     /// right.update_with_weight("banana", 2);
     ///
-    /// left.merge(&right);
+    /// left.merge(&right).unwrap();
     /// assert!(left.estimate("banana") >= 2);
     /// ```
-    pub fn merge(&mut self, other: &CountMinSketch<T>) {
-        if std::ptr::eq(self, other) {
-            panic!("Cannot merge a sketch with itself.");
+    pub fn merge(&mut self, other: &CountMinSketch<T>) -> Result<(), Error> {
+        if self.num_hashes != other.num_hashes
+            || self.num_buckets != other.num_buckets
+            || self.seed != other.seed
+        {
+            return Err(Error::invalid_argument(
+                "Count-Min sketches must have matching numbers of hashes, bucket counts, and seeds",
+            ));
         }
-        assert_eq!(self.num_hashes, other.num_hashes);
-        assert_eq!(self.num_buckets, other.num_buckets);
-        assert_eq!(self.seed, other.seed);
-        assert_eq!(self.counts.len(), other.counts.len());
-        let counts_len = self.counts.len();
-        for i in 0..counts_len {
-            self.counts[i] = self.counts[i] + other.counts[i];
+        for (count, other_count) in self.counts.iter_mut().zip(&other.counts) {
+            *count = *count + *other_count;
         }
         self.total_weight = self.total_weight + other.total_weight;
+        Ok(())
     }
 
     /// Serializes this sketch into the DataSketches CountMin format.

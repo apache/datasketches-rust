@@ -218,7 +218,7 @@ fn test_merge() {
         right.update("a");
         right.update("b");
     }
-    left.merge(&right);
+    left.merge(&right).unwrap();
     assert_eq!(left.total_weight(), 18);
     assert_that!(left.estimate("a"), ge(14));
     assert_that!(left.estimate("b"), ge(4));
@@ -272,11 +272,11 @@ fn test_invalid_buckets_return_error() {
 }
 
 #[test]
-#[should_panic]
 fn test_merge_incompatible() {
     let mut left = CountMinSketch::<i64>::new(3, 64).unwrap();
     let right = CountMinSketch::<i64>::new(2, 64).unwrap();
-    left.merge(&right);
+    let error = left.merge(&right).unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::InvalidArgument);
 }
 
 #[test]
