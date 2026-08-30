@@ -50,7 +50,6 @@ mod sketch;
 mod union;
 
 pub use self::a_not_b::TupleANotB;
-pub use self::hash_table::TupleEntry;
 pub use self::intersection::TupleIntersection;
 pub use self::jaccard_similarity::TupleJaccardSimilarity;
 pub use self::policy::DefaultUnionPolicy;

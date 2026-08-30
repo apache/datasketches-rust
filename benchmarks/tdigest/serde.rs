@@ -100,7 +100,7 @@ fn deserialize_small_partial_groups(bencher: Bencher) {
         .bench_local(|| {
             let digests = bytes
                 .iter()
-                .map(|bytes| TDigestMut::deserialize(bytes, false).unwrap())
+                .map(|bytes| TDigestMut::deserialize(bytes).unwrap())
                 .collect::<Vec<_>>();
             black_box(digests)
         });
@@ -131,7 +131,7 @@ fn deserialize_partial_groups(bencher: Bencher) {
         .bench_local(|| {
             let digests = bytes
                 .iter()
-                .map(|bytes| TDigestMut::deserialize(bytes, false).unwrap())
+                .map(|bytes| TDigestMut::deserialize(bytes).unwrap())
                 .collect::<Vec<_>>();
             black_box(digests)
         });

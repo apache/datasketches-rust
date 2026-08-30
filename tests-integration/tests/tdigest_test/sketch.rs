@@ -69,6 +69,19 @@ fn test_one_value() {
 }
 
 #[test]
+fn test_empty_split_points_define_one_bin() {
+    let mut tdigest = TDigestMut::new(100).unwrap();
+    tdigest.update(1.0);
+
+    assert_eq!(tdigest.cdf(&[]), Some(vec![1.0]));
+    assert_eq!(tdigest.pmf(&[]), Some(vec![1.0]));
+
+    let tdigest = tdigest.freeze();
+    assert_eq!(tdigest.cdf(&[]), Some(vec![1.0]));
+    assert_eq!(tdigest.pmf(&[]), Some(vec![1.0]));
+}
+
+#[test]
 fn test_maximum_k() {
     let mut tdigest = TDigestMut::new(u16::MAX).unwrap();
     tdigest.update(1.0);

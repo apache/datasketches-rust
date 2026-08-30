@@ -111,7 +111,7 @@ fn serialized_partials(bencher: Bencher, rows_per_partial: usize) {
         .bench_local(|| {
             let mut merged = TDigestMut::default();
             for partial in black_box(&partials) {
-                let partial = TDigestMut::deserialize(partial, false).unwrap();
+                let partial = TDigestMut::deserialize(partial).unwrap();
                 merged.merge(&partial);
             }
             black_box(merged.quantile(0.5))
@@ -131,7 +131,7 @@ fn serialized_overlapping_partials(bencher: Bencher) {
         .bench_local(|| {
             let mut merged = TDigestMut::default();
             for partial in black_box(&partials) {
-                let partial = TDigestMut::deserialize(partial, false).unwrap();
+                let partial = TDigestMut::deserialize(partial).unwrap();
                 merged.merge(&partial);
             }
             black_box(merged.quantile(0.5))

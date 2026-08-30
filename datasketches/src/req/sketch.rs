@@ -438,38 +438,6 @@ where
         }
     }
 
-    /// Returns per-level info: `(level_index, num_items, capacity, weight)`.
-    /// Internal/test API; subject to change.
-    #[doc(hidden)]
-    pub fn level_info(&self) -> Vec<(usize, u32, u32, u64)> {
-        self.compactors
-            .iter()
-            .enumerate()
-            .map(|(i, c)| (i, c.num_items(), c.nominal_capacity(), c.weight()))
-            .collect()
-    }
-
-    /// Total nominal capacity across all levels. Internal/test API.
-    #[doc(hidden)]
-    pub fn total_nominal_capacity(&self) -> u32 {
-        self.compactors.iter().map(|c| c.nominal_capacity()).sum()
-    }
-
-    /// Total retained items across all levels. Internal/test API.
-    #[doc(hidden)]
-    pub fn total_retained_items(&self) -> u32 {
-        self.compactors.iter().map(|c| c.num_items()).sum()
-    }
-
-    /// Sum of `level_items × level_weight` across compactors. Internal/test API.
-    #[doc(hidden)]
-    pub fn computed_total_weight(&self) -> u64 {
-        self.compactors
-            .iter()
-            .map(|c| c.num_items() as u64 * c.weight())
-            .sum()
-    }
-
     fn flags_byte(&self) -> u8 {
         let mut flags = 0u8;
         if self.is_empty() {
@@ -498,7 +466,7 @@ where
     {
         // Fixed sketch preamble: 8 bytes (preamble_ints, serial_version, family,
         // flags, k(2), num_levels, num_raw_items).
-        let mut size = 8usize;
+        let mut size = 8;
         if self.is_empty() {
             return size;
         }

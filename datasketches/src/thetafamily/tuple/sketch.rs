@@ -414,9 +414,8 @@ where
 
 /// Compact (immutable) Tuple sketch.
 ///
-/// This is the serialization-friendly form: a compact array of retained [`TupleEntry`] values
-/// (hash plus summary) plus theta and a 16-bit seed hash. It can be ordered (sorted ascending by
-/// hash) or unordered.
+/// This is the serialization-friendly form: a compact array of retained hash-summary pairs plus
+/// theta and a 16-bit seed hash. It can be ordered (sorted ascending by hash) or unordered.
 #[derive(Clone, Debug)]
 pub struct CompactTupleSketch<S> {
     entries: Vec<TupleEntry<S>>,
@@ -677,7 +676,7 @@ impl<S> CompactTupleSketch<S> {
 
         let mut theta = MAX_THETA;
         let num_entries = if pre_longs == 1 {
-            1usize
+            1
         } else {
             let n = cursor
                 .read_u32_le()
