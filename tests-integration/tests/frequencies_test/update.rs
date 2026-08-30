@@ -594,7 +594,7 @@ fn test_invalid_map_size_returns_error() {
 
 #[test]
 fn test_map_size_above_cross_language_limit_returns_error() {
-    let error = FrequentItemsSketch::<i64>::new(1usize << 31).unwrap_err();
+    let error = FrequentItemsSketch::<i64>::new(1 << 31).unwrap_err();
     assert_eq!(error.kind(), ErrorKind::InvalidArgument);
 }
 

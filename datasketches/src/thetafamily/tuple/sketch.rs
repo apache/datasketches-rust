@@ -676,7 +676,7 @@ impl<S> CompactTupleSketch<S> {
 
         let mut theta = MAX_THETA;
         let num_entries = if pre_longs == 1 {
-            1usize
+            1
         } else {
             let n = cursor
                 .read_u32_le()

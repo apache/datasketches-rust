@@ -754,7 +754,7 @@ impl CpcSketch {
                 table_num_entries, table_data_words
             )));
         }
-        let k = 1usize << lg_k;
+        let k = 1 << lg_k;
         if has_window && window_data_words.saturating_mul(32) < k {
             return Err(Error::deserial(format!(
                 "window data ({} words) is too short for lg_k = {lg_k}",

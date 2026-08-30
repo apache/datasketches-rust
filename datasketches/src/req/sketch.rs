@@ -466,7 +466,7 @@ where
     {
         // Fixed sketch preamble: 8 bytes (preamble_ints, serial_version, family,
         // flags, k(2), num_levels, num_raw_items).
-        let mut size = 8usize;
+        let mut size = 8;
         if self.is_empty() {
             return size;
         }
