@@ -498,7 +498,7 @@ impl TDigestMut {
     /// let mut sketch = TDigestMut::new(100).unwrap();
     /// sketch.update(1.0);
     /// let bytes = sketch.serialize();
-    /// let decoded = TDigestMut::deserialize(&bytes, false).unwrap();
+    /// let decoded = TDigestMut::deserialize(&bytes).unwrap();
     /// assert_eq!(decoded.max_value(), Some(1.0));
     /// ```
     pub fn serialize(&mut self) -> Vec<u8> {
@@ -574,15 +574,11 @@ impl TDigestMut {
         bytes.into_bytes()
     }
 
-    /// Deserializes a mutable t-digest from bytes.
+    /// Deserializes a mutable t-digest from the standard double-precision format.
     ///
-    /// Supports reading compact format with (float, int) centroids as opposed to (double, long) to
-    /// represent (mean, weight). [^1]
-    ///
-    /// Supports reading format of the reference implementation (auto-detected) [^2].
-    ///
-    /// [^1]: This is to support reading the `tdigest<float>` format from the C++ implementation.
-    /// [^2]: <https://github.com/tdunning/t-digest>
+    /// The format of the [reference implementation](https://github.com/tdunning/t-digest) is
+    /// auto-detected. Use [`deserialize_f32()`](Self::deserialize_f32) for the compact
+    /// DataSketches C++ `tdigest<float>` format.
     ///
     /// # Examples
     ///
@@ -593,10 +589,23 @@ impl TDigestMut {
     /// sketch.update(1.0);
     /// sketch.update(2.0);
     /// let bytes = sketch.serialize();
-    /// let decoded = TDigestMut::deserialize(&bytes, false).unwrap();
+    /// let decoded = TDigestMut::deserialize(&bytes).unwrap();
     /// assert_eq!(decoded.max_value(), Some(2.0));
     /// ```
-    pub fn deserialize(bytes: &[u8], is_f32: bool) -> Result<Self, Error> {
+    pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
+        Self::deserialize_impl(bytes, false)
+    }
+
+    /// Deserializes a mutable t-digest from the compact single-precision DataSketches format.
+    ///
+    /// This format stores centroid means and weights as `(f32, u32)` and is emitted by the C++
+    /// `tdigest<float>` implementation. Its header does not identify the scalar width, so callers
+    /// must select this entry point explicitly.
+    pub fn deserialize_f32(bytes: &[u8]) -> Result<Self, Error> {
+        Self::deserialize_impl(bytes, true)
+    }
+
+    fn deserialize_impl(bytes: &[u8], is_f32: bool) -> Result<Self, Error> {
         let mut cursor = SketchSlice::new(bytes);
 
         let preamble_longs = cursor

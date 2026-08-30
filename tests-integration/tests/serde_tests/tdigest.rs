@@ -46,7 +46,12 @@ fn patterned_digest(k: u16, len: usize, salt: usize) -> TDigestMut {
 
 fn test_sketch_file(path: PathBuf, n: u64, with_buffer: bool, is_f32: bool) {
     let bytes = fs::read(&path).unwrap();
-    let td = TDigestMut::deserialize(&bytes, is_f32).unwrap();
+    let td = if is_f32 {
+        TDigestMut::deserialize_f32(&bytes)
+    } else {
+        TDigestMut::deserialize(&bytes)
+    }
+    .unwrap();
     let td = td.freeze();
 
     let path = path.display();
@@ -111,7 +116,7 @@ fn test_deserialize_from_reference_implementation() {
     ] {
         let path = serialization_test_data("reference_files", filename);
         let bytes = fs::read(&path).unwrap();
-        let td = TDigestMut::deserialize(&bytes, false).unwrap();
+        let td = TDigestMut::deserialize(&bytes).unwrap();
         let td = td.freeze();
 
         let n = 10000;
@@ -174,7 +179,7 @@ fn test_empty() {
     assert_eq!(bytes.len(), 8);
     let td = td.freeze();
 
-    let deserialized_td = TDigestMut::deserialize(&bytes, false).unwrap();
+    let deserialized_td = TDigestMut::deserialize(&bytes).unwrap();
     let deserialized_td = deserialized_td.freeze();
     assert_eq!(td.k(), deserialized_td.k());
     assert_eq!(td.total_weight(), deserialized_td.total_weight());
@@ -190,7 +195,7 @@ fn test_single_value() {
     let bytes = td.serialize();
     assert_eq!(bytes.len(), 16);
 
-    let deserialized_td = TDigestMut::deserialize(&bytes, false).unwrap();
+    let deserialized_td = TDigestMut::deserialize(&bytes).unwrap();
     let deserialized_td = deserialized_td.freeze();
     assert_eq!(deserialized_td.k(), 200);
     assert_eq!(deserialized_td.total_weight(), 1);
@@ -210,7 +215,7 @@ fn test_many_values() {
     assert_eq!(bytes.len(), 1584);
     let td = td.freeze();
 
-    let deserialized_td = TDigestMut::deserialize(&bytes, false).unwrap();
+    let deserialized_td = TDigestMut::deserialize(&bytes).unwrap();
     let deserialized_td = deserialized_td.freeze();
     assert_eq!(td.k(), deserialized_td.k());
     assert_eq!(td.total_weight(), deserialized_td.total_weight());
@@ -252,10 +257,10 @@ fn test_serialized_bytes_stable_for_full_and_merged_digests() {
 
     let mut left = patterned_digest(10, 199, 2);
     let left = left.serialize();
-    let mut left = TDigestMut::deserialize(&left, false).unwrap();
+    let mut left = TDigestMut::deserialize(&left).unwrap();
     let mut right = patterned_digest(10, 199, 3);
     let right = right.serialize();
-    let right = TDigestMut::deserialize(&right, false).unwrap();
+    let right = TDigestMut::deserialize(&right).unwrap();
     left.merge(&right);
     let bytes = left.serialize();
     assert_eq!(bytes.len(), 272);
@@ -276,7 +281,7 @@ fn test_updates_normalize_overfull_deserialized_buffer_without_centroids() {
         bytes.extend_from_slice(&10_f64.to_le_bytes());
     }
 
-    let mut tdigest = TDigestMut::deserialize(&bytes, false).unwrap();
+    let mut tdigest = TDigestMut::deserialize(&bytes).unwrap();
     for _ in 0..10_000 {
         tdigest.update(10.0);
     }
@@ -290,7 +295,7 @@ fn test_updates_normalize_overfull_deserialized_buffer_without_centroids() {
     let serialized = tdigest.serialize();
     assert_eq!(&serialized[12..16], &0_u32.to_le_bytes());
 
-    let roundtrip = TDigestMut::deserialize(&serialized, false).unwrap();
+    let roundtrip = TDigestMut::deserialize(&serialized).unwrap();
     assert_eq!(roundtrip.total_weight(), 10_841);
     assert_eq!(roundtrip.min_value(), Some(1.0));
     assert_eq!(roundtrip.max_value(), Some(10.0));
@@ -309,7 +314,7 @@ fn test_updates_normalize_overfull_deserialized_mixed_buffer() {
         bytes.extend_from_slice(&1_000_f64.to_le_bytes());
     }
 
-    let mut tdigest = TDigestMut::deserialize(&bytes, false).unwrap();
+    let mut tdigest = TDigestMut::deserialize(&bytes).unwrap();
     for _ in 0..10_000 {
         tdigest.update(1_000.0);
     }
@@ -323,7 +328,7 @@ fn test_updates_normalize_overfull_deserialized_mixed_buffer() {
     let serialized = tdigest.serialize();
     assert_eq!(&serialized[12..16], &0_u32.to_le_bytes());
 
-    let roundtrip = TDigestMut::deserialize(&serialized, false).unwrap();
+    let roundtrip = TDigestMut::deserialize(&serialized).unwrap();
     assert_eq!(roundtrip.total_weight(), 11_681);
     assert_eq!(roundtrip.min_value(), Some(1.0));
     assert_eq!(roundtrip.max_value(), Some(1_000.0));
@@ -338,7 +343,7 @@ fn test_deserialize_rejects_truncated_large_payload_before_allocation() {
     bytes[8..12].copy_from_slice(&u32::MAX.to_le_bytes());
     bytes[12..16].copy_from_slice(&u32::MAX.to_le_bytes());
 
-    assert!(TDigestMut::deserialize(&bytes, false).is_err());
+    assert!(TDigestMut::deserialize(&bytes).is_err());
 }
 
 #[test]
@@ -354,7 +359,7 @@ fn test_large_weights_produce_finite_extreme_quantile() {
     bytes[40..48].copy_from_slice(&((1_u64 << 52) - 1).to_le_bytes());
     bytes[56..64].copy_from_slice(&(1_u64 << 52).to_le_bytes());
 
-    let mut tdigest = TDigestMut::deserialize(&bytes, false).unwrap();
+    let mut tdigest = TDigestMut::deserialize(&bytes).unwrap();
     let quantile = tdigest.quantile(0.25).unwrap();
     assert_that!(quantile, all!(is_finite(), ge(lower), le(f64::MAX)));
 }
