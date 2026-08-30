@@ -928,20 +928,20 @@ impl CpcSketch {
 }
 
 impl CpcSketch {
-    /// Checks whether the stored coupon count agrees with the sketch's reconstructed bit matrix.
+    /// Returns `true` if the sketch's internal state is valid.
     ///
-    /// This integrity check allocates a bit matrix proportional to the configured `k`, so it is
-    /// intended for diagnostics rather than a hot query path.
+    /// This is intended for testing and validation purposes.
+    #[doc(hidden)]
     pub fn validate(&self) -> bool {
         let bit_matrix = self.build_bit_matrix();
         let num_bits_set = count_bits_set_in_matrix(&bit_matrix);
         num_bits_set == self.num_coupons
     }
 
-    /// Returns the number of distinct CPC coupons collected by the sketch.
+    /// Returns the number of coupons in the sketch.
     ///
-    /// The coupon count is an internal statistic, not a cardinality estimate. Use
-    /// [`estimate()`](Self::estimate) for the estimated number of distinct input values.
+    /// This is intended for testing and validation purposes.
+    #[doc(hidden)]
     pub fn num_coupons(&self) -> u32 {
         self.num_coupons
     }
