@@ -66,7 +66,7 @@ fn union_combines_overlapping_summaries() {
     union.update(&b).unwrap();
     let result = union.to_sketch(true);
 
-    let mut summaries: Vec<u64> = result.iter().map(|(_, &summary)| summary).collect();
+    let mut summaries: Vec<u64> = result.iter().map(|entry| *entry.summary()).collect();
     summaries.sort_unstable();
     assert_eq!(result.num_retained(), 3);
     assert_eq!(summaries, [1, 1, 7]);
@@ -137,7 +137,7 @@ fn custom_combine_policy_controls_overlapping_summaries() {
     union.update(&a).unwrap();
     union.update(&b).unwrap();
 
-    assert_eq!(union.to_sketch(true).iter().next().unwrap().1, &9);
+    assert_eq!(union.to_sketch(true).iter().next().unwrap().summary(), &9);
 }
 
 #[test]

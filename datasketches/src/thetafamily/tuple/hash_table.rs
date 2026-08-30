@@ -101,10 +101,9 @@ impl<S> TupleHashTable<S> {
         })
     }
 
-    /// Returns an iterator over retained entries as `(hash, &summary)` pairs.
-    pub fn iter(&self) -> impl Iterator<Item = (u64, &S)> + '_ {
+    /// Returns an iterator over retained entries.
+    pub fn iter(&self) -> impl Iterator<Item = &TupleEntry<S>> + '_ {
         self.iter_entries()
-            .map(|entry| (entry.hash.get(), &entry.summary))
     }
 }
 

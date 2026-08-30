@@ -22,6 +22,7 @@ use datasketches::tuple::CompactTupleSketch;
 use datasketches::tuple::DefaultUpdatePolicy;
 use datasketches::tuple::SummaryPolicy;
 use datasketches::tuple::SummaryUpdatePolicy;
+use datasketches::tuple::TupleEntry;
 use datasketches::tuple::TupleSketch;
 use datasketches::tuple::TupleSketchBuilder;
 use googletest::assert_that;
@@ -60,7 +61,7 @@ fn updates_distinct_keys_and_accumulates_summaries() {
     assert_eq!(sketch.estimate(), 2.0);
     assert_eq!(sketch.num_retained(), 2);
 
-    let mut summaries: Vec<u64> = sketch.iter().map(|(_, &summary)| summary).collect();
+    let mut summaries: Vec<u64> = sketch.iter().map(|entry| *entry.summary()).collect();
     summaries.sort_unstable();
     assert_eq!(summaries, [5, 7]);
 }
@@ -86,7 +87,7 @@ fn default_update_policy_accepts_distinct_rhs_type() {
     sketch.update("key", "hello");
     sketch.update("key", " world");
 
-    assert_eq!(sketch.iter().next().unwrap().1, "hello world");
+    assert_eq!(sketch.iter().next().unwrap().summary(), "hello world");
 }
 
 struct ArraySumPolicy {
@@ -123,7 +124,10 @@ fn custom_update_policy_accepts_multiple_value_representations() {
     sketch.update("key", vec![3.0, 4.0]);
 
     assert_eq!(sketch.num_retained(), 1);
-    assert_eq!(sketch.iter().next().unwrap().1.as_slice(), [4.0, 6.0]);
+    assert_eq!(
+        sketch.iter().next().unwrap().summary().as_slice(),
+        [4.0, 6.0]
+    );
 }
 
 #[test]
@@ -185,8 +189,10 @@ fn empty_sampled_sketch_has_zero_bounds() {
     assert_eq!(sketch.upper_bound(NumStdDev::Three), 0.0);
 }
 
-fn sorted_entries<'a>(entries: impl Iterator<Item = (u64, &'a u64)>) -> Vec<(u64, u64)> {
-    let mut entries: Vec<_> = entries.map(|(hash, &summary)| (hash, summary)).collect();
+fn sorted_entries<'a>(entries: impl Iterator<Item = &'a TupleEntry<u64>>) -> Vec<(u64, u64)> {
+    let mut entries: Vec<_> = entries
+        .map(|entry| (entry.hash(), *entry.summary()))
+        .collect();
     entries.sort_unstable();
     entries
 }

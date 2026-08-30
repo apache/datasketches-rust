@@ -30,7 +30,7 @@ use crate::tuple_sketch_with_range;
 fn sorted_entries(sketch: &CompactTupleSketch<u64>) -> Vec<(u64, u64)> {
     let mut entries: Vec<_> = sketch
         .iter()
-        .map(|(hash, &summary)| (hash, summary))
+        .map(|entry| (entry.hash(), *entry.summary()))
         .collect();
     entries.sort_unstable();
     entries
@@ -49,7 +49,7 @@ fn difference_keeps_only_a_summaries() {
 
     assert_eq!(result.num_retained(), 1);
     assert_eq!(result.estimate(), 1.0);
-    assert_eq!(result.iter().next().unwrap().1, &5);
+    assert_eq!(result.iter().next().unwrap().summary(), &5);
 }
 
 #[test]
