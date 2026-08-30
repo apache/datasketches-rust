@@ -69,27 +69,6 @@ fn test_one_value() {
 }
 
 #[test]
-fn test_reset_reuses_configuration_and_allocation() {
-    let mut tdigest = TDigestMut::new(100).unwrap();
-    for value in 0..1000 {
-        tdigest.update(value as f64);
-    }
-    let size = tdigest.estimated_size();
-
-    tdigest.reset();
-
-    assert!(tdigest.is_empty());
-    assert_eq!(tdigest.k(), 100);
-    assert_eq!(tdigest.total_weight(), 0);
-    assert_eq!(tdigest.min_value(), None);
-    assert_eq!(tdigest.max_value(), None);
-    assert_eq!(tdigest.estimated_size(), size);
-
-    tdigest.update(42.0);
-    assert_eq!(tdigest.quantile(0.5), Some(42.0));
-}
-
-#[test]
 fn test_empty_split_points_define_one_bin() {
     let mut tdigest = TDigestMut::new(100).unwrap();
     tdigest.update(1.0);

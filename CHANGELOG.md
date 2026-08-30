@@ -24,7 +24,6 @@ All significant changes to this project will be documented in this file.
 
 ### New features
 
-* Add `TDigestMut::reset` for reusing centroid storage across independent streams.
 * `TDigest` can now be serialized and deserialized directly without converting through `TDigestMut` at the call site.
 * Add Relative Error Quantiles (REQ) sketches behind the `req` feature, including configurable high- or low-rank accuracy, rank, quantile, PMF, and CDF queries, merging, totally ordered custom item types, the `ReqFloat` adapter for non-NaN floating-point values, and C++/Java-compatible serialization.
 

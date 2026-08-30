@@ -70,11 +70,6 @@ impl TDigestBuffer {
         self.centroids.is_empty()
     }
 
-    fn clear(&mut self) {
-        self.centroids.clear();
-        self.unmerged_tail_len = 0;
-    }
-
     fn unmerged_len(&self) -> usize {
         self.unmerged_tail_len
     }
@@ -323,29 +318,6 @@ impl TDigestMut {
     /// Returns the total weight.
     pub fn total_weight(&self) -> u64 {
         self.compressed_weight + self.buffer.unmerged_len() as u64
-    }
-
-    /// Resets this t-digest to its initial empty state.
-    ///
-    /// Clears all observations while preserving `k` and the centroid allocation for reuse.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use datasketches::tdigest::TDigestMut;
-    ///
-    /// let mut sketch = TDigestMut::new(100).unwrap();
-    /// sketch.update(1.0);
-    /// sketch.reset();
-    /// assert!(sketch.is_empty());
-    /// assert_eq!(sketch.total_weight(), 0);
-    /// ```
-    pub fn reset(&mut self) {
-        self.reverse_merge = false;
-        self.min = f64::INFINITY;
-        self.max = f64::NEG_INFINITY;
-        self.buffer.clear();
-        self.compressed_weight = 0;
     }
 
     /// Merges the given t-digest into this one.
