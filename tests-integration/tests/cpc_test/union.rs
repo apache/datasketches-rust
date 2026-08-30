@@ -98,7 +98,6 @@ fn test_sliding_union_matches_single_sketch() {
     let result = union.to_sketch();
     assert!(!result.is_empty());
     assert!(result.num_coupons() >= 27 * (1 << 11) / 8);
-    assert_eq!(result.num_coupons(), union.num_coupons());
     let estimate = sketch.estimate();
     assert_that!(
         result.estimate(),

@@ -356,19 +356,6 @@ impl CpcUnion {
     }
 }
 
-// testing methods
-impl CpcUnion {
-    /// Returns the number of coupons in the union.
-    ///
-    /// This is primarily for testing and validation purposes.
-    pub fn num_coupons(&self) -> u32 {
-        match &self.state {
-            UnionState::Accumulator(sketch) => sketch.num_coupons,
-            UnionState::BitMatrix(matrix) => count_bits_set_in_matrix(matrix),
-        }
-    }
-}
-
 fn or_window_into_matrix(
     dst_matrix: &mut [u64],
     dst_lg_k: u8,
