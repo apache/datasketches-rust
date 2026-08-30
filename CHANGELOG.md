@@ -16,7 +16,6 @@ All significant changes to this project will be documented in this file.
 * Replace the `is_f32` flag on `TDigestMut::deserialize` with separate `deserialize` and `deserialize_f32` entry points, making the serialized precision explicit at the call site.
 * Remove `CpcUnion::num_coupons`, which exposed internal union state solely for tests. Inspect the resulting `CpcSketch` when diagnostics are needed.
 * Remove the hidden REQ diagnostic methods `level_info`, `total_nominal_capacity`, `total_retained_items`, and `computed_total_weight`; they exposed implementation details and had no supported caller contract.
-* Move `JaccardSimilarity` from the internal-looking `thetacommon` module to both `theta` and `tuple`, and make `thetacommon` private. Import the result type from the same sketch-family module as its operator.
 * Remove the `TupleEntry` re-export. Tuple sketch iterators already expose retained entries as `(hash, &summary)` pairs without leaking the private storage representation.
 * `ThetaIntersection::to_sketch` and `TupleIntersection::to_sketch` now return `Option`. Callers must handle `None` until the intersection receives its first successful update.
 * `BloomFilterBuilder`, `ThetaSketchBuilder`, `ThetaUnionBuilder`, `TupleSketchBuilder`, and `TupleUnionBuilder` now validate their configuration when `build` is called, and `build` returns `Result`. Callers must propagate or handle construction errors.

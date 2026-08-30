@@ -85,7 +85,7 @@ pub mod tdigest;
 #[cfg(any(feature = "theta", feature = "tuple"))]
 mod thetafamily;
 #[cfg(any(feature = "theta", feature = "tuple"))]
-pub(crate) use self::thetafamily::common as thetacommon;
+pub use self::thetafamily::common as thetacommon;
 #[cfg(feature = "theta")]
 pub use self::thetafamily::theta;
 #[cfg(feature = "tuple")]
