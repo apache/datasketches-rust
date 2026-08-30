@@ -17,6 +17,7 @@ All significant changes to this project will be documented in this file.
 * Remove `CpcUnion::num_coupons`, which exposed internal union state solely for tests. Inspect the resulting `CpcSketch` when diagnostics are needed.
 * Remove the hidden REQ diagnostic methods `level_info`, `total_nominal_capacity`, `total_retained_items`, and `computed_total_weight`; they exposed implementation details and had no supported caller contract.
 * Move `JaccardSimilarity` from the internal-looking `thetacommon` module to both `theta` and `tuple`, and make `thetacommon` private. Import the result type from the same sketch-family module as its operator.
+* Remove the `TupleEntry` re-export. Tuple sketch iterators already expose retained entries as `(hash, &summary)` pairs without leaking the private storage representation.
 * `ThetaIntersection::to_sketch` and `TupleIntersection::to_sketch` now return `Option`. Callers must handle `None` until the intersection receives its first successful update.
 * `BloomFilterBuilder`, `ThetaSketchBuilder`, `ThetaUnionBuilder`, `TupleSketchBuilder`, and `TupleUnionBuilder` now validate their configuration when `build` is called, and `build` returns `Result`. Callers must propagate or handle construction errors.
 * `BloomFilterBuilder::{MIN_NUM_BITS, MAX_NUM_BITS, MIN_NUM_HASHES, MAX_NUM_HASHES}` are no longer public. Callers should pass configurations to `build` and handle `InvalidArgument` instead of prevalidating against these constants.
