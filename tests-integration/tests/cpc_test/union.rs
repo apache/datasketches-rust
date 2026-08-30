@@ -82,13 +82,13 @@ fn test_custom_seed_mismatch() {
 }
 
 #[test]
-fn test_large_values() {
+fn test_sliding_union_matches_single_sketch() {
     let mut key = 0;
     let mut sketch = CpcSketch::new(11).unwrap();
     let mut union = CpcUnion::new(11).unwrap();
-    for _ in 0..1000 {
+    for _ in 0..32 {
         let mut tmp = CpcSketch::new(11).unwrap();
-        for _ in 0..10000 {
+        for _ in 0..8192 {
             sketch.update(key);
             tmp.update(key);
             key += 1;
@@ -97,6 +97,7 @@ fn test_large_values() {
     }
     let result = union.to_sketch();
     assert!(!result.is_empty());
+    assert!(result.num_coupons() >= 27 * (1 << 11) / 8);
     assert_eq!(result.num_coupons(), union.num_coupons());
     let estimate = sketch.estimate();
     assert_that!(
