@@ -39,7 +39,6 @@ All significant changes to this project will be documented in this file.
 * Bloom filter deserialization now rejects malformed images with inconsistent counts or payload lengths, while valid images with a dirty cached count are restored correctly.
 * `FrequentItemsSketch` now enforces the cross-language map-size limit of `2^30` consistently. Oversized construction returns `InvalidArgument`, and malformed or oversized serialized images return `InvalidData` instead of panicking or attempting excessive allocation.
 * `FrequentItemsSketch<String>` now rejects an encoded string length that exceeds the remaining input before allocating the string buffer.
-* REQ deserialization now rejects serialized extrema that do not bound every retained item.
 * T-Digest compression now supports `k = u16::MAX` without overflowing.
 * T-Digest rejects truncated serialized payloads before allocating, and updating a deserialized digest no longer allows its buffered state to grow without bound.
 * Compact HLL4 images now restore all register values correctly.
