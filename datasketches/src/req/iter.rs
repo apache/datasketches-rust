@@ -24,7 +24,7 @@ use crate::req::compactor::Compactor;
 /// Provides access to all items in the sketch along with their weights,
 /// which depend on the level of the compactor they're stored in.
 ///
-/// Zero-allocation implementation that works directly with slices.
+/// Items are borrowed from the sketch, so iteration does not clone or allocate.
 pub struct ReqSketchIterator<'a, T> {
     compactors: &'a [Compactor<T>],
     current_level: usize,
@@ -64,14 +64,14 @@ impl<'a, T: Clone + Ord> ReqSketchIterator<'a, T> {
     }
 }
 
-impl<T: Clone + Ord> Iterator for ReqSketchIterator<'_, T> {
-    type Item = (T, u64);
+impl<'a, T: Clone + Ord> Iterator for ReqSketchIterator<'a, T> {
+    type Item = (&'a T, u64);
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             if let Some(ref mut level_iter) = self.current_level_iter {
                 if let Some(item) = level_iter.next() {
-                    return Some((item.clone(), self.current_weight));
+                    return Some((item, self.current_weight));
                 }
             }
 
