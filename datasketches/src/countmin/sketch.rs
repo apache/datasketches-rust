@@ -417,8 +417,24 @@ impl<T: CountMinValue> CountMinSketch<T> {
         )?;
 
         let entries = entries_for_config_checked(num_hashes, num_buckets)?;
+        let is_empty = (flags & FLAGS_IS_EMPTY) != 0;
+        if !is_empty {
+            let payload_values = entries
+                .checked_add(1)
+                .ok_or_else(|| Error::deserial("CountMin payload value count overflows"))?;
+            let payload_bytes = payload_values
+                .checked_mul(LONG_SIZE_BYTES)
+                .ok_or_else(|| Error::deserial("CountMin payload size overflows"))?;
+            if payload_bytes > cursor.remaining().len() {
+                return Err(Error::insufficient_data(format!(
+                    "CountMin payload requires {payload_bytes} bytes, got {}",
+                    cursor.remaining().len()
+                )));
+            }
+        }
+
         let mut sketch = Self::make(num_hashes, num_buckets, seed, expected_seed_hash, entries);
-        if (flags & FLAGS_IS_EMPTY) != 0 {
+        if is_empty {
             return Ok(sketch);
         }
 
