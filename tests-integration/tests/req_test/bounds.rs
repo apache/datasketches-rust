@@ -17,6 +17,7 @@
 
 //! Rank error bounds and sigma coverage for ReqSketch.
 
+use datasketches::common::NumStdDev;
 use datasketches::error::Error;
 use datasketches::req::RankAccuracy;
 use datasketches::req::ReqSketch;
@@ -39,7 +40,8 @@ fn bounds_are_nested_and_in_unit_interval() {
     }
 
     for rank in [0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99, 0.999] {
-        let bounds: Vec<(f64, f64)> = (1..=3u8)
+        let bounds: Vec<(f64, f64)> = [NumStdDev::One, NumStdDev::Two, NumStdDev::Three]
+            .into_iter()
             .map(|sigma| {
                 (
                     sketch.rank_lower_bound(rank, sigma),
@@ -76,8 +78,8 @@ fn theoretical_error_bounds_cover_uniform_quantiles() -> Result<(), Error> {
     ] {
         let true_quantile = req_f64(rank * (n - 1) as f64);
         let estimated_rank = sketch.rank(&true_quantile, SearchCriteria::Inclusive)?;
-        let lower = sketch.rank_lower_bound(rank, 3);
-        let upper = sketch.rank_upper_bound(rank, 3);
+        let lower = sketch.rank_lower_bound(rank, NumStdDev::Three);
+        let upper = sketch.rank_upper_bound(rank, NumStdDev::Three);
         assert_that!(estimated_rank, all!(ge(lower), le(upper)), "rank: {rank}");
     }
 
@@ -95,10 +97,10 @@ fn hra_and_lra_bounds_are_tighter_at_their_target_end() -> Result<(), Error> {
             lra.update(req_f64(i as f64));
         }
 
-        let hra_error =
-            (rank - hra.rank_lower_bound(rank, 2)).max(hra.rank_upper_bound(rank, 2) - rank);
-        let lra_error =
-            (rank - lra.rank_lower_bound(rank, 2)).max(lra.rank_upper_bound(rank, 2) - rank);
+        let hra_error = (rank - hra.rank_lower_bound(rank, NumStdDev::Two))
+            .max(hra.rank_upper_bound(rank, NumStdDev::Two) - rank);
+        let lra_error = (rank - lra.rank_lower_bound(rank, NumStdDev::Two))
+            .max(lra.rank_upper_bound(rank, NumStdDev::Two) - rank);
 
         if rank >= 0.75 {
             assert_that!(hra_error, le(lra_error));
@@ -121,8 +123,8 @@ fn exact_mode_bounds_are_tight() {
     assert!(!sketch.is_estimation_mode());
 
     for rank in [0.1, 0.25, 0.5, 0.75, 0.9] {
-        let lower = sketch.rank_lower_bound(rank, 2);
-        let upper = sketch.rank_upper_bound(rank, 2);
+        let lower = sketch.rank_lower_bound(rank, NumStdDev::Two);
+        let upper = sketch.rank_upper_bound(rank, NumStdDev::Two);
         assert_that!((upper - lower) / 2.0, lt(0.05));
     }
 }
@@ -156,8 +158,8 @@ fn high_rank_accuracy_matches_tight_thresholds() {
     }
 
     for rank in [0.9, 0.99, 0.999] {
-        let lower = sketch.rank_lower_bound(rank, 3);
-        let upper = sketch.rank_upper_bound(rank, 3);
+        let lower = sketch.rank_lower_bound(rank, NumStdDev::Three);
+        let upper = sketch.rank_upper_bound(rank, NumStdDev::Three);
         assert_that!(rank, all!(ge(lower), le(upper)));
     }
 }
