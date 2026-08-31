@@ -18,6 +18,7 @@
 use datasketches::common::NumStdDev;
 use datasketches::error::ErrorKind;
 use datasketches::hash::value::canonical_float;
+use datasketches::theta::CompactThetaSketch;
 use datasketches::theta::ThetaSketchBuilder;
 use googletest::assert_that;
 use googletest::prelude::ge;
@@ -25,6 +26,7 @@ use googletest::prelude::gt;
 use googletest::prelude::le;
 use googletest::prelude::lt;
 use googletest::prelude::near;
+use tests_integration::MAX_THETA;
 use tests_integration::ZERO_HASH_SEED;
 
 #[test]
@@ -291,25 +293,22 @@ fn test_bounds_all_num_std_devs() {
 }
 
 #[test]
-fn test_bounds_empty_estimation_mode() {
-    // Create a sketch with sampling probability < 1.0 to force estimation mode
+fn test_bounds_empty_with_sampling() {
     let sketch = ThetaSketchBuilder::default()
         .lg_k(12)
         .sampling_probability(0.1)
         .build()
         .unwrap();
 
-    // The sketch is empty but theta < 1.0, so it's in estimation mode
-    // However, when empty, both bounds should return 0.0 per Java implementation
     assert!(sketch.is_empty());
-    assert!(sketch.is_estimation_mode());
+    assert!(!sketch.is_estimation_mode());
     assert_eq!(sketch.estimate(), 0.0);
     assert_eq!(sketch.lower_bound(NumStdDev::One), 0.0);
     assert_eq!(sketch.upper_bound(NumStdDev::One), 0.0);
 }
 
 #[test]
-fn test_compact_preserves_logical_non_empty_after_screened_update() {
+fn test_sampling_state_transitions_through_compaction_and_reset() {
     let screened_value = (0u64..)
         .find(|candidate| {
             let mut sketch = ThetaSketchBuilder::default()
@@ -327,13 +326,33 @@ fn test_compact_preserves_logical_non_empty_after_screened_update() {
         .sampling_probability(0.5)
         .build()
         .unwrap();
+
+    assert!(sketch.is_empty());
+    assert_eq!(sketch.theta64(), MAX_THETA);
+    assert!(!sketch.is_estimation_mode());
+    let empty_compact = sketch.compact(false);
+    assert!(empty_compact.is_empty());
+    assert!(empty_compact.is_ordered());
+    let bytes = empty_compact.serialize();
+    assert_eq!(
+        CompactThetaSketch::deserialize(&bytes).unwrap().serialize(),
+        bytes
+    );
+
     sketch.update(screened_value);
 
     assert!(!sketch.is_empty());
     assert_eq!(sketch.num_retained(), 0);
+    assert!(sketch.is_estimation_mode());
+    assert_that!(sketch.theta64(), lt(MAX_THETA));
 
     let compact = sketch.compact(false);
     assert!(!compact.is_empty());
     assert_eq!(compact.num_retained(), 0);
     assert_eq!(compact.theta64(), sketch.theta64());
+
+    sketch.reset();
+    assert!(sketch.is_empty());
+    assert_eq!(sketch.theta64(), MAX_THETA);
+    assert!(!sketch.is_estimation_mode());
 }

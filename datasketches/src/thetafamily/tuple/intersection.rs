@@ -153,16 +153,8 @@ where
     where
         P::Summary: Clone,
     {
-        if !self.state.has_result() {
-            return None;
-        }
-        let parts = self.state.to_compact_parts(ordered);
-        Some(CompactTupleSketch::from_parts(
-            parts.entries,
-            parts.theta,
-            parts.seed_hash,
-            parts.ordered,
-            parts.empty,
-        ))
+        self.state
+            .to_compact_sketch_state(ordered)
+            .map(CompactTupleSketch::from_compact_state)
     }
 }

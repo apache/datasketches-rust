@@ -29,6 +29,7 @@ use googletest::assert_that;
 use googletest::prelude::gt;
 use googletest::prelude::le;
 use googletest::prelude::lt;
+use tests_integration::MAX_THETA;
 use tests_integration::ZERO_HASH_SEED;
 
 use crate::default_tuple_sketch_builder;
@@ -183,7 +184,7 @@ fn empty_sampled_sketch_has_zero_bounds() {
         .unwrap();
 
     assert!(sketch.is_empty());
-    assert!(sketch.is_estimation_mode());
+    assert!(!sketch.is_estimation_mode());
     assert_eq!(sketch.estimate(), 0.0);
     assert_eq!(sketch.lower_bound(NumStdDev::Three), 0.0);
     assert_eq!(sketch.upper_bound(NumStdDev::Three), 0.0);
@@ -231,7 +232,7 @@ fn compact_preserves_state_in_exact_and_estimation_modes() {
 }
 
 #[test]
-fn compact_preserves_logical_non_empty_after_screened_update() {
+fn sampling_state_transitions_through_compaction_and_reset() {
     let screened_value = (0u64..)
         .find(|candidate| {
             let mut sketch = default_tuple_sketch_builder()
@@ -247,10 +248,36 @@ fn compact_preserves_logical_non_empty_after_screened_update() {
         .sampling_probability(0.5)
         .build()
         .unwrap();
+
+    assert!(sketch.is_empty());
+    assert_eq!(sketch.theta64(), MAX_THETA);
+    assert!(!sketch.is_estimation_mode());
+    let empty_compact = sketch.compact(false);
+    assert!(empty_compact.is_empty());
+    assert!(empty_compact.is_ordered());
+    let bytes = empty_compact.serialize();
+    assert_eq!(
+        CompactTupleSketch::<u64>::deserialize(&bytes)
+            .unwrap()
+            .serialize(),
+        bytes
+    );
+
     sketch.update(screened_value, 1u64);
+
+    assert!(!sketch.is_empty());
+    assert_eq!(sketch.num_retained(), 0);
+    assert!(sketch.is_estimation_mode());
+    assert_that!(sketch.theta64(), lt(MAX_THETA));
+
     let compact = sketch.compact(false);
 
     assert!(!compact.is_empty());
     assert_eq!(compact.num_retained(), 0);
     assert_eq!(compact.theta64(), sketch.theta64());
+
+    sketch.reset();
+    assert!(sketch.is_empty());
+    assert_eq!(sketch.theta64(), MAX_THETA);
+    assert!(!sketch.is_estimation_mode());
 }

@@ -91,17 +91,8 @@ impl ThetaANotB {
     ) -> Result<CompactThetaSketch, Error> {
         let a = a.into();
         let b = b.into();
-        let parts = a_not_b::compute(self.seed_hash, a, b, ordered)?;
-        Ok(CompactThetaSketch::from_parts(
-            parts
-                .entries
-                .into_iter()
-                .map(|entry| entry.hash())
-                .collect(),
-            parts.theta,
-            parts.seed_hash,
-            parts.ordered,
-            parts.empty,
-        ))
+        let compact_state = a_not_b::compute(self.seed_hash, a, b, ordered)?
+            .map_retained_entries(|entry| entry.hash());
+        Ok(CompactThetaSketch::from_compact_state(compact_state))
     }
 }

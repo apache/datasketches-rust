@@ -85,20 +85,12 @@ impl ThetaIntersection {
     ///
     /// If `ordered` is `true`, retained hashes are sorted in ascending order.
     pub fn to_sketch(&self, ordered: bool) -> Option<CompactThetaSketch> {
-        if !self.state.has_result() {
-            return None;
-        }
-        let parts = self.state.to_compact_parts(ordered);
-        Some(CompactThetaSketch::from_parts(
-            parts
-                .entries
-                .into_iter()
-                .map(|entry| entry.hash())
-                .collect(),
-            parts.theta,
-            parts.seed_hash,
-            parts.ordered,
-            parts.empty,
-        ))
+        self.state
+            .to_compact_sketch_state(ordered)
+            .map(|compact_state| {
+                CompactThetaSketch::from_compact_state(
+                    compact_state.map_retained_entries(|entry| entry.hash()),
+                )
+            })
     }
 }

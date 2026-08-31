@@ -79,7 +79,8 @@ fn test_update_accepts_compact_sketch() {
 
     let r = i.to_sketch(false).unwrap();
     assert_eq!(r.estimate(), 0.0);
-    assert!(!r.is_ordered());
+    assert!(r.is_empty());
+    assert!(r.is_ordered());
 }
 
 #[test]

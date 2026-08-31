@@ -23,6 +23,7 @@ use googletest::assert_that;
 use googletest::prelude::all;
 use googletest::prelude::ge;
 use googletest::prelude::le;
+use tests_integration::MAX_THETA;
 
 use crate::default_tuple_sketch_builder;
 use crate::tuple_sketch_with_range;
@@ -108,15 +109,18 @@ fn input_and_result_ordering_preserve_entries() {
 
 #[test]
 fn empty_inputs_do_not_impose_a_seed() {
-    let empty_other_seed = default_tuple_sketch_builder().seed(2).build().unwrap();
+    let empty_other_seed = default_tuple_sketch_builder()
+        .sampling_probability(0.5)
+        .seed(2)
+        .build()
+        .unwrap();
     let non_empty = tuple_sketch_with_range(0, 10);
     let op = TupleANotB::default();
 
-    assert!(
-        op.compute(&empty_other_seed, &non_empty, true)
-            .unwrap()
-            .is_empty()
-    );
+    let result = op.compute(&empty_other_seed, &non_empty, true).unwrap();
+    assert!(result.is_empty());
+    assert_eq!(result.theta64(), MAX_THETA);
+    assert!(!result.is_estimation_mode());
     assert_eq!(
         op.compute(&non_empty, &empty_other_seed, true)
             .unwrap()

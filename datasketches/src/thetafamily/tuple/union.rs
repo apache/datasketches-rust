@@ -104,14 +104,7 @@ where
     where
         P::Summary: Clone,
     {
-        let result = self.state.to_compact_parts(ordered);
-        CompactTupleSketch::from_parts(
-            result.entries,
-            result.theta,
-            result.seed_hash,
-            result.ordered,
-            result.empty,
-        )
+        CompactTupleSketch::from_compact_state(self.state.to_compact_sketch_state(ordered))
     }
 
     /// Resets the union to its initial empty state.

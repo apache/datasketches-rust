@@ -100,13 +100,7 @@ impl TupleANotB {
     {
         let a = a.into();
         let b = b.into();
-        let parts = a_not_b::compute(self.seed_hash, a, b, ordered)?;
-        Ok(CompactTupleSketch::from_parts(
-            parts.entries,
-            parts.theta,
-            parts.seed_hash,
-            parts.ordered,
-            parts.empty,
-        ))
+        let compact_state = a_not_b::compute(self.seed_hash, a, b, ordered)?;
+        Ok(CompactTupleSketch::from_compact_state(compact_state))
     }
 }

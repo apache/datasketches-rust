@@ -29,6 +29,7 @@ use googletest::prelude::anything;
 use googletest::prelude::err;
 use googletest::prelude::lt;
 use googletest::prelude::near;
+use tests_integration::MAX_THETA;
 
 fn sketch_with_range(start: u64, count: u64) -> ThetaSketch {
     let mut sketch = ThetaSketchBuilder::default().build().unwrap();
@@ -103,7 +104,10 @@ fn test_seed_mismatch_ignored_for_empty_inputs() {
 
 #[test]
 fn test_empty_a_returns_empty() {
-    let empty = ThetaSketchBuilder::default().build().unwrap();
+    let empty = ThetaSketchBuilder::default()
+        .sampling_probability(0.5)
+        .build()
+        .unwrap();
     let b = sketch_with_range(0, 1000);
 
     let a_not_b = ThetaANotB::default();
@@ -112,6 +116,8 @@ fn test_empty_a_returns_empty() {
     assert!(r.is_empty());
     assert_eq!(r.num_retained(), 0);
     assert_eq!(r.estimate(), 0.0);
+    assert_eq!(r.theta64(), MAX_THETA);
+    assert!(!r.is_estimation_mode());
 }
 
 #[test]

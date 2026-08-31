@@ -47,18 +47,11 @@ impl ThetaUnion {
 
     /// Returns this union as a compact sketch.
     pub fn to_sketch(&self, ordered: bool) -> CompactThetaSketch {
-        let parts = self.state.to_compact_parts(ordered);
-        CompactThetaSketch::from_parts(
-            parts
-                .entries
-                .into_iter()
-                .map(|entry| entry.hash())
-                .collect(),
-            parts.theta,
-            parts.seed_hash,
-            parts.ordered,
-            parts.empty,
-        )
+        let compact_state = self
+            .state
+            .to_compact_sketch_state(ordered)
+            .map_retained_entries(|entry| entry.hash());
+        CompactThetaSketch::from_compact_state(compact_state)
     }
 
     /// Resets the union to its empty state.
