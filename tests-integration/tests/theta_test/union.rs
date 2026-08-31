@@ -25,6 +25,7 @@ use googletest::prelude::anything;
 use googletest::prelude::err;
 use googletest::prelude::le;
 use googletest::prelude::near;
+use tests_integration::MAX_THETA;
 use tests_integration::ZERO_HASH_SEED;
 
 #[test]
@@ -77,6 +78,40 @@ fn test_empty_union() {
     assert_eq!(result.num_retained(), 0);
     assert!(result.is_empty());
     assert!(!result.is_estimation_mode());
+}
+
+#[test]
+fn sampled_union_uses_canonical_empty_state_before_updates_and_after_reset() {
+    for probability in [0.5, 0.1, 0.001] {
+        let mut union = ThetaUnionBuilder::default()
+            .sampling_probability(probability)
+            .build()
+            .unwrap();
+
+        let result = union.to_sketch(false);
+        assert!(result.is_empty());
+        assert!(result.is_ordered());
+        assert_eq!(result.theta64(), MAX_THETA);
+        assert!(!result.is_estimation_mode());
+        let bytes = result.serialize();
+        let restored = CompactThetaSketch::deserialize(&bytes).unwrap();
+        assert_eq!(restored.serialize(), bytes);
+
+        let mut input = ThetaSketchBuilder::default().build().unwrap();
+        input.update(1u64);
+        union.update(&input).unwrap();
+        assert!(!union.to_sketch(false).is_empty());
+
+        union.reset();
+        let result = union.to_sketch(false);
+        assert!(result.is_empty());
+        assert!(result.is_ordered());
+        assert_eq!(result.theta64(), MAX_THETA);
+        assert!(!result.is_estimation_mode());
+        let bytes = result.serialize();
+        let restored = CompactThetaSketch::deserialize(&bytes).unwrap();
+        assert_eq!(restored.serialize(), bytes);
+    }
 }
 
 #[test]

@@ -23,9 +23,8 @@ use crate::hash::check_seed_hash;
 use crate::thetacommon::EntrySketch;
 use crate::thetacommon::KeySketch;
 use crate::thetacommon::SketchEntry;
-use crate::thetacommon::SketchScalars;
-use crate::thetacommon::constants::MAX_THETA;
-use crate::thetacommon::hash_table::CompactSketchParts;
+use crate::thetacommon::sketch_state::CompactSketchState;
+use crate::thetacommon::sketch_state::ThetaThreshold;
 
 /// Computes `a and not b` for Theta-family sketch views.
 ///
@@ -38,54 +37,51 @@ pub fn compute<A, B>(
     a: A,
     b: B,
     ordered: bool,
-) -> Result<CompactSketchParts<A::Entry>, Error>
+) -> Result<CompactSketchState<A::Entry>, Error>
 where
     A: EntrySketch,
     B: KeySketch,
 {
-    let SketchScalars {
-        seed_hash: a_seed_hash,
-        theta: a_theta,
-        empty: a_empty,
-        ordered: a_ordered,
-        ..
-    } = a.scalars();
+    let a_metadata = a.metadata();
 
     // If A is empty the result is an (empty) copy of A. As with the union and intersection, an
     // empty input carries no keys, so its seed is not validated.
-    if a_empty {
-        return Ok(parts_from_sketch(a, ordered));
+    if a_metadata.is_empty() {
+        return Ok(compact_state_from_sketch(a, ordered));
     }
 
     // A is non-empty, so its seed must be compatible.
-    check_seed_hash(seed_hash, a_seed_hash, "A", ErrorKind::InvalidArgument)?;
+    check_seed_hash(
+        seed_hash,
+        a_metadata.seed_hash(),
+        "A",
+        ErrorKind::InvalidArgument,
+    )?;
 
-    let SketchScalars {
-        seed_hash: b_seed_hash,
-        theta: b_theta,
-        empty: b_empty,
-        ordered: b_ordered,
-        num_retained: b_num_retained,
-    } = b.scalars();
+    let b_metadata = b.metadata();
 
     // An empty B subtracts nothing, so the result is simply a copy of A. This also covers the
     // "A is non-empty but has no retained keys" state: B's seed and theta must not influence
     // the result.
-    if b_empty {
-        return Ok(parts_from_sketch(a, ordered));
+    if b_metadata.is_empty() {
+        return Ok(compact_state_from_sketch(a, ordered));
     }
 
     // B is non-empty, so its seed must be compatible.
-    check_seed_hash(seed_hash, b_seed_hash, "B", ErrorKind::InvalidArgument)?;
+    check_seed_hash(
+        seed_hash,
+        b_metadata.seed_hash(),
+        "B",
+        ErrorKind::InvalidArgument,
+    )?;
 
-    let theta = a_theta.min(b_theta);
-    // A is non-empty here; the result only becomes empty if everything is subtracted in exact
-    // mode (handled below).
-    let mut is_empty = false;
+    let theta = a_metadata.theta().min(b_metadata.theta());
 
-    let entries: Vec<A::Entry> = if b_num_retained == 0 {
-        a.entries().filter(|entry| entry.hash() < theta).collect()
-    } else if a_ordered && b_ordered {
+    let entries: Vec<A::Entry> = if b_metadata.num_retained() == 0 {
+        a.entries()
+            .filter(|entry| entry.hash() < theta.get())
+            .collect()
+    } else if a_metadata.is_ordered() && b_metadata.is_ordered() {
         // Both inputs are sorted ascending by hash: merge-scan without a hash set. Only
         // B hashes below theta can exclude an A entry (A entries are all < theta), so
         // unexamined B entries at or above theta are harmless.
@@ -93,7 +89,7 @@ where
         let mut entries = vec![];
         for entry in a.entries() {
             let hash = entry.hash();
-            if hash >= theta {
+            if hash >= theta.get() {
                 break;
             }
             while let Some(&b_hash) = b_hashes.peek() {
@@ -109,11 +105,11 @@ where
         }
         entries
     } else {
-        let mut b_keys: HashSet<u64> = HashSet::with_capacity(b_num_retained);
+        let mut b_keys: HashSet<u64> = HashSet::with_capacity(b_metadata.num_retained());
         for hash in b.hashes() {
-            if hash < theta {
+            if hash < theta.get() {
                 b_keys.insert(hash);
-            } else if b_ordered {
+            } else if b_metadata.is_ordered() {
                 break;
             }
         }
@@ -121,57 +117,51 @@ where
         let mut entries = vec![];
         for entry in a.entries() {
             let hash = entry.hash();
-            if hash < theta {
+            if hash < theta.get() {
                 if !b_keys.contains(&hash) {
                     entries.push(entry);
                 }
-            } else if a_ordered {
+            } else if a_metadata.is_ordered() {
                 break;
             }
         }
         entries
     };
 
-    if entries.is_empty() && theta == MAX_THETA {
-        is_empty = true;
+    if entries.is_empty() && theta == ThetaThreshold::MAX {
+        return Ok(CompactSketchState::empty(seed_hash));
     }
 
-    let out_ordered = ordered || a_ordered;
     let mut entries = entries;
-    if ordered && !a_ordered && entries.len() > 1 {
+    if ordered && !a_metadata.is_ordered() && entries.len() > 1 {
         entries.sort_unstable_by_key(SketchEntry::hash);
     }
+    let out_ordered =
+        ordered || a_metadata.is_ordered() || (entries.len() == 1 && theta == ThetaThreshold::MAX);
 
-    Ok(CompactSketchParts {
+    Ok(CompactSketchState::non_empty(
         entries,
         theta,
         seed_hash,
-        ordered: out_ordered,
-        empty: is_empty,
-    })
+        out_ordered,
+    ))
 }
 
-fn parts_from_sketch<S>(sketch: S, ordered: bool) -> CompactSketchParts<S::Entry>
+fn compact_state_from_sketch<S>(sketch: S, ordered: bool) -> CompactSketchState<S::Entry>
 where
     S: EntrySketch,
 {
-    let SketchScalars {
-        seed_hash,
-        theta,
-        empty,
-        ordered: input_ordered,
-        ..
-    } = sketch.scalars();
+    let metadata = sketch.metadata();
+    if metadata.is_empty() {
+        return CompactSketchState::empty(metadata.seed_hash());
+    }
+
     let mut entries: Vec<S::Entry> = sketch.entries().collect();
-    let out_ordered = ordered || input_ordered;
-    if ordered && !input_ordered && entries.len() > 1 {
+    if ordered && !metadata.is_ordered() && entries.len() > 1 {
         entries.sort_unstable_by_key(SketchEntry::hash);
     }
-    CompactSketchParts {
-        entries,
-        theta,
-        seed_hash,
-        ordered: out_ordered,
-        empty,
-    }
+    let theta = metadata.theta();
+    let out_ordered =
+        ordered || metadata.is_ordered() || (entries.len() == 1 && theta == ThetaThreshold::MAX);
+    CompactSketchState::non_empty(entries, theta, metadata.seed_hash(), out_ordered)
 }

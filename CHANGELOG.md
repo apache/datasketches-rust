@@ -48,7 +48,7 @@ All significant changes to this project will be documented in this file.
 * Malformed CPC images now return `InvalidData` instead of panicking.
 * Seeded deserializers now return `InvalidData` rather than panicking when the caller supplies a seed whose hash is the reserved zero value.
 * Fix T-Digest interpolation and tail calculations that could produce non-monotonic or out-of-range quantiles and invalid rank, CDF, or PMF values.
-* An empty `ThetaSketch` or `TupleSketch` built with a sampling probability below `1.0` now reports `theta` of `1.0`, `theta64` of `MAX_THETA`, and `is_estimation_mode` of `false`, matching Java and C++. The sampling theta previously reported by such a sketch also reached `ThetaANotB` and `TupleANotB` results computed from an empty input, which serialized to an image whose theta deserialization then discarded, so those results did not survive a serialization round trip.
+* Empty Theta-family and Tuple-family sketches now consistently report `theta` of `1.0`, `theta64` of `MAX_THETA`, and `is_estimation_mode` of `false`, including update sketches and unions configured with a sampling probability below `1.0`. Empty compact results now use the canonical ordered representation, so set-operation results survive serialization round trips without changing their reported state.
 
 ## v0.4.0 (2026-08-18)
 

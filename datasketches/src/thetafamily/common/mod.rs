@@ -23,6 +23,7 @@ pub(super) mod constants;
 pub(super) mod hash_table;
 pub(super) mod intersection;
 pub(super) mod jaccard_similarity;
+pub(super) mod sketch_state;
 pub(super) mod union;
 
 pub use self::jaccard_similarity::JaccardSimilarity;
@@ -33,7 +34,7 @@ pub(super) trait SketchEntry {
 }
 
 pub(super) trait KeySketch: Copy {
-    fn scalars(self) -> SketchScalars;
+    fn metadata(self) -> ThetaSketchMetadata;
 
     fn hashes(self) -> impl Iterator<Item = u64>;
 }
@@ -44,12 +45,4 @@ pub(super) trait EntrySketch: KeySketch {
     fn entries(self) -> impl Iterator<Item = Self::Entry>;
 }
 
-/// Scalar sketch values inspected by Theta-family set operations.
-#[derive(Clone, Copy, Debug)]
-pub(super) struct SketchScalars {
-    pub seed_hash: u16,
-    pub theta: u64,
-    pub empty: bool,
-    pub ordered: bool,
-    pub num_retained: usize,
-}
+pub(super) use self::sketch_state::ThetaSketchMetadata;

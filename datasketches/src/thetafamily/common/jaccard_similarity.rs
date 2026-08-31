@@ -23,14 +23,15 @@ use crate::hash::compute_seed_hash;
 use crate::thetacommon::EntrySketch;
 use crate::thetacommon::KeySketch;
 use crate::thetacommon::SketchEntry;
-use crate::thetacommon::SketchScalars;
+use crate::thetacommon::ThetaSketchMetadata;
 use crate::thetacommon::binomial_bounds;
 use crate::thetacommon::constants::MAX_LG_K;
 use crate::thetacommon::constants::MAX_THETA;
 use crate::thetacommon::constants::MIN_LG_K;
-use crate::thetacommon::hash_table::CompactSketchParts;
 use crate::thetacommon::intersection::IntersectionMergePolicy;
 use crate::thetacommon::intersection::IntersectionState;
+use crate::thetacommon::sketch_state::CompactSketchState;
+use crate::thetacommon::sketch_state::ThetaThreshold;
 use crate::thetacommon::union::UnionMergePolicy;
 use crate::thetacommon::union::UnionState;
 
@@ -70,7 +71,11 @@ impl JaccardSimilarity {
         }
     }
 
-    fn ratio_bounds(union_count: u64, intersection_count: u64, theta: u64) -> Result<Self, Error> {
+    fn ratio_bounds(
+        union_count: u64,
+        intersection_count: u64,
+        theta: ThetaThreshold,
+    ) -> Result<Self, Error> {
         if intersection_count > union_count {
             return Err(Error::invalid_argument(format!(
                 "intersection count cannot exceed union count: {intersection_count} > {union_count}"
@@ -84,13 +89,8 @@ impl JaccardSimilarity {
             });
         }
 
-        let sampling_probability = theta as f64 / MAX_THETA as f64;
-        if sampling_probability <= 0.0 || sampling_probability > 1.0 {
-            return Err(Error::invalid_argument(format!(
-                "theta must produce a probability in (0.0, 1.0], got {sampling_probability}"
-            )));
-        }
-        if sampling_probability == 1.0 {
+        let sampling_probability = theta.get() as f64 / MAX_THETA as f64;
+        if theta == ThetaThreshold::MAX {
             return Ok(Self::exact(intersection_count as f64 / union_count as f64));
         }
 
@@ -140,8 +140,8 @@ impl<S> KeySketch for KeyEntries<S>
 where
     S: KeySketch,
 {
-    fn scalars(self) -> SketchScalars {
-        self.0.scalars()
+    fn metadata(self) -> ThetaSketchMetadata {
+        self.0.metadata()
     }
 
     fn hashes(self) -> impl Iterator<Item = u64> {
@@ -165,27 +165,17 @@ where
     A: KeySketch,
     B: KeySketch,
 {
-    let SketchScalars {
-        theta: a_theta,
-        empty: a_empty,
-        num_retained: a_num_retained,
-        ..
-    } = sketch_a.scalars();
-    let SketchScalars {
-        theta: b_theta,
-        empty: b_empty,
-        num_retained: b_num_retained,
-        ..
-    } = sketch_b.scalars();
-    if a_empty && b_empty {
+    let a_metadata = sketch_a.metadata();
+    let b_metadata = sketch_b.metadata();
+    if a_metadata.is_empty() && b_metadata.is_empty() {
         return Ok(JaccardSimilarity::exact(1.0));
     }
-    if a_empty || b_empty {
+    if a_metadata.is_empty() || b_metadata.is_empty() {
         return Ok(JaccardSimilarity::exact(0.0));
     }
 
-    let sketch_a_state = (a_num_retained, a_theta);
-    let sketch_b_state = (b_num_retained, b_theta);
+    let sketch_a_state = (a_metadata.num_retained(), a_metadata.theta());
+    let sketch_b_state = (b_metadata.num_retained(), b_metadata.theta());
     let union = compute_union(seed, sketch_a, sketch_b)?;
     if identical_sets(sketch_a_state, sketch_b_state, &union) {
         return Ok(JaccardSimilarity::exact(1.0));
@@ -194,17 +184,20 @@ where
     let mut intersection = IntersectionState::new(seed, NoopMergePolicy)?;
     intersection.update(KeyEntries(sketch_a))?;
     intersection.update(KeyEntries(sketch_b))?;
-    let intersection = intersection.to_compact_parts(false);
+    let intersection = intersection
+        .to_compact_sketch_state(false)
+        .expect("two intersection updates must produce a result");
+    let union_theta = union.theta_sketch_state().theta();
     let intersection_count = intersection
-        .entries
+        .retained_entries()
         .iter()
-        .filter(|entry| entry.hash < union.theta)
+        .filter(|entry| entry.hash < union_theta.get())
         .count();
 
     JaccardSimilarity::ratio_bounds(
-        union.entries.len() as u64,
+        union.retained_entries().len() as u64,
         intersection_count as u64,
-        union.theta,
+        union_theta,
     )
 }
 
@@ -213,27 +206,17 @@ where
     A: KeySketch,
     B: KeySketch,
 {
-    let SketchScalars {
-        theta: a_theta,
-        empty: a_empty,
-        num_retained: a_num_retained,
-        ..
-    } = sketch_a.scalars();
-    let SketchScalars {
-        theta: b_theta,
-        empty: b_empty,
-        num_retained: b_num_retained,
-        ..
-    } = sketch_b.scalars();
-    if a_empty && b_empty {
+    let a_metadata = sketch_a.metadata();
+    let b_metadata = sketch_b.metadata();
+    if a_metadata.is_empty() && b_metadata.is_empty() {
         return Ok(true);
     }
-    if a_empty || b_empty {
+    if a_metadata.is_empty() || b_metadata.is_empty() {
         return Ok(false);
     }
 
-    let sketch_a_state = (a_num_retained, a_theta);
-    let sketch_b_state = (b_num_retained, b_theta);
+    let sketch_a_state = (a_metadata.num_retained(), a_metadata.theta());
+    let sketch_b_state = (b_metadata.num_retained(), b_metadata.theta());
     let union = compute_union(seed, sketch_a, sketch_b)?;
     Ok(identical_sets(sketch_a_state, sketch_b_state, &union))
 }
@@ -242,27 +225,29 @@ fn compute_union<A, B>(
     seed: u64,
     sketch_a: A,
     sketch_b: B,
-) -> Result<CompactSketchParts<KeyEntry>, Error>
+) -> Result<CompactSketchState<KeyEntry>, Error>
 where
     A: KeySketch,
     B: KeySketch,
 {
-    let SketchScalars {
-        seed_hash: a_seed_hash,
-        num_retained: a_num_retained,
-        ..
-    } = sketch_a.scalars();
-    let SketchScalars {
-        seed_hash: b_seed_hash,
-        num_retained: b_num_retained,
-        ..
-    } = sketch_b.scalars();
+    let a_metadata = sketch_a.metadata();
+    let b_metadata = sketch_b.metadata();
     let seed_hash = compute_seed_hash(seed, ErrorKind::InvalidArgument)?;
-    check_seed_hash(seed_hash, a_seed_hash, "A", ErrorKind::InvalidData)?;
-    check_seed_hash(seed_hash, b_seed_hash, "B", ErrorKind::InvalidData)?;
+    check_seed_hash(
+        seed_hash,
+        a_metadata.seed_hash(),
+        "A",
+        ErrorKind::InvalidData,
+    )?;
+    check_seed_hash(
+        seed_hash,
+        b_metadata.seed_hash(),
+        "B",
+        ErrorKind::InvalidData,
+    )?;
 
     let mut union = UnionState::new(
-        union_lg_k(a_num_retained, b_num_retained),
+        union_lg_k(a_metadata.num_retained(), b_metadata.num_retained()),
         ResizeFactor::X8,
         1.0,
         seed,
@@ -270,7 +255,7 @@ where
     )?;
     union.update(KeyEntries(sketch_a))?;
     union.update(KeyEntries(sketch_b))?;
-    Ok(union.to_compact_parts(false))
+    Ok(union.to_compact_sketch_state(false))
 }
 
 /// Returns whether both sketches have the same retained keys and theta.
@@ -278,14 +263,15 @@ where
 /// When the union retains no additional keys and preserves both input theta values, each input
 /// contains exactly the same retained key set represented by the union.
 fn identical_sets(
-    sketch_a: (usize, u64),
-    sketch_b: (usize, u64),
-    union: &CompactSketchParts<KeyEntry>,
+    sketch_a: (usize, ThetaThreshold),
+    sketch_b: (usize, ThetaThreshold),
+    union: &CompactSketchState<KeyEntry>,
 ) -> bool {
-    union.entries.len() == sketch_a.0
-        && union.entries.len() == sketch_b.0
-        && union.theta == sketch_a.1
-        && union.theta == sketch_b.1
+    let union_state = union.theta_sketch_state();
+    union.retained_entries().len() == sketch_a.0
+        && union.retained_entries().len() == sketch_b.0
+        && union_state.theta() == sketch_a.1
+        && union_state.theta() == sketch_b.1
 }
 
 fn sampling_adjuster(sampling_probability: f64) -> f64 {
