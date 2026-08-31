@@ -1278,8 +1278,9 @@ impl TDigestView<'_> {
                 return Some(if value == self.min {
                     0.5 / centroids_weight
                 } else {
-                    1. + (((value - self.min) / (first_mean - self.min))
-                        * ((self.centroids[0].weight() / 2.) - 1.))
+                    (1. + (((value - self.min) / (first_mean - self.min))
+                        * ((self.centroids[0].weight() / 2.) - 1.)))
+                        / centroids_weight
                 });
             }
             return Some(0.); // should never happen
@@ -1376,9 +1377,12 @@ impl TDigestView<'_> {
         }
         let last_weight = self.centroids[num_centroids - 1].weight();
         if last_weight > 1. && (centroids_weight - weight <= last_weight / 2.) {
+            if last_weight == 2. {
+                return Some(self.max);
+            }
             return Some(
                 self.max
-                    + (((centroids_weight - weight - 1.) / ((last_weight / 2.) - 1.))
+                    - (((centroids_weight - weight - 1.) / ((last_weight / 2.) - 1.))
                         * (self.max - self.centroids[num_centroids - 1].mean)),
             );
         }
@@ -1403,13 +1407,15 @@ impl TDigestView<'_> {
                     }
                     right_weight = 0.5;
                 }
-                let w1 = weight - weight_so_far - left_weight;
-                let w2 = weight_so_far + dw - weight - right_weight;
+                // Each centroid is weighted by the distance from the target to the *other*
+                // centroid, so the estimate approaches the nearer one.
+                let distance_from_left = weight - weight_so_far - left_weight;
+                let distance_to_right = weight_so_far + dw - weight - right_weight;
                 return Some(weighted_average(
                     self.centroids[i].mean,
-                    w1,
+                    distance_to_right,
                     self.centroids[i + 1].mean,
-                    w2,
+                    distance_from_left,
                 ));
             }
             weight_so_far += dw;

@@ -47,6 +47,7 @@ All significant changes to this project will be documented in this file.
 * HLL, Theta, and Tuple deserializers now return `InvalidData` for malformed payload sizes and entry counts instead of risking oversized allocations or decoding failures.
 * Malformed CPC images now return `InvalidData` instead of panicking.
 * Seeded deserializers now return `InvalidData` rather than panicking when the caller supplies a seed whose hash is the reserved zero value.
+* Fix T-Digest interpolation and tail calculations that could produce non-monotonic or out-of-range quantiles and invalid rank, CDF, or PMF values.
 
 ## v0.4.0 (2026-08-18)
 
