@@ -40,6 +40,11 @@ impl UnionMergePolicy<ThetaEntry> for NoopUnionPolicy {
 
 impl ThetaUnion {
     /// Updates this union with the given sketch.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidArgument` if a non-empty `sketch` has a different seed hash from this
+    /// union.
     pub fn update<'a>(&mut self, sketch: impl Into<ThetaSketchView<'a>>) -> Result<(), Error> {
         let sketch = sketch.into();
         self.state.update(sketch)
