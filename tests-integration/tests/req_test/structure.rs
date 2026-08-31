@@ -41,8 +41,8 @@ fn iterator_weights_sum_to_n_and_items_are_in_range() {
 
     for (item, weight) in sketch.iter() {
         assert_that!(weight, ge(1));
-        assert_that!(item, ge(*sketch.min_item().expect("non-empty sketch")));
-        assert_that!(item, le(*sketch.max_item().expect("non-empty sketch")));
+        assert_that!(*item, ge(*sketch.min_item().expect("non-empty sketch")));
+        assert_that!(*item, le(*sketch.max_item().expect("non-empty sketch")));
     }
 }
 
@@ -54,7 +54,7 @@ fn small_sketch_iterator_reports_unit_weights() {
         sketch.update(req_f64(i as f64));
     }
 
-    let items: Vec<(ReqF64, u64)> = sketch.iter().collect();
+    let items: Vec<(&ReqF64, u64)> = sketch.iter().collect();
     assert_eq!(items.len(), 10);
     let weights: Vec<_> = items.iter().map(|&(_, weight)| weight).collect();
     assert_that!(weights, each(eq(&1)));

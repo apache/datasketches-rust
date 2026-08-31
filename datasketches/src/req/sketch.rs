@@ -21,6 +21,7 @@ use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
 use crate::codec::assert::insufficient_data;
 use crate::codec::family::Family;
+use crate::common::NumStdDev;
 use crate::error::Error;
 use crate::req::DEFAULT_K;
 use crate::req::INITIAL_SECTIONS_PER_COMPACTOR;
@@ -351,25 +352,25 @@ where
         Ok(())
     }
 
-    /// Returns the lower bound for the rank of a quantile at `num_std_dev` confidence.
-    pub fn rank_lower_bound(&self, rank: f64, num_std_dev: u8) -> f64 {
+    /// Returns the lower bound for the normalized `rank` at the requested confidence level.
+    pub fn rank_lower_bound(&self, rank: f64, num_std_dev: NumStdDev) -> f64 {
         self.compute_rank_lower_bound(
             self.k,
             self.compactors.len() as u8,
             rank,
-            num_std_dev,
+            num_std_dev.as_u8(),
             self.n,
             matches!(self.rank_accuracy, RankAccuracy::HighRank),
         )
     }
 
-    /// Returns the upper bound for the rank of a quantile at `num_std_dev` confidence.
-    pub fn rank_upper_bound(&self, rank: f64, num_std_dev: u8) -> f64 {
+    /// Returns the upper bound for the normalized `rank` at the requested confidence level.
+    pub fn rank_upper_bound(&self, rank: f64, num_std_dev: NumStdDev) -> f64 {
         self.compute_rank_upper_bound(
             self.k,
             self.compactors.len() as u8,
             rank,
-            num_std_dev,
+            num_std_dev.as_u8(),
             self.n,
             matches!(self.rank_accuracy, RankAccuracy::HighRank),
         )
@@ -689,8 +690,20 @@ where
             }
         }
 
-        if n == 0 || min_item.is_none() || max_item.is_none() {
+        if n == 0 {
             return Err(Error::deserial("non-empty REQ sketch contains no items"));
+        }
+        let (Some(min), Some(max)) = (&min_item, &max_item) else {
+            return Err(Error::deserial("non-empty REQ sketch contains no items"));
+        };
+        if compactors
+            .iter()
+            .flat_map(Compactor::iter)
+            .any(|item| item < min || item > max)
+        {
+            return Err(Error::deserial(
+                "REQ retained item falls outside the min/max range",
+            ));
         }
 
         let expected_raw_items = num_levels == 1 && n <= RAW_ITEMS_THRESHOLD;

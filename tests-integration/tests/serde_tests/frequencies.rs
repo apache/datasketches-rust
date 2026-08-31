@@ -79,6 +79,16 @@ fn test_items_round_trip() {
 }
 
 #[test]
+fn test_string_deserialize_rejects_length_larger_than_input() {
+    let bytes = 1024u32.to_le_bytes();
+    let mut cursor = SketchSlice::new(&bytes);
+
+    let error = String::deserialize_value(&mut cursor).unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::InvalidData);
+    assert_that!(error.message(), contains_substring("exceeds the remaining"));
+}
+
+#[test]
 fn test_non_clone_item_round_trip() {
     let mut sketch = FrequentItemsSketch::<NonCloneSerializableItem>::new(32).unwrap();
     sketch.update_with_count(NonCloneSerializableItem(1), 2);
