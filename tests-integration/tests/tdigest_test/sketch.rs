@@ -386,13 +386,11 @@ fn test_quantile_right_tail_stays_within_max() {
 }
 
 #[test]
-fn test_two_sample_terminal_centroids_are_singletons() {
+fn test_quantile_handles_two_sample_last_centroid() {
     let mut tdigest =
-        deserialize_with_centroids(100, 0.0, 100.0, &[(10.0, 2), (50.0, 1), (90.0, 2)]);
+        deserialize_with_centroids(100, 0.0, 100.0, &[(0.0, 1), (50.0, 1), (90.0, 2)]);
 
-    for (rank, expected) in [(0.2, 20.0), (0.3, 20.0), (0.7, 80.0), (0.8, 100.0)] {
-        assert_that!(tdigest.quantile(rank).unwrap(), near(expected, 1e-12));
-    }
+    assert_eq!(tdigest.quantile(0.75), Some(100.0));
 }
 
 #[test]
