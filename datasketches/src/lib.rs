@@ -69,26 +69,36 @@ compile_error!("datasketches does not support big-endian targets");
 
 // sketches modules
 #[cfg(feature = "bloom")]
+#[cfg_attr(docsrs, doc(cfg(feature = "bloom")))]
 pub mod bloom;
 #[cfg(feature = "countmin")]
+#[cfg_attr(docsrs, doc(cfg(feature = "countmin")))]
 pub mod countmin;
 #[cfg(feature = "cpc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "cpc")))]
 pub mod cpc;
 #[cfg(feature = "frequencies")]
+#[cfg_attr(docsrs, doc(cfg(feature = "frequencies")))]
 pub mod frequencies;
 #[cfg(feature = "hll")]
+#[cfg_attr(docsrs, doc(cfg(feature = "hll")))]
 pub mod hll;
 #[cfg(feature = "req")]
+#[cfg_attr(docsrs, doc(cfg(feature = "req")))]
 pub mod req;
 #[cfg(feature = "tdigest")]
+#[cfg_attr(docsrs, doc(cfg(feature = "tdigest")))]
 pub mod tdigest;
 #[cfg(any(feature = "theta", feature = "tuple"))]
 mod thetafamily;
 #[cfg(any(feature = "theta", feature = "tuple"))]
+#[cfg_attr(docsrs, doc(cfg(any(feature = "theta", feature = "tuple"))))]
 pub use self::thetafamily::common as thetacommon;
 #[cfg(feature = "theta")]
+#[cfg_attr(docsrs, doc(cfg(feature = "theta")))]
 pub use self::thetafamily::theta;
 #[cfg(feature = "tuple")]
+#[cfg_attr(docsrs, doc(cfg(feature = "tuple")))]
 pub use self::thetafamily::tuple;
 
 // common modules
