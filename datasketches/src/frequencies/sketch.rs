@@ -365,7 +365,6 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
         if count == 0 {
             return;
         }
-        assert!(count > 0, "count may not be negative");
         self.stream_weight += count;
         self.hash_map.adjust_or_put_value(item, count);
         self.maybe_resize_or_purge();
@@ -418,7 +417,6 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
         if count == 0 {
             return;
         }
-        assert!(count > 0, "count may not be negative");
         self.stream_weight += count;
         self.hash_map.adjust_or_put_value_ref(item, count);
         self.maybe_resize_or_purge();
