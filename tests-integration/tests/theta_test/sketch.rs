@@ -25,6 +25,7 @@ use googletest::prelude::gt;
 use googletest::prelude::le;
 use googletest::prelude::lt;
 use googletest::prelude::near;
+use tests_integration::MAX_THETA;
 use tests_integration::ZERO_HASH_SEED;
 
 #[test]
@@ -291,21 +292,52 @@ fn test_bounds_all_num_std_devs() {
 }
 
 #[test]
-fn test_bounds_empty_estimation_mode() {
-    // Create a sketch with sampling probability < 1.0 to force estimation mode
+fn test_bounds_empty_with_sampling() {
     let sketch = ThetaSketchBuilder::default()
         .lg_k(12)
         .sampling_probability(0.1)
         .build()
         .unwrap();
 
-    // The sketch is empty but theta < 1.0, so it's in estimation mode
-    // However, when empty, both bounds should return 0.0 per Java implementation
     assert!(sketch.is_empty());
-    assert!(sketch.is_estimation_mode());
+    assert!(!sketch.is_estimation_mode());
     assert_eq!(sketch.estimate(), 0.0);
     assert_eq!(sketch.lower_bound(NumStdDev::One), 0.0);
     assert_eq!(sketch.upper_bound(NumStdDev::One), 0.0);
+}
+
+#[test]
+fn test_empty_sketch_reports_max_theta_for_every_sampling_probability() {
+    for probability in [1.0, 0.9, 0.5, 0.1, 0.01, 0.001] {
+        let sketch = ThetaSketchBuilder::default()
+            .lg_k(12)
+            .sampling_probability(probability)
+            .build()
+            .unwrap();
+
+        assert!(sketch.is_empty());
+        assert_eq!(sketch.theta64(), MAX_THETA);
+        assert_eq!(sketch.theta(), 1.0);
+        assert!(!sketch.is_estimation_mode());
+        assert_eq!(sketch.theta64(), sketch.compact(true).theta64());
+    }
+}
+
+#[test]
+fn test_sampling_theta_applies_once_the_sketch_is_non_empty() {
+    let mut sketch = ThetaSketchBuilder::default()
+        .lg_k(12)
+        .sampling_probability(0.5)
+        .build()
+        .unwrap();
+
+    assert_eq!(sketch.theta64(), MAX_THETA);
+
+    sketch.update(1u64);
+
+    assert!(!sketch.is_empty());
+    assert!(sketch.is_estimation_mode());
+    assert_that!(sketch.theta64(), lt(MAX_THETA));
 }
 
 #[test]

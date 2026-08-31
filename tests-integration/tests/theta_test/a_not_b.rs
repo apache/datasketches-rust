@@ -29,6 +29,7 @@ use googletest::prelude::anything;
 use googletest::prelude::err;
 use googletest::prelude::lt;
 use googletest::prelude::near;
+use tests_integration::MAX_THETA;
 
 fn sketch_with_range(start: u64, count: u64) -> ThetaSketch {
     let mut sketch = ThetaSketchBuilder::default().build().unwrap();
@@ -256,4 +257,31 @@ fn test_estimation_disjoint_returns_a() {
     assert!(!r.is_empty());
     assert!(r.is_estimation_mode());
     assert_that!(r.estimate(), near(10000.0, 10000.0 * 0.02));
+}
+
+#[test]
+fn test_empty_sampled_inputs_produce_a_serializable_empty_result() {
+    for probability in [1.0, 0.5, 0.1, 0.001] {
+        let a = ThetaSketchBuilder::default()
+            .lg_k(12)
+            .sampling_probability(probability)
+            .build()
+            .unwrap();
+        let b = ThetaSketchBuilder::default()
+            .lg_k(12)
+            .sampling_probability(probability)
+            .build()
+            .unwrap();
+
+        let r = ThetaANotB::default().compute(&a, &b, true).unwrap();
+
+        assert!(r.is_empty());
+        assert_eq!(r.theta64(), MAX_THETA);
+        assert!(!r.is_estimation_mode());
+
+        let bytes = r.serialize();
+        let restored = CompactThetaSketch::deserialize(&bytes).unwrap();
+        assert_eq!(restored.serialize(), bytes);
+        assert_eq!(restored.theta64(), r.theta64());
+    }
 }

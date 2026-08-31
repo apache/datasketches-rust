@@ -23,6 +23,7 @@ use googletest::assert_that;
 use googletest::prelude::all;
 use googletest::prelude::ge;
 use googletest::prelude::le;
+use tests_integration::MAX_THETA;
 
 use crate::default_tuple_sketch_builder;
 use crate::tuple_sketch_with_range;
@@ -184,4 +185,34 @@ fn estimation_bounds_cover_the_true_difference() {
 
     assert!(result.is_estimation_mode());
     assert_that!(25_000.0, all!(ge(lower), le(upper)));
+}
+
+#[test]
+fn empty_sampled_inputs_produce_a_serializable_empty_result() {
+    for probability in [1.0, 0.5, 0.1, 0.001] {
+        let a = default_tuple_sketch_builder()
+            .lg_k(12)
+            .sampling_probability(probability)
+            .build()
+            .unwrap();
+        let b = default_tuple_sketch_builder()
+            .lg_k(12)
+            .sampling_probability(probability)
+            .build()
+            .unwrap();
+
+        assert_eq!(a.theta64(), MAX_THETA);
+        assert!(!a.is_estimation_mode());
+
+        let result = TupleANotB::default().compute(&a, &b, true).unwrap();
+
+        assert!(result.is_empty());
+        assert_eq!(result.theta64(), MAX_THETA);
+        assert!(!result.is_estimation_mode());
+
+        let bytes = result.serialize();
+        let restored = CompactTupleSketch::<u64>::deserialize(&bytes).unwrap();
+        assert_eq!(restored.serialize(), bytes);
+        assert_eq!(restored.theta64(), result.theta64());
+    }
 }

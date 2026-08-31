@@ -253,12 +253,19 @@ impl ThetaSketch {
 
     /// Returns theta as a fraction in `[0.0, 1.0]`.
     pub fn theta(&self) -> f64 {
-        self.table.theta() as f64 / MAX_THETA as f64
+        self.theta64() as f64 / MAX_THETA as f64
     }
 
     /// Returns theta as a `u64`.
+    ///
+    /// An empty sketch reports `MAX_THETA` even when it was built with a sampling probability
+    /// below `1.0`, matching the other DataSketches implementations.
     pub fn theta64(&self) -> u64 {
-        self.table.theta()
+        if self.is_empty() {
+            MAX_THETA
+        } else {
+            self.table.theta()
+        }
     }
 
     /// Returns the 16-bit seed hash.
@@ -273,7 +280,7 @@ impl ThetaSketch {
 
     /// Returns `true` if the sketch is in estimation mode.
     pub fn is_estimation_mode(&self) -> bool {
-        self.table.theta() < MAX_THETA
+        self.theta64() < MAX_THETA
     }
 
     /// Returns the number of retained entries.
