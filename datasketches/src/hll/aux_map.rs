@@ -227,7 +227,7 @@ impl AuxMap {
         })
     }
 
-    /// Returns the estimated size of the heap allocations in bytes
+    /// Returns the size of the entry allocation in bytes.
     pub fn estimated_size(&self) -> usize {
         self.entries.len() * size_of::<Coupon>()
     }

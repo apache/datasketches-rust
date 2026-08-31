@@ -150,7 +150,9 @@ where
         self.result_theta = None;
     }
 
-    /// Returns the estimated size of the heap allocations in bytes.
+    /// Returns the retained capacity of the internal hash table in bytes.
+    ///
+    /// The estimate is shallow with respect to entries and the merge policy.
     pub fn estimated_size(&self) -> usize {
         self.table.estimated_size()
     }

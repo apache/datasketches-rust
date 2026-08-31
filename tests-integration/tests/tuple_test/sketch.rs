@@ -132,6 +132,28 @@ fn custom_update_policy_accepts_multiple_value_representations() {
 }
 
 #[test]
+fn estimated_size_is_shallow_for_generic_summaries() {
+    let mut small_summary_sketch = TupleSketchBuilder::new(ArraySumPolicy { num_values: 1 })
+        .build()
+        .unwrap();
+    small_summary_sketch.update("key", [1.0]);
+
+    let mut large_summary_sketch = TupleSketchBuilder::new(ArraySumPolicy { num_values: 1024 })
+        .build()
+        .unwrap();
+    large_summary_sketch.update("key", vec![1.0; 1024]);
+
+    assert_eq!(
+        small_summary_sketch.estimated_size(),
+        large_summary_sketch.estimated_size()
+    );
+    assert_eq!(
+        small_summary_sketch.compact(false).estimated_size(),
+        large_summary_sketch.compact(false).estimated_size()
+    );
+}
+
+#[test]
 fn trim_and_reset_update_public_state() {
     let mut sketch = default_tuple_sketch_builder().lg_k(5).build().unwrap();
     for value in 0..1000 {

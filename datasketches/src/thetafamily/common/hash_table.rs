@@ -347,7 +347,10 @@ where
             })
     }
 
-    /// Returns the estimated size of the heap allocations in bytes.
+    /// Returns the retained capacity of the entry allocation in bytes.
+    ///
+    /// The estimate includes the inline representation of `E` in every allocated slot but does not
+    /// inspect heap allocations owned by active entries.
     pub fn estimated_size(&self) -> usize {
         self.entries.capacity() * size_of::<Option<E>>()
     }

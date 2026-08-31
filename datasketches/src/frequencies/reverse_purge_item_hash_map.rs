@@ -197,7 +197,10 @@ impl<T: Eq + Hash> ReversePurgeItemHashMap<T> {
         self.num_active
     }
 
-    /// Returns the estimated size of the heap allocations in bytes.
+    /// Returns the retained capacity of the map's backing allocations in bytes.
+    ///
+    /// The estimate includes the inline representation of `T` in every allocated key slot but does
+    /// not inspect heap allocations owned by active keys.
     pub fn estimated_size(&self) -> usize {
         self.keys.capacity() * size_of::<Option<T>>()
             + self.values.capacity() * size_of::<u64>()

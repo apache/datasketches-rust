@@ -582,3 +582,19 @@ fn test_estimated_size() {
     }
     assert_eq!(sketch.estimated_size(), 1800);
 }
+
+#[test]
+fn test_estimated_size_is_shallow_for_generic_items() {
+    let mut small_item_sketch = FrequentItemsSketch::new(8).unwrap();
+    small_item_sketch.update("key".to_string());
+
+    let mut large_item = String::with_capacity(4096);
+    large_item.push_str("key");
+    let mut large_item_sketch = FrequentItemsSketch::new(8).unwrap();
+    large_item_sketch.update(large_item);
+
+    assert_eq!(
+        small_item_sketch.estimated_size(),
+        large_item_sketch.estimated_size()
+    );
+}

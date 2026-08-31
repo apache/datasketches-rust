@@ -59,7 +59,11 @@ impl ThetaUnion {
         self.state.reset();
     }
 
-    /// Returns the estimated size of the union in bytes.
+    /// Returns the estimated in-memory size of the union in bytes.
+    ///
+    /// The estimate includes the union's inline representation and the retained capacity of its
+    /// internal hash table. It excludes allocator bookkeeping, temporary allocations, and
+    /// serialized size.
     pub fn estimated_size(&self) -> usize {
         size_of::<Self>() + self.state.estimated_size()
     }

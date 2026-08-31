@@ -475,7 +475,7 @@ impl Array4 {
         bytes.into_bytes()
     }
 
-    /// Returns the estimated size of the heap allocations in bytes
+    /// Returns the size of the register and auxiliary-map allocations in bytes.
     pub fn estimated_size(&self) -> usize {
         self.bytes.len()
             + self

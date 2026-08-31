@@ -604,7 +604,10 @@ impl BloomFilter {
         }
     }
 
-    /// Returns the estimated size of the filter in bytes.
+    /// Returns the estimated in-memory size of the filter in bytes.
+    ///
+    /// The estimate includes the filter's inline representation and its bit-array allocation. It
+    /// excludes allocator bookkeeping, temporary allocations, and serialized size.
     pub fn estimated_size(&self) -> usize {
         size_of::<Self>() + self.bit_array.len() * size_of::<u64>()
     }

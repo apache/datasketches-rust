@@ -45,6 +45,22 @@
 //!
 //! See each module's documentation for accuracy, memory, serialization, and update examples.
 //!
+//! ## Estimated memory size
+//!
+//! Sketches that expose an `estimated_size()` method report the inline size of the sketch value
+//! plus the retained capacity of heap allocations that back its internal containers. The estimate
+//! intentionally excludes allocator bookkeeping and temporary allocations.
+//!
+//! For sketches with generic items, summaries, or policies, the estimate includes their inline
+//! representation wherever it is stored. It does not recursively inspect heap allocations reached
+//! through those generic values; keeping the method unconditionally available is more useful than
+//! requiring application-defined values to implement a sizing trait. The estimate is therefore
+//! shallow with respect to generic values.
+//!
+//! Estimated memory size and serialized size are separate concepts. Serialized size follows each
+//! sketch's wire-format layout, while the in-memory estimate uses Rust type layout, retained
+//! container capacity, and state that may not be serialized.
+//!
 //! ## Cross-language hashing
 //!
 //! Compatible serialization does not by itself make ordinary Rust [`Hash`](std::hash::Hash)

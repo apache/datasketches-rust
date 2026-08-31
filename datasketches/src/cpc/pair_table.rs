@@ -258,7 +258,7 @@ impl PairTable {
         }
     }
 
-    /// Returns the estimated size of the heap allocations in bytes
+    /// Returns the retained capacity of the slot allocation in bytes.
     pub fn estimated_size(&self) -> usize {
         self.slots.capacity() * size_of::<u32>()
     }

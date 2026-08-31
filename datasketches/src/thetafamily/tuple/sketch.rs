@@ -403,7 +403,12 @@ where
         .expect("theta should always be valid")
     }
 
-    /// Returns the estimated size of the sketch in bytes.
+    /// Returns the estimated in-memory size of the sketch in bytes.
+    ///
+    /// The estimate includes the sketch's inline representation and the retained capacity of its
+    /// internal hash table. It includes the inline representations of the policy and every summary
+    /// slot but does not inspect heap allocations owned by the policy or retained summaries.
+    /// Allocator bookkeeping, temporary allocations, and serialized size are not included.
     pub fn estimated_size(&self) -> usize {
         size_of::<Self>() + self.table.estimated_size()
     }
@@ -540,7 +545,12 @@ impl<S> CompactTupleSketch<S> {
         .expect("compact theta should always be valid")
     }
 
-    /// Returns the estimated size of the sketch in bytes.
+    /// Returns the estimated in-memory size of the sketch in bytes.
+    ///
+    /// The estimate includes the sketch's inline representation and the retained capacity of its
+    /// entry array. It includes the inline representation of `S` in every allocated entry slot but
+    /// does not inspect heap allocations owned by retained summaries. Allocator bookkeeping,
+    /// temporary allocations, and serialized size are not included.
     pub fn estimated_size(&self) -> usize {
         size_of::<Self>()
             + self.compact_state.retained_entries_capacity() * size_of::<TupleEntry<S>>()

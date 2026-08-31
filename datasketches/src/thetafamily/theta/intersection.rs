@@ -73,7 +73,11 @@ impl ThetaIntersection {
         self.state.has_result()
     }
 
-    /// Returns the estimated size of the intersection in bytes.
+    /// Returns the estimated in-memory size of the intersection in bytes.
+    ///
+    /// The estimate includes the intersection's inline representation and the retained capacity of
+    /// its internal hash table. It excludes allocator bookkeeping, temporary allocations, and
+    /// serialized size.
     pub fn estimated_size(&self) -> usize {
         size_of::<Self>() + self.state.estimated_size()
     }

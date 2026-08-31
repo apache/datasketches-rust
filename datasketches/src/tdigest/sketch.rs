@@ -906,7 +906,11 @@ impl TDigestMut {
         centroids.shrink_to(target_capacity);
     }
 
-    /// Returns the estimated size of the sketch in bytes.
+    /// Returns the estimated in-memory size of the sketch in bytes.
+    ///
+    /// The estimate includes the sketch's inline representation and the retained capacity of its
+    /// centroid buffer. It excludes allocator bookkeeping, temporary allocations, and serialized
+    /// size.
     pub fn estimated_size(&self) -> usize {
         size_of::<Self>() + self.buffer.estimated_size()
     }
@@ -1229,7 +1233,11 @@ impl TDigest {
         )
     }
 
-    /// Returns the estimated size of the sketch in bytes.
+    /// Returns the estimated in-memory size of the sketch in bytes.
+    ///
+    /// The estimate includes the sketch's inline representation and the retained capacity of its
+    /// centroid array. It excludes allocator bookkeeping, temporary allocations, and serialized
+    /// size.
     pub fn estimated_size(&self) -> usize {
         size_of::<Self>() + self.centroids.capacity() * size_of::<Centroid>()
     }
