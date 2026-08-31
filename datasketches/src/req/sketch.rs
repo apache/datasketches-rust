@@ -689,8 +689,20 @@ where
             }
         }
 
-        if n == 0 || min_item.is_none() || max_item.is_none() {
+        if n == 0 {
             return Err(Error::deserial("non-empty REQ sketch contains no items"));
+        }
+        let (Some(min), Some(max)) = (&min_item, &max_item) else {
+            return Err(Error::deserial("non-empty REQ sketch contains no items"));
+        };
+        if compactors
+            .iter()
+            .flat_map(Compactor::iter)
+            .any(|item| item < min || item > max)
+        {
+            return Err(Error::deserial(
+                "REQ retained item falls outside the min/max range",
+            ));
         }
 
         let expected_raw_items = num_levels == 1 && n <= RAW_ITEMS_THRESHOLD;

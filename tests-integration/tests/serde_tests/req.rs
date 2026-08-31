@@ -462,6 +462,11 @@ fn deserialize_rejects_invalid_extrema_and_raw_nan() {
     reversed[20..24].copy_from_slice(&1.0f32.to_le_bytes());
     assert_invalid_data(&reversed);
 
+    let mut extrema_exclude_retained_items = estimation_image(12, 1_000);
+    extrema_exclude_retained_items[16..20].copy_from_slice(&500.0f32.to_le_bytes());
+    extrema_exclude_retained_items[20..24].copy_from_slice(&500.0f32.to_le_bytes());
+    assert_invalid_data(&extrema_exclude_retained_items);
+
     let mut raw_nan = vec![2u8, 1, 17, 8 | 16, 12, 0, 1, 1];
     raw_nan.extend_from_slice(&f32::NAN.to_le_bytes());
     assert_invalid_data(&raw_nan);
