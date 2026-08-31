@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::convert::identity;
 use std::num::NonZeroU64;
@@ -1225,6 +1226,69 @@ struct TDigestView<'a> {
 }
 
 impl TDigestView<'_> {
+    fn quantile_centroids(&self) -> Cow<'_, [Centroid]> {
+        if self.centroids.is_empty() {
+            return Cow::Borrowed(self.centroids);
+        }
+
+        if self.centroids.len() == 1 {
+            return if self.centroids[0].weight.get() == 2 {
+                Cow::Owned(vec![
+                    Centroid {
+                        mean: self.min,
+                        weight: DEFAULT_WEIGHT,
+                    },
+                    Centroid {
+                        mean: self.max,
+                        weight: DEFAULT_WEIGHT,
+                    },
+                ])
+            } else {
+                Cow::Borrowed(self.centroids)
+            };
+        }
+
+        let split_first = self.centroids[0].weight.get() == 2;
+        let split_last = self.centroids[self.centroids.len() - 1].weight.get() == 2;
+        if !split_first && !split_last {
+            return Cow::Borrowed(self.centroids);
+        }
+
+        // A two-sample terminal centroid contains the observed extreme and the value reflected
+        // across its mean. Treating both as singletons preserves their exact quantile steps.
+        let mut centroids = Vec::with_capacity(
+            self.centroids.len() + usize::from(split_first) + usize::from(split_last),
+        );
+        if split_first {
+            centroids.push(Centroid {
+                mean: self.min,
+                weight: DEFAULT_WEIGHT,
+            });
+            centroids.push(Centroid {
+                mean: self.centroids[0].mean.mul_add(2.0, -self.min),
+                weight: DEFAULT_WEIGHT,
+            });
+        } else {
+            centroids.push(self.centroids[0]);
+        }
+        centroids.extend_from_slice(&self.centroids[1..self.centroids.len() - 1]);
+        if split_last {
+            centroids.push(Centroid {
+                mean: self.centroids[self.centroids.len() - 1]
+                    .mean
+                    .mul_add(2.0, -self.max),
+                weight: DEFAULT_WEIGHT,
+            });
+            centroids.push(Centroid {
+                mean: self.max,
+                weight: DEFAULT_WEIGHT,
+            });
+        } else {
+            centroids.push(self.centroids[self.centroids.len() - 1]);
+        }
+        Cow::Owned(centroids)
+    }
+
     fn pmf(&self, split_points: &[f64]) -> Option<Vec<f64>> {
         let mut buckets = self.cdf(split_points)?;
         for i in (1..buckets.len()).rev() {
@@ -1353,13 +1417,16 @@ impl TDigestView<'_> {
             return None;
         }
 
-        if self.centroids.len() == 1 {
-            return Some(self.centroids[0].mean);
+        let query_centroids = self.quantile_centroids();
+        let centroids = query_centroids.as_ref();
+
+        if centroids.len() == 1 {
+            return Some(centroids[0].mean);
         }
 
         // at least 2 centroids
         let centroids_weight = self.centroids_weight as f64;
-        let num_centroids = self.centroids.len();
+        let num_centroids = centroids.len();
         let weight = rank * centroids_weight;
         if weight < 1. {
             return Some(self.min);
@@ -1367,40 +1434,40 @@ impl TDigestView<'_> {
         if weight > centroids_weight - 1. {
             return Some(self.max);
         }
-        let first_weight = self.centroids[0].weight();
+        let first_weight = centroids[0].weight();
         if first_weight > 1. && weight < first_weight / 2. {
             return Some(
                 self.min
                     + (((weight - 1.) / ((first_weight / 2.) - 1.))
-                        * (self.centroids[0].mean - self.min)),
+                        * (centroids[0].mean - self.min)),
             );
         }
-        let last_weight = self.centroids[num_centroids - 1].weight();
+        let last_weight = centroids[num_centroids - 1].weight();
         if last_weight > 1. && (centroids_weight - weight <= last_weight / 2.) {
             return Some(
                 self.max
                     - (((centroids_weight - weight - 1.) / ((last_weight / 2.) - 1.))
-                        * (self.max - self.centroids[num_centroids - 1].mean)),
+                        * (self.max - centroids[num_centroids - 1].mean)),
             );
         }
 
         // interpolate between extremes
         let mut weight_so_far = first_weight / 2.;
         for i in 0..(num_centroids - 1) {
-            let dw = (self.centroids[i].weight() + self.centroids[i + 1].weight()) / 2.;
+            let dw = (centroids[i].weight() + centroids[i + 1].weight()) / 2.;
             if weight_so_far + dw > weight {
                 // the target weight is between centroids i and i+1
                 let mut left_weight = 0.;
-                if self.centroids[i].weight.get() == 1 {
+                if centroids[i].weight.get() == 1 {
                     if weight - weight_so_far < 0.5 {
-                        return Some(self.centroids[i].mean);
+                        return Some(centroids[i].mean);
                     }
                     left_weight = 0.5;
                 }
                 let mut right_weight = 0.;
-                if self.centroids[i + 1].weight.get() == 1 {
+                if centroids[i + 1].weight.get() == 1 {
                     if weight_so_far + dw - weight <= 0.5 {
-                        return Some(self.centroids[i + 1].mean);
+                        return Some(centroids[i + 1].mean);
                     }
                     right_weight = 0.5;
                 }
@@ -1409,19 +1476,19 @@ impl TDigestView<'_> {
                 let distance_from_left = weight - weight_so_far - left_weight;
                 let distance_to_right = weight_so_far + dw - weight - right_weight;
                 return Some(weighted_average(
-                    self.centroids[i].mean,
+                    centroids[i].mean,
                     distance_to_right,
-                    self.centroids[i + 1].mean,
+                    centroids[i + 1].mean,
                     distance_from_left,
                 ));
             }
             weight_so_far += dw;
         }
 
-        let w1 = weight - (centroids_weight) - ((self.centroids[num_centroids - 1].weight()) / 2.);
-        let w2 = (self.centroids[num_centroids - 1].weight() / 2.) - w1;
+        let w1 = weight - (centroids_weight) - ((centroids[num_centroids - 1].weight()) / 2.);
+        let w2 = (centroids[num_centroids - 1].weight() / 2.) - w1;
         Some(weighted_average(
-            self.centroids[num_centroids - 1].mean,
+            centroids[num_centroids - 1].mean,
             w1,
             self.max,
             w2,

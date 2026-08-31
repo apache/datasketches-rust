@@ -386,6 +386,16 @@ fn test_quantile_right_tail_stays_within_max() {
 }
 
 #[test]
+fn test_two_sample_terminal_centroids_are_singletons() {
+    let mut tdigest =
+        deserialize_with_centroids(100, 0.0, 100.0, &[(10.0, 2), (50.0, 1), (90.0, 2)]);
+
+    for (rank, expected) in [(0.2, 20.0), (0.3, 20.0), (0.7, 80.0), (0.8, 100.0)] {
+        assert_that!(tdigest.quantile(rank).unwrap(), near(expected, 1e-12));
+    }
+}
+
+#[test]
 fn test_rank_left_tail_is_a_fraction_of_the_total_weight() {
     let mut tdigest =
         deserialize_with_centroids(100, 0.0, 100.0, &[(10.0, 10), (50.0, 10), (90.0, 10)]);
