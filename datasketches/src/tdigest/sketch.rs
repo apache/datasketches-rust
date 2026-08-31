@@ -384,6 +384,11 @@ impl TDigestMut {
 
     /// Returns the cumulative distribution approximation described by [`TDigest::cdf`].
     ///
+    /// # Panics
+    ///
+    /// Panics if `split_points` is not unique, not monotonically increasing, or contains `NaN`
+    /// values.
+    ///
     /// # Examples
     ///
     /// ```
@@ -408,6 +413,11 @@ impl TDigestMut {
 
     /// Returns the probability mass approximation described by [`TDigest::pmf`].
     ///
+    /// # Panics
+    ///
+    /// Panics if `split_points` is not unique, not monotonically increasing, or contains `NaN`
+    /// values.
+    ///
     /// # Examples
     ///
     /// ```
@@ -431,6 +441,10 @@ impl TDigestMut {
     }
 
     /// Returns the normalized rank described by [`TDigest::rank`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if `value` is `NaN`.
     ///
     /// # Examples
     ///
@@ -465,6 +479,10 @@ impl TDigestMut {
     }
 
     /// Returns the quantile described by [`TDigest::quantile`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if `rank` is outside `[0.0, 1.0]`.
     ///
     /// # Examples
     ///
