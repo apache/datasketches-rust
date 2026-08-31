@@ -537,6 +537,11 @@ impl TDigestMut {
     /// auto-detected. Use [`deserialize_f32()`](Self::deserialize_f32) for the compact
     /// DataSketches C++ `tdigest<float>` format.
     ///
+    /// # Errors
+    ///
+    /// Returns `InvalidData` if the image is truncated, has an unsupported format, or contains
+    /// invalid extrema, centroids, or weights.
+    ///
     /// # Examples
     ///
     /// ```
@@ -558,6 +563,11 @@ impl TDigestMut {
     /// This format stores centroid means and weights as `(f32, u32)` and is emitted by the C++
     /// `tdigest<float>` implementation. Its header does not identify the scalar width, so callers
     /// must select this entry point explicitly.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidData` if the image is truncated, has an unsupported format, or contains
+    /// invalid extrema, centroids, or weights.
     pub fn deserialize_f32(bytes: &[u8]) -> Result<Self, Error> {
         Self::deserialize_impl(bytes, true)
     }
@@ -1056,11 +1066,19 @@ impl TDigest {
     /// The format of the [reference implementation](https://github.com/tdunning/t-digest) is
     /// auto-detected. Use [`deserialize_f32()`](Self::deserialize_f32) for the compact
     /// DataSketches C++ `tdigest<float>` format.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidData` under the same conditions as [`TDigestMut::deserialize`].
     pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
         Ok(TDigestMut::deserialize(bytes)?.freeze())
     }
 
     /// Deserializes an immutable t-digest from the compact single-precision DataSketches format.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidData` under the same conditions as [`TDigestMut::deserialize_f32`].
     pub fn deserialize_f32(bytes: &[u8]) -> Result<Self, Error> {
         Ok(TDigestMut::deserialize_f32(bytes)?.freeze())
     }

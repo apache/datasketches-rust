@@ -34,7 +34,7 @@ use crate::cpc::serialization::SERIAL_VERSION;
 use crate::cpc::serialization::make_preamble_ints;
 use crate::error::Error;
 
-/// A read-only view of a serialized `CpcSketch` image.
+/// Cardinality metadata extracted from a serialized `CpcSketch` image.
 #[derive(Debug, Clone)]
 pub struct CpcWrapper {
     lg_k: u8,
@@ -44,7 +44,13 @@ pub struct CpcWrapper {
 }
 
 impl CpcWrapper {
-    /// Creates a new `CpcWrapper` from the given byte slice without copying bytes.
+    /// Reads the cardinality metadata without copying or fully deserializing the compressed
+    /// payload.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidData` if the preamble is malformed or does not describe a compressed CPC
+    /// image.
     pub fn new(bytes: &[u8]) -> Result<Self, Error> {
         let mut cursor = SketchSlice::new(bytes);
         let preamble_ints = cursor

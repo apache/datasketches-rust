@@ -339,6 +339,11 @@ impl<T: CountMinValue> CountMinSketch<T> {
 
     /// Deserializes a sketch from bytes using the default seed.
     ///
+    /// # Errors
+    ///
+    /// Returns `InvalidData` if the image is malformed or its seed hash does not match the default
+    /// seed.
+    ///
     /// # Examples
     ///
     /// ```

@@ -605,6 +605,11 @@ impl CpcSketch {
     }
 
     /// Deserializes a `CpcSketch` from bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidData` if the image is malformed or its seed hash does not match the default
+    /// seed.
     pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
         Self::deserialize_with_seed(bytes, DEFAULT_UPDATE_SEED)
     }

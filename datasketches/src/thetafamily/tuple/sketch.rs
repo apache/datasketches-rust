@@ -618,6 +618,11 @@ impl<S> CompactTupleSketch<S> {
     }
 
     /// Deserializes a compact Tuple sketch using the default seed.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidData` if the image is malformed, its seed hash does not match the default
+    /// seed, or a summary cannot be decoded by `S`.
     pub fn deserialize(bytes: &[u8]) -> Result<Self, Error>
     where
         S: TupleSummaryValue,
