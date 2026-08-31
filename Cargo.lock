@@ -85,6 +85,7 @@ version = "0.0.0"
 dependencies = [
  "datasketches",
  "divan",
+ "rand",
 ]
 
 [[package]]

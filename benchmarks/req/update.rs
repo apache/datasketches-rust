@@ -15,15 +15,18 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use divan::AllocProfiler;
+use divan::Bencher;
+use divan::black_box;
+use divan::counter::ItemsCount;
 
-#[global_allocator]
-static ALLOC: AllocProfiler = AllocProfiler::system();
+use super::support::build_sketch;
+use super::support::values;
 
-mod cpc;
-mod req;
-mod tdigest;
+#[divan::bench(args = [1_000, 10_000, 100_000])]
+fn update(bencher: Bencher, len: usize) {
+    let values = values(len);
 
-fn main() {
-    divan::main();
+    bencher
+        .counter(ItemsCount::new(len))
+        .bench_local(|| build_sketch(black_box(&values)));
 }
