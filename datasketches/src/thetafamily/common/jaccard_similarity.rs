@@ -23,7 +23,6 @@ use crate::hash::compute_seed_hash;
 use crate::thetacommon::EntrySketch;
 use crate::thetacommon::KeySketch;
 use crate::thetacommon::SketchEntry;
-use crate::thetacommon::ThetaFamilySketchMetadata;
 use crate::thetacommon::binomial_bounds;
 use crate::thetacommon::constants::MAX_LG_K;
 use crate::thetacommon::constants::MAX_THETA;
@@ -31,6 +30,7 @@ use crate::thetacommon::constants::MIN_LG_K;
 use crate::thetacommon::intersection::IntersectionMergePolicy;
 use crate::thetacommon::intersection::IntersectionState;
 use crate::thetacommon::sketch_state::CompactSketchState;
+use crate::thetacommon::sketch_state::ThetaFamilySketchMetadata;
 use crate::thetacommon::union::UnionMergePolicy;
 use crate::thetacommon::union::UnionState;
 

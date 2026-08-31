@@ -34,7 +34,7 @@ pub(super) trait SketchEntry {
 }
 
 pub(super) trait KeySketch: Copy {
-    fn metadata(self) -> ThetaFamilySketchMetadata;
+    fn metadata(self) -> sketch_state::ThetaFamilySketchMetadata;
 
     fn hashes(self) -> impl Iterator<Item = u64>;
 }
@@ -44,5 +44,3 @@ pub(super) trait EntrySketch: KeySketch {
 
     fn entries(self) -> impl Iterator<Item = Self::Entry>;
 }
-
-pub(super) use self::sketch_state::ThetaFamilySketchMetadata;

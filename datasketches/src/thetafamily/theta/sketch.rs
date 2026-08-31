@@ -48,7 +48,6 @@ use crate::theta::serialization::V2_PREAMBLE_ESTIMATE;
 use crate::theta::serialization::V2_PREAMBLE_PRECISE;
 use crate::thetacommon::EntrySketch;
 use crate::thetacommon::KeySketch;
-use crate::thetacommon::ThetaFamilySketchMetadata;
 use crate::thetacommon::binomial_bounds;
 use crate::thetacommon::constants::DEFAULT_LG_K;
 use crate::thetacommon::constants::FLAGS_IS_COMPACT;
@@ -58,6 +57,7 @@ use crate::thetacommon::constants::FLAGS_IS_READ_ONLY;
 use crate::thetacommon::constants::MAX_THETA;
 use crate::thetacommon::hash_table::SketchHashTableIter;
 use crate::thetacommon::sketch_state::CompactSketchState;
+use crate::thetacommon::sketch_state::ThetaFamilySketchMetadata;
 
 /// Read-only view for Theta sketches.
 ///

@@ -23,9 +23,9 @@ use crate::hash::check_seed_hash;
 use crate::thetacommon::EntrySketch;
 use crate::thetacommon::KeySketch;
 use crate::thetacommon::SketchEntry;
-use crate::thetacommon::ThetaFamilySketchMetadata;
 use crate::thetacommon::constants::MAX_THETA;
 use crate::thetacommon::sketch_state::CompactSketchState;
+use crate::thetacommon::sketch_state::ThetaFamilySketchMetadata;
 
 /// Computes `a and not b` for Theta-family sketch views.
 ///
