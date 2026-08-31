@@ -15,15 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use divan::AllocProfiler;
-
-#[global_allocator]
-static ALLOC: AllocProfiler = AllocProfiler::system();
-
-mod cpc;
-mod req;
-mod tdigest;
-
-fn main() {
-    divan::main();
-}
+mod query;
+mod support;
+mod update;
