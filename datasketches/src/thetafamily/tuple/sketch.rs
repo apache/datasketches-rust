@@ -39,7 +39,7 @@ use crate::hash::check_seed_hash;
 use crate::hash::compute_seed_hash;
 use crate::thetacommon::EntrySketch;
 use crate::thetacommon::KeySketch;
-use crate::thetacommon::ThetaSketchMetadata;
+use crate::thetacommon::ThetaFamilySketchMetadata;
 use crate::thetacommon::binomial_bounds;
 use crate::thetacommon::constants::DEFAULT_LG_K;
 use crate::thetacommon::constants::FLAGS_IS_COMPACT;
@@ -49,9 +49,6 @@ use crate::thetacommon::constants::FLAGS_IS_READ_ONLY;
 use crate::thetacommon::constants::MAX_THETA;
 use crate::thetacommon::hash_table::SketchHashTableIter;
 use crate::thetacommon::sketch_state::CompactSketchState;
-use crate::thetacommon::sketch_state::ThetaSketchState;
-use crate::thetacommon::sketch_state::ThetaThreshold;
-use crate::thetacommon::sketch_state::UpdateSketchState;
 use crate::tuple::hash_table::TupleEntry;
 use crate::tuple::hash_table::TupleHashTable;
 use crate::tuple::policy::SummaryPolicy;
@@ -87,7 +84,7 @@ pub struct TupleSketchView<'a, S>(TupleSketchViewState<'a, S>);
 enum TupleSketchViewState<'a, S> {
     Mutable {
         table: &'a TupleHashTable<S>,
-        update_state: UpdateSketchState,
+        is_empty: bool,
     },
     Compact(&'a CompactTupleSketch<S>),
 }
@@ -142,12 +139,24 @@ impl<'a, S> TupleSketchView<'a, S> {
 
     /// Returns theta as a `u64` threshold.
     pub fn theta64(&self) -> u64 {
-        self.theta_sketch_state().theta().get()
+        match self.0 {
+            TupleSketchViewState::Mutable { table, is_empty } => {
+                if is_empty {
+                    MAX_THETA
+                } else {
+                    table.retention_theta()
+                }
+            }
+            TupleSketchViewState::Compact(sketch) => sketch.theta64(),
+        }
     }
 
     /// Returns `true` if the viewed sketch is empty.
     pub fn is_empty(&self) -> bool {
-        self.theta_sketch_state().is_empty()
+        match self.0 {
+            TupleSketchViewState::Mutable { is_empty, .. } => is_empty,
+            TupleSketchViewState::Compact(sketch) => sketch.is_empty(),
+        }
     }
 
     /// Returns whether retained entries are ordered by ascending hash.
@@ -177,26 +186,22 @@ impl<'a, S> TupleSketchView<'a, S> {
             TupleSketchViewState::Compact(sketch) => sketch.num_retained(),
         }
     }
-
-    fn theta_sketch_state(&self) -> ThetaSketchState {
-        match self.0 {
-            TupleSketchViewState::Mutable {
-                table,
-                update_state,
-            } => update_state.theta_sketch_state(table.retention_theta()),
-            TupleSketchViewState::Compact(sketch) => sketch.theta_sketch_state(),
-        }
-    }
 }
 
 impl<S> KeySketch for TupleSketchView<'_, S> {
-    fn metadata(self) -> ThetaSketchMetadata {
-        ThetaSketchMetadata::from_theta_sketch_state(
-            self.seed_hash(),
-            self.theta_sketch_state(),
-            self.is_ordered(),
-            self.num_retained(),
-        )
+    fn metadata(self) -> ThetaFamilySketchMetadata {
+        if self.is_empty() {
+            ThetaFamilySketchMetadata::Empty {
+                seed_hash: self.seed_hash(),
+            }
+        } else {
+            ThetaFamilySketchMetadata::NonEmpty {
+                seed_hash: self.seed_hash(),
+                theta: self.theta64(),
+                ordered: self.is_ordered(),
+                num_retained: self.num_retained(),
+            }
+        }
     }
 
     fn hashes(self) -> impl Iterator<Item = u64> {
@@ -222,7 +227,7 @@ where
     fn from(sketch: &'a TupleSketch<P>) -> Self {
         Self(TupleSketchViewState::Mutable {
             table: &sketch.table,
-            update_state: sketch.update_state,
+            is_empty: sketch.is_empty,
         })
     }
 }
@@ -258,7 +263,8 @@ where
     P: SummaryPolicy,
 {
     table: TupleHashTable<P::Summary>,
-    update_state: UpdateSketchState,
+    // Public emptiness tracks update calls, not retained entries: theta may screen every update.
+    is_empty: bool,
     policy: P,
 }
 
@@ -291,7 +297,7 @@ where
     where
         P: SummaryUpdatePolicy<U>,
     {
-        self.update_state = UpdateSketchState::Updated;
+        self.is_empty = false;
         let policy = &self.policy;
         self.table.try_insert(key, |existing| match existing {
             Some(summary) => {
@@ -312,7 +318,7 @@ where
             return 0.0;
         }
         let num_retained = self.table.num_retained() as f64;
-        let theta = self.theta_sketch_state().theta().get() as f64 / MAX_THETA as f64;
+        let theta = self.theta64() as f64 / MAX_THETA as f64;
         num_retained / theta
     }
 
@@ -326,7 +332,11 @@ where
     /// An empty sketch reports `MAX_THETA` even when it was built with a sampling probability
     /// below `1.0`, matching the other DataSketches implementations.
     pub fn theta64(&self) -> u64 {
-        self.theta_sketch_state().theta().get()
+        if self.is_empty {
+            MAX_THETA
+        } else {
+            self.table.retention_theta()
+        }
     }
 
     /// Returns the 16-bit seed hash.
@@ -336,12 +346,12 @@ where
 
     /// Returns `true` if the sketch is empty.
     pub fn is_empty(&self) -> bool {
-        self.theta_sketch_state().is_empty()
+        self.is_empty
     }
 
     /// Returns `true` if the sketch is in estimation mode.
     pub fn is_estimation_mode(&self) -> bool {
-        self.theta_sketch_state().is_estimation_mode()
+        !self.is_empty && self.table.retention_theta() < MAX_THETA
     }
 
     /// Returns the number of retained entries.
@@ -362,7 +372,7 @@ where
     /// Resets the sketch to the empty state.
     pub fn reset(&mut self) {
         self.table.reset();
-        self.update_state = UpdateSketchState::NeverUpdated;
+        self.is_empty = true;
     }
 
     /// Returns an iterator over retained entries.
@@ -397,11 +407,6 @@ where
     pub fn estimated_size(&self) -> usize {
         size_of::<Self>() + self.table.estimated_size()
     }
-
-    fn theta_sketch_state(&self) -> ThetaSketchState {
-        self.update_state
-            .theta_sketch_state(self.table.retention_theta())
-    }
 }
 
 impl<P> TupleSketch<P>
@@ -426,10 +431,13 @@ where
     /// assert_eq!(compact.num_retained(), 1);
     /// ```
     pub fn compact(&self, ordered: bool) -> CompactTupleSketch<P::Summary> {
-        CompactTupleSketch::from_compact_state(
-            self.table
-                .to_compact_sketch_state(self.theta_sketch_state(), ordered),
-        )
+        let compact_state = if self.is_empty() {
+            debug_assert_eq!(self.num_retained(), 0);
+            CompactSketchState::empty(self.seed_hash())
+        } else {
+            self.table.to_non_empty_compact_state(ordered)
+        };
+        CompactTupleSketch::from_compact_state(compact_state)
     }
 }
 
@@ -472,17 +480,17 @@ impl<S> CompactTupleSketch<S> {
 
     /// Returns theta as `u64`.
     pub fn theta64(&self) -> u64 {
-        self.theta_sketch_state().theta().get()
+        self.compact_state.theta()
     }
 
     /// Returns `true` if the sketch is empty.
     pub fn is_empty(&self) -> bool {
-        self.theta_sketch_state().is_empty()
+        self.compact_state.is_empty()
     }
 
     /// Returns `true` if the sketch is in estimation mode.
     pub fn is_estimation_mode(&self) -> bool {
-        self.theta_sketch_state().is_estimation_mode()
+        self.compact_state.is_estimation_mode()
     }
 
     /// Returns the number of retained entries.
@@ -507,10 +515,6 @@ impl<S> CompactTupleSketch<S> {
 
     fn retained_entries(&self) -> &[TupleEntry<S>] {
         self.compact_state.retained_entries()
-    }
-
-    fn theta_sketch_state(&self) -> ThetaSketchState {
-        self.compact_state.theta_sketch_state()
     }
 
     /// Returns the approximate lower error bound given the number of standard deviations.
@@ -682,7 +686,7 @@ impl<S> CompactTupleSketch<S> {
             ErrorKind::InvalidData,
         )?;
 
-        let mut theta = ThetaThreshold::MAX;
+        let mut theta = MAX_THETA;
         let num_entries = if pre_longs == 1 {
             1
         } else {
@@ -694,11 +698,12 @@ impl<S> CompactTupleSketch<S> {
                 .map_err(insufficient_data("<unused_u32>"))?;
             if pre_longs > 2 {
                 let value = cursor.read_u64_le().map_err(insufficient_data("theta"))?;
-                theta = ThetaThreshold::try_new(value).ok_or_else(|| {
-                    Error::deserial(format!(
+                if !(1..=MAX_THETA).contains(&value) {
+                    return Err(Error::deserial(format!(
                         "corrupted: theta must be in [1, {MAX_THETA}], got {value}"
-                    ))
-                })?;
+                    )));
+                }
+                theta = value;
             }
             n
         };
@@ -717,7 +722,7 @@ impl<S> CompactTupleSketch<S> {
             let hash = cursor
                 .read_u64_le()
                 .map_err(insufficient_data("entry_hash"))?;
-            if hash == 0 || hash >= theta.get() {
+            if hash == 0 || hash >= theta {
                 return Err(Error::deserial("corrupted: invalid retained hash value"));
             }
             let summary = S::deserialize_value(&mut cursor)?;
@@ -833,7 +838,7 @@ where
                 self.sampling_probability,
                 self.seed,
             )?,
-            update_state: UpdateSketchState::NeverUpdated,
+            is_empty: true,
             policy: self.policy,
         })
     }

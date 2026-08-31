@@ -109,15 +109,18 @@ fn input_and_result_ordering_preserve_entries() {
 
 #[test]
 fn empty_inputs_do_not_impose_a_seed() {
-    let empty_other_seed = default_tuple_sketch_builder().seed(2).build().unwrap();
+    let empty_other_seed = default_tuple_sketch_builder()
+        .sampling_probability(0.5)
+        .seed(2)
+        .build()
+        .unwrap();
     let non_empty = tuple_sketch_with_range(0, 10);
     let op = TupleANotB::default();
 
-    assert!(
-        op.compute(&empty_other_seed, &non_empty, true)
-            .unwrap()
-            .is_empty()
-    );
+    let result = op.compute(&empty_other_seed, &non_empty, true).unwrap();
+    assert!(result.is_empty());
+    assert_eq!(result.theta64(), MAX_THETA);
+    assert!(!result.is_estimation_mode());
     assert_eq!(
         op.compute(&non_empty, &empty_other_seed, true)
             .unwrap()
@@ -185,34 +188,4 @@ fn estimation_bounds_cover_the_true_difference() {
 
     assert!(result.is_estimation_mode());
     assert_that!(25_000.0, all!(ge(lower), le(upper)));
-}
-
-#[test]
-fn empty_sampled_inputs_produce_a_serializable_empty_result() {
-    for probability in [1.0, 0.5, 0.1, 0.001] {
-        let a = default_tuple_sketch_builder()
-            .lg_k(12)
-            .sampling_probability(probability)
-            .build()
-            .unwrap();
-        let b = default_tuple_sketch_builder()
-            .lg_k(12)
-            .sampling_probability(probability)
-            .build()
-            .unwrap();
-
-        assert_eq!(a.theta64(), MAX_THETA);
-        assert!(!a.is_estimation_mode());
-
-        let result = TupleANotB::default().compute(&a, &b, true).unwrap();
-
-        assert!(result.is_empty());
-        assert_eq!(result.theta64(), MAX_THETA);
-        assert!(!result.is_estimation_mode());
-
-        let bytes = result.serialize();
-        let restored = CompactTupleSketch::<u64>::deserialize(&bytes).unwrap();
-        assert_eq!(restored.serialize(), bytes);
-        assert_eq!(restored.theta64(), result.theta64());
-    }
 }

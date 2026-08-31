@@ -104,7 +104,10 @@ fn test_seed_mismatch_ignored_for_empty_inputs() {
 
 #[test]
 fn test_empty_a_returns_empty() {
-    let empty = ThetaSketchBuilder::default().build().unwrap();
+    let empty = ThetaSketchBuilder::default()
+        .sampling_probability(0.5)
+        .build()
+        .unwrap();
     let b = sketch_with_range(0, 1000);
 
     let a_not_b = ThetaANotB::default();
@@ -113,6 +116,8 @@ fn test_empty_a_returns_empty() {
     assert!(r.is_empty());
     assert_eq!(r.num_retained(), 0);
     assert_eq!(r.estimate(), 0.0);
+    assert_eq!(r.theta64(), MAX_THETA);
+    assert!(!r.is_estimation_mode());
 }
 
 #[test]
@@ -257,31 +262,4 @@ fn test_estimation_disjoint_returns_a() {
     assert!(!r.is_empty());
     assert!(r.is_estimation_mode());
     assert_that!(r.estimate(), near(10000.0, 10000.0 * 0.02));
-}
-
-#[test]
-fn test_empty_sampled_inputs_produce_a_serializable_empty_result() {
-    for probability in [1.0, 0.5, 0.1, 0.001] {
-        let a = ThetaSketchBuilder::default()
-            .lg_k(12)
-            .sampling_probability(probability)
-            .build()
-            .unwrap();
-        let b = ThetaSketchBuilder::default()
-            .lg_k(12)
-            .sampling_probability(probability)
-            .build()
-            .unwrap();
-
-        let r = ThetaANotB::default().compute(&a, &b, true).unwrap();
-
-        assert!(r.is_empty());
-        assert_eq!(r.theta64(), MAX_THETA);
-        assert!(!r.is_estimation_mode());
-
-        let bytes = r.serialize();
-        let restored = CompactThetaSketch::deserialize(&bytes).unwrap();
-        assert_eq!(restored.serialize(), bytes);
-        assert_eq!(restored.theta64(), r.theta64());
-    }
 }

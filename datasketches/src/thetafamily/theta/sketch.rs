@@ -48,7 +48,7 @@ use crate::theta::serialization::V2_PREAMBLE_ESTIMATE;
 use crate::theta::serialization::V2_PREAMBLE_PRECISE;
 use crate::thetacommon::EntrySketch;
 use crate::thetacommon::KeySketch;
-use crate::thetacommon::ThetaSketchMetadata;
+use crate::thetacommon::ThetaFamilySketchMetadata;
 use crate::thetacommon::binomial_bounds;
 use crate::thetacommon::constants::DEFAULT_LG_K;
 use crate::thetacommon::constants::FLAGS_IS_COMPACT;
@@ -58,9 +58,6 @@ use crate::thetacommon::constants::FLAGS_IS_READ_ONLY;
 use crate::thetacommon::constants::MAX_THETA;
 use crate::thetacommon::hash_table::SketchHashTableIter;
 use crate::thetacommon::sketch_state::CompactSketchState;
-use crate::thetacommon::sketch_state::ThetaSketchState;
-use crate::thetacommon::sketch_state::ThetaThreshold;
-use crate::thetacommon::sketch_state::UpdateSketchState;
 
 /// Read-only view for Theta sketches.
 ///
@@ -121,12 +118,18 @@ impl<'a> ThetaSketchView<'a> {
 
     /// Returns theta as a `u64` threshold.
     pub fn theta64(&self) -> u64 {
-        self.theta_sketch_state().theta().get()
+        match self.0 {
+            ThetaSketchViewState::Mutable(sketch) => sketch.theta64(),
+            ThetaSketchViewState::Compact(sketch) => sketch.theta64(),
+        }
     }
 
     /// Returns `true` if the viewed sketch is empty.
     pub fn is_empty(&self) -> bool {
-        self.theta_sketch_state().is_empty()
+        match self.0 {
+            ThetaSketchViewState::Mutable(sketch) => sketch.is_empty(),
+            ThetaSketchViewState::Compact(sketch) => sketch.is_empty(),
+        }
     }
 
     /// Returns whether retained entries are ordered by ascending hash.
@@ -156,23 +159,22 @@ impl<'a> ThetaSketchView<'a> {
             ThetaSketchViewState::Compact(sketch) => sketch.num_retained(),
         }
     }
-
-    fn theta_sketch_state(&self) -> ThetaSketchState {
-        match self.0 {
-            ThetaSketchViewState::Mutable(sketch) => sketch.theta_sketch_state(),
-            ThetaSketchViewState::Compact(sketch) => sketch.theta_sketch_state(),
-        }
-    }
 }
 
 impl KeySketch for ThetaSketchView<'_> {
-    fn metadata(self) -> ThetaSketchMetadata {
-        ThetaSketchMetadata::from_theta_sketch_state(
-            self.seed_hash(),
-            self.theta_sketch_state(),
-            self.is_ordered(),
-            self.num_retained(),
-        )
+    fn metadata(self) -> ThetaFamilySketchMetadata {
+        if self.is_empty() {
+            ThetaFamilySketchMetadata::Empty {
+                seed_hash: self.seed_hash(),
+            }
+        } else {
+            ThetaFamilySketchMetadata::NonEmpty {
+                seed_hash: self.seed_hash(),
+                theta: self.theta64(),
+                ordered: self.is_ordered(),
+                num_retained: self.num_retained(),
+            }
+        }
     }
 
     fn hashes(self) -> impl Iterator<Item = u64> {
@@ -204,7 +206,8 @@ impl<'a> From<&'a CompactThetaSketch> for ThetaSketchView<'a> {
 #[derive(Debug)]
 pub struct ThetaSketch {
     table: ThetaHashTable,
-    update_state: UpdateSketchState,
+    // Public emptiness tracks update calls, not retained entries: theta may screen every update.
+    is_empty: bool,
 }
 
 impl ThetaSketch {
@@ -233,7 +236,7 @@ impl ThetaSketch {
     /// assert!(sketch.estimate() >= 1.0);
     /// ```
     pub fn update<T: Hash>(&mut self, value: T) {
-        self.update_state = UpdateSketchState::Updated;
+        self.is_empty = false;
         self.table.try_insert(value);
     }
 
@@ -253,7 +256,7 @@ impl ThetaSketch {
             return 0.0;
         }
         let num_retained = self.table.num_retained() as f64;
-        let theta = self.theta_sketch_state().theta().get() as f64 / MAX_THETA as f64;
+        let theta = self.theta64() as f64 / MAX_THETA as f64;
         num_retained / theta
     }
 
@@ -267,7 +270,11 @@ impl ThetaSketch {
     /// An empty sketch reports `MAX_THETA` even when it was built with a sampling probability
     /// below `1.0`, matching the other DataSketches implementations.
     pub fn theta64(&self) -> u64 {
-        self.theta_sketch_state().theta().get()
+        if self.is_empty {
+            MAX_THETA
+        } else {
+            self.table.retention_theta()
+        }
     }
 
     /// Returns the 16-bit seed hash.
@@ -277,12 +284,12 @@ impl ThetaSketch {
 
     /// Returns `true` if the sketch is empty.
     pub fn is_empty(&self) -> bool {
-        self.theta_sketch_state().is_empty()
+        self.is_empty
     }
 
     /// Returns `true` if the sketch is in estimation mode.
     pub fn is_estimation_mode(&self) -> bool {
-        self.theta_sketch_state().is_estimation_mode()
+        !self.is_empty && self.table.retention_theta() < MAX_THETA
     }
 
     /// Returns the number of retained entries.
@@ -303,7 +310,7 @@ impl ThetaSketch {
     /// Resets the sketch to its empty state.
     pub fn reset(&mut self) {
         self.table.reset();
-        self.update_state = UpdateSketchState::NeverUpdated;
+        self.is_empty = true;
     }
 
     /// Returns an iterator over retained entries.
@@ -337,10 +344,13 @@ impl ThetaSketch {
     /// assert_eq!(compact.num_retained(), 1);
     /// ```
     pub fn compact(&self, ordered: bool) -> CompactThetaSketch {
-        let compact_state = self
-            .table
-            .to_compact_sketch_state(self.theta_sketch_state(), ordered)
-            .map_retained_entries(|entry| entry.hash());
+        let compact_state = if self.is_empty() {
+            debug_assert_eq!(self.num_retained(), 0);
+            CompactSketchState::empty(self.seed_hash())
+        } else {
+            self.table.to_non_empty_compact_state(ordered)
+        }
+        .map_retained_entries(|entry| entry.hash());
         CompactThetaSketch::from_compact_state(compact_state)
     }
 
@@ -421,11 +431,6 @@ impl ThetaSketch {
     pub fn estimated_size(&self) -> usize {
         size_of::<Self>() + self.table.estimated_size()
     }
-
-    fn theta_sketch_state(&self) -> ThetaSketchState {
-        self.update_state
-            .theta_sketch_state(self.table.retention_theta())
-    }
 }
 
 /// Compact (immutable) theta sketch.
@@ -467,17 +472,17 @@ impl CompactThetaSketch {
 
     /// Returns theta as a `u64`.
     pub fn theta64(&self) -> u64 {
-        self.theta_sketch_state().theta().get()
+        self.compact_state.theta()
     }
 
     /// Returns `true` if this sketch is empty.
     pub fn is_empty(&self) -> bool {
-        self.theta_sketch_state().is_empty()
+        self.compact_state.is_empty()
     }
 
     /// Returns `true` if this sketch is in estimation mode.
     pub fn is_estimation_mode(&self) -> bool {
-        self.theta_sketch_state().is_estimation_mode()
+        self.compact_state.is_estimation_mode()
     }
 
     /// Returns the number of retained entries.
@@ -502,10 +507,6 @@ impl CompactThetaSketch {
 
     fn retained_hashes(&self) -> &[u64] {
         self.compact_state.retained_entries()
-    }
-
-    fn theta_sketch_state(&self) -> ThetaSketchState {
-        self.compact_state.theta_sketch_state()
     }
 
     /// Returns the approximate lower error bound for the specified number of standard deviations.
@@ -728,7 +729,7 @@ impl CompactThetaSketch {
     fn read_entries(
         cursor: &mut SketchSlice<'_>,
         num_entries: usize,
-        theta: ThetaThreshold,
+        theta: u64,
     ) -> Result<Vec<u64>, Error> {
         let required_bytes = num_entries
             .checked_mul(size_of::<u64>())
@@ -742,7 +743,7 @@ impl CompactThetaSketch {
         let mut entries = Vec::with_capacity(num_entries);
         for _ in 0..num_entries {
             let hash = cursor.read_u64_le().map_err(insufficient_data("entries"))?;
-            if hash == 0 || hash >= theta.get() {
+            if hash == 0 || hash >= theta {
                 return Err(Error::deserial("corrupted: invalid retained hash value"));
             }
             entries.push(hash);
@@ -750,12 +751,13 @@ impl CompactThetaSketch {
         Ok(entries)
     }
 
-    fn deserialize_theta(value: u64) -> Result<ThetaThreshold, Error> {
-        ThetaThreshold::try_new(value).ok_or_else(|| {
-            Error::deserial(format!(
+    fn deserialize_theta(value: u64) -> Result<u64, Error> {
+        if !(1..=MAX_THETA).contains(&value) {
+            return Err(Error::deserial(format!(
                 "corrupted: theta must be in [1, {MAX_THETA}], got {value}"
-            ))
-        })
+            )));
+        }
+        Ok(value)
     }
 
     fn deserialize_v1(mut cursor: SketchSlice<'_>, expected_seed_hash: u16) -> Result<Self, Error> {
@@ -776,7 +778,7 @@ impl CompactThetaSketch {
                 .map_err(insufficient_data("theta_long"))?,
         )?;
 
-        if num_entries == 0 && theta == ThetaThreshold::MAX {
+        if num_entries == 0 && theta == MAX_THETA {
             return Ok(Self::from_compact_state(CompactSketchState::empty(
                 seed_hash,
             )));
@@ -820,17 +822,14 @@ impl CompactThetaSketch {
                 cursor
                     .read_u32_le()
                     .map_err(insufficient_data("<unused_u32>"))?;
-                let entries = Self::read_entries(&mut cursor, num_entries, ThetaThreshold::MAX)?;
+                let entries = Self::read_entries(&mut cursor, num_entries, MAX_THETA)?;
                 if num_entries == 0 {
                     return Ok(Self::from_compact_state(CompactSketchState::empty(
                         seed_hash,
                     )));
                 }
                 Ok(Self::from_compact_state(CompactSketchState::non_empty(
-                    entries,
-                    ThetaThreshold::MAX,
-                    seed_hash,
-                    true,
+                    entries, MAX_THETA, seed_hash, true,
                 )))
             }
             V2_PREAMBLE_ESTIMATE => {
@@ -847,7 +846,7 @@ impl CompactThetaSketch {
                         .map_err(insufficient_data("theta_long"))?,
                 )?;
                 let entries = Self::read_entries(&mut cursor, num_entries, theta)?;
-                if num_entries == 0 && theta == ThetaThreshold::MAX {
+                if num_entries == 0 && theta == MAX_THETA {
                     return Ok(Self::from_compact_state(CompactSketchState::empty(
                         seed_hash,
                     )));
@@ -886,7 +885,7 @@ impl CompactThetaSketch {
             "deserialized CompactThetaSketch v3",
             ErrorKind::InvalidData,
         )?;
-        let mut theta = ThetaThreshold::MAX;
+        let mut theta = MAX_THETA;
         let num_entries = if pre_longs == 1 {
             1
         } else {
@@ -944,7 +943,7 @@ impl CompactThetaSketch {
                     .map_err(insufficient_data("theta_long"))?,
             )?
         } else {
-            ThetaThreshold::MAX
+            MAX_THETA
         };
 
         // unpack num_entries
@@ -1007,7 +1006,7 @@ impl CompactThetaSketch {
                 .checked_add(previous)
                 .ok_or_else(|| Error::deserial("Theta entry delta overflows"))?;
             previous = *e;
-            if *e == 0 || *e >= theta.get() {
+            if *e == 0 || *e >= theta {
                 return Err(Error::deserial("corrupted: invalid retained hash value"));
             }
         }
@@ -1130,7 +1129,7 @@ impl ThetaSketchBuilder {
 
         Ok(ThetaSketch {
             table,
-            update_state: UpdateSketchState::NeverUpdated,
+            is_empty: true,
         })
     }
 }

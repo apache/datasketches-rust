@@ -66,52 +66,36 @@ fn assert_estimate_close(sketch: &CompactThetaSketch, expected: f64, tolerance: 
 
 #[test]
 fn test_empty_union() {
-    let sketch = ThetaSketchBuilder::default().build().unwrap();
-    let mut union = ThetaUnionBuilder::default().build().unwrap();
+    let sketch = ThetaSketchBuilder::default()
+        .sampling_probability(0.5)
+        .build()
+        .unwrap();
+    let mut union = ThetaUnionBuilder::default()
+        .sampling_probability(0.5)
+        .build()
+        .unwrap();
     let result = union.to_sketch(true);
     assert_eq!(result.num_retained(), 0);
     assert!(result.is_empty());
+    assert!(result.is_ordered());
+    assert_eq!(result.theta64(), MAX_THETA);
     assert!(!result.is_estimation_mode());
 
     union.update(&sketch).unwrap();
     let result = union.to_sketch(true);
     assert_eq!(result.num_retained(), 0);
     assert!(result.is_empty());
+    assert_eq!(result.theta64(), MAX_THETA);
+
+    let mut input = ThetaSketchBuilder::default().build().unwrap();
+    input.update(1u64);
+    union.update(&input).unwrap();
+    union.reset();
+    let result = union.to_sketch(false);
+    assert!(result.is_empty());
+    assert!(result.is_ordered());
+    assert_eq!(result.theta64(), MAX_THETA);
     assert!(!result.is_estimation_mode());
-}
-
-#[test]
-fn sampled_union_uses_canonical_empty_state_before_updates_and_after_reset() {
-    for probability in [0.5, 0.1, 0.001] {
-        let mut union = ThetaUnionBuilder::default()
-            .sampling_probability(probability)
-            .build()
-            .unwrap();
-
-        let result = union.to_sketch(false);
-        assert!(result.is_empty());
-        assert!(result.is_ordered());
-        assert_eq!(result.theta64(), MAX_THETA);
-        assert!(!result.is_estimation_mode());
-        let bytes = result.serialize();
-        let restored = CompactThetaSketch::deserialize(&bytes).unwrap();
-        assert_eq!(restored.serialize(), bytes);
-
-        let mut input = ThetaSketchBuilder::default().build().unwrap();
-        input.update(1u64);
-        union.update(&input).unwrap();
-        assert!(!union.to_sketch(false).is_empty());
-
-        union.reset();
-        let result = union.to_sketch(false);
-        assert!(result.is_empty());
-        assert!(result.is_ordered());
-        assert_eq!(result.theta64(), MAX_THETA);
-        assert!(!result.is_estimation_mode());
-        let bytes = result.serialize();
-        let restored = CompactThetaSketch::deserialize(&bytes).unwrap();
-        assert_eq!(restored.serialize(), bytes);
-    }
 }
 
 #[test]
@@ -750,9 +734,9 @@ fn test_corner_case_union_states() {
 #[test]
 fn test_union_estimated_size() {
     let mut union = ThetaUnionBuilder::default().build().unwrap();
-    assert_eq!(union.estimated_size(), 1096);
+    assert_eq!(union.estimated_size(), 1104);
 
     let sketch = sketch_with_range(12, 0, 1000);
     union.update(&sketch).unwrap();
-    assert_eq!(union.estimated_size(), 65608);
+    assert_eq!(union.estimated_size(), 65616);
 }

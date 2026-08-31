@@ -27,11 +27,10 @@ use crate::thetacommon::SketchEntry;
 use crate::thetacommon::constants::HASH_TABLE_REBUILD_THRESHOLD;
 use crate::thetacommon::constants::HASH_TABLE_RESIZE_THRESHOLD;
 use crate::thetacommon::constants::MAX_LG_K;
+use crate::thetacommon::constants::MAX_THETA;
 use crate::thetacommon::constants::MIN_LG_K;
 use crate::thetacommon::constants::STRIDE_MASK;
 use crate::thetacommon::sketch_state::CompactSketchState;
-use crate::thetacommon::sketch_state::ThetaSketchState;
-use crate::thetacommon::sketch_state::ThetaThreshold;
 
 pub struct SketchHashTableIter<'a, E>(slice::Iter<'a, Option<E>>);
 
@@ -70,7 +69,7 @@ pub struct SketchHashTable<E> {
     // The operational threshold used to screen future updates. This is intentionally independent
     // of the sketch's externally visible empty state: a never-updated sketch built with p < 1.0
     // must retain this sampling threshold even though its public theta is MAX_THETA.
-    retention_theta: ThetaThreshold,
+    retention_theta: u64,
 
     entries: Vec<Option<E>>,
 
@@ -126,7 +125,7 @@ where
     pub fn for_set_operation(
         lg_cur_size: u8,
         lg_nom_size: u8,
-        retention_theta: ThetaThreshold,
+        retention_theta: u64,
         seed: u64,
         seed_hash: u16,
     ) -> Self {
@@ -146,7 +145,7 @@ where
         lg_nom_size: u8,
         resize_factor: ResizeFactor,
         sampling_probability: f32,
-        retention_theta: ThetaThreshold,
+        retention_theta: u64,
         seed: u64,
         seed_hash: u16,
     ) -> Self {
@@ -197,7 +196,7 @@ where
     where
         F: FnOnce(Option<&mut E>) -> Option<E>,
     {
-        if hash == 0 || hash >= self.retention_theta.get() {
+        if hash == 0 || hash >= self.retention_theta {
             return false;
         }
 
@@ -283,7 +282,7 @@ where
     }
 
     /// Returns the operational theta used to screen retained entries.
-    pub fn retention_theta(&self) -> ThetaThreshold {
+    pub fn retention_theta(&self) -> u64 {
         self.retention_theta
     }
 
@@ -292,31 +291,22 @@ where
         SketchHashTableIter(self.entries.iter())
     }
 
-    /// Creates canonical compact-sketch state from this table and its owning sketch state.
-    pub fn to_compact_sketch_state(
-        &self,
-        theta_sketch_state: ThetaSketchState,
-        ordered: bool,
-    ) -> CompactSketchState<E>
+    /// Creates compact state for a sketch known by its owner to be non-empty.
+    pub fn to_non_empty_compact_state(&self, ordered: bool) -> CompactSketchState<E>
     where
         E: Clone,
     {
-        match theta_sketch_state {
-            ThetaSketchState::Empty => {
-                debug_assert_eq!(self.num_retained, 0);
-                CompactSketchState::empty(self.seed_hash)
-            }
-            ThetaSketchState::NonEmpty { theta } => {
-                debug_assert_eq!(theta, self.retention_theta);
-                let mut retained_entries: Vec<E> = self.iter_entries().cloned().collect();
-                let ordered =
-                    ordered || (retained_entries.len() == 1 && theta == ThetaThreshold::MAX);
-                if ordered && retained_entries.len() > 1 {
-                    retained_entries.sort_unstable_by_key(SketchEntry::hash);
-                }
-                CompactSketchState::non_empty(retained_entries, theta, self.seed_hash, ordered)
-            }
+        let mut retained_entries: Vec<E> = self.iter_entries().cloned().collect();
+        let ordered = ordered || (retained_entries.len() == 1 && self.retention_theta == MAX_THETA);
+        if ordered && retained_entries.len() > 1 {
+            retained_entries.sort_unstable_by_key(SketchEntry::hash);
         }
+        CompactSketchState::non_empty(
+            retained_entries,
+            self.retention_theta,
+            self.seed_hash,
+            ordered,
+        )
     }
 
     /// Get log2 of nominal size.
@@ -335,7 +325,11 @@ where
     }
 
     /// Sets the operational theta used to screen retained entries.
-    pub fn set_retention_theta(&mut self, retention_theta: ThetaThreshold) {
+    pub fn set_retention_theta(&mut self, retention_theta: u64) {
+        assert!(
+            (1..=MAX_THETA).contains(&retention_theta),
+            "theta must be in [1, {MAX_THETA}], got {retention_theta}"
+        );
         self.retention_theta = retention_theta;
     }
 
@@ -420,7 +414,7 @@ where
             let (_lesser, kth, _greater) = retained.select_nth_unstable_by_key(k, |e| e.hash());
             kth.hash()
         };
-        self.retention_theta = ThetaThreshold::new(kth_hash);
+        self.retention_theta = kth_hash;
         retained.truncate(k);
 
         let size = 1 << self.lg_cur_size;
@@ -464,25 +458,10 @@ pub fn starting_sub_multiple(lg_target: u8, lg_min: u8, lg_resize_factor: u8) ->
 }
 
 /// Computes the initial operational theta from a sampling probability.
-pub fn starting_retention_theta(sampling_probability: f32) -> ThetaThreshold {
+pub fn starting_retention_theta(sampling_probability: f32) -> u64 {
     if sampling_probability < 1.0 {
-        let scaled_theta = (ThetaThreshold::MAX.get() as f64 * sampling_probability as f64) as u64;
-        // Threshold one and zero screen the same set of usable hashes because hash zero is
-        // reserved. Keep the state valid when a positive f32 probability rounds below one.
-        ThetaThreshold::new(scaled_theta.max(1))
+        (MAX_THETA as f64 * sampling_probability as f64) as u64
     } else {
-        ThetaThreshold::MAX
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn smallest_positive_probability_has_a_valid_retention_theta() {
-        let theta = starting_retention_theta(f32::from_bits(1));
-
-        assert_eq!(theta.get(), 1);
+        MAX_THETA
     }
 }

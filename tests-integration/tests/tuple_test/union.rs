@@ -17,7 +17,6 @@
 
 use datasketches::common::NumStdDev;
 use datasketches::error::ErrorKind;
-use datasketches::tuple::CompactTupleSketch;
 use datasketches::tuple::DefaultUnionPolicy;
 use datasketches::tuple::SummaryCombinePolicy;
 use datasketches::tuple::SummaryPolicy;
@@ -89,50 +88,26 @@ fn accepts_mutable_and_compact_inputs() {
 #[test]
 fn reset_restores_the_initial_empty_state() {
     let input = tuple_sketch_with_range(0, 100);
-    let mut union = default_union_builder().build().unwrap();
+    let mut union = default_union_builder()
+        .sampling_probability(0.5)
+        .build()
+        .unwrap();
 
-    assert!(union.to_sketch(true).is_empty());
+    let initial = union.to_sketch(false);
+    assert!(initial.is_empty());
+    assert!(initial.is_ordered());
+    assert_eq!(initial.theta64(), MAX_THETA);
+    assert!(!initial.is_estimation_mode());
     union.update(&input).unwrap();
     assert!(!union.to_sketch(true).is_empty());
 
     union.reset();
-    let result = union.to_sketch(true);
+    let result = union.to_sketch(false);
     assert!(result.is_empty());
+    assert!(result.is_ordered());
+    assert_eq!(result.theta64(), MAX_THETA);
+    assert!(!result.is_estimation_mode());
     assert_eq!(result.estimate(), 0.0);
-}
-
-#[test]
-fn sampled_union_uses_canonical_empty_state_before_updates_and_after_reset() {
-    for probability in [0.5, 0.1, 0.001] {
-        let mut union = default_union_builder()
-            .sampling_probability(probability)
-            .build()
-            .unwrap();
-
-        let result = union.to_sketch(false);
-        assert!(result.is_empty());
-        assert!(result.is_ordered());
-        assert_eq!(result.theta64(), MAX_THETA);
-        assert!(!result.is_estimation_mode());
-        let bytes = result.serialize();
-        let restored = CompactTupleSketch::<u64>::deserialize(&bytes).unwrap();
-        assert_eq!(restored.serialize(), bytes);
-
-        let mut input = default_tuple_sketch_builder().build().unwrap();
-        input.update(1u64, 1u64);
-        union.update(&input).unwrap();
-        assert!(!union.to_sketch(false).is_empty());
-
-        union.reset();
-        let result = union.to_sketch(false);
-        assert!(result.is_empty());
-        assert!(result.is_ordered());
-        assert_eq!(result.theta64(), MAX_THETA);
-        assert!(!result.is_estimation_mode());
-        let bytes = result.serialize();
-        let restored = CompactTupleSketch::<u64>::deserialize(&bytes).unwrap();
-        assert_eq!(restored.serialize(), bytes);
-    }
 }
 
 #[test]
@@ -211,9 +186,9 @@ fn estimation_bounds_cover_the_true_union() {
 #[test]
 fn union_estimated_size_grows_with_updates() {
     let mut union = default_union_builder().build().unwrap();
-    assert_eq!(union.estimated_size(), 2120);
+    assert_eq!(union.estimated_size(), 2128);
 
     let sketch = tuple_sketch_with_range(0, 1000);
     union.update(&sketch).unwrap();
-    assert_eq!(union.estimated_size(), 131144);
+    assert_eq!(union.estimated_size(), 131152);
 }

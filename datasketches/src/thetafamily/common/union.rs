@@ -21,9 +21,10 @@ use crate::error::ErrorKind;
 use crate::hash::check_seed_hash;
 use crate::thetacommon::EntrySketch;
 use crate::thetacommon::SketchEntry;
+use crate::thetacommon::ThetaFamilySketchMetadata;
+use crate::thetacommon::constants::MAX_THETA;
 use crate::thetacommon::hash_table::SketchHashTable;
 use crate::thetacommon::sketch_state::CompactSketchState;
-use crate::thetacommon::sketch_state::ThetaThreshold;
 
 /// Merges an incoming entry into an existing entry with the same hash.
 pub trait UnionMergePolicy<E> {
@@ -38,14 +39,8 @@ pub trait UnionMergePolicy<E> {
 pub struct UnionState<E, P> {
     table: SketchHashTable<E>,
     policy: P,
-    result_state: UnionResultState,
-}
-
-/// State of the value currently represented by a union operator.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum UnionResultState {
-    Empty,
-    NonEmpty { theta: ThetaThreshold },
+    // None until the union receives a non-empty input sketch.
+    result_theta: Option<u64>,
 }
 
 impl<E, P> UnionState<E, P>
@@ -61,7 +56,7 @@ where
     ) -> Result<Self, Error> {
         let table = SketchHashTable::new(lg_k, resize_factor, sampling_probability, seed)?;
         Ok(Self {
-            result_state: UnionResultState::Empty,
+            result_theta: None,
             table,
             policy,
         })
@@ -73,30 +68,30 @@ where
         S: EntrySketch<Entry = E>,
         P: UnionMergePolicy<E>,
     {
-        let metadata = sketch.metadata();
-        if metadata.is_empty() {
+        let ThetaFamilySketchMetadata::NonEmpty {
+            seed_hash,
+            theta,
+            ordered,
+            ..
+        } = sketch.metadata()
+        else {
             return Ok(());
-        }
+        };
 
         check_seed_hash(
             self.table.seed_hash(),
-            metadata.seed_hash(),
+            seed_hash,
             "union update",
             ErrorKind::InvalidArgument,
         )?;
 
-        let current_theta = match self.result_state {
-            UnionResultState::Empty => self.table.retention_theta(),
-            UnionResultState::NonEmpty { theta } => theta,
-        };
-        let result_theta = current_theta.min(metadata.theta());
-        self.result_state = UnionResultState::NonEmpty {
-            theta: result_theta,
-        };
+        let current_theta = self.result_theta.unwrap_or(self.table.retention_theta());
+        let result_theta = current_theta.min(theta);
+        self.result_theta = Some(result_theta);
 
         for entry in sketch.entries() {
             let hash = entry.hash();
-            if hash < result_theta.get() && hash < self.table.retention_theta().get() {
+            if hash < result_theta && hash < self.table.retention_theta() {
                 self.table.upsert_entry(hash, |existing| match existing {
                     Some(existing) => {
                         self.policy.merge(existing, entry);
@@ -104,13 +99,11 @@ where
                     }
                     None => Some(entry),
                 });
-            } else if metadata.is_ordered() {
+            } else if ordered {
                 break;
             }
         }
-        self.result_state = UnionResultState::NonEmpty {
-            theta: result_theta.min(self.table.retention_theta()),
-        };
+        self.result_theta = Some(result_theta.min(self.table.retention_theta()));
 
         Ok(())
     }
@@ -120,11 +113,8 @@ where
     where
         E: Clone,
     {
-        let result_theta = match self.result_state {
-            UnionResultState::Empty => {
-                return CompactSketchState::empty(self.table.seed_hash());
-            }
-            UnionResultState::NonEmpty { theta } => theta,
+        let Some(result_theta) = self.result_theta else {
+            return CompactSketchState::empty(self.table.seed_hash());
         };
 
         let mut theta = result_theta.min(self.table.retention_theta());
@@ -133,7 +123,7 @@ where
         } else {
             self.table
                 .iter_entries()
-                .filter(|entry| entry.hash() < theta.get())
+                .filter(|entry| entry.hash() < theta)
                 .cloned()
                 .collect::<Vec<_>>()
         };
@@ -142,11 +132,11 @@ where
         if retained_entries.len() > nominal_num {
             let (_, kth, _) =
                 retained_entries.select_nth_unstable_by_key(nominal_num, |entry| entry.hash());
-            theta = ThetaThreshold::new(kth.hash());
+            theta = kth.hash();
             retained_entries.truncate(nominal_num);
         }
 
-        let ordered = ordered || (retained_entries.len() == 1 && theta == ThetaThreshold::MAX);
+        let ordered = ordered || (retained_entries.len() == 1 && theta == MAX_THETA);
         if ordered {
             retained_entries.sort_unstable_by_key(SketchEntry::hash);
         }
@@ -157,7 +147,7 @@ where
     /// Reset the union to its initial state.
     pub fn reset(&mut self) {
         self.table.reset();
-        self.result_state = UnionResultState::Empty;
+        self.result_theta = None;
     }
 
     /// Returns the estimated size of the heap allocations in bytes.

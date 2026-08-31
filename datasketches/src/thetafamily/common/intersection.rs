@@ -21,11 +21,11 @@ use crate::hash::check_seed_hash;
 use crate::hash::compute_seed_hash;
 use crate::thetacommon::EntrySketch;
 use crate::thetacommon::SketchEntry;
+use crate::thetacommon::ThetaFamilySketchMetadata;
 use crate::thetacommon::constants::HASH_TABLE_REBUILD_THRESHOLD;
+use crate::thetacommon::constants::MAX_THETA;
 use crate::thetacommon::hash_table::SketchHashTable;
 use crate::thetacommon::sketch_state::CompactSketchState;
-use crate::thetacommon::sketch_state::ThetaSketchState;
-use crate::thetacommon::sketch_state::ThetaThreshold;
 
 /// Merges an incoming entry into an existing entry with the same hash.
 ///
@@ -63,7 +63,7 @@ where
         let seed_hash = compute_seed_hash(seed, ErrorKind::InvalidArgument)?;
         Ok(Self {
             result_state: IntersectionResultState::Uninitialized,
-            table: SketchHashTable::for_set_operation(0, 0, ThetaThreshold::MAX, seed, seed_hash),
+            table: SketchHashTable::for_set_operation(0, 0, MAX_THETA, seed, seed_hash),
             policy,
         })
     }
@@ -78,7 +78,6 @@ where
         E: Clone,
         P: IntersectionMergePolicy<E>,
     {
-        let metadata = sketch.metadata();
         let table_without_entries = |table: &SketchHashTable<E>, retention_theta| {
             SketchHashTable::for_set_operation(
                 0,
@@ -93,20 +92,28 @@ where
             return Ok(());
         }
 
-        if metadata.is_empty() {
-            self.result_state = IntersectionResultState::Empty;
-            self.table = table_without_entries(&self.table, ThetaThreshold::MAX);
-            return Ok(());
-        }
+        let (seed_hash, input_theta, input_ordered, input_num_retained) = match sketch.metadata() {
+            ThetaFamilySketchMetadata::Empty { .. } => {
+                self.result_state = IntersectionResultState::Empty;
+                self.table = table_without_entries(&self.table, MAX_THETA);
+                return Ok(());
+            }
+            ThetaFamilySketchMetadata::NonEmpty {
+                seed_hash,
+                theta,
+                ordered,
+                num_retained,
+            } => (seed_hash, theta, ordered, num_retained),
+        };
 
         check_seed_hash(
             self.table.seed_hash(),
-            metadata.seed_hash(),
+            seed_hash,
             "intersection update",
             ErrorKind::InvalidArgument,
         )?;
 
-        let result_theta = self.table.retention_theta().min(metadata.theta());
+        let result_theta = self.table.retention_theta().min(input_theta);
         self.table.set_retention_theta(result_theta);
 
         if self.result_state == IntersectionResultState::NonEmpty && self.table.num_retained() == 0
@@ -114,7 +121,7 @@ where
             return Ok(());
         }
 
-        if metadata.num_retained() == 0 {
+        if input_num_retained == 0 {
             self.result_state = IntersectionResultState::NonEmpty;
             self.table = table_without_entries(&self.table, result_theta);
             return Ok(());
@@ -124,7 +131,7 @@ where
         if self.result_state == IntersectionResultState::Uninitialized {
             self.result_state = IntersectionResultState::NonEmpty;
             let lg_size = SketchHashTable::<E>::lg_size_from_count_for_rebuild(
-                metadata.num_retained(),
+                input_num_retained,
                 HASH_TABLE_REBUILD_THRESHOLD,
             );
             // The retained count is at least one here, so lg_size >= 1 and lg_size - 1 below
@@ -149,18 +156,18 @@ where
                 }
             }
             // Safety check.
-            if self.table.num_retained() != metadata.num_retained() {
+            if self.table.num_retained() != input_num_retained {
                 return Err(Error::invalid_argument(
                     "num entries mismatch, possibly corrupted input sketch",
                 ));
             }
         } else {
-            let max_matches = self.table.num_retained().min(metadata.num_retained());
+            let max_matches = self.table.num_retained().min(input_num_retained);
             let mut matched_entries = Vec::with_capacity(max_matches);
             let mut count = 0;
             for entry in sketch.entries() {
                 let hash = entry.hash();
-                if hash < self.table.retention_theta().get() {
+                if hash < self.table.retention_theta() {
                     if let Some(existing) = self.table.entry(hash) {
                         if matched_entries.len() == max_matches {
                             return Err(Error::invalid_argument(
@@ -171,24 +178,24 @@ where
                         self.policy.merge(&mut merged, entry);
                         matched_entries.push(merged);
                     }
-                } else if metadata.is_ordered() {
+                } else if input_ordered {
                     break; // early stop for ordered sketches
                 }
                 count += 1;
             }
             // Safety check.
-            if count > metadata.num_retained() {
+            if count > input_num_retained {
                 return Err(Error::invalid_argument(
                     "more keys than expected, possibly corrupted input sketch",
                 ));
-            } else if !metadata.is_ordered() && count < metadata.num_retained() {
+            } else if !input_ordered && count < input_num_retained {
                 return Err(Error::invalid_argument(
                     "fewer keys than expected, possibly corrupted input sketch",
                 ));
             }
             if matched_entries.is_empty() {
                 self.table = table_without_entries(&self.table, result_theta);
-                if result_theta == ThetaThreshold::MAX {
+                if result_theta == MAX_THETA {
                     self.result_state = IntersectionResultState::Empty;
                 }
             } else {
@@ -242,10 +249,9 @@ where
             IntersectionResultState::Empty => {
                 Some(CompactSketchState::empty(self.table.seed_hash()))
             }
-            IntersectionResultState::NonEmpty => Some(self.table.to_compact_sketch_state(
-                ThetaSketchState::non_empty(self.table.retention_theta()),
-                ordered,
-            )),
+            IntersectionResultState::NonEmpty => {
+                Some(self.table.to_non_empty_compact_state(ordered))
+            }
         }
     }
 }

@@ -190,40 +190,6 @@ fn empty_sampled_sketch_has_zero_bounds() {
     assert_eq!(sketch.upper_bound(NumStdDev::Three), 0.0);
 }
 
-#[test]
-fn empty_sketch_reports_max_theta_for_every_sampling_probability() {
-    for probability in [1.0, 0.9, 0.5, 0.1, 0.01, 0.001] {
-        let sketch = default_tuple_sketch_builder()
-            .lg_k(12)
-            .sampling_probability(probability)
-            .build()
-            .unwrap();
-
-        assert!(sketch.is_empty());
-        assert_eq!(sketch.theta64(), MAX_THETA);
-        assert_eq!(sketch.theta(), 1.0);
-        assert!(!sketch.is_estimation_mode());
-        assert_eq!(sketch.theta64(), sketch.compact(true).theta64());
-    }
-}
-
-#[test]
-fn sampling_theta_applies_once_the_sketch_is_non_empty() {
-    let mut sketch = default_tuple_sketch_builder()
-        .lg_k(12)
-        .sampling_probability(0.5)
-        .build()
-        .unwrap();
-
-    assert_eq!(sketch.theta64(), MAX_THETA);
-
-    sketch.update(1u64, 1u64);
-
-    assert!(!sketch.is_empty());
-    assert!(sketch.is_estimation_mode());
-    assert_that!(sketch.theta64(), lt(MAX_THETA));
-}
-
 fn sorted_entries<'a>(entries: impl Iterator<Item = &'a TupleEntry<u64>>) -> Vec<(u64, u64)> {
     let mut entries: Vec<_> = entries
         .map(|entry| (entry.hash(), *entry.summary()))
@@ -266,7 +232,7 @@ fn compact_preserves_state_in_exact_and_estimation_modes() {
 }
 
 #[test]
-fn compact_preserves_logical_non_empty_after_screened_update() {
+fn sampling_state_transitions_through_compaction_and_reset() {
     let screened_value = (0u64..)
         .find(|candidate| {
             let mut sketch = default_tuple_sketch_builder()
@@ -282,10 +248,36 @@ fn compact_preserves_logical_non_empty_after_screened_update() {
         .sampling_probability(0.5)
         .build()
         .unwrap();
+
+    assert!(sketch.is_empty());
+    assert_eq!(sketch.theta64(), MAX_THETA);
+    assert!(!sketch.is_estimation_mode());
+    let empty_compact = sketch.compact(false);
+    assert!(empty_compact.is_empty());
+    assert!(empty_compact.is_ordered());
+    let bytes = empty_compact.serialize();
+    assert_eq!(
+        CompactTupleSketch::<u64>::deserialize(&bytes)
+            .unwrap()
+            .serialize(),
+        bytes
+    );
+
     sketch.update(screened_value, 1u64);
+
+    assert!(!sketch.is_empty());
+    assert_eq!(sketch.num_retained(), 0);
+    assert!(sketch.is_estimation_mode());
+    assert_that!(sketch.theta64(), lt(MAX_THETA));
+
     let compact = sketch.compact(false);
 
     assert!(!compact.is_empty());
     assert_eq!(compact.num_retained(), 0);
     assert_eq!(compact.theta64(), sketch.theta64());
+
+    sketch.reset();
+    assert!(sketch.is_empty());
+    assert_eq!(sketch.theta64(), MAX_THETA);
+    assert!(!sketch.is_estimation_mode());
 }
