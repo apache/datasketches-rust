@@ -16,6 +16,7 @@
 // under the License.
 
 use std::cmp::Ordering;
+use std::collections::BinaryHeap;
 use std::convert::identity;
 use std::num::NonZeroU64;
 
@@ -422,17 +423,27 @@ impl TDigestMut {
         checked_merged_weight_sum(self.compressed_weight, additional_weight)?;
 
         let own_buffer = std::mem::take(&mut self.buffer);
-        let mut centroids = Vec::with_capacity(num_centroids);
-        // Stable sorting keeps raw values before existing summaries when their means are equal.
-        own_buffer.append_unmerged_to(&mut centroids);
-        for other in &others {
-            other.buffer.append_unmerged_to(&mut centroids);
-        }
-        own_buffer.append_compressed_to(&mut centroids);
-        for other in &others {
-            other.buffer.append_compressed_to(&mut centroids);
-        }
-        centroids.sort_by(centroid_cmp);
+        let centroids = if own_buffer.unmerged_len() == 0
+            && others.iter().all(|other| other.buffer.unmerged_len() == 0)
+        {
+            let sources = std::iter::once(own_buffer.centroids.as_slice())
+                .chain(others.iter().map(|other| other.buffer.centroids.as_slice()))
+                .collect::<Vec<_>>();
+            merge_sorted_centroid_slices(&sources, num_centroids)
+        } else {
+            let mut centroids = Vec::with_capacity(num_centroids);
+            // Stable sorting keeps raw values before existing summaries when their means are equal.
+            own_buffer.append_unmerged_to(&mut centroids);
+            for other in &others {
+                other.buffer.append_unmerged_to(&mut centroids);
+            }
+            own_buffer.append_compressed_to(&mut centroids);
+            for other in &others {
+                other.buffer.append_compressed_to(&mut centroids);
+            }
+            centroids.sort_by(centroid_cmp);
+            centroids
+        };
 
         self.k = k;
         self.min = min;
@@ -1722,6 +1733,70 @@ fn centroids_are_sorted(centroids: &[Centroid]) -> bool {
     centroids
         .windows(2)
         .all(|pair| centroid_cmp(&pair[0], &pair[1]) != Ordering::Greater)
+}
+
+#[derive(Clone, Copy)]
+struct CentroidCursor {
+    centroid: Centroid,
+    source_index: usize,
+    centroid_index: usize,
+}
+
+impl PartialEq for CentroidCursor {
+    fn eq(&self, other: &Self) -> bool {
+        self.source_index == other.source_index && self.centroid_index == other.centroid_index
+    }
+}
+
+impl Eq for CentroidCursor {}
+
+impl PartialOrd for CentroidCursor {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for CentroidCursor {
+    fn cmp(&self, other: &Self) -> Ordering {
+        // Reverse every key because BinaryHeap is a max-heap. Source order breaks equal-mean ties
+        // in the same way as concatenating the inputs and applying a stable sort.
+        centroid_cmp(&other.centroid, &self.centroid)
+            .then_with(|| other.source_index.cmp(&self.source_index))
+            .then_with(|| other.centroid_index.cmp(&self.centroid_index))
+    }
+}
+
+fn merge_sorted_centroid_slices(sources: &[&[Centroid]], num_centroids: usize) -> Vec<Centroid> {
+    debug_assert_eq!(
+        sources.iter().map(|source| source.len()).sum::<usize>(),
+        num_centroids
+    );
+    debug_assert!(sources.iter().all(|source| centroids_are_sorted(source)));
+
+    let mut heap = BinaryHeap::with_capacity(sources.len());
+    for (source_index, source) in sources.iter().enumerate() {
+        if let Some(&centroid) = source.first() {
+            heap.push(CentroidCursor {
+                centroid,
+                source_index,
+                centroid_index: 0,
+            });
+        }
+    }
+
+    let mut centroids = Vec::with_capacity(num_centroids);
+    while let Some(cursor) = heap.pop() {
+        centroids.push(cursor.centroid);
+        let centroid_index = cursor.centroid_index + 1;
+        if let Some(&centroid) = sources[cursor.source_index].get(centroid_index) {
+            heap.push(CentroidCursor {
+                centroid,
+                source_index: cursor.source_index,
+                centroid_index,
+            });
+        }
+    }
+    centroids
 }
 
 fn merge_sorted_centroids(left: &mut Vec<Centroid>, right: &[Centroid]) {

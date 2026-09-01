@@ -302,6 +302,8 @@ fn test_merge_many_uses_one_result_with_the_smallest_nonempty_k() {
         first.update(value as f64);
         second.update((value + 1_000) as f64);
     }
+    let _ = first.rank(0.0);
+    let _ = second.rank(0.0);
 
     merged.merge_many([&first, &empty, &second]).unwrap();
 
