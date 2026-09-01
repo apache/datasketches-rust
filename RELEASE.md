@@ -125,8 +125,6 @@ cargo x prepare-testdata
 cargo x lint
 cargo x check
 cargo x test
-cmp LICENSE datasketches/LICENSE
-cmp NOTICE datasketches/NOTICE
 package_files="$(cargo package --list -p datasketches)"
 printf '%s\n' "$package_files"
 grep -Fx LICENSE <<<"$package_files"
