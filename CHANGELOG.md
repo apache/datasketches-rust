@@ -4,6 +4,8 @@ All significant changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v0.5.0
+
 ### Breaking changes
 
 * `BloomFilter::union` and `BloomFilter::intersect` now return `Result`. Callers must handle incompatible filter configurations instead of relying on a panic.
