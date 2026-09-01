@@ -102,6 +102,25 @@ fn partials(bencher: Bencher) {
         });
 }
 
+#[divan::bench]
+fn partials_batch(bencher: Bencher) {
+    let partials = partial_digests_with(DEFAULT_DIGEST_K, 64, ROWS_PER_PARTIAL)
+        .into_iter()
+        .map(|mut digest| {
+            black_box(digest.rank(0.0));
+            digest
+        })
+        .collect::<Vec<_>>();
+
+    bencher
+        .counter(ItemsCount::new(64 * ROWS_PER_PARTIAL))
+        .bench_local(|| {
+            let mut merged = TDigestMut::new(DEFAULT_DIGEST_K).unwrap();
+            merged.merge_many(black_box(&partials)).unwrap();
+            black_box(merged)
+        });
+}
+
 #[divan::bench(args = [SMALL_ROWS_PER_PARTIAL, ROWS_PER_PARTIAL])]
 fn serialized_partials(bencher: Bencher, rows_per_partial: usize) {
     let partials = serialized_partial_digests(64, rows_per_partial);

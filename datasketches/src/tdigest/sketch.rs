@@ -142,6 +142,16 @@ impl TDigestBuffer {
         self.centroids
     }
 
+    fn append_unmerged_to(&self, output: &mut Vec<Centroid>) {
+        let compressed_prefix_len = self.compressed_prefix_len();
+        output.extend_from_slice(&self.centroids[compressed_prefix_len..]);
+    }
+
+    fn append_compressed_to(&self, output: &mut Vec<Centroid>) {
+        let compressed_prefix_len = self.compressed_prefix_len();
+        output.extend_from_slice(&self.centroids[..compressed_prefix_len]);
+    }
+
     fn compressed_centroids(&self) -> &[Centroid] {
         assert_eq!(
             self.unmerged_tail_len, 0,
@@ -322,6 +332,14 @@ impl TDigestMut {
 
     /// Merges the given t-digest into this one.
     ///
+    /// If the sketches have different `k` values, the merged sketch uses the smaller value because
+    /// centroids produced with a smaller `k` cannot be split to satisfy the tighter size bound.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the combined total weight exceeds `u64::MAX`. Use [`try_merge`](Self::try_merge)
+    /// to handle that condition.
+    ///
     /// # Examples
     ///
     /// ```
@@ -335,13 +353,92 @@ impl TDigestMut {
     /// assert_eq!(left.total_weight(), 2);
     /// ```
     pub fn merge(&mut self, other: &TDigestMut) {
+        self.try_merge(other)
+            .expect("combined t-digest weight exceeds u64::MAX");
+    }
+
+    /// Merges the given t-digest into this one.
+    ///
+    /// If the sketches have different `k` values, the merged sketch uses the smaller value because
+    /// centroids produced with a smaller `k` cannot be split to satisfy the tighter size bound.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the combined total weight exceeds `u64::MAX`.
+    pub fn try_merge(&mut self, other: &TDigestMut) -> Result<(), Error> {
         if other.is_empty() {
-            return;
+            return Ok(());
         }
 
         let self_unmerged_weight = self.buffer.unmerged_len() as u64;
+        let additional_weight =
+            checked_merged_weight_sum(self_unmerged_weight, other.total_weight())?;
+        checked_merged_weight_sum(self.compressed_weight, additional_weight)?;
         let centroids = std::mem::take(&mut self.buffer).into_merged_centroids(&other.buffer);
-        self.compress_sorted_centroids(centroids, self_unmerged_weight + other.total_weight())
+        self.k = self.k.min(other.k);
+        self.min = self.min.min(other.min);
+        self.max = self.max.max(other.max);
+        self.compress_sorted_centroids(centroids, additional_weight);
+        Ok(())
+    }
+
+    /// Merges several t-digests into this one with one compression pass.
+    ///
+    /// Empty inputs are ignored. The merged sketch uses the smallest `k` among the non-empty
+    /// inputs and this sketch. This method temporarily retains every input centroid to avoid
+    /// recompressing intermediate results.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the combined total weight exceeds `u64::MAX`.
+    pub fn merge_many<'a>(
+        &mut self,
+        others: impl IntoIterator<Item = &'a TDigestMut>,
+    ) -> Result<(), Error> {
+        let others = others
+            .into_iter()
+            .filter(|other| !other.is_empty())
+            .collect::<Vec<_>>();
+        if others.is_empty() {
+            return Ok(());
+        }
+
+        let mut additional_weight = self.buffer.unmerged_len() as u64;
+        let mut num_centroids = self.buffer.len();
+        let mut k = self.k;
+        let mut min = self.min;
+        let mut max = self.max;
+        for other in &others {
+            additional_weight = checked_merged_weight_sum(additional_weight, other.total_weight())?;
+            num_centroids = num_centroids
+                .checked_add(other.buffer.len())
+                .ok_or_else(|| {
+                    Error::invalid_argument("combined t-digest centroid count exceeds usize::MAX")
+                })?;
+            k = k.min(other.k);
+            min = min.min(other.min);
+            max = max.max(other.max);
+        }
+        checked_merged_weight_sum(self.compressed_weight, additional_weight)?;
+
+        let own_buffer = std::mem::take(&mut self.buffer);
+        let mut centroids = Vec::with_capacity(num_centroids);
+        // Stable sorting keeps raw values before existing summaries when their means are equal.
+        own_buffer.append_unmerged_to(&mut centroids);
+        for other in &others {
+            other.buffer.append_unmerged_to(&mut centroids);
+        }
+        own_buffer.append_compressed_to(&mut centroids);
+        for other in &others {
+            other.buffer.append_compressed_to(&mut centroids);
+        }
+        centroids.sort_by(centroid_cmp);
+
+        self.k = k;
+        self.min = min;
+        self.max = max;
+        self.compress_sorted_centroids(centroids, additional_weight);
+        Ok(())
     }
 
     /// Converts this mutable t-digest into an immutable one.
@@ -506,6 +603,21 @@ impl TDigestMut {
         self.view().quantile(rank)
     }
 
+    /// Returns the quantiles described by [`TDigest::quantiles`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if any rank is outside `[0.0, 1.0]`.
+    pub fn quantiles(&mut self, ranks: &[f64]) -> Option<Vec<f64>> {
+        check_ranks(ranks);
+
+        if self.is_empty() {
+            return None;
+        }
+
+        self.view().quantiles(ranks)
+    }
+
     /// Serializes this mutable t-digest to bytes.
     ///
     /// # Examples
@@ -595,8 +707,20 @@ impl TDigestMut {
             return Err(Error::deserial(format!("k must be at least 10, got {k}")));
         }
         let flags = cursor.read_u8().map_err(insufficient_data("flags"))?;
+        let known_flags = FLAGS_IS_EMPTY | FLAGS_IS_SINGLE_VALUE | FLAGS_REVERSE_MERGE;
+        if flags & !known_flags != 0 {
+            return Err(Error::deserial(format!(
+                "malformed data: unknown TDigest flags 0x{:02x}",
+                flags & !known_flags
+            )));
+        }
         let is_empty = (flags & FLAGS_IS_EMPTY) != 0;
         let is_single_value = (flags & FLAGS_IS_SINGLE_VALUE) != 0;
+        if is_empty && is_single_value {
+            return Err(Error::deserial(
+                "malformed data: empty and single-value flags are mutually exclusive",
+            ));
+        }
         let expected_preamble_longs = if is_empty || is_single_value {
             PREAMBLE_LONGS_EMPTY_OR_SINGLE
         } else {
@@ -655,10 +779,7 @@ impl TDigestMut {
                 cursor.read_f64_le().map_err(insufficient_data("max"))?,
             )
         };
-        check_non_nan(min, "min")?;
-        check_non_nan(max, "max")?;
-        check_finite(min, "min")?;
-        check_finite(max, "max")?;
+        check_extrema(min, max, "TDigest")?;
         let (centroid_bytes, buffered_value_bytes) = if is_f32 {
             (size_of::<f32>() + size_of::<u32>(), size_of::<f32>())
         } else {
@@ -686,8 +807,15 @@ impl TDigestMut {
         let stored_centroids = num_centroids.checked_add(num_buffered).ok_or_else(|| {
             Error::deserial("num_centroids and num_buffered exceed the supported size")
         })?;
+        if stored_centroids == 0 {
+            return Err(Error::deserial(
+                "malformed data: non-empty TDigest must contain a centroid or buffered value",
+            ));
+        }
         let mut centroids = Vec::with_capacity(stored_centroids);
         let mut compressed_weight = 0u64;
+        let mut previous_mean = min;
+        let mut centroid_means_valid = true;
         for bytes in centroid_payload.chunks_exact(centroid_bytes) {
             let (mean, weight) = if is_f32 {
                 (
@@ -700,25 +828,35 @@ impl TDigestMut {
                     u64::from_le_bytes(bytes[8..].try_into().unwrap()),
                 )
             };
-            check_non_nan(mean, "centroid mean")?;
-            check_finite(mean, "centroid")?;
+            centroid_means_valid &= mean.is_finite() & (mean >= previous_mean) & (mean <= max);
+            previous_mean = mean;
             let weight = check_nonzero(weight, "centroid weight")?;
             compressed_weight = checked_weight_sum(compressed_weight, weight.get())?;
             centroids.push(Centroid { mean, weight });
         }
+        if !centroid_means_valid {
+            return Err(Error::deserial(
+                "malformed data: centroid means must be finite, within extrema, and nondecreasing",
+            ));
+        }
         checked_weight_sum(compressed_weight, num_buffered as u64)?;
+        let mut buffered_values_valid = true;
         for bytes in buffered_payload.chunks_exact(buffered_value_bytes) {
             let value = if is_f32 {
                 f32::from_le_bytes(bytes.try_into().unwrap()) as f64
             } else {
                 f64::from_le_bytes(bytes.try_into().unwrap())
             };
-            check_non_nan(value, "buffered_value mean")?;
-            check_finite(value, "buffered_value mean")?;
+            buffered_values_valid &= value.is_finite() & (value >= min) & (value <= max);
             centroids.push(Centroid {
                 mean: value,
                 weight: DEFAULT_WEIGHT,
             });
+        }
+        if !buffered_values_valid {
+            return Err(Error::deserial(
+                "malformed data: buffered values must be finite and within extrema",
+            ));
         }
         Ok(TDigestMut::make(
             k,
@@ -748,10 +886,7 @@ impl TDigestMut {
                 // compatibility with asBytes()
                 let min = cursor.read_f64_be().map_err(make_error("min"))?;
                 let max = cursor.read_f64_be().map_err(make_error("max"))?;
-                check_non_nan(min, "min in compat double format")?;
-                check_non_nan(max, "max in compat double format")?;
-                check_finite(min, "min in compat double format")?;
-                check_finite(max, "max in compat double format")?;
+                check_extrema(min, max, "compat double TDigest")?;
                 let k = cursor.read_f64_be().map_err(make_error("k"))? as u16;
                 if k < 10 {
                     return Err(Error::deserial(format!(
@@ -760,17 +895,30 @@ impl TDigestMut {
                 }
                 let num_centroids =
                     cursor.read_u32_be().map_err(make_error("num_centroids"))? as usize;
+                if num_centroids == 0 {
+                    return Err(Error::deserial(
+                        "malformed data: compat double TDigest must contain a centroid",
+                    ));
+                }
                 let mut total_weight = 0u64;
                 let mut centroids = Vec::with_capacity(num_centroids);
+                let mut previous_mean = min;
+                let mut centroid_means_valid = true;
                 for _ in 0..num_centroids {
                     let weight = cursor.read_f64_be().map_err(make_error("weight"))?;
                     let mean = cursor.read_f64_be().map_err(make_error("mean"))?;
                     let weight =
                         check_compat_weight(weight, "centroid weight in compat double format")?;
-                    check_non_nan(mean, "centroid mean in compat double format")?;
-                    check_finite(mean, "centroid mean in compat double format")?;
+                    centroid_means_valid &=
+                        mean.is_finite() & (mean >= previous_mean) & (mean <= max);
+                    previous_mean = mean;
                     total_weight = checked_weight_sum(total_weight, weight.get())?;
                     centroids.push(Centroid { mean, weight });
+                }
+                if !centroid_means_valid {
+                    return Err(Error::deserial(
+                        "malformed data: centroid means in compat double format must be finite, within extrema, and nondecreasing",
+                    ));
                 }
                 Ok(TDigestMut::make(
                     k,
@@ -789,10 +937,7 @@ impl TDigestMut {
                 // reference implementation uses doubles for min and max
                 let min = cursor.read_f64_be().map_err(make_error("min"))?;
                 let max = cursor.read_f64_be().map_err(make_error("max"))?;
-                check_non_nan(min, "min in compat float format")?;
-                check_non_nan(max, "max in compat float format")?;
-                check_finite(min, "min in compat float format")?;
-                check_finite(max, "max in compat float format")?;
+                check_extrema(min, max, "compat float TDigest")?;
                 let k = cursor.read_f32_be().map_err(make_error("k"))? as u16;
                 if k < 10 {
                     return Err(Error::deserial(format!(
@@ -804,17 +949,30 @@ impl TDigestMut {
                 cursor.read_u32_be().map_err(make_error("<unused>"))?;
                 let num_centroids =
                     cursor.read_u16_be().map_err(make_error("num_centroids"))? as usize;
+                if num_centroids == 0 {
+                    return Err(Error::deserial(
+                        "malformed data: compat float TDigest must contain a centroid",
+                    ));
+                }
                 let mut total_weight = 0u64;
                 let mut centroids = Vec::with_capacity(num_centroids);
+                let mut previous_mean = min;
+                let mut centroid_means_valid = true;
                 for _ in 0..num_centroids {
                     let weight = cursor.read_f32_be().map_err(make_error("weight"))? as f64;
                     let mean = cursor.read_f32_be().map_err(make_error("mean"))? as f64;
                     let weight =
                         check_compat_weight(weight, "centroid weight in compat float format")?;
-                    check_non_nan(mean, "centroid mean in compat float format")?;
-                    check_finite(mean, "centroid mean in compat float format")?;
+                    centroid_means_valid &=
+                        mean.is_finite() & (mean >= previous_mean) & (mean <= max);
+                    previous_mean = mean;
                     total_weight = checked_weight_sum(total_weight, weight.get())?;
                     centroids.push(Centroid { mean, weight });
+                }
+                if !centroid_means_valid {
+                    return Err(Error::deserial(
+                        "malformed data: centroid means in compat float format must be finite, within extrema, and nondecreasing",
+                    ));
                 }
                 Ok(TDigestMut::make(
                     k,
@@ -1222,6 +1380,35 @@ impl TDigest {
         self.view().quantile(rank)
     }
 
+    /// Computes approximate quantiles for the given normalized ranks.
+    ///
+    /// Ranks in nondecreasing order are answered with one centroid scan. Ranks in any other order
+    /// are accepted and results are returned in the same order as the input.
+    ///
+    /// Returns `None` if this t-digest is empty.
+    ///
+    /// # Panics
+    ///
+    /// Panics if any rank is outside `[0.0, 1.0]`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::tdigest::TDigestMut;
+    ///
+    /// let mut sketch = TDigestMut::new(100).unwrap();
+    /// for value in [1.0, 2.0, 3.0] {
+    ///     sketch.update(value);
+    /// }
+    /// let digest = sketch.freeze();
+    /// let quantiles = digest.quantiles(&[0.25, 0.5, 0.75]).unwrap();
+    /// assert_eq!(quantiles.len(), 3);
+    /// ```
+    pub fn quantiles(&self, ranks: &[f64]) -> Option<Vec<f64>> {
+        check_ranks(ranks);
+        self.view().quantiles(ranks)
+    }
+
     /// Converts this immutable t-digest into a mutable one.
     ///
     /// # Examples
@@ -1389,8 +1576,51 @@ impl TDigestView<'_> {
             return None;
         }
 
+        let mut centroid_index = 0;
+        let mut weight_so_far = self.centroids[0].weight() / 2.;
+        Some(self.quantile_with_cursor(rank, &mut centroid_index, &mut weight_so_far))
+    }
+
+    fn quantiles(&self, ranks: &[f64]) -> Option<Vec<f64>> {
+        debug_assert!(
+            ranks.iter().all(|rank| (0.0..=1.0).contains(rank)),
+            "ranks must be in [0.0, 1.0]"
+        );
+
+        if self.centroids.is_empty() {
+            return None;
+        }
+
+        let mut quantiles = vec![0.; ranks.len()];
+        let mut centroid_index = 0;
+        let mut weight_so_far = self.centroids[0].weight() / 2.;
+        if ranks.windows(2).all(|pair| pair[0] <= pair[1]) {
+            for (index, &rank) in ranks.iter().enumerate() {
+                quantiles[index] =
+                    self.quantile_with_cursor(rank, &mut centroid_index, &mut weight_so_far);
+            }
+            return Some(quantiles);
+        }
+
+        let mut rank_order = (0..ranks.len()).collect::<Vec<_>>();
+        rank_order.sort_by(|&left, &right| ranks[left].total_cmp(&ranks[right]));
+        for index in rank_order {
+            quantiles[index] =
+                self.quantile_with_cursor(ranks[index], &mut centroid_index, &mut weight_so_far);
+        }
+        Some(quantiles)
+    }
+
+    fn quantile_with_cursor(
+        &self,
+        rank: f64,
+        centroid_index: &mut usize,
+        weight_so_far: &mut f64,
+    ) -> f64 {
+        debug_assert!(!self.centroids.is_empty());
+
         if self.centroids.len() == 1 {
-            return Some(self.centroids[0].mean);
+            return self.centroids[0].mean;
         }
 
         // at least 2 centroids
@@ -1398,73 +1628,66 @@ impl TDigestView<'_> {
         let num_centroids = self.centroids.len();
         let weight = rank * centroids_weight;
         if weight < 1. {
-            return Some(self.min);
+            return self.min;
         }
         if weight > centroids_weight - 1. {
-            return Some(self.max);
+            return self.max;
         }
         let first_weight = self.centroids[0].weight();
         if first_weight > 1. && weight < first_weight / 2. {
-            return Some(
-                self.min
-                    + (((weight - 1.) / ((first_weight / 2.) - 1.))
-                        * (self.centroids[0].mean - self.min)),
-            );
+            return self.min
+                + (((weight - 1.) / ((first_weight / 2.) - 1.))
+                    * (self.centroids[0].mean - self.min));
         }
         let last_weight = self.centroids[num_centroids - 1].weight();
         if last_weight > 1. && (centroids_weight - weight <= last_weight / 2.) {
             if last_weight == 2. {
-                return Some(self.max);
+                return self.max;
             }
-            return Some(
-                self.max
-                    - (((centroids_weight - weight - 1.) / ((last_weight / 2.) - 1.))
-                        * (self.max - self.centroids[num_centroids - 1].mean)),
-            );
+            return self.max
+                - (((centroids_weight - weight - 1.) / ((last_weight / 2.) - 1.))
+                    * (self.max - self.centroids[num_centroids - 1].mean));
         }
 
         // interpolate between extremes
-        let mut weight_so_far = first_weight / 2.;
-        for i in 0..(num_centroids - 1) {
-            let dw = (self.centroids[i].weight() + self.centroids[i + 1].weight()) / 2.;
-            if weight_so_far + dw > weight {
+        while *centroid_index < num_centroids - 1 {
+            let dw = (self.centroids[*centroid_index].weight()
+                + self.centroids[*centroid_index + 1].weight())
+                / 2.;
+            if *weight_so_far + dw > weight {
                 // the target weight is between centroids i and i+1
                 let mut left_weight = 0.;
-                if self.centroids[i].weight.get() == 1 {
-                    if weight - weight_so_far < 0.5 {
-                        return Some(self.centroids[i].mean);
+                if self.centroids[*centroid_index].weight.get() == 1 {
+                    if weight - *weight_so_far < 0.5 {
+                        return self.centroids[*centroid_index].mean;
                     }
                     left_weight = 0.5;
                 }
                 let mut right_weight = 0.;
-                if self.centroids[i + 1].weight.get() == 1 {
-                    if weight_so_far + dw - weight <= 0.5 {
-                        return Some(self.centroids[i + 1].mean);
+                if self.centroids[*centroid_index + 1].weight.get() == 1 {
+                    if *weight_so_far + dw - weight <= 0.5 {
+                        return self.centroids[*centroid_index + 1].mean;
                     }
                     right_weight = 0.5;
                 }
                 // Each centroid is weighted by the distance from the target to the *other*
                 // centroid, so the estimate approaches the nearer one.
-                let distance_from_left = weight - weight_so_far - left_weight;
-                let distance_to_right = weight_so_far + dw - weight - right_weight;
-                return Some(weighted_average(
-                    self.centroids[i].mean,
+                let distance_from_left = weight - *weight_so_far - left_weight;
+                let distance_to_right = *weight_so_far + dw - weight - right_weight;
+                return weighted_average(
+                    self.centroids[*centroid_index].mean,
                     distance_to_right,
-                    self.centroids[i + 1].mean,
+                    self.centroids[*centroid_index + 1].mean,
                     distance_from_left,
-                ));
+                );
             }
-            weight_so_far += dw;
+            *weight_so_far += dw;
+            *centroid_index += 1;
         }
 
         let w1 = weight - (centroids_weight) - ((self.centroids[num_centroids - 1].weight()) / 2.);
         let w2 = (self.centroids[num_centroids - 1].weight() / 2.) - w1;
-        Some(weighted_average(
-            self.centroids[num_centroids - 1].mean,
-            w1,
-            self.max,
-            w2,
-        ))
+        weighted_average(self.centroids[num_centroids - 1].mean, w1, self.max, w2)
     }
 }
 
@@ -1478,6 +1701,14 @@ fn check_split_points(split_points: &[f64]) {
     if !split_points.windows(2).all(|pair| pair[0] < pair[1]) {
         panic!("split_points must be unique and monotonically increasing: {split_points:?}");
     }
+}
+
+#[track_caller]
+fn check_ranks(ranks: &[f64]) {
+    assert!(
+        ranks.iter().all(|rank| (0.0..=1.0).contains(rank)),
+        "ranks must be in [0.0, 1.0]"
+    );
 }
 
 fn centroid_cmp(a: &Centroid, b: &Centroid) -> Ordering {
@@ -1597,6 +1828,21 @@ fn check_finite(value: f64, tag: &'static str) -> Result<(), Error> {
     Ok(())
 }
 
+#[inline]
+fn check_extrema(min: f64, max: f64, format: &'static str) -> Result<(), Error> {
+    if !min.is_finite() || !max.is_finite() {
+        return Err(Error::deserial(format!(
+            "malformed data: {format} extrema must be finite"
+        )));
+    }
+    if min > max {
+        return Err(Error::deserial(format!(
+            "malformed data: {format} min {min} exceeds max {max}"
+        )));
+    }
+    Ok(())
+}
+
 fn check_nonzero(value: u64, tag: &'static str) -> Result<NonZeroU64, Error> {
     NonZeroU64::new(value)
         .ok_or_else(|| Error::deserial(format!("malformed data: {tag} cannot be zero")))
@@ -1622,6 +1868,12 @@ fn checked_weight_sum(total_weight: u64, weight: u64) -> Result<u64, Error> {
     total_weight
         .checked_add(weight)
         .ok_or_else(|| Error::deserial("malformed data: total weight overflow"))
+}
+
+fn checked_merged_weight_sum(total_weight: u64, weight: u64) -> Result<u64, Error> {
+    total_weight
+        .checked_add(weight)
+        .ok_or_else(|| Error::invalid_argument("combined t-digest weight exceeds u64::MAX"))
 }
 
 /// Generates cluster sizes proportional to `q*(1-q)`.

@@ -276,6 +276,43 @@ fn test_merge_large() {
 }
 
 #[test]
+fn test_mixed_k_merge_uses_smaller_k() {
+    let mut left = TDigestMut::new(200).unwrap();
+    let mut right = TDigestMut::new(50).unwrap();
+    for value in 0..1_000 {
+        left.update(value as f64);
+        right.update((value + 1_000) as f64);
+    }
+
+    left.try_merge(&right).unwrap();
+
+    assert_eq!(left.k(), 50);
+    assert_eq!(left.total_weight(), 2_000);
+    assert_eq!(left.min_value(), Some(0.0));
+    assert_eq!(left.max_value(), Some(1_999.0));
+}
+
+#[test]
+fn test_merge_many_uses_one_result_with_the_smallest_nonempty_k() {
+    let mut merged = TDigestMut::new(200).unwrap();
+    let mut first = TDigestMut::new(100).unwrap();
+    let mut second = TDigestMut::new(50).unwrap();
+    let empty = TDigestMut::new(10).unwrap();
+    for value in 0..1_000 {
+        first.update(value as f64);
+        second.update((value + 1_000) as f64);
+    }
+
+    merged.merge_many([&first, &empty, &second]).unwrap();
+
+    assert_eq!(merged.k(), 50);
+    assert_eq!(merged.total_weight(), 2_000);
+    assert_eq!(merged.min_value(), Some(0.0));
+    assert_eq!(merged.max_value(), Some(1_999.0));
+    assert_quantiles_are_nondecreasing(&mut merged);
+}
+
+#[test]
 fn test_invalid_inputs() {
     let n = 100;
 
@@ -322,6 +359,33 @@ fn test_extreme_values_produce_finite_quantiles() {
         let quantile = tdigest.quantile(rank).unwrap();
         assert_that!(quantile, is_finite(), "quantile at rank {rank}");
     }
+}
+
+#[test]
+fn test_batch_quantiles_match_scalar_queries_in_input_order() {
+    let mut tdigest = TDigestMut::new(100).unwrap();
+    for value in 0..10_000 {
+        tdigest.update(((value * 37) % 1_003) as f64);
+    }
+    let tdigest = tdigest.freeze();
+
+    for ranks in [
+        vec![0.0, 0.001, 0.25, 0.5, 0.5, 0.99, 1.0],
+        vec![0.99, 0.0, 0.5, 1.0, 0.001, 0.5, 0.25],
+        vec![],
+    ] {
+        let expected = ranks
+            .iter()
+            .map(|&rank| tdigest.quantile(rank).unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(tdigest.quantiles(&ranks), Some(expected));
+    }
+}
+
+fn assert_quantiles_are_nondecreasing(tdigest: &mut TDigestMut) {
+    let ranks = (0..=100).map(|rank| rank as f64 / 100.).collect::<Vec<_>>();
+    let quantiles = tdigest.quantiles(&ranks).unwrap();
+    assert!(quantiles.windows(2).all(|pair| pair[0] <= pair[1]));
 }
 
 #[test]
@@ -391,6 +455,23 @@ fn test_quantile_handles_two_sample_last_centroid() {
         deserialize_with_centroids(100, 0.0, 100.0, &[(0.0, 1), (50.0, 1), (90.0, 2)]);
 
     assert_eq!(tdigest.quantile(0.75), Some(100.0));
+}
+
+#[test]
+fn test_try_merge_reports_total_weight_overflow_without_mutating_receiver() {
+    let mut left = deserialize_with_centroids(100, 0.0, 0.0, &[(0.0, u64::MAX)]);
+    let right = deserialize_with_centroids(50, 1.0, 1.0, &[(1.0, 1)]);
+
+    let error = left.try_merge(&right).unwrap_err();
+
+    assert_eq!(
+        error.kind(),
+        datasketches::error::ErrorKind::InvalidArgument
+    );
+    assert_eq!(left.k(), 100);
+    assert_eq!(left.total_weight(), u64::MAX);
+    assert_eq!(left.min_value(), Some(0.0));
+    assert_eq!(left.max_value(), Some(0.0));
 }
 
 #[test]
