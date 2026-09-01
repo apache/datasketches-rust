@@ -150,7 +150,7 @@ Confirm that the release version and changelog are present in the candidate comm
 
 ```bash
 git grep -F "version = \"${release_version}\"" -- datasketches/Cargo.toml Cargo.lock
-git grep -Fx "## v${release_version}" -- CHANGELOG.md
+grep -Fx "## v${release_version}" CHANGELOG.md
 test -z "$(git status --porcelain)"
 
 release_commit="$(git rev-parse HEAD)"
