@@ -380,9 +380,15 @@ fn serialize_with_serde<T: KllSerde, C: KllComparator<T>>(sketch: &KllSketch<T, 
         }
     }
 
-    for level in &sketch.levels {
-        for item in level {
-            T::serialize(item, &mut bytes);
+    for (level_index, level) in sketch.levels.iter().enumerate() {
+        if level_index == 0 && !sketch.is_level_zero_sorted {
+            for item in level.iter().rev() {
+                T::serialize(item, &mut bytes);
+            }
+        } else {
+            for item in level {
+                T::serialize(item, &mut bytes);
+            }
         }
     }
 
@@ -545,6 +551,9 @@ fn deserialize_with_serde<T: KllSerde, C: KllComparator<T>>(
             items.push(T::deserialize(&mut cursor)?);
         }
         levels.push(items);
+    }
+    if !is_level_zero_sorted {
+        levels[0].reverse();
     }
 
     let mut sketch = KllSketch::make(
@@ -742,7 +751,7 @@ impl<T: KllItem, C: KllComparator<T>> KllSketch<T, C> {
         }
         self.n += 1;
         self.is_level_zero_sorted = false;
-        self.levels[0].insert(0, item);
+        self.levels[0].push(item);
     }
 
     fn compress_while_updating(&mut self) {
@@ -757,7 +766,11 @@ impl<T: KllItem, C: KllComparator<T>> KllSketch<T, C> {
         let odd = current.len() % 2 == 1;
         let mut leftover = None;
         if odd {
-            leftover = Some(current.remove(0));
+            leftover = Some(take_leftover(
+                &mut current,
+                level,
+                self.is_level_zero_sorted,
+            ));
         }
 
         if level == 0 && !self.is_level_zero_sorted {
@@ -926,6 +939,14 @@ fn downsample<T: KllItem>(items: Vec<T>, offset: bool, use_up: bool) -> Vec<T> {
         .collect()
 }
 
+fn take_leftover<T>(items: &mut Vec<T>, level: usize, is_level_zero_sorted: bool) -> T {
+    if level == 0 && !is_level_zero_sorted {
+        items.pop().expect("odd level must not be empty")
+    } else {
+        items.remove(0)
+    }
+}
+
 fn merge_sorted_vec<T: KllItem, C: KllComparator<T>>(
     left: Vec<T>,
     right: Vec<T>,
@@ -977,7 +998,11 @@ fn general_compress<T: KllItem, C: KllComparator<T>>(
             let odd = current.len() % 2 == 1;
             let mut leftover = None;
             if odd {
-                leftover = Some(current.remove(0));
+                leftover = Some(take_leftover(
+                    &mut current,
+                    current_level,
+                    is_level_zero_sorted,
+                ));
             }
 
             if current_level == 0 && !is_level_zero_sorted {
