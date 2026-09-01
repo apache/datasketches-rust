@@ -294,6 +294,11 @@ impl HllSketch {
 
     /// Deserializes an HLL sketch from bytes.
     ///
+    /// # Errors
+    ///
+    /// Returns `InvalidData` if the image is truncated or contains an invalid preamble,
+    /// configuration, or payload.
+    ///
     /// # Examples
     ///
     /// ```

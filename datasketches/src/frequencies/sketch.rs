@@ -748,6 +748,11 @@ impl<T: FrequentItemValue> FrequentItemsSketch<T> {
 
     /// Deserializes a sketch from bytes.
     ///
+    /// # Errors
+    ///
+    /// Returns `InvalidData` if the image is truncated, its metadata is inconsistent, or an item
+    /// cannot be decoded by `T`.
+    ///
     /// # Examples
     ///
     /// Built-in support for `i64`:

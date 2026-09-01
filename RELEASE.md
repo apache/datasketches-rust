@@ -125,7 +125,10 @@ cargo x prepare-testdata
 cargo x lint
 cargo x check
 cargo x test
-cargo package --list -p datasketches
+package_files="$(cargo package --list -p datasketches)"
+printf '%s\n' "$package_files"
+grep -Fx LICENSE <<<"$package_files"
+grep -Fx NOTICE <<<"$package_files"
 cargo publish --dry-run --locked -p datasketches
 ```
 

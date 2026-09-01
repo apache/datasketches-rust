@@ -15,7 +15,7 @@ All significant changes to this project will be documented in this file.
 * `FrequentItemsSketch::new` now rejects map sizes below the minimum of 8 instead of silently rounding them up.
 * Replace `FrequentItemsSketch::epsilon_for_lg` with the fallible `epsilon_for_max_map_size`, and change `apriori_error` to accept the same maximum map size plus an unsigned stream weight. These helpers now match the constructor's units, and `max_map_size` exposes the configured value.
 * Replace the `is_f32` flag on `TDigestMut::deserialize` with separate `deserialize` and `deserialize_f32` entry points, making the serialized precision explicit at the call site.
-* Remove `CpcUnion::num_coupons`, which exposed internal union state solely for tests. Inspect the resulting `CpcSketch` when diagnostics are needed.
+* Remove `CpcSketch::{validate, num_coupons}` and `CpcUnion::num_coupons`, which exposed internal state solely for tests. Use cardinality estimates, confidence bounds, and serialization round trips to inspect observable sketch behavior.
 * Tuple sketch iterators now yield `&TupleEntry<_>` values instead of `(hash, &summary)` pairs. Use `entry.hash()` and `entry.summary()` to inspect each retained entry.
 * `ThetaIntersection::to_sketch` and `TupleIntersection::to_sketch` now return `Option`. Callers must handle `None` until the intersection receives its first successful update.
 * `BloomFilterBuilder`, `ThetaSketchBuilder`, `ThetaUnionBuilder`, `TupleSketchBuilder`, and `TupleUnionBuilder` now validate their configuration when `build` is called, and `build` returns `Result`. Callers must propagate or handle construction errors.
@@ -37,6 +37,7 @@ All significant changes to this project will be documented in this file.
 * Bloom filter accuracy construction now rejects targets that exceed the maximum serialized filter size instead of silently reducing capacity and violating the requested false-positive probability.
 * T-Digest CDF and PMF queries now accept an empty split-point slice and return the single all-values bin instead of panicking.
 * Bloom filter deserialization now rejects malformed images with inconsistent counts or payload lengths, while valid images with a dirty cached count are restored correctly.
+* Count-Min deserialization now rejects truncated counter payloads before allocating the table declared by the image header.
 * `FrequentItemsSketch` now enforces the cross-language map-size limit of `2^30` consistently. Oversized construction returns `InvalidArgument`, and malformed or oversized serialized images return `InvalidData` instead of panicking or attempting excessive allocation.
 * `FrequentItemsSketch<String>` now rejects an encoded string length that exceeds the remaining input before allocating the string buffer.
 * T-Digest compression now supports `k = u16::MAX` without overflowing.

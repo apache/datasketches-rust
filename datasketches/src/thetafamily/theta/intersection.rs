@@ -63,6 +63,11 @@ impl ThetaIntersection {
     /// The intersection can be viewed as starting from the "universe" set,
     /// and every update can reduce the current set to leave the overlapping
     /// subset only.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidArgument` if a non-empty `sketch` has a different seed hash or its retained
+    /// entries are inconsistent with its metadata.
     pub fn update<'a>(&mut self, sketch: impl Into<ThetaSketchView<'a>>) -> Result<(), Error> {
         let sketch = sketch.into();
         self.state.update(sketch)
