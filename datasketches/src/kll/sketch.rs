@@ -108,25 +108,34 @@ pub struct KllSketch<T, C = NaturalOrder> {
 
 impl<T: KllItem> Default for KllSketch<T> {
     fn default() -> Self {
-        Self::new(DEFAULT_K)
+        Self::make(
+            NaturalOrder,
+            DEFAULT_K,
+            DEFAULT_K,
+            0,
+            vec![Vec::new()],
+            None,
+            None,
+            false,
+        )
     }
 }
 
 impl<T: KllItem> KllSketch<T> {
     /// Creates a new sketch with the given value of k.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if k is not in [MIN_K, MAX_K].
+    /// Returns an error if `k` is outside [`MIN_K`, `MAX_K`].
     ///
     /// # Examples
     ///
     /// ```
     /// # use datasketches::kll::KllSketch;
-    /// let sketch = KllSketch::<f64>::new(200);
+    /// let sketch = KllSketch::<f64>::new(200).unwrap();
     /// assert_eq!(sketch.k(), 200);
     /// ```
-    pub fn new(k: u16) -> Self {
+    pub fn new(k: u16) -> Result<Self, Error> {
         Self::new_with_comparator(k, NaturalOrder)
     }
 }
@@ -134,25 +143,25 @@ impl<T: KllItem> KllSketch<T> {
 impl<T: KllItem, C: KllComparator<T>> KllSketch<T, C> {
     /// Creates a new sketch with the given value of k and ordering policy.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if k is not in [MIN_K, MAX_K].
-    pub fn new_with_comparator(k: u16, comparator: C) -> Self {
-        assert!(
-            (MIN_K..=MAX_K).contains(&k),
-            "k must be in [{MIN_K}, {MAX_K}], got {k}"
-        );
-        Self {
+    /// Returns an error if `k` is outside [`MIN_K`, `MAX_K`].
+    pub fn new_with_comparator(k: u16, comparator: C) -> Result<Self, Error> {
+        if !(MIN_K..=MAX_K).contains(&k) {
+            return Err(Error::invalid_argument(format!(
+                "k must be in [{MIN_K}, {MAX_K}], got {k}"
+            )));
+        }
+        Ok(Self::make(
             comparator,
             k,
-            m: DEFAULT_M,
-            min_k: k,
-            n: 0,
-            is_level_zero_sorted: false,
-            levels: vec![Vec::new()],
-            min_item: None,
-            max_item: None,
-        }
+            k,
+            0,
+            vec![Vec::new()],
+            None,
+            None,
+            false,
+        ))
     }
 
     /// Returns parameter k used to configure this sketch.

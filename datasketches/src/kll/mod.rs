@@ -29,7 +29,7 @@
 //!
 //! ```rust
 //! # use datasketches::kll::KllSketch;
-//! let mut sketch = KllSketch::<f64>::new(200);
+//! let mut sketch = KllSketch::<f64>::new(200).unwrap();
 //! sketch.update(1.0);
 //! sketch.update(2.0);
 //! let q = sketch.quantile(0.5, true).unwrap();

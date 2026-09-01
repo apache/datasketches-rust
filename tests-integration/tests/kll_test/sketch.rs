@@ -17,6 +17,7 @@
 
 use std::cmp::Ordering;
 
+use datasketches::error::ErrorKind;
 use datasketches::kll::DEFAULT_K;
 use datasketches::kll::KllComparator;
 use datasketches::kll::KllSketch;
@@ -50,19 +51,19 @@ impl KllComparator<String> for NumericStringOrder {
 
 #[test]
 fn test_k_limits() {
-    let _min = KllSketch::<f32>::new(MIN_K);
-    let _max = KllSketch::<f32>::new(MAX_K);
+    let _min = KllSketch::<f32>::new(MIN_K).unwrap();
+    let _max = KllSketch::<f32>::new(MAX_K).unwrap();
 }
 
 #[test]
-#[should_panic(expected = "k must be in")]
-fn test_k_too_small_panics() {
-    KllSketch::<f32>::new(MIN_K - 1);
+fn test_k_too_small_returns_error() {
+    let error = KllSketch::<f32>::new(MIN_K - 1).unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::InvalidArgument);
 }
 
 #[test]
 fn test_empty() {
-    let sketch = KllSketch::<f32>::new(DEFAULT_K);
+    let sketch = KllSketch::<f32>::new(DEFAULT_K).unwrap();
     assert!(sketch.is_empty());
     assert!(!sketch.is_estimation_mode());
     assert_eq!(sketch.n(), 0);
@@ -78,14 +79,14 @@ fn test_empty() {
 #[test]
 #[should_panic(expected = "rank must be in [0.0, 1.0]")]
 fn test_quantile_out_of_range_panics() {
-    let mut sketch = KllSketch::<f32>::new(DEFAULT_K);
+    let mut sketch = KllSketch::<f32>::new(DEFAULT_K).unwrap();
     sketch.update(0.0);
     sketch.quantile(-1.0, true);
 }
 
 #[test]
 fn test_one_item() {
-    let mut sketch = KllSketch::<f32>::new(DEFAULT_K);
+    let mut sketch = KllSketch::<f32>::new(DEFAULT_K).unwrap();
     sketch.update(1.0);
     assert!(!sketch.is_empty());
     assert!(!sketch.is_estimation_mode());
@@ -101,7 +102,7 @@ fn test_one_item() {
 
 #[test]
 fn test_duplicate_items_follow_inclusive_and_exclusive_semantics() {
-    let mut sketch = KllSketch::<f32>::new(DEFAULT_K);
+    let mut sketch = KllSketch::<f32>::new(DEFAULT_K).unwrap();
     for item in [1.0, 1.0, 2.0, 2.0] {
         sketch.update(item);
     }
@@ -116,7 +117,7 @@ fn test_duplicate_items_follow_inclusive_and_exclusive_semantics() {
 
 #[test]
 fn test_nan_is_ignored() {
-    let mut sketch = KllSketch::<f32>::new(DEFAULT_K);
+    let mut sketch = KllSketch::<f32>::new(DEFAULT_K).unwrap();
     sketch.update(f32::NAN);
     assert!(sketch.is_empty());
     sketch.update(0.0);
@@ -126,7 +127,7 @@ fn test_nan_is_ignored() {
 
 #[test]
 fn test_many_items_exact_mode() {
-    let mut sketch = KllSketch::<f32>::new(DEFAULT_K);
+    let mut sketch = KllSketch::<f32>::new(DEFAULT_K).unwrap();
     let n = DEFAULT_K as usize;
     for i in 1..=n {
         sketch.update(i as f32);
@@ -150,7 +151,7 @@ fn test_many_items_exact_mode() {
 
 #[test]
 fn test_ten_items_quantiles() {
-    let mut sketch = KllSketch::<f32>::new(DEFAULT_K);
+    let mut sketch = KllSketch::<f32>::new(DEFAULT_K).unwrap();
     for i in 1..=10 {
         sketch.update(i as f32);
     }
@@ -162,7 +163,7 @@ fn test_ten_items_quantiles() {
 
 #[test]
 fn test_hundred_items_quantiles() {
-    let mut sketch = KllSketch::<f32>::new(DEFAULT_K);
+    let mut sketch = KllSketch::<f32>::new(DEFAULT_K).unwrap();
     for i in 0..100 {
         sketch.update(i as f32);
     }
@@ -175,7 +176,7 @@ fn test_hundred_items_quantiles() {
 
 #[test]
 fn test_many_items_estimation_mode_rank_error() {
-    let mut sketch = KllSketch::<f32>::new(DEFAULT_K);
+    let mut sketch = KllSketch::<f32>::new(DEFAULT_K).unwrap();
     let n = 10_000;
     for i in 0..n {
         sketch.update(i as f32);
@@ -197,7 +198,7 @@ fn test_many_items_estimation_mode_rank_error() {
 
 #[test]
 fn test_rank_cdf_pmf_consistency() {
-    let mut sketch = KllSketch::<f32>::new(DEFAULT_K);
+    let mut sketch = KllSketch::<f32>::new(DEFAULT_K).unwrap();
     let n = 200;
     let mut values = Vec::with_capacity(n);
     for i in 0..n {
@@ -237,7 +238,7 @@ fn test_rank_cdf_pmf_consistency() {
 #[test]
 #[should_panic(expected = "split_points must be unique and monotonically increasing")]
 fn test_out_of_order_split_points_panics() {
-    let mut sketch = KllSketch::<f32>::new(DEFAULT_K);
+    let mut sketch = KllSketch::<f32>::new(DEFAULT_K).unwrap();
     sketch.update(0.0);
     let split_points = [1.0, 0.0];
     let _ = sketch.cdf(&split_points, true);
@@ -246,7 +247,7 @@ fn test_out_of_order_split_points_panics() {
 #[test]
 #[should_panic(expected = "split_points must not contain NaN values")]
 fn test_nan_split_point_panics() {
-    let mut sketch = KllSketch::<f32>::new(DEFAULT_K);
+    let mut sketch = KllSketch::<f32>::new(DEFAULT_K).unwrap();
     sketch.update(0.0);
     let split_points = [f32::NAN];
     let _ = sketch.cdf(&split_points, true);
@@ -254,8 +255,8 @@ fn test_nan_split_point_panics() {
 
 #[test]
 fn test_merge() {
-    let mut sketch1 = KllSketch::<f32>::new(DEFAULT_K);
-    let mut sketch2 = KllSketch::<f32>::new(DEFAULT_K);
+    let mut sketch1 = KllSketch::<f32>::new(DEFAULT_K).unwrap();
+    let mut sketch2 = KllSketch::<f32>::new(DEFAULT_K).unwrap();
     let n = 10_000;
     for i in 0..n {
         sketch1.update(i as f32);
@@ -280,8 +281,8 @@ fn test_merge() {
 
 #[test]
 fn test_merge_lower_k() {
-    let mut sketch1 = KllSketch::<f32>::new(256);
-    let mut sketch2 = KllSketch::<f32>::new(128);
+    let mut sketch1 = KllSketch::<f32>::new(256).unwrap();
+    let mut sketch2 = KllSketch::<f32>::new(128).unwrap();
     let n = 10_000;
     for i in 0..n {
         sketch1.update(i as f32);
@@ -308,8 +309,8 @@ fn test_merge_lower_k() {
 
 #[test]
 fn test_merge_exact_mode_lower_k() {
-    let mut sketch1 = KllSketch::<f32>::new(256);
-    let sketch2 = KllSketch::<f32>::new(128);
+    let mut sketch1 = KllSketch::<f32>::new(256).unwrap();
+    let sketch2 = KllSketch::<f32>::new(128).unwrap();
     let n = 10_000;
     for i in 0..n {
         sketch1.update(i as f32);
@@ -329,8 +330,8 @@ fn test_merge_exact_mode_lower_k() {
 
 #[test]
 fn test_merge_min_max_from_other() {
-    let mut sketch1 = KllSketch::<f32>::new(DEFAULT_K);
-    let mut sketch2 = KllSketch::<f32>::new(DEFAULT_K);
+    let mut sketch1 = KllSketch::<f32>::new(DEFAULT_K).unwrap();
+    let mut sketch2 = KllSketch::<f32>::new(DEFAULT_K).unwrap();
     sketch1.update(1.0);
     sketch2.update(2.0);
     sketch2.merge(&sketch1);
@@ -340,11 +341,11 @@ fn test_merge_min_max_from_other() {
 
 #[test]
 fn test_merge_min_max_large_other() {
-    let mut sketch1 = KllSketch::<f32>::new(DEFAULT_K);
+    let mut sketch1 = KllSketch::<f32>::new(DEFAULT_K).unwrap();
     for i in 0..1_000_000 {
         sketch1.update(i as f32);
     }
-    let mut sketch2 = KllSketch::<f32>::new(DEFAULT_K);
+    let mut sketch2 = KllSketch::<f32>::new(DEFAULT_K).unwrap();
     sketch2.merge(&sketch1);
     assert_eq!(sketch2.min_item().cloned(), Some(0.0));
     assert_eq!(sketch2.max_item().cloned(), Some(999_999.0));
@@ -352,7 +353,7 @@ fn test_merge_min_max_large_other() {
 
 #[test]
 fn test_reset_retains_configuration() {
-    let mut sketch = KllSketch::<f32>::new(64);
+    let mut sketch = KllSketch::<f32>::new(64).unwrap();
     for i in 0..10_000 {
         sketch.update(i as f32);
     }
@@ -373,7 +374,8 @@ fn test_reset_retains_configuration() {
 #[test]
 fn test_custom_comparator_roundtrip() {
     let mut sketch =
-        KllSketch::<String, NumericStringOrder>::new_with_comparator(200, NumericStringOrder);
+        KllSketch::<String, NumericStringOrder>::new_with_comparator(200, NumericStringOrder)
+            .unwrap();
     for item in ["2", "10", "1"] {
         sketch.update(item.to_owned());
     }
