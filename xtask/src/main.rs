@@ -316,7 +316,7 @@ impl CommandPrepareTestData {
     }
 
     fn prepare(self) -> Result<()> {
-        const REVISION: &str = "d363b12d293b395d90abb42677f9ea63178dbc0d";
+        const REVISION: &str = "c0a180708c6e6433e4cba7fba091713eb8af3eaa";
         let serde_tests =
             Path::new(env!("CARGO_WORKSPACE_DIR")).join("tests-integration/tests/serde_tests");
         let archive_url =
