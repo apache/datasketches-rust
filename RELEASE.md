@@ -112,6 +112,10 @@ CI does not run on every push to `main` or on release tags. Complete the local r
 4. **Release tools**: Install Git, GPG, SVN, `unzip`, and the tools required by `cargo x lint`.
 5. **Clean checkout**: Start from a current checkout of `main` with no local changes.
 
+## Human communication handoffs
+
+Release tooling may prepare message templates, deadlines, vote tallies, and supporting links, but it does not send public communications on behalf of the release manager. The release manager reviews and manually sends the `[VOTE]`, `[RESULT][VOTE]`, and `[ANNOUNCE]` messages from their Apache email account, then records the resulting mailing-list thread URLs in the release tracking issue.
+
 ## Step 1: Prepare the release on `main`
 
 Create a release-preparation pull request that:
@@ -341,7 +345,7 @@ The commands verify both that `signing_key_fingerprint` is present in `KEYS` and
 
 ## Step 6: Send the release vote
 
-Send the vote to `dev@datasketches.apache.org`.
+Hand the prepared vote template to the release manager. The release manager reviews it and manually sends the vote to `dev@datasketches.apache.org` from their Apache email account.
 
 **Subject:** `[VOTE] Release Apache DataSketches Rust ${release_version} (RC${rc_number})`
 
@@ -431,7 +435,7 @@ A release requires at least three explicit binding `+1` votes from PMC members a
 
 ## Step 7: Publish an approved release
 
-Send a `[RESULT][VOTE]` message that lists the binding and non-binding vote totals.
+After the voting period closes and the vote requirements are met, hand the prepared result and tally to the release manager. The release manager reviews and manually sends a `[RESULT][VOTE]` message that lists the binding and non-binding vote totals.
 
 Move the exact approved artifacts from `dist/dev` to `dist/release` without rebuilding or renaming them:
 
@@ -501,7 +505,7 @@ cargo info "datasketches@$release_version"
 
 4. Review the generated `_includes/downloadsInclude.txt`, submit the website change, and verify the download, signature, checksum, and `KEYS` links after it is published.
 5. Wait at least one hour after the release first appears on `downloads.apache.org` before announcing it.
-6. Send a plain-text announcement from an `@apache.org` address to `dev@datasketches.apache.org` and `announce@apache.org`. Include a short project description and links to the project download page, changelog, crates.io, and docs.rs.
+6. Prepare a plain-text announcement with a short project description and links to the project download page, changelog, crates.io, and docs.rs. Hand it to the release manager, who reviews and manually sends it from their Apache email account to `dev@datasketches.apache.org` and `announce@apache.org`.
 7. Submit a post-release pull request that adds the actual release date to the `v${release_version}` changelog heading, then close the release tracking issue.
 
 ## Troubleshooting
