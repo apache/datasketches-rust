@@ -149,8 +149,9 @@ Do not add release changes after creating the release candidate. Fixes require a
 Confirm that the release version and changelog are present in the candidate commit:
 
 ```bash
-git grep -F "version = \"${release_version}\"" -- datasketches/Cargo.toml Cargo.lock
-grep -Fx "## v${release_version}" CHANGELOG.md
+grep -F -x "version = \"${release_version}\"" datasketches/Cargo.toml
+grep -F -x "## v${release_version}" CHANGELOG.md
+cargo metadata --locked --no-deps --format-version 1 >/dev/null
 test -z "$(git status --porcelain)"
 
 release_commit="$(git rev-parse HEAD)"
