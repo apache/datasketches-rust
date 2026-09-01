@@ -41,7 +41,7 @@ fn assert_jaccard_estimate(actual: JaccardSimilarity, expected: f64) {
 }
 
 fn sketch_with_range(start: u64, count: u64) -> ThetaSketch {
-    let mut sketch = ThetaSketchBuilder::default().build();
+    let mut sketch = ThetaSketchBuilder::default().build().unwrap();
     for value in start..start + count {
         sketch.update(value);
     }
@@ -49,17 +49,32 @@ fn sketch_with_range(start: u64, count: u64) -> ThetaSketch {
 }
 
 fn sketch_with_range_and_seed(start: u64, count: u64, seed: u64) -> ThetaSketch {
-    let mut sketch = ThetaSketchBuilder::default().seed(seed).build();
+    let mut sketch = ThetaSketchBuilder::default().seed(seed).build().unwrap();
     for value in start..start + count {
         sketch.update(value);
     }
     sketch
 }
 
+fn non_empty_sketch_without_retained_entries(
+    sampling_probability: f32,
+    value: &str,
+) -> ThetaSketch {
+    let mut sketch = ThetaSketchBuilder::default()
+        .sampling_probability(sampling_probability)
+        .build()
+        .unwrap();
+    sketch.update(value);
+
+    assert!(!sketch.is_empty());
+    assert_eq!(sketch.num_retained(), 0);
+    sketch
+}
+
 #[test]
 fn test_empty() {
-    let sketch_a = ThetaSketchBuilder::default().build();
-    let sketch_b = ThetaSketchBuilder::default().build();
+    let sketch_a = ThetaSketchBuilder::default().build().unwrap();
+    let sketch_b = ThetaSketchBuilder::default().build().unwrap();
 
     let operator = ThetaJaccardSimilarity::default();
     let jaccard = operator.compute(&sketch_a, &sketch_b).unwrap();
@@ -70,7 +85,7 @@ fn test_empty() {
 
 #[test]
 fn test_exactly_equal() {
-    let empty = ThetaSketchBuilder::default().build();
+    let empty = ThetaSketchBuilder::default().build().unwrap();
     let sketch_a = sketch_with_range(0, 1000);
     let sketch_b = sketch_with_range(0, 1000);
     let sketch_c = sketch_with_range(1000, 1000);
@@ -150,7 +165,7 @@ fn test_half_overlap_estimation_mode_custom_seed() {
     let sketch_a = sketch_with_range_and_seed(0, 10000, seed);
     let sketch_b = sketch_with_range_and_seed(5000, 10000, seed);
 
-    let operator = ThetaJaccardSimilarity::with_seed(seed);
+    let operator = ThetaJaccardSimilarity::with_seed(seed).unwrap();
     let jaccard = operator.compute(&sketch_a, &sketch_b).unwrap();
     assert_jaccard_estimate(jaccard, 0.33);
 
@@ -162,10 +177,10 @@ fn test_half_overlap_estimation_mode_custom_seed() {
 
 #[test]
 fn test_seed_mismatch() {
-    let empty = ThetaSketchBuilder::default().build();
-    let mut sketch_a = ThetaSketchBuilder::default().build();
+    let empty = ThetaSketchBuilder::default().build().unwrap();
+    let mut sketch_a = ThetaSketchBuilder::default().build().unwrap();
     sketch_a.update(1u64);
-    let mut sketch_b = ThetaSketchBuilder::default().seed(123).build();
+    let mut sketch_b = ThetaSketchBuilder::default().seed(123).build().unwrap();
     sketch_b.update(1u64);
 
     assert_that!(
@@ -184,32 +199,30 @@ fn test_seed_mismatch() {
 }
 
 #[test]
-fn test_distinct_non_empty_sketches_with_no_retained_entries_are_uncertain() {
-    let mut sketch_a = ThetaSketchBuilder::default()
-        .sampling_probability(1e-12)
-        .build();
-    let mut sketch_b = ThetaSketchBuilder::default()
-        .sampling_probability(1e-12)
-        .build();
-    let mut different_theta = ThetaSketchBuilder::default()
-        .sampling_probability(2e-12)
-        .build();
-    sketch_a.update("apple");
-    sketch_b.update("banana");
-    different_theta.update("orange");
+fn test_equal_theta_non_empty_sketches_with_no_retained_entries_are_identical() {
+    let sketch_a = non_empty_sketch_without_retained_entries(1e-12, "apple");
+    let sketch_b = non_empty_sketch_without_retained_entries(1e-12, "banana");
 
-    assert!(!sketch_a.is_empty());
-    assert!(!sketch_b.is_empty());
-    assert_eq!(sketch_a.num_retained(), 0);
-    assert_eq!(sketch_b.num_retained(), 0);
-    assert_eq!(different_theta.num_retained(), 0);
+    assert_eq!(sketch_a.theta64(), sketch_b.theta64());
 
     let operator = ThetaJaccardSimilarity::default();
-    let jaccard = operator.compute(&sketch_a, &sketch_b).unwrap();
+    assert_jaccard_exact(operator.compute(&sketch_a, &sketch_b).unwrap(), 1.0);
+    assert_jaccard_exact(operator.compute(&sketch_a, &sketch_a).unwrap(), 1.0);
+    assert!(operator.exactly_equal(&sketch_a, &sketch_b).unwrap());
+}
+
+#[test]
+fn test_distinct_theta_non_empty_sketches_with_no_retained_entries_are_uncertain() {
+    let sketch_a = non_empty_sketch_without_retained_entries(1e-12, "apple");
+    let different_theta = non_empty_sketch_without_retained_entries(2e-12, "orange");
+
+    assert_ne!(sketch_a.theta64(), different_theta.theta64());
+
+    let operator = ThetaJaccardSimilarity::default();
+    let jaccard = operator.compute(&sketch_a, &different_theta).unwrap();
     assert_eq!(jaccard.lower_bound(), 0.0);
     assert_eq!(jaccard.estimate(), 0.5);
     assert_eq!(jaccard.upper_bound(), 1.0);
 
-    assert!(operator.exactly_equal(&sketch_a, &sketch_b).unwrap());
     assert!(!operator.exactly_equal(&sketch_a, &different_theta).unwrap());
 }

@@ -88,7 +88,7 @@ static HIP_HIGH_SIDE_DATA: [u16; 33] = [
     5880, 5914, 5953, // 14 1000297
 ];
 
-pub(super) fn estimate(merge_flag: bool, hip_est_accum: f64, lg_k: u8, num_coupons: u32) -> f64 {
+pub fn estimate(merge_flag: bool, hip_est_accum: f64, lg_k: u8, num_coupons: u32) -> f64 {
     if !merge_flag {
         hip_est_accum
     } else {
@@ -96,7 +96,7 @@ pub(super) fn estimate(merge_flag: bool, hip_est_accum: f64, lg_k: u8, num_coupo
     }
 }
 
-pub(super) fn lower_bound(
+pub fn lower_bound(
     merge_flag: bool,
     hip_est_accum: f64,
     lg_k: u8,
@@ -110,7 +110,7 @@ pub(super) fn lower_bound(
     }
 }
 
-pub(super) fn upper_bound(
+pub fn upper_bound(
     merge_flag: bool,
     hip_est_accum: f64,
     lg_k: u8,

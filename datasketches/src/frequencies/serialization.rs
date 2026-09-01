@@ -56,9 +56,16 @@ impl FrequentItemValue for String {
     fn deserialize_value(cursor: &mut SketchSlice<'_>) -> Result<Self, Error> {
         let len = cursor.read_u32_le().map_err(|_| {
             Error::insufficient_data("failed to read string item length".to_string())
-        })?;
+        })? as usize;
 
-        let mut slice = vec![0; len as usize];
+        let remaining = cursor.remaining().len();
+        if len > remaining {
+            return Err(Error::insufficient_data(format!(
+                "string item length ({len}) exceeds the remaining {remaining} bytes"
+            )));
+        }
+
+        let mut slice = vec![0; len];
         cursor.read_exact(&mut slice).map_err(|_| {
             Error::insufficient_data("failed to read string item bytes".to_string())
         })?;

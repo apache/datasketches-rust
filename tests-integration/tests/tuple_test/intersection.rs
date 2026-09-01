@@ -64,10 +64,10 @@ fn result_before_first_update_returns_none() {
 
 #[test]
 fn overlap_combines_summaries() {
-    let mut a = default_tuple_sketch_builder().build();
+    let mut a = default_tuple_sketch_builder().build().unwrap();
     a.update("shared", 3u64);
     a.update("only_a", 100u64);
-    let mut b = default_tuple_sketch_builder().build();
+    let mut b = default_tuple_sketch_builder().build().unwrap();
     b.update("shared", 4u64);
     b.update("only_b", 200u64);
 
@@ -77,7 +77,7 @@ fn overlap_combines_summaries() {
     let result = intersection.to_sketch(true).unwrap();
 
     assert_eq!(result.num_retained(), 1);
-    assert_eq!(result.iter().next().unwrap().1, &7);
+    assert_eq!(result.iter().next().unwrap().summary(), &7);
 }
 
 #[test]
@@ -114,7 +114,8 @@ fn logically_non_empty_input_without_retained_entries_is_preserved() {
         .find(|candidate| {
             let mut sketch = default_tuple_sketch_builder()
                 .sampling_probability(0.001)
-                .build();
+                .build()
+                .unwrap();
             sketch.update(*candidate, 1u64);
             !sketch.is_empty() && sketch.num_retained() == 0
         })
@@ -122,7 +123,8 @@ fn logically_non_empty_input_without_retained_entries_is_preserved() {
 
     let mut sketch = default_tuple_sketch_builder()
         .sampling_probability(0.001)
-        .build();
+        .build()
+        .unwrap();
     sketch.update(screened_value, 1u64);
 
     let mut intersection = TupleIntersection::new(SumPolicy);
@@ -136,14 +138,14 @@ fn logically_non_empty_input_without_retained_entries_is_preserved() {
 
 #[test]
 fn only_non_empty_inputs_require_the_operator_seed() {
-    let empty_other_seed = default_tuple_sketch_builder().seed(2).build();
-    let mut non_empty_other_seed = default_tuple_sketch_builder().seed(2).build();
+    let empty_other_seed = default_tuple_sketch_builder().seed(2).build().unwrap();
+    let mut non_empty_other_seed = default_tuple_sketch_builder().seed(2).build().unwrap();
     non_empty_other_seed.update("value", 1u64);
 
-    let mut intersection = TupleIntersection::with_seed(SumPolicy, 1);
+    let mut intersection = TupleIntersection::with_seed(SumPolicy, 1).unwrap();
     intersection.update(&empty_other_seed).unwrap();
 
-    let mut intersection = TupleIntersection::with_seed(SumPolicy, 1);
+    let mut intersection = TupleIntersection::with_seed(SumPolicy, 1).unwrap();
     let err = intersection.update(&non_empty_other_seed).unwrap_err();
     assert_eq!(err.kind(), ErrorKind::InvalidArgument);
 }
@@ -160,8 +162,8 @@ fn result_ordering_follows_the_request() {
 
 #[test]
 fn estimation_bounds_cover_the_true_intersection() {
-    let mut a = default_tuple_sketch_builder().lg_k(8).build();
-    let mut b = default_tuple_sketch_builder().lg_k(8).build();
+    let mut a = default_tuple_sketch_builder().lg_k(8).build().unwrap();
+    let mut b = default_tuple_sketch_builder().lg_k(8).build().unwrap();
     for value in 0..50_000 {
         a.update(value, 1u64);
     }

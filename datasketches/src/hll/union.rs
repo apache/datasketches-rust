@@ -31,12 +31,14 @@
 use std::hash::Hash;
 
 use crate::common::NumStdDev;
+use crate::error::Error;
 use crate::hll::Coupon;
 use crate::hll::HllSketch;
 use crate::hll::HllType;
 use crate::hll::array4::Array4;
 use crate::hll::array6::Array6;
 use crate::hll::array8::Array8;
+use crate::hll::estimator::EstimateState;
 use crate::hll::mode::Mode;
 
 /// An HLL union for combining multiple HLL sketches.
@@ -66,9 +68,9 @@ impl HllUnion {
     /// * `lg_max_k`: Maximum `lg_k` in `[4, 21]`. This determines the maximum precision the union
     ///   can handle. Input sketches with a larger `lg_k` are downsampled.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if `lg_max_k` is outside `[4, 21]`.
+    /// Returns an error if `lg_max_k` is outside `[4, 21]`.
     ///
     /// # Examples
     ///
@@ -76,22 +78,16 @@ impl HllUnion {
     /// use datasketches::hll::HllType;
     /// use datasketches::hll::HllUnion;
     ///
-    /// let mut union = HllUnion::new(10);
+    /// let mut union = HllUnion::new(10).unwrap();
     /// union.update_value("apple");
     /// let result = union.to_sketch(HllType::Hll8);
     /// assert_eq!(result.estimate(), 1.0);
     /// ```
-    pub fn new(lg_max_k: u8) -> Self {
-        assert!(
-            (4..=21).contains(&lg_max_k),
-            "lg_max_k must be in [4, 21], got {}",
-            lg_max_k
-        );
-
+    pub fn new(lg_max_k: u8) -> Result<Self, Error> {
         // Start with an empty gadget at lg_max_k using Hll8
-        let gadget = HllSketch::new(lg_max_k, HllType::Hll8);
+        let gadget = HllSketch::new(lg_max_k, HllType::Hll8)?;
 
-        Self { lg_max_k, gadget }
+        Ok(Self { lg_max_k, gadget })
     }
 
     /// Updates the union with a hashable value.
@@ -105,7 +101,7 @@ impl HllUnion {
     /// use datasketches::hll::HllType;
     /// use datasketches::hll::HllUnion;
     ///
-    /// let mut union = HllUnion::new(10);
+    /// let mut union = HllUnion::new(10).unwrap();
     /// union.update_value("apple");
     /// let result = union.to_sketch(HllType::Hll8);
     /// assert_eq!(result.estimate(), 1.0);
@@ -126,12 +122,12 @@ impl HllUnion {
     /// use datasketches::hll::HllType;
     /// use datasketches::hll::HllUnion;
     ///
-    /// let mut left = HllSketch::new(10, HllType::Hll8);
-    /// let mut right = HllSketch::new(10, HllType::Hll8);
+    /// let mut left = HllSketch::new(10, HllType::Hll8).unwrap();
+    /// let mut right = HllSketch::new(10, HllType::Hll8).unwrap();
     /// left.update("apple");
     /// right.update("banana");
     ///
-    /// let mut union = HllUnion::new(10);
+    /// let mut union = HllUnion::new(10).unwrap();
     /// union.update(&left);
     /// union.update(&right);
     /// let result = union.to_sketch(HllType::Hll8);
@@ -258,7 +254,7 @@ impl HllUnion {
     /// use datasketches::hll::HllType;
     /// use datasketches::hll::HllUnion;
     ///
-    /// let mut union = HllUnion::new(10);
+    /// let mut union = HllUnion::new(10).unwrap();
     /// union.update_value("apple");
     /// let result = union.to_sketch(HllType::Hll6);
     /// assert!(result.estimate() >= 1.0);
@@ -313,7 +309,7 @@ impl HllUnion {
     ///
     /// This clears all accumulated data so the union can be reused.
     pub fn reset(&mut self) {
-        self.gadget = HllSketch::new(self.lg_max_k, HllType::Hll8);
+        self.gadget = HllSketch::new(self.lg_max_k, HllType::Hll8).unwrap();
     }
 
     /// Returns the union's current cardinality estimate.
@@ -429,14 +425,16 @@ fn merge_array_into_array8(dst_array8: &mut Array8, dst_lg_k: u8, src_mode: &Mod
     }
 }
 
-/// Extract HIP accumulator from an array mode
-fn get_array_hip_accum(mode: &Mode) -> f64 {
+/// Extract estimate state from an array mode.
+fn get_array_estimate_state(mode: &Mode) -> EstimateState {
     match mode {
-        Mode::Array8(src) => src.hip_accum(),
-        Mode::Array6(src) => src.hip_accum(),
-        Mode::Array4(src) => src.hip_accum(),
+        Mode::Array8(src) => src.estimate_state(),
+        Mode::Array6(src) => src.estimate_state(),
+        Mode::Array4(src) => src.estimate_state(),
         Mode::List { .. } | Mode::Set { .. } => {
-            unreachable!("get_array_hip_accum called with non-array mode; List/Set not supported");
+            unreachable!(
+                "get_array_estimate_state called with non-array mode; List/Set not supported"
+            );
         }
     }
 }
@@ -525,8 +523,9 @@ fn merge_array_with_downsample(dst: &mut Array8, dst_lg_k: u8, src_mode: &Mode, 
 /// Convert Array8 to a different HLL type
 ///
 /// Creates a new sketch with the requested type by copying register values
-/// from the Array8 source. Preserves the HIP accumulator.
+/// from the Array8 source. Preserves the estimate state.
 fn convert_array8_to_type(src: &Array8, lg_config_k: u8, target_type: HllType) -> HllSketch {
+    let estimate_state = src.estimate_state();
     match target_type {
         HllType::Hll8 => HllSketch::from_mode(lg_config_k, Mode::Array8(src.clone())),
         HllType::Hll6 => {
@@ -539,12 +538,7 @@ fn convert_array8_to_type(src: &Array8, lg_config_k: u8, target_type: HllType) -
                     array6.update(coupon);
                 }
             }
-
-            let src_est = src.estimate();
-            let arr6_est = array6.estimate();
-            if src_est > arr6_est {
-                array6.set_hip_accum(src_est);
-            }
+            array6.restore_estimate_state(estimate_state);
 
             HllSketch::from_mode(lg_config_k, Mode::Array6(array6))
         }
@@ -557,12 +551,7 @@ fn convert_array8_to_type(src: &Array8, lg_config_k: u8, target_type: HllType) -
                     array4.update(coupon);
                 }
             }
-
-            let src_est = src.estimate();
-            let arr4_est = array4.estimate();
-            if src_est > arr4_est {
-                array4.set_hip_accum(src_est);
-            }
+            array4.restore_estimate_state(estimate_state);
 
             HllSketch::from_mode(lg_config_k, Mode::Array4(array4))
         }
@@ -583,11 +572,12 @@ fn copy_array46_via_coupons(dst: &mut Array8, num_registers: usize, get_value: i
 /// Copy or downsample a source array to create a new Array8
 ///
 /// Directly copies if src_lg_k <= tgt_lg_k, downsamples otherwise.
-/// Result is marked as out-of-order and HIP accumulator is preserved.
+/// The source estimate state carries over because the result represents the same logical sketch.
 fn copy_or_downsample(src_mode: &Mode, src_lg_k: u8, tgt_lg_k: u8) -> Array8 {
-    if src_lg_k <= tgt_lg_k {
+    let estimate_state = get_array_estimate_state(src_mode);
+
+    let mut result = if src_lg_k <= tgt_lg_k {
         let mut result = Array8::new(src_lg_k);
-        let src_hip = get_array_hip_accum(src_mode);
 
         match src_mode {
             Mode::Array8(src) => {
@@ -606,12 +596,14 @@ fn copy_or_downsample(src_mode: &Mode, src_lg_k: u8, tgt_lg_k: u8) -> Array8 {
             }
         }
 
-        result.set_hip_accum(src_hip);
         result
     } else {
         // Downsample from src to tgt
         let mut result = Array8::new(tgt_lg_k);
         merge_array_with_downsample(&mut result, tgt_lg_k, src_mode, src_lg_k);
         result
-    }
+    };
+
+    result.restore_estimate_state(estimate_state);
+    result
 }

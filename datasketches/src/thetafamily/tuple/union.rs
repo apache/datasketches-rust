@@ -26,8 +26,6 @@ use crate::common::ResizeFactor;
 use crate::error::Error;
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::thetacommon::constants::DEFAULT_LG_K;
-use crate::thetacommon::constants::MAX_LG_K;
-use crate::thetacommon::constants::MIN_LG_K;
 use crate::thetacommon::union::UnionState;
 use crate::tuple::hash_table::TupleEntry;
 use crate::tuple::policy::SummaryCombinePolicy;
@@ -49,15 +47,17 @@ use crate::tuple::sketch::TupleSketchView;
 /// use datasketches::tuple::TupleUnionBuilder;
 ///
 /// let update_policy = DefaultUpdatePolicy::<u64>::default();
-/// let mut a = TupleSketchBuilder::new(update_policy).build();
+/// let mut a = TupleSketchBuilder::new(update_policy).build().unwrap();
 /// a.update("apple", 1);
 /// a.update("banana", 1);
 ///
-/// let mut b = TupleSketchBuilder::new(update_policy).build();
+/// let mut b = TupleSketchBuilder::new(update_policy).build().unwrap();
 /// b.update("banana", 1);
 /// b.update("cherry", 1);
 ///
-/// let mut union = TupleUnionBuilder::new(DefaultUnionPolicy::<u64>::default()).build();
+/// let mut union = TupleUnionBuilder::new(DefaultUnionPolicy::<u64>::default())
+///     .build()
+///     .unwrap();
 /// union.update(&a).unwrap();
 /// union.update(&b).unwrap();
 ///
@@ -104,14 +104,7 @@ where
     where
         P::Summary: Clone,
     {
-        let result = self.state.to_compact_parts(ordered);
-        CompactTupleSketch::from_parts(
-            result.entries,
-            result.theta,
-            result.seed_hash,
-            result.ordered,
-            result.empty,
-        )
+        CompactTupleSketch::from_compact_state(self.state.to_compact_sketch_state(ordered))
     }
 
     /// Resets the union to its initial empty state.
@@ -130,6 +123,8 @@ where
 /// Every builder carries a concrete [`SummaryCombinePolicy`]. Use
 /// [`DefaultUnionPolicy`](crate::tuple::DefaultUnionPolicy) for additive summaries, or supply a
 /// custom combine policy.
+///
+/// Configuration is stored without validation and checked when [`build()`](Self::build) is called.
 #[derive(Debug)]
 pub struct TupleUnionBuilder<P>
 where
@@ -156,7 +151,8 @@ where
     ///
     /// let union = TupleUnionBuilder::new(DefaultUnionPolicy::<u64>::default())
     ///     .lg_k(12)
-    ///     .build();
+    ///     .build()
+    ///     .unwrap();
     /// ```
     pub fn new(policy: P) -> Self {
         Self {
@@ -169,15 +165,7 @@ where
     }
 
     /// Sets `lg_k`, the base-2 logarithm of the nominal capacity.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `lg_k` is outside `[5, 26]`.
     pub fn lg_k(mut self, lg_k: u8) -> Self {
-        assert!(
-            (MIN_LG_K..=MAX_LG_K).contains(&lg_k),
-            "lg_k must be in [{MIN_LG_K}, {MAX_LG_K}], got {lg_k}"
-        );
         self.lg_k = lg_k;
         self
     }
@@ -189,15 +177,7 @@ where
     }
 
     /// Sets the sampling probability.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `probability` is outside `(0.0, 1.0]`.
     pub fn sampling_probability(mut self, probability: f32) -> Self {
-        assert!(
-            (0.0..=1.0).contains(&probability) && probability > 0.0,
-            "sampling_probability must be in (0.0, 1.0], got {probability}"
-        );
         self.sampling_probability = probability;
         self
     }
@@ -209,15 +189,20 @@ where
     }
 
     /// Builds the [`TupleUnion`].
-    pub fn build(self) -> TupleUnion<P> {
-        TupleUnion {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `lg_k` is outside `[5, 26]`, `sampling_probability` is outside
+    /// `(0.0, 1.0]`, or the computed seed hash is zero.
+    pub fn build(self) -> Result<TupleUnion<P>, Error> {
+        Ok(TupleUnion {
             state: UnionState::new(
                 self.lg_k,
                 self.resize_factor,
                 self.sampling_probability,
                 self.seed,
                 self.policy,
-            ),
-        }
+            )?,
+        })
     }
 }

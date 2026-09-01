@@ -18,6 +18,7 @@
 //! Core ReqSketch construction and update behavior.
 
 use datasketches::error::Error;
+use datasketches::error::ErrorKind;
 use datasketches::req::RankAccuracy;
 use datasketches::req::ReqSketch;
 use datasketches::req::SearchCriteria;
@@ -31,11 +32,15 @@ use googletest::prelude::le;
 use googletest::prelude::lt;
 use googletest::prelude::near;
 use googletest::prelude::none;
-use googletest::prelude::ok;
+
+use super::ReqF32;
+use super::ReqF64;
+use super::req_f32;
+use super::req_f64;
 
 #[test]
 fn empty_sketch_has_default_state_and_rejects_queries() {
-    let sketch: ReqSketch<f32> = ReqSketch::new();
+    let sketch: ReqSketch<ReqF64> = ReqSketch::default();
 
     assert_eq!(sketch.k(), 12);
     assert!(sketch.is_empty());
@@ -46,7 +51,7 @@ fn empty_sketch_has_default_state_and_rejects_queries() {
     assert_that!(sketch.max_item(), none());
 
     assert_that!(
-        sketch.rank(&0.0, SearchCriteria::Inclusive),
+        sketch.rank(&req_f64(0.0), SearchCriteria::Inclusive),
         err(anything())
     );
     assert_that!(
@@ -54,69 +59,66 @@ fn empty_sketch_has_default_state_and_rejects_queries() {
         err(anything())
     );
     assert_that!(
-        sketch.pmf(&[0.0], SearchCriteria::Inclusive),
+        sketch.pmf(&[req_f64(0.0)], SearchCriteria::Inclusive),
         err(anything())
     );
     assert_that!(
-        sketch.cdf(&[0.0], SearchCriteria::Inclusive),
+        sketch.cdf(&[req_f64(0.0)], SearchCriteria::Inclusive),
         err(anything())
     );
 }
 
 #[test]
 fn single_value_hra_answers_exactly() {
-    let mut sketch = ReqSketch::new();
-    sketch.update(1.0f32);
+    let mut sketch: ReqSketch<ReqF32> = ReqSketch::default();
+    sketch.update(req_f32(1.0));
 
     assert!(!sketch.is_empty());
     assert!(!sketch.is_estimation_mode());
     assert_eq!(sketch.n(), 1);
     assert_eq!(sketch.num_retained(), 1);
-    assert_eq!(sketch.min_item(), Some(&1.0));
-    assert_eq!(sketch.max_item(), Some(&1.0));
+    assert_eq!(sketch.min_item().copied(), Some(req_f32(1.0)));
+    assert_eq!(sketch.max_item().copied(), Some(req_f32(1.0)));
 
     assert_that!(
         sketch
-            .rank(&1.0, SearchCriteria::Exclusive)
+            .rank(&req_f32(1.0), SearchCriteria::Exclusive)
             .expect("rank should succeed"),
         approx_eq(0.0)
     );
     assert_that!(
         sketch
-            .rank(&1.0, SearchCriteria::Inclusive)
+            .rank(&req_f32(1.0), SearchCriteria::Inclusive)
             .expect("rank should succeed"),
         approx_eq(1.0)
     );
     assert_that!(
         sketch
-            .rank(&1.1, SearchCriteria::Exclusive)
+            .rank(&req_f32(2.0), SearchCriteria::Exclusive)
             .expect("rank should succeed"),
         approx_eq(1.0)
     );
     assert_that!(
         sketch
-            .rank(&f32::INFINITY, SearchCriteria::Inclusive)
+            .rank(&req_f32(f32::MAX), SearchCriteria::Inclusive)
             .expect("rank should succeed"),
         approx_eq(1.0)
     );
 
     for rank in [0.0, 0.5, 1.0] {
-        assert_that!(
+        assert_eq!(
             sketch
                 .quantile(rank, SearchCriteria::Exclusive)
                 .expect("quantile should succeed"),
-            approx_eq(1.0)
+            req_f32(1.0)
         );
     }
 }
 
 #[test]
 fn single_value_lra_preserves_configuration() {
-    let mut sketch: ReqSketch<f32> = ReqSketch::builder()
-        .rank_accuracy(RankAccuracy::LowRank)
-        .build()
-        .expect("build should succeed");
-    sketch.update(1.0f32);
+    let mut sketch = ReqSketch::<ReqF64>::new(12, RankAccuracy::LowRank).unwrap();
+    sketch.update(req_f64(1.0));
 
     assert_eq!(sketch.rank_accuracy(), RankAccuracy::LowRank);
     assert!(!sketch.is_empty());
@@ -127,12 +129,12 @@ fn single_value_lra_preserves_configuration() {
 
 #[test]
 fn repeated_values_respect_search_criteria() {
-    let mut sketch = ReqSketch::new();
+    let mut sketch: ReqSketch<ReqF64> = ReqSketch::default();
     for _ in 0..3 {
-        sketch.update(1.0f32);
+        sketch.update(req_f64(1.0));
     }
     for _ in 0..3 {
-        sketch.update(2.0f32);
+        sketch.update(req_f64(2.0));
     }
 
     assert!(!sketch.is_estimation_mode());
@@ -141,25 +143,25 @@ fn repeated_values_respect_search_criteria() {
 
     assert_that!(
         sketch
-            .rank(&1.0, SearchCriteria::Exclusive)
+            .rank(&req_f64(1.0), SearchCriteria::Exclusive)
             .expect("rank should succeed"),
         approx_eq(0.0)
     );
     assert_that!(
         sketch
-            .rank(&1.0, SearchCriteria::Inclusive)
+            .rank(&req_f64(1.0), SearchCriteria::Inclusive)
             .expect("rank should succeed"),
         approx_eq(0.5)
     );
     assert_that!(
         sketch
-            .rank(&2.0, SearchCriteria::Exclusive)
+            .rank(&req_f64(2.0), SearchCriteria::Exclusive)
             .expect("rank should succeed"),
         approx_eq(0.5)
     );
     assert_that!(
         sketch
-            .rank(&2.0, SearchCriteria::Inclusive)
+            .rank(&req_f64(2.0), SearchCriteria::Inclusive)
             .expect("rank should succeed"),
         approx_eq(1.0)
     );
@@ -167,28 +169,28 @@ fn repeated_values_respect_search_criteria() {
 
 #[test]
 fn estimation_mode_compresses_and_keeps_min_max() {
-    let mut sketch = ReqSketch::new();
+    let mut sketch: ReqSketch<ReqF64> = ReqSketch::default();
     let n = 100_000;
 
     for i in 0..n {
-        sketch.update(i as f32);
+        sketch.update(req_f64(i as f64));
     }
 
     assert!(!sketch.is_empty());
     assert!(sketch.is_estimation_mode());
     assert_eq!(sketch.n(), n);
     assert_that!(sketch.num_retained(), lt(n as u32));
-    assert_eq!(sketch.min_item(), Some(&0.0));
-    assert_eq!(sketch.max_item(), Some(&((n - 1) as f32)));
+    assert_eq!(sketch.min_item().copied(), Some(req_f64(0.0)));
+    assert_eq!(sketch.max_item().copied(), Some(req_f64((n - 1) as f64)));
 
     let r0 = sketch
-        .rank(&0.0, SearchCriteria::Exclusive)
+        .rank(&req_f64(0.0), SearchCriteria::Exclusive)
         .expect("rank should succeed");
     let rmid = sketch
-        .rank(&(n as f32 / 2.0), SearchCriteria::Exclusive)
+        .rank(&req_f64((n / 2) as f64), SearchCriteria::Exclusive)
         .expect("rank should succeed");
     let rmax = sketch
-        .rank(&(n as f32), SearchCriteria::Exclusive)
+        .rank(&req_f64(n as f64), SearchCriteria::Exclusive)
         .expect("rank should succeed");
 
     assert_that!(r0, near(0.0, 1e-3));
@@ -197,79 +199,58 @@ fn estimation_mode_compresses_and_keeps_min_max() {
 }
 
 #[test]
-fn nan_updates_are_silently_skipped_for_f64() {
-    let mut sketch: ReqSketch<f64> = ReqSketch::new();
-    sketch.update(f64::NAN);
-    sketch.update(f64::NAN);
-    assert!(sketch.is_empty());
-    assert_eq!(sketch.n(), 0);
+fn req_float_adapts_the_non_nan_numeric_order() {
+    assert!(ReqF32::new(f32::NAN).is_err());
+    assert!(ReqF64::new(f64::NAN).is_err());
 
-    sketch.update(1.0);
-    sketch.update(f64::NAN);
-    sketch.update(2.0);
-    assert_eq!(sketch.n(), 2);
-    assert_eq!(sketch.min_item(), Some(&1.0));
-    assert_eq!(sketch.max_item(), Some(&2.0));
-}
+    let negative_zero = req_f64(-0.0);
+    let positive_zero = req_f64(0.0);
+    assert_eq!(negative_zero, positive_zero);
+    assert_eq!(negative_zero.cmp(&positive_zero), std::cmp::Ordering::Equal);
 
-#[test]
-fn nan_updates_are_silently_skipped_for_f32() {
-    let mut sketch: ReqSketch<f32> = ReqSketch::new();
-    sketch.update(f32::NAN);
-    assert!(sketch.is_empty());
-    assert_eq!(sketch.n(), 0);
-
-    sketch.update(5.0f32);
-    sketch.update(f32::NAN);
-    assert_eq!(sketch.n(), 1);
-    assert_eq!(
-        sketch
-            .quantile(0.5, SearchCriteria::Inclusive)
-            .expect("quantile should succeed"),
-        5.0f32
-    );
+    let negative_infinity = req_f64(f64::NEG_INFINITY);
+    let infinity = req_f64(f64::INFINITY);
+    assert!(negative_infinity < infinity);
 }
 
 #[test]
 fn small_edge_cases_answer_reasonably() -> Result<(), Error> {
-    let mut single = ReqSketch::new();
-    single.update(42.0);
-    assert_eq!(single.quantile(0.5, SearchCriteria::Inclusive)?, 42.0);
+    let mut single: ReqSketch<ReqF64> = ReqSketch::default();
+    single.update(req_f64(42.0));
+    assert_eq!(
+        single.quantile(0.5, SearchCriteria::Inclusive)?,
+        req_f64(42.0)
+    );
 
-    let mut two_values = ReqSketch::new();
-    two_values.update(1.0);
-    two_values.update(100.0);
+    let mut two_values = ReqSketch::default();
+    two_values.update(req_f64(1.0));
+    two_values.update(req_f64(100.0));
     let median = two_values.quantile(0.5, SearchCriteria::Inclusive)?;
-    assert_that!(median, all!(ge(1.0), le(100.0)));
+    assert_that!(*median, all!(ge(1.0), le(100.0)));
 
-    let mut duplicates = ReqSketch::new();
+    let mut duplicates = ReqSketch::default();
     for _ in 0..100 {
-        duplicates.update(42.0);
+        duplicates.update(req_f64(42.0));
     }
-    assert_eq!(duplicates.quantile(0.5, SearchCriteria::Inclusive)?, 42.0);
+    assert_eq!(
+        duplicates.quantile(0.5, SearchCriteria::Inclusive)?,
+        req_f64(42.0)
+    );
 
     Ok(())
 }
 
 #[test]
-fn constructors_validate_k() {
-    // k must be even and within the supported range; both constructors enforce it.
+fn new_validates_k() {
     assert_that!(
-        ReqSketch::<f64>::try_new(0, RankAccuracy::HighRank),
+        ReqSketch::<ReqF64>::new(0, RankAccuracy::HighRank),
         err(anything())
     );
+    let error = ReqSketch::<ReqF64>::new(3, RankAccuracy::HighRank).unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::InvalidArgument);
     assert_that!(
-        ReqSketch::<f64>::try_new(3, RankAccuracy::HighRank),
+        ReqSketch::<ReqF64>::new(4096, RankAccuracy::HighRank),
         err(anything())
-    ); // odd
-    assert_that!(
-        ReqSketch::<f64>::try_new(4096, RankAccuracy::HighRank),
-        err(anything())
-    ); // too large
-    assert_that!(
-        ReqSketch::<f64>::try_new(12, RankAccuracy::HighRank),
-        ok(anything())
     );
-    assert_that!(ReqSketch::<f64>::builder().k(5), err(anything())); // odd via builder
-    assert_that!(ReqSketch::<f64>::builder().k(12), ok(anything()));
+    assert!(ReqSketch::<ReqF64>::new(12, RankAccuracy::HighRank).is_ok());
 }

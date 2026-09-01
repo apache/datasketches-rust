@@ -18,22 +18,21 @@
 //! Iterator implementations for REQ sketch inspection.
 
 use crate::req::compactor::Compactor;
-use crate::req::value::ReqValue;
 
 /// Iterator over (item, weight) pairs in a REQ sketch.
 ///
 /// Provides access to all items in the sketch along with their weights,
 /// which depend on the level of the compactor they're stored in.
 ///
-/// Zero-allocation implementation that works directly with slices.
-pub struct ReqSketchIterator<'a, T: ReqValue> {
+/// Items are borrowed from the sketch, so iteration does not clone or allocate.
+pub struct ReqSketchIterator<'a, T> {
     compactors: &'a [Compactor<T>],
     current_level: usize,
     current_level_iter: Option<std::slice::Iter<'a, T>>,
     current_weight: u64,
 }
 
-impl<'a, T: ReqValue> ReqSketchIterator<'a, T> {
+impl<'a, T: Clone + Ord> ReqSketchIterator<'a, T> {
     /// Creates a new iterator over the compactors.
     pub(super) fn new(compactors: &'a [Compactor<T>]) -> Self {
         let mut iter = Self {
@@ -65,14 +64,14 @@ impl<'a, T: ReqValue> ReqSketchIterator<'a, T> {
     }
 }
 
-impl<T: ReqValue> Iterator for ReqSketchIterator<'_, T> {
-    type Item = (T, u64);
+impl<'a, T: Clone + Ord> Iterator for ReqSketchIterator<'a, T> {
+    type Item = (&'a T, u64);
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             if let Some(ref mut level_iter) = self.current_level_iter {
                 if let Some(item) = level_iter.next() {
-                    return Some((item.clone(), self.current_weight));
+                    return Some((item, self.current_weight));
                 }
             }
 

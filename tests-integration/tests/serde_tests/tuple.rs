@@ -26,6 +26,7 @@ use googletest::assert_that;
 use googletest::prelude::each;
 use googletest::prelude::eq;
 use googletest::prelude::near;
+use tests_integration::ZERO_HASH_SEED;
 
 use crate::serialization_test_data;
 
@@ -109,7 +110,9 @@ fn test_go_compatibility() {
 
 #[test]
 fn round_trip_preserves_summaries() {
-    let mut sketch = TupleSketchBuilder::new(DefaultUpdatePolicy::<u64>::default()).build();
+    let mut sketch = TupleSketchBuilder::new(DefaultUpdatePolicy::<u64>::default())
+        .build()
+        .unwrap();
     for value in 0..50 {
         sketch.update(value, 1);
         sketch.update(value, 2);
@@ -119,13 +122,15 @@ fn round_trip_preserves_summaries() {
         CompactTupleSketch::<u64>::deserialize(&sketch.compact(true).serialize()).unwrap();
 
     assert_eq!(restored.num_retained(), 50);
-    let summaries: Vec<_> = restored.iter().map(|(_, &summary)| summary).collect();
+    let summaries: Vec<_> = restored.iter().map(|entry| *entry.summary()).collect();
     assert_that!(summaries, each(eq(&3)));
 }
 
 #[test]
 fn malformed_input_is_rejected() {
-    let mut sketch = TupleSketchBuilder::new(DefaultUpdatePolicy::<u64>::default()).build();
+    let mut sketch = TupleSketchBuilder::new(DefaultUpdatePolicy::<u64>::default())
+        .build()
+        .unwrap();
     for value in 0..100 {
         sketch.update(value, 1);
     }
@@ -138,6 +143,9 @@ fn malformed_input_is_rejected() {
     let err = CompactTupleSketch::<u64>::deserialize_with_seed(&bytes, 8).unwrap_err();
     assert_eq!(err.kind(), ErrorKind::InvalidData);
 
+    let err = CompactTupleSketch::<u64>::deserialize_with_seed(&bytes, ZERO_HASH_SEED).unwrap_err();
+    assert_eq!(err.kind(), ErrorKind::InvalidData);
+
     let mut wrong_family = bytes;
     wrong_family[2] = 0;
     let err = CompactTupleSketch::<u64>::deserialize(&wrong_family).unwrap_err();
@@ -146,7 +154,9 @@ fn malformed_input_is_rejected() {
 
 #[test]
 fn declared_entry_payload_is_checked_before_allocating() {
-    let mut sketch = TupleSketchBuilder::new(DefaultUpdatePolicy::<u64>::default()).build();
+    let mut sketch = TupleSketchBuilder::new(DefaultUpdatePolicy::<u64>::default())
+        .build()
+        .unwrap();
     for value in 0..100 {
         sketch.update(value, 1);
     }

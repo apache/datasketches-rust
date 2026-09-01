@@ -23,6 +23,7 @@ use googletest::assert_that;
 use googletest::prelude::all;
 use googletest::prelude::ge;
 use googletest::prelude::le;
+use tests_integration::MAX_THETA;
 
 use crate::default_tuple_sketch_builder;
 use crate::tuple_sketch_with_range;
@@ -30,7 +31,7 @@ use crate::tuple_sketch_with_range;
 fn sorted_entries(sketch: &CompactTupleSketch<u64>) -> Vec<(u64, u64)> {
     let mut entries: Vec<_> = sketch
         .iter()
-        .map(|(hash, &summary)| (hash, summary))
+        .map(|entry| (entry.hash(), *entry.summary()))
         .collect();
     entries.sort_unstable();
     entries
@@ -38,10 +39,10 @@ fn sorted_entries(sketch: &CompactTupleSketch<u64>) -> Vec<(u64, u64)> {
 
 #[test]
 fn difference_keeps_only_a_summaries() {
-    let mut a = default_tuple_sketch_builder().build();
+    let mut a = default_tuple_sketch_builder().build().unwrap();
     a.update("shared", 3u64);
     a.update("only_a", 5u64);
-    let mut b = default_tuple_sketch_builder().build();
+    let mut b = default_tuple_sketch_builder().build().unwrap();
     b.update("shared", 9u64);
     b.update("only_b", 7u64);
 
@@ -49,7 +50,7 @@ fn difference_keeps_only_a_summaries() {
 
     assert_eq!(result.num_retained(), 1);
     assert_eq!(result.estimate(), 1.0);
-    assert_eq!(result.iter().next().unwrap().1, &5);
+    assert_eq!(result.iter().next().unwrap().summary(), &5);
 }
 
 #[test]
@@ -72,8 +73,8 @@ fn accepts_mutable_and_compact_inputs() {
 
 #[test]
 fn input_and_result_ordering_preserve_entries() {
-    let mut a = default_tuple_sketch_builder().lg_k(8).build();
-    let mut b = default_tuple_sketch_builder().lg_k(8).build();
+    let mut a = default_tuple_sketch_builder().lg_k(8).build().unwrap();
+    let mut b = default_tuple_sketch_builder().lg_k(8).build().unwrap();
     for value in 0..20_000 {
         a.update(value, 1u64);
     }
@@ -108,15 +109,18 @@ fn input_and_result_ordering_preserve_entries() {
 
 #[test]
 fn empty_inputs_do_not_impose_a_seed() {
-    let empty_other_seed = default_tuple_sketch_builder().seed(2).build();
+    let empty_other_seed = default_tuple_sketch_builder()
+        .sampling_probability(0.5)
+        .seed(2)
+        .build()
+        .unwrap();
     let non_empty = tuple_sketch_with_range(0, 10);
     let op = TupleANotB::default();
 
-    assert!(
-        op.compute(&empty_other_seed, &non_empty, true)
-            .unwrap()
-            .is_empty()
-    );
+    let result = op.compute(&empty_other_seed, &non_empty, true).unwrap();
+    assert!(result.is_empty());
+    assert_eq!(result.theta64(), MAX_THETA);
+    assert!(!result.is_estimation_mode());
     assert_eq!(
         op.compute(&non_empty, &empty_other_seed, true)
             .unwrap()
@@ -127,9 +131,9 @@ fn empty_inputs_do_not_impose_a_seed() {
 
 #[test]
 fn non_empty_inputs_require_the_operator_seed() {
-    let mut other_seed = default_tuple_sketch_builder().seed(2).build();
+    let mut other_seed = default_tuple_sketch_builder().seed(2).build().unwrap();
     other_seed.update("value", 1u64);
-    let empty = default_tuple_sketch_builder().build();
+    let empty = default_tuple_sketch_builder().build().unwrap();
     let good = tuple_sketch_with_range(0, 10);
     let op = TupleANotB::default();
 
@@ -146,7 +150,8 @@ fn empty_b_preserves_logically_non_empty_a_without_retained_entries() {
         .find(|candidate| {
             let mut sketch = default_tuple_sketch_builder()
                 .sampling_probability(0.001)
-                .build();
+                .build()
+                .unwrap();
             sketch.update(*candidate, 1u64);
             !sketch.is_empty() && sketch.num_retained() == 0
         })
@@ -154,9 +159,10 @@ fn empty_b_preserves_logically_non_empty_a_without_retained_entries() {
 
     let mut a = default_tuple_sketch_builder()
         .sampling_probability(0.001)
-        .build();
+        .build()
+        .unwrap();
     a.update(screened_value, 1u64);
-    let empty_b = default_tuple_sketch_builder().seed(999).build();
+    let empty_b = default_tuple_sketch_builder().seed(999).build().unwrap();
 
     let result = TupleANotB::default().compute(&a, &empty_b, true).unwrap();
 
@@ -167,8 +173,8 @@ fn empty_b_preserves_logically_non_empty_a_without_retained_entries() {
 
 #[test]
 fn estimation_bounds_cover_the_true_difference() {
-    let mut a = default_tuple_sketch_builder().lg_k(8).build();
-    let mut b = default_tuple_sketch_builder().lg_k(8).build();
+    let mut a = default_tuple_sketch_builder().lg_k(8).build().unwrap();
+    let mut b = default_tuple_sketch_builder().lg_k(8).build().unwrap();
     for value in 0..50_000 {
         a.update(value, 1u64);
     }

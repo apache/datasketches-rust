@@ -36,7 +36,6 @@ use crate::cpc::compression::encode_pairs;
 use crate::cpc::compression::encode_window;
 use crate::cpc::compression_data::COLUMN_PERMUTATIONS_FOR_DECODING;
 use crate::cpc::compression_data::COLUMN_PERMUTATIONS_FOR_ENCODING;
-use crate::cpc::count_bits_set_in_matrix;
 use crate::cpc::determine_correct_offset;
 use crate::cpc::determine_flavor;
 use crate::cpc::estimator::estimate;
@@ -94,35 +93,36 @@ pub struct CpcSketch {
 
 impl Default for CpcSketch {
     fn default() -> Self {
-        Self::new(DEFAULT_LG_K)
+        Self::new(DEFAULT_LG_K).unwrap()
     }
 }
 
 impl CpcSketch {
     /// Creates a new `CpcSketch` with the given `lg_k` and default seed.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if `lg_k` is not in the range `[4, 26]`.
-    pub fn new(lg_k: u8) -> Self {
+    /// Returns an error if `lg_k` is not in the range `[4, 26]`.
+    pub fn new(lg_k: u8) -> Result<Self, Error> {
         Self::with_seed(lg_k, DEFAULT_UPDATE_SEED)
     }
 
     /// Creates a new `CpcSketch` with the given `lg_k` and `seed`.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if `lg_k` is not in the range `[4, 26]`, or the computed seed hash is zero.
-    pub fn with_seed(lg_k: u8, seed: u64) -> Self {
-        assert!(
-            (MIN_LG_K..=MAX_LG_K).contains(&lg_k),
-            "lg_k out of range; got {lg_k}",
-        );
+    /// Returns an error if `lg_k` is not in the range `[4, 26]`, or the computed seed hash is zero.
+    pub fn with_seed(lg_k: u8, seed: u64) -> Result<Self, Error> {
+        if !(MIN_LG_K..=MAX_LG_K).contains(&lg_k) {
+            return Err(Error::invalid_argument(format!(
+                "lg_k must be in [{MIN_LG_K}, {MAX_LG_K}], got {lg_k}"
+            )));
+        }
 
-        Self {
+        Ok(Self {
             lg_k,
             seed,
-            seed_hash: compute_seed_hash(seed),
+            seed_hash: compute_seed_hash(seed, ErrorKind::InvalidArgument)?,
             first_interesting_column: 0,
             num_coupons: 0,
             surprising_value_table: None,
@@ -131,7 +131,7 @@ impl CpcSketch {
             merge_flag: false,
             kxp: (1 << lg_k) as f64,
             hip_est_accum: 0.0,
-        }
+        })
     }
 
     /// Returns the configured `lg_k`.
@@ -187,12 +187,12 @@ impl CpcSketch {
     /// use datasketches::cpc::CpcSketch;
     /// use datasketches::hash::value::canonical_float;
     ///
-    /// let mut sketch = CpcSketch::with_seed(11, 123);
+    /// let mut sketch = CpcSketch::with_seed(11, 123).unwrap();
     /// sketch.update(1);
     /// sketch.update(2);
     /// sketch.update(3);
     ///
-    /// let mut sketch = CpcSketch::with_seed(11, 123);
+    /// let mut sketch = CpcSketch::with_seed(11, 123).unwrap();
     /// sketch.update(canonical_float::from_f64(1.5));
     /// sketch.update(canonical_float::from_f64(2.5));
     /// sketch.update(canonical_float::from_f64(3.5));
@@ -248,7 +248,7 @@ impl CpcSketch {
             .expect("surprising value table must be initialized")
     }
 
-    pub(super) fn surprising_value_table_mut(&mut self) -> &mut PairTable {
+    fn surprising_value_table_mut(&mut self) -> &mut PairTable {
         self.surprising_value_table
             .as_mut()
             .expect("surprising value table must be initialized")
@@ -571,7 +571,10 @@ impl CpcSketch {
             | (if has_table { 1 } else { 0 } << FLAG_HAS_TABLE)
             | (if has_window { 1 } else { 0 } << FLAG_HAS_WINDOW);
         bytes.write_u8(flags);
-        debug_assert_eq!(self.seed_hash, compute_seed_hash(self.seed));
+        debug_assert_eq!(
+            self.seed_hash,
+            compute_seed_hash(self.seed, ErrorKind::InvalidArgument).unwrap()
+        );
         bytes.write_u16_le(self.seed_hash);
         if !self.is_empty() {
             bytes.write_u32_le(self.num_coupons);
@@ -602,11 +605,21 @@ impl CpcSketch {
     }
 
     /// Deserializes a `CpcSketch` from bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidData` if the image is malformed or its seed hash does not match the default
+    /// seed.
     pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
         Self::deserialize_with_seed(bytes, DEFAULT_UPDATE_SEED)
     }
 
     /// Deserializes a `CpcSketch` from bytes with the provided seed.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidData` if the image is malformed, its seed hash does not match `seed`, or
+    /// `seed` itself computes to the reserved zero seed hash.
     pub fn deserialize_with_seed(bytes: &[u8], seed: u64) -> Result<Self, Error> {
         let mut cursor = SketchSlice::new(bytes);
         let preamble_ints = cursor
@@ -685,7 +698,7 @@ impl CpcSketch {
             make_preamble_ints(num_coupons, has_hip, has_table, has_window);
         ensure_preamble_longs_in(&[expected_preamble_ints], preamble_ints)?;
         check_seed_hash(
-            compute_seed_hash(seed),
+            compute_seed_hash(seed, ErrorKind::InvalidData)?,
             seed_hash,
             "deserialized CpcSketch",
             ErrorKind::InvalidData,
@@ -745,7 +758,7 @@ impl CpcSketch {
                 table_num_entries, table_data_words
             )));
         }
-        let k = 1usize << lg_k;
+        let k = 1 << lg_k;
         if has_window && window_data_words.saturating_mul(32) < k {
             return Err(Error::deserial(format!(
                 "window data ({} words) is too short for lg_k = {lg_k}",
@@ -871,14 +884,15 @@ impl CpcSketch {
     ///
     /// For small values of `n` the size can be much smaller.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if `lg_k` is not in the range `[4, 26]`.
-    pub fn max_serialized_bytes(lg_k: u8) -> usize {
-        assert!(
-            (MIN_LG_K..=MAX_LG_K).contains(&lg_k),
-            "lg_k out of range; got {lg_k}",
-        );
+    /// Returns an error if `lg_k` is not in the range `[4, 26]`.
+    pub fn max_serialized_bytes(lg_k: u8) -> Result<usize, Error> {
+        if !(MIN_LG_K..=MAX_LG_K).contains(&lg_k) {
+            return Err(Error::invalid_argument(format!(
+                "lg_k must be in [{MIN_LG_K}, {MAX_LG_K}], got {lg_k}"
+            )));
+        }
 
         // These empirical values for the 99.9th percentile of size in bytes were measured using
         // 100,000 trials. The value for each trial is the maximum of 5*16=80 measurements
@@ -907,30 +921,12 @@ impl CpcSketch {
             314656, // lg_k = 19
         ];
 
-        if lg_k <= EMPIRICAL_SIZE_MAX_LGK {
+        let max_bytes = if lg_k <= EMPIRICAL_SIZE_MAX_LGK {
             EMPIRICAL_MAX_SIZE_BYTES[(lg_k - MIN_LG_K) as usize] + MAX_PREAMBLE_SIZE_BYTES
         } else {
             let k = 1 << lg_k;
             ((EMPIRICAL_MAX_SIZE_FACTOR * k as f64) as usize) + MAX_PREAMBLE_SIZE_BYTES
-        }
-    }
-}
-
-// testing methods
-impl CpcSketch {
-    /// Returns `true` if the sketch's internal state is valid.
-    ///
-    /// This is primarily for testing and validation purposes.
-    pub fn validate(&self) -> bool {
-        let bit_matrix = self.build_bit_matrix();
-        let num_bits_set = count_bits_set_in_matrix(&bit_matrix);
-        num_bits_set == self.num_coupons
-    }
-
-    /// Returns the number of coupons in the sketch.
-    ///
-    /// This is primarily for testing and validation purposes.
-    pub fn num_coupons(&self) -> u32 {
-        self.num_coupons
+        };
+        Ok(max_bytes)
     }
 }

@@ -24,22 +24,27 @@ use crate::hash::MurmurHash3X64128;
 /// The computed seed hash must not be zero in order to maintain compatibility with older
 /// serialized versions that did not have this concept.
 ///
-/// # Panics
+/// # Errors
 ///
-/// Panics if the computed seed hash is zero.
-pub(crate) fn compute_seed_hash(seed: u64) -> u16 {
+/// Returns an error of `error_kind` if the computed seed hash is zero.
+pub fn compute_seed_hash(seed: u64, error_kind: ErrorKind) -> Result<u16, Error> {
     use std::hash::Hasher;
 
     let mut hasher = MurmurHash3X64128::with_seed(0);
     hasher.write(&seed.to_le_bytes());
     let (h1, _) = hasher.finish128();
     let seed_hash = (h1 & 0xffff) as u16;
-    assert_ne!(seed_hash, 0);
-    seed_hash
+    if seed_hash == 0 {
+        return Err(Error::new(
+            error_kind,
+            format!("seed {seed} produces a seed hash of zero; choose a different seed"),
+        ));
+    }
+    Ok(seed_hash)
 }
 
 /// Checks that an actual seed hash matches the expected seed hash.
-pub(crate) fn check_seed_hash(
+pub fn check_seed_hash(
     expected: u16,
     actual: u16,
     name: &'static str,

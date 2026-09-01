@@ -19,24 +19,18 @@ use std::hash::Hash;
 use std::slice;
 
 use crate::common::ResizeFactor;
+use crate::error::Error;
+use crate::error::ErrorKind;
 use crate::hash::MurmurHash3X64128;
 use crate::hash::compute_seed_hash;
 use crate::thetacommon::SketchEntry;
 use crate::thetacommon::constants::HASH_TABLE_REBUILD_THRESHOLD;
 use crate::thetacommon::constants::HASH_TABLE_RESIZE_THRESHOLD;
+use crate::thetacommon::constants::MAX_LG_K;
 use crate::thetacommon::constants::MAX_THETA;
 use crate::thetacommon::constants::MIN_LG_K;
 use crate::thetacommon::constants::STRIDE_MASK;
-
-/// Compact-sketch state from which a sketch family creates its compact result type.
-#[derive(Debug)]
-pub struct CompactSketchParts<E> {
-    pub entries: Vec<E>,
-    pub theta: u64,
-    pub seed_hash: u16,
-    pub ordered: bool,
-    pub empty: bool,
-}
+use crate::thetacommon::sketch_state::CompactSketchState;
 
 pub struct SketchHashTableIter<'a, E>(slice::Iter<'a, Option<E>>);
 
@@ -55,7 +49,7 @@ impl<'a, E> Iterator for SketchHashTableIter<'a, E> {
 /// Generic hash-table mechanics shared by Theta and Tuple sketches.
 ///
 /// The entry type supplies the retained hash and any sketch-specific payload. The table owns all
-/// theta screening, probing, resizing, rebuilding, trimming, and logical-empty state.
+/// theta screening, probing, resizing, rebuilding, and trimming.
 ///
 /// It maintains an array with capacity up to 2^lg_max_size:
 /// * Before it reaches the max capacity, it will extend the array based on resize_factor.
@@ -70,16 +64,12 @@ pub struct SketchHashTable<E> {
     resize_factor: ResizeFactor,
     sampling_probability: f32,
     seed: u64,
+    seed_hash: u16,
 
-    // Logical emptiness of the source set.
-    //
-    // * `false` if any update has been attempted (even if screened by theta)
-    // * `true` if no updates have been attempted.
-    //
-    // This can be false even when `num_retained` is 0.
-    is_empty: bool,
-
-    theta: u64,
+    // The operational threshold used to screen future updates. This is intentionally independent
+    // of the sketch's externally visible empty state: a never-updated sketch built with p < 1.0
+    // must retain this sampling threshold even though its public theta is MAX_THETA.
+    retention_theta: u64,
 
     entries: Vec<Option<E>>,
 
@@ -91,39 +81,73 @@ impl<E> SketchHashTable<E>
 where
     E: SketchEntry,
 {
-    /// Create a new hash table.
+    /// Creates a new hash table.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `lg_nom_size` is outside `[5, 26]`, `sampling_probability` is outside
+    /// `(0.0, 1.0]`, or the computed seed hash is zero.
     pub fn new(
         lg_nom_size: u8,
         resize_factor: ResizeFactor,
         sampling_probability: f32,
         seed: u64,
-    ) -> Self {
+    ) -> Result<Self, Error> {
+        if !(MIN_LG_K..=MAX_LG_K).contains(&lg_nom_size) {
+            return Err(Error::invalid_argument(format!(
+                "lg_k must be in [{MIN_LG_K}, {MAX_LG_K}], got {lg_nom_size}"
+            )));
+        }
+        if !(sampling_probability > 0.0 && sampling_probability <= 1.0) {
+            return Err(Error::invalid_argument(format!(
+                "sampling_probability must be in (0.0, 1.0], got {sampling_probability}"
+            )));
+        }
+        let seed_hash = compute_seed_hash(seed, ErrorKind::InvalidArgument)?;
         let lg_max_size = lg_nom_size + 1;
         let lg_cur_size = starting_sub_multiple(lg_max_size, MIN_LG_K, resize_factor.lg_value());
-        Self::from_raw_parts(
+        Ok(Self::allocate_empty(
             lg_cur_size,
             lg_nom_size,
             resize_factor,
             sampling_probability,
-            starting_theta_from_sampling_probability(sampling_probability),
+            starting_retention_theta(sampling_probability),
             seed,
-            true,
-        )
+            seed_hash,
+        ))
     }
 
-    /// Constructs a table from raw internal state.
+    /// Creates a table used internally by a Theta-family set operation.
     ///
     /// # Panics
     ///
     /// Panics if `lg_cur_size > lg_nom_size + 1`. (`lg_nom_size + 1 == lg_max_size`)
-    pub fn from_raw_parts(
+    pub fn for_set_operation(
+        lg_cur_size: u8,
+        lg_nom_size: u8,
+        retention_theta: u64,
+        seed: u64,
+        seed_hash: u16,
+    ) -> Self {
+        Self::allocate_empty(
+            lg_cur_size,
+            lg_nom_size,
+            ResizeFactor::X1,
+            1.0,
+            retention_theta,
+            seed,
+            seed_hash,
+        )
+    }
+
+    fn allocate_empty(
         lg_cur_size: u8,
         lg_nom_size: u8,
         resize_factor: ResizeFactor,
         sampling_probability: f32,
-        theta: u64,
+        retention_theta: u64,
         seed: u64,
-        is_empty: bool,
+        seed_hash: u16,
     ) -> Self {
         let lg_max_size = lg_nom_size + 1;
         assert!(
@@ -139,8 +163,8 @@ where
             resize_factor,
             sampling_probability,
             seed,
-            is_empty,
-            theta,
+            seed_hash,
+            retention_theta,
             entries,
             num_retained: 0,
         }
@@ -172,9 +196,7 @@ where
     where
         F: FnOnce(Option<&mut E>) -> Option<E>,
     {
-        self.is_empty = false;
-
-        if hash == 0 || hash >= self.theta {
+        if hash == 0 || hash >= self.retention_theta {
             return false;
         }
 
@@ -237,9 +259,9 @@ where
         }
     }
 
-    /// Reset the table to empty state.
+    /// Restores the table's initial capacity and retention threshold and removes all entries.
     pub fn reset(&mut self) {
-        let init_theta = starting_theta_from_sampling_probability(self.sampling_probability);
+        let initial_retention_theta = starting_retention_theta(self.sampling_probability);
         let init_lg_cur = starting_sub_multiple(
             self.lg_nom_size + 1,
             MIN_LG_K,
@@ -250,8 +272,7 @@ where
         self.entries.clear();
         self.entries.resize_with(size, || None);
         self.num_retained = 0;
-        self.theta = init_theta;
-        self.is_empty = true;
+        self.retention_theta = initial_retention_theta;
         self.lg_cur_size = init_lg_cur;
     }
 
@@ -260,14 +281,9 @@ where
         self.num_retained
     }
 
-    /// Get theta.
-    pub fn theta(&self) -> u64 {
-        self.theta
-    }
-
-    /// Check logical emptiness of the source set.
-    pub fn is_empty(&self) -> bool {
-        self.is_empty
+    /// Returns the operational theta used to screen retained entries.
+    pub fn retention_theta(&self) -> u64 {
+        self.retention_theta
     }
 
     /// Get iterator over retained entries.
@@ -275,31 +291,22 @@ where
         SketchHashTableIter(self.entries.iter())
     }
 
-    /// Returns the retained entries and theta as compact-sketch parts.
-    ///
-    /// An empty table reports `MAX_THETA` rather than its current theta, matching Java's
-    /// `correctThetaOnCompact()` behavior for never-updated sketches initialized with p < 1.0.
-    /// Empty and single-entry exact-mode results are always marked ordered (Java/C++
-    /// compatibility).
-    pub fn to_compact_parts(&self, ordered: bool) -> CompactSketchParts<E>
+    /// Creates compact state for a sketch known by its owner to be non-empty.
+    pub fn to_non_empty_compact_state(&self, ordered: bool) -> CompactSketchState<E>
     where
         E: Clone,
     {
-        let mut entries: Vec<E> = self.iter_entries().cloned().collect();
-        let empty = self.is_empty();
-        let theta = if empty { MAX_THETA } else { self.theta() };
-        let is_single = entries.len() == 1 && theta == MAX_THETA;
-        let ordered = ordered || empty || is_single;
-        if ordered && entries.len() > 1 {
-            entries.sort_unstable_by_key(SketchEntry::hash);
+        let mut retained_entries: Vec<E> = self.iter_entries().cloned().collect();
+        let ordered = ordered || (retained_entries.len() == 1 && self.retention_theta == MAX_THETA);
+        if ordered && retained_entries.len() > 1 {
+            retained_entries.sort_unstable_by_key(SketchEntry::hash);
         }
-        CompactSketchParts {
-            entries,
-            theta,
-            seed_hash: self.seed_hash(),
+        CompactSketchState::non_empty(
+            retained_entries,
+            self.retention_theta,
+            self.seed_hash,
             ordered,
-            empty,
-        }
+        )
     }
 
     /// Get log2 of nominal size.
@@ -309,12 +316,7 @@ where
 
     /// Get the hash of the seed that was used to hash the input.
     pub fn seed_hash(&self) -> u16 {
-        compute_seed_hash(self.seed)
-    }
-
-    /// Set empty flag.
-    pub fn set_empty(&mut self, is_empty: bool) {
-        self.is_empty = is_empty;
+        self.seed_hash
     }
 
     /// Get the seed used by this table.
@@ -322,13 +324,13 @@ where
         self.seed
     }
 
-    /// Sets theta value.
-    pub fn set_theta(&mut self, theta: u64) {
+    /// Sets the operational theta used to screen retained entries.
+    pub fn set_retention_theta(&mut self, retention_theta: u64) {
         assert!(
-            (1..=MAX_THETA).contains(&theta),
-            "theta must be in [1, {MAX_THETA}], got {theta}"
+            (1..=MAX_THETA).contains(&retention_theta),
+            "theta must be in [1, {MAX_THETA}], got {retention_theta}"
         );
-        self.theta = theta;
+        self.retention_theta = retention_theta;
     }
 
     /// Returns minimal lg_size where rebuild-capacity can hold `count`.
@@ -412,7 +414,7 @@ where
             let (_lesser, kth, _greater) = retained.select_nth_unstable_by_key(k, |e| e.hash());
             kth.hash()
         };
-        self.theta = kth_hash;
+        self.retention_theta = kth_hash;
         retained.truncate(k);
 
         let size = 1 << self.lg_cur_size;
@@ -455,8 +457,8 @@ pub fn starting_sub_multiple(lg_target: u8, lg_min: u8, lg_resize_factor: u8) ->
     }
 }
 
-/// Compute initial theta for hash table based on sampling probability.
-pub fn starting_theta_from_sampling_probability(sampling_probability: f32) -> u64 {
+/// Computes the initial operational theta from a sampling probability.
+pub fn starting_retention_theta(sampling_probability: f32) -> u64 {
     if sampling_probability < 1.0 {
         (MAX_THETA as f64 * sampling_probability as f64) as u64
     } else {

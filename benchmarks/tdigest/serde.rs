@@ -65,7 +65,7 @@ fn partial_lifecycle_by_k(bencher: Bencher, k: u16) {
         .counter(ItemsCount::new(ROWS_PER_PARTIAL))
         .counter(BytesCount::new(serialized_bytes))
         .bench_local(|| {
-            let mut digest = TDigestMut::new(black_box(k));
+            let mut digest = TDigestMut::new(black_box(k)).unwrap();
             for &value in black_box(&values) {
                 digest.update(value);
             }
@@ -100,7 +100,7 @@ fn deserialize_small_partial_groups(bencher: Bencher) {
         .bench_local(|| {
             let digests = bytes
                 .iter()
-                .map(|bytes| TDigestMut::deserialize(bytes, false).unwrap())
+                .map(|bytes| TDigestMut::deserialize(bytes).unwrap())
                 .collect::<Vec<_>>();
             black_box(digests)
         });
@@ -131,7 +131,7 @@ fn deserialize_partial_groups(bencher: Bencher) {
         .bench_local(|| {
             let digests = bytes
                 .iter()
-                .map(|bytes| TDigestMut::deserialize(bytes, false).unwrap())
+                .map(|bytes| TDigestMut::deserialize(bytes).unwrap())
                 .collect::<Vec<_>>();
             black_box(digests)
         });

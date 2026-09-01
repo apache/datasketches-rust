@@ -23,8 +23,9 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dev-dependencies]
-datasketches = { workspace = true, features = ["cpc", "tdigest"] }
+datasketches = { workspace = true, features = ["cpc", "req", "tdigest"] }
 divan = { workspace = true }
+rand = { workspace = true }
 
 [[bench]]
 harness = false

@@ -27,9 +27,9 @@ use googletest::prelude::eq;
 #[test]
 fn test_cpc_wrapper() {
     let lg_k = 10;
-    let mut sk1 = CpcSketch::new(lg_k);
-    let mut sk2 = CpcSketch::new(lg_k);
-    let mut sk_dst = CpcSketch::new(lg_k);
+    let mut sk1 = CpcSketch::new(lg_k).unwrap();
+    let mut sk2 = CpcSketch::new(lg_k).unwrap();
+    let mut sk_dst = CpcSketch::new(lg_k).unwrap();
 
     let n = 100000;
     for i in 0..n {
@@ -50,9 +50,9 @@ fn test_cpc_wrapper() {
     assert_that!(concat_wrapper.lower_bound(NumStdDev::Two), eq(dst_lb));
     assert_that!(concat_wrapper.upper_bound(NumStdDev::Two), eq(dst_ub));
 
-    let mut union = CpcUnion::new(lg_k);
-    union.update(&sk1);
-    union.update(&sk2);
+    let mut union = CpcUnion::new(lg_k).unwrap();
+    union.update(&sk1).unwrap();
+    union.update(&sk2).unwrap();
     let merged = union.to_sketch();
     let merged_est = merged.estimate();
     let merged_lb = merged.lower_bound(NumStdDev::Two);
@@ -68,12 +68,12 @@ fn test_cpc_wrapper() {
 
 #[test]
 fn test_is_empty() {
-    let empty_sketch = CpcSketch::new(10);
+    let empty_sketch = CpcSketch::new(10).unwrap();
     let empty_bytes = empty_sketch.serialize();
     let empty_wrapper = CpcWrapper::new(&empty_bytes).unwrap();
     assert_that!(empty_wrapper.is_empty(), eq(true));
 
-    let mut non_empty_sketch = CpcSketch::new(10);
+    let mut non_empty_sketch = CpcSketch::new(10).unwrap();
     non_empty_sketch.update(1u64);
     let non_empty_bytes = non_empty_sketch.serialize();
     let non_empty_wrapper = CpcWrapper::new(&non_empty_bytes).unwrap();
@@ -82,7 +82,7 @@ fn test_is_empty() {
 
 #[test]
 fn test_is_compressed() {
-    let sketch = CpcSketch::new(10);
+    let sketch = CpcSketch::new(10).unwrap();
     let mut bytes = sketch.serialize();
     bytes[5] &= (-3i8) as u8; // clear compressed flag
     let err = CpcWrapper::new(&bytes).unwrap_err();
@@ -94,7 +94,7 @@ fn test_is_compressed() {
 
 #[test]
 fn test_invalid_image_fields_are_invalid_data() {
-    let original = CpcSketch::new(10).serialize();
+    let original = CpcSketch::new(10).unwrap().serialize();
 
     for (index, value, field) in [
         (3, 3, "lg_k"),

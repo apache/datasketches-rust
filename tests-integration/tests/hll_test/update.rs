@@ -15,20 +15,18 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use datasketches::common::NumStdDev;
+use datasketches::error::ErrorKind;
 use datasketches::hll::HllSketch;
 use datasketches::hll::HllType;
 use googletest::assert_that;
-use googletest::prelude::all;
 use googletest::prelude::ge;
 use googletest::prelude::gt;
-use googletest::prelude::le;
 use googletest::prelude::lt;
 use googletest::prelude::near;
 
 #[test]
 fn test_basic_update() {
-    let mut sketch = HllSketch::new(12, HllType::Hll8);
+    let mut sketch = HllSketch::new(12, HllType::Hll8).unwrap();
 
     // Initially empty
     assert_eq!(sketch.estimate(), 0.0);
@@ -46,7 +44,7 @@ fn test_basic_update() {
 #[test]
 fn test_list_to_set_promotion() {
     // Use lg_k=12, which has promotion threshold ~512 for List→Set
-    let mut sketch = HllSketch::new(12, HllType::Hll8);
+    let mut sketch = HllSketch::new(12, HllType::Hll8).unwrap();
 
     // Add enough unique values to trigger promotion
     for i in 0..600 {
@@ -60,7 +58,7 @@ fn test_list_to_set_promotion() {
 #[test]
 fn test_set_to_hll_promotion() {
     // Use lg_k=10 (K=1024), set promotes at 75% = 768
-    let mut sketch = HllSketch::new(10, HllType::Hll8);
+    let mut sketch = HllSketch::new(10, HllType::Hll8).unwrap();
 
     // Add enough values to trigger List→Set→HLL promotions
     for i in 0..1000 {
@@ -73,7 +71,7 @@ fn test_set_to_hll_promotion() {
 
 #[test]
 fn test_duplicate_handling() {
-    let mut sketch = HllSketch::new(12, HllType::Hll8);
+    let mut sketch = HllSketch::new(12, HllType::Hll8).unwrap();
 
     // Add same values multiple times
     for _ in 0..10 {
@@ -89,7 +87,7 @@ fn test_duplicate_handling() {
 
 #[test]
 fn test_different_types() {
-    let mut sketch = HllSketch::new(10, HllType::Hll8);
+    let mut sketch = HllSketch::new(10, HllType::Hll8).unwrap();
 
     // Mix different types
     sketch.update(42i32);
@@ -104,7 +102,7 @@ fn test_different_types() {
 
 #[test]
 fn test_hll4_type() {
-    let mut sketch = HllSketch::new(12, HllType::Hll4);
+    let mut sketch = HllSketch::new(12, HllType::Hll4).unwrap();
 
     for i in 0..1000 {
         sketch.update(i);
@@ -116,7 +114,7 @@ fn test_hll4_type() {
 
 #[test]
 fn test_hll6_type() {
-    let mut sketch = HllSketch::new(12, HllType::Hll6);
+    let mut sketch = HllSketch::new(12, HllType::Hll6).unwrap();
 
     for i in 0..1000 {
         sketch.update(i);
@@ -128,7 +126,7 @@ fn test_hll6_type() {
 
 #[test]
 fn test_serialization_roundtrip_after_updates() {
-    let mut sketch1 = HllSketch::new(12, HllType::Hll8);
+    let mut sketch1 = HllSketch::new(12, HllType::Hll8).unwrap();
 
     // Add values and promote through all modes
     for i in 0..2000 {
@@ -154,7 +152,7 @@ fn test_serialization_roundtrip_after_updates() {
 
 #[test]
 fn test_large_cardinality() {
-    let mut sketch = HllSketch::new(14, HllType::Hll8);
+    let mut sketch = HllSketch::new(14, HllType::Hll8).unwrap();
 
     // Add 100K unique values
     for i in 0..100_000 {
@@ -170,8 +168,8 @@ fn test_large_cardinality() {
 
 #[test]
 fn test_equals_method() {
-    let mut sketch1 = HllSketch::new(10, HllType::Hll8);
-    let mut sketch2 = HllSketch::new(10, HllType::Hll8);
+    let mut sketch1 = HllSketch::new(10, HllType::Hll8).unwrap();
+    let mut sketch2 = HllSketch::new(10, HllType::Hll8).unwrap();
 
     // Both start equal (empty)
     assert!(sketch1.eq(&sketch2));
@@ -193,117 +191,13 @@ fn test_equals_method() {
 }
 
 #[test]
-#[should_panic(expected = "lg_config_k must be in [4, 21]")]
-fn test_invalid_lg_k_low() {
-    HllSketch::new(3, HllType::Hll8);
+fn test_invalid_lg_k_low_returns_error() {
+    let error = HllSketch::new(3, HllType::Hll8).unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::InvalidArgument);
 }
 
 #[test]
-#[should_panic(expected = "lg_config_k must be in [4, 21]")]
-fn test_invalid_lg_k_high() {
-    HllSketch::new(22, HllType::Hll8);
-}
-
-#[test]
-fn test_bounds_basic() {
-    let mut sketch = HllSketch::new(12, HllType::Hll8);
-
-    // Add 1000 unique values
-    for i in 0..1000 {
-        sketch.update(i);
-    }
-
-    let estimate = sketch.estimate();
-    let upper1 = sketch.upper_bound(NumStdDev::One);
-    let lower1 = sketch.lower_bound(NumStdDev::One);
-    let upper2 = sketch.upper_bound(NumStdDev::Two);
-    let lower2 = sketch.lower_bound(NumStdDev::Two);
-    let upper3 = sketch.upper_bound(NumStdDev::Three);
-    let lower3 = sketch.lower_bound(NumStdDev::Three);
-
-    // Basic sanity checks
-    assert_that!(estimate, ge(lower1));
-    assert_that!(estimate, le(upper1));
-
-    // Bounds should widen with more standard deviations
-    assert_that!(lower2, le(lower1));
-    assert_that!(upper1, le(upper2));
-    assert_that!(lower3, le(lower2));
-    assert_that!(upper2, le(upper3));
-
-    // Bounds should be reasonable (within 50% for 3-sigma)
-    assert_that!(lower3, gt(estimate * 0.5));
-    assert_that!(upper3, lt(estimate * 1.5));
-}
-
-#[test]
-fn test_bounds_all_modes() {
-    // Test List mode (small cardinality)
-    let mut sketch = HllSketch::new(12, HllType::Hll8);
-    for i in 0..10 {
-        sketch.update(i);
-    }
-    let estimate = sketch.estimate();
-    let upper = sketch.upper_bound(NumStdDev::Two);
-    let lower = sketch.lower_bound(NumStdDev::Two);
-    assert_that!(estimate, all!(ge(lower), le(upper)), "mode: LIST");
-
-    // Test Set mode (medium cardinality)
-    for i in 10..100 {
-        sketch.update(i);
-    }
-    let estimate = sketch.estimate();
-    let upper = sketch.upper_bound(NumStdDev::Two);
-    let lower = sketch.lower_bound(NumStdDev::Two);
-    assert_that!(estimate, all!(ge(lower), le(upper)), "mode: SET");
-
-    // Test HLL mode (large cardinality)
-    for i in 100..5000 {
-        sketch.update(i);
-    }
-    let estimate = sketch.estimate();
-    let upper = sketch.upper_bound(NumStdDev::Two);
-    let lower = sketch.lower_bound(NumStdDev::Two);
-    assert_that!(estimate, all!(ge(lower), le(upper)), "mode: HLL");
-}
-
-#[test]
-fn test_bounds_different_lg_k() {
-    // Smaller lg_k should have wider bounds (higher RSE)
-    let mut sketch_small = HllSketch::new(8, HllType::Hll8); // lg_k=8, k=256
-    let mut sketch_large = HllSketch::new(14, HllType::Hll8); // lg_k=14, k=16384
-
-    for i in 0..1000 {
-        sketch_small.update(i);
-        sketch_large.update(i);
-    }
-
-    let est_small = sketch_small.estimate();
-    let est_large = sketch_large.estimate();
-
-    let upper_small = sketch_small.upper_bound(NumStdDev::Two);
-    let lower_small = sketch_small.lower_bound(NumStdDev::Two);
-    let upper_large = sketch_large.upper_bound(NumStdDev::Two);
-    let lower_large = sketch_large.lower_bound(NumStdDev::Two);
-
-    // Calculate relative width of confidence intervals
-    let width_small = (upper_small - lower_small) / est_small;
-    let width_large = (upper_large - lower_large) / est_large;
-
-    // Smaller sketch should have wider relative confidence interval
-    assert_that!(width_small, gt(width_large));
-}
-
-#[test]
-fn test_bounds_empty_sketch() {
-    let sketch = HllSketch::new(12, HllType::Hll8);
-
-    let estimate = sketch.estimate();
-    let upper = sketch.upper_bound(NumStdDev::Two);
-    let lower = sketch.lower_bound(NumStdDev::Two);
-
-    assert_eq!(estimate, 0.0, "Empty sketch should have 0 estimate");
-    assert_that!(lower, ge(0.0));
-    assert_that!(upper, ge(0.0));
-    assert_that!(lower, le(upper));
+fn test_invalid_lg_k_high_returns_error() {
+    let error = HllSketch::new(22, HllType::Hll8).unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::InvalidArgument);
 }

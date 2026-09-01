@@ -28,7 +28,8 @@ use crate::codec::family::Family;
 use crate::common::NumStdDev;
 use crate::error::Error;
 use crate::hll::Coupon;
-use crate::hll::estimator::HipEstimator;
+use crate::hll::estimator::EstimateState;
+use crate::hll::estimator::Estimator;
 use crate::hll::serialization::CUR_MODE_HLL;
 use crate::hll::serialization::HLL_PREAMBLE_SIZE;
 use crate::hll::serialization::HLL_PREINTS;
@@ -47,8 +48,7 @@ pub struct Array6 {
     bytes: Box<[u8]>,
     /// Count of slots with value 0
     num_zeros: u32,
-    /// HIP estimator for cardinality estimation
-    estimator: HipEstimator,
+    estimator: Estimator,
 }
 
 impl Array6 {
@@ -60,7 +60,7 @@ impl Array6 {
             lg_config_k,
             bytes: vec![0u8; num_bytes].into_boxed_slice(),
             num_zeros: k,
-            estimator: HipEstimator::new(lg_config_k),
+            estimator: Estimator::new(lg_config_k),
         }
     }
 
@@ -82,18 +82,18 @@ impl Array6 {
 
     /// Get the unpacked 6-bit value (0-63) at the given slot
     #[inline]
-    pub(super) fn get(&self, slot: u32) -> u8 {
+    pub fn get(&self, slot: u32) -> u8 {
         self.get_raw(slot)
     }
 
     /// Get the number of registers (K = 2^lg_config_k)
-    pub(super) fn num_registers(&self) -> usize {
+    pub fn num_registers(&self) -> usize {
         1 << self.lg_config_k
     }
 
-    /// Get the current HIP accumulator value
-    pub(super) fn hip_accum(&self) -> f64 {
-        self.estimator.hip_accum()
+    /// Returns the estimate state independently from register-derived cached values.
+    pub fn estimate_state(&self) -> EstimateState {
+        self.estimator.estimate_state()
     }
 
     /// Set value in a slot (6-bit value)
@@ -145,7 +145,7 @@ impl Array6 {
         }
     }
 
-    /// Get the current cardinality estimate using HIP estimator
+    /// Returns the current cardinality estimate.
     pub fn estimate(&self) -> f64 {
         // Array6 doesn't use cur_min (always 0), so num_at_cur_min = num_zeros
         self.estimator.estimate(self.lg_config_k, 0, self.num_zeros)
@@ -163,11 +163,9 @@ impl Array6 {
             .lower_bound(self.lg_config_k, 0, self.num_zeros, num_std_dev)
     }
 
-    /// Set the HIP accumulator value
-    ///
-    /// This is used when promoting from coupon modes to carry forward the estimate
-    pub fn set_hip_accum(&mut self, value: f64) {
-        self.estimator.set_hip_accum(value);
+    /// Restores estimate state after copying or transforming the same logical sketch.
+    pub fn restore_estimate_state(&mut self, state: EstimateState) {
+        self.estimator.restore_estimate_state(state);
     }
 
     /// Check if the sketch is empty (all slots are zero)
@@ -186,7 +184,7 @@ impl Array6 {
         let k = 1 << lg_config_k;
         let num_bytes = num_bytes_for_k(k);
 
-        // Read HIP estimator values from preamble
+        // Read estimator values from preamble
         let hip_accum = cursor
             .read_f64_le()
             .map_err(insufficient_data("hip_accum"))?;
@@ -218,12 +216,7 @@ impl Array6 {
             .read_exact(&mut data)
             .map_err(insufficient_data("data"))?;
 
-        // Create estimator and restore state
-        let mut estimator = HipEstimator::new(lg_config_k);
-        estimator.set_hip_accum(hip_accum);
-        estimator.set_kxq0(kxq0);
-        estimator.set_kxq1(kxq1);
-        estimator.set_out_of_order(ooo);
+        let estimator = Estimator::from_serialized(hip_accum, kxq0, kxq1, ooo);
 
         Ok(Self {
             lg_config_k,
@@ -251,7 +244,7 @@ impl Array6 {
 
         // Write flags
         let mut flags = 0u8;
-        if self.estimator.is_out_of_order() {
+        if self.estimator.uses_composite_estimate() {
             flags |= OUT_OF_ORDER_FLAG_MASK;
         }
         bytes.write_u8(flags);
@@ -262,7 +255,7 @@ impl Array6 {
         // Mode byte: HLL mode with HLL6 type
         bytes.write_u8(encode_mode_byte(CUR_MODE_HLL, TGT_HLL6));
 
-        // Write HIP estimator values
+        // Write estimator values
         bytes.write_f64_le(self.estimator.hip_accum());
         bytes.write_f64_le(self.estimator.kxq0());
         bytes.write_f64_le(self.estimator.kxq1());

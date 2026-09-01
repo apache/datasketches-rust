@@ -21,6 +21,7 @@ use divan::AllocProfiler;
 static ALLOC: AllocProfiler = AllocProfiler::system();
 
 mod cpc;
+mod req;
 mod tdigest;
 
 fn main() {

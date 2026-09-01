@@ -80,12 +80,20 @@ cargo bench --package benchmarks --bench benchmarks -- cpc::serde
 - End summary sentences with punctuation, and format Rust identifiers, literals, and numeric ranges as inline code.
 - Put contract sections and compatibility notes before examples. When applicable, order sections as `# Errors`, `# Panics`, and `# Examples`. Include only sections that describe an actual contract.
 
+## Visibility
+
+- Let module visibility define the boundary for implementation items. Inside a private module, use `pub` when an item must be available outside its defining module. Inside a `pub(crate)` module, use `pub` when the item should be available wherever that module is visible. Do not repeat an enclosing restriction when it adds no narrower boundary.
+- Keep items private when they are used only by their defining module and its descendants.
+- For items reachable through a public module or a re-exported public type, use the narrowest visibility that supports their internal callers. Reserve unrestricted `pub` for intentional public API.
+
 ## Changelog
 
 - Update `CHANGELOG.md` in the same pull request for significant user-visible changes. Compare the final behavior with the latest release tag rather than recording the sequence of commits that produced it.
 - Include public API migrations, new capabilities, correctness or compatibility changes, and meaningful performance improvements. Exclude tests, internal refactors, documentation, CI, tooling, and dependency maintenance unless they change supported or observable behavior.
 - Keep the permanent `## Unreleased` section at the top. Group entries under user-facing categories consistent with earlier releases, and add only categories that contain entries.
 - Write one bullet for each coherent behavior. Combine related commits, describe the observable impact, and give the required migration for breaking changes. Do not include pull request numbers, issue numbers, discarded intermediate APIs, or implementation history.
+- Write from the user's perspective: name the affected public API or workload and its observable result. Omit implementation mechanics unless users need them to migrate, understand compatibility, or assess risk.
+- Scope performance claims to the workload supported by evidence. Distinguish broad improvements from scenario-specific benchmark results, and do not generalize a microbenchmark into a library-wide claim.
 - During release preparation, insert `## vX.Y.Z` without a date immediately below `## Unreleased` and move the accumulated entries into it. Add the actual UTC release date in `YYYY-MM-DD` format after the release; do not guess it in advance or remove `## Unreleased`.
 
 ## Integration test layout

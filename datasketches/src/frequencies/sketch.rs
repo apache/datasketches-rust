@@ -39,11 +39,12 @@ type SerializeItem<T> = fn(&mut SketchBytes, &T);
 type DeserializeItems<T> = fn(SketchSlice<'_>, usize) -> Result<Vec<T>, Error>;
 
 const LG_MIN_MAP_SIZE: u8 = 3;
+const MIN_MAP_SIZE: usize = 1 << LG_MIN_MAP_SIZE;
 // Java represents map sizes as positive `int` powers of two, while the C++
 // implementation uses 32-bit table indices. Keep Rust configurations within
 // the same cross-language range.
 const LG_MAX_MAP_SIZE: u8 = 30;
-const MAX_MAP_SIZE: usize = 1usize << LG_MAX_MAP_SIZE;
+const MAX_MAP_SIZE: usize = 1 << LG_MAX_MAP_SIZE;
 const SAMPLE_SIZE: usize = 1024;
 const EPSILON_FACTOR: f64 = 3.5;
 const LOAD_FACTOR_NUMERATOR: usize = 3;
@@ -51,7 +52,29 @@ const LOAD_FACTOR_DENOMINATOR: usize = 4;
 
 fn map_capacity_for_lg(lg_map_size: u8) -> usize {
     debug_assert!(lg_map_size <= LG_MAX_MAP_SIZE);
-    (1usize << lg_map_size) * LOAD_FACTOR_NUMERATOR / LOAD_FACTOR_DENOMINATOR
+    (1 << lg_map_size) * LOAD_FACTOR_NUMERATOR / LOAD_FACTOR_DENOMINATOR
+}
+
+fn lg_for_max_map_size(max_map_size: usize) -> Result<u8, Error> {
+    if !max_map_size.is_power_of_two() {
+        return Err(Error::invalid_argument("max_map_size must be a power of 2"));
+    }
+    if max_map_size < MIN_MAP_SIZE {
+        return Err(Error::invalid_argument(format!(
+            "max_map_size must be at least {MIN_MAP_SIZE}"
+        )));
+    }
+    if max_map_size > MAX_MAP_SIZE {
+        return Err(Error::invalid_argument(format!(
+            "max_map_size must not exceed {MAX_MAP_SIZE}"
+        )));
+    }
+    Ok(max_map_size.trailing_zeros() as u8)
+}
+
+fn epsilon_for_lg(lg_max_map_size: u8) -> f64 {
+    debug_assert!((LG_MIN_MAP_SIZE..=LG_MAX_MAP_SIZE).contains(&lg_max_map_size));
+    EPSILON_FACTOR / (1u64 << lg_max_map_size) as f64
 }
 
 fn validate_lg_map_sizes(lg_max: u8, lg_cur: u8) -> Result<(), Error> {
@@ -135,32 +158,24 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     /// The maximum map capacity is `0.75 * max_map_size`, and the internal map grows
     /// from a small starting size up to the maximum as needed.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if `max_map_size` is not a power of two or exceeds `2^30`, the
-    /// maximum supported by the cross-language format implementations.
+    /// Returns an error if `max_map_size` is not a power of two in the range `[8, 2^30]`. The upper
+    /// bound is the maximum supported by the cross-language format implementations.
     ///
     /// # Examples
     ///
     /// ```
     /// use datasketches::frequencies::FrequentItemsSketch;
     ///
-    /// let mut sketch = FrequentItemsSketch::<i64>::new(64);
+    /// let mut sketch = FrequentItemsSketch::<i64>::new(64).unwrap();
     /// sketch.update(1);
     /// sketch.update(2);
     /// assert_eq!(sketch.num_active_items(), 2);
     /// ```
-    pub fn new(max_map_size: usize) -> Self {
-        assert!(
-            max_map_size.is_power_of_two(),
-            "max_map_size must be power of 2"
-        );
-        assert!(
-            max_map_size <= MAX_MAP_SIZE,
-            "max_map_size must not exceed {MAX_MAP_SIZE}"
-        );
-        let lg_max_map_size = max_map_size.trailing_zeros() as u8;
-        Self::with_lg_map_sizes(lg_max_map_size, LG_MIN_MAP_SIZE)
+    pub fn new(max_map_size: usize) -> Result<Self, Error> {
+        let lg_max_map_size = lg_for_max_map_size(max_map_size)?;
+        Ok(Self::with_lg_map_sizes(lg_max_map_size, LG_MIN_MAP_SIZE))
     }
 
     /// Returns `true` if the sketch has no active items.
@@ -197,7 +212,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     /// ```
     /// use datasketches::frequencies::FrequentItemsSketch;
     ///
-    /// let mut sketch = FrequentItemsSketch::<i64>::new(64);
+    /// let mut sketch = FrequentItemsSketch::<i64>::new(64).unwrap();
     /// sketch.update_with_count(10, 2);
     /// assert!(sketch.estimate(&10) >= 2);
     /// ```
@@ -245,17 +260,43 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
 
     /// Returns the epsilon error parameter for this sketch.
     pub fn epsilon(&self) -> f64 {
-        Self::epsilon_for_lg(self.lg_max_map_size)
+        epsilon_for_lg(self.lg_max_map_size)
     }
 
-    /// Returns the epsilon error parameter for the given `lg_max_map_size`.
-    pub fn epsilon_for_lg(lg_max_map_size: u8) -> f64 {
-        EPSILON_FACTOR / (1u64 << lg_max_map_size) as f64
+    /// Returns the epsilon error parameter for the given maximum map size.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `max_map_size` is not a power of two in the range `[8, 2^30]`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::frequencies::FrequentItemsSketch;
+    ///
+    /// let epsilon = FrequentItemsSketch::<i64>::epsilon_for_max_map_size(1024).unwrap();
+    /// assert_eq!(epsilon, 3.5 / 1024.0);
+    /// ```
+    pub fn epsilon_for_max_map_size(max_map_size: usize) -> Result<f64, Error> {
+        Ok(epsilon_for_lg(lg_for_max_map_size(max_map_size)?))
     }
 
-    /// Returns the a priori error estimate.
-    pub fn apriori_error(lg_max_map_size: u8, estimated_total_weight: i64) -> f64 {
-        Self::epsilon_for_lg(lg_max_map_size) * estimated_total_weight as f64
+    /// Returns the a priori error estimate for a maximum map size and estimated total weight.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `max_map_size` is not a power of two in the range `[8, 2^30]`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::frequencies::FrequentItemsSketch;
+    ///
+    /// let error = FrequentItemsSketch::<i64>::apriori_error(1024, 10_000).unwrap();
+    /// assert_eq!(error, 3.5 / 1024.0 * 10_000.0);
+    /// ```
+    pub fn apriori_error(max_map_size: usize, estimated_total_weight: u64) -> Result<f64, Error> {
+        Ok(Self::epsilon_for_max_map_size(max_map_size)? * estimated_total_weight as f64)
     }
 
     /// Returns the maximum map capacity for this sketch.
@@ -270,6 +311,11 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     /// This is the number of counters supported before resizing or purging.
     pub fn current_map_capacity(&self) -> usize {
         self.cur_map_cap
+    }
+
+    /// Returns the configured maximum map size.
+    pub fn max_map_size(&self) -> usize {
+        1 << self.lg_max_map_size
     }
 
     /// Returns the configured `lg_max_map_size`.
@@ -294,7 +340,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     /// ```
     /// use datasketches::frequencies::FrequentItemsSketch;
     ///
-    /// let mut sketch = FrequentItemsSketch::<i64>::new(64);
+    /// let mut sketch = FrequentItemsSketch::<i64>::new(64).unwrap();
     /// sketch.update(42);
     /// assert!(sketch.estimate(&42) >= 1);
     /// ```
@@ -311,7 +357,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     /// ```
     /// use datasketches::frequencies::FrequentItemsSketch;
     ///
-    /// let mut sketch = FrequentItemsSketch::<i64>::new(64);
+    /// let mut sketch = FrequentItemsSketch::<i64>::new(64).unwrap();
     /// sketch.update_with_count(10, 3);
     /// assert!(sketch.estimate(&10) >= 3);
     /// ```
@@ -319,7 +365,6 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
         if count == 0 {
             return;
         }
-        assert!(count > 0, "count may not be negative");
         self.stream_weight += count;
         self.hash_map.adjust_or_put_value(item, count);
         self.maybe_resize_or_purge();
@@ -336,7 +381,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     /// ```
     /// use datasketches::frequencies::FrequentItemsSketch;
     ///
-    /// let mut sketch = FrequentItemsSketch::<String>::new(64);
+    /// let mut sketch = FrequentItemsSketch::<String>::new(64).unwrap();
     /// sketch.update_ref("nginx");
     /// sketch.update_ref("nginx"); // no allocation on the second hit
     /// assert!(sketch.estimate("nginx") >= 2);
@@ -360,7 +405,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     /// ```
     /// use datasketches::frequencies::FrequentItemsSketch;
     ///
-    /// let mut sketch = FrequentItemsSketch::<String>::new(64);
+    /// let mut sketch = FrequentItemsSketch::<String>::new(64).unwrap();
     /// sketch.update_with_count_ref("gzip", 3);
     /// assert!(sketch.estimate("gzip") >= 3);
     /// ```
@@ -372,7 +417,6 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
         if count == 0 {
             return;
         }
-        assert!(count > 0, "count may not be negative");
         self.stream_weight += count;
         self.hash_map.adjust_or_put_value_ref(item, count);
         self.maybe_resize_or_purge();
@@ -388,8 +432,8 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     /// ```
     /// use datasketches::frequencies::FrequentItemsSketch;
     ///
-    /// let mut left = FrequentItemsSketch::<i64>::new(64);
-    /// let mut right = FrequentItemsSketch::<i64>::new(64);
+    /// let mut left = FrequentItemsSketch::<i64>::new(64).unwrap();
+    /// let mut right = FrequentItemsSketch::<i64>::new(64).unwrap();
     /// left.update(1);
     /// right.update_with_count(2, 2);
     /// left.merge(&right);
@@ -425,7 +469,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     /// use datasketches::frequencies::ErrorType;
     /// use datasketches::frequencies::FrequentItemsSketch;
     ///
-    /// let mut sketch = FrequentItemsSketch::<i64>::new(64);
+    /// let mut sketch = FrequentItemsSketch::<i64>::new(64).unwrap();
     /// sketch.update_with_count(1, 5);
     /// sketch.update(2);
     /// let rows = sketch.frequent_items(ErrorType::NoFalseNegatives);
@@ -451,7 +495,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     /// use datasketches::frequencies::ErrorType;
     /// use datasketches::frequencies::FrequentItemsSketch;
     ///
-    /// let mut sketch = FrequentItemsSketch::<i64>::new(64);
+    /// let mut sketch = FrequentItemsSketch::<i64>::new(64).unwrap();
     /// sketch.update_with_count(1, 5);
     /// sketch.update(2);
     /// let rows = sketch.frequent_items_with_threshold(ErrorType::NoFalsePositives, 3);
@@ -513,7 +557,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
             lg_cur <= lg_max,
             "lg_cur_map_size must not exceed lg_max_map_size"
         );
-        let map = ReversePurgeItemHashMap::new(1usize << lg_cur);
+        let map = ReversePurgeItemHashMap::new(1 << lg_cur);
         let cur_map_cap = map.capacity();
         let max_map_cap = map_capacity_for_lg(lg_max);
         let sample_size = SAMPLE_SIZE.min(max_map_cap);
@@ -679,7 +723,7 @@ impl<T: FrequentItemValue> FrequentItemsSketch<T> {
     /// ```
     /// use datasketches::frequencies::FrequentItemsSketch;
     ///
-    /// let mut sketch = FrequentItemsSketch::<i64>::new(64);
+    /// let mut sketch = FrequentItemsSketch::<i64>::new(64).unwrap();
     /// sketch.update_with_count(7, 2);
     /// let bytes = sketch.serialize();
     /// let decoded = FrequentItemsSketch::<i64>::deserialize(&bytes).unwrap();
@@ -691,7 +735,7 @@ impl<T: FrequentItemValue> FrequentItemsSketch<T> {
     /// ```
     /// use datasketches::frequencies::FrequentItemsSketch;
     ///
-    /// let mut sketch = FrequentItemsSketch::<String>::new(64);
+    /// let mut sketch = FrequentItemsSketch::<String>::new(64).unwrap();
     /// let apple = "apple".to_string();
     /// sketch.update_with_count(apple.clone(), 2);
     /// let bytes = sketch.serialize();
@@ -704,6 +748,11 @@ impl<T: FrequentItemValue> FrequentItemsSketch<T> {
 
     /// Deserializes a sketch from bytes.
     ///
+    /// # Errors
+    ///
+    /// Returns `InvalidData` if the image is truncated, its metadata is inconsistent, or an item
+    /// cannot be decoded by `T`.
+    ///
     /// # Examples
     ///
     /// Built-in support for `i64`:
@@ -711,7 +760,7 @@ impl<T: FrequentItemValue> FrequentItemsSketch<T> {
     /// ```
     /// use datasketches::frequencies::FrequentItemsSketch;
     ///
-    /// let mut sketch = FrequentItemsSketch::<i64>::new(64);
+    /// let mut sketch = FrequentItemsSketch::<i64>::new(64).unwrap();
     /// sketch.update_with_count(7, 2);
     /// let bytes = sketch.serialize();
     /// let decoded = FrequentItemsSketch::<i64>::deserialize(&bytes).unwrap();
@@ -723,7 +772,7 @@ impl<T: FrequentItemValue> FrequentItemsSketch<T> {
     /// ```
     /// use datasketches::frequencies::FrequentItemsSketch;
     ///
-    /// let mut sketch = FrequentItemsSketch::<String>::new(64);
+    /// let mut sketch = FrequentItemsSketch::<String>::new(64).unwrap();
     /// let apple = "apple".to_string();
     /// sketch.update_with_count(apple.clone(), 2);
     /// let bytes = sketch.serialize();

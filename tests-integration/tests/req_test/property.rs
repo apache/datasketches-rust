@@ -17,22 +17,26 @@
 
 //! Property-based ReqSketch tests.
 
+use datasketches::common::NumStdDev;
 use datasketches::req::ReqSketch;
 use datasketches::req::SearchCriteria;
 use quickcheck::Gen;
 use quickcheck::QuickCheck;
 use quickcheck::TestResult;
 
+use super::ReqF64;
+use super::req_f64;
+
 #[test]
 fn prop_quantile_rank_consistency() {
-    fn property(values: Vec<u64>) -> TestResult {
+    fn property(values: Vec<u32>) -> TestResult {
         if !(500..1500).contains(&values.len()) {
             return TestResult::discard();
         }
 
-        let mut sketch = ReqSketch::new();
+        let mut sketch: ReqSketch<ReqF64> = ReqSketch::default();
         for value in values {
-            sketch.update(value);
+            sketch.update(req_f64(value as f64));
         }
 
         // These sizes push the sketch past the compaction threshold, so the
@@ -53,8 +57,8 @@ fn prop_quantile_rank_consistency() {
             // interval for the target rank (plus a small cushion for snapping to a
             // stored item). This scales with k and n, unlike a fixed slack, so it
             // actually constrains the result instead of always passing.
-            let lower = sketch.rank_lower_bound(rank, 3) - 0.02;
-            let upper = sketch.rank_upper_bound(rank, 3) + 0.02;
+            let lower = sketch.rank_lower_bound(rank, NumStdDev::Three) - 0.02;
+            let upper = sketch.rank_upper_bound(rank, NumStdDev::Three) + 0.02;
             assert!(
                 (lower..=upper).contains(&recovered),
                 "rank {rank} -> quantile {quantile} -> recovered {recovered}, expected within [{lower:.4}, {upper:.4}]"
@@ -68,23 +72,23 @@ fn prop_quantile_rank_consistency() {
         .tests(256)
         .min_tests_passed(256)
         .rng(Gen::new(1500))
-        .quickcheck(property as fn(Vec<u64>) -> TestResult);
+        .quickcheck(property as fn(Vec<u32>) -> TestResult);
 }
 
 #[test]
 fn prop_sketch_bounds() {
-    fn property(values: Vec<i64>) -> TestResult {
+    fn property(values: Vec<i32>) -> TestResult {
         if !(1..1000).contains(&values.len()) {
             return TestResult::discard();
         }
 
-        let mut sketch = ReqSketch::new();
+        let mut sketch: ReqSketch<ReqF64> = ReqSketch::default();
         for value in &values {
-            sketch.update(*value);
+            sketch.update(req_f64(*value as f64));
         }
 
-        let true_min = values.iter().copied().min().expect("values are non-empty");
-        let true_max = values.iter().copied().max().expect("values are non-empty");
+        let true_min = req_f64(values.iter().copied().min().expect("values are non-empty") as f64);
+        let true_max = req_f64(values.iter().copied().max().expect("values are non-empty") as f64);
 
         assert_eq!(sketch.min_item(), Some(&true_min));
         assert_eq!(sketch.max_item(), Some(&true_max));
@@ -109,7 +113,7 @@ fn prop_sketch_bounds() {
         .tests(256)
         .min_tests_passed(256)
         .rng(Gen::new(1000))
-        .quickcheck(property as fn(Vec<i64>) -> TestResult);
+        .quickcheck(property as fn(Vec<i32>) -> TestResult);
 }
 
 #[test]
@@ -119,9 +123,9 @@ fn prop_rank_monotonicity() {
             return TestResult::discard();
         }
 
-        let mut sketch = ReqSketch::new();
+        let mut sketch: ReqSketch<ReqF64> = ReqSketch::default();
         for value in values {
-            sketch.update(value);
+            sketch.update(req_f64(value as f64));
         }
 
         let mut last_rank = -1.0;
@@ -134,7 +138,7 @@ fn prop_rank_monotonicity() {
             u32::MAX,
         ] {
             let rank = sketch
-                .rank(&value, SearchCriteria::Inclusive)
+                .rank(&req_f64(value as f64), SearchCriteria::Inclusive)
                 .expect("rank should succeed");
             assert!(rank >= last_rank, "rank {} after {}", rank, last_rank);
             assert!((0.0..=1.0).contains(&rank), "rank {} out of bounds", rank);

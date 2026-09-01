@@ -16,3 +16,9 @@
 // under the License.
 
 //! Shared support for end-to-end integration tests.
+
+/// A seed whose 16-bit seed hash is the reserved zero value.
+pub const ZERO_HASH_SEED: u64 = 50_541;
+
+/// The Theta-family theta value that represents exact (non-sampled) mode.
+pub const MAX_THETA: u64 = i64::MAX as u64;

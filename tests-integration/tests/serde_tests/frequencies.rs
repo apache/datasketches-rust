@@ -53,7 +53,7 @@ impl FrequentItemValue for NonCloneSerializableItem {
 
 #[test]
 fn test_longs_round_trip() {
-    let mut sketch: FrequentItemsSketch<i64> = FrequentItemsSketch::new(32);
+    let mut sketch: FrequentItemsSketch<i64> = FrequentItemsSketch::new(32).unwrap();
     for i in 1..=100 {
         sketch.update_with_count(i, i as u64);
     }
@@ -66,7 +66,7 @@ fn test_longs_round_trip() {
 
 #[test]
 fn test_items_round_trip() {
-    let mut sketch = FrequentItemsSketch::new(32);
+    let mut sketch = FrequentItemsSketch::new(32).unwrap();
     sketch.update_with_count("alpha".to_string(), 3);
     sketch.update_with_count("beta".to_string(), 5);
     sketch.update_with_count("gamma".to_string(), 7);
@@ -79,8 +79,18 @@ fn test_items_round_trip() {
 }
 
 #[test]
+fn test_string_deserialize_rejects_length_larger_than_input() {
+    let bytes = 1024u32.to_le_bytes();
+    let mut cursor = SketchSlice::new(&bytes);
+
+    let error = String::deserialize_value(&mut cursor).unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::InvalidData);
+    assert_that!(error.message(), contains_substring("exceeds the remaining"));
+}
+
+#[test]
 fn test_non_clone_item_round_trip() {
-    let mut sketch = FrequentItemsSketch::<NonCloneSerializableItem>::new(32);
+    let mut sketch = FrequentItemsSketch::<NonCloneSerializableItem>::new(32).unwrap();
     sketch.update_with_count(NonCloneSerializableItem(1), 2);
     sketch.update_with_count(NonCloneSerializableItem(2), 5);
 
@@ -94,7 +104,7 @@ fn test_non_clone_item_round_trip() {
 
 #[test]
 fn test_empty_round_trip() {
-    let sketch = FrequentItemsSketch::<i64>::new(32);
+    let sketch = FrequentItemsSketch::<i64>::new(32).unwrap();
     let bytes = sketch.serialize();
     // One preamble long, matching the Java and C++ empty encoding.
     assert_eq!(bytes.len(), 8);
@@ -108,7 +118,7 @@ fn test_empty_round_trip() {
 fn test_purged_to_empty_round_trip() {
     // Saturating the map with count-1 items makes the purge median 1, which
     // removes every counter while retaining stream and error state.
-    let mut sketch = FrequentItemsSketch::<i64>::new(32);
+    let mut sketch = FrequentItemsSketch::<i64>::new(32).unwrap();
     for i in 0..=(32 * 3 / 4) {
         sketch.update(i);
     }
@@ -134,7 +144,7 @@ fn test_zero_stream_weight_does_not_discard_other_state() {
     // Simulate a wrapped stream weight or an inconsistent but accepted serialized image.
     const STREAM_WEIGHT_OFFSET: usize = 2 * size_of::<u64>();
 
-    let mut active_sketch = FrequentItemsSketch::<i64>::new(32);
+    let mut active_sketch = FrequentItemsSketch::<i64>::new(32).unwrap();
     active_sketch.update_with_count(7, 3);
     let mut active_bytes = active_sketch.serialize();
     active_bytes[STREAM_WEIGHT_OFFSET..STREAM_WEIGHT_OFFSET + size_of::<u64>()].fill(0);
@@ -145,12 +155,12 @@ fn test_zero_stream_weight_does_not_discard_other_state() {
     assert_eq!(active_restored.estimate(&7), 3);
     assert_eq!(active_restored.serialize(), active_bytes);
 
-    let mut active_merged = FrequentItemsSketch::<i64>::new(32);
+    let mut active_merged = FrequentItemsSketch::<i64>::new(32).unwrap();
     active_merged.merge(&active_restored);
     assert_eq!(active_merged.num_active_items(), 1);
     assert_eq!(active_merged.estimate(&7), 3);
 
-    let mut purged_sketch = FrequentItemsSketch::<i64>::new(32);
+    let mut purged_sketch = FrequentItemsSketch::<i64>::new(32).unwrap();
     for item in 0..=(32 * 3 / 4) {
         purged_sketch.update(item);
     }
@@ -163,7 +173,7 @@ fn test_zero_stream_weight_does_not_discard_other_state() {
     assert_eq!(purged_restored.maximum_error(), 1);
     assert_eq!(purged_restored.serialize(), purged_bytes);
 
-    let mut purged_merged = FrequentItemsSketch::<i64>::new(32);
+    let mut purged_merged = FrequentItemsSketch::<i64>::new(32).unwrap();
     purged_merged.merge(&purged_restored);
     assert_eq!(purged_merged.num_active_items(), 0);
     assert_eq!(purged_merged.maximum_error(), 1);
@@ -398,8 +408,8 @@ fn test_go_frequent_strings_utf8() {
 
 #[test]
 fn test_deserialize_rejects_invalid_map_sizes() {
-    let empty = FrequentItemsSketch::<i64>::new(32).serialize();
-    let mut nonempty_sketch = FrequentItemsSketch::<i64>::new(32);
+    let empty = FrequentItemsSketch::<i64>::new(32).unwrap().serialize();
+    let mut nonempty_sketch = FrequentItemsSketch::<i64>::new(32).unwrap();
     nonempty_sketch.update(1);
     let nonempty = nonempty_sketch.serialize();
 
@@ -418,7 +428,9 @@ fn test_deserialize_rejects_invalid_map_sizes() {
 
 #[test]
 fn test_deserialize_empty_header_does_not_allocate_declared_map() {
-    let mut bytes = FrequentItemsSketch::<i64>::new(1usize << 30).serialize();
+    let mut bytes = FrequentItemsSketch::<i64>::new(1usize << 30)
+        .unwrap()
+        .serialize();
     bytes[4] = 30;
     let restored = FrequentItemsSketch::<i64>::deserialize(&bytes).unwrap();
     assert!(restored.is_empty());
@@ -428,7 +440,7 @@ fn test_deserialize_empty_header_does_not_allocate_declared_map() {
 
 #[test]
 fn test_deserialize_rejects_lg_cur_inconsistent_with_num_active() {
-    let mut sketch = FrequentItemsSketch::<i64>::new(32);
+    let mut sketch = FrequentItemsSketch::<i64>::new(32).unwrap();
     sketch.update(1);
     let mut bytes = sketch.serialize();
     bytes[8..12].copy_from_slice(&100u32.to_le_bytes());
@@ -437,7 +449,7 @@ fn test_deserialize_rejects_lg_cur_inconsistent_with_num_active() {
 
 #[test]
 fn test_deserialize_rejects_num_active_exceeding_payload() {
-    let mut sketch = FrequentItemsSketch::<i64>::new(32);
+    let mut sketch = FrequentItemsSketch::<i64>::new(32).unwrap();
     sketch.update(1);
     let mut bytes = sketch.serialize();
     bytes[3] = 30;

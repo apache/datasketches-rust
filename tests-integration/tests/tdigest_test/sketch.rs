@@ -25,7 +25,7 @@ use googletest::prelude::near;
 
 #[test]
 fn test_empty() {
-    let mut tdigest = TDigestMut::new(10);
+    let mut tdigest = TDigestMut::new(10).unwrap();
     assert!(tdigest.is_empty());
     assert_eq!(tdigest.k(), 10);
     assert_eq!(tdigest.total_weight(), 0);
@@ -38,7 +38,7 @@ fn test_empty() {
     assert_eq!(tdigest.pmf(&split_points), None);
     assert_eq!(tdigest.cdf(&split_points), None);
 
-    let tdigest = TDigestMut::new(10).freeze();
+    let tdigest = TDigestMut::new(10).unwrap().freeze();
     assert!(tdigest.is_empty());
     assert_eq!(tdigest.k(), 10);
     assert_eq!(tdigest.total_weight(), 0);
@@ -54,7 +54,7 @@ fn test_empty() {
 
 #[test]
 fn test_one_value() {
-    let mut tdigest = TDigestMut::new(100);
+    let mut tdigest = TDigestMut::new(100).unwrap();
     tdigest.update(1.0);
     assert_eq!(tdigest.k(), 100);
     assert_eq!(tdigest.total_weight(), 1);
@@ -69,8 +69,21 @@ fn test_one_value() {
 }
 
 #[test]
+fn test_empty_split_points_define_one_bin() {
+    let mut tdigest = TDigestMut::new(100).unwrap();
+    tdigest.update(1.0);
+
+    assert_eq!(tdigest.cdf(&[]), Some(vec![1.0]));
+    assert_eq!(tdigest.pmf(&[]), Some(vec![1.0]));
+
+    let tdigest = tdigest.freeze();
+    assert_eq!(tdigest.cdf(&[]), Some(vec![1.0]));
+    assert_eq!(tdigest.pmf(&[]), Some(vec![1.0]));
+}
+
+#[test]
 fn test_maximum_k() {
-    let mut tdigest = TDigestMut::new(u16::MAX);
+    let mut tdigest = TDigestMut::new(u16::MAX).unwrap();
     tdigest.update(1.0);
 
     let tdigest = tdigest.freeze();
@@ -85,7 +98,7 @@ fn test_estimated_size_reuses_buffer_after_compression() {
     const MAX_UNMERGED: usize = TARGET_CENTROIDS * 4;
 
     let inline_size = size_of::<TDigestMut>();
-    let mut tdigest = TDigestMut::new(K);
+    let mut tdigest = TDigestMut::new(K).unwrap();
     assert_eq!(tdigest.estimated_size(), inline_size);
 
     for value in 0..MAX_UNMERGED {
@@ -103,11 +116,11 @@ fn test_estimated_size_reuses_buffer_after_compression() {
     tdigest.rank(0.5);
     assert!(tdigest.estimated_size() <= size_before_compression);
 
-    let mut left = TDigestMut::new(K);
+    let mut left = TDigestMut::new(K).unwrap();
     for value in 0..8 {
         left.update(value as f64);
     }
-    let mut right = TDigestMut::new(K);
+    let mut right = TDigestMut::new(K).unwrap();
     for value in 0..MAX_UNMERGED {
         right.update(value as f64);
     }
@@ -117,7 +130,7 @@ fn test_estimated_size_reuses_buffer_after_compression() {
     assert_eq!(right.total_weight(), MAX_UNMERGED as u64);
     assert_eq!(right.estimated_size(), right_size);
 
-    let mut full_left = TDigestMut::new(K);
+    let mut full_left = TDigestMut::new(K).unwrap();
     for value in 0..MAX_UNMERGED {
         full_left.update(value as f64);
     }
@@ -181,7 +194,7 @@ fn test_many_values() {
 
 #[test]
 fn test_rank_two_values() {
-    let mut tdigest = TDigestMut::new(100);
+    let mut tdigest = TDigestMut::new(100).unwrap();
     tdigest.update(1.0);
     tdigest.update(2.0);
     assert_eq!(tdigest.rank(0.99), Some(0.0));
@@ -195,7 +208,7 @@ fn test_rank_two_values() {
 
 #[test]
 fn test_rank_repeated_values() {
-    let mut tdigest = TDigestMut::new(100);
+    let mut tdigest = TDigestMut::new(100).unwrap();
     tdigest.update(1.0);
     tdigest.update(1.0);
     tdigest.update(1.0);
@@ -207,7 +220,7 @@ fn test_rank_repeated_values() {
 
 #[test]
 fn test_repeated_blocks() {
-    let mut tdigest = TDigestMut::new(100);
+    let mut tdigest = TDigestMut::new(100).unwrap();
     tdigest.update(1.0);
     tdigest.update(2.0);
     tdigest.update(2.0);
@@ -221,10 +234,10 @@ fn test_repeated_blocks() {
 
 #[test]
 fn test_merge_small() {
-    let mut td1 = TDigestMut::new(10);
+    let mut td1 = TDigestMut::new(10).unwrap();
     td1.update(1.0);
     td1.update(2.0);
-    let mut td2 = TDigestMut::new(10);
+    let mut td2 = TDigestMut::new(10).unwrap();
     td2.update(2.0);
     td2.update(3.0);
     td1.merge(&td2);
@@ -242,8 +255,8 @@ fn test_merge_small() {
 fn test_merge_large() {
     let n = 10000;
 
-    let mut td1 = TDigestMut::new(10);
-    let mut td2 = TDigestMut::new(10);
+    let mut td1 = TDigestMut::new(10).unwrap();
+    let mut td2 = TDigestMut::new(10).unwrap();
     let sup = n / 2;
     for i in 0..sup {
         td1.update(i as f64);
@@ -266,25 +279,25 @@ fn test_merge_large() {
 fn test_invalid_inputs() {
     let n = 100;
 
-    let mut td = TDigestMut::new(10);
+    let mut td = TDigestMut::new(10).unwrap();
     for _ in 0..n {
         td.update(f64::NAN);
     }
     assert!(td.is_empty());
 
-    let mut td = TDigestMut::new(10);
+    let mut td = TDigestMut::new(10).unwrap();
     for _ in 0..n {
         td.update(f64::INFINITY);
     }
     assert!(td.is_empty());
 
-    let mut td = TDigestMut::new(10);
+    let mut td = TDigestMut::new(10).unwrap();
     for _ in 0..n {
         td.update(f64::NEG_INFINITY);
     }
     assert!(td.is_empty());
 
-    let mut td = TDigestMut::new(10);
+    let mut td = TDigestMut::new(10).unwrap();
     for i in 0..n {
         if i % 2 == 0 {
             td.update(f64::INFINITY);
@@ -318,4 +331,81 @@ fn test_estimate_repeat_values() {
         tdigest.update(1.0);
     }
     assert_eq!(tdigest.quantile(0.9), Some(1.0));
+}
+
+/// Builds a digest whose centroids carry the given weights.
+///
+/// Compression never merges the extreme centroids, so digests built through `update` and `merge`
+/// always keep unit-weight tails. Heavier tails arrive only through deserialization, including the
+/// reference implementation format, and they select the tail interpolation branches.
+fn deserialize_with_centroids(k: u16, min: f64, max: f64, centroids: &[(f64, u64)]) -> TDigestMut {
+    const PREAMBLE_LONGS: u8 = 2;
+    const SERIAL_VERSION: u8 = 1;
+    const FAMILY_TDIGEST: u8 = 20;
+
+    let mut bytes = vec![PREAMBLE_LONGS, SERIAL_VERSION, FAMILY_TDIGEST];
+    bytes.extend_from_slice(&k.to_le_bytes());
+    bytes.push(0); // flags
+    bytes.extend_from_slice(&0u16.to_le_bytes()); // unused
+    bytes.extend_from_slice(&(centroids.len() as u32).to_le_bytes());
+    bytes.extend_from_slice(&0u32.to_le_bytes()); // buffered values
+    bytes.extend_from_slice(&min.to_le_bytes());
+    bytes.extend_from_slice(&max.to_le_bytes());
+    for (mean, weight) in centroids {
+        bytes.extend_from_slice(&mean.to_le_bytes());
+        bytes.extend_from_slice(&weight.to_le_bytes());
+    }
+    TDigestMut::deserialize(&bytes).unwrap()
+}
+
+#[test]
+fn test_quantile_moves_toward_the_nearer_bracketing_centroid() {
+    let mut tdigest =
+        deserialize_with_centroids(100, -1.0, 21.0, &[(0.0, 4), (10.0, 4), (20.0, 4)]);
+
+    assert_eq!(tdigest.total_weight(), 12);
+    // Ranks 2/12 and 6/12 sit exactly on the two centroids bracketing the first interval.
+    assert_that!(tdigest.quantile(2.0 / 12.0).unwrap(), near(0.0, 1e-12));
+    assert_that!(tdigest.quantile(3.0 / 12.0).unwrap(), near(2.5, 1e-12));
+    assert_that!(tdigest.quantile(4.0 / 12.0).unwrap(), near(5.0, 1e-12));
+    assert_that!(tdigest.quantile(5.0 / 12.0).unwrap(), near(7.5, 1e-12));
+    assert_that!(tdigest.quantile(6.0 / 12.0).unwrap(), near(10.0, 1e-12));
+}
+
+#[test]
+fn test_quantile_right_tail_stays_within_max() {
+    let mut tdigest =
+        deserialize_with_centroids(100, 0.0, 100.0, &[(10.0, 10), (50.0, 10), (90.0, 10)]);
+
+    assert_eq!(tdigest.max_value(), Some(100.0));
+    assert_that!(tdigest.quantile(0.9).unwrap(), near(95.0, 1e-12));
+    assert_that!(tdigest.quantile(29.0 / 30.0).unwrap(), near(100.0, 1e-12));
+    // Mirrors the left tail, which interpolates from min up to the first centroid mean.
+    assert_that!(tdigest.quantile(1.0 / 30.0).unwrap(), near(0.0, 1e-12));
+    assert_that!(tdigest.quantile(5.0 / 30.0).unwrap(), near(10.0, 1e-12));
+}
+
+#[test]
+fn test_quantile_handles_two_sample_last_centroid() {
+    let mut tdigest =
+        deserialize_with_centroids(100, 0.0, 100.0, &[(0.0, 1), (50.0, 1), (90.0, 2)]);
+
+    assert_eq!(tdigest.quantile(0.75), Some(100.0));
+}
+
+#[test]
+fn test_rank_left_tail_is_a_fraction_of_the_total_weight() {
+    let mut tdigest =
+        deserialize_with_centroids(100, 0.0, 100.0, &[(10.0, 10), (50.0, 10), (90.0, 10)]);
+
+    assert_that!(tdigest.rank(5.0).unwrap(), near(0.1, 1e-12));
+    assert_that!(tdigest.rank(10.0).unwrap(), near(5.0 / 30.0, 1e-12));
+    // The right tail is the mirror image and pins the scale the left tail must match.
+    assert_that!(tdigest.rank(95.0).unwrap(), near(0.9, 1e-12));
+    assert_that!(tdigest.rank(90.0).unwrap(), near(25.0 / 30.0, 1e-12));
+
+    let pmf = tdigest.pmf(&[5.0, 95.0]).unwrap();
+    assert_that!(pmf[0], near(0.1, 1e-12));
+    assert_that!(pmf[1], near(0.8, 1e-12));
+    assert_that!(pmf[2], near(0.1, 1e-12));
 }

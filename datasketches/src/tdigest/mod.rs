@@ -53,7 +53,7 @@
 //! ```
 //! use datasketches::tdigest::TDigestMut;
 //!
-//! let mut sketch = TDigestMut::new(100);
+//! let mut sketch = TDigestMut::new(100).unwrap();
 //! sketch.update(1.0);
 //! sketch.update(2.0);
 //! let median = sketch.quantile(0.5).unwrap();

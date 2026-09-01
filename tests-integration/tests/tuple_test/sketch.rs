@@ -16,23 +16,45 @@
 // under the License.
 
 use datasketches::common::NumStdDev;
+use datasketches::error::ErrorKind;
 use datasketches::hash::value;
 use datasketches::tuple::CompactTupleSketch;
 use datasketches::tuple::DefaultUpdatePolicy;
 use datasketches::tuple::SummaryPolicy;
 use datasketches::tuple::SummaryUpdatePolicy;
+use datasketches::tuple::TupleEntry;
 use datasketches::tuple::TupleSketch;
 use datasketches::tuple::TupleSketchBuilder;
 use googletest::assert_that;
 use googletest::prelude::gt;
 use googletest::prelude::le;
 use googletest::prelude::lt;
+use tests_integration::MAX_THETA;
+use tests_integration::ZERO_HASH_SEED;
 
 use crate::default_tuple_sketch_builder;
 
 #[test]
+fn builder_validates_configuration_at_build() {
+    let error = default_tuple_sketch_builder().lg_k(4).build().unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::InvalidArgument);
+
+    let error = default_tuple_sketch_builder()
+        .sampling_probability(f32::INFINITY)
+        .build()
+        .unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::InvalidArgument);
+
+    let error = default_tuple_sketch_builder()
+        .seed(ZERO_HASH_SEED)
+        .build()
+        .unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::InvalidArgument);
+}
+
+#[test]
 fn updates_distinct_keys_and_accumulates_summaries() {
-    let mut sketch = default_tuple_sketch_builder().build();
+    let mut sketch = default_tuple_sketch_builder().build().unwrap();
     sketch.update("shared", 2u64);
     sketch.update("shared", 3u64);
     sketch.update("other", 7u64);
@@ -40,14 +62,14 @@ fn updates_distinct_keys_and_accumulates_summaries() {
     assert_eq!(sketch.estimate(), 2.0);
     assert_eq!(sketch.num_retained(), 2);
 
-    let mut summaries: Vec<u64> = sketch.iter().map(|(_, &summary)| summary).collect();
+    let mut summaries: Vec<u64> = sketch.iter().map(|entry| *entry.summary()).collect();
     summaries.sort_unstable();
     assert_eq!(summaries, [5, 7]);
 }
 
 #[test]
 fn accepts_supported_hash_representations() {
-    let mut sketch = default_tuple_sketch_builder().build();
+    let mut sketch = default_tuple_sketch_builder().build().unwrap();
     sketch.update("string", 1u64);
     sketch.update(42i64, 1u64);
     sketch.update(42u64, 1u64);
@@ -60,11 +82,13 @@ fn accepts_supported_hash_representations() {
 
 #[test]
 fn default_update_policy_accepts_distinct_rhs_type() {
-    let mut sketch = TupleSketchBuilder::new(DefaultUpdatePolicy::<String>::default()).build();
+    let mut sketch = TupleSketchBuilder::new(DefaultUpdatePolicy::<String>::default())
+        .build()
+        .unwrap();
     sketch.update("key", "hello");
     sketch.update("key", " world");
 
-    assert_eq!(sketch.iter().next().unwrap().1, "hello world");
+    assert_eq!(sketch.iter().next().unwrap().summary(), "hello world");
 }
 
 struct ArraySumPolicy {
@@ -94,17 +118,22 @@ where
 
 #[test]
 fn custom_update_policy_accepts_multiple_value_representations() {
-    let mut sketch = TupleSketchBuilder::new(ArraySumPolicy { num_values: 2 }).build();
+    let mut sketch = TupleSketchBuilder::new(ArraySumPolicy { num_values: 2 })
+        .build()
+        .unwrap();
     sketch.update("key", &[1.0, 2.0]);
     sketch.update("key", vec![3.0, 4.0]);
 
     assert_eq!(sketch.num_retained(), 1);
-    assert_eq!(sketch.iter().next().unwrap().1.as_slice(), [4.0, 6.0]);
+    assert_eq!(
+        sketch.iter().next().unwrap().summary().as_slice(),
+        [4.0, 6.0]
+    );
 }
 
 #[test]
 fn trim_and_reset_update_public_state() {
-    let mut sketch = default_tuple_sketch_builder().lg_k(5).build();
+    let mut sketch = default_tuple_sketch_builder().lg_k(5).build().unwrap();
     for value in 0..1000 {
         sketch.update(value, 1u64);
     }
@@ -123,14 +152,14 @@ fn trim_and_reset_update_public_state() {
 
 #[test]
 fn bounds_cover_exact_and_estimation_results() {
-    let mut exact = default_tuple_sketch_builder().build();
+    let mut exact = default_tuple_sketch_builder().build().unwrap();
     for value in 0..100 {
         exact.update(value, 1u64);
     }
     assert_eq!(exact.lower_bound(NumStdDev::One), 100.0);
     assert_eq!(exact.upper_bound(NumStdDev::Three), 100.0);
 
-    let mut estimated = default_tuple_sketch_builder().lg_k(8).build();
+    let mut estimated = default_tuple_sketch_builder().lg_k(8).build().unwrap();
     for value in 0..50_000 {
         estimated.update(value, 1u64);
     }
@@ -151,17 +180,20 @@ fn bounds_cover_exact_and_estimation_results() {
 fn empty_sampled_sketch_has_zero_bounds() {
     let sketch = default_tuple_sketch_builder()
         .sampling_probability(0.1)
-        .build();
+        .build()
+        .unwrap();
 
     assert!(sketch.is_empty());
-    assert!(sketch.is_estimation_mode());
+    assert!(!sketch.is_estimation_mode());
     assert_eq!(sketch.estimate(), 0.0);
     assert_eq!(sketch.lower_bound(NumStdDev::Three), 0.0);
     assert_eq!(sketch.upper_bound(NumStdDev::Three), 0.0);
 }
 
-fn sorted_entries<'a>(entries: impl Iterator<Item = (u64, &'a u64)>) -> Vec<(u64, u64)> {
-    let mut entries: Vec<_> = entries.map(|(hash, &summary)| (hash, summary)).collect();
+fn sorted_entries<'a>(entries: impl Iterator<Item = &'a TupleEntry<u64>>) -> Vec<(u64, u64)> {
+    let mut entries: Vec<_> = entries
+        .map(|entry| (entry.hash(), *entry.summary()))
+        .collect();
     entries.sort_unstable();
     entries
 }
@@ -185,7 +217,7 @@ fn assert_compact_preserves_state(
 #[test]
 fn compact_preserves_state_in_exact_and_estimation_modes() {
     for (lg_k, num_updates, expected_estimation_mode) in [(12, 2_000, false), (5, 5_000, true)] {
-        let mut sketch = default_tuple_sketch_builder().lg_k(lg_k).build();
+        let mut sketch = default_tuple_sketch_builder().lg_k(lg_k).build().unwrap();
         for key in 0..num_updates {
             sketch.update(key, key + 1);
             sketch.update(key, 10u64);
@@ -200,12 +232,13 @@ fn compact_preserves_state_in_exact_and_estimation_modes() {
 }
 
 #[test]
-fn compact_preserves_logical_non_empty_after_screened_update() {
+fn sampling_state_transitions_through_compaction_and_reset() {
     let screened_value = (0u64..)
         .find(|candidate| {
             let mut sketch = default_tuple_sketch_builder()
                 .sampling_probability(0.5)
-                .build();
+                .build()
+                .unwrap();
             sketch.update(*candidate, 1u64);
             !sketch.is_empty() && sketch.num_retained() == 0
         })
@@ -213,11 +246,38 @@ fn compact_preserves_logical_non_empty_after_screened_update() {
 
     let mut sketch = default_tuple_sketch_builder()
         .sampling_probability(0.5)
-        .build();
+        .build()
+        .unwrap();
+
+    assert!(sketch.is_empty());
+    assert_eq!(sketch.theta64(), MAX_THETA);
+    assert!(!sketch.is_estimation_mode());
+    let empty_compact = sketch.compact(false);
+    assert!(empty_compact.is_empty());
+    assert!(empty_compact.is_ordered());
+    let bytes = empty_compact.serialize();
+    assert_eq!(
+        CompactTupleSketch::<u64>::deserialize(&bytes)
+            .unwrap()
+            .serialize(),
+        bytes
+    );
+
     sketch.update(screened_value, 1u64);
+
+    assert!(!sketch.is_empty());
+    assert_eq!(sketch.num_retained(), 0);
+    assert!(sketch.is_estimation_mode());
+    assert_that!(sketch.theta64(), lt(MAX_THETA));
+
     let compact = sketch.compact(false);
 
     assert!(!compact.is_empty());
     assert_eq!(compact.num_retained(), 0);
     assert_eq!(compact.theta64(), sketch.theta64());
+
+    sketch.reset();
+    assert!(sketch.is_empty());
+    assert_eq!(sketch.theta64(), MAX_THETA);
+    assert!(!sketch.is_estimation_mode());
 }

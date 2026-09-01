@@ -15,14 +15,13 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! REQ sketch — generic over `T: ReqValue`.
-
-use std::fmt;
+//! Generic REQ sketch implementation.
 
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
 use crate::codec::assert::insufficient_data;
 use crate::codec::family::Family;
+use crate::common::NumStdDev;
 use crate::error::Error;
 use crate::req::DEFAULT_K;
 use crate::req::INITIAL_SECTIONS_PER_COMPACTOR;
@@ -47,74 +46,50 @@ use crate::req::value::ReqValue;
 
 /// A Relative Error Quantiles sketch for approximate quantile estimation.
 ///
-/// See the [module-level documentation](super) for background.
+/// See the [module level documentation](super) for item ordering and floating-point requirements.
 #[derive(Debug, Clone)]
-pub struct ReqSketch<T: ReqValue> {
-    pub(super) k: u16,
-    pub(super) rank_accuracy: RankAccuracy,
-    pub(super) n: u64,
-    pub(super) max_nom_size: u32,
-    pub(super) num_retained: u32,
-    pub(super) compactors: Vec<Compactor<T>>,
-    pub(super) promotion_buf: Vec<T>,
-    pub(super) min_item: Option<T>,
-    pub(super) max_item: Option<T>,
+pub struct ReqSketch<T> {
+    k: u16,
+    rank_accuracy: RankAccuracy,
+    n: u64,
+    max_nom_size: u32,
+    num_retained: u32,
+    compactors: Vec<Compactor<T>>,
+    promotion_buf: Vec<T>,
+    min_item: Option<T>,
+    max_item: Option<T>,
 }
 
-impl<T: ReqValue> ReqSketch<T> {
-    /// Creates a new sketch with default parameters (`k = 12`, `RankAccuracy::HighRank`).
-    pub fn new() -> Self {
-        let mut s = Self {
-            k: DEFAULT_K,
-            rank_accuracy: RankAccuracy::HighRank,
-            n: 0,
-            max_nom_size: 0,
-            num_retained: 0,
-            compactors: Vec::new(),
-            promotion_buf: Vec::with_capacity(DEFAULT_K as usize),
-            min_item: None,
-            max_item: None,
-        };
-        // C++ parity: an empty sketch has a level-0 compactor present from the start.
-        // This makes is_raw_items() and flags_byte() byte-compatible with the C++/Java
-        // wire format for the empty case.
-        s.grow();
-        s
+impl<T> Default for ReqSketch<T>
+where
+    T: Clone + Ord,
+{
+    fn default() -> Self {
+        Self::make(DEFAULT_K, RankAccuracy::HighRank)
     }
+}
 
-    /// Creates a new sketch with the given `k` and rank accuracy.
+impl<T> ReqSketch<T>
+where
+    T: Clone + Ord,
+{
+    /// Creates a sketch with the given `k` and rank-accuracy mode.
+    ///
+    /// Larger `k` improves accuracy at the cost of retained memory.
     ///
     /// # Errors
     ///
-    /// Returns an error if `k` is odd or outside `[MIN_K, MAX_K]`.
-    pub fn try_new(k: u16, rank_accuracy: RankAccuracy) -> Result<Self, Error> {
+    /// Returns an error if `k` is odd or outside `[4, 1024]`.
+    pub fn new(k: u16, rank_accuracy: RankAccuracy) -> Result<Self, Error> {
         if !(MIN_K..=MAX_K).contains(&k) {
             return Err(Error::invalid_argument(format!(
-                "k must be in [{}, {}], got {k}",
-                MIN_K, MAX_K
+                "k must be in [{MIN_K}, {MAX_K}], got {k}"
             )));
         }
         if k % 2 != 0 {
             return Err(Error::invalid_argument(format!("k must be even, got {k}")));
         }
-        let mut s = Self {
-            k,
-            rank_accuracy,
-            n: 0,
-            max_nom_size: 0,
-            num_retained: 0,
-            compactors: Vec::new(),
-            promotion_buf: Vec::with_capacity(k as usize),
-            min_item: None,
-            max_item: None,
-        };
-        s.grow();
-        Ok(s)
-    }
-
-    /// Returns a builder for chained configuration.
-    pub fn builder() -> ReqSketchBuilder<T> {
-        ReqSketchBuilder::new()
+        Ok(Self::make(k, rank_accuracy))
     }
 
     /// Returns the configured `k` parameter.
@@ -127,7 +102,7 @@ impl<T: ReqValue> ReqSketch<T> {
         self.rank_accuracy
     }
 
-    /// Returns the total number of items observed (matches C++ `get_n`).
+    /// Returns the total number of items observed.
     pub fn n(&self) -> u64 {
         self.n
     }
@@ -158,21 +133,15 @@ impl<T: ReqValue> ReqSketch<T> {
     }
 
     /// Updates the sketch with a new item.
-    ///
-    /// NaN inputs are silently ignored for floating-point types, matching the behavior
-    /// of the Java reference implementation (`checkNaNUpdate`). This is intentional.
     pub fn update(&mut self, item: T) {
-        if item.is_nan() {
-            return;
-        }
         match &mut self.min_item {
             None => self.min_item = Some(item.clone()),
-            Some(cur) if item.total_cmp(cur).is_lt() => *cur = item.clone(),
+            Some(cur) if item.cmp(cur).is_lt() => *cur = item.clone(),
             _ => {}
         }
         match &mut self.max_item {
             None => self.max_item = Some(item.clone()),
-            Some(cur) if item.total_cmp(cur).is_gt() => *cur = item.clone(),
+            Some(cur) if item.cmp(cur).is_gt() => *cur = item.clone(),
             _ => {}
         }
 
@@ -208,13 +177,11 @@ impl<T: ReqValue> ReqSketch<T> {
     /// [`SortedView::rank`] on [`Self::sorted_view`].
     ///
     /// # Errors
-    /// Returns an error if the sketch is empty or `item` is NaN.
+    ///
+    /// Returns an error if the sketch is empty.
     pub fn rank(&self, item: &T, criteria: SearchCriteria) -> Result<f64, Error> {
         if self.is_empty() {
             return Err(Error::invalid_argument("sketch is empty"));
-        }
-        if item.is_nan() {
-            return Err(Error::invalid_argument("query item is NaN"));
         }
         let inclusive = matches!(criteria, SearchCriteria::Inclusive);
         let weight: u64 = self
@@ -229,6 +196,10 @@ impl<T: ReqValue> ReqSketch<T> {
     ///
     /// Builds a transient [`SortedView`] internally. For repeated quantile
     /// queries, take one snapshot with [`Self::sorted_view`] and query it.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the sketch is empty or `rank` is outside `[0.0, 1.0]`.
     pub fn quantile(&self, rank: f64, criteria: SearchCriteria) -> Result<T, Error> {
         if self.is_empty() {
             return Err(Error::invalid_argument("sketch is empty"));
@@ -244,6 +215,10 @@ impl<T: ReqValue> ReqSketch<T> {
     /// Returns approximate quantiles for the given normalized ranks.
     ///
     /// The sorted view is built once and shared across all ranks.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the sketch is empty or any rank is outside `[0.0, 1.0]`.
     pub fn quantiles(&self, ranks: &[f64], criteria: SearchCriteria) -> Result<Vec<T>, Error> {
         if self.is_empty() {
             return Err(Error::invalid_argument("sketch is empty"));
@@ -261,6 +236,10 @@ impl<T: ReqValue> ReqSketch<T> {
     }
 
     /// Returns the Probability Mass Function over the given split points.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the sketch is empty or the split points are not strictly increasing.
     pub fn pmf(&self, split_points: &[T], criteria: SearchCriteria) -> Result<Vec<f64>, Error> {
         if self.is_empty() {
             return Err(Error::invalid_argument("sketch is empty"));
@@ -269,6 +248,10 @@ impl<T: ReqValue> ReqSketch<T> {
     }
 
     /// Returns the Cumulative Distribution Function over the given split points.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the sketch is empty or the split points are not strictly increasing.
     pub fn cdf(&self, split_points: &[T], criteria: SearchCriteria) -> Result<Vec<f64>, Error> {
         if self.is_empty() {
             return Err(Error::invalid_argument("sketch is empty"));
@@ -303,6 +286,26 @@ impl<T: ReqValue> ReqSketch<T> {
     /// # Errors
     ///
     /// Returns an error if the two sketches have different `rank_accuracy`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::req::ReqFloat;
+    /// use datasketches::req::ReqSketch;
+    ///
+    /// let mut first = ReqSketch::default();
+    /// first.update(ReqFloat::<f64>::new(1.0)?);
+    ///
+    /// let mut second = ReqSketch::default();
+    /// second.update(ReqFloat::<f64>::new(2.0)?);
+    ///
+    /// let mut combined = ReqSketch::default();
+    /// combined.merge(&first).unwrap();
+    /// combined.merge(&second).unwrap();
+    ///
+    /// assert_eq!(combined.n(), 2);
+    /// # Ok::<(), datasketches::error::Error>(())
+    /// ```
     pub fn merge(&mut self, other: &Self) -> Result<(), Error> {
         if self.rank_accuracy != other.rank_accuracy {
             return Err(Error::invalid_argument(
@@ -319,14 +322,14 @@ impl<T: ReqValue> ReqSketch<T> {
         if let Some(m) = &other.min_item {
             match &self.min_item {
                 None => self.min_item = Some(m.clone()),
-                Some(cur) if m.total_cmp(cur).is_lt() => self.min_item = Some(m.clone()),
+                Some(cur) if m.cmp(cur).is_lt() => self.min_item = Some(m.clone()),
                 _ => {}
             }
         }
         if let Some(m) = &other.max_item {
             match &self.max_item {
                 None => self.max_item = Some(m.clone()),
-                Some(cur) if m.total_cmp(cur).is_gt() => self.max_item = Some(m.clone()),
+                Some(cur) if m.cmp(cur).is_gt() => self.max_item = Some(m.clone()),
                 _ => {}
             }
         }
@@ -349,25 +352,25 @@ impl<T: ReqValue> ReqSketch<T> {
         Ok(())
     }
 
-    /// Returns the lower bound for the rank of a quantile at `num_std_dev` confidence.
-    pub fn rank_lower_bound(&self, rank: f64, num_std_dev: u8) -> f64 {
+    /// Returns the lower bound for the normalized `rank` at the requested confidence level.
+    pub fn rank_lower_bound(&self, rank: f64, num_std_dev: NumStdDev) -> f64 {
         self.compute_rank_lower_bound(
             self.k,
             self.compactors.len() as u8,
             rank,
-            num_std_dev,
+            num_std_dev.as_u8(),
             self.n,
             matches!(self.rank_accuracy, RankAccuracy::HighRank),
         )
     }
 
-    /// Returns the upper bound for the rank of a quantile at `num_std_dev` confidence.
-    pub fn rank_upper_bound(&self, rank: f64, num_std_dev: u8) -> f64 {
+    /// Returns the upper bound for the normalized `rank` at the requested confidence level.
+    pub fn rank_upper_bound(&self, rank: f64, num_std_dev: NumStdDev) -> f64 {
         self.compute_rank_upper_bound(
             self.k,
             self.compactors.len() as u8,
             rank,
-            num_std_dev,
+            num_std_dev.as_u8(),
             self.n,
             matches!(self.rank_accuracy, RankAccuracy::HighRank),
         )
@@ -436,39 +439,7 @@ impl<T: ReqValue> ReqSketch<T> {
         }
     }
 
-    /// Returns per-level info: `(level_index, num_items, capacity, weight)`.
-    /// Internal/test API; subject to change.
-    #[doc(hidden)]
-    pub fn level_info(&self) -> Vec<(usize, u32, u32, u64)> {
-        self.compactors
-            .iter()
-            .enumerate()
-            .map(|(i, c)| (i, c.num_items(), c.nominal_capacity(), c.weight()))
-            .collect()
-    }
-
-    /// Total nominal capacity across all levels. Internal/test API.
-    #[doc(hidden)]
-    pub fn total_nominal_capacity(&self) -> u32 {
-        self.compactors.iter().map(|c| c.nominal_capacity()).sum()
-    }
-
-    /// Total retained items across all levels. Internal/test API.
-    #[doc(hidden)]
-    pub fn total_retained_items(&self) -> u32 {
-        self.compactors.iter().map(|c| c.num_items()).sum()
-    }
-
-    /// Sum of `level_items × level_weight` across compactors. Internal/test API.
-    #[doc(hidden)]
-    pub fn computed_total_weight(&self) -> u64 {
-        self.compactors
-            .iter()
-            .map(|c| c.num_items() as u64 * c.weight())
-            .sum()
-    }
-
-    pub(super) fn flags_byte(&self) -> u8 {
+    fn flags_byte(&self) -> u8 {
         let mut flags = 0u8;
         if self.is_empty() {
             flags |= FLAG_IS_EMPTY;
@@ -485,15 +456,18 @@ impl<T: ReqValue> ReqSketch<T> {
         flags
     }
 
-    pub(super) fn is_raw_items(&self) -> bool {
+    fn is_raw_items(&self) -> bool {
         self.n <= RAW_ITEMS_THRESHOLD && self.compactors.len() == 1
     }
 
-    /// Number of bytes required to serialize the sketch.
-    pub fn serialized_size_bytes(&self) -> usize {
+    /// Returns the number of bytes required to serialize the sketch.
+    pub fn serialized_size_bytes(&self) -> usize
+    where
+        T: ReqValue,
+    {
         // Fixed sketch preamble: 8 bytes (preamble_ints, serial_version, family,
         // flags, k(2), num_levels, num_raw_items).
-        let mut size = 8usize;
+        let mut size = 8;
         if self.is_empty() {
             return size;
         }
@@ -518,8 +492,11 @@ impl<T: ReqValue> ReqSketch<T> {
         size
     }
 
-    /// Serialize the sketch into a `Vec<u8>` matching the C++/Java REQ wire format.
-    pub fn serialize(&self) -> Vec<u8> {
+    /// Serializes the sketch using the C++/Java-compatible REQ wire format.
+    pub fn serialize(&self) -> Vec<u8>
+    where
+        T: ReqValue,
+    {
         let mut out = SketchBytes::with_capacity(self.serialized_size_bytes());
         let preamble_ints = if self.is_estimation_mode() {
             PREAMBLE_INTS_ESTIMATION
@@ -570,7 +547,10 @@ impl<T: ReqValue> ReqSketch<T> {
     ///
     /// Returns an error if the input is truncated or contains an inconsistent
     /// REQ serialized state.
-    pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
+    pub fn deserialize(bytes: &[u8]) -> Result<Self, Error>
+    where
+        T: ReqValue,
+    {
         let mut cursor = SketchSlice::new(bytes);
         let preamble_ints = cursor
             .read_u8()
@@ -600,8 +580,14 @@ impl<T: ReqValue> ReqSketch<T> {
         } else {
             RankAccuracy::LowRank
         };
-        if !(MIN_K..=MAX_K).contains(&k) || k % 2 != 0 {
-            return Err(Error::deserial(format!("k {k} is not a valid REQ k value")));
+
+        if !(MIN_K..=MAX_K).contains(&k) {
+            return Err(Error::deserial(format!(
+                "k must be in [{MIN_K}, {MAX_K}], got {k}"
+            )));
+        }
+        if k % 2 != 0 {
+            return Err(Error::deserial(format!("k must be even, got {k}")));
         }
 
         if is_empty {
@@ -615,7 +601,7 @@ impl<T: ReqValue> ReqSketch<T> {
                     "empty REQ sketch must have 0 raw items, got {num_raw_items}"
                 )));
             }
-            return ReqSketch::try_new(k, rank_accuracy);
+            return Ok(Self::make(k, rank_accuracy));
         }
 
         if num_levels == 0 {
@@ -656,10 +642,7 @@ impl<T: ReqValue> ReqSketch<T> {
             max_item = Some(T::deserialize_value(&mut cursor)?);
             let min = min_item.as_ref().unwrap();
             let max = max_item.as_ref().unwrap();
-            if min.is_nan() || max.is_nan() {
-                return Err(Error::deserial("REQ sketch min or max item is NaN"));
-            }
-            if min.total_cmp(max).is_gt() {
+            if min > max {
                 return Err(Error::deserial(
                     "REQ sketch min item is greater than max item",
                 ));
@@ -675,7 +658,7 @@ impl<T: ReqValue> ReqSketch<T> {
                 items.push(T::deserialize_value(&mut cursor)?);
             }
             let c =
-                Compactor::<T>::raw_items_compactor(k, rank_accuracy, items, is_level_zero_sorted)?;
+                Compactor::<T>::raw_items_compactor(k, rank_accuracy, items, is_level_zero_sorted);
             compactors.push(c);
         } else {
             for i in 0..num_levels {
@@ -695,10 +678,10 @@ impl<T: ReqValue> ReqSketch<T> {
                 let mut mn = first.clone();
                 let mut mx = first.clone();
                 for x in iter {
-                    if x.total_cmp(&mn).is_lt() {
+                    if x < &mn {
                         mn = x.clone();
                     }
-                    if x.total_cmp(&mx).is_gt() {
+                    if x > &mx {
                         mx = x.clone();
                     }
                 }
@@ -707,8 +690,20 @@ impl<T: ReqValue> ReqSketch<T> {
             }
         }
 
-        if n == 0 || min_item.is_none() || max_item.is_none() {
+        if n == 0 {
             return Err(Error::deserial("non-empty REQ sketch contains no items"));
+        }
+        let (Some(min), Some(max)) = (&min_item, &max_item) else {
+            return Err(Error::deserial("non-empty REQ sketch contains no items"));
+        };
+        if compactors
+            .iter()
+            .flat_map(Compactor::iter)
+            .any(|item| item < min || item > max)
+        {
+            return Err(Error::deserial(
+                "REQ retained item falls outside the min/max range",
+            ));
         }
 
         let expected_raw_items = num_levels == 1 && n <= RAW_ITEMS_THRESHOLD;
@@ -738,8 +733,7 @@ impl<T: ReqValue> ReqSketch<T> {
                 "REQ retained weighted count {weighted_count} does not match n {n}"
             )));
         }
-
-        let mut sketch = ReqSketch::try_new(k, rank_accuracy)?;
+        let mut sketch = Self::make(k, rank_accuracy);
         sketch.n = n;
         sketch.min_item = min_item;
         sketch.max_item = max_item;
@@ -749,16 +743,38 @@ impl<T: ReqValue> ReqSketch<T> {
         Ok(sketch)
     }
 
-    // --- Internal ---
+    fn make(k: u16, rank_accuracy: RankAccuracy) -> Self {
+        debug_assert!(
+            (MIN_K..=MAX_K).contains(&k),
+            "k must be in [{MIN_K}, {MAX_K}], got {k}"
+        );
+        debug_assert_eq!(k % 2, 0, "k must be even, got {k}");
+        let mut sketch = Self {
+            k,
+            rank_accuracy,
+            n: 0,
+            max_nom_size: 0,
+            num_retained: 0,
+            compactors: vec![],
+            promotion_buf: Vec::with_capacity(k as usize),
+            min_item: None,
+            max_item: None,
+        };
+        // C++ parity: an empty sketch has a level-0 compactor present from the start.
+        // This makes is_raw_items() and flags_byte() byte-compatible with the C++/Java
+        // wire format for the empty case.
+        sketch.grow();
+        sketch
+    }
 
-    pub(super) fn grow(&mut self) {
+    fn grow(&mut self) {
         let level = self.compactors.len() as u8;
         let compactor = Compactor::new(level, self.k, self.rank_accuracy);
         self.compactors.push(compactor);
         self.update_max_nom_size();
     }
 
-    pub(super) fn compress(&mut self) {
+    fn compress(&mut self) {
         for h in 0..self.compactors.len() {
             if self.compactors[h].num_items() >= self.compactors[h].nominal_capacity() {
                 if h == 0 {
@@ -779,89 +795,11 @@ impl<T: ReqValue> ReqSketch<T> {
         }
     }
 
-    pub(super) fn update_max_nom_size(&mut self) {
+    fn update_max_nom_size(&mut self) {
         self.max_nom_size = self.compactors.iter().map(|c| c.nominal_capacity()).sum();
     }
 
-    pub(super) fn update_num_retained(&mut self) {
+    fn update_num_retained(&mut self) {
         self.num_retained = self.compactors.iter().map(|c| c.num_items()).sum();
-    }
-}
-
-impl<T: ReqValue> Default for ReqSketch<T> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// Builder for [`ReqSketch`].
-#[derive(Debug, Clone)]
-pub struct ReqSketchBuilder<T: ReqValue> {
-    k: u16,
-    rank_accuracy: RankAccuracy,
-    _marker: std::marker::PhantomData<T>,
-}
-
-impl<T: ReqValue> Default for ReqSketchBuilder<T> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl<T: ReqValue> ReqSketchBuilder<T> {
-    /// Creates a new builder with default parameters.
-    pub fn new() -> Self {
-        Self {
-            k: DEFAULT_K,
-            rank_accuracy: RankAccuracy::HighRank,
-            _marker: std::marker::PhantomData,
-        }
-    }
-
-    /// Sets the `k` parameter.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if `k` is odd or outside `[MIN_K, MAX_K]`.
-    pub fn k(mut self, k: u16) -> Result<Self, Error> {
-        if !(MIN_K..=MAX_K).contains(&k) {
-            return Err(Error::invalid_argument(format!(
-                "k must be in [{}, {}], got {k}",
-                MIN_K, MAX_K
-            )));
-        }
-        if k % 2 != 0 {
-            return Err(Error::invalid_argument(format!("k must be even, got {k}")));
-        }
-        self.k = k;
-        Ok(self)
-    }
-
-    /// Sets the rank accuracy.
-    pub fn rank_accuracy(mut self, rank_accuracy: RankAccuracy) -> Self {
-        self.rank_accuracy = rank_accuracy;
-        self
-    }
-
-    /// Builds the sketch.
-    pub fn build(self) -> Result<ReqSketch<T>, Error> {
-        ReqSketch::try_new(self.k, self.rank_accuracy)
-    }
-}
-
-impl<T: ReqValue + fmt::Display> fmt::Display for ReqSketch<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "REQ Sketch Summary:")?;
-        writeln!(f, "  k                : {}", self.k)?;
-        writeln!(f, "  rank accuracy    : {:?}", self.rank_accuracy)?;
-        writeln!(f, "  n                : {}", self.n)?;
-        writeln!(f, "  num retained     : {}", self.num_retained)?;
-        writeln!(f, "  num levels       : {}", self.compactors.len())?;
-        writeln!(f, "  estimation mode  : {}", self.is_estimation_mode())?;
-        if let (Some(min), Some(max)) = (&self.min_item, &self.max_item) {
-            writeln!(f, "  min item         : {min}")?;
-            writeln!(f, "  max item         : {max}")?;
-        }
-        Ok(())
     }
 }

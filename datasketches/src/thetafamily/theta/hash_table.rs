@@ -28,7 +28,7 @@ use crate::thetacommon::hash_table::SketchHashTable;
 /// * After it reaches the capacity bigger than 2^lg_nom_size, every time the number of entries
 ///   exceeds the threshold, it will rebuild the table: only keep the min 2^lg_nom_size entries and
 ///   update the theta to the k-th smallest entry.
-pub(super) type ThetaHashTable = SketchHashTable<ThetaEntry>;
+pub type ThetaHashTable = SketchHashTable<ThetaEntry>;
 
 /// A retained entry in a Theta sketch.
 #[derive(Debug, Clone, Copy)]

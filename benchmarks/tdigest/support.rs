@@ -50,7 +50,7 @@ pub(super) fn partial_digests_with(
 ) -> Vec<TDigestMut> {
     (0..groups)
         .map(|group| {
-            let mut digest = TDigestMut::new(k);
+            let mut digest = TDigestMut::new(k).unwrap();
             for row in 0..rows_per_group {
                 digest.update(partial_value(group, row, rows_per_group));
             }
@@ -84,7 +84,7 @@ pub(super) fn serialized_partial_digests_with(
 }
 
 pub(super) fn serialized_state_shape(k: u16, values: &[f64]) -> (usize, u32) {
-    let mut digest = TDigestMut::new(k);
+    let mut digest = TDigestMut::new(k).unwrap();
     for &value in values {
         digest.update(value);
     }

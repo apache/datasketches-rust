@@ -68,11 +68,11 @@ use crate::tuple::sketch::TupleSketchView;
 /// }
 ///
 /// let update_policy = DefaultUpdatePolicy::<u64>::default();
-/// let mut a = TupleSketchBuilder::new(update_policy).build();
+/// let mut a = TupleSketchBuilder::new(update_policy).build().unwrap();
 /// a.update("shared", 3);
 /// a.update("only_a", 1);
 ///
-/// let mut b = TupleSketchBuilder::new(update_policy).build();
+/// let mut b = TupleSketchBuilder::new(update_policy).build().unwrap();
 /// b.update("shared", 4);
 /// b.update("only_b", 1);
 ///
@@ -82,7 +82,7 @@ use crate::tuple::sketch::TupleSketchView;
 ///
 /// let result = intersection.to_sketch(true).unwrap();
 /// assert_eq!(result.num_retained(), 1); // only "shared"
-/// assert_eq!(result.iter().next().unwrap().1, &7); // 3 + 4
+/// assert_eq!(result.iter().next().unwrap().summary(), &7); // 3 + 4
 /// ```
 #[derive(Debug)]
 pub struct TupleIntersection<P>
@@ -98,14 +98,18 @@ where
 {
     /// Creates a new intersection operator with the default seed and the given combine `policy`.
     pub fn new(policy: P) -> Self {
-        Self::with_seed(policy, DEFAULT_UPDATE_SEED)
+        Self::with_seed(policy, DEFAULT_UPDATE_SEED).unwrap()
     }
 
     /// Creates a new intersection operator for the given combine `policy` and `seed`.
-    pub fn with_seed(policy: P, seed: u64) -> Self {
-        Self {
-            state: IntersectionState::new(seed, policy),
-        }
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the computed seed hash is zero.
+    pub fn with_seed(policy: P, seed: u64) -> Result<Self, Error> {
+        Ok(Self {
+            state: IntersectionState::new(seed, policy)?,
+        })
     }
 
     /// Updates the intersection with a given sketch.
@@ -149,16 +153,8 @@ where
     where
         P::Summary: Clone,
     {
-        if !self.state.has_result() {
-            return None;
-        }
-        let parts = self.state.to_compact_parts(ordered);
-        Some(CompactTupleSketch::from_parts(
-            parts.entries,
-            parts.theta,
-            parts.seed_hash,
-            parts.ordered,
-            parts.empty,
-        ))
+        self.state
+            .to_compact_sketch_state(ordered)
+            .map(CompactTupleSketch::from_compact_state)
     }
 }

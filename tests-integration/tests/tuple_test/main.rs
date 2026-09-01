@@ -30,7 +30,7 @@ fn default_tuple_sketch_builder() -> TupleSketchBuilder<DefaultUpdatePolicy<u64>
 }
 
 fn tuple_sketch_with_range(start: u64, count: u64) -> TupleSketch<DefaultUpdatePolicy<u64>> {
-    let mut sketch = default_tuple_sketch_builder().build();
+    let mut sketch = default_tuple_sketch_builder().build().unwrap();
     for i in 0..count {
         sketch.update(start + i, 1u64);
     }

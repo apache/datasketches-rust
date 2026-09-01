@@ -35,7 +35,7 @@ pub struct ThetaIntersection {
 
 impl Default for ThetaIntersection {
     fn default() -> Self {
-        Self::with_seed(DEFAULT_UPDATE_SEED)
+        Self::with_seed(DEFAULT_UPDATE_SEED).unwrap()
     }
 }
 
@@ -48,10 +48,14 @@ impl IntersectionMergePolicy<ThetaEntry> for NoopIntersectionPolicy {
 
 impl ThetaIntersection {
     /// Creates a new intersection operator for the given `seed`.
-    pub fn with_seed(seed: u64) -> Self {
-        Self {
-            state: IntersectionState::new(seed, NoopIntersectionPolicy),
-        }
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the computed seed hash is zero.
+    pub fn with_seed(seed: u64) -> Result<Self, Error> {
+        Ok(Self {
+            state: IntersectionState::new(seed, NoopIntersectionPolicy)?,
+        })
     }
 
     /// Updates the intersection with a given sketch.
@@ -59,6 +63,11 @@ impl ThetaIntersection {
     /// The intersection can be viewed as starting from the "universe" set,
     /// and every update can reduce the current set to leave the overlapping
     /// subset only.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidArgument` if a non-empty `sketch` has a different seed hash or its retained
+    /// entries are inconsistent with its metadata.
     pub fn update<'a>(&mut self, sketch: impl Into<ThetaSketchView<'a>>) -> Result<(), Error> {
         let sketch = sketch.into();
         self.state.update(sketch)
@@ -81,20 +90,12 @@ impl ThetaIntersection {
     ///
     /// If `ordered` is `true`, retained hashes are sorted in ascending order.
     pub fn to_sketch(&self, ordered: bool) -> Option<CompactThetaSketch> {
-        if !self.state.has_result() {
-            return None;
-        }
-        let parts = self.state.to_compact_parts(ordered);
-        Some(CompactThetaSketch::from_parts(
-            parts
-                .entries
-                .into_iter()
-                .map(|entry| entry.hash())
-                .collect(),
-            parts.theta,
-            parts.seed_hash,
-            parts.ordered,
-            parts.empty,
-        ))
+        self.state
+            .to_compact_sketch_state(ordered)
+            .map(|compact_state| {
+                CompactThetaSketch::from_compact_state(
+                    compact_state.map_retained_entries(|entry| entry.hash()),
+                )
+            })
     }
 }

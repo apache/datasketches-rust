@@ -18,6 +18,7 @@
 use datasketches::thetacommon::JaccardSimilarity;
 use datasketches::tuple::DefaultUpdatePolicy;
 use datasketches::tuple::TupleJaccardSimilarity;
+use datasketches::tuple::TupleSketch;
 use datasketches::tuple::TupleSketchBuilder;
 use googletest::assert_that;
 use googletest::prelude::anything;
@@ -43,10 +44,25 @@ fn assert_jaccard_estimate(actual: JaccardSimilarity, expected: f64) {
     assert_close(actual.upper_bound(), expected, 0.01);
 }
 
+fn non_empty_sketch_without_retained_entries(
+    sampling_probability: f32,
+    value: &str,
+) -> TupleSketch<DefaultUpdatePolicy<u64>> {
+    let mut sketch = default_tuple_sketch_builder()
+        .sampling_probability(sampling_probability)
+        .build()
+        .unwrap();
+    sketch.update(value, 1u64);
+
+    assert!(!sketch.is_empty());
+    assert_eq!(sketch.num_retained(), 0);
+    sketch
+}
+
 #[test]
 fn test_empty() {
-    let sketch_a = default_tuple_sketch_builder().build();
-    let sketch_b = default_tuple_sketch_builder().build();
+    let sketch_a = default_tuple_sketch_builder().build().unwrap();
+    let sketch_b = default_tuple_sketch_builder().build().unwrap();
 
     let operator = TupleJaccardSimilarity::default();
     let jaccard = operator.compute(&sketch_a, &sketch_b).unwrap();
@@ -57,8 +73,12 @@ fn test_empty() {
 
 #[test]
 fn test_summary_values_and_types_do_not_affect_similarity() {
-    let mut sketch_a = TupleSketchBuilder::new(DefaultUpdatePolicy::<u64>::default()).build();
-    let mut sketch_b = TupleSketchBuilder::new(DefaultUpdatePolicy::<i64>::default()).build();
+    let mut sketch_a = TupleSketchBuilder::new(DefaultUpdatePolicy::<u64>::default())
+        .build()
+        .unwrap();
+    let mut sketch_b = TupleSketchBuilder::new(DefaultUpdatePolicy::<i64>::default())
+        .build()
+        .unwrap();
     for key in 0..1000 {
         sketch_a.update(key, 1u64);
         sketch_b.update(key, -7i64);
@@ -96,19 +116,21 @@ fn test_half_overlap_estimation_mode() {
 #[test]
 fn test_custom_seed_and_seed_mismatch() {
     let seed = 123;
-    let empty = default_tuple_sketch_builder().build();
+    let empty = default_tuple_sketch_builder().build().unwrap();
     let mut sketch_a = TupleSketchBuilder::new(DefaultUpdatePolicy::<u64>::default())
         .seed(seed)
-        .build();
+        .build()
+        .unwrap();
     let mut sketch_b = TupleSketchBuilder::new(DefaultUpdatePolicy::<u64>::default())
         .seed(seed)
-        .build();
+        .build()
+        .unwrap();
     for value in 0..1000 {
         sketch_a.update(value, 1u64);
         sketch_b.update(value, 2u64);
     }
 
-    let operator = TupleJaccardSimilarity::with_seed(seed);
+    let operator = TupleJaccardSimilarity::with_seed(seed).unwrap();
     let jaccard = operator.compute(&sketch_a, &sketch_b).unwrap();
     assert_jaccard_exact(jaccard, 1.0);
     assert!(operator.exactly_equal(&sketch_a, &sketch_b).unwrap());
@@ -128,26 +150,30 @@ fn test_custom_seed_and_seed_mismatch() {
 }
 
 #[test]
-fn test_distinct_non_empty_sketches_with_no_retained_entries_are_uncertain() {
-    let mut sketch_a = default_tuple_sketch_builder()
-        .sampling_probability(1e-12)
-        .build();
-    let mut sketch_b = default_tuple_sketch_builder()
-        .sampling_probability(1e-12)
-        .build();
-    sketch_a.update("apple", 1u64);
-    sketch_b.update("banana", 1u64);
+fn test_equal_theta_non_empty_sketches_with_no_retained_entries_are_identical() {
+    let sketch_a = non_empty_sketch_without_retained_entries(1e-12, "apple");
+    let sketch_b = non_empty_sketch_without_retained_entries(1e-12, "banana");
 
-    assert!(!sketch_a.is_empty());
-    assert!(!sketch_b.is_empty());
-    assert_eq!(sketch_a.num_retained(), 0);
-    assert_eq!(sketch_b.num_retained(), 0);
+    assert_eq!(sketch_a.theta64(), sketch_b.theta64());
 
     let operator = TupleJaccardSimilarity::default();
-    let jaccard = operator.compute(&sketch_a, &sketch_b).unwrap();
+    assert_jaccard_exact(operator.compute(&sketch_a, &sketch_b).unwrap(), 1.0);
+    assert_jaccard_exact(operator.compute(&sketch_a, &sketch_a).unwrap(), 1.0);
+    assert!(operator.exactly_equal(&sketch_a, &sketch_b).unwrap());
+}
+
+#[test]
+fn test_distinct_theta_non_empty_sketches_with_no_retained_entries_are_uncertain() {
+    let sketch_a = non_empty_sketch_without_retained_entries(1e-12, "apple");
+    let different_theta = non_empty_sketch_without_retained_entries(2e-12, "orange");
+
+    assert_ne!(sketch_a.theta64(), different_theta.theta64());
+
+    let operator = TupleJaccardSimilarity::default();
+    let jaccard = operator.compute(&sketch_a, &different_theta).unwrap();
     assert_eq!(jaccard.lower_bound(), 0.0);
     assert_eq!(jaccard.estimate(), 0.5);
     assert_eq!(jaccard.upper_bound(), 1.0);
 
-    assert!(operator.exactly_equal(&sketch_a, &sketch_b).unwrap());
+    assert!(!operator.exactly_equal(&sketch_a, &different_theta).unwrap());
 }

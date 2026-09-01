@@ -180,7 +180,9 @@ fn test_go_compatibility() {
 fn test_cached_num_bits_set_is_validated_or_recomputed() {
     const NUM_BITS_SET_OFFSET: usize = 24;
 
-    let mut filter = BloomFilterBuilder::with_accuracy(100, 0.01).build();
+    let mut filter = BloomFilterBuilder::with_accuracy(100, 0.01)
+        .build()
+        .unwrap();
     filter.insert("apple");
     filter.insert("banana");
     let actual_bits_set = filter.bits_used();
@@ -207,7 +209,9 @@ fn test_cached_num_bits_set_is_validated_or_recomputed() {
 fn test_nonempty_payload_length_is_checked_before_allocating() {
     const NUM_LONGS_OFFSET: usize = 16;
 
-    let mut filter = BloomFilterBuilder::with_accuracy(100, 0.01).build();
+    let mut filter = BloomFilterBuilder::with_accuracy(100, 0.01)
+        .build()
+        .unwrap();
     filter.insert("apple");
     let mut bytes = filter.serialize();
     bytes[NUM_LONGS_OFFSET..NUM_LONGS_OFFSET + size_of::<i32>()]

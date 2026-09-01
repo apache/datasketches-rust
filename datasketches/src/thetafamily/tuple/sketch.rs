@@ -39,17 +39,16 @@ use crate::hash::check_seed_hash;
 use crate::hash::compute_seed_hash;
 use crate::thetacommon::EntrySketch;
 use crate::thetacommon::KeySketch;
-use crate::thetacommon::SketchScalars;
 use crate::thetacommon::binomial_bounds;
 use crate::thetacommon::constants::DEFAULT_LG_K;
 use crate::thetacommon::constants::FLAGS_IS_COMPACT;
 use crate::thetacommon::constants::FLAGS_IS_EMPTY;
 use crate::thetacommon::constants::FLAGS_IS_ORDERED;
 use crate::thetacommon::constants::FLAGS_IS_READ_ONLY;
-use crate::thetacommon::constants::MAX_LG_K;
 use crate::thetacommon::constants::MAX_THETA;
-use crate::thetacommon::constants::MIN_LG_K;
 use crate::thetacommon::hash_table::SketchHashTableIter;
+use crate::thetacommon::sketch_state::CompactSketchState;
+use crate::thetacommon::sketch_state::ThetaFamilySketchMetadata;
 use crate::tuple::hash_table::TupleEntry;
 use crate::tuple::hash_table::TupleHashTable;
 use crate::tuple::policy::SummaryPolicy;
@@ -71,17 +70,22 @@ use crate::tuple::serialization::TupleSummaryValue;
 /// use datasketches::tuple::DefaultUpdatePolicy;
 /// use datasketches::tuple::TupleSketchBuilder;
 ///
-/// let mut sketch = TupleSketchBuilder::new(DefaultUpdatePolicy::<u64>::default()).build();
+/// let mut sketch = TupleSketchBuilder::new(DefaultUpdatePolicy::<u64>::default())
+///     .build()
+///     .unwrap();
 /// sketch.update("apple", 1);
 /// let view = sketch.as_view();
-/// assert_eq!(view.iter().next().unwrap().1, &1);
+/// assert_eq!(view.iter().next().unwrap().summary(), &1);
 /// ```
 #[derive(Debug)]
 pub struct TupleSketchView<'a, S>(TupleSketchViewState<'a, S>);
 
 #[derive(Debug)]
 enum TupleSketchViewState<'a, S> {
-    Mutable(&'a TupleHashTable<S>),
+    Mutable {
+        table: &'a TupleHashTable<S>,
+        is_empty: bool,
+    },
     Compact(&'a CompactTupleSketch<S>),
 }
 
@@ -91,12 +95,12 @@ enum TupleSketchIter<'a, S> {
 }
 
 impl<'a, S> Iterator for TupleSketchIter<'a, S> {
-    type Item = (u64, &'a S);
+    type Item = &'a TupleEntry<S>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self {
-            Self::Mutable(iter) => iter.next().map(|entry| (entry.hash(), entry.summary())),
-            Self::Compact(iter) => iter.next().map(|entry| (entry.hash(), entry.summary())),
+            Self::Mutable(iter) => iter.next(),
+            Self::Compact(iter) => iter.next(),
         }
     }
 
@@ -128,7 +132,7 @@ impl<'a, S> TupleSketchView<'a, S> {
     /// Returns the 16-bit seed hash.
     pub fn seed_hash(&self) -> u16 {
         match self.0 {
-            TupleSketchViewState::Mutable(table) => table.seed_hash(),
+            TupleSketchViewState::Mutable { table, .. } => table.seed_hash(),
             TupleSketchViewState::Compact(sketch) => sketch.seed_hash(),
         }
     }
@@ -136,15 +140,21 @@ impl<'a, S> TupleSketchView<'a, S> {
     /// Returns theta as a `u64` threshold.
     pub fn theta64(&self) -> u64 {
         match self.0 {
-            TupleSketchViewState::Mutable(table) => table.theta(),
+            TupleSketchViewState::Mutable { table, is_empty } => {
+                if is_empty {
+                    MAX_THETA
+                } else {
+                    table.retention_theta()
+                }
+            }
             TupleSketchViewState::Compact(sketch) => sketch.theta64(),
         }
     }
 
-    /// Returns whether the viewed sketch has not received any updates.
+    /// Returns `true` if the viewed sketch is empty.
     pub fn is_empty(&self) -> bool {
         match self.0 {
-            TupleSketchViewState::Mutable(table) => table.is_empty(),
+            TupleSketchViewState::Mutable { is_empty, .. } => is_empty,
             TupleSketchViewState::Compact(sketch) => sketch.is_empty(),
         }
     }
@@ -152,17 +162,19 @@ impl<'a, S> TupleSketchView<'a, S> {
     /// Returns whether retained entries are ordered by ascending hash.
     pub fn is_ordered(&self) -> bool {
         match self.0 {
-            TupleSketchViewState::Mutable(_) => false,
+            TupleSketchViewState::Mutable { .. } => false,
             TupleSketchViewState::Compact(sketch) => sketch.is_ordered(),
         }
     }
 
-    /// Returns an iterator over retained hashes and borrowed summaries.
-    pub fn iter(self) -> impl Iterator<Item = (u64, &'a S)> + 'a {
+    /// Returns an iterator over retained entries.
+    pub fn iter(self) -> impl Iterator<Item = &'a TupleEntry<S>> + 'a {
         match self.0 {
-            TupleSketchViewState::Mutable(table) => TupleSketchIter::Mutable(table.iter_entries()),
+            TupleSketchViewState::Mutable { table, .. } => {
+                TupleSketchIter::Mutable(table.iter_entries())
+            }
             TupleSketchViewState::Compact(sketch) => {
-                TupleSketchIter::Compact(sketch.entries.iter())
+                TupleSketchIter::Compact(sketch.compact_state.retained_entries().iter())
             }
         }
     }
@@ -170,25 +182,30 @@ impl<'a, S> TupleSketchView<'a, S> {
     /// Returns the number of retained entries.
     pub fn num_retained(&self) -> usize {
         match self.0 {
-            TupleSketchViewState::Mutable(table) => table.num_retained(),
+            TupleSketchViewState::Mutable { table, .. } => table.num_retained(),
             TupleSketchViewState::Compact(sketch) => sketch.num_retained(),
         }
     }
 }
 
 impl<S> KeySketch for TupleSketchView<'_, S> {
-    fn scalars(self) -> SketchScalars {
-        SketchScalars {
-            seed_hash: self.seed_hash(),
-            theta: self.theta64(),
-            empty: self.is_empty(),
-            ordered: self.is_ordered(),
-            num_retained: self.num_retained(),
+    fn metadata(self) -> ThetaFamilySketchMetadata {
+        if self.is_empty() {
+            ThetaFamilySketchMetadata::Empty {
+                seed_hash: self.seed_hash(),
+            }
+        } else {
+            ThetaFamilySketchMetadata::NonEmpty {
+                seed_hash: self.seed_hash(),
+                theta: self.theta64(),
+                ordered: self.is_ordered(),
+                num_retained: self.num_retained(),
+            }
         }
     }
 
     fn hashes(self) -> impl Iterator<Item = u64> {
-        self.iter().map(|(hash, _)| hash)
+        self.iter().map(TupleEntry::hash)
     }
 }
 
@@ -199,8 +216,7 @@ where
     type Entry = TupleEntry<S>;
 
     fn entries(self) -> impl Iterator<Item = Self::Entry> {
-        self.iter()
-            .map(|(hash, summary)| TupleEntry::new(hash, summary.clone()))
+        self.iter().cloned()
     }
 }
 
@@ -209,7 +225,10 @@ where
     P: SummaryPolicy,
 {
     fn from(sketch: &'a TupleSketch<P>) -> Self {
-        Self(TupleSketchViewState::Mutable(&sketch.table))
+        Self(TupleSketchViewState::Mutable {
+            table: &sketch.table,
+            is_empty: sketch.is_empty,
+        })
     }
 }
 
@@ -232,7 +251,7 @@ impl<'a, S> From<&'a CompactTupleSketch<S>> for TupleSketchView<'a, S> {
 /// use datasketches::tuple::TupleSketchBuilder;
 ///
 /// let policy = DefaultUpdatePolicy::<u64>::default();
-/// let mut sketch = TupleSketchBuilder::new(policy).build();
+/// let mut sketch = TupleSketchBuilder::new(policy).build().unwrap();
 /// sketch.update("apple", 1);
 /// sketch.update("apple", 1);
 /// assert!(sketch.estimate() >= 1.0);
@@ -244,6 +263,8 @@ where
     P: SummaryPolicy,
 {
     table: TupleHashTable<P::Summary>,
+    // Public emptiness tracks update calls, not retained entries: theta may screen every update.
+    is_empty: bool,
     policy: P,
 }
 
@@ -269,13 +290,14 @@ where
     /// use datasketches::tuple::TupleSketchBuilder;
     ///
     /// let policy = DefaultUpdatePolicy::<u64>::default();
-    /// let mut sketch = TupleSketchBuilder::new(policy).build();
+    /// let mut sketch = TupleSketchBuilder::new(policy).build().unwrap();
     /// sketch.update(42, 5);
     /// ```
     pub fn update<U>(&mut self, key: impl Hash, value: U)
     where
         P: SummaryUpdatePolicy<U>,
     {
+        self.is_empty = false;
         let policy = &self.policy;
         self.table.try_insert(key, |existing| match existing {
             Some(summary) => {
@@ -296,18 +318,25 @@ where
             return 0.0;
         }
         let num_retained = self.table.num_retained() as f64;
-        let theta = self.table.theta() as f64 / MAX_THETA as f64;
+        let theta = self.theta64() as f64 / MAX_THETA as f64;
         num_retained / theta
     }
 
     /// Returns theta as a fraction in `[0.0, 1.0]`.
     pub fn theta(&self) -> f64 {
-        self.table.theta() as f64 / MAX_THETA as f64
+        self.theta64() as f64 / MAX_THETA as f64
     }
 
     /// Returns theta as a `u64`.
+    ///
+    /// An empty sketch reports `MAX_THETA` even when it was built with a sampling probability
+    /// below `1.0`, matching the other DataSketches implementations.
     pub fn theta64(&self) -> u64 {
-        self.table.theta()
+        if self.is_empty {
+            MAX_THETA
+        } else {
+            self.table.retention_theta()
+        }
     }
 
     /// Returns the 16-bit seed hash.
@@ -317,12 +346,12 @@ where
 
     /// Returns `true` if the sketch is empty.
     pub fn is_empty(&self) -> bool {
-        self.table.is_empty()
+        self.is_empty
     }
 
     /// Returns `true` if the sketch is in estimation mode.
     pub fn is_estimation_mode(&self) -> bool {
-        self.table.theta() < MAX_THETA
+        !self.is_empty && self.table.retention_theta() < MAX_THETA
     }
 
     /// Returns the number of retained entries.
@@ -343,10 +372,11 @@ where
     /// Resets the sketch to the empty state.
     pub fn reset(&mut self) {
         self.table.reset();
+        self.is_empty = true;
     }
 
-    /// Returns an iterator over retained entries as `(hash, &summary)` pairs.
-    pub fn iter(&self) -> impl Iterator<Item = (u64, &P::Summary)> + '_ {
+    /// Returns an iterator over retained entries.
+    pub fn iter(&self) -> impl Iterator<Item = &TupleEntry<P::Summary>> + '_ {
         self.table.iter()
     }
 
@@ -395,52 +425,34 @@ where
     /// use datasketches::tuple::TupleSketchBuilder;
     ///
     /// let policy = DefaultUpdatePolicy::<u64>::default();
-    /// let mut sketch = TupleSketchBuilder::new(policy).build();
+    /// let mut sketch = TupleSketchBuilder::new(policy).build().unwrap();
     /// sketch.update("apple", 1);
     /// let compact = sketch.compact(true);
     /// assert_eq!(compact.num_retained(), 1);
     /// ```
     pub fn compact(&self, ordered: bool) -> CompactTupleSketch<P::Summary> {
-        let parts = self.table.to_compact_parts(ordered);
-        CompactTupleSketch::from_parts(
-            parts.entries,
-            parts.theta,
-            parts.seed_hash,
-            parts.ordered,
-            parts.empty,
-        )
+        let compact_state = if self.is_empty() {
+            debug_assert_eq!(self.num_retained(), 0);
+            CompactSketchState::empty(self.seed_hash())
+        } else {
+            self.table.to_non_empty_compact_state(ordered)
+        };
+        CompactTupleSketch::from_compact_state(compact_state)
     }
 }
 
 /// Compact (immutable) Tuple sketch.
 ///
-/// This is the serialization-friendly form: a compact array of retained [`TupleEntry`] values
-/// (hash plus summary) plus theta and a 16-bit seed hash. It can be ordered (sorted ascending by
-/// hash) or unordered.
+/// This is the serialization-friendly form: a compact array of retained hash-summary pairs plus
+/// theta and a 16-bit seed hash. It can be ordered (sorted ascending by hash) or unordered.
 #[derive(Clone, Debug)]
 pub struct CompactTupleSketch<S> {
-    entries: Vec<TupleEntry<S>>,
-    theta: u64,
-    seed_hash: u16,
-    ordered: bool,
-    empty: bool,
+    compact_state: CompactSketchState<TupleEntry<S>>,
 }
 
 impl<S> CompactTupleSketch<S> {
-    pub(super) fn from_parts(
-        entries: Vec<TupleEntry<S>>,
-        theta: u64,
-        seed_hash: u16,
-        ordered: bool,
-        empty: bool,
-    ) -> Self {
-        Self {
-            entries,
-            theta,
-            seed_hash,
-            ordered,
-            empty,
-        }
+    pub(super) fn from_compact_state(compact_state: CompactSketchState<TupleEntry<S>>) -> Self {
+        Self { compact_state }
     }
 
     /// Returns a read-only view accepted by Tuple set operations.
@@ -454,53 +466,55 @@ impl<S> CompactTupleSketch<S> {
             return 0.0;
         }
         let num_retained = self.num_retained() as f64;
-        if self.theta == MAX_THETA {
+        if self.theta64() == MAX_THETA {
             return num_retained;
         }
-        let theta = self.theta as f64 / MAX_THETA as f64;
+        let theta = self.theta();
         num_retained / theta
     }
 
     /// Returns theta as a fraction (0.0 to 1.0).
     pub fn theta(&self) -> f64 {
-        self.theta as f64 / MAX_THETA as f64
+        self.theta64() as f64 / MAX_THETA as f64
     }
 
     /// Returns theta as `u64`.
     pub fn theta64(&self) -> u64 {
-        self.theta
+        self.compact_state.theta()
     }
 
     /// Returns `true` if the sketch is empty.
     pub fn is_empty(&self) -> bool {
-        self.empty
+        self.compact_state.is_empty()
     }
 
     /// Returns `true` if the sketch is in estimation mode.
     pub fn is_estimation_mode(&self) -> bool {
-        self.theta < MAX_THETA
+        self.compact_state.is_estimation_mode()
     }
 
     /// Returns the number of retained entries.
     pub fn num_retained(&self) -> usize {
-        self.entries.len()
+        self.retained_entries().len()
     }
 
     /// Returns `true` if retained entries are ordered (sorted ascending by hash).
     pub fn is_ordered(&self) -> bool {
-        self.ordered
+        self.compact_state.is_ordered()
     }
 
     /// Returns the 16-bit seed hash.
     pub fn seed_hash(&self) -> u16 {
-        self.seed_hash
+        self.compact_state.seed_hash()
     }
 
-    /// Returns an iterator over retained entries as `(hash, &summary)` pairs.
-    pub fn iter(&self) -> impl Iterator<Item = (u64, &S)> + '_ {
-        self.entries
-            .iter()
-            .map(|entry| (entry.hash(), entry.summary()))
+    /// Returns an iterator over retained entries.
+    pub fn iter(&self) -> impl Iterator<Item = &TupleEntry<S>> + '_ {
+        self.retained_entries().iter()
+    }
+
+    fn retained_entries(&self) -> &[TupleEntry<S>] {
+        self.compact_state.retained_entries()
     }
 
     /// Returns the approximate lower error bound given the number of standard deviations.
@@ -528,13 +542,14 @@ impl<S> CompactTupleSketch<S> {
 
     /// Returns the estimated size of the sketch in bytes.
     pub fn estimated_size(&self) -> usize {
-        size_of::<Self>() + self.entries.capacity() * size_of::<TupleEntry<S>>()
+        size_of::<Self>()
+            + self.compact_state.retained_entries_capacity() * size_of::<TupleEntry<S>>()
     }
 
     fn preamble_longs(&self) -> u8 {
         if self.is_estimation_mode() {
             3
-        } else if self.is_empty() || self.entries.len() == 1 {
+        } else if self.is_empty() || self.num_retained() == 1 {
             1
         } else {
             2
@@ -554,7 +569,7 @@ impl<S> CompactTupleSketch<S> {
     /// use datasketches::tuple::TupleSketchBuilder;
     ///
     /// let policy = DefaultUpdatePolicy::<u64>::default();
-    /// let mut sketch = TupleSketchBuilder::new(policy).build();
+    /// let mut sketch = TupleSketchBuilder::new(policy).build().unwrap();
     /// sketch.update("apple", 1);
     /// let bytes = sketch.compact(true).serialize();
     /// assert!(!bytes.is_empty());
@@ -563,9 +578,9 @@ impl<S> CompactTupleSketch<S> {
     where
         S: TupleSummaryValue,
     {
+        let retained_entries = self.retained_entries();
         let pre_longs = self.preamble_longs();
-        let entries_size: usize = self
-            .entries
+        let entries_size: usize = retained_entries
             .iter()
             .map(|entry| 8 + entry.summary().serialize_size())
             .sum();
@@ -585,17 +600,17 @@ impl<S> CompactTupleSketch<S> {
             flags |= FLAGS_IS_ORDERED;
         }
         bytes.write_u8(flags);
-        bytes.write_u16_le(self.seed_hash);
+        bytes.write_u16_le(self.seed_hash());
 
         if pre_longs > 1 {
-            bytes.write_u32_le(self.entries.len() as u32);
+            bytes.write_u32_le(retained_entries.len() as u32);
             bytes.write_u32_le(0); // unused
         }
         if self.is_estimation_mode() {
-            bytes.write_u64_le(self.theta);
+            bytes.write_u64_le(self.theta64());
         }
 
-        for entry in &self.entries {
+        for entry in retained_entries {
             bytes.write_u64_le(entry.hash());
             entry.summary().serialize_value(&mut bytes);
         }
@@ -603,6 +618,11 @@ impl<S> CompactTupleSketch<S> {
     }
 
     /// Deserializes a compact Tuple sketch using the default seed.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidData` if the image is malformed, its seed hash does not match the default
+    /// seed, or a summary cannot be decoded by `S`.
     pub fn deserialize(bytes: &[u8]) -> Result<Self, Error>
     where
         S: TupleSummaryValue,
@@ -614,12 +634,14 @@ impl<S> CompactTupleSketch<S> {
     ///
     /// # Errors
     ///
-    /// Returns an error if the bytes are truncated, the family/serial version/sketch type are
-    /// unexpected, the seed hash does not match (for non-empty sketches), or an entry is corrupted.
+    /// Returns `InvalidData` if the bytes are truncated, the family/serial version/sketch type are
+    /// unexpected, the seed hash does not match, the supplied seed computes to the reserved zero
+    /// seed hash, or an entry is corrupted.
     pub fn deserialize_with_seed(bytes: &[u8], seed: u64) -> Result<Self, Error>
     where
         S: TupleSummaryValue,
     {
+        let expected_seed_hash = compute_seed_hash(seed, ErrorKind::InvalidData)?;
         let mut cursor = SketchSlice::new(bytes);
         let pre_longs = cursor
             .read_u8()
@@ -657,17 +679,13 @@ impl<S> CompactTupleSketch<S> {
         let ordered = (flags & FLAGS_IS_ORDERED) != 0;
 
         if empty {
-            return Ok(Self::from_parts(
-                vec![],
-                MAX_THETA,
+            return Ok(Self::from_compact_state(CompactSketchState::empty(
                 seed_hash,
-                ordered,
-                true,
-            ));
+            )));
         }
 
         check_seed_hash(
-            compute_seed_hash(seed),
+            expected_seed_hash,
             seed_hash,
             "deserialized CompactTupleSketch",
             ErrorKind::InvalidData,
@@ -675,7 +693,7 @@ impl<S> CompactTupleSketch<S> {
 
         let mut theta = MAX_THETA;
         let num_entries = if pre_longs == 1 {
-            1usize
+            1
         } else {
             let n = cursor
                 .read_u32_le()
@@ -684,7 +702,13 @@ impl<S> CompactTupleSketch<S> {
                 .read_u32_le()
                 .map_err(insufficient_data("<unused_u32>"))?;
             if pre_longs > 2 {
-                theta = cursor.read_u64_le().map_err(insufficient_data("theta"))?;
+                let value = cursor.read_u64_le().map_err(insufficient_data("theta"))?;
+                if !(1..=MAX_THETA).contains(&value) {
+                    return Err(Error::deserial(format!(
+                        "corrupted: theta must be in [1, {MAX_THETA}], got {value}"
+                    )));
+                }
+                theta = value;
             }
             n
         };
@@ -698,7 +722,7 @@ impl<S> CompactTupleSketch<S> {
                 cursor.remaining().len()
             )));
         }
-        let mut entries = Vec::with_capacity(num_entries);
+        let mut retained_entries = Vec::with_capacity(num_entries);
         for _ in 0..num_entries {
             let hash = cursor
                 .read_u64_le()
@@ -707,10 +731,15 @@ impl<S> CompactTupleSketch<S> {
                 return Err(Error::deserial("corrupted: invalid retained hash value"));
             }
             let summary = S::deserialize_value(&mut cursor)?;
-            entries.push(TupleEntry::new(hash, summary));
+            retained_entries.push(TupleEntry::new(hash, summary));
         }
 
-        Ok(Self::from_parts(entries, theta, seed_hash, ordered, false))
+        Ok(Self::from_compact_state(CompactSketchState::non_empty(
+            retained_entries,
+            theta,
+            seed_hash,
+            ordered,
+        )))
     }
 }
 
@@ -719,6 +748,8 @@ impl<S> CompactTupleSketch<S> {
 /// Every builder carries a concrete [`SummaryPolicy`]. Use
 /// [`DefaultUpdatePolicy`](crate::tuple::DefaultUpdatePolicy) for default-constructed additive
 /// summaries, or supply a custom policy.
+///
+/// Configuration is stored without validation and checked when [`build()`](Self::build) is called.
 #[derive(Debug)]
 pub struct TupleSketchBuilder<P>
 where
@@ -760,7 +791,7 @@ where
     ///     }
     /// }
     ///
-    /// let mut sketch = TupleSketchBuilder::new(MaxPolicy).build();
+    /// let mut sketch = TupleSketchBuilder::new(MaxPolicy).build().unwrap();
     /// sketch.update("k", 3);
     /// sketch.update("k", 7);
     /// ```
@@ -775,15 +806,7 @@ where
     }
 
     /// Sets `lg_k`, the base-2 logarithm of the nominal capacity.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `lg_k` is outside `[5, 26]`.
     pub fn lg_k(mut self, lg_k: u8) -> Self {
-        assert!(
-            (MIN_LG_K..=MAX_LG_K).contains(&lg_k),
-            "lg_k must be in [{MIN_LG_K}, {MAX_LG_K}], got {lg_k}"
-        );
         self.lg_k = lg_k;
         self
     }
@@ -795,15 +818,7 @@ where
     }
 
     /// Sets the sampling probability.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `probability` is outside `(0.0, 1.0]`.
     pub fn sampling_probability(mut self, probability: f32) -> Self {
-        assert!(
-            (0.0..=1.0).contains(&probability) && probability > 0.0,
-            "sampling_probability must be in (0.0, 1.0], got {probability}"
-        );
         self.sampling_probability = probability;
         self
     }
@@ -815,15 +830,21 @@ where
     }
 
     /// Builds a [`TupleSketch`] using the supplied policy.
-    pub fn build(self) -> TupleSketch<P> {
-        TupleSketch {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `lg_k` is outside `[5, 26]`, `sampling_probability` is outside
+    /// `(0.0, 1.0]`, or the computed seed hash is zero.
+    pub fn build(self) -> Result<TupleSketch<P>, Error> {
+        Ok(TupleSketch {
             table: TupleHashTable::new(
                 self.lg_k,
                 self.resize_factor,
                 self.sampling_probability,
                 self.seed,
-            ),
+            )?,
+            is_empty: true,
             policy: self.policy,
-        }
+        })
     }
 }
