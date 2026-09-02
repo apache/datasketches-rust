@@ -8,6 +8,10 @@ All significant changes to this project will be documented in this file.
 
 * Add KLL sketches behind the `kll` feature, including rank, quantile, PMF, and CDF queries, custom item ordering, merging, and C++/Java-compatible serialization.
 
+### Bug fixes
+
+* T-Digest deserialization now rejects unknown or conflicting flags, reversed extrema, out-of-range values, unsorted centroids, and non-empty images without stored values.
+
 ## v0.5.0
 
 ### Breaking changes
