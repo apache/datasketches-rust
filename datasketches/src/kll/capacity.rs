@@ -49,7 +49,7 @@ const POWERS_OF_THREE: [u64; 31] = [
     205891132094649,
 ];
 
-pub(super) fn compute_total_capacity(k: u16, m: u8, num_levels: usize) -> u32 {
+pub fn total_capacity(k: u16, m: u8, num_levels: usize) -> u32 {
     let mut total: u32 = 0;
     for level in 0..num_levels {
         total += level_capacity(k, num_levels, level, m);
@@ -57,27 +57,27 @@ pub(super) fn compute_total_capacity(k: u16, m: u8, num_levels: usize) -> u32 {
     total
 }
 
-pub(super) fn level_capacity(k: u16, num_levels: usize, height: usize, min_wid: u8) -> u32 {
+pub fn level_capacity(k: u16, num_levels: usize, height: usize, min_width: u8) -> u32 {
     assert!(height < num_levels, "height must be < num_levels");
     let depth = num_levels - height - 1;
-    let cap = int_cap_aux(k, depth as u8);
-    std::cmp::max(min_wid as u32, cap as u32)
+    let cap = capacity_at_depth(k, depth as u8);
+    std::cmp::max(min_width as u32, cap as u32)
 }
 
-fn int_cap_aux(k: u16, depth: u8) -> u16 {
+fn capacity_at_depth(k: u16, depth: u8) -> u16 {
     if depth > 60 {
         panic!("depth must be <= 60");
     }
     if depth <= 30 {
-        return int_cap_aux_aux(k, depth);
+        return capacity_at_shallow_depth(k, depth);
     }
     let half = depth / 2;
     let rest = depth - half;
-    let tmp = int_cap_aux_aux(k, half);
-    int_cap_aux_aux(tmp, rest)
+    let tmp = capacity_at_shallow_depth(k, half);
+    capacity_at_shallow_depth(tmp, rest)
 }
 
-fn int_cap_aux_aux(k: u16, depth: u8) -> u16 {
+fn capacity_at_shallow_depth(k: u16, depth: u8) -> u16 {
     if depth > 30 {
         panic!("depth must be <= 30");
     }
@@ -86,14 +86,4 @@ fn int_cap_aux_aux(k: u16, depth: u8) -> u16 {
     let result = (tmp + 1) >> 1;
     assert!(result <= k as u64, "capacity result exceeds k");
     result as u16
-}
-
-pub(super) fn sum_the_sample_weights(level_sizes: &[usize]) -> u64 {
-    let mut total = 0u64;
-    let mut weight = 1u64;
-    for &size in level_sizes {
-        total += weight * size as u64;
-        weight <<= 1;
-    }
-    total
 }

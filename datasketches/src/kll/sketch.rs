@@ -21,9 +21,8 @@ use super::DEFAULT_K;
 use super::DEFAULT_M;
 use super::MAX_K;
 use super::MIN_K;
-use super::helper::compute_total_capacity;
-use super::helper::level_capacity;
-use super::helper::sum_the_sample_weights;
+use super::capacity::level_capacity;
+use super::capacity::total_capacity;
 use super::serialization::DATA_START;
 use super::serialization::DATA_START_SINGLE_ITEM;
 use super::serialization::EMPTY_SIZE_BYTES;
@@ -505,7 +504,7 @@ fn deserialize_with_serde<T: KllSerde, C: KllComparator<T>>(
         )));
     }
 
-    let capacity = compute_total_capacity(k, m, num_levels);
+    let capacity = total_capacity(k, m, num_levels);
     let mut level_offsets = Vec::with_capacity(num_levels + 1);
     if !is_single_item {
         for _ in 0..num_levels {
@@ -692,7 +691,7 @@ impl<T: KllItem, C: KllComparator<T>> KllSketch<T, C> {
     }
 
     fn capacity(&self) -> usize {
-        compute_total_capacity(self.k, self.m, self.levels.len()) as usize
+        total_capacity(self.k, self.m, self.levels.len()) as usize
     }
 
     fn level_offsets(&self) -> Vec<u32> {
@@ -847,8 +846,11 @@ impl<T: KllItem, C: KllComparator<T>> KllSketch<T, C> {
     }
 
     fn total_weight(&self) -> u64 {
-        let sizes: Vec<usize> = self.levels.iter().map(|level| level.len()).collect();
-        sum_the_sample_weights(&sizes)
+        self.levels
+            .iter()
+            .enumerate()
+            .map(|(level, items)| (items.len() as u64) << level)
+            .sum()
     }
 
     fn validate_deserialized_state(&self) -> Result<(), Error> {
@@ -986,7 +988,7 @@ fn general_compress<T: KllItem, C: KllComparator<T>>(
 ) -> Vec<Vec<T>> {
     let mut current_num_levels = levels_in.len();
     let mut current_item_count: usize = levels_in.iter().map(|level| level.len()).sum();
-    let mut target_item_count = compute_total_capacity(k, m, current_num_levels) as usize;
+    let mut target_item_count = total_capacity(k, m, current_num_levels) as usize;
     let mut levels_out = Vec::with_capacity(current_num_levels + 1);
 
     let mut current_level = 0usize;

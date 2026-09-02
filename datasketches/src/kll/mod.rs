@@ -36,7 +36,7 @@
 //! assert!(q >= 1.0 && q <= 2.0);
 //! ```
 
-mod helper;
+mod capacity;
 mod serialization;
 mod sketch;
 mod sorted_view;
