@@ -17,11 +17,10 @@
 
 use std::cmp::Ordering;
 
-use super::sketch::KllComparator;
-use super::sketch::KllItem;
+use super::order::KllComparator;
 
 #[derive(Debug, Clone)]
-pub struct SortedView<T: KllItem, C: KllComparator<T>> {
+pub struct SortedView<T: Clone, C: KllComparator<T>> {
     comparator: C,
     entries: Vec<Entry<T>>,
     total_weight: u64,
@@ -33,7 +32,7 @@ struct Entry<T> {
     weight: u64,
 }
 
-impl<T: KllItem, C: KllComparator<T>> SortedView<T, C> {
+impl<T: Clone, C: KllComparator<T>> SortedView<T, C> {
     fn new(mut entries: Vec<Entry<T>>, comparator: C) -> Self {
         entries.sort_by(|a, b| comparator.compare(&a.item, &b.item));
         let mut total_weight = 0u64;
@@ -104,7 +103,7 @@ impl<T: KllItem, C: KllComparator<T>> SortedView<T, C> {
     }
 }
 
-pub fn build_sorted_view<T: KllItem, C: KllComparator<T>>(
+pub fn build_sorted_view<T: Clone, C: KllComparator<T>>(
     levels: &[Vec<T>],
     comparator: C,
 ) -> SortedView<T, C> {
@@ -125,10 +124,10 @@ pub fn build_sorted_view<T: KllItem, C: KllComparator<T>>(
 }
 
 #[track_caller]
-fn check_split_points<T: KllItem, C: KllComparator<T>>(split_points: &[T], comparator: &C) {
+fn check_split_points<T, C: KllComparator<T>>(split_points: &[T], comparator: &C) {
     assert!(
-        split_points.iter().all(|point| !T::is_nan(point)),
-        "split_points must not contain NaN values"
+        split_points.iter().all(|point| comparator.accepts(point)),
+        "split_points must belong to the comparator's ordered domain"
     );
     for pair in split_points.windows(2) {
         assert!(
@@ -138,11 +137,7 @@ fn check_split_points<T: KllItem, C: KllComparator<T>>(split_points: &[T], compa
     }
 }
 
-fn lower_bound<T: KllItem, C: KllComparator<T>>(
-    entries: &[Entry<T>],
-    item: &T,
-    comparator: &C,
-) -> usize {
+fn lower_bound<T, C: KllComparator<T>>(entries: &[Entry<T>], item: &T, comparator: &C) -> usize {
     let mut left = 0usize;
     let mut right = entries.len();
     while left < right {
@@ -156,11 +151,7 @@ fn lower_bound<T: KllItem, C: KllComparator<T>>(
     left
 }
 
-fn upper_bound<T: KllItem, C: KllComparator<T>>(
-    entries: &[Entry<T>],
-    item: &T,
-    comparator: &C,
-) -> usize {
+fn upper_bound<T, C: KllComparator<T>>(entries: &[Entry<T>], item: &T, comparator: &C) -> usize {
     let mut left = 0usize;
     let mut right = entries.len();
     while left < right {
@@ -174,7 +165,7 @@ fn upper_bound<T: KllItem, C: KllComparator<T>>(
     left
 }
 
-fn lower_bound_by_weight<T: KllItem>(entries: &[Entry<T>], weight: u64) -> usize {
+fn lower_bound_by_weight<T>(entries: &[Entry<T>], weight: u64) -> usize {
     let mut left = 0usize;
     let mut right = entries.len();
     while left < right {
@@ -188,7 +179,7 @@ fn lower_bound_by_weight<T: KllItem>(entries: &[Entry<T>], weight: u64) -> usize
     left
 }
 
-fn upper_bound_by_weight<T: KllItem>(entries: &[Entry<T>], weight: u64) -> usize {
+fn upper_bound_by_weight<T>(entries: &[Entry<T>], weight: u64) -> usize {
     let mut left = 0usize;
     let mut right = entries.len();
     while left < right {

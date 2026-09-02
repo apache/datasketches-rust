@@ -23,6 +23,8 @@ use super::MAX_K;
 use super::MIN_K;
 use super::capacity::level_capacity;
 use super::capacity::total_capacity;
+use super::order::KllComparator;
+use super::order::NaturalOrder;
 use super::serialization::DATA_START;
 use super::serialization::DATA_START_SINGLE_ITEM;
 use super::serialization::EMPTY_SIZE_BYTES;
@@ -35,59 +37,13 @@ use super::serialization::PREAMBLE_INTS_SHORT;
 use super::serialization::SERIAL_VERSION_1;
 use super::serialization::SERIAL_VERSION_2;
 use super::sorted_view::build_sorted_view;
+use super::value::KllValue;
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
 use crate::codec::assert::ensure_serial_version_is;
 use crate::codec::assert::insufficient_data;
 use crate::codec::family::Family;
 use crate::error::Error;
-
-/// Trait implemented by item types supported by [`KllSketch`].
-///
-/// Implementations must provide a total ordering via `cmp`.
-/// For floating-point types, ensure `cmp` handles NaN consistently and `is_nan`
-/// returns true for values that should be ignored by updates.
-pub trait KllItem: Clone {
-    /// Compare two items.
-    fn cmp(a: &Self, b: &Self) -> Ordering;
-
-    /// Returns true if the item is NaN.
-    fn is_nan(_value: &Self) -> bool {
-        false
-    }
-}
-
-/// Ordering policy used by a [`KllSketch`].
-///
-/// A sketch and every sketch merged into it must use equivalent ordering policies.
-pub trait KllComparator<T>: Clone {
-    /// Compare two items.
-    fn compare(&self, left: &T, right: &T) -> Ordering;
-}
-
-/// Uses the natural ordering supplied by [`KllItem::cmp`].
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct NaturalOrder;
-
-impl<T: KllItem> KllComparator<T> for NaturalOrder {
-    fn compare(&self, left: &T, right: &T) -> Ordering {
-        T::cmp(left, right)
-    }
-}
-
-trait KllSerde: KllItem {
-    /// Minimum serialized size in bytes for one item.
-    const MIN_SERIALIZED_SIZE: usize;
-
-    /// Serialized size in bytes.
-    fn serialized_size(value: &Self) -> usize;
-
-    /// Serialize a single item into the buffer.
-    fn serialize(value: &Self, bytes: &mut SketchBytes);
-
-    /// Deserialize a single item from the input.
-    fn deserialize(input: &mut SketchSlice<'_>) -> Result<Self, Error>;
-}
 
 /// KLL sketch for estimating quantiles and ranks.
 ///
@@ -105,7 +61,7 @@ pub struct KllSketch<T, C = NaturalOrder> {
     max_item: Option<T>,
 }
 
-impl<T: KllItem> Default for KllSketch<T> {
+impl<T: Clone + PartialOrd> Default for KllSketch<T> {
     fn default() -> Self {
         Self::make(
             NaturalOrder,
@@ -120,7 +76,7 @@ impl<T: KllItem> Default for KllSketch<T> {
     }
 }
 
-impl<T: KllItem> KllSketch<T> {
+impl<T: Clone + PartialOrd> KllSketch<T> {
     /// Creates a new sketch with the given value of k.
     ///
     /// # Errors
@@ -139,7 +95,7 @@ impl<T: KllItem> KllSketch<T> {
     }
 }
 
-impl<T: KllItem, C: KllComparator<T>> KllSketch<T, C> {
+impl<T: Clone, C: KllComparator<T>> KllSketch<T, C> {
     /// Creates a new sketch with the given value of k and ordering policy.
     ///
     /// # Errors
@@ -207,7 +163,7 @@ impl<T: KllItem, C: KllComparator<T>> KllSketch<T, C> {
     ///
     /// NaN values are ignored for floating-point types.
     pub fn update(&mut self, item: T) {
-        if T::is_nan(&item) {
+        if !self.comparator.accepts(&item) {
             return;
         }
         self.update_min_max(&item);
@@ -307,7 +263,7 @@ impl<T: KllItem, C: KllComparator<T>> KllSketch<T, C> {
     }
 }
 
-fn serialized_size<T: KllSerde, C: KllComparator<T>>(sketch: &KllSketch<T, C>) -> usize {
+fn serialized_size<T: KllValue, C: KllComparator<T>>(sketch: &KllSketch<T, C>) -> usize {
     if sketch.is_empty() {
         return EMPTY_SIZE_BYTES;
     }
@@ -331,7 +287,7 @@ fn serialized_size<T: KllSerde, C: KllComparator<T>>(sketch: &KllSketch<T, C>) -
     size
 }
 
-fn serialize_with_serde<T: KllSerde, C: KllComparator<T>>(sketch: &KllSketch<T, C>) -> Vec<u8> {
+fn serialize_with_serde<T: KllValue, C: KllComparator<T>>(sketch: &KllSketch<T, C>) -> Vec<u8> {
     let size = serialized_size(sketch);
     let mut bytes = SketchBytes::with_capacity(size);
 
@@ -403,7 +359,7 @@ fn serialize_with_serde<T: KllSerde, C: KllComparator<T>>(sketch: &KllSketch<T, 
     bytes.into_bytes()
 }
 
-fn deserialize_with_serde<T: KllSerde, C: KllComparator<T>>(
+fn deserialize_with_serde<T: KllValue, C: KllComparator<T>>(
     bytes: &[u8],
     comparator: C,
 ) -> Result<KllSketch<T, C>, Error> {
@@ -590,83 +546,36 @@ fn deserialize_with_serde<T: KllSerde, C: KllComparator<T>>(
     Ok(sketch)
 }
 
-impl<C: KllComparator<f32>> KllSketch<f32, C> {
+impl<T: KllValue, C: KllComparator<T>> KllSketch<T, C> {
     /// Serializes the sketch to bytes.
     pub fn serialize(&self) -> Vec<u8> {
         serialize_with_serde(self)
     }
 
     /// Deserializes a sketch using the supplied ordering policy.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidData` if the image is truncated, malformed, or inconsistent with
+    /// `comparator`.
     pub fn deserialize_with_comparator(bytes: &[u8], comparator: C) -> Result<Self, Error> {
         deserialize_with_serde(bytes, comparator)
     }
 }
 
-impl KllSketch<f32> {
+impl<T: KllValue + PartialOrd> KllSketch<T> {
     /// Deserializes a sketch from bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidData` if the image is truncated, malformed, or contains values that are not
+    /// naturally ordered.
     pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
         deserialize_with_serde(bytes, NaturalOrder)
     }
 }
 
-impl<C: KllComparator<f64>> KllSketch<f64, C> {
-    /// Serializes the sketch to bytes.
-    pub fn serialize(&self) -> Vec<u8> {
-        serialize_with_serde(self)
-    }
-
-    /// Deserializes a sketch using the supplied ordering policy.
-    pub fn deserialize_with_comparator(bytes: &[u8], comparator: C) -> Result<Self, Error> {
-        deserialize_with_serde(bytes, comparator)
-    }
-}
-
-impl KllSketch<f64> {
-    /// Deserializes a sketch from bytes.
-    pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
-        deserialize_with_serde(bytes, NaturalOrder)
-    }
-}
-
-impl<C: KllComparator<i64>> KllSketch<i64, C> {
-    /// Serializes the sketch to bytes.
-    pub fn serialize(&self) -> Vec<u8> {
-        serialize_with_serde(self)
-    }
-
-    /// Deserializes a sketch using the supplied ordering policy.
-    pub fn deserialize_with_comparator(bytes: &[u8], comparator: C) -> Result<Self, Error> {
-        deserialize_with_serde(bytes, comparator)
-    }
-}
-
-impl KllSketch<i64> {
-    /// Deserializes a sketch from bytes.
-    pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
-        deserialize_with_serde(bytes, NaturalOrder)
-    }
-}
-
-impl<C: KllComparator<String>> KllSketch<String, C> {
-    /// Serializes the sketch to bytes.
-    pub fn serialize(&self) -> Vec<u8> {
-        serialize_with_serde(self)
-    }
-
-    /// Deserializes a sketch using the supplied ordering policy.
-    pub fn deserialize_with_comparator(bytes: &[u8], comparator: C) -> Result<Self, Error> {
-        deserialize_with_serde(bytes, comparator)
-    }
-}
-
-impl KllSketch<String> {
-    /// Deserializes a sketch from bytes.
-    pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
-        deserialize_with_serde(bytes, NaturalOrder)
-    }
-}
-
-impl<T: KllItem, C: KllComparator<T>> KllSketch<T, C> {
+impl<T: Clone, C: KllComparator<T>> KllSketch<T, C> {
     fn make(
         comparator: C,
         k: u16,
@@ -863,8 +772,10 @@ impl<T: KllItem, C: KllComparator<T>> KllSketch<T, C> {
             .as_ref()
             .ok_or_else(|| Error::deserial("non-empty sketch must have a maximum item"))?;
 
-        if T::is_nan(min_item) || T::is_nan(max_item) {
-            return Err(Error::deserial("minimum and maximum items must not be NaN"));
+        if !self.comparator.accepts(min_item) || !self.comparator.accepts(max_item) {
+            return Err(Error::deserial(
+                "minimum and maximum items must belong to the comparator's ordered domain",
+            ));
         }
         if self.comparator.compare(min_item, max_item) == Ordering::Greater {
             return Err(Error::deserial(
@@ -894,8 +805,10 @@ impl<T: KllItem, C: KllComparator<T>> KllSketch<T, C> {
             }
 
             for item in level {
-                if T::is_nan(item) {
-                    return Err(Error::deserial("retained items must not be NaN"));
+                if !self.comparator.accepts(item) {
+                    return Err(Error::deserial(
+                        "retained items must belong to the comparator's ordered domain",
+                    ));
                 }
                 if self.comparator.compare(item, min_item) == Ordering::Less
                     || self.comparator.compare(item, max_item) == Ordering::Greater
@@ -933,7 +846,7 @@ fn normalized_rank_error(k: u16, pmf: bool) -> f64 {
     }
 }
 
-fn downsample<T: KllItem>(items: Vec<T>, offset: bool, use_up: bool) -> Vec<T> {
+fn downsample<T: Clone>(items: Vec<T>, offset: bool, use_up: bool) -> Vec<T> {
     let len = items.len();
     debug_assert!(len % 2 == 0, "length must be even");
     let offset = usize::from(offset);
@@ -958,7 +871,7 @@ fn take_leftover<T>(items: &mut Vec<T>, level: usize, is_level_zero_sorted: bool
     }
 }
 
-fn merge_sorted_vec<T: KllItem, C: KllComparator<T>>(
+fn merge_sorted_vec<T: Clone, C: KllComparator<T>>(
     left: Vec<T>,
     right: Vec<T>,
     comparator: &C,
@@ -979,7 +892,7 @@ fn merge_sorted_vec<T: KllItem, C: KllComparator<T>>(
     merged
 }
 
-fn general_compress<T: KllItem, C: KllComparator<T>>(
+fn general_compress<T: Clone, C: KllComparator<T>>(
     mut levels_in: Vec<Vec<T>>,
     k: u16,
     m: u8,
@@ -1051,118 +964,4 @@ fn general_compress<T: KllItem, C: KllComparator<T>>(
 
     levels_out.truncate(current_num_levels);
     levels_out
-}
-
-impl KllItem for f32 {
-    fn cmp(a: &Self, b: &Self) -> Ordering {
-        a.partial_cmp(b).unwrap_or(Ordering::Greater)
-    }
-
-    fn is_nan(value: &Self) -> bool {
-        value.is_nan()
-    }
-}
-
-impl KllSerde for f32 {
-    const MIN_SERIALIZED_SIZE: usize = 4;
-
-    fn serialized_size(_value: &Self) -> usize {
-        4
-    }
-
-    fn serialize(value: &Self, bytes: &mut SketchBytes) {
-        bytes.write_f32_le(*value);
-    }
-
-    fn deserialize(input: &mut SketchSlice<'_>) -> Result<Self, Error> {
-        input
-            .read_f32_le()
-            .map_err(|_| Error::insufficient_data("f32"))
-    }
-}
-
-impl KllItem for f64 {
-    fn cmp(a: &Self, b: &Self) -> Ordering {
-        a.partial_cmp(b).unwrap_or(Ordering::Greater)
-    }
-
-    fn is_nan(value: &Self) -> bool {
-        value.is_nan()
-    }
-}
-
-impl KllSerde for f64 {
-    const MIN_SERIALIZED_SIZE: usize = 8;
-
-    fn serialized_size(_value: &Self) -> usize {
-        8
-    }
-
-    fn serialize(value: &Self, bytes: &mut SketchBytes) {
-        bytes.write_f64_le(*value);
-    }
-
-    fn deserialize(input: &mut SketchSlice<'_>) -> Result<Self, Error> {
-        input
-            .read_f64_le()
-            .map_err(|_| Error::insufficient_data("f64"))
-    }
-}
-
-impl KllItem for i64 {
-    fn cmp(a: &Self, b: &Self) -> Ordering {
-        a.cmp(b)
-    }
-}
-
-impl KllSerde for i64 {
-    const MIN_SERIALIZED_SIZE: usize = 8;
-
-    fn serialized_size(_value: &Self) -> usize {
-        8
-    }
-
-    fn serialize(value: &Self, bytes: &mut SketchBytes) {
-        bytes.write_i64_le(*value);
-    }
-
-    fn deserialize(input: &mut SketchSlice<'_>) -> Result<Self, Error> {
-        input
-            .read_i64_le()
-            .map_err(|_| Error::insufficient_data("i64"))
-    }
-}
-
-impl KllItem for String {
-    fn cmp(a: &Self, b: &Self) -> Ordering {
-        a.cmp(b)
-    }
-}
-
-impl KllSerde for String {
-    const MIN_SERIALIZED_SIZE: usize = 4;
-
-    fn serialized_size(value: &Self) -> usize {
-        4 + value.len()
-    }
-
-    fn serialize(value: &Self, bytes: &mut SketchBytes) {
-        bytes.write_u32_le(value.len() as u32);
-        bytes.write(value.as_bytes());
-    }
-
-    fn deserialize(input: &mut SketchSlice<'_>) -> Result<Self, Error> {
-        let len = input
-            .read_u32_le()
-            .map_err(|_| Error::insufficient_data("string_len"))? as usize;
-        let bytes = input
-            .remaining()
-            .get(..len)
-            .ok_or_else(|| Error::insufficient_data("string_bytes"))?;
-        let value = std::str::from_utf8(bytes)
-            .map_err(|_| Error::deserial("invalid utf-8 string"))?
-            .to_owned();
-        input.advance(len as u64);
-        Ok(value)
-    }
 }

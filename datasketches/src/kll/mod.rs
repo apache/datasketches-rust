@@ -37,14 +37,16 @@
 //! ```
 
 mod capacity;
+mod order;
 mod serialization;
 mod sketch;
 mod sorted_view;
+mod value;
 
-pub use self::sketch::KllComparator;
-pub use self::sketch::KllItem;
+pub use self::order::KllComparator;
+pub use self::order::NaturalOrder;
 pub use self::sketch::KllSketch;
-pub use self::sketch::NaturalOrder;
+pub use self::value::KllValue;
 
 /// Default value of parameter k.
 const DEFAULT_K: u16 = 200;

@@ -42,6 +42,10 @@ impl KllComparator<String> for NumericStringOrder {
     fn compare(&self, left: &String, right: &String) -> Ordering {
         parse_string_value(left).cmp(&parse_string_value(right))
     }
+
+    fn is_compatible(&self, _other: &Self) -> bool {
+        true
+    }
 }
 
 fn test_f32_file(path: PathBuf, expected_n: usize) {

@@ -47,6 +47,10 @@ impl KllComparator<String> for NumericStringOrder {
             .unwrap()
             .cmp(&right.parse::<u64>().unwrap())
     }
+
+    fn is_compatible(&self, _other: &Self) -> bool {
+        true
+    }
 }
 
 #[test]
@@ -245,7 +249,7 @@ fn test_out_of_order_split_points_panics() {
 }
 
 #[test]
-#[should_panic(expected = "split_points must not contain NaN values")]
+#[should_panic(expected = "split_points must belong to the comparator's ordered domain")]
 fn test_nan_split_point_panics() {
     let mut sketch = KllSketch::<f32>::new(DEFAULT_K).unwrap();
     sketch.update(0.0);
