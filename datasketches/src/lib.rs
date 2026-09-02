@@ -78,6 +78,8 @@ pub mod cpc;
 pub mod frequencies;
 #[cfg(feature = "hll")]
 pub mod hll;
+#[cfg(feature = "kll")]
+pub mod kll;
 #[cfg(feature = "req")]
 pub mod req;
 #[cfg(feature = "tdigest")]

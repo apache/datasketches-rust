@@ -29,6 +29,7 @@ datasketches = { workspace = true, features = [
   "cpc",
   "frequencies",
   "hll",
+  "kll",
   "req",
   "tdigest",
   "theta",
