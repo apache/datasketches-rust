@@ -350,6 +350,60 @@ fn test_updates_normalize_overfull_deserialized_mixed_buffer() {
     assert_eq!(roundtrip.max_value(), Some(1_000.0));
 }
 
+fn serialized_two_value_digest() -> Vec<u8> {
+    let mut tdigest = TDigestMut::new(100).unwrap();
+    tdigest.update(0.0);
+    tdigest.update(1.0);
+    tdigest.serialize()
+}
+
+fn assert_invalid_tdigest(bytes: &[u8]) {
+    let error = TDigestMut::deserialize(bytes).unwrap_err();
+    assert_eq!(error.kind(), datasketches::error::ErrorKind::InvalidData);
+}
+
+#[test]
+fn test_deserialize_rejects_unknown_or_conflicting_flags() {
+    let mut unknown = serialized_two_value_digest();
+    unknown[5] |= 0x80;
+    assert_invalid_tdigest(&unknown);
+
+    let mut empty = TDigestMut::new(100).unwrap();
+    let mut conflicting = empty.serialize();
+    conflicting[5] |= 1 << 1;
+    assert_invalid_tdigest(&conflicting);
+}
+
+#[test]
+fn test_deserialize_rejects_invalid_extrema_and_centroid_ranges() {
+    let mut reversed_extrema = serialized_two_value_digest();
+    reversed_extrema[16..24].copy_from_slice(&2_f64.to_le_bytes());
+    assert_invalid_tdigest(&reversed_extrema);
+
+    let mut centroid_outside_extrema = serialized_two_value_digest();
+    centroid_outside_extrema[32..40].copy_from_slice(&(-1_f64).to_le_bytes());
+    assert_invalid_tdigest(&centroid_outside_extrema);
+
+    let mut buffered_outside_extrema = serialized_two_value_digest();
+    buffered_outside_extrema[8..12].copy_from_slice(&1_u32.to_le_bytes());
+    buffered_outside_extrema[12..16].copy_from_slice(&1_u32.to_le_bytes());
+    buffered_outside_extrema[48..56].copy_from_slice(&2_f64.to_le_bytes());
+    assert_invalid_tdigest(&buffered_outside_extrema);
+}
+
+#[test]
+fn test_deserialize_rejects_unsorted_or_missing_centroids() {
+    let mut unsorted = serialized_two_value_digest();
+    unsorted[32..40].copy_from_slice(&1_f64.to_le_bytes());
+    unsorted[48..56].copy_from_slice(&0_f64.to_le_bytes());
+    assert_invalid_tdigest(&unsorted);
+
+    let mut missing = serialized_two_value_digest();
+    missing[8..12].copy_from_slice(&0_u32.to_le_bytes());
+    missing[12..16].copy_from_slice(&0_u32.to_le_bytes());
+    assert_invalid_tdigest(&missing);
+}
+
 #[test]
 fn test_deserialize_rejects_truncated_large_payload_before_allocation() {
     let mut tdigest = TDigestMut::new(10).unwrap();
