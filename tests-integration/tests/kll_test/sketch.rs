@@ -310,6 +310,52 @@ fn test_rank_cdf_pmf_consistency() {
 }
 
 #[test]
+fn test_sorted_view_supports_repeated_and_batch_queries() {
+    let mut sketch = KllSketch::<f32>::new(64).unwrap();
+    for item in 0..1_000 {
+        sketch.update(item as f32);
+    }
+
+    let view = sketch.sorted_view();
+    let ranks = [0.0, 0.25, 0.5, 0.75, 1.0];
+    let quantiles = sketch.quantiles(&ranks, SearchCriteria::Inclusive).unwrap();
+
+    assert_eq!(view.len(), sketch.num_retained());
+    assert_eq!(view.total_weight(), sketch.n());
+    assert_eq!(
+        view.quantiles(&ranks, SearchCriteria::Inclusive).unwrap(),
+        quantiles
+    );
+    for (&rank, quantile) in ranks.iter().zip(&quantiles) {
+        assert_eq!(
+            view.quantile(rank, SearchCriteria::Inclusive).unwrap(),
+            *quantile
+        );
+        assert_eq!(
+            view.rank(quantile, SearchCriteria::Inclusive).unwrap(),
+            sketch.rank(quantile, SearchCriteria::Inclusive).unwrap()
+        );
+    }
+
+    sketch.update(2_000.0);
+    assert_eq!(view.total_weight(), 1_000);
+    assert_eq!(
+        view.quantile(1.0, SearchCriteria::Inclusive).unwrap(),
+        999.0
+    );
+}
+
+#[test]
+fn test_empty_sorted_view_queries_return_errors() {
+    let sketch = KllSketch::<f32>::new(DEFAULT_K).unwrap();
+    let view = sketch.sorted_view();
+
+    assert!(view.is_empty());
+    assert!(view.quantile(0.5, SearchCriteria::Inclusive).is_err());
+    assert!(view.rank(&0.0, SearchCriteria::Inclusive).is_err());
+}
+
+#[test]
 fn test_out_of_order_split_points_return_error() {
     let mut sketch = KllSketch::<f32>::new(DEFAULT_K).unwrap();
     sketch.update(0.0);

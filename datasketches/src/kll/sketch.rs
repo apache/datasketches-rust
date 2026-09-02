@@ -36,6 +36,7 @@ use super::serialization::PREAMBLE_INTS_FULL;
 use super::serialization::PREAMBLE_INTS_SHORT;
 use super::serialization::SERIAL_VERSION_1;
 use super::serialization::SERIAL_VERSION_2;
+use super::sorted_view::SortedView;
 use super::sorted_view::build_sorted_view;
 use super::value::KllValue;
 use crate::codec::SketchBytes;
@@ -56,6 +57,8 @@ pub struct KllSketch<T, C = NaturalOrder> {
     m: u8,
     min_k: u16,
     n: u64,
+    num_retained: usize,
+    capacity: usize,
     is_level_zero_sorted: bool,
     levels: Vec<Vec<T>>,
     min_item: Option<T>,
@@ -142,7 +145,7 @@ impl<T: Clone, C: KllComparator<T>> KllSketch<T, C> {
 
     /// Returns the number of retained items.
     pub fn num_retained(&self) -> usize {
-        self.levels.iter().map(|level| level.len()).sum()
+        self.num_retained
     }
 
     /// Returns true if the sketch is in estimation mode.
@@ -175,6 +178,8 @@ impl<T: Clone, C: KllComparator<T>> KllSketch<T, C> {
     pub fn reset(&mut self) {
         self.min_k = self.k;
         self.n = 0;
+        self.num_retained = 0;
+        self.capacity = total_capacity(self.k, self.m, 1) as usize;
         self.is_level_zero_sorted = false;
         self.levels.clear();
         self.levels.push(Vec::new());
@@ -243,8 +248,20 @@ impl<T: Clone, C: KllComparator<T>> KllSketch<T, C> {
                 "item must belong to the comparator's ordered domain",
             ));
         }
-        let view = build_sorted_view(&self.levels, self.comparator.clone());
-        Ok(view.rank(item, criteria))
+        let inclusive = criteria == SearchCriteria::Inclusive;
+        let mut weight = 0u64;
+        for (level, items) in self.levels.iter().enumerate() {
+            let count = items
+                .iter()
+                .filter(|retained| match self.comparator.compare(retained, item) {
+                    Ordering::Less => true,
+                    Ordering::Equal => inclusive,
+                    Ordering::Greater => false,
+                })
+                .count() as u64;
+            weight += count << level;
+        }
+        Ok(weight as f64 / self.n as f64)
     }
 
     /// Returns the quantile for the given normalized rank.
@@ -261,8 +278,18 @@ impl<T: Clone, C: KllComparator<T>> KllSketch<T, C> {
                 "rank must be in [0.0, 1.0], got {rank}"
             )));
         }
-        let view = build_sorted_view(&self.levels, self.comparator.clone());
-        Ok(view.quantile(rank, criteria))
+        self.sorted_view().quantile(rank, criteria)
+    }
+
+    /// Returns approximate quantiles for the given normalized ranks.
+    ///
+    /// The sorted view is built once for the whole batch.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the sketch is empty or any rank is outside `[0.0, 1.0]`.
+    pub fn quantiles(&self, ranks: &[f64], criteria: SearchCriteria) -> Result<Vec<T>, Error> {
+        self.sorted_view().quantiles(ranks, criteria)
     }
 
     /// Returns the approximate CDF for the given split points.
@@ -275,8 +302,7 @@ impl<T: Clone, C: KllComparator<T>> KllSketch<T, C> {
         if self.is_empty() {
             return Err(Error::invalid_argument("cannot query an empty sketch"));
         }
-        let view = build_sorted_view(&self.levels, self.comparator.clone());
-        view.cdf(split_points, criteria)
+        self.sorted_view().cdf(split_points, criteria)
     }
 
     /// Returns the approximate PMF for the given split points.
@@ -289,8 +315,18 @@ impl<T: Clone, C: KllComparator<T>> KllSketch<T, C> {
         if self.is_empty() {
             return Err(Error::invalid_argument("cannot query an empty sketch"));
         }
-        let view = build_sorted_view(&self.levels, self.comparator.clone());
-        view.pmf(split_points, criteria)
+        self.sorted_view().pmf(split_points, criteria)
+    }
+
+    /// Returns an owned, sorted snapshot of the current sketch state.
+    ///
+    /// The view can be reused for repeated queries while this sketch continues to receive updates.
+    pub fn sorted_view(&self) -> SortedView<T, C> {
+        build_sorted_view(
+            &self.levels,
+            self.is_level_zero_sorted,
+            self.comparator.clone(),
+        )
     }
 
     /// Returns the normalized single-sided rank error for the configured k.
@@ -627,12 +663,16 @@ impl<T: Clone, C: KllComparator<T>> KllSketch<T, C> {
         max_item: Option<T>,
         is_level_zero_sorted: bool,
     ) -> Self {
+        let num_retained = levels.iter().map(Vec::len).sum();
+        let capacity = total_capacity(k, DEFAULT_M, levels.len()) as usize;
         Self {
             comparator,
             k,
             m: DEFAULT_M,
             min_k,
             n,
+            num_retained,
+            capacity,
             is_level_zero_sorted,
             levels,
             min_item,
@@ -640,12 +680,8 @@ impl<T: Clone, C: KllComparator<T>> KllSketch<T, C> {
         }
     }
 
-    fn capacity(&self) -> usize {
-        total_capacity(self.k, self.m, self.levels.len()) as usize
-    }
-
     fn level_offsets(&self) -> Vec<u32> {
-        let capacity = self.capacity() as u32;
+        let capacity = self.capacity as u32;
         let retained = self.num_retained() as u32;
         assert!(capacity >= retained, "capacity must be >= retained");
 
@@ -704,10 +740,11 @@ impl<T: Clone, C: KllComparator<T>> KllSketch<T, C> {
     }
 
     fn internal_update(&mut self, item: T) {
-        if self.num_retained() >= self.capacity() {
+        if self.num_retained >= self.capacity {
             self.compress_while_updating();
         }
         self.n += 1;
+        self.num_retained += 1;
         self.is_level_zero_sorted = false;
         self.levels[0].push(item);
     }
@@ -718,25 +755,17 @@ impl<T: Clone, C: KllComparator<T>> KllSketch<T, C> {
             self.levels.push(Vec::new());
         }
 
-        let mut current = std::mem::take(&mut self.levels[level]);
+        let current = std::mem::take(&mut self.levels[level]);
         let mut above = std::mem::take(&mut self.levels[level + 1]);
-
-        let odd = current.len() % 2 == 1;
-        let mut leftover = None;
-        if odd {
-            leftover = Some(take_leftover(
-                &mut current,
-                level,
-                self.is_level_zero_sorted,
-            ));
-        }
-
-        if level == 0 && !self.is_level_zero_sorted {
-            current.sort_by(|left, right| self.comparator.compare(left, right));
-        }
-
         let use_up = above.is_empty();
-        let promoted = downsample(current, rand::random::<bool>(), use_up);
+        let (leftover, promoted) = compact_level(
+            current,
+            level,
+            self.is_level_zero_sorted,
+            &self.comparator,
+            rand::random::<bool>(),
+            use_up,
+        );
         if above.is_empty() {
             above = promoted;
         } else {
@@ -749,6 +778,7 @@ impl<T: Clone, C: KllComparator<T>> KllSketch<T, C> {
             new_level.push(item);
         }
         self.levels[level] = new_level;
+        self.refresh_capacity_state();
     }
 
     fn find_level_to_compact(&self) -> usize {
@@ -793,6 +823,12 @@ impl<T: Clone, C: KllComparator<T>> KllSketch<T, C> {
             self.is_level_zero_sorted,
             &self.comparator,
         );
+        self.refresh_capacity_state();
+    }
+
+    fn refresh_capacity_state(&mut self) {
+        self.num_retained = self.levels.iter().map(Vec::len).sum();
+        self.capacity = total_capacity(self.k, self.m, self.levels.len()) as usize;
     }
 
     fn total_weight(&self) -> u64 {
@@ -887,7 +923,36 @@ fn normalized_rank_error(k: u16, pmf: bool) -> f64 {
     }
 }
 
-fn downsample<T: Clone>(items: Vec<T>, offset: bool, use_up: bool) -> Vec<T> {
+fn compact_level<T, C: KllComparator<T>>(
+    mut items: Vec<T>,
+    level: usize,
+    is_level_zero_sorted: bool,
+    comparator: &C,
+    offset: bool,
+    use_up: bool,
+) -> (Option<T>, Vec<T>) {
+    let odd = items.len() % 2 == 1;
+    let level_zero_needs_sorting = level == 0 && !is_level_zero_sorted;
+    let leftover = if odd && level_zero_needs_sorting {
+        items.pop()
+    } else {
+        None
+    };
+    if level_zero_needs_sorting {
+        items.sort_unstable_by(|left, right| comparator.compare(left, right));
+    }
+
+    let mut items = items.into_iter();
+    let leftover = if odd && !level_zero_needs_sorting {
+        items.next()
+    } else {
+        leftover
+    };
+    let promoted = downsample(items, offset, use_up);
+    (leftover, promoted)
+}
+
+fn downsample<T, I: ExactSizeIterator<Item = T>>(items: I, offset: bool, use_up: bool) -> Vec<T> {
     let len = items.len();
     debug_assert!(len % 2 == 0, "length must be even");
     let offset = usize::from(offset);
@@ -898,18 +963,9 @@ fn downsample<T: Clone>(items: Vec<T>, offset: bool, use_up: bool) -> Vec<T> {
     };
 
     items
-        .into_iter()
         .enumerate()
         .filter_map(|(idx, item)| if idx % 2 == parity { Some(item) } else { None })
         .collect()
-}
-
-fn take_leftover<T>(items: &mut Vec<T>, level: usize, is_level_zero_sorted: bool) -> T {
-    if level == 0 && !is_level_zero_sorted {
-        items.pop().expect("odd level must not be empty")
-    } else {
-        items.remove(0)
-    }
 }
 
 fn merge_sorted_vec<T: Clone, C: KllComparator<T>>(
@@ -957,25 +1013,17 @@ fn general_compress<T: Clone, C: KllComparator<T>>(
         if current_item_count < target_item_count || raw_pop < cap {
             levels_out.push(std::mem::take(&mut levels_in[current_level]));
         } else {
-            let mut current = std::mem::take(&mut levels_in[current_level]);
+            let current = std::mem::take(&mut levels_in[current_level]);
             let mut above = std::mem::take(&mut levels_in[current_level + 1]);
-
-            let odd = current.len() % 2 == 1;
-            let mut leftover = None;
-            if odd {
-                leftover = Some(take_leftover(
-                    &mut current,
-                    current_level,
-                    is_level_zero_sorted,
-                ));
-            }
-
-            if current_level == 0 && !is_level_zero_sorted {
-                current.sort_by(|left, right| comparator.compare(left, right));
-            }
-
             let use_up = above.is_empty();
-            let promoted = downsample(current, rand::random::<bool>(), use_up);
+            let (leftover, promoted) = compact_level(
+                current,
+                current_level,
+                is_level_zero_sorted,
+                comparator,
+                rand::random::<bool>(),
+                use_up,
+            );
             let promoted_len = promoted.len();
             if above.is_empty() {
                 above = promoted;

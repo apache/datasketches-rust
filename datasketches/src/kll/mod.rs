@@ -46,6 +46,7 @@ mod value;
 pub use self::order::KllComparator;
 pub use self::order::NaturalOrder;
 pub use self::sketch::KllSketch;
+pub use self::sorted_view::SortedView;
 pub use self::value::KllValue;
 pub use crate::common::SearchCriteria;
 
