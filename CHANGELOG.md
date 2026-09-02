@@ -16,6 +16,7 @@ All significant changes to this project will be documented in this file.
 
 * Improve truncated-input diagnostics across sketch deserializers.
 * Improve hash-backed sketch update performance for integer and raw-byte inputs.
+* Improve Bloom filter membership-and-insert performance and simplify Theta-family hash table thresholds.
 
 ### Bug fixes
 
