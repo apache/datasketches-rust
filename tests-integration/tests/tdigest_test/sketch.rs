@@ -284,7 +284,7 @@ fn test_mixed_k_merge_uses_smaller_k() {
         right.update((value + 1_000) as f64);
     }
 
-    left.try_merge(&right).unwrap();
+    left.merge(&right);
 
     assert_eq!(left.k(), 50);
     assert_eq!(left.total_weight(), 2_000);
@@ -293,8 +293,7 @@ fn test_mixed_k_merge_uses_smaller_k() {
 }
 
 #[test]
-fn test_merge_many_uses_one_result_with_the_smallest_nonempty_k() {
-    let mut merged = TDigestMut::new(200).unwrap();
+fn test_from_iter_uses_one_result_with_the_smallest_nonempty_k() {
     let mut first = TDigestMut::new(100).unwrap();
     let mut second = TDigestMut::new(50).unwrap();
     let empty = TDigestMut::new(10).unwrap();
@@ -305,13 +304,31 @@ fn test_merge_many_uses_one_result_with_the_smallest_nonempty_k() {
     let _ = first.rank(0.0);
     let _ = second.rank(0.0);
 
-    merged.merge_many([&first, &empty, &second]).unwrap();
+    let mut merged = [first, empty, second].into_iter().collect::<TDigestMut>();
 
     assert_eq!(merged.k(), 50);
     assert_eq!(merged.total_weight(), 2_000);
     assert_eq!(merged.min_value(), Some(0.0));
     assert_eq!(merged.max_value(), Some(1_999.0));
     assert_quantiles_are_nondecreasing(&mut merged);
+}
+
+#[test]
+fn test_from_iter_handles_empty_and_single_input_without_recompression() {
+    let empty = std::iter::empty::<TDigestMut>().collect::<TDigestMut>();
+    assert!(empty.is_empty());
+
+    let mut input = TDigestMut::new(50).unwrap();
+    for value in 0..1_000 {
+        input.update(value as f64);
+    }
+    let serialized = input.serialize();
+    let mut collected = [TDigestMut::new(10).unwrap(), input]
+        .into_iter()
+        .collect::<TDigestMut>();
+
+    assert_eq!(collected.k(), 50);
+    assert_eq!(collected.serialize(), serialized);
 }
 
 #[test]
@@ -460,20 +477,12 @@ fn test_quantile_handles_two_sample_last_centroid() {
 }
 
 #[test]
-fn test_try_merge_reports_total_weight_overflow_without_mutating_receiver() {
+#[should_panic(expected = "combined t-digest weight exceeds u64::MAX")]
+fn test_merge_panics_on_total_weight_overflow() {
     let mut left = deserialize_with_centroids(100, 0.0, 0.0, &[(0.0, u64::MAX)]);
     let right = deserialize_with_centroids(50, 1.0, 1.0, &[(1.0, 1)]);
 
-    let error = left.try_merge(&right).unwrap_err();
-
-    assert_eq!(
-        error.kind(),
-        datasketches::error::ErrorKind::InvalidArgument
-    );
-    assert_eq!(left.k(), 100);
-    assert_eq!(left.total_weight(), u64::MAX);
-    assert_eq!(left.min_value(), Some(0.0));
-    assert_eq!(left.max_value(), Some(0.0));
+    left.merge(&right);
 }
 
 #[test]

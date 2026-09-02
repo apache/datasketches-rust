@@ -6,16 +6,15 @@ All significant changes to this project will be documented in this file.
 
 ### New features
 
-* Add `TDigestMut::try_merge` and `TDigestMut::merge_many` for checked and batch merging, and add `TDigestMut::quantiles` and `TDigest::quantiles` for querying several ranks in one centroid scan.
+* Implement `FromIterator<TDigestMut>` for batch construction, and add `TDigestMut::quantiles` and `TDigest::quantiles` for querying several ranks in one centroid scan.
 
 ### Performance improvements
 
-* T-Digest batch merge avoids recompressing each partial sketch, and batch quantile queries reuse one traversal for ranks supplied in nondecreasing order.
+* T-Digest batch construction from owned partial sketches avoids recompressing intermediate results, and batch quantile queries reuse one traversal for ranks supplied in nondecreasing order.
 
 ### Bug fixes
 
 * T-Digest merging now uses the smaller `k` when sketches have different compression parameters, preserving the size bound of the coarser input.
-* T-Digest deserialization now rejects unknown or conflicting flags, reversed extrema, out-of-range values, unsorted centroids, and non-empty images without stored values.
 
 ## v0.5.0
 

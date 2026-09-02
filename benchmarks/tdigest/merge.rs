@@ -103,7 +103,7 @@ fn partials(bencher: Bencher) {
 }
 
 #[divan::bench]
-fn partials_batch(bencher: Bencher) {
+fn partials_from_iter(bencher: Bencher) {
     let partials = partial_digests_with(DEFAULT_DIGEST_K, 64, ROWS_PER_PARTIAL)
         .into_iter()
         .map(|mut digest| {
@@ -114,11 +114,10 @@ fn partials_batch(bencher: Bencher) {
 
     bencher
         .counter(ItemsCount::new(64 * ROWS_PER_PARTIAL))
-        .bench_local(|| {
-            let mut merged = TDigestMut::new(DEFAULT_DIGEST_K).unwrap();
-            merged.merge_many(black_box(&partials)).unwrap();
-            black_box(merged)
-        });
+        // Construct fresh owned inputs outside the measurement, as a real caller transfers
+        // ownership rather than cloning solely for `FromIterator`.
+        .with_inputs(|| partials.clone())
+        .bench_local_values(|partials| black_box(partials).into_iter().collect::<TDigestMut>());
 }
 
 #[divan::bench(args = [SMALL_ROWS_PER_PARTIAL, ROWS_PER_PARTIAL])]
