@@ -16,9 +16,6 @@ All significant changes to this project will be documented in this file.
 ### Improvements
 
 * Improve truncated-input diagnostics across sketch deserializers.
-
-### Performance improvements
-
 * T-Digest batch construction from owned partial sketches avoids recompressing intermediate results, and batch quantile queries reuse one traversal for ranks supplied in nondecreasing order.
 
 ### Bug fixes
