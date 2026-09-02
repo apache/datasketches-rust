@@ -18,6 +18,7 @@
 use std::cmp::Ordering;
 
 use super::order::KllComparator;
+use super::order::NaturalOrder;
 use crate::common::SearchCriteria;
 use crate::error::Error;
 
@@ -26,7 +27,7 @@ use crate::error::Error;
 /// Build one with [`KllSketch::sorted_view`](super::KllSketch::sorted_view) when running repeated
 /// queries against the same sketch state.
 #[derive(Debug, Clone)]
-pub struct SortedView<T: Clone, C: KllComparator<T>> {
+pub struct SortedView<T: Clone, C: KllComparator<T> = NaturalOrder> {
     comparator: C,
     entries: Vec<Entry<T>>,
     total_weight: u64,

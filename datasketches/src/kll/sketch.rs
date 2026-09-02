@@ -165,7 +165,8 @@ impl<T: Clone, C: KllComparator<T>> KllSketch<T, C> {
 
     /// Updates the sketch with a new item.
     ///
-    /// NaN values are ignored for floating-point types.
+    /// Values rejected by the configured comparator are ignored. This includes NaN values when
+    /// using [`NaturalOrder`].
     ///
     /// # Panics
     ///
