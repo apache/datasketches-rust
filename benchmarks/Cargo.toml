@@ -25,10 +25,15 @@ rust-version.workspace = true
 [dev-dependencies]
 datasketches = { workspace = true, features = [
   "bloom",
+  "countmin",
   "cpc",
+  "frequencies",
+  "hll",
   "kll",
   "req",
   "tdigest",
+  "theta",
+  "tuple",
 ] }
 divan = { workspace = true }
 rand = { workspace = true }

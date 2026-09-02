@@ -15,23 +15,14 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use divan::AllocProfiler;
+pub const ITEMS: usize = 10_000;
 
-#[global_allocator]
-static ALLOC: AllocProfiler = AllocProfiler::system();
-
-mod bloom;
-mod countmin;
-mod cpc;
-mod frequencies;
-mod hash_inputs;
-mod hll;
-mod kll;
-mod req;
-mod tdigest;
-mod theta;
-mod tuple;
-
-fn main() {
-    divan::main();
+pub fn bytes_32_values() -> Vec<[u8; 32]> {
+    (0..ITEMS)
+        .map(|value| {
+            let mut bytes = [0; 32];
+            bytes[..8].copy_from_slice(&(value as u64).to_le_bytes());
+            bytes
+        })
+        .collect()
 }

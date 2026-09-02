@@ -21,7 +21,8 @@ use divan::Bencher;
 use divan::black_box;
 use divan::counter::ItemsCount;
 
-const ITEMS: usize = 10_000;
+use crate::hash_inputs::ITEMS;
+use crate::hash_inputs::bytes_32_values;
 
 #[divan::bench]
 fn u64(bencher: Bencher) {
@@ -36,13 +37,7 @@ fn u64(bencher: Bencher) {
 
 #[divan::bench]
 fn bytes_32(bencher: Bencher) {
-    let values = (0..ITEMS)
-        .map(|value| {
-            let mut bytes = [0; 32];
-            bytes[..8].copy_from_slice(&(value as u64).to_le_bytes());
-            bytes
-        })
-        .collect::<Vec<_>>();
+    let values = bytes_32_values();
 
     bencher.counter(ItemsCount::new(ITEMS)).bench_local(|| {
         let mut sketch = CpcSketch::new(11).unwrap();

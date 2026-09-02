@@ -15,8 +15,9 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use datasketches::bloom::BloomFilterBuilder;
 use datasketches::hash::value::raw_bytes;
+use datasketches::hll::HllSketch;
+use datasketches::hll::HllType;
 use divan::Bencher;
 use divan::black_box;
 use divan::counter::ItemsCount;
@@ -27,13 +28,11 @@ use crate::hash_inputs::bytes_32_values;
 #[divan::bench]
 fn u64(bencher: Bencher) {
     bencher.counter(ItemsCount::new(ITEMS)).bench_local(|| {
-        let mut filter = BloomFilterBuilder::with_accuracy(ITEMS as u64, 0.01)
-            .build()
-            .unwrap();
+        let mut sketch = HllSketch::new(12, HllType::Hll8).unwrap();
         for value in 0..ITEMS as u64 {
-            filter.insert(black_box(value));
+            sketch.update(black_box(value));
         }
-        black_box(filter)
+        black_box(sketch)
     });
 }
 
@@ -42,12 +41,10 @@ fn bytes_32(bencher: Bencher) {
     let values = bytes_32_values();
 
     bencher.counter(ItemsCount::new(ITEMS)).bench_local(|| {
-        let mut filter = BloomFilterBuilder::with_accuracy(ITEMS as u64, 0.01)
-            .build()
-            .unwrap();
+        let mut sketch = HllSketch::new(12, HllType::Hll8).unwrap();
         for value in &values {
-            filter.insert(raw_bytes::from_slice(black_box(value)));
+            sketch.update(raw_bytes::from_slice(black_box(value)));
         }
-        black_box(filter)
+        black_box(sketch)
     });
 }
