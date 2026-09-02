@@ -129,6 +129,7 @@ pub fn from_str(v: &str) -> RawBytes<&str> {
 macro_rules! impl_raw_bytes {
     ($t:ty, |$v:ident| $as_slice:expr) => {
         impl HashStrategy<$t> for RawBytesStrategy {
+            #[inline(always)]
             fn hash<H: Hasher>(value: &$t, state: &mut H) {
                 let $v = value;
                 let slice = $as_slice;
