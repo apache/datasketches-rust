@@ -65,7 +65,7 @@ fn small_partials(bencher: Bencher) {
     let partials = partial_digests(64, SMALL_ROWS_PER_PARTIAL)
         .into_iter()
         .map(|mut digest| {
-            black_box(digest.rank(0.0));
+            black_box(digest.quantile(0.5));
             digest
         })
         .collect::<Vec<_>>();
@@ -86,7 +86,7 @@ fn partials(bencher: Bencher) {
     let partials = partial_digests_with(DEFAULT_DIGEST_K, 64, ROWS_PER_PARTIAL)
         .into_iter()
         .map(|mut digest| {
-            black_box(digest.rank(0.0));
+            black_box(digest.quantile(0.5));
             digest
         })
         .collect::<Vec<_>>();
@@ -107,7 +107,7 @@ fn partials_from_iter(bencher: Bencher) {
     let partials = partial_digests_with(DEFAULT_DIGEST_K, 64, ROWS_PER_PARTIAL)
         .into_iter()
         .map(|mut digest| {
-            black_box(digest.rank(0.0));
+            black_box(digest.quantile(0.5));
             digest
         })
         .collect::<Vec<_>>();
@@ -116,6 +116,20 @@ fn partials_from_iter(bencher: Bencher) {
         .counter(ItemsCount::new(64 * ROWS_PER_PARTIAL))
         // Construct fresh owned inputs outside the measurement, as a real caller transfers
         // ownership rather than cloning solely for `FromIterator`.
+        .with_inputs(|| partials.clone())
+        .bench_local_values(|partials| black_box(partials).into_iter().collect::<TDigestMut>());
+}
+
+#[divan::bench]
+fn uncompressed_partials_from_iter(bencher: Bencher) {
+    let values = values(64 * ROWS_PER_PARTIAL);
+    let partials = values
+        .chunks_exact(ROWS_PER_PARTIAL)
+        .map(build_mut_digest)
+        .collect::<Vec<_>>();
+
+    bencher
+        .counter(ItemsCount::new(values.len()))
         .with_inputs(|| partials.clone())
         .bench_local_values(|partials| black_box(partials).into_iter().collect::<TDigestMut>());
 }

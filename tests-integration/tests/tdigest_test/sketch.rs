@@ -301,8 +301,8 @@ fn test_from_iter_uses_one_result_with_the_smallest_nonempty_k() {
         first.update(value as f64);
         second.update((value + 1_000) as f64);
     }
-    let _ = first.rank(0.0);
-    let _ = second.rank(0.0);
+    let _ = first.quantile(0.5);
+    let _ = second.quantile(0.5);
 
     let mut merged = [first, empty, second].into_iter().collect::<TDigestMut>();
 
