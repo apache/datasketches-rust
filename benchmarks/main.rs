@@ -20,6 +20,7 @@ use divan::AllocProfiler;
 #[global_allocator]
 static ALLOC: AllocProfiler = AllocProfiler::system();
 
+mod bloom;
 mod cpc;
 mod kll;
 mod req;

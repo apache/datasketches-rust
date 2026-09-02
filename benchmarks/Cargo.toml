@@ -23,7 +23,13 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dev-dependencies]
-datasketches = { workspace = true, features = ["cpc", "kll", "req", "tdigest"] }
+datasketches = { workspace = true, features = [
+  "bloom",
+  "cpc",
+  "kll",
+  "req",
+  "tdigest",
+] }
 divan = { workspace = true }
 rand = { workspace = true }
 

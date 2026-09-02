@@ -133,6 +133,7 @@ pub fn from_u32(v: u32) -> NaturalExtend<u32> {
 macro_rules! impl_natural_extend {
     ($t:ty, |$v:ident| $extended:expr) => {
         impl HashStrategy<$t> for NaturalExtendStrategy {
+            #[inline(always)]
             fn hash<H: Hasher>(value: &$t, state: &mut H) {
                 let $v = *value;
                 let extended = $extended;

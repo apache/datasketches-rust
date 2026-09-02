@@ -16,6 +16,10 @@ All significant changes to this project will be documented in this file.
 
 * Improve truncated-input diagnostics across sketch deserializers.
 
+### Performance improvements
+
+* Reduce MurmurHash3 and XXHash64 overhead in hash-backed sketch updates. Local end-to-end benchmarks show roughly 20–32% faster `u64` updates for Bloom and CPC sketches and roughly 21% faster Bloom updates for 32-byte inputs.
+
 ### Bug fixes
 
 * T-Digest deserialization now rejects unknown or conflicting flags, reversed extrema, out-of-range values, unsorted centroids, and non-empty images without stored values.
