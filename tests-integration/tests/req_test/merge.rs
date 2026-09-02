@@ -17,9 +17,9 @@
 
 //! Merge behavior for ReqSketch.
 
+use datasketches::common::SearchCriteria;
 use datasketches::req::RankAccuracy;
 use datasketches::req::ReqSketch;
-use datasketches::req::SearchCriteria;
 use googletest::assert_that;
 use googletest::prelude::anything;
 use googletest::prelude::err;

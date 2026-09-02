@@ -15,16 +15,29 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use divan::AllocProfiler;
+use datasketches::kll::KllFloat;
+use datasketches::kll::KllSketch;
+use rand::RngExt;
+use rand::SeedableRng;
+use rand::rngs::StdRng;
 
-#[global_allocator]
-static ALLOC: AllocProfiler = AllocProfiler::system();
+pub(super) const DEFAULT_K: u16 = 200;
 
-mod cpc;
-mod kll;
-mod req;
-mod tdigest;
+pub(super) fn values(len: usize) -> Vec<f64> {
+    let mut rng = StdRng::seed_from_u64(42);
+    (0..len)
+        .map(|_| rng.random_range(0.0..1_000_000.0))
+        .collect()
+}
 
-fn main() {
-    divan::main();
+pub(super) fn build_sketch(values: &[f64]) -> KllSketch<KllFloat<f64>> {
+    let mut sketch = KllSketch::new(DEFAULT_K).unwrap();
+    for &value in values {
+        sketch.update(KllFloat::<f64>::new(value).unwrap());
+    }
+    sketch
+}
+
+pub(super) fn prepared_sketch() -> KllSketch<KllFloat<f64>> {
+    build_sketch(&values(100_000))
 }

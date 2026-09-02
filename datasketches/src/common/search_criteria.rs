@@ -15,16 +15,11 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use divan::AllocProfiler;
-
-#[global_allocator]
-static ALLOC: AllocProfiler = AllocProfiler::system();
-
-mod cpc;
-mod kll;
-mod req;
-mod tdigest;
-
-fn main() {
-    divan::main();
+/// Selects the rank definition used by rank, quantile, PMF, and CDF queries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SearchCriteria {
+    /// Define rank as the fraction of values less than or equal to the boundary.
+    Inclusive,
+    /// Define rank as the fraction of values strictly less than the boundary.
+    Exclusive,
 }

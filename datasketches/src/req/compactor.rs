@@ -52,7 +52,7 @@ pub struct Compactor<T> {
 
     /// Whether this compactor is configured for high rank accuracy
     rank_accuracy: RankAccuracy,
-    /// Raw section size (may be fractional)
+    /// Raw section size (maybe fractional)
     section_size_raw: f32,
     /// Random bit for compaction
     coin: bool,

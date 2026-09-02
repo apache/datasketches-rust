@@ -16,7 +16,7 @@
 // under the License.
 
 use datasketches::common::SearchCriteria;
-use datasketches::req::ReqFloat;
+use datasketches::kll::KllFloat;
 use divan::Bencher;
 use divan::black_box;
 
@@ -25,24 +25,26 @@ use super::support::prepared_sketch;
 #[divan::bench]
 fn rank(bencher: Bencher) {
     let sketch = prepared_sketch();
-    let item = ReqFloat::<f64>::new(500_000.0).unwrap();
-
+    let item = KllFloat::<f64>::new(500_000.0).unwrap();
     bencher.bench_local(|| black_box(&sketch).rank(black_box(&item), SearchCriteria::Inclusive));
 }
 
 #[divan::bench]
 fn quantile(bencher: Bencher) {
     let sketch = prepared_sketch();
-
     bencher.bench_local(|| black_box(&sketch).quantile(black_box(0.5), SearchCriteria::Inclusive));
 }
 
-// Intended pattern for repeated queries: build the view once, query it many
-// times. Contrast against `quantile`, which rebuilds the view on every call.
 #[divan::bench]
 fn sorted_view_quantile(bencher: Bencher) {
-    let sketch = prepared_sketch();
-    let view = sketch.sorted_view();
-
+    let view = prepared_sketch().sorted_view();
     bencher.bench_local(|| black_box(&view).quantile(black_box(0.5), SearchCriteria::Inclusive));
+}
+
+#[divan::bench]
+fn batch_quantiles(bencher: Bencher) {
+    let sketch = prepared_sketch();
+    let ranks = [0.01, 0.1, 0.25, 0.5, 0.75, 0.9, 0.99];
+    bencher
+        .bench_local(|| black_box(&sketch).quantiles(black_box(&ranks), SearchCriteria::Inclusive));
 }

@@ -275,11 +275,12 @@ impl Array8 {
                 "HLL8 zero count must not exceed k and auxiliary count must be zero",
             ));
         }
-        if k > cursor.remaining().len() {
-            return Err(Error::insufficient_data(format!(
-                "HLL8 payload requires {k} bytes, got {}",
-                cursor.remaining().len()
-            )));
+        let available_bytes = cursor.remaining().len();
+        if available_bytes < k {
+            return Err(Error::insufficient_data_of(
+                "HLL8 payload",
+                format_args!("expected {k} bytes, got {available_bytes}"),
+            ));
         }
 
         // Read byte array from offset HLL_BYTE_ARR_START

@@ -739,11 +739,12 @@ impl CompactThetaSketch {
         let required_bytes = num_entries
             .checked_mul(size_of::<u64>())
             .ok_or_else(|| Error::deserial("Theta entry payload length overflows"))?;
-        if required_bytes > cursor.remaining().len() {
-            return Err(Error::insufficient_data(format!(
-                "Theta entries require {required_bytes} bytes, got {}",
-                cursor.remaining().len()
-            )));
+        let available_bytes = cursor.remaining().len();
+        if available_bytes < required_bytes {
+            return Err(Error::insufficient_data_of(
+                "Theta entries",
+                format_args!("expected {required_bytes} bytes, got {available_bytes}"),
+            ));
         }
         let mut entries = Vec::with_capacity(num_entries);
         for _ in 0..num_entries {
@@ -969,11 +970,12 @@ impl CompactThetaSketch {
             .and_then(|bits| bits.checked_add(7))
             .map(|bits| bits / 8)
             .ok_or_else(|| Error::deserial("Theta compressed payload length overflows"))?;
-        if required_bytes > cursor.remaining().len() {
-            return Err(Error::insufficient_data(format!(
-                "Theta compressed entries require {required_bytes} bytes, got {}",
-                cursor.remaining().len()
-            )));
+        let available_bytes = cursor.remaining().len();
+        if available_bytes < required_bytes {
+            return Err(Error::insufficient_data_of(
+                "Theta compressed entries",
+                format_args!("expected {required_bytes} bytes, got {available_bytes}"),
+            ));
         }
 
         // unpack blocks of BLOCK_WIDTH deltas

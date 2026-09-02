@@ -682,8 +682,20 @@ impl TDigestMut {
             return Err(Error::deserial(format!("k must be at least 10, got {k}")));
         }
         let flags = cursor.read_u8().map_err(insufficient_data("flags"))?;
+        let known_flags = FLAGS_IS_EMPTY | FLAGS_IS_SINGLE_VALUE | FLAGS_REVERSE_MERGE;
+        if flags & !known_flags != 0 {
+            return Err(Error::deserial(format!(
+                "malformed data: unknown TDigest flags 0x{:02x}",
+                flags & !known_flags
+            )));
+        }
         let is_empty = (flags & FLAGS_IS_EMPTY) != 0;
         let is_single_value = (flags & FLAGS_IS_SINGLE_VALUE) != 0;
+        if is_empty && is_single_value {
+            return Err(Error::deserial(
+                "malformed data: empty and single-value flags are mutually exclusive",
+            ));
+        }
         let expected_preamble_longs = if is_empty || is_single_value {
             PREAMBLE_LONGS_EMPTY_OR_SINGLE
         } else {
@@ -742,10 +754,7 @@ impl TDigestMut {
                 cursor.read_f64_le().map_err(insufficient_data("max"))?,
             )
         };
-        check_non_nan(min, "min")?;
-        check_non_nan(max, "max")?;
-        check_finite(min, "min")?;
-        check_finite(max, "max")?;
+        check_extrema(min, max, "TDigest")?;
         let (centroid_bytes, buffered_value_bytes) = if is_f32 {
             (size_of::<f32>() + size_of::<u32>(), size_of::<f32>())
         } else {
@@ -760,21 +769,28 @@ impl TDigestMut {
         let required_payload_bytes = centroid_payload_bytes
             .checked_add(buffered_payload_bytes)
             .ok_or_else(|| Error::deserial("TDigest payload size exceeds the supported size"))?;
-        let remaining = cursor.remaining();
-        if remaining.len() < required_payload_bytes {
-            return Err(Error::insufficient_data(format!(
-                "TDigest payload requires {required_payload_bytes} bytes, got {}",
-                remaining.len()
-            )));
-        }
         // Check the whole payload once so fixed-width records can be decoded without per-field I/O.
-        let (centroid_payload, buffered_payload) =
-            remaining[..required_payload_bytes].split_at(centroid_payload_bytes);
+        let available_bytes = cursor.remaining().len();
+        if available_bytes < required_payload_bytes {
+            return Err(Error::insufficient_data_of(
+                "TDigest payload",
+                format_args!("expected {required_payload_bytes} bytes, got {available_bytes}"),
+            ));
+        }
+        let payload = &cursor.remaining()[..required_payload_bytes];
+        let (centroid_payload, buffered_payload) = payload.split_at(centroid_payload_bytes);
         let stored_centroids = num_centroids.checked_add(num_buffered).ok_or_else(|| {
             Error::deserial("num_centroids and num_buffered exceed the supported size")
         })?;
+        if stored_centroids == 0 {
+            return Err(Error::deserial(
+                "malformed data: non-empty TDigest must contain a centroid or buffered value",
+            ));
+        }
         let mut centroids = Vec::with_capacity(stored_centroids);
         let mut compressed_weight = 0u64;
+        let mut previous_mean = min;
+        let mut centroid_means_valid = true;
         for bytes in centroid_payload.chunks_exact(centroid_bytes) {
             let (mean, weight) = if is_f32 {
                 (
@@ -787,25 +803,35 @@ impl TDigestMut {
                     u64::from_le_bytes(bytes[8..].try_into().unwrap()),
                 )
             };
-            check_non_nan(mean, "centroid mean")?;
-            check_finite(mean, "centroid")?;
+            centroid_means_valid &= mean.is_finite() & (mean >= previous_mean) & (mean <= max);
+            previous_mean = mean;
             let weight = check_nonzero(weight, "centroid weight")?;
             compressed_weight = checked_weight_sum(compressed_weight, weight.get())?;
             centroids.push(Centroid { mean, weight });
         }
+        if !centroid_means_valid {
+            return Err(Error::deserial(
+                "malformed data: centroid means must be finite, within extrema, and nondecreasing",
+            ));
+        }
         checked_weight_sum(compressed_weight, num_buffered as u64)?;
+        let mut buffered_values_valid = true;
         for bytes in buffered_payload.chunks_exact(buffered_value_bytes) {
             let value = if is_f32 {
                 f32::from_le_bytes(bytes.try_into().unwrap()) as f64
             } else {
                 f64::from_le_bytes(bytes.try_into().unwrap())
             };
-            check_non_nan(value, "buffered_value mean")?;
-            check_finite(value, "buffered_value mean")?;
+            buffered_values_valid &= value.is_finite() & (value >= min) & (value <= max);
             centroids.push(Centroid {
                 mean: value,
                 weight: DEFAULT_WEIGHT,
             });
+        }
+        if !buffered_values_valid {
+            return Err(Error::deserial(
+                "malformed data: buffered values must be finite and within extrema",
+            ));
         }
         Ok(TDigestMut::make(
             k,
@@ -835,10 +861,7 @@ impl TDigestMut {
                 // compatibility with asBytes()
                 let min = cursor.read_f64_be().map_err(make_error("min"))?;
                 let max = cursor.read_f64_be().map_err(make_error("max"))?;
-                check_non_nan(min, "min in compat double format")?;
-                check_non_nan(max, "max in compat double format")?;
-                check_finite(min, "min in compat double format")?;
-                check_finite(max, "max in compat double format")?;
+                check_extrema(min, max, "compat double TDigest")?;
                 let k = cursor.read_f64_be().map_err(make_error("k"))? as u16;
                 if k < 10 {
                     return Err(Error::deserial(format!(
@@ -847,17 +870,30 @@ impl TDigestMut {
                 }
                 let num_centroids =
                     cursor.read_u32_be().map_err(make_error("num_centroids"))? as usize;
+                if num_centroids == 0 {
+                    return Err(Error::deserial(
+                        "malformed data: compat double TDigest must contain a centroid",
+                    ));
+                }
                 let mut total_weight = 0u64;
                 let mut centroids = Vec::with_capacity(num_centroids);
+                let mut previous_mean = min;
+                let mut centroid_means_valid = true;
                 for _ in 0..num_centroids {
                     let weight = cursor.read_f64_be().map_err(make_error("weight"))?;
                     let mean = cursor.read_f64_be().map_err(make_error("mean"))?;
                     let weight =
                         check_compat_weight(weight, "centroid weight in compat double format")?;
-                    check_non_nan(mean, "centroid mean in compat double format")?;
-                    check_finite(mean, "centroid mean in compat double format")?;
+                    centroid_means_valid &=
+                        mean.is_finite() & (mean >= previous_mean) & (mean <= max);
+                    previous_mean = mean;
                     total_weight = checked_weight_sum(total_weight, weight.get())?;
                     centroids.push(Centroid { mean, weight });
+                }
+                if !centroid_means_valid {
+                    return Err(Error::deserial(
+                        "malformed data: centroid means in compat double format must be finite, within extrema, and nondecreasing",
+                    ));
                 }
                 Ok(TDigestMut::make(
                     k,
@@ -876,10 +912,7 @@ impl TDigestMut {
                 // reference implementation uses doubles for min and max
                 let min = cursor.read_f64_be().map_err(make_error("min"))?;
                 let max = cursor.read_f64_be().map_err(make_error("max"))?;
-                check_non_nan(min, "min in compat float format")?;
-                check_non_nan(max, "max in compat float format")?;
-                check_finite(min, "min in compat float format")?;
-                check_finite(max, "max in compat float format")?;
+                check_extrema(min, max, "compat float TDigest")?;
                 let k = cursor.read_f32_be().map_err(make_error("k"))? as u16;
                 if k < 10 {
                     return Err(Error::deserial(format!(
@@ -891,17 +924,30 @@ impl TDigestMut {
                 cursor.read_u32_be().map_err(make_error("<unused>"))?;
                 let num_centroids =
                     cursor.read_u16_be().map_err(make_error("num_centroids"))? as usize;
+                if num_centroids == 0 {
+                    return Err(Error::deserial(
+                        "malformed data: compat float TDigest must contain a centroid",
+                    ));
+                }
                 let mut total_weight = 0u64;
                 let mut centroids = Vec::with_capacity(num_centroids);
+                let mut previous_mean = min;
+                let mut centroid_means_valid = true;
                 for _ in 0..num_centroids {
                     let weight = cursor.read_f32_be().map_err(make_error("weight"))? as f64;
                     let mean = cursor.read_f32_be().map_err(make_error("mean"))? as f64;
                     let weight =
                         check_compat_weight(weight, "centroid weight in compat float format")?;
-                    check_non_nan(mean, "centroid mean in compat float format")?;
-                    check_finite(mean, "centroid mean in compat float format")?;
+                    centroid_means_valid &=
+                        mean.is_finite() & (mean >= previous_mean) & (mean <= max);
+                    previous_mean = mean;
                     total_weight = checked_weight_sum(total_weight, weight.get())?;
                     centroids.push(Centroid { mean, weight });
+                }
+                if !centroid_means_valid {
+                    return Err(Error::deserial(
+                        "malformed data: centroid means in compat float format must be finite, within extrema, and nondecreasing",
+                    ));
                 }
                 Ok(TDigestMut::make(
                     k,
@@ -1844,6 +1890,21 @@ fn check_finite(value: f64, tag: &'static str) -> Result<(), Error> {
         )));
     }
 
+    Ok(())
+}
+
+#[inline]
+fn check_extrema(min: f64, max: f64, format: &'static str) -> Result<(), Error> {
+    if !min.is_finite() || !max.is_finite() {
+        return Err(Error::deserial(format!(
+            "malformed data: {format} extrema must be finite"
+        )));
+    }
+    if min > max {
+        return Err(Error::deserial(format!(
+            "malformed data: {format} min {min} exceeds max {max}"
+        )));
+    }
     Ok(())
 }
 

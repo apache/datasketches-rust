@@ -39,8 +39,9 @@
 //! * Use `countmin` for point-frequency estimates and `frequencies` for discovering heavy hitters.
 //! * Use `hll` for fast distinct counts, `cpc` for compact serialized distinct counts, or `theta`
 //!   when set operations are required.
-//! * Use `req` or `tdigest` for ranks and quantiles. REQ targets configurable high- or low-rank
-//!   accuracy; T-Digest emphasizes distribution tails.
+//! * Use `kll`, `req`, or `tdigest` for ranks and quantiles. KLL provides strong general-purpose
+//!   rank accuracy, REQ targets configurable high- or low-rank accuracy, and T-Digest emphasizes
+//!   distribution tails.
 //! * Use `tuple` when retained Theta keys need application-defined summaries.
 //!
 //! See each module's documentation for accuracy, memory, serialization, and update examples.
@@ -78,6 +79,8 @@ pub mod cpc;
 pub mod frequencies;
 #[cfg(feature = "hll")]
 pub mod hll;
+#[cfg(feature = "kll")]
+pub mod kll;
 #[cfg(feature = "req")]
 pub mod req;
 #[cfg(feature = "tdigest")]

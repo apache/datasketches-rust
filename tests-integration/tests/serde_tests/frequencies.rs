@@ -85,7 +85,10 @@ fn test_string_deserialize_rejects_length_larger_than_input() {
 
     let error = String::deserialize_value(&mut cursor).unwrap_err();
     assert_eq!(error.kind(), ErrorKind::InvalidData);
-    assert_that!(error.message(), contains_substring("exceeds the remaining"));
+    assert_that!(
+        error.message(),
+        contains_substring("expected 1024 bytes, got 0")
+    );
 }
 
 #[test]

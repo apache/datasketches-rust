@@ -4,9 +4,18 @@ All significant changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Breaking changes
+
+* Move `SearchCriteria` from `req` to `common` and remove its `Default` implementation. Import `datasketches::common::SearchCriteria` and explicitly choose `Inclusive` or `Exclusive` for each query.
+
 ### New features
 
+* Add KLL sketches behind the `kll` feature, with rank, quantile, PMF, and CDF queries, merging, totally ordered custom item types, a `KllFloat` adapter for non-NaN floating-point values, and serialization.
 * Implement `FromIterator<TDigestMut>` for batch construction, and add `TDigestMut::quantiles` and `TDigest::quantiles` for querying several ranks in one centroid scan.
+
+### Improvements
+
+* Improve truncated-input diagnostics across sketch deserializers.
 
 ### Performance improvements
 
@@ -14,6 +23,7 @@ All significant changes to this project will be documented in this file.
 
 ### Bug fixes
 
+* T-Digest deserialization now rejects unknown or conflicting flags, reversed extrema, out-of-range values, unsorted centroids, and non-empty images without stored values.
 * T-Digest merging now uses the smaller `k` when sketches have different compression parameters, preserving the size bound of the coarser input.
 
 ## v0.5.0

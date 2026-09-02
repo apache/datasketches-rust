@@ -18,8 +18,8 @@
 //! Property-based ReqSketch tests.
 
 use datasketches::common::NumStdDev;
+use datasketches::common::SearchCriteria;
 use datasketches::req::ReqSketch;
-use datasketches::req::SearchCriteria;
 use quickcheck::Gen;
 use quickcheck::QuickCheck;
 use quickcheck::TestResult;

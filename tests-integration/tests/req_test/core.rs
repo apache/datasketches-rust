@@ -17,11 +17,11 @@
 
 //! Core ReqSketch construction and update behavior.
 
+use datasketches::common::SearchCriteria;
 use datasketches::error::Error;
 use datasketches::error::ErrorKind;
 use datasketches::req::RankAccuracy;
 use datasketches::req::ReqSketch;
-use datasketches::req::SearchCriteria;
 use googletest::assert_that;
 use googletest::prelude::all;
 use googletest::prelude::anything;
