@@ -716,11 +716,12 @@ impl<S> CompactTupleSketch<S> {
         let required_hash_bytes = num_entries
             .checked_mul(size_of::<u64>())
             .ok_or_else(|| Error::deserial("Tuple entry payload length overflows"))?;
-        if required_hash_bytes > cursor.remaining().len() {
-            return Err(Error::insufficient_data(format!(
-                "Tuple entry hashes require at least {required_hash_bytes} bytes, got {}",
-                cursor.remaining().len()
-            )));
+        let available_bytes = cursor.remaining().len();
+        if available_bytes < required_hash_bytes {
+            return Err(Error::insufficient_data_of(
+                "Tuple entry hashes",
+                format_args!("expected {required_hash_bytes} bytes, got {available_bytes}"),
+            ));
         }
         let mut retained_entries = Vec::with_capacity(num_entries);
         for _ in 0..num_entries {

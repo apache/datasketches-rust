@@ -21,45 +21,40 @@
 //! near-optimal accuracy per retained item. It supports one-pass updates,
 //! approximate quantiles, ranks, PMF, and CDF queries.
 //!
-//! This implementation follows Apache DataSketches semantics (Java KllSketch
-//! / KllPreambleUtil, C++ kll_sketch) and uses the same binary serialization
-//! format as those implementations.
+//! This implementation follows Apache DataSketches semantics and uses the compact binary
+//! serialization format shared by the Java, C++, and Go implementations.
+//!
+//! Items must implement [`Ord`]. Wrap `f32` or `f64` values in [`KllFloat`], which rejects NaN and
+//! provides their ordinary numerical order. Custom ordering should be expressed with a newtype
+//! that implements [`Ord`], keeping the ordering semantics part of the item type.
 //!
 //! # Usage
 //!
 //! ```rust
+//! # use datasketches::common::SearchCriteria;
 //! # use datasketches::kll::KllSketch;
-//! let mut sketch = KllSketch::<f64>::new(200).unwrap();
-//! sketch.update(1.0);
-//! sketch.update(2.0);
-//! let q = sketch.quantile(0.5, true).unwrap();
-//! assert!(q >= 1.0 && q <= 2.0);
+//! let mut sketch = KllSketch::<i64>::new(200).unwrap();
+//! sketch.update(1);
+//! sketch.update(2);
+//! let q = sketch.quantile(0.5, SearchCriteria::Inclusive).unwrap();
+//! assert!((1..=2).contains(&q));
 //! ```
 
-mod helper;
+mod capacity;
 mod serialization;
 mod sketch;
 mod sorted_view;
+mod value;
 
-pub use self::sketch::KllComparator;
-pub use self::sketch::KllItem;
 pub use self::sketch::KllSketch;
-pub use self::sketch::NaturalOrder;
-
-/// KLL sketch specialized for `f64`.
-pub type KllSketchF64<C = NaturalOrder> = KllSketch<f64, C>;
-/// KLL sketch specialized for `f32`.
-pub type KllSketchF32<C = NaturalOrder> = KllSketch<f32, C>;
-/// KLL sketch specialized for `i64`.
-pub type KllSketchI64<C = NaturalOrder> = KllSketch<i64, C>;
-/// KLL sketch specialized for `String`.
-pub type KllSketchString<C = NaturalOrder> = KllSketch<String, C>;
-
+pub use self::sorted_view::SortedView;
+pub use self::value::KllFloat;
+pub use self::value::KllValue;
 /// Default value of parameter k.
-pub const DEFAULT_K: u16 = 200;
+const DEFAULT_K: u16 = 200;
 /// Default value of parameter m.
-pub const DEFAULT_M: u8 = 8;
+const DEFAULT_M: u8 = 8;
 /// Minimum value of parameter k.
-pub const MIN_K: u16 = DEFAULT_M as u16;
+const MIN_K: u16 = DEFAULT_M as u16;
 /// Maximum value of parameter k.
-pub const MAX_K: u16 = u16::MAX;
+const MAX_K: u16 = u16::MAX;

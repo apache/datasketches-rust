@@ -21,9 +21,8 @@ use super::DEFAULT_K;
 use super::DEFAULT_M;
 use super::MAX_K;
 use super::MIN_K;
-use super::helper::compute_total_capacity;
-use super::helper::level_capacity;
-use super::helper::sum_the_sample_weights;
+use super::capacity::level_capacity;
+use super::capacity::total_capacity;
 use super::serialization::DATA_START;
 use super::serialization::DATA_START_SINGLE_ITEM;
 use super::serialization::EMPTY_SIZE_BYTES;
@@ -35,133 +34,61 @@ use super::serialization::PREAMBLE_INTS_FULL;
 use super::serialization::PREAMBLE_INTS_SHORT;
 use super::serialization::SERIAL_VERSION_1;
 use super::serialization::SERIAL_VERSION_2;
+use super::sorted_view::SortedView;
 use super::sorted_view::build_sorted_view;
+use super::value::KllValue;
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
 use crate::codec::assert::ensure_serial_version_is;
 use crate::codec::assert::insufficient_data;
 use crate::codec::family::Family;
+use crate::common::SearchCriteria;
 use crate::error::Error;
-
-/// Trait implemented by item types supported by [`KllSketch`].
-///
-/// Implementations must provide a total ordering via `cmp`.
-/// For floating-point types, ensure `cmp` handles NaN consistently and `is_nan`
-/// returns true for values that should be ignored by updates.
-pub trait KllItem: Clone {
-    /// Compare two items.
-    fn cmp(a: &Self, b: &Self) -> Ordering;
-
-    /// Returns true if the item is NaN.
-    fn is_nan(_value: &Self) -> bool {
-        false
-    }
-}
-
-/// Ordering policy used by a [`KllSketch`].
-///
-/// A sketch and every sketch merged into it must use equivalent ordering policies.
-pub trait KllComparator<T>: Clone {
-    /// Compare two items.
-    fn compare(&self, left: &T, right: &T) -> Ordering;
-}
-
-/// Uses the natural ordering supplied by [`KllItem::cmp`].
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct NaturalOrder;
-
-impl<T: KllItem> KllComparator<T> for NaturalOrder {
-    fn compare(&self, left: &T, right: &T) -> Ordering {
-        T::cmp(left, right)
-    }
-}
-
-trait KllSerde: KllItem {
-    /// Minimum serialized size in bytes for one item.
-    const MIN_SERIALIZED_SIZE: usize;
-
-    /// Serialized size in bytes.
-    fn serialized_size(value: &Self) -> usize;
-
-    /// Serialize a single item into the buffer.
-    fn serialize(value: &Self, bytes: &mut SketchBytes);
-
-    /// Deserialize a single item from the input.
-    fn deserialize(input: &mut SketchSlice<'_>) -> Result<Self, Error>;
-}
 
 /// KLL sketch for estimating quantiles and ranks.
 ///
 /// See the [kll module level documentation](crate::kll) for more.
 #[derive(Debug, Clone, PartialEq)]
-pub struct KllSketch<T, C = NaturalOrder> {
-    comparator: C,
+pub struct KllSketch<T> {
     k: u16,
     m: u8,
     min_k: u16,
     n: u64,
+    num_retained: usize,
+    capacity: usize,
     is_level_zero_sorted: bool,
     levels: Vec<Vec<T>>,
     min_item: Option<T>,
     max_item: Option<T>,
 }
 
-impl<T: KllItem> Default for KllSketch<T> {
+impl<T: Clone + Ord> Default for KllSketch<T> {
     fn default() -> Self {
-        Self::make(
-            NaturalOrder,
-            DEFAULT_K,
-            DEFAULT_K,
-            0,
-            vec![Vec::new()],
-            None,
-            None,
-            false,
-        )
+        Self::make(DEFAULT_K, DEFAULT_K, 0, vec![Vec::new()], None, None, false)
     }
 }
 
-impl<T: KllItem> KllSketch<T> {
+impl<T: Clone + Ord> KllSketch<T> {
     /// Creates a new sketch with the given value of k.
     ///
     /// # Errors
     ///
-    /// Returns an error if `k` is outside [`MIN_K`, `MAX_K`].
+    /// Returns an error if `k` is outside `8..=65535`.
     ///
     /// # Examples
     ///
     /// ```
     /// # use datasketches::kll::KllSketch;
-    /// let sketch = KllSketch::<f64>::new(200).unwrap();
+    /// let sketch = KllSketch::<i64>::new(200).unwrap();
     /// assert_eq!(sketch.k(), 200);
     /// ```
     pub fn new(k: u16) -> Result<Self, Error> {
-        Self::new_with_comparator(k, NaturalOrder)
-    }
-}
-
-impl<T: KllItem, C: KllComparator<T>> KllSketch<T, C> {
-    /// Creates a new sketch with the given value of k and ordering policy.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if `k` is outside [`MIN_K`, `MAX_K`].
-    pub fn new_with_comparator(k: u16, comparator: C) -> Result<Self, Error> {
         if !(MIN_K..=MAX_K).contains(&k) {
             return Err(Error::invalid_argument(format!(
                 "k must be in [{MIN_K}, {MAX_K}], got {k}"
             )));
         }
-        Ok(Self::make(
-            comparator,
-            k,
-            k,
-            0,
-            vec![Vec::new()],
-            None,
-            None,
-            false,
-        ))
+        Ok(Self::make(k, k, 0, vec![Vec::new()], None, None, false))
     }
 
     /// Returns parameter k used to configure this sketch.
@@ -186,7 +113,7 @@ impl<T: KllItem, C: KllComparator<T>> KllSketch<T, C> {
 
     /// Returns the number of retained items.
     pub fn num_retained(&self) -> usize {
-        self.levels.iter().map(|level| level.len()).sum()
+        self.num_retained
     }
 
     /// Returns true if the sketch is in estimation mode.
@@ -206,11 +133,10 @@ impl<T: KllItem, C: KllComparator<T>> KllSketch<T, C> {
 
     /// Updates the sketch with a new item.
     ///
-    /// NaN values are ignored for floating-point types.
+    /// # Panics
+    ///
+    /// Panics if the stream weight would exceed [`u64::MAX`].
     pub fn update(&mut self, item: T) {
-        if T::is_nan(&item) {
-            return;
-        }
         self.update_min_max(&item);
         self.internal_update(item);
     }
@@ -219,6 +145,8 @@ impl<T: KllItem, C: KllComparator<T>> KllSketch<T, C> {
     pub fn reset(&mut self) {
         self.min_k = self.k;
         self.n = 0;
+        self.num_retained = 0;
+        self.capacity = total_capacity(self.k, self.m, 1) as usize;
         self.is_level_zero_sorted = false;
         self.levels.clear();
         self.levels.push(Vec::new());
@@ -228,23 +156,31 @@ impl<T: KllItem, C: KllComparator<T>> KllSketch<T, C> {
 
     /// Merges another sketch into this one.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if the sketches have incompatible parameters.
-    pub fn merge(&mut self, other: &KllSketch<T, C>) {
+    /// Returns an error if the combined stream weight exceeds [`u64::MAX`].
+    pub fn merge(&mut self, other: &KllSketch<T>) -> Result<(), Error> {
         if other.is_empty() {
-            return;
+            return Ok(());
         }
 
-        assert_eq!(
-            self.m, other.m,
-            "incompatible m values: {} and {}",
-            self.m, other.m
-        );
+        if self.m != other.m {
+            return Err(Error::invalid_argument(format!(
+                "cannot merge sketches with different m values: {} and {}",
+                self.m, other.m
+            )));
+        }
+        let final_n = self.n.checked_add(other.n).ok_or_else(|| {
+            Error::invalid_argument(format!(
+                "combined stream weight exceeds {}: left {}, right {}",
+                u64::MAX,
+                self.n,
+                other.n
+            ))
+        })?;
 
         self.update_min_max_from_other(other);
 
-        let final_n = self.n + other.n;
         for item in &other.levels[0] {
             self.internal_update(item.clone());
         }
@@ -259,56 +195,107 @@ impl<T: KllItem, C: KllComparator<T>> KllSketch<T, C> {
         }
 
         debug_assert_eq!(self.total_weight(), self.n, "total weight does not match n");
+        Ok(())
     }
 
     /// Returns the normalized rank of the given item.
-    pub fn rank(&self, item: &T, inclusive: bool) -> Option<f64> {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the sketch is empty.
+    pub fn rank(&self, item: &T, criteria: SearchCriteria) -> Result<f64, Error> {
         if self.is_empty() {
-            return None;
+            return Err(Error::invalid_argument("cannot query an empty sketch"));
         }
-        let view = build_sorted_view(&self.levels, self.comparator.clone());
-        Some(view.rank(item, inclusive))
+        let inclusive = criteria == SearchCriteria::Inclusive;
+        let mut weight = 0u64;
+        for (level, items) in self.levels.iter().enumerate() {
+            let count = items
+                .iter()
+                .filter(|retained| match (*retained).cmp(item) {
+                    Ordering::Less => true,
+                    Ordering::Equal => inclusive,
+                    Ordering::Greater => false,
+                })
+                .count() as u64;
+            weight += count << level;
+        }
+        Ok(weight as f64 / self.n as f64)
     }
 
     /// Returns the quantile for the given normalized rank.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if rank is not in [0.0, 1.0].
-    pub fn quantile(&self, rank: f64, inclusive: bool) -> Option<T> {
+    /// Returns an error if the sketch is empty or `rank` is outside `[0.0, 1.0]`.
+    pub fn quantile(&self, rank: f64, criteria: SearchCriteria) -> Result<T, Error> {
         if self.is_empty() {
-            return None;
+            return Err(Error::invalid_argument("cannot query an empty sketch"));
         }
-        assert!((0.0..=1.0).contains(&rank), "rank must be in [0.0, 1.0]");
-        let view = build_sorted_view(&self.levels, self.comparator.clone());
-        Some(view.quantile(rank, inclusive))
+        if !(0.0..=1.0).contains(&rank) {
+            return Err(Error::invalid_argument(format!(
+                "rank must be in [0.0, 1.0], got {rank}"
+            )));
+        }
+        self.sorted_view().quantile(rank, criteria)
+    }
+
+    /// Returns approximate quantiles for the given normalized ranks.
+    ///
+    /// The sorted view is built once for the whole batch.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the sketch is empty or any rank is outside `[0.0, 1.0]`.
+    pub fn quantiles(&self, ranks: &[f64], criteria: SearchCriteria) -> Result<Vec<T>, Error> {
+        self.sorted_view().quantiles(ranks, criteria)
     }
 
     /// Returns the approximate CDF for the given split points.
-    pub fn cdf(&self, split_points: &[T], inclusive: bool) -> Option<Vec<f64>> {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the sketch is empty or the split points are not unique and strictly
+    /// increasing.
+    pub fn cdf(&self, split_points: &[T], criteria: SearchCriteria) -> Result<Vec<f64>, Error> {
         if self.is_empty() {
-            return None;
+            return Err(Error::invalid_argument("cannot query an empty sketch"));
         }
-        let view = build_sorted_view(&self.levels, self.comparator.clone());
-        Some(view.cdf(split_points, inclusive))
+        self.sorted_view().cdf(split_points, criteria)
     }
 
     /// Returns the approximate PMF for the given split points.
-    pub fn pmf(&self, split_points: &[T], inclusive: bool) -> Option<Vec<f64>> {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the sketch is empty or the split points are not unique and strictly
+    /// increasing.
+    pub fn pmf(&self, split_points: &[T], criteria: SearchCriteria) -> Result<Vec<f64>, Error> {
         if self.is_empty() {
-            return None;
+            return Err(Error::invalid_argument("cannot query an empty sketch"));
         }
-        let view = build_sorted_view(&self.levels, self.comparator.clone());
-        Some(view.pmf(split_points, inclusive))
+        self.sorted_view().pmf(split_points, criteria)
     }
 
-    /// Returns normalized rank error for the configured k.
-    pub fn normalized_rank_error(&self, pmf: bool) -> f64 {
-        normalized_rank_error(self.min_k, pmf)
+    /// Returns an owned, sorted snapshot of the current sketch state.
+    ///
+    /// The view can be reused for repeated queries while this sketch continues to receive updates.
+    pub fn sorted_view(&self) -> SortedView<T> {
+        build_sorted_view(&self.levels, self.is_level_zero_sorted)
+    }
+
+    /// Returns the normalized single-sided rank error for the configured k.
+    pub fn normalized_rank_error(&self) -> f64 {
+        normalized_rank_error(self.min_k, false)
+    }
+
+    /// Returns the normalized double-sided rank error for PMF queries for the configured k.
+    pub fn normalized_pmf_error(&self) -> f64 {
+        normalized_rank_error(self.min_k, true)
     }
 }
 
-fn serialized_size<T: KllSerde, C: KllComparator<T>>(sketch: &KllSketch<T, C>) -> usize {
+fn serialized_size<T: KllValue + Ord>(sketch: &KllSketch<T>) -> usize {
     if sketch.is_empty() {
         return EMPTY_SIZE_BYTES;
     }
@@ -332,7 +319,7 @@ fn serialized_size<T: KllSerde, C: KllComparator<T>>(sketch: &KllSketch<T, C>) -
     size
 }
 
-fn serialize_with_serde<T: KllSerde, C: KllComparator<T>>(sketch: &KllSketch<T, C>) -> Vec<u8> {
+fn serialize_with_serde<T: KllValue + Ord>(sketch: &KllSketch<T>) -> Vec<u8> {
     let size = serialized_size(sketch);
     let mut bytes = SketchBytes::with_capacity(size);
 
@@ -404,10 +391,7 @@ fn serialize_with_serde<T: KllSerde, C: KllComparator<T>>(sketch: &KllSketch<T, 
     bytes.into_bytes()
 }
 
-fn deserialize_with_serde<T: KllSerde, C: KllComparator<T>>(
-    bytes: &[u8],
-    comparator: C,
-) -> Result<KllSketch<T, C>, Error> {
+fn deserialize_with_serde<T: KllValue + Ord>(bytes: &[u8]) -> Result<KllSketch<T>, Error> {
     let mut cursor = SketchSlice::new(bytes);
 
     let preamble_ints = cursor
@@ -457,15 +441,19 @@ fn deserialize_with_serde<T: KllSerde, C: KllComparator<T>>(
     ensure_serial_version_is(expected_version, serial_version)?;
 
     if !(MIN_K..=MAX_K).contains(&k) {
-        return Err(Error::deserial(format!("k out of range: {k}")));
+        return Err(Error::deserial(format!(
+            "k must be in [{MIN_K}, {MAX_K}], got {k}"
+        )));
     }
 
     if is_empty {
-        if !cursor.remaining().is_empty() {
-            return Err(Error::deserial("unexpected trailing data"));
+        let trailing_bytes = cursor.remaining().len();
+        if trailing_bytes != 0 {
+            return Err(Error::deserial(format!(
+                "expected end of KLL image, found {trailing_bytes} trailing bytes"
+            )));
         }
         return Ok(KllSketch::make(
-            comparator,
             k,
             k,
             0,
@@ -486,17 +474,14 @@ fn deserialize_with_serde<T: KllSerde, C: KllComparator<T>>(
         (n, min_k, num_levels as usize)
     };
 
-    if num_levels == 0 {
-        return Err(Error::deserial("num_levels must be > 0"));
-    }
-    if num_levels > MAX_NUM_LEVELS {
+    if !(1..=MAX_NUM_LEVELS).contains(&num_levels) {
         return Err(Error::deserial(format!(
-            "num_levels must be at most {MAX_NUM_LEVELS}, got {num_levels}"
+            "num_levels must be in [1, {MAX_NUM_LEVELS}], got {num_levels}"
         )));
     }
     if !is_single_item && n < 2 {
         return Err(Error::deserial(format!(
-            "full sketch must have n >= 2, got {n}"
+            "full sketch n must be at least 2, got {n}"
         )));
     }
     if min_k < MIN_K || min_k > k {
@@ -505,7 +490,7 @@ fn deserialize_with_serde<T: KllSerde, C: KllComparator<T>>(
         )));
     }
 
-    let capacity = compute_total_capacity(k, m, num_levels);
+    let capacity = total_capacity(k, m, num_levels);
     let mut level_offsets = Vec::with_capacity(num_levels + 1);
     if !is_single_item {
         for _ in 0..num_levels {
@@ -517,47 +502,67 @@ fn deserialize_with_serde<T: KllSerde, C: KllComparator<T>>(
     }
     level_offsets.push(capacity);
 
-    if level_offsets.is_empty() {
-        return Err(Error::deserial("levels array is empty"));
-    }
     if level_offsets[0] > capacity {
-        return Err(Error::deserial("levels[0] exceeds capacity"));
+        return Err(Error::deserial(format!(
+            "first level offset must not exceed capacity {capacity}, got {}",
+            level_offsets[0]
+        )));
     }
-    for window in level_offsets.windows(2) {
+    for (index, window) in level_offsets.windows(2).enumerate() {
         if window[1] < window[0] {
-            return Err(Error::deserial("levels array must be non-decreasing"));
+            return Err(Error::deserial(format!(
+                "level offsets must be nondecreasing: offset[{index}] is {}, offset[{}] is {}",
+                window[0],
+                index + 1,
+                window[1]
+            )));
         }
-    }
-    let last = *level_offsets.last().unwrap();
-    if last != capacity {
-        return Err(Error::deserial("levels last offset must equal capacity"));
     }
 
     let min_item = if is_single_item {
         None
     } else {
-        Some(T::deserialize(&mut cursor)?)
+        Some(
+            T::deserialize(&mut cursor)
+                .map_err(|error| error.with_context("KLL item", "minimum"))?,
+        )
     };
     let max_item = if is_single_item {
         None
     } else {
-        Some(T::deserialize(&mut cursor)?)
+        Some(
+            T::deserialize(&mut cursor)
+                .map_err(|error| error.with_context("KLL item", "maximum"))?,
+        )
     };
 
     let num_retained = (level_offsets[num_levels] - level_offsets[0]) as usize;
     let min_item_bytes = num_retained
         .checked_mul(T::MIN_SERIALIZED_SIZE)
-        .ok_or_else(|| Error::deserial("retained item size overflow"))?;
-    if cursor.remaining().len() < min_item_bytes {
-        return Err(Error::insufficient_data("items"));
+        .ok_or_else(|| {
+            Error::deserial(format!(
+                "minimum serialized size overflows usize: {num_retained} retained items, {} bytes per item",
+                T::MIN_SERIALIZED_SIZE
+            ))
+        })?;
+    let available_item_bytes = cursor.remaining().len();
+    if available_item_bytes < min_item_bytes {
+        return Err(Error::insufficient_data_of(
+            "KLL item payload",
+            format_args!("expected {min_item_bytes} bytes, got {available_item_bytes}"),
+        ));
     }
 
     let mut levels = Vec::with_capacity(num_levels);
     for level in 0..num_levels {
         let size = (level_offsets[level + 1] - level_offsets[level]) as usize;
         let mut items = Vec::with_capacity(size);
-        for _ in 0..size {
-            items.push(T::deserialize(&mut cursor)?);
+        for index in 0..size {
+            items.push(T::deserialize(&mut cursor).map_err(|error| {
+                error
+                    .with_context("KLL level", level)
+                    .with_context("item index", index)
+            })?);
         }
         levels.push(items);
     }
@@ -566,7 +571,6 @@ fn deserialize_with_serde<T: KllSerde, C: KllComparator<T>>(
     }
 
     let mut sketch = KllSketch::make(
-        comparator,
         k,
         min_k,
         n,
@@ -584,92 +588,35 @@ fn deserialize_with_serde<T: KllSerde, C: KllComparator<T>>(
     }
 
     sketch.validate_deserialized_state()?;
-    if !cursor.remaining().is_empty() {
-        return Err(Error::deserial("unexpected trailing data"));
+    let trailing_bytes = cursor.remaining().len();
+    if trailing_bytes != 0 {
+        return Err(Error::deserial(format!(
+            "expected end of KLL image, found {trailing_bytes} trailing bytes"
+        )));
     }
 
     Ok(sketch)
 }
 
-impl<C: KllComparator<f32>> KllSketch<f32, C> {
+impl<T: KllValue + Ord> KllSketch<T> {
     /// Serializes the sketch to bytes.
     pub fn serialize(&self) -> Vec<u8> {
         serialize_with_serde(self)
     }
 
-    /// Deserializes a sketch using the supplied ordering policy.
-    pub fn deserialize_with_comparator(bytes: &[u8], comparator: C) -> Result<Self, Error> {
-        deserialize_with_serde(bytes, comparator)
-    }
-}
-
-impl KllSketch<f32> {
     /// Deserializes a sketch from bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidData` if the image is truncated, malformed, or contains values that are not
+    /// totally ordered.
     pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
-        deserialize_with_serde(bytes, NaturalOrder)
+        deserialize_with_serde(bytes)
     }
 }
 
-impl<C: KllComparator<f64>> KllSketch<f64, C> {
-    /// Serializes the sketch to bytes.
-    pub fn serialize(&self) -> Vec<u8> {
-        serialize_with_serde(self)
-    }
-
-    /// Deserializes a sketch using the supplied ordering policy.
-    pub fn deserialize_with_comparator(bytes: &[u8], comparator: C) -> Result<Self, Error> {
-        deserialize_with_serde(bytes, comparator)
-    }
-}
-
-impl KllSketch<f64> {
-    /// Deserializes a sketch from bytes.
-    pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
-        deserialize_with_serde(bytes, NaturalOrder)
-    }
-}
-
-impl<C: KllComparator<i64>> KllSketch<i64, C> {
-    /// Serializes the sketch to bytes.
-    pub fn serialize(&self) -> Vec<u8> {
-        serialize_with_serde(self)
-    }
-
-    /// Deserializes a sketch using the supplied ordering policy.
-    pub fn deserialize_with_comparator(bytes: &[u8], comparator: C) -> Result<Self, Error> {
-        deserialize_with_serde(bytes, comparator)
-    }
-}
-
-impl KllSketch<i64> {
-    /// Deserializes a sketch from bytes.
-    pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
-        deserialize_with_serde(bytes, NaturalOrder)
-    }
-}
-
-impl<C: KllComparator<String>> KllSketch<String, C> {
-    /// Serializes the sketch to bytes.
-    pub fn serialize(&self) -> Vec<u8> {
-        serialize_with_serde(self)
-    }
-
-    /// Deserializes a sketch using the supplied ordering policy.
-    pub fn deserialize_with_comparator(bytes: &[u8], comparator: C) -> Result<Self, Error> {
-        deserialize_with_serde(bytes, comparator)
-    }
-}
-
-impl KllSketch<String> {
-    /// Deserializes a sketch from bytes.
-    pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
-        deserialize_with_serde(bytes, NaturalOrder)
-    }
-}
-
-impl<T: KllItem, C: KllComparator<T>> KllSketch<T, C> {
+impl<T: Clone + Ord> KllSketch<T> {
     fn make(
-        comparator: C,
         k: u16,
         min_k: u16,
         n: u64,
@@ -678,12 +625,15 @@ impl<T: KllItem, C: KllComparator<T>> KllSketch<T, C> {
         max_item: Option<T>,
         is_level_zero_sorted: bool,
     ) -> Self {
+        let num_retained = levels.iter().map(Vec::len).sum();
+        let capacity = total_capacity(k, DEFAULT_M, levels.len()) as usize;
         Self {
-            comparator,
             k,
             m: DEFAULT_M,
             min_k,
             n,
+            num_retained,
+            capacity,
             is_level_zero_sorted,
             levels,
             min_item,
@@ -691,14 +641,13 @@ impl<T: KllItem, C: KllComparator<T>> KllSketch<T, C> {
         }
     }
 
-    fn capacity(&self) -> usize {
-        compute_total_capacity(self.k, self.m, self.levels.len()) as usize
-    }
-
     fn level_offsets(&self) -> Vec<u32> {
-        let capacity = self.capacity() as u32;
+        let capacity = self.capacity as u32;
         let retained = self.num_retained() as u32;
-        assert!(capacity >= retained, "capacity must be >= retained");
+        assert!(
+            capacity >= retained,
+            "KLL retained item count must not exceed capacity: retained {retained}, capacity {capacity}"
+        );
 
         let mut offsets = Vec::with_capacity(self.levels.len() + 1);
         let mut offset = capacity - retained;
@@ -717,11 +666,11 @@ impl<T: KllItem, C: KllComparator<T>> KllSketch<T, C> {
                 self.max_item = Some(item.clone());
             }
             Some(min) => {
-                if self.comparator.compare(item, min) == Ordering::Less {
+                if item.cmp(min) == Ordering::Less {
                     self.min_item = Some(item.clone());
                 }
                 if let Some(max) = &self.max_item {
-                    if self.comparator.compare(max, item) == Ordering::Less {
+                    if max.cmp(item) == Ordering::Less {
                         self.max_item = Some(item.clone());
                     }
                 }
@@ -729,7 +678,7 @@ impl<T: KllItem, C: KllComparator<T>> KllSketch<T, C> {
         }
     }
 
-    fn update_min_max_from_other(&mut self, other: &KllSketch<T, C>) {
+    fn update_min_max_from_other(&mut self, other: &KllSketch<T>) {
         match (&self.min_item, &self.max_item) {
             (None, None) => {
                 self.min_item = other.min_item.clone();
@@ -737,12 +686,12 @@ impl<T: KllItem, C: KllComparator<T>> KllSketch<T, C> {
             }
             (Some(min), Some(max)) => {
                 if let Some(other_min) = &other.min_item {
-                    if self.comparator.compare(other_min, min) == Ordering::Less {
+                    if other_min.cmp(min) == Ordering::Less {
                         self.min_item = Some(other_min.clone());
                     }
                 }
                 if let Some(other_max) = &other.max_item {
-                    if self.comparator.compare(max, other_max) == Ordering::Less {
+                    if max.cmp(other_max) == Ordering::Less {
                         self.max_item = Some(other_max.clone());
                     }
                 }
@@ -755,10 +704,17 @@ impl<T: KllItem, C: KllComparator<T>> KllSketch<T, C> {
     }
 
     fn internal_update(&mut self, item: T) {
-        if self.num_retained() >= self.capacity() {
+        if self.num_retained >= self.capacity {
             self.compress_while_updating();
         }
-        self.n += 1;
+        self.n = self.n.checked_add(1).unwrap_or_else(|| {
+            panic!(
+                "cannot update KLL sketch: stream weight is {}, maximum is {}",
+                self.n,
+                u64::MAX
+            )
+        });
+        self.num_retained += 1;
         self.is_level_zero_sorted = false;
         self.levels[0].push(item);
     }
@@ -769,29 +725,20 @@ impl<T: KllItem, C: KllComparator<T>> KllSketch<T, C> {
             self.levels.push(Vec::new());
         }
 
-        let mut current = std::mem::take(&mut self.levels[level]);
+        let current = std::mem::take(&mut self.levels[level]);
         let mut above = std::mem::take(&mut self.levels[level + 1]);
-
-        let odd = current.len() % 2 == 1;
-        let mut leftover = None;
-        if odd {
-            leftover = Some(take_leftover(
-                &mut current,
-                level,
-                self.is_level_zero_sorted,
-            ));
-        }
-
-        if level == 0 && !self.is_level_zero_sorted {
-            current.sort_by(|left, right| self.comparator.compare(left, right));
-        }
-
         let use_up = above.is_empty();
-        let promoted = downsample(current, rand::random::<bool>(), use_up);
+        let (leftover, promoted) = compact_level(
+            current,
+            level,
+            self.is_level_zero_sorted,
+            rand::random::<bool>(),
+            use_up,
+        );
         if above.is_empty() {
             above = promoted;
         } else {
-            above = merge_sorted_vec(promoted, above, &self.comparator);
+            above = merge_sorted_vec(promoted, above);
         }
         self.levels[level + 1] = above;
 
@@ -800,6 +747,7 @@ impl<T: KllItem, C: KllComparator<T>> KllSketch<T, C> {
             new_level.push(item);
         }
         self.levels[level] = new_level;
+        self.refresh_capacity_state();
     }
 
     fn find_level_to_compact(&self) -> usize {
@@ -811,10 +759,13 @@ impl<T: KllItem, C: KllComparator<T>> KllSketch<T, C> {
                 return level;
             }
         }
-        panic!("no level to compact");
+        panic!(
+            "KLL sketch has {}/{} retained items but no level reached its compaction capacity (k {}, m {}, levels {num_levels})",
+            self.num_retained, self.capacity, self.k, self.m
+        );
     }
 
-    fn merge_higher_levels(&mut self, other: &KllSketch<T, C>) {
+    fn merge_higher_levels(&mut self, other: &KllSketch<T>) {
         let provisional_levels = self.levels.len().max(other.levels.len());
         let mut self_levels = std::mem::take(&mut self.levels);
         let mut work_levels = vec![Vec::new(); provisional_levels];
@@ -833,22 +784,25 @@ impl<T: KllItem, C: KllComparator<T>> KllSketch<T, C> {
             } else if right.is_empty() {
                 left
             } else {
-                merge_sorted_vec(left, right, &self.comparator)
+                merge_sorted_vec(left, right)
             };
         }
 
-        self.levels = general_compress(
-            work_levels,
-            self.k,
-            self.m,
-            self.is_level_zero_sorted,
-            &self.comparator,
-        );
+        self.levels = general_compress(work_levels, self.k, self.m, self.is_level_zero_sorted);
+        self.refresh_capacity_state();
+    }
+
+    fn refresh_capacity_state(&mut self) {
+        self.num_retained = self.levels.iter().map(Vec::len).sum();
+        self.capacity = total_capacity(self.k, self.m, self.levels.len()) as usize;
     }
 
     fn total_weight(&self) -> u64 {
-        let sizes: Vec<usize> = self.levels.iter().map(|level| level.len()).collect();
-        sum_the_sample_weights(&sizes)
+        self.levels
+            .iter()
+            .enumerate()
+            .map(|(level, items)| (items.len() as u64) << level)
+            .sum()
     }
 
     fn validate_deserialized_state(&self) -> Result<(), Error> {
@@ -861,10 +815,7 @@ impl<T: KllItem, C: KllComparator<T>> KllSketch<T, C> {
             .as_ref()
             .ok_or_else(|| Error::deserial("non-empty sketch must have a maximum item"))?;
 
-        if T::is_nan(min_item) || T::is_nan(max_item) {
-            return Err(Error::deserial("minimum and maximum items must not be NaN"));
-        }
-        if self.comparator.compare(min_item, max_item) == Ordering::Greater {
+        if min_item.cmp(max_item) == Ordering::Greater {
             return Err(Error::deserial(
                 "minimum item must not be greater than maximum item",
             ));
@@ -875,39 +826,48 @@ impl<T: KllItem, C: KllComparator<T>> KllSketch<T, C> {
         for (level_index, level) in self.levels.iter().enumerate() {
             let level_total = level_weight
                 .checked_mul(level.len() as u64)
-                .ok_or_else(|| Error::deserial("sample weight overflow"))?;
+                .ok_or_else(|| {
+                    Error::deserial(format!(
+                        "sample weight overflows u64 at level {level_index}: weight {level_weight}, retained items {}",
+                        level.len()
+                    ))
+                })?;
             total_weight = total_weight
                 .checked_add(level_total)
-                .ok_or_else(|| Error::deserial("total sample weight overflow"))?;
+                .ok_or_else(|| {
+                    Error::deserial(format!(
+                        "total sample weight overflows u64 at level {level_index}: accumulated {total_weight}, level contribution {level_total}"
+                    ))
+                })?;
 
             let must_be_sorted = level_index > 0 || self.is_level_zero_sorted;
-            if must_be_sorted
-                && level
-                    .windows(2)
-                    .any(|pair| self.comparator.compare(&pair[0], &pair[1]) == Ordering::Greater)
-            {
-                return Err(Error::deserial(format!(
-                    "level {level_index} must be sorted"
-                )));
+            if must_be_sorted {
+                for (item_index, pair) in level.windows(2).enumerate() {
+                    if pair[0].cmp(&pair[1]) == Ordering::Greater {
+                        return Err(Error::deserial(format!(
+                            "level {level_index} must be sorted: item at index {item_index} is greater than item at index {}",
+                            item_index + 1
+                        )));
+                    }
+                }
             }
 
-            for item in level {
-                if T::is_nan(item) {
-                    return Err(Error::deserial("retained items must not be NaN"));
-                }
-                if self.comparator.compare(item, min_item) == Ordering::Less
-                    || self.comparator.compare(item, max_item) == Ordering::Greater
-                {
-                    return Err(Error::deserial(
-                        "retained items must be within the minimum and maximum",
-                    ));
+            for (item_index, item) in level.iter().enumerate() {
+                if item.cmp(min_item) == Ordering::Less || item.cmp(max_item) == Ordering::Greater {
+                    return Err(Error::deserial(format!(
+                        "retained item at level {level_index}, index {item_index} is outside the serialized minimum and maximum"
+                    )));
                 }
             }
 
             if level_index + 1 < self.levels.len() {
                 level_weight = level_weight
                     .checked_mul(2)
-                    .ok_or_else(|| Error::deserial("level weight overflow"))?;
+                    .ok_or_else(|| {
+                        Error::deserial(format!(
+                            "level weight overflows u64 after level {level_index}: current weight {level_weight}"
+                        ))
+                    })?;
             }
         }
 
@@ -931,9 +891,40 @@ fn normalized_rank_error(k: u16, pmf: bool) -> f64 {
     }
 }
 
-fn downsample<T: KllItem>(items: Vec<T>, offset: bool, use_up: bool) -> Vec<T> {
+fn compact_level<T: Ord>(
+    mut items: Vec<T>,
+    level: usize,
+    is_level_zero_sorted: bool,
+    offset: bool,
+    use_up: bool,
+) -> (Option<T>, Vec<T>) {
+    let odd = items.len() % 2 == 1;
+    let level_zero_needs_sorting = level == 0 && !is_level_zero_sorted;
+    let leftover = if odd && level_zero_needs_sorting {
+        items.pop()
+    } else {
+        None
+    };
+    if level_zero_needs_sorting {
+        items.sort_unstable();
+    }
+
+    let mut items = items.into_iter();
+    let leftover = if odd && !level_zero_needs_sorting {
+        items.next()
+    } else {
+        leftover
+    };
+    let promoted = downsample(items, offset, use_up);
+    (leftover, promoted)
+}
+
+fn downsample<T, I: ExactSizeIterator<Item = T>>(items: I, offset: bool, use_up: bool) -> Vec<T> {
     let len = items.len();
-    debug_assert!(len % 2 == 0, "length must be even");
+    debug_assert!(
+        len % 2 == 0,
+        "KLL compaction requires an even item count, got {len}"
+    );
     let offset = usize::from(offset);
     let parity = if use_up {
         (len - 1 - offset) % 2
@@ -942,31 +933,18 @@ fn downsample<T: KllItem>(items: Vec<T>, offset: bool, use_up: bool) -> Vec<T> {
     };
 
     items
-        .into_iter()
         .enumerate()
         .filter_map(|(idx, item)| if idx % 2 == parity { Some(item) } else { None })
         .collect()
 }
 
-fn take_leftover<T>(items: &mut Vec<T>, level: usize, is_level_zero_sorted: bool) -> T {
-    if level == 0 && !is_level_zero_sorted {
-        items.pop().expect("odd level must not be empty")
-    } else {
-        items.remove(0)
-    }
-}
-
-fn merge_sorted_vec<T: KllItem, C: KllComparator<T>>(
-    left: Vec<T>,
-    right: Vec<T>,
-    comparator: &C,
-) -> Vec<T> {
+fn merge_sorted_vec<T: Clone + Ord>(left: Vec<T>, right: Vec<T>) -> Vec<T> {
     let mut merged = Vec::with_capacity(left.len() + right.len());
     let mut left_iter = left.into_iter().peekable();
     let mut right_iter = right.into_iter().peekable();
 
     while let (Some(l), Some(r)) = (left_iter.peek(), right_iter.peek()) {
-        if comparator.compare(l, r) == Ordering::Less {
+        if l.cmp(r) == Ordering::Less {
             merged.push(left_iter.next().unwrap());
         } else {
             merged.push(right_iter.next().unwrap());
@@ -977,16 +955,15 @@ fn merge_sorted_vec<T: KllItem, C: KllComparator<T>>(
     merged
 }
 
-fn general_compress<T: KllItem, C: KllComparator<T>>(
+fn general_compress<T: Clone + Ord>(
     mut levels_in: Vec<Vec<T>>,
     k: u16,
     m: u8,
     is_level_zero_sorted: bool,
-    comparator: &C,
 ) -> Vec<Vec<T>> {
     let mut current_num_levels = levels_in.len();
     let mut current_item_count: usize = levels_in.iter().map(|level| level.len()).sum();
-    let mut target_item_count = compute_total_capacity(k, m, current_num_levels) as usize;
+    let mut target_item_count = total_capacity(k, m, current_num_levels) as usize;
     let mut levels_out = Vec::with_capacity(current_num_levels + 1);
 
     let mut current_level = 0usize;
@@ -1001,30 +978,21 @@ fn general_compress<T: KllItem, C: KllComparator<T>>(
         if current_item_count < target_item_count || raw_pop < cap {
             levels_out.push(std::mem::take(&mut levels_in[current_level]));
         } else {
-            let mut current = std::mem::take(&mut levels_in[current_level]);
+            let current = std::mem::take(&mut levels_in[current_level]);
             let mut above = std::mem::take(&mut levels_in[current_level + 1]);
-
-            let odd = current.len() % 2 == 1;
-            let mut leftover = None;
-            if odd {
-                leftover = Some(take_leftover(
-                    &mut current,
-                    current_level,
-                    is_level_zero_sorted,
-                ));
-            }
-
-            if current_level == 0 && !is_level_zero_sorted {
-                current.sort_by(|left, right| comparator.compare(left, right));
-            }
-
             let use_up = above.is_empty();
-            let promoted = downsample(current, rand::random::<bool>(), use_up);
+            let (leftover, promoted) = compact_level(
+                current,
+                current_level,
+                is_level_zero_sorted,
+                rand::random::<bool>(),
+                use_up,
+            );
             let promoted_len = promoted.len();
             if above.is_empty() {
                 above = promoted;
             } else {
-                above = merge_sorted_vec(promoted, above, comparator);
+                above = merge_sorted_vec(promoted, above);
             }
             levels_in[current_level + 1] = above;
 
@@ -1049,118 +1017,4 @@ fn general_compress<T: KllItem, C: KllComparator<T>>(
 
     levels_out.truncate(current_num_levels);
     levels_out
-}
-
-impl KllItem for f32 {
-    fn cmp(a: &Self, b: &Self) -> Ordering {
-        a.partial_cmp(b).unwrap_or(Ordering::Greater)
-    }
-
-    fn is_nan(value: &Self) -> bool {
-        value.is_nan()
-    }
-}
-
-impl KllSerde for f32 {
-    const MIN_SERIALIZED_SIZE: usize = 4;
-
-    fn serialized_size(_value: &Self) -> usize {
-        4
-    }
-
-    fn serialize(value: &Self, bytes: &mut SketchBytes) {
-        bytes.write_f32_le(*value);
-    }
-
-    fn deserialize(input: &mut SketchSlice<'_>) -> Result<Self, Error> {
-        input
-            .read_f32_le()
-            .map_err(|_| Error::insufficient_data("f32"))
-    }
-}
-
-impl KllItem for f64 {
-    fn cmp(a: &Self, b: &Self) -> Ordering {
-        a.partial_cmp(b).unwrap_or(Ordering::Greater)
-    }
-
-    fn is_nan(value: &Self) -> bool {
-        value.is_nan()
-    }
-}
-
-impl KllSerde for f64 {
-    const MIN_SERIALIZED_SIZE: usize = 8;
-
-    fn serialized_size(_value: &Self) -> usize {
-        8
-    }
-
-    fn serialize(value: &Self, bytes: &mut SketchBytes) {
-        bytes.write_f64_le(*value);
-    }
-
-    fn deserialize(input: &mut SketchSlice<'_>) -> Result<Self, Error> {
-        input
-            .read_f64_le()
-            .map_err(|_| Error::insufficient_data("f64"))
-    }
-}
-
-impl KllItem for i64 {
-    fn cmp(a: &Self, b: &Self) -> Ordering {
-        a.cmp(b)
-    }
-}
-
-impl KllSerde for i64 {
-    const MIN_SERIALIZED_SIZE: usize = 8;
-
-    fn serialized_size(_value: &Self) -> usize {
-        8
-    }
-
-    fn serialize(value: &Self, bytes: &mut SketchBytes) {
-        bytes.write_i64_le(*value);
-    }
-
-    fn deserialize(input: &mut SketchSlice<'_>) -> Result<Self, Error> {
-        input
-            .read_i64_le()
-            .map_err(|_| Error::insufficient_data("i64"))
-    }
-}
-
-impl KllItem for String {
-    fn cmp(a: &Self, b: &Self) -> Ordering {
-        a.cmp(b)
-    }
-}
-
-impl KllSerde for String {
-    const MIN_SERIALIZED_SIZE: usize = 4;
-
-    fn serialized_size(value: &Self) -> usize {
-        4 + value.len()
-    }
-
-    fn serialize(value: &Self, bytes: &mut SketchBytes) {
-        bytes.write_u32_le(value.len() as u32);
-        bytes.write(value.as_bytes());
-    }
-
-    fn deserialize(input: &mut SketchSlice<'_>) -> Result<Self, Error> {
-        let len = input
-            .read_u32_le()
-            .map_err(|_| Error::insufficient_data("string_len"))? as usize;
-        let bytes = input
-            .remaining()
-            .get(..len)
-            .ok_or_else(|| Error::insufficient_data("string_bytes"))?;
-        let value = std::str::from_utf8(bytes)
-            .map_err(|_| Error::deserial("invalid utf-8 string"))?
-            .to_owned();
-        input.advance(len as u64);
-        Ok(value)
-    }
 }

@@ -17,9 +17,9 @@
 
 //! Rank, quantile, PMF, and CDF behavior for ReqSketch.
 
+use datasketches::common::SearchCriteria;
 use datasketches::error::Error;
 use datasketches::req::ReqSketch;
-use datasketches::req::SearchCriteria;
 use googletest::assert_that;
 use googletest::prelude::all;
 use googletest::prelude::ge;

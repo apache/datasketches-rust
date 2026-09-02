@@ -17,8 +17,8 @@
 
 //! Sorted view implementation for efficient quantile queries.
 
+use crate::common::SearchCriteria;
 use crate::error::Error;
-use crate::req::SearchCriteria;
 
 /// An owned, sorted snapshot of a [`ReqSketch`](crate::req::ReqSketch).
 ///

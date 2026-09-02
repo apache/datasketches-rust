@@ -15,4 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-mod sketch;
+mod core;
+mod generic;
+mod merge;
+mod query;

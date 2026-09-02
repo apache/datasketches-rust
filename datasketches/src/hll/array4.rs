@@ -356,11 +356,12 @@ impl Array4 {
             .checked_mul(COUPON_SIZE_BYTES)
             .and_then(|aux_bytes| num_bytes.checked_add(aux_bytes))
             .ok_or_else(|| Error::deserial("HLL4 payload length overflows"))?;
-        if required_bytes > cursor.remaining().len() {
-            return Err(Error::insufficient_data(format!(
-                "HLL4 payload requires {required_bytes} bytes, got {}",
-                cursor.remaining().len()
-            )));
+        let available_bytes = cursor.remaining().len();
+        if available_bytes < required_bytes {
+            return Err(Error::insufficient_data_of(
+                "HLL4 payload",
+                format_args!("expected {required_bytes} bytes, got {available_bytes}"),
+            ));
         }
 
         // Read packed 4-bit byte array
@@ -375,10 +376,9 @@ impl Array4 {
             let mut aux = AuxMap::new(lg_config_k);
             let mut decoded_count = 0;
             for i in 0..aux_slots {
-                let coupon = cursor.read_u32_le().map_err(|_| {
-                    Error::insufficient_data(format!(
-                        "expected {aux_slots} HLL4 auxiliary slots, failed at index {i}",
-                    ))
+                let coupon = cursor.read_u32_le().map_err(|error| {
+                    Error::insufficient_data_of("HLL4 auxiliary slot", error)
+                        .with_context("index", i)
                 })?;
                 let coupon = Coupon(coupon);
                 if coupon.is_empty() && !compact {

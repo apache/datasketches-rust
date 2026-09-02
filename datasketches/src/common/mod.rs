@@ -19,8 +19,10 @@
 
 mod num_std_dev;
 mod resize;
+mod search_criteria;
 pub use self::num_std_dev::NumStdDev;
 pub use self::resize::ResizeFactor;
+pub use self::search_criteria::SearchCriteria;
 
 #[cfg(any(feature = "cpc", feature = "hll"))]
 pub(crate) mod inv_pow2;

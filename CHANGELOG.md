@@ -4,9 +4,17 @@ All significant changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Breaking changes
+
+* Move `SearchCriteria` from `req` to `common` and remove its `Default` implementation. Import `datasketches::common::SearchCriteria` and explicitly choose `Inclusive` or `Exclusive` for each query.
+
 ### New features
 
-* Add KLL sketches behind the `kll` feature, including rank, quantile, PMF, and CDF queries, custom item ordering, merging, and C++/Java-compatible serialization.
+* Add KLL sketches behind the `kll` feature, with rank, quantile, PMF, and CDF queries, merging, totally ordered custom item types, a `KllFloat` adapter for non-NaN floating-point values, and serialization.
+
+### Improvements
+
+* Improve truncated-input diagnostics across sketch deserializers.
 
 ### Bug fixes
 

@@ -21,7 +21,7 @@ use std::ops::RangeBounds;
 use crate::error::Error;
 
 pub fn insufficient_data(tag: &'static str) -> impl FnOnce(std::io::Error) -> Error {
-    move |_| Error::insufficient_data(tag)
+    move |error| Error::insufficient_data_of(tag, error)
 }
 
 pub fn ensure_serial_version_is(expected: u8, actual: u8) -> Result<(), Error> {

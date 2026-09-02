@@ -495,11 +495,12 @@ impl BloomFilter {
                 .checked_add(1)
                 .and_then(|words| words.checked_mul(size_of::<u64>()))
                 .ok_or_else(|| Error::deserial("Bloom filter payload length overflows"))?;
-            if payload_bytes > cursor.remaining().len() {
-                return Err(Error::insufficient_data(format!(
-                    "Bloom filter payload requires {payload_bytes} bytes, got {}",
-                    cursor.remaining().len()
-                )));
+            let available_bytes = cursor.remaining().len();
+            if available_bytes < payload_bytes {
+                return Err(Error::insufficient_data_of(
+                    "Bloom filter payload",
+                    format_args!("expected {payload_bytes} bytes, got {available_bytes}"),
+                ));
             }
         }
         let mut bit_array = vec![0u64; num_words].into_boxed_slice();
