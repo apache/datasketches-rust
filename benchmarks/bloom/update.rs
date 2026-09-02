@@ -51,3 +51,23 @@ fn bytes_32(bencher: Bencher) {
         black_box(filter)
     });
 }
+
+#[divan::bench]
+fn contains_and_insert_present_u64(bencher: Bencher) {
+    let mut populated = BloomFilterBuilder::with_accuracy(ITEMS as u64, 0.01)
+        .build()
+        .unwrap();
+    for value in 0..ITEMS as u64 {
+        populated.insert(value);
+    }
+
+    bencher
+        .counter(ItemsCount::new(ITEMS))
+        .with_inputs(|| populated.clone())
+        .bench_local_values(|mut filter| {
+            for value in 0..ITEMS as u64 {
+                black_box(filter.contains_and_insert(black_box(&value)));
+            }
+            filter
+        });
+}

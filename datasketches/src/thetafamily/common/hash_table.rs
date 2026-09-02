@@ -24,8 +24,6 @@ use crate::error::ErrorKind;
 use crate::hash::MurmurHash3X64128;
 use crate::hash::compute_seed_hash;
 use crate::thetacommon::SketchEntry;
-use crate::thetacommon::constants::HASH_TABLE_REBUILD_THRESHOLD;
-use crate::thetacommon::constants::HASH_TABLE_RESIZE_THRESHOLD;
 use crate::thetacommon::constants::MAX_LG_K;
 use crate::thetacommon::constants::MAX_THETA;
 use crate::thetacommon::constants::MIN_LG_K;
@@ -244,12 +242,11 @@ where
 
     /// Return the current resize or rebuild capacity threshold.
     pub fn capacity_threshold(&self) -> usize {
-        let fraction = if self.lg_cur_size <= self.lg_nom_size {
-            HASH_TABLE_RESIZE_THRESHOLD
+        if self.lg_cur_size <= self.lg_nom_size {
+            self.entries.len() / 2
         } else {
-            HASH_TABLE_REBUILD_THRESHOLD
-        };
-        (fraction * self.entries.len() as f64) as usize
+            self.entries.len() - self.entries.len() / 16
+        }
     }
 
     /// Trim the table to nominal size k.
