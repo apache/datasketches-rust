@@ -267,7 +267,9 @@ fn test_truncated_non_empty_payload_is_rejected_before_table_allocation() {
 
     let error = CountMinSketch::<i64>::deserialize(&bytes).unwrap_err();
     assert_eq!(error.kind(), ErrorKind::InvalidData);
-    assert!(error.message().contains("payload requires"));
+    assert!(error.message().contains("CountMin payload"));
+    assert!(error.message().contains("expected"));
+    assert!(error.message().contains("got"));
 }
 
 #[test]

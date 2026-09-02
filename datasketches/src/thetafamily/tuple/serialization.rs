@@ -27,6 +27,7 @@
 
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
+use crate::codec::assert::insufficient_data;
 use crate::error::Error;
 
 /// Current serial version written by this implementation.
@@ -73,11 +74,9 @@ macro_rules! impl_primitive_summary {
             }
 
             fn deserialize_value(cursor: &mut SketchSlice<'_>) -> Result<Self, Error> {
-                cursor.$read().map_err(|_| {
-                    Error::insufficient_data(
-                        concat!("failed to read ", stringify!($name), " summary bytes").to_string(),
-                    )
-                })
+                cursor
+                    .$read()
+                    .map_err(insufficient_data(concat!(stringify!($name), " summary")))
             }
         }
     };

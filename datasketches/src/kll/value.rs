@@ -22,6 +22,7 @@ use std::ops::Deref;
 
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
+use crate::codec::assert::insufficient_data;
 use crate::error::Error;
 
 /// A non-NaN floating-point adapter for [`KllSketch`](crate::kll::KllSketch).
@@ -147,7 +148,7 @@ impl KllValue for KllFloat<f32> {
     fn deserialize(input: &mut SketchSlice<'_>) -> Result<Self, Error> {
         let value = input
             .read_f32_le()
-            .map_err(|_| Error::insufficient_data("f32"))?;
+            .map_err(insufficient_data("KLL f32 item"))?;
         Self::new(value).map_err(|_| Error::deserial("KLL float must not be NaN"))
     }
 }
@@ -166,7 +167,7 @@ impl KllValue for KllFloat<f64> {
     fn deserialize(input: &mut SketchSlice<'_>) -> Result<Self, Error> {
         let value = input
             .read_f64_le()
-            .map_err(|_| Error::insufficient_data("f64"))?;
+            .map_err(insufficient_data("KLL f64 item"))?;
         Self::new(value).map_err(|_| Error::deserial("KLL float must not be NaN"))
     }
 }
@@ -185,7 +186,7 @@ impl KllValue for i64 {
     fn deserialize(input: &mut SketchSlice<'_>) -> Result<Self, Error> {
         input
             .read_i64_le()
-            .map_err(|_| Error::insufficient_data("i64"))
+            .map_err(insufficient_data("KLL i64 item"))
     }
 }
 
@@ -204,17 +205,13 @@ impl KllValue for String {
     fn deserialize(input: &mut SketchSlice<'_>) -> Result<Self, Error> {
         let len = input
             .read_u32_le()
-            .map_err(|_| Error::insufficient_data("string_len"))? as usize;
-        let available = input.remaining().len();
-        let bytes = input.remaining().get(..len).ok_or_else(|| {
-            Error::deserial(format!(
-                "insufficient string data: expected {len} bytes, got {available}"
-            ))
-        })?;
+            .map_err(insufficient_data("KLL string length"))? as usize;
+        let bytes = input
+            .read_bytes(len)
+            .map_err(insufficient_data("KLL string payload"))?;
         let value = std::str::from_utf8(bytes)
             .map_err(|error| Error::deserial(format!("invalid UTF-8 string: {error}")))?
             .to_owned();
-        input.advance(len as u64);
         Ok(value)
     }
 }

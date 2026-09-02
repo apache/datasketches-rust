@@ -439,3 +439,16 @@ fn test_rejects_truncated_or_trailing_data() {
     with_trailing_data.push(0);
     assert!(KllSketch::<KllFloat<f32>>::deserialize(&with_trailing_data).is_err());
 }
+
+#[test]
+fn test_string_value_reports_the_truncated_field_and_byte_counts() {
+    let mut input = SketchSlice::new(&[5, 0, 0, 0, b'a']);
+
+    let error = String::deserialize(&mut input).unwrap_err();
+
+    assert_eq!(error.kind(), ErrorKind::InvalidData);
+    assert_eq!(
+        error.message(),
+        "insufficient data (KLL string payload): expected 5 bytes, got 1"
+    );
+}

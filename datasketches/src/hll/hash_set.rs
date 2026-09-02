@@ -111,22 +111,18 @@ impl HashSet {
         }
         let read_count = if compact { coupon_count } else { array_size };
         let required_bytes = read_count * size_of::<u32>();
-        if required_bytes > cursor.remaining().len() {
-            return Err(Error::insufficient_data(format!(
-                "SET mode coupons require {required_bytes} bytes, got {}",
-                cursor.remaining().len()
-            )));
-        }
+        cursor
+            .ensure_remaining(required_bytes)
+            .map_err(insufficient_data("HLL SET mode coupons"))?;
 
         if compact {
             // Compact mode: only couponCount coupons are stored
             // Create a new hash set and insert coupons one by one
             let mut hash_set = HashSet::new(lg_arr);
             for i in 0..coupon_count {
-                let coupon = cursor.read_u32_le().map_err(|_| {
-                    Error::insufficient_data(format!(
-                        "expected {coupon_count} coupons, failed at index {i}"
-                    ))
+                let coupon = cursor.read_u32_le().map_err(|error| {
+                    Error::insufficient_data_of("HLL SET mode coupon", error)
+                        .with_context("index", i)
                 })?;
                 hash_set.update(Coupon(coupon));
             }
@@ -139,10 +135,9 @@ impl HashSet {
             // Read entire hash table including empty slots
             let mut coupons = vec![Coupon::EMPTY; array_size];
             for (i, coupon) in coupons.iter_mut().enumerate() {
-                let raw = cursor.read_u32_le().map_err(|_| {
-                    Error::insufficient_data(format!(
-                        "expected {array_size} coupons, failed at index {i}"
-                    ))
+                let raw = cursor.read_u32_le().map_err(|error| {
+                    Error::insufficient_data_of("HLL SET mode coupon", error)
+                        .with_context("index", i)
                 })?;
                 *coupon = Coupon(raw);
             }

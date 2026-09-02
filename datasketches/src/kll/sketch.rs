@@ -447,7 +447,7 @@ fn deserialize_with_serde<T: KllValue + Ord>(bytes: &[u8]) -> Result<KllSketch<T
     }
 
     if is_empty {
-        let trailing_bytes = cursor.remaining().len();
+        let trailing_bytes = cursor.remaining_len();
         if trailing_bytes != 0 {
             return Err(Error::deserial(format!(
                 "expected end of KLL image, found {trailing_bytes} trailing bytes"
@@ -522,12 +522,18 @@ fn deserialize_with_serde<T: KllValue + Ord>(bytes: &[u8]) -> Result<KllSketch<T
     let min_item = if is_single_item {
         None
     } else {
-        Some(T::deserialize(&mut cursor)?)
+        Some(
+            T::deserialize(&mut cursor)
+                .map_err(|error| error.with_context("KLL item", "minimum"))?,
+        )
     };
     let max_item = if is_single_item {
         None
     } else {
-        Some(T::deserialize(&mut cursor)?)
+        Some(
+            T::deserialize(&mut cursor)
+                .map_err(|error| error.with_context("KLL item", "maximum"))?,
+        )
     };
 
     let num_retained = (level_offsets[num_levels] - level_offsets[0]) as usize;
@@ -539,19 +545,20 @@ fn deserialize_with_serde<T: KllValue + Ord>(bytes: &[u8]) -> Result<KllSketch<T
                 T::MIN_SERIALIZED_SIZE
             ))
         })?;
-    let available_item_bytes = cursor.remaining().len();
-    if available_item_bytes < min_item_bytes {
-        return Err(Error::deserial(format!(
-            "insufficient item data: expected at least {min_item_bytes} bytes, got {available_item_bytes}"
-        )));
-    }
+    cursor
+        .ensure_remaining(min_item_bytes)
+        .map_err(insufficient_data("KLL item payload"))?;
 
     let mut levels = Vec::with_capacity(num_levels);
     for level in 0..num_levels {
         let size = (level_offsets[level + 1] - level_offsets[level]) as usize;
         let mut items = Vec::with_capacity(size);
-        for _ in 0..size {
-            items.push(T::deserialize(&mut cursor)?);
+        for index in 0..size {
+            items.push(T::deserialize(&mut cursor).map_err(|error| {
+                error
+                    .with_context("KLL level", level)
+                    .with_context("item index", index)
+            })?);
         }
         levels.push(items);
     }
@@ -577,7 +584,7 @@ fn deserialize_with_serde<T: KllValue + Ord>(bytes: &[u8]) -> Result<KllSketch<T
     }
 
     sketch.validate_deserialized_state()?;
-    let trailing_bytes = cursor.remaining().len();
+    let trailing_bytes = cursor.remaining_len();
     if trailing_bytes != 0 {
         return Err(Error::deserial(format!(
             "expected end of KLL image, found {trailing_bytes} trailing bytes"

@@ -679,20 +679,17 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
 
         // Each active item has an eight-byte weight before its encoded key. Check
         // that lower bound before trusting the count for `Vec` preallocation.
-        let weight_bytes = active_items.checked_mul(size_of::<u64>());
-        if !weight_bytes.is_some_and(|needed| needed <= cursor.remaining().len()) {
-            return Err(Error::insufficient_data(format!(
-                "active_items ({active_items}) exceeds the remaining {} bytes",
-                cursor.remaining().len()
-            )));
-        }
+        let weight_bytes = active_items
+            .checked_mul(size_of::<u64>())
+            .ok_or_else(|| Error::deserial("frequent item weight payload length overflows"))?;
+        cursor
+            .ensure_remaining(weight_bytes)
+            .map_err(insufficient_data("frequent item weights"))?;
 
         let mut values = Vec::with_capacity(active_items);
         for i in 0..active_items {
-            values.push(cursor.read_u64_le().map_err(|_| {
-                Error::insufficient_data(format!(
-                    "expected {active_items} weights, failed at index {i}"
-                ))
+            values.push(cursor.read_u64_le().map_err(|error| {
+                Error::insufficient_data_of("frequent item weight", error).with_context("index", i)
             })?);
         }
 
@@ -783,11 +780,8 @@ impl<T: FrequentItemValue> FrequentItemsSketch<T> {
         Self::deserialize_inner(bytes, |mut cursor, num_items| {
             let mut items = Vec::with_capacity(num_items);
             for i in 0..num_items {
-                let item = T::deserialize_value(&mut cursor).map_err(|_| {
-                    Error::insufficient_data(format!(
-                        "expected {num_items} items, failed to read item at index {i}"
-                    ))
-                })?;
+                let item = T::deserialize_value(&mut cursor)
+                    .map_err(|error| error.with_context("item index", i))?;
                 items.push(item);
             }
             Ok(items)

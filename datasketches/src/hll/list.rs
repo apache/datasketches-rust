@@ -22,6 +22,7 @@
 
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
+use crate::codec::assert::insufficient_data;
 use crate::codec::family::Family;
 use crate::error::Error;
 use crate::hll::Coupon;
@@ -99,21 +100,19 @@ impl List {
         }
         let read_count = if compact { coupon_count } else { array_size };
         let required_bytes = read_count * size_of::<u32>();
-        if !empty && required_bytes > cursor.remaining().len() {
-            return Err(Error::insufficient_data(format!(
-                "LIST mode coupons require {required_bytes} bytes, got {}",
-                cursor.remaining().len()
-            )));
+        if !empty {
+            cursor
+                .ensure_remaining(required_bytes)
+                .map_err(insufficient_data("HLL LIST mode coupons"))?;
         }
 
         // Read coupons into the front of the full-sized array; remaining slots stay Coupon::EMPTY.
         let mut coupons = vec![Coupon::EMPTY; array_size];
         if !empty && coupon_count > 0 {
             for (i, coupon) in coupons.iter_mut().take(read_count).enumerate() {
-                let raw = cursor.read_u32_le().map_err(|_| {
-                    Error::insufficient_data(format!(
-                        "expect {coupon_count} coupons, failed at index {i}"
-                    ))
+                let raw = cursor.read_u32_le().map_err(|error| {
+                    Error::insufficient_data_of("HLL LIST mode coupon", error)
+                        .with_context("index", i)
                 })?;
                 *coupon = Coupon(raw);
             }

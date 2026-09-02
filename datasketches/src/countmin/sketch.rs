@@ -430,12 +430,9 @@ impl<T: CountMinValue> CountMinSketch<T> {
             let payload_bytes = payload_values
                 .checked_mul(LONG_SIZE_BYTES)
                 .ok_or_else(|| Error::deserial("CountMin payload size overflows"))?;
-            if payload_bytes > cursor.remaining().len() {
-                return Err(Error::insufficient_data(format!(
-                    "CountMin payload requires {payload_bytes} bytes, got {}",
-                    cursor.remaining().len()
-                )));
-            }
+            cursor
+                .ensure_remaining(payload_bytes)
+                .map_err(insufficient_data("CountMin payload"))?;
         }
 
         let mut sketch = Self::make(num_hashes, num_buckets, seed, expected_seed_hash, entries);

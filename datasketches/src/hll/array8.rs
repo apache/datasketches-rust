@@ -275,12 +275,9 @@ impl Array8 {
                 "HLL8 zero count must not exceed k and auxiliary count must be zero",
             ));
         }
-        if k > cursor.remaining().len() {
-            return Err(Error::insufficient_data(format!(
-                "HLL8 payload requires {k} bytes, got {}",
-                cursor.remaining().len()
-            )));
-        }
+        cursor
+            .ensure_remaining(k)
+            .map_err(insufficient_data("HLL8 payload"))?;
 
         // Read byte array from offset HLL_BYTE_ARR_START
         let mut data = vec![0u8; k];

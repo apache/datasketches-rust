@@ -15,6 +15,7 @@ All significant changes to this project will be documented in this file.
 ### Improvements
 
 * Improve KLL update and query performance.
+* Improve truncated-input diagnostics across sketch deserializers.
 
 ## v0.5.0
 

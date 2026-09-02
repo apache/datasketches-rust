@@ -203,12 +203,9 @@ impl Array6 {
                 "HLL6 zero count must not exceed k and auxiliary count must be zero",
             ));
         }
-        if num_bytes > cursor.remaining().len() {
-            return Err(Error::insufficient_data(format!(
-                "HLL6 payload requires {num_bytes} bytes, got {}",
-                cursor.remaining().len()
-            )));
-        }
+        cursor
+            .ensure_remaining(num_bytes)
+            .map_err(insufficient_data("HLL6 payload"))?;
 
         // Read packed byte array from offset HLL_BYTE_ARR_START
         let mut data = vec![0u8; num_bytes];

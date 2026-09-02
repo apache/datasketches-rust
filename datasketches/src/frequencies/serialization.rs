@@ -19,6 +19,7 @@ use std::hash::Hash;
 
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
+use crate::codec::assert::insufficient_data;
 use crate::error::Error;
 
 /// Serialization version.
@@ -54,24 +55,16 @@ impl FrequentItemValue for String {
     }
 
     fn deserialize_value(cursor: &mut SketchSlice<'_>) -> Result<Self, Error> {
-        let len = cursor.read_u32_le().map_err(|_| {
-            Error::insufficient_data("failed to read string item length".to_string())
-        })? as usize;
+        let len = cursor
+            .read_u32_le()
+            .map_err(insufficient_data("string item length"))? as usize;
+        let bytes = cursor
+            .read_bytes(len)
+            .map_err(insufficient_data("string item payload"))?;
 
-        let remaining = cursor.remaining().len();
-        if len > remaining {
-            return Err(Error::insufficient_data(format!(
-                "string item length ({len}) exceeds the remaining {remaining} bytes"
-            )));
-        }
-
-        let mut slice = vec![0; len];
-        cursor.read_exact(&mut slice).map_err(|_| {
-            Error::insufficient_data("failed to read string item bytes".to_string())
-        })?;
-
-        String::from_utf8(slice)
-            .map_err(|_| Error::deserial("invalid UTF-8 string payload".to_string()))
+        std::str::from_utf8(bytes)
+            .map(str::to_owned)
+            .map_err(|_| Error::deserial("invalid UTF-8 string payload"))
     }
 }
 
@@ -87,11 +80,9 @@ macro_rules! impl_primitive {
             }
 
             fn deserialize_value(cursor: &mut SketchSlice<'_>) -> Result<Self, Error> {
-                cursor.$read().map_err(|_| {
-                    Error::insufficient_data(
-                        concat!("failed to read ", stringify!($name), " item bytes").to_string(),
-                    )
-                })
+                cursor
+                    .$read()
+                    .map_err(insufficient_data(concat!(stringify!($name), " item")))
             }
         }
     };
