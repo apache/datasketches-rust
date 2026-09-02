@@ -15,14 +15,12 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! Data structures and functions that may be used across all the sketch families.
-
-mod num_std_dev;
-mod resize;
-mod search_criteria;
-pub use self::num_std_dev::NumStdDev;
-pub use self::resize::ResizeFactor;
-pub use self::search_criteria::SearchCriteria;
-
-#[cfg(any(feature = "cpc", feature = "hll"))]
-pub(crate) mod inv_pow2;
+/// Selects the rank definition used by rank, quantile, PMF, and CDF queries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SearchCriteria {
+    /// Define rank as the fraction of values less than or equal to the boundary.
+    #[default]
+    Inclusive,
+    /// Define rank as the fraction of values strictly less than the boundary.
+    Exclusive,
+}

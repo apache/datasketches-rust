@@ -61,6 +61,7 @@ pub use self::sketch::ReqSketch;
 pub use self::sorted_view::SortedView;
 pub use self::value::ReqFloat;
 pub use self::value::ReqValue;
+pub use crate::common::SearchCriteria;
 
 /// Default value of `k` if not specified. Roughly 1% relative error at 95% confidence.
 const DEFAULT_K: u16 = 12;
@@ -77,16 +78,6 @@ pub enum RankAccuracy {
     HighRank,
     /// Optimize for accuracy at low ranks (near 0.0).
     LowRank,
-}
-
-/// Selects the rank definition used by rank, quantile, PMF, and CDF queries.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum SearchCriteria {
-    /// Define rank as the fraction of values less than or equal to the boundary.
-    #[default]
-    Inclusive,
-    /// Define rank as the fraction of values strictly less than the boundary.
-    Exclusive,
 }
 
 /// Number of sections in a newly created compactor. The section count and size

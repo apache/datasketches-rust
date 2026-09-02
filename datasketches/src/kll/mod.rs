@@ -28,11 +28,11 @@
 //! # Usage
 //!
 //! ```rust
-//! # use datasketches::kll::KllSketch;
+//! # use datasketches::kll::{KllSketch, SearchCriteria};
 //! let mut sketch = KllSketch::<f64>::new(200).unwrap();
 //! sketch.update(1.0);
 //! sketch.update(2.0);
-//! let q = sketch.quantile(0.5, true).unwrap();
+//! let q = sketch.quantile(0.5, SearchCriteria::Inclusive).unwrap();
 //! assert!(q >= 1.0 && q <= 2.0);
 //! ```
 
@@ -47,6 +47,7 @@ pub use self::order::KllComparator;
 pub use self::order::NaturalOrder;
 pub use self::sketch::KllSketch;
 pub use self::value::KllValue;
+pub use crate::common::SearchCriteria;
 
 /// Default value of parameter k.
 const DEFAULT_K: u16 = 200;

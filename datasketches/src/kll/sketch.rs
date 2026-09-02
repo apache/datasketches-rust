@@ -43,6 +43,7 @@ use crate::codec::SketchSlice;
 use crate::codec::assert::ensure_serial_version_is;
 use crate::codec::assert::insufficient_data;
 use crate::codec::family::Family;
+use crate::common::SearchCriteria;
 use crate::error::Error;
 
 /// KLL sketch for estimating quantiles and ranks.
@@ -217,49 +218,78 @@ impl<T: Clone, C: KllComparator<T>> KllSketch<T, C> {
     }
 
     /// Returns the normalized rank of the given item.
-    pub fn rank(&self, item: &T, inclusive: bool) -> Option<f64> {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the sketch is empty or `item` is outside the comparator's ordered
+    /// domain.
+    pub fn rank(&self, item: &T, criteria: SearchCriteria) -> Result<f64, Error> {
         if self.is_empty() {
-            return None;
+            return Err(Error::invalid_argument("cannot query an empty sketch"));
+        }
+        if !self.comparator.accepts(item) {
+            return Err(Error::invalid_argument(
+                "item must belong to the comparator's ordered domain",
+            ));
         }
         let view = build_sorted_view(&self.levels, self.comparator.clone());
-        Some(view.rank(item, inclusive))
+        Ok(view.rank(item, criteria))
     }
 
     /// Returns the quantile for the given normalized rank.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if rank is not in [0.0, 1.0].
-    pub fn quantile(&self, rank: f64, inclusive: bool) -> Option<T> {
+    /// Returns an error if the sketch is empty or `rank` is outside `[0.0, 1.0]`.
+    pub fn quantile(&self, rank: f64, criteria: SearchCriteria) -> Result<T, Error> {
         if self.is_empty() {
-            return None;
+            return Err(Error::invalid_argument("cannot query an empty sketch"));
         }
-        assert!((0.0..=1.0).contains(&rank), "rank must be in [0.0, 1.0]");
+        if !(0.0..=1.0).contains(&rank) {
+            return Err(Error::invalid_argument(format!(
+                "rank must be in [0.0, 1.0], got {rank}"
+            )));
+        }
         let view = build_sorted_view(&self.levels, self.comparator.clone());
-        Some(view.quantile(rank, inclusive))
+        Ok(view.quantile(rank, criteria))
     }
 
     /// Returns the approximate CDF for the given split points.
-    pub fn cdf(&self, split_points: &[T], inclusive: bool) -> Option<Vec<f64>> {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the sketch is empty, a split point is outside the comparator's ordered
+    /// domain, or the split points are not unique and strictly increasing.
+    pub fn cdf(&self, split_points: &[T], criteria: SearchCriteria) -> Result<Vec<f64>, Error> {
         if self.is_empty() {
-            return None;
+            return Err(Error::invalid_argument("cannot query an empty sketch"));
         }
         let view = build_sorted_view(&self.levels, self.comparator.clone());
-        Some(view.cdf(split_points, inclusive))
+        view.cdf(split_points, criteria)
     }
 
     /// Returns the approximate PMF for the given split points.
-    pub fn pmf(&self, split_points: &[T], inclusive: bool) -> Option<Vec<f64>> {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the sketch is empty, a split point is outside the comparator's ordered
+    /// domain, or the split points are not unique and strictly increasing.
+    pub fn pmf(&self, split_points: &[T], criteria: SearchCriteria) -> Result<Vec<f64>, Error> {
         if self.is_empty() {
-            return None;
+            return Err(Error::invalid_argument("cannot query an empty sketch"));
         }
         let view = build_sorted_view(&self.levels, self.comparator.clone());
-        Some(view.pmf(split_points, inclusive))
+        view.pmf(split_points, criteria)
     }
 
-    /// Returns normalized rank error for the configured k.
-    pub fn normalized_rank_error(&self, pmf: bool) -> f64 {
-        normalized_rank_error(self.min_k, pmf)
+    /// Returns the normalized single-sided rank error for the configured k.
+    pub fn normalized_rank_error(&self) -> f64 {
+        normalized_rank_error(self.min_k, false)
+    }
+
+    /// Returns the normalized double-sided rank error for PMF queries for the configured k.
+    pub fn normalized_pmf_error(&self) -> f64 {
+        normalized_rank_error(self.min_k, true)
     }
 }
 

@@ -20,6 +20,7 @@ use std::cmp::Ordering;
 use datasketches::error::ErrorKind;
 use datasketches::kll::KllComparator;
 use datasketches::kll::KllSketch;
+use datasketches::kll::SearchCriteria;
 
 const DEFAULT_K: u16 = 200;
 const MIN_K: u16 = 8;
@@ -35,7 +36,7 @@ fn assert_approx_eq(actual: f64, expected: f64, tolerance: f64) {
 }
 
 fn rank_eps(sketch: &KllSketch<f32>) -> f64 {
-    sketch.normalized_rank_error(false)
+    sketch.normalized_rank_error()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -74,18 +75,20 @@ fn test_empty() {
     assert_eq!(sketch.num_retained(), 0);
     assert!(sketch.min_item().is_none());
     assert!(sketch.max_item().is_none());
-    assert!(sketch.rank(&0.0, true).is_none());
-    assert!(sketch.quantile(0.5, true).is_none());
-    assert!(sketch.pmf(&[0.0f32], true).is_none());
-    assert!(sketch.cdf(&[0.0f32], true).is_none());
+    assert!(sketch.rank(&0.0, SearchCriteria::Inclusive).is_err());
+    assert!(sketch.quantile(0.5, SearchCriteria::Inclusive).is_err());
+    assert!(sketch.pmf(&[0.0f32], SearchCriteria::Inclusive).is_err());
+    assert!(sketch.cdf(&[0.0f32], SearchCriteria::Inclusive).is_err());
 }
 
 #[test]
-#[should_panic(expected = "rank must be in [0.0, 1.0]")]
-fn test_quantile_out_of_range_panics() {
+fn test_quantile_out_of_range_returns_error() {
     let mut sketch = KllSketch::<f32>::new(DEFAULT_K).unwrap();
     sketch.update(0.0);
-    sketch.quantile(-1.0, true);
+    let error = sketch
+        .quantile(-1.0, SearchCriteria::Inclusive)
+        .unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::InvalidArgument);
 }
 
 #[test]
@@ -96,12 +99,15 @@ fn test_one_item() {
     assert!(!sketch.is_estimation_mode());
     assert_eq!(sketch.n(), 1);
     assert_eq!(sketch.num_retained(), 1);
-    assert_eq!(sketch.rank(&1.0, false), Some(0.0));
-    assert_eq!(sketch.rank(&1.0, true), Some(1.0));
-    assert_eq!(sketch.rank(&2.0, false), Some(1.0));
+    assert_eq!(sketch.rank(&1.0, SearchCriteria::Exclusive).unwrap(), 0.0);
+    assert_eq!(sketch.rank(&1.0, SearchCriteria::Inclusive).unwrap(), 1.0);
+    assert_eq!(sketch.rank(&2.0, SearchCriteria::Exclusive).unwrap(), 1.0);
     assert_eq!(sketch.min_item().cloned(), Some(1.0));
     assert_eq!(sketch.max_item().cloned(), Some(1.0));
-    assert_eq!(sketch.quantile(0.5, true), Some(1.0));
+    assert_eq!(
+        sketch.quantile(0.5, SearchCriteria::Inclusive).unwrap(),
+        1.0
+    );
 }
 
 #[test]
@@ -111,12 +117,18 @@ fn test_duplicate_items_follow_inclusive_and_exclusive_semantics() {
         sketch.update(item);
     }
 
-    assert_eq!(sketch.rank(&1.0, false), Some(0.0));
-    assert_eq!(sketch.rank(&1.0, true), Some(0.5));
-    assert_eq!(sketch.rank(&2.0, false), Some(0.5));
-    assert_eq!(sketch.rank(&2.0, true), Some(1.0));
-    assert_eq!(sketch.quantile(0.5, true), Some(1.0));
-    assert_eq!(sketch.quantile(0.5, false), Some(2.0));
+    assert_eq!(sketch.rank(&1.0, SearchCriteria::Exclusive).unwrap(), 0.0);
+    assert_eq!(sketch.rank(&1.0, SearchCriteria::Inclusive).unwrap(), 0.5);
+    assert_eq!(sketch.rank(&2.0, SearchCriteria::Exclusive).unwrap(), 0.5);
+    assert_eq!(sketch.rank(&2.0, SearchCriteria::Inclusive).unwrap(), 1.0);
+    assert_eq!(
+        sketch.quantile(0.5, SearchCriteria::Inclusive).unwrap(),
+        1.0
+    );
+    assert_eq!(
+        sketch.quantile(0.5, SearchCriteria::Exclusive).unwrap(),
+        2.0
+    );
 }
 
 #[test]
@@ -141,15 +153,27 @@ fn test_many_items_exact_mode() {
     assert!(!sketch.is_estimation_mode());
     assert_eq!(sketch.num_retained(), n);
     assert_eq!(sketch.min_item().cloned(), Some(1.0));
-    assert_eq!(sketch.quantile(0.0, true), Some(1.0));
+    assert_eq!(
+        sketch.quantile(0.0, SearchCriteria::Inclusive).unwrap(),
+        1.0
+    );
     assert_eq!(sketch.max_item().cloned(), Some(n as f32));
-    assert_eq!(sketch.quantile(1.0, true), Some(n as f32));
+    assert_eq!(
+        sketch.quantile(1.0, SearchCriteria::Inclusive).unwrap(),
+        n as f32
+    );
 
     for i in 1..=n {
         let inclusive_rank = i as f64 / n as f64;
-        assert_eq!(sketch.rank(&(i as f32), true), Some(inclusive_rank));
+        assert_eq!(
+            sketch.rank(&(i as f32), SearchCriteria::Inclusive).unwrap(),
+            inclusive_rank
+        );
         let exclusive_rank = (i - 1) as f64 / n as f64;
-        assert_eq!(sketch.rank(&(i as f32), false), Some(exclusive_rank));
+        assert_eq!(
+            sketch.rank(&(i as f32), SearchCriteria::Exclusive).unwrap(),
+            exclusive_rank
+        );
     }
 }
 
@@ -159,10 +183,22 @@ fn test_ten_items_quantiles() {
     for i in 1..=10 {
         sketch.update(i as f32);
     }
-    assert_eq!(sketch.quantile(0.0, true), Some(1.0));
-    assert_eq!(sketch.quantile(0.5, true), Some(5.0));
-    assert_eq!(sketch.quantile(0.99, true), Some(10.0));
-    assert_eq!(sketch.quantile(1.0, true), Some(10.0));
+    assert_eq!(
+        sketch.quantile(0.0, SearchCriteria::Inclusive).unwrap(),
+        1.0
+    );
+    assert_eq!(
+        sketch.quantile(0.5, SearchCriteria::Inclusive).unwrap(),
+        5.0
+    );
+    assert_eq!(
+        sketch.quantile(0.99, SearchCriteria::Inclusive).unwrap(),
+        10.0
+    );
+    assert_eq!(
+        sketch.quantile(1.0, SearchCriteria::Inclusive).unwrap(),
+        10.0
+    );
 }
 
 #[test]
@@ -171,11 +207,26 @@ fn test_hundred_items_quantiles() {
     for i in 0..100 {
         sketch.update(i as f32);
     }
-    assert_eq!(sketch.quantile(0.0, true), Some(0.0));
-    assert_eq!(sketch.quantile(0.01, true), Some(0.0));
-    assert_eq!(sketch.quantile(0.5, true), Some(49.0));
-    assert_eq!(sketch.quantile(0.99, true), Some(98.0));
-    assert_eq!(sketch.quantile(1.0, true), Some(99.0));
+    assert_eq!(
+        sketch.quantile(0.0, SearchCriteria::Inclusive).unwrap(),
+        0.0
+    );
+    assert_eq!(
+        sketch.quantile(0.01, SearchCriteria::Inclusive).unwrap(),
+        0.0
+    );
+    assert_eq!(
+        sketch.quantile(0.5, SearchCriteria::Inclusive).unwrap(),
+        49.0
+    );
+    assert_eq!(
+        sketch.quantile(0.99, SearchCriteria::Inclusive).unwrap(),
+        98.0
+    );
+    assert_eq!(
+        sketch.quantile(1.0, SearchCriteria::Inclusive).unwrap(),
+        99.0
+    );
 }
 
 #[test]
@@ -193,7 +244,7 @@ fn test_many_items_estimation_mode_rank_error() {
     let rank_eps = rank_eps(&sketch);
     for i in (0..n).step_by(10) {
         let true_rank = i as f64 / n as f64;
-        let rank = sketch.rank(&(i as f32), false).unwrap();
+        let rank = sketch.rank(&(i as f32), SearchCriteria::Exclusive).unwrap();
         assert_approx_eq(rank, true_rank, rank_eps);
     }
 
@@ -210,12 +261,12 @@ fn test_rank_cdf_pmf_consistency() {
         values.push(i as f32);
     }
 
-    let ranks = sketch.cdf(&values, false).unwrap();
-    let pmf = sketch.pmf(&values, false).unwrap();
+    let ranks = sketch.cdf(&values, SearchCriteria::Exclusive).unwrap();
+    let pmf = sketch.pmf(&values, SearchCriteria::Exclusive).unwrap();
 
     let mut subtotal = 0.0;
     for i in 0..n {
-        let rank = sketch.rank(&values[i], false).unwrap();
+        let rank = sketch.rank(&values[i], SearchCriteria::Exclusive).unwrap();
         assert_eq!(rank, ranks[i]);
         subtotal += pmf[i];
         assert!(
@@ -224,12 +275,12 @@ fn test_rank_cdf_pmf_consistency() {
         );
     }
 
-    let ranks = sketch.cdf(&values, true).unwrap();
-    let pmf = sketch.pmf(&values, true).unwrap();
+    let ranks = sketch.cdf(&values, SearchCriteria::Inclusive).unwrap();
+    let pmf = sketch.pmf(&values, SearchCriteria::Inclusive).unwrap();
 
     let mut subtotal = 0.0;
     for i in 0..n {
-        let rank = sketch.rank(&values[i], true).unwrap();
+        let rank = sketch.rank(&values[i], SearchCriteria::Inclusive).unwrap();
         assert_eq!(rank, ranks[i]);
         subtotal += pmf[i];
         assert!(
@@ -240,21 +291,25 @@ fn test_rank_cdf_pmf_consistency() {
 }
 
 #[test]
-#[should_panic(expected = "split_points must be unique and monotonically increasing")]
-fn test_out_of_order_split_points_panics() {
+fn test_out_of_order_split_points_return_error() {
     let mut sketch = KllSketch::<f32>::new(DEFAULT_K).unwrap();
     sketch.update(0.0);
     let split_points = [1.0, 0.0];
-    let _ = sketch.cdf(&split_points, true);
+    let error = sketch
+        .cdf(&split_points, SearchCriteria::Inclusive)
+        .unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::InvalidArgument);
 }
 
 #[test]
-#[should_panic(expected = "split_points must belong to the comparator's ordered domain")]
-fn test_nan_split_point_panics() {
+fn test_nan_split_point_returns_error() {
     let mut sketch = KllSketch::<f32>::new(DEFAULT_K).unwrap();
     sketch.update(0.0);
     let split_points = [f32::NAN];
-    let _ = sketch.cdf(&split_points, true);
+    let error = sketch
+        .cdf(&split_points, SearchCriteria::Inclusive)
+        .unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::InvalidArgument);
 }
 
 #[test]
@@ -278,7 +333,7 @@ fn test_merge() {
     assert_eq!(sketch1.n(), (2 * n) as u64);
     assert_eq!(sketch1.min_item().cloned(), Some(0.0));
     assert_eq!(sketch1.max_item().cloned(), Some((2 * n - 1) as f32));
-    let median = sketch1.quantile(0.5, true).unwrap();
+    let median = sketch1.quantile(0.5, SearchCriteria::Inclusive).unwrap();
     let rank_eps = rank_eps(&sketch1);
     assert_approx_eq(median as f64, n as f64, n as f64 * rank_eps);
 }
@@ -299,14 +354,14 @@ fn test_merge_lower_k() {
     assert_eq!(sketch1.min_item().cloned(), Some(0.0));
     assert_eq!(sketch1.max_item().cloned(), Some((2 * n - 1) as f32));
     assert_eq!(
-        sketch1.normalized_rank_error(false),
-        sketch2.normalized_rank_error(false)
+        sketch1.normalized_rank_error(),
+        sketch2.normalized_rank_error()
     );
     assert_eq!(
-        sketch1.normalized_rank_error(true),
-        sketch2.normalized_rank_error(true)
+        sketch1.normalized_pmf_error(),
+        sketch2.normalized_pmf_error()
     );
-    let median = sketch1.quantile(0.5, true).unwrap();
+    let median = sketch1.quantile(0.5, SearchCriteria::Inclusive).unwrap();
     let rank_eps = rank_eps(&sketch1);
     assert_approx_eq(median as f64, n as f64, n as f64 * rank_eps);
 }
@@ -320,14 +375,14 @@ fn test_merge_exact_mode_lower_k() {
         sketch1.update(i as f32);
     }
 
-    let err_before = sketch1.normalized_rank_error(true);
+    let err_before = sketch1.normalized_pmf_error();
     sketch1.merge(&sketch2);
-    assert_eq!(sketch1.normalized_rank_error(true), err_before);
+    assert_eq!(sketch1.normalized_pmf_error(), err_before);
 
     assert_eq!(sketch1.n(), n as u64);
     assert_eq!(sketch1.min_item().cloned(), Some(0.0));
     assert_eq!(sketch1.max_item().cloned(), Some((n - 1) as f32));
-    let median = sketch1.quantile(0.5, true).unwrap();
+    let median = sketch1.quantile(0.5, SearchCriteria::Inclusive).unwrap();
     let rank_eps = rank_eps(&sketch1);
     assert_approx_eq(median as f64, (n / 2) as f64, (n as f64 / 2.0) * rank_eps);
 }
@@ -386,7 +441,13 @@ fn test_custom_comparator_roundtrip() {
 
     assert_eq!(sketch.min_item().map(String::as_str), Some("1"));
     assert_eq!(sketch.max_item().map(String::as_str), Some("10"));
-    assert_eq!(sketch.quantile(0.5, true).as_deref(), Some("2"));
+    assert_eq!(
+        sketch
+            .quantile(0.5, SearchCriteria::Inclusive)
+            .as_deref()
+            .unwrap(),
+        "2"
+    );
 
     let bytes = sketch.serialize();
     let decoded = KllSketch::<String, NumericStringOrder>::deserialize_with_comparator(
@@ -397,5 +458,11 @@ fn test_custom_comparator_roundtrip() {
     assert_eq!(decoded.n(), sketch.n());
     assert_eq!(decoded.min_item().map(String::as_str), Some("1"));
     assert_eq!(decoded.max_item().map(String::as_str), Some("10"));
-    assert_eq!(decoded.quantile(0.5, true).as_deref(), Some("2"));
+    assert_eq!(
+        decoded
+            .quantile(0.5, SearchCriteria::Inclusive)
+            .as_deref()
+            .unwrap(),
+        "2"
+    );
 }

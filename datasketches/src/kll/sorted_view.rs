@@ -18,6 +18,8 @@
 use std::cmp::Ordering;
 
 use super::order::KllComparator;
+use crate::common::SearchCriteria;
+use crate::error::Error;
 
 #[derive(Debug, Clone)]
 pub struct SortedView<T: Clone, C: KllComparator<T>> {
@@ -47,12 +49,12 @@ impl<T: Clone, C: KllComparator<T>> SortedView<T, C> {
         }
     }
 
-    pub fn rank(&self, item: &T, inclusive: bool) -> f64 {
+    pub fn rank(&self, item: &T, criteria: SearchCriteria) -> f64 {
         if self.entries.is_empty() {
             return 0.0;
         }
 
-        let idx = if inclusive {
+        let idx = if criteria == SearchCriteria::Inclusive {
             upper_bound(&self.entries, item, &self.comparator)
         } else {
             lower_bound(&self.entries, item, &self.comparator)
@@ -65,14 +67,14 @@ impl<T: Clone, C: KllComparator<T>> SortedView<T, C> {
         weight as f64 / self.total_weight as f64
     }
 
-    pub fn quantile(&self, rank: f64, inclusive: bool) -> T {
-        let weight = if inclusive {
+    pub fn quantile(&self, rank: f64, criteria: SearchCriteria) -> T {
+        let weight = if criteria == SearchCriteria::Inclusive {
             (rank * self.total_weight as f64).ceil() as u64
         } else {
             (rank * self.total_weight as f64) as u64
         };
 
-        let idx = if inclusive {
+        let idx = if criteria == SearchCriteria::Inclusive {
             lower_bound_by_weight(&self.entries, weight)
         } else {
             upper_bound_by_weight(&self.entries, weight)
@@ -84,22 +86,22 @@ impl<T: Clone, C: KllComparator<T>> SortedView<T, C> {
         self.entries[idx].item.clone()
     }
 
-    pub fn cdf(&self, split_points: &[T], inclusive: bool) -> Vec<f64> {
-        check_split_points(split_points, &self.comparator);
+    pub fn cdf(&self, split_points: &[T], criteria: SearchCriteria) -> Result<Vec<f64>, Error> {
+        check_split_points(split_points, &self.comparator)?;
         let mut ranks = Vec::with_capacity(split_points.len() + 1);
         for item in split_points {
-            ranks.push(self.rank(item, inclusive));
+            ranks.push(self.rank(item, criteria));
         }
         ranks.push(1.0);
-        ranks
+        Ok(ranks)
     }
 
-    pub fn pmf(&self, split_points: &[T], inclusive: bool) -> Vec<f64> {
-        let mut buckets = self.cdf(split_points, inclusive);
+    pub fn pmf(&self, split_points: &[T], criteria: SearchCriteria) -> Result<Vec<f64>, Error> {
+        let mut buckets = self.cdf(split_points, criteria)?;
         for i in (1..buckets.len()).rev() {
             buckets[i] -= buckets[i - 1];
         }
-        buckets
+        Ok(buckets)
     }
 }
 
@@ -123,18 +125,23 @@ pub fn build_sorted_view<T: Clone, C: KllComparator<T>>(
     SortedView::new(entries, comparator)
 }
 
-#[track_caller]
-fn check_split_points<T, C: KllComparator<T>>(split_points: &[T], comparator: &C) {
-    assert!(
-        split_points.iter().all(|point| comparator.accepts(point)),
-        "split_points must belong to the comparator's ordered domain"
-    );
-    for pair in split_points.windows(2) {
-        assert!(
-            comparator.compare(&pair[0], &pair[1]) == Ordering::Less,
-            "split_points must be unique and monotonically increasing"
-        );
+fn check_split_points<T, C: KllComparator<T>>(
+    split_points: &[T],
+    comparator: &C,
+) -> Result<(), Error> {
+    if !split_points.iter().all(|point| comparator.accepts(point)) {
+        return Err(Error::invalid_argument(
+            "split points must belong to the comparator's ordered domain",
+        ));
     }
+    for pair in split_points.windows(2) {
+        if comparator.compare(&pair[0], &pair[1]) != Ordering::Less {
+            return Err(Error::invalid_argument(
+                "split points must be unique and monotonically increasing",
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn lower_bound<T, C: KllComparator<T>>(entries: &[Entry<T>], item: &T, comparator: &C) -> usize {
