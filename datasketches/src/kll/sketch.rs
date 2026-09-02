@@ -184,23 +184,33 @@ impl<T: Clone, C: KllComparator<T>> KllSketch<T, C> {
 
     /// Merges another sketch into this one.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if the sketches have incompatible parameters.
-    pub fn merge(&mut self, other: &KllSketch<T, C>) {
+    /// Returns an error if the sketches use incompatible comparators or their combined stream
+    /// weight exceeds [`u64::MAX`].
+    pub fn merge(&mut self, other: &KllSketch<T, C>) -> Result<(), Error> {
         if other.is_empty() {
-            return;
+            return Ok(());
         }
 
-        assert_eq!(
-            self.m, other.m,
-            "incompatible m values: {} and {}",
-            self.m, other.m
-        );
+        if !self.comparator.is_compatible(&other.comparator) {
+            return Err(Error::invalid_argument(
+                "cannot merge sketches with incompatible comparators",
+            ));
+        }
+        if self.m != other.m {
+            return Err(Error::invalid_argument(format!(
+                "cannot merge sketches with different m values: {} and {}",
+                self.m, other.m
+            )));
+        }
+        let final_n = self
+            .n
+            .checked_add(other.n)
+            .ok_or_else(|| Error::invalid_argument("combined stream weight exceeds u64::MAX"))?;
 
         self.update_min_max_from_other(other);
 
-        let final_n = self.n + other.n;
         for item in &other.levels[0] {
             self.internal_update(item.clone());
         }
@@ -215,6 +225,7 @@ impl<T: Clone, C: KllComparator<T>> KllSketch<T, C> {
         }
 
         debug_assert_eq!(self.total_weight(), self.n, "total weight does not match n");
+        Ok(())
     }
 
     /// Returns the normalized rank of the given item.

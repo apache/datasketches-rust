@@ -54,6 +54,25 @@ impl KllComparator<String> for NumericStringOrder {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct DirectionalOrder {
+    descending: bool,
+}
+
+impl KllComparator<i64> for DirectionalOrder {
+    fn compare(&self, left: &i64, right: &i64) -> Ordering {
+        if self.descending {
+            right.cmp(left)
+        } else {
+            left.cmp(right)
+        }
+    }
+
+    fn is_compatible(&self, other: &Self) -> bool {
+        self == other
+    }
+}
+
 #[test]
 fn test_k_limits() {
     let _min = KllSketch::<f32>::new(MIN_K).unwrap();
@@ -327,7 +346,7 @@ fn test_merge() {
     assert_eq!(sketch2.min_item().cloned(), Some(n as f32));
     assert_eq!(sketch2.max_item().cloned(), Some((2 * n - 1) as f32));
 
-    sketch1.merge(&sketch2);
+    sketch1.merge(&sketch2).unwrap();
 
     assert!(!sketch1.is_empty());
     assert_eq!(sketch1.n(), (2 * n) as u64);
@@ -348,7 +367,7 @@ fn test_merge_lower_k() {
         sketch2.update((2 * n - i - 1) as f32);
     }
 
-    sketch1.merge(&sketch2);
+    sketch1.merge(&sketch2).unwrap();
 
     assert_eq!(sketch1.n(), (2 * n) as u64);
     assert_eq!(sketch1.min_item().cloned(), Some(0.0));
@@ -376,7 +395,7 @@ fn test_merge_exact_mode_lower_k() {
     }
 
     let err_before = sketch1.normalized_pmf_error();
-    sketch1.merge(&sketch2);
+    sketch1.merge(&sketch2).unwrap();
     assert_eq!(sketch1.normalized_pmf_error(), err_before);
 
     assert_eq!(sketch1.n(), n as u64);
@@ -393,9 +412,26 @@ fn test_merge_min_max_from_other() {
     let mut sketch2 = KllSketch::<f32>::new(DEFAULT_K).unwrap();
     sketch1.update(1.0);
     sketch2.update(2.0);
-    sketch2.merge(&sketch1);
+    sketch2.merge(&sketch1).unwrap();
     assert_eq!(sketch2.min_item().cloned(), Some(1.0));
     assert_eq!(sketch2.max_item().cloned(), Some(2.0));
+}
+
+#[test]
+fn test_merge_rejects_incompatible_comparators_without_mutation() {
+    let mut ascending =
+        KllSketch::new_with_comparator(200, DirectionalOrder { descending: false }).unwrap();
+    let mut descending =
+        KllSketch::new_with_comparator(200, DirectionalOrder { descending: true }).unwrap();
+    ascending.update(1);
+    descending.update(2);
+
+    let error = ascending.merge(&descending).unwrap_err();
+
+    assert_eq!(error.kind(), ErrorKind::InvalidArgument);
+    assert_eq!(ascending.n(), 1);
+    assert_eq!(ascending.min_item(), Some(&1));
+    assert_eq!(ascending.max_item(), Some(&1));
 }
 
 #[test]
@@ -405,7 +441,7 @@ fn test_merge_min_max_large_other() {
         sketch1.update(i as f32);
     }
     let mut sketch2 = KllSketch::<f32>::new(DEFAULT_K).unwrap();
-    sketch2.merge(&sketch1);
+    sketch2.merge(&sketch1).unwrap();
     assert_eq!(sketch2.min_item().cloned(), Some(0.0));
     assert_eq!(sketch2.max_item().cloned(), Some(999_999.0));
 }
