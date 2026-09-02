@@ -15,10 +15,7 @@ All significant changes to this project will be documented in this file.
 ### Improvements
 
 * Improve truncated-input diagnostics across sketch deserializers.
-
-### Performance improvements
-
-* Reduce MurmurHash3 and XXHash64 overhead in hash-backed sketch updates. Local end-to-end benchmarks show roughly 20–32% faster `u64` updates for Bloom and CPC sketches and roughly 21% faster Bloom updates for 32-byte inputs.
+* Improve hash-backed sketch update performance, especially for integer inputs and Bloom filter raw-byte inputs.
 
 ### Bug fixes
 
