@@ -25,9 +25,11 @@ pub const SERIAL_VERSION: u8 = 1;
 
 /// Flag indicating sketch is empty (no values inserted)
 pub const EMPTY_FLAG_MASK: u8 = 4;
-/// Flag indicating compact serialization (no empty slots stored)
+/// Flag indicating compact coupon or HLL4 auxiliary storage.
+///
+/// HLL register arrays have the same layout in compact and updatable images.
 pub const COMPACT_FLAG_MASK: u8 = 8;
-/// Flag indicating out-of-order mode (HIP estimator invalid)
+/// Flag indicating that HIP history is unavailable and composite estimation is required.
 pub const OUT_OF_ORDER_FLAG_MASK: u8 = 16;
 
 /// Preamble size for LIST mode (8 bytes = 2 ints)

@@ -17,9 +17,9 @@
 
 //! Binary serialization format constants for Theta sketches.
 
-pub(super) const UNCOMPRESSED_SERIAL_VERSION: u8 = 3;
-pub(super) const COMPRESSED_SERIAL_VERSION: u8 = 4;
+pub const UNCOMPRESSED_SERIAL_VERSION: u8 = 3;
+pub const COMPRESSED_SERIAL_VERSION: u8 = 4;
 
-pub(super) const V2_PREAMBLE_EMPTY: u8 = 1;
-pub(super) const V2_PREAMBLE_PRECISE: u8 = 2;
-pub(super) const V2_PREAMBLE_ESTIMATE: u8 = 3;
+pub const V2_PREAMBLE_EMPTY: u8 = 1;
+pub const V2_PREAMBLE_PRECISE: u8 = 2;
+pub const V2_PREAMBLE_ESTIMATE: u8 = 3;

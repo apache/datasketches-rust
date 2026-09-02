@@ -43,6 +43,7 @@ struct Command {
 impl Command {
     fn run(self) {
         match self.sub {
+            SubCommand::Bench(cmd) => cmd.run(),
             SubCommand::Check(cmd) => cmd.run(),
             SubCommand::Docs(cmd) => cmd.run(),
             SubCommand::Lint(cmd) => cmd.run(),
@@ -54,6 +55,8 @@ impl Command {
 
 #[derive(Subcommand)]
 enum SubCommand {
+    #[clap(about = "Run workspace benchmarks.")]
+    Bench(CommandBench),
     #[clap(about = "Check datasketches under the feature matrix.")]
     Check(CommandCheck),
     #[clap(about = "Generate documentation and open for preview")]
@@ -67,6 +70,15 @@ enum SubCommand {
         about = "Prepare serialization compatibility test data."
     )]
     PrepareTestData(CommandPrepareTestData),
+}
+
+#[derive(Parser)]
+struct CommandBench;
+
+impl CommandBench {
+    fn run(self) {
+        run_command(make_bench_cmd());
+    }
 }
 
 #[derive(Parser)]
@@ -176,6 +188,12 @@ fn run_command(mut cmd: StdCommand) {
     println!("{cmd:?}");
     let status = cmd.status().expect("failed to execute process");
     assert!(status.success(), "command failed: {status}");
+}
+
+fn make_bench_cmd() -> StdCommand {
+    let mut cmd = find_command("cargo");
+    cmd.args(["bench", "--package", "benchmarks", "--bench", "benchmarks"]);
+    cmd
 }
 
 fn make_test_cmd(no_capture: bool, features: &[String]) -> StdCommand {
@@ -298,9 +316,9 @@ impl CommandPrepareTestData {
     }
 
     fn prepare(self) -> Result<()> {
-        const REVISION: &str = "d363b12d293b395d90abb42677f9ea63178dbc0d";
+        const REVISION: &str = "c0a180708c6e6433e4cba7fba091713eb8af3eaa";
         let serde_tests =
-            Path::new(env!("CARGO_WORKSPACE_DIR")).join("datasketches/tests/serde_tests");
+            Path::new(env!("CARGO_WORKSPACE_DIR")).join("tests-integration/tests/serde_tests");
         let archive_url =
             format!("https://api.github.com/repos/apache/datasketches-tck/tarball/{REVISION}");
 

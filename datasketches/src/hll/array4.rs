@@ -20,7 +20,6 @@
 //! Array4 stores HLL register values using 4 bits per slot (2 slots per byte).
 //! When values exceed 4 bits after cur_min offset, they're stored in an auxiliary hash map.
 
-use super::aux_map::AuxMap;
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
 use crate::codec::assert::insufficient_data;
@@ -28,7 +27,9 @@ use crate::codec::family::Family;
 use crate::common::NumStdDev;
 use crate::error::Error;
 use crate::hll::Coupon;
-use crate::hll::estimator::HipEstimator;
+use crate::hll::aux_map::AuxMap;
+use crate::hll::estimator::EstimateState;
+use crate::hll::estimator::Estimator;
 use crate::hll::serialization::COMPACT_FLAG_MASK;
 use crate::hll::serialization::COUPON_SIZE_BYTES;
 use crate::hll::serialization::CUR_MODE_HLL;
@@ -40,6 +41,22 @@ use crate::hll::serialization::TGT_HLL4;
 use crate::hll::serialization::encode_mode_byte;
 
 const AUX_TOKEN: u8 = 15;
+
+#[derive(Clone, Copy)]
+pub enum AuxFormat {
+    Compact,
+    Updatable { lg_arr: u8 },
+}
+
+impl AuxFormat {
+    pub fn from_header(compact: bool, lg_arr: u8) -> Self {
+        if compact {
+            Self::Compact
+        } else {
+            Self::Updatable { lg_arr }
+        }
+    }
+}
 
 /// Core Array4 data structure - stores 4-bit values efficiently
 #[derive(Debug, Clone, PartialEq)]
@@ -54,8 +71,7 @@ pub struct Array4 {
     num_at_cur_min: u32,
     /// Exception table for values >= 15 after cur_min offset
     aux_map: Option<AuxMap>,
-    /// HIP estimator for cardinality estimation
-    estimator: HipEstimator,
+    estimator: Estimator,
 }
 
 impl Array4 {
@@ -68,7 +84,7 @@ impl Array4 {
             cur_min: 0,
             num_at_cur_min,
             aux_map: None,
-            estimator: HipEstimator::new(lg_config_k),
+            estimator: Estimator::new(lg_config_k),
         }
     }
 
@@ -90,7 +106,7 @@ impl Array4 {
     /// Returns the true register value:
     /// * If raw < 15: value = cur_min + raw
     /// * If raw == 15 (AUX_TOKEN): value is in aux_map
-    pub(super) fn get(&self, slot: u32) -> u8 {
+    pub fn get(&self, slot: u32) -> u8 {
         let raw = self.get_raw(slot);
 
         if raw < AUX_TOKEN {
@@ -105,13 +121,13 @@ impl Array4 {
     }
 
     /// Get the number of registers (K = 2^lg_config_k)
-    pub(super) fn num_registers(&self) -> usize {
+    pub fn num_registers(&self) -> usize {
         1 << self.lg_config_k
     }
 
-    /// Get the current HIP accumulator value
-    pub(super) fn hip_accum(&self) -> f64 {
-        self.estimator.hip_accum()
+    /// Returns the estimate state independently from register-derived cached values.
+    pub fn estimate_state(&self) -> EstimateState {
+        self.estimator.estimate_state()
     }
 
     /// Set raw 4-bit value in slot
@@ -254,7 +270,7 @@ impl Array4 {
         self.num_at_cur_min = num_at_new;
     }
 
-    /// Get the current cardinality estimate using HIP estimator
+    /// Returns the current cardinality estimate.
     pub fn estimate(&self) -> f64 {
         // Array4 tracks cur_min and num_at_cur_min dynamically
         self.estimator
@@ -281,11 +297,9 @@ impl Array4 {
         )
     }
 
-    /// Set the HIP accumulator value
-    ///
-    /// This is used when promoting from coupon modes to carry forward the estimate
-    pub fn set_hip_accum(&mut self, value: f64) {
-        self.estimator.set_hip_accum(value);
+    /// Restores estimate state after copying or transforming the same logical sketch.
+    pub fn restore_estimate_state(&mut self, state: EstimateState) {
+        self.estimator.restore_estimate_state(state);
     }
 
     /// Check if the sketch is empty (all slots are zero)
@@ -300,12 +314,13 @@ impl Array4 {
         mut cursor: SketchSlice,
         cur_min: u8,
         lg_config_k: u8,
-        compact: bool,
+        aux_format: AuxFormat,
         ooo: bool,
     ) -> Result<Self, Error> {
-        let num_bytes = 1 << (lg_config_k - 1); // k/2 bytes for 4-bit packing
+        let k = 1usize << lg_config_k;
+        let num_bytes = 1usize << (lg_config_k - 1); // k/2 bytes for 4-bit packing
 
-        // Read HIP estimator values from preamble
+        // Read estimator values from preamble
         let hip_accum = cursor
             .read_f64_le()
             .map_err(insufficient_data("hip_accum"))?;
@@ -319,41 +334,75 @@ impl Array4 {
         let aux_count = cursor
             .read_u32_le()
             .map_err(insufficient_data("aux_count"))?;
+        if num_at_cur_min as usize > k || aux_count as usize > k {
+            return Err(Error::deserial(
+                "HLL4 register or auxiliary count exceeds k",
+            ));
+        }
+        let (aux_slots, compact) = match aux_format {
+            AuxFormat::Compact => (aux_count as usize, true),
+            AuxFormat::Updatable { lg_arr } => {
+                let slots = if aux_count == 0 {
+                    0
+                } else {
+                    1usize
+                        .checked_shl(u32::from(lg_arr))
+                        .ok_or_else(|| Error::deserial(format!("invalid HLL4 lg_arr: {lg_arr}")))?
+                };
+                (slots, false)
+            }
+        };
+        let required_bytes = aux_slots
+            .checked_mul(COUPON_SIZE_BYTES)
+            .and_then(|aux_bytes| num_bytes.checked_add(aux_bytes))
+            .ok_or_else(|| Error::deserial("HLL4 payload length overflows"))?;
+        let available_bytes = cursor.remaining().len();
+        if available_bytes < required_bytes {
+            return Err(Error::insufficient_data_of(
+                "HLL4 payload",
+                format_args!("expected {required_bytes} bytes, got {available_bytes}"),
+            ));
+        }
 
         // Read packed 4-bit byte array
         let mut data = vec![0u8; num_bytes];
-        if !compact {
-            cursor
-                .read_exact(&mut data)
-                .map_err(insufficient_data("data"))?;
-        } else {
-            cursor.advance(num_bytes as u64);
-        }
+        cursor
+            .read_exact(&mut data)
+            .map_err(insufficient_data("data"))?;
 
         // Read aux map if present
         let mut aux_map = None;
         if aux_count > 0 {
             let mut aux = AuxMap::new(lg_config_k);
-            for i in 0..aux_count {
-                let coupon = cursor.read_u32_le().map_err(|_| {
-                    Error::insufficient_data(format!(
-                        "expected {aux_count} aux coupons, failed at index {i}",
-                    ))
+            let mut decoded_count = 0;
+            for i in 0..aux_slots {
+                let coupon = cursor.read_u32_le().map_err(|error| {
+                    Error::insufficient_data_of("HLL4 auxiliary slot", error)
+                        .with_context("index", i)
                 })?;
                 let coupon = Coupon(coupon);
+                if coupon.is_empty() && !compact {
+                    continue;
+                }
                 let slot = coupon.slot() & ((1 << lg_config_k) - 1);
                 let value = coupon.value();
+                if coupon.is_empty() || aux.get(slot).is_some() {
+                    return Err(Error::deserial(
+                        "HLL4 auxiliary entries must be non-empty and unique",
+                    ));
+                }
                 aux.insert(slot, value);
+                decoded_count += 1;
+            }
+            if decoded_count != aux_count as usize {
+                return Err(Error::deserial(format!(
+                    "HLL4 auxiliary count is {aux_count}, decoded {decoded_count}"
+                )));
             }
             aux_map = Some(aux);
         }
 
-        // Create estimator and restore state
-        let mut estimator = HipEstimator::new(lg_config_k);
-        estimator.set_hip_accum(hip_accum);
-        estimator.set_kxq0(kxq0);
-        estimator.set_kxq1(kxq1);
-        estimator.set_out_of_order(ooo);
+        let estimator = Estimator::from_serialized(hip_accum, kxq0, kxq1, ooo);
 
         Ok(Self {
             lg_config_k,
@@ -393,7 +442,7 @@ impl Array4 {
         // COMPACT_FLAG_MASK is always set: aux map entries are written as a compact sequential
         // list of populated entries only.
         let mut flags = COMPACT_FLAG_MASK;
-        if self.estimator.is_out_of_order() {
+        if self.estimator.uses_composite_estimate() {
             flags |= OUT_OF_ORDER_FLAG_MASK;
         }
         bytes.write_u8(flags);
@@ -404,7 +453,7 @@ impl Array4 {
         // Mode byte: HLL mode with HLL4 type
         bytes.write_u8(encode_mode_byte(CUR_MODE_HLL, TGT_HLL4));
 
-        // Write HIP estimator values
+        // Write estimator values
         bytes.write_f64_le(self.estimator.hip_accum());
         bytes.write_f64_le(self.estimator.kxq0());
         bytes.write_f64_le(self.estimator.kxq1());
@@ -439,6 +488,12 @@ impl Array4 {
 
 #[cfg(test)]
 mod tests {
+    use googletest::assert_that;
+    use googletest::prelude::gt;
+    use googletest::prelude::is_finite;
+    use googletest::prelude::lt;
+    use googletest::prelude::none;
+
     use super::*;
     use crate::hll::Coupon;
 
@@ -480,20 +535,14 @@ mod tests {
         // (not exact, but should be non-zero and not NaN/Inf)
         let estimate = arr.estimate();
 
-        assert!(estimate > 0.0, "Estimate should be positive");
-        assert!(estimate.is_finite(), "Estimate should be finite");
-        assert!(estimate < 100_000.0, "Estimate should be reasonable");
+        assert_that!(estimate, gt(0.0));
+        assert_that!(estimate, is_finite());
+        assert_that!(estimate, lt(100_000.0));
 
         // Rough sanity check: with 100 updates to different slots,
         // estimate should be in a reasonable range (very loose bounds)
-        assert!(
-            estimate > 1_000.0,
-            "Estimate seems too low for 10_000 updates"
-        );
-        assert!(
-            estimate < 100_000.0,
-            "Estimate seems too high for 10_000 updates"
-        );
+        assert_that!(estimate, gt(1_000.0));
+        assert_that!(estimate, lt(100_000.0));
     }
 
     #[test]
@@ -507,14 +556,11 @@ mod tests {
         // Verify registers were updated (not exact values, just check they changed)
         // kxq0 should have decreased (we removed a 0 and added a 10)
         // Initial kxq0 = 256 (all zeros = 1.0 each)
-        assert!(arr.estimator.kxq0() < 256.0, "kxq0 should have decreased");
+        assert_that!(arr.estimator.kxq0(), lt(256.0));
 
         // kxq1 should have a small positive value (from 1/2^40)
-        assert!(arr.estimator.kxq1() > 0.0, "kxq1 should be positive");
-        assert!(
-            arr.estimator.kxq1() < 0.001,
-            "kxq1 should be small (1/2^40 is tiny)"
-        );
+        assert_that!(arr.estimator.kxq1(), gt(0.0));
+        assert_that!(arr.estimator.kxq1(), lt(0.001));
     }
 
     #[test]
@@ -535,7 +581,7 @@ mod tests {
         assert_eq!(arr.num_at_cur_min, num_slots - 1);
         assert_eq!(arr.get_raw(0), 14);
         assert_eq!(arr.get(0), 15);
-        assert!(arr.aux_map.is_none());
+        assert_that!(arr.aux_map, none());
 
         for slot in 1..num_slots {
             assert_eq!(arr.get(slot), 1);

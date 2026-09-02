@@ -31,9 +31,9 @@ static DELTA_OF_NUM_STD_DEVS: [f64; 4] = [
 /// Number of standard deviations for confidence bounds.
 ///
 /// This enum specifies the number of standard deviations to use when computing
-/// upper and lower bounds for cardinality estimates. Higher values provide wider
-/// confidence intervals with greater certainty that the true cardinality falls
-/// within the bounds.
+/// upper and lower bounds for sketch estimates. Higher values provide wider
+/// confidence intervals with greater certainty that the true value falls within
+/// the bounds.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum NumStdDev {

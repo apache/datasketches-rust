@@ -18,7 +18,9 @@
 //! Jaccard similarity for Tuple sketches.
 
 use crate::error::Error;
+use crate::error::ErrorKind;
 use crate::hash::DEFAULT_UPDATE_SEED;
+use crate::hash::compute_seed_hash;
 use crate::thetacommon::jaccard_similarity;
 use crate::thetacommon::jaccard_similarity::JaccardSimilarity;
 use crate::tuple::TupleSketchView;
@@ -37,8 +39,8 @@ use crate::tuple::TupleSketchView;
 /// use datasketches::tuple::TupleSketchBuilder;
 ///
 /// let policy = DefaultUpdatePolicy::<u64>::default();
-/// let mut a = TupleSketchBuilder::new(policy).build();
-/// let mut b = TupleSketchBuilder::new(policy).build();
+/// let mut a = TupleSketchBuilder::new(policy).build().unwrap();
+/// let mut b = TupleSketchBuilder::new(policy).build().unwrap();
 /// a.update("apple", 1);
 /// b.update("apple", 2);
 ///
@@ -52,14 +54,19 @@ pub struct TupleJaccardSimilarity {
 
 impl Default for TupleJaccardSimilarity {
     fn default() -> Self {
-        Self::with_seed(DEFAULT_UPDATE_SEED)
+        Self::with_seed(DEFAULT_UPDATE_SEED).unwrap()
     }
 }
 
 impl TupleJaccardSimilarity {
     /// Creates a Jaccard similarity operator for the given `seed`.
-    pub fn with_seed(seed: u64) -> Self {
-        Self { seed }
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the computed seed hash is zero.
+    pub fn with_seed(seed: u64) -> Result<Self, Error> {
+        compute_seed_hash(seed, ErrorKind::InvalidArgument)?;
+        Ok(Self { seed })
     }
 
     /// Computes the Jaccard similarity index for `sketch_a` and `sketch_b`.

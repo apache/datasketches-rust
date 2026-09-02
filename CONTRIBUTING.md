@@ -60,36 +60,57 @@ Lint:
 cargo x lint
 ```
 
+Benchmark:
+
+```shell
+cargo x bench
+```
+
+Benchmarks live in the standalone `benchmarks` crate. Files are grouped first by sketch and then by workload, for example `benchmarks/cpc/serde.rs` and `benchmarks/tdigest/update.rs`. Keep distinct workloads in separate modules so Divan reports stable names such as `cpc::serde::serialize`.
+
+To run only one sketch or workload, pass a Divan filter directly:
+
+```shell
+cargo bench --package benchmarks --bench benchmarks -- cpc::serde
+```
+
 ## Public API documentation
 
 - Describe types with noun phrases and API behavior with third-person present-tense verbs such as `Creates`, `Updates`, and `Returns`.
 - End summary sentences with punctuation, and format Rust identifiers, literals, and numeric ranges as inline code.
 - Put contract sections and compatibility notes before examples. When applicable, order sections as `# Errors`, `# Panics`, and `# Examples`. Include only sections that describe an actual contract.
 
+## Visibility
+
+- Let module visibility define the boundary for implementation items. Inside a private module, use `pub` when an item must be available outside its defining module. Inside a `pub(crate)` module, use `pub` when the item should be available wherever that module is visible. Do not repeat an enclosing restriction when it adds no narrower boundary.
+- Keep items private when they are used only by their defining module and its descendants.
+- For items reachable through a public module or a re-exported public type, use the narrowest visibility that supports their internal callers. Reserve unrestricted `pub` for intentional public API.
+
+## Changelog
+
+- Update `CHANGELOG.md` in the same pull request for significant user-visible changes. Compare the final behavior with the latest release tag rather than recording the sequence of commits that produced it.
+- Include public API migrations, new capabilities, correctness or compatibility changes, and meaningful performance improvements. Exclude tests, internal refactors, documentation, CI, tooling, and dependency maintenance unless they change supported or observable behavior.
+- Keep the permanent `## Unreleased` section at the top. Group entries under user-facing categories consistent with earlier releases, and add only categories that contain entries.
+- Write one bullet for each coherent behavior. Combine related commits, describe the observable impact, and give the required migration for breaking changes. Do not include pull request numbers, issue numbers, discarded intermediate APIs, or implementation history.
+- Write from the user's perspective: name the affected public API or workload and its observable result. Omit implementation mechanics unless users need them to migrate, understand compatibility, or assess risk.
+- Scope performance claims to the workload supported by evidence. Distinguish broad improvements from scenario-specific benchmark results, and do not generalize a microbenchmark into a library-wide claim.
+- During release preparation, insert `## vX.Y.Z` without a date immediately below `## Unreleased` and move the accumulated entries into it. Add the actual UTC release date in `YYYY-MM-DD` format after the release; do not guess it in advance or remove `## Unreleased`.
+
 ## Integration test layout
 
-Integration tests for the `datasketches` crate live under `datasketches/tests` and use two entry-point patterns.
+End-to-end tests live in the standalone `tests-integration` crate, which depends on `datasketches` with every sketch feature enabled. Unit tests that require private implementation access remain next to the library code.
 
 ### Sketch behavior tests
 
-Non-serialization tests are grouped into one integration-test target per sketch. The target entry point is `datasketches/tests/<sketch>_test/main.rs`, with operation-specific modules such as `update.rs`, `union.rs`, or `intersection.rs` alongside it.
+Non-serialization tests are grouped into one integration-test target per sketch. The target entry point is `tests-integration/tests/<sketch>_test/main.rs`, with operation-specific modules such as `update.rs`, `union.rs`, or `intersection.rs` alongside it. Cargo discovers these directory-style targets automatically.
 
-Because these entry points are nested below `tests`, Cargo does not discover them automatically. Each new sketch target must also be registered in `datasketches/Cargo.toml` with its required feature:
-
-```toml
-[[test]]
-name = "tuple_test"
-path = "tests/tuple_test/main.rs"
-required-features = ["tuple"]
-```
-
-When adding a case to an existing sketch target, add it to the appropriate module and declare any new module from that target's `main.rs`; no Cargo manifest change is needed. Add another `[[test]]` entry only when introducing a new sketch target.
+When adding a case to an existing sketch target, add it to the appropriate module and declare any new module from that target's `main.rs`. To add a sketch target, create its directory and `main.rs`; no Cargo manifest entry or feature gate is needed because `tests-integration` enables every sketch feature.
 
 ### Serialization compatibility tests
 
-Cargo automatically discovers `datasketches/tests/serde_tests.rs`, which aggregates the sketch-specific modules under `datasketches/tests/serde_tests`. Each module is gated by its corresponding sketch feature in `serde_tests.rs`.
+Cargo automatically discovers `tests-integration/tests/serde_tests.rs`, which aggregates the sketch-specific modules under `tests-integration/tests/serde_tests`.
 
-To add serialization tests for another sketch, add `serde_tests/<sketch>.rs` and a feature-gated module declaration in `serde_tests.rs`. Do not add a separate `[[test]]` entry. Shared path handling belongs in `serde_tests.rs`, and serialization fixtures belong in the appropriate subdirectory under `serde_tests`.
+To add serialization tests for another sketch, add `serde_tests/<sketch>.rs` and its module declaration in `serde_tests.rs`. Shared path handling belongs in `serde_tests.rs`, and serialization fixtures belong in the appropriate subdirectory under `serde_tests`.
 
 ## Manual workflow (without xtask)
 
@@ -124,9 +145,9 @@ Serialization compatibility tests use snapshots from a pinned revision of [`apac
 
 The `cargo x prepare-testdata` command downloads the TCK archive and synchronizes its snapshots into:
 
-- `datasketches/tests/serde_tests/cpp_generated_files`
-- `datasketches/tests/serde_tests/go_generated_files`
-- `datasketches/tests/serde_tests/java_generated_files`
+- `tests-integration/tests/serde_tests/cpp_generated_files`
+- `tests-integration/tests/serde_tests/go_generated_files`
+- `tests-integration/tests/serde_tests/java_generated_files`
 
 You can synchronize them separately:
 

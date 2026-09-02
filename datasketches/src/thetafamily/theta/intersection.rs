@@ -25,8 +25,9 @@ use crate::thetacommon::intersection::IntersectionState;
 
 /// Stateful intersection operator for Theta sketches.
 ///
-/// Before the first [`update`](Self::update), the result is undefined; use
-/// [`has_result`](Self::has_result) to check.
+/// A newly created operator has no result. [`has_result`](Self::has_result) returns `false` and
+/// [`to_sketch`](Self::to_sketch) returns `None` until the first successful
+/// [`update`](Self::update).
 #[derive(Debug)]
 pub struct ThetaIntersection {
     state: IntersectionState<ThetaEntry, NoopIntersectionPolicy>,
@@ -34,7 +35,7 @@ pub struct ThetaIntersection {
 
 impl Default for ThetaIntersection {
     fn default() -> Self {
-        Self::with_seed(DEFAULT_UPDATE_SEED)
+        Self::with_seed(DEFAULT_UPDATE_SEED).unwrap()
     }
 }
 
@@ -47,10 +48,14 @@ impl IntersectionMergePolicy<ThetaEntry> for NoopIntersectionPolicy {
 
 impl ThetaIntersection {
     /// Creates a new intersection operator for the given `seed`.
-    pub fn with_seed(seed: u64) -> Self {
-        Self {
-            state: IntersectionState::new(seed, NoopIntersectionPolicy),
-        }
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the computed seed hash is zero.
+    pub fn with_seed(seed: u64) -> Result<Self, Error> {
+        Ok(Self {
+            state: IntersectionState::new(seed, NoopIntersectionPolicy)?,
+        })
     }
 
     /// Updates the intersection with a given sketch.
@@ -58,12 +63,17 @@ impl ThetaIntersection {
     /// The intersection can be viewed as starting from the "universe" set,
     /// and every update can reduce the current set to leave the overlapping
     /// subset only.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidArgument` if a non-empty `sketch` has a different seed hash or its retained
+    /// entries are inconsistent with its metadata.
     pub fn update<'a>(&mut self, sketch: impl Into<ThetaSketchView<'a>>) -> Result<(), Error> {
         let sketch = sketch.into();
         self.state.update(sketch)
     }
 
-    /// Returns whether this operator has received at least one update.
+    /// Returns `true` after the first successful [`update`](Self::update).
     pub fn has_result(&self) -> bool {
         self.state.has_result()
     }
@@ -73,27 +83,19 @@ impl ThetaIntersection {
         size_of::<Self>() + self.state.estimated_size()
     }
 
-    /// Returns the intersection result as a compact theta sketch.
+    /// Returns the current intersection as a compact theta sketch.
     ///
-    /// # Panics
+    /// Returns `None` until the first successful [`update`](Self::update). After that, returns
+    /// `Some` even when the intersection is empty.
     ///
-    /// Panics if called before the first [`update`](Self::update).
-    pub fn to_sketch(&self, ordered: bool) -> CompactThetaSketch {
-        assert!(
-            self.state.has_result(),
-            "ThetaIntersection::to_sketch() called before first update()"
-        );
-        let parts = self.state.to_compact_parts(ordered);
-        CompactThetaSketch::from_parts(
-            parts
-                .entries
-                .into_iter()
-                .map(|entry| entry.hash())
-                .collect(),
-            parts.theta,
-            parts.seed_hash,
-            parts.ordered,
-            parts.empty,
-        )
+    /// If `ordered` is `true`, retained hashes are sorted in ascending order.
+    pub fn to_sketch(&self, ordered: bool) -> Option<CompactThetaSketch> {
+        self.state
+            .to_compact_sketch_state(ordered)
+            .map(|compact_state| {
+                CompactThetaSketch::from_compact_state(
+                    compact_state.map_retained_entries(|entry| entry.hash()),
+                )
+            })
     }
 }

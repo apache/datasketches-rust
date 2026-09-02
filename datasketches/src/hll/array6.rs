@@ -28,7 +28,8 @@ use crate::codec::family::Family;
 use crate::common::NumStdDev;
 use crate::error::Error;
 use crate::hll::Coupon;
-use crate::hll::estimator::HipEstimator;
+use crate::hll::estimator::EstimateState;
+use crate::hll::estimator::Estimator;
 use crate::hll::serialization::CUR_MODE_HLL;
 use crate::hll::serialization::HLL_PREAMBLE_SIZE;
 use crate::hll::serialization::HLL_PREINTS;
@@ -47,8 +48,7 @@ pub struct Array6 {
     bytes: Box<[u8]>,
     /// Count of slots with value 0
     num_zeros: u32,
-    /// HIP estimator for cardinality estimation
-    estimator: HipEstimator,
+    estimator: Estimator,
 }
 
 impl Array6 {
@@ -60,7 +60,7 @@ impl Array6 {
             lg_config_k,
             bytes: vec![0u8; num_bytes].into_boxed_slice(),
             num_zeros: k,
-            estimator: HipEstimator::new(lg_config_k),
+            estimator: Estimator::new(lg_config_k),
         }
     }
 
@@ -82,18 +82,18 @@ impl Array6 {
 
     /// Get the unpacked 6-bit value (0-63) at the given slot
     #[inline]
-    pub(super) fn get(&self, slot: u32) -> u8 {
+    pub fn get(&self, slot: u32) -> u8 {
         self.get_raw(slot)
     }
 
     /// Get the number of registers (K = 2^lg_config_k)
-    pub(super) fn num_registers(&self) -> usize {
+    pub fn num_registers(&self) -> usize {
         1 << self.lg_config_k
     }
 
-    /// Get the current HIP accumulator value
-    pub(super) fn hip_accum(&self) -> f64 {
-        self.estimator.hip_accum()
+    /// Returns the estimate state independently from register-derived cached values.
+    pub fn estimate_state(&self) -> EstimateState {
+        self.estimator.estimate_state()
     }
 
     /// Set value in a slot (6-bit value)
@@ -145,7 +145,7 @@ impl Array6 {
         }
     }
 
-    /// Get the current cardinality estimate using HIP estimator
+    /// Returns the current cardinality estimate.
     pub fn estimate(&self) -> f64 {
         // Array6 doesn't use cur_min (always 0), so num_at_cur_min = num_zeros
         self.estimator.estimate(self.lg_config_k, 0, self.num_zeros)
@@ -163,11 +163,9 @@ impl Array6 {
             .lower_bound(self.lg_config_k, 0, self.num_zeros, num_std_dev)
     }
 
-    /// Set the HIP accumulator value
-    ///
-    /// This is used when promoting from coupon modes to carry forward the estimate
-    pub fn set_hip_accum(&mut self, value: f64) {
-        self.estimator.set_hip_accum(value);
+    /// Restores estimate state after copying or transforming the same logical sketch.
+    pub fn restore_estimate_state(&mut self, state: EstimateState) {
+        self.estimator.restore_estimate_state(state);
     }
 
     /// Check if the sketch is empty (all slots are zero)
@@ -178,16 +176,15 @@ impl Array6 {
     /// Deserialize Array6 from HLL mode bytes
     ///
     /// Expects full HLL preamble (40 bytes) followed by packed 6-bit data.
-    pub fn deserialize(
+    pub fn deserialize_registers(
         mut cursor: SketchSlice,
         lg_config_k: u8,
-        compact: bool,
         ooo: bool,
     ) -> Result<Self, Error> {
         let k = 1 << lg_config_k;
         let num_bytes = num_bytes_for_k(k);
 
-        // Read HIP estimator values from preamble
+        // Read estimator values from preamble
         let hip_accum = cursor
             .read_f64_le()
             .map_err(insufficient_data("hip_accum"))?;
@@ -198,26 +195,29 @@ impl Array6 {
         let num_zeros = cursor
             .read_u32_le()
             .map_err(insufficient_data("num_zeros"))?;
-        let _aux_count = cursor
+        let aux_count = cursor
             .read_u32_le()
-            .map_err(insufficient_data("aux_count"))?; // always 0
+            .map_err(insufficient_data("aux_count"))?;
+        if num_zeros > k || aux_count != 0 {
+            return Err(Error::deserial(
+                "HLL6 zero count must not exceed k and auxiliary count must be zero",
+            ));
+        }
+        let available_bytes = cursor.remaining().len();
+        if available_bytes < num_bytes {
+            return Err(Error::insufficient_data_of(
+                "HLL6 payload",
+                format_args!("expected {num_bytes} bytes, got {available_bytes}"),
+            ));
+        }
 
         // Read packed byte array from offset HLL_BYTE_ARR_START
         let mut data = vec![0u8; num_bytes];
-        if !compact {
-            cursor
-                .read_exact(&mut data)
-                .map_err(insufficient_data("data"))?;
-        } else {
-            cursor.advance(num_bytes as u64);
-        }
+        cursor
+            .read_exact(&mut data)
+            .map_err(insufficient_data("data"))?;
 
-        // Create estimator and restore state
-        let mut estimator = HipEstimator::new(lg_config_k);
-        estimator.set_hip_accum(hip_accum);
-        estimator.set_kxq0(kxq0);
-        estimator.set_kxq1(kxq1);
-        estimator.set_out_of_order(ooo);
+        let estimator = Estimator::from_serialized(hip_accum, kxq0, kxq1, ooo);
 
         Ok(Self {
             lg_config_k,
@@ -245,7 +245,7 @@ impl Array6 {
 
         // Write flags
         let mut flags = 0u8;
-        if self.estimator.is_out_of_order() {
+        if self.estimator.uses_composite_estimate() {
             flags |= OUT_OF_ORDER_FLAG_MASK;
         }
         bytes.write_u8(flags);
@@ -256,7 +256,7 @@ impl Array6 {
         // Mode byte: HLL mode with HLL6 type
         bytes.write_u8(encode_mode_byte(CUR_MODE_HLL, TGT_HLL6));
 
-        // Write HIP estimator values
+        // Write estimator values
         bytes.write_f64_le(self.estimator.hip_accum());
         bytes.write_f64_le(self.estimator.kxq0());
         bytes.write_f64_le(self.estimator.kxq1());
@@ -288,6 +288,11 @@ fn num_bytes_for_k(k: u32) -> usize {
 
 #[cfg(test)]
 mod tests {
+    use googletest::assert_that;
+    use googletest::prelude::gt;
+    use googletest::prelude::is_finite;
+    use googletest::prelude::lt;
+
     use super::*;
     use crate::hll::Coupon;
 
@@ -367,12 +372,12 @@ mod tests {
         let estimate = arr.estimate();
 
         // Sanity checks
-        assert!(estimate > 0.0, "Estimate should be positive");
-        assert!(estimate.is_finite(), "Estimate should be finite");
+        assert_that!(estimate, gt(0.0));
+        assert_that!(estimate, is_finite());
 
         // Rough bounds for 10K unique items (very loose)
-        assert!(estimate > 1_000.0, "Estimate seems too low");
-        assert!(estimate < 100_000.0, "Estimate seems too high");
+        assert_that!(estimate, gt(1_000.0));
+        assert_that!(estimate, lt(100_000.0));
     }
 
     #[test]
@@ -398,13 +403,10 @@ mod tests {
         arr.update(Coupon::pack(1, 40)); // value >= 32, goes to kxq1
 
         // Initial kxq0 = 256 (all zeros = 1.0 each)
-        assert!(arr.estimator.kxq0() < 256.0, "kxq0 should have decreased");
+        assert_that!(arr.estimator.kxq0(), lt(256.0));
 
         // kxq1 should have a small positive value (from 1/2^40)
-        assert!(arr.estimator.kxq1() > 0.0, "kxq1 should be positive");
-        assert!(
-            arr.estimator.kxq1() < 0.001,
-            "kxq1 should be small (1/2^40 is tiny)"
-        );
+        assert_that!(arr.estimator.kxq1(), gt(0.0));
+        assert_that!(arr.estimator.kxq1(), lt(0.001));
     }
 }

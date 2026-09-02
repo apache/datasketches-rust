@@ -38,8 +38,9 @@ use crate::tuple::sketch::TupleSketchView;
 /// `P` is the [`SummaryCombinePolicy`] applied to keys present in more than one input. There is no
 /// default policy (see the module docs), so one must be supplied at construction.
 ///
-/// Before the first [`update`](Self::update), the result is undefined; use
-/// [`has_result`](Self::has_result) to check.
+/// A newly created operator has no result. [`has_result`](Self::has_result) returns `false` and
+/// [`to_sketch`](Self::to_sketch) returns `None` until the first successful
+/// [`update`](Self::update).
 ///
 /// # Examples
 ///
@@ -67,11 +68,11 @@ use crate::tuple::sketch::TupleSketchView;
 /// }
 ///
 /// let update_policy = DefaultUpdatePolicy::<u64>::default();
-/// let mut a = TupleSketchBuilder::new(update_policy).build();
+/// let mut a = TupleSketchBuilder::new(update_policy).build().unwrap();
 /// a.update("shared", 3);
 /// a.update("only_a", 1);
 ///
-/// let mut b = TupleSketchBuilder::new(update_policy).build();
+/// let mut b = TupleSketchBuilder::new(update_policy).build().unwrap();
 /// b.update("shared", 4);
 /// b.update("only_b", 1);
 ///
@@ -79,9 +80,9 @@ use crate::tuple::sketch::TupleSketchView;
 /// intersection.update(&a).unwrap();
 /// intersection.update(&b).unwrap();
 ///
-/// let result = intersection.to_sketch(true);
+/// let result = intersection.to_sketch(true).unwrap();
 /// assert_eq!(result.num_retained(), 1); // only "shared"
-/// assert_eq!(result.iter().next().unwrap().1, &7); // 3 + 4
+/// assert_eq!(result.iter().next().unwrap().summary(), &7); // 3 + 4
 /// ```
 #[derive(Debug)]
 pub struct TupleIntersection<P>
@@ -97,14 +98,18 @@ where
 {
     /// Creates a new intersection operator with the default seed and the given combine `policy`.
     pub fn new(policy: P) -> Self {
-        Self::with_seed(policy, DEFAULT_UPDATE_SEED)
+        Self::with_seed(policy, DEFAULT_UPDATE_SEED).unwrap()
     }
 
     /// Creates a new intersection operator for the given combine `policy` and `seed`.
-    pub fn with_seed(policy: P, seed: u64) -> Self {
-        Self {
-            state: IntersectionState::new(seed, policy),
-        }
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the computed seed hash is zero.
+    pub fn with_seed(policy: P, seed: u64) -> Result<Self, Error> {
+        Ok(Self {
+            state: IntersectionState::new(seed, policy)?,
+        })
     }
 
     /// Updates the intersection with a given sketch.
@@ -128,7 +133,7 @@ where
         self.state.update(sketch)
     }
 
-    /// Returns whether this operator has received at least one update.
+    /// Returns `true` after the first successful [`update`](Self::update).
     pub fn has_result(&self) -> bool {
         self.state.has_result()
     }
@@ -138,28 +143,18 @@ where
         size_of::<Self>() + self.state.estimated_size()
     }
 
-    /// Returns the intersection result as a compact Tuple sketch.
+    /// Returns the current intersection as a compact Tuple sketch.
     ///
-    /// If `ordered` is `true`, retained entries are sorted ascending by hash.
+    /// Returns `None` until the first successful [`update`](Self::update). After that, returns
+    /// `Some` even when the intersection is empty.
     ///
-    /// # Panics
-    ///
-    /// Panics if called before the first [`update`](Self::update).
-    pub fn to_sketch(&self, ordered: bool) -> CompactTupleSketch<P::Summary>
+    /// If `ordered` is `true`, retained entries are sorted in ascending hash order.
+    pub fn to_sketch(&self, ordered: bool) -> Option<CompactTupleSketch<P::Summary>>
     where
         P::Summary: Clone,
     {
-        assert!(
-            self.state.has_result(),
-            "TupleIntersection::to_sketch() called before first update()"
-        );
-        let parts = self.state.to_compact_parts(ordered);
-        CompactTupleSketch::from_parts(
-            parts.entries,
-            parts.theta,
-            parts.seed_hash,
-            parts.ordered,
-            parts.empty,
-        )
+        self.state
+            .to_compact_sketch_state(ordered)
+            .map(CompactTupleSketch::from_compact_state)
     }
 }

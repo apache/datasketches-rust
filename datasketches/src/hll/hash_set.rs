@@ -103,33 +103,52 @@ impl HashSet {
             .read_u32_le()
             .map_err(insufficient_data("coupon_count"))?;
         let coupon_count = coupon_count as usize;
+        let array_size = 1usize << lg_arr;
+        if coupon_count >= array_size {
+            return Err(Error::deserial(format!(
+                "SET mode coupon count {coupon_count} must be below capacity {array_size}"
+            )));
+        }
+        let read_count = if compact { coupon_count } else { array_size };
+        let required_bytes = read_count * size_of::<u32>();
+        let available_bytes = cursor.remaining().len();
+        if available_bytes < required_bytes {
+            return Err(Error::insufficient_data_of(
+                "HLL SET mode coupons",
+                format_args!("expected {required_bytes} bytes, got {available_bytes}"),
+            ));
+        }
 
         if compact {
             // Compact mode: only couponCount coupons are stored
             // Create a new hash set and insert coupons one by one
             let mut hash_set = HashSet::new(lg_arr);
             for i in 0..coupon_count {
-                let coupon = cursor.read_u32_le().map_err(|_| {
-                    Error::insufficient_data(format!(
-                        "expected {coupon_count} coupons, failed at index {i}"
-                    ))
+                let coupon = cursor.read_u32_le().map_err(|error| {
+                    Error::insufficient_data_of("HLL SET mode coupon", error)
+                        .with_context("index", i)
                 })?;
                 hash_set.update(Coupon(coupon));
+            }
+            if hash_set.container.len() != coupon_count {
+                return Err(Error::deserial("SET mode contains duplicate coupons"));
             }
             Ok(hash_set)
         } else {
             // Non-compact mode: full hash table with empty slots
-            let array_size = 1 << lg_arr;
-
             // Read entire hash table including empty slots
             let mut coupons = vec![Coupon::EMPTY; array_size];
             for (i, coupon) in coupons.iter_mut().enumerate() {
-                let raw = cursor.read_u32_le().map_err(|_| {
-                    Error::insufficient_data(format!(
-                        "expected {array_size} coupons, failed at index {i}"
-                    ))
+                let raw = cursor.read_u32_le().map_err(|error| {
+                    Error::insufficient_data_of("HLL SET mode coupon", error)
+                        .with_context("index", i)
                 })?;
                 *coupon = Coupon(raw);
+            }
+            if coupons.iter().filter(|coupon| !coupon.is_empty()).count() != coupon_count {
+                return Err(Error::deserial(
+                    "SET mode coupon count does not match occupied slots",
+                ));
             }
 
             Ok(Self {

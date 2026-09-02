@@ -22,6 +22,7 @@
 //! Theta entries carry no summary, so nothing needs to be combined.
 
 use crate::error::Error;
+use crate::error::ErrorKind;
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::hash::compute_seed_hash;
 use crate::theta::CompactThetaSketch;
@@ -39,11 +40,11 @@ use crate::thetacommon::a_not_b;
 /// use datasketches::theta::ThetaANotB;
 /// use datasketches::theta::ThetaSketchBuilder;
 ///
-/// let mut a = ThetaSketchBuilder::default().build();
+/// let mut a = ThetaSketchBuilder::default().build().unwrap();
 /// a.update("apple");
 /// a.update("banana");
 ///
-/// let mut b = ThetaSketchBuilder::default().build();
+/// let mut b = ThetaSketchBuilder::default().build().unwrap();
 /// b.update("banana");
 ///
 /// let a_not_b = ThetaANotB::default();
@@ -57,16 +58,20 @@ pub struct ThetaANotB {
 
 impl Default for ThetaANotB {
     fn default() -> Self {
-        Self::with_seed(DEFAULT_UPDATE_SEED)
+        Self::with_seed(DEFAULT_UPDATE_SEED).unwrap()
     }
 }
 
 impl ThetaANotB {
     /// Creates a new set difference operator for the given `seed`.
-    pub fn with_seed(seed: u64) -> Self {
-        Self {
-            seed_hash: compute_seed_hash(seed),
-        }
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the computed seed hash is zero.
+    pub fn with_seed(seed: u64) -> Result<Self, Error> {
+        Ok(Self {
+            seed_hash: compute_seed_hash(seed, ErrorKind::InvalidArgument)?,
+        })
     }
 
     /// Computes `a and not b`.
@@ -86,17 +91,8 @@ impl ThetaANotB {
     ) -> Result<CompactThetaSketch, Error> {
         let a = a.into();
         let b = b.into();
-        let parts = a_not_b::compute(self.seed_hash, a, b, ordered)?;
-        Ok(CompactThetaSketch::from_parts(
-            parts
-                .entries
-                .into_iter()
-                .map(|entry| entry.hash())
-                .collect(),
-            parts.theta,
-            parts.seed_hash,
-            parts.ordered,
-            parts.empty,
-        ))
+        let compact_state = a_not_b::compute(self.seed_hash, a, b, ordered)?
+            .map_retained_entries(|entry| entry.hash());
+        Ok(CompactThetaSketch::from_compact_state(compact_state))
     }
 }

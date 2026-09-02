@@ -67,6 +67,7 @@ use crate::cpc::Flavor;
 use crate::cpc::count_bits_set_in_matrix;
 use crate::cpc::determine_correct_offset;
 use crate::cpc::pair_table::PairTable;
+use crate::error::Error;
 use crate::hash::DEFAULT_UPDATE_SEED;
 
 /// Union operator for CPC sketches.
@@ -82,30 +83,30 @@ pub struct CpcUnion {
 
 impl Default for CpcUnion {
     fn default() -> Self {
-        Self::new(DEFAULT_LG_K)
+        Self::new(DEFAULT_LG_K).unwrap()
     }
 }
 
 impl CpcUnion {
     /// Creates a new `CpcUnion` with the given `lg_k` and default seed.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if `lg_k` is not in the range `[4, 26]`.
-    pub fn new(lg_k: u8) -> Self {
+    /// Returns an error if `lg_k` is not in the range `[4, 26]`.
+    pub fn new(lg_k: u8) -> Result<Self, Error> {
         Self::with_seed(lg_k, DEFAULT_UPDATE_SEED)
     }
 
     /// Creates a new `CpcUnion` with the given `lg_k` and `seed`.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if `lg_k` is not in the range `[4, 26]`.
-    pub fn with_seed(lg_k: u8, seed: u64) -> Self {
+    /// Returns an error if `lg_k` is not in the range `[4, 26]`, or the computed seed hash is zero.
+    pub fn with_seed(lg_k: u8, seed: u64) -> Result<Self, Error> {
         // We begin with the accumulator holding an EMPTY_MERGED sketch object.
-        let sketch = CpcSketch::with_seed(lg_k, seed);
+        let sketch = CpcSketch::with_seed(lg_k, seed)?;
         let state = UnionState::Accumulator(sketch);
-        Self { lg_k, seed, state }
+        Ok(Self { lg_k, seed, state })
     }
 
     /// Returns the current `lg_k`.
@@ -124,16 +125,16 @@ impl CpcUnion {
     /// use datasketches::cpc::CpcSketch;
     /// use datasketches::cpc::CpcUnion;
     ///
-    /// let mut s1 = CpcSketch::new(12);
+    /// let mut s1 = CpcSketch::new(12).unwrap();
     /// s1.update(&"apple");
     ///
-    /// let mut s2 = CpcSketch::new(12);
+    /// let mut s2 = CpcSketch::new(12).unwrap();
     /// s2.update(&"apple");
     /// s2.update(&"banana");
     ///
-    /// let mut union = CpcUnion::new(12);
-    /// union.update(&s1);
-    /// union.update(&s2);
+    /// let mut union = CpcUnion::new(12).unwrap();
+    /// union.update(&s1).unwrap();
+    /// union.update(&s2).unwrap();
     ///
     /// let result = union.to_sketch();
     /// assert_eq!(result.estimate().trunc(), 2.0);
@@ -142,7 +143,7 @@ impl CpcUnion {
         match &self.state {
             UnionState::Accumulator(sketch) => {
                 if sketch.is_empty() {
-                    CpcSketch::with_seed(self.lg_k, self.seed)
+                    CpcSketch::with_seed(self.lg_k, self.seed).unwrap()
                 } else {
                     let mut sketch = sketch.clone();
                     assert_eq!(sketch.flavor(), Flavor::Sparse);
@@ -153,7 +154,7 @@ impl CpcUnion {
             UnionState::BitMatrix(matrix) => {
                 let lg_k = self.lg_k;
 
-                let mut sketch = CpcSketch::with_seed(lg_k, self.seed);
+                let mut sketch = CpcSketch::with_seed(lg_k, self.seed).unwrap();
                 let num_coupons = count_bits_set_in_matrix(matrix);
                 sketch.num_coupons = num_coupons;
                 let offset = determine_correct_offset(lg_k, num_coupons);
@@ -209,15 +210,21 @@ impl CpcUnion {
 
     /// Updates this union with a `CpcSketch`.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if the seed of the provided sketch does not match the seed of this union.
-    pub fn update(&mut self, sketch: &CpcSketch) {
-        assert_eq!(self.seed, sketch.seed());
+    /// Returns an error if the seed of the provided sketch does not match the seed of this union.
+    pub fn update(&mut self, sketch: &CpcSketch) -> Result<(), Error> {
+        if self.seed != sketch.seed() {
+            return Err(Error::invalid_argument(format!(
+                "CPC sketch seed must match union seed: expected {}, got {}",
+                self.seed,
+                sketch.seed()
+            )));
+        }
 
         let flavor = sketch.flavor();
         if flavor == Flavor::Empty {
-            return;
+            return Ok(());
         }
 
         if sketch.lg_k() < self.lg_k {
@@ -249,7 +256,7 @@ impl CpcUnion {
                     // are equal.
                     if old_flavor == Flavor::Empty && self.lg_k == sketch.lg_k() {
                         *old_sketch = sketch.clone();
-                        return;
+                        return Ok(());
                     }
 
                     walk_table_updating_sketch(old_sketch, sketch.surprising_value_table());
@@ -262,7 +269,7 @@ impl CpcUnion {
                         self.state = UnionState::BitMatrix(bit_matrix);
                     }
 
-                    return;
+                    return Ok(());
                 }
 
                 // If flavor is past SPARSE mode, the state must have been converted to bitMatrix.
@@ -274,7 +281,7 @@ impl CpcUnion {
                 if flavor == Flavor::Sparse {
                     // [Case B] Sparse, bitMatrix valid, accumulator == null
                     or_table_into_matrix(old_matrix, self.lg_k, sketch.surprising_value_table());
-                    return;
+                    return Ok(());
                 }
 
                 if matches!(flavor, Flavor::Hybrid | Flavor::Pinned) {
@@ -288,7 +295,7 @@ impl CpcUnion {
                         sketch.lg_k(),
                     );
                     or_table_into_matrix(old_matrix, self.lg_k, sketch.surprising_value_table());
-                    return;
+                    return Ok(());
                 }
 
                 // [Case D] Sliding, bitMatrix valid, accumulator == null
@@ -299,6 +306,7 @@ impl CpcUnion {
                 or_matrix_into_matrix(old_matrix, self.lg_k, &src_matrix, sketch.lg_k());
             }
         }
+        Ok(())
     }
 
     fn reduce_k(&mut self, new_lg_k: u8) {
@@ -306,11 +314,12 @@ impl CpcUnion {
             UnionState::Accumulator(sketch) => {
                 if sketch.is_empty() {
                     self.lg_k = new_lg_k;
-                    self.state = UnionState::Accumulator(CpcSketch::with_seed(new_lg_k, self.seed));
+                    self.state =
+                        UnionState::Accumulator(CpcSketch::with_seed(new_lg_k, self.seed).unwrap());
                     return;
                 }
 
-                let mut new_sketch = CpcSketch::with_seed(new_lg_k, self.seed);
+                let mut new_sketch = CpcSketch::with_seed(new_lg_k, self.seed).unwrap();
                 walk_table_updating_sketch(&mut new_sketch, sketch.surprising_value_table());
 
                 let final_new_flavor = new_sketch.flavor();
@@ -344,19 +353,6 @@ impl CpcUnion {
             UnionState::BitMatrix(matrix) => matrix.capacity() * size_of::<u64>(),
         };
         size_of::<Self>() + heap_size
-    }
-}
-
-// testing methods
-impl CpcUnion {
-    /// Returns the number of coupons in the union.
-    ///
-    /// This is primarily for testing and validation purposes.
-    pub fn num_coupons(&self) -> u32 {
-        match &self.state {
-            UnionState::Accumulator(sketch) => sketch.num_coupons,
-            UnionState::BitMatrix(matrix) => count_bits_set_in_matrix(matrix),
-        }
     }
 }
 

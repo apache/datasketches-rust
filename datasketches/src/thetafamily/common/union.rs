@@ -21,10 +21,10 @@ use crate::error::ErrorKind;
 use crate::hash::check_seed_hash;
 use crate::thetacommon::EntrySketch;
 use crate::thetacommon::SketchEntry;
-use crate::thetacommon::SketchScalars;
 use crate::thetacommon::constants::MAX_THETA;
-use crate::thetacommon::hash_table::CompactSketchParts;
 use crate::thetacommon::hash_table::SketchHashTable;
+use crate::thetacommon::sketch_state::CompactSketchState;
+use crate::thetacommon::sketch_state::ThetaFamilySketchMetadata;
 
 /// Merges an incoming entry into an existing entry with the same hash.
 pub trait UnionMergePolicy<E> {
@@ -39,7 +39,8 @@ pub trait UnionMergePolicy<E> {
 pub struct UnionState<E, P> {
     table: SketchHashTable<E>,
     policy: P,
-    union_theta: u64,
+    // None until the union receives a non-empty input sketch.
+    result_theta: Option<u64>,
 }
 
 impl<E, P> UnionState<E, P>
@@ -52,13 +53,13 @@ where
         sampling_probability: f32,
         seed: u64,
         policy: P,
-    ) -> Self {
-        let table = SketchHashTable::new(lg_k, resize_factor, sampling_probability, seed);
-        Self {
-            union_theta: table.theta(),
+    ) -> Result<Self, Error> {
+        let table = SketchHashTable::new(lg_k, resize_factor, sampling_probability, seed)?;
+        Ok(Self {
+            result_theta: None,
             table,
             policy,
-        }
+        })
     }
 
     /// Incorporate a sketch into the union.
@@ -67,16 +68,15 @@ where
         S: EntrySketch<Entry = E>,
         P: UnionMergePolicy<E>,
     {
-        let SketchScalars {
+        let ThetaFamilySketchMetadata::NonEmpty {
             seed_hash,
             theta,
-            empty,
             ordered,
             ..
-        } = sketch.scalars();
-        if empty {
+        } = sketch.metadata()
+        else {
             return Ok(());
-        }
+        };
 
         check_seed_hash(
             self.table.seed_hash(),
@@ -85,12 +85,13 @@ where
             ErrorKind::InvalidArgument,
         )?;
 
-        self.table.set_empty(false);
-        self.union_theta = self.union_theta.min(theta);
+        let current_theta = self.result_theta.unwrap_or(self.table.retention_theta());
+        let result_theta = current_theta.min(theta);
+        self.result_theta = Some(result_theta);
 
         for entry in sketch.entries() {
             let hash = entry.hash();
-            if hash < self.union_theta && hash < self.table.theta() {
+            if hash < result_theta && hash < self.table.retention_theta() {
                 self.table.upsert_entry(hash, |existing| match existing {
                     Some(existing) => {
                         self.policy.merge(existing, entry);
@@ -102,30 +103,22 @@ where
                 break;
             }
         }
-        self.union_theta = self.union_theta.min(self.table.theta());
+        self.result_theta = Some(result_theta.min(self.table.retention_theta()));
 
         Ok(())
     }
 
-    /// Return the current compact-union state as compact-sketch parts.
-    pub fn to_compact_parts(&self, ordered: bool) -> CompactSketchParts<E>
+    /// Returns the union as canonical compact-sketch state.
+    pub fn to_compact_sketch_state(&self, ordered: bool) -> CompactSketchState<E>
     where
         E: Clone,
     {
-        let seed_hash = self.table.seed_hash();
+        let Some(result_theta) = self.result_theta else {
+            return CompactSketchState::empty(self.table.seed_hash());
+        };
 
-        if self.table.is_empty() {
-            return CompactSketchParts {
-                entries: vec![],
-                theta: self.union_theta,
-                seed_hash,
-                ordered: true,
-                empty: true,
-            };
-        }
-
-        let mut theta = self.union_theta.min(self.table.theta());
-        let mut entries = if self.union_theta >= self.table.theta() {
+        let mut theta = result_theta.min(self.table.retention_theta());
+        let mut retained_entries = if result_theta >= self.table.retention_theta() {
             self.table.iter_entries().cloned().collect::<Vec<_>>()
         } else {
             self.table
@@ -136,30 +129,25 @@ where
         };
 
         let nominal_num = 1usize << self.table.lg_nom_size();
-        if entries.len() > nominal_num {
-            let (_, kth, _) = entries.select_nth_unstable_by_key(nominal_num, |entry| entry.hash());
+        if retained_entries.len() > nominal_num {
+            let (_, kth, _) =
+                retained_entries.select_nth_unstable_by_key(nominal_num, |entry| entry.hash());
             theta = kth.hash();
-            entries.truncate(nominal_num);
+            retained_entries.truncate(nominal_num);
         }
 
-        let ordered = ordered || (entries.len() == 1 && theta == MAX_THETA);
+        let ordered = ordered || (retained_entries.len() == 1 && theta == MAX_THETA);
         if ordered {
-            entries.sort_unstable_by_key(SketchEntry::hash);
+            retained_entries.sort_unstable_by_key(SketchEntry::hash);
         }
 
-        CompactSketchParts {
-            entries,
-            theta,
-            seed_hash,
-            ordered,
-            empty: false,
-        }
+        CompactSketchState::non_empty(retained_entries, theta, self.table.seed_hash(), ordered)
     }
 
     /// Reset the union to its initial state.
     pub fn reset(&mut self) {
         self.table.reset();
-        self.union_theta = self.table.theta();
+        self.result_theta = None;
     }
 
     /// Returns the estimated size of the heap allocations in bytes.

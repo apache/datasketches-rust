@@ -112,6 +112,17 @@ CI does not run on every push to `main` or on release tags. Complete the local r
 4. **Release tools**: Install Git, GPG, SVN, `unzip`, and the tools required by `cargo x lint`.
 5. **Clean checkout**: Start from a current checkout of `main` with no local changes.
 
+## Public communication checkpoints
+
+The release manager is responsible for the `[VOTE]`, `[CANCEL][VOTE]`, `[RESULT][VOTE]`, and `[ANNOUNCE]` messages. For each message:
+
+1. Populate the documented template from verified release state.
+2. Review the recipients, subject, version, links, and any deadline or vote tally.
+3. Send the message from the release manager's Apache email account.
+4. Record the resulting mailing-list thread URL in the release tracking issue.
+
+A prepared draft does not complete a communication step; the sent message and its mailing-list thread are the evidence of completion.
+
 ## Step 1: Prepare the release on `main`
 
 Create a release-preparation pull request that:
@@ -125,7 +136,10 @@ cargo x prepare-testdata
 cargo x lint
 cargo x check
 cargo x test
-cargo package --list -p datasketches
+package_files="$(cargo package --list -p datasketches)"
+printf '%s\n' "$package_files"
+grep -Fx LICENSE <<<"$package_files"
+grep -Fx NOTICE <<<"$package_files"
 cargo publish --dry-run --locked -p datasketches
 ```
 
@@ -146,8 +160,9 @@ Do not add release changes after creating the release candidate. Fixes require a
 Confirm that the release version and changelog are present in the candidate commit:
 
 ```bash
-git grep -F "version = \"${release_version}\"" -- datasketches/Cargo.toml Cargo.lock
-git grep -Fx "## v${release_version}" -- CHANGELOG.md
+grep -F -x "version = \"${release_version}\"" datasketches/Cargo.toml
+grep -F -x "## v${release_version}" CHANGELOG.md
+cargo metadata --locked --no-deps --format-version 1 >/dev/null
 test -z "$(git status --porcelain)"
 
 release_commit="$(git rev-parse HEAD)"
@@ -337,7 +352,7 @@ The commands verify both that `signing_key_fingerprint` is present in `KEYS` and
 
 ## Step 6: Send the release vote
 
-Send the vote to `dev@datasketches.apache.org`.
+Prepare and review the vote using the verified candidate details and the template below. The release manager sends it to `dev@datasketches.apache.org` and records the mailing-list thread URL in the release tracking issue.
 
 **Subject:** `[VOTE] Release Apache DataSketches Rust ${release_version} (RC${rc_number})`
 
@@ -412,7 +427,7 @@ A release requires at least three explicit binding `+1` votes from PMC members a
 
 ### If the vote is cancelled
 
-1. Send a `[CANCEL][VOTE]` message with the reason.
+1. The release manager sends a `[CANCEL][VOTE]` message with the reason and records its mailing-list thread URL.
 2. Confirm and remove the failed candidate from `dist/dev`:
 
    ```bash
@@ -427,7 +442,7 @@ A release requires at least three explicit binding `+1` votes from PMC members a
 
 ## Step 7: Publish an approved release
 
-Send a `[RESULT][VOTE]` message that lists the binding and non-binding vote totals.
+After the voting period closes and the vote requirements are met, prepare a `[RESULT][VOTE]` message that lists the binding and non-binding vote totals. The release manager reviews and sends it, then records the mailing-list thread URL.
 
 Move the exact approved artifacts from `dist/dev` to `dist/release` without rebuilding or renaming them:
 
@@ -497,7 +512,7 @@ cargo info "datasketches@$release_version"
 
 4. Review the generated `_includes/downloadsInclude.txt`, submit the website change, and verify the download, signature, checksum, and `KEYS` links after it is published.
 5. Wait at least one hour after the release first appears on `downloads.apache.org` before announcing it.
-6. Send a plain-text announcement from an `@apache.org` address to `dev@datasketches.apache.org` and `announce@apache.org`. Include a short project description and links to the project download page, changelog, crates.io, and docs.rs.
+6. Prepare and review a plain-text announcement with a short project description and links to the project download page, changelog, crates.io, and docs.rs. The release manager sends it to `dev@datasketches.apache.org` and `announce@apache.org`, then records the mailing-list thread URLs.
 7. Submit a post-release pull request that adds the actual release date to the `v${release_version}` changelog heading, then close the release tracking issue.
 
 ## Troubleshooting

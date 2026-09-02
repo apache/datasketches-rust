@@ -23,6 +23,7 @@
 //! implementation with Theta a-not-B.
 
 use crate::error::Error;
+use crate::error::ErrorKind;
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::hash::compute_seed_hash;
 use crate::thetacommon::a_not_b;
@@ -43,11 +44,11 @@ use crate::tuple::sketch::TupleSketchView;
 /// use datasketches::tuple::TupleSketchBuilder;
 ///
 /// let update_policy = DefaultUpdatePolicy::<u64>::default();
-/// let mut a = TupleSketchBuilder::new(update_policy).build();
+/// let mut a = TupleSketchBuilder::new(update_policy).build().unwrap();
 /// a.update("apple", 1);
 /// a.update("banana", 1);
 ///
-/// let mut b = TupleSketchBuilder::new(update_policy).build();
+/// let mut b = TupleSketchBuilder::new(update_policy).build().unwrap();
 /// b.update("banana", 1);
 ///
 /// let a_not_b = TupleANotB::default();
@@ -61,16 +62,20 @@ pub struct TupleANotB {
 
 impl Default for TupleANotB {
     fn default() -> Self {
-        Self::with_seed(DEFAULT_UPDATE_SEED)
+        Self::with_seed(DEFAULT_UPDATE_SEED).unwrap()
     }
 }
 
 impl TupleANotB {
     /// Creates a new set difference operator for the given `seed`.
-    pub fn with_seed(seed: u64) -> Self {
-        Self {
-            seed_hash: compute_seed_hash(seed),
-        }
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the computed seed hash is zero.
+    pub fn with_seed(seed: u64) -> Result<Self, Error> {
+        Ok(Self {
+            seed_hash: compute_seed_hash(seed, ErrorKind::InvalidArgument)?,
+        })
     }
 
     /// Computes `a and not b`.
@@ -95,13 +100,7 @@ impl TupleANotB {
     {
         let a = a.into();
         let b = b.into();
-        let parts = a_not_b::compute(self.seed_hash, a, b, ordered)?;
-        Ok(CompactTupleSketch::from_parts(
-            parts.entries,
-            parts.theta,
-            parts.seed_hash,
-            parts.ordered,
-            parts.empty,
-        ))
+        let compact_state = a_not_b::compute(self.seed_hash, a, b, ordered)?;
+        Ok(CompactTupleSketch::from_compact_state(compact_state))
     }
 }

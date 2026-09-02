@@ -31,7 +31,7 @@
 [docs-url]: https://docs.rs/datasketches
 [msrv-badge]: https://img.shields.io/badge/MSRV-1.86.0-green?logo=rust
 [license-badge]: https://img.shields.io/crates/l/datasketches
-[license-url]: LICENSE
+[license-url]: https://www.apache.org/licenses/LICENSE-2.0
 [actions-badge]: https://github.com/apache/datasketches-rust/actions/workflows/ci.yml/badge.svg
 [actions-url]: https://github.com/apache/datasketches-rust/actions/workflows/ci.yml
 
@@ -51,7 +51,7 @@ Then build a sketch and query its distinct-count estimate:
 use datasketches::hll::HllSketch;
 use datasketches::hll::HllType;
 
-let mut sketch = HllSketch::new(12, HllType::Hll8);
+let mut sketch = HllSketch::new(12, HllType::Hll8).unwrap();
 for user in ["alice", "bob", "alice", "carol"] {
     sketch.update(user);
 }
@@ -63,17 +63,18 @@ Enable multiple algorithms by listing their features together, such as `features
 
 ## Available sketches
 
-| Feature | Main types | Use case |
-| --- | --- | --- |
-| `bloom` | `BloomFilter` | Space-efficient probabilistic set membership with a configurable false-positive rate. |
-| `countmin` | `CountMinSketch` | Approximate point-frequency queries over a stream. |
-| `cpc` | `CpcSketch`, `CpcUnion`, `CpcWrapper` | Highly compact distinct-count estimation and unions. |
-| `frequencies` | `FrequentItemsSketch` | Heavy-hitter discovery with upper and lower frequency bounds. |
-| `hll` | `HllSketch`, `HllUnion` | Fast distinct-count estimation and unions. |
-| `tdigest` | `TDigestMut`, `TDigest` | Quantile and rank estimation, with high accuracy near distribution tails. |
-| `theta` | `ThetaSketch` and set operations | Distinct counts, set expressions, and Jaccard similarity. |
-| `tuple` | `TupleSketch` and set operations | Theta-style keys with user-defined summaries attached to retained entries. |
-| `xor` | `XorFilter`, `XorFilterBuilder` | Compact immutable probabilistic set membership with 8- or 16-bit fingerprints. |
+| Feature       | Main types                            | Use case                                                                                          |
+| ------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `bloom`       | `BloomFilter`                         | Space-efficient probabilistic set membership with a configurable false-positive rate.             |
+| `countmin`    | `CountMinSketch`                      | Approximate point-frequency queries over a stream.                                                |
+| `cpc`         | `CpcSketch`, `CpcUnion`, `CpcWrapper` | Highly compact distinct-count estimation and unions.                                              |
+| `frequencies` | `FrequentItemsSketch`                 | Heavy-hitter discovery with upper and lower frequency bounds.                                     |
+| `hll`         | `HllSketch`, `HllUnion`               | Fast distinct-count estimation and unions.                                                        |
+| `req`         | `ReqSketch`                           | Relative-error quantile, rank, PMF, and CDF queries with configurable high- or low-rank accuracy. |
+| `tdigest`     | `TDigestMut`, `TDigest`               | Quantile and rank estimation, with high accuracy near distribution tails.                         |
+| `theta`       | `ThetaSketch` and set operations      | Distinct counts, set expressions, and Jaccard similarity.                                         |
+| `tuple`       | `TupleSketch` and set operations      | Theta-style keys with user-defined summaries attached to retained entries.                        |
+| `xor`         | `XorFilter`, `XorFilterBuilder`       | Compact immutable probabilistic set membership with 8- or 16-bit fingerprints.                    |
 
 See the [API documentation](https://docs.rs/datasketches) for configuration, accuracy guarantees, serialization, and examples for each algorithm.
 
@@ -81,7 +82,9 @@ See the [API documentation](https://docs.rs/datasketches) for configuration, acc
 
 The minimum supported Rust version is 1.86.0. The crate currently supports little-endian targets only.
 
-Supported serialization formats are tested with fixtures produced by Apache DataSketches Java, C++, and Go through the [DataSketches TCK](https://github.com/apache/datasketches-tck). When values must hash identically across language implementations, use the compatibility wrappers in `hash::value`.
+Supported serialization formats are tested with fixtures produced by Apache DataSketches Java, C++, and Go through the [DataSketches TCK](https://github.com/apache/datasketches-tck).
+
+Serialization compatibility does not imply that an ordinary Rust `Hash` implementation produces the same update bytes as another language. When sketches must represent the same inputs across implementations, use `hash::value::{raw_bytes, canonical_float, sign_extend, natural_extend}` (and the constructors within those modules) to match the other language implementations’ hashing rules. Other DataSketches implementations skip empty strings, so skip them before updating when that behavior matters.
 
 See the [changelog](CHANGELOG.md) for release notes and migration guidance.
 
@@ -106,4 +109,4 @@ To report a security vulnerability, follow the [ASF security reporting process](
 
 ## License
 
-Licensed under the [Apache License, Version 2.0](LICENSE).
+Licensed under the [Apache License, Version 2.0][license-url].

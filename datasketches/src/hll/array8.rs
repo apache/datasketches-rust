@@ -27,7 +27,8 @@ use crate::codec::family::Family;
 use crate::common::NumStdDev;
 use crate::error::Error;
 use crate::hll::Coupon;
-use crate::hll::estimator::HipEstimator;
+use crate::hll::estimator::EstimateState;
+use crate::hll::estimator::Estimator;
 use crate::hll::serialization::CUR_MODE_HLL;
 use crate::hll::serialization::HLL_PREAMBLE_SIZE;
 use crate::hll::serialization::HLL_PREINTS;
@@ -44,8 +45,7 @@ pub struct Array8 {
     bytes: Box<[u8]>,
     /// Count of slots with value 0
     num_zeros: u32,
-    /// HIP estimator for cardinality estimation
-    estimator: HipEstimator,
+    estimator: Estimator,
 }
 
 impl Array8 {
@@ -56,7 +56,7 @@ impl Array8 {
             lg_config_k,
             bytes: vec![0u8; k as usize].into_boxed_slice(),
             num_zeros: k,
-            estimator: HipEstimator::new(lg_config_k),
+            estimator: Estimator::new(lg_config_k),
         }
     }
 
@@ -99,7 +99,7 @@ impl Array8 {
         }
     }
 
-    /// Get the current cardinality estimate using HIP estimator
+    /// Returns the current cardinality estimate.
     pub fn estimate(&self) -> f64 {
         // Array8 doesn't use cur_min (always 0), so num_at_cur_min = num_zeros
         self.estimator.estimate(self.lg_config_k, 0, self.num_zeros)
@@ -117,59 +117,57 @@ impl Array8 {
             .lower_bound(self.lg_config_k, 0, self.num_zeros, num_std_dev)
     }
 
-    /// Set the HIP accumulator value
-    ///
-    /// This is used when promoting from coupon modes to carry forward the estimate
-    pub fn set_hip_accum(&mut self, value: f64) {
-        self.estimator.set_hip_accum(value);
-    }
-
     /// Check if the sketch is empty (all slots are zero)
     pub fn is_empty(&self) -> bool {
         self.num_zeros == (1 << self.lg_config_k)
     }
 
     /// Get read access to register values (one byte per register)
-    pub(super) fn values(&self) -> &[u8] {
+    pub fn values(&self) -> &[u8] {
         &self.bytes
     }
 
     /// Get the number of registers (K = 2^lg_config_k)
-    pub(super) fn num_registers(&self) -> usize {
+    pub fn num_registers(&self) -> usize {
         1 << self.lg_config_k
     }
 
-    /// Get the current HIP accumulator value
-    pub(super) fn hip_accum(&self) -> f64 {
-        self.estimator.hip_accum()
+    /// Returns the estimate state independently from register-derived cached values.
+    pub fn estimate_state(&self) -> EstimateState {
+        self.estimator.estimate_state()
+    }
+
+    /// Restores estimate state after copying or transforming the same logical sketch.
+    pub fn restore_estimate_state(&mut self, state: EstimateState) {
+        self.estimator.restore_estimate_state(state);
     }
 
     /// Directly set a register value
     ///
     /// This bypasses the normal update path and directly modifies the register.
     /// Caller must call rebuild_estimator_from_registers() after all modifications.
-    pub(super) fn set_register(&mut self, slot: usize, value: u8) {
+    pub fn set_register(&mut self, slot: usize, value: u8) {
         self.bytes[slot] = value;
     }
 
     /// Rebuild estimator state from current register values
     ///
-    /// Recomputes num_zeros, kxq0, kxq1, and marks estimator as out-of-order.
+    /// Recomputes num_zeros, kxq0, and kxq1, then switches to composite estimation.
     /// Should be called after bulk register modifications.
-    pub(super) fn rebuild_estimator_from_registers(&mut self) {
+    pub fn rebuild_estimator_from_registers(&mut self) {
         self.rebuild_cached_values();
-        self.estimator.set_out_of_order(true);
+        self.estimator.invalidate_hip();
     }
 
     /// Merge another Array8 with the same lg_k
     ///
-    /// Performs register-by-register max merge. Marks estimator as
-    /// out-of-order since HIP cannot be maintained during bulk operations.
+    /// Performs register-by-register max merge. HIP is invalidated because the register update
+    /// order is unavailable.
     ///
     /// # Panics
     ///
     /// Panics if src length doesn't match self length (different lg_k).
-    pub(super) fn merge_array_same_lgk(&mut self, src: &[u8]) {
+    pub fn merge_array_same_lgk(&mut self, src: &[u8]) {
         assert_eq!(
             src.len(),
             self.bytes.len(),
@@ -181,7 +179,7 @@ impl Array8 {
         }
 
         self.rebuild_cached_values();
-        self.estimator.set_out_of_order(true);
+        self.estimator.invalidate_hip();
     }
 
     /// Merge an array with larger lg_k (downsampling)
@@ -200,7 +198,7 @@ impl Array8 {
     /// # Panics
     ///
     /// Panics if src_lg_k <= self.lg_config_k (not downsampling).
-    pub(super) fn merge_array_with_downsample(&mut self, src: &[u8], src_lg_k: u8) {
+    pub fn merge_array_with_downsample(&mut self, src: &[u8], src_lg_k: u8) {
         assert!(
             src_lg_k > self.lg_config_k,
             "Source lg_k must be greater than destination lg_k for downsampling"
@@ -219,7 +217,7 @@ impl Array8 {
         }
 
         self.rebuild_cached_values();
-        self.estimator.set_out_of_order(true);
+        self.estimator.invalidate_hip();
     }
 
     /// Rebuild cached values after bulk modifications
@@ -245,22 +243,20 @@ impl Array8 {
             }
         }
 
-        self.estimator.set_kxq0(kxq0_sum);
-        self.estimator.set_kxq1(kxq1_sum);
+        self.estimator.restore_kxq(kxq0_sum, kxq1_sum);
     }
 
     /// Deserialize Array8 from HLL mode bytes
     ///
     /// Expects full HLL preamble (40 bytes) followed by k bytes of data.
-    pub fn deserialize(
+    pub fn deserialize_registers(
         mut cursor: SketchSlice,
         lg_config_k: u8,
-        compact: bool,
         ooo: bool,
     ) -> Result<Self, Error> {
         let k = 1usize << lg_config_k;
 
-        // Read HIP estimator values from preamble
+        // Read estimator values from preamble
         let hip_accum = cursor
             .read_f64_le()
             .map_err(insufficient_data("hip_accum"))?;
@@ -271,26 +267,29 @@ impl Array8 {
         let num_zeros = cursor
             .read_u32_le()
             .map_err(insufficient_data("num_zeros"))?;
-        let _aux_count = cursor
+        let aux_count = cursor
             .read_u32_le()
-            .map_err(insufficient_data("aux_count"))?; // always 0
+            .map_err(insufficient_data("aux_count"))?;
+        if num_zeros as usize > k || aux_count != 0 {
+            return Err(Error::deserial(
+                "HLL8 zero count must not exceed k and auxiliary count must be zero",
+            ));
+        }
+        let available_bytes = cursor.remaining().len();
+        if available_bytes < k {
+            return Err(Error::insufficient_data_of(
+                "HLL8 payload",
+                format_args!("expected {k} bytes, got {available_bytes}"),
+            ));
+        }
 
         // Read byte array from offset HLL_BYTE_ARR_START
         let mut data = vec![0u8; k];
-        if !compact {
-            cursor
-                .read_exact(&mut data)
-                .map_err(insufficient_data("data"))?;
-        } else {
-            cursor.advance(k as u64);
-        }
+        cursor
+            .read_exact(&mut data)
+            .map_err(insufficient_data("data"))?;
 
-        // Create estimator and restore state
-        let mut estimator = HipEstimator::new(lg_config_k);
-        estimator.set_hip_accum(hip_accum);
-        estimator.set_kxq0(kxq0);
-        estimator.set_kxq1(kxq1);
-        estimator.set_out_of_order(ooo);
+        let estimator = Estimator::from_serialized(hip_accum, kxq0, kxq1, ooo);
 
         Ok(Self {
             lg_config_k,
@@ -317,7 +316,7 @@ impl Array8 {
 
         // Write flags
         let mut flags = 0u8;
-        if self.estimator.is_out_of_order() {
+        if self.estimator.uses_composite_estimate() {
             flags |= OUT_OF_ORDER_FLAG_MASK;
         }
         bytes.write_u8(flags);
@@ -328,7 +327,7 @@ impl Array8 {
         // Mode byte: HLL mode with HLL8 type
         bytes.write_u8(encode_mode_byte(CUR_MODE_HLL, TGT_HLL8));
 
-        // Write HIP estimator values
+        // Write estimator values
         bytes.write_f64_le(self.estimator.hip_accum());
         bytes.write_f64_le(self.estimator.kxq0());
         bytes.write_f64_le(self.estimator.kxq1());
@@ -353,6 +352,11 @@ impl Array8 {
 
 #[cfg(test)]
 mod tests {
+    use googletest::assert_that;
+    use googletest::prelude::gt;
+    use googletest::prelude::is_finite;
+    use googletest::prelude::lt;
+
     use super::*;
     use crate::hll::Coupon;
 
@@ -426,12 +430,12 @@ mod tests {
         let estimate = arr.estimate();
 
         // Sanity checks
-        assert!(estimate > 0.0, "Estimate should be positive");
-        assert!(estimate.is_finite(), "Estimate should be finite");
+        assert_that!(estimate, gt(0.0));
+        assert_that!(estimate, is_finite());
 
         // Rough bounds for 10K unique items (very loose)
-        assert!(estimate > 1_000.0, "Estimate seems too low");
-        assert!(estimate < 100_000.0, "Estimate seems too high");
+        assert_that!(estimate, gt(1_000.0));
+        assert_that!(estimate, lt(100_000.0));
     }
 
     #[test]
@@ -477,14 +481,11 @@ mod tests {
         arr.update(Coupon::pack(1, 50)); // value >= 32, goes to kxq1
 
         // Initial kxq0 = 256 (all zeros = 1.0 each)
-        assert!(arr.estimator.kxq0() < 256.0, "kxq0 should have decreased");
+        assert_that!(arr.estimator.kxq0(), lt(256.0));
 
         // kxq1 should have a positive value (from 1/2^50)
-        assert!(arr.estimator.kxq1() > 0.0, "kxq1 should be positive");
-        assert!(
-            arr.estimator.kxq1() < 1e-10,
-            "kxq1 should be very small (1/2^50 ≈ 8.9e-16)"
-        );
+        assert_that!(arr.estimator.kxq1(), gt(0.0));
+        assert_that!(arr.estimator.kxq1(), lt(1e-10));
     }
 
     #[test]
@@ -529,8 +530,8 @@ mod tests {
         assert_eq!(dst.get(2), 35, "dst[2] updated to larger value");
         assert_eq!(dst.get(3), 40, "dst[3] got new value");
 
-        // Verify estimator marked as OOO
-        assert!(dst.estimator.is_out_of_order());
+        // Bulk merges require composite estimation.
+        assert!(dst.estimator.uses_composite_estimate());
 
         // Verify num_zeros updated (should be 12: 16 - 4 non-zero)
         assert_eq!(dst.num_zeros, 12);
@@ -559,8 +560,8 @@ mod tests {
         assert_eq!(dst.get(0), 25, "dst[0] = max(10, 15, 25)");
         assert_eq!(dst.get(1), 30, "dst[1] = max(20, 18, 30)");
 
-        // Verify estimator marked as OOO
-        assert!(dst.estimator.is_out_of_order());
+        // Bulk merges require composite estimation.
+        assert!(dst.estimator.uses_composite_estimate());
     }
 
     #[test]

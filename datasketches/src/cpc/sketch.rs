@@ -29,8 +29,13 @@ use crate::cpc::DEFAULT_LG_K;
 use crate::cpc::Flavor;
 use crate::cpc::MAX_LG_K;
 use crate::cpc::MIN_LG_K;
-use crate::cpc::compression::CompressedState;
-use crate::cpc::count_bits_set_in_matrix;
+use crate::cpc::compression::decode_pairs;
+use crate::cpc::compression::decode_window;
+use crate::cpc::compression::determine_pseudo_phase;
+use crate::cpc::compression::encode_pairs;
+use crate::cpc::compression::encode_window;
+use crate::cpc::compression_data::COLUMN_PERMUTATIONS_FOR_DECODING;
+use crate::cpc::compression_data::COLUMN_PERMUTATIONS_FOR_ENCODING;
 use crate::cpc::determine_correct_offset;
 use crate::cpc::determine_flavor;
 use crate::cpc::estimator::estimate;
@@ -88,35 +93,36 @@ pub struct CpcSketch {
 
 impl Default for CpcSketch {
     fn default() -> Self {
-        Self::new(DEFAULT_LG_K)
+        Self::new(DEFAULT_LG_K).unwrap()
     }
 }
 
 impl CpcSketch {
     /// Creates a new `CpcSketch` with the given `lg_k` and default seed.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if `lg_k` is not in the range `[4, 26]`.
-    pub fn new(lg_k: u8) -> Self {
+    /// Returns an error if `lg_k` is not in the range `[4, 26]`.
+    pub fn new(lg_k: u8) -> Result<Self, Error> {
         Self::with_seed(lg_k, DEFAULT_UPDATE_SEED)
     }
 
     /// Creates a new `CpcSketch` with the given `lg_k` and `seed`.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if `lg_k` is not in the range `[4, 26]`, or the computed seed hash is zero.
-    pub fn with_seed(lg_k: u8, seed: u64) -> Self {
-        assert!(
-            (MIN_LG_K..=MAX_LG_K).contains(&lg_k),
-            "lg_k out of range; got {lg_k}",
-        );
+    /// Returns an error if `lg_k` is not in the range `[4, 26]`, or the computed seed hash is zero.
+    pub fn with_seed(lg_k: u8, seed: u64) -> Result<Self, Error> {
+        if !(MIN_LG_K..=MAX_LG_K).contains(&lg_k) {
+            return Err(Error::invalid_argument(format!(
+                "lg_k must be in [{MIN_LG_K}, {MAX_LG_K}], got {lg_k}"
+            )));
+        }
 
-        Self {
+        Ok(Self {
             lg_k,
             seed,
-            seed_hash: compute_seed_hash(seed),
+            seed_hash: compute_seed_hash(seed, ErrorKind::InvalidArgument)?,
             first_interesting_column: 0,
             num_coupons: 0,
             surprising_value_table: None,
@@ -125,7 +131,7 @@ impl CpcSketch {
             merge_flag: false,
             kxp: (1 << lg_k) as f64,
             hip_est_accum: 0.0,
-        }
+        })
     }
 
     /// Returns the configured `lg_k`.
@@ -181,12 +187,12 @@ impl CpcSketch {
     /// use datasketches::cpc::CpcSketch;
     /// use datasketches::hash::value::canonical_float;
     ///
-    /// let mut sketch = CpcSketch::with_seed(11, 123);
+    /// let mut sketch = CpcSketch::with_seed(11, 123).unwrap();
     /// sketch.update(1);
     /// sketch.update(2);
     /// sketch.update(3);
     ///
-    /// let mut sketch = CpcSketch::with_seed(11, 123);
+    /// let mut sketch = CpcSketch::with_seed(11, 123).unwrap();
     /// sketch.update(canonical_float::from_f64(1.5));
     /// sketch.update(canonical_float::from_f64(2.5));
     /// sketch.update(canonical_float::from_f64(3.5));
@@ -242,7 +248,7 @@ impl CpcSketch {
             .expect("surprising value table must be initialized")
     }
 
-    pub(super) fn surprising_value_table_mut(&mut self) -> &mut PairTable {
+    fn surprising_value_table_mut(&mut self) -> &mut PairTable {
         self.surprising_value_table
             .as_mut()
             .expect("surprising value table must be initialized")
@@ -468,15 +474,93 @@ impl CpcSketch {
 impl CpcSketch {
     /// Serializes this `CpcSketch` to bytes.
     pub fn serialize(&self) -> Vec<u8> {
-        let mut bytes = SketchBytes::with_capacity(256);
-
-        let mut compressed = CompressedState::default();
-        compressed.compress(self);
-
+        let flavor = self.flavor();
         let has_hip = !self.merge_flag;
-        let has_table = !compressed.table_data.is_empty();
-        let has_window = !compressed.window_data.is_empty();
+        let has_window = matches!(flavor, Flavor::Pinned | Flavor::Sliding);
+        let mut pairs = match flavor {
+            Flavor::Empty => vec![],
+            Flavor::Sparse => {
+                debug_assert!(self.sliding_window.is_empty());
+                self.surprising_value_table().unwrapping_get_items()
+            }
+            Flavor::Hybrid => {
+                debug_assert!(!self.sliding_window.is_empty());
+                debug_assert_eq!(self.window_offset, 0);
+
+                let mut table_pairs = self.surprising_value_table().unwrapping_get_items();
+                table_pairs.sort_unstable();
+                let num_table_pairs = table_pairs.len();
+                let mut all_pairs = vec![0; self.num_coupons as usize];
+
+                let mut index = num_table_pairs;
+                for (row_index, &window_byte) in self.sliding_window.iter().enumerate() {
+                    let mut window_byte = window_byte;
+                    while window_byte != 0 {
+                        let col_index = window_byte.trailing_zeros();
+                        window_byte ^= 1 << col_index;
+                        all_pairs[index] = ((row_index << 6) as u32) | col_index;
+                        index += 1;
+                    }
+                }
+                assert_eq!(index, all_pairs.len());
+
+                let mut table_index = 0;
+                let mut window_index = num_table_pairs;
+                for final_index in 0..all_pairs.len() {
+                    if table_index < num_table_pairs
+                        && (window_index >= all_pairs.len()
+                            || table_pairs[table_index] <= all_pairs[window_index])
+                    {
+                        all_pairs[final_index] = table_pairs[table_index];
+                        table_index += 1;
+                    } else {
+                        all_pairs[final_index] = all_pairs[window_index];
+                        window_index += 1;
+                    }
+                }
+                all_pairs
+            }
+            Flavor::Pinned => {
+                let mut pairs = self.surprising_value_table().unwrapping_get_items();
+                for pair in &mut pairs {
+                    assert!(*pair & 63 >= 8, "pair column index is less than 8: {pair}");
+                    *pair -= 8;
+                }
+                pairs
+            }
+            Flavor::Sliding => {
+                let mut pairs = self.surprising_value_table().unwrapping_get_items();
+                let pseudo_phase = determine_pseudo_phase(self.lg_k, self.num_coupons);
+                let permutation = &COLUMN_PERMUTATIONS_FOR_ENCODING[pseudo_phase as usize];
+                debug_assert!(self.window_offset <= 56);
+                for pair in &mut pairs {
+                    let row = *pair >> 6;
+                    let col = ((*pair & 63) as u8 + 56 - self.window_offset) & 63;
+                    debug_assert!(col < 56);
+                    *pair = (row << 6) | u32::from(permutation[col as usize]);
+                }
+                pairs
+            }
+        };
+        pairs.sort_unstable();
+
+        let table_num_entries = pairs.len() as u32;
+        let mut payload = SketchBytes::with_capacity(if self.is_empty() { 0 } else { 256 });
+        let window_words = has_window.then(|| {
+            encode_window(
+                &self.sliding_window,
+                self.lg_k,
+                self.num_coupons,
+                &mut payload,
+            )
+        });
+        let table_words =
+            (!pairs.is_empty()).then(|| encode_pairs(&pairs, self.lg_k, &mut payload));
+        let payload = payload.into_bytes();
+
+        let has_table = table_words.is_some();
         let preamble_ints = make_preamble_ints(self.num_coupons, has_hip, has_table, has_window);
+        let mut bytes = SketchBytes::with_capacity(40 + payload.len());
         bytes.write_u8(preamble_ints);
         bytes.write_u8(SERIAL_VERSION);
         bytes.write_u8(Family::CPC.id);
@@ -487,51 +571,55 @@ impl CpcSketch {
             | (if has_table { 1 } else { 0 } << FLAG_HAS_TABLE)
             | (if has_window { 1 } else { 0 } << FLAG_HAS_WINDOW);
         bytes.write_u8(flags);
-        debug_assert_eq!(self.seed_hash, compute_seed_hash(self.seed));
+        debug_assert_eq!(
+            self.seed_hash,
+            compute_seed_hash(self.seed, ErrorKind::InvalidArgument).unwrap()
+        );
         bytes.write_u16_le(self.seed_hash);
         if !self.is_empty() {
             bytes.write_u32_le(self.num_coupons);
             if has_table && has_window {
                 // if there is no window it is the same as number of coupons
-                bytes.write_u32_le(compressed.table_num_entries);
+                bytes.write_u32_le(table_num_entries);
                 // HIP values can be in two different places in the sequence of fields
                 // this is the first HIP decision point
                 if has_hip {
                     self.write_hip(&mut bytes);
                 }
             }
-            if has_table {
-                debug_assert!(compressed.table_data_words <= u32::MAX as usize);
-                bytes.write_u32_le(compressed.table_data_words as u32);
+            if let Some(table_words) = table_words {
+                debug_assert!(table_words <= u32::MAX as usize);
+                bytes.write_u32_le(table_words as u32);
             }
-            if has_window {
-                debug_assert!(compressed.window_data_words <= u32::MAX as usize);
-                bytes.write_u32_le(compressed.window_data_words as u32);
+            if let Some(window_words) = window_words {
+                debug_assert!(window_words <= u32::MAX as usize);
+                bytes.write_u32_le(window_words as u32);
             }
             // this is the second HIP decision point
             if has_hip && !(has_table && has_window) {
                 self.write_hip(&mut bytes);
             }
-            if has_window {
-                for i in 0..compressed.window_data_words {
-                    bytes.write_u32_le(compressed.window_data[i]);
-                }
-            }
-            if has_table {
-                for i in 0..compressed.table_data_words {
-                    bytes.write_u32_le(compressed.table_data[i]);
-                }
-            }
+            bytes.write(&payload);
         }
         bytes.into_bytes()
     }
 
     /// Deserializes a `CpcSketch` from bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidData` if the image is malformed or its seed hash does not match the default
+    /// seed.
     pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
         Self::deserialize_with_seed(bytes, DEFAULT_UPDATE_SEED)
     }
 
     /// Deserializes a `CpcSketch` from bytes with the provided seed.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidData` if the image is malformed, its seed hash does not match `seed`, or
+    /// `seed` itself computes to the reserved zero seed hash.
     pub fn deserialize_with_seed(bytes: &[u8], seed: u64) -> Result<Self, Error> {
         let mut cursor = SketchSlice::new(bytes);
         let preamble_ints = cursor
@@ -561,8 +649,10 @@ impl CpcSketch {
         let has_table = flags & (1 << FLAG_HAS_TABLE) != 0;
         let has_window = flags & (1 << FLAG_HAS_WINDOW) != 0;
 
-        let mut compressed = CompressedState::default();
         let mut num_coupons = 0;
+        let mut table_num_entries = 0;
+        let mut table_data_words = 0;
+        let mut window_data_words = 0;
         let mut kxp = 0.0;
         let mut hip_est_accum = 0.0;
 
@@ -571,7 +661,7 @@ impl CpcSketch {
                 .read_u32_le()
                 .map_err(insufficient_data("num_coupons"))?;
             if has_table && has_window {
-                compressed.table_num_entries = cursor
+                table_num_entries = cursor
                     .read_u32_le()
                     .map_err(insufficient_data("table_num_entries"))?;
                 if has_hip {
@@ -582,13 +672,13 @@ impl CpcSketch {
                 }
             }
             if has_table {
-                compressed.table_data_words = cursor
+                table_data_words = cursor
                     .read_u32_le()
                     .map_err(insufficient_data("table_data_words"))?
                     as usize;
             }
             if has_window {
-                compressed.window_data_words = cursor
+                window_data_words = cursor
                     .read_u32_le()
                     .map_err(insufficient_data("window_data_words"))?
                     as usize;
@@ -599,24 +689,8 @@ impl CpcSketch {
                     .read_f64_le()
                     .map_err(insufficient_data("hip_est_accum"))?;
             }
-            if has_window {
-                for _ in 0..compressed.window_data_words {
-                    let word = cursor
-                        .read_u32_le()
-                        .map_err(insufficient_data("window_data"))?;
-                    compressed.window_data.push(word);
-                }
-            }
-            if has_table {
-                for _ in 0..compressed.table_data_words {
-                    let word = cursor
-                        .read_u32_le()
-                        .map_err(insufficient_data("table_data"))?;
-                    compressed.table_data.push(word);
-                }
-            }
             if !has_window {
-                compressed.table_num_entries = num_coupons;
+                table_num_entries = num_coupons;
             }
         }
 
@@ -624,7 +698,7 @@ impl CpcSketch {
             make_preamble_ints(num_coupons, has_hip, has_table, has_window);
         ensure_preamble_longs_in(&[expected_preamble_ints], preamble_ints)?;
         check_seed_hash(
-            compute_seed_hash(seed),
+            compute_seed_hash(seed, ErrorKind::InvalidData)?,
             seed_hash,
             "deserialized CpcSketch",
             ErrorKind::InvalidData,
@@ -639,16 +713,161 @@ impl CpcSketch {
             )));
         }
 
-        let uncompressed = compressed.uncompress(lg_k, num_coupons);
+        // The coupon space of a sketch has `k * 64` cells (`k` rows of 64 columns each), so a
+        // valid sketch can never report more coupons than that. Rejecting larger values keeps the
+        // flavor arithmetic below from overflowing on corrupt input.
+        if (num_coupons as u64) > 64 * (1u64 << lg_k) {
+            return Err(Error::deserial(format!(
+                "num_coupons ({}) exceeds coupon space for lg_k = {}",
+                num_coupons, lg_k
+            )));
+        }
+
+        // A valid sketch stores a sliding window exactly for the pinned and sliding flavors, and
+        // stores its coupons in the surprising-value table for the sparse and hybrid flavors. The
+        // flavor is fully determined by `lg_k` and `num_coupons`, so the flags must agree with it.
+        let flavor = determine_flavor(lg_k, num_coupons);
+        let window_expected = matches!(flavor, Flavor::Pinned | Flavor::Sliding);
+        if has_window != window_expected {
+            return Err(Error::deserial(format!(
+                "sliding-window flag ({}) is inconsistent with the {:?} flavor",
+                has_window, flavor
+            )));
+        }
+        if matches!(flavor, Flavor::Sparse | Flavor::Hybrid) && !has_table {
+            return Err(Error::deserial(format!(
+                "table flag is unset but required for the {:?} flavor",
+                flavor
+            )));
+        }
+
+        // The number of stored table entries can never exceed the number of coupons.
+        if table_num_entries > num_coupons {
+            return Err(Error::deserial(format!(
+                "table_num_entries ({}) exceeds num_coupons ({})",
+                table_num_entries, num_coupons
+            )));
+        }
+        // A pair requires at least one bit to encode, so the declared number of table entries can
+        // never exceed the number of bits available in the table data. This also bounds the size
+        // of the allocation made while decoding, rejecting corrupt inputs that claim an enormous
+        // entry count backed by only a few data words.
+        if (table_num_entries as usize) > table_data_words.saturating_mul(32) {
+            return Err(Error::deserial(format!(
+                "table_num_entries ({}) exceeds capacity of table data ({} words)",
+                table_num_entries, table_data_words
+            )));
+        }
+        let k = 1 << lg_k;
+        if has_window && window_data_words.saturating_mul(32) < k {
+            return Err(Error::deserial(format!(
+                "window data ({} words) is too short for lg_k = {lg_k}",
+                window_data_words
+            )));
+        }
+
+        let window_data_bytes = window_data_words.checked_mul(4).ok_or_else(|| {
+            Error::deserial("CPC window data word count overflows payload length")
+        })?;
+        let table_data_bytes = table_data_words
+            .checked_mul(4)
+            .ok_or_else(|| Error::deserial("CPC table data word count overflows payload length"))?;
+        let payload_bytes = window_data_bytes
+            .checked_add(table_data_bytes)
+            .ok_or_else(|| Error::deserial("CPC payload length overflows"))?;
+        let available_bytes = cursor.remaining().len();
+        if available_bytes < payload_bytes {
+            return Err(Error::insufficient_data_of(
+                "CPC compressed payload",
+                format_args!("expected {payload_bytes} bytes, got {available_bytes}"),
+            ));
+        }
+        let payload = &cursor.remaining()[..payload_bytes];
+        let (window_data, table_data) = payload.split_at(window_data_bytes);
+        let (table, window) = match flavor {
+            Flavor::Empty => (PairTable::new(2, lg_k + 6), vec![]),
+            Flavor::Sparse => {
+                debug_assert!(window_data.is_empty(), "window is not expected");
+                let pairs = decode_pairs(table_data, table_num_entries, lg_k)?;
+                (
+                    PairTable::from_slots(lg_k, table_num_entries, pairs)?,
+                    vec![],
+                )
+            }
+            Flavor::Hybrid => {
+                debug_assert!(window_data.is_empty(), "window is not expected");
+                let mut pairs = decode_pairs(table_data, table_num_entries, lg_k)?;
+                let mut window = vec![0u8; 1 << lg_k];
+                let mut next_true_pair = 0;
+                for index in 0..table_num_entries as usize {
+                    let row_col = pairs[index];
+                    let col = row_col & 63;
+                    if col < 8 {
+                        window[(row_col >> 6) as usize] |= 1 << col;
+                    } else {
+                        pairs[next_true_pair as usize] = row_col;
+                        next_true_pair += 1;
+                    }
+                }
+                (PairTable::from_slots(lg_k, next_true_pair, pairs)?, window)
+            }
+            Flavor::Pinned => {
+                let window = decode_window(window_data, lg_k, num_coupons)?;
+                let table = if table_num_entries == 0 {
+                    PairTable::new(2, lg_k + 6)
+                } else {
+                    let mut pairs = decode_pairs(table_data, table_num_entries, lg_k)?;
+                    for pair in &mut pairs {
+                        if (*pair & 63) >= 56 {
+                            return Err(Error::deserial(format!(
+                                "CPC pinned table pair column index is invalid: {pair}"
+                            )));
+                        }
+                        *pair += 8;
+                    }
+                    PairTable::from_slots(lg_k, table_num_entries, pairs)?
+                };
+                (table, window)
+            }
+            Flavor::Sliding => {
+                let window = decode_window(window_data, lg_k, num_coupons)?;
+                let table = if table_num_entries == 0 {
+                    PairTable::new(2, lg_k + 6)
+                } else {
+                    let mut pairs = decode_pairs(table_data, table_num_entries, lg_k)?;
+                    let pseudo_phase = determine_pseudo_phase(lg_k, num_coupons);
+                    let permutation = &COLUMN_PERMUTATIONS_FOR_DECODING[pseudo_phase as usize];
+                    let offset = determine_correct_offset(lg_k, num_coupons);
+                    if offset > 56 {
+                        return Err(Error::deserial(format!(
+                            "CPC sliding window offset is invalid: {offset}"
+                        )));
+                    }
+                    for pair in &mut pairs {
+                        let row = *pair >> 6;
+                        let col = (*pair & 63) as usize;
+                        if col >= permutation.len() {
+                            return Err(Error::deserial(format!(
+                                "CPC sliding table pair column index is invalid: {pair}"
+                            )));
+                        }
+                        let col = (permutation[col] + offset + 8) & 63;
+                        *pair = (row << 6) | u32::from(col);
+                    }
+                    PairTable::from_slots(lg_k, table_num_entries, pairs)?
+                };
+                (table, window)
+            }
+        };
         Ok(CpcSketch {
             lg_k,
             seed,
             seed_hash,
             first_interesting_column,
             num_coupons,
-            surprising_value_table: Some(uncompressed.table),
+            surprising_value_table: Some(table),
             window_offset: determine_correct_offset(lg_k, num_coupons),
-            sliding_window: uncompressed.window,
+            sliding_window: window,
             merge_flag: !has_hip,
             kxp,
             hip_est_accum,
@@ -669,14 +888,15 @@ impl CpcSketch {
     ///
     /// For small values of `n` the size can be much smaller.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if `lg_k` is not in the range `[4, 26]`.
-    pub fn max_serialized_bytes(lg_k: u8) -> usize {
-        assert!(
-            (MIN_LG_K..=MAX_LG_K).contains(&lg_k),
-            "lg_k out of range; got {lg_k}",
-        );
+    /// Returns an error if `lg_k` is not in the range `[4, 26]`.
+    pub fn max_serialized_bytes(lg_k: u8) -> Result<usize, Error> {
+        if !(MIN_LG_K..=MAX_LG_K).contains(&lg_k) {
+            return Err(Error::invalid_argument(format!(
+                "lg_k must be in [{MIN_LG_K}, {MAX_LG_K}], got {lg_k}"
+            )));
+        }
 
         // These empirical values for the 99.9th percentile of size in bytes were measured using
         // 100,000 trials. The value for each trial is the maximum of 5*16=80 measurements
@@ -705,30 +925,12 @@ impl CpcSketch {
             314656, // lg_k = 19
         ];
 
-        if lg_k <= EMPIRICAL_SIZE_MAX_LGK {
+        let max_bytes = if lg_k <= EMPIRICAL_SIZE_MAX_LGK {
             EMPIRICAL_MAX_SIZE_BYTES[(lg_k - MIN_LG_K) as usize] + MAX_PREAMBLE_SIZE_BYTES
         } else {
             let k = 1 << lg_k;
             ((EMPIRICAL_MAX_SIZE_FACTOR * k as f64) as usize) + MAX_PREAMBLE_SIZE_BYTES
-        }
-    }
-}
-
-// testing methods
-impl CpcSketch {
-    /// Returns `true` if the sketch's internal state is valid.
-    ///
-    /// This is primarily for testing and validation purposes.
-    pub fn validate(&self) -> bool {
-        let bit_matrix = self.build_bit_matrix();
-        let num_bits_set = count_bits_set_in_matrix(&bit_matrix);
-        num_bits_set == self.num_coupons
-    }
-
-    /// Returns the number of coupons in the sketch.
-    ///
-    /// This is primarily for testing and validation purposes.
-    pub fn num_coupons(&self) -> u32 {
-        self.num_coupons
+        };
+        Ok(max_bytes)
     }
 }

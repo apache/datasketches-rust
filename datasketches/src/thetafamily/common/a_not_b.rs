@@ -23,9 +23,9 @@ use crate::hash::check_seed_hash;
 use crate::thetacommon::EntrySketch;
 use crate::thetacommon::KeySketch;
 use crate::thetacommon::SketchEntry;
-use crate::thetacommon::SketchScalars;
 use crate::thetacommon::constants::MAX_THETA;
-use crate::thetacommon::hash_table::CompactSketchParts;
+use crate::thetacommon::sketch_state::CompactSketchState;
+use crate::thetacommon::sketch_state::ThetaFamilySketchMetadata;
 
 /// Computes `a and not b` for Theta-family sketch views.
 ///
@@ -38,50 +38,47 @@ pub fn compute<A, B>(
     a: A,
     b: B,
     ordered: bool,
-) -> Result<CompactSketchParts<A::Entry>, Error>
+) -> Result<CompactSketchState<A::Entry>, Error>
 where
     A: EntrySketch,
     B: KeySketch,
 {
-    let SketchScalars {
-        seed_hash: a_seed_hash,
-        theta: a_theta,
-        empty: a_empty,
-        ordered: a_ordered,
-        ..
-    } = a.scalars();
-
     // If A is empty the result is an (empty) copy of A. As with the union and intersection, an
     // empty input carries no keys, so its seed is not validated.
-    if a_empty {
-        return Ok(parts_from_sketch(a, ordered));
-    }
+    let (a_seed_hash, a_theta, a_ordered) = match a.metadata() {
+        ThetaFamilySketchMetadata::Empty { .. } => {
+            return Ok(copy_to_compact_state(a, ordered));
+        }
+        ThetaFamilySketchMetadata::NonEmpty {
+            seed_hash,
+            theta,
+            ordered,
+            ..
+        } => (seed_hash, theta, ordered),
+    };
 
     // A is non-empty, so its seed must be compatible.
     check_seed_hash(seed_hash, a_seed_hash, "A", ErrorKind::InvalidArgument)?;
 
-    let SketchScalars {
-        seed_hash: b_seed_hash,
-        theta: b_theta,
-        empty: b_empty,
-        ordered: b_ordered,
-        num_retained: b_num_retained,
-    } = b.scalars();
-
     // An empty B subtracts nothing, so the result is simply a copy of A. This also covers the
     // "A is non-empty but has no retained keys" state: B's seed and theta must not influence
     // the result.
-    if b_empty {
-        return Ok(parts_from_sketch(a, ordered));
-    }
+    let (b_seed_hash, b_theta, b_ordered, b_num_retained) = match b.metadata() {
+        ThetaFamilySketchMetadata::Empty { .. } => {
+            return Ok(copy_to_compact_state(a, ordered));
+        }
+        ThetaFamilySketchMetadata::NonEmpty {
+            seed_hash,
+            theta,
+            ordered,
+            num_retained,
+        } => (seed_hash, theta, ordered, num_retained),
+    };
 
     // B is non-empty, so its seed must be compatible.
     check_seed_hash(seed_hash, b_seed_hash, "B", ErrorKind::InvalidArgument)?;
 
     let theta = a_theta.min(b_theta);
-    // A is non-empty here; the result only becomes empty if everything is subtracted in exact
-    // mode (handled below).
-    let mut is_empty = false;
 
     let entries: Vec<A::Entry> = if b_num_retained == 0 {
         a.entries().filter(|entry| entry.hash() < theta).collect()
@@ -133,45 +130,43 @@ where
     };
 
     if entries.is_empty() && theta == MAX_THETA {
-        is_empty = true;
+        return Ok(CompactSketchState::empty(seed_hash));
     }
 
-    let out_ordered = ordered || a_ordered;
     let mut entries = entries;
     if ordered && !a_ordered && entries.len() > 1 {
         entries.sort_unstable_by_key(SketchEntry::hash);
     }
+    let out_ordered = ordered || a_ordered || (entries.len() == 1 && theta == MAX_THETA);
 
-    Ok(CompactSketchParts {
+    Ok(CompactSketchState::non_empty(
         entries,
         theta,
         seed_hash,
-        ordered: out_ordered,
-        empty: is_empty,
-    })
+        out_ordered,
+    ))
 }
 
-fn parts_from_sketch<S>(sketch: S, ordered: bool) -> CompactSketchParts<S::Entry>
+fn copy_to_compact_state<S>(sketch: S, ordered: bool) -> CompactSketchState<S::Entry>
 where
     S: EntrySketch,
 {
-    let SketchScalars {
-        seed_hash,
-        theta,
-        empty,
-        ordered: input_ordered,
-        ..
-    } = sketch.scalars();
+    let (seed_hash, theta, input_ordered) = match sketch.metadata() {
+        ThetaFamilySketchMetadata::Empty { seed_hash } => {
+            return CompactSketchState::empty(seed_hash);
+        }
+        ThetaFamilySketchMetadata::NonEmpty {
+            seed_hash,
+            theta,
+            ordered,
+            ..
+        } => (seed_hash, theta, ordered),
+    };
+
     let mut entries: Vec<S::Entry> = sketch.entries().collect();
-    let out_ordered = ordered || input_ordered;
     if ordered && !input_ordered && entries.len() > 1 {
         entries.sort_unstable_by_key(SketchEntry::hash);
     }
-    CompactSketchParts {
-        entries,
-        theta,
-        seed_hash,
-        ordered: out_ordered,
-        empty,
-    }
+    let out_ordered = ordered || input_ordered || (entries.len() == 1 && theta == MAX_THETA);
+    CompactSketchState::non_empty(entries, theta, seed_hash, out_ordered)
 }
