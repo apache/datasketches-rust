@@ -314,6 +314,29 @@ fn test_from_iter_uses_one_result_with_the_smallest_nonempty_k() {
 }
 
 #[test]
+fn test_from_iter_matches_single_digest_for_uncompressed_inputs() {
+    let values = [3.0, 1.0, 2.0, 2.0, 5.0, 4.0];
+    let partials = values
+        .chunks(3)
+        .map(|values| {
+            let mut digest = TDigestMut::new(100).unwrap();
+            for &value in values {
+                digest.update(value);
+            }
+            digest
+        })
+        .collect::<Vec<_>>();
+    let mut merged = partials.into_iter().collect::<TDigestMut>();
+
+    let mut expected = TDigestMut::new(100).unwrap();
+    for value in values {
+        expected.update(value);
+    }
+
+    assert_eq!(merged.serialize(), expected.serialize());
+}
+
+#[test]
 fn test_from_iter_handles_empty_and_single_input_without_recompression() {
     let empty = std::iter::empty::<TDigestMut>().collect::<TDigestMut>();
     assert!(empty.is_empty());

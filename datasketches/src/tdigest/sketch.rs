@@ -120,11 +120,10 @@ impl TDigestBuffer {
     /// Combines this buffer with a non-empty borrowed buffer in stable mean order.
     fn into_merged_centroids(mut self, other: &TDigestBuffer) -> Vec<Centroid> {
         debug_assert!(!other.is_empty(), "an empty right-hand buffer is a no-op");
-        if self.unmerged_tail_len == 0
-            && other.unmerged_tail_len == 0
-            && centroids_are_sorted(&self.centroids)
-            && centroids_are_sorted(&other.centroids)
-        {
+        if self.unmerged_tail_len == 0 && other.unmerged_tail_len == 0 {
+            // Compression and deserialization both establish this invariant.
+            debug_assert!(centroids_are_sorted(&self.centroids));
+            debug_assert!(centroids_are_sorted(&other.centroids));
             merge_sorted_centroids(&mut self.centroids, &other.centroids);
             return self.centroids;
         }
@@ -324,7 +323,7 @@ impl TDigestMut {
     /// Merges the given t-digest into this one.
     ///
     /// If the sketches have different `k` values, the merged sketch uses the smaller value because
-    /// centroids produced with a smaller `k` cannot be split to satisfy the tighter size bound.
+    /// merging cannot recover detail already discarded by the lower-`k` sketch.
     ///
     /// # Panics
     ///
@@ -361,10 +360,13 @@ impl TDigestMut {
         self.compress_sorted_centroids(centroids, additional_weight);
     }
 
-    fn merge_owned(&mut self, mut others: Vec<TDigestMut>) {
+    fn merge_owned_batch(&mut self, mut others: Vec<TDigestMut>) {
         debug_assert!(!self.is_empty());
         debug_assert!(!others.is_empty());
         debug_assert!(others.iter().all(|other| !other.is_empty()));
+
+        // The receiver's compressed prefix is already included in `compressed_weight`; its
+        // unmerged tail and every centroid in the other digests are new weight for compression.
         let mut additional_weight = self.buffer.unmerged_len() as u64;
         let mut num_centroids = self.buffer.len();
         let mut k = self.k;
@@ -1058,15 +1060,29 @@ impl TDigestMut {
 /// Collects owned t-digests into one result with a single compression pass.
 ///
 /// Empty inputs are ignored. The result uses the smallest `k` among the non-empty inputs. A single
-/// non-empty input is returned unchanged. Collecting consumes each digest without cloning its
-/// buffer. Unlike repeated [`TDigestMut::merge`] calls, it temporarily retains all input centroids
-/// so it can avoid recompressing intermediate results. Use repeated `merge` calls when inputs must
-/// be processed with bounded additional memory.
+/// non-empty input is returned unchanged. Collecting consumes each digest, so callers do not need
+/// to clone inputs. Unlike repeated [`TDigestMut::merge`] calls, it temporarily retains all input
+/// centroids so it can avoid recompressing intermediate results. Use repeated `merge` calls when
+/// inputs must be processed with bounded additional memory.
 ///
 /// # Panics
 ///
 /// Panics if the combined total weight exceeds `u64::MAX` or the combined centroid count exceeds
 /// `usize::MAX`.
+///
+/// # Examples
+///
+/// ```
+/// use datasketches::tdigest::TDigestMut;
+///
+/// let partials = [1.0, 2.0].map(|value| {
+///     let mut digest = TDigestMut::new(100).unwrap();
+///     digest.update(value);
+///     digest
+/// });
+/// let merged = partials.into_iter().collect::<TDigestMut>();
+/// assert_eq!(merged.total_weight(), 2);
+/// ```
 impl FromIterator<TDigestMut> for TDigestMut {
     fn from_iter<T: IntoIterator<Item = TDigestMut>>(iter: T) -> Self {
         let mut digests = iter.into_iter().filter(|digest| !digest.is_empty());
@@ -1075,7 +1091,7 @@ impl FromIterator<TDigestMut> for TDigestMut {
         };
         let others = digests.collect::<Vec<_>>();
         if !others.is_empty() {
-            merged.merge_owned(others);
+            merged.merge_owned_batch(others);
         }
         merged
     }
@@ -1577,9 +1593,7 @@ impl TDigestView<'_> {
             return None;
         }
 
-        let mut centroid_index = 0;
-        let mut weight_so_far = self.centroids[0].weight() / 2.;
-        Some(self.quantile_with_cursor(rank, &mut centroid_index, &mut weight_so_far))
+        Some(QuantileCursor::new(self).quantile(rank))
     }
 
     fn quantiles(&self, ranks: &[f64]) -> Option<Vec<f64>> {
@@ -1593,31 +1607,50 @@ impl TDigestView<'_> {
         }
 
         let mut quantiles = vec![0.; ranks.len()];
-        let mut centroid_index = 0;
-        let mut weight_so_far = self.centroids[0].weight() / 2.;
+        let mut cursor = QuantileCursor::new(self);
         if ranks.windows(2).all(|pair| pair[0] <= pair[1]) {
             for (index, &rank) in ranks.iter().enumerate() {
-                quantiles[index] =
-                    self.quantile_with_cursor(rank, &mut centroid_index, &mut weight_so_far);
+                quantiles[index] = cursor.quantile(rank);
             }
             return Some(quantiles);
         }
 
+        // The cursor only moves forward. Sort indices so queries become monotonic without changing
+        // the caller's output order.
         let mut rank_order = (0..ranks.len()).collect::<Vec<_>>();
         rank_order.sort_by(|&left, &right| ranks[left].total_cmp(&ranks[right]));
         for index in rank_order {
-            quantiles[index] =
-                self.quantile_with_cursor(ranks[index], &mut centroid_index, &mut weight_so_far);
+            quantiles[index] = cursor.quantile(ranks[index]);
         }
         Some(quantiles)
     }
+}
 
-    fn quantile_with_cursor(
-        &self,
-        rank: f64,
-        centroid_index: &mut usize,
-        weight_so_far: &mut f64,
-    ) -> f64 {
+/// Incrementally answers quantile queries supplied in nondecreasing rank order.
+struct QuantileCursor<'a> {
+    min: f64,
+    max: f64,
+    centroids: &'a [Centroid],
+    centroids_weight: f64,
+    centroid_index: usize,
+    weight_so_far: f64,
+}
+
+impl<'a> QuantileCursor<'a> {
+    fn new(view: &TDigestView<'a>) -> Self {
+        debug_assert!(!view.centroids.is_empty());
+
+        QuantileCursor {
+            min: view.min,
+            max: view.max,
+            centroids: view.centroids,
+            centroids_weight: view.centroids_weight as f64,
+            centroid_index: 0,
+            weight_so_far: view.centroids[0].weight() / 2.,
+        }
+    }
+
+    fn quantile(&mut self, rank: f64) -> f64 {
         debug_assert!(!self.centroids.is_empty());
 
         if self.centroids.len() == 1 {
@@ -1625,7 +1658,7 @@ impl TDigestView<'_> {
         }
 
         // at least 2 centroids
-        let centroids_weight = self.centroids_weight as f64;
+        let centroids_weight = self.centroids_weight;
         let num_centroids = self.centroids.len();
         let weight = rank * centroids_weight;
         if weight < 1. {
@@ -1651,39 +1684,39 @@ impl TDigestView<'_> {
         }
 
         // interpolate between extremes
-        while *centroid_index < num_centroids - 1 {
-            let dw = (self.centroids[*centroid_index].weight()
-                + self.centroids[*centroid_index + 1].weight())
+        while self.centroid_index < num_centroids - 1 {
+            let dw = (self.centroids[self.centroid_index].weight()
+                + self.centroids[self.centroid_index + 1].weight())
                 / 2.;
-            if *weight_so_far + dw > weight {
+            if self.weight_so_far + dw > weight {
                 // the target weight is between centroids i and i+1
                 let mut left_weight = 0.;
-                if self.centroids[*centroid_index].weight.get() == 1 {
-                    if weight - *weight_so_far < 0.5 {
-                        return self.centroids[*centroid_index].mean;
+                if self.centroids[self.centroid_index].weight.get() == 1 {
+                    if weight - self.weight_so_far < 0.5 {
+                        return self.centroids[self.centroid_index].mean;
                     }
                     left_weight = 0.5;
                 }
                 let mut right_weight = 0.;
-                if self.centroids[*centroid_index + 1].weight.get() == 1 {
-                    if *weight_so_far + dw - weight <= 0.5 {
-                        return self.centroids[*centroid_index + 1].mean;
+                if self.centroids[self.centroid_index + 1].weight.get() == 1 {
+                    if self.weight_so_far + dw - weight <= 0.5 {
+                        return self.centroids[self.centroid_index + 1].mean;
                     }
                     right_weight = 0.5;
                 }
                 // Each centroid is weighted by the distance from the target to the *other*
                 // centroid, so the estimate approaches the nearer one.
-                let distance_from_left = weight - *weight_so_far - left_weight;
-                let distance_to_right = *weight_so_far + dw - weight - right_weight;
+                let distance_from_left = weight - self.weight_so_far - left_weight;
+                let distance_to_right = self.weight_so_far + dw - weight - right_weight;
                 return weighted_average(
-                    self.centroids[*centroid_index].mean,
+                    self.centroids[self.centroid_index].mean,
                     distance_to_right,
-                    self.centroids[*centroid_index + 1].mean,
+                    self.centroids[self.centroid_index + 1].mean,
                     distance_from_left,
                 );
             }
-            *weight_so_far += dw;
-            *centroid_index += 1;
+            self.weight_so_far += dw;
+            self.centroid_index += 1;
         }
 
         let w1 = weight - (centroids_weight) - ((self.centroids[num_centroids - 1].weight()) / 2.);
@@ -1726,27 +1759,27 @@ fn centroids_are_sorted(centroids: &[Centroid]) -> bool {
 }
 
 #[derive(Clone, Copy)]
-struct CentroidCursor {
+struct CentroidMergeCursor {
     centroid: Centroid,
     source_index: usize,
     centroid_index: usize,
 }
 
-impl PartialEq for CentroidCursor {
+impl PartialEq for CentroidMergeCursor {
     fn eq(&self, other: &Self) -> bool {
         self.source_index == other.source_index && self.centroid_index == other.centroid_index
     }
 }
 
-impl Eq for CentroidCursor {}
+impl Eq for CentroidMergeCursor {}
 
-impl PartialOrd for CentroidCursor {
+impl PartialOrd for CentroidMergeCursor {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl Ord for CentroidCursor {
+impl Ord for CentroidMergeCursor {
     fn cmp(&self, other: &Self) -> Ordering {
         // Reverse every key because BinaryHeap is a max-heap. Source order breaks equal-mean ties
         // in the same way as concatenating the inputs and applying a stable sort.
@@ -1756,6 +1789,7 @@ impl Ord for CentroidCursor {
     }
 }
 
+/// Stably merges sorted centroid slices without sorting their combined contents again.
 fn merge_sorted_centroid_slices(sources: &[&[Centroid]], num_centroids: usize) -> Vec<Centroid> {
     debug_assert_eq!(
         sources.iter().map(|source| source.len()).sum::<usize>(),
@@ -1766,7 +1800,7 @@ fn merge_sorted_centroid_slices(sources: &[&[Centroid]], num_centroids: usize) -
     let mut heap = BinaryHeap::with_capacity(sources.len());
     for (source_index, source) in sources.iter().enumerate() {
         if let Some(&centroid) = source.first() {
-            heap.push(CentroidCursor {
+            heap.push(CentroidMergeCursor {
                 centroid,
                 source_index,
                 centroid_index: 0,
@@ -1779,7 +1813,7 @@ fn merge_sorted_centroid_slices(sources: &[&[Centroid]], num_centroids: usize) -
         centroids.push(cursor.centroid);
         let centroid_index = cursor.centroid_index + 1;
         if let Some(&centroid) = sources[cursor.source_index].get(centroid_index) {
-            heap.push(CentroidCursor {
+            heap.push(CentroidMergeCursor {
                 centroid,
                 source_index: cursor.source_index,
                 centroid_index,
