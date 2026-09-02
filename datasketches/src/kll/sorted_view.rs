@@ -236,16 +236,20 @@ fn check_split_points<T, C: KllComparator<T>>(
     split_points: &[T],
     comparator: &C,
 ) -> Result<(), Error> {
-    if !split_points.iter().all(|point| comparator.accepts(point)) {
-        return Err(Error::invalid_argument(
-            "split points must belong to the comparator's ordered domain",
-        ));
+    if let Some(index) = split_points
+        .iter()
+        .position(|point| !comparator.accepts(point))
+    {
+        return Err(Error::invalid_argument(format!(
+            "split point at index {index} is outside the comparator's ordered domain"
+        )));
     }
-    for pair in split_points.windows(2) {
+    for (index, pair) in split_points.windows(2).enumerate() {
         if comparator.compare(&pair[0], &pair[1]) != Ordering::Less {
-            return Err(Error::invalid_argument(
-                "split points must be unique and monotonically increasing",
-            ));
+            return Err(Error::invalid_argument(format!(
+                "split points at indices {index} and {} must be strictly increasing",
+                index + 1
+            )));
         }
     }
     Ok(())

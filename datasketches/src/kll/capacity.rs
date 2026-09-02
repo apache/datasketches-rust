@@ -52,21 +52,42 @@ const POWERS_OF_THREE: [u64; 31] = [
 const MAX_DEPTH: usize = 60;
 const MAX_SHALLOW_DEPTH: usize = POWERS_OF_THREE.len() - 1;
 
-pub const fn total_capacity(k: u16, minimum_capacity: u8, num_levels: usize) -> u32 {
+pub fn total_capacity(k: u16, minimum_capacity: u8, num_levels: usize) -> u32 {
+    validate_inputs(k, minimum_capacity, num_levels);
     let mut total: u32 = 0;
-    let mut level = 0;
-    while level < num_levels {
-        total += level_capacity(k, num_levels, level, minimum_capacity);
-        level += 1;
+    for level in 0..num_levels {
+        total += level_capacity_unchecked(k, num_levels, level, minimum_capacity);
     }
     total
 }
 
-pub const fn level_capacity(k: u16, num_levels: usize, level: usize, minimum_capacity: u8) -> u32 {
+pub fn level_capacity(k: u16, num_levels: usize, level: usize, minimum_capacity: u8) -> u32 {
+    validate_inputs(k, minimum_capacity, num_levels);
     assert!(
         level < num_levels,
-        "level index must be less than the number of levels"
+        "KLL level index must be in [0, {num_levels}), got {level}"
     );
+    level_capacity_unchecked(k, num_levels, level, minimum_capacity)
+}
+
+fn validate_inputs(k: u16, minimum_capacity: u8, num_levels: usize) {
+    assert!(
+        (1..=MAX_DEPTH + 1).contains(&num_levels),
+        "KLL number of levels must be in [1, {}], got {num_levels}",
+        MAX_DEPTH + 1
+    );
+    assert!(
+        minimum_capacity as u16 <= k,
+        "KLL minimum level capacity must not exceed k: minimum capacity {minimum_capacity}, k {k}"
+    );
+}
+
+const fn level_capacity_unchecked(
+    k: u16,
+    num_levels: usize,
+    level: usize,
+    minimum_capacity: u8,
+) -> u32 {
     let depth = num_levels - level - 1;
     let capacity = capacity_at_depth(k, depth) as u32;
     if capacity < minimum_capacity as u32 {
@@ -77,7 +98,6 @@ pub const fn level_capacity(k: u16, num_levels: usize, level: usize, minimum_cap
 }
 
 const fn capacity_at_depth(k: u16, depth: usize) -> u16 {
-    assert!(depth <= MAX_DEPTH, "KLL capacity depth must be at most 60");
     if depth <= MAX_SHALLOW_DEPTH {
         return capacity_at_shallow_depth(k, depth);
     }
@@ -88,16 +108,6 @@ const fn capacity_at_depth(k: u16, depth: usize) -> u16 {
 }
 
 const fn capacity_at_shallow_depth(k: u16, depth: usize) -> u16 {
-    assert!(
-        depth <= MAX_SHALLOW_DEPTH,
-        "shallow KLL capacity depth must be at most 30"
-    );
-    let twice_k = (k as u64) << 1;
-    let scaled_capacity = (twice_k << depth) / POWERS_OF_THREE[depth];
-    let result = (scaled_capacity + 1) >> 1;
-    assert!(
-        result <= k as u64,
-        "computed level capacity must not exceed k"
-    );
-    result as u16
+    let scaled_capacity = ((k as u64) << (depth + 1)) / POWERS_OF_THREE[depth];
+    ((scaled_capacity + 1) >> 1) as u16
 }

@@ -214,10 +214,14 @@ impl<T: Clone, C: KllComparator<T>> KllSketch<T, C> {
                 self.m, other.m
             )));
         }
-        let final_n = self
-            .n
-            .checked_add(other.n)
-            .ok_or_else(|| Error::invalid_argument("combined stream weight exceeds u64::MAX"))?;
+        let final_n = self.n.checked_add(other.n).ok_or_else(|| {
+            Error::invalid_argument(format!(
+                "combined stream weight exceeds {}: left {}, right {}",
+                u64::MAX,
+                self.n,
+                other.n
+            ))
+        })?;
 
         self.update_min_max_from_other(other);
 
@@ -494,12 +498,17 @@ fn deserialize_with_serde<T: KllValue, C: KllComparator<T>>(
     ensure_serial_version_is(expected_version, serial_version)?;
 
     if !(MIN_K..=MAX_K).contains(&k) {
-        return Err(Error::deserial(format!("k out of range: {k}")));
+        return Err(Error::deserial(format!(
+            "k must be in [{MIN_K}, {MAX_K}], got {k}"
+        )));
     }
 
     if is_empty {
-        if !cursor.remaining().is_empty() {
-            return Err(Error::deserial("unexpected trailing data"));
+        let trailing_bytes = cursor.remaining().len();
+        if trailing_bytes != 0 {
+            return Err(Error::deserial(format!(
+                "expected end of KLL image, found {trailing_bytes} trailing bytes"
+            )));
         }
         return Ok(KllSketch::make(
             comparator,
@@ -523,17 +532,14 @@ fn deserialize_with_serde<T: KllValue, C: KllComparator<T>>(
         (n, min_k, num_levels as usize)
     };
 
-    if num_levels == 0 {
-        return Err(Error::deserial("num_levels must be > 0"));
-    }
-    if num_levels > MAX_NUM_LEVELS {
+    if !(1..=MAX_NUM_LEVELS).contains(&num_levels) {
         return Err(Error::deserial(format!(
-            "num_levels must be at most {MAX_NUM_LEVELS}, got {num_levels}"
+            "num_levels must be in [1, {MAX_NUM_LEVELS}], got {num_levels}"
         )));
     }
     if !is_single_item && n < 2 {
         return Err(Error::deserial(format!(
-            "full sketch must have n >= 2, got {n}"
+            "full sketch n must be at least 2, got {n}"
         )));
     }
     if min_k < MIN_K || min_k > k {
@@ -554,20 +560,21 @@ fn deserialize_with_serde<T: KllValue, C: KllComparator<T>>(
     }
     level_offsets.push(capacity);
 
-    if level_offsets.is_empty() {
-        return Err(Error::deserial("levels array is empty"));
-    }
     if level_offsets[0] > capacity {
-        return Err(Error::deserial("levels[0] exceeds capacity"));
+        return Err(Error::deserial(format!(
+            "first level offset must not exceed capacity {capacity}, got {}",
+            level_offsets[0]
+        )));
     }
-    for window in level_offsets.windows(2) {
+    for (index, window) in level_offsets.windows(2).enumerate() {
         if window[1] < window[0] {
-            return Err(Error::deserial("levels array must be non-decreasing"));
+            return Err(Error::deserial(format!(
+                "level offsets must be nondecreasing: offset[{index}] is {}, offset[{}] is {}",
+                window[0],
+                index + 1,
+                window[1]
+            )));
         }
-    }
-    let last = *level_offsets.last().unwrap();
-    if last != capacity {
-        return Err(Error::deserial("levels last offset must equal capacity"));
     }
 
     let min_item = if is_single_item {
@@ -584,9 +591,17 @@ fn deserialize_with_serde<T: KllValue, C: KllComparator<T>>(
     let num_retained = (level_offsets[num_levels] - level_offsets[0]) as usize;
     let min_item_bytes = num_retained
         .checked_mul(T::MIN_SERIALIZED_SIZE)
-        .ok_or_else(|| Error::deserial("retained item size overflow"))?;
-    if cursor.remaining().len() < min_item_bytes {
-        return Err(Error::insufficient_data("items"));
+        .ok_or_else(|| {
+            Error::deserial(format!(
+                "minimum serialized size overflows usize: {num_retained} retained items, {} bytes per item",
+                T::MIN_SERIALIZED_SIZE
+            ))
+        })?;
+    let available_item_bytes = cursor.remaining().len();
+    if available_item_bytes < min_item_bytes {
+        return Err(Error::deserial(format!(
+            "insufficient item data: expected at least {min_item_bytes} bytes, got {available_item_bytes}"
+        )));
     }
 
     let mut levels = Vec::with_capacity(num_levels);
@@ -621,8 +636,11 @@ fn deserialize_with_serde<T: KllValue, C: KllComparator<T>>(
     }
 
     sketch.validate_deserialized_state()?;
-    if !cursor.remaining().is_empty() {
-        return Err(Error::deserial("unexpected trailing data"));
+    let trailing_bytes = cursor.remaining().len();
+    if trailing_bytes != 0 {
+        return Err(Error::deserial(format!(
+            "expected end of KLL image, found {trailing_bytes} trailing bytes"
+        )));
     }
 
     Ok(sketch)
@@ -688,7 +706,10 @@ impl<T: Clone, C: KllComparator<T>> KllSketch<T, C> {
     fn level_offsets(&self) -> Vec<u32> {
         let capacity = self.capacity as u32;
         let retained = self.num_retained() as u32;
-        assert!(capacity >= retained, "capacity must be >= retained");
+        assert!(
+            capacity >= retained,
+            "KLL retained item count must not exceed capacity: retained {retained}, capacity {capacity}"
+        );
 
         let mut offsets = Vec::with_capacity(self.levels.len() + 1);
         let mut offset = capacity - retained;
@@ -748,10 +769,13 @@ impl<T: Clone, C: KllComparator<T>> KllSketch<T, C> {
         if self.num_retained >= self.capacity {
             self.compress_while_updating();
         }
-        self.n = self
-            .n
-            .checked_add(1)
-            .expect("stream weight exceeds u64::MAX");
+        self.n = self.n.checked_add(1).unwrap_or_else(|| {
+            panic!(
+                "cannot update KLL sketch: stream weight is {}, maximum is {}",
+                self.n,
+                u64::MAX
+            )
+        });
         self.num_retained += 1;
         self.is_level_zero_sorted = false;
         self.levels[0].push(item);
@@ -798,7 +822,10 @@ impl<T: Clone, C: KllComparator<T>> KllSketch<T, C> {
                 return level;
             }
         }
-        panic!("no level to compact");
+        panic!(
+            "KLL sketch has {}/{} retained items but no level reached its compaction capacity (k {}, m {}, levels {num_levels})",
+            self.num_retained, self.capacity, self.k, self.m
+        );
     }
 
     fn merge_higher_levels(&mut self, other: &KllSketch<T, C>) {
@@ -857,9 +884,14 @@ impl<T: Clone, C: KllComparator<T>> KllSketch<T, C> {
             .as_ref()
             .ok_or_else(|| Error::deserial("non-empty sketch must have a maximum item"))?;
 
-        if !self.comparator.accepts(min_item) || !self.comparator.accepts(max_item) {
+        if !self.comparator.accepts(min_item) {
             return Err(Error::deserial(
-                "minimum and maximum items must belong to the comparator's ordered domain",
+                "serialized minimum item is outside the comparator's ordered domain",
+            ));
+        }
+        if !self.comparator.accepts(max_item) {
+            return Err(Error::deserial(
+                "serialized maximum item is outside the comparator's ordered domain",
             ));
         }
         if self.comparator.compare(min_item, max_item) == Ordering::Greater {
@@ -873,41 +905,55 @@ impl<T: Clone, C: KllComparator<T>> KllSketch<T, C> {
         for (level_index, level) in self.levels.iter().enumerate() {
             let level_total = level_weight
                 .checked_mul(level.len() as u64)
-                .ok_or_else(|| Error::deserial("sample weight overflow"))?;
+                .ok_or_else(|| {
+                    Error::deserial(format!(
+                        "sample weight overflows u64 at level {level_index}: weight {level_weight}, retained items {}",
+                        level.len()
+                    ))
+                })?;
             total_weight = total_weight
                 .checked_add(level_total)
-                .ok_or_else(|| Error::deserial("total sample weight overflow"))?;
+                .ok_or_else(|| {
+                    Error::deserial(format!(
+                        "total sample weight overflows u64 at level {level_index}: accumulated {total_weight}, level contribution {level_total}"
+                    ))
+                })?;
 
             let must_be_sorted = level_index > 0 || self.is_level_zero_sorted;
-            if must_be_sorted
-                && level
-                    .windows(2)
-                    .any(|pair| self.comparator.compare(&pair[0], &pair[1]) == Ordering::Greater)
-            {
-                return Err(Error::deserial(format!(
-                    "level {level_index} must be sorted"
-                )));
+            if must_be_sorted {
+                for (item_index, pair) in level.windows(2).enumerate() {
+                    if self.comparator.compare(&pair[0], &pair[1]) == Ordering::Greater {
+                        return Err(Error::deserial(format!(
+                            "level {level_index} must be sorted: item at index {item_index} is greater than item at index {}",
+                            item_index + 1
+                        )));
+                    }
+                }
             }
 
-            for item in level {
+            for (item_index, item) in level.iter().enumerate() {
                 if !self.comparator.accepts(item) {
-                    return Err(Error::deserial(
-                        "retained items must belong to the comparator's ordered domain",
-                    ));
+                    return Err(Error::deserial(format!(
+                        "retained item at level {level_index}, index {item_index} is outside the comparator's ordered domain"
+                    )));
                 }
                 if self.comparator.compare(item, min_item) == Ordering::Less
                     || self.comparator.compare(item, max_item) == Ordering::Greater
                 {
-                    return Err(Error::deserial(
-                        "retained items must be within the minimum and maximum",
-                    ));
+                    return Err(Error::deserial(format!(
+                        "retained item at level {level_index}, index {item_index} is outside the serialized minimum and maximum"
+                    )));
                 }
             }
 
             if level_index + 1 < self.levels.len() {
                 level_weight = level_weight
                     .checked_mul(2)
-                    .ok_or_else(|| Error::deserial("level weight overflow"))?;
+                    .ok_or_else(|| {
+                        Error::deserial(format!(
+                            "level weight overflows u64 after level {level_index}: current weight {level_weight}"
+                        ))
+                    })?;
             }
         }
 
@@ -962,7 +1008,10 @@ fn compact_level<T, C: KllComparator<T>>(
 
 fn downsample<T, I: ExactSizeIterator<Item = T>>(items: I, offset: bool, use_up: bool) -> Vec<T> {
     let len = items.len();
-    debug_assert!(len % 2 == 0, "length must be even");
+    debug_assert!(
+        len % 2 == 0,
+        "KLL compaction requires an even item count, got {len}"
+    );
     let offset = usize::from(offset);
     let parity = if use_up {
         (len - 1 - offset) % 2
