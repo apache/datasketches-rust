@@ -17,8 +17,6 @@
 
 use std::cmp::Ordering;
 
-use super::order::KllComparator;
-use super::order::NaturalOrder;
 use crate::common::SearchCriteria;
 use crate::error::Error;
 
@@ -27,8 +25,7 @@ use crate::error::Error;
 /// Build one with [`KllSketch::sorted_view`](super::KllSketch::sorted_view) when running repeated
 /// queries against the same sketch state.
 #[derive(Debug, Clone)]
-pub struct SortedView<T: Clone, C: KllComparator<T> = NaturalOrder> {
-    comparator: C,
+pub struct SortedView<T: Clone> {
     entries: Vec<Entry<T>>,
     total_weight: u64,
 }
@@ -39,15 +36,14 @@ struct Entry<T> {
     cumulative_weight: u64,
 }
 
-impl<T: Clone, C: KllComparator<T>> SortedView<T, C> {
-    fn from_sorted(mut entries: Vec<Entry<T>>, comparator: C) -> Self {
+impl<T: Clone + Ord> SortedView<T> {
+    fn from_sorted(mut entries: Vec<Entry<T>>) -> Self {
         let mut total_weight = 0u64;
         for entry in &mut entries {
             total_weight += entry.cumulative_weight;
             entry.cumulative_weight = total_weight;
         }
         Self {
-            comparator,
             entries,
             total_weight,
         }
@@ -72,21 +68,15 @@ impl<T: Clone, C: KllComparator<T>> SortedView<T, C> {
     ///
     /// # Errors
     ///
-    /// Returns an error if the view is empty or `item` is outside the comparator's ordered domain.
+    /// Returns an error if the view is empty.
     pub fn rank(&self, item: &T, criteria: SearchCriteria) -> Result<f64, Error> {
         if self.is_empty() {
             return Err(Error::invalid_argument("cannot query an empty view"));
         }
-        if !self.comparator.accepts(item) {
-            return Err(Error::invalid_argument(
-                "item must belong to the comparator's ordered domain",
-            ));
-        }
-
         let index = if criteria == SearchCriteria::Inclusive {
-            upper_bound(&self.entries, item, &self.comparator)
+            upper_bound(&self.entries, item)
         } else {
-            lower_bound(&self.entries, item, &self.comparator)
+            lower_bound(&self.entries, item)
         };
 
         if index == 0 {
@@ -148,7 +138,7 @@ impl<T: Clone, C: KllComparator<T>> SortedView<T, C> {
         if self.is_empty() {
             return Err(Error::invalid_argument("cannot query an empty view"));
         }
-        check_split_points(split_points, &self.comparator)?;
+        check_split_points(split_points)?;
         let mut ranks = Vec::with_capacity(split_points.len() + 1);
         for item in split_points {
             ranks.push(self.rank(item, criteria)?);
@@ -171,11 +161,10 @@ impl<T: Clone, C: KllComparator<T>> SortedView<T, C> {
     }
 }
 
-pub fn build_sorted_view<T: Clone, C: KllComparator<T>>(
+pub fn build_sorted_view<T: Clone + Ord>(
     levels: &[Vec<T>],
     is_level_zero_sorted: bool,
-    comparator: C,
-) -> SortedView<T, C> {
+) -> SortedView<T> {
     let mut runs = Vec::with_capacity(levels.len());
     for (level_index, level) in levels.iter().enumerate() {
         let weight = 1u64 << level_index;
@@ -188,7 +177,7 @@ pub fn build_sorted_view<T: Clone, C: KllComparator<T>>(
             })
             .collect();
         if level_index == 0 && !is_level_zero_sorted {
-            run.sort_unstable_by(|left, right| comparator.compare(&left.item, &right.item));
+            run.sort_unstable_by(|left, right| left.item.cmp(&right.item));
         }
         if !run.is_empty() {
             runs.push(run);
@@ -200,7 +189,7 @@ pub fn build_sorted_view<T: Clone, C: KllComparator<T>>(
         let mut iter = runs.into_iter();
         while let Some(left) = iter.next() {
             if let Some(right) = iter.next() {
-                merged_runs.push(merge_sorted_entries(left, right, &comparator));
+                merged_runs.push(merge_sorted_entries(left, right));
             } else {
                 merged_runs.push(left);
             }
@@ -208,20 +197,16 @@ pub fn build_sorted_view<T: Clone, C: KllComparator<T>>(
         runs = merged_runs;
     }
 
-    SortedView::from_sorted(runs.pop().unwrap_or_default(), comparator)
+    SortedView::from_sorted(runs.pop().unwrap_or_default())
 }
 
-fn merge_sorted_entries<T, C: KllComparator<T>>(
-    left: Vec<Entry<T>>,
-    right: Vec<Entry<T>>,
-    comparator: &C,
-) -> Vec<Entry<T>> {
+fn merge_sorted_entries<T: Ord>(left: Vec<Entry<T>>, right: Vec<Entry<T>>) -> Vec<Entry<T>> {
     let mut merged = Vec::with_capacity(left.len() + right.len());
     let mut left = left.into_iter().peekable();
     let mut right = right.into_iter().peekable();
 
     while let (Some(left_entry), Some(right_entry)) = (left.peek(), right.peek()) {
-        if comparator.compare(&left_entry.item, &right_entry.item) == Ordering::Greater {
+        if left_entry.item.cmp(&right_entry.item) == Ordering::Greater {
             merged.push(right.next().unwrap());
         } else {
             merged.push(left.next().unwrap());
@@ -232,20 +217,9 @@ fn merge_sorted_entries<T, C: KllComparator<T>>(
     merged
 }
 
-fn check_split_points<T, C: KllComparator<T>>(
-    split_points: &[T],
-    comparator: &C,
-) -> Result<(), Error> {
-    if let Some(index) = split_points
-        .iter()
-        .position(|point| !comparator.accepts(point))
-    {
-        return Err(Error::invalid_argument(format!(
-            "split point at index {index} is outside the comparator's ordered domain"
-        )));
-    }
+fn check_split_points<T: Ord>(split_points: &[T]) -> Result<(), Error> {
     for (index, pair) in split_points.windows(2).enumerate() {
-        if comparator.compare(&pair[0], &pair[1]) != Ordering::Less {
+        if pair[0].cmp(&pair[1]) != Ordering::Less {
             return Err(Error::invalid_argument(format!(
                 "split points at indices {index} and {} must be strictly increasing",
                 index + 1
@@ -255,12 +229,12 @@ fn check_split_points<T, C: KllComparator<T>>(
     Ok(())
 }
 
-fn lower_bound<T, C: KllComparator<T>>(entries: &[Entry<T>], item: &T, comparator: &C) -> usize {
-    entries.partition_point(|entry| comparator.compare(&entry.item, item) == Ordering::Less)
+fn lower_bound<T: Ord>(entries: &[Entry<T>], item: &T) -> usize {
+    entries.partition_point(|entry| entry.item.cmp(item) == Ordering::Less)
 }
 
-fn upper_bound<T, C: KllComparator<T>>(entries: &[Entry<T>], item: &T, comparator: &C) -> usize {
-    entries.partition_point(|entry| comparator.compare(&entry.item, item) != Ordering::Greater)
+fn upper_bound<T: Ord>(entries: &[Entry<T>], item: &T) -> usize {
+    entries.partition_point(|entry| entry.item.cmp(item) != Ordering::Greater)
 }
 
 fn lower_bound_by_weight<T>(entries: &[Entry<T>], weight: u64) -> usize {

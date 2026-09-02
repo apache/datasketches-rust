@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use datasketches::kll::KllFloat;
 use datasketches::kll::KllSketch;
 use divan::Bencher;
 use divan::black_box;
@@ -36,5 +37,5 @@ fn deserialize(bencher: Bencher) {
     let bytes = prepared_sketch().serialize();
     bencher
         .counter(BytesCount::new(bytes.len()))
-        .bench_local(|| KllSketch::<f64>::deserialize(black_box(&bytes)).unwrap());
+        .bench_local(|| KllSketch::<KllFloat<f64>>::deserialize(black_box(&bytes)).unwrap());
 }

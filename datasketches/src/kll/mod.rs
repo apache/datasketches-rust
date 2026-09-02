@@ -24,29 +24,31 @@
 //! This implementation follows Apache DataSketches semantics and uses the compact binary
 //! serialization format shared by the Java, C++, and Go implementations.
 //!
+//! Items must implement [`Ord`]. Wrap `f32` or `f64` values in [`KllFloat`], which rejects NaN and
+//! provides their ordinary numerical order. Custom ordering should be expressed with a newtype
+//! that implements [`Ord`], keeping the ordering semantics part of the item type.
+//!
 //! # Usage
 //!
 //! ```rust
 //! # use datasketches::common::SearchCriteria;
 //! # use datasketches::kll::KllSketch;
-//! let mut sketch = KllSketch::<f64>::new(200).unwrap();
-//! sketch.update(1.0);
-//! sketch.update(2.0);
+//! let mut sketch = KllSketch::<i64>::new(200).unwrap();
+//! sketch.update(1);
+//! sketch.update(2);
 //! let q = sketch.quantile(0.5, SearchCriteria::Inclusive).unwrap();
-//! assert!(q >= 1.0 && q <= 2.0);
+//! assert!((1..=2).contains(&q));
 //! ```
 
 mod capacity;
-mod order;
 mod serialization;
 mod sketch;
 mod sorted_view;
 mod value;
 
-pub use self::order::KllComparator;
-pub use self::order::NaturalOrder;
 pub use self::sketch::KllSketch;
 pub use self::sorted_view::SortedView;
+pub use self::value::KllFloat;
 pub use self::value::KllValue;
 /// Default value of parameter k.
 const DEFAULT_K: u16 = 200;

@@ -33,7 +33,7 @@ use datasketches::codec::SketchBytes;
 use datasketches::codec::SketchSlice;
 use datasketches::error::Error;
 use datasketches::error::ErrorKind;
-use datasketches::kll::KllComparator;
+use datasketches::kll::KllFloat;
 use datasketches::kll::KllSketch;
 use datasketches::kll::KllValue;
 
@@ -41,16 +41,34 @@ use crate::serialization_test_data;
 
 const DEFAULT_K: u16 = 200;
 
-#[derive(Clone, Copy)]
-struct NumericStringOrder;
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct NumericString(String);
 
-impl KllComparator<String> for NumericStringOrder {
-    fn compare(&self, left: &String, right: &String) -> Ordering {
-        parse_string_value(left).cmp(&parse_string_value(right))
+impl Ord for NumericString {
+    fn cmp(&self, other: &Self) -> Ordering {
+        parse_string_value(&self.0).cmp(&parse_string_value(&other.0))
+    }
+}
+
+impl PartialOrd for NumericString {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl KllValue for NumericString {
+    const MIN_SERIALIZED_SIZE: usize = String::MIN_SERIALIZED_SIZE;
+
+    fn serialized_size(value: &Self) -> usize {
+        String::serialized_size(&value.0)
     }
 
-    fn is_compatible(&self, _other: &Self) -> bool {
-        true
+    fn serialize(value: &Self, bytes: &mut SketchBytes) {
+        String::serialize(&value.0, bytes);
+    }
+
+    fn deserialize(input: &mut SketchSlice<'_>) -> Result<Self, Error> {
+        String::deserialize(input).map(Self)
     }
 }
 
@@ -85,7 +103,7 @@ impl KllValue for Record {
 
 fn test_f32_file(path: PathBuf, expected_n: usize) {
     let bytes = fs::read(&path).unwrap();
-    let sketch = KllSketch::<f32>::deserialize(&bytes)
+    let sketch = KllSketch::<KllFloat<f32>>::deserialize(&bytes)
         .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
 
     assert_eq!(sketch.k(), DEFAULT_K, "wrong k in {}", path.display());
@@ -113,13 +131,13 @@ fn test_f32_file(path: PathBuf, expected_n: usize) {
         assert!(sketch.max_item().is_none(), "max should be None");
     } else {
         assert_eq!(
-            sketch.min_item().cloned(),
+            sketch.min_item().map(|value| **value),
             Some(1.0),
             "min item mismatch in {}",
             path.display()
         );
         assert_eq!(
-            sketch.max_item().cloned(),
+            sketch.max_item().map(|value| **value),
             Some(expected_n as f32),
             "max item mismatch in {}",
             path.display()
@@ -131,7 +149,7 @@ fn test_f32_file(path: PathBuf, expected_n: usize) {
 
 fn test_f64_file(path: PathBuf, expected_n: usize) {
     let bytes = fs::read(&path).unwrap();
-    let sketch = KllSketch::<f64>::deserialize(&bytes)
+    let sketch = KllSketch::<KllFloat<f64>>::deserialize(&bytes)
         .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
 
     assert_eq!(sketch.k(), DEFAULT_K, "wrong k in {}", path.display());
@@ -159,13 +177,13 @@ fn test_f64_file(path: PathBuf, expected_n: usize) {
         assert!(sketch.max_item().is_none(), "max should be None");
     } else {
         assert_eq!(
-            sketch.min_item().cloned(),
+            sketch.min_item().map(|value| **value),
             Some(1.0),
             "min item mismatch in {}",
             path.display()
         );
         assert_eq!(
-            sketch.max_item().cloned(),
+            sketch.max_item().map(|value| **value),
             Some(expected_n as f64),
             "max item mismatch in {}",
             path.display()
@@ -230,11 +248,8 @@ fn parse_string_value(value: &str) -> u64 {
 
 fn test_string_file(path: PathBuf, expected_n: usize) {
     let bytes = fs::read(&path).unwrap();
-    let sketch = KllSketch::<String, NumericStringOrder>::deserialize_with_comparator(
-        &bytes,
-        NumericStringOrder,
-    )
-    .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+    let sketch = KllSketch::<NumericString>::deserialize(&bytes)
+        .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
 
     assert_eq!(sketch.k(), DEFAULT_K, "wrong k in {}", path.display());
     assert_eq!(
@@ -263,13 +278,13 @@ fn test_string_file(path: PathBuf, expected_n: usize) {
         let min_item = sketch.min_item().expect("missing min item");
         let max_item = sketch.max_item().expect("missing max item");
         assert_eq!(
-            parse_string_value(min_item),
+            parse_string_value(&min_item.0),
             1,
             "min item mismatch in {}",
             path.display()
         );
         assert_eq!(
-            parse_string_value(max_item),
+            parse_string_value(&max_item.0),
             expected_n as u64,
             "max item mismatch in {}",
             path.display()
@@ -410,17 +425,17 @@ fn test_custom_kll_value_roundtrip() {
 
 #[test]
 fn test_rejects_truncated_or_trailing_data() {
-    let mut sketch = KllSketch::<f32>::default();
+    let mut sketch = KllSketch::<KllFloat<f32>>::default();
     for value in 0..1_000 {
-        sketch.update(value as f32);
+        sketch.update(KllFloat::<f32>::new(value as f32).unwrap());
     }
     let bytes = sketch.serialize();
 
     for length in [7, 15, bytes.len() - 1] {
-        assert!(KllSketch::<f32>::deserialize(&bytes[..length]).is_err());
+        assert!(KllSketch::<KllFloat<f32>>::deserialize(&bytes[..length]).is_err());
     }
 
     let mut with_trailing_data = bytes;
     with_trailing_data.push(0);
-    assert!(KllSketch::<f32>::deserialize(&with_trailing_data).is_err());
+    assert!(KllSketch::<KllFloat<f32>>::deserialize(&with_trailing_data).is_err());
 }

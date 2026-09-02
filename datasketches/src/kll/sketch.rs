@@ -23,8 +23,6 @@ use super::MAX_K;
 use super::MIN_K;
 use super::capacity::level_capacity;
 use super::capacity::total_capacity;
-use super::order::KllComparator;
-use super::order::NaturalOrder;
 use super::serialization::DATA_START;
 use super::serialization::DATA_START_SINGLE_ITEM;
 use super::serialization::EMPTY_SIZE_BYTES;
@@ -51,8 +49,7 @@ use crate::error::Error;
 ///
 /// See the [kll module level documentation](crate::kll) for more.
 #[derive(Debug, Clone, PartialEq)]
-pub struct KllSketch<T, C = NaturalOrder> {
-    comparator: C,
+pub struct KllSketch<T> {
     k: u16,
     m: u8,
     min_k: u16,
@@ -65,22 +62,13 @@ pub struct KllSketch<T, C = NaturalOrder> {
     max_item: Option<T>,
 }
 
-impl<T: Clone + PartialOrd> Default for KllSketch<T> {
+impl<T: Clone + Ord> Default for KllSketch<T> {
     fn default() -> Self {
-        Self::make(
-            NaturalOrder,
-            DEFAULT_K,
-            DEFAULT_K,
-            0,
-            vec![Vec::new()],
-            None,
-            None,
-            false,
-        )
+        Self::make(DEFAULT_K, DEFAULT_K, 0, vec![Vec::new()], None, None, false)
     }
 }
 
-impl<T: Clone + PartialOrd> KllSketch<T> {
+impl<T: Clone + Ord> KllSketch<T> {
     /// Creates a new sketch with the given value of k.
     ///
     /// # Errors
@@ -91,36 +79,16 @@ impl<T: Clone + PartialOrd> KllSketch<T> {
     ///
     /// ```
     /// # use datasketches::kll::KllSketch;
-    /// let sketch = KllSketch::<f64>::new(200).unwrap();
+    /// let sketch = KllSketch::<i64>::new(200).unwrap();
     /// assert_eq!(sketch.k(), 200);
     /// ```
     pub fn new(k: u16) -> Result<Self, Error> {
-        Self::new_with_comparator(k, NaturalOrder)
-    }
-}
-
-impl<T: Clone, C: KllComparator<T>> KllSketch<T, C> {
-    /// Creates a new sketch with the given value of k and ordering policy.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if `k` is outside `8..=65535`.
-    pub fn new_with_comparator(k: u16, comparator: C) -> Result<Self, Error> {
         if !(MIN_K..=MAX_K).contains(&k) {
             return Err(Error::invalid_argument(format!(
                 "k must be in [{MIN_K}, {MAX_K}], got {k}"
             )));
         }
-        Ok(Self::make(
-            comparator,
-            k,
-            k,
-            0,
-            vec![Vec::new()],
-            None,
-            None,
-            false,
-        ))
+        Ok(Self::make(k, k, 0, vec![Vec::new()], None, None, false))
     }
 
     /// Returns parameter k used to configure this sketch.
@@ -165,16 +133,10 @@ impl<T: Clone, C: KllComparator<T>> KllSketch<T, C> {
 
     /// Updates the sketch with a new item.
     ///
-    /// Values rejected by the configured comparator are ignored. This includes NaN values when
-    /// using [`NaturalOrder`].
-    ///
     /// # Panics
     ///
     /// Panics if the stream weight would exceed [`u64::MAX`].
     pub fn update(&mut self, item: T) {
-        if !self.comparator.accepts(&item) {
-            return;
-        }
         self.update_min_max(&item);
         self.internal_update(item);
     }
@@ -196,18 +158,12 @@ impl<T: Clone, C: KllComparator<T>> KllSketch<T, C> {
     ///
     /// # Errors
     ///
-    /// Returns an error if the sketches use incompatible comparators or their combined stream
-    /// weight exceeds [`u64::MAX`].
-    pub fn merge(&mut self, other: &KllSketch<T, C>) -> Result<(), Error> {
+    /// Returns an error if the combined stream weight exceeds [`u64::MAX`].
+    pub fn merge(&mut self, other: &KllSketch<T>) -> Result<(), Error> {
         if other.is_empty() {
             return Ok(());
         }
 
-        if !self.comparator.is_compatible(&other.comparator) {
-            return Err(Error::invalid_argument(
-                "cannot merge sketches with incompatible comparators",
-            ));
-        }
         if self.m != other.m {
             return Err(Error::invalid_argument(format!(
                 "cannot merge sketches with different m values: {} and {}",
@@ -246,23 +202,17 @@ impl<T: Clone, C: KllComparator<T>> KllSketch<T, C> {
     ///
     /// # Errors
     ///
-    /// Returns an error if the sketch is empty or `item` is outside the comparator's ordered
-    /// domain.
+    /// Returns an error if the sketch is empty.
     pub fn rank(&self, item: &T, criteria: SearchCriteria) -> Result<f64, Error> {
         if self.is_empty() {
             return Err(Error::invalid_argument("cannot query an empty sketch"));
-        }
-        if !self.comparator.accepts(item) {
-            return Err(Error::invalid_argument(
-                "item must belong to the comparator's ordered domain",
-            ));
         }
         let inclusive = criteria == SearchCriteria::Inclusive;
         let mut weight = 0u64;
         for (level, items) in self.levels.iter().enumerate() {
             let count = items
                 .iter()
-                .filter(|retained| match self.comparator.compare(retained, item) {
+                .filter(|retained| match (*retained).cmp(item) {
                     Ordering::Less => true,
                     Ordering::Equal => inclusive,
                     Ordering::Greater => false,
@@ -305,8 +255,8 @@ impl<T: Clone, C: KllComparator<T>> KllSketch<T, C> {
     ///
     /// # Errors
     ///
-    /// Returns an error if the sketch is empty, a split point is outside the comparator's ordered
-    /// domain, or the split points are not unique and strictly increasing.
+    /// Returns an error if the sketch is empty or the split points are not unique and strictly
+    /// increasing.
     pub fn cdf(&self, split_points: &[T], criteria: SearchCriteria) -> Result<Vec<f64>, Error> {
         if self.is_empty() {
             return Err(Error::invalid_argument("cannot query an empty sketch"));
@@ -318,8 +268,8 @@ impl<T: Clone, C: KllComparator<T>> KllSketch<T, C> {
     ///
     /// # Errors
     ///
-    /// Returns an error if the sketch is empty, a split point is outside the comparator's ordered
-    /// domain, or the split points are not unique and strictly increasing.
+    /// Returns an error if the sketch is empty or the split points are not unique and strictly
+    /// increasing.
     pub fn pmf(&self, split_points: &[T], criteria: SearchCriteria) -> Result<Vec<f64>, Error> {
         if self.is_empty() {
             return Err(Error::invalid_argument("cannot query an empty sketch"));
@@ -330,12 +280,8 @@ impl<T: Clone, C: KllComparator<T>> KllSketch<T, C> {
     /// Returns an owned, sorted snapshot of the current sketch state.
     ///
     /// The view can be reused for repeated queries while this sketch continues to receive updates.
-    pub fn sorted_view(&self) -> SortedView<T, C> {
-        build_sorted_view(
-            &self.levels,
-            self.is_level_zero_sorted,
-            self.comparator.clone(),
-        )
+    pub fn sorted_view(&self) -> SortedView<T> {
+        build_sorted_view(&self.levels, self.is_level_zero_sorted)
     }
 
     /// Returns the normalized single-sided rank error for the configured k.
@@ -349,7 +295,7 @@ impl<T: Clone, C: KllComparator<T>> KllSketch<T, C> {
     }
 }
 
-fn serialized_size<T: KllValue, C: KllComparator<T>>(sketch: &KllSketch<T, C>) -> usize {
+fn serialized_size<T: KllValue + Ord>(sketch: &KllSketch<T>) -> usize {
     if sketch.is_empty() {
         return EMPTY_SIZE_BYTES;
     }
@@ -373,7 +319,7 @@ fn serialized_size<T: KllValue, C: KllComparator<T>>(sketch: &KllSketch<T, C>) -
     size
 }
 
-fn serialize_with_serde<T: KllValue, C: KllComparator<T>>(sketch: &KllSketch<T, C>) -> Vec<u8> {
+fn serialize_with_serde<T: KllValue + Ord>(sketch: &KllSketch<T>) -> Vec<u8> {
     let size = serialized_size(sketch);
     let mut bytes = SketchBytes::with_capacity(size);
 
@@ -445,10 +391,7 @@ fn serialize_with_serde<T: KllValue, C: KllComparator<T>>(sketch: &KllSketch<T, 
     bytes.into_bytes()
 }
 
-fn deserialize_with_serde<T: KllValue, C: KllComparator<T>>(
-    bytes: &[u8],
-    comparator: C,
-) -> Result<KllSketch<T, C>, Error> {
+fn deserialize_with_serde<T: KllValue + Ord>(bytes: &[u8]) -> Result<KllSketch<T>, Error> {
     let mut cursor = SketchSlice::new(bytes);
 
     let preamble_ints = cursor
@@ -511,7 +454,6 @@ fn deserialize_with_serde<T: KllValue, C: KllComparator<T>>(
             )));
         }
         return Ok(KllSketch::make(
-            comparator,
             k,
             k,
             0,
@@ -618,7 +560,6 @@ fn deserialize_with_serde<T: KllValue, C: KllComparator<T>>(
     }
 
     let mut sketch = KllSketch::make(
-        comparator,
         k,
         min_k,
         n,
@@ -646,38 +587,25 @@ fn deserialize_with_serde<T: KllValue, C: KllComparator<T>>(
     Ok(sketch)
 }
 
-impl<T: KllValue, C: KllComparator<T>> KllSketch<T, C> {
+impl<T: KllValue + Ord> KllSketch<T> {
     /// Serializes the sketch to bytes.
     pub fn serialize(&self) -> Vec<u8> {
         serialize_with_serde(self)
     }
 
-    /// Deserializes a sketch using the supplied ordering policy.
-    ///
-    /// # Errors
-    ///
-    /// Returns `InvalidData` if the image is truncated, malformed, or inconsistent with
-    /// `comparator`.
-    pub fn deserialize_with_comparator(bytes: &[u8], comparator: C) -> Result<Self, Error> {
-        deserialize_with_serde(bytes, comparator)
-    }
-}
-
-impl<T: KllValue + PartialOrd> KllSketch<T> {
     /// Deserializes a sketch from bytes.
     ///
     /// # Errors
     ///
     /// Returns `InvalidData` if the image is truncated, malformed, or contains values that are not
-    /// naturally ordered.
+    /// totally ordered.
     pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
-        deserialize_with_serde(bytes, NaturalOrder)
+        deserialize_with_serde(bytes)
     }
 }
 
-impl<T: Clone, C: KllComparator<T>> KllSketch<T, C> {
+impl<T: Clone + Ord> KllSketch<T> {
     fn make(
-        comparator: C,
         k: u16,
         min_k: u16,
         n: u64,
@@ -689,7 +617,6 @@ impl<T: Clone, C: KllComparator<T>> KllSketch<T, C> {
         let num_retained = levels.iter().map(Vec::len).sum();
         let capacity = total_capacity(k, DEFAULT_M, levels.len()) as usize;
         Self {
-            comparator,
             k,
             m: DEFAULT_M,
             min_k,
@@ -728,11 +655,11 @@ impl<T: Clone, C: KllComparator<T>> KllSketch<T, C> {
                 self.max_item = Some(item.clone());
             }
             Some(min) => {
-                if self.comparator.compare(item, min) == Ordering::Less {
+                if item.cmp(min) == Ordering::Less {
                     self.min_item = Some(item.clone());
                 }
                 if let Some(max) = &self.max_item {
-                    if self.comparator.compare(max, item) == Ordering::Less {
+                    if max.cmp(item) == Ordering::Less {
                         self.max_item = Some(item.clone());
                     }
                 }
@@ -740,7 +667,7 @@ impl<T: Clone, C: KllComparator<T>> KllSketch<T, C> {
         }
     }
 
-    fn update_min_max_from_other(&mut self, other: &KllSketch<T, C>) {
+    fn update_min_max_from_other(&mut self, other: &KllSketch<T>) {
         match (&self.min_item, &self.max_item) {
             (None, None) => {
                 self.min_item = other.min_item.clone();
@@ -748,12 +675,12 @@ impl<T: Clone, C: KllComparator<T>> KllSketch<T, C> {
             }
             (Some(min), Some(max)) => {
                 if let Some(other_min) = &other.min_item {
-                    if self.comparator.compare(other_min, min) == Ordering::Less {
+                    if other_min.cmp(min) == Ordering::Less {
                         self.min_item = Some(other_min.clone());
                     }
                 }
                 if let Some(other_max) = &other.max_item {
-                    if self.comparator.compare(max, other_max) == Ordering::Less {
+                    if max.cmp(other_max) == Ordering::Less {
                         self.max_item = Some(other_max.clone());
                     }
                 }
@@ -794,14 +721,13 @@ impl<T: Clone, C: KllComparator<T>> KllSketch<T, C> {
             current,
             level,
             self.is_level_zero_sorted,
-            &self.comparator,
             rand::random::<bool>(),
             use_up,
         );
         if above.is_empty() {
             above = promoted;
         } else {
-            above = merge_sorted_vec(promoted, above, &self.comparator);
+            above = merge_sorted_vec(promoted, above);
         }
         self.levels[level + 1] = above;
 
@@ -828,7 +754,7 @@ impl<T: Clone, C: KllComparator<T>> KllSketch<T, C> {
         );
     }
 
-    fn merge_higher_levels(&mut self, other: &KllSketch<T, C>) {
+    fn merge_higher_levels(&mut self, other: &KllSketch<T>) {
         let provisional_levels = self.levels.len().max(other.levels.len());
         let mut self_levels = std::mem::take(&mut self.levels);
         let mut work_levels = vec![Vec::new(); provisional_levels];
@@ -847,17 +773,11 @@ impl<T: Clone, C: KllComparator<T>> KllSketch<T, C> {
             } else if right.is_empty() {
                 left
             } else {
-                merge_sorted_vec(left, right, &self.comparator)
+                merge_sorted_vec(left, right)
             };
         }
 
-        self.levels = general_compress(
-            work_levels,
-            self.k,
-            self.m,
-            self.is_level_zero_sorted,
-            &self.comparator,
-        );
+        self.levels = general_compress(work_levels, self.k, self.m, self.is_level_zero_sorted);
         self.refresh_capacity_state();
     }
 
@@ -884,17 +804,7 @@ impl<T: Clone, C: KllComparator<T>> KllSketch<T, C> {
             .as_ref()
             .ok_or_else(|| Error::deserial("non-empty sketch must have a maximum item"))?;
 
-        if !self.comparator.accepts(min_item) {
-            return Err(Error::deserial(
-                "serialized minimum item is outside the comparator's ordered domain",
-            ));
-        }
-        if !self.comparator.accepts(max_item) {
-            return Err(Error::deserial(
-                "serialized maximum item is outside the comparator's ordered domain",
-            ));
-        }
-        if self.comparator.compare(min_item, max_item) == Ordering::Greater {
+        if min_item.cmp(max_item) == Ordering::Greater {
             return Err(Error::deserial(
                 "minimum item must not be greater than maximum item",
             ));
@@ -922,7 +832,7 @@ impl<T: Clone, C: KllComparator<T>> KllSketch<T, C> {
             let must_be_sorted = level_index > 0 || self.is_level_zero_sorted;
             if must_be_sorted {
                 for (item_index, pair) in level.windows(2).enumerate() {
-                    if self.comparator.compare(&pair[0], &pair[1]) == Ordering::Greater {
+                    if pair[0].cmp(&pair[1]) == Ordering::Greater {
                         return Err(Error::deserial(format!(
                             "level {level_index} must be sorted: item at index {item_index} is greater than item at index {}",
                             item_index + 1
@@ -932,14 +842,7 @@ impl<T: Clone, C: KllComparator<T>> KllSketch<T, C> {
             }
 
             for (item_index, item) in level.iter().enumerate() {
-                if !self.comparator.accepts(item) {
-                    return Err(Error::deserial(format!(
-                        "retained item at level {level_index}, index {item_index} is outside the comparator's ordered domain"
-                    )));
-                }
-                if self.comparator.compare(item, min_item) == Ordering::Less
-                    || self.comparator.compare(item, max_item) == Ordering::Greater
-                {
+                if item.cmp(min_item) == Ordering::Less || item.cmp(max_item) == Ordering::Greater {
                     return Err(Error::deserial(format!(
                         "retained item at level {level_index}, index {item_index} is outside the serialized minimum and maximum"
                     )));
@@ -977,11 +880,10 @@ fn normalized_rank_error(k: u16, pmf: bool) -> f64 {
     }
 }
 
-fn compact_level<T, C: KllComparator<T>>(
+fn compact_level<T: Ord>(
     mut items: Vec<T>,
     level: usize,
     is_level_zero_sorted: bool,
-    comparator: &C,
     offset: bool,
     use_up: bool,
 ) -> (Option<T>, Vec<T>) {
@@ -993,7 +895,7 @@ fn compact_level<T, C: KllComparator<T>>(
         None
     };
     if level_zero_needs_sorting {
-        items.sort_unstable_by(|left, right| comparator.compare(left, right));
+        items.sort_unstable();
     }
 
     let mut items = items.into_iter();
@@ -1025,17 +927,13 @@ fn downsample<T, I: ExactSizeIterator<Item = T>>(items: I, offset: bool, use_up:
         .collect()
 }
 
-fn merge_sorted_vec<T: Clone, C: KllComparator<T>>(
-    left: Vec<T>,
-    right: Vec<T>,
-    comparator: &C,
-) -> Vec<T> {
+fn merge_sorted_vec<T: Clone + Ord>(left: Vec<T>, right: Vec<T>) -> Vec<T> {
     let mut merged = Vec::with_capacity(left.len() + right.len());
     let mut left_iter = left.into_iter().peekable();
     let mut right_iter = right.into_iter().peekable();
 
     while let (Some(l), Some(r)) = (left_iter.peek(), right_iter.peek()) {
-        if comparator.compare(l, r) == Ordering::Less {
+        if l.cmp(r) == Ordering::Less {
             merged.push(left_iter.next().unwrap());
         } else {
             merged.push(right_iter.next().unwrap());
@@ -1046,12 +944,11 @@ fn merge_sorted_vec<T: Clone, C: KllComparator<T>>(
     merged
 }
 
-fn general_compress<T: Clone, C: KllComparator<T>>(
+fn general_compress<T: Clone + Ord>(
     mut levels_in: Vec<Vec<T>>,
     k: u16,
     m: u8,
     is_level_zero_sorted: bool,
-    comparator: &C,
 ) -> Vec<Vec<T>> {
     let mut current_num_levels = levels_in.len();
     let mut current_item_count: usize = levels_in.iter().map(|level| level.len()).sum();
@@ -1077,7 +974,6 @@ fn general_compress<T: Clone, C: KllComparator<T>>(
                 current,
                 current_level,
                 is_level_zero_sorted,
-                comparator,
                 rand::random::<bool>(),
                 use_up,
             );
@@ -1085,7 +981,7 @@ fn general_compress<T: Clone, C: KllComparator<T>>(
             if above.is_empty() {
                 above = promoted;
             } else {
-                above = merge_sorted_vec(promoted, above, comparator);
+                above = merge_sorted_vec(promoted, above);
             }
             levels_in[current_level + 1] = above;
 

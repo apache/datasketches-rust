@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use datasketches::kll::KllFloat;
 use datasketches::kll::KllSketch;
 use rand::RngExt;
 use rand::SeedableRng;
@@ -29,14 +30,14 @@ pub(super) fn values(len: usize) -> Vec<f64> {
         .collect()
 }
 
-pub(super) fn build_sketch(values: &[f64]) -> KllSketch<f64> {
+pub(super) fn build_sketch(values: &[f64]) -> KllSketch<KllFloat<f64>> {
     let mut sketch = KllSketch::new(DEFAULT_K).unwrap();
     for &value in values {
-        sketch.update(value);
+        sketch.update(KllFloat::<f64>::new(value).unwrap());
     }
     sketch
 }
 
-pub(super) fn prepared_sketch() -> KllSketch<f64> {
+pub(super) fn prepared_sketch() -> KllSketch<KllFloat<f64>> {
     build_sketch(&values(100_000))
 }

@@ -16,6 +16,7 @@
 // under the License.
 
 use datasketches::common::SearchCriteria;
+use datasketches::kll::KllFloat;
 use divan::Bencher;
 use divan::black_box;
 
@@ -24,8 +25,8 @@ use super::support::prepared_sketch;
 #[divan::bench]
 fn rank(bencher: Bencher) {
     let sketch = prepared_sketch();
-    bencher
-        .bench_local(|| black_box(&sketch).rank(black_box(&500_000.0), SearchCriteria::Inclusive));
+    let item = KllFloat::<f64>::new(500_000.0).unwrap();
+    bencher.bench_local(|| black_box(&sketch).rank(black_box(&item), SearchCriteria::Inclusive));
 }
 
 #[divan::bench]

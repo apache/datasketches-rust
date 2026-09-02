@@ -17,52 +17,68 @@
 
 use std::cmp::Ordering;
 
+use datasketches::codec::SketchBytes;
+use datasketches::codec::SketchSlice;
 use datasketches::common::SearchCriteria;
-use datasketches::kll::KllComparator;
+use datasketches::error::Error;
 use datasketches::kll::KllSketch;
+use datasketches::kll::KllValue;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct NumericStringOrder;
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct NumericString(String);
 
-impl KllComparator<String> for NumericStringOrder {
-    fn compare(&self, left: &String, right: &String) -> Ordering {
-        left.parse::<u64>()
+impl Ord for NumericString {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.0
+            .parse::<u64>()
             .unwrap()
-            .cmp(&right.parse::<u64>().unwrap())
+            .cmp(&other.0.parse::<u64>().unwrap())
+    }
+}
+
+impl PartialOrd for NumericString {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl KllValue for NumericString {
+    const MIN_SERIALIZED_SIZE: usize = String::MIN_SERIALIZED_SIZE;
+
+    fn serialized_size(value: &Self) -> usize {
+        String::serialized_size(&value.0)
     }
 
-    fn is_compatible(&self, _other: &Self) -> bool {
-        true
+    fn serialize(value: &Self, bytes: &mut SketchBytes) {
+        String::serialize(&value.0, bytes);
+    }
+
+    fn deserialize(input: &mut SketchSlice<'_>) -> Result<Self, Error> {
+        String::deserialize(input).map(Self)
     }
 }
 
 #[test]
-fn custom_comparator_controls_queries_and_survives_roundtrip() {
-    let mut sketch =
-        KllSketch::<String, NumericStringOrder>::new_with_comparator(200, NumericStringOrder)
-            .unwrap();
+fn custom_item_order_controls_queries_and_survives_roundtrip() {
+    let mut sketch = KllSketch::<NumericString>::new(200).unwrap();
     for item in ["2", "10", "1"] {
-        sketch.update(item.to_owned());
+        sketch.update(NumericString(item.to_owned()));
     }
 
-    assert_eq!(sketch.min_item().map(String::as_str), Some("1"));
-    assert_eq!(sketch.max_item().map(String::as_str), Some("10"));
+    assert_eq!(sketch.min_item().map(|item| item.0.as_str()), Some("1"));
+    assert_eq!(sketch.max_item().map(|item| item.0.as_str()), Some("10"));
     assert_eq!(
-        sketch.quantile(0.5, SearchCriteria::Inclusive).unwrap(),
+        sketch.quantile(0.5, SearchCriteria::Inclusive).unwrap().0,
         "2"
     );
 
-    let decoded = KllSketch::<String, NumericStringOrder>::deserialize_with_comparator(
-        &sketch.serialize(),
-        NumericStringOrder,
-    )
-    .unwrap();
+    let decoded = KllSketch::<NumericString>::deserialize(&sketch.serialize()).unwrap();
     assert_eq!(decoded.n(), sketch.n());
     assert_eq!(decoded.num_retained(), sketch.num_retained());
-    assert_eq!(decoded.min_item().map(String::as_str), Some("1"));
-    assert_eq!(decoded.max_item().map(String::as_str), Some("10"));
+    assert_eq!(decoded.min_item().map(|item| item.0.as_str()), Some("1"));
+    assert_eq!(decoded.max_item().map(|item| item.0.as_str()), Some("10"));
     assert_eq!(
-        decoded.quantile(0.5, SearchCriteria::Inclusive).unwrap(),
+        decoded.quantile(0.5, SearchCriteria::Inclusive).unwrap().0,
         "2"
     );
 }

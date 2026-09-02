@@ -15,15 +15,110 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::cmp::Ordering;
+use std::fmt;
+use std::mem::size_of;
+use std::ops::Deref;
+
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
 use crate::error::Error;
 
+/// A non-NaN floating-point adapter for [`KllSketch`](crate::kll::KllSketch).
+///
+/// KLL requires a totally ordered item domain, while primitive floats are unordered in the
+/// presence of NaN. Construction therefore rejects NaN. Other values retain their numerical
+/// order: signed zeros compare equal and infinities are allowed.
+///
+/// The inner float is available through [`into_inner`](Self::into_inner) or immutable
+/// dereferencing.
+#[repr(transparent)]
+#[derive(Clone, Copy, PartialEq, PartialOrd)]
+pub struct KllFloat<T>(T);
+
+impl<T> KllFloat<T> {
+    /// Returns the wrapped floating-point value.
+    #[inline(always)]
+    pub fn into_inner(self) -> T {
+        self.0
+    }
+}
+
+impl<T> Deref for KllFloat<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<T: fmt::Debug> fmt::Debug for KllFloat<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl<T: fmt::Display> fmt::Display for KllFloat<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl KllFloat<f32> {
+    /// Creates a non-NaN KLL value.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `value` is NaN.
+    #[inline(always)]
+    pub fn new(value: f32) -> Result<Self, Error> {
+        if value.is_nan() {
+            Err(Error::invalid_argument("KLL float must not be NaN"))
+        } else {
+            Ok(Self(value))
+        }
+    }
+}
+
+impl Eq for KllFloat<f32> {}
+
+impl Ord for KllFloat<f32> {
+    #[inline(always)]
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.0.partial_cmp(&other.0).unwrap()
+    }
+}
+
+impl KllFloat<f64> {
+    /// Creates a non-NaN KLL value.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `value` is NaN.
+    #[inline(always)]
+    pub fn new(value: f64) -> Result<Self, Error> {
+        if value.is_nan() {
+            Err(Error::invalid_argument("KLL float must not be NaN"))
+        } else {
+            Ok(Self(value))
+        }
+    }
+}
+
+impl Eq for KllFloat<f64> {}
+
+impl Ord for KllFloat<f64> {
+    #[inline(always)]
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.0.partial_cmp(&other.0).unwrap()
+    }
+}
+
 /// Defines the compact binary representation of a KLL item.
 ///
-/// This trait is required only for serialization. In-memory KLL operations support any cloneable
-/// item type with a [`KllComparator`](crate::kll::KllComparator). The encoded representation must
-/// preserve the comparator's ordering across a round trip.
+/// This trait is required only for serialization. In-memory KLL operations support any cloneable,
+/// totally ordered item type. The encoded representation must preserve that ordering across a
+/// round trip.
 pub trait KllValue: Clone {
     /// Minimum number of bytes required to encode one value.
     const MIN_SERIALIZED_SIZE: usize;
@@ -38,39 +133,41 @@ pub trait KllValue: Clone {
     fn deserialize(input: &mut SketchSlice<'_>) -> Result<Self, Error>;
 }
 
-impl KllValue for f32 {
-    const MIN_SERIALIZED_SIZE: usize = 4;
+impl KllValue for KllFloat<f32> {
+    const MIN_SERIALIZED_SIZE: usize = size_of::<f32>();
 
     fn serialized_size(_value: &Self) -> usize {
-        4
+        size_of::<f32>()
     }
 
     fn serialize(value: &Self, bytes: &mut SketchBytes) {
-        bytes.write_f32_le(*value);
+        bytes.write_f32_le(value.0);
     }
 
     fn deserialize(input: &mut SketchSlice<'_>) -> Result<Self, Error> {
-        input
+        let value = input
             .read_f32_le()
-            .map_err(|_| Error::insufficient_data("f32"))
+            .map_err(|_| Error::insufficient_data("f32"))?;
+        Self::new(value).map_err(|_| Error::deserial("KLL float must not be NaN"))
     }
 }
 
-impl KllValue for f64 {
-    const MIN_SERIALIZED_SIZE: usize = 8;
+impl KllValue for KllFloat<f64> {
+    const MIN_SERIALIZED_SIZE: usize = size_of::<f64>();
 
     fn serialized_size(_value: &Self) -> usize {
-        8
+        size_of::<f64>()
     }
 
     fn serialize(value: &Self, bytes: &mut SketchBytes) {
-        bytes.write_f64_le(*value);
+        bytes.write_f64_le(value.0);
     }
 
     fn deserialize(input: &mut SketchSlice<'_>) -> Result<Self, Error> {
-        input
+        let value = input
             .read_f64_le()
-            .map_err(|_| Error::insufficient_data("f64"))
+            .map_err(|_| Error::insufficient_data("f64"))?;
+        Self::new(value).map_err(|_| Error::deserial("KLL float must not be NaN"))
     }
 }
 

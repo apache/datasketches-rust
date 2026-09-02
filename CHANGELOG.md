@@ -10,7 +10,7 @@ All significant changes to this project will be documented in this file.
 
 ### New features
 
-* Add KLL sketches behind the `kll` feature, with rank, quantile, PMF, and CDF queries, merging, custom item types, and serialization.
+* Add KLL sketches behind the `kll` feature, with rank, quantile, PMF, and CDF queries, merging, totally ordered custom item types, a `KllFloat` adapter for non-NaN floating-point values, and serialization.
 
 ### Improvements
 

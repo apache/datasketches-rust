@@ -16,6 +16,7 @@
 // under the License.
 
 use datasketches::error::ErrorKind;
+use datasketches::kll::KllFloat;
 use datasketches::kll::KllSketch;
 
 const DEFAULT_K: u16 = 200;
@@ -24,16 +25,16 @@ const MAX_K: u16 = u16::MAX;
 
 #[test]
 fn k_limits() {
-    KllSketch::<f32>::new(MIN_K).unwrap();
-    KllSketch::<f32>::new(MAX_K).unwrap();
+    KllSketch::<i64>::new(MIN_K).unwrap();
+    KllSketch::<i64>::new(MAX_K).unwrap();
 
-    let error = KllSketch::<f32>::new(MIN_K - 1).unwrap_err();
+    let error = KllSketch::<i64>::new(MIN_K - 1).unwrap_err();
     assert_eq!(error.kind(), ErrorKind::InvalidArgument);
 }
 
 #[test]
 fn empty_and_reset_state() {
-    let mut sketch = KllSketch::<f32>::new(64).unwrap();
+    let mut sketch = KllSketch::<i64>::new(64).unwrap();
     assert!(sketch.is_empty());
     assert!(!sketch.is_estimation_mode());
     assert_eq!(sketch.n(), 0);
@@ -42,7 +43,7 @@ fn empty_and_reset_state() {
     assert_eq!(sketch.max_item(), None);
 
     for item in 0..10_000 {
-        sketch.update(item as f32);
+        sketch.update(item);
     }
     assert!(sketch.is_estimation_mode());
     assert!(sketch.num_retained() > 0);
@@ -59,28 +60,28 @@ fn empty_and_reset_state() {
 }
 
 #[test]
-fn unordered_updates_are_ignored() {
-    let mut sketch = KllSketch::<f32>::new(DEFAULT_K).unwrap();
-    sketch.update(f32::NAN);
-    assert!(sketch.is_empty());
+fn float_adapter_rejects_nan() {
+    assert_eq!(
+        KllFloat::<f32>::new(f32::NAN).unwrap_err().kind(),
+        ErrorKind::InvalidArgument
+    );
 
-    sketch.update(0.0);
-    sketch.update(f32::NAN);
-    assert_eq!(sketch.n(), 1);
-    assert_eq!(sketch.num_retained(), 1);
+    let mut sketch = KllSketch::new(DEFAULT_K).unwrap();
+    sketch.update(KllFloat::<f32>::new(0.0).unwrap());
+    assert_eq!(sketch.min_item().map(|value| **value), Some(0.0));
 }
 
 #[test]
 fn retained_count_stays_consistent_through_compaction_and_roundtrip() {
-    let mut sketch = KllSketch::<f32>::new(32).unwrap();
+    let mut sketch = KllSketch::<i64>::new(32).unwrap();
     for item in 0..100_000 {
-        sketch.update(item as f32);
+        sketch.update(item);
         assert!(sketch.num_retained() <= sketch.n() as usize);
     }
 
-    let decoded = KllSketch::<f32>::deserialize(&sketch.serialize()).unwrap();
+    let decoded = KllSketch::<i64>::deserialize(&sketch.serialize()).unwrap();
     assert_eq!(decoded.n(), sketch.n());
     assert_eq!(decoded.num_retained(), sketch.num_retained());
-    assert_eq!(decoded.min_item(), Some(&0.0));
-    assert_eq!(decoded.max_item(), Some(&99_999.0));
+    assert_eq!(decoded.min_item(), Some(&0));
+    assert_eq!(decoded.max_item(), Some(&99_999));
 }
