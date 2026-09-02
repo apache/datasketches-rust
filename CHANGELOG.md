@@ -16,6 +16,10 @@ All significant changes to this project will be documented in this file.
 
 * Improve truncated-input diagnostics across sketch deserializers.
 
+### Bug fixes
+
+* T-Digest deserialization now rejects unknown or conflicting flags, reversed extrema, out-of-range values, unsorted centroids, and non-empty images without stored values.
+
 ## v0.5.0
 
 ### Breaking changes
