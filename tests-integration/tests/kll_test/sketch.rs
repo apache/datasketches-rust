@@ -18,12 +18,12 @@
 use std::cmp::Ordering;
 
 use datasketches::error::ErrorKind;
-use datasketches::kll::DEFAULT_K;
 use datasketches::kll::KllComparator;
 use datasketches::kll::KllSketch;
-use datasketches::kll::MAX_K;
-use datasketches::kll::MIN_K;
 
+const DEFAULT_K: u16 = 200;
+const MIN_K: u16 = 8;
+const MAX_K: u16 = u16::MAX;
 const NUMERIC_NOISE_TOLERANCE: f64 = 1e-6;
 
 fn assert_approx_eq(actual: f64, expected: f64, tolerance: f64) {

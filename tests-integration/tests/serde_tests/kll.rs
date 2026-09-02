@@ -28,11 +28,12 @@ use std::cmp::Ordering;
 use std::fs;
 use std::path::PathBuf;
 
-use datasketches::kll::DEFAULT_K;
 use datasketches::kll::KllComparator;
 use datasketches::kll::KllSketch;
 
 use crate::serialization_test_data;
+
+const DEFAULT_K: u16 = 200;
 
 #[derive(Clone, Copy)]
 struct NumericStringOrder;

@@ -125,7 +125,7 @@ impl<T: KllItem> KllSketch<T> {
     ///
     /// # Errors
     ///
-    /// Returns an error if `k` is outside [`MIN_K`, `MAX_K`].
+    /// Returns an error if `k` is outside `8..=65535`.
     ///
     /// # Examples
     ///
@@ -144,7 +144,7 @@ impl<T: KllItem, C: KllComparator<T>> KllSketch<T, C> {
     ///
     /// # Errors
     ///
-    /// Returns an error if `k` is outside [`MIN_K`, `MAX_K`].
+    /// Returns an error if `k` is outside `8..=65535`.
     pub fn new_with_comparator(k: u16, comparator: C) -> Result<Self, Error> {
         if !(MIN_K..=MAX_K).contains(&k) {
             return Err(Error::invalid_argument(format!(

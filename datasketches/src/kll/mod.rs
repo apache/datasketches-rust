@@ -46,20 +46,11 @@ pub use self::sketch::KllItem;
 pub use self::sketch::KllSketch;
 pub use self::sketch::NaturalOrder;
 
-/// KLL sketch specialized for `f64`.
-pub type KllSketchF64<C = NaturalOrder> = KllSketch<f64, C>;
-/// KLL sketch specialized for `f32`.
-pub type KllSketchF32<C = NaturalOrder> = KllSketch<f32, C>;
-/// KLL sketch specialized for `i64`.
-pub type KllSketchI64<C = NaturalOrder> = KllSketch<i64, C>;
-/// KLL sketch specialized for `String`.
-pub type KllSketchString<C = NaturalOrder> = KllSketch<String, C>;
-
 /// Default value of parameter k.
-pub const DEFAULT_K: u16 = 200;
+const DEFAULT_K: u16 = 200;
 /// Default value of parameter m.
-pub const DEFAULT_M: u8 = 8;
+const DEFAULT_M: u8 = 8;
 /// Minimum value of parameter k.
-pub const MIN_K: u16 = DEFAULT_M as u16;
+const MIN_K: u16 = DEFAULT_M as u16;
 /// Maximum value of parameter k.
-pub const MAX_K: u16 = u16::MAX;
+const MAX_K: u16 = u16::MAX;
