@@ -35,6 +35,7 @@ pub struct MurmurHash3X64128 {
 }
 
 impl MurmurHash3X64128 {
+    #[inline(always)]
     pub fn with_seed(seed: u64) -> Self {
         MurmurHash3X64128 {
             h1: seed,
@@ -45,18 +46,18 @@ impl MurmurHash3X64128 {
         }
     }
 
+    #[inline(always)]
     pub fn finish128(&self) -> (u64, u64) {
         let mut h1 = self.h1;
         let mut h2 = self.h2;
 
-        let total = self.total + self.buf_len as u64;
         let rem = self.buf_len;
 
         // tail
         if rem > 0 {
             if rem > 8 {
                 // read k2 little endian
-                let mut k2 = read_u64_le(&self.buf[8..rem]);
+                let mut k2 = read_u64_le_partial(&self.buf[8..rem]);
                 // mix k2
                 k2 = k2.wrapping_mul(C2);
                 k2 = k2.rotate_left(33);
@@ -66,7 +67,7 @@ impl MurmurHash3X64128 {
 
             // read k1 little endian
             let k1_len = rem.min(8);
-            let mut k1 = read_u64_le(&self.buf[..k1_len]);
+            let mut k1 = read_u64_le_partial(&self.buf[..k1_len]);
             // mix k1
             k1 = k1.wrapping_mul(C1);
             k1 = k1.rotate_left(31);
@@ -74,8 +75,8 @@ impl MurmurHash3X64128 {
             h1 ^= k1;
         }
 
-        h1 ^= total;
-        h2 ^= total;
+        h1 ^= self.total;
+        h2 ^= self.total;
         h1 = h1.wrapping_add(h2);
         h2 = h2.wrapping_add(h1);
         h1 = fmix64(h1);
@@ -85,7 +86,7 @@ impl MurmurHash3X64128 {
         (h1, h2)
     }
 
-    #[inline]
+    #[inline(always)]
     fn update(&mut self, mut k1: u64, mut k2: u64) {
         // k1 *= c1; k1 = MURMUR3_ROTL64(k1, 31); k1 *= c2; out.h1 ^= k1;
         k1 = k1.wrapping_mul(C1);
@@ -108,9 +109,6 @@ impl MurmurHash3X64128 {
         self.h2 = self.h2.rotate_left(31);
         self.h2 = self.h2.wrapping_add(self.h1);
         self.h2 = self.h2.wrapping_mul(5).wrapping_add(0x38495ab5);
-
-        // accumulate total length
-        self.total += 16;
     }
 }
 
@@ -121,54 +119,54 @@ impl Default for MurmurHash3X64128 {
 }
 
 impl Hasher for MurmurHash3X64128 {
+    #[inline(always)]
     fn finish(&self) -> u64 {
         self.finish128().0
     }
 
+    #[inline(always)]
     fn write(&mut self, mut bytes: &[u8]) {
-        if self.buf_len + bytes.len() < 16 {
-            self.buf[self.buf_len..self.buf_len + bytes.len()].copy_from_slice(bytes);
-            self.buf_len += bytes.len();
-            return;
-        }
+        self.total = self.total.wrapping_add(bytes.len() as u64);
 
         if self.buf_len != 0 {
-            let wanted = 16 - self.buf_len;
-            self.buf[self.buf_len..].copy_from_slice(&bytes[..wanted]);
+            let copied = (16 - self.buf_len).min(bytes.len());
+            self.buf[self.buf_len..self.buf_len + copied].copy_from_slice(&bytes[..copied]);
+            self.buf_len += copied;
+            bytes = &bytes[copied..];
+
+            if self.buf_len < 16 {
+                return;
+            }
 
             let k1 = read_u64_le(&self.buf[0..8]);
             let k2 = read_u64_le(&self.buf[8..16]);
             self.update(k1, k2);
-
-            bytes = &bytes[wanted..];
             self.buf_len = 0;
         }
 
-        // Number of full 128-bit blocks of 16 bytes.
-        // Possible exclusion of a remainder of up to 15 bytes.
-        let blocks = bytes.len() >> 4; // bytes / 16
-
-        // Process the 128-bit blocks (the body) into the hash
-        for i in 0..blocks {
-            let lo = i << 4;
-            let mi = lo + 8;
-            let hi = mi + 8;
-            let k1 = read_u64_le(&bytes[lo..mi]);
-            let k2 = read_u64_le(&bytes[mi..hi]);
+        while bytes.len() >= 16 {
+            let k1 = read_u64_le(&bytes[..8]);
+            let k2 = read_u64_le(&bytes[8..16]);
             self.update(k1, k2);
+            bytes = &bytes[16..];
         }
 
-        // remain bytes
-        let len = bytes.len() % 16;
-        if len > 0 {
-            self.buf[0..len].copy_from_slice(&bytes[blocks << 4..]);
-            self.buf_len = len;
-        }
+        self.buf[..bytes.len()].copy_from_slice(bytes);
+        self.buf_len = bytes.len();
     }
 }
 
+#[inline(always)]
+fn read_u64_le_partial(bytes: &[u8]) -> u64 {
+    let mut value = 0;
+    for (index, &byte) in bytes.iter().enumerate() {
+        value |= u64::from(byte) << (index * 8);
+    }
+    value
+}
+
 /// Finalization mix: force all bits of a hash block to avalanche.
-#[inline]
+#[inline(always)]
 fn fmix64(mut k: u64) -> u64 {
     k ^= k >> 33;
     k = k.wrapping_mul(0xff51afd7ed558ccd);

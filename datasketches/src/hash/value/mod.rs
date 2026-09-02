@@ -166,6 +166,7 @@ impl<T: fmt::Display, S> fmt::Display for Value<T, S> {
 }
 
 impl<T, S: HashStrategy<T>> Hash for Value<T, S> {
+    #[inline(always)]
     fn hash<H: Hasher>(&self, state: &mut H) {
         S::hash(&self.value, state);
     }

@@ -82,11 +82,12 @@ pub(crate) use self::seed::*;
 ))]
 pub(crate) const DEFAULT_UPDATE_SEED: u64 = 9001;
 
-/// Reads an u64 from a byte slice in little-endian order.
-///
-/// # Panics
-///
-/// Panics if `bytes.len()` is greater than 8.
+#[cfg(feature = "bloom")]
+#[inline(always)]
+fn read_u32_le(bytes: &[u8]) -> u32 {
+    u32::from_le_bytes(bytes.try_into().expect("four-byte hash input"))
+}
+
 #[cfg(any(
     feature = "bloom",
     feature = "countmin",
@@ -96,8 +97,7 @@ pub(crate) const DEFAULT_UPDATE_SEED: u64 = 9001;
     feature = "theta",
     feature = "tuple",
 ))]
+#[inline(always)]
 fn read_u64_le(bytes: &[u8]) -> u64 {
-    let mut buf = [0u8; 8];
-    buf[..bytes.len()].copy_from_slice(bytes);
-    u64::from_le_bytes(buf)
+    u64::from_le_bytes(bytes.try_into().expect("eight-byte hash input"))
 }

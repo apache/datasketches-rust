@@ -160,6 +160,7 @@ pub fn from_u32(v: u32) -> SignExtend<u32> {
 macro_rules! impl_sign_extend {
     ($t:ty, |$v:ident| $extended:expr) => {
         impl HashStrategy<$t> for SignExtendStrategy {
+            #[inline(always)]
             fn hash<H: Hasher>(value: &$t, state: &mut H) {
                 let $v = *value;
                 let extended = $extended as u64;

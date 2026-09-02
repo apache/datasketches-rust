@@ -97,6 +97,7 @@ pub fn from_f64(v: f64) -> CanonicalFloat<f64> {
 }
 
 impl HashStrategy<f32> for CanonicalFloatStrategy {
+    #[inline(always)]
     fn hash<H: Hasher>(value: &f32, state: &mut H) {
         let value = *value as f64;
         let canonical_value = from_f64(value);
@@ -105,6 +106,7 @@ impl HashStrategy<f32> for CanonicalFloatStrategy {
 }
 
 impl HashStrategy<f64> for CanonicalFloatStrategy {
+    #[inline(always)]
     fn hash<H: Hasher>(value: &f64, state: &mut H) {
         let canonical = if value.is_nan() {
             // Java's Double.doubleToLongBits() NaN value.
