@@ -206,12 +206,17 @@ impl KllValue for String {
         let len = input
             .read_u32_le()
             .map_err(insufficient_data("KLL string length"))? as usize;
-        let bytes = input
-            .read_bytes(len)
-            .map_err(insufficient_data("KLL string payload"))?;
-        let value = std::str::from_utf8(bytes)
+        let available_bytes = input.remaining().len();
+        if available_bytes < len {
+            return Err(Error::insufficient_data_of(
+                "KLL string payload",
+                format_args!("expected {len} bytes, got {available_bytes}"),
+            ));
+        }
+        let value = std::str::from_utf8(&input.remaining()[..len])
             .map_err(|error| Error::deserial(format!("invalid UTF-8 string: {error}")))?
             .to_owned();
+        input.advance(len as u64);
         Ok(value)
     }
 }

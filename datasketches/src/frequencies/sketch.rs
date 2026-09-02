@@ -682,9 +682,13 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
         let weight_bytes = active_items
             .checked_mul(size_of::<u64>())
             .ok_or_else(|| Error::deserial("frequent item weight payload length overflows"))?;
-        cursor
-            .ensure_remaining(weight_bytes)
-            .map_err(insufficient_data("frequent item weights"))?;
+        let available_bytes = cursor.remaining().len();
+        if available_bytes < weight_bytes {
+            return Err(Error::insufficient_data_of(
+                "frequent item weights",
+                format_args!("expected {weight_bytes} bytes, got {available_bytes}"),
+            ));
+        }
 
         let mut values = Vec::with_capacity(active_items);
         for i in 0..active_items {

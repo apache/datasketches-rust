@@ -408,7 +408,7 @@ where
         // a multi-gigabyte reservation before the per-item reads below fail. The buffer
         // holds at most `remaining` more items (each item is ≥ 1 byte), so cap the
         // pre-allocation there; `push` still grows the Vec as the validated data needs.
-        let capacity = (num_items as usize).min(cursor.remaining_len());
+        let capacity = (num_items as usize).min(cursor.remaining().len());
         let mut items = Vec::with_capacity(capacity);
         for _ in 0..num_items {
             items.push(T::deserialize_value(cursor)?);

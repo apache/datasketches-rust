@@ -17,6 +17,7 @@
 
 use std::io;
 use std::io::Cursor;
+use std::io::Read;
 
 /// A wrapper around a byte slice that provides methods for reading various types of data from it.
 pub struct SketchSlice<'a> {
@@ -47,37 +48,9 @@ impl SketchSlice<'_> {
         &buf[pos..]
     }
 
-    /// Returns the number of not-yet-read bytes.
-    pub(crate) fn remaining_len(&self) -> usize {
-        self.remaining().len()
-    }
-
-    /// Verifies that at least `expected` bytes remain without advancing the cursor.
-    pub(crate) fn ensure_remaining(&self, expected: usize) -> io::Result<()> {
-        let actual = self.remaining_len();
-        if actual < expected {
-            Err(io::Error::new(
-                io::ErrorKind::UnexpectedEof,
-                format!("expected {expected} bytes, got {actual}"),
-            ))
-        } else {
-            Ok(())
-        }
-    }
-
-    /// Returns and consumes the next `len` bytes.
-    pub(crate) fn read_bytes(&mut self, len: usize) -> io::Result<&[u8]> {
-        self.ensure_remaining(len)?;
-        let start = self.slice.position() as usize;
-        let end = start + len;
-        self.slice.set_position(end as u64);
-        Ok(&self.slice.get_ref()[start..end])
-    }
-
     /// Reads exactly `buf.len()` bytes from the slice into `buf`.
     pub fn read_exact(&mut self, buf: &mut [u8]) -> io::Result<()> {
-        buf.copy_from_slice(self.read_bytes(buf.len())?);
-        Ok(())
+        self.slice.read_exact(buf)
     }
 
     /// Reads a single byte from the slice and returns it as a `u8`.
@@ -204,35 +177,5 @@ impl SketchSlice<'_> {
         let mut buf = [0u8; 8];
         self.read_exact(&mut buf)?;
         Ok(f64::from_be_bytes(buf))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::io::ErrorKind;
-
-    use super::SketchSlice;
-
-    #[test]
-    fn insufficient_reads_report_expected_and_available_bytes_without_advancing() {
-        let mut input = SketchSlice::new(&[1, 2]);
-
-        let error = input.read_u32_le().unwrap_err();
-
-        assert_eq!(error.kind(), ErrorKind::UnexpectedEof);
-        assert_eq!(error.to_string(), "expected 4 bytes, got 2");
-        assert_eq!(input.remaining(), &[1, 2]);
-    }
-
-    #[test]
-    fn read_bytes_consumes_only_the_requested_bytes() {
-        let mut input = SketchSlice::new(&[1, 2, 3]);
-
-        assert_eq!(input.read_bytes(2).unwrap(), &[1, 2]);
-        assert_eq!(input.remaining(), &[3]);
-
-        let error = input.read_bytes(2).unwrap_err();
-        assert_eq!(error.to_string(), "expected 2 bytes, got 1");
-        assert_eq!(input.remaining(), &[3]);
     }
 }

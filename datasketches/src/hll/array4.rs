@@ -356,9 +356,13 @@ impl Array4 {
             .checked_mul(COUPON_SIZE_BYTES)
             .and_then(|aux_bytes| num_bytes.checked_add(aux_bytes))
             .ok_or_else(|| Error::deserial("HLL4 payload length overflows"))?;
-        cursor
-            .ensure_remaining(required_bytes)
-            .map_err(insufficient_data("HLL4 payload"))?;
+        let available_bytes = cursor.remaining().len();
+        if available_bytes < required_bytes {
+            return Err(Error::insufficient_data_of(
+                "HLL4 payload",
+                format_args!("expected {required_bytes} bytes, got {available_bytes}"),
+            ));
+        }
 
         // Read packed 4-bit byte array
         let mut data = vec![0u8; num_bytes];

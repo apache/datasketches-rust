@@ -58,13 +58,18 @@ impl FrequentItemValue for String {
         let len = cursor
             .read_u32_le()
             .map_err(insufficient_data("string item length"))? as usize;
-        let bytes = cursor
-            .read_bytes(len)
-            .map_err(insufficient_data("string item payload"))?;
-
-        std::str::from_utf8(bytes)
+        let available_bytes = cursor.remaining().len();
+        if available_bytes < len {
+            return Err(Error::insufficient_data_of(
+                "string item payload",
+                format_args!("expected {len} bytes, got {available_bytes}"),
+            ));
+        }
+        let value = std::str::from_utf8(&cursor.remaining()[..len])
             .map(str::to_owned)
-            .map_err(|_| Error::deserial("invalid UTF-8 string payload"))
+            .map_err(|_| Error::deserial("invalid UTF-8 string payload"))?;
+        cursor.advance(len as u64);
+        Ok(value)
     }
 }
 

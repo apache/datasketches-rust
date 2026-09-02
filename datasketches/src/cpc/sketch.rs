@@ -775,9 +775,14 @@ impl CpcSketch {
         let payload_bytes = window_data_bytes
             .checked_add(table_data_bytes)
             .ok_or_else(|| Error::deserial("CPC payload length overflows"))?;
-        let payload = cursor
-            .read_bytes(payload_bytes)
-            .map_err(insufficient_data("CPC compressed payload"))?;
+        let available_bytes = cursor.remaining().len();
+        if available_bytes < payload_bytes {
+            return Err(Error::insufficient_data_of(
+                "CPC compressed payload",
+                format_args!("expected {payload_bytes} bytes, got {available_bytes}"),
+            ));
+        }
+        let payload = &cursor.remaining()[..payload_bytes];
         let (window_data, table_data) = payload.split_at(window_data_bytes);
         let (table, window) = match flavor {
             Flavor::Empty => (PairTable::new(2, lg_k + 6), vec![]),

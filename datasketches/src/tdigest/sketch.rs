@@ -674,9 +674,14 @@ impl TDigestMut {
             .checked_add(buffered_payload_bytes)
             .ok_or_else(|| Error::deserial("TDigest payload size exceeds the supported size"))?;
         // Check the whole payload once so fixed-width records can be decoded without per-field I/O.
-        let payload = cursor
-            .read_bytes(required_payload_bytes)
-            .map_err(insufficient_data("TDigest payload"))?;
+        let available_bytes = cursor.remaining().len();
+        if available_bytes < required_payload_bytes {
+            return Err(Error::insufficient_data_of(
+                "TDigest payload",
+                format_args!("expected {required_payload_bytes} bytes, got {available_bytes}"),
+            ));
+        }
+        let payload = &cursor.remaining()[..required_payload_bytes];
         let (centroid_payload, buffered_payload) = payload.split_at(centroid_payload_bytes);
         let stored_centroids = num_centroids.checked_add(num_buffered).ok_or_else(|| {
             Error::deserial("num_centroids and num_buffered exceed the supported size")
