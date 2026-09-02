@@ -66,7 +66,7 @@ thread_local! {
 /// The call is a handful of arithmetic operations on thread-local state: it
 /// never allocates, locks, or blocks. The first call on a thread seeds that
 /// thread's state.
-pub(crate) fn random_bit() -> bool {
+pub fn random_bit() -> bool {
     STATE.with(|state| {
         let (next, value) = next_u64(state.get());
         state.set(next);
