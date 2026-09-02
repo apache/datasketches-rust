@@ -43,14 +43,11 @@ countmin = []
 cpc = []
 frequencies = []
 hll = []
-kll = ["dep:rand"]
-req = ["dep:rand"]
+kll = []
+req = []
 tdigest = []
 theta = []
 tuple = []
-
-[dependencies]
-rand = { workspace = true, optional = true }
 
 [dev-dependencies]
 googletest = { workspace = true }

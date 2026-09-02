@@ -43,6 +43,7 @@ use crate::codec::assert::ensure_serial_version_is;
 use crate::codec::assert::insufficient_data;
 use crate::codec::family::Family;
 use crate::common::SearchCriteria;
+use crate::common::random::random_bit;
 use crate::error::Error;
 
 /// KLL sketch for estimating quantiles and ranks.
@@ -732,7 +733,7 @@ impl<T: Clone + Ord> KllSketch<T> {
             current,
             level,
             self.is_level_zero_sorted,
-            rand::random::<bool>(),
+            random_bit(),
             use_up,
         );
         if above.is_empty() {
@@ -985,7 +986,7 @@ fn general_compress<T: Clone + Ord>(
                 current,
                 current_level,
                 is_level_zero_sorted,
-                rand::random::<bool>(),
+                random_bit(),
                 use_up,
             );
             let promoted_len = promoted.len();

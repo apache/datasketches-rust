@@ -14,6 +14,7 @@ All significant changes to this project will be documented in this file.
 
 ### Improvements
 
+* The crate no longer has any runtime dependencies. The `kll` and `req` features previously pulled in `rand`; compaction now draws its coin from an in-tree generator.
 * Improve truncated-input diagnostics across sketch deserializers.
 * Improve hash-backed sketch update performance for integer and raw-byte inputs.
 * Improve Bloom filter membership-and-insert performance and simplify Theta-family hash table thresholds.
