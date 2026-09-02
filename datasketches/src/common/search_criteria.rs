@@ -16,10 +16,9 @@
 // under the License.
 
 /// Selects the rank definition used by rank, quantile, PMF, and CDF queries.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SearchCriteria {
     /// Define rank as the fraction of values less than or equal to the boundary.
-    #[default]
     Inclusive,
     /// Define rank as the fraction of values strictly less than the boundary.
     Exclusive,
