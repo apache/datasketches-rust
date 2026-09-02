@@ -15,7 +15,7 @@ All significant changes to this project will be documented in this file.
 ### Improvements
 
 * Improve truncated-input diagnostics across sketch deserializers.
-* Improve hash-backed sketch update performance, especially for integer inputs and Bloom filter raw-byte inputs.
+* Improve hash-backed sketch update performance for integer and raw-byte inputs.
 
 ### Bug fixes
 
