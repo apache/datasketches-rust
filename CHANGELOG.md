@@ -6,11 +6,11 @@ All significant changes to this project will be documented in this file.
 
 ### New features
 
-* Add KLL sketches behind the `kll` feature, including inclusive and exclusive rank, quantile, PMF, and CDF queries; reusable sorted views and batch quantiles; comparator-checked merging; custom item ordering and value encodings; and C++, Java, and Go-compatible serialization.
+* Add KLL sketches behind the `kll` feature, with rank, quantile, PMF, and CDF queries, merging, custom item types, and serialization.
 
 ### Performance improvements
 
-* Speed up KLL updates and rank queries by caching retained-capacity state and scanning retained items directly, and make repeated quantile queries reuse sorted levels through an owned `SortedView`.
+* Improve KLL update and query performance.
 
 ## v0.5.0
 
