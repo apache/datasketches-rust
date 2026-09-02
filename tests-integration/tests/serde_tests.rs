@@ -57,6 +57,9 @@ mod frequencies;
 #[path = "serde_tests/hll.rs"]
 mod hll;
 
+#[path = "serde_tests/kll.rs"]
+mod kll;
+
 #[path = "serde_tests/req.rs"]
 mod req;
 

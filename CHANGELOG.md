@@ -4,6 +4,10 @@ All significant changes to this project will be documented in this file.
 
 ## Unreleased
 
+### New features
+
+* Add KLL sketches behind the `kll` feature, including rank, quantile, PMF, and CDF queries, custom item ordering, merging, and C++/Java-compatible serialization.
+
 ## v0.5.0
 
 ### Breaking changes
