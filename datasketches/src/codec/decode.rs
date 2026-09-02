@@ -17,7 +17,6 @@
 
 use std::io;
 use std::io::Cursor;
-use std::io::Read;
 
 /// A wrapper around a byte slice that provides methods for reading various types of data from it.
 pub struct SketchSlice<'a> {
@@ -49,12 +48,12 @@ impl SketchSlice<'_> {
     }
 
     /// Returns the number of not-yet-read bytes.
-    pub fn remaining_len(&self) -> usize {
+    pub(crate) fn remaining_len(&self) -> usize {
         self.remaining().len()
     }
 
     /// Verifies that at least `expected` bytes remain without advancing the cursor.
-    pub fn ensure_remaining(&self, expected: usize) -> io::Result<()> {
+    pub(crate) fn ensure_remaining(&self, expected: usize) -> io::Result<()> {
         let actual = self.remaining_len();
         if actual < expected {
             Err(io::Error::new(
@@ -67,7 +66,7 @@ impl SketchSlice<'_> {
     }
 
     /// Returns and consumes the next `len` bytes.
-    pub fn read_bytes(&mut self, len: usize) -> io::Result<&[u8]> {
+    pub(crate) fn read_bytes(&mut self, len: usize) -> io::Result<&[u8]> {
         self.ensure_remaining(len)?;
         let start = self.slice.position() as usize;
         let end = start + len;
@@ -77,8 +76,8 @@ impl SketchSlice<'_> {
 
     /// Reads exactly `buf.len()` bytes from the slice into `buf`.
     pub fn read_exact(&mut self, buf: &mut [u8]) -> io::Result<()> {
-        self.ensure_remaining(buf.len())?;
-        self.slice.read_exact(buf)
+        buf.copy_from_slice(self.read_bytes(buf.len())?);
+        Ok(())
     }
 
     /// Reads a single byte from the slice and returns it as a `u8`.
