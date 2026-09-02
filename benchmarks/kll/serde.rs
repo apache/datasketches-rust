@@ -15,16 +15,26 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use divan::AllocProfiler;
+use datasketches::kll::KllSketch;
+use divan::Bencher;
+use divan::black_box;
+use divan::counter::BytesCount;
 
-#[global_allocator]
-static ALLOC: AllocProfiler = AllocProfiler::system();
+use super::support::prepared_sketch;
 
-mod cpc;
-mod kll;
-mod req;
-mod tdigest;
+#[divan::bench]
+fn serialize(bencher: Bencher) {
+    let sketch = prepared_sketch();
+    let bytes = sketch.serialize();
+    bencher
+        .counter(BytesCount::new(bytes.len()))
+        .bench_local(|| black_box(&sketch).serialize());
+}
 
-fn main() {
-    divan::main();
+#[divan::bench]
+fn deserialize(bencher: Bencher) {
+    let bytes = prepared_sketch().serialize();
+    bencher
+        .counter(BytesCount::new(bytes.len()))
+        .bench_local(|| KllSketch::<f64>::deserialize(black_box(&bytes)).unwrap());
 }
