@@ -15,14 +15,11 @@ All significant changes to this project will be documented in this file.
 ### Improvements
 
 * Improve truncated-input diagnostics across sketch deserializers.
+* The crate no longer has any runtime dependencies. The `kll` and `req` features previously pulled in `rand`; compaction now draws its coin from an in-tree generator.
 
 ### Bug fixes
 
 * T-Digest deserialization now rejects unknown or conflicting flags, reversed extrema, out-of-range values, unsorted centroids, and non-empty images without stored values.
-
-### Notable changes
-
-* The crate no longer has any runtime dependencies. The `kll` and `req` features previously pulled in `rand`; compaction now draws its coin from an in-tree generator.
 
 ## v0.5.0
 

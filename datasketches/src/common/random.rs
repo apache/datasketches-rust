@@ -48,9 +48,9 @@ fn next_u64(state: u64) -> (u64, u64) {
 
 /// Returns the seed for the calling thread's stream.
 ///
-/// The seed comes from the operating-system entropy that `std` already holds to
-/// key its hash maps, mixed with the current thread's id so that threads in one
-/// process start at unrelated points of the cycle.
+/// The seed is derived from `RandomState`'s randomized hash keys and the current
+/// thread's id so that threads in one process start at unrelated points of the
+/// cycle.
 fn random_seed() -> u64 {
     RandomState::new().hash_one(std::thread::current().id())
 }
