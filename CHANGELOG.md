@@ -4,11 +4,15 @@ All significant changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Breaking changes
+
+* Move `SearchCriteria` from `req` to `common` and remove its `Default` implementation. Import `datasketches::common::SearchCriteria` and explicitly choose `Inclusive` or `Exclusive` for each query.
+
 ### New features
 
 * Add KLL sketches behind the `kll` feature, with rank, quantile, PMF, and CDF queries, merging, custom item types, and serialization.
 
-### Performance improvements
+### Improvements
 
 * Improve KLL update and query performance.
 
