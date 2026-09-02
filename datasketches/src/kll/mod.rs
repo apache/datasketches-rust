@@ -21,9 +21,8 @@
 //! near-optimal accuracy per retained item. It supports one-pass updates,
 //! approximate quantiles, ranks, PMF, and CDF queries.
 //!
-//! This implementation follows Apache DataSketches semantics (Java KllSketch
-//! / KllPreambleUtil, C++ kll_sketch) and uses the same binary serialization
-//! format as those implementations.
+//! This implementation follows Apache DataSketches semantics and uses the compact binary
+//! serialization format shared by the Java, C++, and Go implementations.
 //!
 //! # Usage
 //!

@@ -166,6 +166,10 @@ impl<T: Clone, C: KllComparator<T>> KllSketch<T, C> {
     /// Updates the sketch with a new item.
     ///
     /// NaN values are ignored for floating-point types.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the stream weight would exceed [`u64::MAX`].
     pub fn update(&mut self, item: T) {
         if !self.comparator.accepts(&item) {
             return;
@@ -743,7 +747,10 @@ impl<T: Clone, C: KllComparator<T>> KllSketch<T, C> {
         if self.num_retained >= self.capacity {
             self.compress_while_updating();
         }
-        self.n += 1;
+        self.n = self
+            .n
+            .checked_add(1)
+            .expect("stream weight exceeds u64::MAX");
         self.num_retained += 1;
         self.is_level_zero_sorted = false;
         self.levels[0].push(item);
