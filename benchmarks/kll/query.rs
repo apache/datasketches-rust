@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use datasketches::kll::SearchCriteria;
+use datasketches::common::SearchCriteria;
 use divan::Bencher;
 use divan::black_box;
 

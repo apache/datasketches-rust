@@ -15,8 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use datasketches::common::SearchCriteria;
 use datasketches::req::ReqSketch;
-use datasketches::req::SearchCriteria;
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 struct Reading(i32);

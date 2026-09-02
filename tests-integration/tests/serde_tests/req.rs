@@ -20,11 +20,11 @@
 use std::fs;
 use std::path::PathBuf;
 
+use datasketches::common::SearchCriteria;
 use datasketches::req::RankAccuracy;
 use datasketches::req::ReqFloat;
 use datasketches::req::ReqSketch;
 use datasketches::req::ReqValue;
-use datasketches::req::SearchCriteria;
 use googletest::assert_that;
 use googletest::prelude::anything;
 use googletest::prelude::err;

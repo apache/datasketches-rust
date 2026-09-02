@@ -27,7 +27,8 @@
 //! # Usage
 //!
 //! ```rust
-//! # use datasketches::kll::{KllSketch, SearchCriteria};
+//! # use datasketches::common::SearchCriteria;
+//! # use datasketches::kll::KllSketch;
 //! let mut sketch = KllSketch::<f64>::new(200).unwrap();
 //! sketch.update(1.0);
 //! sketch.update(2.0);
@@ -47,8 +48,6 @@ pub use self::order::NaturalOrder;
 pub use self::sketch::KllSketch;
 pub use self::sorted_view::SortedView;
 pub use self::value::KllValue;
-pub use crate::common::SearchCriteria;
-
 /// Default value of parameter k.
 const DEFAULT_K: u16 = 200;
 /// Default value of parameter m.

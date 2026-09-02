@@ -17,10 +17,10 @@
 
 use std::cmp::Ordering;
 
+use datasketches::common::SearchCriteria;
 use datasketches::error::ErrorKind;
 use datasketches::kll::KllComparator;
 use datasketches::kll::KllSketch;
-use datasketches::kll::SearchCriteria;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct DirectionalOrder {

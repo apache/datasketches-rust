@@ -35,9 +35,9 @@
 //! # Example
 //!
 //! ```
+//! use datasketches::common::SearchCriteria;
 //! use datasketches::req::ReqFloat;
 //! use datasketches::req::ReqSketch;
-//! use datasketches::req::SearchCriteria;
 //!
 //! let mut sketch = ReqSketch::default();
 //! for value in [1.0, 2.0, 3.0] {
@@ -61,8 +61,6 @@ pub use self::sketch::ReqSketch;
 pub use self::sorted_view::SortedView;
 pub use self::value::ReqFloat;
 pub use self::value::ReqValue;
-pub use crate::common::SearchCriteria;
-
 /// Default value of `k` if not specified. Roughly 1% relative error at 95% confidence.
 const DEFAULT_K: u16 = 12;
 /// Minimum allowed value of `k`.

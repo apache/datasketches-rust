@@ -15,8 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use datasketches::common::SearchCriteria;
 use datasketches::req::ReqFloat;
-use datasketches::req::SearchCriteria;
 use divan::Bencher;
 use divan::black_box;
 

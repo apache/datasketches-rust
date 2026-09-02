@@ -19,9 +19,9 @@
 //! distribution queries take `&self`, and `sorted_view()` returns an owned
 //! snapshot instead of relying on an internal cache.
 
+use datasketches::common::SearchCriteria;
 use datasketches::error::ErrorKind;
 use datasketches::req::ReqSketch;
-use datasketches::req::SearchCriteria;
 use datasketches::req::SortedView;
 use googletest::assert_that;
 use googletest::prelude::all;

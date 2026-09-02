@@ -17,9 +17,9 @@
 
 use std::cmp::Ordering;
 
+use datasketches::common::SearchCriteria;
 use datasketches::kll::KllComparator;
 use datasketches::kll::KllSketch;
-use datasketches::kll::SearchCriteria;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct NumericStringOrder;

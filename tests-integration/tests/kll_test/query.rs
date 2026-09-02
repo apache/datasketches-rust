@@ -15,9 +15,9 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use datasketches::common::SearchCriteria;
 use datasketches::error::ErrorKind;
 use datasketches::kll::KllSketch;
-use datasketches::kll::SearchCriteria;
 
 const DEFAULT_K: u16 = 200;
 const NUMERIC_NOISE_TOLERANCE: f64 = 1e-6;

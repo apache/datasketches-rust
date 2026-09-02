@@ -18,10 +18,10 @@
 //! Rank error bounds and sigma coverage for ReqSketch.
 
 use datasketches::common::NumStdDev;
+use datasketches::common::SearchCriteria;
 use datasketches::error::Error;
 use datasketches::req::RankAccuracy;
 use datasketches::req::ReqSketch;
-use datasketches::req::SearchCriteria;
 use googletest::assert_that;
 use googletest::prelude::all;
 use googletest::prelude::ge;
