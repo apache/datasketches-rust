@@ -130,8 +130,8 @@
 //! // filter1.intersect(&filter2).unwrap();
 //!
 //! // Invert: returns a read-only inverted view
-//! //let inverted = filter1.invert();
-//! //assert!(!inverted.contains(&"a"));
+//! let inverted = filter1.invert();
+//! assert!(!inverted.contains(&"a"));
 //! ```
 //!
 //! # Implementation Details
