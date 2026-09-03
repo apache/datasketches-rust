@@ -3,6 +3,7 @@
 All significant changes to this project will be documented in this file.
 
 ## Unreleased
+- feat(bloom): make post-invert semantics observable via `BloomFilterInvertedView` (#270, #271)
 
 ### Breaking changes
 
