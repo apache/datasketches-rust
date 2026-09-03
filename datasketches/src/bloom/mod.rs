@@ -28,8 +28,9 @@
 //! * **Fixed size**: Unlike typical sketches, Bloom filters do not resize automatically
 //! * **Linear space**: Size is proportional to the expected number of distinct items
 //!
-//! These guarantees describe normal operation. After [`invert()`](BloomFilter::invert) neither
-//! the no-false-negative nor the false-positive guarantee holds; see its documentation.
+//! These guarantees describe normal operation. When converted into a [`BloomFilterInvertedView`]
+//! via [`invert()`](BloomFilter::invert), neither the no-false-negative nor the false-positive
+//! guarantee holds; see its documentation.
 //!
 //! # Usage
 //!
@@ -128,8 +129,9 @@
 //! // Intersect: recognizes only items in both filters
 //! // filter1.intersect(&filter2).unwrap();
 //!
-//! // Invert: approximately inverts set membership
-//! // filter1.invert();
+//! // Invert: returns a read-only inverted view
+//! //let inverted = filter1.invert();
+//! //assert!(!inverted.contains(&"a"));
 //! ```
 //!
 //! # Implementation Details
@@ -149,3 +151,4 @@ mod sketch;
 
 pub use self::sketch::BloomFilter;
 pub use self::sketch::BloomFilterBuilder;
+pub use self::sketch::BloomFilterInvertedView;
