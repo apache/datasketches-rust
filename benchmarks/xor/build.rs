@@ -54,3 +54,12 @@ fn xorf_xor16(bencher: Bencher) {
         ))
     });
 }
+
+#[divan::bench]
+fn xorf_xor32(bencher: Bencher) {
+    bencher.counter(ItemsCount::new(ITEMS)).bench_local(|| {
+        black_box(xorf::Xor32::from_iterator(
+            (0..ITEMS).map(|value| value as u64),
+        ))
+    });
+}

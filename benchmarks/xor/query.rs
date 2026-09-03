@@ -111,3 +111,25 @@ fn xorf_xor16_absent(bencher: Bencher) {
         }
     });
 }
+
+#[divan::bench]
+fn xorf_xor32_present(bencher: Bencher) {
+    let filter = xorf::Xor32::from_iterator((0..ITEMS).map(|value| value as u64));
+
+    bencher.counter(ItemsCount::new(ITEMS)).bench_local(|| {
+        for value in 0..ITEMS as u64 {
+            black_box(filter.contains(black_box(&value)));
+        }
+    });
+}
+
+#[divan::bench]
+fn xorf_xor32_absent(bencher: Bencher) {
+    let filter = xorf::Xor32::from_iterator((0..ITEMS).map(|value| value as u64));
+
+    bencher.counter(ItemsCount::new(ITEMS)).bench_local(|| {
+        for value in ITEMS as u64..2 * ITEMS as u64 {
+            black_box(filter.contains(black_box(&value)));
+        }
+    });
+}
