@@ -3,14 +3,16 @@
 All significant changes to this project will be documented in this file.
 
 ## Unreleased
-- feat(bloom): make post-invert semantics observable via `BloomFilterInvertedView` (#270, #271)
+
 
 ### Breaking changes
 
+* `BloomFilter::invert` now consumes `self` and returns a read-only `BloomFilterInvertedView` instead of mutating in place. Call `invert()` on the view to restore the original updatable filter.
 * Move `SearchCriteria` from `req` to `common` and remove its `Default` implementation. Import `datasketches::common::SearchCriteria` and explicitly choose `Inclusive` or `Exclusive` for each query.
 
 ### New features
 
+* Add `BloomFilterInvertedView` to represent inverted Bloom filters with read-only query semantics.
 * Add KLL sketches behind the `kll` feature, with rank, quantile, PMF, and CDF queries, merging, totally ordered custom item types, a `KllFloat` adapter for non-NaN floating-point values, and serialization.
 
 ### Improvements

@@ -106,18 +106,6 @@ fn test_invert_is_reversible() {
 }
 
 #[test]
-fn test_invert_into_filter() {
-    let mut filter = filter();
-    filter.insert("apple");
-
-    let original = filter.clone();
-    let inverted = filter.invert();
-    let restored = inverted.into_filter();
-
-    assert_eq!(restored, original);
-}
-
-#[test]
 fn test_inverted_view_queries() {
     let mut filter = filter();
     filter.insert("apple");
