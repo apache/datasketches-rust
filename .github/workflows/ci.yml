@@ -42,8 +42,6 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
-      - name: Delete rust-toolchain.toml
-        run: rm rust-toolchain.toml
       - name: Install toolchain
         run: rustup toolchain install --component rustfmt,clippy nightly
       - uses: Swatinem/rust-cache@v2
@@ -80,8 +78,6 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
-      - name: Delete rust-toolchain.toml
-        run: rm rust-toolchain.toml
       - name: Install toolchain
         run: |
           rustup toolchain install ${{ matrix.rust-version }}

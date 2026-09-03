@@ -23,11 +23,12 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 For Windows users, download `rustup-init.exe` from [here](https://win.rustup.rs/x86_64) instead.
 
-Rustup will read the `rust-toolchain.toml` file and set up everything else automatically. To ensure that everything works correctly, run `cargo version` under the root directory:
+This project declares its minimum supported Rust version (MSRV) with `rust-version` in the workspace `Cargo.toml`; CI verifies it explicitly. Any toolchain at or above the MSRV works for building and testing.
+
+The lint and check commands additionally require a nightly toolchain:
 
 ```shell
-cargo version
-# cargo 1.86.0 (<hash> <date>)
+rustup toolchain install --component rustfmt,clippy nightly
 ```
 
 To keep code style consistent, run `cargo x lint --fix` to automatically fix any style issues before committing your changes.
