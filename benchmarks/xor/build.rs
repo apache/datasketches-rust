@@ -38,6 +38,13 @@ fn datasketches_xor16(bencher: Bencher) {
 }
 
 #[divan::bench]
+fn datasketches_xor32(bencher: Bencher) {
+    bencher.counter(ItemsCount::new(ITEMS)).bench_local(|| {
+        black_box(XorFilter::from_hashes(0..ITEMS as u64, XorFilterType::Xor32).unwrap())
+    });
+}
+
+#[divan::bench]
 fn xorf_xor8(bencher: Bencher) {
     bencher.counter(ItemsCount::new(ITEMS)).bench_local(|| {
         black_box(xorf::Xor8::from_iterator(

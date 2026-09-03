@@ -69,6 +69,28 @@ fn datasketches_xor16_absent(bencher: Bencher) {
 }
 
 #[divan::bench]
+fn datasketches_xor32_present(bencher: Bencher) {
+    let filter = XorFilter::from_hashes(0..ITEMS as u64, XorFilterType::Xor32).unwrap();
+
+    bencher.counter(ItemsCount::new(ITEMS)).bench_local(|| {
+        for value in 0..ITEMS as u64 {
+            black_box(filter.contains_hash(black_box(value)));
+        }
+    });
+}
+
+#[divan::bench]
+fn datasketches_xor32_absent(bencher: Bencher) {
+    let filter = XorFilter::from_hashes(0..ITEMS as u64, XorFilterType::Xor32).unwrap();
+
+    bencher.counter(ItemsCount::new(ITEMS)).bench_local(|| {
+        for value in ITEMS as u64..2 * ITEMS as u64 {
+            black_box(filter.contains_hash(black_box(value)));
+        }
+    });
+}
+
+#[divan::bench]
 fn xorf_xor8_present(bencher: Bencher) {
     let filter = xorf::Xor8::from_iterator((0..ITEMS).map(|value| value as u64));
 

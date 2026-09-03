@@ -34,7 +34,9 @@ impl XorFilter {
     /// Serializes the filter to a byte vector.
     ///
     /// The format uses Apache DataSketches family ID `22` and is compatible with the corresponding
-    /// xor-filter format in other DataSketches implementations.
+    /// xor-filter format in other DataSketches implementations as long as the filter uses 8- or
+    /// 16-bit fingerprints. Images with 32-bit fingerprints are a Rust-specific extension that
+    /// other implementations reject.
     pub fn serialize(&self) -> Vec<u8> {
         let mut bytes = SketchBytes::with_capacity(self.serialized_size());
 
@@ -54,6 +56,11 @@ impl XorFilter {
             Fingerprints::Xor16(fingerprints) => {
                 for &fingerprint in fingerprints.iter() {
                     bytes.write_u16_le(fingerprint);
+                }
+            }
+            Fingerprints::Xor32(fingerprints) => {
+                for &fingerprint in fingerprints.iter() {
+                    bytes.write_u32_le(fingerprint);
                 }
             }
         }
@@ -164,6 +171,17 @@ impl XorFilter {
                     );
                 }
                 Fingerprints::Xor16(values.into_boxed_slice())
+            }
+            XorFilterType::Xor32 => {
+                let mut values = Vec::with_capacity(capacity);
+                for _ in 0..capacity {
+                    values.push(
+                        cursor
+                            .read_u32_le()
+                            .map_err(insufficient_data("fingerprints"))?,
+                    );
+                }
+                Fingerprints::Xor32(values.into_boxed_slice())
             }
         };
 

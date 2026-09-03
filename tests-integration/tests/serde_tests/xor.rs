@@ -65,8 +65,12 @@ fn java_images_match_byte_for_byte() {
 }
 
 #[test]
-fn serialization_round_trips_both_fingerprint_types() {
-    for filter_type in [XorFilterType::Xor8, XorFilterType::Xor16] {
+fn serialization_round_trips_all_fingerprint_types() {
+    for filter_type in [
+        XorFilterType::Xor8,
+        XorFilterType::Xor16,
+        XorFilterType::Xor32,
+    ] {
         let original = XorFilter::from_hashes(0..10_000_u64, filter_type).unwrap();
         let bytes = original.serialize();
         assert_eq!(bytes.len(), original.serialized_size());
@@ -81,7 +85,11 @@ fn serialization_round_trips_both_fingerprint_types() {
 
 #[test]
 fn every_truncated_image_is_rejected() {
-    for filter_type in [XorFilterType::Xor8, XorFilterType::Xor16] {
+    for filter_type in [
+        XorFilterType::Xor8,
+        XorFilterType::Xor16,
+        XorFilterType::Xor32,
+    ] {
         let bytes = XorFilter::from_hashes(0..100_u64, filter_type)
             .unwrap()
             .serialize();
@@ -99,7 +107,7 @@ fn invalid_preamble_fields_are_rejected() {
         .unwrap()
         .serialize();
 
-    for (offset, value) in [(0, 2), (0, 4), (1, 2), (2, 21), (4, 7), (4, 32), (5, 4)] {
+    for (offset, value) in [(0, 2), (0, 4), (1, 2), (2, 21), (4, 7), (4, 64), (5, 4)] {
         let mut corrupted = valid.clone();
         corrupted[offset] = value;
         let error = XorFilter::deserialize(&corrupted).unwrap_err();
@@ -134,7 +142,7 @@ fn unsafe_lengths_are_rejected_before_indexing() {
 
 #[test]
 fn trailing_storage_is_ignored() {
-    let original = XorFilter::from_hashes(0..100_u64, XorFilterType::Xor16).unwrap();
+    let original = XorFilter::from_hashes(0..100_u64, XorFilterType::Xor32).unwrap();
     let mut bytes = original.serialize();
     bytes.extend_from_slice(&[0xaa; 16]);
 

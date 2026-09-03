@@ -38,7 +38,11 @@ fn precomputed_hashes_have_no_false_negatives() {
         .map(|value| value.wrapping_mul(0x9e37_79b9_7f4a_7c15))
         .collect::<Vec<_>>();
 
-    for filter_type in [XorFilterType::Xor8, XorFilterType::Xor16] {
+    for filter_type in [
+        XorFilterType::Xor8,
+        XorFilterType::Xor16,
+        XorFilterType::Xor32,
+    ] {
         let filter = XorFilter::from_hashes(hashes.iter().copied(), filter_type).unwrap();
         for &hash in &hashes {
             assert!(filter.contains_hash(hash), "false negative for {hash}");
@@ -122,12 +126,16 @@ fn false_positive_rates_follow_fingerprint_width() {
 
     let xor8 = XorFilter::from_hashes(0..NUM_ITEMS, XorFilterType::Xor8).unwrap();
     let xor16 = XorFilter::from_hashes(0..NUM_ITEMS, XorFilterType::Xor16).unwrap();
+    let xor32 = XorFilter::from_hashes(0..NUM_ITEMS, XorFilterType::Xor32).unwrap();
 
     let false_positives8 = (NUM_ITEMS..NUM_ITEMS + NUM_QUERIES)
         .filter(|&hash| xor8.contains_hash(hash))
         .count();
     let false_positives16 = (NUM_ITEMS..NUM_ITEMS + NUM_QUERIES)
         .filter(|&hash| xor16.contains_hash(hash))
+        .count();
+    let false_positives32 = (NUM_ITEMS..NUM_ITEMS + NUM_QUERIES)
+        .filter(|&hash| xor32.contains_hash(hash))
         .count();
 
     assert!(
@@ -137,6 +145,10 @@ fn false_positive_rates_follow_fingerprint_width() {
     assert!(
         false_positives16 < 100,
         "16-bit false-positive count was {false_positives16}"
+    );
+    assert!(
+        false_positives32 < 10,
+        "32-bit false-positive count was {false_positives32}"
     );
     assert!(false_positives16 < false_positives8);
 }

@@ -44,6 +44,11 @@ pub enum XorFilterType {
     /// Uses 16-bit fingerprints and has an expected false-positive probability of about
     /// `1 / 65_536`.
     Xor16,
+    /// Uses 32-bit fingerprints and has an expected false-positive probability of about `2^-32`.
+    ///
+    /// This variant is a Rust-specific extension: the portable serialization format only defines
+    /// 8- and 16-bit fingerprints, and other DataSketches implementations reject 32-bit images.
+    Xor32,
 }
 
 impl XorFilterType {
@@ -52,6 +57,7 @@ impl XorFilterType {
         match self {
             Self::Xor8 => 8,
             Self::Xor16 => 16,
+            Self::Xor32 => 32,
         }
     }
 
@@ -63,8 +69,9 @@ impl XorFilterType {
         match bits {
             8 => Ok(Self::Xor8),
             16 => Ok(Self::Xor16),
+            32 => Ok(Self::Xor32),
             _ => Err(Error::deserial(format!(
-                "invalid fingerprint width: expected 8 or 16, got {bits}"
+                "invalid fingerprint width: expected 8, 16, or 32, got {bits}"
             ))),
         }
     }
@@ -74,6 +81,7 @@ impl XorFilterType {
 pub(super) enum Fingerprints {
     Xor8(Box<[u8]>),
     Xor16(Box<[u16]>),
+    Xor32(Box<[u32]>),
 }
 
 impl Fingerprints {
@@ -81,6 +89,7 @@ impl Fingerprints {
         match self {
             Self::Xor8(values) => values.len(),
             Self::Xor16(values) => values.len(),
+            Self::Xor32(values) => values.len(),
         }
     }
 
@@ -88,6 +97,7 @@ impl Fingerprints {
         match self {
             Self::Xor8(values) => size_of_val::<[u8]>(values),
             Self::Xor16(values) => size_of_val::<[u16]>(values),
+            Self::Xor32(values) => size_of_val::<[u32]>(values),
         }
     }
 }
@@ -162,7 +172,10 @@ impl XorFilter {
                 fingerprint(mixed) as u8 == fingerprints[h0] ^ fingerprints[h1] ^ fingerprints[h2]
             }
             Fingerprints::Xor16(fingerprints) => {
-                fingerprint(mixed) == fingerprints[h0] ^ fingerprints[h1] ^ fingerprints[h2]
+                fingerprint(mixed) as u16 == fingerprints[h0] ^ fingerprints[h1] ^ fingerprints[h2]
+            }
+            Fingerprints::Xor32(fingerprints) => {
+                fingerprint(mixed) as u32 == fingerprints[h0] ^ fingerprints[h1] ^ fingerprints[h2]
             }
         }
     }
@@ -205,7 +218,8 @@ impl XorFilter {
     /// Returns the number of fingerprint bits allocated per distinct input hash.
     ///
     /// Returns `0.0` for an empty filter. For sufficiently large inputs the value approaches `9.84`
-    /// for [`XorFilterType::Xor8`] and `19.68` for [`XorFilterType::Xor16`].
+    /// for [`XorFilterType::Xor8`], `19.68` for [`XorFilterType::Xor16`], and `39.36` for
+    /// [`XorFilterType::Xor32`].
     pub fn bits_per_item(&self) -> f64 {
         if self.is_empty() {
             return 0.0;
@@ -285,9 +299,20 @@ impl XorFilter {
                     segment_length,
                     &stack_hash[..stack_size],
                     &stack_index[..stack_size],
-                    fingerprint,
+                    |hash| fingerprint(hash) as u16,
                 );
                 Fingerprints::Xor16(values)
+            }
+            XorFilterType::Xor32 => {
+                let mut values = vec![0_u32; capacity].into_boxed_slice();
+                assign_fingerprints(
+                    &mut values,
+                    segment_length,
+                    &stack_hash[..stack_size],
+                    &stack_index[..stack_size],
+                    |hash| fingerprint(hash) as u32,
+                );
+                Fingerprints::Xor32(values)
             }
         };
 
@@ -493,8 +518,8 @@ fn reduce(hash: u32, range: usize) -> usize {
 }
 
 #[inline]
-fn fingerprint(hash: u64) -> u16 {
-    (hash ^ (hash >> 32)) as u16
+fn fingerprint(hash: u64) -> u64 {
+    hash ^ (hash >> 32)
 }
 
 #[inline]
