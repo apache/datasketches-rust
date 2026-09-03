@@ -44,7 +44,9 @@
 //!     sketch.update(ReqFloat::<f64>::new(value)?);
 //! }
 //!
-//! let median = sketch.quantile(0.5, SearchCriteria::Inclusive)?;
+//! let median = sketch
+//!     .quantile(0.5, SearchCriteria::Inclusive)?
+//!     .expect("the sketch is non-empty");
 //! assert_eq!(median.into_inner(), 2.0);
 //! # Ok::<(), datasketches::error::Error>(())
 //! ```

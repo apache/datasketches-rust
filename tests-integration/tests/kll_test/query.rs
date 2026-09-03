@@ -23,22 +23,76 @@ const DEFAULT_K: u16 = 200;
 const NUMERIC_NOISE_TOLERANCE: f64 = 1e-6;
 
 #[test]
-fn empty_and_invalid_queries_return_errors() {
-    let mut sketch = KllSketch::<i64>::new(DEFAULT_K).unwrap();
-    assert!(sketch.rank(&0, SearchCriteria::Inclusive).is_err());
-    assert!(sketch.quantile(0.5, SearchCriteria::Inclusive).is_err());
-    assert!(sketch.pmf(&[0], SearchCriteria::Inclusive).is_err());
-    assert!(sketch.cdf(&[0], SearchCriteria::Inclusive).is_err());
+fn empty_queries_return_none_and_invalid_queries_return_errors() {
+    let sketch = KllSketch::<i64>::new(DEFAULT_K).unwrap();
+    assert_eq!(sketch.rank(&0, SearchCriteria::Inclusive), None);
+    assert!(matches!(
+        sketch.quantile(0.5, SearchCriteria::Inclusive),
+        Ok(None)
+    ));
+    assert!(matches!(
+        sketch.quantiles(&[0.25, 0.75], SearchCriteria::Inclusive),
+        Ok(None)
+    ));
+    assert!(matches!(
+        sketch.pmf(&[0], SearchCriteria::Inclusive),
+        Ok(None)
+    ));
+    assert!(matches!(
+        sketch.cdf(&[0], SearchCriteria::Inclusive),
+        Ok(None)
+    ));
 
-    sketch.update(0);
     for rank in [-1.0, f64::NAN, 1.1] {
         let error = sketch
             .quantile(rank, SearchCriteria::Inclusive)
             .unwrap_err();
         assert_eq!(error.kind(), ErrorKind::InvalidArgument);
     }
-    let error = sketch.cdf(&[1, 0], SearchCriteria::Inclusive).unwrap_err();
+    let error = sketch
+        .quantiles(&[0.5, 1.1], SearchCriteria::Inclusive)
+        .unwrap_err();
     assert_eq!(error.kind(), ErrorKind::InvalidArgument);
+    for error in [
+        sketch.cdf(&[1, 0], SearchCriteria::Inclusive).unwrap_err(),
+        sketch.pmf(&[1, 0], SearchCriteria::Inclusive).unwrap_err(),
+    ] {
+        assert_eq!(error.kind(), ErrorKind::InvalidArgument);
+    }
+
+    let view = sketch.sorted_view();
+    assert_eq!(view.rank(&0, SearchCriteria::Inclusive), None);
+    assert!(matches!(
+        view.quantile(0.5, SearchCriteria::Inclusive),
+        Ok(None)
+    ));
+    assert!(matches!(
+        view.quantiles(&[0.25, 0.75], SearchCriteria::Inclusive),
+        Ok(None)
+    ));
+    assert!(matches!(
+        view.pmf(&[0], SearchCriteria::Inclusive),
+        Ok(None)
+    ));
+    assert!(matches!(
+        view.cdf(&[0], SearchCriteria::Inclusive),
+        Ok(None)
+    ));
+
+    for rank in [-1.0, f64::NAN, 1.1] {
+        let error = view.quantile(rank, SearchCriteria::Inclusive).unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::InvalidArgument);
+    }
+    let error = view
+        .quantiles(&[0.5, 1.1], SearchCriteria::Inclusive)
+        .unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::InvalidArgument);
+    for error in [
+        view.cdf(&[1, 0], SearchCriteria::Inclusive).unwrap_err(),
+        view.pmf(&[1, 0], SearchCriteria::Inclusive).unwrap_err(),
+    ] {
+        assert_eq!(error.kind(), ErrorKind::InvalidArgument);
+    }
 }
 
 #[test]
@@ -52,8 +106,20 @@ fn inclusive_and_exclusive_semantics_cover_duplicates() {
     assert_eq!(sketch.rank(&1, SearchCriteria::Inclusive).unwrap(), 0.5);
     assert_eq!(sketch.rank(&2, SearchCriteria::Exclusive).unwrap(), 0.5);
     assert_eq!(sketch.rank(&2, SearchCriteria::Inclusive).unwrap(), 1.0);
-    assert_eq!(sketch.quantile(0.5, SearchCriteria::Inclusive).unwrap(), 1);
-    assert_eq!(sketch.quantile(0.5, SearchCriteria::Exclusive).unwrap(), 2);
+    assert_eq!(
+        sketch
+            .quantile(0.5, SearchCriteria::Inclusive)
+            .unwrap()
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        sketch
+            .quantile(0.5, SearchCriteria::Exclusive)
+            .unwrap()
+            .unwrap(),
+        2
+    );
 }
 
 #[test]
@@ -63,10 +129,25 @@ fn exact_mode_queries_match_the_stream() {
         sketch.update(item);
     }
 
-    assert_eq!(sketch.quantile(0.0, SearchCriteria::Inclusive).unwrap(), 1);
-    assert_eq!(sketch.quantile(0.5, SearchCriteria::Inclusive).unwrap(), 50);
     assert_eq!(
-        sketch.quantile(1.0, SearchCriteria::Inclusive).unwrap(),
+        sketch
+            .quantile(0.0, SearchCriteria::Inclusive)
+            .unwrap()
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        sketch
+            .quantile(0.5, SearchCriteria::Inclusive)
+            .unwrap()
+            .unwrap(),
+        50
+    );
+    assert_eq!(
+        sketch
+            .quantile(1.0, SearchCriteria::Inclusive)
+            .unwrap()
+            .unwrap(),
         100
     );
     for item in 1..=100 {
@@ -105,8 +186,8 @@ fn rank_cdf_and_pmf_are_consistent() {
     let split_points: Vec<_> = (100..10_000).step_by(100).collect();
 
     for criteria in [SearchCriteria::Inclusive, SearchCriteria::Exclusive] {
-        let cdf = sketch.cdf(&split_points, criteria).unwrap();
-        let pmf = sketch.pmf(&split_points, criteria).unwrap();
+        let cdf = sketch.cdf(&split_points, criteria).unwrap().unwrap();
+        let pmf = sketch.pmf(&split_points, criteria).unwrap().unwrap();
         let mut subtotal = 0.0;
         for (index, split_point) in split_points.iter().enumerate() {
             subtotal += pmf[index];
@@ -125,17 +206,24 @@ fn sorted_view_supports_repeated_and_batch_queries() {
     }
     let view = sketch.sorted_view();
     let ranks = [0.0, 0.25, 0.5, 0.75, 1.0];
-    let quantiles = sketch.quantiles(&ranks, SearchCriteria::Inclusive).unwrap();
+    let quantiles = sketch
+        .quantiles(&ranks, SearchCriteria::Inclusive)
+        .unwrap()
+        .unwrap();
 
     assert_eq!(view.len(), sketch.num_retained());
     assert_eq!(view.total_weight(), sketch.n());
     assert_eq!(
-        view.quantiles(&ranks, SearchCriteria::Inclusive).unwrap(),
-        quantiles
+        view.quantiles(&ranks, SearchCriteria::Inclusive)
+            .unwrap()
+            .unwrap(),
+        quantiles,
     );
     for (&rank, quantile) in ranks.iter().zip(&quantiles) {
         assert_eq!(
-            view.quantile(rank, SearchCriteria::Inclusive).unwrap(),
+            view.quantile(rank, SearchCriteria::Inclusive)
+                .unwrap()
+                .unwrap(),
             *quantile
         );
         assert_eq!(
@@ -146,5 +234,10 @@ fn sorted_view_supports_repeated_and_batch_queries() {
 
     sketch.update(2_000);
     assert_eq!(view.total_weight(), 1_000);
-    assert_eq!(view.quantile(1.0, SearchCriteria::Inclusive).unwrap(), 999);
+    assert_eq!(
+        view.quantile(1.0, SearchCriteria::Inclusive)
+            .unwrap()
+            .unwrap(),
+        999
+    );
 }

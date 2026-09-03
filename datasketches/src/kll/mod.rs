@@ -36,7 +36,10 @@
 //! let mut sketch = KllSketch::<i64>::new(200).unwrap();
 //! sketch.update(1);
 //! sketch.update(2);
-//! let q = sketch.quantile(0.5, SearchCriteria::Inclusive).unwrap();
+//! let q = sketch
+//!     .quantile(0.5, SearchCriteria::Inclusive)
+//!     .unwrap()
+//!     .unwrap();
 //! assert!((1..=2).contains(&q));
 //! ```
 
