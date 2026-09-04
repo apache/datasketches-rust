@@ -16,5 +16,6 @@
 // under the License.
 
 mod bounds;
+mod display;
 mod union;
 mod update;

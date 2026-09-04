@@ -16,6 +16,7 @@
 // under the License.
 
 mod deserialize;
+mod display;
 mod union;
 mod update;
 mod wrapper;

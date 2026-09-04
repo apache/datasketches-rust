@@ -47,6 +47,7 @@ All significant changes to this project will be documented in this file.
 
 * `TDigest` can now be serialized and deserialized directly without converting through `TDigestMut` at the call site.
 * Add Relative Error Quantiles (REQ) sketches behind the `req` feature, including configurable high- or low-rank accuracy, rank, quantile, PMF, and CDF queries, typed rank confidence bounds, merging, totally ordered custom item types, the `ReqFloat` adapter for non-NaN floating-point values, and C++/Java-compatible serialization.
+* Add human-readable `Display` summaries for HLL and CPC sketches and unions.
 
 ### Performance improvements
 
