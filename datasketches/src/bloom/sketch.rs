@@ -38,8 +38,6 @@ const EMPTY_FLAG_MASK: u8 = 1 << 2;
 /// * No false negatives (inserted items always return `true`)
 /// * Tunable false positive rate
 /// * Constant space usage
-///
-/// These guarantees hold until [`invert()`](Self::invert) is called; see its documentation.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BloomFilter {
     /// Hash seed for all hash functions
@@ -251,13 +249,7 @@ impl BloomFilter {
         Ok(())
     }
 
-    /// Inverts all bits in the filter.
-    ///
-    /// This approximately inverts the notion of set membership. After inversion, neither the
-    /// no-false-negative nor the false-positive guarantee holds: inserted items may return
-    /// `false` from [`contains()`](Self::contains), and [`is_empty()`](Self::is_empty),
-    /// [`bits_used()`](Self::bits_used), and [`load_factor()`](Self::load_factor) describe the
-    /// raw bit state rather than the inserted items.
+    /// Consumes the filter and inverts all its bits, returning a read-only inverted view.
     ///
     /// # Examples
     ///
@@ -269,20 +261,18 @@ impl BloomFilter {
     ///     .unwrap();
     /// filter.insert("apple");
     ///
-    /// filter.invert();
-    /// // Now "apple" probably returns false, and most other items return true
+    /// let inverted = filter.invert();
+    /// assert!(!inverted.contains(&"apple"));
     /// ```
-    pub fn invert(&mut self) {
+    pub fn invert(mut self) -> BloomFilterInvertedView {
         for word in &mut self.bit_array {
             *word = !*word;
         }
         self.num_bits_set = self.capacity() as u64 - self.num_bits_set;
+        BloomFilterInvertedView { inner: self }
     }
 
-    /// Returns whether no bits are set in the filter.
-    ///
-    /// In normal operation this means no items were inserted. After [`invert()`](Self::invert),
-    /// it reports the raw bit state instead.
+    /// Returns `true` if no bits are set in the filter.
     pub fn is_empty(&self) -> bool {
         self.num_bits_set == 0
     }
@@ -613,6 +603,100 @@ impl BloomFilter {
     }
 }
 
+/// A read-only inverted view of a [`BloomFilter`].
+///
+/// Created by calling [`BloomFilter::invert()`]. Set membership queries on this view are inverted:
+/// a `true` result from [`contains()`](Self::contains) guarantees that the item was definitely not
+/// inserted into the filter prior to inversion.
+///
+/// Modifying operations are omitted to prevent unsound updates. Calling
+/// [`invert()`](Self::invert) restores the original [`BloomFilter`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct BloomFilterInvertedView {
+    inner: BloomFilter,
+}
+
+impl BloomFilterInvertedView {
+    /// Returns `true` if an item was definitely not in the set prior to inversion.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::bloom::BloomFilterBuilder;
+    ///
+    /// let mut filter = BloomFilterBuilder::with_accuracy(100, 0.01)
+    ///     .build()
+    ///     .unwrap();
+    /// filter.insert("apple");
+    ///
+    /// let inverted = filter.invert();
+    /// assert!(!inverted.contains(&"apple"));
+    /// ```
+    pub fn contains<T: Hash>(&self, item: &T) -> bool {
+        self.inner.contains(item)
+    }
+
+    /// Inverts the view back into an updatable [`BloomFilter`].
+    ///
+    /// Inverting twice restores the original bit state and filter guarantees.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::bloom::BloomFilterBuilder;
+    ///
+    /// let mut filter = BloomFilterBuilder::with_accuracy(100, 0.01)
+    ///     .build()
+    ///     .unwrap();
+    /// filter.insert("apple");
+    ///
+    /// let inverted = filter.invert();
+    /// let restored = inverted.invert();
+    /// assert!(restored.contains(&"apple"));
+    /// ```
+    pub fn invert(mut self) -> BloomFilter {
+        for word in &mut self.inner.bit_array {
+            *word = !*word;
+        }
+        self.inner.num_bits_set = self.inner.capacity() as u64 - self.inner.num_bits_set;
+        self.inner
+    }
+
+    /// Returns whether no bits are set in the inverted filter view.
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
+
+    /// Returns the number of bits set to 1 in the inverted filter.
+    pub fn bits_used(&self) -> u64 {
+        self.inner.bits_used()
+    }
+
+    /// Returns the total bit capacity of the filter.
+    pub fn capacity(&self) -> usize {
+        self.inner.capacity()
+    }
+
+    /// Returns the number of hash functions used.
+    pub fn num_hashes(&self) -> u16 {
+        self.inner.num_hashes()
+    }
+
+    /// Returns the hash seed.
+    pub fn seed(&self) -> u64 {
+        self.inner.seed()
+    }
+
+    /// Returns the current load factor of the inverted filter.
+    pub fn load_factor(&self) -> f64 {
+        self.inner.load_factor()
+    }
+
+    /// Returns the estimated size of the filter view in bytes.
+    pub fn estimated_size(&self) -> usize {
+        self.inner.estimated_size()
+    }
+}
 /// Builder for creating [`BloomFilter`] instances.
 ///
 /// Provides two construction modes:

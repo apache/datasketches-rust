@@ -91,11 +91,29 @@ fn test_invert_is_reversible() {
 
     let original = filter.clone();
     let original_bits = filter.bits_used();
-    filter.invert();
-    assert_eq!(filter.bits_used(), filter.capacity() as u64 - original_bits);
 
-    filter.invert();
-    assert_eq!(filter, original);
+    let inverted = filter.invert();
+    assert_eq!(
+        inverted.bits_used(),
+        inverted.capacity() as u64 - original_bits
+    );
+    assert_eq!(inverted.capacity(), original.capacity());
+    assert_eq!(inverted.num_hashes(), original.num_hashes());
+    assert_eq!(inverted.seed(), original.seed());
+
+    let restored = inverted.invert();
+    assert_eq!(restored, original);
+}
+
+#[test]
+fn test_inverted_view_queries() {
+    let mut filter = filter();
+    filter.insert("apple");
+
+    let inverted = filter.invert();
+    assert!(!inverted.contains(&"apple"));
+    assert_that!(inverted.load_factor(), gt(0.0));
+    assert_that!(inverted.estimated_size(), gt(0));
 }
 
 #[test]
