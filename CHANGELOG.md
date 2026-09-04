@@ -11,6 +11,7 @@ All significant changes to this project will be documented in this file.
 ### New features
 
 * Add KLL sketches behind the `kll` feature, with rank, quantile, PMF, and CDF queries, merging, totally ordered custom item types, a `KllFloat` adapter for non-NaN floating-point values, and serialization.
+* Add immutable xor filters behind the `xor` feature, with 8-, 16-, and 32-bit fingerprints, pre-hashed input APIs, and compatible serialization. Images with 32-bit fingerprints are a Rust-specific extension that other DataSketches implementations reject.
 
 ### Improvements
 
