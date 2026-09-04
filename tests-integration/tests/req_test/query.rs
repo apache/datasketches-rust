@@ -63,7 +63,8 @@ fn exact_mode_rank_quantile_pmf_and_cdf_match_reference() {
         assert_eq!(
             *sketch
                 .quantile(rank, SearchCriteria::Exclusive)
-                .expect("quantile should succeed"),
+                .expect("quantile should succeed")
+                .expect("the sketch is non-empty"),
             expected
         );
     }
@@ -72,7 +73,8 @@ fn exact_mode_rank_quantile_pmf_and_cdf_match_reference() {
         assert_eq!(
             *sketch
                 .quantile(rank, SearchCriteria::Inclusive)
-                .expect("quantile should succeed"),
+                .expect("quantile should succeed")
+                .expect("the sketch is non-empty"),
             expected
         );
     }
@@ -80,7 +82,8 @@ fn exact_mode_rank_quantile_pmf_and_cdf_match_reference() {
     let splits = [2.0, 6.0, 9.0].map(req_f64);
     let cdf = sketch
         .cdf(&splits, SearchCriteria::Exclusive)
-        .expect("cdf should succeed");
+        .expect("cdf should succeed")
+        .expect("the sketch is non-empty");
     assert_that!(cdf[0], near(0.1, 1e-6));
     assert_that!(cdf[1], near(0.5, 1e-6));
     assert_that!(cdf[2], near(0.8, 1e-6));
@@ -88,7 +91,8 @@ fn exact_mode_rank_quantile_pmf_and_cdf_match_reference() {
 
     let pmf = sketch
         .pmf(&splits, SearchCriteria::Exclusive)
-        .expect("pmf should succeed");
+        .expect("pmf should succeed")
+        .expect("the sketch is non-empty");
     assert_that!(pmf[0], near(0.1, 1e-6));
     assert_that!(pmf[1], near(0.4, 1e-6));
     assert_that!(pmf[2], near(0.3, 1e-6));
@@ -105,10 +109,12 @@ fn pmf_and_cdf_are_consistent() {
     let split_points = [100.0, 300.0, 500.0, 700.0, 900.0].map(req_f64);
     let pmf = sketch
         .pmf(&split_points, SearchCriteria::Inclusive)
-        .expect("pmf should succeed");
+        .expect("pmf should succeed")
+        .expect("the sketch is non-empty");
     let cdf = sketch
         .cdf(&split_points, SearchCriteria::Inclusive)
-        .expect("cdf should succeed");
+        .expect("cdf should succeed")
+        .expect("the sketch is non-empty");
 
     assert_that!(pmf.iter().sum::<f64>(), near(1.0, 1e-10));
 
@@ -151,7 +157,9 @@ fn quantiles_are_monotonic() -> Result<(), Error> {
     let mut previous = 0.0;
 
     for rank in ranks {
-        let quantile = sketch.quantile(rank, SearchCriteria::Inclusive)?;
+        let quantile = sketch
+            .quantile(rank, SearchCriteria::Inclusive)?
+            .expect("the sketch is non-empty");
         assert_that!(*quantile, ge(previous));
         previous = *quantile;
     }
@@ -167,8 +175,12 @@ fn rank_quantile_round_trip_is_consistent() -> Result<(), Error> {
     }
 
     for target_rank in [0.1, 0.25, 0.5, 0.75, 0.9] {
-        let quantile = sketch.quantile(target_rank, SearchCriteria::Inclusive)?;
-        let recovered_rank = sketch.rank(&quantile, SearchCriteria::Inclusive)?;
+        let quantile = sketch
+            .quantile(target_rank, SearchCriteria::Inclusive)?
+            .expect("the sketch is non-empty");
+        let recovered_rank = sketch
+            .rank(&quantile, SearchCriteria::Inclusive)
+            .expect("the sketch is non-empty");
         let error = (recovered_rank - target_rank).abs() / target_rank;
         assert_that!(error, lt(0.2));
     }
@@ -184,8 +196,12 @@ fn search_criteria_rank_consistency() -> Result<(), Error> {
     }
 
     for value in [100.0, 250.0, 500.0, 750.0].map(req_f64) {
-        let inclusive_rank = sketch.rank(&value, SearchCriteria::Inclusive)?;
-        let exclusive_rank = sketch.rank(&value, SearchCriteria::Exclusive)?;
+        let inclusive_rank = sketch
+            .rank(&value, SearchCriteria::Inclusive)
+            .expect("the sketch is non-empty");
+        let exclusive_rank = sketch
+            .rank(&value, SearchCriteria::Exclusive)
+            .expect("the sketch is non-empty");
 
         assert_that!(exclusive_rank, le(inclusive_rank));
         assert_that!(inclusive_rank, all!(ge(0.0), le(1.0)));
@@ -204,8 +220,18 @@ fn signed_zeros_share_rank_and_cannot_be_distinct_splits() -> Result<(), Error> 
     sketch.update(positive_zero);
 
     for value in [negative_zero, positive_zero] {
-        assert_eq!(sketch.rank(&value, SearchCriteria::Exclusive)?, 0.0);
-        assert_eq!(sketch.rank(&value, SearchCriteria::Inclusive)?, 1.0);
+        assert_eq!(
+            sketch
+                .rank(&value, SearchCriteria::Exclusive)
+                .expect("the sketch is non-empty"),
+            0.0
+        );
+        assert_eq!(
+            sketch
+                .rank(&value, SearchCriteria::Inclusive)
+                .expect("the sketch is non-empty"),
+            1.0
+        );
     }
 
     assert!(

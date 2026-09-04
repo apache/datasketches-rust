@@ -102,12 +102,10 @@ where
 
     /// Returns the approximate normalized rank of `item` in `[0.0, 1.0]`.
     ///
-    /// # Errors
-    ///
-    /// Returns an error if the view is empty.
-    pub fn rank(&self, item: &T, criteria: SearchCriteria) -> Result<f64, Error> {
+    /// Returns `None` if the view is empty.
+    pub fn rank(&self, item: &T, criteria: SearchCriteria) -> Option<f64> {
         if self.is_empty() {
-            return Err(Error::invalid_argument("sketch is empty"));
+            return None;
         }
         match criteria {
             SearchCriteria::Inclusive => {
@@ -115,18 +113,18 @@ where
                 // partition_point finds first index where predicate is false
                 let pos = self.items.partition_point(|x| x <= item);
                 if pos == 0 {
-                    Ok(0.0)
+                    Some(0.0)
                 } else {
-                    Ok(self.cumulative_weights[pos - 1] as f64 / self.total_weight as f64)
+                    Some(self.cumulative_weights[pos - 1] as f64 / self.total_weight as f64)
                 }
             }
             SearchCriteria::Exclusive => {
                 // Find the last position where items[i] < item
                 let pos = self.items.partition_point(|x| x < item);
                 if pos == 0 {
-                    Ok(0.0)
+                    Some(0.0)
                 } else {
-                    Ok(self.cumulative_weights[pos - 1] as f64 / self.total_weight as f64)
+                    Some(self.cumulative_weights[pos - 1] as f64 / self.total_weight as f64)
                 }
             }
         }
@@ -134,29 +132,30 @@ where
 
     /// Returns the approximate quantile at the given normalized rank.
     ///
+    /// Returns `Ok(None)` if the view is empty.
+    ///
     /// # Errors
     ///
-    /// Returns an error if the view is empty or `rank` is outside `[0.0, 1.0]`.
-    pub fn quantile(&self, rank: f64, criteria: SearchCriteria) -> Result<T, Error> {
-        if self.is_empty() {
-            return Err(Error::invalid_argument("sketch is empty"));
-        }
-
+    /// Returns an error if `rank` is outside `[0.0, 1.0]`.
+    pub fn quantile(&self, rank: f64, criteria: SearchCriteria) -> Result<Option<T>, Error> {
         if !(0.0..=1.0).contains(&rank) {
             return Err(Error::invalid_argument(format!(
                 "rank {rank} must be in [0, 1]"
             )));
         }
+        if self.is_empty() {
+            return Ok(None);
+        }
 
         // Handle edge cases
         if rank == 0.0 {
             match criteria {
-                SearchCriteria::Inclusive => return Ok(self.items[0].clone()),
-                SearchCriteria::Exclusive => return Ok(self.items[0].clone()),
+                SearchCriteria::Inclusive => return Ok(Some(self.items[0].clone())),
+                SearchCriteria::Exclusive => return Ok(Some(self.items[0].clone())),
             }
         }
         if rank == 1.0 {
-            return Ok(self.items[self.items.len() - 1].clone());
+            return Ok(Some(self.items[self.items.len() - 1].clone()));
         }
 
         // Convert rank to target cumulative weight
@@ -181,31 +180,38 @@ where
         };
 
         if index >= self.items.len() {
-            return Ok(self.items[self.items.len() - 1].clone());
+            return Ok(Some(self.items[self.items.len() - 1].clone()));
         }
 
-        Ok(self.items[index].clone())
+        Ok(Some(self.items[index].clone()))
     }
 
     /// Returns the probability mass function (PMF) over the given split points.
     ///
     /// The result contains one more value than `split_points`.
     ///
+    /// Returns `Ok(None)` if the view is empty.
+    ///
     /// # Errors
     ///
-    /// Returns an error if the view is empty or the split points are not strictly increasing.
-    pub fn pmf(&self, split_points: &[T], criteria: SearchCriteria) -> Result<Vec<f64>, Error> {
-        if self.is_empty() {
-            return Err(Error::invalid_argument("sketch is empty"));
-        }
-
+    /// Returns an error if the split points are not strictly increasing.
+    pub fn pmf(
+        &self,
+        split_points: &[T],
+        criteria: SearchCriteria,
+    ) -> Result<Option<Vec<f64>>, Error> {
         self.validate_split_points(split_points)?;
+        if self.is_empty() {
+            return Ok(None);
+        }
 
         let mut result = Vec::with_capacity(split_points.len() + 1);
         let mut prev_rank = 0.0;
 
         for split_point in split_points {
-            let rank = self.rank(split_point, criteria)?;
+            let rank = self
+                .rank(split_point, criteria)
+                .expect("checked non-empty view");
             result.push(rank - prev_rank);
             prev_rank = rank;
         }
@@ -213,33 +219,40 @@ where
         // Add the final interval
         result.push(1.0 - prev_rank);
 
-        Ok(result)
+        Ok(Some(result))
     }
 
     /// Returns the cumulative distribution function (CDF) over the given split points.
     ///
     /// The result contains one more value than `split_points` and ends at `1.0`.
     ///
+    /// Returns `Ok(None)` if the view is empty.
+    ///
     /// # Errors
     ///
-    /// Returns an error if the view is empty or the split points are not strictly increasing.
-    pub fn cdf(&self, split_points: &[T], criteria: SearchCriteria) -> Result<Vec<f64>, Error> {
-        if self.is_empty() {
-            return Err(Error::invalid_argument("sketch is empty"));
-        }
-
+    /// Returns an error if the split points are not strictly increasing.
+    pub fn cdf(
+        &self,
+        split_points: &[T],
+        criteria: SearchCriteria,
+    ) -> Result<Option<Vec<f64>>, Error> {
         self.validate_split_points(split_points)?;
+        if self.is_empty() {
+            return Ok(None);
+        }
 
         let mut result = Vec::with_capacity(split_points.len() + 1);
         let mut cumulative = 0.0;
 
-        let pmf = self.pmf(split_points, criteria)?;
+        let pmf = self
+            .pmf(split_points, criteria)?
+            .expect("checked non-empty view");
         for mass in pmf {
             cumulative += mass;
             result.push(cumulative);
         }
 
-        Ok(result)
+        Ok(Some(result))
     }
 
     fn validate_split_points(&self, split_points: &[T]) -> Result<(), Error> {
@@ -256,8 +269,6 @@ where
 mod tests {
     use googletest::assert_that;
     use googletest::prelude::all;
-    use googletest::prelude::anything;
-    use googletest::prelude::err;
     use googletest::prelude::ge;
     use googletest::prelude::le;
     use googletest::prelude::near;
@@ -282,16 +293,34 @@ mod tests {
         let view = create_test_view();
 
         // Test exact matches
-        assert_that!(view.rank(&1, SearchCriteria::Inclusive)?, near(0.2, 1e-10));
-        assert_that!(view.rank(&1, SearchCriteria::Exclusive)?, near(0.0, 1e-10));
+        assert_that!(
+            view.rank(&1, SearchCriteria::Inclusive).unwrap(),
+            near(0.2, 1e-10)
+        );
+        assert_that!(
+            view.rank(&1, SearchCriteria::Exclusive).unwrap(),
+            near(0.0, 1e-10)
+        );
 
         // Test values between items
-        assert_that!(view.rank(&2, SearchCriteria::Inclusive)?, near(0.2, 1e-10));
-        assert_that!(view.rank(&6, SearchCriteria::Inclusive)?, near(0.6, 1e-10));
+        assert_that!(
+            view.rank(&2, SearchCriteria::Inclusive).unwrap(),
+            near(0.2, 1e-10)
+        );
+        assert_that!(
+            view.rank(&6, SearchCriteria::Inclusive).unwrap(),
+            near(0.6, 1e-10)
+        );
 
         // Test edge cases
-        assert_that!(view.rank(&0, SearchCriteria::Inclusive)?, near(0.0, 1e-10));
-        assert_that!(view.rank(&10, SearchCriteria::Inclusive)?, near(1.0, 1e-10));
+        assert_that!(
+            view.rank(&0, SearchCriteria::Inclusive).unwrap(),
+            near(0.0, 1e-10)
+        );
+        assert_that!(
+            view.rank(&10, SearchCriteria::Inclusive).unwrap(),
+            near(1.0, 1e-10)
+        );
         Ok(())
     }
 
@@ -300,16 +329,16 @@ mod tests {
         let view = create_test_view();
 
         // Test edge cases
-        assert_eq!(view.quantile(0.0, SearchCriteria::Inclusive)?, 1);
-        assert_eq!(view.quantile(1.0, SearchCriteria::Inclusive)?, 9);
+        assert_eq!(view.quantile(0.0, SearchCriteria::Inclusive)?.unwrap(), 1);
+        assert_eq!(view.quantile(1.0, SearchCriteria::Inclusive)?.unwrap(), 9);
 
         // Test middle values
-        let median = view.quantile(0.5, SearchCriteria::Inclusive)?;
+        let median = view.quantile(0.5, SearchCriteria::Inclusive)?.unwrap();
         assert_that!(median, all!(ge(3), le(7))); // Should be around the middle (values are 1,3,5,7,9)
 
         // Test various ranks
-        let q25 = view.quantile(0.25, SearchCriteria::Inclusive)?;
-        let q75 = view.quantile(0.75, SearchCriteria::Inclusive)?;
+        let q25 = view.quantile(0.25, SearchCriteria::Inclusive)?.unwrap();
+        let q75 = view.quantile(0.75, SearchCriteria::Inclusive)?.unwrap();
         assert_that!(q25, le(median));
         assert_that!(median, le(q75));
         Ok(())
@@ -320,7 +349,7 @@ mod tests {
         let view = create_test_view();
         let split_points = vec![3, 7];
 
-        let pmf = view.pmf(&split_points, SearchCriteria::Inclusive)?;
+        let pmf = view.pmf(&split_points, SearchCriteria::Inclusive)?.unwrap();
         assert_eq!(pmf.len(), 3); // 2 split points create 3 intervals
 
         // Sum should be approximately 1.0
@@ -334,7 +363,7 @@ mod tests {
         let view = create_test_view();
         let split_points = vec![3, 7];
 
-        let cdf = view.cdf(&split_points, SearchCriteria::Inclusive)?;
+        let cdf = view.cdf(&split_points, SearchCriteria::Inclusive)?.unwrap();
         assert_eq!(cdf.len(), 3);
 
         // CDF should be monotonically increasing
@@ -354,11 +383,10 @@ mod tests {
         assert_eq!(view.len(), 0);
         assert_eq!(view.total_weight(), 0);
 
-        // Operations on empty view should return errors
-        assert_that!(view.rank(&5, SearchCriteria::Inclusive), err(anything()));
-        assert_that!(
+        assert_eq!(view.rank(&5, SearchCriteria::Inclusive), None);
+        assert!(matches!(
             view.quantile(0.5, SearchCriteria::Inclusive),
-            err(anything())
-        );
+            Ok(None)
+        ));
     }
 }

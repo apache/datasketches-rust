@@ -384,10 +384,12 @@ impl TDigestMut {
 
     /// Returns the cumulative distribution approximation described by [`TDigest::cdf`].
     ///
-    /// # Panics
+    /// Returns `Ok(None)` if this t-digest is empty.
     ///
-    /// Panics if `split_points` is not unique, not monotonically increasing, or contains `NaN`
-    /// values.
+    /// # Errors
+    ///
+    /// Returns `InvalidArgument` if `split_points` is not unique, not monotonically increasing, or
+    /// contains `NaN` values.
     ///
     /// # Examples
     ///
@@ -398,25 +400,27 @@ impl TDigestMut {
     /// for value in [1.0, 2.0, 3.0] {
     ///     sketch.update(value);
     /// }
-    /// let cdf = sketch.cdf(&[1.5]).unwrap();
+    /// let cdf = sketch.cdf(&[1.5]).unwrap().unwrap();
     /// assert_eq!(cdf.len(), 2);
     /// ```
-    pub fn cdf(&mut self, split_points: &[f64]) -> Option<Vec<f64>> {
-        check_split_points(split_points);
+    pub fn cdf(&mut self, split_points: &[f64]) -> Result<Option<Vec<f64>>, Error> {
+        check_split_points(split_points)?;
 
         if self.is_empty() {
-            return None;
+            return Ok(None);
         }
 
-        self.view().cdf(split_points)
+        Ok(self.view().cdf(split_points))
     }
 
     /// Returns the probability mass approximation described by [`TDigest::pmf`].
     ///
-    /// # Panics
+    /// Returns `Ok(None)` if this t-digest is empty.
     ///
-    /// Panics if `split_points` is not unique, not monotonically increasing, or contains `NaN`
-    /// values.
+    /// # Errors
+    ///
+    /// Returns `InvalidArgument` if `split_points` is not unique, not monotonically increasing, or
+    /// contains `NaN` values.
     ///
     /// # Examples
     ///
@@ -427,24 +431,26 @@ impl TDigestMut {
     /// for value in [1.0, 2.0, 3.0] {
     ///     sketch.update(value);
     /// }
-    /// let pmf = sketch.pmf(&[1.5]).unwrap();
+    /// let pmf = sketch.pmf(&[1.5]).unwrap().unwrap();
     /// assert_eq!(pmf.len(), 2);
     /// ```
-    pub fn pmf(&mut self, split_points: &[f64]) -> Option<Vec<f64>> {
-        check_split_points(split_points);
+    pub fn pmf(&mut self, split_points: &[f64]) -> Result<Option<Vec<f64>>, Error> {
+        check_split_points(split_points)?;
 
         if self.is_empty() {
-            return None;
+            return Ok(None);
         }
 
-        self.view().pmf(split_points)
+        Ok(self.view().pmf(split_points))
     }
 
     /// Returns the normalized rank described by [`TDigest::rank`].
     ///
-    /// # Panics
+    /// Returns `Ok(None)` if this t-digest is empty.
     ///
-    /// Panics if `value` is `NaN`.
+    /// # Errors
+    ///
+    /// Returns `InvalidArgument` if `value` is `NaN`.
     ///
     /// # Examples
     ///
@@ -455,34 +461,38 @@ impl TDigestMut {
     /// for value in [1.0, 2.0, 3.0] {
     ///     sketch.update(value);
     /// }
-    /// let rank = sketch.rank(2.0).unwrap();
+    /// let rank = sketch.rank(2.0).unwrap().unwrap();
     /// assert!((0.0..=1.0).contains(&rank));
     /// ```
-    pub fn rank(&mut self, value: f64) -> Option<f64> {
-        assert!(!value.is_nan(), "value must not be NaN");
+    pub fn rank(&mut self, value: f64) -> Result<Option<f64>, Error> {
+        if value.is_nan() {
+            return Err(Error::invalid_argument("value must not be NaN"));
+        }
 
         if self.is_empty() {
-            return None;
+            return Ok(None);
         }
         if value < self.min {
-            return Some(0.0);
+            return Ok(Some(0.0));
         }
         if value > self.max {
-            return Some(1.0);
+            return Ok(Some(1.0));
         }
         // one centroid and value == min == max
         if self.buffer.len() == 1 {
-            return Some(0.5);
+            return Ok(Some(0.5));
         }
 
-        self.view().rank(value)
+        Ok(self.view().rank(value))
     }
 
     /// Returns the quantile described by [`TDigest::quantile`].
     ///
-    /// # Panics
+    /// Returns `Ok(None)` if this t-digest is empty.
     ///
-    /// Panics if `rank` is outside `[0.0, 1.0]`.
+    /// # Errors
+    ///
+    /// Returns `InvalidArgument` if `rank` is outside `[0.0, 1.0]`.
     ///
     /// # Examples
     ///
@@ -493,17 +503,21 @@ impl TDigestMut {
     /// for value in [1.0, 2.0, 3.0] {
     ///     sketch.update(value);
     /// }
-    /// let median = sketch.quantile(0.5).unwrap();
+    /// let median = sketch.quantile(0.5).unwrap().unwrap();
     /// assert!((1.0..=3.0).contains(&median));
     /// ```
-    pub fn quantile(&mut self, rank: f64) -> Option<f64> {
-        assert!((0.0..=1.0).contains(&rank), "rank must be in [0.0, 1.0]");
-
-        if self.is_empty() {
-            return None;
+    pub fn quantile(&mut self, rank: f64) -> Result<Option<f64>, Error> {
+        if !(0.0..=1.0).contains(&rank) {
+            return Err(Error::invalid_argument(format!(
+                "rank must be in [0.0, 1.0], got {rank}"
+            )));
         }
 
-        self.view().quantile(rank)
+        if self.is_empty() {
+            return Ok(None);
+        }
+
+        Ok(self.view().quantile(rank))
     }
 
     /// Serializes this mutable t-digest to bytes.
@@ -1154,12 +1168,12 @@ impl TDigest {
     /// This can be viewed as array of ranks of the given split points plus one more value that
     /// is always 1. An empty `split_points` slice returns the single value `[1.0]`.
     ///
-    /// Returns `None` if this t-digest is empty.
+    /// Returns `Ok(None)` if this t-digest is empty.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if `split_points` is not unique, not monotonically increasing, or contains `NaN`
-    /// values.
+    /// Returns `InvalidArgument` if `split_points` is not unique, not monotonically increasing, or
+    /// contains `NaN` values.
     ///
     /// # Examples
     ///
@@ -1171,11 +1185,12 @@ impl TDigest {
     ///     sketch.update(value);
     /// }
     /// let digest = sketch.freeze();
-    /// let cdf = digest.cdf(&[1.5]).unwrap();
+    /// let cdf = digest.cdf(&[1.5]).unwrap().unwrap();
     /// assert_eq!(cdf.len(), 2);
     /// ```
-    pub fn cdf(&self, split_points: &[f64]) -> Option<Vec<f64>> {
-        self.view().cdf(split_points)
+    pub fn cdf(&self, split_points: &[f64]) -> Result<Option<Vec<f64>>, Error> {
+        check_split_points(split_points)?;
+        Ok(self.view().cdf(split_points))
     }
 
     /// Returns an approximation to the Probability Mass Function (PMF) of the input stream
@@ -1192,12 +1207,12 @@ impl TDigest {
     /// stream values (the mass) that fall into one of those intervals.
     /// An empty `split_points` slice returns the single value `[1.0]`.
     ///
-    /// Returns `None` if this t-digest is empty.
+    /// Returns `Ok(None)` if this t-digest is empty.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if `split_points` is not unique, not monotonically increasing, or contains `NaN`
-    /// values.
+    /// Returns `InvalidArgument` if `split_points` is not unique, not monotonically increasing, or
+    /// contains `NaN` values.
     ///
     /// # Examples
     ///
@@ -1209,20 +1224,21 @@ impl TDigest {
     ///     sketch.update(value);
     /// }
     /// let digest = sketch.freeze();
-    /// let pmf = digest.pmf(&[1.5]).unwrap();
+    /// let pmf = digest.pmf(&[1.5]).unwrap().unwrap();
     /// assert_eq!(pmf.len(), 2);
     /// ```
-    pub fn pmf(&self, split_points: &[f64]) -> Option<Vec<f64>> {
-        self.view().pmf(split_points)
+    pub fn pmf(&self, split_points: &[f64]) -> Result<Option<Vec<f64>>, Error> {
+        check_split_points(split_points)?;
+        Ok(self.view().pmf(split_points))
     }
 
     /// Computes the approximate normalized rank in `[0.0, 1.0]` of the given value.
     ///
-    /// Returns `None` if this t-digest is empty.
+    /// Returns `Ok(None)` if this t-digest is empty.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if the value is `NaN`.
+    /// Returns `InvalidArgument` if `value` is `NaN`.
     ///
     /// # Examples
     ///
@@ -1234,21 +1250,23 @@ impl TDigest {
     ///     sketch.update(value);
     /// }
     /// let digest = sketch.freeze();
-    /// let rank = digest.rank(2.0).unwrap();
+    /// let rank = digest.rank(2.0).unwrap().unwrap();
     /// assert!((0.0..=1.0).contains(&rank));
     /// ```
-    pub fn rank(&self, value: f64) -> Option<f64> {
-        assert!(!value.is_nan(), "value must not be NaN");
-        self.view().rank(value)
+    pub fn rank(&self, value: f64) -> Result<Option<f64>, Error> {
+        if value.is_nan() {
+            return Err(Error::invalid_argument("value must not be NaN"));
+        }
+        Ok(self.view().rank(value))
     }
 
     /// Computes the approximate quantile for the given normalized rank.
     ///
-    /// Returns `None` if this t-digest is empty.
+    /// Returns `Ok(None)` if this t-digest is empty.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if `rank` is outside `[0.0, 1.0]`.
+    /// Returns `InvalidArgument` if `rank` is outside `[0.0, 1.0]`.
     ///
     /// # Examples
     ///
@@ -1260,12 +1278,16 @@ impl TDigest {
     ///     sketch.update(value);
     /// }
     /// let digest = sketch.freeze();
-    /// let q = digest.quantile(0.5).unwrap();
+    /// let q = digest.quantile(0.5).unwrap().unwrap();
     /// assert!((1.0..=3.0).contains(&q));
     /// ```
-    pub fn quantile(&self, rank: f64) -> Option<f64> {
-        assert!((0.0..=1.0).contains(&rank), "rank must be in [0.0, 1.0]");
-        self.view().quantile(rank)
+    pub fn quantile(&self, rank: f64) -> Result<Option<f64>, Error> {
+        if !(0.0..=1.0).contains(&rank) {
+            return Err(Error::invalid_argument(format!(
+                "rank must be in [0.0, 1.0], got {rank}"
+            )));
+        }
+        Ok(self.view().quantile(rank))
     }
 
     /// Converts this immutable t-digest into a mutable one.
@@ -1316,7 +1338,7 @@ impl TDigestView<'_> {
     }
 
     fn cdf(&self, split_points: &[f64]) -> Option<Vec<f64>> {
-        check_split_points(split_points);
+        debug_assert!(check_split_points(split_points).is_ok());
 
         if self.centroids.is_empty() {
             return None;
@@ -1514,16 +1536,18 @@ impl TDigestView<'_> {
     }
 }
 
-/// Checks the sequential validity of the given array of double values.
-/// They must be unique, monotonically increasing and not NaN.
-#[track_caller]
-fn check_split_points(split_points: &[f64]) {
+fn check_split_points(split_points: &[f64]) -> Result<(), Error> {
     if split_points.iter().any(|split_point| split_point.is_nan()) {
-        panic!("split_points must not contain NaN values: {split_points:?}");
+        return Err(Error::invalid_argument(format!(
+            "split_points must not contain NaN values: {split_points:?}"
+        )));
     }
     if !split_points.windows(2).all(|pair| pair[0] < pair[1]) {
-        panic!("split_points must be unique and monotonically increasing: {split_points:?}");
+        return Err(Error::invalid_argument(format!(
+            "split_points must be unique and monotonically increasing: {split_points:?}"
+        )));
     }
+    Ok(())
 }
 
 fn centroid_cmp(a: &Centroid, b: &Centroid) -> Ordering {
