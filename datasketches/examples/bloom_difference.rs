@@ -15,24 +15,10 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! A CDN edge-cache purge scenario for [`BloomFilter::difference`].
-//!
-//! An edge node caches objects and records them in a filter. The origin publishes a purge
-//! list (takedowns, stale content) as another filter with the same configuration. The edge
-//! node folds the purge list into its cache picture once, producing a single filter that
-//! represents "everything I still serve", which it ships to sibling nodes.
-//!
-//! Two properties make the difference a good fit here:
-//!
-//! * Purged objects are excluded *exactly*: a taken-down object is never served again. That is the
-//!   compliance-critical direction.
-//! * The cost falls on the other direction: a still-valid object is dropped from the filter when
-//!   one of its hash positions collides with the purge filter. Dropped objects are treated as cache
-//!   misses and refetched from the origin — extra origin load, never a stale serve.
-//!
-//! The drop rate falls as the purge filter gets sparser relative to the shared filter shape,
-//! so difference works best when the subtracted set is much smaller than the shape the
-//! filters were sized for. A purge list is naturally tiny next to a whole cache.
+//! An edge node folds the origin's purge list into its cache picture with
+//! `BloomFilter::difference`, producing one "everything it still serves" filter to ship to
+//! sibling nodes. Purged objects are excluded exactly — a takedown is never served again —
+//! while a few still-valid objects drop out of the filter and become origin refetches.
 
 use datasketches::bloom::BloomFilter;
 use datasketches::bloom::BloomFilterBuilder;
@@ -66,8 +52,11 @@ fn main() {
         purged.insert(object);
     }
 
-    // Fold the purge list into the cache picture once. The result is one artifact that can
-    // be stored or shipped, instead of keeping both filters and querying them per lookup.
+    // Fold the purge list into the cache picture once, producing one artifact to store or
+    // ship instead of keeping both filters and querying both per lookup. A cached object
+    // survives only while none of its hash positions is occupied in the purge filter, so
+    // difference suits a subtracted set that is sparse in the shared shape — a purge list
+    // is naturally tiny next to a whole cache.
     cached.difference(&purged).unwrap();
 
     // The guarantee that matters for takedowns: a purged object is never served again.
@@ -75,7 +64,8 @@ fn main() {
         assert!(!cached.contains(&object));
     }
 
-    // Count how many still-valid objects survived. Dropped ones cost an origin refetch.
+    // Count how many still-valid objects survived; dropped ones cost an origin refetch,
+    // never a stale serve.
     let valid = CACHED_OBJECTS - purged_objects().count() as u64;
     let mut retained = 0_u64;
     for object in (0..CACHED_OBJECTS).filter(|object| object % 200 != 0) {
