@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use datasketches::bloom::BloomFilter;
 use datasketches::bloom::BloomFilterBuilder;
 use datasketches::error::ErrorKind;
 use googletest::assert_that;
@@ -26,7 +27,7 @@ const NUM_BITS: u64 = 65_536;
 const NUM_HASHES: u16 = 5;
 const SEED: u64 = 123;
 
-fn filter() -> datasketches::bloom::BloomFilter {
+fn filter() -> BloomFilter {
     BloomFilterBuilder::with_size(NUM_BITS, NUM_HASHES)
         .seed(SEED)
         .build()
@@ -84,18 +85,79 @@ fn test_union_and_intersection() {
 }
 
 #[test]
-fn test_invert_is_reversible() {
-    let mut filter = filter();
-    filter.insert("apple");
-    filter.insert("banana");
+fn test_difference_excludes_right_items_exactly() {
+    let mut left = filter();
+    let mut right = filter();
+    for i in 0..100_u64 {
+        left.insert(i);
+        right.insert(i);
+    }
+    for i in 100..200_u64 {
+        left.insert(i);
+    }
 
-    let original = filter.clone();
-    let original_bits = filter.bits_used();
-    filter.invert();
-    assert_eq!(filter.bits_used(), filter.capacity() as u64 - original_bits);
+    let left_bits = left.bits_used();
+    left.difference(&right).unwrap();
 
-    filter.invert();
-    assert_eq!(filter, original);
+    // Items inserted into the right filter are excluded exactly.
+    for i in 0..100_u64 {
+        assert!(!left.contains(&i));
+    }
+    assert_that!(left.bits_used(), le(left_bits));
+
+    // The bit count must stay consistent with the backing array.
+    let restored = BloomFilter::deserialize(&left.serialize()).unwrap();
+    assert_eq!(restored, left);
+}
+
+#[test]
+fn test_difference_keeps_disjoint_items() {
+    let mut left = filter();
+    left.insert("shared");
+    left.insert("left");
+
+    let mut right = filter();
+    right.insert("shared");
+    right.insert("right");
+
+    left.difference(&right).unwrap();
+    assert!(left.contains(&"left"));
+    assert!(!left.contains(&"shared"));
+    assert!(!left.contains(&"right"));
+}
+
+#[test]
+fn test_difference_with_self_clears_filter() {
+    let mut left = filter();
+    left.insert("apple");
+    left.insert("banana");
+
+    let same = left.clone();
+    left.difference(&same).unwrap();
+    assert!(left.is_empty());
+    assert_eq!(left.bits_used(), 0);
+    assert!(!left.contains(&"apple"));
+}
+
+#[test]
+fn test_difference_with_empty_right_is_identity() {
+    let mut left = filter();
+    left.insert("apple");
+
+    let original = left.clone();
+    left.difference(&filter()).unwrap();
+    assert_eq!(left, original);
+}
+
+#[test]
+fn test_difference_rejects_incompatible_filters() {
+    let mut left = filter();
+    let right = BloomFilterBuilder::with_size(NUM_BITS, NUM_HASHES)
+        .seed(SEED + 1)
+        .build()
+        .unwrap();
+    let error = left.difference(&right).unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::InvalidArgument);
 }
 
 #[test]

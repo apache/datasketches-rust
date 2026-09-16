@@ -38,8 +38,6 @@ const EMPTY_FLAG_MASK: u8 = 1 << 2;
 /// * No false negatives (inserted items always return `true`)
 /// * Tunable false positive rate
 /// * Constant space usage
-///
-/// These guarantees hold until [`invert()`](Self::invert) is called; see its documentation.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BloomFilter {
     /// Hash seed for all hash functions
@@ -251,38 +249,70 @@ impl BloomFilter {
         Ok(())
     }
 
-    /// Inverts all bits in the filter.
+    /// Computes the approximate set difference with another filter via bitwise AND-NOT.
     ///
-    /// This approximately inverts the notion of set membership. After inversion, neither the
-    /// no-false-negative nor the false-positive guarantee holds: inserted items may return
-    /// `false` from [`contains()`](Self::contains), and [`is_empty()`](Self::is_empty),
-    /// [`bits_used()`](Self::bits_used), and [`load_factor()`](Self::load_factor) describe the
-    /// raw bit state rather than the inserted items.
+    /// After this operation, the filter approximates the set of items inserted into this
+    /// filter but not into `other`:
+    /// * Items inserted into `other` always return `false`: they are excluded exactly.
+    /// * Items inserted only into this filter keep returning `true` as long as none of their hash
+    ///   positions is occupied in `other`. Unlike [`union()`](Self::union) and
+    ///   [`intersect()`](Self::intersect), this operation can drop items, with a probability that
+    ///   grows with `other`'s load factor.
+    /// * Items never inserted into this filter may return `true` (false positives), at a rate no
+    ///   higher than this filter's false positive rate before the operation.
+    ///
+    /// This is the transformation other DataSketches libraries expose as A NOT B.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the filters are not compatible (different size, number of hashes, or
+    /// seed). Use [`is_compatible()`](Self::is_compatible) to check first when an error is not
+    /// expected.
     ///
     /// # Examples
     ///
     /// ```
     /// use datasketches::bloom::BloomFilterBuilder;
     ///
-    /// let mut filter = BloomFilterBuilder::with_accuracy(100, 0.01)
+    /// let mut left = BloomFilterBuilder::with_accuracy(100, 0.01)
+    ///     .seed(123)
     ///     .build()
     ///     .unwrap();
-    /// filter.insert("apple");
+    /// let mut right = BloomFilterBuilder::with_accuracy(100, 0.01)
+    ///     .seed(123)
+    ///     .build()
+    ///     .unwrap();
     ///
-    /// filter.invert();
-    /// // Now "apple" probably returns false, and most other items return true
+    /// left.insert("apple");
+    /// left.insert("shared");
+    /// right.insert("grape");
+    /// right.insert("shared");
+    ///
+    /// left.difference(&right).unwrap();
+    /// assert!(left.contains(&"apple")); // Only in the left filter
+    /// assert!(!left.contains(&"shared")); // In both filters: excluded exactly
     /// ```
-    pub fn invert(&mut self) {
-        for word in &mut self.bit_array {
-            *word = !*word;
+    pub fn difference(&mut self, other: &BloomFilter) -> Result<(), Error> {
+        if !self.is_compatible(other) {
+            return Err(Error::invalid_argument(
+                "Bloom filters must have matching capacity, number of hashes, and seed",
+            ));
         }
-        self.num_bits_set = self.capacity() as u64 - self.num_bits_set;
+
+        // Count bits during difference operation (single pass)
+        let mut num_bits_set = 0;
+        for (word, other_word) in self.bit_array.iter_mut().zip(&other.bit_array) {
+            *word &= !*other_word;
+            num_bits_set += word.count_ones() as u64;
+        }
+        self.num_bits_set = num_bits_set;
+        Ok(())
     }
 
-    /// Returns whether no bits are set in the filter.
+    /// Returns `true` if no bits are set in the filter.
     ///
-    /// In normal operation this means no items were inserted. After [`invert()`](Self::invert),
-    /// it reports the raw bit state instead.
+    /// This is the case when no items were inserted, after [`reset()`](Self::reset), or when a
+    /// set operation cleared every bit.
     pub fn is_empty(&self) -> bool {
         self.num_bits_set == 0
     }
