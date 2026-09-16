@@ -23,6 +23,7 @@ All significant changes to this project will be documented in this file.
 
 ### Bug fixes
 
+* `TDigestMut::merge` now preserves the stored min and max of both digests. Merging a digest whose extreme centroids have weight greater than one (typical of deserialized reference-format images) previously replaced those extrema with the extreme centroid means, which corrupted `min_value`/`max_value` and the rank/quantile tail formulas.
 * T-Digest deserialization now rejects unknown or conflicting flags, reversed extrema, out-of-range values, unsorted centroids, and non-empty images without stored values.
 
 ## v0.5.0 (2026-09-04)

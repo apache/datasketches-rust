@@ -409,3 +409,23 @@ fn test_rank_left_tail_is_a_fraction_of_the_total_weight() {
     assert_that!(pmf[1], near(0.8, 1e-12));
     assert_that!(pmf[2], near(0.1, 1e-12));
 }
+
+#[test]
+fn test_merge_preserves_deserialized_min_max_with_weighted_tails() {
+    // Reference-format images can store min/max strictly outside the extreme
+    // centroid means (those centroids have weight > 1). merge() must copy the
+    // stored extrema rather than re-deriving them from centroid means.
+    let other = deserialize_with_centroids(100, -1.0, 21.0, &[(0.0, 4), (10.0, 4), (20.0, 4)]);
+    assert_eq!(other.min_value(), Some(-1.0));
+    assert_eq!(other.max_value(), Some(21.0));
+
+    let mut empty = TDigestMut::new(100).unwrap();
+    empty.merge(&other);
+    assert_eq!(empty.min_value(), Some(-1.0));
+    assert_eq!(empty.max_value(), Some(21.0));
+
+    let mut left = deserialize_with_centroids(100, 5.0, 15.0, &[(6.0, 4), (10.0, 4), (14.0, 4)]);
+    left.merge(&other);
+    assert_eq!(left.min_value(), Some(-1.0));
+    assert_eq!(left.max_value(), Some(21.0));
+}
