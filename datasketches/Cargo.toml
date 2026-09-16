@@ -49,6 +49,10 @@ tdigest = []
 theta = []
 tuple = []
 
+[[example]]
+name = "bloom_difference"
+required-features = ["bloom"]
+
 [dev-dependencies]
 googletest = { workspace = true }
 insta = { workspace = true }
