@@ -33,8 +33,6 @@
 //! The drop rate falls as the purge filter gets sparser relative to the shared filter shape,
 //! so difference works best when the subtracted set is much smaller than the shape the
 //! filters were sized for. A purge list is naturally tiny next to a whole cache.
-//!
-//! Run with: `cargo run --example bloom_difference --features bloom`
 
 use datasketches::bloom::BloomFilter;
 use datasketches::bloom::BloomFilterBuilder;
