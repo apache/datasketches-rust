@@ -75,7 +75,7 @@ Enable multiple algorithms by listing their features together, such as `features
 | `theta`       | `ThetaSketch` and set operations      | Distinct counts, set expressions, and Jaccard similarity.                                         |
 | `tuple`       | `TupleSketch` and set operations      | Theta-style keys with user-defined summaries attached to retained entries.                        |
 
-See the [API documentation](https://docs.rs/datasketches) for configuration, accuracy guarantees, serialization, and examples for each algorithm.
+See the [API documentation](https://docs.rs/datasketches) for configuration, accuracy guarantees, serialization, and examples for each algorithm. Runnable end-to-end scenarios live in [`datasketches/examples`](datasketches/examples).
 
 ## Compatibility
 
