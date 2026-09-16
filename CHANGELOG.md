@@ -23,6 +23,7 @@ All significant changes to this project will be documented in this file.
 
 ### Bug fixes
 
+* Fix T-Digest `merge` so it preserves `min`/`max` from the other digest instead of re-deriving them from centroid means after compression.
 * T-Digest deserialization now rejects unknown or conflicting flags, reversed extrema, out-of-range values, unsorted centroids, and non-empty images without stored values.
 
 ## v0.5.0 (2026-09-04)
