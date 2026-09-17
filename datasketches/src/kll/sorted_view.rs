@@ -66,12 +66,10 @@ impl<T: Clone + Ord> SortedView<T> {
 
     /// Returns the approximate normalized rank of `item`.
     ///
-    /// # Errors
-    ///
-    /// Returns an error if the view is empty.
-    pub fn rank(&self, item: &T, criteria: SearchCriteria) -> Result<f64, Error> {
+    /// Returns `None` if the view is empty.
+    pub fn rank(&self, item: &T, criteria: SearchCriteria) -> Option<f64> {
         if self.is_empty() {
-            return Err(Error::invalid_argument("cannot query an empty view"));
+            return None;
         }
         let index = if criteria == SearchCriteria::Inclusive {
             upper_bound(&self.entries, item)
@@ -80,24 +78,26 @@ impl<T: Clone + Ord> SortedView<T> {
         };
 
         if index == 0 {
-            return Ok(0.0);
+            return Some(0.0);
         }
-        Ok(self.entries[index - 1].cumulative_weight as f64 / self.total_weight as f64)
+        Some(self.entries[index - 1].cumulative_weight as f64 / self.total_weight as f64)
     }
 
     /// Returns the approximate quantile for `rank`.
     ///
+    /// Returns `Ok(None)` if the view is empty.
+    ///
     /// # Errors
     ///
-    /// Returns an error if the view is empty or `rank` is outside `[0.0, 1.0]`.
-    pub fn quantile(&self, rank: f64, criteria: SearchCriteria) -> Result<T, Error> {
-        if self.is_empty() {
-            return Err(Error::invalid_argument("cannot query an empty view"));
-        }
+    /// Returns an error if `rank` is outside `[0.0, 1.0]`.
+    pub fn quantile(&self, rank: f64, criteria: SearchCriteria) -> Result<Option<T>, Error> {
         if !(0.0..=1.0).contains(&rank) {
             return Err(Error::invalid_argument(format!(
                 "rank must be in [0.0, 1.0], got {rank}"
             )));
+        }
+        if self.is_empty() {
+            return Ok(None);
         }
 
         let weight = if criteria == SearchCriteria::Inclusive {
@@ -111,53 +111,86 @@ impl<T: Clone + Ord> SortedView<T> {
             upper_bound_by_weight(&self.entries, weight)
         };
 
-        Ok(self.entries[index.min(self.entries.len() - 1)].item.clone())
+        Ok(Some(
+            self.entries[index.min(self.entries.len() - 1)].item.clone(),
+        ))
     }
 
     /// Returns approximate quantiles for all `ranks`.
     ///
+    /// Returns `Ok(None)` if the view is empty.
+    ///
     /// # Errors
     ///
-    /// Returns an error if the view is empty or any rank is outside `[0.0, 1.0]`.
-    pub fn quantiles(&self, ranks: &[f64], criteria: SearchCriteria) -> Result<Vec<T>, Error> {
-        if self.is_empty() {
-            return Err(Error::invalid_argument("cannot query an empty view"));
+    /// Returns an error if any rank is outside `[0.0, 1.0]`.
+    pub fn quantiles(
+        &self,
+        ranks: &[f64],
+        criteria: SearchCriteria,
+    ) -> Result<Option<Vec<T>>, Error> {
+        for &rank in ranks {
+            if !(0.0..=1.0).contains(&rank) {
+                return Err(Error::invalid_argument(format!(
+                    "rank must be in [0.0, 1.0], got {rank}"
+                )));
+            }
         }
-        ranks
+        if self.is_empty() {
+            return Ok(None);
+        }
+        let quantiles = ranks
             .iter()
-            .map(|&rank| self.quantile(rank, criteria))
-            .collect()
+            .map(|&rank| {
+                self.quantile(rank, criteria)
+                    .map(|quantile| quantile.expect("checked non-empty view"))
+            })
+            .collect::<Result<_, _>>()?;
+        Ok(Some(quantiles))
     }
 
     /// Returns the approximate cumulative distribution over `split_points`.
     ///
+    /// Returns `Ok(None)` if the view is empty.
+    ///
     /// # Errors
     ///
-    /// Returns an error if the view is empty or the split points are invalid.
-    pub fn cdf(&self, split_points: &[T], criteria: SearchCriteria) -> Result<Vec<f64>, Error> {
-        if self.is_empty() {
-            return Err(Error::invalid_argument("cannot query an empty view"));
-        }
+    /// Returns an error if the split points are invalid.
+    pub fn cdf(
+        &self,
+        split_points: &[T],
+        criteria: SearchCriteria,
+    ) -> Result<Option<Vec<f64>>, Error> {
         check_split_points(split_points)?;
+        if self.is_empty() {
+            return Ok(None);
+        }
         let mut ranks = Vec::with_capacity(split_points.len() + 1);
         for item in split_points {
-            ranks.push(self.rank(item, criteria)?);
+            ranks.push(self.rank(item, criteria).expect("checked non-empty view"));
         }
         ranks.push(1.0);
-        Ok(ranks)
+        Ok(Some(ranks))
     }
 
     /// Returns the approximate probability mass over `split_points`.
     ///
+    /// Returns `Ok(None)` if the view is empty.
+    ///
     /// # Errors
     ///
-    /// Returns an error if the view is empty or the split points are invalid.
-    pub fn pmf(&self, split_points: &[T], criteria: SearchCriteria) -> Result<Vec<f64>, Error> {
-        let mut buckets = self.cdf(split_points, criteria)?;
+    /// Returns an error if the split points are invalid.
+    pub fn pmf(
+        &self,
+        split_points: &[T],
+        criteria: SearchCriteria,
+    ) -> Result<Option<Vec<f64>>, Error> {
+        let Some(mut buckets) = self.cdf(split_points, criteria)? else {
+            return Ok(None);
+        };
         for index in (1..buckets.len()).rev() {
             buckets[index] -= buckets[index - 1];
         }
-        Ok(buckets)
+        Ok(Some(buckets))
     }
 }
 

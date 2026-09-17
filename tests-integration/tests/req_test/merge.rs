@@ -43,13 +43,16 @@ fn merge_into_empty_preserves_source_distribution() {
 
     let q25 = target
         .quantile(0.25, SearchCriteria::Inclusive)
-        .expect("quantile should succeed");
+        .expect("quantile should succeed")
+        .expect("the sketch is non-empty");
     let q50 = target
         .quantile(0.5, SearchCriteria::Inclusive)
-        .expect("quantile should succeed");
+        .expect("quantile should succeed")
+        .expect("the sketch is non-empty");
     let q75 = target
         .quantile(0.75, SearchCriteria::Inclusive)
-        .expect("quantile should succeed");
+        .expect("quantile should succeed")
+        .expect("the sketch is non-empty");
     let r50 = target
         .rank(&req_f64(500.0), SearchCriteria::Inclusive)
         .expect("rank should succeed");
@@ -78,13 +81,16 @@ fn merge_two_ranges_preserves_distribution() {
 
     let q25 = left
         .quantile(0.25, SearchCriteria::Inclusive)
-        .expect("quantile should succeed");
+        .expect("quantile should succeed")
+        .expect("the sketch is non-empty");
     let q50 = left
         .quantile(0.5, SearchCriteria::Inclusive)
-        .expect("quantile should succeed");
+        .expect("quantile should succeed")
+        .expect("the sketch is non-empty");
     let q75 = left
         .quantile(0.75, SearchCriteria::Inclusive)
-        .expect("quantile should succeed");
+        .expect("quantile should succeed")
+        .expect("the sketch is non-empty");
     let r50 = left
         .rank(&req_f64(1000.0), SearchCriteria::Inclusive)
         .expect("rank should succeed");
@@ -122,6 +128,7 @@ fn many_small_merges_preserve_count_bounds_and_median() {
 
     let median = sketch
         .quantile(0.5, SearchCriteria::Inclusive)
-        .expect("quantile should succeed");
+        .expect("quantile should succeed")
+        .expect("the sketch is non-empty");
     assert_that!(*median, near(4999.5, 500.0));
 }

@@ -39,7 +39,7 @@ use super::req_f32;
 use super::req_f64;
 
 #[test]
-fn empty_sketch_has_default_state_and_rejects_queries() {
+fn empty_sketch_has_default_state_and_absent_queries() {
     let sketch: ReqSketch<ReqF64> = ReqSketch::default();
 
     assert_eq!(sketch.k(), 12);
@@ -50,22 +50,23 @@ fn empty_sketch_has_default_state_and_rejects_queries() {
     assert_that!(sketch.min_item(), none());
     assert_that!(sketch.max_item(), none());
 
-    assert_that!(
-        sketch.rank(&req_f64(0.0), SearchCriteria::Inclusive),
-        err(anything())
-    );
-    assert_that!(
+    assert_eq!(sketch.rank(&req_f64(0.0), SearchCriteria::Inclusive), None);
+    assert!(matches!(
         sketch.quantile(0.5, SearchCriteria::Inclusive),
-        err(anything())
-    );
-    assert_that!(
+        Ok(None)
+    ));
+    assert!(matches!(
+        sketch.quantiles(&[0.25, 0.75], SearchCriteria::Inclusive),
+        Ok(None)
+    ));
+    assert!(matches!(
         sketch.pmf(&[req_f64(0.0)], SearchCriteria::Inclusive),
-        err(anything())
-    );
-    assert_that!(
+        Ok(None)
+    ));
+    assert!(matches!(
         sketch.cdf(&[req_f64(0.0)], SearchCriteria::Inclusive),
-        err(anything())
-    );
+        Ok(None)
+    ));
 }
 
 #[test]
@@ -109,7 +110,8 @@ fn single_value_hra_answers_exactly() {
         assert_eq!(
             sketch
                 .quantile(rank, SearchCriteria::Exclusive)
-                .expect("quantile should succeed"),
+                .expect("quantile should succeed")
+                .expect("the sketch is non-empty"),
             req_f32(1.0)
         );
     }
@@ -218,14 +220,18 @@ fn small_edge_cases_answer_reasonably() -> Result<(), Error> {
     let mut single: ReqSketch<ReqF64> = ReqSketch::default();
     single.update(req_f64(42.0));
     assert_eq!(
-        single.quantile(0.5, SearchCriteria::Inclusive)?,
+        single
+            .quantile(0.5, SearchCriteria::Inclusive)?
+            .expect("the sketch is non-empty"),
         req_f64(42.0)
     );
 
     let mut two_values = ReqSketch::default();
     two_values.update(req_f64(1.0));
     two_values.update(req_f64(100.0));
-    let median = two_values.quantile(0.5, SearchCriteria::Inclusive)?;
+    let median = two_values
+        .quantile(0.5, SearchCriteria::Inclusive)?
+        .expect("the sketch is non-empty");
     assert_that!(*median, all!(ge(1.0), le(100.0)));
 
     let mut duplicates = ReqSketch::default();
@@ -233,7 +239,9 @@ fn small_edge_cases_answer_reasonably() -> Result<(), Error> {
         duplicates.update(req_f64(42.0));
     }
     assert_eq!(
-        duplicates.quantile(0.5, SearchCriteria::Inclusive)?,
+        duplicates
+            .quantile(0.5, SearchCriteria::Inclusive)?
+            .expect("the sketch is non-empty"),
         req_f64(42.0)
     );
 

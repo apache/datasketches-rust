@@ -34,8 +34,8 @@ fn merge(bencher: Bencher) {
     let values = values(200_000);
     let mut left = build_mut_digest(&values[..100_000]);
     let mut right = build_mut_digest(&values[100_000..]);
-    black_box(left.rank(0.5));
-    black_box(right.rank(0.5));
+    black_box(left.rank(0.5).unwrap().unwrap());
+    black_box(right.rank(0.5).unwrap().unwrap());
 
     bencher
         .counter(ItemsCount::new(values.len()))
@@ -65,7 +65,7 @@ fn small_partials(bencher: Bencher) {
     let partials = partial_digests(64, SMALL_ROWS_PER_PARTIAL)
         .into_iter()
         .map(|mut digest| {
-            black_box(digest.rank(0.0));
+            black_box(digest.rank(0.0).unwrap().unwrap());
             digest
         })
         .collect::<Vec<_>>();
@@ -86,7 +86,7 @@ fn partials(bencher: Bencher) {
     let partials = partial_digests_with(DEFAULT_DIGEST_K, 64, ROWS_PER_PARTIAL)
         .into_iter()
         .map(|mut digest| {
-            black_box(digest.rank(0.0));
+            black_box(digest.rank(0.0).unwrap().unwrap());
             digest
         })
         .collect::<Vec<_>>();

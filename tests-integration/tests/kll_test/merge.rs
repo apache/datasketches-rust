@@ -35,6 +35,7 @@ fn merge_preserves_weight_extrema_and_query_invariants() {
     assert_eq!(left.sorted_view().total_weight(), left.n());
     let quantiles = left
         .quantiles(&[0.0, 0.25, 0.5, 0.75, 1.0], SearchCriteria::Inclusive)
+        .unwrap()
         .unwrap();
     assert!(quantiles.windows(2).all(|pair| pair[0] <= pair[1]));
 }

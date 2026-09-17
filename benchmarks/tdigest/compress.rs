@@ -38,7 +38,7 @@ fn initial_buffer(bencher: Bencher) {
 fn unmerged_tail(bencher: Bencher) {
     let values = values(3_280);
     let mut digest = build_mut_digest(&values[..1_640]);
-    black_box(digest.rank(0.5));
+    black_box(digest.rank(0.5).unwrap().unwrap());
     for &value in &values[1_640..] {
         digest.update(value);
     }
