@@ -414,8 +414,7 @@ fn test_rank_left_tail_is_a_fraction_of_the_total_weight() {
 fn test_merge_preserves_min_max_from_other() {
     // Heavy extreme centroids are legal after deserialization: `min`/`max` can differ from the
     // first and last centroid means. Merge must keep those stored extrema, not re-derive them.
-    let other =
-        deserialize_with_centroids(100, 0.0, 100.0, &[(10.0, 10), (50.0, 10), (90.0, 10)]);
+    let other = deserialize_with_centroids(100, 0.0, 100.0, &[(10.0, 10), (50.0, 10), (90.0, 10)]);
     assert_eq!(other.min_value(), Some(0.0));
     assert_eq!(other.max_value(), Some(100.0));
 
@@ -425,13 +424,13 @@ fn test_merge_preserves_min_max_from_other() {
     assert_eq!(empty.max_value(), Some(100.0));
     assert_eq!(empty.quantile(0.0), Some(0.0));
     assert_eq!(empty.quantile(1.0), Some(100.0));
-    assert_eq!(empty.rank(0.0), Some(0.0));
-    assert_eq!(empty.rank(100.0), Some(1.0));
+    assert_eq!(empty.rank(0.0), Some(0.5 / 30.0));
+    assert_eq!(empty.rank(100.0), Some(1.0 - 0.5 / 30.0));
+    assert_eq!(empty.rank(-1.0), Some(0.0));
+    assert_eq!(empty.rank(101.0), Some(1.0));
 
-    let mut left =
-        deserialize_with_centroids(100, 5.0, 40.0, &[(10.0, 4), (20.0, 4), (30.0, 4)]);
-    let right =
-        deserialize_with_centroids(100, -10.0, 80.0, &[(0.0, 4), (40.0, 4), (70.0, 4)]);
+    let mut left = deserialize_with_centroids(100, 5.0, 40.0, &[(10.0, 4), (20.0, 4), (30.0, 4)]);
+    let right = deserialize_with_centroids(100, -10.0, 80.0, &[(0.0, 4), (40.0, 4), (70.0, 4)]);
     left.merge(&right);
     assert_eq!(left.min_value(), Some(-10.0));
     assert_eq!(left.max_value(), Some(80.0));
