@@ -13,6 +13,7 @@ All significant changes to this project will be documented in this file.
 
 * Add `BloomFilter::difference` for approximate set difference: the result excludes the other filter's items exactly, while items unique to the left filter are kept unless their hash positions collide with the right filter.
 * Add KLL sketches behind the `kll` feature, with rank, quantile, PMF, and CDF queries, merging, totally ordered custom item types, a `KllFloat` adapter for non-NaN floating-point values, and serialization.
+* Implement `FromIterator<TDigestMut>` for batch construction from owned partial sketches.
 
 ### Improvements
 
@@ -20,11 +21,13 @@ All significant changes to this project will be documented in this file.
 * Improve truncated-input diagnostics across sketch deserializers.
 * Improve hash-backed sketch update performance for integer and raw-byte inputs.
 * Improve Bloom filter membership-and-insert performance and simplify Theta-family hash table thresholds.
+* T-Digest batch construction from owned partial sketches avoids recompressing intermediate results.
 
 ### Bug fixes
 
 * Fix T-Digest `merge` so it preserves `min`/`max` from the other digest instead of re-deriving them from centroid means after compression.
 * T-Digest deserialization now rejects unknown or conflicting flags, reversed extrema, out-of-range values, unsorted centroids, and non-empty images without stored values.
+* T-Digest merging now uses the smaller `k` when sketches have different compression parameters, preserving the size bound of the coarser input.
 
 ## v0.5.0 (2026-09-04)
 

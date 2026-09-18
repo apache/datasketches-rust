@@ -276,6 +276,110 @@ fn test_merge_large() {
 }
 
 #[test]
+fn test_mixed_k_merge_uses_smaller_k() {
+    let mut left = TDigestMut::new(200).unwrap();
+    let mut right = TDigestMut::new(50).unwrap();
+    for value in 0..1_000 {
+        left.update(value as f64);
+        right.update((value + 1_000) as f64);
+    }
+
+    left.merge(&right);
+
+    assert_eq!(left.k(), 50);
+    assert_eq!(left.total_weight(), 2_000);
+    assert_eq!(left.min_value(), Some(0.0));
+    assert_eq!(left.max_value(), Some(1_999.0));
+}
+
+#[test]
+fn test_from_iter_uses_one_result_with_the_smallest_nonempty_k() {
+    let mut first = TDigestMut::new(100).unwrap();
+    let mut second = TDigestMut::new(50).unwrap();
+    let empty = TDigestMut::new(10).unwrap();
+    for value in 0..1_000 {
+        first.update(value as f64);
+        second.update((value + 1_000) as f64);
+    }
+    let _ = first.quantile(0.5);
+    let _ = second.quantile(0.5);
+
+    let mut merged = [first, empty, second].into_iter().collect::<TDigestMut>();
+
+    assert_eq!(merged.k(), 50);
+    assert_eq!(merged.total_weight(), 2_000);
+    assert_eq!(merged.min_value(), Some(0.0));
+    assert_eq!(merged.max_value(), Some(1_999.0));
+    let quantiles = (0..=100)
+        .map(|rank| merged.quantile(rank as f64 / 100.).unwrap())
+        .collect::<Vec<_>>();
+    assert!(quantiles.windows(2).all(|pair| pair[0] <= pair[1]));
+}
+
+#[test]
+fn test_from_iter_matches_single_digest_for_uncompressed_inputs() {
+    let values = [3.0, 1.0, 2.0, 2.0, 5.0, 4.0];
+    let partials = values
+        .chunks(3)
+        .map(|values| {
+            let mut digest = TDigestMut::new(100).unwrap();
+            for &value in values {
+                digest.update(value);
+            }
+            digest
+        })
+        .collect::<Vec<_>>();
+    let mut merged = partials.into_iter().collect::<TDigestMut>();
+
+    let mut expected = TDigestMut::new(100).unwrap();
+    for value in values {
+        expected.update(value);
+    }
+
+    assert_eq!(merged.serialize(), expected.serialize());
+}
+
+#[test]
+fn test_from_iter_preserves_stable_tie_order_for_compressed_inputs() {
+    let left = deserialize_with_centroids(100, 0.0, 10.0, &[(0.0, 1), (10.0, 1)]);
+    let right = deserialize_with_centroids(100, 0.0, 10.0, &[(0.0, 100), (10.0, 100)]);
+    let mut merged = [left, right].into_iter().collect::<TDigestMut>();
+
+    let mut expected = deserialize_with_centroids(
+        100,
+        0.0,
+        10.0,
+        &[(0.0, 1), (0.0, 100), (10.0, 1), (10.0, 100)],
+    );
+
+    let mut merged_image = merged.serialize();
+    let expected_image = expected.serialize();
+    // Collection performs a compression pass and therefore toggles the direction flag for the
+    // next compression. Normalize only that header field so the remaining bytes directly compare
+    // the stable centroid order and weights.
+    merged_image[5] = expected_image[5];
+    assert_eq!(merged_image, expected_image);
+}
+
+#[test]
+fn test_from_iter_handles_empty_and_single_input_without_recompression() {
+    let empty = std::iter::empty::<TDigestMut>().collect::<TDigestMut>();
+    assert!(empty.is_empty());
+
+    let mut input = TDigestMut::new(50).unwrap();
+    for value in 0..1_000 {
+        input.update(value as f64);
+    }
+    let serialized = input.serialize();
+    let mut collected = [TDigestMut::new(10).unwrap(), input]
+        .into_iter()
+        .collect::<TDigestMut>();
+
+    assert_eq!(collected.k(), 50);
+    assert_eq!(collected.serialize(), serialized);
+}
+
+#[test]
 fn test_invalid_inputs() {
     let n = 100;
 
@@ -391,6 +495,15 @@ fn test_quantile_handles_two_sample_last_centroid() {
         deserialize_with_centroids(100, 0.0, 100.0, &[(0.0, 1), (50.0, 1), (90.0, 2)]);
 
     assert_eq!(tdigest.quantile(0.75), Some(100.0));
+}
+
+#[test]
+#[should_panic(expected = "combined t-digest weight exceeds u64::MAX")]
+fn test_merge_panics_on_total_weight_overflow() {
+    let mut left = deserialize_with_centroids(100, 0.0, 0.0, &[(0.0, u64::MAX)]);
+    let right = deserialize_with_centroids(50, 1.0, 1.0, &[(1.0, 1)]);
+
+    left.merge(&right);
 }
 
 #[test]
