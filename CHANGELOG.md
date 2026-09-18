@@ -13,6 +13,7 @@ All significant changes to this project will be documented in this file.
 
 * Add `BloomFilter::difference` for approximate set difference: the result excludes the other filter's items exactly, while items unique to the left filter are kept unless their hash positions collide with the right filter.
 * Add KLL sketches behind the `kll` feature, with rank, quantile, PMF, and CDF queries, merging, totally ordered custom item types, a `KllFloat` adapter for non-NaN floating-point values, and serialization.
+* Add `TDigestMut::quantiles` and `TDigest::quantiles` for querying several ranks in one centroid scan.
 
 ### Improvements
 
@@ -20,6 +21,7 @@ All significant changes to this project will be documented in this file.
 * Improve truncated-input diagnostics across sketch deserializers.
 * Improve hash-backed sketch update performance for integer and raw-byte inputs.
 * Improve Bloom filter membership-and-insert performance and simplify Theta-family hash table thresholds.
+* T-Digest batch quantile queries reuse one traversal for ranks supplied in nondecreasing order.
 
 ### Bug fixes
 

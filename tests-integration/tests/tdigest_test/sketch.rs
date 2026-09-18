@@ -394,6 +394,38 @@ fn test_quantile_handles_two_sample_last_centroid() {
 }
 
 #[test]
+fn test_batch_quantiles_match_scalar_queries_in_input_order() {
+    let mut tdigest = TDigestMut::new(100).unwrap();
+    for value in 0..10_000 {
+        tdigest.update(((value * 37) % 1_003) as f64);
+    }
+
+    for ranks in [
+        vec![0.0, 0.001, 0.25, 0.5, 0.5, 0.99, 1.0],
+        vec![0.99, 0.0, 0.5, 1.0, 0.001, 0.5, 0.25],
+        vec![],
+    ] {
+        let expected = ranks
+            .iter()
+            .map(|&rank| tdigest.quantile(rank).unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(tdigest.quantiles(&ranks), Some(expected.clone()));
+        assert_eq!(tdigest.clone().freeze().quantiles(&ranks), Some(expected));
+    }
+}
+
+#[test]
+fn test_batch_quantiles_reject_invalid_ranks() {
+    let mut tdigest = TDigestMut::default();
+    tdigest.update(1.0);
+    let tdigest = tdigest.freeze();
+
+    for ranks in [[-f64::EPSILON], [1.0 + f64::EPSILON], [f64::NAN]] {
+        assert!(std::panic::catch_unwind(|| tdigest.quantiles(&ranks)).is_err());
+    }
+}
+
+#[test]
 fn test_rank_left_tail_is_a_fraction_of_the_total_weight() {
     let mut tdigest =
         deserialize_with_centroids(100, 0.0, 100.0, &[(10.0, 10), (50.0, 10), (90.0, 10)]);

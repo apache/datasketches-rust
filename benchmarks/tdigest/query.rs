@@ -56,3 +56,24 @@ fn quantiles_2_sequential(bencher: Bencher) {
         ]
     });
 }
+
+#[divan::bench]
+fn quantiles_6_sequential(bencher: Bencher) {
+    let digest = prepared_digest();
+    let ranks = [0.25, 0.5, 0.75, 0.9, 0.95, 0.99];
+
+    bencher
+        .bench_local(|| black_box(ranks).map(|rank| black_box(&digest).quantile(black_box(rank))));
+}
+
+#[divan::bench(args = [2, 6, 100])]
+fn quantiles_batch(bencher: Bencher, num_ranks: usize) {
+    let digest = prepared_digest();
+    let ranks = (1..=num_ranks)
+        .map(|rank| rank as f64 / (num_ranks + 1) as f64)
+        .collect::<Vec<_>>();
+
+    bencher
+        .counter(ItemsCount::new(num_ranks))
+        .bench_local(|| black_box(&digest).quantiles(black_box(&ranks)));
+}
