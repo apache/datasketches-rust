@@ -339,6 +339,11 @@ impl TDigestMut {
             return;
         }
 
+        // Preserve true extrema from `other`. Compression only sees centroid means, which can
+        // differ from `min`/`max` after ordinary compression or deserialization.
+        self.min = self.min.min(other.min);
+        self.max = self.max.max(other.max);
+
         let self_unmerged_weight = self.buffer.unmerged_len() as u64;
         let centroids = std::mem::take(&mut self.buffer).into_merged_centroids(&other.buffer);
         self.compress_sorted_centroids(centroids, self_unmerged_weight + other.total_weight())
