@@ -28,6 +28,7 @@
 //! * Different modes (List, Set, Array4/6/8)
 //! * Different target HLL types
 
+use std::fmt;
 use std::hash::Hash;
 
 use crate::common::NumStdDev;
@@ -335,6 +336,25 @@ impl HllUnion {
     pub fn estimated_size(&self) -> usize {
         // The gadget's inline size is already covered by size_of::<Self>().
         size_of::<Self>() - size_of::<HllSketch>() + self.gadget.estimated_size()
+    }
+}
+
+impl fmt::Display for HllUnion {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "HLL Union Summary:")?;
+        writeln!(f, "  lg max k          : {}", self.lg_max_k())?;
+        writeln!(f, "  lg config k       : {}", self.lg_config_k())?;
+        writeln!(
+            f,
+            "  lower bound       : {}",
+            self.lower_bound(NumStdDev::One)
+        )?;
+        writeln!(f, "  estimate          : {}", self.estimate())?;
+        writeln!(
+            f,
+            "  upper bound       : {}",
+            self.upper_bound(NumStdDev::One)
+        )
     }
 }
 

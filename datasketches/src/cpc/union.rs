@@ -61,6 +61,8 @@
 //! which requires doing some extra work to figure out the values of num_coupons, offset,
 //! first_interesting_column, and kxp.
 
+use std::fmt;
+
 use crate::cpc::CpcSketch;
 use crate::cpc::DEFAULT_LG_K;
 use crate::cpc::Flavor;
@@ -353,6 +355,24 @@ impl CpcUnion {
             UnionState::BitMatrix(matrix) => matrix.capacity() * size_of::<u64>(),
         };
         size_of::<Self>() + heap_size
+    }
+}
+
+impl fmt::Display for CpcUnion {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let state = match &self.state {
+            UnionState::Accumulator(_) => "Accumulator",
+            UnionState::BitMatrix(_) => "BitMatrix",
+        };
+        let num_coupons = match &self.state {
+            UnionState::Accumulator(sketch) => sketch.num_coupons,
+            UnionState::BitMatrix(matrix) => count_bits_set_in_matrix(matrix),
+        };
+
+        writeln!(f, "CPC Union Summary:")?;
+        writeln!(f, "  lg k              : {}", self.lg_k())?;
+        writeln!(f, "  state             : {state}")?;
+        writeln!(f, "  num coupons       : {num_coupons}")
     }
 }
 

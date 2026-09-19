@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::fmt;
 use std::hash::Hash;
 
 use crate::codec::SketchBytes;
@@ -468,6 +469,17 @@ impl CpcSketch {
                 .unwrap_or(0);
 
         size_of::<Self>() + heap_size
+    }
+}
+
+impl fmt::Display for CpcSketch {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "CPC Sketch Summary:")?;
+        writeln!(f, "  flavor            : {:?}", self.flavor())?;
+        writeln!(f, "  lg k              : {}", self.lg_k())?;
+        writeln!(f, "  merged            : {}", self.merge_flag)?;
+        writeln!(f, "  estimate          : {}", self.estimate())?;
+        writeln!(f, "  num coupons       : {}", self.num_coupons)
     }
 }
 
