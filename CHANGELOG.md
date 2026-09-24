@@ -6,6 +6,7 @@ All significant changes to this project will be documented in this file.
 
 ### Breaking changes
 
+* `FrequentItemsSketch::is_empty` now checks whether the total stream weight is zero. A sketch whose counters were all removed by a purge remains non-empty; use `num_active_items() == 0` to check whether any items are retained.
 * Remove `BloomFilter::invert`. Bit inversion has no sound set-membership interpretation; use the new `BloomFilter::difference` for the approximate set-difference (A NOT B) use case it was meant to serve.
 * Move `SearchCriteria` from `req` to `common` and remove its `Default` implementation. Import `datasketches::common::SearchCriteria` and explicitly choose `Inclusive` or `Exclusive` for each query.
 
@@ -23,6 +24,7 @@ All significant changes to this project will be documented in this file.
 
 ### Bug fixes
 
+* `FrequentItemsSketch` updates and merges now panic before modifying the sketch if the total stream weight would overflow, including in release builds. Deserialization rejects non-empty images with zero stream weight or item weights whose sum exceeds the declared stream weight.
 * Fix T-Digest `merge` so it preserves `min`/`max` from the other digest instead of re-deriving them from centroid means after compression.
 * T-Digest deserialization now rejects unknown or conflicting flags, reversed extrema, out-of-range values, unsorted centroids, and non-empty images without stored values.
 
