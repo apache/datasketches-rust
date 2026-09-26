@@ -6,29 +6,26 @@ All significant changes to this project will be documented in this file.
 
 ### Breaking changes
 
-* `FrequentItemsSketch::is_empty` now checks whether the total stream weight is zero. A sketch whose counters were all removed by a purge remains non-empty; use `num_active_items() == 0` to check whether any items are retained.
-* Remove `BloomFilter::invert`. Bit inversion has no sound set-membership interpretation; use the new `BloomFilter::difference` for the approximate set-difference (A NOT B) use case it was meant to serve.
+* `FrequentItemsSketch::is_empty` now returns `false` when the stream weight is nonzero, even if no items are retained. Use `num_active_items() == 0` to test for zero retained items.
+* Remove `BloomFilter::invert`; use `BloomFilter::difference` for approximate A-not-B. The result excludes items in the right filter, but hash collisions can also remove items unique to the left filter.
 * Move `SearchCriteria` from `req` to `common` and remove its `Default` implementation. Import `datasketches::common::SearchCriteria` and explicitly choose `Inclusive` or `Exclusive` for each query.
 
 ### New features
 
-* Add `BloomFilter::difference` for approximate set difference: the result excludes the other filter's items exactly, while items unique to the left filter are kept unless their hash positions collide with the right filter.
 * Add KLL sketches behind the `kll` feature, with rank, quantile, PMF, and CDF queries, merging, totally ordered custom item types, a `KllFloat` adapter for non-NaN floating-point values, and serialization.
 
 ### Improvements
 
-* The crate no longer has any runtime dependencies. The `kll` and `req` features previously pulled in `rand`; compaction now draws its coin from an in-tree generator.
-* Improve truncated-input diagnostics across sketch deserializers.
-* Improve hash-backed sketch update performance for integer and raw-byte inputs.
-* Improve Bloom filter membership-and-insert performance and simplify Theta-family hash table thresholds.
+* Remove the `rand` dependency; the crate now has no runtime dependencies.
+* Improve error messages for truncated serialized sketches.
+* Speed up hash-based sketch updates for integer and raw-byte inputs, and `BloomFilter::contains_and_insert`.
 
 ### Bug fixes
 
-* Count-Min, REQ, and T-Digest now reject total-weight overflow before modifying the sketch, including in release builds. Updates and T-Digest merges panic; Count-Min and REQ merges return an error. KLL updates now detect overflow before changing extrema or compacting retained items.
-* Count-Min upper bounds now clamp to the counter type's maximum instead of overflowing. Deserialization rejects negative total absolute weights and counters whose magnitudes exceed that weight.
-* `FrequentItemsSketch` updates and merges now panic before modifying the sketch if the total stream weight would overflow, including in release builds. Deserialization rejects non-empty images with zero stream weight or item weights whose sum exceeds the declared stream weight.
-* Fix T-Digest `merge` so it preserves `min`/`max` from the other digest instead of re-deriving them from centroid means after compression.
-* T-Digest deserialization now rejects unknown or conflicting flags, reversed extrema, out-of-range values, unsorted centroids, and non-empty images without stored values.
+* Count-Min, REQ, T-Digest, and `FrequentItemsSketch` updates and merges now reject total-weight overflow without changing the sketch, including in release builds. Count-Min and REQ merges return an error; other affected operations panic.
+* Count-Min `upper_bound` now clamps to the counter type's maximum instead of overflowing.
+* T-Digest merges now preserve the true minimum and maximum from both inputs, including compressed digests.
+* Deserialization now returns `InvalidData` for inconsistent weights in Count-Min and `FrequentItemsSketch`, and invalid flags, extrema, or stored values in T-Digest.
 
 ## v0.5.0 (2026-09-04)
 
