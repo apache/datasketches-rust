@@ -6,26 +6,37 @@ All significant changes to this project will be documented in this file.
 
 ### Breaking changes
 
+* `BloomFilter::invert` is removed; use `BloomFilter::difference` for approximate A-not-B. The result excludes items in the right filter, but hash collisions can also remove items unique to the left filter.
 * `FrequentItemsSketch::is_empty` now returns `false` when the stream weight is nonzero, even if no items are retained. Use `num_active_items() == 0` to test for zero retained items.
-* Remove `BloomFilter::invert`; use `BloomFilter::difference` for approximate A-not-B. The result excludes items in the right filter, but hash collisions can also remove items unique to the left filter.
-* Move `SearchCriteria` from `req` to `common` and remove its `Default` implementation. Import `datasketches::common::SearchCriteria` and explicitly choose `Inclusive` or `Exclusive` for each query.
+* `ReqSketch` queries now use `datasketches::common::SearchCriteria` instead of `datasketches::req::SearchCriteria`. `SearchCriteria` no longer implements `Default`; explicitly choose `Inclusive` or `Exclusive`.
 
 ### New features
 
-* Add KLL sketches behind the `kll` feature, with rank, quantile, PMF, and CDF queries, merging, totally ordered custom item types, a `KllFloat` adapter for non-NaN floating-point values, and serialization.
+* `KllSketch` is now available behind the `kll` feature, with rank, quantile, PMF, and CDF queries, merging, serialization, custom ordered item types, and a `KllFloat` adapter for non-NaN floating-point values.
 
 ### Improvements
 
-* Remove the `rand` dependency; the crate now has no runtime dependencies.
-* Improve error messages for truncated serialized sketches.
-* Speed up hash-based sketch updates for integer and raw-byte inputs, and `BloomFilter::contains_and_insert`.
+* `BloomFilter::insert` is faster for integer and raw-byte inputs. `BloomFilter::contains_and_insert` is also faster when checking already-present integer values.
+* `CountMinSketch` updates are faster for integer and raw-byte inputs.
+* `CpcSketch` updates are faster for integer and raw-byte inputs.
+* `FrequentItemsSketch` updates are faster for integer and raw-byte keys.
+* `HllSketch` updates are faster for integer and raw-byte inputs.
+* `ThetaSketch` updates are faster for integer and raw-byte inputs.
+* `TupleSketch` updates are faster for integer and raw-byte inputs.
+* Library-wide: the crate no longer depends on `rand` and has no runtime dependencies.
+* Library-wide: sketch deserializers report clearer errors for truncated input.
 
 ### Bug fixes
 
-* Count-Min, REQ, T-Digest, and `FrequentItemsSketch` updates and merges now reject total-weight overflow without changing the sketch, including in release builds. Count-Min and REQ merges return an error; other affected operations panic.
-* Count-Min `upper_bound` now clamps to the counter type's maximum instead of overflowing.
-* T-Digest merges now preserve the true minimum and maximum from both inputs, including compressed digests.
-* Deserialization now returns `InvalidData` for inconsistent weights in Count-Min and `FrequentItemsSketch`, and invalid flags, extrema, or stored values in T-Digest.
+* `CountMinSketch` updates now panic and merges return `InvalidArgument` if the total absolute weight would exceed the counter type's maximum. Both leave the sketch unchanged, including in release builds.
+* `CountMinSketch::upper_bound` now clamps to the counter type's maximum instead of overflowing.
+* `CountMinSketch` deserialization now returns `InvalidData` if the total absolute weight is negative or any counter's magnitude exceeds it.
+* `FrequentItemsSketch` updates and merges now panic without changing the sketch if the total stream weight would overflow, including in release builds.
+* `FrequentItemsSketch` deserialization now returns `InvalidData` if a non-empty image declares zero stream weight or the item weights sum to more than the declared stream weight.
+* `ReqSketch` updates now panic and merges return `InvalidArgument` if the stream weight would exceed `u64::MAX`. Both leave the sketch unchanged, including in release builds.
+* `TDigestMut` updates and merges now panic without changing the digest if the total weight would exceed `u64::MAX`, including in release builds.
+* `TDigestMut::merge` now preserves the true minimum and maximum from both inputs, including compressed digests.
+* `TDigest` and `TDigestMut` deserialization now returns `InvalidData` for invalid flags or extrema, out-of-range values, unsorted centroids, or non-empty images with no stored values.
 
 ## v0.5.0 (2026-09-04)
 
