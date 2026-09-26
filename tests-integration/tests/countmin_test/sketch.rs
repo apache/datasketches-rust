@@ -15,11 +15,65 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::panic::AssertUnwindSafe;
+use std::panic::catch_unwind;
+
 use datasketches::countmin::CountMinSketch;
 use datasketches::error::ErrorKind;
 use googletest::assert_that;
 use googletest::prelude::ge;
 use googletest::prelude::le;
+
+#[test]
+fn weight_overflow_preserves_unsigned_state() {
+    let mut sketch = CountMinSketch::<u8>::new(2, 8).unwrap();
+    sketch.update_with_weight("x", u8::MAX - 1);
+    let mut one = CountMinSketch::<u8>::new(2, 8).unwrap();
+    one.update("x");
+    sketch.merge(&one).unwrap();
+    assert_eq!(sketch.total_weight(), u8::MAX);
+    let before = sketch.clone();
+
+    sketch.update_with_weight("x", 0);
+    assert!(catch_unwind(AssertUnwindSafe(|| sketch.update("x"))).is_err());
+    assert_eq!(sketch, before);
+    assert_eq!(
+        sketch.merge(&one).unwrap_err().kind(),
+        ErrorKind::InvalidArgument
+    );
+    assert_eq!(sketch, before);
+}
+
+#[test]
+fn weight_overflow_preserves_signed_state() {
+    let mut sketch = CountMinSketch::<i8>::new(2, 8).unwrap();
+    let empty = sketch.clone();
+    assert!(catch_unwind(AssertUnwindSafe(|| sketch.update_with_weight("x", i8::MIN))).is_err());
+    assert_eq!(sketch, empty);
+
+    sketch.update_with_weight("x", -i8::MAX);
+    assert_eq!(sketch.total_weight(), i8::MAX);
+    assert_eq!(sketch.estimate("x"), -i8::MAX);
+    let before = sketch.clone();
+    // Cancellation reduces the counter, but still increases the absolute stream weight.
+    assert!(catch_unwind(AssertUnwindSafe(|| sketch.update("x"))).is_err());
+    assert_eq!(sketch, before);
+    assert_eq!(
+        CountMinSketch::<i8>::deserialize(&sketch.serialize()).unwrap(),
+        sketch
+    );
+}
+
+#[test]
+fn upper_bound_clamps_on_overflow() {
+    let mut unsigned = CountMinSketch::<u8>::new(2, 8).unwrap();
+    unsigned.update_with_weight("x", u8::MAX);
+    assert_eq!(unsigned.upper_bound("x"), u8::MAX);
+
+    let mut signed = CountMinSketch::<i8>::new(2, 8).unwrap();
+    signed.update_with_weight("x", i8::MAX);
+    assert_eq!(signed.upper_bound("x"), i8::MAX);
+}
 
 #[test]
 fn test_init_defaults() {

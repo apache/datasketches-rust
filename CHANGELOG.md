@@ -24,6 +24,8 @@ All significant changes to this project will be documented in this file.
 
 ### Bug fixes
 
+* Count-Min, REQ, and T-Digest now reject total-weight overflow before modifying the sketch, including in release builds. Updates and T-Digest merges panic; Count-Min and REQ merges return an error. KLL updates now detect overflow before changing extrema or compacting retained items.
+* Count-Min upper bounds now clamp to the counter type's maximum instead of overflowing. Deserialization rejects negative total absolute weights and counters whose magnitudes exceed that weight.
 * `FrequentItemsSketch` updates and merges now panic before modifying the sketch if the total stream weight would overflow, including in release builds. Deserialization rejects non-empty images with zero stream weight or item weights whose sum exceeds the declared stream weight.
 * Fix T-Digest `merge` so it preserves `min`/`max` from the other digest instead of re-deriving them from centroid means after compression.
 * T-Digest deserialization now rejects unknown or conflicting flags, reversed extrema, out-of-range values, unsorted centroids, and non-empty images without stored values.

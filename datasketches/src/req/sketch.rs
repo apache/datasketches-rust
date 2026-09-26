@@ -133,7 +133,12 @@ where
     }
 
     /// Updates the sketch with a new item.
+    ///
+    /// # Panics
+    ///
+    /// Panics without modifying the sketch if the stream weight would exceed `u64::MAX`.
     pub fn update(&mut self, item: T) {
+        self.n = self.n.checked_add(1).expect("total stream weight overflow");
         match &mut self.min_item {
             None => self.min_item = Some(item.clone()),
             Some(cur) if item.cmp(cur).is_lt() => *cur = item.clone(),
@@ -146,7 +151,6 @@ where
         }
 
         self.compactors[0].append(item);
-        self.n += 1;
         self.num_retained += 1;
 
         if self.num_retained >= self.max_nom_size {
@@ -285,7 +289,8 @@ where
     ///
     /// # Errors
     ///
-    /// Returns an error if the two sketches have different `rank_accuracy`.
+    /// Returns an error without modifying the sketch if the two sketches have different
+    /// `rank_accuracy` or their combined stream weight exceeds `u64::MAX`.
     ///
     /// # Examples
     ///
@@ -317,7 +322,10 @@ where
             return Ok(());
         }
 
-        self.n += other.n;
+        self.n = self
+            .n
+            .checked_add(other.n)
+            .ok_or_else(|| Error::invalid_argument("total stream weight overflow"))?;
 
         if let Some(m) = &other.min_item {
             match &self.min_item {

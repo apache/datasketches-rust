@@ -136,8 +136,9 @@ impl<T: Clone + Ord> KllSketch<T> {
     ///
     /// # Panics
     ///
-    /// Panics if the stream weight would exceed [`u64::MAX`].
+    /// Panics without modifying the sketch if the stream weight would exceed [`u64::MAX`].
     pub fn update(&mut self, item: T) {
+        assert!(self.n < u64::MAX, "total stream weight overflow");
         self.update_min_max(&item);
         self.internal_update(item);
     }
@@ -708,13 +709,8 @@ impl<T: Clone + Ord> KllSketch<T> {
         if self.num_retained >= self.capacity {
             self.compress_while_updating();
         }
-        self.n = self.n.checked_add(1).unwrap_or_else(|| {
-            panic!(
-                "cannot update KLL sketch: stream weight is {}, maximum is {}",
-                self.n,
-                u64::MAX
-            )
-        });
+        // Both update and merge check the final stream weight before modifying the sketch.
+        self.n += 1;
         self.num_retained += 1;
         self.is_level_zero_sorted = false;
         self.levels[0].push(item);

@@ -37,7 +37,8 @@ mod private {
         const ONE: Self;
         const MAX: Self;
 
-        fn abs(self) -> Self;
+        fn checked_abs(self) -> Option<Self>;
+        fn checked_add(self, other: Self) -> Option<Self>;
         fn scale(self, factor: f64) -> Self;
         fn to_bytes(self) -> [u8; 8];
         fn try_from_bytes(bytes: [u8; 8]) -> Result<Self, Error>;
@@ -56,8 +57,13 @@ macro_rules! impl_signed {
             const MAX: Self = $max;
 
             #[inline(always)]
-            fn abs(self) -> Self {
-                if self >= 0 { self } else { -self }
+            fn checked_abs(self) -> Option<Self> {
+                self.checked_abs()
+            }
+
+            #[inline(always)]
+            fn checked_add(self, other: Self) -> Option<Self> {
+                self.checked_add(other)
             }
 
             #[inline(always)]
@@ -102,8 +108,13 @@ macro_rules! impl_unsigned {
             const MAX: Self = $max;
 
             #[inline(always)]
-            fn abs(self) -> Self {
-                self
+            fn checked_abs(self) -> Option<Self> {
+                Some(self)
+            }
+
+            #[inline(always)]
+            fn checked_add(self, other: Self) -> Option<Self> {
+                self.checked_add(other)
             }
 
             #[inline(always)]

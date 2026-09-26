@@ -264,6 +264,10 @@ impl TDigestMut {
     ///
     /// [f64::NAN], [f64::INFINITY], and [f64::NEG_INFINITY] values are ignored.
     ///
+    /// # Panics
+    ///
+    /// Panics without modifying the digest if the total weight would exceed `u64::MAX`.
+    ///
     /// # Examples
     ///
     /// ```
@@ -277,6 +281,7 @@ impl TDigestMut {
         if !value.is_finite() {
             return;
         }
+        assert!(self.total_weight() < u64::MAX, "total weight overflow");
 
         let max_unmerged = self.max_unmerged();
         if self.buffer.unmerged_len() >= max_unmerged {
@@ -322,6 +327,10 @@ impl TDigestMut {
 
     /// Merges the given t-digest into this one.
     ///
+    /// # Panics
+    ///
+    /// Panics without modifying the digest if the combined total weight would exceed `u64::MAX`.
+    ///
     /// # Examples
     ///
     /// ```
@@ -338,6 +347,9 @@ impl TDigestMut {
         if other.is_empty() {
             return;
         }
+        self.total_weight()
+            .checked_add(other.total_weight())
+            .expect("total weight overflow");
 
         // Preserve true extrema from `other`. Compression only sees centroid means, which can
         // differ from `min`/`max` after ordinary compression or deserialization.

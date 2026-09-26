@@ -119,7 +119,7 @@ impl<T: CountMinValue> CountMinSketch<T> {
         self.seed
     }
 
-    /// Returns the total weight inserted into the sketch.
+    /// Returns the sum of absolute update weights, scaled by any halving or decay.
     pub fn total_weight(&self) -> T {
         self.total_weight
     }
@@ -177,6 +177,10 @@ impl<T: CountMinValue> CountMinSketch<T> {
 
     /// Updates the sketch with a single occurrence of the item.
     ///
+    /// # Panics
+    ///
+    /// Panics without modifying the sketch if the total absolute weight would exceed `T::MAX`.
+    ///
     /// # Examples
     ///
     /// ```
@@ -192,6 +196,11 @@ impl<T: CountMinValue> CountMinSketch<T> {
 
     /// Updates the sketch with the given item and weight.
     ///
+    /// # Panics
+    ///
+    /// Panics without modifying the sketch if the absolute weight or the total absolute weight
+    /// cannot be represented by `T`.
+    ///
     /// # Examples
     ///
     /// ```
@@ -205,8 +214,12 @@ impl<T: CountMinValue> CountMinSketch<T> {
         if weight == T::ZERO {
             return;
         }
-        let abs_weight = weight.abs();
-        self.total_weight = self.total_weight + abs_weight;
+        // Each counter's magnitude is bounded by the total absolute weight, so this also
+        // protects the per-bucket additions. Deserialization validates the same invariant.
+        self.total_weight = weight
+            .checked_abs()
+            .and_then(|weight| self.total_weight.checked_add(weight))
+            .expect("total absolute weight overflow");
         let num_buckets = self.num_buckets as usize;
         for (row, seed) in self.hash_seeds.iter().enumerate() {
             let bucket = self.bucket_index(&item, *seed);
@@ -246,17 +259,20 @@ impl<T: CountMinValue> CountMinSketch<T> {
     }
 
     /// Returns the upper bound on the true frequency of the given item.
+    ///
+    /// Clamps the bound to `T::MAX` if adding the error would overflow.
     pub fn upper_bound<I: Hash>(&self, item: I) -> T {
         let estimate = self.estimate(item);
         let error = self.total_weight.scale(self.relative_error());
-        estimate + error
+        estimate.checked_add(error).unwrap_or(T::MAX)
     }
 
     /// Merges another sketch into this one.
     ///
     /// # Errors
     ///
-    /// Returns an error if the sketches have different numbers of hashes, bucket counts, or seeds.
+    /// Returns an error without modifying the sketch if the sketches have different numbers of
+    /// hashes, bucket counts, or seeds, or their combined total absolute weight exceeds `T::MAX`.
     ///
     /// # Examples
     ///
@@ -281,10 +297,13 @@ impl<T: CountMinValue> CountMinSketch<T> {
                 "Count-Min sketches must have matching numbers of hashes, bucket counts, and seeds",
             ));
         }
+        self.total_weight = self
+            .total_weight
+            .checked_add(other.total_weight)
+            .ok_or_else(|| Error::invalid_argument("total absolute weight overflow"))?;
         for (count, other_count) in self.counts.iter_mut().zip(&other.counts) {
             *count = *count + *other_count;
         }
-        self.total_weight = self.total_weight + other.total_weight;
         Ok(())
     }
 
@@ -445,8 +464,21 @@ impl<T: CountMinValue> CountMinSketch<T> {
         }
 
         sketch.total_weight = read_value(&mut cursor, "total_weight")?;
+        if sketch.total_weight < T::ZERO {
+            return Err(Error::deserial(
+                "total absolute weight must be non-negative",
+            ));
+        }
         for count in &mut sketch.counts {
             *count = read_value(&mut cursor, "counts")?;
+            if count
+                .checked_abs()
+                .is_none_or(|weight| weight > sketch.total_weight)
+            {
+                return Err(Error::deserial(
+                    "counter magnitude exceeds total absolute weight",
+                ));
+            }
         }
         Ok(sketch)
     }
