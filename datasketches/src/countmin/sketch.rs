@@ -49,6 +49,9 @@ pub struct CountMinSketch<T: CountMinValue> {
     num_buckets: u32,
     seed: u64,
     seed_hash: u16,
+    // Every bucket satisfies |count| <= total_weight, so a checked total also bounds bucket
+    // additions during update/merge: |a + b| <= |a| + |b|. Deserialization validates this
+    // invariant; unsigned halving and decay preserve it.
     total_weight: T,
     counts: Vec<T>,
     hash_seeds: Vec<u64>,
@@ -214,8 +217,6 @@ impl<T: CountMinValue> CountMinSketch<T> {
         if weight == T::ZERO {
             return;
         }
-        // Each counter's magnitude is bounded by the total absolute weight, so this also
-        // protects the per-bucket additions. Deserialization validates the same invariant.
         self.total_weight = weight
             .checked_abs()
             .and_then(|weight| self.total_weight.checked_add(weight))

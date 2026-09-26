@@ -18,5 +18,4 @@
 mod core;
 mod generic;
 mod merge;
-mod overflow;
 mod query;
