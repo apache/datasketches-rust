@@ -16,6 +16,7 @@ All significant changes to this project will be documented in this file.
 
 ### Improvements
 
+* Improve the readability of `Debug` output for HLL and CPC sketches and unions.
 * `BloomFilter::insert` is faster for integer and raw-byte inputs. `BloomFilter::contains_and_insert` is also faster when checking already-present integer values.
 * `CountMinSketch` updates are faster for integer and raw-byte inputs.
 * `CpcSketch` updates are faster for integer and raw-byte inputs.

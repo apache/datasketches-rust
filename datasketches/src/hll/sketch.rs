@@ -20,6 +20,7 @@
 //! This module provides the main [`HllSketch`] struct, which is the primary interface
 //! for creating and using HLL sketches for cardinality estimation.
 
+use std::fmt;
 use std::hash::Hash;
 
 use crate::codec::SketchSlice;
@@ -60,7 +61,7 @@ use crate::hll::serialization::extract_tgt_hll_type;
 /// A HyperLogLog sketch.
 ///
 /// See the [module level documentation](super) for more.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct HllSketch {
     lg_config_k: u8,
     mode: Mode,
@@ -461,6 +462,39 @@ impl HllSketch {
         };
 
         size_of::<Self>() + heap_size
+    }
+}
+
+impl fmt::Debug for HllSketch {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let (mode, estimate_state) = match &self.mode {
+            Mode::List { .. } => ("List", None),
+            Mode::Set { .. } => ("Set", None),
+            Mode::Array4(array) => ("Hll", Some(array.estimate_state())),
+            Mode::Array6(array) => ("Hll", Some(array.estimate_state())),
+            Mode::Array8(array) => ("Hll", Some(array.estimate_state())),
+        };
+
+        let mut debug = f.debug_struct("HllSketch");
+        debug
+            .field("lg_config_k", &self.lg_config_k())
+            .field("target_type", &self.target_type())
+            .field("mode", &mode)
+            .field("is_empty", &self.is_empty());
+        if let Some(state) = estimate_state {
+            let estimator = match state {
+                EstimateState::Hip(_) => "HIP",
+                EstimateState::Composite => "Composite",
+            };
+            debug.field("estimator", &estimator);
+        }
+        debug
+            .field("estimate", &self.estimate())
+            .field(
+                "bounds",
+                &(self.lower_bound(NumStdDev::One)..=self.upper_bound(NumStdDev::One)),
+            )
+            .finish()
     }
 }
 
