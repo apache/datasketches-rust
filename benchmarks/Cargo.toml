@@ -34,9 +34,11 @@ datasketches = { workspace = true, features = [
   "tdigest",
   "theta",
   "tuple",
+  "xor",
 ] }
 divan = { workspace = true }
 rand = { workspace = true }
+xorf = { workspace = true }
 
 [[bench]]
 harness = false

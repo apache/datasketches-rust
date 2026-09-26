@@ -93,6 +93,8 @@ pub use self::thetafamily::common as thetacommon;
 pub use self::thetafamily::theta;
 #[cfg(feature = "tuple")]
 pub use self::thetafamily::tuple;
+#[cfg(feature = "xor")]
+pub mod xor;
 
 // common modules
 pub mod codec;

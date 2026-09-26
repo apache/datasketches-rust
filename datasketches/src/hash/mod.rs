@@ -38,9 +38,9 @@ mod murmurhash;
 ))]
 pub(crate) use self::murmurhash::*;
 
-#[cfg(feature = "bloom")]
+#[cfg(any(feature = "bloom", feature = "xor"))]
 mod xxhash;
-#[cfg(feature = "bloom")]
+#[cfg(any(feature = "bloom", feature = "xor"))]
 pub(crate) use self::xxhash::*;
 
 #[cfg(any(
@@ -82,7 +82,7 @@ pub(crate) use self::seed::*;
 ))]
 pub(crate) const DEFAULT_UPDATE_SEED: u64 = 9001;
 
-#[cfg(feature = "bloom")]
+#[cfg(any(feature = "bloom", feature = "xor"))]
 #[inline(always)]
 fn read_u32_le(bytes: &[u8]) -> u32 {
     u32::from_le_bytes(bytes.try_into().expect("four-byte hash input"))
@@ -96,6 +96,7 @@ fn read_u32_le(bytes: &[u8]) -> u32 {
     feature = "hll",
     feature = "theta",
     feature = "tuple",
+    feature = "xor",
 ))]
 #[inline(always)]
 fn read_u64_le(bytes: &[u8]) -> u64 {

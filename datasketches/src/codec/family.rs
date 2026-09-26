@@ -124,6 +124,15 @@ impl Family {
         min_pre_longs: 3,
         max_pre_longs: 4,
     };
+
+    /// Xor filter for probabilistic set membership.
+    #[cfg(feature = "xor")]
+    pub const XORFILTER: Family = Family {
+        id: 22,
+        name: "XORFILTER",
+        min_pre_longs: 3,
+        max_pre_longs: 3,
+    };
 }
 
 impl Family {
