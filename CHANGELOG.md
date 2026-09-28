@@ -29,6 +29,7 @@ All significant changes to this project will be documented in this file.
 
 ### Bug fixes
 
+* Empty compact Theta and Tuple sketches now serialize with a zero seed hash, matching the canonical cross-language encoding. Previously written empty images remain readable.
 * `CountMinSketch` updates now panic and merges return `InvalidArgument` if the total absolute weight would exceed the counter type's maximum. Both leave the sketch unchanged, including in release builds.
 * `CountMinSketch::upper_bound` now clamps to the counter type's maximum instead of overflowing.
 * `CountMinSketch` deserialization now returns `InvalidData` if the total absolute weight is negative or any counter's magnitude exceeds it.

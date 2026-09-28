@@ -563,6 +563,8 @@ impl CompactThetaSketch {
     }
 
     /// Serializes this sketch into the uncompressed compact theta format.
+    ///
+    /// Empty sketches write a zero seed hash; non-empty sketches retain their seed hash.
     pub fn serialize(&self) -> Vec<u8> {
         let retained_hashes = self.retained_hashes();
         let mut bytes = SketchBytes::with_capacity(64 + retained_hashes.len() * 8);
@@ -584,7 +586,7 @@ impl CompactThetaSketch {
         }
         bytes.write_u8(flags);
 
-        bytes.write_u16_le(self.seed_hash());
+        bytes.write_u16_le(if self.is_empty() { 0 } else { self.seed_hash() });
 
         if pre_longs > 1 {
             bytes.write_u32_le(retained_hashes.len() as u32);

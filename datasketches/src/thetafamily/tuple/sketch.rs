@@ -561,6 +561,7 @@ impl<S> CompactTupleSketch<S> {
     /// Each summary is encoded by its [`TupleSummaryValue`] implementation. The layout matches the
     /// Java/C++ Tuple sketches, so the output can be read by those implementations given a
     /// compatible summary encoding.
+    /// Empty sketches write a zero seed hash; non-empty sketches retain their seed hash.
     ///
     /// # Examples
     ///
@@ -600,7 +601,7 @@ impl<S> CompactTupleSketch<S> {
             flags |= FLAGS_IS_ORDERED;
         }
         bytes.write_u8(flags);
-        bytes.write_u16_le(self.seed_hash());
+        bytes.write_u16_le(if self.is_empty() { 0 } else { self.seed_hash() });
 
         if pre_longs > 1 {
             bytes.write_u32_le(retained_entries.len() as u32);

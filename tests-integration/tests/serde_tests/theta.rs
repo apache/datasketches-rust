@@ -160,6 +160,59 @@ fn test_go_compatibility() {
 }
 
 #[test]
+fn empty_images_use_canonical_seed_hash() {
+    let expected = fs::read(serialization_test_data(
+        "cpp_generated_files",
+        "theta_n0_cpp.sk",
+    ))
+    .unwrap();
+
+    for builder in [
+        ThetaSketchBuilder::default(),
+        ThetaSketchBuilder::default()
+            .seed(123)
+            .sampling_probability(0.5),
+    ] {
+        let sketch = builder.build().unwrap().compact(false);
+        assert_eq!(sketch.serialize(), expected);
+        assert_eq!(sketch.serialize_compressed(), expected);
+
+        // Older Rust images stored the configured seed hash even when empty.
+        let mut legacy = expected.clone();
+        legacy[6..8].copy_from_slice(&sketch.seed_hash().to_le_bytes());
+        for bytes in [&expected, &legacy] {
+            let restored = CompactThetaSketch::deserialize_with_seed(bytes, 456).unwrap();
+            assert!(restored.is_empty());
+            assert_eq!(restored.serialize(), expected);
+            assert_eq!(restored.serialize_compressed(), expected);
+        }
+    }
+}
+
+#[test]
+fn non_empty_images_without_entries_preserve_seed_hash() {
+    let mut sketch = ThetaSketchBuilder::default()
+        .seed(123)
+        .sampling_probability(1e-12)
+        .build()
+        .unwrap();
+    sketch.update("apple");
+    let compact = sketch.compact(true);
+    assert!(!compact.is_empty());
+    assert_eq!(compact.num_retained(), 0);
+
+    for bytes in [compact.serialize(), compact.serialize_compressed()] {
+        let restored = CompactThetaSketch::deserialize_with_seed(&bytes, 123).unwrap();
+        assert!(!restored.is_empty());
+        assert_eq!(restored.num_retained(), 0);
+        assert_eq!(restored.theta64(), compact.theta64());
+        assert_eq!(restored.seed_hash(), compact.seed_hash());
+        let err = CompactThetaSketch::deserialize(&bytes).unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::InvalidData);
+    }
+}
+
+#[test]
 fn malformed_input_is_rejected() {
     let mut sketch = ThetaSketchBuilder::default().lg_k(5).build().unwrap();
     for value in 0..5000 {
