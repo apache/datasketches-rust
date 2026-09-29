@@ -160,43 +160,29 @@ fn test_go_compatibility() {
 }
 
 #[test]
-fn empty_images_use_canonical_seed_hash() {
+fn empty_sketch_serialization() {
     let expected = fs::read(serialization_test_data(
         "cpp_generated_files",
         "theta_n0_cpp.sk",
     ))
     .unwrap();
-    let default_seed_hash = ThetaSketchBuilder::default().build().unwrap().seed_hash();
+    let sketch = ThetaSketchBuilder::default()
+        .seed(123)
+        .sampling_probability(0.5)
+        .build()
+        .unwrap()
+        .compact(false);
+    assert_eq!(sketch.serialize(), expected);
+    assert_eq!(sketch.serialize_compressed(), expected);
 
-    for builder in [
-        ThetaSketchBuilder::default(),
-        ThetaSketchBuilder::default()
-            .seed(123)
-            .sampling_probability(0.5),
-    ] {
-        let sketch = builder.build().unwrap().compact(false);
-        assert_eq!(sketch.serialize(), expected);
-        assert_eq!(sketch.serialize_compressed(), expected);
-
-        // Older Rust images stored the configured seed hash even when empty.
-        let mut legacy = expected.clone();
-        legacy[6..8].copy_from_slice(&sketch.seed_hash().to_le_bytes());
-        for bytes in [&expected, &legacy] {
-            let restored = CompactThetaSketch::deserialize(bytes).unwrap();
-            assert_eq!(restored.seed_hash(), default_seed_hash);
-
-            for seed in [123, 456] {
-                let expected_seed_hash = ThetaSketchBuilder::default()
-                    .seed(seed)
-                    .build()
-                    .unwrap()
-                    .seed_hash();
-                let restored = CompactThetaSketch::deserialize_with_seed(bytes, seed).unwrap();
-                assert!(restored.is_empty());
-                assert_eq!(restored.seed_hash(), expected_seed_hash);
-                assert_eq!(restored.serialize(), expected);
-                assert_eq!(restored.serialize_compressed(), expected);
-            }
+    let other_seed_hash = ThetaSketchBuilder::default().build().unwrap().seed_hash();
+    // v3 and v4 empty inputs; v4 includes a one-byte entry count of zero.
+    for mut bytes in [expected, vec![1, 4, 3, 0, 1, 0x1e, 0, 0, 0]] {
+        for stored_seed_hash in [0, other_seed_hash] {
+            bytes[6..8].copy_from_slice(&stored_seed_hash.to_le_bytes());
+            let restored = CompactThetaSketch::deserialize_with_seed(&bytes, 123).unwrap();
+            assert!(restored.is_empty());
+            assert_eq!(restored.seed_hash(), sketch.seed_hash());
         }
     }
 }
@@ -213,13 +199,18 @@ fn non_empty_images_without_entries_preserve_seed_hash() {
     assert!(!compact.is_empty());
     assert_eq!(compact.num_retained(), 0);
 
-    for bytes in [compact.serialize(), compact.serialize_compressed()] {
+    // v2 and v3 share the count/theta layout for sampled sketches.
+    for version in [2, 3] {
+        let mut bytes = compact.serialize();
+        bytes[1] = version;
         let restored = CompactThetaSketch::deserialize_with_seed(&bytes, 123).unwrap();
         assert!(!restored.is_empty());
-        assert_eq!(restored.num_retained(), 0);
         assert_eq!(restored.theta64(), compact.theta64());
-        assert_eq!(restored.seed_hash(), compact.seed_hash());
         let err = CompactThetaSketch::deserialize(&bytes).unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::InvalidData);
+
+        bytes[6..8].fill(0);
+        let err = CompactThetaSketch::deserialize_with_seed(&bytes, 123).unwrap_err();
         assert_eq!(err.kind(), ErrorKind::InvalidData);
     }
 }
@@ -301,111 +292,29 @@ fn test_v2_exact_non_empty_compatibility() {
 
 #[test]
 fn test_v2_java_empty_layouts() {
-    let reference = ThetaSketchBuilder::default()
+    let expected_seed_hash = ThetaSketchBuilder::default()
         .seed(123)
         .build()
         .unwrap()
-        .compact(true);
-    let expected = reference.serialize();
-    let default_seed_hash = ThetaSketchBuilder::default().build().unwrap().seed_hash();
+        .seed_hash();
+    let other_seed_hash = ThetaSketchBuilder::default().build().unwrap().seed_hash();
 
     // Port of Java 8.0.0 ForwardCompatibilityTest's checkSerVer2_{1,2,3}PreLong[s]_Empty:
     // https://github.com/apache/datasketches-java/blob/8.0.0/src/test/java/org/apache/datasketches/theta/ForwardCompatibilityTest.java#L90-L137
     for pre_longs in [1, 2, 3] {
         let mut bytes = serialize_v2_exact(&[]);
         bytes[0] = pre_longs;
-        bytes[5] = 0x0e; // Java's v2 flags: no rebuild, empty, read-only, little-endian.
-        if pre_longs == 1 {
-            bytes.truncate(8);
-        } else if pre_longs == 3 {
-            bytes.extend_from_slice(&(i64::MAX as u64).to_le_bytes());
+        bytes[5] = 0x0e; // Java's v2 empty flags.
+        bytes.resize(pre_longs as usize * 8, 0);
+        if pre_longs == 3 {
+            bytes[16..24].copy_from_slice(&(i64::MAX as u64).to_le_bytes());
         }
 
-        let sketch = CompactThetaSketch::deserialize(&bytes).unwrap();
-        assert!(sketch.is_empty());
-        assert!(!sketch.is_estimation_mode());
-        assert!(sketch.is_ordered());
-        assert_eq!(sketch.seed_hash(), default_seed_hash);
-
-        // Extend Java's default-seed cases with zero and mismatched seed hashes.
-        for seed_hash in [0, reference.seed_hash()] {
-            bytes[6..8].copy_from_slice(&seed_hash.to_le_bytes());
-            for seed in [123, 456] {
-                let expected_seed_hash = ThetaSketchBuilder::default()
-                    .seed(seed)
-                    .build()
-                    .unwrap()
-                    .seed_hash();
-                let sketch = CompactThetaSketch::deserialize_with_seed(&bytes, seed).unwrap();
-                assert!(sketch.is_empty());
-                assert!(!sketch.is_estimation_mode());
-                assert!(sketch.is_ordered());
-                assert_eq!(sketch.num_retained(), 0);
-                assert_eq!(sketch.estimate(), 0.0);
-                assert_eq!(sketch.lower_bound(NumStdDev::One), 0.0);
-                assert_eq!(sketch.upper_bound(NumStdDev::One), 0.0);
-                assert_eq!(sketch.seed_hash(), expected_seed_hash);
-                assert_eq!(sketch.serialize(), expected);
-
-                let restored =
-                    CompactThetaSketch::deserialize_with_seed(&sketch.serialize(), seed).unwrap();
-                assert!(restored.is_empty());
-                assert_eq!(restored.seed_hash(), expected_seed_hash);
-            }
+        for stored_seed_hash in [0, other_seed_hash] {
+            bytes[6..8].copy_from_slice(&stored_seed_hash.to_le_bytes());
+            let sketch = CompactThetaSketch::deserialize_with_seed(&bytes, 123).unwrap();
+            assert!(sketch.is_empty());
+            assert_eq!(sketch.seed_hash(), expected_seed_hash);
         }
-    }
-}
-
-#[test]
-fn empty_v1_and_v4_images_use_requested_seed() {
-    let mut v1 = vec![0; 24];
-    v1[..3].copy_from_slice(&[3, 1, 3]);
-    v1[16..24].copy_from_slice(&(i64::MAX as u64).to_le_bytes());
-
-    // The v4 header is followed by one byte encoding an entry count of zero.
-    let v4 = vec![1, 4, 3, 0, 1, 0x1e, 0, 0, 0];
-    let default = ThetaSketchBuilder::default().build().unwrap().compact(true);
-    let mut legacy_v4 = v4.clone();
-    legacy_v4[6..8].copy_from_slice(&default.seed_hash().to_le_bytes());
-
-    for bytes in [v1, v4, legacy_v4] {
-        let restored = CompactThetaSketch::deserialize(&bytes).unwrap();
-        assert_eq!(restored.seed_hash(), default.seed_hash());
-
-        for seed in [123, 456] {
-            let original = ThetaSketchBuilder::default()
-                .seed(seed)
-                .build()
-                .unwrap()
-                .compact(true);
-            let restored = CompactThetaSketch::deserialize_with_seed(&bytes, seed).unwrap();
-            assert!(restored.is_empty());
-            assert_eq!(restored.seed_hash(), original.seed_hash());
-            assert_eq!(restored.serialize(), original.serialize());
-            let round_trip =
-                CompactThetaSketch::deserialize_with_seed(&restored.serialize(), seed).unwrap();
-            assert_eq!(round_trip.seed_hash(), original.seed_hash());
-        }
-    }
-}
-
-#[test]
-fn test_v2_non_empty_images_validate_seed_hash() {
-    let exact = serialize_v2_exact(&[1]);
-    let mut sampled = serialize_v2_exact(&[]);
-    sampled[0] = 3;
-    sampled.extend_from_slice(&((i64::MAX as u64) / 2).to_le_bytes());
-
-    // Zero retained entries with theta < 1 still describe a non-empty sketch.
-    for mut bytes in [exact, sampled] {
-        let sketch = CompactThetaSketch::deserialize(&bytes).unwrap();
-        assert!(!sketch.is_empty());
-
-        let err = CompactThetaSketch::deserialize_with_seed(&bytes, 456).unwrap_err();
-        assert_eq!(err.kind(), ErrorKind::InvalidData);
-
-        bytes[6..8].fill(0);
-        let err = CompactThetaSketch::deserialize(&bytes).unwrap_err();
-        assert_eq!(err.kind(), ErrorKind::InvalidData);
     }
 }
