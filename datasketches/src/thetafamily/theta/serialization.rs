@@ -20,6 +20,9 @@
 pub const UNCOMPRESSED_SERIAL_VERSION: u8 = 3;
 pub const COMPRESSED_SERIAL_VERSION: u8 = 4;
 
+/// Canonical empty compact image, independent of the configured seed.
+pub const EMPTY_SKETCH_BYTES: [u8; 8] = [1, 3, 3, 0, 0, 0x1e, 0, 0];
+
 pub const V2_PREAMBLE_EMPTY: u8 = 1;
 pub const V2_PREAMBLE_PRECISE: u8 = 2;
 pub const V2_PREAMBLE_ESTIMATE: u8 = 3;

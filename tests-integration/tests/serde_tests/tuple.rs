@@ -109,6 +109,54 @@ fn test_go_compatibility() {
 }
 
 #[test]
+fn empty_sketch_serialization() {
+    let expected = fs::read(serialization_test_data(
+        "cpp_generated_files",
+        "tuple_int_n0_cpp.sk",
+    ))
+    .unwrap();
+    let sketch = TupleSketchBuilder::new(DefaultUpdatePolicy::<i32>::default())
+        .seed(123)
+        .sampling_probability(0.5)
+        .build()
+        .unwrap()
+        .compact(false);
+    assert_eq!(sketch.serialize(), expected);
+
+    let other_seed_hash = TupleSketchBuilder::new(DefaultUpdatePolicy::<i32>::default())
+        .build()
+        .unwrap()
+        .seed_hash();
+    for stored_seed_hash in [0, other_seed_hash] {
+        let mut bytes = expected.clone();
+        bytes[6..8].copy_from_slice(&stored_seed_hash.to_le_bytes());
+        let restored = CompactTupleSketch::<i32>::deserialize_with_seed(&bytes, 123).unwrap();
+        assert!(restored.is_empty());
+        assert_eq!(restored.seed_hash(), sketch.seed_hash());
+    }
+}
+
+#[test]
+fn non_empty_images_without_entries_preserve_seed_hash() {
+    let mut sketch = TupleSketchBuilder::new(DefaultUpdatePolicy::<i32>::default())
+        .seed(123)
+        .sampling_probability(1e-12)
+        .build()
+        .unwrap();
+    sketch.update("apple", 1);
+    let compact = sketch.compact(true);
+    assert!(!compact.is_empty());
+    assert_eq!(compact.num_retained(), 0);
+
+    let bytes = compact.serialize();
+    let restored = CompactTupleSketch::<i32>::deserialize_with_seed(&bytes, 123).unwrap();
+    assert!(!restored.is_empty());
+    assert_eq!(restored.theta64(), compact.theta64());
+    let err = CompactTupleSketch::<i32>::deserialize(&bytes).unwrap_err();
+    assert_eq!(err.kind(), ErrorKind::InvalidData);
+}
+
+#[test]
 fn round_trip_preserves_summaries() {
     let mut sketch = TupleSketchBuilder::new(DefaultUpdatePolicy::<u64>::default())
         .build()

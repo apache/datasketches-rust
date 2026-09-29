@@ -495,7 +495,7 @@ impl CompactThetaSketch {
         self.compact_state.is_ordered()
     }
 
-    /// Returns the 16-bit seed hash.
+    /// Returns the 16-bit fingerprint of the seed associated with this sketch.
     pub fn seed_hash(&self) -> u16 {
         self.compact_state.seed_hash()
     }
@@ -537,7 +537,7 @@ impl CompactThetaSketch {
             if self.is_estimation_mode() { 2 } else { 1 }
         } else if self.is_estimation_mode() {
             3
-        } else if self.is_empty() || self.num_retained() == 1 {
+        } else if self.num_retained() == 1 {
             1
         } else {
             2
@@ -546,8 +546,7 @@ impl CompactThetaSketch {
 
     /// Serializes this sketch in compressed form if applicable.
     ///
-    /// This uses `serVer = 4` when the sketch is ordered and suitable for compression, and falls
-    /// back to uncompressed `serVer = 3` otherwise.
+    /// Falls back to [`serialize`](Self::serialize) when compression is not applicable.
     pub fn serialize_compressed(&self) -> Vec<u8> {
         if self.is_suitable_for_compression() {
             self.serialize_v4()
@@ -562,8 +561,14 @@ impl CompactThetaSketch {
             && (self.num_retained() != 1 || self.is_estimation_mode())
     }
 
-    /// Serializes this sketch into the uncompressed compact theta format.
+    /// Serializes this sketch into the uncompressed compact Theta format.
+    ///
+    /// Empty sketches serialize with a zero seed hash.
     pub fn serialize(&self) -> Vec<u8> {
+        if self.is_empty() {
+            return serialization::EMPTY_SKETCH_BYTES.to_vec();
+        }
+
         let retained_hashes = self.retained_hashes();
         let mut bytes = SketchBytes::with_capacity(64 + retained_hashes.len() * 8);
 
@@ -576,9 +581,6 @@ impl CompactThetaSketch {
         let mut flags = 0u8;
         flags |= FLAGS_IS_READ_ONLY;
         flags |= FLAGS_IS_COMPACT;
-        if self.is_empty() {
-            flags |= FLAGS_IS_EMPTY;
-        }
         if self.is_ordered() {
             flags |= FLAGS_IS_ORDERED;
         }
@@ -685,22 +687,24 @@ impl CompactThetaSketch {
         bits.div_ceil(8) as u8
     }
 
-    /// Deserializes a compact theta sketch from bytes.
+    /// Deserializes a compact Theta sketch using the default seed.
     ///
     /// # Errors
     ///
-    /// Returns `InvalidData` if the image is malformed or its seed hash does not match the default
-    /// seed.
+    /// Returns `InvalidData` if the image is malformed or a non-empty image's seed hash does not
+    /// match the default seed.
     pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
         Self::deserialize_with_seed(bytes, DEFAULT_UPDATE_SEED)
     }
 
-    /// Deserializes a compact theta sketch from bytes using the provided expected seed.
+    /// Deserializes a compact Theta sketch using `seed`.
+    ///
+    /// Empty sketches use the hash of `seed` regardless of the stored seed hash.
     ///
     /// # Errors
     ///
-    /// Returns `InvalidData` if the image is malformed, its seed hash does not match `seed`, or
-    /// `seed` itself computes to the reserved zero seed hash.
+    /// Returns `InvalidData` if the image is malformed, a non-empty image's seed hash does not
+    /// match `seed`, or `seed` itself computes to the reserved zero seed hash.
     pub fn deserialize_with_seed(bytes: &[u8], seed: u64) -> Result<Self, Error> {
         let expected_seed_hash = compute_seed_hash(seed, ErrorKind::InvalidData)?;
         let mut cursor = SketchSlice::new(bytes);
@@ -809,60 +813,46 @@ impl CompactThetaSketch {
         let seed_hash = cursor
             .read_u16_le()
             .map_err(insufficient_data("seed_hash"))?;
+        let (num_entries, theta) = match pre_longs {
+            V2_PREAMBLE_EMPTY => (0, MAX_THETA),
+            V2_PREAMBLE_PRECISE | V2_PREAMBLE_ESTIMATE => {
+                let num_entries = cursor
+                    .read_u32_le()
+                    .map_err(insufficient_data("num_entries"))?
+                    as usize;
+                cursor
+                    .read_u32_le()
+                    .map_err(insufficient_data("<unused_u32>"))?;
+                let theta = if pre_longs == V2_PREAMBLE_ESTIMATE {
+                    Self::deserialize_theta(
+                        cursor
+                            .read_u64_le()
+                            .map_err(insufficient_data("theta_long"))?,
+                    )?
+                } else {
+                    MAX_THETA
+                };
+                (num_entries, theta)
+            }
+            _ => return Err(Error::invalid_preamble_longs(&[1, 2, 3], pre_longs)),
+        };
+
+        if num_entries == 0 && theta == MAX_THETA {
+            return Ok(Self::from_compact_state(CompactSketchState::empty(
+                expected_seed_hash,
+            )));
+        }
+
         check_seed_hash(
             expected_seed_hash,
             seed_hash,
             "deserialized CompactThetaSketch v2",
             ErrorKind::InvalidData,
         )?;
-
-        match pre_longs {
-            V2_PREAMBLE_EMPTY => Ok(Self::from_compact_state(CompactSketchState::empty(
-                seed_hash,
-            ))),
-            V2_PREAMBLE_PRECISE => {
-                let num_entries = cursor
-                    .read_u32_le()
-                    .map_err(insufficient_data("num_entries"))?
-                    as usize;
-                cursor
-                    .read_u32_le()
-                    .map_err(insufficient_data("<unused_u32>"))?;
-                let entries = Self::read_entries(&mut cursor, num_entries, MAX_THETA)?;
-                if num_entries == 0 {
-                    return Ok(Self::from_compact_state(CompactSketchState::empty(
-                        seed_hash,
-                    )));
-                }
-                Ok(Self::from_compact_state(CompactSketchState::non_empty(
-                    entries, MAX_THETA, seed_hash, true,
-                )))
-            }
-            V2_PREAMBLE_ESTIMATE => {
-                let num_entries = cursor
-                    .read_u32_le()
-                    .map_err(insufficient_data("num_entries"))?
-                    as usize;
-                cursor
-                    .read_u32_le()
-                    .map_err(insufficient_data("<unused_u32>"))?;
-                let theta = Self::deserialize_theta(
-                    cursor
-                        .read_u64_le()
-                        .map_err(insufficient_data("theta_long"))?,
-                )?;
-                let entries = Self::read_entries(&mut cursor, num_entries, theta)?;
-                if num_entries == 0 && theta == MAX_THETA {
-                    return Ok(Self::from_compact_state(CompactSketchState::empty(
-                        seed_hash,
-                    )));
-                }
-                Ok(Self::from_compact_state(CompactSketchState::non_empty(
-                    entries, theta, seed_hash, true,
-                )))
-            }
-            _ => Err(Error::invalid_preamble_longs(&[1, 2, 3], pre_longs)),
-        }
+        let entries = Self::read_entries(&mut cursor, num_entries, theta)?;
+        Ok(Self::from_compact_state(CompactSketchState::non_empty(
+            entries, theta, seed_hash, true,
+        )))
     }
 
     fn deserialize_v3(
@@ -881,7 +871,7 @@ impl CompactThetaSketch {
         let empty = (flags & FLAGS_IS_EMPTY) != 0;
         if empty {
             return Ok(Self::from_compact_state(CompactSketchState::empty(
-                seed_hash,
+                expected_seed_hash,
             )));
         }
 
@@ -1021,7 +1011,7 @@ impl CompactThetaSketch {
         let ordered = (flags & FLAGS_IS_ORDERED) != 0;
 
         let compact_state = if empty {
-            CompactSketchState::empty(seed_hash)
+            CompactSketchState::empty(expected_seed_hash)
         } else {
             CompactSketchState::non_empty(entries, theta, seed_hash, ordered)
         };
