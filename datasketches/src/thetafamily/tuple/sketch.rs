@@ -53,6 +53,7 @@ use crate::tuple::hash_table::TupleEntry;
 use crate::tuple::hash_table::TupleHashTable;
 use crate::tuple::policy::SummaryPolicy;
 use crate::tuple::policy::SummaryUpdatePolicy;
+use crate::tuple::serialization::EMPTY_SKETCH_BYTES;
 use crate::tuple::serialization::SERIAL_VERSION;
 use crate::tuple::serialization::SERIAL_VERSION_LEGACY;
 use crate::tuple::serialization::SKETCH_TYPE;
@@ -549,7 +550,7 @@ impl<S> CompactTupleSketch<S> {
     fn preamble_longs(&self) -> u8 {
         if self.is_estimation_mode() {
             3
-        } else if self.is_empty() || self.num_retained() == 1 {
+        } else if self.num_retained() == 1 {
             1
         } else {
             2
@@ -579,6 +580,10 @@ impl<S> CompactTupleSketch<S> {
     where
         S: TupleSummaryValue,
     {
+        if self.is_empty() {
+            return EMPTY_SKETCH_BYTES.to_vec();
+        }
+
         let retained_entries = self.retained_entries();
         let pre_longs = self.preamble_longs();
         let entries_size: usize = retained_entries
@@ -594,14 +599,11 @@ impl<S> CompactTupleSketch<S> {
         bytes.write_u8(0); // unused
 
         let mut flags = FLAGS_IS_READ_ONLY | FLAGS_IS_COMPACT;
-        if self.is_empty() {
-            flags |= FLAGS_IS_EMPTY;
-        }
         if self.is_ordered() {
             flags |= FLAGS_IS_ORDERED;
         }
         bytes.write_u8(flags);
-        bytes.write_u16_le(if self.is_empty() { 0 } else { self.seed_hash() });
+        bytes.write_u16_le(self.seed_hash());
 
         if pre_longs > 1 {
             bytes.write_u32_le(retained_entries.len() as u32);

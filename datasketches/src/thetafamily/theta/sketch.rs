@@ -537,7 +537,7 @@ impl CompactThetaSketch {
             if self.is_estimation_mode() { 2 } else { 1 }
         } else if self.is_estimation_mode() {
             3
-        } else if self.is_empty() || self.num_retained() == 1 {
+        } else if self.num_retained() == 1 {
             1
         } else {
             2
@@ -566,6 +566,10 @@ impl CompactThetaSketch {
     ///
     /// Empty sketches write a zero seed hash; non-empty sketches retain their seed hash.
     pub fn serialize(&self) -> Vec<u8> {
+        if self.is_empty() {
+            return serialization::EMPTY_SKETCH_BYTES.to_vec();
+        }
+
         let retained_hashes = self.retained_hashes();
         let mut bytes = SketchBytes::with_capacity(64 + retained_hashes.len() * 8);
 
@@ -578,15 +582,12 @@ impl CompactThetaSketch {
         let mut flags = 0u8;
         flags |= FLAGS_IS_READ_ONLY;
         flags |= FLAGS_IS_COMPACT;
-        if self.is_empty() {
-            flags |= FLAGS_IS_EMPTY;
-        }
         if self.is_ordered() {
             flags |= FLAGS_IS_ORDERED;
         }
         bytes.write_u8(flags);
 
-        bytes.write_u16_le(if self.is_empty() { 0 } else { self.seed_hash() });
+        bytes.write_u16_le(self.seed_hash());
 
         if pre_longs > 1 {
             bytes.write_u32_le(retained_hashes.len() as u32);
