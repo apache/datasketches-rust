@@ -288,7 +288,7 @@ fn test_v2_exact_non_empty_compatibility() {
 }
 
 #[test]
-fn test_v2_empty_images_ignore_seed_hash() {
+fn test_v2_java_empty_layouts() {
     let reference = ThetaSketchBuilder::default()
         .seed(123)
         .build()
@@ -296,22 +296,32 @@ fn test_v2_empty_images_ignore_seed_hash() {
         .compact(true);
     let expected = reference.serialize();
 
-    // Java accepts empty v2 images with one, two, or three preamble longs.
+    // Port of Java 8.0.0 ForwardCompatibilityTest's checkSerVer2_{1,2,3}PreLong[s]_Empty:
+    // https://github.com/apache/datasketches-java/blob/8.0.0/src/test/java/org/apache/datasketches/theta/ForwardCompatibilityTest.java#L90-L137
     for pre_longs in [1, 2, 3] {
         let mut bytes = serialize_v2_exact(&[]);
         bytes[0] = pre_longs;
+        bytes[5] = 0x0e; // Java's v2 flags: no rebuild, empty, read-only, little-endian.
         if pre_longs == 1 {
             bytes.truncate(8);
         } else if pre_longs == 3 {
             bytes.extend_from_slice(&(i64::MAX as u64).to_le_bytes());
         }
 
+        let sketch = CompactThetaSketch::deserialize(&bytes).unwrap();
+        assert!(sketch.is_empty());
+        assert!(!sketch.is_estimation_mode());
+        assert!(sketch.is_ordered());
+        assert_eq!(sketch.seed_hash(), 0);
+
+        // Extend Java's default-seed cases with zero and mismatched seed hashes.
         for seed_hash in [0, reference.seed_hash()] {
             bytes[6..8].copy_from_slice(&seed_hash.to_le_bytes());
             for seed in [123, 456] {
                 let sketch = CompactThetaSketch::deserialize_with_seed(&bytes, seed).unwrap();
                 assert!(sketch.is_empty());
                 assert!(!sketch.is_estimation_mode());
+                assert!(sketch.is_ordered());
                 assert_eq!(sketch.num_retained(), 0);
                 assert_eq!(sketch.estimate(), 0.0);
                 assert_eq!(sketch.lower_bound(NumStdDev::One), 0.0);
