@@ -504,7 +504,9 @@ impl<S> CompactTupleSketch<S> {
         self.compact_state.is_ordered()
     }
 
-    /// Returns the 16-bit seed hash.
+    /// Returns the 16-bit fingerprint used to check seed compatibility.
+    ///
+    /// Empty sketches may return `0`, indicating no seed association.
     pub fn seed_hash(&self) -> u16 {
         self.compact_state.seed_hash()
     }
@@ -559,10 +561,10 @@ impl<S> CompactTupleSketch<S> {
 
     /// Serializes this sketch into the compact Tuple binary format.
     ///
-    /// Each summary is encoded by its [`TupleSummaryValue`] implementation. The layout matches the
-    /// Java/C++ Tuple sketches, so the output can be read by those implementations given a
-    /// compatible summary encoding.
-    /// Empty sketches write a zero seed hash; non-empty sketches retain their seed hash.
+    /// Uses [`TupleSummaryValue`] to encode summaries. Reading the output in Java or C++ requires
+    /// a compatible summary encoding.
+    ///
+    /// Empty sketches serialize with a zero seed hash.
     ///
     /// # Examples
     ///
@@ -624,8 +626,9 @@ impl<S> CompactTupleSketch<S> {
     ///
     /// # Errors
     ///
-    /// Returns `InvalidData` if the image is malformed, its seed hash does not match the default
-    /// seed, or a summary cannot be decoded by `S`.
+    /// Returns `InvalidData` if the image is malformed or a non-empty image's seed hash does not
+    /// match the default seed. Also propagates errors from
+    /// [`TupleSummaryValue::deserialize_value`].
     pub fn deserialize(bytes: &[u8]) -> Result<Self, Error>
     where
         S: TupleSummaryValue,
@@ -633,13 +636,15 @@ impl<S> CompactTupleSketch<S> {
         Self::deserialize_with_seed(bytes, DEFAULT_UPDATE_SEED)
     }
 
-    /// Deserializes a compact Tuple sketch using the provided expected `seed`.
+    /// Deserializes a compact Tuple sketch using the expected `seed`.
+    ///
+    /// Empty sketches do not require a matching seed hash.
     ///
     /// # Errors
     ///
-    /// Returns `InvalidData` if the bytes are truncated, the family/serial version/sketch type are
-    /// unexpected, the seed hash does not match, the supplied seed computes to the reserved zero
-    /// seed hash, or an entry is corrupted.
+    /// Returns `InvalidData` if the image is malformed, a non-empty image's seed hash does not
+    /// match `seed`, or `seed` itself computes to the reserved zero seed hash. Also propagates
+    /// errors from [`TupleSummaryValue::deserialize_value`].
     pub fn deserialize_with_seed(bytes: &[u8], seed: u64) -> Result<Self, Error>
     where
         S: TupleSummaryValue,

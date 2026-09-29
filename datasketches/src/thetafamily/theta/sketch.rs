@@ -495,7 +495,9 @@ impl CompactThetaSketch {
         self.compact_state.is_ordered()
     }
 
-    /// Returns the 16-bit seed hash.
+    /// Returns the 16-bit fingerprint used to check seed compatibility.
+    ///
+    /// Empty sketches may return `0`, indicating no seed association.
     pub fn seed_hash(&self) -> u16 {
         self.compact_state.seed_hash()
     }
@@ -546,8 +548,7 @@ impl CompactThetaSketch {
 
     /// Serializes this sketch in compressed form if applicable.
     ///
-    /// This uses `serVer = 4` when the sketch is ordered and suitable for compression, and falls
-    /// back to uncompressed `serVer = 3` otherwise.
+    /// Falls back to [`serialize`](Self::serialize) when compression is not applicable.
     pub fn serialize_compressed(&self) -> Vec<u8> {
         if self.is_suitable_for_compression() {
             self.serialize_v4()
@@ -562,9 +563,9 @@ impl CompactThetaSketch {
             && (self.num_retained() != 1 || self.is_estimation_mode())
     }
 
-    /// Serializes this sketch into the uncompressed compact theta format.
+    /// Serializes this sketch into the uncompressed compact Theta format.
     ///
-    /// Empty sketches write a zero seed hash; non-empty sketches retain their seed hash.
+    /// Empty sketches serialize with a zero seed hash.
     pub fn serialize(&self) -> Vec<u8> {
         if self.is_empty() {
             return serialization::EMPTY_SKETCH_BYTES.to_vec();
@@ -688,7 +689,7 @@ impl CompactThetaSketch {
         bits.div_ceil(8) as u8
     }
 
-    /// Deserializes a compact theta sketch from bytes.
+    /// Deserializes a compact Theta sketch using the default seed.
     ///
     /// # Errors
     ///
@@ -698,10 +699,9 @@ impl CompactThetaSketch {
         Self::deserialize_with_seed(bytes, DEFAULT_UPDATE_SEED)
     }
 
-    /// Deserializes a compact theta sketch from bytes using the provided expected seed.
+    /// Deserializes a compact Theta sketch using the expected `seed`.
     ///
-    /// Empty images do not require a matching seed hash. Legacy version 2 empty images are
-    /// normalized to a zero seed hash.
+    /// Empty sketches do not require a matching seed hash.
     ///
     /// # Errors
     ///
