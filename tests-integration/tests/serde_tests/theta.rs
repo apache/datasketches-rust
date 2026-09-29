@@ -288,13 +288,63 @@ fn test_v2_exact_non_empty_compatibility() {
 }
 
 #[test]
-fn test_v2_exact_zero_entries_remains_empty() {
-    let sketch = CompactThetaSketch::deserialize(&serialize_v2_exact(&[])).unwrap();
+fn test_v2_empty_images_ignore_seed_hash() {
+    let reference = ThetaSketchBuilder::default()
+        .seed(123)
+        .build()
+        .unwrap()
+        .compact(true);
+    let expected = reference.serialize();
 
-    assert!(sketch.is_empty());
-    assert!(!sketch.is_estimation_mode());
-    assert_eq!(sketch.num_retained(), 0);
-    assert_eq!(sketch.estimate(), 0.0);
-    assert_eq!(sketch.lower_bound(NumStdDev::One), 0.0);
-    assert_eq!(sketch.upper_bound(NumStdDev::One), 0.0);
+    // Java accepts empty v2 images with one, two, or three preamble longs.
+    for pre_longs in [1, 2, 3] {
+        let mut bytes = serialize_v2_exact(&[]);
+        bytes[0] = pre_longs;
+        if pre_longs == 1 {
+            bytes.truncate(8);
+        } else if pre_longs == 3 {
+            bytes.extend_from_slice(&(i64::MAX as u64).to_le_bytes());
+        }
+
+        for seed_hash in [0, reference.seed_hash()] {
+            bytes[6..8].copy_from_slice(&seed_hash.to_le_bytes());
+            for seed in [123, 456] {
+                let sketch = CompactThetaSketch::deserialize_with_seed(&bytes, seed).unwrap();
+                assert!(sketch.is_empty());
+                assert!(!sketch.is_estimation_mode());
+                assert_eq!(sketch.num_retained(), 0);
+                assert_eq!(sketch.estimate(), 0.0);
+                assert_eq!(sketch.lower_bound(NumStdDev::One), 0.0);
+                assert_eq!(sketch.upper_bound(NumStdDev::One), 0.0);
+                assert_eq!(sketch.seed_hash(), 0);
+                assert_eq!(sketch.serialize(), expected);
+
+                let restored =
+                    CompactThetaSketch::deserialize_with_seed(&sketch.serialize(), seed).unwrap();
+                assert!(restored.is_empty());
+                assert_eq!(restored.seed_hash(), 0);
+            }
+        }
+    }
+}
+
+#[test]
+fn test_v2_non_empty_images_validate_seed_hash() {
+    let exact = serialize_v2_exact(&[1]);
+    let mut sampled = serialize_v2_exact(&[]);
+    sampled[0] = 3;
+    sampled.extend_from_slice(&((i64::MAX as u64) / 2).to_le_bytes());
+
+    // Zero retained entries with theta < 1 still describe a non-empty sketch.
+    for mut bytes in [exact, sampled] {
+        let sketch = CompactThetaSketch::deserialize(&bytes).unwrap();
+        assert!(!sketch.is_empty());
+
+        let err = CompactThetaSketch::deserialize_with_seed(&bytes, 456).unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::InvalidData);
+
+        bytes[6..8].fill(0);
+        let err = CompactThetaSketch::deserialize(&bytes).unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::InvalidData);
+    }
 }

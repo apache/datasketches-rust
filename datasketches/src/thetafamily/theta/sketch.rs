@@ -692,18 +692,21 @@ impl CompactThetaSketch {
     ///
     /// # Errors
     ///
-    /// Returns `InvalidData` if the image is malformed or its seed hash does not match the default
-    /// seed.
+    /// Returns `InvalidData` if the image is malformed or a non-empty image's seed hash does not
+    /// match the default seed.
     pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
         Self::deserialize_with_seed(bytes, DEFAULT_UPDATE_SEED)
     }
 
     /// Deserializes a compact theta sketch from bytes using the provided expected seed.
     ///
+    /// Empty images do not require a matching seed hash. Legacy version 2 empty images are
+    /// normalized to a zero seed hash.
+    ///
     /// # Errors
     ///
-    /// Returns `InvalidData` if the image is malformed, its seed hash does not match `seed`, or
-    /// `seed` itself computes to the reserved zero seed hash.
+    /// Returns `InvalidData` if the image is malformed, a non-empty image's seed hash does not
+    /// match `seed`, or `seed` itself computes to the reserved zero seed hash.
     pub fn deserialize_with_seed(bytes: &[u8], seed: u64) -> Result<Self, Error> {
         let expected_seed_hash = compute_seed_hash(seed, ErrorKind::InvalidData)?;
         let mut cursor = SketchSlice::new(bytes);
@@ -812,60 +815,45 @@ impl CompactThetaSketch {
         let seed_hash = cursor
             .read_u16_le()
             .map_err(insufficient_data("seed_hash"))?;
+        let (num_entries, theta) = match pre_longs {
+            V2_PREAMBLE_EMPTY => (0, MAX_THETA),
+            V2_PREAMBLE_PRECISE | V2_PREAMBLE_ESTIMATE => {
+                let num_entries = cursor
+                    .read_u32_le()
+                    .map_err(insufficient_data("num_entries"))?
+                    as usize;
+                cursor
+                    .read_u32_le()
+                    .map_err(insufficient_data("<unused_u32>"))?;
+                let theta = if pre_longs == V2_PREAMBLE_ESTIMATE {
+                    Self::deserialize_theta(
+                        cursor
+                            .read_u64_le()
+                            .map_err(insufficient_data("theta_long"))?,
+                    )?
+                } else {
+                    MAX_THETA
+                };
+                (num_entries, theta)
+            }
+            _ => return Err(Error::invalid_preamble_longs(&[1, 2, 3], pre_longs)),
+        };
+
+        // Java's v2 conversion normalizes empty images to its seed-independent empty sketch.
+        if num_entries == 0 && theta == MAX_THETA {
+            return Ok(Self::from_compact_state(CompactSketchState::empty(0)));
+        }
+
         check_seed_hash(
             expected_seed_hash,
             seed_hash,
             "deserialized CompactThetaSketch v2",
             ErrorKind::InvalidData,
         )?;
-
-        match pre_longs {
-            V2_PREAMBLE_EMPTY => Ok(Self::from_compact_state(CompactSketchState::empty(
-                seed_hash,
-            ))),
-            V2_PREAMBLE_PRECISE => {
-                let num_entries = cursor
-                    .read_u32_le()
-                    .map_err(insufficient_data("num_entries"))?
-                    as usize;
-                cursor
-                    .read_u32_le()
-                    .map_err(insufficient_data("<unused_u32>"))?;
-                let entries = Self::read_entries(&mut cursor, num_entries, MAX_THETA)?;
-                if num_entries == 0 {
-                    return Ok(Self::from_compact_state(CompactSketchState::empty(
-                        seed_hash,
-                    )));
-                }
-                Ok(Self::from_compact_state(CompactSketchState::non_empty(
-                    entries, MAX_THETA, seed_hash, true,
-                )))
-            }
-            V2_PREAMBLE_ESTIMATE => {
-                let num_entries = cursor
-                    .read_u32_le()
-                    .map_err(insufficient_data("num_entries"))?
-                    as usize;
-                cursor
-                    .read_u32_le()
-                    .map_err(insufficient_data("<unused_u32>"))?;
-                let theta = Self::deserialize_theta(
-                    cursor
-                        .read_u64_le()
-                        .map_err(insufficient_data("theta_long"))?,
-                )?;
-                let entries = Self::read_entries(&mut cursor, num_entries, theta)?;
-                if num_entries == 0 && theta == MAX_THETA {
-                    return Ok(Self::from_compact_state(CompactSketchState::empty(
-                        seed_hash,
-                    )));
-                }
-                Ok(Self::from_compact_state(CompactSketchState::non_empty(
-                    entries, theta, seed_hash, true,
-                )))
-            }
-            _ => Err(Error::invalid_preamble_longs(&[1, 2, 3], pre_longs)),
-        }
+        let entries = Self::read_entries(&mut cursor, num_entries, theta)?;
+        Ok(Self::from_compact_state(CompactSketchState::non_empty(
+            entries, theta, seed_hash, true,
+        )))
     }
 
     fn deserialize_v3(
