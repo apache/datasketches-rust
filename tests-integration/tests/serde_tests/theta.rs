@@ -166,6 +166,7 @@ fn empty_images_use_canonical_seed_hash() {
         "theta_n0_cpp.sk",
     ))
     .unwrap();
+    let default_seed_hash = ThetaSketchBuilder::default().build().unwrap().seed_hash();
 
     for builder in [
         ThetaSketchBuilder::default(),
@@ -181,10 +182,21 @@ fn empty_images_use_canonical_seed_hash() {
         let mut legacy = expected.clone();
         legacy[6..8].copy_from_slice(&sketch.seed_hash().to_le_bytes());
         for bytes in [&expected, &legacy] {
-            let restored = CompactThetaSketch::deserialize_with_seed(bytes, 456).unwrap();
-            assert!(restored.is_empty());
-            assert_eq!(restored.serialize(), expected);
-            assert_eq!(restored.serialize_compressed(), expected);
+            let restored = CompactThetaSketch::deserialize(bytes).unwrap();
+            assert_eq!(restored.seed_hash(), default_seed_hash);
+
+            for seed in [123, 456] {
+                let expected_seed_hash = ThetaSketchBuilder::default()
+                    .seed(seed)
+                    .build()
+                    .unwrap()
+                    .seed_hash();
+                let restored = CompactThetaSketch::deserialize_with_seed(bytes, seed).unwrap();
+                assert!(restored.is_empty());
+                assert_eq!(restored.seed_hash(), expected_seed_hash);
+                assert_eq!(restored.serialize(), expected);
+                assert_eq!(restored.serialize_compressed(), expected);
+            }
         }
     }
 }
@@ -295,6 +307,7 @@ fn test_v2_java_empty_layouts() {
         .unwrap()
         .compact(true);
     let expected = reference.serialize();
+    let default_seed_hash = ThetaSketchBuilder::default().build().unwrap().seed_hash();
 
     // Port of Java 8.0.0 ForwardCompatibilityTest's checkSerVer2_{1,2,3}PreLong[s]_Empty:
     // https://github.com/apache/datasketches-java/blob/8.0.0/src/test/java/org/apache/datasketches/theta/ForwardCompatibilityTest.java#L90-L137
@@ -312,12 +325,17 @@ fn test_v2_java_empty_layouts() {
         assert!(sketch.is_empty());
         assert!(!sketch.is_estimation_mode());
         assert!(sketch.is_ordered());
-        assert_eq!(sketch.seed_hash(), 0);
+        assert_eq!(sketch.seed_hash(), default_seed_hash);
 
         // Extend Java's default-seed cases with zero and mismatched seed hashes.
         for seed_hash in [0, reference.seed_hash()] {
             bytes[6..8].copy_from_slice(&seed_hash.to_le_bytes());
             for seed in [123, 456] {
+                let expected_seed_hash = ThetaSketchBuilder::default()
+                    .seed(seed)
+                    .build()
+                    .unwrap()
+                    .seed_hash();
                 let sketch = CompactThetaSketch::deserialize_with_seed(&bytes, seed).unwrap();
                 assert!(sketch.is_empty());
                 assert!(!sketch.is_estimation_mode());
@@ -326,14 +344,47 @@ fn test_v2_java_empty_layouts() {
                 assert_eq!(sketch.estimate(), 0.0);
                 assert_eq!(sketch.lower_bound(NumStdDev::One), 0.0);
                 assert_eq!(sketch.upper_bound(NumStdDev::One), 0.0);
-                assert_eq!(sketch.seed_hash(), 0);
+                assert_eq!(sketch.seed_hash(), expected_seed_hash);
                 assert_eq!(sketch.serialize(), expected);
 
                 let restored =
                     CompactThetaSketch::deserialize_with_seed(&sketch.serialize(), seed).unwrap();
                 assert!(restored.is_empty());
-                assert_eq!(restored.seed_hash(), 0);
+                assert_eq!(restored.seed_hash(), expected_seed_hash);
             }
+        }
+    }
+}
+
+#[test]
+fn empty_v1_and_v4_images_use_requested_seed() {
+    let mut v1 = vec![0; 24];
+    v1[..3].copy_from_slice(&[3, 1, 3]);
+    v1[16..24].copy_from_slice(&(i64::MAX as u64).to_le_bytes());
+
+    // The v4 header is followed by one byte encoding an entry count of zero.
+    let v4 = vec![1, 4, 3, 0, 1, 0x1e, 0, 0, 0];
+    let default = ThetaSketchBuilder::default().build().unwrap().compact(true);
+    let mut legacy_v4 = v4.clone();
+    legacy_v4[6..8].copy_from_slice(&default.seed_hash().to_le_bytes());
+
+    for bytes in [v1, v4, legacy_v4] {
+        let restored = CompactThetaSketch::deserialize(&bytes).unwrap();
+        assert_eq!(restored.seed_hash(), default.seed_hash());
+
+        for seed in [123, 456] {
+            let original = ThetaSketchBuilder::default()
+                .seed(seed)
+                .build()
+                .unwrap()
+                .compact(true);
+            let restored = CompactThetaSketch::deserialize_with_seed(&bytes, seed).unwrap();
+            assert!(restored.is_empty());
+            assert_eq!(restored.seed_hash(), original.seed_hash());
+            assert_eq!(restored.serialize(), original.serialize());
+            let round_trip =
+                CompactThetaSketch::deserialize_with_seed(&restored.serialize(), seed).unwrap();
+            assert_eq!(round_trip.seed_hash(), original.seed_hash());
         }
     }
 }

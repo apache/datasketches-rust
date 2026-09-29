@@ -495,9 +495,7 @@ impl CompactThetaSketch {
         self.compact_state.is_ordered()
     }
 
-    /// Returns the 16-bit fingerprint used to check seed compatibility.
-    ///
-    /// Empty sketches may return `0`, indicating no seed association.
+    /// Returns the 16-bit fingerprint of the seed associated with this sketch.
     pub fn seed_hash(&self) -> u16 {
         self.compact_state.seed_hash()
     }
@@ -699,9 +697,9 @@ impl CompactThetaSketch {
         Self::deserialize_with_seed(bytes, DEFAULT_UPDATE_SEED)
     }
 
-    /// Deserializes a compact Theta sketch using the expected `seed`.
+    /// Deserializes a compact Theta sketch using `seed`.
     ///
-    /// Empty sketches do not require a matching seed hash.
+    /// Empty sketches use the hash of `seed` regardless of the stored seed hash.
     ///
     /// # Errors
     ///
@@ -839,9 +837,10 @@ impl CompactThetaSketch {
             _ => return Err(Error::invalid_preamble_longs(&[1, 2, 3], pre_longs)),
         };
 
-        // Java's v2 conversion normalizes empty images to its seed-independent empty sketch.
         if num_entries == 0 && theta == MAX_THETA {
-            return Ok(Self::from_compact_state(CompactSketchState::empty(0)));
+            return Ok(Self::from_compact_state(CompactSketchState::empty(
+                expected_seed_hash,
+            )));
         }
 
         check_seed_hash(
@@ -872,7 +871,7 @@ impl CompactThetaSketch {
         let empty = (flags & FLAGS_IS_EMPTY) != 0;
         if empty {
             return Ok(Self::from_compact_state(CompactSketchState::empty(
-                seed_hash,
+                expected_seed_hash,
             )));
         }
 
@@ -1012,7 +1011,7 @@ impl CompactThetaSketch {
         let ordered = (flags & FLAGS_IS_ORDERED) != 0;
 
         let compact_state = if empty {
-            CompactSketchState::empty(seed_hash)
+            CompactSketchState::empty(expected_seed_hash)
         } else {
             CompactSketchState::non_empty(entries, theta, seed_hash, ordered)
         };

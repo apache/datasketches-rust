@@ -115,6 +115,10 @@ fn empty_images_use_canonical_seed_hash() {
         "tuple_int_n0_cpp.sk",
     ))
     .unwrap();
+    let default_seed_hash = TupleSketchBuilder::new(DefaultUpdatePolicy::<i32>::default())
+        .build()
+        .unwrap()
+        .seed_hash();
 
     for builder in [
         TupleSketchBuilder::new(DefaultUpdatePolicy::<i32>::default()),
@@ -128,10 +132,26 @@ fn empty_images_use_canonical_seed_hash() {
         // Older Rust images stored the configured seed hash even when empty.
         let mut legacy = expected.clone();
         legacy[6..8].copy_from_slice(&sketch.seed_hash().to_le_bytes());
-        for bytes in [&expected, &legacy] {
-            let restored = CompactTupleSketch::<i32>::deserialize_with_seed(bytes, 456).unwrap();
-            assert!(restored.is_empty());
-            assert_eq!(restored.serialize(), expected);
+        let mut legacy_format = legacy.clone();
+        legacy_format[1] = 1; // legacy serialization version
+        legacy_format[3] = 5; // legacy compact sketch type
+        for bytes in [&expected, &legacy, &legacy_format] {
+            let restored = CompactTupleSketch::<i32>::deserialize(bytes).unwrap();
+            assert_eq!(restored.seed_hash(), default_seed_hash);
+
+            for seed in [123, 456] {
+                let expected_seed_hash =
+                    TupleSketchBuilder::new(DefaultUpdatePolicy::<i32>::default())
+                        .seed(seed)
+                        .build()
+                        .unwrap()
+                        .seed_hash();
+                let restored =
+                    CompactTupleSketch::<i32>::deserialize_with_seed(bytes, seed).unwrap();
+                assert!(restored.is_empty());
+                assert_eq!(restored.seed_hash(), expected_seed_hash);
+                assert_eq!(restored.serialize(), expected);
+            }
         }
     }
 }

@@ -504,9 +504,7 @@ impl<S> CompactTupleSketch<S> {
         self.compact_state.is_ordered()
     }
 
-    /// Returns the 16-bit fingerprint used to check seed compatibility.
-    ///
-    /// Empty sketches may return `0`, indicating no seed association.
+    /// Returns the 16-bit fingerprint of the seed associated with this sketch.
     pub fn seed_hash(&self) -> u16 {
         self.compact_state.seed_hash()
     }
@@ -636,9 +634,9 @@ impl<S> CompactTupleSketch<S> {
         Self::deserialize_with_seed(bytes, DEFAULT_UPDATE_SEED)
     }
 
-    /// Deserializes a compact Tuple sketch using the expected `seed`.
+    /// Deserializes a compact Tuple sketch using `seed`.
     ///
-    /// Empty sketches do not require a matching seed hash.
+    /// Empty sketches use the hash of `seed` regardless of the stored seed hash.
     ///
     /// # Errors
     ///
@@ -688,7 +686,7 @@ impl<S> CompactTupleSketch<S> {
 
         if empty {
             return Ok(Self::from_compact_state(CompactSketchState::empty(
-                seed_hash,
+                expected_seed_hash,
             )));
         }
 
