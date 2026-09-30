@@ -30,11 +30,8 @@ use crate::error::Error;
 /// repeated quantile/rank queries.
 #[derive(Debug, Clone)]
 pub struct SortedView<T> {
-    /// Items in sorted order
     items: Vec<T>,
-    /// Cumulative weights for each item
     cumulative_weights: Vec<u64>,
-    /// Total weight of all items
     total_weight: u64,
 }
 
@@ -42,22 +39,8 @@ impl<T> SortedView<T>
 where
     T: Clone + Ord,
 {
-    /// Creates a new sorted view from weighted items.
-    ///
-    /// # Arguments
-    /// * `weighted_items` - Vector of (item, weight) pairs
-    ///
-    /// The items will be sorted and cumulative weights computed.
+    /// Creates a sorted view, combining the weights of equal items.
     pub(super) fn new(mut weighted_items: Vec<(T, u64)>) -> Self {
-        if weighted_items.is_empty() {
-            return Self {
-                items: vec![],
-                cumulative_weights: vec![],
-                total_weight: 0,
-            };
-        }
-
-        // Sort by item value - use unstable sort for better performance
         weighted_items.sort_unstable_by(|a, b| a.0.cmp(&b.0));
 
         let mut items: Vec<T> = Vec::with_capacity(weighted_items.len());
@@ -109,30 +92,20 @@ where
         if self.is_empty() {
             return Err(Error::invalid_argument("sketch is empty"));
         }
-        match criteria {
-            SearchCriteria::Inclusive => {
-                // Find the last position where items[i] <= item
-                // partition_point finds first index where predicate is false
-                let pos = self.items.partition_point(|x| x <= item);
-                if pos == 0 {
-                    Ok(0.0)
-                } else {
-                    Ok(self.cumulative_weights[pos - 1] as f64 / self.total_weight as f64)
-                }
-            }
-            SearchCriteria::Exclusive => {
-                // Find the last position where items[i] < item
-                let pos = self.items.partition_point(|x| x < item);
-                if pos == 0 {
-                    Ok(0.0)
-                } else {
-                    Ok(self.cumulative_weights[pos - 1] as f64 / self.total_weight as f64)
-                }
-            }
+        let pos = match criteria {
+            SearchCriteria::Inclusive => self.items.partition_point(|x| x <= item),
+            SearchCriteria::Exclusive => self.items.partition_point(|x| x < item),
+        };
+        if pos == 0 {
+            Ok(0.0)
+        } else {
+            Ok(self.cumulative_weights[pos - 1] as f64 / self.total_weight as f64)
         }
     }
 
     /// Returns the approximate quantile at the given normalized rank.
+    ///
+    /// Ranks `0.0` and `1.0` select the smallest and largest retained items, respectively.
     ///
     /// # Errors
     ///
@@ -148,43 +121,26 @@ where
             )));
         }
 
-        // Handle edge cases
-        if rank == 0.0 {
-            match criteria {
-                SearchCriteria::Inclusive => return Ok(self.items[0].clone()),
-                SearchCriteria::Exclusive => return Ok(self.items[0].clone()),
-            }
-        }
+        // Large stream weights can round down when converted to f64.
         if rank == 1.0 {
             return Ok(self.items[self.items.len() - 1].clone());
         }
 
-        // Convert rank to target cumulative weight
-        // uint64_t weight = static_cast<uint64_t>(inclusive ? std::ceil(rank * total_weight_) :
-        // rank * total_weight_);
         let target_weight = match criteria {
             SearchCriteria::Inclusive => (rank * self.total_weight as f64).ceil() as u64,
             SearchCriteria::Exclusive => (rank * self.total_weight as f64) as u64,
         };
 
         let index = match criteria {
-            SearchCriteria::Inclusive => {
-                // Equivalent to C++ lower_bound: first index where cumulative_weight >= target
-                self.cumulative_weights
-                    .partition_point(|&w| w < target_weight)
-            }
-            SearchCriteria::Exclusive => {
-                // Equivalent to C++ upper_bound: first index where cumulative_weight > target
-                self.cumulative_weights
-                    .partition_point(|&w| w <= target_weight)
-            }
+            SearchCriteria::Inclusive => self
+                .cumulative_weights
+                .partition_point(|&w| w < target_weight),
+            SearchCriteria::Exclusive => self
+                .cumulative_weights
+                .partition_point(|&w| w <= target_weight),
         };
 
-        if index >= self.items.len() {
-            return Ok(self.items[self.items.len() - 1].clone());
-        }
-
-        Ok(self.items[index].clone())
+        Ok(self.items[index.min(self.items.len() - 1)].clone())
     }
 
     /// Returns the probability mass function (PMF) over the given split points.
@@ -195,24 +151,10 @@ where
     ///
     /// Returns an error if the view is empty or the split points are not strictly increasing.
     pub fn pmf(&self, split_points: &[T], criteria: SearchCriteria) -> Result<Vec<f64>, Error> {
-        if self.is_empty() {
-            return Err(Error::invalid_argument("sketch is empty"));
+        let mut result = self.cdf(split_points, criteria)?;
+        for index in (1..result.len()).rev() {
+            result[index] -= result[index - 1];
         }
-
-        self.validate_split_points(split_points)?;
-
-        let mut result = Vec::with_capacity(split_points.len() + 1);
-        let mut prev_rank = 0.0;
-
-        for split_point in split_points {
-            let rank = self.rank(split_point, criteria)?;
-            result.push(rank - prev_rank);
-            prev_rank = rank;
-        }
-
-        // Add the final interval
-        result.push(1.0 - prev_rank);
-
         Ok(result)
     }
 
@@ -231,21 +173,17 @@ where
         self.validate_split_points(split_points)?;
 
         let mut result = Vec::with_capacity(split_points.len() + 1);
-        let mut cumulative = 0.0;
-
-        let pmf = self.pmf(split_points, criteria)?;
-        for mass in pmf {
-            cumulative += mass;
-            result.push(cumulative);
+        for split_point in split_points {
+            result.push(self.rank(split_point, criteria)?);
         }
-
+        result.push(1.0);
         Ok(result)
     }
 
     fn validate_split_points(&self, split_points: &[T]) -> Result<(), Error> {
         if split_points.windows(2).any(|pair| pair[0] >= pair[1]) {
             return Err(Error::invalid_argument(
-                "Split points must be unique and monotonically increasing".to_string(),
+                "Split points must be unique and monotonically increasing",
             ));
         }
         Ok(())

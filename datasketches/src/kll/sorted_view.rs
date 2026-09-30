@@ -87,6 +87,8 @@ impl<T: Clone + Ord> SortedView<T> {
 
     /// Returns the approximate quantile for `rank`.
     ///
+    /// Ranks `0.0` and `1.0` select the smallest and largest retained items, respectively.
+    ///
     /// # Errors
     ///
     /// Returns an error if the view is empty or `rank` is outside `[0.0, 1.0]`.
@@ -98,6 +100,11 @@ impl<T: Clone + Ord> SortedView<T> {
             return Err(Error::invalid_argument(format!(
                 "rank must be in [0.0, 1.0], got {rank}"
             )));
+        }
+
+        // Large stream weights can round down when converted to f64.
+        if rank == 1.0 {
+            return Ok(self.entries[self.entries.len() - 1].item.clone());
         }
 
         let weight = if criteria == SearchCriteria::Inclusive {

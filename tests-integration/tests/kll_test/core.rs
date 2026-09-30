@@ -90,6 +90,43 @@ fn retained_count_stays_consistent_through_compaction_and_roundtrip() {
 }
 
 #[test]
+fn estimated_size_tracks_owned_buffers() {
+    let mut sketch = KllSketch::<i64>::new(32).unwrap();
+    let empty_size = sketch.estimated_size();
+    assert!(empty_size > size_of_val(&sketch));
+
+    for item in 0..10_000 {
+        sketch.update(item);
+    }
+    let populated_size = sketch.estimated_size();
+    assert!(populated_size > empty_size);
+    assert!(populated_size >= size_of_val(&sketch) + sketch.num_retained() * size_of::<i64>());
+
+    sketch.reset();
+    assert!(sketch.estimated_size() >= empty_size);
+    assert!(sketch.estimated_size() < populated_size);
+}
+
+#[test]
+fn estimated_size_excludes_item_owned_allocations() {
+    let mut short = KllSketch::<String>::default();
+    short.update("a".to_string());
+    let mut long = KllSketch::<String>::default();
+    long.update("a".repeat(4096));
+    assert_eq!(short.estimated_size(), long.estimated_size());
+}
+
+#[test]
+fn estimated_size_supports_zero_sized_items() {
+    let mut sketch = KllSketch::<()>::new(8).unwrap();
+    for _ in 0..1_000 {
+        sketch.update(());
+    }
+    assert!(sketch.is_estimation_mode());
+    assert!(sketch.estimated_size() > size_of_val(&sketch));
+}
+
+#[test]
 fn weight_overflow_preserves_state() {
     let mut one = KllSketch::<i64>::new(8).unwrap();
     one.update(0);

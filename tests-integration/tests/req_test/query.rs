@@ -121,6 +121,49 @@ fn pmf_and_cdf_are_consistent() {
 }
 
 #[test]
+fn cdf_preserves_ranks_and_exact_endpoint() {
+    let mut sketch = ReqSketch::<i64>::default();
+    for item in 1..=70 {
+        sketch.update(item);
+    }
+    assert!(!sketch.is_estimation_mode());
+    let view = sketch.sorted_view();
+
+    for criteria in [SearchCriteria::Inclusive, SearchCriteria::Exclusive] {
+        let offset = i64::from(criteria == SearchCriteria::Exclusive);
+        let splits = [8, 17, 58].map(|item| item + offset);
+        let expected: Vec<_> = splits
+            .iter()
+            .map(|item| sketch.rank(item, criteria).unwrap())
+            .chain(std::iter::once(1.0))
+            .collect();
+
+        assert_eq!(sketch.cdf(&splits, criteria).unwrap(), expected);
+        assert_eq!(view.cdf(&splits, criteria).unwrap(), expected);
+        assert_eq!(view.cdf(&[], criteria).unwrap(), [1.0]);
+    }
+}
+
+#[test]
+fn quantile_endpoints_with_large_stream_weight() {
+    let mut sketch = ReqSketch::<i64>::default();
+    sketch.update(0);
+    for _ in 0..53 {
+        sketch.merge(&sketch.clone()).unwrap();
+    }
+    sketch.update(1);
+    assert_eq!(sketch.n(), (1 << 53) + 1);
+    let view = sketch.sorted_view();
+
+    for criteria in [SearchCriteria::Inclusive, SearchCriteria::Exclusive] {
+        assert_eq!(sketch.quantile(0.0, criteria).unwrap(), 0);
+        assert_eq!(sketch.quantile(1.0, criteria).unwrap(), 1);
+        assert_eq!(view.quantile(0.0, criteria).unwrap(), 0);
+        assert_eq!(view.quantile(1.0, criteria).unwrap(), 1);
+    }
+}
+
+#[test]
 fn rank_is_monotonic_and_bounded() {
     let mut sketch: ReqSketch<ReqF64> = ReqSketch::default();
     for i in 0..10_000 {

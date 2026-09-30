@@ -13,6 +13,7 @@ All significant changes to this project will be documented in this file.
 ### New features
 
 * `KllSketch` is now available behind the `kll` feature, with rank, quantile, PMF, and CDF queries, merging, serialization, custom ordered item types, and a `KllFloat` adapter for non-NaN floating-point values.
+* `KllSketch` and `ReqSketch` now provide `estimated_size()` for their inline state and allocated buffer capacity, excluding heap allocations owned by generic items and allocator overhead.
 
 ### Improvements
 
@@ -29,6 +30,7 @@ All significant changes to this project will be documented in this file.
 
 ### Bug fixes
 
+* KLL quantile queries at rank `1.0` now return the largest retained item even when the stream weight exceeds `2^53`.
 * Empty compact Theta and Tuple sketches now serialize with a zero seed hash, matching the canonical cross-language encoding. Deserialization associates empty sketches with the supplied seed, including legacy Theta v2 images with zero or mismatched seed hashes.
 * `CountMinSketch` updates now panic and merges return `InvalidArgument` if the total absolute weight would exceed the counter type's maximum. Both leave the sketch unchanged, including in release builds.
 * `CountMinSketch::upper_bound` now clamps to the counter type's maximum instead of overflowing.
@@ -36,6 +38,7 @@ All significant changes to this project will be documented in this file.
 * `FrequentItemsSketch` updates and merges now panic without changing the sketch if the total stream weight would overflow, including in release builds.
 * `FrequentItemsSketch` deserialization now returns `InvalidData` if a non-empty image declares zero stream weight or the item weights sum to more than the declared stream weight.
 * `ReqSketch` updates now panic and merges return `InvalidArgument` if the stream weight would exceed `u64::MAX`. Both leave the sketch unchanged, including in release builds.
+* `ReqSketch::cdf` and its sorted view now preserve the rank at each split point and end at exactly `1.0`, avoiding extra rounding from accumulating PMF values.
 * `TDigestMut` updates and merges now panic without changing the digest if the total weight would exceed `u64::MAX`, including in release builds.
 * `TDigestMut::merge` now preserves the true minimum and maximum from both inputs, including compressed digests.
 * `TDigest` and `TDigestMut` deserialization now returns `InvalidData` for invalid flags or extrema, out-of-range values, unsorted centroids, or non-empty images with no stored values.

@@ -117,6 +117,20 @@ impl<T: Clone + Ord> KllSketch<T> {
         self.num_retained
     }
 
+    /// Returns the estimated size of the sketch in bytes.
+    ///
+    /// Includes the sketch itself and the allocated capacity of its level buffers. Excludes
+    /// allocator overhead and heap allocations owned by the items, including the extrema.
+    pub fn estimated_size(&self) -> usize {
+        size_of::<Self>()
+            + self.levels.capacity() * size_of::<Vec<T>>()
+            + self
+                .levels
+                .iter()
+                .map(|level| level.capacity() * size_of::<T>())
+                .sum::<usize>()
+    }
+
     /// Returns true if the sketch is in estimation mode.
     pub fn is_estimation_mode(&self) -> bool {
         self.levels.len() > 1
