@@ -39,7 +39,7 @@ fn assert_quantiles_are_monotonic(tdigest: &mut TDigestMut) {
 
     for step in 0..=RANK_STEPS {
         let rank = step as f64 / RANK_STEPS as f64;
-        let quantile = tdigest.quantile(rank).unwrap();
+        let quantile = tdigest.quantile(rank).unwrap().unwrap();
         assert!(
             (previous..=max).contains(&quantile),
             "quantile {quantile} at rank {rank} is outside [{previous}, {max}]"

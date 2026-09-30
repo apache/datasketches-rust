@@ -68,7 +68,11 @@ fn custom_item_order_controls_queries_and_survives_roundtrip() {
     assert_eq!(sketch.min_item().map(|item| item.0.as_str()), Some("1"));
     assert_eq!(sketch.max_item().map(|item| item.0.as_str()), Some("10"));
     assert_eq!(
-        sketch.quantile(0.5, SearchCriteria::Inclusive).unwrap().0,
+        sketch
+            .quantile(0.5, SearchCriteria::Inclusive)
+            .unwrap()
+            .unwrap()
+            .0,
         "2"
     );
 
@@ -78,7 +82,11 @@ fn custom_item_order_controls_queries_and_survives_roundtrip() {
     assert_eq!(decoded.min_item().map(|item| item.0.as_str()), Some("1"));
     assert_eq!(decoded.max_item().map(|item| item.0.as_str()), Some("10"));
     assert_eq!(
-        decoded.quantile(0.5, SearchCriteria::Inclusive).unwrap().0,
+        decoded
+            .quantile(0.5, SearchCriteria::Inclusive)
+            .unwrap()
+            .unwrap()
+            .0,
         "2"
     );
 }

@@ -48,7 +48,8 @@ fn prop_quantile_rank_consistency() {
         for rank in [0.1, 0.25, 0.5, 0.75, 0.9] {
             let quantile = sketch
                 .quantile(rank, SearchCriteria::Inclusive)
-                .expect("quantile should succeed");
+                .expect("quantile should succeed")
+                .expect("the sketch is non-empty");
             let recovered = sketch
                 .rank(&quantile, SearchCriteria::Inclusive)
                 .expect("rank should succeed");
@@ -96,7 +97,8 @@ fn prop_sketch_bounds() {
         for rank in [0.0, 0.25, 0.5, 0.75, 1.0] {
             let quantile = sketch
                 .quantile(rank, SearchCriteria::Inclusive)
-                .expect("quantile should succeed");
+                .expect("quantile should succeed")
+                .expect("the sketch is non-empty");
             assert!(
                 quantile >= true_min && quantile <= true_max,
                 "quantile {} out of bounds [{}, {}]",

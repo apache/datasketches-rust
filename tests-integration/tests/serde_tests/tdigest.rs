@@ -64,13 +64,17 @@ fn test_sketch_file(path: PathBuf, n: u64, with_buffer: bool, is_f32: bool) {
         assert_eq!(td.total_weight(), n, "filepath: {path}");
         assert_eq!(td.min_value(), Some(1.0), "filepath: {path}");
         assert_eq!(td.max_value(), Some(n as f64), "filepath: {path}");
-        assert_eq!(td.rank(0.0), Some(0.0), "filepath: {path}");
-        assert_eq!(td.rank((n + 1) as f64), Some(1.0), "filepath: {path}");
+        assert_eq!(td.rank(0.0).unwrap(), Some(0.0), "filepath: {path}");
+        assert_eq!(
+            td.rank((n + 1) as f64).unwrap(),
+            Some(1.0),
+            "filepath: {path}"
+        );
         if n == 1 {
-            assert_eq!(td.rank(n as f64), Some(0.5), "filepath: {path}");
+            assert_eq!(td.rank(n as f64).unwrap(), Some(0.5), "filepath: {path}");
         } else {
             assert_that!(
-                td.rank(n as f64 / 2.).unwrap(),
+                td.rank(n as f64 / 2.).unwrap().unwrap(),
                 near(0.5, 0.05),
                 "filepath: {path}",
             );
@@ -126,23 +130,31 @@ fn test_deserialize_from_reference_implementation() {
         assert_eq!(td.total_weight(), n, "filepath: {path}");
         assert_eq!(td.min_value(), Some(0.0), "filepath: {path}");
         assert_eq!(td.max_value(), Some((n - 1) as f64), "filepath: {path}");
-        assert_that!(td.rank(0.0).unwrap(), near(0.0, 0.0001), "filepath: {path}");
         assert_that!(
-            td.rank(n as f64 / 4.).unwrap(),
+            td.rank(0.0).unwrap().unwrap(),
+            near(0.0, 0.0001),
+            "filepath: {path}"
+        );
+        assert_that!(
+            td.rank(n as f64 / 4.).unwrap().unwrap(),
             near(0.25, 0.0001),
             "filepath: {path}"
         );
         assert_that!(
-            td.rank(n as f64 / 2.).unwrap(),
+            td.rank(n as f64 / 2.).unwrap().unwrap(),
             near(0.5, 0.0001),
             "filepath: {path}"
         );
         assert_that!(
-            td.rank((n * 3) as f64 / 4.).unwrap(),
+            td.rank((n * 3) as f64 / 4.).unwrap().unwrap(),
             near(0.75, 0.0001),
             "filepath: {path}"
         );
-        assert_that!(td.rank(n as f64).unwrap(), eq(1.0), "filepath: {path}");
+        assert_that!(
+            td.rank(n as f64).unwrap().unwrap(),
+            eq(1.0),
+            "filepath: {path}"
+        );
     }
 }
 
@@ -223,8 +235,14 @@ fn test_many_values() {
     assert_eq!(td.is_empty(), deserialized_td.is_empty());
     assert_eq!(td.min_value(), deserialized_td.min_value());
     assert_eq!(td.max_value(), deserialized_td.max_value());
-    assert_eq!(td.rank(500.0), deserialized_td.rank(500.0));
-    assert_eq!(td.quantile(0.5), deserialized_td.quantile(0.5));
+    assert_eq!(
+        td.rank(500.0).unwrap(),
+        deserialized_td.rank(500.0).unwrap()
+    );
+    assert_eq!(
+        td.quantile(0.5).unwrap(),
+        deserialized_td.quantile(0.5).unwrap()
+    );
 }
 
 #[test]
@@ -239,7 +257,10 @@ fn test_frozen_roundtrip() {
     assert_eq!(actual.total_weight(), expected.total_weight());
     assert_eq!(actual.min_value(), expected.min_value());
     assert_eq!(actual.max_value(), expected.max_value());
-    assert_eq!(actual.quantile(0.5), expected.quantile(0.5));
+    assert_eq!(
+        actual.quantile(0.5).unwrap(),
+        expected.quantile(0.5).unwrap()
+    );
 }
 
 #[test]
@@ -251,7 +272,7 @@ fn test_serialized_bytes_stable_for_full_and_merged_digests() {
 
     let mut left = patterned_digest(10, 201, 2);
     let mut right = patterned_digest(10, 199, 3);
-    right.rank(0.0);
+    right.rank(0.0).unwrap();
     left.merge(&right);
     let bytes = left.serialize();
     assert_eq!(bytes.len(), 272);
@@ -430,6 +451,6 @@ fn test_large_weights_produce_finite_extreme_quantile() {
     bytes[56..64].copy_from_slice(&(1_u64 << 52).to_le_bytes());
 
     let mut tdigest = TDigestMut::deserialize(&bytes).unwrap();
-    let quantile = tdigest.quantile(0.25).unwrap();
+    let quantile = tdigest.quantile(0.25).unwrap().unwrap();
     assert_that!(quantile, all!(is_finite(), ge(lower), le(f64::MAX)));
 }

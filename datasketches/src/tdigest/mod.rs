@@ -56,9 +56,9 @@
 //! let mut sketch = TDigestMut::new(100).unwrap();
 //! sketch.update(1.0);
 //! sketch.update(2.0);
-//! let median = sketch.quantile(0.5).unwrap();
+//! let median = sketch.quantile(0.5).unwrap().unwrap();
 //! let frozen = sketch.freeze();
-//! assert!(frozen.rank(2.0).is_some());
+//! assert!(frozen.rank(2.0).unwrap().is_some());
 //! ```
 
 mod serialization;
