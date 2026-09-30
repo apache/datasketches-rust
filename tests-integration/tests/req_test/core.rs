@@ -259,48 +259,6 @@ fn new_validates_k() {
 }
 
 #[test]
-fn estimated_size_tracks_owned_buffers() {
-    for accuracy in [RankAccuracy::HighRank, RankAccuracy::LowRank] {
-        let mut sketch = ReqSketch::<i64>::new(12, accuracy).unwrap();
-        let empty_size = sketch.estimated_size();
-        assert!(empty_size > size_of_val(&sketch));
-
-        for item in 0..10_000 {
-            sketch.update(item);
-        }
-        let populated_size = sketch.estimated_size();
-        assert!(populated_size > empty_size);
-        assert!(
-            populated_size
-                >= size_of_val(&sketch) + sketch.num_retained() as usize * size_of::<i64>()
-        );
-
-        sketch.reset();
-        assert!(sketch.estimated_size() >= empty_size);
-        assert!(sketch.estimated_size() < populated_size);
-    }
-}
-
-#[test]
-fn estimated_size_excludes_item_owned_allocations() {
-    let mut short = ReqSketch::<String>::default();
-    short.update("a".to_string());
-    let mut long = ReqSketch::<String>::default();
-    long.update("a".repeat(4096));
-    assert_eq!(short.estimated_size(), long.estimated_size());
-}
-
-#[test]
-fn estimated_size_supports_zero_sized_items() {
-    let mut sketch = ReqSketch::<()>::default();
-    for _ in 0..1_000 {
-        sketch.update(());
-    }
-    assert!(sketch.is_estimation_mode());
-    assert!(sketch.estimated_size() > size_of_val(&sketch));
-}
-
-#[test]
 fn weight_overflow_preserves_state() {
     let mut one = ReqSketch::<i64>::default();
     one.update(0);

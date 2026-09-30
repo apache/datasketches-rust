@@ -122,22 +122,6 @@ where
         self.num_retained
     }
 
-    /// Returns the estimated size of the sketch in bytes.
-    ///
-    /// Includes the sketch itself and the allocated capacity of its compactor, scratch, and
-    /// promotion buffers. Excludes allocator overhead and heap allocations owned by the items,
-    /// including the extrema.
-    pub fn estimated_size(&self) -> usize {
-        size_of::<Self>()
-            + self.compactors.capacity() * size_of::<Compactor<T>>()
-            + self
-                .compactors
-                .iter()
-                .map(Compactor::allocated_size)
-                .sum::<usize>()
-            + self.promotion_buf.capacity() * size_of::<T>()
-    }
-
     /// Returns the smallest item ever observed, or `None` if empty.
     pub fn min_item(&self) -> Option<&T> {
         self.min_item.as_ref()

@@ -13,7 +13,6 @@ All significant changes to this project will be documented in this file.
 ### New features
 
 * `KllSketch` is now available behind the `kll` feature, with rank, quantile, PMF, and CDF queries, merging, serialization, custom ordered item types, and a `KllFloat` adapter for non-NaN floating-point values.
-* `KllSketch` and `ReqSketch` now provide `estimated_size()` for their inline state and allocated buffer capacity, excluding heap allocations owned by generic items and allocator overhead.
 
 ### Improvements
 

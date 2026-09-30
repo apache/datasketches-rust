@@ -85,10 +85,6 @@ where
         2 * self.section_size * self.num_sections as u32
     }
 
-    pub fn allocated_size(&self) -> usize {
-        self.items.capacity() * size_of::<T>() + self.scratch_buffer.capacity() * size_of::<T>()
-    }
-
     /// Returns whether the items are currently sorted.
     pub fn is_sorted(&self) -> bool {
         self.is_sorted
