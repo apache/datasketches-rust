@@ -20,6 +20,7 @@ All significant changes to this project will be documented in this file.
 * `KllSketch::quantile` and `ReqSketch::quantile` are faster at ranks `0.0` and `1.0`, with query work independent of the number of retained samples.
 * `BloomFilter::insert` is faster for integer and raw-byte inputs. `BloomFilter::contains_and_insert` is also faster when checking already-present integer values.
 * `CountMinSketch` updates are faster for integer and raw-byte inputs.
+* `CountMinSketch::decay(1.0)` now takes constant time.
 * `CpcSketch` updates are faster for integer and raw-byte inputs.
 * `FrequentItemsSketch` updates are faster for integer and raw-byte keys.
 * `HllSketch` updates are faster for integer and raw-byte inputs.
@@ -30,6 +31,7 @@ All significant changes to this project will be documented in this file.
 
 ### Bug fixes
 
+* `CountMinSketch::decay` and `upper_bound` now scale integer weights without intermediate floating-point rounding, including signed error bounds. Products use the exact binary value of the floating-point factor and truncate toward zero; for example, `decay(0.99)` changes a counter of `100` to `98` rather than `99`.
 * `KllSketch` and `ReqSketch` quantile queries, including their sorted views, now return the exact stream minimum and maximum at ranks `0.0` and `1.0`, even after compaction or when the stream weight exceeds `2^53`.
 * Empty compact Theta and Tuple sketches now serialize with a zero seed hash, matching the canonical cross-language encoding. Deserialization associates empty sketches with the supplied seed, including legacy Theta v2 images with zero or mismatched seed hashes.
 * `CountMinSketch` updates now panic and merges return `InvalidArgument` if the total absolute weight would exceed the counter type's maximum. Both leave the sketch unchanged, including in release builds.

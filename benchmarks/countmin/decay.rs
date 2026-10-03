@@ -15,5 +15,18 @@
 // specific language governing permissions and limitations
 // under the License.
 
-mod decay;
-mod update;
+use datasketches::countmin::CountMinSketch;
+use divan::Bencher;
+use divan::black_box;
+
+#[divan::bench(args = [0.5, 0.99, 1.0])]
+fn u64(bencher: Bencher, factor: f64) {
+    let mut sketch = CountMinSketch::<u64>::new(4, 16_384).unwrap();
+    for item in 0..128_u64 {
+        sketch.update_with_weight(item, (1 << 53) + item);
+    }
+
+    bencher
+        .with_inputs(|| sketch.clone())
+        .bench_local_refs(|sketch| black_box(sketch).decay(black_box(factor)));
+}

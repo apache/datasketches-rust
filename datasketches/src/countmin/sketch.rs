@@ -132,7 +132,7 @@ impl<T: CountMinValue> CountMinSketch<T> {
         std::f64::consts::E / self.num_buckets as f64
     }
 
-    /// Returns `true` if the sketch has not seen any updates.
+    /// Returns `true` if the total weight is zero.
     pub fn is_empty(&self) -> bool {
         self.total_weight == T::ZERO
     }
@@ -260,11 +260,9 @@ impl<T: CountMinValue> CountMinSketch<T> {
     }
 
     /// Returns the upper bound on the true frequency of the given item.
-    ///
-    /// Clamps the bound to `T::MAX` if adding the error would overflow.
     pub fn upper_bound<I: Hash>(&self, item: I) -> T {
         let estimate = self.estimate(item);
-        let error = self.total_weight.scale(self.relative_error());
+        let error = self.total_weight.scale_nonnegative(self.relative_error());
         estimate.checked_add(error).unwrap_or(T::MAX)
     }
 
@@ -514,9 +512,7 @@ impl<T: CountMinValue> CountMinSketch<T> {
 }
 
 impl<T: UnsignedCountMinValue> CountMinSketch<T> {
-    /// Divides every counter by two, truncating toward zero.
-    ///
-    /// Useful for exponential decay where counts represent recent activity.
+    /// Halves all counters and the total weight, rounding down.
     ///
     /// # Examples
     ///
@@ -535,10 +531,12 @@ impl<T: UnsignedCountMinValue> CountMinSketch<T> {
         self.total_weight = self.total_weight.halve();
     }
 
-    /// Multiplies every counter by `decay` and truncates back into `T`.
+    /// Scales all counters and the total weight by `decay`, rounding down.
     ///
-    /// Values are truncated toward zero after multiplication; choose `decay` in `(0, 1]`.
-    /// The total weight is scaled by the same factor to keep bounds consistent.
+    /// Rounding uses the actual `f64` value of the factor, so `decay(0.99)` changes a
+    /// count of `100` to `98`.
+    ///
+    /// A factor of `1.0` leaves the sketch unchanged; `0.5` is equivalent to [`Self::halve`].
     ///
     /// # Panics
     ///
@@ -556,10 +554,17 @@ impl<T: UnsignedCountMinValue> CountMinSketch<T> {
     /// ```
     pub fn decay(&mut self, decay: f64) {
         assert!(decay > 0.0 && decay <= 1.0, "decay must be within (0, 1]");
-        for c in &mut self.counts {
-            *c = c.scale(decay)
+        if decay == 1.0 {
+            return;
         }
-        self.total_weight = self.total_weight.scale(decay);
+        if decay == 0.5 {
+            self.halve();
+            return;
+        }
+        for c in &mut self.counts {
+            *c = c.scale_nonnegative(decay)
+        }
+        self.total_weight = self.total_weight.scale_nonnegative(decay);
     }
 }
 
