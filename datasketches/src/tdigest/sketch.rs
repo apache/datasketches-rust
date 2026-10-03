@@ -514,7 +514,10 @@ impl TDigestMut {
     /// assert!((1.0..=3.0).contains(&median));
     /// ```
     pub fn quantile(&mut self, rank: f64) -> Option<f64> {
-        assert!((0.0..=1.0).contains(&rank), "rank must be in [0.0, 1.0]");
+        assert!(
+            (0.0..=1.0).contains(&rank),
+            "rank must be in [0.0, 1.0]; got {rank}"
+        );
 
         if self.is_empty() {
             return None;
@@ -1500,7 +1503,7 @@ impl TDigestView<'_> {
 
         let mut quantiles = vec![0.; ranks.len()];
         let mut cursor = QuantileCursor::new(self);
-        if ranks.windows(2).all(|pair| pair[0] <= pair[1]) {
+        if ranks.is_sorted() {
             for (index, &rank) in ranks.iter().enumerate() {
                 quantiles[index] = cursor.quantile(rank);
             }
@@ -1510,7 +1513,14 @@ impl TDigestView<'_> {
         // The cursor only moves forward. Sort indices so queries become monotonic without changing
         // the caller's output order.
         let mut rank_order = (0..ranks.len()).collect::<Vec<_>>();
-        rank_order.sort_by(|&left, &right| ranks[left].total_cmp(&ranks[right]));
+        rank_order.sort_by(|left, right| {
+            // ranks are guaranteed to be in [0.0, 1.0], and only is_less is relevant for sorting
+            if ranks[*left] < ranks[*right] {
+                Ordering::Less
+            } else {
+                Ordering::Greater
+            }
+        });
         for index in rank_order {
             quantiles[index] = cursor.quantile(ranks[index]);
         }
@@ -1633,7 +1643,7 @@ fn check_split_points(split_points: &[f64]) {
 fn check_ranks(ranks: &[f64]) {
     assert!(
         ranks.iter().all(|rank| (0.0..=1.0).contains(rank)),
-        "ranks must be in [0.0, 1.0]"
+        "ranks must be in [0.0, 1.0]; got {ranks:?}"
     );
 }
 
