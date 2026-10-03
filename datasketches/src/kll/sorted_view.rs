@@ -28,6 +28,8 @@ use crate::error::Error;
 pub struct SortedView<T: Clone> {
     entries: Vec<Entry<T>>,
     total_weight: u64,
+    min_item: Option<T>,
+    max_item: Option<T>,
 }
 
 #[derive(Debug, Clone)]
@@ -37,7 +39,7 @@ struct Entry<T> {
 }
 
 impl<T: Clone + Ord> SortedView<T> {
-    fn from_sorted(mut entries: Vec<Entry<T>>) -> Self {
+    fn from_sorted(mut entries: Vec<Entry<T>>, min_item: Option<T>, max_item: Option<T>) -> Self {
         let mut total_weight = 0u64;
         for entry in &mut entries {
             total_weight += entry.cumulative_weight;
@@ -46,6 +48,8 @@ impl<T: Clone + Ord> SortedView<T> {
         Self {
             entries,
             total_weight,
+            min_item,
+            max_item,
         }
     }
 
@@ -87,7 +91,7 @@ impl<T: Clone + Ord> SortedView<T> {
 
     /// Returns the approximate quantile for `rank`.
     ///
-    /// Ranks `0.0` and `1.0` select the smallest and largest retained items, respectively.
+    /// Ranks `0.0` and `1.0` return the exact minimum and maximum items of the stream.
     ///
     /// # Errors
     ///
@@ -102,9 +106,12 @@ impl<T: Clone + Ord> SortedView<T> {
             )));
         }
 
-        // Large stream weights can round down when converted to f64.
+        // Compaction may discard extrema, and large weights can lose precision in f64.
+        if rank == 0.0 {
+            return Ok(self.min_item.as_ref().unwrap().clone());
+        }
         if rank == 1.0 {
-            return Ok(self.entries[self.entries.len() - 1].item.clone());
+            return Ok(self.max_item.as_ref().unwrap().clone());
         }
 
         let weight = if criteria == SearchCriteria::Inclusive {
@@ -122,6 +129,8 @@ impl<T: Clone + Ord> SortedView<T> {
     }
 
     /// Returns approximate quantiles for all `ranks`.
+    ///
+    /// Ranks `0.0` and `1.0` return the exact minimum and maximum items of the stream.
     ///
     /// # Errors
     ///
@@ -171,6 +180,8 @@ impl<T: Clone + Ord> SortedView<T> {
 pub fn build_sorted_view<T: Clone + Ord>(
     levels: &[Vec<T>],
     is_level_zero_sorted: bool,
+    min_item: Option<T>,
+    max_item: Option<T>,
 ) -> SortedView<T> {
     let mut runs = Vec::with_capacity(levels.len());
     for (level_index, level) in levels.iter().enumerate() {
@@ -204,7 +215,7 @@ pub fn build_sorted_view<T: Clone + Ord>(
         runs = merged_runs;
     }
 
-    SortedView::from_sorted(runs.pop().unwrap_or_default())
+    SortedView::from_sorted(runs.pop().unwrap_or_default(), min_item, max_item)
 }
 
 fn merge_sorted_entries<T: Ord>(left: Vec<Entry<T>>, right: Vec<Entry<T>>) -> Vec<Entry<T>> {

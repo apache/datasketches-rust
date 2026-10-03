@@ -198,6 +198,8 @@ where
 
     /// Returns the approximate quantile at the given normalized rank.
     ///
+    /// Ranks `0.0` and `1.0` return the exact minimum and maximum items of the stream.
+    ///
     /// Builds a transient [`SortedView`] internally. For repeated quantile
     /// queries, take one snapshot with [`Self::sorted_view`] and query it.
     ///
@@ -217,6 +219,8 @@ where
     }
 
     /// Returns approximate quantiles for the given normalized ranks.
+    ///
+    /// Ranks `0.0` and `1.0` return the exact minimum and maximum items of the stream.
     ///
     /// The sorted view is built once and shared across all ranks.
     ///
@@ -282,7 +286,7 @@ where
                 weighted_items.push((item.clone(), weight));
             }
         }
-        SortedView::new(weighted_items)
+        SortedView::new(weighted_items, self.min_item.clone(), self.max_item.clone())
     }
 
     /// Merges another sketch into this one.

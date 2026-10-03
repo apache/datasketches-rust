@@ -19,6 +19,7 @@
 
 use datasketches::common::SearchCriteria;
 use datasketches::error::Error;
+use datasketches::req::RankAccuracy;
 use datasketches::req::ReqSketch;
 use googletest::assert_that;
 use googletest::prelude::all;
@@ -141,6 +142,39 @@ fn cdf_preserves_ranks_and_exact_endpoint() {
         assert_eq!(sketch.cdf(&splits, criteria).unwrap(), expected);
         assert_eq!(view.cdf(&splits, criteria).unwrap(), expected);
         assert_eq!(view.cdf(&[], criteria).unwrap(), [1.0]);
+    }
+}
+
+#[test]
+fn quantile_endpoints_preserve_extrema_after_compaction() {
+    for accuracy in [RankAccuracy::HighRank, RankAccuracy::LowRank] {
+        let mut sketch = ReqSketch::<i64>::new(4, accuracy).unwrap();
+        // Introduce new extrema across consecutive compactions, whose sampling
+        // parities alternate, so both choices must preserve the exact endpoints.
+        for item in 1..=64 {
+            sketch.update(-item);
+            sketch.update(item);
+            let view = sketch.sorted_view();
+
+            for criteria in [SearchCriteria::Inclusive, SearchCriteria::Exclusive] {
+                assert_eq!(sketch.quantile(0.0, criteria).unwrap(), -item);
+                assert_eq!(sketch.quantile(1.0, criteria).unwrap(), item);
+                assert_eq!(
+                    sketch.quantiles(&[0.0, 1.0], criteria).unwrap(),
+                    [-item, item]
+                );
+                assert_eq!(view.quantile(0.0, criteria).unwrap(), -item);
+                assert_eq!(view.quantile(1.0, criteria).unwrap(), item);
+            }
+        }
+        assert!(sketch.is_estimation_mode());
+
+        let view = sketch.sorted_view();
+        sketch.reset();
+        for criteria in [SearchCriteria::Inclusive, SearchCriteria::Exclusive] {
+            assert_eq!(view.quantile(0.0, criteria).unwrap(), -64);
+            assert_eq!(view.quantile(1.0, criteria).unwrap(), 64);
+        }
     }
 }
 

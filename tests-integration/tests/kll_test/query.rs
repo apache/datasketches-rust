@@ -23,6 +23,32 @@ const DEFAULT_K: u16 = 200;
 const NUMERIC_NOISE_TOLERANCE: f64 = 1e-6;
 
 #[test]
+fn quantile_endpoints_preserve_extrema_after_compaction() {
+    let mut sketch = KllSketch::<i64>::new(8).unwrap();
+    for item in 0..8 {
+        sketch.update(item);
+    }
+    // Compact an even run with distinct extrema before inserting an interior item.
+    // Either sampling parity discards one of the two endpoints.
+    sketch.update(3);
+    assert!(sketch.is_estimation_mode());
+    let view = sketch.sorted_view();
+
+    for criteria in [SearchCriteria::Inclusive, SearchCriteria::Exclusive] {
+        assert_eq!(sketch.quantile(0.0, criteria).unwrap(), 0);
+        assert_eq!(sketch.quantile(1.0, criteria).unwrap(), 7);
+        assert_eq!(sketch.quantiles(&[0.0, 1.0], criteria).unwrap(), [0, 7]);
+    }
+
+    sketch.reset();
+    for criteria in [SearchCriteria::Inclusive, SearchCriteria::Exclusive] {
+        assert_eq!(view.quantile(0.0, criteria).unwrap(), 0);
+        assert_eq!(view.quantile(1.0, criteria).unwrap(), 7);
+        assert_eq!(view.quantiles(&[0.0, 1.0], criteria).unwrap(), [0, 7]);
+    }
+}
+
+#[test]
 fn quantile_endpoints_with_large_stream_weight() {
     let mut sketch = KllSketch::<i64>::new(8).unwrap();
     sketch.update(0);

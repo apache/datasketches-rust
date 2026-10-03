@@ -29,7 +29,7 @@ All significant changes to this project will be documented in this file.
 
 ### Bug fixes
 
-* KLL quantile queries at rank `1.0` now return the largest retained item even when the stream weight exceeds `2^53`.
+* `KllSketch` and `ReqSketch` quantile queries, including their sorted views, now return the exact stream minimum and maximum at ranks `0.0` and `1.0`, even after compaction or when the stream weight exceeds `2^53`.
 * Empty compact Theta and Tuple sketches now serialize with a zero seed hash, matching the canonical cross-language encoding. Deserialization associates empty sketches with the supplied seed, including legacy Theta v2 images with zero or mismatched seed hashes.
 * `CountMinSketch` updates now panic and merges return `InvalidArgument` if the total absolute weight would exceed the counter type's maximum. Both leave the sketch unchanged, including in release builds.
 * `CountMinSketch::upper_bound` now clamps to the counter type's maximum instead of overflowing.

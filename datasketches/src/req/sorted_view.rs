@@ -33,6 +33,8 @@ pub struct SortedView<T> {
     items: Vec<T>,
     cumulative_weights: Vec<u64>,
     total_weight: u64,
+    min_item: Option<T>,
+    max_item: Option<T>,
 }
 
 impl<T> SortedView<T>
@@ -40,7 +42,11 @@ where
     T: Clone + Ord,
 {
     /// Creates a sorted view, combining the weights of equal items.
-    pub(super) fn new(mut weighted_items: Vec<(T, u64)>) -> Self {
+    pub(super) fn new(
+        mut weighted_items: Vec<(T, u64)>,
+        min_item: Option<T>,
+        max_item: Option<T>,
+    ) -> Self {
         weighted_items.sort_unstable_by(|a, b| a.0.cmp(&b.0));
 
         let mut items: Vec<T> = Vec::with_capacity(weighted_items.len());
@@ -65,6 +71,8 @@ where
             items,
             cumulative_weights,
             total_weight: cumulative_weight,
+            min_item,
+            max_item,
         }
     }
 
@@ -73,7 +81,7 @@ where
         self.items.is_empty()
     }
 
-    /// Returns the number of distinct items in the sorted view.
+    /// Returns the number of distinct retained items in the view.
     pub fn len(&self) -> usize {
         self.items.len()
     }
@@ -105,7 +113,7 @@ where
 
     /// Returns the approximate quantile at the given normalized rank.
     ///
-    /// Ranks `0.0` and `1.0` select the smallest and largest retained items, respectively.
+    /// Ranks `0.0` and `1.0` return the exact minimum and maximum items of the stream.
     ///
     /// # Errors
     ///
@@ -121,9 +129,12 @@ where
             )));
         }
 
-        // Large stream weights can round down when converted to f64.
+        // Compaction may discard extrema, and large weights can lose precision in f64.
+        if rank == 0.0 {
+            return Ok(self.min_item.as_ref().unwrap().clone());
+        }
         if rank == 1.0 {
-            return Ok(self.items[self.items.len() - 1].clone());
+            return Ok(self.max_item.as_ref().unwrap().clone());
         }
 
         let target_weight = match criteria {
@@ -204,7 +215,7 @@ mod tests {
 
     fn create_test_view() -> SortedView<i32> {
         let weighted_items = vec![(1, 1), (3, 1), (5, 1), (7, 1), (9, 1)];
-        SortedView::new(weighted_items)
+        SortedView::new(weighted_items, Some(1), Some(9))
     }
 
     #[test]
@@ -287,7 +298,7 @@ mod tests {
 
     #[test]
     fn test_empty_view() {
-        let view: SortedView<i32> = SortedView::new(vec![]);
+        let view: SortedView<i32> = SortedView::new(vec![], None, None);
         assert!(view.is_empty());
         assert_eq!(view.len(), 0);
         assert_eq!(view.total_weight(), 0);
