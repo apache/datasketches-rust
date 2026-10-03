@@ -241,6 +241,12 @@ impl<T: Clone + Ord> KllSketch<T> {
                 "rank must be in [0.0, 1.0], got {rank}"
             )));
         }
+        if rank == 0.0 {
+            return Ok(self.min_item.as_ref().unwrap().clone());
+        }
+        if rank == 1.0 {
+            return Ok(self.max_item.as_ref().unwrap().clone());
+        }
         self.sorted_view().quantile(rank, criteria)
     }
 

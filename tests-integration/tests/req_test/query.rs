@@ -172,6 +172,8 @@ fn quantile_endpoints_preserve_extrema_after_compaction() {
         let view = sketch.sorted_view();
         sketch.reset();
         for criteria in [SearchCriteria::Inclusive, SearchCriteria::Exclusive] {
+            assert!(sketch.quantile(0.0, criteria).is_err());
+            assert!(sketch.quantile(1.0, criteria).is_err());
             assert_eq!(view.quantile(0.0, criteria).unwrap(), -64);
             assert_eq!(view.quantile(1.0, criteria).unwrap(), 64);
         }
