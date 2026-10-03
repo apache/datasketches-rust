@@ -428,6 +428,63 @@ fn test_from_iter_handles_mixed_compressed_and_buffered_inputs() {
 }
 
 #[test]
+fn test_serialized_batch_merge_tree_preserves_weight_and_quantiles() {
+    let mut values = Vec::new();
+    let partials = (0..64)
+        .map(|input| {
+            let mut digest = TDigestMut::default();
+            // Unequal weights, empty states, and repeated values exercise intermediate merges.
+            let rows = [0, 1, 8, 64, 1_024][input % 5];
+            for row in 0..rows {
+                let value = ((row * 37 + input * 113) % 1_024) as f64 - 512.0;
+                values.push(value);
+                digest.update(value);
+            }
+            digest.serialize()
+        })
+        .collect::<Vec<_>>();
+    values.sort_by(f64::total_cmp);
+
+    for fan_in in [2, 7, 64] {
+        let mut states = partials.clone();
+        while states.len() > 1 {
+            states = states
+                .chunks(fan_in)
+                .map(|batch| {
+                    let mut merged = batch
+                        .iter()
+                        .map(|bytes| TDigestMut::deserialize(bytes))
+                        .collect::<Result<TDigestMut, _>>()
+                        .unwrap();
+                    merged.serialize()
+                })
+                .collect();
+        }
+
+        let mut merged = TDigestMut::deserialize(&states[0]).unwrap();
+        assert_eq!(merged.total_weight(), values.len() as u64);
+        assert_eq!(merged.quantile(0.0), values.first().copied());
+        assert_eq!(merged.quantile(1.0), values.last().copied());
+
+        let mut previous = values[0];
+        for rank in [0.01, 0.5, 0.9, 0.99] {
+            let estimate = merged.quantile(rank).unwrap();
+            assert!((previous..=values[values.len() - 1]).contains(&estimate));
+            // Check this fixture's empirical rank, allowing equal values to span a rank interval.
+            let lower =
+                values.partition_point(|value| *value < estimate) as f64 / values.len() as f64;
+            let upper =
+                values.partition_point(|value| *value <= estimate) as f64 / values.len() as f64;
+            assert!(
+                (lower - 0.01..=upper + 0.01).contains(&rank),
+                "fan_in={fan_in}, rank={rank}, estimate={estimate}, observed=[{lower}, {upper}]"
+            );
+            previous = estimate;
+        }
+    }
+}
+
+#[test]
 fn test_from_iter_checks_total_weight_before_compression() {
     for compressed in [false, true] {
         let heavy = deserialize_with_centroids(100, 0.0, 0.0, &[(0.0, u64::MAX - 2)]);
