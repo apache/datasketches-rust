@@ -337,6 +337,28 @@ fn test_extreme_values_produce_finite_quantiles() {
 }
 
 #[test]
+fn test_rank_interpolation_across_extreme_finite_values() {
+    for scale in [1., 1e300, f64::MAX] {
+        let mut digest = TDigestMut::default();
+        digest.update(-scale);
+        digest.update(scale);
+        let digest = digest.freeze();
+        let points = [-scale, -scale / 2., 0., scale / 2., scale];
+        for (point, expected) in points.into_iter().zip([0.25, 0.375, 0.5, 0.625, 0.75]) {
+            assert_that!(digest.rank(point).unwrap(), near(expected, 1e-12));
+        }
+        assert_eq!(
+            digest.cdf(&points).unwrap(),
+            [0.25, 0.375, 0.5, 0.625, 0.75, 1.]
+        );
+        assert_eq!(
+            digest.pmf(&points).unwrap(),
+            [0.25, 0.125, 0.125, 0.125, 0.125, 0.25]
+        );
+    }
+}
+
+#[test]
 fn test_estimate_repeat_values() {
     let mut tdigest = TDigestMut::default();
     for _ in 0..20 {
@@ -421,6 +443,61 @@ fn test_quantile_handles_two_sample_last_centroid() {
         deserialize_with_centroids(100, 0.0, 100.0, &[(0.0, 1), (50.0, 1), (90.0, 2)]);
 
     assert_eq!(tdigest.quantile(0.75), Some(100.0));
+}
+
+#[test]
+fn test_quantile_tails_interpolate_extreme_finite_values() {
+    let max = f64::MAX;
+    let left = deserialize_with_centroids(100, -max, max, &[(max / 2., 10), (max, 1)]);
+    let right = deserialize_with_centroids(100, -max, max, &[(-max, 1), (-max / 2., 10)]);
+    for (digest, rank, expected) in [
+        (left.clone(), 1. / 11., -1.),
+        (left, 3. / 11., -0.25),
+        (right.clone(), 8. / 11., 0.25),
+        (right, 10. / 11., 1.),
+    ] {
+        let frozen = digest.clone().freeze();
+        assert_that!(frozen.quantile(rank).unwrap() / max, near(expected, 1e-12));
+        let mut mutable = digest;
+        let values = mutable.quantiles(&[rank, 0., 1., rank]).unwrap();
+        assert_eq!(values, frozen.quantiles(&[rank, 0., 1., rank]).unwrap());
+        assert_eq!(values[1..3], [-max, max]);
+        assert!(values.iter().all(|value| value.is_finite()));
+    }
+}
+
+#[test]
+fn test_single_centroid_preserves_stored_tail_information() {
+    let digest = deserialize_with_centroids(100, 0., 100., &[(50., 10)]);
+    assert_quantile_queries(
+        &digest,
+        &[0., 0.1, 0.5, 0.9, 1.],
+        &[0., 0., 50., 100., 100.],
+    );
+    let digest = digest.freeze();
+    assert_that!(digest.rank(0.).unwrap(), near(0.05, 1e-12));
+    assert_that!(digest.rank(50.).unwrap(), near(0.5, 1e-12));
+    assert_that!(digest.rank(100.).unwrap(), near(0.95, 1e-12));
+}
+
+#[test]
+fn test_compression_preserves_a_small_centroid_weight() {
+    let weight = 1_u64 << 54;
+    let mut digest = deserialize_with_centroids(
+        10,
+        0.,
+        f64::MAX,
+        &[(0., weight), (1., weight), (1e300, 1), (f64::MAX, weight)],
+    );
+    let mut bytes = digest.serialize();
+    bytes[5] |= 1 << 2; // Compress from the right, merging the light centroid into the heavy one.
+    let mut digest = TDigestMut::deserialize(&bytes).unwrap();
+    digest.update(0.);
+
+    // The middle centroid's center is at the median. Its mean retains the light sample's mass.
+    let expected = 1e300 / weight as f64;
+    assert_that!(digest.quantile(0.5).unwrap() / expected, near(1., 1e-12));
+    assert!(TDigestMut::deserialize(&digest.serialize()).is_ok());
 }
 
 #[test]
@@ -524,28 +601,47 @@ fn test_quantiles_interpolate_around_singleton_centroids() {
 #[test]
 fn test_quantiles_stay_within_extrema_at_large_total_weights() {
     for total_weight in [1_u64 << 53, 1_u64 << 54, u64::MAX] {
-        let tdigest = deserialize_with_centroids(
-            100,
-            0.0,
-            100.0,
-            &[(10.0, total_weight - 2), (50.0, 1), (90.0, 1)],
-        );
-        let frozen = tdigest.clone().freeze();
-        let ranks = [0.0, 0.5, 1.0_f64.next_down(), 1.0, 1.0];
-        for quantiles in [
-            tdigest.clone().quantiles(&ranks).unwrap(),
-            frozen.quantiles(&ranks).unwrap(),
-            ranks.map(|rank| frozen.quantile(rank).unwrap()).to_vec(),
+        for centroids in [
+            vec![(10., total_weight - 2), (50., 1), (90., 1)],
+            vec![(10., total_weight - 5), (50., 1), (90., 4)],
+            vec![(0., 1), (90., total_weight - 1)],
         ] {
-            assert_eq!(quantiles[0], 0.0);
-            assert_eq!(&quantiles[3..], &[100.0, 100.0]);
+            let tdigest = deserialize_with_centroids(100, 0., 100., &centroids);
+            let frozen = tdigest.clone().freeze();
+            let ranks = [
+                0.,
+                0.5_f64.next_down(),
+                0.5,
+                0.5_f64.next_up(),
+                1.0_f64.next_down(),
+                1.,
+                1.,
+            ];
+            for quantiles in [
+                tdigest.clone().quantiles(&ranks).unwrap(),
+                frozen.quantiles(&ranks).unwrap(),
+                ranks.map(|rank| frozen.quantile(rank).unwrap()).to_vec(),
+            ] {
+                assert_eq!(quantiles[0], 0.);
+                assert_eq!(&quantiles[5..], &[100., 100.]);
+                assert!(
+                    quantiles.is_sorted(),
+                    "centroids {centroids:?}: {quantiles:?}"
+                );
+                assert!(
+                    quantiles.iter().all(|value| (0.0..=100.0).contains(value)),
+                    "centroids {centroids:?}: {quantiles:?}"
+                );
+            }
+            let splits = [0., 5., 10., 50., 90., 95., 100.];
+            let cdf = frozen.cdf(&splits).unwrap();
+            assert!(cdf.is_sorted(), "centroids {centroids:?}: {cdf:?}");
             assert!(
-                quantiles.is_sorted(),
-                "weight {total_weight}: {quantiles:?}"
-            );
-            assert!(
-                quantiles.iter().all(|value| (0.0..=100.0).contains(value)),
-                "weight {total_weight}: {quantiles:?}"
+                frozen
+                    .pmf(&splits)
+                    .unwrap()
+                    .iter()
+                    .all(|p| (0.0..=1.0).contains(p))
             );
         }
     }

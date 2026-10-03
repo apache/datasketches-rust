@@ -39,9 +39,9 @@ fn assert_quantiles_are_monotonic(tdigest: &mut TDigestMut) {
     let ranks = (0..=RANK_STEPS)
         .map(|step| step as f64 / RANK_STEPS as f64)
         .collect::<Vec<_>>();
-    let quantiles = tdigest.quantiles(&ranks).unwrap();
+    let mut quantiles = tdigest.quantiles(&ranks).unwrap();
 
-    for (&rank, quantile) in ranks.iter().zip(quantiles) {
+    for (&rank, &quantile) in ranks.iter().zip(&quantiles) {
         assert_eq!(tdigest.quantile(rank), Some(quantile));
         assert!(
             (previous..=max).contains(&quantile),
@@ -49,6 +49,47 @@ fn assert_quantiles_are_monotonic(tdigest: &mut TDigestMut) {
         );
         previous = quantile;
     }
+
+    quantiles.dedup();
+    let cdf = tdigest.cdf(&quantiles).unwrap();
+    assert!(cdf.is_sorted());
+    assert!(cdf.iter().all(|rank| (0.0..=1.0).contains(rank)));
+    let pmf = tdigest.pmf(&quantiles).unwrap();
+    assert!(
+        pmf.iter()
+            .all(|probability| (0.0..=1.0).contains(probability))
+    );
+    assert!((pmf.iter().sum::<f64>() - 1.).abs() < 1e-12);
+}
+
+#[test]
+fn prop_finite_values_survive_partial_aggregation() {
+    fn property(bits: Vec<u64>) {
+        let values: Vec<_> = bits
+            .into_iter()
+            .map(f64::from_bits)
+            .filter(|x| x.is_finite())
+            .collect();
+        if values.is_empty() {
+            return;
+        }
+        let mut digest = TDigestMut::default();
+        for chunk in values.chunks(64) {
+            let mut partial = TDigestMut::default();
+            for &value in chunk {
+                partial.update(value);
+            }
+            digest.merge(&TDigestMut::deserialize(&partial.serialize()).unwrap());
+        }
+        let mut digest = TDigestMut::deserialize(&digest.serialize()).unwrap();
+        assert_eq!(digest.total_weight(), values.len() as u64);
+        assert_quantiles_are_monotonic(&mut digest);
+    }
+
+    QuickCheck::new()
+        .tests(128)
+        .rng(Gen::new(512))
+        .quickcheck(property as fn(Vec<u64>));
 }
 
 #[test]
