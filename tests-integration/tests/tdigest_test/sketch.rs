@@ -356,25 +356,100 @@ fn test_from_iter_matches_single_digest_for_uncompressed_inputs() {
 }
 
 #[test]
-fn test_from_iter_preserves_stable_tie_order_for_compressed_inputs() {
-    let left = deserialize_with_centroids(100, 0.0, 10.0, &[(0.0, 1), (10.0, 1)]);
-    let right = deserialize_with_centroids(100, 0.0, 10.0, &[(0.0, 100), (10.0, 100)]);
-    let mut merged = [left, right].into_iter().collect::<TDigestMut>();
+fn test_from_iter_matches_single_compression_for_interleaved_runs() {
+    let runs: [&[(f64, u64)]; 4] = [
+        &[(0.0, 1), (3.0, 2), (3.0, 5), (6.0, 100), (9.0, 1)],
+        &[(0.0, 7), (2.0, 3), (5.0, 4), (8.0, 2), (9.0, 10)],
+        &[(1.0, 2), (3.0, 6), (4.0, 1), (7.0, 8), (9.0, 20)],
+        &[(0.0, 2), (3.0, 9), (6.0, 7), (9.0, 30)],
+    ];
+    for k in [10, 100] {
+        for reverse in [false, true] {
+            let make_digest = |centroids: &[(f64, u64)]| {
+                let mut digest = deserialize_with_centroids(k, -10.0, 20.0, centroids);
+                if reverse {
+                    let mut bytes = digest.serialize();
+                    bytes[5] |= 1 << 2; // reverse-merge flag
+                    digest = TDigestMut::deserialize(&bytes).unwrap();
+                }
+                digest
+            };
+            let mut ordered = runs
+                .iter()
+                .flat_map(|run| run.iter().copied())
+                .collect::<Vec<_>>();
+            ordered.sort_by(|left, right| left.0.total_cmp(&right.0));
 
-    let mut expected = deserialize_with_centroids(
-        100,
-        0.0,
-        10.0,
-        &[(0.0, 1), (0.0, 100), (10.0, 1), (10.0, 100)],
-    );
+            // Borrowed merge puts the right input first on ties. Keeping the last centroid on
+            // the left reproduces the concatenated runs' stable order in one compression pass.
+            let last = ordered.pop().unwrap();
+            let mut expected = make_digest(&[last]);
+            expected.merge(&make_digest(&ordered));
+            let mut merged = runs.into_iter().map(make_digest).collect::<TDigestMut>();
 
-    let mut merged_image = merged.serialize();
-    let expected_image = expected.serialize();
-    // Collection performs a compression pass and therefore toggles the direction flag for the
-    // next compression. Normalize only that header field so the remaining bytes directly compare
-    // the stable centroid order and weights.
-    merged_image[5] = expected_image[5];
-    assert_eq!(merged_image, expected_image);
+            assert_eq!(merged.serialize(), expected.serialize());
+            assert_eq!(merged.quantile(0.0), Some(-10.0));
+            assert_eq!(merged.quantile(1.0), Some(20.0));
+
+            // A collected digest must still support enough updates to grow and compress again.
+            for value in 0..1_000 {
+                merged.update(value as f64);
+                expected.update(value as f64);
+            }
+            assert_eq!(merged.serialize(), expected.serialize());
+        }
+    }
+}
+
+#[test]
+fn test_from_iter_handles_mixed_compressed_and_buffered_inputs() {
+    let mut expected = TDigestMut::new(100).unwrap();
+    let partials = (0..4)
+        .map(|run| {
+            let mut digest = TDigestMut::new(100).unwrap();
+            for row in 0..60 {
+                let value = ((row * 13 + run * 7) % 37) as f64;
+                digest.update(value);
+                expected.update(value);
+                if run == 2 && row == 29 {
+                    let _ = digest.quantile(0.5);
+                }
+            }
+            if run == 1 {
+                let _ = digest.quantile(0.5);
+            }
+            digest
+        })
+        .collect::<Vec<_>>();
+    let mut merged = partials.into_iter().collect::<TDigestMut>();
+
+    assert_eq!(merged.total_weight(), 240);
+    assert_eq!(merged.serialize(), expected.serialize());
+}
+
+#[test]
+fn test_from_iter_checks_total_weight_before_compression() {
+    for compressed in [false, true] {
+        let heavy = deserialize_with_centroids(100, 0.0, 0.0, &[(0.0, u64::MAX - 2)]);
+        let [one, two, extra] = [1.0, 2.0, 3.0].map(|value| {
+            let mut digest = TDigestMut::new(100).unwrap();
+            digest.update(value);
+            if compressed {
+                let _ = digest.quantile(0.5);
+            }
+            digest
+        });
+        let mut at_limit = [heavy.clone(), one.clone(), two.clone()]
+            .into_iter()
+            .collect::<TDigestMut>();
+        assert_eq!(at_limit.total_weight(), u64::MAX);
+        assert_eq!(at_limit.quantile(0.0), Some(0.0));
+        assert_eq!(at_limit.quantile(1.0), Some(2.0));
+
+        assert!(
+            catch_unwind(|| [heavy, one, two, extra].into_iter().collect::<TDigestMut>()).is_err()
+        );
+    }
 }
 
 #[test]
