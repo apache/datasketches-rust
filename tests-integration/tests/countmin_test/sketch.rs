@@ -262,6 +262,30 @@ fn test_decay() {
 }
 
 #[test]
+fn test_decay_preserves_large_integer_precision() {
+    for weight in [(1_u64 << 53) + 1, u64::MAX - 1, u64::MAX] {
+        for (factor, expected) in [
+            (1.0, weight),
+            (0.5, weight / 2),
+            (0.75, ((u128::from(weight) * 3) / 4) as u64),
+            (f64::from_bits(1), 0),
+        ] {
+            let mut sketch = CountMinSketch::<u64>::new(3, 128).unwrap();
+            sketch.update_with_weight("item", weight);
+            sketch.decay(factor);
+            assert_eq!(
+                sketch.total_weight(),
+                expected,
+                "weight={weight}, factor={factor}"
+            );
+            assert_eq!(sketch.estimate("item"), expected);
+            let restored = CountMinSketch::<u64>::deserialize(&sketch.serialize()).unwrap();
+            assert_eq!(restored.total_weight(), expected);
+        }
+    }
+}
+
+#[test]
 fn test_merge() {
     let mut left = CountMinSketch::<i64>::new(3, 64).unwrap();
     let mut right = CountMinSketch::<i64>::new(3, 64).unwrap();

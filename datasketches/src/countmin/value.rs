@@ -119,7 +119,19 @@ macro_rules! impl_unsigned {
 
             #[inline(always)]
             fn scale(self, factor: f64) -> Self {
-                ((self as f64) * factor).trunc() as $name
+                // Both decay and the relative-error factor lie in (0, 1]. Multiply the
+                // exact binary significand before shifting so large counters never round.
+                let bits = factor.to_bits();
+                let exponent = ((bits >> 52) & 0x7ff) as u32;
+                let fraction = bits & ((1_u64 << 52) - 1);
+                let (significand, shift) = if exponent == 0 {
+                    (fraction, 1074)
+                } else {
+                    (fraction | (1_u64 << 52), 1075 - exponent)
+                };
+                (u128::from(self) * u128::from(significand))
+                    .checked_shr(shift)
+                    .unwrap_or(0) as $name
             }
 
             #[inline(always)]

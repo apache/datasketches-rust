@@ -29,6 +29,7 @@ All significant changes to this project will be documented in this file.
 
 ### Bug fixes
 
+* `CountMinSketch` decay now preserves integer precision for large unsigned counters, including unchanged weights for `decay(1.0)` and exact halving for `decay(0.5)`.
 * Empty compact Theta and Tuple sketches now serialize with a zero seed hash, matching the canonical cross-language encoding. Deserialization associates empty sketches with the supplied seed, including legacy Theta v2 images with zero or mismatched seed hashes.
 * `CountMinSketch` updates now panic and merges return `InvalidArgument` if the total absolute weight would exceed the counter type's maximum. Both leave the sketch unchanged, including in release builds.
 * `CountMinSketch::upper_bound` now clamps to the counter type's maximum instead of overflowing.
