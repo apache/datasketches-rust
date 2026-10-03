@@ -15,6 +15,10 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::hash::Hash;
+use std::panic::AssertUnwindSafe;
+use std::panic::catch_unwind;
+
 use datasketches::error::ErrorKind;
 use datasketches::frequencies::ErrorType;
 use datasketches::frequencies::FrequentItemsSketch;
@@ -506,24 +510,80 @@ fn test_items_merge_empty_is_noop() {
     assert_eq!(sketch.estimate(&1), 1);
 }
 
-#[test]
-fn test_merge_preserves_purged_empty_state() {
-    let mut purged: FrequentItemsSketch<i64> = FrequentItemsSketch::new(32).unwrap();
-    for item in 0..=(32 * 3 / 4) {
-        purged.update(item);
+fn check_purged_state<T: Eq + Hash + Clone>(make_item: impl Fn(i64) -> T) {
+    let mut purged = FrequentItemsSketch::new(256).unwrap();
+    for item in 0..193 {
+        purged.update(make_item(item));
     }
-    assert!(purged.is_empty());
-    assert_eq!(purged.total_weight(), 25);
+    assert!(!purged.is_empty());
+    assert_eq!(purged.num_active_items(), 0);
+    assert_eq!(purged.total_weight(), 193);
     assert_eq!(purged.maximum_error(), 1);
 
-    let mut merged: FrequentItemsSketch<i64> = FrequentItemsSketch::new(32).unwrap();
+    let mut merged = FrequentItemsSketch::new(256).unwrap();
     merged.merge(&purged);
 
-    assert!(merged.is_empty());
+    assert!(!merged.is_empty());
     assert_eq!(merged.num_active_items(), 0);
     assert_eq!(merged.total_weight(), purged.total_weight());
     assert_eq!(merged.maximum_error(), purged.maximum_error());
-    assert_eq!(merged.upper_bound(&1000), purged.upper_bound(&1000));
+    assert_eq!(merged.upper_bound(&make_item(0)), 1);
+
+    let mut nonempty = FrequentItemsSketch::new(256).unwrap();
+    nonempty.update(make_item(1000));
+    nonempty.merge(&purged);
+    assert_eq!(nonempty.total_weight(), 194);
+    assert_eq!(nonempty.maximum_error(), 1);
+    assert_eq!(nonempty.upper_bound(&make_item(0)), 1);
+
+    purged.reset();
+    assert!(purged.is_empty());
+    assert_eq!(purged.total_weight(), 0);
+    assert_eq!(purged.maximum_error(), 0);
+}
+
+#[test]
+fn test_longs_purged_state() {
+    check_purged_state(|item| item);
+}
+
+#[test]
+fn test_items_purged_state() {
+    check_purged_state(|item| item.to_string());
+}
+
+#[test]
+fn test_update_weight_overflow_preserves_state() {
+    let mut sketch = FrequentItemsSketch::<String>::new(8).unwrap();
+    sketch.update_with_count_ref("a", u64::MAX - 1);
+    sketch.update("b".to_string());
+    assert_eq!(sketch.total_weight(), u64::MAX);
+    let before = sketch.serialize();
+
+    assert!(catch_unwind(AssertUnwindSafe(|| sketch.update("c".to_string()))).is_err());
+    assert_eq!(sketch.serialize(), before);
+    assert!(catch_unwind(AssertUnwindSafe(|| sketch.update_ref("a"))).is_err());
+    assert_eq!(sketch.serialize(), before);
+    assert!(!sketch.is_empty());
+}
+
+#[test]
+fn test_merge_weight_overflow_preserves_state() {
+    let mut sketch = FrequentItemsSketch::<i64>::new(8).unwrap();
+    sketch.update_with_count(1, u64::MAX - 7);
+    let mut purged = FrequentItemsSketch::<i64>::new(8).unwrap();
+    for item in 0..7 {
+        purged.update(item);
+    }
+    assert_eq!(purged.num_active_items(), 0);
+
+    sketch.merge(&purged);
+    assert_eq!(sketch.total_weight(), u64::MAX);
+    assert_eq!(sketch.maximum_error(), 1);
+    let before = sketch.serialize();
+    assert!(catch_unwind(AssertUnwindSafe(|| sketch.merge(&purged))).is_err());
+    assert_eq!(sketch.serialize(), before);
+    assert!(!sketch.is_empty());
 }
 
 #[test]

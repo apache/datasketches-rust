@@ -40,6 +40,9 @@ pub const SKETCH_TYPE: u8 = 1;
 /// Legacy sketch-type byte still accepted on read.
 pub const SKETCH_TYPE_LEGACY: u8 = 5;
 
+/// Canonical empty compact image, independent of the configured seed and summary type.
+pub const EMPTY_SKETCH_BYTES: [u8; 8] = [1, 3, 9, 1, 0, 0x1e, 0, 0];
+
 /// Trait for values that can be stored as Tuple sketch summaries.
 ///
 /// Implement this trait for a summary type to make it (de)serializable by

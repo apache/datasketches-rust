@@ -264,6 +264,10 @@ impl TDigestMut {
     ///
     /// [f64::NAN], [f64::INFINITY], and [f64::NEG_INFINITY] values are ignored.
     ///
+    /// # Panics
+    ///
+    /// Panics without modifying the digest if the total weight would exceed `u64::MAX`.
+    ///
     /// # Examples
     ///
     /// ```
@@ -277,6 +281,7 @@ impl TDigestMut {
         if !value.is_finite() {
             return;
         }
+        assert!(self.total_weight() < u64::MAX, "total weight overflow");
 
         let max_unmerged = self.max_unmerged();
         if self.buffer.unmerged_len() >= max_unmerged {
@@ -322,6 +327,10 @@ impl TDigestMut {
 
     /// Merges the given t-digest into this one.
     ///
+    /// # Panics
+    ///
+    /// Panics without modifying the digest if the combined total weight would exceed `u64::MAX`.
+    ///
     /// # Examples
     ///
     /// ```
@@ -338,10 +347,18 @@ impl TDigestMut {
         if other.is_empty() {
             return;
         }
+        let total_weight = self
+            .total_weight()
+            .checked_add(other.total_weight())
+            .expect("total weight overflow");
 
-        let self_unmerged_weight = self.buffer.unmerged_len() as u64;
+        // Preserve true extrema from `other`. Compression only sees centroid means, which can
+        // differ from `min`/`max` after ordinary compression or deserialization.
+        self.min = self.min.min(other.min);
+        self.max = self.max.max(other.max);
+
         let centroids = std::mem::take(&mut self.buffer).into_merged_centroids(&other.buffer);
-        self.compress_sorted_centroids(centroids, self_unmerged_weight + other.total_weight())
+        self.compress_sorted_centroids(centroids, total_weight);
     }
 
     /// Converts this mutable t-digest into an immutable one.
@@ -892,38 +909,27 @@ impl TDigestMut {
 
     /// Processes unmerged values and merges centroids if needed.
     fn compress(&mut self) {
-        let additional_weight = self.buffer.unmerged_len() as u64;
-        if additional_weight == 0 {
+        if self.buffer.unmerged_len() == 0 {
             // Also preserves fully compressed deserialized images verbatim.
             return;
         }
-        let centroids = std::mem::take(&mut self.buffer).into_centroids_for_compression();
-        self.compress_centroids(centroids, additional_weight);
-    }
-
-    /// Compresses the given centroids into this t-digest.
-    ///
-    /// # Contract
-    ///
-    /// * `centroids` must contain at least one centroid.
-    /// * `centroids` contains every centroid to be merged, including all centroids previously
-    ///   stored in `self`.
-    /// * `additional_weight` is the total weight not yet included in `self.compressed_weight`.
-    /// * Every centroid mean in `centroids` is finite.
-    /// * `self.buffer` has no unmerged values before returning.
-    fn compress_centroids(&mut self, mut centroids: Vec<Centroid>, additional_weight: u64) {
-        debug_assert!(!centroids.is_empty());
+        let total_weight = self.total_weight();
+        let mut centroids = std::mem::take(&mut self.buffer).into_centroids_for_compression();
         centroids.sort_by(centroid_cmp);
-        self.compress_sorted_centroids(centroids, additional_weight);
+        self.compress_sorted_centroids(centroids, total_weight);
     }
 
-    fn compress_sorted_centroids(&mut self, mut centroids: Vec<Centroid>, additional_weight: u64) {
+    /// Compresses nonempty, sorted centroids whose combined weight is `total_weight`.
+    ///
+    /// Includes all retained and incoming values, with finite means and nonzero weights.
+    /// Callers ensure the total fits in `u64` before taking the buffer.
+    fn compress_sorted_centroids(&mut self, mut centroids: Vec<Centroid>, total_weight: u64) {
         debug_assert!(!centroids.is_empty());
         debug_assert!(centroids_are_sorted(&centroids));
         if self.reverse_merge {
             centroids.reverse();
         }
-        self.compressed_weight += additional_weight;
+        self.compressed_weight = total_weight;
 
         let mut num_centroids = 1;
         let len = centroids.len();

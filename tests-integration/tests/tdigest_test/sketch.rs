@@ -16,6 +16,8 @@
 // under the License.
 
 use std::mem::size_of;
+use std::panic::AssertUnwindSafe;
+use std::panic::catch_unwind;
 
 use datasketches::tdigest::TDigestMut;
 use googletest::assert_that;
@@ -440,4 +442,58 @@ fn test_rank_left_tail_is_a_fraction_of_the_total_weight() {
     assert_that!(pmf[0], near(0.1, 1e-12));
     assert_that!(pmf[1], near(0.8, 1e-12));
     assert_that!(pmf[2], near(0.1, 1e-12));
+}
+
+#[test]
+fn test_merge_preserves_min_max_from_other() {
+    // Heavy extreme centroids are legal after deserialization: `min`/`max` can differ from the
+    // first and last centroid means. Merge must keep those stored extrema, not re-derive them.
+    let other = deserialize_with_centroids(100, 0.0, 100.0, &[(10.0, 10), (50.0, 10), (90.0, 10)]);
+    assert_eq!(other.min_value(), Some(0.0));
+    assert_eq!(other.max_value(), Some(100.0));
+
+    let mut empty = TDigestMut::new(100).unwrap();
+    empty.merge(&other);
+    assert_eq!(empty.min_value(), Some(0.0));
+    assert_eq!(empty.max_value(), Some(100.0));
+    assert_eq!(empty.quantile(0.0), Some(0.0));
+    assert_eq!(empty.quantile(1.0), Some(100.0));
+    assert_eq!(empty.rank(0.0), Some(0.5 / 30.0));
+    assert_eq!(empty.rank(100.0), Some(1.0 - 0.5 / 30.0));
+    assert_eq!(empty.rank(-1.0), Some(0.0));
+    assert_eq!(empty.rank(101.0), Some(1.0));
+
+    let mut left = deserialize_with_centroids(100, 5.0, 40.0, &[(10.0, 4), (20.0, 4), (30.0, 4)]);
+    let right = deserialize_with_centroids(100, -10.0, 80.0, &[(0.0, 4), (40.0, 4), (70.0, 4)]);
+    left.merge(&right);
+    assert_eq!(left.min_value(), Some(-10.0));
+    assert_eq!(left.max_value(), Some(80.0));
+    assert_eq!(left.quantile(0.0), Some(-10.0));
+    assert_eq!(left.quantile(1.0), Some(80.0));
+}
+
+#[test]
+fn weight_overflow_preserves_buffer_and_extrema() {
+    let mut one = TDigestMut::new(20).unwrap();
+    one.update(0.0);
+    let mut sketch = one.clone();
+    for _ in 0..63 {
+        sketch.merge(&sketch.clone());
+        sketch.update(0.0);
+    }
+    assert_eq!(sketch.total_weight(), u64::MAX);
+    let before = sketch.clone().serialize();
+
+    sketch.update(f64::NAN);
+    sketch.merge(&TDigestMut::default());
+    assert!(catch_unwind(AssertUnwindSafe(|| sketch.update(1.0))).is_err());
+    assert_eq!(sketch.clone().serialize(), before);
+    assert!(catch_unwind(AssertUnwindSafe(|| sketch.merge(&one))).is_err());
+    assert_eq!(sketch.clone().serialize(), before);
+
+    let mut target = TDigestMut::default();
+    target.update(1.0);
+    let before = target.clone().serialize();
+    assert!(catch_unwind(AssertUnwindSafe(|| target.merge(&sketch))).is_err());
+    assert_eq!(target.serialize(), before);
 }

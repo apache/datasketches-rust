@@ -49,6 +49,9 @@ pub struct CountMinSketch<T: CountMinValue> {
     num_buckets: u32,
     seed: u64,
     seed_hash: u16,
+    // Every bucket satisfies |count| <= total_weight, so a checked total also bounds bucket
+    // additions during update/merge: |a + b| <= |a| + |b|. Deserialization validates this
+    // invariant; unsigned halving and decay preserve it.
     total_weight: T,
     counts: Vec<T>,
     hash_seeds: Vec<u64>,
@@ -119,7 +122,7 @@ impl<T: CountMinValue> CountMinSketch<T> {
         self.seed
     }
 
-    /// Returns the total weight inserted into the sketch.
+    /// Returns the sum of absolute update weights, scaled by any halving or decay.
     pub fn total_weight(&self) -> T {
         self.total_weight
     }
@@ -129,7 +132,7 @@ impl<T: CountMinValue> CountMinSketch<T> {
         std::f64::consts::E / self.num_buckets as f64
     }
 
-    /// Returns `true` if the sketch has not seen any updates.
+    /// Returns `true` if the total weight is zero.
     pub fn is_empty(&self) -> bool {
         self.total_weight == T::ZERO
     }
@@ -177,6 +180,10 @@ impl<T: CountMinValue> CountMinSketch<T> {
 
     /// Updates the sketch with a single occurrence of the item.
     ///
+    /// # Panics
+    ///
+    /// Panics without modifying the sketch if the total absolute weight would exceed `T::MAX`.
+    ///
     /// # Examples
     ///
     /// ```
@@ -192,6 +199,11 @@ impl<T: CountMinValue> CountMinSketch<T> {
 
     /// Updates the sketch with the given item and weight.
     ///
+    /// # Panics
+    ///
+    /// Panics without modifying the sketch if the absolute weight or the total absolute weight
+    /// cannot be represented by `T`.
+    ///
     /// # Examples
     ///
     /// ```
@@ -205,8 +217,10 @@ impl<T: CountMinValue> CountMinSketch<T> {
         if weight == T::ZERO {
             return;
         }
-        let abs_weight = weight.abs();
-        self.total_weight = self.total_weight + abs_weight;
+        self.total_weight = weight
+            .checked_abs()
+            .and_then(|weight| self.total_weight.checked_add(weight))
+            .expect("total absolute weight overflow");
         let num_buckets = self.num_buckets as usize;
         for (row, seed) in self.hash_seeds.iter().enumerate() {
             let bucket = self.bucket_index(&item, *seed);
@@ -248,15 +262,16 @@ impl<T: CountMinValue> CountMinSketch<T> {
     /// Returns the upper bound on the true frequency of the given item.
     pub fn upper_bound<I: Hash>(&self, item: I) -> T {
         let estimate = self.estimate(item);
-        let error = self.total_weight.scale(self.relative_error());
-        estimate + error
+        let error = self.total_weight.scale_nonnegative(self.relative_error());
+        estimate.checked_add(error).unwrap_or(T::MAX)
     }
 
     /// Merges another sketch into this one.
     ///
     /// # Errors
     ///
-    /// Returns an error if the sketches have different numbers of hashes, bucket counts, or seeds.
+    /// Returns an error without modifying the sketch if the sketches have different numbers of
+    /// hashes, bucket counts, or seeds, or their combined total absolute weight exceeds `T::MAX`.
     ///
     /// # Examples
     ///
@@ -281,10 +296,13 @@ impl<T: CountMinValue> CountMinSketch<T> {
                 "Count-Min sketches must have matching numbers of hashes, bucket counts, and seeds",
             ));
         }
+        self.total_weight = self
+            .total_weight
+            .checked_add(other.total_weight)
+            .ok_or_else(|| Error::invalid_argument("total absolute weight overflow"))?;
         for (count, other_count) in self.counts.iter_mut().zip(&other.counts) {
             *count = *count + *other_count;
         }
-        self.total_weight = self.total_weight + other.total_weight;
         Ok(())
     }
 
@@ -445,8 +463,21 @@ impl<T: CountMinValue> CountMinSketch<T> {
         }
 
         sketch.total_weight = read_value(&mut cursor, "total_weight")?;
+        if sketch.total_weight < T::ZERO {
+            return Err(Error::deserial(
+                "total absolute weight must be non-negative",
+            ));
+        }
         for count in &mut sketch.counts {
             *count = read_value(&mut cursor, "counts")?;
+            if count
+                .checked_abs()
+                .is_none_or(|weight| weight > sketch.total_weight)
+            {
+                return Err(Error::deserial(
+                    "counter magnitude exceeds total absolute weight",
+                ));
+            }
         }
         Ok(sketch)
     }
@@ -481,9 +512,7 @@ impl<T: CountMinValue> CountMinSketch<T> {
 }
 
 impl<T: UnsignedCountMinValue> CountMinSketch<T> {
-    /// Divides every counter by two, truncating toward zero.
-    ///
-    /// Useful for exponential decay where counts represent recent activity.
+    /// Halves all counters and the total weight, rounding down.
     ///
     /// # Examples
     ///
@@ -502,10 +531,12 @@ impl<T: UnsignedCountMinValue> CountMinSketch<T> {
         self.total_weight = self.total_weight.halve();
     }
 
-    /// Multiplies every counter by `decay` and truncates back into `T`.
+    /// Scales all counters and the total weight by `decay`, rounding down.
     ///
-    /// Values are truncated toward zero after multiplication; choose `decay` in `(0, 1]`.
-    /// The total weight is scaled by the same factor to keep bounds consistent.
+    /// Rounding uses the actual `f64` value of the factor, so `decay(0.99)` changes a
+    /// count of `100` to `98`.
+    ///
+    /// A factor of `1.0` leaves the sketch unchanged; `0.5` is equivalent to [`Self::halve`].
     ///
     /// # Panics
     ///
@@ -523,10 +554,17 @@ impl<T: UnsignedCountMinValue> CountMinSketch<T> {
     /// ```
     pub fn decay(&mut self, decay: f64) {
         assert!(decay > 0.0 && decay <= 1.0, "decay must be within (0, 1]");
-        for c in &mut self.counts {
-            *c = c.scale(decay)
+        if decay == 1.0 {
+            return;
         }
-        self.total_weight = self.total_weight.scale(decay);
+        if decay == 0.5 {
+            self.halve();
+            return;
+        }
+        for c in &mut self.counts {
+            *c = c.scale_nonnegative(decay)
+        }
+        self.total_weight = self.total_weight.scale_nonnegative(decay);
     }
 }
 

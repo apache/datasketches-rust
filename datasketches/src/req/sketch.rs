@@ -133,7 +133,12 @@ where
     }
 
     /// Updates the sketch with a new item.
+    ///
+    /// # Panics
+    ///
+    /// Panics without modifying the sketch if the stream weight would exceed `u64::MAX`.
     pub fn update(&mut self, item: T) {
+        self.n = self.n.checked_add(1).expect("total stream weight overflow");
         match &mut self.min_item {
             None => self.min_item = Some(item.clone()),
             Some(cur) if item.cmp(cur).is_lt() => *cur = item.clone(),
@@ -146,7 +151,6 @@ where
         }
 
         self.compactors[0].append(item);
-        self.n += 1;
         self.num_retained += 1;
 
         if self.num_retained >= self.max_nom_size {
@@ -194,8 +198,10 @@ where
 
     /// Returns the approximate quantile at the given normalized rank.
     ///
-    /// Builds a transient [`SortedView`] internally. For repeated quantile
-    /// queries, take one snapshot with [`Self::sorted_view`] and query it.
+    /// Ranks `0.0` and `1.0` return the exact minimum and maximum items of the stream.
+    ///
+    /// For ranks strictly between `0.0` and `1.0`, builds a transient [`SortedView`].
+    /// For repeated queries at those ranks, take one snapshot with [`Self::sorted_view`].
     ///
     /// # Errors
     ///
@@ -209,10 +215,18 @@ where
                 "rank {rank} must be in [0, 1]"
             )));
         }
+        if rank == 0.0 {
+            return Ok(self.min_item.as_ref().unwrap().clone());
+        }
+        if rank == 1.0 {
+            return Ok(self.max_item.as_ref().unwrap().clone());
+        }
         self.sorted_view().quantile(rank, criteria)
     }
 
     /// Returns approximate quantiles for the given normalized ranks.
+    ///
+    /// Ranks `0.0` and `1.0` return the exact minimum and maximum items of the stream.
     ///
     /// The sorted view is built once and shared across all ranks.
     ///
@@ -266,10 +280,10 @@ where
     /// threads) while the sketch keeps receiving updates, and it keeps answering
     /// from the state it was taken at.
     ///
-    /// Building the view costs `O(retained · log retained)`; each query on it is
-    /// then `O(log retained)`. Prefer taking one view for repeated queries over
-    /// calling [`Self::quantile`]/[`Self::pmf`]/[`Self::cdf`], which each build a
-    /// transient view.
+    /// Building the view costs `O(retained · log retained)`; rank and quantile queries
+    /// then take `O(log retained)`. Prefer reusing one view for repeated quantile
+    /// queries at ranks strictly between `0.0` and `1.0`, or repeated
+    /// [`Self::pmf`]/[`Self::cdf`] queries.
     pub fn sorted_view(&self) -> SortedView<T> {
         let mut weighted_items = Vec::with_capacity(self.num_retained as usize);
         for compactor in &self.compactors {
@@ -278,14 +292,15 @@ where
                 weighted_items.push((item.clone(), weight));
             }
         }
-        SortedView::new(weighted_items)
+        SortedView::new(weighted_items, self.min_item.clone(), self.max_item.clone())
     }
 
     /// Merges another sketch into this one.
     ///
     /// # Errors
     ///
-    /// Returns an error if the two sketches have different `rank_accuracy`.
+    /// Returns an error without modifying the sketch if the two sketches have different
+    /// `rank_accuracy` or their combined stream weight exceeds `u64::MAX`.
     ///
     /// # Examples
     ///
@@ -317,7 +332,10 @@ where
             return Ok(());
         }
 
-        self.n += other.n;
+        self.n = self
+            .n
+            .checked_add(other.n)
+            .ok_or_else(|| Error::invalid_argument("total stream weight overflow"))?;
 
         if let Some(m) = &other.min_item {
             match &self.min_item {
@@ -777,14 +795,10 @@ where
     fn compress(&mut self) {
         for h in 0..self.compactors.len() {
             if self.compactors[h].num_items() >= self.compactors[h].nominal_capacity() {
-                if h == 0 {
-                    self.compactors[0].sort();
-                }
                 if h + 1 >= self.compactors.len() {
                     self.grow();
                 }
-                self.promotion_buf.clear();
-                self.compactors[h].compact_into(self.rank_accuracy, &mut self.promotion_buf);
+                self.compactors[h].compact_into(&mut self.promotion_buf);
                 if !self.promotion_buf.is_empty() {
                     self.compactors[h + 1].sort();
                     self.compactors[h + 1].merge_sorted(&self.promotion_buf);

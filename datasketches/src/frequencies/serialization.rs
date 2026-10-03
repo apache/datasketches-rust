@@ -25,9 +25,9 @@ use crate::error::Error;
 /// Serialization version.
 pub const SERIAL_VERSION: u8 = 1;
 
-/// Preamble longs for empty sketch.
+/// Preamble longs for a sketch with zero stream weight.
 pub const PREAMBLE_LONGS_EMPTY: u8 = 1;
-/// Preamble longs for non-empty sketch.
+/// Preamble longs for a sketch with positive stream weight, even if it retains no items.
 pub const PREAMBLE_LONGS_NONEMPTY: u8 = 4;
 
 /// Empty flag mask (both bits for compatibility).

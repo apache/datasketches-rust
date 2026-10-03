@@ -15,6 +15,9 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::panic::AssertUnwindSafe;
+use std::panic::catch_unwind;
+
 use datasketches::error::ErrorKind;
 use datasketches::kll::KllFloat;
 use datasketches::kll::KllSketch;
@@ -84,4 +87,26 @@ fn retained_count_stays_consistent_through_compaction_and_roundtrip() {
     assert_eq!(decoded.num_retained(), sketch.num_retained());
     assert_eq!(decoded.min_item(), Some(&0));
     assert_eq!(decoded.max_item(), Some(&99_999));
+}
+
+#[test]
+fn weight_overflow_preserves_state() {
+    let mut one = KllSketch::<i64>::new(8).unwrap();
+    one.update(0);
+    let mut sketch = one.clone();
+    // Doubling and adding one reaches the exact limit through valid public operations.
+    for _ in 0..63 {
+        sketch.merge(&sketch.clone()).unwrap();
+        sketch.update(0);
+    }
+    assert_eq!(sketch.n(), u64::MAX);
+    let before = sketch.serialize();
+
+    assert!(catch_unwind(AssertUnwindSafe(|| sketch.update(1))).is_err());
+    assert!(sketch.serialize() == before, "overflow changed the sketch");
+    assert_eq!(
+        sketch.merge(&one).unwrap_err().kind(),
+        ErrorKind::InvalidArgument
+    );
+    assert!(sketch.serialize() == before, "overflow changed the sketch");
 }

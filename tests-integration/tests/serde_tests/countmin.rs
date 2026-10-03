@@ -25,6 +25,24 @@ use tests_integration::ZERO_HASH_SEED;
 
 use crate::serialization_test_data;
 
+#[test]
+fn rejects_weights_that_cannot_bound_counter_arithmetic() {
+    let mut sketch = CountMinSketch::<i8>::new(2, 8).unwrap();
+    sketch.update("x");
+    let bytes = sketch.serialize();
+    for (total, count) in [(-1i64, 0i64), (1, 2), (1, -2), (127, -128)] {
+        let mut corrupt = bytes.clone();
+        corrupt[16..24].copy_from_slice(&total.to_le_bytes());
+        corrupt[24..32].copy_from_slice(&count.to_le_bytes());
+        assert_eq!(
+            CountMinSketch::<i8>::deserialize(&corrupt)
+                .unwrap_err()
+                .kind(),
+            ErrorKind::InvalidData
+        );
+    }
+}
+
 // This test validates binary format compatibility (deserialize + byte round-trip) for
 // C++ CountMin snapshots. It intentionally does not assert estimate equivalence against
 // original input keys because per-row hash seed derivation differs across implementations.
