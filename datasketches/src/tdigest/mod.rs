@@ -23,7 +23,7 @@
 //! The implementation in this library has a few differences from the reference implementation
 //! associated with that paper:
 //!
-//! * Merging does not modify the input.
+//! * [`TDigestMut::merge`] borrows its input without modifying it.
 //! * Deserialization is similar to other sketches in this library, although reading the reference
 //!   implementation format is supported.
 //!
@@ -60,6 +60,11 @@
 //! let frozen = sketch.freeze();
 //! assert!(frozen.rank(2.0).is_some());
 //! ```
+//!
+//! Callers that own several partial sketches can combine them with
+//! `partials.into_iter().collect::<TDigestMut>()` to compress the batch once. Collection first
+//! retains all inputs; use [`TDigestMut::merge`] for borrowed inputs or incremental
+//! processing with fewer inputs in memory at once.
 
 mod serialization;
 

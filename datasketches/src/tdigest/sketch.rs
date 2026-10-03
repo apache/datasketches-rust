@@ -327,6 +327,8 @@ impl TDigestMut {
     /// Merges the given t-digest into this one.
     ///
     /// Retains this digest's `k`, even if the other digest uses a different value.
+    /// The borrowed input remains available for reuse. Collecting owned inputs into a
+    /// [`TDigestMut`] with [`Iterator::collect`] combines a batch with one compression pass.
     ///
     /// # Panics
     ///
@@ -1098,10 +1100,14 @@ impl TDigestMut {
 /// uses the smallest `k` among the non-empty inputs. A single non-empty input is returned
 /// unchanged.
 ///
-/// Collecting consumes each digest, so callers do not need to clone inputs. Unlike repeated
-/// [`TDigestMut::merge`] calls, it temporarily retains all input
-/// centroids so it can avoid recompressing intermediate results. Use repeated `merge` calls when
-/// inputs must be processed with bounded additional memory.
+/// Collecting consumes each digest without cloning it. Callers that need to retain their inputs
+/// can use [`TDigestMut::merge`] or explicitly clone them before collection.
+///
+/// Collection first retains all non-empty input digests, even when given a lazy iterator. Fully
+/// compressed inputs are merged directly into the result; inputs with buffered updates also
+/// require a combined centroid buffer and sorting workspace. Repeated `merge` calls or smaller
+/// batches limit the number of inputs held at once, at the cost of additional compression passes.
+/// Different merge groupings can produce different estimates.
 ///
 /// # Panics
 ///
@@ -1120,6 +1126,32 @@ impl TDigestMut {
 /// });
 /// let merged = partials.into_iter().collect::<TDigestMut>();
 /// assert_eq!(merged.total_weight(), 2);
+/// ```
+///
+/// Serialized states can be decoded in batches, retaining only one batch of decoded inputs at a
+/// time. A batch size limits the number of digests, not their byte size; a strict memory budget
+/// needs to account for varying input sizes and merge workspace.
+///
+/// ```
+/// use datasketches::tdigest::TDigestMut;
+/// # let partial_states: Vec<Vec<u8>> = (0..32).map(|value| {
+/// #     let mut digest = TDigestMut::new(100).unwrap();
+/// #     digest.update(f64::from(value));
+/// #     digest.serialize()
+/// # }).collect();
+///
+/// let mut merged = TDigestMut::new(100)?;
+/// for batch in partial_states.chunks(16) {
+///     let batch = batch
+///         .iter()
+///         .map(|bytes| TDigestMut::deserialize(bytes))
+///         .collect::<Result<TDigestMut, _>>()?;
+///     merged.merge(&batch);
+/// }
+/// # assert_eq!(merged.total_weight(), 32);
+/// # assert_eq!(merged.min_value(), Some(0.0));
+/// # assert_eq!(merged.max_value(), Some(31.0));
+/// # Ok::<(), datasketches::error::Error>(())
 /// ```
 impl FromIterator<TDigestMut> for TDigestMut {
     fn from_iter<T: IntoIterator<Item = TDigestMut>>(iter: T) -> Self {
