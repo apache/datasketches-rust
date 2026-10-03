@@ -370,6 +370,24 @@ fn deserialize_with_centroids(k: u16, min: f64, max: f64, centroids: &[(f64, u64
     TDigestMut::deserialize(&bytes).unwrap()
 }
 
+fn assert_quantile_queries(tdigest: &TDigestMut, ranks: &[f64], expected: &[f64]) {
+    let frozen = tdigest.clone().freeze();
+    for actual in [
+        tdigest.clone().quantiles(ranks).unwrap(),
+        frozen.quantiles(ranks).unwrap(),
+    ] {
+        assert_eq!(actual.len(), expected.len());
+        for (actual, &expected) in actual.into_iter().zip(expected) {
+            assert_that!(actual, near(expected, 1e-12));
+        }
+    }
+    let mut mutable = tdigest.clone();
+    for (&rank, &expected) in ranks.iter().zip(expected) {
+        assert_that!(mutable.quantile(rank).unwrap(), near(expected, 1e-12));
+        assert_that!(frozen.quantile(rank).unwrap(), near(expected, 1e-12));
+    }
+}
+
 #[test]
 fn test_quantile_moves_toward_the_nearer_bracketing_centroid() {
     let mut tdigest =
@@ -433,7 +451,6 @@ fn test_batch_quantiles_match_scalar_queries_in_input_order() {
 fn test_batch_quantiles_cross_centroid_and_tail_boundaries() {
     let tdigest =
         deserialize_with_centroids(100, 0.0, 100.0, &[(10.0, 10), (50.0, 10), (90.0, 10)]);
-    let frozen = tdigest.clone().freeze();
     // Query masses span both tails and the centers of all three centroids.
     let queries = [
         (0.0, 0.0),
@@ -457,14 +474,79 @@ fn test_batch_quantiles_cross_centroid_and_tail_boundaries() {
     for queries in [queries, reversed, unordered] {
         let ranks = queries.map(|(weight, _)| weight / 30.0);
         let expected = queries.map(|(_, quantile)| quantile);
-        for actual in [
+        assert_quantile_queries(&tdigest, &ranks, &expected);
+    }
+    // Batches confined to one region can finish before reaching the centroid scan.
+    for (weight, expected) in queries {
+        assert_quantile_queries(&tdigest, &[weight / 30.0; 3], &[expected; 3]);
+    }
+}
+
+#[test]
+fn test_quantiles_respect_two_sample_tail_boundaries() {
+    let tdigest = deserialize_with_centroids(100, 0.0, 100.0, &[(10.0, 2), (90.0, 2)]);
+    // These tails are discontinuous: the left endpoint steps to the first mean, while the right
+    // endpoint steps from the last mean to max. Neither tail may divide by a zero span.
+    let ranks = [
+        0.0,
+        0.25_f64.next_down(),
+        0.25,
+        0.25_f64.next_up(),
+        0.5,
+        0.75_f64.next_down(),
+        0.75,
+        0.75,
+        0.75_f64.next_up(),
+        1.0,
+    ];
+    let expected = [0.0, 0.0, 10.0, 10.0, 50.0, 90.0, 100.0, 100.0, 100.0, 100.0];
+    assert_quantile_queries(&tdigest, &ranks, &expected);
+}
+
+#[test]
+fn test_quantiles_interpolate_around_singleton_centroids() {
+    let tdigest = deserialize_with_centroids(
+        100,
+        0.0,
+        60.0,
+        &[(0.0, 1), (10.0, 3), (20.0, 1), (40.0, 5), (60.0, 1)],
+    );
+    let ranks = [
+        0.0, 0.75, 1.0, 1.75, 2.5, 3.25, 4.0, 4.5, 4.75, 5.0, 6.25, 7.5, 8.75, 10.0, 11.0,
+    ]
+    .map(|weight| weight / 11.0);
+    let expected = [
+        0.0, 0.0, 0.0, 5.0, 10.0, 15.0, 20.0, 20.0, 20.0, 20.0, 30.0, 40.0, 50.0, 60.0, 60.0,
+    ];
+    assert_quantile_queries(&tdigest, &ranks, &expected);
+}
+
+#[test]
+fn test_quantiles_stay_within_extrema_at_large_total_weights() {
+    for total_weight in [1_u64 << 53, 1_u64 << 54, u64::MAX] {
+        let tdigest = deserialize_with_centroids(
+            100,
+            0.0,
+            100.0,
+            &[(10.0, total_weight - 2), (50.0, 1), (90.0, 1)],
+        );
+        let frozen = tdigest.clone().freeze();
+        let ranks = [0.0, 0.5, 1.0_f64.next_down(), 1.0, 1.0];
+        for quantiles in [
             tdigest.clone().quantiles(&ranks).unwrap(),
             frozen.quantiles(&ranks).unwrap(),
+            ranks.map(|rank| frozen.quantile(rank).unwrap()).to_vec(),
         ] {
-            assert_eq!(actual.len(), expected.len());
-            for (actual, expected) in actual.into_iter().zip(expected) {
-                assert_that!(actual, near(expected, 1e-12));
-            }
+            assert_eq!(quantiles[0], 0.0);
+            assert_eq!(&quantiles[3..], &[100.0, 100.0]);
+            assert!(
+                quantiles.is_sorted(),
+                "weight {total_weight}: {quantiles:?}"
+            );
+            assert!(
+                quantiles.iter().all(|value| (0.0..=100.0).contains(value)),
+                "weight {total_weight}: {quantiles:?}"
+            );
         }
     }
 }

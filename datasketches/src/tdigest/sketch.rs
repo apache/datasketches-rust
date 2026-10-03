@@ -1488,9 +1488,9 @@ impl TDigestView<'_> {
             return None;
         }
 
-        let mut centroid_index = 0;
-        let mut weight_so_far = self.centroids[0].weight() / 2.;
-        Some(self.quantile_from(rank, &mut centroid_index, &mut weight_so_far))
+        let mut quantile = [0.];
+        self.fill_quantiles(std::iter::once((0, rank)), &mut quantile);
+        Some(quantile[0])
     }
 
     fn quantiles(&self, ranks: &[f64]) -> Option<Vec<f64>> {
@@ -1504,13 +1504,8 @@ impl TDigestView<'_> {
         }
 
         let mut quantiles = vec![0.; ranks.len()];
-        let mut centroid_index = 0;
-        let mut weight_so_far = self.centroids[0].weight() / 2.;
         if ranks.is_sorted() {
-            for (index, &rank) in ranks.iter().enumerate() {
-                quantiles[index] =
-                    self.quantile_from(rank, &mut centroid_index, &mut weight_so_far);
-            }
+            self.fill_quantiles(ranks.iter().copied().enumerate(), &mut quantiles);
             return Some(quantiles);
         }
 
@@ -1521,84 +1516,121 @@ impl TDigestView<'_> {
             // Ranks have already been validated, so neither value can be NaN.
             ranks[left].partial_cmp(&ranks[right]).unwrap()
         });
-        for index in rank_order {
-            quantiles[index] =
-                self.quantile_from(ranks[index], &mut centroid_index, &mut weight_so_far);
-        }
+        self.fill_quantiles(
+            rank_order.into_iter().map(|index| (index, ranks[index])),
+            &mut quantiles,
+        );
         Some(quantiles)
     }
 
-    /// Continues a scan for nondecreasing ranks. `weight_so_far` is the cumulative weight at the
-    /// midpoint of the indexed centroid.
-    fn quantile_from(&self, rank: f64, centroid_index: &mut usize, weight_so_far: &mut f64) -> f64 {
+    /// Answers nondecreasing ranks at their original output indices.
+    fn fill_quantiles(
+        &self,
+        ranks: impl DoubleEndedIterator<Item = (usize, f64)>,
+        quantiles: &mut [f64],
+    ) {
         if self.centroids.len() == 1 {
-            return self.centroids[0].mean;
+            quantiles.fill(self.centroids[0].mean);
+            return;
         }
 
-        // at least 2 centroids
         let centroids_weight = self.centroids_weight as f64;
-        let num_centroids = self.centroids.len();
-        let weight = rank * centroids_weight;
-        if weight < 1. {
-            return self.min;
+        let mut queries = ranks
+            .map(|(index, rank)| (index, rank * centroids_weight))
+            .rev()
+            .peekable();
+
+        // Consume the right tail from the back, so the centroid scan can omit all tail checks.
+        while let Some((index, _)) = queries.next_if(|&(_, weight)| weight > centroids_weight - 1.)
+        {
+            quantiles[index] = self.max;
         }
-        if weight > centroids_weight - 1. {
-            return self.max;
-        }
-        let first_weight = self.centroids[0].weight();
-        if first_weight > 1. && weight < first_weight / 2. {
-            return self.min
-                + (((weight - 1.) / ((first_weight / 2.) - 1.))
-                    * (self.centroids[0].mean - self.min));
-        }
-        let last_weight = self.centroids[num_centroids - 1].weight();
-        if last_weight > 1. && (centroids_weight - weight <= last_weight / 2.) {
-            if last_weight == 2. {
-                return self.max;
-            }
-            return self.max
-                - (((centroids_weight - weight - 1.) / ((last_weight / 2.) - 1.))
-                    * (self.max - self.centroids[num_centroids - 1].mean));
+        if queries.peek().is_none() {
+            return;
         }
 
-        // interpolate between extremes
-        while *centroid_index < num_centroids - 1 {
-            let left = &self.centroids[*centroid_index];
-            let right = &self.centroids[*centroid_index + 1];
+        let last = self.centroids.last().unwrap();
+        let last_weight = last.weight();
+        if last_weight > 1. {
+            while let Some((index, weight)) =
+                queries.next_if(|&(_, weight)| centroids_weight - weight <= last_weight / 2.)
+            {
+                quantiles[index] = if last_weight == 2. {
+                    self.max
+                } else {
+                    self.max
+                        - (((centroids_weight - weight - 1.) / ((last_weight / 2.) - 1.))
+                            * (self.max - last.mean))
+                };
+            }
+        }
+
+        let mut queries = queries.rev().peekable();
+        while let Some((index, _)) = queries.next_if(|&(_, weight)| weight < 1.) {
+            quantiles[index] = self.min;
+        }
+        if queries.peek().is_none() {
+            return;
+        }
+
+        let first = &self.centroids[0];
+        let first_weight = first.weight();
+        if first_weight > 1. {
+            while let Some((index, weight)) =
+                queries.next_if(|&(_, weight)| weight < first_weight / 2.)
+            {
+                quantiles[index] = self.min
+                    + (((weight - 1.) / ((first_weight / 2.) - 1.)) * (first.mean - self.min));
+            }
+        }
+        if queries.peek().is_none() {
+            return;
+        }
+
+        // Answer the remaining queries by centroid interval; both streams advance only forward.
+        let mut weight_so_far = first_weight / 2.;
+        for pair in self.centroids.windows(2) {
+            let left = &pair[0];
+            let right = &pair[1];
             let dw = (left.weight() + right.weight()) / 2.;
-            if *weight_so_far + dw > weight {
+            loop {
+                let Some(&(index, weight)) = queries.peek() else {
+                    return;
+                };
+                if weight_so_far + dw <= weight {
+                    break;
+                }
+                queries.next();
                 let mut left_weight = 0.;
                 if left.weight.get() == 1 {
-                    if weight - *weight_so_far < 0.5 {
-                        return left.mean;
+                    if weight - weight_so_far < 0.5 {
+                        quantiles[index] = left.mean;
+                        continue;
                     }
                     left_weight = 0.5;
                 }
                 let mut right_weight = 0.;
                 if right.weight.get() == 1 {
-                    if *weight_so_far + dw - weight <= 0.5 {
-                        return right.mean;
+                    if weight_so_far + dw - weight <= 0.5 {
+                        quantiles[index] = right.mean;
+                        continue;
                     }
                     right_weight = 0.5;
                 }
                 // Each centroid is weighted by the distance from the target to the *other*
                 // centroid, so the estimate approaches the nearer one.
-                let distance_from_left = weight - *weight_so_far - left_weight;
-                let distance_to_right = *weight_so_far + dw - weight - right_weight;
-                return weighted_average(
-                    left.mean,
-                    distance_to_right,
-                    right.mean,
-                    distance_from_left,
-                );
+                let distance_from_left = weight - weight_so_far - left_weight;
+                let distance_to_right = weight_so_far + dw - weight - right_weight;
+                quantiles[index] =
+                    weighted_average(left.mean, distance_to_right, right.mean, distance_from_left);
             }
-            *weight_so_far += dw;
-            *centroid_index += 1;
+            weight_so_far += dw;
         }
 
-        let w1 = weight - centroids_weight - last_weight / 2.;
-        let w2 = last_weight / 2. - w1;
-        weighted_average(self.centroids[num_centroids - 1].mean, w1, self.max, w2)
+        // Rounding at large total weights can exhaust the scan near the maximum.
+        for (index, _) in queries {
+            quantiles[index] = self.max;
+        }
     }
 }
 
