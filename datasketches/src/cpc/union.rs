@@ -61,6 +61,8 @@
 //! which requires doing some extra work to figure out the values of num_coupons, offset,
 //! first_interesting_column, and kxp.
 
+use std::fmt;
+
 use crate::cpc::CpcSketch;
 use crate::cpc::DEFAULT_LG_K;
 use crate::cpc::Flavor;
@@ -71,7 +73,7 @@ use crate::error::Error;
 use crate::hash::DEFAULT_UPDATE_SEED;
 
 /// Union operator for CPC sketches.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct CpcUnion {
     // immutable config variables
     lg_k: u8,
@@ -353,6 +355,23 @@ impl CpcUnion {
             UnionState::BitMatrix(matrix) => matrix.capacity() * size_of::<u64>(),
         };
         size_of::<Self>() + heap_size
+    }
+}
+
+impl fmt::Debug for CpcUnion {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let (state, num_coupons) = match &self.state {
+            UnionState::Accumulator(sketch) => ("Accumulator", sketch.num_coupons),
+            UnionState::BitMatrix(matrix) => ("BitMatrix", count_bits_set_in_matrix(matrix)),
+        };
+
+        f.debug_struct("CpcUnion")
+            .field("lg_k", &self.lg_k())
+            .field("seed", &self.seed)
+            .field("state", &state)
+            .field("is_empty", &(num_coupons == 0))
+            .field("num_coupons", &num_coupons)
+            .finish()
     }
 }
 

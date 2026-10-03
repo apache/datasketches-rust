@@ -30,11 +30,11 @@ fn rank(bencher: Bencher) {
     bencher.bench_local(|| black_box(&sketch).rank(black_box(&item), SearchCriteria::Inclusive));
 }
 
-#[divan::bench]
-fn quantile(bencher: Bencher) {
+#[divan::bench(args = [0.0, 0.5, 1.0])]
+fn quantile(bencher: Bencher, rank: f64) {
     let sketch = prepared_sketch();
 
-    bencher.bench_local(|| black_box(&sketch).quantile(black_box(0.5), SearchCriteria::Inclusive));
+    bencher.bench_local(|| black_box(&sketch).quantile(black_box(rank), SearchCriteria::Inclusive));
 }
 
 // Intended pattern for repeated queries: build the view once, query it many

@@ -53,6 +53,7 @@ use crate::tuple::hash_table::TupleEntry;
 use crate::tuple::hash_table::TupleHashTable;
 use crate::tuple::policy::SummaryPolicy;
 use crate::tuple::policy::SummaryUpdatePolicy;
+use crate::tuple::serialization::EMPTY_SKETCH_BYTES;
 use crate::tuple::serialization::SERIAL_VERSION;
 use crate::tuple::serialization::SERIAL_VERSION_LEGACY;
 use crate::tuple::serialization::SKETCH_TYPE;
@@ -503,7 +504,7 @@ impl<S> CompactTupleSketch<S> {
         self.compact_state.is_ordered()
     }
 
-    /// Returns the 16-bit seed hash.
+    /// Returns the 16-bit fingerprint of the seed associated with this sketch.
     pub fn seed_hash(&self) -> u16 {
         self.compact_state.seed_hash()
     }
@@ -549,7 +550,7 @@ impl<S> CompactTupleSketch<S> {
     fn preamble_longs(&self) -> u8 {
         if self.is_estimation_mode() {
             3
-        } else if self.is_empty() || self.num_retained() == 1 {
+        } else if self.num_retained() == 1 {
             1
         } else {
             2
@@ -558,9 +559,10 @@ impl<S> CompactTupleSketch<S> {
 
     /// Serializes this sketch into the compact Tuple binary format.
     ///
-    /// Each summary is encoded by its [`TupleSummaryValue`] implementation. The layout matches the
-    /// Java/C++ Tuple sketches, so the output can be read by those implementations given a
-    /// compatible summary encoding.
+    /// Uses [`TupleSummaryValue`] to encode summaries. Reading the output in Java or C++ requires
+    /// a compatible summary encoding.
+    ///
+    /// Empty sketches serialize with a zero seed hash.
     ///
     /// # Examples
     ///
@@ -578,6 +580,10 @@ impl<S> CompactTupleSketch<S> {
     where
         S: TupleSummaryValue,
     {
+        if self.is_empty() {
+            return EMPTY_SKETCH_BYTES.to_vec();
+        }
+
         let retained_entries = self.retained_entries();
         let pre_longs = self.preamble_longs();
         let entries_size: usize = retained_entries
@@ -593,9 +599,6 @@ impl<S> CompactTupleSketch<S> {
         bytes.write_u8(0); // unused
 
         let mut flags = FLAGS_IS_READ_ONLY | FLAGS_IS_COMPACT;
-        if self.is_empty() {
-            flags |= FLAGS_IS_EMPTY;
-        }
         if self.is_ordered() {
             flags |= FLAGS_IS_ORDERED;
         }
@@ -621,8 +624,9 @@ impl<S> CompactTupleSketch<S> {
     ///
     /// # Errors
     ///
-    /// Returns `InvalidData` if the image is malformed, its seed hash does not match the default
-    /// seed, or a summary cannot be decoded by `S`.
+    /// Returns `InvalidData` if the image is malformed or a non-empty image's seed hash does not
+    /// match the default seed. Also propagates errors from
+    /// [`TupleSummaryValue::deserialize_value`].
     pub fn deserialize(bytes: &[u8]) -> Result<Self, Error>
     where
         S: TupleSummaryValue,
@@ -630,13 +634,15 @@ impl<S> CompactTupleSketch<S> {
         Self::deserialize_with_seed(bytes, DEFAULT_UPDATE_SEED)
     }
 
-    /// Deserializes a compact Tuple sketch using the provided expected `seed`.
+    /// Deserializes a compact Tuple sketch using `seed`.
+    ///
+    /// Empty sketches use the hash of `seed` regardless of the stored seed hash.
     ///
     /// # Errors
     ///
-    /// Returns `InvalidData` if the bytes are truncated, the family/serial version/sketch type are
-    /// unexpected, the seed hash does not match, the supplied seed computes to the reserved zero
-    /// seed hash, or an entry is corrupted.
+    /// Returns `InvalidData` if the image is malformed, a non-empty image's seed hash does not
+    /// match `seed`, or `seed` itself computes to the reserved zero seed hash. Also propagates
+    /// errors from [`TupleSummaryValue::deserialize_value`].
     pub fn deserialize_with_seed(bytes: &[u8], seed: u64) -> Result<Self, Error>
     where
         S: TupleSummaryValue,
@@ -680,7 +686,7 @@ impl<S> CompactTupleSketch<S> {
 
         if empty {
             return Ok(Self::from_compact_state(CompactSketchState::empty(
-                seed_hash,
+                expected_seed_hash,
             )));
         }
 

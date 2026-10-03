@@ -178,17 +178,13 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
         Ok(Self::with_lg_map_sizes(lg_max_map_size, LG_MIN_MAP_SIZE))
     }
 
-    /// Returns `true` if the sketch has no active items.
+    /// Returns `true` if the total stream weight is zero.
     ///
     /// A purge can remove all active items while retaining a non-zero total weight and
-    /// maximum error. Use [`Self::total_weight`] to distinguish that state from a newly created
-    /// or reset sketch.
+    /// maximum error. Such a sketch is not empty. Use [`Self::num_active_items`] to check
+    /// whether any items are retained.
     pub fn is_empty(&self) -> bool {
-        self.hash_map.num_active() == 0
-    }
-
-    fn is_initial_state(&self) -> bool {
-        self.stream_weight == 0 && self.offset == 0 && self.hash_map.num_active() == 0
+        self.stream_weight == 0
     }
 
     /// Returns the number of active items being tracked.
@@ -335,6 +331,10 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
 
     /// Updates the sketch with a count of one.
     ///
+    /// # Panics
+    ///
+    /// Panics without modifying the sketch if the total stream weight would exceed `u64::MAX`.
+    ///
     /// # Examples
     ///
     /// ```
@@ -352,6 +352,10 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     ///
     /// A count of zero is a no-op.
     ///
+    /// # Panics
+    ///
+    /// Panics without modifying the sketch if the total stream weight would exceed `u64::MAX`.
+    ///
     /// # Examples
     ///
     /// ```
@@ -365,7 +369,10 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
         if count == 0 {
             return;
         }
-        self.stream_weight += count;
+        self.stream_weight = self
+            .stream_weight
+            .checked_add(count)
+            .expect("total stream weight overflow");
         self.hash_map.adjust_or_put_value(item, count);
         self.maybe_resize_or_purge();
     }
@@ -375,6 +382,10 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     /// Equivalent to [`update`](Self::update) but takes the item by reference and
     /// only allocates an owned item when it is newly inserted, so updating an
     /// already-tracked item is allocation free.
+    ///
+    /// # Panics
+    ///
+    /// Panics without modifying the sketch if the total stream weight would exceed `u64::MAX`.
     ///
     /// # Examples
     ///
@@ -400,6 +411,10 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     /// item by reference and only allocates an owned item when it is newly
     /// inserted. A count of zero is a no-op.
     ///
+    /// # Panics
+    ///
+    /// Panics without modifying the sketch if the total stream weight would exceed `u64::MAX`.
+    ///
     /// # Examples
     ///
     /// ```
@@ -417,7 +432,10 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
         if count == 0 {
             return;
         }
-        self.stream_weight += count;
+        self.stream_weight = self
+            .stream_weight
+            .checked_add(count)
+            .expect("total stream weight overflow");
         self.hash_map.adjust_or_put_value_ref(item, count);
         self.maybe_resize_or_purge();
     }
@@ -426,6 +444,10 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     ///
     /// The other sketch may have a different map size. The merged sketch respects the
     /// larger error tolerance of the inputs.
+    ///
+    /// # Panics
+    ///
+    /// Panics without modifying the sketch if the combined stream weight would exceed `u64::MAX`.
     ///
     /// # Examples
     ///
@@ -443,10 +465,13 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     where
         T: Clone,
     {
-        if other.is_initial_state() {
+        if other.is_empty() {
             return;
         }
-        let merged_total = self.stream_weight + other.stream_weight;
+        let merged_total = self
+            .stream_weight
+            .checked_add(other.stream_weight)
+            .expect("total stream weight overflow");
         for (item, count) in other.hash_map.iter() {
             self.update_with_count_ref(item, count);
         }
@@ -576,7 +601,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
         count_serialize_size: CountSerializeSize<T>,
         serialize_item: SerializeItem<T>,
     ) -> Vec<u8> {
-        if self.is_initial_state() {
+        if self.is_empty() {
             let mut bytes = SketchBytes::with_capacity(PREAMBLE_LONGS_EMPTY as usize * 8);
             bytes.write_u8(PREAMBLE_LONGS_EMPTY);
             bytes.write_u8(SERIAL_VERSION);
@@ -649,15 +674,17 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
         ensure_serial_version_is(SERIAL_VERSION, serial_version)?;
         validate_lg_map_sizes(lg_max, lg_cur)?;
 
-        let is_empty = (flags & EMPTY_FLAG_MASK) != 0;
+        ensure_preamble_longs_in(&[PREAMBLE_LONGS_EMPTY, PREAMBLE_LONGS_NONEMPTY], pre_longs)?;
+        let is_empty = pre_longs == PREAMBLE_LONGS_EMPTY;
+        if ((flags & EMPTY_FLAG_MASK) != 0) != is_empty {
+            return Err(Error::deserial("empty flag does not match preamble longs"));
+        }
         if is_empty {
-            ensure_preamble_longs_in(&[PREAMBLE_LONGS_EMPTY], pre_longs)?;
             // Java also restores empty images at the minimum size. `lg_cur` does
             // not carry item state here and must not control an eager allocation.
             return Ok(Self::with_lg_map_sizes(lg_max, LG_MIN_MAP_SIZE));
         }
 
-        ensure_preamble_longs_in(&[PREAMBLE_LONGS_NONEMPTY], pre_longs)?;
         let active_items = cursor
             .read_u32_le()
             .map_err(insufficient_data("active_items"))?;
@@ -675,6 +702,11 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
         let stream_weight = cursor
             .read_u64_le()
             .map_err(insufficient_data("stream_weight"))?;
+        if stream_weight == 0 {
+            return Err(Error::deserial(
+                "non-empty sketch must have a positive stream weight",
+            ));
+        }
         let offset_val = cursor.read_u64_le().map_err(insufficient_data("offset"))?;
 
         // Each active item has an eight-byte weight before its encoded key. Check
@@ -691,10 +723,16 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
         }
 
         let mut values = Vec::with_capacity(active_items);
+        let mut remaining_weight = stream_weight;
         for i in 0..active_items {
-            values.push(cursor.read_u64_le().map_err(|error| {
+            let value = cursor.read_u64_le().map_err(|error| {
                 Error::insufficient_data_of("frequent item weight", error).with_context("index", i)
-            })?);
+            })?;
+            // Reconstructing the map must not overflow or exceed the declared stream weight.
+            remaining_weight = remaining_weight
+                .checked_sub(value)
+                .ok_or_else(|| Error::deserial("item weights exceed total stream weight"))?;
+            values.push(value);
         }
 
         let items = deserialize_items(cursor, active_items)?;

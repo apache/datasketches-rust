@@ -136,8 +136,9 @@ impl<T: Clone + Ord> KllSketch<T> {
     ///
     /// # Panics
     ///
-    /// Panics if the stream weight would exceed [`u64::MAX`].
+    /// Panics without modifying the sketch if the stream weight would exceed [`u64::MAX`].
     pub fn update(&mut self, item: T) {
+        assert!(self.n < u64::MAX, "total stream weight overflow");
         self.update_min_max(&item);
         self.internal_update(item);
     }
@@ -226,6 +227,8 @@ impl<T: Clone + Ord> KllSketch<T> {
 
     /// Returns the quantile for the given normalized rank.
     ///
+    /// Ranks `0.0` and `1.0` return the exact minimum and maximum items of the stream.
+    ///
     /// # Errors
     ///
     /// Returns an error if the sketch is empty or `rank` is outside `[0.0, 1.0]`.
@@ -238,10 +241,18 @@ impl<T: Clone + Ord> KllSketch<T> {
                 "rank must be in [0.0, 1.0], got {rank}"
             )));
         }
+        if rank == 0.0 {
+            return Ok(self.min_item.as_ref().unwrap().clone());
+        }
+        if rank == 1.0 {
+            return Ok(self.max_item.as_ref().unwrap().clone());
+        }
         self.sorted_view().quantile(rank, criteria)
     }
 
     /// Returns approximate quantiles for the given normalized ranks.
+    ///
+    /// Ranks `0.0` and `1.0` return the exact minimum and maximum items of the stream.
     ///
     /// The sorted view is built once for the whole batch.
     ///
@@ -282,7 +293,12 @@ impl<T: Clone + Ord> KllSketch<T> {
     ///
     /// The view can be reused for repeated queries while this sketch continues to receive updates.
     pub fn sorted_view(&self) -> SortedView<T> {
-        build_sorted_view(&self.levels, self.is_level_zero_sorted)
+        build_sorted_view(
+            &self.levels,
+            self.is_level_zero_sorted,
+            self.min_item.clone(),
+            self.max_item.clone(),
+        )
     }
 
     /// Returns the normalized single-sided rank error for the configured k.
@@ -708,13 +724,8 @@ impl<T: Clone + Ord> KllSketch<T> {
         if self.num_retained >= self.capacity {
             self.compress_while_updating();
         }
-        self.n = self.n.checked_add(1).unwrap_or_else(|| {
-            panic!(
-                "cannot update KLL sketch: stream weight is {}, maximum is {}",
-                self.n,
-                u64::MAX
-            )
-        });
+        // Both update and merge check the final stream weight before modifying the sketch.
+        self.n += 1;
         self.num_retained += 1;
         self.is_level_zero_sorted = false;
         self.levels[0].push(item);

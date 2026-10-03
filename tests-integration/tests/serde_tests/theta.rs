@@ -160,6 +160,62 @@ fn test_go_compatibility() {
 }
 
 #[test]
+fn empty_sketch_serialization() {
+    let expected = fs::read(serialization_test_data(
+        "cpp_generated_files",
+        "theta_n0_cpp.sk",
+    ))
+    .unwrap();
+    let sketch = ThetaSketchBuilder::default()
+        .seed(123)
+        .sampling_probability(0.5)
+        .build()
+        .unwrap()
+        .compact(false);
+    assert_eq!(sketch.serialize(), expected);
+    assert_eq!(sketch.serialize_compressed(), expected);
+
+    let other_seed_hash = ThetaSketchBuilder::default().build().unwrap().seed_hash();
+    // v3 and v4 empty inputs; v4 includes a one-byte entry count of zero.
+    for mut bytes in [expected, vec![1, 4, 3, 0, 1, 0x1e, 0, 0, 0]] {
+        for stored_seed_hash in [0, other_seed_hash] {
+            bytes[6..8].copy_from_slice(&stored_seed_hash.to_le_bytes());
+            let restored = CompactThetaSketch::deserialize_with_seed(&bytes, 123).unwrap();
+            assert!(restored.is_empty());
+            assert_eq!(restored.seed_hash(), sketch.seed_hash());
+        }
+    }
+}
+
+#[test]
+fn non_empty_images_without_entries_preserve_seed_hash() {
+    let mut sketch = ThetaSketchBuilder::default()
+        .seed(123)
+        .sampling_probability(1e-12)
+        .build()
+        .unwrap();
+    sketch.update("apple");
+    let compact = sketch.compact(true);
+    assert!(!compact.is_empty());
+    assert_eq!(compact.num_retained(), 0);
+
+    // v2 and v3 share the count/theta layout for sampled sketches.
+    for version in [2, 3] {
+        let mut bytes = compact.serialize();
+        bytes[1] = version;
+        let restored = CompactThetaSketch::deserialize_with_seed(&bytes, 123).unwrap();
+        assert!(!restored.is_empty());
+        assert_eq!(restored.theta64(), compact.theta64());
+        let err = CompactThetaSketch::deserialize(&bytes).unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::InvalidData);
+
+        bytes[6..8].fill(0);
+        let err = CompactThetaSketch::deserialize_with_seed(&bytes, 123).unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::InvalidData);
+    }
+}
+
+#[test]
 fn malformed_input_is_rejected() {
     let mut sketch = ThetaSketchBuilder::default().lg_k(5).build().unwrap();
     for value in 0..5000 {
@@ -235,13 +291,30 @@ fn test_v2_exact_non_empty_compatibility() {
 }
 
 #[test]
-fn test_v2_exact_zero_entries_remains_empty() {
-    let sketch = CompactThetaSketch::deserialize(&serialize_v2_exact(&[])).unwrap();
+fn test_v2_java_empty_layouts() {
+    let expected_seed_hash = ThetaSketchBuilder::default()
+        .seed(123)
+        .build()
+        .unwrap()
+        .seed_hash();
+    let other_seed_hash = ThetaSketchBuilder::default().build().unwrap().seed_hash();
 
-    assert!(sketch.is_empty());
-    assert!(!sketch.is_estimation_mode());
-    assert_eq!(sketch.num_retained(), 0);
-    assert_eq!(sketch.estimate(), 0.0);
-    assert_eq!(sketch.lower_bound(NumStdDev::One), 0.0);
-    assert_eq!(sketch.upper_bound(NumStdDev::One), 0.0);
+    // Port of Java 8.0.0 ForwardCompatibilityTest's checkSerVer2_{1,2,3}PreLong[s]_Empty:
+    // https://github.com/apache/datasketches-java/blob/8.0.0/src/test/java/org/apache/datasketches/theta/ForwardCompatibilityTest.java#L90-L137
+    for pre_longs in [1, 2, 3] {
+        let mut bytes = serialize_v2_exact(&[]);
+        bytes[0] = pre_longs;
+        bytes[5] = 0x0e; // Java's v2 empty flags.
+        bytes.resize(pre_longs as usize * 8, 0);
+        if pre_longs == 3 {
+            bytes[16..24].copy_from_slice(&(i64::MAX as u64).to_le_bytes());
+        }
+
+        for stored_seed_hash in [0, other_seed_hash] {
+            bytes[6..8].copy_from_slice(&stored_seed_hash.to_le_bytes());
+            let sketch = CompactThetaSketch::deserialize_with_seed(&bytes, 123).unwrap();
+            assert!(sketch.is_empty());
+            assert_eq!(sketch.seed_hash(), expected_seed_hash);
+        }
+    }
 }

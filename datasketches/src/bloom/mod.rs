@@ -28,8 +28,10 @@
 //! * **Fixed size**: Unlike typical sketches, Bloom filters do not resize automatically
 //! * **Linear space**: Size is proportional to the expected number of distinct items
 //!
-//! These guarantees describe normal operation. After [`invert()`](BloomFilter::invert) neither
-//! the no-false-negative nor the false-positive guarantee holds; see its documentation.
+//! Set operations transform the represented set: [`union()`](BloomFilter::union) keeps items
+//! from either filter, and [`intersect()`](BloomFilter::intersect) keeps only items in both.
+//! [`difference()`](BloomFilter::difference) excludes the right filter's items exactly, but
+//! may also drop left items whose hash positions collide with the right filter.
 //!
 //! # Usage
 //!
@@ -128,8 +130,10 @@
 //! // Intersect: recognizes only items in both filters
 //! // filter1.intersect(&filter2).unwrap();
 //!
-//! // Invert: approximately inverts set membership
-//! // filter1.invert();
+//! // Difference: recognizes items in filter1 that are definitely not in filter2
+//! filter1.difference(&filter2).unwrap();
+//! assert!(filter1.contains(&"a"));
+//! assert!(!filter1.contains(&"b"));
 //! ```
 //!
 //! # Implementation Details

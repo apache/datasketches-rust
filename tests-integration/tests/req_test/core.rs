@@ -17,6 +17,9 @@
 
 //! Core ReqSketch construction and update behavior.
 
+use std::panic::AssertUnwindSafe;
+use std::panic::catch_unwind;
+
 use datasketches::common::SearchCriteria;
 use datasketches::error::Error;
 use datasketches::error::ErrorKind;
@@ -253,4 +256,26 @@ fn new_validates_k() {
         err(anything())
     );
     assert!(ReqSketch::<ReqF64>::new(12, RankAccuracy::HighRank).is_ok());
+}
+
+#[test]
+fn weight_overflow_preserves_state() {
+    let mut one = ReqSketch::<i64>::default();
+    one.update(0);
+    let mut sketch = one.clone();
+    // Doubling and adding one reaches the exact limit through valid public operations.
+    for _ in 0..63 {
+        sketch.merge(&sketch.clone()).unwrap();
+        sketch.update(0);
+    }
+    assert_eq!(sketch.n(), u64::MAX);
+    let before = sketch.serialize();
+
+    assert!(catch_unwind(AssertUnwindSafe(|| sketch.update(1))).is_err());
+    assert!(sketch.serialize() == before, "overflow changed the sketch");
+    assert_eq!(
+        sketch.merge(&one).unwrap_err().kind(),
+        ErrorKind::InvalidArgument
+    );
+    assert!(sketch.serialize() == before, "overflow changed the sketch");
 }
