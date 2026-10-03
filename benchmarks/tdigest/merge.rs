@@ -65,7 +65,7 @@ fn small_partials(bencher: Bencher) {
     let partials = partial_digests(64, SMALL_ROWS_PER_PARTIAL)
         .into_iter()
         .map(|mut digest| {
-            black_box(digest.rank(0.0));
+            black_box(digest.quantile(0.5));
             digest
         })
         .collect::<Vec<_>>();
@@ -86,7 +86,7 @@ fn partials(bencher: Bencher) {
     let partials = partial_digests_with(DEFAULT_DIGEST_K, 64, ROWS_PER_PARTIAL)
         .into_iter()
         .map(|mut digest| {
-            black_box(digest.rank(0.0));
+            black_box(digest.quantile(0.5));
             digest
         })
         .collect::<Vec<_>>();
@@ -100,6 +100,80 @@ fn partials(bencher: Bencher) {
             }
             black_box(merged)
         });
+}
+
+#[divan::bench]
+fn partials_from_iter(bencher: Bencher) {
+    let partials = partial_digests_with(DEFAULT_DIGEST_K, 64, ROWS_PER_PARTIAL)
+        .into_iter()
+        .map(|mut digest| {
+            black_box(digest.quantile(0.5));
+            digest
+        })
+        .collect::<Vec<_>>();
+
+    bencher
+        .counter(ItemsCount::new(64 * ROWS_PER_PARTIAL))
+        // Construct fresh owned inputs outside the measurement, as a real caller transfers
+        // ownership rather than cloning solely for `FromIterator`.
+        .with_inputs(|| partials.clone())
+        .bench_local_values(|partials| black_box(partials).into_iter().collect::<TDigestMut>());
+}
+
+#[divan::bench]
+fn partials_from_iter_cloned(bencher: Bencher) {
+    let partials = partial_digests_with(DEFAULT_DIGEST_K, 64, ROWS_PER_PARTIAL)
+        .into_iter()
+        .map(|mut digest| {
+            black_box(digest.quantile(0.5));
+            digest
+        })
+        .collect::<Vec<_>>();
+
+    bencher
+        .counter(ItemsCount::new(64 * ROWS_PER_PARTIAL))
+        // Include cloning when the caller needs to retain the original inputs.
+        .bench_local(|| black_box(&partials).iter().cloned().collect::<TDigestMut>());
+}
+
+#[divan::bench(args = [0, 64, 4_096])]
+fn partials_from_iter_finalize(bencher: Bencher, additional_rows: usize) {
+    let partials = partial_digests_with(DEFAULT_DIGEST_K, 64, ROWS_PER_PARTIAL)
+        .into_iter()
+        .map(|mut digest| {
+            black_box(digest.quantile(0.5));
+            digest
+        })
+        .collect::<Vec<_>>();
+    let updates = values(additional_rows)
+        .into_iter()
+        .map(|value| value * (64 * ROWS_PER_PARTIAL) as f64)
+        .collect::<Vec<_>>();
+
+    bencher
+        .counter(ItemsCount::new(64 * ROWS_PER_PARTIAL + additional_rows))
+        .with_inputs(|| partials.clone())
+        .bench_local_values(|partials| {
+            let mut merged = black_box(partials).into_iter().collect::<TDigestMut>();
+            for &value in black_box(&updates) {
+                merged.update(value);
+            }
+            black_box(merged.freeze())
+        });
+}
+
+#[divan::bench]
+fn uncompressed_partials_from_iter(bencher: Bencher) {
+    let values = values(64 * ROWS_PER_PARTIAL);
+    let partials = values
+        .chunks_exact(ROWS_PER_PARTIAL)
+        .map(build_mut_digest)
+        .collect::<Vec<_>>();
+
+    bencher
+        .counter(ItemsCount::new(values.len()))
+        .with_inputs(|| partials.clone())
+        .bench_local_values(|partials| black_box(partials).into_iter().collect::<TDigestMut>());
 }
 
 #[divan::bench(args = [SMALL_ROWS_PER_PARTIAL, ROWS_PER_PARTIAL])]
@@ -136,4 +210,51 @@ fn serialized_overlapping_partials(bencher: Bencher) {
             }
             black_box(merged.quantile(0.5))
         });
+}
+
+#[divan::bench(args = [false, true])]
+fn serialized_partials_from_iter(bencher: Bencher, overlapping: bool) {
+    let partials = serialized_merge_inputs(overlapping);
+
+    bencher
+        .counter(ItemsCount::new(64 * ROWS_PER_PARTIAL))
+        .bench_local(|| {
+            let mut merged = black_box(&partials)
+                .iter()
+                .map(|partial| TDigestMut::deserialize(partial))
+                .collect::<Result<TDigestMut, _>>()
+                .unwrap();
+            black_box(merged.quantile(0.5))
+        });
+}
+
+#[divan::bench(args = [false, true])]
+fn serialized_partials_in_batches(bencher: Bencher, overlapping: bool) {
+    let partials = serialized_merge_inputs(overlapping);
+
+    bencher
+        .counter(ItemsCount::new(64 * ROWS_PER_PARTIAL))
+        .bench_local(|| {
+            let mut merged = TDigestMut::new(DEFAULT_DIGEST_K).unwrap();
+            for batch in black_box(&partials).chunks(16) {
+                let batch = batch
+                    .iter()
+                    .map(|partial| TDigestMut::deserialize(partial))
+                    .collect::<Result<TDigestMut, _>>()
+                    .unwrap();
+                merged.merge(&batch);
+            }
+            black_box(merged.quantile(0.5))
+        });
+}
+
+fn serialized_merge_inputs(overlapping: bool) -> Vec<Vec<u8>> {
+    if overlapping {
+        values(64 * ROWS_PER_PARTIAL)
+            .chunks_exact(ROWS_PER_PARTIAL)
+            .map(|values| build_mut_digest(values).serialize())
+            .collect()
+    } else {
+        serialized_partial_digests(64, ROWS_PER_PARTIAL)
+    }
 }
