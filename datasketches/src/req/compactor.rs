@@ -17,8 +17,7 @@
 
 //! Compactor implementation for REQ sketch levels.
 //!
-//! Each level in the REQ sketch uses a compactor to maintain a bounded set of items
-//! with deterministic compaction when capacity is exceeded.
+//! Each level compacts a selected range, retaining one item from each pair at twice the weight.
 
 use crate::common::random::random_bit;
 use crate::error::Error;
@@ -31,31 +30,20 @@ use crate::req::value::ReqValue;
 
 /// A compactor maintains items at a specific level of the REQ sketch.
 ///
-/// When the compactor reaches its nominal capacity, it performs compaction
-/// by keeping approximately half the items and promoting the rest to the next level.
+/// Compaction preserves the configured accuracy tail and promotes samples from the other tail.
 #[derive(Debug, Clone)]
 pub struct Compactor<T> {
-    /// Current items in the compactor
     items: Vec<T>,
-    /// Whether items are currently sorted
     is_sorted: bool,
-    /// State for deterministic compaction
+    /// Determines which sections are compacted and when their count doubles.
     state: u64,
-    /// Reusable scratch buffer for compaction operations
     scratch_buffer: Vec<T>,
-
-    /// Actual section size (rounded to integer)
     section_size: u32,
-    /// Number of sections in this compactor
     num_sections: u8,
-    /// The level of this compactor (0 = base level)
     lg_weight: u8,
-
-    /// Whether this compactor is configured for high rank accuracy
     rank_accuracy: RankAccuracy,
-    /// Raw section size (maybe fractional)
+    /// Preserves fractional section sizes across successive divisions by sqrt(2).
     section_size_raw: f32,
-    /// Random bit for compaction
     coin: bool,
 }
 
@@ -64,11 +52,6 @@ where
     T: Clone + Ord,
 {
     /// Creates a new compactor for the given level.
-    ///
-    /// # Arguments
-    /// * `lg_weight` - The level (log weight) of this compactor
-    /// * `k` - The k parameter from the parent sketch
-    /// * `rank_accuracy` - Rank accuracy configuration
     pub fn new(lg_weight: u8, k: u16, rank_accuracy: RankAccuracy) -> Self {
         let section_size_raw = k as f32;
         let section_size = nearest_even_section_size(section_size_raw);
@@ -156,8 +139,8 @@ where
         }
     }
 
-    /// Merges pre-sorted items into this compactor.
-    /// Merges sorted items into this compactor using scratch buffer to avoid allocation.
+    /// Merges sorted items using the reusable scratch buffer.
+    ///
     /// Both this compactor's items and the input must be sorted.
     #[inline(always)]
     pub fn merge_sorted(&mut self, items: &[T]) {
@@ -171,18 +154,13 @@ where
             return;
         }
 
-        // Ensure sorted on both inputs by contract
         let total = self.items.len() + items.len();
         self.scratch_buffer.clear();
-        if self.scratch_buffer.capacity() < total {
-            self.scratch_buffer
-                .reserve(total - self.scratch_buffer.capacity());
-        }
+        self.scratch_buffer.reserve(total);
 
         let (mut i, mut j) = (0usize, 0usize);
         let (a, b) = (&self.items, items);
 
-        // Two-pointer merge into scratch buffer
         while i < a.len() && j < b.len() {
             if a[i] <= b[j] {
                 self.scratch_buffer.push(a[i].clone());
@@ -193,15 +171,9 @@ where
             }
         }
 
-        // Add remaining elements
-        if i < a.len() {
-            self.scratch_buffer.extend_from_slice(&a[i..]);
-        }
-        if j < b.len() {
-            self.scratch_buffer.extend_from_slice(&b[j..]);
-        }
+        self.scratch_buffer.extend_from_slice(&a[i..]);
+        self.scratch_buffer.extend_from_slice(&b[j..]);
 
-        // Swap scratch buffer with items (zero-copy)
         self.items.clear();
         std::mem::swap(&mut self.items, &mut self.scratch_buffer);
         self.is_sorted = true;
@@ -211,62 +183,43 @@ where
     #[inline(always)]
     pub fn sort(&mut self) {
         if !self.is_sorted {
-            // Use unstable sort for better performance (stable not needed for REQ sketch)
             self.items.sort_unstable();
             self.is_sorted = true;
         }
     }
 
-    /// Compacts into the provided output buffer without allocating.
-    /// Writes promoted items into `out` and removes the compacted range in-place via `copy_within +
-    /// truncate`.
+    /// Writes promoted samples into `out` and removes their source range from this level.
     #[inline(always)]
-    pub fn compact_into(&mut self, _rank_accuracy: RankAccuracy, out: &mut Vec<T>) {
-        if self.items.is_empty() {
-            out.clear();
-            return;
-        }
-
-        // Sort entire buffer (C++ sorts full buffer before compaction)
+    pub fn compact_into(&mut self, out: &mut Vec<T>) {
+        out.clear();
         self.sort();
 
-        // Calculate sections to compact based on state
         let secs_to_compact =
             ((!self.state).trailing_zeros() + 1).min(self.num_sections as u32) as u8;
-        let compaction_range = self.compute_compaction_range(secs_to_compact);
-
-        // Must have at least 2 items to compact
-        if compaction_range.1 <= compaction_range.0 || (compaction_range.1 - compaction_range.0) < 2
-        {
-            out.clear();
+        let (start, end) = self.compute_compaction_range(secs_to_compact);
+        if end - start < 2 {
             return;
         }
 
+        // Complement consecutive choices so each pair of compactions promotes both parities.
         if (self.state & 1) == 1 {
-            self.coin = !self.coin; // flip coin for odd states
+            self.coin = !self.coin;
         } else {
-            self.coin = random_bit(); // random coin flip for even states
+            self.coin = random_bit();
         }
-        let odds = self.coin;
 
-        // Build promoted items directly into output buffer (no alloc)
-        out.clear();
-        let (start, end) = compaction_range;
-        let mut i = start + if odds { 1 } else { 0 };
+        let mut i = start + usize::from(self.coin);
         while i < end {
-            out.push(self.items[i].clone()); // TODO: use Copy fast-path for numeric types
+            out.push(self.items[i].clone());
             i += 2;
         }
 
-        // Remove the compacted range in-place by rotating elements left
         let removed = end - start;
         if end < self.items.len() {
-            // Use rotate_left to move tail elements to fill the gap
             self.items[start..].rotate_left(removed);
         }
         self.items.truncate(self.items.len() - removed);
 
-        // Update state, then ensure enough sections (C++ order)
         self.state = self.state.wrapping_add(1);
         self.ensure_enough_sections();
     }
@@ -285,8 +238,6 @@ where
     pub fn weight(&self) -> u64 {
         1u64 << self.lg_weight
     }
-
-    // Private helper methods
 
     fn ensure_enough_sections(&mut self) -> bool {
         let Some(threshold) = self
@@ -317,36 +268,18 @@ where
         let mut non_compact = nom_capacity / 2
             + (self.num_sections - secs_to_compact) as usize * self.section_size as usize;
 
-        // if (((num_items_ - non_compact) & 1) == 1) ++non_compact;
+        // Preserve an extra item when needed to make the compacted range even.
         if self.items.len() >= non_compact && ((self.items.len() - non_compact) & 1) == 1 {
             non_compact += 1;
         }
 
-        let (low, high) = match self.rank_accuracy {
-            RankAccuracy::HighRank => {
-                // HRA: Protect high ranks by compacting LOW sections (low values)
-                // This means we compact from [0, num_items - non_compact] (bottom end)
-                let high = if self.items.len() >= non_compact {
-                    self.items.len() - non_compact
-                } else {
-                    0
-                };
-                (0, high)
-            }
+        match self.rank_accuracy {
+            RankAccuracy::HighRank => (0, self.items.len().saturating_sub(non_compact)),
             RankAccuracy::LowRank => {
-                // LRA: Protect low ranks by compacting HIGH sections (high values)
-                // This means we compact from [non_compact, num_items] (top end)
                 let low = non_compact.min(self.items.len());
                 (low, self.items.len())
             }
-        };
-
-        // Empty window safety: ensure we have at least 2 items to compact
-        if high <= low || (high - low) < 2 {
-            return (0, 0); // Signal no compaction needed
         }
-
-        (low, high)
     }
 
     /// Serialize this compactor (preamble + items) into the byte buffer.

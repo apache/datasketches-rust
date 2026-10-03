@@ -17,6 +17,7 @@ All significant changes to this project will be documented in this file.
 ### Improvements
 
 * Improve the readability of `Debug` output for HLL and CPC sketches and unions.
+* `KllSketch::quantile` and `ReqSketch::quantile` are faster at ranks `0.0` and `1.0`, with query work independent of the number of retained samples.
 * `BloomFilter::insert` is faster for integer and raw-byte inputs. `BloomFilter::contains_and_insert` is also faster when checking already-present integer values.
 * `CountMinSketch` updates are faster for integer and raw-byte inputs.
 * `CpcSketch` updates are faster for integer and raw-byte inputs.
@@ -29,6 +30,7 @@ All significant changes to this project will be documented in this file.
 
 ### Bug fixes
 
+* `KllSketch` and `ReqSketch` quantile queries, including their sorted views, now return the exact stream minimum and maximum at ranks `0.0` and `1.0`, even after compaction or when the stream weight exceeds `2^53`.
 * Empty compact Theta and Tuple sketches now serialize with a zero seed hash, matching the canonical cross-language encoding. Deserialization associates empty sketches with the supplied seed, including legacy Theta v2 images with zero or mismatched seed hashes.
 * `CountMinSketch` updates now panic and merges return `InvalidArgument` if the total absolute weight would exceed the counter type's maximum. Both leave the sketch unchanged, including in release builds.
 * `CountMinSketch::upper_bound` now clamps to the counter type's maximum instead of overflowing.
@@ -36,6 +38,7 @@ All significant changes to this project will be documented in this file.
 * `FrequentItemsSketch` updates and merges now panic without changing the sketch if the total stream weight would overflow, including in release builds.
 * `FrequentItemsSketch` deserialization now returns `InvalidData` if a non-empty image declares zero stream weight or the item weights sum to more than the declared stream weight.
 * `ReqSketch` updates now panic and merges return `InvalidArgument` if the stream weight would exceed `u64::MAX`. Both leave the sketch unchanged, including in release builds.
+* `ReqSketch::cdf` and its sorted view now preserve the rank at each split point and end at exactly `1.0`, avoiding extra rounding from accumulating PMF values.
 * `TDigestMut` updates and merges now panic without changing the digest if the total weight would exceed `u64::MAX`, including in release builds.
 * `TDigestMut::merge` now preserves the true minimum and maximum from both inputs, including compressed digests.
 * `TDigest` and `TDigestMut` deserialization now returns `InvalidData` for invalid flags or extrema, out-of-range values, unsorted centroids, or non-empty images with no stored values.
