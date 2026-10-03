@@ -481,6 +481,26 @@ fn test_single_centroid_preserves_stored_tail_information() {
 }
 
 #[test]
+fn test_compression_preserves_a_small_centroid_weight() {
+    let weight = 1_u64 << 54;
+    let mut digest = deserialize_with_centroids(
+        10,
+        0.,
+        f64::MAX,
+        &[(0., weight), (1., weight), (1e300, 1), (f64::MAX, weight)],
+    );
+    let mut bytes = digest.serialize();
+    bytes[5] |= 1 << 2; // Compress from the right, merging the light centroid into the heavy one.
+    let mut digest = TDigestMut::deserialize(&bytes).unwrap();
+    digest.update(0.);
+
+    // The middle centroid's center is at the median. Its mean retains the light sample's mass.
+    let expected = 1e300 / weight as f64;
+    assert_that!(digest.quantile(0.5).unwrap() / expected, near(1., 1e-12));
+    assert!(TDigestMut::deserialize(&digest.serialize()).is_ok());
+}
+
+#[test]
 fn test_batch_quantiles_match_scalar_queries_in_input_order() {
     let mut tdigest = TDigestMut::new(100).unwrap();
     for value in 0..10_000 {
