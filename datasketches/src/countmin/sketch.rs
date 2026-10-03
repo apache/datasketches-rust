@@ -260,9 +260,6 @@ impl<T: CountMinValue> CountMinSketch<T> {
     }
 
     /// Returns the upper bound on the true frequency of the given item.
-    ///
-    /// Adds `total_weight() * relative_error()`, rounded down, to the estimate.
-    /// Clamps the result to `T::MAX`.
     pub fn upper_bound<I: Hash>(&self, item: I) -> T {
         let estimate = self.estimate(item);
         let error = self.total_weight.scale_nonnegative(self.relative_error());
