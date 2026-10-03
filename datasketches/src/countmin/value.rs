@@ -40,7 +40,8 @@ mod private {
         fn checked_abs(self) -> Option<Self>;
         fn checked_add(self, other: Self) -> Option<Self>;
         /// Scales a nonnegative weight by a factor in `(0, 1]`, truncating toward zero.
-        fn scale(self, factor: f64) -> Self;
+        /// Signed sketches scale only their total absolute weight.
+        fn scale_nonnegative(self, factor: f64) -> Self;
         fn to_bytes(self) -> [u8; 8];
         fn try_from_bytes(bytes: [u8; 8]) -> Result<Self, Error>;
     }
@@ -51,7 +52,7 @@ mod private {
 }
 
 #[inline]
-fn scale_nonnegative(value: u64, factor: f64) -> u64 {
+fn scale_u64(value: u64, factor: f64) -> u64 {
     debug_assert!(factor > 0.0 && factor <= 1.0);
 
     // Decode factor = significand / 2^shift. The product needs at most
@@ -89,9 +90,9 @@ macro_rules! impl_signed {
             }
 
             #[inline(always)]
-            fn scale(self, factor: f64) -> Self {
-                let weight = u64::try_from(self).expect("scaled weight must be nonnegative");
-                scale_nonnegative(weight, factor) as $name
+            fn scale_nonnegative(self, factor: f64) -> Self {
+                debug_assert!(self >= 0);
+                scale_u64(self as u64, factor) as $name
             }
 
             #[inline(always)]
@@ -141,9 +142,8 @@ macro_rules! impl_unsigned {
             }
 
             #[inline(always)]
-            fn scale(self, factor: f64) -> Self {
-                let weight = u64::try_from(self).expect("scaled weight must be nonnegative");
-                scale_nonnegative(weight, factor) as $name
+            fn scale_nonnegative(self, factor: f64) -> Self {
+                scale_u64(self as u64, factor) as $name
             }
 
             #[inline(always)]

@@ -266,7 +266,7 @@ impl<T: CountMinValue> CountMinSketch<T> {
     /// Clamps the bound to `T::MAX` if adding the error would overflow.
     pub fn upper_bound<I: Hash>(&self, item: I) -> T {
         let estimate = self.estimate(item);
-        let error = self.total_weight.scale(self.relative_error());
+        let error = self.total_weight.scale_nonnegative(self.relative_error());
         estimate.checked_add(error).unwrap_or(T::MAX)
     }
 
@@ -570,9 +570,9 @@ impl<T: UnsignedCountMinValue> CountMinSketch<T> {
             return;
         }
         for c in &mut self.counts {
-            *c = c.scale(decay)
+            *c = c.scale_nonnegative(decay)
         }
-        self.total_weight = self.total_weight.scale(decay);
+        self.total_weight = self.total_weight.scale_nonnegative(decay);
     }
 }
 
