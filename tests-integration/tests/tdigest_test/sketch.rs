@@ -288,20 +288,24 @@ fn test_merge_large() {
 }
 
 #[test]
-fn test_mixed_k_merge_uses_smaller_k() {
-    let mut left = TDigestMut::new(200).unwrap();
-    let mut right = TDigestMut::new(50).unwrap();
-    for value in 0..1_000 {
-        left.update(value as f64);
-        right.update((value + 1_000) as f64);
+fn test_mixed_k_merge_retains_receiver_k() {
+    for (left_k, right_k, right_count) in [(200, 50, 1_000), (50, 200, 1_000), (200, 10, 1)] {
+        let mut left = TDigestMut::new(left_k).unwrap();
+        let mut right = TDigestMut::new(right_k).unwrap();
+        for value in 0..10_000 {
+            left.update(value as f64);
+        }
+        for value in 0..right_count {
+            right.update((value + 10_000) as f64);
+        }
+
+        left.merge(&right);
+
+        assert_eq!(left.k(), left_k);
+        assert_eq!(left.total_weight(), 10_000 + right_count);
+        assert_eq!(left.quantile(0.0), Some(0.0));
+        assert_eq!(left.quantile(1.0), Some((9_999 + right_count) as f64));
     }
-
-    left.merge(&right);
-
-    assert_eq!(left.k(), 50);
-    assert_eq!(left.total_weight(), 2_000);
-    assert_eq!(left.min_value(), Some(0.0));
-    assert_eq!(left.max_value(), Some(1_999.0));
 }
 
 #[test]

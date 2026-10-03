@@ -326,8 +326,7 @@ impl TDigestMut {
 
     /// Merges the given t-digest into this one.
     ///
-    /// If the sketches have different `k` values, the merged sketch uses the smaller value because
-    /// merging cannot recover detail already discarded by the lower-`k` sketch.
+    /// Retains this digest's `k`, even if the other digest uses a different value.
     ///
     /// # Panics
     ///
@@ -360,7 +359,6 @@ impl TDigestMut {
         self.max = self.max.max(other.max);
 
         let centroids = std::mem::take(&mut self.buffer).into_merged_centroids(&other.buffer);
-        self.k = self.k.min(other.k);
         self.compress_sorted_centroids(centroids, total_weight);
     }
 
@@ -1095,9 +1093,12 @@ impl TDigestMut {
 
 /// Collects owned t-digests into one result with a single compression pass.
 ///
-/// Empty inputs are ignored. The result uses the smallest `k` among the non-empty inputs. A single
-/// non-empty input is returned unchanged. Collecting consumes each digest, so callers do not need
-/// to clone inputs. Unlike repeated [`TDigestMut::merge`] calls, it temporarily retains all input
+/// Empty inputs are ignored; if all inputs are empty, returns [`TDigestMut::default()`]. The result
+/// uses the smallest `k` among the non-empty inputs. A single non-empty input is returned
+/// unchanged.
+///
+/// Collecting consumes each digest, so callers do not need to clone inputs. Unlike repeated
+/// [`TDigestMut::merge`] calls, it temporarily retains all input
 /// centroids so it can avoid recompressing intermediate results. Use repeated `merge` calls when
 /// inputs must be processed with bounded additional memory.
 ///

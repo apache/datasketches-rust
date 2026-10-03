@@ -45,7 +45,6 @@ All significant changes to this project will be documented in this file.
 * `ReqSketch::cdf` and its sorted view now preserve the rank at each split point and end at exactly `1.0`, avoiding extra rounding from accumulating PMF values.
 * `TDigestMut` updates and merges now panic without changing the digest if the total weight would exceed `u64::MAX`, including in release builds.
 * `TDigestMut::merge` now preserves the true minimum and maximum from both inputs, including compressed digests.
-* `TDigestMut::merge` now uses the smaller `k` when sketches have different compression parameters, preserving the size bound of the coarser input.
 * `TDigest` and `TDigestMut` quantile queries no longer extrapolate above the stored maximum when large total weights cause rounding near rank `1.0`.
 * `TDigest` and `TDigestMut` deserialization now returns `InvalidData` for invalid flags or extrema, out-of-range values, unsorted centroids, or non-empty images with no stored values.
 
