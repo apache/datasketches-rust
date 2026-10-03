@@ -65,7 +65,7 @@ fn small_partials(bencher: Bencher) {
     let partials = partial_digests(64, SMALL_ROWS_PER_PARTIAL)
         .into_iter()
         .map(|mut digest| {
-            black_box(digest.rank(0.0));
+            black_box(digest.quantile(0.5));
             digest
         })
         .collect::<Vec<_>>();
@@ -86,7 +86,7 @@ fn partials(bencher: Bencher) {
     let partials = partial_digests_with(DEFAULT_DIGEST_K, 64, ROWS_PER_PARTIAL)
         .into_iter()
         .map(|mut digest| {
-            black_box(digest.rank(0.0));
+            black_box(digest.quantile(0.5));
             digest
         })
         .collect::<Vec<_>>();
@@ -107,7 +107,7 @@ fn partials_from_iter(bencher: Bencher) {
     let partials = partial_digests_with(DEFAULT_DIGEST_K, 64, ROWS_PER_PARTIAL)
         .into_iter()
         .map(|mut digest| {
-            black_box(digest.rank(0.0));
+            black_box(digest.quantile(0.5));
             digest
         })
         .collect::<Vec<_>>();
