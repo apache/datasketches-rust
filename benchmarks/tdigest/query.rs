@@ -18,6 +18,9 @@
 use divan::Bencher;
 use divan::black_box;
 use divan::counter::ItemsCount;
+use rand::SeedableRng;
+use rand::rngs::StdRng;
+use rand::seq::SliceRandom;
 
 use super::support::prepared_digest;
 
@@ -45,14 +48,37 @@ fn cdf_100(bencher: Bencher) {
         .bench_local(|| black_box(&digest).cdf(black_box(&split_points)));
 }
 
-#[divan::bench]
-fn quantiles_2_sequential(bencher: Bencher) {
+#[divan::bench(consts = [true, false], args = [2, 6, 100])]
+fn quantiles_sequential<const SORTED: bool>(bencher: Bencher, num_ranks: usize) {
     let digest = prepared_digest();
+    let ranks = query_ranks(num_ranks, SORTED);
 
-    bencher.bench_local(|| {
-        [
-            black_box(&digest).quantile(black_box(0.5)),
-            black_box(&digest).quantile(black_box(0.95)),
-        ]
+    bencher.counter(ItemsCount::new(num_ranks)).bench_local(|| {
+        for &rank in black_box(&ranks) {
+            black_box(black_box(&digest).quantile(black_box(rank)));
+        }
     });
+}
+
+#[divan::bench(consts = [true, false], args = [2, 6, 100])]
+fn quantiles_batch<const SORTED: bool>(bencher: Bencher, num_ranks: usize) {
+    let digest = prepared_digest();
+    let ranks = query_ranks(num_ranks, SORTED);
+
+    bencher
+        .counter(ItemsCount::new(num_ranks))
+        .bench_local(|| black_box(&digest).quantiles(black_box(&ranks)));
+}
+
+fn query_ranks(num_ranks: usize, sorted: bool) -> Vec<f64> {
+    let mut ranks = (1..=num_ranks)
+        .map(|rank| rank as f64 / (num_ranks + 1) as f64)
+        .collect::<Vec<_>>();
+    if !sorted {
+        ranks.shuffle(&mut StdRng::seed_from_u64(42));
+        if ranks.is_sorted() {
+            ranks.reverse();
+        }
+    }
+    ranks
 }

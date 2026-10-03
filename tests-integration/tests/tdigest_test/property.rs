@@ -36,10 +36,13 @@ fn assert_quantiles_are_monotonic(tdigest: &mut TDigestMut) {
     let min = tdigest.min_value().unwrap();
     let max = tdigest.max_value().unwrap();
     let mut previous = min;
+    let ranks = (0..=RANK_STEPS)
+        .map(|step| step as f64 / RANK_STEPS as f64)
+        .collect::<Vec<_>>();
+    let quantiles = tdigest.quantiles(&ranks).unwrap();
 
-    for step in 0..=RANK_STEPS {
-        let rank = step as f64 / RANK_STEPS as f64;
-        let quantile = tdigest.quantile(rank).unwrap();
+    for (&rank, quantile) in ranks.iter().zip(quantiles) {
+        assert_eq!(tdigest.quantile(rank), Some(quantile));
         assert!(
             (previous..=max).contains(&quantile),
             "quantile {quantile} at rank {rank} is outside [{previous}, {max}]"
@@ -86,4 +89,43 @@ fn prop_merged_quantile_is_non_decreasing() {
         .min_tests_passed(64)
         .rng(Gen::new(900))
         .quickcheck(property as fn(Vec<u32>, Vec<u32>) -> TestResult);
+}
+
+#[test]
+fn prop_batch_quantiles_preserve_input_order_and_duplicates() {
+    fn property(values: Vec<u32>, ranks: Vec<u8>) {
+        let tdigest = digest_of(&values);
+        let frozen = tdigest.clone().freeze();
+        let mut ranks = ranks
+            .into_iter()
+            .map(|rank| f64::from(rank) / f64::from(u8::MAX))
+            .collect::<Vec<_>>();
+        if let Some(&rank) = ranks.first() {
+            ranks.push(rank);
+        }
+        ranks.extend_from_slice(&[1.0, 0.0, -0.0]);
+
+        for sorted in [false, true] {
+            if sorted {
+                ranks.sort_unstable_by(f64::total_cmp);
+            }
+            let expected = if frozen.is_empty() {
+                None
+            } else {
+                Some(
+                    ranks
+                        .iter()
+                        .map(|&rank| frozen.quantile(rank).unwrap())
+                        .collect::<Vec<_>>(),
+                )
+            };
+            assert_eq!(tdigest.clone().quantiles(&ranks), expected);
+            assert_eq!(frozen.quantiles(&ranks), expected);
+        }
+    }
+
+    QuickCheck::new()
+        .tests(256)
+        .rng(Gen::new(1200))
+        .quickcheck(property as fn(Vec<u32>, Vec<u8>));
 }

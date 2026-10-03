@@ -63,6 +63,7 @@
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![deny(missing_docs)]
+extern crate core;
 
 // See https://github.com/apache/datasketches-rust/issues/28 for more information.
 #[cfg(target_endian = "big")]

@@ -13,6 +13,7 @@ All significant changes to this project will be documented in this file.
 ### New features
 
 * `KllSketch` is now available behind the `kll` feature, with rank, quantile, PMF, and CDF queries, merging, serialization, custom ordered item types, and a `KllFloat` adapter for non-NaN floating-point values.
+* Add `TDigestMut::quantiles` and `TDigest::quantiles` for querying several ranks in one centroid scan while preserving input order.
 
 ### Improvements
 
@@ -43,6 +44,7 @@ All significant changes to this project will be documented in this file.
 * `ReqSketch::cdf` and its sorted view now preserve the rank at each split point and end at exactly `1.0`, avoiding extra rounding from accumulating PMF values.
 * `TDigestMut` updates and merges now panic without changing the digest if the total weight would exceed `u64::MAX`, including in release builds.
 * `TDigestMut::merge` now preserves the true minimum and maximum from both inputs, including compressed digests.
+* `TDigest` and `TDigestMut` quantile queries no longer extrapolate above the stored maximum when large total weights cause rounding near rank `1.0`.
 * `TDigest` and `TDigestMut` deserialization now returns `InvalidData` for invalid flags or extrema, out-of-range values, unsorted centroids, or non-empty images with no stored values.
 
 ## v0.5.0 (2026-09-04)
