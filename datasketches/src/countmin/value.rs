@@ -39,6 +39,7 @@ mod private {
 
         fn checked_abs(self) -> Option<Self>;
         fn checked_add(self, other: Self) -> Option<Self>;
+        /// Scales a nonnegative weight by a factor in `(0, 1]`, truncating toward zero.
         fn scale(self, factor: f64) -> Self;
         fn to_bytes(self) -> [u8; 8];
         fn try_from_bytes(bytes: [u8; 8]) -> Result<Self, Error>;
@@ -47,6 +48,27 @@ mod private {
     pub trait UnsignedCountMinValue: CountMinValue {
         fn halve(self) -> Self;
     }
+}
+
+#[inline]
+fn scale_nonnegative(value: u64, factor: f64) -> u64 {
+    debug_assert!(factor > 0.0 && factor <= 1.0);
+
+    // Decode factor = significand / 2^shift. The product needs at most
+    // 64 + 53 bits, so u128 preserves it exactly until the final truncation.
+    let bits = factor.to_bits();
+    let exponent = ((bits >> 52) & 0x7ff) as u32;
+    let fraction = bits & ((1_u64 << 52) - 1);
+    // Normal values have an implicit leading bit and exponent bias 1023;
+    // subnormals have no leading bit and use a fixed exponent of -1074.
+    let (significand, shift) = if exponent == 0 {
+        (fraction, 1074)
+    } else {
+        (fraction | (1_u64 << 52), 1075 - exponent)
+    };
+    (u128::from(value) * u128::from(significand))
+        .checked_shr(shift)
+        .unwrap_or(0) as u64
 }
 
 macro_rules! impl_signed {
@@ -68,7 +90,8 @@ macro_rules! impl_signed {
 
             #[inline(always)]
             fn scale(self, factor: f64) -> Self {
-                ((self as f64) * factor).trunc() as $name
+                let weight = u64::try_from(self).expect("scaled weight must be nonnegative");
+                scale_nonnegative(weight, factor) as $name
             }
 
             #[inline(always)]
@@ -119,19 +142,8 @@ macro_rules! impl_unsigned {
 
             #[inline(always)]
             fn scale(self, factor: f64) -> Self {
-                // Both decay and the relative-error factor lie in (0, 1]. Multiply the
-                // exact binary significand before shifting so large counters never round.
-                let bits = factor.to_bits();
-                let exponent = ((bits >> 52) & 0x7ff) as u32;
-                let fraction = bits & ((1_u64 << 52) - 1);
-                let (significand, shift) = if exponent == 0 {
-                    (fraction, 1074)
-                } else {
-                    (fraction | (1_u64 << 52), 1075 - exponent)
-                };
-                (u128::from(self) * u128::from(significand))
-                    .checked_shr(shift)
-                    .unwrap_or(0) as $name
+                let weight = u64::try_from(self).expect("scaled weight must be nonnegative");
+                scale_nonnegative(weight, factor) as $name
             }
 
             #[inline(always)]

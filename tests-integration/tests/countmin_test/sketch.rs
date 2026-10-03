@@ -19,6 +19,7 @@ use std::panic::AssertUnwindSafe;
 use std::panic::catch_unwind;
 
 use datasketches::countmin::CountMinSketch;
+use datasketches::countmin::UnsignedCountMinValue;
 use datasketches::error::ErrorKind;
 use googletest::assert_that;
 use googletest::prelude::ge;
@@ -73,6 +74,26 @@ fn upper_bound_clamps_on_overflow() {
     let mut signed = CountMinSketch::<i8>::new(2, 8).unwrap();
     signed.update_with_weight("x", i8::MAX);
     assert_eq!(signed.upper_bound("x"), i8::MAX);
+}
+
+#[test]
+fn upper_bound_preserves_large_integer_precision_for_both_counter_types() {
+    let mut signed = CountMinSketch::<i64>::new(3, 128).unwrap();
+    let mut unsigned = CountMinSketch::<u64>::new(3, 128).unwrap();
+    signed.update_with_weight("item", i64::MAX);
+    unsigned.update_with_weight("item", i64::MAX as u64);
+    assert_eq!(signed.estimate("missing"), 0);
+    assert_eq!(unsigned.estimate("missing"), 0);
+
+    // Multiplying this epsilon by 2^63 gives an exactly representable integer.
+    // Subtracting one from the weight subtracts epsilon, so truncation must drop one.
+    let error = (signed.relative_error() * (1_u64 << 63) as f64) as u64 - 1;
+    assert_eq!(signed.upper_bound("missing"), error as i64);
+    assert_eq!(unsigned.upper_bound("missing"), error);
+
+    let mut negative = CountMinSketch::<i64>::new(3, 128).unwrap();
+    negative.update_with_weight("item", -i64::MAX);
+    assert_eq!(negative.upper_bound("item"), -i64::MAX + error as i64);
 }
 
 #[test]
@@ -268,6 +289,9 @@ fn test_decay_preserves_large_integer_precision() {
             (1.0, weight),
             (0.5, weight / 2),
             (0.75, ((u128::from(weight) * 3) / 4) as u64),
+            (1.0_f64.next_down(), weight - weight.div_ceil(1 << 53)),
+            (2.0_f64.powi(-63), weight >> 63),
+            (2.0_f64.powi(-64), 0),
             (f64::from_bits(1), 0),
         ] {
             let mut sketch = CountMinSketch::<u64>::new(3, 128).unwrap();
@@ -283,6 +307,45 @@ fn test_decay_preserves_large_integer_precision() {
             assert_eq!(restored.total_weight(), expected);
         }
     }
+}
+
+#[test]
+fn decay_truncates_the_exact_binary_product() {
+    for (weight, factor, expected) in [
+        (100, 0.99, 98),
+        (100, 0.99_f64.next_up(), 99),
+        (10, 0.3, 2),
+        (10, 0.3_f64.next_up(), 3),
+    ] {
+        let mut sketch = CountMinSketch::<u64>::new(3, 128).unwrap();
+        sketch.update_with_weight("item", weight);
+        sketch.decay(factor);
+        assert_eq!(sketch.total_weight(), expected);
+        assert_eq!(sketch.estimate("item"), expected);
+    }
+}
+
+#[test]
+fn decay_identity_and_halving_preserve_the_whole_sketch() {
+    fn check<T: UnsignedCountMinValue + std::fmt::Debug>(weights: [T; 3]) {
+        let mut sketch = CountMinSketch::<T>::new(3, 128).unwrap();
+        for (item, weight) in weights.into_iter().enumerate() {
+            sketch.update_with_weight(item, weight);
+        }
+
+        let mut decayed = sketch.clone();
+        decayed.decay(1.0);
+        assert_eq!(decayed, sketch);
+
+        decayed.decay(0.5);
+        sketch.halve();
+        assert_eq!(decayed, sketch);
+    }
+
+    check([u8::MAX / 2, u8::MAX / 4, 1]);
+    check([u16::MAX / 2, u16::MAX / 4, 1]);
+    check([u32::MAX / 2, u32::MAX / 4, 1]);
+    check([u64::MAX / 2, u64::MAX / 4, 1]);
 }
 
 #[test]

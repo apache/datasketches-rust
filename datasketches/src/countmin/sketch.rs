@@ -261,6 +261,8 @@ impl<T: CountMinValue> CountMinSketch<T> {
 
     /// Returns the upper bound on the true frequency of the given item.
     ///
+    /// Computes the error from the exact product of the total weight and the binary
+    /// floating-point value of [`Self::relative_error`], truncating toward zero.
     /// Clamps the bound to `T::MAX` if adding the error would overflow.
     pub fn upper_bound<I: Hash>(&self, item: I) -> T {
         let estimate = self.estimate(item);
@@ -537,8 +539,12 @@ impl<T: UnsignedCountMinValue> CountMinSketch<T> {
 
     /// Multiplies every counter by `decay` and truncates back into `T`.
     ///
-    /// Values are truncated toward zero after multiplication; choose `decay` in `(0, 1]`.
+    /// Computes the exact product with the binary floating-point value of `decay`, then
+    /// truncates toward zero. Decimal factors may be slightly smaller than their written
+    /// values: a counter of `100` becomes `98` with `decay(0.99)`.
     /// The total weight is scaled by the same factor to keep bounds consistent.
+    ///
+    /// A factor of `1.0` leaves the sketch unchanged; `0.5` is equivalent to [`Self::halve`].
     ///
     /// # Panics
     ///
@@ -556,6 +562,13 @@ impl<T: UnsignedCountMinValue> CountMinSketch<T> {
     /// ```
     pub fn decay(&mut self, decay: f64) {
         assert!(decay > 0.0 && decay <= 1.0, "decay must be within (0, 1]");
+        if decay == 1.0 {
+            return;
+        }
+        if decay == 0.5 {
+            self.halve();
+            return;
+        }
         for c in &mut self.counts {
             *c = c.scale(decay)
         }
