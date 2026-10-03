@@ -1034,7 +1034,8 @@ impl TDigestMut {
         let normalizer = scale_function::normalizer(2.0 * f64::from(self.k), compressed_weight);
         let mut centroids = centroids.enumerate();
         let (_, first) = centroids.next().expect("non-empty centroid stream");
-        let capacity = self.target_retained_capacity().min(num_input_centroids);
+        // Batch results need no update workspace until new values arrive.
+        let capacity = self.target_centroids().min(num_input_centroids);
         let mut retained = Vec::with_capacity(capacity);
         retained.push(first);
         let mut weight_so_far = 0.;

@@ -120,6 +120,32 @@ fn partials_from_iter(bencher: Bencher) {
         .bench_local_values(|partials| black_box(partials).into_iter().collect::<TDigestMut>());
 }
 
+#[divan::bench(args = [0, 64, 4_096])]
+fn partials_from_iter_finalize(bencher: Bencher, additional_rows: usize) {
+    let partials = partial_digests_with(DEFAULT_DIGEST_K, 64, ROWS_PER_PARTIAL)
+        .into_iter()
+        .map(|mut digest| {
+            black_box(digest.quantile(0.5));
+            digest
+        })
+        .collect::<Vec<_>>();
+    let updates = values(additional_rows)
+        .into_iter()
+        .map(|value| value * (64 * ROWS_PER_PARTIAL) as f64)
+        .collect::<Vec<_>>();
+
+    bencher
+        .counter(ItemsCount::new(64 * ROWS_PER_PARTIAL + additional_rows))
+        .with_inputs(|| partials.clone())
+        .bench_local_values(|partials| {
+            let mut merged = black_box(partials).into_iter().collect::<TDigestMut>();
+            for &value in black_box(&updates) {
+                merged.update(value);
+            }
+            black_box(merged.freeze())
+        });
+}
+
 #[divan::bench]
 fn uncompressed_partials_from_iter(bencher: Bencher) {
     let values = values(64 * ROWS_PER_PARTIAL);
