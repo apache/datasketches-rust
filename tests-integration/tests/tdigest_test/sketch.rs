@@ -35,6 +35,8 @@ fn test_empty() {
     assert_eq!(tdigest.max_value(), None);
     assert_eq!(tdigest.rank(0.0), None);
     assert_eq!(tdigest.quantile(0.5), None);
+    assert_eq!(tdigest.quantiles(&[0.0, 0.5, 1.0]), None);
+    assert_eq!(tdigest.quantiles(&[]), None);
 
     let split_points = [0.0];
     assert_eq!(tdigest.pmf(&split_points), None);
@@ -48,6 +50,8 @@ fn test_empty() {
     assert_eq!(tdigest.max_value(), None);
     assert_eq!(tdigest.rank(0.0), None);
     assert_eq!(tdigest.quantile(0.5), None);
+    assert_eq!(tdigest.quantiles(&[0.0, 0.5, 1.0]), None);
+    assert_eq!(tdigest.quantiles(&[]), None);
 
     let split_points = [0.0];
     assert_eq!(tdigest.pmf(&split_points), None);
@@ -68,6 +72,12 @@ fn test_one_value() {
     assert_eq!(tdigest.quantile(0.0), Some(1.0));
     assert_eq!(tdigest.quantile(0.5), Some(1.0));
     assert_eq!(tdigest.quantile(1.0), Some(1.0));
+    let ranks = [1.0, 0.5, 0.0, 0.5];
+    assert_eq!(tdigest.quantiles(&ranks), Some(vec![1.0; ranks.len()]));
+    assert_eq!(
+        tdigest.freeze().quantiles(&ranks),
+        Some(vec![1.0; ranks.len()])
+    );
 }
 
 #[test]
@@ -402,28 +412,82 @@ fn test_batch_quantiles_match_scalar_queries_in_input_order() {
         tdigest.update(((value * 37) % 1_003) as f64);
     }
 
+    let frozen = tdigest.clone().freeze();
     for ranks in [
-        vec![0.0, 0.001, 0.25, 0.5, 0.5, 0.99, 1.0],
-        vec![0.99, 0.0, 0.5, 1.0, 0.001, 0.5, 0.25],
+        vec![-0.0, 0.0, 0.001, 0.25, 0.5, 0.5, 0.99, 1.0],
+        vec![0.99, 0.0, 0.5, 1.0, 0.001, -0.0, 0.5, 0.25],
+        vec![1.0, 0.99, 0.5, 0.5, 0.25, 0.001, 0.0],
         vec![],
     ] {
         let expected = ranks
             .iter()
-            .map(|&rank| tdigest.quantile(rank).unwrap())
+            .map(|&rank| frozen.quantile(rank).unwrap())
             .collect::<Vec<_>>();
-        assert_eq!(tdigest.quantiles(&ranks), Some(expected.clone()));
-        assert_eq!(tdigest.clone().freeze().quantiles(&ranks), Some(expected));
+        // Each mutable batch starts with the original buffered values still pending.
+        assert_eq!(tdigest.clone().quantiles(&ranks), Some(expected.clone()));
+        assert_eq!(frozen.quantiles(&ranks), Some(expected));
+    }
+}
+
+#[test]
+fn test_batch_quantiles_cross_centroid_and_tail_boundaries() {
+    let tdigest =
+        deserialize_with_centroids(100, 0.0, 100.0, &[(10.0, 10), (50.0, 10), (90.0, 10)]);
+    let frozen = tdigest.clone().freeze();
+    // Query masses span both tails and the centers of all three centroids.
+    let queries = [
+        (0.0, 0.0),
+        (1.0, 0.0),
+        (3.0, 5.0),
+        (5.0, 10.0),
+        (10.0, 30.0),
+        (15.0, 50.0),
+        (15.0, 50.0),
+        (20.0, 70.0),
+        (25.0, 90.0),
+        (27.0, 95.0),
+        (29.0, 100.0),
+        (30.0, 100.0),
+    ];
+    let mut reversed = queries;
+    reversed.reverse();
+    let mut unordered = queries;
+    unordered.rotate_left(5);
+
+    for queries in [queries, reversed, unordered] {
+        let ranks = queries.map(|(weight, _)| weight / 30.0);
+        let expected = queries.map(|(_, quantile)| quantile);
+        for actual in [
+            tdigest.clone().quantiles(&ranks).unwrap(),
+            frozen.quantiles(&ranks).unwrap(),
+        ] {
+            assert_eq!(actual.len(), expected.len());
+            for (actual, expected) in actual.into_iter().zip(expected) {
+                assert_that!(actual, near(expected, 1e-12));
+            }
+        }
     }
 }
 
 #[test]
 fn test_batch_quantiles_reject_invalid_ranks() {
-    let mut tdigest = TDigestMut::default();
-    tdigest.update(1.0);
-    let tdigest = tdigest.freeze();
-
-    for ranks in [[-f64::EPSILON], [1.0 + f64::EPSILON], [f64::NAN]] {
-        assert!(std::panic::catch_unwind(|| tdigest.quantiles(&ranks)).is_err());
+    for values in [&[][..], &[1.0, 2.0, 3.0][..]] {
+        let mut tdigest = TDigestMut::default();
+        for &value in values {
+            tdigest.update(value);
+        }
+        let frozen = tdigest.clone().freeze();
+        for invalid in [
+            -f64::EPSILON,
+            1.0 + f64::EPSILON,
+            f64::NAN,
+            f64::NEG_INFINITY,
+            f64::INFINITY,
+        ] {
+            let ranks = [0.5, invalid];
+            assert!(catch_unwind(AssertUnwindSafe(|| tdigest.quantiles(&ranks))).is_err());
+            assert!(catch_unwind(|| frozen.quantiles(&ranks)).is_err());
+        }
     }
 }
 

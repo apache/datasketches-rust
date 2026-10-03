@@ -1488,7 +1488,9 @@ impl TDigestView<'_> {
             return None;
         }
 
-        Some(QuantileCursor::new(self).quantile(rank))
+        let mut centroid_index = 0;
+        let mut weight_so_far = self.centroids[0].weight() / 2.;
+        Some(self.quantile_from(rank, &mut centroid_index, &mut weight_so_far))
     }
 
     fn quantiles(&self, ranks: &[f64]) -> Option<Vec<f64>> {
@@ -1502,65 +1504,39 @@ impl TDigestView<'_> {
         }
 
         let mut quantiles = vec![0.; ranks.len()];
-        let mut cursor = QuantileCursor::new(self);
+        let mut centroid_index = 0;
+        let mut weight_so_far = self.centroids[0].weight() / 2.;
         if ranks.is_sorted() {
             for (index, &rank) in ranks.iter().enumerate() {
-                quantiles[index] = cursor.quantile(rank);
+                quantiles[index] =
+                    self.quantile_from(rank, &mut centroid_index, &mut weight_so_far);
             }
             return Some(quantiles);
         }
 
-        // The cursor only moves forward. Sort indices so queries become monotonic without changing
+        // The scan only moves forward. Sort indices so queries become monotonic without changing
         // the caller's output order.
         let mut rank_order = (0..ranks.len()).collect::<Vec<_>>();
-        rank_order.sort_by(|left, right| {
-            // ranks are guaranteed to be in [0.0, 1.0], and only is_less is relevant for sorting
-            if ranks[*left] < ranks[*right] {
-                Ordering::Less
-            } else {
-                Ordering::Greater
-            }
+        rank_order.sort_unstable_by(|&left, &right| {
+            // Ranks have already been validated, so neither value can be NaN.
+            ranks[left].partial_cmp(&ranks[right]).unwrap()
         });
         for index in rank_order {
-            quantiles[index] = cursor.quantile(ranks[index]);
+            quantiles[index] =
+                self.quantile_from(ranks[index], &mut centroid_index, &mut weight_so_far);
         }
         Some(quantiles)
     }
-}
 
-/// Incrementally answers quantile queries supplied in nondecreasing rank order.
-struct QuantileCursor<'a> {
-    min: f64,
-    max: f64,
-    centroids: &'a [Centroid],
-    centroids_weight: f64,
-    centroid_index: usize,
-    weight_so_far: f64,
-}
-
-impl<'a> QuantileCursor<'a> {
-    fn new(view: &TDigestView<'a>) -> Self {
-        debug_assert!(!view.centroids.is_empty());
-
-        QuantileCursor {
-            min: view.min,
-            max: view.max,
-            centroids: view.centroids,
-            centroids_weight: view.centroids_weight as f64,
-            centroid_index: 0,
-            weight_so_far: view.centroids[0].weight() / 2.,
-        }
-    }
-
-    fn quantile(&mut self, rank: f64) -> f64 {
-        debug_assert!(!self.centroids.is_empty());
-
+    /// Continues a scan for nondecreasing ranks. `weight_so_far` is the cumulative weight at the
+    /// midpoint of the indexed centroid.
+    fn quantile_from(&self, rank: f64, centroid_index: &mut usize, weight_so_far: &mut f64) -> f64 {
         if self.centroids.len() == 1 {
             return self.centroids[0].mean;
         }
 
         // at least 2 centroids
-        let centroids_weight = self.centroids_weight;
+        let centroids_weight = self.centroids_weight as f64;
         let num_centroids = self.centroids.len();
         let weight = rank * centroids_weight;
         if weight < 1. {
@@ -1586,43 +1562,42 @@ impl<'a> QuantileCursor<'a> {
         }
 
         // interpolate between extremes
-        while self.centroid_index < num_centroids - 1 {
-            let dw = (self.centroids[self.centroid_index].weight()
-                + self.centroids[self.centroid_index + 1].weight())
-                / 2.;
-            if self.weight_so_far + dw > weight {
-                // the target weight is between centroids i and i+1
+        while *centroid_index < num_centroids - 1 {
+            let left = &self.centroids[*centroid_index];
+            let right = &self.centroids[*centroid_index + 1];
+            let dw = (left.weight() + right.weight()) / 2.;
+            if *weight_so_far + dw > weight {
                 let mut left_weight = 0.;
-                if self.centroids[self.centroid_index].weight.get() == 1 {
-                    if weight - self.weight_so_far < 0.5 {
-                        return self.centroids[self.centroid_index].mean;
+                if left.weight.get() == 1 {
+                    if weight - *weight_so_far < 0.5 {
+                        return left.mean;
                     }
                     left_weight = 0.5;
                 }
                 let mut right_weight = 0.;
-                if self.centroids[self.centroid_index + 1].weight.get() == 1 {
-                    if self.weight_so_far + dw - weight <= 0.5 {
-                        return self.centroids[self.centroid_index + 1].mean;
+                if right.weight.get() == 1 {
+                    if *weight_so_far + dw - weight <= 0.5 {
+                        return right.mean;
                     }
                     right_weight = 0.5;
                 }
                 // Each centroid is weighted by the distance from the target to the *other*
                 // centroid, so the estimate approaches the nearer one.
-                let distance_from_left = weight - self.weight_so_far - left_weight;
-                let distance_to_right = self.weight_so_far + dw - weight - right_weight;
+                let distance_from_left = weight - *weight_so_far - left_weight;
+                let distance_to_right = *weight_so_far + dw - weight - right_weight;
                 return weighted_average(
-                    self.centroids[self.centroid_index].mean,
+                    left.mean,
                     distance_to_right,
-                    self.centroids[self.centroid_index + 1].mean,
+                    right.mean,
                     distance_from_left,
                 );
             }
-            self.weight_so_far += dw;
-            self.centroid_index += 1;
+            *weight_so_far += dw;
+            *centroid_index += 1;
         }
 
-        let w1 = weight - (centroids_weight) - ((self.centroids[num_centroids - 1].weight()) / 2.);
-        let w2 = (self.centroids[num_centroids - 1].weight() / 2.) - w1;
+        let w1 = weight - centroids_weight - last_weight / 2.;
+        let w2 = last_weight / 2. - w1;
         weighted_average(self.centroids[num_centroids - 1].mean, w1, self.max, w2)
     }
 }
