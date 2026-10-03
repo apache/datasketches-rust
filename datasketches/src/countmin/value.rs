@@ -39,8 +39,6 @@ mod private {
 
         fn checked_abs(self) -> Option<Self>;
         fn checked_add(self, other: Self) -> Option<Self>;
-        /// Scales a nonnegative weight by a factor in `(0, 1]`, truncating toward zero.
-        /// Signed sketches scale only their total absolute weight.
         fn scale_nonnegative(self, factor: f64) -> Self;
         fn to_bytes(self) -> [u8; 8];
         fn try_from_bytes(bytes: [u8; 8]) -> Result<Self, Error>;
