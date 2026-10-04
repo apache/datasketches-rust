@@ -1072,6 +1072,37 @@ impl FromIterator<TDigestMut> for TDigestMut {
             input_index: usize,
         }
 
+        fn sift_down_merge_heap(heap: &mut [MergeInput], mut position: usize, reverse: bool) {
+            // Equal means follow input order, as in a stable sort of concatenated inputs.
+            // Reverse compression reverses that entire order, including ties.
+            let precedes = |left: &MergeInput, right: &MergeInput| match centroid_cmp(
+                &left.next_centroid,
+                &right.next_centroid,
+            ) {
+                Ordering::Less => !reverse,
+                Ordering::Greater => reverse,
+                Ordering::Equal if reverse => left.input_index > right.input_index,
+                Ordering::Equal => left.input_index < right.input_index,
+            };
+            loop {
+                let left = (position * 2) + 1;
+                if left >= heap.len() {
+                    return;
+                }
+                let right = left + 1;
+                let next = if right < heap.len() && precedes(&heap[right], &heap[left]) {
+                    right
+                } else {
+                    left
+                };
+                if !precedes(&heap[next], &heap[position]) {
+                    return;
+                }
+                heap.swap(position, next);
+                position = next;
+            }
+        }
+
         let reverse = first.reverse_merge;
         let mut merged = TDigestMut::make(
             first.k,
@@ -1194,38 +1225,6 @@ impl FromIterator<TDigestMut> for TDigestMut {
         merged.compressed_weight = total_weight;
         merged.reverse_merge = !reverse;
         merged.buffer = TDigestBuffer::new(retained, 0);
-
-        fn sift_down_merge_heap(heap: &mut [MergeInput], mut position: usize, reverse: bool) {
-            // Equal means follow input order, as in a stable sort of concatenated inputs.
-            // Reverse compression reverses that entire order, including ties.
-            let precedes = |left: &MergeInput, right: &MergeInput| match centroid_cmp(
-                &left.next_centroid,
-                &right.next_centroid,
-            ) {
-                Ordering::Less => !reverse,
-                Ordering::Greater => reverse,
-                Ordering::Equal if reverse => left.input_index > right.input_index,
-                Ordering::Equal => left.input_index < right.input_index,
-            };
-            loop {
-                let left = (position * 2) + 1;
-                if left >= heap.len() {
-                    return;
-                }
-                let right = left + 1;
-                let next = if right < heap.len() && precedes(&heap[right], &heap[left]) {
-                    right
-                } else {
-                    left
-                };
-                if !precedes(&heap[next], &heap[position]) {
-                    return;
-                }
-                heap.swap(position, next);
-                position = next;
-            }
-        }
-
         merged
     }
 }
