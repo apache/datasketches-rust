@@ -18,6 +18,7 @@ All significant changes to this project will be documented in this file.
 
 ### Improvements
 
+* Serializing buffered `TDigestMut` inputs is faster when their total weight is at most `k / 2`.
 * Improve the readability of `Debug` output for HLL and CPC sketches and unions.
 * `KllSketch::quantile` and `ReqSketch::quantile` are faster at ranks `0.0` and `1.0`, with query work independent of the number of retained samples.
 * `BloomFilter::insert` is faster for integer and raw-byte inputs. `BloomFilter::contains_and_insert` is also faster when checking already-present integer values.

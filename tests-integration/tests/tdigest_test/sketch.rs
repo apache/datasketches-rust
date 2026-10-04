@@ -724,6 +724,49 @@ fn test_single_centroid_preserves_stored_tail_information() {
 }
 
 #[test]
+fn test_small_compression_preserves_weighted_centroids_and_tie_order() {
+    // Exercise the no-merge bound at two k values and a tiny input whose K_2 normalizer
+    // is negative. Existing weighted centroids must remain intact in every case.
+    for (k, middle_weight) in [(200, 95), (u16::MAX, 2), (u16::MAX, 32_762)] {
+        for reverse in [false, true] {
+            let mut digest = deserialize_with_centroids(
+                k,
+                -10.,
+                10.,
+                &[(-10., 1), (-0., 1), (0., middle_weight), (1., 1), (10., 1)],
+            );
+            let mut bytes = digest.serialize();
+            if reverse {
+                bytes[5] |= 1 << 2;
+            }
+            let mut digest = TDigestMut::deserialize(&bytes).unwrap();
+            digest.update(0.);
+
+            // Buffered values precede retained centroids on ties, including signed zeros.
+            let mut expected = deserialize_with_centroids(
+                k,
+                -10.,
+                10.,
+                &[
+                    (-10., 1),
+                    (0., 1),
+                    (-0., 1),
+                    (0., middle_weight),
+                    (1., 1),
+                    (10., 1),
+                ],
+            )
+            .serialize();
+            if !reverse {
+                expected[5] |= 1 << 2;
+            }
+            assert_eq!(digest.total_weight(), middle_weight + 5);
+            assert_eq!(digest.serialize(), expected);
+        }
+    }
+}
+
+#[test]
 fn test_compression_preserves_a_small_centroid_weight() {
     for weight in [1_u64 << 20, 1_u64 << 40, 1_u64 << 54] {
         for reverse in [false, true] {

@@ -942,30 +942,38 @@ impl TDigestMut {
 
         let mut num_centroids = 1;
         let len = centroids.len();
-        let compressed_weight = self.compressed_weight as f64;
-        let normalizer = scale_function::normalizer(2.0 * f64::from(self.k), compressed_weight);
-        let mut current = 1;
-        let mut weight_so_far = 0.;
-        while current < len {
-            let c = centroids[current];
-            let proposed_weight = centroids[num_centroids - 1].weight() + c.weight();
-            if should_merge_centroid(
-                current,
-                len,
-                weight_so_far,
-                proposed_weight,
-                compressed_weight,
-                normalizer,
-            ) {
-                // merge into existing centroid
-                centroids[num_centroids - 1].add(c);
-            } else {
-                // copy to a new centroid
-                weight_so_far += centroids[num_centroids - 1].weight();
-                centroids[num_centroids] = c;
-                num_centroids += 1;
+        // No two positive integer weights fit when n <= k / 2. For a positive K_2
+        // normalizer, the maximum limit is n / (4 * normalizer) = r * (ln(r) + 6),
+        // where r = n / (2 * k) <= 1/4: the limit stays below 1.154, hence below 2.
+        // A nonpositive normalizer also rejects all merges at these small counts.
+        if total_weight <= u64::from(self.k) / 2 {
+            num_centroids = len;
+        } else {
+            let compressed_weight = self.compressed_weight as f64;
+            let normalizer = scale_function::normalizer(2.0 * f64::from(self.k), compressed_weight);
+            let mut current = 1;
+            let mut weight_so_far = 0.;
+            while current < len {
+                let c = centroids[current];
+                let proposed_weight = centroids[num_centroids - 1].weight() + c.weight();
+                if should_merge_centroid(
+                    current,
+                    len,
+                    weight_so_far,
+                    proposed_weight,
+                    compressed_weight,
+                    normalizer,
+                ) {
+                    // merge into existing centroid
+                    centroids[num_centroids - 1].add(c);
+                } else {
+                    // copy to a new centroid
+                    weight_so_far += centroids[num_centroids - 1].weight();
+                    centroids[num_centroids] = c;
+                    num_centroids += 1;
+                }
+                current += 1;
             }
-            current += 1;
         }
 
         centroids.truncate(num_centroids);
