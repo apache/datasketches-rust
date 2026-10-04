@@ -1002,6 +1002,11 @@ impl TDigestMut {
 /// Collecting consumes each digest without cloning it. Callers that need to retain their inputs
 /// can use [`TDigestMut::merge`] or explicitly clone them before collection.
 ///
+/// Batch collection can save repeated compression work when combining many small partials, but
+/// is not always faster than repeated [`TDigestMut::merge`] calls. Larger compressed inputs can
+/// favor incremental merging. Input count, retained centroid count, and value distribution all
+/// affect performance; the number of original samples alone does not determine the cost.
+///
 /// Collection retains all non-empty input buffers before compression, even with a lazy iterator.
 /// Fully compressed inputs are merged directly into the result; inputs with buffered updates also
 /// require a combined centroid buffer and sorting workspace. Repeated `merge` calls or smaller
