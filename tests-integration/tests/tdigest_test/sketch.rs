@@ -1048,6 +1048,39 @@ fn test_queries_stay_ordered_at_large_centroid_centers() {
 }
 
 #[test]
+fn test_quantile_right_tail_uses_the_same_center_as_rank() {
+    for (total_weight, last_weight, rank) in [
+        (1_u64 << 53, 5, 1. - f64::EPSILON),
+        ((1_u64 << 53) + 1, 4, 1_f64.next_down()),
+        (1_u64 << 54, 9, 1. - f64::EPSILON),
+        (u64::MAX, 4097, 1_f64.next_down()),
+    ] {
+        let mut digest = deserialize_with_centroids(
+            100,
+            0.,
+            100.,
+            &[(0., total_weight - last_weight), (90., last_weight)],
+        );
+        // These ranks land exactly on the rounded mass N - last_weight/2. Quantile must
+        // return the centroid mean there, before interpolating toward the stored maximum.
+        assert_eq!(digest.rank(90.), Some(rank));
+        assert_quantile_queries(&digest, &[rank, rank, 1.], &[90., 90., 100.]);
+    }
+
+    // At N = 2^53 + 2 the last center and N - 1 round to the same mass. The zero-width
+    // tail must stay finite and ordered, just as a two-sample tail does at smaller counts.
+    let total_weight = (1_u64 << 53) + 2;
+    let digest = deserialize_with_centroids(100, 0., 100., &[(0., total_weight - 3), (90., 3)]);
+    let rank = 1. - f64::EPSILON;
+    let ranks = [rank.next_down(), rank, rank.next_up(), 1.];
+    let quantiles = digest.clone().quantiles(&ranks).unwrap();
+    assert!(quantiles.is_sorted());
+    assert!(quantiles.iter().all(|value| (0.0..=100.0).contains(value)));
+    assert_eq!(quantiles[3], 100.);
+    assert_quantile_queries(&digest, &ranks, &quantiles);
+}
+
+#[test]
 fn test_rank_stays_monotonic_at_the_right_tail_boundary() {
     let digest = deserialize_with_centroids(100, 0., 300., &[(0., 1), (100., 29)]).freeze();
     let points = [100., 100_f64.next_up(), 150., 300.];

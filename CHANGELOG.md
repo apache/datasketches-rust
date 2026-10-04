@@ -46,7 +46,7 @@ All significant changes to this project will be documented in this file.
 * `ReqSketch::cdf` and its sorted view now preserve the rank at each split point and end at exactly `1.0`, avoiding extra rounding from accumulating PMF values.
 * `TDigestMut` updates and merges now panic without changing the digest if the total weight would exceed `u64::MAX`, including in release builds.
 * `TDigestMut::merge` now preserves the true minimum and maximum from both inputs, including compressed digests.
-* Fix `TDigest` and `TDigestMut` queries that could return non-finite, out-of-range, or non-monotonic results for extreme finite values or large total weights. Mutable and frozen single-centroid queries also preserve stored extrema and interpolate their tails.
+* Fix `TDigest` and `TDigestMut` queries that could return non-finite, out-of-range, or non-monotonic results for extreme finite values or large total weights. Tail quantiles now use the same centroid centers as rank queries, including above `2^53` total weight. Mutable and frozen single-centroid queries also preserve stored extrema and interpolate their tails.
 * T-Digest compression no longer discards the contribution of a lightly weighted centroid when merging very unequal weights.
 * `TDigest` and `TDigestMut` deserialization now returns `InvalidData` for invalid flags or extrema, inconsistent single-sample extrema, out-of-range values, unsorted centroids, or non-empty images with no stored values.
 

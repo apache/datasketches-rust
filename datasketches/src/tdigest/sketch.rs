@@ -1795,19 +1795,21 @@ impl TDigestView<'_> {
         }
 
         let last = self.centroids.last().unwrap();
-        let last_weight = last.weight();
-        let last_center =
-            centroid_center(self.centroids_weight - last.weight.get(), last.weight.get());
-        if last_weight > 1. {
+        let last_weight = last.weight.get();
+        let last_center = centroid_center(self.centroids_weight - last_weight, last_weight);
+        if last_weight > 1 {
+            let tail_end = (self.centroids_weight - 1) as f64;
             while let Some((index, weight)) = queries.next_if(|&(_, weight)| weight >= last_center)
             {
-                quantiles[index] = if last_weight == 2. {
+                // Integer counts can round a wider tail to zero width as well. At this
+                // boundary prefer the maximum, as for an exact two-sample tail.
+                quantiles[index] = if last_center == tail_end {
                     self.max
                 } else {
                     interpolate(
-                        self.max,
                         last.mean,
-                        (centroids_weight - weight - 1.) / (last_weight / 2. - 1.),
+                        self.max,
+                        (weight - last_center) / (tail_end - last_center),
                     )
                 };
             }
@@ -1822,16 +1824,13 @@ impl TDigestView<'_> {
         }
 
         let first = &self.centroids[0];
-        let first_weight = first.weight();
-        let first_center = centroid_center(0, first.weight.get());
-        if first_weight > 1. {
+        let first_weight = first.weight.get();
+        let first_center = centroid_center(0, first_weight);
+        if first_weight > 1 {
             while let Some((index, weight)) = queries.next_if(|&(_, weight)| weight < first_center)
             {
-                quantiles[index] = interpolate(
-                    self.min,
-                    first.mean,
-                    (weight - 1.) / (first_weight / 2. - 1.),
-                );
+                quantiles[index] =
+                    interpolate(self.min, first.mean, (weight - 1.) / (first_center - 1.));
             }
         }
         if queries.peek().is_none() {
