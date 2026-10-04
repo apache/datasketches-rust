@@ -577,6 +577,44 @@ fn test_extreme_values_produce_finite_quantiles() {
 }
 
 #[test]
+fn test_rank_interpolation_across_extreme_finite_values() {
+    for scale in [1., f64::MAX] {
+        let mut digest = TDigestMut::default();
+        digest.update(-scale);
+        digest.update(scale);
+        let digest = digest.freeze();
+        // The two centroid centers have ranks 1/4 and 3/4, independently of scale.
+        let points = [-scale, -scale / 2., 0., scale / 2., scale];
+        for (point, expected) in points.into_iter().zip([0.25, 0.375, 0.5, 0.625, 0.75]) {
+            assert_that!(
+                digest.rank(point).unwrap(),
+                near(expected, 4. * f64::EPSILON)
+            );
+        }
+    }
+}
+
+#[test]
+fn test_tail_interpolation_across_extreme_finite_values() {
+    let max = f64::MAX;
+    let left = deserialize_with_centroids(100, -max, max, &[(max / 2., 10), (max, 1)]);
+    let right = deserialize_with_centroids(100, -max, max, &[(-max, 1), (-max / 2., 10)]);
+    // Weight 3 is halfway from the left tail's endpoint (weight 1) to its center (weight 5).
+    // The expected value is therefore (-MAX + MAX/2)/2 = -MAX/4; the right tail mirrors it.
+    for (digest, rank, expected) in [(left, 3. / 11., -0.25), (right, 8. / 11., 0.25)] {
+        let digest = digest.freeze();
+        assert_that!(
+            digest.quantile(rank).unwrap() / max,
+            near(expected, 4. * f64::EPSILON)
+        );
+        assert_that!(
+            digest.rank(expected * max).unwrap(),
+            near(rank, 4. * f64::EPSILON)
+        );
+    }
+}
+
+#[test]
 fn test_estimate_repeat_values() {
     let mut tdigest = TDigestMut::default();
     for _ in 0..20 {

@@ -1655,32 +1655,29 @@ impl TDigestView<'_> {
         // left tail
         let first_mean = self.centroids[0].mean;
         if value < first_mean {
-            if first_mean - self.min > 0. {
-                return Some(if value == self.min {
-                    0.5 / centroids_weight
-                } else {
-                    (1. + (((value - self.min) / (first_mean - self.min))
-                        * ((self.centroids[0].weight() / 2.) - 1.)))
-                        / centroids_weight
-                });
-            }
-            return Some(0.); // should never happen
+            return Some(if value == self.min {
+                0.5 / centroids_weight
+            } else {
+                interpolate(
+                    1.,
+                    self.centroids[0].weight() / 2.,
+                    interpolation_fraction(value, self.min, first_mean),
+                ) / centroids_weight
+            });
         }
 
         // right tail
         let last_mean = self.centroids[num_centroids - 1].mean;
         if value > last_mean {
-            if self.max - last_mean > 0. {
-                return Some(if value == self.max {
-                    1. - (0.5 / centroids_weight)
-                } else {
-                    1.0 - ((1.0
-                        + (((self.max - value) / (self.max - last_mean))
-                            * ((self.centroids[num_centroids - 1].weight() / 2.) - 1.)))
-                        / centroids_weight)
-                });
-            }
-            return Some(1.); // should never happen
+            return Some(if value == self.max {
+                1. - (0.5 / centroids_weight)
+            } else {
+                1. - interpolate(
+                    1.,
+                    self.centroids[num_centroids - 1].weight() / 2.,
+                    interpolation_fraction(value, self.max, last_mean),
+                ) / centroids_weight
+            });
         }
 
         let mut lower = self
@@ -1715,16 +1712,16 @@ impl TDigestView<'_> {
         }
         weight_delta -= self.centroids[lower].weight() / 2.;
         weight_delta += self.centroids[upper].weight() / 2.;
-        Some(
-            if self.centroids[upper].mean - self.centroids[lower].mean > 0. {
-                (weight_below
-                    + (weight_delta * (value - self.centroids[lower].mean)
-                        / (self.centroids[upper].mean - self.centroids[lower].mean)))
-                    / centroids_weight
-            } else {
-                (weight_below + weight_delta / 2.) / centroids_weight
-            },
-        )
+        let fraction = if self.centroids[lower].mean < self.centroids[upper].mean {
+            interpolation_fraction(
+                value,
+                self.centroids[lower].mean,
+                self.centroids[upper].mean,
+            )
+        } else {
+            0.5
+        };
+        Some(interpolate(weight_below, weight_below + weight_delta, fraction) / centroids_weight)
     }
 
     fn quantile(&self, rank: f64) -> Option<f64> {
@@ -1804,9 +1801,11 @@ impl TDigestView<'_> {
                 quantiles[index] = if last_weight == 2. {
                     self.max
                 } else {
-                    self.max
-                        - (((centroids_weight - weight - 1.) / ((last_weight / 2.) - 1.))
-                            * (self.max - last.mean))
+                    interpolate(
+                        self.max,
+                        last.mean,
+                        (centroids_weight - weight - 1.) / (last_weight / 2. - 1.),
+                    )
                 };
             }
         }
@@ -1825,8 +1824,11 @@ impl TDigestView<'_> {
             while let Some((index, weight)) =
                 queries.next_if(|&(_, weight)| weight < first_weight / 2.)
             {
-                quantiles[index] = self.min
-                    + (((weight - 1.) / ((first_weight / 2.) - 1.)) * (first.mean - self.min));
+                quantiles[index] = interpolate(
+                    self.min,
+                    first.mean,
+                    (weight - 1.) / (first_weight / 2. - 1.),
+                );
             }
         }
         if queries.peek().is_none() {
@@ -1867,8 +1869,11 @@ impl TDigestView<'_> {
                 // centroid, so the estimate approaches the nearer one.
                 let distance_from_left = weight - weight_so_far - left_weight;
                 let distance_to_right = weight_so_far + dw - weight - right_weight;
-                quantiles[index] =
-                    weighted_average(left.mean, distance_to_right, right.mean, distance_from_left);
+                quantiles[index] = interpolate(
+                    left.mean,
+                    right.mean,
+                    distance_from_left / (distance_from_left + distance_to_right),
+                );
             }
             weight_so_far += dw;
         }
@@ -2125,14 +2130,39 @@ mod scale_function {
     }
 }
 
-fn weighted_average(x1: f64, w1: f64, x2: f64, w2: f64) -> f64 {
-    let total_weight = w1 + w2;
-    let ratio = w2 / total_weight;
-    if x1.is_sign_positive() != x2.is_sign_positive() {
-        // Subtracting opposite-signed finite extremes can overflow.
-        x1 * (1. - ratio) + x2 * ratio
+/// Interpolates finite endpoints, preserving their bounds despite rounding.
+///
+/// The sign split follows WG21 P0811R3:
+/// <https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2019/p0811r3.html>.
+fn interpolate(start: f64, end: f64, fraction: f64) -> f64 {
+    debug_assert!(start.is_finite() && end.is_finite() && fraction.is_finite());
+    if fraction <= 0. {
+        return start;
+    }
+    if fraction >= 1. {
+        return end;
+    }
+    if start.is_sign_positive() != end.is_sign_positive() {
+        // Avoid the potentially overflowing difference of opposite-signed endpoints.
+        start * (1. - fraction) + end * fraction
     } else {
-        // Same-sign subtraction is finite and avoids summing two near-maximum terms.
-        (x2 - x1).mul_add(ratio, x1)
+        // Same-sign subtraction is finite; rounding must not overshoot the end.
+        let value = (end - start).mul_add(fraction, start);
+        if start < end {
+            value.min(end)
+        } else {
+            value.max(end)
+        }
+    }
+}
+
+/// Locates a value between distinct finite endpoints, in either direction.
+fn interpolation_fraction(value: f64, start: f64, end: f64) -> f64 {
+    let width = end - start;
+    if width.is_finite() {
+        (value - start) / width
+    } else {
+        // Scaling is needed only when opposite-signed endpoints overflow their difference.
+        (value * 0.5 - start * 0.5) / (end * 0.5 - start * 0.5)
     }
 }

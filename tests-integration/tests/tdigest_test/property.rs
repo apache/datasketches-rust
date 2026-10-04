@@ -52,6 +52,50 @@ fn assert_quantiles_are_monotonic(tdigest: &mut TDigestMut) {
 }
 
 #[test]
+fn prop_finite_values_survive_partial_aggregation() {
+    fn property(bits: Vec<u64>) -> TestResult {
+        let mut values: Vec<_> = bits
+            .into_iter()
+            .map(f64::from_bits)
+            .filter(|value| value.is_finite())
+            .collect();
+        if values.is_empty() {
+            return TestResult::discard();
+        }
+        let mut digest = TDigestMut::default();
+        for chunk in values.chunks(64) {
+            let mut partial = TDigestMut::default();
+            for &value in chunk {
+                partial.update(value);
+            }
+            digest.merge(&TDigestMut::deserialize(&partial.serialize()).unwrap());
+        }
+        let mut digest = TDigestMut::deserialize(&digest.serialize()).unwrap();
+        assert_eq!(digest.total_weight(), values.len() as u64);
+        assert_quantiles_are_monotonic(&mut digest);
+
+        // Use the input samples as split points, independently of the computed quantiles.
+        values.sort_unstable_by(f64::total_cmp);
+        values.dedup();
+        assert_eq!(digest.quantile(0.), values.first().copied());
+        assert_eq!(digest.quantile(1.), values.last().copied());
+        let cdf = digest.cdf(&values).unwrap();
+        assert!(cdf.is_sorted());
+        assert!(cdf.iter().all(|rank| (0.0..=1.0).contains(rank)));
+        let pmf = digest.pmf(&values).unwrap();
+        assert!(pmf.iter().all(|p| (0.0..=1.0).contains(p)));
+        assert!((pmf.iter().sum::<f64>() - 1.).abs() < 1e-12);
+        TestResult::passed()
+    }
+
+    QuickCheck::new()
+        .tests(128)
+        .min_tests_passed(128)
+        .rng(Gen::new(512))
+        .quickcheck(property as fn(Vec<u64>) -> TestResult);
+}
+
+#[test]
 fn prop_quantile_is_non_decreasing_and_within_the_observed_range() {
     fn property(values: Vec<u32>) -> TestResult {
         if !(500..1500).contains(&values.len()) {
