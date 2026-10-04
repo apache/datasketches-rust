@@ -756,6 +756,76 @@ fn test_compression_preserves_a_small_centroid_weight() {
 }
 
 #[test]
+fn test_compression_keeps_merged_means_within_their_endpoints() {
+    let tiny = f64::from_bits(1);
+    let heavy = 1_u64 << 54;
+    for (left, right) in [
+        (0., tiny),
+        (tiny, 2. * tiny),
+        (
+            f64::from_bits(f64::MIN_POSITIVE.to_bits() - 1),
+            f64::MIN_POSITIVE,
+        ),
+        (1., f64::from_bits(1_f64.to_bits() + 1)),
+        (f64::from_bits(f64::MAX.to_bits() - 1), f64::MAX),
+        (f64::MAX / 4., f64::MAX),
+        (-f64::MAX, -f64::MAX / 4.),
+        (-2. * tiny, -tiny),
+        (-tiny, tiny),
+        (-f64::MAX, f64::MAX),
+    ] {
+        for (left_weight, right_weight) in [(1, 1), (1, heavy), (heavy, 1)] {
+            for reverse in [false, true] {
+                for owned in [false, true] {
+                    let mut digest = deserialize_with_centroids(
+                        10,
+                        -f64::MAX,
+                        f64::MAX,
+                        &[
+                            (-f64::MAX, heavy),
+                            (left, left_weight),
+                            (right, right_weight),
+                            (f64::MAX, heavy),
+                        ],
+                    );
+                    let mut bytes = digest.serialize();
+                    if reverse {
+                        bytes[5] |= 1 << 2;
+                    }
+                    let mut digest = TDigestMut::deserialize(&bytes).unwrap();
+                    if owned {
+                        let other =
+                            deserialize_with_centroids(10, f64::MAX, f64::MAX, &[(f64::MAX, 1)]);
+                        digest = [digest, other].into_iter().collect();
+                    } else {
+                        digest.update(-f64::MAX);
+                    }
+
+                    // Inspect compression directly; query interpolation could hide an overshoot.
+                    let bytes = digest.serialize();
+                    let centroid = bytes[32..]
+                        .chunks_exact(16)
+                        .find(|c| {
+                            u64::from_le_bytes(c[8..].try_into().unwrap())
+                                == left_weight + right_weight
+                        })
+                        .unwrap_or_else(|| {
+                            panic!(
+                                "middle pair {left:?}:{left_weight}, {right:?}:{right_weight} did not merge (reverse={reverse}, owned={owned})"
+                            )
+                        });
+                    let mean = f64::from_le_bytes(centroid[..8].try_into().unwrap());
+                    assert!(
+                        mean.is_finite() && (left..=right).contains(&mean),
+                        "{mean:?} is outside [{left:?}, {right:?}] (weights={left_weight}:{right_weight}, reverse={reverse}, owned={owned})"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn test_batch_quantiles_match_scalar_queries_in_input_order() {
     let mut tdigest = TDigestMut::new(100).unwrap();
     for value in 0..10_000 {

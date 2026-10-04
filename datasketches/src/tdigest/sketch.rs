@@ -2008,10 +2008,20 @@ impl Centroid {
             .expect("weight overflow");
 
         // Start at the heavier centroid so a small contribution is not rounded away in 1 - ratio.
-        self.mean = if self_weight >= other_weight {
-            interpolate(self.mean, other.mean, other_weight / total_weight)
+        let (start, end, fraction) = if self_weight >= other_weight {
+            (self.mean, other.mean, other_weight / total_weight)
         } else {
-            interpolate(other.mean, self.mean, self_weight / total_weight)
+            (other.mean, self.mean, self_weight / total_weight)
+        };
+        debug_assert!(start.is_finite() && end.is_finite() && fraction > 0. && fraction <= 0.5);
+
+        // Same-sign means within a factor of two in magnitude subtract exactly. For wider
+        // gaps, a step of at most 1/2 cannot cross either endpoint even if subtraction rounds.
+        // Queries can interpolate farther and still need the general bounds.
+        self.mean = if start.is_sign_positive() == end.is_sign_positive() {
+            (end - start).mul_add(fraction, start)
+        } else {
+            interpolate(start, end, fraction)
         };
     }
 
