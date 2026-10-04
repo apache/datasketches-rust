@@ -724,6 +724,38 @@ fn test_single_centroid_preserves_stored_tail_information() {
 }
 
 #[test]
+fn test_compression_preserves_a_small_centroid_weight() {
+    for weight in [1_u64 << 20, 1_u64 << 40, 1_u64 << 54] {
+        for reverse in [false, true] {
+            let mut digest = deserialize_with_centroids(
+                10,
+                0.,
+                f64::MAX,
+                &[(0., weight), (1., weight), (1e300, 1), (f64::MAX, weight)],
+            );
+            let mut bytes = digest.serialize();
+            if reverse {
+                bytes[5] |= 1 << 2;
+            }
+            let mut digest = TDigestMut::deserialize(&bytes).unwrap();
+            digest.update(0.);
+
+            // Read the merged mean directly: quantile interpolation must not hide a bad mean.
+            let bytes = digest.serialize();
+            let centroid = bytes[32..]
+                .chunks_exact(16)
+                .find(|c| u64::from_le_bytes(c[8..].try_into().unwrap()) == weight + 1)
+                .expect("the middle centroids should merge");
+            let mean = f64::from_le_bytes(centroid[..8].try_into().unwrap());
+            // The exact mean is (weight * 1 + 1e300) / (weight + 1). The first term is far
+            // below one ULP of the numerator, so this division is an independent reference.
+            let expected = 1e300 / (weight + 1) as f64;
+            assert_that!(mean / expected, near(1., 4. * f64::EPSILON));
+        }
+    }
+}
+
+#[test]
 fn test_batch_quantiles_match_scalar_queries_in_input_order() {
     let mut tdigest = TDigestMut::new(100).unwrap();
     for value in 0..10_000 {

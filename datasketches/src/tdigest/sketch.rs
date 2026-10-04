@@ -2007,22 +2007,12 @@ impl Centroid {
             .checked_add(other.weight.get())
             .expect("weight overflow");
 
-        let (self_mean, other_mean) = (self.mean, other.mean);
-        let ratio_other = other_weight / total_weight;
-        let delta = other_mean - self_mean;
-        self.mean = if delta.is_finite() {
-            delta.mul_add(ratio_other, self_mean)
+        // Start at the heavier centroid so a small contribution is not rounded away in 1 - ratio.
+        self.mean = if self_weight >= other_weight {
+            interpolate(self.mean, other.mean, other_weight / total_weight)
         } else {
-            let ratio_self = self_weight / total_weight;
-            self_mean.mul_add(ratio_self, other_mean * ratio_other)
+            interpolate(other.mean, self.mean, self_weight / total_weight)
         };
-
-        debug_assert!(
-            self.mean.is_finite(),
-            "Centroid's mean must be finite; self: {}, other: {}",
-            self_mean,
-            other_mean
-        );
     }
 
     fn weight(&self) -> f64 {

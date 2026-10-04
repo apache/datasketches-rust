@@ -247,7 +247,7 @@ fn test_serialized_bytes_stable_for_full_and_merged_digests() {
     let mut full_buffer = patterned_digest(200, 1_641, 0);
     let bytes = full_buffer.serialize();
     assert_eq!(bytes.len(), 2_864);
-    assert_eq!(fnv1a(&bytes), 0x5c01_c50d_d1c8_fdbb);
+    assert_eq!(fnv1a(&bytes), 0xaffe_62f2_3716_59b8);
 
     let mut left = patterned_digest(10, 201, 2);
     let mut right = patterned_digest(10, 199, 3);
@@ -255,12 +255,12 @@ fn test_serialized_bytes_stable_for_full_and_merged_digests() {
     left.merge(&right);
     let bytes = left.serialize();
     assert_eq!(bytes.len(), 272);
-    assert_eq!(fnv1a(&bytes), 0x7d2e_a927_9b9e_f559);
+    assert_eq!(fnv1a(&bytes), 0x6037_b570_d640_d31f);
 
     for &(left_len, right_len, expected_len, expected_hash) in &[
-        (8, 201, 272, 0x8522_1f3f_152f_24e5),
-        (201, 8, 256, 0xe60d_1f6f_f4b0_73e0),
-        (201, 401, 288, 0x4cb8_4037_5e68_ca4b),
+        (8, 201, 272, 0x4ec5_2661_c556_c10e),
+        (201, 8, 256, 0x2b43_056d_9a57_b2a5),
+        (201, 401, 288, 0x1e43_34b7_ba13_4fe0),
         (401, 201, 288, 0x6f6d_e965_77a7_a53f),
     ] {
         let mut left = patterned_digest(10, left_len, 2);
