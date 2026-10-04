@@ -664,6 +664,28 @@ fn test_quantile_handles_two_sample_last_centroid() {
 }
 
 #[test]
+fn test_single_centroid_preserves_stored_tail_information() {
+    let digest = deserialize_with_centroids(100, 0., 100., &[(50., 10)]);
+    // Ten samples have a centroid center at weight 5. The tail spans weights 1 through 5,
+    // so weight 2.5 lies 3/8 of the way from the stored minimum to the mean.
+    assert_quantile_queries(
+        &digest,
+        &[0., 0.1, 0.25, 0.5, 0.75, 0.9, 1.],
+        &[0., 0., 18.75, 50., 81.25, 100., 100.],
+    );
+    let digest = digest.freeze();
+    for (value, rank) in [
+        (0., 0.05),
+        (18.75, 0.25),
+        (50., 0.5),
+        (81.25, 0.75),
+        (100., 0.95),
+    ] {
+        assert_that!(digest.rank(value).unwrap(), near(rank, 1e-12));
+    }
+}
+
+#[test]
 fn test_batch_quantiles_match_scalar_queries_in_input_order() {
     let mut tdigest = TDigestMut::new(100).unwrap();
     for value in 0..10_000 {

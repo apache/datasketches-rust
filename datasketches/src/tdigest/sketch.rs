@@ -1513,6 +1513,8 @@ impl TDigest {
 
     /// Computes the approximate quantile for the given normalized rank.
     ///
+    /// Ranks `0.0` and `1.0` return the stored minimum and maximum, respectively.
+    ///
     /// Returns `None` if this t-digest is empty.
     ///
     /// # Panics
@@ -1643,8 +1645,7 @@ impl TDigestView<'_> {
         if value > self.max {
             return Some(1.0);
         }
-        // one centroid and value == min == max
-        if self.centroids.len() == 1 {
+        if self.min == self.max {
             return Some(0.5);
         }
 
@@ -1774,8 +1775,8 @@ impl TDigestView<'_> {
         ranks: impl DoubleEndedIterator<Item = (usize, f64)>,
         quantiles: &mut [f64],
     ) {
-        if self.centroids.len() == 1 {
-            quantiles.fill(self.centroids[0].mean);
+        if self.min == self.max {
+            quantiles.fill(self.min);
             return;
         }
 
