@@ -852,6 +852,49 @@ fn test_quantiles_stay_within_extrema_at_large_total_weights() {
 }
 
 #[test]
+fn test_queries_stay_ordered_at_large_centroid_centers() {
+    for total_weight in [1_u64 << 53, 1_u64 << 54, u64::MAX] {
+        for centroids in [
+            vec![(10., total_weight - 5), (50., 1), (90., 4)],
+            vec![(0., 1), (90., total_weight - 1)],
+        ] {
+            let digest = deserialize_with_centroids(100, 0., 100., &centroids).freeze();
+            // Probe either side of a heavy centroid's center and the rounded upper endpoint.
+            let ranks = [
+                0.,
+                0.5_f64.next_down(),
+                0.5,
+                0.5_f64.next_up(),
+                1.0_f64.next_down(),
+                1.,
+            ];
+            let quantiles = digest.quantiles(&ranks).unwrap();
+            assert_eq!(quantiles[0], 0.);
+            assert_eq!(quantiles[5], 100.);
+            assert!(
+                quantiles.is_sorted(),
+                "centroids {centroids:?}: {quantiles:?}"
+            );
+            assert!(quantiles.iter().all(|value| (0.0..=100.0).contains(value)));
+
+            let cdf = digest.cdf(&[0., 5., 10., 50., 90., 95., 100.]).unwrap();
+            assert!(cdf.is_sorted(), "centroids {centroids:?}: {cdf:?}");
+            assert!(cdf.iter().all(|rank| (0.0..=1.0).contains(rank)));
+        }
+    }
+}
+
+#[test]
+fn test_rank_stays_monotonic_at_the_right_tail_boundary() {
+    let digest = deserialize_with_centroids(100, 0., 300., &[(0., 1), (100., 29)]).freeze();
+    let points = [100., 100_f64.next_up(), 150., 300.];
+    let cdf = digest.cdf(&points).unwrap();
+    // The last center is at weight 1 + 29/2 = 15.5. Entering the tail must not lower its rank.
+    assert_eq!(cdf[0], 15.5 / 30.);
+    assert!(cdf.is_sorted(), "CDF at {points:?}: {cdf:?}");
+}
+
+#[test]
 fn test_batch_quantiles_reject_invalid_ranks() {
     for values in [&[][..], &[1.0, 2.0, 3.0][..]] {
         let mut tdigest = TDigestMut::default();

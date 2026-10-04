@@ -1660,7 +1660,7 @@ impl TDigestView<'_> {
             } else {
                 interpolate(
                     1.,
-                    self.centroids[0].weight() / 2.,
+                    centroid_center(0, self.centroids[0].weight.get()),
                     interpolation_fraction(value, self.min, first_mean),
                 ) / centroids_weight
             });
@@ -1672,10 +1672,11 @@ impl TDigestView<'_> {
             return Some(if value == self.max {
                 1. - (0.5 / centroids_weight)
             } else {
-                1. - interpolate(
-                    1.,
-                    self.centroids[num_centroids - 1].weight() / 2.,
-                    interpolation_fraction(value, self.max, last_mean),
+                let last_weight = self.centroids[num_centroids - 1].weight.get();
+                interpolate(
+                    centroid_center(self.centroids_weight - last_weight, last_weight),
+                    (self.centroids_weight - 1) as f64,
+                    interpolation_fraction(value, last_mean, self.max),
                 ) / centroids_weight
             });
         }
@@ -1697,31 +1698,25 @@ impl TDigestView<'_> {
             upper -= 1;
         }
 
-        let mut weight_below = 0.;
-        let mut i = 0;
-        while i < lower {
-            weight_below += self.centroids[i].weight();
-            i += 1;
-        }
-        weight_below += self.centroids[lower].weight() / 2.;
-
-        let mut weight_delta = 0.;
-        while i < upper {
-            weight_delta += self.centroids[i].weight();
-            i += 1;
-        }
-        weight_delta -= self.centroids[lower].weight() / 2.;
-        weight_delta += self.centroids[upper].weight() / 2.;
-        let fraction = if self.centroids[lower].mean < self.centroids[upper].mean {
-            interpolation_fraction(
-                value,
-                self.centroids[lower].mean,
-                self.centroids[upper].mean,
-            )
+        let weight_below = self.centroids[..lower].iter().map(|c| c.weight.get()).sum();
+        let weight_between: u64 = self.centroids[lower..upper]
+            .iter()
+            .map(|c| c.weight.get())
+            .sum();
+        let left = &self.centroids[lower];
+        let right = &self.centroids[upper];
+        let fraction = if left.mean < right.mean {
+            interpolation_fraction(value, left.mean, right.mean)
         } else {
             0.5
         };
-        Some(interpolate(weight_below, weight_below + weight_delta, fraction) / centroids_weight)
+        Some(
+            interpolate(
+                centroid_center(weight_below, left.weight.get()),
+                centroid_center(weight_below + weight_between, right.weight.get()),
+                fraction,
+            ) / centroids_weight,
+        )
     }
 
     fn quantile(&self, rank: f64) -> Option<f64> {
@@ -1784,7 +1779,7 @@ impl TDigestView<'_> {
             .peekable();
 
         // Consume the right tail from the back, so the centroid scan can omit all tail checks.
-        while let Some((index, _)) = queries.next_if(|&(_, weight)| weight > centroids_weight - 1.)
+        while let Some((index, _)) = queries.next_if(|&(_, weight)| centroids_weight - weight < 1.)
         {
             quantiles[index] = self.max;
         }
@@ -1794,9 +1789,10 @@ impl TDigestView<'_> {
 
         let last = self.centroids.last().unwrap();
         let last_weight = last.weight();
+        let last_center =
+            centroid_center(self.centroids_weight - last.weight.get(), last.weight.get());
         if last_weight > 1. {
-            while let Some((index, weight)) =
-                queries.next_if(|&(_, weight)| centroids_weight - weight <= last_weight / 2.)
+            while let Some((index, weight)) = queries.next_if(|&(_, weight)| weight >= last_center)
             {
                 quantiles[index] = if last_weight == 2. {
                     self.max
@@ -1820,9 +1816,9 @@ impl TDigestView<'_> {
 
         let first = &self.centroids[0];
         let first_weight = first.weight();
+        let first_center = centroid_center(0, first.weight.get());
         if first_weight > 1. {
-            while let Some((index, weight)) =
-                queries.next_if(|&(_, weight)| weight < first_weight / 2.)
+            while let Some((index, weight)) = queries.next_if(|&(_, weight)| weight < first_center)
             {
                 quantiles[index] = interpolate(
                     self.min,
@@ -1836,46 +1832,42 @@ impl TDigestView<'_> {
         }
 
         // Answer the remaining queries by centroid interval; both streams advance only forward.
-        let mut weight_so_far = first_weight / 2.;
+        let mut weight_before = 0;
+        let mut left_center = first_center;
         for pair in self.centroids.windows(2) {
             let left = &pair[0];
             let right = &pair[1];
-            let dw = (left.weight() + right.weight()) / 2.;
+            let right_before = weight_before + left.weight.get();
+            let right_center = centroid_center(right_before, right.weight.get());
             loop {
                 let Some(&(index, weight)) = queries.peek() else {
                     return;
                 };
-                if weight_so_far + dw <= weight {
+                if right_center <= weight {
                     break;
                 }
                 queries.next();
-                let mut left_weight = 0.;
+                let mut start = left_center;
                 if left.weight.get() == 1 {
-                    if weight - weight_so_far < 0.5 {
+                    start = right_before as f64;
+                    if weight < start {
                         quantiles[index] = left.mean;
                         continue;
                     }
-                    left_weight = 0.5;
                 }
-                let mut right_weight = 0.;
+                let mut end = right_center;
                 if right.weight.get() == 1 {
-                    if weight_so_far + dw - weight <= 0.5 {
+                    end = right_before as f64;
+                    if weight >= end {
                         quantiles[index] = right.mean;
                         continue;
                     }
-                    right_weight = 0.5;
                 }
-                // Each centroid is weighted by the distance from the target to the *other*
-                // centroid, so the estimate approaches the nearer one.
-                let distance_from_left = weight - weight_so_far - left_weight;
-                let distance_to_right = weight_so_far + dw - weight - right_weight;
-                quantiles[index] = interpolate(
-                    left.mean,
-                    right.mean,
-                    distance_from_left / (distance_from_left + distance_to_right),
-                );
+                quantiles[index] =
+                    interpolate(left.mean, right.mean, (weight - start) / (end - start));
             }
-            weight_so_far += dw;
+            weight_before = right_before;
+            left_center = right_center;
         }
 
         // Rounding at large total weights can exhaust the scan near the maximum.
@@ -2128,6 +2120,12 @@ mod scale_function {
     pub fn z(compression: f64, n: f64) -> f64 {
         4. * (n / compression).ln() + 24.
     }
+}
+
+/// Keeps cumulative counts exact until a centroid's midpoint is needed for interpolation.
+/// All intervals and tails use this same center to avoid inconsistent boundary rounding.
+fn centroid_center(weight_before: u64, weight: u64) -> f64 {
+    (weight_before + weight / 2) as f64 + (weight % 2) as f64 * 0.5
 }
 
 /// Interpolates finite endpoints, preserving their bounds despite rounding.
