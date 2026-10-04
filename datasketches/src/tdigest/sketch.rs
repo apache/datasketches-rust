@@ -788,64 +788,115 @@ impl TDigestMut {
         let mut cursor = SketchSlice::new(bytes);
 
         let ty = cursor.read_u32_be().map_err(make_error("type"))?;
-        let layout = match ty {
-            // compatibility with asBytes()
-            COMPAT_DOUBLE => CompatLayout::Double,
-            // compatibility with asSmallBytes()
-            COMPAT_FLOAT => CompatLayout::Float,
-            ty => return Err(Error::deserial(format!("unknown TDigest compat type {ty}"))),
-        };
-
-        // The reference implementation stores min and max as doubles in both layouts.
-        let min = cursor
-            .read_f64_be()
-            .map_err(|_| Error::insufficient_data_of(layout.format(), "min"))?;
-        let max = cursor
-            .read_f64_be()
-            .map_err(|_| Error::insufficient_data_of(layout.format(), "max"))?;
-        check_extrema(min, max, layout.subject())?;
-        let k = layout.read_k(&mut cursor)?;
-        if k < 10 {
-            return Err(Error::deserial(format!(
-                "k must be at least 10 in {}, got {k}",
-                layout.format()
-            )));
+        match ty {
+            COMPAT_DOUBLE => {
+                fn make_error(tag: &'static str) -> impl FnOnce(std::io::Error) -> Error {
+                    move |_| Error::insufficient_data_of("compat double format", tag)
+                }
+                // compatibility with asBytes()
+                let min = cursor.read_f64_be().map_err(make_error("min"))?;
+                let max = cursor.read_f64_be().map_err(make_error("max"))?;
+                check_extrema(min, max, "compat double TDigest")?;
+                let k = cursor.read_f64_be().map_err(make_error("k"))? as u16;
+                if k < 10 {
+                    return Err(Error::deserial(format!(
+                        "k must be at least 10 in compat double format, got {k}"
+                    )));
+                }
+                let num_centroids =
+                    cursor.read_u32_be().map_err(make_error("num_centroids"))? as usize;
+                if num_centroids == 0 {
+                    return Err(Error::deserial(
+                        "malformed data: compat double TDigest must contain a centroid",
+                    ));
+                }
+                let mut total_weight = 0u64;
+                let mut centroids = Vec::with_capacity(num_centroids);
+                let mut previous_mean = min;
+                let mut centroid_means_valid = true;
+                for _ in 0..num_centroids {
+                    let weight = cursor.read_f64_be().map_err(make_error("weight"))?;
+                    let mean = cursor.read_f64_be().map_err(make_error("mean"))?;
+                    let weight =
+                        check_compat_weight(weight, "centroid weight in compat double format")?;
+                    centroid_means_valid &=
+                        mean.is_finite() & (mean >= previous_mean) & (mean <= max);
+                    previous_mean = mean;
+                    total_weight = checked_weight_sum(total_weight, weight.get())?;
+                    centroids.push(Centroid { mean, weight });
+                }
+                if !centroid_means_valid {
+                    return Err(Error::deserial(
+                        "malformed data: centroid means in compat double format must be finite, within extrema, and nondecreasing",
+                    ));
+                }
+                check_single_sample_extrema(min, max, total_weight)?;
+                Ok(TDigestMut::make(
+                    k,
+                    false,
+                    min,
+                    max,
+                    TDigestBuffer::new(centroids, 0),
+                    total_weight,
+                ))
+            }
+            COMPAT_FLOAT => {
+                fn make_error(tag: &'static str) -> impl FnOnce(std::io::Error) -> Error {
+                    move |_| Error::insufficient_data_of("compat float format", tag)
+                }
+                // COMPAT_FLOAT: compatibility with asSmallBytes()
+                // reference implementation uses doubles for min and max
+                let min = cursor.read_f64_be().map_err(make_error("min"))?;
+                let max = cursor.read_f64_be().map_err(make_error("max"))?;
+                check_extrema(min, max, "compat float TDigest")?;
+                let k = cursor.read_f32_be().map_err(make_error("k"))? as u16;
+                if k < 10 {
+                    return Err(Error::deserial(format!(
+                        "k must be at least 10 in compat float format, got {k}"
+                    )));
+                }
+                // reference implementation stores capacities of the array of centroids and the
+                // buffer as shorts they can be derived from k in the constructor
+                cursor.read_u32_be().map_err(make_error("<unused>"))?;
+                let num_centroids =
+                    cursor.read_u16_be().map_err(make_error("num_centroids"))? as usize;
+                if num_centroids == 0 {
+                    return Err(Error::deserial(
+                        "malformed data: compat float TDigest must contain a centroid",
+                    ));
+                }
+                let mut total_weight = 0u64;
+                let mut centroids = Vec::with_capacity(num_centroids);
+                let mut previous_mean = min;
+                let mut centroid_means_valid = true;
+                for _ in 0..num_centroids {
+                    let weight = cursor.read_f32_be().map_err(make_error("weight"))? as f64;
+                    let mean = cursor.read_f32_be().map_err(make_error("mean"))? as f64;
+                    let weight =
+                        check_compat_weight(weight, "centroid weight in compat float format")?;
+                    centroid_means_valid &=
+                        mean.is_finite() & (mean >= previous_mean) & (mean <= max);
+                    previous_mean = mean;
+                    total_weight = checked_weight_sum(total_weight, weight.get())?;
+                    centroids.push(Centroid { mean, weight });
+                }
+                if !centroid_means_valid {
+                    return Err(Error::deserial(
+                        "malformed data: centroid means in compat float format must be finite, within extrema, and nondecreasing",
+                    ));
+                }
+                check_single_sample_extrema(min, max, total_weight)?;
+                Ok(TDigestMut::make(
+                    k,
+                    false,
+                    min,
+                    max,
+                    TDigestBuffer::new(centroids, 0),
+                    total_weight,
+                ))
+            }
+            ty => Err(Error::deserial(format!("unknown TDigest compat type {ty}"))),
         }
-        let num_centroids = layout.read_num_centroids(&mut cursor)?;
-        if num_centroids == 0 {
-            return Err(Error::deserial(format!(
-                "malformed data: {} must contain a centroid",
-                layout.subject()
-            )));
-        }
-        let mut total_weight = 0u64;
-        let mut centroids = Vec::with_capacity(num_centroids);
-        let mut previous_mean = min;
-        let mut centroid_means_valid = true;
-        for _ in 0..num_centroids {
-            let weight = layout.read_scalar(&mut cursor, "weight")?;
-            let mean = layout.read_scalar(&mut cursor, "mean")?;
-            let weight = check_compat_weight(weight, layout.weight_tag())?;
-            centroid_means_valid &= mean.is_finite() & (mean >= previous_mean) & (mean <= max);
-            previous_mean = mean;
-            total_weight = checked_weight_sum(total_weight, weight.get())?;
-            centroids.push(Centroid { mean, weight });
-        }
-        if !centroid_means_valid {
-            return Err(Error::deserial(format!(
-                "malformed data: centroid means in {} must be finite, within extrema, and nondecreasing",
-                layout.format()
-            )));
-        }
-        check_single_sample_extrema(min, max, total_weight)?;
-        Ok(TDigestMut::make(
-            k,
-            false,
-            min,
-            max,
-            TDigestBuffer::new(centroids, 0),
-            total_weight,
-        ))
     }
 
     /// Processes unmerged values and merges centroids if needed.
@@ -2015,78 +2066,6 @@ fn check_finite(value: f64, tag: &'static str) -> Result<(), Error> {
     }
 
     Ok(())
-}
-
-/// The reference implementation's two compat layouts, written by `asBytes()` and
-/// `asSmallBytes()`. Scalar widths differ; the validation pipeline and its messages do not.
-#[derive(Clone, Copy)]
-enum CompatLayout {
-    Double,
-    Float,
-}
-
-impl CompatLayout {
-    /// Malformed-data subject, e.g. "compat double TDigest".
-    fn subject(self) -> &'static str {
-        match self {
-            CompatLayout::Double => "compat double TDigest",
-            CompatLayout::Float => "compat float TDigest",
-        }
-    }
-
-    /// Truncation context, e.g. "compat double format".
-    fn format(self) -> &'static str {
-        match self {
-            CompatLayout::Double => "compat double format",
-            CompatLayout::Float => "compat float format",
-        }
-    }
-
-    /// Centroid weight tag, e.g. "centroid weight in compat double format".
-    fn weight_tag(self) -> &'static str {
-        match self {
-            CompatLayout::Double => "centroid weight in compat double format",
-            CompatLayout::Float => "centroid weight in compat float format",
-        }
-    }
-
-    fn read_k(self, cursor: &mut SketchSlice) -> Result<u16, Error> {
-        let result = match self {
-            CompatLayout::Double => cursor.read_f64_be(),
-            CompatLayout::Float => cursor.read_f32_be().map(f64::from),
-        };
-        result
-            .map(|k| k as u16)
-            .map_err(|_| Error::insufficient_data_of(self.format(), "k"))
-    }
-
-    fn read_num_centroids(self, cursor: &mut SketchSlice) -> Result<usize, Error> {
-        match self {
-            CompatLayout::Double => cursor
-                .read_u32_be()
-                .map(|count| count as usize)
-                .map_err(|_| Error::insufficient_data_of(self.format(), "num_centroids")),
-            CompatLayout::Float => {
-                // The reference implementation stores the centroid and buffer capacities as
-                // shorts; they are derivable from k in the constructor.
-                cursor
-                    .read_u32_be()
-                    .map_err(|_| Error::insufficient_data_of(self.format(), "<unused>"))?;
-                cursor
-                    .read_u16_be()
-                    .map(|count| count as usize)
-                    .map_err(|_| Error::insufficient_data_of(self.format(), "num_centroids"))
-            }
-        }
-    }
-
-    fn read_scalar(self, cursor: &mut SketchSlice, tag: &'static str) -> Result<f64, Error> {
-        let result = match self {
-            CompatLayout::Double => cursor.read_f64_be(),
-            CompatLayout::Float => cursor.read_f32_be().map(f64::from),
-        };
-        result.map_err(|_| Error::insufficient_data_of(self.format(), tag))
-    }
 }
 
 #[inline]
