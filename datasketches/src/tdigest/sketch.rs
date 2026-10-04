@@ -1566,18 +1566,21 @@ impl TDigestView<'_> {
             return None;
         }
 
-        // One prefix pass keeps each split point at two binary searches instead of two
-        // linear weight scans.
-        let mut prefix_weights = Vec::with_capacity(self.centroids.len());
-        let mut weight = 0;
-        for centroid in self.centroids {
-            prefix_weights.push(weight);
-            weight += centroid.weight.get();
-        }
+        // Split points increase, so their lower centroid indexes never move backwards.
+        // Accumulate integer weights only as far as each query needs.
+        let mut previous_lower = 0;
+        let mut weight_below = 0;
 
         let mut ranks = Vec::with_capacity(split_points.len() + 1);
         for &p in split_points {
-            ranks.push(self.rank_with_weights(p, Some(&prefix_weights)));
+            ranks.push(self.rank_with_weights(p, |lower| {
+                weight_below += self.centroids[previous_lower..lower]
+                    .iter()
+                    .map(|c| c.weight.get())
+                    .sum::<u64>();
+                previous_lower = lower;
+                weight_below
+            }));
         }
         ranks.push(1.0);
         Some(ranks)
@@ -1589,12 +1592,13 @@ impl TDigestView<'_> {
         if self.centroids.is_empty() {
             return None;
         }
-        Some(self.rank_with_weights(value, None))
+        Some(self.rank_with_weights(value, |lower| {
+            self.centroids[..lower].iter().map(|c| c.weight.get()).sum()
+        }))
     }
 
-    /// Rank within a non-empty centroid sequence. `prefix_weights` holds each centroid's
-    /// starting weight when several queries share one prefix pass.
-    fn rank_with_weights(&self, value: f64, prefix_weights: Option<&[u64]>) -> f64 {
+    /// Rank within a non-empty centroid sequence, using the weight before its lower anchor.
+    fn rank_with_weights(&self, value: f64, weight_before: impl FnOnce(usize) -> u64) -> f64 {
         if value < self.min {
             return 0.0;
         }
@@ -1658,16 +1662,11 @@ impl TDigestView<'_> {
             upper -= 1;
         }
 
-        let (weight_below, weight_between): (u64, u64) = match prefix_weights {
-            Some(prefix) => (prefix[lower], prefix[upper] - prefix[lower]),
-            None => (
-                self.centroids[..lower].iter().map(|c| c.weight.get()).sum(),
-                self.centroids[lower..upper]
-                    .iter()
-                    .map(|c| c.weight.get())
-                    .sum(),
-            ),
-        };
+        let weight_below = weight_before(lower);
+        let weight_between: u64 = self.centroids[lower..upper]
+            .iter()
+            .map(|c| c.weight.get())
+            .sum();
         let left = &self.centroids[lower];
         let right = &self.centroids[upper];
         let fraction = if left.mean < right.mean {
