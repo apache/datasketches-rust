@@ -402,6 +402,44 @@ fn test_from_iter_matches_single_compression_for_interleaved_runs() {
 }
 
 #[test]
+fn test_from_iter_concatenates_small_compressed_inputs() {
+    // A combined weight of at most k / 2 admits no merges, so collection concatenates the
+    // inputs in stable mean order through the compression fast path instead of the heap scan.
+    let runs: [&[(f64, u64)]; 3] = [
+        &[(2.0, 1), (5.0, 2)],
+        &[(1.0, 1), (5.0, 1)],
+        &[(5.0, 1), (9.0, 1)],
+    ];
+    let concatenated = [
+        (1.0, 1),
+        (2.0, 1),
+        (5.0, 2), // run order breaks mean ties
+        (5.0, 1),
+        (5.0, 1),
+        (9.0, 1),
+    ];
+    for reverse in [false, true] {
+        let make_digest = |centroids: &[(f64, u64)]| {
+            let mut digest = deserialize_with_centroids(100, 1.0, 9.0, centroids);
+            if reverse {
+                let mut bytes = digest.serialize();
+                bytes[5] |= 1 << 2; // reverse-merge flag
+                digest = TDigestMut::deserialize(&bytes).unwrap();
+            }
+            digest
+        };
+        let mut merged = runs.into_iter().map(make_digest).collect::<TDigestMut>();
+
+        let mut expected_bytes =
+            deserialize_with_centroids(100, 1.0, 9.0, &concatenated).serialize();
+        // Collection flips the reverse-merge flag once, like a single compression pass.
+        expected_bytes[5] |= u8::from(!reverse) << 2;
+        assert_eq!(merged.serialize(), expected_bytes);
+        assert_eq!(merged.total_weight(), 7);
+    }
+}
+
+#[test]
 fn test_from_iter_handles_mixed_compressed_and_buffered_inputs() {
     let mut expected = TDigestMut::new(100).unwrap();
     let partials = (0..4)
