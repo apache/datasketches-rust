@@ -2134,12 +2134,14 @@ fn centroid_center(weight_before: u64, weight: u64) -> f64 {
     (weight_before + weight / 2) as f64 + (weight % 2) as f64 * 0.5
 }
 
-/// Interpolates finite endpoints, preserving their bounds despite rounding.
+/// Interpolates finite endpoints at a fraction in `[0, 1]`, preserving their bounds.
 ///
 /// The sign split follows WG21 P0811R3:
 /// <https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2019/p0811r3.html>.
 fn interpolate(start: f64, end: f64, fraction: f64) -> f64 {
-    debug_assert!(start.is_finite() && end.is_finite() && fraction.is_finite());
+    debug_assert!(start.is_finite() && end.is_finite() && (0.0..=1.0).contains(&fraction));
+    // Callers guarantee the fraction's range, but division may round it to an endpoint.
+    // Even an FMA need not reproduce `end` at 1: its subtracted difference already rounded.
     if fraction <= 0. {
         return start;
     }
@@ -2168,5 +2170,22 @@ fn interpolation_fraction(value: f64, start: f64, end: f64) -> f64 {
     } else {
         // Scaling is needed only when opposite-signed endpoints overflow their difference.
         (value * 0.5 - start * 0.5) / (end * 0.5 - start * 0.5)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::interpolate;
+
+    #[test]
+    fn interpolation_preserves_endpoints_after_subtraction_rounds() {
+        let start = f64::EPSILON / 2.;
+        let end = 1_f64.next_up();
+        // end - start rounds to 1, and even an FMA at fraction 1 then returns 1, not end.
+        // The endpoint branch also retains the sign of a zero endpoint.
+        for (start, end) in [(start, end), (end, start), (-0., 1.), (-1., 0.)] {
+            assert_eq!(interpolate(start, end, 0.).to_bits(), start.to_bits());
+            assert_eq!(interpolate(start, end, 1.).to_bits(), end.to_bits());
+        }
     }
 }

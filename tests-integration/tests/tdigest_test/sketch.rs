@@ -887,6 +887,47 @@ fn test_compression_keeps_merged_means_within_their_endpoints() {
 }
 
 #[test]
+fn test_signed_zero_and_symmetric_centroids_survive_interpolation() {
+    for magnitude in [0., f64::from_bits(1), 1., f64::MAX] {
+        let heavy = 1_u64 << 54;
+        for reverse in [false, true] {
+            let mut digest = deserialize_with_centroids(
+                10,
+                -f64::MAX,
+                f64::MAX,
+                &[
+                    (-f64::MAX, heavy),
+                    (-magnitude, 1),
+                    (magnitude, 1),
+                    (f64::MAX, heavy),
+                ],
+            );
+            let mut bytes = digest.serialize();
+            if reverse {
+                bytes[5] |= 1 << 2;
+            }
+            let mut digest = TDigestMut::deserialize(&bytes).unwrap();
+            digest.update(-f64::MAX);
+            let bytes = digest.serialize();
+            let merged = bytes[32..]
+                .chunks_exact(16)
+                .find(|c| u64::from_le_bytes(c[8..].try_into().unwrap()) == 2)
+                .expect("the equally weighted middle centroids should merge");
+            // Equal and opposite contributions cancel exactly, including subnormal values.
+            assert_eq!(f64::from_le_bytes(merged[..8].try_into().unwrap()), 0.);
+        }
+    }
+
+    let mut digest =
+        deserialize_with_centroids(100, -1., 1., &[(-1., 1), (-0., 2), (0., 2), (1., 1)]);
+    assert_eq!(digest.rank(-0.), Some(0.5));
+    assert_eq!(digest.rank(0.), Some(0.5));
+    assert_quantile_queries(&digest, &[1. / 3., 0.5, 2. / 3.], &[0., 0., 0.]);
+    assert_eq!(digest.cdf(&[-0.]), Some(vec![0.5, 1.]));
+    assert_eq!(digest.pmf(&[0.]), Some(vec![0.5, 0.5]));
+}
+
+#[test]
 fn test_batch_quantiles_match_scalar_queries_in_input_order() {
     let mut tdigest = TDigestMut::new(100).unwrap();
     for value in 0..10_000 {
