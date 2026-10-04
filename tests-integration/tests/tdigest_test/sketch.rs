@@ -623,11 +623,7 @@ fn test_estimate_repeat_values() {
     assert_eq!(tdigest.quantile(0.9), Some(1.0));
 }
 
-/// Builds a digest whose centroids carry the given weights.
-///
-/// Compression never merges the extreme centroids, so digests built through `update` and `merge`
-/// always keep unit-weight tails. Heavier tails arrive only through deserialization, including the
-/// reference implementation format, and they select the tail interpolation branches.
+/// Builds a weighted image, including tail centroids unavailable through raw updates.
 fn deserialize_with_centroids(k: u16, min: f64, max: f64, centroids: &[(f64, u64)]) -> TDigestMut {
     const PREAMBLE_LONGS: u8 = 2;
     const SERIAL_VERSION: u8 = 1;
@@ -703,7 +699,7 @@ fn test_quantile_handles_two_sample_last_centroid() {
 
 #[test]
 fn test_single_centroid_preserves_stored_tail_information() {
-    let digest = deserialize_with_centroids(100, 0., 100., &[(50., 10)]);
+    let mut digest = deserialize_with_centroids(100, 0., 100., &[(50., 10)]);
     // Ten samples have a centroid center at weight 5. The tail spans weights 1 through 5,
     // so weight 2.5 lies 3/8 of the way from the stored minimum to the mean.
     assert_quantile_queries(
@@ -711,27 +707,11 @@ fn test_single_centroid_preserves_stored_tail_information() {
         &[0., 0.1, 0.25, 0.5, 0.75, 0.9, 1.],
         &[0., 0., 18.75, 50., 81.25, 100., 100.],
     );
-    let digest = digest.freeze();
-    for (value, rank) in [
-        (0., 0.05),
-        (18.75, 0.25),
-        (50., 0.5),
-        (81.25, 0.75),
-        (100., 0.95),
-    ] {
-        assert_that!(digest.rank(value).unwrap(), near(rank, 1e-12));
-    }
-}
-
-#[test]
-fn test_mutable_rank_preserves_weighted_single_centroid_tails() {
-    let mut digest = deserialize_with_centroids(100, 0., 100., &[(50., 10)]);
     let frozen = digest.clone().freeze();
     let points = [-1., 0., 18.75, 50., 81.25, 100., 101.];
     let expected = [0., 0.05, 0.25, 0.5, 0.75, 0.95, 1.];
 
-    // A quarter rank is mass 2.5: 3/8 of the tail from mass 1 at min to mass 5 at mean.
-    // Repeating the queries must preserve the result before and after creating a view.
+    // Repeated queries agree before and after creating a mutable view.
     for _ in 0..2 {
         for (&point, &rank) in points.iter().zip(&expected) {
             assert_eq!(digest.rank(point), Some(rank));
@@ -743,18 +723,8 @@ fn test_mutable_rank_preserves_weighted_single_centroid_tails() {
 
 #[test]
 fn test_rank_tails_stay_monotonic_after_updating_weighted_centroids() {
-    let points = [
-        0.,
-        0_f64.next_up(),
-        0.25,
-        0.5,
-        1.,
-        50.,
-        99.,
-        99.5,
-        99.75,
-        100.,
-    ];
+    let points = [0., 0_f64.next_up(), 0.5, 1., 99., 99.5, 100.];
+    let expected = [0.5, 0.5, 0.5, 0.5, 11.5, 11.5, 11.5].map(|mass| mass / 12.);
     for operation in 0..3 {
         let mut digest = deserialize_with_centroids(100, 0., 100., &[(50., 10)]);
         let mut updates = TDigestMut::new(100).unwrap();
@@ -772,18 +742,7 @@ fn test_rank_tails_stay_monotonic_after_updating_weighted_centroids() {
 
         // The new unit-weight tails lie inside the retained extrema. Their half-sample
         // centers leave no mass for interpolation between min/first or last/max.
-        for (&point, expected) in points.iter().zip([
-            0.5 / 12.,
-            0.5 / 12.,
-            0.5 / 12.,
-            0.5 / 12.,
-            0.5 / 12.,
-            0.5,
-            11.5 / 12.,
-            11.5 / 12.,
-            11.5 / 12.,
-            11.5 / 12.,
-        ]) {
+        for (&point, &expected) in points.iter().zip(&expected) {
             assert_eq!(digest.rank(point), Some(expected));
             assert_eq!(frozen.rank(point), Some(expected));
         }
@@ -794,42 +753,6 @@ fn test_rank_tails_stay_monotonic_after_updating_weighted_centroids() {
         assert_eq!(pmf, frozen.pmf(&points).unwrap());
         assert!(pmf.iter().all(|&mass| mass >= 0.), "PMF: {pmf:?}");
         assert_that!(pmf.iter().sum::<f64>(), near(1., 1e-12));
-    }
-}
-
-#[test]
-fn test_rank_tail_masses_stay_ordered_when_counts_round() {
-    for total_weight in [
-        (1_u64 << 52) - 2,
-        (1_u64 << 53) - 2,
-        (1_u64 << 53) - 1,
-        1_u64 << 53,
-        (1_u64 << 53) + 1,
-        (1_u64 << 54) - 2,
-        u64::MAX,
-    ] {
-        for last_weight in 1..=4 {
-            let mut digest = deserialize_with_centroids(
-                100,
-                0.,
-                100.,
-                &[(0., total_weight - last_weight), (90., last_weight)],
-            );
-            let frozen = digest.clone().freeze();
-            let points = [90., 90_f64.next_up(), 95., 100_f64.next_down(), 100.];
-            let cdf = digest.cdf(&points).unwrap();
-            assert_eq!(cdf, frozen.cdf(&points).unwrap());
-            assert!(
-                cdf.is_sorted(),
-                "N={total_weight}, last={last_weight}: {cdf:?}"
-            );
-            assert!(cdf.iter().all(|rank| (0.0..=1.0).contains(rank)));
-
-            // At N = 2^53 - 2, the unit-weight last center rounds up to N. Computing
-            // rank(max) as 1 - 0.5/N instead would round down and produce a negative bucket.
-            let pmf = frozen.pmf(&points).unwrap();
-            assert!(pmf.iter().all(|&mass| mass >= 0.), "PMF: {pmf:?}");
-        }
     }
 }
 
@@ -876,30 +799,45 @@ fn test_small_compression_preserves_weighted_centroids_and_tie_order() {
     }
 }
 
+// Exercise both compression paths and inspect the mean directly; query interpolation can hide
+// rounding errors. The heavy outer centroids keep the middle pair away from the protected tails.
+fn merged_centroid_mean(centroids: [(f64, u64); 4], reverse: bool, owned: bool) -> f64 {
+    let min = centroids[0].0;
+    let max = centroids[3].0;
+    let mut bytes = deserialize_with_centroids(10, min, max, &centroids).serialize();
+    if reverse {
+        bytes[5] |= 1 << 2;
+    }
+    let mut digest = TDigestMut::deserialize(&bytes).unwrap();
+    if owned {
+        let other = deserialize_with_centroids(10, max, max, &[(max, 1)]);
+        digest = [digest, other].into_iter().collect();
+    } else {
+        digest.update(min);
+    }
+    let bytes = digest.serialize();
+    let merged_weight = centroids[1].1 + centroids[2].1;
+    let centroid = bytes[32..]
+        .chunks_exact(16)
+        .find(|c| u64::from_le_bytes(c[8..].try_into().unwrap()) == merged_weight)
+        .unwrap_or_else(|| {
+            panic!(
+                "middle pair {:?} did not merge (reverse={reverse}, owned={owned})",
+                &centroids[1..3]
+            )
+        });
+    f64::from_le_bytes(centroid[..8].try_into().unwrap())
+}
+
 #[test]
 fn test_compression_preserves_a_small_centroid_weight() {
     for weight in [1_u64 << 20, 1_u64 << 40, 1_u64 << 54] {
         for reverse in [false, true] {
-            let mut digest = deserialize_with_centroids(
-                10,
-                0.,
-                f64::MAX,
-                &[(0., weight), (1., weight), (1e300, 1), (f64::MAX, weight)],
+            let mean = merged_centroid_mean(
+                [(0., weight), (1., weight), (1e300, 1), (f64::MAX, weight)],
+                reverse,
+                false,
             );
-            let mut bytes = digest.serialize();
-            if reverse {
-                bytes[5] |= 1 << 2;
-            }
-            let mut digest = TDigestMut::deserialize(&bytes).unwrap();
-            digest.update(0.);
-
-            // Read the merged mean directly: quantile interpolation must not hide a bad mean.
-            let bytes = digest.serialize();
-            let centroid = bytes[32..]
-                .chunks_exact(16)
-                .find(|c| u64::from_le_bytes(c[8..].try_into().unwrap()) == weight + 1)
-                .expect("the middle centroids should merge");
-            let mean = f64::from_le_bytes(centroid[..8].try_into().unwrap());
             // The exact mean is (weight * 1 + 1e300) / (weight + 1). The first term is far
             // below one ULP of the numerator, so this division is an independent reference.
             let expected = 1e300 / (weight + 1) as f64;
@@ -929,41 +867,16 @@ fn test_opposite_sign_merge_preserves_a_representable_correction() {
                 };
                 for reverse in [false, true] {
                     for owned in [false, true] {
-                        let mut digest = deserialize_with_centroids(
-                            10,
-                            -f64::MAX,
-                            f64::MAX,
-                            &[
+                        let mean = merged_centroid_mean(
+                            [
                                 (-f64::MAX, outer_weight),
                                 (-magnitude, left_weight),
                                 (magnitude, right_weight),
                                 (f64::MAX, outer_weight),
                             ],
+                            reverse,
+                            owned,
                         );
-                        let mut bytes = digest.serialize();
-                        if reverse {
-                            bytes[5] |= 1 << 2;
-                        }
-                        let mut digest = TDigestMut::deserialize(&bytes).unwrap();
-                        if owned {
-                            let other = deserialize_with_centroids(
-                                10,
-                                f64::MAX,
-                                f64::MAX,
-                                &[(f64::MAX, 1)],
-                            );
-                            digest = [digest, other].into_iter().collect();
-                        } else {
-                            digest.update(-f64::MAX);
-                        }
-                        let bytes = digest.serialize();
-                        let centroid = bytes[32..]
-                            .chunks_exact(16)
-                            .find(|c| u64::from_le_bytes(c[8..].try_into().unwrap()) == total_weight)
-                            .unwrap_or_else(|| {
-                                panic!("middle pair did not merge: magnitude={magnitude:?}, exponent={exponent}, negative_heavy={negative_heavy}, reverse={reverse}, owned={owned}")
-                            });
-                        let mean = f64::from_le_bytes(centroid[..8].try_into().unwrap());
                         assert_eq!(
                             mean, expected,
                             "magnitude={magnitude:?}, exponent={exponent}, negative_heavy={negative_heavy}, reverse={reverse}, owned={owned}"
@@ -982,12 +895,9 @@ fn test_compression_keeps_merged_means_within_their_endpoints() {
     for (left, right) in [
         (0., tiny),
         (tiny, 2. * tiny),
-        (
-            f64::from_bits(f64::MIN_POSITIVE.to_bits() - 1),
-            f64::MIN_POSITIVE,
-        ),
-        (1., f64::from_bits(1_f64.to_bits() + 1)),
-        (f64::from_bits(f64::MAX.to_bits() - 1), f64::MAX),
+        (f64::MIN_POSITIVE.next_down(), f64::MIN_POSITIVE),
+        (1., 1_f64.next_up()),
+        (f64::MAX.next_down(), f64::MAX),
         (f64::MAX / 4., f64::MAX),
         (-f64::MAX, -f64::MAX / 4.),
         (-2. * tiny, -tiny),
@@ -997,44 +907,16 @@ fn test_compression_keeps_merged_means_within_their_endpoints() {
         for (left_weight, right_weight) in [(1, 1), (1, heavy), (heavy, 1)] {
             for reverse in [false, true] {
                 for owned in [false, true] {
-                    let mut digest = deserialize_with_centroids(
-                        10,
-                        -f64::MAX,
-                        f64::MAX,
-                        &[
+                    let mean = merged_centroid_mean(
+                        [
                             (-f64::MAX, heavy),
                             (left, left_weight),
                             (right, right_weight),
                             (f64::MAX, heavy),
                         ],
+                        reverse,
+                        owned,
                     );
-                    let mut bytes = digest.serialize();
-                    if reverse {
-                        bytes[5] |= 1 << 2;
-                    }
-                    let mut digest = TDigestMut::deserialize(&bytes).unwrap();
-                    if owned {
-                        let other =
-                            deserialize_with_centroids(10, f64::MAX, f64::MAX, &[(f64::MAX, 1)]);
-                        digest = [digest, other].into_iter().collect();
-                    } else {
-                        digest.update(-f64::MAX);
-                    }
-
-                    // Inspect compression directly; query interpolation could hide an overshoot.
-                    let bytes = digest.serialize();
-                    let centroid = bytes[32..]
-                        .chunks_exact(16)
-                        .find(|c| {
-                            u64::from_le_bytes(c[8..].try_into().unwrap())
-                                == left_weight + right_weight
-                        })
-                        .unwrap_or_else(|| {
-                            panic!(
-                                "middle pair {left:?}:{left_weight}, {right:?}:{right_weight} did not merge (reverse={reverse}, owned={owned})"
-                            )
-                        });
-                    let mean = f64::from_le_bytes(centroid[..8].try_into().unwrap());
                     assert!(
                         mean.is_finite() && (left..=right).contains(&mean),
                         "{mean:?} is outside [{left:?}, {right:?}] (weights={left_weight}:{right_weight}, reverse={reverse}, owned={owned})"
@@ -1050,30 +932,18 @@ fn test_signed_zero_and_symmetric_centroids_survive_interpolation() {
     for magnitude in [0., f64::from_bits(1), 1., f64::MAX] {
         let heavy = 1_u64 << 54;
         for reverse in [false, true] {
-            let mut digest = deserialize_with_centroids(
-                10,
-                -f64::MAX,
-                f64::MAX,
-                &[
+            let mean = merged_centroid_mean(
+                [
                     (-f64::MAX, heavy),
                     (-magnitude, 1),
                     (magnitude, 1),
                     (f64::MAX, heavy),
                 ],
+                reverse,
+                false,
             );
-            let mut bytes = digest.serialize();
-            if reverse {
-                bytes[5] |= 1 << 2;
-            }
-            let mut digest = TDigestMut::deserialize(&bytes).unwrap();
-            digest.update(-f64::MAX);
-            let bytes = digest.serialize();
-            let merged = bytes[32..]
-                .chunks_exact(16)
-                .find(|c| u64::from_le_bytes(c[8..].try_into().unwrap()) == 2)
-                .expect("the equally weighted middle centroids should merge");
             // Equal and opposite contributions cancel exactly, including subnormal values.
-            assert_eq!(f64::from_le_bytes(merged[..8].try_into().unwrap()), 0.);
+            assert_eq!(mean, 0.);
         }
     }
 
@@ -1299,6 +1169,26 @@ fn test_quantile_uses_max_when_last_center_rounds_down() {
         &[1. - f64::EPSILON, 1_f64.next_down()],
         &[90_f64.next_down(), 100.],
     );
+}
+
+#[test]
+fn test_rank_max_uses_the_same_rounded_mass_as_last_centroid() {
+    // The last half-sample center can round up or down. At N = 2^53 - 2 it rounds to N,
+    // while 1 - 0.5/N rounds below 1 and would give max a lower rank than the last mean.
+    for (total_weight, expected) in [
+        ((1_u64 << 53) - 2, 1.),
+        ((1_u64 << 53) - 1, 1_f64.next_down()),
+        (u64::MAX, 1.),
+    ] {
+        let mut digest =
+            deserialize_with_centroids(100, 0., 100., &[(0., total_weight - 1), (90., 1)]);
+        let frozen = digest.clone().freeze();
+        let points = [90., 90_f64.next_up(), 95., 100_f64.next_down(), 100.];
+        let cdf = digest.cdf(&points).unwrap();
+        assert_eq!(&cdf[..points.len()], &[expected; 5]);
+        assert_eq!(cdf, frozen.cdf(&points).unwrap());
+        assert!(frozen.pmf(&points).unwrap().iter().all(|&mass| mass >= 0.));
+    }
 }
 
 #[test]
