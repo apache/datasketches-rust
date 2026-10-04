@@ -18,6 +18,7 @@ All significant changes to this project will be documented in this file.
 
 ### Improvements
 
+* Serializing buffered `TDigestMut` inputs is faster when their total weight is at most `k / 2`.
 * Improve the readability of `Debug` output for HLL and CPC sketches and unions.
 * `KllSketch::quantile` and `ReqSketch::quantile` are faster at ranks `0.0` and `1.0`, with query work independent of the number of retained samples.
 * `BloomFilter::insert` is faster for integer and raw-byte inputs. `BloomFilter::contains_and_insert` is also faster when checking already-present integer values.
@@ -45,8 +46,9 @@ All significant changes to this project will be documented in this file.
 * `ReqSketch::cdf` and its sorted view now preserve the rank at each split point and end at exactly `1.0`, avoiding extra rounding from accumulating PMF values.
 * `TDigestMut` updates and merges now panic without changing the digest if the total weight would exceed `u64::MAX`, including in release builds.
 * `TDigestMut::merge` now preserves the true minimum and maximum from both inputs, including compressed digests.
-* `TDigest` and `TDigestMut` quantile queries no longer extrapolate above the stored maximum when large total weights cause rounding near rank `1.0`.
-* `TDigest` and `TDigestMut` deserialization now returns `InvalidData` for invalid flags or extrema, out-of-range values, unsorted centroids, or non-empty images with no stored values.
+* Fix non-finite, out-of-range, or decreasing `TDigest` and `TDigestMut` query results for extreme finite values, large weights, and updated or merged deserialized digests. Single-centroid queries now honor stored extrema, and PMF buckets remain nonnegative.
+* T-Digest compression reduces rounding loss in centroid means when merging very unequal weights, including opposite-sign centroids.
+* `TDigest` and `TDigestMut` deserialization now returns `InvalidData` for malformed images, including unsorted centroids, values outside stored extrema, and single-sample images with distinct extrema.
 
 ## v0.5.0 (2026-09-04)
 

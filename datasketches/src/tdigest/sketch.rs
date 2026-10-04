@@ -490,8 +490,7 @@ impl TDigestMut {
         if value > self.max {
             return Some(1.0);
         }
-        // one centroid and value == min == max
-        if self.buffer.len() == 1 {
+        if self.min == self.max {
             return Some(0.5);
         }
 
@@ -765,7 +764,8 @@ impl TDigestMut {
                 "malformed data: centroid means must be finite, within extrema, and nondecreasing",
             ));
         }
-        checked_weight_sum(compressed_weight, num_buffered as u64)?;
+        let total_weight = checked_weight_sum(compressed_weight, num_buffered as u64)?;
+        check_single_sample_extrema(min, max, total_weight)?;
         let mut buffered_values_valid = true;
         for bytes in buffered_payload.chunks_exact(buffered_value_bytes) {
             let value = if is_f32 {
@@ -846,6 +846,7 @@ impl TDigestMut {
                         "malformed data: centroid means in compat double format must be finite, within extrema, and nondecreasing",
                     ));
                 }
+                check_single_sample_extrema(min, max, total_weight)?;
                 Ok(TDigestMut::make(
                     k,
                     false,
@@ -900,6 +901,7 @@ impl TDigestMut {
                         "malformed data: centroid means in compat float format must be finite, within extrema, and nondecreasing",
                     ));
                 }
+                check_single_sample_extrema(min, max, total_weight)?;
                 Ok(TDigestMut::make(
                     k,
                     false,
@@ -939,30 +941,38 @@ impl TDigestMut {
 
         let mut num_centroids = 1;
         let len = centroids.len();
-        let compressed_weight = self.compressed_weight as f64;
-        let normalizer = scale_function::normalizer(2.0 * f64::from(self.k), compressed_weight);
-        let mut current = 1;
-        let mut weight_so_far = 0.;
-        while current < len {
-            let c = centroids[current];
-            let proposed_weight = centroids[num_centroids - 1].weight() + c.weight();
-            if should_merge_centroid(
-                current,
-                len,
-                weight_so_far,
-                proposed_weight,
-                compressed_weight,
-                normalizer,
-            ) {
-                // merge into existing centroid
-                centroids[num_centroids - 1].add(c);
-            } else {
-                // copy to a new centroid
-                weight_so_far += centroids[num_centroids - 1].weight();
-                centroids[num_centroids] = c;
-                num_centroids += 1;
+        // No two positive integer weights fit when n <= k / 2. For a positive K_2
+        // normalizer, the maximum limit is n / (4 * normalizer) = r * (ln(r) + 6),
+        // where r = n / (2 * k) <= 1/4: the limit stays below 1.154, hence below 2.
+        // A nonpositive normalizer also rejects all merges at these small counts.
+        if total_weight <= u64::from(self.k) / 2 {
+            num_centroids = len;
+        } else {
+            let compressed_weight = self.compressed_weight as f64;
+            let normalizer = scale_function::normalizer(2.0 * f64::from(self.k), compressed_weight);
+            let mut current = 1;
+            let mut weight_so_far = 0.;
+            while current < len {
+                let c = centroids[current];
+                let proposed_weight = centroids[num_centroids - 1].weight() + c.weight();
+                if should_merge_centroid(
+                    current,
+                    len,
+                    weight_so_far,
+                    proposed_weight,
+                    compressed_weight,
+                    normalizer,
+                ) {
+                    // merge into existing centroid
+                    centroids[num_centroids - 1].add(c);
+                } else {
+                    // copy to a new centroid
+                    weight_so_far += centroids[num_centroids - 1].weight();
+                    centroids[num_centroids] = c;
+                    num_centroids += 1;
+                }
+                current += 1;
             }
-            current += 1;
         }
 
         centroids.truncate(num_centroids);
@@ -1510,6 +1520,8 @@ impl TDigest {
 
     /// Computes the approximate quantile for the given normalized rank.
     ///
+    /// Ranks `0.0` and `1.0` return the stored minimum and maximum, respectively.
+    ///
     /// Returns `None` if this t-digest is empty.
     ///
     /// # Panics
@@ -1640,43 +1652,44 @@ impl TDigestView<'_> {
         if value > self.max {
             return Some(1.0);
         }
-        // one centroid and value == min == max
-        if self.centroids.len() == 1 {
+        if self.min == self.max {
             return Some(0.5);
         }
 
         let centroids_weight = self.centroids_weight as f64;
         let num_centroids = self.centroids.len();
 
-        // left tail
-        let first_mean = self.centroids[0].mean;
-        if value < first_mean {
-            if first_mean - self.min > 0. {
-                return Some(if value == self.min {
-                    0.5 / centroids_weight
-                } else {
-                    (1. + (((value - self.min) / (first_mean - self.min))
-                        * ((self.centroids[0].weight() / 2.) - 1.)))
-                        / centroids_weight
-                });
-            }
-            return Some(0.); // should never happen
+        // Reserve at most one sample for each stored extremum, without passing the adjacent
+        // centroid center. Updates can place a unit-weight centroid inside the stored extrema,
+        // leaving no mass to interpolate in that tail.
+        let first = &self.centroids[0];
+        if value < first.mean {
+            let center = centroid_center(0, first.weight.get());
+            return Some(if value == self.min {
+                0.5 / centroids_weight
+            } else {
+                interpolate(
+                    center.min(1.),
+                    center,
+                    interpolation_fraction(value, self.min, first.mean),
+                ) / centroids_weight
+            });
         }
 
-        // right tail
-        let last_mean = self.centroids[num_centroids - 1].mean;
-        if value > last_mean {
-            if self.max - last_mean > 0. {
-                return Some(if value == self.max {
-                    1. - (0.5 / centroids_weight)
-                } else {
-                    1.0 - ((1.0
-                        + (((self.max - value) / (self.max - last_mean))
-                            * ((self.centroids[num_centroids - 1].weight() / 2.) - 1.)))
-                        / centroids_weight)
-                });
-            }
-            return Some(1.); // should never happen
+        let last = &self.centroids[num_centroids - 1];
+        if value > last.mean {
+            let center =
+                centroid_center(self.centroids_weight - last.weight.get(), last.weight.get());
+            return Some(if value == self.max {
+                // Round the maximum's mass in the same coordinates as the centroid centers.
+                centroid_center(self.centroids_weight - 1, 1) / centroids_weight
+            } else {
+                interpolate(
+                    center,
+                    center.max((self.centroids_weight - 1) as f64),
+                    interpolation_fraction(value, last.mean, self.max),
+                ) / centroids_weight
+            });
         }
 
         let mut lower = self
@@ -1696,30 +1709,24 @@ impl TDigestView<'_> {
             upper -= 1;
         }
 
-        let mut weight_below = 0.;
-        let mut i = 0;
-        while i < lower {
-            weight_below += self.centroids[i].weight();
-            i += 1;
-        }
-        weight_below += self.centroids[lower].weight() / 2.;
-
-        let mut weight_delta = 0.;
-        while i < upper {
-            weight_delta += self.centroids[i].weight();
-            i += 1;
-        }
-        weight_delta -= self.centroids[lower].weight() / 2.;
-        weight_delta += self.centroids[upper].weight() / 2.;
+        let weight_below = self.centroids[..lower].iter().map(|c| c.weight.get()).sum();
+        let weight_between: u64 = self.centroids[lower..upper]
+            .iter()
+            .map(|c| c.weight.get())
+            .sum();
+        let left = &self.centroids[lower];
+        let right = &self.centroids[upper];
+        let fraction = if left.mean < right.mean {
+            interpolation_fraction(value, left.mean, right.mean)
+        } else {
+            0.5
+        };
         Some(
-            if self.centroids[upper].mean - self.centroids[lower].mean > 0. {
-                (weight_below
-                    + (weight_delta * (value - self.centroids[lower].mean)
-                        / (self.centroids[upper].mean - self.centroids[lower].mean)))
-                    / centroids_weight
-            } else {
-                (weight_below + weight_delta / 2.) / centroids_weight
-            },
+            interpolate(
+                centroid_center(weight_below, left.weight.get()),
+                centroid_center(weight_below + weight_between, right.weight.get()),
+                fraction,
+            ) / centroids_weight,
         )
     }
 
@@ -1771,8 +1778,8 @@ impl TDigestView<'_> {
         ranks: impl DoubleEndedIterator<Item = (usize, f64)>,
         quantiles: &mut [f64],
     ) {
-        if self.centroids.len() == 1 {
-            quantiles.fill(self.centroids[0].mean);
+        if self.min == self.max {
+            quantiles.fill(self.min);
             return;
         }
 
@@ -1783,7 +1790,7 @@ impl TDigestView<'_> {
             .peekable();
 
         // Consume the right tail from the back, so the centroid scan can omit all tail checks.
-        while let Some((index, _)) = queries.next_if(|&(_, weight)| weight > centroids_weight - 1.)
+        while let Some((index, _)) = queries.next_if(|&(_, weight)| centroids_weight - weight < 1.)
         {
             quantiles[index] = self.max;
         }
@@ -1792,17 +1799,22 @@ impl TDigestView<'_> {
         }
 
         let last = self.centroids.last().unwrap();
-        let last_weight = last.weight();
-        if last_weight > 1. {
-            while let Some((index, weight)) =
-                queries.next_if(|&(_, weight)| centroids_weight - weight <= last_weight / 2.)
+        let last_weight = last.weight.get();
+        let last_center = centroid_center(self.centroids_weight - last_weight, last_weight);
+        if last_weight > 1 {
+            let tail_end = (self.centroids_weight - 1) as f64;
+            while let Some((index, weight)) = queries.next_if(|&(_, weight)| weight >= last_center)
             {
-                quantiles[index] = if last_weight == 2. {
+                // Integer counts can round a wider tail to zero width as well. At this
+                // boundary prefer the maximum, as for an exact two-sample tail.
+                quantiles[index] = if last_center == tail_end {
                     self.max
                 } else {
-                    self.max
-                        - (((centroids_weight - weight - 1.) / ((last_weight / 2.) - 1.))
-                            * (self.max - last.mean))
+                    interpolate(
+                        last.mean,
+                        self.max,
+                        (weight - last_center) / (tail_end - last_center),
+                    )
                 };
             }
         }
@@ -1816,13 +1828,14 @@ impl TDigestView<'_> {
         }
 
         let first = &self.centroids[0];
-        let first_weight = first.weight();
-        if first_weight > 1. {
-            while let Some((index, weight)) =
-                queries.next_if(|&(_, weight)| weight < first_weight / 2.)
+        let first_weight = first.weight.get();
+        let first_center = centroid_center(0, first_weight);
+        if first_weight > 1 {
+            // At first_weight == 2, the weight < 1 pre-pass already consumed this interval.
+            while let Some((index, weight)) = queries.next_if(|&(_, weight)| weight < first_center)
             {
-                quantiles[index] = self.min
-                    + (((weight - 1.) / ((first_weight / 2.) - 1.)) * (first.mean - self.min));
+                quantiles[index] =
+                    interpolate(self.min, first.mean, (weight - 1.) / (first_center - 1.));
             }
         }
         if queries.peek().is_none() {
@@ -1830,43 +1843,42 @@ impl TDigestView<'_> {
         }
 
         // Answer the remaining queries by centroid interval; both streams advance only forward.
-        let mut weight_so_far = first_weight / 2.;
+        let mut weight_before = 0;
+        let mut left_center = first_center;
         for pair in self.centroids.windows(2) {
             let left = &pair[0];
             let right = &pair[1];
-            let dw = (left.weight() + right.weight()) / 2.;
+            let right_before = weight_before + left.weight.get();
+            let right_center = centroid_center(right_before, right.weight.get());
             loop {
                 let Some(&(index, weight)) = queries.peek() else {
                     return;
                 };
-                if weight_so_far + dw <= weight {
+                if right_center <= weight {
                     break;
                 }
                 queries.next();
-                let mut left_weight = 0.;
+                let mut start = left_center;
                 if left.weight.get() == 1 {
-                    if weight - weight_so_far < 0.5 {
+                    start = right_before as f64;
+                    if weight < start {
                         quantiles[index] = left.mean;
                         continue;
                     }
-                    left_weight = 0.5;
                 }
-                let mut right_weight = 0.;
+                let mut end = right_center;
                 if right.weight.get() == 1 {
-                    if weight_so_far + dw - weight <= 0.5 {
+                    end = right_before as f64;
+                    if weight >= end {
                         quantiles[index] = right.mean;
                         continue;
                     }
-                    right_weight = 0.5;
                 }
-                // Each centroid is weighted by the distance from the target to the *other*
-                // centroid, so the estimate approaches the nearer one.
-                let distance_from_left = weight - weight_so_far - left_weight;
-                let distance_to_right = weight_so_far + dw - weight - right_weight;
                 quantiles[index] =
-                    weighted_average(left.mean, distance_to_right, right.mean, distance_from_left);
+                    interpolate(left.mean, right.mean, (weight - start) / (end - start));
             }
-            weight_so_far += dw;
+            weight_before = right_before;
+            left_center = right_center;
         }
 
         // Rounding at large total weights can exhaust the scan near the maximum.
@@ -2006,22 +2018,27 @@ impl Centroid {
             .checked_add(other.weight.get())
             .expect("weight overflow");
 
-        let (self_mean, other_mean) = (self.mean, other.mean);
-        let ratio_other = other_weight / total_weight;
-        let delta = other_mean - self_mean;
-        self.mean = if delta.is_finite() {
-            delta.mul_add(ratio_other, self_mean)
+        // Start at the heavier centroid so a small contribution is not rounded away in 1 - ratio.
+        let (start, end, fraction) = if self_weight >= other_weight {
+            (self.mean, other.mean, other_weight / total_weight)
         } else {
-            let ratio_self = self_weight / total_weight;
-            self_mean.mul_add(ratio_self, other_mean * ratio_other)
+            (other.mean, self.mean, self_weight / total_weight)
         };
+        debug_assert!(start.is_finite() && end.is_finite() && fraction > 0. && fraction <= 0.5);
 
-        debug_assert!(
-            self.mean.is_finite(),
-            "Centroid's mean must be finite; self: {}, other: {}",
-            self_mean,
-            other_mean
-        );
+        // Same-sign means within a factor of two in magnitude subtract exactly. For wider
+        // gaps, a step of at most 1/2 cannot cross either endpoint even if subtraction rounds.
+        // Queries can interpolate farther and still need the general bounds.
+        self.mean = if start.is_sign_positive() == end.is_sign_positive() {
+            (end - start).mul_add(fraction, start)
+        } else if 1. - fraction == 1. {
+            // Both corrections can matter even when 1 - fraction rounds to 1.
+            // Halving before subtraction avoids overflow; the FMA combines the
+            // correction with start before rounding the result.
+            (end * 0.5 - start * 0.5).mul_add(2. * fraction, start)
+        } else {
+            interpolate(start, end, fraction)
+        };
     }
 
     fn weight(&self) -> f64 {
@@ -2060,6 +2077,16 @@ fn check_extrema(min: f64, max: f64, format: &'static str) -> Result<(), Error> 
         return Err(Error::deserial(format!(
             "malformed data: {format} min {min} exceeds max {max}"
         )));
+    }
+    Ok(())
+}
+
+fn check_single_sample_extrema(min: f64, max: f64, total_weight: u64) -> Result<(), Error> {
+    // Tail interpolation assumes that distinct extrema represent at least two samples.
+    if total_weight == 1 && min != max {
+        return Err(Error::deserial(
+            "malformed data: a single sample must have equal extrema",
+        ));
     }
     Ok(())
 }
@@ -2111,14 +2138,64 @@ mod scale_function {
     }
 }
 
-fn weighted_average(x1: f64, w1: f64, x2: f64, w2: f64) -> f64 {
-    let total_weight = w1 + w2;
-    let ratio = w2 / total_weight;
-    if x1.is_sign_positive() != x2.is_sign_positive() {
-        // Subtracting opposite-signed finite extremes can overflow.
-        x1 * (1. - ratio) + x2 * ratio
+/// Keeps cumulative counts exact until a centroid's midpoint is needed for interpolation.
+/// All intervals and tails use this same center to avoid inconsistent boundary rounding.
+fn centroid_center(weight_before: u64, weight: u64) -> f64 {
+    (weight_before + weight / 2) as f64 + (weight % 2) as f64 * 0.5
+}
+
+/// Interpolates finite endpoints at a fraction in `[0, 1]`, preserving their bounds.
+///
+/// The sign split follows WG21 P0811R3:
+/// <https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2019/p0811r3.html>.
+fn interpolate(start: f64, end: f64, fraction: f64) -> f64 {
+    debug_assert!(start.is_finite() && end.is_finite() && (0.0..=1.0).contains(&fraction));
+    // Callers guarantee the fraction's range, but division may round it to an endpoint.
+    // Even an FMA need not reproduce `end` at 1: its subtracted difference already rounded.
+    if fraction <= 0. {
+        return start;
+    }
+    if fraction >= 1. {
+        return end;
+    }
+    if start.is_sign_positive() != end.is_sign_positive() {
+        // Avoid the potentially overflowing difference of opposite-signed endpoints.
+        start * (1. - fraction) + end * fraction
     } else {
-        // Same-sign subtraction is finite and avoids summing two near-maximum terms.
-        (x2 - x1).mul_add(ratio, x1)
+        // Same-sign subtraction is finite; rounding must not overshoot the end.
+        let value = (end - start).mul_add(fraction, start);
+        if start < end {
+            value.min(end)
+        } else {
+            value.max(end)
+        }
+    }
+}
+
+/// Locates a value between distinct finite endpoints.
+fn interpolation_fraction(value: f64, start: f64, end: f64) -> f64 {
+    let width = end - start;
+    if width.is_finite() {
+        (value - start) / width
+    } else {
+        // Scaling is needed only when opposite-signed endpoints overflow their difference.
+        (value * 0.5 - start * 0.5) / (end * 0.5 - start * 0.5)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::interpolate;
+
+    #[test]
+    fn interpolation_preserves_endpoints_after_subtraction_rounds() {
+        let start = f64::EPSILON / 2.;
+        let end = 1_f64.next_up();
+        // end - start rounds to 1, and even an FMA at fraction 1 then returns 1, not end.
+        // The endpoint branch also retains the sign of a zero endpoint.
+        for (start, end) in [(start, end), (end, start), (-0., 1.), (-1., 0.)] {
+            assert_eq!(interpolate(start, end, 0.).to_bits(), start.to_bits());
+            assert_eq!(interpolate(start, end, 1.).to_bits(), end.to_bits());
+        }
     }
 }
