@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+mod aggregation;
 mod compress;
 mod merge;
 mod query;

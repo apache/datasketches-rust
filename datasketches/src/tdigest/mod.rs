@@ -23,7 +23,7 @@
 //! The implementation in this library has a few differences from the reference implementation
 //! associated with that paper:
 //!
-//! * Merging does not modify the input.
+//! * [`TDigestMut::merge`] borrows its input without modifying it.
 //! * Deserialization is similar to other sketches in this library, although reading the reference
 //!   implementation format is supported.
 //!

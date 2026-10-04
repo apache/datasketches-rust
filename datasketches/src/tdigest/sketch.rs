@@ -119,11 +119,10 @@ impl TDigestBuffer {
     /// Combines this buffer with a non-empty borrowed buffer in stable mean order.
     fn into_merged_centroids(mut self, other: &TDigestBuffer) -> Vec<Centroid> {
         debug_assert!(!other.is_empty(), "an empty right-hand buffer is a no-op");
-        if self.unmerged_tail_len == 0
-            && other.unmerged_tail_len == 0
-            && centroids_are_sorted(&self.centroids)
-            && centroids_are_sorted(&other.centroids)
-        {
+        if self.unmerged_tail_len == 0 && other.unmerged_tail_len == 0 {
+            // Compression and deserialization both establish this invariant.
+            debug_assert!(centroids_are_sorted(&self.centroids));
+            debug_assert!(centroids_are_sorted(&other.centroids));
             merge_sorted_centroids(&mut self.centroids, &other.centroids);
             return self.centroids;
         }
@@ -326,6 +325,10 @@ impl TDigestMut {
     }
 
     /// Merges the given t-digest into this one.
+    ///
+    /// Retains this digest's `k`, even if the other digest uses a different value.
+    /// The borrowed input remains available for reuse. Collecting owned inputs into a
+    /// [`TDigestMut`] with [`Iterator::collect`] combines a batch with one compression pass.
     ///
     /// # Panics
     ///
@@ -943,16 +946,14 @@ impl TDigestMut {
         while current < len {
             let c = centroids[current];
             let proposed_weight = centroids[num_centroids - 1].weight() + c.weight();
-            let mut add_this = false;
-            if (current != 1) && (current != (len - 1)) {
-                let q0 = weight_so_far / compressed_weight;
-                let q2 = (weight_so_far + proposed_weight) / compressed_weight;
-                add_this = proposed_weight
-                    <= (compressed_weight
-                        * scale_function::max(q0, normalizer)
-                            .min(scale_function::max(q2, normalizer)));
-            }
-            if add_this {
+            if should_merge_centroid(
+                current,
+                len,
+                weight_so_far,
+                proposed_weight,
+                compressed_weight,
+                normalizer,
+            ) {
                 // merge into existing centroid
                 centroids[num_centroids - 1].add(c);
             } else {
@@ -989,6 +990,242 @@ impl TDigestMut {
     /// Returns the estimated size of the sketch in bytes.
     pub fn estimated_size(&self) -> usize {
         size_of::<Self>() + self.buffer.estimated_size()
+    }
+}
+
+/// Collects owned t-digests into one result with a single compression pass.
+///
+/// Empty inputs are ignored; if all inputs are empty, returns [`TDigestMut::default()`]. The result
+/// uses the smallest `k` among the non-empty inputs. A single non-empty input is returned
+/// unchanged.
+///
+/// Collecting consumes each digest without cloning it. Callers that need to retain their inputs
+/// can use [`TDigestMut::merge`] or explicitly clone them before collection.
+///
+/// Collection retains all non-empty input buffers before compression, even with a lazy iterator.
+/// Fully compressed inputs are merged directly into the result; inputs with buffered updates also
+/// require a combined centroid buffer and sorting workspace. Repeated `merge` calls or smaller
+/// batches limit the number of inputs held at once, at the cost of additional compression passes.
+/// Different merge groupings can produce different estimates.
+///
+/// # Panics
+///
+/// Panics if the combined total weight exceeds `u64::MAX` or the combined centroid count exceeds
+/// `usize::MAX`.
+///
+/// # Examples
+///
+/// ```
+/// use datasketches::tdigest::TDigestMut;
+///
+/// let partials = [1.0, 2.0].map(|value| {
+///     let mut digest = TDigestMut::new(100).unwrap();
+///     digest.update(value);
+///     digest
+/// });
+/// let merged = partials.into_iter().collect::<TDigestMut>();
+/// assert_eq!(merged.total_weight(), 2);
+/// ```
+///
+/// Serialized states can be decoded in batches, retaining only one batch of decoded inputs at a
+/// time. A batch size limits the number of digests, not their byte size; a strict memory budget
+/// needs to account for varying input sizes and merge workspace.
+///
+/// ```
+/// use datasketches::tdigest::TDigestMut;
+///
+/// let partial_states = [1.0, 2.0, 3.0, 4.0].map(|value| {
+///     let mut digest = TDigestMut::new(100).unwrap();
+///     digest.update(value);
+///     digest.serialize()
+/// });
+///
+/// let mut merged = TDigestMut::new(100).unwrap();
+/// for batch in partial_states.chunks(2) {
+///     let batch = batch
+///         .iter()
+///         .map(|bytes| TDigestMut::deserialize(bytes))
+///         .collect::<Result<TDigestMut, _>>()
+///         .unwrap();
+///     merged.merge(&batch);
+/// }
+/// assert_eq!(merged.total_weight(), 4);
+/// assert_eq!(merged.min_value(), Some(1.0));
+/// assert_eq!(merged.max_value(), Some(4.0));
+/// ```
+impl FromIterator<TDigestMut> for TDigestMut {
+    fn from_iter<T: IntoIterator<Item = TDigestMut>>(iter: T) -> Self {
+        let mut digests = iter.into_iter();
+        let Some(first) = digests.find(|digest| !digest.is_empty()) else {
+            return TDigestMut::default();
+        };
+        let Some(second) = digests.find(|digest| !digest.is_empty()) else {
+            return first;
+        };
+
+        // Each entry owns its input buffer and releases it when that input is exhausted.
+        struct MergeInput {
+            // Cache the next centroid so heap comparisons only touch heap storage.
+            next_centroid: Centroid,
+            centroids: std::vec::IntoIter<Centroid>,
+            unmerged_len: usize,
+            input_index: usize,
+        }
+
+        fn sift_down_merge_heap(heap: &mut [MergeInput], mut position: usize, reverse: bool) {
+            // Equal means follow input order, as in a stable sort of concatenated inputs.
+            // Reverse compression reverses that entire order, including ties.
+            let precedes = |left: &MergeInput, right: &MergeInput| match centroid_cmp(
+                &left.next_centroid,
+                &right.next_centroid,
+            ) {
+                Ordering::Less => !reverse,
+                Ordering::Greater => reverse,
+                Ordering::Equal if reverse => left.input_index > right.input_index,
+                Ordering::Equal => left.input_index < right.input_index,
+            };
+            loop {
+                let left = (position * 2) + 1;
+                if left >= heap.len() {
+                    return;
+                }
+                let right = left + 1;
+                let next = if right < heap.len() && precedes(&heap[right], &heap[left]) {
+                    right
+                } else {
+                    left
+                };
+                if !precedes(&heap[next], &heap[position]) {
+                    return;
+                }
+                heap.swap(position, next);
+                position = next;
+            }
+        }
+
+        let reverse = first.reverse_merge;
+        let mut merged = TDigestMut::make(
+            first.k,
+            reverse,
+            first.min,
+            first.max,
+            TDigestBuffer::default(),
+            0,
+        );
+        let digests = [first, second].into_iter().chain(digests);
+        let mut heap = Vec::with_capacity(digests.size_hint().0);
+        let mut total_weight = 0u64;
+        let mut num_centroids = 0usize;
+        let mut all_compressed = true;
+        for (input_index, digest) in digests.enumerate() {
+            if digest.is_empty() {
+                continue;
+            }
+            total_weight = total_weight
+                .checked_add(digest.total_weight())
+                .expect("combined t-digest weight exceeds u64::MAX");
+            num_centroids = num_centroids
+                .checked_add(digest.buffer.len())
+                .expect("combined t-digest centroid count exceeds usize::MAX");
+            merged.k = merged.k.min(digest.k);
+            merged.min = merged.min.min(digest.min);
+            merged.max = merged.max.max(digest.max);
+            let unmerged_len = digest.buffer.unmerged_len();
+            all_compressed &= unmerged_len == 0;
+            let next_centroid = if reverse {
+                *digest.buffer.centroids.last().unwrap()
+            } else {
+                digest.buffer.centroids[0]
+            };
+            heap.push(MergeInput {
+                next_centroid,
+                centroids: digest.buffer.centroids.into_iter(),
+                unmerged_len,
+                input_index,
+            });
+        }
+
+        if !all_compressed {
+            // Raw tails precede compressed prefixes to preserve stable equal-mean ordering.
+            let mut centroids = Vec::with_capacity(num_centroids);
+            for input in &heap {
+                let prefix_len = input.centroids.len() - input.unmerged_len;
+                centroids.extend_from_slice(&input.centroids.as_slice()[prefix_len..]);
+            }
+            for input in heap {
+                let prefix_len = input.centroids.len() - input.unmerged_len;
+                centroids.extend(input.centroids.take(prefix_len));
+            }
+            centroids.sort_by(centroid_cmp);
+            merged.compress_sorted_centroids(centroids, total_weight);
+            return merged;
+        }
+
+        for index in (0..heap.len() / 2).rev() {
+            sift_down_merge_heap(&mut heap, index, reverse);
+        }
+        let compressed_weight = total_weight as f64;
+        let normalizer = scale_function::normalizer(2.0 * f64::from(merged.k), compressed_weight);
+        // Reserve compressed output only; later updates can grow their own workspace.
+        let mut retained: Vec<Centroid> =
+            Vec::with_capacity(merged.target_centroids().min(num_centroids));
+        let mut weight_so_far = 0.;
+        // Advancing the selected input can only move it down the heap; the other inputs stay put.
+        for current in 0..num_centroids {
+            let input = &mut heap[0];
+            let centroid = input.next_centroid;
+            let _ = if reverse {
+                input.centroids.next_back()
+            } else {
+                input.centroids.next()
+            };
+            if input.centroids.len() == 0 {
+                heap.swap_remove(0);
+            } else {
+                input.next_centroid = if reverse {
+                    *input.centroids.as_slice().last().unwrap()
+                } else {
+                    input.centroids.as_slice()[0]
+                };
+            }
+            sift_down_merge_heap(&mut heap, 0, reverse);
+
+            if let Some(last) = retained.last_mut() {
+                let proposed_weight = last.weight() + centroid.weight();
+                if should_merge_centroid(
+                    current,
+                    num_centroids,
+                    weight_so_far,
+                    proposed_weight,
+                    compressed_weight,
+                    normalizer,
+                ) {
+                    last.add(centroid);
+                } else {
+                    weight_so_far += last.weight();
+                    retained.push(centroid);
+                }
+            } else {
+                retained.push(centroid);
+            }
+        }
+
+        debug_assert!(retained.len() <= merged.target_centroids());
+        if reverse {
+            retained.reverse();
+        }
+        debug_assert_eq!(
+            retained
+                .iter()
+                .map(|centroid| centroid.weight.get())
+                .sum::<u64>(),
+            total_weight,
+            "compressed centroids must preserve total weight"
+        );
+        merged.compressed_weight = total_weight;
+        merged.reverse_merge = !reverse;
+        merged.buffer = TDigestBuffer::new(retained, 0);
+        merged
     }
 }
 
@@ -1665,6 +1902,42 @@ fn centroids_are_sorted(centroids: &[Centroid]) -> bool {
     centroids
         .windows(2)
         .all(|pair| centroid_cmp(&pair[0], &pair[1]) != Ordering::Greater)
+}
+
+/// Whether the last output centroid can absorb the next input under the K_2 weight limit.
+///
+/// `input_index` (zero-based) and `input_len` count input centroids in scan order.
+/// `weight_before` sums the finalized output weights, excluding the last output centroid;
+/// `proposed_weight` combines that centroid and the next input. `total_weight` sums all
+/// input weights, and `normalizer` is the K_2 normalizer for compression `2 * sketch.k`.
+///
+/// The [paper] limits a centroid with weight > 1 to a scale span of at most one (Section 2.3,
+/// Eq. 4). As in the [reference implementation], we use a conservative weight limit instead of
+/// evaluating that span: K_2's reciprocal slope, `q * (1 - q) / normalizer`, bounds the
+/// allowed fraction of total weight. Both ends of the proposed rank interval must allow
+/// the merge, so we take the smaller limit. This keeps centroids finer near the tails;
+/// symmetry under `q -> 1 - q` also permits scanning in reverse. See Section 2.8, Eq. 8 for K_2.
+///
+/// [paper]: https://arxiv.org/abs/1902.04023
+/// [reference implementation]: https://github.com/tdunning/t-digest/blob/eca1125a39c13e918d7054105dc89bcda11cfa44/core/src/main/java/com/tdunning/math/stats/MergingDigest.java#L421-L436
+fn should_merge_centroid(
+    input_index: usize,
+    input_len: usize,
+    weight_before: f64,
+    proposed_weight: f64,
+    total_weight: f64,
+    normalizer: f64,
+) -> bool {
+    // Index 0 already seeded the output: refusing index 1 and the last index preserves
+    // the first and last input centroids without further merging.
+    if input_index == 1 || input_index == input_len - 1 {
+        return false;
+    }
+    let q_start = weight_before / total_weight;
+    let q_end = (weight_before + proposed_weight) / total_weight;
+    let weight_limit = total_weight
+        * scale_function::max(q_start, normalizer).min(scale_function::max(q_end, normalizer));
+    proposed_weight <= weight_limit
 }
 
 fn merge_sorted_centroids(left: &mut Vec<Centroid>, right: &[Centroid]) {
