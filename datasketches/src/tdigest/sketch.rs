@@ -1827,6 +1827,7 @@ impl TDigestView<'_> {
         let first_weight = first.weight.get();
         let first_center = centroid_center(0, first_weight);
         if first_weight > 1 {
+            // At first_weight == 2, the weight < 1 pre-pass already consumed this interval.
             while let Some((index, weight)) = queries.next_if(|&(_, weight)| weight < first_center)
             {
                 quantiles[index] =
@@ -2167,7 +2168,7 @@ fn interpolate(start: f64, end: f64, fraction: f64) -> f64 {
     }
 }
 
-/// Locates a value between distinct finite endpoints, in either direction.
+/// Locates a value between distinct finite endpoints.
 fn interpolation_fraction(value: f64, start: f64, end: f64) -> f64 {
     let width = end - start;
     if width.is_finite() {

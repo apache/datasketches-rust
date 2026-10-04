@@ -1189,6 +1189,27 @@ fn test_quantile_right_tail_uses_the_same_center_as_rank() {
 }
 
 #[test]
+fn test_quantile_uses_max_when_last_center_rounds_down() {
+    let total_weight = (1_u64 << 53) - 1;
+    let first_weight = (total_weight - 1) / 2;
+    let middle_weight = total_weight - first_weight - 1;
+    let digest = deserialize_with_centroids(
+        100,
+        0.,
+        100.,
+        &[(10., first_weight), (50., middle_weight), (90., 1)],
+    );
+
+    // The last center's +0.5 ties down to the even count 2^53 - 2. The highest rank
+    // below 1 lands there and exhausts the scan; the adjacent rank stays inside it.
+    assert_quantile_queries(
+        &digest,
+        &[1. - f64::EPSILON, 1_f64.next_down()],
+        &[90_f64.next_down(), 100.],
+    );
+}
+
+#[test]
 fn test_rank_stays_monotonic_at_the_right_tail_boundary() {
     let digest = deserialize_with_centroids(100, 0., 300., &[(0., 1), (100., 29)]).freeze();
     let points = [100., 100_f64.next_up(), 150., 300.];
