@@ -765,7 +765,8 @@ impl TDigestMut {
                 "malformed data: centroid means must be finite, within extrema, and nondecreasing",
             ));
         }
-        checked_weight_sum(compressed_weight, num_buffered as u64)?;
+        let total_weight = checked_weight_sum(compressed_weight, num_buffered as u64)?;
+        check_single_sample_extrema(min, max, total_weight)?;
         let mut buffered_values_valid = true;
         for bytes in buffered_payload.chunks_exact(buffered_value_bytes) {
             let value = if is_f32 {
@@ -846,6 +847,7 @@ impl TDigestMut {
                         "malformed data: centroid means in compat double format must be finite, within extrema, and nondecreasing",
                     ));
                 }
+                check_single_sample_extrema(min, max, total_weight)?;
                 Ok(TDigestMut::make(
                     k,
                     false,
@@ -900,6 +902,7 @@ impl TDigestMut {
                         "malformed data: centroid means in compat float format must be finite, within extrema, and nondecreasing",
                     ));
                 }
+                check_single_sample_extrema(min, max, total_weight)?;
                 Ok(TDigestMut::make(
                     k,
                     false,
@@ -2060,6 +2063,16 @@ fn check_extrema(min: f64, max: f64, format: &'static str) -> Result<(), Error> 
         return Err(Error::deserial(format!(
             "malformed data: {format} min {min} exceeds max {max}"
         )));
+    }
+    Ok(())
+}
+
+fn check_single_sample_extrema(min: f64, max: f64, total_weight: u64) -> Result<(), Error> {
+    // Tail interpolation assumes that distinct extrema represent at least two samples.
+    if total_weight == 1 && min != max {
+        return Err(Error::deserial(
+            "malformed data: a single sample must have equal extrema",
+        ));
     }
     Ok(())
 }

@@ -363,6 +363,80 @@ fn assert_invalid_tdigest(bytes: &[u8]) {
 }
 
 #[test]
+fn test_deserialize_single_sample_requires_equal_extrema() {
+    // The multiple-value format can store a single centroid or a single buffered value.
+    for buffered in [false, true] {
+        for is_f32 in [false, true] {
+            for (min, max) in [(0., 100.), (0., 50.), (50., 100.), (50., 50.)] {
+                let mut bytes = vec![2, 1, 20, 100, 0, 0, 0, 0];
+                bytes.extend(u32::from(!buffered).to_le_bytes());
+                bytes.extend(u32::from(buffered).to_le_bytes());
+                if is_f32 {
+                    for value in [min, max, 50.] {
+                        bytes.extend((value as f32).to_le_bytes());
+                    }
+                    if !buffered {
+                        bytes.extend(1_u32.to_le_bytes());
+                    }
+                } else {
+                    for value in [min, max, 50_f64] {
+                        bytes.extend(value.to_le_bytes());
+                    }
+                    if !buffered {
+                        bytes.extend(1_u64.to_le_bytes());
+                    }
+                }
+                let result = if is_f32 {
+                    TDigestMut::deserialize_f32(&bytes)
+                } else {
+                    TDigestMut::deserialize(&bytes)
+                };
+                if min == max {
+                    let mut digest = result.unwrap();
+                    assert_eq!(digest.total_weight(), 1);
+                    assert_eq!(digest.quantiles(&[0., 0.5, 1.]), Some(vec![50.; 3]));
+                } else {
+                    assert_eq!(
+                        result.unwrap_err().kind(),
+                        datasketches::error::ErrorKind::InvalidData
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn test_deserialize_compat_single_sample_requires_equal_extrema() {
+    for compact in [false, true] {
+        for (min, max) in [(0., 100.), (0., 50.), (50., 100.), (50., 50.)] {
+            let mut bytes = if compact { 2_u32 } else { 1_u32 }.to_be_bytes().to_vec();
+            bytes.extend(f64::to_be_bytes(min));
+            bytes.extend(f64::to_be_bytes(max));
+            if compact {
+                bytes.extend(100_f32.to_be_bytes());
+                bytes.extend(0_u32.to_be_bytes()); // unused capacities
+                bytes.extend(1_u16.to_be_bytes());
+                bytes.extend(1_f32.to_be_bytes());
+                bytes.extend(50_f32.to_be_bytes());
+            } else {
+                bytes.extend(100_f64.to_be_bytes());
+                bytes.extend(1_u32.to_be_bytes());
+                bytes.extend(1_f64.to_be_bytes());
+                bytes.extend(50_f64.to_be_bytes());
+            }
+            if min == max {
+                let mut digest = TDigestMut::deserialize(&bytes).unwrap();
+                assert_eq!(digest.total_weight(), 1);
+                assert_eq!(digest.quantiles(&[0., 0.5, 1.]), Some(vec![50.; 3]));
+            } else {
+                assert_invalid_tdigest(&bytes);
+            }
+        }
+    }
+}
+
+#[test]
 fn test_deserialize_rejects_unknown_or_conflicting_flags() {
     let mut unknown = serialized_two_value_digest();
     unknown[5] |= 0x80;

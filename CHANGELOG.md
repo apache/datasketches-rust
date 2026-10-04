@@ -46,7 +46,7 @@ All significant changes to this project will be documented in this file.
 * `TDigestMut` updates and merges now panic without changing the digest if the total weight would exceed `u64::MAX`, including in release builds.
 * `TDigestMut::merge` now preserves the true minimum and maximum from both inputs, including compressed digests.
 * `TDigest` and `TDigestMut` quantile queries no longer extrapolate above the stored maximum when large total weights cause rounding near rank `1.0`.
-* `TDigest` and `TDigestMut` deserialization now returns `InvalidData` for invalid flags or extrema, out-of-range values, unsorted centroids, or non-empty images with no stored values.
+* `TDigest` and `TDigestMut` deserialization now returns `InvalidData` for invalid flags or extrema, inconsistent single-sample extrema, out-of-range values, unsorted centroids, or non-empty images with no stored values.
 
 ## v0.5.0 (2026-09-04)
 
