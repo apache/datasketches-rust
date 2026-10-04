@@ -1906,22 +1906,40 @@ fn centroids_are_sorted(centroids: &[Centroid]) -> bool {
         .all(|pair| centroid_cmp(&pair[0], &pair[1]) != Ordering::Greater)
 }
 
+/// Whether the last output centroid can absorb the next input under the K_2 weight limit.
+///
+/// `input_index` (zero-based) and `input_len` count input centroids in scan order.
+/// `weight_before` sums the finalized output weights, excluding the last output centroid;
+/// `proposed_weight` combines that centroid and the next input. `total_weight` sums all
+/// input weights, and `normalizer` is the K_2 normalizer for compression `2 * sketch.k`.
+///
+/// The [paper] limits a centroid with weight > 1 to a scale span of at most one (Section 2.3,
+/// Eq. 4). As in the [reference implementation], we use a conservative weight limit instead of
+/// evaluating that span: K_2's reciprocal slope, `q * (1 - q) / normalizer`, bounds the
+/// allowed fraction of total weight. Both ends of the proposed rank interval must allow
+/// the merge, so we take the smaller limit. This keeps centroids finer near the tails;
+/// symmetry under `q -> 1 - q` also permits scanning in reverse. See Section 2.8, Eq. 8 for K_2.
+///
+/// [paper]: https://arxiv.org/abs/1902.04023
+/// [reference implementation]: https://github.com/tdunning/t-digest/blob/eca1125a39c13e918d7054105dc89bcda11cfa44/core/src/main/java/com/tdunning/math/stats/MergingDigest.java#L421-L436
 fn should_merge_centroid(
-    current: usize,
-    len: usize,
-    weight_so_far: f64,
+    input_index: usize,
+    input_len: usize,
+    weight_before: f64,
     proposed_weight: f64,
-    compressed_weight: f64,
+    total_weight: f64,
     normalizer: f64,
 ) -> bool {
-    if current == 1 || current == len - 1 {
+    // Index 0 already seeded the output: refusing index 1 and the last index preserves
+    // the first and last input centroids without further merging.
+    if input_index == 1 || input_index == input_len - 1 {
         return false;
     }
-    let q0 = weight_so_far / compressed_weight;
-    let q2 = (weight_so_far + proposed_weight) / compressed_weight;
-    proposed_weight
-        <= compressed_weight
-            * scale_function::max(q0, normalizer).min(scale_function::max(q2, normalizer))
+    let q_start = weight_before / total_weight;
+    let q_end = (weight_before + proposed_weight) / total_weight;
+    let weight_limit = total_weight
+        * scale_function::max(q_start, normalizer).min(scale_function::max(q_end, normalizer));
+    proposed_weight <= weight_limit
 }
 
 fn merge_sorted_centroids(left: &mut Vec<Centroid>, right: &[Centroid]) {
