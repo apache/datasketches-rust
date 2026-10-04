@@ -1034,24 +1034,25 @@ impl TDigestMut {
 ///
 /// ```
 /// use datasketches::tdigest::TDigestMut;
-/// # let partial_states: Vec<Vec<u8>> = (0..32).map(|value| {
-/// #     let mut digest = TDigestMut::new(100).unwrap();
-/// #     digest.update(f64::from(value));
-/// #     digest.serialize()
-/// # }).collect();
 ///
-/// let mut merged = TDigestMut::new(100)?;
-/// for batch in partial_states.chunks(16) {
+/// let partial_states = [1.0, 2.0, 3.0, 4.0].map(|value| {
+///     let mut digest = TDigestMut::new(100).unwrap();
+///     digest.update(value);
+///     digest.serialize()
+/// });
+///
+/// let mut merged = TDigestMut::new(100).unwrap();
+/// for batch in partial_states.chunks(2) {
 ///     let batch = batch
 ///         .iter()
 ///         .map(|bytes| TDigestMut::deserialize(bytes))
-///         .collect::<Result<TDigestMut, _>>()?;
+///         .collect::<Result<TDigestMut, _>>()
+///         .unwrap();
 ///     merged.merge(&batch);
 /// }
-/// # assert_eq!(merged.total_weight(), 32);
-/// # assert_eq!(merged.min_value(), Some(0.0));
-/// # assert_eq!(merged.max_value(), Some(31.0));
-/// # Ok::<(), datasketches::error::Error>(())
+/// assert_eq!(merged.total_weight(), 4);
+/// assert_eq!(merged.min_value(), Some(1.0));
+/// assert_eq!(merged.max_value(), Some(4.0));
 /// ```
 impl FromIterator<TDigestMut> for TDigestMut {
     fn from_iter<T: IntoIterator<Item = TDigestMut>>(iter: T) -> Self {
