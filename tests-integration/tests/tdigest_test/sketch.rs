@@ -817,6 +817,73 @@ fn test_compression_preserves_a_small_centroid_weight() {
 }
 
 #[test]
+fn test_opposite_sign_merge_preserves_a_representable_correction() {
+    let outer_weight = 1_u64 << 56;
+    for magnitude in [1., f64::MAX] {
+        for exponent in [54, 55] {
+            let total_weight = 1_u64 << exponent;
+            // The exact mean is magnitude * (1 - 2 / total_weight). At 2^54 it
+            // rounds to the next value toward zero; at 2^55 it rounds back to magnitude.
+            let expected = if exponent == 54 {
+                magnitude.next_down()
+            } else {
+                magnitude
+            };
+            for negative_heavy in [false, true] {
+                let (left_weight, right_weight, expected) = if negative_heavy {
+                    (total_weight - 1, 1, -expected)
+                } else {
+                    (1, total_weight - 1, expected)
+                };
+                for reverse in [false, true] {
+                    for owned in [false, true] {
+                        let mut digest = deserialize_with_centroids(
+                            10,
+                            -f64::MAX,
+                            f64::MAX,
+                            &[
+                                (-f64::MAX, outer_weight),
+                                (-magnitude, left_weight),
+                                (magnitude, right_weight),
+                                (f64::MAX, outer_weight),
+                            ],
+                        );
+                        let mut bytes = digest.serialize();
+                        if reverse {
+                            bytes[5] |= 1 << 2;
+                        }
+                        let mut digest = TDigestMut::deserialize(&bytes).unwrap();
+                        if owned {
+                            let other = deserialize_with_centroids(
+                                10,
+                                f64::MAX,
+                                f64::MAX,
+                                &[(f64::MAX, 1)],
+                            );
+                            digest = [digest, other].into_iter().collect();
+                        } else {
+                            digest.update(-f64::MAX);
+                        }
+                        let bytes = digest.serialize();
+                        let centroid = bytes[32..]
+                            .chunks_exact(16)
+                            .find(|c| u64::from_le_bytes(c[8..].try_into().unwrap()) == total_weight)
+                            .unwrap_or_else(|| {
+                                panic!("middle pair did not merge: magnitude={magnitude:?}, exponent={exponent}, negative_heavy={negative_heavy}, reverse={reverse}, owned={owned}")
+                            });
+                        let mean = f64::from_le_bytes(centroid[..8].try_into().unwrap());
+                        assert_eq!(
+                            mean, expected,
+                            "magnitude={magnitude:?}, exponent={exponent}, negative_heavy={negative_heavy}, reverse={reverse}, owned={owned}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn test_compression_keeps_merged_means_within_their_endpoints() {
     let tiny = f64::from_bits(1);
     let heavy = 1_u64 << 54;

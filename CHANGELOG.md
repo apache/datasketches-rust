@@ -47,7 +47,7 @@ All significant changes to this project will be documented in this file.
 * `TDigestMut` updates and merges now panic without changing the digest if the total weight would exceed `u64::MAX`, including in release builds.
 * `TDigestMut::merge` now preserves the true minimum and maximum from both inputs, including compressed digests.
 * Fix `TDigest` and `TDigestMut` queries that could return non-finite, out-of-range, or non-monotonic results for extreme finite values or large total weights. Tail quantiles now use the same centroid centers as rank queries, including above `2^53` total weight. Mutable and frozen single-centroid queries also preserve stored extrema and interpolate their tails.
-* T-Digest compression no longer discards the contribution of a lightly weighted centroid when merging very unequal weights.
+* T-Digest compression reduces rounding loss in centroid means when merging very unequal weights, including opposite-sign centroids.
 * `TDigest` and `TDigestMut` deserialization now returns `InvalidData` for invalid flags or extrema, inconsistent single-sample extrema, out-of-range values, unsorted centroids, or non-empty images with no stored values.
 
 ## v0.5.0 (2026-09-04)

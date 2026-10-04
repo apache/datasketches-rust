@@ -2026,6 +2026,11 @@ impl Centroid {
         // Queries can interpolate farther and still need the general bounds.
         self.mean = if start.is_sign_positive() == end.is_sign_positive() {
             (end - start).mul_add(fraction, start)
+        } else if 1. - fraction == 1. {
+            // Both corrections can matter even when 1 - fraction rounds to 1.
+            // Halving before subtraction avoids overflow; the FMA combines the
+            // correction with start before rounding the result.
+            (end * 0.5 - start * 0.5).mul_add(2. * fraction, start)
         } else {
             interpolate(start, end, fraction)
         };
