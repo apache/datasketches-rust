@@ -742,6 +742,98 @@ fn test_mutable_rank_preserves_weighted_single_centroid_tails() {
 }
 
 #[test]
+fn test_rank_tails_stay_monotonic_after_updating_weighted_centroids() {
+    let points = [
+        0.,
+        0_f64.next_up(),
+        0.25,
+        0.5,
+        1.,
+        50.,
+        99.,
+        99.5,
+        99.75,
+        100.,
+    ];
+    for operation in 0..3 {
+        let mut digest = deserialize_with_centroids(100, 0., 100., &[(50., 10)]);
+        let mut updates = TDigestMut::new(100).unwrap();
+        updates.update(1.);
+        updates.update(99.);
+        match operation {
+            0 => {
+                digest.update(1.);
+                digest.update(99.);
+            }
+            1 => digest.merge(&updates),
+            _ => digest = [digest, updates].into_iter().collect(),
+        }
+        let frozen = digest.clone().freeze();
+
+        // The new unit-weight tails lie inside the retained extrema. Their half-sample
+        // centers leave no mass for interpolation between min/first or last/max.
+        for (&point, expected) in points.iter().zip([
+            0.5 / 12.,
+            0.5 / 12.,
+            0.5 / 12.,
+            0.5 / 12.,
+            0.5 / 12.,
+            0.5,
+            11.5 / 12.,
+            11.5 / 12.,
+            11.5 / 12.,
+            11.5 / 12.,
+        ]) {
+            assert_eq!(digest.rank(point), Some(expected));
+            assert_eq!(frozen.rank(point), Some(expected));
+        }
+        let cdf = digest.cdf(&points).unwrap();
+        assert_eq!(cdf, frozen.cdf(&points).unwrap());
+        assert!(cdf.is_sorted(), "CDF at {points:?}: {cdf:?}");
+        let pmf = digest.pmf(&points).unwrap();
+        assert_eq!(pmf, frozen.pmf(&points).unwrap());
+        assert!(pmf.iter().all(|&mass| mass >= 0.), "PMF: {pmf:?}");
+        assert_that!(pmf.iter().sum::<f64>(), near(1., 1e-12));
+    }
+}
+
+#[test]
+fn test_rank_tail_masses_stay_ordered_when_counts_round() {
+    for total_weight in [
+        (1_u64 << 52) - 2,
+        (1_u64 << 53) - 2,
+        (1_u64 << 53) - 1,
+        1_u64 << 53,
+        (1_u64 << 53) + 1,
+        (1_u64 << 54) - 2,
+        u64::MAX,
+    ] {
+        for last_weight in 1..=4 {
+            let mut digest = deserialize_with_centroids(
+                100,
+                0.,
+                100.,
+                &[(0., total_weight - last_weight), (90., last_weight)],
+            );
+            let frozen = digest.clone().freeze();
+            let points = [90., 90_f64.next_up(), 95., 100_f64.next_down(), 100.];
+            let cdf = digest.cdf(&points).unwrap();
+            assert_eq!(cdf, frozen.cdf(&points).unwrap());
+            assert!(
+                cdf.is_sorted(),
+                "N={total_weight}, last={last_weight}: {cdf:?}"
+            );
+            assert!(cdf.iter().all(|rank| (0.0..=1.0).contains(rank)));
+
+            // At N = 2^53 - 2, the unit-weight last center rounds up to N. Computing
+            // rank(max) as 1 - 0.5/N instead would round down and produce a negative bucket.
+            let pmf = frozen.pmf(&points).unwrap();
+            assert!(pmf.iter().all(|&mass| mass >= 0.), "PMF: {pmf:?}");
+        }
+    }
+}
+
+#[test]
 fn test_small_compression_preserves_weighted_centroids_and_tie_order() {
     // Exercise the no-merge bound at two k values and a tiny input whose K_2 normalizer
     // is negative. Existing weighted centroids must remain intact in every case.

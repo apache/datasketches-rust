@@ -1659,31 +1659,35 @@ impl TDigestView<'_> {
         let centroids_weight = self.centroids_weight as f64;
         let num_centroids = self.centroids.len();
 
-        // left tail
-        let first_mean = self.centroids[0].mean;
-        if value < first_mean {
+        // Reserve at most one sample for each stored extremum, without passing the adjacent
+        // centroid center. Updates can place a unit-weight centroid inside the stored extrema,
+        // leaving no mass to interpolate in that tail.
+        let first = &self.centroids[0];
+        if value < first.mean {
+            let center = centroid_center(0, first.weight.get());
             return Some(if value == self.min {
                 0.5 / centroids_weight
             } else {
                 interpolate(
-                    1.,
-                    centroid_center(0, self.centroids[0].weight.get()),
-                    interpolation_fraction(value, self.min, first_mean),
+                    center.min(1.),
+                    center,
+                    interpolation_fraction(value, self.min, first.mean),
                 ) / centroids_weight
             });
         }
 
-        // right tail
-        let last_mean = self.centroids[num_centroids - 1].mean;
-        if value > last_mean {
+        let last = &self.centroids[num_centroids - 1];
+        if value > last.mean {
+            let center =
+                centroid_center(self.centroids_weight - last.weight.get(), last.weight.get());
             return Some(if value == self.max {
-                1. - (0.5 / centroids_weight)
+                // Round the maximum's mass in the same coordinates as the centroid centers.
+                centroid_center(self.centroids_weight - 1, 1) / centroids_weight
             } else {
-                let last_weight = self.centroids[num_centroids - 1].weight.get();
                 interpolate(
-                    centroid_center(self.centroids_weight - last_weight, last_weight),
-                    (self.centroids_weight - 1) as f64,
-                    interpolation_fraction(value, last_mean, self.max),
+                    center,
+                    center.max((self.centroids_weight - 1) as f64),
+                    interpolation_fraction(value, last.mean, self.max),
                 ) / centroids_weight
             });
         }
