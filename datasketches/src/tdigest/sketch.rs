@@ -490,8 +490,7 @@ impl TDigestMut {
         if value > self.max {
             return Some(1.0);
         }
-        // one centroid and value == min == max
-        if self.buffer.len() == 1 {
+        if self.min == self.max {
             return Some(0.5);
         }
 

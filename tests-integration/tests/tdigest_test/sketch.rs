@@ -724,6 +724,24 @@ fn test_single_centroid_preserves_stored_tail_information() {
 }
 
 #[test]
+fn test_mutable_rank_preserves_weighted_single_centroid_tails() {
+    let mut digest = deserialize_with_centroids(100, 0., 100., &[(50., 10)]);
+    let frozen = digest.clone().freeze();
+    let points = [-1., 0., 18.75, 50., 81.25, 100., 101.];
+    let expected = [0., 0.05, 0.25, 0.5, 0.75, 0.95, 1.];
+
+    // A quarter rank is mass 2.5: 3/8 of the tail from mass 1 at min to mass 5 at mean.
+    // Repeating the queries must preserve the result before and after creating a view.
+    for _ in 0..2 {
+        for (&point, &rank) in points.iter().zip(&expected) {
+            assert_eq!(digest.rank(point), Some(rank));
+            assert_eq!(frozen.rank(point), Some(rank));
+        }
+        assert_eq!(&digest.cdf(&points).unwrap()[..points.len()], &expected);
+    }
+}
+
+#[test]
 fn test_small_compression_preserves_weighted_centroids_and_tie_order() {
     // Exercise the no-merge bound at two k values and a tiny input whose K_2 normalizer
     // is negative. Existing weighted centroids must remain intact in every case.
