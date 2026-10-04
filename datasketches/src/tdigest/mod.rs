@@ -60,11 +60,6 @@
 //! let frozen = sketch.freeze();
 //! assert!(frozen.rank(2.0).is_some());
 //! ```
-//!
-//! Callers that own several partial sketches can combine them with
-//! `partials.into_iter().collect::<TDigestMut>()` to compress the batch once. Collection first
-//! retains all inputs; use [`TDigestMut::merge`] for borrowed inputs or incremental
-//! processing with fewer inputs in memory at once.
 
 mod serialization;
 

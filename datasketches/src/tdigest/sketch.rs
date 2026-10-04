@@ -946,15 +946,14 @@ impl TDigestMut {
         while current < len {
             let c = centroids[current];
             let proposed_weight = centroids[num_centroids - 1].weight() + c.weight();
-            let add_this = should_merge_centroid(
+            if should_merge_centroid(
                 current,
                 len,
                 weight_so_far,
                 proposed_weight,
                 compressed_weight,
                 normalizer,
-            );
-            if add_this {
+            ) {
                 // merge into existing centroid
                 centroids[num_centroids - 1].add(c);
             } else {
