@@ -1629,12 +1629,21 @@ impl TDigestView<'_> {
             return None;
         }
 
+        // Split points increase, so their lower centroid indexes never move backwards.
+        // Accumulate integer weights only as far as each query needs.
+        let mut previous_lower = 0;
+        let mut weight_below = 0;
+
         let mut ranks = Vec::with_capacity(split_points.len() + 1);
         for &p in split_points {
-            match self.rank(p) {
-                Some(rank) => ranks.push(rank),
-                None => unreachable!("checked non-empty above"),
-            }
+            ranks.push(self.rank_with_weights(p, |lower| {
+                weight_below += self.centroids[previous_lower..lower]
+                    .iter()
+                    .map(|c| c.weight.get())
+                    .sum::<u64>();
+                previous_lower = lower;
+                weight_below
+            }));
         }
         ranks.push(1.0);
         Some(ranks)
@@ -1646,14 +1655,21 @@ impl TDigestView<'_> {
         if self.centroids.is_empty() {
             return None;
         }
+        Some(self.rank_with_weights(value, |lower| {
+            self.centroids[..lower].iter().map(|c| c.weight.get()).sum()
+        }))
+    }
+
+    /// Rank within a non-empty centroid sequence, using the weight before its lower anchor.
+    fn rank_with_weights(&self, value: f64, weight_before: impl FnOnce(usize) -> u64) -> f64 {
         if value < self.min {
-            return Some(0.0);
+            return 0.0;
         }
         if value > self.max {
-            return Some(1.0);
+            return 1.0;
         }
         if self.min == self.max {
-            return Some(0.5);
+            return 0.5;
         }
 
         let centroids_weight = self.centroids_weight as f64;
@@ -1665,7 +1681,7 @@ impl TDigestView<'_> {
         let first = &self.centroids[0];
         if value < first.mean {
             let center = centroid_center(0, first.weight.get());
-            return Some(if value == self.min {
+            return if value == self.min {
                 0.5 / centroids_weight
             } else {
                 interpolate(
@@ -1673,14 +1689,14 @@ impl TDigestView<'_> {
                     center,
                     interpolation_fraction(value, self.min, first.mean),
                 ) / centroids_weight
-            });
+            };
         }
 
         let last = &self.centroids[num_centroids - 1];
         if value > last.mean {
             let center =
                 centroid_center(self.centroids_weight - last.weight.get(), last.weight.get());
-            return Some(if value == self.max {
+            return if value == self.max {
                 // Round the maximum's mass in the same coordinates as the centroid centers.
                 centroid_center(self.centroids_weight - 1, 1) / centroids_weight
             } else {
@@ -1689,7 +1705,7 @@ impl TDigestView<'_> {
                     center.max((self.centroids_weight - 1) as f64),
                     interpolation_fraction(value, last.mean, self.max),
                 ) / centroids_weight
-            });
+            };
         }
 
         let mut lower = self
@@ -1709,7 +1725,7 @@ impl TDigestView<'_> {
             upper -= 1;
         }
 
-        let weight_below = self.centroids[..lower].iter().map(|c| c.weight.get()).sum();
+        let weight_below = weight_before(lower);
         let weight_between: u64 = self.centroids[lower..upper]
             .iter()
             .map(|c| c.weight.get())
@@ -1721,13 +1737,11 @@ impl TDigestView<'_> {
         } else {
             0.5
         };
-        Some(
-            interpolate(
-                centroid_center(weight_below, left.weight.get()),
-                centroid_center(weight_below + weight_between, right.weight.get()),
-                fraction,
-            ) / centroids_weight,
-        )
+        interpolate(
+            centroid_center(weight_below, left.weight.get()),
+            centroid_center(weight_below + weight_between, right.weight.get()),
+            fraction,
+        ) / centroids_weight
     }
 
     fn quantile(&self, rank: f64) -> Option<f64> {
