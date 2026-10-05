@@ -159,6 +159,36 @@ fn test_items_purged_round_trip() {
     check_purged_round_trip(|item| item.to_string());
 }
 
+fn check_purged_compatibility<T: FrequentItemValue>(dir: &str, filename: &str) {
+    let bytes = fs::read(serialization_test_data(dir, filename)).unwrap();
+    let sketch = FrequentItemsSketch::<T>::deserialize(&bytes).unwrap();
+    assert!(!sketch.is_empty());
+    assert_eq!(sketch.num_active_items(), 0);
+    assert_eq!(sketch.total_weight(), 193);
+    assert_eq!(sketch.maximum_error(), 1);
+    assert_eq!(sketch.serialize(), bytes);
+}
+
+#[test]
+fn test_cpp_frequent_longs_purged() {
+    check_purged_compatibility::<i64>("cpp_generated_files", "frequent_long_purged_cpp.sk");
+}
+
+#[test]
+fn test_cpp_frequent_strings_purged() {
+    check_purged_compatibility::<String>("cpp_generated_files", "frequent_string_purged_cpp.sk");
+}
+
+#[test]
+fn test_java_frequent_longs_purged() {
+    check_purged_compatibility::<i64>("java_generated_files", "frequent_long_purged_java.sk");
+}
+
+#[test]
+fn test_java_frequent_strings_purged() {
+    check_purged_compatibility::<String>("java_generated_files", "frequent_string_purged_java.sk");
+}
+
 #[test]
 fn test_deserialize_rejects_zero_stream_weight() {
     let mut active_sketch = FrequentItemsSketch::<i64>::new(32).unwrap();
