@@ -245,6 +245,49 @@ fn test_repeated_blocks() {
 }
 
 #[test]
+fn test_rank_brackets_weighted_equal_mean_runs() {
+    let mut digest = deserialize_with_centroids(
+        100,
+        0.,
+        20.,
+        &[
+            (0., 2),
+            (0., 6),
+            (10., 4),
+            (10., 8),
+            (10., 12),
+            (20., 14),
+            (20., 18),
+        ],
+    );
+    // The centroid centers are 1, 5, 10, 16, 26, 39, and 55. At an equal-mean run,
+    // rank averages the first and last centers; between runs it uses the adjacent centers.
+    let points = [-1., 0., 5., 10., 15., 20., 21.];
+    let expected = [0., 3., 7.5, 18., 32.5, 47., 64.].map(|mass| mass / 64.);
+    let frozen = digest.clone().freeze();
+    for (&point, &rank) in points.iter().zip(&expected) {
+        assert_eq!(digest.rank(point), Some(rank));
+        assert_eq!(frozen.rank(point), Some(rank));
+    }
+    let mut cdf = expected.to_vec();
+    cdf.push(1.);
+    assert_eq!(digest.cdf(&points), Some(cdf.clone()));
+    assert_eq!(frozen.cdf(&points), Some(cdf));
+    let pmf = vec![
+        0.,
+        3. / 64.,
+        4.5 / 64.,
+        10.5 / 64.,
+        14.5 / 64.,
+        14.5 / 64.,
+        17. / 64.,
+        0.,
+    ];
+    assert_eq!(digest.pmf(&points), Some(pmf.clone()));
+    assert_eq!(frozen.pmf(&points), Some(pmf));
+}
+
+#[test]
 fn test_merge_small() {
     let mut td1 = TDigestMut::new(10).unwrap();
     td1.update(1.0);

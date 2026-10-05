@@ -16,7 +16,6 @@
 // under the License.
 
 use std::cmp::Ordering;
-use std::convert::identity;
 use std::num::NonZeroU64;
 
 use crate::codec::SketchBytes;
@@ -1708,22 +1707,15 @@ impl TDigestView<'_> {
             };
         }
 
-        let mut lower = self
-            .centroids
-            .binary_search_by(|c| centroid_lower_bound(c, value))
-            .unwrap_or_else(identity);
-        assert_ne!(lower, num_centroids, "get_rank: lower == end");
-        let mut upper = self
-            .centroids
-            .binary_search_by(|c| centroid_upper_bound(c, value))
-            .unwrap_or_else(identity);
-        assert_ne!(upper, 0, "get_rank: upper == begin");
-        if value < self.centroids[lower].mean {
-            lower -= 1;
-        }
-        if (upper == num_centroids) || (self.centroids[upper - 1].mean >= value) {
-            upper -= 1;
-        }
+        // The tail checks place value within the centroid means. Between means, the first
+        // mean >= value and its predecessor bracket it; at a mean, use the entire equal run.
+        let index = self.centroids.partition_point(|c| c.mean < value);
+        let (lower, upper) = if self.centroids[index].mean == value {
+            let end = self.centroids.partition_point(|c| c.mean <= value);
+            (index, end - 1)
+        } else {
+            (index - 1, index)
+        };
 
         let weight_below = weight_before(lower);
         let weight_between: u64 = self.centroids[lower..upper]
@@ -1998,22 +1990,6 @@ fn merge_sorted_centroids(left: &mut Vec<Centroid>, right: &[Centroid]) {
     }
     if right_index > 0 {
         left[..right_index].copy_from_slice(&right[..right_index]);
-    }
-}
-
-fn centroid_lower_bound(c: &Centroid, value: f64) -> Ordering {
-    if c.mean < value {
-        Ordering::Less
-    } else {
-        Ordering::Greater
-    }
-}
-
-fn centroid_upper_bound(c: &Centroid, value: f64) -> Ordering {
-    if c.mean > value {
-        Ordering::Greater
-    } else {
-        Ordering::Less
     }
 }
 
