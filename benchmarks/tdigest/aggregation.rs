@@ -24,17 +24,8 @@ use super::support::build_mut_digest;
 use super::support::values;
 
 // (number of partial states, values per state). Each partial samples the same distribution.
-// Small shapes keep the combined weight at most k / 2, where no two centroids can merge.
-const SERIALIZED_INPUTS: &[(usize, usize)] = &[
-    (1, 8),
-    (16, 2),
-    (64, 1),
-    (64, 8),
-    (512, 8),
-    (64, 64),
-    (512, 64),
-    (64, 4_096),
-];
+const SERIALIZED_INPUTS: &[(usize, usize)] =
+    &[(1, 8), (64, 8), (512, 8), (64, 64), (512, 64), (64, 4_096)];
 
 #[divan::bench(args = SERIALIZED_INPUTS, sample_size = 1)]
 fn serialized_borrowed(bencher: Bencher, shape: (usize, usize)) {

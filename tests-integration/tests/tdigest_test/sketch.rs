@@ -363,8 +363,7 @@ fn test_from_iter_matches_single_compression_for_interleaved_runs() {
         &[(1.0, 2), (3.0, 6), (4.0, 1), (7.0, 8), (9.0, 20)],
         &[(0.0, 2), (3.0, 9), (6.0, 7), (9.0, 30)],
     ];
-    // The inputs weigh 220 in total; k = 440 exercises the no-merge boundary.
-    for k in [10, 100, 440] {
+    for k in [10, 100] {
         for reverse in [false, true] {
             let make_digest = |centroids: &[(f64, u64)]| {
                 let mut digest = deserialize_with_centroids(k, -10.0, 20.0, centroids);

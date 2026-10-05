@@ -1144,11 +1144,7 @@ impl FromIterator<TDigestMut> for TDigestMut {
             });
         }
 
-        // Below k / 2 combined weight no two centroids fit under the K_2 limit (the bound in
-        // compress_sorted_centroids), so the heap would only reproduce the stable-sorted
-        // concatenation one centroid at a time. That case takes the same sort path as mixed
-        // inputs, which already skips the merge scan.
-        if !all_compressed || total_weight <= u64::from(merged.k) / 2 {
+        if !all_compressed {
             // Raw tails precede compressed prefixes to preserve stable equal-mean ordering.
             let mut centroids = Vec::with_capacity(num_centroids);
             for input in &heap {
