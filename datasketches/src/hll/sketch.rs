@@ -428,6 +428,8 @@ impl HllSketch {
 
     /// Serializes the HLL sketch to bytes.
     ///
+    /// List and Set modes use compact encoding, storing only occupied coupons.
+    ///
     /// # Examples
     ///
     /// ```

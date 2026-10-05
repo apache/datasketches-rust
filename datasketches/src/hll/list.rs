@@ -126,16 +126,12 @@ impl List {
         })
     }
 
-    /// Serialize a List to bytes
+    /// Serializes occupied coupons in compact format.
     pub fn serialize(&self, lg_config_k: u8, hll_type: HllType) -> Vec<u8> {
-        let compact = true; // Always use compact format
         let empty = self.container.is_empty();
         let coupon_count = self.container.len();
         let lg_arr = self.container.lg_size();
-
-        // Compute size
-        let array_size = if compact { coupon_count } else { 1 << lg_arr };
-        let total_size = LIST_PREAMBLE_SIZE + (array_size * 4);
+        let total_size = LIST_PREAMBLE_SIZE + (coupon_count * size_of::<u32>());
 
         let mut bytes = SketchBytes::with_capacity(total_size);
 
@@ -147,12 +143,9 @@ impl List {
         bytes.write_u8(lg_arr as u8);
 
         // Write flags
-        let mut flags = 0u8;
+        let mut flags = COMPACT_FLAG_MASK;
         if empty {
             flags |= EMPTY_FLAG_MASK;
-        }
-        if compact {
-            flags |= COMPACT_FLAG_MASK;
         }
         bytes.write_u8(flags);
 
@@ -162,19 +155,8 @@ impl List {
         // Write mode byte: LIST mode with target HLL type
         bytes.write_u8(encode_mode_byte(CUR_MODE_LIST, hll_type as u8));
 
-        // Write coupons (only non-empty ones if compact)
-        if !empty {
-            let mut write_idx = 0;
-            for coupon in self.container.coupons.iter().copied() {
-                if compact && coupon.is_empty() {
-                    continue; // Skip empty coupons in compact mode
-                }
-                bytes.write_u32_le(coupon.raw());
-                write_idx += 1;
-                if write_idx >= array_size {
-                    break;
-                }
-            }
+        for coupon in self.container.iter().take(coupon_count) {
+            bytes.write_u32_le(coupon.raw());
         }
 
         bytes.into_bytes()

@@ -161,15 +161,11 @@ impl HashSet {
         }
     }
 
-    /// Serialize a HashSet to bytes
+    /// Serializes occupied coupons in compact format.
     pub fn serialize(&self, lg_config_k: u8, hll_type: HllType) -> Vec<u8> {
-        let compact = true; // Always use compact format
         let coupon_count = self.container.len();
         let lg_arr = self.container.lg_size();
-
-        // Compute size
-        let array_size = if compact { coupon_count } else { 1 << lg_arr };
-        let total_size = SET_PREAMBLE_SIZE + (array_size * 4);
+        let total_size = SET_PREAMBLE_SIZE + (coupon_count * size_of::<u32>());
 
         let mut bytes = SketchBytes::with_capacity(total_size);
 
@@ -181,11 +177,7 @@ impl HashSet {
         bytes.write_u8(lg_arr as u8);
 
         // Write flags
-        let mut flags = 0u8;
-        if compact {
-            flags |= COMPACT_FLAG_MASK;
-        }
-        bytes.write_u8(flags);
+        bytes.write_u8(COMPACT_FLAG_MASK);
 
         // Write unused byte
         bytes.write_u8(0);
@@ -196,16 +188,8 @@ impl HashSet {
         // Write coupon count
         bytes.write_u32_le(coupon_count as u32);
 
-        // Write coupons
-        if compact {
-            for coupon in self.container.iter() {
-                bytes.write_u32_le(coupon.raw());
-            }
-        } else {
-            // Non-compact mode: write entire hash table
-            for coupon in self.container.coupons.iter().copied() {
-                bytes.write_u32_le(coupon.raw());
-            }
+        for coupon in self.container.iter() {
+            bytes.write_u32_le(coupon.raw());
         }
 
         bytes.into_bytes()
