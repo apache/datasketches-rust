@@ -70,6 +70,16 @@ impl HllSketch {
     /// # Errors
     ///
     /// Returns an error if `lg_config_k` is outside `[4, 21]`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::hll::HllSketch;
+    /// use datasketches::hll::HllType;
+    ///
+    /// let sketch = HllSketch::new(12, HllType::Hll8).unwrap();
+    /// assert_eq!(sketch.lg_config_k(), 12);
+    /// ```
     pub fn new(lg_config_k: u8, hll_type: HllType) -> Result<Self, Error> {
         if !(4..=21).contains(&lg_config_k) {
             return Err(Error::invalid_argument(format!(
@@ -153,6 +163,19 @@ impl HllSketch {
     }
 
     /// Updates the sketch with a precomputed [`Coupon`], without hashing the input again.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::hll::Coupon;
+    /// use datasketches::hll::HllSketch;
+    /// use datasketches::hll::HllType;
+    ///
+    /// let coupon = Coupon::from_value("apple");
+    /// let mut sketch = HllSketch::new(10, HllType::Hll8).unwrap();
+    /// sketch.update_with_coupon(coupon);
+    /// assert!(sketch.estimate() >= 1.0);
+    /// ```
     pub fn update_with_coupon(&mut self, coupon: Coupon) {
         match &mut self.mode {
             Mode::List { list, hll_type } => {
@@ -185,6 +208,20 @@ impl HllSketch {
     }
 
     /// Returns the current cardinality estimate.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::hll::HllSketch;
+    /// use datasketches::hll::HllType;
+    ///
+    /// let mut sketch = HllSketch::new(10, HllType::Hll8).unwrap();
+    /// for value in ["apple", "banana", "apple"] {
+    ///     sketch.update(value);
+    /// }
+    /// let estimate = sketch.estimate();
+    /// assert!((estimate - 2.0).abs() < 0.01);
+    /// ```
     pub fn estimate(&self) -> f64 {
         match &self.mode {
             Mode::List { list, .. } => list.container().estimate(),
@@ -196,6 +233,21 @@ impl HllSketch {
     }
 
     /// Returns the upper confidence bound for `num_std_dev` standard deviations.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::common::NumStdDev;
+    /// use datasketches::hll::HllSketch;
+    /// use datasketches::hll::HllType;
+    ///
+    /// let mut sketch = HllSketch::new(10, HllType::Hll8).unwrap();
+    /// for value in 0..10_000 {
+    ///     sketch.update(value);
+    /// }
+    /// let upper = sketch.upper_bound(NumStdDev::Two);
+    /// assert!(upper >= sketch.estimate());
+    /// ```
     pub fn upper_bound(&self, num_std_dev: NumStdDev) -> f64 {
         match &self.mode {
             Mode::List { list, .. } => list.container().upper_bound(num_std_dev),
@@ -207,6 +259,21 @@ impl HllSketch {
     }
 
     /// Returns the lower confidence bound for `num_std_dev` standard deviations.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::common::NumStdDev;
+    /// use datasketches::hll::HllSketch;
+    /// use datasketches::hll::HllType;
+    ///
+    /// let mut sketch = HllSketch::new(10, HllType::Hll8).unwrap();
+    /// for value in 0..10_000 {
+    ///     sketch.update(value);
+    /// }
+    /// let lower = sketch.lower_bound(NumStdDev::Two);
+    /// assert!(lower <= sketch.estimate());
+    /// ```
     pub fn lower_bound(&self, num_std_dev: NumStdDev) -> f64 {
         match &self.mode {
             Mode::List { list, .. } => list.container().lower_bound(num_std_dev),
@@ -223,6 +290,20 @@ impl HllSketch {
     ///
     /// Returns `InvalidData` if the image is truncated or contains an invalid preamble,
     /// configuration, or payload.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::hll::HllSketch;
+    /// use datasketches::hll::HllType;
+    ///
+    /// let mut sketch = HllSketch::new(10, HllType::Hll8).unwrap();
+    /// sketch.update("apple");
+    ///
+    /// let bytes = sketch.serialize();
+    /// let decoded = HllSketch::deserialize(&bytes).unwrap();
+    /// assert_eq!(decoded.estimate(), sketch.estimate());
+    /// ```
     pub fn deserialize(bytes: &[u8]) -> Result<HllSketch, Error> {
         let mut cursor = SketchSlice::new(bytes);
 

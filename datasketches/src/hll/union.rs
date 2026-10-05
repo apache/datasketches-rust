@@ -51,6 +51,18 @@ impl HllUnion {
     /// # Errors
     ///
     /// Returns an error if `lg_max_k` is outside `[4, 21]`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::hll::HllType;
+    /// use datasketches::hll::HllUnion;
+    ///
+    /// let mut union = HllUnion::new(10).unwrap();
+    /// union.update_value("apple");
+    /// let result = union.to_sketch(HllType::Hll8);
+    /// assert!(result.estimate() >= 1.0);
+    /// ```
     pub fn new(lg_max_k: u8) -> Result<Self, Error> {
         let gadget = HllSketch::new(lg_max_k, HllType::Hll8)?;
 
@@ -58,6 +70,16 @@ impl HllUnion {
     }
 
     /// Updates the union with a value, using the same hashing as [`HllSketch::update`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::hll::HllUnion;
+    ///
+    /// let mut union = HllUnion::new(10).unwrap();
+    /// union.update_value("apple");
+    /// assert!(union.estimate() >= 1.0);
+    /// ```
     pub fn update_value<T: Hash>(&mut self, value: T) {
         self.gadget.update(value);
     }
@@ -65,6 +87,25 @@ impl HllUnion {
     /// Merges a sketch into the union, accepting any [`HllType`] and `lg_k`.
     ///
     /// The union's effective `lg_k` may decrease. Empty sketches have no effect.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::hll::HllSketch;
+    /// use datasketches::hll::HllType;
+    /// use datasketches::hll::HllUnion;
+    ///
+    /// let mut left = HllSketch::new(10, HllType::Hll8).unwrap();
+    /// let mut right = HllSketch::new(10, HllType::Hll8).unwrap();
+    /// left.update("apple");
+    /// right.update("banana");
+    ///
+    /// let mut union = HllUnion::new(10).unwrap();
+    /// union.update(&left);
+    /// union.update(&right);
+    /// let result = union.to_sketch(HllType::Hll8);
+    /// assert!(result.estimate() >= 2.0);
+    /// ```
     pub fn update(&mut self, sketch: &HllSketch) {
         if sketch.is_empty() {
             return;
@@ -164,6 +205,19 @@ impl HllUnion {
     /// Returns an independent sketch with the requested [`HllType`].
     ///
     /// The result retains the union's effective `lg_k` and cardinality estimate.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::hll::HllType;
+    /// use datasketches::hll::HllUnion;
+    ///
+    /// let mut union = HllUnion::new(10).unwrap();
+    /// union.update_value("apple");
+    /// let result = union.to_sketch(HllType::Hll6);
+    /// assert_eq!(result.target_type(), HllType::Hll6);
+    /// assert_eq!(result.estimate(), union.estimate());
+    /// ```
     pub fn to_sketch(&self, hll_type: HllType) -> HllSketch {
         let gadget_type = self.gadget.target_type();
 
@@ -211,21 +265,82 @@ impl HllUnion {
     }
 
     /// Clears the union and restores its configured maximum `lg_k`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::hll::HllSketch;
+    /// use datasketches::hll::HllType;
+    /// use datasketches::hll::HllUnion;
+    ///
+    /// let mut sketch = HllSketch::new(10, HllType::Hll8).unwrap();
+    /// for value in 0..10_000 {
+    ///     sketch.update(value);
+    /// }
+    /// let mut union = HllUnion::new(12).unwrap();
+    /// union.update(&sketch);
+    /// assert_eq!(union.lg_config_k(), 10);
+    ///
+    /// union.reset();
+    /// assert!(union.is_empty());
+    /// assert_eq!(union.lg_config_k(), 12);
+    /// ```
     pub fn reset(&mut self) {
         self.gadget = HllSketch::new(self.lg_max_k, HllType::Hll8).unwrap();
     }
 
     /// Returns the union's current cardinality estimate.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::hll::HllUnion;
+    ///
+    /// let mut union = HllUnion::new(10).unwrap();
+    /// for value in ["apple", "banana", "apple"] {
+    ///     union.update_value(value);
+    /// }
+    /// let estimate = union.estimate();
+    /// assert!((estimate - 2.0).abs() < 0.01);
+    /// ```
     pub fn estimate(&self) -> f64 {
         self.gadget.estimate()
     }
 
     /// Returns the upper confidence bound for `num_std_dev` standard deviations.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::common::NumStdDev;
+    /// use datasketches::hll::HllUnion;
+    ///
+    /// let mut union = HllUnion::new(10).unwrap();
+    /// for value in 0..10_000 {
+    ///     union.update_value(value);
+    /// }
+    /// let upper = union.upper_bound(NumStdDev::Two);
+    /// assert!(upper >= union.estimate());
+    /// ```
     pub fn upper_bound(&self, num_std_dev: NumStdDev) -> f64 {
         self.gadget.upper_bound(num_std_dev)
     }
 
     /// Returns the lower confidence bound for `num_std_dev` standard deviations.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::common::NumStdDev;
+    /// use datasketches::hll::HllUnion;
+    ///
+    /// let mut union = HllUnion::new(10).unwrap();
+    /// for value in 0..10_000 {
+    ///     union.update_value(value);
+    /// }
+    /// let lower = union.lower_bound(NumStdDev::Two);
+    /// assert!(lower <= union.estimate());
+    /// ```
     pub fn lower_bound(&self, num_std_dev: NumStdDev) -> f64 {
         self.gadget.lower_bound(num_std_dev)
     }

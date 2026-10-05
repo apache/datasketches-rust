@@ -151,6 +151,19 @@ impl Coupon {
     ///
     /// Use [`hash::value`](crate::hash::value) wrappers when another DataSketches
     /// implementation requires a specific value hashing strategy.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::hll::Coupon;
+    /// use datasketches::hll::HllSketch;
+    /// use datasketches::hll::HllType;
+    ///
+    /// let coupon = Coupon::from_value("apple");
+    /// let mut sketch = HllSketch::new(10, HllType::Hll8).unwrap();
+    /// sketch.update_with_coupon(coupon);
+    /// assert!(sketch.estimate() >= 1.0);
+    /// ```
     #[inline(always)]
     pub fn from_value<T: Hash>(value: T) -> Self {
         let mut hasher = MurmurHash3X64128::default();
