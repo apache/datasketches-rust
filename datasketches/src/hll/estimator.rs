@@ -19,6 +19,9 @@
 //!
 //! Sequential register updates use HIP (Historical Inverse Probability). Bulk merges use the
 //! composite estimator because register values do not retain their update order.
+//!
+//! Estimator formulas and crossover constants follow DataSketches C++:
+//! <https://github.com/apache/datasketches-cpp/blob/5a055521/hll/include/HllArray-internal.hpp>
 
 use crate::common::NumStdDev;
 use crate::common::inv_pow2::inv_pow2;
@@ -35,13 +38,10 @@ pub enum EstimateState {
     Composite,
 }
 
-/// Cardinality estimator shared by Array4, Array6, and Array8.
-///
-/// Sequential updates use HIP. Bulk merges use the composite estimator because register values do
-/// not retain update order. Both modes maintain KxQ as a cache derived from the current registers.
+/// KxQ caches the sum of `2^-register`. Splitting the sum at register value 32 preserves
+/// precision when large and small contributions coexist.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Estimator {
-    /// Estimate selected by the register history.
     estimate_state: EstimateState,
     /// KxQ register for values < 32 (larger inverse powers)
     kxq0: f64,
@@ -50,7 +50,6 @@ pub struct Estimator {
 }
 
 impl Estimator {
-    /// Creates an estimator for a sketch with 2^lg_config_k registers.
     pub fn new(lg_config_k: u8) -> Self {
         let k = 1 << lg_config_k;
         Self {
@@ -74,22 +73,11 @@ impl Estimator {
         }
     }
 
-    /// Update the estimator when a register changes from old_value to new_value
-    ///
-    /// This should be called BEFORE actually updating the register in the array.
-    ///
-    /// # Algorithm
-    ///
-    /// 1. Update the HIP accumulator when it remains valid
-    /// 2. Update KxQ registers (always)
-    ///
-    /// The KxQ registers are split for numerical precision:
-    /// * kxq0: sum of 1/2^v for v < 32
-    /// * kxq1: sum of 1/2^v for v >= 32
+    /// Applies a register increase; requires `new_value > old_value`.
     pub fn update(&mut self, lg_config_k: u8, old_value: u8, new_value: u8) {
         let k = (1 << lg_config_k) as f64;
 
-        // Update HIP accumulator FIRST when the register history is still available.
+        // HIP must use the KxQ sums from before this register update.
         if let EstimateState::Hip(hip_accum) = &mut self.estimate_state {
             *hip_accum += k / (self.kxq0 + self.kxq1);
         }
@@ -98,16 +86,13 @@ impl Estimator {
         self.update_kxq(old_value, new_value);
     }
 
-    /// Update only the KxQ registers (internal helper)
     fn update_kxq(&mut self, old_value: u8, new_value: u8) {
-        // Subtract old value contribution
         if old_value < 32 {
             self.kxq0 -= inv_pow2(old_value);
         } else {
             self.kxq1 -= inv_pow2(old_value);
         }
 
-        // Add new value contribution
         if new_value < 32 {
             self.kxq0 += inv_pow2(new_value);
         } else {
@@ -115,15 +100,8 @@ impl Estimator {
         }
     }
 
-    /// Get the current cardinality estimate
-    ///
-    /// Dispatches to the estimate selected by the register history.
-    ///
-    /// # Arguments
-    ///
-    /// * `lg_config_k`: Log2 of number of registers (k)
-    /// * `cur_min`: Current minimum register value (for Array4, 0 for Array6/8)
-    /// * `num_at_cur_min`: Number of registers at cur_min value
+    /// For `Array6`/`Array8`, pass zero for `cur_min` and the zero-register count for
+    /// `num_at_cur_min`. `Array4` tracks its actual minimum and its count.
     pub fn estimate(&self, lg_config_k: u8, cur_min: u8, num_at_cur_min: u32) -> f64 {
         match self.estimate_state {
             EstimateState::Hip(hip_accum) => hip_accum,
@@ -133,16 +111,6 @@ impl Estimator {
         }
     }
 
-    /// Get upper bound for cardinality estimate
-    ///
-    /// Returns the upper confidence bound for the cardinality estimate.
-    ///
-    /// # Arguments
-    ///
-    /// * `lg_config_k`: Log2 of number of registers (k)
-    /// * `cur_min`: Current minimum register value (for Array4, 0 for Array6/8)
-    /// * `num_at_cur_min`: Number of registers at cur_min value
-    /// * `num_std_dev`: Number of standard deviations (1, 2, or 3)
     pub fn upper_bound(
         &self,
         lg_config_k: u8,
@@ -157,23 +125,11 @@ impl Estimator {
             self.uses_composite_estimate(),
             num_std_dev,
         );
-        // RSE is negative for upper bounds, so (1 + rse) < 1, making bound > estimate
         estimate / (1.0 + rse)
     }
 
-    /// Get lower bound for cardinality estimate
-    ///
-    /// Returns the lower confidence bound for the cardinality estimate.
-    ///
-    /// Each non-zero register requires a distinct item, so their count is a hard floor
-    /// for the lower bound. If `cur_min` is non-zero, all `k` registers are non-zero.
-    ///
-    /// # Arguments
-    ///
-    /// * `lg_config_k`: Log2 of number of registers (k)
-    /// * `cur_min`: Current minimum register value (for Array4, 0 for Array6/8)
-    /// * `num_at_cur_min`: Number of registers at cur_min value
-    /// * `num_std_dev`: Number of standard deviations (1, 2, or 3)
+    /// Each nonzero register requires a distinct item, so their count is a hard floor
+    /// for the lower bound. If `cur_min` is nonzero, all `k` registers are nonzero.
     pub fn lower_bound(
         &self,
         lg_config_k: u8,
@@ -194,15 +150,9 @@ impl Estimator {
         } else {
             config_k
         };
-        // RSE is positive for lower bounds, so (1 + rse) > 1, making bound < estimate
         (estimate / (1.0 + rse)).max(f64::from(num_nonzero_registers))
     }
 
-    /// Get raw HLL estimate using standard HyperLogLog formula
-    ///
-    /// Formula: correctionFactor * k^2 / (kxq0 + kxq1)
-    ///
-    /// Uses lg_k-specific correction factors for small k.
     fn raw_estimate(&self, lg_config_k: u8) -> f64 {
         let k = (1 << lg_config_k) as f64;
 
@@ -217,16 +167,12 @@ impl Estimator {
         (correction_factor * k * k) / (self.kxq0 + self.kxq1)
     }
 
-    /// Get linear counting (bitmap) estimate for small cardinalities
-    ///
-    /// Uses harmonic numbers to estimate based on empty registers.
     fn bitmap_estimate(&self, lg_config_k: u8, cur_min: u8, num_at_cur_min: u32) -> f64 {
         let k = 1 << lg_config_k;
 
-        // Number of unhit (empty) buckets
         let num_unhit = if cur_min == 0 { num_at_cur_min } else { 0 };
 
-        // Edge case: all buckets hit
+        // Preserve the upstream fallback for a bitmap with no empty registers.
         if num_unhit == 0 {
             return (k as f64) * (k as f64 / 0.5).ln();
         }
@@ -235,20 +181,14 @@ impl Estimator {
         harmonic_numbers::bitmap_estimate(k, num_hit)
     }
 
-    /// Get composite estimate (blends raw HLL and linear counting)
-    ///
-    /// This estimate is used when the register update history is unavailable.
-    /// It uses cubic interpolation on the raw HLL estimate, then blends
-    /// with linear counting for small cardinalities.
+    /// Selects between bias-corrected HLL and bitmap estimates using their empirical crossover.
     fn composite_estimate(&self, lg_config_k: u8, cur_min: u8, num_at_cur_min: u32) -> f64 {
         let raw_estimate = self.raw_estimate(lg_config_k);
 
-        // Get composite interpolation table
         let x_arr = composite_interpolation::get_x_arr(lg_config_k);
         let x_arr_len = composite_interpolation::get_x_arr_length();
         let y_stride = composite_interpolation::get_y_stride(lg_config_k) as f64;
 
-        // Handle edge cases
         if raw_estimate < x_arr[0] {
             return 0.0;
         }
@@ -262,7 +202,6 @@ impl Estimator {
             return raw_estimate * factor;
         }
 
-        // Interpolate using cubic interpolation
         let adjusted_estimate =
             cubic_interpolation::using_x_arr_and_y_stride(x_arr, y_stride, raw_estimate);
 
@@ -273,11 +212,9 @@ impl Estimator {
             return adjusted_estimate;
         }
 
-        // Get linear counting estimate
         let linear_estimate = self.bitmap_estimate(lg_config_k, cur_min, num_at_cur_min);
 
-        // Blend estimates based on crossover threshold
-        // Use average to reduce bias from threshold comparison
+        // Comparing the average to the threshold reduces estimator-selection bias.
         let average_estimate = (adjusted_estimate + linear_estimate) / 2.0;
 
         // Crossover thresholds (empirically determined)
@@ -296,7 +233,6 @@ impl Estimator {
         }
     }
 
-    /// Get the HIP accumulator value
     pub fn hip_accum(&self) -> f64 {
         match self.estimate_state {
             EstimateState::Hip(hip_accum) => hip_accum,
@@ -304,22 +240,18 @@ impl Estimator {
         }
     }
 
-    /// Get the kxq0 register value
     pub fn kxq0(&self) -> f64 {
         self.kxq0
     }
 
-    /// Get the kxq1 register value
     pub fn kxq1(&self) -> f64 {
         self.kxq1
     }
 
-    /// Returns whether estimates are derived from registers rather than HIP history.
     pub fn uses_composite_estimate(&self) -> bool {
         matches!(self.estimate_state, EstimateState::Composite)
     }
 
-    /// Returns the estimate state independently from register-derived KxQ values.
     pub fn estimate_state(&self) -> EstimateState {
         self.estimate_state
     }
@@ -341,27 +273,15 @@ impl Estimator {
     }
 }
 
-/// Get relative error for HLL estimates
-///
-/// This matches the implementation in datasketches-cpp HllUtil.hpp and RelativeErrorTables.hpp
-///
-/// # Arguments
-///
-/// * `lg_config_k`: Log2 of number of registers (must be 4-21)
-/// * `upper_bound`: Whether computing upper bound (vs lower bound)
-/// * `composite`: Whether the estimate is derived from registers rather than HIP history
-/// * `num_std_dev`: Number of standard deviations (1, 2, or 3)
-///
-/// # Returns
-///
-/// Relative error factor to apply to estimate
+/// Relative error used as `estimate / (1 + error)`: negative for upper bounds.
+/// Follows DataSketches C++ `HllUtil::getRelErr`:
+/// <https://github.com/apache/datasketches-cpp/blob/5a055521/hll/include/HllUtil.hpp>
 fn relative_error(
     lg_config_k: u8,
     upper_bound: bool,
     composite: bool,
     num_std_dev: NumStdDev,
 ) -> f64 {
-    // For lg_k > 12, use analytical formula with RSE factors
     if lg_config_k > 12 {
         // RSE factors from Apache DataSketches C++ implementation
         // HLL_HIP_RSE_FACTOR = sqrt(ln(2)) ≈ 0.8325546
@@ -378,21 +298,19 @@ fn relative_error(
         return sign * (num_std_dev as u8 as f64) * rse_factor / k.sqrt();
     }
 
-    // For lg_k <= 12, use empirically measured lookup tables.
-    // Tables are indexed by: ((lg_k - 4) * 3) + (num_std_dev - 1)
+    // Small sketches use measured error quantiles rather than the asymptotic formula.
     let idx = ((lg_config_k as usize) - 4) * 3 + ((num_std_dev as usize) - 1);
 
-    // Select the appropriate table based on estimator and bound direction.
     match (composite, upper_bound) {
-        (false, false) => HIP_LB[idx],    // Case 0: HIP, Lower Bound
-        (false, true) => HIP_UB[idx],     // Case 1: HIP, Upper Bound
-        (true, false) => NON_HIP_LB[idx], // Case 2: Non-HIP, Lower Bound
-        (true, true) => NON_HIP_UB[idx],  // Case 3: Non-HIP, Upper Bound
+        (false, false) => HIP_LB[idx],
+        (false, true) => HIP_UB[idx],
+        (true, false) => NON_HIP_LB[idx],
+        (true, true) => NON_HIP_UB[idx],
     }
 }
 
-// Relative error lookup tables from Apache DataSketches C++ implementation
-// RelativeErrorTables-internal.hpp
+// Measured quantiles, grouped by lg_k 4–12 with three standard deviations per group.
+// Source: https://github.com/apache/datasketches-cpp/blob/5a055521/hll/include/RelativeErrorTables-internal.hpp
 
 /// HIP (in-order) Lower Bound errors for lg_k 4-12, std_dev 1-3
 /// Q(.84134), Q(.97725), Q(.99865) quantiles
@@ -572,22 +490,18 @@ mod tests {
     fn test_estimator_update() {
         let mut est = Estimator::new(8); // 256 registers
 
-        // Update from 0 to 10
         est.update(8, 0, 10);
 
-        // HIP should have increased
         assert_that!(est.hip_accum(), gt(0.0));
 
-        // kxq0 should have changed (10 < 32)
         assert_that!(est.kxq0(), lt(256.0));
-        assert_eq!(est.kxq1(), 0.0); // kxq1 unchanged
+        assert_eq!(est.kxq1(), 0.0);
     }
 
     #[test]
     fn test_kxq_split() {
         let mut est = Estimator::new(8);
 
-        // Update to value < 32 (goes to kxq0)
         est.update(8, 0, 10);
         let kxq0_after_10 = est.kxq0();
         let kxq1_after_10 = est.kxq1();

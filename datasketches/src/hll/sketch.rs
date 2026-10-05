@@ -15,11 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! HyperLogLog sketch implementation
-//!
-//! This module provides the main [`HllSketch`] struct, which is the primary interface
-//! for creating and using HLL sketches for cardinality estimation.
-
 use std::fmt;
 use std::hash::Hash;
 
@@ -68,15 +63,9 @@ pub struct HllSketch {
 }
 
 impl HllSketch {
-    /// Creates a new HLL sketch.
+    /// Creates an empty sketch with `2^lg_config_k` registers and the requested [`HllType`].
     ///
-    /// # Arguments
-    ///
-    /// * `lg_config_k`: The `lg_k` value in `[4, 21]`, which controls the number of buckets.
-    ///   * `lg_k = 4`: 16 buckets, ~26% relative error.
-    ///   * `lg_k = 12`: 4096 buckets, ~1.6% relative error (common choice).
-    ///   * `lg_k = 21`: 2M buckets, ~0.4% relative error.
-    /// * `hll_type`: Target HLL array type (`Hll4`, `Hll6`, or `Hll8`).
+    /// Increasing `lg_config_k` uses more memory and reduces estimation error.
     ///
     /// # Errors
     ///
@@ -106,29 +95,15 @@ impl HllSketch {
         })
     }
 
-    /// Create an HLL sketch directly from a Mode
-    ///
-    /// This is used internally (e.g., by union operations) to construct
-    /// sketches in specific modes without going through List mode first.
-    ///
-    /// # Arguments
-    ///
-    /// * `lg_config_k`: Log2 of the number of buckets (K)
-    /// * `mode`: The mode to initialize the sketch with
     pub(super) fn from_mode(lg_config_k: u8, mode: Mode) -> Self {
         Self { lg_config_k, mode }
     }
 
-    /// Get the current mode of the sketch
     pub(super) fn mode(&self) -> &Mode {
         &self.mode
     }
 
-    /// Get mutable access to the current mode
-    ///
-    /// # Safety
-    ///
-    /// Caller must maintain internal invariants (num_zeros, estimator state).
+    /// Callers must keep register-derived caches and estimate state consistent with the mode.
     pub(super) fn mode_mut(&mut self) -> &mut Mode {
         &mut self.mode
     }
@@ -162,16 +137,11 @@ impl HllSketch {
 
     /// Updates the sketch with a value.
     ///
-    /// Accepts any type that implements [`Hash`]. The value is hashed and converted to
-    /// an internal coupon, which is then inserted into the sketch.
-    ///
     /// You may use [`hash::value`](crate::hash::value) wrappers when another DataSketches
     /// implementation requires a specific value hashing strategy.
     ///
-    /// If you need to insert the same logical value into multiple sketches, consider
-    /// pre-computing the coupon with [`Coupon::from_value`] and calling
-    /// [`update_with_coupon`](Self::update_with_coupon) on each sketch to avoid
-    /// redundant hashing.
+    /// To reuse the hash across sketches, see [`Coupon`] and
+    /// [`update_with_coupon`](Self::update_with_coupon).
     ///
     /// # Examples
     ///
@@ -192,15 +162,7 @@ impl HllSketch {
         self.update_with_coupon(Coupon::from_value(value));
     }
 
-    /// Updates the sketch with a pre-computed [`Coupon`].
-    ///
-    /// A [`Coupon`] encodes both the HLL bucket index (low 26 bits) and the register
-    /// value (high 6 bits) derived from hashing an input.  Accepting a pre-computed
-    /// coupon makes it possible to pay the hashing cost once and fan the result out to
-    /// many independent sketches — see [`Coupon`] for a worked example.
-    ///
-    /// All internal bookkeeping, including representation transitions and estimator state updates,
-    /// is handled automatically.
+    /// Updates the sketch with a precomputed [`Coupon`], without hashing the input again.
     ///
     /// # Examples
     ///
@@ -209,9 +171,9 @@ impl HllSketch {
     /// use datasketches::hll::HllSketch;
     /// use datasketches::hll::HllType;
     ///
-    /// let c = Coupon::from_value("apple");
+    /// let coupon = Coupon::from_value("apple");
     /// let mut sketch = HllSketch::new(10, HllType::Hll8).unwrap();
-    /// sketch.update_with_coupon(c);
+    /// sketch.update_with_coupon(coupon);
     /// assert!(sketch.estimate() >= 1.0);
     /// ```
     pub fn update_with_coupon(&mut self, coupon: Coupon) {
@@ -254,8 +216,11 @@ impl HllSketch {
     /// use datasketches::hll::HllType;
     ///
     /// let mut sketch = HllSketch::new(10, HllType::Hll8).unwrap();
-    /// sketch.update("apple");
-    /// assert!(sketch.estimate() >= 1.0);
+    /// for value in ["apple", "banana", "apple"] {
+    ///     sketch.update(value);
+    /// }
+    /// let estimate = sketch.estimate();
+    /// assert!((estimate - 2.0).abs() < 0.01);
     /// ```
     pub fn estimate(&self) -> f64 {
         match &self.mode {
@@ -267,9 +232,22 @@ impl HllSketch {
         }
     }
 
-    /// Returns the upper confidence bound for the cardinality estimate.
+    /// Returns the upper confidence bound for `num_std_dev` standard deviations.
     ///
-    /// The bound is based on the requested number of standard deviations.
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::common::NumStdDev;
+    /// use datasketches::hll::HllSketch;
+    /// use datasketches::hll::HllType;
+    ///
+    /// let mut sketch = HllSketch::new(10, HllType::Hll8).unwrap();
+    /// for value in 0..10_000 {
+    ///     sketch.update(value);
+    /// }
+    /// let upper = sketch.upper_bound(NumStdDev::Two);
+    /// assert!(upper >= sketch.estimate());
+    /// ```
     pub fn upper_bound(&self, num_std_dev: NumStdDev) -> f64 {
         match &self.mode {
             Mode::List { list, .. } => list.container().upper_bound(num_std_dev),
@@ -280,9 +258,22 @@ impl HllSketch {
         }
     }
 
-    /// Returns the lower confidence bound for the cardinality estimate.
+    /// Returns the lower confidence bound for `num_std_dev` standard deviations.
     ///
-    /// The bound is based on the requested number of standard deviations.
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::common::NumStdDev;
+    /// use datasketches::hll::HllSketch;
+    /// use datasketches::hll::HllType;
+    ///
+    /// let mut sketch = HllSketch::new(10, HllType::Hll8).unwrap();
+    /// for value in 0..10_000 {
+    ///     sketch.update(value);
+    /// }
+    /// let lower = sketch.lower_bound(NumStdDev::Two);
+    /// assert!(lower <= sketch.estimate());
+    /// ```
     pub fn lower_bound(&self, num_std_dev: NumStdDev) -> f64 {
         match &self.mode {
             Mode::List { list, .. } => list.container().lower_bound(num_std_dev),
@@ -311,12 +302,11 @@ impl HllSketch {
     ///
     /// let bytes = sketch.serialize();
     /// let decoded = HllSketch::deserialize(&bytes).unwrap();
-    /// assert!(decoded.estimate() >= 1.0);
+    /// assert_eq!(decoded.estimate(), sketch.estimate());
     /// ```
     pub fn deserialize(bytes: &[u8]) -> Result<HllSketch, Error> {
         let mut cursor = SketchSlice::new(bytes);
 
-        // Read and validate preamble
         let preamble_ints = cursor
             .read_u8()
             .map_err(insufficient_data("preamble_ints"))?;
@@ -335,13 +325,10 @@ impl HllSketch {
         let state = cursor.read_u8().map_err(insufficient_data("state"))?;
         let mode_byte = cursor.read_u8().map_err(insufficient_data("mode"))?;
 
-        // Verify family ID
         Family::HLL.validate_id(family_id)?;
 
-        // Verify serialization version
         ensure_serial_version_is(SERIAL_VERSION, serial_version)?;
 
-        // Verify lg_k range (4-21 are valid)
         if !(4..=21).contains(&lg_config_k) {
             return Err(Error::deserial(format!(
                 "lg_k must be in [4; 21], got {lg_config_k}",
@@ -361,7 +348,7 @@ impl HllSketch {
         let compact = (flags & COMPACT_FLAG_MASK) != 0;
         let ooo = (flags & OUT_OF_ORDER_FLAG_MASK) != 0;
 
-        // Deserialize based on mode
+        // Each mode reader starts after the shared eight-byte header.
         let mode =
             match extract_cur_mode(mode_byte) {
                 CUR_MODE_LIST => {
@@ -451,7 +438,7 @@ impl HllSketch {
         }
     }
 
-    /// Returns the estimated size of the sketch in bytes.
+    /// Returns the estimated memory usage in bytes, including owned heap allocations.
     pub fn estimated_size(&self) -> usize {
         let heap_size = match &self.mode {
             Mode::List { list, .. } => list.container().estimated_size(),

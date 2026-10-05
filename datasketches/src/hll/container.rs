@@ -15,11 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! Base container for coupon storage with cardinality estimation
-//!
-//! Provides a simple array-based storage for coupons (hash values) with
-//! cubic interpolation-based cardinality estimation and confidence bounds.
-
 use crate::common::NumStdDev;
 use crate::hll::COUPON_RSE;
 use crate::hll::Coupon;
@@ -27,12 +22,10 @@ use crate::hll::coupon_mapping::X_ARR;
 use crate::hll::coupon_mapping::Y_ARR;
 use crate::hll::cubic_interpolation::using_x_and_y_tables;
 
-/// Container for storing coupons with basic cardinality estimation
 #[derive(Debug, Clone)]
 pub struct Container {
-    /// Log2 of container size
     lg_size: usize,
-    /// Array of coupon values (Coupon::EMPTY = empty)
+    /// Empty slots contain `Coupon::EMPTY`.
     pub coupons: Box<[Coupon]>,
     /// Number of non-empty coupons
     pub len: usize,
@@ -40,8 +33,7 @@ pub struct Container {
 
 impl PartialEq for Container {
     fn eq(&self, other: &Self) -> bool {
-        // Two containers are equal if they have the same non-empty coupons
-        // (regardless of order or internal storage)
+        // Capacity and slot order do not affect the logical coupon contents.
         if self.len != other.len {
             return false;
         }
@@ -75,7 +67,6 @@ impl Container {
         }
     }
 
-    /// Create container from existing coupons
     pub fn from_coupons(lg_size: usize, coupons: Box<[Coupon]>, len: usize) -> Self {
         Self {
             lg_size,
@@ -104,34 +95,28 @@ impl Container {
         self.coupons.len()
     }
 
-    /// Get cardinality estimate using cubic interpolation
     pub fn estimate(&self) -> f64 {
         let len = self.len as f64;
         let est = using_x_and_y_tables(&X_ARR, &Y_ARR, len);
         len.max(est)
     }
 
-    /// Get upper confidence bound for cardinality estimate
     pub fn upper_bound(&self, num_std_dev: NumStdDev) -> f64 {
         let len = self.len as f64;
         let est = using_x_and_y_tables(&X_ARR, &Y_ARR, len);
-        // Upper bound: negative RSE means (1 + rse) < 1, so bound > estimate
         let rse = -(num_std_dev as u8 as f64) * COUPON_RSE;
         let bound = est / (1.0 + rse);
         len.max(bound)
     }
 
-    /// Get lower confidence bound for cardinality estimate
     pub fn lower_bound(&self, num_std_dev: NumStdDev) -> f64 {
         let len = self.len as f64;
         let est = using_x_and_y_tables(&X_ARR, &Y_ARR, len);
-        // Lower bound: positive RSE means (1 + rse) > 1, so bound < estimate
         let rse = (num_std_dev as u8 as f64) * COUPON_RSE;
         let bound = est / (1.0 + rse);
         len.max(bound)
     }
 
-    /// Iterate over all non-empty coupons
     pub fn iter(&self) -> impl Iterator<Item = Coupon> + '_ {
         self.coupons.iter().filter(|&&c| !c.is_empty()).copied()
     }
