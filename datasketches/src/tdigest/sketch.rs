@@ -424,6 +424,10 @@ impl TDigestMut {
     pub fn cdf(&mut self, split_points: &[f64]) -> Option<Vec<f64>> {
         check_split_points(split_points);
 
+        if self.is_empty() {
+            return None;
+        }
+
         self.view().cdf(split_points)
     }
 
@@ -448,6 +452,10 @@ impl TDigestMut {
     /// ```
     pub fn pmf(&mut self, split_points: &[f64]) -> Option<Vec<f64>> {
         check_split_points(split_points);
+
+        if self.is_empty() {
+            return None;
+        }
 
         self.view().pmf(split_points)
     }
@@ -513,6 +521,10 @@ impl TDigestMut {
             "rank must be in [0.0, 1.0]; got {rank}"
         );
 
+        if self.is_empty() {
+            return None;
+        }
+
         self.view().quantile(rank)
     }
 
@@ -523,6 +535,10 @@ impl TDigestMut {
     /// Panics if any rank is outside `[0.0, 1.0]`.
     pub fn quantiles(&mut self, ranks: &[f64]) -> Option<Vec<f64>> {
         check_ranks(ranks);
+
+        if self.is_empty() {
+            return None;
+        }
 
         self.view().quantiles(ranks)
     }
