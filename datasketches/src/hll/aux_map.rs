@@ -15,22 +15,11 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! Auxiliary hash map for HLL Array4 exceptions
-//!
-//! Stores slot-value pairs for values that don't fit in the 4-bit main array.
-//! Uses open addressing with stride-based probing for collision resolution.
-
 use crate::hll::Coupon;
 use crate::hll::RESIZE_DENOMINATOR;
 use crate::hll::RESIZE_NUMERATOR;
 
-/// Open-addressing hash table for exception values (values >= 15)
-///
-/// This hash map stores (slot_number, value) pairs where values have exceeded
-/// the 4-bit representation (after cur_min offset) in the main Array4.
-///
-/// Each entry is a [`Coupon`] packed as: [value (upper 6 bits) | slot_no (lower 26 bits)].
-/// Empty entries are represented as [`Coupon::EMPTY`].
+/// Absolute register values for the `AUX_TOKEN` slots in `Array4`.
 #[derive(Debug, Clone)]
 pub struct AuxMap {
     lg_size: u8,
@@ -41,13 +30,11 @@ pub struct AuxMap {
 
 impl PartialEq for AuxMap {
     fn eq(&self, other: &Self) -> bool {
-        // Two aux maps are equal if they have the same lg_config_k
-        // and the same non-empty entries (regardless of internal storage order)
+        // Capacity and slot order do not affect the logical entries.
         if self.lg_config_k != other.lg_config_k || self.count != other.count {
             return false;
         }
 
-        // Collect and sort non-empty entries from both maps
         let mut entries1: Vec<Coupon> = self
             .entries
             .iter()
@@ -68,10 +55,8 @@ impl PartialEq for AuxMap {
     }
 }
 
-/// Get lg_aux_arr_ints for a given lg_config_k
-///
-/// This determines the initial size of the auxiliary hash map
-/// based on the sketch size.
+/// Initial table sizes from DataSketches C++:
+/// <https://github.com/apache/datasketches-cpp/blob/5a055521/hll/include/HllUtil.hpp>
 fn lg_aux_arr_ints(lg_config_k: u8) -> u8 {
     static LG_AUX_ARR_INTS: &[u8] = &[
         0, 2, 2, 2, 2, 2, 2, 3, 3, 3, // 0-9
@@ -83,7 +68,6 @@ fn lg_aux_arr_ints(lg_config_k: u8) -> u8 {
 }
 
 impl AuxMap {
-    /// Create a new map with specified size
     pub fn new(lg_config_k: u8) -> Self {
         let lg_size = lg_aux_arr_ints(lg_config_k);
         Self {
@@ -94,13 +78,11 @@ impl AuxMap {
         }
     }
 
-    /// Insert a new slot-value pair
     pub fn insert(&mut self, slot: u32, value: u8) {
         let index = self.find(slot);
         match index {
             FindResult::Found(_) => {
-                // Invariant: Array4 always check existence before inserting
-                // a new value on the same slot.
+                // Array4 uses insert only when a slot first becomes an exception.
                 unreachable!("slot {} already exists in aux map", slot);
             }
             FindResult::Empty(idx) => {
@@ -111,9 +93,6 @@ impl AuxMap {
         }
     }
 
-    /// Get value for a slot
-    ///
-    /// Returns `None` if the slot is not found
     pub fn get(&self, slot: u32) -> Option<u8> {
         match self.find(slot) {
             FindResult::Found(idx) => Some(self.entries[idx].value()),
@@ -121,24 +100,18 @@ impl AuxMap {
         }
     }
 
-    /// Replace value for existing slot
     pub fn replace(&mut self, slot: u32, value: u8) {
         match self.find(slot) {
             FindResult::Found(idx) => {
                 self.entries[idx] = Coupon::pack(slot, value);
             }
             FindResult::Empty(_) => {
-                // Invariant: Array4 always check existence before replacing
-                // an old value on the same slot.
+                // Every AUX_TOKEN slot must already have an entry.
                 unreachable!("slot {} not found in aux map", slot);
             }
         }
     }
 
-    /// Find slot in hash table using open addressing with stride
-    ///
-    /// Returns either the index where the slot is found, or the index
-    /// of an empty slot where it could be inserted.
     fn find(&self, slot: u32) -> FindResult {
         let mask = (1 << self.lg_size) - 1;
         let config_k_mask = (1 << self.lg_config_k) - 1;
@@ -157,20 +130,17 @@ impl AuxMap {
                 return FindResult::Found(probe as usize);
             }
 
-            // Open addressing with odd stride (guarantees full coverage)
+            // An odd stride visits every slot in a power-of-two table.
             let stride = (slot >> self.lg_size) | 1;
             probe = (probe + stride) & mask;
 
             if probe == start {
-                // Invariant: AuxMap::insert is responsible for
-                // growing the AuxMap when a new entry is inserted
-                // causing the map to be full.
+                // insert grows the table past 75% occupancy, leaving an empty slot.
                 unreachable!("AuxMap full; no empty slots");
             }
         }
     }
 
-    /// Check if we need to grow the hash table (75% load factor)
     fn check_grow(&mut self) {
         let size = 1 << self.lg_size;
         if (RESIZE_DENOMINATOR * self.count) > (RESIZE_NUMERATOR * size) {
@@ -178,19 +148,16 @@ impl AuxMap {
         }
     }
 
-    /// Double the hash table size and rehash all entries
     fn grow(&mut self) {
         let new_lg_size = self.lg_size + 1;
         let new_size = 1 << new_lg_size;
         let new_mask = (1 << new_lg_size) - 1;
         let mut new_entries = vec![Coupon::EMPTY; new_size].into_boxed_slice();
 
-        // Rehash all entries into the larger table
         for &entry in self.entries.iter() {
             if !entry.is_empty() {
                 let slot = entry.slot();
 
-                // Find position in new table
                 let mut probe = slot & new_mask;
                 let start_position = probe;
 
@@ -203,8 +170,7 @@ impl AuxMap {
                     let stride = (slot >> new_lg_size) | 1;
                     probe = (probe + stride) & new_mask;
                     if probe == start_position {
-                        // Invariant: there will always be space for all
-                        // `self.entries` in the `new_entries` array.
+                        // Doubling capacity leaves room for every existing entry.
                         unreachable!("AuxMap full; no empty slots");
                     }
                 }
@@ -215,7 +181,6 @@ impl AuxMap {
         self.lg_size = new_lg_size;
     }
 
-    /// Iterate over (slot, value) pairs without consuming the map
     pub fn iter(&self) -> impl Iterator<Item = (u32, u8)> + '_ {
         let config_k_mask = (1 << self.lg_config_k) - 1;
         self.entries.iter().filter_map(move |&entry| {
@@ -233,7 +198,6 @@ impl AuxMap {
     }
 }
 
-/// Iterator over AuxMap entries
 pub struct AuxMapIter {
     entries: std::vec::IntoIter<Coupon>,
     config_k_mask: u32,
@@ -250,7 +214,7 @@ impl Iterator for AuxMapIter {
                     let value = entry.value();
                     return Some((slot, value));
                 }
-                Some(_) => continue, // Skip empty entries
+                Some(_) => continue,
                 None => return None,
             }
         }
@@ -269,7 +233,6 @@ impl IntoIterator for AuxMap {
     }
 }
 
-/// Result of a find operation
 enum FindResult {
     Found(usize),
     Empty(usize),
@@ -283,18 +246,15 @@ mod tests {
     fn test_aux_map_basic_operations() {
         let mut map = AuxMap::new(10);
 
-        // Insert some values
         map.insert(10, 20);
         map.insert(50, 30);
         map.insert(100, 40);
 
-        // Get values
         assert_eq!(map.get(10), Some(20));
         assert_eq!(map.get(50), Some(30));
         assert_eq!(map.get(100), Some(40));
         assert_eq!(map.get(999), None);
 
-        // Replace value
         map.replace(50, 35);
         assert_eq!(map.get(50), Some(35));
     }
@@ -303,14 +263,11 @@ mod tests {
     fn test_aux_map_growth() {
         let mut map = AuxMap::new(8);
 
-        // Insert enough to trigger resize (75% load factor)
         map.insert(1, 15);
         map.insert(2, 16);
         map.insert(3, 17);
-        // This should trigger a resize
         map.insert(4, 18);
 
-        // All values should still be accessible
         assert_eq!(map.get(1), Some(15));
         assert_eq!(map.get(2), Some(16));
         assert_eq!(map.get(3), Some(17));
@@ -322,13 +279,13 @@ mod tests {
     fn test_aux_map_duplicate_insert() {
         let mut map = AuxMap::new(10);
         map.insert(10, 20);
-        map.insert(10, 30); // Should panic
+        map.insert(10, 30);
     }
 
     #[test]
     #[should_panic(expected = "not found")]
     fn test_aux_map_replace_missing() {
         let mut map = AuxMap::new(10);
-        map.replace(999, 20); // Should panic
+        map.replace(999, 20);
     }
 }

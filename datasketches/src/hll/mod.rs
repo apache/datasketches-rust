@@ -15,64 +15,14 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! HyperLogLog sketch implementation for cardinality estimation.
+//! HyperLogLog sketches for estimating the number of distinct values.
 //!
-//! This module provides a probabilistic data structure for estimating the cardinality
-//! (number of distinct elements) of large datasets with high accuracy and low memory usage.
+//! Use [`HllSketch`] to collect values and [`HllUnion`] to combine sketches.
+//! [`HllType`] controls register storage; `lg_k` controls the register count and accuracy.
 //!
-//! # Overview
-//!
-//! HyperLogLog (HLL) sketches use hash functions to estimate cardinality in logarithmic space.
-//! This implementation follows the Apache DataSketches specification and supports multiple
-//! storage modes that automatically adapt based on cardinality:
-//!
-//! * **List mode**: Stores individual values for small cardinalities
-//! * **Set mode**: Uses a hash set for medium cardinalities
-//! * **HLL mode**: Uses compact arrays for large cardinalities
-//!
-//! Mode transitions are automatic and transparent to the user. Each promotion preserves
-//! all previously observed values and maintains estimation accuracy.
-//!
-//! # Core Types
-//!
-//! The primary type for cardinality estimation is [`HllSketch`], which maintains a single
-//! sketch and provides methods to update with new values and retrieve cardinality estimates.
-//! For combining multiple sketches, use [`HllUnion`], which efficiently merges sketches
-//! that may have different configurations.
-//!
-//! # HLL Types
-//!
-//! The three target HLL types are isomorphic representations of the same registers. Given the
-//! same `lg_k` and input, they produce identical estimates and error distributions; they trade
-//! memory layout and update performance, not statistical precision:
-//!
-//! * [`HllType::Hll4`]: 4 bits per bucket (most compact)
-//! * [`HllType::Hll6`]: 6 bits per bucket (fixed-size middle ground)
-//! * [`HllType::Hll8`]: 8 bits per bucket (largest and simplest representation)
-//!
-//! # Union Operations
-//!
-//! The [`HllUnion`] type enables combining multiple HLL sketches into a unified estimate.
-//! It accumulates the distinct values represented by all input sketches and automatically handles:
-//!
-//! * Sketches with different `lg_k` configurations (resizes/downsamples as needed)
-//! * Sketches with different target HLL types
-//!
-//! The result's accuracy is determined by its final effective `lg_k`. Merging sketches with
-//! different configurations may reduce this value. Once reduced, it remains lower until the union
-//! is reset. A lower effective `lg_k` widens the error distribution; converting among HLL target
-//! types does not change accuracy.
-//!
-//! # Serialization
-//!
-//! Sketches can be serialized and deserialized while preserving all state, including:
-//! * Current mode and HLL type
-//! * All observed values (coupons or register values)
-//! * HIP accumulator state for accurate estimation
-//! * Out-of-order flag for merged/deserialized sketches
-//!
-//! The serialization format is compatible with Apache DataSketches implementations
-//! in Java and C++, enabling cross-platform sketch exchange.
+//! Serialized sketches are compatible with Apache DataSketches in Java and C++.
+//! Cross-language updates must also use compatible hashing; see
+//! [`hash::value`](crate::hash::value).
 //!
 //! # Usage
 //!
@@ -131,9 +81,10 @@ mod union;
 pub use self::sketch::HllSketch;
 pub use self::union::HllUnion;
 
-/// Target HLL type.
+/// Storage representation for HLL registers.
 ///
-/// See [module level documentation](self) for more details.
+/// For the same `lg_k` and input, all three types produce the same estimates.
+/// They trade memory usage against update speed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HllType {
     /// Uses 4 bits per HLL bucket and has the smallest storage footprint.
@@ -157,19 +108,10 @@ const COUPON_RSE: f64 = COUPON_RSE_FACTOR / (1 << 13) as f64;
 const RESIZE_NUMERATOR: u32 = 3; // Resize at 3/4 = 75% load factor
 const RESIZE_DENOMINATOR: u32 = 4;
 
-/// A coupon encodes a (slot, value) pair derived from hashing an input.
+/// A reusable hash of an input value for HLL sketches.
 ///
-/// Format: `[value (6 bits) << 26] | [slot (26 bits)]`
-///
-/// The slot identifies an HLL register (derived from the lower bits of the hash),
-/// and the value represents the number of leading zeros plus one (from the upper bits).
-///
-/// Pre-computing coupons is useful when the same logical value must be inserted into
-/// multiple independent sketches, because the (relatively expensive) hash step is paid
-/// only once.  A common pattern is dictionary-encoded data: compute the coupon for each
-/// term id up front, cache it, and then call [`HllSketch::update_with_coupon`] for
-/// each per-bucket sketch rather than calling [`HllSketch::update`] repeatedly with the
-/// decoded string.
+/// Compute a coupon once with [`Coupon::from_value`] and pass it to
+/// [`HllSketch::update_with_coupon`] on sketches with any `lg_k` or [`HllType`].
 ///
 /// # Examples
 ///
@@ -189,19 +131,17 @@ const RESIZE_DENOMINATOR: u32 = 4;
 /// assert!(sketch2.estimate() >= 1.0);
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Coupon(u32);
+pub struct Coupon(u32); // Upper six bits: register value; lower 26 bits: slot.
 
 impl Coupon {
     /// Sentinel value indicating an empty coupon slot.
     const EMPTY: Self = Coupon(0);
 
-    /// Returns `true` if this coupon is the empty sentinel (value `0`).
     #[inline(always)]
     fn is_empty(self) -> bool {
         self == Self::EMPTY
     }
 
-    /// Returns the raw 32-bit representation of the coupon.
     #[inline(always)]
     fn raw(self) -> u32 {
         self.0
@@ -209,13 +149,8 @@ impl Coupon {
 
     /// Computes the HLL coupon for a hashable value.
     ///
-    /// You may use [`hash::value`](crate::hash::value) wrappers when another DataSketches
+    /// Use [`hash::value`](crate::hash::value) wrappers when another DataSketches
     /// implementation requires a specific value hashing strategy.
-    ///
-    /// Hashes `value` using MurmurHash3 128-bit and packs the result into a coupon:
-    /// the low 26 bits of the low hash word become the slot index, and the
-    /// leading-zero count of the high hash word (capped at 62, then plus one)
-    /// becomes the 6-bit register value.
     #[inline(always)]
     pub fn from_value<T: Hash>(value: T) -> Self {
         let mut hasher = MurmurHash3X64128::default();
@@ -224,25 +159,23 @@ impl Coupon {
 
         let addr26 = lo as u32 & KEY_MASK_26;
         let lz = hi.leading_zeros();
+        // Register values must fit in six bits; zero is reserved for empty slots.
         let capped = lz.min(62);
         let value = capped + 1;
 
         Coupon((value << KEY_BITS_26) | addr26)
     }
 
-    /// Pack a slot index and register value into a coupon.
     #[inline(always)]
     fn pack(slot: u32, value: u8) -> Self {
         Coupon(((value as u32) << KEY_BITS_26) | (slot & KEY_MASK_26))
     }
 
-    /// Extract the slot index (low 26 bits).
     #[inline(always)]
     fn slot(self) -> u32 {
         self.0 & KEY_MASK_26
     }
 
-    /// Extract the register value (upper 6 bits).
     #[inline(always)]
     fn value(self) -> u8 {
         (self.0 >> KEY_BITS_26) as u8

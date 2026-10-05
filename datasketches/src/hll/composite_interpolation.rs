@@ -15,13 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! Composite interpolation tables for HLL estimation.
-//!
-//! These tables correct raw HyperLogLog estimates when the register update history is unavailable,
-//! such as after merging independent sketches.
-//!
-//! Currently, this module contains tables for common lg_k values (4-12). The full C++
-//! implementation has tables for lg_k 4-21. Additional tables can be found at:
+//! Bias-correction tables for `lg_k` 4 through 21 from DataSketches C++:
 //! <https://github.com/apache/datasketches-cpp/blob/5a055521/hll/include/CompositeInterpolationXTable-internal.hpp>
 
 const NUM_X_VALUES: usize = 257;
@@ -31,11 +25,6 @@ static Y_STRIDES: [u32; 18] = [
     1, 2, 3, 5, 10, 20, 40, 80, 160, 320, 640, 1280, 2560, 5120, 10240, 20480, 40960, 81920,
 ];
 
-/// Get Y stride for a given lg_k.
-///
-/// # Panics
-///
-/// Panics if lg_k is not in range `[4, 21]`.
 pub fn get_y_stride(lg_k: u8) -> u32 {
     if !(4..=21).contains(&lg_k) {
         panic!("lg_k must be in range [4, 21], got: {}", lg_k);
@@ -43,18 +32,10 @@ pub fn get_y_stride(lg_k: u8) -> u32 {
     Y_STRIDES[(lg_k - 4) as usize]
 }
 
-/// Get X array length (constant for all lg_k)
 pub const fn get_x_arr_length() -> usize {
     NUM_X_VALUES
 }
 
-/// Get X array for a given lg_k.
-///
-/// Returns a reference to the pre-computed X values for cubic interpolation.
-///
-/// # Panics
-///
-/// Panics if lg_k is not in range `[4, 21]`.
 pub fn get_x_arr(lg_k: u8) -> &'static [f64; NUM_X_VALUES] {
     if !(4..=21).contains(&lg_k) {
         panic!("lg_k must be in range [4, 21], got: {}", lg_k);
@@ -62,7 +43,6 @@ pub fn get_x_arr(lg_k: u8) -> &'static [f64; NUM_X_VALUES] {
     &ARRAYS[(lg_k - 4) as usize]
 }
 
-/// This is extracted from https://github.com/apache/datasketches-cpp/blob/5a055521/hll/include/CompositeInterpolationXTable-internal.hpp#L54
 static ARRAYS: [[f64; NUM_X_VALUES]; 18] = [
     [
         10.767999803534,
@@ -4796,7 +4776,6 @@ mod tests {
 
     #[test]
     fn test_x_arr_monotonic() {
-        // X array should be strictly increasing
         let x_arr = get_x_arr(8);
         for i in 1..x_arr.len() {
             assert_that!(x_arr[i], gt(x_arr[i - 1]), "index: {i}");

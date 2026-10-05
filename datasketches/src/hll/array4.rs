@@ -15,11 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! HyperLogLog Array4 mode - 4-bit packed representation with exception handling
-//!
-//! Array4 stores HLL register values using 4 bits per slot (2 slots per byte).
-//! When values exceed 4 bits after cur_min offset, they're stored in an auxiliary hash map.
-
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
 use crate::codec::assert::insufficient_data;
@@ -58,18 +53,16 @@ impl AuxFormat {
     }
 }
 
-/// Core Array4 data structure - stores 4-bit values efficiently
+/// Registers stored as four-bit offsets from their current minimum.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Array4 {
     lg_config_k: u8,
-    /// Packed 4-bit values: 2 values per byte
-    /// Even slots use low nibble, odd slots use high nibble
+    /// Even slots occupy the low nibble; odd slots occupy the high nibble.
     bytes: Box<[u8]>,
-    /// Current minimum value offset (optimization to delay aux map creation)
     cur_min: u8,
-    /// Count of slots at exactly cur_min (when 0, increment cur_min)
+    /// When this reaches zero, the offset must increase until it reaches the new minimum.
     num_at_cur_min: u32,
-    /// Exception table for values >= 15 after cur_min offset
+    /// Every `AUX_TOKEN` nibble has an entry here containing the absolute register value.
     aux_map: Option<AuxMap>,
     estimator: Estimator,
 }
@@ -88,49 +81,35 @@ impl Array4 {
         }
     }
 
-    /// Get raw 4-bit value from slot (not adjusted for cur_min)
     #[inline]
     fn get_raw(&self, slot: u32) -> u8 {
         debug_assert!(slot >> 1 < self.bytes.len() as u32);
 
         let byte = self.bytes[(slot >> 1) as usize];
-        if slot & 1 == 0 {
-            byte & 15 // low nibble for even slots
-        } else {
-            byte >> 4 // high nibble for odd slots
-        }
+        if slot & 1 == 0 { byte & 15 } else { byte >> 4 }
     }
 
-    /// Get the actual value at a slot (adjusted for cur_min and aux_map)
-    ///
-    /// Returns the true register value:
-    /// * If raw < 15: value = cur_min + raw
-    /// * If raw == 15 (AUX_TOKEN): value is in aux_map
     pub fn get(&self, slot: u32) -> u8 {
         let raw = self.get_raw(slot);
 
         if raw < AUX_TOKEN {
             self.cur_min + raw
         } else {
-            // Value is in aux_map
             self.aux_map
                 .as_ref()
                 .and_then(|map| map.get(slot))
-                .unwrap_or(self.cur_min) // Fallback (shouldn't happen)
+                .unwrap_or(self.cur_min)
         }
     }
 
-    /// Get the number of registers (K = 2^lg_config_k)
     pub fn num_registers(&self) -> usize {
         1 << self.lg_config_k
     }
 
-    /// Returns the estimate state independently from register-derived cached values.
     pub fn estimate_state(&self) -> EstimateState {
         self.estimator.estimate_state()
     }
 
-    /// Set raw 4-bit value in slot
     #[inline]
     fn put_raw(&mut self, slot: u32, value: u8) {
         debug_assert!(value <= AUX_TOKEN);
@@ -139,9 +118,9 @@ impl Array4 {
         let byte_idx = (slot >> 1) as usize;
         let old_byte = self.bytes[byte_idx];
         self.bytes[byte_idx] = if slot & 1 == 0 {
-            (old_byte & 0xF0) | (value & 0x0F) // set low nibble
+            (old_byte & 0xF0) | (value & 0x0F)
         } else {
-            (old_byte & 0x0F) | (value << 4) // set high nibble
+            (old_byte & 0x0F) | (value << 4)
         };
     }
 
@@ -150,7 +129,6 @@ impl Array4 {
         let slot = coupon.slot() & mask;
         let new_value = coupon.value();
 
-        // Quick rejection: if new value <= cur_min, no update needed
         if new_value <= self.cur_min {
             return;
         }
@@ -162,7 +140,6 @@ impl Array4 {
             return;
         }
 
-        // Get actual old value (might be in aux map)
         let old_value = if raw_stored < AUX_TOKEN {
             lower_bound
         } else {
@@ -177,26 +154,22 @@ impl Array4 {
             return;
         }
 
-        // Update HIP and KxQ registers via estimator
         self.estimator
             .update(self.lg_config_k, old_value, new_value);
 
         let shifted_new = new_value - self.cur_min;
 
-        // Four cases based on old/new exception status
         match (raw_stored, shifted_new) {
-            // Case 1: Both old and new are exceptions
             (AUX_TOKEN, shifted) if shifted >= AUX_TOKEN => {
                 self.aux_map
                     .as_mut()
                     .expect("aux_map should be initialized since stored value is AUX_TOKEN")
                     .replace(slot, new_value);
             }
-            // Case 2: Old is exception, new is not (impossible without cur_min change)
+            // Registers only increase here; an exception cannot disappear until cur_min changes.
             (AUX_TOKEN, _) => {
                 unreachable!("AUX_TOKEN present with non-exception new value");
             }
-            // Case 3: Old not exception, new is exception
             (_, shifted) if shifted >= AUX_TOKEN => {
                 self.put_raw(slot, AUX_TOKEN);
                 let aux = self
@@ -204,13 +177,11 @@ impl Array4 {
                     .get_or_insert_with(|| AuxMap::new(self.lg_config_k));
                 aux.insert(slot, new_value);
             }
-            // Case 4: Neither is exception
             _ => {
                 self.put_raw(slot, shifted_new);
             }
         }
 
-        // Handle cur_min adjustment
         if old_value == self.cur_min {
             self.num_at_cur_min -= 1;
             while self.num_at_cur_min == 0 {
@@ -219,17 +190,13 @@ impl Array4 {
         }
     }
 
-    /// Increment cur_min and adjust all values
-    ///
-    /// This is called when no slots remain at cur_min value.
-    /// All stored values are decremented by 1, and exceptions
-    /// that fall back into the 4-bit range are moved from aux map.
+    /// Requires no registers at `cur_min`. Raising the offset makes some auxiliary values
+    /// fit in the nibbles again; the logical register values must stay unchanged.
     fn shift_to_bigger_cur_min(&mut self) {
         let new_cur_min = self.cur_min + 1;
         let k = 1 << self.lg_config_k;
         let mut num_at_new = 0;
 
-        // Decrement all stored values in the main array
         for slot in 0..k {
             let raw = self.get_raw(slot);
             debug_assert_ne!(raw, 0, "value cannot be 0 when shifting cur_min");
@@ -258,7 +225,6 @@ impl Array4 {
                 if new_shifted < AUX_TOKEN {
                     self.put_raw(slot, new_shifted);
                 } else {
-                    // Still an exception
                     let aux = new_aux.get_or_insert_with(|| AuxMap::new(self.lg_config_k));
                     aux.insert(slot, old_actual_val);
                 }
@@ -270,14 +236,11 @@ impl Array4 {
         self.num_at_cur_min = num_at_new;
     }
 
-    /// Returns the current cardinality estimate.
     pub fn estimate(&self) -> f64 {
-        // Array4 tracks cur_min and num_at_cur_min dynamically
         self.estimator
             .estimate(self.lg_config_k, self.cur_min, self.num_at_cur_min)
     }
 
-    /// Get upper bound for cardinality estimate
     pub fn upper_bound(&self, num_std_dev: NumStdDev) -> f64 {
         self.estimator.upper_bound(
             self.lg_config_k,
@@ -287,7 +250,6 @@ impl Array4 {
         )
     }
 
-    /// Get lower bound for cardinality estimate
     pub fn lower_bound(&self, num_std_dev: NumStdDev) -> f64 {
         self.estimator.lower_bound(
             self.lg_config_k,
@@ -297,19 +259,14 @@ impl Array4 {
         )
     }
 
-    /// Restores estimate state after copying or transforming the same logical sketch.
     pub fn restore_estimate_state(&mut self, state: EstimateState) {
         self.estimator.restore_estimate_state(state);
     }
 
-    /// Check if the sketch is empty (all slots are zero)
     pub fn is_empty(&self) -> bool {
         self.num_at_cur_min == (1 << self.lg_config_k) && self.cur_min == 0
     }
 
-    /// Deserialize Array4 from HLL mode bytes
-    ///
-    /// Expects full HLL preamble (40 bytes) followed by packed 4-bit data and optional aux map.
     pub fn deserialize(
         mut cursor: SketchSlice,
         cur_min: u8,
@@ -318,16 +275,14 @@ impl Array4 {
         ooo: bool,
     ) -> Result<Self, Error> {
         let k = 1usize << lg_config_k;
-        let num_bytes = 1usize << (lg_config_k - 1); // k/2 bytes for 4-bit packing
+        let num_bytes = 1usize << (lg_config_k - 1);
 
-        // Read estimator values from preamble
         let hip_accum = cursor
             .read_f64_le()
             .map_err(insufficient_data("hip_accum"))?;
         let kxq0 = cursor.read_f64_le().map_err(insufficient_data("kxq0"))?;
         let kxq1 = cursor.read_f64_le().map_err(insufficient_data("kxq1"))?;
 
-        // Read num_at_cur_min and aux_count
         let num_at_cur_min = cursor
             .read_u32_le()
             .map_err(insufficient_data("num_at_cur_min"))?;
@@ -364,13 +319,11 @@ impl Array4 {
             ));
         }
 
-        // Read packed 4-bit byte array
         let mut data = vec![0u8; num_bytes];
         cursor
             .read_exact(&mut data)
             .map_err(insufficient_data("data"))?;
 
-        // Read aux map if present
         let mut aux_map = None;
         if aux_count > 0 {
             let mut aux = AuxMap::new(lg_config_k);
@@ -414,13 +367,10 @@ impl Array4 {
         })
     }
 
-    /// Serialize Array4 to bytes
-    ///
-    /// Produces full HLL preamble (40 bytes) followed by packed 4-bit data and optional aux map.
+    /// Writes packed registers followed by compact auxiliary entries.
     pub fn serialize(&self, lg_config_k: u8) -> Vec<u8> {
-        let num_bytes = 1 << (lg_config_k - 1); // k/2 bytes for 4-bit packing
+        let num_bytes = 1 << (lg_config_k - 1);
 
-        // Collect aux map entries if present
         let aux_entries: Vec<(u32, u8)> = if let Some(aux) = &self.aux_map {
             aux.iter().collect()
         } else {
@@ -431,43 +381,32 @@ impl Array4 {
         let total_size = HLL_PREAMBLE_SIZE + num_bytes + (aux_count as usize * COUPON_SIZE_BYTES);
         let mut bytes = SketchBytes::with_capacity(total_size);
 
-        // Write standard header
         bytes.write_u8(HLL_PREINTS);
         bytes.write_u8(SERIAL_VERSION);
         bytes.write_u8(Family::HLL.id);
         bytes.write_u8(lg_config_k);
-        bytes.write_u8(0); // unused for HLL mode
+        bytes.write_u8(0); // lg_arr is unused for compact auxiliary storage.
 
-        // Write flags.
-        // COMPACT_FLAG_MASK is always set: aux map entries are written as a compact sequential
-        // list of populated entries only.
         let mut flags = COMPACT_FLAG_MASK;
         if self.estimator.uses_composite_estimate() {
             flags |= OUT_OF_ORDER_FLAG_MASK;
         }
         bytes.write_u8(flags);
 
-        // Write cur_min
         bytes.write_u8(self.cur_min);
 
-        // Mode byte: HLL mode with HLL4 type
         bytes.write_u8(encode_mode_byte(CUR_MODE_HLL, TGT_HLL4));
 
-        // Write estimator values
         bytes.write_f64_le(self.estimator.hip_accum());
         bytes.write_f64_le(self.estimator.kxq0());
         bytes.write_f64_le(self.estimator.kxq1());
 
-        // Write num_at_cur_min
         bytes.write_u32_le(self.num_at_cur_min);
 
-        // Write aux_count
         bytes.write_u32_le(aux_count);
 
-        // Write packed 4-bit byte array
         bytes.write(&self.bytes);
 
-        // Write aux map entries if present
         for (slot, value) in aux_entries.iter().copied() {
             bytes.write_u32_le(Coupon::pack(slot, value).raw());
         }
@@ -512,7 +451,6 @@ mod tests {
         // Both values should be stored in the same byte
         assert_eq!(data.bytes[0], 0x75); // 0111_0101 = 7 << 4 | 5
 
-        // Test multiple slots
         data.put_raw(2, 15);
         data.put_raw(3, 3);
         assert_eq!(data.get_raw(2), 15);
@@ -523,24 +461,18 @@ mod tests {
     fn test_hip_estimator_basic() {
         let mut arr = Array4::new(10); // 1024 buckets
 
-        // Initially estimate should be 0
         assert_eq!(arr.estimate(), 0.0);
 
-        // Add some unique values to different slots
         for i in 0..10_000u32 {
             arr.update(Coupon::from_value(i));
         }
 
-        // Estimate should be positive and roughly in the ballpark
-        // (not exact, but should be non-zero and not NaN/Inf)
         let estimate = arr.estimate();
 
         assert_that!(estimate, gt(0.0));
         assert_that!(estimate, is_finite());
         assert_that!(estimate, lt(100_000.0));
 
-        // Rough sanity check: with 100 updates to different slots,
-        // estimate should be in a reasonable range (very loose bounds)
         assert_that!(estimate, gt(1_000.0));
         assert_that!(estimate, lt(100_000.0));
     }
@@ -549,11 +481,9 @@ mod tests {
     fn test_kxq_register_split() {
         let mut arr = Array4::new(8); // 256 buckets
 
-        // Test that values < 32 and >= 32 are handled correctly
         arr.update(Coupon::pack(0, 10)); // value < 32, goes to kxq0
         arr.update(Coupon::pack(1, 40)); // value >= 32, goes to kxq1
 
-        // Verify registers were updated (not exact values, just check they changed)
         // kxq0 should have decreased (we removed a 0 and added a 10)
         // Initial kxq0 = 256 (all zeros = 1.0 each)
         assert_that!(arr.estimator.kxq0(), lt(256.0));

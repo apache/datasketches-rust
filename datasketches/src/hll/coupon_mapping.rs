@@ -15,10 +15,9 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! Lookup tables for coupon-based cardinality estimation
-//!
-//! These pre-computed X and Y value pairs are used with cubic interpolation
-//! to map from the number of observed coupons to estimated cardinality.
+//! Coupon-count correction for the 26-bit slot encoding. These X/Y pairs are used with
+//! cubic interpolation and come from DataSketches C++:
+//! <https://github.com/apache/datasketches-cpp/blob/5a055521/hll/include/CubicInterpolation-internal.hpp>
 
 /// X values (coupon counts) for interpolation table
 pub static X_ARR: [f64; 40] = [
