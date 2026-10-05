@@ -22,6 +22,7 @@ use rand::SeedableRng;
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 
+use super::support::build_digest;
 use super::support::prepared_digest;
 
 #[divan::bench]
@@ -29,6 +30,14 @@ fn rank(bencher: Bencher) {
     let digest = prepared_digest();
 
     bencher.bench_local(|| black_box(&digest).rank(black_box(0.531_25)));
+}
+
+#[divan::bench(args = [0.0, 3.0, 3.5, 7.0])]
+fn rank_repeated_means(bencher: Bencher, value: f64) {
+    let values = (0..100_000).map(|i| (i % 8) as f64).collect::<Vec<_>>();
+    let digest = build_digest(&values);
+
+    bencher.bench_local(|| black_box(&digest).rank(black_box(value)));
 }
 
 #[divan::bench]
