@@ -144,7 +144,7 @@ cargo install taplo-cli typos-cli hawkeye
 
 Serialization compatibility tests use snapshots from a pinned revision of [`apache/datasketches-tck`](https://github.com/apache/datasketches-tck).
 
-The `cargo x prepare-testdata` command downloads the TCK archive and synchronizes its snapshots into:
+The `cargo x prepare-testdata` command downloads the TCK archive and synchronizes `.sk` files from `serialization_test_data/<language>_generated_files` into:
 
 - `tests-integration/tests/serde_tests/cpp_generated_files`
 - `tests-integration/tests/serde_tests/go_generated_files`

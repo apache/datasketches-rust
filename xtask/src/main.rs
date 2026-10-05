@@ -316,7 +316,7 @@ impl CommandPrepareTestData {
     }
 
     fn prepare(self) -> Result<()> {
-        const REVISION: &str = "c0a180708c6e6433e4cba7fba091713eb8af3eaa";
+        const REVISION: &str = "8193bab45ca5da3b513ea43fb5793e7e5b4da548";
         let serde_tests =
             Path::new(env!("CARGO_WORKSPACE_DIR")).join("tests-integration/tests/serde_tests");
         let archive_url =
@@ -341,8 +341,9 @@ impl CommandPrepareTestData {
 
         let mut targets = vec![];
         for language in self.languages() {
-            let source_directory = Path::new("serialization").join(language).join("snapshots");
-            let destination = serde_tests.join(format!("{language}_generated_files"));
+            let directory_name = format!("{language}_generated_files");
+            let source_directory = Path::new("serialization_test_data").join(&directory_name);
+            let destination = serde_tests.join(directory_name);
             if fs::exists(&destination)? {
                 println!(
                     "Removing existing {language} snapshots from {}",
