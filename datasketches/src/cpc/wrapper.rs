@@ -33,9 +33,8 @@ use crate::cpc::serialization::FLAG_HAS_WINDOW;
 use crate::cpc::serialization::SERIAL_VERSION;
 use crate::cpc::serialization::make_preamble_ints;
 use crate::error::Error;
-use crate::error::ErrorKind;
 
-/// A read-only view of a serialized image of a CpcSketch.
+/// Cardinality metadata extracted from a serialized `CpcSketch` image.
 #[derive(Debug, Clone)]
 pub struct CpcWrapper {
     lg_k: u8,
@@ -45,7 +44,13 @@ pub struct CpcWrapper {
 }
 
 impl CpcWrapper {
-    /// Creates a new `CpcWrapper` from the given byte slice without copying bytes.
+    /// Reads the cardinality metadata without copying or fully deserializing the compressed
+    /// payload.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidData` if the preamble is malformed or does not describe a compressed CPC
+    /// image.
     pub fn new(bytes: &[u8]) -> Result<Self, Error> {
         let mut cursor = SketchSlice::new(bytes);
         let preamble_ints = cursor
@@ -63,13 +68,10 @@ impl CpcWrapper {
             .read_u8()
             .map_err(insufficient_data("first_interesting_column"))?;
         if !(MIN_LG_K..=MAX_LG_K).contains(&lg_k) {
-            return Err(Error::invalid_argument(format!(
-                "lg_k out of range; got {}",
-                lg_k
-            )));
+            return Err(Error::deserial(format!("lg_k out of range; got {}", lg_k)));
         }
         if first_interesting_column > 63 {
-            return Err(Error::invalid_argument(format!(
+            return Err(Error::deserial(format!(
                 "first_interesting_column out of range; got {}",
                 first_interesting_column
             )));
@@ -78,10 +80,7 @@ impl CpcWrapper {
         let flags = cursor.read_u8().map_err(insufficient_data("flags"))?;
         let is_compressed = flags & (1 << FLAG_COMPRESSED) != 0;
         if !is_compressed {
-            return Err(Error::new(
-                ErrorKind::InvalidData,
-                "only compressed sketches are supported",
-            ));
+            return Err(Error::deserial("only compressed sketches are supported"));
         }
         let has_hip = flags & (1 << FLAG_HAS_HIP) != 0;
         let has_table = flags & (1 << FLAG_HAS_TABLE) != 0;
@@ -138,7 +137,7 @@ impl CpcWrapper {
         })
     }
 
-    /// Return the parameter lg_k.
+    /// Returns the configured `lg_k`.
     pub fn lg_k(&self) -> u8 {
         self.lg_k
     }
@@ -175,7 +174,7 @@ impl CpcWrapper {
         )
     }
 
-    /// Returns true if the sketch is empty.
+    /// Returns `true` if the sketch is empty.
     pub fn is_empty(&self) -> bool {
         self.num_coupons == 0
     }

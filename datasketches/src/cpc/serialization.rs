@@ -15,13 +15,13 @@
 // specific language governing permissions and limitations
 // under the License.
 
-pub(super) const SERIAL_VERSION: u8 = 1;
-pub(super) const FLAG_COMPRESSED: u8 = 1;
-pub(super) const FLAG_HAS_HIP: u8 = 2;
-pub(super) const FLAG_HAS_TABLE: u8 = 3;
-pub(super) const FLAG_HAS_WINDOW: u8 = 4;
+pub const SERIAL_VERSION: u8 = 1;
+pub const FLAG_COMPRESSED: u8 = 1;
+pub const FLAG_HAS_HIP: u8 = 2;
+pub const FLAG_HAS_TABLE: u8 = 3;
+pub const FLAG_HAS_WINDOW: u8 = 4;
 
-pub(super) fn make_preamble_ints(
+pub fn make_preamble_ints(
     num_coupons: u32,
     has_hip: bool,
     has_table: bool,

@@ -27,8 +27,6 @@ pub const MAX_LG_K: u8 = 26;
 /// Default log2 of K.
 pub const DEFAULT_LG_K: u8 = 12;
 
-/// Resize threshold (0.5 = 50% load factor).
-pub const HASH_TABLE_RESIZE_THRESHOLD: f64 = 0.5;
 /// Rebuild threshold (15/16 = 93.75% load factor).
 pub const HASH_TABLE_REBUILD_THRESHOLD: f64 = 15.0 / 16.0;
 

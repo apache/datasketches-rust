@@ -32,7 +32,7 @@ const MAX_SAMPLE_SIZE: usize = 1024;
 
 /// Linear-probing hash map for (item, count) pairs with reverse purge support.
 #[derive(Debug, Clone)]
-pub(super) struct ReversePurgeItemHashMap<T> {
+pub struct ReversePurgeItemHashMap<T> {
     lg_length: u8,
     load_threshold: usize,
     keys: Vec<Option<T>>,
@@ -141,7 +141,7 @@ impl<T: Eq + Hash> ReversePurgeItemHashMap<T> {
     pub fn purge(&mut self, sample_size: usize) -> u64 {
         let limit = sample_size.min(self.num_active).min(MAX_SAMPLE_SIZE);
         let mut samples = Vec::with_capacity(limit);
-        let mut i = 0usize;
+        let mut i = 0;
         while samples.len() < limit {
             if self.is_active(i) {
                 samples.push(self.values[i]);

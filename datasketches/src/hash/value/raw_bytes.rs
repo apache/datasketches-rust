@@ -26,8 +26,8 @@
 
 use std::hash::Hasher;
 
-use super::HashStrategy;
-use super::Value;
+use crate::hash::value::HashStrategy;
+use crate::hash::value::Value;
 
 /// A byte or string value wrapper that hashes raw bytes.
 ///
@@ -38,7 +38,7 @@ pub type RawBytes<T> = Value<T, RawBytesStrategy>;
 #[doc(hidden)]
 pub struct RawBytesStrategy;
 
-/// Create a raw-byte hashable value from a byte vector.
+/// Creates a raw-byte hashable value from a byte vector.
 ///
 /// This hashes the vector contents without Rust's slice length prefix.
 ///
@@ -60,7 +60,7 @@ pub fn from_vec(v: Vec<u8>) -> RawBytes<Vec<u8>> {
     RawBytes::new(v)
 }
 
-/// Create a raw-byte hashable value from a string.
+/// Creates a raw-byte hashable value from a string.
 ///
 /// This hashes the UTF-8 bytes of the string without Rust's string length prefix.
 ///
@@ -82,7 +82,7 @@ pub fn from_string(v: String) -> RawBytes<String> {
     RawBytes::new(v)
 }
 
-/// Create a raw-byte hashable value from a byte slice.
+/// Creates a raw-byte hashable value from a byte slice.
 ///
 /// This hashes the slice contents without Rust's slice length prefix.
 ///
@@ -104,7 +104,7 @@ pub fn from_slice(v: &[u8]) -> RawBytes<&[u8]> {
     RawBytes::new(v)
 }
 
-/// Create a raw-byte hashable value from a string slice.
+/// Creates a raw-byte hashable value from a string slice.
 ///
 /// This hashes the UTF-8 bytes of the string slice without Rust's string length prefix.
 ///
@@ -129,6 +129,7 @@ pub fn from_str(v: &str) -> RawBytes<&str> {
 macro_rules! impl_raw_bytes {
     ($t:ty, |$v:ident| $as_slice:expr) => {
         impl HashStrategy<$t> for RawBytesStrategy {
+            #[inline(always)]
             fn hash<H: Hasher>(value: &$t, state: &mut H) {
                 let $v = value;
                 let slice = $as_slice;

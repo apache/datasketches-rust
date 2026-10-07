@@ -23,10 +23,11 @@
 //! implementation with Theta a-not-B.
 
 use crate::error::Error;
+use crate::error::ErrorKind;
 use crate::hash::DEFAULT_UPDATE_SEED;
-use crate::thetacommon::a_not_b::ANotBOperator;
+use crate::hash::compute_seed_hash;
+use crate::thetacommon::a_not_b;
 use crate::tuple::sketch::CompactTupleSketch;
-use crate::tuple::sketch::TupleKeySketchView;
 use crate::tuple::sketch::TupleSketchView;
 
 /// Set difference operator (`A and not B`) for Tuple sketches.
@@ -43,11 +44,11 @@ use crate::tuple::sketch::TupleSketchView;
 /// use datasketches::tuple::TupleSketchBuilder;
 ///
 /// let update_policy = DefaultUpdatePolicy::<u64>::default();
-/// let mut a = TupleSketchBuilder::new(update_policy).build();
+/// let mut a = TupleSketchBuilder::new(update_policy).build().unwrap();
 /// a.update("apple", 1);
 /// a.update("banana", 1);
 ///
-/// let mut b = TupleSketchBuilder::new(update_policy).build();
+/// let mut b = TupleSketchBuilder::new(update_policy).build().unwrap();
 /// b.update("banana", 1);
 ///
 /// let a_not_b = TupleANotB::default();
@@ -56,50 +57,50 @@ use crate::tuple::sketch::TupleSketchView;
 /// ```
 #[derive(Debug, Clone, Copy)]
 pub struct TupleANotB {
-    op: ANotBOperator,
+    seed_hash: u16,
 }
 
 impl Default for TupleANotB {
     fn default() -> Self {
-        Self::with_seed(DEFAULT_UPDATE_SEED)
+        Self::with_seed(DEFAULT_UPDATE_SEED).unwrap()
     }
 }
 
 impl TupleANotB {
     /// Creates a new set difference operator for the given `seed`.
-    pub fn with_seed(seed: u64) -> Self {
-        Self {
-            op: ANotBOperator::new(seed),
-        }
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the computed seed hash is zero.
+    pub fn with_seed(seed: u64) -> Result<Self, Error> {
+        Ok(Self {
+            seed_hash: compute_seed_hash(seed, ErrorKind::InvalidArgument)?,
+        })
     }
 
     /// Computes `a and not b`.
     ///
     /// The result retains every key of `a` (below the combined theta) that is not present in `b`,
     /// keeping the summaries from `a`. Summary values in `b` are ignored and need not be
-    /// cloneable. If `ordered` is true, the retained entries are sorted ascending by hash.
+    /// cloneable. If `ordered` is `true`, the retained entries are sorted ascending by hash.
     ///
     /// # Errors
     ///
     /// Returns an error if either non-trivial input has a seed hash that differs from this
     /// operator's seed.
-    pub fn compute<S, A, B>(
+    pub fn compute<'a, 'b, S, T>(
         &self,
-        a: &A,
-        b: &B,
+        a: impl Into<TupleSketchView<'a, S>>,
+        b: impl Into<TupleSketchView<'b, T>>,
         ordered: bool,
     ) -> Result<CompactTupleSketch<S>, Error>
     where
-        A: TupleSketchView<S>,
-        B: TupleKeySketchView,
+        S: Clone + 'a,
+        T: 'b,
     {
-        let parts = self.op.compute(a, b, ordered)?;
-        Ok(CompactTupleSketch::from_parts(
-            parts.entries,
-            parts.theta,
-            parts.seed_hash,
-            parts.ordered,
-            parts.empty,
-        ))
+        let a = a.into();
+        let b = b.into();
+        let compact_state = a_not_b::compute(self.seed_hash, a, b, ordered)?;
+        Ok(CompactTupleSketch::from_compact_state(compact_state))
     }
 }

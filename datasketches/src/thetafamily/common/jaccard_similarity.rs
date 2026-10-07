@@ -17,16 +17,20 @@
 
 use crate::common::ResizeFactor;
 use crate::error::Error;
+use crate::error::ErrorKind;
+use crate::hash::check_seed_hash;
 use crate::hash::compute_seed_hash;
-use crate::thetacommon::RetainedEntry;
-use crate::thetacommon::ThetaFamilySketchView;
-use crate::thetacommon::ThetaKeySketchView;
+use crate::thetacommon::EntrySketch;
+use crate::thetacommon::KeySketch;
+use crate::thetacommon::SketchEntry;
 use crate::thetacommon::binomial_bounds;
 use crate::thetacommon::constants::MAX_LG_K;
 use crate::thetacommon::constants::MAX_THETA;
 use crate::thetacommon::constants::MIN_LG_K;
 use crate::thetacommon::intersection::IntersectionMergePolicy;
 use crate::thetacommon::intersection::IntersectionState;
+use crate::thetacommon::sketch_state::CompactSketchState;
+use crate::thetacommon::sketch_state::ThetaFamilySketchMetadata;
 use crate::thetacommon::union::UnionMergePolicy;
 use crate::thetacommon::union::UnionState;
 
@@ -81,12 +85,7 @@ impl JaccardSimilarity {
         }
 
         let sampling_probability = theta as f64 / MAX_THETA as f64;
-        if sampling_probability <= 0.0 || sampling_probability > 1.0 {
-            return Err(Error::invalid_argument(format!(
-                "theta must produce a probability in (0.0, 1.0], got {sampling_probability}"
-            )));
-        }
-        if sampling_probability == 1.0 {
+        if theta == MAX_THETA {
             return Ok(Self::exact(intersection_count as f64 / union_count as f64));
         }
 
@@ -112,192 +111,169 @@ struct KeyEntry {
     hash: u64,
 }
 
-impl RetainedEntry for KeyEntry {
+impl SketchEntry for KeyEntry {
     fn hash(&self) -> u64 {
         self.hash
-    }
-}
-
-struct KeySketchView<'a, S> {
-    sketch: &'a S,
-}
-
-impl<'a, S> KeySketchView<'a, S> {
-    fn new(sketch: &'a S) -> Self {
-        Self { sketch }
-    }
-}
-
-impl<S: ThetaKeySketchView> ThetaKeySketchView for KeySketchView<'_, S> {
-    fn seed_hash(&self) -> u16 {
-        self.sketch.seed_hash()
-    }
-
-    fn theta64(&self) -> u64 {
-        self.sketch.theta64()
-    }
-
-    fn is_empty(&self) -> bool {
-        self.sketch.is_empty()
-    }
-
-    fn is_ordered(&self) -> bool {
-        self.sketch.is_ordered()
-    }
-
-    fn iter_hashes(&self) -> impl Iterator<Item = u64> + '_ {
-        self.sketch.iter_hashes()
-    }
-
-    fn num_retained(&self) -> usize {
-        self.sketch.num_retained()
-    }
-}
-
-impl<S: ThetaKeySketchView> ThetaFamilySketchView for KeySketchView<'_, S> {
-    type Entry = KeyEntry;
-
-    fn iter(&self) -> impl Iterator<Item = KeyEntry> + '_ {
-        self.sketch.iter_hashes().map(|hash| KeyEntry { hash })
     }
 }
 
 #[derive(Clone, Copy, Debug)]
 struct NoopMergePolicy;
 
-impl<E: RetainedEntry> UnionMergePolicy<E> for NoopMergePolicy {
+impl<E: SketchEntry> UnionMergePolicy<E> for NoopMergePolicy {
     fn merge(&self, _existing: &mut E, _incoming: E) {}
 }
 
-impl<E: RetainedEntry> IntersectionMergePolicy<E> for NoopMergePolicy {
+impl<E: SketchEntry> IntersectionMergePolicy<E> for NoopMergePolicy {
     fn merge(&self, _existing: &mut E, _incoming: E) {}
 }
 
-struct CompactKeySketchView {
-    entries: Vec<KeyEntry>,
-    theta: u64,
-    seed_hash: u16,
-    ordered: bool,
-    empty: bool,
-}
+#[derive(Clone, Copy, Debug)]
+struct KeyEntries<S>(S);
 
-impl ThetaKeySketchView for CompactKeySketchView {
-    fn seed_hash(&self) -> u16 {
-        self.seed_hash
+impl<S> KeySketch for KeyEntries<S>
+where
+    S: KeySketch,
+{
+    fn metadata(self) -> ThetaFamilySketchMetadata {
+        self.0.metadata()
     }
 
-    fn theta64(&self) -> u64 {
-        self.theta
-    }
-
-    fn is_empty(&self) -> bool {
-        self.empty
-    }
-
-    fn is_ordered(&self) -> bool {
-        self.ordered
-    }
-
-    fn iter_hashes(&self) -> impl Iterator<Item = u64> + '_ {
-        self.entries.iter().map(RetainedEntry::hash)
-    }
-
-    fn num_retained(&self) -> usize {
-        self.entries.len()
+    fn hashes(self) -> impl Iterator<Item = u64> {
+        self.0.hashes()
     }
 }
 
-impl ThetaFamilySketchView for CompactKeySketchView {
+impl<S> EntrySketch for KeyEntries<S>
+where
+    S: KeySketch,
+{
     type Entry = KeyEntry;
 
-    fn iter(&self) -> impl Iterator<Item = KeyEntry> + '_ {
-        self.entries.iter().copied()
+    fn entries(self) -> impl Iterator<Item = Self::Entry> {
+        self.0.hashes().map(|hash| KeyEntry { hash })
     }
 }
 
-/// Configured Jaccard operator shared by Theta and Tuple public wrappers.
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct JaccardSimilarityOperator {
+pub fn compute<A, B>(seed: u64, sketch_a: A, sketch_b: B) -> Result<JaccardSimilarity, Error>
+where
+    A: KeySketch,
+    B: KeySketch,
+{
+    let (sketch_a_state, sketch_b_state) = match (
+        non_empty_count_and_theta(sketch_a.metadata()),
+        non_empty_count_and_theta(sketch_b.metadata()),
+    ) {
+        (None, None) => return Ok(JaccardSimilarity::exact(1.0)),
+        (None, _) | (_, None) => return Ok(JaccardSimilarity::exact(0.0)),
+        (Some(a), Some(b)) => (a, b),
+    };
+    let union = compute_union(seed, sketch_a, sketch_b)?;
+    if identical_sets(sketch_a_state, sketch_b_state, &union) {
+        return Ok(JaccardSimilarity::exact(1.0));
+    }
+
+    let mut intersection = IntersectionState::new(seed, NoopMergePolicy)?;
+    intersection.update(KeyEntries(sketch_a))?;
+    intersection.update(KeyEntries(sketch_b))?;
+    let intersection = intersection
+        .to_compact_sketch_state(false)
+        .expect("two intersection updates must produce a result");
+    let union_theta = union.theta();
+    let intersection_count = intersection
+        .retained_entries()
+        .iter()
+        .filter(|entry| entry.hash < union_theta)
+        .count();
+
+    JaccardSimilarity::ratio_bounds(
+        union.retained_entries().len() as u64,
+        intersection_count as u64,
+        union_theta,
+    )
+}
+
+pub fn exactly_equal<A, B>(seed: u64, sketch_a: A, sketch_b: B) -> Result<bool, Error>
+where
+    A: KeySketch,
+    B: KeySketch,
+{
+    let (sketch_a_state, sketch_b_state) = match (
+        non_empty_count_and_theta(sketch_a.metadata()),
+        non_empty_count_and_theta(sketch_b.metadata()),
+    ) {
+        (None, None) => return Ok(true),
+        (None, _) | (_, None) => return Ok(false),
+        (Some(a), Some(b)) => (a, b),
+    };
+    let union = compute_union(seed, sketch_a, sketch_b)?;
+    Ok(identical_sets(sketch_a_state, sketch_b_state, &union))
+}
+
+fn compute_union<A, B>(
     seed: u64,
+    sketch_a: A,
+    sketch_b: B,
+) -> Result<CompactSketchState<KeyEntry>, Error>
+where
+    A: KeySketch,
+    B: KeySketch,
+{
+    let ThetaFamilySketchMetadata::NonEmpty {
+        seed_hash: a_seed_hash,
+        num_retained: a_num_retained,
+        ..
+    } = sketch_a.metadata()
+    else {
+        unreachable!("Jaccard union inputs are known to be non-empty")
+    };
+    let ThetaFamilySketchMetadata::NonEmpty {
+        seed_hash: b_seed_hash,
+        num_retained: b_num_retained,
+        ..
+    } = sketch_b.metadata()
+    else {
+        unreachable!("Jaccard union inputs are known to be non-empty")
+    };
+    let seed_hash = compute_seed_hash(seed, ErrorKind::InvalidArgument)?;
+    check_seed_hash(seed_hash, a_seed_hash, "A", ErrorKind::InvalidData)?;
+    check_seed_hash(seed_hash, b_seed_hash, "B", ErrorKind::InvalidData)?;
+
+    let mut union = UnionState::new(
+        union_lg_k(a_num_retained, b_num_retained),
+        ResizeFactor::X8,
+        1.0,
+        seed,
+        NoopMergePolicy,
+    )?;
+    union.update(KeyEntries(sketch_a))?;
+    union.update(KeyEntries(sketch_b))?;
+    Ok(union.to_compact_sketch_state(false))
 }
 
-impl JaccardSimilarityOperator {
-    pub(crate) fn new(seed: u64) -> Self {
-        Self { seed }
-    }
+/// Returns whether both sketches have the same retained keys and theta.
+///
+/// When the union retains no additional keys and preserves both input theta values, each input
+/// contains exactly the same retained key set represented by the union.
+fn identical_sets(
+    sketch_a: (usize, u64),
+    sketch_b: (usize, u64),
+    union: &CompactSketchState<KeyEntry>,
+) -> bool {
+    union.retained_entries().len() == sketch_a.0
+        && union.retained_entries().len() == sketch_b.0
+        && union.theta() == sketch_a.1
+        && union.theta() == sketch_b.1
+}
 
-    pub(crate) fn compute<A, B>(
-        &self,
-        sketch_a: &A,
-        sketch_b: &B,
-    ) -> Result<JaccardSimilarity, Error>
-    where
-        A: ThetaKeySketchView,
-        B: ThetaKeySketchView,
-    {
-        if sketch_a.is_empty() && sketch_b.is_empty() {
-            return Ok(JaccardSimilarity::exact(1.0));
-        }
-        if sketch_a.is_empty() || sketch_b.is_empty() {
-            return Ok(JaccardSimilarity::exact(0.0));
-        }
-
-        let seed_hash = compute_seed_hash(self.seed);
-        if seed_hash != sketch_a.seed_hash() {
-            return Err(Error::invalid_argument(format!(
-                "incompatible seed hash: expected {}, got {}",
-                seed_hash,
-                sketch_a.seed_hash(),
-            )));
-        }
-        if seed_hash != sketch_b.seed_hash() {
-            return Err(Error::invalid_argument(format!(
-                "incompatible seed hash: expected {}, got {}",
-                seed_hash,
-                sketch_b.seed_hash(),
-            )));
-        }
-
-        let sketch_a = KeySketchView::new(sketch_a);
-        let sketch_b = KeySketchView::new(sketch_b);
-        let mut union = UnionState::new(
-            union_lg_k(sketch_a.num_retained(), sketch_b.num_retained()),
-            ResizeFactor::X8,
-            1.0,
-            self.seed,
-            NoopMergePolicy,
-        );
-        union.update(&sketch_a)?;
-        union.update(&sketch_b)?;
-        let union = union.to_compact_parts(false);
-
-        if !union.entries.is_empty()
-            && union.entries.len() == sketch_a.num_retained()
-            && union.entries.len() == sketch_b.num_retained()
-            && union.theta == sketch_a.theta64()
-            && union.theta == sketch_b.theta64()
-        {
-            return Ok(JaccardSimilarity::exact(1.0));
-        }
-
-        let union = CompactKeySketchView {
-            entries: union.entries,
-            theta: union.theta,
-            seed_hash: union.seed_hash,
-            ordered: union.ordered,
-            empty: union.empty,
-        };
-        let mut intersection = IntersectionState::new(self.seed, NoopMergePolicy);
-        intersection.update(&sketch_a)?;
-        intersection.update(&sketch_b)?;
-        intersection.update(&union)?;
-        let intersection = intersection.result(false);
-
-        JaccardSimilarity::ratio_bounds(
-            union.num_retained() as u64,
-            intersection.entries.len() as u64,
-            union.theta64(),
-        )
+fn non_empty_count_and_theta(metadata: ThetaFamilySketchMetadata) -> Option<(usize, u64)> {
+    match metadata {
+        ThetaFamilySketchMetadata::Empty { .. } => None,
+        ThetaFamilySketchMetadata::NonEmpty {
+            theta,
+            num_retained,
+            ..
+        } => Some((num_retained, theta)),
     }
 }
 

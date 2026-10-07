@@ -123,28 +123,28 @@ impl SketchSlice<'_> {
         Ok(i32::from_be_bytes(buf))
     }
 
-    /// Reads a 16-bit unsigned integer from the slice in little-endian byte order.
+    /// Reads a 64-bit unsigned integer from the slice in little-endian byte order.
     pub fn read_u64_le(&mut self) -> io::Result<u64> {
         let mut buf = [0u8; 8];
         self.read_exact(&mut buf)?;
         Ok(u64::from_le_bytes(buf))
     }
 
-    /// Reads a 16-bit unsigned integer from the slice in big-endian byte order.
+    /// Reads a 64-bit unsigned integer from the slice in big-endian byte order.
     pub fn read_u64_be(&mut self) -> io::Result<u64> {
         let mut buf = [0u8; 8];
         self.read_exact(&mut buf)?;
         Ok(u64::from_be_bytes(buf))
     }
 
-    /// Reads a 16-bit signed integer from the slice in little-endian byte order.
+    /// Reads a 64-bit signed integer from the slice in little-endian byte order.
     pub fn read_i64_le(&mut self) -> io::Result<i64> {
         let mut buf = [0u8; 8];
         self.read_exact(&mut buf)?;
         Ok(i64::from_le_bytes(buf))
     }
 
-    /// Reads a 16-bit signed integer from the slice in big-endian byte order.
+    /// Reads a 64-bit signed integer from the slice in big-endian byte order.
     pub fn read_i64_be(&mut self) -> io::Result<i64> {
         let mut buf = [0u8; 8];
         self.read_exact(&mut buf)?;

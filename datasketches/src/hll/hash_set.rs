@@ -15,11 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! Hash set for storing unique coupons with linear probing
-//!
-//! Uses open addressing with a custom stride function to handle collisions.
-//! Provides better performance than List when many coupons are stored.
-
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
 use crate::codec::assert::insufficient_data;
@@ -36,7 +31,6 @@ use crate::hll::serialization::SERIAL_VERSION;
 use crate::hll::serialization::SET_PREAMBLE_SIZE;
 use crate::hll::serialization::encode_mode_byte;
 
-/// Hash set for efficient coupon storage with collision handling
 #[derive(Debug, Clone, PartialEq)]
 pub struct HashSet {
     container: Container,
@@ -56,33 +50,27 @@ impl HashSet {
         }
     }
 
-    /// Insert coupon into hash set, ignoring duplicates
     pub fn update(&mut self, coupon: Coupon) {
         let mask = (1 << self.container.lg_size()) - 1;
 
-        // Initial probe position from low bits of coupon
         let mut probe = coupon.raw() & mask;
         let starting_position = probe;
 
         loop {
             let slot = &mut self.container.coupons[probe as usize];
             if slot.is_empty() {
-                // Found empty slot, insert new coupon
                 *slot = coupon;
                 self.container.len += 1;
                 break;
             } else if *slot == coupon {
-                // Duplicate found, nothing to do
                 break;
             }
 
-            // Collision: compute stride and probe next position
-            // Stride is always odd to ensure all slots are visited
+            // An odd stride visits every slot in a power-of-two table.
             let stride = ((coupon.raw() & KEY_MASK_26) >> self.container.lg_size()) | 1;
             probe = (probe + stride) & mask;
             if probe == starting_position {
-                // Invariant: the caller (HllSketch) is responsible for
-                // growing / upgrading the HashSet when it's full
+                // HllSketch must grow or promote the set before it runs out of empty slots.
                 unreachable!("HashSet full; no empty slots");
             }
         }
@@ -92,7 +80,6 @@ impl HashSet {
         &self.container
     }
 
-    /// Deserialize a HashSet from bytes
     pub fn deserialize(
         mut cursor: SketchSlice,
         lg_arr: usize,
@@ -103,33 +90,50 @@ impl HashSet {
             .read_u32_le()
             .map_err(insufficient_data("coupon_count"))?;
         let coupon_count = coupon_count as usize;
+        let array_size = 1usize << lg_arr;
+        if coupon_count >= array_size {
+            return Err(Error::deserial(format!(
+                "SET mode coupon count {coupon_count} must be below capacity {array_size}"
+            )));
+        }
+        let read_count = if compact { coupon_count } else { array_size };
+        let required_bytes = read_count * size_of::<u32>();
+        let available_bytes = cursor.remaining().len();
+        if available_bytes < required_bytes {
+            return Err(Error::insufficient_data_of(
+                "HLL SET mode coupons",
+                format_args!("expected {required_bytes} bytes, got {available_bytes}"),
+            ));
+        }
 
         if compact {
-            // Compact mode: only couponCount coupons are stored
-            // Create a new hash set and insert coupons one by one
+            // Compact images omit empty slots, so probe positions must be rebuilt.
             let mut hash_set = HashSet::new(lg_arr);
             for i in 0..coupon_count {
-                let coupon = cursor.read_u32_le().map_err(|_| {
-                    Error::insufficient_data(format!(
-                        "expected {coupon_count} coupons, failed at index {i}"
-                    ))
+                let coupon = cursor.read_u32_le().map_err(|error| {
+                    Error::insufficient_data_of("HLL SET mode coupon", error)
+                        .with_context("index", i)
                 })?;
                 hash_set.update(Coupon(coupon));
             }
+            if hash_set.container.len() != coupon_count {
+                return Err(Error::deserial("SET mode contains duplicate coupons"));
+            }
             Ok(hash_set)
         } else {
-            // Non-compact mode: full hash table with empty slots
-            let array_size = 1 << lg_arr;
-
-            // Read entire hash table including empty slots
+            // Updatable images contain the probe positions; preserve their table layout.
             let mut coupons = vec![Coupon::EMPTY; array_size];
             for (i, coupon) in coupons.iter_mut().enumerate() {
-                let raw = cursor.read_u32_le().map_err(|_| {
-                    Error::insufficient_data(format!(
-                        "expected {array_size} coupons, failed at index {i}"
-                    ))
+                let raw = cursor.read_u32_le().map_err(|error| {
+                    Error::insufficient_data_of("HLL SET mode coupon", error)
+                        .with_context("index", i)
                 })?;
                 *coupon = Coupon(raw);
+            }
+            if coupons.iter().filter(|coupon| !coupon.is_empty()).count() != coupon_count {
+                return Err(Error::deserial(
+                    "SET mode coupon count does not match occupied slots",
+                ));
             }
 
             Ok(Self {
@@ -142,51 +146,30 @@ impl HashSet {
         }
     }
 
-    /// Serialize a HashSet to bytes
+    /// Serializes occupied coupons in compact format.
     pub fn serialize(&self, lg_config_k: u8, hll_type: HllType) -> Vec<u8> {
-        let compact = true; // Always use compact format
         let coupon_count = self.container.len();
         let lg_arr = self.container.lg_size();
-
-        // Compute size
-        let array_size = if compact { coupon_count } else { 1 << lg_arr };
-        let total_size = SET_PREAMBLE_SIZE + (array_size * 4);
+        let total_size = SET_PREAMBLE_SIZE + (coupon_count * size_of::<u32>());
 
         let mut bytes = SketchBytes::with_capacity(total_size);
 
-        // Write preamble
         bytes.write_u8(HASH_SET_PREINTS);
         bytes.write_u8(SERIAL_VERSION);
         bytes.write_u8(Family::HLL.id);
         bytes.write_u8(lg_config_k);
         bytes.write_u8(lg_arr as u8);
 
-        // Write flags
-        let mut flags = 0u8;
-        if compact {
-            flags |= COMPACT_FLAG_MASK;
-        }
-        bytes.write_u8(flags);
+        bytes.write_u8(COMPACT_FLAG_MASK);
 
-        // Write unused byte
-        bytes.write_u8(0);
+        bytes.write_u8(0); // Unused state byte in Set mode.
 
-        // Write mode byte: SET mode with target HLL type
         bytes.write_u8(encode_mode_byte(CUR_MODE_SET, hll_type as u8));
 
-        // Write coupon count
         bytes.write_u32_le(coupon_count as u32);
 
-        // Write coupons
-        if compact {
-            for coupon in self.container.iter() {
-                bytes.write_u32_le(coupon.raw());
-            }
-        } else {
-            // Non-compact mode: write entire hash table
-            for coupon in self.container.coupons.iter().copied() {
-                bytes.write_u32_le(coupon.raw());
-            }
+        for coupon in self.container.iter() {
+            bytes.write_u32_le(coupon.raw());
         }
 
         bytes.into_bytes()

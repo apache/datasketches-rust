@@ -18,7 +18,7 @@
 use std::hash::Hash;
 use std::num::NonZeroU64;
 
-use crate::thetacommon::RetainedEntry;
+use crate::thetacommon::SketchEntry;
 use crate::thetacommon::hash_table::SketchHashTable;
 
 /// Specific hash table for theta sketch
@@ -28,7 +28,7 @@ use crate::thetacommon::hash_table::SketchHashTable;
 /// * After it reaches the capacity bigger than 2^lg_nom_size, every time the number of entries
 ///   exceeds the threshold, it will rebuild the table: only keep the min 2^lg_nom_size entries and
 ///   update the theta to the k-th smallest entry.
-pub(super) type ThetaHashTable = SketchHashTable<ThetaEntry>;
+pub type ThetaHashTable = SketchHashTable<ThetaEntry>;
 
 /// A retained entry in a Theta sketch.
 #[derive(Debug, Clone, Copy)]
@@ -37,18 +37,18 @@ pub struct ThetaEntry {
 }
 
 impl ThetaEntry {
-    pub(crate) fn new(hash: u64) -> Self {
+    pub(super) fn new(hash: u64) -> Self {
         let hash = NonZeroU64::new(hash).expect("hash must be non-zero");
         Self { hash }
     }
 
-    /// Return the hash used as this entry's key.
+    /// Returns the hash used as this entry's key.
     pub fn hash(&self) -> u64 {
         self.hash.get()
     }
 }
 
-impl RetainedEntry for ThetaEntry {
+impl SketchEntry for ThetaEntry {
     fn hash(&self) -> u64 {
         self.hash.get()
     }
@@ -57,7 +57,7 @@ impl RetainedEntry for ThetaEntry {
 impl ThetaHashTable {
     /// Hashes and inserts a value into the table.
     ///
-    /// Returns true if the value was inserted (new), false otherwise.
+    /// Returns `true` if the value was inserted, or `false` otherwise.
     pub fn try_insert<T: Hash>(&mut self, value: T) -> bool {
         let hash = self.hash(value);
         self.try_insert_hash(hash)
@@ -65,7 +65,7 @@ impl ThetaHashTable {
 
     /// Inserts a pre-hashed value into the table.
     ///
-    /// Returns true if the value was inserted (new), false otherwise.
+    /// Returns `true` if the value was inserted, or `false` otherwise.
     pub fn try_insert_hash(&mut self, hash: u64) -> bool {
         self.upsert_entry(hash, |existing| {
             if existing.is_some() {

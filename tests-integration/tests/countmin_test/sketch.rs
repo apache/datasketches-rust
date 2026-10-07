@@ -1,0 +1,464 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
+use std::panic::AssertUnwindSafe;
+use std::panic::catch_unwind;
+
+use datasketches::countmin::CountMinSketch;
+use datasketches::countmin::UnsignedCountMinValue;
+use datasketches::error::ErrorKind;
+use googletest::assert_that;
+use googletest::prelude::ge;
+use googletest::prelude::le;
+
+#[test]
+fn weight_overflow_preserves_unsigned_state() {
+    let mut sketch = CountMinSketch::<u8>::new(2, 8).unwrap();
+    sketch.update_with_weight("x", u8::MAX - 1);
+    let mut one = CountMinSketch::<u8>::new(2, 8).unwrap();
+    one.update("x");
+    sketch.merge(&one).unwrap();
+    assert_eq!(sketch.total_weight(), u8::MAX);
+    let before = sketch.clone();
+
+    sketch.update_with_weight("x", 0);
+    assert!(catch_unwind(AssertUnwindSafe(|| sketch.update("x"))).is_err());
+    assert_eq!(sketch, before);
+    assert_eq!(
+        sketch.merge(&one).unwrap_err().kind(),
+        ErrorKind::InvalidArgument
+    );
+    assert_eq!(sketch, before);
+}
+
+#[test]
+fn weight_overflow_preserves_signed_state() {
+    let mut sketch = CountMinSketch::<i8>::new(2, 8).unwrap();
+    let empty = sketch.clone();
+    assert!(catch_unwind(AssertUnwindSafe(|| sketch.update_with_weight("x", i8::MIN))).is_err());
+    assert_eq!(sketch, empty);
+
+    sketch.update_with_weight("x", -i8::MAX);
+    assert_eq!(sketch.total_weight(), i8::MAX);
+    assert_eq!(sketch.estimate("x"), -i8::MAX);
+    let before = sketch.clone();
+    // Cancellation reduces the counter, but still increases the absolute stream weight.
+    assert!(catch_unwind(AssertUnwindSafe(|| sketch.update("x"))).is_err());
+    assert_eq!(sketch, before);
+    assert_eq!(
+        CountMinSketch::<i8>::deserialize(&sketch.serialize()).unwrap(),
+        sketch
+    );
+}
+
+#[test]
+fn upper_bound_clamps_on_overflow() {
+    let mut unsigned = CountMinSketch::<u8>::new(2, 8).unwrap();
+    unsigned.update_with_weight("x", u8::MAX);
+    assert_eq!(unsigned.upper_bound("x"), u8::MAX);
+
+    let mut signed = CountMinSketch::<i8>::new(2, 8).unwrap();
+    signed.update_with_weight("x", i8::MAX);
+    assert_eq!(signed.upper_bound("x"), i8::MAX);
+}
+
+#[test]
+fn upper_bound_preserves_large_integer_precision_for_both_counter_types() {
+    let mut signed = CountMinSketch::<i64>::new(3, 128).unwrap();
+    let mut unsigned = CountMinSketch::<u64>::new(3, 128).unwrap();
+    signed.update_with_weight("item", i64::MAX);
+    unsigned.update_with_weight("item", i64::MAX as u64);
+    assert_eq!(signed.estimate("missing"), 0);
+    assert_eq!(unsigned.estimate("missing"), 0);
+
+    // Multiplying this epsilon by 2^63 gives an exactly representable integer.
+    // Subtracting one from the weight subtracts epsilon, so truncation must drop one.
+    let error = (signed.relative_error() * (1_u64 << 63) as f64) as u64 - 1;
+    assert_eq!(signed.upper_bound("missing"), error as i64);
+    assert_eq!(unsigned.upper_bound("missing"), error);
+
+    let mut negative = CountMinSketch::<i64>::new(3, 128).unwrap();
+    negative.update_with_weight("item", -i64::MAX);
+    assert_eq!(negative.upper_bound("item"), -i64::MAX + error as i64);
+}
+
+#[test]
+fn test_init_defaults() {
+    let sketch = CountMinSketch::<i64>::new(3, 5).unwrap();
+    assert_eq!(sketch.num_hashes(), 3);
+    assert_eq!(sketch.num_buckets(), 5);
+    assert_eq!(sketch.seed(), 9001);
+    assert!(sketch.is_empty());
+    assert_eq!(sketch.total_weight(), 0);
+    assert_eq!(sketch.estimate("missing"), 0);
+}
+
+#[test]
+fn test_parameter_suggestions() {
+    assert_eq!(CountMinSketch::<i64>::suggest_num_buckets(2.0).unwrap(), 3);
+    assert_eq!(CountMinSketch::<i64>::suggest_num_buckets(0.2).unwrap(), 14);
+    assert_eq!(CountMinSketch::<i64>::suggest_num_buckets(0.1).unwrap(), 28);
+    assert_eq!(
+        CountMinSketch::<i64>::suggest_num_buckets(0.05).unwrap(),
+        55
+    );
+    assert_eq!(
+        CountMinSketch::<i64>::suggest_num_buckets(0.01).unwrap(),
+        272
+    );
+
+    assert_eq!(
+        CountMinSketch::<i64>::suggest_num_hashes(0.682689492).unwrap(),
+        2
+    );
+    assert_eq!(CountMinSketch::<i64>::suggest_num_hashes(0.0).unwrap(), 1);
+    assert_eq!(
+        CountMinSketch::<i64>::suggest_num_hashes(0.954499736).unwrap(),
+        4
+    );
+    assert_eq!(
+        CountMinSketch::<i64>::suggest_num_hashes(0.997300204).unwrap(),
+        6
+    );
+
+    let buckets = CountMinSketch::<i64>::suggest_num_buckets(2.0).unwrap();
+    let hashes = CountMinSketch::<i64>::suggest_num_hashes(0.0).unwrap();
+    CountMinSketch::<i64>::new(hashes, buckets).unwrap();
+
+    let buckets_for_error = CountMinSketch::<i64>::suggest_num_buckets(0.1).unwrap();
+    let sketch = CountMinSketch::<i64>::new(3, buckets_for_error).unwrap();
+    assert_that!(sketch.relative_error(), le(0.1));
+
+    assert_eq!(
+        CountMinSketch::<i64>::suggest_num_buckets(f64::NAN)
+            .unwrap_err()
+            .kind(),
+        ErrorKind::InvalidArgument
+    );
+    assert_eq!(
+        CountMinSketch::<i64>::suggest_num_buckets(0.0)
+            .unwrap_err()
+            .kind(),
+        ErrorKind::InvalidArgument
+    );
+    assert_eq!(
+        CountMinSketch::<i64>::suggest_num_buckets(f64::MIN_POSITIVE)
+            .unwrap_err()
+            .kind(),
+        ErrorKind::InvalidArgument
+    );
+    assert_eq!(
+        CountMinSketch::<i64>::suggest_num_hashes(1.1)
+            .unwrap_err()
+            .kind(),
+        ErrorKind::InvalidArgument
+    );
+}
+
+#[test]
+fn test_update_and_bounds() {
+    let mut sketch = CountMinSketch::<i64>::with_seed(3, 128, 123).unwrap();
+    sketch.update("x");
+    sketch.update_with_weight("x", 9);
+    assert_eq!(sketch.estimate("x"), 10);
+    assert_eq!(sketch.total_weight(), 10);
+    let estimate = sketch.estimate("x");
+    let upper = sketch.upper_bound("x");
+    let lower = sketch.lower_bound("x");
+    assert_that!(estimate, ge(lower));
+    assert_that!(estimate, le(upper));
+}
+
+#[test]
+fn test_update_and_bounds_with_scaling() {
+    let mut sketch = CountMinSketch::<u64>::with_seed(3, 128, 123).unwrap();
+    sketch.update_with_weight("x", 10);
+
+    let estimate = sketch.estimate("x");
+    let upper = sketch.upper_bound("x");
+    let lower = sketch.lower_bound("x");
+    assert_eq!(estimate, 10);
+    assert_that!(estimate, ge(lower));
+    assert_that!(estimate, le(upper));
+
+    let eps = sketch.relative_error();
+
+    sketch.halve();
+    let estimate = sketch.estimate("x");
+    let upper = sketch.upper_bound("x");
+    let lower = sketch.lower_bound("x");
+    assert_eq!(sketch.total_weight(), 5);
+    assert_eq!(estimate, 5);
+    assert_that!(estimate, ge(lower));
+    assert_that!(estimate, le(upper));
+    assert_eq!(
+        upper,
+        estimate + (eps * sketch.total_weight() as f64) as u64
+    );
+
+    sketch.decay(0.5);
+    let estimate = sketch.estimate("x");
+    let upper = sketch.upper_bound("x");
+    let lower = sketch.lower_bound("x");
+    assert_eq!(sketch.total_weight(), 2);
+    assert_eq!(estimate, 2);
+    assert_that!(estimate, ge(lower));
+    assert_that!(estimate, le(upper));
+    assert_eq!(
+        upper,
+        estimate + (eps * sketch.total_weight() as f64) as u64
+    );
+}
+
+#[test]
+fn test_negative_weights() {
+    let mut sketch = CountMinSketch::<i64>::with_seed(2, 32, 123).unwrap();
+    sketch.update_with_weight("y", -1);
+    assert_eq!(sketch.total_weight(), 1);
+    assert_eq!(sketch.estimate("y"), -1);
+    sketch.update_with_weight("x", 2);
+    assert_eq!(sketch.total_weight(), 3);
+}
+
+#[test]
+fn test_halve() {
+    let buckets = CountMinSketch::<u64>::suggest_num_buckets(0.01).unwrap();
+    let hashes = CountMinSketch::<u64>::suggest_num_hashes(0.9).unwrap();
+    let mut sketch = CountMinSketch::<u64>::new(hashes, buckets).unwrap();
+
+    for i in 0..1000usize {
+        for _ in 0..i {
+            sketch.update(i as u64);
+        }
+    }
+
+    for i in 0..1000usize {
+        assert_that!(sketch.estimate(i as u64), ge(i as u64));
+    }
+
+    sketch.halve();
+
+    for i in 0..1000usize {
+        assert_that!(sketch.estimate(i as u64), ge((i as u64) / 2));
+    }
+}
+
+#[test]
+fn test_decay() {
+    let buckets = CountMinSketch::<u64>::suggest_num_buckets(0.01).unwrap();
+    let hashes = CountMinSketch::<u64>::suggest_num_hashes(0.9).unwrap();
+    let mut sketch = CountMinSketch::<u64>::new(hashes, buckets).unwrap();
+
+    for i in 0..1000usize {
+        for _ in 0..i {
+            sketch.update(i as u64);
+        }
+    }
+
+    for i in 0..1000usize {
+        assert_that!(sketch.estimate(i as u64), ge(i as u64));
+    }
+
+    const FACTOR: f64 = 0.5;
+    sketch.decay(FACTOR);
+
+    for i in 0..1000usize {
+        let expected = ((i as f64) * FACTOR).floor() as u64;
+        assert_that!(sketch.estimate(i as u64), ge(expected));
+    }
+}
+
+#[test]
+fn test_decay_preserves_large_integer_precision() {
+    for weight in [(1_u64 << 53) + 1, u64::MAX - 1, u64::MAX] {
+        for (factor, expected) in [
+            (1.0, weight),
+            (0.5, weight / 2),
+            (0.75, ((u128::from(weight) * 3) / 4) as u64),
+            (1.0_f64.next_down(), weight - weight.div_ceil(1 << 53)),
+            (2.0_f64.powi(-63), weight >> 63),
+            (2.0_f64.powi(-64), 0),
+            (f64::from_bits(1), 0),
+        ] {
+            let mut sketch = CountMinSketch::<u64>::new(3, 128).unwrap();
+            sketch.update_with_weight("item", weight);
+            sketch.decay(factor);
+            assert_eq!(
+                sketch.total_weight(),
+                expected,
+                "weight={weight}, factor={factor}"
+            );
+            assert_eq!(sketch.estimate("item"), expected);
+            let restored = CountMinSketch::<u64>::deserialize(&sketch.serialize()).unwrap();
+            assert_eq!(restored.total_weight(), expected);
+        }
+    }
+}
+
+#[test]
+fn decay_truncates_the_exact_binary_product() {
+    for (weight, factor, expected) in [
+        (100, 0.99, 98),
+        (100, 0.99_f64.next_up(), 99),
+        (10, 0.3, 2),
+        (10, 0.3_f64.next_up(), 3),
+    ] {
+        let mut sketch = CountMinSketch::<u64>::new(3, 128).unwrap();
+        sketch.update_with_weight("item", weight);
+        sketch.decay(factor);
+        assert_eq!(sketch.total_weight(), expected);
+        assert_eq!(sketch.estimate("item"), expected);
+    }
+}
+
+#[test]
+fn decay_identity_and_halving_preserve_the_whole_sketch() {
+    fn check<T: UnsignedCountMinValue + std::fmt::Debug>(weights: [T; 3]) {
+        let mut sketch = CountMinSketch::<T>::new(3, 128).unwrap();
+        for (item, weight) in weights.into_iter().enumerate() {
+            sketch.update_with_weight(item, weight);
+        }
+
+        let mut decayed = sketch.clone();
+        decayed.decay(1.0);
+        assert_eq!(decayed, sketch);
+
+        decayed.decay(0.5);
+        sketch.halve();
+        assert_eq!(decayed, sketch);
+    }
+
+    check([u8::MAX / 2, u8::MAX / 4, 1]);
+    check([u16::MAX / 2, u16::MAX / 4, 1]);
+    check([u32::MAX / 2, u32::MAX / 4, 1]);
+    check([u64::MAX / 2, u64::MAX / 4, 1]);
+}
+
+#[test]
+fn test_merge() {
+    let mut left = CountMinSketch::<i64>::new(3, 64).unwrap();
+    let mut right = CountMinSketch::<i64>::new(3, 64).unwrap();
+    for _ in 0..10 {
+        left.update("a");
+    }
+    for _ in 0..4 {
+        right.update("a");
+        right.update("b");
+    }
+    left.merge(&right).unwrap();
+    assert_eq!(left.total_weight(), 18);
+    assert_that!(left.estimate("a"), ge(14));
+    assert_that!(left.estimate("b"), ge(4));
+}
+
+#[test]
+fn test_serialize_deserialize_empty() {
+    let sketch = CountMinSketch::<i64>::with_seed(2, 5, 123).unwrap();
+    let bytes = sketch.serialize();
+    let decoded = CountMinSketch::<i64>::deserialize_with_seed(&bytes, 123).unwrap();
+    assert!(decoded.is_empty());
+    assert_eq!(decoded.num_hashes(), 2);
+    assert_eq!(decoded.num_buckets(), 5);
+    assert_eq!(decoded.seed(), 123);
+}
+
+#[test]
+fn test_serialize_deserialize_non_empty() {
+    let mut sketch = CountMinSketch::<i64>::with_seed(3, 32, 123).unwrap();
+    for i in 0..100i64 {
+        sketch.update(i);
+    }
+    let bytes = sketch.serialize();
+    let decoded = CountMinSketch::<i64>::deserialize_with_seed(&bytes, 123).unwrap();
+    assert_eq!(decoded.total_weight(), sketch.total_weight());
+    assert_eq!(decoded.estimate(42i64), sketch.estimate(42i64));
+}
+
+#[test]
+fn test_serialize_deserialize_non_empty_u64() {
+    let mut sketch = CountMinSketch::<u64>::with_seed(3, 32, 123).unwrap();
+    for i in 0..100u64 {
+        sketch.update(i);
+    }
+    let bytes = sketch.serialize();
+    let decoded = CountMinSketch::<u64>::deserialize_with_seed(&bytes, 123).unwrap();
+    assert_eq!(decoded.total_weight(), sketch.total_weight());
+    assert_eq!(decoded.estimate(42u64), sketch.estimate(42u64));
+}
+
+#[test]
+fn test_truncated_non_empty_payload_is_rejected_before_table_allocation() {
+    let mut bytes = CountMinSketch::<i64>::new(1, 3).unwrap().serialize();
+    bytes[3] = 0;
+    bytes[8..12].copy_from_slice(&(1u32 << 29).to_le_bytes());
+
+    let error = CountMinSketch::<i64>::deserialize(&bytes).unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::InvalidData);
+    assert!(error.message().contains("CountMin payload"));
+    assert!(error.message().contains("expected"));
+    assert!(error.message().contains("got"));
+}
+
+#[test]
+fn test_invalid_hashes_return_error() {
+    let error = CountMinSketch::<i64>::new(0, 5).unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::InvalidArgument);
+}
+
+#[test]
+fn test_invalid_buckets_return_error() {
+    let error = CountMinSketch::<i64>::new(1, 2).unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::InvalidArgument);
+}
+
+#[test]
+fn test_merge_incompatible() {
+    let mut left = CountMinSketch::<i64>::new(3, 64).unwrap();
+    let right = CountMinSketch::<i64>::new(2, 64).unwrap();
+    let error = left.merge(&right).unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::InvalidArgument);
+}
+
+#[test]
+fn test_increment_single_key_like_rust_count_min_sketch() {
+    let mut sketch = CountMinSketch::<i64>::new(4, 32).unwrap();
+    for _ in 0..300 {
+        sketch.update("key");
+    }
+    assert_eq!(sketch.estimate("key"), 300);
+}
+
+#[test]
+fn test_estimated_size() {
+    let mut sketch = CountMinSketch::<i64>::new(4, 128).unwrap();
+    assert_eq!(sketch.estimated_size(), 4200);
+
+    // The backing tables are allocated up front; updates do not grow the sketch.
+    sketch.update("apple");
+    assert_eq!(sketch.estimated_size(), 4200);
+}
+
+#[test]
+fn test_increment_multi_like_rust_count_min_sketch() {
+    let mut sketch = CountMinSketch::<i64>::new(6, 128).unwrap();
+    for i in 0..1_000_000u64 {
+        sketch.update(i % 100);
+    }
+    for key in 0..100u64 {
+        assert_that!(sketch.estimate(key), ge(9_000));
+    }
+}

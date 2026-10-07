@@ -22,10 +22,12 @@
 //! Theta entries carry no summary, so nothing needs to be combined.
 
 use crate::error::Error;
+use crate::error::ErrorKind;
 use crate::hash::DEFAULT_UPDATE_SEED;
+use crate::hash::compute_seed_hash;
 use crate::theta::CompactThetaSketch;
 use crate::theta::ThetaSketchView;
-use crate::thetacommon::a_not_b::ANotBOperator;
+use crate::thetacommon::a_not_b;
 
 /// Set difference operator (`A and not B`) for Theta sketches.
 ///
@@ -38,11 +40,11 @@ use crate::thetacommon::a_not_b::ANotBOperator;
 /// use datasketches::theta::ThetaANotB;
 /// use datasketches::theta::ThetaSketchBuilder;
 ///
-/// let mut a = ThetaSketchBuilder::default().build();
+/// let mut a = ThetaSketchBuilder::default().build().unwrap();
 /// a.update("apple");
 /// a.update("banana");
 ///
-/// let mut b = ThetaSketchBuilder::default().build();
+/// let mut b = ThetaSketchBuilder::default().build().unwrap();
 /// b.update("banana");
 ///
 /// let a_not_b = ThetaANotB::default();
@@ -51,48 +53,46 @@ use crate::thetacommon::a_not_b::ANotBOperator;
 /// ```
 #[derive(Debug, Clone, Copy)]
 pub struct ThetaANotB {
-    op: ANotBOperator,
+    seed_hash: u16,
 }
 
 impl Default for ThetaANotB {
     fn default() -> Self {
-        Self::with_seed(DEFAULT_UPDATE_SEED)
+        Self::with_seed(DEFAULT_UPDATE_SEED).unwrap()
     }
 }
 
 impl ThetaANotB {
     /// Creates a new set difference operator for the given `seed`.
-    pub fn with_seed(seed: u64) -> Self {
-        Self {
-            op: ANotBOperator::new(seed),
-        }
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the computed seed hash is zero.
+    pub fn with_seed(seed: u64) -> Result<Self, Error> {
+        Ok(Self {
+            seed_hash: compute_seed_hash(seed, ErrorKind::InvalidArgument)?,
+        })
     }
 
     /// Computes `a and not b`.
     ///
     /// The result retains every key of `a` (below the combined theta) that is not present in `b`.
-    /// If `ordered` is true, the retained entries are sorted ascending by hash.
+    /// If `ordered` is `true`, the retained entries are sorted ascending by hash.
     ///
     /// # Errors
     ///
     /// Returns an error if either non-trivial input has a seed hash that differs from this
     /// operator's seed.
-    pub fn compute<A, B>(&self, a: &A, b: &B, ordered: bool) -> Result<CompactThetaSketch, Error>
-    where
-        A: ThetaSketchView,
-        B: ThetaSketchView,
-    {
-        let parts = self.op.compute(a, b, ordered)?;
-        Ok(CompactThetaSketch::from_parts(
-            parts
-                .entries
-                .into_iter()
-                .map(|entry| entry.hash())
-                .collect(),
-            parts.theta,
-            parts.seed_hash,
-            parts.ordered,
-            parts.empty,
-        ))
+    pub fn compute<'a, 'b>(
+        &self,
+        a: impl Into<ThetaSketchView<'a>>,
+        b: impl Into<ThetaSketchView<'b>>,
+        ordered: bool,
+    ) -> Result<CompactThetaSketch, Error> {
+        let a = a.into();
+        let b = b.into();
+        let compact_state = a_not_b::compute(self.seed_hash, a, b, ordered)?
+            .map_retained_entries(|entry| entry.hash());
+        Ok(CompactThetaSketch::from_compact_state(compact_state))
     }
 }

@@ -71,6 +71,15 @@ impl Family {
         max_pre_longs: 4,
     };
 
+    /// KLL sketch for estimating quantiles and ranks.
+    #[cfg(feature = "kll")]
+    pub const KLL: Family = Family {
+        id: 15,
+        name: "KLL",
+        min_pre_longs: 1,
+        max_pre_longs: 2,
+    };
+
     /// Compressed Probabilistic Counting (CPC) Sketch.
     #[cfg(feature = "cpc")]
     pub const CPC: Family = Family {
@@ -78,6 +87,15 @@ impl Family {
         name: "CPC",
         min_pre_longs: 1,
         max_pre_longs: 5,
+    };
+
+    /// Relative Error Quantiles (REQ) sketch.
+    #[cfg(feature = "req")]
+    pub const REQ: Family = Family {
+        id: 17,
+        name: "REQ",
+        min_pre_longs: 1,
+        max_pre_longs: 2,
     };
 
     /// CountMin Sketch

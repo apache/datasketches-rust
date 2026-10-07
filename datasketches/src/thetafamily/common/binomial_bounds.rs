@@ -285,11 +285,7 @@ static UB_EQUIV_TABLE: [f64; 363] = [
 /// # Errors
 ///
 /// Returns an error if `theta` is not in the range `(0.0, 1.0]`.
-pub(crate) fn lower_bound(
-    num_samples: u64,
-    theta: f64,
-    num_std_dev: NumStdDev,
-) -> Result<f64, Error> {
+pub fn lower_bound(num_samples: u64, theta: f64, num_std_dev: NumStdDev) -> Result<f64, Error> {
     if theta <= 0.0 || theta > 1.0 {
         return Err(Error::invalid_argument(format!(
             "theta must be in the range (0.0, 1.0], got {theta}"
@@ -320,7 +316,7 @@ pub(crate) fn lower_bound(
 /// # Errors
 ///
 /// Returns an error if `theta` is not in the range `(0.0, 1.0]`.
-pub(crate) fn upper_bound(
+pub fn upper_bound(
     num_samples: u64,
     theta: f64,
     num_std_dev: NumStdDev,
@@ -342,11 +338,7 @@ pub(crate) fn upper_bound(
 }
 
 /// Computes an approximate lower bound for an unknown binomial proportion.
-pub(crate) fn approximate_lower_bound_on_p(
-    n: u64,
-    k: u64,
-    num_std_devs: f64,
-) -> Result<f64, Error> {
+pub fn approximate_lower_bound_on_p(n: u64, k: u64, num_std_devs: f64) -> Result<f64, Error> {
     check_proportion_inputs(n, k)?;
     if n == 0 || k == 0 {
         Ok(0.0)
@@ -367,11 +359,7 @@ pub(crate) fn approximate_lower_bound_on_p(
 }
 
 /// Computes an approximate upper bound for an unknown binomial proportion.
-pub(crate) fn approximate_upper_bound_on_p(
-    n: u64,
-    k: u64,
-    num_std_devs: f64,
-) -> Result<f64, Error> {
+pub fn approximate_upper_bound_on_p(n: u64, k: u64, num_std_devs: f64) -> Result<f64, Error> {
     check_proportion_inputs(n, k)?;
     if n == 0 || k == n {
         Ok(1.0)
@@ -684,6 +672,12 @@ fn compute_approx_binomial_upper_bound(
 
 #[cfg(test)]
 mod tests {
+    use googletest::assert_that;
+    use googletest::prelude::anything;
+    use googletest::prelude::err;
+    use googletest::prelude::gt;
+    use googletest::prelude::near;
+
     use super::*;
 
     fn run_test_aux(max_num_samples: u64, ci: NumStdDev, min_p: f64) -> [f64; 5] {
@@ -800,10 +794,7 @@ mod tests {
 
         fn assert_approx_equal(ci: NumStdDev, j: usize, expected: f64, actual: f64) {
             let ratio = actual / expected;
-            assert!(
-                (ratio - 1.0).abs() < TOL,
-                "ci={ci:?}, j={j}: expected {expected}, got {actual}, ratio={ratio}",
-            );
+            assert_that!(ratio, near(1.0, TOL), "ci={ci:?}, j={j}",);
         }
 
         for ci in [NumStdDev::One, NumStdDev::Two, NumStdDev::Three] {
@@ -834,13 +825,19 @@ mod tests {
     #[test]
     fn check_check_args() {
         // Invalid theta values
-        assert!(lower_bound(10, 0.0, NumStdDev::One).is_err());
-        assert!(lower_bound(10, 1.01, NumStdDev::One).is_err());
-        assert!(lower_bound(10, -0.1, NumStdDev::One).is_err());
+        assert_that!(lower_bound(10, 0.0, NumStdDev::One), err(anything()));
+        assert_that!(lower_bound(10, 1.01, NumStdDev::One), err(anything()));
+        assert_that!(lower_bound(10, -0.1, NumStdDev::One), err(anything()));
 
-        assert!(upper_bound(10, 0.0, NumStdDev::One, false).is_err());
-        assert!(upper_bound(10, 1.01, NumStdDev::One, false).is_err());
-        assert!(upper_bound(10, -0.1, NumStdDev::One, false).is_err());
+        assert_that!(upper_bound(10, 0.0, NumStdDev::One, false), err(anything()));
+        assert_that!(
+            upper_bound(10, 1.01, NumStdDev::One, false),
+            err(anything())
+        );
+        assert_that!(
+            upper_bound(10, -0.1, NumStdDev::One, false),
+            err(anything())
+        );
     }
 
     #[test]
@@ -868,13 +865,13 @@ mod tests {
         // When no_data_seen is false with zero samples and theta < 1.0,
         // upper bound should be calculated normally and be greater than 0
         let result = upper_bound(0, 0.5, NumStdDev::One, false).unwrap();
-        assert!(result > 0.0); // Upper bound should exist
+        assert_that!(result, gt(0.0)); // Upper bound should exist
     }
 
     #[test]
     fn rejects_invalid_proportion_counts() {
-        assert!(approximate_lower_bound_on_p(1, 2, 2.0).is_err());
-        assert!(approximate_upper_bound_on_p(1, 2, 2.0).is_err());
+        assert_that!(approximate_lower_bound_on_p(1, 2, 2.0), err(anything()));
+        assert_that!(approximate_upper_bound_on_p(1, 2, 2.0), err(anything()));
     }
 
     #[test]
@@ -907,8 +904,8 @@ mod tests {
         for k in 0..=5 {
             let lower = approximate_lower_bound_on_p(5, k, 2.0).unwrap();
             let upper = approximate_upper_bound_on_p(5, k, 2.0).unwrap();
-            assert!((lower - LOWER[k as usize]).abs() < 1e-14);
-            assert!((upper - UPPER[k as usize]).abs() < 1e-14);
+            assert_that!(lower, near(LOWER[k as usize], 1e-14));
+            assert_that!(upper, near(UPPER[k as usize], 1e-14));
         }
     }
 }

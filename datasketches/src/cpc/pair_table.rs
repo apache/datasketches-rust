@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use crate::error::Error;
+
 const UPSIZE_NUMERATOR: u32 = 3;
 const UPSIZE_DENOMINATOR: u32 = 4;
 const DOWNSIZE_NUMERATOR: u32 = 1;
@@ -25,7 +27,7 @@ const DOWNSIZE_DENOMINATOR: u32 = 4;
 /// This table stores `(row, col)` pairs and uses linear probing for collision resolution. It is
 /// optimized for scenarios where the cardinality of entries is low.
 #[derive(Debug, Clone)]
-pub(super) struct PairTable {
+pub struct PairTable {
     /// log2 of number of slots
     lg_size: u8,
     num_valid_bits: u8,
@@ -52,9 +54,17 @@ impl PairTable {
     }
 
     /// A constructor specifically tailored to be a part of FM85 decompression scheme.
-    pub fn from_slots(lg_size: u8, num_items: u32, slots: Vec<u32>) -> Self {
+    pub fn from_slots(lg_size: u8, num_items: u32, slots: Vec<u32>) -> Result<Self, Error> {
+        if slots.len() < num_items as usize {
+            return Err(Error::deserial("CPC pair table contains too few slots"));
+        }
         let mut lg_num_slots = 2;
-        while UPSIZE_DENOMINATOR * num_items > (UPSIZE_NUMERATOR * (1 << lg_num_slots)) {
+        while u64::from(UPSIZE_DENOMINATOR) * u64::from(num_items)
+            > u64::from(UPSIZE_NUMERATOR) * (1u64 << lg_num_slots)
+        {
+            if lg_num_slots == 26 {
+                return Err(Error::deserial("CPC pair table is too large"));
+            }
             lg_num_slots += 1;
         }
 
@@ -65,10 +75,11 @@ impl PairTable {
         // the problem might not occur.
 
         for i in 0..num_items {
-            table.must_insert(slots[i as usize]);
+            if !table.maybe_insert(slots[i as usize]) {
+                return Err(Error::deserial("CPC pair table contains a duplicate pair"));
+            }
         }
-        table.num_items = num_items;
-        table
+        Ok(table)
     }
 
     pub fn slots(&self) -> &[u32] {

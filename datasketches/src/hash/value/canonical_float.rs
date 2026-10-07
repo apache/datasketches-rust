@@ -26,8 +26,8 @@
 use std::hash::Hash;
 use std::hash::Hasher;
 
-use super::HashStrategy;
-use super::Value;
+use crate::hash::value::HashStrategy;
+use crate::hash::value::Value;
 
 /// A floating-point value wrapper that uses canonical floating-point hashing.
 ///
@@ -38,7 +38,7 @@ pub type CanonicalFloat<T> = Value<T, CanonicalFloatStrategy>;
 #[doc(hidden)]
 pub struct CanonicalFloatStrategy;
 
-/// Create a canonical hashable value from a `f32` value.
+/// Creates a canonical hashable value from an `f32` value.
 ///
 /// `f32` values are converted to `f64` before hashing. Values that are not exactly representable
 /// in `f32` may hash differently from the corresponding `f64` value. Signed zero values hash the
@@ -68,7 +68,7 @@ pub fn from_f32(v: f32) -> CanonicalFloat<f32> {
     CanonicalFloat::new(v)
 }
 
-/// Create a canonical hashable value from a `f64` value.
+/// Creates a canonical hashable value from an `f64` value.
 ///
 /// Signed zero values hash the same, and all NaN values use one canonical NaN bit pattern.
 ///
@@ -97,6 +97,7 @@ pub fn from_f64(v: f64) -> CanonicalFloat<f64> {
 }
 
 impl HashStrategy<f32> for CanonicalFloatStrategy {
+    #[inline(always)]
     fn hash<H: Hasher>(value: &f32, state: &mut H) {
         let value = *value as f64;
         let canonical_value = from_f64(value);
@@ -105,6 +106,7 @@ impl HashStrategy<f32> for CanonicalFloatStrategy {
 }
 
 impl HashStrategy<f64> for CanonicalFloatStrategy {
+    #[inline(always)]
     fn hash<H: Hasher>(value: &f64, state: &mut H) {
         let canonical = if value.is_nan() {
             // Java's Double.doubleToLongBits() NaN value.

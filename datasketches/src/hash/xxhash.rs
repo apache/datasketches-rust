@@ -17,6 +17,7 @@
 
 use std::hash::Hasher;
 
+use crate::hash::read_u32_le;
 use crate::hash::read_u64_le;
 
 const DEFAULT_SEED: u64 = 0;
@@ -43,6 +44,7 @@ pub struct XxHash64 {
 }
 
 impl XxHash64 {
+    #[inline(always)]
     pub fn with_seed(seed: u64) -> Self {
         XxHash64 {
             seed,
@@ -56,6 +58,7 @@ impl XxHash64 {
         }
     }
 
+    #[inline(always)]
     pub fn finish64(&self) -> u64 {
         let mut hash = if self.total_len >= 32 {
             let mut acc = self
@@ -88,8 +91,8 @@ impl XxHash64 {
         }
 
         if idx + 4 <= buf.len() {
-            let k1 = read_u64_le(&buf[idx..idx + 4]);
-            hash ^= k1.wrapping_mul(P1);
+            let k1 = read_u32_le(&buf[idx..idx + 4]);
+            hash ^= u64::from(k1).wrapping_mul(P1);
             hash = hash.rotate_left(23).wrapping_mul(P2).wrapping_add(P3);
             idx += 4;
         }
@@ -105,6 +108,7 @@ impl XxHash64 {
     }
 
     #[allow(dead_code)]
+    #[inline(always)]
     pub fn hash_u64(input: u64, seed: u64) -> u64 {
         let mut hash = seed.wrapping_add(P5).wrapping_add(8);
         let mut k1 = input;
@@ -116,7 +120,7 @@ impl XxHash64 {
         finalize(hash)
     }
 
-    #[inline]
+    #[inline(always)]
     fn update(&mut self, chunk: &[u8]) {
         self.v1 = round(self.v1, read_u64_le(&chunk[0..8]));
         self.v2 = round(self.v2, read_u64_le(&chunk[8..16]));
@@ -132,10 +136,12 @@ impl Default for XxHash64 {
 }
 
 impl Hasher for XxHash64 {
+    #[inline(always)]
     fn finish(&self) -> u64 {
         self.finish64()
     }
 
+    #[inline(always)]
     fn write(&mut self, bytes: &[u8]) {
         self.total_len = self.total_len.wrapping_add(bytes.len() as u64);
 
@@ -169,14 +175,14 @@ impl Hasher for XxHash64 {
     }
 }
 
-#[inline]
+#[inline(always)]
 fn round(mut acc: u64, input: u64) -> u64 {
     acc = acc.wrapping_add(input.wrapping_mul(P2));
     acc = acc.rotate_left(31);
     acc.wrapping_mul(P1)
 }
 
-#[inline]
+#[inline(always)]
 fn merge_round(mut acc: u64, val: u64) -> u64 {
     let mut v = val;
     v = v.wrapping_mul(P2);
@@ -186,7 +192,7 @@ fn merge_round(mut acc: u64, val: u64) -> u64 {
     acc.wrapping_mul(P1).wrapping_add(P4)
 }
 
-#[inline]
+#[inline(always)]
 fn finalize(mut hash: u64) -> u64 {
     hash ^= hash >> 33;
     hash = hash.wrapping_mul(P2);

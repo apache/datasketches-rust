@@ -43,6 +43,7 @@ struct Command {
 impl Command {
     fn run(self) {
         match self.sub {
+            SubCommand::Bench(cmd) => cmd.run(),
             SubCommand::Check(cmd) => cmd.run(),
             SubCommand::Docs(cmd) => cmd.run(),
             SubCommand::Lint(cmd) => cmd.run(),
@@ -55,6 +56,8 @@ impl Command {
 
 #[derive(Subcommand)]
 enum SubCommand {
+    #[clap(about = "Run workspace benchmarks.")]
+    Bench(CommandBench),
     #[clap(about = "Check datasketches under the feature matrix.")]
     Check(CommandCheck),
     #[clap(about = "Generate documentation and open for preview")]
@@ -73,6 +76,15 @@ enum SubCommand {
         about = "Generate deterministic Rust serialization snapshots."
     )]
     GenerateSnapshots(CommandGenerateSnapshots),
+}
+
+#[derive(Parser)]
+struct CommandBench;
+
+impl CommandBench {
+    fn run(self) {
+        run_command(make_bench_cmd());
+    }
 }
 
 #[derive(Parser)]
@@ -184,6 +196,12 @@ fn run_command(mut cmd: StdCommand) {
     assert!(status.success(), "command failed: {status}");
 }
 
+fn make_bench_cmd() -> StdCommand {
+    let mut cmd = find_command("cargo");
+    cmd.args(["bench", "--package", "benchmarks", "--bench", "benchmarks"]);
+    cmd
+}
+
 fn make_test_cmd(no_capture: bool, features: &[String]) -> StdCommand {
     let mut cmd = find_command("cargo");
     cmd.args(["test", "--workspace", "--no-default-features"]);
@@ -261,7 +279,7 @@ fn make_hawkeye_cmd(fix: bool) -> StdCommand {
     ensure_installed("hawkeye", "hawkeye");
     let mut cmd = find_command("hawkeye");
     if fix {
-        cmd.args(["format", "--fail-if-updated=false"]);
+        cmd.args(["format"]);
     } else {
         cmd.args(["check"]);
     }
@@ -304,9 +322,9 @@ impl CommandPrepareTestData {
     }
 
     fn prepare(self) -> Result<()> {
-        const REVISION: &str = "d363b12d293b395d90abb42677f9ea63178dbc0d";
+        const REVISION: &str = "8193bab45ca5da3b513ea43fb5793e7e5b4da548";
         let serde_tests =
-            Path::new(env!("CARGO_WORKSPACE_DIR")).join("datasketches/tests/serde_tests");
+            Path::new(env!("CARGO_WORKSPACE_DIR")).join("tests-integration/tests/serde_tests");
         let archive_url =
             format!("https://api.github.com/repos/apache/datasketches-tck/tarball/{REVISION}");
 
@@ -329,8 +347,9 @@ impl CommandPrepareTestData {
 
         let mut targets = vec![];
         for language in self.languages() {
-            let source_directory = Path::new("serialization").join(language).join("snapshots");
-            let destination = serde_tests.join(format!("{language}_generated_files"));
+            let directory_name = format!("{language}_generated_files");
+            let source_directory = Path::new("serialization_test_data").join(&directory_name);
+            let destination = serde_tests.join(directory_name);
             if fs::exists(&destination)? {
                 println!(
                     "Removing existing {language} snapshots from {}",

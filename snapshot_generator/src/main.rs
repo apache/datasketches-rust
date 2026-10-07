@@ -17,6 +17,7 @@
 
 use std::fs;
 use std::io;
+use std::path::Path;
 use std::path::PathBuf;
 
 use clap::Parser;
@@ -31,7 +32,7 @@ struct Arguments {
     output: PathBuf,
 }
 
-fn main() -> io::Result<()> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let arguments = Arguments::parse();
     fs::create_dir_all(&arguments.output)?;
 
@@ -39,11 +40,11 @@ fn main() -> io::Result<()> {
         &arguments.output,
         "bloom_empty_rust.sk",
         &BloomFilterBuilder::with_accuracy(128, 0.01)
-            .build()
+            .build()?
             .serialize(),
     )?;
 
-    let mut bloom = BloomFilterBuilder::with_accuracy(128, 0.01).build();
+    let mut bloom = BloomFilterBuilder::with_accuracy(128, 0.01).build()?;
     for value in ["alpha", "beta", "gamma"] {
         bloom.insert(value);
     }
@@ -53,14 +54,14 @@ fn main() -> io::Result<()> {
         &bloom.serialize(),
     )?;
 
-    let empty_countmin = CountMinSketch::<i64>::with_seed(4, 32, 9001);
+    let empty_countmin = CountMinSketch::<i64>::with_seed(4, 32, 9001)?;
     write_snapshot(
         &arguments.output,
         "count_min_empty_rust.sk",
         &empty_countmin.serialize(),
     )?;
 
-    let mut countmin = CountMinSketch::<i64>::with_seed(4, 32, 9001);
+    let mut countmin = CountMinSketch::<i64>::with_seed(4, 32, 9001)?;
     for (value, weight) in [("alpha", 3), ("beta", 2), ("gamma", 5)] {
         for _ in 0..weight {
             countmin.update(value);
@@ -75,7 +76,7 @@ fn main() -> io::Result<()> {
     Ok(())
 }
 
-fn write_snapshot(output: &PathBuf, name: &str, bytes: &[u8]) -> io::Result<()> {
+fn write_snapshot(output: &Path, name: &str, bytes: &[u8]) -> io::Result<()> {
     let path = output.join(name);
     fs::write(&path, bytes)?;
     println!("wrote {} ({} bytes)", path.display(), bytes.len());

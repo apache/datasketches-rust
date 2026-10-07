@@ -15,10 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! Harmonic number calculations for linear counting estimator
-//!
-//! Provides utilities for computing harmonic numbers used in the
-//! HLL bitmap estimator for small cardinalities.
+//! Harmonic-number approximation used by the bitmap estimator, following DataSketches C++:
+//! <https://github.com/apache/datasketches-cpp/blob/5a055521/hll/include/HarmonicNumbers-internal.hpp>
 
 const NUM_EXACT: usize = 25;
 const EULER_MASCHERONI: f64 = 0.577_215_664_901_532_9;
@@ -52,9 +50,7 @@ static EXACT_HARMONIC: [f64; NUM_EXACT] = [
     1347822955.0 / 356948592.0, // H(24)
 ];
 
-/// Compute the n-th harmonic number H(n) = 1 + 1/2 + 1/3 + ... + 1/n
-///
-/// Uses exact table for small n, asymptotic expansion for large n.
+/// Computes `H(n) = 1 + 1/2 + ... + 1/n`, with `H(0) = 0`.
 fn harmonic_number(n: usize) -> f64 {
     if n < NUM_EXACT {
         return EXACT_HARMONIC[n];
@@ -64,7 +60,7 @@ fn harmonic_number(n: usize) -> f64 {
     let inv_sq = 1.0 / (x * x);
     let mut sum = x.ln() + EULER_MASCHERONI + (1.0 / (2.0 * x));
 
-    // Asymptotic expansion (appropriate for n >= 25)
+    // The cutoff at 25 and expansion through n^-8 are chosen together for f64 precision.
     let mut pow = inv_sq; // n^-2
     sum -= pow * (1.0 / 12.0);
 
@@ -80,18 +76,8 @@ fn harmonic_number(n: usize) -> f64 {
     sum
 }
 
-/// Bitmap estimator for flat random-access bit vectors (similar to Bloom filter)
-///
-/// This is used for linear counting in the HLL composite estimator.
-///
-/// # Arguments
-///
-/// * `bit_vector_length`: Total length of bit vector (k for HLL)
-/// * `num_bits_set`: Number of bits set (non-zero registers)
-///
-/// # Returns
-///
-/// Estimated cardinality based on coupon collector problem
+/// Expected draws needed to hit `num_bits_set` distinct slots under the coupon collector model.
+/// Requires `num_bits_set <= bit_vector_length`.
 pub fn bitmap_estimate(bit_vector_length: u32, num_bits_set: u32) -> f64 {
     let k = bit_vector_length;
     let num_set = num_bits_set;
@@ -104,20 +90,21 @@ pub fn bitmap_estimate(bit_vector_length: u32, num_bits_set: u32) -> f64 {
 
 #[cfg(test)]
 mod tests {
+    use googletest::assert_that;
+    use googletest::prelude::gt;
+    use googletest::prelude::lt;
+    use googletest::prelude::near;
+
     use super::*;
 
     #[test]
     fn test_exact_harmonic_numbers() {
-        // H(1) = 1
-        assert!((harmonic_number(1) - 1.0).abs() < 1e-10);
+        assert_that!(harmonic_number(1), near(1.0, 1e-10));
 
-        // H(2) = 1 + 1/2 = 1.5
-        assert!((harmonic_number(2) - 1.5).abs() < 1e-10);
+        assert_that!(harmonic_number(2), near(1.5, 1e-10));
 
-        // H(3) = 1 + 1/2 + 1/3 = 11/6
-        assert!((harmonic_number(3) - 11.0 / 6.0).abs() < 1e-10);
+        assert_that!(harmonic_number(3), near(11.0 / 6.0, 1e-10));
 
-        // H(10) should be exact from table
         let expected = 1.0
             + 1.0 / 2.0
             + 1.0 / 3.0
@@ -128,7 +115,7 @@ mod tests {
             + 1.0 / 8.0
             + 1.0 / 9.0
             + 1.0 / 10.0;
-        assert!((harmonic_number(10) - expected).abs() < 1e-10);
+        assert_that!(harmonic_number(10), near(expected, 1e-10));
     }
 
     #[test]
@@ -138,39 +125,34 @@ mod tests {
         let h_n = harmonic_number(n);
         let approx = (n as f64).ln() + EULER_MASCHERONI + 1.0 / (2.0 * n as f64);
 
-        // Should be close (within 0.1%)
-        assert!((h_n - approx).abs() / h_n < 0.001);
+        assert_that!(h_n, near(approx, h_n * 0.001));
     }
 
     #[test]
     fn test_bitmap_estimate_empty() {
-        // No bits set = estimate should be near 0
         let est = bitmap_estimate(1024, 0);
-        assert!(est.abs() < 1e-6);
+        assert_that!(est, near(0.0, 1e-6));
     }
 
     #[test]
     fn test_bitmap_estimate_full() {
-        // All bits set = should estimate large value
         let k = 1024;
         let est = bitmap_estimate(k, k);
 
         // With all slots hit, estimate should be >> k
-        assert!(est > k as f64);
+        assert_that!(est, gt(k as f64));
 
         // H(k) - H(0) = H(k), so estimate = k * H(k)
         let expected = k as f64 * harmonic_number(k as usize);
-        assert!((est - expected).abs() < 1e-6);
+        assert_that!(est, near(expected, 1e-6));
     }
 
     #[test]
     fn test_bitmap_estimate_half() {
-        // Half bits set
         let k = 1024;
         let est = bitmap_estimate(k, k / 2);
 
-        // Should be between 0 and k * H(k)
-        assert!(est > 0.0);
-        assert!(est < k as f64 * harmonic_number(k as usize));
+        assert_that!(est, gt(0.0));
+        assert_that!(est, lt(k as f64 * harmonic_number(k as usize)));
     }
 }

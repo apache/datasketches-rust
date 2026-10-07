@@ -15,11 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! Simple list for storing unique coupons in order
-//!
-//! Provides sequential storage with linear search for duplicates.
-//! Efficient for small numbers of coupons before transitioning to HashSet.
-
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
 use crate::codec::family::Family;
@@ -35,7 +30,6 @@ use crate::hll::serialization::LIST_PREINTS;
 use crate::hll::serialization::SERIAL_VERSION;
 use crate::hll::serialization::encode_mode_byte;
 
-/// List for sequential coupon storage with duplicate detection
 #[derive(Debug, Clone, PartialEq)]
 pub struct List {
     container: Container,
@@ -55,16 +49,13 @@ impl List {
         }
     }
 
-    /// Insert coupon into list, ignoring duplicates
     pub fn update(&mut self, coupon: Coupon) {
         for value in self.container.coupons.iter_mut() {
             if value.is_empty() {
-                // Found empty slot, insert new coupon
                 *value = coupon;
                 self.container.len += 1;
                 break;
             } else if *value == coupon {
-                // Duplicate found, nothing to do
                 break;
             }
         }
@@ -74,7 +65,6 @@ impl List {
         &self.container
     }
 
-    /// Deserialize a List from bytes
     pub fn deserialize(
         mut cursor: SketchSlice,
         lg_arr: usize,
@@ -82,21 +72,37 @@ impl List {
         empty: bool,
         compact: bool,
     ) -> Result<Self, Error> {
-        // Always allocate the full-sized array (1 << lg_arr) so Coupon::EMPTY sentinel
-        // slots are available for future update() calls. In compact format only
-        // coupon_count values are stored on disk, but memory must hold the full capacity
-        // so the linear scan in update() can find an empty slot to insert into.
-        let array_size = 1 << lg_arr;
+        // Compact images omit empty slots. Restore the full capacity so future updates
+        // can insert into an empty slot before the list promotes.
+        let array_size = 1usize << lg_arr;
+        if coupon_count > array_size {
+            return Err(Error::deserial(format!(
+                "LIST mode coupon count {coupon_count} exceeds capacity {array_size}"
+            )));
+        }
+        if empty != (coupon_count == 0) {
+            return Err(Error::deserial(
+                "LIST mode empty flag and coupon count disagree",
+            ));
+        }
         let read_count = if compact { coupon_count } else { array_size };
+        let required_bytes = read_count * size_of::<u32>();
+        if !empty {
+            let available_bytes = cursor.remaining().len();
+            if available_bytes < required_bytes {
+                return Err(Error::insufficient_data_of(
+                    "HLL LIST mode coupons",
+                    format_args!("expected {required_bytes} bytes, got {available_bytes}"),
+                ));
+            }
+        }
 
-        // Read coupons into the front of the full-sized array; remaining slots stay Coupon::EMPTY.
         let mut coupons = vec![Coupon::EMPTY; array_size];
         if !empty && coupon_count > 0 {
             for (i, coupon) in coupons.iter_mut().take(read_count).enumerate() {
-                let raw = cursor.read_u32_le().map_err(|_| {
-                    Error::insufficient_data(format!(
-                        "expect {coupon_count} coupons, failed at index {i}"
-                    ))
+                let raw = cursor.read_u32_le().map_err(|error| {
+                    Error::insufficient_data_of("HLL LIST mode coupon", error)
+                        .with_context("index", i)
                 })?;
                 *coupon = Coupon(raw);
             }
@@ -107,55 +113,33 @@ impl List {
         })
     }
 
-    /// Serialize a List to bytes
+    /// Serializes occupied coupons in compact format.
     pub fn serialize(&self, lg_config_k: u8, hll_type: HllType) -> Vec<u8> {
-        let compact = true; // Always use compact format
         let empty = self.container.is_empty();
         let coupon_count = self.container.len();
         let lg_arr = self.container.lg_size();
-
-        // Compute size
-        let array_size = if compact { coupon_count } else { 1 << lg_arr };
-        let total_size = LIST_PREAMBLE_SIZE + (array_size * 4);
+        let total_size = LIST_PREAMBLE_SIZE + (coupon_count * size_of::<u32>());
 
         let mut bytes = SketchBytes::with_capacity(total_size);
 
-        // Write preamble
         bytes.write_u8(LIST_PREINTS);
         bytes.write_u8(SERIAL_VERSION);
         bytes.write_u8(Family::HLL.id);
         bytes.write_u8(lg_config_k);
         bytes.write_u8(lg_arr as u8);
 
-        // Write flags
-        let mut flags = 0u8;
+        let mut flags = COMPACT_FLAG_MASK;
         if empty {
             flags |= EMPTY_FLAG_MASK;
         }
-        if compact {
-            flags |= COMPACT_FLAG_MASK;
-        }
         bytes.write_u8(flags);
 
-        // Write count
         bytes.write_u8(coupon_count as u8);
 
-        // Write mode byte: LIST mode with target HLL type
         bytes.write_u8(encode_mode_byte(CUR_MODE_LIST, hll_type as u8));
 
-        // Write coupons (only non-empty ones if compact)
-        if !empty {
-            let mut write_idx = 0;
-            for coupon in self.container.coupons.iter().copied() {
-                if compact && coupon.is_empty() {
-                    continue; // Skip empty coupons in compact mode
-                }
-                bytes.write_u32_le(coupon.raw());
-                write_idx += 1;
-                if write_idx >= array_size {
-                    break;
-                }
-            }
+        for coupon in self.container.iter().take(coupon_count) {
+            bytes.write_u32_le(coupon.raw());
         }
 
         bytes.into_bytes()

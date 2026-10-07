@@ -15,14 +15,17 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use crate::common::ResizeFactor;
 use crate::error::Error;
-use crate::thetacommon::RetainedEntry;
-use crate::thetacommon::ThetaFamilySketchView;
+use crate::error::ErrorKind;
+use crate::hash::check_seed_hash;
+use crate::hash::compute_seed_hash;
+use crate::thetacommon::EntrySketch;
+use crate::thetacommon::SketchEntry;
 use crate::thetacommon::constants::HASH_TABLE_REBUILD_THRESHOLD;
 use crate::thetacommon::constants::MAX_THETA;
-use crate::thetacommon::hash_table::CompactSketchParts;
 use crate::thetacommon::hash_table::SketchHashTable;
+use crate::thetacommon::sketch_state::CompactSketchState;
+use crate::thetacommon::sketch_state::ThetaFamilySketchMetadata;
 
 /// Merges an incoming entry into an existing entry with the same hash.
 ///
@@ -40,104 +43,108 @@ pub trait IntersectionMergePolicy<E> {
 pub struct IntersectionState<E, P> {
     table: SketchHashTable<E>,
     policy: P,
-    has_result: bool,
+    result_state: IntersectionResultState,
+}
+
+/// State of the value currently represented by an intersection operator.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum IntersectionResultState {
+    Uninitialized,
+    Empty,
+    NonEmpty,
 }
 
 impl<E, P> IntersectionState<E, P>
 where
-    E: RetainedEntry,
+    E: SketchEntry,
 {
     /// Creates a new intersection operator for the given `seed` and entry-merge `policy`.
-    pub fn new(seed: u64, policy: P) -> Self {
-        Self {
-            has_result: false,
-            table: SketchHashTable::from_raw_parts(
-                0,
-                0,
-                ResizeFactor::X1,
-                1.0,
-                MAX_THETA,
-                seed,
-                false,
-            ),
+    pub fn new(seed: u64, policy: P) -> Result<Self, Error> {
+        let seed_hash = compute_seed_hash(seed, ErrorKind::InvalidArgument)?;
+        Ok(Self {
+            result_state: IntersectionResultState::Uninitialized,
+            table: SketchHashTable::for_set_operation(0, 0, MAX_THETA, seed, seed_hash),
             policy,
-        }
+        })
     }
 
     /// Updates the intersection with a given sketch.
     ///
     /// The intersection can be viewed as starting from the "universe" set, and every update
     /// reduces the current set to the keys it shares with `sketch`.
-    pub fn update<S>(&mut self, sketch: &S) -> Result<(), Error>
+    pub fn update<S>(&mut self, sketch: S) -> Result<(), Error>
     where
-        S: ThetaFamilySketchView<Entry = E>,
+        S: EntrySketch<Entry = E>,
         E: Clone,
         P: IntersectionMergePolicy<E>,
     {
-        let new_default_table = |table: &SketchHashTable<E>| {
-            SketchHashTable::from_raw_parts(
+        let table_without_entries = |table: &SketchHashTable<E>, retention_theta| {
+            SketchHashTable::for_set_operation(
                 0,
                 0,
-                ResizeFactor::X1,
-                1.0,
-                table.theta(),
+                retention_theta,
                 table.seed(),
-                table.is_empty(),
+                table.seed_hash(),
             )
         };
 
-        if self.table.is_empty() {
+        if self.result_state == IntersectionResultState::Empty {
             return Ok(());
         }
 
-        if !sketch.is_empty() && sketch.seed_hash() != self.table.seed_hash() {
-            return Err(Error::invalid_argument(format!(
-                "incompatible seed hash: expected {}, got {}",
-                self.table.seed_hash(),
-                sketch.seed_hash()
-            )));
-        }
+        let (seed_hash, input_theta, input_ordered, input_num_retained) = match sketch.metadata() {
+            ThetaFamilySketchMetadata::Empty { .. } => {
+                self.result_state = IntersectionResultState::Empty;
+                self.table = table_without_entries(&self.table, MAX_THETA);
+                return Ok(());
+            }
+            ThetaFamilySketchMetadata::NonEmpty {
+                seed_hash,
+                theta,
+                ordered,
+                num_retained,
+            } => (seed_hash, theta, ordered, num_retained),
+        };
 
-        if sketch.is_empty() {
-            self.table.set_empty(true);
-        }
+        check_seed_hash(
+            self.table.seed_hash(),
+            seed_hash,
+            "intersection update",
+            ErrorKind::InvalidArgument,
+        )?;
 
-        self.table.set_theta(if self.table.is_empty() {
-            MAX_THETA
-        } else {
-            self.table.theta().min(sketch.theta64())
-        });
+        let result_theta = self.table.retention_theta().min(input_theta);
+        self.table.set_retention_theta(result_theta);
 
-        if self.has_result && self.table.num_retained() == 0 {
+        if self.result_state == IntersectionResultState::NonEmpty && self.table.num_retained() == 0
+        {
             return Ok(());
         }
 
-        if sketch.num_retained() == 0 {
-            self.has_result = true;
-            self.table = new_default_table(&self.table);
+        if input_num_retained == 0 {
+            self.result_state = IntersectionResultState::NonEmpty;
+            self.table = table_without_entries(&self.table, result_theta);
             return Ok(());
         }
 
         // first update, copy incoming entries
-        if !self.has_result {
-            self.has_result = true;
+        if self.result_state == IntersectionResultState::Uninitialized {
+            self.result_state = IntersectionResultState::NonEmpty;
             let lg_size = SketchHashTable::<E>::lg_size_from_count_for_rebuild(
-                sketch.num_retained(),
+                input_num_retained,
                 HASH_TABLE_REBUILD_THRESHOLD,
             );
-            // num_retained >= 1 here (the zero case returned early above), so lg_size >= 1 and
-            // lg_size - 1 below cannot underflow.
+            // The retained count is at least one here, so lg_size >= 1 and lg_size - 1 below
+            // cannot underflow.
             debug_assert!(lg_size >= 1);
-            self.table = SketchHashTable::from_raw_parts(
+            self.table = SketchHashTable::for_set_operation(
                 lg_size,
                 lg_size - 1,
-                ResizeFactor::X1,
-                1.0,
-                self.table.theta(),
+                result_theta,
                 self.table.seed(),
-                self.table.is_empty(),
+                self.table.seed_hash(),
             );
-            for entry in sketch.iter() {
+            for entry in sketch.entries() {
                 let hash = entry.hash();
                 if !self.table.upsert_entry(hash, |existing| match existing {
                     Some(_) => None,
@@ -149,18 +156,18 @@ where
                 }
             }
             // Safety check.
-            if self.table.num_retained() != sketch.num_retained() {
+            if self.table.num_retained() != input_num_retained {
                 return Err(Error::invalid_argument(
                     "num entries mismatch, possibly corrupted input sketch",
                 ));
             }
         } else {
-            let max_matches = self.table.num_retained().min(sketch.num_retained());
+            let max_matches = self.table.num_retained().min(input_num_retained);
             let mut matched_entries = Vec::with_capacity(max_matches);
             let mut count = 0;
-            for entry in sketch.iter() {
+            for entry in sketch.entries() {
                 let hash = entry.hash();
-                if hash < self.table.theta() {
+                if hash < self.table.retention_theta() {
                     if let Some(existing) = self.table.entry(hash) {
                         if matched_entries.len() == max_matches {
                             return Err(Error::invalid_argument(
@@ -171,25 +178,25 @@ where
                         self.policy.merge(&mut merged, entry);
                         matched_entries.push(merged);
                     }
-                } else if sketch.is_ordered() {
+                } else if input_ordered {
                     break; // early stop for ordered sketches
                 }
                 count += 1;
             }
             // Safety check.
-            if count > sketch.num_retained() {
+            if count > input_num_retained {
                 return Err(Error::invalid_argument(
                     "more keys than expected, possibly corrupted input sketch",
                 ));
-            } else if !sketch.is_ordered() && count < sketch.num_retained() {
+            } else if !input_ordered && count < input_num_retained {
                 return Err(Error::invalid_argument(
                     "fewer keys than expected, possibly corrupted input sketch",
                 ));
             }
             if matched_entries.is_empty() {
-                self.table = new_default_table(&self.table);
-                if self.table.theta() == MAX_THETA {
-                    self.table.set_empty(true);
+                self.table = table_without_entries(&self.table, result_theta);
+                if result_theta == MAX_THETA {
+                    self.result_state = IntersectionResultState::Empty;
                 }
             } else {
                 let lg_size = SketchHashTable::<E>::lg_size_from_count_for_rebuild(
@@ -199,14 +206,12 @@ where
                 // matched_entries is non-empty here (the empty case is handled above), so
                 // lg_size >= 1 and lg_size - 1 below cannot underflow.
                 debug_assert!(lg_size >= 1);
-                self.table = SketchHashTable::from_raw_parts(
+                self.table = SketchHashTable::for_set_operation(
                     lg_size,
                     lg_size - 1,
-                    ResizeFactor::X1,
-                    1.0,
-                    self.table.theta(),
+                    result_theta,
                     self.table.seed(),
-                    self.table.is_empty(),
+                    self.table.seed_hash(),
                 );
                 for entry in matched_entries {
                     let hash = entry.hash();
@@ -226,172 +231,27 @@ where
 
     /// Returns whether this operator has received at least one update.
     pub fn has_result(&self) -> bool {
-        self.has_result
+        self.result_state != IntersectionResultState::Uninitialized
     }
 
-    /// Return the current intersection state as compact-sketch parts.
-    pub fn result(&self, ordered: bool) -> CompactSketchParts<E>
+    /// Returns the estimated size of the heap allocations in bytes.
+    pub fn estimated_size(&self) -> usize {
+        self.table.estimated_size()
+    }
+
+    /// Returns the current intersection as canonical compact-sketch state.
+    pub fn to_compact_sketch_state(&self, ordered: bool) -> Option<CompactSketchState<E>>
     where
         E: Clone,
     {
-        let mut entries: Vec<E> = self.table.iter_entries().cloned().collect();
-        if ordered {
-            entries.sort_unstable_by_key(RetainedEntry::hash);
-        }
-        CompactSketchParts {
-            entries,
-            theta: self.table.theta(),
-            seed_hash: self.table.seed_hash(),
-            ordered,
-            empty: self.table.is_empty(),
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::hash::DEFAULT_UPDATE_SEED;
-    use crate::thetacommon::ThetaKeySketchView;
-
-    #[derive(Clone, Debug, Eq, PartialEq)]
-    struct TestEntry {
-        hash: u64,
-        summary: u64,
-    }
-
-    impl RetainedEntry for TestEntry {
-        fn hash(&self) -> u64 {
-            self.hash
-        }
-    }
-
-    struct TestSketch {
-        entries: Vec<TestEntry>,
-    }
-
-    impl TestSketch {
-        fn of_hashes(hashes: &[u64]) -> Self {
-            Self {
-                entries: hashes
-                    .iter()
-                    .map(|&hash| TestEntry { hash, summary: 1 })
-                    .collect(),
+        match self.result_state {
+            IntersectionResultState::Uninitialized => None,
+            IntersectionResultState::Empty => {
+                Some(CompactSketchState::empty(self.table.seed_hash()))
+            }
+            IntersectionResultState::NonEmpty => {
+                Some(self.table.to_non_empty_compact_state(ordered))
             }
         }
-    }
-
-    impl ThetaKeySketchView for TestSketch {
-        fn seed_hash(&self) -> u16 {
-            crate::hash::compute_seed_hash(DEFAULT_UPDATE_SEED)
-        }
-
-        fn theta64(&self) -> u64 {
-            MAX_THETA
-        }
-
-        fn is_empty(&self) -> bool {
-            self.entries.is_empty()
-        }
-
-        fn is_ordered(&self) -> bool {
-            false
-        }
-
-        fn iter_hashes(&self) -> impl Iterator<Item = u64> + '_ {
-            self.entries.iter().map(RetainedEntry::hash)
-        }
-
-        fn num_retained(&self) -> usize {
-            self.entries.len()
-        }
-    }
-
-    impl ThetaFamilySketchView for TestSketch {
-        type Entry = TestEntry;
-
-        fn iter(&self) -> impl Iterator<Item = TestEntry> + '_ {
-            self.entries.iter().cloned()
-        }
-    }
-
-    struct SumPolicy;
-
-    impl IntersectionMergePolicy<TestEntry> for SumPolicy {
-        fn merge(&self, existing: &mut TestEntry, incoming: TestEntry) {
-            existing.summary += incoming.summary;
-        }
-    }
-
-    #[test]
-    fn first_update_copies_entries() {
-        let mut intersection = IntersectionState::new(DEFAULT_UPDATE_SEED, SumPolicy);
-        assert!(!intersection.has_result());
-
-        intersection
-            .update(&TestSketch::of_hashes(&[1, 2, 3]))
-            .unwrap();
-
-        assert!(intersection.has_result());
-        let parts = intersection.result(true);
-        assert_eq!(
-            parts.entries,
-            vec![
-                TestEntry {
-                    hash: 1,
-                    summary: 1
-                },
-                TestEntry {
-                    hash: 2,
-                    summary: 1
-                },
-                TestEntry {
-                    hash: 3,
-                    summary: 1
-                },
-            ]
-        );
-    }
-
-    #[test]
-    fn second_update_keeps_matches_and_merges_with_policy() {
-        let mut intersection = IntersectionState::new(DEFAULT_UPDATE_SEED, SumPolicy);
-        intersection
-            .update(&TestSketch::of_hashes(&[1, 2, 3]))
-            .unwrap();
-        intersection
-            .update(&TestSketch::of_hashes(&[2, 3, 4]))
-            .unwrap();
-
-        let parts = intersection.result(true);
-        assert_eq!(
-            parts.entries,
-            vec![
-                TestEntry {
-                    hash: 2,
-                    summary: 2
-                },
-                TestEntry {
-                    hash: 3,
-                    summary: 2
-                },
-            ]
-        );
-    }
-
-    #[test]
-    fn disjoint_second_update_empties_intersection() {
-        let mut intersection = IntersectionState::new(DEFAULT_UPDATE_SEED, SumPolicy);
-        intersection
-            .update(&TestSketch::of_hashes(&[1, 2, 3]))
-            .unwrap();
-        intersection
-            .update(&TestSketch::of_hashes(&[4, 5]))
-            .unwrap();
-
-        let parts = intersection.result(true);
-        assert!(parts.entries.is_empty());
-        assert!(parts.empty);
-        assert_eq!(parts.theta, MAX_THETA);
     }
 }

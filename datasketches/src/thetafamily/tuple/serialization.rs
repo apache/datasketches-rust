@@ -27,17 +27,21 @@
 
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
+use crate::codec::assert::insufficient_data;
 use crate::error::Error;
 
 /// Current serial version written by this implementation.
-pub(super) const SERIAL_VERSION: u8 = 3;
+pub const SERIAL_VERSION: u8 = 3;
 /// Legacy serial version still accepted on read.
-pub(super) const SERIAL_VERSION_LEGACY: u8 = 1;
+pub const SERIAL_VERSION_LEGACY: u8 = 1;
 
 /// Current sketch-type byte written by this implementation.
-pub(super) const SKETCH_TYPE: u8 = 1;
+pub const SKETCH_TYPE: u8 = 1;
 /// Legacy sketch-type byte still accepted on read.
-pub(super) const SKETCH_TYPE_LEGACY: u8 = 5;
+pub const SKETCH_TYPE_LEGACY: u8 = 5;
+
+/// Canonical empty compact image, independent of the configured seed and summary type.
+pub const EMPTY_SKETCH_BYTES: [u8; 8] = [1, 3, 9, 1, 0, 0x1e, 0, 0];
 
 /// Trait for values that can be stored as Tuple sketch summaries.
 ///
@@ -73,11 +77,9 @@ macro_rules! impl_primitive_summary {
             }
 
             fn deserialize_value(cursor: &mut SketchSlice<'_>) -> Result<Self, Error> {
-                cursor.$read().map_err(|_| {
-                    Error::insufficient_data(
-                        concat!("failed to read ", stringify!($name), " summary bytes").to_string(),
-                    )
-                })
+                cursor
+                    .$read()
+                    .map_err(insufficient_data(concat!(stringify!($name), " summary")))
             }
         }
     };

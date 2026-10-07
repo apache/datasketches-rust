@@ -17,7 +17,7 @@
 
 /// Notice that there are only 65 symbols here, which is different from our usual 8->12 coding
 /// scheme which handles 256 symbols.
-pub(super) static LENGTH_LIMITED_UNARY_ENCODING_TABLE65: [u16; 65] = [
+pub static LENGTH_LIMITED_UNARY_ENCODING_TABLE65: [u16; 65] = [
     // Length-limited "unary" code with 65 symbols.
     // entropy:    2.0
     // avg_length: 2.0249023437500000000; max_length = 12; num_symbols = 65
@@ -92,7 +92,7 @@ pub(super) static LENGTH_LIMITED_UNARY_ENCODING_TABLE65: [u16; 65] = [
 ];
 
 /// Reverse mapping for the length-limited unary code with 65 symbols.
-pub(super) static LENGTH_LIMITED_UNARY_DECODING_TABLE65: [u16; 4096] = [
+pub static LENGTH_LIMITED_UNARY_DECODING_TABLE65: [u16; 4096] = [
     256, 513, 256, 770, 256, 513, 256, 1027, 256, 513, 256, 770, 256, 513, 256, 1284, 256, 513,
     256, 770, 256, 513, 256, 1027, 256, 513, 256, 770, 256, 513, 256, 1797, 256, 513, 256, 770,
     256, 513, 256, 1027, 256, 513, 256, 770, 256, 513, 256, 1284, 256, 513, 256, 770, 256, 513,
@@ -336,7 +336,7 @@ pub(super) static LENGTH_LIMITED_UNARY_DECODING_TABLE65: [u16; 4096] = [
 /// encoding for rows containing more than one surprising bit).
 ///
 /// These permutations were created by the ocaml program "generatePermutationsForSLIDING.ml".
-pub(super) static COLUMN_PERMUTATIONS_FOR_ENCODING: [[u8; 56]; 16] = [
+pub static COLUMN_PERMUTATIONS_FOR_ENCODING: [[u8; 56]; 16] = [
     // for phase = 1 / 32
     [
         0, 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
@@ -436,7 +436,7 @@ pub(super) static COLUMN_PERMUTATIONS_FOR_ENCODING: [[u8; 56]; 16] = [
 ];
 
 /// Reverse mapping for column permutations.
-pub(super) static COLUMN_PERMUTATIONS_FOR_DECODING: [[u8; 56]; 16] = [
+pub static COLUMN_PERMUTATIONS_FOR_DECODING: [[u8; 56]; 16] = [
     [
         0, 1, 2, 3, 55, 4, 5, 6, 7, 8, 9, 10, 11, 12, 54, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22,
         23, 24, 25, 26, 27, 28, 29, 30, 31, 53, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44,
@@ -532,7 +532,7 @@ pub(super) static COLUMN_PERMUTATIONS_FOR_DECODING: [[u8; 56]; 16] = [
 ///
 /// Only the encoding tables are defined by this file. The decoding tables (which are exact
 /// inverses) are created at library startup time.
-pub(super) static ENCODING_TABLES_FOR_HIGH_ENTROPY_BYTE: [[u16; 256]; 22] = [
+pub static ENCODING_TABLES_FOR_HIGH_ENTROPY_BYTE: [[u16; 256]; 22] = [
     // Sixteen Encoding Tables for the Steady State.
 
     // (table 0 of 22) (steady 0 of 16) (phase = 0.031250000 = 1.0 / 32.0)
@@ -6326,7 +6326,7 @@ pub(super) static ENCODING_TABLES_FOR_HIGH_ENTROPY_BYTE: [[u16; 256]; 22] = [
 ];
 
 /// Reverse mapping for high entropy byte encoding tables.
-pub(super) static DECODING_TABLES_FOR_HIGH_ENTROPY_BYTE: [[u16; 4096]; 22] = [
+pub static DECODING_TABLES_FOR_HIGH_ENTROPY_BYTE: [[u16; 4096]; 22] = [
     [
         519, 1035, 771, 1567, 519, 1293, 783, 2081, 519, 1281, 771, 1809, 519, 1303, 783, 2609,
         519, 1035, 771, 1575, 519, 1299, 783, 2304, 519, 1285, 771, 1859, 519, 1545, 783, 3186,

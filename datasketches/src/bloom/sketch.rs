@@ -25,6 +25,7 @@ use crate::codec::assert::ensure_serial_version_is;
 use crate::codec::assert::insufficient_data;
 use crate::codec::family::Family;
 use crate::error::Error;
+use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::hash::XxHash64;
 
 // Serialization constants
@@ -37,37 +38,36 @@ const EMPTY_FLAG_MASK: u8 = 1 << 2;
 /// * No false negatives (inserted items always return `true`)
 /// * Tunable false positive rate
 /// * Constant space usage
-///
-/// Use [`super::BloomFilterBuilder`] to construct instances.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BloomFilter {
     /// Hash seed for all hash functions
-    pub(super) seed: u64,
+    seed: u64,
     /// Number of hash functions to use (k)
-    pub(super) num_hashes: u16,
+    num_hashes: u16,
     /// Count of bits set to 1 (for statistics)
-    pub(super) num_bits_set: u64,
+    num_bits_set: u64,
     /// Bit array packed into u64 words
-    pub(super) bit_array: Box<[u64]>,
+    bit_array: Box<[u64]>,
 }
 
 impl BloomFilter {
-    /// Tests whether an item is possibly in the set.
+    /// Returns `true` if an item is possibly in the set.
     ///
-    /// Returns:
-    /// * `true`: Item was **possibly** inserted (or false positive)
-    /// * `false`: Item was **definitely not** inserted
+    /// A `false` result means the item was definitely not inserted; a `true` result may be a false
+    /// positive.
     ///
     /// # Examples
     ///
     /// ```
     /// use datasketches::bloom::BloomFilterBuilder;
     ///
-    /// let mut filter = BloomFilterBuilder::with_accuracy(100, 0.01).build();
+    /// let mut filter = BloomFilterBuilder::with_accuracy(100, 0.01)
+    ///     .build()
+    ///     .unwrap();
     /// filter.insert("apple");
     ///
-    /// assert!(filter.contains(&"apple")); // true - was inserted (probably)
-    /// assert!(!filter.contains(&"grape")); // false - never inserted
+    /// assert!(filter.contains(&"apple")); // true - possibly present (and known to be inserted here)
+    /// assert!(!filter.contains(&"grape")); // false - definitely not present
     /// ```
     pub fn contains<T: Hash>(&self, item: &T) -> bool {
         if self.is_empty() {
@@ -78,9 +78,8 @@ impl BloomFilter {
         self.check_bits(h0, h1)
     }
 
-    /// Tests and inserts an item in a single operation.
+    /// Returns `true` if an item was possibly present before inserting it.
     ///
-    /// Returns whether the item was possibly already in the set before insertion.
     /// This is more efficient than calling `contains()` then `insert()` separately.
     ///
     /// # Examples
@@ -88,7 +87,9 @@ impl BloomFilter {
     /// ```
     /// use datasketches::bloom::BloomFilterBuilder;
     ///
-    /// let mut filter = BloomFilterBuilder::with_accuracy(100, 0.01).build();
+    /// let mut filter = BloomFilterBuilder::with_accuracy(100, 0.01)
+    ///     .build()
+    ///     .unwrap();
     ///
     /// let was_present = filter.contains_and_insert(&"apple");
     /// assert!(!was_present); // First insertion
@@ -98,9 +99,7 @@ impl BloomFilter {
     /// ```
     pub fn contains_and_insert<T: Hash>(&mut self, item: &T) -> bool {
         let (h0, h1) = self.compute_hash(item);
-        let was_present = self.check_bits(h0, h1);
-        self.set_bits(h0, h1);
-        was_present
+        self.set_bits(h0, h1)
     }
 
     /// Inserts an item into the filter.
@@ -112,7 +111,9 @@ impl BloomFilter {
     /// ```
     /// use datasketches::bloom::BloomFilterBuilder;
     ///
-    /// let mut filter = BloomFilterBuilder::with_accuracy(100, 0.01).build();
+    /// let mut filter = BloomFilterBuilder::with_accuracy(100, 0.01)
+    ///     .build()
+    ///     .unwrap();
     ///
     /// filter.insert("apple");
     /// filter.insert(42_u64);
@@ -134,7 +135,9 @@ impl BloomFilter {
     /// ```
     /// use datasketches::bloom::BloomFilterBuilder;
     ///
-    /// let mut filter = BloomFilterBuilder::with_accuracy(100, 0.01).build();
+    /// let mut filter = BloomFilterBuilder::with_accuracy(100, 0.01)
+    ///     .build()
+    ///     .unwrap();
     /// filter.insert("apple");
     /// assert!(!filter.is_empty());
     ///
@@ -152,10 +155,11 @@ impl BloomFilter {
     /// After merging, this filter will recognize items from either filter
     /// (plus any false positives from either).
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if the filters are not compatible (different size, hashes, or seed).
-    /// Use [`is_compatible()`](Self::is_compatible) to check first.
+    /// Returns an error if the filters are not compatible (different size, number of hashes, or
+    /// seed). Use [`is_compatible()`](Self::is_compatible) to check first when an error is not
+    /// expected.
     ///
     /// # Examples
     ///
@@ -164,23 +168,26 @@ impl BloomFilter {
     ///
     /// let mut f1 = BloomFilterBuilder::with_accuracy(100, 0.01)
     ///     .seed(123)
-    ///     .build();
+    ///     .build()
+    ///     .unwrap();
     /// let mut f2 = BloomFilterBuilder::with_accuracy(100, 0.01)
     ///     .seed(123)
-    ///     .build();
+    ///     .build()
+    ///     .unwrap();
     ///
     /// f1.insert("a");
     /// f2.insert("b");
     ///
-    /// f1.union(&f2);
+    /// f1.union(&f2).unwrap();
     /// assert!(f1.contains(&"a"));
     /// assert!(f1.contains(&"b"));
     /// ```
-    pub fn union(&mut self, other: &BloomFilter) {
-        assert!(
-            self.is_compatible(other),
-            "Cannot union incompatible Bloom filters"
-        );
+    pub fn union(&mut self, other: &BloomFilter) -> Result<(), Error> {
+        if !self.is_compatible(other) {
+            return Err(Error::invalid_argument(
+                "Bloom filters must have matching capacity, number of hashes, and seed",
+            ));
+        }
 
         // Count bits during union operation (single pass)
         let mut num_bits_set = 0;
@@ -189,6 +196,7 @@ impl BloomFilter {
             num_bits_set += word.count_ones() as u64;
         }
         self.num_bits_set = num_bits_set;
+        Ok(())
     }
 
     /// Intersects this filter with another via bitwise AND.
@@ -196,9 +204,10 @@ impl BloomFilter {
     /// After intersection, this filter will recognize only items present in both
     /// filters (plus false positives).
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if the filters are not compatible (different size, hashes, or seed).
+    /// Returns an error if the filters are not compatible (different size, number of hashes, or
+    /// seed).
     ///
     /// # Examples
     ///
@@ -207,25 +216,28 @@ impl BloomFilter {
     ///
     /// let mut f1 = BloomFilterBuilder::with_accuracy(100, 0.01)
     ///     .seed(123)
-    ///     .build();
+    ///     .build()
+    ///     .unwrap();
     /// let mut f2 = BloomFilterBuilder::with_accuracy(100, 0.01)
     ///     .seed(123)
-    ///     .build();
+    ///     .build()
+    ///     .unwrap();
     ///
     /// f1.insert("a");
     /// f1.insert("b");
     /// f2.insert("b");
     /// f2.insert("c");
     ///
-    /// f1.intersect(&f2);
+    /// f1.intersect(&f2).unwrap();
     /// assert!(f1.contains(&"b")); // In both
     /// // "a" and "c" likely return false now
     /// ```
-    pub fn intersect(&mut self, other: &BloomFilter) {
-        assert!(
-            self.is_compatible(other),
-            "Cannot intersect incompatible Bloom filters"
-        );
+    pub fn intersect(&mut self, other: &BloomFilter) -> Result<(), Error> {
+        if !self.is_compatible(other) {
+            return Err(Error::invalid_argument(
+                "Bloom filters must have matching capacity, number of hashes, and seed",
+            ));
+        }
 
         // Count bits during intersect operation (single pass)
         let mut num_bits_set = 0;
@@ -234,32 +246,73 @@ impl BloomFilter {
             num_bits_set += word.count_ones() as u64;
         }
         self.num_bits_set = num_bits_set;
+        Ok(())
     }
 
-    /// Inverts all bits in the filter.
+    /// Computes the approximate set difference with another filter via bitwise AND-NOT.
     ///
-    /// This approximately inverts the notion of set membership, though the false
-    /// positive guarantees no longer hold in a well-defined way.
+    /// After this operation, the filter approximates the set of items inserted into this
+    /// filter but not into `other`:
+    /// * Items inserted into `other` always return `false`: they are excluded exactly.
+    /// * Items inserted only into this filter keep returning `true` as long as none of their hash
+    ///   positions is occupied in `other`. Unlike [`union()`](Self::union) and
+    ///   [`intersect()`](Self::intersect), this operation can drop items, with a probability that
+    ///   grows with `other`'s load factor.
+    /// * Items never inserted into this filter may return `true` (false positives), at a rate no
+    ///   higher than this filter's false positive rate before the operation.
+    ///
+    /// This is the transformation other DataSketches libraries expose as A NOT B.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the filters are not compatible (different size, number of hashes, or
+    /// seed). Use [`is_compatible()`](Self::is_compatible) to check first when an error is not
+    /// expected.
     ///
     /// # Examples
     ///
     /// ```
     /// use datasketches::bloom::BloomFilterBuilder;
     ///
-    /// let mut filter = BloomFilterBuilder::with_accuracy(100, 0.01).build();
-    /// filter.insert("apple");
+    /// let mut left = BloomFilterBuilder::with_accuracy(100, 0.01)
+    ///     .seed(123)
+    ///     .build()
+    ///     .unwrap();
+    /// let mut right = BloomFilterBuilder::with_accuracy(100, 0.01)
+    ///     .seed(123)
+    ///     .build()
+    ///     .unwrap();
     ///
-    /// filter.invert();
-    /// // Now "apple" probably returns false, and most other items return true
+    /// left.insert("apple");
+    /// left.insert("shared");
+    /// right.insert("grape");
+    /// right.insert("shared");
+    ///
+    /// left.difference(&right).unwrap();
+    /// assert!(left.contains(&"apple")); // Only in the left filter
+    /// assert!(!left.contains(&"shared")); // In both filters: excluded exactly
     /// ```
-    pub fn invert(&mut self) {
-        for word in &mut self.bit_array {
-            *word = !*word;
+    pub fn difference(&mut self, other: &BloomFilter) -> Result<(), Error> {
+        if !self.is_compatible(other) {
+            return Err(Error::invalid_argument(
+                "Bloom filters must have matching capacity, number of hashes, and seed",
+            ));
         }
-        self.num_bits_set = self.capacity() as u64 - self.num_bits_set;
+
+        // Count bits during difference operation (single pass)
+        let mut num_bits_set = 0;
+        for (word, other_word) in self.bit_array.iter_mut().zip(&other.bit_array) {
+            *word &= !*other_word;
+            num_bits_set += word.count_ones() as u64;
+        }
+        self.num_bits_set = num_bits_set;
+        Ok(())
     }
 
-    /// Returns whether the filter is empty (no items inserted).
+    /// Returns `true` if no bits are set in the filter.
+    ///
+    /// This is the case when no items were inserted, after [`reset()`](Self::reset), or when a
+    /// set operation cleared every bit.
     pub fn is_empty(&self) -> bool {
         self.num_bits_set == 0
     }
@@ -294,7 +347,7 @@ impl BloomFilter {
         self.num_bits_set as f64 / self.capacity() as f64
     }
 
-    /// Estimates the current false positive probability.
+    /// Returns the estimated current false positive probability.
     ///
     /// Uses the approximation: `load_factor^k`
     /// where:
@@ -312,7 +365,7 @@ impl BloomFilter {
         load.powf(k)
     }
 
-    /// Checks if two filters are compatible for merging.
+    /// Returns `true` if two filters are compatible for merging.
     ///
     /// Filters are compatible if they have the same:
     /// * Capacity (number of bits)
@@ -334,7 +387,9 @@ impl BloomFilter {
     /// use datasketches::bloom::BloomFilter;
     /// use datasketches::bloom::BloomFilterBuilder;
     ///
-    /// let mut filter = BloomFilterBuilder::with_accuracy(100, 0.01).build();
+    /// let mut filter = BloomFilterBuilder::with_accuracy(100, 0.01)
+    ///     .build()
+    ///     .unwrap();
     /// filter.insert("test");
     ///
     /// let bytes = filter.serialize();
@@ -389,9 +444,9 @@ impl BloomFilter {
     /// # Errors
     ///
     /// Returns an error if:
-    /// * The data is truncated or corrupted
-    /// * The family ID doesn't match (not a Bloom filter)
-    /// * The serial version is unsupported
+    /// * The data is truncated or corrupted.
+    /// * The family ID does not identify a Bloom filter.
+    /// * The serial version is unsupported.
     ///
     /// # Examples
     ///
@@ -399,7 +454,9 @@ impl BloomFilter {
     /// use datasketches::bloom::BloomFilter;
     /// use datasketches::bloom::BloomFilterBuilder;
     ///
-    /// let original = BloomFilterBuilder::with_accuracy(100, 0.01).build();
+    /// let original = BloomFilterBuilder::with_accuracy(100, 0.01)
+    ///     .build()
+    ///     .unwrap();
     /// let bytes = original.serialize();
     ///
     /// let restored = BloomFilter::deserialize(&bytes).unwrap();
@@ -461,38 +518,41 @@ impl BloomFilter {
         }
 
         let num_words = num_longs as usize;
+        if !is_empty {
+            let payload_bytes = num_words
+                .checked_add(1)
+                .and_then(|words| words.checked_mul(size_of::<u64>()))
+                .ok_or_else(|| Error::deserial("Bloom filter payload length overflows"))?;
+            let available_bytes = cursor.remaining().len();
+            if available_bytes < payload_bytes {
+                return Err(Error::insufficient_data_of(
+                    "Bloom filter payload",
+                    format_args!("expected {payload_bytes} bytes, got {available_bytes}"),
+                ));
+            }
+        }
         let mut bit_array = vec![0u64; num_words].into_boxed_slice();
-        let num_bits_set;
-
-        if is_empty {
-            num_bits_set = 0;
+        let num_bits_set = if is_empty {
+            0
         } else {
-            let raw_num_bits_set = cursor
+            let serialized_num_bits_set = cursor
                 .read_u64_le()
                 .map_err(insufficient_data("num_bits_set"))?;
 
+            let mut count = 0;
             for word in &mut bit_array {
                 *word = cursor
                     .read_u64_le()
                     .map_err(insufficient_data("bit_array"))?;
+                count += word.count_ones() as u64;
             }
-
-            // Handle "dirty" state: 0xFFFFFFFFFFFFFFFF indicates bits need recounting
-            const DIRTY_BITS_VALUE: u64 = 0xFFFFFFFFFFFFFFFF;
-            if raw_num_bits_set == DIRTY_BITS_VALUE {
-                num_bits_set = bit_array.iter().map(|w| w.count_ones() as u64).sum();
-            } else {
-                let raw_num_words_set = raw_num_bits_set.div_ceil(64) as usize;
-                if raw_num_words_set > num_words {
-                    return Err(Error::deserial(format!(
-                        "invalid num_bits_set: expected <= {}, got {}",
-                        num_words * 64,
-                        raw_num_bits_set
-                    )));
-                }
-                num_bits_set = raw_num_bits_set;
+            if serialized_num_bits_set != u64::MAX && serialized_num_bits_set != count {
+                return Err(Error::deserial(format!(
+                    "invalid num_bits_set: expected {count}, got {serialized_num_bits_set}"
+                )));
             }
-        }
+            count
+        };
 
         Ok(BloomFilter {
             seed,
@@ -532,12 +592,14 @@ impl BloomFilter {
         true
     }
 
-    /// Sets all k bits for the given hash values.
-    fn set_bits(&mut self, h0: u64, h1: u64) {
+    /// Sets all k bits and returns whether they were already set.
+    fn set_bits(&mut self, h0: u64, h1: u64) -> bool {
+        let mut were_all_set = true;
         for i in 1..=self.num_hashes {
             let bit_index = self.compute_bit_index(h0, h1, i);
-            self.set_bit(bit_index);
+            were_all_set &= self.set_bit(bit_index);
         }
+        were_all_set
     }
 
     /// Computes a bit index using double hashing (Kirsch-Mitzenmacher).
@@ -547,7 +609,7 @@ impl BloomFilter {
     /// hash_index = ((h0 + i * h1) >> 1) % capacity_bits
     /// ```
     ///
-    /// The right shift by 1 improves bit distribution. The index `i` is 1-based.
+    /// The right shift by 1 improves bit-distribution. The index `i` is 1-based.
     fn compute_bit_index(&self, h0: u64, h1: u64, i: u16) -> usize {
         let hash = h0.wrapping_add(u64::from(i).wrapping_mul(h1)) as usize;
         (hash >> 1) % self.capacity()
@@ -561,20 +623,217 @@ impl BloomFilter {
         (self.bit_array[word_index] & mask) != 0
     }
 
-    /// Sets a single bit and updates the count if it wasn't already set.
-    fn set_bit(&mut self, bit_index: usize) {
+    /// Sets a single bit and returns whether it was already set.
+    fn set_bit(&mut self, bit_index: usize) -> bool {
         let word_index = bit_index >> 6; // Equivalent to bit_index / 64
         let bit_offset = bit_index & 63; // Equivalent to bit_index % 64
         let mask = 1u64 << bit_offset;
+        let was_set = (self.bit_array[word_index] & mask) != 0;
 
-        if (self.bit_array[word_index] & mask) == 0 {
+        if !was_set {
             self.bit_array[word_index] |= mask;
             self.num_bits_set += 1;
         }
+        was_set
     }
 
-    /// Returns the estimated size of the filter in bytes
+    /// Returns the estimated size of the filter in bytes.
     pub fn estimated_size(&self) -> usize {
         size_of::<Self>() + self.bit_array.len() * size_of::<u64>()
+    }
+}
+
+/// Builder for creating [`BloomFilter`] instances.
+///
+/// Provides two construction modes:
+/// * [`with_accuracy()`](Self::with_accuracy): Specify target items and false positive rate
+///   (recommended)
+/// * [`with_size()`](Self::with_size): Specify requested bit count and hash functions (manual)
+///
+/// Configuration is stored without validation and checked when [`build()`](Self::build) is called.
+/// Accuracy construction treats `max_items` as a sizing assumption, not an insertion limit. The
+/// filter continues accepting items beyond that count, but its false-positive probability can then
+/// exceed the requested target.
+#[derive(Debug, Clone)]
+pub struct BloomFilterBuilder {
+    mode: BloomFilterBuilderMode,
+    seed: u64,
+}
+
+#[derive(Debug, Clone)]
+enum BloomFilterBuilderMode {
+    Accuracy { max_items: u64, fpp: f64 },
+    Size { num_bits: u64, num_hashes: u16 },
+}
+
+impl BloomFilterBuilder {
+    /// Minimum allowed requested Bloom filter size, in bits.
+    const MIN_NUM_BITS: u64 = 1;
+    /// Maximum allowed requested Bloom filter size, in bits.
+    ///
+    /// Derived from serialization limits so the encoded sketch length fits in a signed 32-bit size
+    /// field.
+    const MAX_NUM_BITS: u64 = (i32::MAX as u64 - Family::BLOOMFILTER.max_pre_longs as u64) * 64;
+    /// Minimum allowed number of hash functions.
+    const MIN_NUM_HASHES: u16 = 1;
+    /// Maximum allowed number of hash functions.
+    const MAX_NUM_HASHES: u16 = i16::MAX as u16;
+
+    /// Creates a builder that derives its parameters from a target accuracy.
+    ///
+    /// Uses the standard Bloom filter sizing formulas to choose the requested number of bits and
+    /// hash functions. The parameters are validated when [`build()`](Self::build) is called.
+    ///
+    /// `max_items` is the expected maximum number of distinct items, not a hard insertion limit.
+    /// Inserting more distinct items remains valid but can increase the false-positive probability
+    /// beyond `fpp`. An `fpp` of `1.0` is accepted and creates the smallest allocation: 64 bits and
+    /// one hash function.
+    ///
+    /// # Arguments
+    ///
+    /// * `max_items`: Maximum expected number of distinct items.
+    /// * `fpp`: Target false positive probability (for example, `0.01` for `1%`).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::bloom::BloomFilterBuilder;
+    ///
+    /// // Optimal for 10,000 items with 1% FPP
+    /// let filter = BloomFilterBuilder::with_accuracy(10_000, 0.01)
+    ///     .seed(42)
+    ///     .build()
+    ///     .unwrap();
+    /// ```
+    pub fn with_accuracy(max_items: u64, fpp: f64) -> Self {
+        BloomFilterBuilder {
+            mode: BloomFilterBuilderMode::Accuracy { max_items, fpp },
+            seed: DEFAULT_UPDATE_SEED,
+        }
+    }
+
+    /// Creates a builder with manual size specification.
+    ///
+    /// Use this when you want precise control over the requested filter size,
+    /// or when working with pre-calculated parameters.
+    /// The parameters are validated when [`build()`](Self::build) is called.
+    ///
+    /// The underlying storage is word-based, so the actual capacity is rounded
+    /// up to the next multiple of 64 bits.
+    ///
+    /// `num_bits` must be positive and fit the serialized Bloom filter format. `num_hashes` must be
+    /// in the range `1..=32767`. These constraints are checked by [`build()`](Self::build).
+    ///
+    /// # Arguments
+    ///
+    /// * `num_bits`: Total number of bits in the filter.
+    /// * `num_hashes`: Number of hash functions to use.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::bloom::BloomFilterBuilder;
+    ///
+    /// let filter = BloomFilterBuilder::with_size(10_000, 7).build().unwrap();
+    /// ```
+    pub fn with_size(num_bits: u64, num_hashes: u16) -> Self {
+        BloomFilterBuilder {
+            mode: BloomFilterBuilderMode::Size {
+                num_bits,
+                num_hashes,
+            },
+            seed: DEFAULT_UPDATE_SEED,
+        }
+    }
+
+    /// Sets a custom hash seed (default: 9001).
+    ///
+    /// **Important**: Filters with different seeds cannot be merged.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::bloom::BloomFilterBuilder;
+    ///
+    /// let filter = BloomFilterBuilder::with_accuracy(100, 0.01)
+    ///     .seed(12345)
+    ///     .build()
+    ///     .unwrap();
+    /// ```
+    pub fn seed(mut self, seed: u64) -> Self {
+        self.seed = seed;
+        self
+    }
+
+    /// Builds the Bloom filter.
+    ///
+    /// # Errors
+    ///
+    /// In accuracy mode, returns an error if `max_items` is zero, `fpp` is outside `(0.0, 1.0]`, or
+    /// the target requires more bits than the serialized format supports.
+    ///
+    /// In manual size mode, returns an error if `num_bits` is zero or exceeds the serialized format
+    /// limit, or if `num_hashes` is outside `1..=32767`.
+    ///
+    /// Valid configurations may still request more memory than the current process can allocate.
+    pub fn build(self) -> Result<BloomFilter, Error> {
+        let (num_bits, num_hashes) = match self.mode {
+            BloomFilterBuilderMode::Accuracy { max_items, fpp } => {
+                if max_items == 0 {
+                    return Err(Error::invalid_argument("max_items must be greater than 0"));
+                }
+                if !(fpp > 0.0 && fpp <= 1.0) {
+                    return Err(Error::invalid_argument("fpp must be in (0.0, 1.0]"));
+                }
+
+                let n = max_items as f64;
+                let ln2_squared = std::f64::consts::LN_2 * std::f64::consts::LN_2;
+                let bits = (-n * fpp.ln() / ln2_squared).ceil();
+                if bits > Self::MAX_NUM_BITS as f64 {
+                    return Err(Error::invalid_argument(format!(
+                        "target accuracy requires {bits:.0} bits, but at most {} are supported",
+                        Self::MAX_NUM_BITS
+                    )));
+                }
+
+                let num_bits = (bits as u64).max(Self::MIN_NUM_BITS);
+                let num_hashes = (num_bits as f64 / n * std::f64::consts::LN_2).ceil().clamp(
+                    f64::from(Self::MIN_NUM_HASHES),
+                    f64::from(Self::MAX_NUM_HASHES),
+                ) as u16;
+                (num_bits, num_hashes)
+            }
+            BloomFilterBuilderMode::Size {
+                num_bits,
+                num_hashes,
+            } => {
+                if !(Self::MIN_NUM_BITS..=Self::MAX_NUM_BITS).contains(&num_bits) {
+                    return Err(Error::invalid_argument(format!(
+                        "num_bits must be between {} and {}, got {}",
+                        Self::MIN_NUM_BITS,
+                        Self::MAX_NUM_BITS,
+                        num_bits
+                    )));
+                }
+                if !(Self::MIN_NUM_HASHES..=Self::MAX_NUM_HASHES).contains(&num_hashes) {
+                    return Err(Error::invalid_argument(format!(
+                        "num_hashes must be between {} and {}, got {}",
+                        Self::MIN_NUM_HASHES,
+                        Self::MAX_NUM_HASHES,
+                        num_hashes
+                    )));
+                }
+                (num_bits, num_hashes)
+            }
+        };
+        let num_words = num_bits.div_ceil(64) as usize;
+        let bit_array = vec![0u64; num_words].into_boxed_slice();
+
+        Ok(BloomFilter {
+            seed: self.seed,
+            num_hashes,
+            num_bits_set: 0,
+            bit_array,
+        })
     }
 }

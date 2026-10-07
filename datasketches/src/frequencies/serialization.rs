@@ -19,14 +19,15 @@ use std::hash::Hash;
 
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
+use crate::codec::assert::insufficient_data;
 use crate::error::Error;
 
 /// Serialization version.
 pub const SERIAL_VERSION: u8 = 1;
 
-/// Preamble longs for empty sketch.
+/// Preamble longs for a sketch with zero stream weight.
 pub const PREAMBLE_LONGS_EMPTY: u8 = 1;
-/// Preamble longs for non-empty sketch.
+/// Preamble longs for a sketch with positive stream weight, even if it retains no items.
 pub const PREAMBLE_LONGS_NONEMPTY: u8 = 4;
 
 /// Empty flag mask (both bits for compatibility).
@@ -54,17 +55,21 @@ impl FrequentItemValue for String {
     }
 
     fn deserialize_value(cursor: &mut SketchSlice<'_>) -> Result<Self, Error> {
-        let len = cursor.read_u32_le().map_err(|_| {
-            Error::insufficient_data("failed to read string item length".to_string())
-        })?;
-
-        let mut slice = vec![0; len as usize];
-        cursor.read_exact(&mut slice).map_err(|_| {
-            Error::insufficient_data("failed to read string item bytes".to_string())
-        })?;
-
-        String::from_utf8(slice)
-            .map_err(|_| Error::deserial("invalid UTF-8 string payload".to_string()))
+        let len = cursor
+            .read_u32_le()
+            .map_err(insufficient_data("string item length"))? as usize;
+        let available_bytes = cursor.remaining().len();
+        if available_bytes < len {
+            return Err(Error::insufficient_data_of(
+                "string item payload",
+                format_args!("expected {len} bytes, got {available_bytes}"),
+            ));
+        }
+        let value = std::str::from_utf8(&cursor.remaining()[..len])
+            .map(str::to_owned)
+            .map_err(|_| Error::deserial("invalid UTF-8 string payload"))?;
+        cursor.advance(len as u64);
+        Ok(value)
     }
 }
 
@@ -80,11 +85,9 @@ macro_rules! impl_primitive {
             }
 
             fn deserialize_value(cursor: &mut SketchSlice<'_>) -> Result<Self, Error> {
-                cursor.$read().map_err(|_| {
-                    Error::insufficient_data(
-                        concat!("failed to read ", stringify!($name), " item bytes").to_string(),
-                    )
-                })
+                cursor
+                    .$read()
+                    .map_err(insufficient_data(concat!(stringify!($name), " item")))
             }
         }
     };
