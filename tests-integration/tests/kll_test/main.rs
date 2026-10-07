@@ -19,3 +19,4 @@ mod core;
 mod generic;
 mod merge;
 mod query;
+mod update;
