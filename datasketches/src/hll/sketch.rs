@@ -209,6 +209,10 @@ impl HllSketch {
 
     /// Returns the current cardinality estimate.
     ///
+    /// In HLL mode, uses the more accurate HIP estimator when the update history is available,
+    /// and the composite estimator otherwise. Use [`composite_estimate`](Self::composite_estimate)
+    /// to query the composite estimator regardless of update history.
+    ///
     /// # Examples
     ///
     /// ```
@@ -229,6 +233,39 @@ impl HllSketch {
             Mode::Array4(arr) => arr.estimate(),
             Mode::Array6(arr) => arr.estimate(),
             Mode::Array8(arr) => arr.estimate(),
+        }
+    }
+
+    /// Returns the cardinality estimate using the composite estimator.
+    ///
+    /// In HLL mode, this derives the estimate from the registers rather than the HIP update
+    /// history. It is less accurate than HIP but allows callers to compare estimates without
+    /// depending on insertion order. In LIST and SET modes, it returns the same coupon-count
+    /// estimate as [`estimate`](Self::estimate).
+    ///
+    /// This is equivalent to Java's `HllSketch.getCompositeEstimate()`. It does not modify the
+    /// sketch or invalidate the HIP estimator.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::hll::HllSketch;
+    /// use datasketches::hll::HllType;
+    ///
+    /// let mut sketch = HllSketch::new(12, HllType::Hll4).unwrap();
+    /// for value in 0..10_000 {
+    ///     sketch.update(value);
+    /// }
+    /// let estimate = sketch.composite_estimate();
+    /// assert!((estimate - 10_000.0).abs() < 500.0);
+    /// ```
+    pub fn composite_estimate(&self) -> f64 {
+        match &self.mode {
+            Mode::List { list, .. } => list.container().estimate(),
+            Mode::Set { set, .. } => set.container().estimate(),
+            Mode::Array4(arr) => arr.composite_estimate(),
+            Mode::Array6(arr) => arr.composite_estimate(),
+            Mode::Array8(arr) => arr.composite_estimate(),
         }
     }
 

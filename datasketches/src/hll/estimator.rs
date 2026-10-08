@@ -182,7 +182,7 @@ impl Estimator {
     }
 
     /// Selects between bias-corrected HLL and bitmap estimates using their empirical crossover.
-    fn composite_estimate(&self, lg_config_k: u8, cur_min: u8, num_at_cur_min: u32) -> f64 {
+    pub fn composite_estimate(&self, lg_config_k: u8, cur_min: u8, num_at_cur_min: u32) -> f64 {
         let raw_estimate = self.raw_estimate(lg_config_k);
 
         let x_arr = composite_interpolation::get_x_arr(lg_config_k);

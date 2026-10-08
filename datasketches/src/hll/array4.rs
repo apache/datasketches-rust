@@ -241,6 +241,11 @@ impl Array4 {
             .estimate(self.lg_config_k, self.cur_min, self.num_at_cur_min)
     }
 
+    pub fn composite_estimate(&self) -> f64 {
+        self.estimator
+            .composite_estimate(self.lg_config_k, self.cur_min, self.num_at_cur_min)
+    }
+
     pub fn upper_bound(&self, num_std_dev: NumStdDev) -> f64 {
         self.estimator.upper_bound(
             self.lg_config_k,

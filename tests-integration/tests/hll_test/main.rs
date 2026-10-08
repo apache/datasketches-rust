@@ -16,5 +16,6 @@
 // under the License.
 
 mod bounds;
+mod estimate;
 mod union;
 mod update;
