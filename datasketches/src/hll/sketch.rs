@@ -209,10 +209,6 @@ impl HllSketch {
 
     /// Returns the current cardinality estimate.
     ///
-    /// In HLL mode, uses the more accurate HIP estimator when the update history is available,
-    /// and the composite estimator otherwise. Use [`composite_estimate`](Self::composite_estimate)
-    /// to query the composite estimator regardless of update history.
-    ///
     /// # Examples
     ///
     /// ```
@@ -238,13 +234,10 @@ impl HllSketch {
 
     /// Returns the cardinality estimate using the composite estimator.
     ///
-    /// In HLL mode, this derives the estimate from the registers rather than the HIP update
-    /// history. It is less accurate than HIP but allows callers to compare estimates without
-    /// depending on insertion order. In LIST and SET modes, it returns the same coupon-count
-    /// estimate as [`estimate`](Self::estimate).
-    ///
-    /// This is equivalent to Java's `HllSketch.getCompositeEstimate()`. It does not modify the
-    /// sketch or invalidate the HIP estimator.
+    /// The estimate is derived only from the sketch's registers, so it does not depend on the
+    /// order in which values were inserted. This can be less accurate than
+    /// [`estimate`](Self::estimate); use it to compare estimates across sketches that saw the
+    /// same values in different orders. This method does not modify the sketch.
     ///
     /// # Examples
     ///

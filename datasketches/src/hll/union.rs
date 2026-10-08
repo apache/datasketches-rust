@@ -309,9 +309,7 @@ impl HllUnion {
 
     /// Returns the union's cardinality estimate using the composite estimator.
     ///
-    /// Uses [`HllSketch::composite_estimate`] regardless of whether the union retains valid HIP
-    /// update history. This is equivalent to Java's `Union.getCompositeEstimate()` and does not
-    /// modify the union.
+    /// See [`HllSketch::composite_estimate`]. This method does not modify the union.
     ///
     /// # Examples
     ///
