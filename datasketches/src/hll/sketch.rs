@@ -232,12 +232,10 @@ impl HllSketch {
         }
     }
 
-    /// Returns the cardinality estimate using the composite estimator.
+    /// Returns the current cardinality estimate that never depends on
+    /// the order in which values were inserted.
     ///
-    /// The estimate is derived only from the sketch's registers, so it does not depend on the
-    /// order in which values were inserted. This can be less accurate than
-    /// [`estimate`](Self::estimate); use it to compare estimates across sketches that saw the
-    /// same values in different orders. This method does not modify the sketch.
+    /// This can be less accurate than [`estimate`](Self::estimate).
     ///
     /// # Examples
     ///

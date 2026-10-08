@@ -309,7 +309,7 @@ impl HllUnion {
 
     /// Returns the union's cardinality estimate using the composite estimator.
     ///
-    /// See [`HllSketch::composite_estimate`]. This method does not modify the union.
+    /// See [`HllSketch::composite_estimate`].
     ///
     /// # Examples
     ///
