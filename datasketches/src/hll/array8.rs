@@ -87,6 +87,11 @@ impl Array8 {
         self.estimator.estimate(self.lg_config_k, 0, self.num_zeros)
     }
 
+    pub fn composite_estimate(&self) -> f64 {
+        self.estimator
+            .composite_estimate(self.lg_config_k, 0, self.num_zeros)
+    }
+
     pub fn upper_bound(&self, num_std_dev: NumStdDev) -> f64 {
         self.estimator
             .upper_bound(self.lg_config_k, 0, self.num_zeros, num_std_dev)

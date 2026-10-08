@@ -232,6 +232,34 @@ impl HllSketch {
         }
     }
 
+    /// Returns the current cardinality estimate that never depends on
+    /// the order in which values were inserted.
+    ///
+    /// This can be less accurate than [`estimate`](Self::estimate).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::hll::HllSketch;
+    /// use datasketches::hll::HllType;
+    ///
+    /// let mut sketch = HllSketch::new(12, HllType::Hll4).unwrap();
+    /// for value in 0..10_000 {
+    ///     sketch.update(value);
+    /// }
+    /// let estimate = sketch.composite_estimate();
+    /// assert!((estimate - 10_000.0).abs() < 500.0);
+    /// ```
+    pub fn composite_estimate(&self) -> f64 {
+        match &self.mode {
+            Mode::List { list, .. } => list.container().estimate(),
+            Mode::Set { set, .. } => set.container().estimate(),
+            Mode::Array4(arr) => arr.composite_estimate(),
+            Mode::Array6(arr) => arr.composite_estimate(),
+            Mode::Array8(arr) => arr.composite_estimate(),
+        }
+    }
+
     /// Returns the upper confidence bound for `num_std_dev` standard deviations.
     ///
     /// # Examples

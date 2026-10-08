@@ -12,6 +12,7 @@ All significant changes to this project will be documented in this file.
 
 ### New features
 
+* Add `HllSketch::composite_estimate` and `HllUnion::composite_estimate` to query cardinality without relying on HIP update history, matching Java's `getCompositeEstimate()`.
 * `KllSketch` is now available behind the `kll` feature, with rank, quantile, PMF, and CDF queries, merging, serialization, custom ordered item types, and a `KllFloat` adapter for non-NaN floating-point values.
 * Add `TDigestMut::quantiles` and `TDigest::quantiles` for querying several ranks in one centroid scan while preserving input order.
 * Add `FromIterator<TDigestMut>` as an alternative to incremental `TDigestMut::merge` calls for combining owned partial sketches in a single compression pass.

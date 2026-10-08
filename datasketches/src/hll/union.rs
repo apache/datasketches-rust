@@ -307,6 +307,26 @@ impl HllUnion {
         self.gadget.estimate()
     }
 
+    /// Returns the union's cardinality estimate using the composite estimator.
+    ///
+    /// See [`HllSketch::composite_estimate`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::hll::HllUnion;
+    ///
+    /// let mut union = HllUnion::new(12).unwrap();
+    /// for value in 0..10_000 {
+    ///     union.update_value(value);
+    /// }
+    /// let estimate = union.composite_estimate();
+    /// assert!((estimate - 10_000.0).abs() < 500.0);
+    /// ```
+    pub fn composite_estimate(&self) -> f64 {
+        self.gadget.composite_estimate()
+    }
+
     /// Returns the upper confidence bound for `num_std_dev` standard deviations.
     ///
     /// # Examples
