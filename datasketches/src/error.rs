@@ -16,6 +16,30 @@
 // under the License.
 
 //! Error types for DataSketches operations.
+//!
+//! # Query results
+//!
+//! An empty sketch is valid. Queries with no meaningful result use `Option` to represent
+//! absence; invalid caller arguments use `Result::Err`. A query that can encounter both returns
+//! `Result<Option<T>, Error>`: `Ok(None)` means no result, not an invalid request.
+//!
+//! The following contract applies to KLL sketches and their sorted views:
+//!
+//! | Query | Valid input, non-empty | Valid input, empty | Invalid input, any state |
+//! | --- | --- | --- | --- |
+//! | `min_item`, `max_item` | `Some(item)` | `None` | No arguments |
+//! | `rank` | `Some(rank)` | `None` | Items implement `Ord` |
+//! | `quantile`, `quantiles`, `cdf`, `pmf` | `Ok(Some(result))` | `Ok(None)` | `Err(InvalidArgument)` |
+//!
+//! - **Validation comes first:** ranks must be in `[0.0, 1.0]` and not NaN; split points must be
+//!   strictly increasing.
+//! - **Empty argument slices are valid:** on a non-empty sketch, `quantiles(&[])` returns
+//!   `Ok(Some(vec![]))`, and `cdf(&[])` / `pmf(&[])` return `Ok(Some(vec![1.0]))`. On an empty
+//!   sketch, all return `Ok(None)`.
+//! - **Caller migration:** handle `rank` as an `Option`; for fallible queries, use `?` to propagate
+//!   invalid arguments, then handle the `Option` for an empty sketch.
+//! - **Errors remain distinct:** malformed serialized data returns [`ErrorKind::InvalidData`];
+//!   broken internal invariants remain programming errors.
 
 use std::fmt;
 

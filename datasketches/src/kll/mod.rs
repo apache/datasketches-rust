@@ -28,16 +28,26 @@
 //! provides their ordinary numerical order. Custom ordering should be expressed with a newtype
 //! that implements [`Ord`], keeping the ordering semantics part of the item type.
 //!
+//! # Query results
+//!
+//! Valid queries on an empty sketch return no result. Invalid ranks or split points return
+//! [`ErrorKind::InvalidArgument`](crate::error::ErrorKind::InvalidArgument), even on an empty
+//! sketch. See the [query contract](crate::error#query-results) for return
+//! types and migration guidance.
+//!
 //! # Usage
 //!
 //! ```rust
 //! # use datasketches::common::SearchCriteria;
 //! # use datasketches::kll::KllSketch;
-//! let mut sketch = KllSketch::<i64>::new(200).unwrap();
+//! let mut sketch = KllSketch::<i64>::new(200)?;
 //! sketch.update(1);
 //! sketch.update(2);
-//! let q = sketch.quantile(0.5, SearchCriteria::Inclusive).unwrap();
+//! let Some(q) = sketch.quantile(0.5, SearchCriteria::Inclusive)? else {
+//!     return Ok(()); // No samples to query.
+//! };
 //! assert!((1..=2).contains(&q));
+//! # Ok::<(), datasketches::error::Error>(())
 //! ```
 
 mod capacity;
