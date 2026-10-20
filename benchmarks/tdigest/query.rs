@@ -29,7 +29,7 @@ use super::support::prepared_digest;
 fn rank(bencher: Bencher) {
     let digest = prepared_digest();
 
-    bencher.bench_local(|| black_box(&digest).rank(black_box(0.531_25)));
+    bencher.bench_local(|| black_box(&digest).rank(black_box(0.531_25)).unwrap());
 }
 
 #[divan::bench(args = [0.0, 3.0, 3.5, 7.0])]
@@ -37,14 +37,14 @@ fn rank_repeated_means(bencher: Bencher, value: f64) {
     let values = (0..100_000).map(|i| (i % 8) as f64).collect::<Vec<_>>();
     let digest = build_digest(&values);
 
-    bencher.bench_local(|| black_box(&digest).rank(black_box(value)));
+    bencher.bench_local(|| black_box(&digest).rank(black_box(value)).unwrap());
 }
 
 #[divan::bench]
 fn quantile(bencher: Bencher) {
     let digest = prepared_digest();
 
-    bencher.bench_local(|| black_box(&digest).quantile(black_box(0.531_25)));
+    bencher.bench_local(|| black_box(&digest).quantile(black_box(0.531_25)).unwrap());
 }
 
 #[divan::bench]
@@ -54,7 +54,7 @@ fn cdf_100(bencher: Bencher) {
 
     bencher
         .counter(ItemsCount::new(split_points.len()))
-        .bench_local(|| black_box(&digest).cdf(black_box(&split_points)));
+        .bench_local(|| black_box(&digest).cdf(black_box(&split_points)).unwrap());
 }
 
 #[divan::bench(consts = [true, false], args = [2, 6, 100])]
@@ -64,7 +64,7 @@ fn quantiles_sequential<const SORTED: bool>(bencher: Bencher, num_ranks: usize) 
 
     bencher.counter(ItemsCount::new(num_ranks)).bench_local(|| {
         for &rank in black_box(&ranks) {
-            black_box(black_box(&digest).quantile(black_box(rank)));
+            black_box(black_box(&digest).quantile(black_box(rank)).unwrap());
         }
     });
 }
@@ -76,7 +76,7 @@ fn quantiles_batch<const SORTED: bool>(bencher: Bencher, num_ranks: usize) {
 
     bencher
         .counter(ItemsCount::new(num_ranks))
-        .bench_local(|| black_box(&digest).quantiles(black_box(&ranks)));
+        .bench_local(|| black_box(&digest).quantiles(black_box(&ranks)).unwrap());
 }
 
 fn query_ranks(num_ranks: usize, sorted: bool) -> Vec<f64> {

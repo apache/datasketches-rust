@@ -127,4 +127,5 @@ fn final_quantile(mut merged: TDigestMut) -> Option<f64> {
     TDigestMut::deserialize(black_box(&bytes))
         .unwrap()
         .quantile(black_box(0.9))
+        .unwrap()
 }

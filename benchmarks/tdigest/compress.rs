@@ -31,14 +31,14 @@ fn initial_buffer(bencher: Bencher) {
     bencher
         .counter(ItemsCount::new(values.len()))
         .with_inputs(|| digest.clone())
-        .bench_local_values(|mut digest| black_box(digest.rank(0.5)));
+        .bench_local_values(|mut digest| black_box(digest.rank(0.5).unwrap()));
 }
 
 #[divan::bench]
 fn unmerged_tail(bencher: Bencher) {
     let values = values(3_280);
     let mut digest = build_mut_digest(&values[..1_640]);
-    black_box(digest.rank(0.5));
+    black_box(digest.rank(0.5).unwrap());
     for &value in &values[1_640..] {
         digest.update(value);
     }
@@ -46,7 +46,7 @@ fn unmerged_tail(bencher: Bencher) {
     bencher
         .counter(ItemsCount::new(1_640_usize))
         .with_inputs(|| digest.clone())
-        .bench_local_values(|mut digest| black_box(digest.rank(0.5)));
+        .bench_local_values(|mut digest| black_box(digest.rank(0.5).unwrap()));
 }
 
 #[divan::bench]

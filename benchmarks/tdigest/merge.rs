@@ -34,8 +34,8 @@ fn merge(bencher: Bencher) {
     let values = values(200_000);
     let mut left = build_mut_digest(&values[..100_000]);
     let mut right = build_mut_digest(&values[100_000..]);
-    black_box(left.rank(0.5));
-    black_box(right.rank(0.5));
+    black_box(left.rank(0.5).unwrap());
+    black_box(right.rank(0.5).unwrap());
 
     bencher
         .counter(ItemsCount::new(values.len()))
@@ -65,7 +65,7 @@ fn small_partials(bencher: Bencher) {
     let partials = partial_digests(64, SMALL_ROWS_PER_PARTIAL)
         .into_iter()
         .map(|mut digest| {
-            black_box(digest.quantile(0.5));
+            black_box(digest.quantile(0.5).unwrap());
             digest
         })
         .collect::<Vec<_>>();
@@ -86,7 +86,7 @@ fn partials(bencher: Bencher) {
     let partials = partial_digests_with(DEFAULT_DIGEST_K, 64, ROWS_PER_PARTIAL)
         .into_iter()
         .map(|mut digest| {
-            black_box(digest.quantile(0.5));
+            black_box(digest.quantile(0.5).unwrap());
             digest
         })
         .collect::<Vec<_>>();
@@ -107,7 +107,7 @@ fn partials_from_iter(bencher: Bencher) {
     let partials = partial_digests_with(DEFAULT_DIGEST_K, 64, ROWS_PER_PARTIAL)
         .into_iter()
         .map(|mut digest| {
-            black_box(digest.quantile(0.5));
+            black_box(digest.quantile(0.5).unwrap());
             digest
         })
         .collect::<Vec<_>>();
@@ -125,7 +125,7 @@ fn partials_from_iter_cloned(bencher: Bencher) {
     let partials = partial_digests_with(DEFAULT_DIGEST_K, 64, ROWS_PER_PARTIAL)
         .into_iter()
         .map(|mut digest| {
-            black_box(digest.quantile(0.5));
+            black_box(digest.quantile(0.5).unwrap());
             digest
         })
         .collect::<Vec<_>>();
@@ -141,7 +141,7 @@ fn partials_from_iter_finalize(bencher: Bencher, additional_rows: usize) {
     let partials = partial_digests_with(DEFAULT_DIGEST_K, 64, ROWS_PER_PARTIAL)
         .into_iter()
         .map(|mut digest| {
-            black_box(digest.quantile(0.5));
+            black_box(digest.quantile(0.5).unwrap());
             digest
         })
         .collect::<Vec<_>>();
@@ -188,7 +188,7 @@ fn serialized_partials(bencher: Bencher, rows_per_partial: usize) {
                 let partial = TDigestMut::deserialize(partial).unwrap();
                 merged.merge(&partial);
             }
-            black_box(merged.quantile(0.5))
+            black_box(merged.quantile(0.5).unwrap())
         });
 }
 
@@ -208,7 +208,7 @@ fn serialized_overlapping_partials(bencher: Bencher) {
                 let partial = TDigestMut::deserialize(partial).unwrap();
                 merged.merge(&partial);
             }
-            black_box(merged.quantile(0.5))
+            black_box(merged.quantile(0.5).unwrap())
         });
 }
 
@@ -224,7 +224,7 @@ fn serialized_partials_from_iter(bencher: Bencher, overlapping: bool) {
                 .map(|partial| TDigestMut::deserialize(partial))
                 .collect::<Result<TDigestMut, _>>()
                 .unwrap();
-            black_box(merged.quantile(0.5))
+            black_box(merged.quantile(0.5).unwrap())
         });
 }
 
@@ -244,7 +244,7 @@ fn serialized_partials_in_batches(bencher: Bencher, overlapping: bool) {
                     .unwrap();
                 merged.merge(&batch);
             }
-            black_box(merged.quantile(0.5))
+            black_box(merged.quantile(0.5).unwrap())
         });
 }
 

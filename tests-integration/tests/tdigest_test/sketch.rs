@@ -19,6 +19,7 @@ use std::mem::size_of;
 use std::panic::AssertUnwindSafe;
 use std::panic::catch_unwind;
 
+use datasketches::error::ErrorKind;
 use datasketches::tdigest::TDigestMut;
 use googletest::assert_that;
 use googletest::prelude::eq;
@@ -33,14 +34,16 @@ fn test_empty() {
     assert_eq!(tdigest.total_weight(), 0);
     assert_eq!(tdigest.min_value(), None);
     assert_eq!(tdigest.max_value(), None);
-    assert_eq!(tdigest.rank(0.0), None);
-    assert_eq!(tdigest.quantile(0.5), None);
-    assert_eq!(tdigest.quantiles(&[0.0, 0.5, 1.0]), None);
-    assert_eq!(tdigest.quantiles(&[]), None);
+    assert_eq!(tdigest.rank(0.0).unwrap(), None);
+    assert_eq!(tdigest.quantile(0.5).unwrap(), None);
+    assert_eq!(tdigest.quantiles(&[0.0, 0.5, 1.0]).unwrap(), None);
+    assert_eq!(tdigest.quantiles(&[]).unwrap(), None);
 
     let split_points = [0.0];
-    assert_eq!(tdigest.pmf(&split_points), None);
-    assert_eq!(tdigest.cdf(&split_points), None);
+    assert_eq!(tdigest.pmf(&split_points).unwrap(), None);
+    assert_eq!(tdigest.cdf(&split_points).unwrap(), None);
+    assert_eq!(tdigest.pmf(&[]).unwrap(), None);
+    assert_eq!(tdigest.cdf(&[]).unwrap(), None);
 
     let tdigest = TDigestMut::new(10).unwrap().freeze();
     assert!(tdigest.is_empty());
@@ -48,14 +51,16 @@ fn test_empty() {
     assert_eq!(tdigest.total_weight(), 0);
     assert_eq!(tdigest.min_value(), None);
     assert_eq!(tdigest.max_value(), None);
-    assert_eq!(tdigest.rank(0.0), None);
-    assert_eq!(tdigest.quantile(0.5), None);
-    assert_eq!(tdigest.quantiles(&[0.0, 0.5, 1.0]), None);
-    assert_eq!(tdigest.quantiles(&[]), None);
+    assert_eq!(tdigest.rank(0.0).unwrap(), None);
+    assert_eq!(tdigest.quantile(0.5).unwrap(), None);
+    assert_eq!(tdigest.quantiles(&[0.0, 0.5, 1.0]).unwrap(), None);
+    assert_eq!(tdigest.quantiles(&[]).unwrap(), None);
 
     let split_points = [0.0];
-    assert_eq!(tdigest.pmf(&split_points), None);
-    assert_eq!(tdigest.cdf(&split_points), None);
+    assert_eq!(tdigest.pmf(&split_points).unwrap(), None);
+    assert_eq!(tdigest.cdf(&split_points).unwrap(), None);
+    assert_eq!(tdigest.pmf(&[]).unwrap(), None);
+    assert_eq!(tdigest.cdf(&[]).unwrap(), None);
 }
 
 #[test]
@@ -66,31 +71,36 @@ fn test_one_value() {
     assert_eq!(tdigest.total_weight(), 1);
     assert_eq!(tdigest.min_value(), Some(1.0));
     assert_eq!(tdigest.max_value(), Some(1.0));
-    assert_eq!(tdigest.rank(0.99), Some(0.0));
-    assert_eq!(tdigest.rank(1.0), Some(0.5));
-    assert_eq!(tdigest.rank(1.01), Some(1.0));
-    assert_eq!(tdigest.quantile(0.0), Some(1.0));
-    assert_eq!(tdigest.quantile(0.5), Some(1.0));
-    assert_eq!(tdigest.quantile(1.0), Some(1.0));
+    assert_eq!(tdigest.rank(0.99).unwrap(), Some(0.0));
+    assert_eq!(tdigest.rank(1.0).unwrap(), Some(0.5));
+    assert_eq!(tdigest.rank(1.01).unwrap(), Some(1.0));
+    assert_eq!(tdigest.quantile(0.0).unwrap(), Some(1.0));
+    assert_eq!(tdigest.quantile(0.5).unwrap(), Some(1.0));
+    assert_eq!(tdigest.quantile(1.0).unwrap(), Some(1.0));
     let ranks = [1.0, 0.5, 0.0, 0.5];
-    assert_eq!(tdigest.quantiles(&ranks), Some(vec![1.0; ranks.len()]));
     assert_eq!(
-        tdigest.freeze().quantiles(&ranks),
+        tdigest.quantiles(&ranks).unwrap(),
+        Some(vec![1.0; ranks.len()])
+    );
+    assert_eq!(
+        tdigest.freeze().quantiles(&ranks).unwrap(),
         Some(vec![1.0; ranks.len()])
     );
 }
 
 #[test]
-fn test_empty_split_points_define_one_bin() {
+fn test_empty_query_slices_on_nonempty_digest() {
     let mut tdigest = TDigestMut::new(100).unwrap();
     tdigest.update(1.0);
 
-    assert_eq!(tdigest.cdf(&[]), Some(vec![1.0]));
-    assert_eq!(tdigest.pmf(&[]), Some(vec![1.0]));
+    assert_eq!(tdigest.cdf(&[]).unwrap(), Some(vec![1.0]));
+    assert_eq!(tdigest.pmf(&[]).unwrap(), Some(vec![1.0]));
+    assert_eq!(tdigest.quantiles(&[]).unwrap(), Some(vec![]));
 
     let tdigest = tdigest.freeze();
-    assert_eq!(tdigest.cdf(&[]), Some(vec![1.0]));
-    assert_eq!(tdigest.pmf(&[]), Some(vec![1.0]));
+    assert_eq!(tdigest.cdf(&[]).unwrap(), Some(vec![1.0]));
+    assert_eq!(tdigest.pmf(&[]).unwrap(), Some(vec![1.0]));
+    assert_eq!(tdigest.quantiles(&[]).unwrap(), Some(vec![]));
 }
 
 #[test]
@@ -100,7 +110,7 @@ fn test_maximum_k() {
 
     let tdigest = tdigest.freeze();
     assert_eq!(tdigest.k(), u16::MAX);
-    assert_eq!(tdigest.quantile(0.5), Some(1.0));
+    assert_eq!(tdigest.quantile(0.5).unwrap(), Some(1.0));
 }
 
 #[test]
@@ -118,14 +128,14 @@ fn test_estimated_size_reuses_buffer_after_compression() {
     }
     let size_before_compression = tdigest.estimated_size();
     assert!(size_before_compression > inline_size);
-    tdigest.rank(0.5);
+    tdigest.rank(0.5).unwrap();
     assert!(tdigest.estimated_size() <= size_before_compression);
 
     for value in MAX_UNMERGED..10_000 {
         tdigest.update(value as f64);
     }
     let size_before_compression = tdigest.estimated_size();
-    tdigest.rank(0.5);
+    tdigest.rank(0.5).unwrap();
     assert!(tdigest.estimated_size() <= size_before_compression);
 
     let mut left = TDigestMut::new(K).unwrap();
@@ -170,35 +180,41 @@ fn test_many_values() {
     assert_eq!(tdigest.min_value(), Some(0.0));
     assert_eq!(tdigest.max_value(), Some((n - 1) as f64));
 
-    assert_that!(tdigest.rank(0.0).unwrap(), near(0.0, 0.0001));
-    assert_that!(tdigest.rank((n / 4) as f64).unwrap(), near(0.25, 0.0001));
-    assert_that!(tdigest.rank((n / 2) as f64).unwrap(), near(0.5, 0.0001));
+    assert_that!(tdigest.rank(0.0).unwrap().unwrap(), near(0.0, 0.0001));
     assert_that!(
-        tdigest.rank((n * 3 / 4) as f64).unwrap(),
+        tdigest.rank((n / 4) as f64).unwrap().unwrap(),
+        near(0.25, 0.0001)
+    );
+    assert_that!(
+        tdigest.rank((n / 2) as f64).unwrap().unwrap(),
+        near(0.5, 0.0001)
+    );
+    assert_that!(
+        tdigest.rank((n * 3 / 4) as f64).unwrap().unwrap(),
         near(0.75, 0.0001)
     );
-    assert_that!(tdigest.rank(n as f64).unwrap(), eq(1.0));
-    assert_that!(tdigest.quantile(0.0).unwrap(), eq(0.0));
+    assert_that!(tdigest.rank(n as f64).unwrap().unwrap(), eq(1.0));
+    assert_that!(tdigest.quantile(0.0).unwrap().unwrap(), eq(0.0));
     assert_that!(
-        tdigest.quantile(0.5).unwrap(),
+        tdigest.quantile(0.5).unwrap().unwrap(),
         near((n / 2) as f64, 0.03 * (n / 2) as f64)
     );
     assert_that!(
-        tdigest.quantile(0.9).unwrap(),
+        tdigest.quantile(0.9).unwrap().unwrap(),
         near((n as f64) * 0.9, 0.01 * (n as f64) * 0.9)
     );
     assert_that!(
-        tdigest.quantile(0.95).unwrap(),
+        tdigest.quantile(0.95).unwrap().unwrap(),
         near((n as f64) * 0.95, 0.01 * (n as f64) * 0.95)
     );
-    assert_that!(tdigest.quantile(1.0).unwrap(), eq((n - 1) as f64));
+    assert_that!(tdigest.quantile(1.0).unwrap().unwrap(), eq((n - 1) as f64));
 
     let split_points = [n as f64 / 2.0];
-    let pmf = tdigest.pmf(&split_points).unwrap();
+    let pmf = tdigest.pmf(&split_points).unwrap().unwrap();
     assert_eq!(pmf.len(), 2);
     assert_that!(pmf[0], near(0.5, 0.0001));
     assert_that!(pmf[1], near(0.5, 0.0001));
-    let cdf = tdigest.cdf(&split_points).unwrap();
+    let cdf = tdigest.cdf(&split_points).unwrap().unwrap();
     assert_eq!(cdf.len(), 2);
     assert_that!(cdf[0], near(0.5, 0.0001));
     assert_that!(cdf[1], eq(1.0));
@@ -209,13 +225,13 @@ fn test_rank_two_values() {
     let mut tdigest = TDigestMut::new(100).unwrap();
     tdigest.update(1.0);
     tdigest.update(2.0);
-    assert_eq!(tdigest.rank(0.99), Some(0.0));
-    assert_eq!(tdigest.rank(1.0), Some(0.25));
-    assert_eq!(tdigest.rank(1.25), Some(0.375));
-    assert_eq!(tdigest.rank(1.5), Some(0.5));
-    assert_eq!(tdigest.rank(1.75), Some(0.625));
-    assert_eq!(tdigest.rank(2.0), Some(0.75));
-    assert_eq!(tdigest.rank(2.01), Some(1.0));
+    assert_eq!(tdigest.rank(0.99).unwrap(), Some(0.0));
+    assert_eq!(tdigest.rank(1.0).unwrap(), Some(0.25));
+    assert_eq!(tdigest.rank(1.25).unwrap(), Some(0.375));
+    assert_eq!(tdigest.rank(1.5).unwrap(), Some(0.5));
+    assert_eq!(tdigest.rank(1.75).unwrap(), Some(0.625));
+    assert_eq!(tdigest.rank(2.0).unwrap(), Some(0.75));
+    assert_eq!(tdigest.rank(2.01).unwrap(), Some(1.0));
 }
 
 #[test]
@@ -225,9 +241,9 @@ fn test_rank_repeated_values() {
     tdigest.update(1.0);
     tdigest.update(1.0);
     tdigest.update(1.0);
-    assert_eq!(tdigest.rank(0.99), Some(0.0));
-    assert_eq!(tdigest.rank(1.0), Some(0.5));
-    assert_eq!(tdigest.rank(1.01), Some(1.0));
+    assert_eq!(tdigest.rank(0.99).unwrap(), Some(0.0));
+    assert_eq!(tdigest.rank(1.0).unwrap(), Some(0.5));
+    assert_eq!(tdigest.rank(1.01).unwrap(), Some(1.0));
 }
 
 #[test]
@@ -237,11 +253,11 @@ fn test_repeated_blocks() {
     tdigest.update(2.0);
     tdigest.update(2.0);
     tdigest.update(3.0);
-    assert_eq!(tdigest.rank(0.99), Some(0.0));
-    assert_eq!(tdigest.rank(1.0), Some(0.125));
-    assert_eq!(tdigest.rank(2.0), Some(0.5));
-    assert_eq!(tdigest.rank(3.0), Some(0.875));
-    assert_eq!(tdigest.rank(3.01), Some(1.0));
+    assert_eq!(tdigest.rank(0.99).unwrap(), Some(0.0));
+    assert_eq!(tdigest.rank(1.0).unwrap(), Some(0.125));
+    assert_eq!(tdigest.rank(2.0).unwrap(), Some(0.5));
+    assert_eq!(tdigest.rank(3.0).unwrap(), Some(0.875));
+    assert_eq!(tdigest.rank(3.01).unwrap(), Some(1.0));
 }
 
 #[test]
@@ -266,13 +282,13 @@ fn test_rank_brackets_weighted_equal_mean_runs() {
     let expected = [0., 3., 7.5, 18., 32.5, 47., 64.].map(|mass| mass / 64.);
     let frozen = digest.clone().freeze();
     for (&point, &rank) in points.iter().zip(&expected) {
-        assert_eq!(digest.rank(point), Some(rank));
-        assert_eq!(frozen.rank(point), Some(rank));
+        assert_eq!(digest.rank(point).unwrap(), Some(rank));
+        assert_eq!(frozen.rank(point).unwrap(), Some(rank));
     }
     let mut cdf = expected.to_vec();
     cdf.push(1.);
-    assert_eq!(digest.cdf(&points), Some(cdf.clone()));
-    assert_eq!(frozen.cdf(&points), Some(cdf));
+    assert_eq!(digest.cdf(&points).unwrap(), Some(cdf.clone()));
+    assert_eq!(frozen.cdf(&points).unwrap(), Some(cdf));
     let pmf = vec![
         0.,
         3. / 64.,
@@ -283,8 +299,8 @@ fn test_rank_brackets_weighted_equal_mean_runs() {
         17. / 64.,
         0.,
     ];
-    assert_eq!(digest.pmf(&points), Some(pmf.clone()));
-    assert_eq!(frozen.pmf(&points), Some(pmf));
+    assert_eq!(digest.pmf(&points).unwrap(), Some(pmf.clone()));
+    assert_eq!(frozen.pmf(&points).unwrap(), Some(pmf));
 }
 
 #[test]
@@ -299,11 +315,11 @@ fn test_merge_small() {
     assert_eq!(td1.min_value(), Some(1.0));
     assert_eq!(td1.max_value(), Some(3.0));
     assert_eq!(td1.total_weight(), 4);
-    assert_eq!(td1.rank(0.99), Some(0.0));
-    assert_eq!(td1.rank(1.0), Some(0.125));
-    assert_eq!(td1.rank(2.0), Some(0.5));
-    assert_eq!(td1.rank(3.0), Some(0.875));
-    assert_eq!(td1.rank(3.01), Some(1.0));
+    assert_eq!(td1.rank(0.99).unwrap(), Some(0.0));
+    assert_eq!(td1.rank(1.0).unwrap(), Some(0.125));
+    assert_eq!(td1.rank(2.0).unwrap(), Some(0.5));
+    assert_eq!(td1.rank(3.0).unwrap(), Some(0.875));
+    assert_eq!(td1.rank(3.01).unwrap(), Some(1.0));
 }
 
 #[test]
@@ -323,11 +339,20 @@ fn test_merge_large() {
     assert_eq!(td1.min_value(), Some(0.0));
     assert_eq!(td1.max_value(), Some((n - 1) as f64));
 
-    assert_that!(td1.rank(0.0).unwrap(), near(0.0, 0.0001));
-    assert_that!(td1.rank((n / 4) as f64).unwrap(), near(0.25, 0.0001));
-    assert_that!(td1.rank((n / 2) as f64).unwrap(), near(0.5, 0.0001));
-    assert_that!(td1.rank((n * 3 / 4) as f64).unwrap(), near(0.75, 0.0001));
-    assert_that!(td1.rank(n as f64).unwrap(), eq(1.0));
+    assert_that!(td1.rank(0.0).unwrap().unwrap(), near(0.0, 0.0001));
+    assert_that!(
+        td1.rank((n / 4) as f64).unwrap().unwrap(),
+        near(0.25, 0.0001)
+    );
+    assert_that!(
+        td1.rank((n / 2) as f64).unwrap().unwrap(),
+        near(0.5, 0.0001)
+    );
+    assert_that!(
+        td1.rank((n * 3 / 4) as f64).unwrap().unwrap(),
+        near(0.75, 0.0001)
+    );
+    assert_that!(td1.rank(n as f64).unwrap().unwrap(), eq(1.0));
 }
 
 #[test]
@@ -346,8 +371,11 @@ fn test_mixed_k_merge_retains_receiver_k() {
 
         assert_eq!(left.k(), left_k);
         assert_eq!(left.total_weight(), 10_000 + right_count);
-        assert_eq!(left.quantile(0.0), Some(0.0));
-        assert_eq!(left.quantile(1.0), Some((9_999 + right_count) as f64));
+        assert_eq!(left.quantile(0.0).unwrap(), Some(0.0));
+        assert_eq!(
+            left.quantile(1.0).unwrap(),
+            Some((9_999 + right_count) as f64)
+        );
     }
 }
 
@@ -360,8 +388,8 @@ fn test_from_iter_uses_one_result_with_the_smallest_nonempty_k() {
         first.update(value as f64);
         second.update((value + 1_000) as f64);
     }
-    let _ = first.quantile(0.5);
-    let _ = second.quantile(0.5);
+    let _ = first.quantile(0.5).unwrap();
+    let _ = second.quantile(0.5).unwrap();
 
     let mut merged = [first, empty, second].into_iter().collect::<TDigestMut>();
 
@@ -370,7 +398,7 @@ fn test_from_iter_uses_one_result_with_the_smallest_nonempty_k() {
     assert_eq!(merged.min_value(), Some(0.0));
     assert_eq!(merged.max_value(), Some(1_999.0));
     let quantiles = (0..=100)
-        .map(|rank| merged.quantile(rank as f64 / 100.).unwrap())
+        .map(|rank| merged.quantile(rank as f64 / 100.).unwrap().unwrap())
         .collect::<Vec<_>>();
     assert!(quantiles.windows(2).all(|pair| pair[0] <= pair[1]));
 }
@@ -431,8 +459,8 @@ fn test_from_iter_matches_single_compression_for_interleaved_runs() {
             let mut merged = runs.into_iter().map(make_digest).collect::<TDigestMut>();
 
             assert_eq!(merged.serialize(), expected.serialize());
-            assert_eq!(merged.quantile(0.0), Some(-10.0));
-            assert_eq!(merged.quantile(1.0), Some(20.0));
+            assert_eq!(merged.quantile(0.0).unwrap(), Some(-10.0));
+            assert_eq!(merged.quantile(1.0).unwrap(), Some(20.0));
 
             // A collected digest must still support enough updates to grow and compress again.
             for value in 0..1_000 {
@@ -455,11 +483,11 @@ fn test_from_iter_handles_mixed_compressed_and_buffered_inputs() {
                 digest.update(value);
                 expected.update(value);
                 if run == 2 && row == 29 {
-                    let _ = digest.quantile(0.5);
+                    let _ = digest.quantile(0.5).unwrap();
                 }
             }
             if run == 1 {
-                let _ = digest.quantile(0.5);
+                let _ = digest.quantile(0.5).unwrap();
             }
             digest
         })
@@ -506,12 +534,12 @@ fn test_serialized_batch_merge_tree_preserves_weight_and_quantiles() {
 
         let mut merged = TDigestMut::deserialize(&states[0]).unwrap();
         assert_eq!(merged.total_weight(), values.len() as u64);
-        assert_eq!(merged.quantile(0.0), values.first().copied());
-        assert_eq!(merged.quantile(1.0), values.last().copied());
+        assert_eq!(merged.quantile(0.0).unwrap(), values.first().copied());
+        assert_eq!(merged.quantile(1.0).unwrap(), values.last().copied());
 
         let mut previous = values[0];
         for rank in [0.01, 0.5, 0.9, 0.99] {
-            let estimate = merged.quantile(rank).unwrap();
+            let estimate = merged.quantile(rank).unwrap().unwrap();
             assert!((previous..=values[values.len() - 1]).contains(&estimate));
             // Check this fixture's empirical rank, allowing equal values to span a rank interval.
             let lower =
@@ -535,7 +563,7 @@ fn test_from_iter_checks_total_weight_before_compression() {
             let mut digest = TDigestMut::new(100).unwrap();
             digest.update(value);
             if compressed {
-                let _ = digest.quantile(0.5);
+                let _ = digest.quantile(0.5).unwrap();
             }
             digest
         });
@@ -543,8 +571,8 @@ fn test_from_iter_checks_total_weight_before_compression() {
             .into_iter()
             .collect::<TDigestMut>();
         assert_eq!(at_limit.total_weight(), u64::MAX);
-        assert_eq!(at_limit.quantile(0.0), Some(0.0));
-        assert_eq!(at_limit.quantile(1.0), Some(2.0));
+        assert_eq!(at_limit.quantile(0.0).unwrap(), Some(0.0));
+        assert_eq!(at_limit.quantile(1.0).unwrap(), Some(2.0));
 
         assert!(
             catch_unwind(|| [heavy, one, two, extra].into_iter().collect::<TDigestMut>()).is_err()
@@ -614,7 +642,7 @@ fn test_extreme_values_produce_finite_quantiles() {
     assert_eq!(tdigest.min_value(), Some(-f64::MAX));
     assert_eq!(tdigest.max_value(), Some(f64::MAX));
     for rank in [0.25, 0.5, 0.75] {
-        let quantile = tdigest.quantile(rank).unwrap();
+        let quantile = tdigest.quantile(rank).unwrap().unwrap();
         assert_that!(quantile, is_finite(), "quantile at rank {rank}");
     }
 }
@@ -630,7 +658,7 @@ fn test_rank_interpolation_across_extreme_finite_values() {
         let points = [-scale, -scale / 2., 0., scale / 2., scale];
         for (point, expected) in points.into_iter().zip([0.25, 0.375, 0.5, 0.625, 0.75]) {
             assert_that!(
-                digest.rank(point).unwrap(),
+                digest.rank(point).unwrap().unwrap(),
                 near(expected, 4. * f64::EPSILON)
             );
         }
@@ -647,11 +675,11 @@ fn test_tail_interpolation_across_extreme_finite_values() {
     for (digest, rank, expected) in [(left, 3. / 11., -0.25), (right, 8. / 11., 0.25)] {
         let digest = digest.freeze();
         assert_that!(
-            digest.quantile(rank).unwrap() / max,
+            digest.quantile(rank).unwrap().unwrap() / max,
             near(expected, 4. * f64::EPSILON)
         );
         assert_that!(
-            digest.rank(expected * max).unwrap(),
+            digest.rank(expected * max).unwrap().unwrap(),
             near(rank, 4. * f64::EPSILON)
         );
     }
@@ -663,7 +691,7 @@ fn test_estimate_repeat_values() {
     for _ in 0..20 {
         tdigest.update(1.0);
     }
-    assert_eq!(tdigest.quantile(0.9), Some(1.0));
+    assert_eq!(tdigest.quantile(0.9).unwrap(), Some(1.0));
 }
 
 /// Builds a weighted image, including tail centroids unavailable through raw updates.
@@ -690,8 +718,8 @@ fn deserialize_with_centroids(k: u16, min: f64, max: f64, centroids: &[(f64, u64
 fn assert_quantile_queries(tdigest: &TDigestMut, ranks: &[f64], expected: &[f64]) {
     let frozen = tdigest.clone().freeze();
     for actual in [
-        tdigest.clone().quantiles(ranks).unwrap(),
-        frozen.quantiles(ranks).unwrap(),
+        tdigest.clone().quantiles(ranks).unwrap().unwrap(),
+        frozen.quantiles(ranks).unwrap().unwrap(),
     ] {
         assert_eq!(actual.len(), expected.len());
         for (actual, &expected) in actual.into_iter().zip(expected) {
@@ -700,8 +728,14 @@ fn assert_quantile_queries(tdigest: &TDigestMut, ranks: &[f64], expected: &[f64]
     }
     let mut mutable = tdigest.clone();
     for (&rank, &expected) in ranks.iter().zip(expected) {
-        assert_that!(mutable.quantile(rank).unwrap(), near(expected, 1e-12));
-        assert_that!(frozen.quantile(rank).unwrap(), near(expected, 1e-12));
+        assert_that!(
+            mutable.quantile(rank).unwrap().unwrap(),
+            near(expected, 1e-12)
+        );
+        assert_that!(
+            frozen.quantile(rank).unwrap().unwrap(),
+            near(expected, 1e-12)
+        );
     }
 }
 
@@ -712,11 +746,26 @@ fn test_quantile_moves_toward_the_nearer_bracketing_centroid() {
 
     assert_eq!(tdigest.total_weight(), 12);
     // Ranks 2/12 and 6/12 sit exactly on the two centroids bracketing the first interval.
-    assert_that!(tdigest.quantile(2.0 / 12.0).unwrap(), near(0.0, 1e-12));
-    assert_that!(tdigest.quantile(3.0 / 12.0).unwrap(), near(2.5, 1e-12));
-    assert_that!(tdigest.quantile(4.0 / 12.0).unwrap(), near(5.0, 1e-12));
-    assert_that!(tdigest.quantile(5.0 / 12.0).unwrap(), near(7.5, 1e-12));
-    assert_that!(tdigest.quantile(6.0 / 12.0).unwrap(), near(10.0, 1e-12));
+    assert_that!(
+        tdigest.quantile(2.0 / 12.0).unwrap().unwrap(),
+        near(0.0, 1e-12)
+    );
+    assert_that!(
+        tdigest.quantile(3.0 / 12.0).unwrap().unwrap(),
+        near(2.5, 1e-12)
+    );
+    assert_that!(
+        tdigest.quantile(4.0 / 12.0).unwrap().unwrap(),
+        near(5.0, 1e-12)
+    );
+    assert_that!(
+        tdigest.quantile(5.0 / 12.0).unwrap().unwrap(),
+        near(7.5, 1e-12)
+    );
+    assert_that!(
+        tdigest.quantile(6.0 / 12.0).unwrap().unwrap(),
+        near(10.0, 1e-12)
+    );
 }
 
 #[test]
@@ -725,11 +774,20 @@ fn test_quantile_right_tail_stays_within_max() {
         deserialize_with_centroids(100, 0.0, 100.0, &[(10.0, 10), (50.0, 10), (90.0, 10)]);
 
     assert_eq!(tdigest.max_value(), Some(100.0));
-    assert_that!(tdigest.quantile(0.9).unwrap(), near(95.0, 1e-12));
-    assert_that!(tdigest.quantile(29.0 / 30.0).unwrap(), near(100.0, 1e-12));
+    assert_that!(tdigest.quantile(0.9).unwrap().unwrap(), near(95.0, 1e-12));
+    assert_that!(
+        tdigest.quantile(29.0 / 30.0).unwrap().unwrap(),
+        near(100.0, 1e-12)
+    );
     // Mirrors the left tail, which interpolates from min up to the first centroid mean.
-    assert_that!(tdigest.quantile(1.0 / 30.0).unwrap(), near(0.0, 1e-12));
-    assert_that!(tdigest.quantile(5.0 / 30.0).unwrap(), near(10.0, 1e-12));
+    assert_that!(
+        tdigest.quantile(1.0 / 30.0).unwrap().unwrap(),
+        near(0.0, 1e-12)
+    );
+    assert_that!(
+        tdigest.quantile(5.0 / 30.0).unwrap().unwrap(),
+        near(10.0, 1e-12)
+    );
 }
 
 #[test]
@@ -737,7 +795,7 @@ fn test_quantile_handles_two_sample_last_centroid() {
     let mut tdigest =
         deserialize_with_centroids(100, 0.0, 100.0, &[(0.0, 1), (50.0, 1), (90.0, 2)]);
 
-    assert_eq!(tdigest.quantile(0.75), Some(100.0));
+    assert_eq!(tdigest.quantile(0.75).unwrap(), Some(100.0));
 }
 
 #[test]
@@ -757,10 +815,13 @@ fn test_single_centroid_preserves_stored_tail_information() {
     // Repeated queries agree before and after creating a mutable view.
     for _ in 0..2 {
         for (&point, &rank) in points.iter().zip(&expected) {
-            assert_eq!(digest.rank(point), Some(rank));
-            assert_eq!(frozen.rank(point), Some(rank));
+            assert_eq!(digest.rank(point).unwrap(), Some(rank));
+            assert_eq!(frozen.rank(point).unwrap(), Some(rank));
         }
-        assert_eq!(&digest.cdf(&points).unwrap()[..points.len()], &expected);
+        assert_eq!(
+            &digest.cdf(&points).unwrap().unwrap()[..points.len()],
+            &expected
+        );
     }
 }
 
@@ -786,14 +847,14 @@ fn test_rank_tails_stay_monotonic_after_updating_weighted_centroids() {
         // The new unit-weight tails lie inside the retained extrema. Their half-sample
         // centers leave no mass for interpolation between min/first or last/max.
         for (&point, &expected) in points.iter().zip(&expected) {
-            assert_eq!(digest.rank(point), Some(expected));
-            assert_eq!(frozen.rank(point), Some(expected));
+            assert_eq!(digest.rank(point).unwrap(), Some(expected));
+            assert_eq!(frozen.rank(point).unwrap(), Some(expected));
         }
-        let cdf = digest.cdf(&points).unwrap();
-        assert_eq!(cdf, frozen.cdf(&points).unwrap());
+        let cdf = digest.cdf(&points).unwrap().unwrap();
+        assert_eq!(cdf, frozen.cdf(&points).unwrap().unwrap());
         assert!(cdf.is_sorted(), "CDF at {points:?}: {cdf:?}");
-        let pmf = digest.pmf(&points).unwrap();
-        assert_eq!(pmf, frozen.pmf(&points).unwrap());
+        let pmf = digest.pmf(&points).unwrap().unwrap();
+        assert_eq!(pmf, frozen.pmf(&points).unwrap().unwrap());
         assert!(pmf.iter().all(|&mass| mass >= 0.), "PMF: {pmf:?}");
         assert_that!(pmf.iter().sum::<f64>(), near(1., 1e-12));
     }
@@ -992,11 +1053,11 @@ fn test_signed_zero_and_symmetric_centroids_survive_interpolation() {
 
     let mut digest =
         deserialize_with_centroids(100, -1., 1., &[(-1., 1), (-0., 2), (0., 2), (1., 1)]);
-    assert_eq!(digest.rank(-0.), Some(0.5));
-    assert_eq!(digest.rank(0.), Some(0.5));
+    assert_eq!(digest.rank(-0.).unwrap(), Some(0.5));
+    assert_eq!(digest.rank(0.).unwrap(), Some(0.5));
     assert_quantile_queries(&digest, &[1. / 3., 0.5, 2. / 3.], &[0., 0., 0.]);
-    assert_eq!(digest.cdf(&[-0.]), Some(vec![0.5, 1.]));
-    assert_eq!(digest.pmf(&[0.]), Some(vec![0.5, 0.5]));
+    assert_eq!(digest.cdf(&[-0.]).unwrap(), Some(vec![0.5, 1.]));
+    assert_eq!(digest.pmf(&[0.]).unwrap(), Some(vec![0.5, 0.5]));
 }
 
 #[test]
@@ -1015,11 +1076,14 @@ fn test_batch_quantiles_match_scalar_queries_in_input_order() {
     ] {
         let expected = ranks
             .iter()
-            .map(|&rank| frozen.quantile(rank).unwrap())
+            .map(|&rank| frozen.quantile(rank).unwrap().unwrap())
             .collect::<Vec<_>>();
         // Each mutable batch starts with the original buffered values still pending.
-        assert_eq!(tdigest.clone().quantiles(&ranks), Some(expected.clone()));
-        assert_eq!(frozen.quantiles(&ranks), Some(expected));
+        assert_eq!(
+            tdigest.clone().quantiles(&ranks).unwrap(),
+            Some(expected.clone())
+        );
+        assert_eq!(frozen.quantiles(&ranks).unwrap(), Some(expected));
     }
 }
 
@@ -1109,9 +1173,11 @@ fn test_quantiles_stay_within_extrema_at_large_total_weights() {
         let frozen = tdigest.clone().freeze();
         let ranks = [0.0, 0.5, 1.0_f64.next_down(), 1.0, 1.0];
         for quantiles in [
-            tdigest.clone().quantiles(&ranks).unwrap(),
-            frozen.quantiles(&ranks).unwrap(),
-            ranks.map(|rank| frozen.quantile(rank).unwrap()).to_vec(),
+            tdigest.clone().quantiles(&ranks).unwrap().unwrap(),
+            frozen.quantiles(&ranks).unwrap().unwrap(),
+            ranks
+                .map(|rank| frozen.quantile(rank).unwrap().unwrap())
+                .to_vec(),
         ] {
             assert_eq!(quantiles[0], 0.0);
             assert_eq!(&quantiles[3..], &[100.0, 100.0]);
@@ -1144,7 +1210,7 @@ fn test_queries_stay_ordered_at_large_centroid_centers() {
                 1.0_f64.next_down(),
                 1.,
             ];
-            let quantiles = digest.quantiles(&ranks).unwrap();
+            let quantiles = digest.quantiles(&ranks).unwrap().unwrap();
             assert_eq!(quantiles[0], 0.);
             assert_eq!(quantiles[5], 100.);
             assert!(
@@ -1153,7 +1219,10 @@ fn test_queries_stay_ordered_at_large_centroid_centers() {
             );
             assert!(quantiles.iter().all(|value| (0.0..=100.0).contains(value)));
 
-            let cdf = digest.cdf(&[0., 5., 10., 50., 90., 95., 100.]).unwrap();
+            let cdf = digest
+                .cdf(&[0., 5., 10., 50., 90., 95., 100.])
+                .unwrap()
+                .unwrap();
             assert!(cdf.is_sorted(), "centroids {centroids:?}: {cdf:?}");
             assert!(cdf.iter().all(|rank| (0.0..=1.0).contains(rank)));
         }
@@ -1176,7 +1245,7 @@ fn test_quantile_right_tail_uses_the_same_center_as_rank() {
         );
         // These ranks land exactly on the rounded mass N - last_weight/2. Quantile must
         // return the centroid mean there, before interpolating toward the stored maximum.
-        assert_eq!(digest.rank(90.), Some(rank));
+        assert_eq!(digest.rank(90.).unwrap(), Some(rank));
         assert_quantile_queries(&digest, &[rank, rank, 1.], &[90., 90., 100.]);
     }
 
@@ -1186,7 +1255,7 @@ fn test_quantile_right_tail_uses_the_same_center_as_rank() {
     let digest = deserialize_with_centroids(100, 0., 100., &[(0., total_weight - 3), (90., 3)]);
     let rank = 1. - f64::EPSILON;
     let ranks = [rank.next_down(), rank, rank.next_up(), 1.];
-    let quantiles = digest.clone().quantiles(&ranks).unwrap();
+    let quantiles = digest.clone().quantiles(&ranks).unwrap().unwrap();
     assert!(quantiles.is_sorted());
     assert!(quantiles.iter().all(|value| (0.0..=100.0).contains(value)));
     assert_eq!(quantiles[3], 100.);
@@ -1227,10 +1296,17 @@ fn test_rank_max_uses_the_same_rounded_mass_as_last_centroid() {
             deserialize_with_centroids(100, 0., 100., &[(0., total_weight - 1), (90., 1)]);
         let frozen = digest.clone().freeze();
         let points = [90., 90_f64.next_up(), 95., 100_f64.next_down(), 100.];
-        let cdf = digest.cdf(&points).unwrap();
+        let cdf = digest.cdf(&points).unwrap().unwrap();
         assert_eq!(&cdf[..points.len()], &[expected; 5]);
-        assert_eq!(cdf, frozen.cdf(&points).unwrap());
-        assert!(frozen.pmf(&points).unwrap().iter().all(|&mass| mass >= 0.));
+        assert_eq!(cdf, frozen.cdf(&points).unwrap().unwrap());
+        assert!(
+            frozen
+                .pmf(&points)
+                .unwrap()
+                .unwrap()
+                .iter()
+                .all(|&mass| mass >= 0.)
+        );
     }
 }
 
@@ -1238,20 +1314,28 @@ fn test_rank_max_uses_the_same_rounded_mass_as_last_centroid() {
 fn test_rank_stays_monotonic_at_the_right_tail_boundary() {
     let digest = deserialize_with_centroids(100, 0., 300., &[(0., 1), (100., 29)]).freeze();
     let points = [100., 100_f64.next_up(), 150., 300.];
-    let cdf = digest.cdf(&points).unwrap();
+    let cdf = digest.cdf(&points).unwrap().unwrap();
     // The last center is at weight 1 + 29/2 = 15.5. Entering the tail must not lower its rank.
     assert_eq!(cdf[0], 15.5 / 30.);
     assert!(cdf.is_sorted(), "CDF at {points:?}: {cdf:?}");
 }
 
 #[test]
-fn test_batch_quantiles_reject_invalid_ranks() {
-    for values in [&[][..], &[1.0, 2.0, 3.0][..]] {
+fn test_invalid_queries_return_errors_before_checking_emptiness() {
+    for n in [0, 1, 1_000] {
         let mut tdigest = TDigestMut::default();
-        for &value in values {
-            tdigest.update(value);
+        for value in 0..n {
+            tdigest.update(f64::from(value));
         }
         let frozen = tdigest.clone().freeze();
+        assert_eq!(
+            tdigest.rank(f64::NAN).unwrap_err().kind(),
+            ErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            frozen.rank(f64::NAN).unwrap_err().kind(),
+            ErrorKind::InvalidArgument
+        );
         for invalid in [
             -f64::EPSILON,
             1.0 + f64::EPSILON,
@@ -1260,9 +1344,56 @@ fn test_batch_quantiles_reject_invalid_ranks() {
             f64::INFINITY,
         ] {
             let ranks = [0.5, invalid];
-            assert!(catch_unwind(AssertUnwindSafe(|| tdigest.quantiles(&ranks))).is_err());
-            assert!(catch_unwind(|| frozen.quantiles(&ranks)).is_err());
+            for error in [
+                tdigest.quantile(invalid).unwrap_err(),
+                frozen.quantile(invalid).unwrap_err(),
+                tdigest.quantiles(&ranks).unwrap_err(),
+                frozen.quantiles(&ranks).unwrap_err(),
+            ] {
+                assert_eq!(error.kind(), ErrorKind::InvalidArgument);
+            }
         }
+        for split_points in [
+            &[f64::NAN][..],
+            &[0.0, f64::NAN],
+            &[f64::NAN, 0.0],
+            &[1.0, 1.0],
+            &[2.0, 1.0],
+            &[-0.0, 0.0],
+            &[f64::INFINITY, f64::INFINITY],
+        ] {
+            for error in [
+                tdigest.cdf(split_points).unwrap_err(),
+                frozen.cdf(split_points).unwrap_err(),
+                tdigest.pmf(split_points).unwrap_err(),
+                frozen.pmf(split_points).unwrap_err(),
+            ] {
+                assert_eq!(error.kind(), ErrorKind::InvalidArgument);
+            }
+        }
+    }
+}
+
+#[test]
+fn test_infinite_values_are_valid_rank_and_split_point_arguments() {
+    for n in [0, 1, 1_000] {
+        let mut tdigest = TDigestMut::default();
+        for value in 0..n {
+            tdigest.update(f64::from(value));
+        }
+        let frozen = tdigest.clone().freeze();
+        for (value, rank) in [(f64::NEG_INFINITY, 0.0), (f64::INFINITY, 1.0)] {
+            let expected = (n > 0).then_some(rank);
+            assert_eq!(tdigest.rank(value).unwrap(), expected);
+            assert_eq!(frozen.rank(value).unwrap(), expected);
+        }
+        let split_points = [f64::NEG_INFINITY, f64::INFINITY];
+        let cdf = (n > 0).then(|| vec![0.0, 1.0, 1.0]);
+        let pmf = (n > 0).then(|| vec![0.0, 1.0, 0.0]);
+        assert_eq!(tdigest.cdf(&split_points).unwrap(), cdf);
+        assert_eq!(frozen.cdf(&split_points).unwrap(), cdf);
+        assert_eq!(tdigest.pmf(&split_points).unwrap(), pmf);
+        assert_eq!(frozen.pmf(&split_points).unwrap(), pmf);
     }
 }
 
@@ -1271,13 +1402,19 @@ fn test_rank_left_tail_is_a_fraction_of_the_total_weight() {
     let mut tdigest =
         deserialize_with_centroids(100, 0.0, 100.0, &[(10.0, 10), (50.0, 10), (90.0, 10)]);
 
-    assert_that!(tdigest.rank(5.0).unwrap(), near(0.1, 1e-12));
-    assert_that!(tdigest.rank(10.0).unwrap(), near(5.0 / 30.0, 1e-12));
+    assert_that!(tdigest.rank(5.0).unwrap().unwrap(), near(0.1, 1e-12));
+    assert_that!(
+        tdigest.rank(10.0).unwrap().unwrap(),
+        near(5.0 / 30.0, 1e-12)
+    );
     // The right tail is the mirror image and pins the scale the left tail must match.
-    assert_that!(tdigest.rank(95.0).unwrap(), near(0.9, 1e-12));
-    assert_that!(tdigest.rank(90.0).unwrap(), near(25.0 / 30.0, 1e-12));
+    assert_that!(tdigest.rank(95.0).unwrap().unwrap(), near(0.9, 1e-12));
+    assert_that!(
+        tdigest.rank(90.0).unwrap().unwrap(),
+        near(25.0 / 30.0, 1e-12)
+    );
 
-    let pmf = tdigest.pmf(&[5.0, 95.0]).unwrap();
+    let pmf = tdigest.pmf(&[5.0, 95.0]).unwrap().unwrap();
     assert_that!(pmf[0], near(0.1, 1e-12));
     assert_that!(pmf[1], near(0.8, 1e-12));
     assert_that!(pmf[2], near(0.1, 1e-12));
@@ -1295,20 +1432,20 @@ fn test_merge_preserves_min_max_from_other() {
     empty.merge(&other);
     assert_eq!(empty.min_value(), Some(0.0));
     assert_eq!(empty.max_value(), Some(100.0));
-    assert_eq!(empty.quantile(0.0), Some(0.0));
-    assert_eq!(empty.quantile(1.0), Some(100.0));
-    assert_eq!(empty.rank(0.0), Some(0.5 / 30.0));
-    assert_eq!(empty.rank(100.0), Some(1.0 - 0.5 / 30.0));
-    assert_eq!(empty.rank(-1.0), Some(0.0));
-    assert_eq!(empty.rank(101.0), Some(1.0));
+    assert_eq!(empty.quantile(0.0).unwrap(), Some(0.0));
+    assert_eq!(empty.quantile(1.0).unwrap(), Some(100.0));
+    assert_eq!(empty.rank(0.0).unwrap(), Some(0.5 / 30.0));
+    assert_eq!(empty.rank(100.0).unwrap(), Some(1.0 - 0.5 / 30.0));
+    assert_eq!(empty.rank(-1.0).unwrap(), Some(0.0));
+    assert_eq!(empty.rank(101.0).unwrap(), Some(1.0));
 
     let mut left = deserialize_with_centroids(100, 5.0, 40.0, &[(10.0, 4), (20.0, 4), (30.0, 4)]);
     let right = deserialize_with_centroids(100, -10.0, 80.0, &[(0.0, 4), (40.0, 4), (70.0, 4)]);
     left.merge(&right);
     assert_eq!(left.min_value(), Some(-10.0));
     assert_eq!(left.max_value(), Some(80.0));
-    assert_eq!(left.quantile(0.0), Some(-10.0));
-    assert_eq!(left.quantile(1.0), Some(80.0));
+    assert_eq!(left.quantile(0.0).unwrap(), Some(-10.0));
+    assert_eq!(left.quantile(1.0).unwrap(), Some(80.0));
 }
 
 #[test]
