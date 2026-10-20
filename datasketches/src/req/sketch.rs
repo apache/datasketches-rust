@@ -176,9 +176,8 @@ where
 
     /// Returns the approximate rank of `item` in `[0.0, 1.0]`.
     ///
-    /// Computed directly from the retained items in a single `O(retained)` pass,
-    /// without building a sorted view. The result is identical to
-    /// [`SortedView::rank`] on [`Self::sorted_view`].
+    /// Computed directly from the retained items in a single `O(retained)` pass, without building
+    /// a sorted view. The result is identical to [`SortedView::rank`] on [`Self::sorted_view`].
     ///
     /// Returns `None` if the sketch is empty.
     pub fn rank(&self, item: &T, criteria: SearchCriteria) -> Option<f64> {
@@ -196,8 +195,8 @@ where
 
     /// Returns the approximate quantile at the given normalized rank.
     ///
-    /// Ranks `0.0` and `1.0` return the exact minimum and maximum items of the stream.
-    /// Returns `Ok(None)` if the sketch is empty.
+    /// Ranks `0.0` and `1.0` return the exact minimum and maximum items of the stream. Returns
+    /// `Ok(None)` if the sketch is empty.
     ///
     /// For ranks strictly between `0.0` and `1.0`, builds a transient [`SortedView`].
     /// For repeated queries at those ranks, take one snapshot with [`Self::sorted_view`].
@@ -226,9 +225,9 @@ where
 
     /// Returns approximate quantiles for the given normalized ranks.
     ///
-    /// Ranks `0.0` and `1.0` return the exact minimum and maximum items of the stream.
-    /// Returns `Ok(None)` if the sketch is empty.
-    /// Otherwise, an empty `ranks` slice returns `Ok(Some(vec![]))`.
+    /// Ranks `0.0` and `1.0` return the exact minimum and maximum items of the stream. Returns
+    /// `Ok(None)` if the sketch is empty. Otherwise, an empty `ranks` slice returns
+    /// `Ok(Some(vec![]))`.
     ///
     /// The sorted view is built once and shared across all ranks.
     ///
@@ -265,8 +264,8 @@ where
 
     /// Returns the Probability Mass Function over the given split points.
     ///
-    /// Returns `Ok(None)` if the sketch is empty.
-    /// Otherwise, an empty `split_points` slice returns `Ok(Some(vec![1.0]))`.
+    /// Returns `Ok(None)` if the sketch is empty. Otherwise, an empty `split_points` slice returns
+    /// `Ok(Some(vec![1.0]))`.
     ///
     /// # Errors
     ///
@@ -282,8 +281,8 @@ where
 
     /// Returns the Cumulative Distribution Function over the given split points.
     ///
-    /// Returns `Ok(None)` if the sketch is empty.
-    /// Otherwise, an empty `split_points` slice returns `Ok(Some(vec![1.0]))`.
+    /// Returns `Ok(None)` if the sketch is empty. Otherwise, an empty `split_points` slice returns
+    /// `Ok(Some(vec![1.0]))`.
     ///
     /// # Errors
     ///
@@ -304,8 +303,8 @@ where
     ///
     /// Building the view costs `O(retained · log retained)`; rank and quantile queries
     /// then take `O(log retained)`. Prefer reusing one view for repeated quantile
-    /// queries at ranks strictly between `0.0` and `1.0`, or repeated
-    /// [`Self::pmf`]/[`Self::cdf`] queries.
+    /// queries at ranks strictly between `0.0` and `1.0`, or repeated [`Self::pmf`]/[`Self::cdf`]
+    /// queries.
     pub fn sorted_view(&self) -> SortedView<T> {
         let mut weighted_items = Vec::with_capacity(self.num_retained as usize);
         for compactor in &self.compactors {

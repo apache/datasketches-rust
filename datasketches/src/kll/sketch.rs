@@ -123,12 +123,16 @@ impl<T: Clone + Ord> KllSketch<T> {
         self.levels.len() > 1
     }
 
-    /// Returns the minimum item seen by the sketch, or `None` if it is empty.
+    /// Returns the minimum item seen by the sketch.
+    ///
+    /// Returns `None` if the sketch is empty.
     pub fn min_item(&self) -> Option<&T> {
         self.min_item.as_ref()
     }
 
-    /// Returns the maximum item seen by the sketch, or `None` if it is empty.
+    /// Returns the maximum item seen by the sketch.
+    ///
+    /// Returns `None` if the sketch is empty.
     pub fn max_item(&self) -> Option<&T> {
         self.max_item.as_ref()
     }
@@ -226,8 +230,8 @@ impl<T: Clone + Ord> KllSketch<T> {
 
     /// Returns the quantile for the given normalized rank.
     ///
-    /// Ranks `0.0` and `1.0` return the exact minimum and maximum items of the stream.
-    /// Returns `Ok(None)` if the sketch is empty.
+    /// Ranks `0.0` and `1.0` return the exact minimum and maximum items of the stream. Returns
+    /// `Ok(None)` if the sketch is empty.
     ///
     /// # Errors
     ///
@@ -253,9 +257,9 @@ impl<T: Clone + Ord> KllSketch<T> {
 
     /// Returns approximate quantiles for the given normalized ranks.
     ///
-    /// Ranks `0.0` and `1.0` return the exact minimum and maximum items of the stream.
-    /// Returns `Ok(None)` if the sketch is empty.
-    /// Otherwise, an empty `ranks` slice returns `Ok(Some(vec![]))`.
+    /// Ranks `0.0` and `1.0` return the exact minimum and maximum items of the stream. Returns
+    /// `Ok(None)` if the sketch is empty. Otherwise, an empty `ranks` slice returns
+    /// `Ok(Some(vec![]))`.
     ///
     /// The sorted view is built once for the whole batch.
     ///
@@ -273,8 +277,8 @@ impl<T: Clone + Ord> KllSketch<T> {
 
     /// Returns the approximate CDF for the given split points.
     ///
-    /// Returns `Ok(None)` if the sketch is empty.
-    /// Otherwise, an empty `split_points` slice returns `Ok(Some(vec![1.0]))`.
+    /// Returns `Ok(None)` if the sketch is empty. Otherwise, an empty `split_points` slice returns
+    /// `Ok(Some(vec![1.0]))`.
     ///
     /// # Errors
     ///
@@ -290,8 +294,8 @@ impl<T: Clone + Ord> KllSketch<T> {
 
     /// Returns the approximate PMF for the given split points.
     ///
-    /// Returns `Ok(None)` if the sketch is empty.
-    /// Otherwise, an empty `split_points` slice returns `Ok(Some(vec![1.0]))`.
+    /// Returns `Ok(None)` if the sketch is empty. Otherwise, an empty `split_points` slice returns
+    /// `Ok(Some(vec![1.0]))`.
     ///
     /// # Errors
     ///

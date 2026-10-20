@@ -537,8 +537,8 @@ impl TDigestMut {
 
     /// Returns the quantiles described by [`TDigest::quantiles`].
     ///
-    /// Returns `Ok(None)` if this t-digest is empty.
-    /// Otherwise, an empty `ranks` slice returns `Ok(Some(vec![]))`.
+    /// Returns `Ok(None)` if this t-digest is empty. Otherwise, an empty `ranks` slice returns
+    /// `Ok(Some(vec![]))`.
     ///
     /// # Errors
     ///
@@ -1568,8 +1568,8 @@ impl TDigest {
     /// Ranks in nondecreasing order are answered with one centroid scan. Ranks in any other order
     /// are accepted and results are returned in the same order as the input.
     ///
-    /// Returns `Ok(None)` if this t-digest is empty.
-    /// Otherwise, an empty `ranks` slice returns `Ok(Some(vec![]))`.
+    /// Returns `Ok(None)` if this t-digest is empty. Otherwise, an empty `ranks` slice returns
+    /// `Ok(Some(vec![]))`.
     ///
     /// # Errors
     ///

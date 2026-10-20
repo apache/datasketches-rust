@@ -22,12 +22,11 @@ use crate::error::Error;
 
 /// An owned, sorted snapshot of a [`ReqSketch`](crate::req::ReqSketch).
 ///
-/// Obtain one with [`ReqSketch::sorted_view`](crate::req::ReqSketch::sorted_view).
-/// The view is independent of the sketch: it can be queried (and sent to other
-/// threads) while the sketch keeps receiving updates, and it keeps answering
-/// from the state it was taken at. Building it costs `O(retained · log retained)`;
-/// each subsequent query is `O(log retained)`, so it is the right tool for
-/// repeated quantile/rank queries.
+/// Obtain one with [`ReqSketch::sorted_view`](crate::req::ReqSketch::sorted_view). The view is
+/// independent of the sketch: it can be queried (and sent to other threads) while the sketch keeps
+/// receiving updates, and it keeps answering from the state it was taken at. Building it costs
+/// `O(retained · log retained)`; each subsequent query is `O(log retained)`, so it is the right
+/// tool for repeated quantile/rank queries.
 #[derive(Debug, Clone)]
 pub struct SortedView<T> {
     items: Vec<T>,
@@ -111,8 +110,8 @@ where
 
     /// Returns the approximate quantile at the given normalized rank.
     ///
-    /// Ranks `0.0` and `1.0` return the exact minimum and maximum items of the stream.
-    /// Returns `Ok(None)` if the view is empty.
+    /// Ranks `0.0` and `1.0` return the exact minimum and maximum items of the stream. Returns
+    /// `Ok(None)` if the view is empty.
     ///
     /// # Errors
     ///
@@ -155,9 +154,8 @@ where
 
     /// Returns the probability mass function (PMF) over the given split points.
     ///
-    /// The result contains one more value than `split_points`.
-    /// Returns `Ok(None)` if the view is empty.
-    /// Otherwise, an empty `split_points` slice returns `Ok(Some(vec![1.0]))`.
+    /// The result contains one more value than `split_points`. Returns `Ok(None)` if the view is
+    /// empty. Otherwise, an empty `split_points` slice returns `Ok(Some(vec![1.0]))`.
     ///
     /// # Errors
     ///
@@ -179,9 +177,9 @@ where
 
     /// Returns the cumulative distribution function (CDF) over the given split points.
     ///
-    /// The result contains one more value than `split_points` and ends at `1.0`.
-    /// Returns `Ok(None)` if the view is empty.
-    /// Otherwise, an empty `split_points` slice returns `Ok(Some(vec![1.0]))`.
+    /// The result contains one more value than `split_points` and ends at `1.0`. Returns
+    /// `Ok(None)` if the view is empty. Otherwise, an empty `split_points` slice returns
+    /// `Ok(Some(vec![1.0]))`.
     ///
     /// # Errors
     ///

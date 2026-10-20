@@ -89,8 +89,8 @@ impl<T: Clone + Ord> SortedView<T> {
 
     /// Returns the approximate quantile for `rank`.
     ///
-    /// Ranks `0.0` and `1.0` return the exact minimum and maximum items of the stream.
-    /// Returns `Ok(None)` if the view is empty.
+    /// Ranks `0.0` and `1.0` return the exact minimum and maximum items of the stream. Returns
+    /// `Ok(None)` if the view is empty.
     ///
     /// # Errors
     ///
@@ -132,9 +132,9 @@ impl<T: Clone + Ord> SortedView<T> {
 
     /// Returns approximate quantiles for all `ranks`.
     ///
-    /// Ranks `0.0` and `1.0` return the exact minimum and maximum items of the stream.
-    /// Returns `Ok(None)` if the view is empty.
-    /// Otherwise, an empty `ranks` slice returns `Ok(Some(vec![]))`.
+    /// Ranks `0.0` and `1.0` return the exact minimum and maximum items of the stream. Returns
+    /// `Ok(None)` if the view is empty. Otherwise, an empty `ranks` slice returns
+    /// `Ok(Some(vec![]))`.
     ///
     /// # Errors
     ///
@@ -167,8 +167,8 @@ impl<T: Clone + Ord> SortedView<T> {
 
     /// Returns the approximate cumulative distribution over `split_points`.
     ///
-    /// Returns `Ok(None)` if the view is empty.
-    /// Otherwise, an empty `split_points` slice returns `Ok(Some(vec![1.0]))`.
+    /// Returns `Ok(None)` if the view is empty. Otherwise, an empty `split_points` slice returns
+    /// `Ok(Some(vec![1.0]))`.
     ///
     /// # Errors
     ///
@@ -193,8 +193,8 @@ impl<T: Clone + Ord> SortedView<T> {
 
     /// Returns the approximate probability mass over `split_points`.
     ///
-    /// Returns `Ok(None)` if the view is empty.
-    /// Otherwise, an empty `split_points` slice returns `Ok(Some(vec![1.0]))`.
+    /// Returns `Ok(None)` if the view is empty. Otherwise, an empty `split_points` slice returns
+    /// `Ok(Some(vec![1.0]))`.
     ///
     /// # Errors
     ///
