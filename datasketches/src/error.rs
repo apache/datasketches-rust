@@ -23,7 +23,7 @@
 //! absence; invalid caller arguments use `Result::Err`. A query that can encounter both returns
 //! `Result<Option<T>, Error>`: `Ok(None)` means no result, not an invalid request.
 //!
-//! The following contract applies to KLL sketches and their sorted views:
+//! The following contract applies to KLL and REQ sketches and their sorted views, where exposed:
 //!
 //! | Query | Valid input, non-empty | Valid input, empty | Invalid input, any state |
 //! | --- | --- | --- | --- |
@@ -40,6 +40,10 @@
 //!   invalid arguments, then handle the `Option` for an empty sketch.
 //! - **Errors remain distinct:** malformed serialized data returns [`ErrorKind::InvalidData`];
 //!   broken internal invariants remain programming errors.
+//! - **Error models still have results:** REQ `rank_lower_bound` / `rank_upper_bound` calculate
+//!   bounds around a supplied normalized rank. In exact mode, including an empty sketch, both
+//!   return that rank. KLL `normalized_rank_error` / `normalized_pmf_error` depend on
+//!   configuration.
 
 use std::fmt;
 

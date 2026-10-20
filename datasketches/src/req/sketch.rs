@@ -180,12 +180,10 @@ where
     /// without building a sorted view. The result is identical to
     /// [`SortedView::rank`] on [`Self::sorted_view`].
     ///
-    /// # Errors
-    ///
-    /// Returns an error if the sketch is empty.
-    pub fn rank(&self, item: &T, criteria: SearchCriteria) -> Result<f64, Error> {
+    /// Returns `None` if the sketch is empty.
+    pub fn rank(&self, item: &T, criteria: SearchCriteria) -> Option<f64> {
         if self.is_empty() {
-            return Err(Error::invalid_argument("sketch is empty"));
+            return None;
         }
         let inclusive = matches!(criteria, SearchCriteria::Inclusive);
         let weight: u64 = self
@@ -193,33 +191,34 @@ where
             .iter()
             .map(|c| c.count_below(item, inclusive) as u64 * c.weight())
             .sum();
-        Ok(weight as f64 / self.n as f64)
+        Some(weight as f64 / self.n as f64)
     }
 
     /// Returns the approximate quantile at the given normalized rank.
     ///
     /// Ranks `0.0` and `1.0` return the exact minimum and maximum items of the stream.
+    /// Returns `Ok(None)` if the sketch is empty.
     ///
     /// For ranks strictly between `0.0` and `1.0`, builds a transient [`SortedView`].
     /// For repeated queries at those ranks, take one snapshot with [`Self::sorted_view`].
     ///
     /// # Errors
     ///
-    /// Returns an error if the sketch is empty or `rank` is outside `[0.0, 1.0]`.
-    pub fn quantile(&self, rank: f64, criteria: SearchCriteria) -> Result<T, Error> {
-        if self.is_empty() {
-            return Err(Error::invalid_argument("sketch is empty"));
-        }
+    /// Returns an error if `rank` is NaN or outside `[0.0, 1.0]`, even if the sketch is empty.
+    pub fn quantile(&self, rank: f64, criteria: SearchCriteria) -> Result<Option<T>, Error> {
         if !(0.0..=1.0).contains(&rank) {
             return Err(Error::invalid_argument(format!(
                 "rank {rank} must be in [0, 1]"
             )));
         }
+        if self.is_empty() {
+            return Ok(None);
+        }
         if rank == 0.0 {
-            return Ok(self.min_item.as_ref().unwrap().clone());
+            return Ok(Some(self.min_item.as_ref().unwrap().clone()));
         }
         if rank == 1.0 {
-            return Ok(self.max_item.as_ref().unwrap().clone());
+            return Ok(Some(self.max_item.as_ref().unwrap().clone()));
         }
         self.sorted_view().quantile(rank, criteria)
     }
@@ -227,16 +226,18 @@ where
     /// Returns approximate quantiles for the given normalized ranks.
     ///
     /// Ranks `0.0` and `1.0` return the exact minimum and maximum items of the stream.
+    /// Returns `Ok(None)` if the sketch is empty.
     ///
     /// The sorted view is built once and shared across all ranks.
     ///
     /// # Errors
     ///
-    /// Returns an error if the sketch is empty or any rank is outside `[0.0, 1.0]`.
-    pub fn quantiles(&self, ranks: &[f64], criteria: SearchCriteria) -> Result<Vec<T>, Error> {
-        if self.is_empty() {
-            return Err(Error::invalid_argument("sketch is empty"));
-        }
+    /// Returns an error if any rank is NaN or outside `[0.0, 1.0]`, even if the sketch is empty.
+    pub fn quantiles(
+        &self,
+        ranks: &[f64],
+        criteria: SearchCriteria,
+    ) -> Result<Option<Vec<T>>, Error> {
         // Reject invalid ranks before paying for the view build.
         for &r in ranks {
             if !(0.0..=1.0).contains(&r) {
@@ -245,37 +246,55 @@ where
                 )));
             }
         }
+        if self.is_empty() {
+            return Ok(None);
+        }
         let view = self.sorted_view();
-        ranks.iter().map(|&r| view.quantile(r, criteria)).collect()
+        let quantiles = ranks
+            .iter()
+            .map(|&r| {
+                view.quantile(r, criteria)
+                    .map(|quantile| quantile.expect("checked non-empty view"))
+            })
+            .collect::<Result<_, _>>()?;
+        Ok(Some(quantiles))
     }
 
     /// Returns the Probability Mass Function over the given split points.
     ///
+    /// Returns `Ok(None)` if the sketch is empty.
+    ///
     /// # Errors
     ///
-    /// Returns an error if the sketch is empty or the split points are not strictly increasing.
-    pub fn pmf(&self, split_points: &[T], criteria: SearchCriteria) -> Result<Vec<f64>, Error> {
-        if self.is_empty() {
-            return Err(Error::invalid_argument("sketch is empty"));
-        }
+    /// Returns an error if the split points are not strictly increasing, even if the sketch is
+    /// empty.
+    pub fn pmf(
+        &self,
+        split_points: &[T],
+        criteria: SearchCriteria,
+    ) -> Result<Option<Vec<f64>>, Error> {
         self.sorted_view().pmf(split_points, criteria)
     }
 
     /// Returns the Cumulative Distribution Function over the given split points.
     ///
+    /// Returns `Ok(None)` if the sketch is empty.
+    ///
     /// # Errors
     ///
-    /// Returns an error if the sketch is empty or the split points are not strictly increasing.
-    pub fn cdf(&self, split_points: &[T], criteria: SearchCriteria) -> Result<Vec<f64>, Error> {
-        if self.is_empty() {
-            return Err(Error::invalid_argument("sketch is empty"));
-        }
+    /// Returns an error if the split points are not strictly increasing, even if the sketch is
+    /// empty.
+    pub fn cdf(
+        &self,
+        split_points: &[T],
+        criteria: SearchCriteria,
+    ) -> Result<Option<Vec<f64>>, Error> {
         self.sorted_view().cdf(split_points, criteria)
     }
 
     /// Returns an owned, sorted snapshot of the sketch's current state.
     ///
-    /// An empty sketch yields an empty view; queries on it return an error. The
+    /// An empty sketch yields an empty view; valid queries on it return no result. The
     /// view is independent of the sketch — it can be queried (and sent to other
     /// threads) while the sketch keeps receiving updates, and it keeps answering
     /// from the state it was taken at.
@@ -371,6 +390,9 @@ where
     }
 
     /// Returns the lower bound for the normalized `rank` at the requested confidence level.
+    ///
+    /// This evaluates the error model around the supplied rank without querying a sample.
+    /// In exact mode, including an empty sketch, the bound equals `rank`.
     pub fn rank_lower_bound(&self, rank: f64, num_std_dev: NumStdDev) -> f64 {
         self.compute_rank_lower_bound(
             self.k,
@@ -383,6 +405,9 @@ where
     }
 
     /// Returns the upper bound for the normalized `rank` at the requested confidence level.
+    ///
+    /// This evaluates the error model around the supplied rank without querying a sample.
+    /// In exact mode, including an empty sketch, the bound equals `rank`.
     pub fn rank_upper_bound(&self, rank: f64, num_std_dev: NumStdDev) -> f64 {
         self.compute_rank_upper_bound(
             self.k,

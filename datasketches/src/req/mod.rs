@@ -32,6 +32,13 @@
 //! Custom item types need only [`Clone`] and [`Ord`] for in-memory use. Serialization additionally
 //! requires [`ReqValue`].
 //!
+//! # Query results
+//!
+//! Rank, quantile, CDF, and PMF queries on an empty sketch return no result. Invalid ranks or
+//! split points return [`ErrorKind::InvalidArgument`](crate::error::ErrorKind::InvalidArgument),
+//! even on an empty sketch. See the [query contract](crate::error#query-results) for return types
+//! and migration guidance.
+//!
 //! # Example
 //!
 //! ```
@@ -44,7 +51,9 @@
 //!     sketch.update(ReqFloat::<f64>::new(value)?);
 //! }
 //!
-//! let median = sketch.quantile(0.5, SearchCriteria::Inclusive)?;
+//! let Some(median) = sketch.quantile(0.5, SearchCriteria::Inclusive)? else {
+//!     return Ok(()); // No samples to query.
+//! };
 //! assert_eq!(median.into_inner(), 2.0);
 //! # Ok::<(), datasketches::error::Error>(())
 //! ```

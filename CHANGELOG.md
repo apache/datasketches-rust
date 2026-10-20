@@ -9,6 +9,7 @@ All significant changes to this project will be documented in this file.
 * `BloomFilter::invert` is removed; use `BloomFilter::difference` for approximate A-not-B. The result excludes items in the right filter, but hash collisions can also remove items unique to the left filter.
 * `FrequentItemsSketch::is_empty` now returns `false` when the stream weight is nonzero, even if no items are retained. Use `num_active_items() == 0` to test for zero retained items.
 * `ReqSketch` queries now use `datasketches::common::SearchCriteria` instead of `datasketches::req::SearchCriteria`. `SearchCriteria` no longer implements `Default`; explicitly choose `Inclusive` or `Exclusive`.
+* `ReqSketch` and `req::SortedView` queries now distinguish empty sketches from invalid arguments. `rank` returns `Option<f64>`; `quantile`, `quantiles`, `cdf`, and `pmf`, where available, return `Result<Option<_>, Error>`. Handle `None` for valid queries on an empty sketch, and propagate or handle `InvalidArgument` for invalid ranks or split points, which are checked before emptiness.
 
 ### New features
 

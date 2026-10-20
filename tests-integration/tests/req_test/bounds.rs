@@ -77,7 +77,9 @@ fn theoretical_error_bounds_cover_uniform_quantiles() -> Result<(), Error> {
         0.95, 0.97, 0.98, 0.99, 0.995, 0.999,
     ] {
         let true_quantile = req_f64(rank * (n - 1) as f64);
-        let estimated_rank = sketch.rank(&true_quantile, SearchCriteria::Inclusive)?;
+        let estimated_rank = sketch
+            .rank(&true_quantile, SearchCriteria::Inclusive)
+            .expect("the sketch is non-empty");
         let lower = sketch.rank_lower_bound(rank, NumStdDev::Three);
         let upper = sketch.rank_upper_bound(rank, NumStdDev::Three);
         assert_that!(estimated_rank, all!(ge(lower), le(upper)), "rank: {rank}");

@@ -31,7 +31,10 @@ fn custom_items_do_not_need_serialization() {
     assert_eq!(sketch.min_item(), Some(&Reading(10)));
     assert_eq!(sketch.max_item(), Some(&Reading(30)));
     assert_eq!(
-        sketch.quantile(0.5, SearchCriteria::Inclusive).unwrap(),
+        sketch
+            .quantile(0.5, SearchCriteria::Inclusive)
+            .unwrap()
+            .unwrap(),
         Reading(20)
     );
 }

@@ -25,9 +25,6 @@ use datasketches::req::ReqSketch;
 use datasketches::req::SortedView;
 use googletest::assert_that;
 use googletest::prelude::all;
-use googletest::prelude::anything;
-use googletest::prelude::contains_substring;
-use googletest::prelude::err;
 use googletest::prelude::ge;
 use googletest::prelude::lt;
 use googletest::prelude::near;
@@ -47,19 +44,23 @@ fn populated_sketch(n: i64) -> ReqSketch<ReqF64> {
 fn query_through_shared_ref(sketch: &ReqSketch<ReqF64>) {
     sketch
         .quantile(0.5, SearchCriteria::Inclusive)
-        .expect("quantile");
+        .expect("quantile")
+        .expect("the sketch is non-empty");
     sketch
         .quantiles(&[0.25, 0.5, 0.75], SearchCriteria::Inclusive)
-        .expect("quantiles");
+        .expect("quantiles")
+        .expect("the sketch is non-empty");
     sketch
         .rank(&req_f64(50.0), SearchCriteria::Inclusive)
         .expect("rank");
     sketch
         .pmf(&[req_f64(10.0), req_f64(50.0)], SearchCriteria::Inclusive)
-        .expect("pmf");
+        .expect("pmf")
+        .expect("the sketch is non-empty");
     sketch
         .cdf(&[req_f64(10.0), req_f64(50.0)], SearchCriteria::Inclusive)
-        .expect("cdf");
+        .expect("cdf")
+        .expect("the sketch is non-empty");
     assert!(!sketch.sorted_view().is_empty());
 }
 
@@ -95,24 +96,36 @@ fn sorted_view_on_empty_sketch_is_an_empty_view() {
     assert!(view.is_empty());
     assert_eq!(view.len(), 0);
     assert_eq!(view.total_weight(), 0);
-    // Queries on the empty view still report an error.
-    assert_that!(
-        view.quantile(0.5, SearchCriteria::Inclusive),
-        err(anything())
-    );
+    for criteria in [SearchCriteria::Inclusive, SearchCriteria::Exclusive] {
+        assert_eq!(sketch.rank(&req_f64(0.0), criteria), None);
+        assert_eq!(view.rank(&req_f64(0.0), criteria), None);
+        for rank in [0.0, 0.5, 1.0] {
+            assert_eq!(sketch.quantile(rank, criteria).unwrap(), None);
+            assert_eq!(view.quantile(rank, criteria).unwrap(), None);
+        }
+        assert_eq!(sketch.quantiles(&[0.0, 0.5, 1.0], criteria).unwrap(), None);
+        assert_eq!(sketch.pmf(&[req_f64(0.0)], criteria).unwrap(), None);
+        assert_eq!(sketch.cdf(&[req_f64(0.0)], criteria).unwrap(), None);
+        assert_eq!(view.pmf(&[req_f64(0.0)], criteria).unwrap(), None);
+        assert_eq!(view.cdf(&[req_f64(0.0)], criteria).unwrap(), None);
+    }
 }
 
 #[test]
-fn empty_sketch_pmf_cdf_report_error() {
-    let sketch: ReqSketch<ReqF64> = ReqSketch::default();
-    assert_that!(
-        sketch.pmf(&[req_f64(1.0)], SearchCriteria::Inclusive),
-        err(anything())
-    );
-    assert_that!(
-        sketch.cdf(&[req_f64(1.0)], SearchCriteria::Inclusive),
-        err(anything())
-    );
+fn empty_argument_slices_preserve_the_sketch_empty_state() {
+    for n in [0, 1] {
+        let sketch = populated_sketch(n);
+        let view = sketch.sorted_view();
+        let quantiles = (n != 0).then(Vec::new);
+        let distribution = (n != 0).then(|| vec![1.0]);
+        for criteria in [SearchCriteria::Inclusive, SearchCriteria::Exclusive] {
+            assert_eq!(sketch.quantiles(&[], criteria).unwrap(), quantiles);
+            assert_eq!(sketch.cdf(&[], criteria).unwrap(), distribution);
+            assert_eq!(sketch.pmf(&[], criteria).unwrap(), distribution);
+            assert_eq!(view.cdf(&[], criteria).unwrap(), distribution);
+            assert_eq!(view.pmf(&[], criteria).unwrap(), distribution);
+        }
+    }
 }
 
 #[test]
@@ -126,17 +139,33 @@ fn view_rank_is_primary_query_name() {
 }
 
 #[test]
-fn error_precedence_empty_before_invalid_rank() {
-    // On an empty sketch the emptiness is reported before the out-of-range rank.
-    let empty: ReqSketch<ReqF64> = ReqSketch::default();
-    let empty_err = empty.quantile(2.0, SearchCriteria::Inclusive).unwrap_err();
-    assert_that!(empty_err.message(), contains_substring("empty"));
-
-    // On a populated sketch the out-of-range rank is reported.
-    let sketch = populated_sketch(10);
-    let range_err = sketch.quantile(2.0, SearchCriteria::Inclusive).unwrap_err();
-    assert_eq!(range_err.kind(), ErrorKind::InvalidArgument);
-    assert_that!(range_err.message(), contains_substring("must be in"));
+fn invalid_arguments_are_rejected_regardless_of_sketch_state() {
+    for n in [0, 1, 1_000] {
+        let sketch = populated_sketch(n);
+        let view = sketch.sorted_view();
+        for criteria in [SearchCriteria::Inclusive, SearchCriteria::Exclusive] {
+            for rank in [f64::NAN, f64::NEG_INFINITY, -0.1, 1.1, f64::INFINITY] {
+                for error in [
+                    sketch.quantile(rank, criteria).unwrap_err(),
+                    view.quantile(rank, criteria).unwrap_err(),
+                    sketch.quantiles(&[0.5, rank], criteria).unwrap_err(),
+                ] {
+                    assert_eq!(error.kind(), ErrorKind::InvalidArgument);
+                }
+            }
+            for splits in [[1.0, 1.0], [2.0, 1.0]] {
+                let splits = splits.map(req_f64);
+                for error in [
+                    sketch.cdf(&splits, criteria).unwrap_err(),
+                    sketch.pmf(&splits, criteria).unwrap_err(),
+                    view.cdf(&splits, criteria).unwrap_err(),
+                    view.pmf(&splits, criteria).unwrap_err(),
+                ] {
+                    assert_eq!(error.kind(), ErrorKind::InvalidArgument);
+                }
+            }
+        }
+    }
 }
 
 #[test]
@@ -157,6 +186,7 @@ fn concurrent_readers_share_the_sketch() {
                 sketch
                     .quantile(rank, SearchCriteria::Inclusive)
                     .expect("quantile from shared sketch")
+                    .expect("the sketch is non-empty")
             })
         })
         .collect();
