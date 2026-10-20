@@ -31,8 +31,9 @@
 //! # Usage
 //!
 //! ```rust
-//! # use datasketches::common::SearchCriteria;
-//! # use datasketches::kll::KllSketch;
+//! use datasketches::common::SearchCriteria;
+//! use datasketches::kll::KllSketch;
+//!
 //! let mut sketch = KllSketch::<i64>::new(200)?;
 //! sketch.update(1);
 //! sketch.update(2);

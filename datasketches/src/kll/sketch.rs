@@ -79,7 +79,8 @@ impl<T: Clone + Ord> KllSketch<T> {
     /// # Examples
     ///
     /// ```
-    /// # use datasketches::kll::KllSketch;
+    /// use datasketches::kll::KllSketch;
+    ///
     /// let sketch = KllSketch::<i64>::new(200).unwrap();
     /// assert_eq!(sketch.k(), 200);
     /// ```
