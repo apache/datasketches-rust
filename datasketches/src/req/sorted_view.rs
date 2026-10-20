@@ -116,7 +116,8 @@ where
     ///
     /// # Errors
     ///
-    /// Returns an error if `rank` is NaN or outside `[0.0, 1.0]`, even if the view is empty.
+    /// Returns `InvalidArgument` if `rank` is NaN or outside `[0.0, 1.0]`, even if the view is
+    /// empty.
     pub fn quantile(&self, rank: f64, criteria: SearchCriteria) -> Result<Option<T>, Error> {
         if !(0.0..=1.0).contains(&rank) {
             return Err(Error::invalid_argument(format!(
@@ -156,10 +157,12 @@ where
     ///
     /// The result contains one more value than `split_points`.
     /// Returns `Ok(None)` if the view is empty.
+    /// Otherwise, an empty `split_points` slice returns `Ok(Some(vec![1.0]))`.
     ///
     /// # Errors
     ///
-    /// Returns an error if the split points are not strictly increasing, even if the view is empty.
+    /// Returns `InvalidArgument` if the split points are not strictly increasing, even if the view
+    /// is empty.
     pub fn pmf(
         &self,
         split_points: &[T],
@@ -178,10 +181,12 @@ where
     ///
     /// The result contains one more value than `split_points` and ends at `1.0`.
     /// Returns `Ok(None)` if the view is empty.
+    /// Otherwise, an empty `split_points` slice returns `Ok(Some(vec![1.0]))`.
     ///
     /// # Errors
     ///
-    /// Returns an error if the split points are not strictly increasing, even if the view is empty.
+    /// Returns `InvalidArgument` if the split points are not strictly increasing, even if the view
+    /// is empty.
     pub fn cdf(
         &self,
         split_points: &[T],

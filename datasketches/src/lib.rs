@@ -45,8 +45,6 @@
 //! * Use `tuple` when retained Theta keys need application-defined summaries.
 //!
 //! See each module's documentation for accuracy, memory, serialization, and update examples.
-//! See the [query contract](error#query-results) for empty results, invalid query arguments, and
-//! the interfaces that retain meaningful values on empty sketches.
 //!
 //! ## Cross-language hashing
 //!

@@ -48,14 +48,6 @@
 //!
 //! [paper]: https://arxiv.org/abs/1902.04023
 //!
-//! # Query results
-//!
-//! Rank, quantile, CDF, and PMF queries return `Ok(None)` for an empty t-digest and
-//! [`ErrorKind::InvalidArgument`](crate::error::ErrorKind::InvalidArgument) for invalid arguments,
-//! even when empty. Minimum and maximum queries return `Option<f64>` directly. The same contract
-//! applies to [`TDigestMut`] and [`TDigest`]. See the [query contract](crate::error#query-results)
-//! for argument validation and migration guidance.
-//!
 //! # Usage
 //!
 //! ```

@@ -28,13 +28,6 @@
 //! provides their ordinary numerical order. Custom ordering should be expressed with a newtype
 //! that implements [`Ord`], keeping the ordering semantics part of the item type.
 //!
-//! # Query results
-//!
-//! Valid queries on an empty sketch return no result. Invalid ranks or split points return
-//! [`ErrorKind::InvalidArgument`](crate::error::ErrorKind::InvalidArgument), even on an empty
-//! sketch. See the [query contract](crate::error#query-results) for return
-//! types and migration guidance.
-//!
 //! # Usage
 //!
 //! ```rust

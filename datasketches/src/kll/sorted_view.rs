@@ -94,7 +94,8 @@ impl<T: Clone + Ord> SortedView<T> {
     ///
     /// # Errors
     ///
-    /// Returns an error if `rank` is NaN or outside `[0.0, 1.0]`, even if the view is empty.
+    /// Returns `InvalidArgument` if `rank` is NaN or outside `[0.0, 1.0]`, even if the view is
+    /// empty.
     pub fn quantile(&self, rank: f64, criteria: SearchCriteria) -> Result<Option<T>, Error> {
         if !(0.0..=1.0).contains(&rank) {
             return Err(Error::invalid_argument(format!(
@@ -133,10 +134,12 @@ impl<T: Clone + Ord> SortedView<T> {
     ///
     /// Ranks `0.0` and `1.0` return the exact minimum and maximum items of the stream.
     /// Returns `Ok(None)` if the view is empty.
+    /// Otherwise, an empty `ranks` slice returns `Ok(Some(vec![]))`.
     ///
     /// # Errors
     ///
-    /// Returns an error if any rank is NaN or outside `[0.0, 1.0]`, even if the view is empty.
+    /// Returns `InvalidArgument` if any rank is NaN or outside `[0.0, 1.0]`, even if the view is
+    /// empty.
     pub fn quantiles(
         &self,
         ranks: &[f64],
@@ -165,10 +168,12 @@ impl<T: Clone + Ord> SortedView<T> {
     /// Returns the approximate cumulative distribution over `split_points`.
     ///
     /// Returns `Ok(None)` if the view is empty.
+    /// Otherwise, an empty `split_points` slice returns `Ok(Some(vec![1.0]))`.
     ///
     /// # Errors
     ///
-    /// Returns an error if the split points are not strictly increasing, even if the view is empty.
+    /// Returns `InvalidArgument` if the split points are not strictly increasing, even if the view
+    /// is empty.
     pub fn cdf(
         &self,
         split_points: &[T],
@@ -189,10 +194,12 @@ impl<T: Clone + Ord> SortedView<T> {
     /// Returns the approximate probability mass over `split_points`.
     ///
     /// Returns `Ok(None)` if the view is empty.
+    /// Otherwise, an empty `split_points` slice returns `Ok(Some(vec![1.0]))`.
     ///
     /// # Errors
     ///
-    /// Returns an error if the split points are not strictly increasing, even if the view is empty.
+    /// Returns `InvalidArgument` if the split points are not strictly increasing, even if the view
+    /// is empty.
     pub fn pmf(
         &self,
         split_points: &[T],

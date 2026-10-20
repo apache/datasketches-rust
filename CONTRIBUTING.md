@@ -80,6 +80,12 @@ cargo bench --package benchmarks --bench benchmarks -- cpc::serde
 - Describe types with noun phrases and API behavior with third-person present-tense verbs such as `Creates`, `Updates`, and `Returns`.
 - End summary sentences with punctuation, and format Rust identifiers, literals, and numeric ranges as inline code.
 - Put contract sections and compatibility notes before examples. When applicable, order sections as `# Errors`, `# Panics`, and `# Examples`. Include only sections that describe an actual contract.
+- Document return values and error conditions on the relevant methods rather than repeating them in crate or module overviews.
+
+## Query semantics
+
+- Validate query arguments before handling an empty sketch. Invalid arguments return `InvalidArgument` regardless of whether the sketch is empty.
+- Return a meaningful result when one exists, such as zero, `false`, or an empty collection. Otherwise, use `Option` for an absent result, combined with `Result` when argument validation can fail.
 
 ## Visibility
 

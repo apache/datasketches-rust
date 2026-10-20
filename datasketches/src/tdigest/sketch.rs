@@ -407,8 +407,8 @@ impl TDigestMut {
     ///
     /// # Errors
     ///
-    /// Returns an error if `split_points` contains NaN or is not strictly increasing, even if
-    /// this t-digest is empty.
+    /// Returns `InvalidArgument` if `split_points` contains NaN or is not strictly increasing, even
+    /// if this t-digest is empty.
     ///
     /// # Examples
     ///
@@ -438,8 +438,8 @@ impl TDigestMut {
     ///
     /// # Errors
     ///
-    /// Returns an error if `split_points` contains NaN or is not strictly increasing, even if
-    /// this t-digest is empty.
+    /// Returns `InvalidArgument` if `split_points` contains NaN or is not strictly increasing, even
+    /// if this t-digest is empty.
     ///
     /// # Examples
     ///
@@ -469,7 +469,7 @@ impl TDigestMut {
     ///
     /// # Errors
     ///
-    /// Returns an error if `value` is NaN, even if this t-digest is empty.
+    /// Returns `InvalidArgument` if `value` is NaN, even if this t-digest is empty.
     ///
     /// # Examples
     ///
@@ -510,7 +510,8 @@ impl TDigestMut {
     ///
     /// # Errors
     ///
-    /// Returns an error if `rank` is NaN or outside `[0.0, 1.0]`, even if this t-digest is empty.
+    /// Returns `InvalidArgument` if `rank` is NaN or outside `[0.0, 1.0]`, even if this t-digest is
+    /// empty.
     ///
     /// # Examples
     ///
@@ -541,7 +542,8 @@ impl TDigestMut {
     ///
     /// # Errors
     ///
-    /// Returns an error if any rank is NaN or outside `[0.0, 1.0]`, even if this t-digest is empty.
+    /// Returns `InvalidArgument` if any rank is NaN or outside `[0.0, 1.0]`, even if this t-digest
+    /// is empty.
     pub fn quantiles(&mut self, ranks: &[f64]) -> Result<Option<Vec<f64>>, Error> {
         check_ranks(ranks)?;
 
@@ -1444,8 +1446,8 @@ impl TDigest {
     ///
     /// # Errors
     ///
-    /// Returns an error if `split_points` contains NaN or is not strictly increasing, even if
-    /// this t-digest is empty.
+    /// Returns `InvalidArgument` if `split_points` contains NaN or is not strictly increasing, even
+    /// if this t-digest is empty.
     ///
     /// # Examples
     ///
@@ -1483,8 +1485,8 @@ impl TDigest {
     ///
     /// # Errors
     ///
-    /// Returns an error if `split_points` contains NaN or is not strictly increasing, even if
-    /// this t-digest is empty.
+    /// Returns `InvalidArgument` if `split_points` contains NaN or is not strictly increasing, even
+    /// if this t-digest is empty.
     ///
     /// # Examples
     ///
@@ -1510,7 +1512,7 @@ impl TDigest {
     ///
     /// # Errors
     ///
-    /// Returns an error if `value` is NaN, even if this t-digest is empty.
+    /// Returns `InvalidArgument` if `value` is NaN, even if this t-digest is empty.
     ///
     /// # Examples
     ///
@@ -1540,7 +1542,8 @@ impl TDigest {
     ///
     /// # Errors
     ///
-    /// Returns an error if `rank` is NaN or outside `[0.0, 1.0]`, even if this t-digest is empty.
+    /// Returns `InvalidArgument` if `rank` is NaN or outside `[0.0, 1.0]`, even if this t-digest is
+    /// empty.
     ///
     /// # Examples
     ///
@@ -1570,7 +1573,8 @@ impl TDigest {
     ///
     /// # Errors
     ///
-    /// Returns an error if any rank is NaN or outside `[0.0, 1.0]`, even if this t-digest is empty.
+    /// Returns `InvalidArgument` if any rank is NaN or outside `[0.0, 1.0]`, even if this t-digest
+    /// is empty.
     ///
     /// # Examples
     ///
