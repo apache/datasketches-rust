@@ -306,7 +306,7 @@ impl<T: CountMinValue> CountMinSketch<T> {
         Ok(())
     }
 
-    /// Serializes this sketch into the DataSketches CountMin format.
+    /// Serializes this sketch into the Count-Min binary format.
     ///
     /// # Examples
     ///

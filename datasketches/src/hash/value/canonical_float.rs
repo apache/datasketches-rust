@@ -20,8 +20,6 @@
 //! [`CanonicalFloat`] maps `f32` and `f64` values through a canonical `f64` bit pattern before
 //! hashing. Signed zero values hash the same, all NaN values use one canonical NaN bit pattern,
 //! and equal `f32`/`f64` values hash the same.
-//!
-//! This strategy is compatible with how other datasketches hashes floating-point numbers.
 
 use std::hash::Hash;
 use std::hash::Hasher;

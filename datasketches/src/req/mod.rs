@@ -19,8 +19,7 @@
 //!
 //! [`ReqSketch`] provides bounded-memory rank, quantile, PMF, and CDF estimates with
 //! configurable relative accuracy at either end of the rank domain. It is based on
-//! [Relative Error Streaming Quantiles](https://arxiv.org/abs/2004.01668) and the Apache
-//! DataSketches C++ implementation.
+//! [Relative Error Streaming Quantiles](https://arxiv.org/abs/2004.01668).
 //!
 //! # Item ordering
 //!

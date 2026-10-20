@@ -19,7 +19,7 @@
 //!
 //! The Tuple compact format reuses the uncompressed Theta layout (preamble, flags, theta) but uses
 //! the Tuple family id, carries a sketch-type byte, and stores the user summary bytes after each
-//! retained hash. See the C++/Java reference implementations for the on-disk format.
+//! retained hash.
 //!
 //! A Tuple sketch keeps a user-defined summary next to every retained key. Because the summary
 //! type is opaque to the sketch, (de)serialization of summaries is delegated to the summary type

@@ -19,8 +19,7 @@
 //!
 //! [`SignExtend`] first sign-extends values to 64-bits and then hashes the resulting integers.
 //!
-//! This strategy is the same as how datasketches-cpp hashes short integers for `HllSketch` and
-//! `CpcSketch`.
+//! Use this encoding for cross-language hashing of short integers in HLL and CPC.
 
 use std::hash::Hash;
 use std::hash::Hasher;

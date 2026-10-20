@@ -21,8 +21,7 @@
 //! near-optimal accuracy per retained item. It supports one-pass updates,
 //! approximate quantiles, ranks, PMF, and CDF queries.
 //!
-//! This implementation follows Apache DataSketches semantics and uses the compact binary
-//! serialization format shared by the Java, C++, and Go implementations.
+//! The compact binary serialization format supports cross-language interchange.
 //!
 //! Items must implement [`Ord`]. Wrap `f32` or `f64` values in [`KllFloat`], which rejects NaN and
 //! provides their ordinary numerical order. Custom ordering should be expressed with a newtype

@@ -109,7 +109,7 @@ fn test_non_clone_item_round_trip() {
 fn test_empty_round_trip() {
     let sketch = FrequentItemsSketch::<i64>::new(32).unwrap();
     let bytes = sketch.serialize();
-    // One preamble long, matching the Java and C++ empty encoding.
+    // One preamble long for the canonical empty encoding.
     assert_eq!(bytes.len(), 8);
     let restored = FrequentItemsSketch::<i64>::deserialize(&bytes).unwrap();
     assert!(restored.is_empty());

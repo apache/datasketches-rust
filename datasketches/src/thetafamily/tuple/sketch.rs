@@ -331,7 +331,7 @@ where
     /// Returns theta as a `u64`.
     ///
     /// An empty sketch reports `MAX_THETA` even when it was built with a sampling probability
-    /// below `1.0`, matching the other DataSketches implementations.
+    /// below `1.0`.
     pub fn theta64(&self) -> u64 {
         if self.is_empty {
             MAX_THETA
@@ -559,8 +559,8 @@ impl<S> CompactTupleSketch<S> {
 
     /// Serializes this sketch into the compact Tuple binary format.
     ///
-    /// Uses [`TupleSummaryValue`] to encode summaries. Reading the output in Java or C++ requires
-    /// a compatible summary encoding.
+    /// Uses [`TupleSummaryValue`] to encode summaries. Readers must use a compatible summary
+    /// encoding.
     ///
     /// Empty sketches serialize with a zero seed hash.
     ///

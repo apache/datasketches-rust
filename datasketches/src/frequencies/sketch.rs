@@ -680,8 +680,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
             return Err(Error::deserial("empty flag does not match preamble longs"));
         }
         if is_empty {
-            // Java also restores empty images at the minimum size. `lg_cur` does
-            // not carry item state here and must not control an eager allocation.
+            // Empty images carry no item state, so `lg_cur` must not control an eager allocation.
             return Ok(Self::with_lg_map_sizes(lg_max, LG_MIN_MAP_SIZE));
         }
 

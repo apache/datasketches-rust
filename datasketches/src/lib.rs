@@ -18,8 +18,6 @@
 //! # Apache® DataSketches™ Core Rust Library Component
 //!
 //! This crate provides compact, mergeable summaries for answering queries over large data streams.
-//! It implements a subset of the algorithms available in the other Apache DataSketches language
-//! components.
 //!
 //! ## Enabling sketches
 //!
@@ -49,7 +47,7 @@
 //! ## Cross-language hashing
 //!
 //! Compatible serialization does not by itself make ordinary Rust [`Hash`](std::hash::Hash)
-//! input compatible with Java, C++, or Go. Rust strings and slices include type-specific framing,
+//! input compatible across languages. Rust strings and slices include type-specific framing,
 //! and short integers require different widening rules for different sketch families. When
 //! sketches must represent the same updates across languages, use the wrappers in [`hash::value`]:
 //!
@@ -58,8 +56,8 @@
 //! * `sign_extend` for short integers used with HLL and CPC;
 //! * `natural_extend` for short integers used with Bloom filters.
 //!
-//! Other DataSketches implementations skip empty strings rather than hashing them. Check for empty
-//! input before updating when that cross-language behavior is required.
+//! When interoperating with an implementation that skips empty strings, check for empty input
+//! before updating here as well.
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![deny(missing_docs)]

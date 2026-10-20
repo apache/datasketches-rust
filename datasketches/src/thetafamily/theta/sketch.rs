@@ -218,8 +218,8 @@ impl ThetaSketch {
 
     /// Updates the sketch with a hashable value.
     ///
-    /// You may use [`hash::value`](crate::hash::value) wrappers when another DataSketches
-    /// implementation requires a specific value hashing strategy.
+    /// Use [`hash::value`](crate::hash::value) wrappers to select an input encoding for
+    /// cross-language hashing.
     ///
     /// # Examples
     ///
@@ -268,7 +268,7 @@ impl ThetaSketch {
     /// Returns theta as a `u64`.
     ///
     /// An empty sketch reports `MAX_THETA` even when it was built with a sampling probability
-    /// below `1.0`, matching the other DataSketches implementations.
+    /// below `1.0`.
     pub fn theta64(&self) -> u64 {
         if self.is_empty {
             MAX_THETA
@@ -590,7 +590,7 @@ impl CompactThetaSketch {
 
         if pre_longs > 1 {
             bytes.write_u32_le(retained_hashes.len() as u32);
-            bytes.write_u32_be(0); // not used by compact sketches; match Java/C++
+            bytes.write_u32_be(0); // unused by compact sketches
         }
         if self.is_estimation_mode() {
             bytes.write_u64_le(self.theta64());

@@ -20,7 +20,7 @@
 //! [`NaturalExtend`] first widens signed values to `i64` and unsigned values to `u64`, and then
 //! hashes the resulting integers.
 //!
-//! This strategy is the same as how datasketches-cpp hashes short integers for `BloomFilter`.
+//! Use this encoding for cross-language hashing of short integers in Bloom filters.
 
 use std::hash::Hash;
 use std::hash::Hasher;

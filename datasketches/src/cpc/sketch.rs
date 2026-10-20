@@ -179,8 +179,8 @@ impl CpcSketch {
 
     /// Updates the sketch with a hashable value.
     ///
-    /// You may use [`hash::value`](crate::hash::value) wrappers when another DataSketches
-    /// implementation requires a specific value hashing strategy.
+    /// Use [`hash::value`](crate::hash::value) wrappers to select an input encoding for
+    /// cross-language hashing.
     ///
     /// # Examples
     ///

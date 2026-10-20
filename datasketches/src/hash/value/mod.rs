@@ -27,8 +27,6 @@
 //! pattern before hashing. Signed zero values hash the same, all NaN values use one canonical NaN
 //! bit pattern, and equal `f32`/`f64` values hash the same.
 //!
-//! This strategy is the same as how other datasketches implementations hash floating-point numbers.
-//!
 //! The concrete wrapper documentation provides more details and examples.
 //!
 //! * [`canonical_float::from_f32`]
@@ -37,8 +35,7 @@
 //! ## Integers
 //!
 //! [`sign_extend::SignExtend`] first sign-extends values to 64-bits, and then hashes the resulting
-//! integers. This strategy is the same as how datasketches-cpp hashes short integers for
-//! `HllSketch` and `CpcSketch`.
+//! integers. Use this encoding for cross-language hashing of short integers in HLL and CPC.
 //!
 //! The concrete wrapper documentation provides more details and examples.
 //!
@@ -47,8 +44,8 @@
 //! * [`sign_extend::from_i32`], [`sign_extend::from_u32`]
 //!
 //! [`natural_extend::NaturalExtend`] first widens signed values to `i64` and unsigned values to
-//! `u64`, and then hashes the resulting integers. This strategy is the same as how datasketches-cpp
-//! hashes short integers for `BloomFilter`.
+//! `u64`, and then hashes the resulting integers. Use this encoding for cross-language hashing of
+//! short integers in Bloom filters.
 //!
 //! The concrete wrapper documentation provides more details and examples.
 //!
@@ -61,9 +58,8 @@
 //! [`raw_bytes::RawBytes`] hashes byte and string inputs as raw bytes without Rust's slice or
 //! string length prefix.
 //!
-//! Empty byte and string inputs have zero bytes to hash. Other datasketches implementations skip
-//! empty strings before hashing, so check `is_empty` before updating a sketch when that behavior
-//! matters.
+//! Empty byte and string inputs have zero bytes to hash. When interoperating with an implementation
+//! that skips empty strings, check `is_empty` before updating here as well.
 //!
 //! The concrete wrapper documentation provides more details and examples.
 //!

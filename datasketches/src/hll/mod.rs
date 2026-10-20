@@ -20,7 +20,7 @@
 //! Use [`HllSketch`] to collect values and [`HllUnion`] to combine sketches.
 //! [`HllType`] controls register storage; `lg_k` controls the register count and accuracy.
 //!
-//! Serialized sketches are compatible with Apache DataSketches in Java and C++.
+//! The binary serialization format supports cross-language interchange.
 //! Cross-language updates must also use compatible hashing; see
 //! [`hash::value`](crate::hash::value).
 //!
@@ -149,8 +149,8 @@ impl Coupon {
 
     /// Computes the HLL coupon for a hashable value.
     ///
-    /// Use [`hash::value`](crate::hash::value) wrappers when another DataSketches
-    /// implementation requires a specific value hashing strategy.
+    /// Use [`hash::value`](crate::hash::value) wrappers to select an input encoding for
+    /// cross-language hashing.
     ///
     /// # Examples
     ///

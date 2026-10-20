@@ -535,7 +535,7 @@ where
         size
     }
 
-    /// Serializes the sketch using the C++/Java-compatible REQ wire format.
+    /// Serializes the sketch using the REQ wire format for cross-language interchange.
     pub fn serialize(&self) -> Vec<u8>
     where
         T: ReqValue,
@@ -583,8 +583,8 @@ where
         out.into_bytes()
     }
 
-    /// Deserialize a sketch from bytes produced by [`Self::serialize`] or by the
-    /// C++/Java reference implementations.
+    /// Deserializes a sketch from bytes produced by [`Self::serialize`] or a compatible
+    /// implementation.
     ///
     /// # Errors
     ///
@@ -803,9 +803,8 @@ where
             min_item: None,
             max_item: None,
         };
-        // C++ parity: an empty sketch has a level-0 compactor present from the start.
-        // This makes is_raw_items() and flags_byte() byte-compatible with the C++/Java
-        // wire format for the empty case.
+        // Keep a level-0 compactor so is_raw_items() and flags_byte() produce
+        // the canonical empty encoding.
         sketch.grow();
         sketch
     }

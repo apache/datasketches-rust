@@ -364,7 +364,7 @@ where
     ///
     /// The wire format omits the compactor preamble for tiny sketches (n ≤ 4); this
     /// helper synthesises a fresh compactor and seeds it with the deserialized items.
-    /// A false wire flag stays false for byte-stable C++/Java round trips; a true flag
+    /// A false wire flag stays false for byte-stable round trips; a true flag
     /// is cleared if the items are not actually sorted.
     pub fn raw_items_compactor(
         k: u16,
