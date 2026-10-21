@@ -16,4 +16,5 @@
 // under the License.
 
 mod decay;
+mod estimate;
 mod update;
