@@ -314,7 +314,7 @@ impl HllSketch {
 
     /// Deserializes an HLL sketch from bytes.
     ///
-    /// The binary format is compatible with other Apache DataSketches implementations.
+    /// Also accepts data serialized by other DataSketches implementations.
     ///
     /// # Errors
     ///
@@ -445,7 +445,7 @@ impl HllSketch {
 
     /// Serializes the HLL sketch to bytes.
     ///
-    /// The binary format is compatible with other Apache DataSketches implementations.
+    /// The serialized data can be read by other DataSketches implementations.
     ///
     /// # Examples
     ///

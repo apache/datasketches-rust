@@ -638,7 +638,7 @@ fn deserialize_with_serde<T: KllValue + Ord>(bytes: &[u8]) -> Result<KllSketch<T
 impl<T: KllValue + Ord> KllSketch<T> {
     /// Serializes the sketch to bytes in compact form.
     ///
-    /// The binary format is compatible with other Apache DataSketches implementations when both
+    /// The serialized data can be read by other DataSketches implementations when both
     /// sides use the same [`KllValue`] item encoding.
     pub fn serialize(&self) -> Vec<u8> {
         serialize_with_serde(self)
@@ -646,7 +646,7 @@ impl<T: KllValue + Ord> KllSketch<T> {
 
     /// Deserializes a sketch from bytes in compact form.
     ///
-    /// The binary format is compatible with other Apache DataSketches implementations when both
+    /// Also accepts data serialized by other DataSketches implementations when both
     /// sides use the same [`KllValue`] item encoding.
     ///
     /// # Errors

@@ -47,7 +47,7 @@ impl CpcWrapper {
     /// Reads the cardinality metadata without copying or fully deserializing the compressed
     /// payload.
     ///
-    /// The binary format is compatible with other Apache DataSketches implementations.
+    /// Also accepts data serialized by other DataSketches implementations.
     ///
     /// # Errors
     ///

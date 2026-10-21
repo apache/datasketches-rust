@@ -379,7 +379,7 @@ impl BloomFilter {
 
     /// Serializes the filter to a byte vector.
     ///
-    /// The binary format is compatible with other Apache DataSketches implementations.
+    /// The serialized data can be read by other DataSketches implementations.
     ///
     /// # Examples
     ///
@@ -441,7 +441,7 @@ impl BloomFilter {
 
     /// Deserializes a filter from bytes.
     ///
-    /// The binary format is compatible with other Apache DataSketches implementations.
+    /// Also accepts data serialized by other DataSketches implementations.
     ///
     /// # Errors
     ///

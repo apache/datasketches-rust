@@ -537,7 +537,7 @@ where
 
     /// Serializes the sketch using the REQ wire format.
     ///
-    /// The binary format is compatible with other Apache DataSketches implementations when both
+    /// The serialized data can be read by other DataSketches implementations when both
     /// sides use the same [`ReqValue`] item encoding.
     pub fn serialize(&self) -> Vec<u8>
     where
@@ -588,7 +588,7 @@ where
 
     /// Deserializes a sketch from bytes in the REQ wire format.
     ///
-    /// The binary format is compatible with other Apache DataSketches implementations when both
+    /// Also accepts data serialized by other DataSketches implementations when both
     /// sides use the same [`ReqValue`] item encoding.
     ///
     /// # Errors

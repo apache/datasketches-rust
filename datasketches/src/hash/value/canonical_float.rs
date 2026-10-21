@@ -21,7 +21,7 @@
 //! hashing. Signed zero values hash the same, all NaN values use one canonical NaN bit pattern,
 //! and equal `f32`/`f64` values hash the same.
 //!
-//! Use this encoding to match floating-point hashing in datasketches-java and datasketches-cpp.
+//! Use this encoding to match floating-point hashing in DataSketches Java and DataSketches C++.
 
 use std::hash::Hash;
 use std::hash::Hasher;

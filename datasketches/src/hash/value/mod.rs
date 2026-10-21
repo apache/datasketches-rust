@@ -27,7 +27,7 @@
 //! pattern before hashing. Signed zero values hash the same, all NaN values use one canonical NaN
 //! bit pattern, and equal `f32`/`f64` values hash the same.
 //!
-//! Use this encoding to match floating-point hashing in datasketches-java and datasketches-cpp.
+//! Use this encoding to match floating-point hashing in DataSketches Java and DataSketches C++.
 //!
 //! The concrete wrapper documentation provides more details and examples.
 //!
@@ -37,7 +37,7 @@
 //! ## Integers
 //!
 //! [`sign_extend::SignExtend`] first sign-extends values to 64-bits, and then hashes the resulting
-//! integers. Use this encoding to match short-integer hashing in datasketches-cpp's HLL and CPC
+//! integers. Use this encoding to match short-integer hashing in DataSketches C++'s HLL and CPC
 //! sketches.
 //!
 //! The concrete wrapper documentation provides more details and examples.
@@ -48,7 +48,7 @@
 //!
 //! [`natural_extend::NaturalExtend`] first widens signed values to `i64` and unsigned values to
 //! `u64`, and then hashes the resulting integers. Use this encoding to match short-integer hashing
-//! in datasketches-cpp's Bloom filters.
+//! in DataSketches C++'s Bloom filters.
 //!
 //! The concrete wrapper documentation provides more details and examples.
 //!
@@ -61,8 +61,8 @@
 //! [`raw_bytes::RawBytes`] hashes byte and string inputs as raw bytes without Rust's slice or
 //! string length prefix.
 //!
-//! Use this encoding to match byte and UTF-8 string hashing in datasketches-java and
-//! datasketches-cpp. Their string update APIs skip empty strings; check `is_empty` before updating
+//! Use this encoding to match byte and UTF-8 string hashing in DataSketches Java and
+//! DataSketches C++. Their string update APIs skip empty strings; check `is_empty` before updating
 //! here as well.
 //!
 //! The concrete wrapper documentation provides more details and examples.
