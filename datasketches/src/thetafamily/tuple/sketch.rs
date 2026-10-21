@@ -559,8 +559,8 @@ impl<S> CompactTupleSketch<S> {
 
     /// Serializes this sketch into the compact Tuple binary format.
     ///
-    /// Uses [`TupleSummaryValue`] to encode summaries. Readers must use a compatible summary
-    /// encoding.
+    /// The binary format is compatible with other Apache DataSketches implementations when both
+    /// sides use the same [`TupleSummaryValue`] summary encoding.
     ///
     /// Empty sketches serialize with a zero seed hash.
     ///
@@ -622,6 +622,9 @@ impl<S> CompactTupleSketch<S> {
 
     /// Deserializes a compact Tuple sketch using the default seed.
     ///
+    /// The binary format is compatible with other Apache DataSketches implementations when both
+    /// sides use the same [`TupleSummaryValue`] summary encoding.
+    ///
     /// # Errors
     ///
     /// Returns `InvalidData` if the image is malformed or a non-empty image's seed hash does not
@@ -635,6 +638,9 @@ impl<S> CompactTupleSketch<S> {
     }
 
     /// Deserializes a compact Tuple sketch using `seed`.
+    ///
+    /// The binary format is compatible with other Apache DataSketches implementations when both
+    /// sides use the same [`TupleSummaryValue`] summary encoding.
     ///
     /// Empty sketches use the hash of `seed` regardless of the stored seed hash.
     ///

@@ -314,6 +314,8 @@ impl HllSketch {
 
     /// Deserializes an HLL sketch from bytes.
     ///
+    /// The binary format is compatible with other Apache DataSketches implementations.
+    ///
     /// # Errors
     ///
     /// Returns `InvalidData` if the image is truncated or contains an invalid preamble,
@@ -442,6 +444,8 @@ impl HllSketch {
     }
 
     /// Serializes the HLL sketch to bytes.
+    ///
+    /// The binary format is compatible with other Apache DataSketches implementations.
     ///
     /// # Examples
     ///

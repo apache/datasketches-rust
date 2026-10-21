@@ -535,7 +535,10 @@ where
         size
     }
 
-    /// Serializes the sketch using the REQ wire format for cross-language interchange.
+    /// Serializes the sketch using the REQ wire format.
+    ///
+    /// The binary format is compatible with other Apache DataSketches implementations when both
+    /// sides use the same [`ReqValue`] item encoding.
     pub fn serialize(&self) -> Vec<u8>
     where
         T: ReqValue,
@@ -583,8 +586,10 @@ where
         out.into_bytes()
     }
 
-    /// Deserializes a sketch from bytes produced by [`Self::serialize`] or a compatible
-    /// implementation.
+    /// Deserializes a sketch from bytes in the REQ wire format.
+    ///
+    /// The binary format is compatible with other Apache DataSketches implementations when both
+    /// sides use the same [`ReqValue`] item encoding.
     ///
     /// # Errors
     ///

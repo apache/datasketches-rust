@@ -379,7 +379,7 @@ impl BloomFilter {
 
     /// Serializes the filter to a byte vector.
     ///
-    /// The binary format supports cross-language interchange.
+    /// The binary format is compatible with other Apache DataSketches implementations.
     ///
     /// # Examples
     ///
@@ -440,6 +440,8 @@ impl BloomFilter {
     }
 
     /// Deserializes a filter from bytes.
+    ///
+    /// The binary format is compatible with other Apache DataSketches implementations.
     ///
     /// # Errors
     ///

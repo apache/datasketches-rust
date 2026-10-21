@@ -754,6 +754,9 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
 impl<T: FrequentItemValue> FrequentItemsSketch<T> {
     /// Serializes this sketch into a byte vector.
     ///
+    /// The binary format is compatible with other Apache DataSketches implementations when both
+    /// sides use the same [`FrequentItemValue`] item encoding.
+    ///
     /// # Examples
     ///
     /// Built-in support for `i64`:
@@ -785,6 +788,9 @@ impl<T: FrequentItemValue> FrequentItemsSketch<T> {
     }
 
     /// Deserializes a sketch from bytes.
+    ///
+    /// The binary format is compatible with other Apache DataSketches implementations when both
+    /// sides use the same [`FrequentItemValue`] item encoding.
     ///
     /// # Errors
     ///

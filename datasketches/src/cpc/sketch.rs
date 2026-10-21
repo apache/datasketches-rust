@@ -490,6 +490,8 @@ impl fmt::Debug for CpcSketch {
 
 impl CpcSketch {
     /// Serializes this `CpcSketch` to bytes.
+    ///
+    /// The binary format is compatible with other Apache DataSketches implementations.
     pub fn serialize(&self) -> Vec<u8> {
         let flavor = self.flavor();
         let has_hip = !self.merge_flag;
@@ -623,6 +625,8 @@ impl CpcSketch {
 
     /// Deserializes a `CpcSketch` from bytes.
     ///
+    /// The binary format is compatible with other Apache DataSketches implementations.
+    ///
     /// # Errors
     ///
     /// Returns `InvalidData` if the image is malformed or its seed hash does not match the default
@@ -632,6 +636,8 @@ impl CpcSketch {
     }
 
     /// Deserializes a `CpcSketch` from bytes with the provided seed.
+    ///
+    /// The binary format is compatible with other Apache DataSketches implementations.
     ///
     /// # Errors
     ///

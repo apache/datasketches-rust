@@ -546,6 +546,8 @@ impl CompactThetaSketch {
 
     /// Serializes this sketch in compressed form if applicable.
     ///
+    /// The binary format is compatible with other Apache DataSketches implementations.
+    ///
     /// Falls back to [`serialize`](Self::serialize) when compression is not applicable.
     pub fn serialize_compressed(&self) -> Vec<u8> {
         if self.is_suitable_for_compression() {
@@ -562,6 +564,8 @@ impl CompactThetaSketch {
     }
 
     /// Serializes this sketch into the uncompressed compact Theta format.
+    ///
+    /// The binary format is compatible with other Apache DataSketches implementations.
     ///
     /// Empty sketches serialize with a zero seed hash.
     pub fn serialize(&self) -> Vec<u8> {
@@ -690,6 +694,8 @@ impl CompactThetaSketch {
 
     /// Deserializes a compact Theta sketch using the default seed.
     ///
+    /// The binary format is compatible with other Apache DataSketches implementations.
+    ///
     /// # Errors
     ///
     /// Returns `InvalidData` if the image is malformed or a non-empty image's seed hash does not
@@ -699,6 +705,8 @@ impl CompactThetaSketch {
     }
 
     /// Deserializes a compact Theta sketch using `seed`.
+    ///
+    /// The binary format is compatible with other Apache DataSketches implementations.
     ///
     /// Empty sketches use the hash of `seed` regardless of the stored seed hash.
     ///
