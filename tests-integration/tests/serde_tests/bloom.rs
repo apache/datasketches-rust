@@ -55,7 +55,7 @@ fn test_bloom_filter_file(path: PathBuf, expected_num_items: u64, expected_num_h
     }
 
     // Verify the items that were inserted (integers 0 to n/10-1)
-    // C++ code: for (uint64_t i = 0; i < n / 10; ++i) bf.update(i);
+    // datasketches-cpp code: for (uint64_t i = 0; i < n / 10; ++i) bf.update(i);
     let num_inserted = expected_num_items / 10;
 
     if num_inserted > 0 {

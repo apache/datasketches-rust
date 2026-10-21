@@ -114,7 +114,7 @@ where
             }
         }
         // OR-ing the schedule counters can advance state past several doubling
-        // thresholds at once. Loop until no more doublings are needed (C++:
+        // thresholds at once. Loop until no more doublings are needed (datasketches-cpp:
         // req_compactor_impl.hpp:250 — `while (ensure_enough_sections()) {}`).
         while self.ensure_enough_sections() {}
     }
@@ -364,8 +364,8 @@ where
     ///
     /// The wire format omits the compactor preamble for tiny sketches (n ≤ 4); this
     /// helper synthesises a fresh compactor and seeds it with the deserialized items.
-    /// A false wire flag stays false for byte-stable round trips; a true flag
-    /// is cleared if the items are not actually sorted.
+    /// A false wire flag stays false for byte-stable datasketches-cpp and datasketches-java round
+    /// trips; a true flag is cleared if the items are not actually sorted.
     pub fn raw_items_compactor(
         k: u16,
         rank_accuracy: RankAccuracy,
@@ -513,7 +513,7 @@ mod tests {
         // ensure_enough_sections() once instead of looping. Without the loop,
         // num_sections doubles at most once per merge — but OR-ing a high state
         // can advance past several doubling thresholds at once and require
-        // multiple doublings (matching the C++ reference at
+        // multiple doublings (matching datasketches-cpp at
         // req_compactor_impl.hpp:250 — `while (ensure_enough_sections()) {}`).
         //
         // Setup: a fresh compactor (state=0, num_sections=3) merged with another

@@ -20,8 +20,9 @@
 //! [`RawBytes`] hashes byte and string inputs as raw bytes without Rust's slice or string length
 //! prefix.
 //!
-//! Empty byte and string inputs have zero bytes to hash. When interoperating with an implementation
-//! that skips empty strings, check `is_empty` before updating here as well.
+//! Use this encoding to match byte and UTF-8 string hashing in datasketches-java and
+//! datasketches-cpp. Their string update APIs skip empty strings; check `is_empty` before updating
+//! here as well.
 
 use std::hash::Hasher;
 

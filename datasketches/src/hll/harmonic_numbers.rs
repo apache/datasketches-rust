@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! Harmonic-number approximation used by the bitmap estimator, following DataSketches C++:
+//! Harmonic-number approximation used by the bitmap estimator, following datasketches-cpp:
 //! <https://github.com/apache/datasketches-cpp/blob/5a055521/hll/include/HarmonicNumbers-internal.hpp>
 
 const NUM_EXACT: usize = 25;

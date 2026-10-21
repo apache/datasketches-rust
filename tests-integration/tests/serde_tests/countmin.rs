@@ -44,8 +44,8 @@ fn rejects_weights_that_cannot_bound_counter_arithmetic() {
 }
 
 // This test validates binary format compatibility (deserialize + byte round-trip) for
-// C++ CountMin snapshots. It intentionally does not assert estimate equivalence against
-// original input keys because per-row hash seed derivation differs across implementations.
+// datasketches-cpp CountMin snapshots. It intentionally does not assert estimate equivalence
+// against original input keys because per-row hash seed derivation differs across implementations.
 fn assert_cpp_snapshot(
     filename: &str,
     seed: u64,

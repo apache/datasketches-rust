@@ -173,7 +173,7 @@ where
         let mut hasher = MurmurHash3X64128::with_seed(self.seed);
         value.hash(&mut hasher);
         let (h1, _) = hasher.finish128();
-        h1 >> 1 // Reduce to the 63-bit hash domain shared by Theta and Tuple sketches.
+        h1 >> 1 // Match the 63-bit hash domain used by datasketches-java's Theta and Tuple sketches.
     }
 
     /// Inserts or updates the entry slot for a pre-hashed key.

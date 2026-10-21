@@ -29,7 +29,8 @@ pub const PREAMBLE_INTS_EXACT: u8 = 2;
 pub const PREAMBLE_INTS_ESTIMATION: u8 = 4;
 pub const RAW_ITEMS_THRESHOLD: u64 = 4;
 
-// REQ wire-format flags; bits 0 and 1 are reserved.
+// Match the datasketches-cpp enum order: RESERVED1, RESERVED2, IS_EMPTY, IS_HIGH_RANK, RAW_ITEMS,
+// IS_LEVEL_ZERO_SORTED.
 pub const FLAG_IS_EMPTY: u8 = 1 << 2;
 pub const FLAG_IS_HIGH_RANK: u8 = 1 << 3;
 pub const FLAG_RAW_ITEMS: u8 = 1 << 4;

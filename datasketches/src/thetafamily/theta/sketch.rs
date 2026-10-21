@@ -590,7 +590,8 @@ impl CompactThetaSketch {
 
         if pre_longs > 1 {
             bytes.write_u32_le(retained_hashes.len() as u32);
-            bytes.write_u32_be(0); // unused by compact sketches
+            // Unused by compact sketches; matches datasketches-java and datasketches-cpp.
+            bytes.write_u32_be(0);
         }
         if self.is_estimation_mode() {
             bytes.write_u64_le(self.theta64());

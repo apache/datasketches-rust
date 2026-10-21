@@ -299,12 +299,12 @@ fn test_v2_java_empty_layouts() {
         .seed_hash();
     let other_seed_hash = ThetaSketchBuilder::default().build().unwrap().seed_hash();
 
-    // Port of Java 8.0.0 ForwardCompatibilityTest's checkSerVer2_{1,2,3}PreLong[s]_Empty:
-    // https://github.com/apache/datasketches-java/blob/8.0.0/src/test/java/org/apache/datasketches/theta/ForwardCompatibilityTest.java#L90-L137
+    // Port of datasketches-java 8.0.0 ForwardCompatibilityTest's
+    // checkSerVer2_{1,2,3}PreLong[s]_Empty: https://github.com/apache/datasketches-java/blob/8.0.0/src/test/java/org/apache/datasketches/theta/ForwardCompatibilityTest.java#L90-L137
     for pre_longs in [1, 2, 3] {
         let mut bytes = serialize_v2_exact(&[]);
         bytes[0] = pre_longs;
-        bytes[5] = 0x0e; // Java's v2 empty flags.
+        bytes[5] = 0x0e; // datasketches-java's v2 empty flags.
         bytes.resize(pre_longs as usize * 8, 0);
         if pre_longs == 3 {
             bytes[16..24].copy_from_slice(&(i64::MAX as u64).to_le_bytes());

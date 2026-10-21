@@ -20,6 +20,8 @@
 //! [`CanonicalFloat`] maps `f32` and `f64` values through a canonical `f64` bit pattern before
 //! hashing. Signed zero values hash the same, all NaN values use one canonical NaN bit pattern,
 //! and equal `f32`/`f64` values hash the same.
+//!
+//! Use this encoding to match floating-point hashing in datasketches-java and datasketches-cpp.
 
 use std::hash::Hash;
 use std::hash::Hasher;
@@ -107,7 +109,7 @@ impl HashStrategy<f64> for CanonicalFloatStrategy {
     #[inline(always)]
     fn hash<H: Hasher>(value: &f64, state: &mut H) {
         let canonical = if value.is_nan() {
-            // Java's Double.doubleToLongBits() NaN value.
+            // Canonical NaN used by datasketches-java via Double.doubleToLongBits().
             0x7ff8000000000000u64
         } else {
             // -0.0 + 0.0 == +0.0 under IEEE754 roundTiesToEven rounding mode,

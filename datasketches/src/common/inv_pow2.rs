@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-/// Returns `2^-exp` by constructing the floating-point exponent bits.
+/// Returns `2^-exp` by constructing the floating-point exponent bits, as in datasketches-java.
 #[inline]
 pub fn inv_pow2(exp: u8) -> f64 {
     f64::from_bits((1023 - exp as u64) << 52)

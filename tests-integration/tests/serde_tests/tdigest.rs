@@ -311,8 +311,9 @@ fn test_updates_normalize_overfull_deserialized_buffer_without_centroids() {
     assert_eq!(&bytes[8..12], &0_u32.to_le_bytes()); // num centroids
     assert_eq!(&bytes[12..16], &10_u32.to_le_bytes()); // num buffered
 
-    // k=100 normally compresses at 840 buffered values. Extend a real C++ image without centroids
-    // just past that producer threshold while keeping every value within the recorded min/max.
+    // k=100 normally compresses at 840 buffered values. Extend a datasketches-cpp image without
+    // centroids just past that producer threshold while keeping every value within the recorded
+    // min/max.
     bytes[12..16].copy_from_slice(&841_u32.to_le_bytes());
     for _ in 0..831 {
         bytes.extend_from_slice(&10_f64.to_le_bytes());
@@ -345,7 +346,8 @@ fn test_updates_normalize_overfull_deserialized_mixed_buffer() {
     assert_eq!(&bytes[8..12], &89_u32.to_le_bytes()); // num centroids
     assert_eq!(&bytes[12..16], &160_u32.to_le_bytes()); // num buffered
 
-    // Extend the buffered tail of a real mixed C++ image just past the k=100 producer threshold.
+    // Extend the buffered tail of a mixed datasketches-cpp image just past the k=100 producer
+    // threshold.
     bytes[12..16].copy_from_slice(&841_u32.to_le_bytes());
     for _ in 0..681 {
         bytes.extend_from_slice(&1_000_f64.to_le_bytes());

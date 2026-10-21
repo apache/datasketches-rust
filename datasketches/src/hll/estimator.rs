@@ -20,7 +20,7 @@
 //! Sequential register updates use HIP (Historical Inverse Probability). Bulk merges use the
 //! composite estimator because register values do not retain their update order.
 //!
-//! Estimator formulas and crossover constants follow DataSketches C++:
+//! Estimator formulas and crossover constants follow datasketches-cpp:
 //! <https://github.com/apache/datasketches-cpp/blob/5a055521/hll/include/HllArray-internal.hpp>
 
 use crate::common::NumStdDev;
@@ -274,7 +274,7 @@ impl Estimator {
 }
 
 /// Relative error used as `estimate / (1 + error)`: negative for upper bounds.
-/// Follows DataSketches C++ `HllUtil::getRelErr`:
+/// Follows datasketches-cpp's `HllUtil::getRelErr`:
 /// <https://github.com/apache/datasketches-cpp/blob/5a055521/hll/include/HllUtil.hpp>
 fn relative_error(
     lg_config_k: u8,
@@ -283,7 +283,7 @@ fn relative_error(
     num_std_dev: NumStdDev,
 ) -> f64 {
     if lg_config_k > 12 {
-        // RSE factors from Apache DataSketches C++ implementation
+        // RSE factors from datasketches-cpp.
         // HLL_HIP_RSE_FACTOR = sqrt(ln(2)) ≈ 0.8325546
         // HLL_NON_HIP_RSE_FACTOR = sqrt((3 * ln(2)) - 1) ≈ 1.03896
         let rse_factor = if composite {

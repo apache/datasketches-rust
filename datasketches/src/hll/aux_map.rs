@@ -55,7 +55,7 @@ impl PartialEq for AuxMap {
     }
 }
 
-/// Initial table sizes from DataSketches C++:
+/// Initial table sizes from datasketches-cpp:
 /// <https://github.com/apache/datasketches-cpp/blob/5a055521/hll/include/HllUtil.hpp>
 fn lg_aux_arr_ints(lg_config_k: u8) -> u8 {
     static LG_AUX_ARR_INTS: &[u8] = &[

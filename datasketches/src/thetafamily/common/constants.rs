@@ -17,7 +17,7 @@
 
 /// Maximum theta value.
 ///
-/// The shared format uses a 63-bit hash domain, bounded by `i64::MAX`.
+/// The shared format uses a 63-bit hash domain, bounded by `i64::MAX`, as in datasketches-java.
 pub const MAX_THETA: u64 = i64::MAX as u64;
 
 /// Minimum log2 of K.

@@ -15,8 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! Serialization round-trip and cross-language compatibility tests for ReqSketch.
-
 use std::fs;
 use std::path::PathBuf;
 

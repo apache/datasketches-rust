@@ -803,8 +803,8 @@ where
             min_item: None,
             max_item: None,
         };
-        // Keep a level-0 compactor so is_raw_items() and flags_byte() produce
-        // the canonical empty encoding.
+        // Keep a level-0 compactor, as in datasketches-cpp, so is_raw_items() and flags_byte()
+        // produce the same empty encoding as datasketches-cpp and datasketches-java.
         sketch.grow();
         sketch
     }

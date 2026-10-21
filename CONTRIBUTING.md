@@ -81,7 +81,7 @@ cargo bench --package benchmarks --bench benchmarks -- cpc::serde
 - End summary sentences with punctuation, and format Rust identifiers, literals, and numeric ranges as inline code.
 - Put contract sections and compatibility notes before examples. When applicable, order sections as `# Errors`, `# Panics`, and `# Examples`. Include only sections that describe an actual contract.
 - Document return values and error conditions on the relevant methods rather than repeating them in crate or module overviews.
-- Describe shared capabilities in language-neutral terms. Name another implementation when identifying a specific source, format variant, or behavior difference.
+- Describe shared capabilities in language-neutral terms. Name another implementation when it clarifies interoperability requirements, a specific source, a format variant, or a behavior difference. Retain useful implementation references in internal comments.
 - Keep imports visible in doctests. A trailing hidden `Ok(...)` may be used to support `?`.
 
 ## Query semantics

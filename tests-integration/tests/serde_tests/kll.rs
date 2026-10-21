@@ -15,8 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! KLL serialization round trips and cross-language compatibility.
-
 use std::cmp::Ordering;
 use std::fs;
 use std::path::PathBuf;

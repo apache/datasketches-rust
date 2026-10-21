@@ -19,7 +19,7 @@
 //!
 //! [`SignExtend`] first sign-extends values to 64-bits and then hashes the resulting integers.
 //!
-//! Use this encoding for cross-language hashing of short integers in HLL and CPC.
+//! Use this encoding to match short-integer hashing in datasketches-cpp's HLL and CPC sketches.
 
 use std::hash::Hash;
 use std::hash::Hasher;
