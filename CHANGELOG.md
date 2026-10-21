@@ -26,7 +26,7 @@ All significant changes to this project will be documented in this file.
 * Improve the readability of `Debug` output for HLL and CPC sketches and unions.
 * `KllSketch::quantile` and `ReqSketch::quantile` are faster at ranks `0.0` and `1.0`, with query work independent of the number of retained samples.
 * `BloomFilter::insert` is faster for integer and raw-byte inputs. `BloomFilter::contains_and_insert` is also faster when checking already-present integer values.
-* `CountMinSketch` updates are faster for integer and raw-byte inputs.
+* `CountMinSketch` updates and estimates are faster for all item types, with the largest gains for integer and raw-byte inputs. Counter placement and serialized bytes are unchanged.
 * `CountMinSketch::decay(1.0)` now takes constant time.
 * `CpcSketch` updates are faster for integer and raw-byte inputs.
 * `FrequentItemsSketch` updates are faster for integer and raw-byte keys.
