@@ -16,6 +16,7 @@
 // under the License.
 
 pub const PREAMBLE_LONGS_SHORT: u8 = 2;
-pub const SERIAL_VERSION: u8 = 1;
+pub const SERIAL_VERSION_1: u8 = 1;
+pub const SERIAL_VERSION_2: u8 = 2;
 pub const FLAGS_IS_EMPTY: u8 = 1 << 0;
 pub const LONG_SIZE_BYTES: usize = 8;

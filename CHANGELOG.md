@@ -6,6 +6,7 @@ All significant changes to this project will be documented in this file.
 
 ### Breaking changes
 
+* New `CountMinSketch` values use serial version 2 with XxHash64-derived row seeds and item hashes, plus unsigned bucket mapping. Deserialization still accepts legacy Rust version 1 images and preserves their version when reserializing, but version 1 images from other implementations remain incompatible for queries, updates, and merges. Merging now requires matching serial versions.
 * `BloomFilter::invert` is removed; use `BloomFilter::difference` for approximate A-not-B. The result excludes items in the right filter, but hash collisions can also remove items unique to the left filter.
 * `FrequentItemsSketch::is_empty` now returns `false` when the stream weight is nonzero, even if no items are retained. Use `num_active_items() == 0` to test for zero retained items.
 * `ReqSketch` queries now use `datasketches::common::SearchCriteria` instead of `datasketches::req::SearchCriteria`. `SearchCriteria` no longer implements `Default`; explicitly choose `Inclusive` or `Exclusive`.

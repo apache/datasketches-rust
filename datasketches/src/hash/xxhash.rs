@@ -142,6 +142,16 @@ impl Hasher for XxHash64 {
     }
 
     #[inline(always)]
+    fn write_i64(&mut self, value: i64) {
+        self.write(&value.to_le_bytes());
+    }
+
+    #[inline(always)]
+    fn write_u64(&mut self, value: u64) {
+        self.write(&value.to_le_bytes());
+    }
+
+    #[inline(always)]
     fn write(&mut self, bytes: &[u8]) {
         self.total_len = self.total_len.wrapping_add(bytes.len() as u64);
 
