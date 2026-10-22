@@ -21,7 +21,6 @@ use std::hash::Hasher;
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
 use crate::codec::assert::ensure_preamble_longs_in;
-use crate::codec::assert::ensure_serial_version_is;
 use crate::codec::assert::insufficient_data;
 use crate::codec::family::Family;
 use crate::countmin::CountMinValue;
@@ -29,11 +28,13 @@ use crate::countmin::UnsignedCountMinValue;
 use crate::countmin::serialization::FLAGS_IS_EMPTY;
 use crate::countmin::serialization::LONG_SIZE_BYTES;
 use crate::countmin::serialization::PREAMBLE_LONGS_SHORT;
-use crate::countmin::serialization::SERIAL_VERSION;
+use crate::countmin::serialization::SERIAL_VERSION_1;
+use crate::countmin::serialization::SERIAL_VERSION_2;
 use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::hash::MurmurHash3X64128;
+use crate::hash::XxHash64;
 use crate::hash::check_seed_hash;
 use crate::hash::compute_seed_hash;
 
@@ -49,6 +50,7 @@ pub struct CountMinSketch<T: CountMinValue> {
     num_buckets: u32,
     seed: u64,
     seed_hash: u16,
+    serial_version: u8,
     // Every bucket satisfies |count| <= total_weight, so a checked total also bounds bucket
     // additions during update/merge: |a + b| <= |a| + |b|. Deserialization validates this
     // invariant; unsigned halving and decay preserve it.
@@ -103,6 +105,7 @@ impl<T: CountMinValue> CountMinSketch<T> {
             num_buckets,
             seed,
             seed_hash,
+            SERIAL_VERSION_2,
             entries,
         ))
     }
@@ -271,7 +274,8 @@ impl<T: CountMinValue> CountMinSketch<T> {
     /// # Errors
     ///
     /// Returns an error without modifying the sketch if the sketches have different numbers of
-    /// hashes, bucket counts, or seeds, or their combined total absolute weight exceeds `T::MAX`.
+    /// hashes, bucket counts, seeds, or serial versions, or their combined total absolute weight
+    /// exceeds `T::MAX`.
     ///
     /// # Examples
     ///
@@ -291,9 +295,10 @@ impl<T: CountMinValue> CountMinSketch<T> {
         if self.num_hashes != other.num_hashes
             || self.num_buckets != other.num_buckets
             || self.seed != other.seed
+            || self.serial_version != other.serial_version
         {
             return Err(Error::invalid_argument(
-                "Count-Min sketches must have matching numbers of hashes, bucket counts, and seeds",
+                "Count-Min sketches must have matching numbers of hashes, bucket counts, seeds, and serial versions",
             ));
         }
         self.total_weight = self
@@ -308,8 +313,12 @@ impl<T: CountMinValue> CountMinSketch<T> {
 
     /// Serializes this sketch into the Count-Min binary format.
     ///
-    /// DataSketches C++ can read the serialized data, but item queries and updates there are
-    /// unreliable because the two implementations map items to counters differently.
+    /// New sketches use serial version 2. Sketches deserialized from version 1 images retain the
+    /// legacy Rust item-to-counter mapping and are serialized as version 1 again.
+    ///
+    /// Version 2 derives each row seed by hashing the row's 8-byte little-endian index with
+    /// XxHash64 and the sketch seed. It uses XxHash64 for item hashing and shifts the hash right by
+    /// one before taking the bucket modulo.
     ///
     /// # Examples
     ///
@@ -333,7 +342,7 @@ impl<T: CountMinValue> CountMinSketch<T> {
         let mut bytes = SketchBytes::with_capacity(header_size + payload_size);
 
         bytes.write_u8(PREAMBLE_LONGS_SHORT);
-        bytes.write_u8(SERIAL_VERSION);
+        bytes.write_u8(self.serial_version);
         bytes.write_u8(Family::COUNTMIN.id);
         bytes.write_u8(if self.is_empty() { FLAGS_IS_EMPTY } else { 0 });
         bytes.write_u32_le(0); // unused
@@ -360,9 +369,9 @@ impl<T: CountMinValue> CountMinSketch<T> {
 
     /// Deserializes a sketch from bytes using the default seed.
     ///
-    /// Can read sketches serialized by DataSketches C++.
-    /// Item queries and updates on those sketches are unreliable because the two
-    /// implementations map items to counters differently.
+    /// Accepts serial versions 1 and 2. Version 1 uses the legacy Rust item-to-counter mapping;
+    /// queries, updates, and merges on version 1 images from other implementations remain
+    /// unreliable.
     ///
     /// # Errors
     ///
@@ -386,9 +395,9 @@ impl<T: CountMinValue> CountMinSketch<T> {
 
     /// Deserializes a sketch from bytes using the provided seed.
     ///
-    /// Can read sketches serialized by DataSketches C++.
-    /// Item queries and updates on those sketches are unreliable because the two
-    /// implementations map items to counters differently.
+    /// Accepts serial versions 1 and 2. Version 1 uses the legacy Rust item-to-counter mapping;
+    /// queries, updates, and merges on version 1 images from other implementations remain
+    /// unreliable.
     ///
     /// # Errors
     ///
@@ -430,7 +439,11 @@ impl<T: CountMinValue> CountMinSketch<T> {
             .map_err(insufficient_data("<unused>"))?;
 
         Family::COUNTMIN.validate_id(family_id)?;
-        ensure_serial_version_is(SERIAL_VERSION, serial_version)?;
+        if serial_version != SERIAL_VERSION_1 && serial_version != SERIAL_VERSION_2 {
+            return Err(Error::deserial(format!(
+                "unsupported serial version: expected {SERIAL_VERSION_1} or {SERIAL_VERSION_2}, got {serial_version}"
+            )));
+        }
         ensure_preamble_longs_in(&[PREAMBLE_LONGS_SHORT], preamble_longs)?;
 
         let num_buckets = cursor
@@ -468,7 +481,14 @@ impl<T: CountMinValue> CountMinSketch<T> {
             }
         }
 
-        let mut sketch = Self::make(num_hashes, num_buckets, seed, expected_seed_hash, entries);
+        let mut sketch = Self::make(
+            num_hashes,
+            num_buckets,
+            seed,
+            expected_seed_hash,
+            serial_version,
+            entries,
+        );
         if is_empty {
             return Ok(sketch);
         }
@@ -500,14 +520,22 @@ impl<T: CountMinValue> CountMinSketch<T> {
             + self.hash_seeds.capacity() * size_of::<u64>()
     }
 
-    fn make(num_hashes: u8, num_buckets: u32, seed: u64, seed_hash: u16, entries: usize) -> Self {
+    fn make(
+        num_hashes: u8,
+        num_buckets: u32,
+        seed: u64,
+        seed_hash: u16,
+        serial_version: u8,
+        entries: usize,
+    ) -> Self {
         let counts = vec![T::ZERO; entries];
-        let hash_seeds = make_hash_seeds(seed, num_hashes);
+        let hash_seeds = make_hash_seeds(seed, num_hashes, serial_version);
         CountMinSketch {
             num_hashes,
             num_buckets,
             seed,
             seed_hash,
+            serial_version,
             total_weight: T::ZERO,
             counts,
             hash_seeds,
@@ -515,10 +543,20 @@ impl<T: CountMinValue> CountMinSketch<T> {
     }
 
     fn bucket_index<I: Hash>(&self, item: &I, seed: u64) -> usize {
-        let mut hasher = MurmurHash3X64128::with_seed(seed);
-        item.hash(&mut hasher);
-        let (h1, _) = hasher.finish128();
-        (h1 % self.num_buckets as u64) as usize
+        let hash = match self.serial_version {
+            SERIAL_VERSION_1 => {
+                let mut hasher = MurmurHash3X64128::with_seed(seed);
+                item.hash(&mut hasher);
+                hasher.finish128().0
+            }
+            SERIAL_VERSION_2 => {
+                let mut hasher = XxHash64::with_seed(seed);
+                item.hash(&mut hasher);
+                hasher.finish64() >> 1
+            }
+            _ => unreachable!("unsupported Count-Min serial version"),
+        };
+        (hash % self.num_buckets as u64) as usize
     }
 }
 
@@ -615,14 +653,19 @@ fn entries_for_config_checked(num_hashes: u8, num_buckets: u32) -> Result<usize,
     Ok(entries)
 }
 
-fn make_hash_seeds(seed: u64, num_hashes: u8) -> Vec<u64> {
+fn make_hash_seeds(seed: u64, num_hashes: u8, serial_version: u8) -> Vec<u64> {
     let mut seeds = Vec::with_capacity(num_hashes as usize);
     for i in 0..num_hashes {
-        // Derive per-row hash seeds deterministically from the sketch seed.
-        let mut hasher = MurmurHash3X64128::with_seed(seed);
-        hasher.write(&u64::from(i).to_le_bytes());
-        let (h1, _) = hasher.finish128();
-        seeds.push(h1);
+        let row_seed = match serial_version {
+            SERIAL_VERSION_1 => {
+                let mut hasher = MurmurHash3X64128::with_seed(seed);
+                hasher.write(&u64::from(i).to_le_bytes());
+                hasher.finish128().0
+            }
+            SERIAL_VERSION_2 => XxHash64::hash_u64(u64::from(i), seed),
+            _ => unreachable!("unsupported Count-Min serial version"),
+        };
+        seeds.push(row_seed);
     }
     seeds
 }

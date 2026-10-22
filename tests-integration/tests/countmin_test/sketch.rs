@@ -401,6 +401,55 @@ fn test_serialize_deserialize_non_empty_u64() {
 }
 
 #[test]
+fn test_v2_known_answer_vectors() {
+    // Independently computed with XXH64 over little-endian `u64` values.
+    const NUM_BUCKETS: usize = 1000;
+
+    for (seed, one_buckets, nine_buckets) in [
+        (9001, [185, 898, 4], [490, 217, 440]),
+        (42, [468, 459, 696], [841, 428, 322]),
+    ] {
+        let mut sketch = CountMinSketch::<u64>::with_seed(3, NUM_BUCKETS as u32, seed).unwrap();
+        sketch.update_with_weight(1u64, 10);
+        sketch.update_with_weight(9u64, 810);
+
+        let bytes = sketch.serialize();
+        assert_eq!(bytes[1], 2);
+        let counts: Vec<u64> = bytes[24..]
+            .chunks_exact(8)
+            .map(|bytes| u64::from_le_bytes(bytes.try_into().unwrap()))
+            .collect();
+        assert_eq!(counts.len(), 3 * NUM_BUCKETS);
+
+        for row in 0..3 {
+            let actual: Vec<(usize, u64)> = counts[row * NUM_BUCKETS..(row + 1) * NUM_BUCKETS]
+                .iter()
+                .copied()
+                .enumerate()
+                .filter(|(_, count)| *count != 0)
+                .collect();
+            let mut expected = vec![(one_buckets[row], 10), (nine_buckets[row], 810)];
+            expected.sort_unstable_by_key(|(bucket, _)| *bucket);
+            assert_eq!(actual, expected, "seed {seed}, row {row}");
+        }
+
+        let mut decoded = CountMinSketch::<u64>::deserialize_with_seed(&bytes, seed).unwrap();
+        assert_eq!(decoded.total_weight(), 820);
+        assert_eq!(decoded.estimate(1u64), 10);
+        assert_eq!(decoded.estimate(9u64), 810);
+        assert_eq!(decoded.serialize(), bytes);
+
+        decoded.update_with_weight(1u64, 5);
+        assert_eq!(decoded.estimate(1u64), 15);
+        let mut merged = CountMinSketch::<u64>::with_seed(3, NUM_BUCKETS as u32, seed).unwrap();
+        merged.merge(&decoded).unwrap();
+        assert_eq!(merged.total_weight(), 825);
+        assert_eq!(merged.estimate(1u64), 15);
+        assert_eq!(merged.estimate(9u64), 810);
+    }
+}
+
+#[test]
 fn test_truncated_non_empty_payload_is_rejected_before_table_allocation() {
     let mut bytes = CountMinSketch::<i64>::new(1, 3).unwrap().serialize();
     bytes[3] = 0;
