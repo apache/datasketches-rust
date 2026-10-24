@@ -459,19 +459,17 @@ impl CpcSketch {
         matrix
     }
 
-    /// Returns the estimated in-memory size of the sketch in bytes, including its inline
-    /// representation and the retained heap allocations it owns.
+    /// Returns an estimate of the sketch's memory usage in bytes, based on the retained heap
+    /// allocations it owns.
     ///
     /// The estimate excludes allocator bookkeeping, temporary allocations, and serialized size.
     pub fn estimated_size(&self) -> usize {
-        let heap_size = self.sliding_window.capacity()
+        self.sliding_window.capacity()
             + self
                 .surprising_value_table
                 .as_ref()
                 .map(|t| t.estimated_size())
-                .unwrap_or(0);
-
-        size_of::<Self>() + heap_size
+                .unwrap_or(0)
     }
 }
 

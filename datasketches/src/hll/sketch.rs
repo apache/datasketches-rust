@@ -470,20 +470,18 @@ impl HllSketch {
         }
     }
 
-    /// Returns the estimated in-memory size of the sketch in bytes, including its inline
-    /// representation and the retained heap allocations it owns.
+    /// Returns an estimate of the sketch's memory usage in bytes, based on the retained heap
+    /// allocations it owns.
     ///
     /// The estimate excludes allocator bookkeeping, temporary allocations, and serialized size.
     pub fn estimated_size(&self) -> usize {
-        let heap_size = match &self.mode {
+        match &self.mode {
             Mode::List { list, .. } => list.container().estimated_size(),
             Mode::Set { set, .. } => set.container().estimated_size(),
             Mode::Array4(arr) => arr.estimated_size(),
             Mode::Array6(arr) => arr.estimated_size(),
             Mode::Array8(arr) => arr.estimated_size(),
-        };
-
-        size_of::<Self>() + heap_size
+        }
     }
 }
 

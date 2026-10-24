@@ -15,8 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use std::mem::size_of_val;
-
 use datasketches::common::NumStdDev;
 use datasketches::cpc::CpcSketch;
 use datasketches::error::ErrorKind;
@@ -74,7 +72,7 @@ fn test_max_serialized_bytes_validates_lg_k() {
 fn test_estimated_size() {
     let mut sketch = CpcSketch::new(11).unwrap();
     let empty_size = sketch.estimated_size();
-    assert_eq!(empty_size, size_of_val(&sketch));
+    assert_eq!(empty_size, 0);
 
     for i in 0..10_000 {
         sketch.update(i);

@@ -633,14 +633,22 @@ fn test_map_size_above_cross_language_limit_returns_error() {
 
 #[test]
 fn test_estimated_size() {
+    let expected_size = |sketch: &FrequentItemsSketch<i64>| {
+        let slots = 1usize << sketch.lg_cur_map_size();
+        slots
+            * (std::mem::size_of::<Option<i64>>()
+                + std::mem::size_of::<u64>()
+                + std::mem::size_of::<u16>())
+    };
+
     let mut sketch: FrequentItemsSketch<i64> = FrequentItemsSketch::new(64).unwrap();
-    assert_eq!(sketch.estimated_size(), 344);
+    assert_eq!(sketch.estimated_size(), expected_size(&sketch));
 
     // The internal map grows from its starting size up to the maximum size.
     for i in 0..100 {
         sketch.update(i);
     }
-    assert_eq!(sketch.estimated_size(), 1800);
+    assert_eq!(sketch.estimated_size(), expected_size(&sketch));
 }
 
 #[test]

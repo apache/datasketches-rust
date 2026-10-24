@@ -323,14 +323,14 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
         self.hash_map.lg_length()
     }
 
-    /// Returns the estimated in-memory size of the sketch in bytes, including its inline
-    /// representation and the retained heap allocations it owns.
+    /// Returns an estimate of the sketch's memory usage in bytes, based on the retained heap
+    /// allocations it owns.
     ///
     /// The estimate excludes allocator bookkeeping, temporary allocations, and serialized size.
-    /// Inline representations of items are included, but heap allocations owned by those items are
-    /// not recursively inspected.
+    /// Storage for items held inside owned containers is included, but heap allocations owned by
+    /// those items are not recursively inspected.
     pub fn estimated_size(&self) -> usize {
-        size_of::<Self>() + self.hash_map.estimated_size()
+        self.hash_map.estimated_size()
     }
 
     /// Updates the sketch with a count of one.

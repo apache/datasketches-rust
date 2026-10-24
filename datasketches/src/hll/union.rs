@@ -365,13 +365,12 @@ impl HllUnion {
         self.gadget.lower_bound(num_std_dev)
     }
 
-    /// Returns the estimated in-memory size of the union in bytes, including its inline
-    /// representation and the retained heap allocations it owns.
+    /// Returns an estimate of the union's memory usage in bytes, based on the retained heap
+    /// allocations it owns.
     ///
     /// The estimate excludes allocator bookkeeping, temporary allocations, and serialized size.
     pub fn estimated_size(&self) -> usize {
-        // The gadget's inline size is already covered by size_of::<Self>().
-        size_of::<Self>() - size_of::<HllSketch>() + self.gadget.estimated_size()
+        self.gadget.estimated_size()
     }
 }
 

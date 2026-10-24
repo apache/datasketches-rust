@@ -404,14 +404,16 @@ where
         .expect("theta should always be valid")
     }
 
-    /// Returns the estimated in-memory size of the sketch in bytes, including its inline
-    /// representation and the retained heap allocations it owns.
+    /// Returns an estimate of the sketch's memory usage in bytes, based on the retained heap
+    /// allocations it owns.
     ///
     /// The estimate excludes allocator bookkeeping, temporary allocations, and serialized size.
-    /// Inline representations of summaries and the policy are included, but heap allocations owned
-    /// by those values are not recursively inspected.
+    /// Storage for summaries held inside owned containers is included, but heap allocations owned
+    /// by those summaries or the policy are not recursively inspected.
+    /// The policy's inline representation is excluded because a custom policy can have an
+    /// arbitrarily large inline payload.
     pub fn estimated_size(&self) -> usize {
-        size_of::<Self>() + self.table.estimated_size()
+        self.table.estimated_size()
     }
 }
 
@@ -546,15 +548,14 @@ impl<S> CompactTupleSketch<S> {
         .expect("compact theta should always be valid")
     }
 
-    /// Returns the estimated in-memory size of the sketch in bytes, including its inline
-    /// representation and the retained heap allocations it owns.
+    /// Returns an estimate of the sketch's memory usage in bytes, based on the retained heap
+    /// allocations it owns.
     ///
     /// The estimate excludes allocator bookkeeping, temporary allocations, and serialized size.
-    /// Inline representations of summaries are included, but heap allocations owned by those
-    /// summaries are not recursively inspected.
+    /// Storage for summaries held inside owned containers is included, but heap allocations owned
+    /// by those summaries are not recursively inspected.
     pub fn estimated_size(&self) -> usize {
-        size_of::<Self>()
-            + self.compact_state.retained_entries_capacity() * size_of::<TupleEntry<S>>()
+        self.compact_state.retained_entries_capacity() * size_of::<TupleEntry<S>>()
     }
 
     fn preamble_longs(&self) -> u8 {

@@ -16,7 +16,6 @@
 // under the License.
 
 use std::mem::size_of;
-use std::mem::size_of_val;
 use std::panic::AssertUnwindSafe;
 use std::panic::catch_unwind;
 
@@ -447,7 +446,7 @@ fn test_increment_single_key_like_rust_count_min_sketch() {
 #[test]
 fn test_estimated_size() {
     let mut sketch = CountMinSketch::<i64>::new(4, 128).unwrap();
-    let expected_size = size_of_val(&sketch) + 4 * 128 * size_of::<i64>() + 4 * size_of::<u64>();
+    let expected_size = 4 * 128 * size_of::<i64>() + 4 * size_of::<u64>();
     assert_eq!(sketch.estimated_size(), expected_size);
 
     // The backing tables are allocated up front; updates do not grow the sketch.

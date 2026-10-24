@@ -15,8 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use std::mem::size_of_val;
-
 use datasketches::error::ErrorKind;
 use datasketches::hll::HllSketch;
 use datasketches::hll::HllType;
@@ -208,7 +206,7 @@ fn test_invalid_lg_k_high_returns_error() {
 fn estimated_size_tracks_retained_storage() {
     let mut sketch = HllSketch::new(10, HllType::Hll8).unwrap();
     let initial_size = sketch.estimated_size();
-    assert!(initial_size > size_of_val(&sketch));
+    assert_eq!(initial_size, 32);
 
     sketch.update(0);
     assert_eq!(sketch.estimated_size(), initial_size);
@@ -216,5 +214,5 @@ fn estimated_size_tracks_retained_storage() {
     for i in 1..1000 {
         sketch.update(i);
     }
-    assert!(sketch.estimated_size() > initial_size);
+    assert_eq!(sketch.estimated_size(), 1024);
 }

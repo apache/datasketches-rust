@@ -347,17 +347,15 @@ impl CpcUnion {
         }
     }
 
-    /// Returns the estimated in-memory size of the union in bytes, including its inline
-    /// representation and the retained heap allocations it owns.
+    /// Returns an estimate of the union's memory usage in bytes, based on the retained heap
+    /// allocations it owns.
     ///
     /// The estimate excludes allocator bookkeeping, temporary allocations, and serialized size.
     pub fn estimated_size(&self) -> usize {
-        // The state's inline size is already covered by size_of::<Self>().
-        let heap_size = match &self.state {
-            UnionState::Accumulator(sketch) => sketch.estimated_size() - size_of::<CpcSketch>(),
+        match &self.state {
+            UnionState::Accumulator(sketch) => sketch.estimated_size(),
             UnionState::BitMatrix(matrix) => matrix.capacity() * size_of::<u64>(),
-        };
-        size_of::<Self>() + heap_size
+        }
     }
 }
 
