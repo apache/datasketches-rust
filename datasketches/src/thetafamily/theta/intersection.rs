@@ -78,10 +78,7 @@ impl ThetaIntersection {
         self.state.has_result()
     }
 
-    /// Returns an estimate of the intersection's memory usage in bytes, based on the retained heap
-    /// allocations it owns.
-    ///
-    /// The estimate excludes allocator bookkeeping, temporary allocations, and serialized size.
+    /// Returns an estimate of the intersection's memory usage in bytes.
     pub fn estimated_size(&self) -> usize {
         self.state.estimated_size()
     }

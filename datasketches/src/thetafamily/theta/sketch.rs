@@ -427,10 +427,7 @@ impl ThetaSketch {
         .expect("theta should always be valid")
     }
 
-    /// Returns an estimate of the sketch's memory usage in bytes, based on the retained heap
-    /// allocations it owns.
-    ///
-    /// The estimate excludes allocator bookkeeping, temporary allocations, and serialized size.
+    /// Returns an estimate of the sketch's memory usage in bytes.
     pub fn estimated_size(&self) -> usize {
         self.table.estimated_size()
     }
@@ -1030,10 +1027,7 @@ impl CompactThetaSketch {
         Ok(Self::from_compact_state(compact_state))
     }
 
-    /// Returns an estimate of the sketch's memory usage in bytes, based on the retained heap
-    /// allocations it owns.
-    ///
-    /// The estimate excludes allocator bookkeeping, temporary allocations, and serialized size.
+    /// Returns an estimate of the sketch's memory usage in bytes.
     pub fn estimated_size(&self) -> usize {
         self.compact_state.retained_entries_capacity() * size_of::<u64>()
     }

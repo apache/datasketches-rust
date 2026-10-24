@@ -1013,10 +1013,7 @@ impl TDigestMut {
         centroids.shrink_to(target_capacity);
     }
 
-    /// Returns an estimate of the sketch's memory usage in bytes, based on the retained heap
-    /// allocations it owns.
-    ///
-    /// The estimate excludes allocator bookkeeping, temporary allocations, and serialized size.
+    /// Returns an estimate of the sketch's memory usage in bytes.
     pub fn estimated_size(&self) -> usize {
         self.buffer.estimated_size()
     }
@@ -1634,10 +1631,7 @@ impl TDigest {
         )
     }
 
-    /// Returns an estimate of the sketch's memory usage in bytes, based on the retained heap
-    /// allocations it owns.
-    ///
-    /// The estimate excludes allocator bookkeeping, temporary allocations, and serialized size.
+    /// Returns an estimate of the sketch's memory usage in bytes.
     pub fn estimated_size(&self) -> usize {
         self.centroids.capacity() * size_of::<Centroid>()
     }

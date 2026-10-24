@@ -112,14 +112,7 @@ where
         self.state.reset();
     }
 
-    /// Returns an estimate of the union's memory usage in bytes, based on the retained heap
-    /// allocations it owns.
-    ///
-    /// The estimate excludes allocator bookkeeping, temporary allocations, and serialized size.
-    /// Storage for summaries held inside owned containers is included, but heap allocations owned
-    /// by those summaries or the policy are not recursively inspected.
-    /// The policy's inline representation is excluded because a custom policy can have an
-    /// arbitrarily large inline payload.
+    /// Returns an estimate of the union's memory usage in bytes.
     pub fn estimated_size(&self) -> usize {
         self.state.estimated_size()
     }
