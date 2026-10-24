@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::mem::size_of_val;
+
 use datasketches::common::NumStdDev;
 use datasketches::error::ErrorKind;
 use datasketches::tuple::DefaultUnionPolicy;
@@ -191,4 +193,17 @@ fn union_estimated_size_grows_with_updates() {
     let sketch = tuple_sketch_with_range(0, 1000);
     union.update(&sketch).unwrap();
     assert_eq!(union.estimated_size(), 131152);
+}
+
+#[test]
+fn compact_estimated_size_includes_retained_capacity() {
+    let sketch = tuple_sketch_with_range(0, 1000);
+    let mut union = default_union_builder().lg_k(5).build().unwrap();
+    union.update(&sketch).unwrap();
+    let result = union.to_sketch(true);
+
+    assert_eq!(result.num_retained(), 32);
+    let entry_size = size_of_val(result.iter().next().unwrap());
+    let logical_size = size_of_val(&result) + result.num_retained() * entry_size;
+    assert!(result.estimated_size() > logical_size);
 }

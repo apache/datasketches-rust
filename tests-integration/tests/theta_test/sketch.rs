@@ -157,6 +157,7 @@ fn test_reset() {
     assert_that!(sketch.num_retained(), gt(32));
     assert_that!(sketch.theta(), lt(1.0));
 
+    let size_before_reset = sketch.estimated_size();
     sketch.reset();
     assert!(sketch.is_empty());
     assert_eq!(sketch.estimate(), 0.0);
@@ -165,6 +166,7 @@ fn test_reset() {
     assert!(!sketch.is_estimation_mode());
     assert_eq!(sketch.lower_bound(NumStdDev::One), 0.0);
     assert_eq!(sketch.upper_bound(NumStdDev::One), 0.0);
+    assert_eq!(sketch.estimated_size(), size_before_reset);
 }
 
 #[test]

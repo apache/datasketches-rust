@@ -639,7 +639,10 @@ impl BloomFilter {
         was_set
     }
 
-    /// Returns the estimated size of the filter in bytes.
+    /// Returns the estimated in-memory size of the filter in bytes, including its inline
+    /// representation and the retained heap allocations it owns.
+    ///
+    /// The estimate excludes allocator bookkeeping, temporary allocations, and serialized size.
     pub fn estimated_size(&self) -> usize {
         size_of::<Self>() + self.bit_array.len() * size_of::<u64>()
     }

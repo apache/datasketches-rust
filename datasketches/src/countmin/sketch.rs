@@ -495,7 +495,10 @@ impl<T: CountMinValue> CountMinSketch<T> {
         Ok(sketch)
     }
 
-    /// Returns the estimated size of the sketch in bytes.
+    /// Returns the estimated in-memory size of the sketch in bytes, including its inline
+    /// representation and the retained heap allocations it owns.
+    ///
+    /// The estimate excludes allocator bookkeeping, temporary allocations, and serialized size.
     pub fn estimated_size(&self) -> usize {
         size_of::<Self>()
             + self.counts.capacity() * size_of::<T>()
