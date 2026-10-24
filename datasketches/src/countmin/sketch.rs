@@ -46,7 +46,7 @@ const MAX_TABLE_ENTRIES: usize = 1 << 30;
 #[derive(Debug, Clone, PartialEq)]
 pub struct CountMinSketch<T: CountMinValue> {
     num_hashes: u8,
-    num_buckets: u32,
+    buckets: BucketCount,
     seed: u64,
     seed_hash: u16,
     // Every bucket satisfies |count| <= total_weight, so a checked total also bounds bucket
@@ -55,8 +55,45 @@ pub struct CountMinSketch<T: CountMinValue> {
     total_weight: T,
     counts: Vec<T>,
     hash_seeds: Vec<u64>,
-    /// Multiplier for [`fast_remainder`], derived from `num_buckets`.
-    bucket_multiplier: u128,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct BucketCount {
+    count: u32,
+    multiplier: u128,
+}
+
+impl BucketCount {
+    fn new(count: u32) -> Self {
+        Self {
+            count,
+            multiplier: u128::MAX / u128::from(count) + 1,
+        }
+    }
+
+    #[inline]
+    fn index(&self, hash: u64) -> usize {
+        if self.count.is_power_of_two() {
+            // Same result as `%` for a power-of-two divisor.
+            (hash & (u64::from(self.count) - 1)) as usize
+        } else {
+            self.remainder(hash) as usize
+        }
+    }
+
+    /// Returns `a % self.count` without a hardware division, using Lemire's direct remainder
+    /// ("Faster Remainder by Direct Computation", 2019).
+    ///
+    /// Exact for every `u64` input and every `self.count >= 2`.
+    #[inline]
+    fn remainder(&self, a: u64) -> u64 {
+        let low_bits = self.multiplier.wrapping_mul(u128::from(a));
+        // High 64 bits of the 192-bit product `low_bits * d`.
+        let d = u128::from(self.count);
+        let lo = u128::from(low_bits as u64) * d;
+        let hi = (low_bits >> 64) * d;
+        ((hi + (lo >> 64)) >> 64) as u64
+    }
 }
 
 impl<T: CountMinValue> CountMinSketch<T> {
@@ -116,7 +153,7 @@ impl<T: CountMinValue> CountMinSketch<T> {
 
     /// Returns the number of buckets per hash function.
     pub fn num_buckets(&self) -> u32 {
-        self.num_buckets
+        self.buckets.count
     }
 
     /// Returns the seed used by the sketch.
@@ -131,7 +168,7 @@ impl<T: CountMinValue> CountMinSketch<T> {
 
     /// Returns the relative error (epsilon) implied by the number of buckets.
     pub fn relative_error(&self) -> f64 {
-        std::f64::consts::E / self.num_buckets as f64
+        std::f64::consts::E / self.buckets.count as f64
     }
 
     /// Returns `true` if the total weight is zero.
@@ -223,7 +260,7 @@ impl<T: CountMinValue> CountMinSketch<T> {
             .checked_abs()
             .and_then(|weight| self.total_weight.checked_add(weight))
             .expect("total absolute weight overflow");
-        let num_buckets = self.num_buckets as usize;
+        let num_buckets = self.buckets.count as usize;
         for (row, seed) in self.hash_seeds.iter().enumerate() {
             let bucket = self.bucket_index(&item, *seed);
             let index = row * num_buckets + bucket;
@@ -243,7 +280,7 @@ impl<T: CountMinValue> CountMinSketch<T> {
     /// assert!(sketch.estimate("pear") >= 2);
     /// ```
     pub fn estimate<I: Hash>(&self, item: I) -> T {
-        let num_buckets = self.num_buckets as usize;
+        let num_buckets = self.buckets.count as usize;
         let mut min = T::MAX;
         for (row, seed) in self.hash_seeds.iter().enumerate() {
             let bucket = self.bucket_index(&item, *seed);
@@ -291,7 +328,7 @@ impl<T: CountMinValue> CountMinSketch<T> {
     /// ```
     pub fn merge(&mut self, other: &CountMinSketch<T>) -> Result<(), Error> {
         if self.num_hashes != other.num_hashes
-            || self.num_buckets != other.num_buckets
+            || self.buckets.count != other.buckets.count
             || self.seed != other.seed
         {
             return Err(Error::invalid_argument(
@@ -340,7 +377,7 @@ impl<T: CountMinValue> CountMinSketch<T> {
         bytes.write_u8(if self.is_empty() { FLAGS_IS_EMPTY } else { 0 });
         bytes.write_u32_le(0); // unused
 
-        bytes.write_u32_le(self.num_buckets);
+        bytes.write_u32_le(self.buckets.count);
         bytes.write_u8(self.num_hashes);
         debug_assert_eq!(
             self.seed_hash,
@@ -507,13 +544,12 @@ impl<T: CountMinValue> CountMinSketch<T> {
         let hash_seeds = make_hash_seeds(seed, num_hashes);
         CountMinSketch {
             num_hashes,
-            num_buckets,
+            buckets: BucketCount::new(num_buckets),
             seed,
             seed_hash,
             total_weight: T::ZERO,
             counts,
             hash_seeds,
-            bucket_multiplier: u128::MAX / u128::from(num_buckets) + 1,
         }
     }
 
@@ -521,12 +557,7 @@ impl<T: CountMinValue> CountMinSketch<T> {
         let mut hasher = MurmurHash3X64128::with_seed(seed);
         item.hash(&mut hasher);
         let (h1, _) = hasher.finish128();
-        if self.num_buckets.is_power_of_two() {
-            // Same result as `%` for a power-of-two divisor.
-            (h1 & (u64::from(self.num_buckets) - 1)) as usize
-        } else {
-            fast_remainder(h1, self.bucket_multiplier, self.num_buckets) as usize
-        }
+        self.buckets.index(h1)
     }
 }
 
@@ -635,19 +666,6 @@ fn make_hash_seeds(seed: u64, num_hashes: u8) -> Vec<u64> {
     seeds
 }
 
-/// Returns `a % d` without a hardware division, using Lemire's direct remainder
-/// ("Faster Remainder by Direct Computation", 2019) with `multiplier` =
-/// `u128::MAX / d + 1`. Exact for every `u64` `a` and `u32` `d >= 2`.
-#[inline]
-fn fast_remainder(a: u64, multiplier: u128, d: u32) -> u64 {
-    let low_bits = multiplier.wrapping_mul(u128::from(a));
-    // High 64 bits of the 192-bit product `low_bits * d`.
-    let d = u128::from(d);
-    let lo = u128::from(low_bits as u64) * d;
-    let hi = (low_bits >> 64) * d;
-    ((hi + (lo >> 64)) >> 64) as u64
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -656,12 +674,8 @@ mod tests {
     fn test_fast_remainder_matches_remainder() {
         let mut x = 0x9E37_79B9_7F4A_7C15u64;
         let check = |d: u32, a: u64| {
-            let multiplier = u128::MAX / u128::from(d) + 1;
-            assert_eq!(
-                fast_remainder(a, multiplier, d),
-                a % u64::from(d),
-                "a={a} d={d}"
-            );
+            let buckets = BucketCount::new(d);
+            assert_eq!(buckets.remainder(a), a % u64::from(d), "a={a} d={d}");
         };
         for d in [3, 5, 7, 1000, 20_000, 65_537, u32::MAX - 1, u32::MAX] {
             for a in [
