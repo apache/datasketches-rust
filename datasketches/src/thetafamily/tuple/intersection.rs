@@ -138,7 +138,12 @@ where
         self.state.has_result()
     }
 
-    /// Returns the estimated size of the intersection in bytes.
+    /// Returns the estimated in-memory size of the intersection in bytes, including its inline
+    /// representation and the retained heap allocations it owns.
+    ///
+    /// The estimate excludes allocator bookkeeping, temporary allocations, and serialized size.
+    /// Inline representations of summaries and the policy are included, but heap allocations owned
+    /// by those values are not recursively inspected.
     pub fn estimated_size(&self) -> usize {
         size_of::<Self>() + self.state.estimated_size()
     }

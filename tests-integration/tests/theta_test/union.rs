@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::mem::size_of_val;
+
 use datasketches::error::ErrorKind;
 use datasketches::theta::CompactThetaSketch;
 use datasketches::theta::ThetaSketch;
@@ -739,4 +741,16 @@ fn test_union_estimated_size() {
     let sketch = sketch_with_range(12, 0, 1000);
     union.update(&sketch).unwrap();
     assert_eq!(union.estimated_size(), 65616);
+}
+
+#[test]
+fn compact_estimated_size_includes_retained_capacity() {
+    let sketch = sketch_with_range(5, 0, 1000);
+    let mut union = ThetaUnionBuilder::default().lg_k(5).build().unwrap();
+    union.update(&sketch).unwrap();
+    let result = union.to_sketch(true);
+
+    assert_eq!(result.num_retained(), 32);
+    let logical_size = size_of_val(&result) + result.num_retained() * std::mem::size_of::<u64>();
+    assert!(result.estimated_size() > logical_size);
 }
