@@ -201,7 +201,5 @@ fn compact_estimated_size_includes_retained_capacity() {
     let result = union.to_sketch(true);
 
     assert_eq!(result.num_retained(), 32);
-    let entry_size = size_of_val(result.iter().next().unwrap());
-    let logical_size = result.num_retained() * entry_size;
-    assert!(result.estimated_size() > logical_size);
+    assert_eq!(result.estimated_size(), 1024);
 }

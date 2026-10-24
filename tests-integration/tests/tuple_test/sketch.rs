@@ -153,6 +153,45 @@ fn estimated_size_is_shallow_for_generic_summaries() {
     );
 }
 
+struct PaddedArraySumPolicy {
+    inner: ArraySumPolicy,
+    _padding: [u8; 1024],
+}
+
+impl SummaryPolicy for PaddedArraySumPolicy {
+    type Summary = Vec<f64>;
+
+    fn create(&self) -> Self::Summary {
+        self.inner.create()
+    }
+}
+
+impl<U> SummaryUpdatePolicy<U> for PaddedArraySumPolicy
+where
+    U: AsRef<[f64]>,
+{
+    fn update(&self, summary: &mut Self::Summary, value: U) {
+        self.inner.update(summary, value);
+    }
+}
+
+#[test]
+fn estimated_size_includes_policy_inline_storage() {
+    let mut small_policy_sketch = TupleSketchBuilder::new(ArraySumPolicy { num_values: 1 })
+        .build()
+        .unwrap();
+    small_policy_sketch.update("key", [1.0]);
+
+    let policy = PaddedArraySumPolicy {
+        inner: ArraySumPolicy { num_values: 1 },
+        _padding: [0; 1024],
+    };
+    let mut large_policy_sketch = TupleSketchBuilder::new(policy).build().unwrap();
+    large_policy_sketch.update("key", [1.0]);
+
+    assert!(large_policy_sketch.estimated_size() > small_policy_sketch.estimated_size());
+}
+
 #[test]
 fn trim_and_reset_update_public_state() {
     let mut sketch = default_tuple_sketch_builder().lg_k(5).build().unwrap();

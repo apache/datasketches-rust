@@ -77,5 +77,5 @@ fn test_estimated_size() {
     for i in 0..10_000 {
         sketch.update(i);
     }
-    assert!(sketch.estimated_size() > empty_size);
+    assert_eq!(sketch.estimated_size(), 2304);
 }

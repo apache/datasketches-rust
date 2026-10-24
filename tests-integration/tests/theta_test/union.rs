@@ -749,6 +749,5 @@ fn compact_estimated_size_includes_retained_capacity() {
     let result = union.to_sketch(true);
 
     assert_eq!(result.num_retained(), 32);
-    let logical_size = result.num_retained() * std::mem::size_of::<u64>();
-    assert!(result.estimated_size() > logical_size);
+    assert_eq!(result.estimated_size(), 512);
 }

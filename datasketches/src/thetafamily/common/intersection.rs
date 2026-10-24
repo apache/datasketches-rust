@@ -234,9 +234,9 @@ where
         self.result_state != IntersectionResultState::Uninitialized
     }
 
-    /// Returns the estimated size of retained heap allocations in bytes.
+    /// Returns an estimate of memory usage in bytes.
     pub fn estimated_size(&self) -> usize {
-        self.table.estimated_size()
+        size_of::<P>() + self.table.estimated_size()
     }
 
     /// Returns the current intersection as canonical compact-sketch state.

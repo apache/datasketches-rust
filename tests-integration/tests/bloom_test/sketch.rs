@@ -15,8 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use std::mem::size_of;
-
 use datasketches::bloom::BloomFilter;
 use datasketches::bloom::BloomFilterBuilder;
 use datasketches::error::ErrorKind;
@@ -216,8 +214,7 @@ fn test_requested_size_rounds_to_word_boundary() {
 #[test]
 fn test_estimated_size() {
     let filter = BloomFilterBuilder::with_size(65, 3).build().unwrap();
-    let expected_size = filter.capacity() / 64 * size_of::<u64>();
-    assert_eq!(filter.estimated_size(), expected_size);
+    assert_eq!(filter.estimated_size(), 16);
 }
 
 #[test]

@@ -278,7 +278,7 @@ impl Array8 {
         bytes.into_bytes()
     }
 
-    /// Returns the estimated size of retained heap allocations in bytes.
+    /// Returns an estimate of memory usage in bytes.
     pub fn estimated_size(&self) -> usize {
         self.bytes.len()
     }

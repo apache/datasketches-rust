@@ -406,7 +406,7 @@ where
 
     /// Returns an estimate of the sketch's memory usage in bytes.
     pub fn estimated_size(&self) -> usize {
-        self.table.estimated_size()
+        size_of::<P>() + self.table.estimated_size()
     }
 }
 

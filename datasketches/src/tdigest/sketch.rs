@@ -156,7 +156,7 @@ impl TDigestBuffer {
         self.centroids
     }
 
-    /// Returns the estimated size of retained heap allocations in bytes.
+    /// Returns an estimate of memory usage in bytes.
     fn estimated_size(&self) -> usize {
         self.centroids.capacity() * size_of::<Centroid>()
     }

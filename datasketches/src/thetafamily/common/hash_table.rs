@@ -344,7 +344,7 @@ where
             })
     }
 
-    /// Returns the estimated size of retained heap allocations in bytes.
+    /// Returns an estimate of memory usage in bytes.
     pub fn estimated_size(&self) -> usize {
         self.entries.capacity() * size_of::<Option<E>>()
     }
