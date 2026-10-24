@@ -57,8 +57,6 @@ pub struct CountMinSketch<T: CountMinValue> {
     hash_seeds: Vec<u64>,
 }
 
-// Reduce the padding introduced by nesting this type in `CountMinSketch`.
-#[repr(Rust, packed(8))]
 #[derive(Debug, Clone, PartialEq)]
 struct BucketCount {
     count: u32,
