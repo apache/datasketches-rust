@@ -27,6 +27,8 @@ pub enum ErrorKind {
     InvalidArgument,
     /// The serialized sketch data is malformed.
     InvalidData,
+    /// No valid construction was found within the allowed attempts.
+    ConstructionFailed,
 }
 
 impl ErrorKind {
@@ -35,6 +37,7 @@ impl ErrorKind {
         match self {
             ErrorKind::InvalidArgument => "InvalidArgument",
             ErrorKind::InvalidData => "InvalidData",
+            ErrorKind::ConstructionFailed => "ConstructionFailed",
         }
     }
 }

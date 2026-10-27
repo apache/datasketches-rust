@@ -86,6 +86,7 @@ dependencies = [
  "datasketches",
  "divan",
  "rand",
+ "xorf",
 ]
 
 [[package]]
@@ -782,6 +783,7 @@ dependencies = [
  "googletest",
  "insta",
  "quickcheck",
+ "xorf",
 ]
 
 [[package]]
@@ -1002,6 +1004,12 @@ dependencies = [
  "ureq",
  "which",
 ]
+
+[[package]]
+name = "xorf"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0f13846c9009c0e550697ddde851e934b5dfafbce757a5ef5edfdb27ea20803e"
 
 [[package]]
 name = "zeroize"
