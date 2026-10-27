@@ -24,12 +24,41 @@ use rand::seq::SliceRandom;
 
 use super::support::build_digest;
 use super::support::prepared_digest;
+use super::support::values;
 
 #[divan::bench]
 fn rank(bencher: Bencher) {
     let digest = prepared_digest();
 
     bencher.bench_local(|| black_box(&digest).rank(black_box(0.531_25)).unwrap());
+}
+
+#[divan::bench]
+fn rank_mixed(bencher: Bencher) {
+    let digest = prepared_digest();
+    let queries = values(256);
+
+    bencher
+        .counter(ItemsCount::new(queries.len()))
+        .bench_local(|| {
+            for &value in black_box(&queries) {
+                black_box(black_box(&digest).rank(black_box(value)).unwrap());
+            }
+        });
+}
+
+#[divan::bench(args = [0.0, 2.5, 5.0])]
+fn rank_small(bencher: Bencher, value: f64) {
+    let digest = build_digest(&[0., 1., 2., 3., 4., 5.]);
+
+    bencher.bench_local(|| black_box(&digest).rank(black_box(value)).unwrap());
+}
+
+#[divan::bench]
+fn rank_mut(bencher: Bencher) {
+    let mut digest = prepared_digest().unfreeze();
+
+    bencher.bench_local(|| black_box(&mut digest).rank(black_box(0.531_25)).unwrap());
 }
 
 #[divan::bench(args = [0.0, 3.0, 3.5, 7.0])]
@@ -55,6 +84,18 @@ fn cdf_100(bencher: Bencher) {
     bencher
         .counter(ItemsCount::new(split_points.len()))
         .bench_local(|| black_box(&digest).cdf(black_box(&split_points)).unwrap());
+}
+
+#[divan::bench(args = [1, 6, 100, 512])]
+fn pmf(bencher: Bencher, num_split_points: usize) {
+    let digest = prepared_digest();
+    let split_points = (1..=num_split_points)
+        .map(|i| i as f64 / (num_split_points + 1) as f64)
+        .collect::<Vec<_>>();
+
+    bencher
+        .counter(ItemsCount::new(num_split_points))
+        .bench_local(|| black_box(&digest).pmf(black_box(&split_points)).unwrap());
 }
 
 #[divan::bench(consts = [true, false], args = [2, 6, 100])]
