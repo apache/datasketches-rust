@@ -42,7 +42,7 @@ const EMPTY_FLAG_MASK: u8 = 1 << 2;
 pub struct BloomFilter {
     /// Hash seed for all hash functions
     seed: u64,
-    /// Number of hash-derived bit positions per item (k).
+    /// Number of hash functions (k).
     num_hashes: u16,
     /// Count of bits set to 1 (for statistics)
     num_bits_set: u64,
@@ -353,10 +353,10 @@ impl BloomFilter {
         self.bit_array.len() * 64
     }
 
-    /// Returns the number of hash-derived bit positions per item (`k`).
+    /// Returns the number of hash functions (`k`).
     ///
-    /// This is conventionally called the number of hash functions in a Bloom filter.
-    /// Two base hashes are combined to derive these positions; positions may repeat.
+    /// The `k` hash functions are derived from two base hashes using double hashing.
+    /// Their bit positions may repeat.
     pub fn num_hashes(&self) -> u16 {
         self.num_hashes
     }
@@ -396,7 +396,7 @@ impl BloomFilter {
     ///
     /// Filters are compatible if they have the same:
     /// * Capacity (number of bits)
-    /// * Number of probes per item
+    /// * Number of hash functions
     /// * Seed
     pub fn is_compatible(&self, other: &Self) -> bool {
         self.bit_array.len() == other.bit_array.len()
@@ -653,7 +653,8 @@ impl BloomFilter {
 /// Provides two construction modes:
 /// * [`with_accuracy()`](Self::with_accuracy): Specify target items and false positive rate
 ///   (recommended)
-/// * [`with_size()`](Self::with_size): Specify requested bit count and probes per item (manual)
+/// * [`with_size()`](Self::with_size): Specify requested bit count and number of hash functions
+///   (manual)
 ///
 /// Configuration is stored without validation and checked when [`build()`](Self::build) is called.
 /// Accuracy construction treats `max_items` as a sizing assumption, not an insertion limit. The
@@ -679,20 +680,20 @@ impl BloomFilterBuilder {
     /// Derived from serialization limits so the encoded sketch length fits in a signed 32-bit size
     /// field.
     const MAX_NUM_BITS: u64 = (i32::MAX as u64 - Family::BLOOMFILTER.max_pre_longs as u64) * 64;
-    /// Minimum allowed number of probes per item.
+    /// Minimum allowed number of hash functions.
     const MIN_NUM_HASHES: u16 = 1;
-    /// Maximum allowed number of probes per item.
+    /// Maximum allowed number of hash functions.
     const MAX_NUM_HASHES: u16 = i16::MAX as u16;
 
     /// Creates a builder that derives its parameters from a target accuracy.
     ///
     /// Uses the standard Bloom filter sizing formulas to choose the requested number of bits and
-    /// probes per item. The parameters are validated when [`build()`](Self::build) is called.
+    /// hash functions. The parameters are validated when [`build()`](Self::build) is called.
     ///
     /// `max_items` is the expected maximum number of distinct items, not a hard insertion limit.
     /// Inserting more distinct items remains valid but can increase the false-positive probability
     /// beyond `fpp`. An `fpp` of `1.0` is accepted and creates the smallest allocation: 64 bits and
-    /// one probe per item.
+    /// one hash function.
     ///
     /// # Arguments
     ///
@@ -732,8 +733,7 @@ impl BloomFilterBuilder {
     /// # Arguments
     ///
     /// * `num_bits`: Total number of bits in the filter.
-    /// * `num_hashes`: Number of hash-derived bit positions per item; see
-    ///   [`BloomFilter::num_hashes`].
+    /// * `num_hashes`: Number of hash functions (`k`); see [`BloomFilter::num_hashes`].
     ///
     /// # Examples
     ///

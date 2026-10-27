@@ -65,7 +65,7 @@
 //!
 //! ## By Accuracy (Recommended)
 //!
-//! Derive the size and number of probes per item from an expected distinct-item count and a target
+//! Derive the size and number of hash functions from an expected distinct-item count and a target
 //! false-positive probability:
 //!
 //! ```
@@ -84,19 +84,19 @@
 //! distinct items beyond that count, but its false-positive probability can then exceed the target.
 //! Accuracy inputs are validated by `build`: `max_items` must be positive, `fpp` must be in
 //! `(0.0, 1.0]`, and the requested target must fit the serialized Bloom filter format. An `fpp` of
-//! `1.0` is accepted and creates the smallest allocation: 64 bits and one probe per item.
+//! `1.0` is accepted and creates the smallest allocation: 64 bits and one hash function.
 //!
 //! ## By Size (Manual)
 //!
-//! Specify the requested bit count and probes per item. Capacity is rounded up to a multiple of 64
-//! bits:
+//! Specify the requested bit count and number of hash functions. Capacity is rounded up to a
+//! multiple of 64 bits:
 //!
 //! ```
 //! use datasketches::bloom::BloomFilterBuilder;
 //!
 //! let filter = BloomFilterBuilder::with_size(
 //!     95_851, // Number of bits
-//!     7,      // Hash-derived bit positions per item
+//!     7,      // Number of hash functions
 //! )
 //! .build()
 //! .unwrap();
@@ -139,7 +139,8 @@
 //!
 //! # Implementation Details
 //!
-//! * Derives `k` bit positions from two XXHash64 hashes using double hashing (Kirsch-Mitzenmacher).
+//! * Derives `k` hash functions from two XXHash64 hashes using double hashing
+//!   (Kirsch-Mitzenmacher).
 //! * Bits packed efficiently in `u64` words
 //! * Compatible serialization format (family ID: 21)
 //!
