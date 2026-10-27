@@ -8,6 +8,13 @@ All significant changes to this project will be documented in this file.
 
 * Add immutable `XorFilter` and `XorFilterBuilder` behind the `xor` feature, with 8-, 16-, and 32-bit fingerprints, consuming builder configuration with complete-input construction and bounded seeded retries, optional cardinality metadata for imported filters, Java-compatible standard serialization for 8/16-bit filters, and raw parts for application-defined storage.
 
+### Improvements
+
+* `KllSketch::rank` is faster for repeated queries on compacted sketches.
+* Repeated scalar `TDigest::rank` queries are faster, including small digests and data with repeated values.
+* `TDigest` and `TDigestMut` CDF and PMF batches are faster for many split points; batches with sparse split points keep the original binary-search behavior.
+* `BloomFilter::insert` is faster for streams of new items when multiple hashes are configured.
+
 ## v0.6.0
 
 ### Breaking changes

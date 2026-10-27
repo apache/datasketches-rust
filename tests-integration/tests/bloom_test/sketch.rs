@@ -56,6 +56,48 @@ fn test_membership_statistics_and_reset() {
 }
 
 #[test]
+fn test_insert_matches_membership_and_insert() {
+    let mut inserted = filter();
+    let mut checked = inserted.clone();
+
+    for value in 0..128_u64 {
+        let was_present = inserted.contains(&value);
+        assert_eq!(checked.contains_and_insert(&value), was_present);
+        inserted.insert(value);
+        assert!(inserted.contains(&value));
+        assert_eq!(checked, inserted);
+    }
+}
+
+#[test]
+fn test_collisions_and_repeated_inserts_do_not_overcount_bits() {
+    // Exercise one hash and force within-item collisions: 65 hashes cannot
+    // select distinct positions in a 64-bit filter.
+    for num_hashes in [1, 65] {
+        let mut inserted = BloomFilterBuilder::with_size(64, num_hashes)
+            .build()
+            .unwrap();
+        let mut checked = inserted.clone();
+        inserted.insert(42_u64);
+        assert!(!checked.contains_and_insert(&42_u64));
+
+        for filter in [&mut inserted, &mut checked] {
+            let before_repeat = filter.clone();
+            filter.insert(42_u64);
+            assert_eq!(*filter, before_repeat);
+            assert!(filter.contains_and_insert(&42_u64));
+            assert_eq!(*filter, before_repeat);
+
+            // Recount the backing bits independently of either insertion path.
+            assert_eq!(
+                BloomFilter::deserialize(&filter.serialize()).unwrap(),
+                *filter
+            );
+        }
+    }
+}
+
+#[test]
 fn test_union_and_intersection() {
     let mut left = filter();
     left.insert("shared");
@@ -209,11 +251,6 @@ fn test_intersection_rejects_incompatible_filters() {
 fn test_requested_size_rounds_to_word_boundary() {
     let filter = BloomFilterBuilder::with_size(65, 3).build().unwrap();
     assert_eq!(filter.capacity(), 128);
-}
-
-#[test]
-fn test_estimated_size() {
-    let filter = BloomFilterBuilder::with_size(65, 3).build().unwrap();
     assert_eq!(filter.estimated_size(), 16);
 }
 
