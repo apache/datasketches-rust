@@ -168,6 +168,15 @@ fn inclusive_and_exclusive_semantics_cover_duplicates() {
         sketch.quantile(0.5, SearchCriteria::Exclusive).unwrap(),
         Some(2)
     );
+
+    // Equal values make the expected ranks independent of compaction sampling.
+    let mut compacted = KllSketch::<i64>::new(8).unwrap();
+    for _ in 0..9 {
+        compacted.update(1);
+    }
+    assert!(compacted.is_estimation_mode());
+    assert_eq!(compacted.rank(&1, SearchCriteria::Exclusive), Some(0.0));
+    assert_eq!(compacted.rank(&1, SearchCriteria::Inclusive), Some(1.0));
 }
 
 #[test]

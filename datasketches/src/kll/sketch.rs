@@ -212,20 +212,24 @@ impl<T: Clone + Ord> KllSketch<T> {
         if self.is_empty() {
             return None;
         }
-        let inclusive = criteria == SearchCriteria::Inclusive;
-        let mut weight = 0u64;
-        for (level, items) in self.levels.iter().enumerate() {
-            let count = items
-                .iter()
-                .filter(|retained| match (*retained).cmp(item) {
-                    Ordering::Less => true,
-                    Ordering::Equal => inclusive,
-                    Ordering::Greater => false,
-                })
-                .count() as u64;
-            weight += count << level;
+        // Keep a direct scan to preserve query latency for small exact sketches.
+        if let [items] = self.levels.as_slice() {
+            let count = count_rank_linear(items, item, criteria);
+            return Some(count as f64 / self.n as f64);
         }
-        Some(weight as f64 / self.n as f64)
+
+        let mut rank_weight = 0u64;
+        for (level, items) in self.levels.iter().enumerate() {
+            // Higher levels are always sorted; level zero may be an unsorted update buffer.
+            let is_sorted = level > 0 || self.is_level_zero_sorted;
+            let count = if is_sorted {
+                count_rank_sorted(items, item, criteria)
+            } else {
+                count_rank_linear(items, item, criteria)
+            };
+            rank_weight += (count as u64) << level;
+        }
+        Some(rank_weight as f64 / self.n as f64)
     }
 
     /// Returns the quantile for the given normalized rank.
@@ -918,6 +922,23 @@ impl<T: Clone + Ord> KllSketch<T> {
 
         Ok(())
     }
+}
+
+fn count_rank_linear<T: Ord>(items: &[T], item: &T, criteria: SearchCriteria) -> usize {
+    items
+        .iter()
+        .filter(|retained| match criteria {
+            SearchCriteria::Inclusive => *retained <= item,
+            SearchCriteria::Exclusive => *retained < item,
+        })
+        .count()
+}
+
+fn count_rank_sorted<T: Ord>(items: &[T], item: &T, criteria: SearchCriteria) -> usize {
+    items.partition_point(|retained| match criteria {
+        SearchCriteria::Inclusive => retained <= item,
+        SearchCriteria::Exclusive => retained < item,
+    })
 }
 
 fn normalized_rank_error(k: u16, pmf: bool) -> f64 {
