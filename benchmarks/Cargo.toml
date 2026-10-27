@@ -34,6 +34,11 @@ datasketches = { workspace = true, features = [
   "tdigest",
   "theta",
   "tuple",
+  "uddsketch",
+] }
+# Pin the comparison baseline so results remain reproducible.
+datasketches-v05 = { package = "datasketches", version = "=0.5.0", features = [
+  "tdigest",
 ] }
 divan = { workspace = true }
 rand = { workspace = true }
@@ -42,6 +47,10 @@ rand = { workspace = true }
 harness = false
 name = "benchmarks"
 path = "main.rs"
+
+[[example]]
+name = "quantile_comparison"
+path = "uddsketch/comparison.rs"
 
 [lints]
 workspace = true

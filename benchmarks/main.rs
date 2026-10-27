@@ -31,6 +31,7 @@ mod req;
 mod tdigest;
 mod theta;
 mod tuple;
+mod uddsketch;
 
 fn main() {
     divan::main();
