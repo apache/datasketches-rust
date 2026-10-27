@@ -25,7 +25,7 @@ use crate::xor::hashes_with_offset;
 
 // xorf 0.13 starts SplitMix at 1. Both builders use the same seed sequence;
 // equal winning seeds therefore imply equal attempt counts. The offset 917504
-// case requires two attempts, while the other listed cases require one.
+// case exercises a second attempt; every case verifies equal winning seeds.
 fn verify_seed(keys: &[u64], kind: XorFilterType) {
     let filter = XorFilterBuilder::new(kind)
         .seed(1)
@@ -34,7 +34,7 @@ fn verify_seed(keys: &[u64], kind: XorFilterType) {
     assert_eq!(filter.seed(), xorf::Xor8::from(keys).seed);
 }
 
-#[divan::bench(args = [(1_000, 0), (16_384, 0), (16_384, 917_504), (49_999, 0), (50_000, 0), (50_001, 0), (100_000, 0)])]
+#[divan::bench(args = [(1_000, 0), (16_384, 0), (16_384, 917_504), (49_999, 0), (50_000, 0), (50_001, 0), (100_000, 0), (8_000_000, 0)])]
 fn datasketches_8(bencher: Bencher, case: (usize, u64)) {
     let (cardinality, offset) = case;
     let keys = hashes_with_offset(cardinality, offset);
@@ -51,7 +51,7 @@ fn datasketches_8(bencher: Bencher, case: (usize, u64)) {
         });
 }
 
-#[divan::bench(args = [(1_000, 0), (16_384, 0), (16_384, 917_504), (49_999, 0), (50_000, 0), (50_001, 0), (100_000, 0)])]
+#[divan::bench(args = [(1_000, 0), (16_384, 0), (16_384, 917_504), (49_999, 0), (50_000, 0), (50_001, 0), (100_000, 0), (8_000_000, 0)])]
 fn xorf_8(bencher: Bencher, case: (usize, u64)) {
     let (cardinality, offset) = case;
     let keys = hashes_with_offset(cardinality, offset);
@@ -61,7 +61,7 @@ fn xorf_8(bencher: Bencher, case: (usize, u64)) {
         .bench_local(|| black_box(xorf::Xor8::from_iterator(keys.iter().copied())));
 }
 
-#[divan::bench(args = [(1_000, 0), (16_384, 0), (16_384, 917_504), (49_999, 0), (50_000, 0), (50_001, 0), (100_000, 0)])]
+#[divan::bench(args = [(1_000, 0), (16_384, 0), (16_384, 917_504), (49_999, 0), (50_000, 0), (50_001, 0), (100_000, 0), (8_000_000, 0)])]
 fn datasketches_16(bencher: Bencher, case: (usize, u64)) {
     let (cardinality, offset) = case;
     let keys = hashes_with_offset(cardinality, offset);
@@ -78,7 +78,7 @@ fn datasketches_16(bencher: Bencher, case: (usize, u64)) {
         });
 }
 
-#[divan::bench(args = [(1_000, 0), (16_384, 0), (16_384, 917_504), (49_999, 0), (50_000, 0), (50_001, 0), (100_000, 0)])]
+#[divan::bench(args = [(1_000, 0), (16_384, 0), (16_384, 917_504), (49_999, 0), (50_000, 0), (50_001, 0), (100_000, 0), (8_000_000, 0)])]
 fn xorf_16(bencher: Bencher, case: (usize, u64)) {
     let (cardinality, offset) = case;
     let keys = hashes_with_offset(cardinality, offset);
@@ -88,7 +88,7 @@ fn xorf_16(bencher: Bencher, case: (usize, u64)) {
         .bench_local(|| black_box(xorf::Xor16::from_iterator(keys.iter().copied())));
 }
 
-#[divan::bench(args = [(1_000, 0), (16_384, 0), (16_384, 917_504), (49_999, 0), (50_000, 0), (50_001, 0), (100_000, 0)])]
+#[divan::bench(args = [(1_000, 0), (16_384, 0), (16_384, 917_504), (49_999, 0), (50_000, 0), (50_001, 0), (100_000, 0), (8_000_000, 0)])]
 fn datasketches_32(bencher: Bencher, case: (usize, u64)) {
     let (cardinality, offset) = case;
     let keys = hashes_with_offset(cardinality, offset);
@@ -105,7 +105,7 @@ fn datasketches_32(bencher: Bencher, case: (usize, u64)) {
         });
 }
 
-#[divan::bench(args = [(1_000, 0), (16_384, 0), (16_384, 917_504), (49_999, 0), (50_000, 0), (50_001, 0), (100_000, 0)])]
+#[divan::bench(args = [(1_000, 0), (16_384, 0), (16_384, 917_504), (49_999, 0), (50_000, 0), (50_001, 0), (100_000, 0), (8_000_000, 0)])]
 fn xorf_32(bencher: Bencher, case: (usize, u64)) {
     let (cardinality, offset) = case;
     let keys = hashes_with_offset(cardinality, offset);

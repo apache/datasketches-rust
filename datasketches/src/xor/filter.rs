@@ -554,15 +554,14 @@ fn map(
     let mut masks = split_segments(xor_mask, segment_length);
     let mut counts = split_segments(count, segment_length);
     let mut queues = split_segments(queue, segment_length);
-    for &key in keys {
-        let hash = mix(key, seed);
-        let indexes = [
-            reduce(hash as u32, segment_length),
-            reduce(hash.rotate_left(21) as u32, segment_length),
-            reduce(hash.rotate_left(42) as u32, segment_length),
-        ];
-        for block in 0..3 {
-            let index = indexes[block];
+    // Reuse the peel stack for mixed hashes while mapping one segment at a time.
+    // This bounds the random-access working set without allocating another buffer.
+    for (&key, hash) in keys.iter().zip(stack_hash.iter_mut()) {
+        *hash = mix(key, seed);
+    }
+    for block in 0..3 {
+        for &hash in stack_hash.iter() {
+            let index = reduce(hash.rotate_left(block as u32 * 21) as u32, segment_length);
             masks[block][index] ^= hash;
             counts[block][index] += 1;
         }
@@ -745,6 +744,15 @@ mod tests {
             for &key in &keys {
                 assert!(filter.contains_hash(key));
             }
+            // A failed peel overwrites the mixed hashes in the scratch stack. An automatic
+            // retry must remap the original input before attempting the next seed.
+            assert_eq!(
+                XorFilterBuilder::new(kind)
+                    .seed(1)
+                    .build_from_distinct_hashes(&keys)
+                    .unwrap(),
+                filter,
+            );
             assert_eq!(
                 builder
                     .build_from_hashes(keys.iter().copied().chain(keys.iter().copied()))
