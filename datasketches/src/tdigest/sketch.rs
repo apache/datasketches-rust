@@ -545,8 +545,7 @@ impl TDigestMut {
             let mut weight_so_far = 0.;
             while current < len {
                 let c = centroids[current];
-                let proposed_weight =
-                    centroids[num_centroids - 1].weight_as_f64() + c.weight_as_f64();
+                let proposed_weight = centroids[num_centroids - 1].weight() + c.weight();
                 if should_merge_centroid(
                     current,
                     len,
@@ -559,7 +558,7 @@ impl TDigestMut {
                     centroids[num_centroids - 1].merge(c);
                 } else {
                     // copy to a new centroid
-                    weight_so_far += centroids[num_centroids - 1].weight_as_f64();
+                    weight_so_far += centroids[num_centroids - 1].weight();
                     centroids[num_centroids] = c;
                     num_centroids += 1;
                 }
@@ -1107,7 +1106,7 @@ impl FromIterator<TDigestMut> for TDigestMut {
             sift_down_merge_heap(&mut heap, 0, reverse);
 
             if let Some(last) = retained.last_mut() {
-                let proposed_weight = last.weight_as_f64() + centroid.weight_as_f64();
+                let proposed_weight = last.weight() + centroid.weight();
                 if should_merge_centroid(
                     current,
                     num_centroids,
@@ -1118,7 +1117,7 @@ impl FromIterator<TDigestMut> for TDigestMut {
                 ) {
                     last.merge(centroid);
                 } else {
-                    weight_so_far += last.weight_as_f64();
+                    weight_so_far += last.weight();
                     retained.push(centroid);
                 }
             } else {
@@ -1133,7 +1132,7 @@ impl FromIterator<TDigestMut> for TDigestMut {
         debug_assert_eq!(
             retained
                 .iter()
-                .map(|centroid| centroid.weight.get())
+                .map(|centroid| centroid.weight64())
                 .sum::<u64>(),
             total_weight,
             "compressed centroids must preserve total weight"
@@ -1342,7 +1341,7 @@ impl TDigestView<'_> {
             self.centroids.partition_point(|c| c.mean < value)
         };
         let (lower, interval) = self.interpolation_interval(value, index);
-        let weight_below = self.centroids[..lower].iter().map(|c| c.weight.get()).sum();
+        let weight_below = self.centroids[..lower].iter().map(|c| c.weight64()).sum();
         Some(interpolate_weight(value, interval, weight_below) / total_weight)
     }
 
@@ -1376,7 +1375,7 @@ impl TDigestView<'_> {
             let (lower, interval) = self.interpolation_interval(value, index);
             weight_below += self.centroids[previous_lower..lower]
                 .iter()
-                .map(|c| c.weight.get())
+                .map(|c| c.weight64())
                 .sum::<u64>();
             previous_lower = lower;
             ranks.push(interpolate_weight(value, interval, weight_below) / total_weight);
@@ -1401,7 +1400,7 @@ impl TDigestView<'_> {
                     continue;
                 }
                 while index < self.centroids.len() && self.centroids[index].mean < value {
-                    weight_before_index += self.centroids[index].weight.get();
+                    weight_before_index += self.centroids[index].weight64();
                     index += 1;
                 }
                 index
@@ -1411,7 +1410,7 @@ impl TDigestView<'_> {
             // interpolation interval rather than the prefix below that interval.
             let weight_below = weight_before_index
                 - if lower < lower_bound {
-                    self.centroids[lower].weight.get()
+                    self.centroids[lower].weight64()
                 } else {
                     0
                 };
@@ -1421,7 +1420,7 @@ impl TDigestView<'_> {
 
     #[inline]
     fn left_tail_weight(&self, value: f64) -> f64 {
-        let center = centroid_weight_center(0, self.centroids[0].weight.get());
+        let center = centroid_weight_center(0, self.centroids[0].weight64());
         if value == self.min {
             0.5
         } else {
@@ -1437,7 +1436,7 @@ impl TDigestView<'_> {
     fn right_tail_weight(&self, value: f64) -> f64 {
         let last = self.centroids.last().unwrap();
         let center =
-            centroid_weight_center(self.centroids_weight - last.weight.get(), last.weight.get());
+            centroid_weight_center(self.centroids_weight - last.weight64(), last.weight64());
         if value == self.max {
             // Use the same rounded weight as the adjacent centroid center.
             centroid_weight_center(self.centroids_weight - 1, 1)
@@ -1531,7 +1530,7 @@ impl TDigestView<'_> {
         }
 
         let last = self.centroids.last().unwrap();
-        let last_weight = last.weight.get();
+        let last_weight = last.weight64();
         let last_center = centroid_weight_center(self.centroids_weight - last_weight, last_weight);
         if last_weight > 1 {
             let tail_end = (self.centroids_weight - 1) as f64;
@@ -1560,7 +1559,7 @@ impl TDigestView<'_> {
         }
 
         let first = &self.centroids[0];
-        let first_weight = first.weight.get();
+        let first_weight = first.weight64();
         let first_center = centroid_weight_center(0, first_weight);
         if first_weight > 1 {
             // At first_weight == 2, the weight < 1 pre-pass already consumed this interval.
@@ -1580,8 +1579,8 @@ impl TDigestView<'_> {
         for pair in self.centroids.windows(2) {
             let left = &pair[0];
             let right = &pair[1];
-            let right_before = weight_before + left.weight.get();
-            let right_center = centroid_weight_center(right_before, right.weight.get());
+            let right_before = weight_before + left.weight64();
+            let right_center = centroid_weight_center(right_before, right.weight64());
             loop {
                 let Some(&(index, weight)) = queries.peek() else {
                     return;
@@ -1591,7 +1590,7 @@ impl TDigestView<'_> {
                 }
                 queries.next();
                 let mut start = left_center;
-                if left.weight.get() == 1 {
+                if left.weight64() == 1 {
                     start = right_before as f64;
                     if weight < start {
                         quantiles[index] = left.mean;
@@ -1599,7 +1598,7 @@ impl TDigestView<'_> {
                     }
                 }
                 let mut end = right_center;
-                if right.weight.get() == 1 {
+                if right.weight64() == 1 {
                     end = right_before as f64;
                     if weight >= end {
                         quantiles[index] = right.mean;
@@ -1739,11 +1738,11 @@ struct Centroid {
 
 impl Centroid {
     fn merge(&mut self, other: Centroid) {
-        let (self_weight, other_weight) = (self.weight_as_f64(), other.weight_as_f64());
+        let (self_weight, other_weight) = (self.weight(), other.weight());
         let total_weight = self_weight + other_weight;
         self.weight = self
             .weight
-            .checked_add(other.weight.get())
+            .checked_add(other.weight64())
             .expect("weight overflow");
 
         // Start at the heavier centroid so a small contribution is not rounded away in 1 - ratio.
@@ -1769,8 +1768,12 @@ impl Centroid {
         };
     }
 
-    fn weight_as_f64(&self) -> f64 {
-        self.weight.get() as f64
+    fn weight(&self) -> f64 {
+        self.weight64() as f64
+    }
+
+    fn weight64(&self) -> u64 {
+        self.weight.get()
     }
 }
 
@@ -1795,17 +1798,17 @@ mod scale_function {
 fn interpolate_weight(value: f64, interval: &[Centroid], weight_below: u64) -> f64 {
     let left = &interval[0];
     let Some((right, middle)) = interval[1..].split_last() else {
-        return centroid_weight_center(weight_below, left.weight.get());
+        return centroid_weight_center(weight_below, left.weight64());
     };
-    let weight_between = left.weight.get() + middle.iter().map(|c| c.weight.get()).sum::<u64>();
+    let weight_between = left.weight64() + middle.iter().map(|c| c.weight64()).sum::<u64>();
     let fraction = if left.mean < right.mean {
         interpolation_fraction(value, left.mean, right.mean)
     } else {
         0.5
     };
     interpolate(
-        centroid_weight_center(weight_below, left.weight.get()),
-        centroid_weight_center(weight_below + weight_between, right.weight.get()),
+        centroid_weight_center(weight_below, left.weight64()),
+        centroid_weight_center(weight_below + weight_between, right.weight64()),
         fraction,
     )
 }
@@ -1926,7 +1929,7 @@ fn serialize_compressed(
     bytes.write_f64_le(max);
     for centroid in centroids {
         bytes.write_f64_le(centroid.mean);
-        bytes.write_u64_le(centroid.weight.get());
+        bytes.write_u64_le(centroid.weight64());
     }
     bytes.into_bytes()
 }
