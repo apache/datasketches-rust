@@ -7,6 +7,7 @@ All significant changes to this project will be documented in this file.
 ### Improvements
 
 * `KllSketch::rank` is faster for repeated queries on compacted sketches.
+* Repeated scalar `TDigest::rank` queries are faster, including small digests and data with repeated values.
 * `TDigest` and `TDigestMut` CDF and PMF batches are faster for many split points; batches with sparse split points keep the original binary-search behavior.
 * `BloomFilter::insert` is faster for streams of new items when multiple hashes are configured.
 

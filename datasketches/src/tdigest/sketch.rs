@@ -140,6 +140,7 @@ impl TDigestBuffer {
         self.centroids
     }
 
+    #[inline]
     fn compressed_centroids(&self) -> &[Centroid] {
         assert_eq!(
             self.unmerged_tail_len, 0,
@@ -392,6 +393,7 @@ impl TDigestMut {
         }
     }
 
+    #[inline]
     fn view(&mut self) -> TDigestView<'_> {
         self.compress(); // side effect
         TDigestView {
@@ -484,6 +486,7 @@ impl TDigestMut {
     /// let rank = sketch.rank(2.0).unwrap().unwrap();
     /// assert!((0.0..=1.0).contains(&rank));
     /// ```
+    #[inline]
     pub fn rank(&mut self, value: f64) -> Result<Option<f64>, Error> {
         if value.is_nan() {
             return Err(Error::invalid_argument("value must not be NaN"));
@@ -526,6 +529,7 @@ impl TDigestMut {
     /// let median = sketch.quantile(0.5).unwrap().unwrap();
     /// assert!((1.0..=3.0).contains(&median));
     /// ```
+    #[inline]
     pub fn quantile(&mut self, rank: f64) -> Result<Option<f64>, Error> {
         check_rank(rank)?;
 
@@ -1539,6 +1543,7 @@ impl TDigest {
     /// let rank = digest.rank(2.0).unwrap().unwrap();
     /// assert!((0.0..=1.0).contains(&rank));
     /// ```
+    #[inline]
     pub fn rank(&self, value: f64) -> Result<Option<f64>, Error> {
         if value.is_nan() {
             return Err(Error::invalid_argument("value must not be NaN"));
@@ -1570,6 +1575,7 @@ impl TDigest {
     /// let q = digest.quantile(0.5).unwrap().unwrap();
     /// assert!((1.0..=3.0).contains(&q));
     /// ```
+    #[inline]
     pub fn quantile(&self, rank: f64) -> Result<Option<f64>, Error> {
         check_rank(rank)?;
         Ok(self.view().quantile(rank))
@@ -1647,8 +1653,11 @@ struct TDigestView<'a> {
 impl TDigestView<'_> {
     fn pmf(&self, split_points: &[f64]) -> Option<Vec<f64>> {
         let mut buckets = self.cdf(split_points)?;
-        for i in (1..buckets.len()).rev() {
-            buckets[i] -= buckets[i - 1];
+        let mut previous = buckets[0];
+        for bucket in &mut buckets[1..] {
+            let rank = *bucket;
+            *bucket -= previous;
+            previous = rank;
         }
         Some(buckets)
     }
@@ -1657,126 +1666,185 @@ impl TDigestView<'_> {
         if self.centroids.is_empty() {
             return None;
         }
+        if split_points.is_empty() {
+            return Some(vec![1.0]);
+        }
 
-        // Split points increase, so their lower centroid indexes never move backwards.
-        // Accumulate integer weights only as far as each query needs.
         let binary_search_cost = self.centroids.len().ilog2() as usize;
         let use_scan = split_points.len().saturating_mul(binary_search_cost) > self.centroids.len();
-        let mut index = 0;
-        let mut previous_lower = 0;
-        let mut weight_below = 0;
-
         let mut ranks = Vec::with_capacity(split_points.len() + 1);
-        for &p in split_points {
-            ranks.push(self.rank_with_weights(
-                p,
-                |centroids, value| {
-                    if use_scan {
-                        while index < centroids.len() && centroids[index].mean < value {
-                            index += 1;
-                        }
-                        index
-                    } else {
-                        centroid_lower_bound_index(centroids, value)
-                    }
-                },
-                |lower| {
-                    weight_below += self.centroids[previous_lower..lower]
-                        .iter()
-                        .map(|c| c.weight.get())
-                        .sum::<u64>();
-                    previous_lower = lower;
-                    weight_below
-                },
-            ));
+        if use_scan || self.min == self.max {
+            // Constant sketches and scans can fill the sorted outer tails directly.
+            let start = split_points.partition_point(|&p| p < self.min);
+            let end = start + split_points[start..].partition_point(|&p| p <= self.max);
+            ranks.resize(start, 0.0);
+            if self.min == self.max {
+                ranks.resize(end, 0.5);
+            } else {
+                self.fill_cdf_scan(&split_points[start..end], &mut ranks);
+            }
+            ranks.resize(split_points.len(), 1.0);
+        } else {
+            self.fill_cdf_binary_search(split_points, &mut ranks);
         }
         ranks.push(1.0);
         Some(ranks)
     }
 
+    #[inline(always)]
     fn rank(&self, value: f64) -> Option<f64> {
         debug_assert!(!value.is_nan(), "value must not be NaN");
 
         if self.centroids.is_empty() {
             return None;
         }
-        Some(
-            self.rank_with_weights(value, centroid_lower_bound_index, |lower| {
-                self.centroids[..lower].iter().map(|c| c.weight.get()).sum()
-            }),
-        )
-    }
-
-    /// Rank within a non-empty centroid sequence, using the first centroid at or above `value`.
-    fn rank_with_weights(
-        &self,
-        value: f64,
-        find_index: impl FnOnce(&[Centroid], f64) -> usize,
-        weight_before: impl FnOnce(usize) -> u64,
-    ) -> f64 {
         if value < self.min {
-            return 0.0;
+            return Some(0.0);
         }
         if value > self.max {
-            return 1.0;
+            return Some(1.0);
         }
         if self.min == self.max {
-            return 0.5;
+            return Some(0.5);
         }
-
-        let centroids_weight = self.centroids_weight as f64;
-        let num_centroids = self.centroids.len();
-
-        // Reserve at most one sample for each stored extremum, without passing the adjacent
-        // centroid center. Updates can place a unit-weight centroid inside the stored extrema,
-        // leaving no mass to interpolate in that tail.
-        let first = &self.centroids[0];
-        if value < first.mean {
-            let center = centroid_center(0, first.weight.get());
-            return if value == self.min {
-                0.5 / centroids_weight
-            } else {
-                interpolate(
-                    center.min(1.),
-                    center,
-                    interpolation_fraction(value, self.min, first.mean),
-                ) / centroids_weight
-            };
-        }
-
-        let last = &self.centroids[num_centroids - 1];
-        if value > last.mean {
-            let center =
-                centroid_center(self.centroids_weight - last.weight.get(), last.weight.get());
-            return if value == self.max {
-                // Round the maximum's mass in the same coordinates as the centroid centers.
-                centroid_center(self.centroids_weight - 1, 1) / centroids_weight
-            } else {
-                interpolate(
-                    center,
-                    center.max((self.centroids_weight - 1) as f64),
-                    interpolation_fraction(value, last.mean, self.max),
-                ) / centroids_weight
-            };
-        }
-
-        // The tail checks place value within the centroid means. Between means, the first
-        // mean >= value and its predecessor bracket it; at a mean, use the entire equal run.
-        let index = find_index(self.centroids, value);
-        let (lower, upper) = if self.centroids[index].mean == value {
-            let end = self.centroids.partition_point(|c| c.mean <= value);
-            (index, end - 1)
+        let total_weight = self.centroids_weight as f64;
+        let index = if value <= self.centroids[0].mean {
+            if value < self.centroids[0].mean {
+                return Some(self.mass_in_left_tail(value) / total_weight);
+            }
+            0
         } else {
-            (index - 1, index)
+            if value > self.centroids.last().unwrap().mean {
+                return Some(self.mass_in_right_tail(value) / total_weight);
+            }
+            self.centroids.partition_point(|c| c.mean < value)
         };
+        let (lower, anchors) = self.rank_anchors(value, index);
+        let weight_below = self.centroids[..lower].iter().map(|c| c.weight.get()).sum();
+        Some(Self::interpolated_mass(value, anchors, weight_below) / total_weight)
+    }
 
-        let weight_below = weight_before(lower);
-        let weight_between: u64 = self.centroids[lower..upper]
-            .iter()
-            .map(|c| c.weight.get())
-            .sum();
-        let left = &self.centroids[lower];
-        let right = &self.centroids[upper];
+    #[inline(always)]
+    fn fill_cdf_binary_search(&self, split_points: &[f64], ranks: &mut Vec<f64>) {
+        let total_weight = self.centroids_weight as f64;
+        let mut previous_lower = 0;
+        let mut weight_below = 0;
+        for &value in split_points {
+            if value < self.min {
+                ranks.push(0.0);
+                continue;
+            }
+            if value > self.max {
+                ranks.push(1.0);
+                continue;
+            }
+            let index = if value <= self.centroids[0].mean {
+                if value < self.centroids[0].mean {
+                    ranks.push(self.mass_in_left_tail(value) / total_weight);
+                    continue;
+                }
+                0
+            } else {
+                if value > self.centroids.last().unwrap().mean {
+                    ranks.push(self.mass_in_right_tail(value) / total_weight);
+                    continue;
+                }
+                self.centroids.partition_point(|c| c.mean < value)
+            };
+            let (lower, anchors) = self.rank_anchors(value, index);
+            weight_below += self.centroids[previous_lower..lower]
+                .iter()
+                .map(|c| c.weight.get())
+                .sum::<u64>();
+            previous_lower = lower;
+            ranks.push(Self::interpolated_mass(value, anchors, weight_below) / total_weight);
+        }
+    }
+
+    #[inline(always)]
+    fn fill_cdf_scan(&self, split_points: &[f64], ranks: &mut Vec<f64>) {
+        let total_weight = self.centroids_weight as f64;
+        let mut index = 0;
+        let mut weight_before_index = 0;
+        for &value in split_points {
+            let lower_bound = if value <= self.centroids[0].mean {
+                if value < self.centroids[0].mean {
+                    ranks.push(self.mass_in_left_tail(value) / total_weight);
+                    continue;
+                }
+                0
+            } else {
+                if value > self.centroids.last().unwrap().mean {
+                    ranks.push(self.mass_in_right_tail(value) / total_weight);
+                    continue;
+                }
+                while index < self.centroids.len() && self.centroids[index].mean < value {
+                    weight_before_index += self.centroids[index].weight.get();
+                    index += 1;
+                }
+                index
+            };
+            let (lower, anchors) = self.rank_anchors(value, lower_bound);
+            // Between means, the lower anchor precedes index. Its weight belongs to the
+            // interpolation interval rather than the prefix below that interval.
+            let weight_below = weight_before_index
+                - if lower < lower_bound {
+                    self.centroids[lower].weight.get()
+                } else {
+                    0
+                };
+            ranks.push(Self::interpolated_mass(value, anchors, weight_below) / total_weight);
+        }
+    }
+
+    #[inline]
+    fn mass_in_left_tail(&self, value: f64) -> f64 {
+        let center = centroid_center(0, self.centroids[0].weight.get());
+        if value == self.min {
+            0.5
+        } else {
+            interpolate(
+                center.min(1.),
+                center,
+                interpolation_fraction(value, self.min, self.centroids[0].mean),
+            )
+        }
+    }
+
+    #[inline]
+    fn mass_in_right_tail(&self, value: f64) -> f64 {
+        let last = self.centroids.last().unwrap();
+        let center = centroid_center(self.centroids_weight - last.weight.get(), last.weight.get());
+        if value == self.max {
+            // Use the same rounded mass as the adjacent centroid center.
+            centroid_center(self.centroids_weight - 1, 1)
+        } else {
+            interpolate(
+                center,
+                center.max((self.centroids_weight - 1) as f64),
+                interpolation_fraction(value, last.mean, self.max),
+            )
+        }
+    }
+
+    #[inline(always)]
+    fn rank_anchors(&self, value: f64, index: usize) -> (usize, &[Centroid]) {
+        // An exact mean spans its entire equal run; otherwise adjacent centroids bracket it.
+        if self.centroids[index].mean == value {
+            let end = self.centroids.partition_point(|c| c.mean <= value);
+            (index, &self.centroids[index..end])
+        } else {
+            (index - 1, &self.centroids[index - 1..=index])
+        }
+    }
+
+    #[inline(always)]
+    fn interpolated_mass(value: f64, anchors: &[Centroid], weight_below: u64) -> f64 {
+        let left = &anchors[0];
+        let Some((right, middle)) = anchors[1..].split_last() else {
+            return centroid_center(weight_below, left.weight.get());
+        };
+        let weight_between = left.weight.get() + middle.iter().map(|c| c.weight.get()).sum::<u64>();
         let fraction = if left.mean < right.mean {
             interpolation_fraction(value, left.mean, right.mean)
         } else {
@@ -1786,9 +1854,10 @@ impl TDigestView<'_> {
             centroid_center(weight_below, left.weight.get()),
             centroid_center(weight_below + weight_between, right.weight.get()),
             fraction,
-        ) / centroids_weight
+        )
     }
 
+    #[inline]
     fn quantile(&self, rank: f64) -> Option<f64> {
         debug_assert!((0.0..=1.0).contains(&rank), "rank must be in [0.0, 1.0]");
 
@@ -1984,10 +2053,6 @@ fn centroid_cmp(a: &Centroid, b: &Centroid) -> Ordering {
         Some(order) => order,
         None => unreachable!("NaN values should never be present in centroids"),
     }
-}
-
-fn centroid_lower_bound_index(centroids: &[Centroid], value: f64) -> usize {
-    centroids.partition_point(|centroid| centroid.mean < value)
 }
 
 fn centroids_are_sorted(centroids: &[Centroid]) -> bool {
