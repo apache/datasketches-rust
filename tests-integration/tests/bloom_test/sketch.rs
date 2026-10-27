@@ -71,7 +71,7 @@ fn test_insert_matches_membership_and_insert() {
 
 #[test]
 fn test_collisions_and_repeated_inserts_do_not_overcount_bits() {
-    // Cover the single-hash path and force within-item collisions: 65 hashes cannot
+    // Exercise one hash and force within-item collisions: 65 hashes cannot
     // select distinct positions in a 64-bit filter.
     for num_hashes in [1, 65] {
         let mut inserted = BloomFilterBuilder::with_size(64, num_hashes)
