@@ -107,7 +107,7 @@ impl XorFingerprints {
 ///
 /// Ordinary values passed to [`contains`](Self::contains) are reduced to 64-bit hashes with
 /// xxHash64 and seed `0`. Use [`contains_hash`](Self::contains_hash) only with the same hashes that
-/// were supplied to [`XorFilter::from_hashes`] or [`XorFilterBuilder::update_hash`].
+/// were supplied to [`XorFilter::from_hashes`] or [`XorFilterBuilder::build_from_hashes`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct XorFilter {
     pub(crate) segment_length: usize,
@@ -142,9 +142,7 @@ impl XorFilter {
         hashes: impl IntoIterator<Item = u64>,
         filter_type: XorFilterType,
     ) -> Result<Self, Error> {
-        let mut builder = XorFilterBuilder::new(filter_type);
-        builder.extend_hashes(hashes);
-        builder.build()
+        XorFilterBuilder::new(filter_type).build_from_hashes(hashes)
     }
 
     /// Builds a filter from distinct precomputed hashes without copying or sorting them.
@@ -161,24 +159,7 @@ impl XorFilter {
     /// Changing the seed does not guarantee success. Use [`from_hashes`](Self::from_hashes)
     /// to remove duplicates.
     pub fn from_distinct_hashes(hashes: &[u64], filter_type: XorFilterType) -> Result<Self, Error> {
-        Self::from_distinct_hashes_with_seed(hashes, filter_type, DEFAULT_CONSTRUCTION_SEED)
-    }
-
-    /// Builds a filter from distinct hashes with an explicit base construction seed.
-    ///
-    /// This has the same input contract as [`from_distinct_hashes`](Self::from_distinct_hashes).
-    /// A different seed can be used to retry a failed construction without copying or sorting.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error under the same conditions as
-    /// [`from_distinct_hashes`](Self::from_distinct_hashes).
-    pub fn from_distinct_hashes_with_seed(
-        hashes: &[u64],
-        filter_type: XorFilterType,
-        seed: u64,
-    ) -> Result<Self, Error> {
-        Self::build(hashes, filter_type, seed, MAX_CONSTRUCTION_ATTEMPTS)
+        XorFilterBuilder::new(filter_type).build_from_distinct_hashes(hashes)
     }
 
     /// Imports raw parts without requiring a DataSketches serialization header.
@@ -431,16 +412,15 @@ impl XorFilter {
     }
 }
 
-/// Builder for accumulating values and creating an immutable [`XorFilter`].
+/// Builder for configuring and creating an immutable [`XorFilter`].
 ///
-/// Values are reduced to 64-bit hashes as they are added, so the builder retains one `u64` per
-/// update regardless of the original value size. Duplicate hashes are removed by
-/// [`build`](Self::build).
+/// Stores only the fingerprint type and construction seed. Each build consumes the configuration
+/// and takes the complete input set. Ordinary values and precomputed hashes are deduplicated in
+/// temporary storage; already-distinct hashes can be borrowed without copying or sorting.
 #[derive(Debug, Clone)]
 pub struct XorFilterBuilder {
     filter_type: XorFilterType,
     seed: u64,
-    hashes: Vec<u64>,
 }
 
 impl XorFilterBuilder {
@@ -451,7 +431,6 @@ impl XorFilterBuilder {
         Self {
             filter_type,
             seed: DEFAULT_CONSTRUCTION_SEED,
-            hashes: Vec::new(),
         }
     }
 
@@ -464,47 +443,38 @@ impl XorFilterBuilder {
         self
     }
 
-    /// Updates the builder with a value hashed by xxHash64 with seed `0`.
-    pub fn update<T: Hash>(&mut self, item: T) {
-        self.hashes.push(hash_item(&item));
+    /// Builds a filter from values hashed by xxHash64 with seed `0`.
+    ///
+    /// Duplicate hashes are removed before construction. The input is consumed as an iterator;
+    /// pass borrowed values to retain them for a later build, including after an error.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error under the same conditions as
+    /// [`build_from_hashes`](Self::build_from_hashes).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::xor::XorFilterBuilder;
+    /// use datasketches::xor::XorFilterType;
+    ///
+    /// let filter = XorFilterBuilder::new(XorFilterType::Xor8)
+    ///     .seed(42)
+    ///     .build(["apple", "banana"])?;
+    /// assert!(filter.contains("apple"));
+    /// # Ok::<(), datasketches::error::Error>(())
+    /// ```
+    pub fn build<T: Hash>(self, items: impl IntoIterator<Item = T>) -> Result<XorFilter, Error> {
+        self.build_from_hashes(items.into_iter().map(|item| hash_item(&item)))
     }
 
-    /// Updates the builder with a precomputed 64-bit hash.
+    /// Builds a filter from precomputed 64-bit hashes, removing duplicates.
     ///
     /// This method bypasses xxHash64. Query the resulting filter with
-    /// [`XorFilter::contains_hash`] using hashes from the same source.
-    pub fn update_hash(&mut self, hash: u64) {
-        self.hashes.push(hash);
-    }
-
-    /// Extends the builder with values hashed by xxHash64 with seed `0`.
-    pub fn extend<T: Hash>(&mut self, items: impl IntoIterator<Item = T>) {
-        self.hashes
-            .extend(items.into_iter().map(|item| hash_item(&item)));
-    }
-
-    /// Extends the builder with precomputed 64-bit hashes.
-    pub fn extend_hashes(&mut self, hashes: impl IntoIterator<Item = u64>) {
-        self.hashes.extend(hashes);
-    }
-
-    /// Returns the number of retained hashes, including duplicates added since the last build.
-    ///
-    /// Each build removes duplicates in place, even when construction fails.
-    pub fn num_items(&self) -> usize {
-        self.hashes.len()
-    }
-
-    /// Returns `true` if no updates have been accumulated.
-    pub fn is_empty(&self) -> bool {
-        self.hashes.is_empty()
-    }
-
-    /// Builds an immutable filter after removing duplicate hashes.
-    ///
-    /// Retains the deduplicated input on success and failure. The builder can accept more values
-    /// or be moved through [`seed`](Self::seed) to retry with a different base seed; success is not
-    /// guaranteed. Drop the builder when its retained hashes are no longer needed.
+    /// [`XorFilter::contains_hash`] using hashes from the same source. Temporary input storage is
+    /// released on success or failure. Pass `hashes.iter().copied()` to retain the original input
+    /// for a later build, including after an error.
     ///
     /// # Errors
     ///
@@ -512,15 +482,36 @@ impl XorFilterBuilder {
     /// or a scratch allocation would exceed `isize::MAX` bytes. Returns
     /// [`ErrorKind::ConstructionFailed`] if no peelable construction is found within 100 attempts.
     /// A successful build may still exceed the limits of [`XorFilter::serialize`].
-    pub fn build(&mut self) -> Result<XorFilter, Error> {
-        self.build_with_attempts(MAX_CONSTRUCTION_ATTEMPTS)
+    pub fn build_from_hashes(
+        self,
+        hashes: impl IntoIterator<Item = u64>,
+    ) -> Result<XorFilter, Error> {
+        let mut hashes: Vec<_> = hashes.into_iter().collect();
+        hashes.sort_unstable();
+        hashes.dedup();
+        self.build_from_distinct_hashes(&hashes)
+    }
+
+    /// Builds a filter from distinct precomputed hashes without copying or sorting them.
+    ///
+    /// Borrows the input without modifying it, so the same slice can be retried with another
+    /// construction seed after an error. Changing the seed does not guarantee success.
+    /// Input order does not affect the result.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error under the size limits described by
+    /// [`build_from_hashes`](Self::build_from_hashes), or [`ErrorKind::ConstructionFailed`] if
+    /// no peelable construction is found within 100 attempts. Duplicate hashes prevent peeling
+    /// but are not checked separately; use [`build_from_hashes`](Self::build_from_hashes) to
+    /// remove duplicates.
+    pub fn build_from_distinct_hashes(self, hashes: &[u64]) -> Result<XorFilter, Error> {
+        self.build_with_attempts(hashes, MAX_CONSTRUCTION_ATTEMPTS)
     }
 
     // A private attempt bound makes exhaustion and recovery deterministic in unit tests.
-    fn build_with_attempts(&mut self, max_attempts: usize) -> Result<XorFilter, Error> {
-        self.hashes.sort_unstable();
-        self.hashes.dedup();
-        XorFilter::build(&self.hashes, self.filter_type, self.seed, max_attempts)
+    fn build_with_attempts(self, hashes: &[u64], max_attempts: usize) -> Result<XorFilter, Error> {
+        XorFilter::build(hashes, self.filter_type, self.seed, max_attempts)
     }
 }
 
@@ -728,7 +719,7 @@ mod tests {
     }
 
     #[test]
-    fn builder_retains_input_after_exhaustion_and_can_retry() {
+    fn borrowed_input_survives_exhaustion_and_can_retry() {
         // This synthetic set fails its first peeling attempt with base seed 1.
         // Limiting the private engine to one attempt exercises the public build failure path
         // without relying on a rare failure across all 100 production attempts.
@@ -740,26 +731,26 @@ mod tests {
             XorFilterType::Xor16,
             XorFilterType::Xor32,
         ] {
-            let mut builder = XorFilterBuilder::new(kind).seed(1);
-            builder.extend_hashes(keys.iter().copied().chain(keys.iter().copied()));
-            let error = builder.build_with_attempts(1).unwrap_err();
+            let original = keys.clone();
+            let error = XorFilterBuilder::new(kind)
+                .seed(1)
+                .build_with_attempts(&keys, 1)
+                .unwrap_err();
             assert_eq!(error.kind(), ErrorKind::ConstructionFailed);
-            assert_eq!(builder.num_items(), keys.len());
-            assert!(!builder.is_empty());
+            assert_eq!(keys, original);
 
-            builder = builder.seed(1_u64.wrapping_add(SPLITMIX_GAMMA));
-            let filter = builder.build().unwrap();
+            let builder = XorFilterBuilder::new(kind).seed(1_u64.wrapping_add(SPLITMIX_GAMMA));
+            let filter = builder.clone().build_from_distinct_hashes(&keys).unwrap();
             assert_eq!(filter.num_items(), Some(keys.len()));
             for &key in &keys {
                 assert!(filter.contains_hash(key));
             }
-            assert_eq!(builder.build().unwrap(), filter);
-            builder.update_hash(42);
-            let extended = builder.build().unwrap();
-            assert!(extended.contains_hash(42));
-            for &key in &keys {
-                assert!(extended.contains_hash(key));
-            }
+            assert_eq!(
+                builder
+                    .build_from_hashes(keys.iter().copied().chain(keys.iter().copied()))
+                    .unwrap(),
+                filter,
+            );
         }
     }
 }

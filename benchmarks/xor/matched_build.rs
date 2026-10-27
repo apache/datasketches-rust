@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use datasketches::xor::XorFilter;
+use datasketches::xor::XorFilterBuilder;
 use datasketches::xor::XorFilterType;
 use divan::Bencher;
 use divan::black_box;
@@ -27,7 +27,10 @@ use crate::xor::hashes_with_offset;
 // equal winning seeds therefore imply equal attempt counts. The offset 917504
 // case requires two attempts, while the other listed cases require one.
 fn verify_seed(keys: &[u64], kind: XorFilterType) {
-    let filter = XorFilter::from_distinct_hashes_with_seed(keys, kind, 1).unwrap();
+    let filter = XorFilterBuilder::new(kind)
+        .seed(1)
+        .build_from_distinct_hashes(keys)
+        .unwrap();
     assert_eq!(filter.seed(), xorf::Xor8::from(keys).seed);
 }
 
@@ -40,7 +43,10 @@ fn datasketches_8(bencher: Bencher, case: (usize, u64)) {
         .counter(ItemsCount::new(cardinality))
         .bench_local(|| {
             black_box(
-                XorFilter::from_distinct_hashes_with_seed(&keys, XorFilterType::Xor8, 1).unwrap(),
+                XorFilterBuilder::new(XorFilterType::Xor8)
+                    .seed(1)
+                    .build_from_distinct_hashes(&keys)
+                    .unwrap(),
             )
         });
 }
@@ -64,7 +70,10 @@ fn datasketches_16(bencher: Bencher, case: (usize, u64)) {
         .counter(ItemsCount::new(cardinality))
         .bench_local(|| {
             black_box(
-                XorFilter::from_distinct_hashes_with_seed(&keys, XorFilterType::Xor16, 1).unwrap(),
+                XorFilterBuilder::new(XorFilterType::Xor16)
+                    .seed(1)
+                    .build_from_distinct_hashes(&keys)
+                    .unwrap(),
             )
         });
 }
@@ -88,7 +97,10 @@ fn datasketches_32(bencher: Bencher, case: (usize, u64)) {
         .counter(ItemsCount::new(cardinality))
         .bench_local(|| {
             black_box(
-                XorFilter::from_distinct_hashes_with_seed(&keys, XorFilterType::Xor32, 1).unwrap(),
+                XorFilterBuilder::new(XorFilterType::Xor32)
+                    .seed(1)
+                    .build_from_distinct_hashes(&keys)
+                    .unwrap(),
             )
         });
 }

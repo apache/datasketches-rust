@@ -21,11 +21,10 @@ use datasketches::xor::XorFilterType;
 
 #[test]
 fn values_have_no_false_negatives() {
-    let mut builder = XorFilterBuilder::new(XorFilterType::Xor8).seed(8123);
-    for value in 0..10_000_u64 {
-        builder.update(value);
-    }
-    let filter = builder.build().unwrap();
+    let filter = XorFilterBuilder::new(XorFilterType::Xor8)
+        .seed(8123)
+        .build(0..10_000_u64)
+        .unwrap();
 
     for value in 0..10_000_u64 {
         assert!(filter.contains(&value), "false negative for {value}");
@@ -51,25 +50,22 @@ fn precomputed_hashes_have_no_false_negatives() {
 }
 
 #[test]
-fn builder_accepts_mixed_value_types() {
-    let mut builder = XorFilterBuilder::new(XorFilterType::Xor16);
-    builder.update("datasketches");
-    builder.update(42_u64);
-    builder.update([1_u8, 2, 3, 4]);
-    let filter = builder.build().unwrap();
-
-    assert!(filter.contains("datasketches"));
-    assert!(filter.contains(&42_u64));
-    assert!(filter.contains(&[1_u8, 2, 3, 4]));
+fn borrowed_values_can_be_reused() {
+    let values = vec!["datasketches".to_string(), "xor filter".to_string()];
+    let builder = XorFilterBuilder::new(XorFilterType::Xor16).seed(42);
+    let first = builder.clone().build(&values).unwrap();
+    let second = builder.build(&values).unwrap();
+    assert_eq!(first, second);
+    for value in &values {
+        assert!(first.contains(value));
+    }
 }
 
 #[test]
 fn duplicates_are_removed_before_construction() {
-    let mut builder = XorFilterBuilder::new(XorFilterType::Xor8);
-    builder.extend_hashes([7, 7, 11, 11, 11]);
-    assert_eq!(builder.num_items(), 5);
-
-    let filter = builder.build().unwrap();
+    let filter = XorFilterBuilder::new(XorFilterType::Xor8)
+        .build_from_hashes([7, 7, 11, 11, 11])
+        .unwrap();
     assert_eq!(filter.num_items(), Some(2));
     assert!(filter.contains_hash(7));
     assert!(filter.contains_hash(11));
@@ -80,14 +76,17 @@ fn construction_is_independent_of_input_order() {
     let ascending = XorFilterBuilder::new(XorFilterType::Xor8).seed(424_242);
     let descending = ascending.clone();
 
-    let mut ascending = ascending;
-    ascending.extend_hashes(0..50_000_u64);
-    let mut descending = descending;
-    descending.extend_hashes((0..50_000_u64).rev());
-
     assert_eq!(
-        ascending.build().unwrap().serialize().unwrap(),
-        descending.build().unwrap().serialize().unwrap()
+        ascending
+            .build_from_hashes(0..50_000_u64)
+            .unwrap()
+            .serialize()
+            .unwrap(),
+        descending
+            .build_from_hashes((0..50_000_u64).rev())
+            .unwrap()
+            .serialize()
+            .unwrap()
     );
 }
 
@@ -108,9 +107,9 @@ fn metadata_describes_the_compact_payload() {
 
 #[test]
 fn empty_filter_is_well_formed() {
-    let mut builder = XorFilterBuilder::new(XorFilterType::Xor16);
-    assert!(builder.is_empty());
-    let filter = builder.build().unwrap();
+    let filter = XorFilterBuilder::new(XorFilterType::Xor16)
+        .build_from_hashes([])
+        .unwrap();
 
     assert_eq!(filter.is_empty(), Some(true));
     assert_eq!(filter.num_items(), Some(0));

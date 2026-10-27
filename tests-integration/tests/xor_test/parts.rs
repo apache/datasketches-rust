@@ -17,6 +17,7 @@
 
 use datasketches::error::ErrorKind;
 use datasketches::xor::XorFilter;
+use datasketches::xor::XorFilterBuilder;
 use datasketches::xor::XorFilterType;
 use datasketches::xor::XorFingerprints;
 use xorf::Filter;
@@ -164,7 +165,9 @@ fn construction_recovers_after_an_unpeelable_first_attempt() {
             z ^ (z >> 31)
         })
         .collect();
-    let first_seed = XorFilter::from_distinct_hashes_with_seed(&[], XorFilterType::Xor8, 1)
+    let first_seed = XorFilterBuilder::new(XorFilterType::Xor8)
+        .seed(1)
+        .build_from_distinct_hashes(&[])
         .unwrap()
         .seed();
     let reference = xorf::Xor8::from(&keys);
@@ -174,7 +177,10 @@ fn construction_recovers_after_an_unpeelable_first_attempt() {
         XorFilterType::Xor16,
         XorFilterType::Xor32,
     ] {
-        let filter = XorFilter::from_distinct_hashes_with_seed(&keys, kind, 1).unwrap();
+        let filter = XorFilterBuilder::new(kind)
+            .seed(1)
+            .build_from_distinct_hashes(&keys)
+            .unwrap();
         assert_eq!(filter.seed(), reference.seed);
         for &key in &keys {
             assert!(filter.contains_hash(key));
@@ -183,7 +189,10 @@ fn construction_recovers_after_an_unpeelable_first_attempt() {
         reversed.reverse();
         assert_eq!(
             filter,
-            XorFilter::from_distinct_hashes_with_seed(&reversed, kind, 1).unwrap()
+            XorFilterBuilder::new(kind)
+                .seed(1)
+                .build_from_distinct_hashes(&reversed)
+                .unwrap()
         );
     }
 }

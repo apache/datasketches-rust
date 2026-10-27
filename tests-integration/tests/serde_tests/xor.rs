@@ -50,9 +50,10 @@ fn java_images_round_trip_byte_for_byte() {
         (XorFilterType::Xor16, JAVA_XOR16_IMAGE),
     ] {
         let expected = decode_hex(image);
-        let mut builder = XorFilterBuilder::new(filter_type).seed(42);
-        builder.extend(values);
-        let built = builder.build().unwrap();
+        let built = XorFilterBuilder::new(filter_type)
+            .seed(42)
+            .build(values)
+            .unwrap();
 
         let restored = XorFilter::deserialize(&expected).unwrap();
         assert_eq!(restored.serialize().unwrap(), expected);
@@ -184,13 +185,16 @@ fn java_utf8_and_raw_byte_inputs_match() {
         ),
     ];
     for (kind, image) in images {
-        let mut builder = XorFilterBuilder::new(kind).seed(42);
-        builder.update(raw_bytes::from_str("hello"));
-        builder.update(raw_bytes::from_str("数据🔎"));
-        builder.update(raw_bytes::from_slice(&[]));
-        builder.update(raw_bytes::from_slice(&[0, 1, 255]));
+        let built = XorFilterBuilder::new(kind)
+            .seed(42)
+            .build([
+                raw_bytes::from_slice(b"hello"),
+                raw_bytes::from_slice("数据🔎".as_bytes()),
+                raw_bytes::from_slice(&[]),
+                raw_bytes::from_slice(&[0, 1, 255]),
+            ])
+            .unwrap();
         let expected = decode_hex(image);
-        let built = builder.build().unwrap();
         let restored = XorFilter::deserialize(&expected).unwrap();
         assert_eq!(restored.serialize().unwrap(), expected);
         for bytes in [b"hello".as_slice(), "数据🔎".as_bytes(), &[], &[0, 1, 255]] {

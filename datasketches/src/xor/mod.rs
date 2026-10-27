@@ -23,8 +23,8 @@
 //! in the number of distinct hashes.
 //!
 //! The [`XorFilterBuilder`] hashes ordinary Rust values with xxHash64. Call
-//! [`XorFilterBuilder::update_hash`] or [`XorFilter::from_hashes`] when hashes have already been
-//! computed and must not be hashed again.
+//! [`XorFilterBuilder::build_from_hashes`] or [`XorFilter::from_hashes`] when hashes have already
+//! been computed and must not be hashed again.
 //!
 //! # Cross-language hashing
 //!
@@ -57,10 +57,9 @@
 //! use datasketches::xor::XorFilterBuilder;
 //! use datasketches::xor::XorFilterType;
 //!
-//! let mut builder = XorFilterBuilder::new(XorFilterType::Xor8);
-//! builder.update("apple");
-//! builder.update("banana");
-//! let filter = builder.build().unwrap();
+//! let filter = XorFilterBuilder::new(XorFilterType::Xor8)
+//!     .build(["apple", "banana"])
+//!     .unwrap();
 //!
 //! assert!(filter.contains(&"apple"));
 //! ```
