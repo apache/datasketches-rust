@@ -50,8 +50,11 @@ fn assert_equivalent(values: &[f64], limit: u32, alpha: f64, seed: u64) {
             partials[i % shards].update(value).unwrap();
         }
         let mut linear = UddSketch::new(limit, alpha).unwrap();
+        let mut serialized = UddSketch::new(limit, alpha).unwrap();
         for partial in partials.iter().rev() {
             linear.merge(partial).unwrap();
+            serialized.merge_serialized(&partial.serialize()).unwrap();
+            assert_eq!(serialized.serialize(), linear.serialize());
         }
         assert_eq!(linear.serialize(), expected.serialize());
         while partials.len() > 1 {
@@ -59,7 +62,7 @@ fn assert_equivalent(values: &[f64], limit: u32, alpha: f64, seed: u64) {
             shuffle(&mut partials, tree_seed);
             let right = partials.pop().unwrap();
             let left = partials.last_mut().unwrap();
-            left.merge(&right).unwrap();
+            left.merge_serialized(&right.serialize()).unwrap();
             *left = UddSketch::deserialize(&left.serialize()).unwrap();
         }
         assert_eq!(partials[0].serialize(), expected.serialize());

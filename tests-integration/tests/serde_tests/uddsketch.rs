@@ -18,6 +18,113 @@
 use datasketches::error::ErrorKind;
 use datasketches::uddsketch::UddSketch;
 
+fn assert_serialized_merge(target: &UddSketch, bytes: &[u8]) {
+    let before = target.serialize();
+    let mut expected = target.clone();
+    let reference = UddSketch::deserialize(bytes).and_then(|other| expected.merge(&other));
+    let mut actual = target.clone();
+    let result = actual.merge_serialized(bytes);
+    if result.is_err() {
+        assert_eq!(actual.serialize(), before);
+    }
+    assert_eq!(
+        result.map_err(|e| e.kind()),
+        reference.map_err(|e| e.kind())
+    );
+    assert_eq!(actual.serialize(), expected.serialize());
+    assert_eq!(actual.relative_error(), expected.relative_error());
+    assert_eq!(
+        actual.quantiles(&[0.0, 0.01, 0.5, 0.99, 1.0]).unwrap(),
+        expected.quantiles(&[0.0, 0.01, 0.5, 0.99, 1.0]).unwrap()
+    );
+}
+
+#[test]
+fn serialized_merge_intervals_and_levels() {
+    let values = [
+        -f64::MAX,
+        -2.0,
+        -1.009,
+        -1.001,
+        -f64::from_bits(5),
+        -f64::from_bits(1),
+        -0.0,
+        0.0,
+        f64::from_bits(1),
+        f64::from_bits(5),
+        1.001,
+        1.009,
+        2.0,
+        f64::MAX,
+    ];
+    for limit in [3, 16, 512] {
+        for accuracy in [1e-9, 0.01, 0.9] {
+            let mut target = UddSketch::new(limit, accuracy).unwrap();
+            for value in values {
+                target.update(value).unwrap();
+            }
+            assert_serialized_merge(&target, &target.serialize());
+            let mut sources = vec![UddSketch::new(limit, accuracy).unwrap()];
+            for value in values {
+                for probe in [value, value.next_up(), value.next_down()] {
+                    if probe.is_finite() {
+                        let mut source = UddSketch::new(limit, accuracy).unwrap();
+                        source.update_weighted(probe, 2).unwrap();
+                        sources.push(source);
+                    }
+                }
+            }
+            let mut interior = UddSketch::new(limit, accuracy).unwrap();
+            for value in [-1.005, -0.0, 1.005] {
+                interior.update(value).unwrap();
+            }
+            sources.push(interior);
+            for source in sources {
+                assert_serialized_merge(&target, &source.serialize());
+                assert_serialized_merge(&source, &target.serialize());
+            }
+        }
+    }
+}
+
+#[test]
+fn serialized_merge_validates_entire_image_atomically() {
+    let mut target = UddSketch::default();
+    for value in [-2.0, -1.009, -1.001, 0.0, 1.001, 1.009, 2.0] {
+        target.update(value).unwrap();
+    }
+    let bytes = target.serialize();
+    let mut saturated = UddSketch::default();
+    saturated.update_weighted(1.005, u64::MAX - 1).unwrap();
+    let incompatible = UddSketch::new(3, 0.1).unwrap();
+    let empty = UddSketch::default();
+    for receiver in [&target, &saturated, &incompatible, &empty] {
+        assert_serialized_merge(receiver, &bytes);
+        for len in 0..bytes.len() {
+            assert_serialized_merge(receiver, &bytes[..len]);
+        }
+        let mut trailing = bytes.clone();
+        trailing.push(0);
+        assert_serialized_merge(receiver, &trailing);
+        // Corrupt every field, including buckets following a valid, mergeable prefix.
+        for offset in 0..bytes.len() {
+            for bit in 0..8 {
+                let mut changed = bytes.clone();
+                changed[offset] ^= 1 << bit;
+                assert_serialized_merge(receiver, &changed);
+            }
+        }
+    }
+    // A false declared total must not allow a bucket addition to overflow before validation.
+    let mut image = saturated.serialize();
+    image[20..28].copy_from_slice(&1u64.to_le_bytes());
+    assert_serialized_merge(&saturated, &image);
+    let mut full = UddSketch::default();
+    full.update_weighted(1.005, u64::MAX).unwrap();
+    assert_serialized_merge(&UddSketch::default(), &full.serialize());
+    assert_serialized_merge(&saturated, &full.serialize());
+}
+
 #[test]
 fn roundtrip_then_continue_and_merge() {
     let mut direct = UddSketch::new(16, 0.001).unwrap();
@@ -133,6 +240,17 @@ fn external_coarse_image_preserves_histogram_not_replay_history() {
 
     // Imported coarse states also support the interval fast path and checked weights.
     let image = restored.serialize();
+    assert_serialized_merge(&restored, &image);
+    assert_serialized_merge(&other, &image);
+    let mut interior = image.clone();
+    interior[48..56].copy_from_slice(&1.5f64.to_le_bytes());
+    interior[56..64].copy_from_slice(&3.0f64.to_le_bytes());
+    assert_serialized_merge(&restored, &interior);
+    // A coarse receiver's interval cannot prove membership in a finer input bucket.
+    let mut wrong_child = other.serialize();
+    let key = i64::from_le_bytes(wrong_child[32..40].try_into().unwrap());
+    wrong_child[32..40].copy_from_slice(&(key + 1).to_le_bytes());
+    assert_serialized_merge(&restored, &wrong_child);
     for value in [
         0.0,
         -1.0,

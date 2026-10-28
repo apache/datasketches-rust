@@ -37,3 +37,29 @@ fn partials(bencher: Bencher, shards: usize) {
         black_box(merged)
     });
 }
+
+#[divan::bench(consts = [false, true], args = [8, 64, 16_384])]
+fn serialized_partials<const DIRECT: bool>(bencher: Bencher, rows: usize) {
+    let partials = (0..64)
+        .map(|group| {
+            let mut sketch = UddSketch::default();
+            for row in 0..rows {
+                sketch.update(row as f64 + group as f64 / 64.0).unwrap();
+            }
+            sketch.serialize()
+        })
+        .collect::<Vec<_>>();
+    bencher.bench_local(|| {
+        let mut merged = UddSketch::default();
+        for bytes in black_box(&partials) {
+            if DIRECT {
+                merged.merge_serialized(bytes).unwrap();
+            } else {
+                merged
+                    .merge(&UddSketch::deserialize(bytes).unwrap())
+                    .unwrap();
+            }
+        }
+        black_box(merged)
+    });
+}

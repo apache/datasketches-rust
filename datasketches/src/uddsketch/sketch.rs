@@ -202,6 +202,77 @@ impl UddSketch {
         Ok(())
     }
 
+    /// Validates and merges a Rust-specific version 1 image.
+    ///
+    /// Produces the same state as [`Self::deserialize`] followed by [`Self::merge`].
+    /// Already validated bucket intervals can establish extrema membership in the input image.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidData` for any image rejected by [`Self::deserialize`]. After validating
+    /// the image, returns `InvalidArgument` for incompatible parameters or total weight overflow.
+    /// Every error leaves the receiver unchanged.
+    pub fn merge_serialized(&mut self, bytes: &[u8]) -> Result<(), Error> {
+        let (other, payload) = Self::deserialize_header(bytes)?;
+        let count = self.count.checked_add(other.count);
+        if self.max_buckets != other.max_buckets
+            || self.initial_accuracy.to_bits() != other.initial_accuracy.to_bits()
+            || count.is_none()
+        {
+            return self.merge(&other.deserialize_body(payload)?);
+        }
+        if self.is_empty() {
+            *self = other.deserialize_body(payload)?;
+            return Ok(());
+        }
+        if payload.is_empty() {
+            return Ok(());
+        }
+        if self.level != other.level {
+            return self.merge(&other.deserialize_body(payload)?);
+        }
+
+        let mut merged = Vec::with_capacity(self.buckets.len() + payload.len() / 32);
+        let mut left = self.buckets.as_slice();
+        let mut previous = None;
+        let mut input_count = 0u64;
+        for chunk in payload.chunks_exact(32) {
+            let mut bucket = Bucket::read(chunk);
+            bucket.validate_after(previous)?;
+            // Bound every intermediate sum before combining it with receiver counts. The
+            // declared total may be corrupt even when it fits alongside the receiver's total.
+            input_count = input_count
+                .checked_add(bucket.count)
+                .filter(|&count| count <= other.count)
+                .ok_or_else(invalid_image)?;
+            previous = Some(bucket);
+            while let Some((&first, rest)) = left.split_first() {
+                if first.key >= bucket.key {
+                    break;
+                }
+                merged.push(first);
+                left = rest;
+            }
+            let known = left.first().filter(|first| first.key == bucket.key);
+            self.validate_membership(&bucket, known)?;
+            if let Some(&first) = known {
+                bucket.merge(first);
+                left = &left[1..];
+            }
+            merged.push(bucket);
+        }
+        if input_count != other.count {
+            return Err(invalid_image());
+        }
+        merged.extend_from_slice(left);
+        // The receiver, including its compaction level, remains untouched until validation
+        // has covered every input bucket and reconciled the complete input weight.
+        self.buckets = merged;
+        self.count = count.unwrap();
+        self.enforce_budget();
+        Ok(())
+    }
+
     /// Returns the number of inserted values, including weights.
     pub fn total_weight(&self) -> u64 {
         self.count
@@ -371,7 +442,12 @@ impl UddSketch {
     /// Returns `InvalidData` for unsupported versions, truncation, trailing bytes, invalid
     /// parameters, invalid bucket ordering or extrema, and inconsistent or overflowing counts.
     pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
-        let bad = || Error::deserial("invalid UDDSketch image");
+        let (sketch, payload) = Self::deserialize_header(bytes)?;
+        sketch.deserialize_body(payload)
+    }
+
+    fn deserialize_header(bytes: &[u8]) -> Result<(Self, &[u8]), Error> {
+        let bad = invalid_image;
         if bytes.len() < 32 || &bytes[..4] != b"UDD1" {
             return Err(bad());
         }
@@ -391,46 +467,41 @@ impl UddSketch {
         {
             return Err(bad());
         }
-        // Validate the complete payload length before allocating from an untrusted count.
-        sketch.buckets = Vec::with_capacity(len);
+        Ok((sketch, &bytes[32..]))
+    }
+
+    fn deserialize_body(mut self, payload: &[u8]) -> Result<Self, Error> {
+        // The header validates the complete payload length before allocating.
+        self.buckets = Vec::with_capacity(payload.len() / 32);
         let mut count = 0u64;
-        for chunk in input.remaining().chunks_exact(32) {
-            let b = Bucket {
-                key: i64::from_le_bytes(chunk[..8].try_into().unwrap()),
-                count: u64::from_le_bytes(chunk[8..16].try_into().unwrap()),
-                min: f64::from_le_bytes(chunk[16..24].try_into().unwrap()),
-                max: f64::from_le_bytes(chunk[24..].try_into().unwrap()),
-            };
-            if b.count == 0
-                || !b.min.is_finite()
-                || !b.max.is_finite()
-                || b.min > b.max
-                || (b.count == 1 && b.min != b.max)
-                || b.min.to_bits() == (-0.0f64).to_bits()
-                || b.max.to_bits() == (-0.0f64).to_bits()
-                || sketch
-                    .buckets
-                    .last()
-                    .is_some_and(|last| last.key >= b.key || last.max >= b.min)
-            {
-                return Err(bad());
-            }
-            let min_key = sketch.key(b.min);
-            let max_key = if b.min == b.max {
-                min_key
-            } else {
-                sketch.key(b.max)
-            };
-            if min_key != b.key || max_key != b.key {
-                return Err(bad());
-            }
-            count = count.checked_add(b.count).ok_or_else(bad)?;
-            sketch.buckets.push(b);
+        for chunk in payload.chunks_exact(32) {
+            let bucket = Bucket::read(chunk);
+            bucket.validate_after(self.buckets.last().copied())?;
+            self.validate_membership(&bucket, None)?;
+            count = count.checked_add(bucket.count).ok_or_else(invalid_image)?;
+            self.buckets.push(bucket);
         }
-        if count != sketch.count {
-            return Err(bad());
+        if count != self.count {
+            return Err(invalid_image());
         }
-        Ok(sketch)
+        Ok(self)
+    }
+
+    // Specialize the interval check at both callers: standalone decoding has no known
+    // interval, while serialized merging can avoid mapping either or both extrema.
+    #[inline(always)]
+    fn validate_membership(&self, bucket: &Bucket, known: Option<&Bucket>) -> Result<(), Error> {
+        // Callers supply a validated bucket with the same parameters, level, and key.
+        // Monotonicity proves membership throughout its observed interval, including endpoints.
+        let contains = |value| known.is_some_and(|b| b.min <= value && value <= b.max);
+        let min_valid = contains(bucket.min) || self.key(bucket.min) == bucket.key;
+        let max_valid =
+            bucket.min == bucket.max || contains(bucket.max) || self.key(bucket.max) == bucket.key;
+        if min_valid && max_valid {
+            Ok(())
+        } else {
+            Err(invalid_image())
+        }
     }
 
     fn key(&self, value: f64) -> i64 {
@@ -468,6 +539,31 @@ impl UddSketch {
 }
 
 impl Bucket {
+    fn read(chunk: &[u8]) -> Self {
+        Self {
+            key: i64::from_le_bytes(chunk[..8].try_into().unwrap()),
+            count: u64::from_le_bytes(chunk[8..16].try_into().unwrap()),
+            min: f64::from_le_bytes(chunk[16..24].try_into().unwrap()),
+            max: f64::from_le_bytes(chunk[24..].try_into().unwrap()),
+        }
+    }
+
+    fn validate_after(self, previous: Option<Self>) -> Result<(), Error> {
+        if self.count == 0
+            || !self.min.is_finite()
+            || !self.max.is_finite()
+            || self.min > self.max
+            || (self.count == 1 && self.min != self.max)
+            || self.min.to_bits() == (-0.0f64).to_bits()
+            || self.max.to_bits() == (-0.0f64).to_bits()
+            || previous.is_some_and(|last| last.key >= self.key || last.max >= self.min)
+        {
+            Err(invalid_image())
+        } else {
+            Ok(())
+        }
+    }
+
     fn merge(&mut self, other: Self) {
         // The public operations check total weight before mutating any bucket.
         self.count += other.count;
@@ -484,6 +580,10 @@ impl Bucket {
         let magnitude = (lo / (0.5 + 0.5 * (lo / hi))).clamp(lo, hi);
         if self.key < 0 { -magnitude } else { magnitude }
     }
+}
+
+fn invalid_image() -> Error {
+    Error::deserial("invalid UDDSketch image")
 }
 
 fn parent(key: i64, levels: u32) -> i64 {

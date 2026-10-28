@@ -6,7 +6,7 @@ All significant changes to this project will be documented in this file.
 
 ### New features
 
-* Add `UddSketch` behind the `uddsketch` feature for bounded quantile summaries of finite signed values, with weighted updates, compatible merges, a queryable final relative-value error bound, and Rust-specific serialization. With identical parameters and mapping versions, states built through updates, merges, and unmodified serialization roundtrips have the same estimates and serialized bytes regardless of input order, partitioning, or merge tree.
+* Add `UddSketch` behind the `uddsketch` feature for bounded quantile summaries of finite signed values, with weighted updates, compatible merges of sketches or serialized states, a queryable final relative-value error bound, and Rust-specific serialization. With identical parameters and mapping versions, states built through updates, merges, and unmodified serialization roundtrips have the same estimates and serialized bytes regardless of input order, partitioning, or merge tree.
 
 ### Improvements
 

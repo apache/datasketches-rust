@@ -62,14 +62,17 @@
 //! and combining counts and extrema is associative and commutative, so merging partitions reaches
 //! the same state. These arguments require identical initial parameters and exclude deletion.
 //!
-//! Serialization uses a versioned, Rust-specific format, not an Apache DataSketches TCK format
-//! or the Timescale format. No cross-language compatibility is claimed. The mapping constants
-//! and rounding rules are part of this version's bucket semantics. Deserialization validates
+//! Serialization uses a versioned, Rust-specific format. The mapping constants and rounding
+//! rules are part of this version's bucket semantics. Deserialization validates
 //! histogram structure, not provenance or minimal compaction level. Externally constructed
 //! images can represent coarser histograms and need not reproduce a direct build from original
 //! inputs; see [`UddSketch::deserialize`].
 //! Independent groups can reuse the sketch's bucket allocation with [`UddSketch::reset`] and
 //! the output buffer with [`UddSketch::serialize_into`].
+//! [`UddSketch::merge_serialized`] validates and merges an image in one pass when the levels
+//! match, using already validated intervals to establish extrema membership. It preserves the
+//! validation and result of deserializing and merging separately, and leaves the receiver
+//! unchanged on every error.
 //!
 //! # Examples
 //!
