@@ -128,7 +128,7 @@ fn distinct_construction_is_bounded_and_does_not_deduplicate() {
         XorFilterType::Xor32,
     ] {
         let error = XorFilter::from_distinct_hashes(&[1, 2, 1], kind).unwrap_err();
-        assert_eq!(error.kind(), ErrorKind::ConstructionFailed);
+        assert_eq!(error.kind(), ErrorKind::InvalidArgument);
         assert!(error.message().contains("100 attempts"));
         for keys in [vec![], vec![0], vec![u64::MAX], vec![0, u64::MAX]] {
             let f = XorFilter::from_distinct_hashes(&keys, kind).unwrap();

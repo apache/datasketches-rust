@@ -20,7 +20,6 @@ use std::hash::Hasher;
 use std::ops::BitXor;
 
 use crate::error::Error;
-use crate::error::ErrorKind;
 use crate::hash::XxHash64;
 
 const NUM_HASHES: u8 = 3;
@@ -124,10 +123,11 @@ impl XorFilter {
     ///
     /// # Errors
     ///
-    /// Returns [`ErrorKind::InvalidArgument`] if the fingerprint slot count exceeds `u32::MAX`
-    /// or a scratch allocation would exceed `isize::MAX` bytes. Returns
-    /// [`ErrorKind::ConstructionFailed`] if no peelable construction is found within 100 attempts.
-    /// A successful build may still exceed the limits of [`XorFilter::serialize`].
+    /// Returns [`InvalidArgument`](crate::error::ErrorKind::InvalidArgument) if the fingerprint
+    /// slot count exceeds `u32::MAX` or a scratch allocation would exceed `isize::MAX` bytes,
+    /// or if no peelable construction is found within 100 attempts. Valid input can also
+    /// exhaust the construction attempts. A successful build may still exceed the limits of
+    /// [`XorFilter::serialize`].
     ///
     /// # Examples
     ///
@@ -152,10 +152,10 @@ impl XorFilter {
     ///
     /// # Errors
     ///
-    /// Returns [`ErrorKind::InvalidArgument`] for the size limits described by
-    /// [`from_hashes`](Self::from_hashes), or [`ErrorKind::ConstructionFailed`] if no peelable
-    /// construction is found within 100 attempts. Duplicate hashes prevent peeling but are not
-    /// checked separately; they produce the same error as an exhausted search over valid input.
+    /// Returns [`InvalidArgument`](crate::error::ErrorKind::InvalidArgument) for the size limits
+    /// described by [`from_hashes`](Self::from_hashes), or if no peelable construction is found
+    /// within 100 attempts. Duplicate hashes prevent peeling but are not checked separately;
+    /// they produce the same error as an exhausted search over valid input.
     /// Changing the seed does not guarantee success. Use [`from_hashes`](Self::from_hashes)
     /// to remove duplicates.
     pub fn from_distinct_hashes(hashes: &[u64], filter_type: XorFilterType) -> Result<Self, Error> {
@@ -360,10 +360,9 @@ impl XorFilter {
         }
 
         if stack_size != num_items {
-            return Err(Error::new(
-                ErrorKind::ConstructionFailed,
-                format!("xor filter construction failed after {max_attempts} attempts"),
-            )
+            return Err(Error::invalid_argument(format!(
+                "xor filter construction failed after {max_attempts} attempts"
+            ))
             .with_context("num_items", num_items));
         }
 
@@ -478,10 +477,11 @@ impl XorFilterBuilder {
     ///
     /// # Errors
     ///
-    /// Returns [`ErrorKind::InvalidArgument`] if the fingerprint slot count exceeds `u32::MAX`
-    /// or a scratch allocation would exceed `isize::MAX` bytes. Returns
-    /// [`ErrorKind::ConstructionFailed`] if no peelable construction is found within 100 attempts.
-    /// A successful build may still exceed the limits of [`XorFilter::serialize`].
+    /// Returns [`InvalidArgument`](crate::error::ErrorKind::InvalidArgument) if the fingerprint
+    /// slot count exceeds `u32::MAX` or a scratch allocation would exceed `isize::MAX` bytes,
+    /// or if no peelable construction is found within 100 attempts. Valid input can also
+    /// exhaust the construction attempts. A successful build may still exceed the limits of
+    /// [`XorFilter::serialize`].
     pub fn build_from_hashes(
         self,
         hashes: impl IntoIterator<Item = u64>,
@@ -500,11 +500,11 @@ impl XorFilterBuilder {
     ///
     /// # Errors
     ///
-    /// Returns an error under the size limits described by
-    /// [`build_from_hashes`](Self::build_from_hashes), or [`ErrorKind::ConstructionFailed`] if
-    /// no peelable construction is found within 100 attempts. Duplicate hashes prevent peeling
-    /// but are not checked separately; use [`build_from_hashes`](Self::build_from_hashes) to
-    /// remove duplicates.
+    /// Returns [`InvalidArgument`](crate::error::ErrorKind::InvalidArgument) under the size limits
+    /// described by [`build_from_hashes`](Self::build_from_hashes), or if no peelable
+    /// construction is found within 100 attempts, even for valid input. Duplicate hashes
+    /// prevent peeling but are not checked separately; use
+    /// [`build_from_hashes`](Self::build_from_hashes) to remove duplicates.
     pub fn build_from_distinct_hashes(self, hashes: &[u64]) -> Result<XorFilter, Error> {
         self.build_with_attempts(hashes, MAX_CONSTRUCTION_ATTEMPTS)
     }
@@ -706,6 +706,7 @@ fn splitmix64(state: u64) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::ErrorKind;
 
     #[test]
     fn oversized_input_is_rejected_before_allocating() {
@@ -735,7 +736,7 @@ mod tests {
                 .seed(1)
                 .build_with_attempts(&keys, 1)
                 .unwrap_err();
-            assert_eq!(error.kind(), ErrorKind::ConstructionFailed);
+            assert_eq!(error.kind(), ErrorKind::InvalidArgument);
             assert_eq!(keys, original);
 
             let builder = XorFilterBuilder::new(kind).seed(1_u64.wrapping_add(SPLITMIX_GAMMA));
