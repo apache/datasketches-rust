@@ -40,6 +40,7 @@
 //! * Use `kll`, `req`, or `tdigest` for ranks and quantiles. KLL provides strong general-purpose
 //!   rank accuracy, REQ targets configurable high- or low-rank accuracy, and T-Digest emphasizes
 //!   distribution tails.
+//! * Use `ddsketch` for numeric quantiles with relative value accuracy and a fixed bucket budget.
 //! * Use `tuple` when retained Theta keys need application-defined summaries.
 //!
 //! See each module's documentation for accuracy, memory, serialization, and update examples.
@@ -73,6 +74,8 @@ pub mod bloom;
 pub mod countmin;
 #[cfg(feature = "cpc")]
 pub mod cpc;
+#[cfg(feature = "ddsketch")]
+pub mod ddsketch;
 #[cfg(feature = "frequencies")]
 pub mod frequencies;
 #[cfg(feature = "hll")]
