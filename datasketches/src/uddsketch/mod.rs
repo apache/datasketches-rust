@@ -68,6 +68,8 @@
 //! histogram structure, not provenance or minimal compaction level. Externally constructed
 //! images can represent coarser histograms and need not reproduce a direct build from original
 //! inputs; see [`UddSketch::deserialize`].
+//! Independent groups can reuse the sketch's bucket allocation with [`UddSketch::reset`] and
+//! the output buffer with [`UddSketch::serialize_into`].
 //!
 //! # Examples
 //!

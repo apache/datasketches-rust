@@ -29,6 +29,16 @@ fn serialize(bencher: Bencher) {
 }
 
 #[divan::bench]
+fn serialize_reusing_buffer(bencher: Bencher) {
+    let sketch = build(&values(100_000));
+    let mut bytes = Vec::new();
+    bencher.bench_local(|| {
+        black_box(&sketch).serialize_into(black_box(&mut bytes));
+        black_box(bytes.len())
+    });
+}
+
+#[divan::bench]
 fn deserialize(bencher: Bencher) {
     let bytes = build(&values(100_000)).serialize();
     bencher.bench_local(|| UddSketch::deserialize(black_box(&bytes)).unwrap());

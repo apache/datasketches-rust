@@ -80,6 +80,40 @@ fn empty_and_discrete_semantics() {
 }
 
 #[test]
+fn reset_starts_an_independent_stream() {
+    for limit in [3, 16, 512] {
+        let mut sketch = build(
+            &(-2000..2000).map(f64::from).collect::<Vec<_>>(),
+            limit,
+            0.001,
+        );
+        assert!(sketch.compaction_level() > 0);
+        for values in [
+            &[][..],
+            &[-f64::MAX, -0.0, f64::from_bits(1), f64::MAX],
+            &[1.0, 1.001, 1.005, 2.0],
+        ] {
+            sketch.reset();
+            let fresh = UddSketch::new(limit, 0.001).unwrap();
+            assert_eq!(sketch.serialize(), fresh.serialize());
+            assert_eq!(sketch.quantile(0.5).unwrap(), None);
+            for &value in values {
+                sketch.update(value).unwrap();
+            }
+            let expected = build(values, limit, 0.001);
+            assert_eq!(sketch.serialize(), expected.serialize());
+            assert_eq!(sketch.relative_error(), expected.relative_error());
+        }
+        sketch.reset();
+        sketch.update_weighted(1.0, u64::MAX).unwrap();
+        sketch.reset();
+        sketch.update(2.0).unwrap();
+        assert_eq!(sketch.total_weight(), 1);
+        assert_eq!(sketch.quantile(0.5).unwrap(), Some(2.0));
+    }
+}
+
+#[test]
 fn exact_weighted_rank_above_float_integer_precision() {
     let mut sketch = UddSketch::default();
     sketch.update_weighted(1.0, 1u64 << 63).unwrap();

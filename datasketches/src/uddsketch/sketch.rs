@@ -16,7 +16,6 @@
 // under the License.
 
 use super::mapping::Mapping;
-use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
 use crate::error::Error;
 
@@ -72,6 +71,14 @@ impl UddSketch {
         })
     }
 
+    /// Removes all values and restores the initial compaction level, retaining the configuration
+    /// and allocated bucket capacity.
+    pub fn reset(&mut self) {
+        self.level = 0;
+        self.count = 0;
+        self.buckets.clear();
+    }
+
     /// Inserts one finite value, treating both signed zeros as positive zero.
     ///
     /// # Errors
@@ -120,15 +127,19 @@ impl UddSketch {
                 max: value,
             };
             if position < self.buckets.len() && self.buckets[position].key == key {
-                self.buckets[position].merge(bucket);
+                // The interval lookup already established value < this bucket's minimum.
+                self.buckets[position].count += weight;
+                self.buckets[position].min = value;
             } else if position > 0 && self.buckets[position - 1].key == key {
-                self.buckets[position - 1].merge(bucket);
+                // Its predecessor is the only other candidate, with maximum < value.
+                self.buckets[position - 1].count += weight;
+                self.buckets[position - 1].max = value;
             } else {
                 self.buckets.insert(position, bucket);
+                self.enforce_budget();
             }
         }
         self.count = count;
-        self.enforce_budget();
         Ok(())
     }
 
@@ -154,31 +165,37 @@ impl UddSketch {
         if other.is_empty() {
             return Ok(());
         }
+        if self.is_empty() {
+            self.buckets.clone_from(&other.buckets);
+            self.level = other.level;
+            self.count = count;
+            return Ok(());
+        }
         let level = self.level.max(other.level);
         self.collapse_to(level);
         let mut merged: Vec<Bucket> = Vec::with_capacity(self.buckets.len() + other.buckets.len());
-        let mut left = self.buckets.iter().copied().peekable();
-        let mut right = other
-            .buckets
-            .iter()
-            .copied()
-            .map(|mut b| {
-                b.key = parent(b.key, level - other.level);
-                b
-            })
-            .peekable();
-        while left.peek().is_some() || right.peek().is_some() {
-            let bucket = match (left.peek(), right.peek()) {
-                (Some(a), Some(b)) if a.key <= b.key => left.next().unwrap(),
-                (Some(_), None) => left.next().unwrap(),
-                _ => right.next().unwrap(),
-            };
+        let mut left = self.buckets.as_slice();
+        for mut bucket in other.buckets.iter().copied() {
+            bucket.key = parent(bucket.key, level - other.level);
+            while let Some((&first, rest)) = left.split_first() {
+                if first.key > bucket.key {
+                    break;
+                }
+                left = rest;
+                if first.key == bucket.key {
+                    bucket.merge(first);
+                    break;
+                }
+                merged.push(first);
+            }
+            // Alignment can map several consecutive input buckets to the same parent.
             if let Some(last) = merged.last_mut().filter(|last| last.key == bucket.key) {
                 last.merge(bucket);
             } else {
                 merged.push(bucket);
             }
         }
+        merged.extend_from_slice(left);
         self.buckets = merged;
         self.count = count;
         self.enforce_budget();
@@ -314,20 +331,29 @@ impl UddSketch {
     /// Each 32-byte bucket contains `key: i64`, `count: u64`, `min: f64`, and `max: f64`.
     /// It has no cross-language compatibility contract.
     pub fn serialize(&self) -> Vec<u8> {
-        let mut out = SketchBytes::with_capacity(32 + 32 * self.buckets.len());
-        out.write(b"UDD1");
-        out.write_u32_le(self.max_buckets);
-        out.write_f64_le(self.initial_accuracy);
-        out.write_u32_le(self.level);
-        out.write_u64_le(self.count);
-        out.write_u32_le(self.buckets.len() as u32);
+        let mut out = Vec::new();
+        self.serialize_into(&mut out);
+        out
+    }
+
+    /// Replaces `out` with the version 1 image, reusing its allocated capacity.
+    ///
+    /// Produces the same bytes as [`Self::serialize`].
+    pub fn serialize_into(&self, out: &mut Vec<u8>) {
+        out.clear();
+        out.reserve(32 + 32 * self.buckets.len());
+        out.extend_from_slice(b"UDD1");
+        out.extend_from_slice(&self.max_buckets.to_le_bytes());
+        out.extend_from_slice(&self.initial_accuracy.to_le_bytes());
+        out.extend_from_slice(&self.level.to_le_bytes());
+        out.extend_from_slice(&self.count.to_le_bytes());
+        out.extend_from_slice(&(self.buckets.len() as u32).to_le_bytes());
         for b in &self.buckets {
-            out.write_i64_le(b.key);
-            out.write_u64_le(b.count);
-            out.write_f64_le(b.min);
-            out.write_f64_le(b.max);
+            out.extend_from_slice(&b.key.to_le_bytes());
+            out.extend_from_slice(&b.count.to_le_bytes());
+            out.extend_from_slice(&b.min.to_le_bytes());
+            out.extend_from_slice(&b.max.to_le_bytes());
         }
-        out.into_bytes()
     }
 
     /// Deserializes a Rust-specific version 1 image.
@@ -382,13 +408,20 @@ impl UddSketch {
                 || (b.count == 1 && b.min != b.max)
                 || b.min.to_bits() == (-0.0f64).to_bits()
                 || b.max.to_bits() == (-0.0f64).to_bits()
-                || sketch.key(b.min) != b.key
-                || (b.min != b.max && sketch.key(b.max) != b.key)
                 || sketch
                     .buckets
                     .last()
                     .is_some_and(|last| last.key >= b.key || last.max >= b.min)
             {
+                return Err(bad());
+            }
+            let min_key = sketch.key(b.min);
+            let max_key = if b.min == b.max {
+                min_key
+            } else {
+                sketch.key(b.max)
+            };
+            if min_key != b.key || max_key != b.key {
                 return Err(bad());
             }
             count = count.checked_add(b.count).ok_or_else(bad)?;

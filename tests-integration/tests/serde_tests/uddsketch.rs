@@ -36,6 +36,28 @@ fn roundtrip_then_continue_and_merge() {
 }
 
 #[test]
+fn serialize_into_replaces_previous_images() {
+    let mut sketch = UddSketch::default();
+    for i in -1000..1000 {
+        sketch.update(f64::from(i)).unwrap();
+    }
+    let mut bytes = vec![0xff; 32_768];
+    sketch.serialize_into(&mut bytes);
+    assert_eq!(bytes, sketch.serialize());
+    assert_eq!(UddSketch::deserialize(&bytes).unwrap().serialize(), bytes);
+    // Successively smaller groups must not retain any bytes from the previous image.
+    for values in [&[-0.0, f64::from_bits(1)][..], &[]] {
+        sketch.reset();
+        for &value in values {
+            sketch.update(value).unwrap();
+        }
+        sketch.serialize_into(&mut bytes);
+        assert_eq!(bytes, sketch.serialize());
+        assert_eq!(UddSketch::deserialize(&bytes).unwrap().serialize(), bytes);
+    }
+}
+
+#[test]
 fn rust_format_fixture() {
     // This is a local format fixture, not a cross-language TCK snapshot.
     let mut sketch = UddSketch::new(3, 0.01).unwrap();
