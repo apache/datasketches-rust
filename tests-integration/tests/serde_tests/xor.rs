@@ -19,6 +19,7 @@ use datasketches::error::ErrorKind;
 use datasketches::xor::XorFilter;
 use datasketches::xor::XorFilterBuilder;
 use datasketches::xor::XorFilterType;
+use datasketches::xor::XorFingerprints;
 
 // Generated from datasketches-java commit 1034fb33b6e013334ff870f130b9c388cae5dfa9.
 // XorFilterBuilder.create([1, 2, 3, Long.MIN_VALUE], bits, 42).toByteArray().
@@ -71,22 +72,35 @@ fn java_images_round_trip_byte_for_byte() {
 
 #[test]
 fn serialization_round_trips_standard_fingerprint_types() {
-    for filter_type in [XorFilterType::Xor8, XorFilterType::Xor16] {
-        let original = XorFilter::from_hashes(0..10_000_u64, filter_type).unwrap();
-        let bytes = original.serialize().unwrap();
-        assert_eq!(bytes.len(), original.serialized_size().unwrap());
+    for filter_type in [
+        XorFilterType::Xor8,
+        XorFilterType::Xor16,
+        XorFilterType::Xor32,
+    ] {
+        for count in [0, 1, 10_000_u64] {
+            let original = XorFilter::from_hashes(0..count, filter_type).unwrap();
+            let bytes = original.serialize().unwrap();
+            assert_eq!(bytes.len(), original.serialized_size().unwrap());
 
-        let restored = XorFilter::deserialize(&bytes).unwrap();
-        assert_eq!(restored, original);
-        for hash in 0..10_000_u64 {
-            assert!(restored.contains_hash(hash));
+            let restored = XorFilter::deserialize(&bytes).unwrap();
+            assert_eq!(restored, original);
+            for hash in 0..count {
+                assert!(restored.contains_hash(hash));
+            }
+            if count == 0 {
+                assert!(!restored.contains_hash(restored.seed().wrapping_neg()));
+            }
         }
     }
 }
 
 #[test]
 fn every_truncated_image_is_rejected() {
-    for filter_type in [XorFilterType::Xor8, XorFilterType::Xor16] {
+    for filter_type in [
+        XorFilterType::Xor8,
+        XorFilterType::Xor16,
+        XorFilterType::Xor32,
+    ] {
         let bytes = XorFilter::from_hashes(0..100_u64, filter_type)
             .unwrap()
             .serialize()
@@ -112,7 +126,7 @@ fn invalid_preamble_fields_are_rejected() {
         (1, 2),
         (2, 21),
         (4, 7),
-        (4, 32),
+        (4, 24),
         (4, 64),
         (5, 4),
     ] {
@@ -151,11 +165,17 @@ fn unsafe_lengths_are_rejected_before_indexing() {
 
 #[test]
 fn trailing_storage_is_ignored() {
-    let original = XorFilter::from_hashes(0..100_u64, XorFilterType::Xor16).unwrap();
-    let mut bytes = original.serialize().unwrap();
-    bytes.extend_from_slice(&[0xaa; 16]);
+    for kind in [
+        XorFilterType::Xor8,
+        XorFilterType::Xor16,
+        XorFilterType::Xor32,
+    ] {
+        let original = XorFilter::from_hashes(0..100_u64, kind).unwrap();
+        let mut bytes = original.serialize().unwrap();
+        bytes.extend_from_slice(&[0xaa; 16]);
 
-    assert_eq!(XorFilter::deserialize(&bytes).unwrap(), original);
+        assert_eq!(XorFilter::deserialize(&bytes).unwrap(), original);
+    }
 }
 
 fn decode_hex(input: &str) -> Vec<u8> {
@@ -205,22 +225,30 @@ fn java_utf8_and_raw_byte_inputs_match() {
 }
 
 #[test]
-fn nonstandard_filters_require_application_defined_storage() {
-    let filter = XorFilter::from_hashes(0..10, XorFilterType::Xor32).unwrap();
-    assert_eq!(
-        filter.serialize().unwrap_err().kind(),
-        ErrorKind::InvalidArgument
-    );
-    assert_eq!(
-        filter.serialized_size().unwrap_err().kind(),
-        ErrorKind::InvalidArgument
-    );
+fn xor32_image_preserves_full_width_little_endian_slots() {
+    // Hand-authored layout fixture, independent of the construction algorithm:
+    // family 22/version 1, width 32, three one-slot segments, one item.
+    let bytes = decode_hex(concat!(
+        "0301160020030000",
+        "efcdab8967452301",
+        "0100000001000000",
+        "67452301efcdab89ffffffff",
+    ));
+    let filter = XorFilter::from_parts(
+        0x0123_4567_89ab_cdef,
+        1,
+        XorFingerprints::Xor32(vec![0x0123_4567, 0x89ab_cdef, u32::MAX].into_boxed_slice()),
+        Some(1),
+    )
+    .unwrap();
+    assert_eq!(filter.serialized_size().unwrap(), bytes.len());
+    assert_eq!(filter.serialize().unwrap(), bytes);
+    assert_eq!(XorFilter::deserialize(&bytes).unwrap(), filter);
 }
 
 #[test]
 fn raw_parts_preserve_an_application_storage_layout() {
     use datasketches::codec::SketchSlice;
-    use datasketches::xor::XorFingerprints;
     // Synthetic storage fixtures with public xorf 0.13.0 payloads for [0, 1, 2, u64::MAX].
     // This test-only envelope omits cardinality: magic, width:u8, segment:u32, seed:u64,
     // and little-endian slots. It is not a production storage format.

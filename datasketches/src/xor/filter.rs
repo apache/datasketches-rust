@@ -45,9 +45,6 @@ pub enum XorFilterType {
     /// `1 / 65_536`.
     Xor16,
     /// Uses 32-bit fingerprints and has an expected false-positive probability of about `2^-32`.
-    ///
-    /// This variant supports application-defined storage through [`XorFilter::from_parts`] and
-    /// [`XorFilter::into_parts`]. Standard serialization only supports 8- and 16-bit fingerprints.
     Xor32,
 }
 
@@ -75,7 +72,7 @@ pub enum XorFingerprints {
     Xor8(Box<[u8]>),
     /// 16-bit fingerprint slots.
     Xor16(Box<[u16]>),
-    /// 32-bit fingerprint slots; not part of the Java serialization format.
+    /// 32-bit fingerprint slots.
     Xor32(Box<[u32]>),
 }
 

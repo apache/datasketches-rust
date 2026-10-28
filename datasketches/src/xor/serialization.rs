@@ -33,13 +33,16 @@ const PREAMBLE_BYTES: usize = 3 * size_of::<u64>();
 impl XorFilter {
     /// Serializes the filter using DataSketches family `22`, version `1`.
     ///
-    /// The format is compatible with Java for 8- and 16-bit fingerprints when input hashing
-    /// agrees. Reserved fields are written as zero; integers and fingerprints are little-endian.
+    /// Supports 8-, 16-, and 32-bit fingerprints, recorded in the header's fingerprint width
+    /// field. Reserved fields are written as zero; integers and fingerprints are little-endian.
+    /// The 8- and 16-bit images are compatible with Java when input hashing agrees. Readers
+    /// must support the encoded fingerprint width; implementations limited to 8/16 bits cannot
+    /// read 32-bit images.
     ///
     /// # Errors
     ///
-    /// Returns [`InvalidArgument`](crate::error::ErrorKind::InvalidArgument) for 32-bit
-    /// fingerprints, an unknown item count, or an item count or segment length above `i32::MAX`.
+    /// Returns [`InvalidArgument`](crate::error::ErrorKind::InvalidArgument) for an unknown
+    /// item count, or an item count or segment length above `i32::MAX`.
     /// The total number of slots must also fit `i32::MAX` so that Java can index all three
     /// segments; this is an additional interoperability limit, not a header field. Construction
     /// and raw parts allow larger capacities, so successful construction does not guarantee
@@ -69,8 +72,10 @@ impl XorFilter {
                     bytes.write_u16_le(fingerprint);
                 }
             }
-            XorFingerprints::Xor32(_) => {
-                unreachable!("serialized_size rejected 32-bit fingerprints")
+            XorFingerprints::Xor32(fingerprints) => {
+                for &fingerprint in fingerprints.iter() {
+                    bytes.write_u32_le(fingerprint);
+                }
             }
         }
 
@@ -79,8 +84,8 @@ impl XorFilter {
 
     /// Deserializes an owned filter from bytes.
     ///
-    /// Accepts 8- and 16-bit images within the limits of [`serialize`](Self::serialize). Reserved
-    /// fields and trailing bytes are ignored.
+    /// Accepts 8-, 16-, and 32-bit images within the limits of [`serialize`](Self::serialize).
+    /// Reserved fields and trailing bytes are ignored.
     ///
     /// # Errors
     ///
@@ -112,9 +117,10 @@ impl XorFilter {
         let filter_type = match bits_per_fingerprint {
             8 => XorFilterType::Xor8,
             16 => XorFilterType::Xor16,
+            32 => XorFilterType::Xor32,
             _ => {
                 return Err(Error::deserial(
-                    "standard xor format requires 8- or 16-bit fingerprints",
+                    "standard xor format requires 8-, 16-, or 32-bit fingerprints",
                 ));
             }
         };
@@ -192,7 +198,17 @@ impl XorFilter {
                 }
                 XorFingerprints::Xor16(values.into_boxed_slice())
             }
-            XorFilterType::Xor32 => unreachable!("header validation rejected 32-bit fingerprints"),
+            XorFilterType::Xor32 => {
+                let mut values = Vec::with_capacity(capacity);
+                for _ in 0..capacity {
+                    values.push(
+                        cursor
+                            .read_u32_le()
+                            .map_err(insufficient_data("fingerprints"))?,
+                    );
+                }
+                XorFingerprints::Xor32(values.into_boxed_slice())
+            }
         };
 
         Ok(Self {
@@ -209,11 +225,6 @@ impl XorFilter {
     ///
     /// Returns an error under the same conditions as [`serialize`](Self::serialize).
     pub fn serialized_size(&self) -> Result<usize, Error> {
-        if self.filter_type() == XorFilterType::Xor32 {
-            return Err(Error::invalid_argument(
-                "standard xor format does not support 32-bit fingerprints",
-            ));
-        }
         let count = self
             .num_items
             .ok_or_else(|| Error::invalid_argument("standard xor format requires an item count"))?;

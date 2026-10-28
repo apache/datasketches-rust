@@ -28,8 +28,10 @@
 //!
 //! # Cross-language hashing
 //!
-//! Standard serialization supports 8- and 16-bit fingerprints using family `22`, version `1`.
-//! The 32-bit variant uses application-defined storage through raw parts only.
+//! Standard serialization supports 8-, 16-, and 32-bit fingerprints using family `22`, version `1`.
+//! Interoperability requires the reader to support the encoded fingerprint width. The 8- and
+//! 16-bit images match Java's format; 32-bit images extend the same layout with little-endian
+//! `u32` slots and cannot be read by implementations limited to 8/16 bits.
 //! Construction may choose a different valid fingerprint array from another implementation;
 //! byte-for-byte equality of independently constructed filters is not guaranteed. Rust's
 //! [`Hash`](std::hash::Hash) implementations do not always encode values like other languages. Use
