@@ -41,6 +41,7 @@ default = []
 bloom = []
 countmin = []
 cpc = []
+ddsketch = []
 frequencies = []
 hll = []
 kll = []
@@ -52,6 +53,10 @@ tuple = []
 [[example]]
 name = "bloom_difference"
 required-features = ["bloom"]
+
+[[example]]
+name = "ddsketch_latency"
+required-features = ["ddsketch"]
 
 [dev-dependencies]
 googletest = { workspace = true }

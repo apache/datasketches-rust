@@ -4,6 +4,10 @@ All significant changes to this project will be documented in this file.
 
 ## Unreleased
 
+### New features
+
+* Add `DdSketch` behind the `ddsketch` feature for relative-value quantiles with configurable accuracy, bounded buckets, lowest- or highest-value collapse, weighted updates, merging, and Rust-specific serialization. Queries can identify collapsed buckets that no longer retain the configured accuracy.
+
 ### Improvements
 
 * `KllSketch::rank` is faster for repeated queries on compacted sketches.

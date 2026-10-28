@@ -23,6 +23,7 @@ static ALLOC: AllocProfiler = AllocProfiler::system();
 mod bloom;
 mod countmin;
 mod cpc;
+mod ddsketch;
 mod frequencies;
 mod hash_inputs;
 mod hll;

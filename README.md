@@ -35,7 +35,7 @@
 [actions-badge]: https://github.com/apache/datasketches-rust/actions/workflows/ci.yml/badge.svg
 [actions-url]: https://github.com/apache/datasketches-rust/actions/workflows/ci.yml
 
-Apache DataSketches Rust provides stochastic streaming algorithms for answering queries over large data sets with compact, mergeable summaries. It is the core Rust component of Apache DataSketches and currently implements a subset of the algorithms available in the other language components.
+Apache DataSketches Rust provides stochastic streaming algorithms for answering queries over large data sets with compact, mergeable summaries. It is the core Rust component of Apache DataSketches.
 
 ## Getting started
 
@@ -68,6 +68,7 @@ Enable multiple algorithms by listing their features together, such as `features
 | `bloom`       | `BloomFilter`                         | Space-efficient probabilistic set membership with a configurable false-positive rate.             |
 | `countmin`    | `CountMinSketch`                      | Approximate point-frequency queries over a stream.                                                |
 | `cpc`         | `CpcSketch`, `CpcUnion`, `CpcWrapper` | Highly compact distinct-count estimation and unions.                                              |
+| `ddsketch`    | `DdSketch`                            | Numeric quantiles with relative value accuracy and a fixed bucket budget.                          |
 | `frequencies` | `FrequentItemsSketch`                 | Heavy-hitter discovery with upper and lower frequency bounds.                                     |
 | `hll`         | `HllSketch`, `HllUnion`               | Fast distinct-count estimation and unions.                                                        |
 | `kll`         | `KllSketch`                           | General-purpose quantile, rank, PMF, and CDF queries over totally ordered items.                    |
@@ -82,7 +83,7 @@ See the [API documentation](https://docs.rs/datasketches) for configuration, acc
 
 The minimum supported Rust version is 1.86.0. The crate currently supports little-endian targets only.
 
-Supported serialization formats are tested with fixtures produced by Apache DataSketches Java, C++, and Go through the [DataSketches TCK](https://github.com/apache/datasketches-tck).
+Each module documents its serialization format and compatibility guarantees. Cross-language formats are tested with fixtures produced by Apache DataSketches Java, C++, and Go through the [DataSketches TCK](https://github.com/apache/datasketches-tck).
 
 Serialization compatibility does not imply that an ordinary Rust `Hash` implementation produces the same update bytes across languages. When sketches must represent the same inputs across implementations, use `hash::value::{raw_bytes, canonical_float, sign_extend, natural_extend}` (and the constructors within those modules) to select matching input encodings. When interoperating with an implementation that skips empty strings, skip them before updating here as well.
 
