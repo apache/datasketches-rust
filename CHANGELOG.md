@@ -11,7 +11,7 @@ All significant changes to this project will be documented in this file.
 * `TDigest` and `TDigestMut` CDF and PMF batches are faster for many split points; batches with sparse split points keep the original binary-search behavior.
 * `BloomFilter::insert` is faster for streams of new items when multiple hashes are configured.
 
-## v0.6.0
+## v0.6.0 (2026-10-29)
 
 ### Breaking changes
 
