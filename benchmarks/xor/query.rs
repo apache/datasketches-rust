@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use datasketches::xor::XorFilter;
+use datasketches::xor::XorFilterBuilder;
 use datasketches::xor::XorFilterType;
 use divan::Bencher;
 use divan::black_box;
@@ -27,8 +27,9 @@ use crate::xor::hashes;
 #[divan::bench(args = [16_384, 50_000])]
 fn datasketches_8_present(bencher: Bencher, cardinality: usize) {
     let keys = hashes(cardinality * 2);
-    let filter =
-        XorFilter::from_distinct_hashes(&keys[..cardinality], XorFilterType::Xor8).unwrap();
+    let filter = XorFilterBuilder::new(XorFilterType::Xor8)
+        .build_from_distinct_hashes(&keys[..cardinality])
+        .unwrap();
     bencher
         .counter(ItemsCount::new(cardinality))
         .bench_local(|| {
@@ -41,8 +42,9 @@ fn datasketches_8_present(bencher: Bencher, cardinality: usize) {
 #[divan::bench(args = [16_384, 50_000])]
 fn datasketches_8_absent(bencher: Bencher, cardinality: usize) {
     let keys = hashes(cardinality * 2);
-    let filter =
-        XorFilter::from_distinct_hashes(&keys[..cardinality], XorFilterType::Xor8).unwrap();
+    let filter = XorFilterBuilder::new(XorFilterType::Xor8)
+        .build_from_distinct_hashes(&keys[..cardinality])
+        .unwrap();
     bencher
         .counter(ItemsCount::new(cardinality))
         .bench_local(|| {
@@ -81,8 +83,9 @@ fn xorf_8_absent(bencher: Bencher, cardinality: usize) {
 #[divan::bench(args = [16_384, 50_000])]
 fn datasketches_16_present(bencher: Bencher, cardinality: usize) {
     let keys = hashes(cardinality * 2);
-    let filter =
-        XorFilter::from_distinct_hashes(&keys[..cardinality], XorFilterType::Xor16).unwrap();
+    let filter = XorFilterBuilder::new(XorFilterType::Xor16)
+        .build_from_distinct_hashes(&keys[..cardinality])
+        .unwrap();
     bencher
         .counter(ItemsCount::new(cardinality))
         .bench_local(|| {
@@ -95,8 +98,9 @@ fn datasketches_16_present(bencher: Bencher, cardinality: usize) {
 #[divan::bench(args = [16_384, 50_000])]
 fn datasketches_16_absent(bencher: Bencher, cardinality: usize) {
     let keys = hashes(cardinality * 2);
-    let filter =
-        XorFilter::from_distinct_hashes(&keys[..cardinality], XorFilterType::Xor16).unwrap();
+    let filter = XorFilterBuilder::new(XorFilterType::Xor16)
+        .build_from_distinct_hashes(&keys[..cardinality])
+        .unwrap();
     bencher
         .counter(ItemsCount::new(cardinality))
         .bench_local(|| {
@@ -135,8 +139,9 @@ fn xorf_16_absent(bencher: Bencher, cardinality: usize) {
 #[divan::bench(args = [16_384, 50_000])]
 fn datasketches_32_present(bencher: Bencher, cardinality: usize) {
     let keys = hashes(cardinality * 2);
-    let filter =
-        XorFilter::from_distinct_hashes(&keys[..cardinality], XorFilterType::Xor32).unwrap();
+    let filter = XorFilterBuilder::new(XorFilterType::Xor32)
+        .build_from_distinct_hashes(&keys[..cardinality])
+        .unwrap();
     bencher
         .counter(ItemsCount::new(cardinality))
         .bench_local(|| {
@@ -149,8 +154,9 @@ fn datasketches_32_present(bencher: Bencher, cardinality: usize) {
 #[divan::bench(args = [16_384, 50_000])]
 fn datasketches_32_absent(bencher: Bencher, cardinality: usize) {
     let keys = hashes(cardinality * 2);
-    let filter =
-        XorFilter::from_distinct_hashes(&keys[..cardinality], XorFilterType::Xor32).unwrap();
+    let filter = XorFilterBuilder::new(XorFilterType::Xor32)
+        .build_from_distinct_hashes(&keys[..cardinality])
+        .unwrap();
     bencher
         .counter(ItemsCount::new(cardinality))
         .bench_local(|| {

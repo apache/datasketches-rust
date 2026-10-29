@@ -15,7 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use datasketches::xor::XorFilter;
 use datasketches::xor::XorFilterBuilder;
 use datasketches::xor::XorFilterType;
 
@@ -42,7 +41,9 @@ fn precomputed_hashes_have_no_false_negatives() {
         XorFilterType::Xor16,
         XorFilterType::Xor32,
     ] {
-        let filter = XorFilter::from_hashes(hashes.iter().copied(), filter_type).unwrap();
+        let filter = XorFilterBuilder::new(filter_type)
+            .build_from_hashes(hashes.iter().copied())
+            .unwrap();
         for &hash in &hashes {
             assert!(filter.contains_hash(hash), "false negative for {hash}");
         }
@@ -92,7 +93,9 @@ fn construction_is_independent_of_input_order() {
 
 #[test]
 fn metadata_describes_the_compact_payload() {
-    let filter = XorFilter::from_hashes(0..10_000_u64, XorFilterType::Xor8).unwrap();
+    let filter = XorFilterBuilder::new(XorFilterType::Xor8)
+        .build_from_hashes(0..10_000_u64)
+        .unwrap();
 
     assert_eq!(filter.is_empty(), Some(false));
     assert_eq!(filter.num_items(), Some(10_000));
@@ -123,9 +126,15 @@ fn false_positive_rates_follow_fingerprint_width() {
     const NUM_ITEMS: u64 = 50_000;
     const NUM_QUERIES: u64 = 100_000;
 
-    let xor8 = XorFilter::from_hashes(0..NUM_ITEMS, XorFilterType::Xor8).unwrap();
-    let xor16 = XorFilter::from_hashes(0..NUM_ITEMS, XorFilterType::Xor16).unwrap();
-    let xor32 = XorFilter::from_hashes(0..NUM_ITEMS, XorFilterType::Xor32).unwrap();
+    let xor8 = XorFilterBuilder::new(XorFilterType::Xor8)
+        .build_from_hashes(0..NUM_ITEMS)
+        .unwrap();
+    let xor16 = XorFilterBuilder::new(XorFilterType::Xor16)
+        .build_from_hashes(0..NUM_ITEMS)
+        .unwrap();
+    let xor32 = XorFilterBuilder::new(XorFilterType::Xor32)
+        .build_from_hashes(0..NUM_ITEMS)
+        .unwrap();
 
     let false_positives8 = (NUM_ITEMS..NUM_ITEMS + NUM_QUERIES)
         .filter(|&hash| xor8.contains_hash(hash))

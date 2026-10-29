@@ -23,8 +23,8 @@
 //! in the number of distinct hashes.
 //!
 //! The [`XorFilterBuilder`] hashes ordinary Rust values with xxHash64. Call
-//! [`XorFilterBuilder::build_from_hashes`] or [`XorFilter::from_hashes`] when hashes have already
-//! been computed and must not be hashed again.
+//! [`XorFilterBuilder::build_from_hashes`] or [`XorFilterBuilder::build_from_distinct_hashes`]
+//! when hashes have already been computed and must not be hashed again.
 //!
 //! # Cross-language hashing
 //!
@@ -46,12 +46,11 @@
 //!
 //! # Application-defined storage
 //!
-//! [`XorFilter::from_parts`] and [`XorFilter::into_parts`] preserve the construction seed, segment
-//! length, and typed fingerprint slots without adding metadata to an existing disk format.
-//! Imported parts may omit the item count. Raw parts use the same query algorithm as `xorf`
-//! 0.13 for all three widths, but builders need not produce identical fingerprint arrays.
-//! Filters with a known zero item count always reject queries; imported parts with an unknown
-//! count retain the ordinary fingerprint comparison, including possible false positives.
+//! [`XorFilter::into_parts`] and [`XorFilter::from_parts`] exchange [`XorFilterParts`], which
+//! preserve the construction seed, segment length, and typed fingerprint slots without adding
+//! metadata to an existing disk format. Imported parts may omit the item count. Filters with a
+//! known zero item count always reject queries; imported parts with an unknown count retain the
+//! ordinary fingerprint comparison, including possible false positives.
 //!
 //! # Examples
 //!
@@ -76,5 +75,6 @@ mod serialization;
 
 pub use self::filter::XorFilter;
 pub use self::filter::XorFilterBuilder;
+pub use self::filter::XorFilterParts;
 pub use self::filter::XorFilterType;
 pub use self::filter::XorFingerprints;

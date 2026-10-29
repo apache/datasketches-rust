@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use datasketches::xor::XorFilter;
+use datasketches::xor::XorFilterBuilder;
 use datasketches::xor::XorFilterType;
 use divan::Bencher;
 use divan::black_box;
@@ -29,7 +29,11 @@ fn datasketches_distinct_8(bencher: Bencher, cardinality: usize) {
     bencher
         .counter(ItemsCount::new(cardinality))
         .bench_local(|| {
-            black_box(XorFilter::from_distinct_hashes(&keys, XorFilterType::Xor8).unwrap())
+            black_box(
+                XorFilterBuilder::new(XorFilterType::Xor8)
+                    .build_from_distinct_hashes(&keys)
+                    .unwrap(),
+            )
         });
 }
 
@@ -39,7 +43,11 @@ fn datasketches_deduplicate_8(bencher: Bencher, cardinality: usize) {
     bencher
         .counter(ItemsCount::new(cardinality))
         .bench_local(|| {
-            black_box(XorFilter::from_hashes(keys.iter().copied(), XorFilterType::Xor8).unwrap())
+            black_box(
+                XorFilterBuilder::new(XorFilterType::Xor8)
+                    .build_from_hashes(keys.iter().copied())
+                    .unwrap(),
+            )
         });
 }
 
@@ -57,7 +65,11 @@ fn datasketches_distinct_16(bencher: Bencher, cardinality: usize) {
     bencher
         .counter(ItemsCount::new(cardinality))
         .bench_local(|| {
-            black_box(XorFilter::from_distinct_hashes(&keys, XorFilterType::Xor16).unwrap())
+            black_box(
+                XorFilterBuilder::new(XorFilterType::Xor16)
+                    .build_from_distinct_hashes(&keys)
+                    .unwrap(),
+            )
         });
 }
 
@@ -67,7 +79,11 @@ fn datasketches_deduplicate_16(bencher: Bencher, cardinality: usize) {
     bencher
         .counter(ItemsCount::new(cardinality))
         .bench_local(|| {
-            black_box(XorFilter::from_hashes(keys.iter().copied(), XorFilterType::Xor16).unwrap())
+            black_box(
+                XorFilterBuilder::new(XorFilterType::Xor16)
+                    .build_from_hashes(keys.iter().copied())
+                    .unwrap(),
+            )
         });
 }
 
@@ -85,7 +101,11 @@ fn datasketches_distinct_32(bencher: Bencher, cardinality: usize) {
     bencher
         .counter(ItemsCount::new(cardinality))
         .bench_local(|| {
-            black_box(XorFilter::from_distinct_hashes(&keys, XorFilterType::Xor32).unwrap())
+            black_box(
+                XorFilterBuilder::new(XorFilterType::Xor32)
+                    .build_from_distinct_hashes(&keys)
+                    .unwrap(),
+            )
         });
 }
 
@@ -95,7 +115,11 @@ fn datasketches_deduplicate_32(bencher: Bencher, cardinality: usize) {
     bencher
         .counter(ItemsCount::new(cardinality))
         .bench_local(|| {
-            black_box(XorFilter::from_hashes(keys.iter().copied(), XorFilterType::Xor32).unwrap())
+            black_box(
+                XorFilterBuilder::new(XorFilterType::Xor32)
+                    .build_from_hashes(keys.iter().copied())
+                    .unwrap(),
+            )
         });
 }
 
