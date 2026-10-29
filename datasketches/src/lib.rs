@@ -40,6 +40,7 @@
 //! * Use `kll`, `req`, or `tdigest` for ranks and quantiles. KLL provides strong general-purpose
 //!   rank accuracy, REQ targets configurable high- or low-rank accuracy, and T-Digest emphasizes
 //!   distribution tails.
+//! * Use `uddsketch` for reproducible quantiles with a queryable relative-value error bound.
 //! * Use `tuple` when retained Theta keys need application-defined summaries.
 //!
 //! See each module's documentation for accuracy, memory, serialization, and update examples.
@@ -91,6 +92,9 @@ pub use self::thetafamily::common as thetacommon;
 pub use self::thetafamily::theta;
 #[cfg(feature = "tuple")]
 pub use self::thetafamily::tuple;
+
+#[cfg(feature = "uddsketch")]
+pub mod uddsketch;
 
 // common modules
 pub mod codec;

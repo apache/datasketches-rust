@@ -128,6 +128,7 @@ fn datasketches_features() -> Vec<String> {
 
     let Metadata { packages, .. } = MetadataCommand::new()
         .manifest_path(datasketches_manifest)
+        .no_deps()
         .exec()
         .expect("failed to get cargo metadata");
 

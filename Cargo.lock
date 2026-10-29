@@ -83,7 +83,8 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 name = "benchmarks"
 version = "0.0.0"
 dependencies = [
- "datasketches",
+ "datasketches 0.5.0",
+ "datasketches 0.6.0",
  "divan",
  "rand",
 ]
@@ -237,6 +238,12 @@ checksum = "8b2a41393f66f16b0823bb79094d54ac5fbd34ab292ddafb9a0456ac9f87d201"
 dependencies = [
  "libc",
 ]
+
+[[package]]
+name = "datasketches"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "11c0bd7d22989969a619bae09147b992a6aa7f31dd4f9d9af6345f533744781f"
 
 [[package]]
 name = "datasketches"
@@ -778,7 +785,7 @@ dependencies = [
 name = "tests-integration"
 version = "0.0.0"
 dependencies = [
- "datasketches",
+ "datasketches 0.6.0",
  "googletest",
  "insta",
  "quickcheck",

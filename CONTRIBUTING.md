@@ -75,6 +75,13 @@ To run only one sketch or workload, pass a Divan filter directly:
 cargo bench --package benchmarks --bench benchmarks -- cpc::serde
 ```
 
+The reproducible quantile comparison includes UDDSketch, the current t-digest, and a pinned t-digest 0.5.0 baseline. It prints tagged CSV with timing, memory estimates, serialized sizes, value and rank errors, and permutation/partition/merge-tree stability. Inputs are synthetic; the experiment excludes database scheduling and I/O. Run it with:
+
+```shell
+cargo run --release -p benchmarks --example quantile_comparison
+QUANTILE_ROWS=1000000 cargo run --release -p benchmarks --example quantile_comparison
+```
+
 ## Public API documentation
 
 - Describe types with noun phrases and API behavior with third-person present-tense verbs such as `Creates`, `Updates`, and `Returns`.
@@ -119,7 +126,7 @@ When adding a case to an existing sketch target, add it to the appropriate modul
 
 Cargo automatically discovers `tests-integration/tests/serde_tests.rs`, which aggregates the sketch-specific modules under `tests-integration/tests/serde_tests`.
 
-To add serialization tests for another sketch, add `serde_tests/<sketch>.rs` and its module declaration in `serde_tests.rs`. Shared path handling belongs in `serde_tests.rs`, and serialization fixtures belong in the appropriate subdirectory under `serde_tests`.
+To add serialization tests for another sketch, add `serde_tests/<sketch>.rs` and its module declaration in `serde_tests.rs`. UDDSketch uses local Rust-format fixtures in `serde_tests/uddsketch.rs`; it has no cross-language TCK snapshots. Shared path handling belongs in `serde_tests.rs`, and serialization fixtures belong in the appropriate subdirectory under `serde_tests`.
 
 ## Manual workflow (without xtask)
 
