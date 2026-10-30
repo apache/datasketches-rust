@@ -75,6 +75,7 @@ Enable multiple algorithms by listing their features together, such as `features
 | `tdigest`     | `TDigestMut`, `TDigest`               | Quantile and rank estimation, with high accuracy near distribution tails.                         |
 | `theta`       | `ThetaSketch` and set operations      | Distinct counts, set expressions, and Jaccard similarity.                                         |
 | `tuple`       | `TupleSketch` and set operations      | Theta-style keys with user-defined summaries attached to retained entries.                        |
+| `xor`         | `XorFilter`, `XorFilterBuilder`        | Immutable probabilistic membership with 8-, 16-, or 32-bit fingerprints.                           |
 
 See the [API documentation](https://docs.rs/datasketches) for configuration, accuracy guarantees, serialization, and examples for each algorithm. Runnable end-to-end scenarios live in [`datasketches/examples`](datasketches/examples).
 
@@ -82,7 +83,7 @@ See the [API documentation](https://docs.rs/datasketches) for configuration, acc
 
 The minimum supported Rust version is 1.86.0. The crate currently supports little-endian targets only.
 
-Supported serialization formats are tested with fixtures produced by Apache DataSketches Java, C++, and Go through the [DataSketches TCK](https://github.com/apache/datasketches-tck).
+Supported serialization formats are tested with fixtures produced by Apache DataSketches Java, C++, and Go through the [DataSketches TCK](https://github.com/apache/datasketches-tck). XOR additionally uses fixtures generated from the merged Java implementation until TCK snapshots are available. Its standard format supports 8-, 16-, and 32-bit fingerprints; 32-bit images require a reader that supports that width. Formats without an item count use the raw-parts API.
 
 Serialization compatibility does not imply that an ordinary Rust `Hash` implementation produces the same update bytes across languages. When sketches must represent the same inputs across implementations, use `hash::value::{raw_bytes, canonical_float, sign_extend, natural_extend}` (and the constructors within those modules) to select matching input encodings. When interoperating with an implementation that skips empty strings, skip them before updating here as well.
 

@@ -31,6 +31,7 @@ mod req;
 mod tdigest;
 mod theta;
 mod tuple;
+mod xor;
 
 fn main() {
     divan::main();

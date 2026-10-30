@@ -168,6 +168,8 @@ cargo x prepare-testdata java
 
 If no language is specified, all languages are prepared. These directories are not stored in Git. Run the command before the first test run and again whenever the pinned TCK revision changes. It requires network access and replaces the selected generated directories.
 
+The pinned TCK revision does not yet contain XOR filter snapshots. Until it does, `serde_tests/xor.rs` retains small hexadecimal fixtures generated from the merged Java implementation, with the source revision and inputs documented alongside them. Keep these separate from the synchronized `*_generated_files` directories; replace them with TCK fixtures when available.
+
 ## Code of Conduct
 
 We expect all community members to follow our [Code of Conduct](https://www.apache.org/foundation/policies/conduct.html).

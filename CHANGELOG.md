@@ -4,6 +4,10 @@ All significant changes to this project will be documented in this file.
 
 ## Unreleased
 
+### New features
+
+* Add immutable `XorFilter` and `XorFilterBuilder` behind the `xor` feature, with 8-, 16-, and 32-bit fingerprints, consuming builder configuration with complete-input construction and bounded seeded retries, optional cardinality metadata for imported filters, standard serialization for all three widths (Java-compatible for 8/16-bit filters), and raw parts for application-defined storage.
+
 ### Improvements
 
 * `KllSketch::rank` is faster for repeated queries on compacted sketches.
