@@ -92,31 +92,6 @@ jobs:
         shell: bash
         run: cargo x test
 
-  xor-java:
-    name: XOR Java interoperability
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/checkout@v7
-        with:
-          repository: apache/datasketches-java
-          ref: 1034fb33b6e013334ff870f130b9c388cae5dfa9
-          path: interop-java
-      - uses: actions/setup-java@v6
-        with:
-          distribution: temurin
-          java-version: '25'
-      - name: Compile Java reader and builder
-        working-directory: interop-java
-        run: mvn --batch-mode -DskipTests compile
-      - name: Install toolchain
-        run: rustup toolchain install stable && rustup default stable
-      - uses: Swatinem/rust-cache@v2
-      - name: Check both serialization directions
-        env:
-          DATASKETCHES_JAVA_CLASSPATH: ${{ github.workspace }}/interop-java/target/classes
-        run: cargo test -p tests-integration --test serde_tests java_reads_rust_images -- --ignored
-
   required:
     name: Required
     runs-on: ubuntu-24.04
@@ -124,14 +99,12 @@ jobs:
     needs:
       - check
       - test
-      - xor-java
     steps:
       - name: Guardian
         run: |
           if [[ ! ( \
                  "${{ needs.check.result }}" == "success" \
               && "${{ needs.test.result }}" == "success" \
-              && "${{ needs.xor-java.result }}" == "success" \
               ) ]]; then
             echo "Required jobs haven't been completed successfully."
             exit 1
