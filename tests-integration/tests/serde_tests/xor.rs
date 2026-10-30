@@ -339,3 +339,59 @@ fn raw_parts_preserve_an_application_storage_layout() {
         assert_eq!(encoded, bytes);
     }
 }
+
+#[test]
+#[ignore = "requires Java 25+ and DataSketches Java classes; see CONTRIBUTING.md"]
+fn java_reads_rust_images() {
+    use std::fs;
+    use std::process::Command;
+
+    let classpath = std::env::var_os("DATASKETCHES_JAVA_CLASSPATH")
+        .expect("set DATASKETCHES_JAVA_CLASSPATH to the compiled Java classes or JAR");
+    let directory = std::env::temp_dir().join(format!("xor-interop-{}", std::process::id()));
+    fs::create_dir(&directory).unwrap();
+    for kind in [XorFilterType::Xor8, XorFilterType::Xor16] {
+        for count in [0, 1, 4, 16_384, 50_001_u64] {
+            let values = (0..count).map(|i| if i == 3 { 1 << 63 } else { i + 1 });
+            let filter = XorFilterBuilder::new(kind).seed(42).build(values).unwrap();
+            let name = format!("{}_{}.sk", filter.bits_per_fingerprint(), count);
+            fs::write(
+                directory.join(format!("rust_{name}")),
+                filter.serialize().unwrap(),
+            )
+            .unwrap();
+        }
+    }
+    let output = Command::new("java")
+        .arg("--class-path")
+        .arg(classpath)
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/serde_tests/XorInterop.java"
+        ))
+        .arg(&directory)
+        .output()
+        .expect("run Java source launcher");
+    assert!(
+        output.status.success(),
+        "Java interoperability failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    for bits in [8, 16] {
+        for count in [0, 1, 4, 16_384, 50_001_u64] {
+            let name = format!("{bits}_{count}.sk");
+            assert_eq!(
+                fs::read(directory.join(format!("rust_{name}"))).unwrap(),
+                fs::read(directory.join(format!("roundtrip_{name}"))).unwrap()
+            );
+            let bytes = fs::read(directory.join(format!("java_{name}"))).unwrap();
+            let restored = XorFilter::deserialize(&bytes).unwrap();
+            assert_eq!(restored.num_items(), Some(count as usize));
+            for i in 0..count {
+                let value = if i == 3 { 1_u64 << 63 } else { i + 1 };
+                assert!(restored.contains(&value), "{name}, value {value}");
+            }
+        }
+    }
+    fs::remove_dir_all(directory).unwrap();
+}

@@ -170,6 +170,15 @@ If no language is specified, all languages are prepared. These directories are n
 
 The pinned TCK revision does not yet contain XOR filter snapshots. Until it does, `serde_tests/xor.rs` retains small hexadecimal fixtures generated from the merged Java implementation, with the source revision and inputs documented alongside them. Keep these separate from the synchronized `*_generated_files` directories; replace them with TCK fixtures when available.
 
+The `java_reads_rust_images` test checks XOR interoperability in both directions using Java's actual reader and builder. It covers empty, singleton, signed-integer, and larger inputs at both supported Java fingerprint widths, including byte-preserving re-encoding of Rust images by Java. CI runs it in a dedicated required job. It requires Java 25 or later and compiled DataSketches Java classes; the ordinary Rust suite does not require a JVM. To run it locally, build Java commit `1034fb33b6e013334ff870f130b9c388cae5dfa9` with `mvn -DskipTests compile`, then run:
+
+```shell
+DATASKETCHES_JAVA_CLASSPATH=/path/to/datasketches-java/target/classes \
+  cargo test -p tests-integration --test serde_tests java_reads_rust_images -- --ignored
+```
+
+The test writes temporary images under the system temporary directory and removes them on success. It compares membership across independently constructed filters; their fingerprint payloads need not be identical. The 32-bit format remains covered by Rust wire-format tests until another implementation supports it.
+
 ## Code of Conduct
 
 We expect all community members to follow our [Code of Conduct](https://www.apache.org/foundation/policies/conduct.html).
