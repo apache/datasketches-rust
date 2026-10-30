@@ -405,6 +405,12 @@ impl XorFilter {
             .with_context("num_items", num_items));
         }
 
+        // Assignment only needs the peel stack. Release the graph before allocating the
+        // fingerprint payload so these allocations do not overlap at peak memory usage.
+        drop(xor_mask);
+        drop(count);
+        drop(queue);
+
         let fingerprints = match filter_type {
             XorFilterType::Xor8 => {
                 let mut values = vec![0_u8; capacity].into_boxed_slice();
