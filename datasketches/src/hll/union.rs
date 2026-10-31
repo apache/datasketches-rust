@@ -249,6 +249,29 @@ impl HllUnion {
         }
     }
 
+    /// Serializes the union's result as an [`HllType::Hll8`] sketch.
+    ///
+    /// Produces the same bytes as `to_sketch(HllType::Hll8).serialize()` without copying an
+    /// intermediate sketch. The image retains the effective `lg_k` and estimate, but not the
+    /// union's configured maximum `lg_k`. It can be read with [`HllSketch::deserialize`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::hll::HllSketch;
+    /// use datasketches::hll::HllUnion;
+    ///
+    /// let mut union = HllUnion::new(12).unwrap();
+    /// union.update_value("apple");
+    /// let mut partial = HllSketch::deserialize(&union.serialize()).unwrap();
+    /// partial.update("banana");
+    /// union.update(&partial);
+    /// assert!((union.estimate() - 2.0).abs() < 0.01);
+    /// ```
+    pub fn serialize(&self) -> Vec<u8> {
+        self.gadget.serialize()
+    }
+
     /// Returns the union's current effective `lg_k`.
     pub fn lg_config_k(&self) -> u8 {
         self.gadget.lg_config_k()
