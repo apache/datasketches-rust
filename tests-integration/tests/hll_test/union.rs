@@ -745,3 +745,31 @@ fn test_downsampling_single_hll_input_preserves_estimate() {
         assert_eq!(union.estimate(), sketch.estimate(), "{hll_type:?} estimate");
     }
 }
+
+#[test]
+fn test_copied_hll8_input_preserves_subsequent_updates() {
+    for lg_max_k in [10, 12] {
+        for merged in [false, true] {
+            let mut source = make_hll_sketch(HllType::Hll8, 10, 0, 2_000);
+            if merged {
+                let mut union = HllUnion::new(10).unwrap();
+                union.update(&source);
+                union.update(&make_hll_sketch(HllType::Hll8, 10, 1_000, 3_000));
+                source = union.to_sketch(HllType::Hll8);
+            }
+            let mut union = HllUnion::new(lg_max_k).unwrap();
+            union.update(&source);
+            let mut expected = source.clone();
+
+            // Copying must retain both the estimate history and the caches used by later updates.
+            for value in 2_000..5_000_u64 {
+                union.update_value(value);
+                expected.update(value);
+            }
+            let result = union.to_sketch(HllType::Hll8);
+            assert_same_estimate_and_bounds(&result, &expected);
+            assert_eq!(result.serialize(), expected.serialize());
+            assert_eq!(union.lg_config_k(), source.lg_config_k());
+        }
+    }
+}

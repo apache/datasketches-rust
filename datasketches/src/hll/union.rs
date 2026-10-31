@@ -586,17 +586,17 @@ fn copy_or_downsample(src_mode: &Mode, src_lg_k: u8, tgt_lg_k: u8) -> Array8 {
     let estimate_state = get_array_estimate_state(src_mode);
 
     let mut result = if src_lg_k <= tgt_lg_k {
-        let mut result = Array8::new(src_lg_k);
-
         match src_mode {
-            Mode::Array8(src) => {
-                result.merge_array_same_lgk(src.values());
-            }
+            Mode::Array8(src) => src.clone(),
             Mode::Array6(src) => {
+                let mut result = Array8::new(src_lg_k);
                 copy_array46_via_coupons(&mut result, src.num_registers(), |slot| src.get(slot));
+                result
             }
             Mode::Array4(src) => {
+                let mut result = Array8::new(src_lg_k);
                 copy_array46_via_coupons(&mut result, src.num_registers(), |slot| src.get(slot));
+                result
             }
             Mode::List { .. } | Mode::Set { .. } => {
                 unreachable!(
@@ -604,8 +604,6 @@ fn copy_or_downsample(src_mode: &Mode, src_lg_k: u8, tgt_lg_k: u8) -> Array8 {
                 );
             }
         }
-
-        result
     } else {
         let mut result = Array8::new(tgt_lg_k);
         merge_array_with_downsample(&mut result, tgt_lg_k, src_mode, src_lg_k);

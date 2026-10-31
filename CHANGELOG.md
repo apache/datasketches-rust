@@ -10,6 +10,7 @@ All significant changes to this project will be documented in this file.
 
 ### Improvements
 
+* `HllUnion` is faster when adopting an HLL8 input without downsampling, including repeated unions of a dense result with small partial sketches.
 * `KllSketch::rank` is faster for repeated queries on compacted sketches.
 * Repeated scalar `TDigest::rank` queries are faster, including small digests and data with repeated values.
 * `TDigest` and `TDigestMut` CDF and PMF batches are faster for many split points; batches with sparse split points keep the original binary-search behavior.
