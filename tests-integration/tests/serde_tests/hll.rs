@@ -21,6 +21,7 @@ use std::path::PathBuf;
 use datasketches::hash::value::natural_extend;
 use datasketches::hll::HllSketch;
 use datasketches::hll::HllType;
+use datasketches::hll::HllUnion;
 use googletest::assert_that;
 use googletest::prelude::all;
 use googletest::prelude::ge;
@@ -29,6 +30,40 @@ use googletest::prelude::lt;
 use googletest::prelude::near;
 
 use crate::serialization_test_data;
+
+#[test]
+fn union_serialization_preserves_result_and_subsequent_updates() {
+    for hll_type in [HllType::Hll4, HllType::Hll6, HllType::Hll8] {
+        for count in [0, 4, 100, 10_000_u64] {
+            let mut source = HllSketch::new(12, hll_type).unwrap();
+            for value in 0..count {
+                source.update(value);
+            }
+            for lg_max_k in [8, 12, 14] {
+                let mut union = HllUnion::new(lg_max_k).unwrap();
+                union.update(&source);
+                let bytes = union.serialize();
+                assert_eq!(bytes, union.to_sketch(HllType::Hll8).serialize());
+
+                let mut restored = HllSketch::deserialize(&bytes).unwrap();
+                assert_eq!(restored.target_type(), HllType::Hll8);
+                assert_eq!(restored.lg_config_k(), union.lg_config_k());
+                assert_eq!(restored.estimate(), union.estimate());
+
+                for value in count..count + 1_000 {
+                    union.update_value(value);
+                    restored.update(value);
+                }
+                assert_eq!(union.to_sketch(HllType::Hll8), restored);
+
+                union.reset();
+                let empty = HllSketch::deserialize(&union.serialize()).unwrap();
+                assert!(empty.is_empty());
+                assert_eq!(empty.lg_config_k(), lg_max_k);
+            }
+        }
+    }
+}
 
 fn test_sketch_file(path: PathBuf, expected_cardinality: usize, expected_lg_k: u8) {
     let expected = expected_cardinality as f64;

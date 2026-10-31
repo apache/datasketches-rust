@@ -249,6 +249,29 @@ impl HllUnion {
         }
     }
 
+    /// Serializes the union's result as an [`HllType::Hll8`] sketch.
+    ///
+    /// Produces the same bytes as `to_sketch(HllType::Hll8).serialize()` without copying an
+    /// intermediate sketch. The image retains the effective `lg_k` and estimate, but not the
+    /// union's configured maximum `lg_k`. It can be read with [`HllSketch::deserialize`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::hll::HllSketch;
+    /// use datasketches::hll::HllUnion;
+    ///
+    /// let mut union = HllUnion::new(12).unwrap();
+    /// union.update_value("apple");
+    /// let mut partial = HllSketch::deserialize(&union.serialize()).unwrap();
+    /// partial.update("banana");
+    /// union.update(&partial);
+    /// assert!((union.estimate() - 2.0).abs() < 0.01);
+    /// ```
+    pub fn serialize(&self) -> Vec<u8> {
+        self.gadget.serialize()
+    }
+
     /// Returns the union's current effective `lg_k`.
     pub fn lg_config_k(&self) -> u8 {
         self.gadget.lg_config_k()
@@ -468,7 +491,7 @@ fn merge_array46_same_lgk(dst: &mut Array8, num_registers: usize, get_value: imp
             dst.set_register(slot, val);
         }
     }
-    dst.rebuild_estimator_from_registers();
+    dst.invalidate_estimator();
 }
 
 /// Merging independent register histories invalidates the HIP accumulator.
@@ -506,7 +529,7 @@ fn merge_array46_with_downsample(
             }
         }
     }
-    dst.rebuild_estimator_from_registers();
+    dst.invalidate_estimator();
 }
 
 /// Multiple source registers map to each destination register via masking.
@@ -586,17 +609,17 @@ fn copy_or_downsample(src_mode: &Mode, src_lg_k: u8, tgt_lg_k: u8) -> Array8 {
     let estimate_state = get_array_estimate_state(src_mode);
 
     let mut result = if src_lg_k <= tgt_lg_k {
-        let mut result = Array8::new(src_lg_k);
-
         match src_mode {
-            Mode::Array8(src) => {
-                result.merge_array_same_lgk(src.values());
-            }
+            Mode::Array8(src) => src.clone(),
             Mode::Array6(src) => {
+                let mut result = Array8::new(src_lg_k);
                 copy_array46_via_coupons(&mut result, src.num_registers(), |slot| src.get(slot));
+                result
             }
             Mode::Array4(src) => {
+                let mut result = Array8::new(src_lg_k);
                 copy_array46_via_coupons(&mut result, src.num_registers(), |slot| src.get(slot));
+                result
             }
             Mode::List { .. } | Mode::Set { .. } => {
                 unreachable!(
@@ -604,8 +627,6 @@ fn copy_or_downsample(src_mode: &Mode, src_lg_k: u8, tgt_lg_k: u8) -> Array8 {
                 );
             }
         }
-
-        result
     } else {
         let mut result = Array8::new(tgt_lg_k);
         merge_array_with_downsample(&mut result, tgt_lg_k, src_mode, src_lg_k);
