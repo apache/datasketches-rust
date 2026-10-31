@@ -491,7 +491,7 @@ fn merge_array46_same_lgk(dst: &mut Array8, num_registers: usize, get_value: imp
             dst.set_register(slot, val);
         }
     }
-    dst.rebuild_estimator_from_registers();
+    dst.invalidate_estimator();
 }
 
 /// Merging independent register histories invalidates the HIP accumulator.
@@ -529,7 +529,7 @@ fn merge_array46_with_downsample(
             }
         }
     }
-    dst.rebuild_estimator_from_registers();
+    dst.invalidate_estimator();
 }
 
 /// Multiple source registers map to each destination register via masking.

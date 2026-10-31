@@ -54,6 +54,7 @@ fn recreated_small_partials(bencher: Bencher, lg_k: u8) {
             union.update(partial);
             sketch = union.to_sketch(HllType::Hll8);
         }
+        black_box(sketch.estimate());
         black_box(sketch)
     });
 }
@@ -66,6 +67,7 @@ fn persistent_small_partials(bencher: Bencher, lg_k: u8) {
         for partial in black_box(&partials) {
             union.update(partial);
         }
+        black_box(union.estimate());
         black_box(union.to_sketch(HllType::Hll8))
     });
 }
@@ -78,6 +80,33 @@ fn dense_partials(bencher: Bencher, lg_k: u8) {
         for partial in black_box(&partials) {
             union.update(partial);
         }
+        black_box(union.estimate());
+        black_box(union.to_sketch(HllType::Hll8))
+    });
+}
+
+#[divan::bench(args = [12, 18])]
+fn dense_partials_with_queries(bencher: Bencher, lg_k: u8) {
+    let partials = partials(lg_k, 16, (1 << lg_k) / 4);
+    bencher.bench_local(|| {
+        let mut union = HllUnion::new(lg_k).unwrap();
+        for partial in black_box(&partials) {
+            union.update(partial);
+            black_box(union.estimate());
+        }
+        black_box(union.to_sketch(HllType::Hll8))
+    });
+}
+
+#[divan::bench(args = [12, 18])]
+fn downsampled_dense_partials(bencher: Bencher, lg_k: u8) {
+    let partials = partials(lg_k + 1, 16, (1 << lg_k) / 2);
+    bencher.bench_local(|| {
+        let mut union = HllUnion::new(lg_k).unwrap();
+        for partial in black_box(&partials) {
+            union.update(partial);
+        }
+        black_box(union.estimate());
         black_box(union.to_sketch(HllType::Hll8))
     });
 }

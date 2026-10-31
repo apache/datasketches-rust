@@ -773,3 +773,88 @@ fn test_copied_hll8_input_preserves_subsequent_updates() {
         }
     }
 }
+
+#[test]
+fn test_union_query_timing_does_not_change_mixed_updates() {
+    let mut queried = HllUnion::new(12).unwrap();
+    let mut deferred = queried.clone();
+    let inputs = [
+        (HllType::Hll8, 12),
+        (HllType::Hll4, 12),
+        (HllType::Hll6, 14),
+        (HllType::Hll8, 10),
+        (HllType::Hll4, 8),
+    ];
+    for (index, (hll_type, lg_k)) in inputs.into_iter().enumerate() {
+        let start = index as u64 * 10_000;
+        let source = make_hll_sketch(hll_type, lg_k, start, start + 5_000);
+        queried.update(&source);
+        deferred.update(&source);
+        assert!(!deferred.is_empty());
+
+        // Queries refresh one accumulator between merges; the other keeps accepting updates.
+        assert_same_estimate_and_bounds(
+            &queried.to_sketch(HllType::Hll8),
+            &queried.to_sketch(HllType::Hll4),
+        );
+        let restored = HllSketch::deserialize(&queried.serialize()).unwrap();
+        assert_eq!(restored.composite_estimate(), queried.composite_estimate());
+        for value in start + 5_000..start + 5_100 {
+            queried.update_value(value);
+            deferred.update_value(value);
+        }
+    }
+
+    assert_eq!(queried.serialize(), deferred.serialize());
+    assert_same_estimate_and_bounds(
+        &queried.to_sketch(HllType::Hll8),
+        &deferred.to_sketch(HllType::Hll8),
+    );
+
+    // A copied result can be merged again before either its source or the copy is queried.
+    let source = make_hll_sketch(HllType::Hll8, 8, 50_000, 55_000);
+    deferred.update(&source);
+    let result = deferred.to_sketch(HllType::Hll8);
+    let mut copied = HllUnion::new(12).unwrap();
+    copied.update(&result);
+    for value in 55_000..56_000_u64 {
+        copied.update_value(value);
+        deferred.update_value(value);
+    }
+    assert_eq!(copied.serialize(), deferred.serialize());
+}
+
+#[test]
+fn test_union_supports_shared_queries_after_dense_merges() {
+    let mut union = HllUnion::new(12).unwrap();
+    for index in 0..3 {
+        union.update(&make_hll_sketch(
+            HllType::Hll8,
+            12,
+            index * 5_000,
+            (index + 1) * 5_000,
+        ));
+    }
+    let expected = union.to_sketch(HllType::Hll8);
+    let bytes = expected.serialize();
+    let barrier = std::sync::Barrier::new(4);
+
+    std::thread::scope(|scope| {
+        for _ in 0..4 {
+            scope.spawn(|| {
+                barrier.wait();
+                assert_eq!(union.estimate(), expected.estimate());
+                assert_eq!(union.composite_estimate(), expected.composite_estimate());
+                assert_eq!(
+                    union.lower_bound(NumStdDev::Two),
+                    expected.lower_bound(NumStdDev::Two)
+                );
+                assert_eq!(
+                    union.upper_bound(NumStdDev::Two),
+                    expected.upper_bound(NumStdDev::Two)
+                );
+                assert_eq!(union.serialize(), bytes);
+            });
+        }
+    });
+}
