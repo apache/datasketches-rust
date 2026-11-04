@@ -25,10 +25,10 @@ use divan::counter::ItemsCount;
 use crate::hash_inputs::ITEMS;
 use crate::hash_inputs::bytes_32_values;
 
-#[divan::bench]
-fn u64(bencher: Bencher) {
+#[divan::bench(args = [HllType::Hll4, HllType::Hll6, HllType::Hll8])]
+fn u64(bencher: Bencher, hll_type: HllType) {
     bencher.counter(ItemsCount::new(ITEMS)).bench_local(|| {
-        let mut sketch = HllSketch::new(12, HllType::Hll8).unwrap();
+        let mut sketch = HllSketch::new(12, hll_type).unwrap();
         for value in 0..ITEMS as u64 {
             sketch.update(black_box(value));
         }

@@ -90,16 +90,7 @@ impl Array4 {
     }
 
     pub fn get(&self, slot: u32) -> u8 {
-        let raw = self.get_raw(slot);
-
-        if raw < AUX_TOKEN {
-            self.cur_min + raw
-        } else {
-            self.aux_map
-                .as_ref()
-                .and_then(|map| map.get(slot))
-                .unwrap_or(self.cur_min)
-        }
+        read_register(&self.bytes, self.cur_min, self.aux_map.as_ref(), slot)
     }
 
     pub fn num_registers(&self) -> usize {
@@ -236,40 +227,42 @@ impl Array4 {
         self.num_at_cur_min = num_at_new;
     }
 
+    fn register_values(&self) -> impl Iterator<Item = u8> {
+        (0..self.num_registers() as u32).map(|slot| self.get(slot))
+    }
+
     pub fn estimate(&self) -> f64 {
         self.estimator
-            .estimate(self.lg_config_k, self.cur_min, self.num_at_cur_min)
+            .estimate(self.lg_config_k, self.register_values())
     }
 
     pub fn composite_estimate(&self) -> f64 {
         self.estimator
-            .composite_estimate(self.lg_config_k, self.cur_min, self.num_at_cur_min)
+            .composite_estimate(self.lg_config_k, self.register_values())
     }
 
     pub fn upper_bound(&self, num_std_dev: NumStdDev) -> f64 {
-        self.estimator.upper_bound(
-            self.lg_config_k,
-            self.cur_min,
-            self.num_at_cur_min,
-            num_std_dev,
-        )
+        self.estimator
+            .upper_bound(self.lg_config_k, self.register_values(), num_std_dev)
     }
 
     pub fn lower_bound(&self, num_std_dev: NumStdDev) -> f64 {
-        self.estimator.lower_bound(
-            self.lg_config_k,
-            self.cur_min,
-            self.num_at_cur_min,
-            num_std_dev,
-        )
+        self.estimator
+            .lower_bound(self.lg_config_k, self.register_values(), num_std_dev)
     }
 
     pub fn restore_estimate_state(&mut self, state: EstimateState) {
-        self.estimator.restore_estimate_state(state);
+        let bytes = &self.bytes;
+        let cur_min = self.cur_min;
+        let aux_map = self.aux_map.as_ref();
+        let registers =
+            (0..1 << self.lg_config_k).map(|slot| read_register(bytes, cur_min, aux_map, slot));
+        self.estimator.restore_estimate_state(state, registers);
     }
 
     pub fn is_empty(&self) -> bool {
-        self.num_at_cur_min == (1 << self.lg_config_k) && self.cur_min == 0
+        self.estimator
+            .is_empty(self.lg_config_k, self.register_values())
     }
 
     pub fn deserialize(
@@ -360,7 +353,13 @@ impl Array4 {
             aux_map = Some(aux);
         }
 
-        let estimator = Estimator::from_serialized(hip_accum, kxq0, kxq1, ooo);
+        let estimator = Estimator::from_serialized(
+            hip_accum,
+            kxq0,
+            kxq1,
+            if cur_min == 0 { num_at_cur_min } else { 0 },
+            ooo,
+        );
 
         Ok(Self {
             lg_config_k,
@@ -374,6 +373,7 @@ impl Array4 {
 
     /// Writes packed registers followed by compact auxiliary entries.
     pub fn serialize(&self, lg_config_k: u8) -> Vec<u8> {
+        let statistics = self.estimator.statistics(self.register_values());
         let num_bytes = 1 << (lg_config_k - 1);
 
         let aux_entries: Vec<(u32, u8)> = if let Some(aux) = &self.aux_map {
@@ -403,8 +403,8 @@ impl Array4 {
         bytes.write_u8(encode_mode_byte(CUR_MODE_HLL, TGT_HLL4));
 
         bytes.write_f64_le(self.estimator.hip_accum());
-        bytes.write_f64_le(self.estimator.kxq0());
-        bytes.write_f64_le(self.estimator.kxq1());
+        bytes.write_f64_le(statistics.kxq0);
+        bytes.write_f64_le(statistics.kxq1);
 
         bytes.write_u32_le(self.num_at_cur_min);
 
@@ -427,6 +427,17 @@ impl Array4 {
                 .as_ref()
                 .map(|a| a.estimated_size())
                 .unwrap_or(0)
+    }
+}
+
+fn read_register(bytes: &[u8], cur_min: u8, aux_map: Option<&AuxMap>, slot: u32) -> u8 {
+    let byte = bytes[(slot >> 1) as usize];
+    let raw = if slot & 1 == 0 { byte & 15 } else { byte >> 4 };
+
+    if raw < AUX_TOKEN {
+        cur_min + raw
+    } else {
+        aux_map.and_then(|map| map.get(slot)).unwrap_or(cur_min)
     }
 }
 
@@ -491,11 +502,20 @@ mod tests {
 
         // kxq0 should have decreased (we removed a 0 and added a 10)
         // Initial kxq0 = 256 (all zeros = 1.0 each)
-        assert_that!(arr.estimator.kxq0(), lt(256.0));
+        assert_that!(
+            arr.estimator.statistics(arr.register_values()).kxq0,
+            lt(256.0)
+        );
 
         // kxq1 should have a small positive value (from 1/2^40)
-        assert_that!(arr.estimator.kxq1(), gt(0.0));
-        assert_that!(arr.estimator.kxq1(), lt(0.001));
+        assert_that!(
+            arr.estimator.statistics(arr.register_values()).kxq1,
+            gt(0.0)
+        );
+        assert_that!(
+            arr.estimator.statistics(arr.register_values()).kxq1,
+            lt(0.001)
+        );
     }
 
     #[test]

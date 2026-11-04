@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use datasketches::common::NumStdDev;
 use datasketches::hll::HllSketch;
 use datasketches::hll::HllType;
 use datasketches::hll::HllUnion;
@@ -23,6 +24,44 @@ use googletest::prelude::near;
 
 const HLL_TYPES: [HllType; 3] = [HllType::Hll4, HllType::Hll6, HllType::Hll8];
 
+#[test]
+fn estimates_survive_minimum_shifts_and_round_trips() {
+    let mut sketches = HLL_TYPES.map(|hll_type| HllSketch::new(4, hll_type).unwrap());
+    let mut start = 0;
+    // At this precision, the growing stream fills every register and repeatedly raises
+    // HLL4's packing minimum. Its minimum count must not be treated as a zero count.
+    for end in [64, 512, 4_096] {
+        for value in start..end {
+            for sketch in &mut sketches {
+                sketch.update(value as u64);
+            }
+        }
+        let expected = &sketches[2];
+        for sketch in &sketches {
+            assert_eq!(sketch.estimate(), expected.estimate());
+            assert_eq!(sketch.composite_estimate(), expected.composite_estimate());
+            for num_std_dev in [NumStdDev::One, NumStdDev::Two, NumStdDev::Three] {
+                assert_eq!(
+                    sketch.lower_bound(num_std_dev),
+                    expected.lower_bound(num_std_dev)
+                );
+                assert_eq!(
+                    sketch.upper_bound(num_std_dev),
+                    expected.upper_bound(num_std_dev)
+                );
+            }
+        }
+        for sketch in &mut sketches {
+            *sketch = HllSketch::deserialize(&sketch.serialize()).unwrap();
+        }
+        start = end;
+    }
+    assert_eq!(sketches[0].estimate(), sketches[2].estimate());
+    assert_eq!(
+        sketches[0].composite_estimate(),
+        sketches[2].composite_estimate()
+    );
+}
 fn make_sketch(hll_type: HllType, values: impl Iterator<Item = u64>) -> HllSketch {
     let mut sketch = HllSketch::new(11, hll_type).unwrap();
     for value in values {

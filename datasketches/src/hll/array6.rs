@@ -39,7 +39,6 @@ const VAL_MASK_6: u16 = 0x3F;
 pub struct Array6 {
     lg_config_k: u8,
     bytes: Box<[u8]>,
-    num_zeros: u32,
     estimator: Estimator,
 }
 
@@ -51,20 +50,13 @@ impl Array6 {
         Self {
             lg_config_k,
             bytes: vec![0u8; num_bytes].into_boxed_slice(),
-            num_zeros: k,
             estimator: Estimator::new(lg_config_k),
         }
     }
 
     #[inline]
     fn get_raw(&self, slot: u32) -> u8 {
-        let start_bit = slot * 6;
-        let byte_idx = (start_bit >> 3) as usize;
-        let shift = (start_bit & 7) as u8;
-
-        let two_bytes = u16::from_le_bytes([self.bytes[byte_idx], self.bytes[byte_idx + 1]]);
-
-        ((two_bytes >> shift) & VAL_MASK_6) as u8
+        read_register(&self.bytes, slot)
     }
 
     #[inline]
@@ -99,6 +91,7 @@ impl Array6 {
         self.bytes[byte_idx + 1] = bytes_out[1];
     }
 
+    #[inline]
     pub fn update(&mut self, coupon: Coupon) {
         let mask = (1 << self.lg_config_k) - 1;
         let slot = coupon.slot() & mask;
@@ -111,39 +104,42 @@ impl Array6 {
                 .update(self.lg_config_k, old_value, new_value);
 
             self.put_raw(slot, new_value);
-
-            if old_value == 0 {
-                self.num_zeros -= 1;
-            }
         }
     }
 
+    fn register_values(&self) -> impl Iterator<Item = u8> {
+        (0..self.num_registers() as u32).map(|slot| self.get(slot))
+    }
+
     pub fn estimate(&self) -> f64 {
-        // Array6 doesn't use cur_min (always 0), so num_at_cur_min = num_zeros
-        self.estimator.estimate(self.lg_config_k, 0, self.num_zeros)
+        self.estimator
+            .estimate(self.lg_config_k, self.register_values())
     }
 
     pub fn composite_estimate(&self) -> f64 {
         self.estimator
-            .composite_estimate(self.lg_config_k, 0, self.num_zeros)
+            .composite_estimate(self.lg_config_k, self.register_values())
     }
 
     pub fn upper_bound(&self, num_std_dev: NumStdDev) -> f64 {
         self.estimator
-            .upper_bound(self.lg_config_k, 0, self.num_zeros, num_std_dev)
+            .upper_bound(self.lg_config_k, self.register_values(), num_std_dev)
     }
 
     pub fn lower_bound(&self, num_std_dev: NumStdDev) -> f64 {
         self.estimator
-            .lower_bound(self.lg_config_k, 0, self.num_zeros, num_std_dev)
+            .lower_bound(self.lg_config_k, self.register_values(), num_std_dev)
     }
 
     pub fn restore_estimate_state(&mut self, state: EstimateState) {
-        self.estimator.restore_estimate_state(state);
+        let bytes = &self.bytes;
+        let registers = (0..1 << self.lg_config_k).map(|slot| read_register(bytes, slot));
+        self.estimator.restore_estimate_state(state, registers);
     }
 
     pub fn is_empty(&self) -> bool {
-        self.num_zeros == (1 << self.lg_config_k)
+        self.estimator
+            .is_empty(self.lg_config_k, self.register_values())
     }
 
     pub fn deserialize_registers(
@@ -185,17 +181,17 @@ impl Array6 {
             .read_exact(&mut data)
             .map_err(insufficient_data("data"))?;
 
-        let estimator = Estimator::from_serialized(hip_accum, kxq0, kxq1, ooo);
+        let estimator = Estimator::from_serialized(hip_accum, kxq0, kxq1, num_zeros, ooo);
 
         Ok(Self {
             lg_config_k,
             bytes: data.into_boxed_slice(),
-            num_zeros,
             estimator,
         })
     }
 
     pub fn serialize(&self, lg_config_k: u8) -> Vec<u8> {
+        let statistics = self.estimator.statistics(self.register_values());
         let k = 1 << lg_config_k;
         let num_bytes = num_bytes_for_k(k);
         let total_size = HLL_PREAMBLE_SIZE + num_bytes;
@@ -219,11 +215,11 @@ impl Array6 {
         bytes.write_u8(encode_mode_byte(CUR_MODE_HLL, TGT_HLL6));
 
         bytes.write_f64_le(self.estimator.hip_accum());
-        bytes.write_f64_le(self.estimator.kxq0());
-        bytes.write_f64_le(self.estimator.kxq1());
+        bytes.write_f64_le(statistics.kxq0);
+        bytes.write_f64_le(statistics.kxq1);
 
         // Write num_at_cur_min (num_zeros for Array6)
-        bytes.write_u32_le(self.num_zeros);
+        bytes.write_u32_le(statistics.num_zeros);
 
         // Write aux_count (always 0 for Array6)
         bytes.write_u32_le(0);
@@ -237,6 +233,16 @@ impl Array6 {
     pub fn estimated_size(&self) -> usize {
         self.bytes.len()
     }
+}
+
+fn read_register(bytes: &[u8], slot: u32) -> u8 {
+    let start_bit = slot * 6;
+    let byte_idx = (start_bit >> 3) as usize;
+    let shift = (start_bit & 7) as u8;
+
+    let two_bytes = u16::from_le_bytes([bytes[byte_idx], bytes[byte_idx + 1]]);
+
+    ((two_bytes >> shift) & VAL_MASK_6) as u8
 }
 
 fn num_bytes_for_k(k: u32) -> usize {
@@ -349,10 +355,19 @@ mod tests {
         arr.update(Coupon::pack(1, 40)); // value >= 32, goes to kxq1
 
         // Initial kxq0 = 256 (all zeros = 1.0 each)
-        assert_that!(arr.estimator.kxq0(), lt(256.0));
+        assert_that!(
+            arr.estimator.statistics(arr.register_values()).kxq0,
+            lt(256.0)
+        );
 
         // kxq1 should have a small positive value (from 1/2^40)
-        assert_that!(arr.estimator.kxq1(), gt(0.0));
-        assert_that!(arr.estimator.kxq1(), lt(0.001));
+        assert_that!(
+            arr.estimator.statistics(arr.register_values()).kxq1,
+            gt(0.0)
+        );
+        assert_that!(
+            arr.estimator.statistics(arr.register_values()).kxq1,
+            lt(0.001)
+        );
     }
 }

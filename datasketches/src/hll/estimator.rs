@@ -23,6 +23,8 @@
 //! Estimator formulas and crossover constants follow datasketches-cpp:
 //! <https://github.com/apache/datasketches-cpp/blob/5a055521/hll/include/HllArray-internal.hpp>
 
+use std::sync::OnceLock;
+
 use crate::common::NumStdDev;
 use crate::common::inv_pow2::inv_pow2;
 use crate::hll::composite_interpolation;
@@ -38,87 +40,100 @@ pub enum EstimateState {
     Composite,
 }
 
-/// KxQ caches the sum of `2^-register`. Splitting the sum at register value 32 preserves
-/// precision when large and small contributions coexist.
+/// Estimation history and lazily materialized statistics of the logical registers.
+///
+/// HIP depends on update order and cannot be reconstructed from register values. Bulk merges
+/// discard that history and invalidate only the derived statistics. Queries share a single
+/// reconstruction until the next bulk merge; scalar updates maintain materialized statistics.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Estimator {
-    estimate_state: EstimateState,
-    /// KxQ register for values < 32 (larger inverse powers)
-    kxq0: f64,
-    /// KxQ register for values >= 32 (tiny inverse powers)
-    kxq1: f64,
+    state: EstimateState,
+    statistics: OnceLock<RegisterStatistics>,
+}
+
+/// Representation-independent statistics derived entirely from the current register values.
+///
+/// Splitting the sum of `2^-register` at value 32 preserves precision when large and small
+/// contributions coexist. HLL4's packing minimum and its count are separate storage metadata.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RegisterStatistics {
+    pub num_zeros: u32,
+    pub kxq0: f64,
+    pub kxq1: f64,
 }
 
 impl Estimator {
     pub fn new(lg_config_k: u8) -> Self {
         let k = 1 << lg_config_k;
         Self {
-            estimate_state: EstimateState::Hip(0.0),
-            kxq0: k as f64, // All registers start at 0, so kxq0 = k * (1/2^0) = k
-            kxq1: 0.0,
+            state: EstimateState::Hip(0.0),
+            statistics: OnceLock::from(RegisterStatistics {
+                num_zeros: k,
+                kxq0: k as f64,
+                kxq1: 0.0,
+            }),
         }
     }
 
-    /// Restores estimator fields from an HLL serialization preamble.
-    pub fn from_serialized(hip_accum: f64, kxq0: f64, kxq1: f64, out_of_order: bool) -> Self {
-        let estimate_state = if out_of_order {
-            EstimateState::Composite
-        } else {
-            EstimateState::Hip(hip_accum)
-        };
+    /// Restores history and statistics from an HLL serialization preamble.
+    pub fn from_serialized(
+        hip_accum: f64,
+        kxq0: f64,
+        kxq1: f64,
+        num_zeros: u32,
+        out_of_order: bool,
+    ) -> Self {
         Self {
-            estimate_state,
-            kxq0,
-            kxq1,
+            state: if out_of_order {
+                EstimateState::Composite
+            } else {
+                EstimateState::Hip(hip_accum)
+            },
+            statistics: OnceLock::from(RegisterStatistics {
+                num_zeros,
+                kxq0,
+                kxq1,
+            }),
         }
     }
 
     /// Applies a register increase; requires `new_value > old_value`.
+    #[inline]
     pub fn update(&mut self, lg_config_k: u8, old_value: u8, new_value: u8) {
-        let k = (1 << lg_config_k) as f64;
-
-        // HIP must use the KxQ sums from before this register update.
-        if let EstimateState::Hip(hip_accum) = &mut self.estimate_state {
-            *hip_accum += k / (self.kxq0 + self.kxq1);
-        }
-
-        // Always update KxQ because it depends only on the current registers.
-        self.update_kxq(old_value, new_value);
-    }
-
-    fn update_kxq(&mut self, old_value: u8, new_value: u8) {
-        if old_value < 32 {
-            self.kxq0 -= inv_pow2(old_value);
-        } else {
-            self.kxq1 -= inv_pow2(old_value);
-        }
-
-        if new_value < 32 {
-            self.kxq0 += inv_pow2(new_value);
-        } else {
-            self.kxq1 += inv_pow2(new_value);
-        }
-    }
-
-    /// For `Array6`/`Array8`, pass zero for `cur_min` and the zero-register count for
-    /// `num_at_cur_min`. `Array4` tracks its actual minimum and its count.
-    pub fn estimate(&self, lg_config_k: u8, cur_min: u8, num_at_cur_min: u32) -> f64 {
-        match self.estimate_state {
-            EstimateState::Hip(hip_accum) => hip_accum,
-            EstimateState::Composite => {
-                self.composite_estimate(lg_config_k, cur_min, num_at_cur_min)
+        if let Some(statistics) = self.statistics.get_mut() {
+            // HIP must use the sums from before this register update.
+            if let EstimateState::Hip(hip_accum) = &mut self.state {
+                *hip_accum += (1 << lg_config_k) as f64 / (statistics.kxq0 + statistics.kxq1);
             }
+            statistics.update(old_value, new_value);
+        } else {
+            debug_assert_eq!(self.state, EstimateState::Composite);
         }
+    }
+
+    pub fn statistics(&self, registers: impl Iterator<Item = u8>) -> &RegisterStatistics {
+        self.statistics
+            .get_or_init(|| RegisterStatistics::from_registers(registers))
+    }
+
+    pub fn estimate(&self, lg_config_k: u8, registers: impl Iterator<Item = u8>) -> f64 {
+        match self.state {
+            EstimateState::Hip(hip_accum) => hip_accum,
+            EstimateState::Composite => self.composite_estimate(lg_config_k, registers),
+        }
+    }
+
+    pub fn composite_estimate(&self, lg_config_k: u8, registers: impl Iterator<Item = u8>) -> f64 {
+        self.statistics(registers).composite_estimate(lg_config_k)
     }
 
     pub fn upper_bound(
         &self,
         lg_config_k: u8,
-        cur_min: u8,
-        num_at_cur_min: u32,
+        registers: impl Iterator<Item = u8>,
         num_std_dev: NumStdDev,
     ) -> f64 {
-        let estimate = self.estimate(lg_config_k, cur_min, num_at_cur_min);
+        let estimate = self.estimate(lg_config_k, registers);
         let rse = relative_error(
             lg_config_k,
             true,
@@ -128,29 +143,105 @@ impl Estimator {
         estimate / (1.0 + rse)
     }
 
-    /// Each nonzero register requires a distinct item, so their count is a hard floor
-    /// for the lower bound. If `cur_min` is nonzero, all `k` registers are nonzero.
     pub fn lower_bound(
         &self,
         lg_config_k: u8,
-        cur_min: u8,
-        num_at_cur_min: u32,
+        registers: impl Iterator<Item = u8>,
         num_std_dev: NumStdDev,
     ) -> f64 {
-        let estimate = self.estimate(lg_config_k, cur_min, num_at_cur_min);
+        let statistics = self.statistics(registers);
+        let estimate = match self.state {
+            EstimateState::Hip(hip_accum) => hip_accum,
+            EstimateState::Composite => statistics.composite_estimate(lg_config_k),
+        };
         let rse = relative_error(
             lg_config_k,
             false,
             self.uses_composite_estimate(),
             num_std_dev,
         );
-        let config_k = 1u32 << lg_config_k;
-        let num_nonzero_registers = if cur_min == 0 {
-            config_k - num_at_cur_min
+        // Each nonzero register requires at least one distinct item.
+        (estimate / (1.0 + rse)).max(f64::from((1 << lg_config_k) - statistics.num_zeros))
+    }
+
+    pub fn is_empty(&self, lg_config_k: u8, mut registers: impl Iterator<Item = u8>) -> bool {
+        if let Some(statistics) = self.statistics.get() {
+            statistics.num_zeros == (1 << lg_config_k)
         } else {
-            config_k
+            // Union checks emptiness between merges; stop at the first nonzero register
+            // without materializing statistics that the next merge would invalidate.
+            registers.all(|value| value == 0)
+        }
+    }
+
+    pub fn hip_accum(&self) -> f64 {
+        match self.state {
+            EstimateState::Hip(hip_accum) => hip_accum,
+            EstimateState::Composite => 0.0,
+        }
+    }
+
+    pub fn uses_composite_estimate(&self) -> bool {
+        matches!(self.state, EstimateState::Composite)
+    }
+
+    pub fn estimate_state(&self) -> EstimateState {
+        self.state
+    }
+
+    /// Restores history after copying or transforming the same logical sketch.
+    pub fn restore_estimate_state(
+        &mut self,
+        state: EstimateState,
+        registers: impl Iterator<Item = u8>,
+    ) {
+        if let EstimateState::Hip(_) = state {
+            // Subsequent scalar updates need the sums to advance the restored HIP accumulator.
+            self.statistics(registers);
+        }
+        self.state = state;
+    }
+
+    /// Discards update history and defers rebuilding statistics after a bulk register write.
+    pub fn invalidate(&mut self) {
+        self.state = EstimateState::Composite;
+        self.statistics.take();
+    }
+}
+
+impl RegisterStatistics {
+    fn from_registers(registers: impl Iterator<Item = u8>) -> Self {
+        let mut statistics = Self {
+            num_zeros: 0,
+            kxq0: 0.0,
+            kxq1: 0.0,
         };
-        (estimate / (1.0 + rse)).max(f64::from(num_nonzero_registers))
+        for value in registers {
+            if value == 0 {
+                statistics.num_zeros += 1;
+                statistics.kxq0 += 1.0;
+            } else if value < 32 {
+                statistics.kxq0 += 1.0 / (1u64 << value) as f64;
+            } else {
+                statistics.kxq1 += 1.0 / (1u64 << value) as f64;
+            }
+        }
+        statistics
+    }
+
+    #[inline]
+    fn update(&mut self, old_value: u8, new_value: u8) {
+        self.num_zeros -= u32::from(old_value == 0);
+        if old_value < 32 {
+            self.kxq0 -= inv_pow2(old_value);
+        } else {
+            self.kxq1 -= inv_pow2(old_value);
+        }
+        if new_value < 32 {
+            self.kxq0 += inv_pow2(new_value);
+        } else {
+            self.kxq1 += inv_pow2(new_value);
+        }
     }
 
     fn raw_estimate(&self, lg_config_k: u8) -> f64 {
@@ -167,10 +258,10 @@ impl Estimator {
         (correction_factor * k * k) / (self.kxq0 + self.kxq1)
     }
 
-    fn bitmap_estimate(&self, lg_config_k: u8, cur_min: u8, num_at_cur_min: u32) -> f64 {
+    fn bitmap_estimate(&self, lg_config_k: u8) -> f64 {
         let k = 1 << lg_config_k;
 
-        let num_unhit = if cur_min == 0 { num_at_cur_min } else { 0 };
+        let num_unhit = self.num_zeros;
 
         // Preserve the upstream fallback for a bitmap with no empty registers.
         if num_unhit == 0 {
@@ -182,7 +273,7 @@ impl Estimator {
     }
 
     /// Selects between bias-corrected HLL and bitmap estimates using their empirical crossover.
-    pub fn composite_estimate(&self, lg_config_k: u8, cur_min: u8, num_at_cur_min: u32) -> f64 {
+    pub fn composite_estimate(&self, lg_config_k: u8) -> f64 {
         let raw_estimate = self.raw_estimate(lg_config_k);
 
         let x_arr = composite_interpolation::get_x_arr(lg_config_k);
@@ -212,7 +303,7 @@ impl Estimator {
             return adjusted_estimate;
         }
 
-        let linear_estimate = self.bitmap_estimate(lg_config_k, cur_min, num_at_cur_min);
+        let linear_estimate = self.bitmap_estimate(lg_config_k);
 
         // Comparing the average to the threshold reduces estimator-selection bias.
         let average_estimate = (adjusted_estimate + linear_estimate) / 2.0;
@@ -231,45 +322,6 @@ impl Estimator {
         } else {
             linear_estimate
         }
-    }
-
-    pub fn hip_accum(&self) -> f64 {
-        match self.estimate_state {
-            EstimateState::Hip(hip_accum) => hip_accum,
-            EstimateState::Composite => 0.0,
-        }
-    }
-
-    pub fn kxq0(&self) -> f64 {
-        self.kxq0
-    }
-
-    pub fn kxq1(&self) -> f64 {
-        self.kxq1
-    }
-
-    pub fn uses_composite_estimate(&self) -> bool {
-        matches!(self.estimate_state, EstimateState::Composite)
-    }
-
-    pub fn estimate_state(&self) -> EstimateState {
-        self.estimate_state
-    }
-
-    /// Restores estimate state after copying or transforming the same logical sketch.
-    pub fn restore_estimate_state(&mut self, state: EstimateState) {
-        self.estimate_state = state;
-    }
-
-    /// Invalidates HIP after registers from independent histories are merged.
-    pub fn invalidate_hip(&mut self) {
-        self.estimate_state = EstimateState::Composite;
-    }
-
-    /// Replaces register-derived KxQ values after a bulk register operation.
-    pub fn restore_kxq(&mut self, kxq0: f64, kxq1: f64) {
-        self.kxq0 = kxq0;
-        self.kxq1 = kxq1;
     }
 }
 
@@ -449,6 +501,33 @@ mod tests {
     use super::*;
 
     #[test]
+    fn restored_hip_supports_updates_after_deferred_reconstruction() {
+        let lg_config_k = 4;
+        let mut registers = [0; 16];
+        let mut eager = Estimator::new(lg_config_k);
+        for (slot, value) in [(0, 4), (1, 32), (2, 63)] {
+            eager.update(lg_config_k, registers[slot], value);
+            registers[slot] = value;
+        }
+        let history = eager.estimate_state();
+        let mut deferred = eager.clone();
+        deferred.invalidate();
+        deferred.restore_estimate_state(history, registers.iter().copied());
+
+        for (slot, value) in [(3, 2), (0, 33), (3, 5)] {
+            eager.update(lg_config_k, registers[slot], value);
+            deferred.update(lg_config_k, registers[slot], value);
+            registers[slot] = value;
+        }
+
+        assert_eq!(deferred.estimate_state(), eager.estimate_state());
+        assert_eq!(
+            deferred.statistics(registers.iter().copied()),
+            eager.statistics(registers.iter().copied())
+        );
+    }
+
+    #[test]
     fn lower_bound_is_clamped_to_the_non_zero_register_count() {
         let lg_config_k = 4;
         let mut estimator = Estimator::new(lg_config_k);
@@ -457,7 +536,7 @@ mod tests {
         }
 
         assert_eq!(
-            estimator.lower_bound(lg_config_k, 0, 8, NumStdDev::Three),
+            estimator.lower_bound(lg_config_k, std::iter::empty(), NumStdDev::Three),
             8.0
         );
     }
@@ -471,7 +550,7 @@ mod tests {
         }
 
         assert_eq!(
-            estimator.lower_bound(lg_config_k, 1, 16, NumStdDev::Three),
+            estimator.lower_bound(lg_config_k, std::iter::empty(), NumStdDev::Three),
             16.0
         );
     }
@@ -481,8 +560,8 @@ mod tests {
         let est = Estimator::new(10); // 1024 registers
 
         assert_eq!(est.hip_accum(), 0.0);
-        assert_eq!(est.kxq0(), 1024.0); // All zeros = 1.0 each
-        assert_eq!(est.kxq1(), 0.0);
+        assert_eq!(est.statistics(std::iter::empty()).kxq0, 1024.0); // All zeros = 1.0 each
+        assert_eq!(est.statistics(std::iter::empty()).kxq1, 0.0);
         assert!(!est.uses_composite_estimate());
     }
 
@@ -494,8 +573,8 @@ mod tests {
 
         assert_that!(est.hip_accum(), gt(0.0));
 
-        assert_that!(est.kxq0(), lt(256.0));
-        assert_eq!(est.kxq1(), 0.0);
+        assert_that!(est.statistics(std::iter::empty()).kxq0, lt(256.0));
+        assert_eq!(est.statistics(std::iter::empty()).kxq1, 0.0);
     }
 
     #[test]
@@ -503,37 +582,37 @@ mod tests {
         let mut est = Estimator::new(8);
 
         est.update(8, 0, 10);
-        let kxq0_after_10 = est.kxq0();
-        let kxq1_after_10 = est.kxq1();
+        let kxq0_after_10 = est.statistics(std::iter::empty()).kxq0;
+        let kxq1_after_10 = est.statistics(std::iter::empty()).kxq1;
 
         assert_that!(kxq0_after_10, lt(256.0));
         assert_eq!(kxq1_after_10, 0.0);
 
         // Update from 10 to 50 (crosses the 32 boundary)
         est.update(8, 10, 50);
-        let kxq0_after_50 = est.kxq0();
-        let kxq1_after_50 = est.kxq1();
+        let kxq0_after_50 = est.statistics(std::iter::empty()).kxq0;
+        let kxq1_after_50 = est.statistics(std::iter::empty()).kxq1;
 
         assert_that!(kxq0_after_50, lt(kxq0_after_10)); // Removed 1/2^10 from kxq0 (decreases kxq0)
         assert_that!(kxq1_after_50, gt(0.0)); // Added 1/2^50 to kxq1
     }
 
     #[test]
-    fn test_invalidate_hip() {
+    fn test_restore_composite_estimate() {
         let mut est = Estimator::new(10);
 
         est.update(10, 0, 5);
         let hip_normal = est.hip_accum();
         assert_that!(hip_normal, gt(0.0));
 
-        est.invalidate_hip();
+        est.restore_estimate_state(EstimateState::Composite, std::iter::empty());
         assert!(est.uses_composite_estimate());
         assert_eq!(est.hip_accum(), 0.0);
 
         // Register-derived state continues to update after HIP is invalidated.
-        let kxq0_before = est.kxq0();
+        let kxq0_before = est.statistics(std::iter::empty()).kxq0;
         est.update(10, 5, 10);
         assert_eq!(est.hip_accum(), 0.0);
-        assert_ne!(est.kxq0(), kxq0_before);
+        assert_ne!(est.statistics(std::iter::empty()).kxq0, kxq0_before);
     }
 }
