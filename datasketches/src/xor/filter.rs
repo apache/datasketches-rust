@@ -267,15 +267,13 @@ impl XorFilter {
     ///
     /// This method bypasses xxHash64. The caller must use the same hash value during construction
     /// and queries; mixing raw values with precomputed hashes can introduce false negatives.
-    #[inline]
+    // Keep the width dispatch in the caller's hot loop, including across crates.
+    #[inline(always)]
     pub fn contains_hash(&self, hash: u64) -> bool {
-        if self.num_items == Some(0) {
-            return false;
-        }
         let mixed = mix(hash, self.seed);
         let [h0, h1, h2] = indexes(mixed, self.segment_length);
 
-        match &self.fingerprints {
+        let found = match &self.fingerprints {
             XorFingerprints::Xor8(fingerprints) => {
                 fingerprint(mixed) as u8 == fingerprints[h0] ^ fingerprints[h1] ^ fingerprints[h2]
             }
@@ -285,7 +283,10 @@ impl XorFilter {
             XorFingerprints::Xor32(fingerprints) => {
                 fingerprint(mixed) as u32 == fingerprints[h0] ^ fingerprints[h1] ^ fingerprints[h2]
             }
-        }
+        };
+        // Avoid branching on the fingerprint comparison, including rare false
+        // positives. Unknown counts must preserve the raw comparison.
+        found & (self.num_items != Some(0))
     }
 
     /// Returns whether the input set was empty, or `None` if imported without an item count.
@@ -361,7 +362,8 @@ impl XorFilter {
         let segment_length = capacity / usize::from(NUM_HASHES);
         let mut xor_mask = vec![0_u64; capacity];
         let mut count = vec![0_u32; capacity];
-        let mut queue = vec![0_u32; capacity];
+        // One spare slot per segment allows a speculative enqueue even when full.
+        let mut queue = vec![0_u32; capacity + 3];
         let mut stack_hash = vec![0_u64; num_items];
         let mut stack_index = vec![0_u32; num_items];
 
@@ -596,10 +598,10 @@ fn map(
     stack_index: &mut [u32],
 ) -> usize {
     // Separate queues keep each drain within one segment and make the two neighbor
-    // segments statically known. Scratch space remains one slot per fingerprint.
+    // segments statically known.
     let mut masks = split_segments(xor_mask, segment_length);
     let mut counts = split_segments(count, segment_length);
-    let mut queues = split_segments(queue, segment_length);
+    let mut queues = split_segments(queue, segment_length + 1);
     // Reuse the peel stack for mixed hashes while mapping one segment at a time.
     // This bounds the random-access working set without allocating another buffer.
     for (&key, hash) in keys.iter().zip(stack_hash.iter_mut()) {
@@ -690,10 +692,11 @@ fn peel_block<const BLOCK: usize>(
             let index = reduce(hash.rotate_left(other as u32 * 21) as u32, segment_length);
             masks[other][index] ^= hash;
             counts[other][index] -= 1;
-            if counts[other][index] == 1 {
-                queues[other][queue_sizes[other]] = index as u32;
-                queue_sizes[other] += 1;
-            }
+            // A slot enters its queue at most once. The extra slot accommodates
+            // this write when every real slot is already queued; retain it only
+            // when the neighbor becomes a singleton.
+            queues[other][queue_sizes[other]] = index as u32;
+            queue_sizes[other] += usize::from(counts[other][index] == 1);
         }
     }
 }
@@ -715,6 +718,9 @@ fn assign_fingerprints<T: Copy + BitXor<Output = T>>(
 
 #[inline]
 fn indexes(hash: u64, segment_length: usize) -> [usize; 3] {
+    // Construction and import validate this bound. Exposing it here allows
+    // widening 32-bit multiplies for the three range reductions.
+    let segment_length = segment_length as u32 as usize;
     [
         reduce(hash as u32, segment_length),
         reduce(hash.rotate_left(21) as u32, segment_length) + segment_length,
@@ -762,6 +768,32 @@ mod tests {
                 ErrorKind::InvalidArgument
             );
         }
+    }
+
+    #[test]
+    fn peeling_handles_full_neighbor_queues() {
+        // All three singleton queues are full. Removing the only edge makes
+        // both neighbors stale, so speculative enqueues must not retain them.
+        let mut masks = [0; 3];
+        let mut counts = [0; 3];
+        let mut queues = [0; 6];
+        let mut hashes = [0; 1];
+        let mut indexes = [0; 1];
+        assert_eq!(
+            map(
+                &[42],
+                1,
+                1,
+                &mut masks,
+                &mut counts,
+                &mut queues,
+                &mut hashes,
+                &mut indexes
+            ),
+            1,
+        );
+        assert_eq!(hashes, [mix(42, 1)]);
+        assert_eq!(indexes, [0]);
     }
 
     #[test]
