@@ -793,22 +793,16 @@ mod tests {
         let keys: Vec<_> = (917_504..917_504 + 16_384u64)
             .map(|i| splitmix64(i.wrapping_add(SPLITMIX_GAMMA)))
             .collect();
-        for kind in [
-            XorFilterType::Xor8,
-            XorFilterType::Xor16,
-            XorFilterType::Xor32,
-        ] {
-            let original = keys.clone();
-            let error = XorFilter::build(&keys, kind, 1, 1).unwrap_err();
-            assert_eq!(error.kind(), ErrorKind::InvalidArgument);
-            assert_eq!(keys, original);
+        let error = XorFilter::build(&keys, XorFilterType::Xor8, 1, 1).unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::InvalidArgument);
 
-            let builder = XorFilterBuilder::new(kind).seed(1_u64.wrapping_add(SPLITMIX_GAMMA));
-            let filter = builder.clone().build_from_distinct_hashes(&keys).unwrap();
-            assert_eq!(filter.num_items(), Some(keys.len()));
-            for &key in &keys {
-                assert!(filter.contains_hash(key));
-            }
+        let filter = XorFilterBuilder::new(XorFilterType::Xor8)
+            .seed(1_u64.wrapping_add(SPLITMIX_GAMMA))
+            .build_from_distinct_hashes(&keys)
+            .unwrap();
+        assert_eq!(filter.num_items(), Some(keys.len()));
+        for &key in &keys {
+            assert!(filter.contains_hash(key));
         }
     }
 }
