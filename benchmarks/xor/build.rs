@@ -15,118 +15,142 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::hint::black_box;
+
+use benchmarks::Bencher;
+use benchmarks::Runner;
 use datasketches::xor::XorFilterBuilder;
 use datasketches::xor::XorFilterType;
-use divan::Bencher;
-use divan::black_box;
-use divan::counter::ItemsCount;
 
 use crate::xor::hashes;
 
-#[divan::bench(args = [1_000, 16_384, 49_999, 50_000, 50_001, 100_000])]
 fn datasketches_distinct_8(bencher: Bencher, cardinality: usize) {
     let keys = hashes(cardinality);
-    bencher
-        .counter(ItemsCount::new(cardinality))
-        .bench_local(|| {
-            black_box(
-                XorFilterBuilder::new(XorFilterType::Xor8)
-                    .build_from_distinct_hashes(&keys)
-                    .unwrap(),
-            )
-        });
+    bencher.bench_local(|| {
+        black_box(
+            XorFilterBuilder::new(XorFilterType::Xor8)
+                .build_from_distinct_hashes(&keys)
+                .unwrap(),
+        )
+    });
 }
 
-#[divan::bench(args = [1_000, 16_384, 49_999, 50_000, 50_001, 100_000])]
 fn datasketches_deduplicate_8(bencher: Bencher, cardinality: usize) {
     let keys = hashes(cardinality);
-    bencher
-        .counter(ItemsCount::new(cardinality))
-        .bench_local(|| {
-            black_box(
-                XorFilterBuilder::new(XorFilterType::Xor8)
-                    .build_from_hashes(keys.iter().copied())
-                    .unwrap(),
-            )
-        });
+    bencher.bench_local(|| {
+        black_box(
+            XorFilterBuilder::new(XorFilterType::Xor8)
+                .build_from_hashes(keys.iter().copied())
+                .unwrap(),
+        )
+    });
 }
 
-#[divan::bench(args = [1_000, 16_384, 49_999, 50_000, 50_001, 100_000])]
 fn xorf_8(bencher: Bencher, cardinality: usize) {
     let keys = hashes(cardinality);
-    bencher
-        .counter(ItemsCount::new(cardinality))
-        .bench_local(|| black_box(xorf::Xor8::from_iterator(keys.iter().copied())));
+    bencher.bench_local(|| black_box(xorf::Xor8::from_iterator(keys.iter().copied())));
 }
 
-#[divan::bench(args = [1_000, 16_384, 49_999, 50_000, 50_001, 100_000])]
 fn datasketches_distinct_16(bencher: Bencher, cardinality: usize) {
     let keys = hashes(cardinality);
-    bencher
-        .counter(ItemsCount::new(cardinality))
-        .bench_local(|| {
-            black_box(
-                XorFilterBuilder::new(XorFilterType::Xor16)
-                    .build_from_distinct_hashes(&keys)
-                    .unwrap(),
-            )
-        });
+    bencher.bench_local(|| {
+        black_box(
+            XorFilterBuilder::new(XorFilterType::Xor16)
+                .build_from_distinct_hashes(&keys)
+                .unwrap(),
+        )
+    });
 }
 
-#[divan::bench(args = [1_000, 16_384, 49_999, 50_000, 50_001, 100_000])]
 fn datasketches_deduplicate_16(bencher: Bencher, cardinality: usize) {
     let keys = hashes(cardinality);
-    bencher
-        .counter(ItemsCount::new(cardinality))
-        .bench_local(|| {
-            black_box(
-                XorFilterBuilder::new(XorFilterType::Xor16)
-                    .build_from_hashes(keys.iter().copied())
-                    .unwrap(),
-            )
-        });
+    bencher.bench_local(|| {
+        black_box(
+            XorFilterBuilder::new(XorFilterType::Xor16)
+                .build_from_hashes(keys.iter().copied())
+                .unwrap(),
+        )
+    });
 }
 
-#[divan::bench(args = [1_000, 16_384, 49_999, 50_000, 50_001, 100_000])]
 fn xorf_16(bencher: Bencher, cardinality: usize) {
     let keys = hashes(cardinality);
-    bencher
-        .counter(ItemsCount::new(cardinality))
-        .bench_local(|| black_box(xorf::Xor16::from_iterator(keys.iter().copied())));
+    bencher.bench_local(|| black_box(xorf::Xor16::from_iterator(keys.iter().copied())));
 }
 
-#[divan::bench(args = [1_000, 16_384, 49_999, 50_000, 50_001, 100_000])]
 fn datasketches_distinct_32(bencher: Bencher, cardinality: usize) {
     let keys = hashes(cardinality);
-    bencher
-        .counter(ItemsCount::new(cardinality))
-        .bench_local(|| {
-            black_box(
-                XorFilterBuilder::new(XorFilterType::Xor32)
-                    .build_from_distinct_hashes(&keys)
-                    .unwrap(),
-            )
-        });
+    bencher.bench_local(|| {
+        black_box(
+            XorFilterBuilder::new(XorFilterType::Xor32)
+                .build_from_distinct_hashes(&keys)
+                .unwrap(),
+        )
+    });
 }
 
-#[divan::bench(args = [1_000, 16_384, 49_999, 50_000, 50_001, 100_000])]
 fn datasketches_deduplicate_32(bencher: Bencher, cardinality: usize) {
     let keys = hashes(cardinality);
-    bencher
-        .counter(ItemsCount::new(cardinality))
-        .bench_local(|| {
-            black_box(
-                XorFilterBuilder::new(XorFilterType::Xor32)
-                    .build_from_hashes(keys.iter().copied())
-                    .unwrap(),
-            )
-        });
+    bencher.bench_local(|| {
+        black_box(
+            XorFilterBuilder::new(XorFilterType::Xor32)
+                .build_from_hashes(keys.iter().copied())
+                .unwrap(),
+        )
+    });
 }
 
-#[divan::bench(args = [1_000, 16_384, 49_999, 50_000, 50_001, 100_000])]
 fn xorf_32(bencher: Bencher, cardinality: usize) {
     let keys = hashes(cardinality);
-    bencher
-        .counter(ItemsCount::new(cardinality))
-        .bench_local(|| black_box(xorf::Xor32::from_iterator(keys.iter().copied())));
+    bencher.bench_local(|| black_box(xorf::Xor32::from_iterator(keys.iter().copied())));
+}
+
+pub fn register(runner: &mut Runner) {
+    let cases = &[
+        (1_000, 60_000),
+        (16_384, 2_000),
+        (49_999, 600),
+        (50_000, 600),
+        (50_001, 600),
+        (100_000, 200),
+    ];
+    for &(cardinality, rounds) in cases {
+        runner.compare(
+            &format!("xor::build::8/{cardinality}"),
+            rounds,
+            &[
+                ("distinct", &|b| datasketches_distinct_8(b, cardinality)),
+                ("deduplicate", &|b| {
+                    datasketches_deduplicate_8(b, cardinality)
+                }),
+                ("xorf", &|b| xorf_8(b, cardinality)),
+            ],
+        );
+    }
+    for &(cardinality, rounds) in cases {
+        runner.compare(
+            &format!("xor::build::16/{cardinality}"),
+            rounds,
+            &[
+                ("distinct", &|b| datasketches_distinct_16(b, cardinality)),
+                ("deduplicate", &|b| {
+                    datasketches_deduplicate_16(b, cardinality)
+                }),
+                ("xorf", &|b| xorf_16(b, cardinality)),
+            ],
+        );
+    }
+    for &(cardinality, rounds) in cases {
+        runner.compare(
+            &format!("xor::build::32/{cardinality}"),
+            rounds,
+            &[
+                ("distinct", &|b| datasketches_distinct_32(b, cardinality)),
+                ("deduplicate", &|b| {
+                    datasketches_deduplicate_32(b, cardinality)
+                }),
+                ("xorf", &|b| xorf_32(b, cardinality)),
+            ],
+        );
+    }
 }

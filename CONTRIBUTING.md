@@ -67,13 +67,41 @@ Benchmark:
 cargo x bench
 ```
 
-Benchmarks live in the standalone `benchmarks` crate. Files are grouped first by sketch and then by workload, for example `benchmarks/cpc/serde.rs` and `benchmarks/tdigest/update.rs`. Keep distinct workloads in separate modules so Divan reports stable names such as `cpc::serde::serialize`.
+Benchmarks live in the standalone `benchmarks` crate. Files are grouped first by sketch and then by workload, for example `benchmarks/cpc/serde.rs` and `benchmarks/tdigest/update.rs`. Each workload module registers its scenarios and fixed round counts with the [runner](benchmarks/harness.rs). Keep distinct workloads in separate modules and use names such as `cpc::serde::serialize/200` that identify the sketch, operation, and input.
 
-To run only one sketch or workload, pass a Divan filter directly:
+Compile, list, or smoke-test the benchmarks:
 
 ```shell
-cargo bench --package benchmarks --bench benchmarks -- cpc::serde
+cargo x bench --no-run
+cargo x bench -- --list
+cargo x bench -- --test
 ```
+
+Smoke mode executes every selected implementation for one outer round, preserving input sizes, inner loops, and correctness checks. CI runs this mode without asserting elapsed times. The runner's tests are included in `cargo x test`.
+
+To select workloads and inspect repeated measurements:
+
+```shell
+cargo x bench -- cpc::serde --repeat 10 --raw
+cargo x bench -- xor::matched_build::8 --repeat 5
+cargo x bench -- 'kll::query::quantile/0.5' --exact --rounds 100000
+```
+
+Filters are substrings; a scenario must match all supplied filters. Use `--exact` with one complete name to select only that scenario. A filter that matches nothing fails. Runner options can also be passed directly with `cargo bench --package benchmarks --bench benchmarks -- ...`.
+
+### Fixed workloads and timing
+
+[Benchmark In Milliseconds](https://matklad.github.io/2026/10/05/benchmark-milliseconds.html) recommends sizing useful work to take roughly 300 ms. Choose that work size on a reference revision, then preserve it across comparisons. The runner never calibrates rounds automatically: an optimization should reduce elapsed time for the same work. The initial counts were sized against the library at `5f080f9` using the timing boundaries below. Hardware and toolchains affect duration, so 300 ms is a sizing guideline, not a performance assertion. The eight-million-key XOR cases retain one full build per round.
+
+Each repetition starts the clock before fixture construction and stops after cleanup. A fixture is built once per repetition and may be reused across its fixed rounds. Updates rebuild the sketch each round; read-only queries reuse a prepared sketch; destructive operations clone their inputs each round. Input generation, cloning, allocations, output destruction, and fixture validation all count toward elapsed time. No allocation profiler is installed. These measurements establish a new baseline and are not directly comparable to the old Divan timings that excluded setup or destruction.
+
+A round is one invocation of the workload closure, not necessarily one item. For example, hash-based updates process 10,000 inputs, parameterized updates process the named input size, XOR queries visit every key in the selected present or absent set, and aggregation rounds process the entire specified group of partial states. Keep inner batch sizes and sketch parameters stable when adjusting outer rounds; changing cardinality can change the algorithmic path.
+
+The default is five repetitions. Output reports the median and full minimum-to-maximum range in integer milliseconds. `--raw` includes every elapsed time in measurement order, including the first run and outliers. XOR tables interleave implementations and rotate the first implementation across repetitions, using identical rounds and input parameters. `vs ref` divides each median by the first implementation's median before rounding; `0.80x` means 20% less elapsed time for that workload. `--baseline-only` runs just the first implementation.
+
+XOR build tables compare DataSketches' distinct-hash and deduplicating entry points with xorf on distinct inputs. The `matched_build` scenarios additionally align the seed sequence and check each resulting seed against the expected first or second attempt, including a case requiring a second attempt. Query tables use the same key sets and fingerprint widths. These comparisons include each implementation's fixture construction and cleanup. Different scenario rows may have different round counts and are not a throughput ranking; use identical rounds when comparing equivalent work across rows.
+
+To add or resize a scenario, select a reference revision and run it with an explicit `--rounds` value and several repetitions. Choose a convenient fixed count that puts the reference in the hundreds of milliseconds, then record it in the workload registration. Give all implementations of that scenario the same count. Keep it fixed for later revisions and faster peers. When inputs, rounds, or timing boundaries change, rerun both sides under the new definition. Inspect the measured range before drawing conclusions; changing rounds alone does not eliminate noise.
 
 ## Public API documentation
 

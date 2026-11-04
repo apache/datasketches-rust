@@ -15,18 +15,18 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::hint::black_box;
+
+use benchmarks::Bencher;
+use benchmarks::Runner;
 use datasketches::countmin::CountMinSketch;
 use datasketches::hash::value::raw_bytes;
-use divan::Bencher;
-use divan::black_box;
-use divan::counter::ItemsCount;
 
 use crate::hash_inputs::ITEMS;
 use crate::hash_inputs::bytes_32_values;
 
-#[divan::bench]
 fn u64(bencher: Bencher) {
-    bencher.counter(ItemsCount::new(ITEMS)).bench_local(|| {
+    bencher.bench_local(|| {
         let mut sketch = CountMinSketch::<u64>::new(4, 16_384).unwrap();
         for value in 0..ITEMS as u64 {
             sketch.update(black_box(value));
@@ -35,15 +35,19 @@ fn u64(bencher: Bencher) {
     });
 }
 
-#[divan::bench]
 fn bytes_32(bencher: Bencher) {
     let values = bytes_32_values();
 
-    bencher.counter(ItemsCount::new(ITEMS)).bench_local(|| {
+    bencher.bench_local(|| {
         let mut sketch = CountMinSketch::<u64>::new(4, 16_384).unwrap();
         for value in &values {
             sketch.update(raw_bytes::from_slice(black_box(value)));
         }
         black_box(sketch)
     });
+}
+
+pub fn register(runner: &mut Runner) {
+    runner.case("countmin::update::u64", 2_000, u64);
+    runner.case("countmin::update::bytes_32", 1_000, bytes_32);
 }

@@ -15,103 +15,95 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::hint::black_box;
+
+use benchmarks::Bencher;
+use benchmarks::Runner;
 use datasketches::tdigest::TDigestMut;
-use divan::Bencher;
-use divan::black_box;
-use divan::counter::ItemsCount;
 
 use super::support::build_mut_digest;
 use super::support::values;
 
-// (number of partial states, values per state). Each partial samples the same distribution.
-const SERIALIZED_INPUTS: &[(usize, usize)] =
-    &[(1, 8), (64, 8), (512, 8), (64, 64), (512, 64), (64, 4_096)];
+// ((partial states, values per state), rounds). Keep the work equal across merge strategies.
+const SERIALIZED_INPUTS: &[((usize, usize), usize)] = &[
+    ((1, 8), 2_000_000),
+    ((64, 8), 9_000),
+    ((512, 8), 800),
+    ((64, 64), 5_000),
+    ((512, 64), 300),
+    ((64, 4_096), 2_000),
+];
 
-#[divan::bench(args = SERIALIZED_INPUTS, sample_size = 1)]
 fn serialized_borrowed(bencher: Bencher, shape: (usize, usize)) {
     let (num_partials, rows_per_partial) = shape;
     let partials = serialize_partials(&values(num_partials * rows_per_partial), rows_per_partial);
 
-    bencher
-        .counter(ItemsCount::new(num_partials * rows_per_partial))
-        .bench_local(|| {
-            let mut merged = TDigestMut::default();
-            for bytes in black_box(&partials) {
-                merged.merge(&TDigestMut::deserialize(bytes).unwrap());
-            }
-            final_quantile(merged)
-        });
+    bencher.bench_local(|| {
+        let mut merged = TDigestMut::default();
+        for bytes in black_box(&partials) {
+            merged.merge(&TDigestMut::deserialize(bytes).unwrap());
+        }
+        final_quantile(merged)
+    });
 }
 
-#[divan::bench(args = SERIALIZED_INPUTS, sample_size = 1)]
 fn serialized_owned(bencher: Bencher, shape: (usize, usize)) {
     let (num_partials, rows_per_partial) = shape;
     let partials = serialize_partials(&values(num_partials * rows_per_partial), rows_per_partial);
 
-    bencher
-        .counter(ItemsCount::new(num_partials * rows_per_partial))
-        .bench_local(|| {
-            let merged = black_box(&partials)
-                .iter()
-                .map(|bytes| TDigestMut::deserialize(bytes))
-                .collect::<Result<TDigestMut, _>>()
-                .unwrap();
-            final_quantile(merged)
-        });
+    bencher.bench_local(|| {
+        let merged = black_box(&partials)
+            .iter()
+            .map(|bytes| TDigestMut::deserialize(bytes))
+            .collect::<Result<TDigestMut, _>>()
+            .unwrap();
+        final_quantile(merged)
+    });
 }
 
-#[divan::bench(args = SERIALIZED_INPUTS, sample_size = 1)]
 fn serialized_in_batches(bencher: Bencher, shape: (usize, usize)) {
     let (num_partials, rows_per_partial) = shape;
     let partials = serialize_partials(&values(num_partials * rows_per_partial), rows_per_partial);
 
-    bencher
-        .counter(ItemsCount::new(num_partials * rows_per_partial))
-        .bench_local(|| {
-            let mut merged = TDigestMut::default();
-            for batch in black_box(&partials).chunks(16) {
-                let batch = batch
-                    .iter()
-                    .map(|bytes| TDigestMut::deserialize(bytes))
-                    .collect::<Result<TDigestMut, _>>()
-                    .unwrap();
-                merged.merge(&batch);
-            }
-            final_quantile(merged)
-        });
-}
-
-#[divan::bench(args = [8, 64], sample_size = 1)]
-fn end_to_end_borrowed(bencher: Bencher, rows_per_partial: usize) {
-    let inputs = values(64 * rows_per_partial);
-
-    bencher
-        .counter(ItemsCount::new(inputs.len()))
-        .bench_local(|| {
-            let partials = serialize_partials(black_box(&inputs), rows_per_partial);
-            let mut merged = TDigestMut::default();
-            for bytes in &partials {
-                merged.merge(&TDigestMut::deserialize(bytes).unwrap());
-            }
-            final_quantile(merged)
-        });
-}
-
-#[divan::bench(args = [8, 64], sample_size = 1)]
-fn end_to_end_owned(bencher: Bencher, rows_per_partial: usize) {
-    let inputs = values(64 * rows_per_partial);
-
-    bencher
-        .counter(ItemsCount::new(inputs.len()))
-        .bench_local(|| {
-            let partials = serialize_partials(black_box(&inputs), rows_per_partial);
-            let merged = partials
+    bencher.bench_local(|| {
+        let mut merged = TDigestMut::default();
+        for batch in black_box(&partials).chunks(16) {
+            let batch = batch
                 .iter()
                 .map(|bytes| TDigestMut::deserialize(bytes))
                 .collect::<Result<TDigestMut, _>>()
                 .unwrap();
-            final_quantile(merged)
-        });
+            merged.merge(&batch);
+        }
+        final_quantile(merged)
+    });
+}
+
+fn end_to_end_borrowed(bencher: Bencher, rows_per_partial: usize) {
+    let inputs = values(64 * rows_per_partial);
+
+    bencher.bench_local(|| {
+        let partials = serialize_partials(black_box(&inputs), rows_per_partial);
+        let mut merged = TDigestMut::default();
+        for bytes in &partials {
+            merged.merge(&TDigestMut::deserialize(bytes).unwrap());
+        }
+        final_quantile(merged)
+    });
+}
+
+fn end_to_end_owned(bencher: Bencher, rows_per_partial: usize) {
+    let inputs = values(64 * rows_per_partial);
+
+    bencher.bench_local(|| {
+        let partials = serialize_partials(black_box(&inputs), rows_per_partial);
+        let merged = partials
+            .iter()
+            .map(|bytes| TDigestMut::deserialize(bytes))
+            .collect::<Result<TDigestMut, _>>()
+            .unwrap();
+        final_quantile(merged)
+    });
 }
 
 fn serialize_partials(inputs: &[f64], rows_per_partial: usize) -> Vec<Vec<u8>> {
@@ -128,4 +120,43 @@ fn final_quantile(mut merged: TDigestMut) -> Option<f64> {
         .unwrap()
         .quantile(black_box(0.9))
         .unwrap()
+}
+
+pub fn register(runner: &mut Runner) {
+    let end_to_end_cases = &[(8, 8_000), (64, 3_000)];
+    for &(shape, rounds) in SERIALIZED_INPUTS {
+        runner.case(
+            format!("tdigest::aggregation::serialized_borrowed/{shape:?}"),
+            rounds,
+            |b| serialized_borrowed(b, shape),
+        );
+    }
+    for &(shape, rounds) in SERIALIZED_INPUTS {
+        runner.case(
+            format!("tdigest::aggregation::serialized_owned/{shape:?}"),
+            rounds,
+            |b| serialized_owned(b, shape),
+        );
+    }
+    for &(shape, rounds) in SERIALIZED_INPUTS {
+        runner.case(
+            format!("tdigest::aggregation::serialized_in_batches/{shape:?}"),
+            rounds,
+            |b| serialized_in_batches(b, shape),
+        );
+    }
+    for &(rows_per_partial, rounds) in end_to_end_cases {
+        runner.case(
+            format!("tdigest::aggregation::end_to_end_borrowed/{rows_per_partial:?}"),
+            rounds,
+            |b| end_to_end_borrowed(b, rows_per_partial),
+        );
+    }
+    for &(rows_per_partial, rounds) in end_to_end_cases {
+        runner.case(
+            format!("tdigest::aggregation::end_to_end_owned/{rows_per_partial:?}"),
+            rounds,
+            |b| end_to_end_owned(b, rows_per_partial),
+        );
+    }
 }

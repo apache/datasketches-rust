@@ -17,3 +17,8 @@
 
 mod serde;
 mod update;
+
+pub fn register(runner: &mut benchmarks::Runner) {
+    serde::register(runner);
+    update::register(runner);
+}
