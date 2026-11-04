@@ -83,7 +83,7 @@ To select workloads and inspect repeated measurements:
 
 ```shell
 cargo x bench -- cpc::serde --repeat 10 --raw
-cargo x bench -- xor::matched_build::8 --repeat 5
+cargo x bench -- xor::build::8 --repeat 5
 cargo x bench -- 'kll::query::quantile/0.5' --exact --rounds 100000
 ```
 

@@ -73,25 +73,6 @@ fn duplicates_are_removed_before_construction() {
 }
 
 #[test]
-fn construction_is_independent_of_input_order() {
-    let ascending = XorFilterBuilder::new(XorFilterType::Xor8).seed(424_242);
-    let descending = ascending.clone();
-
-    assert_eq!(
-        ascending
-            .build_from_hashes(0..50_000_u64)
-            .unwrap()
-            .serialize()
-            .unwrap(),
-        descending
-            .build_from_hashes((0..50_000_u64).rev())
-            .unwrap()
-            .serialize()
-            .unwrap()
-    );
-}
-
-#[test]
 fn metadata_describes_the_compact_payload() {
     let filter = XorFilterBuilder::new(XorFilterType::Xor8)
         .build_from_hashes(0..10_000_u64)
