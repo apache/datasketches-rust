@@ -7,6 +7,7 @@ All significant changes to this project will be documented in this file.
 ### New features
 
 * Add `HllUnion::serialize` to serialize union results directly.
+* Add `TupleUnion::serialize` to serialize union results without cloning summaries, which avoids per-entry allocations for heap-backed summaries.
 * Add immutable `XorFilter` and `XorFilterBuilder` behind the `xor` feature, with 8-, 16-, and 32-bit fingerprints, consuming builder configuration with complete-input construction, bounded seeded retries and compact temporary storage, optional cardinality metadata for imported filters, standard serialization for all three widths (Java-compatible for 8/16-bit filters), and raw parts for application-defined storage.
 
 ### Improvements

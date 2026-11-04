@@ -113,18 +113,35 @@ where
     where
         E: Clone,
     {
+        self.compact_sketch_state_with(ordered, E::clone)
+    }
+
+    /// Returns the union as canonical compact-sketch state that borrows the retained entries.
+    ///
+    /// Theta filtering, trimming to nominal capacity, and ordering match
+    /// [`to_compact_sketch_state`](Self::to_compact_sketch_state).
+    #[cfg(feature = "tuple")]
+    pub fn to_borrowed_compact_sketch_state(&self, ordered: bool) -> CompactSketchState<&E> {
+        self.compact_sketch_state_with(ordered, |entry| entry)
+    }
+
+    fn compact_sketch_state_with<'a, T: SketchEntry>(
+        &'a self,
+        ordered: bool,
+        project: impl FnMut(&'a E) -> T,
+    ) -> CompactSketchState<T> {
         let Some(result_theta) = self.result_theta else {
             return CompactSketchState::empty(self.table.seed_hash());
         };
 
         let mut theta = result_theta.min(self.table.retention_theta());
         let mut retained_entries = if result_theta >= self.table.retention_theta() {
-            self.table.iter_entries().cloned().collect::<Vec<_>>()
+            self.table.iter_entries().map(project).collect::<Vec<_>>()
         } else {
             self.table
                 .iter_entries()
                 .filter(|entry| entry.hash() < theta)
-                .cloned()
+                .map(project)
                 .collect::<Vec<_>>()
         };
 
