@@ -19,12 +19,12 @@ use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
 use crate::codec::assert::insufficient_data;
 use crate::codec::family::Family;
-use crate::common::NumStdDev;
 use crate::error::Error;
 use crate::hll::Coupon;
+use crate::hll::array::HllArray;
+use crate::hll::array::Registers;
 use crate::hll::aux_map::AuxMap;
-use crate::hll::estimator::EstimateState;
-use crate::hll::estimator::Estimator;
+use crate::hll::estimator::Kxq;
 use crate::hll::serialization::COMPACT_FLAG_MASK;
 use crate::hll::serialization::COUPON_SIZE_BYTES;
 use crate::hll::serialization::CUR_MODE_HLL;
@@ -55,7 +55,7 @@ impl AuxFormat {
 
 /// Registers stored as four-bit offsets from their current minimum.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Array4 {
+pub struct Registers4 {
     lg_config_k: u8,
     /// Even slots occupy the low nibble; odd slots occupy the high nibble.
     bytes: Box<[u8]>,
@@ -64,41 +64,17 @@ pub struct Array4 {
     num_at_cur_min: u32,
     /// Every `AUX_TOKEN` nibble has an entry here containing the absolute register value.
     aux_map: Option<AuxMap>,
-    estimator: Estimator,
 }
 
-impl Array4 {
-    pub fn new(lg_config_k: u8) -> Self {
-        let num_bytes = 1 << (lg_config_k - 1);
-        let num_at_cur_min = 1 << lg_config_k;
-        Self {
-            lg_config_k,
-            bytes: vec![0u8; num_bytes].into_boxed_slice(),
-            cur_min: 0,
-            num_at_cur_min,
-            aux_map: None,
-            estimator: Estimator::new(lg_config_k),
-        }
-    }
+pub type Array4 = HllArray<Registers4>;
 
+impl Registers4 {
     #[inline]
     fn get_raw(&self, slot: u32) -> u8 {
         debug_assert!(slot >> 1 < self.bytes.len() as u32);
 
         let byte = self.bytes[(slot >> 1) as usize];
         if slot & 1 == 0 { byte & 15 } else { byte >> 4 }
-    }
-
-    pub fn get(&self, slot: u32) -> u8 {
-        read_register(&self.bytes, self.cur_min, self.aux_map.as_ref(), slot)
-    }
-
-    pub fn num_registers(&self) -> usize {
-        1 << self.lg_config_k
-    }
-
-    pub fn estimate_state(&self) -> EstimateState {
-        self.estimator.estimate_state()
     }
 
     #[inline]
@@ -113,72 +89,6 @@ impl Array4 {
         } else {
             (old_byte & 0x0F) | (value << 4)
         };
-    }
-
-    pub fn update(&mut self, coupon: Coupon) {
-        let mask = (1 << self.lg_config_k) - 1;
-        let slot = coupon.slot() & mask;
-        let new_value = coupon.value();
-
-        if new_value <= self.cur_min {
-            return;
-        }
-
-        let raw_stored = self.get_raw(slot);
-        let lower_bound = raw_stored + self.cur_min;
-
-        if new_value <= lower_bound {
-            return;
-        }
-
-        let old_value = if raw_stored < AUX_TOKEN {
-            lower_bound
-        } else {
-            self.aux_map
-                .as_ref()
-                .expect("aux_map should be initialized since stored value is AUX_TOKEN")
-                .get(slot)
-                .expect("slot should be in aux_map since associated value is AUX_TOKEN")
-        };
-
-        if new_value <= old_value {
-            return;
-        }
-
-        self.estimator
-            .update(self.lg_config_k, old_value, new_value);
-
-        let shifted_new = new_value - self.cur_min;
-
-        match (raw_stored, shifted_new) {
-            (AUX_TOKEN, shifted) if shifted >= AUX_TOKEN => {
-                self.aux_map
-                    .as_mut()
-                    .expect("aux_map should be initialized since stored value is AUX_TOKEN")
-                    .replace(slot, new_value);
-            }
-            // Registers only increase here; an exception cannot disappear until cur_min changes.
-            (AUX_TOKEN, _) => {
-                unreachable!("AUX_TOKEN present with non-exception new value");
-            }
-            (_, shifted) if shifted >= AUX_TOKEN => {
-                self.put_raw(slot, AUX_TOKEN);
-                let aux = self
-                    .aux_map
-                    .get_or_insert_with(|| AuxMap::new(self.lg_config_k));
-                aux.insert(slot, new_value);
-            }
-            _ => {
-                self.put_raw(slot, shifted_new);
-            }
-        }
-
-        if old_value == self.cur_min {
-            self.num_at_cur_min -= 1;
-            while self.num_at_cur_min == 0 {
-                self.shift_to_bigger_cur_min();
-            }
-        }
     }
 
     /// Requires no registers at `cur_min`. Raising the offset makes some auxiliary values
@@ -226,45 +136,113 @@ impl Array4 {
         self.cur_min = new_cur_min;
         self.num_at_cur_min = num_at_new;
     }
+}
 
-    fn register_values(&self) -> impl Iterator<Item = u8> {
-        (0..self.num_registers() as u32).map(|slot| self.get(slot))
+impl Registers for Registers4 {
+    type Statistics = Kxq;
+    fn new(lg_config_k: u8) -> Self {
+        let num_bytes = 1 << (lg_config_k - 1);
+        let num_at_cur_min = 1 << lg_config_k;
+        Self {
+            lg_config_k,
+            bytes: vec![0u8; num_bytes].into_boxed_slice(),
+            cur_min: 0,
+            num_at_cur_min,
+            aux_map: None,
+        }
     }
 
-    pub fn estimate(&self) -> f64 {
-        self.estimator
-            .estimate(self.lg_config_k, self.register_values())
+    fn lg_config_k(&self) -> u8 {
+        self.lg_config_k
     }
 
-    pub fn composite_estimate(&self) -> f64 {
-        self.estimator
-            .composite_estimate(self.lg_config_k, self.register_values())
+    fn get(&self, slot: u32) -> u8 {
+        read_register(&self.bytes, self.cur_min, self.aux_map.as_ref(), slot)
     }
 
-    pub fn upper_bound(&self, num_std_dev: NumStdDev) -> f64 {
-        self.estimator
-            .upper_bound(self.lg_config_k, self.register_values(), num_std_dev)
+    fn values(&self) -> impl Iterator<Item = u8> {
+        (0..1 << self.lg_config_k).map(|slot| self.get(slot))
     }
 
-    pub fn lower_bound(&self, num_std_dev: NumStdDev) -> f64 {
-        self.estimator
-            .lower_bound(self.lg_config_k, self.register_values(), num_std_dev)
+    fn num_zeros(&self) -> u32 {
+        if self.cur_min == 0 {
+            self.num_at_cur_min
+        } else {
+            0
+        }
     }
 
-    pub fn restore_estimate_state(&mut self, state: EstimateState) {
-        let bytes = &self.bytes;
-        let cur_min = self.cur_min;
-        let aux_map = self.aux_map.as_ref();
-        let registers =
-            (0..1 << self.lg_config_k).map(|slot| read_register(bytes, cur_min, aux_map, slot));
-        self.estimator.restore_estimate_state(state, registers);
+    fn is_empty(&self) -> bool {
+        self.num_zeros() == (1 << self.lg_config_k)
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.estimator
-            .is_empty(self.lg_config_k, self.register_values())
-    }
+    #[inline]
+    fn update(&mut self, coupon: Coupon) -> Option<(u8, u8)> {
+        let mask = (1 << self.lg_config_k) - 1;
+        let slot = coupon.slot() & mask;
+        let new_value = coupon.value();
 
+        if new_value <= self.cur_min {
+            return None;
+        }
+
+        let raw_stored = self.get_raw(slot);
+        let lower_bound = raw_stored + self.cur_min;
+
+        if new_value <= lower_bound {
+            return None;
+        }
+
+        let old_value = if raw_stored < AUX_TOKEN {
+            lower_bound
+        } else {
+            self.aux_map
+                .as_ref()
+                .expect("aux_map should be initialized since stored value is AUX_TOKEN")
+                .get(slot)
+                .expect("slot should be in aux_map since associated value is AUX_TOKEN")
+        };
+
+        if new_value <= old_value {
+            return None;
+        }
+
+        let shifted_new = new_value - self.cur_min;
+
+        match (raw_stored, shifted_new) {
+            (AUX_TOKEN, shifted) if shifted >= AUX_TOKEN => {
+                self.aux_map
+                    .as_mut()
+                    .expect("aux_map should be initialized since stored value is AUX_TOKEN")
+                    .replace(slot, new_value);
+            }
+            // Registers only increase here; an exception cannot disappear until cur_min changes.
+            (AUX_TOKEN, _) => {
+                unreachable!("AUX_TOKEN present with non-exception new value");
+            }
+            (_, shifted) if shifted >= AUX_TOKEN => {
+                self.put_raw(slot, AUX_TOKEN);
+                let aux = self
+                    .aux_map
+                    .get_or_insert_with(|| AuxMap::new(self.lg_config_k));
+                aux.insert(slot, new_value);
+            }
+            _ => {
+                self.put_raw(slot, shifted_new);
+            }
+        }
+
+        if old_value == self.cur_min {
+            self.num_at_cur_min -= 1;
+            while self.num_at_cur_min == 0 {
+                self.shift_to_bigger_cur_min();
+            }
+        }
+        Some((old_value, new_value))
+    }
+}
+
+impl Array4 {
     pub fn deserialize(
         mut cursor: SketchSlice,
         cur_min: u8,
@@ -353,30 +331,30 @@ impl Array4 {
             aux_map = Some(aux);
         }
 
-        let estimator = Estimator::from_serialized(
+        Ok(Self::from_serialized(
+            Registers4 {
+                lg_config_k,
+                bytes: data.into_boxed_slice(),
+                cur_min,
+                num_at_cur_min,
+                aux_map,
+            },
             hip_accum,
             kxq0,
             kxq1,
             if cur_min == 0 { num_at_cur_min } else { 0 },
             ooo,
-        );
-
-        Ok(Self {
-            lg_config_k,
-            bytes: data.into_boxed_slice(),
-            cur_min,
-            num_at_cur_min,
-            aux_map,
-            estimator,
-        })
+        ))
     }
 
     /// Writes packed registers followed by compact auxiliary entries.
-    pub fn serialize(&self, lg_config_k: u8) -> Vec<u8> {
-        let statistics = self.estimator.statistics(self.register_values());
+    pub fn serialize(&self) -> Vec<u8> {
+        let registers = self.registers();
+        let lg_config_k = self.lg_config_k();
+        let statistics = self.statistics();
         let num_bytes = 1 << (lg_config_k - 1);
 
-        let aux_entries: Vec<(u32, u8)> = if let Some(aux) = &self.aux_map {
+        let aux_entries: Vec<(u32, u8)> = if let Some(aux) = &registers.aux_map {
             aux.iter().collect()
         } else {
             vec![]
@@ -393,24 +371,24 @@ impl Array4 {
         bytes.write_u8(0); // lg_arr is unused for compact auxiliary storage.
 
         let mut flags = COMPACT_FLAG_MASK;
-        if self.estimator.uses_composite_estimate() {
+        if self.estimate_state().uses_composite_estimate() {
             flags |= OUT_OF_ORDER_FLAG_MASK;
         }
         bytes.write_u8(flags);
 
-        bytes.write_u8(self.cur_min);
+        bytes.write_u8(registers.cur_min);
 
         bytes.write_u8(encode_mode_byte(CUR_MODE_HLL, TGT_HLL4));
 
-        bytes.write_f64_le(self.estimator.hip_accum());
-        bytes.write_f64_le(statistics.kxq0);
-        bytes.write_f64_le(statistics.kxq1);
+        bytes.write_f64_le(self.estimate_state().hip_accum());
+        bytes.write_f64_le(statistics.kxq.low);
+        bytes.write_f64_le(statistics.kxq.high);
 
-        bytes.write_u32_le(self.num_at_cur_min);
+        bytes.write_u32_le(registers.num_at_cur_min);
 
         bytes.write_u32_le(aux_count);
 
-        bytes.write(&self.bytes);
+        bytes.write(&registers.bytes);
 
         for (slot, value) in aux_entries.iter().copied() {
             bytes.write_u32_le(Coupon::pack(slot, value).raw());
@@ -421,8 +399,9 @@ impl Array4 {
 
     /// Returns an estimate of memory usage in bytes.
     pub fn estimated_size(&self) -> usize {
-        self.bytes.len()
+        self.registers().bytes.len()
             + self
+                .registers()
                 .aux_map
                 .as_ref()
                 .map(|a| a.estimated_size())
@@ -454,7 +433,7 @@ mod tests {
 
     #[test]
     fn test_get_set_raw() {
-        let mut data = Array4::new(4); // 16 buckets
+        let mut data = Registers4::new(4); // 16 buckets
 
         // Test even slot (low nibble)
         data.put_raw(0, 5);
@@ -502,20 +481,11 @@ mod tests {
 
         // kxq0 should have decreased (we removed a 0 and added a 10)
         // Initial kxq0 = 256 (all zeros = 1.0 each)
-        assert_that!(
-            arr.estimator.statistics(arr.register_values()).kxq0,
-            lt(256.0)
-        );
+        assert_that!(arr.statistics().kxq.low, lt(256.0));
 
         // kxq1 should have a small positive value (from 1/2^40)
-        assert_that!(
-            arr.estimator.statistics(arr.register_values()).kxq1,
-            gt(0.0)
-        );
-        assert_that!(
-            arr.estimator.statistics(arr.register_values()).kxq1,
-            lt(0.001)
-        );
+        assert_that!(arr.statistics().kxq.high, gt(0.0));
+        assert_that!(arr.statistics().kxq.high, lt(0.001));
     }
 
     #[test]
@@ -525,18 +495,21 @@ mod tests {
         let mut arr = Array4::new(lg_config_k);
 
         arr.update(Coupon::pack(0, 15));
-        assert_eq!(arr.get_raw(0), AUX_TOKEN);
-        assert_eq!(arr.aux_map.as_ref().and_then(|aux| aux.get(0)), Some(15));
+        assert_eq!(arr.registers().get_raw(0), AUX_TOKEN);
+        assert_eq!(
+            arr.registers().aux_map.as_ref().and_then(|aux| aux.get(0)),
+            Some(15)
+        );
 
         for slot in 1..num_slots {
             arr.update(Coupon::pack(slot, 1));
         }
 
-        assert_eq!(arr.cur_min, 1);
-        assert_eq!(arr.num_at_cur_min, num_slots - 1);
-        assert_eq!(arr.get_raw(0), 14);
+        assert_eq!(arr.registers().cur_min, 1);
+        assert_eq!(arr.registers().num_at_cur_min, num_slots - 1);
+        assert_eq!(arr.registers().get_raw(0), 14);
         assert_eq!(arr.get(0), 15);
-        assert_that!(arr.aux_map, none());
+        assert_that!(arr.registers().aux_map, none());
 
         for slot in 1..num_slots {
             assert_eq!(arr.get(slot), 1);

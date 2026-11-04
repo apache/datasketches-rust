@@ -464,9 +464,9 @@ impl HllSketch {
         match &self.mode {
             Mode::List { list, hll_type } => list.serialize(self.lg_config_k, *hll_type),
             Mode::Set { set, hll_type } => set.serialize(self.lg_config_k, *hll_type),
-            Mode::Array4(arr) => arr.serialize(self.lg_config_k),
-            Mode::Array6(arr) => arr.serialize(self.lg_config_k),
-            Mode::Array8(arr) => arr.serialize(self.lg_config_k),
+            Mode::Array4(arr) => arr.serialize(),
+            Mode::Array6(arr) => arr.serialize(),
+            Mode::Array8(arr) => arr.serialize(),
         }
     }
 

@@ -415,6 +415,12 @@ fn convert_coupon_mode_to_hll8(src_mode: &Mode, src_lg_k: u8) -> HllSketch {
 }
 
 fn merge_coupons_into_gadget(gadget: &mut HllSketch, src_mode: &Mode) {
+    // Dense coupon updates cannot change representation, so dispatch once for the batch.
+    if let Mode::Array8(dst) = gadget.mode_mut() {
+        merge_coupons_into_mode(dst, src_mode);
+        return;
+    }
+
     match src_mode {
         Mode::List { list, .. } => {
             for coupon in list.container().iter() {
@@ -484,14 +490,7 @@ fn get_array_estimate_state(mode: &Mode) -> EstimateState {
 }
 
 fn merge_array46_same_lgk(dst: &mut Array8, num_registers: usize, get_value: impl Fn(u32) -> u8) {
-    for slot in 0..num_registers {
-        let val = get_value(slot as u32);
-        let current = dst.values()[slot];
-        if val > current {
-            dst.set_register(slot, val);
-        }
-    }
-    dst.invalidate_estimator();
+    dst.merge_registers((0..num_registers).map(|slot| (slot, get_value(slot as u32))));
 }
 
 /// Merging independent register histories invalidates the HIP accumulator.
@@ -518,18 +517,12 @@ fn merge_array46_with_downsample(
     num_registers: usize,
     get_value: impl Fn(u32) -> u8,
 ) {
-    let dst_mask = (1 << dst_lg_k) - 1;
-    for src_slot in 0..num_registers {
-        let val = get_value(src_slot as u32);
-        if val > 0 {
-            let dst_slot = (src_slot as u32 & dst_mask) as usize;
-            let current = dst.values()[dst_slot];
-            if val > current {
-                dst.set_register(dst_slot, val);
-            }
-        }
-    }
-    dst.invalidate_estimator();
+    let mask = (1 << dst_lg_k) - 1;
+    dst.merge_registers(
+        (0..num_registers)
+            .map(|slot| (slot & mask, get_value(slot as u32)))
+            .filter(|&(_, value)| value > 0),
+    );
 }
 
 /// Multiple source registers map to each destination register via masking.
