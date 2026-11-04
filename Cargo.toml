@@ -33,7 +33,6 @@ datasketches = { path = "datasketches" }
 
 # Crates.io dependencies
 clap = { version = "4.6.5", features = ["derive"] }
-divan = { version = "0.1.21" }
 googletest = { version = "0.14.3" }
 insta = { version = "1.48.0" }
 cargo_metadata = { version = "0.23.1" }

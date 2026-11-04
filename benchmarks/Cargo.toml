@@ -22,6 +22,9 @@ publish = false
 edition.workspace = true
 rust-version.workspace = true
 
+[dependencies]
+clap = { workspace = true }
+
 [dev-dependencies]
 xorf = { version = "=0.13.0", default-features = false }
 datasketches = { workspace = true, features = [
@@ -37,8 +40,11 @@ datasketches = { workspace = true, features = [
   "tuple",
   "xor",
 ] }
-divan = { workspace = true }
 rand = { workspace = true }
+
+[lib]
+path = "harness.rs"
+bench = false
 
 [[bench]]
 harness = false

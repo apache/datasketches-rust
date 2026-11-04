@@ -34,3 +34,9 @@ fn hashes_with_offset(count: usize, offset: u64) -> Vec<u64> {
         })
         .collect()
 }
+
+pub fn register(runner: &mut benchmarks::Runner) {
+    build::register(runner);
+    matched_build::register(runner);
+    query::register(runner);
+}

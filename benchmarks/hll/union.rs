@@ -15,11 +15,13 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::hint::black_box;
+
+use benchmarks::Bencher;
+use benchmarks::Runner;
 use datasketches::hll::HllSketch;
 use datasketches::hll::HllType;
 use datasketches::hll::HllUnion;
-use divan::Bencher;
-use divan::black_box;
 
 fn partials(lg_k: u8, count: usize, rows: usize) -> Vec<HllSketch> {
     (0..count)
@@ -33,7 +35,6 @@ fn partials(lg_k: u8, count: usize, rows: usize) -> Vec<HllSketch> {
         .collect()
 }
 
-#[divan::bench(args = [12, 18])]
 fn empty_from_dense(bencher: Bencher, lg_k: u8) {
     let source = partials(lg_k, 1, 1 << lg_k).pop().unwrap();
     bencher.bench_local(|| {
@@ -43,7 +44,6 @@ fn empty_from_dense(bencher: Bencher, lg_k: u8) {
     });
 }
 
-#[divan::bench(args = [12, 18])]
 fn recreated_small_partials(bencher: Bencher, lg_k: u8) {
     let partials = partials(lg_k, 400, 200);
     bencher.bench_local(|| {
@@ -59,7 +59,6 @@ fn recreated_small_partials(bencher: Bencher, lg_k: u8) {
     });
 }
 
-#[divan::bench(args = [12, 18])]
 fn persistent_small_partials(bencher: Bencher, lg_k: u8) {
     let partials = partials(lg_k, 400, 200);
     bencher.bench_local(|| {
@@ -72,7 +71,6 @@ fn persistent_small_partials(bencher: Bencher, lg_k: u8) {
     });
 }
 
-#[divan::bench(args = [12, 18])]
 fn dense_partials(bencher: Bencher, lg_k: u8) {
     let partials = partials(lg_k, 16, (1 << lg_k) / 4);
     bencher.bench_local(|| {
@@ -85,7 +83,6 @@ fn dense_partials(bencher: Bencher, lg_k: u8) {
     });
 }
 
-#[divan::bench(args = [12, 18])]
 fn dense_partials_with_queries(bencher: Bencher, lg_k: u8) {
     let partials = partials(lg_k, 16, (1 << lg_k) / 4);
     bencher.bench_local(|| {
@@ -98,7 +95,6 @@ fn dense_partials_with_queries(bencher: Bencher, lg_k: u8) {
     });
 }
 
-#[divan::bench(args = [12, 18])]
 fn downsampled_dense_partials(bencher: Bencher, lg_k: u8) {
     let partials = partials(lg_k + 1, 16, (1 << lg_k) / 2);
     bencher.bench_local(|| {
@@ -109,4 +105,49 @@ fn downsampled_dense_partials(bencher: Bencher, lg_k: u8) {
         black_box(union.estimate());
         black_box(union.to_sketch(HllType::Hll8))
     });
+}
+
+pub fn register(runner: &mut Runner) {
+    for &(lg_k, rounds) in &[(12, 2_000_000), (18, 70_000)] {
+        runner.case(
+            format!("hll::union::empty_from_dense/{lg_k:?}"),
+            rounds,
+            |b| empty_from_dense(b, lg_k),
+        );
+    }
+    for &(lg_k, rounds) in &[(12, 500), (18, 90)] {
+        runner.case(
+            format!("hll::union::recreated_small_partials/{lg_k:?}"),
+            rounds,
+            |b| recreated_small_partials(b, lg_k),
+        );
+    }
+    for &(lg_k, rounds) in &[(12, 500), (18, 300)] {
+        runner.case(
+            format!("hll::union::persistent_small_partials/{lg_k:?}"),
+            rounds,
+            |b| persistent_small_partials(b, lg_k),
+        );
+    }
+    for &(lg_k, rounds) in &[(12, 80_000), (18, 700)] {
+        runner.case(
+            format!("hll::union::dense_partials/{lg_k:?}"),
+            rounds,
+            |b| dense_partials(b, lg_k),
+        );
+    }
+    for &(lg_k, rounds) in &[(12, 7_000), (18, 60)] {
+        runner.case(
+            format!("hll::union::dense_partials_with_queries/{lg_k:?}"),
+            rounds,
+            |b| dense_partials_with_queries(b, lg_k),
+        );
+    }
+    for &(lg_k, rounds) in &[(12, 6_000), (18, 80)] {
+        runner.case(
+            format!("hll::union::downsampled_dense_partials/{lg_k:?}"),
+            rounds,
+            |b| downsampled_dense_partials(b, lg_k),
+        );
+    }
 }

@@ -16,3 +16,7 @@
 // under the License.
 
 mod update;
+
+pub fn register(runner: &mut benchmarks::Runner) {
+    update::register(runner);
+}

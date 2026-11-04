@@ -15,17 +15,23 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use divan::Bencher;
-use divan::black_box;
-use divan::counter::ItemsCount;
+use std::hint::black_box;
+
+use benchmarks::Bencher;
+use benchmarks::Runner;
 
 use super::support::build_sketch;
 use super::support::values;
 
-#[divan::bench(args = [1_000, 10_000, 100_000])]
 fn update(bencher: Bencher, len: usize) {
     let values = values(len);
-    bencher
-        .counter(ItemsCount::new(len))
-        .bench_local(|| build_sketch(black_box(&values)));
+    bencher.bench_local(|| build_sketch(black_box(&values)));
+}
+
+pub fn register(runner: &mut Runner) {
+    for &(len, rounds) in &[(1_000, 30_000), (10_000, 2_000), (100_000, 100)] {
+        runner.case(format!("kll::update::update/{len:?}"), rounds, |b| {
+            update(b, len)
+        });
+    }
 }

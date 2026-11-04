@@ -15,18 +15,28 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use datasketches::countmin::CountMinSketch;
-use divan::Bencher;
-use divan::black_box;
+use std::hint::black_box;
 
-#[divan::bench(args = [0.5, 0.99, 1.0])]
+use benchmarks::Bencher;
+use benchmarks::Runner;
+use datasketches::countmin::CountMinSketch;
+
 fn u64(bencher: Bencher, factor: f64) {
     let mut sketch = CountMinSketch::<u64>::new(4, 16_384).unwrap();
     for item in 0..128_u64 {
         sketch.update_with_weight(item, (1 << 53) + item);
     }
 
-    bencher
-        .with_inputs(|| sketch.clone())
-        .bench_local_refs(|sketch| black_box(sketch).decay(black_box(factor)));
+    bencher.bench_local(|| {
+        let mut sketch = sketch.clone();
+        black_box(&mut sketch).decay(black_box(factor))
+    });
+}
+
+pub fn register(runner: &mut Runner) {
+    for &(factor, rounds) in &[(0.5, 20_000), (0.99, 10_000), (1.0, 50_000)] {
+        runner.case(format!("countmin::decay::u64/{factor:?}"), rounds, |b| {
+            u64(b, factor)
+        });
+    }
 }
