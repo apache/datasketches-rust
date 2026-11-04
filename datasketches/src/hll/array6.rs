@@ -19,11 +19,11 @@ use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
 use crate::codec::assert::insufficient_data;
 use crate::codec::family::Family;
+use crate::common::NumStdDev;
 use crate::error::Error;
 use crate::hll::Coupon;
-use crate::hll::array::HllArray;
-use crate::hll::array::Registers;
-use crate::hll::estimator::Kxq;
+use crate::hll::estimator::EstimateState;
+use crate::hll::estimator::Estimator;
 use crate::hll::serialization::CUR_MODE_HLL;
 use crate::hll::serialization::HLL_PREAMBLE_SIZE;
 use crate::hll::serialization::HLL_PREINTS;
@@ -36,18 +36,48 @@ const VAL_MASK_6: u16 = 0x3F;
 
 /// Registers packed into consecutive six-bit fields.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Registers6 {
+pub struct Array6 {
     lg_config_k: u8,
     bytes: Box<[u8]>,
     num_zeros: u32,
+    estimator: Estimator,
 }
 
-pub type Array6 = HllArray<Registers6>;
+impl Array6 {
+    pub fn new(lg_config_k: u8) -> Self {
+        let k = 1 << lg_config_k;
+        let num_bytes = num_bytes_for_k(k);
 
-impl Registers6 {
+        Self {
+            lg_config_k,
+            bytes: vec![0u8; num_bytes].into_boxed_slice(),
+            num_zeros: k,
+            estimator: Estimator::new(lg_config_k),
+        }
+    }
+
     #[inline]
     fn get_raw(&self, slot: u32) -> u8 {
-        read_register(&self.bytes, slot)
+        let start_bit = slot * 6;
+        let byte_idx = (start_bit >> 3) as usize;
+        let shift = (start_bit & 7) as u8;
+
+        let two_bytes = u16::from_le_bytes([self.bytes[byte_idx], self.bytes[byte_idx + 1]]);
+
+        ((two_bytes >> shift) & VAL_MASK_6) as u8
+    }
+
+    #[inline]
+    pub fn get(&self, slot: u32) -> u8 {
+        self.get_raw(slot)
+    }
+
+    pub fn num_registers(&self) -> usize {
+        1 << self.lg_config_k
+    }
+
+    pub fn estimate_state(&self) -> EstimateState {
+        self.estimator.estimate_state()
     }
 
     #[inline]
@@ -68,43 +98,8 @@ impl Registers6 {
         self.bytes[byte_idx] = bytes_out[0];
         self.bytes[byte_idx + 1] = bytes_out[1];
     }
-}
 
-impl Registers for Registers6 {
-    type Statistics = Kxq;
-    fn new(lg_config_k: u8) -> Self {
-        let k = 1 << lg_config_k;
-        let num_bytes = num_bytes_for_k(k);
-
-        Self {
-            lg_config_k,
-            bytes: vec![0u8; num_bytes].into_boxed_slice(),
-            num_zeros: k,
-        }
-    }
-
-    fn lg_config_k(&self) -> u8 {
-        self.lg_config_k
-    }
-
-    fn get(&self, slot: u32) -> u8 {
-        self.get_raw(slot)
-    }
-
-    fn values(&self) -> impl Iterator<Item = u8> {
-        (0..1 << self.lg_config_k).map(|slot| self.get(slot))
-    }
-
-    fn num_zeros(&self) -> u32 {
-        self.num_zeros
-    }
-
-    fn is_empty(&self) -> bool {
-        self.num_zeros() == (1 << self.lg_config_k)
-    }
-
-    #[inline]
-    fn update(&mut self, coupon: Coupon) -> Option<(u8, u8)> {
+    pub fn update(&mut self, coupon: Coupon) {
         let mask = (1 << self.lg_config_k) - 1;
         let slot = coupon.slot() & mask;
         let new_value = coupon.value();
@@ -112,18 +107,45 @@ impl Registers for Registers6 {
         let old_value = self.get_raw(slot);
 
         if new_value > old_value {
+            self.estimator
+                .update(self.lg_config_k, old_value, new_value);
+
             self.put_raw(slot, new_value);
+
             if old_value == 0 {
                 self.num_zeros -= 1;
             }
-            Some((old_value, new_value))
-        } else {
-            None
         }
     }
-}
 
-impl Array6 {
+    pub fn estimate(&self) -> f64 {
+        // Array6 doesn't use cur_min (always 0), so num_at_cur_min = num_zeros
+        self.estimator.estimate(self.lg_config_k, 0, self.num_zeros)
+    }
+
+    pub fn composite_estimate(&self) -> f64 {
+        self.estimator
+            .composite_estimate(self.lg_config_k, 0, self.num_zeros)
+    }
+
+    pub fn upper_bound(&self, num_std_dev: NumStdDev) -> f64 {
+        self.estimator
+            .upper_bound(self.lg_config_k, 0, self.num_zeros, num_std_dev)
+    }
+
+    pub fn lower_bound(&self, num_std_dev: NumStdDev) -> f64 {
+        self.estimator
+            .lower_bound(self.lg_config_k, 0, self.num_zeros, num_std_dev)
+    }
+
+    pub fn restore_estimate_state(&mut self, state: EstimateState) {
+        self.estimator.restore_estimate_state(state);
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.num_zeros == (1 << self.lg_config_k)
+    }
+
     pub fn deserialize_registers(
         mut cursor: SketchSlice,
         lg_config_k: u8,
@@ -163,24 +185,17 @@ impl Array6 {
             .read_exact(&mut data)
             .map_err(insufficient_data("data"))?;
 
-        Ok(Self::from_serialized(
-            Registers6 {
-                lg_config_k,
-                bytes: data.into_boxed_slice(),
-                num_zeros,
-            },
-            hip_accum,
-            kxq0,
-            kxq1,
+        let estimator = Estimator::from_serialized(hip_accum, kxq0, kxq1, ooo);
+
+        Ok(Self {
+            lg_config_k,
+            bytes: data.into_boxed_slice(),
             num_zeros,
-            ooo,
-        ))
+            estimator,
+        })
     }
 
-    pub fn serialize(&self) -> Vec<u8> {
-        let registers = self.registers();
-        let lg_config_k = self.lg_config_k();
-        let statistics = self.statistics();
+    pub fn serialize(&self, lg_config_k: u8) -> Vec<u8> {
         let k = 1 << lg_config_k;
         let num_bytes = num_bytes_for_k(k);
         let total_size = HLL_PREAMBLE_SIZE + num_bytes;
@@ -193,7 +208,7 @@ impl Array6 {
         bytes.write_u8(0); // unused for HLL mode
 
         let mut flags = 0u8;
-        if self.estimate_state().uses_composite_estimate() {
+        if self.estimator.uses_composite_estimate() {
             flags |= OUT_OF_ORDER_FLAG_MASK;
         }
         bytes.write_u8(flags);
@@ -203,35 +218,25 @@ impl Array6 {
 
         bytes.write_u8(encode_mode_byte(CUR_MODE_HLL, TGT_HLL6));
 
-        bytes.write_f64_le(self.estimate_state().hip_accum());
-        bytes.write_f64_le(statistics.kxq.low);
-        bytes.write_f64_le(statistics.kxq.high);
+        bytes.write_f64_le(self.estimator.hip_accum());
+        bytes.write_f64_le(self.estimator.kxq0());
+        bytes.write_f64_le(self.estimator.kxq1());
 
         // Write num_at_cur_min (num_zeros for Array6)
-        bytes.write_u32_le(statistics.num_zeros);
+        bytes.write_u32_le(self.num_zeros);
 
         // Write aux_count (always 0 for Array6)
         bytes.write_u32_le(0);
 
-        bytes.write(&registers.bytes);
+        bytes.write(&self.bytes);
 
         bytes.into_bytes()
     }
 
     /// Returns an estimate of memory usage in bytes.
     pub fn estimated_size(&self) -> usize {
-        self.registers().bytes.len()
+        self.bytes.len()
     }
-}
-
-fn read_register(bytes: &[u8], slot: u32) -> u8 {
-    let start_bit = slot * 6;
-    let byte_idx = (start_bit >> 3) as usize;
-    let shift = (start_bit & 7) as u8;
-
-    let two_bytes = u16::from_le_bytes([bytes[byte_idx], bytes[byte_idx + 1]]);
-
-    ((two_bytes >> shift) & VAL_MASK_6) as u8
 }
 
 fn num_bytes_for_k(k: u32) -> usize {
@@ -258,7 +263,7 @@ mod tests {
 
     #[test]
     fn test_get_set_raw() {
-        let mut arr = Registers6::new(4); // 16 slots
+        let mut arr = Array6::new(4); // 16 slots
 
         arr.put_raw(0, 0);
         arr.put_raw(1, 1);
@@ -285,7 +290,7 @@ mod tests {
 
     #[test]
     fn test_boundary_crossing() {
-        let mut arr = Registers6::new(8); // 256 slots
+        let mut arr = Array6::new(8); // 256 slots
 
         // Slot 1: starts at bit 6 (crosses byte 0/1 boundary)
         arr.put_raw(1, 0b111111);
@@ -325,7 +330,7 @@ mod tests {
 
     #[test]
     fn test_full_range() {
-        let mut arr = Registers6::new(6); // 64 slots
+        let mut arr = Array6::new(6); // 64 slots
 
         for val in 0..64u8 {
             arr.put_raw(val as u32, val);
@@ -344,10 +349,10 @@ mod tests {
         arr.update(Coupon::pack(1, 40)); // value >= 32, goes to kxq1
 
         // Initial kxq0 = 256 (all zeros = 1.0 each)
-        assert_that!(arr.statistics().kxq.low, lt(256.0));
+        assert_that!(arr.estimator.kxq0(), lt(256.0));
 
         // kxq1 should have a small positive value (from 1/2^40)
-        assert_that!(arr.statistics().kxq.high, gt(0.0));
-        assert_that!(arr.statistics().kxq.high, lt(0.001));
+        assert_that!(arr.estimator.kxq1(), gt(0.0));
+        assert_that!(arr.estimator.kxq1(), lt(0.001));
     }
 }

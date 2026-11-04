@@ -21,11 +21,11 @@ use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
 use crate::codec::assert::insufficient_data;
 use crate::codec::family::Family;
+use crate::common::NumStdDev;
 use crate::error::Error;
 use crate::hll::Coupon;
-use crate::hll::array::HllArray;
-use crate::hll::array::Registers;
-use crate::hll::estimator::RegisterStatistics;
+use crate::hll::estimator::EstimateState;
+use crate::hll::estimator::Estimator;
 use crate::hll::serialization::CUR_MODE_HLL;
 use crate::hll::serialization::HLL_PREAMBLE_SIZE;
 use crate::hll::serialization::HLL_PREINTS;
@@ -35,84 +35,212 @@ use crate::hll::serialization::TGT_HLL8;
 use crate::hll::serialization::encode_mode_byte;
 
 /// Registers stored one per byte.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Registers8 {
+#[derive(Debug, Clone)]
+pub struct Array8 {
     lg_config_k: u8,
     bytes: Box<[u8]>,
+    /// An absent cache means a bulk merge invalidated HIP and the register-derived fields.
+    /// Shared queries initialize it once; exclusive updates can maintain or invalidate it.
+    cache: OnceLock<CachedState>,
 }
 
-pub type Array8 = HllArray<Registers8>;
-
-impl Registers for Registers8 {
-    type Statistics = OnceLock<RegisterStatistics>;
-    fn new(lg_config_k: u8) -> Self {
-        Self {
-            lg_config_k,
-            bytes: vec![0; 1 << lg_config_k].into_boxed_slice(),
-        }
-    }
-
-    fn lg_config_k(&self) -> u8 {
-        self.lg_config_k
-    }
-
-    fn get(&self, slot: u32) -> u8 {
-        self.bytes[slot as usize]
-    }
-
-    fn values(&self) -> impl Iterator<Item = u8> {
-        self.bytes.iter().copied()
-    }
-
-    fn num_zeros(&self) -> u32 {
-        self.bytes.iter().filter(|&&value| value == 0).count() as u32
-    }
-
-    fn is_empty(&self) -> bool {
-        self.bytes.iter().all(|&value| value == 0)
-    }
-
-    #[inline]
-    fn update(&mut self, coupon: Coupon) -> Option<(u8, u8)> {
-        let slot = (coupon.slot() & ((1 << self.lg_config_k) - 1)) as usize;
-        let old = self.bytes[slot];
-        let new = coupon.value();
-        if new > old {
-            self.bytes[slot] = new;
-            Some((old, new))
-        } else {
-            None
-        }
-    }
+#[derive(Debug, Clone, PartialEq)]
+struct CachedState {
+    num_zeros: u32,
+    estimator: Estimator,
 }
 
-impl Registers8 {
-    pub fn as_slice(&self) -> &[u8] {
-        &self.bytes
-    }
-
-    pub fn merge_registers(&mut self, values: impl Iterator<Item = (usize, u8)>) {
-        for (slot, value) in values {
-            self.bytes[slot] = self.bytes[slot].max(value);
-        }
-    }
-
-    pub fn merge_same_lgk(&mut self, values: &[u8]) {
-        for (dst, &src) in self.bytes.iter_mut().zip(values) {
-            *dst = (*dst).max(src);
-        }
-    }
-
-    pub fn merge_with_downsample(&mut self, values: &[u8]) {
-        let mask = (1 << self.lg_config_k) - 1;
-        for (src_slot, &value) in values.iter().enumerate() {
-            let dst_slot = (src_slot as u32 & mask) as usize;
-            self.bytes[dst_slot] = self.bytes[dst_slot].max(value);
-        }
+impl PartialEq for Array8 {
+    fn eq(&self, other: &Self) -> bool {
+        self.lg_config_k == other.lg_config_k
+            && self.bytes == other.bytes
+            && self.cached_state() == other.cached_state()
     }
 }
 
 impl Array8 {
+    pub fn new(lg_config_k: u8) -> Self {
+        let k = 1 << lg_config_k;
+
+        Self {
+            lg_config_k,
+            bytes: vec![0u8; k as usize].into_boxed_slice(),
+            cache: OnceLock::from(CachedState {
+                num_zeros: k,
+                estimator: Estimator::new(lg_config_k),
+            }),
+        }
+    }
+
+    #[inline]
+    pub fn get(&self, slot: u32) -> u8 {
+        self.bytes[slot as usize]
+    }
+
+    #[inline]
+    fn put(&mut self, slot: u32, value: u8) {
+        self.bytes[slot as usize] = value;
+    }
+
+    pub fn update(&mut self, coupon: Coupon) {
+        let mask = (1 << self.lg_config_k) - 1;
+        let slot = coupon.slot() & mask;
+        let new_value = coupon.value();
+
+        let old_value = self.get(slot);
+
+        if new_value > old_value {
+            if let Some(cache) = self.cache.get_mut() {
+                cache
+                    .estimator
+                    .update(self.lg_config_k, old_value, new_value);
+                if old_value == 0 {
+                    cache.num_zeros -= 1;
+                }
+            }
+            self.put(slot, new_value);
+        }
+    }
+
+    pub fn estimate(&self) -> f64 {
+        let cache = self.cached_state();
+        // Array8 doesn't use cur_min (always 0), so num_at_cur_min = num_zeros
+        cache
+            .estimator
+            .estimate(self.lg_config_k, 0, cache.num_zeros)
+    }
+
+    pub fn composite_estimate(&self) -> f64 {
+        let cache = self.cached_state();
+        cache
+            .estimator
+            .composite_estimate(self.lg_config_k, 0, cache.num_zeros)
+    }
+
+    pub fn upper_bound(&self, num_std_dev: NumStdDev) -> f64 {
+        let cache = self.cached_state();
+        cache
+            .estimator
+            .upper_bound(self.lg_config_k, 0, cache.num_zeros, num_std_dev)
+    }
+
+    pub fn lower_bound(&self, num_std_dev: NumStdDev) -> f64 {
+        let cache = self.cached_state();
+        cache
+            .estimator
+            .lower_bound(self.lg_config_k, 0, cache.num_zeros, num_std_dev)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        if let Some(cache) = self.cache.get() {
+            return cache.num_zeros == (1 << self.lg_config_k);
+        }
+        // Union checks emptiness between merges. A nonzero register answers that without
+        // rebuilding all estimator fields and defeating deferred reconstruction.
+        self.bytes.iter().all(|&value| value == 0)
+    }
+
+    pub fn values(&self) -> &[u8] {
+        &self.bytes
+    }
+
+    pub fn num_registers(&self) -> usize {
+        1 << self.lg_config_k
+    }
+
+    pub fn estimate_state(&self) -> EstimateState {
+        self.cache.get().map_or(EstimateState::Composite, |cache| {
+            cache.estimator.estimate_state()
+        })
+    }
+
+    pub fn restore_estimate_state(&mut self, state: EstimateState) {
+        if let Some(cache) = self.cache.get_mut() {
+            cache.estimator.restore_estimate_state(state);
+        } else if let EstimateState::Hip(_) = state {
+            let mut cache = self.rebuild_cached_values();
+            cache.estimator.restore_estimate_state(state);
+            self.cache = OnceLock::from(cache);
+        }
+    }
+
+    /// Bypasses estimator updates. Call `invalidate_estimator` after all writes.
+    pub fn set_register(&mut self, slot: usize, value: u8) {
+        self.bytes[slot] = value;
+    }
+
+    /// Invalidates HIP and defers rebuilding register-derived fields until a query needs them.
+    pub fn invalidate_estimator(&mut self) {
+        self.cache.take();
+    }
+
+    /// Merges registers and invalidates HIP because their update order is unavailable.
+    pub fn merge_array_same_lgk(&mut self, src: &[u8]) {
+        assert_eq!(
+            src.len(),
+            self.bytes.len(),
+            "Source and destination must have same lg_k"
+        );
+
+        for (i, &val) in src.iter().enumerate() {
+            self.bytes[i] = self.bytes[i].max(val);
+        }
+
+        self.invalidate_estimator();
+    }
+
+    /// Register values come from a separate hash word, so folding slot indices needs no
+    /// adjustment to the values. Merging independent histories invalidates HIP.
+    pub fn merge_array_with_downsample(&mut self, src: &[u8], src_lg_k: u8) {
+        assert!(
+            src_lg_k > self.lg_config_k,
+            "Source lg_k must be greater than destination lg_k for downsampling"
+        );
+        assert_eq!(
+            src.len(),
+            1 << src_lg_k,
+            "Source length must match 2^src_lg_k"
+        );
+
+        let dst_mask = (1 << self.lg_config_k) - 1;
+
+        for (src_slot, &val) in src.iter().enumerate() {
+            let dst_slot = (src_slot as u32 & dst_mask) as usize;
+            self.bytes[dst_slot] = self.bytes[dst_slot].max(val);
+        }
+
+        self.invalidate_estimator();
+    }
+
+    fn cached_state(&self) -> &CachedState {
+        self.cache.get_or_init(|| self.rebuild_cached_values())
+    }
+
+    fn rebuild_cached_values(&self) -> CachedState {
+        let num_zeros = self.bytes.iter().filter(|&&v| v == 0).count() as u32;
+
+        let mut kxq0_sum = 0.0;
+        let mut kxq1_sum = 0.0;
+
+        for &val in self.bytes.iter() {
+            if val == 0 {
+                kxq0_sum += 1.0;
+            } else if val < 32 {
+                kxq0_sum += 1.0 / (1u64 << val) as f64;
+            } else {
+                kxq1_sum += 1.0 / (1u64 << val) as f64;
+            }
+        }
+
+        let mut estimator = Estimator::new(self.lg_config_k);
+        estimator.restore_kxq(kxq0_sum, kxq1_sum);
+        estimator.invalidate_hip();
+        CachedState {
+            num_zeros,
+            estimator,
+        }
+    }
+
     pub fn deserialize_registers(
         mut cursor: SketchSlice,
         lg_config_k: u8,
@@ -151,22 +279,20 @@ impl Array8 {
             .read_exact(&mut data)
             .map_err(insufficient_data("data"))?;
 
-        Ok(Self::from_serialized(
-            Registers8 {
-                lg_config_k,
-                bytes: data.into_boxed_slice(),
-            },
-            hip_accum,
-            kxq0,
-            kxq1,
-            num_zeros,
-            ooo,
-        ))
+        let estimator = Estimator::from_serialized(hip_accum, kxq0, kxq1, ooo);
+
+        Ok(Self {
+            lg_config_k,
+            bytes: data.into_boxed_slice(),
+            cache: OnceLock::from(CachedState {
+                num_zeros,
+                estimator,
+            }),
+        })
     }
 
-    pub fn serialize(&self) -> Vec<u8> {
-        let lg_config_k = self.lg_config_k();
-        let statistics = self.statistics();
+    pub fn serialize(&self, lg_config_k: u8) -> Vec<u8> {
+        let cache = self.cached_state();
         let k = 1 << lg_config_k;
         let total_size = HLL_PREAMBLE_SIZE + k as usize;
         let mut bytes = SketchBytes::with_capacity(total_size);
@@ -178,7 +304,7 @@ impl Array8 {
         bytes.write_u8(0); // unused for HLL mode
 
         let mut flags = 0u8;
-        if self.estimate_state().uses_composite_estimate() {
+        if cache.estimator.uses_composite_estimate() {
             flags |= OUT_OF_ORDER_FLAG_MASK;
         }
         bytes.write_u8(flags);
@@ -188,23 +314,24 @@ impl Array8 {
 
         bytes.write_u8(encode_mode_byte(CUR_MODE_HLL, TGT_HLL8));
 
-        bytes.write_f64_le(self.estimate_state().hip_accum());
-        bytes.write_f64_le(statistics.kxq.low);
-        bytes.write_f64_le(statistics.kxq.high);
+        bytes.write_f64_le(cache.estimator.hip_accum());
+        bytes.write_f64_le(cache.estimator.kxq0());
+        bytes.write_f64_le(cache.estimator.kxq1());
 
         // Write num_at_cur_min (num_zeros for Array8)
-        bytes.write_u32_le(statistics.num_zeros);
+        bytes.write_u32_le(cache.num_zeros);
 
         // Write aux_count (always 0 for Array8)
         bytes.write_u32_le(0);
 
-        bytes.write(self.values());
+        bytes.write(&self.bytes);
 
         bytes.into_bytes()
     }
 
+    /// Returns an estimate of memory usage in bytes.
     pub fn estimated_size(&self) -> usize {
-        self.values().len()
+        self.bytes.len()
     }
 }
 
@@ -229,19 +356,19 @@ mod tests {
 
     #[test]
     fn test_get_set() {
-        let mut arr = Registers8::new(4); // 16 slots
+        let mut arr = Array8::new(4); // 16 slots
 
         for slot in 0..16 {
-            arr.bytes[slot] = (slot * 17) as u8;
+            arr.put(slot, (slot * 17) as u8);
         }
 
         for slot in 0..16 {
             assert_eq!(arr.get(slot), (slot * 17) as u8);
         }
 
-        arr.bytes[0] = 0;
-        arr.bytes[1] = 127;
-        arr.bytes[2] = 255;
+        arr.put(0, 0);
+        arr.put(1, 127);
+        arr.put(2, 255);
 
         assert_eq!(arr.get(0), 0);
         assert_eq!(arr.get(1), 127);
@@ -286,10 +413,10 @@ mod tests {
 
     #[test]
     fn test_full_value_range() {
-        let mut arr = Registers8::new(8); // 256 slots
+        let mut arr = Array8::new(8); // 256 slots
 
         for val in 0..=255u8 {
-            arr.bytes[val as usize] = val;
+            arr.put(val as u32, val);
         }
 
         for val in 0..=255u8 {
@@ -299,13 +426,13 @@ mod tests {
 
     #[test]
     fn test_high_value_direct() {
-        let mut arr = Registers8::new(6); // 64 slots
+        let mut arr = Array8::new(6); // 64 slots
 
         // Direct storage accepts byte values beyond the six-bit coupon range.
         let test_values = [16, 32, 64, 128, 200, 255];
 
         for (slot, &value) in test_values.iter().enumerate() {
-            arr.bytes[slot] = value;
+            arr.put(slot as u32, value);
             assert_eq!(arr.get(slot as u32), value);
         }
 
@@ -322,20 +449,20 @@ mod tests {
         arr.update(Coupon::pack(1, 50)); // value >= 32, goes to kxq1
 
         // Initial kxq0 = 256 (all zeros = 1.0 each)
-        assert_that!(arr.statistics().kxq.low, lt(256.0));
+        assert_that!(arr.cached_state().estimator.kxq0(), lt(256.0));
 
         // kxq1 should have a positive value (from 1/2^50)
-        assert_that!(arr.statistics().kxq.high, gt(0.0));
-        assert_that!(arr.statistics().kxq.high, lt(1e-10));
+        assert_that!(arr.cached_state().estimator.kxq1(), gt(0.0));
+        assert_that!(arr.cached_state().estimator.kxq1(), lt(1e-10));
     }
 
     #[test]
     fn test_values_access() {
         let mut arr = Array8::new(4); // 16 slots
 
-        arr.merge_registers(std::iter::once((0, 10)));
-        arr.merge_registers(std::iter::once((5, 25)));
-        arr.merge_registers(std::iter::once((15, 63)));
+        arr.put(0, 10);
+        arr.put(5, 25);
+        arr.put(15, 63);
 
         let vals = arr.values();
         assert_eq!(vals.len(), 16);
@@ -350,13 +477,13 @@ mod tests {
         let mut dst = Array8::new(4); // 16 slots
         let mut src = Array8::new(4); // 16 slots
 
-        dst.merge_registers(std::iter::once((0, 10)));
-        dst.merge_registers(std::iter::once((1, 20)));
-        dst.merge_registers(std::iter::once((2, 30)));
+        dst.put(0, 10);
+        dst.put(1, 20);
+        dst.put(2, 30);
 
-        src.merge_registers(std::iter::once((1, 15))); // Smaller than dst[1]=20, should keep 20
-        src.merge_registers(std::iter::once((2, 35))); // Larger than dst[2]=30, should update to 35
-        src.merge_registers(std::iter::once((3, 40))); // New value
+        src.put(1, 15); // Smaller than dst[1]=20, should keep 20
+        src.put(2, 35); // Larger than dst[2]=30, should update to 35
+        src.put(3, 40); // New value
 
         dst.merge_array_same_lgk(src.values());
 
@@ -366,9 +493,9 @@ mod tests {
         assert_eq!(dst.get(3), 40, "dst[3] got new value");
 
         // Bulk merges require composite estimation.
-        assert!(dst.estimate_state().uses_composite_estimate());
+        assert!(dst.cached_state().estimator.uses_composite_estimate());
 
-        assert_eq!(dst.statistics().num_zeros, 12);
+        assert_eq!(dst.cached_state().num_zeros, 12);
     }
 
     #[test]
@@ -377,14 +504,14 @@ mod tests {
         let mut dst = Array8::new(4); // 16 slots
         let mut src = Array8::new(5); // 32 slots
 
-        dst.merge_registers(std::iter::once((0, 10)));
-        dst.merge_registers(std::iter::once((1, 20)));
+        dst.put(0, 10);
+        dst.put(1, 20);
 
         // Set up src - slots 0 and 16 both map to dst slot 0
-        src.merge_registers(std::iter::once((0, 15))); // maps to dst[0], max(10, 15) = 15
-        src.merge_registers(std::iter::once((16, 25))); // maps to dst[0], max(15, 25) = 25
-        src.merge_registers(std::iter::once((1, 18))); // maps to dst[1], max(20, 18) = 20
-        src.merge_registers(std::iter::once((17, 30))); // maps to dst[1], max(20, 30) = 30
+        src.put(0, 15); // maps to dst[0], max(10, 15) = 15
+        src.put(16, 25); // maps to dst[0], max(15, 25) = 25
+        src.put(1, 18); // maps to dst[1], max(20, 18) = 20
+        src.put(17, 30); // maps to dst[1], max(20, 30) = 30
 
         dst.merge_array_with_downsample(src.values(), 5);
 
@@ -392,7 +519,7 @@ mod tests {
         assert_eq!(dst.get(1), 30, "dst[1] = max(20, 18, 30)");
 
         // Bulk merges require composite estimation.
-        assert!(dst.estimate_state().uses_composite_estimate());
+        assert!(dst.cached_state().estimator.uses_composite_estimate());
     }
 
     #[test]
@@ -417,21 +544,22 @@ mod tests {
     fn test_rebuild_cached_values() {
         let mut arr = Array8::new(4); // 16 slots
 
-        arr.merge_registers(std::iter::once((0, 10)));
-        arr.merge_registers(std::iter::once((1, 20)));
-        arr.merge_registers(std::iter::once((2, 30)));
+        arr.put(0, 10);
+        arr.put(1, 20);
+        arr.put(2, 30);
 
-        arr.merge_registers(std::iter::once((3, 31)));
-        arr.merge_registers(std::iter::once((4, 32)));
-        arr.merge_registers(std::iter::once((5, 63)));
+        arr.put(3, 31);
+        arr.put(4, 32);
+        arr.put(5, 63);
+        arr.invalidate_estimator();
 
-        let statistics = arr.statistics();
-        assert_eq!(statistics.num_zeros, 10);
+        let cache = arr.cached_state();
+        assert_eq!(cache.num_zeros, 10);
         assert_eq!(
-            statistics.kxq.low,
+            cache.estimator.kxq0(),
             10.0 + 2_f64.powi(-10) + 2_f64.powi(-20) + 2_f64.powi(-30) + 2_f64.powi(-31)
         );
-        assert_eq!(statistics.kxq.high, 2_f64.powi(-32) + 2_f64.powi(-63));
+        assert_eq!(cache.estimator.kxq1(), 2_f64.powi(-32) + 2_f64.powi(-63));
     }
 
     #[test]
@@ -440,11 +568,11 @@ mod tests {
         let mut src = Array8::new(4);
 
         for i in 0..16 {
-            dst.merge_registers(std::iter::once((i as usize, i as u8)));
+            dst.put(i, i as u8);
         }
 
         for i in 0..16 {
-            src.merge_registers(std::iter::once((i as usize, (15 - i) as u8)));
+            src.put(i, (15 - i) as u8);
         }
 
         dst.merge_array_same_lgk(src.values());

@@ -61,7 +61,6 @@ use std::hash::Hash;
 
 use crate::hash::MurmurHash3X64128;
 
-mod array;
 mod array4;
 mod array6;
 mod array8;
