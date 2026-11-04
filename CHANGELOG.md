@@ -8,6 +8,7 @@ All significant changes to this project will be documented in this file.
 
 * Add `HllUnion::serialize` to serialize union results directly.
 * Add immutable `XorFilter` behind the `xor` feature, with 8-, 16-, and 32-bit fingerprints, construction from values with automatic deduplication or borrowed distinct precomputed hashes, bounded seeded retries and compact temporary storage, optional cardinality metadata for imported filters, standard serialization for all three widths (Java-compatible for 8/16-bit filters), and validated imports for application-defined storage.
+* Big-endian targets are supported. Sketches updated with the same items produce the same estimates and serialized images on big-endian and little-endian hosts.
 
 ### Improvements
 
