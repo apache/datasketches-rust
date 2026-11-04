@@ -41,12 +41,12 @@ pub struct Array8 {
     bytes: Box<[u8]>,
     /// Absent estimation data means a bulk merge invalidated HIP and the register-derived fields.
     /// Shared queries initialize it once; exclusive updates can maintain or invalidate it.
-    estimation: OnceLock<EstimationData>,
+    estimation: OnceLock<Estimation>,
 }
 
 /// Zero-register count and estimator used for cardinality queries.
 #[derive(Debug, Clone, PartialEq)]
-struct EstimationData {
+struct Estimation {
     num_zeros: u32,
     estimator: Estimator,
 }
@@ -66,7 +66,7 @@ impl Array8 {
         Self {
             lg_config_k,
             bytes: vec![0u8; k as usize].into_boxed_slice(),
-            estimation: OnceLock::from(EstimationData {
+            estimation: OnceLock::from(Estimation {
                 num_zeros: k,
                 estimator: Estimator::new(lg_config_k),
             }),
@@ -104,32 +104,36 @@ impl Array8 {
     }
 
     pub fn estimate(&self) -> f64 {
-        let estimation = self.estimation();
+        let Estimation {
+            num_zeros,
+            estimator,
+        } = self.estimation();
         // Array8 doesn't use cur_min (always 0), so num_at_cur_min = num_zeros
-        estimation
-            .estimator
-            .estimate(self.lg_config_k, 0, estimation.num_zeros)
+        estimator.estimate(self.lg_config_k, 0, *num_zeros)
     }
 
     pub fn composite_estimate(&self) -> f64 {
-        let estimation = self.estimation();
-        estimation
-            .estimator
-            .composite_estimate(self.lg_config_k, 0, estimation.num_zeros)
+        let Estimation {
+            num_zeros,
+            estimator,
+        } = self.estimation();
+        estimator.composite_estimate(self.lg_config_k, 0, *num_zeros)
     }
 
     pub fn upper_bound(&self, num_std_dev: NumStdDev) -> f64 {
-        let estimation = self.estimation();
-        estimation
-            .estimator
-            .upper_bound(self.lg_config_k, 0, estimation.num_zeros, num_std_dev)
+        let Estimation {
+            num_zeros,
+            estimator,
+        } = self.estimation();
+        estimator.upper_bound(self.lg_config_k, 0, *num_zeros, num_std_dev)
     }
 
     pub fn lower_bound(&self, num_std_dev: NumStdDev) -> f64 {
-        let estimation = self.estimation();
-        estimation
-            .estimator
-            .lower_bound(self.lg_config_k, 0, estimation.num_zeros, num_std_dev)
+        let Estimation {
+            num_zeros,
+            estimator,
+        } = self.estimation();
+        estimator.lower_bound(self.lg_config_k, 0, *num_zeros, num_std_dev)
     }
 
     pub fn is_empty(&self) -> bool {
@@ -215,11 +219,11 @@ impl Array8 {
         self.invalidate_estimator();
     }
 
-    fn estimation(&self) -> &EstimationData {
+    fn estimation(&self) -> &Estimation {
         self.estimation.get_or_init(|| self.rebuild_estimation())
     }
 
-    fn rebuild_estimation(&self) -> EstimationData {
+    fn rebuild_estimation(&self) -> Estimation {
         let num_zeros = self.bytes.iter().filter(|&&v| v == 0).count() as u32;
 
         let mut kxq0_sum = 0.0;
@@ -238,7 +242,7 @@ impl Array8 {
         let mut estimator = Estimator::new(self.lg_config_k);
         estimator.restore_kxq(kxq0_sum, kxq1_sum);
         estimator.invalidate_hip();
-        EstimationData {
+        Estimation {
             num_zeros,
             estimator,
         }
@@ -287,7 +291,7 @@ impl Array8 {
         Ok(Self {
             lg_config_k,
             bytes: data.into_boxed_slice(),
-            estimation: OnceLock::from(EstimationData {
+            estimation: OnceLock::from(Estimation {
                 num_zeros,
                 estimator,
             }),

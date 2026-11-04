@@ -166,15 +166,10 @@ impl HllUnion {
 
             match self.gadget.mode() {
                 Mode::Array8(old_gadget) => {
-                    merge_array_with_downsample(
-                        &mut new_array,
-                        src_lg_k,
-                        &Mode::Array8(old_gadget.clone()),
-                        dst_lg_k,
-                    );
+                    new_array.merge_array_with_downsample(old_gadget.values(), dst_lg_k);
                 }
                 _ => {
-                    unreachable!("gadget mode changed unexpectedly; should never be Array4/Array6")
+                    unreachable!("gadget mode changed unexpectedly; should never be Array4/Array6");
                 }
             }
 
@@ -186,7 +181,7 @@ impl HllUnion {
                     merge_array_into_array8(dst_array, dst_lg_k, src_mode, src_lg_k);
                 }
                 _ => {
-                    unreachable!("gadget mode changed unexpectedly; should never be Array4/Array6")
+                    unreachable!("gadget mode changed unexpectedly; should never be Array4/Array6");
                 }
             }
         }
