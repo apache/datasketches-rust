@@ -81,7 +81,8 @@ fn serialization_round_trips_standard_fingerprint_types() {
         XorFilterType::Xor32,
     ] {
         for count in [0, 1, 10_000_u64] {
-            let original = XorFilter::from_hashes(0..count, ty, 0).unwrap();
+            let hashes: Vec<_> = (0..count).collect();
+            let original = XorFilter::from_hashes(&hashes, ty, 0).unwrap();
             let bytes = original.serialize().unwrap();
             assert_eq!(bytes.len(), original.serialized_size().unwrap());
 
@@ -104,7 +105,8 @@ fn every_truncated_image_is_rejected() {
         XorFilterType::Xor16,
         XorFilterType::Xor32,
     ] {
-        let bytes = XorFilter::from_hashes(0..100_u64, ty, 0)
+        let hashes: Vec<_> = (0..100_u64).collect();
+        let bytes = XorFilter::from_hashes(&hashes, ty, 0)
             .unwrap()
             .serialize()
             .unwrap();
@@ -118,7 +120,8 @@ fn every_truncated_image_is_rejected() {
 
 #[test]
 fn invalid_preamble_fields_are_rejected() {
-    let valid = XorFilter::from_hashes(0..100_u64, XorFilterType::Xor8, 0)
+    let hashes: Vec<_> = (0..100_u64).collect();
+    let valid = XorFilter::from_hashes(&hashes, XorFilterType::Xor8, 0)
         .unwrap()
         .serialize()
         .unwrap();
@@ -142,7 +145,8 @@ fn invalid_preamble_fields_are_rejected() {
 
 #[test]
 fn unsafe_lengths_are_rejected_before_indexing() {
-    let valid = XorFilter::from_hashes(0..100_u64, XorFilterType::Xor8, 0)
+    let hashes: Vec<_> = (0..100_u64).collect();
+    let valid = XorFilter::from_hashes(&hashes, XorFilterType::Xor8, 0)
         .unwrap()
         .serialize()
         .unwrap();
@@ -173,7 +177,8 @@ fn trailing_storage_is_ignored() {
         XorFilterType::Xor16,
         XorFilterType::Xor32,
     ] {
-        let original = XorFilter::from_hashes(0..100_u64, kind, 0).unwrap();
+        let hashes: Vec<_> = (0..100_u64).collect();
+        let original = XorFilter::from_hashes(&hashes, kind, 0).unwrap();
         let mut bytes = original.serialize().unwrap();
         bytes.extend_from_slice(&[0xaa; 16]);
 

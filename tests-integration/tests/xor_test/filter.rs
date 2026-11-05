@@ -38,7 +38,7 @@ fn precomputed_hashes_have_no_false_negatives() {
         XorFilterType::Xor16,
         XorFilterType::Xor32,
     ] {
-        let filter = XorFilter::from_hashes(hashes.iter().copied(), ty, 0).unwrap();
+        let filter = XorFilter::from_hashes(&hashes, ty, 0).unwrap();
         for &hash in &hashes {
             assert!(filter.contains_hash(hash), "false negative for {hash}");
         }
@@ -58,15 +58,16 @@ fn borrowed_values_can_be_reused() {
 
 #[test]
 fn duplicates_are_removed_before_construction() {
-    let filter = XorFilter::from_hashes([7, 7, 11, 11, 11], XorFilterType::Xor8, 0).unwrap();
+    let filter = XorFilter::from_values([7_u64, 7, 11, 11, 11], XorFilterType::Xor8, 0).unwrap();
     assert_eq!(filter.num_items(), Some(2));
-    assert!(filter.contains_hash(7));
-    assert!(filter.contains_hash(11));
+    assert!(filter.contains(&7_u64));
+    assert!(filter.contains(&11_u64));
 }
 
 #[test]
 fn metadata_describes_the_compact_payload() {
-    let filter = XorFilter::from_hashes(0..10_000_u64, XorFilterType::Xor8, 0).unwrap();
+    let hashes: Vec<_> = (0..10_000_u64).collect();
+    let filter = XorFilter::from_hashes(&hashes, XorFilterType::Xor8, 0).unwrap();
 
     assert_eq!(filter.is_empty(), Some(false));
     assert_eq!(filter.num_items(), Some(10_000));
@@ -81,7 +82,7 @@ fn metadata_describes_the_compact_payload() {
 
 #[test]
 fn empty_filter_is_well_formed() {
-    let filter = XorFilter::from_hashes([], XorFilterType::Xor16, 0).unwrap();
+    let filter = XorFilter::from_hashes(&[], XorFilterType::Xor16, 0).unwrap();
 
     assert_eq!(filter.is_empty(), Some(true));
     assert_eq!(filter.num_items(), Some(0));
@@ -95,9 +96,10 @@ fn false_positive_rates_follow_fingerprint_width() {
     const NUM_ITEMS: u64 = 50_000;
     const NUM_QUERIES: u64 = 100_000;
 
-    let xor8 = XorFilter::from_hashes(0..NUM_ITEMS, XorFilterType::Xor8, 0).unwrap();
-    let xor16 = XorFilter::from_hashes(0..NUM_ITEMS, XorFilterType::Xor16, 0).unwrap();
-    let xor32 = XorFilter::from_hashes(0..NUM_ITEMS, XorFilterType::Xor32, 0).unwrap();
+    let hashes: Vec<_> = (0..NUM_ITEMS).collect();
+    let xor8 = XorFilter::from_hashes(&hashes, XorFilterType::Xor8, 0).unwrap();
+    let xor16 = XorFilter::from_hashes(&hashes, XorFilterType::Xor16, 0).unwrap();
+    let xor32 = XorFilter::from_hashes(&hashes, XorFilterType::Xor32, 0).unwrap();
 
     let false_positives8 = (NUM_ITEMS..NUM_ITEMS + NUM_QUERIES)
         .filter(|&hash| xor8.contains_hash(hash))

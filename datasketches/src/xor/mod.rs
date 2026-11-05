@@ -23,7 +23,7 @@
 //! in the number of distinct hashes.
 //!
 //! [`XorFilter::from_values`] hashes ordinary Rust values with xxHash64. Call
-//! [`XorFilter::from_hashes`] or [`XorFilter::from_distinct_hashes`]
+//! [`XorFilter::from_hashes`] with distinct hashes
 //! when hashes have already been computed and must not be hashed again.
 //!
 //! # Cross-language hashing
@@ -69,7 +69,6 @@
 //!   of Experimental Algorithmics 25 (2020).
 
 mod filter;
-mod serialization;
 
 pub use self::filter::XorFilter;
 pub use self::filter::XorFilterType;

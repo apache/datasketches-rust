@@ -19,10 +19,18 @@ use std::hash::Hash;
 use std::hash::Hasher;
 use std::ops::BitXor;
 
+use crate::codec::SketchBytes;
+use crate::codec::SketchSlice;
+use crate::codec::assert::ensure_preamble_longs_in_range;
+use crate::codec::assert::ensure_serial_version_is;
+use crate::codec::assert::insufficient_data;
+use crate::codec::family::Family;
 use crate::error::Error;
 use crate::hash::XxHash64;
 
 const NUM_HASHES: u8 = 3;
+const SERIAL_VERSION: u8 = 1;
+const PREAMBLE_BYTES: usize = 3 * size_of::<u64>();
 const HASH_SEED: u64 = 0;
 const LOAD_FACTOR: f64 = 1.23;
 const CAPACITY_OFFSET: u64 = 32;
@@ -57,7 +65,7 @@ impl XorFilterType {
         }
     }
 
-    pub(crate) const fn bytes_per_fingerprint(self) -> usize {
+    const fn bytes_per_fingerprint(self) -> usize {
         (self.bits_per_fingerprint() / 8) as usize
     }
 }
@@ -84,7 +92,7 @@ impl XorFingerprints {
         }
     }
 
-    pub(crate) fn byte_len(&self) -> usize {
+    fn byte_len(&self) -> usize {
         match self {
             Self::Xor8(values) => size_of_val::<[u8]>(values),
             Self::Xor16(values) => size_of_val::<[u16]>(values),
@@ -102,14 +110,13 @@ impl XorFingerprints {
 ///
 /// Ordinary values passed to [`contains`](Self::contains) are reduced to 64-bit hashes with
 /// xxHash64 and seed `0`. Use [`contains_hash`](Self::contains_hash) only with the same hashes that
-/// were supplied to [`from_hashes`](Self::from_hashes) or
-/// [`from_distinct_hashes`](Self::from_distinct_hashes).
+/// were supplied to [`from_hashes`](Self::from_hashes).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct XorFilter {
-    pub(crate) segment_length: usize,
-    pub(crate) num_items: Option<usize>,
-    pub(crate) seed: u64,
-    pub(crate) fingerprints: XorFingerprints,
+    segment_length: usize,
+    num_items: Option<usize>,
+    seed: u64,
+    fingerprints: XorFingerprints,
 }
 
 impl XorFilter {
@@ -121,7 +128,8 @@ impl XorFilter {
     ///
     /// # Errors
     ///
-    /// Returns an error under the same conditions as [`from_hashes`](Self::from_hashes).
+    /// Returns an error under the size and construction-attempt limits of
+    /// [`from_hashes`](Self::from_hashes). Duplicate values are removed before construction.
     ///
     /// # Examples
     ///
@@ -138,48 +146,28 @@ impl XorFilter {
         ty: XorFilterType,
         seed: u64,
     ) -> Result<Self, Error> {
-        Self::from_hashes(items.into_iter().map(|item| hash_item(&item)), ty, seed)
-    }
-
-    /// Creates a filter from precomputed 64-bit hashes, removing duplicates.
-    ///
-    /// This method bypasses xxHash64. Query the resulting filter with
-    /// [`contains_hash`](Self::contains_hash) using hashes from the same source.
-    /// The construction `seed` selects a deterministic sequence of attempts.
-    /// Pass `hashes.iter().copied()` to retain the original input after construction.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`InvalidArgument`](crate::error::ErrorKind::InvalidArgument) if the fingerprint
-    /// slot count exceeds `u32::MAX` or a scratch allocation would exceed `isize::MAX` bytes,
-    /// or if no peelable construction is found within 100 attempts. Valid input can also
-    /// exhaust the construction attempts. A successful build may still exceed the limits of
-    /// [`serialize`](Self::serialize).
-    pub fn from_hashes(
-        hashes: impl IntoIterator<Item = u64>,
-        ty: XorFilterType,
-        seed: u64,
-    ) -> Result<Self, Error> {
-        let mut hashes: Vec<_> = hashes.into_iter().collect();
+        let mut hashes: Vec<_> = items.into_iter().map(|item| hash_item(&item)).collect();
         hashes.sort_unstable();
         hashes.dedup();
-        Self::from_distinct_hashes(&hashes, ty, seed)
+        Self::from_hashes(&hashes, ty, seed)
     }
 
-    /// Creates a filter from distinct precomputed hashes without copying or sorting them.
+    /// Creates a filter from distinct precomputed 64-bit hashes without copying or sorting them.
     ///
-    /// The caller must supply distinct hashes. Use [`from_hashes`](Self::from_hashes) when
-    /// duplicates may be present. This method borrows the input without modifying it.
+    /// The caller must supply distinct hashes. Duplicate hashes return an error; this method
+    /// does not remove them. The input is borrowed without modification.
+    /// Query with [`contains_hash`](Self::contains_hash) using hashes from the same source.
     /// The construction `seed` selects a deterministic sequence of attempts; input order
     /// does not affect the result.
     ///
     /// # Errors
     ///
-    /// Returns [`InvalidArgument`](crate::error::ErrorKind::InvalidArgument) under the size limits
-    /// described by [`from_hashes`](Self::from_hashes), or if no peelable construction is found
-    /// within 100 attempts, even for valid input. Duplicate hashes prevent construction and
-    /// return an error; they are not removed by this method.
-    pub fn from_distinct_hashes(keys: &[u64], ty: XorFilterType, seed: u64) -> Result<Self, Error> {
+    /// Returns [`InvalidArgument`](crate::error::ErrorKind::InvalidArgument) if hashes contain
+    /// duplicates, the fingerprint slot count exceeds `u32::MAX`, a scratch allocation would
+    /// exceed `isize::MAX` bytes, or no peelable construction is found within 100 attempts.
+    /// Valid input can also exhaust the attempts. A successful build may still exceed the
+    /// limits of [`serialize`](Self::serialize).
+    pub fn from_hashes(keys: &[u64], ty: XorFilterType, seed: u64) -> Result<Self, Error> {
         let num_items = keys.len();
         let capacity = compute_capacity(num_items)?;
         let segment_length = capacity / usize::from(NUM_HASHES);
@@ -288,7 +276,7 @@ impl XorFilter {
     /// use datasketches::xor::XorFilter;
     /// use datasketches::xor::XorFilterType;
     ///
-    /// let filter = XorFilter::from_hashes([10, 20, 30], XorFilterType::Xor8, 0)?;
+    /// let filter = XorFilter::from_hashes(&[10, 20, 30], XorFilterType::Xor8, 0)?;
     /// let imported = XorFilter::from_parts(
     ///     filter.seed(),
     ///     filter.segment_length(),
@@ -430,6 +418,216 @@ impl XorFilter {
     /// Returns the estimated in-memory size of the filter in bytes.
     pub fn estimated_size(&self) -> usize {
         size_of::<Self>() + self.fingerprints.byte_len()
+    }
+
+    /// Serializes the filter using DataSketches family `22`, version `1`.
+    ///
+    /// Supports 8-, 16-, and 32-bit fingerprints, recorded in the header's fingerprint width
+    /// field. Reserved fields are written as zero; integers and fingerprints are little-endian.
+    /// The 8- and 16-bit images are compatible with Java when input hashing agrees. Readers
+    /// must support the encoded fingerprint width; implementations limited to 8/16 bits cannot
+    /// read 32-bit images.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InvalidArgument`](crate::error::ErrorKind::InvalidArgument) for an unknown
+    /// item count, or an item count or segment length above `i32::MAX`.
+    /// The total number of slots must also fit `i32::MAX` so that Java can index all three
+    /// segments; this is an additional interoperability limit, not a header field. Construction
+    /// and raw parts allow larger capacities, so successful construction does not guarantee
+    /// standard serialization. Use raw parts for other storage formats.
+    pub fn serialize(&self) -> Result<Vec<u8>, Error> {
+        let size = self.serialized_size()?;
+        let num_items = self
+            .num_items
+            .expect("serialized_size checked the item count");
+        let mut bytes = SketchBytes::with_capacity(size);
+
+        bytes.write_u8(Family::XORFILTER.min_pre_longs);
+        bytes.write_u8(SERIAL_VERSION);
+        bytes.write_u8(Family::XORFILTER.id);
+        bytes.write_u8(0); // flags
+        bytes.write_u8(self.bits_per_fingerprint());
+        bytes.write_u8(NUM_HASHES);
+        bytes.write_u16_le(0); // unused
+        bytes.write_u64_le(self.seed);
+        bytes.write_i32_le(self.segment_length as i32);
+        bytes.write_i32_le(num_items as i32);
+
+        match &self.fingerprints {
+            XorFingerprints::Xor8(fingerprints) => bytes.write(fingerprints),
+            XorFingerprints::Xor16(fingerprints) => {
+                for &fingerprint in fingerprints.iter() {
+                    bytes.write_u16_le(fingerprint);
+                }
+            }
+            XorFingerprints::Xor32(fingerprints) => {
+                for &fingerprint in fingerprints.iter() {
+                    bytes.write_u32_le(fingerprint);
+                }
+            }
+        }
+
+        Ok(bytes.into_bytes())
+    }
+
+    /// Deserializes an owned filter from bytes.
+    ///
+    /// Accepts 8-, 16-, and 32-bit images within the limits of [`serialize`](Self::serialize).
+    /// Reserved fields and trailing bytes are ignored.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the image is truncated, belongs to another sketch family or version, or
+    /// contains metadata that could make a membership query index outside the fingerprint payload.
+    pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
+        let mut cursor = SketchSlice::new(bytes);
+
+        let preamble_longs = cursor
+            .read_u8()
+            .map_err(insufficient_data("preamble_longs"))?;
+        let serial_version = cursor
+            .read_u8()
+            .map_err(insufficient_data("serial_version"))?;
+        let family_id = cursor.read_u8().map_err(insufficient_data("family_id"))?;
+        let _flags = cursor.read_u8().map_err(insufficient_data("flags"))?;
+        let bits_per_fingerprint = cursor
+            .read_u8()
+            .map_err(insufficient_data("bits_per_fingerprint"))?;
+        let num_hashes = cursor.read_u8().map_err(insufficient_data("num_hashes"))?;
+        let _unused = cursor.read_u16_le().map_err(insufficient_data("unused"))?;
+
+        Family::XORFILTER.validate_id(family_id)?;
+        ensure_serial_version_is(SERIAL_VERSION, serial_version)?;
+        ensure_preamble_longs_in_range(
+            Family::XORFILTER.min_pre_longs..=Family::XORFILTER.max_pre_longs,
+            preamble_longs,
+        )?;
+        let ty = match bits_per_fingerprint {
+            8 => XorFilterType::Xor8,
+            16 => XorFilterType::Xor16,
+            32 => XorFilterType::Xor32,
+            _ => {
+                return Err(Error::deserial(
+                    "standard xor format requires 8-, 16-, or 32-bit fingerprints",
+                ));
+            }
+        };
+        if num_hashes != NUM_HASHES {
+            return Err(Error::deserial(format!(
+                "invalid number of hashes: expected {NUM_HASHES}, got {num_hashes}"
+            )));
+        }
+
+        let seed = cursor.read_u64_le().map_err(insufficient_data("seed"))?;
+        let segment_length = cursor
+            .read_i32_le()
+            .map_err(insufficient_data("segment_length"))?;
+        if segment_length <= 0 {
+            return Err(Error::deserial(format!(
+                "invalid segment length: expected a positive value, got {segment_length}"
+            )));
+        }
+        let segment_length = segment_length as usize;
+
+        let num_items = cursor
+            .read_i32_le()
+            .map_err(insufficient_data("num_items"))?;
+        if num_items < 0 {
+            return Err(Error::deserial(format!(
+                "invalid item count: expected a non-negative value, got {num_items}"
+            )));
+        }
+        let num_items = num_items as usize;
+
+        let capacity = segment_length
+            .checked_mul(usize::from(NUM_HASHES))
+            .ok_or_else(|| Error::deserial("xor filter capacity overflow"))?;
+        if capacity > i32::MAX as usize {
+            return Err(Error::deserial(format!(
+                "invalid xor filter capacity: maximum is {}, got {capacity}",
+                i32::MAX
+            )));
+        }
+        if num_items > capacity {
+            return Err(Error::deserial(format!(
+                "invalid item count: capacity is {capacity}, got {num_items}"
+            )));
+        }
+
+        let fingerprint_bytes = capacity
+            .checked_mul(ty.bytes_per_fingerprint())
+            .ok_or_else(|| Error::deserial("xor filter fingerprint size overflow"))?;
+        if cursor.remaining().len() < fingerprint_bytes {
+            return Err(Error::insufficient_data_of(
+                "fingerprints",
+                format!(
+                    "expected {fingerprint_bytes} bytes, got {}",
+                    cursor.remaining().len()
+                ),
+            ));
+        }
+
+        let fingerprints = match ty {
+            XorFilterType::Xor8 => {
+                let mut values = vec![0_u8; capacity].into_boxed_slice();
+                cursor
+                    .read_exact(&mut values)
+                    .map_err(insufficient_data("fingerprints"))?;
+                XorFingerprints::Xor8(values)
+            }
+            XorFilterType::Xor16 => {
+                let mut values = Vec::with_capacity(capacity);
+                for _ in 0..capacity {
+                    values.push(
+                        cursor
+                            .read_u16_le()
+                            .map_err(insufficient_data("fingerprints"))?,
+                    );
+                }
+                XorFingerprints::Xor16(values.into_boxed_slice())
+            }
+            XorFilterType::Xor32 => {
+                let mut values = Vec::with_capacity(capacity);
+                for _ in 0..capacity {
+                    values.push(
+                        cursor
+                            .read_u32_le()
+                            .map_err(insufficient_data("fingerprints"))?,
+                    );
+                }
+                XorFingerprints::Xor32(values.into_boxed_slice())
+            }
+        };
+
+        Ok(Self {
+            segment_length,
+            num_items: Some(num_items),
+            seed,
+            fingerprints,
+        })
+    }
+
+    /// Returns the standard serialized size in bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error under the same conditions as [`serialize`](Self::serialize).
+    pub fn serialized_size(&self) -> Result<usize, Error> {
+        let count = self
+            .num_items
+            .ok_or_else(|| Error::invalid_argument("standard xor format requires an item count"))?;
+        if count > i32::MAX as usize
+            || self.segment_length > i32::MAX as usize
+            || self.capacity() > i32::MAX as usize
+        {
+            return Err(Error::invalid_argument(
+                "xor filter exceeds standard format limits",
+            ));
+        }
+        PREAMBLE_BYTES
+            .checked_add(self.fingerprints.byte_len())
+            .ok_or_else(|| Error::invalid_argument("xor filter serialized size overflow"))
     }
 }
 

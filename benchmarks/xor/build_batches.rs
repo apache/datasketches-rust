@@ -26,7 +26,6 @@ use crate::xor::hashes_with_offset;
 
 fn build<F>(bencher: Bencher, cardinality: usize, build: impl Fn(&[u64]) -> F) {
     // Multiple independent sets keep one set's retry count from dominating the comparison.
-    // The deduplicating constructor receives the same already-distinct inputs.
     let inputs: Vec<_> = (0..32)
         .map(|i| hashes_with_offset(cardinality, i * cardinality as u64))
         .collect();
@@ -46,13 +45,7 @@ pub fn register(runner: &mut Runner) {
             &[
                 ("distinct", &|b| {
                     build(b, cardinality, |keys| {
-                        XorFilter::from_distinct_hashes(keys, XorFilterType::Xor8, 1).unwrap()
-                    })
-                }),
-                ("deduplicate", &|b| {
-                    build(b, cardinality, |keys| {
-                        XorFilter::from_hashes(keys.iter().copied(), XorFilterType::Xor8, 1)
-                            .unwrap()
+                        XorFilter::from_hashes(keys, XorFilterType::Xor8, 1).unwrap()
                     })
                 }),
                 ("xorf", &|b| {

@@ -31,9 +31,8 @@ fn repeated_hashes(rows: usize) -> Vec<u64> {
 
 fn distinct_8(bencher: Bencher, cardinality: usize) {
     let keys = hashes(cardinality);
-    bencher.bench_local(|| {
-        black_box(XorFilter::from_distinct_hashes(&keys, XorFilterType::Xor8, 0).unwrap())
-    });
+    bencher
+        .bench_local(|| black_box(XorFilter::from_hashes(&keys, XorFilterType::Xor8, 0).unwrap()));
 }
 
 fn xorf_distinct_8(bencher: Bencher, cardinality: usize) {
@@ -44,14 +43,17 @@ fn xorf_distinct_8(bencher: Bencher, cardinality: usize) {
 fn deduplicate_8(bencher: Bencher, rows: usize) {
     let keys = repeated_hashes(rows);
     bencher.bench_local(|| {
-        black_box(XorFilter::from_hashes(keys.iter().copied(), XorFilterType::Xor8, 0).unwrap())
+        let mut distinct = keys.clone();
+        distinct.sort_unstable();
+        distinct.dedup();
+        black_box(XorFilter::from_hashes(&distinct, XorFilterType::Xor8, 0).unwrap())
     });
 }
 
 fn xorf_deduplicate_8(bencher: Bencher, rows: usize) {
     let keys = repeated_hashes(rows);
     bencher.bench_local(|| {
-        // xorf requires distinct input, so include the caller's preprocessing.
+        // Include the caller's deduplication, as for DataSketches.
         let mut distinct = keys.clone();
         distinct.sort_unstable();
         distinct.dedup();
@@ -61,9 +63,8 @@ fn xorf_deduplicate_8(bencher: Bencher, rows: usize) {
 
 fn distinct_16(bencher: Bencher, cardinality: usize) {
     let keys = hashes(cardinality);
-    bencher.bench_local(|| {
-        black_box(XorFilter::from_distinct_hashes(&keys, XorFilterType::Xor16, 0).unwrap())
-    });
+    bencher
+        .bench_local(|| black_box(XorFilter::from_hashes(&keys, XorFilterType::Xor16, 0).unwrap()));
 }
 
 fn xorf_distinct_16(bencher: Bencher, cardinality: usize) {
@@ -74,14 +75,17 @@ fn xorf_distinct_16(bencher: Bencher, cardinality: usize) {
 fn deduplicate_16(bencher: Bencher, rows: usize) {
     let keys = repeated_hashes(rows);
     bencher.bench_local(|| {
-        black_box(XorFilter::from_hashes(keys.iter().copied(), XorFilterType::Xor16, 0).unwrap())
+        let mut distinct = keys.clone();
+        distinct.sort_unstable();
+        distinct.dedup();
+        black_box(XorFilter::from_hashes(&distinct, XorFilterType::Xor16, 0).unwrap())
     });
 }
 
 fn xorf_deduplicate_16(bencher: Bencher, rows: usize) {
     let keys = repeated_hashes(rows);
     bencher.bench_local(|| {
-        // xorf requires distinct input, so include the caller's preprocessing.
+        // Include the caller's deduplication, as for DataSketches.
         let mut distinct = keys.clone();
         distinct.sort_unstable();
         distinct.dedup();
@@ -91,9 +95,8 @@ fn xorf_deduplicate_16(bencher: Bencher, rows: usize) {
 
 fn distinct_32(bencher: Bencher, cardinality: usize) {
     let keys = hashes(cardinality);
-    bencher.bench_local(|| {
-        black_box(XorFilter::from_distinct_hashes(&keys, XorFilterType::Xor32, 0).unwrap())
-    });
+    bencher
+        .bench_local(|| black_box(XorFilter::from_hashes(&keys, XorFilterType::Xor32, 0).unwrap()));
 }
 
 fn xorf_distinct_32(bencher: Bencher, cardinality: usize) {
@@ -104,14 +107,17 @@ fn xorf_distinct_32(bencher: Bencher, cardinality: usize) {
 fn deduplicate_32(bencher: Bencher, rows: usize) {
     let keys = repeated_hashes(rows);
     bencher.bench_local(|| {
-        black_box(XorFilter::from_hashes(keys.iter().copied(), XorFilterType::Xor32, 0).unwrap())
+        let mut distinct = keys.clone();
+        distinct.sort_unstable();
+        distinct.dedup();
+        black_box(XorFilter::from_hashes(&distinct, XorFilterType::Xor32, 0).unwrap())
     });
 }
 
 fn xorf_deduplicate_32(bencher: Bencher, rows: usize) {
     let keys = repeated_hashes(rows);
     bencher.bench_local(|| {
-        // xorf requires distinct input, so include the caller's preprocessing.
+        // Include the caller's deduplication, as for DataSketches.
         let mut distinct = keys.clone();
         distinct.sort_unstable();
         distinct.dedup();
