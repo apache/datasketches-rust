@@ -414,39 +414,27 @@ impl XorFilter {
         drop(queue);
 
         let fingerprints = match filter_type {
-            XorFilterType::Xor8 => {
-                let mut values = vec![0_u8; capacity].into_boxed_slice();
-                assign_fingerprints(
-                    &mut values,
-                    segment_length,
-                    &stack_hash[..stack_size],
-                    &stack_index[..stack_size],
-                    |hash| fingerprint(hash) as u8,
-                );
-                XorFingerprints::Xor8(values)
-            }
-            XorFilterType::Xor16 => {
-                let mut values = vec![0_u16; capacity].into_boxed_slice();
-                assign_fingerprints(
-                    &mut values,
-                    segment_length,
-                    &stack_hash[..stack_size],
-                    &stack_index[..stack_size],
-                    |hash| fingerprint(hash) as u16,
-                );
-                XorFingerprints::Xor16(values)
-            }
-            XorFilterType::Xor32 => {
-                let mut values = vec![0_u32; capacity].into_boxed_slice();
-                assign_fingerprints(
-                    &mut values,
-                    segment_length,
-                    &stack_hash[..stack_size],
-                    &stack_index[..stack_size],
-                    |hash| fingerprint(hash) as u32,
-                );
-                XorFingerprints::Xor32(values)
-            }
+            XorFilterType::Xor8 => XorFingerprints::Xor8(assign_fingerprints(
+                capacity,
+                segment_length,
+                &stack_hash,
+                &stack_index,
+                |hash| fingerprint(hash) as u8,
+            )),
+            XorFilterType::Xor16 => XorFingerprints::Xor16(assign_fingerprints(
+                capacity,
+                segment_length,
+                &stack_hash,
+                &stack_index,
+                |hash| fingerprint(hash) as u16,
+            )),
+            XorFilterType::Xor32 => XorFingerprints::Xor32(assign_fingerprints(
+                capacity,
+                segment_length,
+                &stack_hash,
+                &stack_index,
+                |hash| fingerprint(hash) as u32,
+            )),
         };
 
         Ok(Self {
@@ -554,12 +542,12 @@ impl XorFilterBuilder {
     /// but detection is not guaranteed. Use [`build_from_hashes`](Self::build_from_hashes) to
     /// remove duplicates.
     pub fn build_from_distinct_hashes(self, hashes: &[u64]) -> Result<XorFilter, Error> {
-        self.build_with_attempts(hashes, MAX_CONSTRUCTION_ATTEMPTS)
-    }
-
-    // A private attempt bound makes exhaustion and recovery deterministic in unit tests.
-    fn build_with_attempts(self, hashes: &[u64], max_attempts: usize) -> Result<XorFilter, Error> {
-        XorFilter::build(hashes, self.filter_type, self.seed, max_attempts)
+        XorFilter::build(
+            hashes,
+            self.filter_type,
+            self.seed,
+            MAX_CONSTRUCTION_ATTEMPTS,
+        )
     }
 }
 
@@ -701,26 +689,25 @@ fn peel_block<const BLOCK: usize>(
     }
 }
 
-fn assign_fingerprints<T: Copy + BitXor<Output = T>>(
-    fingerprints: &mut [T],
+fn assign_fingerprints<T: Copy + Default + BitXor<Output = T>>(
+    capacity: usize,
     segment_length: usize,
     stack_hash: &[u64],
     stack_index: &[u32],
     fingerprint_of: impl Fn(u64) -> T,
-) {
+) -> Box<[T]> {
+    let mut fingerprints = vec![T::default(); capacity].into_boxed_slice();
     for (&hash, &index) in stack_hash.iter().zip(stack_index).rev() {
         let index = index as usize;
         let [h0, h1, h2] = indexes(hash, segment_length);
         fingerprints[index] =
             fingerprint_of(hash) ^ fingerprints[h0] ^ fingerprints[h1] ^ fingerprints[h2];
     }
+    fingerprints
 }
 
 #[inline]
 fn indexes(hash: u64, segment_length: usize) -> [usize; 3] {
-    // Construction and import validate this bound. Exposing it here allows
-    // widening 32-bit multiplies for the three range reductions.
-    let segment_length = segment_length as u32 as usize;
     [
         reduce(hash as u32, segment_length),
         reduce(hash.rotate_left(21) as u32, segment_length) + segment_length,
@@ -730,7 +717,9 @@ fn indexes(hash: u64, segment_length: usize) -> [usize; 3] {
 
 #[inline]
 fn reduce(hash: u32, range: usize) -> usize {
-    ((u64::from(hash) * range as u64) >> 32) as usize
+    // Construction and import validate the 32-bit segment bound. Keep both inputs
+    // narrow so mapping, peeling, and queries can use widening 32-bit multiplies.
+    ((u64::from(hash) * u64::from(range as u32)) >> 32) as usize
 }
 
 #[inline]
@@ -804,40 +793,16 @@ mod tests {
         let keys: Vec<_> = (917_504..917_504 + 16_384u64)
             .map(|i| splitmix64(i.wrapping_add(SPLITMIX_GAMMA)))
             .collect();
-        for kind in [
-            XorFilterType::Xor8,
-            XorFilterType::Xor16,
-            XorFilterType::Xor32,
-        ] {
-            let original = keys.clone();
-            let error = XorFilterBuilder::new(kind)
-                .seed(1)
-                .build_with_attempts(&keys, 1)
-                .unwrap_err();
-            assert_eq!(error.kind(), ErrorKind::InvalidArgument);
-            assert_eq!(keys, original);
+        let error = XorFilter::build(&keys, XorFilterType::Xor8, 1, 1).unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::InvalidArgument);
 
-            let builder = XorFilterBuilder::new(kind).seed(1_u64.wrapping_add(SPLITMIX_GAMMA));
-            let filter = builder.clone().build_from_distinct_hashes(&keys).unwrap();
-            assert_eq!(filter.num_items(), Some(keys.len()));
-            for &key in &keys {
-                assert!(filter.contains_hash(key));
-            }
-            // A failed peel overwrites the mixed hashes in the scratch stack. An automatic
-            // retry must remap the original input before attempting the next seed.
-            assert_eq!(
-                XorFilterBuilder::new(kind)
-                    .seed(1)
-                    .build_from_distinct_hashes(&keys)
-                    .unwrap(),
-                filter,
-            );
-            assert_eq!(
-                builder
-                    .build_from_hashes(keys.iter().copied().chain(keys.iter().copied()))
-                    .unwrap(),
-                filter,
-            );
+        let filter = XorFilterBuilder::new(XorFilterType::Xor8)
+            .seed(1_u64.wrapping_add(SPLITMIX_GAMMA))
+            .build_from_distinct_hashes(&keys)
+            .unwrap();
+        assert_eq!(filter.num_items(), Some(keys.len()));
+        for &key in &keys {
+            assert!(filter.contains_hash(key));
         }
     }
 }

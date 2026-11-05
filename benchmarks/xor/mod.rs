@@ -17,7 +17,6 @@
 
 mod build;
 mod build_batches;
-mod matched_build;
 mod query;
 mod query_shards;
 
@@ -40,7 +39,6 @@ fn hashes_with_offset(count: usize, offset: u64) -> Vec<u64> {
 pub fn register(runner: &mut benchmarks::Runner) {
     build::register(runner);
     build_batches::register(runner);
-    matched_build::register(runner);
     query::register(runner);
     query_shards::register(runner);
 }

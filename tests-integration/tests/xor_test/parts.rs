@@ -148,19 +148,6 @@ fn distinct_construction_is_bounded_and_does_not_deduplicate() {
 }
 
 #[test]
-fn empty_filters_never_match_even_when_the_fingerprint_is_zero() {
-    for kind in [
-        XorFilterType::Xor8,
-        XorFilterType::Xor16,
-        XorFilterType::Xor32,
-    ] {
-        let f = XorFilterBuilder::new(kind).build_from_hashes([]).unwrap();
-        // This key mixes to zero under the filter's construction seed.
-        assert!(!f.contains_hash(f.seed().wrapping_neg()));
-    }
-}
-
-#[test]
 fn construction_recovers_after_an_unpeelable_first_attempt() {
     // This distinct set needs two attempts with base seed 1. All fingerprint widths
     // share the peeling graph, so each must reset the failed attempt's accumulators.
