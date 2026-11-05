@@ -35,6 +35,8 @@ const HASH_SEED: u64 = 0;
 const LOAD_FACTOR: f64 = 1.23;
 const CAPACITY_OFFSET: u64 = 32;
 const MAX_CONSTRUCTION_ATTEMPTS: usize = 100;
+// Counts cannot exceed the allocated fingerprint capacity, so this value is unreachable.
+const UNKNOWN_NUM_ITEMS: usize = usize::MAX;
 
 const MURMUR_C1: u64 = 0xff51_afd7_ed55_8ccd;
 const MURMUR_C2: u64 = 0xc4ce_b9fe_1a85_ec53;
@@ -114,7 +116,7 @@ impl XorFingerprints {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct XorFilter {
     segment_length: usize,
-    num_items: Option<usize>,
+    num_items: usize,
     seed: u64,
     fingerprints: XorFingerprints,
 }
@@ -249,7 +251,7 @@ impl XorFilter {
 
         Ok(Self {
             segment_length,
-            num_items: Some(num_items),
+            num_items,
             seed: construction_seed,
             fingerprints,
         })
@@ -307,7 +309,7 @@ impl XorFilter {
         }
         Ok(Self {
             segment_length,
-            num_items,
+            num_items: num_items.unwrap_or(UNKNOWN_NUM_ITEMS),
             seed,
             fingerprints,
         })
@@ -355,19 +357,19 @@ impl XorFilter {
         };
         // Avoid branching on the fingerprint comparison, including rare false
         // positives. Unknown counts must preserve the raw comparison.
-        found & (self.num_items != Some(0))
+        found & (self.num_items != 0)
     }
 
     /// Returns whether the input set was empty, or `None` if imported without an item count.
     ///
     /// Fingerprint contents cannot reliably establish whether the original set was empty.
     pub fn is_empty(&self) -> Option<bool> {
-        self.num_items.map(|count| count == 0)
+        self.num_items().map(|count| count == 0)
     }
 
     /// Returns the number of distinct input hashes, or `None` if imported without a count.
     pub fn num_items(&self) -> Option<usize> {
-        self.num_items
+        (self.num_items != UNKNOWN_NUM_ITEMS).then_some(self.num_items)
     }
 
     /// Returns the fingerprint representation.
@@ -405,7 +407,7 @@ impl XorFilter {
     /// sufficiently large inputs the value approaches `9.84` for [`XorFilterType::Xor8`],
     /// `19.68` for [`XorFilterType::Xor16`], and `39.36` for [`XorFilterType::Xor32`].
     pub fn bits_per_item(&self) -> Option<f64> {
-        self.num_items.map(|count| {
+        self.num_items().map(|count| {
             if count == 0 {
                 0.0
             } else {
@@ -437,9 +439,6 @@ impl XorFilter {
     /// standard serialization. Use raw parts for other storage formats.
     pub fn serialize(&self) -> Result<Vec<u8>, Error> {
         let size = self.serialized_size()?;
-        let num_items = self
-            .num_items
-            .expect("serialized_size checked the item count");
         let mut bytes = SketchBytes::with_capacity(size);
 
         bytes.write_u8(Family::XORFILTER.min_pre_longs);
@@ -451,7 +450,7 @@ impl XorFilter {
         bytes.write_u16_le(0); // unused
         bytes.write_u64_le(self.seed);
         bytes.write_i32_le(self.segment_length as i32);
-        bytes.write_i32_le(num_items as i32);
+        bytes.write_i32_le(self.num_items as i32);
 
         match &self.fingerprints {
             XorFingerprints::Xor8(fingerprints) => bytes.write(fingerprints),
@@ -601,7 +600,7 @@ impl XorFilter {
 
         Ok(Self {
             segment_length,
-            num_items: Some(num_items),
+            num_items,
             seed,
             fingerprints,
         })
@@ -609,7 +608,7 @@ impl XorFilter {
 
     fn serialized_size(&self) -> Result<usize, Error> {
         let count = self
-            .num_items
+            .num_items()
             .ok_or_else(|| Error::invalid_argument("standard xor format requires an item count"))?;
         if count > i32::MAX as usize
             || self.segment_length > i32::MAX as usize
