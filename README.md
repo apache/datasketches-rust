@@ -81,7 +81,7 @@ See the [API documentation](https://docs.rs/datasketches) for configuration, acc
 
 ## Compatibility
 
-The minimum supported Rust version is 1.86.0. The crate currently supports little-endian targets only.
+The minimum supported Rust version is 1.86.0.
 
 Supported serialization formats are tested with fixtures produced by Apache DataSketches Java, C++, and Go through the [DataSketches TCK](https://github.com/apache/datasketches-tck). XOR additionally uses fixtures generated from the merged Java implementation until TCK snapshots are available. Its standard format supports 8-, 16-, and 32-bit fingerprints; 32-bit images require a reader that supports that width. Formats without an item count use the raw-parts API.
 

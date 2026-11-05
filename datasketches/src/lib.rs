@@ -62,10 +62,6 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![deny(missing_docs)]
 
-// See https://github.com/apache/datasketches-rust/issues/28 for more information.
-#[cfg(target_endian = "big")]
-compile_error!("datasketches does not support big-endian targets");
-
 // sketches modules
 #[cfg(feature = "bloom")]
 pub mod bloom;

@@ -173,6 +173,33 @@ impl Hasher for XxHash64 {
             self.buffer_len = remainder.len();
         }
     }
+
+    // See MurmurHash3X64128: hash integers as little-endian bytes so that
+    // the result does not depend on the byte order of the host.
+    #[inline(always)]
+    fn write_u16(&mut self, i: u16) {
+        self.write(&i.to_le_bytes());
+    }
+
+    #[inline(always)]
+    fn write_u32(&mut self, i: u32) {
+        self.write(&i.to_le_bytes());
+    }
+
+    #[inline(always)]
+    fn write_u64(&mut self, i: u64) {
+        self.write(&i.to_le_bytes());
+    }
+
+    #[inline(always)]
+    fn write_u128(&mut self, i: u128) {
+        self.write(&i.to_le_bytes());
+    }
+
+    #[inline(always)]
+    fn write_usize(&mut self, i: usize) {
+        self.write(&i.to_le_bytes());
+    }
 }
 
 #[inline(always)]
@@ -204,6 +231,42 @@ fn finalize(mut hash: u64) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn integers_hash_as_little_endian_bytes() {
+        fn hash_with(f: impl FnOnce(&mut XxHash64)) -> u64 {
+            let mut hasher = XxHash64::with_seed(DEFAULT_SEED);
+            f(&mut hasher);
+            hasher.finish64()
+        }
+
+        let v = 0x0123_4567_89ab_cdef_u64;
+        let w = ((v as u128) << 64) | v as u128;
+        assert_eq!(
+            hash_with(|h| h.write_u16(v as u16)),
+            hash_with(|h| h.write(&(v as u16).to_le_bytes()))
+        );
+        assert_eq!(
+            hash_with(|h| h.write_u32(v as u32)),
+            hash_with(|h| h.write(&(v as u32).to_le_bytes()))
+        );
+        assert_eq!(
+            hash_with(|h| h.write_u64(v)),
+            hash_with(|h| h.write(&v.to_le_bytes()))
+        );
+        assert_eq!(
+            hash_with(|h| h.write_u128(w)),
+            hash_with(|h| h.write(&w.to_le_bytes()))
+        );
+        assert_eq!(
+            hash_with(|h| h.write_usize(v as usize)),
+            hash_with(|h| h.write(&(v as usize).to_le_bytes()))
+        );
+        assert_eq!(
+            hash_with(|h| h.write_i64(v as i64)),
+            hash_with(|h| h.write(&v.to_le_bytes()))
+        );
+    }
 
     const PRIME32: u64 = 0x9E3779B1;
     const PRIME64: u64 = 0x9E3779B185EBCA8D;
