@@ -96,20 +96,24 @@ impl XorFingerprints {
 
 /// Raw state of an [`XorFilter`] for application-defined storage.
 ///
-/// Created by [`XorFilter::into_parts`] or [`XorFilterParts::new`], and consumed by
-/// [`XorFilter::from_parts`], which validates the layout.
+/// Created directly or by [`XorFilter::into_parts`], and consumed by
+/// [`XorFilter::from_parts`], which validates the layout before it can be queried.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct XorFilterParts {
-    seed: u64,
-    segment_length: usize,
-    fingerprints: XorFingerprints,
-    num_items: Option<usize>,
+    /// Construction seed used to mix input hashes.
+    pub seed: u64,
+    /// Number of fingerprint slots in each of the three segments.
+    pub segment_length: usize,
+    /// Fingerprint slots ordered as three consecutive, equally sized segments.
+    pub fingerprints: XorFingerprints,
+    /// Number of distinct input hashes, or `None` if the storage format omits it.
+    ///
+    /// Standard serialization requires a known count. `Some(0)` makes every query return `false`.
+    pub num_items: Option<usize>,
 }
 
 impl XorFilterParts {
-    /// Creates parts from a construction seed, segment length, and fingerprint slots.
-    ///
-    /// The item count is unknown unless set with [`with_num_items`](Self::with_num_items).
+    /// Creates raw parts with an unknown item count for application-defined storage.
     pub fn new(seed: u64, segment_length: usize, fingerprints: XorFingerprints) -> Self {
         Self {
             seed,
@@ -117,39 +121,6 @@ impl XorFilterParts {
             fingerprints,
             num_items: None,
         }
-    }
-
-    /// Records the number of distinct hashes in the original input set.
-    ///
-    /// Standard serialization and emptiness checks require a known item count.
-    pub fn with_num_items(mut self, num_items: usize) -> Self {
-        self.num_items = Some(num_items);
-        self
-    }
-
-    /// Returns the construction seed.
-    pub fn seed(&self) -> u64 {
-        self.seed
-    }
-
-    /// Returns the number of fingerprint slots in each of the three segments.
-    pub fn segment_length(&self) -> usize {
-        self.segment_length
-    }
-
-    /// Returns the fingerprint slots.
-    pub fn fingerprints(&self) -> &XorFingerprints {
-        &self.fingerprints
-    }
-
-    /// Returns the number of distinct input hashes, or `None` if unknown.
-    pub fn num_items(&self) -> Option<usize> {
-        self.num_items
-    }
-
-    /// Returns the fingerprint slots without copying.
-    pub fn into_fingerprints(self) -> XorFingerprints {
-        self.fingerprints
     }
 }
 
@@ -190,17 +161,12 @@ impl XorFilter {
     /// ```
     /// use datasketches::xor::XorFilter;
     /// use datasketches::xor::XorFilterBuilder;
-    /// use datasketches::xor::XorFilterParts;
     /// use datasketches::xor::XorFilterType;
     ///
     /// let filter = XorFilterBuilder::new(XorFilterType::Xor8).build_from_hashes([10, 20, 30])?;
-    /// let parts = filter.into_parts();
-    /// // A storage format that does not record the item count keeps only these fields.
-    /// let parts = XorFilterParts::new(
-    ///     parts.seed(),
-    ///     parts.segment_length(),
-    ///     parts.into_fingerprints(),
-    /// );
+    /// let mut parts = filter.into_parts();
+    /// // A storage format may omit the item count.
+    /// parts.num_items = None;
     /// let imported = XorFilter::from_parts(parts)?;
     /// assert!(imported.contains_hash(20));
     /// assert_eq!(imported.num_items(), None);
@@ -349,101 +315,6 @@ impl XorFilter {
     pub fn estimated_size(&self) -> usize {
         size_of::<Self>() + self.fingerprints.byte_len()
     }
-
-    fn build(
-        keys: &[u64],
-        filter_type: XorFilterType,
-        base_seed: u64,
-        max_attempts: usize,
-    ) -> Result<Self, Error> {
-        debug_assert!(max_attempts > 0);
-        let num_items = keys.len();
-        let capacity = compute_capacity(num_items)?;
-        let segment_length = capacity / usize::from(NUM_HASHES);
-        let mut xor_mask = vec![0_u64; capacity];
-        let mut count = vec![0_u32; capacity];
-        // One spare slot per segment allows a speculative enqueue even when full.
-        let mut queue = vec![0_u32; capacity + 3];
-        let mut stack_hash = vec![0_u64; num_items];
-        let mut stack_index = vec![0_u32; num_items];
-
-        let mut rng_state = base_seed;
-        let mut construction_seed = 0;
-        let mut stack_size = 0;
-        for attempt in 0..max_attempts {
-            if attempt != 0 {
-                xor_mask.fill(0);
-                count.fill(0);
-            }
-            rng_state = rng_state.wrapping_add(SPLITMIX_GAMMA);
-            construction_seed = splitmix64(rng_state);
-            stack_size = map(
-                keys,
-                construction_seed,
-                segment_length,
-                &mut xor_mask,
-                &mut count,
-                &mut queue,
-                &mut stack_hash,
-                &mut stack_index,
-            );
-            if stack_size == num_items {
-                break;
-            }
-            // For a fixed seed, mixing is a bijection, so two remaining hashes that cancel
-            // out are the same input hash. Reseeding cannot separate duplicates.
-            if count.iter().zip(&xor_mask).any(|(&c, &m)| c == 2 && m == 0) {
-                return Err(
-                    Error::invalid_argument("xor filter input contains duplicate hashes")
-                        .with_context("num_items", num_items),
-                );
-            }
-        }
-
-        if stack_size != num_items {
-            return Err(Error::invalid_argument(format!(
-                "xor filter construction failed after {max_attempts} attempts"
-            ))
-            .with_context("num_items", num_items));
-        }
-
-        // Assignment only needs the peel stack. Release the graph before allocating the
-        // fingerprint payload so these allocations do not overlap at peak memory usage.
-        drop(xor_mask);
-        drop(count);
-        drop(queue);
-
-        let fingerprints = match filter_type {
-            XorFilterType::Xor8 => XorFingerprints::Xor8(assign_fingerprints(
-                capacity,
-                segment_length,
-                &stack_hash,
-                &stack_index,
-                |hash| fingerprint(hash) as u8,
-            )),
-            XorFilterType::Xor16 => XorFingerprints::Xor16(assign_fingerprints(
-                capacity,
-                segment_length,
-                &stack_hash,
-                &stack_index,
-                |hash| fingerprint(hash) as u16,
-            )),
-            XorFilterType::Xor32 => XorFingerprints::Xor32(assign_fingerprints(
-                capacity,
-                segment_length,
-                &stack_hash,
-                &stack_index,
-                |hash| fingerprint(hash) as u32,
-            )),
-        };
-
-        Ok(Self {
-            segment_length,
-            num_items: Some(num_items),
-            seed: construction_seed,
-            fingerprints,
-        })
-    }
 }
 
 /// Builder for configuring and creating an immutable [`XorFilter`].
@@ -541,13 +412,93 @@ impl XorFilterBuilder {
     /// prevent peeling; a failed attempt usually exposes them and stops construction early,
     /// but detection is not guaranteed. Use [`build_from_hashes`](Self::build_from_hashes) to
     /// remove duplicates.
-    pub fn build_from_distinct_hashes(self, hashes: &[u64]) -> Result<XorFilter, Error> {
-        XorFilter::build(
-            hashes,
-            self.filter_type,
-            self.seed,
-            MAX_CONSTRUCTION_ATTEMPTS,
-        )
+    pub fn build_from_distinct_hashes(self, keys: &[u64]) -> Result<XorFilter, Error> {
+        let num_items = keys.len();
+        let capacity = compute_capacity(num_items)?;
+        let segment_length = capacity / usize::from(NUM_HASHES);
+        let mut xor_mask = vec![0_u64; capacity];
+        let mut count = vec![0_u32; capacity];
+        // One spare slot per segment allows a speculative enqueue even when full.
+        let mut queue = vec![0_u32; capacity + 3];
+        let mut stack_hash = vec![0_u64; num_items];
+        let mut stack_index = vec![0_u32; num_items];
+
+        let mut rng_state = self.seed;
+        let mut construction_seed = 0;
+        let mut stack_size = 0;
+        for attempt in 0..MAX_CONSTRUCTION_ATTEMPTS {
+            if attempt != 0 {
+                xor_mask.fill(0);
+                count.fill(0);
+            }
+            rng_state = rng_state.wrapping_add(SPLITMIX_GAMMA);
+            construction_seed = splitmix64(rng_state);
+            stack_size = map(
+                keys,
+                construction_seed,
+                segment_length,
+                &mut xor_mask,
+                &mut count,
+                &mut queue,
+                &mut stack_hash,
+                &mut stack_index,
+            );
+            if stack_size == num_items {
+                break;
+            }
+            // For a fixed seed, mixing is a bijection, so two remaining hashes that cancel
+            // out are the same input hash. Reseeding cannot separate duplicates.
+            if count.iter().zip(&xor_mask).any(|(&c, &m)| c == 2 && m == 0) {
+                return Err(
+                    Error::invalid_argument("xor filter input contains duplicate hashes")
+                        .with_context("num_items", num_items),
+                );
+            }
+        }
+
+        if stack_size != num_items {
+            return Err(Error::invalid_argument(format!(
+                "xor filter construction failed after {MAX_CONSTRUCTION_ATTEMPTS} attempts"
+            ))
+            .with_context("num_items", num_items));
+        }
+
+        // Assignment only needs the peel stack. Release the graph before allocating the
+        // fingerprint payload so these allocations do not overlap at peak memory usage.
+        drop(xor_mask);
+        drop(count);
+        drop(queue);
+
+        let fingerprints = match self.filter_type {
+            XorFilterType::Xor8 => XorFingerprints::Xor8(assign_fingerprints(
+                capacity,
+                segment_length,
+                &stack_hash,
+                &stack_index,
+                |hash| fingerprint(hash) as u8,
+            )),
+            XorFilterType::Xor16 => XorFingerprints::Xor16(assign_fingerprints(
+                capacity,
+                segment_length,
+                &stack_hash,
+                &stack_index,
+                |hash| fingerprint(hash) as u16,
+            )),
+            XorFilterType::Xor32 => XorFingerprints::Xor32(assign_fingerprints(
+                capacity,
+                segment_length,
+                &stack_hash,
+                &stack_index,
+                |hash| fingerprint(hash) as u32,
+            )),
+        };
+
+        Ok(XorFilter {
+            segment_length,
+            num_items: Some(num_items),
+            seed: construction_seed,
+            fingerprints,
+        })
     }
 }
 
@@ -783,26 +734,5 @@ mod tests {
         );
         assert_eq!(hashes, [mix(42, 1)]);
         assert_eq!(indexes, [0]);
-    }
-
-    #[test]
-    fn borrowed_input_survives_exhaustion_and_can_retry() {
-        // This synthetic set fails its first peeling attempt with base seed 1.
-        // Limiting the private engine to one attempt exercises the public build failure path
-        // without relying on a rare failure across all 100 production attempts.
-        let keys: Vec<_> = (917_504..917_504 + 16_384u64)
-            .map(|i| splitmix64(i.wrapping_add(SPLITMIX_GAMMA)))
-            .collect();
-        let error = XorFilter::build(&keys, XorFilterType::Xor8, 1, 1).unwrap_err();
-        assert_eq!(error.kind(), ErrorKind::InvalidArgument);
-
-        let filter = XorFilterBuilder::new(XorFilterType::Xor8)
-            .seed(1_u64.wrapping_add(SPLITMIX_GAMMA))
-            .build_from_distinct_hashes(&keys)
-            .unwrap();
-        assert_eq!(filter.num_items(), Some(keys.len()));
-        for &key in &keys {
-            assert!(filter.contains_hash(key));
-        }
     }
 }

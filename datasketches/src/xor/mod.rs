@@ -15,9 +15,9 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! Xor filters for immutable probabilistic set membership.
+//! XOR filters for immutable probabilistic set membership.
 //!
-//! An xor filter is built from the complete input set and cannot be updated afterward. Compared
+//! An XOR filter is built from the complete input set and cannot be updated afterward. Compared
 //! with a Bloom filter at the same false-positive probability, it generally needs less space and
 //! performs exactly three fingerprint reads per query. Construction needs temporary space linear
 //! in the number of distinct hashes.

@@ -256,14 +256,14 @@ fn xor32_image_preserves_full_width_little_endian_slots() {
         "0100000001000000",
         "67452301efcdab89ffffffff",
     ));
-    let filter = XorFilter::from_parts(
-        XorFilterParts::new(
-            0x0123_4567_89ab_cdef,
-            1,
-            XorFingerprints::Xor32(vec![0x0123_4567, 0x89ab_cdef, u32::MAX].into_boxed_slice()),
-        )
-        .with_num_items(1),
-    )
+    let filter = XorFilter::from_parts(XorFilterParts {
+        seed: 0x0123_4567_89ab_cdef,
+        segment_length: 1,
+        fingerprints: XorFingerprints::Xor32(
+            vec![0x0123_4567, 0x89ab_cdef, u32::MAX].into_boxed_slice(),
+        ),
+        num_items: Some(1),
+    })
     .unwrap();
     assert_eq!(filter.serialized_size().unwrap(), bytes.len());
     assert_eq!(filter.serialize().unwrap(), bytes);
@@ -320,9 +320,9 @@ fn raw_parts_preserve_an_application_storage_layout() {
         assert_eq!(filter.num_items(), None);
 
         let parts = filter.into_parts();
-        assert_eq!(parts.num_items(), None);
-        let (seed, segment) = (parts.seed(), parts.segment_length());
-        let payload = parts.into_fingerprints();
+        assert_eq!(parts.num_items, None);
+        let (seed, segment) = (parts.seed, parts.segment_length);
+        let payload = parts.fingerprints;
         let mut encoded = b"TEST".to_vec();
         encoded.push(width);
         encoded.extend((segment as u32).to_le_bytes());

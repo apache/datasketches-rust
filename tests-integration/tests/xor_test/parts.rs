@@ -75,9 +75,9 @@ fn raw_parts_interoperate_with_xorf_in_both_directions() {
             .build_from_distinct_hashes(&keys)
             .unwrap();
         let parts = built.clone().into_parts();
-        assert_eq!(parts.num_items(), Some(keys.len()));
-        let (seed, block_length) = (parts.seed(), parts.segment_length());
-        let payload = parts.into_fingerprints();
+        assert_eq!(parts.num_items, Some(keys.len()));
+        let (seed, block_length) = (parts.seed, parts.segment_length);
+        let payload = parts.fingerprints;
         // Compare all answers, including false positives, after transferring ownership.
         let reference: Box<dyn Filter<u64>> = match payload {
             XorFingerprints::Xor8(fingerprints) => Box::new(xorf::Xor8 {
@@ -111,11 +111,12 @@ fn raw_parts_reject_invalid_layouts_and_counts() {
         (usize::MAX, 3, None),
         (1, 3, Some(4)),
     ] {
-        let mut parts =
-            XorFilterParts::new(0, segment, XorFingerprints::Xor8(vec![0; length].into()));
-        if let Some(count) = count {
-            parts = parts.with_num_items(count);
-        }
+        let parts = XorFilterParts {
+            seed: 0,
+            segment_length: segment,
+            fingerprints: XorFingerprints::Xor8(vec![0; length].into()),
+            num_items: count,
+        };
         assert_eq!(
             XorFilter::from_parts(parts).unwrap_err().kind(),
             ErrorKind::InvalidArgument
@@ -202,13 +203,9 @@ fn unknown_count_does_not_infer_emptiness_from_zero_fingerprints() {
         let zero_hash = empty.seed().wrapping_neg();
         assert_eq!(empty.is_empty(), Some(true));
         assert!(!empty.contains_hash(zero_hash));
-        let parts = empty.into_parts();
-        let unknown = XorFilter::from_parts(XorFilterParts::new(
-            parts.seed(),
-            parts.segment_length(),
-            parts.into_fingerprints(),
-        ))
-        .unwrap();
+        let mut parts = empty.into_parts();
+        parts.num_items = None;
+        let unknown = XorFilter::from_parts(parts).unwrap();
         assert_eq!(unknown.is_empty(), None);
         assert_eq!(unknown.num_items(), None);
         assert_eq!(unknown.bits_per_item(), None);
@@ -223,7 +220,7 @@ fn unknown_count_does_not_infer_emptiness_from_zero_fingerprints() {
             ErrorKind::InvalidArgument
         );
         let parts = unknown.into_parts();
-        assert_eq!(parts.num_items(), None);
+        assert_eq!(parts.num_items, None);
         let restored = XorFilter::from_parts(parts).unwrap();
         assert_eq!(restored.is_empty(), None);
         assert!(restored.contains_hash(zero_hash));
