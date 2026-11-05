@@ -20,7 +20,6 @@ use std::hint::black_box;
 use benchmarks::Bencher;
 use benchmarks::Runner;
 use datasketches::xor::XorFilter;
-use datasketches::xor::XorFilterParts;
 use datasketches::xor::XorFilterType;
 use datasketches::xor::XorFingerprints;
 use xorf::Filter;
@@ -74,7 +73,7 @@ impl Reference {
                 XorFingerprints::Xor32(f.fingerprints),
             ),
         };
-        XorFilter::from_parts(XorFilterParts::new(seed, segment, fingerprints)).unwrap()
+        XorFilter::from_parts(seed, segment, fingerprints, None).unwrap()
     }
 }
 

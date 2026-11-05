@@ -19,7 +19,7 @@ use std::hint::black_box;
 
 use benchmarks::Bencher;
 use benchmarks::Runner;
-use datasketches::xor::XorFilterBuilder;
+use datasketches::xor::XorFilter;
 use datasketches::xor::XorFilterType;
 use xorf::Filter as _;
 
@@ -27,9 +27,8 @@ use crate::xor::hashes;
 
 fn datasketches_8_present(bencher: Bencher, cardinality: usize) {
     let keys = hashes(cardinality * 2);
-    let filter = XorFilterBuilder::new(XorFilterType::Xor8)
-        .build_from_distinct_hashes(&keys[..cardinality])
-        .unwrap();
+    let filter =
+        XorFilter::from_distinct_hashes(&keys[..cardinality], XorFilterType::Xor8, 0).unwrap();
     bencher.bench_local(|| {
         for key in &keys[..cardinality] {
             black_box(filter.contains_hash(black_box(*key)));
@@ -39,9 +38,8 @@ fn datasketches_8_present(bencher: Bencher, cardinality: usize) {
 
 fn datasketches_8_absent(bencher: Bencher, cardinality: usize) {
     let keys = hashes(cardinality * 2);
-    let filter = XorFilterBuilder::new(XorFilterType::Xor8)
-        .build_from_distinct_hashes(&keys[..cardinality])
-        .unwrap();
+    let filter =
+        XorFilter::from_distinct_hashes(&keys[..cardinality], XorFilterType::Xor8, 0).unwrap();
     bencher.bench_local(|| {
         for key in &keys[cardinality..] {
             black_box(filter.contains_hash(black_box(*key)));
@@ -71,9 +69,8 @@ fn xorf_8_absent(bencher: Bencher, cardinality: usize) {
 
 fn datasketches_16_present(bencher: Bencher, cardinality: usize) {
     let keys = hashes(cardinality * 2);
-    let filter = XorFilterBuilder::new(XorFilterType::Xor16)
-        .build_from_distinct_hashes(&keys[..cardinality])
-        .unwrap();
+    let filter =
+        XorFilter::from_distinct_hashes(&keys[..cardinality], XorFilterType::Xor16, 0).unwrap();
     bencher.bench_local(|| {
         for key in &keys[..cardinality] {
             black_box(filter.contains_hash(black_box(*key)));
@@ -83,9 +80,8 @@ fn datasketches_16_present(bencher: Bencher, cardinality: usize) {
 
 fn datasketches_16_absent(bencher: Bencher, cardinality: usize) {
     let keys = hashes(cardinality * 2);
-    let filter = XorFilterBuilder::new(XorFilterType::Xor16)
-        .build_from_distinct_hashes(&keys[..cardinality])
-        .unwrap();
+    let filter =
+        XorFilter::from_distinct_hashes(&keys[..cardinality], XorFilterType::Xor16, 0).unwrap();
     bencher.bench_local(|| {
         for key in &keys[cardinality..] {
             black_box(filter.contains_hash(black_box(*key)));
@@ -115,9 +111,8 @@ fn xorf_16_absent(bencher: Bencher, cardinality: usize) {
 
 fn datasketches_32_present(bencher: Bencher, cardinality: usize) {
     let keys = hashes(cardinality * 2);
-    let filter = XorFilterBuilder::new(XorFilterType::Xor32)
-        .build_from_distinct_hashes(&keys[..cardinality])
-        .unwrap();
+    let filter =
+        XorFilter::from_distinct_hashes(&keys[..cardinality], XorFilterType::Xor32, 0).unwrap();
     bencher.bench_local(|| {
         for key in &keys[..cardinality] {
             black_box(filter.contains_hash(black_box(*key)));
@@ -127,9 +122,8 @@ fn datasketches_32_present(bencher: Bencher, cardinality: usize) {
 
 fn datasketches_32_absent(bencher: Bencher, cardinality: usize) {
     let keys = hashes(cardinality * 2);
-    let filter = XorFilterBuilder::new(XorFilterType::Xor32)
-        .build_from_distinct_hashes(&keys[..cardinality])
-        .unwrap();
+    let filter =
+        XorFilter::from_distinct_hashes(&keys[..cardinality], XorFilterType::Xor32, 0).unwrap();
     bencher.bench_local(|| {
         for key in &keys[cardinality..] {
             black_box(filter.contains_hash(black_box(*key)));

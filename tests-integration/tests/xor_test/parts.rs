@@ -17,8 +17,6 @@
 
 use datasketches::error::ErrorKind;
 use datasketches::xor::XorFilter;
-use datasketches::xor::XorFilterBuilder;
-use datasketches::xor::XorFilterParts;
 use datasketches::xor::XorFilterType;
 use datasketches::xor::XorFingerprints;
 use xorf::Filter;
@@ -59,7 +57,7 @@ fn raw_parts_interoperate_with_xorf_in_both_directions() {
                 )
             }
         };
-        let imported = XorFilter::from_parts(XorFilterParts::new(seed, segment, payload)).unwrap();
+        let imported = XorFilter::from_parts(seed, segment, payload, None).unwrap();
         assert_eq!(imported.num_items(), None);
         assert_eq!(imported.bits_per_item(), None);
         assert_eq!(imported.is_empty(), None);
@@ -71,14 +69,11 @@ fn raw_parts_interoperate_with_xorf_in_both_directions() {
             assert!(imported.contains_hash(key));
         }
 
-        let built = XorFilterBuilder::new(kind)
-            .build_from_distinct_hashes(&keys)
-            .unwrap();
-        let parts = built.clone().into_parts();
-        assert_eq!(parts.num_items, Some(keys.len()));
-        let (seed, block_length) = (parts.seed, parts.segment_length);
-        let payload = parts.fingerprints;
-        // Compare all answers, including false positives, after transferring ownership.
+        let built = XorFilter::from_distinct_hashes(&keys, kind, 0).unwrap();
+        assert_eq!(built.num_items(), Some(keys.len()));
+        let (seed, block_length) = (built.seed(), built.segment_length());
+        let payload = built.fingerprints().clone();
+        // Compare all answers, including false positives, after exporting the fingerprints.
         let reference: Box<dyn Filter<u64>> = match payload {
             XorFingerprints::Xor8(fingerprints) => Box::new(xorf::Xor8 {
                 seed,
@@ -111,14 +106,15 @@ fn raw_parts_reject_invalid_layouts_and_counts() {
         (usize::MAX, 3, None),
         (1, 3, Some(4)),
     ] {
-        let parts = XorFilterParts {
-            seed: 0,
-            segment_length: segment,
-            fingerprints: XorFingerprints::Xor8(vec![0; length].into()),
-            num_items: count,
-        };
         assert_eq!(
-            XorFilter::from_parts(parts).unwrap_err().kind(),
+            XorFilter::from_parts(
+                0,
+                segment,
+                XorFingerprints::Xor8(vec![0; length].into()),
+                count
+            )
+            .unwrap_err()
+            .kind(),
             ErrorKind::InvalidArgument
         );
     }
@@ -131,15 +127,11 @@ fn distinct_construction_is_bounded_and_does_not_deduplicate() {
         XorFilterType::Xor16,
         XorFilterType::Xor32,
     ] {
-        let error = XorFilterBuilder::new(kind)
-            .build_from_distinct_hashes(&[1, 2, 1])
-            .unwrap_err();
+        let error = XorFilter::from_distinct_hashes(&[1, 2, 1], kind, 0).unwrap_err();
         assert_eq!(error.kind(), ErrorKind::InvalidArgument);
         assert!(error.message().contains("duplicate hashes"));
         for keys in [vec![], vec![0], vec![u64::MAX], vec![0, u64::MAX]] {
-            let f = XorFilterBuilder::new(kind)
-                .build_from_distinct_hashes(&keys)
-                .unwrap();
+            let f = XorFilter::from_distinct_hashes(&keys, kind, 0).unwrap();
             assert_eq!(f.num_items(), Some(keys.len()));
             for key in keys {
                 assert!(f.contains_hash(key));
@@ -160,9 +152,7 @@ fn construction_recovers_after_an_unpeelable_first_attempt() {
             z ^ (z >> 31)
         })
         .collect();
-    let first_seed = XorFilterBuilder::new(XorFilterType::Xor8)
-        .seed(1)
-        .build_from_distinct_hashes(&[])
+    let first_seed = XorFilter::from_distinct_hashes(&[], XorFilterType::Xor8, 1)
         .unwrap()
         .seed();
     let reference = xorf::Xor8::from(&keys);
@@ -172,10 +162,7 @@ fn construction_recovers_after_an_unpeelable_first_attempt() {
         XorFilterType::Xor16,
         XorFilterType::Xor32,
     ] {
-        let filter = XorFilterBuilder::new(kind)
-            .seed(1)
-            .build_from_distinct_hashes(&keys)
-            .unwrap();
+        let filter = XorFilter::from_distinct_hashes(&keys, kind, 1).unwrap();
         assert_eq!(filter.seed(), reference.seed);
         for &key in &keys {
             assert!(filter.contains_hash(key));
@@ -184,10 +171,7 @@ fn construction_recovers_after_an_unpeelable_first_attempt() {
         reversed.reverse();
         assert_eq!(
             filter,
-            XorFilterBuilder::new(kind)
-                .seed(1)
-                .build_from_distinct_hashes(&reversed)
-                .unwrap()
+            XorFilter::from_distinct_hashes(&reversed, kind, 1).unwrap()
         );
     }
 }
@@ -199,13 +183,17 @@ fn unknown_count_does_not_infer_emptiness_from_zero_fingerprints() {
         XorFilterType::Xor16,
         XorFilterType::Xor32,
     ] {
-        let empty = XorFilterBuilder::new(kind).build_from_hashes([]).unwrap();
+        let empty = XorFilter::from_hashes([], kind, 0).unwrap();
         let zero_hash = empty.seed().wrapping_neg();
         assert_eq!(empty.is_empty(), Some(true));
         assert!(!empty.contains_hash(zero_hash));
-        let mut parts = empty.into_parts();
-        parts.num_items = None;
-        let unknown = XorFilter::from_parts(parts).unwrap();
+        let unknown = XorFilter::from_parts(
+            empty.seed(),
+            empty.segment_length(),
+            empty.fingerprints().clone(),
+            None,
+        )
+        .unwrap();
         assert_eq!(unknown.is_empty(), None);
         assert_eq!(unknown.num_items(), None);
         assert_eq!(unknown.bits_per_item(), None);
@@ -219,10 +207,5 @@ fn unknown_count_does_not_infer_emptiness_from_zero_fingerprints() {
             unknown.serialize().unwrap_err().kind(),
             ErrorKind::InvalidArgument
         );
-        let parts = unknown.into_parts();
-        assert_eq!(parts.num_items, None);
-        let restored = XorFilter::from_parts(parts).unwrap();
-        assert_eq!(restored.is_empty(), None);
-        assert!(restored.contains_hash(zero_hash));
     }
 }

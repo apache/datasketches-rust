@@ -17,8 +17,6 @@
 
 use datasketches::error::ErrorKind;
 use datasketches::xor::XorFilter;
-use datasketches::xor::XorFilterBuilder;
-use datasketches::xor::XorFilterParts;
 use datasketches::xor::XorFilterType;
 use datasketches::xor::XorFingerprints;
 
@@ -52,10 +50,7 @@ fn java_images_round_trip_byte_for_byte() {
         (XorFilterType::Xor16, JAVA_XOR16_IMAGE),
     ] {
         let expected = decode_hex(image);
-        let built = XorFilterBuilder::new(filter_type)
-            .seed(42)
-            .build(values)
-            .unwrap();
+        let built = XorFilter::from_values(values, filter_type, 42).unwrap();
 
         let restored = XorFilter::deserialize(&expected).unwrap();
         assert_eq!(restored.serialize().unwrap(), expected);
@@ -86,9 +81,7 @@ fn serialization_round_trips_standard_fingerprint_types() {
         XorFilterType::Xor32,
     ] {
         for count in [0, 1, 10_000_u64] {
-            let original = XorFilterBuilder::new(filter_type)
-                .build_from_hashes(0..count)
-                .unwrap();
+            let original = XorFilter::from_hashes(0..count, filter_type, 0).unwrap();
             let bytes = original.serialize().unwrap();
             assert_eq!(bytes.len(), original.serialized_size().unwrap());
 
@@ -111,8 +104,7 @@ fn every_truncated_image_is_rejected() {
         XorFilterType::Xor16,
         XorFilterType::Xor32,
     ] {
-        let bytes = XorFilterBuilder::new(filter_type)
-            .build_from_hashes(0..100_u64)
+        let bytes = XorFilter::from_hashes(0..100_u64, filter_type, 0)
             .unwrap()
             .serialize()
             .unwrap();
@@ -126,8 +118,7 @@ fn every_truncated_image_is_rejected() {
 
 #[test]
 fn invalid_preamble_fields_are_rejected() {
-    let valid = XorFilterBuilder::new(XorFilterType::Xor8)
-        .build_from_hashes(0..100_u64)
+    let valid = XorFilter::from_hashes(0..100_u64, XorFilterType::Xor8, 0)
         .unwrap()
         .serialize()
         .unwrap();
@@ -151,8 +142,7 @@ fn invalid_preamble_fields_are_rejected() {
 
 #[test]
 fn unsafe_lengths_are_rejected_before_indexing() {
-    let valid = XorFilterBuilder::new(XorFilterType::Xor8)
-        .build_from_hashes(0..100_u64)
+    let valid = XorFilter::from_hashes(0..100_u64, XorFilterType::Xor8, 0)
         .unwrap()
         .serialize()
         .unwrap();
@@ -183,9 +173,7 @@ fn trailing_storage_is_ignored() {
         XorFilterType::Xor16,
         XorFilterType::Xor32,
     ] {
-        let original = XorFilterBuilder::new(kind)
-            .build_from_hashes(0..100_u64)
-            .unwrap();
+        let original = XorFilter::from_hashes(0..100_u64, kind, 0).unwrap();
         let mut bytes = original.serialize().unwrap();
         bytes.extend_from_slice(&[0xaa; 16]);
 
@@ -220,15 +208,17 @@ fn java_utf8_and_raw_byte_inputs_match() {
         ),
     ];
     for (kind, image) in images {
-        let built = XorFilterBuilder::new(kind)
-            .seed(42)
-            .build([
+        let built = XorFilter::from_values(
+            [
                 raw_bytes::from_slice(b"hello"),
                 raw_bytes::from_slice("数据🔎".as_bytes()),
                 raw_bytes::from_slice(&[]),
                 raw_bytes::from_slice(&[0, 1, 255]),
-            ])
-            .unwrap();
+            ],
+            kind,
+            42,
+        )
+        .unwrap();
         let expected = decode_hex(image);
         let restored = XorFilter::deserialize(&expected).unwrap();
         assert_eq!(restored.serialize().unwrap(), expected);
@@ -256,14 +246,12 @@ fn xor32_image_preserves_full_width_little_endian_slots() {
         "0100000001000000",
         "67452301efcdab89ffffffff",
     ));
-    let filter = XorFilter::from_parts(XorFilterParts {
-        seed: 0x0123_4567_89ab_cdef,
-        segment_length: 1,
-        fingerprints: XorFingerprints::Xor32(
-            vec![0x0123_4567, 0x89ab_cdef, u32::MAX].into_boxed_slice(),
-        ),
-        num_items: Some(1),
-    })
+    let filter = XorFilter::from_parts(
+        0x0123_4567_89ab_cdef,
+        1,
+        XorFingerprints::Xor32(vec![0x0123_4567, 0x89ab_cdef, u32::MAX].into_boxed_slice()),
+        Some(1),
+    )
     .unwrap();
     assert_eq!(filter.serialized_size().unwrap(), bytes.len());
     assert_eq!(filter.serialize().unwrap(), bytes);
@@ -312,23 +300,21 @@ fn raw_parts_preserve_an_application_storage_layout() {
             }
             _ => unreachable!(),
         };
-        let filter = XorFilter::from_parts(XorFilterParts::new(seed, segment, payload)).unwrap();
+        let filter = XorFilter::from_parts(seed, segment, payload, None).unwrap();
         for hash in [0, 1, 2, u64::MAX] {
             assert!(filter.contains_hash(hash));
         }
         assert_eq!(filter.capacity(), slots);
         assert_eq!(filter.num_items(), None);
 
-        let parts = filter.into_parts();
-        assert_eq!(parts.num_items, None);
-        let (seed, segment) = (parts.seed, parts.segment_length);
-        let payload = parts.fingerprints;
+        let (seed, segment) = (filter.seed(), filter.segment_length());
+        let payload = filter.fingerprints();
         let mut encoded = b"TEST".to_vec();
         encoded.push(width);
         encoded.extend((segment as u32).to_le_bytes());
         encoded.extend(seed.to_le_bytes());
         match payload {
-            XorFingerprints::Xor8(values) => encoded.extend_from_slice(&values),
+            XorFingerprints::Xor8(values) => encoded.extend_from_slice(values),
             XorFingerprints::Xor16(values) => {
                 encoded.extend(values.iter().flat_map(|v| v.to_le_bytes()))
             }

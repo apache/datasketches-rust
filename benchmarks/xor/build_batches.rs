@@ -19,14 +19,14 @@ use std::hint::black_box;
 
 use benchmarks::Bencher;
 use benchmarks::Runner;
-use datasketches::xor::XorFilterBuilder;
+use datasketches::xor::XorFilter;
 use datasketches::xor::XorFilterType;
 
 use crate::xor::hashes_with_offset;
 
 fn build<F>(bencher: Bencher, cardinality: usize, build: impl Fn(&[u64]) -> F) {
-    // Multiple independent sets keep a particular seed's retry count on one set
-    // from dominating the comparison of default construction policies.
+    // Multiple independent sets keep one set's retry count from dominating the comparison.
+    // The deduplicating constructor receives the same already-distinct inputs.
     let inputs: Vec<_> = (0..32)
         .map(|i| hashes_with_offset(cardinality, i * cardinality as u64))
         .collect();
@@ -38,23 +38,20 @@ fn build<F>(bencher: Bencher, cardinality: usize, build: impl Fn(&[u64]) -> F) {
 }
 
 pub fn register(runner: &mut Runner) {
+    // Use xorf's initial seed for each constructor.
     for (cardinality, rounds) in [(128, 10_000), (16_384, 40), (50_000, 12)] {
         runner.compare(
             &format!("xor::build_batches::8/{cardinality}"),
             rounds,
             &[
-                ("default_seed", &|b| {
+                ("distinct", &|b| {
                     build(b, cardinality, |keys| {
-                        XorFilterBuilder::new(XorFilterType::Xor8)
-                            .build_from_distinct_hashes(keys)
-                            .unwrap()
+                        XorFilter::from_distinct_hashes(keys, XorFilterType::Xor8, 1).unwrap()
                     })
                 }),
-                ("matched_seed", &|b| {
+                ("deduplicate", &|b| {
                     build(b, cardinality, |keys| {
-                        XorFilterBuilder::new(XorFilterType::Xor8)
-                            .seed(1)
-                            .build_from_distinct_hashes(keys)
+                        XorFilter::from_hashes(keys.iter().copied(), XorFilterType::Xor8, 1)
                             .unwrap()
                     })
                 }),

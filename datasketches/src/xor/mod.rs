@@ -22,8 +22,8 @@
 //! performs exactly three fingerprint reads per query. Construction needs temporary space linear
 //! in the number of distinct hashes.
 //!
-//! The [`XorFilterBuilder`] hashes ordinary Rust values with xxHash64. Call
-//! [`XorFilterBuilder::build_from_hashes`] or [`XorFilterBuilder::build_from_distinct_hashes`]
+//! [`XorFilter::from_values`] hashes ordinary Rust values with xxHash64. Call
+//! [`XorFilter::from_hashes`] or [`XorFilter::from_distinct_hashes`]
 //! when hashes have already been computed and must not be hashed again.
 //!
 //! # Cross-language hashing
@@ -46,21 +46,19 @@
 //!
 //! # Application-defined storage
 //!
-//! [`XorFilter::into_parts`] and [`XorFilter::from_parts`] exchange [`XorFilterParts`], which
-//! preserve the construction seed, segment length, and typed fingerprint slots without adding
-//! metadata to an existing disk format. Imported parts may omit the item count. Filters with a
+//! [`XorFilter::from_parts`] imports a construction seed, segment length, and typed fingerprint
+//! slots without adding metadata to an existing disk format. Accessors expose these fields for
+//! serialization. Imports may omit the item count. Filters with a
 //! known zero item count always reject queries; imported parts with an unknown count retain the
 //! ordinary fingerprint comparison, including possible false positives.
 //!
 //! # Examples
 //!
 //! ```
-//! use datasketches::xor::XorFilterBuilder;
+//! use datasketches::xor::XorFilter;
 //! use datasketches::xor::XorFilterType;
 //!
-//! let filter = XorFilterBuilder::new(XorFilterType::Xor8)
-//!     .build(["apple", "banana"])
-//!     .unwrap();
+//! let filter = XorFilter::from_values(["apple", "banana"], XorFilterType::Xor8, 0).unwrap();
 //!
 //! assert!(filter.contains(&"apple"));
 //! ```
@@ -74,7 +72,5 @@ mod filter;
 mod serialization;
 
 pub use self::filter::XorFilter;
-pub use self::filter::XorFilterBuilder;
-pub use self::filter::XorFilterParts;
 pub use self::filter::XorFilterType;
 pub use self::filter::XorFingerprints;

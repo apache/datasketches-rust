@@ -19,7 +19,7 @@ use std::hint::black_box;
 
 use benchmarks::Bencher;
 use benchmarks::Runner;
-use datasketches::xor::XorFilterBuilder;
+use datasketches::xor::XorFilter;
 use datasketches::xor::XorFilterType;
 
 use crate::xor::hashes;
@@ -32,11 +32,7 @@ fn repeated_hashes(rows: usize) -> Vec<u64> {
 fn distinct_8(bencher: Bencher, cardinality: usize) {
     let keys = hashes(cardinality);
     bencher.bench_local(|| {
-        black_box(
-            XorFilterBuilder::new(XorFilterType::Xor8)
-                .build_from_distinct_hashes(&keys)
-                .unwrap(),
-        )
+        black_box(XorFilter::from_distinct_hashes(&keys, XorFilterType::Xor8, 0).unwrap())
     });
 }
 
@@ -48,11 +44,7 @@ fn xorf_distinct_8(bencher: Bencher, cardinality: usize) {
 fn deduplicate_8(bencher: Bencher, rows: usize) {
     let keys = repeated_hashes(rows);
     bencher.bench_local(|| {
-        black_box(
-            XorFilterBuilder::new(XorFilterType::Xor8)
-                .build_from_hashes(keys.iter().copied())
-                .unwrap(),
-        )
+        black_box(XorFilter::from_hashes(keys.iter().copied(), XorFilterType::Xor8, 0).unwrap())
     });
 }
 
@@ -70,11 +62,7 @@ fn xorf_deduplicate_8(bencher: Bencher, rows: usize) {
 fn distinct_16(bencher: Bencher, cardinality: usize) {
     let keys = hashes(cardinality);
     bencher.bench_local(|| {
-        black_box(
-            XorFilterBuilder::new(XorFilterType::Xor16)
-                .build_from_distinct_hashes(&keys)
-                .unwrap(),
-        )
+        black_box(XorFilter::from_distinct_hashes(&keys, XorFilterType::Xor16, 0).unwrap())
     });
 }
 
@@ -86,11 +74,7 @@ fn xorf_distinct_16(bencher: Bencher, cardinality: usize) {
 fn deduplicate_16(bencher: Bencher, rows: usize) {
     let keys = repeated_hashes(rows);
     bencher.bench_local(|| {
-        black_box(
-            XorFilterBuilder::new(XorFilterType::Xor16)
-                .build_from_hashes(keys.iter().copied())
-                .unwrap(),
-        )
+        black_box(XorFilter::from_hashes(keys.iter().copied(), XorFilterType::Xor16, 0).unwrap())
     });
 }
 
@@ -108,11 +92,7 @@ fn xorf_deduplicate_16(bencher: Bencher, rows: usize) {
 fn distinct_32(bencher: Bencher, cardinality: usize) {
     let keys = hashes(cardinality);
     bencher.bench_local(|| {
-        black_box(
-            XorFilterBuilder::new(XorFilterType::Xor32)
-                .build_from_distinct_hashes(&keys)
-                .unwrap(),
-        )
+        black_box(XorFilter::from_distinct_hashes(&keys, XorFilterType::Xor32, 0).unwrap())
     });
 }
 
@@ -124,11 +104,7 @@ fn xorf_distinct_32(bencher: Bencher, cardinality: usize) {
 fn deduplicate_32(bencher: Bencher, rows: usize) {
     let keys = repeated_hashes(rows);
     bencher.bench_local(|| {
-        black_box(
-            XorFilterBuilder::new(XorFilterType::Xor32)
-                .build_from_hashes(keys.iter().copied())
-                .unwrap(),
-        )
+        black_box(XorFilter::from_hashes(keys.iter().copied(), XorFilterType::Xor32, 0).unwrap())
     });
 }
 
