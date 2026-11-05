@@ -22,16 +22,16 @@
 //! performs exactly three fingerprint reads per query. Construction needs temporary space linear
 //! in the number of distinct hashes.
 //!
-//! [`XorFilter::from_values`] hashes ordinary Rust values with xxHash64. Call
-//! [`XorFilter::from_hashes`] with distinct hashes
-//! when hashes have already been computed and must not be hashed again.
+//! [`XorFilterBuilder`] collects values or precomputed hashes and removes duplicates when built.
+//! Use [`XorFilter::from_hashes`] when the input hashes are already distinct, or
+//! [`XorFilter::from_fingerprints`] to import an existing filter.
 //!
 //! # Cross-language hashing
 //!
-//! Standard serialization supports 8-, 16-, and 32-bit fingerprints using family `22`, version `1`.
-//! Interoperability requires the reader to support the encoded fingerprint width. The 8- and
-//! 16-bit images match Java's format; 32-bit images extend the same layout with little-endian
-//! `u32` slots and cannot be read by implementations limited to 8/16 bits.
+//! Standard serialization supports 8-, 16-, and 32-bit fingerprints using family `22`, version `2`.
+//! Interoperability requires the reader to support this version and the encoded fingerprint width.
+//! Version `1` images are not supported. The format stores the seed, segment layout, and
+//! fingerprints, without an item count.
 //! Construction may choose a different valid fingerprint array from another implementation;
 //! byte-for-byte equality of independently constructed filters is not guaranteed. Rust's
 //! [`Hash`](std::hash::Hash) implementations do not always encode values like other languages. Use
@@ -46,17 +46,20 @@
 //!
 //! # Application-defined storage
 //!
-//! [`XorFilter::from_parts`] imports a construction seed and typed fingerprint
+//! [`XorFilter::from_fingerprints`] imports a construction seed and typed fingerprint
 //! slots without adding metadata to an existing disk format. Accessors expose these fields for
-//! serialization. Imports may omit the item count, which does not affect membership queries.
+//! serialization.
 //!
 //! # Examples
 //!
 //! ```
-//! use datasketches::xor::XorFilter;
+//! use datasketches::xor::XorFilterBuilder;
 //! use datasketches::xor::XorFilterType;
 //!
-//! let filter = XorFilter::from_values(["apple", "banana"], XorFilterType::Xor8, 0).unwrap();
+//! let mut builder = XorFilterBuilder::new(XorFilterType::Xor8, 0);
+//! builder.update("apple");
+//! builder.update("banana");
+//! let filter = builder.build().unwrap();
 //!
 //! assert!(filter.contains(&"apple"));
 //! ```
@@ -69,5 +72,6 @@
 mod filter;
 
 pub use self::filter::XorFilter;
+pub use self::filter::XorFilterBuilder;
 pub use self::filter::XorFilterType;
 pub use self::filter::XorFingerprints;

@@ -30,7 +30,7 @@ const SHARDS: usize = 32;
 const QUERIES: usize = 256;
 
 // Storage formats can choose a fingerprint width at runtime. Give both peers
-// this dispatch, and import identical payloads without cardinality metadata.
+// this dispatch, and import identical payloads.
 enum Reference {
     Xor8(xorf::Xor8),
     Xor16(xorf::Xor16),
@@ -61,7 +61,7 @@ impl Reference {
             Self::Xor16(f) => (f.seed, XorFingerprints::Xor16(f.fingerprints)),
             Self::Xor32(f) => (f.seed, XorFingerprints::Xor32(f.fingerprints)),
         };
-        XorFilter::from_parts(seed, fingerprints, None).unwrap()
+        XorFilter::from_fingerprints(seed, fingerprints).unwrap()
     }
 }
 

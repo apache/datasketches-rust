@@ -17,28 +17,20 @@
 
 use datasketches::error::ErrorKind;
 use datasketches::xor::XorFilter;
+use datasketches::xor::XorFilterBuilder;
 use datasketches::xor::XorFilterType;
 use datasketches::xor::XorFingerprints;
 
-// Generated from datasketches-java commit 1034fb33b6e013334ff870f130b9c388cae5dfa9.
+// Generated from datasketches-java commit a038a8b298e3580da73f4c8ee9d0c8e33f77a607.
 // XorFilterBuilder.create([1, 2, 3, Long.MIN_VALUE], bits, 42).toByteArray().
 const JAVA_XOR8_IMAGE: &str = concat!(
-    "0301160008030000956eeb2f2632d7bd0c00000004000000",
-    "00000000000000000000c500000000000000000000000000dd000000040000000b000000"
+    "020216080c000000956eeb2f2632d7bd",
+    "000000000000000400dd0000000000000000ce0000c50000000000000000000000000000"
 );
 const JAVA_XOR16_IMAGE: &str = concat!(
-    "0301160010030000",
-    "956eeb2f2632d7bd",
-    "0c00000004000000",
-    "0000000000000000",
-    "0000000000000000",
-    "00000000c5b60000",
-    "0000000000000000",
-    "0000000000000000",
-    "0000000000000000",
-    "dd6e000000000000",
-    "04e8000000000000",
-    "0b23000000000000",
+    "020216100c000000956eeb2f2632d7bd",
+    "000000000000000000000000000004e80000dd6e00000000000000000000000000000000",
+    "ce9500000000c5b600000000000000000000000000000000000000000000000000000000",
 );
 
 #[test]
@@ -50,19 +42,16 @@ fn java_images_round_trip_byte_for_byte() {
         (XorFilterType::Xor16, JAVA_XOR16_IMAGE),
     ] {
         let expected = decode_hex(image);
-        let built = XorFilter::from_values(values, ty, 42).unwrap();
+        let mut builder = XorFilterBuilder::new(ty, 42);
+        for value in values {
+            builder.update(&value);
+        }
+        let built = builder.build().unwrap();
 
         let restored = XorFilter::deserialize(&expected).unwrap();
         assert_eq!(restored.serialize().unwrap(), expected);
-        // Peelability does not depend on peeling order, so both builders select the same
-        // construction seed and layout. Fingerprint slots may still differ by peeling order.
-        assert_eq!(
-            built.serialize().unwrap()[..24],
-            expected[..24],
-            "{ty:?} header differs from Java"
-        );
+        assert_eq!(built.serialize().unwrap(), expected);
         assert_eq!(restored.filter_type(), ty);
-        assert_eq!(restored.num_items(), Some(values.len()));
         for value in values {
             assert!(built.contains(&value));
             assert!(
@@ -123,14 +112,14 @@ fn invalid_preamble_fields_are_rejected() {
         .unwrap();
 
     for (offset, value) in [
-        (0, 2),
-        (0, 4),
-        (1, 2),
+        (0, 1),
+        (0, 3),
+        (1, 1),
+        (1, 3),
         (2, 21),
-        (4, 7),
-        (4, 24),
-        (4, 64),
-        (5, 4),
+        (3, 7),
+        (3, 24),
+        (3, 64),
     ] {
         let mut corrupted = valid.clone();
         corrupted[offset] = value;
@@ -149,16 +138,7 @@ fn unsafe_lengths_are_rejected_before_indexing() {
 
     for segment_length in [0_i32, -1, i32::MAX] {
         let mut corrupted = valid.clone();
-        corrupted[16..20].copy_from_slice(&segment_length.to_le_bytes());
-        assert_eq!(
-            XorFilter::deserialize(&corrupted).unwrap_err().kind(),
-            ErrorKind::InvalidData
-        );
-    }
-
-    for num_items in [-1_i32, i32::MAX] {
-        let mut corrupted = valid.clone();
-        corrupted[20..24].copy_from_slice(&num_items.to_le_bytes());
+        corrupted[4..8].copy_from_slice(&segment_length.to_le_bytes());
         assert_eq!(
             XorFilter::deserialize(&corrupted).unwrap_err().kind(),
             ErrorKind::InvalidData
@@ -197,39 +177,27 @@ fn decode_hex(input: &str) -> Vec<u8> {
 #[test]
 fn java_utf8_and_raw_byte_inputs_match() {
     use datasketches::hash::value::raw_bytes;
-    // The same merged Java implementation, using update(String) and update(byte[]).
+    // The same Java revision, using update(String) and update(byte[]).
     let images = [
         (
             XorFilterType::Xor8,
-            "0301160008030000956eeb2f2632d7bd0c0000000400000000000000000000000000000000df00000000000000000000cc0000003000000091000000",
+            "020216080c000000956eeb2f2632d7bdccdf00000000000000ef0091000000000000000000000000000000000000000000000000",
         ),
         (
             XorFilterType::Xor16,
-            "0301160010030000956eeb2f2632d7bd0c000000040000000000000000000000000000000000000000000000000000000000df500000000000000000000000000000000000000000ccb5000000000000301200000000000091b8000000000000",
+            "020216100c000000956eeb2f2632d7bdccb5df500000000000000000000000000000ef42000091b8000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
         ),
     ];
     for (kind, image) in images {
-        let built = XorFilter::from_values(
-            [
-                raw_bytes::from_slice(b"hello"),
-                raw_bytes::from_slice("数据🔎".as_bytes()),
-                raw_bytes::from_slice(&[]),
-                raw_bytes::from_slice(&[0, 1, 255]),
-            ],
-            kind,
-            42,
-        )
-        .unwrap();
+        let mut builder = XorFilterBuilder::new(kind, 42);
+        for bytes in [b"hello".as_slice(), "数据🔎".as_bytes(), &[], &[0, 1, 255]] {
+            builder.update(&raw_bytes::from_slice(bytes));
+        }
+        let built = builder.build().unwrap();
         let expected = decode_hex(image);
         let restored = XorFilter::deserialize(&expected).unwrap();
         assert_eq!(restored.serialize().unwrap(), expected);
-        // Peelability does not depend on peeling order, so both builders select the same
-        // construction seed and layout. Fingerprint slots may still differ by peeling order.
-        assert_eq!(
-            built.serialize().unwrap()[..24],
-            expected[..24],
-            "{kind:?} header differs from Java"
-        );
+        assert_eq!(built.serialize().unwrap(), expected);
         for bytes in [b"hello".as_slice(), "数据🔎".as_bytes(), &[], &[0, 1, 255]] {
             assert!(built.contains(&raw_bytes::from_slice(bytes)));
             assert!(restored.contains(&raw_bytes::from_slice(bytes)));
@@ -240,17 +208,15 @@ fn java_utf8_and_raw_byte_inputs_match() {
 #[test]
 fn xor32_image_preserves_full_width_little_endian_slots() {
     // Hand-authored layout fixture, independent of the construction algorithm:
-    // family 22/version 1, width 32, three one-slot segments, one item.
+    // family 22/version 2, width 32, three one-slot segments.
     let bytes = decode_hex(concat!(
-        "0301160020030000",
+        "0202162001000000",
         "efcdab8967452301",
-        "0100000001000000",
         "67452301efcdab89ffffffff",
     ));
-    let filter = XorFilter::from_parts(
+    let filter = XorFilter::from_fingerprints(
         0x0123_4567_89ab_cdef,
         XorFingerprints::Xor32(vec![0x0123_4567, 0x89ab_cdef, u32::MAX].into_boxed_slice()),
-        Some(1),
     )
     .unwrap();
     assert_eq!(filter.serialize().unwrap(), bytes);
@@ -258,7 +224,7 @@ fn xor32_image_preserves_full_width_little_endian_slots() {
 }
 
 #[test]
-fn raw_parts_preserve_an_application_storage_layout() {
+fn fingerprints_preserve_an_application_storage_layout() {
     use datasketches::codec::SketchSlice;
     // Synthetic storage fixtures with public xorf 0.13.0 payloads for [0, 1, 2, u64::MAX].
     // This test-only envelope omits cardinality: magic, width:u8, segment:u32, seed:u64,
@@ -300,11 +266,10 @@ fn raw_parts_preserve_an_application_storage_layout() {
             }
             _ => unreachable!(),
         };
-        let filter = XorFilter::from_parts(seed, payload, None).unwrap();
+        let filter = XorFilter::from_fingerprints(seed, payload).unwrap();
         for hash in [0, 1, 2, u64::MAX] {
             assert!(filter.contains_hash(hash));
         }
-        assert_eq!(filter.num_items(), None);
 
         let seed = filter.seed();
         let payload = filter.fingerprints();
