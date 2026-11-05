@@ -90,9 +90,6 @@ fn serialization_round_trips_standard_fingerprint_types() {
             for hash in 0..count {
                 assert!(restored.contains_hash(hash));
             }
-            if count == 0 {
-                assert!(!restored.contains_hash(restored.seed().wrapping_neg()));
-            }
         }
     }
 }

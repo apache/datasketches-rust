@@ -103,9 +103,9 @@ impl XorFingerprints {
 /// An immutable xor filter for probabilistic set membership.
 ///
 /// A query that returns `false` proves that the item was not in the input set. A query that returns
-/// `true` may be a false positive, with probability determined by [`XorFilterType`]. A filter
-/// known to be empty always returns `false`. Values cannot
-/// be added after construction; rebuild the filter when the set changes.
+/// `true` may be a false positive, with probability determined by [`XorFilterType`], even for an
+/// empty input set. Values cannot be added after construction; rebuild the filter when the set
+/// changes.
 ///
 /// Ordinary values passed to [`contains`](Self::contains) are reduced to 64-bit hashes with
 /// xxHash64 and seed `0`. Use [`contains_hash`](Self::contains_hash) only with the same hashes that
@@ -260,7 +260,7 @@ impl XorFilter {
     /// with the original input hashes. A supplied item count must describe the original set.
     /// A valid layout alone cannot establish these invariants.
     /// Pass `None` when the storage format omits the item count. Standard serialization requires
-    /// a known count; a known zero count makes every query return `false`.
+    /// a known count. The item count does not affect membership queries.
     ///
     /// # Errors
     ///
@@ -341,7 +341,7 @@ impl XorFilter {
         let mixed = mix(hash, self.seed);
         let [h0, h1, h2] = indexes(mixed, self.segment_length);
 
-        let found = match &self.fingerprints {
+        match &self.fingerprints {
             XorFingerprints::Xor8(fingerprints) => {
                 fingerprint(mixed) as u8 == fingerprints[h0] ^ fingerprints[h1] ^ fingerprints[h2]
             }
@@ -351,10 +351,7 @@ impl XorFilter {
             XorFingerprints::Xor32(fingerprints) => {
                 fingerprint(mixed) as u32 == fingerprints[h0] ^ fingerprints[h1] ^ fingerprints[h2]
             }
-        };
-        // Avoid branching on the fingerprint comparison, including rare false
-        // positives. Unknown counts must preserve the raw comparison.
-        found & (self.num_items != Some(0))
+        }
     }
 
     /// Returns whether the input set was empty, or `None` if imported without an item count.

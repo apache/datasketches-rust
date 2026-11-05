@@ -173,7 +173,7 @@ fn construction_recovers_after_an_unpeelable_first_attempt() {
 }
 
 #[test]
-fn unknown_count_does_not_infer_emptiness_from_zero_fingerprints() {
+fn item_count_does_not_change_queries() {
     for kind in [
         XorFilterType::Xor8,
         XorFilterType::Xor16,
@@ -182,7 +182,8 @@ fn unknown_count_does_not_infer_emptiness_from_zero_fingerprints() {
         let empty = XorFilter::from_hashes(&[], kind, 0).unwrap();
         let zero_hash = empty.seed().wrapping_neg();
         assert_eq!(empty.is_empty(), Some(true));
-        assert!(!empty.contains_hash(zero_hash));
+        // This query produces a false positive even though the input set is empty.
+        assert!(empty.contains_hash(zero_hash));
         let unknown = XorFilter::from_parts(
             empty.seed(),
             empty.segment_length(),
@@ -192,8 +193,9 @@ fn unknown_count_does_not_infer_emptiness_from_zero_fingerprints() {
         .unwrap();
         assert_eq!(unknown.is_empty(), None);
         assert_eq!(unknown.num_items(), None);
-        // An omitted count must preserve the raw fingerprint comparison, even for all-zero slots.
-        assert!(unknown.contains_hash(zero_hash));
+        for hash in (0..1_000).chain([zero_hash]) {
+            assert_eq!(unknown.contains_hash(hash), empty.contains_hash(hash));
+        }
         assert_eq!(
             unknown.serialize().unwrap_err().kind(),
             ErrorKind::InvalidArgument

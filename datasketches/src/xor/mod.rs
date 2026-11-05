@@ -48,9 +48,7 @@
 //!
 //! [`XorFilter::from_parts`] imports a construction seed, segment length, and typed fingerprint
 //! slots without adding metadata to an existing disk format. Accessors expose these fields for
-//! serialization. Imports may omit the item count. Filters with a
-//! known zero item count always reject queries; imported parts with an unknown count retain the
-//! ordinary fingerprint comparison, including possible false positives.
+//! serialization. Imports may omit the item count, which does not affect membership queries.
 //!
 //! # Examples
 //!
