@@ -197,10 +197,6 @@ fn unknown_count_does_not_infer_emptiness_from_zero_fingerprints() {
         // An omitted count must preserve the raw fingerprint comparison, even for all-zero slots.
         assert!(unknown.contains_hash(zero_hash));
         assert_eq!(
-            unknown.serialized_size().unwrap_err().kind(),
-            ErrorKind::InvalidArgument
-        );
-        assert_eq!(
             unknown.serialize().unwrap_err().kind(),
             ErrorKind::InvalidArgument
         );

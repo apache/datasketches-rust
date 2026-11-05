@@ -152,10 +152,9 @@ impl XorFilter {
         Self::from_hashes(&hashes, ty, seed)
     }
 
-    /// Creates a filter from distinct precomputed 64-bit hashes without copying or sorting them.
+    /// Creates a filter from distinct precomputed 64-bit hashes.
     ///
-    /// The caller must supply distinct hashes. Duplicate hashes return an error; this method
-    /// does not remove them. The input is borrowed without modification.
+    /// Duplicate hashes return an error.
     /// Query with [`contains_hash`](Self::contains_hash) using hashes from the same source.
     /// The construction `seed` selects a deterministic sequence of attempts; input order
     /// does not affect the result.
@@ -608,12 +607,7 @@ impl XorFilter {
         })
     }
 
-    /// Returns the standard serialized size in bytes.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error under the same conditions as [`serialize`](Self::serialize).
-    pub fn serialized_size(&self) -> Result<usize, Error> {
+    fn serialized_size(&self) -> Result<usize, Error> {
         let count = self
             .num_items
             .ok_or_else(|| Error::invalid_argument("standard xor format requires an item count"))?;

@@ -77,7 +77,6 @@ fn metadata_describes_the_compact_payload() {
     assert_eq!(filter.capacity() % 3, 0);
     assert!((9.5..10.5).contains(&filter.bits_per_item().unwrap()));
     assert!(filter.estimated_size() >= filter.capacity());
-    assert_eq!(filter.serialized_size().unwrap(), 24 + filter.capacity());
 }
 
 #[test]
@@ -88,7 +87,6 @@ fn empty_filter_is_well_formed() {
     assert_eq!(filter.num_items(), Some(0));
     assert_eq!(filter.capacity(), 30);
     assert_eq!(filter.bits_per_item().unwrap(), 0.0);
-    assert_eq!(filter.serialized_size().unwrap(), 24 + 60);
 }
 
 #[test]
