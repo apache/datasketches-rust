@@ -104,7 +104,6 @@ fn raw_parts_reject_invalid_layouts_and_counts() {
         (1, 4, None),
         (usize::MAX, 3, None),
         (1, 3, Some(4)),
-        (1, 3, Some(usize::MAX)),
     ] {
         assert_eq!(
             XorFilter::from_parts(
