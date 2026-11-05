@@ -485,7 +485,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
 
     /// Returns frequent items using the sketch maximum error as threshold.
     ///
-    /// This is equivalent to `frequent_items_with_threshold(ty, self.maximum_error())`.
+    /// This is equivalent to `frequent_items_with_threshold(error_type, self.maximum_error())`.
     ///
     /// # Examples
     ///
@@ -499,11 +499,11 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     /// let rows = sketch.frequent_items(ErrorType::NoFalseNegatives);
     /// assert!(rows.iter().any(|row| *row.item() == 1));
     /// ```
-    pub fn frequent_items(&self, ty: ErrorType) -> Vec<Row<T>>
+    pub fn frequent_items(&self, error_type: ErrorType) -> Vec<Row<T>>
     where
         T: Clone,
     {
-        self.frequent_items_with_threshold(ty, self.offset)
+        self.frequent_items_with_threshold(error_type, self.offset)
     }
 
     /// Returns frequent items using a custom threshold.
@@ -525,7 +525,11 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     /// let rows = sketch.frequent_items_with_threshold(ErrorType::NoFalsePositives, 3);
     /// assert!(rows.iter().any(|row| *row.item() == 1));
     /// ```
-    pub fn frequent_items_with_threshold(&self, ty: ErrorType, threshold: u64) -> Vec<Row<T>>
+    pub fn frequent_items_with_threshold(
+        &self,
+        error_type: ErrorType,
+        threshold: u64,
+    ) -> Vec<Row<T>>
     where
         T: Clone,
     {
@@ -534,7 +538,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
         for (item, count) in self.hash_map.iter() {
             let lower = count;
             let upper = count + self.offset;
-            let include = match ty {
+            let include = match error_type {
                 ErrorType::NoFalseNegatives => upper > threshold,
                 ErrorType::NoFalsePositives => lower > threshold,
             };
