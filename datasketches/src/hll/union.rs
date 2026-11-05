@@ -555,9 +555,9 @@ fn merge_array_with_downsample(dst: &mut Array8, dst_lg_k: u8, src_mode: &Mode, 
 
 /// Changing representation preserves the estimate state; replaying registers alone would change
 /// HIP.
-fn convert_array8_to_type(src: &Array8, lg_config_k: u8, target_type: HllType) -> HllSketch {
-    let estimate_state = src.estimate_state();
-    match target_type {
+fn convert_array8_to_type(src: &Array8, lg_config_k: u8, ty: HllType) -> HllSketch {
+    let state = src.estimate_state();
+    match ty {
         HllType::Hll8 => HllSketch::from_mode(lg_config_k, Mode::Array8(src.clone())),
         HllType::Hll6 => {
             let mut array6 = Array6::new(lg_config_k);
@@ -569,7 +569,7 @@ fn convert_array8_to_type(src: &Array8, lg_config_k: u8, target_type: HllType) -
                     array6.update(coupon);
                 }
             }
-            array6.restore_estimate_state(estimate_state);
+            array6.restore_estimate_state(state);
 
             HllSketch::from_mode(lg_config_k, Mode::Array6(array6))
         }
@@ -582,7 +582,7 @@ fn convert_array8_to_type(src: &Array8, lg_config_k: u8, target_type: HllType) -
                     array4.update(coupon);
                 }
             }
-            array4.restore_estimate_state(estimate_state);
+            array4.restore_estimate_state(state);
 
             HllSketch::from_mode(lg_config_k, Mode::Array4(array4))
         }
@@ -601,7 +601,7 @@ fn copy_array46_via_coupons(dst: &mut Array8, num_registers: usize, get_value: i
 
 /// Preserves the source estimate state because the result represents the same logical sketch.
 fn copy_or_downsample(src_mode: &Mode, src_lg_k: u8, tgt_lg_k: u8) -> Array8 {
-    let estimate_state = get_array_estimate_state(src_mode);
+    let state = get_array_estimate_state(src_mode);
 
     let mut result = if src_lg_k <= tgt_lg_k {
         match src_mode {
@@ -628,6 +628,6 @@ fn copy_or_downsample(src_mode: &Mode, src_lg_k: u8, tgt_lg_k: u8) -> Array8 {
         result
     };
 
-    result.restore_estimate_state(estimate_state);
+    result.restore_estimate_state(state);
     result
 }
