@@ -28,10 +28,9 @@
 //!
 //! # Cross-language hashing
 //!
-//! Standard serialization supports 8-, 16-, and 32-bit fingerprints using family `22`, version `2`.
-//! Interoperability requires the reader to support this version and the encoded fingerprint width.
-//! Version `1` images are not supported. The format stores the seed, segment layout, and
-//! fingerprints, without an item count.
+//! Standard serialization supports 8-, 16-, and 32-bit fingerprints using family `22`, version `1`.
+//! Interoperability requires the reader to support the encoded fingerprint width. The format
+//! stores the seed, segment layout, and fingerprints, without an item count.
 //! Construction may choose a different valid fingerprint array from another implementation;
 //! byte-for-byte equality of independently constructed filters is not guaranteed. Rust's
 //! [`Hash`](std::hash::Hash) implementations do not always encode values like other languages. Use

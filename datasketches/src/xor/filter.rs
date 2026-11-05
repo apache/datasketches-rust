@@ -29,7 +29,7 @@ use crate::error::Error;
 use crate::hash::XxHash64;
 
 const NUM_HASHES: u8 = 3;
-const SERIAL_VERSION: u8 = 2;
+const SERIAL_VERSION: u8 = 1;
 const PREAMBLE_BYTES: usize = 2 * size_of::<u64>();
 const HASH_SEED: u64 = 0;
 const LOAD_FACTOR: f64 = 1.23;
@@ -371,12 +371,11 @@ impl XorFilter {
         size_of::<Self>() + self.fingerprints.byte_len()
     }
 
-    /// Serializes the filter using DataSketches family `22`, version `2`.
+    /// Serializes the filter using DataSketches family `22`, version `1`.
     ///
     /// Supports 8-, 16-, and 32-bit fingerprints, recorded in the header's fingerprint width
-    /// field. Integers and fingerprints are little-endian. Readers must support version `2`
-    /// and the encoded fingerprint width; implementations limited to 8/16 bits cannot read
-    /// 32-bit images. Version `1` images are not supported.
+    /// field. Integers and fingerprints are little-endian. Readers must support the encoded
+    /// fingerprint width; implementations limited to 8/16 bits cannot read 32-bit images.
     ///
     /// # Errors
     ///

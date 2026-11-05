@@ -21,14 +21,14 @@ use datasketches::xor::XorFilterBuilder;
 use datasketches::xor::XorFilterType;
 use datasketches::xor::XorFingerprints;
 
-// Generated from datasketches-java commit a038a8b298e3580da73f4c8ee9d0c8e33f77a607.
+// Generated from datasketches-java commit c179c5bc00d5aadaed8c68ce11d14d812abe08d6.
 // XorFilterBuilder.create([1, 2, 3, Long.MIN_VALUE], bits, 42).toByteArray().
 const JAVA_XOR8_IMAGE: &str = concat!(
-    "020216080c000000956eeb2f2632d7bd",
+    "020116080c000000956eeb2f2632d7bd",
     "000000000000000400dd0000000000000000ce0000c50000000000000000000000000000"
 );
 const JAVA_XOR16_IMAGE: &str = concat!(
-    "020216100c000000956eeb2f2632d7bd",
+    "020116100c000000956eeb2f2632d7bd",
     "000000000000000000000000000004e80000dd6e00000000000000000000000000000000",
     "ce9500000000c5b600000000000000000000000000000000000000000000000000000000",
 );
@@ -114,8 +114,8 @@ fn invalid_preamble_fields_are_rejected() {
     for (offset, value) in [
         (0, 1),
         (0, 3),
-        (1, 1),
-        (1, 3),
+        (1, 0),
+        (1, 2),
         (2, 21),
         (3, 7),
         (3, 24),
@@ -181,11 +181,11 @@ fn java_utf8_and_raw_byte_inputs_match() {
     let images = [
         (
             XorFilterType::Xor8,
-            "020216080c000000956eeb2f2632d7bdccdf00000000000000ef0091000000000000000000000000000000000000000000000000",
+            "020116080c000000956eeb2f2632d7bdccdf00000000000000ef0091000000000000000000000000000000000000000000000000",
         ),
         (
             XorFilterType::Xor16,
-            "020216100c000000956eeb2f2632d7bdccb5df500000000000000000000000000000ef42000091b8000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+            "020116100c000000956eeb2f2632d7bdccb5df500000000000000000000000000000ef42000091b8000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
         ),
     ];
     for (kind, image) in images {
@@ -208,9 +208,9 @@ fn java_utf8_and_raw_byte_inputs_match() {
 #[test]
 fn xor32_image_preserves_full_width_little_endian_slots() {
     // Hand-authored layout fixture, independent of the construction algorithm:
-    // family 22/version 2, width 32, three one-slot segments.
+    // family 22/version 1, width 32, three one-slot segments.
     let bytes = decode_hex(concat!(
-        "0202162001000000",
+        "0201162001000000",
         "efcdab8967452301",
         "67452301efcdab89ffffffff",
     ));
