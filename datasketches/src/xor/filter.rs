@@ -135,14 +135,10 @@ impl XorFilter {
     /// ```
     pub fn from_values<T: Hash>(
         items: impl IntoIterator<Item = T>,
-        filter_type: XorFilterType,
+        ty: XorFilterType,
         seed: u64,
     ) -> Result<Self, Error> {
-        Self::from_hashes(
-            items.into_iter().map(|item| hash_item(&item)),
-            filter_type,
-            seed,
-        )
+        Self::from_hashes(items.into_iter().map(|item| hash_item(&item)), ty, seed)
     }
 
     /// Creates a filter from precomputed 64-bit hashes, removing duplicates.
@@ -161,13 +157,13 @@ impl XorFilter {
     /// [`serialize`](Self::serialize).
     pub fn from_hashes(
         hashes: impl IntoIterator<Item = u64>,
-        filter_type: XorFilterType,
+        ty: XorFilterType,
         seed: u64,
     ) -> Result<Self, Error> {
         let mut hashes: Vec<_> = hashes.into_iter().collect();
         hashes.sort_unstable();
         hashes.dedup();
-        Self::from_distinct_hashes(&hashes, filter_type, seed)
+        Self::from_distinct_hashes(&hashes, ty, seed)
     }
 
     /// Creates a filter from distinct precomputed hashes without copying or sorting them.
@@ -183,11 +179,7 @@ impl XorFilter {
     /// described by [`from_hashes`](Self::from_hashes), or if no peelable construction is found
     /// within 100 attempts, even for valid input. Duplicate hashes prevent construction and
     /// return an error; they are not removed by this method.
-    pub fn from_distinct_hashes(
-        keys: &[u64],
-        filter_type: XorFilterType,
-        seed: u64,
-    ) -> Result<Self, Error> {
+    pub fn from_distinct_hashes(keys: &[u64], ty: XorFilterType, seed: u64) -> Result<Self, Error> {
         let num_items = keys.len();
         let capacity = compute_capacity(num_items)?;
         let segment_length = capacity / usize::from(NUM_HASHES);
@@ -244,7 +236,7 @@ impl XorFilter {
         drop(count);
         drop(queue);
 
-        let fingerprints = match filter_type {
+        let fingerprints = match ty {
             XorFilterType::Xor8 => XorFingerprints::Xor8(assign_fingerprints(
                 capacity,
                 segment_length,

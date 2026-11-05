@@ -1211,8 +1211,8 @@ impl TDigestBuffer {
     /// values stay before existing centroids when their means are equal.
     fn into_centroids_for_compression(mut self) -> Vec<Centroid> {
         debug_assert_ne!(self.unmerged_tail_len, 0);
-        let compressed_prefix_len = self.compressed_prefix_len();
-        self.centroids.rotate_left(compressed_prefix_len);
+        let prefix_len = self.compressed_prefix_len();
+        self.centroids.rotate_left(prefix_len);
         self.centroids
     }
 
@@ -1227,7 +1227,7 @@ impl TDigestBuffer {
             return self.centroids;
         }
 
-        let compressed_prefix_len = self.compressed_prefix_len();
+        let prefix_len = self.compressed_prefix_len();
         self.centroids.reserve(other.len());
         let other_prefix_len = other.compressed_prefix_len();
         self.centroids
@@ -1236,7 +1236,7 @@ impl TDigestBuffer {
             .extend_from_slice(&other.centroids[..other_prefix_len]);
         // Preserve the stable tie order: left unmerged, right unmerged and compressed, then the
         // left compressed prefix.
-        self.centroids.rotate_left(compressed_prefix_len);
+        self.centroids.rotate_left(prefix_len);
         self.centroids.sort_by(centroid_cmp);
         self.centroids
     }

@@ -171,18 +171,18 @@ impl CpcUnion {
                 let mut table = PairTable::new(new_table_lg_size, 6 + lg_k);
 
                 // the following should work even when the offset is zero
-                let mask_for_clearing_window = (0xFFu64 << offset) ^ u64::MAX;
-                let mask_for_flipping_early_zone = (1u64 << offset) - 1;
-                let mut all_surprises_ored = 0;
+                let clear_mask = (0xFFu64 << offset) ^ u64::MAX;
+                let flip_mask = (1u64 << offset) - 1;
+                let mut surprises = 0;
 
                 // The snowplow effect was caused by processing the rows in order,
                 // but we have fixed it by using a sufficiently large hash table.
                 for i in 0..k {
                     let mut pattern = matrix[i];
                     sliding_window[i] = ((pattern >> offset) & 0xFF) as u8;
-                    pattern &= mask_for_clearing_window;
-                    pattern ^= mask_for_flipping_early_zone; // this flipping converts surprising 0's to 1's
-                    all_surprises_ored |= pattern;
+                    pattern &= clear_mask;
+                    pattern ^= flip_mask; // this flipping converts surprising 0's to 1's
+                    surprises |= pattern;
                     while pattern != 0 {
                         let col = pattern.trailing_zeros();
                         pattern ^= 1u64 << col; // erase the 1
@@ -194,7 +194,7 @@ impl CpcUnion {
 
                 // at this point we could shrink an oversized hash table, but the relative waste
                 // isn't very big
-                sketch.first_interesting_column = all_surprises_ored.trailing_zeros() as u8;
+                sketch.first_interesting_column = surprises.trailing_zeros() as u8;
                 if sketch.first_interesting_column > offset {
                     sketch.first_interesting_column = offset; // corner case
                 }

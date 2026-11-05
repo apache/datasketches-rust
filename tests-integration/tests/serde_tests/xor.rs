@@ -45,12 +45,12 @@ const JAVA_XOR16_IMAGE: &str = concat!(
 fn java_images_round_trip_byte_for_byte() {
     let values = [1_u64, 2, 3, 1_u64 << 63];
 
-    for (filter_type, image) in [
+    for (ty, image) in [
         (XorFilterType::Xor8, JAVA_XOR8_IMAGE),
         (XorFilterType::Xor16, JAVA_XOR16_IMAGE),
     ] {
         let expected = decode_hex(image);
-        let built = XorFilter::from_values(values, filter_type, 42).unwrap();
+        let built = XorFilter::from_values(values, ty, 42).unwrap();
 
         let restored = XorFilter::deserialize(&expected).unwrap();
         assert_eq!(restored.serialize().unwrap(), expected);
@@ -59,15 +59,15 @@ fn java_images_round_trip_byte_for_byte() {
         assert_eq!(
             built.serialize().unwrap()[..24],
             expected[..24],
-            "{filter_type:?} header differs from Java"
+            "{ty:?} header differs from Java"
         );
-        assert_eq!(restored.filter_type(), filter_type);
+        assert_eq!(restored.filter_type(), ty);
         assert_eq!(restored.num_items(), Some(values.len()));
         for value in values {
             assert!(built.contains(&value));
             assert!(
                 restored.contains(&value),
-                "{filter_type:?} image did not contain {value}"
+                "{ty:?} image did not contain {value}"
             );
         }
     }
@@ -75,13 +75,13 @@ fn java_images_round_trip_byte_for_byte() {
 
 #[test]
 fn serialization_round_trips_standard_fingerprint_types() {
-    for filter_type in [
+    for ty in [
         XorFilterType::Xor8,
         XorFilterType::Xor16,
         XorFilterType::Xor32,
     ] {
         for count in [0, 1, 10_000_u64] {
-            let original = XorFilter::from_hashes(0..count, filter_type, 0).unwrap();
+            let original = XorFilter::from_hashes(0..count, ty, 0).unwrap();
             let bytes = original.serialize().unwrap();
             assert_eq!(bytes.len(), original.serialized_size().unwrap());
 
@@ -99,12 +99,12 @@ fn serialization_round_trips_standard_fingerprint_types() {
 
 #[test]
 fn every_truncated_image_is_rejected() {
-    for filter_type in [
+    for ty in [
         XorFilterType::Xor8,
         XorFilterType::Xor16,
         XorFilterType::Xor32,
     ] {
-        let bytes = XorFilter::from_hashes(0..100_u64, filter_type, 0)
+        let bytes = XorFilter::from_hashes(0..100_u64, ty, 0)
             .unwrap()
             .serialize()
             .unwrap();

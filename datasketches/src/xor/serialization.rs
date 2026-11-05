@@ -114,7 +114,7 @@ impl XorFilter {
             Family::XORFILTER.min_pre_longs..=Family::XORFILTER.max_pre_longs,
             preamble_longs,
         )?;
-        let filter_type = match bits_per_fingerprint {
+        let ty = match bits_per_fingerprint {
             8 => XorFilterType::Xor8,
             16 => XorFilterType::Xor16,
             32 => XorFilterType::Xor32,
@@ -167,7 +167,7 @@ impl XorFilter {
         }
 
         let fingerprint_bytes = capacity
-            .checked_mul(filter_type.bytes_per_fingerprint())
+            .checked_mul(ty.bytes_per_fingerprint())
             .ok_or_else(|| Error::deserial("xor filter fingerprint size overflow"))?;
         if cursor.remaining().len() < fingerprint_bytes {
             return Err(Error::insufficient_data_of(
@@ -179,7 +179,7 @@ impl XorFilter {
             ));
         }
 
-        let fingerprints = match filter_type {
+        let fingerprints = match ty {
             XorFilterType::Xor8 => {
                 let mut values = vec![0_u8; capacity].into_boxed_slice();
                 cursor

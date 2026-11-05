@@ -33,12 +33,12 @@ fn precomputed_hashes_have_no_false_negatives() {
         .map(|value| value.wrapping_mul(0x9e37_79b9_7f4a_7c15))
         .collect::<Vec<_>>();
 
-    for filter_type in [
+    for ty in [
         XorFilterType::Xor8,
         XorFilterType::Xor16,
         XorFilterType::Xor32,
     ] {
-        let filter = XorFilter::from_hashes(hashes.iter().copied(), filter_type, 0).unwrap();
+        let filter = XorFilter::from_hashes(hashes.iter().copied(), ty, 0).unwrap();
         for &hash in &hashes {
             assert!(filter.contains_hash(hash), "false negative for {hash}");
         }
