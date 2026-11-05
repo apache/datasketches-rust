@@ -58,23 +58,23 @@ fn raw_parts_interoperate_with_xorf_in_both_directions() {
 
         let built = XorFilter::from_hashes(&keys, kind, 0).unwrap();
         assert_eq!(built.num_items(), Some(keys.len()));
-        let (seed, block_length) = (built.seed(), built.segment_length());
+        let seed = built.seed();
         let payload = built.fingerprints().clone();
         // Compare all answers, including false positives, after exporting the fingerprints.
         let reference: Box<dyn Filter<u64>> = match payload {
             XorFingerprints::Xor8(fingerprints) => Box::new(xorf::Xor8 {
                 seed,
-                block_length,
+                block_length: fingerprints.len() / 3,
                 fingerprints,
             }),
             XorFingerprints::Xor16(fingerprints) => Box::new(xorf::Xor16 {
                 seed,
-                block_length,
+                block_length: fingerprints.len() / 3,
                 fingerprints,
             }),
             XorFingerprints::Xor32(fingerprints) => Box::new(xorf::Xor32 {
                 seed,
-                block_length,
+                block_length: fingerprints.len() / 3,
                 fingerprints,
             }),
         };

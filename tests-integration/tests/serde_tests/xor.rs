@@ -289,6 +289,7 @@ fn raw_parts_preserve_an_application_storage_layout() {
         let segment = cursor.read_u32_le().unwrap() as usize;
         let seed = cursor.read_u64_le().unwrap();
         let slots = cursor.remaining().len() / usize::from(width / 8);
+        assert_eq!(segment * 3, slots);
         let payload = match width {
             8 => XorFingerprints::Xor8(cursor.remaining().into()),
             16 => {
@@ -300,14 +301,18 @@ fn raw_parts_preserve_an_application_storage_layout() {
             _ => unreachable!(),
         };
         let filter = XorFilter::from_parts(seed, payload, None).unwrap();
-        assert_eq!(filter.segment_length(), segment);
         for hash in [0, 1, 2, u64::MAX] {
             assert!(filter.contains_hash(hash));
         }
         assert_eq!(filter.num_items(), None);
 
-        let (seed, segment) = (filter.seed(), filter.segment_length());
+        let seed = filter.seed();
         let payload = filter.fingerprints();
+        let segment = match payload {
+            XorFingerprints::Xor8(values) => values.len() / 3,
+            XorFingerprints::Xor16(values) => values.len() / 3,
+            XorFingerprints::Xor32(values) => values.len() / 3,
+        };
         let mut encoded = b"TEST".to_vec();
         encoded.push(width);
         encoded.extend((segment as u32).to_le_bytes());

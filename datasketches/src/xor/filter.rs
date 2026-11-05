@@ -305,11 +305,6 @@ impl XorFilter {
         })
     }
 
-    /// Returns the number of fingerprint slots in each of the three segments.
-    pub fn segment_length(&self) -> usize {
-        self.segment_length
-    }
-
     /// Returns the fingerprint slots for application-defined serialization.
     pub fn fingerprints(&self) -> &XorFingerprints {
         &self.fingerprints
