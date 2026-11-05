@@ -46,7 +46,7 @@
 //!
 //! # Application-defined storage
 //!
-//! [`XorFilter::from_parts`] imports a construction seed, segment length, and typed fingerprint
+//! [`XorFilter::from_parts`] imports a construction seed and typed fingerprint
 //! slots without adding metadata to an existing disk format. Accessors expose these fields for
 //! serialization. Imports may omit the item count, which does not affect membership queries.
 //!

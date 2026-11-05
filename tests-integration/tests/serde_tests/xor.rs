@@ -249,7 +249,6 @@ fn xor32_image_preserves_full_width_little_endian_slots() {
     ));
     let filter = XorFilter::from_parts(
         0x0123_4567_89ab_cdef,
-        1,
         XorFingerprints::Xor32(vec![0x0123_4567, 0x89ab_cdef, u32::MAX].into_boxed_slice()),
         Some(1),
     )
@@ -300,7 +299,8 @@ fn raw_parts_preserve_an_application_storage_layout() {
             }
             _ => unreachable!(),
         };
-        let filter = XorFilter::from_parts(seed, segment, payload, None).unwrap();
+        let filter = XorFilter::from_parts(seed, payload, None).unwrap();
+        assert_eq!(filter.segment_length(), segment);
         for hash in [0, 1, 2, u64::MAX] {
             assert!(filter.contains_hash(hash));
         }

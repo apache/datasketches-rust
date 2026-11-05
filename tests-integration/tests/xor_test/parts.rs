@@ -31,33 +31,21 @@ fn raw_parts_interoperate_with_xorf_in_both_directions() {
         XorFilterType::Xor16,
         XorFilterType::Xor32,
     ] {
-        let (seed, segment, payload) = match kind {
+        let (seed, payload) = match kind {
             XorFilterType::Xor8 => {
                 let f = xorf::Xor8::from(&keys);
-                (
-                    f.seed,
-                    f.block_length,
-                    XorFingerprints::Xor8(f.fingerprints),
-                )
+                (f.seed, XorFingerprints::Xor8(f.fingerprints))
             }
             XorFilterType::Xor16 => {
                 let f = xorf::Xor16::from(&keys);
-                (
-                    f.seed,
-                    f.block_length,
-                    XorFingerprints::Xor16(f.fingerprints),
-                )
+                (f.seed, XorFingerprints::Xor16(f.fingerprints))
             }
             XorFilterType::Xor32 => {
                 let f = xorf::Xor32::from(&keys);
-                (
-                    f.seed,
-                    f.block_length,
-                    XorFingerprints::Xor32(f.fingerprints),
-                )
+                (f.seed, XorFingerprints::Xor32(f.fingerprints))
             }
         };
-        let imported = XorFilter::from_parts(seed, segment, payload, None).unwrap();
+        let imported = XorFilter::from_parts(seed, payload, None).unwrap();
         assert_eq!(imported.num_items(), None);
         assert_eq!(imported.is_empty(), None);
         assert_eq!(
@@ -98,22 +86,11 @@ fn raw_parts_interoperate_with_xorf_in_both_directions() {
 
 #[test]
 fn raw_parts_reject_invalid_layouts_and_counts() {
-    for (segment, length, count) in [
-        (0, 0, None),
-        (1, 2, None),
-        (1, 4, None),
-        (usize::MAX, 3, None),
-        (1, 3, Some(4)),
-    ] {
+    for (length, count) in [(0, None), (2, None), (4, None), (3, Some(4))] {
         assert_eq!(
-            XorFilter::from_parts(
-                0,
-                segment,
-                XorFingerprints::Xor8(vec![0; length].into()),
-                count
-            )
-            .unwrap_err()
-            .kind(),
+            XorFilter::from_parts(0, XorFingerprints::Xor8(vec![0; length].into()), count)
+                .unwrap_err()
+                .kind(),
             ErrorKind::InvalidArgument
         );
     }
@@ -184,13 +161,8 @@ fn item_count_does_not_change_queries() {
         assert_eq!(empty.is_empty(), Some(true));
         // This query produces a false positive even though the input set is empty.
         assert!(empty.contains_hash(zero_hash));
-        let unknown = XorFilter::from_parts(
-            empty.seed(),
-            empty.segment_length(),
-            empty.fingerprints().clone(),
-            None,
-        )
-        .unwrap();
+        let unknown =
+            XorFilter::from_parts(empty.seed(), empty.fingerprints().clone(), None).unwrap();
         assert_eq!(unknown.is_empty(), None);
         assert_eq!(unknown.num_items(), None);
         for hash in (0..1_000).chain([zero_hash]) {

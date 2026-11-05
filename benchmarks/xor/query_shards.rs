@@ -56,24 +56,12 @@ impl Reference {
     }
 
     fn into_datasketches(self) -> XorFilter {
-        let (seed, segment, fingerprints) = match self {
-            Self::Xor8(f) => (
-                f.seed,
-                f.block_length,
-                XorFingerprints::Xor8(f.fingerprints),
-            ),
-            Self::Xor16(f) => (
-                f.seed,
-                f.block_length,
-                XorFingerprints::Xor16(f.fingerprints),
-            ),
-            Self::Xor32(f) => (
-                f.seed,
-                f.block_length,
-                XorFingerprints::Xor32(f.fingerprints),
-            ),
+        let (seed, fingerprints) = match self {
+            Self::Xor8(f) => (f.seed, XorFingerprints::Xor8(f.fingerprints)),
+            Self::Xor16(f) => (f.seed, XorFingerprints::Xor16(f.fingerprints)),
+            Self::Xor32(f) => (f.seed, XorFingerprints::Xor32(f.fingerprints)),
         };
-        XorFilter::from_parts(seed, segment, fingerprints, None).unwrap()
+        XorFilter::from_parts(seed, fingerprints, None).unwrap()
     }
 }
 

@@ -112,6 +112,7 @@ impl XorFingerprints {
 /// were supplied to [`from_hashes`](Self::from_hashes).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct XorFilter {
+    // Cache the derived length to avoid division on every query.
     segment_length: usize,
     num_items: Option<usize>,
     seed: u64,
@@ -257,15 +258,15 @@ impl XorFilter {
     /// Imports a filter from its raw fields without requiring a DataSketches serialization header.
     ///
     /// The caller must preserve the original construction seed and fingerprint order, and query
-    /// with the original input hashes. A supplied item count must describe the original set.
+    /// with the original input hashes. A supplied item count must match the distinct input hashes.
     /// A valid layout alone cannot establish these invariants.
     /// Pass `None` when the storage format omits the item count. Standard serialization requires
     /// a known count. The item count does not affect membership queries.
     ///
     /// # Errors
     ///
-    /// Returns an error unless the segment length is positive, the payload has exactly three
-    /// segments, and a supplied item count fits the capacity. Segment lengths above `u32::MAX`
+    /// Returns an error unless the payload has three equally sized, nonempty segments and a
+    /// supplied item count fits the capacity. Segment lengths above `u32::MAX`
     /// are rejected because the index reduction uses 32-bit hash words.
     ///
     /// # Examples
@@ -275,37 +276,29 @@ impl XorFilter {
     /// use datasketches::xor::XorFilterType;
     ///
     /// let filter = XorFilter::from_hashes(&[10, 20, 30], XorFilterType::Xor8, 0)?;
-    /// let imported = XorFilter::from_parts(
-    ///     filter.seed(),
-    ///     filter.segment_length(),
-    ///     filter.fingerprints().clone(),
-    ///     None,
-    /// )?;
+    /// let imported = XorFilter::from_parts(filter.seed(), filter.fingerprints().clone(), None)?;
     /// assert!(imported.contains_hash(20));
     /// assert_eq!(imported.num_items(), None);
     /// # Ok::<(), datasketches::error::Error>(())
     /// ```
     pub fn from_parts(
         seed: u64,
-        segment_length: usize,
         fingerprints: XorFingerprints,
         num_items: Option<usize>,
     ) -> Result<Self, Error> {
-        if segment_length == 0
-            || segment_length > u32::MAX as usize
-            || segment_length.checked_mul(3) != Some(fingerprints.len())
-        {
+        let slots = fingerprints.len();
+        if slots == 0 || slots % 3 != 0 || slots / 3 > u32::MAX as usize {
             return Err(Error::invalid_argument(
                 "invalid xor filter segment or payload length",
             ));
         }
-        if num_items.is_some_and(|count| count > fingerprints.len()) {
+        if num_items.is_some_and(|count| count > slots) {
             return Err(Error::invalid_argument(
                 "item count exceeds xor filter capacity",
             ));
         }
         Ok(Self {
-            segment_length,
+            segment_length: slots / 3,
             num_items,
             seed,
             fingerprints,
@@ -405,10 +398,7 @@ impl XorFilter {
         let count = self
             .num_items
             .ok_or_else(|| Error::invalid_argument("standard xor format requires an item count"))?;
-        if count > i32::MAX as usize
-            || self.segment_length > i32::MAX as usize
-            || self.fingerprints.len() > i32::MAX as usize
-        {
+        if count > i32::MAX as usize || self.fingerprints.len() > i32::MAX as usize {
             return Err(Error::invalid_argument(
                 "xor filter exceeds standard format limits",
             ));
