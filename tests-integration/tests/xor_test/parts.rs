@@ -59,7 +59,6 @@ fn raw_parts_interoperate_with_xorf_in_both_directions() {
         };
         let imported = XorFilter::from_parts(seed, segment, payload, None).unwrap();
         assert_eq!(imported.num_items(), None);
-        assert_eq!(imported.bits_per_item(), None);
         assert_eq!(imported.is_empty(), None);
         assert_eq!(
             imported.serialize().unwrap_err().kind(),
@@ -105,6 +104,7 @@ fn raw_parts_reject_invalid_layouts_and_counts() {
         (1, 4, None),
         (usize::MAX, 3, None),
         (1, 3, Some(4)),
+        (1, 3, Some(usize::MAX)),
     ] {
         assert_eq!(
             XorFilter::from_parts(
@@ -193,7 +193,6 @@ fn unknown_count_does_not_infer_emptiness_from_zero_fingerprints() {
         .unwrap();
         assert_eq!(unknown.is_empty(), None);
         assert_eq!(unknown.num_items(), None);
-        assert_eq!(unknown.bits_per_item(), None);
         // An omitted count must preserve the raw fingerprint comparison, even for all-zero slots.
         assert!(unknown.contains_hash(zero_hash));
         assert_eq!(

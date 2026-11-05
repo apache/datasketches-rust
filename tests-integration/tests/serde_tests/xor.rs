@@ -307,7 +307,6 @@ fn raw_parts_preserve_an_application_storage_layout() {
         for hash in [0, 1, 2, u64::MAX] {
             assert!(filter.contains_hash(hash));
         }
-        assert_eq!(filter.capacity(), slots);
         assert_eq!(filter.num_items(), None);
 
         let (seed, segment) = (filter.seed(), filter.segment_length());

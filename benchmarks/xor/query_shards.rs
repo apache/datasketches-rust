@@ -112,18 +112,15 @@ fn query<F>(
 }
 
 pub fn register(runner: &mut Runner) {
-    for kind in [
-        XorFilterType::Xor8,
-        XorFilterType::Xor16,
-        XorFilterType::Xor32,
+    for (bits, kind) in [
+        (8, XorFilterType::Xor8),
+        (16, XorFilterType::Xor16),
+        (32, XorFilterType::Xor32),
     ] {
         for cardinality in [128, 16_384] {
             for (name, present) in [("present", true), ("absent", false)] {
                 runner.compare(
-                    &format!(
-                        "xor::query_shards::{}_{name}/{cardinality}",
-                        kind.bits_per_fingerprint()
-                    ),
+                    &format!("xor::query_shards::{bits}_{name}/{cardinality}"),
                     20_000,
                     &[
                         ("DataSketches", &|b| {

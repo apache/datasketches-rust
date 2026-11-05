@@ -35,8 +35,9 @@ const HASH_SEED: u64 = 0;
 const LOAD_FACTOR: f64 = 1.23;
 const CAPACITY_OFFSET: u64 = 32;
 const MAX_CONSTRUCTION_ATTEMPTS: usize = 100;
-// Counts cannot exceed the allocated fingerprint capacity, so this value is unreachable.
-const UNKNOWN_NUM_ITEMS: usize = usize::MAX;
+// Sentinel for an absent item count. Valid counts cannot exceed the fingerprint count;
+// u8/u16/u32 slices occupy at most isize::MAX bytes, so their lengths are below usize::MAX.
+const NUM_ITEMS_SENTINEL: usize = usize::MAX;
 
 const MURMUR_C1: u64 = 0xff51_afd7_ed55_8ccd;
 const MURMUR_C2: u64 = 0xc4ce_b9fe_1a85_ec53;
@@ -58,8 +59,7 @@ pub enum XorFilterType {
 }
 
 impl XorFilterType {
-    /// Returns the number of bits in each fingerprint.
-    pub const fn bits_per_fingerprint(self) -> u8 {
+    const fn bits_per_fingerprint(self) -> u8 {
         match self {
             Self::Xor8 => 8,
             Self::Xor16 => 16,
@@ -309,7 +309,7 @@ impl XorFilter {
         }
         Ok(Self {
             segment_length,
-            num_items: num_items.unwrap_or(UNKNOWN_NUM_ITEMS),
+            num_items: num_items.unwrap_or(NUM_ITEMS_SENTINEL),
             seed,
             fingerprints,
         })
@@ -369,7 +369,7 @@ impl XorFilter {
 
     /// Returns the number of distinct input hashes, or `None` if imported without a count.
     pub fn num_items(&self) -> Option<usize> {
-        (self.num_items != UNKNOWN_NUM_ITEMS).then_some(self.num_items)
+        (self.num_items != NUM_ITEMS_SENTINEL).then_some(self.num_items)
     }
 
     /// Returns the fingerprint representation.
@@ -381,39 +381,9 @@ impl XorFilter {
         }
     }
 
-    /// Returns the number of bits in each fingerprint.
-    pub fn bits_per_fingerprint(&self) -> u8 {
-        self.filter_type().bits_per_fingerprint()
-    }
-
-    /// Returns the number of hash locations used by non-empty filter queries.
-    pub fn num_hashes(&self) -> u8 {
-        NUM_HASHES
-    }
-
-    /// Returns the number of fingerprint slots in the filter.
-    pub fn capacity(&self) -> usize {
-        self.fingerprints.len()
-    }
-
     /// Returns the construction seed stored with the filter.
     pub fn seed(&self) -> u64 {
         self.seed
-    }
-
-    /// Returns the number of fingerprint bits allocated per distinct input hash.
-    ///
-    /// Returns `None` for an unknown item count and `Some(0.0)` for an empty filter. For
-    /// sufficiently large inputs the value approaches `9.84` for [`XorFilterType::Xor8`],
-    /// `19.68` for [`XorFilterType::Xor16`], and `39.36` for [`XorFilterType::Xor32`].
-    pub fn bits_per_item(&self) -> Option<f64> {
-        self.num_items().map(|count| {
-            if count == 0 {
-                0.0
-            } else {
-                self.capacity() as f64 * f64::from(self.bits_per_fingerprint()) / count as f64
-            }
-        })
     }
 
     /// Returns the estimated in-memory size of the filter in bytes.
@@ -445,7 +415,7 @@ impl XorFilter {
         bytes.write_u8(SERIAL_VERSION);
         bytes.write_u8(Family::XORFILTER.id);
         bytes.write_u8(0); // flags
-        bytes.write_u8(self.bits_per_fingerprint());
+        bytes.write_u8(self.filter_type().bits_per_fingerprint());
         bytes.write_u8(NUM_HASHES);
         bytes.write_u16_le(0); // unused
         bytes.write_u64_le(self.seed);
@@ -612,7 +582,7 @@ impl XorFilter {
             .ok_or_else(|| Error::invalid_argument("standard xor format requires an item count"))?;
         if count > i32::MAX as usize
             || self.segment_length > i32::MAX as usize
-            || self.capacity() > i32::MAX as usize
+            || self.fingerprints.len() > i32::MAX as usize
         {
             return Err(Error::invalid_argument(
                 "xor filter exceeds standard format limits",

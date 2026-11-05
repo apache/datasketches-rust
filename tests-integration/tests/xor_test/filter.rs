@@ -65,28 +65,11 @@ fn duplicates_are_removed_before_construction() {
 }
 
 #[test]
-fn metadata_describes_the_compact_payload() {
-    let hashes: Vec<_> = (0..10_000_u64).collect();
-    let filter = XorFilter::from_hashes(&hashes, XorFilterType::Xor8, 0).unwrap();
-
-    assert_eq!(filter.is_empty(), Some(false));
-    assert_eq!(filter.num_items(), Some(10_000));
-    assert_eq!(filter.filter_type(), XorFilterType::Xor8);
-    assert_eq!(filter.bits_per_fingerprint(), 8);
-    assert_eq!(filter.num_hashes(), 3);
-    assert_eq!(filter.capacity() % 3, 0);
-    assert!((9.5..10.5).contains(&filter.bits_per_item().unwrap()));
-    assert!(filter.estimated_size() >= filter.capacity());
-}
-
-#[test]
 fn empty_filter_is_well_formed() {
     let filter = XorFilter::from_hashes(&[], XorFilterType::Xor16, 0).unwrap();
 
     assert_eq!(filter.is_empty(), Some(true));
     assert_eq!(filter.num_items(), Some(0));
-    assert_eq!(filter.capacity(), 30);
-    assert_eq!(filter.bits_per_item().unwrap(), 0.0);
 }
 
 #[test]
