@@ -43,9 +43,7 @@ fn java_images_round_trip_byte_for_byte() {
     ] {
         let expected = decode_hex(image);
         let mut builder = XorFilterBuilder::new(ty, 42);
-        for value in values {
-            builder.update(&value);
-        }
+        builder.update_values(values.iter());
         let built = builder.build().unwrap();
 
         let restored = XorFilter::deserialize(&expected).unwrap();

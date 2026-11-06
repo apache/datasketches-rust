@@ -7,7 +7,7 @@ All significant changes to this project will be documented in this file.
 ### New features
 
 * Add `HllUnion::serialize` to serialize union results directly.
-* Add immutable `XorFilter` behind the `xor` feature, with 8-, 16-, and 32-bit fingerprints. Build from distinct precomputed hashes, use `XorFilterBuilder` to collect and deduplicate values or hashes, or import a seed and fingerprints with `from_fingerprints`. Serialization stores no item count; readers must support the encoded fingerprint width.
+* Add immutable `XorFilter` behind the `xor` feature, with 8-, 16-, and 32-bit fingerprints. Build from distinct precomputed hashes or import a seed and fingerprints with `from_fingerprints`. `XorFilterBuilder` accepts values or hashes individually or in batches and removes duplicates when built. Serialization stores no item count; readers must support the encoded fingerprint width.
 
 ### Improvements
 

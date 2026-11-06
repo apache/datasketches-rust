@@ -103,44 +103,46 @@ impl XorFingerprints {
 /// A collector of values or precomputed hashes for building an [`XorFilter`].
 ///
 /// Retains hashes until [`build`](Self::build), which removes duplicates and consumes the builder.
+/// Query values with [`XorFilter::contains`] and precomputed hashes with
+/// [`XorFilter::contains_hash`].
 #[derive(Debug)]
 pub struct XorFilterBuilder {
-    ty: XorFilterType,
+    filter_type: XorFilterType,
     seed: u64,
     hashes: Vec<u64>,
 }
 
 impl XorFilterBuilder {
-    /// Creates a builder with the given fingerprint width and construction seed.
+    /// Creates a builder with the given fingerprint width and initial construction seed.
     ///
-    /// The `seed` selects a deterministic sequence of construction attempts; it does not change
-    /// the hash function used for values.
-    pub fn new(ty: XorFilterType, seed: u64) -> Self {
+    /// The `seed` determines which layouts to try during construction. Values are hashed
+    /// independently of it.
+    pub fn new(filter_type: XorFilterType, seed: u64) -> Self {
         Self {
-            ty,
+            filter_type,
             seed,
             hashes: Vec::new(),
         }
     }
 
-    /// Adds a value hashed by xxHash64 with seed `0`.
-    ///
-    /// Query the resulting filter with [`XorFilter::contains`].
+    /// Adds a value.
+    #[inline]
     pub fn update<T: Hash + ?Sized>(&mut self, item: &T) {
         self.update_hash(hash_item(item));
     }
 
     /// Adds a precomputed 64-bit hash.
-    ///
-    /// Query the resulting filter with [`XorFilter::contains_hash`] using the same hash function.
     #[inline]
     pub fn update_hash(&mut self, hash: u64) {
         self.hashes.push(hash);
     }
 
+    /// Adds a batch of values.
+    pub fn update_values<T: Hash>(&mut self, items: impl IntoIterator<Item = T>) {
+        self.update_hashes(items.into_iter().map(|item| hash_item(&item)));
+    }
+
     /// Adds a batch of precomputed 64-bit hashes.
-    ///
-    /// Query the resulting filter with [`XorFilter::contains_hash`] using the same hash function.
     pub fn update_hashes(&mut self, hashes: impl IntoIterator<Item = u64>) {
         self.hashes.extend(hashes);
     }
@@ -154,7 +156,7 @@ impl XorFilterBuilder {
     pub fn build(mut self) -> Result<XorFilter, Error> {
         self.hashes.sort_unstable();
         self.hashes.dedup();
-        XorFilter::from_hashes(&self.hashes, self.ty, self.seed)
+        XorFilter::from_hashes(&self.hashes, self.filter_type, self.seed)
     }
 }
 
@@ -164,10 +166,6 @@ impl XorFilterBuilder {
 /// `true` may be a false positive, with probability determined by [`XorFilterType`], even for an
 /// empty input set. Values cannot be added after construction; rebuild the filter when the set
 /// changes.
-///
-/// Ordinary values passed to [`contains`](Self::contains) are reduced to 64-bit hashes with
-/// xxHash64 and seed `0`. Use [`contains_hash`](Self::contains_hash) only with the same hashes that
-/// were supplied to [`from_hashes`](Self::from_hashes).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct XorFilter {
     // Cache the derived length to avoid division on every query.
@@ -179,10 +177,9 @@ pub struct XorFilter {
 impl XorFilter {
     /// Creates a filter from distinct precomputed 64-bit hashes.
     ///
-    /// Duplicate hashes return an error.
-    /// Query with [`contains_hash`](Self::contains_hash) using hashes from the same source.
-    /// The construction `seed` selects a deterministic sequence of attempts; input order
-    /// does not affect the result.
+    /// The initial `seed` determines which layouts to try during construction. The same set of
+    /// hashes, filter type, and seed produce the same filter regardless of input order.
+    /// Query with [`contains_hash`](Self::contains_hash) using the same hash function.
     ///
     /// # Errors
     ///
@@ -191,7 +188,7 @@ impl XorFilter {
     /// exceed `isize::MAX` bytes, or no peelable construction is found within 100 attempts.
     /// Valid input can also exhaust the attempts. A successful build may still exceed the
     /// limits of [`serialize`](Self::serialize).
-    pub fn from_hashes(keys: &[u64], ty: XorFilterType, seed: u64) -> Result<Self, Error> {
+    pub fn from_hashes(keys: &[u64], filter_type: XorFilterType, seed: u64) -> Result<Self, Error> {
         let num_items = keys.len();
         let capacity = compute_capacity(num_items)?;
         let segment_length = capacity / usize::from(NUM_HASHES);
@@ -248,7 +245,7 @@ impl XorFilter {
         drop(count);
         drop(queue);
 
-        let fingerprints = match ty {
+        let fingerprints = match filter_type {
             XorFilterType::Xor8 => XorFingerprints::Xor8(assign_fingerprints(
                 capacity,
                 segment_length,
@@ -279,16 +276,14 @@ impl XorFilter {
         })
     }
 
-    /// Imports a filter from its construction seed and fingerprint slots.
+    /// Imports a filter from its stored seed and fingerprint slots.
     ///
-    /// The caller must preserve the original construction seed and fingerprint order, and query
-    /// with the original input hashes. A valid layout alone cannot establish these invariants.
+    /// Pass the original filter's [`seed`](Self::seed), which can differ from the initial
+    /// construction seed. Preserve the fingerprint order and query with the original input hashes.
     ///
     /// # Errors
     ///
-    /// Returns an error unless the payload has three equally sized, nonempty segments.
-    /// Segment lengths above `u32::MAX`
-    /// are rejected because the index reduction uses 32-bit hash words.
+    /// Returns an error unless the payload has three equal segments of `1..=u32::MAX` slots each.
     ///
     /// # Examples
     ///
@@ -331,8 +326,7 @@ impl XorFilter {
 
     /// Returns `true` if a precomputed 64-bit hash is possibly in the input set.
     ///
-    /// This method bypasses xxHash64. The caller must use the same hash value during construction
-    /// and queries; mixing raw values with precomputed hashes can introduce false negatives.
+    /// Use the same hash function for construction and queries.
     // Keep the width dispatch in the caller's hot loop, including across crates.
     #[inline(always)]
     pub fn contains_hash(&self, hash: u64) -> bool {
@@ -361,7 +355,7 @@ impl XorFilter {
         }
     }
 
-    /// Returns the construction seed stored with the filter.
+    /// Returns the seed paired with these fingerprints for queries and imports.
     pub fn seed(&self) -> u64 {
         self.seed
     }
@@ -446,7 +440,7 @@ impl XorFilter {
             Family::XORFILTER.min_pre_longs..=Family::XORFILTER.max_pre_longs,
             preamble_longs,
         )?;
-        let ty = match bits_per_fingerprint {
+        let filter_type = match bits_per_fingerprint {
             8 => XorFilterType::Xor8,
             16 => XorFilterType::Xor16,
             32 => XorFilterType::Xor32,
@@ -479,7 +473,7 @@ impl XorFilter {
         }
 
         let fingerprint_bytes = capacity
-            .checked_mul(ty.bytes_per_fingerprint())
+            .checked_mul(filter_type.bytes_per_fingerprint())
             .ok_or_else(|| Error::deserial("xor filter fingerprint size overflow"))?;
         if cursor.remaining().len() < fingerprint_bytes {
             return Err(Error::insufficient_data_of(
@@ -491,7 +485,7 @@ impl XorFilter {
             ));
         }
 
-        let fingerprints = match ty {
+        let fingerprints = match filter_type {
             XorFilterType::Xor8 => {
                 let mut values = vec![0_u8; capacity].into_boxed_slice();
                 cursor

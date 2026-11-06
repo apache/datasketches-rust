@@ -45,9 +45,8 @@
 //!
 //! # Application-defined storage
 //!
-//! [`XorFilter::from_fingerprints`] imports a construction seed and typed fingerprint
-//! slots without adding metadata to an existing disk format. Accessors expose these fields for
-//! serialization.
+//! [`XorFilter::from_fingerprints`] restores a filter from its stored [`seed`](XorFilter::seed)
+//! and [`fingerprints`](XorFilter::fingerprints).
 //!
 //! # Examples
 //!
@@ -56,11 +55,10 @@
 //! use datasketches::xor::XorFilterType;
 //!
 //! let mut builder = XorFilterBuilder::new(XorFilterType::Xor8, 0);
-//! builder.update("apple");
-//! builder.update("banana");
+//! builder.update_values(["apple", "banana"]);
 //! let filter = builder.build().unwrap();
 //!
-//! assert!(filter.contains(&"apple"));
+//! assert!(filter.contains("apple"));
 //! ```
 //!
 //! # References

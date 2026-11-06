@@ -59,17 +59,16 @@ fn builder_deduplicates_values_and_hashes() {
     ] {
         let mut values = XorFilterBuilder::new(ty, 0);
         let mut hashes = XorFilterBuilder::new(ty, 0);
-        for value in [7_u64, 7, 11, 11, 11] {
-            values.update(&value);
-            hashes.update_hash(value);
-        }
-        hashes.update_hashes([13, 7, 13]);
+        values.update(&7_u64);
+        values.update_values([11_u64, 7, 11]);
+        hashes.update_hash(7);
+        hashes.update_hashes([11, 7, 11]);
         let filter = values.build().unwrap();
         assert!(filter.contains(&7_u64));
         assert!(filter.contains(&11_u64));
         assert_eq!(
             hashes.build().unwrap(),
-            XorFilter::from_hashes(&[7, 11, 13], ty, 0).unwrap()
+            XorFilter::from_hashes(&[7, 11], ty, 0).unwrap()
         );
     }
 }
