@@ -29,8 +29,10 @@ use crate::thetacommon::constants::DEFAULT_LG_K;
 use crate::thetacommon::union::UnionState;
 use crate::tuple::hash_table::TupleEntry;
 use crate::tuple::policy::SummaryCombinePolicy;
+use crate::tuple::serialization::TupleSummaryValue;
 use crate::tuple::sketch::CompactTupleSketch;
 use crate::tuple::sketch::TupleSketchView;
+use crate::tuple::sketch::serialize_compact_state;
 
 /// Union (set OR) of Tuple sketches.
 ///
@@ -105,6 +107,43 @@ where
         P::Summary: Clone,
     {
         CompactTupleSketch::from_compact_state(self.state.to_compact_sketch_state(ordered))
+    }
+
+    /// Serializes the union result into the compact Tuple binary format.
+    ///
+    /// The result is the same as `self.to_sketch(ordered).serialize()`: the same retained entries,
+    /// theta, and seed hash, and identical bytes when `ordered` is `true`. Summaries are encoded in
+    /// place instead of being cloned into an intermediate sketch, so `P::Summary` does not need to
+    /// implement [`Clone`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::tuple::CompactTupleSketch;
+    /// use datasketches::tuple::DefaultUnionPolicy;
+    /// use datasketches::tuple::DefaultUpdatePolicy;
+    /// use datasketches::tuple::TupleSketchBuilder;
+    /// use datasketches::tuple::TupleUnionBuilder;
+    ///
+    /// let mut sketch = TupleSketchBuilder::new(DefaultUpdatePolicy::<u64>::default())
+    ///     .build()
+    ///     .unwrap();
+    /// sketch.update("apple", 1);
+    ///
+    /// let mut union = TupleUnionBuilder::new(DefaultUnionPolicy::<u64>::default())
+    ///     .build()
+    ///     .unwrap();
+    /// union.update(&sketch).unwrap();
+    ///
+    /// let bytes = union.serialize(true);
+    /// let result = CompactTupleSketch::<u64>::deserialize(&bytes).unwrap();
+    /// assert_eq!(result.num_retained(), 1);
+    /// ```
+    pub fn serialize(&self, ordered: bool) -> Vec<u8>
+    where
+        P::Summary: TupleSummaryValue,
+    {
+        serialize_compact_state(&self.state.to_borrowed_compact_sketch_state(ordered))
     }
 
     /// Resets the union to its initial empty state.

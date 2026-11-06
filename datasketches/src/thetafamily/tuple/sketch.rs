@@ -22,6 +22,7 @@
 //! created by a [`SummaryPolicy`] and updated through one or more [`SummaryUpdatePolicy`]
 //! implementations.
 
+use std::borrow::Borrow;
 use std::hash::Hash;
 use std::slice;
 
@@ -442,6 +443,60 @@ where
     }
 }
 
+/// Serializes compact Tuple state whose retained entries are owned or borrowed.
+pub(super) fn serialize_compact_state<S, E>(compact_state: &CompactSketchState<E>) -> Vec<u8>
+where
+    S: TupleSummaryValue,
+    E: Borrow<TupleEntry<S>>,
+{
+    if compact_state.is_empty() {
+        return EMPTY_SKETCH_BYTES.to_vec();
+    }
+
+    let retained_entries = compact_state.retained_entries();
+    let is_estimation_mode = compact_state.is_estimation_mode();
+    let pre_longs = if is_estimation_mode {
+        3
+    } else if retained_entries.len() == 1 {
+        1
+    } else {
+        2
+    };
+    let entries_size: usize = retained_entries
+        .iter()
+        .map(|entry| 8 + entry.borrow().summary().serialize_size())
+        .sum();
+    let mut bytes = SketchBytes::with_capacity(8 * pre_longs as usize + entries_size);
+
+    bytes.write_u8(pre_longs);
+    bytes.write_u8(SERIAL_VERSION);
+    bytes.write_u8(Family::TUPLE.id);
+    bytes.write_u8(SKETCH_TYPE);
+    bytes.write_u8(0); // unused
+
+    let mut flags = FLAGS_IS_READ_ONLY | FLAGS_IS_COMPACT;
+    if compact_state.is_ordered() {
+        flags |= FLAGS_IS_ORDERED;
+    }
+    bytes.write_u8(flags);
+    bytes.write_u16_le(compact_state.seed_hash());
+
+    if pre_longs > 1 {
+        bytes.write_u32_le(retained_entries.len() as u32);
+        bytes.write_u32_le(0); // unused
+    }
+    if is_estimation_mode {
+        bytes.write_u64_le(compact_state.theta());
+    }
+
+    for entry in retained_entries {
+        let entry = entry.borrow();
+        bytes.write_u64_le(entry.hash());
+        entry.summary().serialize_value(&mut bytes);
+    }
+    bytes.into_bytes()
+}
+
 /// Compact (immutable) Tuple sketch.
 ///
 /// This is the serialization-friendly form: a compact array of retained hash-summary pairs plus
@@ -546,16 +601,6 @@ impl<S> CompactTupleSketch<S> {
         self.compact_state.retained_entries_capacity() * size_of::<TupleEntry<S>>()
     }
 
-    fn preamble_longs(&self) -> u8 {
-        if self.is_estimation_mode() {
-            3
-        } else if self.num_retained() == 1 {
-            1
-        } else {
-            2
-        }
-    }
-
     /// Serializes this sketch into the compact Tuple binary format.
     ///
     /// The serialized data can be read by other DataSketches implementations when both
@@ -579,44 +624,7 @@ impl<S> CompactTupleSketch<S> {
     where
         S: TupleSummaryValue,
     {
-        if self.is_empty() {
-            return EMPTY_SKETCH_BYTES.to_vec();
-        }
-
-        let retained_entries = self.retained_entries();
-        let pre_longs = self.preamble_longs();
-        let entries_size: usize = retained_entries
-            .iter()
-            .map(|entry| 8 + entry.summary().serialize_size())
-            .sum();
-        let mut bytes = SketchBytes::with_capacity(8 * pre_longs as usize + entries_size);
-
-        bytes.write_u8(pre_longs);
-        bytes.write_u8(SERIAL_VERSION);
-        bytes.write_u8(Family::TUPLE.id);
-        bytes.write_u8(SKETCH_TYPE);
-        bytes.write_u8(0); // unused
-
-        let mut flags = FLAGS_IS_READ_ONLY | FLAGS_IS_COMPACT;
-        if self.is_ordered() {
-            flags |= FLAGS_IS_ORDERED;
-        }
-        bytes.write_u8(flags);
-        bytes.write_u16_le(self.seed_hash());
-
-        if pre_longs > 1 {
-            bytes.write_u32_le(retained_entries.len() as u32);
-            bytes.write_u32_le(0); // unused
-        }
-        if self.is_estimation_mode() {
-            bytes.write_u64_le(self.theta64());
-        }
-
-        for entry in retained_entries {
-            bytes.write_u64_le(entry.hash());
-            entry.summary().serialize_value(&mut bytes);
-        }
-        bytes.into_bytes()
+        serialize_compact_state(&self.compact_state)
     }
 
     /// Deserializes a compact Tuple sketch using the default seed.
