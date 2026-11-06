@@ -99,8 +99,6 @@ impl Fingerprints {
 
 /// An [`XorFilter`] builder for values or precomputed hashes.
 ///
-/// Inputs may repeat. Temporary memory use can grow linearly with the total input count.
-///
 /// Query values with [`XorFilter::contains`] and precomputed hashes with
 /// [`XorFilter::contains_hash`].
 #[derive(Debug)]
@@ -145,11 +143,11 @@ impl XorFilterBuilder {
         self.hashes.extend(hashes);
     }
 
-    /// Consumes the builder and creates a filter from the distinct hashes.
+    /// Consumes the builder and creates the filter.
     ///
     /// # Errors
     ///
-    /// Returns an error if the set of distinct hashes is too large or no valid layout is found.
+    /// Returns an error if the input is too large or no valid layout is found.
     pub fn build(mut self) -> Result<XorFilter, Error> {
         self.hashes.sort_unstable();
         self.hashes.dedup();
@@ -180,11 +178,8 @@ impl XorFilter {
     ///
     /// # Errors
     ///
-    /// Returns [`InvalidArgument`](crate::error::ErrorKind::InvalidArgument) in these cases:
-    ///
-    /// - The input contains duplicate hashes.
-    /// - The input is too large to build a filter.
-    /// - Construction cannot find a valid layout. For distinct hashes, try another `seed`.
+    /// Returns [`InvalidArgument`](crate::error::ErrorKind::InvalidArgument) for invalid or
+    /// oversized input, or if no valid layout is found. In the latter case, try another `seed`.
     pub fn from_hashes(keys: &[u64], filter_type: XorFilterType, seed: u64) -> Result<Self, Error> {
         let num_items = keys.len();
         let capacity = compute_capacity(num_items)?;

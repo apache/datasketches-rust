@@ -17,12 +17,8 @@
 
 //! XOR filters for immutable probabilistic set membership.
 //!
-//! An XOR filter is built from the complete input set and cannot be updated afterward. Compared
-//! with a Bloom filter at the same false-positive probability, it generally needs less space and
-//! performs exactly three fingerprint reads per query.
-//!
-//! [`XorFilterBuilder`] accepts values or precomputed hashes, including duplicates.
-//! Use [`XorFilter::from_hashes`] when the hashes are already distinct.
+//! Use [`XorFilterBuilder`] to build a filter from values or precomputed hashes. A negative
+//! query result rules out membership. A positive result may be a false positive.
 //!
 //! # Cross-language hashing
 //!
