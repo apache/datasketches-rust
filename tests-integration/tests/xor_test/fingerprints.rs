@@ -83,13 +83,11 @@ fn fingerprints_interoperate_with_xorf_in_both_directions() {
 
 #[test]
 fn fingerprints_reject_invalid_layouts() {
-    for length in [0, 2, 4] {
-        assert_eq!(
-            XorFilter::from_fingerprints(0, XorFingerprints::Xor8(vec![0; length].into()))
-                .unwrap_err()
-                .kind(),
-            ErrorKind::InvalidArgument
-        );
+    for (length, reason) in [(0, "empty"), (2, "multiple of 3"), (4, "multiple of 3")] {
+        let error = XorFilter::from_fingerprints(0, XorFingerprints::Xor8(vec![0; length].into()))
+            .unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::InvalidArgument);
+        assert!(error.message().contains(reason), "{error}");
     }
 }
 

@@ -64,7 +64,11 @@ impl XorFilterType {
     }
 
     const fn bytes_per_fingerprint(self) -> usize {
-        (self.bits_per_fingerprint() / 8) as usize
+        match self {
+            Self::Xor8 => 1,
+            Self::Xor16 => 2,
+            Self::Xor32 => 4,
+        }
     }
 }
 
@@ -150,8 +154,7 @@ impl XorFilterBuilder {
     ///
     /// # Errors
     ///
-    /// Returns an error under the size and construction-attempt limits of
-    /// [`XorFilter::from_hashes`].
+    /// Returns an error if the set of distinct hashes is too large or no valid layout is found.
     pub fn build(mut self) -> Result<XorFilter, Error> {
         self.hashes.sort_unstable();
         self.hashes.dedup();
@@ -182,11 +185,11 @@ impl XorFilter {
     ///
     /// # Errors
     ///
-    /// Returns [`InvalidArgument`](crate::error::ErrorKind::InvalidArgument) if hashes contain
-    /// duplicates, the fingerprint slot count exceeds `u32::MAX`, a scratch allocation would
-    /// exceed `isize::MAX` bytes, or no peelable construction is found within 100 attempts.
-    /// Valid input can also exhaust the attempts. A successful build may still exceed the
-    /// limits of [`serialize`](Self::serialize).
+    /// Returns [`InvalidArgument`](crate::error::ErrorKind::InvalidArgument) in these cases:
+    ///
+    /// - The input contains duplicate hashes.
+    /// - The input is too large to build a filter.
+    /// - Construction cannot find a valid layout. For distinct hashes, try another `seed`.
     pub fn from_hashes(keys: &[u64], filter_type: XorFilterType, seed: u64) -> Result<Self, Error> {
         let num_items = keys.len();
         let capacity = compute_capacity(num_items)?;
@@ -232,9 +235,9 @@ impl XorFilter {
         }
 
         if stack_size != num_items {
-            return Err(Error::invalid_argument(format!(
-                "xor filter construction failed after {MAX_CONSTRUCTION_ATTEMPTS} attempts"
-            ))
+            return Err(Error::invalid_argument(
+                "xor filter construction could not find a valid layout",
+            )
             .with_context("num_items", num_items));
         }
 
@@ -297,13 +300,25 @@ impl XorFilter {
     /// ```
     pub fn from_fingerprints(seed: u64, fingerprints: XorFingerprints) -> Result<Self, Error> {
         let slots = fingerprints.len();
-        if slots == 0 || slots % 3 != 0 || slots / 3 > u32::MAX as usize {
+        if slots == 0 {
             return Err(Error::invalid_argument(
-                "invalid xor filter segment or payload length",
+                "xor filter fingerprint array must not be empty",
             ));
         }
+        if slots % 3 != 0 {
+            return Err(Error::invalid_argument(format!(
+                "xor filter fingerprint slot count must be a multiple of 3, got {slots}"
+            )));
+        }
+        let segment_length = slots / 3;
+        if segment_length > u32::MAX as usize {
+            return Err(Error::invalid_argument(format!(
+                "xor filter segment length must be at most {}, got {segment_length}",
+                u32::MAX
+            )));
+        }
         Ok(Self {
-            segment_length: slots / 3,
+            segment_length,
             seed,
             fingerprints,
         })
