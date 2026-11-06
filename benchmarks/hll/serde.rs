@@ -15,10 +15,12 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::hint::black_box;
+
+use benchmarks::Bencher;
+use benchmarks::Runner;
 use datasketches::hll::HllType;
 use datasketches::hll::HllUnion;
-use divan::Bencher;
-use divan::black_box;
 
 fn union(rows: u64) -> HllUnion {
     let mut union = HllUnion::new(18).unwrap();
@@ -28,14 +30,35 @@ fn union(rows: u64) -> HllUnion {
     union
 }
 
-#[divan::bench(args = [0, 4, 100, 80_000])]
 fn serialize_union(bencher: Bencher, rows: u64) {
     let union = union(rows);
     bencher.bench_local(|| black_box(&union).serialize());
 }
 
-#[divan::bench(args = [0, 4, 100, 80_000])]
 fn serialize_union_via_sketch(bencher: Bencher, rows: u64) {
     let union = union(rows);
     bencher.bench_local(|| black_box(&union).to_sketch(HllType::Hll8).serialize());
+}
+
+pub fn register(runner: &mut Runner) {
+    let cases = &[
+        (0, 15_000_000),
+        (4, 12_000_000),
+        (100, 2_000_000),
+        (80_000, 90_000),
+    ];
+    for &(rows, rounds) in cases {
+        runner.case(
+            format!("hll::serde::serialize_union/{rows:?}"),
+            rounds,
+            |b| serialize_union(b, rows),
+        );
+    }
+    for &(rows, rounds) in cases {
+        runner.case(
+            format!("hll::serde::serialize_union_via_sketch/{rows:?}"),
+            rounds,
+            |b| serialize_union_via_sketch(b, rows),
+        );
+    }
 }

@@ -19,12 +19,19 @@ use std::hash::Hash;
 use std::hash::Hasher;
 use std::ops::BitXor;
 
+use crate::codec::SketchBytes;
+use crate::codec::SketchSlice;
+use crate::codec::assert::ensure_preamble_longs_in_range;
+use crate::codec::assert::ensure_serial_version_is;
+use crate::codec::assert::insufficient_data;
+use crate::codec::family::Family;
 use crate::error::Error;
 use crate::hash::XxHash64;
 
 const NUM_HASHES: u8 = 3;
+const SERIAL_VERSION: u8 = 1;
+const PREAMBLE_BYTES: usize = 3 * size_of::<u64>();
 const HASH_SEED: u64 = 0;
-const DEFAULT_CONSTRUCTION_SEED: u64 = 0;
 const LOAD_FACTOR: f64 = 1.23;
 const CAPACITY_OFFSET: u64 = 32;
 const MAX_CONSTRUCTION_ATTEMPTS: usize = 100;
@@ -58,7 +65,7 @@ impl XorFilterType {
         }
     }
 
-    pub(crate) const fn bytes_per_fingerprint(self) -> usize {
+    const fn bytes_per_fingerprint(self) -> usize {
         (self.bits_per_fingerprint() / 8) as usize
     }
 }
@@ -85,71 +92,12 @@ impl XorFingerprints {
         }
     }
 
-    pub(crate) fn byte_len(&self) -> usize {
+    fn byte_len(&self) -> usize {
         match self {
             Self::Xor8(values) => size_of_val::<[u8]>(values),
             Self::Xor16(values) => size_of_val::<[u16]>(values),
             Self::Xor32(values) => size_of_val::<[u32]>(values),
         }
-    }
-}
-
-/// Raw state of an [`XorFilter`] for application-defined storage.
-///
-/// Created by [`XorFilter::into_parts`] or [`XorFilterParts::new`], and consumed by
-/// [`XorFilter::from_parts`], which validates the layout.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct XorFilterParts {
-    seed: u64,
-    segment_length: usize,
-    fingerprints: XorFingerprints,
-    num_items: Option<usize>,
-}
-
-impl XorFilterParts {
-    /// Creates parts from a construction seed, segment length, and fingerprint slots.
-    ///
-    /// The item count is unknown unless set with [`with_num_items`](Self::with_num_items).
-    pub fn new(seed: u64, segment_length: usize, fingerprints: XorFingerprints) -> Self {
-        Self {
-            seed,
-            segment_length,
-            fingerprints,
-            num_items: None,
-        }
-    }
-
-    /// Records the number of distinct hashes in the original input set.
-    ///
-    /// Standard serialization and emptiness checks require a known item count.
-    pub fn with_num_items(mut self, num_items: usize) -> Self {
-        self.num_items = Some(num_items);
-        self
-    }
-
-    /// Returns the construction seed.
-    pub fn seed(&self) -> u64 {
-        self.seed
-    }
-
-    /// Returns the number of fingerprint slots in each of the three segments.
-    pub fn segment_length(&self) -> usize {
-        self.segment_length
-    }
-
-    /// Returns the fingerprint slots.
-    pub fn fingerprints(&self) -> &XorFingerprints {
-        &self.fingerprints
-    }
-
-    /// Returns the number of distinct input hashes, or `None` if unknown.
-    pub fn num_items(&self) -> Option<usize> {
-        self.num_items
-    }
-
-    /// Returns the fingerprint slots without copying.
-    pub fn into_fingerprints(self) -> XorFingerprints {
-        self.fingerprints
     }
 }
 
@@ -162,22 +110,158 @@ impl XorFilterParts {
 ///
 /// Ordinary values passed to [`contains`](Self::contains) are reduced to 64-bit hashes with
 /// xxHash64 and seed `0`. Use [`contains_hash`](Self::contains_hash) only with the same hashes that
-/// were supplied to [`XorFilterBuilder::build_from_hashes`] or
-/// [`XorFilterBuilder::build_from_distinct_hashes`].
+/// were supplied to [`from_hashes`](Self::from_hashes).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct XorFilter {
-    pub(crate) segment_length: usize,
-    pub(crate) num_items: Option<usize>,
-    pub(crate) seed: u64,
-    pub(crate) fingerprints: XorFingerprints,
+    segment_length: usize,
+    num_items: Option<usize>,
+    seed: u64,
+    fingerprints: XorFingerprints,
 }
 
 impl XorFilter {
-    /// Imports raw parts without requiring a DataSketches serialization header.
+    /// Creates a filter from values hashed by xxHash64 with seed `0`.
+    ///
+    /// Removes duplicate hashes before construction. The construction `seed` selects a
+    /// deterministic sequence of attempts; it does not change the hash function used for values.
+    /// Pass borrowed values to retain them after construction.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error under the size and construction-attempt limits of
+    /// [`from_hashes`](Self::from_hashes). Duplicate values are removed before construction.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::xor::XorFilter;
+    /// use datasketches::xor::XorFilterType;
+    ///
+    /// let filter = XorFilter::from_values(["apple", "banana"], XorFilterType::Xor8, 0)?;
+    /// assert!(filter.contains("apple"));
+    /// # Ok::<(), datasketches::error::Error>(())
+    /// ```
+    pub fn from_values<T: Hash>(
+        items: impl IntoIterator<Item = T>,
+        ty: XorFilterType,
+        seed: u64,
+    ) -> Result<Self, Error> {
+        let mut hashes: Vec<_> = items.into_iter().map(|item| hash_item(&item)).collect();
+        hashes.sort_unstable();
+        hashes.dedup();
+        Self::from_hashes(&hashes, ty, seed)
+    }
+
+    /// Creates a filter from distinct precomputed 64-bit hashes.
+    ///
+    /// Duplicate hashes return an error.
+    /// Query with [`contains_hash`](Self::contains_hash) using hashes from the same source.
+    /// The construction `seed` selects a deterministic sequence of attempts; input order
+    /// does not affect the result.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InvalidArgument`](crate::error::ErrorKind::InvalidArgument) if hashes contain
+    /// duplicates, the fingerprint slot count exceeds `u32::MAX`, a scratch allocation would
+    /// exceed `isize::MAX` bytes, or no peelable construction is found within 100 attempts.
+    /// Valid input can also exhaust the attempts. A successful build may still exceed the
+    /// limits of [`serialize`](Self::serialize).
+    pub fn from_hashes(keys: &[u64], ty: XorFilterType, seed: u64) -> Result<Self, Error> {
+        let num_items = keys.len();
+        let capacity = compute_capacity(num_items)?;
+        let segment_length = capacity / usize::from(NUM_HASHES);
+        let mut xor_mask = vec![0_u64; capacity];
+        let mut count = vec![0_u32; capacity];
+        // One spare slot per segment allows a speculative enqueue even when full.
+        let mut queue = vec![0_u32; capacity + 3];
+        let mut stack_hash = vec![0_u64; num_items];
+        let mut stack_index = vec![0_u32; num_items];
+
+        let mut rng_state = seed;
+        let mut construction_seed = 0;
+        let mut stack_size = 0;
+        for attempt in 0..MAX_CONSTRUCTION_ATTEMPTS {
+            if attempt != 0 {
+                xor_mask.fill(0);
+                count.fill(0);
+            }
+            rng_state = rng_state.wrapping_add(SPLITMIX_GAMMA);
+            construction_seed = splitmix64(rng_state);
+            stack_size = map(
+                keys,
+                construction_seed,
+                segment_length,
+                &mut xor_mask,
+                &mut count,
+                &mut queue,
+                &mut stack_hash,
+                &mut stack_index,
+            );
+            if stack_size == num_items {
+                break;
+            }
+            // For a fixed seed, mixing is a bijection, so two remaining hashes that cancel
+            // out are the same input hash. Reseeding cannot separate duplicates.
+            if count.iter().zip(&xor_mask).any(|(&c, &m)| c == 2 && m == 0) {
+                return Err(
+                    Error::invalid_argument("xor filter input contains duplicate hashes")
+                        .with_context("num_items", num_items),
+                );
+            }
+        }
+
+        if stack_size != num_items {
+            return Err(Error::invalid_argument(format!(
+                "xor filter construction failed after {MAX_CONSTRUCTION_ATTEMPTS} attempts"
+            ))
+            .with_context("num_items", num_items));
+        }
+
+        // Assignment only needs the peel stack. Release the graph before allocating the
+        // fingerprint payload so these allocations do not overlap at peak memory usage.
+        drop(xor_mask);
+        drop(count);
+        drop(queue);
+
+        let fingerprints = match ty {
+            XorFilterType::Xor8 => XorFingerprints::Xor8(assign_fingerprints(
+                capacity,
+                segment_length,
+                &stack_hash,
+                &stack_index,
+                |hash| fingerprint(hash) as u8,
+            )),
+            XorFilterType::Xor16 => XorFingerprints::Xor16(assign_fingerprints(
+                capacity,
+                segment_length,
+                &stack_hash,
+                &stack_index,
+                |hash| fingerprint(hash) as u16,
+            )),
+            XorFilterType::Xor32 => XorFingerprints::Xor32(assign_fingerprints(
+                capacity,
+                segment_length,
+                &stack_hash,
+                &stack_index,
+                |hash| fingerprint(hash) as u32,
+            )),
+        };
+
+        Ok(Self {
+            segment_length,
+            num_items: Some(num_items),
+            seed: construction_seed,
+            fingerprints,
+        })
+    }
+
+    /// Imports a filter from its raw fields without requiring a DataSketches serialization header.
     ///
     /// The caller must preserve the original construction seed and fingerprint order, and query
     /// with the original input hashes. A supplied item count must describe the original set.
     /// A valid layout alone cannot establish these invariants.
+    /// Pass `None` when the storage format omits the item count. Standard serialization requires
+    /// a known count; a known zero count makes every query return `false`.
     ///
     /// # Errors
     ///
@@ -189,30 +273,25 @@ impl XorFilter {
     ///
     /// ```
     /// use datasketches::xor::XorFilter;
-    /// use datasketches::xor::XorFilterBuilder;
-    /// use datasketches::xor::XorFilterParts;
     /// use datasketches::xor::XorFilterType;
     ///
-    /// let filter = XorFilterBuilder::new(XorFilterType::Xor8).build_from_hashes([10, 20, 30])?;
-    /// let parts = filter.into_parts();
-    /// // A storage format that does not record the item count keeps only these fields.
-    /// let parts = XorFilterParts::new(
-    ///     parts.seed(),
-    ///     parts.segment_length(),
-    ///     parts.into_fingerprints(),
-    /// );
-    /// let imported = XorFilter::from_parts(parts)?;
+    /// let filter = XorFilter::from_hashes(&[10, 20, 30], XorFilterType::Xor8, 0)?;
+    /// let imported = XorFilter::from_parts(
+    ///     filter.seed(),
+    ///     filter.segment_length(),
+    ///     filter.fingerprints().clone(),
+    ///     None,
+    /// )?;
     /// assert!(imported.contains_hash(20));
     /// assert_eq!(imported.num_items(), None);
     /// # Ok::<(), datasketches::error::Error>(())
     /// ```
-    pub fn from_parts(parts: XorFilterParts) -> Result<Self, Error> {
-        let XorFilterParts {
-            seed,
-            segment_length,
-            fingerprints,
-            num_items,
-        } = parts;
+    pub fn from_parts(
+        seed: u64,
+        segment_length: usize,
+        fingerprints: XorFingerprints,
+        num_items: Option<usize>,
+    ) -> Result<Self, Error> {
         if segment_length == 0
             || segment_length > u32::MAX as usize
             || segment_length.checked_mul(3) != Some(fingerprints.len())
@@ -244,16 +323,6 @@ impl XorFilter {
         &self.fingerprints
     }
 
-    /// Converts the filter into raw parts without copying the fingerprint slots.
-    pub fn into_parts(self) -> XorFilterParts {
-        XorFilterParts {
-            seed: self.seed,
-            segment_length: self.segment_length,
-            fingerprints: self.fingerprints,
-            num_items: self.num_items,
-        }
-    }
-
     /// Returns `true` if an item is possibly in the input set.
     ///
     /// A `false` result means the item was definitely absent; a `true` result may be a false
@@ -267,15 +336,13 @@ impl XorFilter {
     ///
     /// This method bypasses xxHash64. The caller must use the same hash value during construction
     /// and queries; mixing raw values with precomputed hashes can introduce false negatives.
-    #[inline]
+    // Keep the width dispatch in the caller's hot loop, including across crates.
+    #[inline(always)]
     pub fn contains_hash(&self, hash: u64) -> bool {
-        if self.num_items == Some(0) {
-            return false;
-        }
         let mixed = mix(hash, self.seed);
         let [h0, h1, h2] = indexes(mixed, self.segment_length);
 
-        match &self.fingerprints {
+        let found = match &self.fingerprints {
             XorFingerprints::Xor8(fingerprints) => {
                 fingerprint(mixed) as u8 == fingerprints[h0] ^ fingerprints[h1] ^ fingerprints[h2]
             }
@@ -285,7 +352,10 @@ impl XorFilter {
             XorFingerprints::Xor32(fingerprints) => {
                 fingerprint(mixed) as u32 == fingerprints[h0] ^ fingerprints[h1] ^ fingerprints[h2]
             }
-        }
+        };
+        // Avoid branching on the fingerprint comparison, including rare false
+        // positives. Unknown counts must preserve the raw comparison.
+        found & (self.num_items != Some(0))
     }
 
     /// Returns whether the input set was empty, or `None` if imported without an item count.
@@ -349,215 +419,209 @@ impl XorFilter {
         size_of::<Self>() + self.fingerprints.byte_len()
     }
 
-    fn build(
-        keys: &[u64],
-        filter_type: XorFilterType,
-        base_seed: u64,
-        max_attempts: usize,
-    ) -> Result<Self, Error> {
-        debug_assert!(max_attempts > 0);
-        let num_items = keys.len();
-        let capacity = compute_capacity(num_items)?;
-        let segment_length = capacity / usize::from(NUM_HASHES);
-        let mut xor_mask = vec![0_u64; capacity];
-        let mut count = vec![0_u32; capacity];
-        let mut queue = vec![0_u32; capacity];
-        let mut stack_hash = vec![0_u64; num_items];
-        let mut stack_index = vec![0_u32; num_items];
+    /// Serializes the filter using DataSketches family `22`, version `1`.
+    ///
+    /// Supports 8-, 16-, and 32-bit fingerprints, recorded in the header's fingerprint width
+    /// field. Reserved fields are written as zero; integers and fingerprints are little-endian.
+    /// The 8- and 16-bit images are compatible with Java when input hashing agrees. Readers
+    /// must support the encoded fingerprint width; implementations limited to 8/16 bits cannot
+    /// read 32-bit images.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InvalidArgument`](crate::error::ErrorKind::InvalidArgument) for an unknown
+    /// item count, or an item count or segment length above `i32::MAX`.
+    /// The total number of slots must also fit `i32::MAX` so that Java can index all three
+    /// segments; this is an additional interoperability limit, not a header field. Construction
+    /// and raw parts allow larger capacities, so successful construction does not guarantee
+    /// standard serialization. Use raw parts for other storage formats.
+    pub fn serialize(&self) -> Result<Vec<u8>, Error> {
+        let size = self.serialized_size()?;
+        let num_items = self
+            .num_items
+            .expect("serialized_size checked the item count");
+        let mut bytes = SketchBytes::with_capacity(size);
 
-        let mut rng_state = base_seed;
-        let mut construction_seed = 0;
-        let mut stack_size = 0;
-        for attempt in 0..max_attempts {
-            if attempt != 0 {
-                xor_mask.fill(0);
-                count.fill(0);
+        bytes.write_u8(Family::XORFILTER.min_pre_longs);
+        bytes.write_u8(SERIAL_VERSION);
+        bytes.write_u8(Family::XORFILTER.id);
+        bytes.write_u8(0); // flags
+        bytes.write_u8(self.bits_per_fingerprint());
+        bytes.write_u8(NUM_HASHES);
+        bytes.write_u16_le(0); // unused
+        bytes.write_u64_le(self.seed);
+        bytes.write_i32_le(self.segment_length as i32);
+        bytes.write_i32_le(num_items as i32);
+
+        match &self.fingerprints {
+            XorFingerprints::Xor8(fingerprints) => bytes.write(fingerprints),
+            XorFingerprints::Xor16(fingerprints) => {
+                for &fingerprint in fingerprints.iter() {
+                    bytes.write_u16_le(fingerprint);
+                }
             }
-            rng_state = rng_state.wrapping_add(SPLITMIX_GAMMA);
-            construction_seed = splitmix64(rng_state);
-            stack_size = map(
-                keys,
-                construction_seed,
-                segment_length,
-                &mut xor_mask,
-                &mut count,
-                &mut queue,
-                &mut stack_hash,
-                &mut stack_index,
-            );
-            if stack_size == num_items {
-                break;
-            }
-            // For a fixed seed, mixing is a bijection, so two remaining hashes that cancel
-            // out are the same input hash. Reseeding cannot separate duplicates.
-            if count.iter().zip(&xor_mask).any(|(&c, &m)| c == 2 && m == 0) {
-                return Err(
-                    Error::invalid_argument("xor filter input contains duplicate hashes")
-                        .with_context("num_items", num_items),
-                );
+            XorFingerprints::Xor32(fingerprints) => {
+                for &fingerprint in fingerprints.iter() {
+                    bytes.write_u32_le(fingerprint);
+                }
             }
         }
 
-        if stack_size != num_items {
-            return Err(Error::invalid_argument(format!(
-                "xor filter construction failed after {max_attempts} attempts"
-            ))
-            .with_context("num_items", num_items));
+        Ok(bytes.into_bytes())
+    }
+
+    /// Deserializes an owned filter from bytes.
+    ///
+    /// Accepts 8-, 16-, and 32-bit images within the limits of [`serialize`](Self::serialize).
+    /// Reserved fields and trailing bytes are ignored.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the image is truncated, belongs to another sketch family or version, or
+    /// contains metadata that could make a membership query index outside the fingerprint payload.
+    pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
+        let mut cursor = SketchSlice::new(bytes);
+
+        let preamble_longs = cursor
+            .read_u8()
+            .map_err(insufficient_data("preamble_longs"))?;
+        let serial_version = cursor
+            .read_u8()
+            .map_err(insufficient_data("serial_version"))?;
+        let family_id = cursor.read_u8().map_err(insufficient_data("family_id"))?;
+        let _flags = cursor.read_u8().map_err(insufficient_data("flags"))?;
+        let bits_per_fingerprint = cursor
+            .read_u8()
+            .map_err(insufficient_data("bits_per_fingerprint"))?;
+        let num_hashes = cursor.read_u8().map_err(insufficient_data("num_hashes"))?;
+        let _unused = cursor.read_u16_le().map_err(insufficient_data("unused"))?;
+
+        Family::XORFILTER.validate_id(family_id)?;
+        ensure_serial_version_is(SERIAL_VERSION, serial_version)?;
+        ensure_preamble_longs_in_range(
+            Family::XORFILTER.min_pre_longs..=Family::XORFILTER.max_pre_longs,
+            preamble_longs,
+        )?;
+        let ty = match bits_per_fingerprint {
+            8 => XorFilterType::Xor8,
+            16 => XorFilterType::Xor16,
+            32 => XorFilterType::Xor32,
+            _ => {
+                return Err(Error::deserial(
+                    "standard xor format requires 8-, 16-, or 32-bit fingerprints",
+                ));
+            }
+        };
+        if num_hashes != NUM_HASHES {
+            return Err(Error::deserial(format!(
+                "invalid number of hashes: expected {NUM_HASHES}, got {num_hashes}"
+            )));
         }
 
-        // Assignment only needs the peel stack. Release the graph before allocating the
-        // fingerprint payload so these allocations do not overlap at peak memory usage.
-        drop(xor_mask);
-        drop(count);
-        drop(queue);
+        let seed = cursor.read_u64_le().map_err(insufficient_data("seed"))?;
+        let segment_length = cursor
+            .read_i32_le()
+            .map_err(insufficient_data("segment_length"))?;
+        if segment_length <= 0 {
+            return Err(Error::deserial(format!(
+                "invalid segment length: expected a positive value, got {segment_length}"
+            )));
+        }
+        let segment_length = segment_length as usize;
 
-        let fingerprints = match filter_type {
+        let num_items = cursor
+            .read_i32_le()
+            .map_err(insufficient_data("num_items"))?;
+        if num_items < 0 {
+            return Err(Error::deserial(format!(
+                "invalid item count: expected a non-negative value, got {num_items}"
+            )));
+        }
+        let num_items = num_items as usize;
+
+        let capacity = segment_length
+            .checked_mul(usize::from(NUM_HASHES))
+            .ok_or_else(|| Error::deserial("xor filter capacity overflow"))?;
+        if capacity > i32::MAX as usize {
+            return Err(Error::deserial(format!(
+                "invalid xor filter capacity: maximum is {}, got {capacity}",
+                i32::MAX
+            )));
+        }
+        if num_items > capacity {
+            return Err(Error::deserial(format!(
+                "invalid item count: capacity is {capacity}, got {num_items}"
+            )));
+        }
+
+        let fingerprint_bytes = capacity
+            .checked_mul(ty.bytes_per_fingerprint())
+            .ok_or_else(|| Error::deserial("xor filter fingerprint size overflow"))?;
+        if cursor.remaining().len() < fingerprint_bytes {
+            return Err(Error::insufficient_data_of(
+                "fingerprints",
+                format!(
+                    "expected {fingerprint_bytes} bytes, got {}",
+                    cursor.remaining().len()
+                ),
+            ));
+        }
+
+        let fingerprints = match ty {
             XorFilterType::Xor8 => {
                 let mut values = vec![0_u8; capacity].into_boxed_slice();
-                assign_fingerprints(
-                    &mut values,
-                    segment_length,
-                    &stack_hash[..stack_size],
-                    &stack_index[..stack_size],
-                    |hash| fingerprint(hash) as u8,
-                );
+                cursor
+                    .read_exact(&mut values)
+                    .map_err(insufficient_data("fingerprints"))?;
                 XorFingerprints::Xor8(values)
             }
             XorFilterType::Xor16 => {
-                let mut values = vec![0_u16; capacity].into_boxed_slice();
-                assign_fingerprints(
-                    &mut values,
-                    segment_length,
-                    &stack_hash[..stack_size],
-                    &stack_index[..stack_size],
-                    |hash| fingerprint(hash) as u16,
-                );
-                XorFingerprints::Xor16(values)
+                let mut values = Vec::with_capacity(capacity);
+                for _ in 0..capacity {
+                    values.push(
+                        cursor
+                            .read_u16_le()
+                            .map_err(insufficient_data("fingerprints"))?,
+                    );
+                }
+                XorFingerprints::Xor16(values.into_boxed_slice())
             }
             XorFilterType::Xor32 => {
-                let mut values = vec![0_u32; capacity].into_boxed_slice();
-                assign_fingerprints(
-                    &mut values,
-                    segment_length,
-                    &stack_hash[..stack_size],
-                    &stack_index[..stack_size],
-                    |hash| fingerprint(hash) as u32,
-                );
-                XorFingerprints::Xor32(values)
+                let mut values = Vec::with_capacity(capacity);
+                for _ in 0..capacity {
+                    values.push(
+                        cursor
+                            .read_u32_le()
+                            .map_err(insufficient_data("fingerprints"))?,
+                    );
+                }
+                XorFingerprints::Xor32(values.into_boxed_slice())
             }
         };
 
         Ok(Self {
             segment_length,
             num_items: Some(num_items),
-            seed: construction_seed,
+            seed,
             fingerprints,
         })
     }
-}
 
-/// Builder for configuring and creating an immutable [`XorFilter`].
-///
-/// Stores only the fingerprint type and construction seed. Each build consumes the configuration
-/// and takes the complete input set. Ordinary values and precomputed hashes are deduplicated in
-/// temporary storage; already-distinct hashes can be borrowed without copying or sorting.
-#[derive(Debug, Clone)]
-pub struct XorFilterBuilder {
-    filter_type: XorFilterType,
-    seed: u64,
-}
-
-impl XorFilterBuilder {
-    /// Creates a builder for the requested fingerprint representation.
-    ///
-    /// The default base construction seed is `0`.
-    pub fn new(filter_type: XorFilterType) -> Self {
-        Self {
-            filter_type,
-            seed: DEFAULT_CONSTRUCTION_SEED,
+    fn serialized_size(&self) -> Result<usize, Error> {
+        let count = self
+            .num_items
+            .ok_or_else(|| Error::invalid_argument("standard xor format requires an item count"))?;
+        if count > i32::MAX as usize
+            || self.segment_length > i32::MAX as usize
+            || self.capacity() > i32::MAX as usize
+        {
+            return Err(Error::invalid_argument(
+                "xor filter exceeds standard format limits",
+            ));
         }
-    }
-
-    /// Sets the base seed used to derive construction attempts.
-    ///
-    /// A fixed seed makes construction deterministic for a given set of hashes. The filter stores
-    /// the successful derived seed, which is returned by [`XorFilter::seed`].
-    pub fn seed(mut self, seed: u64) -> Self {
-        self.seed = seed;
-        self
-    }
-
-    /// Builds a filter from values hashed by xxHash64 with seed `0`.
-    ///
-    /// Duplicate hashes are removed before construction. The input is consumed as an iterator;
-    /// pass borrowed values to retain them for a later build, including after an error.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error under the same conditions as
-    /// [`build_from_hashes`](Self::build_from_hashes).
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use datasketches::xor::XorFilterBuilder;
-    /// use datasketches::xor::XorFilterType;
-    ///
-    /// let filter = XorFilterBuilder::new(XorFilterType::Xor8)
-    ///     .seed(42)
-    ///     .build(["apple", "banana"])?;
-    /// assert!(filter.contains("apple"));
-    /// # Ok::<(), datasketches::error::Error>(())
-    /// ```
-    pub fn build<T: Hash>(self, items: impl IntoIterator<Item = T>) -> Result<XorFilter, Error> {
-        self.build_from_hashes(items.into_iter().map(|item| hash_item(&item)))
-    }
-
-    /// Builds a filter from precomputed 64-bit hashes, removing duplicates.
-    ///
-    /// This method bypasses xxHash64. Query the resulting filter with
-    /// [`XorFilter::contains_hash`] using hashes from the same source. Temporary input storage is
-    /// released on success or failure. Pass `hashes.iter().copied()` to retain the original input
-    /// for a later build, including after an error.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`InvalidArgument`](crate::error::ErrorKind::InvalidArgument) if the fingerprint
-    /// slot count exceeds `u32::MAX` or a scratch allocation would exceed `isize::MAX` bytes,
-    /// or if no peelable construction is found within 100 attempts. Valid input can also
-    /// exhaust the construction attempts. A successful build may still exceed the limits of
-    /// [`XorFilter::serialize`].
-    pub fn build_from_hashes(
-        self,
-        hashes: impl IntoIterator<Item = u64>,
-    ) -> Result<XorFilter, Error> {
-        let mut hashes: Vec<_> = hashes.into_iter().collect();
-        hashes.sort_unstable();
-        hashes.dedup();
-        self.build_from_distinct_hashes(&hashes)
-    }
-
-    /// Builds a filter from distinct precomputed hashes without copying or sorting them.
-    ///
-    /// Borrows the input without modifying it, so the same slice can be retried with another
-    /// construction seed after an error. Changing the seed does not guarantee success.
-    /// Input order does not affect the result.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`InvalidArgument`](crate::error::ErrorKind::InvalidArgument) under the size limits
-    /// described by [`build_from_hashes`](Self::build_from_hashes), or if no peelable
-    /// construction is found within 100 attempts, even for valid input. Duplicate hashes
-    /// prevent peeling; a failed attempt usually exposes them and stops construction early,
-    /// but detection is not guaranteed. Use [`build_from_hashes`](Self::build_from_hashes) to
-    /// remove duplicates.
-    pub fn build_from_distinct_hashes(self, hashes: &[u64]) -> Result<XorFilter, Error> {
-        self.build_with_attempts(hashes, MAX_CONSTRUCTION_ATTEMPTS)
-    }
-
-    // A private attempt bound makes exhaustion and recovery deterministic in unit tests.
-    fn build_with_attempts(self, hashes: &[u64], max_attempts: usize) -> Result<XorFilter, Error> {
-        XorFilter::build(hashes, self.filter_type, self.seed, max_attempts)
+        PREAMBLE_BYTES
+            .checked_add(self.fingerprints.byte_len())
+            .ok_or_else(|| Error::invalid_argument("xor filter serialized size overflow"))
     }
 }
 
@@ -596,10 +660,10 @@ fn map(
     stack_index: &mut [u32],
 ) -> usize {
     // Separate queues keep each drain within one segment and make the two neighbor
-    // segments statically known. Scratch space remains one slot per fingerprint.
+    // segments statically known.
     let mut masks = split_segments(xor_mask, segment_length);
     let mut counts = split_segments(count, segment_length);
-    let mut queues = split_segments(queue, segment_length);
+    let mut queues = split_segments(queue, segment_length + 1);
     // Reuse the peel stack for mixed hashes while mapping one segment at a time.
     // This bounds the random-access working set without allocating another buffer.
     for (&key, hash) in keys.iter().zip(stack_hash.iter_mut()) {
@@ -690,27 +754,30 @@ fn peel_block<const BLOCK: usize>(
             let index = reduce(hash.rotate_left(other as u32 * 21) as u32, segment_length);
             masks[other][index] ^= hash;
             counts[other][index] -= 1;
-            if counts[other][index] == 1 {
-                queues[other][queue_sizes[other]] = index as u32;
-                queue_sizes[other] += 1;
-            }
+            // A slot enters its queue at most once. The extra slot accommodates
+            // this write when every real slot is already queued; retain it only
+            // when the neighbor becomes a singleton.
+            queues[other][queue_sizes[other]] = index as u32;
+            queue_sizes[other] += usize::from(counts[other][index] == 1);
         }
     }
 }
 
-fn assign_fingerprints<T: Copy + BitXor<Output = T>>(
-    fingerprints: &mut [T],
+fn assign_fingerprints<T: Copy + Default + BitXor<Output = T>>(
+    capacity: usize,
     segment_length: usize,
     stack_hash: &[u64],
     stack_index: &[u32],
     fingerprint_of: impl Fn(u64) -> T,
-) {
+) -> Box<[T]> {
+    let mut fingerprints = vec![T::default(); capacity].into_boxed_slice();
     for (&hash, &index) in stack_hash.iter().zip(stack_index).rev() {
         let index = index as usize;
         let [h0, h1, h2] = indexes(hash, segment_length);
         fingerprints[index] =
             fingerprint_of(hash) ^ fingerprints[h0] ^ fingerprints[h1] ^ fingerprints[h2];
     }
+    fingerprints
 }
 
 #[inline]
@@ -724,7 +791,9 @@ fn indexes(hash: u64, segment_length: usize) -> [usize; 3] {
 
 #[inline]
 fn reduce(hash: u32, range: usize) -> usize {
-    ((u64::from(hash) * range as u64) >> 32) as usize
+    // Construction and import validate the 32-bit segment bound. Keep both inputs
+    // narrow so mapping, peeling, and queries can use widening 32-bit multiplies.
+    ((u64::from(hash) * u64::from(range as u32)) >> 32) as usize
 }
 
 #[inline]
@@ -765,47 +834,28 @@ mod tests {
     }
 
     #[test]
-    fn borrowed_input_survives_exhaustion_and_can_retry() {
-        // This synthetic set fails its first peeling attempt with base seed 1.
-        // Limiting the private engine to one attempt exercises the public build failure path
-        // without relying on a rare failure across all 100 production attempts.
-        let keys: Vec<_> = (917_504..917_504 + 16_384u64)
-            .map(|i| splitmix64(i.wrapping_add(SPLITMIX_GAMMA)))
-            .collect();
-        for kind in [
-            XorFilterType::Xor8,
-            XorFilterType::Xor16,
-            XorFilterType::Xor32,
-        ] {
-            let original = keys.clone();
-            let error = XorFilterBuilder::new(kind)
-                .seed(1)
-                .build_with_attempts(&keys, 1)
-                .unwrap_err();
-            assert_eq!(error.kind(), ErrorKind::InvalidArgument);
-            assert_eq!(keys, original);
-
-            let builder = XorFilterBuilder::new(kind).seed(1_u64.wrapping_add(SPLITMIX_GAMMA));
-            let filter = builder.clone().build_from_distinct_hashes(&keys).unwrap();
-            assert_eq!(filter.num_items(), Some(keys.len()));
-            for &key in &keys {
-                assert!(filter.contains_hash(key));
-            }
-            // A failed peel overwrites the mixed hashes in the scratch stack. An automatic
-            // retry must remap the original input before attempting the next seed.
-            assert_eq!(
-                XorFilterBuilder::new(kind)
-                    .seed(1)
-                    .build_from_distinct_hashes(&keys)
-                    .unwrap(),
-                filter,
-            );
-            assert_eq!(
-                builder
-                    .build_from_hashes(keys.iter().copied().chain(keys.iter().copied()))
-                    .unwrap(),
-                filter,
-            );
-        }
+    fn peeling_handles_full_neighbor_queues() {
+        // All three singleton queues are full. Removing the only edge makes
+        // both neighbors stale, so speculative enqueues must not retain them.
+        let mut masks = [0; 3];
+        let mut counts = [0; 3];
+        let mut queues = [0; 6];
+        let mut hashes = [0; 1];
+        let mut indexes = [0; 1];
+        assert_eq!(
+            map(
+                &[42],
+                1,
+                1,
+                &mut masks,
+                &mut counts,
+                &mut queues,
+                &mut hashes,
+                &mut indexes
+            ),
+            1,
+        );
+        assert_eq!(hashes, [mix(42, 1)]);
+        assert_eq!(indexes, [0]);
     }
 }

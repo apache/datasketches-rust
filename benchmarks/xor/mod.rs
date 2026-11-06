@@ -16,8 +16,9 @@
 // under the License.
 
 mod build;
-mod matched_build;
+mod build_batches;
 mod query;
+mod query_shards;
 
 // SplitMix is a permutation, so these pseudorandom precomputed hashes are distinct.
 fn hashes(count: usize) -> Vec<u64> {
@@ -33,4 +34,11 @@ fn hashes_with_offset(count: usize, offset: u64) -> Vec<u64> {
             z ^ (z >> 31)
         })
         .collect()
+}
+
+pub fn register(runner: &mut benchmarks::Runner) {
+    build::register(runner);
+    build_batches::register(runner);
+    query::register(runner);
+    query_shards::register(runner);
 }

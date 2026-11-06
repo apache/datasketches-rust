@@ -18,3 +18,9 @@
 mod serde;
 mod union;
 mod update;
+
+pub fn register(runner: &mut benchmarks::Runner) {
+    serde::register(runner);
+    union::register(runner);
+    update::register(runner);
+}

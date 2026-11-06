@@ -15,6 +15,10 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::hint::black_box;
+
+use benchmarks::Bencher;
+use benchmarks::Runner;
 use datasketches::codec::SketchBytes;
 use datasketches::codec::SketchSlice;
 use datasketches::error::Error;
@@ -27,8 +31,6 @@ use datasketches::tuple::TupleSketchBuilder;
 use datasketches::tuple::TupleSummaryValue;
 use datasketches::tuple::TupleUnion;
 use datasketches::tuple::TupleUnionBuilder;
-use divan::Bencher;
-use divan::black_box;
 
 const ROWS: [u64; 4] = [0, 4, 100, 80_000];
 
@@ -46,13 +48,11 @@ fn u64_union(rows: u64) -> TupleUnion<DefaultUnionPolicy<u64>> {
     union
 }
 
-#[divan::bench(args = ROWS, consts = [true, false])]
 fn serialize_union<const ORDERED: bool>(bencher: Bencher, rows: u64) {
     let union = u64_union(rows);
     bencher.bench_local(|| black_box(&union).serialize(ORDERED));
 }
 
-#[divan::bench(args = ROWS, consts = [true, false])]
 fn serialize_union_via_sketch<const ORDERED: bool>(bencher: Bencher, rows: u64) {
     let union = u64_union(rows);
     bencher.bench_local(|| black_box(&union).to_sketch(ORDERED).serialize());
@@ -115,14 +115,48 @@ fn labels_union(rows: u64) -> TupleUnion<LabelsPolicy> {
     union
 }
 
-#[divan::bench(args = ROWS, consts = [true, false])]
 fn serialize_labels_union<const ORDERED: bool>(bencher: Bencher, rows: u64) {
     let union = labels_union(rows);
     bencher.bench_local(|| black_box(&union).serialize(ORDERED));
 }
 
-#[divan::bench(args = ROWS, consts = [true, false])]
 fn serialize_labels_union_via_sketch<const ORDERED: bool>(bencher: Bencher, rows: u64) {
     let union = labels_union(rows);
     bencher.bench_local(|| black_box(&union).to_sketch(ORDERED).serialize());
+}
+
+pub fn register(runner: &mut Runner) {
+    for rows in ROWS {
+        register_order::<false>(runner, rows);
+        register_order::<true>(runner, rows);
+    }
+}
+
+fn register_order<const ORDERED: bool>(runner: &mut Runner, rows: u64) {
+    let order = if ORDERED { "ordered" } else { "unordered" };
+    let rounds = if rows >= 100 { 500 } else { 10_000 };
+    runner.compare(
+        &format!("tuple::serde::u64::{order}::{rows}"),
+        rounds,
+        &[
+            ("via_compact_sketch", &|bencher| {
+                serialize_union_via_sketch::<ORDERED>(bencher, rows)
+            }),
+            ("direct", &|bencher| {
+                serialize_union::<ORDERED>(bencher, rows)
+            }),
+        ],
+    );
+    runner.compare(
+        &format!("tuple::serde::labels::{order}::{rows}"),
+        rounds,
+        &[
+            ("via_compact_sketch", &|bencher| {
+                serialize_labels_union_via_sketch::<ORDERED>(bencher, rows)
+            }),
+            ("direct", &|bencher| {
+                serialize_labels_union::<ORDERED>(bencher, rows)
+            }),
+        ],
+    );
 }

@@ -18,3 +18,9 @@
 mod decay;
 mod estimate;
 mod update;
+
+pub fn register(runner: &mut benchmarks::Runner) {
+    decay::register(runner);
+    estimate::register(runner);
+    update::register(runner);
+}

@@ -15,36 +15,24 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::hint::black_box;
+
+use benchmarks::Bencher;
+use benchmarks::Runner;
 use datasketches::cpc::CpcSketch;
-use divan::Bencher;
-use divan::black_box;
-use divan::black_box_drop;
-use divan::counter::BytesCount;
-use divan::counter::ItemsCount;
 
 const LG_K: u8 = 10;
 
-#[divan::bench(args = [200_u64, 8_000_u64])]
 fn serialize(bencher: Bencher, items: u64) {
     let sketch = sketch(items);
-    let serialized_bytes = sketch.serialize().len();
 
-    bencher
-        .counter(ItemsCount::new(items))
-        .counter(BytesCount::new(serialized_bytes))
-        .bench_local(|| black_box_drop(black_box(&sketch).serialize()));
+    bencher.bench_local(|| black_box(&sketch).serialize());
 }
 
-#[divan::bench(args = [200_u64, 8_000_u64])]
 fn deserialize(bencher: Bencher, items: u64) {
     let bytes = sketch(items).serialize();
 
-    bencher
-        .counter(ItemsCount::new(items))
-        .counter(BytesCount::new(bytes.len()))
-        .bench_local(|| {
-            black_box_drop(CpcSketch::deserialize(black_box(&bytes)).unwrap());
-        });
+    bencher.bench_local(|| CpcSketch::deserialize(black_box(&bytes)).unwrap());
 }
 
 fn sketch(items: u64) -> CpcSketch {
@@ -53,4 +41,17 @@ fn sketch(items: u64) -> CpcSketch {
         sketch.update(value);
     }
     sketch
+}
+
+pub fn register(runner: &mut Runner) {
+    for &(items, rounds) in &[(200_u64, 400_000), (8_000_u64, 500_000)] {
+        runner.case(format!("cpc::serde::serialize/{items:?}"), rounds, |b| {
+            serialize(b, items)
+        });
+    }
+    for &(items, rounds) in &[(200_u64, 400_000), (8_000_u64, 100_000)] {
+        runner.case(format!("cpc::serde::deserialize/{items:?}"), rounds, |b| {
+            deserialize(b, items)
+        });
+    }
 }

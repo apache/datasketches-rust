@@ -73,11 +73,21 @@ enum SubCommand {
 }
 
 #[derive(Parser)]
-struct CommandBench;
+struct CommandBench {
+    #[arg(long, help = "Compile benchmarks without running them.")]
+    no_run: bool,
+
+    #[arg(
+        last = true,
+        conflicts_with = "no_run",
+        help = "Arguments passed to the benchmark runner."
+    )]
+    args: Vec<String>,
+}
 
 impl CommandBench {
     fn run(self) {
-        run_command(make_bench_cmd());
+        run_command(make_bench_cmd(self.no_run, &self.args));
     }
 }
 
@@ -190,9 +200,15 @@ fn run_command(mut cmd: StdCommand) {
     assert!(status.success(), "command failed: {status}");
 }
 
-fn make_bench_cmd() -> StdCommand {
+fn make_bench_cmd(no_run: bool, args: &[String]) -> StdCommand {
     let mut cmd = find_command("cargo");
     cmd.args(["bench", "--package", "benchmarks", "--bench", "benchmarks"]);
+    if no_run {
+        cmd.arg("--no-run");
+    }
+    if !args.is_empty() {
+        cmd.arg("--").args(args);
+    }
     cmd
 }
 

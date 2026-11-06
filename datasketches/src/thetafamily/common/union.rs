@@ -113,38 +113,37 @@ where
     where
         E: Clone,
     {
-        self.compact_sketch_state_with(ordered, E::clone)
+        let Some(theta) = self.result_theta else {
+            return CompactSketchState::empty(self.table.seed_hash());
+        };
+        let entries = self.retained_entries(theta).cloned().collect();
+        self.finish_compaction(entries, theta, ordered)
     }
 
     /// Returns the union as canonical compact-sketch state that borrows the retained entries.
-    ///
-    /// Theta filtering, trimming to nominal capacity, and ordering match
-    /// [`to_compact_sketch_state`](Self::to_compact_sketch_state).
     #[cfg(feature = "tuple")]
     pub fn to_borrowed_compact_sketch_state(&self, ordered: bool) -> CompactSketchState<&E> {
-        self.compact_sketch_state_with(ordered, |entry| entry)
-    }
-
-    fn compact_sketch_state_with<'a, T: SketchEntry>(
-        &'a self,
-        ordered: bool,
-        project: impl FnMut(&'a E) -> T,
-    ) -> CompactSketchState<T> {
-        let Some(result_theta) = self.result_theta else {
+        let Some(theta) = self.result_theta else {
             return CompactSketchState::empty(self.table.seed_hash());
         };
+        let entries = self.retained_entries(theta).collect();
+        self.finish_compaction(entries, theta, ordered)
+    }
 
+    fn retained_entries(&self, theta: u64) -> impl Iterator<Item = &E> {
+        let all_retained = theta >= self.table.retention_theta();
+        self.table
+            .iter_entries()
+            .filter(move |entry| all_retained || entry.hash() < theta)
+    }
+
+    fn finish_compaction<T: SketchEntry>(
+        &self,
+        mut retained_entries: Vec<T>,
+        result_theta: u64,
+        ordered: bool,
+    ) -> CompactSketchState<T> {
         let mut theta = result_theta.min(self.table.retention_theta());
-        let mut retained_entries = if result_theta >= self.table.retention_theta() {
-            self.table.iter_entries().map(project).collect::<Vec<_>>()
-        } else {
-            self.table
-                .iter_entries()
-                .filter(|entry| entry.hash() < theta)
-                .map(project)
-                .collect::<Vec<_>>()
-        };
-
         let nominal_num = 1usize << self.table.lg_nom_size();
         if retained_entries.len() > nominal_num {
             let (_, kth, _) =
