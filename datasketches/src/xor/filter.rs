@@ -103,9 +103,10 @@ impl XorFingerprints {
     }
 }
 
-/// A collector of values or precomputed hashes for building an [`XorFilter`].
+/// An [`XorFilter`] builder for values or precomputed hashes.
 ///
-/// Retains hashes until [`build`](Self::build), which removes duplicates and consumes the builder.
+/// Inputs may repeat. Temporary memory use can grow linearly with the total input count.
+///
 /// Query values with [`XorFilter::contains`] and precomputed hashes with
 /// [`XorFilter::contains_hash`].
 #[derive(Debug)]

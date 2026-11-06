@@ -21,9 +21,8 @@
 //! with a Bloom filter at the same false-positive probability, it generally needs less space and
 //! performs exactly three fingerprint reads per query.
 //!
-//! [`XorFilterBuilder`] buffers one hash per input until [`build`](XorFilterBuilder::build)
-//! removes duplicates. Constructing the layout then needs additional space proportional to the
-//! number of distinct hashes. Use [`XorFilter::from_hashes`] for already distinct hashes.
+//! [`XorFilterBuilder`] accepts values or precomputed hashes, including duplicates.
+//! Use [`XorFilter::from_hashes`] when the hashes are already distinct.
 //!
 //! # Cross-language hashing
 //!
