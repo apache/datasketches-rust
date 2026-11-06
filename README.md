@@ -83,7 +83,7 @@ See the [API documentation](https://docs.rs/datasketches) for configuration, acc
 
 The minimum supported Rust version is 1.86.0. The crate currently supports little-endian targets only.
 
-Supported serialization formats are tested with fixtures produced by Apache DataSketches Java, C++, and Go through the [DataSketches TCK](https://github.com/apache/datasketches-tck). XOR also uses Java fixtures until TCK snapshots are available. Its standard format supports 8-, 16-, and 32-bit fingerprints; readers must support the encoded width.
+Cross-language serialization tests use Java, C++, and Go fixtures from the [DataSketches TCK](https://github.com/apache/datasketches-tck).
 
 Serialization compatibility does not imply that an ordinary Rust `Hash` implementation produces the same update bytes across languages. When sketches must represent the same inputs across implementations, use `hash::value::{raw_bytes, canonical_float, sign_extend, natural_extend}` (and the constructors within those modules) to select matching input encodings. When interoperating with an implementation that skips empty strings, skip them before updating here as well.
 

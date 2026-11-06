@@ -312,11 +312,7 @@ impl XorFilter {
         size_of::<Self>() + self.fingerprints.byte_len()
     }
 
-    /// Serializes the filter using DataSketches family `22`, version `1`.
-    ///
-    /// Supports 8-, 16-, and 32-bit fingerprints, recorded in the header's fingerprint width
-    /// field. Integers and fingerprints are little-endian. Readers must support the encoded
-    /// fingerprint width; implementations limited to 8/16 bits cannot read 32-bit images.
+    /// Serializes the filter in the DataSketches format.
     ///
     /// # Errors
     ///
@@ -360,7 +356,6 @@ impl XorFilter {
 
     /// Deserializes an owned filter from bytes.
     ///
-    /// Accepts 8-, 16-, and 32-bit images within the limits of [`serialize`](Self::serialize).
     /// Trailing bytes are ignored.
     ///
     /// # Errors

@@ -22,15 +22,9 @@
 //!
 //! # Cross-language hashing
 //!
-//! Standard serialization supports 8-, 16-, and 32-bit fingerprints using family `22`, version `1`.
-//! Interoperability requires the reader to support the encoded fingerprint width. The format
-//! stores the seed, segment layout, and fingerprints, without an item count.
-//! Construction may choose a different valid fingerprint array from another implementation;
-//! byte-for-byte equality of independently constructed filters is not guaranteed. Rust's
-//! [`Hash`](std::hash::Hash) implementations do not always encode values like other languages. Use
-//! the strategies in [`crate::hash::value`] when the input hashes must match another DataSketches
-//! implementation. A filter built through the precomputed-hash APIs remains portable only when
-//! every reader uses the same external hash function.
+//! Rust's [`Hash`](std::hash::Hash) may encode a value differently from other languages. Use
+//! [`crate::hash::value`] to match the input encoding of another DataSketches implementation.
+//! For precomputed hashes, use the same hash function when building and querying the filter.
 //!
 //! Java hashes integer scalars as 64-bit little-endian values and strings as UTF-8 bytes with
 //! xxHash64 seed `0`. Use `u64`/`i64` and [`crate::hash::value::raw_bytes`] accordingly. Java
