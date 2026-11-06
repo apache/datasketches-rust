@@ -46,10 +46,9 @@ const SPLITMIX_MUL2: u64 = 0x94d0_49bb_1331_11eb;
 /// Fingerprint representation used by an [`XorFilter`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum XorFilterType {
-    /// Uses 8-bit fingerprints and has an expected false-positive probability of about `1 / 256`.
+    /// Uses 8-bit fingerprints and has an expected false-positive probability of about `2^-8`.
     Xor8,
-    /// Uses 16-bit fingerprints and has an expected false-positive probability of about
-    /// `1 / 65_536`.
+    /// Uses 16-bit fingerprints and has an expected false-positive probability of about `2^-16`.
     Xor16,
     /// Uses 32-bit fingerprints and has an expected false-positive probability of about `2^-32`.
     Xor32,
