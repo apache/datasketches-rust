@@ -23,7 +23,6 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dev-dependencies]
-xorf = { version = "=0.13.0", default-features = false }
 datasketches = { workspace = true, features = [
   "bloom",
   "countmin",

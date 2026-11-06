@@ -72,20 +72,14 @@ impl XorFilterType {
     }
 }
 
-/// Owned fingerprint slots for importing and exporting an application-defined format.
-///
-/// Slots are ordered as three consecutive, equally sized segments.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum XorFingerprints {
-    /// 8-bit fingerprint slots.
+enum Fingerprints {
     Xor8(Box<[u8]>),
-    /// 16-bit fingerprint slots.
     Xor16(Box<[u16]>),
-    /// 32-bit fingerprint slots.
     Xor32(Box<[u32]>),
 }
 
-impl XorFingerprints {
+impl Fingerprints {
     fn len(&self) -> usize {
         match self {
             Self::Xor8(values) => values.len(),
@@ -104,8 +98,6 @@ impl XorFingerprints {
 }
 
 /// An [`XorFilter`] builder for values or precomputed hashes.
-///
-/// Inputs may repeat. Temporary memory use can grow linearly with the total input count.
 ///
 /// Query values with [`XorFilter::contains`] and precomputed hashes with
 /// [`XorFilter::contains_hash`].
@@ -151,11 +143,11 @@ impl XorFilterBuilder {
         self.hashes.extend(hashes);
     }
 
-    /// Consumes the builder and creates a filter from the distinct hashes.
+    /// Consumes the builder and creates the filter.
     ///
     /// # Errors
     ///
-    /// Returns an error if the set of distinct hashes is too large or no valid layout is found.
+    /// Returns an error if the input is too large or no valid layout is found.
     pub fn build(mut self) -> Result<XorFilter, Error> {
         self.hashes.sort_unstable();
         self.hashes.dedup();
@@ -174,7 +166,7 @@ pub struct XorFilter {
     // Cache the derived length to avoid division on every query.
     segment_length: usize,
     seed: u64,
-    fingerprints: XorFingerprints,
+    fingerprints: Fingerprints,
 }
 
 impl XorFilter {
@@ -249,21 +241,21 @@ impl XorFilter {
         drop(queue);
 
         let fingerprints = match filter_type {
-            XorFilterType::Xor8 => XorFingerprints::Xor8(assign_fingerprints(
+            XorFilterType::Xor8 => Fingerprints::Xor8(assign_fingerprints(
                 capacity,
                 segment_length,
                 &stack_hash,
                 &stack_index,
                 |hash| fingerprint(hash) as u8,
             )),
-            XorFilterType::Xor16 => XorFingerprints::Xor16(assign_fingerprints(
+            XorFilterType::Xor16 => Fingerprints::Xor16(assign_fingerprints(
                 capacity,
                 segment_length,
                 &stack_hash,
                 &stack_index,
                 |hash| fingerprint(hash) as u16,
             )),
-            XorFilterType::Xor32 => XorFingerprints::Xor32(assign_fingerprints(
+            XorFilterType::Xor32 => Fingerprints::Xor32(assign_fingerprints(
                 capacity,
                 segment_length,
                 &stack_hash,
@@ -277,57 +269,6 @@ impl XorFilter {
             seed: construction_seed,
             fingerprints,
         })
-    }
-
-    /// Imports a filter from its stored seed and fingerprint slots.
-    ///
-    /// Pass the original filter's [`seed`](Self::seed), which can differ from the initial
-    /// construction seed. Preserve the fingerprint order and query with the original input hashes.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error unless the payload has three equal segments of `1..=u32::MAX` slots each.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use datasketches::xor::XorFilter;
-    /// use datasketches::xor::XorFilterType;
-    ///
-    /// let filter = XorFilter::from_hashes(&[10, 20, 30], XorFilterType::Xor8, 0)?;
-    /// let imported = XorFilter::from_fingerprints(filter.seed(), filter.fingerprints().clone())?;
-    /// assert!(imported.contains_hash(20));
-    /// # Ok::<(), datasketches::error::Error>(())
-    /// ```
-    pub fn from_fingerprints(seed: u64, fingerprints: XorFingerprints) -> Result<Self, Error> {
-        let slots = fingerprints.len();
-        if slots == 0 {
-            return Err(Error::invalid_argument(
-                "xor filter fingerprint array must not be empty",
-            ));
-        }
-        if slots % 3 != 0 {
-            return Err(Error::invalid_argument(format!(
-                "xor filter fingerprint slot count must be a multiple of 3, got {slots}"
-            )));
-        }
-        let segment_length = slots / 3;
-        if segment_length > u32::MAX as usize {
-            return Err(Error::invalid_argument(format!(
-                "xor filter segment length must be at most {}, got {segment_length}",
-                u32::MAX
-            )));
-        }
-        Ok(Self {
-            segment_length,
-            seed,
-            fingerprints,
-        })
-    }
-
-    /// Returns the fingerprint slots for application-defined serialization.
-    pub fn fingerprints(&self) -> &XorFingerprints {
-        &self.fingerprints
     }
 
     /// Returns `true` if an item is possibly in the input set.
@@ -349,30 +290,24 @@ impl XorFilter {
         let [h0, h1, h2] = indexes(mixed, self.segment_length);
 
         match &self.fingerprints {
-            XorFingerprints::Xor8(fingerprints) => {
+            Fingerprints::Xor8(fingerprints) => {
                 fingerprint(mixed) as u8 == fingerprints[h0] ^ fingerprints[h1] ^ fingerprints[h2]
             }
-            XorFingerprints::Xor16(fingerprints) => {
+            Fingerprints::Xor16(fingerprints) => {
                 fingerprint(mixed) as u16 == fingerprints[h0] ^ fingerprints[h1] ^ fingerprints[h2]
             }
-            XorFingerprints::Xor32(fingerprints) => {
+            Fingerprints::Xor32(fingerprints) => {
                 fingerprint(mixed) as u32 == fingerprints[h0] ^ fingerprints[h1] ^ fingerprints[h2]
             }
         }
     }
 
-    /// Returns the fingerprint representation.
-    pub fn filter_type(&self) -> XorFilterType {
+    fn filter_type(&self) -> XorFilterType {
         match &self.fingerprints {
-            XorFingerprints::Xor8(_) => XorFilterType::Xor8,
-            XorFingerprints::Xor16(_) => XorFilterType::Xor16,
-            XorFingerprints::Xor32(_) => XorFilterType::Xor32,
+            Fingerprints::Xor8(_) => XorFilterType::Xor8,
+            Fingerprints::Xor16(_) => XorFilterType::Xor16,
+            Fingerprints::Xor32(_) => XorFilterType::Xor32,
         }
-    }
-
-    /// Returns the seed paired with these fingerprints for queries and imports.
-    pub fn seed(&self) -> u64 {
-        self.seed
     }
 
     /// Returns the estimated in-memory size of the filter in bytes.
@@ -380,17 +315,13 @@ impl XorFilter {
         size_of::<Self>() + self.fingerprints.byte_len()
     }
 
-    /// Serializes the filter using DataSketches family `22`, version `1`.
-    ///
-    /// Supports 8-, 16-, and 32-bit fingerprints, recorded in the header's fingerprint width
-    /// field. Integers and fingerprints are little-endian. Readers must support the encoded
-    /// fingerprint width; implementations limited to 8/16 bits cannot read 32-bit images.
+    /// Serializes the filter in the DataSketches format.
     ///
     /// # Errors
     ///
     /// Returns [`InvalidArgument`](crate::error::ErrorKind::InvalidArgument) if the fingerprint
-    /// slot count exceeds `i32::MAX` or the serialized size overflows `usize`. Construction and
-    /// imports allow larger capacities than the standard format.
+    /// slot count exceeds `i32::MAX` or the serialized size overflows `usize`. Construction allows
+    /// larger capacities than the standard format.
     pub fn serialize(&self) -> Result<Vec<u8>, Error> {
         if self.fingerprints.len() > i32::MAX as usize {
             return Err(Error::invalid_argument(
@@ -410,13 +341,13 @@ impl XorFilter {
         bytes.write_u64_le(self.seed);
 
         match &self.fingerprints {
-            XorFingerprints::Xor8(fingerprints) => bytes.write(fingerprints),
-            XorFingerprints::Xor16(fingerprints) => {
+            Fingerprints::Xor8(fingerprints) => bytes.write(fingerprints),
+            Fingerprints::Xor16(fingerprints) => {
                 for &fingerprint in fingerprints.iter() {
                     bytes.write_u16_le(fingerprint);
                 }
             }
-            XorFingerprints::Xor32(fingerprints) => {
+            Fingerprints::Xor32(fingerprints) => {
                 for &fingerprint in fingerprints.iter() {
                     bytes.write_u32_le(fingerprint);
                 }
@@ -428,7 +359,6 @@ impl XorFilter {
 
     /// Deserializes an owned filter from bytes.
     ///
-    /// Accepts 8-, 16-, and 32-bit images within the limits of [`serialize`](Self::serialize).
     /// Trailing bytes are ignored.
     ///
     /// # Errors
@@ -501,13 +431,7 @@ impl XorFilter {
         }
 
         let fingerprints = match filter_type {
-            XorFilterType::Xor8 => {
-                let mut values = vec![0_u8; capacity].into_boxed_slice();
-                cursor
-                    .read_exact(&mut values)
-                    .map_err(insufficient_data("fingerprints"))?;
-                XorFingerprints::Xor8(values)
-            }
+            XorFilterType::Xor8 => Fingerprints::Xor8(cursor.remaining()[..capacity].into()),
             XorFilterType::Xor16 => {
                 let mut values = Vec::with_capacity(capacity);
                 for _ in 0..capacity {
@@ -517,7 +441,7 @@ impl XorFilter {
                             .map_err(insufficient_data("fingerprints"))?,
                     );
                 }
-                XorFingerprints::Xor16(values.into_boxed_slice())
+                Fingerprints::Xor16(values.into_boxed_slice())
             }
             XorFilterType::Xor32 => {
                 let mut values = Vec::with_capacity(capacity);
@@ -528,7 +452,7 @@ impl XorFilter {
                             .map_err(insufficient_data("fingerprints"))?,
                     );
                 }
-                XorFingerprints::Xor32(values.into_boxed_slice())
+                Fingerprints::Xor32(values.into_boxed_slice())
             }
         };
 

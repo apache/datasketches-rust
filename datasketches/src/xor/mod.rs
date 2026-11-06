@@ -17,34 +17,19 @@
 
 //! XOR filters for immutable probabilistic set membership.
 //!
-//! An XOR filter is built from the complete input set and cannot be updated afterward. Compared
-//! with a Bloom filter at the same false-positive probability, it generally needs less space and
-//! performs exactly three fingerprint reads per query.
-//!
-//! [`XorFilterBuilder`] accepts values or precomputed hashes, including duplicates.
-//! Use [`XorFilter::from_hashes`] when the hashes are already distinct.
+//! Use [`XorFilterBuilder`] to build a filter from values or precomputed hashes. A negative
+//! query result rules out membership. A positive result may be a false positive.
 //!
 //! # Cross-language hashing
 //!
-//! Standard serialization supports 8-, 16-, and 32-bit fingerprints using family `22`, version `1`.
-//! Interoperability requires the reader to support the encoded fingerprint width. The format
-//! stores the seed, segment layout, and fingerprints, without an item count.
-//! Construction may choose a different valid fingerprint array from another implementation;
-//! byte-for-byte equality of independently constructed filters is not guaranteed. Rust's
-//! [`Hash`](std::hash::Hash) implementations do not always encode values like other languages. Use
-//! the strategies in [`crate::hash::value`] when the input hashes must match another DataSketches
-//! implementation. A filter built through the precomputed-hash APIs remains portable only when
-//! every reader uses the same external hash function.
+//! Rust's [`Hash`](std::hash::Hash) may encode a value differently from other languages. Use
+//! [`crate::hash::value`] to match the input encoding of another DataSketches implementation.
+//! For precomputed hashes, use the same hash function when building and querying the filter.
 //!
 //! Java hashes integer scalars as 64-bit little-endian values and strings as UTF-8 bytes with
 //! xxHash64 seed `0`. Use `u64`/`i64` and [`crate::hash::value::raw_bytes`] accordingly. Java
 //! skips empty strings; callers must do so explicitly here. External hashes (for example XXH3)
 //! must use the precomputed-hash APIs throughout; Java's typed query API will not match them.
-//!
-//! # Application-defined storage
-//!
-//! [`XorFilter::from_fingerprints`] restores a filter from its stored [`seed`](XorFilter::seed)
-//! and [`fingerprints`](XorFilter::fingerprints).
 //!
 //! # Examples
 //!
@@ -69,4 +54,3 @@ mod filter;
 pub use self::filter::XorFilter;
 pub use self::filter::XorFilterBuilder;
 pub use self::filter::XorFilterType;
-pub use self::filter::XorFingerprints;
