@@ -21,7 +21,6 @@ use benchmarks::Bencher;
 use benchmarks::Runner;
 use datasketches::xor::XorFilter;
 use datasketches::xor::XorFilterType;
-use datasketches::xor::XorFingerprints;
 use xorf::Filter;
 
 use crate::xor::hashes_with_offset;
@@ -29,8 +28,7 @@ use crate::xor::hashes_with_offset;
 const SHARDS: usize = 32;
 const QUERIES: usize = 256;
 
-// Storage formats can choose a fingerprint width at runtime. Give both peers
-// this dispatch, and import identical payloads.
+// Both implementations dispatch on fingerprint width at runtime.
 enum Reference {
     Xor8(xorf::Xor8),
     Xor16(xorf::Xor16),
@@ -53,15 +51,6 @@ impl Reference {
             Self::Xor16(filter) => filter.contains(&key),
             Self::Xor32(filter) => filter.contains(&key),
         }
-    }
-
-    fn into_datasketches(self) -> XorFilter {
-        let (seed, fingerprints) = match self {
-            Self::Xor8(f) => (f.seed, XorFingerprints::Xor8(f.fingerprints)),
-            Self::Xor16(f) => (f.seed, XorFingerprints::Xor16(f.fingerprints)),
-            Self::Xor32(f) => (f.seed, XorFingerprints::Xor32(f.fingerprints)),
-        };
-        XorFilter::from_fingerprints(seed, fingerprints).unwrap()
     }
 }
 
@@ -116,7 +105,7 @@ pub fn register(runner: &mut Runner) {
                                 b,
                                 cardinality,
                                 present,
-                                |keys| Reference::new(keys, kind).into_datasketches(),
+                                |keys| XorFilter::from_hashes(keys, kind, 1).unwrap(),
                                 XorFilter::contains_hash,
                             )
                         }),

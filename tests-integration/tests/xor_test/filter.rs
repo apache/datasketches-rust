@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use datasketches::error::ErrorKind;
 use datasketches::xor::XorFilter;
 use datasketches::xor::XorFilterBuilder;
 use datasketches::xor::XorFilterType;
@@ -106,4 +107,50 @@ fn false_positive_rates_follow_fingerprint_width() {
         "32-bit false-positive count was {false_positives32}"
     );
     assert!(false_positives16 < false_positives8);
+}
+
+#[test]
+fn distinct_construction_is_bounded_and_does_not_deduplicate() {
+    for kind in [
+        XorFilterType::Xor8,
+        XorFilterType::Xor16,
+        XorFilterType::Xor32,
+    ] {
+        let error = XorFilter::from_hashes(&[1, 2, 1], kind, 0).unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::InvalidArgument);
+        assert!(error.message().contains("duplicate hashes"));
+        for keys in [vec![], vec![0], vec![u64::MAX], vec![0, u64::MAX]] {
+            let f = XorFilter::from_hashes(&keys, kind, 0).unwrap();
+            for key in keys {
+                assert!(f.contains_hash(key));
+            }
+        }
+    }
+}
+
+#[test]
+fn construction_recovers_after_an_unpeelable_first_attempt() {
+    // This distinct set needs two attempts with base seed 1. All fingerprint widths
+    // share the peeling graph, so each must reset the failed attempt's accumulators.
+    let keys: Vec<_> = (917_504..917_504 + 16_384u64)
+        .map(|i| {
+            let mut z = i.wrapping_add(0x9e3779b97f4a7c15);
+            z = (z ^ (z >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
+            z = (z ^ (z >> 27)).wrapping_mul(0x94d049bb133111eb);
+            z ^ (z >> 31)
+        })
+        .collect();
+    for kind in [
+        XorFilterType::Xor8,
+        XorFilterType::Xor16,
+        XorFilterType::Xor32,
+    ] {
+        let filter = XorFilter::from_hashes(&keys, kind, 1).unwrap();
+        for &key in &keys {
+            assert!(filter.contains_hash(key));
+        }
+        let mut reversed = keys.clone();
+        reversed.reverse();
+        assert_eq!(filter, XorFilter::from_hashes(&reversed, kind, 1).unwrap());
+    }
 }

@@ -16,4 +16,3 @@
 // under the License.
 
 mod filter;
-mod fingerprints;

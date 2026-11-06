@@ -19,12 +19,11 @@
 //!
 //! An XOR filter is built from the complete input set and cannot be updated afterward. Compared
 //! with a Bloom filter at the same false-positive probability, it generally needs less space and
-//! performs exactly three fingerprint reads per query. Construction needs temporary space linear
-//! in the number of distinct hashes.
+//! performs exactly three fingerprint reads per query.
 //!
-//! [`XorFilterBuilder`] collects values or precomputed hashes and removes duplicates when built.
-//! Use [`XorFilter::from_hashes`] when the input hashes are already distinct, or
-//! [`XorFilter::from_fingerprints`] to import an existing filter.
+//! [`XorFilterBuilder`] buffers one hash per input until [`build`](XorFilterBuilder::build)
+//! removes duplicates. Constructing the layout then needs additional space proportional to the
+//! number of distinct hashes. Use [`XorFilter::from_hashes`] for already distinct hashes.
 //!
 //! # Cross-language hashing
 //!
@@ -42,11 +41,6 @@
 //! xxHash64 seed `0`. Use `u64`/`i64` and [`crate::hash::value::raw_bytes`] accordingly. Java
 //! skips empty strings; callers must do so explicitly here. External hashes (for example XXH3)
 //! must use the precomputed-hash APIs throughout; Java's typed query API will not match them.
-//!
-//! # Application-defined storage
-//!
-//! [`XorFilter::from_fingerprints`] restores a filter from its stored [`seed`](XorFilter::seed)
-//! and [`fingerprints`](XorFilter::fingerprints).
 //!
 //! # Examples
 //!
@@ -71,4 +65,3 @@ mod filter;
 pub use self::filter::XorFilter;
 pub use self::filter::XorFilterBuilder;
 pub use self::filter::XorFilterType;
-pub use self::filter::XorFingerprints;

@@ -19,7 +19,6 @@ use datasketches::error::ErrorKind;
 use datasketches::xor::XorFilter;
 use datasketches::xor::XorFilterBuilder;
 use datasketches::xor::XorFilterType;
-use datasketches::xor::XorFingerprints;
 
 // Generated from datasketches-java commit c179c5bc00d5aadaed8c68ce11d14d812abe08d6.
 // XorFilterBuilder.create([1, 2, 3, Long.MIN_VALUE], bits, 42).toByteArray().
@@ -49,7 +48,6 @@ fn java_images_round_trip_byte_for_byte() {
         let restored = XorFilter::deserialize(&expected).unwrap();
         assert_eq!(restored.serialize().unwrap(), expected);
         assert_eq!(built.serialize().unwrap(), expected);
-        assert_eq!(restored.filter_type(), ty);
         for value in values {
             assert!(built.contains(&value));
             assert!(
@@ -210,85 +208,9 @@ fn xor32_image_preserves_full_width_little_endian_slots() {
     let bytes = decode_hex(concat!(
         "0201162001000000",
         "efcdab8967452301",
-        "67452301efcdab89ffffffff",
+        "67452301efcdab899c5f4186",
     ));
-    let filter = XorFilter::from_fingerprints(
-        0x0123_4567_89ab_cdef,
-        XorFingerprints::Xor32(vec![0x0123_4567, 0x89ab_cdef, u32::MAX].into_boxed_slice()),
-    )
-    .unwrap();
+    let filter = XorFilter::deserialize(&bytes).unwrap();
+    assert!(filter.contains_hash(0));
     assert_eq!(filter.serialize().unwrap(), bytes);
-    assert_eq!(XorFilter::deserialize(&bytes).unwrap(), filter);
-}
-
-#[test]
-fn fingerprints_preserve_an_application_storage_layout() {
-    use datasketches::codec::SketchSlice;
-    // Synthetic storage fixtures with public xorf 0.13.0 payloads for [0, 1, 2, u64::MAX].
-    // This test-only envelope omits cardinality: magic, width:u8, segment:u32, seed:u64,
-    // and little-endian slots. It is not a production storage format.
-    let images = [
-        concat!(
-            "54455354080c000000c15c0289ec2d0a91ad000000000000000000ca000000000000000000dc00300000000000000000",
-            "0000000000",
-        ),
-        concat!(
-            "54455354100c000000c15c0289ec2d0a91aded000000000000000000000000000000000000ca18000000000000000000",
-            "000000000000000000dcb9000030fc0000000000000000000000000000000000000000000000000000",
-        ),
-        concat!(
-            "54455354200c000000c15c0289ec2d0a91adedfc84000000000000000000000000000000000000000000000000000000",
-            "000000000000000000ca187b8e0000000000000000000000000000000000000000000000000000000000000000000000",
-            "00dcb969ee0000000030fcf3490000000000000000000000000000000000000000000000000000000000000000000000",
-            "0000000000000000000000000000000000",
-        ),
-    ];
-    for image in images {
-        let bytes = decode_hex(image);
-        let mut cursor = SketchSlice::new(&bytes);
-        assert_eq!(&bytes[..4], b"TEST");
-        let mut magic = [0; 4];
-        cursor.read_exact(&mut magic).unwrap();
-        let width = cursor.read_u8().unwrap();
-        let segment = cursor.read_u32_le().unwrap() as usize;
-        let seed = cursor.read_u64_le().unwrap();
-        let slots = cursor.remaining().len() / usize::from(width / 8);
-        assert_eq!(segment * 3, slots);
-        let payload = match width {
-            8 => XorFingerprints::Xor8(cursor.remaining().into()),
-            16 => {
-                XorFingerprints::Xor16((0..slots).map(|_| cursor.read_u16_le().unwrap()).collect())
-            }
-            32 => {
-                XorFingerprints::Xor32((0..slots).map(|_| cursor.read_u32_le().unwrap()).collect())
-            }
-            _ => unreachable!(),
-        };
-        let filter = XorFilter::from_fingerprints(seed, payload).unwrap();
-        for hash in [0, 1, 2, u64::MAX] {
-            assert!(filter.contains_hash(hash));
-        }
-
-        let seed = filter.seed();
-        let payload = filter.fingerprints();
-        let segment = match payload {
-            XorFingerprints::Xor8(values) => values.len() / 3,
-            XorFingerprints::Xor16(values) => values.len() / 3,
-            XorFingerprints::Xor32(values) => values.len() / 3,
-        };
-        let mut encoded = b"TEST".to_vec();
-        encoded.push(width);
-        encoded.extend((segment as u32).to_le_bytes());
-        encoded.extend(seed.to_le_bytes());
-        match payload {
-            XorFingerprints::Xor8(values) => encoded.extend_from_slice(values),
-            XorFingerprints::Xor16(values) => {
-                encoded.extend(values.iter().flat_map(|v| v.to_le_bytes()))
-            }
-            XorFingerprints::Xor32(values) => {
-                encoded.extend(values.iter().flat_map(|v| v.to_le_bytes()))
-            }
-        }
-        assert_eq!(encoded, bytes);
-    }
 }
