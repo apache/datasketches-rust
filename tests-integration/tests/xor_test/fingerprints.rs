@@ -22,7 +22,7 @@ use datasketches::xor::XorFingerprints;
 use xorf::Filter;
 
 #[test]
-fn raw_parts_interoperate_with_xorf_in_both_directions() {
+fn fingerprints_interoperate_with_xorf_in_both_directions() {
     let keys: Vec<_> = (0..16_384u64)
         .map(|n| n.wrapping_mul(0x9e3779b97f4a7c15))
         .collect();
@@ -31,63 +31,47 @@ fn raw_parts_interoperate_with_xorf_in_both_directions() {
         XorFilterType::Xor16,
         XorFilterType::Xor32,
     ] {
-        let (seed, segment, payload) = match kind {
+        let (seed, payload) = match kind {
             XorFilterType::Xor8 => {
                 let f = xorf::Xor8::from(&keys);
-                (
-                    f.seed,
-                    f.block_length,
-                    XorFingerprints::Xor8(f.fingerprints),
-                )
+                (f.seed, XorFingerprints::Xor8(f.fingerprints))
             }
             XorFilterType::Xor16 => {
                 let f = xorf::Xor16::from(&keys);
-                (
-                    f.seed,
-                    f.block_length,
-                    XorFingerprints::Xor16(f.fingerprints),
-                )
+                (f.seed, XorFingerprints::Xor16(f.fingerprints))
             }
             XorFilterType::Xor32 => {
                 let f = xorf::Xor32::from(&keys);
-                (
-                    f.seed,
-                    f.block_length,
-                    XorFingerprints::Xor32(f.fingerprints),
-                )
+                (f.seed, XorFingerprints::Xor32(f.fingerprints))
             }
         };
-        let imported = XorFilter::from_parts(seed, segment, payload, None).unwrap();
-        assert_eq!(imported.num_items(), None);
-        assert_eq!(imported.bits_per_item(), None);
-        assert_eq!(imported.is_empty(), None);
+        let imported = XorFilter::from_fingerprints(seed, payload).unwrap();
         assert_eq!(
-            imported.serialize().unwrap_err().kind(),
-            ErrorKind::InvalidArgument
+            XorFilter::deserialize(&imported.serialize().unwrap()).unwrap(),
+            imported
         );
         for &key in &keys {
             assert!(imported.contains_hash(key));
         }
 
         let built = XorFilter::from_hashes(&keys, kind, 0).unwrap();
-        assert_eq!(built.num_items(), Some(keys.len()));
-        let (seed, block_length) = (built.seed(), built.segment_length());
+        let seed = built.seed();
         let payload = built.fingerprints().clone();
         // Compare all answers, including false positives, after exporting the fingerprints.
         let reference: Box<dyn Filter<u64>> = match payload {
             XorFingerprints::Xor8(fingerprints) => Box::new(xorf::Xor8 {
                 seed,
-                block_length,
+                block_length: fingerprints.len() / 3,
                 fingerprints,
             }),
             XorFingerprints::Xor16(fingerprints) => Box::new(xorf::Xor16 {
                 seed,
-                block_length,
+                block_length: fingerprints.len() / 3,
                 fingerprints,
             }),
             XorFingerprints::Xor32(fingerprints) => Box::new(xorf::Xor32 {
                 seed,
-                block_length,
+                block_length: fingerprints.len() / 3,
                 fingerprints,
             }),
         };
@@ -98,25 +82,12 @@ fn raw_parts_interoperate_with_xorf_in_both_directions() {
 }
 
 #[test]
-fn raw_parts_reject_invalid_layouts_and_counts() {
-    for (segment, length, count) in [
-        (0, 0, None),
-        (1, 2, None),
-        (1, 4, None),
-        (usize::MAX, 3, None),
-        (1, 3, Some(4)),
-    ] {
-        assert_eq!(
-            XorFilter::from_parts(
-                0,
-                segment,
-                XorFingerprints::Xor8(vec![0; length].into()),
-                count
-            )
-            .unwrap_err()
-            .kind(),
-            ErrorKind::InvalidArgument
-        );
+fn fingerprints_reject_invalid_layouts() {
+    for (length, reason) in [(0, "empty"), (2, "multiple of 3"), (4, "multiple of 3")] {
+        let error = XorFilter::from_fingerprints(0, XorFingerprints::Xor8(vec![0; length].into()))
+            .unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::InvalidArgument);
+        assert!(error.message().contains(reason), "{error}");
     }
 }
 
@@ -132,7 +103,6 @@ fn distinct_construction_is_bounded_and_does_not_deduplicate() {
         assert!(error.message().contains("duplicate hashes"));
         for keys in [vec![], vec![0], vec![u64::MAX], vec![0, u64::MAX]] {
             let f = XorFilter::from_hashes(&keys, kind, 0).unwrap();
-            assert_eq!(f.num_items(), Some(keys.len()));
             for key in keys {
                 assert!(f.contains_hash(key));
             }
@@ -174,7 +144,7 @@ fn construction_recovers_after_an_unpeelable_first_attempt() {
 }
 
 #[test]
-fn unknown_count_does_not_infer_emptiness_from_zero_fingerprints() {
+fn empty_input_uses_fingerprint_queries() {
     for kind in [
         XorFilterType::Xor8,
         XorFilterType::Xor16,
@@ -182,23 +152,12 @@ fn unknown_count_does_not_infer_emptiness_from_zero_fingerprints() {
     ] {
         let empty = XorFilter::from_hashes(&[], kind, 0).unwrap();
         let zero_hash = empty.seed().wrapping_neg();
-        assert_eq!(empty.is_empty(), Some(true));
-        assert!(!empty.contains_hash(zero_hash));
-        let unknown = XorFilter::from_parts(
-            empty.seed(),
-            empty.segment_length(),
-            empty.fingerprints().clone(),
-            None,
-        )
-        .unwrap();
-        assert_eq!(unknown.is_empty(), None);
-        assert_eq!(unknown.num_items(), None);
-        assert_eq!(unknown.bits_per_item(), None);
-        // An omitted count must preserve the raw fingerprint comparison, even for all-zero slots.
-        assert!(unknown.contains_hash(zero_hash));
-        assert_eq!(
-            unknown.serialize().unwrap_err().kind(),
-            ErrorKind::InvalidArgument
-        );
+        // This query produces a false positive even though the input set is empty.
+        assert!(empty.contains_hash(zero_hash));
+        let imported =
+            XorFilter::from_fingerprints(empty.seed(), empty.fingerprints().clone()).unwrap();
+        for hash in (0..1_000).chain([zero_hash]) {
+            assert_eq!(imported.contains_hash(hash), empty.contains_hash(hash));
+        }
     }
 }

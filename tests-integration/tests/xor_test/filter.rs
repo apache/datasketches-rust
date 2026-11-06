@@ -16,11 +16,16 @@
 // under the License.
 
 use datasketches::xor::XorFilter;
+use datasketches::xor::XorFilterBuilder;
 use datasketches::xor::XorFilterType;
 
 #[test]
 fn values_have_no_false_negatives() {
-    let filter = XorFilter::from_values(0..10_000_u64, XorFilterType::Xor8, 8123).unwrap();
+    let mut builder = XorFilterBuilder::new(XorFilterType::Xor8, 8123);
+    for value in 0..10_000_u64 {
+        builder.update(&value);
+    }
+    let filter = builder.build().unwrap();
 
     for value in 0..10_000_u64 {
         assert!(filter.contains(&value), "false negative for {value}");
@@ -46,47 +51,26 @@ fn precomputed_hashes_have_no_false_negatives() {
 }
 
 #[test]
-fn borrowed_values_can_be_reused() {
-    let values = vec!["datasketches".to_string(), "xor filter".to_string()];
-    let first = XorFilter::from_values(&values, XorFilterType::Xor16, 42).unwrap();
-    let second = XorFilter::from_values(&values, XorFilterType::Xor16, 42).unwrap();
-    assert_eq!(first, second);
-    for value in &values {
-        assert!(first.contains(value));
+fn builder_deduplicates_values_and_hashes() {
+    for ty in [
+        XorFilterType::Xor8,
+        XorFilterType::Xor16,
+        XorFilterType::Xor32,
+    ] {
+        let mut values = XorFilterBuilder::new(ty, 0);
+        let mut hashes = XorFilterBuilder::new(ty, 0);
+        values.update(&7_u64);
+        values.update_values([11_u64, 7, 11]);
+        hashes.update_hash(7);
+        hashes.update_hashes([11, 7, 11]);
+        let filter = values.build().unwrap();
+        assert!(filter.contains(&7_u64));
+        assert!(filter.contains(&11_u64));
+        assert_eq!(
+            hashes.build().unwrap(),
+            XorFilter::from_hashes(&[7, 11], ty, 0).unwrap()
+        );
     }
-}
-
-#[test]
-fn duplicates_are_removed_before_construction() {
-    let filter = XorFilter::from_values([7_u64, 7, 11, 11, 11], XorFilterType::Xor8, 0).unwrap();
-    assert_eq!(filter.num_items(), Some(2));
-    assert!(filter.contains(&7_u64));
-    assert!(filter.contains(&11_u64));
-}
-
-#[test]
-fn metadata_describes_the_compact_payload() {
-    let hashes: Vec<_> = (0..10_000_u64).collect();
-    let filter = XorFilter::from_hashes(&hashes, XorFilterType::Xor8, 0).unwrap();
-
-    assert_eq!(filter.is_empty(), Some(false));
-    assert_eq!(filter.num_items(), Some(10_000));
-    assert_eq!(filter.filter_type(), XorFilterType::Xor8);
-    assert_eq!(filter.bits_per_fingerprint(), 8);
-    assert_eq!(filter.num_hashes(), 3);
-    assert_eq!(filter.capacity() % 3, 0);
-    assert!((9.5..10.5).contains(&filter.bits_per_item().unwrap()));
-    assert!(filter.estimated_size() >= filter.capacity());
-}
-
-#[test]
-fn empty_filter_is_well_formed() {
-    let filter = XorFilter::from_hashes(&[], XorFilterType::Xor16, 0).unwrap();
-
-    assert_eq!(filter.is_empty(), Some(true));
-    assert_eq!(filter.num_items(), Some(0));
-    assert_eq!(filter.capacity(), 30);
-    assert_eq!(filter.bits_per_item().unwrap(), 0.0);
 }
 
 #[test]

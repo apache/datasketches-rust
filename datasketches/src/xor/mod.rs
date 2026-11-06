@@ -19,19 +19,16 @@
 //!
 //! An XOR filter is built from the complete input set and cannot be updated afterward. Compared
 //! with a Bloom filter at the same false-positive probability, it generally needs less space and
-//! performs exactly three fingerprint reads per query. Construction needs temporary space linear
-//! in the number of distinct hashes.
+//! performs exactly three fingerprint reads per query.
 //!
-//! [`XorFilter::from_values`] hashes ordinary Rust values with xxHash64. Call
-//! [`XorFilter::from_hashes`] with distinct hashes
-//! when hashes have already been computed and must not be hashed again.
+//! [`XorFilterBuilder`] accepts values or precomputed hashes, including duplicates.
+//! Use [`XorFilter::from_hashes`] when the hashes are already distinct.
 //!
 //! # Cross-language hashing
 //!
 //! Standard serialization supports 8-, 16-, and 32-bit fingerprints using family `22`, version `1`.
-//! Interoperability requires the reader to support the encoded fingerprint width. The 8- and
-//! 16-bit images match Java's format; 32-bit images extend the same layout with little-endian
-//! `u32` slots and cannot be read by implementations limited to 8/16 bits.
+//! Interoperability requires the reader to support the encoded fingerprint width. The format
+//! stores the seed, segment layout, and fingerprints, without an item count.
 //! Construction may choose a different valid fingerprint array from another implementation;
 //! byte-for-byte equality of independently constructed filters is not guaranteed. Rust's
 //! [`Hash`](std::hash::Hash) implementations do not always encode values like other languages. Use
@@ -46,21 +43,20 @@
 //!
 //! # Application-defined storage
 //!
-//! [`XorFilter::from_parts`] imports a construction seed, segment length, and typed fingerprint
-//! slots without adding metadata to an existing disk format. Accessors expose these fields for
-//! serialization. Imports may omit the item count. Filters with a
-//! known zero item count always reject queries; imported parts with an unknown count retain the
-//! ordinary fingerprint comparison, including possible false positives.
+//! [`XorFilter::from_fingerprints`] restores a filter from its stored [`seed`](XorFilter::seed)
+//! and [`fingerprints`](XorFilter::fingerprints).
 //!
 //! # Examples
 //!
 //! ```
-//! use datasketches::xor::XorFilter;
+//! use datasketches::xor::XorFilterBuilder;
 //! use datasketches::xor::XorFilterType;
 //!
-//! let filter = XorFilter::from_values(["apple", "banana"], XorFilterType::Xor8, 0).unwrap();
+//! let mut builder = XorFilterBuilder::new(XorFilterType::Xor8, 0);
+//! builder.update_values(["apple", "banana"]);
+//! let filter = builder.build().unwrap();
 //!
-//! assert!(filter.contains(&"apple"));
+//! assert!(filter.contains("apple"));
 //! ```
 //!
 //! # References
@@ -71,5 +67,6 @@
 mod filter;
 
 pub use self::filter::XorFilter;
+pub use self::filter::XorFilterBuilder;
 pub use self::filter::XorFilterType;
 pub use self::filter::XorFingerprints;
