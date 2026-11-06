@@ -178,8 +178,11 @@ impl XorFilter {
     ///
     /// # Errors
     ///
-    /// Returns [`InvalidArgument`](crate::error::ErrorKind::InvalidArgument) for invalid or
-    /// oversized input, or if no valid layout is found. In the latter case, try another `seed`.
+    /// Returns [`InvalidArgument`](crate::error::ErrorKind::InvalidArgument) in these cases:
+    ///
+    /// - The input contains duplicate hashes.
+    /// - The input is too large to build a filter.
+    /// - Construction cannot find a valid layout. For distinct hashes, try another `seed`.
     pub fn from_hashes(keys: &[u64], filter_type: XorFilterType, seed: u64) -> Result<Self, Error> {
         let num_items = keys.len();
         let capacity = compute_capacity(num_items)?;
