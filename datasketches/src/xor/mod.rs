@@ -19,12 +19,11 @@
 //!
 //! An XOR filter is built from the complete input set and cannot be updated afterward. Compared
 //! with a Bloom filter at the same false-positive probability, it generally needs less space and
-//! performs exactly three fingerprint reads per query. Construction needs temporary space linear
-//! in the number of distinct hashes.
+//! performs exactly three fingerprint reads per query.
 //!
-//! [`XorFilterBuilder`] collects values or precomputed hashes and removes duplicates when built.
-//! Use [`XorFilter::from_hashes`] when the input hashes are already distinct, or
-//! [`XorFilter::from_fingerprints`] to import an existing filter.
+//! [`XorFilterBuilder`] buffers one hash per input until [`build`](XorFilterBuilder::build)
+//! removes duplicates. Constructing the layout then needs additional space proportional to the
+//! number of distinct hashes. Use [`XorFilter::from_hashes`] for already distinct hashes.
 //!
 //! # Cross-language hashing
 //!
