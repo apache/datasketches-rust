@@ -21,6 +21,7 @@ use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::theta::CompactThetaSketch;
 use crate::theta::ThetaSketchView;
 use crate::theta::hash_table::ThetaEntry;
+use crate::theta::serialization;
 use crate::thetacommon::constants::DEFAULT_LG_K;
 use crate::thetacommon::union::UnionMergePolicy;
 use crate::thetacommon::union::UnionState;
@@ -57,6 +58,15 @@ impl ThetaUnion {
             .to_compact_sketch_state(ordered)
             .map_retained_entries(|entry| entry.hash());
         CompactThetaSketch::from_compact_state(compact_state)
+    }
+
+    /// Serializes this union result into the uncompressed compact Theta format.
+    ///
+    /// When `ordered` is true, retained hashes are sorted. Otherwise they may be unordered;
+    /// empty results and exact singletons always use their canonical encoding.
+    pub fn serialize(&self, ordered: bool) -> Vec<u8> {
+        let state = self.state.to_compact_sketch_state(ordered);
+        serialization::serialize_uncompressed(&state, ThetaEntry::hash)
     }
 
     /// Resets the union to its empty state.
