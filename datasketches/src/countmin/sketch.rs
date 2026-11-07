@@ -40,28 +40,6 @@ use crate::hash::compute_seed_hash;
 
 const MAX_TABLE_ENTRIES: usize = 1 << 30;
 
-// V2 specifies little-endian integer inputs. Keep this policy local to Count-Min so other
-// sketches and the V1 path retain their existing Hash encodings.
-struct V2Hasher(XxHash64);
-
-impl Hasher for V2Hasher {
-    fn finish(&self) -> u64 {
-        self.0.finish64()
-    }
-
-    fn write(&mut self, bytes: &[u8]) {
-        self.0.write(bytes);
-    }
-
-    fn write_i64(&mut self, value: i64) {
-        self.write(&value.to_le_bytes());
-    }
-
-    fn write_u64(&mut self, value: u64) {
-        self.write(&value.to_le_bytes());
-    }
-}
-
 /// CountMin sketch for estimating item frequencies.
 ///
 /// The sketch provides upper and lower bounds on estimated item frequencies
@@ -74,11 +52,12 @@ impl Hasher for V2Hasher {
 ///   [`crate::hash::value::natural_extend`].
 /// * Strings use UTF-8 and byte arrays use their contents without prefixes or terminators. Use
 ///   [`crate::hash::value::raw_bytes`] wrappers.
-/// * Callers must skip empty string/byte updates and return zero for empty queries.
 ///
-/// Generic methods retain the supplied [`Hash`] encoding, including for empty inputs. Bare
-/// strings, slices, and arbitrary custom `Hash` implementations are not automatically portable.
-/// Use the same encoding for updates and queries; version 1 data must keep its original encoding.
+/// Version 2 ignores empty encodings: updates have no effect, and estimates and bounds are zero.
+/// This includes empty `raw_bytes` wrappers and any [`Hash`] implementation that writes no bytes.
+/// Bare strings, slices, and arbitrary custom `Hash` implementations are not automatically
+/// portable. Use the same encoding for updates and queries; version 1 data must keep its original
+/// encoding.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CountMinSketch<T: CountMinValue> {
     num_hashes: u8,
@@ -92,6 +71,33 @@ pub struct CountMinSketch<T: CountMinValue> {
     total_weight: T,
     counts: Vec<T>,
     hash_seeds: Vec<u64>,
+}
+
+// The portable format needs little-endian integer writes and an explicit empty-input check.
+// XXH64 itself hashes empty inputs, so its output cannot identify whether counters apply.
+// Legacy sketches bypass this adapter to keep their original item encodings.
+struct ItemHasher {
+    hash: XxHash64,
+    empty: bool,
+}
+
+impl Hasher for ItemHasher {
+    fn finish(&self) -> u64 {
+        self.hash.finish64()
+    }
+
+    fn write(&mut self, bytes: &[u8]) {
+        self.empty &= bytes.is_empty();
+        self.hash.write(bytes);
+    }
+
+    fn write_i64(&mut self, value: i64) {
+        self.write(&value.to_le_bytes());
+    }
+
+    fn write_u64(&mut self, value: u64) {
+        self.write(&value.to_le_bytes());
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -272,6 +278,8 @@ impl<T: CountMinValue> CountMinSketch<T> {
 
     /// Updates the sketch with the given item and weight.
     ///
+    /// Version 2 ignores empty encodings regardless of weight. See [`CountMinSketch`].
+    ///
     /// # Panics
     ///
     /// Panics without modifying the sketch if the absolute weight or the total absolute weight
@@ -290,13 +298,19 @@ impl<T: CountMinValue> CountMinSketch<T> {
         if weight == T::ZERO {
             return;
         }
-        self.total_weight = weight
-            .checked_abs()
-            .and_then(|weight| self.total_weight.checked_add(weight))
-            .expect("total absolute weight overflow");
         let num_buckets = self.buckets.count as usize;
         for (row, seed) in self.hash_seeds.iter().enumerate() {
-            let bucket = self.bucket_index(&item, *seed);
+            let Some(bucket) = self.bucket_index(&item, *seed) else {
+                return;
+            };
+            if row == 0 {
+                // Ignore empty encodings before checking weight, and check before changing
+                // counters.
+                self.total_weight = weight
+                    .checked_abs()
+                    .and_then(|weight| self.total_weight.checked_add(weight))
+                    .expect("total absolute weight overflow");
+            }
             let index = row * num_buckets + bucket;
             self.counts[index] = self.counts[index] + weight;
         }
@@ -314,17 +328,7 @@ impl<T: CountMinValue> CountMinSketch<T> {
     /// assert!(sketch.estimate("pear") >= 2);
     /// ```
     pub fn estimate<I: Hash>(&self, item: I) -> T {
-        let num_buckets = self.buckets.count as usize;
-        let mut min = T::MAX;
-        for (row, seed) in self.hash_seeds.iter().enumerate() {
-            let bucket = self.bucket_index(&item, *seed);
-            let index = row * num_buckets + bucket;
-            let value = self.counts[index];
-            if value < min {
-                min = value;
-            }
-        }
-        min
+        self.estimate_item(&item).unwrap_or(T::ZERO)
     }
 
     /// Returns the lower bound on the true frequency of the given item.
@@ -334,7 +338,9 @@ impl<T: CountMinValue> CountMinSketch<T> {
 
     /// Returns the upper bound on the true frequency of the given item.
     pub fn upper_bound<I: Hash>(&self, item: I) -> T {
-        let estimate = self.estimate(item);
+        let Some(estimate) = self.estimate_item(&item) else {
+            return T::ZERO;
+        };
         let error = self.total_weight.scale_nonnegative(self.relative_error());
         estimate.checked_add(error).unwrap_or(T::MAX)
     }
@@ -620,7 +626,19 @@ impl<T: CountMinValue> CountMinSketch<T> {
         }
     }
 
-    fn bucket_index<I: Hash>(&self, item: &I, seed: u64) -> usize {
+    // Preserve the distinction between an empty encoding and an item with a zero estimate:
+    // empty encodings also have a zero upper bound, without the usual error term.
+    fn estimate_item<I: Hash>(&self, item: &I) -> Option<T> {
+        let num_buckets = self.buckets.count as usize;
+        let mut min = T::MAX;
+        for (row, seed) in self.hash_seeds.iter().enumerate() {
+            let bucket = self.bucket_index(item, *seed)?;
+            min = min.min(self.counts[row * num_buckets + bucket]);
+        }
+        Some(min)
+    }
+
+    fn bucket_index<I: Hash>(&self, item: &I, seed: u64) -> Option<usize> {
         let hash = match self.serial_version {
             SERIAL_VERSION_1 => {
                 let mut hasher = MurmurHash3X64128::with_seed(seed);
@@ -628,13 +646,19 @@ impl<T: CountMinValue> CountMinSketch<T> {
                 hasher.finish128().0
             }
             SERIAL_VERSION_2 => {
-                let mut hasher = V2Hasher(XxHash64::with_seed(seed));
+                let mut hasher = ItemHasher {
+                    hash: XxHash64::with_seed(seed),
+                    empty: true,
+                };
                 item.hash(&mut hasher);
+                if hasher.empty {
+                    return None;
+                }
                 hasher.finish() >> 1
             }
             _ => unreachable!("unsupported Count-Min serial version"),
         };
-        self.buckets.index(hash)
+        Some(self.buckets.index(hash))
     }
 }
 

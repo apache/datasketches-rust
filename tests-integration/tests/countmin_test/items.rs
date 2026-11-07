@@ -21,6 +21,31 @@ use datasketches::countmin::CountMinSketch;
 use datasketches::hash::value::natural_extend;
 use datasketches::hash::value::raw_bytes;
 
+#[test]
+fn empty_encodings_do_not_update_or_query_counters() {
+    fn check<I: Hash>(sketch: &mut CountMinSketch<i64>, item: I) {
+        let before = sketch.clone();
+        sketch.update_with_weight(&item, 5);
+        assert_eq!(*sketch, before);
+        sketch.update_with_weight(&item, i64::MIN);
+        assert_eq!(*sketch, before);
+        assert_eq!(sketch.estimate(&item), 0);
+        assert_eq!(sketch.lower_bound(&item), 0);
+        assert_eq!(sketch.upper_bound(&item), 0);
+    }
+
+    let mut sketch = CountMinSketch::<i64>::new(1, 3).unwrap();
+    for populated in [false, true] {
+        if populated {
+            // Integer 2 and the empty encoding share a bucket with these parameters.
+            sketch.update_with_weight(2u64, 5);
+        }
+        check(&mut sketch, raw_bytes::from_str(""));
+        check(&mut sketch, raw_bytes::from_slice(&[]));
+        check(&mut sketch, ());
+    }
+}
+
 fn assert_same_item<I: Hash, J: Hash>(left: I, right: J) {
     let mut a = CountMinSketch::<i64>::new(3, 1000).unwrap();
     let mut b = a.clone();
