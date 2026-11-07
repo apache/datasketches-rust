@@ -67,3 +67,15 @@ fn test_max_serialized_bytes_validates_lg_k() {
         assert_eq!(error.kind(), ErrorKind::InvalidArgument);
     }
 }
+
+#[test]
+fn test_estimated_size() {
+    let mut sketch = CpcSketch::new(11).unwrap();
+    let empty_size = sketch.estimated_size();
+    assert_eq!(empty_size, 0);
+
+    for i in 0..10_000 {
+        sketch.update(i);
+    }
+    assert_eq!(sketch.estimated_size(), 2304);
+}

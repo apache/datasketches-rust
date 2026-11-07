@@ -173,3 +173,41 @@ fn prop_batch_quantiles_preserve_input_order_and_duplicates() {
         .rng(Gen::new(1200))
         .quickcheck(property as fn(Vec<u32>, Vec<u8>));
 }
+
+#[test]
+fn prop_cdf_matches_scalar_ranks() {
+    fn property(values: Vec<u32>, points: Vec<u32>) {
+        let digest = digest_of(&values);
+        let frozen = digest.clone().freeze();
+        let mut points = points
+            .into_iter()
+            .map(|point| f64::from(point) / 4096.0)
+            .collect::<Vec<_>>();
+        points.extend_from_slice(&[f64::NEG_INFINITY, f64::INFINITY]);
+        points.sort_unstable_by(f64::total_cmp);
+        points.dedup();
+
+        let middle = vec![points[points.len() / 2]];
+        let sparse = points
+            .iter()
+            .step_by((points.len() / 6).max(1))
+            .copied()
+            .collect::<Vec<_>>();
+        for queries in [&[][..], &middle, &sparse, &points] {
+            let expected = (!frozen.is_empty()).then(|| {
+                queries
+                    .iter()
+                    .map(|&point| frozen.rank(point).unwrap().unwrap())
+                    .chain(std::iter::once(1.0))
+                    .collect::<Vec<_>>()
+            });
+            assert_eq!(frozen.cdf(queries).unwrap(), expected);
+            assert_eq!(digest.clone().cdf(queries).unwrap(), expected);
+        }
+    }
+
+    QuickCheck::new()
+        .tests(128)
+        .rng(Gen::new(512))
+        .quickcheck(property as fn(Vec<u32>, Vec<u32>));
+}

@@ -15,11 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use divan::AllocProfiler;
-
-#[global_allocator]
-static ALLOC: AllocProfiler = AllocProfiler::system();
-
 mod bloom;
 mod countmin;
 mod cpc;
@@ -31,7 +26,20 @@ mod req;
 mod tdigest;
 mod theta;
 mod tuple;
+mod xor;
 
 fn main() {
-    divan::main();
+    let mut runner = benchmarks::Runner::from_args();
+    bloom::register(&mut runner);
+    countmin::register(&mut runner);
+    cpc::register(&mut runner);
+    frequencies::register(&mut runner);
+    hll::register(&mut runner);
+    kll::register(&mut runner);
+    req::register(&mut runner);
+    tdigest::register(&mut runner);
+    theta::register(&mut runner);
+    tuple::register(&mut runner);
+    xor::register(&mut runner);
+    runner.finish();
 }

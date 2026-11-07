@@ -112,9 +112,9 @@ where
         self.state.reset();
     }
 
-    /// Returns the estimated size of the union in bytes.
+    /// Returns an estimate of the union's memory usage in bytes.
     pub fn estimated_size(&self) -> usize {
-        size_of::<Self>() + self.state.estimated_size()
+        self.state.estimated_size()
     }
 }
 

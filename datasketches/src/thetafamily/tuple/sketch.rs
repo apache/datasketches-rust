@@ -404,9 +404,9 @@ where
         .expect("theta should always be valid")
     }
 
-    /// Returns the estimated size of the sketch in bytes.
+    /// Returns an estimate of the sketch's memory usage in bytes.
     pub fn estimated_size(&self) -> usize {
-        size_of::<Self>() + self.table.estimated_size()
+        size_of::<P>() + self.table.estimated_size()
     }
 }
 
@@ -541,10 +541,9 @@ impl<S> CompactTupleSketch<S> {
         .expect("compact theta should always be valid")
     }
 
-    /// Returns the estimated size of the sketch in bytes.
+    /// Returns an estimate of the sketch's memory usage in bytes.
     pub fn estimated_size(&self) -> usize {
-        size_of::<Self>()
-            + self.compact_state.retained_entries_capacity() * size_of::<TupleEntry<S>>()
+        self.compact_state.retained_entries_capacity() * size_of::<TupleEntry<S>>()
     }
 
     fn preamble_longs(&self) -> u8 {

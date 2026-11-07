@@ -166,15 +166,10 @@ impl HllUnion {
 
             match self.gadget.mode() {
                 Mode::Array8(old_gadget) => {
-                    merge_array_with_downsample(
-                        &mut new_array,
-                        src_lg_k,
-                        &Mode::Array8(old_gadget.clone()),
-                        dst_lg_k,
-                    );
+                    new_array.merge_array_with_downsample(old_gadget.values(), dst_lg_k);
                 }
                 _ => {
-                    unreachable!("gadget mode changed unexpectedly; should never be Array4/Array6")
+                    unreachable!("gadget mode changed unexpectedly; should never be Array4/Array6");
                 }
             }
 
@@ -186,7 +181,7 @@ impl HllUnion {
                     merge_array_into_array8(dst_array, dst_lg_k, src_mode, src_lg_k);
                 }
                 _ => {
-                    unreachable!("gadget mode changed unexpectedly; should never be Array4/Array6")
+                    unreachable!("gadget mode changed unexpectedly; should never be Array4/Array6");
                 }
             }
         }
@@ -247,6 +242,29 @@ impl HllUnion {
                 unreachable!("gadget mode changed unexpectedly; should never be Array4/Array6")
             }
         }
+    }
+
+    /// Serializes the union's result as an [`HllType::Hll8`] sketch.
+    ///
+    /// Produces the same bytes as `to_sketch(HllType::Hll8).serialize()` without copying an
+    /// intermediate sketch. The image retains the effective `lg_k` and estimate, but not the
+    /// union's configured maximum `lg_k`. It can be read with [`HllSketch::deserialize`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::hll::HllSketch;
+    /// use datasketches::hll::HllUnion;
+    ///
+    /// let mut union = HllUnion::new(12).unwrap();
+    /// union.update_value("apple");
+    /// let mut partial = HllSketch::deserialize(&union.serialize()).unwrap();
+    /// partial.update("banana");
+    /// union.update(&partial);
+    /// assert!((union.estimate() - 2.0).abs() < 0.01);
+    /// ```
+    pub fn serialize(&self) -> Vec<u8> {
+        self.gadget.serialize()
     }
 
     /// Returns the union's current effective `lg_k`.
@@ -365,10 +383,9 @@ impl HllUnion {
         self.gadget.lower_bound(num_std_dev)
     }
 
-    /// Returns the estimated memory usage in bytes, including owned heap allocations.
+    /// Returns an estimate of the union's memory usage in bytes.
     pub fn estimated_size(&self) -> usize {
-        // The gadget's inline size is already covered by size_of::<Self>().
-        size_of::<Self>() - size_of::<HllSketch>() + self.gadget.estimated_size()
+        self.gadget.estimated_size()
     }
 }
 
@@ -469,7 +486,7 @@ fn merge_array46_same_lgk(dst: &mut Array8, num_registers: usize, get_value: imp
             dst.set_register(slot, val);
         }
     }
-    dst.rebuild_estimator_from_registers();
+    dst.invalidate_estimator();
 }
 
 /// Merging independent register histories invalidates the HIP accumulator.
@@ -507,7 +524,7 @@ fn merge_array46_with_downsample(
             }
         }
     }
-    dst.rebuild_estimator_from_registers();
+    dst.invalidate_estimator();
 }
 
 /// Multiple source registers map to each destination register via masking.
@@ -538,9 +555,9 @@ fn merge_array_with_downsample(dst: &mut Array8, dst_lg_k: u8, src_mode: &Mode, 
 
 /// Changing representation preserves the estimate state; replaying registers alone would change
 /// HIP.
-fn convert_array8_to_type(src: &Array8, lg_config_k: u8, target_type: HllType) -> HllSketch {
-    let estimate_state = src.estimate_state();
-    match target_type {
+fn convert_array8_to_type(src: &Array8, lg_config_k: u8, ty: HllType) -> HllSketch {
+    let state = src.estimate_state();
+    match ty {
         HllType::Hll8 => HllSketch::from_mode(lg_config_k, Mode::Array8(src.clone())),
         HllType::Hll6 => {
             let mut array6 = Array6::new(lg_config_k);
@@ -552,7 +569,7 @@ fn convert_array8_to_type(src: &Array8, lg_config_k: u8, target_type: HllType) -
                     array6.update(coupon);
                 }
             }
-            array6.restore_estimate_state(estimate_state);
+            array6.restore_estimate_state(state);
 
             HllSketch::from_mode(lg_config_k, Mode::Array6(array6))
         }
@@ -565,7 +582,7 @@ fn convert_array8_to_type(src: &Array8, lg_config_k: u8, target_type: HllType) -
                     array4.update(coupon);
                 }
             }
-            array4.restore_estimate_state(estimate_state);
+            array4.restore_estimate_state(state);
 
             HllSketch::from_mode(lg_config_k, Mode::Array4(array4))
         }
@@ -584,20 +601,20 @@ fn copy_array46_via_coupons(dst: &mut Array8, num_registers: usize, get_value: i
 
 /// Preserves the source estimate state because the result represents the same logical sketch.
 fn copy_or_downsample(src_mode: &Mode, src_lg_k: u8, tgt_lg_k: u8) -> Array8 {
-    let estimate_state = get_array_estimate_state(src_mode);
+    let state = get_array_estimate_state(src_mode);
 
     let mut result = if src_lg_k <= tgt_lg_k {
-        let mut result = Array8::new(src_lg_k);
-
         match src_mode {
-            Mode::Array8(src) => {
-                result.merge_array_same_lgk(src.values());
-            }
+            Mode::Array8(src) => src.clone(),
             Mode::Array6(src) => {
+                let mut result = Array8::new(src_lg_k);
                 copy_array46_via_coupons(&mut result, src.num_registers(), |slot| src.get(slot));
+                result
             }
             Mode::Array4(src) => {
+                let mut result = Array8::new(src_lg_k);
                 copy_array46_via_coupons(&mut result, src.num_registers(), |slot| src.get(slot));
+                result
             }
             Mode::List { .. } | Mode::Set { .. } => {
                 unreachable!(
@@ -605,14 +622,12 @@ fn copy_or_downsample(src_mode: &Mode, src_lg_k: u8, tgt_lg_k: u8) -> Array8 {
                 );
             }
         }
-
-        result
     } else {
         let mut result = Array8::new(tgt_lg_k);
         merge_array_with_downsample(&mut result, tgt_lg_k, src_mode, src_lg_k);
         result
     };
 
-    result.restore_estimate_state(estimate_state);
+    result.restore_estimate_state(state);
     result
 }

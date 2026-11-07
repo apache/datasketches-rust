@@ -29,58 +29,28 @@ fn test_bloom_filter_file(path: PathBuf, expected_num_items: u64, expected_num_h
     let bytes = fs::read(&path).unwrap();
     let filter1 = BloomFilter::deserialize(&bytes).unwrap();
 
-    // Verify basic properties
     assert_eq!(
         filter1.num_hashes(),
         expected_num_hashes,
         "Wrong num_hashes in {}",
         path.display()
     );
+    assert_eq!(
+        filter1.is_empty(),
+        expected_num_items == 0,
+        "Wrong empty state in {}",
+        path.display()
+    );
 
-    // Check empty state
-    if expected_num_items == 0 {
-        assert!(filter1.is_empty(), "Filter should be empty for n=0");
-        assert_eq!(
-            filter1.bits_used(),
-            0,
-            "Empty filter should have 0 bits set"
-        );
-    } else {
+    // TCK fixtures insert integers 0..n/10. Bound the sample for large fixtures.
+    for item in 0..(expected_num_items / 10).min(100) {
         assert!(
-            !filter1.is_empty(),
-            "Filter should not be empty for n={}",
-            expected_num_items
-        );
-        assert_that!(filter1.bits_used(), gt(0));
-    }
-
-    // Verify the items that were inserted (integers 0 to n/10-1)
-    // datasketches-cpp code: for (uint64_t i = 0; i < n / 10; ++i) bf.update(i);
-    let num_inserted = expected_num_items / 10;
-
-    if num_inserted > 0 {
-        // Check a sample of inserted items
-        // For large n, we only check a sample to keep tests fast
-        let sample_size = std::cmp::min(num_inserted, 100);
-        let mut false_negatives = 0;
-
-        for i in 0..sample_size {
-            if !filter1.contains(&i) {
-                false_negatives += 1;
-            }
-        }
-
-        assert_eq!(
-            false_negatives,
-            0,
-            "Found {} false negatives out of {} items in {}",
-            false_negatives,
-            sample_size,
+            filter1.contains(&item),
+            "Missing item {item} in {}",
             path.display()
         );
     }
 
-    // Serialize and deserialize again to test round-trip
     let serialized_bytes = filter1.serialize();
     let filter2 = BloomFilter::deserialize(&serialized_bytes).unwrap_or_else(|err| {
         panic!(
@@ -90,38 +60,12 @@ fn test_bloom_filter_file(path: PathBuf, expected_num_items: u64, expected_num_h
         )
     });
 
-    // Check that both filters are functionally equivalent
     assert_eq!(
-        filter1.num_hashes(),
-        filter2.num_hashes(),
-        "num_hashes mismatch after round-trip for {}",
+        filter1,
+        filter2,
+        "Filter changed after round-trip for {}",
         path.display()
     );
-    assert_eq!(
-        filter1.capacity(),
-        filter2.capacity(),
-        "capacity mismatch after round-trip for {}",
-        path.display()
-    );
-    assert_eq!(
-        filter1.bits_used(),
-        filter2.bits_used(),
-        "bits_used mismatch after round-trip for {}",
-        path.display()
-    );
-
-    // Verify same items are present after round-trip
-    if num_inserted > 0 {
-        let sample_size = std::cmp::min(num_inserted, 100);
-        for i in 0..sample_size {
-            assert_eq!(
-                filter1.contains(&i),
-                filter2.contains(&i),
-                "Item {} presence differs after round-trip",
-                i
-            );
-        }
-    }
 }
 
 #[test]

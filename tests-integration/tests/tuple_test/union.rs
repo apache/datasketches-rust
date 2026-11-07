@@ -186,9 +186,20 @@ fn estimation_bounds_cover_the_true_union() {
 #[test]
 fn union_estimated_size_grows_with_updates() {
     let mut union = default_union_builder().build().unwrap();
-    assert_eq!(union.estimated_size(), 2128);
+    assert_eq!(union.estimated_size(), 2048);
 
     let sketch = tuple_sketch_with_range(0, 1000);
     union.update(&sketch).unwrap();
-    assert_eq!(union.estimated_size(), 131152);
+    assert_eq!(union.estimated_size(), 131072);
+}
+
+#[test]
+fn compact_estimated_size_includes_retained_capacity() {
+    let sketch = tuple_sketch_with_range(0, 1000);
+    let mut union = default_union_builder().lg_k(5).build().unwrap();
+    union.update(&sketch).unwrap();
+    let result = union.to_sketch(true);
+
+    assert_eq!(result.num_retained(), 32);
+    assert_eq!(result.estimated_size(), 1024);
 }

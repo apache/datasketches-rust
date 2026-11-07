@@ -323,9 +323,9 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
         self.hash_map.lg_length()
     }
 
-    /// Returns the estimated size of the sketch in bytes.
+    /// Returns an estimate of the sketch's memory usage in bytes.
     pub fn estimated_size(&self) -> usize {
-        size_of::<Self>() + self.hash_map.estimated_size()
+        self.hash_map.estimated_size()
     }
 
     /// Updates the sketch with a count of one.

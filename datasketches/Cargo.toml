@@ -17,7 +17,7 @@
 
 [package]
 name = "datasketches"
-version = "0.5.0"
+version = "0.6.0"
 
 edition.workspace = true
 homepage.workspace = true
@@ -48,6 +48,7 @@ req = []
 tdigest = []
 theta = []
 tuple = []
+xor = []
 
 [[example]]
 name = "bloom_difference"

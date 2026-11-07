@@ -65,7 +65,7 @@
 //!
 //! ## By Accuracy (Recommended)
 //!
-//! Derive the size and hash-function count from an expected distinct-item count and a target
+//! Derive the size and number of hash functions from an expected distinct-item count and a target
 //! false-positive probability:
 //!
 //! ```
@@ -88,7 +88,8 @@
 //!
 //! ## By Size (Manual)
 //!
-//! Specify requested bit count and hash functions (rounded up to a multiple of 64 bits):
+//! Specify the requested bit count and number of hash functions. Capacity is rounded up to a
+//! multiple of 64 bits:
 //!
 //! ```
 //! use datasketches::bloom::BloomFilterBuilder;
@@ -138,8 +139,8 @@
 //!
 //! # Implementation Details
 //!
-//! * Uses XXHash64 for hashing
-//! * Implements double hashing (Kirsch-Mitzenmacher method) for k hash functions
+//! * Derives `k` hash functions from two XXHash64 hashes using double hashing
+//!   (Kirsch-Mitzenmacher).
 //! * Bits packed efficiently in `u64` words
 //! * Compatible serialization format (family ID: 21)
 //!

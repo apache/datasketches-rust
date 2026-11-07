@@ -634,11 +634,27 @@ fn test_map_size_above_cross_language_limit_returns_error() {
 #[test]
 fn test_estimated_size() {
     let mut sketch: FrequentItemsSketch<i64> = FrequentItemsSketch::new(64).unwrap();
-    assert_eq!(sketch.estimated_size(), 344);
+    assert_eq!(sketch.estimated_size(), 208);
 
     // The internal map grows from its starting size up to the maximum size.
     for i in 0..100 {
         sketch.update(i);
     }
-    assert_eq!(sketch.estimated_size(), 1800);
+    assert_eq!(sketch.estimated_size(), 1664);
+}
+
+#[test]
+fn estimated_size_is_shallow_for_generic_items() {
+    let mut small_item_sketch = FrequentItemsSketch::new(8).unwrap();
+    small_item_sketch.update("key".to_string());
+
+    let mut large_item = String::with_capacity(4096);
+    large_item.push_str("key");
+    let mut large_item_sketch = FrequentItemsSketch::new(8).unwrap();
+    large_item_sketch.update(large_item);
+
+    assert_eq!(
+        small_item_sketch.estimated_size(),
+        large_item_sketch.estimated_size()
+    );
 }

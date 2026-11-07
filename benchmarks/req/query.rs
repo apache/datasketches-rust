@@ -15,14 +15,15 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::hint::black_box;
+
+use benchmarks::Bencher;
+use benchmarks::Runner;
 use datasketches::common::SearchCriteria;
 use datasketches::req::ReqFloat;
-use divan::Bencher;
-use divan::black_box;
 
 use super::support::prepared_sketch;
 
-#[divan::bench]
 fn rank(bencher: Bencher) {
     let sketch = prepared_sketch();
     let item = ReqFloat::<f64>::new(500_000.0).unwrap();
@@ -30,7 +31,6 @@ fn rank(bencher: Bencher) {
     bencher.bench_local(|| black_box(&sketch).rank(black_box(&item), SearchCriteria::Inclusive));
 }
 
-#[divan::bench(args = [0.0, 0.5, 1.0])]
 fn quantile(bencher: Bencher, rank: f64) {
     let sketch = prepared_sketch();
 
@@ -39,10 +39,23 @@ fn quantile(bencher: Bencher, rank: f64) {
 
 // Intended pattern for repeated queries: build the view once, query it many
 // times. Contrast against `quantile`, which rebuilds the view on every call.
-#[divan::bench]
 fn sorted_view_quantile(bencher: Bencher) {
     let sketch = prepared_sketch();
     let view = sketch.sorted_view();
 
     bencher.bench_local(|| black_box(&view).quantile(black_box(0.5), SearchCriteria::Inclusive));
+}
+
+pub fn register(runner: &mut Runner) {
+    runner.case("req::query::rank", 6_000_000, rank);
+    for &(rank, rounds) in &[(0.0, 100_000_000), (0.5, 30_000), (1.0, 100_000_000)] {
+        runner.case(format!("req::query::quantile/{rank:?}"), rounds, |b| {
+            quantile(b, rank)
+        });
+    }
+    runner.case(
+        "req::query::sorted_view_quantile",
+        30_000_000,
+        sorted_view_quantile,
+    );
 }

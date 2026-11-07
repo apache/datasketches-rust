@@ -368,18 +368,18 @@ impl CpcSketch {
 
         self.surprising_value_table_mut().clear(); // the new number of surprises will be about the same
 
-        let mask_for_clearing_window = (0xFF << new_offset) ^ u64::MAX;
-        let mask_for_flipping_early_zone = (1u64 << new_offset) - 1;
+        let clear_mask = (0xFF << new_offset) ^ u64::MAX;
+        let flip_mask = (1u64 << new_offset) - 1;
 
-        let mut all_surprises_ored = 0u64;
+        let mut surprises = 0u64;
         for i in 0..k {
             let mut pattern = bit_matrix[i];
             self.sliding_window[i] = ((pattern >> new_offset) & 0xff) as u8;
-            pattern &= mask_for_clearing_window;
+            pattern &= clear_mask;
             // The following line converts surprising 0's to 1's in the "early zone",
             // (and vice versa, which is essential for this procedure's O(k) time cost).
-            pattern ^= mask_for_flipping_early_zone;
-            all_surprises_ored |= pattern; // a cheap way to recalculate first_interesting_column
+            pattern ^= flip_mask;
+            surprises |= pattern; // a cheap way to recalculate first_interesting_column
             while pattern != 0 {
                 let col = pattern.trailing_zeros();
                 pattern ^= 1 << col; // erase the 1
@@ -390,7 +390,7 @@ impl CpcSketch {
         }
 
         self.window_offset = new_offset;
-        self.first_interesting_column = all_surprises_ored.trailing_zeros() as u8;
+        self.first_interesting_column = surprises.trailing_zeros() as u8;
         if self.first_interesting_column > new_offset {
             self.first_interesting_column = new_offset; // corner case
         }
@@ -459,16 +459,14 @@ impl CpcSketch {
         matrix
     }
 
-    /// Returns the estimated size of the sketch in bytes.
+    /// Returns an estimate of the sketch's memory usage in bytes.
     pub fn estimated_size(&self) -> usize {
-        let heap_size = self.sliding_window.capacity()
+        self.sliding_window.capacity()
             + self
                 .surprising_value_table
                 .as_ref()
                 .map(|t| t.estimated_size())
-                .unwrap_or(0);
-
-        size_of::<Self>() + heap_size
+                .unwrap_or(0)
     }
 }
 

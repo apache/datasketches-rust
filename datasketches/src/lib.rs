@@ -33,7 +33,7 @@
 //!
 //! ## Choosing a sketch
 //!
-//! * Use `bloom` for probabilistic membership queries.
+//! * Use `bloom` for incremental probabilistic membership queries or `xor` for immutable sets.
 //! * Use `countmin` for point-frequency estimates and `frequencies` for discovering heavy hitters.
 //! * Use `hll` for fast distinct counts, `cpc` for compact serialized distinct counts, or `theta`
 //!   when set operations are required.
@@ -91,6 +91,9 @@ pub use self::thetafamily::common as thetacommon;
 pub use self::thetafamily::theta;
 #[cfg(feature = "tuple")]
 pub use self::thetafamily::tuple;
+
+#[cfg(feature = "xor")]
+pub mod xor;
 
 // common modules
 pub mod codec;

@@ -7,11 +7,30 @@ All significant changes to this project will be documented in this file.
 ### Breaking changes
 
 * New `CountMinSketch` values use serial version 2 with XxHash64-derived row seeds and item hashes, plus unsigned bucket mapping. Deserialization still accepts legacy Rust version 1 images and preserves their version when reserializing, but version 1 images from other implementations remain incompatible for queries, updates, and merges. Merging now requires matching serial versions.
+
+### New features
+
+* Add `HllUnion::serialize` to serialize union results directly.
+* Add `XorFilter` and `XorFilterBuilder` behind the `xor` feature for immutable membership queries on values or precomputed hashes. Filters support 8-, 16-, and 32-bit fingerprints and can be serialized for later queries.
+
+### Improvements
+
+* `HllUnion` is faster when adopting HLL8 inputs without downsampling or merging multiple dense inputs before querying or serializing the result.
+* `KllSketch::rank` is faster for repeated queries on compacted sketches.
+* Repeated scalar `TDigest::rank` queries are faster, including small digests and data with repeated values.
+* `TDigest` and `TDigestMut` CDF and PMF batches are faster for many split points; batches with sparse split points keep the original binary-search behavior.
+* `BloomFilter::insert` is faster for streams of new items when multiple hashes are configured.
+
+## v0.6.0 (2026-10-29)
+
+### Breaking changes
+
 * `BloomFilter::invert` is removed; use `BloomFilter::difference` for approximate A-not-B. The result excludes items in the right filter, but hash collisions can also remove items unique to the left filter.
 * `FrequentItemsSketch::is_empty` now returns `false` when the stream weight is nonzero, even if no items are retained. Use `num_active_items() == 0` to test for zero retained items.
 * `ReqSketch` queries now use `datasketches::common::SearchCriteria` instead of `datasketches::req::SearchCriteria`. `SearchCriteria` no longer implements `Default`; explicitly choose `Inclusive` or `Exclusive`.
 * `ReqSketch` and `req::SortedView` queries now distinguish empty sketches from invalid arguments. `rank` returns `Option<f64>`; `quantile`, `quantiles`, `cdf`, and `pmf`, where available, return `Result<Option<_>, Error>`. Handle `None` for valid queries on an empty sketch, and propagate or handle `InvalidArgument` for invalid ranks or split points, which are checked before emptiness.
 * `TDigest` and `TDigestMut` rank, quantile, CDF, and PMF queries now return `Result<Option<_>, Error>`. Invalid arguments return `InvalidArgument` instead of panicking, including on empty digests. Propagate or handle the `Result` before handling `None` for an empty digest; `min_value` and `max_value` still return `Option<f64>`.
+* `estimated_size` now returns an implementation-dependent estimate of memory usage. Returned values may change as implementations evolve and should not be treated as exact totals or a stable accounting contract.
 
 ### New features
 
@@ -27,7 +46,7 @@ All significant changes to this project will be documented in this file.
 * Improve the readability of `Debug` output for HLL and CPC sketches and unions.
 * `KllSketch::quantile` and `ReqSketch::quantile` are faster at ranks `0.0` and `1.0`, with query work independent of the number of retained samples.
 * `BloomFilter::insert` is faster for integer and raw-byte inputs. `BloomFilter::contains_and_insert` is also faster when checking already-present integer values.
-* `CountMinSketch` updates are faster for integer and raw-byte inputs.
+* `CountMinSketch` updates and estimates are faster for all item types, with the largest gains for integer and raw-byte inputs. Counter placement and serialized bytes are unchanged.
 * `CountMinSketch::decay(1.0)` now takes constant time.
 * `CpcSketch` updates are faster for integer and raw-byte inputs.
 * `FrequentItemsSketch` updates are faster for integer and raw-byte keys.

@@ -15,7 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use std::mem::size_of;
 use std::panic::AssertUnwindSafe;
 use std::panic::catch_unwind;
 
@@ -119,15 +118,14 @@ fn test_estimated_size_reuses_buffer_after_compression() {
     const TARGET_CENTROIDS: usize = 410;
     const MAX_UNMERGED: usize = TARGET_CENTROIDS * 4;
 
-    let inline_size = size_of::<TDigestMut>();
     let mut tdigest = TDigestMut::new(K).unwrap();
-    assert_eq!(tdigest.estimated_size(), inline_size);
+    assert_eq!(tdigest.estimated_size(), 0);
 
     for value in 0..MAX_UNMERGED {
         tdigest.update(value as f64);
     }
     let size_before_compression = tdigest.estimated_size();
-    assert!(size_before_compression > inline_size);
+    assert!(size_before_compression > 0);
     tdigest.rank(0.5).unwrap();
     assert!(tdigest.estimated_size() <= size_before_compression);
 

@@ -103,8 +103,8 @@ const fn capacity_at_depth(k: u16, depth: usize) -> u16 {
     }
     let first_depth = depth / 2;
     let remaining_depth = depth - first_depth;
-    let intermediate_capacity = capacity_at_shallow_depth(k, first_depth);
-    capacity_at_shallow_depth(intermediate_capacity, remaining_depth)
+    let capacity = capacity_at_shallow_depth(k, first_depth);
+    capacity_at_shallow_depth(capacity, remaining_depth)
 }
 
 const fn capacity_at_shallow_depth(k: u16, depth: usize) -> u16 {

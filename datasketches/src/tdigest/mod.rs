@@ -65,8 +65,6 @@
 //! # Ok::<(), datasketches::error::Error>(())
 //! ```
 
-mod serialization;
-
 mod sketch;
 pub use self::sketch::TDigest;
 pub use self::sketch::TDigestMut;

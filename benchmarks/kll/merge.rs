@@ -15,24 +15,26 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use divan::Bencher;
-use divan::black_box;
-use divan::counter::ItemsCount;
+use std::hint::black_box;
+
+use benchmarks::Bencher;
+use benchmarks::Runner;
 
 use super::support::build_sketch;
 use super::support::values;
 
-#[divan::bench]
 fn merge(bencher: Bencher) {
     let values = values(200_000);
     let left = build_sketch(&values[..100_000]);
     let right = build_sketch(&values[100_000..]);
 
-    bencher
-        .counter(ItemsCount::new(values.len()))
-        .with_inputs(|| left.clone())
-        .bench_local_values(|mut left| {
-            left.merge(black_box(&right)).unwrap();
-            black_box(left)
-        });
+    bencher.bench_local(|| {
+        let mut left = left.clone();
+        left.merge(black_box(&right)).unwrap();
+        black_box(left)
+    });
+}
+
+pub fn register(runner: &mut Runner) {
+    runner.case("kll::merge::merge", 70_000, merge);
 }

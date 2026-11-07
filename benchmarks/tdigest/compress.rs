@@ -15,26 +15,25 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use divan::Bencher;
-use divan::black_box;
-use divan::counter::ItemsCount;
+use std::hint::black_box;
+
+use benchmarks::Bencher;
+use benchmarks::Runner;
 
 use super::support::build_mut_digest;
 use super::support::values;
 
-#[divan::bench]
 fn initial_buffer(bencher: Bencher) {
     // The default k=200 digest buffers 1,640 values before automatic compression.
     let values = values(1_640);
     let digest = build_mut_digest(&values);
 
-    bencher
-        .counter(ItemsCount::new(values.len()))
-        .with_inputs(|| digest.clone())
-        .bench_local_values(|mut digest| black_box(digest.rank(0.5).unwrap()));
+    bencher.bench_local(|| {
+        let mut digest = digest.clone();
+        black_box(digest.rank(0.5).unwrap())
+    });
 }
 
-#[divan::bench]
 fn unmerged_tail(bencher: Bencher) {
     let values = values(3_280);
     let mut digest = build_mut_digest(&values[..1_640]);
@@ -43,19 +42,28 @@ fn unmerged_tail(bencher: Bencher) {
         digest.update(value);
     }
 
-    bencher
-        .counter(ItemsCount::new(1_640_usize))
-        .with_inputs(|| digest.clone())
-        .bench_local_values(|mut digest| black_box(digest.rank(0.5).unwrap()));
+    bencher.bench_local(|| {
+        let mut digest = digest.clone();
+        black_box(digest.rank(0.5).unwrap())
+    });
 }
 
-#[divan::bench]
 fn freeze_initial_buffer(bencher: Bencher) {
     let values = values(1_640);
     let digest = build_mut_digest(&values);
 
-    bencher
-        .counter(ItemsCount::new(values.len()))
-        .with_inputs(|| digest.clone())
-        .bench_local_values(|digest| black_box(digest.freeze()));
+    bencher.bench_local(|| {
+        let digest = digest.clone();
+        black_box(digest.freeze())
+    });
+}
+
+pub fn register(runner: &mut Runner) {
+    runner.case("tdigest::compress::initial_buffer", 20_000, initial_buffer);
+    runner.case("tdigest::compress::unmerged_tail", 10_000, unmerged_tail);
+    runner.case(
+        "tdigest::compress::freeze_initial_buffer",
+        20_000,
+        freeze_initial_buffer,
+    );
 }
