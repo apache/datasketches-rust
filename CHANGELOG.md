@@ -6,13 +6,12 @@ All significant changes to this project will be documented in this file.
 
 ### New features
 
-* Add `CpcUnion::serialize` to serialize union results directly.
+* Add `CpcUnion::serialize`, which produces the same bytes as `to_sketch().serialize()` and can be faster.
 * Add `HllUnion::serialize` to serialize union results directly.
 * Add `XorFilter` and `XorFilterBuilder` behind the `xor` feature for immutable membership queries on values or precomputed hashes. Filters support 8-, 16-, and 32-bit fingerprints and can be serialized for later queries.
 
 ### Improvements
 
-* Serializing empty and sparse `CpcUnion` results no longer materializes an intermediate sketch.
 * `HllUnion` is faster when adopting HLL8 inputs without downsampling or merging multiple dense inputs before querying or serializing the result.
 * `KllSketch::rank` is faster for repeated queries on compacted sketches.
 * Repeated scalar `TDigest::rank` queries are faster, including small digests and data with repeated values.

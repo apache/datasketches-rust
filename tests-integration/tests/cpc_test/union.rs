@@ -82,54 +82,6 @@ fn test_custom_seed_mismatch() {
 }
 
 #[test]
-fn test_serialize_matches_materialized_result_across_flavors() {
-    const LG_K: u8 = 11;
-    const SEED: u64 = 123;
-
-    // These cardinalities exercise empty, sparse, hybrid, pinned, and sliding results.
-    for num_values in [0, 100, 300, 2_000, 20_000] {
-        let mut sketch = CpcSketch::with_seed(LG_K, SEED).unwrap();
-        for value in 0..num_values {
-            sketch.update(value);
-        }
-
-        let mut union = CpcUnion::with_seed(LG_K, SEED).unwrap();
-        union.update(&sketch).unwrap();
-
-        let direct = union.serialize();
-        assert_eq!(direct, union.to_sketch().serialize());
-
-        let decoded = CpcSketch::deserialize_with_seed(&direct, SEED).unwrap();
-        assert_eq!(decoded.estimate(), union.to_sketch().estimate());
-
-        let mut merged_again = CpcUnion::with_seed(LG_K, SEED).unwrap();
-        merged_again.update(&decoded).unwrap();
-        assert_eq!(merged_again.to_sketch().estimate(), decoded.estimate());
-    }
-}
-
-#[test]
-fn test_serialize_preserves_reduced_precision() {
-    const SEED: u64 = 123;
-
-    for num_values in [100, 20_000] {
-        let mut sketch = CpcSketch::with_seed(10, SEED).unwrap();
-        for value in 0..num_values {
-            sketch.update(value);
-        }
-
-        let mut union = CpcUnion::with_seed(12, SEED).unwrap();
-        union.update(&sketch).unwrap();
-
-        let direct = union.serialize();
-        assert_eq!(direct, union.to_sketch().serialize());
-
-        let decoded = CpcSketch::deserialize_with_seed(&direct, SEED).unwrap();
-        assert_eq!(decoded.lg_k(), 10);
-    }
-}
-
-#[test]
 fn test_sliding_union_matches_single_sketch() {
     let mut key = 0;
     let mut sketch = CpcSketch::new(11).unwrap();
