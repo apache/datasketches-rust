@@ -19,10 +19,67 @@ use std::fs;
 use std::path::Path;
 
 use datasketches::cpc::CpcSketch;
+use datasketches::cpc::CpcUnion;
 use googletest::assert_that;
 use googletest::prelude::near;
 
 use crate::serialization_test_data;
+
+#[test]
+fn test_union_serialization_matches_result() {
+    const LG_K: u8 = 11;
+    const SEED: u64 = 123;
+
+    // Empty, sparse, and bit-matrix union states.
+    for num_values in [0, 100, 2_000] {
+        let mut sketch = CpcSketch::with_seed(LG_K, SEED).unwrap();
+        for value in 0..num_values {
+            sketch.update(value);
+        }
+        let mut union = CpcUnion::with_seed(LG_K, SEED).unwrap();
+        union.update(&sketch).unwrap();
+
+        let bytes = union.serialize();
+        let result = union.to_sketch();
+        assert_eq!(bytes, result.serialize());
+        let decoded = CpcSketch::deserialize_with_seed(&bytes, SEED).unwrap();
+        assert_eq!(decoded.estimate(), result.estimate());
+    }
+}
+
+#[test]
+fn test_union_serialization_after_updates_and_downsampling() {
+    let mut union = CpcUnion::new(12).unwrap();
+    // Adopt a sparse input, accumulate overlapping inputs, downsample, fold a larger input,
+    // then promote to a bit matrix. Serialize between updates to check continued use.
+    for (lg_k, values) in [
+        (12, 0..40),
+        (12, 20..60),
+        (11, 50..100),
+        (12, 90..140),
+        (10, 100..2_000),
+    ] {
+        let mut sketch = CpcSketch::new(lg_k).unwrap();
+        for value in values.clone() {
+            sketch.update(value);
+        }
+        union.update(&sketch).unwrap();
+
+        // The same coupons must produce the same merged result regardless of stream order.
+        let mut reversed = CpcSketch::new(union.lg_k()).unwrap();
+        for value in (0..values.end).rev() {
+            reversed.update(value);
+        }
+        let mut reference = CpcUnion::new(union.lg_k()).unwrap();
+        reference.update(&reversed).unwrap();
+
+        let bytes = union.serialize();
+        assert_eq!(bytes, reference.to_sketch().serialize());
+        let decoded = CpcSketch::deserialize(&bytes).unwrap();
+        assert_eq!(decoded.lg_k(), union.lg_k());
+        assert_eq!(decoded.estimate(), union.to_sketch().estimate());
+    }
+}
 
 fn test_sketch_file(path: &Path, expected_cardinality: usize) -> CpcSketch {
     let expected = expected_cardinality as f64;

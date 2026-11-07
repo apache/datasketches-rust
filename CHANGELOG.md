@@ -6,8 +6,9 @@ All significant changes to this project will be documented in this file.
 
 ### New features
 
+* Add `CpcUnion::serialize`, which produces the same bytes as `to_sketch().serialize()` and can be faster.
 * Add `HllUnion::serialize` to serialize union results directly.
-* Add immutable `XorFilter` behind the `xor` feature, with 8-, 16-, and 32-bit fingerprints, construction from values with automatic deduplication or borrowed distinct precomputed hashes, bounded seeded retries and compact temporary storage, optional cardinality metadata for imported filters, standard serialization for all three widths (Java-compatible for 8/16-bit filters), and validated imports for application-defined storage.
+* Add `XorFilter` and `XorFilterBuilder` behind the `xor` feature for immutable membership queries on values or precomputed hashes. Filters support 8-, 16-, and 32-bit fingerprints and can be serialized for later queries.
 
 ### Improvements
 
