@@ -25,10 +25,18 @@
 //! type is opaque to the sketch, (de)serialization of summaries is delegated to the summary type
 //! itself via the [`TupleSummaryValue`] trait, mirroring `FrequentItemValue`.
 
+use std::borrow::Borrow;
+
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
 use crate::codec::assert::insufficient_data;
+use crate::codec::family::Family;
 use crate::error::Error;
+use crate::thetacommon::constants::FLAGS_IS_COMPACT;
+use crate::thetacommon::constants::FLAGS_IS_ORDERED;
+use crate::thetacommon::constants::FLAGS_IS_READ_ONLY;
+use crate::thetacommon::sketch_state::CompactSketchState;
+use crate::tuple::hash_table::TupleEntry;
 
 /// Current serial version written by this implementation.
 pub const SERIAL_VERSION: u8 = 3;
@@ -42,6 +50,60 @@ pub const SKETCH_TYPE_LEGACY: u8 = 5;
 
 /// Canonical empty compact image, independent of the configured seed and summary type.
 pub const EMPTY_SKETCH_BYTES: [u8; 8] = [1, 3, 9, 1, 0, 0x1e, 0, 0];
+
+/// Serializes compact Tuple state whose retained entries are owned or borrowed.
+pub(super) fn serialize_compact_state<S, E>(compact_state: &CompactSketchState<E>) -> Vec<u8>
+where
+    S: TupleSummaryValue,
+    E: Borrow<TupleEntry<S>>,
+{
+    if compact_state.is_empty() {
+        return EMPTY_SKETCH_BYTES.to_vec();
+    }
+
+    let retained_entries = compact_state.retained_entries();
+    let is_estimation_mode = compact_state.is_estimation_mode();
+    let pre_longs = if is_estimation_mode {
+        3
+    } else if retained_entries.len() == 1 {
+        1
+    } else {
+        2
+    };
+    let entries_size: usize = retained_entries
+        .iter()
+        .map(|entry| 8 + entry.borrow().summary().serialize_size())
+        .sum();
+    let mut bytes = SketchBytes::with_capacity(8 * pre_longs as usize + entries_size);
+
+    bytes.write_u8(pre_longs);
+    bytes.write_u8(SERIAL_VERSION);
+    bytes.write_u8(Family::TUPLE.id);
+    bytes.write_u8(SKETCH_TYPE);
+    bytes.write_u8(0); // unused
+
+    let mut flags = FLAGS_IS_READ_ONLY | FLAGS_IS_COMPACT;
+    if compact_state.is_ordered() {
+        flags |= FLAGS_IS_ORDERED;
+    }
+    bytes.write_u8(flags);
+    bytes.write_u16_le(compact_state.seed_hash());
+
+    if pre_longs > 1 {
+        bytes.write_u32_le(retained_entries.len() as u32);
+        bytes.write_u32_le(0); // unused
+    }
+    if is_estimation_mode {
+        bytes.write_u64_le(compact_state.theta());
+    }
+
+    for entry in retained_entries {
+        let entry = entry.borrow();
+        bytes.write_u64_le(entry.hash());
+        entry.summary().serialize_value(&mut bytes);
+    }
+    bytes.into_bytes()
+}
 
 /// Trait for values that can be stored as Tuple sketch summaries.
 ///
