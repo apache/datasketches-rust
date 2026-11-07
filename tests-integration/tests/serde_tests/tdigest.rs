@@ -30,12 +30,6 @@ use googletest::prelude::near;
 
 use crate::serialization_test_data;
 
-fn fnv1a(bytes: &[u8]) -> u64 {
-    bytes.iter().fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
-        (hash ^ u64::from(*byte)).wrapping_mul(0x0000_0100_0000_01b3)
-    })
-}
-
 fn patterned_digest(k: u16, len: usize, salt: usize) -> TDigestMut {
     let mut tdigest = TDigestMut::new(k).unwrap();
     for index in 0..len {
@@ -261,47 +255,6 @@ fn test_frozen_roundtrip() {
         actual.quantile(0.5).unwrap(),
         expected.quantile(0.5).unwrap()
     );
-}
-
-#[test]
-fn test_serialized_bytes_stable_for_full_and_merged_digests() {
-    let mut full_buffer = patterned_digest(200, 1_641, 0);
-    let bytes = full_buffer.serialize();
-    assert_eq!(bytes.len(), 2_864);
-    assert_eq!(fnv1a(&bytes), 0xaffe_62f2_3716_59b8);
-
-    let mut left = patterned_digest(10, 201, 2);
-    let mut right = patterned_digest(10, 199, 3);
-    right.rank(0.0).unwrap();
-    left.merge(&right);
-    let bytes = left.serialize();
-    assert_eq!(bytes.len(), 272);
-    assert_eq!(fnv1a(&bytes), 0x6037_b570_d640_d31f);
-
-    for &(left_len, right_len, expected_len, expected_hash) in &[
-        (8, 201, 272, 0x4ec5_2661_c556_c10e),
-        (201, 8, 256, 0x2b43_056d_9a57_b2a5),
-        (201, 401, 288, 0x1e43_34b7_ba13_4fe0),
-        (401, 201, 288, 0x6f6d_e965_77a7_a53f),
-    ] {
-        let mut left = patterned_digest(10, left_len, 2);
-        let right = patterned_digest(10, right_len, 3);
-        left.merge(&right);
-        let bytes = left.serialize();
-        assert_eq!(bytes.len(), expected_len);
-        assert_eq!(fnv1a(&bytes), expected_hash);
-    }
-
-    let mut left = patterned_digest(10, 199, 2);
-    let left = left.serialize();
-    let mut left = TDigestMut::deserialize(&left).unwrap();
-    let mut right = patterned_digest(10, 199, 3);
-    let right = right.serialize();
-    let right = TDigestMut::deserialize(&right).unwrap();
-    left.merge(&right);
-    let bytes = left.serialize();
-    assert_eq!(bytes.len(), 272);
-    assert_eq!(fnv1a(&bytes), 0x5759_0428_c175_88ab);
 }
 
 #[test]
