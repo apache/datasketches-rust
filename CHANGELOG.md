@@ -12,6 +12,7 @@ All significant changes to this project will be documented in this file.
 
 ### Improvements
 
+* `FrequentItemsSketch` updates are faster for streams of distinct items while the map is growing.
 * `HllUnion` is faster when adopting HLL8 inputs without downsampling or merging multiple dense inputs before querying or serializing the result.
 * `KllSketch::rank` is faster for repeated queries on compacted sketches.
 * Repeated scalar `TDigest::rank` queries are faster, including small digests and data with repeated values.
