@@ -7,11 +7,13 @@ All significant changes to this project will be documented in this file.
 ### New features
 
 * Create new `CountMinSketch` instances with serial version 2 hashing for cross-language interchange using the documented input encodings. Version 1 images retain their legacy queries, updates, merges, and serialization. New sketches support 1–127 rows and cannot be merged with version 1 sketches or read by version-1-only libraries; rebuild from source items when migrating existing data to version 2.
+* Add `CpcUnion::serialize`, which produces the same bytes as `to_sketch().serialize()` and can be faster.
 * Add `HllUnion::serialize` to serialize union results directly.
 * Add `XorFilter` and `XorFilterBuilder` behind the `xor` feature for immutable membership queries on values or precomputed hashes. Filters support 8-, 16-, and 32-bit fingerprints and can be serialized for later queries.
 
 ### Improvements
 
+* `FrequentItemsSketch` updates are faster for streams of distinct items while the map is growing.
 * `HllUnion` is faster when adopting HLL8 inputs without downsampling or merging multiple dense inputs before querying or serializing the result.
 * `KllSketch::rank` is faster for repeated queries on compacted sketches.
 * Repeated scalar `TDigest::rank` queries are faster, including small digests and data with repeated values.
