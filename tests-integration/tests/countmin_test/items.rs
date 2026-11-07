@@ -15,11 +15,15 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use datasketches::countmin::CountMinItem;
-use datasketches::countmin::CountMinSketch;
+use std::hash::Hash;
 
-fn assert_same_item<I: CountMinItem, J: CountMinItem>(left: I, right: J) {
-    let mut a = CountMinSketch::<i64>::new(3, 1000).unwrap();
+use datasketches::countmin::CountMinSketch;
+use datasketches::error::ErrorKind;
+use datasketches::hash::value::natural_extend;
+use datasketches::hash::value::raw_bytes;
+
+fn assert_same_item<I: Hash, J: Hash>(left: I, right: J) {
+    let mut a = CountMinSketch::<i64>::new_v2(3, 1000).unwrap();
     let mut b = a.clone();
     a.update_with_weight(&left, 7);
     b.update_with_weight(&right, 7);
@@ -29,56 +33,85 @@ fn assert_same_item<I: CountMinItem, J: CountMinItem>(left: I, right: J) {
 }
 
 #[test]
-fn integer_widths_use_the_same_64_bit_encoding() {
-    assert_same_item(-1i8, -1i64);
-    assert_same_item(-1i16, -1i64);
-    assert_same_item(-1i32, -1i64);
-    assert_same_item(-1isize, -1i64);
-    assert_same_item(u8::MAX, 255u64);
-    assert_same_item(u16::MAX, 65535u64);
-    assert_same_item(u32::MAX, u32::MAX as u64);
-    assert_same_item(1usize, 1u64);
-    assert_same_item(1i32, 1u64);
+fn v2_integer_wrappers_use_little_endian_64_bit_encoding() {
+    assert_same_item(natural_extend::from_i8(-1), -1i64);
+    assert_same_item(natural_extend::from_i16(-1), -1i64);
+    assert_same_item(natural_extend::from_i32(-1), -1i64);
+    assert_same_item(natural_extend::from_u8(255), 255u64);
+    assert_same_item(natural_extend::from_u16(65535), 65535u64);
+    assert_same_item(natural_extend::from_u32(u32::MAX), u32::MAX as u64);
     assert_same_item(-1i64, u64::MAX);
     assert_same_item(i64::MIN, 1u64 << 63);
-    assert_same_item(0x0102_0304_0506_0708u64, [8u8, 7, 6, 5, 4, 3, 2, 1]);
+    assert_same_item(-1i64, raw_bytes::from_slice(&[0xff; 8]));
+    assert_same_item(
+        0x0102_0304_0506_0708u64,
+        raw_bytes::from_slice(&[8, 7, 6, 5, 4, 3, 2, 1]),
+    );
 }
 
 #[test]
-fn owned_and_borrowed_strings_and_bytes_identify_the_same_item() {
+fn raw_byte_methods_match_wrappers_for_both_versions() {
     let text = "été and a long UTF-8 string crossing the 32-byte hash block boundary";
-    assert_same_item(text, text.to_owned());
-    assert_same_item(text, text.as_bytes());
-    assert_same_item(text, text.as_bytes().to_vec());
-    assert_same_item("apple", *b"apple");
-    assert_same_item("apple", b"apple");
-    assert_same_item("été", [0xc3u8, 0xa9, 0x74, 0xc3, 0xa9]);
+    for mut sketch in [
+        CountMinSketch::<i64>::new(3, 1000).unwrap(),
+        CountMinSketch::<i64>::new_v2(3, 1000).unwrap(),
+    ] {
+        sketch.update_bytes_with_weight(text.as_bytes(), 7);
+        assert_eq!(sketch.estimate(raw_bytes::from_str(text)), 7);
+        assert_eq!(sketch.estimate_bytes(text.as_bytes()), 7);
+        assert_eq!(
+            sketch.lower_bound_bytes(text.as_bytes()),
+            sketch.lower_bound(raw_bytes::from_str(text))
+        );
+        assert_eq!(
+            sketch.upper_bound_bytes(text.as_bytes()),
+            sketch.upper_bound(raw_bytes::from_str(text))
+        );
+        sketch.update(raw_bytes::from_string(text.to_owned()));
+        sketch.update(raw_bytes::from_vec(text.as_bytes().to_vec()));
+        assert_eq!(sketch.estimate_bytes(text.as_bytes()), 9);
+    }
 }
 
 #[test]
-fn empty_items_are_ignored_even_in_a_full_sketch() {
-    fn check<I: CountMinItem>(sketch: &mut CountMinSketch<i64>, item: I) {
-        let before = sketch.clone();
-        sketch.update(&item);
-        sketch.update_with_weight(&item, i64::MIN);
-        assert_eq!(*sketch, before);
-        assert_eq!(sketch.estimate(&item), 0);
-        assert_eq!(sketch.lower_bound(&item), 0);
-        assert_eq!(sketch.upper_bound(item), 0);
-    }
-
+fn byte_methods_ignore_empty_inputs_even_in_a_full_sketch() {
     for filled in [false, true] {
-        let mut sketch = CountMinSketch::<i64>::new(1, 3).unwrap();
-        if filled {
-            for i in 0..100 {
-                sketch.update(i);
+        for mut sketch in [
+            CountMinSketch::<i64>::new(1, 3).unwrap(),
+            CountMinSketch::<i64>::new_v2(1, 3).unwrap(),
+        ] {
+            if filled {
+                for i in 0..100u64 {
+                    sketch.update(i);
+                }
             }
+            let before = sketch.clone();
+            sketch.update_bytes(b"");
+            sketch.update_bytes_with_weight(b"", i64::MIN);
+            assert_eq!(sketch, before);
+            assert_eq!(sketch.estimate_bytes(b""), 0);
+            assert_eq!(sketch.lower_bound_bytes(b""), 0);
+            assert_eq!(sketch.upper_bound_bytes(b""), 0);
         }
-        check(&mut sketch, "");
-        check(&mut sketch, String::new());
-        check(&mut sketch, b"".as_slice());
-        check(&mut sketch, [] as [u8; 0]);
-        check(&mut sketch, b"");
-        check(&mut sketch, Vec::<u8>::new());
     }
+}
+
+#[test]
+fn only_v2_constructors_limit_the_row_count_to_127() {
+    for rows in [128, 255] {
+        let legacy = CountMinSketch::<i64>::with_seed(rows, 3, 42).unwrap();
+        assert_eq!(legacy.num_hashes(), rows);
+        assert_eq!(
+            CountMinSketch::<i64>::deserialize_with_seed(&legacy.serialize(), 42).unwrap(),
+            legacy
+        );
+        assert_eq!(
+            CountMinSketch::<i64>::with_seed_v2(rows, 3, 42)
+                .unwrap_err()
+                .kind(),
+            ErrorKind::InvalidArgument
+        );
+    }
+    assert!(CountMinSketch::<i64>::new_v2(127, 3).is_ok());
+    assert!(CountMinSketch::<i64>::new_v2(0, 3).is_err());
 }
