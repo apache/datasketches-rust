@@ -33,6 +33,12 @@ pub(super) trait SketchEntry {
     fn hash(&self) -> u64;
 }
 
+impl<E: SketchEntry> SketchEntry for &E {
+    fn hash(&self) -> u64 {
+        E::hash(self)
+    }
+}
+
 pub(super) trait KeySketch: Copy {
     fn metadata(self) -> sketch_state::ThetaFamilySketchMetadata;
 

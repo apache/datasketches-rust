@@ -532,18 +532,6 @@ impl CompactThetaSketch {
         .expect("compact theta should always be valid")
     }
 
-    fn preamble_longs(&self, compressed: bool) -> u8 {
-        if compressed {
-            if self.is_estimation_mode() { 2 } else { 1 }
-        } else if self.is_estimation_mode() {
-            3
-        } else if self.num_retained() == 1 {
-            1
-        } else {
-            2
-        }
-    }
-
     /// Serializes this sketch in compressed form if applicable.
     ///
     /// The serialized data can be read by other DataSketches implementations.
@@ -569,46 +557,12 @@ impl CompactThetaSketch {
     ///
     /// Empty sketches serialize with a zero seed hash.
     pub fn serialize(&self) -> Vec<u8> {
-        if self.is_empty() {
-            return serialization::EMPTY_SKETCH_BYTES.to_vec();
-        }
-
-        let retained_hashes = self.retained_hashes();
-        let mut bytes = SketchBytes::with_capacity(64 + retained_hashes.len() * 8);
-
-        let pre_longs = self.preamble_longs(false);
-        bytes.write_u8(pre_longs);
-        bytes.write_u8(serialization::UNCOMPRESSED_SERIAL_VERSION);
-        bytes.write_u8(Family::THETA.id);
-        bytes.write_u16_be(0); // unused for compact
-
-        let mut flags = 0u8;
-        flags |= FLAGS_IS_READ_ONLY;
-        flags |= FLAGS_IS_COMPACT;
-        if self.is_ordered() {
-            flags |= FLAGS_IS_ORDERED;
-        }
-        bytes.write_u8(flags);
-
-        bytes.write_u16_le(self.seed_hash());
-
-        if pre_longs > 1 {
-            bytes.write_u32_le(retained_hashes.len() as u32);
-            // Unused by compact sketches; matches datasketches-java and datasketches-cpp.
-            bytes.write_u32_be(0);
-        }
-        if self.is_estimation_mode() {
-            bytes.write_u64_le(self.theta64());
-        }
-        for hash in retained_hashes {
-            bytes.write_u64_le(*hash);
-        }
-        bytes.into_bytes()
+        serialization::serialize_uncompressed(&self.compact_state, |hash| *hash)
     }
 
     fn serialize_v4(&self) -> Vec<u8> {
         let retained_hashes = self.retained_hashes();
-        let pre_longs = self.preamble_longs(true);
+        let pre_longs = if self.is_estimation_mode() { 2u8 } else { 1u8 };
         let entry_bits = Self::compute_entry_bits(retained_hashes);
         let num_entries_bytes = Self::num_entries_bytes(retained_hashes.len());
 

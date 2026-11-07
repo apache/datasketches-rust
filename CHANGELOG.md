@@ -8,6 +8,7 @@ All significant changes to this project will be documented in this file.
 
 * Add `CpcUnion::serialize`, which produces the same bytes as `to_sketch().serialize()` and can be faster.
 * Add `HllUnion::serialize` to serialize union results directly.
+* Add `ThetaUnion::serialize` and `TupleUnion::serialize` to serialize ordered or unordered union results directly in their compact binary formats. Tuple summaries are serialized without cloning, avoiding per-entry allocations for heap-backed summaries.
 * Add `XorFilter` and `XorFilterBuilder` behind the `xor` feature for immutable membership queries on values or precomputed hashes. Filters support 8-, 16-, and 32-bit fingerprints and can be serialized for later queries.
 
 ### Improvements
