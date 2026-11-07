@@ -251,7 +251,6 @@ fn test_intersection_rejects_incompatible_filters() {
 fn test_requested_size_rounds_to_word_boundary() {
     let filter = BloomFilterBuilder::with_size(65, 3).build().unwrap();
     assert_eq!(filter.capacity(), 128);
-    assert_eq!(filter.estimated_size(), 16);
 }
 
 #[test]

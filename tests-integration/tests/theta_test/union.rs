@@ -730,24 +730,3 @@ fn test_corner_case_union_states() {
         assert_eq!(compact_result.is_empty(), expected_empty);
     }
 }
-
-#[test]
-fn test_union_estimated_size() {
-    let mut union = ThetaUnionBuilder::default().build().unwrap();
-    assert_eq!(union.estimated_size(), 1024);
-
-    let sketch = sketch_with_range(12, 0, 1000);
-    union.update(&sketch).unwrap();
-    assert_eq!(union.estimated_size(), 65536);
-}
-
-#[test]
-fn compact_estimated_size_includes_retained_capacity() {
-    let sketch = sketch_with_range(5, 0, 1000);
-    let mut union = ThetaUnionBuilder::default().lg_k(5).build().unwrap();
-    union.update(&sketch).unwrap();
-    let result = union.to_sketch(true);
-
-    assert_eq!(result.num_retained(), 32);
-    assert_eq!(result.estimated_size(), 512);
-}

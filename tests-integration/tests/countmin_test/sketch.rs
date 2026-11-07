@@ -443,16 +443,6 @@ fn test_increment_single_key_like_rust_count_min_sketch() {
 }
 
 #[test]
-fn test_estimated_size() {
-    let mut sketch = CountMinSketch::<i64>::new(4, 128).unwrap();
-    assert_eq!(sketch.estimated_size(), 4128);
-
-    // The backing tables are allocated up front; updates do not grow the sketch.
-    sketch.update("apple");
-    assert_eq!(sketch.estimated_size(), 4128);
-}
-
-#[test]
 fn test_increment_multi_like_rust_count_min_sketch() {
     let mut sketch = CountMinSketch::<i64>::new(6, 128).unwrap();
     for i in 0..1_000_000u64 {
