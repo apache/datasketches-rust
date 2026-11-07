@@ -18,12 +18,11 @@
 use std::hash::Hash;
 
 use datasketches::countmin::CountMinSketch;
-use datasketches::error::ErrorKind;
 use datasketches::hash::value::natural_extend;
 use datasketches::hash::value::raw_bytes;
 
 fn assert_same_item<I: Hash, J: Hash>(left: I, right: J) {
-    let mut a = CountMinSketch::<i64>::new_v2(3, 1000).unwrap();
+    let mut a = CountMinSketch::<i64>::new(3, 1000).unwrap();
     let mut b = a.clone();
     a.update_with_weight(&left, 7);
     b.update_with_weight(&right, 7);
@@ -42,24 +41,4 @@ fn v2_integer_wrappers_use_little_endian_64_bit_encoding() {
         0x0102_0304_0506_0708u64,
         raw_bytes::from_slice(&[8, 7, 6, 5, 4, 3, 2, 1]),
     );
-}
-
-#[test]
-fn only_v2_constructors_limit_the_row_count_to_127() {
-    for rows in [128, 255] {
-        let legacy = CountMinSketch::<i64>::with_seed(rows, 3, 42).unwrap();
-        assert_eq!(legacy.num_hashes(), rows);
-        assert_eq!(
-            CountMinSketch::<i64>::deserialize_with_seed(&legacy.serialize(), 42).unwrap(),
-            legacy
-        );
-        assert_eq!(
-            CountMinSketch::<i64>::with_seed_v2(rows, 3, 42)
-                .unwrap_err()
-                .kind(),
-            ErrorKind::InvalidArgument
-        );
-    }
-    assert!(CountMinSketch::<i64>::new_v2(127, 3).is_ok());
-    assert!(CountMinSketch::<i64>::new_v2(0, 3).is_err());
 }

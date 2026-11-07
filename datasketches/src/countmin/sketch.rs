@@ -66,9 +66,8 @@ impl Hasher for V2Hasher {
 ///
 /// The sketch provides upper and lower bounds on estimated item frequencies
 /// with configurable relative error and confidence.
-/// [`Self::new`] and [`Self::with_seed`] create version 1 sketches, retaining Rust's existing
-/// hashing behavior. [`Self::new_v2`] and [`Self::with_seed_v2`] opt into portable version 2
-/// hashing. Versions cannot be merged with each other.
+/// New sketches use serial version 2. Deserialized version 1 sketches retain their legacy
+/// hashing and serialization. Sketches of different versions cannot be merged.
 ///
 /// For version 2 cross-language interchange, use `i64` counters and encode items as follows:
 /// * `i64` and `u64` are hashed as eight little-endian bytes. Widen smaller integers first, or use
@@ -135,47 +134,6 @@ impl BucketCount {
 }
 
 impl<T: CountMinValue> CountMinSketch<T> {
-    /// Creates a version 1 CountMin sketch with the default seed.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if `num_hashes` is `0`, `num_buckets` is less than `3`, or
-    /// the total table size exceeds the supported limit.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use datasketches::countmin::CountMinSketch;
-    ///
-    /// let sketch = CountMinSketch::<i64>::new(4, 128).unwrap();
-    /// assert_eq!(sketch.num_buckets(), 128);
-    /// ```
-    pub fn new(num_hashes: u8, num_buckets: u32) -> Result<Self, Error> {
-        Self::with_seed(num_hashes, num_buckets, DEFAULT_UPDATE_SEED)
-    }
-
-    /// Creates a version 1 CountMin sketch with the provided seed.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if any of:
-    /// * `num_hashes` is `0`.
-    /// * `num_buckets` is less than `3`.
-    /// * The total table size exceeds the supported limit.
-    /// * The computed seed hash is zero.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use datasketches::countmin::CountMinSketch;
-    ///
-    /// let sketch = CountMinSketch::<i64>::with_seed(4, 64, 42).unwrap();
-    /// assert_eq!(sketch.seed(), 42);
-    /// ```
-    pub fn with_seed(num_hashes: u8, num_buckets: u32, seed: u64) -> Result<Self, Error> {
-        Self::create(num_hashes, num_buckets, seed, SERIAL_VERSION_1)
-    }
-
     /// Creates a version 2 CountMin sketch with the default seed.
     ///
     /// See [`CountMinSketch`] for portable input encodings. Version 2 sketches cannot be merged
@@ -192,13 +150,13 @@ impl<T: CountMinValue> CountMinSketch<T> {
     /// use datasketches::countmin::CountMinSketch;
     /// use datasketches::hash::value::raw_bytes;
     ///
-    /// let mut sketch = CountMinSketch::<i64>::new_v2(3, 1000)?;
+    /// let mut sketch = CountMinSketch::<i64>::new(3, 1000)?;
     /// sketch.update(raw_bytes::from_str("apple"));
     /// assert_eq!(sketch.estimate(raw_bytes::from_str("apple")), 1);
     /// # Ok::<(), datasketches::error::Error>(())
     /// ```
-    pub fn new_v2(num_hashes: u8, num_buckets: u32) -> Result<Self, Error> {
-        Self::with_seed_v2(num_hashes, num_buckets, DEFAULT_UPDATE_SEED)
+    pub fn new(num_hashes: u8, num_buckets: u32) -> Result<Self, Error> {
+        Self::with_seed(num_hashes, num_buckets, DEFAULT_UPDATE_SEED)
     }
 
     /// Creates a version 2 CountMin sketch with the provided seed.
@@ -209,13 +167,17 @@ impl<T: CountMinValue> CountMinSketch<T> {
     ///
     /// Returns an error if `num_hashes` is outside `1..=127`, `num_buckets` is less than `3`, the
     /// total table size exceeds the supported limit, or the computed seed hash is zero.
-    pub fn with_seed_v2(num_hashes: u8, num_buckets: u32, seed: u64) -> Result<Self, Error> {
-        if num_hashes > 127 {
-            return Err(Error::invalid_argument(
-                "version 2 num_hashes must be within 1..=127",
-            ));
-        }
-        Self::create(num_hashes, num_buckets, seed, SERIAL_VERSION_2)
+    pub fn with_seed(num_hashes: u8, num_buckets: u32, seed: u64) -> Result<Self, Error> {
+        let entries = entries_for_config(num_hashes, num_buckets)?;
+        let seed_hash = compute_seed_hash(seed, ErrorKind::InvalidArgument)?;
+        Ok(Self::make(
+            num_hashes,
+            num_buckets,
+            seed,
+            seed_hash,
+            SERIAL_VERSION_2,
+            entries,
+        ))
     }
 
     /// Returns the number of hash functions used by the sketch.
@@ -421,10 +383,8 @@ impl<T: CountMinValue> CountMinSketch<T> {
 
     /// Serializes this sketch into the Count-Min binary format.
     ///
-    /// Preserves the sketch's serial version. The default constructors create version 1 sketches;
-    /// [`Self::new_v2`] and [`Self::with_seed_v2`] create version 2 sketches. Deserializing an
-    /// image retains its version and hashing behavior for queries, updates, merges, and
-    /// serialization.
+    /// New sketches are written as version 2. A sketch deserialized from a version 1 image
+    /// retains its legacy hashing for queries and updates and is written back as version 1.
     ///
     /// Version 1 images are not portable across implementations. Version 2 supports cross-language
     /// interchange with `i64` counters and the input encodings documented on [`CountMinSketch`].
@@ -638,24 +598,6 @@ impl<T: CountMinValue> CountMinSketch<T> {
         self.counts.capacity() * size_of::<T>() + self.hash_seeds.capacity() * size_of::<u64>()
     }
 
-    fn create(
-        num_hashes: u8,
-        num_buckets: u32,
-        seed: u64,
-        serial_version: u8,
-    ) -> Result<Self, Error> {
-        let entries = entries_for_config(num_hashes, num_buckets)?;
-        let seed_hash = compute_seed_hash(seed, ErrorKind::InvalidArgument)?;
-        Ok(Self::make(
-            num_hashes,
-            num_buckets,
-            seed,
-            seed_hash,
-            serial_version,
-            entries,
-        ))
-    }
-
     fn make(
         num_hashes: u8,
         num_buckets: u32,
@@ -754,8 +696,8 @@ impl<T: UnsignedCountMinValue> CountMinSketch<T> {
 }
 
 fn entries_for_config(num_hashes: u8, num_buckets: u32) -> Result<usize, Error> {
-    if num_hashes == 0 {
-        return Err(Error::invalid_argument("num_hashes must be at least 1"));
+    if !(1..=127).contains(&num_hashes) {
+        return Err(Error::invalid_argument("num_hashes must be within 1..=127"));
     }
     if num_buckets < 3 {
         return Err(Error::invalid_argument("num_buckets must be at least 3"));
