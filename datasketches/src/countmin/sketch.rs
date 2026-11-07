@@ -48,8 +48,8 @@ const MAX_TABLE_ENTRIES: usize = 1 << 30;
 /// hashing and serialization. Sketches of different versions cannot be merged.
 ///
 /// For version 2 cross-language interchange, use `i64` counters and encode items as follows:
-/// * `i64` and `u64` are hashed as eight little-endian bytes. Widen smaller integers first, or use
-///   [`crate::hash::value::natural_extend`].
+/// * Integers up to 64 bits, including `isize` and `usize`, are widened to 64 bits and hashed as
+///   eight little-endian bytes. Signed integers are sign-extended.
 /// * Strings use UTF-8 and byte arrays use their contents without prefixes or terminators. Use
 ///   [`crate::hash::value::raw_bytes`] wrappers.
 ///
@@ -95,8 +95,40 @@ impl Hasher for ItemHasher {
         self.write(&value.to_le_bytes());
     }
 
+    fn write_i8(&mut self, value: i8) {
+        self.write_i64(i64::from(value));
+    }
+
+    fn write_i16(&mut self, value: i16) {
+        self.write_i64(i64::from(value));
+    }
+
+    fn write_i32(&mut self, value: i32) {
+        self.write_i64(i64::from(value));
+    }
+
+    fn write_isize(&mut self, value: isize) {
+        self.write_i64(value as i64);
+    }
+
     fn write_u64(&mut self, value: u64) {
         self.write(&value.to_le_bytes());
+    }
+
+    fn write_u8(&mut self, value: u8) {
+        self.write_u64(u64::from(value));
+    }
+
+    fn write_u16(&mut self, value: u16) {
+        self.write_u64(u64::from(value));
+    }
+
+    fn write_u32(&mut self, value: u32) {
+        self.write_u64(u64::from(value));
+    }
+
+    fn write_usize(&mut self, value: usize) {
+        self.write_u64(value as u64);
     }
 }
 

@@ -55,7 +55,15 @@ fn assert_same_item<I: Hash, J: Hash>(left: I, right: J) {
 }
 
 #[test]
-fn v2_integer_wrappers_use_little_endian_64_bit_encoding() {
+fn integer_inputs_use_little_endian_64_bit_encoding() {
+    assert_same_item(-2i8, -2i64);
+    assert_same_item(-2i16, -2i64);
+    assert_same_item(-2i32, -2i64);
+    assert_same_item(-2isize, -2i64);
+    assert_same_item(u8::MAX, u8::MAX as u64);
+    assert_same_item(u16::MAX, u16::MAX as u64);
+    assert_same_item(u32::MAX, u32::MAX as u64);
+    assert_same_item(usize::MAX, usize::MAX as u64);
     assert_same_item(natural_extend::from_i8(-2), -2i64);
     assert_same_item(natural_extend::from_u8(255), 255u64);
     assert_same_item(
