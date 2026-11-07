@@ -17,9 +17,10 @@
 
 //! Hashable value wrappers for sketches.
 //!
-//! Sketch update APIs accept any value that implements [`Hash`]. For most Rust values,
+//! Most sketch update APIs accept any value that implements [`Hash`]. For most Rust values,
 //! passing the value directly is sufficient. This module provides value wrappers for
 //! cases where the default implementation does not match a sketch's compatibility rules.
+//! Count-Min instead accepts its own set of integer, string, and byte inputs directly.
 //!
 //! ## Floating-point Numbers
 //!

@@ -7,6 +7,7 @@ All significant changes to this project will be documented in this file.
 ### Breaking changes
 
 * New `CountMinSketch` values use serial version 2 with XxHash64-derived row seeds and item hashes, plus unsigned bucket mapping. Deserialization still accepts legacy Rust version 1 images and preserves their version when reserializing, but version 1 images from other implementations remain incompatible for queries, updates, and merges. Merging now requires matching serial versions.
+* `CountMinSketch` updates and queries now accept `CountMinItem` instead of arbitrary `Hash` values: integers up to 64 bits, strings, byte slices, arrays, vectors, and shared references. Version 2 widens integers to 64 bits and hashes little-endian bytes, uses UTF-8 strings and raw byte contents without prefixes or terminators, and ignores empty strings and byte collections. Pass these inputs directly instead of hash wrappers; convert custom values to a supported representation and use `CountMinItem` for generic bounds. Legacy sketches populated with unsupported custom hash encodings must be rebuilt from their input data. New sketches and version 2 images require `1..=127` hash rows.
 
 ### New features
 

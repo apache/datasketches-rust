@@ -44,6 +44,9 @@
 
 mod serialization;
 
+mod item;
+pub use self::item::CountMinItem;
+
 mod sketch;
 pub use self::sketch::CountMinSketch;
 

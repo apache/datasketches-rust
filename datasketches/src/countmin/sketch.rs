@@ -15,7 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use std::hash::Hash;
 use std::hash::Hasher;
 
 use crate::codec::SketchBytes;
@@ -23,6 +22,7 @@ use crate::codec::SketchSlice;
 use crate::codec::assert::ensure_preamble_longs_in;
 use crate::codec::assert::insufficient_data;
 use crate::codec::family::Family;
+use crate::countmin::CountMinItem;
 use crate::countmin::CountMinValue;
 use crate::countmin::UnsignedCountMinValue;
 use crate::countmin::serialization::FLAGS_IS_EMPTY;
@@ -44,6 +44,7 @@ const MAX_TABLE_ENTRIES: usize = 1 << 30;
 ///
 /// The sketch provides upper and lower bounds on estimated item frequencies
 /// with configurable relative error and confidence.
+/// Inputs follow the encoding rules of [`CountMinItem`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct CountMinSketch<T: CountMinValue> {
     num_hashes: u8,
@@ -103,8 +104,8 @@ impl<T: CountMinValue> CountMinSketch<T> {
     ///
     /// # Errors
     ///
-    /// Returns an error if `num_hashes` is `0`, `num_buckets` is less than `3`, or the total table
-    /// size exceeds the supported limit.
+    /// Returns an error if `num_hashes` is outside `1..=127`, `num_buckets` is less than `3`, or
+    /// the total table size exceeds the supported limit.
     ///
     /// # Examples
     ///
@@ -123,7 +124,7 @@ impl<T: CountMinValue> CountMinSketch<T> {
     /// # Errors
     ///
     /// Returns an error if any of:
-    /// * `num_hashes` is `0`.
+    /// * `num_hashes` is outside `1..=127`.
     /// * `num_buckets` is less than `3`.
     /// * The total table size exceeds the supported limit.
     /// * The computed seed hash is zero.
@@ -222,6 +223,8 @@ impl<T: CountMinValue> CountMinSketch<T> {
 
     /// Updates the sketch with a single occurrence of the item.
     ///
+    /// Version 2 ignores empty strings and byte collections. See [`CountMinItem`] for encoding.
+    ///
     /// # Panics
     ///
     /// Panics without modifying the sketch if the total absolute weight would exceed `T::MAX`.
@@ -235,11 +238,14 @@ impl<T: CountMinValue> CountMinSketch<T> {
     /// sketch.update("apple");
     /// assert!(sketch.estimate("apple") >= 1);
     /// ```
-    pub fn update<I: Hash>(&mut self, item: I) {
+    pub fn update<I: CountMinItem>(&mut self, item: I) {
         self.update_with_weight(item, T::ONE);
     }
 
     /// Updates the sketch with the given item and weight.
+    ///
+    /// Version 2 ignores empty strings and byte collections, regardless of weight.
+    /// See [`CountMinItem`] for encoding.
     ///
     /// # Panics
     ///
@@ -255,8 +261,8 @@ impl<T: CountMinValue> CountMinSketch<T> {
     /// sketch.update_with_weight("banana", 3);
     /// assert!(sketch.estimate("banana") >= 3);
     /// ```
-    pub fn update_with_weight<I: Hash>(&mut self, item: I, weight: T) {
-        if weight == T::ZERO {
+    pub fn update_with_weight<I: CountMinItem>(&mut self, item: I, weight: T) {
+        if weight == T::ZERO || (self.serial_version == SERIAL_VERSION_2 && item.is_empty()) {
             return;
         }
         self.total_weight = weight
@@ -273,6 +279,9 @@ impl<T: CountMinValue> CountMinSketch<T> {
 
     /// Returns the estimated frequency of the given item.
     ///
+    /// Version 2 returns zero for empty strings and byte collections.
+    /// See [`CountMinItem`] for encoding.
+    ///
     /// # Examples
     ///
     /// ```
@@ -282,7 +291,10 @@ impl<T: CountMinValue> CountMinSketch<T> {
     /// sketch.update_with_weight("pear", 2);
     /// assert!(sketch.estimate("pear") >= 2);
     /// ```
-    pub fn estimate<I: Hash>(&self, item: I) -> T {
+    pub fn estimate<I: CountMinItem>(&self, item: I) -> T {
+        if self.serial_version == SERIAL_VERSION_2 && item.is_empty() {
+            return T::ZERO;
+        }
         let num_buckets = self.buckets.count as usize;
         let mut min = T::MAX;
         for (row, seed) in self.hash_seeds.iter().enumerate() {
@@ -297,12 +309,19 @@ impl<T: CountMinValue> CountMinSketch<T> {
     }
 
     /// Returns the lower bound on the true frequency of the given item.
-    pub fn lower_bound<I: Hash>(&self, item: I) -> T {
+    ///
+    /// Version 2 returns zero for empty strings and byte collections.
+    pub fn lower_bound<I: CountMinItem>(&self, item: I) -> T {
         self.estimate(item)
     }
 
     /// Returns the upper bound on the true frequency of the given item.
-    pub fn upper_bound<I: Hash>(&self, item: I) -> T {
+    ///
+    /// Version 2 returns zero for empty strings and byte collections.
+    pub fn upper_bound<I: CountMinItem>(&self, item: I) -> T {
+        if self.serial_version == SERIAL_VERSION_2 && item.is_empty() {
+            return T::ZERO;
+        }
         let estimate = self.estimate(item);
         let error = self.total_weight.scale_nonnegative(self.relative_error());
         estimate.checked_add(error).unwrap_or(T::MAX)
@@ -355,9 +374,9 @@ impl<T: CountMinValue> CountMinSketch<T> {
     /// New sketches use serial version 2. Sketches deserialized from version 1 images retain the
     /// legacy Rust item-to-counter mapping and are serialized as version 1 again.
     ///
-    /// Version 2 derives each row seed by hashing the row's 8-byte little-endian index with
-    /// XxHash64 and the sketch seed. It uses XxHash64 for item hashing and shifts the hash right by
-    /// one before taking the bucket modulo.
+    /// Version 2 uses the portable DataSketches Count-Min format and [`CountMinItem`] encoding.
+    /// Use `i64` counters for cross-language interchange; other counter types are compatible only
+    /// when their eight-byte values can be interpreted as signed 64-bit integers by the reader.
     ///
     /// # Examples
     ///
@@ -408,6 +427,9 @@ impl<T: CountMinValue> CountMinSketch<T> {
 
     /// Deserializes a sketch from bytes using the default seed.
     ///
+    /// Reads portable version 2 images using [`CountMinItem`] encoding. Counter values must fit
+    /// `T`.
+    ///
     /// Accepts serial versions 1 and 2. Version 1 uses the legacy Rust item-to-counter mapping;
     /// queries, updates, and merges on version 1 images from other implementations remain
     /// unreliable.
@@ -433,6 +455,9 @@ impl<T: CountMinValue> CountMinSketch<T> {
     }
 
     /// Deserializes a sketch from bytes using the provided seed.
+    ///
+    /// Reads portable version 2 images using [`CountMinItem`] encoding. Counter values must fit
+    /// `T`.
     ///
     /// Accepts serial versions 1 and 2. Version 1 uses the legacy Rust item-to-counter mapping;
     /// queries, updates, and merges on version 1 images from other implementations remain
@@ -489,6 +514,11 @@ impl<T: CountMinValue> CountMinSketch<T> {
             .read_u32_le()
             .map_err(insufficient_data("num_buckets"))?;
         let num_hashes = cursor.read_u8().map_err(insufficient_data("num_hashes"))?;
+        if serial_version == SERIAL_VERSION_2 && num_hashes > 127 {
+            return Err(Error::deserial(
+                "version 2 num_hashes must be within 1..=127",
+            ));
+        }
         let seed_hash = cursor
             .read_u16_le()
             .map_err(insufficient_data("seed_hash"))?;
@@ -579,18 +609,14 @@ impl<T: CountMinValue> CountMinSketch<T> {
         }
     }
 
-    fn bucket_index<I: Hash>(&self, item: &I, seed: u64) -> usize {
+    fn bucket_index<I: CountMinItem>(&self, item: &I, seed: u64) -> usize {
         let hash = match self.serial_version {
             SERIAL_VERSION_1 => {
                 let mut hasher = MurmurHash3X64128::with_seed(seed);
                 item.hash(&mut hasher);
                 hasher.finish128().0
             }
-            SERIAL_VERSION_2 => {
-                let mut hasher = XxHash64::with_seed(seed);
-                item.hash(&mut hasher);
-                hasher.finish64() >> 1
-            }
+            SERIAL_VERSION_2 => item.hash_v2(seed) >> 1,
             _ => unreachable!("unsupported Count-Min serial version"),
         };
         self.buckets.index(hash)
@@ -655,8 +681,8 @@ impl<T: UnsignedCountMinValue> CountMinSketch<T> {
 }
 
 fn entries_for_config(num_hashes: u8, num_buckets: u32) -> Result<usize, Error> {
-    if num_hashes == 0 {
-        return Err(Error::invalid_argument("num_hashes must be at least 1"));
+    if !(1..=127).contains(&num_hashes) {
+        return Err(Error::invalid_argument("num_hashes must be within 1..=127"));
     }
     if num_buckets < 3 {
         return Err(Error::invalid_argument("num_buckets must be at least 3"));

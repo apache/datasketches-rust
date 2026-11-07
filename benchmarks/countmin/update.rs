@@ -20,7 +20,6 @@ use std::hint::black_box;
 use benchmarks::Bencher;
 use benchmarks::Runner;
 use datasketches::countmin::CountMinSketch;
-use datasketches::hash::value::raw_bytes;
 
 use crate::hash_inputs::ITEMS;
 use crate::hash_inputs::bytes_32_values;
@@ -41,7 +40,7 @@ fn bytes_32(bencher: Bencher) {
     bencher.bench_local(|| {
         let mut sketch = CountMinSketch::<u64>::new(4, 16_384).unwrap();
         for value in &values {
-            sketch.update(raw_bytes::from_slice(black_box(value)));
+            sketch.update(black_box(value));
         }
         black_box(sketch)
     });
