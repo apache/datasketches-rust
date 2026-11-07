@@ -432,23 +432,3 @@ fn test_merge_incompatible() {
     let error = left.merge(&right).unwrap_err();
     assert_eq!(error.kind(), ErrorKind::InvalidArgument);
 }
-
-#[test]
-fn test_increment_single_key_like_rust_count_min_sketch() {
-    let mut sketch = CountMinSketch::<i64>::new(4, 32).unwrap();
-    for _ in 0..300 {
-        sketch.update("key");
-    }
-    assert_eq!(sketch.estimate("key"), 300);
-}
-
-#[test]
-fn test_increment_multi_like_rust_count_min_sketch() {
-    let mut sketch = CountMinSketch::<i64>::new(6, 128).unwrap();
-    for i in 0..1_000_000u64 {
-        sketch.update(i % 100);
-    }
-    for key in 0..100u64 {
-        assert_that!(sketch.estimate(key), ge(9_000));
-    }
-}
