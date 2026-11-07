@@ -491,8 +491,16 @@ impl CpcSketch {
     ///
     /// The serialized data can be read by other DataSketches implementations.
     pub fn serialize(&self) -> Vec<u8> {
+        self.serialize_with_merge_flag(self.merge_flag)
+    }
+
+    pub(super) fn serialize_merged(&self) -> Vec<u8> {
+        self.serialize_with_merge_flag(true)
+    }
+
+    fn serialize_with_merge_flag(&self, merge_flag: bool) -> Vec<u8> {
         let flavor = self.flavor();
-        let has_hip = !self.merge_flag;
+        let has_hip = !merge_flag;
         let has_window = matches!(flavor, Flavor::Pinned | Flavor::Sliding);
         let mut pairs = match flavor {
             Flavor::Empty => vec![],

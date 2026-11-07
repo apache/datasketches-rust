@@ -20,8 +20,10 @@ use std::hint::black_box;
 use benchmarks::Bencher;
 use benchmarks::Runner;
 use datasketches::cpc::CpcSketch;
+use datasketches::cpc::CpcUnion;
 
 const LG_K: u8 = 10;
+const UNION_LG_K: u8 = 18;
 
 fn serialize(bencher: Bencher, items: u64) {
     let sketch = sketch(items);
@@ -35,12 +37,35 @@ fn deserialize(bencher: Bencher, items: u64) {
     bencher.bench_local(|| CpcSketch::deserialize(black_box(&bytes)).unwrap());
 }
 
+fn serialize_union(bencher: Bencher, items: u64) {
+    let union = union(items);
+
+    bencher.bench_local(|| black_box(&union).serialize());
+}
+
+fn serialize_union_via_sketch(bencher: Bencher, items: u64) {
+    let union = union(items);
+
+    bencher.bench_local(|| black_box(&union).to_sketch().serialize());
+}
+
 fn sketch(items: u64) -> CpcSketch {
-    let mut sketch = CpcSketch::new(LG_K).unwrap();
+    sketch_with_lg_k(LG_K, items)
+}
+
+fn sketch_with_lg_k(lg_k: u8, items: u64) -> CpcSketch {
+    let mut sketch = CpcSketch::new(lg_k).unwrap();
     for value in 0..items {
         sketch.update(value);
     }
     sketch
+}
+
+fn union(items: u64) -> CpcUnion {
+    let sketch = sketch_with_lg_k(UNION_LG_K, items);
+    let mut union = CpcUnion::new(UNION_LG_K).unwrap();
+    union.update(&sketch).unwrap();
+    union
 }
 
 pub fn register(runner: &mut Runner) {
@@ -53,5 +78,15 @@ pub fn register(runner: &mut Runner) {
         runner.case(format!("cpc::serde::deserialize/{items:?}"), rounds, |b| {
             deserialize(b, items)
         });
+    }
+    for &(items, rounds) in &[(0_u64, 4_000_000), (20_000_u64, 500), (80_000_u64, 200)] {
+        runner.compare(
+            &format!("cpc::serde::serialize_union/{items:?}"),
+            rounds,
+            &[
+                ("via sketch", &|b| serialize_union_via_sketch(b, items)),
+                ("direct", &|b| serialize_union(b, items)),
+            ],
+        );
     }
 }

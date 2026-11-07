@@ -210,6 +210,41 @@ impl CpcUnion {
         }
     }
 
+    /// Serializes the union's result as a `CpcSketch`.
+    ///
+    /// Produces the same bytes as `to_sketch().serialize()`. The image retains the effective
+    /// `lg_k`, seed hash, and merged-estimator semantics. It represents a sketch result rather than
+    /// the union operator's configuration and can be read with [`CpcSketch::deserialize`] or
+    /// [`CpcSketch::deserialize_with_seed`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::cpc::CpcSketch;
+    /// use datasketches::cpc::CpcUnion;
+    ///
+    /// let mut sketch = CpcSketch::new(12).unwrap();
+    /// sketch.update("apple");
+    ///
+    /// let mut union = CpcUnion::new(12).unwrap();
+    /// union.update(&sketch).unwrap();
+    ///
+    /// let result = CpcSketch::deserialize(&union.serialize()).unwrap();
+    /// assert_eq!(result.estimate(), union.to_sketch().estimate());
+    /// ```
+    pub fn serialize(&self) -> Vec<u8> {
+        match &self.state {
+            UnionState::Accumulator(sketch) if sketch.is_empty() => sketch.serialize(),
+            UnionState::Accumulator(sketch) => {
+                debug_assert_eq!(sketch.flavor(), Flavor::Sparse);
+                sketch.serialize_merged()
+            }
+            // Dense result serialization still uses the existing materialization path. Avoiding
+            // its intermediate window and pair table is a separate optimization.
+            UnionState::BitMatrix(_) => self.to_sketch().serialize(),
+        }
+    }
+
     /// Updates this union with a `CpcSketch`.
     ///
     /// # Errors
