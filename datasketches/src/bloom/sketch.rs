@@ -49,8 +49,8 @@ pub struct BloomFilter {
     num_bits_set: u64,
     /// Bit array packed into u64 words
     bit_array: Box<[u64]>,
-    /// Multiplier for reducing hashes modulo the bit capacity; derived from `bit_array`.
-    capacity_multiplier: u128,
+    /// Reduces shifted hashes modulo the bit capacity; derived from `bit_array`.
+    reducer: CapacityReducer,
 }
 
 impl fmt::Debug for BloomFilter {
@@ -602,7 +602,7 @@ impl BloomFilter {
             seed,
             num_hashes,
             num_bits_set,
-            capacity_multiplier: capacity_multiplier(&bit_array),
+            reducer: CapacityReducer::new(bit_array.len() as u64 * 64),
             bit_array,
         })
     }
@@ -612,6 +612,7 @@ impl BloomFilter {
     /// Uses a two-hash approach:
     /// * h0 = XXHash64(item, seed)
     /// * h1 = XXHash64(item, h0)
+    #[inline]
     fn compute_hash<T: Hash>(&self, item: &T) -> (u64, u64) {
         // First hash with the configured seed
         let mut hasher = XxHash64::with_seed(self.seed);
@@ -646,17 +647,8 @@ impl BloomFilter {
     ///
     /// The right shift by 1 improves bit-distribution. The index `i` is 1-based.
     fn compute_bit_index(&self, h0: u64, h1: u64, i: u16) -> usize {
-        let hash = h0.wrapping_add(u64::from(i).wrapping_mul(h1)) as usize;
-        let hash = (hash >> 1) as u64;
-        // Lemire's remainder by direct computation ("Faster Remainder by Direct Computation",
-        // 2019) equals `hash % capacity_bits` for every `u64` dividend and every divisor >= 2,
-        // without a hardware division.
-        let low_bits = self.capacity_multiplier.wrapping_mul(u128::from(hash));
-        // High 64 bits of the 192-bit product `low_bits * capacity_bits`.
-        let capacity = self.capacity() as u128;
-        let lo = u128::from(low_bits as u64) * capacity;
-        let hi = (low_bits >> 64) * capacity;
-        ((hi + (lo >> 64)) >> 64) as usize
+        let hash = h0.wrapping_add(u64::from(i).wrapping_mul(h1)) >> 1;
+        self.reducer.remainder(hash) as usize
     }
 
     /// Gets the value of a single bit.
@@ -673,12 +665,39 @@ impl BloomFilter {
     }
 }
 
-/// Returns the multiplier used by [`BloomFilter::compute_bit_index`] to reduce hashes modulo the
-/// bit capacity of `bit_array`.
-fn capacity_multiplier(bit_array: &[u64]) -> u128 {
-    // The capacity is a positive multiple of 64, so the multiplier cannot overflow.
-    let capacity = bit_array.len() as u128 * 64;
-    u128::MAX / capacity + 1
+/// Reduces shifted hashes (below `2^63`) modulo the bit capacity without a hardware division.
+#[derive(Clone, Copy, PartialEq)]
+struct CapacityReducer {
+    capacity: u64,
+    /// `ceil(2^(63 + l) / capacity)` with `l = ceil(log2(capacity))`.
+    multiplier: u64,
+    /// `l - 1`.
+    shift: u32,
+}
+
+impl CapacityReducer {
+    /// `capacity` is a positive multiple of 64.
+    fn new(capacity: u64) -> Self {
+        // `capacity > 2^(l - 1)`, so the multiplier is below `2^64`.
+        let l = 64 - (capacity - 1).leading_zeros();
+        let multiplier = (1u128 << (63 + l)).div_ceil(u128::from(capacity)) as u64;
+        Self {
+            capacity,
+            multiplier,
+            shift: l - 1,
+        }
+    }
+
+    /// Returns `hash % capacity` for every `hash < 2^63`, using division by an invariant integer
+    /// (Granlund and Montgomery, 1994): `hash / capacity == (multiplier * hash) >> (63 + l)`,
+    /// which is one high multiply and one shift.
+    #[inline]
+    fn remainder(self, hash: u64) -> u64 {
+        debug_assert!(hash < 1 << 63);
+        let quotient =
+            ((u128::from(hash) * u128::from(self.multiplier)) >> 64) as u64 >> self.shift;
+        hash - quotient * self.capacity
+    }
 }
 
 /// Builder for creating [`BloomFilter`] instances.
@@ -872,7 +891,7 @@ impl BloomFilterBuilder {
             seed: self.seed,
             num_hashes,
             num_bits_set: 0,
-            capacity_multiplier: capacity_multiplier(&bit_array),
+            reducer: CapacityReducer::new(bit_array.len() as u64 * 64),
             bit_array,
         })
     }
@@ -914,14 +933,62 @@ mod tests {
             for &h0 in &hashes {
                 for &h1 in &hashes {
                     for i in [1, 2, 3, 7, 64, 1_000, u16::MAX] {
-                        let hash = h0.wrapping_add(u64::from(i).wrapping_mul(h1)) as usize;
+                        let hash = h0.wrapping_add(u64::from(i).wrapping_mul(h1)) >> 1;
                         assert_eq!(
-                            filter.compute_bit_index(h0, h1, i),
-                            (hash >> 1) % capacity,
+                            filter.compute_bit_index(h0, h1, i) as u64,
+                            hash % capacity as u64,
                             "capacity {capacity}, h0 {h0}, h1 {h1}, i {i}"
                         );
                     }
                 }
+            }
+        }
+    }
+
+    /// The reducer must equal `%` for every shifted hash (below `2^63`) and every supported
+    /// capacity, including capacities too large to allocate here.
+    #[test]
+    fn capacity_reducer_equals_remainder_for_supported_capacities() {
+        let max = BloomFilterBuilder::MAX_NUM_BITS;
+        let capacities = [
+            64,
+            128,
+            192,
+            4_096,
+            4_160,
+            95_872,
+            131_072,
+            3_000_064,
+            (1 << 36) + 64,
+            (1 << 37) - 64,
+            max - 64,
+            max,
+        ];
+        let mut state = 0x2545_f491_4f6c_dd1d_u64;
+        for capacity in capacities {
+            assert_eq!(capacity % 64, 0);
+            let reducer = CapacityReducer::new(capacity);
+            let mut hashes = vec![
+                0,
+                1,
+                capacity - 1,
+                capacity,
+                capacity + 1,
+                (1 << 63) - capacity,
+                (1 << 63) - 1,
+            ];
+            for _ in 0..10_000 {
+                state ^= state << 13;
+                state ^= state >> 7;
+                state ^= state << 17;
+                hashes.push(state >> 1);
+            }
+            for hash in hashes {
+                assert_eq!(
+                    reducer.remainder(hash),
+                    hash % capacity,
+                    "capacity {capacity}, hash {hash}"
+                );
             }
         }
     }

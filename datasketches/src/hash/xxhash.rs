@@ -144,7 +144,32 @@ impl Hasher for XxHash64 {
     #[inline(always)]
     fn write(&mut self, bytes: &[u8]) {
         self.total_len = self.total_len.wrapping_add(bytes.len() as u64);
+        self.write_bytes(bytes);
+    }
 
+    /// Same result as the default `write(&i.to_ne_bytes())`, with an inlined body small enough
+    /// that hashing an integer folds to a few multiplies at the call site.
+    #[inline(always)]
+    fn write_u64(&mut self, i: u64) {
+        let bytes = i.to_ne_bytes();
+        self.total_len = self.total_len.wrapping_add(8);
+        if self.buffer_len + 8 < 32 {
+            self.buffer[self.buffer_len..self.buffer_len + 8].copy_from_slice(&bytes);
+            self.buffer_len += 8;
+        } else {
+            self.write_bytes_outlined(&bytes);
+        }
+    }
+}
+
+impl XxHash64 {
+    #[inline(never)]
+    fn write_bytes_outlined(&mut self, bytes: &[u8]) {
+        self.write_bytes(bytes);
+    }
+
+    #[inline(always)]
+    fn write_bytes(&mut self, bytes: &[u8]) {
         if self.buffer_len + bytes.len() < 32 {
             self.buffer[self.buffer_len..self.buffer_len + bytes.len()].copy_from_slice(bytes);
             self.buffer_len += bytes.len();
@@ -269,5 +294,29 @@ mod tests {
         hasher.write(&123u64.to_le_bytes());
         let hash2 = hasher.finish64();
         assert_eq!(hash2, hash1);
+    }
+
+    #[test]
+    fn write_u64_matches_write_of_native_bytes() {
+        let input: Vec<u8> = (0..=40).collect();
+        for prefix in 0..=input.len() {
+            for value in [0u64, 1, 0x0123_4567_89ab_cdef, u64::MAX] {
+                let mut expected = XxHash64::with_seed(PRIME32);
+                expected.write(&input[..prefix]);
+                expected.write(&value.to_ne_bytes());
+                expected.write(&input[..prefix]);
+
+                let mut hasher = XxHash64::with_seed(PRIME32);
+                hasher.write(&input[..prefix]);
+                hasher.write_u64(value);
+                hasher.write(&input[..prefix]);
+
+                assert_eq!(
+                    hasher.finish64(),
+                    expected.finish64(),
+                    "prefix {prefix}, value {value:#x}"
+                );
+            }
+        }
     }
 }
