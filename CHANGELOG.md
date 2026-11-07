@@ -7,7 +7,6 @@ All significant changes to this project will be documented in this file.
 ### New features
 
 * Add opt-in Count-Min serial version 2 through `CountMinSketch::new_v2` and `with_seed_v2`, with portable row seeds, item hashing, and bucket mapping. Default constructors and version 1 images retain their existing hashing and serialization behavior, including custom `Hash` inputs and value wrappers. Version 2 interchange requires the documented input encodings; sketches of different versions cannot be merged.
-* Add raw-byte update and query methods to `CountMinSketch`, with UTF-8 string support through `as_bytes()` and automatic empty-input handling.
 * Add `HllUnion::serialize` to serialize union results directly.
 * Add `XorFilter` and `XorFilterBuilder` behind the `xor` feature for immutable membership queries on values or precomputed hashes. Filters support 8-, 16-, and 32-bit fingerprints and can be serialized for later queries.
 

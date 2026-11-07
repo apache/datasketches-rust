@@ -37,7 +37,6 @@ use crate::hash::MurmurHash3X64128;
 use crate::hash::XxHash64;
 use crate::hash::check_seed_hash;
 use crate::hash::compute_seed_hash;
-use crate::hash::value::raw_bytes;
 
 const MAX_TABLE_ENTRIES: usize = 1 << 30;
 
@@ -75,9 +74,8 @@ impl Hasher for V2Hasher {
 /// * `i64` and `u64` are hashed as eight little-endian bytes. Widen smaller integers first, or use
 ///   [`crate::hash::value::natural_extend`].
 /// * Strings use UTF-8 and byte arrays use their contents without prefixes or terminators. Use
-///   [`Self::update_bytes`] and [`Self::estimate_bytes`], or [`raw_bytes`] wrappers.
-/// * The byte methods ignore empty inputs. With wrappers, skip empty inputs before updating and
-///   return zero for empty queries.
+///   [`crate::hash::value::raw_bytes`] wrappers.
+/// * Callers must skip empty string/byte updates and return zero for empty queries.
 ///
 /// Generic methods retain the supplied [`Hash`] encoding, including for empty inputs. Bare
 /// strings, slices, and arbitrary custom `Hash` implementations are not automatically portable.
@@ -195,7 +193,7 @@ impl<T: CountMinValue> CountMinSketch<T> {
     /// use datasketches::hash::value::raw_bytes;
     ///
     /// let mut sketch = CountMinSketch::<i64>::new_v2(3, 1000)?;
-    /// sketch.update_bytes("apple".as_bytes());
+    /// sketch.update(raw_bytes::from_str("apple"));
     /// assert_eq!(sketch.estimate(raw_bytes::from_str("apple")), 1);
     /// # Ok::<(), datasketches::error::Error>(())
     /// ```
@@ -377,62 +375,6 @@ impl<T: CountMinValue> CountMinSketch<T> {
         let estimate = self.estimate(item);
         let error = self.total_weight.scale_nonnegative(self.relative_error());
         estimate.checked_add(error).unwrap_or(T::MAX)
-    }
-
-    /// Updates the sketch with one occurrence of raw bytes, ignoring an empty input.
-    ///
-    /// Equivalent to updating with [`raw_bytes::from_slice`] for non-empty inputs. Strings can
-    /// be passed as UTF-8 with `str::as_bytes`. Uses the sketch's current hash version.
-    ///
-    /// # Panics
-    ///
-    /// Panics without modifying the sketch if the total absolute weight would exceed `T::MAX`.
-    pub fn update_bytes(&mut self, item: &[u8]) {
-        self.update_bytes_with_weight(item, T::ONE);
-    }
-
-    /// Updates the sketch with raw bytes and a weight, ignoring an empty input regardless of
-    /// weight.
-    ///
-    /// Uses the same encoding as [`Self::update_bytes`].
-    ///
-    /// # Panics
-    ///
-    /// Panics without modifying the sketch if the absolute weight or the total absolute weight
-    /// cannot be represented by `T`.
-    pub fn update_bytes_with_weight(&mut self, item: &[u8], weight: T) {
-        if !item.is_empty() {
-            self.update_with_weight(raw_bytes::from_slice(item), weight);
-        }
-    }
-
-    /// Returns the estimated frequency of raw bytes, or zero for an empty input.
-    ///
-    /// Uses the same encoding as [`Self::update_bytes`].
-    pub fn estimate_bytes(&self, item: &[u8]) -> T {
-        if item.is_empty() {
-            T::ZERO
-        } else {
-            self.estimate(raw_bytes::from_slice(item))
-        }
-    }
-
-    /// Returns the lower frequency bound for raw bytes, or zero for an empty input.
-    ///
-    /// Uses the same encoding as [`Self::update_bytes`].
-    pub fn lower_bound_bytes(&self, item: &[u8]) -> T {
-        self.estimate_bytes(item)
-    }
-
-    /// Returns the upper frequency bound for raw bytes, or zero for an empty input.
-    ///
-    /// Uses the same encoding as [`Self::update_bytes`].
-    pub fn upper_bound_bytes(&self, item: &[u8]) -> T {
-        if item.is_empty() {
-            T::ZERO
-        } else {
-            self.upper_bound(raw_bytes::from_slice(item))
-        }
     }
 
     /// Merges another sketch into this one.
