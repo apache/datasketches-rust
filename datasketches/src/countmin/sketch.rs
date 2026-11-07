@@ -46,6 +46,7 @@ const MAX_TABLE_ENTRIES: usize = 1 << 30;
 /// with configurable relative error and confidence.
 /// New sketches use serial version 2. Deserialized version 1 sketches retain their legacy
 /// hashing and serialization. Sketches of different versions cannot be merged.
+/// Version 1 images are not portable across implementations.
 ///
 /// For version 2 cross-language interchange, use `i64` counters and encode items as follows:
 /// * Integers up to 64 bits, including `isize` and `usize`, are widened to 64 bits and hashed as
@@ -301,8 +302,8 @@ impl<T: CountMinValue> CountMinSketch<T> {
     /// use datasketches::countmin::CountMinSketch;
     ///
     /// let mut sketch = CountMinSketch::<i64>::new(4, 128).unwrap();
-    /// sketch.update("apple");
-    /// assert!(sketch.estimate("apple") >= 1);
+    /// sketch.update(1i64);
+    /// assert!(sketch.estimate(1i64) >= 1);
     /// ```
     pub fn update<I: Hash>(&mut self, item: I) {
         self.update_with_weight(item, T::ONE);
@@ -323,8 +324,8 @@ impl<T: CountMinValue> CountMinSketch<T> {
     /// use datasketches::countmin::CountMinSketch;
     ///
     /// let mut sketch = CountMinSketch::<i64>::new(4, 128).unwrap();
-    /// sketch.update_with_weight("banana", 3);
-    /// assert!(sketch.estimate("banana") >= 3);
+    /// sketch.update_with_weight(2i64, 3);
+    /// assert!(sketch.estimate(2i64) >= 3);
     /// ```
     pub fn update_with_weight<I: Hash>(&mut self, item: I, weight: T) {
         if weight == T::ZERO {
@@ -356,8 +357,8 @@ impl<T: CountMinValue> CountMinSketch<T> {
     /// use datasketches::countmin::CountMinSketch;
     ///
     /// let mut sketch = CountMinSketch::<i64>::new(4, 128).unwrap();
-    /// sketch.update_with_weight("pear", 2);
-    /// assert!(sketch.estimate("pear") >= 2);
+    /// sketch.update_with_weight(3i64, 2);
+    /// assert!(sketch.estimate(3i64) >= 2);
     /// ```
     pub fn estimate<I: Hash>(&self, item: I) -> T {
         self.estimate_item(&item).unwrap_or(T::ZERO)
@@ -393,11 +394,11 @@ impl<T: CountMinValue> CountMinSketch<T> {
     /// let mut left = CountMinSketch::<i64>::new(4, 128).unwrap();
     /// let mut right = CountMinSketch::<i64>::new(4, 128).unwrap();
     ///
-    /// left.update("apple");
-    /// right.update_with_weight("banana", 2);
+    /// left.update(1i64);
+    /// right.update_with_weight(2i64, 2);
     ///
     /// left.merge(&right).unwrap();
-    /// assert!(left.estimate("banana") >= 2);
+    /// assert!(left.estimate(2i64) >= 2);
     /// ```
     pub fn merge(&mut self, other: &CountMinSketch<T>) -> Result<(), Error> {
         if self.num_hashes != other.num_hashes
@@ -433,10 +434,10 @@ impl<T: CountMinValue> CountMinSketch<T> {
     /// use datasketches::countmin::CountMinSketch;
     ///
     /// let mut sketch = CountMinSketch::<i64>::new(4, 128).unwrap();
-    /// sketch.update("apple");
+    /// sketch.update(1i64);
     /// let bytes = sketch.serialize();
     /// let decoded = CountMinSketch::<i64>::deserialize(&bytes).unwrap();
-    /// assert!(decoded.estimate("apple") >= 1);
+    /// assert!(decoded.estimate(1i64) >= 1);
     /// ```
     pub fn serialize(&self) -> Vec<u8> {
         let header_size = PREAMBLE_LONGS_SHORT as usize * LONG_SIZE_BYTES;
@@ -476,12 +477,8 @@ impl<T: CountMinValue> CountMinSketch<T> {
 
     /// Deserializes a sketch from bytes using the default seed.
     ///
-    /// Reads version 2 images with the encodings documented on [`CountMinSketch`]. Values must fit
-    /// `T`.
-    ///
-    /// Accepts serial versions 1 and 2. Version 1 uses the legacy Rust item-to-counter mapping;
-    /// queries, updates, and merges on version 1 images from other implementations remain
-    /// unreliable.
+    /// Accepts versions 1 and 2, preserving the image's hashing and serialization version.
+    /// Counter values must fit `T`. See [`CountMinSketch`] for input encodings and compatibility.
     ///
     /// # Errors
     ///
@@ -494,10 +491,10 @@ impl<T: CountMinValue> CountMinSketch<T> {
     /// use datasketches::countmin::CountMinSketch;
     ///
     /// let mut sketch = CountMinSketch::<i64>::new(4, 64).unwrap();
-    /// sketch.update("apple");
+    /// sketch.update(1i64);
     /// let bytes = sketch.serialize();
     /// let decoded = CountMinSketch::<i64>::deserialize(&bytes).unwrap();
-    /// assert!(decoded.estimate("apple") >= 1);
+    /// assert!(decoded.estimate(1i64) >= 1);
     /// ```
     pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
         Self::deserialize_with_seed(bytes, DEFAULT_UPDATE_SEED)
@@ -505,12 +502,8 @@ impl<T: CountMinValue> CountMinSketch<T> {
 
     /// Deserializes a sketch from bytes using the provided seed.
     ///
-    /// Reads version 2 images with the encodings documented on [`CountMinSketch`]. Values must fit
-    /// `T`.
-    ///
-    /// Accepts serial versions 1 and 2. Version 1 uses the legacy Rust item-to-counter mapping;
-    /// queries, updates, and merges on version 1 images from other implementations remain
-    /// unreliable.
+    /// Accepts versions 1 and 2, preserving the image's hashing and serialization version.
+    /// Counter values must fit `T`. See [`CountMinSketch`] for input encodings and compatibility.
     ///
     /// # Errors
     ///
@@ -523,10 +516,10 @@ impl<T: CountMinValue> CountMinSketch<T> {
     /// use datasketches::countmin::CountMinSketch;
     ///
     /// let mut sketch = CountMinSketch::<i64>::with_seed(4, 64, 7).unwrap();
-    /// sketch.update("apple");
+    /// sketch.update(1i64);
     /// let bytes = sketch.serialize();
     /// let decoded = CountMinSketch::<i64>::deserialize_with_seed(&bytes, 7).unwrap();
-    /// assert!(decoded.estimate("apple") >= 1);
+    /// assert!(decoded.estimate(1i64) >= 1);
     /// ```
     pub fn deserialize_with_seed(bytes: &[u8], seed: u64) -> Result<Self, Error> {
         fn read_value<T: CountMinValue>(
@@ -703,9 +696,9 @@ impl<T: UnsignedCountMinValue> CountMinSketch<T> {
     /// use datasketches::countmin::CountMinSketch;
     ///
     /// let mut sketch = CountMinSketch::<u64>::new(4, 128).unwrap();
-    /// sketch.update_with_weight("apple", 3);
+    /// sketch.update_with_weight(1i64, 3);
     /// sketch.halve();
-    /// assert!(sketch.estimate("apple") >= 1);
+    /// assert!(sketch.estimate(1i64) >= 1);
     /// ```
     pub fn halve(&mut self) {
         for c in &mut self.counts {
@@ -731,9 +724,9 @@ impl<T: UnsignedCountMinValue> CountMinSketch<T> {
     /// use datasketches::countmin::CountMinSketch;
     ///
     /// let mut sketch = CountMinSketch::<u64>::new(4, 128).unwrap();
-    /// sketch.update_with_weight("apple", 3);
+    /// sketch.update_with_weight(1i64, 3);
     /// sketch.decay(0.5);
-    /// assert!(sketch.estimate("apple") >= 1);
+    /// assert!(sketch.estimate(1i64) >= 1);
     /// ```
     pub fn decay(&mut self, decay: f64) {
         assert!(decay > 0.0 && decay <= 1.0, "decay must be within (0, 1]");
