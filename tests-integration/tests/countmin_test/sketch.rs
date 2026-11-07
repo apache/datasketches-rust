@@ -415,8 +415,11 @@ fn test_truncated_non_empty_payload_is_rejected_before_table_allocation() {
 
 #[test]
 fn test_invalid_hashes_return_error() {
-    let error = CountMinSketch::<i64>::new(0, 5).unwrap_err();
-    assert_eq!(error.kind(), ErrorKind::InvalidArgument);
+    for rows in [0, 128, 255] {
+        let error = CountMinSketch::<i64>::new(rows, 5).unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::InvalidArgument);
+    }
+    assert!(CountMinSketch::<i64>::new(127, 5).is_ok());
 }
 
 #[test]
