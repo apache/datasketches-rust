@@ -44,21 +44,15 @@ const MAX_TABLE_ENTRIES: usize = 1 << 30;
 ///
 /// The sketch provides upper and lower bounds on estimated item frequencies
 /// with configurable relative error and confidence.
+///
 /// New sketches use serial version 2. Deserialized version 1 sketches retain their legacy
-/// hashing and serialization. Sketches of different versions cannot be merged.
-/// Version 1 images are not portable across implementations.
+/// hashing and serialization format, and sketches of different versions cannot be merged.
 ///
-/// For version 2 cross-language interchange, use `i64` counters and encode items as follows:
-/// * Integers up to 64 bits, including `isize` and `usize`, are widened to 64 bits and hashed as
-///   eight little-endian bytes. Signed integers are sign-extended.
-/// * Strings use UTF-8 and byte arrays use their contents without prefixes or terminators. Use
-///   [`crate::hash::value::raw_bytes`] wrappers.
-///
-/// Version 2 ignores empty encodings: updates have no effect, and estimates and bounds are zero.
-/// This includes empty `raw_bytes` wrappers and any [`Hash`] implementation that writes no bytes.
-/// Bare strings, slices, and arbitrary custom `Hash` implementations are not automatically
-/// portable. Use the same encoding for updates and queries; version 1 data must keep its original
-/// encoding.
+/// For cross-language version 2 interchange, use `i64` counters and encode inputs consistently:
+/// * `i64` and `u64` values are hashed as eight little-endian bytes; use
+///   [`crate::hash::value::natural_extend`] for narrower integers.
+/// * Use [`crate::hash::value::raw_bytes`] for UTF-8 strings and byte slices, and skip empty inputs
+///   when interoperating with implementations that ignore them.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CountMinSketch<T: CountMinValue> {
     num_hashes: u8,
@@ -199,10 +193,7 @@ impl BucketCount {
 }
 
 impl<T: CountMinValue> CountMinSketch<T> {
-    /// Creates a version 2 CountMin sketch with the default seed.
-    ///
-    /// See [`CountMinSketch`] for portable input encodings. Version 2 sketches cannot be merged
-    /// with version 1 sketches or read by libraries that support only version 1.
+    /// Creates a new CountMin sketch with the default seed.
     ///
     /// # Errors
     ///
@@ -213,25 +204,32 @@ impl<T: CountMinValue> CountMinSketch<T> {
     ///
     /// ```
     /// use datasketches::countmin::CountMinSketch;
-    /// use datasketches::hash::value::raw_bytes;
     ///
-    /// let mut sketch = CountMinSketch::<i64>::new(3, 1000)?;
-    /// sketch.update(raw_bytes::from_str("apple"));
-    /// assert_eq!(sketch.estimate(raw_bytes::from_str("apple")), 1);
-    /// # Ok::<(), datasketches::error::Error>(())
+    /// let sketch = CountMinSketch::<i64>::new(4, 128).unwrap();
+    /// assert_eq!(sketch.num_buckets(), 128);
     /// ```
     pub fn new(num_hashes: u8, num_buckets: u32) -> Result<Self, Error> {
         Self::with_seed(num_hashes, num_buckets, DEFAULT_UPDATE_SEED)
     }
 
-    /// Creates a version 2 CountMin sketch with the provided seed.
-    ///
-    /// See [`CountMinSketch`] for portable input encodings.
+    /// Creates a new CountMin sketch with the provided seed.
     ///
     /// # Errors
     ///
-    /// Returns an error if `num_hashes` is outside `1..=127`, `num_buckets` is less than `3`, the
-    /// total table size exceeds the supported limit, or the computed seed hash is zero.
+    /// Returns an error if any of:
+    /// * `num_hashes` is outside `1..=127`.
+    /// * `num_buckets` is less than `3`.
+    /// * The total table size exceeds the supported limit.
+    /// * The computed seed hash is zero.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::countmin::CountMinSketch;
+    ///
+    /// let sketch = CountMinSketch::<i64>::with_seed(4, 64, 42).unwrap();
+    /// assert_eq!(sketch.seed(), 42);
+    /// ```
     pub fn with_seed(num_hashes: u8, num_buckets: u32, seed: u64) -> Result<Self, Error> {
         let entries = SerialVersion::V2.entries_for_config(
             num_hashes,
@@ -322,6 +320,9 @@ impl<T: CountMinValue> CountMinSketch<T> {
 
     /// Updates the sketch with a single occurrence of the item.
     ///
+    /// Use [`hash::value`](crate::hash::value) wrappers to select an input encoding for
+    /// cross-language hashing.
+    ///
     /// # Panics
     ///
     /// Panics without modifying the sketch if the total absolute weight would exceed `T::MAX`.
@@ -341,7 +342,8 @@ impl<T: CountMinValue> CountMinSketch<T> {
 
     /// Updates the sketch with the given item and weight.
     ///
-    /// Version 2 ignores empty encodings regardless of weight. See [`CountMinSketch`].
+    /// Use [`hash::value`](crate::hash::value) wrappers to select an input encoding for
+    /// cross-language hashing.
     ///
     /// # Panics
     ///

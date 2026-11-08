@@ -20,6 +20,9 @@
 //! The CountMin sketch provides approximate frequency counts for streaming data
 //! with configurable relative error and confidence bounds.
 //!
+//! Serial version 2 sketches with `i64` counters support cross-language binary interchange when
+//! items use compatible hashing; see [`CountMinSketch`] and [`hash::value`](crate::hash::value).
+//!
 //! # Usage
 //!
 //! ```
