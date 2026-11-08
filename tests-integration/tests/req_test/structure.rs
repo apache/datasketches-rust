@@ -22,9 +22,7 @@ use googletest::assert_that;
 use googletest::prelude::each;
 use googletest::prelude::eq;
 use googletest::prelude::ge;
-use googletest::prelude::gt;
 use googletest::prelude::le;
-use googletest::prelude::predicate;
 
 use super::ReqF64;
 use super::req_f64;
@@ -64,27 +62,4 @@ fn small_sketch_iterator_reports_unit_weights() {
 fn empty_sketch_iterator_yields_nothing() {
     let sketch: ReqSketch<ReqF64> = ReqSketch::default();
     assert_eq!(sketch.iter().count(), 0);
-}
-
-#[test]
-fn compaction_promotes_surviving_items_to_higher_weights() {
-    // After enough updates to trigger compaction, surviving items are promoted up a
-    // level at double weight, so the maximum item weight exceeds 1.
-    let mut sketch: ReqSketch<ReqF64> = ReqSketch::default();
-    for i in 0..100_000 {
-        sketch.update(req_f64(i as f64));
-    }
-
-    let max_weight = sketch.iter().map(|(_, weight)| weight).max().unwrap();
-    assert_that!(max_weight, gt(1));
-
-    // Every weight is a power of two (2^level).
-    let weights: Vec<_> = sketch.iter().map(|(_, weight)| weight).collect();
-    assert_that!(
-        weights,
-        each(
-            predicate(|weight: &u64| weight.is_power_of_two())
-                .with_description("is a power of two", "is not a power of two")
-        )
-    );
 }

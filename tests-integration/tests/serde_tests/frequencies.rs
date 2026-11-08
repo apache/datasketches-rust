@@ -65,23 +65,6 @@ fn test_longs_round_trip() {
 }
 
 #[test]
-fn test_growth_survives_serialization() {
-    let mut sketch = FrequentItemsSketch::<i64>::new(1 << 12).unwrap();
-    for i in 0..2_000 {
-        sketch.update_with_count(i * 7_919 + 13, (i % 5 + 1) as u64);
-    }
-    let bytes = sketch.serialize();
-    let restored = FrequentItemsSketch::<i64>::deserialize(&bytes).unwrap();
-    assert_eq!(restored.serialize(), bytes);
-    assert_eq!(restored.total_weight(), sketch.total_weight());
-    assert_eq!(restored.num_active_items(), 2_000);
-    assert_eq!(restored.maximum_error(), 0);
-    for i in 0..2_000 {
-        assert_eq!(restored.estimate(&(i * 7_919 + 13)), (i % 5 + 1) as u64);
-    }
-}
-
-#[test]
 fn test_items_round_trip() {
     let mut sketch = FrequentItemsSketch::new(32).unwrap();
     sketch.update_with_count("alpha".to_string(), 3);

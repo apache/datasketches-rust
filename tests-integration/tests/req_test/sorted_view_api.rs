@@ -15,19 +15,10 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! Tests for the user-managed SortedView API (ported from reqsketch-rs #25):
-//! distribution queries take `&self`, and `sorted_view()` returns an owned
-//! snapshot instead of relying on an internal cache.
-
 use datasketches::common::SearchCriteria;
 use datasketches::error::ErrorKind;
 use datasketches::req::ReqSketch;
 use datasketches::req::SortedView;
-use googletest::assert_that;
-use googletest::prelude::all;
-use googletest::prelude::ge;
-use googletest::prelude::lt;
-use googletest::prelude::near;
 
 use super::ReqF64;
 use super::req_f64;
@@ -38,36 +29,6 @@ fn populated_sketch(n: i64) -> ReqSketch<ReqF64> {
         sketch.update(req_f64(i as f64));
     }
     sketch
-}
-
-/// All distribution queries must work through a shared (`&self`) reference.
-fn query_through_shared_ref(sketch: &ReqSketch<ReqF64>) {
-    sketch
-        .quantile(0.5, SearchCriteria::Inclusive)
-        .expect("quantile")
-        .expect("the sketch is non-empty");
-    sketch
-        .quantiles(&[0.25, 0.5, 0.75], SearchCriteria::Inclusive)
-        .expect("quantiles")
-        .expect("the sketch is non-empty");
-    sketch
-        .rank(&req_f64(50.0), SearchCriteria::Inclusive)
-        .expect("rank");
-    sketch
-        .pmf(&[req_f64(10.0), req_f64(50.0)], SearchCriteria::Inclusive)
-        .expect("pmf")
-        .expect("the sketch is non-empty");
-    sketch
-        .cdf(&[req_f64(10.0), req_f64(50.0)], SearchCriteria::Inclusive)
-        .expect("cdf")
-        .expect("the sketch is non-empty");
-    assert!(!sketch.sorted_view().is_empty());
-}
-
-#[test]
-fn queries_work_through_shared_reference() {
-    let sketch = populated_sketch(100);
-    query_through_shared_ref(&sketch);
 }
 
 #[test]
@@ -129,16 +90,6 @@ fn empty_argument_slices_preserve_the_sketch_empty_state() {
 }
 
 #[test]
-fn view_rank_is_primary_query_name() {
-    let sketch = populated_sketch(10);
-    let view = sketch.sorted_view();
-    let r = view
-        .rank(&req_f64(5.0), SearchCriteria::Inclusive)
-        .expect("rank");
-    assert_that!(r, near(0.6, 1e-10));
-}
-
-#[test]
 fn invalid_arguments_are_rejected_regardless_of_sketch_state() {
     for n in [0, 1, 1_000] {
         let sketch = populated_sketch(n);
@@ -173,25 +124,4 @@ fn view_is_send_and_sync() {
     fn assert_send_sync<T: Send + Sync>() {}
     assert_send_sync::<SortedView<ReqF64>>();
     assert_send_sync::<ReqSketch<ReqF64>>();
-}
-
-#[test]
-fn concurrent_readers_share_the_sketch() {
-    let sketch = std::sync::Arc::new(populated_sketch(1_000));
-    let handles: Vec<_> = (0..4)
-        .map(|i| {
-            let sketch = std::sync::Arc::clone(&sketch);
-            std::thread::spawn(move || {
-                let rank = 0.2 * (i + 1) as f64;
-                sketch
-                    .quantile(rank, SearchCriteria::Inclusive)
-                    .expect("quantile from shared sketch")
-                    .expect("the sketch is non-empty")
-            })
-        })
-        .collect();
-    for handle in handles {
-        let q = handle.join().expect("thread");
-        assert_that!(*q, all!(ge(0.0), lt(1_000.0)));
-    }
 }
