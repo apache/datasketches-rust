@@ -43,8 +43,6 @@
 //! assert_eq!(sketch.estimate(1i64), 0);
 //! ```
 
-mod serialization;
-
 mod sketch;
 pub use self::sketch::CountMinSketch;
 

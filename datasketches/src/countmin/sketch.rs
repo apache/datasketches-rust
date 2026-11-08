@@ -25,11 +25,6 @@ use crate::codec::assert::insufficient_data;
 use crate::codec::family::Family;
 use crate::countmin::CountMinValue;
 use crate::countmin::UnsignedCountMinValue;
-use crate::countmin::serialization::FLAGS_IS_EMPTY;
-use crate::countmin::serialization::LONG_SIZE_BYTES;
-use crate::countmin::serialization::PREAMBLE_LONGS_SHORT;
-use crate::countmin::serialization::SERIAL_VERSION_1;
-use crate::countmin::serialization::SERIAL_VERSION_2;
 use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::hash::DEFAULT_UPDATE_SEED;
@@ -38,6 +33,11 @@ use crate::hash::XxHash64;
 use crate::hash::check_seed_hash;
 use crate::hash::compute_seed_hash;
 
+const PREAMBLE_LONGS_SHORT: u8 = 2;
+const SERIAL_VERSION_1: u8 = 1;
+const SERIAL_VERSION_2: u8 = 2;
+const FLAGS_IS_EMPTY: u8 = 1 << 0;
+const LONG_SIZE_BYTES: usize = 8;
 const MAX_TABLE_ENTRIES: usize = 1 << 30;
 
 /// CountMin sketch for estimating item frequencies.
@@ -65,13 +65,98 @@ pub struct CountMinSketch<T: CountMinValue> {
     buckets: BucketCount,
     seed: u64,
     seed_hash: u16,
-    serial_version: u8,
+    serial_version: SerialVersion,
     // Every bucket satisfies |count| <= total_weight, so a checked total also bounds bucket
     // additions during update/merge: |a + b| <= |a| + |b|. Deserialization validates this
     // invariant; unsigned halving and decay preserve it.
     total_weight: T,
     counts: Vec<T>,
     hash_seeds: Vec<u64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+enum SerialVersion {
+    V1 = SERIAL_VERSION_1,
+    V2 = SERIAL_VERSION_2,
+}
+
+impl SerialVersion {
+    fn from_u8(byte: u8) -> Result<Self, Error> {
+        match byte {
+            SERIAL_VERSION_1 => Ok(Self::V1),
+            SERIAL_VERSION_2 => Ok(Self::V2),
+            _ => Err(Error::deserial(format!(
+                "unsupported serial version: expected {SERIAL_VERSION_1} or {SERIAL_VERSION_2}, got {byte}"
+            ))),
+        }
+    }
+
+    fn max_hashes(self) -> u8 {
+        match self {
+            Self::V1 => u8::MAX,
+            Self::V2 => 127,
+        }
+    }
+
+    fn entries_for_config(
+        self,
+        num_hashes: u8,
+        num_buckets: u32,
+        kind: ErrorKind,
+    ) -> Result<usize, Error> {
+        if !(1..=self.max_hashes()).contains(&num_hashes) {
+            return Err(Error::new(
+                kind,
+                match self {
+                    Self::V1 => "num_hashes must be at least 1",
+                    Self::V2 => "num_hashes must be within 1..=127",
+                },
+            ));
+        }
+        if num_buckets < 3 {
+            return Err(Error::new(kind, "num_buckets must be at least 3"));
+        }
+        let entries = (num_hashes as usize)
+            .checked_mul(num_buckets as usize)
+            .ok_or_else(|| Error::new(kind, "num_hashes * num_buckets overflows usize"))?;
+        if entries >= MAX_TABLE_ENTRIES {
+            return Err(Error::new(
+                kind,
+                format!("num_hashes * num_buckets must be < {MAX_TABLE_ENTRIES}"),
+            ));
+        }
+        Ok(entries)
+    }
+
+    fn make_hash_seeds(self, seed: u64, num_hashes: u8) -> Vec<u64> {
+        (0..num_hashes)
+            .map(|i| match self {
+                Self::V1 => {
+                    let mut hasher = MurmurHash3X64128::with_seed(seed);
+                    hasher.write(&u64::from(i).to_le_bytes());
+                    hasher.finish128().0
+                }
+                Self::V2 => XxHash64::hash_u64(u64::from(i), seed),
+            })
+            .collect()
+    }
+
+    #[inline]
+    fn hash_item<I: Hash>(self, item: &I, seed: u64) -> u64 {
+        match self {
+            Self::V1 => {
+                let mut hasher = MurmurHash3X64128::with_seed(seed);
+                item.hash(&mut hasher);
+                hasher.finish128().0
+            }
+            Self::V2 => {
+                let mut hasher = XxHash64::with_seed(seed);
+                item.hash(&mut hasher);
+                hasher.finish64() >> 1
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -148,14 +233,18 @@ impl<T: CountMinValue> CountMinSketch<T> {
     /// Returns an error if `num_hashes` is outside `1..=127`, `num_buckets` is less than `3`, the
     /// total table size exceeds the supported limit, or the computed seed hash is zero.
     pub fn with_seed(num_hashes: u8, num_buckets: u32, seed: u64) -> Result<Self, Error> {
-        let entries = entries_for_config(num_hashes, num_buckets)?;
+        let entries = SerialVersion::V2.entries_for_config(
+            num_hashes,
+            num_buckets,
+            ErrorKind::InvalidArgument,
+        )?;
         let seed_hash = compute_seed_hash(seed, ErrorKind::InvalidArgument)?;
         Ok(Self::make(
             num_hashes,
             num_buckets,
             seed,
             seed_hash,
-            SERIAL_VERSION_2,
+            SerialVersion::V2,
             entries,
         ))
     }
@@ -389,7 +478,7 @@ impl<T: CountMinValue> CountMinSketch<T> {
         let mut bytes = SketchBytes::with_capacity(header_size + payload_size);
 
         bytes.write_u8(PREAMBLE_LONGS_SHORT);
-        bytes.write_u8(self.serial_version);
+        bytes.write_u8(self.serial_version as u8);
         bytes.write_u8(Family::COUNTMIN.id);
         bytes.write_u8(if self.is_empty() { FLAGS_IS_EMPTY } else { 0 });
         bytes.write_u32_le(0); // unused
@@ -484,22 +573,13 @@ impl<T: CountMinValue> CountMinSketch<T> {
             .map_err(insufficient_data("<unused>"))?;
 
         Family::COUNTMIN.validate_id(family_id)?;
-        if serial_version != SERIAL_VERSION_1 && serial_version != SERIAL_VERSION_2 {
-            return Err(Error::deserial(format!(
-                "unsupported serial version: expected {SERIAL_VERSION_1} or {SERIAL_VERSION_2}, got {serial_version}"
-            )));
-        }
+        let serial_version = SerialVersion::from_u8(serial_version)?;
         ensure_preamble_longs_in(&[PREAMBLE_LONGS_SHORT], preamble_longs)?;
 
         let num_buckets = cursor
             .read_u32_le()
             .map_err(insufficient_data("num_buckets"))?;
         let num_hashes = cursor.read_u8().map_err(insufficient_data("num_hashes"))?;
-        if serial_version == SERIAL_VERSION_2 && num_hashes > 127 {
-            return Err(Error::deserial(
-                "version 2 num_hashes must be within 1..=127",
-            ));
-        }
         let seed_hash = cursor
             .read_u16_le()
             .map_err(insufficient_data("seed_hash"))?;
@@ -513,7 +593,8 @@ impl<T: CountMinValue> CountMinSketch<T> {
             ErrorKind::InvalidData,
         )?;
 
-        let entries = entries_for_config_checked(num_hashes, num_buckets)?;
+        let entries =
+            serial_version.entries_for_config(num_hashes, num_buckets, ErrorKind::InvalidData)?;
         let is_empty = (flags & FLAGS_IS_EMPTY) != 0;
         if !is_empty {
             let payload_values = entries
@@ -573,11 +654,11 @@ impl<T: CountMinValue> CountMinSketch<T> {
         num_buckets: u32,
         seed: u64,
         seed_hash: u16,
-        serial_version: u8,
+        serial_version: SerialVersion,
         entries: usize,
     ) -> Self {
         let counts = vec![T::ZERO; entries];
-        let hash_seeds = make_hash_seeds(seed, num_hashes, serial_version);
+        let hash_seeds = serial_version.make_hash_seeds(seed, num_hashes);
         CountMinSketch {
             num_hashes,
             buckets: BucketCount::new(num_buckets),
@@ -591,20 +672,8 @@ impl<T: CountMinValue> CountMinSketch<T> {
     }
 
     fn bucket_index<I: Hash>(&self, item: &I, seed: u64) -> usize {
-        let hash = match self.serial_version {
-            SERIAL_VERSION_1 => {
-                let mut hasher = MurmurHash3X64128::with_seed(seed);
-                item.hash(&mut hasher);
-                hasher.finish128().0
-            }
-            SERIAL_VERSION_2 => {
-                let mut hasher = XxHash64::with_seed(seed);
-                item.hash(&mut hasher);
-                hasher.finish64() >> 1
-            }
-            _ => unreachable!("unsupported Count-Min serial version"),
-        };
-        self.buckets.index(hash)
+        self.buckets
+            .index(self.serial_version.hash_item(item, seed))
     }
 }
 
@@ -663,59 +732,6 @@ impl<T: UnsignedCountMinValue> CountMinSketch<T> {
         }
         self.total_weight = self.total_weight.scale_nonnegative(decay);
     }
-}
-
-fn entries_for_config(num_hashes: u8, num_buckets: u32) -> Result<usize, Error> {
-    if !(1..=127).contains(&num_hashes) {
-        return Err(Error::invalid_argument("num_hashes must be within 1..=127"));
-    }
-    if num_buckets < 3 {
-        return Err(Error::invalid_argument("num_buckets must be at least 3"));
-    }
-    let entries = (num_hashes as usize)
-        .checked_mul(num_buckets as usize)
-        .ok_or_else(|| Error::invalid_argument("num_hashes * num_buckets overflows usize"))?;
-    if entries >= MAX_TABLE_ENTRIES {
-        return Err(Error::invalid_argument(format!(
-            "num_hashes * num_buckets must be < {MAX_TABLE_ENTRIES}"
-        )));
-    }
-    Ok(entries)
-}
-
-fn entries_for_config_checked(num_hashes: u8, num_buckets: u32) -> Result<usize, Error> {
-    if num_hashes == 0 {
-        return Err(Error::deserial("num_hashes must be at least 1"));
-    }
-    if num_buckets < 3 {
-        return Err(Error::deserial("num_buckets must be at least 3"));
-    }
-    let entries = (num_hashes as usize)
-        .checked_mul(num_buckets as usize)
-        .ok_or_else(|| Error::deserial("num_hashes * num_buckets overflows usize"))?;
-    if entries >= MAX_TABLE_ENTRIES {
-        return Err(Error::deserial(format!(
-            "num_hashes * num_buckets must be < {MAX_TABLE_ENTRIES}",
-        )));
-    }
-    Ok(entries)
-}
-
-fn make_hash_seeds(seed: u64, num_hashes: u8, serial_version: u8) -> Vec<u64> {
-    let mut seeds = Vec::with_capacity(num_hashes as usize);
-    for i in 0..num_hashes {
-        let row_seed = match serial_version {
-            SERIAL_VERSION_1 => {
-                let mut hasher = MurmurHash3X64128::with_seed(seed);
-                hasher.write(&u64::from(i).to_le_bytes());
-                hasher.finish128().0
-            }
-            SERIAL_VERSION_2 => XxHash64::hash_u64(u64::from(i), seed),
-            _ => unreachable!("unsupported Count-Min serial version"),
-        };
-        seeds.push(row_seed);
-    }
-    seeds
 }
 
 #[cfg(test)]
