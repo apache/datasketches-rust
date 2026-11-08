@@ -20,15 +20,19 @@
 //! The CountMin sketch provides approximate frequency counts for streaming data
 //! with configurable relative error and confidence bounds.
 //!
+//! Serial version 2 sketches with `i64` counters support cross-language binary interchange when
+//! items use compatible hashing; see [`CountMinSketch`] and [`hash::value`](crate::hash::value).
+//!
 //! # Usage
 //!
 //! ```
 //! use datasketches::countmin::CountMinSketch;
+//! use datasketches::hash::value::raw_bytes;
 //!
 //! let mut sketch = CountMinSketch::<i64>::new(5, 256).unwrap();
-//! sketch.update("apple");
-//! sketch.update_with_weight("banana", 3);
-//! assert!(sketch.estimate("banana") >= 3);
+//! sketch.update(raw_bytes::from_str("apple"));
+//! sketch.update_with_weight(raw_bytes::from_str("banana"), 3);
+//! assert!(sketch.estimate(raw_bytes::from_str("banana")) >= 3);
 //! ```
 //!
 //! # Configuration Helpers
@@ -39,10 +43,8 @@
 //! let buckets = CountMinSketch::<i64>::suggest_num_buckets(0.01).unwrap();
 //! let hashes = CountMinSketch::<i64>::suggest_num_hashes(0.99).unwrap();
 //! let sketch = CountMinSketch::<i64>::new(hashes, buckets).unwrap();
-//! assert_eq!(sketch.estimate("apple"), 0);
+//! assert_eq!(sketch.estimate(1i64), 0);
 //! ```
-
-mod serialization;
 
 mod sketch;
 pub use self::sketch::CountMinSketch;
