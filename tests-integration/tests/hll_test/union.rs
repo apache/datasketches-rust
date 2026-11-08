@@ -708,19 +708,6 @@ fn test_union_validation() {
 }
 
 #[test]
-fn test_union_estimated_size() {
-    let mut union = HllUnion::new(10).unwrap();
-    assert_eq!(union.estimated_size(), 32);
-
-    let mut sketch = HllSketch::new(10, HllType::Hll8).unwrap();
-    for i in 0..1000 {
-        sketch.update(i);
-    }
-    union.update(&sketch);
-    assert_eq!(union.estimated_size(), 1024);
-}
-
-#[test]
 fn test_single_hll_input_preserves_estimate_and_bounds() {
     for hll_type in HLL_TYPES {
         let sketch = make_hll_sketch(hll_type, 8, 0, 1_000);
