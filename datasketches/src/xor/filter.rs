@@ -338,10 +338,10 @@ impl XorFilter {
         bytes.write_u8(Family::XORFILTER.id);
         bytes.write_u8(0); // flags
         bytes.write_u8(self.filter_type().bits_per_fingerprint());
-        bytes.write(&[0; 3]); // reserved
+        bytes.write(&[0; 3]); // Pad to the seed at byte 8.
         bytes.write_u64_le(self.seed);
         bytes.write_i32_le(self.segment_length as i32);
-        bytes.write_u32_le(0); // reserved
+        bytes.write_u32_le(0); // Pad the preamble to three 64-bit words.
 
         match &self.fingerprints {
             Fingerprints::Xor8(fingerprints) => bytes.write(fingerprints),
