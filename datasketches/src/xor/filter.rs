@@ -30,7 +30,7 @@ use crate::hash::XxHash64;
 
 const NUM_HASHES: u8 = 3;
 const SERIAL_VERSION: u8 = 1;
-const PREAMBLE_BYTES: usize = 2 * size_of::<u64>();
+const PREAMBLE_BYTES: usize = 3 * size_of::<u64>();
 const HASH_SEED: u64 = 0;
 const LOAD_FACTOR: f64 = 1.23;
 const CAPACITY_OFFSET: u64 = 32;
@@ -336,9 +336,12 @@ impl XorFilter {
         bytes.write_u8(Family::XORFILTER.min_pre_longs);
         bytes.write_u8(SERIAL_VERSION);
         bytes.write_u8(Family::XORFILTER.id);
+        bytes.write_u8(0); // flags
         bytes.write_u8(self.filter_type().bits_per_fingerprint());
-        bytes.write_i32_le(self.segment_length as i32);
+        bytes.write(&[0; 3]); // reserved
         bytes.write_u64_le(self.seed);
+        bytes.write_i32_le(self.segment_length as i32);
+        bytes.write_u32_le(0); // reserved
 
         match &self.fingerprints {
             Fingerprints::Xor8(fingerprints) => bytes.write(fingerprints),
@@ -375,6 +378,12 @@ impl XorFilter {
             .read_u8()
             .map_err(insufficient_data("serial_version"))?;
         let family_id = cursor.read_u8().map_err(insufficient_data("family_id"))?;
+        let flags = cursor.read_u8().map_err(insufficient_data("flags"))?;
+        if flags != 0 {
+            return Err(Error::deserial(format!(
+                "unsupported xor filter flags: {flags}"
+            )));
+        }
         let bits_per_fingerprint = cursor
             .read_u8()
             .map_err(insufficient_data("bits_per_fingerprint"))?;
@@ -395,6 +404,10 @@ impl XorFilter {
                 ));
             }
         };
+        cursor
+            .read_exact(&mut [0; 3])
+            .map_err(insufficient_data("reserved"))?;
+        let seed = cursor.read_u64_le().map_err(insufficient_data("seed"))?;
         let segment_length = cursor
             .read_i32_le()
             .map_err(insufficient_data("segment_length"))?;
@@ -405,7 +418,9 @@ impl XorFilter {
         }
         let segment_length = segment_length as usize;
 
-        let seed = cursor.read_u64_le().map_err(insufficient_data("seed"))?;
+        cursor
+            .read_u32_le()
+            .map_err(insufficient_data("reserved"))?;
 
         let capacity = segment_length
             .checked_mul(usize::from(NUM_HASHES))
