@@ -41,8 +41,6 @@
 //! integer overloads, use [`natural_extend`](crate::hash::value::natural_extend).
 //!
 //! For C++ floating-point inputs, use [`canonical_float`](crate::hash::value::canonical_float).
-//! For Java floating-point inputs, convert to `f64` and hash its bits as `u64`, preserving signed
-//! zero and mapping all NaNs to `0x7ff8_0000_0000_0000`.
 //!
 //! For compatibility with DataSketches Java, skip empty string inserts and return `false` for
 //! empty string membership queries, including queries combined with insertion. Pass empty byte

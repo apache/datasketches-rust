@@ -23,9 +23,8 @@
 //! # Cross-language hashing
 //!
 //! For compatibility with DataSketches Java, use `i64` for `long` inputs and
-//! [`raw_bytes`](crate::hash::value::raw_bytes) for UTF-8 strings and byte slices. For
-//! floating-point inputs, convert to `f64` and hash its bits as `u64`, preserving signed zero and
-//! mapping all NaNs to `0x7ff8_0000_0000_0000`. Java hashes these encodings with xxHash64 seed `0`.
+//! [`raw_bytes`](crate::hash::value::raw_bytes) for UTF-8 strings and byte slices.
+//! Java hashes these encodings with xxHash64 seed `0`.
 //!
 //! For precomputed hashes, use the same hash function when building and querying the filter.
 //! External hashes (for example XXH3) must use the precomputed-hash APIs throughout; Java's typed
