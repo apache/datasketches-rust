@@ -51,8 +51,51 @@ const MAX_TABLE_ENTRIES: usize = 1 << 30;
 /// For cross-language version 2 interchange, use `i64` counters and encode inputs consistently:
 /// * `i64` and `u64` values are hashed as eight little-endian bytes; use
 ///   [`crate::hash::value::natural_extend`] for narrower integers.
-/// * Use [`crate::hash::value::raw_bytes`] for UTF-8 strings and byte slices, and skip empty inputs
-///   when interoperating with implementations that ignore them.
+/// * Use [`crate::hash::value::raw_bytes`] for UTF-8 strings and byte slices.
+///
+/// # Empty inputs
+///
+/// Empty strings and byte slices are hashed like other inputs, including when wrapped in
+/// `raw_bytes`. The wrapper selects the encoding; it does not skip updates or queries.
+///
+/// To match the cross-language version 2 convention, callers skip empty string and byte-slice
+/// updates and return zero for their estimates and both bounds without querying the sketch.
+/// Filtering updates alone is insufficient: an empty query can collide with populated counters,
+/// and the upper bound can include a nonzero error term even when the estimate is zero.
+/// Version 1 data must retain the input handling used when it was created.
+///
+/// # Examples
+///
+/// Applies the empty-input convention to a string stream and query. Byte slices use the same
+/// `is_empty()` checks with `raw_bytes::from_slice`.
+///
+/// ```
+/// use datasketches::countmin::CountMinSketch;
+/// use datasketches::hash::value::raw_bytes;
+///
+/// let mut sketch = CountMinSketch::<i64>::new(3, 1000)?;
+/// for input in ["", "apple", ""] {
+///     let item = raw_bytes::from_str(input);
+///     if !item.is_empty() {
+///         sketch.update_with_weight(item, 5);
+///     }
+/// }
+/// assert_eq!(sketch.total_weight(), 5);
+/// assert_eq!(sketch.estimate(raw_bytes::from_str("apple")), 5);
+///
+/// let item = raw_bytes::from_str("");
+/// let (estimate, lower, upper) = if item.is_empty() {
+///     (0, 0, 0)
+/// } else {
+///     (
+///         sketch.estimate(item),
+///         sketch.lower_bound(item),
+///         sketch.upper_bound(item),
+///     )
+/// };
+/// assert_eq!((estimate, lower, upper), (0, 0, 0));
+/// # Ok::<(), datasketches::error::Error>(())
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct CountMinSketch<T: CountMinValue> {
     num_hashes: u8,
