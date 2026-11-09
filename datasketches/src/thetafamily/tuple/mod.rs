@@ -30,11 +30,12 @@
 //!
 //! # Cross-language hashing
 //!
-//! Use [`hash::value`](crate::hash::value) wrappers to match key encodings across languages,
-//! including `raw_bytes` for UTF-8 strings and byte slices.
+//! Cross-language use requires matching input encodings. See [`hash::value`](crate::hash::value)
+//! for encoding helpers.
 //!
-//! To match DataSketches Java, callers skip empty string and byte-slice keys before updates.
-//! To match DataSketches C++ string-key updates, callers skip empty string keys.
+//! For compatibility with DataSketches Java, skip empty string and byte-slice keys before updates.
+//! For compatibility with DataSketches C++, skip empty string keys and pass empty byte-slice keys
+//! through to updates.
 //!
 //! # Usage
 //!

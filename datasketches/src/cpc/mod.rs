@@ -37,11 +37,12 @@
 //!
 //! # Cross-language hashing
 //!
-//! Use [`hash::value`](crate::hash::value) wrappers to match input encodings across languages,
-//! including `raw_bytes` for UTF-8 strings and byte slices.
+//! Cross-language use requires matching input encodings. See [`hash::value`](crate::hash::value)
+//! for encoding helpers.
 //!
-//! To match DataSketches Java, callers skip empty strings and byte slices before updates.
-//! To match DataSketches C++ string updates, callers skip empty strings.
+//! For compatibility with DataSketches Java, skip empty strings and byte slices before updates.
+//! For compatibility with DataSketches C++, skip empty strings and pass empty byte slices through
+//! to updates.
 
 mod compression;
 mod compression_data;

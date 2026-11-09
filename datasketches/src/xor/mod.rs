@@ -22,18 +22,17 @@
 //!
 //! # Cross-language hashing
 //!
-//! Use [`hash::value`](crate::hash::value) wrappers to match input encodings across languages,
-//! including `raw_bytes` for UTF-8 strings and byte slices.
+//! Cross-language use requires matching input encodings. See [`hash::value`](crate::hash::value)
+//! for encoding helpers.
 //! For precomputed hashes, use the same hash function when building and querying the filter.
 //!
 //! Java hashes integer scalars as 64-bit little-endian values and strings as UTF-8 bytes with
-//! xxHash64 seed `0`. Use `u64`/`i64` and [`crate::hash::value::raw_bytes`] accordingly. External
-//! hashes (for example XXH3) must use the precomputed-hash APIs throughout; Java's typed query
-//! API will not match them.
+//! xxHash64 seed `0`. External hashes (for example XXH3) must use the precomputed-hash APIs
+//! throughout; Java's typed query API will not match them.
 //!
-//! To match DataSketches Java, callers skip empty strings when building the filter and return
-//! `false` for empty string membership queries. Empty byte slices are valid inputs and are not
-//! filtered.
+//! For compatibility with DataSketches Java, skip empty strings when building the filter and
+//! return `false` for empty string membership queries. Pass empty byte slices through to filter
+//! construction and queries.
 //!
 //! # Examples
 //!

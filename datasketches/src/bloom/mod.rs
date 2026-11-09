@@ -35,12 +35,15 @@
 //!
 //! # Cross-language hashing
 //!
-//! Use [`hash::value`](crate::hash::value) wrappers to match input encodings across languages,
-//! including `raw_bytes` for UTF-8 strings and byte slices.
+//! Cross-language use requires matching input encodings. See [`hash::value`](crate::hash::value)
+//! for encoding helpers.
 //!
-//! To match DataSketches Java, callers skip empty string inserts and return `false` for empty
-//! string membership queries, including queries combined with insertion. Empty byte slices are
-//! valid inputs and are not filtered.
+//! For compatibility with DataSketches Java, skip empty string inserts and return `false` for
+//! empty string membership queries, including queries combined with insertion. Pass empty byte
+//! slices through to inserts and queries.
+//!
+//! For compatibility with DataSketches C++, skip empty string and byte-slice inserts and return
+//! `false` for their membership queries, including queries combined with insertion.
 //!
 //! # Usage
 //!
