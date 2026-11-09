@@ -245,8 +245,7 @@ impl<'a, S> From<&'a CompactTupleSketch<S>> for TupleSketchView<'a, S> {
 /// [`P::Summary`](SummaryPolicy::Summary), while each accepted update type is selected by a
 /// [`SummaryUpdatePolicy<U>`] implementation.
 ///
-/// For input encodings and empty-input handling, see
-/// [Cross-language hashing](crate::tuple#cross-language-hashing).
+/// See the [module level documentation](super) for more.
 ///
 /// # Examples
 ///

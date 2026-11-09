@@ -31,7 +31,7 @@
 //! * Use [`canonical_float`](crate::hash::value::canonical_float) for floating-point values.
 //! * Use [`raw_bytes`](crate::hash::value::raw_bytes) for UTF-8 strings and byte slices.
 //!
-//! Callers skip empty strings and byte slices before updates.
+//! Skip empty strings and byte slices before updating the sketch.
 //!
 //! # Usage
 //!
@@ -122,8 +122,7 @@ const RESIZE_DENOMINATOR: u32 = 4;
 /// Compute a coupon once with [`Coupon::from_value`] and pass it to
 /// [`HllSketch::update_with_coupon`] on sketches with any `lg_k` or [`HllType`].
 ///
-/// For input encodings and empty-input handling, see
-/// [Cross-language hashing](crate::hll#cross-language-hashing).
+/// See the [module level documentation](crate::hll) for more.
 ///
 /// # Examples
 ///

@@ -28,7 +28,7 @@ use crate::hash::value::Value;
 
 /// An integer value wrapper that sign-extends the value before hashing.
 ///
-/// See the [sign_extend](crate::hash::value::sign_extend) module for encoding details and examples.
+/// See the [module level documentation](super) for more.
 pub type SignExtend<T> = Value<T, SignExtendStrategy>;
 
 /// Hashing strategy for [`SignExtend`].

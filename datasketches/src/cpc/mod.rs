@@ -44,7 +44,7 @@
 //! * Use [`canonical_float`](crate::hash::value::canonical_float) for floating-point values.
 //! * Use [`raw_bytes`](crate::hash::value::raw_bytes) for UTF-8 strings and byte slices.
 //!
-//! Callers skip empty strings and byte slices before updates.
+//! Skip empty strings and byte slices before updating the sketch.
 
 mod compression;
 mod compression_data;

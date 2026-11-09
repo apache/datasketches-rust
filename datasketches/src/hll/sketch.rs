@@ -55,8 +55,7 @@ use crate::hll::serialization::extract_tgt_hll_type;
 
 /// A HyperLogLog sketch.
 ///
-/// For input encodings and empty-input handling, see
-/// [Cross-language hashing](crate::hll#cross-language-hashing).
+/// See the [module level documentation](super) for more.
 #[derive(Clone, PartialEq)]
 pub struct HllSketch {
     lg_config_k: u8,

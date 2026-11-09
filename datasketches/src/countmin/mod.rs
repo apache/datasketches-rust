@@ -29,10 +29,31 @@
 //! * Use [`canonical_float`](crate::hash::value::canonical_float) for floating-point values.
 //! * Use [`raw_bytes`](crate::hash::value::raw_bytes) for UTF-8 strings and byte slices.
 //!
-//! Version 2 interchange requires `i64` counters. Callers skip empty string and byte-slice
-//! updates and return zero for their estimates and both bounds.
+//! Use `i64` counters for cross-language interchange. Skip empty strings and byte slices before
+//! updating the sketch. For these inputs, return zero for the estimate and both bounds without
+//! querying the sketch.
 //!
 //! # Usage
+//!
+//! Choose the number of buckets and hash functions from the desired relative error and
+//! confidence, then update the sketch as items arrive:
+//!
+//! ```
+//! use datasketches::countmin::CountMinSketch;
+//!
+//! let buckets = CountMinSketch::<i64>::suggest_num_buckets(0.01)?;
+//! let hashes = CountMinSketch::<i64>::suggest_num_hashes(0.99)?;
+//! let mut sketch = CountMinSketch::<i64>::new(hashes, buckets)?;
+//! sketch.update(42i64);
+//! sketch.update_with_weight(42i64, 5);
+//!
+//! assert_eq!(sketch.estimate(42i64), 6);
+//! assert!(sketch.lower_bound(42i64) <= 6);
+//! assert!(sketch.upper_bound(42i64) >= 6);
+//! # Ok::<(), datasketches::error::Error>(())
+//! ```
+//!
+//! ## Empty inputs
 //!
 //! This example handles empty strings before updating or querying. Byte slices use the same
 //! `is_empty()` checks with `raw_bytes::from_slice`.
@@ -63,17 +84,6 @@
 //! };
 //! assert_eq!((estimate, lower, upper), (0, 0, 0));
 //! # Ok::<(), datasketches::error::Error>(())
-//! ```
-//!
-//! # Configuration Helpers
-//!
-//! ```
-//! use datasketches::countmin::CountMinSketch;
-//!
-//! let buckets = CountMinSketch::<i64>::suggest_num_buckets(0.01).unwrap();
-//! let hashes = CountMinSketch::<i64>::suggest_num_hashes(0.99).unwrap();
-//! let sketch = CountMinSketch::<i64>::new(hashes, buckets).unwrap();
-//! assert_eq!(sketch.estimate(1i64), 0);
 //! ```
 
 mod sketch;

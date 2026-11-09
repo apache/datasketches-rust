@@ -27,7 +27,7 @@ use crate::hash::value::Value;
 
 /// A byte or string value wrapper that hashes raw bytes.
 ///
-/// See the [raw_bytes](crate::hash::value::raw_bytes) module for encoding details and examples.
+/// See the [module level documentation](super) for more.
 pub type RawBytes<T> = Value<T, RawBytesStrategy>;
 
 /// Hashing strategy for [`RawBytes`].

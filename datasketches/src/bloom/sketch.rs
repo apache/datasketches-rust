@@ -39,8 +39,7 @@ const EMPTY_FLAG_MASK: u8 = 1 << 2;
 /// * Tunable false positive rate
 /// * Constant space usage
 ///
-/// For input encodings and empty-input handling, see
-/// [Cross-language hashing](crate::bloom#cross-language-hashing).
+/// See the [module level documentation](super) for more.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BloomFilter {
     /// Hash seed for all hash functions

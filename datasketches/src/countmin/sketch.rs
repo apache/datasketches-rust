@@ -45,11 +45,7 @@ const MAX_TABLE_ENTRIES: usize = 1 << 30;
 /// The sketch provides upper and lower bounds on estimated item frequencies
 /// with configurable relative error and confidence.
 ///
-/// New sketches use serial version 2. Deserialized version 1 sketches retain their legacy
-/// hashing and serialization format, and sketches of different versions cannot be merged.
-///
-/// For input encodings and empty-input handling, see
-/// [Cross-language hashing](crate::countmin#cross-language-hashing).
+/// See the [module level documentation](super) for more.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CountMinSketch<T: CountMinValue> {
     num_hashes: u8,
@@ -443,11 +439,7 @@ impl<T: CountMinValue> CountMinSketch<T> {
 
     /// Serializes this sketch into the Count-Min binary format.
     ///
-    /// New sketches are written as version 2. A sketch deserialized from a version 1 image
-    /// retains its legacy hashing for queries and updates and is written back as version 1.
-    ///
-    /// Version 1 images are not portable across implementations. Version 2 supports cross-language
-    /// interchange with `i64` counters and the input encodings documented on [`CountMinSketch`].
+    /// A sketch restored by [`deserialize`](Self::deserialize) retains its original format.
     ///
     /// # Examples
     ///
@@ -498,13 +490,15 @@ impl<T: CountMinValue> CountMinSketch<T> {
 
     /// Deserializes a sketch from bytes using the default seed.
     ///
-    /// Accepts versions 1 and 2, preserving the image's hashing and serialization version.
-    /// Counter values must fit `T`. See [`CountMinSketch`] for input encodings and compatibility.
+    /// Accepts the current format and legacy version 1 images. Legacy images retain their original
+    /// hashing and serialization format and cannot be merged with newly created sketches. Use the
+    /// same input encodings that were used to create the image; version 1 images are not portable
+    /// across implementations. Counter values must fit `T`.
     ///
     /// # Errors
     ///
-    /// Returns `InvalidData` if the image is malformed or its seed hash does not match the default
-    /// seed.
+    /// Returns `InvalidData` if the image is malformed, its serialization version is unsupported,
+    /// or its seed hash does not match the default seed.
     ///
     /// # Examples
     ///
@@ -523,13 +517,13 @@ impl<T: CountMinValue> CountMinSketch<T> {
 
     /// Deserializes a sketch from bytes using the provided seed.
     ///
-    /// Accepts versions 1 and 2, preserving the image's hashing and serialization version.
-    /// Counter values must fit `T`. See [`CountMinSketch`] for input encodings and compatibility.
+    /// The format and counter requirements are the same as for [`deserialize`](Self::deserialize).
     ///
     /// # Errors
     ///
-    /// Returns `InvalidData` if the image is malformed, its seed hash does not match `seed`, or
-    /// `seed` itself computes to the reserved zero seed hash.
+    /// Returns `InvalidData` if the image is malformed, its serialization version is unsupported,
+    /// its seed hash does not match `seed`, or `seed` itself computes to the reserved zero seed
+    /// hash.
     ///
     /// # Examples
     ///

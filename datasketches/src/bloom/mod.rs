@@ -42,8 +42,8 @@
 //! * Use [`canonical_float`](crate::hash::value::canonical_float) for floating-point values.
 //! * Use [`raw_bytes`](crate::hash::value::raw_bytes) for UTF-8 strings and byte slices.
 //!
-//! Callers skip empty string and byte-slice inserts and return `false` for their membership
-//! queries, including queries combined with insertion.
+//! Skip empty strings and byte slices before inserting into the filter. For these inputs,
+//! return `false` without querying the filter, including for queries combined with insertion.
 //!
 //! # Usage
 //!

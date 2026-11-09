@@ -37,7 +37,7 @@
 //! * Use [`canonical_float`](crate::hash::value::canonical_float) for floating-point values.
 //! * Use [`raw_bytes`](crate::hash::value::raw_bytes) for UTF-8 strings and byte slices.
 //!
-//! These encodings apply to keys. Callers skip empty string and byte-slice keys before updates.
+//! These encodings apply to keys. Skip empty string and byte-slice keys before updating the sketch.
 //!
 //! # Usage
 //!
