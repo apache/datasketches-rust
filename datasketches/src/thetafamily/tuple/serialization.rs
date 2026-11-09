@@ -68,14 +68,17 @@ pub trait TupleSummaryValue: Sized {
 macro_rules! impl_primitive_summary {
     ($name:ty, $read:ident, $write:ident) => {
         impl TupleSummaryValue for $name {
+            #[inline]
             fn serialize_size(&self) -> usize {
                 size_of::<$name>()
             }
 
+            #[inline]
             fn serialize_value(&self, bytes: &mut SketchBytes) {
                 bytes.$write(*self);
             }
 
+            #[inline]
             fn deserialize_value(cursor: &mut SketchSlice<'_>) -> Result<Self, Error> {
                 cursor
                     .$read()
