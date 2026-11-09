@@ -35,8 +35,14 @@
 //!
 //! # Cross-language hashing
 //!
-//! Cross-language use requires matching input encodings. See [`hash::value`](crate::hash::value)
-//! for encoding helpers.
+//! For compatibility with DataSketches Java and C++, use
+//! [`raw_bytes`](crate::hash::value::raw_bytes) for UTF-8 strings and byte slices.
+//! Use `i64` for Java `long` inputs and `i64`/`u64` for C++ 64-bit integers. For C++ narrower
+//! integer overloads, use [`natural_extend`](crate::hash::value::natural_extend).
+//!
+//! For C++ floating-point inputs, use [`canonical_float`](crate::hash::value::canonical_float).
+//! For Java floating-point inputs, convert to `f64` and hash its bits as `u64`, preserving signed
+//! zero and mapping all NaNs to `0x7ff8_0000_0000_0000`.
 //!
 //! For compatibility with DataSketches Java, skip empty string inserts and return `false` for
 //! empty string membership queries, including queries combined with insertion. Pass empty byte

@@ -22,12 +22,12 @@
 //!
 //! # Cross-language hashing
 //!
-//! Cross-language use requires matching input encodings. See [`hash::value`](crate::hash::value)
-//! for encoding helpers.
+//! For version 2 interchange, use `i64` counters and the following input encodings:
 //!
-//! For version 2 interchange, use `i64` counters. Encode integers as eight little-endian bytes,
-//! widening narrower integers to 64 bits first (sign-extending signed values). Encode strings as
-//! UTF-8 bytes and byte slices as their contents, without length prefixes or terminators.
+//! * Use `i64`/`u64` for eight-byte little-endian integers and
+//!   [`natural_extend`](crate::hash::value::natural_extend) for narrower integers.
+//! * Use [`raw_bytes`](crate::hash::value::raw_bytes) for UTF-8 strings and byte slices without
+//!   length prefixes or terminators.
 //!
 //! The version 2 specification ignores empty strings and byte arrays. For cross-language use,
 //! callers skip these updates and return zero for empty-input estimates and both bounds.

@@ -19,15 +19,14 @@
 //!
 //! Sketch update APIs accept any value that implements [`Hash`]. For most Rust values,
 //! passing the value directly is sufficient. This module provides value wrappers for
-//! cases where the default implementation does not match a sketch's compatibility rules.
+//! cases where the default implementation does not match the required input encoding. See each
+//! sketch's module documentation for cross-language compatibility guidance.
 //!
 //! ## Floating-point Numbers
 //!
 //! [`canonical_float::CanonicalFloat`] maps `f32` and `f64` values through a canonical `f64` bit
 //! pattern before hashing. Signed zero values hash the same, all NaN values use one canonical NaN
 //! bit pattern, and equal `f32`/`f64` values hash the same.
-//!
-//! Use this encoding to match floating-point hashing in DataSketches Java and DataSketches C++.
 //!
 //! The concrete wrapper documentation provides more details and examples.
 //!
@@ -37,8 +36,7 @@
 //! ## Integers
 //!
 //! [`sign_extend::SignExtend`] first sign-extends values to 64-bits, and then hashes the resulting
-//! integers. Use this encoding to match short-integer hashing in DataSketches C++'s HLL and CPC
-//! sketches.
+//! integers. Unsigned values are interpreted as signed at their original width before extension.
 //!
 //! The concrete wrapper documentation provides more details and examples.
 //!
@@ -47,8 +45,7 @@
 //! * [`sign_extend::from_i32`], [`sign_extend::from_u32`]
 //!
 //! [`natural_extend::NaturalExtend`] first widens signed values to `i64` and unsigned values to
-//! `u64`, and then hashes the resulting integers. Use this encoding to match short-integer hashing
-//! in DataSketches C++'s Bloom filters and Count-Min sketches.
+//! `u64`, and then hashes the resulting integers.
 //!
 //! The concrete wrapper documentation provides more details and examples.
 //!
@@ -58,12 +55,8 @@
 //!
 //! ## Raw Bytes
 //!
-//! [`raw_bytes::RawBytes`] hashes byte and string inputs as raw bytes without Rust's slice or
-//! string length prefix.
-//!
-//! Use this encoding to match byte and UTF-8 string hashing in DataSketches Java and
-//! DataSketches C++. Their string update APIs skip empty strings; check `is_empty` before updating
-//! here as well.
+//! [`raw_bytes::RawBytes`] hashes byte slices as their contents and strings as UTF-8 bytes,
+//! without length prefixes or terminators.
 //!
 //! The concrete wrapper documentation provides more details and examples.
 //!
