@@ -34,6 +34,14 @@
 //! configurations of K.
 //!
 //! For additional security this sketch can be configured with a user-specified hash seed.
+//!
+//! # Cross-language hashing
+//!
+//! Use [`hash::value`](crate::hash::value) wrappers to match input encodings across languages,
+//! including `raw_bytes` for UTF-8 strings and byte slices.
+//!
+//! To match DataSketches Java, callers skip empty strings and byte slices before updates.
+//! To match DataSketches C++ string updates, callers skip empty strings.
 
 mod compression;
 mod compression_data;

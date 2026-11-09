@@ -30,6 +30,14 @@
 //! * [`ThetaSketch`]: Mutable sketch for building from input data.
 //! * [`CompactThetaSketch`]: Immutable sketch with a compact memory layout.
 //!
+//! # Cross-language hashing
+//!
+//! Use [`hash::value`](crate::hash::value) wrappers to match input encodings across languages,
+//! including `raw_bytes` for UTF-8 strings and byte slices.
+//!
+//! To match DataSketches Java, callers skip empty strings and byte slices before updates.
+//! To match DataSketches C++ string updates, callers skip empty strings.
+//!
 //! # Usage
 //!
 //! ```

@@ -28,6 +28,14 @@
 //! summaries of shared keys through [`SummaryCombinePolicy`]; the union defaults to
 //! [`DefaultUnionPolicy`].
 //!
+//! # Cross-language hashing
+//!
+//! Use [`hash::value`](crate::hash::value) wrappers to match key encodings across languages,
+//! including `raw_bytes` for UTF-8 strings and byte slices.
+//!
+//! To match DataSketches Java, callers skip empty string and byte-slice keys before updates.
+//! To match DataSketches C++ string-key updates, callers skip empty string keys.
+//!
 //! # Usage
 //!
 //! ```

@@ -20,19 +20,48 @@
 //! The CountMin sketch provides approximate frequency counts for streaming data
 //! with configurable relative error and confidence bounds.
 //!
-//! Serial version 2 sketches with `i64` counters support cross-language binary interchange when
-//! items use compatible hashing; see [`CountMinSketch`] and [`hash::value`](crate::hash::value).
+//! # Cross-language hashing
+//!
+//! For cross-language version 2 interchange, use `i64` counters and compatible input encodings:
+//!
+//! * Use `i64`/`u64` for eight-byte little-endian integers and
+//!   [`natural_extend`](crate::hash::value::natural_extend) for narrower integers.
+//! * Use [`raw_bytes`](crate::hash::value::raw_bytes) for UTF-8 strings and byte slices.
+//!
+//! The version 2 specification ignores empty strings and byte arrays. For cross-language use,
+//! callers skip these updates and return zero for empty-input estimates and both bounds.
 //!
 //! # Usage
+//!
+//! This example handles empty strings before updating or querying. Byte slices use the same
+//! `is_empty()` checks with `raw_bytes::from_slice`.
 //!
 //! ```
 //! use datasketches::countmin::CountMinSketch;
 //! use datasketches::hash::value::raw_bytes;
 //!
-//! let mut sketch = CountMinSketch::<i64>::new(5, 256).unwrap();
-//! sketch.update(raw_bytes::from_str("apple"));
-//! sketch.update_with_weight(raw_bytes::from_str("banana"), 3);
-//! assert!(sketch.estimate(raw_bytes::from_str("banana")) >= 3);
+//! let mut sketch = CountMinSketch::<i64>::new(3, 1000)?;
+//! for input in ["", "apple", ""] {
+//!     let item = raw_bytes::from_str(input);
+//!     if !item.is_empty() {
+//!         sketch.update_with_weight(item, 5);
+//!     }
+//! }
+//! assert_eq!(sketch.total_weight(), 5);
+//! assert_eq!(sketch.estimate(raw_bytes::from_str("apple")), 5);
+//!
+//! let item = raw_bytes::from_str("");
+//! let (estimate, lower, upper) = if item.is_empty() {
+//!     (0, 0, 0)
+//! } else {
+//!     (
+//!         sketch.estimate(item),
+//!         sketch.lower_bound(item),
+//!         sketch.upper_bound(item),
+//!     )
+//! };
+//! assert_eq!((estimate, lower, upper), (0, 0, 0));
+//! # Ok::<(), datasketches::error::Error>(())
 //! ```
 //!
 //! # Configuration Helpers

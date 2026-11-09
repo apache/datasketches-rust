@@ -33,6 +33,15 @@
 //! [`difference()`](BloomFilter::difference) excludes the right filter's items exactly, but
 //! may also drop left items whose hash positions collide with the right filter.
 //!
+//! # Cross-language hashing
+//!
+//! Use [`hash::value`](crate::hash::value) wrappers to match input encodings across languages,
+//! including `raw_bytes` for UTF-8 strings and byte slices.
+//!
+//! To match DataSketches Java, callers skip empty string inserts and return `false` for empty
+//! string membership queries, including queries combined with insertion. Empty byte slices are
+//! valid inputs and are not filtered.
+//!
 //! # Usage
 //!
 //! ```
