@@ -22,17 +22,18 @@
 //!
 //! # Cross-language hashing
 //!
-//! For compatibility with DataSketches Java, use `i64` for `long` inputs and
-//! [`raw_bytes`](crate::hash::value::raw_bytes) for UTF-8 strings and byte slices.
-//! Java hashes these encodings with xxHash64 seed `0`.
+//! For cross-language use, apply the following input conventions:
 //!
-//! For precomputed hashes, use the same hash function when building and querying the filter.
-//! External hashes (for example XXH3) must use the precomputed-hash APIs throughout; Java's typed
-//! query API will not match them.
+//! * Use `i64`/`u64` for 64-bit integers and [`natural_extend`](crate::hash::value::natural_extend)
+//!   for narrower integers.
+//! * Use [`canonical_float`](crate::hash::value::canonical_float) for floating-point values.
+//! * Use [`raw_bytes`](crate::hash::value::raw_bytes) for UTF-8 strings and byte slices.
 //!
-//! For compatibility with DataSketches Java, skip empty strings when building the filter and
-//! return `false` for empty string membership queries. Pass empty byte slices through to filter
-//! construction and queries.
+//! Callers skip empty strings and byte slices when building the filter and return `false` for
+//! their membership queries.
+//!
+//! Value-based APIs use xxHash64 with seed `0`. For precomputed hashes, use the same hash function
+//! when building and querying the filter, and use the precomputed-hash APIs throughout.
 //!
 //! # Examples
 //!

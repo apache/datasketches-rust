@@ -35,19 +35,15 @@
 //!
 //! # Cross-language hashing
 //!
-//! For compatibility with DataSketches Java and C++, use
-//! [`raw_bytes`](crate::hash::value::raw_bytes) for UTF-8 strings and byte slices.
-//! Use `i64` for Java `long` inputs and `i64`/`u64` for C++ 64-bit integers. For C++ narrower
-//! integer overloads, use [`natural_extend`](crate::hash::value::natural_extend).
+//! For cross-language use, apply the following input conventions:
 //!
-//! For C++ floating-point inputs, use [`canonical_float`](crate::hash::value::canonical_float).
+//! * Use `i64`/`u64` for 64-bit integers and [`natural_extend`](crate::hash::value::natural_extend)
+//!   for narrower integers.
+//! * Use [`canonical_float`](crate::hash::value::canonical_float) for floating-point values.
+//! * Use [`raw_bytes`](crate::hash::value::raw_bytes) for UTF-8 strings and byte slices.
 //!
-//! For compatibility with DataSketches Java, skip empty string inserts and return `false` for
-//! empty string membership queries, including queries combined with insertion. Pass empty byte
-//! slices through to inserts and queries.
-//!
-//! For compatibility with DataSketches C++, skip empty string and byte-slice inserts and return
-//! `false` for their membership queries, including queries combined with insertion.
+//! Callers skip empty string and byte-slice inserts and return `false` for their membership
+//! queries, including queries combined with insertion.
 //!
 //! # Usage
 //!

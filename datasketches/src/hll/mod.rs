@@ -24,15 +24,14 @@
 //!
 //! # Cross-language hashing
 //!
-//! For compatibility with DataSketches Java and C++, use
-//! [`raw_bytes`](crate::hash::value::raw_bytes) for UTF-8 strings and byte slices, and
-//! [`canonical_float`](crate::hash::value::canonical_float) for floating-point values.
-//! Use `i64` for Java `long` inputs and `i64`/`u64` for C++ 64-bit integers. For C++ narrower
-//! integer overloads, use [`sign_extend`](crate::hash::value::sign_extend).
+//! For cross-language use, apply the following input conventions:
 //!
-//! For compatibility with DataSketches Java, skip empty strings and byte slices before updates.
-//! For compatibility with DataSketches C++, skip empty strings and pass empty byte slices through
-//! to updates.
+//! * Use `i64`/`u64` for 64-bit integers and [`sign_extend`](crate::hash::value::sign_extend) for
+//!   narrower integers.
+//! * Use [`canonical_float`](crate::hash::value::canonical_float) for floating-point values.
+//! * Use [`raw_bytes`](crate::hash::value::raw_bytes) for UTF-8 strings and byte slices.
+//!
+//! Callers skip empty strings and byte slices before updates.
 //!
 //! # Usage
 //!
@@ -123,6 +122,9 @@ const RESIZE_DENOMINATOR: u32 = 4;
 /// Compute a coupon once with [`Coupon::from_value`] and pass it to
 /// [`HllSketch::update_with_coupon`] on sketches with any `lg_k` or [`HllType`].
 ///
+/// For input encodings and empty-input handling, see
+/// [Cross-language hashing](crate::hll#cross-language-hashing).
+///
 /// # Examples
 ///
 /// ```
@@ -158,9 +160,6 @@ impl Coupon {
     }
 
     /// Computes the HLL coupon for a hashable value.
-    ///
-    /// Use [`hash::value`](crate::hash::value) wrappers to select an input encoding for
-    /// cross-language hashing.
     ///
     /// # Examples
     ///

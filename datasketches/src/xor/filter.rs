@@ -101,6 +101,9 @@ impl Fingerprints {
 ///
 /// Query values with [`XorFilter::contains`] and precomputed hashes with
 /// [`XorFilter::contains_hash`].
+///
+/// For input encodings and empty-input handling, see
+/// [Cross-language hashing](crate::xor#cross-language-hashing).
 #[derive(Debug)]
 pub struct XorFilterBuilder {
     filter_type: XorFilterType,
@@ -161,6 +164,9 @@ impl XorFilterBuilder {
 /// `true` may be a false positive, with probability determined by [`XorFilterType`], even for an
 /// empty input set. Values cannot be added after construction; rebuild the filter when the set
 /// changes.
+///
+/// For input encodings and empty-input handling, see
+/// [Cross-language hashing](crate::xor#cross-language-hashing).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct XorFilter {
     // Cache the derived length to avoid division on every query.

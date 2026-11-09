@@ -19,51 +19,20 @@
 //!
 //! Sketch update APIs accept any value that implements [`Hash`]. For most Rust values,
 //! passing the value directly is sufficient. This module provides value wrappers for
-//! cases where the default implementation does not match the required input encoding. See each
-//! sketch's module documentation for cross-language compatibility guidance.
+//! cases where the default implementation does not match the required input encoding.
 //!
-//! ## Floating-point Numbers
+//! ## Encoding strategies
 //!
-//! [`canonical_float::CanonicalFloat`] maps `f32` and `f64` values through a canonical `f64` bit
-//! pattern before hashing. Signed zero values hash the same, all NaN values use one canonical NaN
-//! bit pattern, and equal `f32`/`f64` values hash the same.
+//! * [`canonical_float`] widens floating-point values to `f64`, normalizes signed zero to `+0.0`,
+//!   and maps all NaNs to one bit pattern before hashing.
+//! * [`sign_extend`] interprets integers as signed at their original width and sign-extends them to
+//!   64 bits before hashing.
+//! * [`natural_extend`] widens signed integers to `i64` and unsigned integers to `u64` before
+//!   hashing.
+//! * [`raw_bytes`] hashes byte slices as their contents and strings as UTF-8 bytes, without length
+//!   prefixes or terminators.
 //!
-//! The concrete wrapper documentation provides more details and examples.
-//!
-//! * [`canonical_float::from_f32`]
-//! * [`canonical_float::from_f64`]
-//!
-//! ## Integers
-//!
-//! [`sign_extend::SignExtend`] first sign-extends values to 64-bits, and then hashes the resulting
-//! integers. Unsigned values are interpreted as signed at their original width before extension.
-//!
-//! The concrete wrapper documentation provides more details and examples.
-//!
-//! * [`sign_extend::from_i8`], [`sign_extend::from_u8`]
-//! * [`sign_extend::from_i16`], [`sign_extend::from_u16`]
-//! * [`sign_extend::from_i32`], [`sign_extend::from_u32`]
-//!
-//! [`natural_extend::NaturalExtend`] first widens signed values to `i64` and unsigned values to
-//! `u64`, and then hashes the resulting integers.
-//!
-//! The concrete wrapper documentation provides more details and examples.
-//!
-//! * [`natural_extend::from_i8`], [`natural_extend::from_u8`]
-//! * [`natural_extend::from_i16`], [`natural_extend::from_u16`]
-//! * [`natural_extend::from_i32`], [`natural_extend::from_u32`]
-//!
-//! ## Raw Bytes
-//!
-//! [`raw_bytes::RawBytes`] hashes byte slices as their contents and strings as UTF-8 bytes,
-//! without length prefixes or terminators.
-//!
-//! The concrete wrapper documentation provides more details and examples.
-//!
-//! * [`raw_bytes::from_vec`]
-//! * [`raw_bytes::from_string`]
-//! * [`raw_bytes::from_slice`]
-//! * [`raw_bytes::from_str`]
+//! Each strategy module provides constructors and examples.
 
 pub mod canonical_float;
 pub mod natural_extend;

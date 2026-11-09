@@ -22,15 +22,15 @@
 //!
 //! # Cross-language hashing
 //!
-//! For version 2 interchange, use `i64` counters and the following input encodings:
+//! For cross-language use, apply the following input conventions:
 //!
-//! * Use `i64`/`u64` for eight-byte little-endian integers and
-//!   [`natural_extend`](crate::hash::value::natural_extend) for narrower integers.
-//! * Use [`raw_bytes`](crate::hash::value::raw_bytes) for UTF-8 strings and byte slices without
-//!   length prefixes or terminators.
+//! * Use `i64`/`u64` for 64-bit integers and [`natural_extend`](crate::hash::value::natural_extend)
+//!   for narrower integers.
+//! * Use [`canonical_float`](crate::hash::value::canonical_float) for floating-point values.
+//! * Use [`raw_bytes`](crate::hash::value::raw_bytes) for UTF-8 strings and byte slices.
 //!
-//! The version 2 specification ignores empty strings and byte arrays. For cross-language use,
-//! callers skip these updates and return zero for empty-input estimates and both bounds.
+//! Version 2 interchange requires `i64` counters. Callers skip empty string and byte-slice
+//! updates and return zero for their estimates and both bounds.
 //!
 //! # Usage
 //!

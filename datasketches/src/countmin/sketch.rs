@@ -317,9 +317,6 @@ impl<T: CountMinValue> CountMinSketch<T> {
 
     /// Updates the sketch with a single occurrence of the item.
     ///
-    /// Use [`hash::value`](crate::hash::value) wrappers to select an input encoding for
-    /// cross-language hashing.
-    ///
     /// # Panics
     ///
     /// Panics without modifying the sketch if the total absolute weight would exceed `T::MAX`.
@@ -338,9 +335,6 @@ impl<T: CountMinValue> CountMinSketch<T> {
     }
 
     /// Updates the sketch with the given item and weight.
-    ///
-    /// Use [`hash::value`](crate::hash::value) wrappers to select an input encoding for
-    /// cross-language hashing.
     ///
     /// # Panics
     ///
