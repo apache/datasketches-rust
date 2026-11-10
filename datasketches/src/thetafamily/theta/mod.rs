@@ -52,7 +52,6 @@
 //! ```
 
 mod a_not_b;
-mod bit_pack;
 mod hash_table;
 mod intersection;
 mod jaccard_similarity;
