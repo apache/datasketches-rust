@@ -9,6 +9,7 @@ All significant changes to this project will be documented in this file.
 * Use serial version 2 for new `CountMinSketch` instances, enabling cross-language interchange with the documented input encodings. New sketches support `1..=127` rows and require a version 2 reader. Existing version 1 data remains readable and updatable, but must be rebuilt from source items to merge with new sketches.
 * Add `CpcUnion::serialize`, which produces the same bytes as `to_sketch().serialize()` and can be faster.
 * Add `HllUnion::serialize` to serialize union results directly.
+* Add `ThetaUnion::serialize` and `TupleUnion::serialize` to serialize ordered or unordered union results directly in their compact binary formats. Tuple summaries are serialized without cloning, avoiding per-entry allocations for heap-backed summaries.
 * Add `XorFilter` and `XorFilterBuilder` behind the `xor` feature for immutable membership queries on values or precomputed hashes. Filters support 8-, 16-, and 32-bit fingerprints and can be serialized for later queries.
 
 ### Improvements
@@ -20,6 +21,7 @@ All significant changes to this project will be documented in this file.
 * `TDigest` and `TDigestMut` CDF and PMF batches are faster for many split points; batches with sparse split points keep the original binary-search behavior.
 * `BloomFilter::insert` is faster for streams of new items when multiple hashes are configured.
 * Compressed `CompactThetaSketch` serialization and deserialization are faster.
+* Tuple sketch serialization and deserialization are faster.
 
 ## v0.6.0 (2026-10-29)
 

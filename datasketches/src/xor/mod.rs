@@ -22,14 +22,18 @@
 //!
 //! # Cross-language hashing
 //!
-//! Rust's [`Hash`](std::hash::Hash) may encode a value differently from other languages. Use
-//! [`crate::hash::value`] to match the input encoding of another DataSketches implementation.
-//! For precomputed hashes, use the same hash function when building and querying the filter.
+//! For cross-language use, apply the following input conventions:
 //!
-//! Java hashes integer scalars as 64-bit little-endian values and strings as UTF-8 bytes with
-//! xxHash64 seed `0`. Use `u64`/`i64` and [`crate::hash::value::raw_bytes`] accordingly. Java
-//! skips empty strings; callers must do so explicitly here. External hashes (for example XXH3)
-//! must use the precomputed-hash APIs throughout; Java's typed query API will not match them.
+//! * Use `i64`/`u64` for 64-bit integers and [`natural_extend`](crate::hash::value::natural_extend)
+//!   for narrower integers.
+//! * Use [`canonical_float`](crate::hash::value::canonical_float) for floating-point values.
+//! * Use [`raw_bytes`](crate::hash::value::raw_bytes) for UTF-8 strings and byte slices.
+//!
+//! Skip empty strings and byte slices when building the filter. For these inputs, return
+//! `false` without querying the filter.
+//!
+//! Value-based APIs use xxHash64 with seed `0`. For precomputed hashes, use the same hash function
+//! when building and querying the filter, and use the precomputed-hash APIs throughout.
 //!
 //! # Examples
 //!

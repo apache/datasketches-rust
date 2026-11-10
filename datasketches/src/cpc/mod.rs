@@ -34,6 +34,17 @@
 //! configurations of K.
 //!
 //! For additional security this sketch can be configured with a user-specified hash seed.
+//!
+//! # Cross-language hashing
+//!
+//! For cross-language use, apply the following input conventions:
+//!
+//! * Use `i64`/`u64` for 64-bit integers and [`sign_extend`](crate::hash::value::sign_extend) for
+//!   narrower integers.
+//! * Use [`canonical_float`](crate::hash::value::canonical_float) for floating-point values.
+//! * Use [`raw_bytes`](crate::hash::value::raw_bytes) for UTF-8 strings and byte slices.
+//!
+//! Skip empty strings and byte slices before updating the sketch.
 
 mod compression;
 mod compression_data;

@@ -37,18 +37,21 @@ pub struct ThetaEntry {
 }
 
 impl ThetaEntry {
+    #[inline]
     pub(super) fn new(hash: u64) -> Self {
         let hash = NonZeroU64::new(hash).expect("hash must be non-zero");
         Self { hash }
     }
 
     /// Returns the hash used as this entry's key.
+    #[inline]
     pub fn hash(&self) -> u64 {
         self.hash.get()
     }
 }
 
 impl SketchEntry for ThetaEntry {
+    #[inline]
     fn hash(&self) -> u64 {
         self.hash.get()
     }
