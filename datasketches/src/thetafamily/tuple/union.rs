@@ -30,7 +30,7 @@ use crate::thetacommon::union::UnionState;
 use crate::tuple::hash_table::TupleEntry;
 use crate::tuple::policy::SummaryCombinePolicy;
 use crate::tuple::serialization::TupleSummaryValue;
-use crate::tuple::serialization::serialize_compact_state;
+use crate::tuple::serialization::serialize_compact_uncompressed;
 use crate::tuple::sketch::CompactTupleSketch;
 use crate::tuple::sketch::TupleSketchView;
 
@@ -144,7 +144,7 @@ where
     where
         P::Summary: TupleSummaryValue,
     {
-        serialize_compact_state(&self.state.to_borrowed_compact_sketch_state(ordered))
+        serialize_compact_uncompressed(&self.state.to_borrowed_compact_sketch_state(ordered))
     }
 
     /// Resets the union to its initial empty state.

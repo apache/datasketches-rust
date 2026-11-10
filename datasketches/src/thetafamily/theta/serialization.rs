@@ -35,7 +35,9 @@ pub const V2_PREAMBLE_EMPTY: u8 = 1;
 pub const V2_PREAMBLE_PRECISE: u8 = 2;
 pub const V2_PREAMBLE_ESTIMATE: u8 = 3;
 
-pub(super) fn serialize_uncompressed<E: SketchEntry>(state: &CompactSketchState<E>) -> Vec<u8> {
+pub(super) fn serialize_compact_uncompressed<E: SketchEntry>(
+    state: &CompactSketchState<E>,
+) -> Vec<u8> {
     if state.is_empty() {
         return EMPTY_SKETCH_BYTES.to_vec();
     }

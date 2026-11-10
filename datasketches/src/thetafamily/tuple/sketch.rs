@@ -55,7 +55,7 @@ use crate::tuple::serialization::SERIAL_VERSION_LEGACY;
 use crate::tuple::serialization::SKETCH_TYPE;
 use crate::tuple::serialization::SKETCH_TYPE_LEGACY;
 use crate::tuple::serialization::TupleSummaryValue;
-use crate::tuple::serialization::serialize_compact_state;
+use crate::tuple::serialization::serialize_compact_uncompressed;
 
 /// Read-only view of a mutable or compact Tuple sketch.
 ///
@@ -566,7 +566,7 @@ impl<S> CompactTupleSketch<S> {
     where
         S: TupleSummaryValue,
     {
-        serialize_compact_state(&self.compact_state)
+        serialize_compact_uncompressed(&self.compact_state)
     }
 
     /// Deserializes a compact Tuple sketch using the default seed.

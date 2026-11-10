@@ -52,7 +52,7 @@ pub const SKETCH_TYPE_LEGACY: u8 = 5;
 pub const EMPTY_SKETCH_BYTES: [u8; 8] = [1, 3, 9, 1, 0, 0x1e, 0, 0];
 
 /// Serializes compact Tuple state whose retained entries are owned or borrowed.
-pub(super) fn serialize_compact_state<S, E>(compact_state: &CompactSketchState<E>) -> Vec<u8>
+pub(super) fn serialize_compact_uncompressed<S, E>(compact_state: &CompactSketchState<E>) -> Vec<u8>
 where
     S: TupleSummaryValue,
     E: Borrow<TupleEntry<S>>,

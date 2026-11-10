@@ -557,7 +557,7 @@ impl CompactThetaSketch {
     ///
     /// Empty sketches serialize with a zero seed hash.
     pub fn serialize(&self) -> Vec<u8> {
-        serialization::serialize_uncompressed(&self.compact_state)
+        serialization::serialize_compact_uncompressed(&self.compact_state)
     }
 
     fn serialize_v4(&self) -> Vec<u8> {
