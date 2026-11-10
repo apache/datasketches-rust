@@ -1054,25 +1054,30 @@ fn unpack_deltas(
     };
     let mut entries = vec![0u64; num_entries];
     let mut previous = 0u64;
-    let mut invalid = false;
-    let mut accept = |slot: &mut u64, delta: u64| {
-        previous = previous.wrapping_add(delta);
-        invalid |= previous == 0 || previous >= theta;
-        *slot = previous;
+    let mut accept = |slot: &mut u64, delta: u64| -> Result<(), Error> {
+        let value = previous
+            .checked_add(delta)
+            .ok_or_else(|| Error::deserial("Theta entry delta overflows"))?;
+        if value == 0 || value >= theta {
+            return Err(Error::deserial("corrupted: invalid retained hash value"));
+        }
+        previous = value;
+        *slot = value;
+        Ok(())
     };
     let (head, tail) = entries.split_at_mut(fast);
     if bits <= 56 {
         for (i, slot) in head.iter_mut().enumerate() {
             let pos = i * bits;
             let window = u64::from_be_bytes(payload[pos >> 3..(pos >> 3) + 8].try_into().unwrap());
-            accept(slot, (window << (pos & 7)) >> (64 - bits));
+            accept(slot, (window << (pos & 7)) >> (64 - bits))?;
         }
     } else {
         for (i, slot) in head.iter_mut().enumerate() {
             let pos = i * bits;
             let window =
                 u128::from_be_bytes(payload[pos >> 3..(pos >> 3) + 16].try_into().unwrap());
-            accept(slot, ((window << (pos & 7)) >> (128 - bits)) as u64);
+            accept(slot, ((window << (pos & 7)) >> (128 - bits)) as u64)?;
         }
     }
     for (i, slot) in tail.iter_mut().enumerate() {
@@ -1084,10 +1089,7 @@ fn unpack_deltas(
         accept(
             slot,
             ((u128::from_be_bytes(window) << (pos & 7)) >> (128 - bits)) as u64,
-        );
-    }
-    if invalid {
-        return Err(Error::deserial("corrupted: invalid retained hash value"));
+        )?;
     }
     Ok(entries)
 }

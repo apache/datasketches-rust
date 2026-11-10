@@ -246,6 +246,37 @@ fn malformed_input_is_rejected() {
 }
 
 #[test]
+fn compressed_hashes_must_be_nonzero_and_below_theta() {
+    for width in [1, 56, 57, 63] {
+        for count in [2, 128] {
+            let hashes: Vec<u64> = (0..count).map(|i| (1u64 << (width - 1)) + i).collect();
+            let sketch = CompactThetaSketch::deserialize(&serialize_v2_exact(&hashes)).unwrap();
+            let mut bytes = sketch.serialize_compressed();
+
+            // Add a sampling threshold immediately above the last retained hash.
+            bytes[0] = 2;
+            bytes.splice(8..8, (hashes.last().unwrap() + 1).to_le_bytes());
+            let decoded = CompactThetaSketch::deserialize(&bytes).unwrap();
+            assert_eq!(
+                decoded.iter().map(|entry| entry.hash()).collect::<Vec<_>>(),
+                hashes
+            );
+
+            for theta in [hashes[0], hashes[hashes.len() / 2], *hashes.last().unwrap()] {
+                bytes[8..16].copy_from_slice(&theta.to_le_bytes());
+                let err = CompactThetaSketch::deserialize(&bytes).unwrap_err();
+                assert_eq!(err.kind(), ErrorKind::InvalidData);
+            }
+
+            let payload_offset = 16 + usize::from(bytes[4]);
+            bytes[payload_offset..].fill(0);
+            let err = CompactThetaSketch::deserialize(&bytes).unwrap_err();
+            assert_eq!(err.kind(), ErrorKind::InvalidData);
+        }
+    }
+}
+
+#[test]
 fn declared_entry_payload_is_checked_before_allocating() {
     let mut uncompressed = serialize_v2_exact(&[1]);
     uncompressed[8..12].copy_from_slice(&u32::MAX.to_le_bytes());
