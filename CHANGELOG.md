@@ -6,6 +6,7 @@ All significant changes to this project will be documented in this file.
 
 ### New features
 
+* Use serial version 2 for new `CountMinSketch` instances, enabling cross-language interchange with the documented input encodings. New sketches support `1..=127` rows and require a version 2 reader. Existing version 1 data remains readable and updatable, but must be rebuilt from source items to merge with new sketches.
 * Add `CpcUnion::serialize`, which produces the same bytes as `to_sketch().serialize()` and can be faster.
 * Add `HllUnion::serialize` to serialize union results directly.
 * Add `ThetaUnion::serialize` and `TupleUnion::serialize` to serialize ordered or unordered union results directly in their compact binary formats. Tuple summaries are serialized without cloning, avoiding per-entry allocations for heap-backed summaries.
@@ -13,6 +14,7 @@ All significant changes to this project will be documented in this file.
 
 ### Improvements
 
+* `FrequentItemsSketch` updates are faster for streams of distinct items while the map is growing.
 * `HllUnion` is faster when adopting HLL8 inputs without downsampling or merging multiple dense inputs before querying or serializing the result.
 * `KllSketch::rank` is faster for repeated queries on compacted sketches.
 * Repeated scalar `TDigest::rank` queries are faster, including small digests and data with repeated values.

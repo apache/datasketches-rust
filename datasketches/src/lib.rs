@@ -54,7 +54,7 @@
 //! * `raw_bytes` for byte and string contents;
 //! * `canonical_float` for floating-point values;
 //! * `sign_extend` for short integers used with HLL and CPC;
-//! * `natural_extend` for short integers used with Bloom filters.
+//! * `natural_extend` for short integers used with Bloom filters and Count-Min sketches.
 //!
 //! When interoperating with an implementation that skips empty strings, check for empty input
 //! before updating here as well.

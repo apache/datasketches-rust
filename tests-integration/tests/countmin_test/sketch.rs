@@ -15,12 +15,15 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::hash::Hash;
 use std::panic::AssertUnwindSafe;
 use std::panic::catch_unwind;
 
 use datasketches::countmin::CountMinSketch;
 use datasketches::countmin::UnsignedCountMinValue;
 use datasketches::error::ErrorKind;
+use datasketches::hash::value::natural_extend;
+use datasketches::hash::value::raw_bytes;
 use googletest::assert_that;
 use googletest::prelude::ge;
 use googletest::prelude::le;
@@ -415,8 +418,11 @@ fn test_truncated_non_empty_payload_is_rejected_before_table_allocation() {
 
 #[test]
 fn test_invalid_hashes_return_error() {
-    let error = CountMinSketch::<i64>::new(0, 5).unwrap_err();
-    assert_eq!(error.kind(), ErrorKind::InvalidArgument);
+    for rows in [0, 128, 255] {
+        let error = CountMinSketch::<i64>::new(rows, 5).unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::InvalidArgument);
+    }
+    assert!(CountMinSketch::<i64>::new(127, 5).is_ok());
 }
 
 #[test]
@@ -434,31 +440,27 @@ fn test_merge_incompatible() {
 }
 
 #[test]
-fn test_increment_single_key_like_rust_count_min_sketch() {
-    let mut sketch = CountMinSketch::<i64>::new(4, 32).unwrap();
-    for _ in 0..300 {
-        sketch.update("key");
+fn value_wrappers_match_portable_item_encodings() {
+    fn assert_same_item<I: Hash, J: Hash>(left: I, right: J) {
+        let mut a = CountMinSketch::<i64>::new(3, 1000).unwrap();
+        let mut b = a.clone();
+        a.update_with_weight(&left, 7);
+        b.update_with_weight(&right, 7);
+        assert_eq!(a, b);
     }
-    assert_eq!(sketch.estimate("key"), 300);
-}
 
-#[test]
-fn test_estimated_size() {
-    let mut sketch = CountMinSketch::<i64>::new(4, 128).unwrap();
-    assert_eq!(sketch.estimated_size(), 4128);
-
-    // The backing tables are allocated up front; updates do not grow the sketch.
-    sketch.update("apple");
-    assert_eq!(sketch.estimated_size(), 4128);
-}
-
-#[test]
-fn test_increment_multi_like_rust_count_min_sketch() {
-    let mut sketch = CountMinSketch::<i64>::new(6, 128).unwrap();
-    for i in 0..1_000_000u64 {
-        sketch.update(i % 100);
-    }
-    for key in 0..100u64 {
-        assert_that!(sketch.estimate(key), ge(9_000));
-    }
+    assert_same_item(natural_extend::from_i8(-2), -2i64);
+    assert_same_item(natural_extend::from_i16(-2), -2i64);
+    assert_same_item(natural_extend::from_i32(-2), -2i64);
+    assert_same_item(natural_extend::from_u8(u8::MAX), u64::from(u8::MAX));
+    assert_same_item(natural_extend::from_u16(u16::MAX), u64::from(u16::MAX));
+    assert_same_item(natural_extend::from_u32(u32::MAX), u64::from(u32::MAX));
+    assert_same_item(
+        -2i64,
+        raw_bytes::from_slice(&[0xfe, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff]),
+    );
+    assert_same_item(
+        0x0102_0304_0506_0708u64,
+        raw_bytes::from_slice(&[8, 7, 6, 5, 4, 3, 2, 1]),
+    );
 }

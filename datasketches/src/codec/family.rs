@@ -130,8 +130,8 @@ impl Family {
     pub const XORFILTER: Family = Family {
         id: 22,
         name: "XORFILTER",
-        min_pre_longs: 2,
-        max_pre_longs: 2,
+        min_pre_longs: 3,
+        max_pre_longs: 3,
     };
 }
 

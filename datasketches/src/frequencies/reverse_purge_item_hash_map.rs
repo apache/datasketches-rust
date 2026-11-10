@@ -171,10 +171,28 @@ impl<T: Eq + Hash> ReversePurgeItemHashMap<T> {
         for i in 0..old_keys.len() {
             if old_states[i] > 0 {
                 if let Some(key) = old_keys[i].take() {
-                    self.adjust_or_put_value(key, old_values[i]);
+                    self.insert_absent(key, old_values[i]);
                 }
             }
         }
+    }
+
+    /// Inserts a key that is known to be absent, such as when rehashing distinct keys.
+    ///
+    /// This probes the same slots as [`Self::adjust_or_put_value`] but skips key comparisons.
+    fn insert_absent(&mut self, key: T, value: u64) {
+        let mask = self.keys.len() - 1;
+        let mut probe = (hash_item(&key) as usize) & mask;
+        let mut drift: usize = 1;
+        while self.states[probe] > 0 {
+            probe = (probe + 1) & mask;
+            drift += 1;
+            debug_assert!(drift < DRIFT_LIMIT, "drift limit exceeded");
+        }
+        self.keys[probe] = Some(key);
+        self.values[probe] = value;
+        self.states[probe] = drift as u16;
+        self.num_active += 1;
     }
 
     /// Returns the length of the underlying arrays.
