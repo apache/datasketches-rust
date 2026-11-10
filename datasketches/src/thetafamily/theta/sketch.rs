@@ -203,6 +203,8 @@ impl<'a> From<&'a CompactThetaSketch> for ThetaSketchView<'a> {
 }
 
 /// Mutable theta sketch for building from input data.
+///
+/// See the [module level documentation](super) for more.
 #[derive(Debug)]
 pub struct ThetaSketch {
     table: ThetaHashTable,
@@ -217,9 +219,6 @@ impl ThetaSketch {
     }
 
     /// Updates the sketch with a hashable value.
-    ///
-    /// Use [`hash::value`](crate::hash::value) wrappers to select an input encoding for
-    /// cross-language hashing.
     ///
     /// # Examples
     ///

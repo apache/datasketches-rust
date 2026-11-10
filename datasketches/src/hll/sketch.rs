@@ -137,9 +137,6 @@ impl HllSketch {
 
     /// Updates the sketch with a value.
     ///
-    /// Use [`hash::value`](crate::hash::value) wrappers to select an input encoding for
-    /// cross-language hashing.
-    ///
     /// To reuse the hash across sketches, see [`Coupon`] and
     /// [`update_with_coupon`](Self::update_with_coupon).
     ///
