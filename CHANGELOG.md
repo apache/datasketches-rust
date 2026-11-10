@@ -22,6 +22,7 @@ All significant changes to this project will be documented in this file.
 * `BloomFilter::insert` is faster for streams of new items when multiple hashes are configured.
 * Compressed `CompactThetaSketch` serialization and deserialization are faster.
 * Tuple sketch serialization and deserialization are faster.
+* `ThetaANotB` and `TupleANotB` are faster when either input is unordered.
 
 ## v0.6.0 (2026-10-29)
 

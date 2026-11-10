@@ -16,6 +16,8 @@
 // under the License.
 
 use std::collections::HashSet;
+use std::hash::BuildHasher;
+use std::hash::Hasher;
 
 use crate::error::Error;
 use crate::error::ErrorKind;
@@ -106,7 +108,8 @@ where
         }
         entries
     } else {
-        let mut b_keys: HashSet<u64> = HashSet::with_capacity(b_num_retained);
+        let mut b_keys: HashSet<u64, RetainedHashState> =
+            HashSet::with_capacity_and_hasher(b_num_retained, RetainedHashState::new());
         for hash in b.hashes() {
             if hash < theta {
                 b_keys.insert(hash);
@@ -169,4 +172,43 @@ where
     }
     let out_ordered = ordered || input_ordered || (entries.len() == 1 && theta == MAX_THETA);
     CompactSketchState::non_empty(entries, theta, seed_hash, out_ordered)
+}
+
+struct RetainedHashState(u64);
+
+impl RetainedHashState {
+    fn new() -> Self {
+        Self(std::collections::hash_map::RandomState::new().hash_one(0u64))
+    }
+}
+
+impl BuildHasher for RetainedHashState {
+    type Hasher = RetainedHashHasher;
+
+    fn build_hasher(&self) -> RetainedHashHasher {
+        RetainedHashHasher {
+            seed: self.0,
+            hash: 0,
+        }
+    }
+}
+
+struct RetainedHashHasher {
+    seed: u64,
+    hash: u64,
+}
+
+impl Hasher for RetainedHashHasher {
+    fn finish(&self) -> u64 {
+        self.hash
+    }
+
+    fn write(&mut self, _bytes: &[u8]) {
+        unreachable!("retained hashes are hashed as u64");
+    }
+
+    fn write_u64(&mut self, hash: u64) {
+        let product = u128::from(hash ^ self.seed) * 0x9E37_79B9_7F4A_7C15;
+        self.hash = (product as u64) ^ ((product >> 64) as u64);
+    }
 }
