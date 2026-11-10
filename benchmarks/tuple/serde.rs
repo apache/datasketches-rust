@@ -32,27 +32,29 @@ use datasketches::tuple::TupleSummaryValue;
 use datasketches::tuple::TupleUnion;
 use datasketches::tuple::TupleUnionBuilder;
 
-fn u64_union(rows: u64) -> TupleUnion<DefaultUnionPolicy<u64>> {
+fn u64_union(rows: u64, lg_k: u8) -> TupleUnion<DefaultUnionPolicy<u64>> {
     let mut sketch = TupleSketchBuilder::new(DefaultUpdatePolicy::<u64>::default())
+        .lg_k(lg_k)
         .build()
         .unwrap();
     for value in 0..rows {
         sketch.update(value, 1);
     }
     let mut union = TupleUnionBuilder::new(DefaultUnionPolicy::<u64>::default())
+        .lg_k(lg_k)
         .build()
         .unwrap();
     union.update(&sketch).unwrap();
     union
 }
 
-fn serialize_union<const ORDERED: bool>(bencher: Bencher, rows: u64) {
-    let union = u64_union(rows);
+fn serialize_union<const ORDERED: bool>(bencher: Bencher, rows: u64, lg_k: u8) {
+    let union = u64_union(rows, lg_k);
     bencher.bench_local(|| black_box(&union).serialize(ORDERED));
 }
 
-fn serialize_union_via_sketch<const ORDERED: bool>(bencher: Bencher, rows: u64) {
-    let union = u64_union(rows);
+fn serialize_union_via_sketch<const ORDERED: bool>(bencher: Bencher, rows: u64, lg_k: u8) {
+    let union = u64_union(rows, lg_k);
     bencher.bench_local(|| black_box(&union).to_sketch(ORDERED).serialize());
 }
 
@@ -103,67 +105,83 @@ impl SummaryCombinePolicy for LabelsPolicy {
     }
 }
 
-fn labels_union(rows: u64) -> TupleUnion<LabelsPolicy> {
-    let mut sketch = TupleSketchBuilder::new(LabelsPolicy).build().unwrap();
+fn labels_union(rows: u64, lg_k: u8) -> TupleUnion<LabelsPolicy> {
+    let mut sketch = TupleSketchBuilder::new(LabelsPolicy)
+        .lg_k(lg_k)
+        .build()
+        .unwrap();
     for value in 0..rows {
         sketch.update(value, value);
     }
-    let mut union = TupleUnionBuilder::new(LabelsPolicy).build().unwrap();
+    let mut union = TupleUnionBuilder::new(LabelsPolicy)
+        .lg_k(lg_k)
+        .build()
+        .unwrap();
     union.update(&sketch).unwrap();
     union
 }
 
-fn serialize_labels_union<const ORDERED: bool>(bencher: Bencher, rows: u64) {
-    let union = labels_union(rows);
+fn serialize_labels_union<const ORDERED: bool>(bencher: Bencher, rows: u64, lg_k: u8) {
+    let union = labels_union(rows, lg_k);
     bencher.bench_local(|| black_box(&union).serialize(ORDERED));
 }
 
-fn serialize_labels_union_via_sketch<const ORDERED: bool>(bencher: Bencher, rows: u64) {
-    let union = labels_union(rows);
+fn serialize_labels_union_via_sketch<const ORDERED: bool>(bencher: Bencher, rows: u64, lg_k: u8) {
+    let union = labels_union(rows, lg_k);
     bencher.bench_local(|| black_box(&union).to_sketch(ORDERED).serialize());
 }
 
 pub fn register(runner: &mut Runner) {
     // Reuse each union for repeated serialization, including fixture construction in timing.
-    for (rows, u64_rounds, labels_rounds) in [
-        (0, 10_000_000, 10_000_000),
-        (4, 2_000_000, 500_000),
-        (100, 300_000, 20_000),
-        (80_000, 5_000, 500),
+    // Cover exact results and estimation results with different retained sizes.
+    for (rows, lg_k, u64_rounds, labels_rounds) in [
+        (0, 12, 10_000_000, 10_000_000),
+        (4, 12, 2_000_000, 500_000),
+        (100, 12, 300_000, 20_000),
+        (1_000, 12, 30_000, 2_000),
+        (80_000, 8, 30_000, 3_000),
+        (80_000, 12, 5_000, 500),
+        (80_000, 16, 250, 20),
     ] {
-        register_order::<false>(runner, rows, u64_rounds, labels_rounds);
-        register_order::<true>(runner, rows, u64_rounds, labels_rounds);
+        register_order::<false>(runner, rows, lg_k, u64_rounds, labels_rounds);
+        register_order::<true>(runner, rows, lg_k, u64_rounds, labels_rounds);
     }
 }
 
 fn register_order<const ORDERED: bool>(
     runner: &mut Runner,
     rows: u64,
+    lg_k: u8,
     u64_rounds: usize,
     labels_rounds: usize,
 ) {
+    let size = if lg_k == 12 {
+        rows.to_string()
+    } else {
+        format!("{rows}/lg_k={lg_k}")
+    };
     let order = if ORDERED { "ordered" } else { "unordered" };
     runner.compare(
-        &format!("tuple::serde::u64::{order}/{rows}"),
+        &format!("tuple::serde::u64::{order}/{size}"),
         u64_rounds,
         &[
             ("via_compact_sketch", &|bencher| {
-                serialize_union_via_sketch::<ORDERED>(bencher, rows)
+                serialize_union_via_sketch::<ORDERED>(bencher, rows, lg_k)
             }),
             ("direct", &|bencher| {
-                serialize_union::<ORDERED>(bencher, rows)
+                serialize_union::<ORDERED>(bencher, rows, lg_k)
             }),
         ],
     );
     runner.compare(
-        &format!("tuple::serde::labels::{order}/{rows}"),
+        &format!("tuple::serde::labels::{order}/{size}"),
         labels_rounds,
         &[
             ("via_compact_sketch", &|bencher| {
-                serialize_labels_union_via_sketch::<ORDERED>(bencher, rows)
+                serialize_labels_union_via_sketch::<ORDERED>(bencher, rows, lg_k)
             }),
             ("direct", &|bencher| {
-                serialize_labels_union::<ORDERED>(bencher, rows)
+                serialize_labels_union::<ORDERED>(bencher, rows, lg_k)
             }),
         ],
     );
