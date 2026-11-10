@@ -67,7 +67,7 @@ impl ThetaUnion {
     /// singletons always use their canonical encoding.
     pub fn serialize(&self, ordered: bool) -> Vec<u8> {
         let state = self.state.to_compact_sketch_state(ordered);
-        serialization::serialize_uncompressed(&state, ThetaEntry::hash)
+        serialization::serialize_uncompressed(&state)
     }
 
     /// Resets the union to its empty state.

@@ -19,6 +19,7 @@
 
 use crate::codec::SketchBytes;
 use crate::codec::family::Family;
+use crate::thetacommon::SketchEntry;
 use crate::thetacommon::constants::FLAGS_IS_COMPACT;
 use crate::thetacommon::constants::FLAGS_IS_ORDERED;
 use crate::thetacommon::constants::FLAGS_IS_READ_ONLY;
@@ -34,10 +35,7 @@ pub const V2_PREAMBLE_EMPTY: u8 = 1;
 pub const V2_PREAMBLE_PRECISE: u8 = 2;
 pub const V2_PREAMBLE_ESTIMATE: u8 = 3;
 
-pub(super) fn serialize_uncompressed<E>(
-    state: &CompactSketchState<E>,
-    hash: impl Fn(&E) -> u64,
-) -> Vec<u8> {
+pub(super) fn serialize_uncompressed<E: SketchEntry>(state: &CompactSketchState<E>) -> Vec<u8> {
     if state.is_empty() {
         return EMPTY_SKETCH_BYTES.to_vec();
     }
@@ -75,7 +73,7 @@ pub(super) fn serialize_uncompressed<E>(
         bytes.write_u64_le(state.theta());
     }
     for entry in entries {
-        bytes.write_u64_le(hash(entry));
+        bytes.write_u64_le(entry.hash());
     }
     bytes.into_bytes()
 }
