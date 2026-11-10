@@ -19,9 +19,6 @@
 //!
 //! [`NaturalExtend`] first widens signed values to `i64` and unsigned values to `u64`, and then
 //! hashes the resulting integers.
-//!
-//! Use this encoding to match short-integer hashing in DataSketches C++'s Bloom filters and
-//! Count-Min sketches.
 
 use std::hash::Hash;
 use std::hash::Hasher;
