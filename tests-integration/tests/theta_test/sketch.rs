@@ -16,6 +16,7 @@
 // under the License.
 
 use datasketches::common::NumStdDev;
+use datasketches::common::ResizeFactor;
 use datasketches::error::ErrorKind;
 use datasketches::hash::value::canonical_float;
 use datasketches::theta::CompactThetaSketch;
@@ -165,6 +166,44 @@ fn test_reset() {
     assert!(!sketch.is_estimation_mode());
     assert_eq!(sketch.lower_bound(NumStdDev::One), 0.0);
     assert_eq!(sketch.upper_bound(NumStdDev::One), 0.0);
+}
+
+#[test]
+fn test_compact_ordered_sorts_retained_hashes() {
+    for (lg_k, n, p, rf) in [
+        (12, 1, 1.0, ResizeFactor::X8),
+        (12, 2, 1.0, ResizeFactor::X8),
+        (12, 300, 1.0, ResizeFactor::X1),
+        (5, 300, 1.0, ResizeFactor::X8),
+        (8, 255, 1.0, ResizeFactor::X8),
+        (12, 3000, 1.0, ResizeFactor::X8),
+        (12, 100_000, 1.0, ResizeFactor::X8),
+        (12, 100_000, 0.01, ResizeFactor::X8),
+        (16, 1_000_000, 1.0, ResizeFactor::X8),
+    ] {
+        let mut sketch = ThetaSketchBuilder::default()
+            .lg_k(lg_k)
+            .sampling_probability(p)
+            .resize_factor(rf)
+            .build()
+            .unwrap();
+        for i in 0..n {
+            sketch.update(i as u64);
+        }
+        let mut expected: Vec<u64> = sketch.iter().map(|entry| entry.hash()).collect();
+        expected.sort_unstable();
+
+        let ordered = sketch.compact(true);
+        assert!(ordered.is_ordered());
+        let hashes: Vec<u64> = ordered.iter().map(|entry| entry.hash()).collect();
+        assert_eq!(hashes, expected);
+
+        let unordered = sketch.compact(false);
+        let mut hashes: Vec<u64> = unordered.iter().map(|entry| entry.hash()).collect();
+        hashes.sort_unstable();
+        assert_eq!(hashes, expected);
+        assert_eq!(unordered.theta64(), sketch.theta64());
+    }
 }
 
 #[test]

@@ -342,9 +342,14 @@ impl ThetaSketch {
             debug_assert_eq!(self.num_retained(), 0);
             CompactSketchState::empty(self.seed_hash())
         } else {
-            self.table.to_non_empty_compact_state(ordered)
-        }
-        .map_retained_entries(|entry| entry.hash());
+            let mut hashes = self.table.retained_hashes();
+            let theta = self.table.retention_theta();
+            let ordered = ordered || (hashes.len() == 1 && theta == MAX_THETA);
+            if ordered {
+                sort_uniform_hashes(&mut hashes);
+            }
+            CompactSketchState::non_empty(hashes, theta, self.seed_hash(), ordered)
+        };
         CompactThetaSketch::from_compact_state(compact_state)
     }
 
@@ -1092,6 +1097,49 @@ fn unpack_deltas(
         )?;
     }
     Ok(entries)
+}
+
+fn sort_uniform_hashes(hashes: &mut Vec<u64>) {
+    const MAX_BUCKET: usize = 32;
+    let len = hashes.len();
+    let Some(&max) = hashes.iter().max() else {
+        return;
+    };
+    if len < 256 {
+        hashes.sort_unstable();
+        return;
+    }
+    let lg_buckets = len.ilog2();
+    let shift = (u64::BITS - max.leading_zeros()).saturating_sub(lg_buckets);
+    let mut starts = vec![0u32; (1 << lg_buckets) + 1];
+    for &hash in hashes.iter() {
+        starts[(hash >> shift) as usize + 1] += 1;
+    }
+    let mut largest = 0;
+    for i in 1..starts.len() {
+        largest = largest.max(starts[i]);
+        starts[i] += starts[i - 1];
+    }
+    if largest as usize > MAX_BUCKET {
+        hashes.sort_unstable();
+        return;
+    }
+    let mut sorted = vec![0u64; len];
+    for &hash in hashes.iter() {
+        let next = &mut starts[(hash >> shift) as usize];
+        sorted[*next as usize] = hash;
+        *next += 1;
+    }
+    for i in 1..len {
+        let hash = sorted[i];
+        let mut j = i;
+        while j > 0 && sorted[j - 1] > hash {
+            sorted[j] = sorted[j - 1];
+            j -= 1;
+        }
+        sorted[j] = hash;
+    }
+    *hashes = sorted;
 }
 
 #[cfg(test)]

@@ -307,6 +307,24 @@ where
         )
     }
 
+    /// Get the retained hashes in table order.
+    #[cfg(feature = "theta")]
+    pub fn retained_hashes(&self) -> Vec<u64> {
+        if self.num_retained * 16 <= self.entries.len() {
+            let mut hashes = Vec::with_capacity(self.num_retained);
+            hashes.extend(self.entries.iter().flatten().map(SketchEntry::hash));
+            return hashes;
+        }
+        let mut hashes = vec![0u64; self.num_retained + 1];
+        let mut len = 0;
+        for slot in &self.entries {
+            hashes[len] = slot.as_ref().map_or(0, SketchEntry::hash);
+            len += usize::from(slot.is_some());
+        }
+        hashes.truncate(len);
+        hashes
+    }
+
     /// Get log2 of nominal size.
     pub fn lg_nom_size(&self) -> u8 {
         self.lg_nom_size
