@@ -23,6 +23,7 @@ use datasketches::common::NumStdDev;
 use datasketches::error::ErrorKind;
 use datasketches::theta::CompactThetaSketch;
 use datasketches::theta::ThetaSketchBuilder;
+use datasketches::theta::ThetaUnionBuilder;
 use googletest::assert_that;
 use googletest::prelude::near;
 use tests_integration::ZERO_HASH_SEED;
@@ -315,6 +316,71 @@ fn test_v2_java_empty_layouts() {
             let sketch = CompactThetaSketch::deserialize_with_seed(&bytes, 123).unwrap();
             assert!(sketch.is_empty());
             assert_eq!(sketch.seed_hash(), expected_seed_hash);
+        }
+    }
+}
+
+#[test]
+fn union_serialization_matches_compact_result() {
+    for (rows, probability, mixed_precision) in [
+        (0, 1.0, false),
+        (1, 1.0, false),
+        (12, 1.0, false),
+        (40, 1.0, false),
+        (64, 0.5, false),
+        (64, 1e-12, false),
+        (64, 1.0, true),
+    ] {
+        let seed = 123;
+        let mut input = ThetaSketchBuilder::default()
+            .lg_k(8)
+            .seed(seed)
+            .sampling_probability(probability)
+            .build()
+            .unwrap();
+        for value in 0..rows {
+            input.update(value);
+        }
+        let mut union = ThetaUnionBuilder::default()
+            .lg_k(5)
+            .seed(seed)
+            .build()
+            .unwrap();
+        for ordered in [false, true] {
+            assert_eq!(
+                union.serialize(ordered),
+                union.to_sketch(ordered).serialize()
+            );
+        }
+        union.update(&input).unwrap();
+        if mixed_precision {
+            let mut other = ThetaSketchBuilder::default()
+                .lg_k(5)
+                .seed(seed)
+                .build()
+                .unwrap();
+            for value in 32..96 {
+                other.update(value);
+            }
+            union.update(&other.compact(true)).unwrap();
+        }
+
+        for ordered in [false, true] {
+            let bytes = union.serialize(ordered);
+            assert_eq!(
+                bytes,
+                union.to_sketch(ordered).serialize(),
+                "rows={rows}, probability={probability}, mixed={mixed_precision}, ordered={ordered}",
+            );
+            let restored = CompactThetaSketch::deserialize_with_seed(&bytes, seed).unwrap();
+            assert_eq!(restored.serialize(), bytes);
+        }
+        union.reset();
+        for ordered in [false, true] {
+            assert_eq!(
+                union.serialize(ordered),
+                union.to_sketch(ordered).serialize()
+            );
         }
     }
 }

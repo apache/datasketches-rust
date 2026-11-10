@@ -25,7 +25,6 @@
 use std::hash::Hash;
 use std::slice;
 
-use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
 use crate::codec::assert::ensure_preamble_longs_in_range;
 use crate::codec::assert::insufficient_data;
@@ -41,10 +40,8 @@ use crate::thetacommon::EntrySketch;
 use crate::thetacommon::KeySketch;
 use crate::thetacommon::binomial_bounds;
 use crate::thetacommon::constants::DEFAULT_LG_K;
-use crate::thetacommon::constants::FLAGS_IS_COMPACT;
 use crate::thetacommon::constants::FLAGS_IS_EMPTY;
 use crate::thetacommon::constants::FLAGS_IS_ORDERED;
-use crate::thetacommon::constants::FLAGS_IS_READ_ONLY;
 use crate::thetacommon::constants::MAX_THETA;
 use crate::thetacommon::hash_table::SketchHashTableIter;
 use crate::thetacommon::sketch_state::CompactSketchState;
@@ -53,12 +50,12 @@ use crate::tuple::hash_table::TupleEntry;
 use crate::tuple::hash_table::TupleHashTable;
 use crate::tuple::policy::SummaryPolicy;
 use crate::tuple::policy::SummaryUpdatePolicy;
-use crate::tuple::serialization::EMPTY_SKETCH_BYTES;
 use crate::tuple::serialization::SERIAL_VERSION;
 use crate::tuple::serialization::SERIAL_VERSION_LEGACY;
 use crate::tuple::serialization::SKETCH_TYPE;
 use crate::tuple::serialization::SKETCH_TYPE_LEGACY;
 use crate::tuple::serialization::TupleSummaryValue;
+use crate::tuple::serialization::serialize_compact_uncompressed;
 
 /// Read-only view of a mutable or compact Tuple sketch.
 ///
@@ -548,16 +545,6 @@ impl<S> CompactTupleSketch<S> {
         self.compact_state.retained_entries_capacity() * size_of::<TupleEntry<S>>()
     }
 
-    fn preamble_longs(&self) -> u8 {
-        if self.is_estimation_mode() {
-            3
-        } else if self.num_retained() == 1 {
-            1
-        } else {
-            2
-        }
-    }
-
     /// Serializes this sketch into the compact Tuple binary format.
     ///
     /// The serialized data can be read by other DataSketches implementations when both
@@ -581,44 +568,7 @@ impl<S> CompactTupleSketch<S> {
     where
         S: TupleSummaryValue,
     {
-        if self.is_empty() {
-            return EMPTY_SKETCH_BYTES.to_vec();
-        }
-
-        let retained_entries = self.retained_entries();
-        let pre_longs = self.preamble_longs();
-        let entries_size: usize = retained_entries
-            .iter()
-            .map(|entry| 8 + entry.summary().serialize_size())
-            .sum();
-        let mut bytes = SketchBytes::with_capacity(8 * pre_longs as usize + entries_size);
-
-        bytes.write_u8(pre_longs);
-        bytes.write_u8(SERIAL_VERSION);
-        bytes.write_u8(Family::TUPLE.id);
-        bytes.write_u8(SKETCH_TYPE);
-        bytes.write_u8(0); // unused
-
-        let mut flags = FLAGS_IS_READ_ONLY | FLAGS_IS_COMPACT;
-        if self.is_ordered() {
-            flags |= FLAGS_IS_ORDERED;
-        }
-        bytes.write_u8(flags);
-        bytes.write_u16_le(self.seed_hash());
-
-        if pre_longs > 1 {
-            bytes.write_u32_le(retained_entries.len() as u32);
-            bytes.write_u32_le(0); // unused
-        }
-        if self.is_estimation_mode() {
-            bytes.write_u64_le(self.theta64());
-        }
-
-        for entry in retained_entries {
-            bytes.write_u64_le(entry.hash());
-            entry.summary().serialize_value(&mut bytes);
-        }
-        bytes.into_bytes()
+        serialize_compact_uncompressed(&self.compact_state)
     }
 
     /// Deserializes a compact Tuple sketch using the default seed.
