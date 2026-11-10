@@ -43,13 +43,7 @@ pub(super) fn serialize_compact_uncompressed<E: SketchEntry>(
     }
 
     let entries = state.retained_entries();
-    let pre_longs = if state.is_estimation_mode() {
-        3
-    } else if entries.len() == 1 {
-        1
-    } else {
-        2
-    };
+    let pre_longs = state.uncompressed_preamble_longs();
     let mut bytes = SketchBytes::with_capacity((usize::from(pre_longs) + entries.len()) * 8);
     bytes.write_u8(pre_longs);
     bytes.write_u8(UNCOMPRESSED_SERIAL_VERSION);

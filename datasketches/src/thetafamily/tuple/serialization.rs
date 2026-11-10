@@ -63,13 +63,7 @@ where
 
     let retained_entries = compact_state.retained_entries();
     let is_estimation_mode = compact_state.is_estimation_mode();
-    let pre_longs = if is_estimation_mode {
-        3
-    } else if retained_entries.len() == 1 {
-        1
-    } else {
-        2
-    };
+    let pre_longs = compact_state.uncompressed_preamble_longs();
     let entries_size: usize = retained_entries
         .iter()
         .map(|entry| 8 + entry.borrow().summary().serialize_size())

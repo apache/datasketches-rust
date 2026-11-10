@@ -82,6 +82,19 @@ impl<E> CompactSketchState<E> {
         matches!(self, Self::NonEmpty { theta, .. } if *theta < MAX_THETA)
     }
 
+    /// Returns the preamble size in 8-byte words for uncompressed compact Theta and Tuple images.
+    pub fn uncompressed_preamble_longs(&self) -> u8 {
+        if self.is_empty() {
+            1
+        } else if self.is_estimation_mode() {
+            3
+        } else if self.retained_entries().len() == 1 {
+            1
+        } else {
+            2
+        }
+    }
+
     pub fn seed_hash(&self) -> u16 {
         match self {
             Self::Empty { seed_hash } | Self::NonEmpty { seed_hash, .. } => *seed_hash,
