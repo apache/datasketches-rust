@@ -270,6 +270,7 @@ fn union_serialization_matches_compact_result() {
         (5, 1.0, 1.0, 1),
         (5, 1.0, 1.0, 20),
         (5, 1.0, 1.0, 10_000),
+        (12, 1.0, 1.0, 10_000),
         (8, 0.5, 1.0, 10_000),
         (5, 1e-12, 1.0, 10),
         (5, 1.0, 0.1, 100),
@@ -376,43 +377,45 @@ impl SummaryCombinePolicy for TagsPolicy {
 
 #[test]
 fn union_serialization_with_heap_backed_summaries_supports_later_merges() {
-    let seed = 123;
-    let sketch = |values: std::ops::Range<u64>, tag: &str| {
-        let mut sketch = TupleSketchBuilder::new(TagsPolicy)
-            .lg_k(5)
-            .seed(seed)
-            .build()
+    for lg_k in [5, 9] {
+        let seed = 123;
+        let sketch = |values: std::ops::Range<u64>, tag: &str| {
+            let mut sketch = TupleSketchBuilder::new(TagsPolicy)
+                .lg_k(lg_k)
+                .seed(seed)
+                .build()
+                .unwrap();
+            for value in values {
+                sketch.update(value, tag);
+            }
+            sketch
+        };
+        let union_builder = || TupleUnionBuilder::new(TagsPolicy).lg_k(lg_k).seed(seed);
+
+        let mut union = union_builder().build().unwrap();
+        union.update(&sketch(0..1_000, "first")).unwrap();
+        union
+            .update(&sketch(500..1_500, "a longer second tag"))
             .unwrap();
-        for value in values {
-            sketch.update(value, tag);
+        let later = sketch(1_000..2_000, "third");
+
+        for ordered in [true, false] {
+            let clones = SUMMARY_CLONES.get();
+            let bytes = union.serialize(ordered);
+            assert_eq!(SUMMARY_CLONES.get(), clones);
+            let expected = union.to_sketch(ordered).serialize();
+            assert_same_compact_result::<Tags>(&bytes, &expected, seed);
+
+            let restored = CompactTupleSketch::<Tags>::deserialize_with_seed(&bytes, seed).unwrap();
+            let mut from_bytes = union_builder().build().unwrap();
+            from_bytes.update(&restored).unwrap();
+            from_bytes.update(&later).unwrap();
+
+            let mut from_sketch = union_builder().build().unwrap();
+            from_sketch.update(&union.to_sketch(ordered)).unwrap();
+            from_sketch.update(&later).unwrap();
+
+            assert_eq!(from_bytes.serialize(true), from_sketch.serialize(true));
         }
-        sketch
-    };
-    let union_builder = || TupleUnionBuilder::new(TagsPolicy).lg_k(5).seed(seed);
-
-    let mut union = union_builder().build().unwrap();
-    union.update(&sketch(0..1_000, "first")).unwrap();
-    union
-        .update(&sketch(500..1_500, "a longer second tag"))
-        .unwrap();
-    let later = sketch(1_000..2_000, "third");
-
-    for ordered in [true, false] {
-        let clones = SUMMARY_CLONES.get();
-        let bytes = union.serialize(ordered);
-        assert_eq!(SUMMARY_CLONES.get(), clones);
-        let expected = union.to_sketch(ordered).serialize();
-        assert_same_compact_result::<Tags>(&bytes, &expected, seed);
-
-        let restored = CompactTupleSketch::<Tags>::deserialize_with_seed(&bytes, seed).unwrap();
-        let mut from_bytes = union_builder().build().unwrap();
-        from_bytes.update(&restored).unwrap();
-        from_bytes.update(&later).unwrap();
-
-        let mut from_sketch = union_builder().build().unwrap();
-        from_sketch.update(&union.to_sketch(ordered)).unwrap();
-        from_sketch.update(&later).unwrap();
-
-        assert_eq!(from_bytes.serialize(true), from_sketch.serialize(true));
     }
 }

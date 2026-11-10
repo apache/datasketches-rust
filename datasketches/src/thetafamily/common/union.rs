@@ -122,12 +122,28 @@ where
 
     /// Returns the union as canonical compact-sketch state that borrows the retained entries.
     #[cfg(feature = "tuple")]
+    #[inline]
     pub fn to_borrowed_compact_sketch_state(&self, ordered: bool) -> CompactSketchState<&E> {
         let Some(theta) = self.result_theta else {
             return CompactSketchState::empty(self.table.seed_hash());
         };
-        let entries = self.retained_entries(theta).collect();
-        self.finish_compaction(entries, theta, ordered)
+        let entries = self.retained_entries(theta).collect::<Vec<_>>();
+        if !ordered || entries.len() < 256 {
+            return self.finish_compaction(entries, theta, ordered);
+        }
+
+        let mut state = self.finish_compaction(entries, theta, false);
+        if let CompactSketchState::NonEmpty {
+            retained_entries,
+            theta,
+            ordered,
+            ..
+        } = &mut state
+        {
+            sort_borrowed_entries(retained_entries, *theta);
+            *ordered = true;
+        }
+        state
     }
 
     fn retained_entries(&self, theta: u64) -> impl Iterator<Item = &E> {
@@ -137,6 +153,7 @@ where
             .filter(move |entry| all_retained || entry.hash() < theta)
     }
 
+    #[inline]
     fn finish_compaction<T: SketchEntry>(
         &self,
         mut retained_entries: Vec<T>,
@@ -169,5 +186,60 @@ where
     /// Returns an estimate of memory usage in bytes.
     pub fn estimated_size(&self) -> usize {
         size_of::<P>() + self.table.estimated_size()
+    }
+}
+
+#[cfg(feature = "tuple")]
+fn sort_borrowed_entries<E: SketchEntry>(entries: &mut [&E], theta: u64) {
+    // Partition by the top eight active hash bits before comparison sorting. Hashes are
+    // distributed below theta, so scaling the buckets to theta also works in estimation mode.
+    // Small buckets reduce comparisons that dereference entries in the original hash table.
+    let shift = (u64::BITS - theta.leading_zeros()).saturating_sub(8);
+    let mut offsets = [0usize; 256];
+    for entry in entries.iter() {
+        offsets[(entry.hash() >> shift) as usize] += 1;
+    }
+    let mut total = 0;
+    for offset in &mut offsets {
+        let count = *offset;
+        *offset = total;
+        total += count;
+    }
+    let mut scratch = entries.to_vec();
+    for &entry in entries.iter() {
+        let bucket = (entry.hash() >> shift) as usize;
+        scratch[offsets[bucket]] = entry;
+        offsets[bucket] += 1;
+    }
+    let mut start = 0;
+    for end in offsets {
+        scratch[start..end].sort_unstable_by_key(SketchEntry::hash);
+        start = end;
+    }
+    entries.copy_from_slice(&scratch);
+}
+
+#[cfg(all(test, feature = "tuple"))]
+mod tests {
+    use super::sort_borrowed_entries;
+    use crate::thetacommon::constants::MAX_THETA;
+
+    #[test]
+    fn borrowed_ordering_matches_hash_order_for_spread_and_clustered_entries() {
+        for len in [255, 256, 257, 4096] {
+            for theta in [8192, 1 << 32, MAX_THETA] {
+                for spacing in [1, theta / (len as u64 + 1)] {
+                    let hashes = (1..=len as u64)
+                        .map(|value| value * spacing)
+                        .collect::<Vec<_>>();
+                    let mut entries = hashes.iter().rev().collect::<Vec<_>>();
+                    entries.rotate_left(len / 3);
+
+                    sort_borrowed_entries(&mut entries, theta);
+
+                    assert!(entries.iter().copied().eq(hashes.iter()));
+                }
+            }
+        }
     }
 }
