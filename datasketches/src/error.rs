@@ -100,10 +100,14 @@ impl Error {
         Self::new(ErrorKind::InvalidData, msg)
     }
 
+    #[cold]
+    #[inline(never)]
     pub(crate) fn insufficient_data(msg: impl fmt::Display) -> Self {
         Self::deserial(format!("insufficient data: {msg}"))
     }
 
+    #[cold]
+    #[inline(never)]
     pub(crate) fn insufficient_data_of(context: &'static str, msg: impl fmt::Display) -> Self {
         Self::deserial(format!("insufficient data ({context}): {msg}"))
     }
