@@ -4,26 +4,26 @@ All significant changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Breaking changes
+
+* `CountMinSketch::new` and `CountMinSketch::with_seed` now create serial version 2 sketches, require `num_hashes` in `1..=127`, and emit images that require a version 2 reader. Version 2 enables cross-language interchange when using `i64` counters and the documented input encodings, while existing version 1 images remain readable, updatable, and serializable as version 1. `CountMinSketch::merge` rejects mixing version 1 and version 2 sketches; upgrade readers before writers and rebuild persisted version 1 data from source items to merge it with new sketches.
+
 ### New features
 
-* Use serial version 2 for new `CountMinSketch` instances, enabling cross-language interchange with the documented input encodings. New sketches support `1..=127` rows and require a version 2 reader. Existing version 1 data remains readable and updatable, but must be rebuilt from source items to merge with new sketches.
-* Add `CpcUnion::serialize`, which produces the same bytes as `to_sketch().serialize()` and can be faster.
-* Add `HllUnion::serialize` to serialize union results directly.
-* Add `ThetaUnion::serialize` and `TupleUnion::serialize` to serialize ordered or unordered union results directly in their compact binary formats. Tuple summaries are serialized without cloning, avoiding per-entry allocations for heap-backed summaries.
-* Add `XorFilter` and `XorFilterBuilder` behind the `xor` feature for immutable membership queries on values or precomputed hashes. Filters support 8-, 16-, and 32-bit fingerprints and can be serialized for later queries.
+* Add `CpcUnion::serialize`, `HllUnion::serialize`, `ThetaUnion::serialize`, and `TupleUnion::serialize` to encode union results without calling `to_sketch`. Direct serialization avoids intermediate sketch allocations for `HllUnion` and low-cardinality `CpcUnion` inputs, writes an `HllType::Hll8` image at the union's effective `lg_k` for `HllUnion`, and encodes `TupleUnion` summaries without requiring `Clone` or cloning heap-backed summaries.
+* Add `XorFilter`, `XorFilterBuilder`, and `XorFilterType` behind the `xor` feature for immutable membership queries on values or precomputed hashes. Filters support 8-, 16-, and 32-bit fingerprints and can be serialized for later queries.
 
-### Improvements
+### Performance improvements
 
-* `FrequentItemsSketch` updates are faster for streams of distinct items while the map is growing.
-* `HllUnion` is faster when adopting HLL8 inputs without downsampling or merging multiple dense inputs before querying or serializing the result.
-* `KllSketch::rank` is faster for repeated queries on compacted sketches.
-* Repeated scalar `TDigest::rank` queries are faster, including small digests and data with repeated values.
-* `TDigest` and `TDigestMut` CDF and PMF batches are faster for many split points; batches with sparse split points keep the original binary-search behavior.
-* `BloomFilter::insert` is faster for streams of new items when multiple hashes are configured.
-* Compressed `CompactThetaSketch` serialization and deserialization are faster.
-* Tuple sketch serialization and deserialization are faster.
-* `ThetaANotB` and `TupleANotB` are faster when either input is unordered.
-* Compacting Theta and Tuple sketches and producing ordered union, intersection, and A-not-B results are faster.
+* Speed up `BloomFilter::insert` when adding new items to filters configured with multiple hash functions; single-hash, repeated-item, and saturated-filter workloads see smaller gains.
+* Reduce `FrequentItemsSketch` update cost on streams of distinct items while growing toward `max_map_size`, particularly for keys such as strings or byte slices whose comparisons cost more than integers; updates once at capacity are unchanged.
+* Speed up `HllUnion::update` when adopting a high-cardinality `HllType::Hll8` sketch within `lg_max_k` or merging multiple high-cardinality sketches before querying or serializing the union; workloads that query after every merge are roughly unchanged.
+* Speed up `KllSketch::rank` in estimation mode while keeping exact-mode query latency unchanged.
+* Speed up `TDigest` and `TDigestMut` queries for dense `cdf` and `pmf` split-point batches and scalar `rank` lookups, particularly on digests with repeated values, with roughly unchanged performance on sparse split-point batches.
+* Speed up `CompactThetaSketch::serialize_compressed` and `CompactThetaSketch::deserialize` for compressed images while preserving the serialized format.
+* Speed up `CompactTupleSketch` and `TupleUnion` serialization and `CompactTupleSketch` deserialization for primitive summaries and custom `TupleSummaryValue` implementations built on `SketchBytes` and `SketchSlice`.
+* Speed up `ThetaSketch::compact` and `TupleSketch::compact` on populated sketches, along with ordered result generation across `ThetaUnion`, `TupleUnion`, `ThetaIntersection`, `TupleIntersection`, `ThetaANotB`, and `TupleANotB` for larger retained entry counts; sketches with very few retained entries are unchanged.
+* Speed up `ThetaANotB::compute` and `TupleANotB::compute` when either input is unordered, while avoiding intermediate allocations when subtracting a mutable `ThetaSketch` or `TupleSketch` directly; pairs of ordered compact inputs are unchanged.
 
 ## v0.6.0 (2026-10-29)
 
