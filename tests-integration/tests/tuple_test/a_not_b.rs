@@ -15,10 +15,16 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::cell::Cell;
+use std::ops::AddAssign;
+use std::rc::Rc;
+
 use datasketches::common::NumStdDev;
 use datasketches::error::ErrorKind;
 use datasketches::tuple::CompactTupleSketch;
+use datasketches::tuple::DefaultUpdatePolicy;
 use datasketches::tuple::TupleANotB;
+use datasketches::tuple::TupleSketchBuilder;
 use googletest::assert_that;
 use googletest::prelude::all;
 use googletest::prelude::ge;
@@ -169,6 +175,71 @@ fn empty_b_preserves_logically_non_empty_a_without_retained_entries() {
     assert!(!result.is_empty());
     assert_eq!(result.num_retained(), 0);
     assert_eq!(result.theta64(), a.theta64());
+}
+
+#[test]
+fn non_empty_b_without_retained_entries_screens_ordered_a_with_early_stop() {
+    #[derive(Default)]
+    struct CountingSummary {
+        value: u64,
+        clones: Option<Rc<Cell<usize>>>,
+    }
+
+    impl Clone for CountingSummary {
+        fn clone(&self) -> Self {
+            if let Some(clones) = &self.clones {
+                clones.set(clones.get() + 1);
+            }
+            Self {
+                value: self.value,
+                clones: self.clones.clone(),
+            }
+        }
+    }
+
+    impl AddAssign<(u64, Rc<Cell<usize>>)> for CountingSummary {
+        fn add_assign(&mut self, (value, clones): (u64, Rc<Cell<usize>>)) {
+            self.value += value;
+            self.clones = Some(clones);
+        }
+    }
+
+    let clones = Rc::new(Cell::new(0));
+    let mut a = TupleSketchBuilder::new(DefaultUpdatePolicy::<CountingSummary>::default())
+        .build()
+        .unwrap();
+    for key in 0..1000u64 {
+        a.update(key, (1u64, Rc::clone(&clones)));
+    }
+    let a_ordered = a.compact(true);
+    clones.set(0);
+
+    let screened_value = (0u64..)
+        .find(|candidate| {
+            let mut sketch = default_tuple_sketch_builder()
+                .sampling_probability(0.1)
+                .build()
+                .unwrap();
+            sketch.update(*candidate, 1u64);
+            !sketch.is_empty() && sketch.num_retained() == 0
+        })
+        .expect("failed to find a value screened out by the sampling theta");
+
+    let mut b = default_tuple_sketch_builder()
+        .sampling_probability(0.1)
+        .build()
+        .unwrap();
+    b.update(screened_value, 1u64);
+    assert!(!b.is_empty() && b.num_retained() == 0);
+
+    let result = TupleANotB::default().compute(&a_ordered, &b, true).unwrap();
+
+    assert_eq!(result.theta64(), b.theta64());
+    assert!(result.iter().all(|entry| entry.hash() < b.theta64()));
+    // Ordered A stops at the first entry at or above theta, cloning at most one boundary entry
+    // beyond the surviving prefix rather than all 1000 summaries.
+    assert!(clones.get() <= result.num_retained() + 1);
+    assert!(result.num_retained() + 1 < a_ordered.num_retained());
 }
 
 #[test]

@@ -220,6 +220,23 @@ fn test_estimation_lower_theta_b_unordered() {
 }
 
 #[test]
+fn test_estimation_lower_theta_a_mutable_b() {
+    let a = sketch_with_range(0, 25000);
+    let b = sketch_with_range(5000, 10000);
+    assert_that!(a.theta64(), lt(b.theta64()));
+
+    let a_not_b = ThetaANotB::default();
+    let from_mutable_b = a_not_b.compute(&a, &b, true).unwrap();
+    let from_compact_b = a_not_b.compute(&a, &b.compact(false), true).unwrap();
+
+    assert_eq!(from_mutable_b.theta64(), a.theta64());
+    let mutable_hashes: Vec<u64> = from_mutable_b.iter().map(|entry| entry.hash()).collect();
+    let compact_hashes: Vec<u64> = from_compact_b.iter().map(|entry| entry.hash()).collect();
+    assert_eq!(mutable_hashes, compact_hashes);
+    assert_that!(from_mutable_b.estimate(), near(15000.0, 15000.0 * 0.03));
+}
+
+#[test]
 fn test_estimation_lower_theta_b_ordered() {
     let a = sketch_with_range(0, 10000);
     let b = sketch_with_range(5000, 25000);
@@ -262,4 +279,29 @@ fn test_estimation_disjoint_returns_a() {
     assert!(!r.is_empty());
     assert!(r.is_estimation_mode());
     assert_that!(r.estimate(), near(10000.0, 10000.0 * 0.02));
+}
+
+fn unordered_sketch_with_hashes(hashes: &[u64]) -> CompactThetaSketch {
+    let mut bytes = sketch_with_range(0, hashes.len() as u64)
+        .compact(false)
+        .serialize();
+    let offset = bytes.len() - hashes.len() * 8;
+    for (slot, hash) in bytes[offset..].chunks_exact_mut(8).zip(hashes) {
+        slot.copy_from_slice(&hash.to_le_bytes());
+    }
+    CompactThetaSketch::deserialize(&bytes).unwrap()
+}
+
+#[test]
+fn test_unordered_hashes_sharing_low_bits() {
+    let hash = |k: u64| (k << 32) | 0x5A5A_5A5A;
+    let a: Vec<u64> = (1..=3000).map(hash).collect();
+    let b: Vec<u64> = (1001..=4000).map(hash).collect();
+    let a = unordered_sketch_with_hashes(&a);
+    let b = unordered_sketch_with_hashes(&b);
+    assert!(!a.is_ordered() && !b.is_ordered());
+
+    let r = ThetaANotB::default().compute(&a, &b, true).unwrap();
+    let retained: Vec<u64> = r.iter().map(|entry| entry.hash()).collect();
+    assert_eq!(retained, (1..=1000).map(hash).collect::<Vec<_>>());
 }

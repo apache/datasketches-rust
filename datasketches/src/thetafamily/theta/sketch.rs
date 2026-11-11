@@ -43,6 +43,7 @@ use crate::theta::serialization::V2_PREAMBLE_ESTIMATE;
 use crate::theta::serialization::V2_PREAMBLE_PRECISE;
 use crate::thetacommon::EntrySketch;
 use crate::thetacommon::KeySketch;
+use crate::thetacommon::SketchEntry;
 use crate::thetacommon::binomial_bounds;
 use crate::thetacommon::constants::DEFAULT_LG_K;
 use crate::thetacommon::constants::FLAGS_IS_COMPACT;
@@ -50,6 +51,7 @@ use crate::thetacommon::constants::FLAGS_IS_EMPTY;
 use crate::thetacommon::constants::FLAGS_IS_ORDERED;
 use crate::thetacommon::constants::FLAGS_IS_READ_ONLY;
 use crate::thetacommon::constants::MAX_THETA;
+use crate::thetacommon::hash_table::SketchHashTable;
 use crate::thetacommon::hash_table::SketchHashTableIter;
 use crate::thetacommon::sketch_state::CompactSketchState;
 use crate::thetacommon::sketch_state::ThetaFamilySketchMetadata;
@@ -174,6 +176,14 @@ impl KeySketch for ThetaSketchView<'_> {
 
     fn hashes(self) -> impl Iterator<Item = u64> {
         self.iter().map(|entry| entry.hash())
+    }
+
+    #[inline]
+    fn hash_table(&self) -> Option<&SketchHashTable<impl SketchEntry>> {
+        match self.0 {
+            ThetaSketchViewState::Mutable(sketch) => Some(&sketch.table),
+            ThetaSketchViewState::Compact(_) => None,
+        }
     }
 }
 

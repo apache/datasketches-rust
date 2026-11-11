@@ -27,6 +27,7 @@ use crate::thetacommon::binomial_bounds;
 use crate::thetacommon::constants::MAX_LG_K;
 use crate::thetacommon::constants::MAX_THETA;
 use crate::thetacommon::constants::MIN_LG_K;
+use crate::thetacommon::hash_table::SketchHashTable;
 use crate::thetacommon::intersection::IntersectionMergePolicy;
 use crate::thetacommon::intersection::IntersectionState;
 use crate::thetacommon::sketch_state::CompactSketchState;
@@ -141,6 +142,11 @@ where
 
     fn hashes(self) -> impl Iterator<Item = u64> {
         self.0.hashes()
+    }
+
+    #[inline]
+    fn hash_table(&self) -> Option<&SketchHashTable<impl SketchEntry>> {
+        self.0.hash_table()
     }
 }
 

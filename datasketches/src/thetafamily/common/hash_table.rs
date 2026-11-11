@@ -230,6 +230,7 @@ where
     }
 
     /// Returns a reference to the entry stored for `hash`, or `None` if the hash is not retained.
+    #[inline]
     pub fn entry(&self, hash: u64) -> Option<&E> {
         if hash == 0 {
             return None;
@@ -368,6 +369,7 @@ where
         self.entries.capacity() * size_of::<Option<E>>()
     }
 
+    #[inline]
     fn find_in_curr_entries(&self, key: u64) -> Option<usize> {
         Self::find_in_entries(&self.entries, key, self.lg_cur_size)
     }
