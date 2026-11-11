@@ -1122,33 +1122,55 @@ fn unpack_deltas(
 }
 
 fn sort_uniform_hashes(hashes: &mut Vec<u64>) {
-    const MAX_BUCKET: usize = 32;
+    const MIN_BUCKET_SORT_LEN: usize = 256;
+    const MAX_BUCKET_LEN: u32 = 32;
+
     let len = hashes.len();
-    let Some(&max) = hashes.iter().max() else {
-        return;
-    };
-    if len < 256 {
-        hashes.sort_unstable();
+    if len < MIN_BUCKET_SORT_LEN {
+        if len > 1 {
+            hashes.sort_unstable();
+        }
         return;
     }
+
+    // The highest set bit of the bitwise OR equals the highest set bit of the maximum element,
+    // avoiding a branch-dependent max reduction before computing the top-bit bucket shift.
+    let bits = hashes.iter().fold(0u64, |acc, &hash| acc | hash);
     let lg_buckets = len.ilog2();
-    let shift = (u64::BITS - max.leading_zeros()).saturating_sub(lg_buckets);
-    let mut starts = vec![0u32; (1 << lg_buckets) + 1];
+    let num_buckets = 1usize << lg_buckets;
+    let mask = num_buckets - 1;
+    let shift = (u64::BITS - bits.leading_zeros()).saturating_sub(lg_buckets);
+
+    let mut heap_starts;
+    let mut stack_10;
+    let mut stack_12;
+    let starts: &mut [u32] = if lg_buckets <= 10 {
+        stack_10 = [0u32; (1 << 10) + 1];
+        &mut stack_10[..=num_buckets]
+    } else if lg_buckets <= 12 {
+        stack_12 = [0u32; (1 << 12) + 1];
+        &mut stack_12[..=num_buckets]
+    } else {
+        heap_starts = vec![0u32; num_buckets + 1];
+        &mut heap_starts
+    };
+
     for &hash in hashes.iter() {
-        starts[(hash >> shift) as usize + 1] += 1;
+        starts[((hash >> shift) as usize & mask) + 1] += 1;
     }
-    let mut largest = 0;
+    let mut largest = 0u32;
     for i in 1..starts.len() {
         largest = largest.max(starts[i]);
         starts[i] += starts[i - 1];
     }
-    if largest as usize > MAX_BUCKET {
+    if largest > MAX_BUCKET_LEN {
         hashes.sort_unstable();
         return;
     }
+
     let mut sorted = vec![0u64; len];
     for &hash in hashes.iter() {
-        let next = &mut starts[(hash >> shift) as usize];
+        let next = &mut starts[(hash >> shift) as usize & mask];
         sorted[*next as usize] = hash;
         *next += 1;
     }
