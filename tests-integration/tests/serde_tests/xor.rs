@@ -46,8 +46,8 @@ fn java_images_round_trip_byte_for_byte() {
         let built = builder.build().unwrap();
 
         let restored = XorFilter::deserialize(&expected).unwrap();
-        assert_eq!(restored.serialize().unwrap(), expected);
-        assert_eq!(built.serialize().unwrap(), expected);
+        assert_eq!(restored.serialize(), expected);
+        assert_eq!(built.serialize(), expected);
         for value in values {
             assert!(built.contains(&value));
             assert!(
@@ -68,7 +68,7 @@ fn serialization_round_trips_standard_fingerprint_types() {
         for count in [0, 1, 10_000_u64] {
             let hashes: Vec<_> = (0..count).collect();
             let original = XorFilter::from_hashes(&hashes, ty, 0).unwrap();
-            let bytes = original.serialize().unwrap();
+            let bytes = original.serialize();
 
             let restored = XorFilter::deserialize(&bytes).unwrap();
             assert_eq!(restored, original);
@@ -87,10 +87,7 @@ fn every_truncated_image_is_rejected() {
         XorFilterType::Xor32,
     ] {
         let hashes: Vec<_> = (0..100_u64).collect();
-        let bytes = XorFilter::from_hashes(&hashes, ty, 0)
-            .unwrap()
-            .serialize()
-            .unwrap();
+        let bytes = XorFilter::from_hashes(&hashes, ty, 0).unwrap().serialize();
         for end in 0..bytes.len() {
             let error = XorFilter::deserialize(&bytes[..end]).unwrap_err();
             assert_eq!(error.kind(), ErrorKind::InvalidData, "length {end}");
@@ -104,8 +101,7 @@ fn invalid_preamble_fields_are_rejected() {
     let hashes: Vec<_> = (0..100_u64).collect();
     let valid = XorFilter::from_hashes(&hashes, XorFilterType::Xor8, 0)
         .unwrap()
-        .serialize()
-        .unwrap();
+        .serialize();
 
     for (offset, value) in [
         (0, 1),
@@ -130,8 +126,7 @@ fn unsafe_lengths_are_rejected_before_indexing() {
     let hashes: Vec<_> = (0..100_u64).collect();
     let valid = XorFilter::from_hashes(&hashes, XorFilterType::Xor8, 0)
         .unwrap()
-        .serialize()
-        .unwrap();
+        .serialize();
 
     for segment_length in [0_i32, -1, i32::MAX] {
         let mut corrupted = valid.clone();
@@ -152,7 +147,7 @@ fn trailing_storage_is_ignored() {
     ] {
         let hashes: Vec<_> = (0..100_u64).collect();
         let original = XorFilter::from_hashes(&hashes, kind, 0).unwrap();
-        let mut bytes = original.serialize().unwrap();
+        let mut bytes = original.serialize();
         bytes.extend_from_slice(&[0xaa; 16]);
 
         assert_eq!(XorFilter::deserialize(&bytes).unwrap(), original);
@@ -193,8 +188,8 @@ fn java_utf8_and_raw_byte_inputs_match() {
         let built = builder.build().unwrap();
         let expected = decode_hex(image);
         let restored = XorFilter::deserialize(&expected).unwrap();
-        assert_eq!(restored.serialize().unwrap(), expected);
-        assert_eq!(built.serialize().unwrap(), expected);
+        assert_eq!(restored.serialize(), expected);
+        assert_eq!(built.serialize(), expected);
         for bytes in [b"hello".as_slice(), "数据🔎".as_bytes(), &[], &[0, 1, 255]] {
             assert!(built.contains(&raw_bytes::from_slice(bytes)));
             assert!(restored.contains(&raw_bytes::from_slice(bytes)));
@@ -214,5 +209,5 @@ fn xor32_image_preserves_full_width_little_endian_slots() {
     ));
     let filter = XorFilter::deserialize(&bytes).unwrap();
     assert!(filter.contains_hash(0));
-    assert_eq!(filter.serialize().unwrap(), bytes);
+    assert_eq!(filter.serialize(), bytes);
 }
