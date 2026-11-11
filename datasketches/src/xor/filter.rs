@@ -80,14 +80,6 @@ enum Fingerprints {
 }
 
 impl Fingerprints {
-    fn len(&self) -> usize {
-        match self {
-            Self::Xor8(values) => values.len(),
-            Self::Xor16(values) => values.len(),
-            Self::Xor32(values) => values.len(),
-        }
-    }
-
     fn byte_len(&self) -> usize {
         match self {
             Self::Xor8(values) => size_of_val::<[u8]>(values),
@@ -320,22 +312,8 @@ impl XorFilter {
     }
 
     /// Serializes the filter in the DataSketches format.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`InvalidArgument`](crate::error::ErrorKind::InvalidArgument) if the fingerprint
-    /// slot count exceeds `i32::MAX` or the serialized size overflows `usize`. Construction allows
-    /// larger capacities than the standard format.
-    pub fn serialize(&self) -> Result<Vec<u8>, Error> {
-        if self.fingerprints.len() > i32::MAX as usize {
-            return Err(Error::invalid_argument(
-                "xor filter exceeds standard format limits",
-            ));
-        }
-        let size = PREAMBLE_BYTES
-            .checked_add(self.fingerprints.byte_len())
-            .ok_or_else(|| Error::invalid_argument("xor filter serialized size overflow"))?;
-        let mut bytes = SketchBytes::with_capacity(size);
+    pub fn serialize(&self) -> Vec<u8> {
+        let mut bytes = SketchBytes::with_capacity(PREAMBLE_BYTES + self.fingerprints.byte_len());
 
         bytes.write_u8(Family::XORFILTER.min_pre_longs);
         bytes.write_u8(SERIAL_VERSION);
@@ -361,7 +339,7 @@ impl XorFilter {
             }
         }
 
-        Ok(bytes.into_bytes())
+        bytes.into_bytes()
     }
 
     /// Deserializes an owned filter from bytes.
@@ -490,7 +468,7 @@ fn hash_item<T: Hash + ?Sized>(item: &T) -> u64 {
 }
 
 fn compute_capacity(num_items: usize) -> Result<usize, Error> {
-    if num_items > u32::MAX as usize {
+    if num_items > i32::MAX as usize {
         return Err(Error::invalid_argument(format!(
             "xor filter item count exceeds construction limit: {num_items}"
         )));
@@ -499,7 +477,7 @@ fn compute_capacity(num_items: usize) -> Result<usize, Error> {
     let scaled = (LOAD_FACTOR * num_items as f64) as u64;
     let capacity = CAPACITY_OFFSET + scaled;
     let capacity = capacity / u64::from(NUM_HASHES) * u64::from(NUM_HASHES);
-    if capacity > u32::MAX as u64 || capacity > (isize::MAX as u64 / size_of::<u64>() as u64) {
+    if capacity > i32::MAX as u64 || capacity > (isize::MAX as u64 / size_of::<u64>() as u64) {
         return Err(Error::invalid_argument(format!(
             "xor filter capacity exceeds construction limit: {capacity}"
         )));
@@ -683,12 +661,19 @@ mod tests {
 
     #[test]
     fn oversized_input_is_rejected_before_allocating() {
-        for count in [usize::MAX, u32::MAX as usize] {
+        for count in [
+            usize::MAX,
+            u32::MAX as usize,
+            i32::MAX as usize,
+            1_745_921_640,
+        ] {
             assert_eq!(
                 compute_capacity(count).unwrap_err().kind(),
                 ErrorKind::InvalidArgument
             );
         }
+        #[cfg(target_pointer_width = "64")]
+        assert_eq!(compute_capacity(1_745_921_639).unwrap(), 2_147_483_646);
     }
 
     #[test]
