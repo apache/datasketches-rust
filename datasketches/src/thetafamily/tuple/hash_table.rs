@@ -46,6 +46,7 @@ impl<S> TupleEntry<S> {
     }
 
     /// Returns the hash used as this entry's key.
+    #[inline]
     pub fn hash(&self) -> u64 {
         self.hash.get()
     }
@@ -64,8 +65,13 @@ impl<S> TupleEntry<S> {
 pub type TupleHashTable<S> = SketchHashTable<TupleEntry<S>>;
 
 impl<S> SketchEntry for TupleEntry<S> {
+    #[inline]
     fn hash(&self) -> u64 {
         self.hash.get()
+    }
+
+    fn sort_by_hash(entries: &mut Vec<Self>) {
+        crate::thetacommon::sketch_state::sort_niche_by_hash(entries);
     }
 }
 

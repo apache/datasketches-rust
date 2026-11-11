@@ -28,20 +28,32 @@ pub(super) mod union;
 
 pub use self::jaccard_similarity::JaccardSimilarity;
 
-/// Minimal entry behavior required by the shared hash table and set operations.
-pub(super) trait SketchEntry {
+/// Minimal entry behavior required by the shared hash table, compaction, and set operations.
+pub(super) trait SketchEntry: Sized {
     fn hash(&self) -> u64;
+
+    fn sort_by_hash(entries: &mut Vec<Self>);
 }
 
 impl SketchEntry for u64 {
+    #[inline]
     fn hash(&self) -> u64 {
         *self
+    }
+
+    fn sort_by_hash(entries: &mut Vec<Self>) {
+        sketch_state::sort_copy_by_hash(entries);
     }
 }
 
 impl<E: SketchEntry> SketchEntry for &E {
+    #[inline]
     fn hash(&self) -> u64 {
         E::hash(self)
+    }
+
+    fn sort_by_hash(entries: &mut Vec<Self>) {
+        sketch_state::sort_copy_by_hash(entries);
     }
 }
 

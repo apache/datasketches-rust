@@ -318,33 +318,52 @@ where
     where
         E: Clone,
     {
-        let mut retained_entries: Vec<E> = self.iter_entries().cloned().collect();
-        let ordered = ordered || (retained_entries.len() == 1 && self.retention_theta == MAX_THETA);
-        if ordered && retained_entries.len() > 1 {
-            retained_entries.sort_unstable_by_key(SketchEntry::hash);
-        }
-        CompactSketchState::non_empty(
+        let retained_entries = self.iter_entries().cloned().collect();
+        CompactSketchState::compact(
             retained_entries,
             self.retention_theta,
             self.seed_hash,
+            false,
             ordered,
         )
     }
 
-    /// Get the retained hashes in table order.
+    /// Creates compact hash state for a Theta sketch or operator known to be non-empty.
     #[cfg(feature = "theta")]
-    pub fn retained_hashes(&self) -> Vec<u64> {
+    pub fn to_non_empty_compact_hashes(&self, ordered: bool) -> CompactSketchState<u64> {
+        let hashes = self.retained_hashes_below(self.retention_theta);
+        CompactSketchState::compact(hashes, self.retention_theta, self.seed_hash, false, ordered)
+    }
+
+    /// Returns retained hashes strictly below `upper_theta` in table order.
+    #[cfg(feature = "theta")]
+    pub fn retained_hashes_below(&self, upper_theta: u64) -> Vec<u64> {
+        let all_retained = upper_theta >= self.retention_theta;
         if self.num_retained * 16 <= self.entries.len() {
-            return self.iter_entries().map(SketchEntry::hash).collect();
+            let iter = self.iter_entries().map(SketchEntry::hash);
+            return if all_retained {
+                iter.collect()
+            } else {
+                iter.filter(|&hash| hash < upper_theta).collect()
+            };
         }
+
         let mut hashes = vec![0u64; self.num_retained + 1];
         let mut len = 0;
-        for slot in &self.entries {
-            let hash = slot.as_ref().map_or(0, SketchEntry::hash);
-            hashes[len] = hash;
-            len += usize::from(hash != 0);
+        if all_retained {
+            for slot in &self.entries {
+                let hash = slot.as_ref().map_or(0, SketchEntry::hash);
+                hashes[len] = hash;
+                len += usize::from(hash != 0);
+            }
+            debug_assert_eq!(len, self.num_retained);
+        } else {
+            for slot in &self.entries {
+                let hash = slot.as_ref().map_or(0, SketchEntry::hash);
+                hashes[len] = hash;
+                len += usize::from(hash != 0 && hash < upper_theta);
+            }
         }
-        debug_assert_eq!(len, self.num_retained);
         hashes.truncate(len);
         hashes
     }

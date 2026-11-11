@@ -113,8 +113,13 @@ struct KeyEntry {
 }
 
 impl SketchEntry for KeyEntry {
+    #[inline]
     fn hash(&self) -> u64 {
         self.hash
+    }
+
+    fn sort_by_hash(entries: &mut Vec<Self>) {
+        crate::thetacommon::sketch_state::sort_copy_by_hash(entries);
     }
 }
 
