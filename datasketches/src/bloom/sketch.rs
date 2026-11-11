@@ -647,8 +647,10 @@ impl BloomFilter {
     ///
     /// The right shift by 1 improves bit-distribution. The index `i` is 1-based.
     fn compute_bit_index(&self, h0: u64, h1: u64, i: u16) -> usize {
-        let hash = h0.wrapping_add(u64::from(i).wrapping_mul(h1)) >> 1;
-        self.reducer.remainder(hash) as usize
+        // The conversion to `usize` truncates the hash on 32-bit targets. Filters serialized
+        // there depend on it, so it is part of the bit layout.
+        let hash = h0.wrapping_add(u64::from(i).wrapping_mul(h1)) as usize;
+        self.reducer.remainder((hash >> 1) as u64) as usize
     }
 
     /// Gets the value of a single bit.
@@ -933,10 +935,10 @@ mod tests {
             for &h0 in &hashes {
                 for &h1 in &hashes {
                     for i in [1, 2, 3, 7, 64, 1_000, u16::MAX] {
-                        let hash = h0.wrapping_add(u64::from(i).wrapping_mul(h1)) >> 1;
+                        let hash = h0.wrapping_add(u64::from(i).wrapping_mul(h1)) as usize;
                         assert_eq!(
-                            filter.compute_bit_index(h0, h1, i) as u64,
-                            hash % capacity as u64,
+                            filter.compute_bit_index(h0, h1, i),
+                            (hash >> 1) % capacity,
                             "capacity {capacity}, h0 {h0}, h1 {h1}, i {i}"
                         );
                     }
