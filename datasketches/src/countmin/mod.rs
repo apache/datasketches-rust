@@ -20,29 +20,71 @@
 //! The CountMin sketch provides approximate frequency counts for streaming data
 //! with configurable relative error and confidence bounds.
 //!
+//! # Cross-language hashing
+//!
+//! For cross-language use, apply the following input conventions:
+//!
+//! * Use `i64`/`u64` for 64-bit integers and [`natural_extend`](crate::hash::value::natural_extend)
+//!   for narrower integers.
+//! * Use [`canonical_float`](crate::hash::value::canonical_float) for floating-point values.
+//! * Use [`raw_bytes`](crate::hash::value::raw_bytes) for UTF-8 strings and byte slices.
+//!
+//! Use `i64` counters for cross-language interchange. Skip empty strings and byte slices before
+//! updating the sketch. For these inputs, return zero for the estimate and both bounds without
+//! querying the sketch.
+//!
 //! # Usage
 //!
-//! ```
-//! use datasketches::countmin::CountMinSketch;
-//!
-//! let mut sketch = CountMinSketch::<i64>::new(5, 256).unwrap();
-//! sketch.update("apple");
-//! sketch.update_with_weight("banana", 3);
-//! assert!(sketch.estimate("banana") >= 3);
-//! ```
-//!
-//! # Configuration Helpers
+//! Choose the number of buckets and hash functions from the desired relative error and
+//! confidence, then update the sketch as items arrive:
 //!
 //! ```
 //! use datasketches::countmin::CountMinSketch;
 //!
-//! let buckets = CountMinSketch::<i64>::suggest_num_buckets(0.01).unwrap();
-//! let hashes = CountMinSketch::<i64>::suggest_num_hashes(0.99).unwrap();
-//! let sketch = CountMinSketch::<i64>::new(hashes, buckets).unwrap();
-//! assert_eq!(sketch.estimate("apple"), 0);
+//! let buckets = CountMinSketch::<i64>::suggest_num_buckets(0.01)?;
+//! let hashes = CountMinSketch::<i64>::suggest_num_hashes(0.99)?;
+//! let mut sketch = CountMinSketch::<i64>::new(hashes, buckets)?;
+//! sketch.update(42i64);
+//! sketch.update_with_weight(42i64, 5);
+//!
+//! assert_eq!(sketch.estimate(42i64), 6);
+//! assert!(sketch.lower_bound(42i64) <= 6);
+//! assert!(sketch.upper_bound(42i64) >= 6);
+//! # Ok::<(), datasketches::error::Error>(())
 //! ```
-
-mod serialization;
+//!
+//! ## Empty inputs
+//!
+//! This example handles empty strings before updating or querying. Byte slices use the same
+//! `is_empty()` checks with `raw_bytes::from_slice`.
+//!
+//! ```
+//! use datasketches::countmin::CountMinSketch;
+//! use datasketches::hash::value::raw_bytes;
+//!
+//! let mut sketch = CountMinSketch::<i64>::new(3, 1000)?;
+//! for input in ["", "apple", ""] {
+//!     let item = raw_bytes::from_str(input);
+//!     if !item.is_empty() {
+//!         sketch.update_with_weight(item, 5);
+//!     }
+//! }
+//! assert_eq!(sketch.total_weight(), 5);
+//! assert_eq!(sketch.estimate(raw_bytes::from_str("apple")), 5);
+//!
+//! let item = raw_bytes::from_str("");
+//! let (estimate, lower, upper) = if item.is_empty() {
+//!     (0, 0, 0)
+//! } else {
+//!     (
+//!         sketch.estimate(item),
+//!         sketch.lower_bound(item),
+//!         sketch.upper_bound(item),
+//!     )
+//! };
+//! assert_eq!((estimate, lower, upper), (0, 0, 0));
+//! # Ok::<(), datasketches::error::Error>(())
+//! ```
 
 mod sketch;
 pub use self::sketch::CountMinSketch;

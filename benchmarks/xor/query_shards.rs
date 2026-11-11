@@ -21,7 +21,6 @@ use benchmarks::Bencher;
 use benchmarks::Runner;
 use datasketches::xor::XorFilter;
 use datasketches::xor::XorFilterType;
-use datasketches::xor::XorFingerprints;
 use xorf::Filter;
 
 use crate::xor::hashes_with_offset;
@@ -29,8 +28,7 @@ use crate::xor::hashes_with_offset;
 const SHARDS: usize = 32;
 const QUERIES: usize = 256;
 
-// Storage formats can choose a fingerprint width at runtime. Give both peers
-// this dispatch, and import identical payloads without cardinality metadata.
+// Both implementations dispatch on fingerprint width at runtime.
 enum Reference {
     Xor8(xorf::Xor8),
     Xor16(xorf::Xor16),
@@ -53,27 +51,6 @@ impl Reference {
             Self::Xor16(filter) => filter.contains(&key),
             Self::Xor32(filter) => filter.contains(&key),
         }
-    }
-
-    fn into_datasketches(self) -> XorFilter {
-        let (seed, segment, fingerprints) = match self {
-            Self::Xor8(f) => (
-                f.seed,
-                f.block_length,
-                XorFingerprints::Xor8(f.fingerprints),
-            ),
-            Self::Xor16(f) => (
-                f.seed,
-                f.block_length,
-                XorFingerprints::Xor16(f.fingerprints),
-            ),
-            Self::Xor32(f) => (
-                f.seed,
-                f.block_length,
-                XorFingerprints::Xor32(f.fingerprints),
-            ),
-        };
-        XorFilter::from_parts(seed, segment, fingerprints, None).unwrap()
     }
 }
 
@@ -112,18 +89,15 @@ fn query<F>(
 }
 
 pub fn register(runner: &mut Runner) {
-    for kind in [
-        XorFilterType::Xor8,
-        XorFilterType::Xor16,
-        XorFilterType::Xor32,
+    for (bits, kind) in [
+        (8, XorFilterType::Xor8),
+        (16, XorFilterType::Xor16),
+        (32, XorFilterType::Xor32),
     ] {
         for cardinality in [128, 16_384] {
             for (name, present) in [("present", true), ("absent", false)] {
                 runner.compare(
-                    &format!(
-                        "xor::query_shards::{}_{name}/{cardinality}",
-                        kind.bits_per_fingerprint()
-                    ),
+                    &format!("xor::query_shards::{bits}_{name}/{cardinality}"),
                     20_000,
                     &[
                         ("DataSketches", &|b| {
@@ -131,7 +105,7 @@ pub fn register(runner: &mut Runner) {
                                 b,
                                 cardinality,
                                 present,
-                                |keys| Reference::new(keys, kind).into_datasketches(),
+                                |keys| XorFilter::from_hashes(keys, kind, 1).unwrap(),
                                 XorFilter::contains_hash,
                             )
                         }),

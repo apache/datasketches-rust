@@ -39,6 +39,8 @@ const EMPTY_FLAG_MASK: u8 = 1 << 2;
 /// * No false negatives (inserted items always return `true`)
 /// * Tunable false positive rate
 /// * Constant space usage
+///
+/// See the [module level documentation](super) for more.
 #[derive(Clone, PartialEq)]
 pub struct BloomFilter {
     /// Hash seed for all hash functions

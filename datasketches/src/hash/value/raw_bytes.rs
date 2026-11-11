@@ -17,12 +17,8 @@
 
 //! Raw byte and string hash value wrappers.
 //!
-//! [`RawBytes`] hashes byte and string inputs as raw bytes without Rust's slice or string length
-//! prefix.
-//!
-//! Use this encoding to match byte and UTF-8 string hashing in DataSketches Java and
-//! DataSketches C++. Their string update APIs skip empty strings; check `is_empty` before updating
-//! here as well.
+//! [`RawBytes`] hashes byte slices as their contents and strings as UTF-8 bytes, without length
+//! prefixes or terminators.
 
 use std::hash::Hasher;
 
@@ -62,7 +58,7 @@ pub fn from_vec(v: Vec<u8>) -> RawBytes<Vec<u8>> {
 
 /// Creates a raw-byte hashable value from a string.
 ///
-/// This hashes the UTF-8 bytes of the string without Rust's string length prefix.
+/// This hashes the UTF-8 bytes of the string without a length prefix or terminator.
 ///
 /// # Examples
 ///
@@ -106,7 +102,7 @@ pub fn from_slice(v: &[u8]) -> RawBytes<&[u8]> {
 
 /// Creates a raw-byte hashable value from a string slice.
 ///
-/// This hashes the UTF-8 bytes of the string slice without Rust's string length prefix.
+/// This hashes the UTF-8 bytes of the string slice without a length prefix or terminator.
 ///
 /// # Examples
 ///

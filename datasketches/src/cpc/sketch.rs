@@ -179,9 +179,6 @@ impl CpcSketch {
 
     /// Updates the sketch with a hashable value.
     ///
-    /// Use [`hash::value`](crate::hash::value) wrappers to select an input encoding for
-    /// cross-language hashing.
-    ///
     /// # Examples
     ///
     /// ```rust

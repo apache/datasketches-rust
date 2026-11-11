@@ -18,8 +18,7 @@
 //! Sign-extended integer hash value wrappers.
 //!
 //! [`SignExtend`] first sign-extends values to 64-bits and then hashes the resulting integers.
-//!
-//! Use this encoding to match short-integer hashing in DataSketches C++'s HLL and CPC sketches.
+//! Unsigned values are interpreted as signed at their original width before extension.
 
 use std::hash::Hash;
 use std::hash::Hasher;

@@ -33,6 +33,18 @@
 //! [`difference()`](BloomFilter::difference) excludes the right filter's items exactly, but
 //! may also drop left items whose hash positions collide with the right filter.
 //!
+//! # Cross-language hashing
+//!
+//! For cross-language use, apply the following input conventions:
+//!
+//! * Use `i64`/`u64` for 64-bit integers and [`natural_extend`](crate::hash::value::natural_extend)
+//!   for narrower integers.
+//! * Use [`canonical_float`](crate::hash::value::canonical_float) for floating-point values.
+//! * Use [`raw_bytes`](crate::hash::value::raw_bytes) for UTF-8 strings and byte slices.
+//!
+//! Skip empty strings and byte slices before inserting into the filter. For these inputs,
+//! return `false` without querying the filter, including for queries combined with insertion.
+//!
 //! # Usage
 //!
 //! ```

@@ -169,6 +169,7 @@ where
     }
 
     /// Hash a value with the table seed and return the hash.
+    #[inline]
     pub fn hash<T: Hash>(&self, value: T) -> u64 {
         let mut hasher = MurmurHash3X64128::with_seed(self.seed);
         value.hash(&mut hasher);

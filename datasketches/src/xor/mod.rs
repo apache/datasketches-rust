@@ -17,50 +17,35 @@
 
 //! XOR filters for immutable probabilistic set membership.
 //!
-//! An XOR filter is built from the complete input set and cannot be updated afterward. Compared
-//! with a Bloom filter at the same false-positive probability, it generally needs less space and
-//! performs exactly three fingerprint reads per query. Construction needs temporary space linear
-//! in the number of distinct hashes.
-//!
-//! [`XorFilter::from_values`] hashes ordinary Rust values with xxHash64. Call
-//! [`XorFilter::from_hashes`] with distinct hashes
-//! when hashes have already been computed and must not be hashed again.
+//! Use [`XorFilterBuilder`] to build a filter from values or precomputed hashes. A negative
+//! query result rules out membership. A positive result may be a false positive.
 //!
 //! # Cross-language hashing
 //!
-//! Standard serialization supports 8-, 16-, and 32-bit fingerprints using family `22`, version `1`.
-//! Interoperability requires the reader to support the encoded fingerprint width. The 8- and
-//! 16-bit images match Java's format; 32-bit images extend the same layout with little-endian
-//! `u32` slots and cannot be read by implementations limited to 8/16 bits.
-//! Construction may choose a different valid fingerprint array from another implementation;
-//! byte-for-byte equality of independently constructed filters is not guaranteed. Rust's
-//! [`Hash`](std::hash::Hash) implementations do not always encode values like other languages. Use
-//! the strategies in [`crate::hash::value`] when the input hashes must match another DataSketches
-//! implementation. A filter built through the precomputed-hash APIs remains portable only when
-//! every reader uses the same external hash function.
+//! For cross-language use, apply the following input conventions:
 //!
-//! Java hashes integer scalars as 64-bit little-endian values and strings as UTF-8 bytes with
-//! xxHash64 seed `0`. Use `u64`/`i64` and [`crate::hash::value::raw_bytes`] accordingly. Java
-//! skips empty strings; callers must do so explicitly here. External hashes (for example XXH3)
-//! must use the precomputed-hash APIs throughout; Java's typed query API will not match them.
+//! * Use `i64`/`u64` for 64-bit integers and [`natural_extend`](crate::hash::value::natural_extend)
+//!   for narrower integers.
+//! * Use [`canonical_float`](crate::hash::value::canonical_float) for floating-point values.
+//! * Use [`raw_bytes`](crate::hash::value::raw_bytes) for UTF-8 strings and byte slices.
 //!
-//! # Application-defined storage
+//! Skip empty strings and byte slices when building the filter. For these inputs, return
+//! `false` without querying the filter.
 //!
-//! [`XorFilter::from_parts`] imports a construction seed, segment length, and typed fingerprint
-//! slots without adding metadata to an existing disk format. Accessors expose these fields for
-//! serialization. Imports may omit the item count. Filters with a
-//! known zero item count always reject queries; imported parts with an unknown count retain the
-//! ordinary fingerprint comparison, including possible false positives.
+//! Value-based APIs use xxHash64 with seed `0`. For precomputed hashes, use the same hash function
+//! when building and querying the filter, and use the precomputed-hash APIs throughout.
 //!
 //! # Examples
 //!
 //! ```
-//! use datasketches::xor::XorFilter;
+//! use datasketches::xor::XorFilterBuilder;
 //! use datasketches::xor::XorFilterType;
 //!
-//! let filter = XorFilter::from_values(["apple", "banana"], XorFilterType::Xor8, 0).unwrap();
+//! let mut builder = XorFilterBuilder::new(XorFilterType::Xor8, 0);
+//! builder.update_values(["apple", "banana"]);
+//! let filter = builder.build().unwrap();
 //!
-//! assert!(filter.contains(&"apple"));
+//! assert!(filter.contains("apple"));
 //! ```
 //!
 //! # References
@@ -71,5 +56,5 @@
 mod filter;
 
 pub use self::filter::XorFilter;
+pub use self::filter::XorFilterBuilder;
 pub use self::filter::XorFilterType;
-pub use self::filter::XorFingerprints;

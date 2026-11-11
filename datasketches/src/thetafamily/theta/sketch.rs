@@ -35,11 +35,6 @@ use crate::error::ErrorKind;
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::hash::check_seed_hash;
 use crate::hash::compute_seed_hash;
-use crate::theta::bit_pack::BLOCK_WIDTH;
-use crate::theta::bit_pack::BitPacker;
-use crate::theta::bit_pack::BitUnpacker;
-use crate::theta::bit_pack::pack_bits_block;
-use crate::theta::bit_pack::unpack_bits_block;
 use crate::theta::hash_table::ThetaEntry;
 use crate::theta::hash_table::ThetaHashTable;
 use crate::theta::serialization;
@@ -203,6 +198,8 @@ impl<'a> From<&'a CompactThetaSketch> for ThetaSketchView<'a> {
 }
 
 /// Mutable theta sketch for building from input data.
+///
+/// See the [module level documentation](super) for more.
 #[derive(Debug)]
 pub struct ThetaSketch {
     table: ThetaHashTable,
@@ -217,9 +214,6 @@ impl ThetaSketch {
     }
 
     /// Updates the sketch with a hashable value.
-    ///
-    /// Use [`hash::value`](crate::hash::value) wrappers to select an input encoding for
-    /// cross-language hashing.
     ///
     /// # Examples
     ///
@@ -532,18 +526,6 @@ impl CompactThetaSketch {
         .expect("compact theta should always be valid")
     }
 
-    fn preamble_longs(&self, compressed: bool) -> u8 {
-        if compressed {
-            if self.is_estimation_mode() { 2 } else { 1 }
-        } else if self.is_estimation_mode() {
-            3
-        } else if self.num_retained() == 1 {
-            1
-        } else {
-            2
-        }
-    }
-
     /// Serializes this sketch in compressed form if applicable.
     ///
     /// The serialized data can be read by other DataSketches implementations.
@@ -569,46 +551,12 @@ impl CompactThetaSketch {
     ///
     /// Empty sketches serialize with a zero seed hash.
     pub fn serialize(&self) -> Vec<u8> {
-        if self.is_empty() {
-            return serialization::EMPTY_SKETCH_BYTES.to_vec();
-        }
-
-        let retained_hashes = self.retained_hashes();
-        let mut bytes = SketchBytes::with_capacity(64 + retained_hashes.len() * 8);
-
-        let pre_longs = self.preamble_longs(false);
-        bytes.write_u8(pre_longs);
-        bytes.write_u8(serialization::UNCOMPRESSED_SERIAL_VERSION);
-        bytes.write_u8(Family::THETA.id);
-        bytes.write_u16_be(0); // unused for compact
-
-        let mut flags = 0u8;
-        flags |= FLAGS_IS_READ_ONLY;
-        flags |= FLAGS_IS_COMPACT;
-        if self.is_ordered() {
-            flags |= FLAGS_IS_ORDERED;
-        }
-        bytes.write_u8(flags);
-
-        bytes.write_u16_le(self.seed_hash());
-
-        if pre_longs > 1 {
-            bytes.write_u32_le(retained_hashes.len() as u32);
-            // Unused by compact sketches; matches datasketches-java and datasketches-cpp.
-            bytes.write_u32_be(0);
-        }
-        if self.is_estimation_mode() {
-            bytes.write_u64_le(self.theta64());
-        }
-        for hash in retained_hashes {
-            bytes.write_u64_le(*hash);
-        }
-        bytes.into_bytes()
+        serialization::serialize_compact_uncompressed(&self.compact_state)
     }
 
     fn serialize_v4(&self) -> Vec<u8> {
         let retained_hashes = self.retained_hashes();
-        let pre_longs = self.preamble_longs(true);
+        let pre_longs = if self.is_estimation_mode() { 2u8 } else { 1u8 };
         let entry_bits = Self::compute_entry_bits(retained_hashes);
         let num_entries_bytes = Self::num_entries_bytes(retained_hashes.len());
 
@@ -641,35 +589,22 @@ impl CompactThetaSketch {
             n >>= 8;
         }
 
-        // pack deltas
+        let bits = u32::from(entry_bits);
+        let mut acc = 0u128;
+        let mut acc_bits = 0u32;
         let mut previous = 0u64;
-        let mut i = 0usize;
-        let mut block = vec![0u8; entry_bits as usize];
-        while i + BLOCK_WIDTH <= retained_hashes.len() {
-            let mut deltas = [0u64; BLOCK_WIDTH];
-            for j in 0..BLOCK_WIDTH {
-                let entry = retained_hashes[i + j];
-                deltas[j] = entry - previous;
-                previous = entry;
+        for &entry in retained_hashes {
+            acc = (acc << bits) | u128::from(entry - previous);
+            previous = entry;
+            acc_bits += bits;
+            if acc_bits >= 64 {
+                acc_bits -= 64;
+                bytes.write(&((acc >> acc_bits) as u64).to_be_bytes());
             }
-            block.fill(0);
-            pack_bits_block(&deltas, &mut block, entry_bits);
-            bytes.write(&block);
-            i += BLOCK_WIDTH;
         }
-
-        // pack extra deltas if fewer than 8 of them left
-        if i < retained_hashes.len() {
-            let mut block = vec![0u8; entry_bits as usize];
-            let mut packer = BitPacker::new(&mut block);
-            while i < retained_hashes.len() {
-                let delta = retained_hashes[i] - previous;
-                previous = retained_hashes[i];
-                packer.pack_value(delta, entry_bits);
-                i += 1;
-            }
-            let bytes_used = packer.bytes_used();
-            bytes.write(&block[0..bytes_used]);
+        if acc_bits > 0 {
+            let tail = ((acc << (64 - acc_bits)) as u64).to_be_bytes();
+            bytes.write(&tail[..acc_bits.div_ceil(8) as usize]);
         }
 
         bytes.into_bytes()
@@ -977,45 +912,9 @@ impl CompactThetaSketch {
             ));
         }
 
-        // unpack blocks of BLOCK_WIDTH deltas
-        let mut i = 0usize;
-        let mut entries = vec![0u64; num_entries];
-        while i + BLOCK_WIDTH <= num_entries {
-            let mut block = vec![0u8; entry_bits as usize];
-            cursor
-                .read_exact(&mut block)
-                .map_err(insufficient_data("delta_block"))?;
-            unpack_bits_block(&mut entries[i..i + BLOCK_WIDTH], &block, entry_bits);
-            i += BLOCK_WIDTH;
-        }
-
-        // unpack extra deltas if fewer than 8 of them left
-        if i < num_entries {
-            // read extra bytes
-            let rem = num_entries - i;
-            let bytes_needed = (rem * entry_bits as usize).div_ceil(8);
-            let mut tail = vec![0u8; bytes_needed];
-            cursor
-                .read_exact(&mut tail)
-                .map_err(insufficient_data("delta_tail"))?;
-
-            let mut unpacker = BitUnpacker::new(&tail);
-            for slot in entries.iter_mut().take(num_entries).skip(i) {
-                *slot = unpacker.unpack_value(entry_bits);
-            }
-        }
-
-        // undo deltas
-        let mut previous = 0;
-        for e in &mut entries {
-            *e = e
-                .checked_add(previous)
-                .ok_or_else(|| Error::deserial("Theta entry delta overflows"))?;
-            previous = *e;
-            if *e == 0 || *e >= theta {
-                return Err(Error::deserial("corrupted: invalid retained hash value"));
-            }
-        }
+        let payload = &cursor.remaining()[..required_bytes];
+        let entries = unpack_deltas(payload, num_entries, entry_bits, theta)?;
+        cursor.advance(required_bytes as u64);
 
         let ordered = (flags & FLAGS_IS_ORDERED) != 0;
 
@@ -1138,6 +1037,61 @@ impl ThetaSketchBuilder {
             is_empty: true,
         })
     }
+}
+
+fn unpack_deltas(
+    payload: &[u8],
+    num_entries: usize,
+    entry_bits: u8,
+    theta: u64,
+) -> Result<Vec<u64>, Error> {
+    let bits = entry_bits as usize;
+    let window_bytes = if bits <= 56 { 8 } else { 16 };
+    let fast = if payload.len() >= window_bytes {
+        (((payload.len() - window_bytes) * 8 + 7) / bits + 1).min(num_entries)
+    } else {
+        0
+    };
+    let mut entries = vec![0u64; num_entries];
+    let mut previous = 0u64;
+    let mut accept = |slot: &mut u64, delta: u64| -> Result<(), Error> {
+        let value = previous
+            .checked_add(delta)
+            .ok_or_else(|| Error::deserial("Theta entry delta overflows"))?;
+        if value == 0 || value >= theta {
+            return Err(Error::deserial("corrupted: invalid retained hash value"));
+        }
+        previous = value;
+        *slot = value;
+        Ok(())
+    };
+    let (head, tail) = entries.split_at_mut(fast);
+    if bits <= 56 {
+        for (i, slot) in head.iter_mut().enumerate() {
+            let pos = i * bits;
+            let window = u64::from_be_bytes(payload[pos >> 3..(pos >> 3) + 8].try_into().unwrap());
+            accept(slot, (window << (pos & 7)) >> (64 - bits))?;
+        }
+    } else {
+        for (i, slot) in head.iter_mut().enumerate() {
+            let pos = i * bits;
+            let window =
+                u128::from_be_bytes(payload[pos >> 3..(pos >> 3) + 16].try_into().unwrap());
+            accept(slot, ((window << (pos & 7)) >> (128 - bits)) as u64)?;
+        }
+    }
+    for (i, slot) in tail.iter_mut().enumerate() {
+        let pos = (fast + i) * bits;
+        let rest = &payload[pos >> 3..];
+        let mut window = [0u8; 16];
+        let len = rest.len().min(16);
+        window[..len].copy_from_slice(&rest[..len]);
+        accept(
+            slot,
+            ((u128::from_be_bytes(window) << (pos & 7)) >> (128 - bits)) as u64,
+        )?;
+    }
+    Ok(entries)
 }
 
 #[cfg(test)]
@@ -1275,5 +1229,58 @@ mod tests {
         assert!(compact.is_ordered());
 
         assert_compressed_round_trip(&theta, &compact);
+    }
+
+    #[test]
+    fn compact_theta_compressed_round_trip_every_entry_width() {
+        let seed_hash = compute_seed_hash(DEFAULT_UPDATE_SEED, ErrorKind::InvalidArgument).unwrap();
+        let mut state = 0x9e37_79b9_7f4a_7c15u64;
+        for width in 1..=63u32 {
+            for count in [2usize, 3, 7, 8, 9, 15, 16, 17, 63, 64, 65, 300] {
+                let top = 1u64 << (width - 1);
+                let budget = ((MAX_THETA - 1 - top) / count as u64)
+                    .min((top << 1) - 1)
+                    .max(1);
+                let mut hashes = Vec::with_capacity(count);
+                let mut deltas = Vec::with_capacity(count);
+                let mut previous = 0u64;
+                for i in 0..count {
+                    state ^= state << 13;
+                    state ^= state >> 7;
+                    state ^= state << 17;
+                    let delta = if i == count / 2 {
+                        top
+                    } else {
+                        1 + state % budget
+                    };
+                    previous += delta;
+                    deltas.push(delta);
+                    hashes.push(previous);
+                }
+                let compact = CompactThetaSketch::from_compact_state(
+                    CompactSketchState::non_empty(hashes.clone(), MAX_THETA, seed_hash, true),
+                );
+                let bytes = compact.serialize_compressed();
+
+                let mut expected = vec![0u8; (count * width as usize).div_ceil(8)];
+                for (i, delta) in deltas.iter().enumerate() {
+                    for b in 0..width as usize {
+                        if delta >> (width as usize - 1 - b) & 1 == 1 {
+                            let bit = i * width as usize + b;
+                            expected[bit / 8] |= 0x80 >> (bit % 8);
+                        }
+                    }
+                }
+                assert_eq!(bytes[3], width as u8, "width {width}, count {count}");
+                assert!(bytes.ends_with(&expected), "width {width}, count {count}");
+
+                let decoded = CompactThetaSketch::deserialize(&bytes).unwrap();
+                assert_eq!(
+                    decoded.retained_hashes(),
+                    &hashes[..],
+                    "width {width}, count {count}"
+                );
+            }
+        }
     }
 }

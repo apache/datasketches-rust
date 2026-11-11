@@ -23,6 +23,7 @@ use datasketches::common::NumStdDev;
 use datasketches::error::ErrorKind;
 use datasketches::theta::CompactThetaSketch;
 use datasketches::theta::ThetaSketchBuilder;
+use datasketches::theta::ThetaUnionBuilder;
 use googletest::assert_that;
 use googletest::prelude::near;
 use tests_integration::ZERO_HASH_SEED;
@@ -245,6 +246,37 @@ fn malformed_input_is_rejected() {
 }
 
 #[test]
+fn compressed_hashes_must_be_nonzero_and_below_theta() {
+    for width in [1, 56, 57, 63] {
+        for count in [2, 128] {
+            let hashes: Vec<u64> = (0..count).map(|i| (1u64 << (width - 1)) + i).collect();
+            let sketch = CompactThetaSketch::deserialize(&serialize_v2_exact(&hashes)).unwrap();
+            let mut bytes = sketch.serialize_compressed();
+
+            // Add a sampling threshold immediately above the last retained hash.
+            bytes[0] = 2;
+            bytes.splice(8..8, (hashes.last().unwrap() + 1).to_le_bytes());
+            let decoded = CompactThetaSketch::deserialize(&bytes).unwrap();
+            assert_eq!(
+                decoded.iter().map(|entry| entry.hash()).collect::<Vec<_>>(),
+                hashes
+            );
+
+            for theta in [hashes[0], hashes[hashes.len() / 2], *hashes.last().unwrap()] {
+                bytes[8..16].copy_from_slice(&theta.to_le_bytes());
+                let err = CompactThetaSketch::deserialize(&bytes).unwrap_err();
+                assert_eq!(err.kind(), ErrorKind::InvalidData);
+            }
+
+            let payload_offset = 16 + usize::from(bytes[4]);
+            bytes[payload_offset..].fill(0);
+            let err = CompactThetaSketch::deserialize(&bytes).unwrap_err();
+            assert_eq!(err.kind(), ErrorKind::InvalidData);
+        }
+    }
+}
+
+#[test]
 fn declared_entry_payload_is_checked_before_allocating() {
     let mut uncompressed = serialize_v2_exact(&[1]);
     uncompressed[8..12].copy_from_slice(&u32::MAX.to_le_bytes());
@@ -315,6 +347,71 @@ fn test_v2_java_empty_layouts() {
             let sketch = CompactThetaSketch::deserialize_with_seed(&bytes, 123).unwrap();
             assert!(sketch.is_empty());
             assert_eq!(sketch.seed_hash(), expected_seed_hash);
+        }
+    }
+}
+
+#[test]
+fn union_serialization_matches_compact_result() {
+    for (rows, probability, mixed_precision) in [
+        (0, 1.0, false),
+        (1, 1.0, false),
+        (12, 1.0, false),
+        (40, 1.0, false),
+        (64, 0.5, false),
+        (64, 1e-12, false),
+        (64, 1.0, true),
+    ] {
+        let seed = 123;
+        let mut input = ThetaSketchBuilder::default()
+            .lg_k(8)
+            .seed(seed)
+            .sampling_probability(probability)
+            .build()
+            .unwrap();
+        for value in 0..rows {
+            input.update(value);
+        }
+        let mut union = ThetaUnionBuilder::default()
+            .lg_k(5)
+            .seed(seed)
+            .build()
+            .unwrap();
+        for ordered in [false, true] {
+            assert_eq!(
+                union.serialize(ordered),
+                union.to_sketch(ordered).serialize()
+            );
+        }
+        union.update(&input).unwrap();
+        if mixed_precision {
+            let mut other = ThetaSketchBuilder::default()
+                .lg_k(5)
+                .seed(seed)
+                .build()
+                .unwrap();
+            for value in 32..96 {
+                other.update(value);
+            }
+            union.update(&other.compact(true)).unwrap();
+        }
+
+        for ordered in [false, true] {
+            let bytes = union.serialize(ordered);
+            assert_eq!(
+                bytes,
+                union.to_sketch(ordered).serialize(),
+                "rows={rows}, probability={probability}, mixed={mixed_precision}, ordered={ordered}",
+            );
+            let restored = CompactThetaSketch::deserialize_with_seed(&bytes, seed).unwrap();
+            assert_eq!(restored.serialize(), bytes);
+        }
+        union.reset();
+        for ordered in [false, true] {
+            assert_eq!(
+                union.serialize(ordered),
+                union.to_sketch(ordered).serialize()
+            );
         }
     }
 }
