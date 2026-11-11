@@ -152,12 +152,25 @@ fn only_non_empty_inputs_require_the_operator_seed() {
 
 #[test]
 fn result_ordering_follows_the_request() {
-    let input = tuple_sketch_with_range(0, 100);
+    let input = tuple_sketch_with_range(0, 1_000);
     let mut intersection = TupleIntersection::new(SumPolicy);
     intersection.update(&input).unwrap();
 
-    assert!(intersection.to_sketch(true).unwrap().is_ordered());
-    assert!(!intersection.to_sketch(false).unwrap().is_ordered());
+    let ordered = intersection.to_sketch(true).unwrap();
+    let unordered = intersection.to_sketch(false).unwrap();
+    assert!(ordered.is_ordered());
+    assert!(!unordered.is_ordered());
+
+    let mut expected: Vec<_> = unordered
+        .iter()
+        .map(|entry| (entry.hash(), *entry.summary()))
+        .collect();
+    expected.sort_unstable();
+    let actual: Vec<_> = ordered
+        .iter()
+        .map(|entry| (entry.hash(), *entry.summary()))
+        .collect();
+    assert_eq!(actual, expected);
 }
 
 #[test]

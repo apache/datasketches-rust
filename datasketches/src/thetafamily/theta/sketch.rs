@@ -1138,8 +1138,13 @@ mod tests {
     fn assert_theta_and_compact_equivalent_ordered(theta: &ThetaSketch, ordered: bool) {
         let compact = theta.compact(ordered);
         assert_theta_and_compact_equivalent(theta, &compact);
-        if compact.num_retained() > 1 {
-            assert_eq!(compact.is_ordered(), ordered);
+        let expected_ordered = ordered
+            || compact.is_empty()
+            || (compact.num_retained() == 1 && !compact.is_estimation_mode());
+        assert_eq!(compact.is_ordered(), expected_ordered);
+        if compact.is_ordered() {
+            let entries: Vec<u64> = compact.iter().map(|entry| entry.hash()).collect();
+            assert_eq!(entries, sorted_theta_entries(theta));
         }
     }
 
