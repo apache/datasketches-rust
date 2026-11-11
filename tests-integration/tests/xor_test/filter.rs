@@ -24,12 +24,12 @@ use datasketches::xor::XorFilterType;
 fn values_have_no_false_negatives() {
     let mut builder = XorFilterBuilder::new(XorFilterType::Xor8, 8123);
     for value in 0..10_000_u64 {
-        builder.update(&value);
+        builder.update(value);
     }
     let filter = builder.build().unwrap();
 
     for value in 0..10_000_u64 {
-        assert!(filter.contains(&value), "false negative for {value}");
+        assert!(filter.contains(value), "false negative for {value}");
     }
 }
 
@@ -60,13 +60,13 @@ fn builder_deduplicates_values_and_hashes() {
     ] {
         let mut values = XorFilterBuilder::new(ty, 0);
         let mut hashes = XorFilterBuilder::new(ty, 0);
-        values.update(&7_u64);
+        values.update(7_u64);
         values.update_values([11_u64, 7, 11]);
         hashes.update_hash(7);
         hashes.update_hashes([11, 7, 11]);
         let filter = values.build().unwrap();
-        assert!(filter.contains(&7_u64));
-        assert!(filter.contains(&11_u64));
+        assert!(filter.contains(7_u64));
+        assert!(filter.contains(11_u64));
         assert_eq!(
             hashes.build().unwrap(),
             XorFilter::from_hashes(&[7, 11], ty, 0).unwrap()

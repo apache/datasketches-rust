@@ -61,7 +61,7 @@ fn main() {
 
     // The guarantee that matters for takedowns: a purged object is never served again.
     for object in purged_objects() {
-        assert!(!cached.contains(&object));
+        assert!(!cached.contains(object));
     }
 
     // Count how many still-valid objects survived; dropped ones cost an origin refetch,
@@ -69,7 +69,7 @@ fn main() {
     let valid = CACHED_OBJECTS - purged_objects().count() as u64;
     let mut retained = 0_u64;
     for object in (0..CACHED_OBJECTS).filter(|object| object % 200 != 0) {
-        if cached.contains(&object) {
+        if cached.contains(object) {
             retained += 1;
         }
     }

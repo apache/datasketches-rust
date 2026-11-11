@@ -37,14 +37,16 @@ fn filter() -> BloomFilter {
 #[test]
 fn test_membership_statistics_and_reset() {
     let mut filter = filter();
+    let apple = String::from("apple");
     assert_eq!(filter.capacity(), NUM_BITS as usize);
     assert_eq!(filter.num_hashes(), NUM_HASHES);
     assert_eq!(filter.seed(), SEED);
     assert!(filter.is_empty());
-    assert!(!filter.contains(&"apple"));
+    assert!(!filter.contains("apple"));
 
-    assert!(!filter.contains_and_insert(&"apple"));
-    assert!(filter.contains_and_insert(&"apple"));
+    assert!(!filter.contains_and_insert("apple"));
+    assert!(filter.contains(&apple));
+    assert!(filter.contains_and_insert(&apple));
     assert_that!(filter.bits_used(), gt(0));
     assert_that!(filter.load_factor(), gt(0.0));
     assert_that!(filter.estimated_fpp(), gt(0.0));
@@ -52,7 +54,7 @@ fn test_membership_statistics_and_reset() {
     filter.reset();
     assert!(filter.is_empty());
     assert_eq!(filter.bits_used(), 0);
-    assert!(!filter.contains(&"apple"));
+    assert!(!filter.contains("apple"));
 }
 
 #[test]
@@ -61,10 +63,10 @@ fn test_insert_matches_membership_and_insert() {
     let mut checked = inserted.clone();
 
     for value in 0..128_u64 {
-        let was_present = inserted.contains(&value);
-        assert_eq!(checked.contains_and_insert(&value), was_present);
+        let was_present = inserted.contains(value);
+        assert_eq!(checked.contains_and_insert(value), was_present);
         inserted.insert(value);
-        assert!(inserted.contains(&value));
+        assert!(inserted.contains(value));
         assert_eq!(checked, inserted);
     }
 }
@@ -79,13 +81,13 @@ fn test_collisions_and_repeated_inserts_do_not_overcount_bits() {
             .unwrap();
         let mut checked = inserted.clone();
         inserted.insert(42_u64);
-        assert!(!checked.contains_and_insert(&42_u64));
+        assert!(!checked.contains_and_insert(42_u64));
 
         for filter in [&mut inserted, &mut checked] {
             let before_repeat = filter.clone();
             filter.insert(42_u64);
             assert_eq!(*filter, before_repeat);
-            assert!(filter.contains_and_insert(&42_u64));
+            assert!(filter.contains_and_insert(42_u64));
             assert_eq!(*filter, before_repeat);
 
             // Recount the backing bits independently of either insertion path.
@@ -112,16 +114,16 @@ fn test_union_and_intersection() {
 
     let mut intersection = left.clone();
     intersection.intersect(&right).unwrap();
-    assert!(intersection.contains(&"shared"));
+    assert!(intersection.contains("shared"));
     let intersection_bits = intersection.bits_used();
     assert_that!(intersection_bits, le(left_bits));
     assert_that!(intersection_bits, le(right_bits));
 
     let mut union = left;
     union.union(&right).unwrap();
-    assert!(union.contains(&"shared"));
-    assert!(union.contains(&"left"));
-    assert!(union.contains(&"right"));
+    assert!(union.contains("shared"));
+    assert!(union.contains("left"));
+    assert!(union.contains("right"));
     assert_that!(union.bits_used(), ge(left_bits));
     assert_that!(union.bits_used(), ge(right_bits));
 }
@@ -143,7 +145,7 @@ fn test_difference_excludes_right_items_exactly() {
 
     // Items inserted into the right filter are excluded exactly.
     for i in 0..100_u64 {
-        assert!(!left.contains(&i));
+        assert!(!left.contains(i));
     }
     assert_that!(left.bits_used(), le(left_bits));
 
@@ -163,9 +165,9 @@ fn test_difference_keeps_disjoint_items() {
     right.insert("right");
 
     left.difference(&right).unwrap();
-    assert!(left.contains(&"left"));
-    assert!(!left.contains(&"shared"));
-    assert!(!left.contains(&"right"));
+    assert!(left.contains("left"));
+    assert!(!left.contains("shared"));
+    assert!(!left.contains("right"));
 }
 
 #[test]
@@ -178,7 +180,7 @@ fn test_difference_with_self_clears_filter() {
     left.difference(&same).unwrap();
     assert!(left.is_empty());
     assert_eq!(left.bits_used(), 0);
-    assert!(!left.contains(&"apple"));
+    assert!(!left.contains("apple"));
 }
 
 #[test]

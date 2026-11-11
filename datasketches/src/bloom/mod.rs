@@ -62,8 +62,8 @@
 //! filter.insert(42_u64);
 //!
 //! // Check membership
-//! assert!(filter.contains(&"apple")); // true - possibly present (and known to be inserted here)
-//! assert!(!filter.contains(&"grape")); // false - definitely not present
+//! assert!(filter.contains("apple")); // true - possibly present (and known to be inserted here)
+//! assert!(!filter.contains("grape")); // false - definitely not present
 //!
 //! // Get statistics
 //! println!("Capacity: {} bits", filter.capacity());
@@ -137,16 +137,16 @@
 //!
 //! // Union: recognizes items from either filter
 //! filter1.union(&filter2).unwrap();
-//! assert!(filter1.contains(&"a"));
-//! assert!(filter1.contains(&"b"));
+//! assert!(filter1.contains("a"));
+//! assert!(filter1.contains("b"));
 //!
 //! // Intersect: recognizes only items in both filters
 //! // filter1.intersect(&filter2).unwrap();
 //!
 //! // Difference: recognizes items in filter1 that are definitely not in filter2
 //! filter1.difference(&filter2).unwrap();
-//! assert!(filter1.contains(&"a"));
-//! assert!(!filter1.contains(&"b"));
+//! assert!(filter1.contains("a"));
+//! assert!(!filter1.contains("b"));
 //! ```
 //!
 //! # Implementation Details

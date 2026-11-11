@@ -68,10 +68,10 @@ impl BloomFilter {
     ///     .unwrap();
     /// filter.insert("apple");
     ///
-    /// assert!(filter.contains(&"apple")); // true - possibly present (and known to be inserted here)
-    /// assert!(!filter.contains(&"grape")); // false - definitely not present
+    /// assert!(filter.contains("apple")); // true - possibly present (and known to be inserted here)
+    /// assert!(!filter.contains("grape")); // false - definitely not present
     /// ```
-    pub fn contains<T: Hash>(&self, item: &T) -> bool {
+    pub fn contains<T: Hash>(&self, item: T) -> bool {
         if self.is_empty() {
             return false;
         }
@@ -93,13 +93,13 @@ impl BloomFilter {
     ///     .build()
     ///     .unwrap();
     ///
-    /// let was_present = filter.contains_and_insert(&"apple");
+    /// let was_present = filter.contains_and_insert("apple");
     /// assert!(!was_present); // First insertion
     ///
-    /// let was_present = filter.contains_and_insert(&"apple");
+    /// let was_present = filter.contains_and_insert("apple");
     /// assert!(was_present); // Now it's in the set
     /// ```
-    pub fn contains_and_insert<T: Hash>(&mut self, item: &T) -> bool {
+    pub fn contains_and_insert<T: Hash>(&mut self, item: T) -> bool {
         let (h0, h1) = self.compute_hash(item);
         let mut were_all_set = true;
         for i in 1..=self.num_hashes {
@@ -135,10 +135,10 @@ impl BloomFilter {
     /// filter.insert(42_u64);
     /// filter.insert(&[1, 2, 3]);
     ///
-    /// assert!(filter.contains(&"apple"));
+    /// assert!(filter.contains("apple"));
     /// ```
     pub fn insert<T: Hash>(&mut self, item: T) {
-        let (h0, h1) = self.compute_hash(&item);
+        let (h0, h1) = self.compute_hash(item);
         for i in 1..=self.num_hashes {
             let bit_index = self.compute_bit_index(h0, h1, i);
             let word_index = bit_index >> 6;
@@ -169,7 +169,7 @@ impl BloomFilter {
     ///
     /// filter.reset();
     /// assert!(filter.is_empty());
-    /// assert!(!filter.contains(&"apple"));
+    /// assert!(!filter.contains("apple"));
     /// ```
     pub fn reset(&mut self) {
         self.bit_array.fill(0);
@@ -205,8 +205,8 @@ impl BloomFilter {
     /// f2.insert("b");
     ///
     /// f1.union(&f2).unwrap();
-    /// assert!(f1.contains(&"a"));
-    /// assert!(f1.contains(&"b"));
+    /// assert!(f1.contains("a"));
+    /// assert!(f1.contains("b"));
     /// ```
     pub fn union(&mut self, other: &BloomFilter) -> Result<(), Error> {
         if !self.is_compatible(other) {
@@ -255,7 +255,7 @@ impl BloomFilter {
     /// f2.insert("c");
     ///
     /// f1.intersect(&f2).unwrap();
-    /// assert!(f1.contains(&"b")); // In both
+    /// assert!(f1.contains("b")); // In both
     /// // "a" and "c" likely return false now
     /// ```
     pub fn intersect(&mut self, other: &BloomFilter) -> Result<(), Error> {
@@ -315,8 +315,8 @@ impl BloomFilter {
     /// right.insert("shared");
     ///
     /// left.difference(&right).unwrap();
-    /// assert!(left.contains(&"apple")); // Only in the left filter
-    /// assert!(!left.contains(&"shared")); // In both filters: excluded exactly
+    /// assert!(left.contains("apple")); // Only in the left filter
+    /// assert!(!left.contains("shared")); // In both filters: excluded exactly
     /// ```
     pub fn difference(&mut self, other: &BloomFilter) -> Result<(), Error> {
         if !self.is_compatible(other) {
@@ -423,7 +423,7 @@ impl BloomFilter {
     ///
     /// let bytes = filter.serialize();
     /// let restored = BloomFilter::deserialize(&bytes).unwrap();
-    /// assert!(restored.contains(&"test"));
+    /// assert!(restored.contains("test"));
     /// ```
     pub fn serialize(&self) -> Vec<u8> {
         let is_empty = self.is_empty();
@@ -598,7 +598,7 @@ impl BloomFilter {
     /// Uses a two-hash approach:
     /// * h0 = XXHash64(item, seed)
     /// * h1 = XXHash64(item, h0)
-    fn compute_hash<T: Hash>(&self, item: &T) -> (u64, u64) {
+    fn compute_hash<T: Hash>(&self, item: T) -> (u64, u64) {
         // First hash with the configured seed
         let mut hasher = XxHash64::with_seed(self.seed);
         item.hash(&mut hasher);
