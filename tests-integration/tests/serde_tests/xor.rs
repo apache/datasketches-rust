@@ -42,16 +42,16 @@ fn java_images_round_trip_byte_for_byte() {
     ] {
         let expected = decode_hex(image);
         let mut builder = XorFilterBuilder::new(ty, 42);
-        builder.update_values(values.iter());
+        builder.update_values(values);
         let built = builder.build().unwrap();
 
         let restored = XorFilter::deserialize(&expected).unwrap();
         assert_eq!(restored.serialize(), expected);
         assert_eq!(built.serialize(), expected);
         for value in values {
-            assert!(built.contains(&value));
+            assert!(built.contains(value));
             assert!(
-                restored.contains(&value),
+                restored.contains(value),
                 "{ty:?} image did not contain {value}"
             );
         }
@@ -183,7 +183,7 @@ fn java_utf8_and_raw_byte_inputs_match() {
     for (kind, image) in images {
         let mut builder = XorFilterBuilder::new(kind, 42);
         for bytes in [b"hello".as_slice(), "数据🔎".as_bytes(), &[], &[0, 1, 255]] {
-            builder.update(&raw_bytes::from_slice(bytes));
+            builder.update(raw_bytes::from_slice(bytes));
         }
         let built = builder.build().unwrap();
         let expected = decode_hex(image);
@@ -191,8 +191,8 @@ fn java_utf8_and_raw_byte_inputs_match() {
         assert_eq!(restored.serialize(), expected);
         assert_eq!(built.serialize(), expected);
         for bytes in [b"hello".as_slice(), "数据🔎".as_bytes(), &[], &[0, 1, 255]] {
-            assert!(built.contains(&raw_bytes::from_slice(bytes)));
-            assert!(restored.contains(&raw_bytes::from_slice(bytes)));
+            assert!(built.contains(raw_bytes::from_slice(bytes)));
+            assert!(restored.contains(raw_bytes::from_slice(bytes)));
         }
     }
 }

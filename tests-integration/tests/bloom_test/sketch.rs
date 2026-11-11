@@ -18,6 +18,7 @@
 use datasketches::bloom::BloomFilter;
 use datasketches::bloom::BloomFilterBuilder;
 use datasketches::error::ErrorKind;
+use datasketches::hash::value::raw_bytes;
 use googletest::assert_that;
 use googletest::prelude::ge;
 use googletest::prelude::gt;
@@ -41,10 +42,10 @@ fn test_membership_statistics_and_reset() {
     assert_eq!(filter.num_hashes(), NUM_HASHES);
     assert_eq!(filter.seed(), SEED);
     assert!(filter.is_empty());
-    assert!(!filter.contains(&"apple"));
+    assert!(!filter.contains("apple"));
 
-    assert!(!filter.contains_and_insert(&"apple"));
-    assert!(filter.contains_and_insert(&"apple"));
+    assert!(!filter.contains_and_insert("apple"));
+    assert!(filter.contains_and_insert("apple"));
     assert_that!(filter.bits_used(), gt(0));
     assert_that!(filter.load_factor(), gt(0.0));
     assert_that!(filter.estimated_fpp(), gt(0.0));
@@ -52,7 +53,7 @@ fn test_membership_statistics_and_reset() {
     filter.reset();
     assert!(filter.is_empty());
     assert_eq!(filter.bits_used(), 0);
-    assert!(!filter.contains(&"apple"));
+    assert!(!filter.contains("apple"));
 }
 
 #[test]
@@ -61,12 +62,51 @@ fn test_insert_matches_membership_and_insert() {
     let mut checked = inserted.clone();
 
     for value in 0..128_u64 {
-        let was_present = inserted.contains(&value);
-        assert_eq!(checked.contains_and_insert(&value), was_present);
+        let was_present = inserted.contains(value);
+        assert_eq!(checked.contains_and_insert(value), was_present);
         inserted.insert(value);
-        assert!(inserted.contains(&value));
+        assert!(inserted.contains(value));
         assert_eq!(checked, inserted);
     }
+}
+
+#[test]
+fn test_equivalent_borrowed_and_owned_inputs_match() {
+    let owned_text = String::from("apple");
+    let owned_bytes = vec![1_u8, 2, 3, 4];
+    let ids = [7_u64, 11_u64];
+
+    let mut from_borrows = filter();
+    from_borrows.insert(&owned_text);
+    from_borrows.insert(&owned_bytes);
+    for id in &ids {
+        from_borrows.insert(id);
+    }
+    from_borrows.insert(raw_bytes::from_string(String::from("payload")));
+
+    let mut from_slices_and_values = filter();
+    assert!(!from_slices_and_values.contains_and_insert(owned_text.as_str()));
+    assert!(!from_slices_and_values.contains_and_insert(owned_bytes.as_slice()));
+    for id in ids {
+        assert!(!from_slices_and_values.contains_and_insert(id));
+    }
+    assert!(!from_slices_and_values.contains_and_insert(raw_bytes::from_str("payload")));
+
+    assert_eq!(from_borrows, from_slices_and_values);
+
+    assert!(from_borrows.contains(&owned_text));
+    assert!(from_borrows.contains(owned_text.as_str()));
+    assert!(from_borrows.contains(&owned_bytes));
+    assert!(from_borrows.contains(owned_bytes.as_slice()));
+    for id in &ids {
+        assert!(from_borrows.contains(id));
+        assert!(from_borrows.contains(*id));
+    }
+    assert!(from_borrows.contains(raw_bytes::from_slice(b"payload")));
+
+    assert!(from_slices_and_values.contains_and_insert(&owned_text));
+    assert!(from_slices_and_values.contains_and_insert(&owned_bytes));
+    assert_eq!(from_slices_and_values, from_borrows);
 }
 
 #[test]
@@ -79,13 +119,13 @@ fn test_collisions_and_repeated_inserts_do_not_overcount_bits() {
             .unwrap();
         let mut checked = inserted.clone();
         inserted.insert(42_u64);
-        assert!(!checked.contains_and_insert(&42_u64));
+        assert!(!checked.contains_and_insert(42_u64));
 
         for filter in [&mut inserted, &mut checked] {
             let before_repeat = filter.clone();
             filter.insert(42_u64);
             assert_eq!(*filter, before_repeat);
-            assert!(filter.contains_and_insert(&42_u64));
+            assert!(filter.contains_and_insert(42_u64));
             assert_eq!(*filter, before_repeat);
 
             // Recount the backing bits independently of either insertion path.
@@ -112,16 +152,16 @@ fn test_union_and_intersection() {
 
     let mut intersection = left.clone();
     intersection.intersect(&right).unwrap();
-    assert!(intersection.contains(&"shared"));
+    assert!(intersection.contains("shared"));
     let intersection_bits = intersection.bits_used();
     assert_that!(intersection_bits, le(left_bits));
     assert_that!(intersection_bits, le(right_bits));
 
     let mut union = left;
     union.union(&right).unwrap();
-    assert!(union.contains(&"shared"));
-    assert!(union.contains(&"left"));
-    assert!(union.contains(&"right"));
+    assert!(union.contains("shared"));
+    assert!(union.contains("left"));
+    assert!(union.contains("right"));
     assert_that!(union.bits_used(), ge(left_bits));
     assert_that!(union.bits_used(), ge(right_bits));
 }
@@ -143,7 +183,7 @@ fn test_difference_excludes_right_items_exactly() {
 
     // Items inserted into the right filter are excluded exactly.
     for i in 0..100_u64 {
-        assert!(!left.contains(&i));
+        assert!(!left.contains(i));
     }
     assert_that!(left.bits_used(), le(left_bits));
 
@@ -163,9 +203,9 @@ fn test_difference_keeps_disjoint_items() {
     right.insert("right");
 
     left.difference(&right).unwrap();
-    assert!(left.contains(&"left"));
-    assert!(!left.contains(&"shared"));
-    assert!(!left.contains(&"right"));
+    assert!(left.contains("left"));
+    assert!(!left.contains("shared"));
+    assert!(!left.contains("right"));
 }
 
 #[test]
@@ -178,7 +218,7 @@ fn test_difference_with_self_clears_filter() {
     left.difference(&same).unwrap();
     assert!(left.is_empty());
     assert_eq!(left.bits_used(), 0);
-    assert!(!left.contains(&"apple"));
+    assert!(!left.contains("apple"));
 }
 
 #[test]

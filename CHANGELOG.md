@@ -6,6 +6,7 @@ All significant changes to this project will be documented in this file.
 
 ### Breaking changes
 
+* `BloomFilter::contains` and `BloomFilter::contains_and_insert` now take `item: T` (`T: Hash`) by value instead of `&T`, matching `BloomFilter::insert`. Pass `&item` to retain owned values such as `String` or `Vec<u8>` without cloning, and remove explicit turbofish type arguments (or change `T` to `&T`) on borrowed calls such as `contains::<u64>(&value)`.
 * `CountMinSketch::new` and `CountMinSketch::with_seed` now create serial version 2 sketches, require `num_hashes` in `1..=127`, and emit images that require a version 2 reader. Version 2 enables cross-language interchange when using `i64` counters and the documented input encodings, while existing version 1 images remain readable, updatable, and serializable as version 1. `CountMinSketch::merge` rejects mixing version 1 and version 2 sketches; upgrade readers before writers and rebuild persisted version 1 data from source items to merge it with new sketches.
 * `CpcSketch::max_serialized_bytes` and `ReqSketch::serialized_size_bytes` are removed; serialize the sketch and inspect `len()` on the returned byte buffer when the encoded size is needed.
 

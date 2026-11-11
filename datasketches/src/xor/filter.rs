@@ -117,7 +117,7 @@ impl XorFilterBuilder {
 
     /// Adds a value.
     #[inline]
-    pub fn update<T: Hash + ?Sized>(&mut self, item: &T) {
+    pub fn update<T: Hash>(&mut self, item: T) {
         self.update_hash(hash_item(item));
     }
 
@@ -129,7 +129,7 @@ impl XorFilterBuilder {
 
     /// Adds a batch of values.
     pub fn update_values<T: Hash>(&mut self, items: impl IntoIterator<Item = T>) {
-        self.update_hashes(items.into_iter().map(|item| hash_item(&item)));
+        self.update_hashes(items.into_iter().map(hash_item));
     }
 
     /// Adds a batch of precomputed 64-bit hashes.
@@ -272,7 +272,7 @@ impl XorFilter {
     /// A `false` result means the item was definitely absent; a `true` result may be a false
     /// positive.
     #[inline]
-    pub fn contains<T: Hash + ?Sized>(&self, item: &T) -> bool {
+    pub fn contains<T: Hash>(&self, item: T) -> bool {
         self.contains_hash(hash_item(item))
     }
 
@@ -461,7 +461,7 @@ impl XorFilter {
     }
 }
 
-fn hash_item<T: Hash + ?Sized>(item: &T) -> u64 {
+fn hash_item<T: Hash>(item: T) -> u64 {
     let mut hasher = XxHash64::with_seed(HASH_SEED);
     item.hash(&mut hasher);
     hasher.finish()
