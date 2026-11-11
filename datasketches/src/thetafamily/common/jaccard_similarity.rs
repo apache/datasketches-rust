@@ -32,6 +32,7 @@ use crate::thetacommon::intersection::IntersectionMergePolicy;
 use crate::thetacommon::intersection::IntersectionState;
 use crate::thetacommon::sketch_state::CompactSketchState;
 use crate::thetacommon::sketch_state::ThetaFamilySketchMetadata;
+use crate::thetacommon::sketch_state::sort_copy_by_hash;
 use crate::thetacommon::union::UnionMergePolicy;
 use crate::thetacommon::union::UnionState;
 
@@ -119,7 +120,7 @@ impl SketchEntry for KeyEntry {
     }
 
     fn sort_by_hash(entries: &mut Vec<Self>) {
-        crate::thetacommon::sketch_state::sort_copy_by_hash(entries);
+        sort_copy_by_hash(entries);
     }
 }
 

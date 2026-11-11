@@ -20,6 +20,7 @@ use std::num::NonZeroU64;
 
 use crate::thetacommon::SketchEntry;
 use crate::thetacommon::hash_table::SketchHashTable;
+use crate::thetacommon::sketch_state::sort_copy_by_hash;
 
 /// Specific hash table for theta sketch
 ///
@@ -58,7 +59,7 @@ impl SketchEntry for ThetaEntry {
     }
 
     fn sort_by_hash(entries: &mut Vec<Self>) {
-        crate::thetacommon::sketch_state::sort_copy_by_hash(entries);
+        sort_copy_by_hash(entries);
     }
 }
 

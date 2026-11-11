@@ -21,6 +21,7 @@ use std::num::NonZeroU64;
 use crate::thetacommon::SketchEntry;
 use crate::thetacommon::hash_table::SketchHashTable;
 use crate::thetacommon::intersection::IntersectionMergePolicy;
+use crate::thetacommon::sketch_state::sort_niche_by_hash;
 use crate::thetacommon::union::UnionMergePolicy;
 use crate::tuple::SummaryCombinePolicy;
 
@@ -71,7 +72,7 @@ impl<S> SketchEntry for TupleEntry<S> {
     }
 
     fn sort_by_hash(entries: &mut Vec<Self>) {
-        crate::thetacommon::sketch_state::sort_niche_by_hash(entries);
+        sort_niche_by_hash(entries);
     }
 }
 

@@ -19,6 +19,7 @@ use std::collections::HashSet;
 use std::hash::BuildHasher;
 use std::hash::Hasher;
 
+use crate::common::random::random_u64;
 use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::hash::check_seed_hash;
@@ -196,7 +197,7 @@ struct FoldHashState(u64);
 impl FoldHashState {
     #[inline]
     fn new() -> Self {
-        Self(crate::common::random::random_u64())
+        Self(random_u64())
     }
 }
 
