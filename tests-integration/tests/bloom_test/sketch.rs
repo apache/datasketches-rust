@@ -18,6 +18,7 @@
 use datasketches::bloom::BloomFilter;
 use datasketches::bloom::BloomFilterBuilder;
 use datasketches::error::ErrorKind;
+use datasketches::hash::value::raw_bytes;
 use googletest::assert_that;
 use googletest::prelude::ge;
 use googletest::prelude::gt;
@@ -37,7 +38,6 @@ fn filter() -> BloomFilter {
 #[test]
 fn test_membership_statistics_and_reset() {
     let mut filter = filter();
-    let apple = String::from("apple");
     assert_eq!(filter.capacity(), NUM_BITS as usize);
     assert_eq!(filter.num_hashes(), NUM_HASHES);
     assert_eq!(filter.seed(), SEED);
@@ -45,8 +45,7 @@ fn test_membership_statistics_and_reset() {
     assert!(!filter.contains("apple"));
 
     assert!(!filter.contains_and_insert("apple"));
-    assert!(filter.contains(&apple));
-    assert!(filter.contains_and_insert(&apple));
+    assert!(filter.contains_and_insert("apple"));
     assert_that!(filter.bits_used(), gt(0));
     assert_that!(filter.load_factor(), gt(0.0));
     assert_that!(filter.estimated_fpp(), gt(0.0));
@@ -69,6 +68,45 @@ fn test_insert_matches_membership_and_insert() {
         assert!(inserted.contains(value));
         assert_eq!(checked, inserted);
     }
+}
+
+#[test]
+fn test_equivalent_borrowed_and_owned_inputs_match() {
+    let owned_text = String::from("apple");
+    let owned_bytes = vec![1_u8, 2, 3, 4];
+    let ids = [7_u64, 11_u64];
+
+    let mut from_borrows = filter();
+    from_borrows.insert(&owned_text);
+    from_borrows.insert(&owned_bytes);
+    for id in &ids {
+        from_borrows.insert(id);
+    }
+    from_borrows.insert(raw_bytes::from_string(String::from("payload")));
+
+    let mut from_slices_and_values = filter();
+    assert!(!from_slices_and_values.contains_and_insert(owned_text.as_str()));
+    assert!(!from_slices_and_values.contains_and_insert(owned_bytes.as_slice()));
+    for id in ids {
+        assert!(!from_slices_and_values.contains_and_insert(id));
+    }
+    assert!(!from_slices_and_values.contains_and_insert(raw_bytes::from_str("payload")));
+
+    assert_eq!(from_borrows, from_slices_and_values);
+
+    assert!(from_borrows.contains(&owned_text));
+    assert!(from_borrows.contains(owned_text.as_str()));
+    assert!(from_borrows.contains(&owned_bytes));
+    assert!(from_borrows.contains(owned_bytes.as_slice()));
+    for id in &ids {
+        assert!(from_borrows.contains(id));
+        assert!(from_borrows.contains(*id));
+    }
+    assert!(from_borrows.contains(raw_bytes::from_slice(b"payload")));
+
+    assert!(from_slices_and_values.contains_and_insert(&owned_text));
+    assert!(from_slices_and_values.contains_and_insert(&owned_bytes));
+    assert_eq!(from_slices_and_values, from_borrows);
 }
 
 #[test]

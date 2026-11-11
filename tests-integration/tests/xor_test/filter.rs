@@ -16,6 +16,7 @@
 // under the License.
 
 use datasketches::error::ErrorKind;
+use datasketches::hash::value::raw_bytes;
 use datasketches::xor::XorFilter;
 use datasketches::xor::XorFilterBuilder;
 use datasketches::xor::XorFilterType;
@@ -58,19 +59,79 @@ fn builder_deduplicates_values_and_hashes() {
         XorFilterType::Xor16,
         XorFilterType::Xor32,
     ] {
-        let mut values = XorFilterBuilder::new(ty, 0);
+        let mut duplicate_values = XorFilterBuilder::new(ty, 0);
+        duplicate_values.update(7_u64);
+        duplicate_values.update_values([11_u64, 7, 11]);
+
+        let mut distinct_values = XorFilterBuilder::new(ty, 0);
+        distinct_values.update_values([11_u64, 7]);
+        assert_eq!(
+            duplicate_values.build().unwrap(),
+            distinct_values.build().unwrap(),
+        );
+
         let mut hashes = XorFilterBuilder::new(ty, 0);
-        values.update(7_u64);
-        values.update_values([11_u64, 7, 11]);
         hashes.update_hash(7);
         hashes.update_hashes([11, 7, 11]);
-        let filter = values.build().unwrap();
-        assert!(filter.contains(7_u64));
-        assert!(filter.contains(11_u64));
         assert_eq!(
             hashes.build().unwrap(),
-            XorFilter::from_hashes(&[7, 11], ty, 0).unwrap()
+            XorFilter::from_hashes(&[7, 11], ty, 0).unwrap(),
         );
+    }
+}
+
+#[test]
+fn equivalent_borrowed_and_value_inputs_build_identical_filters() {
+    let strings = [String::from("alpha"), String::from("beta")];
+    let blobs = [vec![0_u8, 1, 2], vec![3_u8, 4, 5]];
+    let ids = [7_u64, 11_u64];
+
+    for ty in [
+        XorFilterType::Xor8,
+        XorFilterType::Xor16,
+        XorFilterType::Xor32,
+    ] {
+        let mut by_str_update = XorFilterBuilder::new(ty, 0);
+        for s in &strings {
+            by_str_update.update(s);
+        }
+        let mut by_str_batch = XorFilterBuilder::new(ty, 0);
+        by_str_batch.update_values(strings.iter().map(String::as_str));
+        let str_filter = by_str_update.build().unwrap();
+        assert_eq!(str_filter, by_str_batch.build().unwrap());
+        for s in &strings {
+            assert!(str_filter.contains(s));
+            assert!(str_filter.contains(s.as_str()));
+        }
+
+        let mut by_blob_update = XorFilterBuilder::new(ty, 0);
+        for blob in &blobs {
+            by_blob_update.update(blob);
+        }
+        let mut by_blob_batch = XorFilterBuilder::new(ty, 0);
+        by_blob_batch.update_values(blobs.iter().map(Vec::as_slice));
+        let blob_filter = by_blob_update.build().unwrap();
+        assert_eq!(blob_filter, by_blob_batch.build().unwrap());
+        for blob in &blobs {
+            assert!(blob_filter.contains(blob));
+            assert!(blob_filter.contains(blob.as_slice()));
+        }
+
+        let mut by_mixed_update = XorFilterBuilder::new(ty, 0);
+        for id in &ids {
+            by_mixed_update.update(id);
+        }
+        by_mixed_update.update(raw_bytes::from_string(String::from("payload")));
+        let mut by_mixed_batch = XorFilterBuilder::new(ty, 0);
+        by_mixed_batch.update_values(ids);
+        by_mixed_batch.update(raw_bytes::from_str("payload"));
+        let mixed_filter = by_mixed_update.build().unwrap();
+        assert_eq!(mixed_filter, by_mixed_batch.build().unwrap());
+        for id in &ids {
+            assert!(mixed_filter.contains(id));
+            assert!(mixed_filter.contains(*id));
+        }
+        assert!(mixed_filter.contains(raw_bytes::from_slice(b"payload")));
     }
 }
 
