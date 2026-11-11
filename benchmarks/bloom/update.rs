@@ -62,7 +62,7 @@ fn contains_and_insert_present_u64(bencher: Bencher) {
     bencher.bench_local(|| {
         let mut filter = populated.clone();
         for value in 0..ITEMS as u64 {
-            black_box(filter.contains_and_insert(black_box(&value)));
+            black_box(filter.contains_and_insert(black_box(value)));
         }
         filter
     });

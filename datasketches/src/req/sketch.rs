@@ -504,7 +504,7 @@ where
     }
 
     /// Returns the number of bytes required to serialize the sketch.
-    pub fn serialized_size_bytes(&self) -> usize
+    fn serialized_size_bytes(&self) -> usize
     where
         T: ReqValue,
     {
