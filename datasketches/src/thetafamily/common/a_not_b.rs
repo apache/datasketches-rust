@@ -108,8 +108,8 @@ where
         }
         entries
     } else {
-        let mut b_keys: HashSet<u64, RetainedHashState> =
-            HashSet::with_capacity_and_hasher(b_num_retained, RetainedHashState::new());
+        let mut b_keys: HashSet<u64, FoldHashState> =
+            HashSet::with_capacity_and_hasher(b_num_retained, FoldHashState::new());
         for hash in b.hashes() {
             if hash < theta {
                 b_keys.insert(hash);
@@ -174,41 +174,55 @@ where
     CompactSketchState::non_empty(entries, theta, seed_hash, out_ordered)
 }
 
-struct RetainedHashState(u64);
+const FOLD_MULTIPLIER: u64 = 0x9E37_79B9_7F4A_7C15;
 
-impl RetainedHashState {
+#[inline]
+fn folded_multiply(x: u64, y: u64) -> u64 {
+    let product = u128::from(x) * u128::from(y);
+    (product as u64) ^ ((product >> 64) as u64)
+}
+
+/// Per-operation random state for hashing pre-hashed 64-bit sketch keys.
+///
+/// Keys in Theta and Tuple sketches are already uniform MurmurHash3 outputs, so SipHash is
+/// unnecessary overhead, but compact sketches can be deserialized from untrusted bytes whose raw
+/// hashes were chosen to collide. Seeding a 128-bit folded multiply from the thread-local PRNG on
+/// each call prevents crafted inputs from forcing worst-case probe chains.
+struct FoldHashState(u64);
+
+impl FoldHashState {
+    #[inline]
     fn new() -> Self {
-        Self(std::collections::hash_map::RandomState::new().hash_one(0u64))
+        Self(crate::common::random::random_u64())
     }
 }
 
-impl BuildHasher for RetainedHashState {
-    type Hasher = RetainedHashHasher;
+impl BuildHasher for FoldHashState {
+    type Hasher = FoldHasher;
 
-    fn build_hasher(&self) -> RetainedHashHasher {
-        RetainedHashHasher {
-            seed: self.0,
-            hash: 0,
+    #[inline]
+    fn build_hasher(&self) -> FoldHasher {
+        FoldHasher(self.0)
+    }
+}
+
+struct FoldHasher(u64);
+
+impl Hasher for FoldHasher {
+    #[inline]
+    fn finish(&self) -> u64 {
+        self.0
+    }
+
+    #[inline]
+    fn write(&mut self, bytes: &[u8]) {
+        for &byte in bytes {
+            self.0 = folded_multiply(self.0 ^ u64::from(byte), FOLD_MULTIPLIER);
         }
     }
-}
 
-struct RetainedHashHasher {
-    seed: u64,
-    hash: u64,
-}
-
-impl Hasher for RetainedHashHasher {
-    fn finish(&self) -> u64 {
-        self.hash
-    }
-
-    fn write(&mut self, _bytes: &[u8]) {
-        unreachable!("retained hashes are hashed as u64");
-    }
-
-    fn write_u64(&mut self, hash: u64) {
-        let product = u128::from(hash ^ self.seed) * 0x9E37_79B9_7F4A_7C15;
-        self.hash = (product as u64) ^ ((product >> 64) as u64);
+    #[inline]
+    fn write_u64(&mut self, value: u64) {
+        self.0 = folded_multiply(self.0 ^ value, FOLD_MULTIPLIER);
     }
 }

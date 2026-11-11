@@ -60,18 +60,30 @@ thread_local! {
     static STATE: Cell<u64> = Cell::new(random_seed());
 }
 
+/// Returns a uniformly distributed `u64` from the calling thread's stream.
+///
+/// The call is a handful of arithmetic operations on thread-local state: it
+/// never allocates, locks, or blocks. The first call on a thread seeds that
+/// thread's state.
+#[inline]
+pub fn random_u64() -> u64 {
+    STATE.with(|state| {
+        let (next, value) = next_u64(state.get());
+        state.set(next);
+        value
+    })
+}
+
 /// Returns `true` or `false`, each with probability 1/2.
 ///
 /// The bit is the low bit of the next output of the calling thread's stream.
 /// The call is a handful of arithmetic operations on thread-local state: it
 /// never allocates, locks, or blocks. The first call on a thread seeds that
 /// thread's state.
+#[cfg(any(test, feature = "kll", feature = "req"))]
+#[inline]
 pub fn random_bit() -> bool {
-    STATE.with(|state| {
-        let (next, value) = next_u64(state.get());
-        state.set(next);
-        value & 1 == 1
-    })
+    random_u64() & 1 == 1
 }
 
 #[cfg(test)]
