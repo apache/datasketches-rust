@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use crate::common::JaccardSimilarity;
 use crate::common::ResizeFactor;
 use crate::error::Error;
 use crate::error::ErrorKind;
@@ -38,74 +39,33 @@ use crate::thetacommon::union::UnionState;
 
 const NUM_STD_DEVS: f64 = 2.0;
 
-/// Jaccard similarity estimate and confidence bounds for two Theta-family sketches.
-///
-/// The bounds use a 95.4% confidence interval, equivalent to +/- 2 standard deviations.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct JaccardSimilarity {
-    lower_bound: f64,
-    estimate: f64,
-    upper_bound: f64,
-}
-
-impl JaccardSimilarity {
-    /// Returns the approximate lower bound for the Jaccard index.
-    pub fn lower_bound(&self) -> f64 {
-        self.lower_bound
+fn ratio_bounds(
+    union_count: u64,
+    intersection_count: u64,
+    theta: u64,
+) -> Result<JaccardSimilarity, Error> {
+    if intersection_count > union_count {
+        return Err(Error::invalid_argument(format!(
+            "intersection count cannot exceed union count: {intersection_count} > {union_count}"
+        )));
+    }
+    if union_count == 0 {
+        return Ok(JaccardSimilarity::new(0.0, 0.5, 1.0));
     }
 
-    /// Returns the estimate of the Jaccard index.
-    pub fn estimate(&self) -> f64 {
-        self.estimate
+    let sampling_probability = theta as f64 / MAX_THETA as f64;
+    if theta == MAX_THETA {
+        return Ok(JaccardSimilarity::exact(
+            intersection_count as f64 / union_count as f64,
+        ));
     }
 
-    /// Returns the approximate upper bound for the Jaccard index.
-    pub fn upper_bound(&self) -> f64 {
-        self.upper_bound
-    }
-
-    fn exact(value: f64) -> Self {
-        Self {
-            lower_bound: value,
-            estimate: value,
-            upper_bound: value,
-        }
-    }
-
-    fn ratio_bounds(union_count: u64, intersection_count: u64, theta: u64) -> Result<Self, Error> {
-        if intersection_count > union_count {
-            return Err(Error::invalid_argument(format!(
-                "intersection count cannot exceed union count: {intersection_count} > {union_count}"
-            )));
-        }
-        if union_count == 0 {
-            return Ok(Self {
-                lower_bound: 0.0,
-                estimate: 0.5,
-                upper_bound: 1.0,
-            });
-        }
-
-        let sampling_probability = theta as f64 / MAX_THETA as f64;
-        if theta == MAX_THETA {
-            return Ok(Self::exact(intersection_count as f64 / union_count as f64));
-        }
-
-        let adjustment = NUM_STD_DEVS * sampling_adjuster(sampling_probability);
-        Ok(Self {
-            lower_bound: binomial_bounds::approximate_lower_bound_on_p(
-                union_count,
-                intersection_count,
-                adjustment,
-            )?,
-            estimate: intersection_count as f64 / union_count as f64,
-            upper_bound: binomial_bounds::approximate_upper_bound_on_p(
-                union_count,
-                intersection_count,
-                adjustment,
-            )?,
-        })
-    }
+    let adjustment = NUM_STD_DEVS * sampling_adjuster(sampling_probability);
+    Ok(JaccardSimilarity::new(
+        binomial_bounds::approximate_lower_bound_on_p(union_count, intersection_count, adjustment)?,
+        intersection_count as f64 / union_count as f64,
+        binomial_bounds::approximate_upper_bound_on_p(union_count, intersection_count, adjustment)?,
+    ))
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -198,7 +158,7 @@ where
         .filter(|entry| entry.hash < union_theta)
         .count();
 
-    JaccardSimilarity::ratio_bounds(
+    ratio_bounds(
         union.retained_entries().len() as u64,
         intersection_count as u64,
         union_theta,

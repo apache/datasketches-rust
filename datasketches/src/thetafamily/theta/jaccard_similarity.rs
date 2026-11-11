@@ -17,13 +17,13 @@
 
 //! Jaccard similarity for Theta sketches.
 
+use crate::common::JaccardSimilarity;
 use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::hash::compute_seed_hash;
 use crate::theta::ThetaSketchView;
 use crate::thetacommon::jaccard_similarity;
-use crate::thetacommon::jaccard_similarity::JaccardSimilarity;
 
 /// Jaccard similarity operator for Theta sketches.
 ///

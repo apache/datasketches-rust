@@ -26,8 +26,6 @@ pub(super) mod jaccard_similarity;
 pub(super) mod sketch_state;
 pub(super) mod union;
 
-pub use self::jaccard_similarity::JaccardSimilarity;
-
 /// Minimal entry behavior required by the shared hash table, compaction, and set operations.
 pub(super) trait SketchEntry: Sized {
     fn hash(&self) -> u64;
