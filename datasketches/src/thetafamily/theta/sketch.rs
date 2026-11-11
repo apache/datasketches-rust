@@ -21,6 +21,7 @@
 //! for cardinality estimation.
 
 use std::hash::Hash;
+use std::iter::FusedIterator;
 use std::slice;
 
 use crate::codec::SketchBytes;
@@ -103,6 +104,17 @@ impl Iterator for ThetaSketchIter<'_> {
         }
     }
 }
+
+impl ExactSizeIterator for ThetaSketchIter<'_> {
+    fn len(&self) -> usize {
+        match self {
+            Self::Mutable(iter) => iter.len(),
+            Self::Compact(iter) => iter.len(),
+        }
+    }
+}
+
+impl FusedIterator for ThetaSketchIter<'_> {}
 
 impl<'a> ThetaSketchView<'a> {
     /// Returns the 16-bit seed hash.
