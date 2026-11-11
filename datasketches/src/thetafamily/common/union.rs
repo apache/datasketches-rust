@@ -125,7 +125,15 @@ where
         let Some(theta) = self.result_theta else {
             return CompactSketchState::empty(self.table.seed_hash());
         };
-        let hashes = self.table.retained_hashes_below(theta);
+        let hashes = if theta >= self.table.retention_theta() {
+            self.table.retained_hashes()
+        } else {
+            self.table
+                .iter_entries()
+                .map(SketchEntry::hash)
+                .filter(|&hash| hash < theta)
+                .collect()
+        };
         self.finish_compaction(hashes, theta, ordered)
     }
 

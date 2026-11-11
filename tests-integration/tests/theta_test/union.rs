@@ -497,6 +497,24 @@ fn test_trim_to_k() {
 }
 
 #[test]
+fn test_mixed_lg_k_union_compacts_result_storage() {
+    let large_exact = sketch_with_range(16, 0, 50_000);
+    let small_estimated = sketch_with_range(5, 0, 100_000);
+
+    let mut union = ThetaUnionBuilder::default().lg_k(16).build().unwrap();
+    union.update(&large_exact).unwrap();
+    union.update(&small_estimated).unwrap();
+
+    for ordered in [false, true] {
+        let result = union.to_sketch(ordered);
+        assert_that!(
+            result.estimated_size(),
+            le(result.num_retained().next_power_of_two().max(4) * size_of::<u64>()),
+        );
+    }
+}
+
+#[test]
 fn test_builder_lg_k() {
     let sketch = sketch_with_range(10, 0, 1000);
     let mut union = ThetaUnionBuilder::default().lg_k(10).build().unwrap();
