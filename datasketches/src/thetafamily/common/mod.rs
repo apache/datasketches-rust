@@ -49,6 +49,9 @@ pub(super) trait KeySketch: Copy {
     fn metadata(self) -> sketch_state::ThetaFamilySketchMetadata;
 
     fn hashes(self) -> impl Iterator<Item = u64>;
+
+    /// Returns the backing hash table when this sketch stores entries in one.
+    fn hash_table(&self) -> Option<&hash_table::SketchHashTable<impl SketchEntry>>;
 }
 
 pub(super) trait EntrySketch: KeySketch {
