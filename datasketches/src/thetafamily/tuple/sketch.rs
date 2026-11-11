@@ -205,6 +205,16 @@ impl<S> KeySketch for TupleSketchView<'_, S> {
     fn hashes(self) -> impl Iterator<Item = u64> {
         self.iter().map(TupleEntry::hash)
     }
+
+    #[inline]
+    fn hash_lookup(self) -> Option<impl Fn(u64) -> bool> {
+        match self.0 {
+            TupleSketchViewState::Mutable { table, .. } => {
+                Some(move |hash| table.entry(hash).is_some())
+            }
+            TupleSketchViewState::Compact(_) => None,
+        }
+    }
 }
 
 impl<'a, S> EntrySketch for TupleSketchView<'a, S>

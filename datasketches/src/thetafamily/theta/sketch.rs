@@ -175,6 +175,16 @@ impl KeySketch for ThetaSketchView<'_> {
     fn hashes(self) -> impl Iterator<Item = u64> {
         self.iter().map(|entry| entry.hash())
     }
+
+    #[inline]
+    fn hash_lookup(self) -> Option<impl Fn(u64) -> bool> {
+        match self.0 {
+            ThetaSketchViewState::Mutable(sketch) => {
+                Some(move |hash| sketch.table.entry(hash).is_some())
+            }
+            ThetaSketchViewState::Compact(_) => None,
+        }
+    }
 }
 
 impl EntrySketch for ThetaSketchView<'_> {

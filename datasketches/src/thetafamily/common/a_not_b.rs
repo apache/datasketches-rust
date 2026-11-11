@@ -107,6 +107,11 @@ where
             }
         }
         entries
+    } else if let Some(b_contains) = b.hash_lookup() {
+        // Mutable B sketches already own an open-addressed hash table populated through
+        // MurmurHash3. Probing it directly avoids scanning B or allocating a temporary set; keys
+        // in B at or above theta are harmless because A entries are screened by theta first.
+        retain_not_in_b(a, theta, a_ordered, b_contains)
     } else {
         let mut b_keys: HashSet<u64, FoldHashState> =
             HashSet::with_capacity_and_hasher(b_num_retained, FoldHashState::new());
@@ -117,19 +122,7 @@ where
                 break;
             }
         }
-
-        let mut entries = vec![];
-        for entry in a.entries() {
-            let hash = entry.hash();
-            if hash < theta {
-                if !b_keys.contains(&hash) {
-                    entries.push(entry);
-                }
-            } else if a_ordered {
-                break;
-            }
-        }
-        entries
+        retain_not_in_b(a, theta, a_ordered, |hash| b_keys.contains(&hash))
     };
 
     if entries.is_empty() && theta == MAX_THETA {
@@ -148,6 +141,29 @@ where
         seed_hash,
         out_ordered,
     ))
+}
+
+fn retain_not_in_b<A>(
+    a: A,
+    theta: u64,
+    a_ordered: bool,
+    b_contains: impl Fn(u64) -> bool,
+) -> Vec<A::Entry>
+where
+    A: EntrySketch,
+{
+    let mut entries = vec![];
+    for entry in a.entries() {
+        let hash = entry.hash();
+        if hash < theta {
+            if !b_contains(hash) {
+                entries.push(entry);
+            }
+        } else if a_ordered {
+            break;
+        }
+    }
+    entries
 }
 
 fn copy_to_compact_state<S>(sketch: S, ordered: bool) -> CompactSketchState<S::Entry>
