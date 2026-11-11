@@ -83,7 +83,7 @@ where
     let theta = a_theta.min(b_theta);
 
     let entries: Vec<A::Entry> = if b_num_retained == 0 {
-        a.entries().filter(|entry| entry.hash() < theta).collect()
+        retain_not_in_b(a, theta, a_ordered, |_| false)
     } else if a_ordered && b_ordered {
         // Both inputs are sorted ascending by hash: merge-scan without a hash set. Only
         // B hashes below theta can exclude an A entry (A entries are all < theta), so
