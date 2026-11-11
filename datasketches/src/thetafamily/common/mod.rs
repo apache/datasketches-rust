@@ -50,10 +50,8 @@ pub(super) trait KeySketch: Copy {
 
     fn hashes(self) -> impl Iterator<Item = u64>;
 
-    /// Returns a direct membership lookup when this sketch is already backed by a hash table.
-    fn hash_lookup(self) -> Option<impl Fn(u64) -> bool> {
-        None::<fn(u64) -> bool>
-    }
+    /// Returns the backing hash table when this sketch stores entries in one.
+    fn hash_table(&self) -> Option<&hash_table::SketchHashTable<impl SketchEntry>>;
 }
 
 pub(super) trait EntrySketch: KeySketch {

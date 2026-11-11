@@ -107,11 +107,11 @@ where
             }
         }
         entries
-    } else if let Some(b_contains) = b.hash_lookup() {
+    } else if let Some(b_table) = b.hash_table() {
         // Mutable B sketches already own an open-addressed hash table populated through
         // MurmurHash3. Probing it directly avoids scanning B or allocating a temporary set; keys
         // in B at or above theta are harmless because A entries are screened by theta first.
-        retain_not_in_b(a, theta, a_ordered, b_contains)
+        retain_not_in_b(a, theta, a_ordered, |hash| b_table.entry(hash).is_some())
     } else {
         let mut b_keys: HashSet<u64, FoldHashState> =
             HashSet::with_capacity_and_hasher(b_num_retained, FoldHashState::new());

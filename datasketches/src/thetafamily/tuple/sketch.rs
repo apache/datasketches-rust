@@ -38,11 +38,13 @@ use crate::hash::check_seed_hash;
 use crate::hash::compute_seed_hash;
 use crate::thetacommon::EntrySketch;
 use crate::thetacommon::KeySketch;
+use crate::thetacommon::SketchEntry;
 use crate::thetacommon::binomial_bounds;
 use crate::thetacommon::constants::DEFAULT_LG_K;
 use crate::thetacommon::constants::FLAGS_IS_EMPTY;
 use crate::thetacommon::constants::FLAGS_IS_ORDERED;
 use crate::thetacommon::constants::MAX_THETA;
+use crate::thetacommon::hash_table::SketchHashTable;
 use crate::thetacommon::hash_table::SketchHashTableIter;
 use crate::thetacommon::sketch_state::CompactSketchState;
 use crate::thetacommon::sketch_state::ThetaFamilySketchMetadata;
@@ -207,11 +209,9 @@ impl<S> KeySketch for TupleSketchView<'_, S> {
     }
 
     #[inline]
-    fn hash_lookup(self) -> Option<impl Fn(u64) -> bool> {
+    fn hash_table(&self) -> Option<&SketchHashTable<impl SketchEntry>> {
         match self.0 {
-            TupleSketchViewState::Mutable { table, .. } => {
-                Some(move |hash| table.entry(hash).is_some())
-            }
+            TupleSketchViewState::Mutable { table, .. } => Some(table),
             TupleSketchViewState::Compact(_) => None,
         }
     }
