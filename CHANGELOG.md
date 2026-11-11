@@ -7,6 +7,8 @@ All significant changes to this project will be documented in this file.
 ### Breaking changes
 
 * `CountMinSketch::new` and `CountMinSketch::with_seed` now create serial version 2 sketches, require `num_hashes` in `1..=127`, and emit images that require a version 2 reader. Version 2 enables cross-language interchange when using `i64` counters and the documented input encodings, while existing version 1 images remain readable, updatable, and serializable as version 1. `CountMinSketch::merge` rejects mixing version 1 and version 2 sketches; upgrade readers before writers and rebuild persisted version 1 data from source items to merge it with new sketches.
+* `FrequentItemsSketch::update_with_count` and `FrequentItemsSketch::update_with_count_ref` are renamed to `update_with_weight` and `update_with_weight_ref` to match weighted update naming across the crate.
+* `ReqSketch::num_retained` now returns `usize` instead of `u32` to match `KllSketch`, `ThetaSketch`, and `TupleSketch`.
 
 ### New features
 
