@@ -206,17 +206,30 @@ fn assert_compact_preserves_state(
     assert_eq!(compact.is_estimation_mode(), updatable.is_estimation_mode());
     assert_eq!(compact.theta64(), updatable.theta64());
     assert_eq!(compact.seed_hash(), updatable.seed_hash());
-    assert_eq!(
-        sorted_entries(compact.iter()),
-        sorted_entries(updatable.iter())
-    );
     assert_eq!(compact.estimate(), updatable.estimate());
-    assert_eq!(compact.is_ordered(), ordered);
+
+    let expected_ordered = ordered
+        || compact.is_empty()
+        || (compact.num_retained() == 1 && !compact.is_estimation_mode());
+    assert_eq!(compact.is_ordered(), expected_ordered);
+
+    let expected = sorted_entries(updatable.iter());
+    if compact.is_ordered() {
+        let actual: Vec<_> = compact
+            .iter()
+            .map(|entry| (entry.hash(), *entry.summary()))
+            .collect();
+        assert_eq!(actual, expected);
+    } else {
+        assert_eq!(sorted_entries(compact.iter()), expected);
+    }
 }
 
 #[test]
 fn compact_preserves_state_in_exact_and_estimation_modes() {
-    for (lg_k, num_updates, expected_estimation_mode) in [(12, 2_000, false), (5, 5_000, true)] {
+    for (lg_k, num_updates, expected_estimation_mode) in
+        [(12, 1, false), (12, 2_000, false), (5, 5_000, true)]
+    {
         let mut sketch = default_tuple_sketch_builder().lg_k(lg_k).build().unwrap();
         for key in 0..num_updates {
             sketch.update(key, key + 1);

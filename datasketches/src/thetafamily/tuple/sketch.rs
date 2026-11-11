@@ -23,6 +23,7 @@
 //! implementations.
 
 use std::hash::Hash;
+use std::iter::FusedIterator;
 use std::slice;
 
 use crate::codec::SketchSlice;
@@ -111,6 +112,17 @@ impl<'a, S> Iterator for TupleSketchIter<'a, S> {
         }
     }
 }
+
+impl<S> ExactSizeIterator for TupleSketchIter<'_, S> {
+    fn len(&self) -> usize {
+        match self {
+            Self::Mutable(iter) => iter.len(),
+            Self::Compact(iter) => iter.len(),
+        }
+    }
+}
+
+impl<S> FusedIterator for TupleSketchIter<'_, S> {}
 
 impl<S> Clone for TupleSketchView<'_, S> {
     fn clone(&self) -> Self {

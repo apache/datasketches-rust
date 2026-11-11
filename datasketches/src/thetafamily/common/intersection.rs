@@ -254,4 +254,18 @@ where
             }
         }
     }
+
+    /// Returns the current intersection as canonical compact hash state.
+    #[cfg(feature = "theta")]
+    pub fn to_compact_hash_state(&self, ordered: bool) -> Option<CompactSketchState<u64>> {
+        match self.result_state {
+            IntersectionResultState::Uninitialized => None,
+            IntersectionResultState::Empty => {
+                Some(CompactSketchState::empty(self.table.seed_hash()))
+            }
+            IntersectionResultState::NonEmpty => {
+                Some(self.table.to_non_empty_compact_hashes(ordered))
+            }
+        }
+    }
 }

@@ -91,11 +91,7 @@ impl ThetaIntersection {
     /// If `ordered` is `true`, retained hashes are sorted in ascending order.
     pub fn to_sketch(&self, ordered: bool) -> Option<CompactThetaSketch> {
         self.state
-            .to_compact_sketch_state(ordered)
-            .map(|compact_state| {
-                CompactThetaSketch::from_compact_state(
-                    compact_state.map_retained_entries(|entry| entry.hash()),
-                )
-            })
+            .to_compact_hash_state(ordered)
+            .map(CompactThetaSketch::from_compact_state)
     }
 }

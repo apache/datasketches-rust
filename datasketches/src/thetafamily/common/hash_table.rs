@@ -16,6 +16,7 @@
 // under the License.
 
 use std::hash::Hash;
+use std::iter::FusedIterator;
 use std::slice;
 
 use crate::common::ResizeFactor;
@@ -30,19 +31,38 @@ use crate::thetacommon::constants::MIN_LG_K;
 use crate::thetacommon::constants::STRIDE_MASK;
 use crate::thetacommon::sketch_state::CompactSketchState;
 
-pub struct SketchHashTableIter<'a, E>(slice::Iter<'a, Option<E>>);
+pub struct SketchHashTableIter<'a, E> {
+    iter: slice::Iter<'a, Option<E>>,
+    remaining: usize,
+}
 
 impl<'a, E> Iterator for SketchHashTableIter<'a, E> {
     type Item = &'a E;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        self.0.find_map(Option::as_ref)
+        if self.remaining == 0 {
+            return None;
+        }
+        let entry = self.iter.find_map(Option::as_ref)?;
+        self.remaining -= 1;
+        Some(entry)
     }
 
+    #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
-        (0, self.0.size_hint().1)
+        (self.remaining, Some(self.remaining))
     }
 }
+
+impl<E> ExactSizeIterator for SketchHashTableIter<'_, E> {
+    #[inline]
+    fn len(&self) -> usize {
+        self.remaining
+    }
+}
+
+impl<E> FusedIterator for SketchHashTableIter<'_, E> {}
 
 /// Generic hash-table mechanics shared by Theta and Tuple sketches.
 ///
@@ -287,7 +307,10 @@ where
 
     /// Get iterator over retained entries.
     pub fn iter_entries(&self) -> SketchHashTableIter<'_, E> {
-        SketchHashTableIter(self.entries.iter())
+        SketchHashTableIter {
+            iter: self.entries.iter(),
+            remaining: self.num_retained,
+        }
     }
 
     /// Creates compact state for a sketch known by its owner to be non-empty.
@@ -295,17 +318,40 @@ where
     where
         E: Clone,
     {
-        let mut retained_entries: Vec<E> = self.iter_entries().cloned().collect();
-        let ordered = ordered || (retained_entries.len() == 1 && self.retention_theta == MAX_THETA);
-        if ordered && retained_entries.len() > 1 {
-            retained_entries.sort_unstable_by_key(SketchEntry::hash);
-        }
-        CompactSketchState::non_empty(
+        let retained_entries = self.iter_entries().cloned().collect();
+        CompactSketchState::compact(
             retained_entries,
             self.retention_theta,
             self.seed_hash,
+            false,
             ordered,
         )
+    }
+
+    /// Creates compact hash state for a Theta sketch or operator known to be non-empty.
+    #[cfg(feature = "theta")]
+    pub fn to_non_empty_compact_hashes(&self, ordered: bool) -> CompactSketchState<u64> {
+        let hashes = self.retained_hashes();
+        CompactSketchState::compact(hashes, self.retention_theta, self.seed_hash, false, ordered)
+    }
+
+    /// Returns retained hashes in table order.
+    #[cfg(feature = "theta")]
+    pub fn retained_hashes(&self) -> Vec<u64> {
+        if self.num_retained * 16 <= self.entries.len() {
+            return self.iter_entries().map(SketchEntry::hash).collect();
+        }
+
+        let mut hashes = vec![0u64; self.num_retained + 1];
+        let mut len = 0;
+        for slot in &self.entries {
+            let hash = slot.as_ref().map_or(0, SketchEntry::hash);
+            hashes[len] = hash;
+            len += usize::from(hash != 0);
+        }
+        debug_assert_eq!(len, self.num_retained);
+        hashes.truncate(len);
+        hashes
     }
 
     /// Get log2 of nominal size.
@@ -406,10 +452,8 @@ where
         let k = 1usize << self.lg_nom_size;
 
         // Select the k-th smallest entry as new theta and keep the lesser entries.
-        let mut retained: Vec<E> = std::mem::take(&mut self.entries)
-            .into_iter()
-            .flatten()
-            .collect();
+        let mut retained = Vec::with_capacity(self.num_retained);
+        retained.extend(std::mem::take(&mut self.entries).into_iter().flatten());
         let kth_hash = {
             let (_lesser, kth, _greater) = retained.select_nth_unstable_by_key(k, |e| e.hash());
             kth.hash()

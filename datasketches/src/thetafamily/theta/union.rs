@@ -53,11 +53,7 @@ impl ThetaUnion {
 
     /// Returns this union as a compact sketch.
     pub fn to_sketch(&self, ordered: bool) -> CompactThetaSketch {
-        let compact_state = self
-            .state
-            .to_compact_sketch_state(ordered)
-            .map_retained_entries(|entry| entry.hash());
-        CompactThetaSketch::from_compact_state(compact_state)
+        CompactThetaSketch::from_compact_state(self.state.to_compact_hash_state(ordered))
     }
 
     /// Serializes this union result into the uncompressed compact Theta format.
@@ -66,7 +62,7 @@ impl ThetaUnion {
     /// retained hashes are sorted. Otherwise they may be unordered; empty results and exact
     /// singletons always use their canonical encoding.
     pub fn serialize(&self, ordered: bool) -> Vec<u8> {
-        let state = self.state.to_compact_sketch_state(ordered);
+        let state = self.state.to_compact_hash_state(ordered);
         serialization::serialize_compact_uncompressed(&state)
     }
 

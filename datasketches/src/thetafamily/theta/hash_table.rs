@@ -20,6 +20,7 @@ use std::num::NonZeroU64;
 
 use crate::thetacommon::SketchEntry;
 use crate::thetacommon::hash_table::SketchHashTable;
+use crate::thetacommon::sketch_state::sort_copy_by_hash;
 
 /// Specific hash table for theta sketch
 ///
@@ -32,6 +33,7 @@ pub type ThetaHashTable = SketchHashTable<ThetaEntry>;
 
 /// A retained entry in a Theta sketch.
 #[derive(Debug, Clone, Copy)]
+#[repr(transparent)]
 pub struct ThetaEntry {
     hash: NonZeroU64,
 }
@@ -54,6 +56,10 @@ impl SketchEntry for ThetaEntry {
     #[inline]
     fn hash(&self) -> u64 {
         self.hash.get()
+    }
+
+    fn sort_by_hash(entries: &mut Vec<Self>) {
+        sort_copy_by_hash(entries);
     }
 }
 

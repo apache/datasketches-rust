@@ -34,11 +34,15 @@ use tests_integration::MAX_THETA;
 use crate::default_tuple_sketch_builder;
 use crate::tuple_sketch_with_range;
 
-fn sorted_entries(sketch: &CompactTupleSketch<u64>) -> Vec<(u64, u64)> {
-    let mut entries: Vec<_> = sketch
+fn entries(sketch: &CompactTupleSketch<u64>) -> Vec<(u64, u64)> {
+    sketch
         .iter()
         .map(|entry| (entry.hash(), *entry.summary()))
-        .collect();
+        .collect()
+}
+
+fn sorted_entries(sketch: &CompactTupleSketch<u64>) -> Vec<(u64, u64)> {
+    let mut entries = entries(sketch);
     entries.sort_unstable();
     entries
 }
@@ -70,10 +74,7 @@ fn accepts_mutable_and_compact_inputs() {
         .compute(&a.compact(true), &b.compact(false), true)
         .unwrap();
 
-    assert_eq!(
-        sorted_entries(&mutable_result),
-        sorted_entries(&compact_result)
-    );
+    assert_eq!(entries(&mutable_result), entries(&compact_result));
     assert_eq!(mutable_result.num_retained(), 500);
 }
 
@@ -103,14 +104,10 @@ fn input_and_result_ordering_preserve_entries() {
         from_ordered_inputs.theta64()
     );
     assert_eq!(from_unordered_inputs.theta64(), unordered_result.theta64());
-    assert_eq!(
-        sorted_entries(&from_unordered_inputs),
-        sorted_entries(&from_ordered_inputs)
-    );
-    assert_eq!(
-        sorted_entries(&from_unordered_inputs),
-        sorted_entries(&unordered_result)
-    );
+
+    let expected = sorted_entries(&unordered_result);
+    assert_eq!(entries(&from_unordered_inputs), expected);
+    assert_eq!(entries(&from_ordered_inputs), expected);
 }
 
 #[test]

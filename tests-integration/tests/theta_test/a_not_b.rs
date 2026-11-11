@@ -191,16 +191,20 @@ fn test_exact_superset_b_returns_empty() {
 
 #[test]
 fn test_result_ordering() {
-    let a = sketch_with_range(0, 64);
+    let a = sketch_with_range(0, 1_000);
     let empty = ThetaSketchBuilder::default().build().unwrap();
 
     let a_not_b = ThetaANotB::default();
 
-    let r = a_not_b.compute(&a, &empty, true).unwrap();
-    assert!(r.is_ordered());
+    let ordered = a_not_b.compute(&a, &empty, true).unwrap();
+    let unordered = a_not_b.compute(&a, &empty, false).unwrap();
+    assert!(ordered.is_ordered());
+    assert!(!unordered.is_ordered());
 
-    let r = a_not_b.compute(&a, &empty, false).unwrap();
-    assert!(!r.is_ordered());
+    let mut expected: Vec<u64> = unordered.iter().map(|entry| entry.hash()).collect();
+    expected.sort_unstable();
+    let actual: Vec<u64> = ordered.iter().map(|entry| entry.hash()).collect();
+    assert_eq!(actual, expected);
 }
 
 #[test]

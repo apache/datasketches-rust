@@ -19,6 +19,7 @@ use std::collections::HashSet;
 use std::hash::BuildHasher;
 use std::hash::Hasher;
 
+use crate::common::random::random_u64;
 use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::hash::check_seed_hash;
@@ -129,17 +130,8 @@ where
         return Ok(CompactSketchState::empty(seed_hash));
     }
 
-    let mut entries = entries;
-    if ordered && !a_ordered && entries.len() > 1 {
-        entries.sort_unstable_by_key(SketchEntry::hash);
-    }
-    let out_ordered = ordered || a_ordered || (entries.len() == 1 && theta == MAX_THETA);
-
-    Ok(CompactSketchState::non_empty(
-        entries,
-        theta,
-        seed_hash,
-        out_ordered,
+    Ok(CompactSketchState::compact(
+        entries, theta, seed_hash, a_ordered, ordered,
     ))
 }
 
@@ -182,12 +174,8 @@ where
         } => (seed_hash, theta, ordered),
     };
 
-    let mut entries: Vec<S::Entry> = sketch.entries().collect();
-    if ordered && !input_ordered && entries.len() > 1 {
-        entries.sort_unstable_by_key(SketchEntry::hash);
-    }
-    let out_ordered = ordered || input_ordered || (entries.len() == 1 && theta == MAX_THETA);
-    CompactSketchState::non_empty(entries, theta, seed_hash, out_ordered)
+    let entries = sketch.entries().collect();
+    CompactSketchState::compact(entries, theta, seed_hash, input_ordered, ordered)
 }
 
 const FOLD_MULTIPLIER: u64 = 0x9E37_79B9_7F4A_7C15;
@@ -209,7 +197,7 @@ struct FoldHashState(u64);
 impl FoldHashState {
     #[inline]
     fn new() -> Self {
-        Self(crate::common::random::random_u64())
+        Self(random_u64())
     }
 }
 

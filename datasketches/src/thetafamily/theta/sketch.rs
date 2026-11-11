@@ -21,6 +21,7 @@
 //! for cardinality estimation.
 
 use std::hash::Hash;
+use std::iter::FusedIterator;
 use std::slice;
 
 use crate::codec::SketchBytes;
@@ -103,6 +104,17 @@ impl Iterator for ThetaSketchIter<'_> {
         }
     }
 }
+
+impl ExactSizeIterator for ThetaSketchIter<'_> {
+    fn len(&self) -> usize {
+        match self {
+            Self::Mutable(iter) => iter.len(),
+            Self::Compact(iter) => iter.len(),
+        }
+    }
+}
+
+impl FusedIterator for ThetaSketchIter<'_> {}
 
 impl<'a> ThetaSketchView<'a> {
     /// Returns the 16-bit seed hash.
@@ -352,9 +364,8 @@ impl ThetaSketch {
             debug_assert_eq!(self.num_retained(), 0);
             CompactSketchState::empty(self.seed_hash())
         } else {
-            self.table.to_non_empty_compact_state(ordered)
-        }
-        .map_retained_entries(|entry| entry.hash());
+            self.table.to_non_empty_compact_hashes(ordered)
+        };
         CompactThetaSketch::from_compact_state(compact_state)
     }
 
@@ -1127,8 +1138,13 @@ mod tests {
     fn assert_theta_and_compact_equivalent_ordered(theta: &ThetaSketch, ordered: bool) {
         let compact = theta.compact(ordered);
         assert_theta_and_compact_equivalent(theta, &compact);
-        if compact.num_retained() > 1 {
-            assert_eq!(compact.is_ordered(), ordered);
+        let expected_ordered = ordered
+            || compact.is_empty()
+            || (compact.num_retained() == 1 && !compact.is_estimation_mode());
+        assert_eq!(compact.is_ordered(), expected_ordered);
+        if compact.is_ordered() {
+            let entries: Vec<u64> = compact.iter().map(|entry| entry.hash()).collect();
+            assert_eq!(entries, sorted_theta_entries(theta));
         }
     }
 

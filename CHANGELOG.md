@@ -23,6 +23,7 @@ All significant changes to this project will be documented in this file.
 * Compressed `CompactThetaSketch` serialization and deserialization are faster.
 * Tuple sketch serialization and deserialization are faster.
 * `ThetaANotB` and `TupleANotB` are faster when either input is unordered.
+* Compacting Theta and Tuple sketches and producing ordered union, intersection, and A-not-B results are faster.
 
 ## v0.6.0 (2026-10-29)
 
