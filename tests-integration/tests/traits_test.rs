@@ -107,7 +107,7 @@ fn populated_types_format_concise_diagnostic_summaries() {
     }
     assert_concise_debug(&bloom);
 
-    let mut xor_builder = XorFilterBuilder::new(XorFilterType::Xor8, 0);
+    let mut xor_builder = XorFilterBuilder::new(XorFilterType::Xor8);
     xor_builder.update_values(0..500_u64);
     let xor = xor_builder.build().unwrap();
     assert_concise_debug(&xor);
