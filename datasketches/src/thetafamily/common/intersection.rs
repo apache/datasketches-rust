@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::fmt;
+
 use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::hash::check_seed_hash;
@@ -237,6 +239,30 @@ where
     /// Returns an estimate of memory usage in bytes.
     pub fn estimated_size(&self) -> usize {
         size_of::<P>() + self.table.estimated_size()
+    }
+
+    /// Formats a concise diagnostic summary for Theta-family intersection operators.
+    pub fn fmt_debug(&self, f: &mut fmt::Formatter<'_>, name: &str) -> fmt::Result {
+        let mut debug = f.debug_struct(name);
+        debug
+            .field("seed_hash", &self.table.seed_hash())
+            .field("has_result", &self.has_result());
+        match self.result_state {
+            IntersectionResultState::Uninitialized => {}
+            IntersectionResultState::Empty => {
+                debug
+                    .field("is_empty", &true)
+                    .field("theta64", &MAX_THETA)
+                    .field("num_retained", &0usize);
+            }
+            IntersectionResultState::NonEmpty => {
+                debug
+                    .field("is_empty", &false)
+                    .field("theta64", &self.table.retention_theta())
+                    .field("num_retained", &self.table.num_retained());
+            }
+        }
+        debug.finish()
     }
 
     /// Returns the current intersection as canonical compact-sketch state.

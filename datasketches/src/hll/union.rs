@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::fmt;
 use std::hash::Hash;
 
 use crate::common::NumStdDev;
@@ -36,11 +37,26 @@ use crate::hll::mode::Mode;
 /// its statistical accuracy.
 ///
 /// See the [module level documentation](super) for more.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct HllUnion {
     lg_max_k: u8,
     /// Array modes always use `Array8`; packed results are produced by `to_sketch`.
     gadget: HllSketch,
+}
+
+impl fmt::Debug for HllUnion {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("HllUnion")
+            .field("lg_max_k", &self.lg_max_k)
+            .field("lg_config_k", &self.gadget.lg_config_k())
+            .field("is_empty", &self.is_empty())
+            .field("estimate", &self.estimate())
+            .field(
+                "bounds",
+                &(self.lower_bound(NumStdDev::One)..=self.upper_bound(NumStdDev::One)),
+            )
+            .finish()
+    }
 }
 
 impl HllUnion {

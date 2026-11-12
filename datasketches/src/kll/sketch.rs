@@ -16,6 +16,7 @@
 // under the License.
 
 use std::cmp::Ordering;
+use std::fmt;
 
 use super::DEFAULT_K;
 use super::DEFAULT_M;
@@ -49,7 +50,7 @@ use crate::error::Error;
 /// KLL sketch for estimating quantiles and ranks.
 ///
 /// See the [kll module level documentation](crate::kll) for more.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct KllSketch<T> {
     k: u16,
     m: u8,
@@ -61,6 +62,22 @@ pub struct KllSketch<T> {
     levels: Vec<Vec<T>>,
     min_item: Option<T>,
     max_item: Option<T>,
+}
+
+impl<T: fmt::Debug> fmt::Debug for KllSketch<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("KllSketch")
+            .field("k", &self.k)
+            .field("min_k", &self.min_k)
+            .field("n", &self.n)
+            .field("is_empty", &(self.n == 0))
+            .field("is_estimation_mode", &(self.levels.len() > 1))
+            .field("num_levels", &self.levels.len())
+            .field("num_retained", &self.num_retained)
+            .field("min_item", &self.min_item)
+            .field("max_item", &self.max_item)
+            .finish()
+    }
 }
 
 impl<T: Clone + Ord> Default for KllSketch<T> {

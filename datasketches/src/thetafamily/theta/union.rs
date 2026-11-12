@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::fmt;
+
 use crate::common::ResizeFactor;
 use crate::error::Error;
 use crate::hash::DEFAULT_UPDATE_SEED;
@@ -27,9 +29,14 @@ use crate::thetacommon::union::UnionMergePolicy;
 use crate::thetacommon::union::UnionState;
 
 /// Stateful union operator for Theta sketches.
-#[derive(Debug)]
 pub struct ThetaUnion {
     state: UnionState<ThetaEntry, NoopUnionPolicy>,
+}
+
+impl fmt::Debug for ThetaUnion {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.state.fmt_debug(f, "ThetaUnion")
+    }
 }
 
 #[derive(Debug)]

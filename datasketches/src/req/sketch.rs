@@ -17,6 +17,8 @@
 
 //! Generic REQ sketch implementation.
 
+use std::fmt;
+
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
 use crate::codec::assert::insufficient_data;
@@ -47,7 +49,7 @@ use crate::req::value::ReqValue;
 /// A Relative Error Quantiles sketch for approximate quantile estimation.
 ///
 /// See the [module level documentation](super) for item ordering and floating-point requirements.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ReqSketch<T> {
     k: u16,
     rank_accuracy: RankAccuracy,
@@ -58,6 +60,22 @@ pub struct ReqSketch<T> {
     promotion_buf: Vec<T>,
     min_item: Option<T>,
     max_item: Option<T>,
+}
+
+impl<T: fmt::Debug> fmt::Debug for ReqSketch<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ReqSketch")
+            .field("k", &self.k)
+            .field("rank_accuracy", &self.rank_accuracy)
+            .field("n", &self.n)
+            .field("is_empty", &(self.n == 0))
+            .field("is_estimation_mode", &(self.compactors.len() > 1))
+            .field("num_levels", &self.compactors.len())
+            .field("num_retained", &self.num_retained)
+            .field("min_item", &self.min_item)
+            .field("max_item", &self.max_item)
+            .finish()
+    }
 }
 
 impl<T> Default for ReqSketch<T>
