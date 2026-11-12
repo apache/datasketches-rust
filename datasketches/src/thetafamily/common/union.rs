@@ -118,7 +118,17 @@ where
         let Some(theta) = self.result_theta else {
             return CompactSketchState::empty(self.table.seed_hash());
         };
-        let entries = self.collect_retained_entries(theta, Clone::clone);
+
+        let entries = if theta >= self.table.retention_theta() {
+            self.table.iter_entries().cloned().collect()
+        } else {
+            self.table
+                .iter_entries()
+                .filter(|&ent| ent.hash() < theta)
+                .cloned()
+                .collect()
+        };
+
         self.finish_compaction(entries, theta, ordered)
     }
 
@@ -146,24 +156,17 @@ where
         let Some(theta) = self.result_theta else {
             return CompactSketchState::empty(self.table.seed_hash());
         };
-        let entries = self.collect_retained_entries(theta, |entry| entry);
-        self.finish_compaction(entries, theta, ordered)
-    }
 
-    fn collect_retained_entries<'a, T>(
-        &'a self,
-        theta: u64,
-        map: impl FnMut(&'a E) -> T,
-    ) -> Vec<T> {
-        if theta >= self.table.retention_theta() {
-            self.table.iter_entries().map(map).collect()
+        let entries = if theta >= self.table.retention_theta() {
+            self.table.iter_entries().collect()
         } else {
             self.table
                 .iter_entries()
-                .filter(|entry| entry.hash() < theta)
-                .map(map)
+                .filter(|ent| ent.hash() < theta)
                 .collect()
-        }
+        };
+
+        self.finish_compaction(entries, theta, ordered)
     }
 
     fn finish_compaction<T: SketchEntry>(
