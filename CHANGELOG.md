@@ -11,6 +11,7 @@ All significant changes to this project will be documented in this file.
 * `CpcSketch::max_serialized_bytes` and `ReqSketch::serialized_size_bytes` are removed; serialize the sketch and inspect `len()` on the returned byte buffer when the encoded size is needed.
 * `ThetaJaccardSimilarity::compute` and `TupleJaccardSimilarity::compute` now return `datasketches::common::JaccardSimilarity` instead of `datasketches::thetacommon::JaccardSimilarity`, and `datasketches::thetacommon` is no longer part of the public API.
 * `FrequentItemsSketch::update_with_count` and `FrequentItemsSketch::update_with_count_ref` are renamed to `update_with_weight` and `update_with_weight_ref` to match weighted update naming across the crate.
+* `ReqSketch::num_retained` now returns `usize` instead of `u32`, matching `KllSketch`, `ThetaSketch`, and `TupleSketch`.
 
 ### New features
 
@@ -35,6 +36,8 @@ All significant changes to this project will be documented in this file.
 
 ### Bug fixes
 
+* `ReqSketch::merge` now cascades compaction across newly grown levels when a merged sketch overflows the top compactor's nominal capacity.
+* `ReqSketch::deserialize` now returns `InvalidData` for out-of-range or non-finite compactor `section_size_raw` values instead of overflowing section-size rounding.
 * `ThetaJaccardSimilarity` and `TupleJaccardSimilarity` now return `InvalidArgument` instead of `InvalidData` when a non-empty input sketch's seed hash does not match the configured seed.
 
 ## v0.6.0 (2026-10-29)

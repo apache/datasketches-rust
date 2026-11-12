@@ -335,11 +335,27 @@ fn deserialize_rejects_inconsistent_weighted_count() {
 
 #[test]
 fn deserialize_rejects_unreachable_section_configuration() {
-    let mut invalid_raw = exact_image(12, &[1.0, 2.0, 3.0, 4.0, 5.0]);
-    invalid_raw[EXACT_COMPACTOR_OFFSET + SECTION_SIZE_RAW_OFFSET
+    for raw in [
+        0.0f32,
+        -6.0,
+        f32::NAN,
+        f32::INFINITY,
+        f32::NEG_INFINITY,
+        f32::MAX,
+    ] {
+        let mut invalid_raw = exact_image(12, &[1.0, 2.0, 3.0, 4.0, 5.0]);
+        invalid_raw[EXACT_COMPACTOR_OFFSET + SECTION_SIZE_RAW_OFFSET
+            ..EXACT_COMPACTOR_OFFSET + SECTION_SIZE_RAW_OFFSET + 4]
+            .copy_from_slice(&raw.to_le_bytes());
+        assert_invalid_data(&invalid_raw);
+    }
+
+    // (4_294_967_808.0 / 2.0) = 0x8000_0100; shifting left in u32 would wrap to 512 == k.
+    let mut wrapping_raw = exact_image(512, &[1.0, 2.0, 3.0, 4.0, 5.0]);
+    wrapping_raw[EXACT_COMPACTOR_OFFSET + SECTION_SIZE_RAW_OFFSET
         ..EXACT_COMPACTOR_OFFSET + SECTION_SIZE_RAW_OFFSET + 4]
-        .copy_from_slice(&0.0f32.to_le_bytes());
-    assert_invalid_data(&invalid_raw);
+        .copy_from_slice(&4_294_967_808.0f32.to_le_bytes());
+    assert_invalid_data(&wrapping_raw);
 
     let mut invalid_sections = exact_image(12, &[1.0, 2.0, 3.0, 4.0, 5.0]);
     invalid_sections[EXACT_COMPACTOR_OFFSET + NUM_SECTIONS_OFFSET] = 6;
