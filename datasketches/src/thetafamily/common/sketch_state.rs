@@ -254,22 +254,33 @@ pub fn sort_copy_by_hash<E: SketchEntry + Copy>(entries: &mut Vec<E>) {
 }
 
 #[cfg(feature = "tuple")]
-pub fn sort_niche_by_hash<E: SketchEntry>(entries: &mut Vec<E>) {
+use crate::tuple::TupleEntry;
+
+#[cfg(feature = "tuple")]
+pub fn sort_niche_by_hash<S>(entries: &mut Vec<TupleEntry<S>>) {
     const {
-        assert!(
-            size_of::<Option<E>>() == size_of::<E>() && align_of::<Option<E>>() == align_of::<E>(),
-            "niche bucket sort requires Option<E> to match E in size and alignment",
-        );
+        if size_of::<TupleEntry<S>>() != size_of::<Option<TupleEntry<S>>>() {
+            panic!("niche sort requires Option<TupleEntry> to match TupleEntry in size");
+        }
+        if align_of::<TupleEntry<S>>() != align_of::<Option<TupleEntry<S>>>() {
+            panic!("niche sort requires Option<TupleEntry> to match TupleEntry in alignment");
+        }
     }
+
     with_bucket_starts(entries, |entries, starts, shift, mask| {
         let len = entries.len();
-        let mut sorted: Vec<Option<E>> = std::iter::repeat_with(|| None).take(len).collect();
+        let mut sorted = std::iter::repeat_with(|| None)
+            .take(len)
+            .collect::<Vec<_>>();
         for entry in std::mem::take(entries) {
             let next = &mut starts[(entry.hash() >> shift) as usize & mask];
             sorted[*next as usize] = Some(entry);
             *next += 1;
         }
-        let mut sorted: Vec<E> = sorted.into_iter().map(Option::unwrap).collect();
+        let mut sorted = sorted
+            .into_iter()
+            .map(|ent| ent.unwrap())
+            .collect::<Vec<_>>();
         for i in 1..len {
             let mut j = i;
             while j > 0 && sorted[j - 1].hash() > sorted[j].hash() {
