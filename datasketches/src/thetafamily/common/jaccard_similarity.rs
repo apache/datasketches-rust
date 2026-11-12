@@ -103,6 +103,7 @@ where
     A: KeySketch,
     B: KeySketch,
 {
+    let seed_hash = compute_seed_hash(seed, ErrorKind::InvalidArgument)?;
     let (sketch_a_state, sketch_b_state) = match (
         non_empty_count_and_theta(sketch_a.metadata()),
         non_empty_count_and_theta(sketch_b.metadata()),
@@ -111,7 +112,7 @@ where
         (None, _) | (_, None) => return Ok(JaccardSimilarity::exact(0.0)),
         (Some(a), Some(b)) => (a, b),
     };
-    let union = compute_union(seed, sketch_a, sketch_b)?;
+    let union = compute_union(seed, seed_hash, sketch_a, sketch_b)?;
     if identical_sets(sketch_a_state, sketch_b_state, &union) {
         return Ok(JaccardSimilarity::exact(1.0));
     }
@@ -153,6 +154,7 @@ where
     A: KeySketch,
     B: KeySketch,
 {
+    let seed_hash = compute_seed_hash(seed, ErrorKind::InvalidArgument)?;
     let (sketch_a_state, sketch_b_state) = match (
         non_empty_count_and_theta(sketch_a.metadata()),
         non_empty_count_and_theta(sketch_b.metadata()),
@@ -161,12 +163,13 @@ where
         (None, _) | (_, None) => return Ok(false),
         (Some(a), Some(b)) => (a, b),
     };
-    let union = compute_union(seed, sketch_a, sketch_b)?;
+    let union = compute_union(seed, seed_hash, sketch_a, sketch_b)?;
     Ok(identical_sets(sketch_a_state, sketch_b_state, &union))
 }
 
 fn compute_union<A, B>(
     seed: u64,
+    seed_hash: u16,
     sketch_a: A,
     sketch_b: B,
 ) -> Result<CompactSketchState<KeyEntry>, Error>
@@ -190,9 +193,8 @@ where
     else {
         unreachable!("Jaccard union inputs are known to be non-empty")
     };
-    let seed_hash = compute_seed_hash(seed, ErrorKind::InvalidArgument)?;
-    check_seed_hash(seed_hash, a_seed_hash, "A", ErrorKind::InvalidData)?;
-    check_seed_hash(seed_hash, b_seed_hash, "B", ErrorKind::InvalidData)?;
+    check_seed_hash(seed_hash, a_seed_hash, "A", ErrorKind::InvalidArgument)?;
+    check_seed_hash(seed_hash, b_seed_hash, "B", ErrorKind::InvalidArgument)?;
 
     let mut union = UnionState::new(
         union_lg_k(a_num_retained, b_num_retained),
