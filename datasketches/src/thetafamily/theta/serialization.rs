@@ -19,11 +19,11 @@
 
 use crate::codec::SketchBytes;
 use crate::codec::family::Family;
-use crate::thetacommon::SketchEntry;
-use crate::thetacommon::constants::FLAGS_IS_COMPACT;
-use crate::thetacommon::constants::FLAGS_IS_ORDERED;
-use crate::thetacommon::constants::FLAGS_IS_READ_ONLY;
-use crate::thetacommon::sketch_state::CompactSketchState;
+use crate::thetafamily::common::SketchEntry;
+use crate::thetafamily::common::constants::FLAGS_IS_COMPACT;
+use crate::thetafamily::common::constants::FLAGS_IS_ORDERED;
+use crate::thetafamily::common::constants::FLAGS_IS_READ_ONLY;
+use crate::thetafamily::common::sketch_state::CompactSketchState;
 
 pub const UNCOMPRESSED_SERIAL_VERSION: u8 = 3;
 pub const COMPRESSED_SERIAL_VERSION: u8 = 4;

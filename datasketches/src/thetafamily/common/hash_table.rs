@@ -24,12 +24,12 @@ use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::hash::MurmurHash3X64128;
 use crate::hash::compute_seed_hash;
-use crate::thetacommon::SketchEntry;
-use crate::thetacommon::constants::MAX_LG_K;
-use crate::thetacommon::constants::MAX_THETA;
-use crate::thetacommon::constants::MIN_LG_K;
-use crate::thetacommon::constants::STRIDE_MASK;
-use crate::thetacommon::sketch_state::CompactSketchState;
+use crate::thetafamily::common::SketchEntry;
+use crate::thetafamily::common::constants::MAX_LG_K;
+use crate::thetafamily::common::constants::MAX_THETA;
+use crate::thetafamily::common::constants::MIN_LG_K;
+use crate::thetafamily::common::constants::STRIDE_MASK;
+use crate::thetafamily::common::sketch_state::CompactSketchState;
 
 pub struct SketchHashTableIter<'a, E> {
     iter: slice::Iter<'a, Option<E>>,
