@@ -244,3 +244,52 @@ fn test_distinct_theta_non_empty_sketches_with_no_retained_entries_are_uncertain
 
     assert!(!operator.exactly_equal(&sketch_a, &different_theta).unwrap());
 }
+
+#[test]
+fn test_representation_combinations_and_asymmetric_theta() {
+    // `sketch_a` (lg_k = 5, 5000 items) enters estimation mode with a low theta, while
+    // `sketch_b` (lg_k = 12, 2000 items) stays in exact mode (`MAX_THETA`) with partial overlap.
+    let mut sketch_a = ThetaSketchBuilder::default().lg_k(5).build().unwrap();
+    for value in 0..5000u64 {
+        sketch_a.update(value);
+    }
+    let mut sketch_b = ThetaSketchBuilder::default().lg_k(12).build().unwrap();
+    for value in 2500..4500u64 {
+        sketch_b.update(value);
+    }
+    assert!(sketch_a.is_estimation_mode());
+    assert!(!sketch_b.is_estimation_mode());
+
+    let compact_ordered_a = sketch_a.compact(true);
+    let compact_unordered_a = sketch_a.compact(false);
+    let compact_ordered_b = sketch_b.compact(true);
+    let compact_unordered_b = sketch_b.compact(false);
+    assert!(!compact_unordered_a.is_ordered());
+    assert!(!compact_unordered_b.is_ordered());
+
+    let operator = ThetaJaccardSimilarity::default();
+    let expected = operator.compute(&sketch_a, &sketch_b).unwrap();
+    assert_close(expected.estimate(), 2000.0 / 5000.0, 0.2);
+
+    let views_a = [
+        sketch_a.as_view(),
+        compact_ordered_a.as_view(),
+        compact_unordered_a.as_view(),
+    ];
+    let views_b = [
+        sketch_b.as_view(),
+        compact_ordered_b.as_view(),
+        compact_unordered_b.as_view(),
+    ];
+    for &va in &views_a {
+        for &vb in &views_b {
+            assert_eq!(operator.compute(va, vb).unwrap(), expected);
+            assert_eq!(operator.compute(vb, va).unwrap(), expected);
+            assert!(!operator.exactly_equal(va, vb).unwrap());
+        }
+        for &va2 in &views_a {
+            assert!(operator.exactly_equal(va, va2).unwrap());
+            assert_jaccard_exact(operator.compute(va, va2).unwrap(), 1.0);
+        }
+    }
+}

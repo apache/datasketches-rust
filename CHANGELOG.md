@@ -32,6 +32,7 @@ All significant changes to this project will be documented in this file.
 * Speed up `CompactTupleSketch` and `TupleUnion` serialization and `CompactTupleSketch` deserialization for primitive summaries and custom `TupleSummaryValue` implementations built on `SketchBytes` and `SketchSlice`.
 * Speed up `ThetaSketch::compact` and `TupleSketch::compact` on populated sketches, along with ordered result generation across `ThetaUnion`, `TupleUnion`, `ThetaIntersection`, `TupleIntersection`, `ThetaANotB`, and `TupleANotB` for larger retained entry counts; sketches with very few retained entries are unchanged.
 * Speed up `ThetaANotB::compute` and `TupleANotB::compute` when either input is unordered, while avoiding intermediate allocations when subtracting a mutable `ThetaSketch` or `TupleSketch` directly; pairs of ordered compact inputs are unchanged.
+* Speed up `ThetaJaccardSimilarity` and `TupleJaccardSimilarity` similarity and equality checks by eliminating intermediate intersection state and compact-sketch allocations, with zero heap allocations when comparing mutable or ordered compact sketches.
 
 ### Bug fixes
 

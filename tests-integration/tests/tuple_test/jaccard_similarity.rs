@@ -111,6 +111,17 @@ fn test_half_overlap_estimation_mode() {
         .compute(&sketch_a.compact(true), &sketch_b.compact(true))
         .unwrap();
     assert_jaccard_estimate(jaccard, 0.33);
+    assert_eq!(
+        operator
+            .compute(&sketch_a.compact(false), &sketch_b.compact(false))
+            .unwrap(),
+        jaccard
+    );
+    assert!(
+        operator
+            .exactly_equal(&sketch_a, &sketch_a.compact(false))
+            .unwrap()
+    );
 }
 
 #[test]

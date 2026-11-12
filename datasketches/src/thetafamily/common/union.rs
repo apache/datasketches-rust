@@ -111,6 +111,7 @@ where
     }
 
     /// Returns the union as canonical compact-sketch state.
+    #[cfg(feature = "tuple")]
     pub fn to_compact_sketch_state(&self, ordered: bool) -> CompactSketchState<E>
     where
         E: Clone,
@@ -120,6 +121,42 @@ where
         };
         let entries = self.collect_retained_entries(theta, Clone::clone);
         self.finish_compaction(entries, theta, ordered)
+    }
+
+    /// Folds over the canonical retained entries and returns `(theta, output)`.
+    ///
+    /// Avoids allocating an intermediate vector whenever the retained entry count fits within the
+    /// nominal capacity `2^lg_k`.
+    pub fn fold_retained<Acc>(&self, init: Acc, mut f: impl FnMut(Acc, &E) -> Acc) -> (u64, Acc) {
+        let Some(result_theta) = self.result_theta else {
+            return (MAX_THETA, init);
+        };
+        let theta = result_theta.min(self.table.retention_theta());
+        let nominal_num = 1usize << self.table.lg_nom_size();
+        if self.table.num_retained() <= nominal_num {
+            let acc = if theta >= self.table.retention_theta() {
+                self.table.iter_entries().fold(init, &mut f)
+            } else {
+                self.table
+                    .iter_entries()
+                    .filter(|entry| entry.hash() < theta)
+                    .fold(init, &mut f)
+            };
+            return (theta, acc);
+        }
+
+        let mut retained = self.collect_retained_entries(theta, |entry| entry);
+        let final_theta = if retained.len() > nominal_num {
+            let (_, kth, _) =
+                retained.select_nth_unstable_by_key(nominal_num, |entry| entry.hash());
+            let kth_hash = kth.hash();
+            retained.truncate(nominal_num);
+            kth_hash
+        } else {
+            theta
+        };
+        let acc = retained.into_iter().fold(init, f);
+        (final_theta, acc)
     }
 
     /// Returns the union as canonical compact hash state.
