@@ -293,3 +293,38 @@ fn test_representation_combinations_and_asymmetric_theta() {
         }
     }
 }
+
+#[test]
+fn test_similarity_and_dissimilarity_thresholds() {
+    let sketch_a = sketch_with_range(0, 10000);
+    let sketch_b = sketch_with_range(5000, 10000);
+    let operator = ThetaJaccardSimilarity::default();
+    let jaccard = operator.compute(&sketch_a, &sketch_b).unwrap();
+    assert!(jaccard.lower_bound() < jaccard.estimate());
+    assert!(jaccard.estimate() < jaccard.upper_bound());
+
+    // Inclusive bounds pass; interior thresholds are inconclusive (`false` for both tests).
+    assert!(jaccard.is_similar(0.0).unwrap());
+    assert!(jaccard.is_similar(jaccard.lower_bound()).unwrap());
+    assert!(!jaccard.is_similar(jaccard.estimate()).unwrap());
+    assert!(!jaccard.is_dissimilar(jaccard.estimate()).unwrap());
+    assert!(jaccard.is_dissimilar(jaccard.upper_bound()).unwrap());
+    assert!(jaccard.is_dissimilar(1.0).unwrap());
+
+    let uncertain_a = non_empty_sketch_without_retained_entries(1e-12, "apple");
+    let uncertain_b = non_empty_sketch_without_retained_entries(2e-12, "orange");
+    let uncertain = operator.compute(&uncertain_a, &uncertain_b).unwrap();
+    assert!(!uncertain.is_similar(0.01).unwrap());
+    assert!(!uncertain.is_dissimilar(0.99).unwrap());
+
+    for invalid in [-0.01, 1.01, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        assert_eq!(
+            jaccard.is_similar(invalid).unwrap_err().kind(),
+            ErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            jaccard.is_dissimilar(invalid).unwrap_err().kind(),
+            ErrorKind::InvalidArgument
+        );
+    }
+}
