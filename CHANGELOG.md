@@ -9,14 +9,13 @@ All significant changes to this project will be documented in this file.
 * `BloomFilter::contains` and `BloomFilter::contains_and_insert` now take `item: T` (`T: Hash`) by value instead of `&T`, matching `BloomFilter::insert`. Pass `&item` to retain owned values such as `String` or `Vec<u8>` without cloning, and remove explicit turbofish type arguments (or change `T` to `&T`) on borrowed calls such as `contains::<u64>(&value)`.
 * `CountMinSketch::new` and `CountMinSketch::with_seed` now create serial version 2 sketches, require `num_hashes` in `1..=127`, and emit images that require a version 2 reader. Version 2 enables cross-language interchange when using `i64` counters and the documented input encodings, while existing version 1 images remain readable, updatable, and serializable as version 1. `CountMinSketch::merge` rejects mixing version 1 and version 2 sketches; upgrade readers before writers and rebuild persisted version 1 data from source items to merge it with new sketches.
 * `CpcSketch::max_serialized_bytes` and `ReqSketch::serialized_size_bytes` are removed; serialize the sketch and inspect `len()` on the returned byte buffer when the encoded size is needed.
-* `ThetaJaccardSimilarity`, `TupleJaccardSimilarity`, and `datasketches::thetacommon` are removed. Use `datasketches::common::JaccardSimilarity::{compute, compute_with_seed, exactly_equal, exactly_equal_with_seed}` instead, which accept borrowed Theta and Tuple sketches and views directly.
+* `ThetaJaccardSimilarity::compute` and `TupleJaccardSimilarity::compute` now return `datasketches::common::JaccardSimilarity` instead of `datasketches::thetacommon::JaccardSimilarity`, and `datasketches::thetacommon` is no longer part of the public API.
 * `FrequentItemsSketch::update_with_count` and `FrequentItemsSketch::update_with_count_ref` are renamed to `update_with_weight` and `update_with_weight_ref` to match weighted update naming across the crate.
 
 ### New features
 
 * Add `CpcUnion::serialize`, `HllUnion::serialize`, `ThetaUnion::serialize`, and `TupleUnion::serialize` to encode union results without calling `to_sketch`. Direct serialization avoids intermediate sketch allocations for `HllUnion` and `CpcUnion`, writes an `HllType::Hll8` image at the union's effective `lg_k` for `HllUnion`, and encodes `TupleUnion` summaries without requiring `Clone` or cloning heap-backed summaries.
 * Add `XorFilter`, `XorFilterBuilder`, and `XorFilterType` behind the `xor` feature for immutable membership queries on values or precomputed hashes. Filters support 8-, 16-, and 32-bit fingerprints and can be serialized for later queries.
-* Add `JaccardSimilarity::{is_similar, is_dissimilar}` to test similarity and dissimilarity thresholds at 97.7% one-sided confidence, and support direct Jaccard similarity and exact sketch-state equality comparisons between Theta and Tuple sketches via `JaccardSimilarity::{compute, compute_with_seed, exactly_equal, exactly_equal_with_seed}`.
 
 ### Improvements
 
@@ -33,11 +32,10 @@ All significant changes to this project will be documented in this file.
 * Speed up `CompactTupleSketch` and `TupleUnion` serialization and `CompactTupleSketch` deserialization for primitive summaries and custom `TupleSummaryValue` implementations built on `SketchBytes` and `SketchSlice`.
 * Speed up `ThetaSketch::compact` and `TupleSketch::compact` on populated sketches, along with ordered result generation across `ThetaUnion`, `TupleUnion`, `ThetaIntersection`, `TupleIntersection`, `ThetaANotB`, and `TupleANotB` for larger retained entry counts; sketches with very few retained entries are unchanged.
 * Speed up `ThetaANotB::compute` and `TupleANotB::compute` when either input is unordered, while avoiding intermediate allocations when subtracting a mutable `ThetaSketch` or `TupleSketch` directly; pairs of ordered compact inputs are unchanged.
-* Speed up `JaccardSimilarity` similarity and equality checks by eliminating intermediate intersection state and compact-sketch allocations, with zero heap allocations when comparing mutable or ordered compact sketches.
 
 ### Bug fixes
 
-* Jaccard similarity and exact sketch-state equality checks now return `InvalidArgument` instead of `InvalidData` when a non-empty input sketch's seed hash does not match the supplied seed, and reject zero-hash seeds before taking empty-input fast paths.
+* `ThetaJaccardSimilarity` and `TupleJaccardSimilarity` now return `InvalidArgument` instead of `InvalidData` when a non-empty input sketch's seed hash does not match the configured seed.
 
 ## v0.6.0 (2026-10-29)
 

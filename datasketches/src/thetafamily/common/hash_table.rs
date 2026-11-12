@@ -314,7 +314,6 @@ where
     }
 
     /// Creates compact state for a sketch known by its owner to be non-empty.
-    #[cfg(feature = "tuple")]
     pub fn to_non_empty_compact_state(&self, ordered: bool) -> CompactSketchState<E>
     where
         E: Clone,

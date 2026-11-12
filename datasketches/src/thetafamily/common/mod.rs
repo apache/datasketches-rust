@@ -20,14 +20,14 @@
 pub(super) mod a_not_b;
 pub(super) mod binomial_bounds;
 pub(super) mod constants;
-pub mod hash_table;
+pub(super) mod hash_table;
 pub(super) mod intersection;
-pub mod jaccard_similarity;
-pub mod sketch_state;
+pub(super) mod jaccard_similarity;
+pub(super) mod sketch_state;
 pub(super) mod union;
 
 /// Minimal entry behavior required by the shared hash table, compaction, and set operations.
-pub trait SketchEntry: Sized {
+pub(super) trait SketchEntry: Sized {
     fn hash(&self) -> u64;
 
     fn sort_by_hash(entries: &mut Vec<Self>);
@@ -55,7 +55,7 @@ impl<E: SketchEntry> SketchEntry for &E {
     }
 }
 
-pub trait KeySketch: Copy {
+pub(super) trait KeySketch: Copy {
     fn metadata(self) -> sketch_state::ThetaFamilySketchMetadata;
 
     fn hashes(self) -> impl Iterator<Item = u64>;

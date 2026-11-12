@@ -266,7 +266,6 @@ where
     }
 
     /// Returns the current intersection as canonical compact-sketch state.
-    #[cfg(feature = "tuple")]
     pub fn to_compact_sketch_state(&self, ordered: bool) -> Option<CompactSketchState<E>>
     where
         E: Clone,
