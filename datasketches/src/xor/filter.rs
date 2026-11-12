@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::fmt;
 use std::hash::Hash;
 use std::hash::Hasher;
 use std::ops::BitXor;
@@ -96,11 +97,21 @@ impl Fingerprints {
 /// [`XorFilter::contains_hash`].
 ///
 /// See the [module level documentation](super) for more.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct XorFilterBuilder {
     filter_type: XorFilterType,
     seed: u64,
     hashes: Vec<u64>,
+}
+
+impl fmt::Debug for XorFilterBuilder {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("XorFilterBuilder")
+            .field("filter_type", &self.filter_type)
+            .field("seed", &self.seed)
+            .field("num_hashes", &self.hashes.len())
+            .finish()
+    }
 }
 
 impl XorFilterBuilder {
@@ -165,7 +176,7 @@ impl XorFilterBuilder {
 /// changes.
 ///
 /// See the [module level documentation](super) for more.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct XorFilter {
     // Cache the derived length to avoid division on every query.
     segment_length: usize,
@@ -489,6 +500,17 @@ impl XorFilter {
             seed,
             fingerprints,
         })
+    }
+}
+
+impl fmt::Debug for XorFilter {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("XorFilter")
+            .field("filter_type", &self.filter_type())
+            .field("seed", &self.seed)
+            .field("segment_length", &self.segment_length)
+            .field("fingerprint_bytes", &self.fingerprints.byte_len())
+            .finish()
     }
 }
 

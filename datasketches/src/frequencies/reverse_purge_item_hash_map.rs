@@ -41,6 +41,13 @@ pub struct ReversePurgeItemHashMap<T> {
     num_active: usize,
 }
 
+impl<T> ReversePurgeItemHashMap<T> {
+    /// Returns the number of active keys in the map.
+    pub fn num_active(&self) -> usize {
+        self.num_active
+    }
+}
+
 impl<T: Eq + Hash> ReversePurgeItemHashMap<T> {
     /// Creates a new map with arrays of length `map_size` (must be a power of two).
     ///
@@ -208,11 +215,6 @@ impl<T: Eq + Hash> ReversePurgeItemHashMap<T> {
     /// Returns the maximum number of keys before a purge or resize.
     pub fn capacity(&self) -> usize {
         self.load_threshold
-    }
-
-    /// Returns the number of active keys in the map.
-    pub fn num_active(&self) -> usize {
-        self.num_active
     }
 
     /// Returns an estimate of memory usage in bytes.

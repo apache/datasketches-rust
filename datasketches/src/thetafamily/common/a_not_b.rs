@@ -23,12 +23,12 @@ use crate::common::random::random_u64;
 use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::hash::check_seed_hash;
-use crate::thetacommon::EntrySketch;
-use crate::thetacommon::KeySketch;
-use crate::thetacommon::SketchEntry;
-use crate::thetacommon::constants::MAX_THETA;
-use crate::thetacommon::sketch_state::CompactSketchState;
-use crate::thetacommon::sketch_state::ThetaFamilySketchMetadata;
+use crate::thetafamily::common::EntrySketch;
+use crate::thetafamily::common::KeySketch;
+use crate::thetafamily::common::SketchEntry;
+use crate::thetafamily::common::constants::MAX_THETA;
+use crate::thetafamily::common::sketch_state::CompactSketchState;
+use crate::thetafamily::common::sketch_state::ThetaFamilySketchMetadata;
 
 /// Computes `a and not b` for Theta-family sketch views.
 ///

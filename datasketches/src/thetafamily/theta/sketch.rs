@@ -20,6 +20,7 @@
 //! This module provides ThetaSketch (mutable) and CompactThetaSketch (immutable)
 //! for cardinality estimation.
 
+use std::fmt;
 use std::hash::Hash;
 use std::iter::FusedIterator;
 use std::slice;
@@ -42,20 +43,20 @@ use crate::theta::serialization;
 use crate::theta::serialization::V2_PREAMBLE_EMPTY;
 use crate::theta::serialization::V2_PREAMBLE_ESTIMATE;
 use crate::theta::serialization::V2_PREAMBLE_PRECISE;
-use crate::thetacommon::EntrySketch;
-use crate::thetacommon::KeySketch;
-use crate::thetacommon::SketchEntry;
-use crate::thetacommon::binomial_bounds;
-use crate::thetacommon::constants::DEFAULT_LG_K;
-use crate::thetacommon::constants::FLAGS_IS_COMPACT;
-use crate::thetacommon::constants::FLAGS_IS_EMPTY;
-use crate::thetacommon::constants::FLAGS_IS_ORDERED;
-use crate::thetacommon::constants::FLAGS_IS_READ_ONLY;
-use crate::thetacommon::constants::MAX_THETA;
-use crate::thetacommon::hash_table::SketchHashTable;
-use crate::thetacommon::hash_table::SketchHashTableIter;
-use crate::thetacommon::sketch_state::CompactSketchState;
-use crate::thetacommon::sketch_state::ThetaFamilySketchMetadata;
+use crate::thetafamily::common::EntrySketch;
+use crate::thetafamily::common::KeySketch;
+use crate::thetafamily::common::SketchEntry;
+use crate::thetafamily::common::binomial_bounds;
+use crate::thetafamily::common::constants::DEFAULT_LG_K;
+use crate::thetafamily::common::constants::FLAGS_IS_COMPACT;
+use crate::thetafamily::common::constants::FLAGS_IS_EMPTY;
+use crate::thetafamily::common::constants::FLAGS_IS_ORDERED;
+use crate::thetafamily::common::constants::FLAGS_IS_READ_ONLY;
+use crate::thetafamily::common::constants::MAX_THETA;
+use crate::thetafamily::common::hash_table::SketchHashTable;
+use crate::thetafamily::common::hash_table::SketchHashTableIter;
+use crate::thetafamily::common::sketch_state::CompactSketchState;
+use crate::thetafamily::common::sketch_state::ThetaFamilySketchMetadata;
 
 /// Read-only view for Theta sketches.
 ///
@@ -73,13 +74,25 @@ use crate::thetacommon::sketch_state::ThetaFamilySketchMetadata;
 /// let view = sketch.as_view();
 /// assert_eq!(view.num_retained(), 1);
 /// ```
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 pub struct ThetaSketchView<'a>(ThetaSketchViewState<'a>);
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 enum ThetaSketchViewState<'a> {
     Mutable(&'a ThetaSketch),
     Compact(&'a CompactThetaSketch),
+}
+
+impl fmt::Debug for ThetaSketchView<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ThetaSketchView")
+            .field("seed_hash", &self.seed_hash())
+            .field("is_empty", &self.is_empty())
+            .field("is_ordered", &self.is_ordered())
+            .field("num_retained", &self.num_retained())
+            .field("theta64", &self.theta64())
+            .finish()
+    }
 }
 
 enum ThetaSketchIter<'a> {
@@ -222,11 +235,24 @@ impl<'a> From<&'a CompactThetaSketch> for ThetaSketchView<'a> {
 /// Mutable theta sketch for building from input data.
 ///
 /// See the [module level documentation](super) for more.
-#[derive(Debug)]
 pub struct ThetaSketch {
     table: ThetaHashTable,
     // Public emptiness tracks update calls, not retained entries: theta may screen every update.
     is_empty: bool,
+}
+
+impl fmt::Debug for ThetaSketch {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ThetaSketch")
+            .field("lg_k", &self.lg_k())
+            .field("seed_hash", &self.seed_hash())
+            .field("is_empty", &self.is_empty())
+            .field("is_estimation_mode", &self.is_estimation_mode())
+            .field("num_retained", &self.num_retained())
+            .field("theta64", &self.theta64())
+            .field("estimate", &self.estimate())
+            .finish()
+    }
 }
 
 impl ThetaSketch {
@@ -452,9 +478,23 @@ impl ThetaSketch {
 ///
 /// This is the serialized-friendly form of a theta sketch: a compact array of retained hash values
 /// plus theta and a 16-bit seed hash. It can be ordered (sorted ascending) or unordered.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct CompactThetaSketch {
     compact_state: CompactSketchState<u64>,
+}
+
+impl fmt::Debug for CompactThetaSketch {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CompactThetaSketch")
+            .field("seed_hash", &self.seed_hash())
+            .field("is_empty", &self.is_empty())
+            .field("is_ordered", &self.is_ordered())
+            .field("is_estimation_mode", &self.is_estimation_mode())
+            .field("num_retained", &self.num_retained())
+            .field("theta64", &self.theta64())
+            .field("estimate", &self.estimate())
+            .finish()
+    }
 }
 
 impl CompactThetaSketch {
