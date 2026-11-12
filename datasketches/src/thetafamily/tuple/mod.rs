@@ -26,7 +26,8 @@
 //! creates summaries, while [`SummaryUpdatePolicy`] folds update values into them. Summaries that
 //! implement `Default` and `AddAssign` can use [`DefaultUpdatePolicy`]. Set operations combine the
 //! summaries of shared keys through [`SummaryCombinePolicy`]; the union defaults to
-//! [`DefaultUnionPolicy`].
+//! [`DefaultUnionPolicy`]. [`JaccardSimilarity`](crate::common::JaccardSimilarity) compares
+//! retained key sets across Tuple and Theta sketches without inspecting summaries.
 //!
 //! # Cross-language hashing
 //!
@@ -54,7 +55,6 @@
 mod a_not_b;
 mod hash_table;
 mod intersection;
-mod jaccard_similarity;
 mod policy;
 mod serialization;
 mod sketch;
@@ -63,7 +63,6 @@ mod union;
 pub use self::a_not_b::TupleANotB;
 pub use self::hash_table::TupleEntry;
 pub use self::intersection::TupleIntersection;
-pub use self::jaccard_similarity::TupleJaccardSimilarity;
 pub use self::policy::DefaultUnionPolicy;
 pub use self::policy::DefaultUpdatePolicy;
 pub use self::policy::SummaryCombinePolicy;

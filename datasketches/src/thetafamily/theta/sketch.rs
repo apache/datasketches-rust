@@ -212,6 +212,8 @@ impl KeySketch for ThetaSketchView<'_> {
     }
 }
 
+impl crate::common::JaccardSketch for ThetaSketchView<'_> {}
+
 impl EntrySketch for ThetaSketchView<'_> {
     type Entry = ThetaEntry;
 
@@ -219,6 +221,40 @@ impl EntrySketch for ThetaSketchView<'_> {
         self.iter()
     }
 }
+
+impl KeySketch for &ThetaSketch {
+    fn metadata(self) -> ThetaFamilySketchMetadata {
+        self.as_view().metadata()
+    }
+
+    fn hashes(self) -> impl Iterator<Item = u64> {
+        self.table.iter_entries().map(|entry| entry.hash())
+    }
+
+    #[inline]
+    fn hash_table(&self) -> Option<&SketchHashTable<impl SketchEntry>> {
+        Some(&self.table)
+    }
+}
+
+impl crate::common::JaccardSketch for &ThetaSketch {}
+
+impl KeySketch for &CompactThetaSketch {
+    fn metadata(self) -> ThetaFamilySketchMetadata {
+        self.as_view().metadata()
+    }
+
+    fn hashes(self) -> impl Iterator<Item = u64> {
+        self.compact_state.retained_entries().iter().copied()
+    }
+
+    #[inline]
+    fn hash_table(&self) -> Option<&SketchHashTable<impl SketchEntry>> {
+        None::<&SketchHashTable<u64>>
+    }
+}
+
+impl crate::common::JaccardSketch for &CompactThetaSketch {}
 
 impl<'a> From<&'a ThetaSketch> for ThetaSketchView<'a> {
     fn from(sketch: &'a ThetaSketch) -> Self {

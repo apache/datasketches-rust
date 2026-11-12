@@ -17,8 +17,10 @@
 
 use datasketches::common::JaccardSimilarity;
 use datasketches::error::ErrorKind;
+use datasketches::theta::ThetaSketchBuilder;
 use datasketches::tuple::DefaultUpdatePolicy;
-use datasketches::tuple::TupleJaccardSimilarity;
+use datasketches::tuple::SummaryPolicy;
+use datasketches::tuple::SummaryUpdatePolicy;
 use datasketches::tuple::TupleSketch;
 use datasketches::tuple::TupleSketchBuilder;
 use googletest::assert_that;
@@ -27,6 +29,24 @@ use tests_integration::ZERO_HASH_SEED;
 
 use crate::default_tuple_sketch_builder;
 use crate::tuple_sketch_with_range;
+
+struct NonCloneSummary(u64);
+
+struct NonClonePolicy;
+
+impl SummaryPolicy for NonClonePolicy {
+    type Summary = NonCloneSummary;
+
+    fn create(&self) -> Self::Summary {
+        NonCloneSummary(0)
+    }
+}
+
+impl SummaryUpdatePolicy<u64> for NonClonePolicy {
+    fn update(&self, summary: &mut Self::Summary, value: u64) {
+        summary.0 += value;
+    }
+}
 
 fn assert_jaccard_exact(actual: JaccardSimilarity, expected: f64) {
     assert_eq!(actual.lower_bound(), expected);
@@ -64,11 +84,10 @@ fn test_empty() {
     let sketch_a = default_tuple_sketch_builder().build().unwrap();
     let sketch_b = default_tuple_sketch_builder().build().unwrap();
 
-    let operator = TupleJaccardSimilarity::default();
-    let jaccard = operator.compute(&sketch_a, &sketch_b).unwrap();
+    let jaccard = JaccardSimilarity::compute(&sketch_a, &sketch_b).unwrap();
 
     assert_jaccard_exact(jaccard, 1.0);
-    assert!(operator.exactly_equal(&sketch_a, &sketch_b).unwrap());
+    assert!(JaccardSimilarity::exactly_equal(&sketch_a, &sketch_b).unwrap());
 }
 
 #[test]
@@ -84,17 +103,16 @@ fn test_summary_values_and_types_do_not_affect_similarity() {
         sketch_b.update(key, -7i64);
     }
 
-    let operator = TupleJaccardSimilarity::default();
-    let jaccard = operator.compute(&sketch_a, &sketch_b).unwrap();
+    let jaccard = JaccardSimilarity::compute(&sketch_a, &sketch_b).unwrap();
     assert_jaccard_exact(jaccard, 1.0);
-    assert!(operator.exactly_equal(&sketch_a, &sketch_b).unwrap());
+    assert!(JaccardSimilarity::exactly_equal(&sketch_a, &sketch_b).unwrap());
 
     let compact_a = sketch_a.compact(true);
     let compact_b = sketch_b.compact(true);
-    let jaccard = operator.compute(&compact_a, &compact_b).unwrap();
+    let jaccard = JaccardSimilarity::compute(&compact_a, &compact_b).unwrap();
     assert_jaccard_exact(jaccard, 1.0);
-    assert!(operator.exactly_equal(&sketch_a, &compact_b).unwrap());
-    assert!(operator.exactly_equal(&compact_a, &sketch_b).unwrap());
+    assert!(JaccardSimilarity::exactly_equal(&sketch_a, &compact_b).unwrap());
+    assert!(JaccardSimilarity::exactly_equal(&compact_a, &sketch_b).unwrap());
 }
 
 #[test]
@@ -102,26 +120,18 @@ fn test_half_overlap_estimation_mode() {
     let sketch_a = tuple_sketch_with_range(0, 10000);
     let sketch_b = tuple_sketch_with_range(5000, 10000);
 
-    let operator = TupleJaccardSimilarity::default();
-    let jaccard = operator.compute(&sketch_a, &sketch_b).unwrap();
+    let jaccard = JaccardSimilarity::compute(&sketch_a, &sketch_b).unwrap();
     assert_jaccard_estimate(jaccard, 0.33);
-    assert!(!operator.exactly_equal(&sketch_a, &sketch_b).unwrap());
+    assert!(!JaccardSimilarity::exactly_equal(&sketch_a, &sketch_b).unwrap());
 
-    let jaccard = operator
-        .compute(&sketch_a.compact(true), &sketch_b.compact(true))
-        .unwrap();
+    let jaccard =
+        JaccardSimilarity::compute(&sketch_a.compact(true), &sketch_b.compact(true)).unwrap();
     assert_jaccard_estimate(jaccard, 0.33);
     assert_eq!(
-        operator
-            .compute(&sketch_a.compact(false), &sketch_b.compact(false))
-            .unwrap(),
+        JaccardSimilarity::compute(&sketch_a.compact(false), &sketch_b.compact(false)).unwrap(),
         jaccard
     );
-    assert!(
-        operator
-            .exactly_equal(&sketch_a, &sketch_a.compact(false))
-            .unwrap()
-    );
+    assert!(JaccardSimilarity::exactly_equal(&sketch_a, &sketch_a.compact(false)).unwrap());
 }
 
 #[test]
@@ -141,33 +151,29 @@ fn test_custom_seed_and_seed_mismatch() {
         sketch_b.update(value, 2u64);
     }
 
-    let operator = TupleJaccardSimilarity::with_seed(seed).unwrap();
-    let jaccard = operator.compute(&sketch_a, &sketch_b).unwrap();
+    let jaccard = JaccardSimilarity::compute_with_seed(&sketch_a, &sketch_b, seed).unwrap();
     assert_jaccard_exact(jaccard, 1.0);
-    assert!(operator.exactly_equal(&sketch_a, &sketch_b).unwrap());
+    assert!(JaccardSimilarity::exactly_equal_with_seed(&sketch_a, &sketch_b, seed).unwrap());
     assert_eq!(
-        TupleJaccardSimilarity::with_seed(ZERO_HASH_SEED)
-            .unwrap_err()
-            .kind(),
-        ErrorKind::InvalidArgument
-    );
-    let default_operator = TupleJaccardSimilarity::default();
-    assert_eq!(
-        default_operator
-            .compute(&sketch_a, &sketch_b)
+        JaccardSimilarity::compute_with_seed(&empty, &empty, ZERO_HASH_SEED)
             .unwrap_err()
             .kind(),
         ErrorKind::InvalidArgument
     );
     assert_eq!(
-        default_operator
-            .exactly_equal(&sketch_a, &sketch_b)
+        JaccardSimilarity::compute(&sketch_a, &sketch_b)
             .unwrap_err()
             .kind(),
         ErrorKind::InvalidArgument
     );
-    assert_jaccard_exact(default_operator.compute(&empty, &sketch_a).unwrap(), 0.0);
-    assert!(!default_operator.exactly_equal(&empty, &sketch_a).unwrap());
+    assert_eq!(
+        JaccardSimilarity::exactly_equal(&sketch_a, &sketch_b)
+            .unwrap_err()
+            .kind(),
+        ErrorKind::InvalidArgument
+    );
+    assert_jaccard_exact(JaccardSimilarity::compute(&empty, &sketch_a).unwrap(), 0.0);
+    assert!(!JaccardSimilarity::exactly_equal(&empty, &sketch_a).unwrap());
 }
 
 #[test]
@@ -177,10 +183,15 @@ fn test_equal_theta_non_empty_sketches_with_no_retained_entries_are_identical() 
 
     assert_eq!(sketch_a.theta64(), sketch_b.theta64());
 
-    let operator = TupleJaccardSimilarity::default();
-    assert_jaccard_exact(operator.compute(&sketch_a, &sketch_b).unwrap(), 1.0);
-    assert_jaccard_exact(operator.compute(&sketch_a, &sketch_a).unwrap(), 1.0);
-    assert!(operator.exactly_equal(&sketch_a, &sketch_b).unwrap());
+    assert_jaccard_exact(
+        JaccardSimilarity::compute(&sketch_a, &sketch_b).unwrap(),
+        1.0,
+    );
+    assert_jaccard_exact(
+        JaccardSimilarity::compute(&sketch_a, &sketch_a).unwrap(),
+        1.0,
+    );
+    assert!(JaccardSimilarity::exactly_equal(&sketch_a, &sketch_b).unwrap());
 }
 
 #[test]
@@ -190,11 +201,58 @@ fn test_distinct_theta_non_empty_sketches_with_no_retained_entries_are_uncertain
 
     assert_ne!(sketch_a.theta64(), different_theta.theta64());
 
-    let operator = TupleJaccardSimilarity::default();
-    let jaccard = operator.compute(&sketch_a, &different_theta).unwrap();
+    let jaccard = JaccardSimilarity::compute(&sketch_a, &different_theta).unwrap();
     assert_eq!(jaccard.lower_bound(), 0.0);
     assert_eq!(jaccard.estimate(), 0.5);
     assert_eq!(jaccard.upper_bound(), 1.0);
 
-    assert!(!operator.exactly_equal(&sketch_a, &different_theta).unwrap());
+    assert!(!JaccardSimilarity::exactly_equal(&sketch_a, &different_theta).unwrap());
+}
+
+#[test]
+fn test_cross_theta_and_tuple_interoperability() {
+    let mut theta_a = ThetaSketchBuilder::default().build().unwrap();
+    let mut theta_b = ThetaSketchBuilder::default().build().unwrap();
+    let mut tuple_a = TupleSketchBuilder::new(NonClonePolicy).build().unwrap();
+    let mut tuple_b = TupleSketchBuilder::new(DefaultUpdatePolicy::<u64>::default())
+        .build()
+        .unwrap();
+
+    for key in 0..10_000u64 {
+        theta_a.update(key);
+        tuple_a.update(key, 1);
+    }
+    for key in 5_000..15_000u64 {
+        theta_b.update(key);
+        tuple_b.update(key, 2);
+    }
+
+    assert!(JaccardSimilarity::exactly_equal(&theta_a, &tuple_a).unwrap());
+    assert!(JaccardSimilarity::exactly_equal(&tuple_a, &theta_a.compact(true)).unwrap());
+    assert!(JaccardSimilarity::exactly_equal(&tuple_a, &theta_a.compact(false)).unwrap());
+    assert!(JaccardSimilarity::exactly_equal(theta_b.as_view(), tuple_b.as_view()).unwrap());
+    assert_jaccard_exact(JaccardSimilarity::compute(&theta_a, &tuple_a).unwrap(), 1.0);
+
+    let expected = JaccardSimilarity::compute(&theta_a, &theta_b).unwrap();
+    assert_eq!(
+        JaccardSimilarity::compute(&theta_a, &tuple_b).unwrap(),
+        expected
+    );
+    assert_eq!(
+        JaccardSimilarity::compute(&tuple_a, &theta_b.compact(true)).unwrap(),
+        expected
+    );
+    assert_eq!(
+        JaccardSimilarity::compute(&theta_a.compact(false), &tuple_b.compact(true)).unwrap(),
+        expected
+    );
+
+    let mut seeded_theta = ThetaSketchBuilder::default().seed(42).build().unwrap();
+    seeded_theta.update(1u64);
+    assert_eq!(
+        JaccardSimilarity::compute(&tuple_a, &seeded_theta)
+            .unwrap_err()
+            .kind(),
+        ErrorKind::InvalidArgument
+    );
 }

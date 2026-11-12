@@ -17,7 +17,6 @@
 
 use datasketches::common::JaccardSimilarity;
 use datasketches::error::ErrorKind;
-use datasketches::theta::ThetaJaccardSimilarity;
 use datasketches::theta::ThetaSketch;
 use datasketches::theta::ThetaSketchBuilder;
 use googletest::assert_that;
@@ -76,11 +75,10 @@ fn test_empty() {
     let sketch_a = ThetaSketchBuilder::default().build().unwrap();
     let sketch_b = ThetaSketchBuilder::default().build().unwrap();
 
-    let operator = ThetaJaccardSimilarity::default();
-    let jaccard = operator.compute(&sketch_a, &sketch_b).unwrap();
+    let jaccard = JaccardSimilarity::compute(&sketch_a, &sketch_b).unwrap();
 
     assert_jaccard_exact(jaccard, 1.0);
-    assert!(operator.exactly_equal(&sketch_a, &sketch_b).unwrap());
+    assert!(JaccardSimilarity::exactly_equal(&sketch_a, &sketch_b).unwrap());
 }
 
 #[test]
@@ -92,25 +90,21 @@ fn test_exactly_equal() {
     let compact_a = sketch_a.compact(true);
     let compact_b = sketch_b.compact(true);
 
-    let operator = ThetaJaccardSimilarity::default();
-    assert!(!operator.exactly_equal(&empty, &sketch_a).unwrap());
-    assert!(operator.exactly_equal(&sketch_a, &sketch_b).unwrap());
-    assert!(operator.exactly_equal(&sketch_a, &compact_b).unwrap());
-    assert!(operator.exactly_equal(&compact_a, &sketch_b).unwrap());
-    assert!(!operator.exactly_equal(&sketch_a, &sketch_c).unwrap());
+    assert!(!JaccardSimilarity::exactly_equal(&empty, &sketch_a).unwrap());
+    assert!(JaccardSimilarity::exactly_equal(&sketch_a, &sketch_b).unwrap());
+    assert!(JaccardSimilarity::exactly_equal(&sketch_a, &compact_b).unwrap());
+    assert!(JaccardSimilarity::exactly_equal(&compact_a, &sketch_b).unwrap());
+    assert!(!JaccardSimilarity::exactly_equal(&sketch_a, &sketch_c).unwrap());
 }
 
 #[test]
 fn test_same_sketch_exact_mode() {
     let sketch = sketch_with_range(0, 1000);
 
-    let operator = ThetaJaccardSimilarity::default();
-    let jaccard = operator.compute(&sketch, &sketch).unwrap();
+    let jaccard = JaccardSimilarity::compute(&sketch, &sketch).unwrap();
     assert_jaccard_exact(jaccard, 1.0);
 
-    let jaccard = operator
-        .compute(&sketch.compact(true), &sketch.compact(true))
-        .unwrap();
+    let jaccard = JaccardSimilarity::compute(&sketch.compact(true), &sketch.compact(true)).unwrap();
     assert_jaccard_exact(jaccard, 1.0);
 }
 
@@ -119,13 +113,11 @@ fn test_full_overlap_exact_mode() {
     let sketch_a = sketch_with_range(0, 1000);
     let sketch_b = sketch_with_range(0, 1000);
 
-    let operator = ThetaJaccardSimilarity::default();
-    let jaccard = operator.compute(&sketch_a, &sketch_b).unwrap();
+    let jaccard = JaccardSimilarity::compute(&sketch_a, &sketch_b).unwrap();
     assert_jaccard_exact(jaccard, 1.0);
 
-    let jaccard = operator
-        .compute(&sketch_a.compact(true), &sketch_b.compact(true))
-        .unwrap();
+    let jaccard =
+        JaccardSimilarity::compute(&sketch_a.compact(true), &sketch_b.compact(true)).unwrap();
     assert_jaccard_exact(jaccard, 1.0);
 }
 
@@ -134,13 +126,11 @@ fn test_disjoint_exact_mode() {
     let sketch_a = sketch_with_range(0, 1000);
     let sketch_b = sketch_with_range(1000, 1000);
 
-    let operator = ThetaJaccardSimilarity::default();
-    let jaccard = operator.compute(&sketch_a, &sketch_b).unwrap();
+    let jaccard = JaccardSimilarity::compute(&sketch_a, &sketch_b).unwrap();
     assert_jaccard_exact(jaccard, 0.0);
 
-    let jaccard = operator
-        .compute(&sketch_a.compact(true), &sketch_b.compact(true))
-        .unwrap();
+    let jaccard =
+        JaccardSimilarity::compute(&sketch_a.compact(true), &sketch_b.compact(true)).unwrap();
     assert_jaccard_exact(jaccard, 0.0);
 }
 
@@ -149,13 +139,11 @@ fn test_half_overlap_estimation_mode() {
     let sketch_a = sketch_with_range(0, 10000);
     let sketch_b = sketch_with_range(5000, 10000);
 
-    let operator = ThetaJaccardSimilarity::default();
-    let jaccard = operator.compute(&sketch_a, &sketch_b).unwrap();
+    let jaccard = JaccardSimilarity::compute(&sketch_a, &sketch_b).unwrap();
     assert_jaccard_estimate(jaccard, 0.33);
 
-    let jaccard = operator
-        .compute(&sketch_a.compact(true), &sketch_b.compact(true))
-        .unwrap();
+    let jaccard =
+        JaccardSimilarity::compute(&sketch_a.compact(true), &sketch_b.compact(true)).unwrap();
     assert_jaccard_estimate(jaccard, 0.33);
 }
 
@@ -165,13 +153,15 @@ fn test_half_overlap_estimation_mode_custom_seed() {
     let sketch_a = sketch_with_range_and_seed(0, 10000, seed);
     let sketch_b = sketch_with_range_and_seed(5000, 10000, seed);
 
-    let operator = ThetaJaccardSimilarity::with_seed(seed).unwrap();
-    let jaccard = operator.compute(&sketch_a, &sketch_b).unwrap();
+    let jaccard = JaccardSimilarity::compute_with_seed(&sketch_a, &sketch_b, seed).unwrap();
     assert_jaccard_estimate(jaccard, 0.33);
 
-    let jaccard = operator
-        .compute(&sketch_a.compact(true), &sketch_b.compact(true))
-        .unwrap();
+    let jaccard = JaccardSimilarity::compute_with_seed(
+        &sketch_a.compact(true),
+        &sketch_b.compact(true),
+        seed,
+    )
+    .unwrap();
     assert_jaccard_estimate(jaccard, 0.33);
 }
 
@@ -184,36 +174,43 @@ fn test_seed_mismatch() {
     sketch_b.update(1u64);
 
     assert_eq!(
-        ThetaJaccardSimilarity::with_seed(ZERO_HASH_SEED)
-            .unwrap_err()
-            .kind(),
-        ErrorKind::InvalidArgument
-    );
-    let operator = ThetaJaccardSimilarity::default();
-    assert_eq!(
-        operator.compute(&sketch_a, &sketch_b).unwrap_err().kind(),
-        ErrorKind::InvalidArgument
-    );
-    assert_eq!(
-        operator.compute(&sketch_b, &sketch_a).unwrap_err().kind(),
-        ErrorKind::InvalidArgument
-    );
-    assert_eq!(
-        operator
-            .exactly_equal(&sketch_a, &sketch_b)
+        JaccardSimilarity::compute_with_seed(&empty, &empty, ZERO_HASH_SEED)
             .unwrap_err()
             .kind(),
         ErrorKind::InvalidArgument
     );
     assert_eq!(
-        operator
-            .exactly_equal(&sketch_b, &sketch_a)
+        JaccardSimilarity::exactly_equal_with_seed(&empty, &empty, ZERO_HASH_SEED)
             .unwrap_err()
             .kind(),
         ErrorKind::InvalidArgument
     );
-    assert_jaccard_exact(operator.compute(&empty, &sketch_b).unwrap(), 0.0);
-    assert!(!operator.exactly_equal(&empty, &sketch_b).unwrap());
+    assert_eq!(
+        JaccardSimilarity::compute(&sketch_a, &sketch_b)
+            .unwrap_err()
+            .kind(),
+        ErrorKind::InvalidArgument
+    );
+    assert_eq!(
+        JaccardSimilarity::compute(&sketch_b, &sketch_a)
+            .unwrap_err()
+            .kind(),
+        ErrorKind::InvalidArgument
+    );
+    assert_eq!(
+        JaccardSimilarity::exactly_equal(&sketch_a, &sketch_b)
+            .unwrap_err()
+            .kind(),
+        ErrorKind::InvalidArgument
+    );
+    assert_eq!(
+        JaccardSimilarity::exactly_equal(&sketch_b, &sketch_a)
+            .unwrap_err()
+            .kind(),
+        ErrorKind::InvalidArgument
+    );
+    assert_jaccard_exact(JaccardSimilarity::compute(&empty, &sketch_b).unwrap(), 0.0);
+    assert!(!JaccardSimilarity::exactly_equal(&empty, &sketch_b).unwrap());
 }
 
 #[test]
@@ -223,10 +220,15 @@ fn test_equal_theta_non_empty_sketches_with_no_retained_entries_are_identical() 
 
     assert_eq!(sketch_a.theta64(), sketch_b.theta64());
 
-    let operator = ThetaJaccardSimilarity::default();
-    assert_jaccard_exact(operator.compute(&sketch_a, &sketch_b).unwrap(), 1.0);
-    assert_jaccard_exact(operator.compute(&sketch_a, &sketch_a).unwrap(), 1.0);
-    assert!(operator.exactly_equal(&sketch_a, &sketch_b).unwrap());
+    assert_jaccard_exact(
+        JaccardSimilarity::compute(&sketch_a, &sketch_b).unwrap(),
+        1.0,
+    );
+    assert_jaccard_exact(
+        JaccardSimilarity::compute(&sketch_a, &sketch_a).unwrap(),
+        1.0,
+    );
+    assert!(JaccardSimilarity::exactly_equal(&sketch_a, &sketch_b).unwrap());
 }
 
 #[test]
@@ -236,13 +238,12 @@ fn test_distinct_theta_non_empty_sketches_with_no_retained_entries_are_uncertain
 
     assert_ne!(sketch_a.theta64(), different_theta.theta64());
 
-    let operator = ThetaJaccardSimilarity::default();
-    let jaccard = operator.compute(&sketch_a, &different_theta).unwrap();
+    let jaccard = JaccardSimilarity::compute(&sketch_a, &different_theta).unwrap();
     assert_eq!(jaccard.lower_bound(), 0.0);
     assert_eq!(jaccard.estimate(), 0.5);
     assert_eq!(jaccard.upper_bound(), 1.0);
 
-    assert!(!operator.exactly_equal(&sketch_a, &different_theta).unwrap());
+    assert!(!JaccardSimilarity::exactly_equal(&sketch_a, &different_theta).unwrap());
 }
 
 #[test]
@@ -267,8 +268,7 @@ fn test_representation_combinations_and_asymmetric_theta() {
     assert!(!compact_unordered_a.is_ordered());
     assert!(!compact_unordered_b.is_ordered());
 
-    let operator = ThetaJaccardSimilarity::default();
-    let expected = operator.compute(&sketch_a, &sketch_b).unwrap();
+    let expected = JaccardSimilarity::compute(&sketch_a, &sketch_b).unwrap();
     assert_close(expected.estimate(), 2000.0 / 5000.0, 0.2);
 
     let views_a = [
@@ -283,13 +283,13 @@ fn test_representation_combinations_and_asymmetric_theta() {
     ];
     for &va in &views_a {
         for &vb in &views_b {
-            assert_eq!(operator.compute(va, vb).unwrap(), expected);
-            assert_eq!(operator.compute(vb, va).unwrap(), expected);
-            assert!(!operator.exactly_equal(va, vb).unwrap());
+            assert_eq!(JaccardSimilarity::compute(va, vb).unwrap(), expected);
+            assert_eq!(JaccardSimilarity::compute(vb, va).unwrap(), expected);
+            assert!(!JaccardSimilarity::exactly_equal(va, vb).unwrap());
         }
         for &va2 in &views_a {
-            assert!(operator.exactly_equal(va, va2).unwrap());
-            assert_jaccard_exact(operator.compute(va, va2).unwrap(), 1.0);
+            assert!(JaccardSimilarity::exactly_equal(va, va2).unwrap());
+            assert_jaccard_exact(JaccardSimilarity::compute(va, va2).unwrap(), 1.0);
         }
     }
 }
@@ -298,8 +298,7 @@ fn test_representation_combinations_and_asymmetric_theta() {
 fn test_similarity_and_dissimilarity_thresholds() {
     let sketch_a = sketch_with_range(0, 10000);
     let sketch_b = sketch_with_range(5000, 10000);
-    let operator = ThetaJaccardSimilarity::default();
-    let jaccard = operator.compute(&sketch_a, &sketch_b).unwrap();
+    let jaccard = JaccardSimilarity::compute(&sketch_a, &sketch_b).unwrap();
     assert!(jaccard.lower_bound() < jaccard.estimate());
     assert!(jaccard.estimate() < jaccard.upper_bound());
 
@@ -313,7 +312,7 @@ fn test_similarity_and_dissimilarity_thresholds() {
 
     let uncertain_a = non_empty_sketch_without_retained_entries(1e-12, "apple");
     let uncertain_b = non_empty_sketch_without_retained_entries(2e-12, "orange");
-    let uncertain = operator.compute(&uncertain_a, &uncertain_b).unwrap();
+    let uncertain = JaccardSimilarity::compute(&uncertain_a, &uncertain_b).unwrap();
     assert!(!uncertain.is_similar(0.01).unwrap());
     assert!(!uncertain.is_dissimilar(0.99).unwrap());
 

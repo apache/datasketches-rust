@@ -240,6 +240,8 @@ impl<S> KeySketch for TupleSketchView<'_, S> {
     }
 }
 
+impl<S> crate::common::JaccardSketch for TupleSketchView<'_, S> {}
+
 impl<'a, S> EntrySketch for TupleSketchView<'a, S>
 where
     S: Clone + 'a,
@@ -250,6 +252,46 @@ where
         self.iter().cloned()
     }
 }
+
+impl<P> KeySketch for &TupleSketch<P>
+where
+    P: SummaryPolicy,
+{
+    fn metadata(self) -> ThetaFamilySketchMetadata {
+        self.as_view().metadata()
+    }
+
+    fn hashes(self) -> impl Iterator<Item = u64> {
+        self.table.iter_entries().map(TupleEntry::hash)
+    }
+
+    #[inline]
+    fn hash_table(&self) -> Option<&SketchHashTable<impl SketchEntry>> {
+        Some(&self.table)
+    }
+}
+
+impl<P> crate::common::JaccardSketch for &TupleSketch<P> where P: SummaryPolicy {}
+
+impl<S> KeySketch for &CompactTupleSketch<S> {
+    fn metadata(self) -> ThetaFamilySketchMetadata {
+        self.as_view().metadata()
+    }
+
+    fn hashes(self) -> impl Iterator<Item = u64> {
+        self.compact_state
+            .retained_entries()
+            .iter()
+            .map(TupleEntry::hash)
+    }
+
+    #[inline]
+    fn hash_table(&self) -> Option<&SketchHashTable<impl SketchEntry>> {
+        None::<&SketchHashTable<u64>>
+    }
+}
+
+impl<S> crate::common::JaccardSketch for &CompactTupleSketch<S> {}
 
 impl<'a, P> From<&'a TupleSketch<P>> for TupleSketchView<'a, P::Summary>
 where

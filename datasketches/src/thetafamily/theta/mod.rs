@@ -29,6 +29,9 @@
 //!
 //! * [`ThetaSketch`]: Mutable sketch for building from input data.
 //! * [`CompactThetaSketch`]: Immutable sketch with a compact memory layout.
+//! * [`ThetaUnion`], [`ThetaIntersection`], and [`ThetaANotB`]: Set operations over Theta sketches.
+//! * [`JaccardSimilarity`](crate::common::JaccardSimilarity): Jaccard similarity and exact
+//!   sketch-state equality across Theta and Tuple sketches.
 //!
 //! # Cross-language hashing
 //!
@@ -54,7 +57,6 @@
 mod a_not_b;
 mod hash_table;
 mod intersection;
-mod jaccard_similarity;
 mod serialization;
 mod sketch;
 mod union;
@@ -62,7 +64,6 @@ mod union;
 pub use self::a_not_b::ThetaANotB;
 pub use self::hash_table::ThetaEntry;
 pub use self::intersection::ThetaIntersection;
-pub use self::jaccard_similarity::ThetaJaccardSimilarity;
 pub use self::sketch::CompactThetaSketch;
 pub use self::sketch::ThetaSketch;
 pub use self::sketch::ThetaSketchBuilder;
