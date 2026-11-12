@@ -607,7 +607,6 @@ impl TDigestMut {
 /// Immutable (frozen) T-Digest sketch for estimating quantiles and ranks.
 ///
 /// See the [module level documentation](super) for more.
-#[derive(Clone)]
 pub struct TDigest {
     k: u16,
 

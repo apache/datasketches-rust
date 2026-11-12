@@ -29,7 +29,6 @@ use crate::thetacommon::union::UnionMergePolicy;
 use crate::thetacommon::union::UnionState;
 
 /// Stateful union operator for Theta sketches.
-#[derive(Clone)]
 pub struct ThetaUnion {
     state: UnionState<ThetaEntry, NoopUnionPolicy>,
 }
@@ -40,7 +39,7 @@ impl fmt::Debug for ThetaUnion {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Debug)]
 struct NoopUnionPolicy;
 
 impl UnionMergePolicy<ThetaEntry> for NoopUnionPolicy {

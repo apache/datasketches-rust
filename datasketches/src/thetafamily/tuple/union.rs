@@ -68,7 +68,6 @@ use crate::tuple::sketch::TupleSketchView;
 /// let result = union.to_sketch(true);
 /// assert_eq!(result.num_retained(), 3); // apple, banana, cherry
 /// ```
-#[derive(Clone)]
 pub struct TupleUnion<P>
 where
     P: SummaryCombinePolicy,
@@ -173,7 +172,7 @@ where
 /// custom combine policy.
 ///
 /// Configuration is stored without validation and checked when [`build()`](Self::build) is called.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct TupleUnionBuilder<P>
 where
     P: SummaryCombinePolicy,

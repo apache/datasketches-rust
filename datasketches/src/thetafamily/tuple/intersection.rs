@@ -86,7 +86,6 @@ use crate::tuple::sketch::TupleSketchView;
 /// assert_eq!(result.num_retained(), 1); // only "shared"
 /// assert_eq!(result.iter().next().unwrap().summary(), &7); // 3 + 4
 /// ```
-#[derive(Clone)]
 pub struct TupleIntersection<P>
 where
     P: SummaryCombinePolicy,

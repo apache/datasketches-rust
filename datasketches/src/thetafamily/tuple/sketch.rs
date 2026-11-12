@@ -290,7 +290,6 @@ impl<'a, S> From<&'a CompactTupleSketch<S>> for TupleSketchView<'a, S> {
 /// assert!(sketch.estimate() >= 1.0);
 /// assert_eq!(sketch.num_retained(), 1);
 /// ```
-#[derive(Clone)]
 pub struct TupleSketch<P>
 where
     P: SummaryPolicy,
@@ -775,7 +774,7 @@ impl<S> CompactTupleSketch<S> {
 /// summaries, or supply a custom policy.
 ///
 /// Configuration is stored without validation and checked when [`build()`](Self::build) is called.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct TupleSketchBuilder<P>
 where
     P: SummaryPolicy,

@@ -18,8 +18,7 @@ All significant changes to this project will be documented in this file.
 
 ### Improvements
 
-* Replace derived `Debug` dumps with concise diagnostic summaries across Bloom, Xor, Count-Min, Frequent Items, KLL, REQ, T-Digest, Theta, and Tuple sketches, views, unions, intersections, and `XorFilterBuilder`, as well as `HllUnion`.
-* Implement `Debug` and `Clone` for `TDigest`, and implement `Clone` for Theta and Tuple mutable sketches, builders, unions, and intersections; `FrequentItemsSketch` and Tuple sketches, views, and set operators no longer require item, summary, or policy types to implement `Debug`.
+* Improve the readability of `Debug` output across sketches, filters, views, and stateful set operators, and implement `Debug` for `TDigest`.
 
 ### Performance improvements
 

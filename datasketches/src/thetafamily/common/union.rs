@@ -37,7 +37,7 @@ pub trait UnionMergePolicy<E> {
 ///
 /// `E` is the retained entry type. Ordinary Theta entries only contain a hash, while tuple
 /// entries also carry a summary. `P` defines how equal-hash entries are combined.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct UnionState<E, P> {
     table: SketchHashTable<E>,
     policy: P,

@@ -74,7 +74,7 @@ impl<E> FusedIterator for SketchHashTableIter<'_, E> {}
 /// * After it reaches the capacity bigger than 2^lg_nom_size, every time the number of entries
 ///   exceeds the threshold, it will rebuild the table: only keep the min 2^lg_nom_size entries and
 ///   update the theta to the k-th smallest entry.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct SketchHashTable<E> {
     lg_cur_size: u8,
     lg_nom_size: u8,

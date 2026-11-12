@@ -235,7 +235,6 @@ impl<'a> From<&'a CompactThetaSketch> for ThetaSketchView<'a> {
 /// Mutable theta sketch for building from input data.
 ///
 /// See the [module level documentation](super) for more.
-#[derive(Clone)]
 pub struct ThetaSketch {
     table: ThetaHashTable,
     // Public emptiness tracks update calls, not retained entries: theta may screen every update.
@@ -997,7 +996,7 @@ impl CompactThetaSketch {
 /// Builder for [`ThetaSketch`].
 ///
 /// Configuration is stored without validation and checked when [`build()`](Self::build) is called.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct ThetaSketchBuilder {
     lg_k: u8,
     resize_factor: ResizeFactor,

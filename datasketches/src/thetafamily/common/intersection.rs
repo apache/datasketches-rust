@@ -41,7 +41,7 @@ pub trait IntersectionMergePolicy<E> {
 ///
 /// `E` is the retained entry type. `P` defines how equal-hash entries are combined; it is only
 /// exercised for keys present in both the running intersection and the incoming sketch.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct IntersectionState<E, P> {
     table: SketchHashTable<E>,
     policy: P,

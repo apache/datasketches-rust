@@ -30,7 +30,6 @@ use crate::thetacommon::intersection::IntersectionState;
 /// A newly created operator has no result. [`has_result`](Self::has_result) returns `false` and
 /// [`to_sketch`](Self::to_sketch) returns `None` until the first successful
 /// [`update`](Self::update).
-#[derive(Clone)]
 pub struct ThetaIntersection {
     state: IntersectionState<ThetaEntry, NoopIntersectionPolicy>,
 }
@@ -47,7 +46,7 @@ impl Default for ThetaIntersection {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Debug)]
 struct NoopIntersectionPolicy;
 
 impl IntersectionMergePolicy<ThetaEntry> for NoopIntersectionPolicy {
