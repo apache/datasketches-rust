@@ -18,6 +18,7 @@
 //! Frequent items sketch implementations.
 
 use std::borrow::Borrow;
+use std::fmt;
 use std::hash::Hash;
 
 use crate::codec::SketchBytes;
@@ -141,7 +142,7 @@ impl<T> Row<T> {
 /// guaranteed upper and lower bounds.
 ///
 /// See the [module level documentation](super) for an overview and error guarantees.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct FrequentItemsSketch<T> {
     lg_max_map_size: u8,
     cur_map_cap: usize,
@@ -149,6 +150,19 @@ pub struct FrequentItemsSketch<T> {
     stream_weight: u64,
     sample_size: usize,
     hash_map: ReversePurgeItemHashMap<T>,
+}
+
+impl<T> fmt::Debug for FrequentItemsSketch<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("FrequentItemsSketch")
+            .field("lg_max_map_size", &self.lg_max_map_size)
+            .field("cur_map_cap", &self.cur_map_cap)
+            .field("is_empty", &(self.stream_weight == 0))
+            .field("num_active_items", &self.hash_map.num_active())
+            .field("total_weight", &self.stream_weight)
+            .field("maximum_error", &self.offset)
+            .finish()
+    }
 }
 
 impl<T: Eq + Hash> FrequentItemsSketch<T> {

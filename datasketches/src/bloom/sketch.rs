@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::fmt;
 use std::hash::Hash;
 use std::hash::Hasher;
 
@@ -40,7 +41,7 @@ const EMPTY_FLAG_MASK: u8 = 1 << 2;
 /// * Constant space usage
 ///
 /// See the [module level documentation](super) for more.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct BloomFilter {
     /// Hash seed for all hash functions
     seed: u64,
@@ -647,6 +648,18 @@ impl BloomFilter {
     /// Returns an estimate of the filter's memory usage in bytes.
     pub fn estimated_size(&self) -> usize {
         self.bit_array.len() * size_of::<u64>()
+    }
+}
+
+impl fmt::Debug for BloomFilter {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("BloomFilter")
+            .field("seed", &self.seed)
+            .field("num_hashes", &self.num_hashes)
+            .field("capacity", &self.capacity())
+            .field("bits_used", &self.num_bits_set)
+            .field("is_empty", &self.is_empty())
+            .finish()
     }
 }
 

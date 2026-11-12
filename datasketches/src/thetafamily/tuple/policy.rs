@@ -23,6 +23,7 @@
 //! different behaviors and can carry per-instance configuration (such as the number of values in an
 //! array-of-doubles summary).
 
+use std::fmt;
 use std::marker::PhantomData;
 use std::ops::AddAssign;
 
@@ -61,9 +62,30 @@ pub trait SummaryCombinePolicy: SummaryPolicy {
 ///
 /// The factory determines the summary type and creates its identity state. The policy accepts every
 /// update type `U` for which the summary implements [`AddAssign<U>`].
-#[derive(Default, Debug, Clone, Copy)]
 pub struct DefaultUpdatePolicy<S> {
     marker: PhantomData<fn() -> S>,
+}
+
+impl<S> Default for DefaultUpdatePolicy<S> {
+    fn default() -> Self {
+        Self {
+            marker: PhantomData,
+        }
+    }
+}
+
+impl<S> Clone for DefaultUpdatePolicy<S> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<S> Copy for DefaultUpdatePolicy<S> {}
+
+impl<S> fmt::Debug for DefaultUpdatePolicy<S> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DefaultUpdatePolicy").finish()
+    }
 }
 
 impl<S> SummaryPolicy for DefaultUpdatePolicy<S>
@@ -95,9 +117,30 @@ where
 /// There is intentionally no default combine policy for the intersection: how to combine summaries
 /// of the keys present in both inputs is application-specific, so the intersection always requires
 /// an explicit policy.
-#[derive(Default, Debug, Clone, Copy)]
 pub struct DefaultUnionPolicy<S> {
     marker: PhantomData<fn() -> S>,
+}
+
+impl<S> Default for DefaultUnionPolicy<S> {
+    fn default() -> Self {
+        Self {
+            marker: PhantomData,
+        }
+    }
+}
+
+impl<S> Clone for DefaultUnionPolicy<S> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<S> Copy for DefaultUnionPolicy<S> {}
+
+impl<S> fmt::Debug for DefaultUnionPolicy<S> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DefaultUnionPolicy").finish()
+    }
 }
 
 impl<S> SummaryPolicy for DefaultUnionPolicy<S>

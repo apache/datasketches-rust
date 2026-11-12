@@ -22,6 +22,8 @@
 //! already exists in the union, the two summaries are combined with a [`SummaryCombinePolicy`]
 //! instead of one being dropped.
 
+use std::fmt;
+
 use crate::common::ResizeFactor;
 use crate::error::Error;
 use crate::hash::DEFAULT_UPDATE_SEED;
@@ -66,12 +68,18 @@ use crate::tuple::sketch::TupleSketchView;
 /// let result = union.to_sketch(true);
 /// assert_eq!(result.num_retained(), 3); // apple, banana, cherry
 /// ```
-#[derive(Debug)]
+#[derive(Clone)]
 pub struct TupleUnion<P>
 where
     P: SummaryCombinePolicy,
 {
     state: UnionState<TupleEntry<P::Summary>, P>,
+}
+
+impl<P: SummaryCombinePolicy> fmt::Debug for TupleUnion<P> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.state.fmt_debug(f, "TupleUnion")
+    }
 }
 
 impl<P> TupleUnion<P>
@@ -165,7 +173,7 @@ where
 /// custom combine policy.
 ///
 /// Configuration is stored without validation and checked when [`build()`](Self::build) is called.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct TupleUnionBuilder<P>
 where
     P: SummaryCombinePolicy,

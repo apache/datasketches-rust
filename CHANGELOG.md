@@ -15,6 +15,11 @@ All significant changes to this project will be documented in this file.
 * Add `CpcUnion::serialize`, `HllUnion::serialize`, `ThetaUnion::serialize`, and `TupleUnion::serialize` to encode union results without calling `to_sketch`. Direct serialization avoids intermediate sketch allocations for `HllUnion` and low-cardinality `CpcUnion` inputs, writes an `HllType::Hll8` image at the union's effective `lg_k` for `HllUnion`, and encodes `TupleUnion` summaries without requiring `Clone` or cloning heap-backed summaries.
 * Add `XorFilter`, `XorFilterBuilder`, and `XorFilterType` behind the `xor` feature for immutable membership queries on values or precomputed hashes. Filters support 8-, 16-, and 32-bit fingerprints and can be serialized for later queries.
 
+### Improvements
+
+* Replace derived `Debug` dumps with concise diagnostic summaries across Bloom, Xor, Count-Min, Frequent Items, KLL, REQ, T-Digest, Theta, and Tuple sketches, views, unions, and intersections, as well as `HllUnion`.
+* Implement `Debug` and `Clone` for `TDigest`, `ReqSketchIterator`, `SketchBytes`, and `SketchSlice`, and implement `Clone` for Theta and Tuple mutable sketches, builders, unions, and intersections; `FrequentItemsSketch`, `ReqSketchIterator`, and Tuple sketches, views, and set operators no longer require item, summary, or policy types to implement `Debug`.
+
 ### Performance improvements
 
 * Speed up `BloomFilter::insert` when adding new items to filters configured with multiple hash functions; single-hash, repeated-item, and saturated-filter workloads see smaller gains.

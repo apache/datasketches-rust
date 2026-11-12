@@ -25,6 +25,8 @@
 //! Unlike the union there is no default policy: how to combine the summaries of keys present in
 //! both inputs is application-specific, so a policy must always be supplied.
 
+use std::fmt;
+
 use crate::error::Error;
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::thetacommon::intersection::IntersectionState;
@@ -84,12 +86,18 @@ use crate::tuple::sketch::TupleSketchView;
 /// assert_eq!(result.num_retained(), 1); // only "shared"
 /// assert_eq!(result.iter().next().unwrap().summary(), &7); // 3 + 4
 /// ```
-#[derive(Debug)]
+#[derive(Clone)]
 pub struct TupleIntersection<P>
 where
     P: SummaryCombinePolicy,
 {
     state: IntersectionState<TupleEntry<P::Summary>, P>,
+}
+
+impl<P: SummaryCombinePolicy> fmt::Debug for TupleIntersection<P> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.state.fmt_debug(f, "TupleIntersection")
+    }
 }
 
 impl<P> TupleIntersection<P>

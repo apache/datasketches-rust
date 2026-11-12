@@ -22,6 +22,7 @@
 //! created by a [`SummaryPolicy`] and updated through one or more [`SummaryUpdatePolicy`]
 //! implementations.
 
+use std::fmt;
 use std::hash::Hash;
 use std::iter::FusedIterator;
 use std::slice;
@@ -78,16 +79,26 @@ use crate::tuple::serialization::serialize_compact_uncompressed;
 /// let view = sketch.as_view();
 /// assert_eq!(view.iter().next().unwrap().summary(), &1);
 /// ```
-#[derive(Debug)]
 pub struct TupleSketchView<'a, S>(TupleSketchViewState<'a, S>);
 
-#[derive(Debug)]
 enum TupleSketchViewState<'a, S> {
     Mutable {
         table: &'a TupleHashTable<S>,
         is_empty: bool,
     },
     Compact(&'a CompactTupleSketch<S>),
+}
+
+impl<S> fmt::Debug for TupleSketchView<'_, S> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TupleSketchView")
+            .field("seed_hash", &self.seed_hash())
+            .field("is_empty", &self.is_empty())
+            .field("is_ordered", &self.is_ordered())
+            .field("num_retained", &self.num_retained())
+            .field("theta64", &self.theta64())
+            .finish()
+    }
 }
 
 enum TupleSketchIter<'a, S> {
@@ -279,7 +290,7 @@ impl<'a, S> From<&'a CompactTupleSketch<S>> for TupleSketchView<'a, S> {
 /// assert!(sketch.estimate() >= 1.0);
 /// assert_eq!(sketch.num_retained(), 1);
 /// ```
-#[derive(Debug)]
+#[derive(Clone)]
 pub struct TupleSketch<P>
 where
     P: SummaryPolicy,
@@ -288,6 +299,20 @@ where
     // Public emptiness tracks update calls, not retained entries: theta may screen every update.
     is_empty: bool,
     policy: P,
+}
+
+impl<P: SummaryPolicy> fmt::Debug for TupleSketch<P> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TupleSketch")
+            .field("lg_k", &self.lg_k())
+            .field("seed_hash", &self.seed_hash())
+            .field("is_empty", &self.is_empty())
+            .field("is_estimation_mode", &self.is_estimation_mode())
+            .field("num_retained", &self.num_retained())
+            .field("theta64", &self.theta64())
+            .field("estimate", &self.estimate())
+            .finish()
+    }
 }
 
 impl<P> TupleSketch<P>
@@ -467,9 +492,23 @@ where
 ///
 /// This is the serialization-friendly form: a compact array of retained hash-summary pairs plus
 /// theta and a 16-bit seed hash. It can be ordered (sorted ascending by hash) or unordered.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct CompactTupleSketch<S> {
     compact_state: CompactSketchState<TupleEntry<S>>,
+}
+
+impl<S> fmt::Debug for CompactTupleSketch<S> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CompactTupleSketch")
+            .field("seed_hash", &self.seed_hash())
+            .field("is_empty", &self.is_empty())
+            .field("is_ordered", &self.is_ordered())
+            .field("is_estimation_mode", &self.is_estimation_mode())
+            .field("num_retained", &self.num_retained())
+            .field("theta64", &self.theta64())
+            .field("estimate", &self.estimate())
+            .finish()
+    }
 }
 
 impl<S> CompactTupleSketch<S> {
@@ -736,7 +775,7 @@ impl<S> CompactTupleSketch<S> {
 /// summaries, or supply a custom policy.
 ///
 /// Configuration is stored without validation and checked when [`build()`](Self::build) is called.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct TupleSketchBuilder<P>
 where
     P: SummaryPolicy,

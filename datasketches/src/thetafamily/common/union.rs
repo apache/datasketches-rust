@@ -15,12 +15,15 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::fmt;
+
 use crate::common::ResizeFactor;
 use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::hash::check_seed_hash;
 use crate::thetacommon::EntrySketch;
 use crate::thetacommon::SketchEntry;
+use crate::thetacommon::constants::MAX_THETA;
 use crate::thetacommon::hash_table::SketchHashTable;
 use crate::thetacommon::sketch_state::CompactSketchState;
 use crate::thetacommon::sketch_state::ThetaFamilySketchMetadata;
@@ -34,7 +37,7 @@ pub trait UnionMergePolicy<E> {
 ///
 /// `E` is the retained entry type. Ordinary Theta entries only contain a hash, while tuple
 /// entries also carry a summary. `P` defines how equal-hash entries are combined.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct UnionState<E, P> {
     table: SketchHashTable<E>,
     policy: P,
@@ -196,5 +199,29 @@ where
     /// Returns an estimate of memory usage in bytes.
     pub fn estimated_size(&self) -> usize {
         size_of::<P>() + self.table.estimated_size()
+    }
+
+    /// Formats a concise diagnostic summary for Theta-family union operators.
+    pub fn fmt_debug(&self, f: &mut fmt::Formatter<'_>, name: &str) -> fmt::Result {
+        let is_empty = self.result_theta.is_none();
+        let union_theta = self
+            .result_theta
+            .map_or(MAX_THETA, |theta| theta.min(self.table.retention_theta()));
+        let num_retained = match self.result_theta {
+            None => 0,
+            Some(theta) if theta >= self.table.retention_theta() => self.table.num_retained(),
+            Some(theta) => self
+                .table
+                .iter_entries()
+                .filter(|entry| entry.hash() < theta)
+                .count(),
+        };
+        f.debug_struct(name)
+            .field("lg_k", &self.table.lg_nom_size())
+            .field("seed_hash", &self.table.seed_hash())
+            .field("is_empty", &is_empty)
+            .field("union_theta", &union_theta)
+            .field("num_retained", &num_retained)
+            .finish()
     }
 }

@@ -16,6 +16,7 @@
 // under the License.
 
 use std::cmp::Ordering;
+use std::fmt;
 use std::num::NonZeroU64;
 
 use crate::codec::SketchBytes;
@@ -38,7 +39,7 @@ const DEFAULT_WEIGHT: NonZeroU64 = NonZeroU64::new(1).unwrap();
 /// T-Digest sketch for estimating quantiles and ranks.
 ///
 /// See the [module level documentation](super) for more.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct TDigestMut {
     k: u16,
 
@@ -50,6 +51,20 @@ pub struct TDigestMut {
     // Weight represented by the compressed prefix. The unmerged tail contributes one per
     // centroid and is counted separately by `TDigestBuffer::unmerged_len`.
     compressed_weight: u64,
+}
+
+impl fmt::Debug for TDigestMut {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TDigestMut")
+            .field("k", &self.k)
+            .field("is_empty", &self.is_empty())
+            .field("total_weight", &self.total_weight())
+            .field("compressed_centroids", &self.buffer.compressed_prefix_len())
+            .field("unmerged_values", &self.buffer.unmerged_len())
+            .field("min_value", &self.min_value())
+            .field("max_value", &self.max_value())
+            .finish()
+    }
 }
 
 impl Default for TDigestMut {
@@ -592,6 +607,7 @@ impl TDigestMut {
 /// Immutable (frozen) T-Digest sketch for estimating quantiles and ranks.
 ///
 /// See the [module level documentation](super) for more.
+#[derive(Clone)]
 pub struct TDigest {
     k: u16,
 
@@ -601,6 +617,19 @@ pub struct TDigest {
 
     centroids: Vec<Centroid>,
     centroids_weight: u64,
+}
+
+impl fmt::Debug for TDigest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TDigest")
+            .field("k", &self.k)
+            .field("is_empty", &self.is_empty())
+            .field("total_weight", &self.total_weight())
+            .field("num_centroids", &self.centroids.len())
+            .field("min_value", &self.min_value())
+            .field("max_value", &self.max_value())
+            .finish()
+    }
 }
 
 impl TDigest {

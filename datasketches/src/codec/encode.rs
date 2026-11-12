@@ -15,9 +15,21 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::fmt;
+
 /// A simple wrapper around a `Vec<u8>` that provides methods for writing various types of data.
+#[derive(Clone, Default)]
 pub struct SketchBytes {
     bytes: Vec<u8>,
+}
+
+impl fmt::Debug for SketchBytes {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SketchBytes")
+            .field("len", &self.bytes.len())
+            .field("capacity", &self.bytes.capacity())
+            .finish()
+    }
 }
 
 impl SketchBytes {
