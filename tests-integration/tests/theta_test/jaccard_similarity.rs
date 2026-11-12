@@ -16,13 +16,13 @@
 // under the License.
 
 use datasketches::common::JaccardSimilarity;
+use datasketches::error::ErrorKind;
 use datasketches::theta::ThetaJaccardSimilarity;
 use datasketches::theta::ThetaSketch;
 use datasketches::theta::ThetaSketchBuilder;
 use googletest::assert_that;
-use googletest::prelude::anything;
-use googletest::prelude::err;
 use googletest::prelude::near;
+use tests_integration::ZERO_HASH_SEED;
 
 fn assert_jaccard_exact(actual: JaccardSimilarity, expected: f64) {
     assert_eq!(actual.lower_bound(), expected);
@@ -183,19 +183,37 @@ fn test_seed_mismatch() {
     let mut sketch_b = ThetaSketchBuilder::default().seed(123).build().unwrap();
     sketch_b.update(1u64);
 
-    assert_that!(
-        ThetaJaccardSimilarity::default().compute(&sketch_a, &sketch_b),
-        err(anything())
+    assert_eq!(
+        ThetaJaccardSimilarity::with_seed(ZERO_HASH_SEED)
+            .unwrap_err()
+            .kind(),
+        ErrorKind::InvalidArgument
     );
-    assert_that!(
-        ThetaJaccardSimilarity::default().exactly_equal(&sketch_a, &sketch_b),
-        err(anything())
+    let operator = ThetaJaccardSimilarity::default();
+    assert_eq!(
+        operator.compute(&sketch_a, &sketch_b).unwrap_err().kind(),
+        ErrorKind::InvalidArgument
     );
-    assert!(
-        !ThetaJaccardSimilarity::default()
-            .exactly_equal(&empty, &sketch_b)
-            .unwrap()
+    assert_eq!(
+        operator.compute(&sketch_b, &sketch_a).unwrap_err().kind(),
+        ErrorKind::InvalidArgument
     );
+    assert_eq!(
+        operator
+            .exactly_equal(&sketch_a, &sketch_b)
+            .unwrap_err()
+            .kind(),
+        ErrorKind::InvalidArgument
+    );
+    assert_eq!(
+        operator
+            .exactly_equal(&sketch_b, &sketch_a)
+            .unwrap_err()
+            .kind(),
+        ErrorKind::InvalidArgument
+    );
+    assert_jaccard_exact(operator.compute(&empty, &sketch_b).unwrap(), 0.0);
+    assert!(!operator.exactly_equal(&empty, &sketch_b).unwrap());
 }
 
 #[test]

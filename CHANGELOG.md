@@ -33,6 +33,10 @@ All significant changes to this project will be documented in this file.
 * Speed up `ThetaSketch::compact` and `TupleSketch::compact` on populated sketches, along with ordered result generation across `ThetaUnion`, `TupleUnion`, `ThetaIntersection`, `TupleIntersection`, `ThetaANotB`, and `TupleANotB` for larger retained entry counts; sketches with very few retained entries are unchanged.
 * Speed up `ThetaANotB::compute` and `TupleANotB::compute` when either input is unordered, while avoiding intermediate allocations when subtracting a mutable `ThetaSketch` or `TupleSketch` directly; pairs of ordered compact inputs are unchanged.
 
+### Bug fixes
+
+* `ThetaJaccardSimilarity` and `TupleJaccardSimilarity` now return `InvalidArgument` instead of `InvalidData` when a non-empty input sketch's seed hash does not match the configured seed.
+
 ## v0.6.0 (2026-10-29)
 
 ### Breaking changes
