@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::fmt;
+
 use crate::error::Error;
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::theta::CompactThetaSketch;
@@ -28,9 +30,14 @@ use crate::thetafamily::common::intersection::IntersectionState;
 /// A newly created operator has no result. [`has_result`](Self::has_result) returns `false` and
 /// [`to_sketch`](Self::to_sketch) returns `None` until the first successful
 /// [`update`](Self::update).
-#[derive(Debug)]
 pub struct ThetaIntersection {
     state: IntersectionState<ThetaEntry, NoopIntersectionPolicy>,
+}
+
+impl fmt::Debug for ThetaIntersection {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.state.fmt_debug(f, "ThetaIntersection")
+    }
 }
 
 impl Default for ThetaIntersection {

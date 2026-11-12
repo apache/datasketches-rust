@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::fmt;
 use std::hash::Hash;
 use std::hash::Hasher;
 
@@ -46,7 +47,7 @@ const MAX_TABLE_ENTRIES: usize = 1 << 30;
 /// with configurable relative error and confidence.
 ///
 /// See the [module level documentation](super) for more.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct CountMinSketch<T: CountMinValue> {
     num_hashes: u8,
     buckets: BucketCount,
@@ -59,6 +60,18 @@ pub struct CountMinSketch<T: CountMinValue> {
     total_weight: T,
     counts: Vec<T>,
     hash_seeds: Vec<u64>,
+}
+
+impl<T: CountMinValue + fmt::Debug> fmt::Debug for CountMinSketch<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CountMinSketch")
+            .field("num_hashes", &self.num_hashes)
+            .field("num_buckets", &self.buckets.count)
+            .field("seed", &self.seed)
+            .field("is_empty", &(self.total_weight == T::ZERO))
+            .field("total_weight", &self.total_weight)
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
