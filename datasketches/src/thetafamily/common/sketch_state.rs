@@ -15,8 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use crate::thetacommon::SketchEntry;
-use crate::thetacommon::constants::MAX_THETA;
+use crate::thetafamily::common::SketchEntry;
+use crate::thetafamily::common::constants::MAX_THETA;
 
 /// Observable metadata consumed by shared Theta-family set operations.
 ///

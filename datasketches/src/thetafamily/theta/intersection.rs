@@ -20,8 +20,8 @@ use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::theta::CompactThetaSketch;
 use crate::theta::ThetaSketchView;
 use crate::theta::hash_table::ThetaEntry;
-use crate::thetacommon::intersection::IntersectionMergePolicy;
-use crate::thetacommon::intersection::IntersectionState;
+use crate::thetafamily::common::intersection::IntersectionMergePolicy;
+use crate::thetafamily::common::intersection::IntersectionState;
 
 /// Stateful intersection operator for Theta sketches.
 ///
