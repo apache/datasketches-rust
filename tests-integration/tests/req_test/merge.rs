@@ -23,6 +23,7 @@ use datasketches::req::ReqSketch;
 use googletest::assert_that;
 use googletest::prelude::anything;
 use googletest::prelude::err;
+use googletest::prelude::lt;
 use googletest::prelude::near;
 
 use super::ReqF64;
@@ -131,4 +132,32 @@ fn many_small_merges_preserve_count_bounds_and_median() {
         .expect("quantile should succeed")
         .expect("the sketch is non-empty");
     assert_that!(*median, near(4999.5, 500.0));
+}
+
+#[test]
+fn merge_larger_k_into_smaller_k_cascades_compaction_across_new_levels() {
+    let mut target: ReqSketch<ReqF64> = ReqSketch::new(4, RankAccuracy::HighRank).unwrap();
+    let mut source: ReqSketch<ReqF64> = ReqSketch::new(200, RankAccuracy::HighRank).unwrap();
+
+    // 500 items fit in level 0 of k=200 (nominal capacity 1200), so source has 1 level.
+    // Merging into k=4 (level nominal capacity 24) promotes 240 items into a newly grown
+    // level 1, which must cascade further compactions across newly grown upper levels.
+    for i in 0..500 {
+        source.update(req_f64(i as f64));
+    }
+    assert!(!source.is_estimation_mode());
+
+    target.merge(&source).expect("merge should succeed");
+
+    assert_eq!(target.n(), 500);
+    assert!(target.is_estimation_mode());
+    assert_that!(target.num_retained(), lt(120));
+    let weighted_sum: u64 = target.iter().map(|(_, weight)| weight).sum();
+    assert_eq!(weighted_sum, 500);
+    assert_eq!(target.min_item().copied(), Some(req_f64(0.0)));
+    assert_eq!(target.max_item().copied(), Some(req_f64(499.0)));
+
+    let round_trip = ReqSketch::<ReqF64>::deserialize(&target.serialize()).unwrap();
+    assert_eq!(round_trip.n(), target.n());
+    assert_eq!(round_trip.num_retained(), target.num_retained());
 }
