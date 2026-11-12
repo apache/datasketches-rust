@@ -97,11 +97,21 @@ impl Fingerprints {
 /// [`XorFilter::contains_hash`].
 ///
 /// See the [module level documentation](super) for more.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct XorFilterBuilder {
     filter_type: XorFilterType,
     seed: u64,
     hashes: Vec<u64>,
+}
+
+impl fmt::Debug for XorFilterBuilder {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("XorFilterBuilder")
+            .field("filter_type", &self.filter_type)
+            .field("seed", &self.seed)
+            .field("num_hashes", &self.hashes.len())
+            .finish()
+    }
 }
 
 impl XorFilterBuilder {

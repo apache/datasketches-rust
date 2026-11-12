@@ -19,8 +19,6 @@ use std::fmt::Debug;
 use std::ops::AddAssign;
 
 use datasketches::bloom::BloomFilterBuilder;
-use datasketches::codec::SketchBytes;
-use datasketches::codec::SketchSlice;
 use datasketches::countmin::CountMinSketch;
 use datasketches::frequencies::FrequentItemsSketch;
 use datasketches::hll::HllSketch;
@@ -109,6 +107,7 @@ fn populated_types_format_concise_diagnostic_summaries() {
 
     let mut xor_builder = XorFilterBuilder::new(XorFilterType::Xor8);
     xor_builder.update_values(0..500_u64);
+    assert_concise_debug(&xor_builder);
     let xor = xor_builder.build().unwrap();
     assert_concise_debug(&xor);
 
@@ -176,13 +175,6 @@ fn populated_types_format_concise_diagnostic_summaries() {
     assert_concise_debug(&tuple.as_view());
     assert_concise_debug(&compact_tuple);
     assert_concise_debug(&compact_tuple.as_view());
-
-    let mut bytes = SketchBytes::with_capacity(1024);
-    bytes.write(&[0xAB; 512]);
-    assert_concise_debug(&bytes);
-    let raw = bytes.into_bytes();
-    let slice = SketchSlice::new(&raw);
-    assert_concise_debug(&slice);
 }
 
 #[test]
@@ -190,20 +182,6 @@ fn debug_and_clone_do_not_require_debug_on_items_summaries_or_policies() {
     let mut freq = FrequentItemsSketch::new(64).unwrap();
     freq.update(NonDebugItem(7));
     assert_concise_debug(&freq);
-
-    let mut req = ReqSketch::new(12, RankAccuracy::HighRank).unwrap();
-    for i in 0..50_u64 {
-        req.update(NonDebugItem(i));
-    }
-    let mut iter = req.iter();
-    assert!(iter.next().map(|(item, _)| *item) == Some(NonDebugItem(0)));
-    assert_concise_debug(&iter);
-    let cloned_iter = iter.clone();
-    let remaining_original: Vec<(NonDebugItem, u64)> =
-        iter.map(|(item, weight)| (*item, weight)).collect();
-    let remaining_cloned: Vec<(NonDebugItem, u64)> =
-        cloned_iter.map(|(item, weight)| (*item, weight)).collect();
-    assert!(remaining_original == remaining_cloned);
 
     let update_policy = DefaultUpdatePolicy::<NonCopyNonDebugSummary>::default();
     let copied_update_policy = update_policy;
@@ -249,7 +227,7 @@ fn debug_and_clone_do_not_require_debug_on_items_summaries_or_policies() {
 }
 
 #[test]
-fn union_intersection_tdigest_and_codec_clone_and_debug_invariants() {
+fn union_intersection_and_tdigest_clone_and_debug_invariants() {
     let builder_large = ThetaSketchBuilder::default().lg_k(12);
     let mut large = builder_large.clone().build().unwrap();
     for i in 0..2000_u64 {
@@ -302,20 +280,4 @@ fn union_intersection_tdigest_and_codec_clone_and_debug_invariants() {
         tdigest.quantile(0.5).unwrap(),
         cloned_tdigest.quantile(0.5).unwrap()
     );
-
-    let mut bytes = SketchBytes::default();
-    bytes.write_u32_le(0x1122_3344);
-    let mut cloned_bytes = bytes.clone();
-    cloned_bytes.write_u32_le(0x5566_7788);
-    let original_buf = bytes.into_bytes();
-    let cloned_buf = cloned_bytes.into_bytes();
-    assert_eq!(original_buf.len(), 4);
-    assert_eq!(cloned_buf.len(), 8);
-
-    let mut slice = SketchSlice::new(&cloned_buf);
-    assert_eq!(slice.read_u16_le().unwrap(), 0x3344);
-    let mut cloned_slice = slice.clone();
-    assert_eq!(cloned_slice.read_u16_le().unwrap(), 0x1122);
-    assert_eq!(slice.remaining().len(), 6);
-    assert_eq!(cloned_slice.remaining().len(), 4);
 }

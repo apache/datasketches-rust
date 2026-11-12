@@ -17,8 +17,6 @@
 
 //! Iterator implementations for REQ sketch inspection.
 
-use std::fmt;
-
 use crate::req::compactor::Compactor;
 
 /// Iterator over (item, weight) pairs in a REQ sketch.
@@ -32,27 +30,6 @@ pub struct ReqSketchIterator<'a, T> {
     current_level: usize,
     current_level_iter: Option<std::slice::Iter<'a, T>>,
     current_weight: u64,
-}
-
-impl<T> Clone for ReqSketchIterator<'_, T> {
-    fn clone(&self) -> Self {
-        Self {
-            compactors: self.compactors,
-            current_level: self.current_level,
-            current_level_iter: self.current_level_iter.clone(),
-            current_weight: self.current_weight,
-        }
-    }
-}
-
-impl<T> fmt::Debug for ReqSketchIterator<'_, T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ReqSketchIterator")
-            .field("current_level", &self.current_level)
-            .field("num_levels", &self.compactors.len())
-            .field("current_weight", &self.current_weight)
-            .finish()
-    }
 }
 
 impl<'a, T: Clone + Ord> ReqSketchIterator<'a, T> {

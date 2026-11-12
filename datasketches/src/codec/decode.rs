@@ -15,24 +15,13 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use std::fmt;
 use std::io;
 use std::io::Cursor;
 use std::io::Read;
 
 /// A wrapper around a byte slice that provides methods for reading various types of data from it.
-#[derive(Clone)]
 pub struct SketchSlice<'a> {
     slice: Cursor<&'a [u8]>,
-}
-
-impl fmt::Debug for SketchSlice<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("SketchSlice")
-            .field("position", &self.slice.position())
-            .field("remaining", &self.remaining().len())
-            .finish()
-    }
 }
 
 impl SketchSlice<'_> {
