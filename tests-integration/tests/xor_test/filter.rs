@@ -23,11 +23,12 @@ use datasketches::xor::XorFilterType;
 
 #[test]
 fn values_have_no_false_negatives() {
-    let mut builder = XorFilterBuilder::new(XorFilterType::Xor8, 8123);
+    let mut builder = XorFilterBuilder::with_seed(XorFilterType::Xor8, 8123);
     for value in 0..10_000_u64 {
         builder.update(value);
     }
     let filter = builder.build().unwrap();
+    assert_eq!(filter.filter_type(), XorFilterType::Xor8);
 
     for value in 0..10_000_u64 {
         assert!(filter.contains(value), "false negative for {value}");
@@ -45,7 +46,8 @@ fn precomputed_hashes_have_no_false_negatives() {
         XorFilterType::Xor16,
         XorFilterType::Xor32,
     ] {
-        let filter = XorFilter::from_hashes(&hashes, ty, 0).unwrap();
+        let filter = XorFilter::from_hashes(&hashes, ty).unwrap();
+        assert_eq!(filter.filter_type(), ty);
         for &hash in &hashes {
             assert!(filter.contains_hash(hash), "false negative for {hash}");
         }
@@ -59,23 +61,50 @@ fn builder_deduplicates_values_and_hashes() {
         XorFilterType::Xor16,
         XorFilterType::Xor32,
     ] {
-        let mut duplicate_values = XorFilterBuilder::new(ty, 0);
+        let mut duplicate_values = XorFilterBuilder::new(ty);
         duplicate_values.update(7_u64);
         duplicate_values.update_values([11_u64, 7, 11]);
 
-        let mut distinct_values = XorFilterBuilder::new(ty, 0);
+        let mut distinct_values = XorFilterBuilder::new(ty);
         distinct_values.update_values([11_u64, 7]);
         assert_eq!(
             duplicate_values.build().unwrap(),
             distinct_values.build().unwrap(),
         );
 
-        let mut hashes = XorFilterBuilder::new(ty, 0);
+        let mut hashes = XorFilterBuilder::new(ty);
         hashes.update_hash(7);
         hashes.update_hashes([11, 7, 11]);
         assert_eq!(
             hashes.build().unwrap(),
-            XorFilter::from_hashes(&[7, 11], ty, 0).unwrap(),
+            XorFilter::from_hashes(&[7, 11], ty).unwrap(),
+        );
+    }
+}
+
+#[test]
+fn default_seed_constructors_and_builder_clone_behave_consistently() {
+    for ty in [
+        XorFilterType::Xor8,
+        XorFilterType::Xor16,
+        XorFilterType::Xor32,
+    ] {
+        let mut default_builder = XorFilterBuilder::new(ty);
+        default_builder.update_values([1_u64, 2, 3]);
+        let cloned_builder = default_builder.clone();
+        default_builder.update(4_u64);
+
+        let mut zero_seeded_builder = XorFilterBuilder::with_seed(ty, 0);
+        zero_seeded_builder.update_values([1_u64, 2, 3]);
+
+        let cloned_filter = cloned_builder.build().unwrap();
+        assert_eq!(cloned_filter, zero_seeded_builder.build().unwrap());
+        assert_eq!(cloned_filter.filter_type(), ty);
+        assert_ne!(cloned_filter, default_builder.build().unwrap());
+
+        assert_eq!(
+            XorFilter::from_hashes(&[10, 20, 30], ty).unwrap(),
+            XorFilter::from_hashes_with_seed(&[10, 20, 30], ty, 0).unwrap(),
         );
     }
 }
@@ -91,11 +120,11 @@ fn equivalent_borrowed_and_value_inputs_build_identical_filters() {
         XorFilterType::Xor16,
         XorFilterType::Xor32,
     ] {
-        let mut by_str_update = XorFilterBuilder::new(ty, 0);
+        let mut by_str_update = XorFilterBuilder::new(ty);
         for s in &strings {
             by_str_update.update(s);
         }
-        let mut by_str_batch = XorFilterBuilder::new(ty, 0);
+        let mut by_str_batch = XorFilterBuilder::new(ty);
         by_str_batch.update_values(strings.iter().map(String::as_str));
         let str_filter = by_str_update.build().unwrap();
         assert_eq!(str_filter, by_str_batch.build().unwrap());
@@ -104,11 +133,11 @@ fn equivalent_borrowed_and_value_inputs_build_identical_filters() {
             assert!(str_filter.contains(s.as_str()));
         }
 
-        let mut by_blob_update = XorFilterBuilder::new(ty, 0);
+        let mut by_blob_update = XorFilterBuilder::new(ty);
         for blob in &blobs {
             by_blob_update.update(blob);
         }
-        let mut by_blob_batch = XorFilterBuilder::new(ty, 0);
+        let mut by_blob_batch = XorFilterBuilder::new(ty);
         by_blob_batch.update_values(blobs.iter().map(Vec::as_slice));
         let blob_filter = by_blob_update.build().unwrap();
         assert_eq!(blob_filter, by_blob_batch.build().unwrap());
@@ -117,12 +146,12 @@ fn equivalent_borrowed_and_value_inputs_build_identical_filters() {
             assert!(blob_filter.contains(blob.as_slice()));
         }
 
-        let mut by_mixed_update = XorFilterBuilder::new(ty, 0);
+        let mut by_mixed_update = XorFilterBuilder::new(ty);
         for id in &ids {
             by_mixed_update.update(id);
         }
         by_mixed_update.update(raw_bytes::from_string(String::from("payload")));
-        let mut by_mixed_batch = XorFilterBuilder::new(ty, 0);
+        let mut by_mixed_batch = XorFilterBuilder::new(ty);
         by_mixed_batch.update_values(ids);
         by_mixed_batch.update(raw_bytes::from_str("payload"));
         let mixed_filter = by_mixed_update.build().unwrap();
@@ -141,9 +170,9 @@ fn false_positive_rates_follow_fingerprint_width() {
     const NUM_QUERIES: u64 = 100_000;
 
     let hashes: Vec<_> = (0..NUM_ITEMS).collect();
-    let xor8 = XorFilter::from_hashes(&hashes, XorFilterType::Xor8, 0).unwrap();
-    let xor16 = XorFilter::from_hashes(&hashes, XorFilterType::Xor16, 0).unwrap();
-    let xor32 = XorFilter::from_hashes(&hashes, XorFilterType::Xor32, 0).unwrap();
+    let xor8 = XorFilter::from_hashes(&hashes, XorFilterType::Xor8).unwrap();
+    let xor16 = XorFilter::from_hashes(&hashes, XorFilterType::Xor16).unwrap();
+    let xor32 = XorFilter::from_hashes(&hashes, XorFilterType::Xor32).unwrap();
 
     let false_positives8 = (NUM_ITEMS..NUM_ITEMS + NUM_QUERIES)
         .filter(|&hash| xor8.contains_hash(hash))
@@ -177,11 +206,11 @@ fn distinct_construction_is_bounded_and_does_not_deduplicate() {
         XorFilterType::Xor16,
         XorFilterType::Xor32,
     ] {
-        let error = XorFilter::from_hashes(&[1, 2, 1], kind, 0).unwrap_err();
+        let error = XorFilter::from_hashes(&[1, 2, 1], kind).unwrap_err();
         assert_eq!(error.kind(), ErrorKind::InvalidArgument);
         assert!(error.message().contains("duplicate hashes"));
         for keys in [vec![], vec![0], vec![u64::MAX], vec![0, u64::MAX]] {
-            let f = XorFilter::from_hashes(&keys, kind, 0).unwrap();
+            let f = XorFilter::from_hashes(&keys, kind).unwrap();
             for key in keys {
                 assert!(f.contains_hash(key));
             }
@@ -206,12 +235,15 @@ fn construction_recovers_after_an_unpeelable_first_attempt() {
         XorFilterType::Xor16,
         XorFilterType::Xor32,
     ] {
-        let filter = XorFilter::from_hashes(&keys, kind, 1).unwrap();
+        let filter = XorFilter::from_hashes_with_seed(&keys, kind, 1).unwrap();
         for &key in &keys {
             assert!(filter.contains_hash(key));
         }
         let mut reversed = keys.clone();
         reversed.reverse();
-        assert_eq!(filter, XorFilter::from_hashes(&reversed, kind, 1).unwrap());
+        assert_eq!(
+            filter,
+            XorFilter::from_hashes_with_seed(&reversed, kind, 1).unwrap()
+        );
     }
 }

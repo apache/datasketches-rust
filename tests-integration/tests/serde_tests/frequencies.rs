@@ -55,7 +55,7 @@ impl FrequentItemValue for NonCloneSerializableItem {
 fn test_longs_round_trip() {
     let mut sketch: FrequentItemsSketch<i64> = FrequentItemsSketch::new(32).unwrap();
     for i in 1..=100 {
-        sketch.update_with_count(i, i as u64);
+        sketch.update_with_weight(i, i as u64);
     }
     let bytes = sketch.serialize();
     let restored = FrequentItemsSketch::<i64>::deserialize(&bytes).unwrap();
@@ -67,9 +67,9 @@ fn test_longs_round_trip() {
 #[test]
 fn test_items_round_trip() {
     let mut sketch = FrequentItemsSketch::new(32).unwrap();
-    sketch.update_with_count("alpha".to_string(), 3);
-    sketch.update_with_count("beta".to_string(), 5);
-    sketch.update_with_count("gamma".to_string(), 7);
+    sketch.update_with_weight("alpha".to_string(), 3);
+    sketch.update_with_weight("beta".to_string(), 5);
+    sketch.update_with_weight("gamma".to_string(), 7);
 
     let bytes = sketch.serialize();
     let restored = FrequentItemsSketch::<String>::deserialize(&bytes).unwrap();
@@ -94,8 +94,8 @@ fn test_string_deserialize_rejects_length_larger_than_input() {
 #[test]
 fn test_non_clone_item_round_trip() {
     let mut sketch = FrequentItemsSketch::<NonCloneSerializableItem>::new(32).unwrap();
-    sketch.update_with_count(NonCloneSerializableItem(1), 2);
-    sketch.update_with_count(NonCloneSerializableItem(2), 5);
+    sketch.update_with_weight(NonCloneSerializableItem(1), 2);
+    sketch.update_with_weight(NonCloneSerializableItem(2), 5);
 
     let bytes = sketch.serialize();
     let restored = FrequentItemsSketch::<NonCloneSerializableItem>::deserialize(&bytes).unwrap();
@@ -192,7 +192,7 @@ fn test_java_frequent_strings_purged() {
 #[test]
 fn test_deserialize_rejects_zero_stream_weight() {
     let mut active_sketch = FrequentItemsSketch::<i64>::new(32).unwrap();
-    active_sketch.update_with_count(7, 3);
+    active_sketch.update_with_weight(7, 3);
     let mut purged_sketch = FrequentItemsSketch::<i64>::new(32).unwrap();
     for item in 0..=(32 * 3 / 4) {
         purged_sketch.update(item);
