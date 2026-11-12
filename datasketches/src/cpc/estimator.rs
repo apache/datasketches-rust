@@ -427,3 +427,458 @@ fn icon_estimate(lg_k: u8, num_coupons: u32) -> f64 {
     let result = c * factor * term;
     if result >= c { result } else { c }
 }
+
+#[cfg(test)]
+mod tests {
+    // Reference ICON estimator, least-squares polynomial reconstruction, and confidence-table
+    // verification.
+    //
+    // Provenance in Kevin J. Lang's original FM85 / CPC implementation:
+    // 1. `iconEstimator.c` / `icon_estimator.hpp` / `IconEstimatorTest.java`: Defines the exact
+    //    FM85 ICON (Inverted Coupon Number) estimator by numerically inverting the expected coupon
+    //    count `E[C | N] = K * sum_{col=1..=128} (1 - (1 - 1/(K*2^col))^N)`, together with a
+    //    validation sweep comparing `icon_estimate` against `exact_icon_estimate`.
+    // 2. `icon_estimator.hpp` / `IconPolynomialCoefficients.java` (offline polynomial generator):
+    //    Only the fitted degree-19 coefficient matrix `ICON_POLYNOMIAL_COEFFICIENTS` and the
+    //    constants `0.7940236163830469`, `2.0`, and `66.774757` were checked into C/C++/Java. The
+    //    offline fitting procedure was reverse-engineered from `icon_estimate`'s evaluation
+    //    formula, the Maclaurin series of `N(C) / C`, and the error profile beyond `5.7 * K`; see
+    //    `fit_icon_polynomial_row` below.
+    // 3. `cpc_confidence.hpp` / `CpcConfidence.java` (offline Monte Carlo characterization):
+    //    Defines the theoretical asymptotic relative standard error constants (`ICON_ERROR_CONSTANT
+    //    = ln 2` and `HIP_ERROR_CONSTANT = sqrt((ln 2) / 2)`) alongside the empirical
+    //    ~1,000,000-trial quantile tables `ICON_{LOW,HIGH}_SIDE_DATA` and
+    //    `HIP_{LOW,HIGH}_SIDE_DATA` measured at `N = 1000 * K` for `lg_k = 4..=14`.
+
+    use std::array::from_fn;
+    use std::f64::consts::SQRT_2;
+
+    use googletest::assert_that;
+    use googletest::prelude::gt;
+    use googletest::prelude::lt;
+    use googletest::prelude::near;
+
+    use super::*;
+    use crate::common::inv_pow2::inv_pow2;
+
+    const EULER_MASCHERONI: f64 = 0.577_215_664_901_532_9;
+    const ICON_EXPONENTIAL_CONSTANT: f64 = 0.7940236163830469;
+    const ICON_CUBIC_PRECONDITIONER: f64 = 66.774757;
+
+    // -------------------------------------------------------------------------
+    // 1. Exact FM85 ICON estimator (`IconEstimatorTest.java` / `fm85`)
+    // -------------------------------------------------------------------------
+
+    const ICON_INVERSION_TOLERANCE: f64 = 1.0e-15;
+
+    /// Precomputes `ln(1 - 1 / (K * 2^col))` for 1-based `col = 1..=128` at fixed `kf`, matching
+    /// `qnj` in `IconEstimatorTest.java` bit-for-bit while avoiding repeated `ln_1p` evaluations
+    /// inside the binary-search inner loop.
+    fn precompute_col_ln1p(kf: f64) -> [f64; 128] {
+        from_fn(|idx| (-inv_pow2((idx + 1) as u8) / kf).ln_1p())
+    }
+
+    /// Expected coupon count `E[C | N] = K * sum_{col=1..=128} (1 - (1 - 1/(K*2^col))^N)` in the
+    /// unclipped 128-column FM85 coupon matrix (`exactCofN` in `IconEstimatorTest.java`).
+    fn exact_coupon_count_with_ln1p(kf: f64, col_ln1p: &[f64; 128], nf: f64) -> f64 {
+        let mut total = 0.0;
+        // Iterating from 128 down to 1 accumulates tiny tail probabilities first before large
+        // head probabilities, preserving full `f64` summation precision.
+        for &tmp2 in col_ln1p.iter().rev() {
+            total += -f64::exp_m1(nf * tmp2);
+        }
+        kf * total
+    }
+
+    /// Exact ICON estimate `N_hat` solving `exact_coupon_count(kf, N_hat) = target_c` by bracket
+    /// doubling and binary search (`exactIconEstimator` in `IconEstimatorTest.java`).
+    fn exact_icon_estimate(kf: f64, target_c: f64) -> f64 {
+        if target_c == 0.0 || target_c == 1.0 {
+            return target_c;
+        }
+        let col_ln1p = precompute_col_ln1p(kf);
+        exact_icon_estimate_with_ln1p(kf, &col_ln1p, target_c)
+    }
+
+    fn exact_icon_estimate_with_ln1p(kf: f64, col_ln1p: &[f64; 128], target_c: f64) -> f64 {
+        if target_c == 0.0 || target_c == 1.0 {
+            return target_c;
+        }
+        let mut lo = target_c;
+        let mut hi = 2.0 * target_c;
+        while exact_coupon_count_with_ln1p(kf, col_ln1p, hi) <= target_c {
+            lo = hi;
+            hi *= 2.0;
+        }
+        for _ in 0..100 {
+            let mid = lo + 0.5 * (hi - lo);
+            if (hi - lo) / mid < ICON_INVERSION_TOLERANCE || mid <= lo || mid >= hi {
+                return mid;
+            }
+            let mid_c = exact_coupon_count_with_ln1p(kf, col_ln1p, mid);
+            if mid_c == target_c {
+                return mid;
+            } else if mid_c < target_c {
+                lo = mid;
+            } else {
+                hi = mid;
+            }
+        }
+        0.5 * (lo + hi)
+    }
+
+    // -------------------------------------------------------------------------
+    // 2. Reconstructed generator for `ICON_POLYNOMIAL_COEFFICIENTS`
+    // -------------------------------------------------------------------------
+    //
+    // How `ICON_POLYNOMIAL_COEFFICIENTS` and its constants were reverse-engineered:
+    //
+    // * Pre-conditioned target function: In `icon_estimate`, for `2 <= C <= threshold * K`:
+    //   `N_approx(K, C) = C * (1 + (C / K)^3 / 66.774757) * P_{lg_k}(C / (2 * K))`. Hence row
+    //   `lg_k` of `ICON_POLYNOMIAL_COEFFICIENTS` is a degree-19 polynomial in `x = C / (2 * K)`
+    //   approximating the smooth ratio `g_K(x) = N_exact(K, C) / (C * (1 + (C / K)^3 /
+    //   66.774757))`. Without the cubic pre-conditioner, `N_exact(K, C) / C` grows by > 8x over `C
+    //   / K in [0, 6]` as it transitions into `0.794 * K * 2^(C / K)`; dividing by `1 + (C / K)^3 /
+    //   66.774757` flattens `g_K(x)` into `[0.89, 1.48]` so a degree-19 polynomial achieves `<
+    //   2e-7` relative error everywhere. Scaling the argument by `1 / (2 * K)` maps `C in [0, 6 *
+    //   K]` onto `x in [0, 3]` instead of `[0, 6]`, keeping `x^19` bounded by `3^19 ≈ 1.16e9`
+    //   rather than `6^19 ≈ 6.09e14`.
+    //
+    // * Maclaurin series check on the leading columns: For `K -> inf` and `lambda = N / K -> 0`,
+    //   `E[C] / K = sum_{j>=1} (1 - exp(-lambda * 2^-j)) = lambda - lambda^2/6 + lambda^3/42 -
+    //   ...`. Series inversion yields `N / C = 1 + (C/K)/6 + 2*(C/K)^2/63 + ... = 1 + x/3 +
+    //   8*x^2/63 + ...`. Dividing by `1 + 8*x^3 / 66.774757` preserves the degree-0..2 Maclaurin
+    //   terms, explaining why columns 0, 1, 2 of `ICON_POLYNOMIAL_COEFFICIENTS` converge to `1`,
+    //   `1/3`, and `8/63` as `lg_k` increases.
+    //
+    // * Fitting domain `C in [1, 6 * K]` (`x in (0, 3]`) and sample grid transition at `lg_k = 8`:
+    //   Evaluating the stored rows past the runtime threshold (`5.6 * K` or `5.7 * K`) shows that
+    //   their relative error against `exact_icon_estimate` stays flat (`<= 2e-7`) all the way up to
+    //   `C = 6.0 * K` (`x = 3.0`) and diverges sharply immediately above `6.0 * K`. Thus the
+    //   polynomials were fit on `C in [1, 6 * K]`, using `[5.6 * K, 6.0 * K]` as a boundary guard
+    //   band against endpoint oscillation (Runge phenomenon). Furthermore, a visible step in the
+    //   high-degree monomials between `lg_k = 7` (`a_19 ≈ 4.28e-5`) and `lg_k = 8` (`a_19 ≈
+    //   2.91e-5`) reveals the sample-grid transition:
+    //   - For `lg_k <= 7` (`6 * K <= 768`), ordinary least squares over *every integer* `C = 1 ..=
+    //     6 * K` reproduces the stored polynomial to `< 2e-8` relative prediction difference (and
+    //     matches all 20 monomials directly up to the `~1e12` condition number of the
+    //     unorthogonalized Vandermonde basis on `[0, 3]`).
+    //   - For `lg_k >= 8` (`6 * K` up to `4e8`), evaluating every integer is infeasible, so the
+    //     offline script switches to dense low integers plus geometrically spaced `C` values up to
+    //     `6 * K` (the same `max(c + 1, ...)` stepping pattern used in `IconEstimatorTest.java`).
+
+    /// Solves the overdetermined linear least-squares problem `min_a ||V * a - y||_2` (`m >= n`)
+    /// via Householder QR factorization without external linear-algebra dependencies.
+    fn solve_least_squares_qr(mut v: Vec<f64>, mut y: Vec<f64>, m: usize, n: usize) -> Vec<f64> {
+        assert!(m >= n && v.len() == m * n && y.len() == m);
+
+        for k in 0..n {
+            let mut norm_sq = 0.0;
+            for row in k..m {
+                let val = v[row * n + k];
+                norm_sq += val * val;
+            }
+            let norm = norm_sq.sqrt();
+            if norm == 0.0 {
+                continue;
+            }
+
+            let v_kk = v[k * n + k];
+            let alpha = if v_kk >= 0.0 { -norm } else { norm };
+            let u0 = v_kk - alpha;
+
+            let mut u_norm_sq = u0 * u0;
+            for row in (k + 1)..m {
+                let val = v[row * n + k];
+                u_norm_sq += val * val;
+            }
+            let beta = 2.0 / u_norm_sq;
+
+            v[k * n + k] = alpha;
+            for col in (k + 1)..n {
+                let mut dot = u0 * v[k * n + col];
+                for row in (k + 1)..m {
+                    dot += v[row * n + k] * v[row * n + col];
+                }
+                let scale = beta * dot;
+                v[k * n + col] -= scale * u0;
+                for row in (k + 1)..m {
+                    v[row * n + col] -= scale * v[row * n + k];
+                }
+            }
+
+            let mut dot_y = u0 * y[k];
+            for row in (k + 1)..m {
+                dot_y += v[row * n + k] * y[row];
+            }
+            let scale_y = beta * dot_y;
+            y[k] -= scale_y * u0;
+            for row in (k + 1)..m {
+                y[row] -= scale_y * v[row * n + k];
+            }
+        }
+
+        let mut coeffs = vec![0.0; n];
+        for i in (0..n).rev() {
+            let mut sum = y[i];
+            for j in (i + 1)..n {
+                sum -= v[i * n + j] * coeffs[j];
+            }
+            coeffs[i] = sum / v[i * n + i];
+        }
+        coeffs
+    }
+
+    /// Generates the sample grid of coupon counts `C in [1, 6 * K]` for fitting row `lg_k`.
+    fn icon_fitting_grid(lg_k: usize) -> Vec<u64> {
+        let k = 1_u64 << lg_k;
+        let max_c = 6 * k;
+        if lg_k <= 7 {
+            // Exact exhaustive integer grid used by the original generator for small `K`.
+            (1..=max_c).collect()
+        } else {
+            // Dense small integers followed by geometric stepping across `[1, 6 * K]`.
+            let mut grid = Vec::with_capacity(512);
+            let mut c = 1_u64;
+            while c < max_c {
+                grid.push(c);
+                c = if c < 64 {
+                    c + 1
+                } else {
+                    (c + 1).max((1040 * c) / 1000)
+                };
+            }
+            grid.push(max_c);
+            grid
+        }
+    }
+
+    /// Reconstructs the 20 degree-19 polynomial coefficients for `lg_k` from first principles by
+    /// fitting least squares to `exact_icon_estimate` on `C in [1, 6 * K]`.
+    fn fit_icon_polynomial_row(lg_k: usize) -> Vec<f64> {
+        let kf = (1_u64 << lg_k) as f64;
+        let col_ln1p = precompute_col_ln1p(kf);
+        let grid = icon_fitting_grid(lg_k);
+        let m = grid.len();
+        let n = ICON_POLYNOMIAL_NUM_COEFFICIENTS;
+
+        let mut vandermonde = vec![0.0; m * n];
+        let mut target = vec![0.0; m];
+
+        for (row, &c_int) in grid.iter().enumerate() {
+            let cf = c_int as f64;
+            let n_exact = exact_icon_estimate_with_ln1p(kf, &col_ln1p, cf);
+            let ratio = cf / kf;
+            let precond = 1.0 + (ratio * ratio * ratio) / ICON_CUBIC_PRECONDITIONER;
+            target[row] = n_exact / (cf * precond);
+
+            let x = cf / (2.0 * kf);
+            let mut x_pow = 1.0;
+            for col in 0..n {
+                vandermonde[row * n + col] = x_pow;
+                x_pow *= x;
+            }
+        }
+
+        solve_least_squares_qr(vandermonde, target, m, n)
+    }
+
+    #[test]
+    fn exact_icon_estimator_matches_approximation() {
+        for lg_k in ICON_MIN_LOG_K..=ICON_MAX_LOG_K {
+            let lg_k_u8 = lg_k as u8;
+            let k = 1_u64 << lg_k;
+            let kf = k as f64;
+
+            assert_eq!(icon_estimate(lg_k_u8, 0), 0.0);
+            assert_eq!(icon_estimate(lg_k_u8, 1), 1.0);
+
+            // Verify strict monotonicity across the polynomial-to-exponential splice threshold
+            // (`5.7 * K` for `lg_k < 14`, `5.6 * K` for `lg_k >= 14`).
+            let threshold_factor = if lg_k < 14 { 5.7 } else { 5.6 };
+            let splice_c = (threshold_factor * kf).floor() as u32;
+            let mut prev_est = icon_estimate(lg_k_u8, splice_c - 2);
+            for c in (splice_c - 1)..=(splice_c + 2) {
+                let est = icon_estimate(lg_k_u8, c);
+                assert_that!(est, gt(prev_est));
+                prev_est = est;
+            }
+
+            // Geometric sweep from `C = 2` into the exponential regime (`60 * K`), matching the
+            // characterization sweep in `IconEstimatorTest.java`.
+            let max_c = (60 * k).min(u32::MAX as u64);
+            let mut c = 2_u64;
+            while c <= max_c {
+                let exact = exact_icon_estimate(kf, c as f64);
+                let approx = icon_estimate(lg_k_u8, c as u32);
+                let rel_err = ((approx - exact) / exact).abs();
+                // In the polynomial region (`<= threshold * K`), relative error is `< 2e-6`. In
+                // the exponential region (`> threshold * K`), the error combines the finite-`K`
+                // binomial-vs-Poisson gap `O(1 / (80 * K))` (matching `1.0 / (80 * k)` in
+                // `IconEstimatorTest::quickIconEstimatorTest`) and Flajolet-Martin's periodic
+                // oscillation (`< 2e-5`).
+                let tol = if (c as f64) <= threshold_factor * kf {
+                    2e-6
+                } else {
+                    (2e-5_f64).max(1.0 / (80.0 * kf))
+                };
+                assert_that!(rel_err, lt(tol));
+
+                c = if c < 32 {
+                    c + 1
+                } else {
+                    (c + 1).max((125 * c) / 100)
+                };
+            }
+        }
+    }
+
+    #[test]
+    fn icon_exponential_constant_matches_theory() {
+        // Asymptotic FM85 theory: `E[C]/K = log2(N/K) + gamma/ln(2) - 1/2 + P(log2(N/K)) + O(K/N)`,
+        // so ignoring the tiny 1-periodic oscillation `P(u)` (`|P(u)| < 1e-5`) gives
+        // `N_hat / (K * 2^(C/K)) -> sqrt(2) * exp(-gamma) ≈ 0.7940236163832829`.
+        let theoretical = SQRT_2 * (-EULER_MASCHERONI).exp();
+        assert_that!(ICON_EXPONENTIAL_CONSTANT, near(theoretical, 3e-13));
+
+        // Averaging `(N_exact(2^32, C) / 2^32) * 2^(-C/K)` over one full unit period of `C / K`
+        // (`C / K in [10, 11)`) cancels the fundamental periodic harmonics of `P(u)`.
+        let kf = (1_u64 << 32) as f64;
+        let samples = 32;
+        let mut period_sum = 0.0;
+        for m in 0..samples {
+            let c_over_k = 10.0 + (m as f64 + 0.5) / (samples as f64);
+            let n_exact = exact_icon_estimate(kf, c_over_k * kf);
+            period_sum += (n_exact / kf) * 2.0_f64.powf(-c_over_k);
+        }
+        let period_mean = period_sum / (samples as f64);
+        assert_that!(ICON_EXPONENTIAL_CONSTANT, near(period_mean, 1e-10));
+    }
+
+    #[test]
+    fn reconstruct_icon_polynomial_coefficients() {
+        // Verify asymptotic Maclaurin limits on the highest-`lg_k` stored row (`lg_k = 26`):
+        // `N / C = 1 + (1/3)*x + (8/63)*x^2 + ...` where `x = C / (2 * K)`.
+        let last_row_start = ICON_POLYNOMIAL_NUM_COEFFICIENTS * (ICON_MAX_LOG_K - ICON_MIN_LOG_K);
+        assert_that!(
+            ICON_POLYNOMIAL_COEFFICIENTS[last_row_start],
+            near(1.0, 1e-7)
+        );
+        assert_that!(
+            ICON_POLYNOMIAL_COEFFICIENTS[last_row_start + 1],
+            near(1.0 / 3.0, 1e-5),
+        );
+        assert_that!(
+            ICON_POLYNOMIAL_COEFFICIENTS[last_row_start + 2],
+            near(8.0 / 63.0, 4e-4),
+        );
+
+        for lg_k in ICON_MIN_LOG_K..=ICON_MAX_LOG_K {
+            let fitted = fit_icon_polynomial_row(lg_k);
+            let stored_start = ICON_POLYNOMIAL_NUM_COEFFICIENTS * (lg_k - ICON_MIN_LOG_K);
+            let stored = &ICON_POLYNOMIAL_COEFFICIENTS
+                [stored_start..stored_start + ICON_POLYNOMIAL_NUM_COEFFICIENTS];
+
+            if lg_k <= 7 {
+                // On `lg_k <= 7`, the exact exhaustive integer grid `C = 1 ..= 6 * K` reproduces
+                // `a_0` to `< 1e-6`, `a_1` to `< 2e-5`, and all 20 monomials within `2.5%`
+                // despite the `kappa(V) ~ 1e12` conditioning of the unorthogonalized degree-19
+                // Vandermonde basis on `[0, 3]` (where a 1-ULP `ln_1p`/`exp_m1` difference gets
+                // amplified by `~1e12` in the high-degree monomials while leaving `P(x)` invariant
+                // to `< 2e-8`).
+                assert_that!(fitted[0], near(stored[0], 1e-6));
+                assert_that!(fitted[1], near(stored[1], 2e-5));
+                for deg in 0..ICON_POLYNOMIAL_NUM_COEFFICIENTS {
+                    let rel_diff = ((fitted[deg] - stored[deg]) / stored[deg]).abs();
+                    assert_that!(rel_diff, lt(0.025));
+                }
+            }
+
+            // Across every `lg_k = 4..=26`, verify that the reconstructed polynomial agrees with
+            // both the checked-in `ICON_POLYNOMIAL_COEFFICIENTS` row and `exact_icon_estimate`
+            // throughout the active evaluation interval `[2, threshold * K]`.
+            let k = 1_u64 << lg_k;
+            let kf = k as f64;
+            let threshold_factor = if lg_k < 14 { 5.7 } else { 5.6 };
+            let max_active_c = (threshold_factor * kf).floor() as u64;
+
+            let pred_vs_stored_tol = if lg_k <= 7 { 2e-8 } else { 4e-7 };
+            for step in 0..=40 {
+                let c_int = 2 + ((max_active_c - 2) * step) / 40;
+                let cf = c_int as f64;
+                let x = cf / (2.0 * kf);
+                let ratio = cf / kf;
+                let precond = 1.0 + (ratio * ratio * ratio) / ICON_CUBIC_PRECONDITIONER;
+
+                let n_fitted = cf * precond * evaluate_polynomial(&fitted, 0, fitted.len(), x);
+                let n_stored = cf * precond * evaluate_polynomial(stored, 0, stored.len(), x);
+                let n_exact = exact_icon_estimate(kf, cf);
+
+                let rel_vs_stored = ((n_fitted - n_stored) / n_stored).abs();
+                let rel_vs_exact = ((n_fitted - n_exact) / n_exact).abs();
+                assert_that!(rel_vs_stored, lt(pred_vs_stored_tol));
+                assert_that!(rel_vs_exact, lt(4e-7));
+            }
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // 3. Confidence interval constants & empirical tables (`cpc_confidence.hpp`)
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn confidence_error_constants_and_tables() {
+        // Theoretical asymptotic (`K -> inf`) relative standard errors scaled by `sqrt(K)`:
+        // - ICON (merged sketches): `ln(2)`
+        // - HIP (unmerged sketches): `sqrt(ln(2) / 2)`
+        assert_eq!(ICON_ERROR_CONSTANT, LN_2);
+        assert_that!(HIP_ERROR_CONSTANT, near((LN_2 / 2.0).sqrt(), 1e-16));
+
+        // `ICON_{LOW,HIGH}_SIDE_DATA` and `HIP_{LOW,HIGH}_SIDE_DATA` store empirical 1-sided error
+        // factors scaled by `10_000` from ~1,000,000 Monte Carlo trials at `N = 1000 * K` for
+        // `lg_k = 4..=14` and `kappa in {1, 2, 3}`. Verify structural invariants and convergence
+        // of the `lg_k = 14` row toward `10_000 * ICON_ERROR_CONSTANT` (`6931.47`) and
+        // `10_000 * HIP_ERROR_CONSTANT` (`5887.05`).
+        for row in 0..11 {
+            for kappa_idx in 0..3 {
+                let idx = 3 * row + kappa_idx;
+                assert!(ICON_LOW_SIDE_DATA[idx] > 5000 && ICON_LOW_SIDE_DATA[idx] < 7500);
+                assert!(ICON_HIGH_SIDE_DATA[idx] > 6500 && ICON_HIGH_SIDE_DATA[idx] < 10000);
+                assert!(HIP_LOW_SIDE_DATA[idx] > 4500 && HIP_LOW_SIDE_DATA[idx] < 6000);
+                assert!(HIP_HIGH_SIDE_DATA[idx] > 5800 && HIP_HIGH_SIDE_DATA[idx] < 7500);
+            }
+        }
+
+        let lg14_base = 3 * (14 - 4);
+        assert_that!(
+            ICON_LOW_SIDE_DATA[lg14_base] as f64,
+            near(ICON_ERROR_CONSTANT * 10_000.0, 20.0),
+        );
+        assert_that!(
+            ICON_HIGH_SIDE_DATA[lg14_base] as f64,
+            near(ICON_ERROR_CONSTANT * 10_000.0, 20.0),
+        );
+        assert_that!(
+            HIP_LOW_SIDE_DATA[lg14_base] as f64,
+            near(HIP_ERROR_CONSTANT * 10_000.0, 15.0),
+        );
+        assert_that!(
+            HIP_HIGH_SIDE_DATA[lg14_base] as f64,
+            near(HIP_ERROR_CONSTANT * 10_000.0, 15.0),
+        );
+
+        for lg_k in 4..=16_u8 {
+            let c = 3 * (1_u32 << lg_k);
+            let icon_est = estimate(true, 0.0, lg_k, c);
+            for kappa in [NumStdDev::One, NumStdDev::Two, NumStdDev::Three] {
+                let lb_icon = lower_bound(true, 0.0, lg_k, c, kappa);
+                let ub_icon = upper_bound(true, 0.0, lg_k, c, kappa);
+                assert!(lb_icon >= c as f64 && lb_icon <= icon_est && icon_est <= ub_icon);
+
+                let lb_hip = lower_bound(false, icon_est, lg_k, c, kappa);
+                let ub_hip = upper_bound(false, icon_est, lg_k, c, kappa);
+                assert!(lb_hip >= c as f64 && lb_hip <= icon_est && icon_est <= ub_hip);
+            }
+        }
+    }
+}
