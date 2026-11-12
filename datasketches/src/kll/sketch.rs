@@ -780,7 +780,8 @@ impl<T: Clone + Ord> KllSketch<T> {
 
     fn compress_while_updating(&mut self) {
         let level = self.find_level_to_compact();
-        if level + 1 == self.levels.len() {
+        let adds_level = level + 1 == self.levels.len();
+        if adds_level {
             self.levels.push(Vec::new());
         }
 
@@ -796,6 +797,11 @@ impl<T: Clone + Ord> KllSketch<T> {
         );
         if above.is_empty() {
             above = promoted;
+            if adds_level {
+                // The new top level was downsampled in the compacted level's buffer, about twice
+                // its length, and it is kept until the level below is compacted again.
+                above.shrink_to_fit();
+            }
         } else {
             above = merge_sorted_vec(promoted, above);
         }
@@ -806,7 +812,11 @@ impl<T: Clone + Ord> KllSketch<T> {
             new_level.push(item);
         }
         self.levels[level] = new_level;
-        self.refresh_capacity_state();
+        self.num_retained = self.levels.iter().map(Vec::len).sum();
+        if adds_level {
+            // The total capacity depends only on the number of levels.
+            self.capacity = total_capacity(self.k, self.m, self.levels.len()) as usize;
+        }
     }
 
     fn find_level_to_compact(&self) -> usize {
@@ -836,14 +846,14 @@ impl<T: Clone + Ord> KllSketch<T> {
             } else {
                 Vec::new()
             };
-            let right = other.levels.get(level).cloned().unwrap_or_default();
+            let right = other.levels.get(level).map_or(&[][..], Vec::as_slice);
 
             work_levels[level] = if left.is_empty() {
-                right
+                right.to_vec()
             } else if right.is_empty() {
                 left
             } else {
-                merge_sorted_vec(left, right)
+                merge_sorted_vec_with_slice(left, right)
             };
         }
 
@@ -911,11 +921,24 @@ impl<T: Clone + Ord> KllSketch<T> {
                 }
             }
 
-            for (item_index, item) in level.iter().enumerate() {
-                if item.cmp(min_item) == Ordering::Less || item.cmp(max_item) == Ordering::Greater {
-                    return Err(Error::deserial(format!(
-                        "retained item at level {level_index}, index {item_index} is outside the serialized minimum and maximum"
-                    )));
+            // A sorted level lies within its first and last items, so it is inside the bounds if
+            // those two are; otherwise the scan below finds the first item outside them.
+            let within_bounds = must_be_sorted
+                && level
+                    .first()
+                    .is_none_or(|first| first.cmp(min_item) != Ordering::Less)
+                && level
+                    .last()
+                    .is_none_or(|last| last.cmp(max_item) != Ordering::Greater);
+            if !within_bounds {
+                for (item_index, item) in level.iter().enumerate() {
+                    if item.cmp(min_item) == Ordering::Less
+                        || item.cmp(max_item) == Ordering::Greater
+                    {
+                        return Err(Error::deserial(format!(
+                            "retained item at level {level_index}, index {item_index} is outside the serialized minimum and maximum"
+                        )));
+                    }
                 }
             }
 
@@ -1016,6 +1039,10 @@ fn downsample<T, I: ExactSizeIterator<Item = T>>(items: I, offset: bool, use_up:
 
 fn merge_sorted_vec<T: Clone + Ord>(left: Vec<T>, right: Vec<T>) -> Vec<T> {
     let mut merged = Vec::with_capacity(left.len() + right.len());
+    if !std::mem::needs_drop::<T>() {
+        merge_sorted_slices(&left, &right, &mut merged);
+        return merged;
+    }
     let mut left_iter = left.into_iter().peekable();
     let mut right_iter = right.into_iter().peekable();
 
@@ -1029,6 +1056,46 @@ fn merge_sorted_vec<T: Clone + Ord>(left: Vec<T>, right: Vec<T>) -> Vec<T> {
     merged.extend(left_iter);
     merged.extend(right_iter);
     merged
+}
+
+/// Merges like [`merge_sorted_vec`], cloning items from the borrowed `right` only as they are
+/// consumed.
+fn merge_sorted_vec_with_slice<T: Clone + Ord>(left: Vec<T>, right: &[T]) -> Vec<T> {
+    let mut merged = Vec::with_capacity(left.len() + right.len());
+    if !std::mem::needs_drop::<T>() {
+        merge_sorted_slices(&left, right, &mut merged);
+        return merged;
+    }
+    let mut left_iter = left.into_iter().peekable();
+    let mut right_iter = right.iter().peekable();
+
+    while let (Some(l), Some(&r)) = (left_iter.peek(), right_iter.peek()) {
+        if l.cmp(r) == Ordering::Less {
+            merged.push(left_iter.next().unwrap());
+        } else {
+            merged.push(right_iter.next().unwrap().clone());
+        }
+    }
+    merged.extend(left_iter);
+    merged.extend(right_iter.cloned());
+    merged
+}
+
+/// Appends the merge of two sorted slices to `out`; equal items from `right` come first.
+///
+/// Intended for items without drop glue, which are cheap to clone. Selecting the source with
+/// the comparison result, rather than branching on it, avoids mispredicted branches on unordered
+/// inputs.
+fn merge_sorted_slices<T: Clone + Ord>(left: &[T], right: &[T], out: &mut Vec<T>) {
+    let (mut i, mut j) = (0, 0);
+    while i < left.len() && j < right.len() {
+        let take_left = left[i].cmp(&right[j]) == Ordering::Less;
+        out.push(if take_left { &left[i] } else { &right[j] }.clone());
+        i += usize::from(take_left);
+        j += usize::from(!take_left);
+    }
+    out.extend_from_slice(&left[i..]);
+    out.extend_from_slice(&right[j..]);
 }
 
 fn general_compress<T: Clone + Ord>(
@@ -1067,6 +1134,11 @@ fn general_compress<T: Clone + Ord>(
             let promoted_len = promoted.len();
             if above.is_empty() {
                 above = promoted;
+                if current_level == current_num_levels - 1 {
+                    // As in `compress_while_updating`: the new top level holds the downsampled
+                    // half in the compacted level's buffer.
+                    above.shrink_to_fit();
+                }
             } else {
                 above = merge_sorted_vec(promoted, above);
             }

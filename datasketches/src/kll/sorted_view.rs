@@ -233,23 +233,46 @@ pub fn build_sorted_view<T: Clone + Ord>(
     min_item: Option<T>,
     max_item: Option<T>,
 ) -> SortedView<T> {
-    let mut runs = Vec::with_capacity(levels.len());
-    for (level_index, level) in levels.iter().enumerate() {
-        let weight = 1u64 << level_index;
-        let mut run: Vec<_> = level
-            .iter()
-            .cloned()
-            .map(|item| Entry {
-                item,
-                cumulative_weight: weight,
-            })
-            .collect();
-        if level_index == 0 && !is_level_zero_sorted {
+    // An unsorted level 0 is sorted as entries, as it always was, so equal items keep their order.
+    let mut level_zero = match levels.first() {
+        Some(level) if !is_level_zero_sorted && !level.is_empty() => {
+            let mut run: Vec<_> = weighted_entries(level, 1).collect();
             run.sort_unstable_by(|left, right| left.item.cmp(&right.item));
+            Some(run)
         }
-        if !run.is_empty() {
-            runs.push(run);
-        }
+        _ => None,
+    };
+
+    // The first round merges pairs of non-empty levels straight from the sketch, so each item is
+    // copied into an entry only by its first merge. Later rounds merge the runs pairwise, lower
+    // levels first, so equal items keep level order.
+    let mut sorted_levels = levels
+        .iter()
+        .enumerate()
+        .filter(|(_, level)| !level.is_empty())
+        .map(|(level_index, level)| (level.as_slice(), 1u64 << level_index));
+    let mut runs = Vec::with_capacity(levels.len().div_ceil(2));
+    while let Some((left, left_weight)) = sorted_levels.next() {
+        // Only level 0 has weight 1, and it is the first level when it is not empty.
+        let sorted_left = if left_weight == 1 {
+            level_zero.take()
+        } else {
+            None
+        };
+        let run = match (sorted_left, sorted_levels.next()) {
+            (Some(left), Some((right, right_weight))) => {
+                let len = left.len() + right.len();
+                merge_sorted_entries(left.into_iter(), weighted_entries(right, right_weight), len)
+            }
+            (Some(left), None) => left,
+            (None, Some((right, right_weight))) => merge_sorted_entries(
+                weighted_entries(left, left_weight),
+                weighted_entries(right, right_weight),
+                left.len() + right.len(),
+            ),
+            (None, None) => weighted_entries(left, left_weight).collect(),
+        };
+        runs.push(run);
     }
 
     while runs.len() > 1 {
@@ -257,7 +280,12 @@ pub fn build_sorted_view<T: Clone + Ord>(
         let mut iter = runs.into_iter();
         while let Some(left) = iter.next() {
             if let Some(right) = iter.next() {
-                merged_runs.push(merge_sorted_entries(left, right));
+                let len = left.len() + right.len();
+                merged_runs.push(merge_sorted_entries(
+                    left.into_iter(),
+                    right.into_iter(),
+                    len,
+                ));
             } else {
                 merged_runs.push(left);
             }
@@ -268,10 +296,21 @@ pub fn build_sorted_view<T: Clone + Ord>(
     SortedView::from_sorted(runs.pop().unwrap_or_default(), min_item, max_item)
 }
 
-fn merge_sorted_entries<T: Ord>(left: Vec<Entry<T>>, right: Vec<Entry<T>>) -> Vec<Entry<T>> {
-    let mut merged = Vec::with_capacity(left.len() + right.len());
-    let mut left = left.into_iter().peekable();
-    let mut right = right.into_iter().peekable();
+fn weighted_entries<T: Clone>(level: &[T], weight: u64) -> impl Iterator<Item = Entry<T>> + '_ {
+    level.iter().cloned().map(move |item| Entry {
+        item,
+        cumulative_weight: weight,
+    })
+}
+
+fn merge_sorted_entries<T: Ord>(
+    left: impl Iterator<Item = Entry<T>>,
+    right: impl Iterator<Item = Entry<T>>,
+    len: usize,
+) -> Vec<Entry<T>> {
+    let mut merged = Vec::with_capacity(len);
+    let mut left = left.peekable();
+    let mut right = right.peekable();
 
     while let (Some(left_entry), Some(right_entry)) = (left.peek(), right.peek()) {
         if left_entry.item.cmp(&right_entry.item) == Ordering::Greater {
