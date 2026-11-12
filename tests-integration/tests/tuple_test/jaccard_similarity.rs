@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use datasketches::thetacommon::JaccardSimilarity;
+use datasketches::common::JaccardSimilarity;
 use datasketches::tuple::DefaultUpdatePolicy;
 use datasketches::tuple::TupleJaccardSimilarity;
 use datasketches::tuple::TupleSketch;

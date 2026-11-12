@@ -18,6 +18,7 @@
 //! Frequent items sketch implementations.
 
 use std::borrow::Borrow;
+use std::fmt;
 use std::hash::Hash;
 
 use crate::codec::SketchBytes;
@@ -141,7 +142,7 @@ impl<T> Row<T> {
 /// guaranteed upper and lower bounds.
 ///
 /// See the [module level documentation](super) for an overview and error guarantees.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct FrequentItemsSketch<T> {
     lg_max_map_size: u8,
     cur_map_cap: usize,
@@ -149,6 +150,19 @@ pub struct FrequentItemsSketch<T> {
     stream_weight: u64,
     sample_size: usize,
     hash_map: ReversePurgeItemHashMap<T>,
+}
+
+impl<T> fmt::Debug for FrequentItemsSketch<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("FrequentItemsSketch")
+            .field("lg_max_map_size", &self.lg_max_map_size)
+            .field("cur_map_cap", &self.cur_map_cap)
+            .field("is_empty", &(self.stream_weight == 0))
+            .field("num_active_items", &self.hash_map.num_active())
+            .field("total_weight", &self.stream_weight)
+            .field("maximum_error", &self.offset)
+            .finish()
+    }
 }
 
 impl<T: Eq + Hash> FrequentItemsSketch<T> {
@@ -193,7 +207,8 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
 
     /// Returns the total weight of the stream.
     ///
-    /// This is the sum of all counts passed to `update` and `update_with_count`.
+    /// This is the sum of all weights passed to `update`, `update_with_weight`, `update_ref`, and
+    /// `update_with_weight_ref`.
     pub fn total_weight(&self) -> u64 {
         self.stream_weight
     }
@@ -208,7 +223,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     /// use datasketches::frequencies::FrequentItemsSketch;
     ///
     /// let mut sketch = FrequentItemsSketch::<i64>::new(64).unwrap();
-    /// sketch.update_with_count(10, 2);
+    /// sketch.update_with_weight(10, 2);
     /// assert!(sketch.estimate(&10) >= 2);
     /// ```
     pub fn estimate<Q>(&self, item: &Q) -> u64
@@ -328,7 +343,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
         self.hash_map.estimated_size()
     }
 
-    /// Updates the sketch with a count of one.
+    /// Updates the sketch with a weight of one.
     ///
     /// # Panics
     ///
@@ -344,12 +359,12 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     /// assert!(sketch.estimate(&42) >= 1);
     /// ```
     pub fn update(&mut self, item: T) {
-        self.update_with_count(item, 1);
+        self.update_with_weight(item, 1);
     }
 
-    /// Updates the sketch with an item and count.
+    /// Updates the sketch with an item and weight.
     ///
-    /// A count of zero is a no-op.
+    /// A weight of zero is a no-op.
     ///
     /// # Panics
     ///
@@ -361,22 +376,22 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     /// use datasketches::frequencies::FrequentItemsSketch;
     ///
     /// let mut sketch = FrequentItemsSketch::<i64>::new(64).unwrap();
-    /// sketch.update_with_count(10, 3);
+    /// sketch.update_with_weight(10, 3);
     /// assert!(sketch.estimate(&10) >= 3);
     /// ```
-    pub fn update_with_count(&mut self, item: T, count: u64) {
-        if count == 0 {
+    pub fn update_with_weight(&mut self, item: T, weight: u64) {
+        if weight == 0 {
             return;
         }
         self.stream_weight = self
             .stream_weight
-            .checked_add(count)
+            .checked_add(weight)
             .expect("total stream weight overflow");
-        self.hash_map.adjust_or_put_value(item, count);
+        self.hash_map.adjust_or_put_value(item, weight);
         self.maybe_resize_or_purge();
     }
 
-    /// Updates the sketch with a borrowed item and a count of one.
+    /// Updates the sketch with a borrowed item and a weight of one.
     ///
     /// Equivalent to [`update`](Self::update) but takes the item by reference and
     /// only allocates an owned item when it is newly inserted, so updating an
@@ -401,14 +416,14 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
         T: Borrow<Q>,
         Q: Eq + Hash + ToOwned<Owned = T> + ?Sized,
     {
-        self.update_with_count_ref(item, 1);
+        self.update_with_weight_ref(item, 1);
     }
 
-    /// Updates the sketch with a borrowed item and count.
+    /// Updates the sketch with a borrowed item and weight.
     ///
-    /// Equivalent to [`update_with_count`](Self::update_with_count) but takes the
+    /// Equivalent to [`update_with_weight`](Self::update_with_weight) but takes the
     /// item by reference and only allocates an owned item when it is newly
-    /// inserted. A count of zero is a no-op.
+    /// inserted. A weight of zero is a no-op.
     ///
     /// # Panics
     ///
@@ -420,22 +435,22 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     /// use datasketches::frequencies::FrequentItemsSketch;
     ///
     /// let mut sketch = FrequentItemsSketch::<String>::new(64).unwrap();
-    /// sketch.update_with_count_ref("gzip", 3);
+    /// sketch.update_with_weight_ref("gzip", 3);
     /// assert!(sketch.estimate("gzip") >= 3);
     /// ```
-    pub fn update_with_count_ref<Q>(&mut self, item: &Q, count: u64)
+    pub fn update_with_weight_ref<Q>(&mut self, item: &Q, weight: u64)
     where
         T: Borrow<Q>,
         Q: Eq + Hash + ToOwned<Owned = T> + ?Sized,
     {
-        if count == 0 {
+        if weight == 0 {
             return;
         }
         self.stream_weight = self
             .stream_weight
-            .checked_add(count)
+            .checked_add(weight)
             .expect("total stream weight overflow");
-        self.hash_map.adjust_or_put_value_ref(item, count);
+        self.hash_map.adjust_or_put_value_ref(item, weight);
         self.maybe_resize_or_purge();
     }
 
@@ -456,7 +471,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     /// let mut left = FrequentItemsSketch::<i64>::new(64).unwrap();
     /// let mut right = FrequentItemsSketch::<i64>::new(64).unwrap();
     /// left.update(1);
-    /// right.update_with_count(2, 2);
+    /// right.update_with_weight(2, 2);
     /// left.merge(&right);
     /// assert!(left.estimate(&2) >= 2);
     /// ```
@@ -472,7 +487,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
             .checked_add(other.stream_weight)
             .expect("total stream weight overflow");
         for (item, count) in other.hash_map.iter() {
-            self.update_with_count_ref(item, count);
+            self.update_with_weight_ref(item, count);
         }
         self.offset += other.offset;
         self.stream_weight = merged_total;
@@ -494,7 +509,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     /// use datasketches::frequencies::FrequentItemsSketch;
     ///
     /// let mut sketch = FrequentItemsSketch::<i64>::new(64).unwrap();
-    /// sketch.update_with_count(1, 5);
+    /// sketch.update_with_weight(1, 5);
     /// sketch.update(2);
     /// let rows = sketch.frequent_items(ErrorType::NoFalseNegatives);
     /// assert!(rows.iter().any(|row| *row.item() == 1));
@@ -520,7 +535,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     /// use datasketches::frequencies::FrequentItemsSketch;
     ///
     /// let mut sketch = FrequentItemsSketch::<i64>::new(64).unwrap();
-    /// sketch.update_with_count(1, 5);
+    /// sketch.update_with_weight(1, 5);
     /// sketch.update(2);
     /// let rows = sketch.frequent_items_with_threshold(ErrorType::NoFalsePositives, 3);
     /// assert!(rows.iter().any(|row| *row.item() == 1));
@@ -743,7 +758,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
 
         let mut sketch = Self::with_lg_map_sizes(lg_max, lg_cur);
         for (item, value) in items.into_iter().zip(values) {
-            sketch.update_with_count(item, value);
+            sketch.update_with_weight(item, value);
         }
         sketch.stream_weight = stream_weight;
         sketch.offset = offset_val;
@@ -765,7 +780,7 @@ impl<T: FrequentItemValue> FrequentItemsSketch<T> {
     /// use datasketches::frequencies::FrequentItemsSketch;
     ///
     /// let mut sketch = FrequentItemsSketch::<i64>::new(64).unwrap();
-    /// sketch.update_with_count(7, 2);
+    /// sketch.update_with_weight(7, 2);
     /// let bytes = sketch.serialize();
     /// let decoded = FrequentItemsSketch::<i64>::deserialize(&bytes).unwrap();
     /// assert!(decoded.estimate(&7) >= 2);
@@ -778,7 +793,7 @@ impl<T: FrequentItemValue> FrequentItemsSketch<T> {
     ///
     /// let mut sketch = FrequentItemsSketch::<String>::new(64).unwrap();
     /// let apple = "apple".to_string();
-    /// sketch.update_with_count(apple.clone(), 2);
+    /// sketch.update_with_weight(apple.clone(), 2);
     /// let bytes = sketch.serialize();
     /// let decoded = FrequentItemsSketch::<String>::deserialize(&bytes).unwrap();
     /// assert!(decoded.estimate(&apple) >= 2);
@@ -805,7 +820,7 @@ impl<T: FrequentItemValue> FrequentItemsSketch<T> {
     /// use datasketches::frequencies::FrequentItemsSketch;
     ///
     /// let mut sketch = FrequentItemsSketch::<i64>::new(64).unwrap();
-    /// sketch.update_with_count(7, 2);
+    /// sketch.update_with_weight(7, 2);
     /// let bytes = sketch.serialize();
     /// let decoded = FrequentItemsSketch::<i64>::deserialize(&bytes).unwrap();
     /// assert!(decoded.estimate(&7) >= 2);
@@ -818,7 +833,7 @@ impl<T: FrequentItemValue> FrequentItemsSketch<T> {
     ///
     /// let mut sketch = FrequentItemsSketch::<String>::new(64).unwrap();
     /// let apple = "apple".to_string();
-    /// sketch.update_with_count(apple.clone(), 2);
+    /// sketch.update_with_weight(apple.clone(), 2);
     /// let bytes = sketch.serialize();
     /// let decoded = FrequentItemsSketch::<String>::deserialize(&bytes).unwrap();
     /// assert!(decoded.estimate(&apple) >= 2);

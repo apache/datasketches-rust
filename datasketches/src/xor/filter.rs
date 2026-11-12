@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::fmt;
 use std::hash::Hash;
 use std::hash::Hasher;
 use std::ops::BitXor;
@@ -32,6 +33,7 @@ const NUM_HASHES: u8 = 3;
 const SERIAL_VERSION: u8 = 1;
 const PREAMBLE_BYTES: usize = 3 * size_of::<u64>();
 const HASH_SEED: u64 = 0;
+const DEFAULT_CONSTRUCTION_SEED: u64 = 0;
 const LOAD_FACTOR: f64 = 1.23;
 const CAPACITY_OFFSET: u64 = 32;
 const MAX_CONSTRUCTION_ATTEMPTS: usize = 100;
@@ -95,19 +97,36 @@ impl Fingerprints {
 /// [`XorFilter::contains_hash`].
 ///
 /// See the [module level documentation](super) for more.
-#[derive(Debug)]
+#[derive(Clone)]
 pub struct XorFilterBuilder {
     filter_type: XorFilterType,
     seed: u64,
     hashes: Vec<u64>,
 }
 
+impl fmt::Debug for XorFilterBuilder {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("XorFilterBuilder")
+            .field("filter_type", &self.filter_type)
+            .field("seed", &self.seed)
+            .field("num_hashes", &self.hashes.len())
+            .finish()
+    }
+}
+
 impl XorFilterBuilder {
+    /// Creates a builder with the given fingerprint width and the default construction seed (`0`).
+    ///
+    /// Values are hashed independently of the construction seed.
+    pub fn new(filter_type: XorFilterType) -> Self {
+        Self::with_seed(filter_type, DEFAULT_CONSTRUCTION_SEED)
+    }
+
     /// Creates a builder with the given fingerprint width and initial construction seed.
     ///
     /// The `seed` determines which layouts to try during construction. Values are hashed
     /// independently of it.
-    pub fn new(filter_type: XorFilterType, seed: u64) -> Self {
+    pub fn with_seed(filter_type: XorFilterType, seed: u64) -> Self {
         Self {
             filter_type,
             seed,
@@ -145,7 +164,7 @@ impl XorFilterBuilder {
     pub fn build(mut self) -> Result<XorFilter, Error> {
         self.hashes.sort_unstable();
         self.hashes.dedup();
-        XorFilter::from_hashes(&self.hashes, self.filter_type, self.seed)
+        XorFilter::from_hashes_with_seed(&self.hashes, self.filter_type, self.seed)
     }
 }
 
@@ -157,7 +176,7 @@ impl XorFilterBuilder {
 /// changes.
 ///
 /// See the [module level documentation](super) for more.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct XorFilter {
     // Cache the derived length to avoid division on every query.
     segment_length: usize,
@@ -166,7 +185,25 @@ pub struct XorFilter {
 }
 
 impl XorFilter {
-    /// Creates a filter from distinct precomputed 64-bit hashes.
+    /// Creates a filter from distinct precomputed 64-bit hashes using the default construction
+    /// seed (`0`).
+    ///
+    /// The same set of hashes and filter type produce the same filter regardless of input order.
+    /// Query with [`contains_hash`](Self::contains_hash) using the same hash function.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InvalidArgument`](crate::error::ErrorKind::InvalidArgument) in these cases:
+    ///
+    /// - The input contains duplicate hashes.
+    /// - The input is too large to build a filter.
+    /// - Construction cannot find a valid layout. For distinct hashes, try another seed with
+    ///   [`from_hashes_with_seed`](Self::from_hashes_with_seed).
+    pub fn from_hashes(keys: &[u64], filter_type: XorFilterType) -> Result<Self, Error> {
+        Self::from_hashes_with_seed(keys, filter_type, DEFAULT_CONSTRUCTION_SEED)
+    }
+
+    /// Creates a filter from distinct precomputed 64-bit hashes and an explicit construction seed.
     ///
     /// The initial `seed` determines which layouts to try during construction. The same set of
     /// hashes, filter type, and seed produce the same filter regardless of input order.
@@ -179,7 +216,11 @@ impl XorFilter {
     /// - The input contains duplicate hashes.
     /// - The input is too large to build a filter.
     /// - Construction cannot find a valid layout. For distinct hashes, try another `seed`.
-    pub fn from_hashes(keys: &[u64], filter_type: XorFilterType, seed: u64) -> Result<Self, Error> {
+    pub fn from_hashes_with_seed(
+        keys: &[u64],
+        filter_type: XorFilterType,
+        seed: u64,
+    ) -> Result<Self, Error> {
         let num_items = keys.len();
         let capacity = compute_capacity(num_items)?;
         let segment_length = capacity / usize::from(NUM_HASHES);
@@ -298,7 +339,8 @@ impl XorFilter {
         }
     }
 
-    fn filter_type(&self) -> XorFilterType {
+    /// Returns the fingerprint representation used by this filter.
+    pub fn filter_type(&self) -> XorFilterType {
         match &self.fingerprints {
             Fingerprints::Xor8(_) => XorFilterType::Xor8,
             Fingerprints::Xor16(_) => XorFilterType::Xor16,
@@ -458,6 +500,17 @@ impl XorFilter {
             seed,
             fingerprints,
         })
+    }
+}
+
+impl fmt::Debug for XorFilter {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("XorFilter")
+            .field("filter_type", &self.filter_type())
+            .field("seed", &self.seed)
+            .field("segment_length", &self.segment_length)
+            .field("fingerprint_bytes", &self.fingerprints.byte_len())
+            .finish()
     }
 }
 

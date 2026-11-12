@@ -17,6 +17,8 @@
 
 //! Sorted view implementation for efficient quantile queries.
 
+use std::fmt;
+
 use crate::common::SearchCriteria;
 use crate::error::Error;
 
@@ -27,13 +29,24 @@ use crate::error::Error;
 /// receiving updates, and it keeps answering from the state it was taken at. Building it costs
 /// `O(retained · log retained)`; each subsequent query is `O(log retained)`, so it is the right
 /// tool for repeated quantile/rank queries.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct SortedView<T> {
     items: Vec<T>,
     cumulative_weights: Vec<u64>,
     total_weight: u64,
     min_item: Option<T>,
     max_item: Option<T>,
+}
+
+impl<T: fmt::Debug> fmt::Debug for SortedView<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SortedView")
+            .field("len", &self.items.len())
+            .field("total_weight", &self.total_weight)
+            .field("min_item", &self.min_item)
+            .field("max_item", &self.max_item)
+            .finish()
+    }
 }
 
 impl<T> SortedView<T>

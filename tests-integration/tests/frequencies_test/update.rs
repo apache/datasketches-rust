@@ -32,7 +32,7 @@ use googletest::prelude::near;
 #[test]
 fn test_longs_update_with_zero_count_is_noop() {
     let mut sketch: FrequentItemsSketch<i64> = FrequentItemsSketch::new(8).unwrap();
-    sketch.update_with_count(1, 0);
+    sketch.update_with_weight(1, 0);
 
     assert!(sketch.is_empty());
     assert_eq!(sketch.total_weight(), 0);
@@ -87,8 +87,8 @@ fn test_items_borrowed_key_updates_and_queries() {
 
     sketch.update_ref("alpha");
     sketch.update_ref("alpha");
-    sketch.update_with_count_ref("beta", 3);
-    sketch.update_with_count_ref("ignored", 0);
+    sketch.update_with_weight_ref("beta", 3);
+    sketch.update_with_weight_ref("ignored", 0);
     for item in [
         "gamma", "delta", "epsilon", "zeta", "eta", "theta", "iota", "kappa", "lambda", "mu",
     ] {
@@ -198,11 +198,11 @@ fn test_items_several_items_with_resize_no_purge() {
 #[test]
 fn test_longs_estimation_mode() {
     let mut sketch: FrequentItemsSketch<i64> = FrequentItemsSketch::new(8).unwrap();
-    sketch.update_with_count(1, 10);
+    sketch.update_with_weight(1, 10);
     for item in 2..=6 {
         sketch.update(item);
     }
-    sketch.update_with_count(7, 15);
+    sketch.update_with_weight(7, 15);
     for item in 8..=12 {
         sketch.update(item);
     }
@@ -226,7 +226,7 @@ fn test_longs_estimation_mode() {
 #[test]
 fn test_longs_purge_keeps_heavy_hitters() {
     let mut sketch: FrequentItemsSketch<i64> = FrequentItemsSketch::new(8).unwrap();
-    sketch.update_with_count(1, 10);
+    sketch.update_with_weight(1, 10);
     for item in 2..=7 {
         sketch.update(item);
     }
@@ -245,7 +245,7 @@ fn test_longs_purge_keeps_heavy_hitters() {
 #[test]
 fn test_longs_merge_estimation_mode() {
     let mut sketch1: FrequentItemsSketch<i64> = FrequentItemsSketch::new(16).unwrap();
-    sketch1.update_with_count(1, 9);
+    sketch1.update_with_weight(1, 9);
     for item in 2..=14 {
         sketch1.update(item);
     }
@@ -255,7 +255,7 @@ fn test_longs_merge_estimation_mode() {
     for item in 8..=20 {
         sketch2.update(item);
     }
-    sketch2.update_with_count(21, 11);
+    sketch2.update_with_weight(21, 11);
     assert_that!(sketch2.maximum_error(), gt(0));
 
     sketch1.merge(&sketch2);
@@ -345,7 +345,7 @@ fn test_purged_state_survives_merge_and_reset() {
 #[test]
 fn test_update_weight_overflow_preserves_state() {
     let mut sketch = FrequentItemsSketch::<String>::new(8).unwrap();
-    sketch.update_with_count_ref("a", u64::MAX - 1);
+    sketch.update_with_weight_ref("a", u64::MAX - 1);
     sketch.update("b".to_string());
     assert_eq!(sketch.total_weight(), u64::MAX);
     let before = sketch.serialize();
@@ -360,7 +360,7 @@ fn test_update_weight_overflow_preserves_state() {
 #[test]
 fn test_merge_weight_overflow_preserves_state() {
     let mut sketch = FrequentItemsSketch::<i64>::new(8).unwrap();
-    sketch.update_with_count(1, u64::MAX - 7);
+    sketch.update_with_weight(1, u64::MAX - 7);
     let mut purged = FrequentItemsSketch::<i64>::new(8).unwrap();
     for item in 0..7 {
         purged.update(item);
@@ -379,8 +379,8 @@ fn test_merge_weight_overflow_preserves_state() {
 #[test]
 fn test_longs_reset() {
     let mut sketch: FrequentItemsSketch<i64> = FrequentItemsSketch::new(8).unwrap();
-    sketch.update_with_count(1, 3);
-    sketch.update_with_count(2, 2);
+    sketch.update_with_weight(1, 3);
+    sketch.update_with_weight(2, 2);
     sketch.reset();
 
     assert!(sketch.is_empty());
@@ -420,13 +420,13 @@ fn test_colliding_items_preserve_frequency_bounds() {
         *count = 100;
     }
     for (item, &count) in counts.iter().enumerate() {
-        sketch.update_with_count(CollidingItem(item), count);
+        sketch.update_with_weight(CollidingItem(item), count);
     }
     assert!(sketch.maximum_error() > 0);
 
     // Exercise subsequent updates to both a heavy hitter and a light item.
     for item in [0, 1] {
-        sketch.update_with_count(CollidingItem(item), 10);
+        sketch.update_with_weight(CollidingItem(item), 10);
         counts[item] += 10;
     }
     assert_eq!(sketch.total_weight(), counts.iter().sum::<u64>());

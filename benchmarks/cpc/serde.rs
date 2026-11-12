@@ -75,8 +75,15 @@ pub fn register(runner: &mut Runner) {
             deserialize(b, items)
         });
     }
-    // Reuse each union for repeated serialization: empty, sparse, and bit-matrix results.
-    for &(items, rounds) in &[(0_u64, 4_000_000), (20_000_u64, 500), (80_000_u64, 200)] {
+    // Reuse each union for repeated serialization across empty, sparse, hybrid, pinned, and
+    // sliding union results.
+    for &(items, rounds) in &[
+        (0_u64, 4_000_000),
+        (20_000_u64, 500),
+        (80_000_u64, 200),
+        (400_000_u64, 500),
+        (2_500_000_u64, 400),
+    ] {
         runner.compare(
             &format!("cpc::serde::serialize_union/{items:?}"),
             rounds,

@@ -105,7 +105,7 @@ pub fn register(runner: &mut Runner) {
                                 b,
                                 cardinality,
                                 present,
-                                |keys| XorFilter::from_hashes(keys, kind, 1).unwrap(),
+                                |keys| XorFilter::from_hashes_with_seed(keys, kind, 1).unwrap(),
                                 XorFilter::contains_hash,
                             )
                         }),

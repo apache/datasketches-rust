@@ -16,6 +16,7 @@
 // under the License.
 
 use std::cmp::Ordering;
+use std::fmt;
 
 use crate::common::SearchCriteria;
 use crate::error::Error;
@@ -24,12 +25,23 @@ use crate::error::Error;
 ///
 /// Build one with [`KllSketch::sorted_view`](super::KllSketch::sorted_view) when running repeated
 /// queries against the same sketch state.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct SortedView<T: Clone> {
     entries: Vec<Entry<T>>,
     total_weight: u64,
     min_item: Option<T>,
     max_item: Option<T>,
+}
+
+impl<T: Clone + fmt::Debug> fmt::Debug for SortedView<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SortedView")
+            .field("len", &self.entries.len())
+            .field("total_weight", &self.total_weight)
+            .field("min_item", &self.min_item)
+            .field("max_item", &self.max_item)
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone)]

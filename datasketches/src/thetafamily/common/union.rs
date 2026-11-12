@@ -15,15 +15,18 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::fmt;
+
 use crate::common::ResizeFactor;
 use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::hash::check_seed_hash;
-use crate::thetacommon::EntrySketch;
-use crate::thetacommon::SketchEntry;
-use crate::thetacommon::hash_table::SketchHashTable;
-use crate::thetacommon::sketch_state::CompactSketchState;
-use crate::thetacommon::sketch_state::ThetaFamilySketchMetadata;
+use crate::thetafamily::common::EntrySketch;
+use crate::thetafamily::common::SketchEntry;
+use crate::thetafamily::common::constants::MAX_THETA;
+use crate::thetafamily::common::hash_table::SketchHashTable;
+use crate::thetafamily::common::sketch_state::CompactSketchState;
+use crate::thetafamily::common::sketch_state::ThetaFamilySketchMetadata;
 
 /// Merges an incoming entry into an existing entry with the same hash.
 pub trait UnionMergePolicy<E> {
@@ -115,7 +118,17 @@ where
         let Some(theta) = self.result_theta else {
             return CompactSketchState::empty(self.table.seed_hash());
         };
-        let entries = self.collect_retained_entries(theta, Clone::clone);
+
+        let entries = if theta >= self.table.retention_theta() {
+            self.table.iter_entries().cloned().collect()
+        } else {
+            self.table
+                .iter_entries()
+                .filter(|&ent| ent.hash() < theta)
+                .cloned()
+                .collect()
+        };
+
         self.finish_compaction(entries, theta, ordered)
     }
 
@@ -143,24 +156,17 @@ where
         let Some(theta) = self.result_theta else {
             return CompactSketchState::empty(self.table.seed_hash());
         };
-        let entries = self.collect_retained_entries(theta, |entry| entry);
-        self.finish_compaction(entries, theta, ordered)
-    }
 
-    fn collect_retained_entries<'a, T>(
-        &'a self,
-        theta: u64,
-        map: impl FnMut(&'a E) -> T,
-    ) -> Vec<T> {
-        if theta >= self.table.retention_theta() {
-            self.table.iter_entries().map(map).collect()
+        let entries = if theta >= self.table.retention_theta() {
+            self.table.iter_entries().collect()
         } else {
             self.table
                 .iter_entries()
-                .filter(|entry| entry.hash() < theta)
-                .map(map)
+                .filter(|ent| ent.hash() < theta)
                 .collect()
-        }
+        };
+
+        self.finish_compaction(entries, theta, ordered)
     }
 
     fn finish_compaction<T: SketchEntry>(
@@ -196,5 +202,29 @@ where
     /// Returns an estimate of memory usage in bytes.
     pub fn estimated_size(&self) -> usize {
         size_of::<P>() + self.table.estimated_size()
+    }
+
+    /// Formats a concise diagnostic summary for Theta-family union operators.
+    pub fn fmt_debug(&self, f: &mut fmt::Formatter<'_>, name: &str) -> fmt::Result {
+        let is_empty = self.result_theta.is_none();
+        let union_theta = self
+            .result_theta
+            .map_or(MAX_THETA, |theta| theta.min(self.table.retention_theta()));
+        let num_retained = match self.result_theta {
+            None => 0,
+            Some(theta) if theta >= self.table.retention_theta() => self.table.num_retained(),
+            Some(theta) => self
+                .table
+                .iter_entries()
+                .filter(|entry| entry.hash() < theta)
+                .count(),
+        };
+        f.debug_struct(name)
+            .field("lg_k", &self.table.lg_nom_size())
+            .field("seed_hash", &self.table.seed_hash())
+            .field("is_empty", &is_empty)
+            .field("union_theta", &union_theta)
+            .field("num_retained", &num_retained)
+            .finish()
     }
 }
