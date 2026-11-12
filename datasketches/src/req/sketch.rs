@@ -118,8 +118,8 @@ where
     }
 
     /// Returns the number of items currently stored across all compactors.
-    pub fn num_retained(&self) -> usize {
-        self.num_retained as usize
+    pub fn num_retained(&self) -> u32 {
+        self.num_retained
     }
 
     /// Returns the smallest item ever observed, or `None` if empty.
