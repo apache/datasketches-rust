@@ -59,21 +59,30 @@
 //! [`CpcUnion::serialize`] borrows it directly. Its estimator state must therefore be maintained
 //! during merging, including input adoption and downsampling, rather than repaired on export.
 //!
-//! A bit matrix has no sliding window or surprise table. Both export paths reconstruct these,
-//! along with the coupon count, window offset, and first interesting column, through
-//! [`CpcUnion::to_sketch`]. The matrix does not preserve the stream history needed by HIP, so
-//! the reconstructed sketch uses the merged estimator.
+//! A bit matrix has no sliding window or surprise table. [`CpcUnion::to_sketch`] reconstructs
+//! both to return a mutable sketch, while [`CpcUnion::serialize`] streams the window bytes and
+//! ordered coupon pairs directly from the matrix into the compressed encoder. Neither export path
+//! has the stream history needed by HIP, so both emit the merged estimator state.
 
 use std::fmt;
+use std::iter::Empty;
 
+use crate::codec::SketchBytes;
 use crate::cpc::CpcSketch;
 use crate::cpc::DEFAULT_LG_K;
 use crate::cpc::Flavor;
+use crate::cpc::compression::PairEncoder;
+use crate::cpc::compression::determine_pseudo_phase;
+use crate::cpc::compression_data::COLUMN_PERMUTATIONS_FOR_ENCODING;
 use crate::cpc::count_bits_set_in_matrix;
 use crate::cpc::determine_correct_offset;
+use crate::cpc::determine_flavor;
 use crate::cpc::pair_table::PairTable;
+use crate::cpc::serialization::serialize_compressed;
 use crate::error::Error;
+use crate::error::ErrorKind;
 use crate::hash::DEFAULT_UPDATE_SEED;
+use crate::hash::compute_seed_hash;
 
 /// Union operator for CPC sketches.
 #[derive(Clone)]
@@ -97,7 +106,7 @@ enum UnionState {
     /// A full coupon matrix, used once an input or the accumulator outgrows sparse mode.
     ///
     /// Row-wise OR combines coupon sets without maintaining a sketch's compressed layout or
-    /// estimator fields. Export must reconstruct that layout before it can use the sketch encoder.
+    /// estimator fields. Export derives the window and surprise pairs from the matrix on demand.
     BitMatrix(Vec<u64>),
 }
 
@@ -220,8 +229,8 @@ impl CpcUnion {
 
     /// Serializes the union's result as a `CpcSketch`.
     ///
-    /// Produces the same bytes as [`Self::to_sketch`] followed by [`CpcSketch::serialize`],
-    /// and can be faster.
+    /// Produces the same bytes as [`Self::to_sketch`] followed by [`CpcSketch::serialize`]
+    /// without constructing an intermediate sketch.
     ///
     /// # Examples
     ///
@@ -241,7 +250,7 @@ impl CpcUnion {
     pub fn serialize(&self) -> Vec<u8> {
         match &self.state {
             UnionState::Accumulator(sketch) => sketch.serialize(),
-            UnionState::BitMatrix(_) => self.to_sketch().serialize(),
+            UnionState::BitMatrix(matrix) => serialize_bit_matrix(matrix, self.lg_k, self.seed),
         }
     }
 
@@ -476,4 +485,175 @@ fn merge_table_into_sketch(sketch: &mut CpcSketch, table: &PairTable) {
         }
         k += stride;
     }
+}
+
+fn serialize_bit_matrix(matrix: &[u64], lg_k: u8, seed: u64) -> Vec<u8> {
+    let seed_hash = compute_seed_hash(seed, ErrorKind::InvalidArgument)
+        .expect("union seed was validated at construction");
+    let num_coupons = count_bits_set_in_matrix(matrix);
+    let flavor = determine_flavor(lg_k, num_coupons);
+
+    match flavor {
+        Flavor::Empty => {
+            serialize_compressed(lg_k, seed_hash, 0, 0, None, None::<Empty<u8>>, 0, |_| 0)
+        }
+        Flavor::Sparse | Flavor::Hybrid => serialize_compressed(
+            lg_k,
+            seed_hash,
+            0,
+            num_coupons,
+            None,
+            None::<Empty<u8>>,
+            num_coupons,
+            |bytes| encode_all_matrix_pairs(matrix, num_coupons, lg_k, bytes),
+        ),
+        Flavor::Pinned => {
+            let table_num_entries = matrix.iter().map(|&word| (word >> 8).count_ones()).sum();
+            let window = matrix.iter().map(|&word| (word & 0xFF) as u8);
+            serialize_compressed(
+                lg_k,
+                seed_hash,
+                0,
+                num_coupons,
+                None,
+                Some(window),
+                table_num_entries,
+                |bytes| encode_pinned_matrix_pairs(matrix, table_num_entries, lg_k, bytes),
+            )
+        }
+        Flavor::Sliding => {
+            let offset = determine_correct_offset(lg_k, num_coupons);
+            let clear_mask = (0xFFu64 << offset) ^ u64::MAX;
+            let flip_mask = (1u64 << offset) - 1;
+            let mut surprises = 0u64;
+            let mut table_num_entries = 0u32;
+            for &word in matrix {
+                let pattern = (word & clear_mask) ^ flip_mask;
+                surprises |= pattern;
+                table_num_entries += pattern.count_ones();
+            }
+            let first_interesting_column = (surprises.trailing_zeros() as u8).min(offset);
+            let window = matrix.iter().map(|&word| ((word >> offset) & 0xFF) as u8);
+            serialize_compressed(
+                lg_k,
+                seed_hash,
+                first_interesting_column,
+                num_coupons,
+                None,
+                Some(window),
+                table_num_entries,
+                |bytes| {
+                    encode_sliding_matrix_pairs(
+                        matrix,
+                        lg_k,
+                        num_coupons,
+                        offset,
+                        clear_mask,
+                        flip_mask,
+                        table_num_entries,
+                        bytes,
+                    )
+                },
+            )
+        }
+    }
+}
+
+/// Streams all set `(row, col)` bits in ascending row-major order.
+fn encode_all_matrix_pairs(
+    matrix: &[u64],
+    num_pairs: u32,
+    lg_k: u8,
+    bytes: &mut SketchBytes,
+) -> usize {
+    let mut encoder = PairEncoder::new(num_pairs, lg_k, bytes);
+    for (row, &word) in matrix.iter().enumerate() {
+        let row_prefix = (row as u32) << 6;
+        let mut pattern = word;
+        while pattern != 0 {
+            let col = pattern.trailing_zeros();
+            pattern &= pattern - 1;
+            encoder.write_pair(row_prefix | col);
+        }
+    }
+    encoder.finish()
+}
+
+/// Streams post-window `(row, col - 8)` surprise bits (`col >= 8`) in ascending row-major order.
+fn encode_pinned_matrix_pairs(
+    matrix: &[u64],
+    num_pairs: u32,
+    lg_k: u8,
+    bytes: &mut SketchBytes,
+) -> usize {
+    let mut encoder = PairEncoder::new(num_pairs, lg_k, bytes);
+    for (row, &word) in matrix.iter().enumerate() {
+        let row_prefix = (row as u32) << 6;
+        let mut shifted = word >> 8;
+        while shifted != 0 {
+            let reduced_col = shifted.trailing_zeros();
+            shifted &= shifted - 1;
+            encoder.write_pair(row_prefix | reduced_col);
+        }
+    }
+    encoder.finish()
+}
+
+/// Streams sliding-flavor surprise pairs row by row, sorting permuted columns within each row.
+fn encode_sliding_matrix_pairs(
+    matrix: &[u64],
+    lg_k: u8,
+    num_coupons: u32,
+    offset: u8,
+    clear_mask: u64,
+    flip_mask: u64,
+    num_pairs: u32,
+    bytes: &mut SketchBytes,
+) -> usize {
+    debug_assert!(offset <= 56);
+    let pseudo_phase = determine_pseudo_phase(lg_k, num_coupons);
+    let permutation = &COLUMN_PERMUTATIONS_FOR_ENCODING[pseudo_phase as usize];
+    let col_shift = 56 - offset;
+    let mut encoder = PairEncoder::new(num_pairs, lg_k, bytes);
+    let mut row_cols = [0u8; 56];
+
+    for (row, &word) in matrix.iter().enumerate() {
+        let mut pattern = (word & clear_mask) ^ flip_mask;
+        if pattern == 0 {
+            continue;
+        }
+
+        let row_prefix = (row as u32) << 6;
+        let first_col = pattern.trailing_zeros() as u8;
+        pattern &= pattern - 1;
+        let first_perm = permutation[((first_col + col_shift) & 63) as usize];
+        if pattern == 0 {
+            encoder.write_pair(row_prefix | u32::from(first_perm));
+            continue;
+        }
+
+        row_cols[0] = first_perm;
+        let mut len = 1;
+        while pattern != 0 {
+            let col = pattern.trailing_zeros() as u8;
+            pattern &= pattern - 1;
+            row_cols[len] = permutation[((col + col_shift) & 63) as usize];
+            len += 1;
+        }
+
+        // Rows are visited in ascending order; only permuted columns within this row need sorting.
+        for i in 1..len {
+            let key = row_cols[i];
+            let mut j = i;
+            while j > 0 && row_cols[j - 1] > key {
+                row_cols[j] = row_cols[j - 1];
+                j -= 1;
+            }
+            row_cols[j] = key;
+        }
+        for &perm_col in &row_cols[..len] {
+            encoder.write_pair(row_prefix | u32::from(perm_col));
+        }
+    }
+    encoder.finish()
 }
