@@ -18,7 +18,6 @@
 use std::fmt;
 use std::hash::Hash;
 use std::hash::Hasher;
-use std::ops::BitXor;
 
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
@@ -82,12 +81,119 @@ enum Fingerprints {
 }
 
 impl Fingerprints {
+    fn assign(
+        filter_type: XorFilterType,
+        capacity: usize,
+        segment_length: usize,
+        stack_hash: &[u64],
+        stack_index: &[u32],
+    ) -> Self {
+        macro_rules! assign_slots {
+            ($ty:ty) => {{
+                let mut slots: Box<[$ty]> = vec![0; capacity].into_boxed_slice();
+                for (&hash, &index) in stack_hash.iter().zip(stack_index).rev() {
+                    let [h0, h1, h2] = indexes(hash, segment_length);
+                    slots[index as usize] =
+                        (fingerprint(hash) as $ty) ^ slots[h0] ^ slots[h1] ^ slots[h2];
+                }
+                slots
+            }};
+        }
+
+        match filter_type {
+            XorFilterType::Xor8 => Self::Xor8(assign_slots!(u8)),
+            XorFilterType::Xor16 => Self::Xor16(assign_slots!(u16)),
+            XorFilterType::Xor32 => Self::Xor32(assign_slots!(u32)),
+        }
+    }
+
+    #[inline(always)]
+    fn contains(&self, mixed: u64, segment_length: usize) -> bool {
+        let [h0, h1, h2] = indexes(mixed, segment_length);
+        match self {
+            Self::Xor8(slots) => fingerprint(mixed) as u8 == slots[h0] ^ slots[h1] ^ slots[h2],
+            Self::Xor16(slots) => fingerprint(mixed) as u16 == slots[h0] ^ slots[h1] ^ slots[h2],
+            Self::Xor32(slots) => fingerprint(mixed) as u32 == slots[h0] ^ slots[h1] ^ slots[h2],
+        }
+    }
+
+    const fn filter_type(&self) -> XorFilterType {
+        match self {
+            Self::Xor8(_) => XorFilterType::Xor8,
+            Self::Xor16(_) => XorFilterType::Xor16,
+            Self::Xor32(_) => XorFilterType::Xor32,
+        }
+    }
+
     fn byte_len(&self) -> usize {
         match self {
-            Self::Xor8(values) => size_of_val::<[u8]>(values),
-            Self::Xor16(values) => size_of_val::<[u16]>(values),
-            Self::Xor32(values) => size_of_val::<[u32]>(values),
+            Self::Xor8(slots) => size_of_val::<[u8]>(slots),
+            Self::Xor16(slots) => size_of_val::<[u16]>(slots),
+            Self::Xor32(slots) => size_of_val::<[u32]>(slots),
         }
+    }
+
+    fn serialize(&self, bytes: &mut SketchBytes) {
+        match self {
+            Self::Xor8(slots) => bytes.write(slots),
+            Self::Xor16(slots) => {
+                for &slot in slots.iter() {
+                    bytes.write_u16_le(slot);
+                }
+            }
+            Self::Xor32(slots) => {
+                for &slot in slots.iter() {
+                    bytes.write_u32_le(slot);
+                }
+            }
+        }
+    }
+
+    fn deserialize(
+        filter_type: XorFilterType,
+        capacity: usize,
+        mut cursor: SketchSlice<'_>,
+    ) -> Result<Self, Error> {
+        let fingerprint_bytes = capacity
+            .checked_mul(filter_type.bytes_per_fingerprint())
+            .ok_or_else(|| Error::deserial("xor filter fingerprint size overflow"))?;
+        if cursor.remaining().len() < fingerprint_bytes {
+            return Err(Error::insufficient_data_of(
+                "fingerprints",
+                format!(
+                    "expected {fingerprint_bytes} bytes, got {}",
+                    cursor.remaining().len()
+                ),
+            ));
+        }
+
+        let fingerprints = match filter_type {
+            XorFilterType::Xor8 => Self::Xor8(cursor.remaining()[..capacity].into()),
+            XorFilterType::Xor16 => {
+                let mut slots = Vec::with_capacity(capacity);
+                for _ in 0..capacity {
+                    slots.push(
+                        cursor
+                            .read_u16_le()
+                            .map_err(insufficient_data("fingerprints"))?,
+                    );
+                }
+                Self::Xor16(slots.into_boxed_slice())
+            }
+            XorFilterType::Xor32 => {
+                let mut slots = Vec::with_capacity(capacity);
+                for _ in 0..capacity {
+                    slots.push(
+                        cursor
+                            .read_u32_le()
+                            .map_err(insufficient_data("fingerprints"))?,
+                    );
+                }
+                Self::Xor32(slots.into_boxed_slice())
+            }
+        };
+
+        Ok(fingerprints)
     }
 }
 
@@ -277,29 +383,13 @@ impl XorFilter {
         drop(count);
         drop(queue);
 
-        let fingerprints = match filter_type {
-            XorFilterType::Xor8 => Fingerprints::Xor8(assign_fingerprints(
-                capacity,
-                segment_length,
-                &stack_hash,
-                &stack_index,
-                |hash| fingerprint(hash) as u8,
-            )),
-            XorFilterType::Xor16 => Fingerprints::Xor16(assign_fingerprints(
-                capacity,
-                segment_length,
-                &stack_hash,
-                &stack_index,
-                |hash| fingerprint(hash) as u16,
-            )),
-            XorFilterType::Xor32 => Fingerprints::Xor32(assign_fingerprints(
-                capacity,
-                segment_length,
-                &stack_hash,
-                &stack_index,
-                |hash| fingerprint(hash) as u32,
-            )),
-        };
+        let fingerprints = Fingerprints::assign(
+            filter_type,
+            capacity,
+            segment_length,
+            &stack_hash,
+            &stack_index,
+        );
 
         Ok(Self {
             segment_length,
@@ -320,32 +410,16 @@ impl XorFilter {
     /// Returns `true` if a precomputed 64-bit hash is possibly in the input set.
     ///
     /// Use the same hash function for construction and queries.
-    // Keep the width dispatch in the caller's hot loop, including across crates.
+    // Inline through Fingerprints::contains so width dispatch stays in the caller's hot loop.
     #[inline(always)]
     pub fn contains_hash(&self, hash: u64) -> bool {
         let mixed = mix(hash, self.seed);
-        let [h0, h1, h2] = indexes(mixed, self.segment_length);
-
-        match &self.fingerprints {
-            Fingerprints::Xor8(fingerprints) => {
-                fingerprint(mixed) as u8 == fingerprints[h0] ^ fingerprints[h1] ^ fingerprints[h2]
-            }
-            Fingerprints::Xor16(fingerprints) => {
-                fingerprint(mixed) as u16 == fingerprints[h0] ^ fingerprints[h1] ^ fingerprints[h2]
-            }
-            Fingerprints::Xor32(fingerprints) => {
-                fingerprint(mixed) as u32 == fingerprints[h0] ^ fingerprints[h1] ^ fingerprints[h2]
-            }
-        }
+        self.fingerprints.contains(mixed, self.segment_length)
     }
 
     /// Returns the fingerprint representation used by this filter.
     pub fn filter_type(&self) -> XorFilterType {
-        match &self.fingerprints {
-            Fingerprints::Xor8(_) => XorFilterType::Xor8,
-            Fingerprints::Xor16(_) => XorFilterType::Xor16,
-            Fingerprints::Xor32(_) => XorFilterType::Xor32,
-        }
+        self.fingerprints.filter_type()
     }
 
     /// Returns the estimated in-memory size of the filter in bytes.
@@ -366,20 +440,7 @@ impl XorFilter {
         bytes.write_u64_le(self.seed);
         bytes.write_i32_le(self.segment_length as i32);
         bytes.write_u32_le(0); // Pad the preamble to three 64-bit words.
-
-        match &self.fingerprints {
-            Fingerprints::Xor8(fingerprints) => bytes.write(fingerprints),
-            Fingerprints::Xor16(fingerprints) => {
-                for &fingerprint in fingerprints.iter() {
-                    bytes.write_u16_le(fingerprint);
-                }
-            }
-            Fingerprints::Xor32(fingerprints) => {
-                for &fingerprint in fingerprints.iter() {
-                    bytes.write_u32_le(fingerprint);
-                }
-            }
-        }
+        self.fingerprints.serialize(&mut bytes);
 
         bytes.into_bytes()
     }
@@ -456,44 +517,7 @@ impl XorFilter {
             )));
         }
 
-        let fingerprint_bytes = capacity
-            .checked_mul(filter_type.bytes_per_fingerprint())
-            .ok_or_else(|| Error::deserial("xor filter fingerprint size overflow"))?;
-        if cursor.remaining().len() < fingerprint_bytes {
-            return Err(Error::insufficient_data_of(
-                "fingerprints",
-                format!(
-                    "expected {fingerprint_bytes} bytes, got {}",
-                    cursor.remaining().len()
-                ),
-            ));
-        }
-
-        let fingerprints = match filter_type {
-            XorFilterType::Xor8 => Fingerprints::Xor8(cursor.remaining()[..capacity].into()),
-            XorFilterType::Xor16 => {
-                let mut values = Vec::with_capacity(capacity);
-                for _ in 0..capacity {
-                    values.push(
-                        cursor
-                            .read_u16_le()
-                            .map_err(insufficient_data("fingerprints"))?,
-                    );
-                }
-                Fingerprints::Xor16(values.into_boxed_slice())
-            }
-            XorFilterType::Xor32 => {
-                let mut values = Vec::with_capacity(capacity);
-                for _ in 0..capacity {
-                    values.push(
-                        cursor
-                            .read_u32_le()
-                            .map_err(insufficient_data("fingerprints"))?,
-                    );
-                }
-                Fingerprints::Xor32(values.into_boxed_slice())
-            }
-        };
+        let fingerprints = Fingerprints::deserialize(filter_type, capacity, cursor)?;
 
         Ok(Self {
             segment_length,
@@ -650,23 +674,6 @@ fn peel_block<const BLOCK: usize>(
             queue_sizes[other] += usize::from(counts[other][index] == 1);
         }
     }
-}
-
-fn assign_fingerprints<T: Copy + Default + BitXor<Output = T>>(
-    capacity: usize,
-    segment_length: usize,
-    stack_hash: &[u64],
-    stack_index: &[u32],
-    fingerprint_of: impl Fn(u64) -> T,
-) -> Box<[T]> {
-    let mut fingerprints = vec![T::default(); capacity].into_boxed_slice();
-    for (&hash, &index) in stack_hash.iter().zip(stack_index).rev() {
-        let index = index as usize;
-        let [h0, h1, h2] = indexes(hash, segment_length);
-        fingerprints[index] =
-            fingerprint_of(hash) ^ fingerprints[h0] ^ fingerprints[h1] ^ fingerprints[h2];
-    }
-    fingerprints
 }
 
 #[inline]
