@@ -12280,56 +12280,71 @@ mod tests {
         );
     }
 
+    /// `(entropy, avg_length)` printed by `generateHuffmanCodes.ml` above each table of
+    /// `ENCODING_TABLES_FOR_HIGH_ENTROPY_BYTE`, copied verbatim from the header comments.
+    ///
+    /// These 20-digit values are the only continuous output of the original generator that
+    /// survived, so they are the evidence that discriminates between occupancy models: the
+    /// codewords alone are reproduced by a wide range of models (e.g. every `K >= 2^16` for the
+    /// midrange tables), whereas the entropies resolve differences of ~`1e-14`.
+    #[allow(clippy::excessive_precision)]
+    const RECORDED_HEADER_STATS: [(f64, f64); 22] = [
+        (4.4619200780464778333, 4.5415773046232610355), // table 0
+        (4.4574755684414029133, 4.5336306265208552446), // table 1
+        (4.4520619712441886762, 4.5253989110544479146), // table 2
+        (4.4457680500675866853, 4.5181192844586535173), // table 3
+        (4.4386754570568340839, 4.5071584786605640716), // table 4
+        (4.4308578632493116345, 4.4996166821663301505), // table 5
+        (4.4310364988500126060, 4.5051134111084252254), // table 6
+        (4.4417871821766841123, 4.5206419191518980583), // table 7
+        (4.4505873338397474726, 4.5270058771550303334), // table 8
+        (4.4575203029748040606, 4.5315465600684730063), // table 9
+        (4.4626765653088611430, 4.5373141251902122661), // table 10
+        (4.4661524304421691411, 4.5443750890419041255), // table 11
+        (4.4680486273043946710, 4.5521643785256946657), // table 12
+        (4.4684687952964843305, 4.5509169030369793774), // table 13
+        (4.4675179140944036860, 4.5477235350841240802), // table 14
+        (4.4653007097343397902, 4.5480722016259509388), // table 15
+        (2.1627885076675394949, 2.2704182849800043087), // table 16
+        (2.9553294756640680063, 3.0766035704232641557), // table 17
+        (3.5218672531711128215, 3.6153551492375441967), // table 18
+        (3.9228873257934386842, 3.9989687586992346269), // table 19
+        (4.1937026483207340277, 4.2809622975207295426), // table 20
+        (4.3601926041863263706, 4.4384101723259572481), // table 21
+    ];
+
+    /// Tolerance for matching `RECORDED_HEADER_STATS`: a few dozen `f64` ULPs, three orders of
+    /// magnitude below the `>= 2.5e-11` deviation of the nearest rejected occupancy model.
+    const HEADER_STATS_TOLERANCE: f64 = 3e-14;
+
     #[test]
     fn high_entropy_byte_encoding_tables() {
-        let mut generated_tables = Vec::with_capacity(22);
-
-        // Tables 0..16: steady-state sliding window at `c/k = 32.0 + (2*m + 1)/32`,
-        // `offset = floor(c/k - 2.375)` (`29` for `m < 6`, `30` for `m >= 6`).
-        for m in 0..16 {
-            let phase = (2 * m + 1) as f64 / 32.0;
-            let c_over_k = STEADY_STATE_BYTE_C_OVER_K_BASE + phase;
-            let offset = (c_over_k - 2.375).floor() as u8;
-            let probs = window_byte_probabilities(c_over_k, offset);
+        for (idx, &(entropy, avg_length)) in RECORDED_HEADER_STATS.iter().enumerate() {
+            let probs = if idx < 16 {
+                // Tables 0..16: steady-state sliding window at `c/k = 32.0 + (2*m + 1)/32`,
+                // `offset = floor(c/k - 2.375)` (`29` for `m < 6`, `30` for `m >= 6`).
+                let phase = (2 * idx + 1) as f64 / 32.0;
+                let c_over_k = STEADY_STATE_BYTE_C_OVER_K_BASE + phase;
+                let offset = (c_over_k - 2.375).floor() as u8;
+                window_byte_probabilities(c_over_k, offset)
+            } else {
+                // Tables 16..22: midrange pinned window (`offset = 0`) at `c/k = (2*m + 3) / 6`.
+                let m = idx - 16;
+                window_byte_probabilities((2 * m + 3) as f64 / 6.0, 0)
+            };
             let table = generate_length_limited_huffman_table(&probs, MAX_CODE_LENGTH);
 
-            if m == 0 {
-                // Header comment on table 0:
-                // entropy:    4.4619200780464778333
-                // avg_length: 4.5415773046232610355
-                assert_that!(shannon_entropy(&probs), near(4.461920078046478, 1e-14));
-                assert_that!(
-                    expected_code_length(&probs, &table),
-                    near(4.541577304623261, 1e-14),
-                );
-            }
-            generated_tables.push(table);
-        }
-
-        // Tables 16..22: midrange pinned window (`offset = 0`) at `c/k = (2*m + 3) / 6`.
-        for m in 0..6 {
-            let c_over_k = (2 * m + 3) as f64 / 6.0;
-            let probs = window_byte_probabilities(c_over_k, 0);
-            let table = generate_length_limited_huffman_table(&probs, MAX_CODE_LENGTH);
-
-            if m == 0 {
-                // Header comment on table 16 (midrange 0 of 6) — distinguishes `K = 2^32` from
-                // the `K -> inf` Poisson limit (`2.162788507679910...`):
-                // entropy:    2.1627885076675394949
-                // avg_length: 2.2704182849800043087
-                assert_that!(shannon_entropy(&probs), near(2.1627885076675395, 1e-14));
-                assert_that!(
-                    expected_code_length(&probs, &table),
-                    near(2.2704182849800043, 1e-14),
-                );
-            }
-            generated_tables.push(table);
-        }
-
-        for (idx, generated) in generated_tables.iter().enumerate() {
             assert_that!(
-                generated,
-                container_eq(ENCODING_TABLES_FOR_HIGH_ENTROPY_BYTE[idx]),
+                shannon_entropy(&probs),
+                near(entropy, HEADER_STATS_TOLERANCE)
+            );
+            assert_that!(
+                expected_code_length(&probs, &table),
+                near(avg_length, HEADER_STATS_TOLERANCE),
+            );
+            assert_that!(
+                table,
+                container_eq(ENCODING_TABLES_FOR_HIGH_ENTROPY_BYTE[idx])
             );
         }
     }
