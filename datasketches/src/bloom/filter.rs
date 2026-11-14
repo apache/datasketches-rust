@@ -118,7 +118,7 @@ impl BloomFilterBuilder {
     ///
     /// # Errors
     ///
-    /// Returns [`InvalidArgument`](crate::error::ErrorKind::InvalidArgument) if:
+    /// Returns [`InvalidArgument`](ErrorKind::InvalidArgument) if:
     /// * In accuracy mode, `max_items` is zero, `fpp` is outside `(0.0, 1.0]`, or the target
     ///   exceeds the serialized format or addressable allocation limits.
     /// * In size mode, `num_bits` is zero or exceeds the serialized format or addressable
@@ -226,7 +226,7 @@ impl BloomFilter {
     ///
     /// # Errors
     ///
-    /// Returns [`InvalidArgument`](crate::error::ErrorKind::InvalidArgument) if
+    /// Returns [`InvalidArgument`](ErrorKind::InvalidArgument) if
     /// [`is_compatible`](Self::is_compatible) is `false`.
     pub fn union(&mut self, other: &Self) -> Result<(), Error> {
         self.ensure_compatible(other)?;
@@ -239,7 +239,7 @@ impl BloomFilter {
     ///
     /// # Errors
     ///
-    /// Returns [`InvalidArgument`](crate::error::ErrorKind::InvalidArgument) if
+    /// Returns [`InvalidArgument`](ErrorKind::InvalidArgument) if
     /// [`is_compatible`](Self::is_compatible) is `false`.
     pub fn intersect(&mut self, other: &Self) -> Result<(), Error> {
         self.ensure_compatible(other)?;
@@ -255,7 +255,7 @@ impl BloomFilter {
     ///
     /// # Errors
     ///
-    /// Returns [`InvalidArgument`](crate::error::ErrorKind::InvalidArgument) if
+    /// Returns [`InvalidArgument`](ErrorKind::InvalidArgument) if
     /// [`is_compatible`](Self::is_compatible) is `false`.
     pub fn difference(&mut self, other: &Self) -> Result<(), Error> {
         self.ensure_compatible(other)?;
@@ -344,8 +344,8 @@ impl BloomFilter {
     ///
     /// # Errors
     ///
-    /// Returns [`InvalidData`](crate::error::ErrorKind::InvalidData) if the header, bit count, or
-    /// payload is malformed, truncated, or exceeds supported limits.
+    /// Returns [`InvalidData`](ErrorKind::InvalidData) if the header, bit count, or payload is
+    /// malformed, truncated, or exceeds supported limits.
     pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
         let mut cursor = SketchSlice::new(bytes);
 
