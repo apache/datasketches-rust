@@ -150,6 +150,17 @@ where
         self.max_item.as_ref()
     }
 
+    /// Returns an estimate of the sketch's memory usage in bytes.
+    pub fn estimated_size(&self) -> usize {
+        self.compactors.capacity() * size_of::<Compactor<T>>()
+            + self
+                .compactors
+                .iter()
+                .map(Compactor::estimated_size)
+                .sum::<usize>()
+            + self.promotion_buf.capacity() * size_of::<T>()
+    }
+
     /// Updates the sketch with a new item.
     ///
     /// # Panics

@@ -351,6 +351,16 @@ impl<T: Clone + Ord> KllSketch<T> {
     pub fn normalized_pmf_error(&self) -> f64 {
         normalized_rank_error(self.min_k, true)
     }
+
+    /// Returns an estimate of the sketch's memory usage in bytes.
+    pub fn estimated_size(&self) -> usize {
+        self.levels.capacity() * size_of::<Vec<T>>()
+            + self
+                .levels
+                .iter()
+                .map(|level| level.capacity() * size_of::<T>())
+                .sum::<usize>()
+    }
 }
 
 fn serialized_size<T: KllValue + Ord>(sketch: &KllSketch<T>) -> usize {
