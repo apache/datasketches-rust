@@ -61,8 +61,12 @@ fn v2_reads_and_writes_the_published_image() {
     let mut sketch = CountMinSketch::<i64>::new(2, 9).unwrap();
     let mut empty = bytes[..16].to_vec();
     empty[3] = 1;
+    assert_eq!(sketch.serial_version(), 2);
     assert_eq!(sketch.serialize(), empty);
-    assert_eq!(CountMinSketch::<i64>::deserialize(&empty).unwrap(), sketch);
+    let restored_empty = CountMinSketch::<i64>::deserialize(&empty).unwrap();
+    assert_eq!(restored_empty, sketch);
+    assert_eq!(restored_empty.serial_version(), 2);
+    assert!(sketch.is_compatible(&restored_empty));
 
     sketch.update_with_weight(1i64, 10);
     sketch.update_with_weight(9i64, 810);
@@ -71,6 +75,9 @@ fn v2_reads_and_writes_the_published_image() {
 
     let mut restored = CountMinSketch::<i64>::deserialize(&bytes).unwrap();
     assert_eq!(restored, sketch);
+    assert_eq!(restored.serial_version(), 2);
+    assert!(sketch.is_compatible(&restored));
+    assert!(restored.is_compatible(&sketch));
     assert_eq!(restored.estimate(1u64), 10);
     assert_eq!(restored.estimate(natural_extend::from_i8(9)), 810);
     assert_eq!(restored.estimate(raw_bytes::from_str("apple")), 5);
@@ -150,9 +157,12 @@ fn legacy_image_preserves_wrappers_and_custom_hash_inputs() {
         0,
     ]);
     let mut sketch = CountMinSketch::<i64>::deserialize(&bytes).unwrap();
+    assert_eq!(sketch.serial_version(), 1);
     assert_eq!(sketch.serialize(), bytes);
 
     let restored = CountMinSketch::<i64>::deserialize(&bytes).unwrap();
+    assert_eq!(restored.serial_version(), 1);
+    assert!(sketch.is_compatible(&restored));
     assert_eq!(restored.estimate(raw_bytes::from_str("apple")), 12);
     assert_eq!(restored.estimate(natural_extend::from_i8(-1)), 7);
     assert_eq!(restored.estimate(Key(42)), 11);
@@ -228,11 +238,32 @@ fn rejects_merge_across_serial_versions() {
     current.update_with_weight(1u64, 10);
     let before = current.clone();
 
+    assert_eq!(legacy.serial_version(), 1);
+    assert_eq!(current.serial_version(), 2);
+    assert!(!current.is_compatible(&legacy));
+    assert!(!legacy.is_compatible(&current));
+
     assert_eq!(
         current.merge(&legacy).unwrap_err().kind(),
         ErrorKind::InvalidArgument
     );
     assert_eq!(current, before);
+
+    let empty_bytes = fs::read(serialization_test_data(
+        "cpp_generated_files",
+        "count_min_empty_cpp.sk",
+    ))
+    .unwrap();
+    let empty_v1 = CountMinSketch::<u64>::deserialize(&empty_bytes).unwrap();
+    let mut empty_v2 = CountMinSketch::<u64>::new(1, 5).unwrap();
+    assert_eq!(empty_v1.serial_version(), 1);
+    assert_eq!(empty_v2.serial_version(), 2);
+    assert!(!empty_v2.is_compatible(&empty_v1));
+    assert!(!empty_v1.is_compatible(&empty_v2));
+    assert_eq!(
+        empty_v2.merge(&empty_v1).unwrap_err().kind(),
+        ErrorKind::InvalidArgument
+    );
 }
 
 #[test]
@@ -283,6 +314,7 @@ fn assert_cpp_snapshot(
     assert_eq!(sketch.num_hashes(), expected_num_hashes);
     assert_eq!(sketch.num_buckets(), expected_num_buckets);
     assert_eq!(sketch.seed(), seed);
+    assert_eq!(sketch.serial_version(), 1);
     assert_eq!(sketch.total_weight(), expected_total_weight);
     assert_eq!(sketch.is_empty(), expected_total_weight == 0);
 

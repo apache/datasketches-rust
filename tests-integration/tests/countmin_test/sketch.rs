@@ -39,6 +39,7 @@ fn weight_overflow_preserves_unsigned_state() {
     let before = sketch.clone();
 
     sketch.update_with_weight("x", 0);
+    assert!(sketch.is_compatible(&one));
     assert!(catch_unwind(AssertUnwindSafe(|| sketch.update("x"))).is_err());
     assert_eq!(sketch, before);
     assert_eq!(
@@ -105,9 +106,13 @@ fn test_init_defaults() {
     assert_eq!(sketch.num_hashes(), 3);
     assert_eq!(sketch.num_buckets(), 5);
     assert_eq!(sketch.seed(), 9001);
+    assert_eq!(sketch.serial_version(), 2);
     assert!(sketch.is_empty());
     assert_eq!(sketch.total_weight(), 0);
     assert_eq!(sketch.estimate("missing"), 0);
+
+    let seeded = CountMinSketch::<i64>::with_seed(3, 5, 42).unwrap();
+    assert_eq!(seeded.serial_version(), 2);
 }
 
 #[test]
@@ -166,6 +171,21 @@ fn test_parameter_suggestions() {
     );
     assert_eq!(
         CountMinSketch::<i64>::suggest_num_hashes(1.1)
+            .unwrap_err()
+            .kind(),
+        ErrorKind::InvalidArgument
+    );
+
+    let large_buckets = CountMinSketch::<i64>::suggest_num_buckets(1e-8).unwrap();
+    let hashes = CountMinSketch::<i64>::suggest_num_hashes(0.99).unwrap();
+    assert_eq!(
+        CountMinSketch::<i64>::new(hashes, large_buckets)
+            .unwrap_err()
+            .kind(),
+        ErrorKind::InvalidArgument
+    );
+    assert_eq!(
+        CountMinSketch::<i64>::with_seed(hashes, large_buckets, 123)
             .unwrap_err()
             .kind(),
         ErrorKind::InvalidArgument
@@ -432,11 +452,31 @@ fn test_invalid_buckets_return_error() {
 }
 
 #[test]
-fn test_merge_incompatible() {
-    let mut left = CountMinSketch::<i64>::new(3, 64).unwrap();
-    let right = CountMinSketch::<i64>::new(2, 64).unwrap();
-    let error = left.merge(&right).unwrap_err();
-    assert_eq!(error.kind(), ErrorKind::InvalidArgument);
+fn compatibility_checks_and_incompatible_merges() {
+    let mut baseline = CountMinSketch::<i64>::with_seed(3, 64, 123).unwrap();
+    baseline.update_with_weight("a", 10);
+
+    let mut same_config = CountMinSketch::<i64>::with_seed(3, 64, 123).unwrap();
+    same_config.update_with_weight("b", 20);
+    assert!(baseline.is_compatible(&same_config));
+    assert!(same_config.is_compatible(&baseline));
+
+    let incompatible = [
+        CountMinSketch::<i64>::with_seed(2, 64, 123).unwrap(),
+        CountMinSketch::<i64>::with_seed(3, 65, 123).unwrap(),
+        CountMinSketch::<i64>::with_seed(3, 64, 124).unwrap(),
+    ];
+    for other in &incompatible {
+        assert!(!baseline.is_compatible(other));
+        assert!(!other.is_compatible(&baseline));
+
+        let mut target = baseline.clone();
+        assert_eq!(
+            target.merge(other).unwrap_err().kind(),
+            ErrorKind::InvalidArgument
+        );
+        assert_eq!(target, baseline);
+    }
 }
 
 #[test]

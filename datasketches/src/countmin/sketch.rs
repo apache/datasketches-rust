@@ -68,6 +68,7 @@ impl<T: CountMinValue + fmt::Debug> fmt::Debug for CountMinSketch<T> {
             .field("num_hashes", &self.num_hashes)
             .field("num_buckets", &self.buckets.count)
             .field("seed", &self.seed)
+            .field("serial_version", &self.serial_version())
             .field("is_empty", &(self.total_weight == T::ZERO))
             .field("total_weight", &self.total_weight)
             .finish()
@@ -268,6 +269,53 @@ impl<T: CountMinValue> CountMinSketch<T> {
         self.seed
     }
 
+    /// Returns the serialization format version of the sketch.
+    ///
+    /// Newly created sketches return `2`. Sketches restored from legacy version 1 images via
+    /// [`deserialize`](Self::deserialize) or [`deserialize_with_seed`](Self::deserialize_with_seed)
+    /// return `1`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::countmin::CountMinSketch;
+    ///
+    /// let sketch = CountMinSketch::<i64>::new(4, 128).unwrap();
+    /// assert_eq!(sketch.serial_version(), 2);
+    /// ```
+    #[must_use]
+    pub fn serial_version(&self) -> u8 {
+        self.serial_version as u8
+    }
+
+    /// Returns `true` if `self` and `other` have matching `num_hashes`, `num_buckets`, `seed`, and
+    /// `serial_version`.
+    ///
+    /// This checks configuration and serial-version compatibility for [`merge`](Self::merge). Even
+    /// when `is_compatible` returns `true`, [`merge`](Self::merge) can still return
+    /// [`InvalidArgument`](ErrorKind::InvalidArgument) if the combined total absolute weight
+    /// exceeds `T::MAX`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::countmin::CountMinSketch;
+    ///
+    /// let a = CountMinSketch::<i64>::new(4, 128).unwrap();
+    /// let b = CountMinSketch::<i64>::new(4, 128).unwrap();
+    /// let c = CountMinSketch::<i64>::with_seed(4, 128, 42).unwrap();
+    ///
+    /// assert!(a.is_compatible(&b));
+    /// assert!(!a.is_compatible(&c));
+    /// ```
+    #[must_use]
+    pub fn is_compatible(&self, other: &Self) -> bool {
+        self.num_hashes == other.num_hashes
+            && self.buckets.count == other.buckets.count
+            && self.seed == other.seed
+            && self.serial_version == other.serial_version
+    }
+
     /// Returns the sum of absolute update weights, scaled by any halving or decay.
     pub fn total_weight(&self) -> T {
         self.total_weight
@@ -285,10 +333,15 @@ impl<T: CountMinValue> CountMinSketch<T> {
 
     /// Suggests the number of buckets to achieve the given relative error.
     ///
+    /// Individually valid suggestions from this method and
+    /// [`suggest_num_hashes`](Self::suggest_num_hashes) can still exceed the combined table entry
+    /// limit (`num_hashes * num_buckets < 1_073_741_824`) when passed together to
+    /// [`new`](Self::new) or [`with_seed`](Self::with_seed).
+    ///
     /// # Errors
     ///
     /// Returns an error if `relative_error` is not finite, is not greater than zero, or would
-    /// require more buckets than the sketch supports.
+    /// require `1_073_741_824` or more buckets.
     pub fn suggest_num_buckets(relative_error: f64) -> Result<u32, Error> {
         if !relative_error.is_finite() || relative_error <= 0.0 {
             return Err(Error::invalid_argument(
@@ -307,6 +360,11 @@ impl<T: CountMinValue> CountMinSketch<T> {
     }
 
     /// Suggests the number of hashes to achieve the given confidence.
+    ///
+    /// Individually valid suggestions from this method and
+    /// [`suggest_num_buckets`](Self::suggest_num_buckets) can still exceed the combined table entry
+    /// limit (`num_hashes * num_buckets < 1_073_741_824`) when passed together to
+    /// [`new`](Self::new) or [`with_seed`](Self::with_seed).
     ///
     /// # Errors
     ///
@@ -412,9 +470,9 @@ impl<T: CountMinValue> CountMinSketch<T> {
     ///
     /// # Errors
     ///
-    /// Returns an error without modifying the sketch if the sketches have different numbers of
-    /// hashes, bucket counts, seeds, or serial versions, or their combined total absolute weight
-    /// exceeds `T::MAX`.
+    /// Returns [`InvalidArgument`](ErrorKind::InvalidArgument) without modifying the sketch if
+    /// [`is_compatible`](Self::is_compatible) is `false` (different numbers of hashes, bucket
+    /// counts, seeds, or serial versions) or their combined total absolute weight exceeds `T::MAX`.
     ///
     /// # Examples
     ///
@@ -431,11 +489,7 @@ impl<T: CountMinValue> CountMinSketch<T> {
     /// assert!(left.estimate(2i64) >= 2);
     /// ```
     pub fn merge(&mut self, other: &CountMinSketch<T>) -> Result<(), Error> {
-        if self.num_hashes != other.num_hashes
-            || self.buckets.count != other.buckets.count
-            || self.seed != other.seed
-            || self.serial_version != other.serial_version
-        {
+        if !self.is_compatible(other) {
             return Err(Error::invalid_argument(
                 "Count-Min sketches must have matching numbers of hashes, bucket counts, seeds, and serial versions",
             ));
