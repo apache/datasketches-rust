@@ -12243,18 +12243,25 @@ mod tests {
     /// Generates the 56-column encoding permutation for sliding-window `phase = (2 * m + 1) / 32`
     /// (`generatePermutationsForSLIDING.ml`).
     ///
-    /// How the sliding density `c/k = 6.0 + phase` was reverse-engineered:
-    /// In `Sliding` mode (`c/k >= 3.375`), 0-based window offset is `floor(c/k - 2.375)`. Outside
-    /// the 8-bit window `[offset, offset + 7]`, a bit at `col < offset` is surprising when `0`,
-    /// and a bit at `col >= offset + 8` is surprising when `1`. Rotating column indices via
-    /// `canon = (col + 56 - offset) % 64` places post-window columns at `0 .. 56 - offset` and
-    /// pre-window columns at `56 - offset .. 56`. In `COLUMN_PERMUTATIONS_FOR_ENCODING`, phases
-    /// `0..6` (`< 3/8`) interleave 3 pre-window slots (`53, 54, 55`) into the sequence while
-    /// phases `6..16` (`> 3/8`) interleave 4 pre-window slots (`52, 53, 54, 55`). Because the
-    /// number of pre-window columns equals `offset`, `offset` transitions from `3` to `4` across
-    /// `phase = 3/8`, uniquely pinning `c/k = 6.0 + phase` (evaluated with `STEADY_STATE_MODEL`,
-    /// shared with the 16 steady-state byte tables). Ranking `0..56` by descending surprise
-    /// probability assigns shorter unary codes to more frequent surprise columns.
+    /// In `Sliding` mode (`c/k >= 3.375`), the 0-based window offset is `floor(c/k - 2.375)`.
+    /// Outside the 8-bit window `[offset, offset + 7]`, a bit at `col < offset` is surprising when
+    /// `0` (probability `p_0`), and a bit at `col >= offset + 8` is surprising when `1`
+    /// (probability `q`). Rotating column indices via `canon = (col + 56 - offset) % 64` places
+    /// post-window columns at `0 .. 56 - offset` and pre-window columns at `56 - offset .. 56`.
+    /// Ranking the 56 canonical columns by descending surprise probability (ties by index) assigns
+    /// shorter unary codes to more frequent surprise columns.
+    ///
+    /// What the 16 stored permutations identify:
+    /// * The base of `c/k = 6.0 + phase`. The base enters only through `offset`, which equals the
+    ///   base minus 3 below `phase = 3/8` and the base minus 2 above it. With `p_0` computed as an
+    ///   exponential, bases 5, 6, and 7 reproduce 6, 16, and 10 of the 16 phases.
+    /// * That `p_0` was computed without cancellation. Computing it as `1.0 - q` reproduces 15 of
+    ///   16 phases for both base 6 and base 7, so the decisive datum is a single comparison at
+    ///   `phase = 19/32` (`offset = 4`): column 1 (`canon = 52`) has `p_0 ≈ 2.22e-17` and must rank
+    ///   ahead of 1-based column 62 (`canon = 49`, `q ≈ 1.66e-17`), whereas `1.0 - q` rounds `p_0`
+    ///   to `0.0` and ranks it last.
+    /// * Nothing about `K`: every `K` from `2^8` to the Poisson limit yields identical
+    ///   permutations.
     fn generate_sliding_column_permutation(phase_index: usize) -> [u8; 56] {
         let model = STEADY_STATE_MODEL;
         let phase = (2 * phase_index + 1) as f64 / 32.0;
