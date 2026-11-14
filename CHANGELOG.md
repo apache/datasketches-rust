@@ -6,7 +6,6 @@ All significant changes to this project will be documented in this file.
 
 ### Breaking changes
 
-* Remove `BloomFilterBuilder`; construct filters directly with `BloomFilter::{with_accuracy, with_accuracy_and_seed, with_size, with_size_and_seed}`, which validate configuration on construction and return `Result<BloomFilter, Error>`.
 * `BloomFilter::capacity` now returns `u64` instead of `usize`; update callers expecting `usize` to use `u64` or convert explicitly.
 * `BloomFilter::contains` and `BloomFilter::contains_and_insert` now take `item: T` (`T: Hash`) by value instead of `&T`, matching `BloomFilter::insert`. Pass `&item` to retain owned values such as `String` or `Vec<u8>` without cloning, and remove explicit turbofish type arguments (or change `T` to `&T`) on borrowed calls such as `contains::<u64>(&value)`.
 * Fix 32-bit (`wasm32`) double hashing in `BloomFilter` to use the full 64-bit hash consistently with 64-bit targets, Java, C++, and Go. 64-bit targets and serialized formats are unchanged; rebuild or re-ingest filters created on 32-bit targets instead of mixing them across versions.

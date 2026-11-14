@@ -21,13 +21,16 @@
 //! while a few still-valid objects drop out of the filter and become origin refetches.
 
 use datasketches::bloom::BloomFilter;
+use datasketches::bloom::BloomFilterBuilder;
 
 /// Returns an empty filter using the shared configuration published by the origin.
 ///
 /// Both sides of a difference must use identical capacity, hash count, and seed, so the
 /// parameters are distributed rather than chosen independently by each node.
 fn published_filter() -> BloomFilter {
-    BloomFilter::with_accuracy(CACHED_OBJECTS, 0.01).unwrap()
+    BloomFilterBuilder::with_accuracy(CACHED_OBJECTS, 0.01)
+        .build()
+        .unwrap()
 }
 
 /// Number of objects cached by the edge node.

@@ -21,10 +21,10 @@
 //! tunable false-positive probability. Unlike resizing sketches, its capacity is fixed at
 //! construction.
 //!
-//! Construct a filter with [`BloomFilter::with_accuracy`] (or
-//! [`BloomFilter::with_accuracy_and_seed`]) from a target distinct-item count and false-positive
-//! probability, or with [`BloomFilter::with_size`] (or [`BloomFilter::with_size_and_seed`]) to
-//! specify bit count and hash count directly.
+//! Construct a filter via [`BloomFilterBuilder`], using [`BloomFilterBuilder::with_accuracy`]
+//! from a target distinct-item count and false-positive probability, or
+//! [`BloomFilterBuilder::with_size`] to specify bit count and hash count directly. Both modes
+//! accept an optional [`BloomFilterBuilder::seed`].
 //!
 //! # Cross-language hashing
 //!
@@ -42,18 +42,27 @@
 //!
 //! ```
 //! use datasketches::bloom::BloomFilter;
+//! use datasketches::bloom::BloomFilterBuilder;
 //!
-//! let mut filter = BloomFilter::with_accuracy(1000, 0.01).unwrap();
+//! let mut filter = BloomFilterBuilder::with_accuracy(1000, 0.01)
+//!     .build()
+//!     .unwrap();
 //! filter.insert("apple");
 //! filter.insert(42_u64);
 //! assert!(filter.contains("apple"));
 //! assert!(!filter.contains("grape"));
 //!
-//! let manual = BloomFilter::with_size(10_000, 7).unwrap();
+//! let manual = BloomFilterBuilder::with_size(10_000, 7)
+//!     .seed(42)
+//!     .build()
+//!     .unwrap();
 //! assert_eq!(manual.capacity(), 10_048);
 //! assert_eq!(manual.num_hashes(), 7);
+//! assert_eq!(manual.seed(), 42);
 //!
-//! let mut other = BloomFilter::with_accuracy(1000, 0.01).unwrap();
+//! let mut other = BloomFilterBuilder::with_accuracy(1000, 0.01)
+//!     .build()
+//!     .unwrap();
 //! other.insert("banana");
 //! filter.union(&other).unwrap();
 //! assert!(filter.contains("apple"));
@@ -69,7 +78,7 @@
 //! * Kirsch and Mitzenmacher (2008). "Less Hashing, Same Performance: Building a Better Bloom
 //!   Filter"
 
-mod bit_array;
 mod filter;
 
 pub use self::filter::BloomFilter;
+pub use self::filter::BloomFilterBuilder;

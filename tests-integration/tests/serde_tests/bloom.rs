@@ -19,6 +19,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use datasketches::bloom::BloomFilter;
+use datasketches::bloom::BloomFilterBuilder;
 use datasketches::error::ErrorKind;
 use googletest::assert_that;
 use googletest::prelude::gt;
@@ -124,7 +125,9 @@ fn test_go_compatibility() {
 fn test_cached_num_bits_set_is_validated_or_recomputed() {
     const NUM_BITS_SET_OFFSET: usize = 24;
 
-    let mut filter = BloomFilter::with_accuracy(100, 0.01).unwrap();
+    let mut filter = BloomFilterBuilder::with_accuracy(100, 0.01)
+        .build()
+        .unwrap();
     filter.insert("apple");
     filter.insert("banana");
     let actual_bits_set = filter.bits_used();
@@ -154,7 +157,9 @@ fn test_cached_num_bits_set_is_validated_or_recomputed() {
 fn test_invalid_num_longs_are_rejected() {
     const NUM_LONGS_OFFSET: usize = 16;
 
-    let empty = BloomFilter::with_accuracy(100, 0.01).unwrap();
+    let empty = BloomFilterBuilder::with_accuracy(100, 0.01)
+        .build()
+        .unwrap();
     let mut non_empty = empty.clone();
     non_empty.insert("apple");
 

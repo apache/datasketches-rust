@@ -19,7 +19,7 @@ use std::hint::black_box;
 
 use benchmarks::Bencher;
 use benchmarks::Runner;
-use datasketches::bloom::BloomFilter;
+use datasketches::bloom::BloomFilterBuilder;
 use datasketches::hash::value::raw_bytes;
 
 use crate::hash_inputs::ITEMS;
@@ -27,7 +27,9 @@ use crate::hash_inputs::bytes_32_values;
 
 fn u64(bencher: Bencher) {
     bencher.bench_local(|| {
-        let mut filter = BloomFilter::with_accuracy(ITEMS as u64, 0.01).unwrap();
+        let mut filter = BloomFilterBuilder::with_accuracy(ITEMS as u64, 0.01)
+            .build()
+            .unwrap();
         for value in 0..ITEMS as u64 {
             filter.insert(black_box(value));
         }
@@ -39,7 +41,9 @@ fn bytes_32(bencher: Bencher) {
     let values = bytes_32_values();
 
     bencher.bench_local(|| {
-        let mut filter = BloomFilter::with_accuracy(ITEMS as u64, 0.01).unwrap();
+        let mut filter = BloomFilterBuilder::with_accuracy(ITEMS as u64, 0.01)
+            .build()
+            .unwrap();
         for value in &values {
             filter.insert(raw_bytes::from_slice(black_box(value)));
         }
@@ -48,7 +52,9 @@ fn bytes_32(bencher: Bencher) {
 }
 
 fn contains_and_insert_present_u64(bencher: Bencher) {
-    let mut populated = BloomFilter::with_accuracy(ITEMS as u64, 0.01).unwrap();
+    let mut populated = BloomFilterBuilder::with_accuracy(ITEMS as u64, 0.01)
+        .build()
+        .unwrap();
     for value in 0..ITEMS as u64 {
         populated.insert(value);
     }

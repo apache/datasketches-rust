@@ -16,6 +16,7 @@
 // under the License.
 
 use datasketches::bloom::BloomFilter;
+use datasketches::bloom::BloomFilterBuilder;
 use datasketches::error::ErrorKind;
 use datasketches::hash::value::raw_bytes;
 use googletest::assert_that;
@@ -28,7 +29,10 @@ const NUM_HASHES: u16 = 5;
 const SEED: u64 = 123;
 
 fn filter() -> BloomFilter {
-    BloomFilter::with_size_and_seed(NUM_BITS, NUM_HASHES, SEED).unwrap()
+    BloomFilterBuilder::with_size(NUM_BITS, NUM_HASHES)
+        .seed(SEED)
+        .build()
+        .unwrap()
 }
 
 fn decode_hex(input: &str) -> Vec<u8> {
@@ -58,7 +62,9 @@ fn lifecycle_statistics_and_reset() {
     assert!(!filter.contains("apple"));
     assert_that!(filter.estimated_size(), ge((NUM_BITS / 8) as usize));
 
-    let larger = BloomFilter::with_size(NUM_BITS * 2, NUM_HASHES).unwrap();
+    let larger = BloomFilterBuilder::with_size(NUM_BITS * 2, NUM_HASHES)
+        .build()
+        .unwrap();
     assert_that!(larger.estimated_size(), gt(filter.estimated_size()));
 
     assert!(!filter.contains_and_insert("apple"));
@@ -137,7 +143,9 @@ fn within_item_collisions_and_repeated_inserts_preserve_bit_count() {
     // Exercise one hash and force within-item collisions: 65 hashes cannot
     // select distinct positions in a 64-bit filter.
     for num_hashes in [1, 65] {
-        let mut inserted = BloomFilter::with_size(64, num_hashes).unwrap();
+        let mut inserted = BloomFilterBuilder::with_size(64, num_hashes)
+            .build()
+            .unwrap();
         let mut checked = inserted.clone();
         inserted.insert(42_u64);
         assert!(!checked.contains_and_insert(42_u64));
@@ -237,9 +245,18 @@ fn compatibility_checks_and_incompatible_set_operations_are_rejected() {
     assert!(baseline.is_compatible(&filter()));
 
     let incompatible = [
-        BloomFilter::with_size_and_seed(NUM_BITS, NUM_HASHES, SEED + 1).unwrap(),
-        BloomFilter::with_size_and_seed(NUM_BITS * 2, NUM_HASHES, SEED).unwrap(),
-        BloomFilter::with_size_and_seed(NUM_BITS, NUM_HASHES + 1, SEED).unwrap(),
+        BloomFilterBuilder::with_size(NUM_BITS, NUM_HASHES)
+            .seed(SEED + 1)
+            .build()
+            .unwrap(),
+        BloomFilterBuilder::with_size(NUM_BITS * 2, NUM_HASHES)
+            .seed(SEED)
+            .build()
+            .unwrap(),
+        BloomFilterBuilder::with_size(NUM_BITS, NUM_HASHES + 1)
+            .seed(SEED)
+            .build()
+            .unwrap(),
     ];
 
     for other in &incompatible {
@@ -269,28 +286,42 @@ fn compatibility_checks_and_incompatible_set_operations_are_rejected() {
 }
 
 #[test]
-fn constructor_validation_and_word_rounding() {
-    let rounded = BloomFilter::with_size(65, 3).unwrap();
-    assert_eq!(rounded.capacity(), 128);
-    assert_eq!(rounded.num_hashes(), 3);
-
-    let size_seeded = BloomFilter::with_size_and_seed(65, 3, 42).unwrap();
+fn builder_validation_and_word_rounding() {
+    let builder = BloomFilterBuilder::with_size(65, 3).seed(42);
+    let _ = format!("{builder:?}");
+    let size_seeded = builder.clone().build().unwrap();
+    assert_eq!(size_seeded, builder.build().unwrap());
     assert_eq!(size_seeded.capacity(), 128);
     assert_eq!(size_seeded.num_hashes(), 3);
     assert_eq!(size_seeded.seed(), 42);
 
-    let trivial = BloomFilter::with_accuracy(100, 1.0).unwrap();
+    let rounded = BloomFilterBuilder::with_size(65, 3).build().unwrap();
+    assert_eq!(rounded.capacity(), 128);
+    assert_eq!(rounded.num_hashes(), 3);
+    assert_eq!(rounded.seed(), 9001);
+
+    let trivial = BloomFilterBuilder::with_accuracy(100, 1.0).build().unwrap();
     assert_eq!(trivial.capacity(), 64);
     assert_eq!(trivial.num_hashes(), 1);
+    assert_eq!(trivial.seed(), 9001);
 
-    let acc = BloomFilter::with_accuracy(100, 0.01).unwrap();
-    let acc_seeded = BloomFilter::with_accuracy_and_seed(100, 0.01, 42).unwrap();
+    let acc = BloomFilterBuilder::with_accuracy(100, 0.01)
+        .build()
+        .unwrap();
+    assert_eq!(acc.seed(), 9001);
+    let acc_seeded = BloomFilterBuilder::with_accuracy(100, 0.01)
+        .seed(42)
+        .build()
+        .unwrap();
     assert_eq!(acc_seeded.seed(), 42);
     assert_eq!(acc_seeded.capacity(), acc.capacity());
     assert_eq!(acc_seeded.num_hashes(), acc.num_hashes());
     assert_eq!(
         acc_seeded,
-        BloomFilter::with_size_and_seed(acc.capacity(), acc.num_hashes(), 42).unwrap()
+        BloomFilterBuilder::with_size(acc.capacity(), acc.num_hashes())
+            .seed(42)
+            .build()
+            .unwrap()
     );
 
     for (max_items, fpp) in [
@@ -301,28 +332,34 @@ fn constructor_validation_and_word_rounding() {
         (u64::MAX, 0.01),
     ] {
         assert_eq!(
-            BloomFilter::with_accuracy(max_items, fpp)
+            BloomFilterBuilder::with_accuracy(max_items, fpp)
+                .build()
                 .unwrap_err()
                 .kind(),
             ErrorKind::InvalidArgument
         );
         assert_eq!(
-            BloomFilter::with_accuracy_and_seed(max_items, fpp, 42)
+            BloomFilterBuilder::with_accuracy(max_items, fpp)
+                .seed(42)
+                .build()
                 .unwrap_err()
                 .kind(),
             ErrorKind::InvalidArgument
         );
     }
 
-    for (num_bits, num_hashes) in [(0, 3), (128, 0)] {
+    for (num_bits, num_hashes) in [(0, 3), (u64::MAX, 3), (128, 0), (128, 32_768)] {
         assert_eq!(
-            BloomFilter::with_size(num_bits, num_hashes)
+            BloomFilterBuilder::with_size(num_bits, num_hashes)
+                .build()
                 .unwrap_err()
                 .kind(),
             ErrorKind::InvalidArgument
         );
         assert_eq!(
-            BloomFilter::with_size_and_seed(num_bits, num_hashes, 42)
+            BloomFilterBuilder::with_size(num_bits, num_hashes)
+                .seed(42)
+                .build()
                 .unwrap_err()
                 .kind(),
             ErrorKind::InvalidArgument
@@ -339,7 +376,10 @@ fn serialized_bit_layout_matches_cross_language_vector() {
         "0008080000000000",
         "0000000400000000",
     ));
-    let mut filter = BloomFilter::with_size_and_seed(192, 3, 9001).unwrap();
+    let mut filter = BloomFilterBuilder::with_size(192, 3)
+        .seed(9001)
+        .build()
+        .unwrap();
     filter.insert(0_u64);
 
     assert_eq!(filter.serialize(), expected);

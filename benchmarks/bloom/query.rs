@@ -20,13 +20,16 @@ use std::hint::black_box;
 use benchmarks::Bencher;
 use benchmarks::Runner;
 use datasketches::bloom::BloomFilter;
+use datasketches::bloom::BloomFilterBuilder;
 use datasketches::hash::value::raw_bytes;
 
 use crate::hash_inputs::ITEMS;
 use crate::hash_inputs::bytes_32_values;
 
 fn populated_u64_filter() -> BloomFilter {
-    let mut filter = BloomFilter::with_accuracy(ITEMS as u64, 0.01).unwrap();
+    let mut filter = BloomFilterBuilder::with_accuracy(ITEMS as u64, 0.01)
+        .build()
+        .unwrap();
     for value in 0..ITEMS as u64 {
         filter.insert(value);
     }
@@ -34,7 +37,9 @@ fn populated_u64_filter() -> BloomFilter {
 }
 
 fn populated_bytes_32_filter(values: &[[u8; 32]]) -> BloomFilter {
-    let mut filter = BloomFilter::with_accuracy(ITEMS as u64, 0.01).unwrap();
+    let mut filter = BloomFilterBuilder::with_accuracy(ITEMS as u64, 0.01)
+        .build()
+        .unwrap();
     for value in values {
         filter.insert(raw_bytes::from_slice(value));
     }
