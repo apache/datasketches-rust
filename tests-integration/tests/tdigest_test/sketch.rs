@@ -19,6 +19,7 @@ use std::panic::AssertUnwindSafe;
 use std::panic::catch_unwind;
 
 use datasketches::error::ErrorKind;
+use datasketches::tdigest::TDigest;
 use datasketches::tdigest::TDigestMut;
 use googletest::assert_that;
 use googletest::prelude::eq;
@@ -1034,4 +1035,23 @@ fn weight_overflow_preserves_buffer_and_extrema() {
     let before = target.clone().serialize();
     assert!(catch_unwind(AssertUnwindSafe(|| target.merge(&sketch))).is_err());
     assert_eq!(target.serialize(), before);
+}
+
+#[test]
+fn clone_tdigest_produces_independent_identical_digest() {
+    let mut mutable = TDigestMut::new(100).unwrap();
+    for value in [1.0, 2.0, 3.0, 4.0] {
+        mutable.update(value);
+    }
+    let expected_bytes = mutable.serialize();
+    let digest: TDigest = mutable.freeze();
+    let cloned = digest.clone();
+    drop(digest);
+
+    assert_eq!(cloned.k(), 100);
+    assert_eq!(cloned.total_weight(), 4);
+    assert_eq!(cloned.min_value(), Some(1.0));
+    assert_eq!(cloned.max_value(), Some(4.0));
+    assert_eq!(cloned.cdf(&[2.5]).unwrap(), Some(vec![0.5, 1.0]));
+    assert_eq!(cloned.serialize(), expected_bytes);
 }

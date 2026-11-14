@@ -996,7 +996,7 @@ impl CompactThetaSketch {
 /// Builder for [`ThetaSketch`].
 ///
 /// Configuration is stored without validation and checked when [`build()`](Self::build) is called.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ThetaSketchBuilder {
     lg_k: u8,
     resize_factor: ResizeFactor,

@@ -172,7 +172,7 @@ where
 /// custom combine policy.
 ///
 /// Configuration is stored without validation and checked when [`build()`](Self::build) is called.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TupleUnionBuilder<P>
 where
     P: SummaryCombinePolicy,

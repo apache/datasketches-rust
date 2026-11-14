@@ -16,6 +16,7 @@
 // under the License.
 
 use datasketches::common::NumStdDev;
+use datasketches::common::ResizeFactor;
 use datasketches::error::ErrorKind;
 use datasketches::tuple::DefaultUnionPolicy;
 use datasketches::tuple::SummaryCombinePolicy;
@@ -194,4 +195,36 @@ fn estimation_bounds_cover_the_true_union() {
 
     assert!(result.is_estimation_mode());
     assert_that!(75_000.0, all!(ge(lower), le(upper)));
+}
+
+#[test]
+fn builder_clone_preserves_config_and_is_independent() {
+    let base = default_union_builder()
+        .lg_k(8)
+        .resize_factor(ResizeFactor::X2)
+        .sampling_probability(0.5)
+        .seed(123);
+    let cloned = base.clone();
+    let reconfigured = base.clone().lg_k(10).seed(456);
+
+    let mut union_a = base.build().unwrap();
+    let mut union_b = cloned.build().unwrap();
+    let mut union_c = reconfigured.build().unwrap();
+    assert_eq!(union_a.estimated_size(), union_b.estimated_size());
+
+    let mut input = default_tuple_sketch_builder()
+        .lg_k(8)
+        .seed(123)
+        .build()
+        .unwrap();
+    for i in 0..500 {
+        input.update(i, 2u64);
+    }
+    union_a.update(&input).unwrap();
+    union_b.update(&input).unwrap();
+    let error = union_c.update(&input).unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::InvalidArgument);
+
+    assert_eq!(union_a.serialize(true), union_b.serialize(true));
+    assert!(union_a.to_sketch(true).is_estimation_mode());
 }

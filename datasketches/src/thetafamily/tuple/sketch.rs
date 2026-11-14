@@ -774,7 +774,7 @@ impl<S> CompactTupleSketch<S> {
 /// summaries, or supply a custom policy.
 ///
 /// Configuration is stored without validation and checked when [`build()`](Self::build) is called.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TupleSketchBuilder<P>
 where
     P: SummaryPolicy,
