@@ -21,14 +21,13 @@
 //! while a few still-valid objects drop out of the filter and become origin refetches.
 
 use datasketches::bloom::BloomFilter;
-use datasketches::bloom::BloomFilterBuilder;
 
-/// Returns the shared filter configuration published by the origin.
+/// Returns an empty filter using the shared configuration published by the origin.
 ///
 /// Both sides of a difference must use identical capacity, hash count, and seed, so the
 /// parameters are distributed rather than chosen independently by each node.
-fn published_config() -> BloomFilterBuilder {
-    BloomFilterBuilder::with_accuracy(CACHED_OBJECTS, 0.01)
+fn published_filter() -> BloomFilter {
+    BloomFilter::with_accuracy(CACHED_OBJECTS, 0.01).unwrap()
 }
 
 /// Number of objects cached by the edge node.
@@ -41,13 +40,13 @@ fn purged_objects() -> impl Iterator<Item = u64> {
 
 fn main() {
     // The edge node records every object it caches.
-    let mut cached = published_config().build().unwrap();
+    let mut cached = published_filter();
     for object in 0..CACHED_OBJECTS {
         cached.insert(object);
     }
 
     // The origin records every purged object using the same published configuration.
-    let mut purged = published_config().build().unwrap();
+    let mut purged = published_filter();
     for object in purged_objects() {
         purged.insert(object);
     }

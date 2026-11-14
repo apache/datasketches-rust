@@ -19,7 +19,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use datasketches::bloom::BloomFilter;
-use datasketches::bloom::BloomFilterBuilder;
+use datasketches::error::ErrorKind;
 use googletest::assert_that;
 use googletest::prelude::gt;
 
@@ -124,9 +124,7 @@ fn test_go_compatibility() {
 fn test_cached_num_bits_set_is_validated_or_recomputed() {
     const NUM_BITS_SET_OFFSET: usize = 24;
 
-    let mut filter = BloomFilterBuilder::with_accuracy(100, 0.01)
-        .build()
-        .unwrap();
+    let mut filter = BloomFilter::with_accuracy(100, 0.01).unwrap();
     filter.insert("apple");
     filter.insert("banana");
     let actual_bits_set = filter.bits_used();
@@ -137,7 +135,10 @@ fn test_cached_num_bits_set_is_validated_or_recomputed() {
         bytes[NUM_BITS_SET_OFFSET..NUM_BITS_SET_OFFSET + size_of::<u64>()]
             .copy_from_slice(&serialized_count.to_le_bytes());
 
-        assert!(BloomFilter::deserialize(&bytes).is_err());
+        assert_eq!(
+            BloomFilter::deserialize(&bytes).unwrap_err().kind(),
+            ErrorKind::InvalidData
+        );
     }
 
     let mut dirty = filter.serialize();
@@ -150,16 +151,23 @@ fn test_cached_num_bits_set_is_validated_or_recomputed() {
 }
 
 #[test]
-fn test_nonempty_payload_length_is_checked_before_allocating() {
+fn test_invalid_num_longs_are_rejected() {
     const NUM_LONGS_OFFSET: usize = 16;
 
-    let mut filter = BloomFilterBuilder::with_accuracy(100, 0.01)
-        .build()
-        .unwrap();
-    filter.insert("apple");
-    let mut bytes = filter.serialize();
-    bytes[NUM_LONGS_OFFSET..NUM_LONGS_OFFSET + size_of::<i32>()]
-        .copy_from_slice(&i32::MAX.to_le_bytes());
+    let empty = BloomFilter::with_accuracy(100, 0.01).unwrap();
+    let mut non_empty = empty.clone();
+    non_empty.insert("apple");
 
-    assert!(BloomFilter::deserialize(&bytes).is_err());
+    for base in [empty.serialize(), non_empty.serialize()] {
+        for num_longs in [0_i32, -1, i32::MAX] {
+            let mut corrupted = base.clone();
+            corrupted[NUM_LONGS_OFFSET..NUM_LONGS_OFFSET + size_of::<i32>()]
+                .copy_from_slice(&num_longs.to_le_bytes());
+
+            assert_eq!(
+                BloomFilter::deserialize(&corrupted).unwrap_err().kind(),
+                ErrorKind::InvalidData
+            );
+        }
+    }
 }
