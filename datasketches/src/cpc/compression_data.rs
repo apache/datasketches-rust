@@ -11970,7 +11970,8 @@ mod tests {
     // written by Kevin J. Lang referenced in the comments above were never published:
     //
     // 1. `columnProbabilities.ml`: computes cell occupancy probabilities in the FM85 coupon matrix
-    //    and derives the symbol distributions for high-entropy window bytes and unary run lengths.
+    //    and derives the symbol distributions for high-entropy window bytes and for the column
+    //    deltas of surprise pairs.
     // 2. `generateHuffmanCodes.ml`: builds length-limited (<= 12 bits) canonical LSB-first Huffman
     //    encoding tables (`LENGTH_LIMITED_UNARY_ENCODING_TABLE65` and the 22 tables of
     //    `ENCODING_TABLES_FOR_HIGH_ENTROPY_BYTE`).
@@ -11978,9 +11979,9 @@ mod tests {
     //    surprise probability across the 16 sliding-window phases
     //    (`COLUMN_PERMUTATIONS_FOR_ENCODING`).
     //
-    // The helpers and tests below document how each hidden parameter and tie-breaking rule was
-    // reverse-engineered from the checked-in tables and header comments, and verify a 1-to-1
-    // bit-exact match for every entry of all six tables.
+    // The helpers and tests below document which hidden parameters the checked-in tables and
+    // header comments identify, which ones they leave open, and verify a 1-to-1 bit-exact match
+    // for every entry of all six tables.
 
     use std::array::from_fn;
 
@@ -12132,6 +12133,12 @@ mod tests {
     /// `LENGTH_LIMITED_UNARY_ENCODING_TABLE65` (`columnProbabilities.ml`):
     /// `P(s) = 2^{-(s+1)}` for `s in 0..64` and `P(64) = 2^{-64}`, which sums to `1.0` and has
     /// exact Shannon entropy `2.0` bits.
+    ///
+    /// The symbol is the column delta `x_delta` that the pair encoder writes for each surprise
+    /// `(row, col)` pair (the row delta is Golomb-coded with a plain unary high part instead).
+    /// The geometric law is the column distribution of a single coupon, and "unary" describes the
+    /// shape of the resulting code: lengths `1, 2, 3, 4, 5, 7, 8, 8, 10, 10, 11, 12, ...` follow
+    /// the unary pattern until the 12-bit limit forces a redistribution.
     fn unary65_probabilities() -> [f64; 65] {
         let mut probs = [0.0; 65];
         for (s, slot) in probs.iter_mut().enumerate().take(64) {
@@ -12169,10 +12176,12 @@ mod tests {
     ///    probabilities such as `2^-64` are capped at length 12 while strictly minimizing `sum_s
     ///    P(s) * len[s]` subject to Kraft's equality `sum_s 2^-len[s] = 1`. In Package-Merge over
     ///    `max_length` levels, each level pairs adjacent items `(2k, 2k+1)` from the previous level
-    ///    and stably merges `[leaves, packages]` by non-decreasing weight (breaking leaf ties by
-    ///    ascending symbol index, with leaves preceding packages on exact ties such as `P(62) =
-    ///    2^-63 == P(63) + P(64)`). Selecting the `2 * n - 2` lightest items at the final level and
-    ///    counting each symbol's leaf occurrences yields the exact optimal code lengths.
+    ///    and stably merges `[leaves, packages]` by non-decreasing weight, breaking leaf ties by
+    ///    ascending symbol index. Selecting the `2 * n - 2` lightest items at the final level and
+    ///    counting each symbol's leaf occurrences yields the optimal code lengths. Exact weight
+    ///    ties between a leaf and a package do occur (e.g. `P(62) = 2^-63 == P(63) + P(64)`), but
+    ///    the tables do not identify a tie rule: ordering packages ahead of leaves yields the same
+    ///    code lengths for all 23 tables. Leaves go first here.
     /// 2. Canonical LSB-first codeword assignment: sorting symbols by `(len[s], s)` ascending,
     ///    assigning standard canonical MSB-first integers (`code <<= len - prev_len`, then
     ///    incrementing), and bit-reversing the low `len` bits (`reverse_bits() >> (16 - len)`) so
