@@ -136,9 +136,11 @@ impl BloomFilterBuilder {
                 let n = max_items as f64;
                 let log_fpp = fpp.ln();
 
+                // Kirsch and Mitzenmacher (2008), Section 2: https://doi.org/10.1002/rsa.20208
                 // For n items, m bits and k independent hash probes, a bit stays unset with
                 // probability (1 - 1/m)^(k*n) ≈ exp(-k*n/m), so p ≈ (1 - exp(-k*n/m))^k.
                 // At the continuous optimum half the bits are set: p = 2^-k, or k = -ln(p)/ln(2).
+                // Since fpp >= 2^-1074 for positive f64, k <= 1074 < MAX_NUM_HASHES.
                 let num_hashes = (-log_fpp / std::f64::consts::LN_2).ceil().max(1.0) as u16;
                 let k = f64::from(num_hashes);
 
