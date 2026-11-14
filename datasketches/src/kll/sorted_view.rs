@@ -25,6 +25,7 @@ use crate::error::Error;
 ///
 /// Build one with [`KllSketch::sorted_view`](super::KllSketch::sorted_view) when running repeated
 /// queries against the same sketch state.
+#[must_use]
 #[derive(Clone)]
 pub struct SortedView<T: Clone> {
     entries: Vec<Entry<T>>,
@@ -66,16 +67,19 @@ impl<T: Clone + Ord> SortedView<T> {
     }
 
     /// Returns whether the view contains no retained items.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
 
     /// Returns the number of retained items in the view.
+    #[must_use]
     pub fn len(&self) -> usize {
         self.entries.len()
     }
 
     /// Returns the total stream weight represented by the view.
+    #[must_use]
     pub fn total_weight(&self) -> u64 {
         self.total_weight
     }
@@ -83,6 +87,7 @@ impl<T: Clone + Ord> SortedView<T> {
     /// Returns the approximate normalized rank of `item`.
     ///
     /// Returns `None` if the view is empty.
+    #[must_use]
     pub fn rank(&self, item: &T, criteria: SearchCriteria) -> Option<f64> {
         if self.is_empty() {
             return None;

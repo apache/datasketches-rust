@@ -229,6 +229,7 @@ impl HllUnion {
     /// assert_eq!(result.target_type(), HllType::Hll6);
     /// assert_eq!(result.estimate(), union.estimate());
     /// ```
+    #[must_use]
     pub fn to_sketch(&self, hll_type: HllType) -> HllSketch {
         let gadget_type = self.gadget.target_type();
 
@@ -279,21 +280,25 @@ impl HllUnion {
     /// union.update(&partial);
     /// assert!((union.estimate() - 2.0).abs() < 0.01);
     /// ```
+    #[must_use]
     pub fn serialize(&self) -> Vec<u8> {
         self.gadget.serialize()
     }
 
     /// Returns the union's current effective `lg_k`.
+    #[must_use]
     pub fn lg_config_k(&self) -> u8 {
         self.gadget.lg_config_k()
     }
 
     /// Returns the maximum configured `lg_k`.
+    #[must_use]
     pub fn lg_max_k(&self) -> u8 {
         self.lg_max_k
     }
 
     /// Returns `true` if the union is empty.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.gadget.is_empty()
     }
@@ -337,6 +342,7 @@ impl HllUnion {
     /// let estimate = union.estimate();
     /// assert!((estimate - 2.0).abs() < 0.01);
     /// ```
+    #[must_use]
     pub fn estimate(&self) -> f64 {
         self.gadget.estimate()
     }
@@ -357,6 +363,7 @@ impl HllUnion {
     /// let estimate = union.composite_estimate();
     /// assert!((estimate - 10_000.0).abs() < 500.0);
     /// ```
+    #[must_use]
     pub fn composite_estimate(&self) -> f64 {
         self.gadget.composite_estimate()
     }
@@ -376,6 +383,7 @@ impl HllUnion {
     /// let upper = union.upper_bound(NumStdDev::Two);
     /// assert!(upper >= union.estimate());
     /// ```
+    #[must_use]
     pub fn upper_bound(&self, num_std_dev: NumStdDev) -> f64 {
         self.gadget.upper_bound(num_std_dev)
     }
@@ -395,11 +403,13 @@ impl HllUnion {
     /// let lower = union.lower_bound(NumStdDev::Two);
     /// assert!(lower <= union.estimate());
     /// ```
+    #[must_use]
     pub fn lower_bound(&self, num_std_dev: NumStdDev) -> f64 {
         self.gadget.lower_bound(num_std_dev)
     }
 
     /// Returns an estimate of the union's memory usage in bytes.
+    #[must_use]
     pub fn estimated_size(&self) -> usize {
         self.gadget.estimated_size()
     }

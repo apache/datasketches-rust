@@ -21,6 +21,7 @@ use std::fmt;
 
 /// Categories of errors returned by DataSketches operations.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[must_use]
 #[non_exhaustive]
 pub enum ErrorKind {
     /// The argument provided is invalid.
@@ -31,6 +32,7 @@ pub enum ErrorKind {
 
 impl ErrorKind {
     /// Converts this error kind into a static string.
+    #[must_use]
     pub const fn into_static(self) -> &'static str {
         match self {
             ErrorKind::InvalidArgument => "InvalidArgument",
@@ -57,6 +59,7 @@ impl fmt::Display for ErrorKind {
 /// assert_eq!(err.kind(), ErrorKind::InvalidArgument);
 /// assert_eq!(err.message(), "bad input");
 /// ```
+#[must_use]
 #[derive(Clone, PartialEq, Eq)]
 pub struct Error {
     kind: ErrorKind,
@@ -86,6 +89,7 @@ impl Error {
     }
 
     /// Returns the error message.
+    #[must_use]
     pub fn message(&self) -> &str {
         self.message.as_str()
     }

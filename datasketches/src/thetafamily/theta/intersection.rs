@@ -81,11 +81,13 @@ impl ThetaIntersection {
     }
 
     /// Returns `true` after the first successful [`update`](Self::update).
+    #[must_use]
     pub fn has_result(&self) -> bool {
         self.state.has_result()
     }
 
     /// Returns an estimate of the intersection's memory usage in bytes.
+    #[must_use]
     pub fn estimated_size(&self) -> usize {
         self.state.estimated_size()
     }
@@ -96,6 +98,7 @@ impl ThetaIntersection {
     /// `Some` even when the intersection is empty.
     ///
     /// If `ordered` is `true`, retained hashes are sorted in ascending order.
+    #[must_use]
     pub fn to_sketch(&self, ordered: bool) -> Option<CompactThetaSketch> {
         self.state
             .to_compact_hash_state(ordered)

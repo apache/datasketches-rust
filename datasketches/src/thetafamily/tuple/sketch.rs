@@ -79,6 +79,7 @@ use crate::tuple::serialization::serialize_compact_uncompressed;
 /// let view = sketch.as_view();
 /// assert_eq!(view.iter().next().unwrap().summary(), &1);
 /// ```
+#[must_use]
 pub struct TupleSketchView<'a, S>(TupleSketchViewState<'a, S>);
 
 enum TupleSketchViewState<'a, S> {
@@ -153,6 +154,7 @@ impl<S> Copy for TupleSketchViewState<'_, S> {}
 
 impl<'a, S> TupleSketchView<'a, S> {
     /// Returns the 16-bit seed hash.
+    #[must_use]
     pub fn seed_hash(&self) -> u16 {
         match self.0 {
             TupleSketchViewState::Mutable { table, .. } => table.seed_hash(),
@@ -161,6 +163,7 @@ impl<'a, S> TupleSketchView<'a, S> {
     }
 
     /// Returns theta as a `u64` threshold.
+    #[must_use]
     pub fn theta64(&self) -> u64 {
         match self.0 {
             TupleSketchViewState::Mutable { table, is_empty } => {
@@ -175,6 +178,7 @@ impl<'a, S> TupleSketchView<'a, S> {
     }
 
     /// Returns `true` if the viewed sketch is empty.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         match self.0 {
             TupleSketchViewState::Mutable { is_empty, .. } => is_empty,
@@ -183,6 +187,7 @@ impl<'a, S> TupleSketchView<'a, S> {
     }
 
     /// Returns whether retained entries are ordered by ascending hash.
+    #[must_use]
     pub fn is_ordered(&self) -> bool {
         match self.0 {
             TupleSketchViewState::Mutable { .. } => false,
@@ -203,6 +208,7 @@ impl<'a, S> TupleSketchView<'a, S> {
     }
 
     /// Returns the number of retained entries.
+    #[must_use]
     pub fn num_retained(&self) -> usize {
         match self.0 {
             TupleSketchViewState::Mutable { table, .. } => table.num_retained(),
@@ -359,6 +365,7 @@ where
     }
 
     /// Returns the cardinality (distinct key count) estimate.
+    #[must_use]
     pub fn estimate(&self) -> f64 {
         if self.is_empty() {
             return 0.0;
@@ -369,6 +376,7 @@ where
     }
 
     /// Returns theta as a fraction in `[0.0, 1.0]`.
+    #[must_use]
     pub fn theta(&self) -> f64 {
         self.theta64() as f64 / MAX_THETA as f64
     }
@@ -377,6 +385,7 @@ where
     ///
     /// An empty sketch reports `MAX_THETA` even when it was built with a sampling probability
     /// below `1.0`.
+    #[must_use]
     pub fn theta64(&self) -> u64 {
         if self.is_empty {
             MAX_THETA
@@ -386,26 +395,31 @@ where
     }
 
     /// Returns the 16-bit seed hash.
+    #[must_use]
     pub fn seed_hash(&self) -> u16 {
         self.table.seed_hash()
     }
 
     /// Returns `true` if the sketch is empty.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.is_empty
     }
 
     /// Returns `true` if the sketch is in estimation mode.
+    #[must_use]
     pub fn is_estimation_mode(&self) -> bool {
         !self.is_empty && self.table.retention_theta() < MAX_THETA
     }
 
     /// Returns the number of retained entries.
+    #[must_use]
     pub fn num_retained(&self) -> usize {
         self.table.num_retained()
     }
 
     /// Returns the configured `lg_k`.
+    #[must_use]
     pub fn lg_k(&self) -> u8 {
         self.table.lg_nom_size()
     }
@@ -427,6 +441,7 @@ where
     }
 
     /// Returns the approximate lower error bound given the number of standard deviations.
+    #[must_use]
     pub fn lower_bound(&self, num_std_dev: NumStdDev) -> f64 {
         if !self.is_estimation_mode() {
             return self.num_retained() as f64;
@@ -436,6 +451,7 @@ where
     }
 
     /// Returns the approximate upper error bound given the number of standard deviations.
+    #[must_use]
     pub fn upper_bound(&self, num_std_dev: NumStdDev) -> f64 {
         if !self.is_estimation_mode() {
             return self.num_retained() as f64;
@@ -450,6 +466,7 @@ where
     }
 
     /// Returns an estimate of the sketch's memory usage in bytes.
+    #[must_use]
     pub fn estimated_size(&self) -> usize {
         size_of::<P>() + self.table.estimated_size()
     }
@@ -476,6 +493,7 @@ where
     /// let compact = sketch.compact(true);
     /// assert_eq!(compact.num_retained(), 1);
     /// ```
+    #[must_use]
     pub fn compact(&self, ordered: bool) -> CompactTupleSketch<P::Summary> {
         let compact_state = if self.is_empty() {
             debug_assert_eq!(self.num_retained(), 0);
@@ -521,6 +539,7 @@ impl<S> CompactTupleSketch<S> {
     }
 
     /// Returns the cardinality (distinct key count) estimate.
+    #[must_use]
     pub fn estimate(&self) -> f64 {
         if self.is_empty() {
             return 0.0;
@@ -534,36 +553,43 @@ impl<S> CompactTupleSketch<S> {
     }
 
     /// Returns theta as a fraction (0.0 to 1.0).
+    #[must_use]
     pub fn theta(&self) -> f64 {
         self.theta64() as f64 / MAX_THETA as f64
     }
 
     /// Returns theta as `u64`.
+    #[must_use]
     pub fn theta64(&self) -> u64 {
         self.compact_state.theta()
     }
 
     /// Returns `true` if the sketch is empty.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.compact_state.is_empty()
     }
 
     /// Returns `true` if the sketch is in estimation mode.
+    #[must_use]
     pub fn is_estimation_mode(&self) -> bool {
         self.compact_state.is_estimation_mode()
     }
 
     /// Returns the number of retained entries.
+    #[must_use]
     pub fn num_retained(&self) -> usize {
         self.retained_entries().len()
     }
 
     /// Returns `true` if retained entries are ordered (sorted ascending by hash).
+    #[must_use]
     pub fn is_ordered(&self) -> bool {
         self.compact_state.is_ordered()
     }
 
     /// Returns the 16-bit fingerprint of the seed associated with this sketch.
+    #[must_use]
     pub fn seed_hash(&self) -> u16 {
         self.compact_state.seed_hash()
     }
@@ -578,6 +604,7 @@ impl<S> CompactTupleSketch<S> {
     }
 
     /// Returns the approximate lower error bound given the number of standard deviations.
+    #[must_use]
     pub fn lower_bound(&self, num_std_dev: NumStdDev) -> f64 {
         if !self.is_estimation_mode() {
             return self.num_retained() as f64;
@@ -587,6 +614,7 @@ impl<S> CompactTupleSketch<S> {
     }
 
     /// Returns the approximate upper error bound given the number of standard deviations.
+    #[must_use]
     pub fn upper_bound(&self, num_std_dev: NumStdDev) -> f64 {
         if !self.is_estimation_mode() {
             return self.num_retained() as f64;
@@ -601,6 +629,7 @@ impl<S> CompactTupleSketch<S> {
     }
 
     /// Returns an estimate of the sketch's memory usage in bytes.
+    #[must_use]
     pub fn estimated_size(&self) -> usize {
         self.compact_state.retained_entries_capacity() * size_of::<TupleEntry<S>>()
     }
@@ -624,6 +653,7 @@ impl<S> CompactTupleSketch<S> {
     /// let bytes = sketch.compact(true).serialize();
     /// assert!(!bytes.is_empty());
     /// ```
+    #[must_use]
     pub fn serialize(&self) -> Vec<u8>
     where
         S: TupleSummaryValue,
@@ -774,6 +804,7 @@ impl<S> CompactTupleSketch<S> {
 /// summaries, or supply a custom policy.
 ///
 /// Configuration is stored without validation and checked when [`build()`](Self::build) is called.
+#[must_use]
 #[derive(Debug, Clone)]
 pub struct TupleSketchBuilder<P>
 where

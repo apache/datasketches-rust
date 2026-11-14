@@ -141,6 +141,7 @@ impl CpcUnion {
     ///
     /// Note that due to merging with source sketches that may have a lower `lg_k`, this
     /// value can be less than what the union object was configured with.
+    #[must_use]
     pub fn lg_k(&self) -> u8 {
         self.lg_k
     }
@@ -167,6 +168,7 @@ impl CpcUnion {
     /// let result = union.to_sketch();
     /// assert_eq!(result.estimate().trunc(), 2.0);
     /// ```
+    #[must_use]
     pub fn to_sketch(&self) -> CpcSketch {
         match &self.state {
             UnionState::Accumulator(sketch) => sketch.clone(),
@@ -247,6 +249,7 @@ impl CpcUnion {
     /// let result = CpcSketch::deserialize(&union.serialize()).unwrap();
     /// assert_eq!(result.estimate(), union.to_sketch().estimate());
     /// ```
+    #[must_use]
     pub fn serialize(&self) -> Vec<u8> {
         match &self.state {
             UnionState::Accumulator(sketch) => sketch.serialize(),
@@ -394,6 +397,7 @@ impl CpcUnion {
     }
 
     /// Returns an estimate of the union's memory usage in bytes.
+    #[must_use]
     pub fn estimated_size(&self) -> usize {
         match &self.state {
             UnionState::Accumulator(sketch) => sketch.estimated_size(),

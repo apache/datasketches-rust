@@ -18,6 +18,7 @@
 /// Jaccard similarity estimate and confidence bounds for two sketches.
 ///
 /// The bounds use a 95.4% confidence interval, equivalent to +/- 2 standard deviations.
+#[must_use]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct JaccardSimilarity {
     lower_bound: f64,
@@ -41,16 +42,19 @@ impl JaccardSimilarity {
     }
 
     /// Returns the approximate lower bound for the Jaccard index.
+    #[must_use]
     pub fn lower_bound(&self) -> f64 {
         self.lower_bound
     }
 
     /// Returns the estimate of the Jaccard index.
+    #[must_use]
     pub fn estimate(&self) -> f64 {
         self.estimate
     }
 
     /// Returns the approximate upper bound for the Jaccard index.
+    #[must_use]
     pub fn upper_bound(&self) -> f64 {
         self.upper_bound
     }

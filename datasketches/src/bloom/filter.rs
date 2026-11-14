@@ -44,6 +44,7 @@ const MAX_NUM_HASHES: u16 = i16::MAX as u16;
 /// Construct a builder using [`with_accuracy`](Self::with_accuracy) (recommended) or
 /// [`with_size`](Self::with_size), optionally set [`seed`](Self::seed), and finalize with
 /// [`build`](Self::build). Parameters are validated when `build` is called.
+#[must_use]
 #[derive(Debug, Clone)]
 pub struct BloomFilterBuilder {
     mode: SizingMode,
@@ -202,6 +203,7 @@ impl BloomFilter {
     /// Returns `true` if `item` is possibly in the filter, or `false` if it was definitely not
     /// inserted.
     #[inline]
+    #[must_use]
     pub fn contains<T: Hash>(&self, item: T) -> bool {
         if self.is_empty() {
             return false;
@@ -274,41 +276,49 @@ impl BloomFilter {
 
     /// Returns `true` if no bits are set in the filter.
     #[inline]
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.bits.bits_used == 0
     }
 
     /// Returns the number of bits currently set to `1`.
+    #[must_use]
     pub fn bits_used(&self) -> u64 {
         self.bits.bits_used
     }
 
     /// Returns the total bit capacity of the filter (always a positive multiple of 64).
+    #[must_use]
     pub fn capacity(&self) -> u64 {
         self.bits.capacity()
     }
 
     /// Returns the number of hash probes performed per item (`k`).
+    #[must_use]
     pub fn num_hashes(&self) -> u16 {
         self.num_hashes
     }
 
     /// Returns the hash seed used by this filter.
+    #[must_use]
     pub fn seed(&self) -> u64 {
         self.seed
     }
 
     /// Returns the fraction of bits currently set (`bits_used / capacity`).
+    #[must_use]
     pub fn load_factor(&self) -> f64 {
         self.bits_used() as f64 / self.capacity() as f64
     }
 
     /// Returns the estimated false-positive probability (`load_factor^num_hashes`).
+    #[must_use]
     pub fn estimated_fpp(&self) -> f64 {
         self.load_factor().powi(i32::from(self.num_hashes))
     }
 
     /// Returns `true` if `self` and `other` have identical capacity, `num_hashes`, and `seed`.
+    #[must_use]
     pub fn is_compatible(&self, other: &Self) -> bool {
         self.bits.words.len() == other.bits.words.len()
             && self.num_hashes == other.num_hashes
@@ -316,11 +326,13 @@ impl BloomFilter {
     }
 
     /// Returns the estimated heap allocation of the filter's backing bit array in bytes.
+    #[must_use]
     pub fn estimated_size(&self) -> usize {
         size_of_val::<[u64]>(&self.bits.words)
     }
 
     /// Serializes the filter in the DataSketches binary format.
+    #[must_use]
     pub fn serialize(&self) -> Vec<u8> {
         let is_empty = self.is_empty();
         let preamble_longs = if is_empty {

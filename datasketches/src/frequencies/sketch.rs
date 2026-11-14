@@ -95,6 +95,7 @@ fn validate_lg_map_sizes(lg_max: u8, lg_cur: u8) -> Result<(), Error> {
 }
 
 /// Error guarantees for frequent item queries.
+#[must_use]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ErrorType {
     /// Includes items if the upper bound exceeds the threshold (no false negatives).
@@ -106,6 +107,7 @@ pub enum ErrorType {
 /// Result row for frequent item queries.
 ///
 /// Each row includes an estimate and upper and lower bounds on the true frequency.
+#[must_use]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Row<T> {
     item: T,
@@ -116,21 +118,25 @@ pub struct Row<T> {
 
 impl<T> Row<T> {
     /// Returns the item value.
+    #[must_use]
     pub fn item(&self) -> &T {
         &self.item
     }
 
     /// Returns the estimated frequency.
+    #[must_use]
     pub fn estimate(&self) -> u64 {
         self.estimate
     }
 
     /// Returns the guaranteed upper bound for the frequency.
+    #[must_use]
     pub fn upper_bound(&self) -> u64 {
         self.upper_bound
     }
 
     /// Returns the guaranteed lower bound for the frequency.
+    #[must_use]
     pub fn lower_bound(&self) -> u64 {
         self.lower_bound
     }
@@ -196,11 +202,13 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     /// A purge can remove all active items while retaining a non-zero total weight and
     /// maximum error. Such a sketch is not empty. Use [`Self::num_active_items`] to check
     /// whether any items are retained.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.stream_weight == 0
     }
 
     /// Returns the number of active items being tracked.
+    #[must_use]
     pub fn num_active_items(&self) -> usize {
         self.hash_map.num_active()
     }
@@ -209,6 +217,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     ///
     /// This is the sum of all weights passed to `update`, `update_with_weight`, `update_ref`, and
     /// `update_with_weight_ref`.
+    #[must_use]
     pub fn total_weight(&self) -> u64 {
         self.stream_weight
     }
@@ -226,6 +235,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     /// sketch.update_with_weight(10, 2);
     /// assert!(sketch.estimate(&10) >= 2);
     /// ```
+    #[must_use]
     pub fn estimate<Q>(&self, item: &Q) -> u64
     where
         T: Borrow<Q>,
@@ -239,6 +249,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     ///
     /// This value is guaranteed to be no larger than the true frequency. If the item is not
     /// tracked, the lower bound is zero.
+    #[must_use]
     pub fn lower_bound<Q>(&self, item: &Q) -> u64
     where
         T: Borrow<Q>,
@@ -251,6 +262,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     ///
     /// This value is guaranteed to be no smaller than the true frequency. If the item is tracked,
     /// this is `item_count + offset`.
+    #[must_use]
     pub fn upper_bound<Q>(&self, item: &Q) -> u64
     where
         T: Borrow<Q>,
@@ -264,11 +276,13 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     ///
     /// This is equivalent to the maximum distance between the upper bound and the lower bound
     /// for any item.
+    #[must_use]
     pub fn maximum_error(&self) -> u64 {
         self.offset
     }
 
     /// Returns the epsilon error parameter for this sketch.
+    #[must_use]
     pub fn epsilon(&self) -> f64 {
         epsilon_for_lg(self.lg_max_map_size)
     }
@@ -312,6 +326,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     /// Returns the maximum map capacity for this sketch.
     ///
     /// This is `0.75 * max_map_size`.
+    #[must_use]
     pub fn maximum_map_capacity(&self) -> usize {
         map_capacity_for_lg(self.lg_max_map_size)
     }
@@ -319,26 +334,31 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     /// Returns the current map capacity.
     ///
     /// This is the number of counters supported before resizing or purging.
+    #[must_use]
     pub fn current_map_capacity(&self) -> usize {
         self.cur_map_cap
     }
 
     /// Returns the configured maximum map size.
+    #[must_use]
     pub fn max_map_size(&self) -> usize {
         1 << self.lg_max_map_size
     }
 
     /// Returns the configured `lg_max_map_size`.
+    #[must_use]
     pub fn lg_max_map_size(&self) -> u8 {
         self.lg_max_map_size
     }
 
     /// Returns the current `lg_cur_map_size`.
+    #[must_use]
     pub fn lg_cur_map_size(&self) -> u8 {
         self.hash_map.lg_length()
     }
 
     /// Returns an estimate of the sketch's memory usage in bytes.
+    #[must_use]
     pub fn estimated_size(&self) -> usize {
         self.hash_map.estimated_size()
     }
@@ -514,6 +534,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     /// let rows = sketch.frequent_items(ErrorType::NoFalseNegatives);
     /// assert!(rows.iter().any(|row| *row.item() == 1));
     /// ```
+    #[must_use]
     pub fn frequent_items(&self, error_type: ErrorType) -> Vec<Row<T>>
     where
         T: Clone,
@@ -540,6 +561,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     /// let rows = sketch.frequent_items_with_threshold(ErrorType::NoFalsePositives, 3);
     /// assert!(rows.iter().any(|row| *row.item() == 1));
     /// ```
+    #[must_use]
     pub fn frequent_items_with_threshold(
         &self,
         error_type: ErrorType,
@@ -798,6 +820,7 @@ impl<T: FrequentItemValue> FrequentItemsSketch<T> {
     /// let decoded = FrequentItemsSketch::<String>::deserialize(&bytes).unwrap();
     /// assert!(decoded.estimate(&apple) >= 2);
     /// ```
+    #[must_use]
     pub fn serialize(&self) -> Vec<u8> {
         self.serialize_inner(T::serialize_size, |bytes, item| item.serialize_value(bytes))
     }

@@ -41,6 +41,7 @@
 /// assert_eq!(factor.value(), 4);
 /// assert_eq!(factor.lg_value(), 2);
 /// ```
+#[must_use]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ResizeFactor {
     /// Does not resize; configures the sketch at full size.
@@ -55,6 +56,7 @@ pub enum ResizeFactor {
 
 impl ResizeFactor {
     /// Returns the base-2 logarithm of the resize factor.
+    #[must_use]
     pub fn lg_value(self) -> u8 {
         match self {
             ResizeFactor::X1 => 0,
@@ -65,6 +67,7 @@ impl ResizeFactor {
     }
 
     /// Returns the Resize Factor.
+    #[must_use]
     pub fn value(self) -> usize {
         // 1 << lg_value
         match self {

@@ -16,6 +16,7 @@
 // under the License.
 
 /// A simple wrapper around a `Vec<u8>` that provides methods for writing various types of data.
+#[must_use]
 #[derive(Debug, Clone, Default)]
 pub struct SketchBytes {
     bytes: Vec<u8>,
@@ -32,6 +33,7 @@ impl SketchBytes {
 
     /// Returns the underlying `Vec<u8>`, consuming the `SketchBytes`.
     #[inline]
+    #[must_use]
     pub fn into_bytes(self) -> Vec<u8> {
         self.bytes
     }

@@ -29,6 +29,7 @@ use crate::error::Error;
 /// receiving updates, and it keeps answering from the state it was taken at. Building it costs
 /// `O(retained · log retained)`; each subsequent query is `O(log retained)`, so it is the right
 /// tool for repeated quantile/rank queries.
+#[must_use]
 #[derive(Clone)]
 pub struct SortedView<T> {
     items: Vec<T>,
@@ -89,16 +90,19 @@ where
     }
 
     /// Returns true if the sorted view is empty.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()
     }
 
     /// Returns the number of distinct retained items in the view.
+    #[must_use]
     pub fn len(&self) -> usize {
         self.items.len()
     }
 
     /// Returns the total weight (stream length captured) of all items.
+    #[must_use]
     pub fn total_weight(&self) -> u64 {
         self.total_weight
     }
@@ -106,6 +110,7 @@ where
     /// Returns the approximate normalized rank of `item` in `[0.0, 1.0]`.
     ///
     /// Returns `None` if the view is empty.
+    #[must_use]
     pub fn rank(&self, item: &T, criteria: SearchCriteria) -> Option<f64> {
         if self.is_empty() {
             return None;

@@ -109,6 +109,7 @@ impl HllSketch {
     }
 
     /// Returns `true` if no values have been added to the sketch.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         match &self.mode {
             Mode::List { list, .. } => list.container().is_empty(),
@@ -131,6 +132,7 @@ impl HllSketch {
     }
 
     /// Returns the configured `lg_k`.
+    #[must_use]
     pub fn lg_config_k(&self) -> u8 {
         self.lg_config_k
     }
@@ -219,6 +221,7 @@ impl HllSketch {
     /// let estimate = sketch.estimate();
     /// assert!((estimate - 2.0).abs() < 0.01);
     /// ```
+    #[must_use]
     pub fn estimate(&self) -> f64 {
         match &self.mode {
             Mode::List { list, .. } => list.container().estimate(),
@@ -247,6 +250,7 @@ impl HllSketch {
     /// let estimate = sketch.composite_estimate();
     /// assert!((estimate - 10_000.0).abs() < 500.0);
     /// ```
+    #[must_use]
     pub fn composite_estimate(&self) -> f64 {
         match &self.mode {
             Mode::List { list, .. } => list.container().estimate(),
@@ -273,6 +277,7 @@ impl HllSketch {
     /// let upper = sketch.upper_bound(NumStdDev::Two);
     /// assert!(upper >= sketch.estimate());
     /// ```
+    #[must_use]
     pub fn upper_bound(&self, num_std_dev: NumStdDev) -> f64 {
         match &self.mode {
             Mode::List { list, .. } => list.container().upper_bound(num_std_dev),
@@ -299,6 +304,7 @@ impl HllSketch {
     /// let lower = sketch.lower_bound(NumStdDev::Two);
     /// assert!(lower <= sketch.estimate());
     /// ```
+    #[must_use]
     pub fn lower_bound(&self, num_std_dev: NumStdDev) -> f64 {
         match &self.mode {
             Mode::List { list, .. } => list.container().lower_bound(num_std_dev),
@@ -457,6 +463,7 @@ impl HllSketch {
     /// let decoded = HllSketch::deserialize(&bytes).unwrap();
     /// assert!(decoded.estimate() >= 1.0);
     /// ```
+    #[must_use]
     pub fn serialize(&self) -> Vec<u8> {
         match &self.mode {
             Mode::List { list, hll_type } => list.serialize(self.lg_config_k, *hll_type),
@@ -468,6 +475,7 @@ impl HllSketch {
     }
 
     /// Returns an estimate of the sketch's memory usage in bytes.
+    #[must_use]
     pub fn estimated_size(&self) -> usize {
         match &self.mode {
             Mode::List { list, .. } => list.container().estimated_size(),

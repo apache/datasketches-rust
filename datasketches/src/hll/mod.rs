@@ -94,6 +94,7 @@ pub use self::union::HllUnion;
 ///
 /// For the same `lg_k` and input, all three types produce the same estimates.
 /// They trade memory usage against update speed.
+#[must_use]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HllType {
     /// Uses 4 bits per HLL bucket and has the smallest storage footprint.
@@ -141,6 +142,7 @@ const RESIZE_DENOMINATOR: u32 = 4;
 /// assert!(sketch1.estimate() >= 1.0);
 /// assert!(sketch2.estimate() >= 1.0);
 /// ```
+#[must_use]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Coupon(u32); // Upper six bits: register value; lower 26 bits: slot.
 

@@ -20,6 +20,7 @@ use std::io::Cursor;
 use std::io::Read;
 
 /// A wrapper around a byte slice that provides methods for reading various types of data from it.
+#[must_use]
 #[derive(Debug, Clone)]
 pub struct SketchSlice<'a> {
     slice: Cursor<&'a [u8]>,
@@ -46,6 +47,7 @@ impl SketchSlice<'_> {
     /// Useful for handing the remaining bytes to a variable-length decoder that reports how many
     /// bytes it consumed; pair it with [`advance`](Self::advance).
     #[inline]
+    #[must_use]
     pub fn remaining(&self) -> &[u8] {
         let buf = self.slice.get_ref();
         let pos = (self.slice.position() as usize).min(buf.len());

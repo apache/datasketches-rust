@@ -26,6 +26,7 @@ use crate::thetafamily::common::union::UnionMergePolicy;
 use crate::tuple::SummaryCombinePolicy;
 
 /// A retained entry in a Tuple sketch: a hash key together with its associated summary.
+#[must_use]
 #[derive(Debug, Clone)]
 pub struct TupleEntry<S> {
     // Note that this field is stored as `NonZeroU64` (hash 0 is screened out before insertion),
@@ -48,11 +49,13 @@ impl<S> TupleEntry<S> {
 
     /// Returns the hash used as this entry's key.
     #[inline]
+    #[must_use]
     pub fn hash(&self) -> u64 {
         self.hash.get()
     }
 
     /// Returns the summary stored in this entry.
+    #[must_use]
     pub fn summary(&self) -> &S {
         &self.summary
     }

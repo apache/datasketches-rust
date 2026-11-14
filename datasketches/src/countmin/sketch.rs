@@ -254,31 +254,37 @@ impl<T: CountMinValue> CountMinSketch<T> {
     }
 
     /// Returns the number of hash functions used by the sketch.
+    #[must_use]
     pub fn num_hashes(&self) -> u8 {
         self.num_hashes
     }
 
     /// Returns the number of buckets per hash function.
+    #[must_use]
     pub fn num_buckets(&self) -> u32 {
         self.buckets.count
     }
 
     /// Returns the seed used by the sketch.
+    #[must_use]
     pub fn seed(&self) -> u64 {
         self.seed
     }
 
     /// Returns the sum of absolute update weights, scaled by any halving or decay.
+    #[must_use]
     pub fn total_weight(&self) -> T {
         self.total_weight
     }
 
     /// Returns the relative error (epsilon) implied by the number of buckets.
+    #[must_use]
     pub fn relative_error(&self) -> f64 {
         std::f64::consts::E / self.buckets.count as f64
     }
 
     /// Returns `true` if the total weight is zero.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.total_weight == T::ZERO
     }
@@ -386,6 +392,7 @@ impl<T: CountMinValue> CountMinSketch<T> {
     /// sketch.update_with_weight(3i64, 2);
     /// assert!(sketch.estimate(3i64) >= 2);
     /// ```
+    #[must_use]
     pub fn estimate<I: Hash>(&self, item: I) -> T {
         let num_buckets = self.buckets.count as usize;
         let mut min = T::MAX;
@@ -397,11 +404,13 @@ impl<T: CountMinValue> CountMinSketch<T> {
     }
 
     /// Returns the lower bound on the true frequency of the given item.
+    #[must_use]
     pub fn lower_bound<I: Hash>(&self, item: I) -> T {
         self.estimate(item)
     }
 
     /// Returns the upper bound on the true frequency of the given item.
+    #[must_use]
     pub fn upper_bound<I: Hash>(&self, item: I) -> T {
         let estimate = self.estimate(item);
         let error = self.total_weight.scale_nonnegative(self.relative_error());
@@ -465,6 +474,7 @@ impl<T: CountMinValue> CountMinSketch<T> {
     /// let decoded = CountMinSketch::<i64>::deserialize(&bytes).unwrap();
     /// assert!(decoded.estimate(1i64) >= 1);
     /// ```
+    #[must_use]
     pub fn serialize(&self) -> Vec<u8> {
         let header_size = PREAMBLE_LONGS_SHORT as usize * LONG_SIZE_BYTES;
         let value_size = LONG_SIZE_BYTES;
@@ -645,6 +655,7 @@ impl<T: CountMinValue> CountMinSketch<T> {
     }
 
     /// Returns an estimate of the sketch's memory usage in bytes.
+    #[must_use]
     pub fn estimated_size(&self) -> usize {
         self.counts.capacity() * size_of::<T>() + self.hash_seeds.capacity() * size_of::<u64>()
     }
