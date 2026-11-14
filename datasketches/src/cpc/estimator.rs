@@ -858,46 +858,24 @@ mod tests {
     // -------------------------------------------------------------------------
 
     #[test]
-    fn confidence_error_constants_and_tables() {
-        // Theoretical asymptotic (`K -> inf`) relative standard errors scaled by `sqrt(K)`:
-        // - ICON (merged sketches): `ln(2)`
-        // - HIP (unmerged sketches): `sqrt(ln(2) / 2)`
-        assert_eq!(ICON_ERROR_CONSTANT, LN_2);
+    fn confidence_constants_and_bounds() {
+        // Both asymptotic (`K -> inf`) relative standard errors, scaled by `sqrt(K)`, follow from
+        // the Poisson model of the coupon matrix:
+        // - ICON: cells are independent, so `Var(C) ≈ K * sum_j q_j * (1 - q_j)`. Averaged over a
+        //   period, the sum equals `(1 / ln 2) * int_0^inf (exp(-u) - exp(-2u)) / u du = 1`
+        //   (Frullani), so `sd(C) ≈ sqrt(K)`; since `N_hat` grows like `2^(C/K)`, the relative
+        //   error is `ln(2) / sqrt(K)`.
+        // - HIP: a new item changes the sketch with probability `p ≈ 1 / (lambda * ln 2)`, and the
+        //   HIP variance `int_0^n (1/p - 1) dm ≈ n^2 * ln(2) / (2 * K)` gives `sqrt(ln(2) / 2)`.
+        // `HIP_ERROR_CONSTANT` is spelled out as a decimal literal, so check it against that form.
         assert_that!(HIP_ERROR_CONSTANT, near((LN_2 / 2.0).sqrt(), 1e-16));
 
-        // `ICON_{LOW,HIGH}_SIDE_DATA` and `HIP_{LOW,HIGH}_SIDE_DATA` store empirical 1-sided error
-        // factors scaled by `10_000` from ~1,000,000 Monte Carlo trials at `N = 1000 * K` for
-        // `lg_k = 4..=14` and `kappa in {1, 2, 3}`. Verify structural invariants and convergence
-        // of the `lg_k = 14` row toward `10_000 * ICON_ERROR_CONSTANT` (`6931.47`) and
-        // `10_000 * HIP_ERROR_CONSTANT` (`5887.05`).
-        for row in 0..11 {
-            for kappa_idx in 0..3 {
-                let idx = 3 * row + kappa_idx;
-                assert!(ICON_LOW_SIDE_DATA[idx] > 5000 && ICON_LOW_SIDE_DATA[idx] < 7500);
-                assert!(ICON_HIGH_SIDE_DATA[idx] > 6500 && ICON_HIGH_SIDE_DATA[idx] < 10000);
-                assert!(HIP_LOW_SIDE_DATA[idx] > 4500 && HIP_LOW_SIDE_DATA[idx] < 6000);
-                assert!(HIP_HIGH_SIDE_DATA[idx] > 5800 && HIP_HIGH_SIDE_DATA[idx] < 7500);
-            }
-        }
-
-        let lg14_base = 3 * (14 - 4);
-        assert_that!(
-            ICON_LOW_SIDE_DATA[lg14_base] as f64,
-            near(ICON_ERROR_CONSTANT * 10_000.0, 20.0),
-        );
-        assert_that!(
-            ICON_HIGH_SIDE_DATA[lg14_base] as f64,
-            near(ICON_ERROR_CONSTANT * 10_000.0, 20.0),
-        );
-        assert_that!(
-            HIP_LOW_SIDE_DATA[lg14_base] as f64,
-            near(HIP_ERROR_CONSTANT * 10_000.0, 15.0),
-        );
-        assert_that!(
-            HIP_HIGH_SIDE_DATA[lg14_base] as f64,
-            near(HIP_ERROR_CONSTANT * 10_000.0, 15.0),
-        );
-
+        // For `lg_k <= 14` the bounds use the Monte Carlo tables instead. Each entry is
+        // `10_000 * sqrt(K) * eps / kappa`, where `eps` is the one-sided `Phi(-kappa)` tail
+        // quantile of `estimate / N - 1` (high side, used by the lower bound) or of
+        // `1 - estimate / N` (low side, used by the upper bound) at `N = 1000 * K`. Being random
+        // measurements, the tables can only be re-measured statistically, not regenerated, so
+        // check how the bounds use them.
         for lg_k in 4..=16_u8 {
             let c = 3 * (1_u32 << lg_k);
             let icon_est = estimate(true, 0.0, lg_k, c);
