@@ -30,35 +30,42 @@ fn union(rows: u64) -> HllUnion {
     union
 }
 
-fn serialize_union(bencher: Bencher, rows: u64) {
+fn serialize_union(bencher: Bencher, rows: u64, hll_type: HllType, direct: bool) {
     let union = union(rows);
-    bencher.bench_local(|| black_box(&union).serialize());
-}
-
-fn serialize_union_via_sketch(bencher: Bencher, rows: u64) {
-    let union = union(rows);
-    bencher.bench_local(|| black_box(&union).to_sketch(HllType::Hll8).serialize());
+    if direct {
+        bencher.bench_local(|| black_box(&union).serialize(hll_type));
+    } else {
+        bencher.bench_local(|| black_box(&union).to_sketch(hll_type).serialize());
+    }
 }
 
 pub fn register(runner: &mut Runner) {
-    let cases = &[
-        (0, 15_000_000),
-        (4, 12_000_000),
-        (100, 2_000_000),
-        (80_000, 90_000),
+    let targets = [
+        ("hll4", HllType::Hll4, 500),
+        ("hll6", HllType::Hll6, 600),
+        ("hll8", HllType::Hll8, 50_000),
     ];
-    for &(rows, rounds) in cases {
-        runner.case(
-            format!("hll::serde::serialize_union/{rows:?}"),
-            rounds,
-            |b| serialize_union(b, rows),
-        );
-    }
-    for &(rows, rounds) in cases {
-        runner.case(
-            format!("hll::serde::serialize_union_via_sketch/{rows:?}"),
-            rounds,
-            |b| serialize_union_via_sketch(b, rows),
+    let sparse_cases = [(0, 10_000_000), (4, 8_000_000), (100, 1_500_000)];
+    for &(label, hll_type, dense_rounds) in &targets {
+        for &(rows, rounds) in &sparse_cases {
+            runner.compare(
+                &format!("hll::serde::serialize_union/{label}/{rows:?}"),
+                rounds,
+                &[
+                    ("via_sketch", &|b| serialize_union(b, rows, hll_type, false)),
+                    ("direct", &|b| serialize_union(b, rows, hll_type, true)),
+                ],
+            );
+        }
+        runner.compare(
+            &format!("hll::serde::serialize_union/{label}/80000"),
+            dense_rounds,
+            &[
+                ("via_sketch", &|b| {
+                    serialize_union(b, 80_000, hll_type, false)
+                }),
+                ("direct", &|b| serialize_union(b, 80_000, hll_type, true)),
+            ],
         );
     }
 }

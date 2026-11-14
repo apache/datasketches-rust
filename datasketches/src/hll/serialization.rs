@@ -18,6 +18,11 @@
 //! HLL wire-format constants. Preamble lengths ending in `PREINTS` count 32-bit words;
 //! those ending in `PREAMBLE_SIZE` count bytes.
 
+use crate::codec::SketchBytes;
+use crate::codec::family::Family;
+use crate::hll::HllType;
+use crate::hll::estimator::Estimator;
+
 pub const SERIAL_VERSION: u8 = 1;
 
 pub const EMPTY_FLAG_MASK: u8 = 4;
@@ -65,3 +70,40 @@ pub const TGT_HLL6: u8 = 1;
 pub const TGT_HLL8: u8 = 2;
 
 pub const COUPON_SIZE_BYTES: usize = 4;
+
+pub fn write_hll_preamble(
+    bytes: &mut SketchBytes,
+    lg_config_k: u8,
+    hll_type: HllType,
+    cur_min: u8,
+    num_at_cur_min: u32,
+    aux_count: u32,
+    estimator: &Estimator,
+) {
+    let (tgt_type, compact) = match hll_type {
+        HllType::Hll4 => (TGT_HLL4, true),
+        HllType::Hll6 => (TGT_HLL6, false),
+        HllType::Hll8 => (TGT_HLL8, false),
+    };
+
+    bytes.write_u8(HLL_PREINTS);
+    bytes.write_u8(SERIAL_VERSION);
+    bytes.write_u8(Family::HLL.id);
+    bytes.write_u8(lg_config_k);
+    bytes.write_u8(0); // unused in HLL6/HLL8 and compact HLL4
+
+    let mut flags = if compact { COMPACT_FLAG_MASK } else { 0 };
+    if estimator.uses_composite_estimate() {
+        flags |= OUT_OF_ORDER_FLAG_MASK;
+    }
+    bytes.write_u8(flags);
+    bytes.write_u8(cur_min);
+    bytes.write_u8(encode_mode_byte(CUR_MODE_HLL, tgt_type));
+
+    bytes.write_f64_le(estimator.hip_accum());
+    bytes.write_f64_le(estimator.kxq0());
+    bytes.write_f64_le(estimator.kxq1());
+
+    bytes.write_u32_le(num_at_cur_min);
+    bytes.write_u32_le(aux_count);
+}

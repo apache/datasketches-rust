@@ -415,3 +415,98 @@ fn union_serialization_matches_compact_result() {
         }
     }
 }
+
+#[test]
+fn union_compressed_serialization_matches_compact_result() {
+    for (lg_k, rows, probability, mixed_precision) in [
+        (5, 0, 1.0, false),
+        (5, 1, 1.0, false),
+        (5, 12, 1.0, false),
+        (5, 40, 1.0, false),
+        (5, 64, 0.5, false),
+        (5, 64, 1e-12, false),
+        (5, 64, 1.0, true),
+        (8, 5_000, 1.0, false),
+    ] {
+        let seed = 123;
+        let mut input = ThetaSketchBuilder::default()
+            .lg_k(8)
+            .seed(seed)
+            .sampling_probability(probability)
+            .build()
+            .unwrap();
+        for value in 0..rows {
+            input.update(value);
+        }
+        let mut union = ThetaUnionBuilder::default()
+            .lg_k(lg_k)
+            .seed(seed)
+            .build()
+            .unwrap();
+
+        let empty_compressed = union.serialize_compressed();
+        assert_eq!(
+            empty_compressed,
+            union.to_sketch(true).serialize_compressed()
+        );
+        assert_eq!(empty_compressed, union.serialize(true));
+        assert_eq!(empty_compressed[1], 3);
+
+        union.update(&input).unwrap();
+        if mixed_precision {
+            let mut other = ThetaSketchBuilder::default()
+                .lg_k(5)
+                .seed(seed)
+                .build()
+                .unwrap();
+            for value in 32..96 {
+                other.update(value);
+            }
+            union.update(&other.compact(true)).unwrap();
+        }
+
+        let compressed = union.serialize_compressed();
+        let expected_sketch = union.to_sketch(true);
+        assert_eq!(
+            compressed,
+            expected_sketch.serialize_compressed(),
+            "lg_k={lg_k}, rows={rows}, probability={probability}, mixed={mixed_precision}",
+        );
+
+        let num_retained = expected_sketch.num_retained();
+        if num_retained == 0 || (num_retained == 1 && !expected_sketch.is_estimation_mode()) {
+            assert_eq!(compressed[1], 3);
+            assert_eq!(compressed, union.serialize(true));
+        } else {
+            assert_eq!(compressed[1], 4);
+            assert!(compressed.len() <= union.serialize(true).len());
+        }
+
+        let restored = CompactThetaSketch::deserialize_with_seed(&compressed, seed).unwrap();
+        assert_eq!(restored.is_empty(), expected_sketch.is_empty());
+        assert_eq!(
+            restored.is_estimation_mode(),
+            expected_sketch.is_estimation_mode()
+        );
+        assert_eq!(restored.is_ordered(), expected_sketch.is_ordered());
+        assert_eq!(restored.theta(), expected_sketch.theta());
+        assert_eq!(restored.estimate(), expected_sketch.estimate());
+        assert_eq!(
+            restored
+                .iter()
+                .map(|entry| entry.hash())
+                .collect::<Vec<_>>(),
+            expected_sketch
+                .iter()
+                .map(|entry| entry.hash())
+                .collect::<Vec<_>>(),
+        );
+        assert_eq!(restored.serialize_compressed(), compressed);
+
+        union.reset();
+        assert_eq!(
+            union.serialize_compressed(),
+            union.to_sketch(true).serialize_compressed()
+        );
+    }
+}

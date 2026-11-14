@@ -260,27 +260,43 @@ impl HllUnion {
         }
     }
 
-    /// Serializes the union's result as an [`HllType::Hll8`] sketch.
+    /// Serializes the union's result as an [`HllSketch`] with the requested [`HllType`].
     ///
-    /// Produces the same bytes as `to_sketch(HllType::Hll8).serialize()` without copying an
-    /// intermediate sketch. The image retains the effective `lg_k` and estimate, but not the
-    /// union's configured maximum `lg_k`. It can be read with [`HllSketch::deserialize`].
+    /// Produces an equivalent sketch to [`Self::to_sketch`] followed by [`HllSketch::serialize`]
+    /// without allocating or cloning an intermediate sketch. For [`HllType::Hll6`],
+    /// [`HllType::Hll8`], coupon modes, and [`HllType::Hll4`] with at most one auxiliary entry,
+    /// the output matches `to_sketch(hll_type).serialize()` byte-for-byte; for [`HllType::Hll4`]
+    /// with multiple auxiliary entries, auxiliary entries are written in ascending slot order
+    /// rather than hash-table order.
+    ///
+    /// The image retains the effective `lg_k` and estimate, but not the union's configured maximum
+    /// `lg_k`. It can be read with [`HllSketch::deserialize`].
     ///
     /// # Examples
     ///
     /// ```
     /// use datasketches::hll::HllSketch;
+    /// use datasketches::hll::HllType;
     /// use datasketches::hll::HllUnion;
     ///
     /// let mut union = HllUnion::new(12).unwrap();
     /// union.update_value("apple");
-    /// let mut partial = HllSketch::deserialize(&union.serialize()).unwrap();
+    /// let mut partial = HllSketch::deserialize(&union.serialize(HllType::Hll8)).unwrap();
     /// partial.update("banana");
     /// union.update(&partial);
     /// assert!((union.estimate() - 2.0).abs() < 0.01);
     /// ```
-    pub fn serialize(&self) -> Vec<u8> {
-        self.gadget.serialize()
+    #[must_use]
+    pub fn serialize(&self, hll_type: HllType) -> Vec<u8> {
+        let lg_config_k = self.gadget.lg_config_k();
+        match self.gadget.mode() {
+            Mode::List { list, .. } => list.serialize(lg_config_k, hll_type),
+            Mode::Set { set, .. } => set.serialize(lg_config_k, hll_type),
+            Mode::Array8(arr) => arr.serialize_as(lg_config_k, hll_type),
+            Mode::Array4(_) | Mode::Array6(_) => {
+                unreachable!("gadget mode changed unexpectedly; should never be Array4/Array6")
+            }
+        }
     }
 
     /// Returns the union's current effective `lg_k`.

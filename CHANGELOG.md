@@ -18,7 +18,7 @@ All significant changes to this project will be documented in this file.
 
 ### New features
 
-* Add `CpcUnion::serialize`, `HllUnion::serialize`, `ThetaUnion::serialize`, and `TupleUnion::serialize` to encode union results without calling `to_sketch`. Direct serialization avoids intermediate sketch allocations for `HllUnion` and `CpcUnion`, writes an `HllType::Hll8` image at the union's effective `lg_k` for `HllUnion`, and encodes `TupleUnion` summaries without requiring `Clone` or cloning heap-backed summaries.
+* Add `CpcUnion::serialize`, `HllUnion::serialize`, `ThetaUnion::serialize`, `ThetaUnion::serialize_compressed`, and `TupleUnion::serialize` to encode union results without calling `to_sketch`. Direct serialization avoids intermediate sketch allocations for `HllUnion` and `CpcUnion`, lets `HllUnion::serialize` target any `HllType` (`Hll4`, `Hll6`, or `Hll8`) at the union's effective `lg_k`, supports v4 compressed output via `ThetaUnion::serialize_compressed`, and encodes `TupleUnion` summaries without requiring `Clone` or cloning heap-backed summaries.
 * Add `XorFilter`, `XorFilterBuilder`, and `XorFilterType` behind the `xor` feature for immutable membership queries on values or precomputed hashes. Filters support 8-, 16-, and 32-bit fingerprints and can be serialized for later queries.
 
 ### Improvements

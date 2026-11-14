@@ -65,12 +65,49 @@ impl ThetaUnion {
 
     /// Serializes this union result into the uncompressed compact Theta format.
     ///
-    /// Produces the same bytes as `self.to_sketch(ordered).serialize()`. When `ordered` is `true`,
-    /// retained hashes are sorted. Otherwise they may be unordered; empty results and exact
-    /// singletons always use their canonical encoding.
+    /// The result is the same as [`Self::to_sketch`] followed by
+    /// [`CompactThetaSketch::serialize`]: the same retained hashes, theta, and seed hash, and
+    /// identical bytes when `ordered` is `true` (`to_sketch(true).serialize()`). When `ordered` is
+    /// `false`, retained hashes may appear in a different order. Empty results and exact singletons
+    /// always use their canonical encoding.
     pub fn serialize(&self, ordered: bool) -> Vec<u8> {
         let state = self.state.to_compact_hash_state(ordered);
         serialization::serialize_compact_uncompressed(&state)
+    }
+
+    /// Serializes this union result in compressed compact Theta format if applicable.
+    ///
+    /// Produces the same bytes as `self.to_sketch(true).serialize_compressed()`. Compressed
+    /// serialization requires ordered entries, so retained hashes are sorted ascending. Falls back
+    /// to uncompressed canonical encoding for empty sketches, zero-entry estimation sketches, and
+    /// exact singletons.
+    ///
+    /// The serialized data can be read by other DataSketches implementations via
+    /// [`CompactThetaSketch::deserialize`] or [`CompactThetaSketch::deserialize_with_seed`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::theta::CompactThetaSketch;
+    /// use datasketches::theta::ThetaSketchBuilder;
+    /// use datasketches::theta::ThetaUnionBuilder;
+    ///
+    /// let mut sketch = ThetaSketchBuilder::default().lg_k(12).build().unwrap();
+    /// for value in 0..100 {
+    ///     sketch.update(value);
+    /// }
+    ///
+    /// let mut union = ThetaUnionBuilder::default().lg_k(12).build().unwrap();
+    /// union.update(&sketch).unwrap();
+    ///
+    /// let bytes = union.serialize_compressed();
+    /// let restored = CompactThetaSketch::deserialize(&bytes).unwrap();
+    /// assert_eq!(restored.num_retained(), 100);
+    /// ```
+    #[must_use]
+    pub fn serialize_compressed(&self) -> Vec<u8> {
+        let state = self.state.to_compact_hash_state(true);
+        serialization::serialize_compact_compressed(&state)
     }
 
     /// Resets the union to its empty state.
