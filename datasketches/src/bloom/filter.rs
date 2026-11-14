@@ -134,8 +134,20 @@ impl BloomFilterBuilder {
                 }
 
                 let n = max_items as f64;
-                let ln2_squared = std::f64::consts::LN_2 * std::f64::consts::LN_2;
-                let bits = (-n * fpp.ln() / ln2_squared).ceil();
+                let log_fpp = fpp.ln();
+
+                // Kirsch and Mitzenmacher (2008), Section 2: https://doi.org/10.1002/rsa.20208
+                // For n items, m bits and k independent hash probes, a bit stays unset with
+                // probability (1 - 1/m)^(k*n) ≈ exp(-k*n/m), so p ≈ (1 - exp(-k*n/m))^k.
+                // At the continuous optimum half the bits are set: p = 2^-k, or k = -ln(p)/ln(2).
+                // Since fpp >= 2^-1074 for positive f64, k <= 1074 < MAX_NUM_HASHES.
+                let num_hashes = (-log_fpp / std::f64::consts::LN_2).ceil().max(1.0) as u16;
+                let k = f64::from(num_hashes);
+
+                // With integer k fixed, solve for m = -k*n / ln(1 - p^(1/k)).
+                let bit_set_probability = (log_fpp / k).exp();
+                let log_unset_probability = (-bit_set_probability).ln_1p();
+                let bits = (-k * n / log_unset_probability).ceil();
                 if bits > MAX_NUM_BITS as f64 {
                     return Err(Error::invalid_argument(format!(
                         "target accuracy requires {bits:.0} bits, but at most {MAX_NUM_BITS} are supported"
@@ -143,10 +155,6 @@ impl BloomFilterBuilder {
                 }
 
                 let num_bits = (bits as u64).max(MIN_NUM_BITS);
-                let num_hashes = (num_bits as f64 / n * std::f64::consts::LN_2)
-                    .ceil()
-                    .clamp(f64::from(MIN_NUM_HASHES), f64::from(MAX_NUM_HASHES))
-                    as u16;
                 (num_bits, num_hashes)
             }
             SizingMode::Size {
@@ -511,14 +519,11 @@ impl BitArray {
 
     fn from_words(bits_used: u64, words: Box<[u64]>) -> Self {
         let capacity = (words.len() as u64) << 6;
-        // `capacity` is a positive multiple of 64, so `2^(l - 1) < capacity <= 2^l`
-        // and `ceil(2^(63 + l) / capacity)` fits in `u64`.
-        let l = 64 - (capacity - 1).leading_zeros();
-        let multiplier = (1_u128 << (63 + l)).div_ceil(u128::from(capacity)) as u64;
+        let (multiplier, shift) = reduction_parameters(capacity);
         Self {
             bits_used,
             multiplier,
-            shift: l - 1,
+            shift,
             words,
         }
     }
@@ -561,23 +566,21 @@ impl BitArray {
     }
 
     #[inline(always)]
-    fn contains_and_insert(&mut self, h0: u64, h1: u64, num_hashes: u16) -> bool {
+    fn contains_and_insert(&mut self, mut h0: u64, h1: u64, num_hashes: u16) -> bool {
         let capacity = self.capacity();
         let multiplier = self.multiplier;
         let shift = self.shift;
         let words = &mut *self.words;
-        let mut bits_added = 0_u64;
-        for i in 1..=num_hashes {
-            let (word_index, mask) = probe_slot(h0, h1, i, capacity, multiplier, shift);
-            let word = &mut words[word_index];
-            if (*word & mask) == 0 {
-                *word |= mask;
-                bits_added += 1;
+        for i in 0..num_hashes {
+            let (word_index, mask) = probe_slot(h0, h1, 1, capacity, multiplier, shift);
+            h0 = h0.wrapping_add(h1);
+            if (words[word_index] & mask) == 0 {
+                words[word_index] |= mask;
+                self.bits_used += 1;
+                // Continue after the first missing probe using the branchless insertion loop.
+                self.insert(h0, h1, num_hashes - i - 1);
+                return false;
             }
-        }
-        if bits_added != 0 {
-            self.bits_used += bits_added;
-            return false;
         }
         true
     }
@@ -627,4 +630,41 @@ fn bit_index(shifted: u64, capacity: u64, multiplier: u64, shift: u32) -> u64 {
     // Granlund-Montgomery invariant division: (multiplier * shifted) >> (63 + l).
     let quotient = ((u128::from(shifted) * u128::from(multiplier)) >> 64) as u64 >> shift;
     shifted - quotient * capacity
+}
+
+fn reduction_parameters(capacity: u64) -> (u64, u32) {
+    // `capacity` is a positive multiple of 64, so `2^(l - 1) < capacity <= 2^l`
+    // and `ceil(2^(63 + l) / capacity)` fits in `u64`.
+    let l = 64 - (capacity - 1).leading_zeros();
+    let multiplier = (1_u128 << (63 + l)).div_ceil(u128::from(capacity)) as u64;
+    (multiplier, l - 1)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bit_indexes_match_remainder_at_boundaries() {
+        for capacity in [64, 192, 95_872, (1 << 36) + 64, MAX_NUM_BITS] {
+            let (multiplier, shift) = reduction_parameters(capacity);
+            let max_hash = (1_u64 << 63) - 1;
+            let last_multiple = max_hash - max_hash % capacity;
+            for hash in [
+                0,
+                capacity - 1,
+                capacity,
+                capacity + 1,
+                last_multiple - 1,
+                last_multiple,
+                max_hash,
+            ] {
+                assert_eq!(
+                    bit_index(hash, capacity, multiplier, shift),
+                    hash % capacity,
+                    "capacity {capacity}, hash {hash}"
+                );
+            }
+        }
+    }
 }

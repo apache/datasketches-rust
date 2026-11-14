@@ -6,6 +6,7 @@ All significant changes to this project will be documented in this file.
 
 ### Breaking changes
 
+* `BloomFilterBuilder::with_accuracy` now sizes the filter for its integer hash count, correcting false-positive targets that previously produced undersized filters. Capacity and hash count can differ from earlier versions; to combine with an existing filter, use `with_size(existing.capacity(), existing.num_hashes())` and the same seed.
 * `BloomFilter::capacity` now returns `u64` instead of `usize`; update callers expecting `usize` to use `u64` or convert explicitly.
 * `BloomFilter::contains` and `BloomFilter::contains_and_insert` now take `item: T` (`T: Hash`) by value instead of `&T`, matching `BloomFilter::insert`. Pass `&item` to retain owned values such as `String` or `Vec<u8>` without cloning, and remove explicit turbofish type arguments (or change `T` to `&T`) on borrowed calls such as `contains::<u64>(&value)`.
 * Fix 32-bit (`wasm32`) double hashing in `BloomFilter` to use the full 64-bit hash consistently with 64-bit targets, Java, C++, and Go. 64-bit targets and serialized formats are unchanged; rebuild or re-ingest filters created on 32-bit targets instead of mixing them across versions.
@@ -26,7 +27,7 @@ All significant changes to this project will be documented in this file.
 
 ### Performance improvements
 
-* Speed up `BloomFilter::contains`, `BloomFilter::insert`, and `BloomFilter::contains_and_insert` across filter saturation levels, particularly for primitive and scalar-wrapped integer inputs and multi-hash configurations; longer byte-slice inputs on CPUs with fast hardware dividers see smaller gains.
+* Speed up `BloomFilter::contains`, `BloomFilter::insert`, and `BloomFilter::contains_and_insert` across filter saturation levels, particularly for primitive and scalar-wrapped integer inputs and multi-hash configurations; longer byte-slice inputs on CPUs with fast hardware dividers see smaller gains. For `contains_and_insert`, gains are larger on streams containing new keys than on repeated-key streams.
 * Reduce `FrequentItemsSketch` update cost on streams of distinct items while growing toward `max_map_size`, particularly for keys such as strings or byte slices whose comparisons cost more than integers; updates once at capacity are unchanged.
 * Speed up `HllUnion::update` when adopting a high-cardinality `HllType::Hll8` sketch within `lg_max_k` or merging multiple high-cardinality sketches before querying or serializing the union; workloads that query after every merge are roughly unchanged.
 * Speed up `KllSketch::rank` in estimation mode while keeping exact-mode query latency unchanged.

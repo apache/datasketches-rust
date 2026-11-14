@@ -51,17 +51,21 @@ fn bytes_32(bencher: Bencher) {
     });
 }
 
-fn contains_and_insert_present_u64(bencher: Bencher) {
+fn contains_and_insert(
+    bencher: Bencher,
+    initial_items: u64,
+    values: impl Iterator<Item = u64> + Clone,
+) {
     let mut populated = BloomFilterBuilder::with_accuracy(ITEMS as u64, 0.01)
         .build()
         .unwrap();
-    for value in 0..ITEMS as u64 {
+    for value in 0..initial_items {
         populated.insert(value);
     }
 
     bencher.bench_local(|| {
         let mut filter = populated.clone();
-        for value in 0..ITEMS as u64 {
+        for value in values.clone() {
             black_box(filter.contains_and_insert(black_box(value)));
         }
         filter
@@ -74,6 +78,27 @@ pub fn register(runner: &mut Runner) {
     runner.case(
         "bloom::update::contains_and_insert_present_u64",
         2_000,
-        contains_and_insert_present_u64,
+        |b| contains_and_insert(b, ITEMS as u64, 0..ITEMS as u64),
     );
+    runner.case(
+        "bloom::update::contains_and_insert_absent_u64",
+        1_000,
+        |b| contains_and_insert(b, ITEMS as u64, ITEMS as u64..(2 * ITEMS) as u64),
+    );
+    runner.case("bloom::update::contains_and_insert_mixed_u64", 1_000, |b| {
+        contains_and_insert(
+            b,
+            ITEMS as u64,
+            (0..ITEMS as u64).map(|value| {
+                if value % 2 == 0 {
+                    value
+                } else {
+                    value + ITEMS as u64
+                }
+            }),
+        )
+    });
+    runner.case("bloom::update::contains_and_insert_build_u64", 1_000, |b| {
+        contains_and_insert(b, 0, 0..ITEMS as u64)
+    });
 }
