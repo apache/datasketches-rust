@@ -729,15 +729,20 @@ mod tests {
                 let exact = exact_icon_estimate(kf, c as f64);
                 let approx = icon_estimate(lg_k_u8, c as u32);
                 let rel_err = ((approx - exact) / exact).abs();
-                // In the polynomial region (`<= threshold * K`), relative error is `< 2e-6`. In
-                // the exponential region (`> threshold * K`), the error combines the finite-`K`
-                // binomial-vs-Poisson gap `O(1 / (80 * K))` (matching `1.0 / (80 * k)` in
-                // `IconEstimatorTest::quickIconEstimatorTest`) and Flajolet-Martin's periodic
-                // oscillation (`< 2e-5`).
+                // In the polynomial region (`<= threshold * K`) the stored rows stay below
+                // `2.1e-7` on a dense sweep over every `lg_k`.
+                //
+                // In the exponential region (`> threshold * K`) two effects add up. The finite-`K`
+                // correction makes the Poisson-based approximation overestimate `N` by about
+                // `1 / (2 * K * lambda)` with `lambda = N / K`; this decays with `C` and peaks at
+                // the splice point, where `lambda ≈ 41.3` gives `1 / (82.6 * K)`. That explains the
+                // `1.0 / (80 * k)` bound in `IconEstimatorTest::quickIconEstimatorTest`. For large
+                // `K` the periodic term of FM85 theory dominates instead, with relative amplitude
+                // `1.09e-6`; the dense-sweep maximum for `lg_k >= 14` is `1.53e-6`.
                 let tol = if (c as f64) <= threshold_factor * kf {
-                    2e-6
+                    3e-7
                 } else {
-                    (2e-5_f64).max(1.0 / (80.0 * kf))
+                    (2.5e-6_f64).max(1.0 / (80.0 * kf))
                 };
                 assert_that!(rel_err, lt(tol));
 
