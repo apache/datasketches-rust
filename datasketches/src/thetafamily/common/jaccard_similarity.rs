@@ -15,96 +15,29 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use crate::common::JaccardSimilarity;
 use crate::common::ResizeFactor;
 use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::hash::check_seed_hash;
 use crate::hash::compute_seed_hash;
-use crate::thetacommon::EntrySketch;
-use crate::thetacommon::KeySketch;
-use crate::thetacommon::SketchEntry;
-use crate::thetacommon::binomial_bounds;
-use crate::thetacommon::constants::MAX_LG_K;
-use crate::thetacommon::constants::MAX_THETA;
-use crate::thetacommon::constants::MIN_LG_K;
-use crate::thetacommon::intersection::IntersectionMergePolicy;
-use crate::thetacommon::intersection::IntersectionState;
-use crate::thetacommon::sketch_state::CompactSketchState;
-use crate::thetacommon::sketch_state::ThetaFamilySketchMetadata;
-use crate::thetacommon::union::UnionMergePolicy;
-use crate::thetacommon::union::UnionState;
+use crate::thetafamily::common::EntrySketch;
+use crate::thetafamily::common::KeySketch;
+use crate::thetafamily::common::SketchEntry;
+use crate::thetafamily::common::binomial_bounds;
+use crate::thetafamily::common::constants::MAX_LG_K;
+use crate::thetafamily::common::constants::MAX_THETA;
+use crate::thetafamily::common::constants::MIN_LG_K;
+use crate::thetafamily::common::hash_table::SketchHashTable;
+use crate::thetafamily::common::intersection::IntersectionMergePolicy;
+use crate::thetafamily::common::intersection::IntersectionState;
+use crate::thetafamily::common::sketch_state::CompactSketchState;
+use crate::thetafamily::common::sketch_state::ThetaFamilySketchMetadata;
+use crate::thetafamily::common::sketch_state::sort_copy_by_hash;
+use crate::thetafamily::common::union::UnionMergePolicy;
+use crate::thetafamily::common::union::UnionState;
 
 const NUM_STD_DEVS: f64 = 2.0;
-
-/// Jaccard similarity estimate and confidence bounds for two Theta-family sketches.
-///
-/// The bounds use a 95.4% confidence interval, equivalent to +/- 2 standard deviations.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct JaccardSimilarity {
-    lower_bound: f64,
-    estimate: f64,
-    upper_bound: f64,
-}
-
-impl JaccardSimilarity {
-    /// Returns the approximate lower bound for the Jaccard index.
-    pub fn lower_bound(&self) -> f64 {
-        self.lower_bound
-    }
-
-    /// Returns the estimate of the Jaccard index.
-    pub fn estimate(&self) -> f64 {
-        self.estimate
-    }
-
-    /// Returns the approximate upper bound for the Jaccard index.
-    pub fn upper_bound(&self) -> f64 {
-        self.upper_bound
-    }
-
-    fn exact(value: f64) -> Self {
-        Self {
-            lower_bound: value,
-            estimate: value,
-            upper_bound: value,
-        }
-    }
-
-    fn ratio_bounds(union_count: u64, intersection_count: u64, theta: u64) -> Result<Self, Error> {
-        if intersection_count > union_count {
-            return Err(Error::invalid_argument(format!(
-                "intersection count cannot exceed union count: {intersection_count} > {union_count}"
-            )));
-        }
-        if union_count == 0 {
-            return Ok(Self {
-                lower_bound: 0.0,
-                estimate: 0.5,
-                upper_bound: 1.0,
-            });
-        }
-
-        let sampling_probability = theta as f64 / MAX_THETA as f64;
-        if theta == MAX_THETA {
-            return Ok(Self::exact(intersection_count as f64 / union_count as f64));
-        }
-
-        let adjustment = NUM_STD_DEVS * sampling_adjuster(sampling_probability);
-        Ok(Self {
-            lower_bound: binomial_bounds::approximate_lower_bound_on_p(
-                union_count,
-                intersection_count,
-                adjustment,
-            )?,
-            estimate: intersection_count as f64 / union_count as f64,
-            upper_bound: binomial_bounds::approximate_upper_bound_on_p(
-                union_count,
-                intersection_count,
-                adjustment,
-            )?,
-        })
-    }
-}
 
 #[derive(Clone, Copy, Debug)]
 struct KeyEntry {
@@ -112,8 +45,13 @@ struct KeyEntry {
 }
 
 impl SketchEntry for KeyEntry {
+    #[inline]
     fn hash(&self) -> u64 {
         self.hash
+    }
+
+    fn sort_by_hash(entries: &mut Vec<Self>) {
+        sort_copy_by_hash(entries);
     }
 }
 
@@ -142,6 +80,11 @@ where
     fn hashes(self) -> impl Iterator<Item = u64> {
         self.0.hashes()
     }
+
+    #[inline]
+    fn hash_table(&self) -> Option<&SketchHashTable<impl SketchEntry>> {
+        self.0.hash_table()
+    }
 }
 
 impl<S> EntrySketch for KeyEntries<S>
@@ -160,6 +103,7 @@ where
     A: KeySketch,
     B: KeySketch,
 {
+    let seed_hash = compute_seed_hash(seed, ErrorKind::InvalidArgument)?;
     let (sketch_a_state, sketch_b_state) = match (
         non_empty_count_and_theta(sketch_a.metadata()),
         non_empty_count_and_theta(sketch_b.metadata()),
@@ -168,9 +112,14 @@ where
         (None, _) | (_, None) => return Ok(JaccardSimilarity::exact(0.0)),
         (Some(a), Some(b)) => (a, b),
     };
-    let union = compute_union(seed, sketch_a, sketch_b)?;
+    let union = compute_union(seed, seed_hash, sketch_a, sketch_b)?;
     if identical_sets(sketch_a_state, sketch_b_state, &union) {
         return Ok(JaccardSimilarity::exact(1.0));
+    }
+
+    let union_count = union.retained_entries().len() as u64;
+    if union_count == 0 {
+        return Ok(JaccardSimilarity::new(0.0, 0.5, 1.0));
     }
 
     let mut intersection = IntersectionState::new(seed, NoopMergePolicy)?;
@@ -184,13 +133,20 @@ where
         .retained_entries()
         .iter()
         .filter(|entry| entry.hash < union_theta)
-        .count();
+        .count() as u64;
 
-    JaccardSimilarity::ratio_bounds(
-        union.retained_entries().len() as u64,
-        intersection_count as u64,
-        union_theta,
-    )
+    let estimate = intersection_count as f64 / union_count as f64;
+    if union_theta == MAX_THETA {
+        return Ok(JaccardSimilarity::exact(estimate));
+    }
+
+    let sampling_probability = union_theta as f64 / MAX_THETA as f64;
+    let adjustment = NUM_STD_DEVS * sampling_adjuster(sampling_probability);
+    Ok(JaccardSimilarity::new(
+        binomial_bounds::approximate_lower_bound_on_p(union_count, intersection_count, adjustment)?,
+        estimate,
+        binomial_bounds::approximate_upper_bound_on_p(union_count, intersection_count, adjustment)?,
+    ))
 }
 
 pub fn exactly_equal<A, B>(seed: u64, sketch_a: A, sketch_b: B) -> Result<bool, Error>
@@ -198,6 +154,7 @@ where
     A: KeySketch,
     B: KeySketch,
 {
+    let seed_hash = compute_seed_hash(seed, ErrorKind::InvalidArgument)?;
     let (sketch_a_state, sketch_b_state) = match (
         non_empty_count_and_theta(sketch_a.metadata()),
         non_empty_count_and_theta(sketch_b.metadata()),
@@ -206,12 +163,13 @@ where
         (None, _) | (_, None) => return Ok(false),
         (Some(a), Some(b)) => (a, b),
     };
-    let union = compute_union(seed, sketch_a, sketch_b)?;
+    let union = compute_union(seed, seed_hash, sketch_a, sketch_b)?;
     Ok(identical_sets(sketch_a_state, sketch_b_state, &union))
 }
 
 fn compute_union<A, B>(
     seed: u64,
+    seed_hash: u16,
     sketch_a: A,
     sketch_b: B,
 ) -> Result<CompactSketchState<KeyEntry>, Error>
@@ -235,9 +193,8 @@ where
     else {
         unreachable!("Jaccard union inputs are known to be non-empty")
     };
-    let seed_hash = compute_seed_hash(seed, ErrorKind::InvalidArgument)?;
-    check_seed_hash(seed_hash, a_seed_hash, "A", ErrorKind::InvalidData)?;
-    check_seed_hash(seed_hash, b_seed_hash, "B", ErrorKind::InvalidData)?;
+    check_seed_hash(seed_hash, a_seed_hash, "A", ErrorKind::InvalidArgument)?;
+    check_seed_hash(seed_hash, b_seed_hash, "B", ErrorKind::InvalidArgument)?;
 
     let mut union = UnionState::new(
         union_lg_k(a_num_retained, b_num_retained),

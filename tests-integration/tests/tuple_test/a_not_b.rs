@@ -15,10 +15,16 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::cell::Cell;
+use std::ops::AddAssign;
+use std::rc::Rc;
+
 use datasketches::common::NumStdDev;
 use datasketches::error::ErrorKind;
 use datasketches::tuple::CompactTupleSketch;
+use datasketches::tuple::DefaultUpdatePolicy;
 use datasketches::tuple::TupleANotB;
+use datasketches::tuple::TupleSketchBuilder;
 use googletest::assert_that;
 use googletest::prelude::all;
 use googletest::prelude::ge;
@@ -28,11 +34,15 @@ use tests_integration::MAX_THETA;
 use crate::default_tuple_sketch_builder;
 use crate::tuple_sketch_with_range;
 
-fn sorted_entries(sketch: &CompactTupleSketch<u64>) -> Vec<(u64, u64)> {
-    let mut entries: Vec<_> = sketch
+fn entries(sketch: &CompactTupleSketch<u64>) -> Vec<(u64, u64)> {
+    sketch
         .iter()
         .map(|entry| (entry.hash(), *entry.summary()))
-        .collect();
+        .collect()
+}
+
+fn sorted_entries(sketch: &CompactTupleSketch<u64>) -> Vec<(u64, u64)> {
+    let mut entries = entries(sketch);
     entries.sort_unstable();
     entries
 }
@@ -64,10 +74,7 @@ fn accepts_mutable_and_compact_inputs() {
         .compute(&a.compact(true), &b.compact(false), true)
         .unwrap();
 
-    assert_eq!(
-        sorted_entries(&mutable_result),
-        sorted_entries(&compact_result)
-    );
+    assert_eq!(entries(&mutable_result), entries(&compact_result));
     assert_eq!(mutable_result.num_retained(), 500);
 }
 
@@ -97,14 +104,10 @@ fn input_and_result_ordering_preserve_entries() {
         from_ordered_inputs.theta64()
     );
     assert_eq!(from_unordered_inputs.theta64(), unordered_result.theta64());
-    assert_eq!(
-        sorted_entries(&from_unordered_inputs),
-        sorted_entries(&from_ordered_inputs)
-    );
-    assert_eq!(
-        sorted_entries(&from_unordered_inputs),
-        sorted_entries(&unordered_result)
-    );
+
+    let expected = sorted_entries(&unordered_result);
+    assert_eq!(entries(&from_unordered_inputs), expected);
+    assert_eq!(entries(&from_ordered_inputs), expected);
 }
 
 #[test]
@@ -169,6 +172,71 @@ fn empty_b_preserves_logically_non_empty_a_without_retained_entries() {
     assert!(!result.is_empty());
     assert_eq!(result.num_retained(), 0);
     assert_eq!(result.theta64(), a.theta64());
+}
+
+#[test]
+fn non_empty_b_without_retained_entries_screens_ordered_a_with_early_stop() {
+    #[derive(Default)]
+    struct CountingSummary {
+        value: u64,
+        clones: Option<Rc<Cell<usize>>>,
+    }
+
+    impl Clone for CountingSummary {
+        fn clone(&self) -> Self {
+            if let Some(clones) = &self.clones {
+                clones.set(clones.get() + 1);
+            }
+            Self {
+                value: self.value,
+                clones: self.clones.clone(),
+            }
+        }
+    }
+
+    impl AddAssign<(u64, Rc<Cell<usize>>)> for CountingSummary {
+        fn add_assign(&mut self, (value, clones): (u64, Rc<Cell<usize>>)) {
+            self.value += value;
+            self.clones = Some(clones);
+        }
+    }
+
+    let clones = Rc::new(Cell::new(0));
+    let mut a = TupleSketchBuilder::new(DefaultUpdatePolicy::<CountingSummary>::default())
+        .build()
+        .unwrap();
+    for key in 0..1000u64 {
+        a.update(key, (1u64, Rc::clone(&clones)));
+    }
+    let a_ordered = a.compact(true);
+    clones.set(0);
+
+    let screened_value = (0u64..)
+        .find(|candidate| {
+            let mut sketch = default_tuple_sketch_builder()
+                .sampling_probability(0.1)
+                .build()
+                .unwrap();
+            sketch.update(*candidate, 1u64);
+            !sketch.is_empty() && sketch.num_retained() == 0
+        })
+        .expect("failed to find a value screened out by the sampling theta");
+
+    let mut b = default_tuple_sketch_builder()
+        .sampling_probability(0.1)
+        .build()
+        .unwrap();
+    b.update(screened_value, 1u64);
+    assert!(!b.is_empty() && b.num_retained() == 0);
+
+    let result = TupleANotB::default().compute(&a_ordered, &b, true).unwrap();
+
+    assert_eq!(result.theta64(), b.theta64());
+    assert!(result.iter().all(|entry| entry.hash() < b.theta64()));
+    // Ordered A stops at the first entry at or above theta, cloning at most one boundary entry
+    // beyond the surviving prefix rather than all 1000 summaries.
+    assert!(clones.get() <= result.num_retained() + 1);
+    assert!(result.num_retained() + 1 < a_ordered.num_retained());
 }
 
 #[test]

@@ -119,16 +119,20 @@ fn test_terminal_empty_state_ignores_future_updates() {
 }
 
 #[test]
-fn test_to_sketch_unordered_is_not_ordered() {
-    let mut a = ThetaSketchBuilder::default().build().unwrap();
-    for i in 0..64 {
-        a.update(i);
-    }
+fn test_result_ordering() {
+    let a = sketch_with_range(0, 1_000);
     let mut i = ThetaIntersection::default();
     i.update(&a).unwrap();
 
-    let r = i.to_sketch(false).unwrap();
-    assert!(!r.is_ordered());
+    let unordered = i.to_sketch(false).unwrap();
+    let ordered = i.to_sketch(true).unwrap();
+    assert!(!unordered.is_ordered());
+    assert!(ordered.is_ordered());
+
+    let mut expected: Vec<u64> = unordered.iter().map(|entry| entry.hash()).collect();
+    expected.sort_unstable();
+    let actual: Vec<u64> = ordered.iter().map(|entry| entry.hash()).collect();
+    assert_eq!(actual, expected);
 }
 
 #[test]

@@ -153,12 +153,25 @@ fn custom_combine_policy_controls_overlapping_summaries() {
 
 #[test]
 fn result_ordering_follows_the_request() {
-    let input = tuple_sketch_with_range(0, 100);
+    let input = tuple_sketch_with_range(0, 1_000);
     let mut union = default_union_builder().build().unwrap();
     union.update(&input).unwrap();
 
-    assert!(union.to_sketch(true).is_ordered());
-    assert!(!union.to_sketch(false).is_ordered());
+    let ordered = union.to_sketch(true);
+    let unordered = union.to_sketch(false);
+    assert!(ordered.is_ordered());
+    assert!(!unordered.is_ordered());
+
+    let mut expected: Vec<_> = unordered
+        .iter()
+        .map(|entry| (entry.hash(), *entry.summary()))
+        .collect();
+    expected.sort_unstable();
+    let actual: Vec<_> = ordered
+        .iter()
+        .map(|entry| (entry.hash(), *entry.summary()))
+        .collect();
+    assert_eq!(actual, expected);
 }
 
 #[test]

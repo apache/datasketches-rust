@@ -45,7 +45,7 @@ fn test_bloom_filter_file(path: PathBuf, expected_num_items: u64, expected_num_h
     // TCK fixtures insert integers 0..n/10. Bound the sample for large fixtures.
     for item in 0..(expected_num_items / 10).min(100) {
         assert!(
-            filter1.contains(&item),
+            filter1.contains(item),
             "Missing item {item} in {}",
             path.display()
         );
@@ -145,8 +145,8 @@ fn test_cached_num_bits_set_is_validated_or_recomputed() {
         .copy_from_slice(&u64::MAX.to_le_bytes());
     let restored = BloomFilter::deserialize(&dirty).unwrap();
     assert_eq!(restored.bits_used(), actual_bits_set);
-    assert!(restored.contains(&"apple"));
-    assert!(restored.contains(&"banana"));
+    assert!(restored.contains("apple"));
+    assert!(restored.contains("banana"));
 }
 
 #[test]

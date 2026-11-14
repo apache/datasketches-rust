@@ -19,6 +19,9 @@
 //!
 //! Each level compacts a selected range, retaining one item from each pair at twice the weight.
 
+use crate::codec::SketchBytes;
+use crate::codec::SketchSlice;
+use crate::codec::assert::insufficient_data;
 use crate::common::random::random_bit;
 use crate::error::Error;
 use crate::req::INITIAL_SECTIONS_PER_COMPACTOR;
@@ -38,7 +41,7 @@ pub struct Compactor<T> {
     /// Determines which sections are compacted and when their count doubles.
     state: u64,
     scratch_buffer: Vec<T>,
-    section_size: u32,
+    section_size: usize,
     num_sections: u8,
     lg_weight: u8,
     rank_accuracy: RankAccuracy,
@@ -57,7 +60,7 @@ where
         let section_size = nearest_even_section_size(section_size_raw);
         let num_sections = INITIAL_SECTIONS_PER_COMPACTOR;
 
-        let nominal: usize = (2 * section_size * num_sections as u32) as usize;
+        let nominal = 2 * section_size * usize::from(num_sections);
 
         Self {
             items: Vec::with_capacity(nominal),
@@ -76,13 +79,13 @@ where
     }
 
     /// Returns the number of items currently in this compactor.
-    pub fn num_items(&self) -> u32 {
-        self.items.len() as u32
+    pub fn num_items(&self) -> usize {
+        self.items.len()
     }
 
     /// Returns the nominal capacity of this compactor.
-    pub fn nominal_capacity(&self) -> u32 {
-        2 * self.section_size * self.num_sections as u32
+    pub fn nominal_capacity(&self) -> usize {
+        2 * self.section_size * usize::from(self.num_sections)
     }
 
     /// Returns whether the items are currently sorted.
@@ -253,7 +256,7 @@ where
         let section_size_raw = self.section_size_raw / std::f32::consts::SQRT_2;
         let section_size = nearest_even_section_size(section_size_raw);
 
-        if self.state >= threshold && section_size >= u32::from(MIN_K) {
+        if self.state >= threshold && section_size >= usize::from(MIN_K) {
             self.section_size_raw = section_size_raw;
             self.section_size = section_size;
             self.num_sections = num_sections;
@@ -264,9 +267,9 @@ where
 
     #[inline(always)]
     fn compute_compaction_range(&self, secs_to_compact: u8) -> (usize, usize) {
-        let nom_capacity = self.nominal_capacity() as usize;
-        let mut non_compact = nom_capacity / 2
-            + (self.num_sections - secs_to_compact) as usize * self.section_size as usize;
+        let nom_capacity = self.nominal_capacity();
+        let mut non_compact =
+            nom_capacity / 2 + usize::from(self.num_sections - secs_to_compact) * self.section_size;
 
         // Preserve an extra item when needed to make the compacted range even.
         if self.items.len() >= non_compact && ((self.items.len() - non_compact) & 1) == 1 {
@@ -283,16 +286,18 @@ where
     }
 
     /// Serialize this compactor (preamble + items) into the byte buffer.
-    pub fn serialize_into(&self, bytes: &mut crate::codec::SketchBytes)
+    pub fn serialize_into(&self, bytes: &mut SketchBytes)
     where
         T: ReqValue,
     {
+        let num_items =
+            u32::try_from(self.num_items()).expect("REQ compactor item count exceeds u32::MAX");
         bytes.write_u64_le(self.state);
         bytes.write_f32_le(self.section_size_raw);
         bytes.write_u8(self.lg_weight);
         bytes.write_u8(self.num_sections);
         bytes.write_u16_le(0); // padding
-        bytes.write_u32_le(self.num_items());
+        bytes.write_u32_le(num_items);
         for item in self.iter() {
             item.serialize_value(bytes);
         }
@@ -300,7 +305,7 @@ where
 
     /// Deserialize a compactor (preamble + items) from the byte cursor.
     pub fn deserialize(
-        cursor: &mut crate::codec::SketchSlice<'_>,
+        cursor: &mut SketchSlice<'_>,
         k: u16,
         expected_lg_weight: u8,
         rank_accuracy: RankAccuracy,
@@ -309,7 +314,6 @@ where
     where
         T: ReqValue,
     {
-        use crate::codec::assert::insufficient_data;
         let state = cursor
             .read_u64_le()
             .map_err(insufficient_data("compactor.state"))?;
@@ -325,9 +329,12 @@ where
         let _padding = cursor
             .read_u16_le()
             .map_err(insufficient_data("compactor.padding"))?;
-        let num_items = cursor
-            .read_u32_le()
-            .map_err(insufficient_data("compactor.num_items"))?;
+        let num_items = usize::try_from(
+            cursor
+                .read_u32_le()
+                .map_err(insufficient_data("compactor.num_items"))?,
+        )
+        .map_err(|_| Error::deserial("REQ compactor item count overflows usize"))?;
 
         validate_compactor_state(
             k,
@@ -342,7 +349,7 @@ where
         // a multi-gigabyte reservation before the per-item reads below fail. The buffer
         // holds at most `remaining` more items (each item is ≥ 1 byte), so cap the
         // pre-allocation there; `push` still grows the Vec as the validated data needs.
-        let capacity = (num_items as usize).min(cursor.remaining().len());
+        let capacity = num_items.min(cursor.remaining().len());
         let mut items = Vec::with_capacity(capacity);
         for _ in 0..num_items {
             items.push(T::deserialize_value(cursor)?);
@@ -476,9 +483,6 @@ mod tests {
 
     #[test]
     fn compactor_serialization_round_trip() {
-        use crate::codec::SketchBytes;
-        use crate::codec::SketchSlice;
-
         let mut c: Compactor<ReqFloat<f32>> = Compactor::new(0, 12, RankAccuracy::HighRank);
         for i in 0..30 {
             c.append(ReqFloat::<f32>::new(i as f32).unwrap());

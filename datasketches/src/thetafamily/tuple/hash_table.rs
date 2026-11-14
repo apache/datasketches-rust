@@ -18,10 +18,11 @@
 use std::hash::Hash;
 use std::num::NonZeroU64;
 
-use crate::thetacommon::SketchEntry;
-use crate::thetacommon::hash_table::SketchHashTable;
-use crate::thetacommon::intersection::IntersectionMergePolicy;
-use crate::thetacommon::union::UnionMergePolicy;
+use crate::thetafamily::common::SketchEntry;
+use crate::thetafamily::common::hash_table::SketchHashTable;
+use crate::thetafamily::common::intersection::IntersectionMergePolicy;
+use crate::thetafamily::common::sketch_state::sort_niche_by_hash;
+use crate::thetafamily::common::union::UnionMergePolicy;
 use crate::tuple::SummaryCombinePolicy;
 
 /// A retained entry in a Tuple sketch: a hash key together with its associated summary.
@@ -46,6 +47,7 @@ impl<S> TupleEntry<S> {
     }
 
     /// Returns the hash used as this entry's key.
+    #[inline]
     pub fn hash(&self) -> u64 {
         self.hash.get()
     }
@@ -64,8 +66,13 @@ impl<S> TupleEntry<S> {
 pub type TupleHashTable<S> = SketchHashTable<TupleEntry<S>>;
 
 impl<S> SketchEntry for TupleEntry<S> {
+    #[inline]
     fn hash(&self) -> u64 {
         self.hash.get()
+    }
+
+    fn sort_by_hash(entries: &mut Vec<Self>) {
+        sort_niche_by_hash(entries);
     }
 }
 

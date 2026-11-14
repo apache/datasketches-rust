@@ -327,7 +327,39 @@ fn test_result_ordering_forms_have_same_estimate() {
 
     assert!(!unordered.is_ordered());
     assert!(ordered.is_ordered());
+    assert_eq!(unordered.theta64(), ordered.theta64());
     assert_eq!(unordered.estimate(), ordered.estimate());
+
+    let mut expected: Vec<u64> = unordered.iter().map(|entry| entry.hash()).collect();
+    expected.sort_unstable();
+    let actual: Vec<u64> = ordered.iter().map(|entry| entry.hash()).collect();
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn test_ordered_result_sorts_clustered_deserialized_hashes() {
+    let clustered: Vec<u64> = (1..=1_000u64)
+        .rev()
+        .map(|k| (0x5AA5u64 << 48) | k)
+        .collect();
+    let mut bytes = sketch_with_range(12, 0, clustered.len() as i64)
+        .compact(false)
+        .serialize();
+    let offset = bytes.len() - clustered.len() * 8;
+    for (slot, hash) in bytes[offset..].chunks_exact_mut(8).zip(&clustered) {
+        slot.copy_from_slice(&hash.to_le_bytes());
+    }
+    let input = CompactThetaSketch::deserialize(&bytes).unwrap();
+    assert!(!input.is_ordered());
+
+    let mut union = ThetaUnionBuilder::default().lg_k(12).build().unwrap();
+    union.update(&input).unwrap();
+    let result = union.to_sketch(true);
+
+    assert!(result.is_ordered());
+    let actual: Vec<u64> = result.iter().map(|entry| entry.hash()).collect();
+    let expected: Vec<u64> = (1..=1_000u64).map(|k| (0x5AA5u64 << 48) | k).collect();
+    assert_eq!(actual, expected);
 }
 
 #[test]
@@ -462,6 +494,24 @@ fn test_trim_to_k() {
     let result = union.to_sketch(true);
 
     assert_eq!(result.num_retained(), 1024);
+}
+
+#[test]
+fn test_mixed_lg_k_union_compacts_result_storage() {
+    let large_exact = sketch_with_range(16, 0, 50_000);
+    let small_estimated = sketch_with_range(5, 0, 100_000);
+
+    let mut union = ThetaUnionBuilder::default().lg_k(16).build().unwrap();
+    union.update(&large_exact).unwrap();
+    union.update(&small_estimated).unwrap();
+
+    for ordered in [false, true] {
+        let result = union.to_sketch(ordered);
+        assert_that!(
+            result.estimated_size(),
+            le(result.num_retained().next_power_of_two().max(4) * size_of::<u64>()),
+        );
+    }
 }
 
 #[test]

@@ -18,7 +18,6 @@
 use std::fmt;
 use std::hash::Hash;
 
-use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
 use crate::codec::assert::ensure_preamble_longs_in;
 use crate::codec::assert::ensure_serial_version_is;
@@ -34,7 +33,6 @@ use crate::cpc::compression::decode_pairs;
 use crate::cpc::compression::decode_window;
 use crate::cpc::compression::determine_pseudo_phase;
 use crate::cpc::compression::encode_pairs;
-use crate::cpc::compression::encode_window;
 use crate::cpc::compression_data::COLUMN_PERMUTATIONS_FOR_DECODING;
 use crate::cpc::compression_data::COLUMN_PERMUTATIONS_FOR_ENCODING;
 use crate::cpc::determine_correct_offset;
@@ -50,6 +48,7 @@ use crate::cpc::serialization::FLAG_HAS_TABLE;
 use crate::cpc::serialization::FLAG_HAS_WINDOW;
 use crate::cpc::serialization::SERIAL_VERSION;
 use crate::cpc::serialization::make_preamble_ints;
+use crate::cpc::serialization::serialize_compressed;
 use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::hash::DEFAULT_UPDATE_SEED;
@@ -489,7 +488,6 @@ impl CpcSketch {
     /// The serialized data can be read by other DataSketches implementations.
     pub fn serialize(&self) -> Vec<u8> {
         let flavor = self.flavor();
-        let has_hip = !self.merge_flag;
         let has_window = matches!(flavor, Flavor::Pinned | Flavor::Sliding);
         let mut pairs = match flavor {
             Flavor::Empty => vec![],
@@ -558,64 +556,22 @@ impl CpcSketch {
         };
         pairs.sort_unstable();
 
-        let table_num_entries = pairs.len() as u32;
-        let mut payload = SketchBytes::with_capacity(if self.is_empty() { 0 } else { 256 });
-        let window_words = has_window.then(|| {
-            encode_window(
-                &self.sliding_window,
-                self.lg_k,
-                self.num_coupons,
-                &mut payload,
-            )
-        });
-        let table_words =
-            (!pairs.is_empty()).then(|| encode_pairs(&pairs, self.lg_k, &mut payload));
-        let payload = payload.into_bytes();
-
-        let has_table = table_words.is_some();
-        let preamble_ints = make_preamble_ints(self.num_coupons, has_hip, has_table, has_window);
-        let mut bytes = SketchBytes::with_capacity(40 + payload.len());
-        bytes.write_u8(preamble_ints);
-        bytes.write_u8(SERIAL_VERSION);
-        bytes.write_u8(Family::CPC.id);
-        bytes.write_u8(self.lg_k);
-        bytes.write_u8(self.first_interesting_column);
-        let flags = (1 << FLAG_COMPRESSED)
-            | (if has_hip { 1 } else { 0 } << FLAG_HAS_HIP)
-            | (if has_table { 1 } else { 0 } << FLAG_HAS_TABLE)
-            | (if has_window { 1 } else { 0 } << FLAG_HAS_WINDOW);
-        bytes.write_u8(flags);
         debug_assert_eq!(
             self.seed_hash,
             compute_seed_hash(self.seed, ErrorKind::InvalidArgument).unwrap()
         );
-        bytes.write_u16_le(self.seed_hash);
-        if !self.is_empty() {
-            bytes.write_u32_le(self.num_coupons);
-            if has_table && has_window {
-                // if there is no window it is the same as number of coupons
-                bytes.write_u32_le(table_num_entries);
-                // HIP values can be in two different places in the sequence of fields
-                // this is the first HIP decision point
-                if has_hip {
-                    self.write_hip(&mut bytes);
-                }
-            }
-            if let Some(table_words) = table_words {
-                debug_assert!(table_words <= u32::MAX as usize);
-                bytes.write_u32_le(table_words as u32);
-            }
-            if let Some(window_words) = window_words {
-                debug_assert!(window_words <= u32::MAX as usize);
-                bytes.write_u32_le(window_words as u32);
-            }
-            // this is the second HIP decision point
-            if has_hip && !(has_table && has_window) {
-                self.write_hip(&mut bytes);
-            }
-            bytes.write(&payload);
-        }
-        bytes.into_bytes()
+        let hip = (!self.merge_flag).then_some((self.kxp, self.hip_est_accum));
+        let window = has_window.then(|| self.sliding_window.iter().copied());
+        serialize_compressed(
+            self.lg_k,
+            self.seed_hash,
+            self.first_interesting_column,
+            self.num_coupons,
+            hip,
+            window,
+            pairs.len() as u32,
+            |bytes| encode_pairs(&pairs, self.lg_k, bytes),
+        )
     }
 
     /// Deserializes a `CpcSketch` from bytes.
@@ -890,65 +846,5 @@ impl CpcSketch {
             kxp,
             hip_est_accum,
         })
-    }
-
-    fn write_hip(&self, bytes: &mut SketchBytes) {
-        bytes.write_f64_le(self.kxp);
-        bytes.write_f64_le(self.hip_est_accum);
-    }
-}
-
-impl CpcSketch {
-    /// Returns the estimated maximum compressed serialized size of a sketch.
-    ///
-    /// The actual size of a compressed CPC sketch has a small random variance, but the following
-    /// empirically measured size should be large enough for at least 99.9 percent of sketches.
-    ///
-    /// For small values of `n` the size can be much smaller.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if `lg_k` is not in the range `[4, 26]`.
-    pub fn max_serialized_bytes(lg_k: u8) -> Result<usize, Error> {
-        if !(MIN_LG_K..=MAX_LG_K).contains(&lg_k) {
-            return Err(Error::invalid_argument(format!(
-                "lg_k must be in [{MIN_LG_K}, {MAX_LG_K}], got {lg_k}"
-            )));
-        }
-
-        // These empirical values for the 99.9th percentile of size in bytes were measured using
-        // 100,000 trials. The value for each trial is the maximum of 5*16=80 measurements
-        // that were equally spaced over values of the quantity C/K between 3.0 and 8.0.
-        // This table does not include the worst-case space for the preamble, which is added
-        // by the function.
-        const MAX_PREAMBLE_SIZE_BYTES: usize = 40;
-        const EMPIRICAL_SIZE_MAX_LGK: u8 = 19;
-        const EMPIRICAL_MAX_SIZE_FACTOR: f64 = 0.6; // 0.6 = 4.8 / 8.0
-        static EMPIRICAL_MAX_SIZE_BYTES: [usize; 16] = [
-            24,     // lg_k = 4
-            36,     // lg_k = 5
-            56,     // lg_k = 6
-            100,    // lg_k = 7
-            180,    // lg_k = 8
-            344,    // lg_k = 9
-            660,    // lg_k = 10
-            1292,   // lg_k = 11
-            2540,   // lg_k = 12
-            5020,   // lg_k = 13
-            9968,   // lg_k = 14
-            19836,  // lg_k = 15
-            39532,  // lg_k = 16
-            78880,  // lg_k = 17
-            157516, // lg_k = 18
-            314656, // lg_k = 19
-        ];
-
-        let max_bytes = if lg_k <= EMPIRICAL_SIZE_MAX_LGK {
-            EMPIRICAL_MAX_SIZE_BYTES[(lg_k - MIN_LG_K) as usize] + MAX_PREAMBLE_SIZE_BYTES
-        } else {
-            let k = 1 << lg_k;
-            ((EMPIRICAL_MAX_SIZE_FACTOR * k as f64) as usize) + MAX_PREAMBLE_SIZE_BYTES
-        };
-        Ok(max_bytes)
     }
 }

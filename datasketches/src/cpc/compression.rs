@@ -15,8 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use std::cmp::Ordering;
-
 use crate::codec::SketchBytes;
 use crate::cpc::compression_data::DECODING_TABLES_FOR_HIGH_ENTROPY_BYTE;
 use crate::cpc::compression_data::ENCODING_TABLES_FOR_HIGH_ENTROPY_BYTE;
@@ -24,49 +22,104 @@ use crate::cpc::compression_data::LENGTH_LIMITED_UNARY_DECODING_TABLE65;
 use crate::cpc::compression_data::LENGTH_LIMITED_UNARY_ENCODING_TABLE65;
 use crate::error::Error;
 
-pub fn encode_pairs(pairs: &[u32], lg_k: u8, output: &mut SketchBytes) -> usize {
-    let num_pairs = pairs.len() as u32;
-    let num_base_bits =
-        golomb_choose_number_of_base_bits((1 << lg_k) + num_pairs, u64::from(num_pairs));
-    let mut bits = BitWriter::new(output);
-    let golomb_lo_mask = (1 << num_base_bits) - 1;
-    let mut predicted_row_index = 0;
-    let mut predicted_col_index = 0;
-
-    for &row_col in pairs {
-        let row_index = row_col >> 6;
-        let col_index = row_col & 63;
-        if row_index != predicted_row_index {
-            predicted_col_index = 0;
-        }
-        assert!(row_index >= predicted_row_index);
-        assert!(col_index >= predicted_col_index);
-
-        let y_delta = row_index - predicted_row_index;
-        let x_delta = col_index - predicted_col_index;
-        predicted_row_index = row_index;
-        predicted_col_index = col_index + 1;
-
-        let code_info = LENGTH_LIMITED_UNARY_ENCODING_TABLE65[x_delta as usize];
-        bits.write(u64::from(code_info & 0xfff), (code_info >> 12) as u8);
-        bits.write_unary(u64::from(y_delta >> num_base_bits));
-        bits.write(u64::from(y_delta & golomb_lo_mask), num_base_bits);
-    }
-
-    bits.pad(10u8.saturating_sub(num_base_bits));
-    bits.finish()
+pub struct PairEncoder<'a> {
+    bits: BitWriter<'a>,
+    num_base_bits: u8,
+    golomb_lo_mask: u32,
+    predicted_row_index: u32,
+    predicted_col_index: u32,
 }
 
-pub fn encode_window(window: &[u8], lg_k: u8, num_coupons: u32, output: &mut SketchBytes) -> usize {
+impl<'a> PairEncoder<'a> {
+    pub fn new(num_pairs: u32, lg_k: u8, output: &'a mut SketchBytes) -> Self {
+        let num_base_bits = golomb_choose_number_of_base_bits(
+            (1u64 << lg_k) + u64::from(num_pairs),
+            u64::from(num_pairs),
+        );
+        Self {
+            bits: BitWriter::new(output),
+            num_base_bits,
+            golomb_lo_mask: (1 << num_base_bits) - 1,
+            predicted_row_index: 0,
+            predicted_col_index: 0,
+        }
+    }
+
+    #[inline(always)]
+    pub fn write_pair(&mut self, row_col: u32) {
+        let row_index = row_col >> 6;
+        let col_index = row_col & 63;
+        if row_index != self.predicted_row_index {
+            self.predicted_col_index = 0;
+        }
+        assert!(row_index >= self.predicted_row_index);
+        assert!(col_index >= self.predicted_col_index);
+
+        let y_delta = row_index - self.predicted_row_index;
+        let x_delta = col_index - self.predicted_col_index;
+        self.predicted_row_index = row_index;
+        self.predicted_col_index = col_index + 1;
+
+        let code_info = LENGTH_LIMITED_UNARY_ENCODING_TABLE65[x_delta as usize];
+        self.bits
+            .write(u64::from(code_info & 0xfff), (code_info >> 12) as u8);
+        self.bits
+            .write_unary(u64::from(y_delta >> self.num_base_bits));
+        self.bits
+            .write(u64::from(y_delta & self.golomb_lo_mask), self.num_base_bits);
+    }
+
+    pub fn finish(mut self) -> usize {
+        self.bits.pad(10u8.saturating_sub(self.num_base_bits));
+        self.bits.finish()
+    }
+}
+
+pub fn encode_pairs(pairs: &[u32], lg_k: u8, output: &mut SketchBytes) -> usize {
+    let mut encoder = PairEncoder::new(pairs.len() as u32, lg_k, output);
+    for &row_col in pairs {
+        encoder.write_pair(row_col);
+    }
+    encoder.finish()
+}
+
+pub fn encode_window(
+    window: impl IntoIterator<Item = u8>,
+    lg_k: u8,
+    num_coupons: u32,
+    output: &mut SketchBytes,
+) -> usize {
     let pseudo_phase = determine_pseudo_phase(lg_k, num_coupons);
     let encoding_table = &ENCODING_TABLES_FOR_HIGH_ENTROPY_BYTE[pseudo_phase as usize];
     let mut bits = BitWriter::new(output);
-    for &byte in window {
+    for byte in window {
         let code_info = encoding_table[byte as usize];
         bits.write(u64::from(code_info & 0xfff), (code_info >> 12) as u8);
     }
     bits.pad(11);
     bits.finish()
+}
+
+pub fn estimated_encoded_pair_bytes(num_pairs: u32, lg_k: u8) -> usize {
+    if num_pairs == 0 {
+        return 0;
+    }
+    let b = golomb_choose_number_of_base_bits(
+        (1u64 << lg_k) + u64::from(num_pairs),
+        u64::from(num_pairs),
+    );
+    let unary_zero_bits = (1u64 << lg_k) >> b;
+    let pair_bits = u64::from(num_pairs) * (u64::from(b) + 4);
+    let total_words = (unary_zero_bits + pair_bits + 63) >> 5;
+    (total_words as usize) * size_of::<u32>()
+}
+
+pub fn estimated_encoded_window_bytes(lg_k: u8, num_coupons: u32) -> usize {
+    let k = 1u64 << lg_k;
+    let max_steady_bits = k * 5;
+    let sparse_window_bits = k + 4 * u64::from(num_coupons);
+    let bits = max_steady_bits.min(sparse_window_bits) + 63;
+    ((bits >> 5) as usize) * size_of::<u32>()
 }
 
 struct BitWriter<'a> {
@@ -77,6 +130,7 @@ struct BitWriter<'a> {
 }
 
 impl<'a> BitWriter<'a> {
+    #[inline]
     fn new(output: &'a mut SketchBytes) -> Self {
         Self {
             output,
@@ -86,12 +140,14 @@ impl<'a> BitWriter<'a> {
         }
     }
 
+    #[inline]
     fn write(&mut self, value: u64, count: u8) {
         self.buffer |= value << self.buffered_bits;
         self.buffered_bits += count;
         self.flush_full_word();
     }
 
+    #[inline]
     fn write_unary(&mut self, value: u64) {
         let mut remaining = value;
         while remaining >= 16 {
@@ -101,11 +157,13 @@ impl<'a> BitWriter<'a> {
         self.write(1 << remaining, (remaining + 1) as u8);
     }
 
+    #[inline]
     fn pad(&mut self, count: u8) {
         self.buffered_bits += count;
         self.flush_full_word();
     }
 
+    #[inline]
     fn flush_full_word(&mut self) {
         if self.buffered_bits >= 32 {
             self.output.write_u32_le(self.buffer as u32);
@@ -115,6 +173,7 @@ impl<'a> BitWriter<'a> {
         }
     }
 
+    #[inline]
     fn finish(mut self) -> usize {
         if self.buffered_bits > 0 {
             debug_assert!(self.buffered_bits < 32);
@@ -131,7 +190,10 @@ pub fn decode_pairs(data: &[u8], num_pairs: u32, lg_k: u8) -> Result<Vec<u32>, E
     }
     let k = 1 << lg_k;
     let mut pairs = vec![0; num_pairs as usize];
-    let num_base_bits = golomb_choose_number_of_base_bits(k + num_pairs, num_pairs as u64);
+    let num_base_bits = golomb_choose_number_of_base_bits(
+        (1u64 << lg_k) + u64::from(num_pairs),
+        u64::from(num_pairs),
+    );
     let mut bits = BitReader::new(data);
     let golomb_lo_mask = (1 << num_base_bits) - 1;
     let mut predicted_row_index = 0u32;
@@ -307,10 +369,10 @@ pub fn determine_pseudo_phase(lg_k: u8, num_coupons: u32) -> u8 {
 }
 
 /// Returns an integer that is between zero and ceil(log_2(k)) - 1, inclusive.
-fn golomb_choose_number_of_base_bits(k: u32, count: u64) -> u8 {
+fn golomb_choose_number_of_base_bits(k: u64, count: u64) -> u8 {
     debug_assert!(k > 0);
     debug_assert!(count > 0);
-    let quotient = ((k as u64) - count) / count; // integer division
+    let quotient = (k - count) / count; // integer division
     if quotient == 0 {
         0
     } else {
@@ -320,18 +382,7 @@ fn golomb_choose_number_of_base_bits(k: u32, count: u64) -> u8 {
 
 fn floor_log2_of_long(x: u64) -> u8 {
     debug_assert!(x > 0);
-    let mut p = 0u8;
-    let mut y = 1u64;
-    loop {
-        match u64::cmp(&y, &x) {
-            Ordering::Equal => return p,
-            Ordering::Greater => return p - 1,
-            Ordering::Less => {
-                p += 1;
-                y <<= 1;
-            }
-        }
-    }
+    (u64::BITS - 1 - x.leading_zeros()) as u8
 }
 
 #[cfg(test)]

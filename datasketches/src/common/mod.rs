@@ -17,14 +17,16 @@
 
 //! Data structures and functions that may be used across all the sketch families.
 
+mod jaccard_similarity;
 mod num_std_dev;
 mod resize;
 mod search_criteria;
+pub use self::jaccard_similarity::JaccardSimilarity;
 pub use self::num_std_dev::NumStdDev;
 pub use self::resize::ResizeFactor;
 pub use self::search_criteria::SearchCriteria;
 
 #[cfg(any(feature = "cpc", feature = "hll"))]
 pub(crate) mod inv_pow2;
-#[cfg(any(feature = "kll", feature = "req"))]
+#[cfg(any(feature = "kll", feature = "req", feature = "theta", feature = "tuple"))]
 pub(crate) mod random;

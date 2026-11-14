@@ -15,17 +15,19 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::fmt;
+
 use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::hash::check_seed_hash;
 use crate::hash::compute_seed_hash;
-use crate::thetacommon::EntrySketch;
-use crate::thetacommon::SketchEntry;
-use crate::thetacommon::constants::HASH_TABLE_REBUILD_THRESHOLD;
-use crate::thetacommon::constants::MAX_THETA;
-use crate::thetacommon::hash_table::SketchHashTable;
-use crate::thetacommon::sketch_state::CompactSketchState;
-use crate::thetacommon::sketch_state::ThetaFamilySketchMetadata;
+use crate::thetafamily::common::EntrySketch;
+use crate::thetafamily::common::SketchEntry;
+use crate::thetafamily::common::constants::HASH_TABLE_REBUILD_THRESHOLD;
+use crate::thetafamily::common::constants::MAX_THETA;
+use crate::thetafamily::common::hash_table::SketchHashTable;
+use crate::thetafamily::common::sketch_state::CompactSketchState;
+use crate::thetafamily::common::sketch_state::ThetaFamilySketchMetadata;
 
 /// Merges an incoming entry into an existing entry with the same hash.
 ///
@@ -239,6 +241,30 @@ where
         size_of::<P>() + self.table.estimated_size()
     }
 
+    /// Formats a concise diagnostic summary for Theta-family intersection operators.
+    pub fn fmt_debug(&self, f: &mut fmt::Formatter<'_>, name: &str) -> fmt::Result {
+        let mut debug = f.debug_struct(name);
+        debug
+            .field("seed_hash", &self.table.seed_hash())
+            .field("has_result", &self.has_result());
+        match self.result_state {
+            IntersectionResultState::Uninitialized => {}
+            IntersectionResultState::Empty => {
+                debug
+                    .field("is_empty", &true)
+                    .field("theta64", &MAX_THETA)
+                    .field("num_retained", &0usize);
+            }
+            IntersectionResultState::NonEmpty => {
+                debug
+                    .field("is_empty", &false)
+                    .field("theta64", &self.table.retention_theta())
+                    .field("num_retained", &self.table.num_retained());
+            }
+        }
+        debug.finish()
+    }
+
     /// Returns the current intersection as canonical compact-sketch state.
     pub fn to_compact_sketch_state(&self, ordered: bool) -> Option<CompactSketchState<E>>
     where
@@ -251,6 +277,20 @@ where
             }
             IntersectionResultState::NonEmpty => {
                 Some(self.table.to_non_empty_compact_state(ordered))
+            }
+        }
+    }
+
+    /// Returns the current intersection as canonical compact hash state.
+    #[cfg(feature = "theta")]
+    pub fn to_compact_hash_state(&self, ordered: bool) -> Option<CompactSketchState<u64>> {
+        match self.result_state {
+            IntersectionResultState::Uninitialized => None,
+            IntersectionResultState::Empty => {
+                Some(CompactSketchState::empty(self.table.seed_hash()))
+            }
+            IntersectionResultState::NonEmpty => {
+                Some(self.table.to_non_empty_compact_hashes(ordered))
             }
         }
     }

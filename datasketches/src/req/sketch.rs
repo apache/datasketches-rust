@@ -17,6 +17,8 @@
 
 //! Generic REQ sketch implementation.
 
+use std::fmt;
+
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
 use crate::codec::assert::insufficient_data;
@@ -47,17 +49,33 @@ use crate::req::value::ReqValue;
 /// A Relative Error Quantiles sketch for approximate quantile estimation.
 ///
 /// See the [module level documentation](super) for item ordering and floating-point requirements.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ReqSketch<T> {
     k: u16,
     rank_accuracy: RankAccuracy,
     n: u64,
-    max_nom_size: u32,
-    num_retained: u32,
+    max_nom_size: usize,
+    num_retained: usize,
     compactors: Vec<Compactor<T>>,
     promotion_buf: Vec<T>,
     min_item: Option<T>,
     max_item: Option<T>,
+}
+
+impl<T: fmt::Debug> fmt::Debug for ReqSketch<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ReqSketch")
+            .field("k", &self.k)
+            .field("rank_accuracy", &self.rank_accuracy)
+            .field("n", &self.n)
+            .field("is_empty", &(self.n == 0))
+            .field("is_estimation_mode", &(self.compactors.len() > 1))
+            .field("num_levels", &self.compactors.len())
+            .field("num_retained", &self.num_retained)
+            .field("min_item", &self.min_item)
+            .field("max_item", &self.max_item)
+            .finish()
+    }
 }
 
 impl<T> Default for ReqSketch<T>
@@ -118,7 +136,7 @@ where
     }
 
     /// Returns the number of items currently stored across all compactors.
-    pub fn num_retained(&self) -> u32 {
+    pub fn num_retained(&self) -> usize {
         self.num_retained
     }
 
@@ -306,7 +324,7 @@ where
     /// queries at ranks strictly between `0.0` and `1.0`, or repeated [`Self::pmf`]/[`Self::cdf`]
     /// queries.
     pub fn sorted_view(&self) -> SortedView<T> {
-        let mut weighted_items = Vec::with_capacity(self.num_retained as usize);
+        let mut weighted_items = Vec::with_capacity(self.num_retained);
         for compactor in &self.compactors {
             let weight = compactor.weight();
             for item in compactor.iter() {
@@ -504,7 +522,7 @@ where
     }
 
     /// Returns the number of bytes required to serialize the sketch.
-    pub fn serialized_size_bytes(&self) -> usize
+    fn serialized_size_bytes(&self) -> usize
     where
         T: ReqValue,
     {
@@ -720,7 +738,8 @@ where
         if num_levels == 1 {
             // Recover n / min / max from level 0 (these aren't in the preamble for exact mode).
             let level0 = &compactors[0];
-            n = level0.num_items() as u64;
+            n = u64::try_from(level0.num_items())
+                .map_err(|_| Error::deserial("REQ level 0 item count overflows u64"))?;
             let mut iter = level0.iter();
             if let Some(first) = iter.next() {
                 let mut mn = first.clone();
@@ -764,14 +783,13 @@ where
         let (retained_count, nominal_capacity, weighted_count) = compactors
             .iter()
             .try_fold(
-                (0u32, 0u32, 0u64),
+                (0usize, 0usize, 0u64),
                 |(retained, capacity, weighted), compactor| {
+                    let level_items = u64::try_from(compactor.num_items()).ok()?;
                     Some((
                         retained.checked_add(compactor.num_items())?,
                         capacity.checked_add(compactor.nominal_capacity())?,
-                        weighted.checked_add(
-                            (compactor.num_items() as u64).checked_mul(compactor.weight())?,
-                        )?,
+                        weighted.checked_add(level_items.checked_mul(compactor.weight())?)?,
                     ))
                 },
             )
@@ -804,7 +822,7 @@ where
             max_nom_size: 0,
             num_retained: 0,
             compactors: vec![],
-            promotion_buf: Vec::with_capacity(k as usize),
+            promotion_buf: Vec::with_capacity(usize::from(k)),
             min_item: None,
             max_item: None,
         };
@@ -822,7 +840,8 @@ where
     }
 
     fn compress(&mut self) {
-        for h in 0..self.compactors.len() {
+        let mut h = 0;
+        while h < self.compactors.len() {
             if self.compactors[h].num_items() >= self.compactors[h].nominal_capacity() {
                 if h + 1 >= self.compactors.len() {
                     self.grow();
@@ -832,10 +851,11 @@ where
                     self.compactors[h + 1].sort();
                     self.compactors[h + 1].merge_sorted(&self.promotion_buf);
                 }
-                self.update_max_nom_size();
-                self.update_num_retained();
             }
+            h += 1;
         }
+        self.update_max_nom_size();
+        self.update_num_retained();
     }
 
     fn update_max_nom_size(&mut self) {

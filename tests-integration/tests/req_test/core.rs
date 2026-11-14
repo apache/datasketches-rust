@@ -184,7 +184,7 @@ fn estimation_mode_compresses_and_keeps_min_max() {
     assert!(!sketch.is_empty());
     assert!(sketch.is_estimation_mode());
     assert_eq!(sketch.n(), n);
-    assert_that!(sketch.num_retained(), lt(n as u32));
+    assert_that!(sketch.num_retained(), lt(n as usize));
     assert_eq!(sketch.min_item().copied(), Some(req_f64(0.0)));
     assert_eq!(sketch.max_item().copied(), Some(req_f64((n - 1) as f64)));
 

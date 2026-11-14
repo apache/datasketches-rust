@@ -16,16 +16,19 @@
 // under the License.
 
 use std::collections::HashSet;
+use std::hash::BuildHasher;
+use std::hash::Hasher;
 
+use crate::common::random::random_u64;
 use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::hash::check_seed_hash;
-use crate::thetacommon::EntrySketch;
-use crate::thetacommon::KeySketch;
-use crate::thetacommon::SketchEntry;
-use crate::thetacommon::constants::MAX_THETA;
-use crate::thetacommon::sketch_state::CompactSketchState;
-use crate::thetacommon::sketch_state::ThetaFamilySketchMetadata;
+use crate::thetafamily::common::EntrySketch;
+use crate::thetafamily::common::KeySketch;
+use crate::thetafamily::common::SketchEntry;
+use crate::thetafamily::common::constants::MAX_THETA;
+use crate::thetafamily::common::sketch_state::CompactSketchState;
+use crate::thetafamily::common::sketch_state::ThetaFamilySketchMetadata;
 
 /// Computes `a and not b` for Theta-family sketch views.
 ///
@@ -81,7 +84,7 @@ where
     let theta = a_theta.min(b_theta);
 
     let entries: Vec<A::Entry> = if b_num_retained == 0 {
-        a.entries().filter(|entry| entry.hash() < theta).collect()
+        retain_not_in_b(a, theta, a_ordered, |_| false)
     } else if a_ordered && b_ordered {
         // Both inputs are sorted ascending by hash: merge-scan without a hash set. Only
         // B hashes below theta can exclude an A entry (A entries are all < theta), so
@@ -105,8 +108,14 @@ where
             }
         }
         entries
+    } else if let Some(b_table) = b.hash_table() {
+        // Mutable B sketches already own an open-addressed hash table populated through
+        // MurmurHash3. Probing it directly avoids scanning B or allocating a temporary set; keys
+        // in B at or above theta are harmless because A entries are screened by theta first.
+        retain_not_in_b(a, theta, a_ordered, |hash| b_table.entry(hash).is_some())
     } else {
-        let mut b_keys: HashSet<u64> = HashSet::with_capacity(b_num_retained);
+        let mut b_keys: HashSet<u64, FoldHashState> =
+            HashSet::with_capacity_and_hasher(b_num_retained, FoldHashState::new());
         for hash in b.hashes() {
             if hash < theta {
                 b_keys.insert(hash);
@@ -114,37 +123,39 @@ where
                 break;
             }
         }
-
-        let mut entries = vec![];
-        for entry in a.entries() {
-            let hash = entry.hash();
-            if hash < theta {
-                if !b_keys.contains(&hash) {
-                    entries.push(entry);
-                }
-            } else if a_ordered {
-                break;
-            }
-        }
-        entries
+        retain_not_in_b(a, theta, a_ordered, |hash| b_keys.contains(&hash))
     };
 
     if entries.is_empty() && theta == MAX_THETA {
         return Ok(CompactSketchState::empty(seed_hash));
     }
 
-    let mut entries = entries;
-    if ordered && !a_ordered && entries.len() > 1 {
-        entries.sort_unstable_by_key(SketchEntry::hash);
-    }
-    let out_ordered = ordered || a_ordered || (entries.len() == 1 && theta == MAX_THETA);
-
-    Ok(CompactSketchState::non_empty(
-        entries,
-        theta,
-        seed_hash,
-        out_ordered,
+    Ok(CompactSketchState::compact(
+        entries, theta, seed_hash, a_ordered, ordered,
     ))
+}
+
+fn retain_not_in_b<A>(
+    a: A,
+    theta: u64,
+    a_ordered: bool,
+    b_contains: impl Fn(u64) -> bool,
+) -> Vec<A::Entry>
+where
+    A: EntrySketch,
+{
+    let mut entries = vec![];
+    for entry in a.entries() {
+        let hash = entry.hash();
+        if hash < theta {
+            if !b_contains(hash) {
+                entries.push(entry);
+            }
+        } else if a_ordered {
+            break;
+        }
+    }
+    entries
 }
 
 fn copy_to_compact_state<S>(sketch: S, ordered: bool) -> CompactSketchState<S::Entry>
@@ -163,10 +174,59 @@ where
         } => (seed_hash, theta, ordered),
     };
 
-    let mut entries: Vec<S::Entry> = sketch.entries().collect();
-    if ordered && !input_ordered && entries.len() > 1 {
-        entries.sort_unstable_by_key(SketchEntry::hash);
+    let entries = sketch.entries().collect();
+    CompactSketchState::compact(entries, theta, seed_hash, input_ordered, ordered)
+}
+
+const FOLD_MULTIPLIER: u64 = 0x9E37_79B9_7F4A_7C15;
+
+#[inline]
+fn folded_multiply(x: u64, y: u64) -> u64 {
+    let product = u128::from(x) * u128::from(y);
+    (product as u64) ^ ((product >> 64) as u64)
+}
+
+/// Per-operation random state for hashing pre-hashed 64-bit sketch keys.
+///
+/// Keys in Theta and Tuple sketches are already uniform MurmurHash3 outputs, so SipHash is
+/// unnecessary overhead, but compact sketches can be deserialized from untrusted bytes whose raw
+/// hashes were chosen to collide. Seeding a 128-bit folded multiply from the thread-local PRNG on
+/// each call prevents crafted inputs from forcing worst-case probe chains.
+struct FoldHashState(u64);
+
+impl FoldHashState {
+    #[inline]
+    fn new() -> Self {
+        Self(random_u64())
     }
-    let out_ordered = ordered || input_ordered || (entries.len() == 1 && theta == MAX_THETA);
-    CompactSketchState::non_empty(entries, theta, seed_hash, out_ordered)
+}
+
+impl BuildHasher for FoldHashState {
+    type Hasher = FoldHasher;
+
+    #[inline]
+    fn build_hasher(&self) -> FoldHasher {
+        FoldHasher(self.0)
+    }
+}
+
+struct FoldHasher(u64);
+
+impl Hasher for FoldHasher {
+    #[inline]
+    fn finish(&self) -> u64 {
+        self.0
+    }
+
+    #[inline]
+    fn write(&mut self, bytes: &[u8]) {
+        for &byte in bytes {
+            self.0 = folded_multiply(self.0 ^ u64::from(byte), FOLD_MULTIPLIER);
+        }
+    }
+
+    #[inline]
+    fn write_u64(&mut self, value: u64) {
+        self.0 = folded_multiply(self.0 ^ value, FOLD_MULTIPLIER);
+    }
 }
