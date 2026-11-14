@@ -64,6 +64,10 @@ impl BloomFilterBuilder {
     /// remains valid, though the actual false-positive probability can exceed `fpp`. An `fpp` of
     /// `1.0` creates the minimal allocation: 64 bits and 1 hash function.
     ///
+    /// Sizing accounts for the integer hash count using the standard Bloom filter probability
+    /// model; actual false-positive rates can vary. To match an existing filter's configuration,
+    /// use [`with_size`](Self::with_size) with its capacity and hash count, and set the same seed.
+    ///
     /// # Examples
     ///
     /// ```
@@ -134,8 +138,14 @@ impl BloomFilterBuilder {
                 }
 
                 let n = max_items as f64;
-                let ln2_squared = std::f64::consts::LN_2 * std::f64::consts::LN_2;
-                let bits = (-n * fpp.ln() / ln2_squared).ceil();
+                let log_fpp = fpp.ln();
+                let num_hashes = (-log_fpp / std::f64::consts::LN_2)
+                    .ceil()
+                    .clamp(f64::from(MIN_NUM_HASHES), f64::from(MAX_NUM_HASHES))
+                    as u16;
+                let k = f64::from(num_hashes);
+                // Solve p = (1 - exp(-k*n/m))^k for m after choosing an integer k.
+                let bits = (-k * n / (-(log_fpp / k).exp()).ln_1p()).ceil();
                 if bits > MAX_NUM_BITS as f64 {
                     return Err(Error::invalid_argument(format!(
                         "target accuracy requires {bits:.0} bits, but at most {MAX_NUM_BITS} are supported"
@@ -143,10 +153,6 @@ impl BloomFilterBuilder {
                 }
 
                 let num_bits = (bits as u64).max(MIN_NUM_BITS);
-                let num_hashes = (num_bits as f64 / n * std::f64::consts::LN_2)
-                    .ceil()
-                    .clamp(f64::from(MIN_NUM_HASHES), f64::from(MAX_NUM_HASHES))
-                    as u16;
                 (num_bits, num_hashes)
             }
             SizingMode::Size {

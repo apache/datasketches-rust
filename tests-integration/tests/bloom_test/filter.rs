@@ -368,6 +368,30 @@ fn builder_validation_and_word_rounding() {
 }
 
 #[test]
+fn accuracy_sizing_accounts_for_integer_hash_count() {
+    for fpp in [
+        f64::from_bits(1),
+        0.01,
+        0.1,
+        0.5,
+        0.9,
+        1.0 - f64::EPSILON,
+        1.0,
+    ] {
+        let filter = BloomFilterBuilder::with_accuracy(10_000, fpp)
+            .build()
+            .unwrap();
+        let k = f64::from(filter.num_hashes());
+        let occupancy = -(-k * 10_000.0 / filter.capacity() as f64).exp_m1();
+        let modeled_fpp = occupancy.powi(i32::from(filter.num_hashes()));
+        assert!(
+            modeled_fpp <= fpp * (1.0 + 1e-12),
+            "{filter:?}, target {fpp}"
+        );
+    }
+}
+
+#[test]
 fn serialized_bit_layout_matches_cross_language_vector() {
     let expected = decode_hex(concat!(
         "04011500030000002923000000000000",
