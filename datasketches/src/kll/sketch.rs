@@ -182,17 +182,18 @@ impl<T: Clone + Ord> KllSketch<T> {
     ///
     /// # Errors
     ///
-    /// Returns an error if the combined stream weight exceeds [`u64::MAX`].
+    /// Returns an error without modifying the sketch if the two sketches have different `m`
+    /// or their combined stream weight exceeds [`u64::MAX`].
     pub fn merge(&mut self, other: &KllSketch<T>) -> Result<(), Error> {
-        if other.is_empty() {
-            return Ok(());
-        }
-
         if self.m != other.m {
             return Err(Error::invalid_argument(format!(
                 "cannot merge sketches with different m values: {} and {}",
                 self.m, other.m
             )));
+        }
+
+        if other.is_empty() {
+            return Ok(());
         }
         let final_n = self.n.checked_add(other.n).ok_or_else(|| {
             Error::invalid_argument(format!(
@@ -1093,4 +1094,31 @@ fn general_compress<T: Clone + Ord>(
 
     levels_out.truncate(current_num_levels);
     levels_out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::error::ErrorKind;
+
+    #[test]
+    fn test_merge_rejects_empty_sketch_with_different_m() {
+        let mut sketch = KllSketch::<i64>::new(200).unwrap();
+        for item in 0..1000 {
+            sketch.update(item);
+        }
+        let before = sketch.clone();
+
+        // `new` and `deserialize` only produce the default m, so set it directly.
+        let mut other = KllSketch::<i64>::new(200).unwrap();
+        other.m = DEFAULT_M + 2;
+        assert!(other.is_empty());
+
+        let err = sketch.merge(&other).unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::InvalidArgument);
+        assert!(
+            sketch == before,
+            "a rejected merge must not modify the sketch"
+        );
+    }
 }
