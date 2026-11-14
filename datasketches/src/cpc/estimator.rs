@@ -438,12 +438,12 @@ mod tests {
     //    FM85 ICON (Inverted Coupon Number) estimator by numerically inverting the expected coupon
     //    count `E[C | N] = K * sum_{col=1..=128} (1 - (1 - 1/(K*2^col))^N)`, together with a
     //    validation sweep comparing `icon_estimate` against `exact_icon_estimate`.
-    // 2. `icon_estimator.hpp` / `IconPolynomialCoefficients.java` (offline polynomial generator):
-    //    Only the fitted degree-19 coefficient matrix `ICON_POLYNOMIAL_COEFFICIENTS` and the
-    //    constants `0.7940236163830469`, `2.0`, and `66.774757` were checked into C/C++/Java. The
-    //    offline fitting procedure was reverse-engineered from `icon_estimate`'s evaluation
-    //    formula, the Maclaurin series of `N(C) / C`, and the error profile beyond `5.7 * K`; see
-    //    `fit_icon_polynomial_row` below.
+    // 2. `icon_estimator.hpp` / `IconPolynomialCoefficients.java`: only the fitted degree-19
+    //    coefficient matrix `ICON_POLYNOMIAL_COEFFICIENTS` and the constants `0.7940236163830469`,
+    //    `2.0`, and `66.774757` were checked into C/C++/Java; the offline fitting script was not.
+    //    What `icon_estimate`'s evaluation formula, the Maclaurin series of `N(C) / C`, and the
+    //    error profile beyond `5.7 * K` reveal about that script is documented next to
+    //    `fit_icon_polynomial_row` below, including what remains unknown.
     // 3. `cpc_confidence.hpp` / `CpcConfidence.java` (offline Monte Carlo characterization):
     //    Defines the theoretical asymptotic relative standard error constants (`ICON_ERROR_CONSTANT
     //    = ln 2` and `HIP_ERROR_CONSTANT = sqrt((ln 2) / 2)`) alongside the empirical
@@ -531,41 +531,53 @@ mod tests {
     // 2. Reconstructed generator for `ICON_POLYNOMIAL_COEFFICIENTS`
     // -------------------------------------------------------------------------
     //
-    // How `ICON_POLYNOMIAL_COEFFICIENTS` and its constants were reverse-engineered:
+    // What the stored coefficients reveal about the offline fit, and what they do not:
     //
-    // * Pre-conditioned target function: In `icon_estimate`, for `2 <= C <= threshold * K`:
-    //   `N_approx(K, C) = C * (1 + (C / K)^3 / 66.774757) * P_{lg_k}(C / (2 * K))`. Hence row
-    //   `lg_k` of `ICON_POLYNOMIAL_COEFFICIENTS` is a degree-19 polynomial in `x = C / (2 * K)`
-    //   approximating the smooth ratio `g_K(x) = N_exact(K, C) / (C * (1 + (C / K)^3 /
-    //   66.774757))`. Without the cubic pre-conditioner, `N_exact(K, C) / C` grows by > 8x over `C
-    //   / K in [0, 6]` as it transitions into `0.794 * K * 2^(C / K)`; dividing by `1 + (C / K)^3 /
-    //   66.774757` flattens `g_K(x)` into `[0.89, 1.48]` so a degree-19 polynomial achieves `<
-    //   2e-7` relative error everywhere. Scaling the argument by `1 / (2 * K)` maps `C in [0, 6 *
-    //   K]` onto `x in [0, 3]` instead of `[0, 6]`, keeping `x^19` bounded by `3^19 ≈ 1.16e9`
-    //   rather than `6^19 ≈ 6.09e14`.
+    // * Pre-conditioned target function: for `2 <= C <= threshold * K`, `icon_estimate` returns
+    //   `C*(1+(C/K)^3/66.774757)*P(x)` with `x = C / (2 * K)`, so row `lg_k` of
+    //   `ICON_POLYNOMIAL_COEFFICIENTS` is a degree-19 polynomial approximating the ratio
+    //   `g_K(x)=N_exact/(C*(1+(C/K)^3/66.774757))`. Without the cubic pre-conditioner, `N_exact/C`
+    //   grows by more than 8x over `C/K` in `[0, 6]` as it transitions into `0.794*K*2^(C/K)`; with
+    //   it, `g_K` stays within `[0.89, 1.48]`, and the stored rows reach a maximum relative error
+    //   of about `2e-7` on `[2, threshold * K]`.
+    //
+    //   The argument `x = C / (2 * K)` maps `C in [0, 6 * K]` onto `[0, 3]` instead of `[0, 6]`,
+    //   keeping `x^19` bounded by `3^19 ≈ 1.16e9` rather than `6^19 ≈ 6.09e14`. Where the value
+    //   `66.774757` comes from is not known.
     //
     // * Maclaurin series check on the leading columns: For `K -> inf` and `lambda = N / K -> 0`,
     //   `E[C] / K = sum_{j>=1} (1 - exp(-lambda * 2^-j)) = lambda - lambda^2/6 + lambda^3/42 -
     //   ...`. Series inversion yields `N / C = 1 + (C/K)/6 + 2*(C/K)^2/63 + ... = 1 + x/3 +
     //   8*x^2/63 + ...`. Dividing by `1 + 8*x^3 / 66.774757` preserves the degree-0..2 Maclaurin
-    //   terms, explaining why columns 0, 1, 2 of `ICON_POLYNOMIAL_COEFFICIENTS` converge to `1`,
-    //   `1/3`, and `8/63` as `lg_k` increases.
+    //   terms, so columns 0, 1, 2 of `ICON_POLYNOMIAL_COEFFICIENTS` should approximate `1`, `1/3`,
+    //   and `8/63`. They do so only approximately: `a_0` approaches `1` like `1 - O(1 / K)`, but
+    //   `a_1` wanders at the `1e-5` level and `a_2` plateaus near `0.1267` for `lg_k >= 8` instead
+    //   of `0.12698`, because least squares optimizes uniform accuracy on `[0, 3]` rather than
+    //   Taylor accuracy at `0`.
     //
-    // * Fitting domain `C in [1, 6 * K]` (`x in (0, 3]`) and sample grid transition at `lg_k = 8`:
-    //   Evaluating the stored rows past the runtime threshold (`5.6 * K` or `5.7 * K`) shows that
-    //   their relative error against `exact_icon_estimate` stays flat (`<= 2e-7`) all the way up to
-    //   `C = 6.0 * K` (`x = 3.0`) and diverges sharply immediately above `6.0 * K`. Thus the
-    //   polynomials were fit on `C in [1, 6 * K]`, using `[5.6 * K, 6.0 * K]` as a boundary guard
-    //   band against endpoint oscillation (Runge phenomenon). Furthermore, a visible step in the
-    //   high-degree monomials between `lg_k = 7` (`a_19 ≈ 4.28e-5`) and `lg_k = 8` (`a_19 ≈
-    //   2.91e-5`) reveals the sample-grid transition:
-    //   - For `lg_k <= 7` (`6 * K <= 768`), ordinary least squares over *every integer* `C = 1 ..=
-    //     6 * K` reproduces the stored polynomial to `< 2e-8` relative prediction difference (and
-    //     matches all 20 monomials directly up to the `~1e12` condition number of the
-    //     unorthogonalized Vandermonde basis on `[0, 3]`).
-    //   - For `lg_k >= 8` (`6 * K` up to `4e8`), evaluating every integer is infeasible, so the
-    //     offline script switches to dense low integers plus geometrically spaced `C` values up to
-    //     `6 * K` (the same `max(c + 1, ...)` stepping pattern used in `IconEstimatorTest.java`).
+    // * Fitting domain `C in [1, 6 * K]` (`x in (0, 3]`): evaluating the stored rows past the
+    //   runtime threshold (`5.6 * K` or `5.7 * K`) shows that their relative error against
+    //   `exact_icon_estimate` stays at the `1e-7` level up to exactly `C = 6.0 * K` and degrades
+    //   abruptly beyond it (for `lg_k = 4`: `1.3e-8` at `C = 96`, `2.2e-6` at `C = 97`). The
+    //   polynomials were therefore fit up to `6 * K`, leaving `[5.6 * K, 6.0 * K]` as a guard band
+    //   against endpoint oscillation.
+    //
+    // * Sample grid for `lg_k <= 7` (`6 * K <= 768`): ordinary least squares on `g_K` over every
+    //   integer `C = 1 ..= 6 * K` reproduces the stored coefficients within `0.07%` to `1.4%` and
+    //   the stored polynomial to `< 2e-8` relative prediction difference, despite the `~1e12`
+    //   condition number of the monomial basis on `[0, 3]`. The agreement is discriminating: moving
+    //   either end of the grid by one integer, dropping `C = 1` (where the exact estimator returns
+    //   `N = 1` by definition), or halving the grid spacing makes the coefficient agreement at
+    //   least 4x (`lg_k = 6`) to 59x (`lg_k = 5`) worse. The weighting is less certain: a
+    //   relative-error-weighted fit agrees slightly better (`0.63%`) at `lg_k = 4`.
+    //
+    // * Sample grid for `lg_k >= 8`: not identified. A discontinuity between `lg_k = 7` and `8`
+    //   (`a_2`: `0.12534 -> 0.12667`; `a_19`: `4.28e-5 -> 2.91e-5`) and the irregular high-order
+    //   coefficients afterwards suggest that the procedure changed, plausibly to a sampled grid,
+    //   but neither exhaustive integer grids nor the dense-then-geometric grid of
+    //   `icon_fitting_grid` reproduce the stored coefficients (deviations of 14% to 65%). For these
+    //   rows the test only demonstrates functional equivalence: a fit of the same form attains the
+    //   same `~1e-7` accuracy.
 
     /// Solves the overdetermined linear least-squares problem `min_a ||V * a - y||_2` (`m >= n`)
     /// via Householder QR factorization without external linear-algebra dependencies.
@@ -630,14 +642,18 @@ mod tests {
     }
 
     /// Generates the sample grid of coupon counts `C in [1, 6 * K]` for fitting row `lg_k`.
+    ///
+    /// For `lg_k <= 7` this is the exhaustive integer grid that reproduces the stored
+    /// coefficients. For `lg_k >= 8` the original grid is unknown; the dense-then-geometric grid
+    /// below is an assumption that reproduces the accuracy of the stored rows, not their
+    /// coefficients.
     fn icon_fitting_grid(lg_k: usize) -> Vec<u64> {
         let k = 1_u64 << lg_k;
         let max_c = 6 * k;
         if lg_k <= 7 {
-            // Exact exhaustive integer grid used by the original generator for small `K`.
             (1..=max_c).collect()
         } else {
-            // Dense small integers followed by geometric stepping across `[1, 6 * K]`.
+            // Assumed grid: dense small integers, then 4% geometric steps up to `6 * K`.
             let mut grid = Vec::with_capacity(512);
             let mut c = 1_u64;
             while c < max_c {
@@ -653,8 +669,9 @@ mod tests {
         }
     }
 
-    /// Reconstructs the 20 degree-19 polynomial coefficients for `lg_k` from first principles by
-    /// fitting least squares to `exact_icon_estimate` on `C in [1, 6 * K]`.
+    /// Fits the 20 degree-19 polynomial coefficients for `lg_k` by least squares against
+    /// `exact_icon_estimate` on `C in [1, 6 * K]` (see `icon_fitting_grid` for which rows this
+    /// reproduces coefficient by coefficient).
     fn fit_icon_polynomial_row(lg_k: usize) -> Vec<f64> {
         let kf = (1_u64 << lg_k) as f64;
         let col_ln1p = precompute_col_ln1p(kf);
@@ -735,9 +752,15 @@ mod tests {
 
     #[test]
     fn icon_exponential_constant_matches_theory() {
-        // Asymptotic FM85 theory: `E[C]/K = log2(N/K) + gamma/ln(2) - 1/2 + P(log2(N/K)) + O(K/N)`,
-        // so ignoring the tiny 1-periodic oscillation `P(u)` (`|P(u)| < 1e-5`) gives
-        // `N_hat / (K * 2^(C/K)) -> sqrt(2) * exp(-gamma) ≈ 0.7940236163832829`.
+        // Asymptotic FM85 theory (Mellin transform of the harmonic sum `E[C] / K`):
+        // `E[C]/K = log2(N/K) + gamma/ln(2) - 1/2 + P(log2(N/K)) + o(1)`, where the 1-periodic
+        // oscillation `P` has a relative amplitude in `N` of about `1.09e-6`, namely
+        // `2 * |Gamma(2*pi*i / ln 2)|`.
+        //
+        // Ignoring `P` gives the limit `N_hat / (K * 2^(C/K)) -> sqrt(2) * exp(-gamma)`, which is
+        // `0.7940236163832829`. The stored constant differs from this closed form by `2.4e-13`
+        // (about 1000 ULPs); where its last digits come from is unknown, and the tolerance merely
+        // covers that gap.
         let theoretical = SQRT_2 * (-EULER_MASCHERONI).exp();
         assert_that!(ICON_EXPONENTIAL_CONSTANT, near(theoretical, 3e-13));
 
@@ -757,8 +780,10 @@ mod tests {
 
     #[test]
     fn reconstruct_icon_polynomial_coefficients() {
-        // Verify asymptotic Maclaurin limits on the highest-`lg_k` stored row (`lg_k = 26`):
-        // `N / C = 1 + (1/3)*x + (8/63)*x^2 + ...` where `x = C / (2 * K)`.
+        // The highest-`lg_k` stored row (`lg_k = 26`) is consistent with the Maclaurin series
+        // `N / C = 1 + (1/3)*x + (8/63)*x^2 + ...` (`x = C / (2 * K)`) only up to the bias of a
+        // least-squares fit on `[0, 3]`: the stored `a_0`, `a_1`, `a_2` differ from the series by
+        // `2.9e-9`, `5.0e-6`, and `3.4e-4`, and `a_2` does not converge with growing `lg_k`.
         let last_row_start = ICON_POLYNOMIAL_NUM_COEFFICIENTS * (ICON_MAX_LOG_K - ICON_MIN_LOG_K);
         assert_that!(
             ICON_POLYNOMIAL_COEFFICIENTS[last_row_start],
@@ -794,9 +819,10 @@ mod tests {
                 }
             }
 
-            // Across every `lg_k = 4..=26`, verify that the reconstructed polynomial agrees with
-            // both the checked-in `ICON_POLYNOMIAL_COEFFICIENTS` row and `exact_icon_estimate`
-            // throughout the active evaluation interval `[2, threshold * K]`.
+            // Across every `lg_k = 4..=26`, verify that the fitted polynomial agrees with both
+            // the checked-in `ICON_POLYNOMIAL_COEFFICIENTS` row and `exact_icon_estimate`
+            // throughout the active evaluation interval `[2, threshold * K]`. For `lg_k >= 8` this
+            // shows functional equivalence only; the coefficients themselves are not reproduced.
             let k = 1_u64 << lg_k;
             let kf = k as f64;
             let threshold_factor = if lg_k < 14 { 5.7 } else { 5.6 };
