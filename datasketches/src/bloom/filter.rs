@@ -564,23 +564,21 @@ impl BitArray {
     }
 
     #[inline(always)]
-    fn contains_and_insert(&mut self, h0: u64, h1: u64, num_hashes: u16) -> bool {
+    fn contains_and_insert(&mut self, mut h0: u64, h1: u64, num_hashes: u16) -> bool {
         let capacity = self.capacity();
         let multiplier = self.multiplier;
         let shift = self.shift;
         let words = &mut *self.words;
-        let mut bits_added = 0_u64;
-        for i in 1..=num_hashes {
-            let (word_index, mask) = probe_slot(h0, h1, i, capacity, multiplier, shift);
-            let word = &mut words[word_index];
-            if (*word & mask) == 0 {
-                *word |= mask;
-                bits_added += 1;
+        for i in 0..num_hashes {
+            let (word_index, mask) = probe_slot(h0, h1, 1, capacity, multiplier, shift);
+            h0 = h0.wrapping_add(h1);
+            if (words[word_index] & mask) == 0 {
+                words[word_index] |= mask;
+                self.bits_used += 1;
+                // Continue after the first missing probe using the branchless insertion loop.
+                self.insert(h0, h1, num_hashes - i - 1);
+                return false;
             }
-        }
-        if bits_added != 0 {
-            self.bits_used += bits_added;
-            return false;
         }
         true
     }
