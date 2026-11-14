@@ -517,14 +517,11 @@ impl BitArray {
 
     fn from_words(bits_used: u64, words: Box<[u64]>) -> Self {
         let capacity = (words.len() as u64) << 6;
-        // `capacity` is a positive multiple of 64, so `2^(l - 1) < capacity <= 2^l`
-        // and `ceil(2^(63 + l) / capacity)` fits in `u64`.
-        let l = 64 - (capacity - 1).leading_zeros();
-        let multiplier = (1_u128 << (63 + l)).div_ceil(u128::from(capacity)) as u64;
+        let (multiplier, shift) = reduction_parameters(capacity);
         Self {
             bits_used,
             multiplier,
-            shift: l - 1,
+            shift,
             words,
         }
     }
@@ -633,4 +630,41 @@ fn bit_index(shifted: u64, capacity: u64, multiplier: u64, shift: u32) -> u64 {
     // Granlund-Montgomery invariant division: (multiplier * shifted) >> (63 + l).
     let quotient = ((u128::from(shifted) * u128::from(multiplier)) >> 64) as u64 >> shift;
     shifted - quotient * capacity
+}
+
+fn reduction_parameters(capacity: u64) -> (u64, u32) {
+    // `capacity` is a positive multiple of 64, so `2^(l - 1) < capacity <= 2^l`
+    // and `ceil(2^(63 + l) / capacity)` fits in `u64`.
+    let l = 64 - (capacity - 1).leading_zeros();
+    let multiplier = (1_u128 << (63 + l)).div_ceil(u128::from(capacity)) as u64;
+    (multiplier, l - 1)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bit_indexes_match_remainder_at_boundaries() {
+        for capacity in [64, 192, 95_872, (1 << 36) + 64, MAX_NUM_BITS] {
+            let (multiplier, shift) = reduction_parameters(capacity);
+            let max_hash = (1_u64 << 63) - 1;
+            let last_multiple = max_hash - max_hash % capacity;
+            for hash in [
+                0,
+                capacity - 1,
+                capacity,
+                capacity + 1,
+                last_multiple - 1,
+                last_multiple,
+                max_hash,
+            ] {
+                assert_eq!(
+                    bit_index(hash, capacity, multiplier, shift),
+                    hash % capacity,
+                    "capacity {capacity}, hash {hash}"
+                );
+            }
+        }
+    }
 }

@@ -154,7 +154,7 @@ fn test_cached_num_bits_set_is_validated_or_recomputed() {
 }
 
 #[test]
-fn test_invalid_num_longs_are_rejected() {
+fn test_invalid_bit_array_lengths_are_rejected() {
     const NUM_LONGS_OFFSET: usize = 16;
 
     let empty = BloomFilterBuilder::with_accuracy(100, 0.01)
@@ -175,4 +175,11 @@ fn test_invalid_num_longs_are_rejected() {
             );
         }
     }
+
+    let mut truncated = non_empty.serialize();
+    truncated.pop();
+    assert_eq!(
+        BloomFilter::deserialize(&truncated).unwrap_err().kind(),
+        ErrorKind::InvalidData
+    );
 }
