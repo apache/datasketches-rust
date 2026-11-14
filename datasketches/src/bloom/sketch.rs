@@ -74,6 +74,7 @@ impl BloomFilter {
     /// assert!(filter.contains("apple")); // true - possibly present (and known to be inserted here)
     /// assert!(!filter.contains("grape")); // false - definitely not present
     /// ```
+    #[inline]
     pub fn contains<T: Hash>(&self, item: T) -> bool {
         if self.is_empty() {
             return false;
@@ -102,23 +103,30 @@ impl BloomFilter {
     /// let was_present = filter.contains_and_insert("apple");
     /// assert!(was_present); // Now it's in the set
     /// ```
+    #[inline]
     pub fn contains_and_insert<T: Hash>(&mut self, item: T) -> bool {
         let (h0, h1) = self.compute_hash(item);
-        let mut were_all_set = true;
-        for i in 1..=self.num_hashes {
-            let bit_index = self.compute_bit_index(h0, h1, i);
+        let num_hashes = self.num_hashes;
+        let reducer = self.reducer;
+        let bit_array = &mut *self.bit_array;
+        let mut bits_added = 0;
+        for i in 1..=num_hashes {
+            let bit_index = reducer.bit_index(h0, h1, i);
             let word_index = bit_index >> 6;
             let bit_offset = bit_index & 63;
             let mask = 1u64 << bit_offset;
-            let word = &mut self.bit_array[word_index];
+            let word = &mut bit_array[word_index];
 
             if (*word & mask) == 0 {
                 *word |= mask;
-                self.num_bits_set += 1;
-                were_all_set = false;
+                bits_added += 1;
             }
         }
-        were_all_set
+        if bits_added != 0 {
+            self.num_bits_set += bits_added;
+            return false;
+        }
+        true
     }
 
     /// Inserts an item into the filter.
@@ -140,19 +148,25 @@ impl BloomFilter {
     ///
     /// assert!(filter.contains("apple"));
     /// ```
+    #[inline]
     pub fn insert<T: Hash>(&mut self, item: T) {
         let (h0, h1) = self.compute_hash(item);
-        for i in 1..=self.num_hashes {
-            let bit_index = self.compute_bit_index(h0, h1, i);
+        let num_hashes = self.num_hashes;
+        let reducer = self.reducer;
+        let bit_array = &mut *self.bit_array;
+        let mut bits_added = 0;
+        for i in 1..=num_hashes {
+            let bit_index = reducer.bit_index(h0, h1, i);
             let word_index = bit_index >> 6;
             let bit_offset = bit_index & 63;
             let mask = 1u64 << bit_offset;
-            let word = &mut self.bit_array[word_index];
+            let word = &mut bit_array[word_index];
             let was_set = (*word & mask) != 0;
 
             *word |= mask;
-            self.num_bits_set += u64::from(!was_set);
+            bits_added += u64::from(!was_set);
         }
+        self.num_bits_set += bits_added;
     }
 
     /// Resets the filter to its initial empty state.
@@ -342,6 +356,7 @@ impl BloomFilter {
     ///
     /// This is the case when no items were inserted, after [`reset()`](Self::reset), or when a
     /// set operation cleared every bit.
+    #[inline]
     pub fn is_empty(&self) -> bool {
         self.num_bits_set == 0
     }
@@ -618,37 +633,21 @@ impl BloomFilter {
     }
 
     /// Checks if all k bits are set for the given hash values.
+    #[inline]
     fn check_bits(&self, h0: u64, h1: u64) -> bool {
-        for i in 1..=self.num_hashes {
-            let bit_index = self.compute_bit_index(h0, h1, i);
-            if !self.get_bit(bit_index) {
+        let num_hashes = self.num_hashes;
+        let reducer = self.reducer;
+        let bit_array = &*self.bit_array;
+        for i in 1..=num_hashes {
+            let bit_index = reducer.bit_index(h0, h1, i);
+            let word_index = bit_index >> 6;
+            let bit_offset = bit_index & 63;
+            let mask = 1u64 << bit_offset;
+            if (bit_array[word_index] & mask) == 0 {
                 return false;
             }
         }
         true
-    }
-
-    /// Computes a bit index using double hashing (Kirsch-Mitzenmacher).
-    ///
-    /// Formula:
-    /// ```text
-    /// hash_index = ((h0 + i * h1) >> 1) % capacity_bits
-    /// ```
-    ///
-    /// The right shift by 1 improves bit-distribution. The index `i` is 1-based.
-    fn compute_bit_index(&self, h0: u64, h1: u64, i: u16) -> usize {
-        // The conversion to `usize` truncates the hash on 32-bit targets. Filters serialized
-        // there depend on it, so it is part of the bit layout.
-        let hash = h0.wrapping_add(u64::from(i).wrapping_mul(h1)) as usize;
-        self.reducer.remainder((hash >> 1) as u64) as usize
-    }
-
-    /// Gets the value of a single bit.
-    fn get_bit(&self, bit_index: usize) -> bool {
-        let word_index = bit_index >> 6; // Equivalent to bit_index / 64
-        let bit_offset = bit_index & 63; // Equivalent to bit_index % 64
-        let mask = 1u64 << bit_offset;
-        (self.bit_array[word_index] & mask) != 0
     }
 
     /// Returns an estimate of the filter's memory usage in bytes.
@@ -690,6 +689,16 @@ impl CapacityReducer {
             multiplier,
             shift: l - 1,
         }
+    }
+
+    /// Computes a bit index using double hashing (Kirsch-Mitzenmacher):
+    /// `((h0 + i * h1) >> 1) % capacity`, where `i` is 1-based.
+    #[inline]
+    fn bit_index(self, h0: u64, h1: u64, i: u16) -> usize {
+        // The conversion to `usize` truncates the hash on 32-bit targets. Filters serialized
+        // there depend on it, so it is part of the bit layout.
+        let hash = h0.wrapping_add(u64::from(i).wrapping_mul(h1)) as usize;
+        self.remainder((hash >> 1) as u64) as usize
     }
 
     /// Returns `hash % capacity` for every `hash < 2^63`, using division by an invariant integer
@@ -939,7 +948,7 @@ mod tests {
                     for i in [1, 2, 3, 7, 64, 1_000, u16::MAX] {
                         let hash = h0.wrapping_add(u64::from(i).wrapping_mul(h1)) as usize;
                         assert_eq!(
-                            filter.compute_bit_index(h0, h1, i),
+                            filter.reducer.bit_index(h0, h1, i),
                             (hash >> 1) % capacity,
                             "capacity {capacity}, h0 {h0}, h1 {h1}, i {i}"
                         );
@@ -963,6 +972,7 @@ mod tests {
             95_872,
             131_072,
             3_000_064,
+            1 << 36,
             (1 << 36) + 64,
             (1 << 37) - 64,
             max - 64,
@@ -972,12 +982,15 @@ mod tests {
         for capacity in capacities {
             assert_eq!(capacity % 64, 0);
             let reducer = CapacityReducer::new(capacity);
+            let max_quotient = ((1u64 << 63) - 1) / capacity;
             let mut hashes = vec![
                 0,
                 1,
                 capacity - 1,
                 capacity,
                 capacity + 1,
+                max_quotient * capacity - 1,
+                max_quotient * capacity,
                 (1 << 63) - capacity,
                 (1 << 63) - 1,
             ];
