@@ -64,10 +64,6 @@ impl BloomFilterBuilder {
     /// remains valid, though the actual false-positive probability can exceed `fpp`. An `fpp` of
     /// `1.0` creates the minimal allocation: 64 bits and 1 hash function.
     ///
-    /// Sizing accounts for the integer hash count using the standard Bloom filter probability
-    /// model; actual false-positive rates can vary. To match an existing filter's configuration,
-    /// use [`with_size`](Self::with_size) with its capacity and hash count, and set the same seed.
-    ///
     /// # Examples
     ///
     /// ```
@@ -139,13 +135,17 @@ impl BloomFilterBuilder {
 
                 let n = max_items as f64;
                 let log_fpp = fpp.ln();
-                let num_hashes = (-log_fpp / std::f64::consts::LN_2)
-                    .ceil()
-                    .clamp(f64::from(MIN_NUM_HASHES), f64::from(MAX_NUM_HASHES))
-                    as u16;
+
+                // For n items, m bits and k independent hash probes, a bit stays unset with
+                // probability (1 - 1/m)^(k*n) ≈ exp(-k*n/m), so p ≈ (1 - exp(-k*n/m))^k.
+                // At the continuous optimum half the bits are set: p = 2^-k, or k = -ln(p)/ln(2).
+                let num_hashes = (-log_fpp / std::f64::consts::LN_2).ceil().max(1.0) as u16;
                 let k = f64::from(num_hashes);
-                // Solve p = (1 - exp(-k*n/m))^k for m after choosing an integer k.
-                let bits = (-k * n / (-(log_fpp / k).exp()).ln_1p()).ceil();
+
+                // With integer k fixed, solve for m = -k*n / ln(1 - p^(1/k)).
+                let bit_set_probability = (log_fpp / k).exp();
+                let log_unset_probability = (-bit_set_probability).ln_1p();
+                let bits = (-k * n / log_unset_probability).ceil();
                 if bits > MAX_NUM_BITS as f64 {
                     return Err(Error::invalid_argument(format!(
                         "target accuracy requires {bits:.0} bits, but at most {MAX_NUM_BITS} are supported"
