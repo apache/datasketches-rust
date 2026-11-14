@@ -228,26 +228,17 @@ impl XorFilterBuilder {
     ///
     /// Values are hashed independently of the construction seed.
     pub fn new(filter_type: XorFilterType) -> Self {
-        Self::with_seed(filter_type, DEFAULT_CONSTRUCTION_SEED)
-    }
-
-    /// Creates a builder with the given fingerprint width and initial construction seed.
-    ///
-    /// The `seed` determines which layouts to try during construction. Values are hashed
-    /// independently of this construction seed.
-    pub fn with_seed(filter_type: XorFilterType, seed: u64) -> Self {
         Self {
             filter_type,
-            seed,
+            seed: DEFAULT_CONSTRUCTION_SEED,
             hashes: Vec::new(),
         }
     }
 
-    /// Sets the initial construction seed used by [`build`](Self::build).
+    /// Sets the initial construction seed used by [`build`](Self::build) (default: `0`).
     ///
     /// The `seed` determines which layouts to try during construction. Values are hashed
-    /// independently of this construction seed, so reseeding allows retrying construction
-    /// without losing accumulated hashes.
+    /// independently of this construction seed.
     ///
     /// # Examples
     ///
@@ -255,55 +246,52 @@ impl XorFilterBuilder {
     /// use datasketches::xor::XorFilterBuilder;
     /// use datasketches::xor::XorFilterType;
     ///
-    /// let mut builder = XorFilterBuilder::new(XorFilterType::Xor8);
-    /// builder.update_values(["apple", "banana"]);
-    ///
-    /// let first = builder.seed(1).build().unwrap();
-    /// let second = builder.seed(2).build().unwrap();
-    /// assert_ne!(first.seed(), second.seed());
-    /// assert!(second.contains("apple"));
+    /// let filter = XorFilterBuilder::new(XorFilterType::Xor8)
+    ///     .seed(42)
+    ///     .update_values(["apple", "banana"])
+    ///     .build()
+    ///     .unwrap();
+    /// assert!(filter.contains("apple"));
     /// ```
     #[inline]
-    pub fn seed(&mut self, seed: u64) -> &mut Self {
+    pub fn seed(mut self, seed: u64) -> Self {
         self.seed = seed;
         self
     }
 
     /// Adds a value to the builder.
     #[inline]
-    pub fn update<T: Hash>(&mut self, item: T) -> &mut Self {
+    pub fn update<T: Hash>(self, item: T) -> Self {
         self.update_hash(hash_item(item))
     }
 
     /// Adds a precomputed 64-bit hash to the builder.
     #[inline]
-    pub fn update_hash(&mut self, hash: u64) -> &mut Self {
+    pub fn update_hash(mut self, hash: u64) -> Self {
         self.hashes.push(hash);
         self
     }
 
     /// Adds a batch of values to the builder.
-    pub fn update_values<T: Hash>(&mut self, items: impl IntoIterator<Item = T>) -> &mut Self {
+    pub fn update_values<T: Hash>(self, items: impl IntoIterator<Item = T>) -> Self {
         self.update_hashes(items.into_iter().map(hash_item))
     }
 
     /// Adds a batch of precomputed 64-bit hashes to the builder.
-    pub fn update_hashes(&mut self, hashes: impl IntoIterator<Item = u64>) -> &mut Self {
+    pub fn update_hashes(mut self, hashes: impl IntoIterator<Item = u64>) -> Self {
         self.hashes.extend(hashes);
         self
     }
 
-    /// Sorts and deduplicates accumulated hashes in place and creates an [`XorFilter`].
-    ///
-    /// Accumulated hashes are retained across calls, so callers can update [`seed`](Self::seed)
-    /// or add more entries and build again.
+    /// Consumes the builder, sorts and deduplicates accumulated hashes, and creates an
+    /// [`XorFilter`].
     ///
     /// # Errors
     ///
     /// Returns [`InvalidArgument`](crate::error::ErrorKind::InvalidArgument) if the distinct
     /// input is too large or construction cannot find a valid layout within `100` internal
     /// seed attempts.
-    pub fn build(&mut self) -> Result<XorFilter, Error> {
+    pub fn build(mut self) -> Result<XorFilter, Error> {
         self.hashes.sort_unstable();
         self.hashes.dedup();
         XorFilter::from_hashes_with_seed(&self.hashes, self.filter_type, self.seed)
@@ -359,8 +347,7 @@ impl XorFilter {
     /// deduplicate and rejects duplicate hashes.
     ///
     /// Starting from `seed`, construction tries up to `100` internal mixing seeds derived from it
-    /// until it finds a valid peeling layout, and stores the winning mixing seed in the filter
-    /// (accessible via [`seed`](Self::seed)). The same set of distinct hashes, filter type, and
+    /// until it finds a valid peeling layout. The same set of distinct hashes, filter type, and
     /// initial `seed` produce the same filter regardless of input order. Query with
     /// [`contains_hash`](Self::contains_hash) using the same hash function.
     ///
@@ -479,22 +466,6 @@ impl XorFilter {
         self.fingerprints.filter_type()
     }
 
-    /// Returns the winning mixing seed stored in this filter.
-    ///
-    /// This value is encoded in the serialized preamble and may differ from the initial
-    /// construction seed passed to [`XorFilterBuilder::with_seed`] or
-    /// [`XorFilter::from_hashes_with_seed`].
-    #[must_use]
-    pub fn seed(&self) -> u64 {
-        self.seed
-    }
-
-    /// Returns the total number of fingerprint slots in this filter.
-    #[must_use]
-    pub fn capacity(&self) -> u64 {
-        (self.segment_length as u64) * u64::from(NUM_HASHES)
-    }
-
     /// Returns the estimated in-memory size of the filter in bytes.
     #[must_use]
     pub fn estimated_size(&self) -> usize {
@@ -607,7 +578,6 @@ impl fmt::Debug for XorFilter {
         f.debug_struct("XorFilter")
             .field("filter_type", &self.filter_type())
             .field("seed", &self.seed)
-            .field("capacity", &self.capacity())
             .field("segment_length", &self.segment_length)
             .field("fingerprint_bytes", &self.fingerprints.byte_len())
             .finish()

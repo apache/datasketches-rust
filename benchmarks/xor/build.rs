@@ -43,9 +43,12 @@ fn xorf_distinct_8(bencher: Bencher, cardinality: usize) {
 fn deduplicate_8(bencher: Bencher, rows: usize) {
     let keys = repeated_hashes(rows);
     bencher.bench_local(|| {
-        let mut builder = XorFilterBuilder::new(XorFilterType::Xor8);
-        builder.update_hashes(keys.iter().copied());
-        black_box(builder.build().unwrap())
+        black_box(
+            XorFilterBuilder::new(XorFilterType::Xor8)
+                .update_hashes(keys.iter().copied())
+                .build()
+                .unwrap(),
+        )
     });
 }
 
@@ -73,9 +76,12 @@ fn xorf_distinct_16(bencher: Bencher, cardinality: usize) {
 fn deduplicate_16(bencher: Bencher, rows: usize) {
     let keys = repeated_hashes(rows);
     bencher.bench_local(|| {
-        let mut builder = XorFilterBuilder::new(XorFilterType::Xor16);
-        builder.update_hashes(keys.iter().copied());
-        black_box(builder.build().unwrap())
+        black_box(
+            XorFilterBuilder::new(XorFilterType::Xor16)
+                .update_hashes(keys.iter().copied())
+                .build()
+                .unwrap(),
+        )
     });
 }
 
@@ -103,9 +109,12 @@ fn xorf_distinct_32(bencher: Bencher, cardinality: usize) {
 fn deduplicate_32(bencher: Bencher, rows: usize) {
     let keys = repeated_hashes(rows);
     bencher.bench_local(|| {
-        let mut builder = XorFilterBuilder::new(XorFilterType::Xor32);
-        builder.update_hashes(keys.iter().copied());
-        black_box(builder.build().unwrap())
+        black_box(
+            XorFilterBuilder::new(XorFilterType::Xor32)
+                .update_hashes(keys.iter().copied())
+                .build()
+                .unwrap(),
+        )
     });
 }
 

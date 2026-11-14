@@ -41,16 +41,14 @@ fn java_images_round_trip_byte_for_byte() {
         (XorFilterType::Xor16, JAVA_XOR16_IMAGE),
     ] {
         let expected = decode_hex(image);
-        let mut builder = XorFilterBuilder::with_seed(ty, 42);
-        builder.update_values(values);
-        let built = builder.build().unwrap();
+        let built = XorFilterBuilder::new(ty)
+            .seed(42)
+            .update_values(values)
+            .build()
+            .unwrap();
 
         let restored = XorFilter::deserialize(&expected).unwrap();
         assert_eq!(restored.filter_type(), ty);
-        assert_eq!(built.seed(), 0xbdd7_3226_2feb_6e95);
-        assert_eq!(restored.seed(), built.seed());
-        assert_eq!(built.capacity(), 36);
-        assert_eq!(restored.capacity(), built.capacity());
         assert_eq!(restored.serialize(), expected);
         assert_eq!(built.serialize(), expected);
         for value in values {
@@ -77,10 +75,6 @@ fn serialization_round_trips_standard_fingerprint_types() {
 
             let restored = XorFilter::deserialize(&bytes).unwrap();
             assert_eq!(restored.filter_type(), ty);
-            assert_eq!(restored.seed(), original.seed());
-            assert_eq!(restored.capacity(), original.capacity());
-            assert_eq!(restored.capacity() % 3, 0);
-            assert!(restored.capacity() >= count);
             assert_eq!(restored, original);
             for hash in 0..count {
                 assert!(restored.contains_hash(hash));
@@ -191,17 +185,13 @@ fn java_utf8_and_raw_byte_inputs_match() {
         ),
     ];
     for (kind, image) in images {
-        let mut builder = XorFilterBuilder::with_seed(kind, 42);
+        let mut builder = XorFilterBuilder::new(kind).seed(42);
         for bytes in [b"hello".as_slice(), "数据🔎".as_bytes(), &[], &[0, 1, 255]] {
-            builder.update(raw_bytes::from_slice(bytes));
+            builder = builder.update(raw_bytes::from_slice(bytes));
         }
         let built = builder.build().unwrap();
         let expected = decode_hex(image);
         let restored = XorFilter::deserialize(&expected).unwrap();
-        assert_eq!(built.seed(), 0xbdd7_3226_2feb_6e95);
-        assert_eq!(restored.seed(), built.seed());
-        assert_eq!(built.capacity(), 36);
-        assert_eq!(restored.capacity(), built.capacity());
         assert_eq!(restored.serialize(), expected);
         assert_eq!(built.serialize(), expected);
         for bytes in [b"hello".as_slice(), "数据🔎".as_bytes(), &[], &[0, 1, 255]] {
@@ -223,8 +213,6 @@ fn xor32_image_preserves_full_width_little_endian_slots() {
     ));
     let filter = XorFilter::deserialize(&bytes).unwrap();
     assert_eq!(filter.filter_type(), XorFilterType::Xor32);
-    assert_eq!(filter.seed(), 0x0123_4567_89ab_cdef);
-    assert_eq!(filter.capacity(), 3);
     assert!(filter.contains_hash(0));
     assert_eq!(filter.serialize(), bytes);
 }
