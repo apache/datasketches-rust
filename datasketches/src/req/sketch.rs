@@ -224,11 +224,7 @@ where
     /// Returns `InvalidArgument` if `rank` is NaN or outside `[0.0, 1.0]`, even if the sketch is
     /// empty.
     pub fn quantile(&self, rank: f64, criteria: SearchCriteria) -> Result<Option<T>, Error> {
-        if !(0.0..=1.0).contains(&rank) {
-            return Err(Error::invalid_argument(format!(
-                "rank {rank} must be in [0, 1]"
-            )));
-        }
+        validate_rank(rank)?;
         if self.is_empty() {
             return Ok(None);
         }
@@ -260,11 +256,7 @@ where
     ) -> Result<Option<Vec<T>>, Error> {
         // Reject invalid ranks before paying for the view build.
         for &r in ranks {
-            if !(0.0..=1.0).contains(&r) {
-                return Err(Error::invalid_argument(format!(
-                    "rank {r} must be in [0, 1]"
-                )));
-            }
+            validate_rank(r)?;
         }
         if self.is_empty() {
             return Ok(None);
@@ -412,29 +404,41 @@ where
     /// Returns the lower bound for the normalized `rank` at the requested confidence level.
     ///
     /// In exact mode, including an empty sketch, the bound equals `rank`.
-    pub fn rank_lower_bound(&self, rank: f64, num_std_dev: NumStdDev) -> f64 {
-        self.compute_rank_lower_bound(
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidArgument` if `rank` is NaN or outside `[0.0, 1.0]`, even if the sketch is
+    /// empty.
+    pub fn rank_lower_bound(&self, rank: f64, num_std_dev: NumStdDev) -> Result<f64, Error> {
+        validate_rank(rank)?;
+        Ok(self.compute_rank_lower_bound(
             self.k,
             self.compactors.len() as u8,
             rank,
             num_std_dev.as_u8(),
             self.n,
             matches!(self.rank_accuracy, RankAccuracy::HighRank),
-        )
+        ))
     }
 
     /// Returns the upper bound for the normalized `rank` at the requested confidence level.
     ///
     /// In exact mode, including an empty sketch, the bound equals `rank`.
-    pub fn rank_upper_bound(&self, rank: f64, num_std_dev: NumStdDev) -> f64 {
-        self.compute_rank_upper_bound(
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidArgument` if `rank` is NaN or outside `[0.0, 1.0]`, even if the sketch is
+    /// empty.
+    pub fn rank_upper_bound(&self, rank: f64, num_std_dev: NumStdDev) -> Result<f64, Error> {
+        validate_rank(rank)?;
+        Ok(self.compute_rank_upper_bound(
             self.k,
             self.compactors.len() as u8,
             rank,
             num_std_dev.as_u8(),
             self.n,
             matches!(self.rank_accuracy, RankAccuracy::HighRank),
-        )
+        ))
     }
 
     const FIXED_RSE_FACTOR: f64 = 0.084;
@@ -865,4 +869,13 @@ where
     fn update_num_retained(&mut self) {
         self.num_retained = self.compactors.iter().map(|c| c.num_items()).sum();
     }
+}
+
+fn validate_rank(rank: f64) -> Result<(), Error> {
+    if !(0.0..=1.0).contains(&rank) {
+        return Err(Error::invalid_argument(format!(
+            "rank {rank} must be in [0, 1]"
+        )));
+    }
+    Ok(())
 }
