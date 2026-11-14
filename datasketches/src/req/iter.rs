@@ -17,6 +17,8 @@
 
 //! Iterator implementations for REQ sketch inspection.
 
+use std::fmt;
+
 use crate::req::compactor::Compactor;
 
 /// Iterator over (item, weight) pairs in a REQ sketch.
@@ -30,6 +32,23 @@ pub struct ReqSketchIterator<'a, T> {
     current_level: usize,
     current_level_iter: Option<std::slice::Iter<'a, T>>,
     current_weight: u64,
+}
+
+impl<T> fmt::Debug for ReqSketchIterator<'_, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ReqSketchIterator")
+            .field("current_level", &self.current_level)
+            .field("num_levels", &self.compactors.len())
+            .field("current_weight", &self.current_weight)
+            .field(
+                "remaining_in_level",
+                &self
+                    .current_level_iter
+                    .as_ref()
+                    .map_or(0, |iter| iter.len()),
+            )
+            .finish()
+    }
 }
 
 impl<'a, T: Clone + Ord> ReqSketchIterator<'a, T> {
@@ -81,5 +100,25 @@ impl<'a, T: Clone + Ord> Iterator for ReqSketchIterator<'a, T> {
 
             self.current_level_iter.as_ref()?;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fmt;
+
+    use super::ReqSketchIterator;
+
+    #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+    struct NonDebugItem(u8);
+
+    #[test]
+    fn debug_does_not_require_item_debug() {
+        fn assert_debug<T: fmt::Debug>(value: &T) {
+            let _ = format!("{value:?}");
+        }
+
+        let iter: ReqSketchIterator<'_, NonDebugItem> = ReqSketchIterator::new(&[]);
+        assert_debug(&iter);
     }
 }

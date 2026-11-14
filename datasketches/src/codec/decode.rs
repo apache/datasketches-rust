@@ -20,6 +20,7 @@ use std::io::Cursor;
 use std::io::Read;
 
 /// A wrapper around a byte slice that provides methods for reading various types of data from it.
+#[derive(Debug, Clone)]
 pub struct SketchSlice<'a> {
     slice: Cursor<&'a [u8]>,
 }
@@ -37,7 +38,7 @@ impl SketchSlice<'_> {
     #[inline]
     pub fn advance(&mut self, n: u64) {
         let pos = self.slice.position();
-        self.slice.set_position(pos + n);
+        self.slice.set_position(pos.saturating_add(n));
     }
 
     /// Returns the not-yet-read portion of the underlying slice.
@@ -199,5 +200,32 @@ impl SketchSlice<'_> {
         let mut buf = [0u8; 8];
         self.read_exact(&mut buf)?;
         Ok(f64::from_be_bytes(buf))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io;
+
+    use super::SketchSlice;
+
+    #[test]
+    fn advance_saturates_on_overflow() {
+        let mut at_start = SketchSlice::new(&[1, 2, 3, 4]);
+        at_start.advance(u64::MAX);
+        assert!(at_start.remaining().is_empty());
+        assert_eq!(
+            at_start.read_u8().unwrap_err().kind(),
+            io::ErrorKind::UnexpectedEof
+        );
+
+        let mut after_read = SketchSlice::new(&[1, 2, 3, 4]);
+        assert_eq!(after_read.read_u8().unwrap(), 1);
+        after_read.advance(u64::MAX);
+        assert!(after_read.remaining().is_empty());
+        assert_eq!(
+            after_read.read_u8().unwrap_err().kind(),
+            io::ErrorKind::UnexpectedEof
+        );
     }
 }
