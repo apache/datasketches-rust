@@ -41,9 +41,10 @@
 //! use datasketches::xor::XorFilterBuilder;
 //! use datasketches::xor::XorFilterType;
 //!
-//! let mut builder = XorFilterBuilder::new(XorFilterType::Xor8);
-//! builder.update_values(["apple", "banana"]);
-//! let filter = builder.build().unwrap();
+//! let filter = XorFilterBuilder::new(XorFilterType::Xor8)
+//!     .update_values(["apple", "banana"])
+//!     .build()
+//!     .unwrap();
 //!
 //! assert!(filter.contains("apple"));
 //! ```

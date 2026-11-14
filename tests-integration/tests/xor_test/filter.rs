@@ -91,7 +91,7 @@ fn default_seed_constructors_and_builder_clone_behave_consistently() {
     ] {
         let mut default_builder = XorFilterBuilder::new(ty);
         default_builder.update_values([1_u64, 2, 3]);
-        let cloned_builder = default_builder.clone();
+        let mut cloned_builder = default_builder.clone();
         default_builder.update(4_u64);
 
         let mut zero_seeded_builder = XorFilterBuilder::with_seed(ty, 0);
@@ -206,14 +206,93 @@ fn distinct_construction_is_bounded_and_does_not_deduplicate() {
         XorFilterType::Xor16,
         XorFilterType::Xor32,
     ] {
-        let error = XorFilter::from_hashes(&[1, 2, 1], kind).unwrap_err();
-        assert_eq!(error.kind(), ErrorKind::InvalidArgument);
-        assert!(error.message().contains("duplicate hashes"));
+        for duplicate_hashes in [
+            [1_u64, 2, 1].as_slice(),
+            &[1, 1, 1],
+            &[1, 2, 1, 3, 1],
+            &[1, 1, 1, 1],
+        ] {
+            let error = XorFilter::from_hashes(duplicate_hashes, kind).unwrap_err();
+            assert_eq!(error.kind(), ErrorKind::InvalidArgument);
+            assert!(error.message().contains("duplicate hashes"));
+
+            let seeded_error =
+                XorFilter::from_hashes_with_seed(duplicate_hashes, kind, 42).unwrap_err();
+            assert_eq!(seeded_error.kind(), ErrorKind::InvalidArgument);
+            assert!(seeded_error.message().contains("duplicate hashes"));
+        }
+
         for keys in [vec![], vec![0], vec![u64::MAX], vec![0, u64::MAX]] {
             let f = XorFilter::from_hashes(&keys, kind).unwrap();
+            assert_eq!(f.capacity() % 3, 0);
+            assert!(f.capacity() >= keys.len() as u64);
             for key in keys {
                 assert!(f.contains_hash(key));
             }
+        }
+    }
+}
+
+#[test]
+fn builder_chaining_and_reseed_preserve_accumulated_inputs() {
+    for ty in [
+        XorFilterType::Xor8,
+        XorFilterType::Xor16,
+        XorFilterType::Xor32,
+    ] {
+        let chained = XorFilterBuilder::new(ty)
+            .seed(42)
+            .update("alpha")
+            .update_hash(99)
+            .update_values(["beta", "gamma"])
+            .update_hashes([100, 101])
+            .build()
+            .unwrap();
+
+        let mut imperative = XorFilterBuilder::with_seed(ty, 42);
+        imperative.update("alpha");
+        imperative.update_hash(99);
+        imperative.update_values(["beta", "gamma"]);
+        imperative.update_hashes([100, 101]);
+        let imperative_filter = imperative.build().unwrap();
+
+        assert_eq!(chained, imperative_filter);
+        assert_eq!(chained.seed(), imperative_filter.seed());
+        assert_eq!(chained.capacity(), imperative_filter.capacity());
+        assert_eq!(chained.capacity() % 3, 0);
+        for value in ["alpha", "beta", "gamma"] {
+            assert!(chained.contains(value));
+        }
+        for hash in [99, 100, 101] {
+            assert!(chained.contains_hash(hash));
+        }
+
+        let mut builder = XorFilterBuilder::new(ty);
+        builder.update_values(["alpha", "beta", "gamma"]);
+        let first = builder.build().unwrap();
+        let reseeded = builder.seed(42).build().unwrap();
+        assert_ne!(reseeded.seed(), first.seed());
+        assert_eq!(reseeded.capacity(), first.capacity());
+        assert_eq!(
+            reseeded,
+            XorFilterBuilder::with_seed(ty, 42)
+                .update_values(["gamma", "alpha", "beta"])
+                .build()
+                .unwrap(),
+        );
+
+        builder.seed(7);
+        builder.update("delta");
+        let extended = builder.build().unwrap();
+        assert_eq!(
+            extended,
+            XorFilterBuilder::with_seed(ty, 7)
+                .update_values(["alpha", "beta", "gamma", "delta"])
+                .build()
+                .unwrap(),
+        );
+        for value in ["alpha", "beta", "gamma", "delta"] {
+            assert!(extended.contains(value));
         }
     }
 }
@@ -235,15 +314,27 @@ fn construction_recovers_after_an_unpeelable_first_attempt() {
         XorFilterType::Xor16,
         XorFilterType::Xor32,
     ] {
+        let single_attempt = XorFilter::from_hashes_with_seed(&[keys[0]], kind, 1).unwrap();
         let filter = XorFilter::from_hashes_with_seed(&keys, kind, 1).unwrap();
+        assert_ne!(filter.seed(), single_attempt.seed());
+        assert_eq!(filter.capacity() % 3, 0);
+        assert!(filter.capacity() >= keys.len() as u64);
         for &key in &keys {
             assert!(filter.contains_hash(key));
         }
         let mut reversed = keys.clone();
         reversed.reverse();
-        assert_eq!(
-            filter,
-            XorFilter::from_hashes_with_seed(&reversed, kind, 1).unwrap()
-        );
+        let reversed_filter = XorFilter::from_hashes_with_seed(&reversed, kind, 1).unwrap();
+        assert_eq!(filter, reversed_filter);
+        assert_eq!(filter.seed(), reversed_filter.seed());
+        assert_eq!(filter.capacity(), reversed_filter.capacity());
+
+        let builder_filter = XorFilterBuilder::with_seed(kind, 99)
+            .update_hashes(keys.iter().copied())
+            .seed(1)
+            .build()
+            .unwrap();
+        assert_eq!(builder_filter, filter);
+        assert_eq!(builder_filter.seed(), filter.seed());
     }
 }
