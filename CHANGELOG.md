@@ -24,7 +24,7 @@ All significant changes to this project will be documented in this file.
 
 ### Performance improvements
 
-* Speed up `BloomFilter::insert` when adding new items to filters configured with multiple hash functions; single-hash, repeated-item, and saturated-filter workloads see smaller gains.
+* Speed up `BloomFilter::contains`, `BloomFilter::insert`, and `BloomFilter::contains_and_insert` across filter saturation levels, particularly for primitive and scalar-wrapped integer inputs and multi-hash configurations; longer byte-slice inputs on CPUs with fast hardware dividers see smaller gains.
 * Reduce `FrequentItemsSketch` update cost on streams of distinct items while growing toward `max_map_size`, particularly for keys such as strings or byte slices whose comparisons cost more than integers; updates once at capacity are unchanged.
 * Speed up `HllUnion::update` when adopting a high-cardinality `HllType::Hll8` sketch within `lg_max_k` or merging multiple high-cardinality sketches before querying or serializing the union; workloads that query after every merge are roughly unchanged.
 * Speed up `KllSketch::rank` in estimation mode while keeping exact-mode query latency unchanged.
