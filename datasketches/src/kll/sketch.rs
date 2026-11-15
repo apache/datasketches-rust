@@ -50,7 +50,7 @@ use crate::error::Error;
 /// KLL sketch for estimating quantiles and ranks.
 ///
 /// See the [kll module level documentation](crate::kll) for more.
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq)]
 pub struct KllSketch<T> {
     k: u16,
     m: u8,

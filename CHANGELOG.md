@@ -26,7 +26,7 @@ All significant changes to this project will be documented in this file.
 
 ### Improvements
 
-* Complete standard trait implementations (`Clone`, `Eq`, `Hash`, `Debug`, and `Default`) across configuration enums, builders, `Error`, codec helpers, `ReqSketchIterator`, `TDigest`, `CountMinSketch`, and `KllSketch`, and saturate `SketchSlice::advance` on offset overflow.
+* Implement `Clone` for `TDigest`, `ThetaSketchBuilder`, `TupleSketchBuilder`, and `TupleUnionBuilder`; derive `Eq` and `Hash` across `NumStdDev`, `ResizeFactor`, and `SearchCriteria`; implement `Debug` for `ReqSketchIterator`, `SketchSlice`, and `SketchBytes` (plus `Clone` and `Default` on codec types); and saturate `SketchSlice::advance` on offset overflow.
 * Improve the readability of `Debug` output across sketches, filters, views, and stateful set operators, and implement `Debug` for `TDigest`.
 
 ### Performance improvements

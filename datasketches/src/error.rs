@@ -57,7 +57,6 @@ impl fmt::Display for ErrorKind {
 /// assert_eq!(err.kind(), ErrorKind::InvalidArgument);
 /// assert_eq!(err.message(), "bad input");
 /// ```
-#[derive(Clone, PartialEq, Eq)]
 pub struct Error {
     kind: ErrorKind,
     message: String,
