@@ -885,19 +885,23 @@ mod tests {
         // `10_000 * sqrt(K) * eps / kappa`, where `eps` is the one-sided `Phi(-kappa)` tail
         // quantile of `estimate / N - 1` (high side, used by the lower bound) or of
         // `1 - estimate / N` (low side, used by the upper bound) at `N = 1000 * K`. Being random
-        // measurements, the tables can only be re-measured statistically, not regenerated, so
-        // check how the bounds use them.
+        // measurements, the tables can only be re-measured statistically, not regenerated, and
+        // this test does not verify their values or the coverage of the resulting intervals. It
+        // checks only how the bounds use them: every bound brackets the estimate, respects `C`,
+        // and widens strictly as `kappa` grows.
         for lg_k in 4..=16_u8 {
             let c = 3 * (1_u32 << lg_k);
             let icon_est = estimate(true, 0.0, lg_k, c);
-            for kappa in [NumStdDev::One, NumStdDev::Two, NumStdDev::Three] {
-                let lb_icon = lower_bound(true, 0.0, lg_k, c, kappa);
-                let ub_icon = upper_bound(true, 0.0, lg_k, c, kappa);
-                assert!(lb_icon >= c as f64 && lb_icon <= icon_est && icon_est <= ub_icon);
-
-                let lb_hip = lower_bound(false, icon_est, lg_k, c, kappa);
-                let ub_hip = upper_bound(false, icon_est, lg_k, c, kappa);
-                assert!(lb_hip >= c as f64 && lb_hip <= icon_est && icon_est <= ub_hip);
+            for (merge_flag, hip_est) in [(true, 0.0), (false, icon_est)] {
+                let mut prev_lb = icon_est;
+                let mut prev_ub = icon_est;
+                for kappa in [NumStdDev::One, NumStdDev::Two, NumStdDev::Three] {
+                    let lb = lower_bound(merge_flag, hip_est, lg_k, c, kappa);
+                    let ub = upper_bound(merge_flag, hip_est, lg_k, c, kappa);
+                    assert!(lb >= c as f64 && lb < prev_lb && ub > prev_ub);
+                    prev_lb = lb;
+                    prev_ub = ub;
+                }
             }
         }
     }
