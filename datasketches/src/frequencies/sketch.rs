@@ -158,7 +158,7 @@ impl<T> fmt::Debug for FrequentItemsSketch<T> {
             .field("lg_max_map_size", &self.lg_max_map_size)
             .field("cur_map_cap", &self.cur_map_cap)
             .field("is_empty", &(self.stream_weight == 0))
-            .field("num_active_items", &self.hash_map.num_active())
+            .field("num_retained", &self.hash_map.num_active())
             .field("total_weight", &self.stream_weight)
             .field("maximum_error", &self.offset)
             .finish()
@@ -184,7 +184,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     /// let mut sketch = FrequentItemsSketch::<i64>::new(64).unwrap();
     /// sketch.update(1);
     /// sketch.update(2);
-    /// assert_eq!(sketch.num_active_items(), 2);
+    /// assert_eq!(sketch.num_retained(), 2);
     /// ```
     pub fn new(max_map_size: usize) -> Result<Self, Error> {
         let lg_max_map_size = lg_for_max_map_size(max_map_size)?;
@@ -194,14 +194,14 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     /// Returns `true` if the total stream weight is zero.
     ///
     /// A purge can remove all active items while retaining a non-zero total weight and
-    /// maximum error. Such a sketch is not empty. Use [`Self::num_active_items`] to check
+    /// maximum error. Such a sketch is not empty. Use [`Self::num_retained`] to check
     /// whether any items are retained.
     pub fn is_empty(&self) -> bool {
         self.stream_weight == 0
     }
 
-    /// Returns the number of active items being tracked.
-    pub fn num_active_items(&self) -> usize {
+    /// Returns the number of retained items currently tracked in the map.
+    pub fn num_retained(&self) -> usize {
         self.hash_map.num_active()
     }
 
@@ -642,7 +642,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
             return bytes.into_bytes();
         }
 
-        let active_items = self.num_active_items();
+        let active_items = self.num_retained();
         let active_entries = self.hash_map.active_entries();
 
         let mut bytes = SketchBytes::with_capacity({

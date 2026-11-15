@@ -129,7 +129,7 @@ fn check_purged_round_trip<T: FrequentItemValue>(make_item: impl Fn(i64) -> T) {
         sketch.update(make_item(i));
     }
     assert!(!sketch.is_empty());
-    assert_eq!(sketch.num_active_items(), 0);
+    assert_eq!(sketch.num_retained(), 0);
     assert_eq!(sketch.total_weight(), 193);
     assert_eq!(sketch.maximum_error(), 1);
     assert_eq!(sketch.upper_bound(&make_item(0)), 1);
@@ -140,7 +140,7 @@ fn check_purged_round_trip<T: FrequentItemValue>(make_item: impl Fn(i64) -> T) {
     assert_eq!(bytes[5], 0);
     let mut restored = FrequentItemsSketch::<T>::deserialize(&bytes).unwrap();
     assert!(!restored.is_empty());
-    assert_eq!(restored.num_active_items(), 0);
+    assert_eq!(restored.num_retained(), 0);
     assert_eq!(restored.total_weight(), sketch.total_weight());
     assert_eq!(restored.maximum_error(), sketch.maximum_error());
     assert_eq!(restored.upper_bound(&make_item(0)), 1);
@@ -167,7 +167,7 @@ fn check_purged_compatibility<T: FrequentItemValue>(dir: &str, filename: &str) {
     let bytes = fs::read(serialization_test_data(dir, filename)).unwrap();
     let sketch = FrequentItemsSketch::<T>::deserialize(&bytes).unwrap();
     assert!(!sketch.is_empty());
-    assert_eq!(sketch.num_active_items(), 0);
+    assert_eq!(sketch.num_retained(), 0);
     assert_eq!(sketch.total_weight(), 193);
     assert_eq!(sketch.maximum_error(), 1);
     assert_eq!(sketch.serialize(), bytes);

@@ -77,7 +77,7 @@ fn custom_item_order_controls_queries_and_survives_roundtrip() {
     );
 
     let decoded = KllSketch::<NumericString>::deserialize(&sketch.serialize()).unwrap();
-    assert_eq!(decoded.n(), sketch.n());
+    assert_eq!(decoded.total_weight(), sketch.total_weight());
     assert_eq!(decoded.num_retained(), sketch.num_retained());
     assert_eq!(decoded.min_item().map(|item| item.0.as_str()), Some("1"));
     assert_eq!(decoded.max_item().map(|item| item.0.as_str()), Some("10"));

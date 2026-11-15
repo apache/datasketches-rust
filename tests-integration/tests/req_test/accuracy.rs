@@ -35,7 +35,7 @@ fn rank_space_error_is_bounded() -> Result<(), Error> {
         sketch.update(req_f64(i as f64));
     }
 
-    assert_eq!(sketch.n(), n as u64);
+    assert_eq!(sketch.total_weight(), n as u64);
 
     for rank in [0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99] {
         let quantile = sketch

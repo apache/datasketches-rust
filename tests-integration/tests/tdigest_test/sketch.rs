@@ -31,6 +31,7 @@ fn test_empty() {
     assert!(tdigest.is_empty());
     assert_eq!(tdigest.k(), 10);
     assert_eq!(tdigest.total_weight(), 0);
+    assert_eq!(tdigest.num_retained(), 0);
     assert_eq!(tdigest.min_value(), None);
     assert_eq!(tdigest.max_value(), None);
     assert_eq!(tdigest.rank(0.0).unwrap(), None);
@@ -48,6 +49,7 @@ fn test_empty() {
     assert!(tdigest.is_empty());
     assert_eq!(tdigest.k(), 10);
     assert_eq!(tdigest.total_weight(), 0);
+    assert_eq!(tdigest.num_retained(), 0);
     assert_eq!(tdigest.min_value(), None);
     assert_eq!(tdigest.max_value(), None);
     assert_eq!(tdigest.rank(0.0).unwrap(), None);
@@ -1043,4 +1045,34 @@ fn weight_overflow_preserves_buffer_and_extrema() {
     assert_eq!(target.max_value(), Some(1.0));
     assert_eq!(target.total_weight(), 1);
     assert_eq!(target.serialize(), before);
+}
+
+#[test]
+fn test_num_retained_tracks_buffering_and_compression() {
+    let mut tdigest = TDigestMut::new(10).unwrap();
+    for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        tdigest.update(value);
+    }
+    assert_eq!(tdigest.num_retained(), 0);
+    assert_eq!(tdigest.clone().freeze().num_retained(), 0);
+
+    for value in 0..50 {
+        tdigest.update(f64::from(value));
+    }
+    assert_eq!(tdigest.total_weight(), 50);
+    assert_eq!(tdigest.num_retained(), 50);
+
+    let frozen = tdigest.clone().freeze();
+    assert_eq!(frozen.total_weight(), 50);
+    assert!(frozen.num_retained() > 0 && frozen.num_retained() < 50);
+
+    for value in 50..1_000 {
+        tdigest.update(f64::from(value));
+    }
+    assert_eq!(tdigest.total_weight(), 1_000);
+    assert!(tdigest.num_retained() > 0 && tdigest.num_retained() < 1_000);
+
+    let frozen = tdigest.freeze();
+    assert_eq!(frozen.total_weight(), 1_000);
+    assert!(frozen.num_retained() > 0 && frozen.num_retained() < 1_000);
 }

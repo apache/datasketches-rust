@@ -126,7 +126,7 @@ fn many_small_merges_preserve_count_bounds_and_median() {
         sketch.merge(&batch_sketch).expect("merge should succeed");
     }
 
-    assert_eq!(sketch.n(), 10_000);
+    assert_eq!(sketch.total_weight(), 10_000);
     assert_eq!(sketch.min_item().copied(), Some(req_f64(0.0)));
     assert_eq!(sketch.max_item().copied(), Some(req_f64(9999.0)));
 
@@ -152,7 +152,7 @@ fn merge_larger_k_into_smaller_k_cascades_compaction_across_new_levels() {
 
     target.merge(&source).expect("merge should succeed");
 
-    assert_eq!(target.n(), 500);
+    assert_eq!(target.total_weight(), 500);
     assert!(target.is_estimation_mode());
     assert_that!(target.num_retained(), lt(120));
     let weighted_sum: u64 = target.iter().map(|(_, weight)| weight).sum();
@@ -161,6 +161,6 @@ fn merge_larger_k_into_smaller_k_cascades_compaction_across_new_levels() {
     assert_eq!(target.max_item().copied(), Some(req_f64(499.0)));
 
     let round_trip = ReqSketch::<ReqF64>::deserialize(&target.serialize()).unwrap();
-    assert_eq!(round_trip.n(), target.n());
+    assert_eq!(round_trip.total_weight(), target.total_weight());
     assert_eq!(round_trip.num_retained(), target.num_retained());
 }
