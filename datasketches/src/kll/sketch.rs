@@ -182,12 +182,12 @@ impl<T: Clone + Ord> KllSketch<T> {
     ///
     /// # Errors
     ///
-    /// Returns an error without modifying the sketch if the two sketches have different `m`
-    /// or their combined stream weight exceeds [`u64::MAX`].
+    /// Returns an error without modifying the sketch if the combined stream weight exceeds
+    /// [`u64::MAX`].
     pub fn merge(&mut self, other: &KllSketch<T>) -> Result<(), Error> {
         if self.m != other.m {
             return Err(Error::invalid_argument(format!(
-                "cannot merge sketches with different m values: {} and {}",
+                "cannot merge KLL sketches with different m values: expected {}, got {}",
                 self.m, other.m
             )));
         }
@@ -1116,9 +1116,6 @@ mod tests {
 
         let err = sketch.merge(&other).unwrap_err();
         assert_eq!(err.kind(), ErrorKind::InvalidArgument);
-        assert!(
-            sketch == before,
-            "a rejected merge must not modify the sketch"
-        );
+        assert_eq!(sketch, before);
     }
 }
