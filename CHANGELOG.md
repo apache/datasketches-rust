@@ -10,6 +10,7 @@ All significant changes to this project will be documented in this file.
 * `BloomFilter::capacity` now returns `u64` instead of `usize`; update callers expecting `usize` to use `u64` or convert explicitly.
 * `BloomFilter::contains` and `BloomFilter::contains_and_insert` now take `item: T` (`T: Hash`) by value instead of `&T`, matching `BloomFilter::insert`. Pass `&item` to retain owned values such as `String` or `Vec<u8>` without cloning, and remove explicit turbofish type arguments (or change `T` to `&T`) on borrowed calls such as `contains::<u64>(&value)`.
 * Fix 32-bit (`wasm32`) double hashing in `BloomFilter` to use the full 64-bit hash consistently with 64-bit targets, Java, C++, and Go. 64-bit targets and serialized formats are unchanged; rebuild or re-ingest filters created on 32-bit targets instead of mixing them across versions.
+* Remove `BloomFilter::is_compatible`; handle `InvalidArgument` from `union`, `intersect`, or `difference`, or compare `capacity()`, `num_hashes()`, and `seed()` directly.
 * `CountMinSketch::new` and `CountMinSketch::with_seed` now create serial version 2 sketches, require `num_hashes` in `1..=127`, and emit images that require a version 2 reader. Version 2 enables cross-language interchange when using `i64` counters and the documented input encodings, while existing version 1 images remain readable, updatable, and serializable as version 1. `CountMinSketch::merge` rejects mixing version 1 and version 2 sketches; upgrade readers before writers and rebuild persisted version 1 data from source items to merge it with new sketches.
 * `CpcSketch::max_serialized_bytes` and `ReqSketch::serialized_size_bytes` are removed; serialize the sketch and inspect `len()` on the returned byte buffer when the encoded size is needed.
 * `ThetaJaccardSimilarity::compute` and `TupleJaccardSimilarity::compute` now return `datasketches::common::JaccardSimilarity` instead of `datasketches::thetacommon::JaccardSimilarity`, and `datasketches::thetacommon` is no longer part of the public API.
@@ -42,6 +43,7 @@ All significant changes to this project will be documented in this file.
 * `ReqSketch::merge` now cascades compaction across newly grown levels when a merged sketch overflows the top compactor's nominal capacity.
 * `ReqSketch::deserialize` now returns `InvalidData` for out-of-range or non-finite compactor `section_size_raw` values instead of overflowing section-size rounding.
 * `ThetaJaccardSimilarity` and `TupleJaccardSimilarity` now return `InvalidArgument` instead of `InvalidData` when a non-empty input sketch's seed hash does not match the configured seed.
+* `ThetaANotB::compute` and `TupleANotB::compute` now stamp empty results with the operator's seed hash instead of copying an unchecked seed hash from an empty left input.
 
 ## v0.6.0 (2026-10-29)
 

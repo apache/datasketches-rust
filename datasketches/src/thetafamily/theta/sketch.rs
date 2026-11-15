@@ -186,9 +186,7 @@ impl<'a> ThetaSketchView<'a> {
 impl KeySketch for ThetaSketchView<'_> {
     fn metadata(self) -> ThetaFamilySketchMetadata {
         if self.is_empty() {
-            ThetaFamilySketchMetadata::Empty {
-                seed_hash: self.seed_hash(),
-            }
+            ThetaFamilySketchMetadata::Empty
         } else {
             ThetaFamilySketchMetadata::NonEmpty {
                 seed_hash: self.seed_hash(),

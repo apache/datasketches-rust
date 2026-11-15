@@ -97,6 +97,7 @@ fn test_seed_mismatch_ignored_for_empty_inputs() {
 
     let r = a_not_b.compute(&empty_other_seed, &good, true).unwrap();
     assert!(r.is_empty());
+    assert_eq!(r.seed_hash(), good.seed_hash());
 
     let r = a_not_b.compute(&good, &empty_other_seed, true).unwrap();
     assert_eq!(r.num_retained(), 10);

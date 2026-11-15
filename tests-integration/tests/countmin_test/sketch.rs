@@ -434,9 +434,19 @@ fn test_invalid_buckets_return_error() {
 #[test]
 fn test_merge_incompatible() {
     let mut left = CountMinSketch::<i64>::new(3, 64).unwrap();
-    let right = CountMinSketch::<i64>::new(2, 64).unwrap();
-    let error = left.merge(&right).unwrap_err();
-    assert_eq!(error.kind(), ErrorKind::InvalidArgument);
+    left.update_with_weight("apple", 5);
+    let before = left.clone();
+
+    let incompatible = [
+        CountMinSketch::<i64>::new(2, 64).unwrap(),
+        CountMinSketch::<i64>::new(3, 128).unwrap(),
+        CountMinSketch::<i64>::with_seed(3, 64, 42).unwrap(),
+    ];
+    for other in &incompatible {
+        let error = left.merge(other).unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::InvalidArgument);
+        assert_eq!(left, before);
+    }
 }
 
 #[test]

@@ -20,13 +20,11 @@ use crate::thetafamily::common::constants::MAX_THETA;
 
 /// Observable metadata consumed by shared Theta-family set operations.
 ///
-/// Empty sketches cannot carry a retained count, theta, or ordering claim in this representation.
-/// A non-empty sketch may retain zero entries when theta screened every input.
+/// Empty sketches carry neither a seed hash, retained count, theta, nor ordering claim in this
+/// representation. A non-empty sketch may retain zero entries when theta screened every input.
 #[derive(Clone, Copy, Debug)]
 pub enum ThetaFamilySketchMetadata {
-    Empty {
-        seed_hash: u16,
-    },
+    Empty,
     NonEmpty {
         seed_hash: u16,
         theta: u64,
