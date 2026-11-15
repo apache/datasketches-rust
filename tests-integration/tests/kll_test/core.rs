@@ -96,17 +96,15 @@ fn weight_overflow_preserves_state() {
     let mut sketch = one.clone();
     // Doubling and adding one reaches the exact limit through valid public operations.
     for _ in 0..63 {
-        sketch.merge(&sketch.clone()).unwrap();
+        sketch.merge(&sketch.clone());
         sketch.update(0);
     }
     assert_eq!(sketch.total_weight(), u64::MAX);
     let before = sketch.serialize();
 
+    sketch.merge(&KllSketch::new(8).unwrap());
     assert!(catch_unwind(AssertUnwindSafe(|| sketch.update(1))).is_err());
     assert!(sketch.serialize() == before, "overflow changed the sketch");
-    assert_eq!(
-        sketch.merge(&one).unwrap_err().kind(),
-        ErrorKind::InvalidArgument
-    );
+    assert!(catch_unwind(AssertUnwindSafe(|| sketch.merge(&one))).is_err());
     assert!(sketch.serialize() == before, "overflow changed the sketch");
 }

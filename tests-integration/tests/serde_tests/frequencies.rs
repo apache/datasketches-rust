@@ -222,6 +222,37 @@ fn test_deserialize_rejects_counters_exceeding_stream_weight() {
 }
 
 #[test]
+fn test_deserialize_rejects_zero_item_weight() {
+    let mut sketch = FrequentItemsSketch::<i64>::new(32).unwrap();
+    sketch.update_with_weight(1, 5);
+    let mut corrupt = sketch.serialize();
+    corrupt[32..40].fill(0);
+    let error = FrequentItemsSketch::<i64>::deserialize(&corrupt).unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::InvalidData);
+}
+
+#[test]
+fn test_deserialize_rejects_weights_and_offset_exceeding_stream_weight() {
+    let mut active = FrequentItemsSketch::<i64>::new(32).unwrap();
+    active.update_with_weight(1, 3);
+    active.update_with_weight(2, 4);
+    let mut active_corrupt = active.serialize();
+    active_corrupt[24..32].copy_from_slice(&1u64.to_le_bytes());
+
+    let mut purged = FrequentItemsSketch::<i64>::new(32).unwrap();
+    for item in 0..=(32 * 3 / 4) {
+        purged.update(item);
+    }
+    let mut purged_corrupt = purged.serialize();
+    purged_corrupt[24..32].copy_from_slice(&(purged.total_weight() + 1).to_le_bytes());
+
+    for corrupt in [active_corrupt, purged_corrupt] {
+        let error = FrequentItemsSketch::<i64>::deserialize(&corrupt).unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::InvalidData);
+    }
+}
+
+#[test]
 fn test_deserialize_empty_legacy_flags() {
     let mut bytes = FrequentItemsSketch::<i64>::new(256).unwrap().serialize();
     for flag in [1, 4, 5] {

@@ -719,9 +719,10 @@ impl<T: UnsignedCountMinValue> CountMinSketch<T> {
     ///
     /// A factor of `1.0` leaves the sketch unchanged; `0.5` is equivalent to [`Self::halve`].
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if `decay` is not finite or is outside `(0, 1]`.
+    /// Returns `InvalidArgument` without modifying the sketch if `decay` is NaN or outside
+    /// `(0.0, 1.0]`.
     ///
     /// # Examples
     ///
@@ -730,22 +731,27 @@ impl<T: UnsignedCountMinValue> CountMinSketch<T> {
     ///
     /// let mut sketch = CountMinSketch::<u64>::new(4, 128).unwrap();
     /// sketch.update_with_weight(1i64, 3);
-    /// sketch.decay(0.5);
+    /// sketch.decay(0.5).unwrap();
     /// assert!(sketch.estimate(1i64) >= 1);
     /// ```
-    pub fn decay(&mut self, decay: f64) {
-        assert!(decay > 0.0 && decay <= 1.0, "decay must be within (0, 1]");
+    pub fn decay(&mut self, decay: f64) -> Result<(), Error> {
+        if !(decay > 0.0 && decay <= 1.0) {
+            return Err(Error::invalid_argument(format!(
+                "decay must be in (0, 1], got {decay}"
+            )));
+        }
         if decay == 1.0 {
-            return;
+            return Ok(());
         }
         if decay == 0.5 {
             self.halve();
-            return;
+            return Ok(());
         }
         for c in &mut self.counts {
             *c = c.scale_nonnegative(decay)
         }
         self.total_weight = self.total_weight.scale_nonnegative(decay);
+        Ok(())
     }
 }
 

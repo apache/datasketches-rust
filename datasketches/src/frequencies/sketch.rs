@@ -742,11 +742,19 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
             let value = cursor.read_u64_le().map_err(|error| {
                 Error::insufficient_data_of("frequent item weight", error).with_context("index", i)
             })?;
+            if value == 0 {
+                return Err(Error::deserial("frequent item weight must be positive"));
+            }
             // Reconstructing the map must not overflow or exceed the declared stream weight.
             remaining_weight = remaining_weight
                 .checked_sub(value)
                 .ok_or_else(|| Error::deserial("item weights exceed total stream weight"))?;
             values.push(value);
+        }
+        if offset_val > remaining_weight {
+            return Err(Error::deserial(
+                "item weights and maximum error exceed total stream weight",
+            ));
         }
 
         let items = deserialize_items(cursor, active_items)?;

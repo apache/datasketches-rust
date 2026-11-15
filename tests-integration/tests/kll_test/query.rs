@@ -61,7 +61,7 @@ fn quantile_endpoints_with_large_stream_weight() {
     let mut sketch = KllSketch::<i64>::new(8).unwrap();
     sketch.update(0);
     for _ in 0..53 {
-        sketch.merge(&sketch.clone()).unwrap();
+        sketch.merge(&sketch.clone());
     }
     sketch.update(1);
     assert_eq!(sketch.total_weight(), (1 << 53) + 1);

@@ -30,7 +30,7 @@ fn merge(bencher: Bencher) {
 
     bencher.bench_local(|| {
         let mut left = left.clone();
-        left.merge(black_box(&right)).unwrap();
+        left.merge(black_box(&right));
         black_box(left)
     });
 }

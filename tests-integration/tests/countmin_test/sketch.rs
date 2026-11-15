@@ -225,7 +225,7 @@ fn test_update_and_bounds_with_scaling() {
         estimate + (eps * sketch.total_weight() as f64) as u64
     );
 
-    sketch.decay(0.5);
+    sketch.decay(0.5).unwrap();
     let estimate = sketch.estimate("x");
     let upper = sketch.upper_bound("x");
     let lower = sketch.lower_bound("x");
@@ -289,7 +289,7 @@ fn test_decay() {
     }
 
     const FACTOR: f64 = 0.5;
-    sketch.decay(FACTOR);
+    sketch.decay(FACTOR).unwrap();
 
     for i in 0..1000usize {
         let expected = ((i as f64) * FACTOR).floor() as u64;
@@ -311,7 +311,7 @@ fn test_decay_preserves_large_integer_precision() {
         ] {
             let mut sketch = CountMinSketch::<u64>::new(3, 128).unwrap();
             sketch.update_with_weight("item", weight);
-            sketch.decay(factor);
+            sketch.decay(factor).unwrap();
             assert_eq!(
                 sketch.total_weight(),
                 expected,
@@ -334,7 +334,7 @@ fn decay_truncates_the_exact_binary_product() {
     ] {
         let mut sketch = CountMinSketch::<u64>::new(3, 128).unwrap();
         sketch.update_with_weight("item", weight);
-        sketch.decay(factor);
+        sketch.decay(factor).unwrap();
         assert_eq!(sketch.total_weight(), expected);
         assert_eq!(sketch.estimate("item"), expected);
     }
@@ -349,10 +349,10 @@ fn decay_identity_and_halving_preserve_the_whole_sketch() {
         }
 
         let mut decayed = sketch.clone();
-        decayed.decay(1.0);
+        decayed.decay(1.0).unwrap();
         assert_eq!(sketch_snapshot(&decayed), sketch_snapshot(&sketch));
 
-        decayed.decay(0.5);
+        decayed.decay(0.5).unwrap();
         sketch.halve();
         assert_eq!(sketch_snapshot(&decayed), sketch_snapshot(&sketch));
     }
@@ -361,6 +361,34 @@ fn decay_identity_and_halving_preserve_the_whole_sketch() {
     check([u16::MAX / 2, u16::MAX / 4, 1]);
     check([u32::MAX / 2, u32::MAX / 4, 1]);
     check([u64::MAX / 2, u64::MAX / 4, 1]);
+}
+
+#[test]
+fn decay_rejects_invalid_factors_without_modifying_sketch() {
+    for weight in [0u64, 100] {
+        let mut sketch = CountMinSketch::<u64>::new(3, 128).unwrap();
+        if weight > 0 {
+            sketch.update_with_weight("item", weight);
+        }
+        let before = sketch.clone();
+        for factor in [
+            f64::NAN,
+            0.0,
+            -0.0,
+            -0.5,
+            1.0_f64.next_up(),
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+        ] {
+            let error = sketch.decay(factor).unwrap_err();
+            assert_eq!(
+                error.kind(),
+                ErrorKind::InvalidArgument,
+                "factor={factor:?}"
+            );
+            assert_eq!(sketch_snapshot(&sketch), sketch_snapshot(&before));
+        }
+    }
 }
 
 #[test]

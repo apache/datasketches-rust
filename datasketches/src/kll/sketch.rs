@@ -53,7 +53,6 @@ use crate::error::Error;
 #[derive(Clone)]
 pub struct KllSketch<T> {
     k: u16,
-    m: u8,
     min_k: u16,
     n: u64,
     num_retained: usize,
@@ -170,7 +169,7 @@ impl<T: Clone + Ord> KllSketch<T> {
         self.min_k = self.k;
         self.n = 0;
         self.num_retained = 0;
-        self.capacity = total_capacity(self.k, self.m, 1) as usize;
+        self.capacity = total_capacity(self.k, 1) as usize;
         self.is_level_zero_sorted = false;
         self.levels.clear();
         self.levels.push(Vec::new());
@@ -180,29 +179,17 @@ impl<T: Clone + Ord> KllSketch<T> {
 
     /// Merges another sketch into this one.
     ///
-    /// # Errors
+    /// # Panics
     ///
-    /// Returns an error without modifying the sketch if the combined stream weight exceeds
-    /// [`u64::MAX`].
-    pub fn merge(&mut self, other: &KllSketch<T>) -> Result<(), Error> {
-        if self.m != other.m {
-            return Err(Error::invalid_argument(format!(
-                "cannot merge KLL sketches with different m values: expected {}, got {}",
-                self.m, other.m
-            )));
-        }
-
+    /// Panics without modifying the sketch if the combined stream weight would exceed [`u64::MAX`].
+    pub fn merge(&mut self, other: &KllSketch<T>) {
         if other.is_empty() {
-            return Ok(());
+            return;
         }
-        let final_n = self.n.checked_add(other.n).ok_or_else(|| {
-            Error::invalid_argument(format!(
-                "combined stream weight exceeds {}: left {}, right {}",
-                u64::MAX,
-                self.n,
-                other.n
-            ))
-        })?;
+        let final_n = self
+            .n
+            .checked_add(other.n)
+            .expect("total stream weight overflow");
 
         self.update_min_max_from_other(other);
 
@@ -224,7 +211,6 @@ impl<T: Clone + Ord> KllSketch<T> {
             self.n,
             "total weight does not match n"
         );
-        Ok(())
     }
 
     /// Returns the normalized rank of the given item.
@@ -423,7 +409,7 @@ fn serialize_with_serde<T: KllValue + Ord>(sketch: &KllSketch<T>) -> Vec<u8> {
     bytes.write_u8(Family::KLL.id);
     bytes.write_u8(flags);
     bytes.write_u16_le(sketch.k);
-    bytes.write_u8(sketch.m);
+    bytes.write_u8(DEFAULT_M);
     bytes.write_u8(0);
 
     if is_empty {
@@ -563,7 +549,7 @@ fn deserialize_with_serde<T: KllValue + Ord>(bytes: &[u8]) -> Result<KllSketch<T
         )));
     }
 
-    let capacity = total_capacity(k, m, num_levels);
+    let capacity = total_capacity(k, num_levels);
     let mut level_offsets = Vec::with_capacity(num_levels + 1);
     if !is_single_item {
         for _ in 0..num_levels {
@@ -705,10 +691,9 @@ impl<T: Clone + Ord> KllSketch<T> {
         is_level_zero_sorted: bool,
     ) -> Self {
         let num_retained = levels.iter().map(Vec::len).sum();
-        let capacity = total_capacity(k, DEFAULT_M, levels.len()) as usize;
+        let capacity = total_capacity(k, levels.len()) as usize;
         Self {
             k,
-            m: DEFAULT_M,
             min_k,
             n,
             num_retained,
@@ -828,14 +813,14 @@ impl<T: Clone + Ord> KllSketch<T> {
         let num_levels = self.levels.len();
         for level in 0..num_levels {
             let pop = self.levels[level].len() as u32;
-            let cap = level_capacity(self.k, num_levels, level, self.m);
+            let cap = level_capacity(self.k, num_levels, level);
             if pop >= cap {
                 return level;
             }
         }
         panic!(
-            "KLL sketch has {}/{} retained items but no level reached its compaction capacity (k {}, m {}, levels {num_levels})",
-            self.num_retained, self.capacity, self.k, self.m
+            "KLL sketch has {}/{} retained items but no level reached its compaction capacity (k {}, levels {num_levels})",
+            self.num_retained, self.capacity, self.k
         );
     }
 
@@ -862,13 +847,13 @@ impl<T: Clone + Ord> KllSketch<T> {
             };
         }
 
-        self.levels = general_compress(work_levels, self.k, self.m, self.is_level_zero_sorted);
+        self.levels = general_compress(work_levels, self.k, self.is_level_zero_sorted);
         self.refresh_capacity_state();
     }
 
     fn refresh_capacity_state(&mut self) {
         self.num_retained = self.levels.iter().map(Vec::len).sum();
-        self.capacity = total_capacity(self.k, self.m, self.levels.len()) as usize;
+        self.capacity = total_capacity(self.k, self.levels.len()) as usize;
     }
 
     fn levels_weight(&self) -> u64 {
@@ -1049,12 +1034,11 @@ fn merge_sorted_vec<T: Clone + Ord>(left: Vec<T>, right: Vec<T>) -> Vec<T> {
 fn general_compress<T: Clone + Ord>(
     mut levels_in: Vec<Vec<T>>,
     k: u16,
-    m: u8,
     is_level_zero_sorted: bool,
 ) -> Vec<Vec<T>> {
     let mut current_num_levels = levels_in.len();
     let mut current_item_count: usize = levels_in.iter().map(|level| level.len()).sum();
-    let mut target_item_count = total_capacity(k, m, current_num_levels) as usize;
+    let mut target_item_count = total_capacity(k, current_num_levels) as usize;
     let mut levels_out = Vec::with_capacity(current_num_levels + 1);
 
     let mut current_level = 0usize;
@@ -1064,7 +1048,7 @@ fn general_compress<T: Clone + Ord>(
         }
 
         let raw_pop = levels_in[current_level].len();
-        let cap = level_capacity(k, current_num_levels, current_level, m) as usize;
+        let cap = level_capacity(k, current_num_levels, current_level) as usize;
 
         if current_item_count < target_item_count || raw_pop < cap {
             levels_out.push(std::mem::take(&mut levels_in[current_level]));
@@ -1097,7 +1081,7 @@ fn general_compress<T: Clone + Ord>(
 
             if current_level == current_num_levels - 1 {
                 current_num_levels += 1;
-                target_item_count += level_capacity(k, current_num_levels, 0, m) as usize;
+                target_item_count += level_capacity(k, current_num_levels, 0) as usize;
                 if levels_in.len() < current_num_levels + 1 {
                     levels_in.resize_with(current_num_levels + 1, Vec::new);
                 }
