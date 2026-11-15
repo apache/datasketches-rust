@@ -286,16 +286,14 @@ impl HllUnion {
     /// union.update(&partial);
     /// assert!((union.estimate() - 2.0).abs() < 0.01);
     /// ```
-    #[must_use]
     pub fn serialize(&self, hll_type: HllType) -> Vec<u8> {
         let lg_config_k = self.gadget.lg_config_k();
         match self.gadget.mode() {
             Mode::List { list, .. } => list.serialize(lg_config_k, hll_type),
             Mode::Set { set, .. } => set.serialize(lg_config_k, hll_type),
             Mode::Array8(arr) => arr.serialize_as(lg_config_k, hll_type),
-            Mode::Array4(_) | Mode::Array6(_) => {
-                unreachable!("gadget mode changed unexpectedly; should never be Array4/Array6")
-            }
+            Mode::Array4(_) => unreachable!("HllUnion gadget should never be in Array4 mode"),
+            Mode::Array6(_) => unreachable!("HllUnion gadget should never be in Array6 mode"),
         }
     }
 

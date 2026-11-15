@@ -104,7 +104,6 @@ impl ThetaUnion {
     /// let restored = CompactThetaSketch::deserialize(&bytes).unwrap();
     /// assert_eq!(restored.num_retained(), 100);
     /// ```
-    #[must_use]
     pub fn serialize_compressed(&self) -> Vec<u8> {
         let state = self.state.to_compact_hash_state(true);
         serialization::serialize_compact_compressed(&state)
