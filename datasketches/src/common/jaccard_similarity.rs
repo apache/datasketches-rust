@@ -18,7 +18,7 @@
 /// Jaccard similarity estimate and confidence bounds for two sketches.
 ///
 /// The bounds use a 95.4% confidence interval, equivalent to +/- 2 standard deviations.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug)]
 pub struct JaccardSimilarity {
     lower_bound: f64,
     estimate: f64,

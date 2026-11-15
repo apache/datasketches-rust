@@ -94,7 +94,7 @@ pub use self::union::HllUnion;
 ///
 /// For the same `lg_k` and input, all three types produce the same estimates.
 /// They trade memory usage against update speed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum HllType {
     /// Uses 4 bits per HLL bucket and has the smallest storage footprint.
     ///

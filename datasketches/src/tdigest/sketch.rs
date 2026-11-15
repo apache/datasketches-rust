@@ -1759,7 +1759,7 @@ fn merge_sorted_centroids(left: &mut Vec<Centroid>, right: &[Centroid]) {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy)]
 struct Centroid {
     mean: f64,
     weight: NonZeroU64,

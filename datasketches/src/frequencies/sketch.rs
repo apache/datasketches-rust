@@ -95,7 +95,7 @@ fn validate_lg_map_sizes(lg_max: u8, lg_cur: u8) -> Result<(), Error> {
 }
 
 /// Error guarantees for frequent item queries.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ErrorType {
     /// Includes items if the upper bound exceeds the threshold (no false negatives).
     NoFalseNegatives,
