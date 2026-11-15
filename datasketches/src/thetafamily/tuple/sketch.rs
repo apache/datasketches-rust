@@ -474,6 +474,7 @@ where
     /// let compact = sketch.compact(true);
     /// assert_eq!(compact.num_retained(), 1);
     /// ```
+    #[must_use = "compact returns a new compact sketch without modifying this sketch"]
     pub fn compact(&self, ordered: bool) -> CompactTupleSketch<P::Summary> {
         let compact_state = if self.is_empty() {
             debug_assert_eq!(self.num_retained(), 0);
@@ -772,7 +773,7 @@ impl<S> CompactTupleSketch<S> {
 /// summaries, or supply a custom policy.
 ///
 /// Configuration is stored without validation and checked when [`build()`](Self::build) is called.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TupleSketchBuilder<P>
 where
     P: SummaryPolicy,

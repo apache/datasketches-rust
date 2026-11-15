@@ -68,7 +68,7 @@ impl FrequentItemValue for String {
         let value = std::str::from_utf8(&cursor.remaining()[..len])
             .map(str::to_owned)
             .map_err(|_| Error::deserial("invalid UTF-8 string payload"))?;
-        cursor.advance(len as u64);
+        cursor.advance(len);
         Ok(value)
     }
 }

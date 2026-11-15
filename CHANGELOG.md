@@ -16,14 +16,19 @@ All significant changes to this project will be documented in this file.
 * `ThetaJaccardSimilarity::compute` and `TupleJaccardSimilarity::compute` now return `datasketches::common::JaccardSimilarity` instead of `datasketches::thetacommon::JaccardSimilarity`, and `datasketches::thetacommon` is no longer part of the public API.
 * `FrequentItemsSketch::update_with_count` and `FrequentItemsSketch::update_with_count_ref` are renamed to `update_with_weight` and `update_with_weight_ref` to match weighted update naming across the crate.
 * `ReqSketch::num_retained` now returns `usize` instead of `u32`, matching `KllSketch`, `ThetaSketch`, and `TupleSketch`.
+* `ReqSketch::rank_lower_bound` and `ReqSketch::rank_upper_bound` now return `Result<f64, Error>`, returning `InvalidArgument` when `rank` is NaN or outside `[0.0, 1.0]` even on empty or exact-mode sketches.
+* `SketchSlice::advance` now takes `n: usize` instead of `u64` and panics if `n > self.remaining().len()`.
+* Remove `PartialEq` from `BloomFilter`, `CountMinSketch`, `HllSketch`, `JaccardSimilarity`, and `KllSketch`.
 
 ### New features
 
+* Add `KllSketch::estimated_size` and `ReqSketch::estimated_size` to estimate sketch memory usage in bytes.
 * Add `CpcUnion::serialize`, `HllUnion::serialize`, `ThetaUnion::serialize`, `ThetaUnion::serialize_compressed`, and `TupleUnion::serialize` to encode union results without calling `to_sketch`. Direct serialization avoids intermediate sketch allocations for `HllUnion` and `CpcUnion`, lets `HllUnion::serialize` target any `HllType` (`Hll4`, `Hll6`, or `Hll8`) at the union's effective `lg_k`, supports v4 compressed output via `ThetaUnion::serialize_compressed`, and encodes `TupleUnion` summaries without requiring `Clone` or cloning heap-backed summaries.
 * Add `XorFilter`, `XorFilterBuilder`, and `XorFilterType` behind the `xor` feature for immutable membership queries on values or precomputed hashes. Filters support 8-, 16-, and 32-bit fingerprints and can be serialized for later queries.
 
 ### Improvements
 
+* Implement `Clone` for `TDigest`, `ThetaSketchBuilder`, `TupleSketchBuilder`, and `TupleUnionBuilder`; derive `Eq` and `Hash` across `NumStdDev`, `ResizeFactor`, and `SearchCriteria`, and `Hash` across `ErrorType`, `HllType`, and `RankAccuracy`; and implement `Debug` for `ReqSketchIterator`, `SketchSlice`, and `SketchBytes` (plus `Clone` and `Default` on codec types).
 * Improve the readability of `Debug` output across sketches, filters, views, and stateful set operators, and implement `Debug` for `TDigest`.
 
 ### Performance improvements

@@ -191,7 +191,7 @@ impl BloomFilterBuilder {
 /// bit capacity chosen at construction.
 ///
 /// See [`BloomFilterBuilder`] and the [module level documentation](super) for more.
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone)]
 pub struct BloomFilter {
     seed: u64,
     num_hashes: u16,
@@ -438,8 +438,7 @@ impl fmt::Debug for BloomFilter {
     }
 }
 
-// Scalar fields precede `words` so derived `PartialEq` short-circuits on `bits_used`.
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone)]
 struct BitArray {
     bits_used: u64,
     multiplier: u64,

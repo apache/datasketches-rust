@@ -32,6 +32,42 @@ use googletest::prelude::near;
 
 use crate::serialization_test_data;
 
+fn canonical_hll_bytes(sketch: &HllSketch) -> Vec<u8> {
+    let mut bytes = sketch.serialize();
+    bytes[4] = 0; // lg_arr depends on table history / compact vs updatable form
+    let trailing_offset = match bytes[7] & 0x3 {
+        // Set mode stores open-addressing coupons after the 12-byte preamble.
+        1 => Some(12),
+        // HLL4 stores auxiliary exception coupons after the 40-byte preamble and 4-bit nibbles.
+        2 if sketch.target_type() == HllType::Hll4 => {
+            Some(40 + (1usize << (sketch.lg_config_k() - 1)))
+        }
+        _ => None,
+    };
+    if let Some(offset) = trailing_offset {
+        let mut coupons: Vec<u32> = bytes[offset..]
+            .chunks_exact(4)
+            .map(|chunk| u32::from_le_bytes(chunk.try_into().unwrap()))
+            .collect();
+        coupons.sort_unstable();
+        for (dst, coupon) in bytes[offset..].chunks_exact_mut(4).zip(coupons) {
+            dst.copy_from_slice(&coupon.to_le_bytes());
+        }
+    }
+    bytes
+}
+
+fn assert_hll_sketches_eq(actual: &HllSketch, expected: &HllSketch, context: &str) {
+    assert_eq!(actual.lg_config_k(), expected.lg_config_k(), "{context}");
+    assert_eq!(actual.target_type(), expected.target_type(), "{context}");
+    assert_eq!(actual.is_empty(), expected.is_empty(), "{context}");
+    assert_eq!(
+        canonical_hll_bytes(actual),
+        canonical_hll_bytes(expected),
+        "{context}"
+    );
+}
+
 #[test]
 fn union_serialization_preserves_result_and_subsequent_updates() {
     for hll_type in [HllType::Hll4, HllType::Hll6, HllType::Hll8] {
@@ -55,7 +91,11 @@ fn union_serialization_preserves_result_and_subsequent_updates() {
                     union.update_value(value);
                     restored.update(value);
                 }
-                assert_eq!(union.to_sketch(HllType::Hll8), restored);
+                assert_hll_sketches_eq(
+                    &union.to_sketch(HllType::Hll8),
+                    &restored,
+                    &format!("hll_type={hll_type:?}, count={count}, lg_max_k={lg_max_k}"),
+                );
 
                 union.reset();
                 for target_type in [HllType::Hll4, HllType::Hll6, HllType::Hll8] {
@@ -94,7 +134,11 @@ fn assert_union_matches_sketch(
     assert_eq!(restored.target_type(), target_type);
     assert_eq!(restored.lg_config_k(), expected.lg_config_k());
     assert_eq!(restored.is_empty(), expected.is_empty());
-    assert_eq!(restored, expected);
+    assert_hll_sketches_eq(
+        &restored,
+        &expected,
+        &format!("target_type={target_type:?}, lg_k={}", union.lg_config_k()),
+    );
     assert_eq!(restored.estimate(), expected.estimate());
     assert_eq!(restored.composite_estimate(), expected.composite_estimate());
     assert_eq!(restored.estimate(), union.estimate());
@@ -287,11 +331,13 @@ fn test_sketch_file(path: PathBuf, expected_cardinality: usize, expected_lg_k: u
     );
 
     // Check that the sketches are functionally equal
-    assert_eq!(
-        sketch1,
-        sketch2,
-        "Sketches are not equal after round-trip for {}",
-        path.display()
+    assert_hll_sketches_eq(
+        &sketch1,
+        &sketch2,
+        &format!(
+            "Sketches are not equal after round-trip for {}",
+            path.display()
+        ),
     );
 
     // Verify estimates match after round-trip
@@ -363,7 +409,7 @@ fn hll_mode_round_trip_preserves_registers_and_rejects_truncation() {
 
         let bytes = sketch.serialize();
         let restored = HllSketch::deserialize(&bytes).unwrap();
-        assert_eq!(restored, sketch, "hll_type: {hll_type:?}");
+        assert_hll_sketches_eq(&restored, &sketch, &format!("hll_type: {hll_type:?}"));
         assert!(HllSketch::deserialize(&bytes[..bytes.len() - 1]).is_err());
     }
 }
@@ -397,9 +443,10 @@ fn hll4_updatable_aux_table_matches_compact_image() {
         updatable.extend_from_slice(&coupon.to_le_bytes());
     }
 
-    assert_eq!(
-        HllSketch::deserialize(&updatable).unwrap(),
-        HllSketch::deserialize(&compact).unwrap()
+    assert_hll_sketches_eq(
+        &HllSketch::deserialize(&updatable).unwrap(),
+        &HllSketch::deserialize(&compact).unwrap(),
+        "updatable vs compact HLL4",
     );
 }
 

@@ -48,7 +48,7 @@ impl AuxFormat {
 }
 
 /// Registers stored as four-bit offsets from their current minimum.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Array4 {
     lg_config_k: u8,
     /// Even slots occupy the low nibble; odd slots occupy the high nibble.

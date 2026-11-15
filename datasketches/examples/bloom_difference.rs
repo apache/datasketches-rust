@@ -86,6 +86,7 @@ fn main() {
     // Ship the resulting filter to a sibling node; the purge filter is discarded.
     let bytes = cached.serialize();
     let shipped = BloomFilter::deserialize(&bytes).unwrap();
-    assert_eq!(shipped, cached);
+    assert_eq!(shipped.bits_used(), cached.bits_used());
+    assert_eq!(shipped.serialize(), bytes);
     println!("Shipped filter:  {} bytes", bytes.len());
 }

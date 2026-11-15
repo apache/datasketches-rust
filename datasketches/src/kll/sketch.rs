@@ -50,7 +50,7 @@ use crate::error::Error;
 /// KLL sketch for estimating quantiles and ranks.
 ///
 /// See the [kll module level documentation](crate::kll) for more.
-#[derive(Clone, PartialEq)]
+#[derive(Clone)]
 pub struct KllSketch<T> {
     k: u16,
     m: u8,
@@ -351,6 +351,16 @@ impl<T: Clone + Ord> KllSketch<T> {
     /// Returns the normalized double-sided rank error for PMF queries for the configured k.
     pub fn normalized_pmf_error(&self) -> f64 {
         normalized_rank_error(self.min_k, true)
+    }
+
+    /// Returns an estimate of the sketch's memory usage in bytes.
+    pub fn estimated_size(&self) -> usize {
+        self.levels.capacity() * size_of::<Vec<T>>()
+            + self
+                .levels
+                .iter()
+                .map(|level| level.capacity() * size_of::<T>())
+                .sum::<usize>()
     }
 }
 

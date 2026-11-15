@@ -380,6 +380,7 @@ impl ThetaSketch {
     /// let compact = sketch.compact(true);
     /// assert_eq!(compact.num_retained(), 1);
     /// ```
+    #[must_use = "compact returns a new compact sketch without modifying this sketch"]
     pub fn compact(&self, ordered: bool) -> CompactThetaSketch {
         let compact_state = if self.is_empty() {
             debug_assert_eq!(self.num_retained(), 0);
@@ -887,7 +888,7 @@ impl CompactThetaSketch {
 
         let payload = &cursor.remaining()[..required_bytes];
         let entries = unpack_deltas(payload, num_entries, entry_bits, theta)?;
-        cursor.advance(required_bytes as u64);
+        cursor.advance(required_bytes);
 
         let ordered = (flags & FLAGS_IS_ORDERED) != 0;
 
@@ -908,7 +909,7 @@ impl CompactThetaSketch {
 /// Builder for [`ThetaSketch`].
 ///
 /// Configuration is stored without validation and checked when [`build()`](Self::build) is called.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ThetaSketchBuilder {
     lg_k: u8,
     resize_factor: ResizeFactor,

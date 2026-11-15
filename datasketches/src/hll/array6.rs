@@ -30,7 +30,7 @@ use crate::hll::serialization::write_hll_preamble;
 const VAL_MASK_6: u16 = 0x3F;
 
 /// Registers packed into consecutive six-bit fields.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Array6 {
     lg_config_k: u8,
     bytes: Box<[u8]>,

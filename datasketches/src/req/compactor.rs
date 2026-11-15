@@ -242,6 +242,11 @@ where
         1u64 << self.lg_weight
     }
 
+    /// Returns an estimate of memory usage in bytes.
+    pub fn estimated_size(&self) -> usize {
+        self.items.capacity() * size_of::<T>() + self.scratch_buffer.capacity() * size_of::<T>()
+    }
+
     fn ensure_enough_sections(&mut self) -> bool {
         let Some(threshold) = self
             .num_sections

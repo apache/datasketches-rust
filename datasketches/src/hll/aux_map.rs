@@ -28,33 +28,6 @@ pub struct AuxMap {
     count: u32,
 }
 
-impl PartialEq for AuxMap {
-    fn eq(&self, other: &Self) -> bool {
-        // Capacity and slot order do not affect the logical entries.
-        if self.lg_config_k != other.lg_config_k || self.count != other.count {
-            return false;
-        }
-
-        let mut entries1: Vec<Coupon> = self
-            .entries
-            .iter()
-            .filter(|&&e| !e.is_empty())
-            .copied()
-            .collect();
-        let mut entries2: Vec<Coupon> = other
-            .entries
-            .iter()
-            .filter(|&&e| !e.is_empty())
-            .copied()
-            .collect();
-
-        entries1.sort_unstable();
-        entries2.sort_unstable();
-
-        entries1 == entries2
-    }
-}
-
 /// Initial table sizes from datasketches-cpp:
 /// <https://github.com/apache/datasketches-cpp/blob/5a055521/hll/include/HllUtil.hpp>
 fn lg_aux_arr_ints(lg_config_k: u8) -> u8 {

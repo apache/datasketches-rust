@@ -75,7 +75,7 @@ fn serialization_round_trips_standard_fingerprint_types() {
 
             let restored = XorFilter::deserialize(&bytes).unwrap();
             assert_eq!(restored.filter_type(), ty);
-            assert_eq!(restored, original);
+            assert_eq!(restored.serialize(), bytes);
             for hash in 0..count {
                 assert!(restored.contains_hash(hash));
             }
@@ -154,7 +154,10 @@ fn trailing_storage_is_ignored() {
         let mut bytes = original.serialize();
         bytes.extend_from_slice(&[0xaa; 16]);
 
-        assert_eq!(XorFilter::deserialize(&bytes).unwrap(), original);
+        assert_eq!(
+            XorFilter::deserialize(&bytes).unwrap().serialize(),
+            original.serialize()
+        );
     }
 }
 

@@ -16,6 +16,7 @@
 // under the License.
 
 /// A simple wrapper around a `Vec<u8>` that provides methods for writing various types of data.
+#[derive(Debug, Clone, Default)]
 pub struct SketchBytes {
     bytes: Vec<u8>,
 }

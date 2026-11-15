@@ -43,18 +43,10 @@ pub struct Array8 {
 }
 
 /// Zero-register count and estimator used for cardinality queries.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 struct Estimation {
     num_zeros: u32,
     estimator: Estimator,
-}
-
-impl PartialEq for Array8 {
-    fn eq(&self, other: &Self) -> bool {
-        self.lg_config_k == other.lg_config_k
-            && self.bytes == other.bytes
-            && self.estimation() == other.estimation()
-    }
 }
 
 impl Array8 {
@@ -697,6 +689,28 @@ mod tests {
         use crate::hll::HllSketch;
         use crate::hll::array4::Array4;
 
+        fn canonical_hll4_bytes(sketch: &HllSketch) -> Vec<u8> {
+            let mut bytes = sketch.serialize();
+            bytes[4] = 0;
+            let aux_start = HLL_PREAMBLE_SIZE + (1usize << (sketch.lg_config_k() - 1));
+            let mut aux: Vec<u32> = bytes[aux_start..]
+                .chunks_exact(4)
+                .map(|chunk| u32::from_le_bytes(chunk.try_into().unwrap()))
+                .collect();
+            aux.sort_unstable();
+            for (dst, coupon) in bytes[aux_start..].chunks_exact_mut(4).zip(aux) {
+                dst.copy_from_slice(&coupon.to_le_bytes());
+            }
+            bytes
+        }
+
+        fn assert_hll4_eq(actual: &HllSketch, expected: &HllSketch) {
+            assert_eq!(actual.lg_config_k(), expected.lg_config_k());
+            assert_eq!(actual.target_type(), expected.target_type());
+            assert_eq!(actual.is_empty(), expected.is_empty());
+            assert_eq!(canonical_hll4_bytes(actual), canonical_hll4_bytes(expected));
+        }
+
         let lg_k = 4u8;
         let k = 1usize << lg_k;
         let mut arr8 = Array8::new(lg_k);
@@ -720,7 +734,7 @@ mod tests {
 
         let decoded = HllSketch::deserialize(&direct_bytes).unwrap();
         let expected = HllSketch::from_mode(lg_k, crate::hll::mode::Mode::Array4(arr4.clone()));
-        assert_eq!(decoded, expected);
+        assert_hll4_eq(&decoded, &expected);
         assert_eq!(decoded.estimate(), expected.estimate());
         assert_eq!(decoded.composite_estimate(), expected.composite_estimate());
         for std_dev in [NumStdDev::One, NumStdDev::Two, NumStdDev::Three] {
@@ -734,7 +748,7 @@ mod tests {
         let direct_ooo = arr8.serialize_as(lg_k, HllType::Hll4);
         let decoded_ooo = HllSketch::deserialize(&direct_ooo).unwrap();
         let expected_ooo = HllSketch::from_mode(lg_k, crate::hll::mode::Mode::Array4(arr4));
-        assert_eq!(decoded_ooo, expected_ooo);
+        assert_hll4_eq(&decoded_ooo, &expected_ooo);
         assert_eq!(decoded_ooo.estimate(), expected_ooo.estimate());
         assert_eq!(
             decoded_ooo.composite_estimate(),

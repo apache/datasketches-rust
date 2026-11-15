@@ -47,7 +47,7 @@ const MAX_TABLE_ENTRIES: usize = 1 << 30;
 /// with configurable relative error and confidence.
 ///
 /// See the [module level documentation](super) for more.
-#[derive(Clone, PartialEq)]
+#[derive(Clone)]
 pub struct CountMinSketch<T: CountMinValue> {
     num_hashes: u8,
     buckets: BucketCount,
@@ -159,7 +159,7 @@ impl SerialVersion {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 struct BucketCount {
     count: u32,
     multiplier: u128,

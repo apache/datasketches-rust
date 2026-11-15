@@ -607,6 +607,7 @@ impl TDigestMut {
 /// Immutable (frozen) T-Digest sketch for estimating quantiles and ranks.
 ///
 /// See the [module level documentation](super) for more.
+#[derive(Clone)]
 pub struct TDigest {
     k: u16,
 
@@ -1758,7 +1759,7 @@ fn merge_sorted_centroids(left: &mut Vec<Centroid>, right: &[Centroid]) {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy)]
 struct Centroid {
     mean: f64,
     weight: NonZeroU64,

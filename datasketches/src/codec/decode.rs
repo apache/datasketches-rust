@@ -16,28 +16,29 @@
 // under the License.
 
 use std::io;
-use std::io::Cursor;
 use std::io::Read;
 
 /// A wrapper around a byte slice that provides methods for reading various types of data from it.
+#[derive(Debug, Clone)]
 pub struct SketchSlice<'a> {
-    slice: Cursor<&'a [u8]>,
+    slice: &'a [u8],
 }
 
 impl SketchSlice<'_> {
     /// Creates a new `SketchSlice` from the given byte slice.
     #[inline]
     pub fn new(slice: &[u8]) -> SketchSlice<'_> {
-        SketchSlice {
-            slice: Cursor::new(slice),
-        }
+        SketchSlice { slice }
     }
 
     /// Advances the position of the slice by `n` bytes.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `n > self.remaining().len()`.
     #[inline]
-    pub fn advance(&mut self, n: u64) {
-        let pos = self.slice.position();
-        self.slice.set_position(pos + n);
+    pub fn advance(&mut self, n: usize) {
+        self.slice = &self.slice[n..];
     }
 
     /// Returns the not-yet-read portion of the underlying slice.
@@ -46,9 +47,7 @@ impl SketchSlice<'_> {
     /// bytes it consumed; pair it with [`advance`](Self::advance).
     #[inline]
     pub fn remaining(&self) -> &[u8] {
-        let buf = self.slice.get_ref();
-        let pos = (self.slice.position() as usize).min(buf.len());
-        &buf[pos..]
+        self.slice
     }
 
     /// Reads exactly `buf.len()` bytes from the slice into `buf`.

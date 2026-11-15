@@ -69,6 +69,38 @@ fn assert_same_estimate_and_bounds(actual: &HllSketch, expected: &HllSketch) {
     }
 }
 
+fn canonical_hll_bytes(sketch: &HllSketch) -> Vec<u8> {
+    let mut bytes = sketch.serialize();
+    bytes[4] = 0; // lg_arr depends on table history / compact vs updatable form
+    let trailing_offset = match bytes[7] & 0x3 {
+        // Set mode stores open-addressing coupons after the 12-byte preamble.
+        1 => Some(12),
+        // HLL4 stores auxiliary exception coupons after the 40-byte preamble and 4-bit nibbles.
+        2 if sketch.target_type() == HllType::Hll4 => {
+            Some(40 + (1usize << (sketch.lg_config_k() - 1)))
+        }
+        _ => None,
+    };
+    if let Some(offset) = trailing_offset {
+        let mut coupons: Vec<u32> = bytes[offset..]
+            .chunks_exact(4)
+            .map(|chunk| u32::from_le_bytes(chunk.try_into().unwrap()))
+            .collect();
+        coupons.sort_unstable();
+        for (dst, coupon) in bytes[offset..].chunks_exact_mut(4).zip(coupons) {
+            dst.copy_from_slice(&coupon.to_le_bytes());
+        }
+    }
+    bytes
+}
+
+fn assert_hll_sketches_eq(actual: &HllSketch, expected: &HllSketch) {
+    assert_eq!(actual.lg_config_k(), expected.lg_config_k());
+    assert_eq!(actual.target_type(), expected.target_type());
+    assert_eq!(actual.is_empty(), expected.is_empty());
+    assert_eq!(canonical_hll_bytes(actual), canonical_hll_bytes(expected));
+}
+
 fn serialize_flat_union(first: &HllSketch, second: &HllSketch, third: &HllSketch) -> Vec<u8> {
     let mut union = HllUnion::new(8).unwrap();
     union.update(first);
@@ -854,10 +886,10 @@ fn test_union_supports_shared_queries_after_dense_merges() {
                 );
                 assert_eq!(union.serialize(HllType::Hll8), bytes_hll8);
                 assert_eq!(union.serialize(HllType::Hll6), bytes_hll6);
-                assert_eq!(
-                    HllSketch::deserialize(&union.serialize(HllType::Hll4)).unwrap(),
-                    expected_hll4
-                );
+                let restored_hll4 =
+                    HllSketch::deserialize(&union.serialize(HllType::Hll4)).unwrap();
+                assert_hll_sketches_eq(&restored_hll4, &expected_hll4);
+                assert_same_estimate_and_bounds(&restored_hll4, &expected_hll4);
             });
         }
     });

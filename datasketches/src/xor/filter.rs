@@ -45,7 +45,6 @@ const SPLITMIX_MUL1: u64 = 0xbf58_476d_1ce4_e5b9;
 const SPLITMIX_MUL2: u64 = 0x94d0_49bb_1331_11eb;
 
 /// Fingerprint representation used by an [`XorFilter`].
-#[must_use]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum XorFilterType {
     /// Uses 8-bit fingerprints and has an expected false-positive probability of about `2^-8`.
@@ -74,7 +73,7 @@ impl XorFilterType {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 enum Fingerprints {
     Xor8(Box<[u8]>),
     Xor16(Box<[u16]>),
@@ -205,7 +204,6 @@ impl Fingerprints {
 /// [`XorFilter::contains_hash`].
 ///
 /// See the [module level documentation](super) for more.
-#[must_use]
 #[derive(Clone)]
 pub struct XorFilterBuilder {
     filter_type: XorFilterType,
@@ -306,8 +304,7 @@ impl XorFilterBuilder {
 /// changes.
 ///
 /// See the [module level documentation](super) for more.
-#[must_use]
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone)]
 pub struct XorFilter {
     // Cache the derived length to avoid division on every query.
     segment_length: usize,
@@ -445,7 +442,6 @@ impl XorFilter {
     ///
     /// A `false` result means the item was definitely absent; a `true` result may be a false
     /// positive.
-    #[must_use]
     #[inline]
     pub fn contains<T: Hash>(&self, item: T) -> bool {
         self.contains_hash(hash_item(item))
@@ -455,7 +451,6 @@ impl XorFilter {
     ///
     /// Use the same hash function for construction and queries.
     // Inline through Fingerprints::contains so width dispatch stays in the caller's hot loop.
-    #[must_use]
     #[inline(always)]
     pub fn contains_hash(&self, hash: u64) -> bool {
         let mixed = mix(hash, self.seed);
@@ -468,13 +463,11 @@ impl XorFilter {
     }
 
     /// Returns the estimated in-memory size of the filter in bytes.
-    #[must_use]
     pub fn estimated_size(&self) -> usize {
         size_of::<Self>() + self.fingerprints.byte_len()
     }
 
     /// Serializes the filter in the DataSketches format.
-    #[must_use]
     pub fn serialize(&self) -> Vec<u8> {
         let mut bytes = SketchBytes::with_capacity(PREAMBLE_BYTES + self.fingerprints.byte_len());
 

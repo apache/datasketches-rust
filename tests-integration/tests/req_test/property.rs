@@ -58,8 +58,14 @@ fn prop_quantile_rank_consistency() {
             // interval for the target rank (plus a small cushion for snapping to a
             // stored item). This scales with k and n, unlike a fixed slack, so it
             // actually constrains the result instead of always passing.
-            let lower = sketch.rank_lower_bound(rank, NumStdDev::Three) - 0.02;
-            let upper = sketch.rank_upper_bound(rank, NumStdDev::Three) + 0.02;
+            let lower = sketch
+                .rank_lower_bound(rank, NumStdDev::Three)
+                .expect("rank_lower_bound should succeed")
+                - 0.02;
+            let upper = sketch
+                .rank_upper_bound(rank, NumStdDev::Three)
+                .expect("rank_upper_bound should succeed")
+                + 0.02;
             assert!(
                 (lower..=upper).contains(&recovered),
                 "rank {rank} -> quantile {quantile} -> recovered {recovered}, expected within [{lower:.4}, {upper:.4}]"
