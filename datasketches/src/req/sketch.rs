@@ -67,7 +67,7 @@ impl<T: fmt::Debug> fmt::Debug for ReqSketch<T> {
         f.debug_struct("ReqSketch")
             .field("k", &self.k)
             .field("rank_accuracy", &self.rank_accuracy)
-            .field("n", &self.n)
+            .field("total_weight", &self.n)
             .field("is_empty", &(self.n == 0))
             .field("is_estimation_mode", &(self.compactors.len() > 1))
             .field("num_levels", &self.compactors.len())
@@ -120,8 +120,8 @@ where
         self.rank_accuracy
     }
 
-    /// Returns the total number of items observed.
-    pub fn n(&self) -> u64 {
+    /// Returns the total stream weight.
+    pub fn total_weight(&self) -> u64 {
         self.n
     }
 
@@ -360,7 +360,7 @@ where
     /// combined.merge(&first).unwrap();
     /// combined.merge(&second).unwrap();
     ///
-    /// assert_eq!(combined.n(), 2);
+    /// assert_eq!(combined.total_weight(), 2);
     /// # Ok::<(), datasketches::error::Error>(())
     /// ```
     pub fn merge(&mut self, other: &Self) -> Result<(), Error> {

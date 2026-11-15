@@ -35,7 +35,7 @@ fn iterator_weights_sum_to_n_and_items_are_in_range() {
     }
 
     let total_weight: u64 = sketch.iter().map(|(_, weight)| weight).sum();
-    assert_eq!(total_weight, sketch.n());
+    assert_eq!(total_weight, sketch.total_weight());
 
     for (item, weight) in sketch.iter() {
         assert_that!(weight, ge(1));

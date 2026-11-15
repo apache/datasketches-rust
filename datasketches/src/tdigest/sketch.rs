@@ -177,6 +177,12 @@ impl TDigestMut {
         self.compressed_weight + self.buffer.unmerged_len() as u64
     }
 
+    /// Returns the number of retained entries in this t-digest, including compressed centroids and
+    /// buffered unmerged values.
+    pub fn num_retained(&self) -> usize {
+        self.buffer.len()
+    }
+
     /// Merges the given t-digest into this one.
     ///
     /// Retains this digest's `k`, even if the other digest uses a different value.
@@ -625,7 +631,7 @@ impl fmt::Debug for TDigest {
             .field("k", &self.k)
             .field("is_empty", &self.is_empty())
             .field("total_weight", &self.total_weight())
-            .field("num_centroids", &self.centroids.len())
+            .field("num_retained", &self.centroids.len())
             .field("min_value", &self.min_value())
             .field("max_value", &self.max_value())
             .finish()
@@ -664,6 +670,11 @@ impl TDigest {
     /// Returns the total weight.
     pub fn total_weight(&self) -> u64 {
         self.centroids_weight
+    }
+
+    /// Returns the number of retained centroids in this t-digest.
+    pub fn num_retained(&self) -> usize {
+        self.centroids.len()
     }
 
     /// Serializes this immutable t-digest to bytes in double precision.

@@ -39,7 +39,7 @@ fn exact_mode_rank_quantile_pmf_and_cdf_match_reference() {
     }
 
     assert!(!sketch.is_estimation_mode());
-    assert_eq!(sketch.n(), 10);
+    assert_eq!(sketch.total_weight(), 10);
     assert_eq!(sketch.num_retained(), 10);
     let view = sketch.sorted_view();
 
@@ -197,7 +197,7 @@ fn quantile_endpoints_with_large_stream_weight() {
         sketch.merge(&sketch.clone()).unwrap();
     }
     sketch.update(1);
-    assert_eq!(sketch.n(), (1 << 53) + 1);
+    assert_eq!(sketch.total_weight(), (1 << 53) + 1);
     let view = sketch.sorted_view();
 
     for criteria in [SearchCriteria::Inclusive, SearchCriteria::Exclusive] {

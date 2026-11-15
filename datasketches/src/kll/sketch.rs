@@ -69,7 +69,7 @@ impl<T: fmt::Debug> fmt::Debug for KllSketch<T> {
         f.debug_struct("KllSketch")
             .field("k", &self.k)
             .field("min_k", &self.min_k)
-            .field("n", &self.n)
+            .field("total_weight", &self.n)
             .field("is_empty", &(self.n == 0))
             .field("is_estimation_mode", &(self.levels.len() > 1))
             .field("num_levels", &self.levels.len())
@@ -120,8 +120,8 @@ impl<T: Clone + Ord> KllSketch<T> {
         self.min_k
     }
 
-    /// Returns total weight of the stream.
-    pub fn n(&self) -> u64 {
+    /// Returns the total stream weight.
+    pub fn total_weight(&self) -> u64 {
         self.n
     }
 
@@ -219,7 +219,11 @@ impl<T: Clone + Ord> KllSketch<T> {
             self.min_k = self.min_k.min(other.min_k);
         }
 
-        debug_assert_eq!(self.total_weight(), self.n, "total weight does not match n");
+        debug_assert_eq!(
+            self.levels_weight(),
+            self.n,
+            "total weight does not match n"
+        );
         Ok(())
     }
 
@@ -867,7 +871,7 @@ impl<T: Clone + Ord> KllSketch<T> {
         self.capacity = total_capacity(self.k, self.m, self.levels.len()) as usize;
     }
 
-    fn total_weight(&self) -> u64 {
+    fn levels_weight(&self) -> u64 {
         self.levels
             .iter()
             .enumerate()

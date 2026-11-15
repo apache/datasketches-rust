@@ -29,10 +29,10 @@ fn merge_preserves_weight_extrema_and_query_invariants() {
 
     left.merge(&right).unwrap();
 
-    assert_eq!(left.n(), 20_000);
+    assert_eq!(left.total_weight(), 20_000);
     assert_eq!(left.min_item(), Some(&0));
     assert_eq!(left.max_item(), Some(&19_999));
-    assert_eq!(left.sorted_view().total_weight(), left.n());
+    assert_eq!(left.sorted_view().total_weight(), left.total_weight());
     let quantiles = left
         .quantiles(&[0.0, 0.25, 0.5, 0.75, 1.0], SearchCriteria::Inclusive)
         .unwrap()
@@ -67,7 +67,7 @@ fn merging_an_empty_lower_k_sketch_does_not_change_accuracy() {
 
     sketch.merge(&empty).unwrap();
 
-    assert_eq!(sketch.n(), 10_000);
+    assert_eq!(sketch.total_weight(), 10_000);
     assert_eq!(sketch.normalized_rank_error(), rank_error);
 }
 

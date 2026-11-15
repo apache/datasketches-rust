@@ -19,12 +19,15 @@ All significant changes to this project will be documented in this file.
 * `ReqSketch::rank_lower_bound` and `ReqSketch::rank_upper_bound` now return `Result<f64, Error>`, returning `InvalidArgument` when `rank` is NaN or outside `[0.0, 1.0]` even on empty or exact-mode sketches.
 * `SketchSlice::advance` now takes `n: usize` instead of `u64` and panics if `n > self.remaining().len()`.
 * Remove `PartialEq` from `BloomFilter`, `CountMinSketch`, `HllSketch`, `JaccardSimilarity`, and `KllSketch`.
+* Rename `KllSketch::n` and `ReqSketch::n` to `total_weight` to match stream-weight naming across the crate; update callers of `n()` to call `total_weight()`.
+* Rename `FrequentItemsSketch::num_active_items` to `num_retained` to match retained-entry naming across the crate; update callers of `num_active_items()` to call `num_retained()`.
 
 ### New features
 
 * Add `KllSketch::estimated_size` and `ReqSketch::estimated_size` to estimate sketch memory usage in bytes.
 * Add `CpcUnion::serialize`, `HllUnion::serialize`, `ThetaUnion::serialize`, `ThetaUnion::serialize_compressed`, and `TupleUnion::serialize` to encode union results without calling `to_sketch`. Direct serialization avoids intermediate sketch allocations for `HllUnion` and `CpcUnion`, lets `HllUnion::serialize` target any `HllType` (`Hll4`, `Hll6`, or `Hll8`) at the union's effective `lg_k`, supports v4 compressed output via `ThetaUnion::serialize_compressed`, and encodes `TupleUnion` summaries without requiring `Clone` or cloning heap-backed summaries.
 * Add `XorFilter`, `XorFilterBuilder`, and `XorFilterType` behind the `xor` feature for immutable membership queries on values or precomputed hashes. Filters support 8-, 16-, and 32-bit fingerprints and can be serialized for later queries.
+* Add `TDigest::num_retained` and `TDigestMut::num_retained` to report the number of retained entries or centroids in a t-digest.
 
 ### Improvements
 

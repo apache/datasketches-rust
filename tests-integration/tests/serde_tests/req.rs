@@ -53,7 +53,7 @@ where
     }
     let bytes = a.serialize();
     let b: ReqSketch<T> = ReqSketch::deserialize(&bytes).unwrap();
-    assert_eq!(a.n(), b.n());
+    assert_eq!(a.total_weight(), b.total_weight());
     assert_eq!(a.k(), b.k());
     assert_eq!(a.rank_accuracy(), b.rank_accuracy());
     assert_eq!(a.min_item(), b.min_item());
@@ -511,7 +511,12 @@ fn validate_cross_language_fixture(path: PathBuf, expected_n: u64) {
     let sketch = ReqSketch::<ReqF32>::deserialize(&bytes)
         .unwrap_or_else(|e| panic!("deserialize failed for {}: {e}", path.display()));
 
-    assert_eq!(sketch.n(), expected_n, "n mismatch on {}", path.display());
+    assert_eq!(
+        sketch.total_weight(),
+        expected_n,
+        "n mismatch on {}",
+        path.display()
+    );
     assert_eq!(sketch.k(), 12, "k mismatch on {}", path.display());
     assert_eq!(sketch.rank_accuracy(), RankAccuracy::HighRank);
 
