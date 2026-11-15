@@ -12014,11 +12014,14 @@ mod tests {
     /// steady-state headers within `1.1e-14`, whereas the binomial model at `K = 2^32` misses
     /// them by `6.1e-12`. That residual halves with every unit added to the base (`3.1e-12` at
     /// `7.0 + phase`, `1.5e-12` at `8.0 + phase`), which is the `2^-col / K` signature of the
-    /// finite-`K` correction at the window columns, not an effect of the matrix edge: the left
-    /// edge (column 1 has `p_0 ≈ 5.3e-12` at `C / K = 6 + 1/32`) moves `lambda / 2^offset` by
-    /// less than one ULP. Consequently "`K = 2^32` with base `>= 16`" fits the byte tables
-    /// equally well; the Poisson limit is preferred because a single operating point then
-    /// explains both the byte tables and the permutations, which are insensitive to `K`.
+    /// finite-`K` correction at the window columns, not an effect of the matrix edge. Although
+    /// `lambda` is solved over all 128 columns, the Poisson identity
+    /// `f(2 * lambda) = f(lambda) + 1 - exp(-lambda)` for `f(lambda) = E[C] / K` means that raising
+    /// the base by one doubles `lambda` and shifts the window by one column up to a relative
+    /// `ln(2) * exp(-lambda)`, about `2e-23` at `C / K = 6 + 1/32` (`lambda ≈ 51.9`).
+    /// Consequently "`K = 2^32` with base `>= 16`" fits the byte tables equally well; the Poisson
+    /// limit is preferred because a single operating point then explains both the byte tables and
+    /// the permutations, which are insensitive to `K`.
     const STEADY_STATE_MODEL: Occupancy = Occupancy::Poisson;
 
     /// Integer part of the steady-state operating point `C / K = 6.0 + phase`, where
@@ -12064,8 +12067,10 @@ mod tests {
 
         /// Probability `p_0` that a cell in 1-based column `col` is still `0`.
         ///
-        /// Evaluated as `exp(...)` rather than `1.0 - one_prob(...)`, which rounds to `0.0` once
-        /// `p_0 < f64::EPSILON / 2` and would misrank tiny surprise probabilities in
+        /// Evaluated as `exp(...)` rather than `1.0 - one_prob(...)`: `one_prob` cannot hold a
+        /// difference from `1.0` below the `2^-53` spacing there, so it rounds to exactly `1.0`
+        /// once `p_0 <= 2^-54` (`f64::EPSILON / 4`) and the subtraction then yields `0.0`. That
+        /// cancellation would misrank tiny surprise probabilities in
         /// `generate_sliding_column_permutation`.
         fn zero_prob(self, lambda: f64, col: u8) -> f64 {
             self.ln_zero_prob(lambda, col).exp()
