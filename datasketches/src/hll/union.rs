@@ -21,6 +21,7 @@ use std::hash::Hash;
 use crate::common::NumStdDev;
 use crate::error::Error;
 use crate::hll::Coupon;
+use crate::hll::DEFAULT_LG_K;
 use crate::hll::HllSketch;
 use crate::hll::HllType;
 use crate::hll::array4::Array4;
@@ -56,6 +57,13 @@ impl fmt::Debug for HllUnion {
                 &(self.lower_bound(NumStdDev::One)..=self.upper_bound(NumStdDev::One)),
             )
             .finish()
+    }
+}
+
+impl Default for HllUnion {
+    /// Creates an empty union with `lg_max_k = 12`.
+    fn default() -> Self {
+        Self::new(DEFAULT_LG_K).unwrap()
     }
 }
 

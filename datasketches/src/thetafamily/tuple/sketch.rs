@@ -786,6 +786,15 @@ where
     policy: P,
 }
 
+impl<P> Default for TupleSketchBuilder<P>
+where
+    P: SummaryPolicy + Default,
+{
+    fn default() -> Self {
+        Self::new(P::default())
+    }
+}
+
 impl<P> TupleSketchBuilder<P>
 where
     P: SummaryPolicy,

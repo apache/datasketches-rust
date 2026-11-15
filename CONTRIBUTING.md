@@ -113,6 +113,15 @@ When adding or resizing a scenario, use `--rounds` to select a suitable fixed co
 - Validate query arguments before handling an empty sketch. Invalid arguments return `InvalidArgument` regardless of whether the sketch is empty.
 - Return a meaningful result when one exists, such as zero, `false`, or an empty collection. Otherwise, use `Option` for an absent result, combined with `Result` when argument validation can fail.
 
+## Constructors and defaults
+
+- Use `new` or `with_seed` when a sketch requires one or two core parameters.
+- Use a builder for several optional settings, distinct sizing modes, or buffered construction.
+- Implement `Default` when there is an established empty configuration. A generic type can
+  implement it when its caller-selected policy implements `Default`. Keep required sizing choices
+  explicit when they depend on the domain. Immutable views and snapshots use the corresponding
+  conversion or deserialization methods.
+
 ## Visibility
 
 - Let module visibility define the boundary for implementation items. Inside a private module, use `pub` when an item must be available outside its defining module. Inside a `pub(crate)` module, use `pub` when the item should be available wherever that module is visible. Do not repeat an enclosing restriction when it adds no narrower boundary.

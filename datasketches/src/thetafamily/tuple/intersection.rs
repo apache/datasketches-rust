@@ -99,6 +99,15 @@ impl<P: SummaryCombinePolicy> fmt::Debug for TupleIntersection<P> {
     }
 }
 
+impl<P> Default for TupleIntersection<P>
+where
+    P: SummaryCombinePolicy + Default,
+{
+    fn default() -> Self {
+        Self::new(P::default())
+    }
+}
+
 impl<P> TupleIntersection<P>
 where
     P: SummaryCombinePolicy,

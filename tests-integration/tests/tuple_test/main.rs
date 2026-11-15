@@ -26,7 +26,7 @@ use datasketches::tuple::TupleSketch;
 use datasketches::tuple::TupleSketchBuilder;
 
 fn default_tuple_sketch_builder() -> TupleSketchBuilder<DefaultUpdatePolicy<u64>> {
-    TupleSketchBuilder::new(DefaultUpdatePolicy::<u64>::default())
+    TupleSketchBuilder::default()
 }
 
 fn tuple_sketch_with_range(start: u64, count: u64) -> TupleSketch<DefaultUpdatePolicy<u64>> {

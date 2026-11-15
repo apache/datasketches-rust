@@ -25,6 +25,7 @@ use crate::codec::family::Family;
 use crate::common::NumStdDev;
 use crate::error::Error;
 use crate::hll::Coupon;
+use crate::hll::DEFAULT_LG_K;
 use crate::hll::HllType;
 use crate::hll::RESIZE_DENOMINATOR;
 use crate::hll::RESIZE_NUMERATOR;
@@ -60,6 +61,13 @@ use crate::hll::serialization::extract_tgt_hll_type;
 pub struct HllSketch {
     lg_config_k: u8,
     mode: Mode,
+}
+
+impl Default for HllSketch {
+    /// Creates an empty HLL_8 sketch with `lg_config_k = 12`.
+    fn default() -> Self {
+        Self::new(DEFAULT_LG_K, HllType::default()).unwrap()
+    }
 }
 
 impl HllSketch {

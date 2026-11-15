@@ -94,7 +94,7 @@ pub use self::union::HllUnion;
 ///
 /// For the same `lg_k` and input, all three types produce the same estimates.
 /// They trade memory usage against update speed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum HllType {
     /// Uses 4 bits per HLL bucket and has the smallest storage footprint.
     ///
@@ -105,8 +105,11 @@ pub enum HllType {
     /// Uses 8 bits per HLL bucket and has the largest storage footprint.
     ///
     /// It is generally the fastest representation to update.
+    #[default]
     Hll8,
 }
+
+const DEFAULT_LG_K: u8 = 12;
 
 const KEY_BITS_26: u32 = 26;
 const KEY_MASK_26: u32 = (1 << KEY_BITS_26) - 1;

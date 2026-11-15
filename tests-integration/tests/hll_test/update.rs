@@ -26,7 +26,9 @@ use googletest::prelude::near;
 
 #[test]
 fn test_basic_update() {
-    let mut sketch = HllSketch::new(12, HllType::Hll8).unwrap();
+    let mut sketch = HllSketch::default();
+    assert_eq!(sketch.lg_config_k(), 12);
+    assert_eq!(sketch.target_type(), HllType::Hll8);
 
     // Initially empty
     assert_eq!(sketch.estimate(), 0.0);

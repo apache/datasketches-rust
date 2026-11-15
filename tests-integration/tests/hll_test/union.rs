@@ -845,3 +845,15 @@ fn test_union_supports_shared_queries_after_dense_merges() {
         }
     });
 }
+
+#[test]
+fn default_union_accepts_default_sketch() {
+    let mut sketch = HllSketch::default();
+    sketch.update("apple");
+
+    let mut union = HllUnion::default();
+    assert_eq!(union.lg_max_k(), 12);
+    assert!(union.is_empty());
+    union.update(&sketch);
+    assert_eq!(union.estimate(), sketch.estimate());
+}

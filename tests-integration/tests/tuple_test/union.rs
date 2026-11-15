@@ -32,7 +32,7 @@ use crate::default_tuple_sketch_builder;
 use crate::tuple_sketch_with_range;
 
 fn default_union_builder() -> TupleUnionBuilder<DefaultUnionPolicy<u64>> {
-    TupleUnionBuilder::new(DefaultUnionPolicy::<u64>::default())
+    TupleUnionBuilder::default()
 }
 
 #[test]

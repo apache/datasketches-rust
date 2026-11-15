@@ -92,9 +92,8 @@ where
 /// It combines two summaries with `summary += other` and is available for any summary type `S`
 /// where `S: AddAssign<&S>`.
 ///
-/// There is intentionally no default combine policy for the intersection: how to combine summaries
-/// of the keys present in both inputs is application-specific, so the intersection always requires
-/// an explicit policy.
+/// An intersection also requires a concrete policy type because combining summaries is
+/// application-specific. A default-constructed intersection uses that policy type's default.
 #[derive(Default, Debug, Clone, Copy)]
 pub struct DefaultUnionPolicy<S> {
     marker: PhantomData<fn() -> S>,

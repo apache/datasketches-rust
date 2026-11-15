@@ -184,6 +184,15 @@ where
     policy: P,
 }
 
+impl<P> Default for TupleUnionBuilder<P>
+where
+    P: SummaryCombinePolicy + Default,
+{
+    fn default() -> Self {
+        Self::new(P::default())
+    }
+}
+
 impl<P> TupleUnionBuilder<P>
 where
     P: SummaryCombinePolicy,

@@ -48,7 +48,7 @@ impl SummaryCombinePolicy for SumPolicy {
 #[test]
 fn has_result_tracks_the_first_update() {
     let sketch = tuple_sketch_with_range(0, 10);
-    let mut intersection = TupleIntersection::new(SumPolicy);
+    let mut intersection = TupleIntersection::<SumPolicy>::default();
 
     assert!(!intersection.has_result());
     intersection.update(&sketch).unwrap();
