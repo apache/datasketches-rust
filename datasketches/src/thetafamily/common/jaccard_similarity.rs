@@ -225,7 +225,7 @@ fn identical_sets(
 
 fn non_empty_count_and_theta(metadata: ThetaFamilySketchMetadata) -> Option<(usize, u64)> {
     match metadata {
-        ThetaFamilySketchMetadata::Empty { .. } => None,
+        ThetaFamilySketchMetadata::Empty => None,
         ThetaFamilySketchMetadata::NonEmpty {
             theta,
             num_retained,

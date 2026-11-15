@@ -46,11 +46,11 @@ where
     A: EntrySketch,
     B: KeySketch,
 {
-    // If A is empty the result is an (empty) copy of A. As with the union and intersection, an
-    // empty input carries no keys, so its seed is not validated.
+    // If A is empty the result is empty. As with the union and intersection, an empty input
+    // carries no keys, so its seed is not validated and the result uses this operator's seed hash.
     let (a_seed_hash, a_theta, a_ordered) = match a.metadata() {
-        ThetaFamilySketchMetadata::Empty { .. } => {
-            return Ok(copy_to_compact_state(a, ordered));
+        ThetaFamilySketchMetadata::Empty => {
+            return Ok(CompactSketchState::empty(seed_hash));
         }
         ThetaFamilySketchMetadata::NonEmpty {
             seed_hash,
@@ -67,8 +67,14 @@ where
     // "A is non-empty but has no retained keys" state: B's seed and theta must not influence
     // the result.
     let (b_seed_hash, b_theta, b_ordered, b_num_retained) = match b.metadata() {
-        ThetaFamilySketchMetadata::Empty { .. } => {
-            return Ok(copy_to_compact_state(a, ordered));
+        ThetaFamilySketchMetadata::Empty => {
+            return Ok(CompactSketchState::compact(
+                a.entries().collect(),
+                a_theta,
+                a_seed_hash,
+                a_ordered,
+                ordered,
+            ));
         }
         ThetaFamilySketchMetadata::NonEmpty {
             seed_hash,
@@ -156,26 +162,6 @@ where
         }
     }
     entries
-}
-
-fn copy_to_compact_state<S>(sketch: S, ordered: bool) -> CompactSketchState<S::Entry>
-where
-    S: EntrySketch,
-{
-    let (seed_hash, theta, input_ordered) = match sketch.metadata() {
-        ThetaFamilySketchMetadata::Empty { seed_hash } => {
-            return CompactSketchState::empty(seed_hash);
-        }
-        ThetaFamilySketchMetadata::NonEmpty {
-            seed_hash,
-            theta,
-            ordered,
-            ..
-        } => (seed_hash, theta, ordered),
-    };
-
-    let entries = sketch.entries().collect();
-    CompactSketchState::compact(entries, theta, seed_hash, input_ordered, ordered)
 }
 
 const FOLD_MULTIPLIER: u64 = 0x9E37_79B9_7F4A_7C15;

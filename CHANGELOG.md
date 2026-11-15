@@ -43,6 +43,7 @@ All significant changes to this project will be documented in this file.
 * `ReqSketch::merge` now cascades compaction across newly grown levels when a merged sketch overflows the top compactor's nominal capacity.
 * `ReqSketch::deserialize` now returns `InvalidData` for out-of-range or non-finite compactor `section_size_raw` values instead of overflowing section-size rounding.
 * `ThetaJaccardSimilarity` and `TupleJaccardSimilarity` now return `InvalidArgument` instead of `InvalidData` when a non-empty input sketch's seed hash does not match the configured seed.
+* `ThetaANotB::compute` and `TupleANotB::compute` now stamp empty results with the operator's seed hash instead of copying an unchecked seed hash from an empty left input.
 
 ## v0.6.0 (2026-10-29)
 

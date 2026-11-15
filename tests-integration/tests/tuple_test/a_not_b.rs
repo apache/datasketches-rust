@@ -122,6 +122,7 @@ fn empty_inputs_do_not_impose_a_seed() {
 
     let result = op.compute(&empty_other_seed, &non_empty, true).unwrap();
     assert!(result.is_empty());
+    assert_eq!(result.seed_hash(), non_empty.seed_hash());
     assert_eq!(result.theta64(), MAX_THETA);
     assert!(!result.is_estimation_mode());
     assert_eq!(
