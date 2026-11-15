@@ -39,7 +39,7 @@ fn merge(bencher: Bencher) {
 
     bencher.bench_local(|| {
         let mut left = left.clone();
-        left.merge(black_box(&right));
+        left.merge(black_box(&right)).unwrap();
         black_box(left)
     });
 }
@@ -50,7 +50,7 @@ fn unmerged(bencher: Bencher, left_rows: usize) {
 
     bencher.bench_local(|| {
         let mut left = left.clone();
-        left.merge(black_box(&right));
+        left.merge(black_box(&right)).unwrap();
         black_box(left)
     });
 }
@@ -67,7 +67,7 @@ fn small_partials(bencher: Bencher) {
     bencher.bench_local(|| {
         let mut merged = TDigestMut::default();
         for partial in &partials {
-            merged.merge(black_box(partial));
+            merged.merge(black_box(partial)).unwrap();
         }
         black_box(merged)
     });
@@ -85,7 +85,7 @@ fn partials(bencher: Bencher) {
     bencher.bench_local(|| {
         let mut merged = TDigestMut::new(DEFAULT_DIGEST_K).unwrap();
         for partial in &partials {
-            merged.merge(black_box(partial));
+            merged.merge(black_box(partial)).unwrap();
         }
         black_box(merged)
     });
@@ -163,7 +163,7 @@ fn serialized_partials(bencher: Bencher, rows_per_partial: usize) {
         let mut merged = TDigestMut::default();
         for partial in black_box(&partials) {
             let partial = TDigestMut::deserialize(partial).unwrap();
-            merged.merge(&partial);
+            merged.merge(&partial).unwrap();
         }
         black_box(merged.quantile(0.5).unwrap())
     });
@@ -180,7 +180,7 @@ fn serialized_overlapping_partials(bencher: Bencher) {
         let mut merged = TDigestMut::default();
         for partial in black_box(&partials) {
             let partial = TDigestMut::deserialize(partial).unwrap();
-            merged.merge(&partial);
+            merged.merge(&partial).unwrap();
         }
         black_box(merged.quantile(0.5).unwrap())
     });
@@ -210,7 +210,7 @@ fn serialized_partials_in_batches(bencher: Bencher, overlapping: bool) {
                 .map(|partial| TDigestMut::deserialize(partial))
                 .collect::<Result<TDigestMut, _>>()
                 .unwrap();
-            merged.merge(&batch);
+            merged.merge(&batch).unwrap();
         }
         black_box(merged.quantile(0.5).unwrap())
     });

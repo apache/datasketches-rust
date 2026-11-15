@@ -24,12 +24,12 @@ use datasketches::countmin::CountMinSketch;
 fn u64(bencher: Bencher, factor: f64) {
     let mut sketch = CountMinSketch::<u64>::new(4, 16_384).unwrap();
     for item in 0..128_u64 {
-        sketch.update_with_weight(item, (1 << 53) + item);
+        sketch.update_with_weight(item, (1 << 53) + item).unwrap();
     }
 
     bencher.bench_local(|| {
         let mut sketch = sketch.clone();
-        black_box(&mut sketch).decay(black_box(factor))
+        black_box(&mut sketch).decay(black_box(factor)).unwrap()
     });
 }
 

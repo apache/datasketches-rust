@@ -41,7 +41,9 @@ fn serialized_borrowed(bencher: Bencher, shape: (usize, usize)) {
     bencher.bench_local(|| {
         let mut merged = TDigestMut::default();
         for bytes in black_box(&partials) {
-            merged.merge(&TDigestMut::deserialize(bytes).unwrap());
+            merged
+                .merge(&TDigestMut::deserialize(bytes).unwrap())
+                .unwrap();
         }
         final_quantile(merged)
     });
@@ -73,7 +75,7 @@ fn serialized_in_batches(bencher: Bencher, shape: (usize, usize)) {
                 .map(|bytes| TDigestMut::deserialize(bytes))
                 .collect::<Result<TDigestMut, _>>()
                 .unwrap();
-            merged.merge(&batch);
+            merged.merge(&batch).unwrap();
         }
         final_quantile(merged)
     });
@@ -86,7 +88,9 @@ fn end_to_end_borrowed(bencher: Bencher, rows_per_partial: usize) {
         let partials = serialize_partials(black_box(&inputs), rows_per_partial);
         let mut merged = TDigestMut::default();
         for bytes in &partials {
-            merged.merge(&TDigestMut::deserialize(bytes).unwrap());
+            merged
+                .merge(&TDigestMut::deserialize(bytes).unwrap())
+                .unwrap();
         }
         final_quantile(merged)
     });

@@ -257,7 +257,7 @@ fn test_merge_small() {
     let mut td2 = TDigestMut::new(10).unwrap();
     td2.update(2.0);
     td2.update(3.0);
-    td1.merge(&td2);
+    td1.merge(&td2).unwrap();
     assert_eq!(td1.min_value(), Some(1.0));
     assert_eq!(td1.max_value(), Some(3.0));
     assert_eq!(td1.total_weight(), 4);
@@ -279,7 +279,7 @@ fn test_merge_large() {
         td1.update(i as f64);
         td2.update((sup + i) as f64);
     }
-    td1.merge(&td2);
+    td1.merge(&td2).unwrap();
 
     assert_eq!(td1.total_weight(), n);
     assert_eq!(td1.min_value(), Some(0.0));
@@ -313,7 +313,7 @@ fn test_mixed_k_merge_retains_receiver_k() {
             right.update((value + 10_000) as f64);
         }
 
-        left.merge(&right);
+        left.merge(&right).unwrap();
 
         assert_eq!(left.k(), left_k);
         assert_eq!(left.total_weight(), 10_000 + right_count);
@@ -657,7 +657,7 @@ fn test_rank_tails_stay_monotonic_after_updating_weighted_centroids() {
                 digest.update(1.);
                 digest.update(99.);
             }
-            1 => digest.merge(&updates),
+            1 => digest.merge(&updates).unwrap(),
             _ => digest = [digest, updates].into_iter().collect(),
         }
         let frozen = digest.clone().freeze();
@@ -991,7 +991,7 @@ fn test_merge_preserves_min_max_from_other() {
     assert_eq!(other.max_value(), Some(100.0));
 
     let mut empty = TDigestMut::new(100).unwrap();
-    empty.merge(&other);
+    empty.merge(&other).unwrap();
     assert_eq!(empty.min_value(), Some(0.0));
     assert_eq!(empty.max_value(), Some(100.0));
     assert_eq!(empty.quantile(0.0).unwrap(), Some(0.0));
@@ -1003,7 +1003,7 @@ fn test_merge_preserves_min_max_from_other() {
 
     let mut left = deserialize_with_centroids(100, 5.0, 40.0, &[(10.0, 4), (20.0, 4), (30.0, 4)]);
     let right = deserialize_with_centroids(100, -10.0, 80.0, &[(0.0, 4), (40.0, 4), (70.0, 4)]);
-    left.merge(&right);
+    left.merge(&right).unwrap();
     assert_eq!(left.min_value(), Some(-10.0));
     assert_eq!(left.max_value(), Some(80.0));
     assert_eq!(left.quantile(0.0).unwrap(), Some(-10.0));
@@ -1016,22 +1016,31 @@ fn weight_overflow_preserves_buffer_and_extrema() {
     one.update(0.0);
     let mut sketch = one.clone();
     for _ in 0..63 {
-        sketch.merge(&sketch.clone());
+        sketch.merge(&sketch.clone()).unwrap();
         sketch.update(0.0);
     }
     assert_eq!(sketch.total_weight(), u64::MAX);
     let before = sketch.clone().serialize();
 
     sketch.update(f64::NAN);
-    sketch.merge(&TDigestMut::default());
+    sketch.merge(&TDigestMut::default()).unwrap();
     assert!(catch_unwind(AssertUnwindSafe(|| sketch.update(1.0))).is_err());
     assert_eq!(sketch.clone().serialize(), before);
-    assert!(catch_unwind(AssertUnwindSafe(|| sketch.merge(&one))).is_err());
+    assert_eq!(
+        sketch.merge(&one).unwrap_err().kind(),
+        ErrorKind::InvalidArgument
+    );
     assert_eq!(sketch.clone().serialize(), before);
 
     let mut target = TDigestMut::default();
     target.update(1.0);
     let before = target.clone().serialize();
-    assert!(catch_unwind(AssertUnwindSafe(|| target.merge(&sketch))).is_err());
+    assert_eq!(
+        target.merge(&sketch).unwrap_err().kind(),
+        ErrorKind::InvalidArgument
+    );
+    assert_eq!(target.min_value(), Some(1.0));
+    assert_eq!(target.max_value(), Some(1.0));
+    assert_eq!(target.total_weight(), 1);
     assert_eq!(target.serialize(), before);
 }
