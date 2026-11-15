@@ -77,7 +77,7 @@ Enable multiple algorithms by listing their features together, such as `features
 | `tuple`       | `TupleSketch` and set operations      | Theta-style keys with user-defined summaries attached to retained entries.                        |
 | `xor`         | `XorFilter`, `XorFilterBuilder`        | Immutable probabilistic membership with 8-, 16-, or 32-bit fingerprints.                           |
 
-See the [API documentation](https://docs.rs/datasketches) for configuration, accuracy guarantees, serialization, and examples for each algorithm. Runnable end-to-end scenarios live in [`datasketches/examples`](datasketches/examples).
+See the [API documentation](https://docs.rs/datasketches) for configuration, accuracy guarantees, serialization, and examples for each algorithm. Runnable end-to-end scenarios live in [`examples`](examples).
 
 ## Compatibility
 
