@@ -41,9 +41,11 @@ fn java_images_round_trip_byte_for_byte() {
         (XorFilterType::Xor16, JAVA_XOR16_IMAGE),
     ] {
         let expected = decode_hex(image);
-        let mut builder = XorFilterBuilder::with_seed(ty, 42);
-        builder.update_values(values);
-        let built = builder.build().unwrap();
+        let built = XorFilterBuilder::new(ty)
+            .seed(42)
+            .update_values(values)
+            .build()
+            .unwrap();
 
         let restored = XorFilter::deserialize(&expected).unwrap();
         assert_eq!(restored.filter_type(), ty);
@@ -183,9 +185,9 @@ fn java_utf8_and_raw_byte_inputs_match() {
         ),
     ];
     for (kind, image) in images {
-        let mut builder = XorFilterBuilder::with_seed(kind, 42);
+        let mut builder = XorFilterBuilder::new(kind).seed(42);
         for bytes in [b"hello".as_slice(), "数据🔎".as_bytes(), &[], &[0, 1, 255]] {
-            builder.update(raw_bytes::from_slice(bytes));
+            builder = builder.update(raw_bytes::from_slice(bytes));
         }
         let built = builder.build().unwrap();
         let expected = decode_hex(image);
