@@ -200,6 +200,7 @@ impl Fingerprints {
 
 /// An [`XorFilter`] builder for values or precomputed hashes.
 ///
+/// Accumulated hashes are sorted and deduplicated when [`build`](Self::build) is called.
 /// Query values with [`XorFilter::contains`] and precomputed hashes with
 /// [`XorFilter::contains_hash`].
 ///
@@ -227,48 +228,69 @@ impl XorFilterBuilder {
     ///
     /// Values are hashed independently of the construction seed.
     pub fn new(filter_type: XorFilterType) -> Self {
-        Self::with_seed(filter_type, DEFAULT_CONSTRUCTION_SEED)
-    }
-
-    /// Creates a builder with the given fingerprint width and initial construction seed.
-    ///
-    /// The `seed` determines which layouts to try during construction. Values are hashed
-    /// independently of it.
-    pub fn with_seed(filter_type: XorFilterType, seed: u64) -> Self {
         Self {
             filter_type,
-            seed,
+            seed: DEFAULT_CONSTRUCTION_SEED,
             hashes: Vec::new(),
         }
     }
 
-    /// Adds a value.
+    /// Sets the initial construction seed used by [`build`](Self::build) (default: `0`).
+    ///
+    /// The `seed` determines which layouts to try during construction. Values are hashed
+    /// independently of this construction seed.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::xor::XorFilterBuilder;
+    /// use datasketches::xor::XorFilterType;
+    ///
+    /// let filter = XorFilterBuilder::new(XorFilterType::Xor8)
+    ///     .seed(42)
+    ///     .update_values(["apple", "banana"])
+    ///     .build()
+    ///     .unwrap();
+    /// assert!(filter.contains("apple"));
+    /// ```
     #[inline]
-    pub fn update<T: Hash>(&mut self, item: T) {
-        self.update_hash(hash_item(item));
+    pub fn seed(mut self, seed: u64) -> Self {
+        self.seed = seed;
+        self
     }
 
-    /// Adds a precomputed 64-bit hash.
+    /// Adds a value to the builder.
     #[inline]
-    pub fn update_hash(&mut self, hash: u64) {
+    pub fn update<T: Hash>(self, item: T) -> Self {
+        self.update_hash(hash_item(item))
+    }
+
+    /// Adds a precomputed 64-bit hash to the builder.
+    #[inline]
+    pub fn update_hash(mut self, hash: u64) -> Self {
         self.hashes.push(hash);
+        self
     }
 
-    /// Adds a batch of values.
-    pub fn update_values<T: Hash>(&mut self, items: impl IntoIterator<Item = T>) {
-        self.update_hashes(items.into_iter().map(hash_item));
+    /// Adds a batch of values to the builder.
+    pub fn update_values<T: Hash>(self, items: impl IntoIterator<Item = T>) -> Self {
+        self.update_hashes(items.into_iter().map(hash_item))
     }
 
-    /// Adds a batch of precomputed 64-bit hashes.
-    pub fn update_hashes(&mut self, hashes: impl IntoIterator<Item = u64>) {
+    /// Adds a batch of precomputed 64-bit hashes to the builder.
+    pub fn update_hashes(mut self, hashes: impl IntoIterator<Item = u64>) -> Self {
         self.hashes.extend(hashes);
+        self
     }
 
-    /// Consumes the builder and creates the filter.
+    /// Consumes the builder, sorts and deduplicates accumulated hashes, and creates an
+    /// [`XorFilter`].
     ///
     /// # Errors
     ///
-    /// Returns an error if the input is too large or no valid layout is found.
+    /// Returns [`InvalidArgument`](crate::error::ErrorKind::InvalidArgument) if the distinct
+    /// input is too large or construction cannot find a valid layout within `100` internal
+    /// seed attempts.
     pub fn build(mut self) -> Result<XorFilter, Error> {
         self.hashes.sort_unstable();
         self.hashes.dedup();
@@ -284,6 +306,7 @@ impl XorFilterBuilder {
 /// changes.
 ///
 /// See the [module level documentation](super) for more.
+#[must_use]
 #[derive(Clone, PartialEq, Eq)]
 pub struct XorFilter {
     // Cache the derived length to avoid division on every query.
@@ -296,8 +319,12 @@ impl XorFilter {
     /// Creates a filter from distinct precomputed 64-bit hashes using the default construction
     /// seed (`0`).
     ///
-    /// The same set of hashes and filter type produce the same filter regardless of input order.
-    /// Query with [`contains_hash`](Self::contains_hash) using the same hash function.
+    /// Use [`XorFilterBuilder`] instead when inputs may contain duplicates or unhashed values.
+    ///
+    /// Starting from seed `0`, construction tries up to `100` internal mixing seeds derived from
+    /// it until it finds a valid peeling layout. The same set of distinct hashes and filter type
+    /// produce the same filter regardless of input order. Query with
+    /// [`contains_hash`](Self::contains_hash) using the same hash function.
     ///
     /// # Errors
     ///
@@ -305,17 +332,20 @@ impl XorFilter {
     ///
     /// - The input contains duplicate hashes.
     /// - The input is too large to build a filter.
-    /// - Construction cannot find a valid layout. For distinct hashes, try another seed with
-    ///   [`from_hashes_with_seed`](Self::from_hashes_with_seed).
-    pub fn from_hashes(keys: &[u64], filter_type: XorFilterType) -> Result<Self, Error> {
-        Self::from_hashes_with_seed(keys, filter_type, DEFAULT_CONSTRUCTION_SEED)
+    /// - Construction cannot find a valid layout within `100` internal seed attempts. For distinct
+    ///   hashes, try another seed with [`from_hashes_with_seed`](Self::from_hashes_with_seed).
+    pub fn from_hashes(hashes: &[u64], filter_type: XorFilterType) -> Result<Self, Error> {
+        Self::from_hashes_with_seed(hashes, filter_type, DEFAULT_CONSTRUCTION_SEED)
     }
 
     /// Creates a filter from distinct precomputed 64-bit hashes and an explicit construction seed.
     ///
-    /// The initial `seed` determines which layouts to try during construction. The same set of
-    /// hashes, filter type, and seed produce the same filter regardless of input order.
-    /// Query with [`contains_hash`](Self::contains_hash) using the same hash function.
+    /// Use [`XorFilterBuilder`] instead when inputs may contain duplicates or unhashed values.
+    ///
+    /// Starting from `seed`, construction tries up to `100` internal mixing seeds derived from it
+    /// until it finds a valid peeling layout. The same set of distinct hashes, filter type, and
+    /// initial `seed` produce the same filter regardless of input order. Query with
+    /// [`contains_hash`](Self::contains_hash) using the same hash function.
     ///
     /// # Errors
     ///
@@ -323,13 +353,14 @@ impl XorFilter {
     ///
     /// - The input contains duplicate hashes.
     /// - The input is too large to build a filter.
-    /// - Construction cannot find a valid layout. For distinct hashes, try another `seed`.
+    /// - Construction cannot find a valid layout within `100` internal seed attempts. For distinct
+    ///   hashes, try another `seed`.
     pub fn from_hashes_with_seed(
-        keys: &[u64],
+        hashes: &[u64],
         filter_type: XorFilterType,
         seed: u64,
     ) -> Result<Self, Error> {
-        let num_items = keys.len();
+        let num_items = hashes.len();
         let capacity = compute_capacity(num_items)?;
         let segment_length = capacity / usize::from(NUM_HASHES);
         let mut xor_mask = vec![0_u64; capacity];
@@ -339,44 +370,54 @@ impl XorFilter {
         let mut stack_hash = vec![0_u64; num_items];
         let mut stack_index = vec![0_u32; num_items];
 
-        let mut rng_state = seed;
-        let mut construction_seed = 0;
-        let mut stack_size = 0;
-        for attempt in 0..MAX_CONSTRUCTION_ATTEMPTS {
-            if attempt != 0 {
+        let mut rng_state = seed.wrapping_add(SPLITMIX_GAMMA);
+        let mut construction_seed = splitmix64(rng_state);
+        let mut stack_size = map(
+            hashes,
+            construction_seed,
+            segment_length,
+            &mut xor_mask,
+            &mut count,
+            &mut queue,
+            &mut stack_hash,
+            &mut stack_index,
+        );
+        if stack_size != num_items {
+            for _ in 1..MAX_CONSTRUCTION_ATTEMPTS {
                 xor_mask.fill(0);
                 count.fill(0);
-            }
-            rng_state = rng_state.wrapping_add(SPLITMIX_GAMMA);
-            construction_seed = splitmix64(rng_state);
-            stack_size = map(
-                keys,
-                construction_seed,
-                segment_length,
-                &mut xor_mask,
-                &mut count,
-                &mut queue,
-                &mut stack_hash,
-                &mut stack_index,
-            );
-            if stack_size == num_items {
-                break;
-            }
-            // For a fixed seed, mixing is a bijection, so two remaining hashes that cancel
-            // out are the same input hash. Reseeding cannot separate duplicates.
-            if count.iter().zip(&xor_mask).any(|(&c, &m)| c == 2 && m == 0) {
-                return Err(
-                    Error::invalid_argument("xor filter input contains duplicate hashes")
-                        .with_context("num_items", num_items),
+                rng_state = rng_state.wrapping_add(SPLITMIX_GAMMA);
+                construction_seed = splitmix64(rng_state);
+                stack_size = map(
+                    hashes,
+                    construction_seed,
+                    segment_length,
+                    &mut xor_mask,
+                    &mut count,
+                    &mut queue,
+                    &mut stack_hash,
+                    &mut stack_index,
                 );
+                if stack_size == num_items {
+                    break;
+                }
             }
-        }
-
-        if stack_size != num_items {
-            return Err(Error::invalid_argument(
-                "xor filter construction could not find a valid layout",
-            )
-            .with_context("num_items", num_items));
+            if stack_size != num_items {
+                // Any duplicate hash prevents full peeling regardless of multiplicity; sort after
+                // all attempts fail so valid distinct inputs never pay sorting overhead on retry.
+                stack_hash.copy_from_slice(hashes);
+                stack_hash.sort_unstable();
+                if stack_hash.windows(2).any(|w| w[0] == w[1]) {
+                    return Err(Error::invalid_argument(
+                        "xor filter input contains duplicate hashes",
+                    )
+                    .with_context("num_items", num_items));
+                }
+                return Err(Error::invalid_argument(
+                    "xor filter construction could not find a valid layout",
+                )
+                .with_context("num_items", num_items));
+            }
         }
 
         // Assignment only needs the peel stack. Release the graph before allocating the
@@ -404,8 +445,8 @@ impl XorFilter {
     ///
     /// A `false` result means the item was definitely absent; a `true` result may be a false
     /// positive.
-    #[inline]
     #[must_use]
+    #[inline]
     pub fn contains<T: Hash>(&self, item: T) -> bool {
         self.contains_hash(hash_item(item))
     }
@@ -414,8 +455,8 @@ impl XorFilter {
     ///
     /// Use the same hash function for construction and queries.
     // Inline through Fingerprints::contains so width dispatch stays in the caller's hot loop.
-    #[inline(always)]
     #[must_use]
+    #[inline(always)]
     pub fn contains_hash(&self, hash: u64) -> bool {
         let mixed = mix(hash, self.seed);
         self.fingerprints.contains(mixed, self.segment_length)
@@ -569,7 +610,7 @@ fn compute_capacity(num_items: usize) -> Result<usize, Error> {
 }
 
 fn map(
-    keys: &[u64],
+    hashes: &[u64],
     seed: u64,
     segment_length: usize,
     xor_mask: &mut [u64],
@@ -585,8 +626,8 @@ fn map(
     let mut queues = split_segments(queue, segment_length + 1);
     // Reuse the peel stack for mixed hashes while mapping one segment at a time.
     // This bounds the random-access working set without allocating another buffer.
-    for (&key, hash) in keys.iter().zip(stack_hash.iter_mut()) {
-        *hash = mix(key, seed);
+    for (&raw_hash, mixed_slot) in hashes.iter().zip(stack_hash.iter_mut()) {
+        *mixed_slot = mix(raw_hash, seed);
     }
     for block in 0..3 {
         for &hash in stack_hash.iter() {

@@ -440,14 +440,29 @@ impl<T: CountMinValue> CountMinSketch<T> {
     /// assert!(left.estimate(2i64) >= 2);
     /// ```
     pub fn merge(&mut self, other: &CountMinSketch<T>) -> Result<(), Error> {
-        if self.num_hashes != other.num_hashes
-            || self.buckets.count != other.buckets.count
-            || self.seed != other.seed
-            || self.serial_version != other.serial_version
-        {
-            return Err(Error::invalid_argument(
-                "Count-Min sketches must have matching numbers of hashes, bucket counts, seeds, and serial versions",
-            ));
+        if self.num_hashes != other.num_hashes {
+            return Err(Error::invalid_argument(format!(
+                "cannot merge Count-Min sketches with different num_hashes: expected {}, got {}",
+                self.num_hashes, other.num_hashes
+            )));
+        }
+        if self.buckets.count != other.buckets.count {
+            return Err(Error::invalid_argument(format!(
+                "cannot merge Count-Min sketches with different num_buckets: expected {}, got {}",
+                self.buckets.count, other.buckets.count
+            )));
+        }
+        if self.seed != other.seed {
+            return Err(Error::invalid_argument(format!(
+                "cannot merge Count-Min sketches with different seeds: expected {}, got {}",
+                self.seed, other.seed
+            )));
+        }
+        if self.serial_version != other.serial_version {
+            return Err(Error::invalid_argument(format!(
+                "cannot merge Count-Min sketches with different serial versions: expected {}, got {}",
+                self.serial_version as u8, other.serial_version as u8
+            )));
         }
         self.total_weight = self
             .total_weight

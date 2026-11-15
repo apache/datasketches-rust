@@ -93,8 +93,8 @@ where
     ///
     /// # Errors
     ///
-    /// Returns an error if `sketch` was built with a different seed than this union (its seed hash
-    /// does not match).
+    /// Returns `InvalidArgument` if a non-empty `sketch` has a different seed hash from this
+    /// union.
     pub fn update<'a>(
         &mut self,
         sketch: impl Into<TupleSketchView<'a, P::Summary>>,

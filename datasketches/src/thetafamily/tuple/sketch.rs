@@ -220,9 +220,7 @@ impl<'a, S> TupleSketchView<'a, S> {
 impl<S> KeySketch for TupleSketchView<'_, S> {
     fn metadata(self) -> ThetaFamilySketchMetadata {
         if self.is_empty() {
-            ThetaFamilySketchMetadata::Empty {
-                seed_hash: self.seed_hash(),
-            }
+            ThetaFamilySketchMetadata::Empty
         } else {
             ThetaFamilySketchMetadata::NonEmpty {
                 seed_hash: self.seed_hash(),

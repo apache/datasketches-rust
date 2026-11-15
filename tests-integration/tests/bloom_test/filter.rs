@@ -240,9 +240,8 @@ fn union_intersect_and_difference_preserve_set_semantics() {
 }
 
 #[test]
-fn compatibility_checks_and_incompatible_set_operations_are_rejected() {
+fn incompatible_set_operations_are_rejected() {
     let baseline = filter();
-    assert!(baseline.is_compatible(&filter()));
 
     let incompatible = [
         BloomFilterBuilder::with_size(NUM_BITS, NUM_HASHES)
@@ -260,8 +259,6 @@ fn compatibility_checks_and_incompatible_set_operations_are_rejected() {
     ];
 
     for other in &incompatible {
-        assert!(!baseline.is_compatible(other));
-
         let mut union = baseline.clone();
         assert_eq!(
             union.union(other).unwrap_err().kind(),

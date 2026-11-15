@@ -95,7 +95,7 @@ where
         }
 
         let (seed_hash, input_theta, input_ordered, input_num_retained) = match sketch.metadata() {
-            ThetaFamilySketchMetadata::Empty { .. } => {
+            ThetaFamilySketchMetadata::Empty => {
                 self.result_state = IntersectionResultState::Empty;
                 self.table = table_without_entries(&self.table, MAX_THETA);
                 return Ok(());

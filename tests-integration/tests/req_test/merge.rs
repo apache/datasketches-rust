@@ -18,11 +18,10 @@
 //! Merge behavior for ReqSketch.
 
 use datasketches::common::SearchCriteria;
+use datasketches::error::ErrorKind;
 use datasketches::req::RankAccuracy;
 use datasketches::req::ReqSketch;
 use googletest::assert_that;
-use googletest::prelude::anything;
-use googletest::prelude::err;
 use googletest::prelude::lt;
 use googletest::prelude::near;
 
@@ -108,7 +107,11 @@ fn merge_rejects_incompatible_accuracy_modes() {
     let low_rank: ReqSketch<ReqF64> = ReqSketch::new(12, RankAccuracy::LowRank).unwrap();
 
     high_rank.update(req_f64(1.0));
-    assert_that!(high_rank.merge(&low_rank), err(anything()));
+    let before = high_rank.serialize();
+
+    let err = high_rank.merge(&low_rank).unwrap_err();
+    assert_eq!(err.kind(), ErrorKind::InvalidArgument);
+    assert_eq!(high_rank.serialize(), before);
 }
 
 #[test]
