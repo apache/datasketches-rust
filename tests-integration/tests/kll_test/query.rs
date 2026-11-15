@@ -64,7 +64,7 @@ fn quantile_endpoints_with_large_stream_weight() {
         sketch.merge(&sketch.clone()).unwrap();
     }
     sketch.update(1);
-    assert_eq!(sketch.n(), (1 << 53) + 1);
+    assert_eq!(sketch.total_weight(), (1 << 53) + 1);
     let view = sketch.sorted_view();
 
     for criteria in [SearchCriteria::Inclusive, SearchCriteria::Exclusive] {
@@ -260,7 +260,7 @@ fn sorted_view_supports_repeated_and_batch_queries() {
         .unwrap();
 
     assert_eq!(view.len(), sketch.num_retained());
-    assert_eq!(view.total_weight(), sketch.n());
+    assert_eq!(view.total_weight(), sketch.total_weight());
     assert_eq!(
         view.quantiles(&ranks, SearchCriteria::Inclusive)
             .unwrap()

@@ -145,7 +145,7 @@ fn high_rank_accuracy_matches_tight_thresholds() -> Result<(), Error> {
         sketch.update(req_f64(i as f64));
     }
 
-    assert_eq!(sketch.n(), n as u64);
+    assert_eq!(sketch.total_weight(), n as u64);
 
     for rank in [0.5, 0.9, 0.95, 0.99, 0.999] {
         let true_quantile = req_f64(rank * (n - 1) as f64);

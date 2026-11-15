@@ -98,7 +98,7 @@ fn test_f32_file(path: PathBuf, expected_n: usize) {
 
     assert_eq!(sketch.k(), DEFAULT_K, "wrong k in {}", path.display());
     assert_eq!(
-        sketch.n() as usize,
+        sketch.total_weight() as usize,
         expected_n,
         "wrong n in {}",
         path.display()
@@ -144,7 +144,7 @@ fn test_f64_file(path: PathBuf, expected_n: usize) {
 
     assert_eq!(sketch.k(), DEFAULT_K, "wrong k in {}", path.display());
     assert_eq!(
-        sketch.n() as usize,
+        sketch.total_weight() as usize,
         expected_n,
         "wrong n in {}",
         path.display()
@@ -190,7 +190,7 @@ fn test_i64_file(path: PathBuf, expected_n: usize) {
 
     assert_eq!(sketch.k(), DEFAULT_K, "wrong k in {}", path.display());
     assert_eq!(
-        sketch.n() as usize,
+        sketch.total_weight() as usize,
         expected_n,
         "wrong n in {}",
         path.display()
@@ -243,7 +243,7 @@ fn test_string_file(path: PathBuf, expected_n: usize) {
 
     assert_eq!(sketch.k(), DEFAULT_K, "wrong k in {}", path.display());
     assert_eq!(
-        sketch.n() as usize,
+        sketch.total_weight() as usize,
         expected_n,
         "wrong n in {}",
         path.display()
@@ -410,7 +410,7 @@ fn test_custom_kll_value_roundtrip() {
 
     assert_eq!(decoded.serialize(), sketch.serialize());
     assert_eq!(decoded.k(), sketch.k());
-    assert_eq!(decoded.n(), 1_000);
+    assert_eq!(decoded.total_weight(), 1_000);
     assert_eq!(decoded.num_retained(), sketch.num_retained());
     assert_eq!(decoded.min_item(), sketch.min_item());
     assert_eq!(decoded.max_item(), sketch.max_item());

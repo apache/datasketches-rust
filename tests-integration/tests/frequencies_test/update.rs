@@ -36,7 +36,7 @@ fn test_longs_update_with_zero_count_is_noop() {
 
     assert!(sketch.is_empty());
     assert_eq!(sketch.total_weight(), 0);
-    assert_eq!(sketch.num_active_items(), 0);
+    assert_eq!(sketch.num_retained(), 0);
 }
 
 #[test]
@@ -73,7 +73,7 @@ fn test_longs_empty() {
     let sketch: FrequentItemsSketch<i64> = FrequentItemsSketch::new(8).unwrap();
 
     assert!(sketch.is_empty());
-    assert_eq!(sketch.num_active_items(), 0);
+    assert_eq!(sketch.num_retained(), 0);
     assert_eq!(sketch.total_weight(), 0);
     assert_eq!(sketch.estimate(&42), 0);
     assert_eq!(sketch.lower_bound(&42), 0);
@@ -97,7 +97,7 @@ fn test_items_borrowed_key_updates_and_queries() {
 
     assert!(!sketch.is_empty());
     assert_eq!(sketch.total_weight(), 15);
-    assert_eq!(sketch.num_active_items(), 12);
+    assert_eq!(sketch.num_retained(), 12);
     assert_eq!(sketch.estimate("alpha"), 2);
     assert_eq!(sketch.lower_bound("alpha"), 2);
     assert_eq!(sketch.upper_bound("alpha"), 2);
@@ -122,7 +122,7 @@ fn test_longs_several_items_no_resize_no_purge() {
 
     assert!(!sketch.is_empty());
     assert_eq!(sketch.total_weight(), 7);
-    assert_eq!(sketch.num_active_items(), 4);
+    assert_eq!(sketch.num_retained(), 4);
     assert_eq!(sketch.estimate(&1), 1);
     assert_eq!(sketch.estimate(&2), 3);
     assert_eq!(sketch.estimate(&3), 2);
@@ -147,7 +147,7 @@ fn test_items_several_items_no_resize_no_purge() {
 
     assert!(!sketch.is_empty());
     assert_eq!(sketch.total_weight(), 7);
-    assert_eq!(sketch.num_active_items(), 4);
+    assert_eq!(sketch.num_retained(), 4);
     assert_eq!(sketch.estimate(&a), 1);
     assert_eq!(sketch.estimate(&b), 3);
     assert_eq!(sketch.estimate(&c), 2);
@@ -163,7 +163,7 @@ fn test_items_several_items_no_resize_no_purge() {
 
     sketch.reset();
     assert!(sketch.is_empty());
-    assert_eq!(sketch.num_active_items(), 0);
+    assert_eq!(sketch.num_retained(), 0);
     assert_eq!(sketch.total_weight(), 0);
 }
 
@@ -187,7 +187,7 @@ fn test_items_several_items_with_resize_no_purge() {
 
     assert!(!sketch.is_empty());
     assert_eq!(sketch.total_weight(), 15);
-    assert_eq!(sketch.num_active_items(), 12);
+    assert_eq!(sketch.num_retained(), 12);
     assert_eq!(sketch.estimate(&a), 1);
     assert_eq!(sketch.estimate(&b), 3);
     assert_eq!(sketch.estimate(&c), 2);
@@ -261,7 +261,7 @@ fn test_longs_merge_estimation_mode() {
     sketch1.merge(&sketch2);
     assert!(!sketch1.is_empty());
     assert_eq!(sketch1.total_weight(), 46);
-    assert_that!(sketch1.num_active_items(), ge(2));
+    assert_that!(sketch1.num_retained(), ge(2));
 
     let items = sketch1.frequent_items_with_threshold(ErrorType::NoFalsePositives, 2);
     assert_eq!(items.len(), 2);
@@ -289,7 +289,7 @@ fn test_items_merge_exact_mode() {
 
     assert!(!sketch1.is_empty());
     assert_eq!(sketch1.total_weight(), 5);
-    assert_eq!(sketch1.num_active_items(), 3);
+    assert_eq!(sketch1.num_retained(), 3);
     assert_eq!(sketch1.estimate(&a), 1);
     assert_eq!(sketch1.estimate(&b), 3);
     assert_eq!(sketch1.estimate(&c), 1);
@@ -305,7 +305,7 @@ fn test_longs_merge_empty_is_noop() {
     sketch.merge(&empty);
 
     assert_eq!(sketch.total_weight(), 1);
-    assert_eq!(sketch.num_active_items(), 1);
+    assert_eq!(sketch.num_retained(), 1);
     assert_eq!(sketch.estimate(&1), 1);
 }
 
@@ -316,7 +316,7 @@ fn test_purged_state_survives_merge_and_reset() {
         purged.update(item);
     }
     assert!(!purged.is_empty());
-    assert_eq!(purged.num_active_items(), 0);
+    assert_eq!(purged.num_retained(), 0);
     assert_eq!(purged.total_weight(), 193);
     assert_eq!(purged.maximum_error(), 1);
 
@@ -324,7 +324,7 @@ fn test_purged_state_survives_merge_and_reset() {
     merged.merge(&purged);
 
     assert!(!merged.is_empty());
-    assert_eq!(merged.num_active_items(), 0);
+    assert_eq!(merged.num_retained(), 0);
     assert_eq!(merged.total_weight(), purged.total_weight());
     assert_eq!(merged.maximum_error(), purged.maximum_error());
     assert_eq!(merged.upper_bound(&0), 1);
@@ -365,7 +365,7 @@ fn test_merge_weight_overflow_preserves_state() {
     for item in 0..7 {
         purged.update(item);
     }
-    assert_eq!(purged.num_active_items(), 0);
+    assert_eq!(purged.num_retained(), 0);
 
     sketch.merge(&purged);
     assert_eq!(sketch.total_weight(), u64::MAX);
@@ -385,7 +385,7 @@ fn test_longs_reset() {
 
     assert!(sketch.is_empty());
     assert_eq!(sketch.total_weight(), 0);
-    assert_eq!(sketch.num_active_items(), 0);
+    assert_eq!(sketch.num_retained(), 0);
     assert_eq!(sketch.lg_max_map_size(), 3);
 }
 

@@ -113,6 +113,12 @@ When adding or resizing a scenario, use `--rounds` to select a suitable fixed co
 - Validate query arguments before handling an empty sketch. Invalid arguments return `InvalidArgument` regardless of whether the sketch is empty.
 - Return a meaningful result when one exists, such as zero, `false`, or an empty collection. Otherwise, use `Option` for an absent result, combined with `Result` when argument validation can fail.
 
+## Inspector naming
+
+- Use `total_weight(&self)` for the accumulated input stream weight observed by a sketch or view: `u64` on item, quantile, frequency, and t-digest types (`KllSketch`, `ReqSketch`, `FrequentItemsSketch`, `TDigestMut`, `TDigest`, and sorted views), or the counter type `T` on `CountMinSketch<T>`, where it tracks the sum of absolute update weights scaled by `halve` or `decay`.
+- Use `num_retained(&self) -> usize` for the number of entries, items, or centroids currently retained by a sketch (`KllSketch`, `ReqSketch`, `FrequentItemsSketch`, `TDigestMut`, `TDigest`, and Theta/Tuple sketches and views). Snapshot views (`kll::SortedView` and `req::SortedView`) use `len(&self) -> usize` alongside `is_empty`, and `BloomFilter` exposes bitset metrics (`bits_used`, `capacity`, `load_factor`, `estimated_fpp`) instead of retained entries.
+- Use `min_item` and `max_item` returning `Option<&T>` on generic item sketches (`KllSketch<T>`, `ReqSketch<T>`), and `min_value` and `max_value` returning `Option<f64>` on `f64`-only digests (`TDigestMut`, `TDigest`).
+
 ## Visibility
 
 - Let module visibility define the boundary for implementation items. Inside a private module, use `pub` when an item must be available outside its defining module. Inside a `pub(crate)` module, use `pub` when the item should be available wherever that module is visible. Do not repeat an enclosing restriction when it adds no narrower boundary.
