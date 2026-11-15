@@ -362,19 +362,24 @@ where
     /// ```
     pub fn merge(&mut self, other: &Self) -> Result<(), Error> {
         if self.rank_accuracy != other.rank_accuracy {
-            return Err(Error::invalid_argument(
-                "sketches must have the same rank_accuracy",
-            ));
+            return Err(Error::invalid_argument(format!(
+                "cannot merge REQ sketches with different rank_accuracy: expected {:?}, got {:?}",
+                self.rank_accuracy, other.rank_accuracy
+            )));
         }
 
         if other.is_empty() {
             return Ok(());
         }
 
-        self.n = self
-            .n
-            .checked_add(other.n)
-            .ok_or_else(|| Error::invalid_argument("total stream weight overflow"))?;
+        self.n = self.n.checked_add(other.n).ok_or_else(|| {
+            Error::invalid_argument(format!(
+                "combined stream weight exceeds {}: left {}, right {}",
+                u64::MAX,
+                self.n,
+                other.n
+            ))
+        })?;
 
         if let Some(m) = &other.min_item {
             match &self.min_item {
