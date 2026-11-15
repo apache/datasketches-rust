@@ -451,6 +451,7 @@ mod tests {
     //    `HIP_{LOW,HIGH}_SIDE_DATA` measured at `N = 1000 * K` for `lg_k = 4..=14`.
 
     use std::array::from_fn;
+    use std::f64::consts::PI;
     use std::f64::consts::SQRT_2;
 
     use googletest::assert_that;
@@ -462,7 +463,6 @@ mod tests {
     use crate::common::inv_pow2::inv_pow2;
 
     const EULER_MASCHERONI: f64 = 0.577_215_664_901_532_9;
-    const ICON_EXPONENTIAL_CONSTANT: f64 = 0.7940236163830469;
     const ICON_CUBIC_PRECONDITIONER: f64 = 66.774757;
 
     // -------------------------------------------------------------------------
@@ -757,30 +757,41 @@ mod tests {
 
     #[test]
     fn icon_exponential_constant_matches_theory() {
-        // Asymptotic FM85 theory (Mellin transform of the harmonic sum `E[C] / K`):
-        // `E[C]/K = log2(N/K) + gamma/ln(2) - 1/2 + P(log2(N/K)) + o(1)`, where the 1-periodic
-        // oscillation `P` has a relative amplitude in `N` of about `1.09e-6`, namely
-        // `2 * |Gamma(2*pi*i / ln 2)|`.
-        //
-        // Ignoring `P` gives the limit `N_hat / (K * 2^(C/K)) -> sqrt(2) * exp(-gamma)`, which is
-        // `0.7940236163832829`. The stored constant differs from this closed form by `2.4e-13`
-        // (about 1000 ULPs); where its last digits come from is unknown, and the tolerance merely
-        // covers that gap.
-        let theoretical = SQRT_2 * (-EULER_MASCHERONI).exp();
-        assert_that!(ICON_EXPONENTIAL_CONSTANT, near(theoretical, 3e-13));
+        // The coefficient used at runtime, read back from the production function.
+        let runtime_constant = icon_exponential_approximation(1.0, 0.0);
 
-        // Averaging `(N_exact(2^32, C) / 2^32) * 2^(-C/K)` over one full unit period of `C / K`
-        // (`C / K in [10, 11)`) cancels the fundamental periodic harmonics of `P(u)`.
+        // Asymptotic FM85 theory (Mellin transform of the harmonic sum `E[C] / K`):
+        // `E[C]/K = log2(N/K) + gamma/ln(2) - 1/2 + P(log2(N/K)) + o(1)`, where `P` is 1-periodic
+        // and `ln(2) * P` has the fundamental amplitude `a = 2 * |Gamma(2*pi*i / ln 2)|`, about
+        // `1.09e-6`. Hence `N = D * K * 2^(C/K) * exp(-ln(2) * P)`, where the closed form
+        // `D = sqrt(2) * exp(-gamma) = 0.7940236163832829` differs from the runtime constant by
+        // `2.4e-13`.
+        //
+        // The approximation `A * K * 2^(C/K)` has relative error `(A / D) * exp(ln(2) * P) - 1`.
+        // Choosing `A` so that this error averages to zero over a period of `C / K` gives
+        // `A = D / <exp(ln(2) * P)> = D * (1 - a^2 / 4)` up to `O(a^3)`, where
+        // `a^2 / 4 = |Gamma(i * y)|^2 = pi / (y * sinh(pi * y))` with `y = 2 * pi / ln 2`. This
+        // value rounds to the runtime constant, which explains its last digits; whether the
+        // original fitting script used this criterion is not known.
+        let d = SQRT_2 * (-EULER_MASCHERONI).exp();
+        let y = 2.0 * PI / LN_2;
+        let zero_mean_error_constant = d * (1.0 - PI / (y * (PI * y).sinh()));
+        assert_that!(runtime_constant, near(zero_mean_error_constant, 3e-16));
+
+        // The same criterion evaluated numerically: the harmonic mean of `N_exact / (K * 2^(C/K))`
+        // over one period of `C / K`. At `C / K in [20, 21)` the finite-`K` bias
+        // `1 / (2 * K * lambda)` is below `2e-16` for `K = 2^32`, and the tolerance separates this
+        // criterion from `D` (`2.4e-13` away) and from the arithmetic mean (`4.7e-13` away).
         let kf = (1_u64 << 32) as f64;
         let samples = 32;
-        let mut period_sum = 0.0;
+        let mut inverse_ratio_sum = 0.0;
         for m in 0..samples {
-            let c_over_k = 10.0 + (m as f64 + 0.5) / (samples as f64);
+            let c_over_k = 20.0 + (m as f64 + 0.5) / (samples as f64);
             let n_exact = exact_icon_estimate(kf, c_over_k * kf);
-            period_sum += (n_exact / kf) * 2.0_f64.powf(-c_over_k);
+            inverse_ratio_sum += kf * 2.0_f64.powf(c_over_k) / n_exact;
         }
-        let period_mean = period_sum / (samples as f64);
-        assert_that!(ICON_EXPONENTIAL_CONSTANT, near(period_mean, 1e-10));
+        let harmonic_mean = samples as f64 / inverse_ratio_sum;
+        assert_that!(runtime_constant, near(harmonic_mean, 1e-14));
     }
 
     #[test]
