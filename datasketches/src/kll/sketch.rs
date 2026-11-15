@@ -182,17 +182,18 @@ impl<T: Clone + Ord> KllSketch<T> {
     ///
     /// # Errors
     ///
-    /// Returns an error if the combined stream weight exceeds [`u64::MAX`].
+    /// Returns an error without modifying the sketch if the combined stream weight exceeds
+    /// [`u64::MAX`].
     pub fn merge(&mut self, other: &KllSketch<T>) -> Result<(), Error> {
-        if other.is_empty() {
-            return Ok(());
-        }
-
         if self.m != other.m {
             return Err(Error::invalid_argument(format!(
-                "cannot merge sketches with different m values: {} and {}",
+                "cannot merge KLL sketches with different m values: expected {}, got {}",
                 self.m, other.m
             )));
+        }
+
+        if other.is_empty() {
+            return Ok(());
         }
         let final_n = self.n.checked_add(other.n).ok_or_else(|| {
             Error::invalid_argument(format!(
