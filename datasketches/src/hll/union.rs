@@ -26,6 +26,7 @@ use crate::hll::HllType;
 use crate::hll::array4::Array4;
 use crate::hll::array6::Array6;
 use crate::hll::array8::Array8;
+use crate::hll::container::Container;
 use crate::hll::estimator::EstimateState;
 use crate::hll::mode::Mode;
 
@@ -129,37 +130,51 @@ impl HllUnion {
 
         let src_lg_k = sketch.lg_config_k();
         let dst_lg_k = self.gadget.lg_config_k();
-        let src_mode = sketch.mode();
 
-        match src_mode {
-            Mode::List { .. } | Mode::Set { .. } => {
-                self.update_from_list_or_set(sketch, src_mode, src_lg_k, dst_lg_k);
+        match sketch.mode() {
+            Mode::List { list, .. } => {
+                if self.gadget.is_empty() && src_lg_k == dst_lg_k {
+                    self.gadget = HllSketch::from_mode(
+                        src_lg_k,
+                        Mode::List {
+                            list: list.clone(),
+                            hll_type: HllType::Hll8,
+                        },
+                    );
+                } else {
+                    for coupon in list.container().iter() {
+                        self.gadget.update_with_coupon(coupon);
+                    }
+                }
             }
-            Mode::Array4(_) | Mode::Array6(_) | Mode::Array8(_) => {
-                self.update_from_array(src_mode, src_lg_k, dst_lg_k);
+            Mode::Set { set, .. } => {
+                if self.gadget.is_empty() && src_lg_k == dst_lg_k {
+                    self.gadget = HllSketch::from_mode(
+                        src_lg_k,
+                        Mode::Set {
+                            set: set.clone(),
+                            hll_type: HllType::Hll8,
+                        },
+                    );
+                } else {
+                    for coupon in set.container().iter() {
+                        self.gadget.update_with_coupon(coupon);
+                    }
+                }
+            }
+            Mode::Array4(src) => {
+                self.update_from_array(ArrayMode::Array4(src), src_lg_k, dst_lg_k);
+            }
+            Mode::Array6(src) => {
+                self.update_from_array(ArrayMode::Array6(src), src_lg_k, dst_lg_k);
+            }
+            Mode::Array8(src) => {
+                self.update_from_array(ArrayMode::Array8(src), src_lg_k, dst_lg_k);
             }
         }
     }
 
-    fn update_from_list_or_set(
-        &mut self,
-        sketch: &HllSketch,
-        src_mode: &Mode,
-        src_lg_k: u8,
-        dst_lg_k: u8,
-    ) {
-        if self.gadget.is_empty() && src_lg_k == dst_lg_k {
-            self.gadget = if sketch.target_type() == HllType::Hll8 {
-                sketch.clone()
-            } else {
-                convert_coupon_mode_to_hll8(src_mode, src_lg_k)
-            };
-        } else {
-            merge_coupons_into_gadget(&mut self.gadget, src_mode);
-        }
-    }
-
-    fn update_from_array(&mut self, src_mode: &Mode, src_lg_k: u8, dst_lg_k: u8) {
+    fn update_from_array(&mut self, src_mode: ArrayMode<'_>, src_lg_k: u8, dst_lg_k: u8) {
         if self.gadget.is_empty() {
             let new_array = copy_or_downsample(src_mode, src_lg_k, self.lg_max_k);
             let final_lg_k = new_array.num_registers().trailing_zeros() as u8;
@@ -167,50 +182,31 @@ impl HllUnion {
             return;
         }
 
-        let is_gadget_array = matches!(self.gadget.mode(), Mode::Array8(_));
-
-        if is_gadget_array {
-            self.merge_array_into_array_gadget(src_mode, src_lg_k, dst_lg_k);
-        } else {
-            self.promote_gadget_and_merge_array(src_mode, src_lg_k);
-        }
-    }
-
-    fn merge_array_into_array_gadget(&mut self, src_mode: &Mode, src_lg_k: u8, dst_lg_k: u8) {
-        if src_lg_k < dst_lg_k {
-            let mut new_array = Array8::new(src_lg_k);
-
-            match self.gadget.mode() {
-                Mode::Array8(old_gadget) => {
-                    new_array.merge_array_with_downsample(old_gadget.values(), dst_lg_k);
-                }
-                _ => {
-                    unreachable!("gadget mode changed unexpectedly; should never be Array4/Array6");
-                }
+        let lg_max_k = self.lg_max_k;
+        match self.gadget.mode_mut() {
+            Mode::List { list, .. } => {
+                let next =
+                    promote_coupons_and_merge_array(src_mode, src_lg_k, lg_max_k, list.container());
+                self.gadget = next;
             }
-
-            merge_array_same_lgk(&mut new_array, src_mode);
-            self.gadget = HllSketch::from_mode(src_lg_k, Mode::Array8(new_array));
-        } else {
-            match self.gadget.mode_mut() {
-                Mode::Array8(dst_array) => {
+            Mode::Set { set, .. } => {
+                let next =
+                    promote_coupons_and_merge_array(src_mode, src_lg_k, lg_max_k, set.container());
+                self.gadget = next;
+            }
+            Mode::Array8(dst_array) => {
+                if src_lg_k < dst_lg_k {
+                    let mut new_array = Array8::new(src_lg_k);
+                    new_array.merge_array_with_downsample(dst_array.values(), dst_lg_k);
+                    merge_array_same_lgk(&mut new_array, src_mode);
+                    self.gadget = HllSketch::from_mode(src_lg_k, Mode::Array8(new_array));
+                } else {
                     merge_array_into_array8(dst_array, dst_lg_k, src_mode, src_lg_k);
                 }
-                _ => {
-                    unreachable!("gadget mode changed unexpectedly; should never be Array4/Array6");
-                }
             }
+            Mode::Array4(_) => unreachable!("HllUnion gadget should never be in Array4 mode"),
+            Mode::Array6(_) => unreachable!("HllUnion gadget should never be in Array6 mode"),
         }
-    }
-
-    fn promote_gadget_and_merge_array(&mut self, src_mode: &Mode, src_lg_k: u8) {
-        let mut new_array = copy_or_downsample(src_mode, src_lg_k, self.lg_max_k);
-
-        let old_gadget_mode = self.gadget.mode();
-        merge_coupons_into_mode(&mut new_array, old_gadget_mode);
-
-        let final_lg_k = new_array.num_registers().trailing_zeros() as u8;
-        self.gadget = HllSketch::from_mode(final_lg_k, Mode::Array8(new_array));
     }
 
     /// Returns an independent sketch with the requested [`HllType`].
@@ -254,9 +250,8 @@ impl HllUnion {
             Mode::Array8(array8) => {
                 convert_array8_to_type(array8, self.gadget.lg_config_k(), hll_type)
             }
-            Mode::Array4(_) | Mode::Array6(_) => {
-                unreachable!("gadget mode changed unexpectedly; should never be Array4/Array6")
-            }
+            Mode::Array4(_) => unreachable!("HllUnion gadget should never be in Array4 mode"),
+            Mode::Array6(_) => unreachable!("HllUnion gadget should never be in Array6 mode"),
         }
     }
 
@@ -419,68 +414,44 @@ impl HllUnion {
     }
 }
 
-fn convert_coupon_mode_to_hll8(src_mode: &Mode, src_lg_k: u8) -> HllSketch {
-    match src_mode {
-        Mode::List { list, .. } => HllSketch::from_mode(
-            src_lg_k,
-            Mode::List {
-                list: list.clone(),
-                hll_type: HllType::Hll8,
-            },
-        ),
-        Mode::Set { set, .. } => HllSketch::from_mode(
-            src_lg_k,
-            Mode::Set {
-                set: set.clone(),
-                hll_type: HllType::Hll8,
-            },
-        ),
-        _ => unreachable!("convert_coupon_mode_to_hll8 called with non-coupon mode"),
-    }
+#[derive(Clone, Copy)]
+enum ArrayMode<'a> {
+    Array4(&'a Array4),
+    Array6(&'a Array6),
+    Array8(&'a Array8),
 }
 
-fn merge_coupons_into_gadget(gadget: &mut HllSketch, src_mode: &Mode) {
-    match src_mode {
-        Mode::List { list, .. } => {
-            for coupon in list.container().iter() {
-                gadget.update_with_coupon(coupon);
-            }
-        }
-        Mode::Set { set, .. } => {
-            for coupon in set.container().iter() {
-                gadget.update_with_coupon(coupon);
-            }
-        }
-        Mode::Array4(_) | Mode::Array6(_) | Mode::Array8(_) => {
-            unreachable!(
-                "merge_coupons_into_gadget called with array mode; array modes should use merge_array_into_array8"
-            );
+impl ArrayMode<'_> {
+    fn estimate_state(self) -> EstimateState {
+        match self {
+            Self::Array4(src) => src.estimate_state(),
+            Self::Array6(src) => src.estimate_state(),
+            Self::Array8(src) => src.estimate_state(),
         }
     }
 }
 
-fn merge_coupons_into_mode(dst: &mut Array8, src_mode: &Mode) {
-    match src_mode {
-        Mode::List { list, .. } => {
-            for coupon in list.container().iter() {
-                dst.update(coupon);
-            }
-        }
-        Mode::Set { set, .. } => {
-            for coupon in set.container().iter() {
-                dst.update(coupon);
-            }
-        }
-        Mode::Array4(_) | Mode::Array6(_) | Mode::Array8(_) => {
-            unreachable!(
-                "merge_coupons_into_mode called with array mode; array modes should use copy_or_downsample"
-            );
-        }
+fn promote_coupons_and_merge_array(
+    src_mode: ArrayMode<'_>,
+    src_lg_k: u8,
+    lg_max_k: u8,
+    coupons: &Container,
+) -> HllSketch {
+    let mut new_array = copy_or_downsample(src_mode, src_lg_k, lg_max_k);
+    for coupon in coupons.iter() {
+        new_array.update(coupon);
     }
+    let final_lg_k = new_array.num_registers().trailing_zeros() as u8;
+    HllSketch::from_mode(final_lg_k, Mode::Array8(new_array))
 }
 
 /// The caller must downsize the destination first if the source has a smaller `lg_k`.
-fn merge_array_into_array8(dst_array8: &mut Array8, dst_lg_k: u8, src_mode: &Mode, src_lg_k: u8) {
+fn merge_array_into_array8(
+    dst_array8: &mut Array8,
+    dst_lg_k: u8,
+    src_mode: ArrayMode<'_>,
+    src_lg_k: u8,
+) {
     assert!(
         src_lg_k >= dst_lg_k,
         "merge_array_into_array8 requires src_lg_k >= dst_lg_k (got src={}, dst={})",
@@ -492,19 +463,6 @@ fn merge_array_into_array8(dst_array8: &mut Array8, dst_lg_k: u8, src_mode: &Mod
         merge_array_same_lgk(dst_array8, src_mode);
     } else {
         merge_array_with_downsample(dst_array8, dst_lg_k, src_mode, src_lg_k);
-    }
-}
-
-fn get_array_estimate_state(mode: &Mode) -> EstimateState {
-    match mode {
-        Mode::Array8(src) => src.estimate_state(),
-        Mode::Array6(src) => src.estimate_state(),
-        Mode::Array4(src) => src.estimate_state(),
-        Mode::List { .. } | Mode::Set { .. } => {
-            unreachable!(
-                "get_array_estimate_state called with non-array mode; List/Set not supported"
-            );
-        }
     }
 }
 
@@ -520,19 +478,16 @@ fn merge_array46_same_lgk(dst: &mut Array8, num_registers: usize, get_value: imp
 }
 
 /// Merging independent register histories invalidates the HIP accumulator.
-fn merge_array_same_lgk(dst: &mut Array8, src_mode: &Mode) {
+fn merge_array_same_lgk(dst: &mut Array8, src_mode: ArrayMode<'_>) {
     match src_mode {
-        Mode::Array8(src) => {
+        ArrayMode::Array8(src) => {
             dst.merge_array_same_lgk(src.values());
         }
-        Mode::Array6(src) => {
+        ArrayMode::Array6(src) => {
             merge_array46_same_lgk(dst, src.num_registers(), |slot| src.get(slot));
         }
-        Mode::Array4(src) => {
+        ArrayMode::Array4(src) => {
             merge_array46_same_lgk(dst, src.num_registers(), |slot| src.get(slot));
-        }
-        _ => {
-            unreachable!("merge_array_same_lgk called with non-array mode; List/Set not supported")
         }
     }
 }
@@ -559,7 +514,12 @@ fn merge_array46_with_downsample(
 
 /// Multiple source registers map to each destination register via masking.
 /// Merging independent register histories invalidates the HIP accumulator.
-fn merge_array_with_downsample(dst: &mut Array8, dst_lg_k: u8, src_mode: &Mode, src_lg_k: u8) {
+fn merge_array_with_downsample(
+    dst: &mut Array8,
+    dst_lg_k: u8,
+    src_mode: ArrayMode<'_>,
+    src_lg_k: u8,
+) {
     assert!(
         src_lg_k > dst_lg_k,
         "merge_array_with_downsample requires src_lg_k > dst_lg_k (got src={}, dst={})",
@@ -568,18 +528,15 @@ fn merge_array_with_downsample(dst: &mut Array8, dst_lg_k: u8, src_mode: &Mode, 
     );
 
     match src_mode {
-        Mode::Array8(src) => {
+        ArrayMode::Array8(src) => {
             dst.merge_array_with_downsample(src.values(), src_lg_k);
         }
-        Mode::Array6(src) => {
+        ArrayMode::Array6(src) => {
             merge_array46_with_downsample(dst, dst_lg_k, src.num_registers(), |slot| src.get(slot));
         }
-        Mode::Array4(src) => {
+        ArrayMode::Array4(src) => {
             merge_array46_with_downsample(dst, dst_lg_k, src.num_registers(), |slot| src.get(slot));
         }
-        _ => unreachable!(
-            "merge_array_with_downsample called with non-array mode; List/Set not supported"
-        ),
     }
 }
 
@@ -630,26 +587,21 @@ fn copy_array46_via_coupons(dst: &mut Array8, num_registers: usize, get_value: i
 }
 
 /// Preserves the source estimate state because the result represents the same logical sketch.
-fn copy_or_downsample(src_mode: &Mode, src_lg_k: u8, tgt_lg_k: u8) -> Array8 {
-    let state = get_array_estimate_state(src_mode);
+fn copy_or_downsample(src_mode: ArrayMode<'_>, src_lg_k: u8, tgt_lg_k: u8) -> Array8 {
+    let state = src_mode.estimate_state();
 
     let mut result = if src_lg_k <= tgt_lg_k {
         match src_mode {
-            Mode::Array8(src) => src.clone(),
-            Mode::Array6(src) => {
+            ArrayMode::Array8(src) => src.clone(),
+            ArrayMode::Array6(src) => {
                 let mut result = Array8::new(src_lg_k);
                 copy_array46_via_coupons(&mut result, src.num_registers(), |slot| src.get(slot));
                 result
             }
-            Mode::Array4(src) => {
+            ArrayMode::Array4(src) => {
                 let mut result = Array8::new(src_lg_k);
                 copy_array46_via_coupons(&mut result, src.num_registers(), |slot| src.get(slot));
                 result
-            }
-            Mode::List { .. } | Mode::Set { .. } => {
-                unreachable!(
-                    "copy_or_downsample called with non-array mode; List/Set not supported"
-                );
             }
         }
     } else {
