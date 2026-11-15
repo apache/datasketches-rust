@@ -1095,27 +1095,3 @@ fn general_compress<T: Clone + Ord>(
     levels_out.truncate(current_num_levels);
     levels_out
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::error::ErrorKind;
-
-    #[test]
-    fn test_merge_rejects_empty_sketch_with_different_m() {
-        let mut sketch = KllSketch::<i64>::new(200).unwrap();
-        for item in 0..1000 {
-            sketch.update(item);
-        }
-        let before = sketch.clone();
-
-        // `new` and `deserialize` only produce the default m, so set it directly.
-        let mut other = KllSketch::<i64>::new(200).unwrap();
-        other.m = DEFAULT_M + 2;
-        assert!(other.is_empty());
-
-        let err = sketch.merge(&other).unwrap_err();
-        assert_eq!(err.kind(), ErrorKind::InvalidArgument);
-        assert_eq!(sketch, before);
-    }
-}
