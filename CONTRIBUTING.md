@@ -113,11 +113,6 @@ When adding or resizing a scenario, use `--rounds` to select a suitable fixed co
 - Validate query arguments before handling an empty sketch. Invalid arguments return `InvalidArgument` regardless of whether the sketch is empty.
 - Return a meaningful result when one exists, such as zero, `false`, or an empty collection. Otherwise, use `Option` for an absent result, combined with `Result` when argument validation can fail.
 
-## Mutation and overflow semantics
-
-- Mutating operations that validate runtime parameters, check sketch compatibility, or combine sketches or caller-supplied weights (`merge`, `decay`, `update_with_weight`, and `update_with_weight_ref`) return `Result<(), Error>`. Validate all preconditions before mutating `self`, returning `InvalidArgument` on invalid inputs, incompatible sketches, or counter or total-weight overflow while leaving `self` unmodified.
-- Unit-weight streaming ingestion (`update` and `update_ref`) and `FromIterator` implementations return `()` or `Self` and document `# Panics` on weight or capacity overflow; `&mut self` updates leave `self` unmodified when they panic.
-
 ## Visibility
 
 - Let module visibility define the boundary for implementation items. Inside a private module, use `pub` when an item must be available outside its defining module. Inside a `pub(crate)` module, use `pub` when the item should be available wherever that module is visible. Do not repeat an enclosing restriction when it adds no narrower boundary.
