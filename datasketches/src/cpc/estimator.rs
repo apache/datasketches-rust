@@ -555,21 +555,25 @@ mod tests {
     //   of `0.12698`, because least squares optimizes uniform accuracy on `[0, 3]` rather than
     //   Taylor accuracy at `0`.
     //
-    // * Fitting domain `C in [1, 6 * K]` (`x in (0, 3]`): evaluating the stored rows past the
-    //   runtime threshold (`5.6 * K` or `5.7 * K`) shows that their relative error against
-    //   `exact_icon_estimate` stays at the `1e-7` level up to exactly `C = 6.0 * K` and degrades
-    //   abruptly beyond it (for `lg_k = 4`: `1.3e-8` at `C = 96`, `2.2e-6` at `C = 97`). The
-    //   polynomials were therefore fit up to `6 * K`, leaving `[5.6 * K, 6.0 * K]` as a guard band
-    //   against endpoint oscillation.
+    // * Fitting domain `C in [1, 6 * K]` (`x in (0, 3]`): past the runtime threshold (`5.6 * K` or
+    //   `5.7 * K`) the stored rows keep a relative error below `5e-7` against `exact_icon_estimate`
+    //   up to `C = 6 * K`, and diverge within a few percent beyond it (at `6.25 * K` every row is
+    //   off by `4e-6` to `1.3e-4`). The end is sharp for small `K`: `lg_k = 4` has at most `8.7e-8`
+    //   up to `C = 96` and `2.2e-6` at `C = 97`. For larger `lg_k` an integer step is too fine to
+    //   locate it: `lg_k = 8` is still at `-6.6e-8` at `C = 6 * K + 1`. The end at exactly `6 * K`
+    //   rests on the grid experiments for `lg_k <= 7` below. Why the fit extends past the runtime
+    //   threshold, e.g. as a guard band against endpoint oscillation, is not documented.
     //
     // * Sample grid for `lg_k <= 7` (`6 * K <= 768`): ordinary least squares on `g_K` over every
     //   integer `C = 1 ..= 6 * K` reproduces the stored coefficients within `0.07%` to `1.4%` and
-    //   the stored polynomial to `< 2e-8` relative prediction difference, despite the `~1e12`
-    //   condition number of the monomial basis on `[0, 3]`. The agreement is discriminating: moving
-    //   either end of the grid by one integer, dropping `C = 1` (where the exact estimator returns
-    //   `N = 1` by definition), or halving the grid spacing makes the coefficient agreement at
-    //   least 4x (`lg_k = 6`) to 59x (`lg_k = 5`) worse. The weighting is less certain: a
-    //   relative-error-weighted fit agrees slightly better (`0.63%`) at `lg_k = 4`.
+    //   the stored polynomial to `< 2e-8` relative prediction difference, although the unscaled
+    //   monomial basis on these grids has a 2-norm condition number of about `1e17` (`1e14` after
+    //   scaling its columns). The agreement is discriminating: moving either end of the grid by one
+    //   integer, dropping `C = 1` (where the exact estimator returns `N = 1` by definition), or
+    //   halving the grid spacing makes the coefficient agreement at least 4x (`lg_k = 6`) to 59x
+    //   (`lg_k = 5`) worse. This identifies the grid, not the original numerics; the weighting is
+    //   less certain as well: a relative-error-weighted fit agrees slightly better (`0.63%`) at
+    //   `lg_k = 4`.
     //
     // * Sample grid for `lg_k >= 8`: not identified. A discontinuity between `lg_k = 7` and `8`
     //   (`a_2`: `0.12534 -> 0.12667`; `a_19`: `4.28e-5 -> 2.91e-5`) and the irregular high-order
@@ -735,10 +739,11 @@ mod tests {
                 // In the exponential region (`> threshold * K`) two effects add up. The finite-`K`
                 // correction makes the Poisson-based approximation overestimate `N` by about
                 // `1 / (2 * K * lambda)` with `lambda = N / K`; this decays with `C` and peaks at
-                // the splice point, where `lambda ≈ 41.3` gives `1 / (82.6 * K)`. That explains the
-                // `1.0 / (80 * k)` bound in `IconEstimatorTest::quickIconEstimatorTest`. For large
-                // `K` the periodic term of FM85 theory dominates instead, with relative amplitude
-                // `1.09e-6`; the dense-sweep maximum for `lg_k >= 14` is `1.53e-6`.
+                // the splice point, where `lambda ≈ 41.3` gives `1 / (82.6 * K)`. The
+                // `1.0 / (80 * k)` bound in `IconEstimatorTest::quickIconEstimatorTest` matches
+                // this peak with a small margin. For large `K` the periodic term of FM85 theory
+                // dominates instead, with relative amplitude `1.09e-6`; the dense-sweep maximum
+                // for `lg_k >= 14` is `1.53e-6`.
                 let tol = if (c as f64) <= threshold_factor * kf {
                     3e-7
                 } else {
@@ -822,11 +827,11 @@ mod tests {
 
             if lg_k <= 7 {
                 // On `lg_k <= 7`, the exact exhaustive integer grid `C = 1 ..= 6 * K` reproduces
-                // `a_0` to `< 1e-6`, `a_1` to `< 2e-5`, and all 20 monomials within `2.5%`
-                // despite the `kappa(V) ~ 1e12` conditioning of the unorthogonalized degree-19
-                // Vandermonde basis on `[0, 3]` (where a 1-ULP `ln_1p`/`exp_m1` difference gets
-                // amplified by `~1e12` in the high-degree monomials while leaving `P(x)` invariant
-                // to `< 2e-8`).
+                // `a_0` to `< 1e-6`, `a_1` to `< 2e-5`, and all 20 monomials within `2.5%`.
+                // Closer agreement is not expected: the unscaled degree-19 monomial basis on these
+                // grids is ill-conditioned (2-norm condition number `~1e17`), so tiny differences
+                // in the target values move the high-degree coefficients by percents while leaving
+                // `P(x)` invariant to `< 2e-8`.
                 assert_that!(fitted[0], near(stored[0], 1e-6));
                 assert_that!(fitted[1], near(stored[1], 2e-5));
                 for deg in 0..ICON_POLYNOMIAL_NUM_COEFFICIENTS {
