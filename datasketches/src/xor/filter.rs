@@ -319,9 +319,7 @@ impl XorFilter {
     /// Creates a filter from distinct precomputed 64-bit hashes using the default construction
     /// seed (`0`).
     ///
-    /// This is the fast construction path when inputs are already distinct and hashed. Unlike
-    /// [`XorFilterBuilder`], which sorts and deduplicates accumulated inputs, this method does not
-    /// deduplicate and rejects duplicate hashes.
+    /// Use [`XorFilterBuilder`] instead when inputs may contain duplicates or unhashed values.
     ///
     /// Starting from seed `0`, construction tries up to `100` internal mixing seeds derived from
     /// it until it finds a valid peeling layout. The same set of distinct hashes and filter type
@@ -342,9 +340,7 @@ impl XorFilter {
 
     /// Creates a filter from distinct precomputed 64-bit hashes and an explicit construction seed.
     ///
-    /// This is the fast construction path when inputs are already distinct and hashed. Unlike
-    /// [`XorFilterBuilder`], which sorts and deduplicates accumulated inputs, this method does not
-    /// deduplicate and rejects duplicate hashes.
+    /// Use [`XorFilterBuilder`] instead when inputs may contain duplicates or unhashed values.
     ///
     /// Starting from `seed`, construction tries up to `100` internal mixing seeds derived from it
     /// until it finds a valid peeling layout. The same set of distinct hashes, filter type, and
@@ -374,33 +370,41 @@ impl XorFilter {
         let mut stack_hash = vec![0_u64; num_items];
         let mut stack_index = vec![0_u32; num_items];
 
-        let mut rng_state = seed;
-        let mut construction_seed = 0;
-        let mut stack_size = 0;
-        for attempt in 0..MAX_CONSTRUCTION_ATTEMPTS {
-            if attempt != 0 {
+        let mut rng_state = seed.wrapping_add(SPLITMIX_GAMMA);
+        let mut construction_seed = splitmix64(rng_state);
+        let mut stack_size = map(
+            hashes,
+            construction_seed,
+            segment_length,
+            &mut xor_mask,
+            &mut count,
+            &mut queue,
+            &mut stack_hash,
+            &mut stack_index,
+        );
+        if stack_size != num_items {
+            for _ in 1..MAX_CONSTRUCTION_ATTEMPTS {
                 xor_mask.fill(0);
                 count.fill(0);
+                rng_state = rng_state.wrapping_add(SPLITMIX_GAMMA);
+                construction_seed = splitmix64(rng_state);
+                stack_size = map(
+                    hashes,
+                    construction_seed,
+                    segment_length,
+                    &mut xor_mask,
+                    &mut count,
+                    &mut queue,
+                    &mut stack_hash,
+                    &mut stack_index,
+                );
+                if stack_size == num_items {
+                    break;
+                }
             }
-            rng_state = rng_state.wrapping_add(SPLITMIX_GAMMA);
-            construction_seed = splitmix64(rng_state);
-            stack_size = map(
-                hashes,
-                construction_seed,
-                segment_length,
-                &mut xor_mask,
-                &mut count,
-                &mut queue,
-                &mut stack_hash,
-                &mut stack_index,
-            );
-            if stack_size == num_items {
-                break;
-            }
-            if attempt == 0 {
-                // Any duplicate hash prevents full peeling, regardless of multiplicity.
-                // Check once after attempt 0 fails so the fast first-attempt path pays
-                // no extra sorting cost.
+            if stack_size != num_items {
+                // Any duplicate hash prevents full peeling regardless of multiplicity; sort after
+                // all attempts fail so valid distinct inputs never pay sorting overhead on retry.
                 stack_hash.copy_from_slice(hashes);
                 stack_hash.sort_unstable();
                 if stack_hash.windows(2).any(|w| w[0] == w[1]) {
@@ -409,14 +413,11 @@ impl XorFilter {
                     )
                     .with_context("num_items", num_items));
                 }
+                return Err(Error::invalid_argument(
+                    "xor filter construction could not find a valid layout",
+                )
+                .with_context("num_items", num_items));
             }
-        }
-
-        if stack_size != num_items {
-            return Err(Error::invalid_argument(
-                "xor filter construction could not find a valid layout",
-            )
-            .with_context("num_items", num_items));
         }
 
         // Assignment only needs the peel stack. Release the graph before allocating the
