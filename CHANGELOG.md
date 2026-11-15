@@ -17,6 +17,7 @@ All significant changes to this project will be documented in this file.
 * `FrequentItemsSketch::update_with_count` and `FrequentItemsSketch::update_with_count_ref` are renamed to `update_with_weight` and `update_with_weight_ref` to match weighted update naming across the crate.
 * `ReqSketch::num_retained` now returns `usize` instead of `u32`, matching `KllSketch`, `ThetaSketch`, and `TupleSketch`.
 * `ReqSketch::rank_lower_bound` and `ReqSketch::rank_upper_bound` now return `Result<f64, Error>`, returning `InvalidArgument` when `rank` is NaN or outside `[0.0, 1.0]` even on empty or exact-mode sketches.
+* `SketchSlice::advance` now takes `n: usize` instead of `u64` and panics if `n > self.remaining().len()`.
 
 ### New features
 
@@ -26,7 +27,7 @@ All significant changes to this project will be documented in this file.
 
 ### Improvements
 
-* Implement `Clone` for `TDigest`, `ThetaSketchBuilder`, `TupleSketchBuilder`, and `TupleUnionBuilder`; derive `Eq` and `Hash` across `NumStdDev`, `ResizeFactor`, and `SearchCriteria`; implement `Debug` for `ReqSketchIterator`, `SketchSlice`, and `SketchBytes` (plus `Clone` and `Default` on codec types); and saturate `SketchSlice::advance` on offset overflow.
+* Implement `Clone` for `TDigest`, `ThetaSketchBuilder`, `TupleSketchBuilder`, and `TupleUnionBuilder`; derive `Eq` and `Hash` across `NumStdDev`, `ResizeFactor`, and `SearchCriteria`; and implement `Debug` for `ReqSketchIterator`, `SketchSlice`, and `SketchBytes` (plus `Clone` and `Default` on codec types).
 * Improve the readability of `Debug` output across sketches, filters, views, and stateful set operators, and implement `Debug` for `TDigest`.
 
 ### Performance improvements

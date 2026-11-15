@@ -216,7 +216,7 @@ impl KllValue for String {
         let value = std::str::from_utf8(&input.remaining()[..len])
             .map_err(|error| Error::deserial(format!("invalid UTF-8 string: {error}")))?
             .to_owned();
-        input.advance(len as u64);
+        input.advance(len);
         Ok(value)
     }
 }

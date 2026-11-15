@@ -888,7 +888,7 @@ impl CompactThetaSketch {
 
         let payload = &cursor.remaining()[..required_bytes];
         let entries = unpack_deltas(payload, num_entries, entry_bits, theta)?;
-        cursor.advance(required_bytes as u64);
+        cursor.advance(required_bytes);
 
         let ordered = (flags & FLAGS_IS_ORDERED) != 0;
 
