@@ -36,14 +36,12 @@ use crate::error::Error;
 /// The inner float is available through [`into_inner`](Self::into_inner) or immutable
 /// dereferencing.
 #[repr(transparent)]
-#[must_use]
 #[derive(Clone, Copy, PartialEq, PartialOrd)]
 pub struct ReqFloat<T>(T);
 
 impl<T> ReqFloat<T> {
     /// Returns the wrapped floating-point value.
     #[inline(always)]
-    #[must_use]
     pub fn into_inner(self) -> T {
         self.0
     }

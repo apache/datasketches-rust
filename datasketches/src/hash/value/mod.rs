@@ -50,7 +50,6 @@ use std::ops::DerefMut;
 /// A value wrapper that hashes its inner value with strategy `S`.
 ///
 /// Most users should prefer the strategy-specific constructors.
-#[must_use]
 #[doc(hidden)]
 pub struct Value<T, S> {
     value: T,
@@ -69,7 +68,6 @@ impl<T, S> Value<T, S> {
 
     /// Get the value out.
     #[inline(always)]
-    #[must_use]
     pub fn into_inner(self) -> T {
         self.value
     }
@@ -141,7 +139,6 @@ pub trait HashStrategy<T> {
     fn hash<H: Hasher>(value: &T, state: &mut H);
 }
 
-#[must_use]
 #[doc(hidden)] // for doctest
 pub fn calculate_hash<T: Hash>(t: T) -> u64 {
     use std::hash::DefaultHasher;

@@ -33,7 +33,6 @@ pub type ThetaHashTable = SketchHashTable<ThetaEntry>;
 
 /// A retained entry in a Theta sketch.
 #[derive(Debug, Clone, Copy)]
-#[must_use]
 #[repr(transparent)]
 pub struct ThetaEntry {
     hash: NonZeroU64,
@@ -48,7 +47,6 @@ impl ThetaEntry {
 
     /// Returns the hash used as this entry's key.
     #[inline]
-    #[must_use]
     pub fn hash(&self) -> u64 {
         self.hash.get()
     }

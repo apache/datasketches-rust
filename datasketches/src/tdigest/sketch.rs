@@ -145,19 +145,16 @@ impl TDigestMut {
     }
 
     /// Returns the compression parameter `k` used to configure this t-digest.
-    #[must_use]
     pub fn k(&self) -> u16 {
         self.k
     }
 
     /// Returns `true` if this t-digest has not seen any data.
-    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.buffer.is_empty()
     }
 
     /// Returns the minimum value seen by this t-digest, or `None` if it is empty.
-    #[must_use]
     pub fn min_value(&self) -> Option<f64> {
         if self.is_empty() {
             None
@@ -167,7 +164,6 @@ impl TDigestMut {
     }
 
     /// Returns the maximum value seen by this t-digest, or `None` if it is empty.
-    #[must_use]
     pub fn max_value(&self) -> Option<f64> {
         if self.is_empty() {
             None
@@ -177,7 +173,6 @@ impl TDigestMut {
     }
 
     /// Returns the total weight.
-    #[must_use]
     pub fn total_weight(&self) -> u64 {
         self.compressed_weight + self.buffer.unmerged_len() as u64
     }
@@ -234,7 +229,6 @@ impl TDigestMut {
     /// let frozen = sketch.freeze();
     /// assert!(!frozen.is_empty());
     /// ```
-    #[must_use]
     pub fn freeze(mut self) -> TDigest {
         self.compress();
         let mut centroids = self.buffer.into_compressed_centroids();
@@ -421,7 +415,6 @@ impl TDigestMut {
     /// let decoded = TDigestMut::deserialize(&bytes).unwrap();
     /// assert_eq!(decoded.max_value(), Some(1.0));
     /// ```
-    #[must_use]
     pub fn serialize(&mut self) -> Vec<u8> {
         self.compress();
         serialize_compressed(
@@ -478,7 +471,6 @@ impl TDigestMut {
     }
 
     /// Returns an estimate of the sketch's memory usage in bytes.
-    #[must_use]
     pub fn estimated_size(&self) -> usize {
         self.buffer.estimated_size()
     }
@@ -642,19 +634,16 @@ impl fmt::Debug for TDigest {
 
 impl TDigest {
     /// Returns the compression parameter `k` used to configure this t-digest.
-    #[must_use]
     pub fn k(&self) -> u16 {
         self.k
     }
 
     /// Returns `true` if this t-digest has not seen any data.
-    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.centroids.is_empty()
     }
 
     /// Returns the minimum value seen by this t-digest, or `None` if it is empty.
-    #[must_use]
     pub fn min_value(&self) -> Option<f64> {
         if self.is_empty() {
             None
@@ -664,7 +653,6 @@ impl TDigest {
     }
 
     /// Returns the maximum value seen by this t-digest, or `None` if it is empty.
-    #[must_use]
     pub fn max_value(&self) -> Option<f64> {
         if self.is_empty() {
             None
@@ -674,7 +662,6 @@ impl TDigest {
     }
 
     /// Returns the total weight.
-    #[must_use]
     pub fn total_weight(&self) -> u64 {
         self.centroids_weight
     }
@@ -696,7 +683,6 @@ impl TDigest {
     /// let decoded = TDigest::deserialize(&bytes).unwrap();
     /// assert_eq!(decoded.max_value(), Some(1.0));
     /// ```
-    #[must_use]
     pub fn serialize(&self) -> Vec<u8> {
         serialize_compressed(
             self.k,
@@ -920,7 +906,6 @@ impl TDigest {
     /// mutable.update(2.0);
     /// assert_eq!(mutable.total_weight(), 2);
     /// ```
-    #[must_use]
     pub fn unfreeze(self) -> TDigestMut {
         TDigestMut::from_parts(
             self.k,
@@ -933,7 +918,6 @@ impl TDigest {
     }
 
     /// Returns an estimate of the sketch's memory usage in bytes.
-    #[must_use]
     pub fn estimated_size(&self) -> usize {
         self.centroids.capacity() * size_of::<Centroid>()
     }

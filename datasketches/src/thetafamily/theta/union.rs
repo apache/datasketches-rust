@@ -59,7 +59,6 @@ impl ThetaUnion {
     }
 
     /// Returns this union as a compact sketch.
-    #[must_use]
     pub fn to_sketch(&self, ordered: bool) -> CompactThetaSketch {
         CompactThetaSketch::from_compact_state(self.state.to_compact_hash_state(ordered))
     }
@@ -71,7 +70,6 @@ impl ThetaUnion {
     /// identical bytes when `ordered` is `true` (`to_sketch(true).serialize()`). When `ordered` is
     /// `false`, retained hashes may appear in a different order. Empty results and exact singletons
     /// always use their canonical encoding.
-    #[must_use]
     pub fn serialize(&self, ordered: bool) -> Vec<u8> {
         let state = self.state.to_compact_hash_state(ordered);
         serialization::serialize_compact_uncompressed(&state)
@@ -106,7 +104,6 @@ impl ThetaUnion {
     /// let restored = CompactThetaSketch::deserialize(&bytes).unwrap();
     /// assert_eq!(restored.num_retained(), 100);
     /// ```
-    #[must_use]
     pub fn serialize_compressed(&self) -> Vec<u8> {
         let state = self.state.to_compact_hash_state(true);
         serialization::serialize_compact_compressed(&state)
@@ -118,7 +115,6 @@ impl ThetaUnion {
     }
 
     /// Returns an estimate of the union's memory usage in bytes.
-    #[must_use]
     pub fn estimated_size(&self) -> usize {
         self.state.estimated_size()
     }
@@ -127,7 +123,6 @@ impl ThetaUnion {
 /// Builder for [`ThetaUnion`].
 ///
 /// Configuration is stored without validation and checked when [`build()`](Self::build) is called.
-#[must_use]
 #[derive(Debug, Clone)]
 pub struct ThetaUnionBuilder {
     lg_k: u8,

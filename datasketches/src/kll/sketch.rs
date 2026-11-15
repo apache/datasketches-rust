@@ -111,37 +111,31 @@ impl<T: Clone + Ord> KllSketch<T> {
     }
 
     /// Returns parameter k used to configure this sketch.
-    #[must_use]
     pub fn k(&self) -> u16 {
         self.k
     }
 
     /// Returns the minimum k used when merging sketches.
-    #[must_use]
     pub fn min_k(&self) -> u16 {
         self.min_k
     }
 
     /// Returns total weight of the stream.
-    #[must_use]
     pub fn n(&self) -> u64 {
         self.n
     }
 
     /// Returns true if the sketch has not seen any data.
-    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.n == 0
     }
 
     /// Returns the number of retained items.
-    #[must_use]
     pub fn num_retained(&self) -> usize {
         self.num_retained
     }
 
     /// Returns true if the sketch is in estimation mode.
-    #[must_use]
     pub fn is_estimation_mode(&self) -> bool {
         self.levels.len() > 1
     }
@@ -149,7 +143,6 @@ impl<T: Clone + Ord> KllSketch<T> {
     /// Returns the minimum item seen by the sketch.
     ///
     /// Returns `None` if the sketch is empty.
-    #[must_use]
     pub fn min_item(&self) -> Option<&T> {
         self.min_item.as_ref()
     }
@@ -157,7 +150,6 @@ impl<T: Clone + Ord> KllSketch<T> {
     /// Returns the maximum item seen by the sketch.
     ///
     /// Returns `None` if the sketch is empty.
-    #[must_use]
     pub fn max_item(&self) -> Option<&T> {
         self.max_item.as_ref()
     }
@@ -234,7 +226,6 @@ impl<T: Clone + Ord> KllSketch<T> {
     /// Returns the normalized rank of the given item.
     ///
     /// Returns `None` if the sketch is empty.
-    #[must_use]
     pub fn rank(&self, item: &T, criteria: SearchCriteria) -> Option<f64> {
         if self.is_empty() {
             return None;
@@ -353,19 +344,16 @@ impl<T: Clone + Ord> KllSketch<T> {
     }
 
     /// Returns the normalized single-sided rank error for the configured k.
-    #[must_use]
     pub fn normalized_rank_error(&self) -> f64 {
         normalized_rank_error(self.min_k, false)
     }
 
     /// Returns the normalized double-sided rank error for PMF queries for the configured k.
-    #[must_use]
     pub fn normalized_pmf_error(&self) -> f64 {
         normalized_rank_error(self.min_k, true)
     }
 
     /// Returns an estimate of the sketch's memory usage in bytes.
-    #[must_use]
     pub fn estimated_size(&self) -> usize {
         self.levels.capacity() * size_of::<Vec<T>>()
             + self
@@ -684,7 +672,6 @@ impl<T: KllValue + Ord> KllSketch<T> {
     ///
     /// The serialized data can be read by other DataSketches implementations when both
     /// sides use the same [`KllValue`] item encoding.
-    #[must_use]
     pub fn serialize(&self) -> Vec<u8> {
         serialize_with_serde(self)
     }

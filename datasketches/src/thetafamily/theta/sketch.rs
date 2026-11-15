@@ -71,7 +71,6 @@ use crate::thetafamily::common::sketch_state::ThetaFamilySketchMetadata;
 /// let view = sketch.as_view();
 /// assert_eq!(view.num_retained(), 1);
 /// ```
-#[must_use]
 #[derive(Clone, Copy)]
 pub struct ThetaSketchView<'a>(ThetaSketchViewState<'a>);
 
@@ -129,7 +128,6 @@ impl FusedIterator for ThetaSketchIter<'_> {}
 
 impl<'a> ThetaSketchView<'a> {
     /// Returns the 16-bit seed hash.
-    #[must_use]
     pub fn seed_hash(&self) -> u16 {
         match self.0 {
             ThetaSketchViewState::Mutable(sketch) => sketch.seed_hash(),
@@ -138,7 +136,6 @@ impl<'a> ThetaSketchView<'a> {
     }
 
     /// Returns theta as a `u64` threshold.
-    #[must_use]
     pub fn theta64(&self) -> u64 {
         match self.0 {
             ThetaSketchViewState::Mutable(sketch) => sketch.theta64(),
@@ -147,7 +144,6 @@ impl<'a> ThetaSketchView<'a> {
     }
 
     /// Returns `true` if the viewed sketch is empty.
-    #[must_use]
     pub fn is_empty(&self) -> bool {
         match self.0 {
             ThetaSketchViewState::Mutable(sketch) => sketch.is_empty(),
@@ -156,7 +152,6 @@ impl<'a> ThetaSketchView<'a> {
     }
 
     /// Returns whether retained entries are ordered by ascending hash.
-    #[must_use]
     pub fn is_ordered(&self) -> bool {
         match self.0 {
             ThetaSketchViewState::Mutable(_) => false,
@@ -177,7 +172,6 @@ impl<'a> ThetaSketchView<'a> {
     }
 
     /// Returns the number of retained entries.
-    #[must_use]
     pub fn num_retained(&self) -> usize {
         match self.0 {
             ThetaSketchViewState::Mutable(sketch) => sketch.num_retained(),
@@ -294,7 +288,6 @@ impl ThetaSketch {
     /// sketch.update("apple");
     /// assert!(sketch.estimate() >= 1.0);
     /// ```
-    #[must_use]
     pub fn estimate(&self) -> f64 {
         if self.is_empty() {
             return 0.0;
@@ -305,7 +298,6 @@ impl ThetaSketch {
     }
 
     /// Returns theta as a fraction in `[0.0, 1.0]`.
-    #[must_use]
     pub fn theta(&self) -> f64 {
         self.theta64() as f64 / MAX_THETA as f64
     }
@@ -314,7 +306,6 @@ impl ThetaSketch {
     ///
     /// An empty sketch reports `MAX_THETA` even when it was built with a sampling probability
     /// below `1.0`.
-    #[must_use]
     pub fn theta64(&self) -> u64 {
         if self.is_empty {
             MAX_THETA
@@ -324,31 +315,26 @@ impl ThetaSketch {
     }
 
     /// Returns the 16-bit seed hash.
-    #[must_use]
     pub fn seed_hash(&self) -> u16 {
         self.table.seed_hash()
     }
 
     /// Returns `true` if the sketch is empty.
-    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.is_empty
     }
 
     /// Returns `true` if the sketch is in estimation mode.
-    #[must_use]
     pub fn is_estimation_mode(&self) -> bool {
         !self.is_empty && self.table.retention_theta() < MAX_THETA
     }
 
     /// Returns the number of retained entries.
-    #[must_use]
     pub fn num_retained(&self) -> usize {
         self.table.num_retained()
     }
 
     /// Returns the configured `lg_k`.
-    #[must_use]
     pub fn lg_k(&self) -> u8 {
         self.table.lg_nom_size()
     }
@@ -394,7 +380,7 @@ impl ThetaSketch {
     /// let compact = sketch.compact(true);
     /// assert_eq!(compact.num_retained(), 1);
     /// ```
-    #[must_use]
+    #[must_use = "compact returns a new compact sketch without modifying this sketch"]
     pub fn compact(&self, ordered: bool) -> CompactThetaSketch {
         let compact_state = if self.is_empty() {
             debug_assert_eq!(self.num_retained(), 0);
@@ -429,7 +415,6 @@ impl ThetaSketch {
     /// assert!(lower_bound <= estimate);
     /// assert!(estimate <= upper_bound);
     /// ```
-    #[must_use]
     pub fn lower_bound(&self, num_std_dev: NumStdDev) -> f64 {
         if !self.is_estimation_mode() {
             return self.num_retained() as f64;
@@ -464,7 +449,6 @@ impl ThetaSketch {
     /// assert!(lower_bound <= estimate);
     /// assert!(estimate <= upper_bound);
     /// ```
-    #[must_use]
     pub fn upper_bound(&self, num_std_dev: NumStdDev) -> f64 {
         if !self.is_estimation_mode() {
             return self.num_retained() as f64;
@@ -481,7 +465,6 @@ impl ThetaSketch {
     }
 
     /// Returns an estimate of the sketch's memory usage in bytes.
-    #[must_use]
     pub fn estimated_size(&self) -> usize {
         self.table.estimated_size()
     }
@@ -521,7 +504,6 @@ impl CompactThetaSketch {
     }
 
     /// Returns the cardinality estimate.
-    #[must_use]
     pub fn estimate(&self) -> f64 {
         if self.is_empty() {
             return 0.0;
@@ -535,43 +517,36 @@ impl CompactThetaSketch {
     }
 
     /// Returns theta as a fraction in `[0.0, 1.0]`.
-    #[must_use]
     pub fn theta(&self) -> f64 {
         self.theta64() as f64 / MAX_THETA as f64
     }
 
     /// Returns theta as a `u64`.
-    #[must_use]
     pub fn theta64(&self) -> u64 {
         self.compact_state.theta()
     }
 
     /// Returns `true` if this sketch is empty.
-    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.compact_state.is_empty()
     }
 
     /// Returns `true` if this sketch is in estimation mode.
-    #[must_use]
     pub fn is_estimation_mode(&self) -> bool {
         self.compact_state.is_estimation_mode()
     }
 
     /// Returns the number of retained entries.
-    #[must_use]
     pub fn num_retained(&self) -> usize {
         self.retained_hashes().len()
     }
 
     /// Returns `true` if retained entries are ordered (sorted ascending).
-    #[must_use]
     pub fn is_ordered(&self) -> bool {
         self.compact_state.is_ordered()
     }
 
     /// Returns the 16-bit fingerprint of the seed associated with this sketch.
-    #[must_use]
     pub fn seed_hash(&self) -> u16 {
         self.compact_state.seed_hash()
     }
@@ -586,7 +561,6 @@ impl CompactThetaSketch {
     }
 
     /// Returns the approximate lower error bound for the specified number of standard deviations.
-    #[must_use]
     pub fn lower_bound(&self, num_std_dev: NumStdDev) -> f64 {
         if !self.is_estimation_mode() {
             return self.num_retained() as f64;
@@ -596,7 +570,6 @@ impl CompactThetaSketch {
     }
 
     /// Returns the approximate upper error bound for the specified number of standard deviations.
-    #[must_use]
     pub fn upper_bound(&self, num_std_dev: NumStdDev) -> f64 {
         if !self.is_estimation_mode() {
             return self.num_retained() as f64;
@@ -615,7 +588,6 @@ impl CompactThetaSketch {
     /// The serialized data can be read by other DataSketches implementations.
     ///
     /// Falls back to [`serialize`](Self::serialize) when compression is not applicable.
-    #[must_use]
     pub fn serialize_compressed(&self) -> Vec<u8> {
         serialization::serialize_compact_compressed(&self.compact_state)
     }
@@ -625,7 +597,6 @@ impl CompactThetaSketch {
     /// The serialized data can be read by other DataSketches implementations.
     ///
     /// Empty sketches serialize with a zero seed hash.
-    #[must_use]
     pub fn serialize(&self) -> Vec<u8> {
         serialization::serialize_compact_uncompressed(&self.compact_state)
     }
@@ -930,7 +901,6 @@ impl CompactThetaSketch {
     }
 
     /// Returns an estimate of the sketch's memory usage in bytes.
-    #[must_use]
     pub fn estimated_size(&self) -> usize {
         self.compact_state.retained_entries_capacity() * size_of::<u64>()
     }
@@ -939,7 +909,6 @@ impl CompactThetaSketch {
 /// Builder for [`ThetaSketch`].
 ///
 /// Configuration is stored without validation and checked when [`build()`](Self::build) is called.
-#[must_use]
 #[derive(Debug, Clone)]
 pub struct ThetaSketchBuilder {
     lg_k: u8,

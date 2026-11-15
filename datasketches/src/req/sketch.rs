@@ -111,7 +111,6 @@ where
     }
 
     /// Returns the configured `k` parameter.
-    #[must_use]
     pub fn k(&self) -> u16 {
         self.k
     }
@@ -122,43 +121,36 @@ where
     }
 
     /// Returns the total number of items observed.
-    #[must_use]
     pub fn n(&self) -> u64 {
         self.n
     }
 
     /// Returns true if the sketch has observed no items.
-    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.n == 0
     }
 
     /// Returns true if compaction has occurred.
-    #[must_use]
     pub fn is_estimation_mode(&self) -> bool {
         self.compactors.len() > 1
     }
 
     /// Returns the number of items currently stored across all compactors.
-    #[must_use]
     pub fn num_retained(&self) -> usize {
         self.num_retained
     }
 
     /// Returns the smallest item ever observed, or `None` if empty.
-    #[must_use]
     pub fn min_item(&self) -> Option<&T> {
         self.min_item.as_ref()
     }
 
     /// Returns the largest item ever observed, or `None` if empty.
-    #[must_use]
     pub fn max_item(&self) -> Option<&T> {
         self.max_item.as_ref()
     }
 
     /// Returns an estimate of the sketch's memory usage in bytes.
-    #[must_use]
     pub fn estimated_size(&self) -> usize {
         self.compactors.capacity() * size_of::<Compactor<T>>()
             + self
@@ -217,7 +209,6 @@ where
     /// a sorted view. The result is identical to [`SortedView::rank`] on [`Self::sorted_view`].
     ///
     /// Returns `None` if the sketch is empty.
-    #[must_use]
     pub fn rank(&self, item: &T, criteria: SearchCriteria) -> Option<f64> {
         if self.is_empty() {
             return None;
@@ -586,7 +577,6 @@ where
     ///
     /// The serialized data can be read by other DataSketches implementations when both
     /// sides use the same [`ReqValue`] item encoding.
-    #[must_use]
     pub fn serialize(&self) -> Vec<u8>
     where
         T: ReqValue,

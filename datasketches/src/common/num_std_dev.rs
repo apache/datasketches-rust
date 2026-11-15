@@ -35,7 +35,6 @@ static DELTA_OF_NUM_STD_DEVS: [f64; 4] = [
 /// confidence intervals with greater certainty that the true value falls within
 /// the bounds.
 #[repr(u8)]
-#[must_use]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum NumStdDev {
     /// One standard deviation (\~68% confidence interval).
@@ -48,13 +47,11 @@ pub enum NumStdDev {
 
 impl NumStdDev {
     /// Returns the tail probability (delta) for this confidence level.
-    #[must_use]
     pub const fn tail_probability(&self) -> f64 {
         DELTA_OF_NUM_STD_DEVS[*self as usize]
     }
 
     /// Returns the number of standard deviations as a `u8`.
-    #[must_use]
     pub const fn as_u8(&self) -> u8 {
         *self as u8
     }

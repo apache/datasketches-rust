@@ -26,7 +26,7 @@ All significant changes to this project will be documented in this file.
 
 ### Improvements
 
-* Complete standard trait implementations (`Clone`, `Eq`, `Hash`, `Debug`, and `Default`) across configuration enums, builders, `Error`, codec helpers, `ReqSketchIterator`, `TDigest`, `CountMinSketch`, and `KllSketch`; saturate `SketchSlice::advance` on offset overflow; and add `#[must_use]` annotations to builders, `Error`, value/view/codec types, and pure query/encoding methods.
+* Complete standard trait implementations (`Clone`, `Eq`, `Hash`, `Debug`, and `Default`) across configuration enums, builders, `Error`, codec helpers, `ReqSketchIterator`, `TDigest`, `CountMinSketch`, and `KllSketch`, and saturate `SketchSlice::advance` on offset overflow.
 * Improve the readability of `Debug` output across sketches, filters, views, and stateful set operators, and implement `Debug` for `TDigest`.
 
 ### Performance improvements

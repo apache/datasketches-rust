@@ -27,7 +27,7 @@ use crate::req::compactor::Compactor;
 /// which depend on the level of the compactor they're stored in.
 ///
 /// Items are borrowed from the sketch, so iteration does not clone or allocate.
-#[must_use]
+#[must_use = "iterators are lazy and do nothing unless consumed"]
 pub struct ReqSketchIterator<'a, T> {
     compactors: &'a [Compactor<T>],
     current_level: usize,

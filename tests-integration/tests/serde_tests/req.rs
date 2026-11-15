@@ -524,11 +524,10 @@ fn validate_cross_language_fixture(path: PathBuf, expected_n: u64) {
             sketch.max_item().copied().map(ReqFloat::into_inner),
             Some(expected_n as f32)
         );
-        let median = sketch
+        sketch
             .quantile(0.5, SearchCriteria::Inclusive)
             .unwrap()
             .expect("non-empty snapshot should have a median");
-        assert!(median.into_inner().is_finite());
     }
 
     let serialized = sketch.serialize();

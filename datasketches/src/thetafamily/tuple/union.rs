@@ -109,7 +109,6 @@ where
     /// Returns the union as a [`CompactTupleSketch`].
     ///
     /// If `ordered` is `true`, retained entries are sorted ascending by hash.
-    #[must_use]
     pub fn to_sketch(&self, ordered: bool) -> CompactTupleSketch<P::Summary>
     where
         P::Summary: Clone,
@@ -148,7 +147,6 @@ where
     /// let result = CompactTupleSketch::<u64>::deserialize(&bytes).unwrap();
     /// assert_eq!(result.num_retained(), 1);
     /// ```
-    #[must_use]
     pub fn serialize(&self, ordered: bool) -> Vec<u8>
     where
         P::Summary: TupleSummaryValue,
@@ -162,7 +160,6 @@ where
     }
 
     /// Returns an estimate of the union's memory usage in bytes.
-    #[must_use]
     pub fn estimated_size(&self) -> usize {
         self.state.estimated_size()
     }
@@ -175,7 +172,6 @@ where
 /// custom combine policy.
 ///
 /// Configuration is stored without validation and checked when [`build()`](Self::build) is called.
-#[must_use]
 #[derive(Debug, Clone)]
 pub struct TupleUnionBuilder<P>
 where

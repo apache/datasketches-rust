@@ -135,13 +135,11 @@ impl CpcSketch {
     }
 
     /// Returns the configured `lg_k`.
-    #[must_use]
     pub fn lg_k(&self) -> u8 {
         self.lg_k
     }
 
     /// Returns the best estimate of the cardinality of the sketch.
-    #[must_use]
     pub fn estimate(&self) -> f64 {
         estimate(
             self.merge_flag,
@@ -152,7 +150,6 @@ impl CpcSketch {
     }
 
     /// Returns the best estimate of the lower bound of the confidence interval.
-    #[must_use]
     pub fn lower_bound(&self, num_std_dev: NumStdDev) -> f64 {
         lower_bound(
             self.merge_flag,
@@ -164,7 +161,6 @@ impl CpcSketch {
     }
 
     /// Returns the best estimate of the upper bound of the confidence interval.
-    #[must_use]
     pub fn upper_bound(&self, num_std_dev: NumStdDev) -> f64 {
         upper_bound(
             self.merge_flag,
@@ -176,7 +172,6 @@ impl CpcSketch {
     }
 
     /// Returns `true` if the sketch is empty.
-    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.num_coupons == 0
     }
@@ -461,7 +456,6 @@ impl CpcSketch {
     }
 
     /// Returns an estimate of the sketch's memory usage in bytes.
-    #[must_use]
     pub fn estimated_size(&self) -> usize {
         self.sliding_window.capacity()
             + self
@@ -492,7 +486,6 @@ impl CpcSketch {
     /// Serializes this `CpcSketch` to bytes.
     ///
     /// The serialized data can be read by other DataSketches implementations.
-    #[must_use]
     pub fn serialize(&self) -> Vec<u8> {
         let flavor = self.flavor();
         let has_window = matches!(flavor, Flavor::Pinned | Flavor::Sliding);

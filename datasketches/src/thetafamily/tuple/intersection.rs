@@ -141,13 +141,11 @@ where
     }
 
     /// Returns `true` after the first successful [`update`](Self::update).
-    #[must_use]
     pub fn has_result(&self) -> bool {
         self.state.has_result()
     }
 
     /// Returns an estimate of the intersection's memory usage in bytes.
-    #[must_use]
     pub fn estimated_size(&self) -> usize {
         self.state.estimated_size()
     }
@@ -158,7 +156,6 @@ where
     /// `Some` even when the intersection is empty.
     ///
     /// If `ordered` is `true`, retained entries are sorted in ascending hash order.
-    #[must_use]
     pub fn to_sketch(&self, ordered: bool) -> Option<CompactTupleSketch<P::Summary>>
     where
         P::Summary: Clone,
