@@ -234,8 +234,8 @@ impl BloomFilter {
     ///
     /// # Errors
     ///
-    /// Returns [`InvalidArgument`](ErrorKind::InvalidArgument) if
-    /// [`is_compatible`](Self::is_compatible) is `false`.
+    /// Returns [`InvalidArgument`](ErrorKind::InvalidArgument) without modifying `self` if
+    /// `self` and `other` have different capacities, hash counts, or seeds.
     pub fn union(&mut self, other: &Self) -> Result<(), Error> {
         self.ensure_compatible(other)?;
         self.bits
@@ -247,8 +247,8 @@ impl BloomFilter {
     ///
     /// # Errors
     ///
-    /// Returns [`InvalidArgument`](ErrorKind::InvalidArgument) if
-    /// [`is_compatible`](Self::is_compatible) is `false`.
+    /// Returns [`InvalidArgument`](ErrorKind::InvalidArgument) without modifying `self` if
+    /// `self` and `other` have different capacities, hash counts, or seeds.
     pub fn intersect(&mut self, other: &Self) -> Result<(), Error> {
         self.ensure_compatible(other)?;
         self.bits
@@ -263,8 +263,8 @@ impl BloomFilter {
     ///
     /// # Errors
     ///
-    /// Returns [`InvalidArgument`](ErrorKind::InvalidArgument) if
-    /// [`is_compatible`](Self::is_compatible) is `false`.
+    /// Returns [`InvalidArgument`](ErrorKind::InvalidArgument) without modifying `self` if
+    /// `self` and `other` have different capacities, hash counts, or seeds.
     pub fn difference(&mut self, other: &Self) -> Result<(), Error> {
         self.ensure_compatible(other)?;
         self.bits
@@ -306,13 +306,6 @@ impl BloomFilter {
     /// Returns the estimated false-positive probability (`load_factor^num_hashes`).
     pub fn estimated_fpp(&self) -> f64 {
         self.load_factor().powi(i32::from(self.num_hashes))
-    }
-
-    /// Returns `true` if `self` and `other` have identical capacity, `num_hashes`, and `seed`.
-    pub fn is_compatible(&self, other: &Self) -> bool {
-        self.bits.words.len() == other.bits.words.len()
-            && self.num_hashes == other.num_hashes
-            && self.seed == other.seed
     }
 
     /// Returns the estimated heap allocation of the filter's backing bit array in bytes.
@@ -395,11 +388,26 @@ impl BloomFilter {
         })
     }
 
+    #[inline]
     fn ensure_compatible(&self, other: &Self) -> Result<(), Error> {
-        if !self.is_compatible(other) {
-            return Err(Error::invalid_argument(
-                "Bloom filters must have matching capacity, number of hashes, and seed",
-            ));
+        if self.bits.words.len() != other.bits.words.len() {
+            return Err(Error::invalid_argument(format!(
+                "cannot combine Bloom filters with different capacities: expected {}, got {}",
+                self.capacity(),
+                other.capacity()
+            )));
+        }
+        if self.num_hashes != other.num_hashes {
+            return Err(Error::invalid_argument(format!(
+                "cannot combine Bloom filters with different num_hashes: expected {}, got {}",
+                self.num_hashes, other.num_hashes
+            )));
+        }
+        if self.seed != other.seed {
+            return Err(Error::invalid_argument(format!(
+                "cannot combine Bloom filters with different seeds: expected {}, got {}",
+                self.seed, other.seed
+            )));
         }
         Ok(())
     }
