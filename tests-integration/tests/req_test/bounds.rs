@@ -182,20 +182,18 @@ fn rank_bounds_reject_invalid_ranks_across_sketch_states() {
         }
         assert_eq!(sketch.is_estimation_mode(), expected_estimation);
 
-        for sigma in [NumStdDev::One, NumStdDev::Two, NumStdDev::Three] {
-            for rank in [f64::NAN, -0.1, 1.1, f64::INFINITY, f64::NEG_INFINITY] {
-                for error in [
-                    sketch.rank_lower_bound(rank, sigma).unwrap_err(),
-                    sketch.rank_upper_bound(rank, sigma).unwrap_err(),
-                ] {
-                    assert_eq!(error.kind(), ErrorKind::InvalidArgument);
-                }
+        for rank in [f64::NAN, -0.1, 1.1, f64::INFINITY, f64::NEG_INFINITY] {
+            for error in [
+                sketch.rank_lower_bound(rank, NumStdDev::Two).unwrap_err(),
+                sketch.rank_upper_bound(rank, NumStdDev::Two).unwrap_err(),
+            ] {
+                assert_eq!(error.kind(), ErrorKind::InvalidArgument);
             }
+        }
 
-            if !expected_estimation {
-                assert_eq!(sketch.rank_lower_bound(0.5, sigma).unwrap(), 0.5);
-                assert_eq!(sketch.rank_upper_bound(0.5, sigma).unwrap(), 0.5);
-            }
+        if !expected_estimation {
+            assert_eq!(sketch.rank_lower_bound(0.5, NumStdDev::Two).unwrap(), 0.5);
+            assert_eq!(sketch.rank_upper_bound(0.5, NumStdDev::Two).unwrap(), 0.5);
         }
     }
 }

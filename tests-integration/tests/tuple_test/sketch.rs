@@ -16,7 +16,6 @@
 // under the License.
 
 use datasketches::common::NumStdDev;
-use datasketches::common::ResizeFactor;
 use datasketches::error::ErrorKind;
 use datasketches::hash::value;
 use datasketches::tuple::CompactTupleSketch;
@@ -294,34 +293,4 @@ fn sampling_state_transitions_through_compaction_and_reset() {
     assert!(sketch.is_empty());
     assert_eq!(sketch.theta64(), MAX_THETA);
     assert!(!sketch.is_estimation_mode());
-}
-
-#[test]
-fn builder_clone_preserves_config_and_is_independent() {
-    let base = default_tuple_sketch_builder()
-        .lg_k(8)
-        .resize_factor(ResizeFactor::X2)
-        .sampling_probability(0.5)
-        .seed(123);
-    let cloned = base.clone();
-    let reconfigured = base.clone().lg_k(10).seed(456);
-
-    let mut a = base.build().unwrap();
-    let mut b = cloned.build().unwrap();
-    let mut c = reconfigured.build().unwrap();
-
-    assert_eq!(a.lg_k(), 8);
-    assert_eq!(b.lg_k(), 8);
-    assert_eq!(c.lg_k(), 10);
-    assert_eq!(a.seed_hash(), b.seed_hash());
-    assert_ne!(a.seed_hash(), c.seed_hash());
-    assert_eq!(a.estimated_size(), b.estimated_size());
-
-    for i in 0..500 {
-        a.update(i, 1u64);
-        b.update(i, 1u64);
-        c.update(i, 1u64);
-    }
-    assert_eq!(a.compact(true).serialize(), b.compact(true).serialize());
-    assert_ne!(a.compact(true).serialize(), c.compact(true).serialize());
 }

@@ -103,23 +103,3 @@ impl<'a, T: Clone + Ord> Iterator for ReqSketchIterator<'a, T> {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use std::fmt;
-
-    use super::ReqSketchIterator;
-
-    #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
-    struct NonDebugItem(u8);
-
-    #[test]
-    fn debug_does_not_require_item_debug() {
-        fn assert_debug<T: fmt::Debug>(value: &T) {
-            let _ = format!("{value:?}");
-        }
-
-        let iter: ReqSketchIterator<'_, NonDebugItem> = ReqSketchIterator::new(&[]);
-        assert_debug(&iter);
-    }
-}

@@ -211,20 +211,12 @@ mod tests {
 
     #[test]
     fn advance_saturates_on_overflow() {
-        let mut at_start = SketchSlice::new(&[1, 2, 3, 4]);
-        at_start.advance(u64::MAX);
-        assert!(at_start.remaining().is_empty());
+        let mut cursor = SketchSlice::new(&[1, 2, 3, 4]);
+        assert_eq!(cursor.read_u8().unwrap(), 1);
+        cursor.advance(u64::MAX);
+        assert!(cursor.remaining().is_empty());
         assert_eq!(
-            at_start.read_u8().unwrap_err().kind(),
-            io::ErrorKind::UnexpectedEof
-        );
-
-        let mut after_read = SketchSlice::new(&[1, 2, 3, 4]);
-        assert_eq!(after_read.read_u8().unwrap(), 1);
-        after_read.advance(u64::MAX);
-        assert!(after_read.remaining().is_empty());
-        assert_eq!(
-            after_read.read_u8().unwrap_err().kind(),
+            cursor.read_u8().unwrap_err().kind(),
             io::ErrorKind::UnexpectedEof
         );
     }

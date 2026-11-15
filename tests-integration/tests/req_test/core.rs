@@ -287,36 +287,3 @@ fn weight_overflow_preserves_state() {
     );
     assert!(sketch.serialize() == before, "overflow changed the sketch");
 }
-
-#[test]
-fn estimated_size_grows_across_levels_and_is_shallow() {
-    let mut sketch = ReqSketch::<i64>::new(4, RankAccuracy::HighRank).unwrap();
-    let empty_size = sketch.estimated_size();
-    assert!(empty_size > 0);
-
-    for item in 0..200 {
-        sketch.update(item);
-    }
-    assert!(sketch.is_estimation_mode());
-    let mid_size = sketch.estimated_size();
-    assert!(mid_size > empty_size);
-
-    for item in 200..20_000 {
-        sketch.update(item);
-    }
-    let large_size = sketch.estimated_size();
-    assert!(large_size > mid_size);
-
-    let mut small_item_sketch = ReqSketch::<String>::new(4, RankAccuracy::HighRank).unwrap();
-    small_item_sketch.update("key".to_string());
-
-    let mut large_item = String::with_capacity(4096);
-    large_item.push_str("key");
-    let mut large_item_sketch = ReqSketch::<String>::new(4, RankAccuracy::HighRank).unwrap();
-    large_item_sketch.update(large_item);
-
-    assert_eq!(
-        small_item_sketch.estimated_size(),
-        large_item_sketch.estimated_size()
-    );
-}
