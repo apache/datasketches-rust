@@ -56,7 +56,7 @@ use crate::hll::serialization::extract_tgt_hll_type;
 /// A HyperLogLog sketch.
 ///
 /// See the [module level documentation](super) for more.
-#[derive(Clone, PartialEq)]
+#[derive(Clone)]
 pub struct HllSketch {
     lg_config_k: u8,
     mode: Mode,

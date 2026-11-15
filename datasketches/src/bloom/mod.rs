@@ -69,7 +69,11 @@
 //! assert!(filter.contains("banana"));
 //!
 //! let restored = BloomFilter::deserialize(&filter.serialize()).unwrap();
-//! assert_eq!(filter, restored);
+//! assert!(restored.contains("apple"));
+//! assert!(restored.contains("banana"));
+//! assert!(!restored.contains("grape"));
+//! assert_eq!(restored.bits_used(), filter.bits_used());
+//! assert_eq!(restored.serialize(), filter.serialize());
 //! ```
 //!
 //! # References

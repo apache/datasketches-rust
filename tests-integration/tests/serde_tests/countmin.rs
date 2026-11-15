@@ -19,6 +19,7 @@ use std::fs;
 use std::hash::Hash;
 
 use datasketches::countmin::CountMinSketch;
+use datasketches::countmin::CountMinValue;
 use datasketches::error::ErrorKind;
 use datasketches::hash::value::natural_extend;
 use datasketches::hash::value::raw_bytes;
@@ -27,6 +28,16 @@ use googletest::prelude::contains_substring;
 use tests_integration::ZERO_HASH_SEED;
 
 use crate::serialization_test_data;
+
+fn sketch_snapshot<T: CountMinValue>(sketch: &CountMinSketch<T>) -> (u8, u32, u64, T, Vec<u8>) {
+    (
+        sketch.num_hashes(),
+        sketch.num_buckets(),
+        sketch.seed(),
+        sketch.total_weight(),
+        sketch.serialize(),
+    )
+}
 
 fn words_to_bytes<const N: usize>(words: [u64; N]) -> Vec<u8> {
     words.into_iter().flat_map(u64::to_le_bytes).collect()
@@ -62,7 +73,10 @@ fn v2_reads_and_writes_the_published_image() {
     let mut empty = bytes[..16].to_vec();
     empty[3] = 1;
     assert_eq!(sketch.serialize(), empty);
-    assert_eq!(CountMinSketch::<i64>::deserialize(&empty).unwrap(), sketch);
+    assert_eq!(
+        sketch_snapshot(&CountMinSketch::<i64>::deserialize(&empty).unwrap()),
+        sketch_snapshot(&sketch)
+    );
 
     sketch.update_with_weight(1i64, 10);
     sketch.update_with_weight(9i64, 810);
@@ -70,7 +84,7 @@ fn v2_reads_and_writes_the_published_image() {
     assert_eq!(sketch.serialize(), bytes);
 
     let mut restored = CountMinSketch::<i64>::deserialize(&bytes).unwrap();
-    assert_eq!(restored, sketch);
+    assert_eq!(sketch_snapshot(&restored), sketch_snapshot(&sketch));
     assert_eq!(restored.estimate(1u64), 10);
     assert_eq!(restored.estimate(natural_extend::from_i8(9)), 810);
     assert_eq!(restored.estimate(raw_bytes::from_str("apple")), 5);
@@ -164,8 +178,8 @@ fn legacy_image_preserves_wrappers_and_custom_hash_inputs() {
     assert_eq!(sketch.total_weight(), 73);
     assert_eq!(sketch.serialize()[1], 1);
     assert_eq!(
-        CountMinSketch::<i64>::deserialize(&sketch.serialize()).unwrap(),
-        sketch
+        sketch_snapshot(&CountMinSketch::<i64>::deserialize(&sketch.serialize()).unwrap()),
+        sketch_snapshot(&sketch)
     );
 }
 
@@ -232,7 +246,7 @@ fn rejects_merge_across_serial_versions() {
         current.merge(&legacy).unwrap_err().kind(),
         ErrorKind::InvalidArgument
     );
-    assert_eq!(current, before);
+    assert_eq!(sketch_snapshot(&current), sketch_snapshot(&before));
 }
 
 #[test]

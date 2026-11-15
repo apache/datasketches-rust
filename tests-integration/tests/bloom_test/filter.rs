@@ -35,6 +35,16 @@ fn filter() -> BloomFilter {
         .unwrap()
 }
 
+fn filter_snapshot(filter: &BloomFilter) -> (u64, u16, u64, u64, Vec<u8>) {
+    (
+        filter.capacity(),
+        filter.num_hashes(),
+        filter.seed(),
+        filter.bits_used(),
+        filter.serialize(),
+    )
+}
+
 fn decode_hex(input: &str) -> Vec<u8> {
     assert_eq!(input.len() % 2, 0);
     input
@@ -51,7 +61,7 @@ fn decode_hex(input: &str) -> Vec<u8> {
 fn lifecycle_statistics_and_reset() {
     let mut filter = filter();
     let empty = filter.clone();
-    assert_eq!(filter, empty);
+    assert_eq!(filter_snapshot(&filter), filter_snapshot(&empty));
     assert_eq!(filter.capacity(), NUM_BITS);
     assert_eq!(filter.num_hashes(), NUM_HASHES);
     assert_eq!(filter.seed(), SEED);
@@ -71,13 +81,13 @@ fn lifecycle_statistics_and_reset() {
     assert!(filter.contains_and_insert("apple"));
     assert!(filter.contains("apple"));
     assert!(!filter.is_empty());
-    assert_ne!(filter, empty);
+    assert_ne!(filter_snapshot(&filter), filter_snapshot(&empty));
     assert_that!(filter.bits_used(), gt(0));
     assert_that!(filter.load_factor(), gt(0.0));
     assert_that!(filter.estimated_fpp(), gt(0.0));
 
     filter.reset();
-    assert_eq!(filter, empty);
+    assert_eq!(filter_snapshot(&filter), filter_snapshot(&empty));
     assert!(filter.is_empty());
     assert_eq!(filter.bits_used(), 0);
     assert_eq!(filter.load_factor(), 0.0);
@@ -95,7 +105,7 @@ fn insert_and_contains_and_insert_are_equivalent() {
         assert_eq!(checked.contains_and_insert(value), was_present);
         inserted.insert(value);
         assert!(inserted.contains(value));
-        assert_eq!(checked, inserted);
+        assert_eq!(filter_snapshot(&checked), filter_snapshot(&inserted));
     }
 }
 
@@ -121,7 +131,10 @@ fn equivalent_borrowed_and_value_inputs_match() {
     }
     assert!(!from_slices_and_values.contains_and_insert(raw_bytes::from_str("payload")));
 
-    assert_eq!(from_borrows, from_slices_and_values);
+    assert_eq!(
+        filter_snapshot(&from_borrows),
+        filter_snapshot(&from_slices_and_values)
+    );
 
     assert!(from_borrows.contains(&owned_text));
     assert!(from_borrows.contains(owned_text.as_str()));
@@ -135,7 +148,10 @@ fn equivalent_borrowed_and_value_inputs_match() {
 
     assert!(from_slices_and_values.contains_and_insert(&owned_text));
     assert!(from_slices_and_values.contains_and_insert(&owned_bytes));
-    assert_eq!(from_slices_and_values, from_borrows);
+    assert_eq!(
+        filter_snapshot(&from_slices_and_values),
+        filter_snapshot(&from_borrows)
+    );
 }
 
 #[test]
@@ -153,13 +169,13 @@ fn within_item_collisions_and_repeated_inserts_preserve_bit_count() {
         for filter in [&mut inserted, &mut checked] {
             let before_repeat = filter.clone();
             filter.insert(42_u64);
-            assert_eq!(*filter, before_repeat);
+            assert_eq!(filter_snapshot(filter), filter_snapshot(&before_repeat));
             assert!(filter.contains_and_insert(42_u64));
-            assert_eq!(*filter, before_repeat);
+            assert_eq!(filter_snapshot(filter), filter_snapshot(&before_repeat));
 
             // Recount the backing bits independently of either insertion path.
             let restored = BloomFilter::deserialize(&filter.serialize()).unwrap();
-            assert_eq!(restored, *filter);
+            assert_eq!(filter_snapshot(&restored), filter_snapshot(filter));
             assert_eq!(restored.bits_used(), filter.bits_used());
         }
     }
@@ -184,8 +200,8 @@ fn union_intersect_and_difference_preserve_set_semantics() {
     assert_that!(intersection.bits_used(), le(left_bits));
     assert_that!(intersection.bits_used(), le(right_bits));
     assert_eq!(
-        BloomFilter::deserialize(&intersection.serialize()).unwrap(),
-        intersection
+        filter_snapshot(&BloomFilter::deserialize(&intersection.serialize()).unwrap()),
+        filter_snapshot(&intersection)
     );
 
     let mut union = left.clone();
@@ -195,7 +211,10 @@ fn union_intersect_and_difference_preserve_set_semantics() {
     assert!(union.contains("right"));
     assert_that!(union.bits_used(), ge(left_bits));
     assert_that!(union.bits_used(), ge(right_bits));
-    assert_eq!(BloomFilter::deserialize(&union.serialize()).unwrap(), union);
+    assert_eq!(
+        filter_snapshot(&BloomFilter::deserialize(&union.serialize()).unwrap()),
+        filter_snapshot(&union)
+    );
 
     let mut diff_disjoint = left.clone();
     diff_disjoint.difference(&right).unwrap();
@@ -205,7 +224,7 @@ fn union_intersect_and_difference_preserve_set_semantics() {
 
     let mut diff_empty = left.clone();
     diff_empty.difference(&filter()).unwrap();
-    assert_eq!(diff_empty, left);
+    assert_eq!(filter_snapshot(&diff_empty), filter_snapshot(&left));
 
     let mut diff_self = left.clone();
     diff_self.difference(&left).unwrap();
@@ -214,8 +233,8 @@ fn union_intersect_and_difference_preserve_set_semantics() {
     assert!(!diff_self.contains("shared"));
     assert!(!diff_self.contains("left"));
     assert_eq!(
-        BloomFilter::deserialize(&diff_self.serialize()).unwrap(),
-        diff_self
+        filter_snapshot(&BloomFilter::deserialize(&diff_self.serialize()).unwrap()),
+        filter_snapshot(&diff_self)
     );
 
     let mut bulk_left = filter();
@@ -234,8 +253,8 @@ fn union_intersect_and_difference_preserve_set_semantics() {
     }
     assert_that!(bulk_left.bits_used(), le(bulk_left_bits));
     assert_eq!(
-        BloomFilter::deserialize(&bulk_left.serialize()).unwrap(),
-        bulk_left
+        filter_snapshot(&BloomFilter::deserialize(&bulk_left.serialize()).unwrap()),
+        filter_snapshot(&bulk_left)
     );
 }
 
@@ -264,21 +283,21 @@ fn incompatible_set_operations_are_rejected() {
             union.union(other).unwrap_err().kind(),
             ErrorKind::InvalidArgument
         );
-        assert_eq!(union, baseline);
+        assert_eq!(filter_snapshot(&union), filter_snapshot(&baseline));
 
         let mut intersect = baseline.clone();
         assert_eq!(
             intersect.intersect(other).unwrap_err().kind(),
             ErrorKind::InvalidArgument
         );
-        assert_eq!(intersect, baseline);
+        assert_eq!(filter_snapshot(&intersect), filter_snapshot(&baseline));
 
         let mut difference = baseline.clone();
         assert_eq!(
             difference.difference(other).unwrap_err().kind(),
             ErrorKind::InvalidArgument
         );
-        assert_eq!(difference, baseline);
+        assert_eq!(filter_snapshot(&difference), filter_snapshot(&baseline));
     }
 }
 
@@ -287,7 +306,10 @@ fn builder_validation_and_word_rounding() {
     let builder = BloomFilterBuilder::with_size(65, 3).seed(42);
     let _ = format!("{builder:?}");
     let size_seeded = builder.clone().build().unwrap();
-    assert_eq!(size_seeded, builder.build().unwrap());
+    assert_eq!(
+        filter_snapshot(&size_seeded),
+        filter_snapshot(&builder.build().unwrap())
+    );
     assert_eq!(size_seeded.capacity(), 128);
     assert_eq!(size_seeded.num_hashes(), 3);
     assert_eq!(size_seeded.seed(), 42);
@@ -314,11 +336,13 @@ fn builder_validation_and_word_rounding() {
     assert_eq!(acc_seeded.capacity(), acc.capacity());
     assert_eq!(acc_seeded.num_hashes(), acc.num_hashes());
     assert_eq!(
-        acc_seeded,
-        BloomFilterBuilder::with_size(acc.capacity(), acc.num_hashes())
-            .seed(42)
-            .build()
-            .unwrap()
+        filter_snapshot(&acc_seeded),
+        filter_snapshot(
+            &BloomFilterBuilder::with_size(acc.capacity(), acc.num_hashes())
+                .seed(42)
+                .build()
+                .unwrap()
+        )
     );
 
     for (max_items, fpp) in [
@@ -406,6 +430,6 @@ fn serialized_bit_layout_matches_cross_language_vector() {
     assert_eq!(filter.serialize(), expected);
 
     let restored = BloomFilter::deserialize(&expected).unwrap();
-    assert_eq!(restored, filter);
+    assert_eq!(filter_snapshot(&restored), filter_snapshot(&filter));
     assert!(restored.contains(0_u64));
 }

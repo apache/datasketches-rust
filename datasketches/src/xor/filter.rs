@@ -73,7 +73,7 @@ impl XorFilterType {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 enum Fingerprints {
     Xor8(Box<[u8]>),
     Xor16(Box<[u16]>),
@@ -304,7 +304,7 @@ impl XorFilterBuilder {
 /// changes.
 ///
 /// See the [module level documentation](super) for more.
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone)]
 pub struct XorFilter {
     // Cache the derived length to avoid division on every query.
     segment_length: usize,

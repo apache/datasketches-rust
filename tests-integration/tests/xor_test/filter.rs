@@ -66,16 +66,16 @@ fn builder_deduplicates_values_and_hashes() {
             .update_values([11_u64, 7, 11]);
         let distinct_values = XorFilterBuilder::new(ty).update_values([11_u64, 7]);
         assert_eq!(
-            duplicate_values.build().unwrap(),
-            distinct_values.build().unwrap(),
+            duplicate_values.build().unwrap().serialize(),
+            distinct_values.build().unwrap().serialize(),
         );
 
         let hashes = XorFilterBuilder::new(ty)
             .update_hash(7)
             .update_hashes([11, 7, 11]);
         assert_eq!(
-            hashes.build().unwrap(),
-            XorFilter::from_hashes(&[7, 11], ty).unwrap(),
+            hashes.build().unwrap().serialize(),
+            XorFilter::from_hashes(&[7, 11], ty).unwrap().serialize(),
         );
     }
 }
@@ -96,13 +96,23 @@ fn default_seed_constructors_and_builder_clone_behave_consistently() {
             .update_values([1_u64, 2, 3]);
 
         let cloned_filter = cloned_builder.build().unwrap();
-        assert_eq!(cloned_filter, zero_seeded_builder.build().unwrap());
+        assert_eq!(
+            cloned_filter.serialize(),
+            zero_seeded_builder.build().unwrap().serialize(),
+        );
         assert_eq!(cloned_filter.filter_type(), ty);
-        assert_ne!(cloned_filter, extended_builder.build().unwrap());
+        assert_ne!(
+            cloned_filter.serialize(),
+            extended_builder.build().unwrap().serialize(),
+        );
 
         assert_eq!(
-            XorFilter::from_hashes(&[10, 20, 30], ty).unwrap(),
-            XorFilter::from_hashes_with_seed(&[10, 20, 30], ty, 0).unwrap(),
+            XorFilter::from_hashes(&[10, 20, 30], ty)
+                .unwrap()
+                .serialize(),
+            XorFilter::from_hashes_with_seed(&[10, 20, 30], ty, 0)
+                .unwrap()
+                .serialize(),
         );
     }
 }
@@ -125,7 +135,10 @@ fn equivalent_borrowed_and_value_inputs_build_identical_filters() {
         let by_str_batch =
             XorFilterBuilder::new(ty).update_values(strings.iter().map(String::as_str));
         let str_filter = by_str_update.build().unwrap();
-        assert_eq!(str_filter, by_str_batch.build().unwrap());
+        assert_eq!(
+            str_filter.serialize(),
+            by_str_batch.build().unwrap().serialize(),
+        );
         for s in &strings {
             assert!(str_filter.contains(s));
             assert!(str_filter.contains(s.as_str()));
@@ -138,7 +151,10 @@ fn equivalent_borrowed_and_value_inputs_build_identical_filters() {
         let by_blob_batch =
             XorFilterBuilder::new(ty).update_values(blobs.iter().map(Vec::as_slice));
         let blob_filter = by_blob_update.build().unwrap();
-        assert_eq!(blob_filter, by_blob_batch.build().unwrap());
+        assert_eq!(
+            blob_filter.serialize(),
+            by_blob_batch.build().unwrap().serialize(),
+        );
         for blob in &blobs {
             assert!(blob_filter.contains(blob));
             assert!(blob_filter.contains(blob.as_slice()));
@@ -153,7 +169,10 @@ fn equivalent_borrowed_and_value_inputs_build_identical_filters() {
             .update_values(ids)
             .update(raw_bytes::from_str("payload"));
         let mixed_filter = by_mixed_update.build().unwrap();
-        assert_eq!(mixed_filter, by_mixed_batch.build().unwrap());
+        assert_eq!(
+            mixed_filter.serialize(),
+            by_mixed_batch.build().unwrap().serialize(),
+        );
         for id in &ids {
             assert!(mixed_filter.contains(id));
             assert!(mixed_filter.contains(*id));
@@ -250,7 +269,10 @@ fn builder_chaining_and_seed_override_behave_consistently() {
         step_by_step = step_by_step.update_hash(99);
         step_by_step = step_by_step.update_values(["beta", "gamma"]);
         step_by_step = step_by_step.update_hashes([100, 101]);
-        assert_eq!(chained, step_by_step.build().unwrap());
+        assert_eq!(
+            chained.serialize(),
+            step_by_step.build().unwrap().serialize(),
+        );
 
         for value in ["alpha", "beta", "gamma"] {
             assert!(chained.contains(value));
@@ -266,20 +288,22 @@ fn builder_chaining_and_seed_override_behave_consistently() {
             .build()
             .unwrap();
         assert_eq!(
-            overridden,
+            overridden.serialize(),
             XorFilterBuilder::new(ty)
                 .seed(42)
                 .update_values(["gamma", "alpha", "beta"])
                 .build()
-                .unwrap(),
+                .unwrap()
+                .serialize(),
         );
         assert_ne!(
-            overridden,
+            overridden.serialize(),
             XorFilterBuilder::new(ty)
                 .seed(1)
                 .update_values(["alpha", "beta", "gamma"])
                 .build()
-                .unwrap(),
+                .unwrap()
+                .serialize(),
         );
     }
 }
@@ -310,8 +334,10 @@ fn construction_recovers_after_an_unpeelable_first_attempt() {
         let mut reversed = keys.clone();
         reversed.reverse();
         assert_eq!(
-            filter,
-            XorFilter::from_hashes_with_seed(&reversed, kind, 1).unwrap(),
+            filter.serialize(),
+            XorFilter::from_hashes_with_seed(&reversed, kind, 1)
+                .unwrap()
+                .serialize(),
         );
 
         let builder_filter = XorFilterBuilder::new(kind)
@@ -320,6 +346,6 @@ fn construction_recovers_after_an_unpeelable_first_attempt() {
             .seed(1)
             .build()
             .unwrap();
-        assert_eq!(builder_filter, filter);
+        assert_eq!(builder_filter.serialize(), filter.serialize());
     }
 }

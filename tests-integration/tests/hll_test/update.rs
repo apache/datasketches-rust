@@ -167,30 +167,6 @@ fn test_large_cardinality() {
 }
 
 #[test]
-fn test_equals_method() {
-    let mut sketch1 = HllSketch::new(10, HllType::Hll8).unwrap();
-    let mut sketch2 = HllSketch::new(10, HllType::Hll8).unwrap();
-
-    // Both start equal (empty)
-    assert!(sketch1.eq(&sketch2));
-
-    // Add same values to both
-    for i in 0..100 {
-        sketch1.update(i);
-        sketch2.update(i);
-    }
-
-    // Should still be equal
-    assert!(sketch1.eq(&sketch2));
-
-    // Add different value to sketch2
-    sketch2.update(999);
-
-    // Now they're different
-    assert!(!sketch1.eq(&sketch2));
-}
-
-#[test]
 fn test_invalid_lg_k_low_returns_error() {
     let error = HllSketch::new(3, HllType::Hll8).unwrap_err();
     assert_eq!(error.kind(), ErrorKind::InvalidArgument);

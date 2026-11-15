@@ -408,9 +408,12 @@ fn test_custom_kll_value_roundtrip() {
 
     let decoded = KllSketch::<Record>::deserialize(&sketch.serialize()).unwrap();
 
-    assert_eq!(decoded, sketch);
+    assert_eq!(decoded.serialize(), sketch.serialize());
+    assert_eq!(decoded.k(), sketch.k());
     assert_eq!(decoded.n(), 1_000);
     assert_eq!(decoded.num_retained(), sketch.num_retained());
+    assert_eq!(decoded.min_item(), sketch.min_item());
+    assert_eq!(decoded.max_item(), sketch.max_item());
 }
 
 #[test]

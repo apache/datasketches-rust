@@ -22,7 +22,7 @@ use crate::hll::array8::Array8;
 use crate::hll::hash_set::HashSet;
 use crate::hll::list::List;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum Mode {
     List { list: List, hll_type: HllType },
     Set { set: HashSet, hll_type: HllType },

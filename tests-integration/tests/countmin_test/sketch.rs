@@ -20,6 +20,7 @@ use std::panic::AssertUnwindSafe;
 use std::panic::catch_unwind;
 
 use datasketches::countmin::CountMinSketch;
+use datasketches::countmin::CountMinValue;
 use datasketches::countmin::UnsignedCountMinValue;
 use datasketches::error::ErrorKind;
 use datasketches::hash::value::natural_extend;
@@ -27,6 +28,16 @@ use datasketches::hash::value::raw_bytes;
 use googletest::assert_that;
 use googletest::prelude::ge;
 use googletest::prelude::le;
+
+fn sketch_snapshot<T: CountMinValue>(sketch: &CountMinSketch<T>) -> (u8, u32, u64, T, Vec<u8>) {
+    (
+        sketch.num_hashes(),
+        sketch.num_buckets(),
+        sketch.seed(),
+        sketch.total_weight(),
+        sketch.serialize(),
+    )
+}
 
 #[test]
 fn weight_overflow_preserves_unsigned_state() {
@@ -40,12 +51,12 @@ fn weight_overflow_preserves_unsigned_state() {
 
     sketch.update_with_weight("x", 0);
     assert!(catch_unwind(AssertUnwindSafe(|| sketch.update("x"))).is_err());
-    assert_eq!(sketch, before);
+    assert_eq!(sketch_snapshot(&sketch), sketch_snapshot(&before));
     assert_eq!(
         sketch.merge(&one).unwrap_err().kind(),
         ErrorKind::InvalidArgument
     );
-    assert_eq!(sketch, before);
+    assert_eq!(sketch_snapshot(&sketch), sketch_snapshot(&before));
 }
 
 #[test]
@@ -53,7 +64,8 @@ fn weight_overflow_preserves_signed_state() {
     let mut sketch = CountMinSketch::<i8>::new(2, 8).unwrap();
     let empty = sketch.clone();
     assert!(catch_unwind(AssertUnwindSafe(|| sketch.update_with_weight("x", i8::MIN))).is_err());
-    assert_eq!(sketch, empty);
+    assert_eq!(sketch_snapshot(&sketch), sketch_snapshot(&empty));
+    assert_eq!(sketch.estimate("x"), 0);
 
     sketch.update_with_weight("x", -i8::MAX);
     assert_eq!(sketch.total_weight(), i8::MAX);
@@ -61,10 +73,10 @@ fn weight_overflow_preserves_signed_state() {
     let before = sketch.clone();
     // Cancellation reduces the counter, but still increases the absolute stream weight.
     assert!(catch_unwind(AssertUnwindSafe(|| sketch.update("x"))).is_err());
-    assert_eq!(sketch, before);
+    assert_eq!(sketch_snapshot(&sketch), sketch_snapshot(&before));
     assert_eq!(
-        CountMinSketch::<i8>::deserialize(&sketch.serialize()).unwrap(),
-        sketch
+        sketch_snapshot(&CountMinSketch::<i8>::deserialize(&sketch.serialize()).unwrap()),
+        sketch_snapshot(&sketch)
     );
 }
 
@@ -338,11 +350,11 @@ fn decay_identity_and_halving_preserve_the_whole_sketch() {
 
         let mut decayed = sketch.clone();
         decayed.decay(1.0);
-        assert_eq!(decayed, sketch);
+        assert_eq!(sketch_snapshot(&decayed), sketch_snapshot(&sketch));
 
         decayed.decay(0.5);
         sketch.halve();
-        assert_eq!(decayed, sketch);
+        assert_eq!(sketch_snapshot(&decayed), sketch_snapshot(&sketch));
     }
 
     check([u8::MAX / 2, u8::MAX / 4, 1]);
@@ -445,7 +457,7 @@ fn test_merge_incompatible() {
     for other in &incompatible {
         let error = left.merge(other).unwrap_err();
         assert_eq!(error.kind(), ErrorKind::InvalidArgument);
-        assert_eq!(left, before);
+        assert_eq!(sketch_snapshot(&left), sketch_snapshot(&before));
     }
 }
 
@@ -456,7 +468,7 @@ fn value_wrappers_match_portable_item_encodings() {
         let mut b = a.clone();
         a.update_with_weight(&left, 7);
         b.update_with_weight(&right, 7);
-        assert_eq!(a, b);
+        assert_eq!(sketch_snapshot(&a), sketch_snapshot(&b));
     }
 
     assert_same_item(natural_extend::from_i8(-2), -2i64);

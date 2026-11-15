@@ -30,7 +30,7 @@ use crate::hll::serialization::LIST_PREINTS;
 use crate::hll::serialization::SERIAL_VERSION;
 use crate::hll::serialization::encode_mode_byte;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct List {
     container: Container,
 }

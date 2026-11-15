@@ -31,33 +31,6 @@ pub struct Container {
     pub len: usize,
 }
 
-impl PartialEq for Container {
-    fn eq(&self, other: &Self) -> bool {
-        // Capacity and slot order do not affect the logical coupon contents.
-        if self.len != other.len {
-            return false;
-        }
-
-        let mut coupons1: Vec<Coupon> = self
-            .coupons
-            .iter()
-            .filter(|&&c| !c.is_empty())
-            .copied()
-            .collect();
-        let mut coupons2: Vec<Coupon> = other
-            .coupons
-            .iter()
-            .filter(|&&c| !c.is_empty())
-            .copied()
-            .collect();
-
-        coupons1.sort_unstable();
-        coupons2.sort_unstable();
-
-        coupons1 == coupons2
-    }
-}
-
 impl Container {
     pub fn new(lg_size: usize) -> Self {
         Self {

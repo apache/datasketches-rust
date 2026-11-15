@@ -30,7 +30,7 @@ use crate::hll::cubic_interpolation;
 use crate::hll::harmonic_numbers;
 
 /// Selects the estimate that is valid for the current register history.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy)]
 pub enum EstimateState {
     /// The register updates have a known order, so the HIP accumulator is valid.
     Hip(f64),
@@ -40,7 +40,7 @@ pub enum EstimateState {
 
 /// KxQ caches the sum of `2^-register`. Splitting the sum at register value 32 preserves
 /// precision when large and small contributions coexist.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Estimator {
     state: EstimateState,
     /// KxQ register for values < 32 (larger inverse powers)

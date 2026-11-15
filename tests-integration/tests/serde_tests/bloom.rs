@@ -26,6 +26,16 @@ use googletest::prelude::gt;
 
 use crate::serialization_test_data;
 
+fn filter_snapshot(filter: &BloomFilter) -> (u64, u16, u64, u64, Vec<u8>) {
+    (
+        filter.capacity(),
+        filter.num_hashes(),
+        filter.seed(),
+        filter.bits_used(),
+        filter.serialize(),
+    )
+}
+
 fn test_bloom_filter_file(path: PathBuf, expected_num_items: u64, expected_num_hashes: u16) {
     let bytes = fs::read(&path).unwrap();
     let filter1 = BloomFilter::deserialize(&bytes).unwrap();
@@ -62,8 +72,8 @@ fn test_bloom_filter_file(path: PathBuf, expected_num_items: u64, expected_num_h
     });
 
     assert_eq!(
-        filter1,
-        filter2,
+        filter_snapshot(&filter1),
+        filter_snapshot(&filter2),
         "Filter changed after round-trip for {}",
         path.display()
     );
