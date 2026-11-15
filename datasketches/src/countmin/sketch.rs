@@ -340,18 +340,15 @@ impl<T: CountMinValue> CountMinSketch<T> {
     /// assert!(sketch.estimate(1i64) >= 1);
     /// ```
     pub fn update<I: Hash>(&mut self, item: I) {
-        self.update_with_weight(item, T::ONE)
-            .expect("total absolute weight overflow");
+        self.update_with_weight(item, T::ONE);
     }
 
     /// Updates the sketch with the given item and weight.
     ///
-    /// A weight of zero is a no-op.
+    /// # Panics
     ///
-    /// # Errors
-    ///
-    /// Returns `InvalidArgument` without modifying the sketch if the absolute weight or the total
-    /// absolute weight cannot be represented by `T`.
+    /// Panics without modifying the sketch if the absolute weight or the total absolute weight
+    /// cannot be represented by `T`.
     ///
     /// # Examples
     ///
@@ -359,27 +356,23 @@ impl<T: CountMinValue> CountMinSketch<T> {
     /// use datasketches::countmin::CountMinSketch;
     ///
     /// let mut sketch = CountMinSketch::<i64>::new(4, 128).unwrap();
-    /// sketch.update_with_weight(2i64, 3).unwrap();
+    /// sketch.update_with_weight(2i64, 3);
     /// assert!(sketch.estimate(2i64) >= 3);
     /// ```
-    pub fn update_with_weight<I: Hash>(&mut self, item: I, weight: T) -> Result<(), Error> {
+    pub fn update_with_weight<I: Hash>(&mut self, item: I, weight: T) {
         if weight == T::ZERO {
-            return Ok(());
+            return;
         }
-        let abs_weight = weight
+        self.total_weight = weight
             .checked_abs()
-            .ok_or_else(|| Error::invalid_argument("absolute weight overflows counter type"))?;
-        self.total_weight = self
-            .total_weight
-            .checked_add(abs_weight)
-            .ok_or_else(|| Error::invalid_argument("total absolute weight overflow"))?;
+            .and_then(|weight| self.total_weight.checked_add(weight))
+            .expect("total absolute weight overflow");
         let num_buckets = self.buckets.count as usize;
         for (row, seed) in self.hash_seeds.iter().enumerate() {
             let bucket = self.bucket_index(&item, *seed);
             let index = row * num_buckets + bucket;
             self.counts[index] = self.counts[index] + weight;
         }
-        Ok(())
     }
 
     /// Returns the estimated frequency of the given item.
@@ -390,7 +383,7 @@ impl<T: CountMinValue> CountMinSketch<T> {
     /// use datasketches::countmin::CountMinSketch;
     ///
     /// let mut sketch = CountMinSketch::<i64>::new(4, 128).unwrap();
-    /// sketch.update_with_weight(3i64, 2).unwrap();
+    /// sketch.update_with_weight(3i64, 2);
     /// assert!(sketch.estimate(3i64) >= 2);
     /// ```
     pub fn estimate<I: Hash>(&self, item: I) -> T {
@@ -432,7 +425,7 @@ impl<T: CountMinValue> CountMinSketch<T> {
     /// let mut right = CountMinSketch::<i64>::new(4, 128).unwrap();
     ///
     /// left.update(1i64);
-    /// right.update_with_weight(2i64, 2).unwrap();
+    /// right.update_with_weight(2i64, 2);
     ///
     /// left.merge(&right).unwrap();
     /// assert!(left.estimate(2i64) >= 2);
@@ -708,7 +701,7 @@ impl<T: UnsignedCountMinValue> CountMinSketch<T> {
     /// use datasketches::countmin::CountMinSketch;
     ///
     /// let mut sketch = CountMinSketch::<u64>::new(4, 128).unwrap();
-    /// sketch.update_with_weight(1i64, 3).unwrap();
+    /// sketch.update_with_weight(1i64, 3);
     /// sketch.halve();
     /// assert!(sketch.estimate(1i64) >= 1);
     /// ```
@@ -737,7 +730,7 @@ impl<T: UnsignedCountMinValue> CountMinSketch<T> {
     /// use datasketches::countmin::CountMinSketch;
     ///
     /// let mut sketch = CountMinSketch::<u64>::new(4, 128).unwrap();
-    /// sketch.update_with_weight(1i64, 3).unwrap();
+    /// sketch.update_with_weight(1i64, 3);
     /// sketch.decay(0.5).unwrap();
     /// assert!(sketch.estimate(1i64) >= 1);
     /// ```

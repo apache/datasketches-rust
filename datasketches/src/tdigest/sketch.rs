@@ -189,10 +189,9 @@ impl TDigestMut {
     /// The borrowed input remains available for reuse. Collecting owned inputs into a
     /// [`TDigestMut`] with [`Iterator::collect`] combines a batch with one compression pass.
     ///
-    /// # Errors
+    /// # Panics
     ///
-    /// Returns `InvalidArgument` without modifying the digest if the combined total weight would
-    /// exceed `u64::MAX`.
+    /// Panics without modifying the digest if the combined total weight would exceed `u64::MAX`.
     ///
     /// # Examples
     ///
@@ -203,21 +202,17 @@ impl TDigestMut {
     /// let mut right = TDigestMut::new(100).unwrap();
     /// left.update(1.0);
     /// right.update(2.0);
-    /// left.merge(&right).unwrap();
+    /// left.merge(&right);
     /// assert_eq!(left.total_weight(), 2);
     /// ```
-    pub fn merge(&mut self, other: &TDigestMut) -> Result<(), Error> {
+    pub fn merge(&mut self, other: &TDigestMut) {
         if other.is_empty() {
-            return Ok(());
+            return;
         }
-        let left_weight = self.total_weight();
-        let right_weight = other.total_weight();
-        let total_weight = left_weight.checked_add(right_weight).ok_or_else(|| {
-            Error::invalid_argument(format!(
-                "combined total weight exceeds {}: left {left_weight}, right {right_weight}",
-                u64::MAX,
-            ))
-        })?;
+        let total_weight = self
+            .total_weight()
+            .checked_add(other.total_weight())
+            .expect("total weight overflow");
 
         // Preserve true extrema from `other`. Compression only sees centroid means, which can
         // differ from `min`/`max` after ordinary compression or deserialization.
@@ -226,7 +221,6 @@ impl TDigestMut {
 
         let centroids = std::mem::take(&mut self.buffer).into_merged_centroids(&other.buffer);
         self.compress_sorted_centroids(centroids, total_weight);
-        Ok(())
     }
 
     /// Converts this mutable t-digest into an immutable one.
@@ -972,7 +966,7 @@ impl TDigest {
 /// # Panics
 ///
 /// Panics if the combined total weight exceeds `u64::MAX` or the combined centroid count exceeds
-/// `usize::MAX`. Use [`TDigestMut::merge`] for fallible incremental merging.
+/// `usize::MAX`.
 ///
 /// # Examples
 ///
@@ -1008,7 +1002,7 @@ impl TDigest {
 ///         .map(|bytes| TDigestMut::deserialize(bytes))
 ///         .collect::<Result<TDigestMut, _>>()
 ///         .unwrap();
-///     merged.merge(&batch).unwrap();
+///     merged.merge(&batch);
 /// }
 /// assert_eq!(merged.total_weight(), 4);
 /// assert_eq!(merged.min_value(), Some(1.0));

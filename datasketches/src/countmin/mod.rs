@@ -45,7 +45,7 @@
 //! let hashes = CountMinSketch::<i64>::suggest_num_hashes(0.99)?;
 //! let mut sketch = CountMinSketch::<i64>::new(hashes, buckets)?;
 //! sketch.update(42i64);
-//! sketch.update_with_weight(42i64, 5)?;
+//! sketch.update_with_weight(42i64, 5);
 //!
 //! assert_eq!(sketch.estimate(42i64), 6);
 //! assert!(sketch.lower_bound(42i64) <= 6);
@@ -66,7 +66,7 @@
 //! for input in ["", "apple", ""] {
 //!     let item = raw_bytes::from_str(input);
 //!     if !item.is_empty() {
-//!         sketch.update_with_weight(item, 5)?;
+//!         sketch.update_with_weight(item, 5);
 //!     }
 //! }
 //! assert_eq!(sketch.total_weight(), 5);

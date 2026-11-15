@@ -78,11 +78,9 @@ fn v2_reads_and_writes_the_published_image() {
         sketch_snapshot(&sketch)
     );
 
-    sketch.update_with_weight(1i64, 10).unwrap();
-    sketch.update_with_weight(9i64, 810).unwrap();
-    sketch
-        .update_with_weight(raw_bytes::from_str("apple"), 5)
-        .unwrap();
+    sketch.update_with_weight(1i64, 10);
+    sketch.update_with_weight(9i64, 810);
+    sketch.update_with_weight(raw_bytes::from_str("apple"), 5);
     assert_eq!(sketch.serialize(), bytes);
 
     let mut restored = CountMinSketch::<i64>::deserialize(&bytes).unwrap();
@@ -90,9 +88,7 @@ fn v2_reads_and_writes_the_published_image() {
     assert_eq!(restored.estimate(1u64), 10);
     assert_eq!(restored.estimate(natural_extend::from_i8(9)), 810);
     assert_eq!(restored.estimate(raw_bytes::from_str("apple")), 5);
-    restored
-        .update_with_weight(raw_bytes::from_str("apple"), -2)
-        .unwrap();
+    restored.update_with_weight(raw_bytes::from_str("apple"), -2);
     assert_eq!(restored.estimate(raw_bytes::from_str("apple")), 3);
     assert_eq!(restored.total_weight(), 827);
     sketch.merge(&restored).unwrap();
@@ -104,7 +100,7 @@ fn v2_reads_and_writes_the_published_image() {
 fn v2_matches_known_bucket_vectors() {
     fn check<I: Hash>(item: I, seed: u64, expected: [usize; 3]) {
         let mut sketch = CountMinSketch::<i64>::with_seed(3, 1000, seed).unwrap();
-        sketch.update_with_weight(&item, 7).unwrap();
+        sketch.update_with_weight(&item, 7);
         let bytes = sketch.serialize();
         for (row, bucket) in expected.into_iter().enumerate() {
             let row_start = 24 + row * 1000 * 8;
@@ -227,7 +223,7 @@ fn legacy_rust_v1_image_preserves_queries_updates_and_merges() {
     assert_eq!(sketch.estimate(1u64), 10);
     assert_eq!(sketch.serialize(), image);
 
-    sketch.update_with_weight(1u64, 5).unwrap();
+    sketch.update_with_weight(1u64, 5);
     assert_eq!(sketch.total_weight(), 15);
     assert_eq!(sketch.estimate(1u64), 15);
     assert_eq!(sketch.serialize()[1], 1);
@@ -243,7 +239,7 @@ fn rejects_merge_across_serial_versions() {
     let legacy =
         CountMinSketch::<u64>::deserialize_with_seed(&rust_v1_custom_seed_image(), 123).unwrap();
     let mut current = CountMinSketch::<u64>::with_seed(1, 5, 123).unwrap();
-    current.update_with_weight(1u64, 10).unwrap();
+    current.update_with_weight(1u64, 10);
     let before = current.clone();
 
     assert_eq!(

@@ -223,7 +223,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     /// use datasketches::frequencies::FrequentItemsSketch;
     ///
     /// let mut sketch = FrequentItemsSketch::<i64>::new(64).unwrap();
-    /// sketch.update_with_weight(10, 2).unwrap();
+    /// sketch.update_with_weight(10, 2);
     /// assert!(sketch.estimate(&10) >= 2);
     /// ```
     pub fn estimate<Q>(&self, item: &Q) -> u64
@@ -359,18 +359,16 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     /// assert!(sketch.estimate(&42) >= 1);
     /// ```
     pub fn update(&mut self, item: T) {
-        self.update_with_weight(item, 1)
-            .expect("total stream weight overflow");
+        self.update_with_weight(item, 1);
     }
 
     /// Updates the sketch with an item and weight.
     ///
     /// A weight of zero is a no-op.
     ///
-    /// # Errors
+    /// # Panics
     ///
-    /// Returns `InvalidArgument` without modifying the sketch if the total stream weight would
-    /// exceed `u64::MAX`.
+    /// Panics without modifying the sketch if the total stream weight would exceed `u64::MAX`.
     ///
     /// # Examples
     ///
@@ -378,20 +376,19 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     /// use datasketches::frequencies::FrequentItemsSketch;
     ///
     /// let mut sketch = FrequentItemsSketch::<i64>::new(64).unwrap();
-    /// sketch.update_with_weight(10, 3).unwrap();
+    /// sketch.update_with_weight(10, 3);
     /// assert!(sketch.estimate(&10) >= 3);
     /// ```
-    pub fn update_with_weight(&mut self, item: T, weight: u64) -> Result<(), Error> {
+    pub fn update_with_weight(&mut self, item: T, weight: u64) {
         if weight == 0 {
-            return Ok(());
+            return;
         }
         self.stream_weight = self
             .stream_weight
             .checked_add(weight)
-            .ok_or_else(|| Error::invalid_argument("total stream weight overflow"))?;
+            .expect("total stream weight overflow");
         self.hash_map.adjust_or_put_value(item, weight);
         self.maybe_resize_or_purge();
-        Ok(())
     }
 
     /// Updates the sketch with a borrowed item and a weight of one.
@@ -419,8 +416,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
         T: Borrow<Q>,
         Q: Eq + Hash + ToOwned<Owned = T> + ?Sized,
     {
-        self.update_with_weight_ref(item, 1)
-            .expect("total stream weight overflow");
+        self.update_with_weight_ref(item, 1);
     }
 
     /// Updates the sketch with a borrowed item and weight.
@@ -429,10 +425,9 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     /// item by reference and only allocates an owned item when it is newly
     /// inserted. A weight of zero is a no-op.
     ///
-    /// # Errors
+    /// # Panics
     ///
-    /// Returns `InvalidArgument` without modifying the sketch if the total stream weight would
-    /// exceed `u64::MAX`.
+    /// Panics without modifying the sketch if the total stream weight would exceed `u64::MAX`.
     ///
     /// # Examples
     ///
@@ -440,24 +435,23 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     /// use datasketches::frequencies::FrequentItemsSketch;
     ///
     /// let mut sketch = FrequentItemsSketch::<String>::new(64).unwrap();
-    /// sketch.update_with_weight_ref("gzip", 3).unwrap();
+    /// sketch.update_with_weight_ref("gzip", 3);
     /// assert!(sketch.estimate("gzip") >= 3);
     /// ```
-    pub fn update_with_weight_ref<Q>(&mut self, item: &Q, weight: u64) -> Result<(), Error>
+    pub fn update_with_weight_ref<Q>(&mut self, item: &Q, weight: u64)
     where
         T: Borrow<Q>,
         Q: Eq + Hash + ToOwned<Owned = T> + ?Sized,
     {
         if weight == 0 {
-            return Ok(());
+            return;
         }
         self.stream_weight = self
             .stream_weight
             .checked_add(weight)
-            .ok_or_else(|| Error::invalid_argument("total stream weight overflow"))?;
+            .expect("total stream weight overflow");
         self.hash_map.adjust_or_put_value_ref(item, weight);
         self.maybe_resize_or_purge();
-        Ok(())
     }
 
     /// Merges another sketch into this one.
@@ -465,10 +459,9 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     /// The other sketch may have a different map size. The merged sketch respects the
     /// larger error tolerance of the inputs.
     ///
-    /// # Errors
+    /// # Panics
     ///
-    /// Returns `InvalidArgument` without modifying the sketch if the combined stream weight or
-    /// maximum error offset would exceed `u64::MAX`.
+    /// Panics without modifying the sketch if the combined stream weight would exceed `u64::MAX`.
     ///
     /// # Examples
     ///
@@ -478,34 +471,26 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     /// let mut left = FrequentItemsSketch::<i64>::new(64).unwrap();
     /// let mut right = FrequentItemsSketch::<i64>::new(64).unwrap();
     /// left.update(1);
-    /// right.update_with_weight(2, 2).unwrap();
-    /// left.merge(&right).unwrap();
+    /// right.update_with_weight(2, 2);
+    /// left.merge(&right);
     /// assert!(left.estimate(&2) >= 2);
     /// ```
-    pub fn merge(&mut self, other: &Self) -> Result<(), Error>
+    pub fn merge(&mut self, other: &Self)
     where
         T: Clone,
     {
         if other.is_empty() {
-            return Ok(());
+            return;
         }
         let merged_total = self
             .stream_weight
             .checked_add(other.stream_weight)
-            .ok_or_else(|| Error::invalid_argument("total stream weight overflow"))?;
-        if self.offset.checked_add(other.offset).is_none() {
-            return Err(Error::invalid_argument("maximum error offset overflow"));
-        }
+            .expect("total stream weight overflow");
         for (item, count) in other.hash_map.iter() {
-            self.hash_map.adjust_or_put_value_ref(item, count);
-            self.maybe_resize_or_purge();
+            self.update_with_weight_ref(item, count);
         }
-        self.offset = self
-            .offset
-            .checked_add(other.offset)
-            .expect("validated offset fits within merged stream weight");
+        self.offset += other.offset;
         self.stream_weight = merged_total;
-        Ok(())
     }
 
     /// Resets the sketch to an empty state.
@@ -524,7 +509,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     /// use datasketches::frequencies::FrequentItemsSketch;
     ///
     /// let mut sketch = FrequentItemsSketch::<i64>::new(64).unwrap();
-    /// sketch.update_with_weight(1, 5).unwrap();
+    /// sketch.update_with_weight(1, 5);
     /// sketch.update(2);
     /// let rows = sketch.frequent_items(ErrorType::NoFalseNegatives);
     /// assert!(rows.iter().any(|row| *row.item() == 1));
@@ -550,7 +535,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
     /// use datasketches::frequencies::FrequentItemsSketch;
     ///
     /// let mut sketch = FrequentItemsSketch::<i64>::new(64).unwrap();
-    /// sketch.update_with_weight(1, 5).unwrap();
+    /// sketch.update_with_weight(1, 5);
     /// sketch.update(2);
     /// let rows = sketch.frequent_items_with_threshold(ErrorType::NoFalsePositives, 3);
     /// assert!(rows.iter().any(|row| *row.item() == 1));
@@ -781,9 +766,7 @@ impl<T: Eq + Hash> FrequentItemsSketch<T> {
 
         let mut sketch = Self::with_lg_map_sizes(lg_max, lg_cur);
         for (item, value) in items.into_iter().zip(values) {
-            sketch
-                .update_with_weight(item, value)
-                .expect("validated item weights fit within stream_weight");
+            sketch.update_with_weight(item, value);
         }
         sketch.stream_weight = stream_weight;
         sketch.offset = offset_val;
@@ -805,7 +788,7 @@ impl<T: FrequentItemValue> FrequentItemsSketch<T> {
     /// use datasketches::frequencies::FrequentItemsSketch;
     ///
     /// let mut sketch = FrequentItemsSketch::<i64>::new(64).unwrap();
-    /// sketch.update_with_weight(7, 2).unwrap();
+    /// sketch.update_with_weight(7, 2);
     /// let bytes = sketch.serialize();
     /// let decoded = FrequentItemsSketch::<i64>::deserialize(&bytes).unwrap();
     /// assert!(decoded.estimate(&7) >= 2);
@@ -818,7 +801,7 @@ impl<T: FrequentItemValue> FrequentItemsSketch<T> {
     ///
     /// let mut sketch = FrequentItemsSketch::<String>::new(64).unwrap();
     /// let apple = "apple".to_string();
-    /// sketch.update_with_weight(apple.clone(), 2).unwrap();
+    /// sketch.update_with_weight(apple.clone(), 2);
     /// let bytes = sketch.serialize();
     /// let decoded = FrequentItemsSketch::<String>::deserialize(&bytes).unwrap();
     /// assert!(decoded.estimate(&apple) >= 2);
@@ -845,7 +828,7 @@ impl<T: FrequentItemValue> FrequentItemsSketch<T> {
     /// use datasketches::frequencies::FrequentItemsSketch;
     ///
     /// let mut sketch = FrequentItemsSketch::<i64>::new(64).unwrap();
-    /// sketch.update_with_weight(7, 2).unwrap();
+    /// sketch.update_with_weight(7, 2);
     /// let bytes = sketch.serialize();
     /// let decoded = FrequentItemsSketch::<i64>::deserialize(&bytes).unwrap();
     /// assert!(decoded.estimate(&7) >= 2);
@@ -858,7 +841,7 @@ impl<T: FrequentItemValue> FrequentItemsSketch<T> {
     ///
     /// let mut sketch = FrequentItemsSketch::<String>::new(64).unwrap();
     /// let apple = "apple".to_string();
-    /// sketch.update_with_weight(apple.clone(), 2).unwrap();
+    /// sketch.update_with_weight(apple.clone(), 2);
     /// let bytes = sketch.serialize();
     /// let decoded = FrequentItemsSketch::<String>::deserialize(&bytes).unwrap();
     /// assert!(decoded.estimate(&apple) >= 2);
@@ -873,28 +856,5 @@ impl<T: FrequentItemValue> FrequentItemsSketch<T> {
             }
             Ok(items)
         })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::error::ErrorKind;
-
-    #[test]
-    fn merge_offset_overflow_leaves_sketch_unmodified() {
-        let mut left = FrequentItemsSketch::<i64>::new(8).unwrap();
-        left.update_with_weight(1, 5).unwrap();
-        left.offset = u64::MAX - 2;
-        let before = left.serialize();
-
-        let mut right = FrequentItemsSketch::<i64>::new(8).unwrap();
-        right.update_with_weight(2, 5).unwrap();
-        right.offset = 3;
-
-        let err = left.merge(&right).unwrap_err();
-        assert_eq!(err.kind(), ErrorKind::InvalidArgument);
-        assert_eq!(left.serialize(), before);
-        assert_eq!(left.estimate(&2), 0);
     }
 }

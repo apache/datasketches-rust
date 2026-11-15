@@ -80,7 +80,7 @@
 //! use datasketches::frequencies::FrequentItemsSketch;
 //!
 //! let mut sketch = FrequentItemsSketch::<i64>::new(64).unwrap();
-//! sketch.update_with_weight(1, 3).unwrap();
+//! sketch.update_with_weight(1, 3);
 //! sketch.update(2);
 //! let rows = sketch.frequent_items(ErrorType::NoFalseNegatives);
 //! assert!(rows.iter().any(|row| *row.item() == 1));
@@ -95,7 +95,7 @@
 //! use datasketches::frequencies::FrequentItemsSketch;
 //!
 //! let mut sketch = FrequentItemsSketch::<i64>::new(64).unwrap();
-//! sketch.update_with_weight(42, 2).unwrap();
+//! sketch.update_with_weight(42, 2);
 //!
 //! let bytes = sketch.serialize();
 //! let decoded = FrequentItemsSketch::<i64>::deserialize(&bytes).unwrap();

@@ -68,9 +68,7 @@ fn prop_finite_values_survive_partial_aggregation() {
             for &value in chunk {
                 partial.update(value);
             }
-            digest
-                .merge(&TDigestMut::deserialize(&partial.serialize()).unwrap())
-                .unwrap();
+            digest.merge(&TDigestMut::deserialize(&partial.serialize()).unwrap());
         }
         let mut digest = TDigestMut::deserialize(&digest.serialize()).unwrap();
         assert_eq!(digest.total_weight(), values.len() as u64);
@@ -124,7 +122,7 @@ fn prop_merged_quantile_is_non_decreasing() {
         }
 
         let mut tdigest = digest_of(&left);
-        tdigest.merge(&digest_of(&right)).unwrap();
+        tdigest.merge(&digest_of(&right));
         assert_quantiles_are_monotonic(&mut tdigest);
 
         TestResult::passed()

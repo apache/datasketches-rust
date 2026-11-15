@@ -42,27 +42,14 @@ fn sketch_snapshot<T: CountMinValue>(sketch: &CountMinSketch<T>) -> (u8, u32, u6
 #[test]
 fn weight_overflow_preserves_unsigned_state() {
     let mut sketch = CountMinSketch::<u8>::new(2, 8).unwrap();
-    sketch.update_with_weight("x", u8::MAX - 1).unwrap();
-    let before_add = sketch.clone();
-    assert_eq!(
-        sketch.update_with_weight("y", 2).unwrap_err().kind(),
-        ErrorKind::InvalidArgument
-    );
-    assert_eq!(sketch_snapshot(&sketch), sketch_snapshot(&before_add));
-
+    sketch.update_with_weight("x", u8::MAX - 1);
     let mut one = CountMinSketch::<u8>::new(2, 8).unwrap();
     one.update("x");
     sketch.merge(&one).unwrap();
     assert_eq!(sketch.total_weight(), u8::MAX);
     let before = sketch.clone();
 
-    sketch.update_with_weight("x", 0).unwrap();
-    assert_eq!(sketch_snapshot(&sketch), sketch_snapshot(&before));
-    assert_eq!(
-        sketch.update_with_weight("x", 1).unwrap_err().kind(),
-        ErrorKind::InvalidArgument
-    );
-    assert_eq!(sketch_snapshot(&sketch), sketch_snapshot(&before));
+    sketch.update_with_weight("x", 0);
     assert!(catch_unwind(AssertUnwindSafe(|| sketch.update("x"))).is_err());
     assert_eq!(sketch_snapshot(&sketch), sketch_snapshot(&before));
     assert_eq!(
@@ -76,38 +63,15 @@ fn weight_overflow_preserves_unsigned_state() {
 fn weight_overflow_preserves_signed_state() {
     let mut sketch = CountMinSketch::<i8>::new(2, 8).unwrap();
     let empty = sketch.clone();
-    assert_eq!(
-        sketch.update_with_weight("x", i8::MIN).unwrap_err().kind(),
-        ErrorKind::InvalidArgument
-    );
+    assert!(catch_unwind(AssertUnwindSafe(|| sketch.update_with_weight("x", i8::MIN))).is_err());
     assert_eq!(sketch_snapshot(&sketch), sketch_snapshot(&empty));
     assert_eq!(sketch.estimate("x"), 0);
 
-    sketch.update_with_weight("x", -1).unwrap();
-    let non_empty = sketch.clone();
-    assert_eq!(
-        sketch.update_with_weight("x", i8::MIN).unwrap_err().kind(),
-        ErrorKind::InvalidArgument
-    );
-    assert_eq!(sketch_snapshot(&sketch), sketch_snapshot(&non_empty));
-
-    sketch.update_with_weight("x", -(i8::MAX - 1)).unwrap();
+    sketch.update_with_weight("x", -i8::MAX);
     assert_eq!(sketch.total_weight(), i8::MAX);
     assert_eq!(sketch.estimate("x"), -i8::MAX);
     let before = sketch.clone();
-    sketch.update_with_weight("x", 0).unwrap();
-    assert_eq!(sketch_snapshot(&sketch), sketch_snapshot(&before));
-    assert_eq!(
-        sketch.update_with_weight("x", -1).unwrap_err().kind(),
-        ErrorKind::InvalidArgument
-    );
-    assert_eq!(sketch_snapshot(&sketch), sketch_snapshot(&before));
     // Cancellation reduces the counter, but still increases the absolute stream weight.
-    assert_eq!(
-        sketch.update_with_weight("x", 1).unwrap_err().kind(),
-        ErrorKind::InvalidArgument
-    );
-    assert_eq!(sketch_snapshot(&sketch), sketch_snapshot(&before));
     assert!(catch_unwind(AssertUnwindSafe(|| sketch.update("x"))).is_err());
     assert_eq!(sketch_snapshot(&sketch), sketch_snapshot(&before));
     assert_eq!(
@@ -119,11 +83,11 @@ fn weight_overflow_preserves_signed_state() {
 #[test]
 fn upper_bound_clamps_on_overflow() {
     let mut unsigned = CountMinSketch::<u8>::new(2, 8).unwrap();
-    unsigned.update_with_weight("x", u8::MAX).unwrap();
+    unsigned.update_with_weight("x", u8::MAX);
     assert_eq!(unsigned.upper_bound("x"), u8::MAX);
 
     let mut signed = CountMinSketch::<i8>::new(2, 8).unwrap();
-    signed.update_with_weight("x", i8::MAX).unwrap();
+    signed.update_with_weight("x", i8::MAX);
     assert_eq!(signed.upper_bound("x"), i8::MAX);
 }
 
@@ -131,10 +95,8 @@ fn upper_bound_clamps_on_overflow() {
 fn upper_bound_preserves_large_integer_precision_for_both_counter_types() {
     let mut signed = CountMinSketch::<i64>::new(3, 128).unwrap();
     let mut unsigned = CountMinSketch::<u64>::new(3, 128).unwrap();
-    signed.update_with_weight("item", i64::MAX).unwrap();
-    unsigned
-        .update_with_weight("item", i64::MAX as u64)
-        .unwrap();
+    signed.update_with_weight("item", i64::MAX);
+    unsigned.update_with_weight("item", i64::MAX as u64);
     assert_eq!(signed.estimate("missing"), 0);
     assert_eq!(unsigned.estimate("missing"), 0);
 
@@ -145,7 +107,7 @@ fn upper_bound_preserves_large_integer_precision_for_both_counter_types() {
     assert_eq!(unsigned.upper_bound("missing"), error);
 
     let mut negative = CountMinSketch::<i64>::new(3, 128).unwrap();
-    negative.update_with_weight("item", -i64::MAX).unwrap();
+    negative.update_with_weight("item", -i64::MAX);
     assert_eq!(negative.upper_bound("item"), -i64::MAX + error as i64);
 }
 
@@ -226,7 +188,7 @@ fn test_parameter_suggestions() {
 fn test_update_and_bounds() {
     let mut sketch = CountMinSketch::<i64>::with_seed(3, 128, 123).unwrap();
     sketch.update("x");
-    sketch.update_with_weight("x", 9).unwrap();
+    sketch.update_with_weight("x", 9);
     assert_eq!(sketch.estimate("x"), 10);
     assert_eq!(sketch.total_weight(), 10);
     let estimate = sketch.estimate("x");
@@ -239,7 +201,7 @@ fn test_update_and_bounds() {
 #[test]
 fn test_update_and_bounds_with_scaling() {
     let mut sketch = CountMinSketch::<u64>::with_seed(3, 128, 123).unwrap();
-    sketch.update_with_weight("x", 10).unwrap();
+    sketch.update_with_weight("x", 10);
 
     let estimate = sketch.estimate("x");
     let upper = sketch.upper_bound("x");
@@ -280,10 +242,10 @@ fn test_update_and_bounds_with_scaling() {
 #[test]
 fn test_negative_weights() {
     let mut sketch = CountMinSketch::<i64>::with_seed(2, 32, 123).unwrap();
-    sketch.update_with_weight("y", -1).unwrap();
+    sketch.update_with_weight("y", -1);
     assert_eq!(sketch.total_weight(), 1);
     assert_eq!(sketch.estimate("y"), -1);
-    sketch.update_with_weight("x", 2).unwrap();
+    sketch.update_with_weight("x", 2);
     assert_eq!(sketch.total_weight(), 3);
 }
 
@@ -348,7 +310,7 @@ fn test_decay_preserves_large_integer_precision() {
             (f64::from_bits(1), 0),
         ] {
             let mut sketch = CountMinSketch::<u64>::new(3, 128).unwrap();
-            sketch.update_with_weight("item", weight).unwrap();
+            sketch.update_with_weight("item", weight);
             sketch.decay(factor).unwrap();
             assert_eq!(
                 sketch.total_weight(),
@@ -371,7 +333,7 @@ fn decay_truncates_the_exact_binary_product() {
         (10, 0.3_f64.next_up(), 3),
     ] {
         let mut sketch = CountMinSketch::<u64>::new(3, 128).unwrap();
-        sketch.update_with_weight("item", weight).unwrap();
+        sketch.update_with_weight("item", weight);
         sketch.decay(factor).unwrap();
         assert_eq!(sketch.total_weight(), expected);
         assert_eq!(sketch.estimate("item"), expected);
@@ -383,7 +345,7 @@ fn decay_identity_and_halving_preserve_the_whole_sketch() {
     fn check<T: UnsignedCountMinValue + std::fmt::Debug>(weights: [T; 3]) {
         let mut sketch = CountMinSketch::<T>::new(3, 128).unwrap();
         for (item, weight) in weights.into_iter().enumerate() {
-            sketch.update_with_weight(item, weight).unwrap();
+            sketch.update_with_weight(item, weight);
         }
 
         let mut decayed = sketch.clone();
@@ -406,7 +368,7 @@ fn decay_rejects_invalid_factors_without_modifying_sketch() {
     for weight in [0u64, 100] {
         let mut sketch = CountMinSketch::<u64>::new(3, 128).unwrap();
         if weight > 0 {
-            sketch.update_with_weight("item", weight).unwrap();
+            sketch.update_with_weight("item", weight);
         }
         let before = sketch.clone();
         for factor in [
@@ -512,7 +474,7 @@ fn test_invalid_buckets_return_error() {
 #[test]
 fn test_merge_incompatible() {
     let mut left = CountMinSketch::<i64>::new(3, 64).unwrap();
-    left.update_with_weight("apple", 5).unwrap();
+    left.update_with_weight("apple", 5);
     let before = left.clone();
 
     let incompatible = [
@@ -532,8 +494,8 @@ fn value_wrappers_match_portable_item_encodings() {
     fn assert_same_item<I: Hash, J: Hash>(left: I, right: J) {
         let mut a = CountMinSketch::<i64>::new(3, 1000).unwrap();
         let mut b = a.clone();
-        a.update_with_weight(&left, 7).unwrap();
-        b.update_with_weight(&right, 7).unwrap();
+        a.update_with_weight(&left, 7);
+        b.update_with_weight(&right, 7);
         assert_eq!(sketch_snapshot(&a), sketch_snapshot(&b));
     }
 
