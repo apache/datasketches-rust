@@ -784,7 +784,7 @@ fn test_union_query_timing_does_not_change_mixed_updates() {
             &queried.to_sketch(HllType::Hll8),
             &queried.to_sketch(HllType::Hll4),
         );
-        let restored = HllSketch::deserialize(&queried.serialize()).unwrap();
+        let restored = HllSketch::deserialize(&queried.serialize(HllType::Hll8)).unwrap();
         assert_eq!(restored.composite_estimate(), queried.composite_estimate());
         for value in start + 5_000..start + 5_100 {
             queried.update_value(value);
@@ -792,7 +792,10 @@ fn test_union_query_timing_does_not_change_mixed_updates() {
         }
     }
 
-    assert_eq!(queried.serialize(), deferred.serialize());
+    assert_eq!(
+        queried.serialize(HllType::Hll8),
+        deferred.serialize(HllType::Hll8)
+    );
     assert_same_estimate_and_bounds(
         &queried.to_sketch(HllType::Hll8),
         &deferred.to_sketch(HllType::Hll8),
@@ -808,7 +811,10 @@ fn test_union_query_timing_does_not_change_mixed_updates() {
         copied.update_value(value);
         deferred.update_value(value);
     }
-    assert_eq!(copied.serialize(), deferred.serialize());
+    assert_eq!(
+        copied.serialize(HllType::Hll8),
+        deferred.serialize(HllType::Hll8)
+    );
 }
 
 #[test]
@@ -822,25 +828,36 @@ fn test_union_supports_shared_queries_after_dense_merges() {
             (index + 1) * 5_000,
         ));
     }
-    let expected = union.to_sketch(HllType::Hll8);
-    let bytes = expected.serialize();
+    let expected_hll8 = union.to_sketch(HllType::Hll8);
+    let bytes_hll8 = expected_hll8.serialize();
+    let expected_hll6 = union.to_sketch(HllType::Hll6);
+    let bytes_hll6 = expected_hll6.serialize();
+    let expected_hll4 = union.to_sketch(HllType::Hll4);
     let barrier = std::sync::Barrier::new(4);
 
     std::thread::scope(|scope| {
         for _ in 0..4 {
             scope.spawn(|| {
                 barrier.wait();
-                assert_eq!(union.estimate(), expected.estimate());
-                assert_eq!(union.composite_estimate(), expected.composite_estimate());
+                assert_eq!(union.estimate(), expected_hll8.estimate());
+                assert_eq!(
+                    union.composite_estimate(),
+                    expected_hll8.composite_estimate()
+                );
                 assert_eq!(
                     union.lower_bound(NumStdDev::Two),
-                    expected.lower_bound(NumStdDev::Two)
+                    expected_hll8.lower_bound(NumStdDev::Two)
                 );
                 assert_eq!(
                     union.upper_bound(NumStdDev::Two),
-                    expected.upper_bound(NumStdDev::Two)
+                    expected_hll8.upper_bound(NumStdDev::Two)
                 );
-                assert_eq!(union.serialize(), bytes);
+                assert_eq!(union.serialize(HllType::Hll8), bytes_hll8);
+                assert_eq!(union.serialize(HllType::Hll6), bytes_hll6);
+                assert_eq!(
+                    HllSketch::deserialize(&union.serialize(HllType::Hll4)).unwrap(),
+                    expected_hll4
+                );
             });
         }
     });

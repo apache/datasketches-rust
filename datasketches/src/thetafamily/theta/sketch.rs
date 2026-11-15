@@ -25,7 +25,6 @@ use std::hash::Hash;
 use std::iter::FusedIterator;
 use std::slice;
 
-use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
 use crate::codec::assert::ensure_preamble_longs_in_range;
 use crate::codec::assert::insufficient_data;
@@ -48,10 +47,8 @@ use crate::thetafamily::common::KeySketch;
 use crate::thetafamily::common::SketchEntry;
 use crate::thetafamily::common::binomial_bounds;
 use crate::thetafamily::common::constants::DEFAULT_LG_K;
-use crate::thetafamily::common::constants::FLAGS_IS_COMPACT;
 use crate::thetafamily::common::constants::FLAGS_IS_EMPTY;
 use crate::thetafamily::common::constants::FLAGS_IS_ORDERED;
-use crate::thetafamily::common::constants::FLAGS_IS_READ_ONLY;
 use crate::thetafamily::common::constants::MAX_THETA;
 use crate::thetafamily::common::hash_table::SketchHashTable;
 use crate::thetafamily::common::hash_table::SketchHashTableIter;
@@ -620,17 +617,7 @@ impl CompactThetaSketch {
     /// Falls back to [`serialize`](Self::serialize) when compression is not applicable.
     #[must_use]
     pub fn serialize_compressed(&self) -> Vec<u8> {
-        if self.is_suitable_for_compression() {
-            self.serialize_v4()
-        } else {
-            self.serialize()
-        }
-    }
-
-    fn is_suitable_for_compression(&self) -> bool {
-        self.is_ordered()
-            && self.num_retained() != 0
-            && (self.num_retained() != 1 || self.is_estimation_mode())
+        serialization::serialize_compact_compressed(&self.compact_state)
     }
 
     /// Serializes this sketch into the uncompressed compact Theta format.
@@ -641,79 +628,6 @@ impl CompactThetaSketch {
     #[must_use]
     pub fn serialize(&self) -> Vec<u8> {
         serialization::serialize_compact_uncompressed(&self.compact_state)
-    }
-
-    fn serialize_v4(&self) -> Vec<u8> {
-        let retained_hashes = self.retained_hashes();
-        let pre_longs = if self.is_estimation_mode() { 2u8 } else { 1u8 };
-        let entry_bits = Self::compute_entry_bits(retained_hashes);
-        let num_entries_bytes = Self::num_entries_bytes(retained_hashes.len());
-
-        // Pre-size exactly: preamble longs (8 bytes each) + num_entries_bytes + packed bits.
-        let compressed_bits = entry_bits as usize * retained_hashes.len();
-        let compressed_bytes = compressed_bits.div_ceil(8);
-        let out_bytes = (pre_longs as usize * 8) + (num_entries_bytes as usize) + compressed_bytes;
-        let mut bytes = SketchBytes::with_capacity(out_bytes);
-
-        bytes.write_u8(pre_longs);
-        bytes.write_u8(serialization::COMPRESSED_SERIAL_VERSION);
-        bytes.write_u8(Family::THETA.id);
-        bytes.write_u8(entry_bits);
-        bytes.write_u8(num_entries_bytes);
-
-        let mut flags = 0u8;
-        flags |= FLAGS_IS_READ_ONLY;
-        flags |= FLAGS_IS_COMPACT;
-        flags |= FLAGS_IS_ORDERED;
-        bytes.write_u8(flags);
-
-        bytes.write_u16_le(self.seed_hash());
-        if self.is_estimation_mode() {
-            bytes.write_u64_le(self.theta64());
-        }
-
-        let mut n = retained_hashes.len() as u32;
-        for _ in 0..num_entries_bytes {
-            bytes.write_u8((n & 0xff) as u8);
-            n >>= 8;
-        }
-
-        let bits = u32::from(entry_bits);
-        let mut acc = 0u128;
-        let mut acc_bits = 0u32;
-        let mut previous = 0u64;
-        for &entry in retained_hashes {
-            acc = (acc << bits) | u128::from(entry - previous);
-            previous = entry;
-            acc_bits += bits;
-            if acc_bits >= 64 {
-                acc_bits -= 64;
-                bytes.write(&((acc >> acc_bits) as u64).to_be_bytes());
-            }
-        }
-        if acc_bits > 0 {
-            let tail = ((acc << (64 - acc_bits)) as u64).to_be_bytes();
-            bytes.write(&tail[..acc_bits.div_ceil(8) as usize]);
-        }
-
-        bytes.into_bytes()
-    }
-
-    fn compute_entry_bits(entries: &[u64]) -> u8 {
-        let mut previous = 0u64;
-        let mut ored = 0u64;
-        for &entry in entries {
-            let delta = entry - previous;
-            ored |= delta;
-            previous = entry;
-        }
-        (64 - ored.leading_zeros()) as u8
-    }
-
-    fn num_entries_bytes(num_entries: usize) -> u8 {
-        let n = num_entries as u32;
-        let bits = u32::BITS - n.leading_zeros();
-        bits.div_ceil(8) as u8
     }
 
     /// Deserializes a compact Theta sketch using the default seed.

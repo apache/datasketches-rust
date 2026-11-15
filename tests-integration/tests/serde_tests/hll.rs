@@ -18,6 +18,7 @@
 use std::fs;
 use std::path::PathBuf;
 
+use datasketches::common::NumStdDev;
 use datasketches::hash::value::natural_extend;
 use datasketches::hll::HllSketch;
 use datasketches::hll::HllType;
@@ -42,7 +43,7 @@ fn union_serialization_preserves_result_and_subsequent_updates() {
             for lg_max_k in [8, 12, 14] {
                 let mut union = HllUnion::new(lg_max_k).unwrap();
                 union.update(&source);
-                let bytes = union.serialize();
+                let bytes = union.serialize(HllType::Hll8);
                 assert_eq!(bytes, union.to_sketch(HllType::Hll8).serialize());
 
                 let mut restored = HllSketch::deserialize(&bytes).unwrap();
@@ -57,10 +58,177 @@ fn union_serialization_preserves_result_and_subsequent_updates() {
                 assert_eq!(union.to_sketch(HllType::Hll8), restored);
 
                 union.reset();
-                let empty = HllSketch::deserialize(&union.serialize()).unwrap();
-                assert!(empty.is_empty());
-                assert_eq!(empty.lg_config_k(), lg_max_k);
+                for target_type in [HllType::Hll4, HllType::Hll6, HllType::Hll8] {
+                    let empty = HllSketch::deserialize(&union.serialize(target_type)).unwrap();
+                    assert!(empty.is_empty());
+                    assert_eq!(empty.target_type(), target_type);
+                    assert_eq!(empty.lg_config_k(), lg_max_k);
+                }
             }
+        }
+    }
+}
+
+fn assert_union_matches_sketch(
+    union: &HllUnion,
+    target_type: HllType,
+    check_bytes_when_single_aux: bool,
+) {
+    let bytes = union.serialize(target_type);
+    let expected = union.to_sketch(target_type);
+    if check_bytes_when_single_aux {
+        let dense_offset = 40 + (1usize << (union.lg_config_k() - 1));
+        let single_or_no_aux =
+            target_type != HllType::Hll4 || bytes.len() <= dense_offset + size_of::<u32>();
+        if single_or_no_aux {
+            assert_eq!(
+                bytes,
+                expected.serialize(),
+                "byte mismatch for target_type={target_type:?}, lg_k={}",
+                union.lg_config_k()
+            );
+        }
+    }
+
+    let restored = HllSketch::deserialize(&bytes).unwrap();
+    assert_eq!(restored.target_type(), target_type);
+    assert_eq!(restored.lg_config_k(), expected.lg_config_k());
+    assert_eq!(restored.is_empty(), expected.is_empty());
+    assert_eq!(restored, expected);
+    assert_eq!(restored.estimate(), expected.estimate());
+    assert_eq!(restored.composite_estimate(), expected.composite_estimate());
+    assert_eq!(restored.estimate(), union.estimate());
+    assert_eq!(restored.composite_estimate(), union.composite_estimate());
+    for num_std_dev in [NumStdDev::One, NumStdDev::Two, NumStdDev::Three] {
+        assert_eq!(
+            restored.lower_bound(num_std_dev),
+            expected.lower_bound(num_std_dev)
+        );
+        assert_eq!(
+            restored.upper_bound(num_std_dev),
+            expected.upper_bound(num_std_dev)
+        );
+        assert_eq!(
+            restored.lower_bound(num_std_dev),
+            union.lower_bound(num_std_dev)
+        );
+        assert_eq!(
+            restored.upper_bound(num_std_dev),
+            union.upper_bound(num_std_dev)
+        );
+    }
+}
+
+#[test]
+fn union_serialization_handles_all_modes_and_target_types() {
+    for count in [0, 4, 100, 10_000_u64] {
+        let mut union = HllUnion::new(12).unwrap();
+        for value in 0..count {
+            union.update_value(value);
+        }
+        for target_type in [HllType::Hll4, HllType::Hll6, HllType::Hll8] {
+            assert_union_matches_sketch(&union, target_type, true);
+        }
+    }
+}
+
+#[test]
+fn union_serialization_cold_and_warm_composite_states_match() {
+    let build_composite_union = || {
+        let mut union = HllUnion::new(12).unwrap();
+        for (start, end) in [(0_u64, 3_000), (3_000, 6_000)] {
+            let mut sketch = HllSketch::new(12, HllType::Hll8).unwrap();
+            for value in start..end {
+                sketch.update(value);
+            }
+            union.update(&sketch);
+        }
+        union
+    };
+
+    for target_type in [HllType::Hll4, HllType::Hll6, HllType::Hll8] {
+        // Cold: serialize before calling any estimate or to_sketch on this union.
+        let cold_union = build_composite_union();
+        let cold_bytes = cold_union.serialize(target_type);
+
+        // Warm: populate lazy estimator cache before serializing.
+        let warm_union = build_composite_union();
+        let _ = warm_union.composite_estimate();
+        let warm_bytes = warm_union.serialize(target_type);
+
+        assert_eq!(cold_bytes, warm_bytes);
+        assert_union_matches_sketch(&cold_union, target_type, true);
+    }
+}
+
+#[test]
+fn union_serialization_handles_downsampled_unions() {
+    // Single-sketch downsample keeps HIP mode.
+    let mut wide = HllSketch::new(14, HllType::Hll8).unwrap();
+    for value in 0..10_000_u64 {
+        wide.update(value);
+    }
+    let mut hip_downsampled = HllUnion::new(10).unwrap();
+    hip_downsampled.update(&wide);
+    assert_eq!(hip_downsampled.lg_config_k(), 10);
+    for target_type in [HllType::Hll4, HllType::Hll6, HllType::Hll8] {
+        assert_union_matches_sketch(&hip_downsampled, target_type, true);
+    }
+
+    // Multi-sketch downsample merges into dense OOO Array8 at the smaller lg_k.
+    let mut narrow = HllSketch::new(8, HllType::Hll4).unwrap();
+    for value in 10_000..15_000_u64 {
+        narrow.update(value);
+    }
+    let mut ooo_downsampled = HllUnion::new(12).unwrap();
+    ooo_downsampled.update(&wide);
+    ooo_downsampled.update(&narrow);
+    assert_eq!(ooo_downsampled.lg_config_k(), 8);
+    for target_type in [HllType::Hll4, HllType::Hll6, HllType::Hll8] {
+        assert_union_matches_sketch(&ooo_downsampled, target_type, true);
+    }
+}
+
+#[test]
+fn union_serialization_hll4_handles_shifted_cur_min_and_multi_aux() {
+    // Keys verified at lg_k = 4 to hit distinct slots with register value >= 22.
+    const HIGH_VALUE_KEYS: [u64; 4] = [503_824, 2_048_382, 2_144_141, 9_410_086];
+
+    let mut direct_union = HllUnion::new(4).unwrap();
+    for value in 0..200_u64 {
+        direct_union.update_value(value);
+    }
+    for value in HIGH_VALUE_KEYS {
+        direct_union.update_value(value);
+    }
+
+    let mut merged_left = HllSketch::new(4, HllType::Hll8).unwrap();
+    for value in 0..200_u64 {
+        merged_left.update(value);
+    }
+    let mut merged_right = HllSketch::new(4, HllType::Hll8).unwrap();
+    for value in HIGH_VALUE_KEYS {
+        merged_right.update(value);
+    }
+    let mut merged_union = HllUnion::new(4).unwrap();
+    merged_union.update(&merged_left);
+    merged_union.update(&merged_right);
+
+    for union in [&direct_union, &merged_union] {
+        let hll4_bytes = union.serialize(HllType::Hll4);
+        let expected_hll4_bytes = union.to_sketch(HllType::Hll4).serialize();
+        let dense_end = 40 + (1usize << (4 - 1));
+        assert!(hll4_bytes[6] > 0, "expected shifted cur_min > 0");
+        assert!(
+            (hll4_bytes.len() - dense_end) / size_of::<u32>() >= 2,
+            "expected at least 2 aux exceptions"
+        );
+        // Preamble and packed nibbles must match bit-for-bit; only aux coupon order may differ.
+        assert_eq!(hll4_bytes[..dense_end], expected_hll4_bytes[..dense_end]);
+        assert_eq!(hll4_bytes.len(), expected_hll4_bytes.len());
+
+        for target_type in [HllType::Hll4, HllType::Hll6, HllType::Hll8] {
+            assert_union_matches_sketch(union, target_type, target_type != HllType::Hll4);
         }
     }
 }
