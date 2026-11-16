@@ -12019,18 +12019,19 @@ mod tests {
     /// `f(2 * lambda) = f(lambda) + 1 - exp(-lambda)` for `f(lambda) = E[C] / K` means that raising
     /// the base by one doubles `lambda` and shifts the window by one column up to a relative
     /// `ln(2) * exp(-lambda)`, about `2e-23` at `C / K = 6 + 1/32` (`lambda ≈ 51.9`).
-    /// Consequently "`K = 2^32` with base `>= 16`" fits the byte tables equally well; the Poisson
-    /// limit is preferred because a single operating point then explains both the byte tables and
-    /// the permutations, which are insensitive to `K`.
+    /// Consequently `K = 2^32` with any base from `14` to `85` also matches all 16 headers within
+    /// `HEADER_STATS_TOLERANCE`; the Poisson limit is preferred because a single operating point
+    /// then explains both the byte tables and the permutations, which are insensitive to `K`.
     const STEADY_STATE_MODEL: Occupancy = Occupancy::Poisson;
 
     /// Integer part of the steady-state operating point `C / K = 6.0 + phase`, where
     /// `phase = (2 * m + 1) / 32` is the midpoint of the `m`-th sixteenth.
     ///
     /// The base is pinned by `COLUMN_PERMUTATIONS_FOR_ENCODING` (see
-    /// `generate_sliding_column_permutation`). The steady-state byte tables accept any base from
-    /// `6` to `64` under `STEADY_STATE_MODEL`; below `6` the left edge starts to matter, and the
-    /// 128-column right edge eventually does beyond `64` (base `100` misses by `7e-10`).
+    /// `generate_sliding_column_permutation`). Under `STEADY_STATE_MODEL` the steady-state byte
+    /// tables accept any base from `6` to `85` within `HEADER_STATS_TOLERANCE`; below `6` the left
+    /// edge starts to matter, and beyond `85` the 128-column right edge does (base `86` misses by
+    /// `4e-14`, base `100` by `7e-10`).
     const STEADY_STATE_C_OVER_K_BASE: f64 = 6.0;
 
     /// Maximum Huffman codeword length, chosen so single-step lookup decoding tables occupy
