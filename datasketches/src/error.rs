@@ -15,22 +15,22 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! Error types for datasketches operations
+//! Error types for DataSketches operations.
 
 use std::fmt;
 
-/// ErrorKind is all kinds of Error of datasketches.
+/// Categories of errors returned by DataSketches operations.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum ErrorKind {
     /// The argument provided is invalid.
     InvalidArgument,
-    /// The sketch data deserializing is malformed.
+    /// The serialized sketch data is malformed.
     InvalidData,
 }
 
 impl ErrorKind {
-    /// Convert this error kind instance into static str.
+    /// Converts this error kind into a static string.
     pub const fn into_static(self) -> &'static str {
         match self {
             ErrorKind::InvalidArgument => "InvalidArgument",
@@ -45,13 +45,14 @@ impl fmt::Display for ErrorKind {
     }
 }
 
-/// Error is the error struct returned by all datasketches functions.
+/// Error returned by a DataSketches operation.
 ///
 /// # Examples
 ///
 /// ```
-/// # use datasketches::error::Error;
-/// # use datasketches::error::ErrorKind;
+/// use datasketches::error::Error;
+/// use datasketches::error::ErrorKind;
+///
 /// let err = Error::new(ErrorKind::InvalidArgument, "bad input");
 /// assert_eq!(err.kind(), ErrorKind::InvalidArgument);
 /// assert_eq!(err.message(), "bad input");
@@ -63,7 +64,7 @@ pub struct Error {
 }
 
 impl Error {
-    /// Create a new Error with error kind and message.
+    /// Creates a new `Error` with the given kind and message.
     pub fn new(kind: ErrorKind, message: impl Into<String>) -> Self {
         Self {
             kind,
@@ -72,25 +73,24 @@ impl Error {
         }
     }
 
-    /// Add more context in error.
+    /// Adds context to the error.
     pub fn with_context(mut self, key: &'static str, value: impl ToString) -> Self {
         self.context.push((key, value.to_string()));
         self
     }
 
-    /// Return error's kind.
+    /// Returns the error kind.
     pub fn kind(&self) -> ErrorKind {
         self.kind
     }
 
-    /// Return error's message.
+    /// Returns the error message.
     pub fn message(&self) -> &str {
         self.message.as_str()
     }
 }
 
-// pub(crate) convenient constructors
-#[allow(dead_code)] // some constructors are only used for certain sketches
+#[allow(dead_code)] // some convenient constructors are only used for certain sketches
 impl Error {
     pub(crate) fn invalid_argument(msg: impl Into<String>) -> Self {
         Self::new(ErrorKind::InvalidArgument, msg)
@@ -100,10 +100,14 @@ impl Error {
         Self::new(ErrorKind::InvalidData, msg)
     }
 
+    #[cold]
+    #[inline(never)]
     pub(crate) fn insufficient_data(msg: impl fmt::Display) -> Self {
         Self::deserial(format!("insufficient data: {msg}"))
     }
 
+    #[cold]
+    #[inline(never)]
     pub(crate) fn insufficient_data_of(context: &'static str, msg: impl fmt::Display) -> Self {
         Self::deserial(format!("insufficient data ({context}): {msg}"))
     }
@@ -116,7 +120,13 @@ impl Error {
 
     pub(crate) fn invalid_preamble_longs(expected: &[u8], actual: u8) -> Self {
         Error::deserial(format!(
-            "invalid preamble longs: expected {expected:?}, got {actual}"
+            "invalid preamble longs: expected one of {expected:?}, got {actual}"
+        ))
+    }
+
+    pub(crate) fn invalid_preamble_ints(expected: u8, actual: u8) -> Self {
+        Self::deserial(format!(
+            "invalid preamble ints: expected {expected}, got {actual}"
         ))
     }
 }

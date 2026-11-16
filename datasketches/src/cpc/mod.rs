@@ -34,6 +34,17 @@
 //! configurations of K.
 //!
 //! For additional security this sketch can be configured with a user-specified hash seed.
+//!
+//! # Cross-language hashing
+//!
+//! For cross-language use, apply the following input conventions:
+//!
+//! * Use `i64`/`u64` for 64-bit integers and [`sign_extend`](crate::hash::value::sign_extend) for
+//!   narrower integers.
+//! * Use [`canonical_float`](crate::hash::value::canonical_float) for floating-point values.
+//! * Use [`raw_bytes`](crate::hash::value::raw_bytes) for UTF-8 strings and byte slices.
+//!
+//! Skip empty strings and byte slices before updating the sketch.
 
 mod compression;
 mod compression_data;
@@ -74,17 +85,15 @@ fn count_bits_set_in_matrix(matrix: &[u64]) -> u32 {
 }
 
 fn determine_flavor(lg_k: u8, num_coupons: u32) -> Flavor {
-    let k = 1 << lg_k;
-    let c2 = num_coupons << 1;
-    let c8 = num_coupons << 3;
-    let c32 = num_coupons << 5;
+    let k = 1u64 << lg_k;
+    let coupons = u64::from(num_coupons);
     if num_coupons == 0 {
         Flavor::Empty
-    } else if c32 < (3 * k) {
+    } else if 32 * coupons < 3 * k {
         Flavor::Sparse
-    } else if c2 < k {
+    } else if 2 * coupons < k {
         Flavor::Hybrid
-    } else if c8 < (27 * k) {
+    } else if 8 * coupons < 27 * k {
         Flavor::Pinned
     } else {
         Flavor::Sliding

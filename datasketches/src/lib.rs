@@ -17,11 +17,47 @@
 
 //! # Apache® DataSketches™ Core Rust Library Component
 //!
-//! The Sketching Core Library provides a range of stochastic streaming algorithms and closely
-//! related Rust technologies that are particularly useful when integrating this technology into
-//! systems that must deal with massive data.
+//! This crate provides compact, mergeable summaries for answering queries over large data streams.
 //!
-//! This library is divided into modules that constitute distinct groups of functionality.
+//! ## Enabling sketches
+//!
+//! Sketch implementations are opt-in Cargo features; this crate enables none by default. Enable
+//! only the algorithms an application uses:
+//!
+//! ```text
+//! cargo add datasketches --features hll,theta
+//! ```
+//!
+//! Each feature exposes a same-named module. For example, `hll` exposes `datasketches::hll` and
+//! `tdigest` exposes `datasketches::tdigest`.
+//!
+//! ## Choosing a sketch
+//!
+//! * Use `bloom` for incremental probabilistic membership queries or `xor` for immutable sets.
+//! * Use `countmin` for point-frequency estimates and `frequencies` for discovering heavy hitters.
+//! * Use `hll` for fast distinct counts, `cpc` for compact serialized distinct counts, or `theta`
+//!   when set operations are required.
+//! * Use `kll`, `req`, or `tdigest` for ranks and quantiles. KLL provides strong general-purpose
+//!   rank accuracy, REQ targets configurable high- or low-rank accuracy, and T-Digest emphasizes
+//!   distribution tails.
+//! * Use `tuple` when retained Theta keys need application-defined summaries.
+//!
+//! See each module's documentation for accuracy, memory, serialization, and update examples.
+//!
+//! ## Cross-language hashing
+//!
+//! Compatible serialization does not by itself make ordinary Rust [`Hash`](std::hash::Hash)
+//! input compatible across languages. Rust strings and slices include type-specific framing,
+//! and short integers require different widening rules for different sketch families. When
+//! sketches must represent the same updates across languages, use the wrappers in [`hash::value`]:
+//!
+//! * `raw_bytes` for byte and string contents;
+//! * `canonical_float` for floating-point values;
+//! * `sign_extend` for short integers used with HLL and CPC;
+//! * `natural_extend` for short integers used with Bloom filters and Count-Min sketches.
+//!
+//! When interoperating with an implementation that skips empty strings, check for empty input
+//! before updating here as well.
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![deny(missing_docs)]
@@ -37,22 +73,28 @@ pub mod bloom;
 pub mod countmin;
 #[cfg(feature = "cpc")]
 pub mod cpc;
-#[cfg(feature = "density")]
-pub mod density;
 #[cfg(feature = "frequencies")]
 pub mod frequencies;
 #[cfg(feature = "hll")]
 pub mod hll;
+#[cfg(feature = "kll")]
+pub mod kll;
+#[cfg(feature = "req")]
+pub mod req;
 #[cfg(feature = "tdigest")]
 pub mod tdigest;
+#[cfg(any(feature = "theta", feature = "tuple"))]
+mod thetafamily;
 #[cfg(feature = "theta")]
-pub mod theta;
+pub use self::thetafamily::theta;
+#[cfg(feature = "tuple")]
+pub use self::thetafamily::tuple;
+
+#[cfg(feature = "xor")]
+pub mod xor;
 
 // common modules
 pub mod codec;
 pub mod common;
 pub mod error;
-pub mod hash_value;
-
-// private internal modules
-mod hash;
+pub mod hash;

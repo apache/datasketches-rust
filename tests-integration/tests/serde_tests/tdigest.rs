@@ -1,0 +1,491 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
+use std::fs;
+use std::path::PathBuf;
+
+use datasketches::tdigest::TDigest;
+use datasketches::tdigest::TDigestMut;
+use googletest::assert_that;
+use googletest::prelude::all;
+use googletest::prelude::eq;
+use googletest::prelude::ge;
+use googletest::prelude::is_finite;
+use googletest::prelude::le;
+use googletest::prelude::near;
+
+use crate::serialization_test_data;
+
+fn patterned_digest(k: u16, len: usize, salt: usize) -> TDigestMut {
+    let mut tdigest = TDigestMut::new(k).unwrap();
+    for index in 0..len {
+        let value = (((index * 37 + salt * 17) % 101) as f64) - 50.0;
+        tdigest.update(value);
+    }
+    tdigest
+}
+
+fn test_sketch_file(path: PathBuf, n: u64, with_buffer: bool, is_f32: bool) {
+    let bytes = fs::read(&path).unwrap();
+    let td = if is_f32 {
+        TDigestMut::deserialize_f32(&bytes)
+    } else {
+        TDigestMut::deserialize(&bytes)
+    }
+    .unwrap();
+    let td = td.freeze();
+
+    let path = path.display();
+    if n == 0 {
+        assert!(td.is_empty(), "filepath: {path}");
+        assert_eq!(td.total_weight(), 0, "filepath: {path}");
+    } else {
+        assert!(!td.is_empty(), "filepath: {path}");
+        assert_eq!(td.total_weight(), n, "filepath: {path}");
+        assert_eq!(td.min_value(), Some(1.0), "filepath: {path}");
+        assert_eq!(td.max_value(), Some(n as f64), "filepath: {path}");
+        assert_eq!(td.rank(0.0).unwrap(), Some(0.0), "filepath: {path}");
+        assert_eq!(
+            td.rank((n + 1) as f64).unwrap(),
+            Some(1.0),
+            "filepath: {path}"
+        );
+        if n == 1 {
+            assert_eq!(td.rank(n as f64).unwrap(), Some(0.5), "filepath: {path}");
+        } else {
+            assert_that!(
+                td.rank(n as f64 / 2.).unwrap().unwrap(),
+                near(0.5, 0.05),
+                "filepath: {path}",
+            );
+        }
+    }
+
+    if !with_buffer && !is_f32 {
+        let mut td = td.unfreeze();
+        let roundtrip_bytes = td.serialize();
+        assert_eq!(bytes, roundtrip_bytes, "filepath: {path}");
+    }
+}
+
+#[test]
+fn test_deserialize_from_cpp_snapshots() {
+    let ns = [0, 1, 10, 100, 1000, 10_000, 100_000, 1_000_000];
+    for n in ns {
+        let filename = format!("tdigest_double_n{}_cpp.sk", n);
+        let path = serialization_test_data("cpp_generated_files", &filename);
+        test_sketch_file(path, n, false, false);
+    }
+    for n in ns {
+        let filename = format!("tdigest_double_buf_n{}_cpp.sk", n);
+        let path = serialization_test_data("cpp_generated_files", &filename);
+        test_sketch_file(path, n, true, false);
+    }
+    for n in ns {
+        let filename = format!("tdigest_float_n{}_cpp.sk", n);
+        let path = serialization_test_data("cpp_generated_files", &filename);
+        test_sketch_file(path, n, false, true);
+    }
+    for n in ns {
+        let filename = format!("tdigest_float_buf_n{}_cpp.sk", n);
+        let path = serialization_test_data("cpp_generated_files", &filename);
+        test_sketch_file(path, n, true, true);
+    }
+}
+
+#[test]
+fn test_deserialize_from_reference_implementation() {
+    for filename in [
+        "tdigest_ref_k100_n10000_double.sk",
+        "tdigest_ref_k100_n10000_float.sk",
+    ] {
+        let path = serialization_test_data("reference_files", filename);
+        let bytes = fs::read(&path).unwrap();
+        let td = TDigestMut::deserialize(&bytes).unwrap();
+        let td = td.freeze();
+
+        let n = 10000;
+        let path = path.display();
+        assert_eq!(td.k(), 100, "filepath: {path}");
+        assert_eq!(td.total_weight(), n, "filepath: {path}");
+        assert_eq!(td.min_value(), Some(0.0), "filepath: {path}");
+        assert_eq!(td.max_value(), Some((n - 1) as f64), "filepath: {path}");
+        assert_that!(
+            td.rank(0.0).unwrap().unwrap(),
+            near(0.0, 0.0001),
+            "filepath: {path}"
+        );
+        assert_that!(
+            td.rank(n as f64 / 4.).unwrap().unwrap(),
+            near(0.25, 0.0001),
+            "filepath: {path}"
+        );
+        assert_that!(
+            td.rank(n as f64 / 2.).unwrap().unwrap(),
+            near(0.5, 0.0001),
+            "filepath: {path}"
+        );
+        assert_that!(
+            td.rank((n * 3) as f64 / 4.).unwrap().unwrap(),
+            near(0.75, 0.0001),
+            "filepath: {path}"
+        );
+        assert_that!(
+            td.rank(n as f64).unwrap().unwrap(),
+            eq(1.0),
+            "filepath: {path}"
+        );
+    }
+}
+
+#[test]
+fn test_deserialize_from_java_snapshots() {
+    let ns = [0, 1, 10, 100, 1000, 10_000, 100_000, 1_000_000];
+    for n in ns {
+        let filename = format!("tdigest_double_n{}_java.sk", n);
+        let path = serialization_test_data("java_generated_files", &filename);
+        test_sketch_file(path, n, false, false);
+    }
+}
+
+#[test]
+fn test_deserialize_from_go_snapshots() {
+    let ns = [0, 1, 10, 100, 1000, 10_000, 100_000, 1_000_000];
+    for n in ns {
+        let filename = format!("tdigest_double_n{n}_go.sk");
+        let path = serialization_test_data("go_generated_files", &filename);
+        test_sketch_file(path, n, false, false);
+    }
+    for n in ns {
+        let filename = format!("tdigest_double_buf_n{n}_go.sk");
+        let path = serialization_test_data("go_generated_files", &filename);
+        test_sketch_file(path, n, true, false);
+    }
+}
+
+#[test]
+fn test_empty() {
+    let mut td = TDigestMut::new(100).unwrap();
+    assert!(td.is_empty());
+
+    let bytes = td.serialize();
+    assert_eq!(bytes.len(), 8);
+    let td = td.freeze();
+
+    let deserialized_td = TDigestMut::deserialize(&bytes).unwrap();
+    let deserialized_td = deserialized_td.freeze();
+    assert_eq!(td.k(), deserialized_td.k());
+    assert_eq!(td.total_weight(), deserialized_td.total_weight());
+    assert!(td.is_empty());
+    assert!(deserialized_td.is_empty());
+}
+
+#[test]
+fn test_single_value() {
+    let mut td = TDigestMut::default();
+    td.update(123.0);
+
+    let bytes = td.serialize();
+    assert_eq!(bytes.len(), 16);
+
+    let deserialized_td = TDigestMut::deserialize(&bytes).unwrap();
+    let deserialized_td = deserialized_td.freeze();
+    assert_eq!(deserialized_td.k(), 200);
+    assert_eq!(deserialized_td.total_weight(), 1);
+    assert!(!deserialized_td.is_empty());
+    assert_eq!(deserialized_td.min_value(), Some(123.0));
+    assert_eq!(deserialized_td.max_value(), Some(123.0));
+}
+
+#[test]
+fn test_many_values() {
+    let mut td = TDigestMut::new(100).unwrap();
+    for i in 0..1000 {
+        td.update(i as f64);
+    }
+
+    let bytes = td.serialize();
+    assert_eq!(bytes.len(), 1584);
+    let td = td.freeze();
+
+    let deserialized_td = TDigestMut::deserialize(&bytes).unwrap();
+    let deserialized_td = deserialized_td.freeze();
+    assert_eq!(td.k(), deserialized_td.k());
+    assert_eq!(td.total_weight(), deserialized_td.total_weight());
+    assert_eq!(td.is_empty(), deserialized_td.is_empty());
+    assert_eq!(td.min_value(), deserialized_td.min_value());
+    assert_eq!(td.max_value(), deserialized_td.max_value());
+    assert_eq!(
+        td.rank(500.0).unwrap(),
+        deserialized_td.rank(500.0).unwrap()
+    );
+    assert_eq!(
+        td.quantile(0.5).unwrap(),
+        deserialized_td.quantile(0.5).unwrap()
+    );
+}
+
+#[test]
+fn test_frozen_roundtrip() {
+    let tdigest = patterned_digest(100, 1000, 7);
+    let expected = tdigest.freeze();
+
+    let bytes = expected.serialize();
+    let actual = TDigest::deserialize(&bytes).unwrap();
+
+    assert_eq!(actual.k(), expected.k());
+    assert_eq!(actual.total_weight(), expected.total_weight());
+    assert_eq!(actual.min_value(), expected.min_value());
+    assert_eq!(actual.max_value(), expected.max_value());
+    assert_eq!(
+        actual.quantile(0.5).unwrap(),
+        expected.quantile(0.5).unwrap()
+    );
+}
+
+#[test]
+fn test_updates_normalize_overfull_deserialized_buffer_without_centroids() {
+    let path = serialization_test_data("cpp_generated_files", "tdigest_double_buf_n10_cpp.sk");
+    let mut bytes = fs::read(path).unwrap();
+    assert_eq!(&bytes[8..12], &0_u32.to_le_bytes()); // num centroids
+    assert_eq!(&bytes[12..16], &10_u32.to_le_bytes()); // num buffered
+
+    // k=100 normally compresses at 840 buffered values. Extend a datasketches-cpp image without
+    // centroids just past that producer threshold while keeping every value within the recorded
+    // min/max.
+    bytes[12..16].copy_from_slice(&841_u32.to_le_bytes());
+    for _ in 0..831 {
+        bytes.extend_from_slice(&10_f64.to_le_bytes());
+    }
+
+    let mut tdigest = TDigestMut::deserialize(&bytes).unwrap();
+    for _ in 0..10_000 {
+        tdigest.update(10.0);
+    }
+
+    assert_eq!(tdigest.total_weight(), 10_841);
+    assert_eq!(tdigest.min_value(), Some(1.0));
+    assert_eq!(tdigest.max_value(), Some(10.0));
+    // The overfull image must not disable future compression and let the buffered tail grow with
+    // every subsequent value.
+    assert!(tdigest.estimated_size() < 32_768);
+    let serialized = tdigest.serialize();
+    assert_eq!(&serialized[12..16], &0_u32.to_le_bytes());
+
+    let roundtrip = TDigestMut::deserialize(&serialized).unwrap();
+    assert_eq!(roundtrip.total_weight(), 10_841);
+    assert_eq!(roundtrip.min_value(), Some(1.0));
+    assert_eq!(roundtrip.max_value(), Some(10.0));
+}
+
+#[test]
+fn test_updates_normalize_overfull_deserialized_mixed_buffer() {
+    let path = serialization_test_data("cpp_generated_files", "tdigest_double_buf_n1000_cpp.sk");
+    let mut bytes = fs::read(path).unwrap();
+    assert_eq!(&bytes[8..12], &89_u32.to_le_bytes()); // num centroids
+    assert_eq!(&bytes[12..16], &160_u32.to_le_bytes()); // num buffered
+
+    // Extend the buffered tail of a mixed datasketches-cpp image just past the k=100 producer
+    // threshold.
+    bytes[12..16].copy_from_slice(&841_u32.to_le_bytes());
+    for _ in 0..681 {
+        bytes.extend_from_slice(&1_000_f64.to_le_bytes());
+    }
+
+    let mut tdigest = TDigestMut::deserialize(&bytes).unwrap();
+    for _ in 0..10_000 {
+        tdigest.update(1_000.0);
+    }
+
+    assert_eq!(tdigest.total_weight(), 11_681);
+    assert_eq!(tdigest.min_value(), Some(1.0));
+    assert_eq!(tdigest.max_value(), Some(1_000.0));
+    // The overfull image must not disable future compression and let the centroid tail grow with
+    // every subsequent value.
+    assert!(tdigest.estimated_size() < 32_768);
+    let serialized = tdigest.serialize();
+    assert_eq!(&serialized[12..16], &0_u32.to_le_bytes());
+
+    let roundtrip = TDigestMut::deserialize(&serialized).unwrap();
+    assert_eq!(roundtrip.total_weight(), 11_681);
+    assert_eq!(roundtrip.min_value(), Some(1.0));
+    assert_eq!(roundtrip.max_value(), Some(1_000.0));
+}
+
+fn serialized_two_value_digest() -> Vec<u8> {
+    let mut tdigest = TDigestMut::new(100).unwrap();
+    tdigest.update(0.0);
+    tdigest.update(1.0);
+    tdigest.serialize()
+}
+
+fn assert_invalid_tdigest(bytes: &[u8]) {
+    let error = TDigestMut::deserialize(bytes).unwrap_err();
+    assert_eq!(error.kind(), datasketches::error::ErrorKind::InvalidData);
+}
+
+#[test]
+fn test_deserialize_single_sample_requires_equal_extrema() {
+    // The multiple-value format can store a single centroid or a single buffered value.
+    for buffered in [false, true] {
+        for is_f32 in [false, true] {
+            for (min, max) in [(0., 100.), (0., 50.), (50., 100.), (50., 50.)] {
+                let mut bytes = vec![2, 1, 20, 100, 0, 0, 0, 0];
+                bytes.extend(u32::from(!buffered).to_le_bytes());
+                bytes.extend(u32::from(buffered).to_le_bytes());
+                if is_f32 {
+                    for value in [min, max, 50.] {
+                        bytes.extend((value as f32).to_le_bytes());
+                    }
+                    if !buffered {
+                        bytes.extend(1_u32.to_le_bytes());
+                    }
+                } else {
+                    for value in [min, max, 50_f64] {
+                        bytes.extend(value.to_le_bytes());
+                    }
+                    if !buffered {
+                        bytes.extend(1_u64.to_le_bytes());
+                    }
+                }
+                let result = if is_f32 {
+                    TDigestMut::deserialize_f32(&bytes)
+                } else {
+                    TDigestMut::deserialize(&bytes)
+                };
+                if min == max {
+                    let mut digest = result.unwrap();
+                    assert_eq!(digest.total_weight(), 1);
+                    assert_eq!(
+                        digest.quantiles(&[0., 0.5, 1.]).unwrap(),
+                        Some(vec![50.; 3])
+                    );
+                } else {
+                    assert_eq!(
+                        result.unwrap_err().kind(),
+                        datasketches::error::ErrorKind::InvalidData
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn test_deserialize_compat_single_sample_requires_equal_extrema() {
+    for compact in [false, true] {
+        for (min, max) in [(0., 100.), (0., 50.), (50., 100.), (50., 50.)] {
+            let mut bytes = if compact { 2_u32 } else { 1_u32 }.to_be_bytes().to_vec();
+            bytes.extend(f64::to_be_bytes(min));
+            bytes.extend(f64::to_be_bytes(max));
+            if compact {
+                bytes.extend(100_f32.to_be_bytes());
+                bytes.extend(0_u32.to_be_bytes()); // unused capacities
+                bytes.extend(1_u16.to_be_bytes());
+                bytes.extend(1_f32.to_be_bytes());
+                bytes.extend(50_f32.to_be_bytes());
+            } else {
+                bytes.extend(100_f64.to_be_bytes());
+                bytes.extend(1_u32.to_be_bytes());
+                bytes.extend(1_f64.to_be_bytes());
+                bytes.extend(50_f64.to_be_bytes());
+            }
+            if min == max {
+                let mut digest = TDigestMut::deserialize(&bytes).unwrap();
+                assert_eq!(digest.total_weight(), 1);
+                assert_eq!(
+                    digest.quantiles(&[0., 0.5, 1.]).unwrap(),
+                    Some(vec![50.; 3])
+                );
+            } else {
+                assert_invalid_tdigest(&bytes);
+            }
+        }
+    }
+}
+
+#[test]
+fn test_deserialize_rejects_unknown_or_conflicting_flags() {
+    let mut unknown = serialized_two_value_digest();
+    unknown[5] |= 0x80;
+    assert_invalid_tdigest(&unknown);
+
+    let mut empty = TDigestMut::new(100).unwrap();
+    let mut conflicting = empty.serialize();
+    conflicting[5] |= 1 << 1;
+    assert_invalid_tdigest(&conflicting);
+}
+
+#[test]
+fn test_deserialize_rejects_invalid_extrema_and_centroid_ranges() {
+    let mut reversed_extrema = serialized_two_value_digest();
+    reversed_extrema[16..24].copy_from_slice(&2_f64.to_le_bytes());
+    assert_invalid_tdigest(&reversed_extrema);
+
+    let mut centroid_outside_extrema = serialized_two_value_digest();
+    centroid_outside_extrema[32..40].copy_from_slice(&(-1_f64).to_le_bytes());
+    assert_invalid_tdigest(&centroid_outside_extrema);
+
+    let mut buffered_outside_extrema = serialized_two_value_digest();
+    buffered_outside_extrema[8..12].copy_from_slice(&1_u32.to_le_bytes());
+    buffered_outside_extrema[12..16].copy_from_slice(&1_u32.to_le_bytes());
+    buffered_outside_extrema[48..56].copy_from_slice(&2_f64.to_le_bytes());
+    assert_invalid_tdigest(&buffered_outside_extrema);
+}
+
+#[test]
+fn test_deserialize_rejects_unsorted_or_missing_centroids() {
+    let mut unsorted = serialized_two_value_digest();
+    unsorted[32..40].copy_from_slice(&1_f64.to_le_bytes());
+    unsorted[48..56].copy_from_slice(&0_f64.to_le_bytes());
+    assert_invalid_tdigest(&unsorted);
+
+    let mut missing = serialized_two_value_digest();
+    missing[8..12].copy_from_slice(&0_u32.to_le_bytes());
+    missing[12..16].copy_from_slice(&0_u32.to_le_bytes());
+    assert_invalid_tdigest(&missing);
+}
+
+#[test]
+fn test_deserialize_rejects_truncated_large_payload_before_allocation() {
+    let mut tdigest = TDigestMut::new(10).unwrap();
+    tdigest.update(0.0);
+    tdigest.update(1.0);
+    let mut bytes = tdigest.serialize();
+    bytes[8..12].copy_from_slice(&u32::MAX.to_le_bytes());
+    bytes[12..16].copy_from_slice(&u32::MAX.to_le_bytes());
+
+    assert!(TDigestMut::deserialize(&bytes).is_err());
+}
+
+#[test]
+fn test_large_weights_produce_finite_extreme_quantile() {
+    let lower = f64::from_bits(f64::MAX.to_bits() - 1);
+    let mut tdigest = TDigestMut::default();
+    tdigest.update(lower);
+    tdigest.update(f64::MAX);
+    let mut bytes = tdigest.serialize();
+
+    // These valid weights retain a positive lower contribution even though its normalized ratio
+    // rounds away when interpolating between the two extreme values.
+    bytes[40..48].copy_from_slice(&((1_u64 << 52) - 1).to_le_bytes());
+    bytes[56..64].copy_from_slice(&(1_u64 << 52).to_le_bytes());
+
+    let mut tdigest = TDigestMut::deserialize(&bytes).unwrap();
+    let quantile = tdigest.quantile(0.25).unwrap().unwrap();
+    assert_that!(quantile, all!(is_finite(), ge(lower), le(f64::MAX)));
+}

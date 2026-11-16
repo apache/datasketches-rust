@@ -20,6 +20,7 @@
 //! This linear-probing hash map supports a reverse purge operation that removes
 //! keys with non-positive counts by scanning clusters from the back to the front.
 
+use std::borrow::Borrow;
 use std::hash::Hash;
 use std::hash::Hasher;
 
@@ -31,13 +32,20 @@ const MAX_SAMPLE_SIZE: usize = 1024;
 
 /// Linear-probing hash map for (item, count) pairs with reverse purge support.
 #[derive(Debug, Clone)]
-pub(super) struct ReversePurgeItemHashMap<T> {
+pub struct ReversePurgeItemHashMap<T> {
     lg_length: u8,
     load_threshold: usize,
     keys: Vec<Option<T>>,
     values: Vec<u64>,
     states: Vec<u16>,
     num_active: usize,
+}
+
+impl<T> ReversePurgeItemHashMap<T> {
+    /// Returns the number of active keys in the map.
+    pub fn num_active(&self) -> usize {
+        self.num_active
+    }
 }
 
 impl<T: Eq + Hash> ReversePurgeItemHashMap<T> {
@@ -59,8 +67,15 @@ impl<T: Eq + Hash> ReversePurgeItemHashMap<T> {
     }
 
     /// Returns the value for `key`, or zero if the key is not present.
-    pub fn get(&self, key: &T) -> u64 {
-        let probe = self.hash_probe(key);
+    ///
+    /// The key may be any borrowed form of `T` (e.g. `&str` for a `String` map),
+    /// matching the `HashMap::get` convention.
+    pub fn get<Q>(&self, key: &Q) -> u64
+    where
+        T: Borrow<Q>,
+        Q: Eq + Hash + ?Sized,
+    {
+        let (probe, _) = self.find_probe_or_empty(key);
         if self.states[probe] > 0 {
             return self.values[probe];
         }
@@ -69,23 +84,26 @@ impl<T: Eq + Hash> ReversePurgeItemHashMap<T> {
 
     /// Adds `adjust_amount` to the value for `key`, inserting if absent.
     pub fn adjust_or_put_value(&mut self, key: T, adjust_amount: u64) {
-        let mask = self.keys.len() - 1;
-        let mut probe = (hash_item(&key) as usize) & mask;
-        let mut drift: usize = 1;
-        while self.states[probe] != 0 {
-            let matches = self.keys[probe]
-                .as_ref()
-                .map(|existing| existing == &key)
-                .unwrap_or(false);
-            if matches {
-                break;
-            }
-            probe = (probe + 1) & mask;
-            drift += 1;
-            debug_assert!(drift < DRIFT_LIMIT, "drift limit exceeded");
-        }
+        let (probe, drift) = self.find_probe_or_empty(&key);
         if self.states[probe] == 0 {
             self.keys[probe] = Some(key);
+            self.values[probe] = adjust_amount;
+            self.states[probe] = drift as u16;
+            self.num_active += 1;
+        } else {
+            self.values[probe] += adjust_amount;
+        }
+    }
+
+    /// Adds `adjust_amount` to the value for a borrowed `key`, inserting if absent.
+    pub fn adjust_or_put_value_ref<Q>(&mut self, key: &Q, adjust_amount: u64)
+    where
+        T: Borrow<Q>,
+        Q: Eq + Hash + ToOwned<Owned = T> + ?Sized,
+    {
+        let (probe, drift) = self.find_probe_or_empty(key);
+        if self.states[probe] == 0 {
+            self.keys[probe] = Some(key.to_owned());
             self.values[probe] = adjust_amount;
             self.states[probe] = drift as u16;
             self.num_active += 1;
@@ -130,7 +148,7 @@ impl<T: Eq + Hash> ReversePurgeItemHashMap<T> {
     pub fn purge(&mut self, sample_size: usize) -> u64 {
         let limit = sample_size.min(self.num_active).min(MAX_SAMPLE_SIZE);
         let mut samples = Vec::with_capacity(limit);
-        let mut i = 0usize;
+        let mut i = 0;
         while samples.len() < limit {
             if self.is_active(i) {
                 samples.push(self.values[i]);
@@ -160,10 +178,28 @@ impl<T: Eq + Hash> ReversePurgeItemHashMap<T> {
         for i in 0..old_keys.len() {
             if old_states[i] > 0 {
                 if let Some(key) = old_keys[i].take() {
-                    self.adjust_or_put_value(key, old_values[i]);
+                    self.insert_absent(key, old_values[i]);
                 }
             }
         }
+    }
+
+    /// Inserts a key that is known to be absent, such as when rehashing distinct keys.
+    ///
+    /// This probes the same slots as [`Self::adjust_or_put_value`] but skips key comparisons.
+    fn insert_absent(&mut self, key: T, value: u64) {
+        let mask = self.keys.len() - 1;
+        let mut probe = (hash_item(&key) as usize) & mask;
+        let mut drift: usize = 1;
+        while self.states[probe] > 0 {
+            probe = (probe + 1) & mask;
+            drift += 1;
+            debug_assert!(drift < DRIFT_LIMIT, "drift limit exceeded");
+        }
+        self.keys[probe] = Some(key);
+        self.values[probe] = value;
+        self.states[probe] = drift as u16;
+        self.num_active += 1;
     }
 
     /// Returns the length of the underlying arrays.
@@ -181,42 +217,24 @@ impl<T: Eq + Hash> ReversePurgeItemHashMap<T> {
         self.load_threshold
     }
 
-    /// Returns the number of active keys in the map.
-    pub fn num_active(&self) -> usize {
-        self.num_active
+    /// Returns an estimate of memory usage in bytes.
+    pub fn estimated_size(&self) -> usize {
+        self.keys.capacity() * size_of::<Option<T>>()
+            + self.values.capacity() * size_of::<u64>()
+            + self.states.capacity() * size_of::<u16>()
     }
 
-    /// Returns the active keys in the map.
-    pub fn active_keys(&self) -> Vec<T>
-    where
-        T: Clone,
-    {
-        if self.num_active == 0 {
-            return vec![];
-        }
-        let mut keys = Vec::with_capacity(self.num_active);
+    /// Returns active keys and values in storage order.
+    pub fn active_entries(&self) -> Vec<(&T, u64)> {
+        let mut entries = Vec::with_capacity(self.num_active);
         for i in 0..self.keys.len() {
             if self.states[i] > 0 {
                 if let Some(key) = self.keys[i].as_ref() {
-                    keys.push(key.clone());
+                    entries.push((key, self.values[i]));
                 }
             }
         }
-        keys
-    }
-
-    /// Returns the active values in the map.
-    pub fn active_values(&self) -> Vec<u64> {
-        if self.num_active == 0 {
-            return vec![];
-        }
-        let mut values = Vec::with_capacity(self.num_active);
-        for i in 0..self.values.len() {
-            if self.states[i] > 0 {
-                values.push(self.values[i]);
-            }
-        }
-        values
+        entries
     }
 
     /// Returns an iterator over active keys and values.
@@ -228,20 +246,27 @@ impl<T: Eq + Hash> ReversePurgeItemHashMap<T> {
         self.states[probe] > 0
     }
 
-    fn hash_probe(&self, key: &T) -> usize {
+    fn find_probe_or_empty<Q>(&self, key: &Q) -> (usize, usize)
+    where
+        T: Borrow<Q>,
+        Q: Eq + Hash + ?Sized,
+    {
         let mask = self.keys.len() - 1;
         let mut probe = (hash_item(key) as usize) & mask;
+        let mut drift: usize = 1;
         while self.states[probe] > 0 {
             let matches = self.keys[probe]
                 .as_ref()
-                .map(|existing| existing == key)
+                .map(|existing| existing.borrow() == key)
                 .unwrap_or(false);
             if matches {
                 break;
             }
             probe = (probe + 1) & mask;
+            drift += 1;
+            debug_assert!(drift < DRIFT_LIMIT, "drift limit exceeded");
         }
-        probe
+        (probe, drift)
     }
 
     fn hash_delete(&mut self, mut delete_probe: usize) {
@@ -312,7 +337,7 @@ impl<'a, T> Iterator for ReversePurgeItemIter<'a, T> {
 }
 
 #[inline]
-fn hash_item<T: Hash>(item: &T) -> u64 {
+fn hash_item<T: Hash + ?Sized>(item: &T) -> u64 {
     let mut hasher = MurmurHash3X64128::default();
     item.hash(&mut hasher);
     hasher.finish()

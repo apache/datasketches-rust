@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-pub(super) static KXP_BYTE_TABLE: [f64; 256] = [
+pub static KXP_BYTE_TABLE: [f64; 256] = [
     0.99609375, 0.49609375, 0.74609375, 0.24609375, 0.87109375, 0.37109375, 0.62109375, 0.12109375,
     0.93359375, 0.43359375, 0.68359375, 0.18359375, 0.80859375, 0.30859375, 0.55859375, 0.05859375,
     0.96484375, 0.46484375, 0.71484375, 0.21484375, 0.83984375, 0.33984375, 0.58984375, 0.08984375,
@@ -52,7 +52,7 @@ pub(super) static KXP_BYTE_TABLE: [f64; 256] = [
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::inv_pow2_table::INVERSE_POWERS_OF_2;
+    use crate::common::inv_pow2::inv_pow2;
 
     #[test]
     fn assert_kxp_byte_table() {
@@ -66,7 +66,7 @@ mod tests {
                 let bit = (byte >> col) & 1;
                 if bit == 0 {
                     // note the inverted logic
-                    computed += INVERSE_POWERS_OF_2[col + 1]; //note the "+1"
+                    computed += inv_pow2(col + 1); //note the "+1"
                 }
             }
 

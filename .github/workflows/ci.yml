@@ -18,9 +18,7 @@
 name: CI
 on:
   pull_request:
-    branches: [main]
-  push:
-    branches: [main]
+    branches: [ main ]
 
 # Concurrency strategy:
 #   github.workflow: distinguish this workflow from others
@@ -43,9 +41,7 @@ jobs:
     name: Check
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
-      - name: Delete rust-toolchain.toml
-        run: rm rust-toolchain.toml
+      - uses: actions/checkout@v7
       - name: Install toolchain
         run: rustup toolchain install --component rustfmt,clippy nightly
       - uses: Swatinem/rust-cache@v2
@@ -58,6 +54,8 @@ jobs:
         run: cargo x lint
       - name: Check feature matrix
         run: cargo x check
+      - name: Exercise benchmark workloads
+        run: cargo x bench -- --test
 
   msrv:
     name: Resolve MSRV
@@ -65,7 +63,7 @@ jobs:
     outputs:
       rust-versions: ${{ steps.metadata.outputs.rust-versions }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - id: metadata
         run: |
           msrv=$(yq '.workspace.package.rust-version' Cargo.toml)
@@ -77,13 +75,11 @@ jobs:
     needs: msrv
     strategy:
       matrix:
-        os: [ubuntu-24.04, macos-14, windows-2022]
+        os: [ ubuntu-24.04, macos-15, windows-2022 ]
         rust-version: ${{ fromJson(needs.msrv.outputs.rust-versions) }}
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v6
-      - name: Delete rust-toolchain.toml
-        run: rm rust-toolchain.toml
+      - uses: actions/checkout@v7
       - name: Install toolchain
         run: |
           rustup toolchain install ${{ matrix.rust-version }}
@@ -91,15 +87,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           cache-bin: "false"
-      - name: Setup Java
-        uses: actions/setup-java@v5
-        with:
-          java-version: "25"
-          distribution: "temurin"
       - name: Prepare test data
         shell: bash
-        run: ./tools/generate_serialization_test_data.py
-      - name: Run unit tests
+        run: cargo x prepare-testdata
+      - name: Run test suite
         shell: bash
         run: cargo x test
 
@@ -118,5 +109,5 @@ jobs:
               && "${{ needs.test.result }}" == "success" \
               ) ]]; then
             echo "Required jobs haven't been completed successfully."
-            exit -1
+            exit 1
           fi

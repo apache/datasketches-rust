@@ -53,6 +53,15 @@ impl Family {
         max_pre_longs: 1,
     };
 
+    /// Tuple Sketch for cardinality estimation with per-key summaries.
+    #[cfg(feature = "tuple")]
+    pub const TUPLE: Family = Family {
+        id: 9,
+        name: "TUPLE",
+        min_pre_longs: 1,
+        max_pre_longs: 3,
+    };
+
     /// The Frequency family of sketches.
     #[cfg(feature = "frequencies")]
     pub const FREQUENCY: Family = Family {
@@ -60,6 +69,15 @@ impl Family {
         name: "FREQUENCY",
         min_pre_longs: 1,
         max_pre_longs: 4,
+    };
+
+    /// KLL sketch for estimating quantiles and ranks.
+    #[cfg(feature = "kll")]
+    pub const KLL: Family = Family {
+        id: 15,
+        name: "KLL",
+        min_pre_longs: 1,
+        max_pre_longs: 2,
     };
 
     /// Compressed Probabilistic Counting (CPC) Sketch.
@@ -71,6 +89,15 @@ impl Family {
         max_pre_longs: 5,
     };
 
+    /// Relative Error Quantiles (REQ) sketch.
+    #[cfg(feature = "req")]
+    pub const REQ: Family = Family {
+        id: 17,
+        name: "REQ",
+        min_pre_longs: 1,
+        max_pre_longs: 2,
+    };
+
     /// CountMin Sketch
     #[cfg(feature = "countmin")]
     pub const COUNTMIN: Family = Family {
@@ -78,15 +105,6 @@ impl Family {
         name: "COUNTMIN",
         min_pre_longs: 2,
         max_pre_longs: 2,
-    };
-
-    /// Density sketch for streaming density estimation.
-    #[cfg(feature = "density")]
-    pub const DENSITY: Family = Family {
-        id: 19,
-        name: "DENSITY",
-        min_pre_longs: 3,
-        max_pre_longs: 6,
     };
 
     /// T-Digest for estimating quantiles and ranks.
@@ -105,6 +123,15 @@ impl Family {
         name: "BLOOMFILTER",
         min_pre_longs: 3,
         max_pre_longs: 4,
+    };
+
+    /// Immutable XOR Filter.
+    #[cfg(feature = "xor")]
+    pub const XORFILTER: Family = Family {
+        id: 22,
+        name: "XORFILTER",
+        min_pre_longs: 3,
+        max_pre_longs: 3,
     };
 }
 

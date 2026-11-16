@@ -17,6 +17,9 @@
 
 use std::hash::Hasher;
 
+use crate::hash::read_u32_le;
+use crate::hash::read_u64_le;
+
 const DEFAULT_SEED: u64 = 0;
 
 // Unsigned 64-bit primes from xxhash64.
@@ -41,6 +44,7 @@ pub struct XxHash64 {
 }
 
 impl XxHash64 {
+    #[inline(always)]
     pub fn with_seed(seed: u64) -> Self {
         XxHash64 {
             seed,
@@ -54,6 +58,7 @@ impl XxHash64 {
         }
     }
 
+    #[inline(always)]
     pub fn finish64(&self) -> u64 {
         let mut hash = if self.total_len >= 32 {
             let mut acc = self
@@ -76,7 +81,7 @@ impl XxHash64 {
         let mut idx = 0;
         let buf = &self.buffer[..self.buffer_len];
         while idx + 8 <= buf.len() {
-            let mut k1 = super::read_u64_le(&buf[idx..idx + 8]);
+            let mut k1 = read_u64_le(&buf[idx..idx + 8]);
             k1 = k1.wrapping_mul(P2);
             k1 = k1.rotate_left(31);
             k1 = k1.wrapping_mul(P1);
@@ -86,8 +91,8 @@ impl XxHash64 {
         }
 
         if idx + 4 <= buf.len() {
-            let k1 = super::read_u64_le(&buf[idx..idx + 4]);
-            hash ^= k1.wrapping_mul(P1);
+            let k1 = read_u32_le(&buf[idx..idx + 4]);
+            hash ^= u64::from(k1).wrapping_mul(P1);
             hash = hash.rotate_left(23).wrapping_mul(P2).wrapping_add(P3);
             idx += 4;
         }
@@ -103,6 +108,7 @@ impl XxHash64 {
     }
 
     #[allow(dead_code)]
+    #[inline(always)]
     pub fn hash_u64(input: u64, seed: u64) -> u64 {
         let mut hash = seed.wrapping_add(P5).wrapping_add(8);
         let mut k1 = input;
@@ -114,12 +120,12 @@ impl XxHash64 {
         finalize(hash)
     }
 
-    #[inline]
+    #[inline(always)]
     fn update(&mut self, chunk: &[u8]) {
-        self.v1 = round(self.v1, super::read_u64_le(&chunk[0..8]));
-        self.v2 = round(self.v2, super::read_u64_le(&chunk[8..16]));
-        self.v3 = round(self.v3, super::read_u64_le(&chunk[16..24]));
-        self.v4 = round(self.v4, super::read_u64_le(&chunk[24..32]));
+        self.v1 = round(self.v1, read_u64_le(&chunk[0..8]));
+        self.v2 = round(self.v2, read_u64_le(&chunk[8..16]));
+        self.v3 = round(self.v3, read_u64_le(&chunk[16..24]));
+        self.v4 = round(self.v4, read_u64_le(&chunk[24..32]));
     }
 }
 
@@ -130,13 +136,70 @@ impl Default for XxHash64 {
 }
 
 impl Hasher for XxHash64 {
+    #[inline(always)]
     fn finish(&self) -> u64 {
         self.finish64()
     }
 
+    #[inline(always)]
     fn write(&mut self, bytes: &[u8]) {
         self.total_len = self.total_len.wrapping_add(bytes.len() as u64);
+        self.write_bytes(bytes);
+    }
 
+    #[inline(always)]
+    fn write_u8(&mut self, i: u8) {
+        self.write_fixed(i.to_ne_bytes());
+    }
+
+    #[inline(always)]
+    fn write_u16(&mut self, i: u16) {
+        self.write_fixed(i.to_ne_bytes());
+    }
+
+    #[inline(always)]
+    fn write_u32(&mut self, i: u32) {
+        self.write_fixed(i.to_ne_bytes());
+    }
+
+    #[inline(always)]
+    fn write_u64(&mut self, i: u64) {
+        self.write_fixed(i.to_ne_bytes());
+    }
+
+    #[inline(always)]
+    fn write_u128(&mut self, i: u128) {
+        self.write_fixed(i.to_ne_bytes());
+    }
+
+    #[inline(always)]
+    fn write_usize(&mut self, i: usize) {
+        self.write_fixed(i.to_ne_bytes());
+    }
+}
+
+impl XxHash64 {
+    /// Same result as `write(&bytes)`, with an inlined body small enough that hashing a
+    /// fixed-width integer folds to register arithmetic at the call site.
+    #[inline(always)]
+    fn write_fixed<const N: usize>(&mut self, bytes: [u8; N]) {
+        debug_assert!(N < 32);
+        self.total_len = self.total_len.wrapping_add(N as u64);
+        if self.buffer_len + N < 32 {
+            self.buffer[self.buffer_len..self.buffer_len + N].copy_from_slice(&bytes);
+            self.buffer_len += N;
+        } else {
+            self.write_bytes_outlined(&bytes);
+        }
+    }
+
+    #[inline(never)]
+    fn write_bytes_outlined(&mut self, bytes: &[u8]) {
+        self.write_bytes(bytes);
+    }
+
+    #[inline(always)]
+    fn write_bytes(&mut self, bytes: &[u8]) {
         if self.buffer_len + bytes.len() < 32 {
             self.buffer[self.buffer_len..self.buffer_len + bytes.len()].copy_from_slice(bytes);
             self.buffer_len += bytes.len();
@@ -167,14 +230,14 @@ impl Hasher for XxHash64 {
     }
 }
 
-#[inline]
+#[inline(always)]
 fn round(mut acc: u64, input: u64) -> u64 {
     acc = acc.wrapping_add(input.wrapping_mul(P2));
     acc = acc.rotate_left(31);
     acc.wrapping_mul(P1)
 }
 
-#[inline]
+#[inline(always)]
 fn merge_round(mut acc: u64, val: u64) -> u64 {
     let mut v = val;
     v = v.wrapping_mul(P2);
@@ -184,7 +247,7 @@ fn merge_round(mut acc: u64, val: u64) -> u64 {
     acc.wrapping_mul(P1).wrapping_add(P4)
 }
 
-#[inline]
+#[inline(always)]
 fn finalize(mut hash: u64) -> u64 {
     hash ^= hash >> 33;
     hash = hash.wrapping_mul(P2);
@@ -217,6 +280,24 @@ mod tests {
     }
 
     #[test]
+    fn streaming_writes_match_single_write() {
+        let input: Vec<u8> = (0..=96).collect();
+        for len in 0..=input.len() {
+            let expected = xxhash64(&input[..len], PRIME32);
+            for split in 0..=len {
+                let mut hasher = XxHash64::with_seed(PRIME32);
+                hasher.write(&input[..split]);
+                hasher.write(&input[split..len]);
+                assert_eq!(
+                    hasher.finish64(),
+                    expected,
+                    "hash changed for input length {len} split at {split}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn test_vectors_seed_zero() {
         let buf = fill_test_buffer(101);
         assert_eq!(xxhash64(&buf[..0], 0), 0xEF46DB3751D8E999);
@@ -243,5 +324,50 @@ mod tests {
         hasher.write(&123u64.to_le_bytes());
         let hash2 = hasher.finish64();
         assert_eq!(hash2, hash1);
+    }
+
+    #[test]
+    fn write_integers_match_write_of_native_bytes() {
+        let input: Vec<u8> = (0..=40).collect();
+
+        macro_rules! check_write {
+            ($method:ident, $values:expr) => {
+                for prefix in 0..=input.len() {
+                    for value in $values {
+                        let mut expected = XxHash64::with_seed(PRIME32);
+                        expected.write(&input[..prefix]);
+                        expected.write(&value.to_ne_bytes());
+                        expected.write(&input[..prefix]);
+
+                        let mut hasher = XxHash64::with_seed(PRIME32);
+                        hasher.write(&input[..prefix]);
+                        hasher.$method(value);
+                        hasher.write(&input[..prefix]);
+
+                        assert_eq!(
+                            hasher.finish64(),
+                            expected.finish64(),
+                            "{} prefix {prefix}, value {value:#x}",
+                            stringify!($method)
+                        );
+                    }
+                }
+            };
+        }
+
+        check_write!(write_u8, [0u8, 1, 0x7f, u8::MAX]);
+        check_write!(write_u16, [0u16, 1, 0x1234, u16::MAX]);
+        check_write!(write_u32, [0u32, 1, 0x0123_4567, u32::MAX]);
+        check_write!(write_u64, [0u64, 1, 0x0123_4567_89ab_cdef, u64::MAX]);
+        check_write!(
+            write_u128,
+            [
+                0u128,
+                1,
+                0x0123_4567_89ab_cdef_fedc_ba98_7654_3210,
+                u128::MAX
+            ]
+        );
+        check_write!(write_usize, [0usize, 1, 0x1234_5678, usize::MAX]);
     }
 }

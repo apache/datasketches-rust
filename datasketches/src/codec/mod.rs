@@ -26,11 +26,14 @@ pub use self::encode::SketchBytes;
     feature = "bloom",
     feature = "countmin",
     feature = "cpc",
-    feature = "density",
     feature = "frequencies",
     feature = "hll",
+    feature = "kll",
+    feature = "req",
     feature = "tdigest",
-    feature = "theta"
+    feature = "theta",
+    feature = "tuple",
+    feature = "xor",
 ))]
 #[allow(dead_code)] // some utilities are only used for certain sketches
 pub(crate) mod assert;
@@ -39,10 +42,13 @@ pub(crate) mod assert;
     feature = "bloom",
     feature = "countmin",
     feature = "cpc",
-    feature = "density",
     feature = "frequencies",
     feature = "hll",
+    feature = "kll",
+    feature = "req",
     feature = "tdigest",
-    feature = "theta"
+    feature = "theta",
+    feature = "tuple",
+    feature = "xor",
 ))]
 pub(crate) mod family;

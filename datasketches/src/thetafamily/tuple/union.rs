@@ -1,0 +1,255 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
+//! Tuple sketch union.
+//!
+//! [`TupleUnion`] computes the union (set OR) of any number of Tuple sketches. It shares its state
+//! machine with the Theta union; the only Tuple-specific behavior is that when an incoming key
+//! already exists in the union, the two summaries are combined with a [`SummaryCombinePolicy`]
+//! instead of one being dropped.
+
+use std::fmt;
+
+use crate::common::ResizeFactor;
+use crate::error::Error;
+use crate::hash::DEFAULT_UPDATE_SEED;
+use crate::thetafamily::common::constants::DEFAULT_LG_K;
+use crate::thetafamily::common::union::UnionState;
+use crate::tuple::hash_table::TupleEntry;
+use crate::tuple::policy::SummaryCombinePolicy;
+use crate::tuple::serialization::TupleSummaryValue;
+use crate::tuple::serialization::serialize_compact_uncompressed;
+use crate::tuple::sketch::CompactTupleSketch;
+use crate::tuple::sketch::TupleSketchView;
+
+/// Union (set OR) of Tuple sketches.
+///
+/// `P` is the [`SummaryCombinePolicy`] applied when a key is present in more than one input. For
+/// additive summaries the built-in
+/// [`DefaultUnionPolicy`](crate::tuple::DefaultUnionPolicy) can be used.
+///
+/// # Examples
+///
+/// ```
+/// use datasketches::tuple::DefaultUnionPolicy;
+/// use datasketches::tuple::DefaultUpdatePolicy;
+/// use datasketches::tuple::TupleSketchBuilder;
+/// use datasketches::tuple::TupleUnionBuilder;
+///
+/// let update_policy = DefaultUpdatePolicy::<u64>::default();
+/// let mut a = TupleSketchBuilder::new(update_policy).build().unwrap();
+/// a.update("apple", 1);
+/// a.update("banana", 1);
+///
+/// let mut b = TupleSketchBuilder::new(update_policy).build().unwrap();
+/// b.update("banana", 1);
+/// b.update("cherry", 1);
+///
+/// let mut union = TupleUnionBuilder::new(DefaultUnionPolicy::<u64>::default())
+///     .build()
+///     .unwrap();
+/// union.update(&a).unwrap();
+/// union.update(&b).unwrap();
+///
+/// let result = union.to_sketch(true);
+/// assert_eq!(result.num_retained(), 3); // apple, banana, cherry
+/// ```
+pub struct TupleUnion<P>
+where
+    P: SummaryCombinePolicy,
+{
+    state: UnionState<TupleEntry<P::Summary>, P>,
+}
+
+impl<P: SummaryCombinePolicy> fmt::Debug for TupleUnion<P> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.state.fmt_debug(f, "TupleUnion")
+    }
+}
+
+impl<P> TupleUnion<P>
+where
+    P: SummaryCombinePolicy,
+{
+    /// Merges a sketch into the union.
+    ///
+    /// Accepts either an [`TupleSketch`](crate::tuple::TupleSketch) or a
+    /// [`CompactTupleSketch`] through [`TupleSketchView`]. Keys present in both the running union
+    /// and `sketch` have their summaries combined via the union policy.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidArgument` if a non-empty `sketch` has a different seed hash from this
+    /// union.
+    pub fn update<'a>(
+        &mut self,
+        sketch: impl Into<TupleSketchView<'a, P::Summary>>,
+    ) -> Result<(), Error>
+    where
+        P::Summary: Clone + 'a,
+    {
+        let sketch = sketch.into();
+        self.state.update(sketch)
+    }
+
+    /// Returns the union as a [`CompactTupleSketch`].
+    ///
+    /// If `ordered` is `true`, retained entries are sorted ascending by hash.
+    pub fn to_sketch(&self, ordered: bool) -> CompactTupleSketch<P::Summary>
+    where
+        P::Summary: Clone,
+    {
+        CompactTupleSketch::from_compact_state(self.state.to_compact_sketch_state(ordered))
+    }
+
+    /// Serializes the union result into the compact Tuple binary format.
+    ///
+    /// The result is the same as `self.to_sketch(ordered).serialize()`: the same retained entries,
+    /// theta, and seed hash, and identical bytes when `ordered` is `true`. Unordered results may
+    /// list the retained entries in a different order. Summaries are encoded in
+    /// place instead of being cloned into an intermediate sketch, so `P::Summary` does not need to
+    /// implement [`Clone`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::tuple::CompactTupleSketch;
+    /// use datasketches::tuple::DefaultUnionPolicy;
+    /// use datasketches::tuple::DefaultUpdatePolicy;
+    /// use datasketches::tuple::TupleSketchBuilder;
+    /// use datasketches::tuple::TupleUnionBuilder;
+    ///
+    /// let mut sketch = TupleSketchBuilder::new(DefaultUpdatePolicy::<u64>::default())
+    ///     .build()
+    ///     .unwrap();
+    /// sketch.update("apple", 1);
+    ///
+    /// let mut union = TupleUnionBuilder::new(DefaultUnionPolicy::<u64>::default())
+    ///     .build()
+    ///     .unwrap();
+    /// union.update(&sketch).unwrap();
+    ///
+    /// let bytes = union.serialize(true);
+    /// let result = CompactTupleSketch::<u64>::deserialize(&bytes).unwrap();
+    /// assert_eq!(result.num_retained(), 1);
+    /// ```
+    pub fn serialize(&self, ordered: bool) -> Vec<u8>
+    where
+        P::Summary: TupleSummaryValue,
+    {
+        serialize_compact_uncompressed(&self.state.to_borrowed_compact_sketch_state(ordered))
+    }
+
+    /// Resets the union to its initial empty state.
+    pub fn reset(&mut self) {
+        self.state.reset();
+    }
+
+    /// Returns an estimate of the union's memory usage in bytes.
+    pub fn estimated_size(&self) -> usize {
+        self.state.estimated_size()
+    }
+}
+
+/// Builder for [`TupleUnion`].
+///
+/// Every builder carries a concrete [`SummaryCombinePolicy`]. Use
+/// [`DefaultUnionPolicy`](crate::tuple::DefaultUnionPolicy) for additive summaries, or supply a
+/// custom combine policy.
+///
+/// Configuration is stored without validation and checked when [`build()`](Self::build) is called.
+#[derive(Debug, Clone)]
+pub struct TupleUnionBuilder<P>
+where
+    P: SummaryCombinePolicy,
+{
+    lg_k: u8,
+    resize_factor: ResizeFactor,
+    sampling_probability: f32,
+    seed: u64,
+    policy: P,
+}
+
+impl<P> TupleUnionBuilder<P>
+where
+    P: SummaryCombinePolicy,
+{
+    /// Creates a builder with the given combine policy.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::tuple::DefaultUnionPolicy;
+    /// use datasketches::tuple::TupleUnionBuilder;
+    ///
+    /// let union = TupleUnionBuilder::new(DefaultUnionPolicy::<u64>::default())
+    ///     .lg_k(12)
+    ///     .build()
+    ///     .unwrap();
+    /// ```
+    pub fn new(policy: P) -> Self {
+        Self {
+            lg_k: DEFAULT_LG_K,
+            resize_factor: ResizeFactor::X8,
+            sampling_probability: 1.0,
+            seed: DEFAULT_UPDATE_SEED,
+            policy,
+        }
+    }
+
+    /// Sets `lg_k`, the base-2 logarithm of the nominal capacity.
+    pub fn lg_k(mut self, lg_k: u8) -> Self {
+        self.lg_k = lg_k;
+        self
+    }
+
+    /// Sets the resize factor.
+    pub fn resize_factor(mut self, factor: ResizeFactor) -> Self {
+        self.resize_factor = factor;
+        self
+    }
+
+    /// Sets the sampling probability.
+    pub fn sampling_probability(mut self, probability: f32) -> Self {
+        self.sampling_probability = probability;
+        self
+    }
+
+    /// Sets the hash seed.
+    pub fn seed(mut self, seed: u64) -> Self {
+        self.seed = seed;
+        self
+    }
+
+    /// Builds the [`TupleUnion`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `lg_k` is outside `[5, 26]`, `sampling_probability` is outside
+    /// `(0.0, 1.0]`, or the computed seed hash is zero.
+    pub fn build(self) -> Result<TupleUnion<P>, Error> {
+        Ok(TupleUnion {
+            state: UnionState::new(
+                self.lg_k,
+                self.resize_factor,
+                self.sampling_probability,
+                self.seed,
+                self.policy,
+            )?,
+        })
+    }
+}

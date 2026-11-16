@@ -18,6 +18,7 @@
 [default.extend-words]
 # False-Positive Abbreviations
 "PREINTS" = "PREINTS"
+"SER" = "SER"
 
 [files]
 extend-exclude = []

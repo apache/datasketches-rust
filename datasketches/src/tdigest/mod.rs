@@ -23,9 +23,9 @@
 //! The implementation in this library has a few differences from the reference implementation
 //! associated with that paper:
 //!
-//! * Merge does not modify the input
-//! * Deserialization similar to other sketches in this library, although reading the reference
-//!   implementation format is supported
+//! * [`TDigestMut::merge`] borrows its input without modifying it.
+//! * Deserialization is similar to other sketches in this library, although reading the reference
+//!   implementation format is supported.
 //!
 //! Unlike all other algorithms in the library, t-digest is empirical and has no mathematical
 //! basis for estimating its error and its results are dependent on the input data. However,
@@ -51,16 +51,19 @@
 //! # Usage
 //!
 //! ```
-//! # use datasketches::tdigest::TDigestMut;
-//! let mut sketch = TDigestMut::new(100);
+//! use datasketches::tdigest::TDigestMut;
+//!
+//! let mut sketch = TDigestMut::new(100).unwrap();
 //! sketch.update(1.0);
 //! sketch.update(2.0);
-//! let median = sketch.quantile(0.5).unwrap();
+//! let Some(median) = sketch.quantile(0.5)? else {
+//!     return Ok(()); // No samples to query.
+//! };
+//! assert!((1.0..=2.0).contains(&median));
 //! let frozen = sketch.freeze();
-//! assert!(frozen.rank(2.0).is_some());
+//! assert!(frozen.rank(2.0)?.is_some());
+//! # Ok::<(), datasketches::error::Error>(())
 //! ```
-
-mod serialization;
 
 mod sketch;
 pub use self::sketch::TDigest;

@@ -23,20 +23,19 @@
 //! in Data Streams"](https://arxiv.org/abs/1705.07001) by Daniel Anderson, Pryce Bevan, Kevin Lang,
 //! Edo Liberty, Lee Rhodes, and Justin Thaler.
 //!
-//! This sketch is useful for tracking approximate frequencies of items of type `T` that implements
-//! [`FrequentItemValue`], with optional associated counts (`T` item, `u64` count) that are members
-//! of a multiset of such items. The true frequency of an item is defined to be the sum of
-//! associated counts.
+//! This sketch tracks approximate frequencies of items of type `T` that implement [`Eq`] and
+//! [`Hash`](std::hash::Hash), with optional associated counts (`T` item, `u64` count) that are
+//! members of a multiset. The true frequency of an item is the sum of its associated counts.
 //!
-//! This implementation provides the following capabilities:
-//! * Estimate the frequency of an item.
-//! * Return upper and lower bounds of any item, such that the true frequency is always between the
-//!   upper and lower bounds.
-//! * Return a global maximum error that holds for all items in the stream.
-//! * Return an array of frequent items that qualify either [`ErrorType::NoFalsePositives`] or
+//! This implementation:
+//! * Estimates the frequency of an item.
+//! * Returns upper and lower bounds for any item, such that the true frequency is always between
+//!   the upper and lower bounds.
+//! * Returns a global maximum error that holds for all items in the stream.
+//! * Returns an array of frequent items that qualify either [`ErrorType::NoFalsePositives`] or
 //!   [`ErrorType::NoFalseNegatives`].
-//! * Merge itself with another sketch created from this module.
-//! * Serialize to bytes, or deserialize from bytes, for storage or transmission.
+//! * Merges itself with another sketch created from this module.
+//! * Serializes to bytes and deserializes from bytes for storage or transmission.
 //!
 //! # Accuracy
 //!
@@ -77,10 +76,11 @@
 //! # Examples
 //!
 //! ```
-//! # use datasketches::frequencies::ErrorType;
-//! # use datasketches::frequencies::FrequentItemsSketch;
-//! let mut sketch = FrequentItemsSketch::<i64>::new(64);
-//! sketch.update_with_count(1, 3);
+//! use datasketches::frequencies::ErrorType;
+//! use datasketches::frequencies::FrequentItemsSketch;
+//!
+//! let mut sketch = FrequentItemsSketch::<i64>::new(64).unwrap();
+//! sketch.update_with_weight(1, 3);
 //! sketch.update(2);
 //! let rows = sketch.frequent_items(ErrorType::NoFalseNegatives);
 //! assert!(rows.iter().any(|row| *row.item() == 1));
@@ -88,10 +88,14 @@
 //!
 //! # Serialization
 //!
+//! The built-in serialization methods are available when the item type implements
+//! [`FrequentItemValue`].
+//!
 //! ```
-//! # use datasketches::frequencies::FrequentItemsSketch;
-//! let mut sketch = FrequentItemsSketch::<i64>::new(64);
-//! sketch.update_with_count(42, 2);
+//! use datasketches::frequencies::FrequentItemsSketch;
+//!
+//! let mut sketch = FrequentItemsSketch::<i64>::new(64).unwrap();
+//! sketch.update_with_weight(42, 2);
 //!
 //! let bytes = sketch.serialize();
 //! let decoded = FrequentItemsSketch::<i64>::deserialize(&bytes).unwrap();

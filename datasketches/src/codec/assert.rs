@@ -20,11 +20,11 @@ use std::ops::RangeBounds;
 
 use crate::error::Error;
 
-pub(crate) fn insufficient_data(tag: &'static str) -> impl FnOnce(std::io::Error) -> Error {
-    move |_| Error::insufficient_data(tag)
+pub fn insufficient_data(tag: &'static str) -> impl FnOnce(std::io::Error) -> Error {
+    move |error| Error::insufficient_data_of(tag, error)
 }
 
-pub(crate) fn ensure_serial_version_is(expected: u8, actual: u8) -> Result<(), Error> {
+pub fn ensure_serial_version_is(expected: u8, actual: u8) -> Result<(), Error> {
     if expected == actual {
         Ok(())
     } else {
@@ -34,7 +34,7 @@ pub(crate) fn ensure_serial_version_is(expected: u8, actual: u8) -> Result<(), E
     }
 }
 
-pub(crate) fn ensure_preamble_longs_in(expected: &[u8], actual: u8) -> Result<(), Error> {
+pub fn ensure_preamble_longs_in(expected: &[u8], actual: u8) -> Result<(), Error> {
     if expected.contains(&actual) {
         Ok(())
     } else {
@@ -42,7 +42,7 @@ pub(crate) fn ensure_preamble_longs_in(expected: &[u8], actual: u8) -> Result<()
     }
 }
 
-pub(crate) fn ensure_preamble_longs_in_range(
+pub fn ensure_preamble_longs_in_range(
     expected: impl RangeBounds<u8>,
     actual: u8,
 ) -> Result<(), Error> {

@@ -1,0 +1,152 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
+//! Binary serialization of Tuple sketches.
+//!
+//! The Tuple compact format reuses the uncompressed Theta layout (preamble, flags, theta) but uses
+//! the Tuple family id, carries a sketch-type byte, and stores the user summary bytes after each
+//! retained hash. See datasketches-cpp and datasketches-java for the on-disk format.
+//!
+//! A Tuple sketch keeps a user-defined summary next to every retained key. Because the summary
+//! type is opaque to the sketch, (de)serialization of summaries is delegated to the summary type
+//! itself via the [`TupleSummaryValue`] trait, mirroring `FrequentItemValue`.
+
+use std::borrow::Borrow;
+
+use crate::codec::SketchBytes;
+use crate::codec::SketchSlice;
+use crate::codec::assert::insufficient_data;
+use crate::codec::family::Family;
+use crate::error::Error;
+use crate::thetafamily::common::constants::FLAGS_IS_COMPACT;
+use crate::thetafamily::common::constants::FLAGS_IS_ORDERED;
+use crate::thetafamily::common::constants::FLAGS_IS_READ_ONLY;
+use crate::thetafamily::common::sketch_state::CompactSketchState;
+use crate::tuple::hash_table::TupleEntry;
+
+/// Current serial version written by this implementation.
+pub const SERIAL_VERSION: u8 = 3;
+/// Legacy serial version still accepted on read.
+pub const SERIAL_VERSION_LEGACY: u8 = 1;
+
+/// Current sketch-type byte written by this implementation.
+pub const SKETCH_TYPE: u8 = 1;
+/// Legacy sketch-type byte still accepted on read.
+pub const SKETCH_TYPE_LEGACY: u8 = 5;
+
+/// Canonical empty compact image, independent of the configured seed and summary type.
+pub const EMPTY_SKETCH_BYTES: [u8; 8] = [1, 3, 9, 1, 0, 0x1e, 0, 0];
+
+/// Serializes compact Tuple state whose retained entries are owned or borrowed.
+pub(super) fn serialize_compact_uncompressed<S, E>(compact_state: &CompactSketchState<E>) -> Vec<u8>
+where
+    S: TupleSummaryValue,
+    E: Borrow<TupleEntry<S>>,
+{
+    if compact_state.is_empty() {
+        return EMPTY_SKETCH_BYTES.to_vec();
+    }
+
+    let retained_entries = compact_state.retained_entries();
+    let is_estimation_mode = compact_state.is_estimation_mode();
+    let pre_longs = compact_state.uncompressed_preamble_longs();
+    let entries_size: usize = retained_entries
+        .iter()
+        .map(|entry| 8 + entry.borrow().summary().serialize_size())
+        .sum();
+    let mut bytes = SketchBytes::with_capacity(8 * pre_longs as usize + entries_size);
+
+    bytes.write_u8(pre_longs);
+    bytes.write_u8(SERIAL_VERSION);
+    bytes.write_u8(Family::TUPLE.id);
+    bytes.write_u8(SKETCH_TYPE);
+    bytes.write_u8(0); // unused
+
+    let mut flags = FLAGS_IS_READ_ONLY | FLAGS_IS_COMPACT;
+    if compact_state.is_ordered() {
+        flags |= FLAGS_IS_ORDERED;
+    }
+    bytes.write_u8(flags);
+    bytes.write_u16_le(compact_state.seed_hash());
+
+    if pre_longs > 1 {
+        bytes.write_u32_le(retained_entries.len() as u32);
+        bytes.write_u32_le(0); // unused
+    }
+    if is_estimation_mode {
+        bytes.write_u64_le(compact_state.theta());
+    }
+
+    for entry in retained_entries {
+        let entry = entry.borrow();
+        bytes.write_u64_le(entry.hash());
+        entry.summary().serialize_value(&mut bytes);
+    }
+    bytes.into_bytes()
+}
+
+/// Trait for values that can be stored as Tuple sketch summaries.
+///
+/// Implement this trait for a summary type to make it (de)serializable by
+/// [`CompactTupleSketch`](crate::tuple::CompactTupleSketch). The encoding is entirely up to the
+/// implementation; both fixed-width summaries (such as a `u64` counter) and variable-width
+/// summaries (such as an array of doubles whose length is encoded in the bytes) are supported by
+/// advancing the cursor past exactly the bytes read.
+pub trait TupleSummaryValue: Sized {
+    /// Returns the size in bytes required to serialize this summary.
+    fn serialize_size(&self) -> usize;
+
+    /// Serializes the summary into the byte buffer.
+    fn serialize_value(&self, bytes: &mut SketchBytes);
+
+    /// Deserializes a summary from the byte cursor, advancing it past the bytes consumed.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the cursor holds too few bytes or the encoding is otherwise malformed.
+    fn deserialize_value(cursor: &mut SketchSlice<'_>) -> Result<Self, Error>;
+}
+
+macro_rules! impl_primitive_summary {
+    ($name:ty, $read:ident, $write:ident) => {
+        impl TupleSummaryValue for $name {
+            #[inline]
+            fn serialize_size(&self) -> usize {
+                size_of::<$name>()
+            }
+
+            #[inline]
+            fn serialize_value(&self, bytes: &mut SketchBytes) {
+                bytes.$write(*self);
+            }
+
+            #[inline]
+            fn deserialize_value(cursor: &mut SketchSlice<'_>) -> Result<Self, Error> {
+                cursor
+                    .$read()
+                    .map_err(insufficient_data(concat!(stringify!($name), " summary")))
+            }
+        }
+    };
+}
+
+impl_primitive_summary!(u32, read_u32_le, write_u32_le);
+impl_primitive_summary!(u64, read_u64_le, write_u64_le);
+impl_primitive_summary!(i32, read_i32_le, write_i32_le);
+impl_primitive_summary!(i64, read_i64_le, write_i64_le);
+impl_primitive_summary!(f32, read_f32_le, write_f32_le);
+impl_primitive_summary!(f64, read_f64_le, write_f64_le);

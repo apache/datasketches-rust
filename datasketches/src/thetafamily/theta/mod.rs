@@ -1,0 +1,71 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
+//! Theta sketch implementation for cardinality estimation.
+//!
+//! Theta sketch is a generalization of the Kth Minimum Value (KMV) sketch that uses
+//! a hash table to store retained entries and a theta parameter (sampling threshold)
+//! to control memory usage. When the hash table reaches capacity, theta is reduced
+//! to maintain the capacity configured by `lg_k`.
+//!
+//! # Overview
+//!
+//! Theta sketches provide approximate distinct count (cardinality) estimation with
+//! configurable accuracy and memory usage. The implementation supports:
+//!
+//! * [`ThetaSketch`]: Mutable sketch for building from input data.
+//! * [`CompactThetaSketch`]: Immutable sketch with a compact memory layout.
+//!
+//! # Cross-language hashing
+//!
+//! For cross-language use, apply the following input conventions:
+//!
+//! * Use `i64`/`u64` for 64-bit integers and [`sign_extend`](crate::hash::value::sign_extend) for
+//!   narrower integers.
+//! * Use [`canonical_float`](crate::hash::value::canonical_float) for floating-point values.
+//! * Use [`raw_bytes`](crate::hash::value::raw_bytes) for UTF-8 strings and byte slices.
+//!
+//! Skip empty strings and byte slices before updating the sketch.
+//!
+//! # Usage
+//!
+//! ```
+//! use datasketches::theta::ThetaSketchBuilder;
+//!
+//! let mut sketch = ThetaSketchBuilder::default().build().unwrap();
+//! sketch.update("apple");
+//! assert!(sketch.estimate() >= 1.0);
+//! ```
+
+mod a_not_b;
+mod hash_table;
+mod intersection;
+mod jaccard_similarity;
+mod serialization;
+mod sketch;
+mod union;
+
+pub use self::a_not_b::ThetaANotB;
+pub use self::hash_table::ThetaEntry;
+pub use self::intersection::ThetaIntersection;
+pub use self::jaccard_similarity::ThetaJaccardSimilarity;
+pub use self::sketch::CompactThetaSketch;
+pub use self::sketch::ThetaSketch;
+pub use self::sketch::ThetaSketchBuilder;
+pub use self::sketch::ThetaSketchView;
+pub use self::union::ThetaUnion;
+pub use self::union::ThetaUnionBuilder;
