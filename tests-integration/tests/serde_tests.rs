@@ -51,6 +51,9 @@ mod countmin;
 #[path = "serde_tests/cpc.rs"]
 mod cpc;
 
+#[path = "serde_tests/density.rs"]
+mod density;
+
 #[path = "serde_tests/frequencies.rs"]
 mod frequencies;
 

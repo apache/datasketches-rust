@@ -68,6 +68,7 @@ Enable multiple algorithms by listing their features together, such as `features
 | `bloom`       | `BloomFilter`                         | Space-efficient probabilistic set membership with a configurable false-positive rate.             |
 | `countmin`    | `CountMinSketch`                      | Approximate point-frequency queries over a stream.                                                |
 | `cpc`         | `CpcSketch`, `CpcUnion`, `CpcWrapper` | Highly compact distinct-count estimation and unions.                                              |
+| `density`     | `DensitySketch`, `GaussianKernel`     | Streaming kernel density estimation and coreset construction over multi-dimensional vectors.      |
 | `frequencies` | `FrequentItemsSketch`                 | Heavy-hitter discovery with upper and lower frequency bounds.                                     |
 | `hll`         | `HllSketch`, `HllUnion`               | Fast distinct-count estimation and unions.                                                        |
 | `kll`         | `KllSketch`                           | General-purpose quantile, rank, PMF, and CDF queries over totally ordered items.                    |
