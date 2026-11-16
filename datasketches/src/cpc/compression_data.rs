@@ -12013,15 +12013,21 @@ mod tests {
     /// byte tables identify only this limit: the Poisson model matches all 16 steady-state headers
     /// within `1.1e-14`, whereas the binomial model at `K = 2^32` misses them by `6.1e-12`. That
     /// residual halves with every unit added to the base (`3.1e-12` at `7.0 + phase`, `1.5e-12` at
-    /// `8.0 + phase`), which is the `2^-col / K` signature of the finite-`K` correction at the
-    /// window columns, not an effect of the matrix edge. Although `lambda` is solved over all 128
-    /// columns, the Poisson identity `f(2 * lambda) = f(lambda) + 1 - exp(-lambda)` for
-    /// `f(lambda) = E[C] / K` means that raising the base by one doubles `lambda` and shifts the
-    /// window by one column up to a relative `ln(2) * exp(-lambda)`, about `2e-23` at `C / K = 6 +
-    /// 1/32` (`lambda ≈ 51.9`). Consequently `K = 2^32` with any base from `14` to `84` also
-    /// matches both the entropy and average-length headers of all 16 steady-state tables within
-    /// `HEADER_STATS_TOLERANCE`; the Poisson limit at base `6` is preferred because a single
-    /// operating point then explains both the byte tables and the permutations, which are
+    /// `3.1e-12` at `7.0 + phase`, `1.5e-12` at `8.0 + phase`), which is the `2^-col / K` signature
+    /// of the finite-`K` correction at the window columns, not an effect of the matrix edge.
+    /// Although `lambda` is solved over all 128 columns (`f_128(lambda) = E[C] / K`), the
+    /// finite-column shift identity
+    ///
+    ///   f_128(2 * lambda) = f_128(lambda) + (1 - exp(-lambda)) - (1 - exp(-lambda / 2^128))
+    ///
+    /// means that raising the base by one doubles `lambda` and shifts the window by one column up
+    /// to both boundary terms. At `C / K = 6 + 1/32` (`lambda ≈ 51.9`), the left-edge term
+    /// `exp(-lambda)` is about `2.8e-23` and the right-edge term `1 - exp(-lambda / 2^128)` is
+    /// about `1.53e-37`, both negligible compared to `6.1e-12`; by base `84` (`C / K = 84 + 1/32`),
+    /// the right-edge term grows to about `4.61e-14`. Consequently `K = 2^32` with any base from
+    /// `14` to `84` also matches both the entropy and average-length headers of all 16 steady-state
+    /// tables within `HEADER_STATS_TOLERANCE`; the Poisson limit at base `6` is preferred because
+    /// a single operating point then explains both the byte tables and the permutations, which are
     /// insensitive to `K`.
     const STEADY_STATE_MODEL: Occupancy = Occupancy::Poisson;
 
