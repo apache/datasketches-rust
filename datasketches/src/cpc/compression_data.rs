@@ -12009,19 +12009,20 @@ mod tests {
     /// Occupancy model of the steady-state tables and the sliding column permutations: the
     /// stationary Poisson limit `K -> inf`.
     ///
-    /// The steady-state artifacts identify only this limit, not a particular `K`. Evaluated at
-    /// `C / K = 6.0 + phase` (`STEADY_STATE_C_OVER_K_BASE`), the Poisson model matches all 16
-    /// steady-state headers within `1.1e-14`, whereas the binomial model at `K = 2^32` misses
-    /// them by `6.1e-12`. That residual halves with every unit added to the base (`3.1e-12` at
-    /// `7.0 + phase`, `1.5e-12` at `8.0 + phase`), which is the `2^-col / K` signature of the
-    /// finite-`K` correction at the window columns, not an effect of the matrix edge. Although
-    /// `lambda` is solved over all 128 columns, the Poisson identity
-    /// `f(2 * lambda) = f(lambda) + 1 - exp(-lambda)` for `f(lambda) = E[C] / K` means that raising
-    /// the base by one doubles `lambda` and shifts the window by one column up to a relative
-    /// `ln(2) * exp(-lambda)`, about `2e-23` at `C / K = 6 + 1/32` (`lambda ≈ 51.9`).
-    /// Consequently `K = 2^32` with any base from `14` to `85` also matches all 16 headers within
-    /// `HEADER_STATS_TOLERANCE`; the Poisson limit is preferred because a single operating point
-    /// then explains both the byte tables and the permutations, which are insensitive to `K`.
+    /// At the true base `C / K = 6.0 + phase` (`STEADY_STATE_C_OVER_K_BASE`), the steady-state
+    /// byte tables identify only this limit: the Poisson model matches all 16 steady-state headers
+    /// within `1.1e-14`, whereas the binomial model at `K = 2^32` misses them by `6.1e-12`. That
+    /// residual halves with every unit added to the base (`3.1e-12` at `7.0 + phase`, `1.5e-12` at
+    /// `8.0 + phase`), which is the `2^-col / K` signature of the finite-`K` correction at the
+    /// window columns, not an effect of the matrix edge. Although `lambda` is solved over all 128
+    /// columns, the Poisson identity `f(2 * lambda) = f(lambda) + 1 - exp(-lambda)` for
+    /// `f(lambda) = E[C] / K` means that raising the base by one doubles `lambda` and shifts the
+    /// window by one column up to a relative `ln(2) * exp(-lambda)`, about `2e-23` at `C / K = 6 +
+    /// 1/32` (`lambda ≈ 51.9`). Consequently `K = 2^32` with any base from `14` to `84` also
+    /// matches both the entropy and average-length headers of all 16 steady-state tables within
+    /// `HEADER_STATS_TOLERANCE`; the Poisson limit at base `6` is preferred because a single
+    /// operating point then explains both the byte tables and the permutations, which are
+    /// insensitive to `K`.
     const STEADY_STATE_MODEL: Occupancy = Occupancy::Poisson;
 
     /// Integer part of the steady-state operating point `C / K = 6.0 + phase`, where
@@ -12029,9 +12030,10 @@ mod tests {
     ///
     /// The base is pinned by `COLUMN_PERMUTATIONS_FOR_ENCODING` (see
     /// `generate_sliding_column_permutation`). Under `STEADY_STATE_MODEL` the steady-state byte
-    /// tables accept any base from `6` to `85` within `HEADER_STATS_TOLERANCE`; below `6` the left
-    /// edge starts to matter, and beyond `85` the 128-column right edge does (base `86` misses by
-    /// `4e-14`, base `100` by `7e-10`).
+    /// tables accept any base from `6` to `84` across both entropy and average-length headers
+    /// within `HEADER_STATS_TOLERANCE`; below `6` the left edge starts to matter, and beyond `84`
+    /// the 128-column right edge does (at base `85` the average length error already reaches
+    /// `3.1e-14`; base `100` misses by `7e-10`).
     const STEADY_STATE_C_OVER_K_BASE: f64 = 6.0;
 
     /// Maximum Huffman codeword length, chosen so single-step lookup decoding tables occupy
@@ -12138,7 +12140,7 @@ mod tests {
     /// Computes the 65-symbol truncated dyadic geometric distribution for
     /// `LENGTH_LIMITED_UNARY_ENCODING_TABLE65` (`columnProbabilities.ml`):
     /// `P(s) = 2^{-(s+1)}` for `s in 0..64` and `P(64) = 2^{-64}`, which sums to `1.0` and has
-    /// exact Shannon entropy `2.0` bits.
+    /// exact Shannon entropy `2 - 2^{-63}` bits (which rounds to `2.0` in `f64`).
     ///
     /// The symbol is the column delta `x_delta` that the pair encoder writes for each surprise
     /// `(row, col)` pair (the row delta is Golomb-coded with a plain unary high part instead).
@@ -12362,7 +12364,8 @@ mod tests {
     ];
 
     /// Tolerance for matching `RECORDED_HEADER_STATS`: a few dozen `f64` ULPs, two orders of
-    /// magnitude below the deviation of every rejected occupancy model (`>= 6e-12`).
+    /// magnitude below the deviation of the rejected base-6 finite-`K` steady-state model
+    /// (`6.1e-12`) and the alternative midrange models (`>= 2.5e-11` away from `K = 2^32`).
     const HEADER_STATS_TOLERANCE: f64 = 3e-14;
 
     #[test]
