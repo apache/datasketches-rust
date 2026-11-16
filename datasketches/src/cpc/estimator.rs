@@ -571,9 +571,9 @@ mod tests {
     //   scaling its columns). The agreement is discriminating: moving either end of the grid by one
     //   integer, dropping `C = 1` (where the exact estimator returns `N = 1` by definition), or
     //   halving the grid spacing makes the coefficient agreement at least 4x (`lg_k = 6`) to 59x
-    //   (`lg_k = 5`) worse. This identifies the grid, not the original numerics; the weighting is
-    //   less certain as well: a relative-error-weighted fit agrees slightly better (`0.63%`) at
-    //   `lg_k = 4`.
+    //   (`lg_k = 5`) worse. This strongly supports the grid but does not establish the original
+    //   procedure: the weighting and the numerics are not identified, and a relative-error-weighted
+    //   fit agrees slightly better (`0.63%`) at `lg_k = 4`.
     //
     // * Sample grid for `lg_k >= 8`: not identified. A discontinuity between `lg_k = 7` and `8`
     //   (`a_2`: `0.12534 -> 0.12667`; `a_19`: `4.28e-5 -> 2.91e-5`) and the irregular high-order
