@@ -12013,8 +12013,8 @@ mod tests {
     /// byte tables identify only this limit: the Poisson model matches all 16 steady-state headers
     /// within `1.1e-14`, whereas the binomial model at `K = 2^32` misses them by `6.1e-12`. That
     /// residual halves with every unit added to the base (`3.1e-12` at `7.0 + phase`, `1.5e-12` at
-    /// `3.1e-12` at `7.0 + phase`, `1.5e-12` at `8.0 + phase`), which is the `2^-col / K` signature
-    /// of the finite-`K` correction at the window columns, not an effect of the matrix edge.
+    /// `8.0 + phase`), which is the `2^-col / K` signature of the finite-`K` correction at the
+    /// window columns, not an effect of the matrix edge.
     /// Although `lambda` is solved over all 128 columns (`f_128(lambda) = E[C] / K`), the
     /// finite-column shift identity
     ///
