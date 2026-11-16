@@ -1001,19 +1001,67 @@ fn malformed_counts_levels_payloads_and_trailing_bytes_are_rejected() {
         assert_invalid_f32(&corrupted);
     }
 
-    // Trailing extra bytes (empty and non-empty, including trailing zero-length level).
+    // Trailing extra bytes (empty and non-empty).
     for base in [&empty, &single, &exact, &est] {
-        let mut with_one = base.clone();
-        with_one.push(0x00);
-        assert_invalid_f64(&with_one);
+        for trailing_len in 1..=3 {
+            let mut unaligned = base.clone();
+            unaligned.resize(unaligned.len() + trailing_len, 0x00);
+            assert_invalid_f64(&unaligned);
+        }
 
         let mut with_many = base.clone();
         with_many.extend_from_slice(&[0xaa; 8]);
         assert_invalid_f64(&with_many);
     }
+
+    // Non-empty trailing non-zero u32 (level_len = 1 after all retained points are consumed).
     {
-        let mut with_trailing_empty_level = est.clone();
-        with_trailing_empty_level.extend_from_slice(&0_u32.to_le_bytes());
-        assert_invalid_f64(&with_trailing_empty_level);
+        let mut nonzero_trailing_u32 = est.clone();
+        nonzero_trailing_u32.extend_from_slice(&1_u32.to_le_bytes());
+        assert_invalid_f64(&nonzero_trailing_u32);
     }
+
+    // Trailing empty levels pushing total levels past 64 must be rejected.
+    {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&[6, 1, 19, 0]);
+        bytes.extend_from_slice(&2_u16.to_le_bytes());
+        bytes.extend_from_slice(&0_u16.to_le_bytes());
+        bytes.extend_from_slice(&1_u32.to_le_bytes()); // dim = 1
+        bytes.extend_from_slice(&1_u32.to_le_bytes()); // num_retained = 1
+        bytes.extend_from_slice(&3_u64.to_le_bytes()); // n = 3
+        bytes.extend_from_slice(&1_u32.to_le_bytes());
+        bytes.extend_from_slice(&50.0_f64.to_le_bytes());
+        for _ in 0..64 {
+            bytes.extend_from_slice(&0_u32.to_le_bytes());
+        }
+        assert_invalid_f64(&bytes);
+    }
+}
+
+#[test]
+fn cpp_trailing_empty_top_level_round_trips() {
+    // C++ density_sketch can emit a trailing empty top level when zero-delta compaction drops
+    // every item at the highest level (e.g. levels = [[50.0], []], num_retained = 1, n = 3).
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&[6, 1, 19, 0]);
+    bytes.extend_from_slice(&2_u16.to_le_bytes());
+    bytes.extend_from_slice(&0_u16.to_le_bytes());
+    bytes.extend_from_slice(&1_u32.to_le_bytes()); // dim = 1
+    bytes.extend_from_slice(&1_u32.to_le_bytes()); // num_retained = 1
+    bytes.extend_from_slice(&3_u64.to_le_bytes()); // n = 3
+    bytes.extend_from_slice(&1_u32.to_le_bytes()); // level 0 len = 1
+    bytes.extend_from_slice(&50.0_f64.to_le_bytes());
+    bytes.extend_from_slice(&0_u32.to_le_bytes()); // level 1 len = 0 (trailing empty top level)
+
+    let sketch = DensitySketch::<f64>::deserialize(&bytes).unwrap();
+    assert!(sketch.is_estimation_mode());
+    assert_eq!(sketch.k(), 2);
+    assert_eq!(sketch.dim(), 1);
+    assert_eq!(sketch.total_weight(), 3);
+    assert_eq!(sketch.num_retained(), 1);
+    let retained: Vec<(&[f64], u64)> = sketch.iter().collect();
+    assert_eq!(retained, vec![(&[50.0][..], 1)]);
+    assert_eq!(sketch.estimate(&[50.0]).unwrap(), Some(1.0 / 3.0));
+    assert_eq!(sketch.serialize(), bytes);
 }

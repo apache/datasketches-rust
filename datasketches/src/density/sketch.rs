@@ -507,11 +507,14 @@ impl<T: DensityValue, K: Kernel<T>> DensitySketch<T, K> {
                 delta < 0.0
             };
         }
-        // Guarantee every compaction promotes at least one point so non-empty sketches never
-        // drop to zero retained points or leave a trailing empty top level. Since
-        // `level_coords` was shuffled above, index 0 is a uniform choice.
+        // Keep compaction strictly reducing (1 <= kept <= m - 1) and unbiased when kernel
+        // evaluations vanish (e.g., compact-support kernels or far-apart outliers where
+        // exp(-d^2) underflows to 0.0). Because `level_coords` was shuffled above, flipping
+        // index 0 preserves E[kept] = m / 2.
         if !keep.iter().any(|&b| b) {
             keep[0] = true;
+        } else if keep.iter().all(|&b| b) {
+            keep[0] = false;
         }
 
         let (head, tail) = self.levels.split_at_mut(height + 1);
@@ -581,7 +584,7 @@ mod tests {
     }
 
     #[test]
-    fn compact_always_promotes_at_least_one_point_when_kernel_is_zero() {
+    fn compact_is_strictly_reducing_and_unbiased_when_kernel_is_zero() {
         #[derive(Debug, Default, Clone, Copy)]
         struct ZeroKernel;
 
@@ -591,6 +594,8 @@ mod tests {
             }
         }
 
+        // For k = 2, merging 2 distant points triggers compaction of m = 2 items:
+        // kept must be strictly in 1..=1 (always 1).
         for _ in 0..128 {
             let mut left = DensitySketch::<f64, _>::with_kernel(2, 1, ZeroKernel).unwrap();
             let mut right = DensitySketch::<f64, _>::with_kernel(2, 1, ZeroKernel).unwrap();
@@ -598,8 +603,9 @@ mod tests {
             right.update(&[33.6875]).unwrap();
 
             left.merge(&right).unwrap();
-            assert!(left.num_retained() > 0);
-            assert!(!left.levels.last().unwrap().coords.is_empty());
+            assert_eq!(left.num_retained(), 1);
+            assert_eq!(left.levels.len(), 2);
+            assert_eq!(left.levels[1].coords.len(), 1);
 
             let bytes = left.serialize();
             let decoded =
@@ -607,5 +613,25 @@ mod tests {
             assert_eq!(decoded.total_weight(), left.total_weight());
             assert_eq!(decoded.num_retained(), left.num_retained());
         }
+
+        // For m = 4 (k = 4), compact_level must always keep 1..=3 items with E[kept] = 2.0.
+        const TRIALS: usize = 2_000;
+        let mut total_kept = 0usize;
+        for _ in 0..TRIALS {
+            let levels = vec![Level {
+                coords: vec![0.0, 1.0, 2.0, 3.0],
+            }];
+            let mut sketch = DensitySketch::from_parts(4, 1, ZeroKernel, 4, 4, levels);
+            sketch.compact();
+            let kept = sketch.levels[1].coords.len();
+            assert!((1..=3).contains(&kept), "unexpected kept={kept}");
+            assert_eq!(sketch.num_retained(), kept);
+            total_kept += kept;
+        }
+        let mean_kept = total_kept as f64 / TRIALS as f64;
+        assert!(
+            (mean_kept - 2.0).abs() < 0.15,
+            "mean kept {mean_kept} deviated from 2.0"
+        );
     }
 }

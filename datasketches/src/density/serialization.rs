@@ -185,7 +185,9 @@ pub fn deserialize_sketch<T: DensityValue, K>(
 
     let mut levels = Vec::new();
     let mut remaining = total_retained;
-    while remaining > 0 {
+    // Also consume trailing empty top levels emitted by datasketches-cpp when zero-delta
+    // compaction drops every item at the highest level.
+    while remaining > 0 || !cursor.remaining().is_empty() {
         if levels.len() >= MAX_LEVELS {
             return Err(Error::deserial(format!(
                 "density sketch cannot have more than {MAX_LEVELS} levels"
@@ -230,15 +232,12 @@ pub fn deserialize_sketch<T: DensityValue, K>(
         remaining -= level_len;
     }
 
+    if levels.is_empty() {
+        return Err(Error::deserial("non-empty density sketch has no levels"));
+    }
     if levels.len() == 1 && u64::from(num_retained) != n {
         return Err(Error::deserial(format!(
             "exact-mode density sketch must have num_retained ({num_retained}) == n ({n})"
-        )));
-    }
-    let trailing = cursor.remaining().len();
-    if trailing != 0 {
-        return Err(Error::deserial(format!(
-            "expected end of density sketch image, found {trailing} trailing bytes"
         )));
     }
 

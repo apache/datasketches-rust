@@ -18,6 +18,7 @@
 use std::f64::consts::PI;
 
 use datasketches::density::DensitySketch;
+use datasketches::density::GaussianKernel;
 use datasketches::density::Kernel;
 use googletest::assert_that;
 use googletest::prelude::near;
@@ -294,4 +295,43 @@ fn custom_kernels_and_delta_zero_tie_break_avoid_collapse() {
     assert!(scaled_est.num_retained() > 0);
     let est = scaled_est.estimate(&[0.0, 1.0]).unwrap().unwrap();
     assert!(est.is_finite() && est > 0.0);
+}
+
+#[test]
+fn disjoint_points_at_k2_preserve_unbiased_total_weight() {
+    const TRIALS: usize = 200;
+    const N: usize = 200;
+
+    fn run_trials<K: Kernel<f64> + Clone>(kernel: K, spacing: f64, label: &str) {
+        let mut sum_total_weights = 0_u128;
+        for _ in 0..TRIALS {
+            let mut sketch = DensitySketch::<f64, _>::with_kernel(2, 1, kernel.clone()).unwrap();
+            for i in 0..N {
+                sketch.update(&[(i as f64) * spacing]).unwrap();
+            }
+            assert!(sketch.is_estimation_mode());
+            assert_eq!(sketch.total_weight(), N as u64);
+            assert!(sketch.num_retained() > 0);
+
+            let retained_weight: u64 = sketch.iter().map(|(_, w)| w).sum();
+            sum_total_weights += u128::from(retained_weight);
+        }
+
+        let mean_weight = sum_total_weights as f64 / TRIALS as f64;
+        let rel_error = (mean_weight - N as f64).abs() / (N as f64);
+        assert!(
+            rel_error < 0.15,
+            "{label}: expected unbiased mean retained weight near {N}, got {mean_weight}"
+        );
+    }
+
+    run_trials(
+        SphericalKernel {
+            radius_squared: 1.0,
+        },
+        10.0,
+        "SphericalKernel",
+    );
+    // Spacing > 30.0 makes exp(-d^2) underflow to 0.0 in f64.
+    run_trials(GaussianKernel, 40.0, "GaussianKernel");
 }
