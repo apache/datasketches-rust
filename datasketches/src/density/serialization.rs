@@ -235,11 +235,9 @@ pub fn deserialize_sketch<T: DensityValue, K>(
     if levels.is_empty() {
         return Err(Error::deserial("non-empty density sketch has no levels"));
     }
-    if levels.len() == 1 && u64::from(num_retained) != n {
-        return Err(Error::deserial(format!(
-            "exact-mode density sketch must have num_retained ({num_retained}) == n ({n})"
-        )));
-    }
+    // `datasketches-cpp` stops reading levels once `num_retained` points are read, stripping any
+    // trailing empty top levels. Re-serializing that sketch in C++ produces a single-level image
+    // with `num_retained < n`, which remains valid because `num_retained <= n` is checked above.
 
     Ok(DensitySketch::from_parts(
         k,

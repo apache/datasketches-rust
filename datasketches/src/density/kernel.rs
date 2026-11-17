@@ -22,6 +22,10 @@ use crate::density::value::DensityValue;
 /// Implement this trait to supply a custom kernel to
 /// [`DensitySketch::with_kernel`](crate::density::DensitySketch::with_kernel) or
 /// [`DensitySketch::deserialize_with_kernel`](crate::density::DensitySketch::deserialize_with_kernel).
+///
+/// Kernel configuration is neither serialized into binary images nor checked by
+/// [`DensitySketch::merge`](crate::density::DensitySketch::merge), so callers must keep kernel
+/// parameters consistent across merges and deserialization.
 pub trait Kernel<T> {
     /// Evaluates the kernel between two points `a` and `b`.
     fn evaluate(&self, a: &[T], b: &[T]) -> f64;

@@ -56,12 +56,14 @@ pub struct DensitySketch<T, K = GaussianKernel> {
 
 impl<T, K: fmt::Debug> fmt::Debug for DensitySketch<T, K> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let is_estimation_mode = self.levels.len() > 1
+            || u64::try_from(self.num_retained).is_ok_and(|retained| retained < self.n);
         f.debug_struct("DensitySketch")
             .field("k", &self.k)
             .field("dim", &self.dim)
             .field("total_weight", &self.n)
             .field("is_empty", &(self.n == 0))
-            .field("is_estimation_mode", &(self.levels.len() > 1))
+            .field("is_estimation_mode", &is_estimation_mode)
             .field("num_levels", &self.levels.len())
             .field("num_retained", &self.num_retained)
             .field("kernel", &self.kernel)
@@ -96,7 +98,10 @@ impl<T: DensityValue> DensitySketch<T, GaussianKernel> {
 
     /// Deserializes a sketch using [`GaussianKernel`] from the DataSketches binary format.
     ///
-    /// Accepts images serialized by `datasketches-cpp`'s `density_sketch`.
+    /// Accepts images serialized by `datasketches-cpp`'s `density_sketch`. Because the wire format
+    /// encodes no kernel metadata, this method always attaches [`GaussianKernel`]; sketches built
+    /// with a custom kernel must be restored via [`Self::deserialize_with_kernel`] with an
+    /// equivalent kernel configuration.
     ///
     /// # Errors
     ///
@@ -172,9 +177,13 @@ impl<T: DensityValue, K> DensitySketch<T, K> {
         self.n == 0
     }
 
-    /// Returns `true` if compaction has created more than one level.
+    /// Returns `true` if the sketch is in estimation mode.
+    ///
+    /// Compaction has either created more than one level or discarded points
+    /// (`self.num_retained() < self.total_weight()`).
     pub fn is_estimation_mode(&self) -> bool {
         self.levels.len() > 1
+            || u64::try_from(self.num_retained).is_ok_and(|retained| retained < self.n)
     }
 
     /// Returns the number of points currently retained across all levels.
@@ -311,6 +320,10 @@ impl<T: DensityValue, K: Kernel<T>> DensitySketch<T, K> {
 
     /// Merges another sketch into `self`.
     ///
+    /// Both sketches must use equivalent kernel configurations (including any runtime parameters
+    /// such as bandwidth). Compatibility of kernel values is not checked at runtime; merging
+    /// coresets produced under different kernels invalidates the coreset error guarantees.
+    ///
     /// # Errors
     ///
     /// Returns [`InvalidArgument`](crate::error::ErrorKind::InvalidArgument) without modifying
@@ -427,12 +440,17 @@ impl<T: DensityValue, K: Kernel<T>> DensitySketch<T, K> {
 
     /// Serializes the sketch into the DataSketches binary format.
     ///
-    /// The encoded bytes are compatible with `datasketches-cpp`'s `density_sketch`.
+    /// The encoded bytes are compatible with `datasketches-cpp`'s `density_sketch`. Kernel
+    /// configuration is not stored in the serialized image; deserialize with a matching kernel
+    /// configuration to preserve density estimates and coreset error guarantees.
     pub fn serialize(&self) -> Vec<u8> {
         serialize_sketch(self)
     }
 
     /// Deserializes a sketch with a custom `kernel` from the DataSketches binary format.
+    ///
+    /// Callers must supply a `kernel` with the same configuration used when building the original
+    /// sketch, as kernel parameters are not encoded in the serialized byte stream.
     ///
     /// # Errors
     ///

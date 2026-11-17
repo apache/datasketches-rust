@@ -925,14 +925,6 @@ fn malformed_counts_levels_payloads_and_trailing_bytes_are_rejected() {
         assert_invalid_f64(&huge_retained);
     }
 
-    // levels.len() == 1 && num_retained != n.
-    {
-        let mut single_level_mismatch = exact.clone();
-        // exact has num_retained=10 in 1 level; set n=11.
-        single_level_mismatch[16..24].copy_from_slice(&11_u64.to_le_bytes());
-        assert_invalid_f64(&single_level_mismatch);
-    }
-
     // levels > 64: 64 empty levels followed by 1 non-empty level (65 levels total).
     {
         let mut bytes = Vec::new();
@@ -1040,28 +1032,60 @@ fn malformed_counts_levels_payloads_and_trailing_bytes_are_rejected() {
 }
 
 #[test]
-fn cpp_trailing_empty_top_level_round_trips() {
-    // C++ density_sketch can emit a trailing empty top level when zero-delta compaction drops
-    // every item at the highest level (e.g. levels = [[50.0], []], num_retained = 1, n = 3).
-    let mut bytes = Vec::new();
-    bytes.extend_from_slice(&[6, 1, 19, 0]);
-    bytes.extend_from_slice(&2_u16.to_le_bytes());
-    bytes.extend_from_slice(&0_u16.to_le_bytes());
-    bytes.extend_from_slice(&1_u32.to_le_bytes()); // dim = 1
-    bytes.extend_from_slice(&1_u32.to_le_bytes()); // num_retained = 1
-    bytes.extend_from_slice(&3_u64.to_le_bytes()); // n = 3
-    bytes.extend_from_slice(&1_u32.to_le_bytes()); // level 0 len = 1
-    bytes.extend_from_slice(&50.0_f64.to_le_bytes());
-    bytes.extend_from_slice(&0_u32.to_le_bytes()); // level 1 len = 0 (trailing empty top level)
+fn cpp_trailing_empty_top_level_and_round_trip_single_level_compacted_images() {
+    // Generated from datasketches-cpp commit 70b86faa63402d7f62f5a6b1b05109d5fd1f2186 with
+    // k=2, dim=1, random_bit seed 0, and inputs [0, 40, 80]. C++ initially emits a trailing
+    // empty top level (40B f64 / 36B f32); after one C++ deserialize -> serialize round-trip, C++
+    // drops the empty level and emits a 1-level image with num_retained (1) < n (3) (36B / 32B).
+    const CPP_F64_WITH_EMPTY_TOP: &str =
+        "06011300020000000100000001000000030000000000000001000000000000000000544000000000";
+    const CPP_F64_CPP_ROUNDTRIP_1_LEVEL: &str =
+        "060113000200000001000000010000000300000000000000010000000000000000005440";
+    const CPP_F32_WITH_EMPTY_TOP: &str =
+        "060113000200000001000000010000000300000000000000010000000000a04200000000";
+    const CPP_F32_CPP_ROUNDTRIP_1_LEVEL: &str =
+        "060113000200000001000000010000000300000000000000010000000000a042";
 
-    let sketch = DensitySketch::<f64>::deserialize(&bytes).unwrap();
-    assert!(sketch.is_estimation_mode());
-    assert_eq!(sketch.k(), 2);
-    assert_eq!(sketch.dim(), 1);
-    assert_eq!(sketch.total_weight(), 3);
-    assert_eq!(sketch.num_retained(), 1);
-    let retained: Vec<(&[f64], u64)> = sketch.iter().collect();
-    assert_eq!(retained, vec![(&[50.0][..], 1)]);
-    assert_eq!(sketch.estimate(&[50.0]).unwrap(), Some(1.0 / 3.0));
-    assert_eq!(sketch.serialize(), bytes);
+    for hex in [CPP_F64_WITH_EMPTY_TOP, CPP_F64_CPP_ROUNDTRIP_1_LEVEL] {
+        let bytes = decode_hex(hex);
+        let mut sketch = DensitySketch::<f64>::deserialize(&bytes).unwrap();
+        assert!(!sketch.is_empty());
+        assert!(sketch.is_estimation_mode());
+        assert_eq!(sketch.k(), 2);
+        assert_eq!(sketch.dim(), 1);
+        assert_eq!(sketch.total_weight(), 3);
+        assert_eq!(sketch.num_retained(), 1);
+        assert!(!format!("{sketch:?}").is_empty());
+        assert!(format!("{sketch:?}").contains("is_estimation_mode: true"));
+        let retained: Vec<(&[f64], u64)> = sketch.iter().collect();
+        assert_eq!(retained, vec![(&[80.0][..], 1)]);
+        assert_eq!(sketch.estimate(&[80.0]).unwrap(), Some(1.0 / 3.0));
+        assert_eq!(sketch.serialize(), bytes);
+
+        // Further updates and merges preserve estimation mode and invariants.
+        sketch.update(&[120.0]).unwrap();
+        assert!(sketch.is_estimation_mode());
+        assert_eq!(sketch.total_weight(), 4);
+        let mut other = DensitySketch::<f64>::new(2, 1).unwrap();
+        other.update(&[160.0]).unwrap();
+        sketch.merge(&other).unwrap();
+        assert!(sketch.is_estimation_mode());
+        assert_eq!(sketch.total_weight(), 5);
+        assert!(sketch.num_retained() > 0);
+    }
+
+    for hex in [CPP_F32_WITH_EMPTY_TOP, CPP_F32_CPP_ROUNDTRIP_1_LEVEL] {
+        let bytes = decode_hex(hex);
+        let sketch = DensitySketch::<f32>::deserialize(&bytes).unwrap();
+        assert!(!sketch.is_empty());
+        assert!(sketch.is_estimation_mode());
+        assert_eq!(sketch.k(), 2);
+        assert_eq!(sketch.dim(), 1);
+        assert_eq!(sketch.total_weight(), 3);
+        assert_eq!(sketch.num_retained(), 1);
+        let retained: Vec<(&[f32], u64)> = sketch.iter().collect();
+        assert_eq!(retained, vec![(&[80.0_f32][..], 1)]);
+        assert_eq!(sketch.estimate(&[80.0]).unwrap(), Some(1.0 / 3.0));
+        assert_eq!(sketch.serialize(), bytes);
+    }
 }
