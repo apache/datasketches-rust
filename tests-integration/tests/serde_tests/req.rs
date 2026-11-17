@@ -561,3 +561,105 @@ fn java_compatibility() {
         validate_cross_language_fixture(path, n);
     }
 }
+
+#[test]
+fn rust_compatibility() {
+    for n in [0u64, 1, 10, 100, 1000, 10000, 100000, 1000000] {
+        let path =
+            serialization_test_data("rust_generated_files", &format!("req_float_n{n}_rust.sk"));
+        validate_cross_language_fixture(path, n);
+    }
+
+    for m in [1u64, 10] {
+        let neg_name = format!("req_float_negative_n{m}_rust.sk");
+        let neg_path = serialization_test_data("rust_generated_files", &neg_name);
+        let neg_bytes = fs::read(&neg_path).unwrap();
+        let neg = ReqSketch::<ReqF32>::deserialize(&neg_bytes).unwrap();
+        let neg_min = req_f32(-(m as f32));
+        let neg_max = req_f32(-1.0);
+        assert_eq!(neg.k(), 12, "{neg_name}");
+        assert_eq!(neg.rank_accuracy(), RankAccuracy::HighRank, "{neg_name}");
+        assert!(!neg.is_empty(), "{neg_name}");
+        assert!(!neg.is_estimation_mode(), "{neg_name}");
+        assert_eq!(neg.total_weight(), m, "{neg_name}");
+        assert_eq!(neg.min_item(), Some(&neg_min), "{neg_name}");
+        assert_eq!(neg.max_item(), Some(&neg_max), "{neg_name}");
+        assert_eq!(
+            neg.quantile(0.0, SearchCriteria::Inclusive).unwrap(),
+            Some(neg_min),
+            "{neg_name}"
+        );
+        assert_eq!(
+            neg.quantile(1.0, SearchCriteria::Inclusive).unwrap(),
+            Some(neg_max),
+            "{neg_name}"
+        );
+        assert_eq!(
+            neg.rank(&neg_min, SearchCriteria::Exclusive),
+            Some(0.0),
+            "{neg_name}"
+        );
+        assert_eq!(
+            neg.rank(&neg_min, SearchCriteria::Inclusive),
+            Some(1.0 / m as f64),
+            "{neg_name}"
+        );
+        assert_eq!(
+            neg.rank(&neg_max, SearchCriteria::Inclusive),
+            Some(1.0),
+            "{neg_name}"
+        );
+        assert_eq!(neg.serialize(), neg_bytes, "{neg_name}");
+
+        let mixed_name = format!("req_float_mixed_n{m}_rust.sk");
+        let mixed_path = serialization_test_data("rust_generated_files", &mixed_name);
+        let mixed_bytes = fs::read(&mixed_path).unwrap();
+        let mixed = ReqSketch::<ReqF32>::deserialize(&mixed_bytes).unwrap();
+        let expected_n = 2 * m + 1;
+        let mixed_min = req_f32(-(m as f32));
+        let zero = req_f32(0.0);
+        let mixed_max = req_f32(m as f32);
+        assert_eq!(mixed.k(), 12, "{mixed_name}");
+        assert_eq!(
+            mixed.rank_accuracy(),
+            RankAccuracy::HighRank,
+            "{mixed_name}"
+        );
+        assert!(!mixed.is_empty(), "{mixed_name}");
+        assert!(!mixed.is_estimation_mode(), "{mixed_name}");
+        assert_eq!(mixed.total_weight(), expected_n, "{mixed_name}");
+        assert_eq!(mixed.min_item(), Some(&mixed_min), "{mixed_name}");
+        assert_eq!(mixed.max_item(), Some(&mixed_max), "{mixed_name}");
+        assert_eq!(
+            mixed.quantile(0.0, SearchCriteria::Inclusive).unwrap(),
+            Some(mixed_min),
+            "{mixed_name}"
+        );
+        assert_eq!(
+            mixed.quantile(0.5, SearchCriteria::Inclusive).unwrap(),
+            Some(zero),
+            "{mixed_name}"
+        );
+        assert_eq!(
+            mixed.quantile(1.0, SearchCriteria::Inclusive).unwrap(),
+            Some(mixed_max),
+            "{mixed_name}"
+        );
+        assert_eq!(
+            mixed.rank(&zero, SearchCriteria::Exclusive),
+            Some(m as f64 / expected_n as f64),
+            "{mixed_name}"
+        );
+        assert_eq!(
+            mixed.rank(&zero, SearchCriteria::Inclusive),
+            Some((m + 1) as f64 / expected_n as f64),
+            "{mixed_name}"
+        );
+        assert_eq!(
+            mixed.rank(&mixed_max, SearchCriteria::Inclusive),
+            Some(1.0),
+            "{mixed_name}"
+        );
+        assert_eq!(mixed.serialize(), mixed_bytes, "{mixed_name}");
+    }
+}

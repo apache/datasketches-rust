@@ -178,6 +178,15 @@ fn test_deserialize_from_go_snapshots() {
 }
 
 #[test]
+fn test_deserialize_from_rust_snapshots() {
+    for n in [0, 1, 10, 100, 1000, 10_000, 100_000, 1_000_000] {
+        let filename = format!("tdigest_double_n{n}_rust.sk");
+        let path = serialization_test_data("rust_generated_files", &filename);
+        test_sketch_file(path, n, false, false);
+    }
+}
+
+#[test]
 fn test_empty() {
     let mut td = TDigestMut::new(100).unwrap();
     assert!(td.is_empty());

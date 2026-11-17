@@ -15,9 +15,13 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::fs;
+
 use datasketches::density::DensitySketch;
 use datasketches::density::Kernel;
 use datasketches::error::ErrorKind;
+
+use crate::serialization_test_data;
 
 // Generated from datasketches-cpp commit 70b86faa63402d7f62f5a6b1b05109d5fd1f2186.
 const CPP_F64_EMPTY: &str = "030113040a00000003000000";
@@ -1085,5 +1089,125 @@ fn cpp_trailing_empty_top_level_and_round_trip_single_level_compacted_images() {
         assert_eq!(retained, vec![(&[80.0_f32][..], 1)]);
         assert_eq!(sketch.estimate(&[80.0]).unwrap(), Some(1.0 / 3.0));
         assert_eq!(sketch.serialize(), bytes);
+    }
+}
+
+#[test]
+fn rust_double_snapshots_round_trip() {
+    for n in [0_u64, 1, 10, 100, 1000, 10_000] {
+        let filename = format!("density_double_n{n}_rust.sk");
+        let path = serialization_test_data("rust_generated_files", &filename);
+        let bytes = fs::read(&path).unwrap();
+        let sketch = DensitySketch::<f64>::deserialize(&bytes).unwrap();
+
+        assert_eq!(sketch.k(), 10, "{filename}");
+        assert_eq!(sketch.dim(), 3, "{filename}");
+        assert_eq!(sketch.total_weight(), n, "{filename}");
+        assert_eq!(sketch.is_empty(), n == 0, "{filename}");
+        assert_eq!(sketch.is_estimation_mode(), n >= 30, "{filename}");
+        let retained_weight: u64 = sketch.iter().map(|(_, weight)| weight).sum();
+        if n < 30 {
+            assert_eq!(retained_weight, n, "{filename}");
+        } else {
+            assert!(retained_weight > 0, "{filename}");
+        }
+
+        match n {
+            0 => {
+                assert_eq!(sketch.num_retained(), 0, "{filename}");
+                assert_eq!(sketch.estimate(&[0.0, 0.0, 0.0]).unwrap(), None);
+                assert_eq!(bytes, decode_hex(CPP_F64_EMPTY), "{filename}");
+            }
+            10 => {
+                assert_eq!(bytes, decode_hex(CPP_F64_EXACT_N10), "{filename}");
+            }
+            _ => {}
+        }
+
+        if n > 0 {
+            assert!(sketch.num_retained() > 0, "{filename}");
+            let (first_pt, _) = sketch.iter().next().unwrap();
+            let (last_pt, _) = sketch.iter().last().unwrap();
+            for pt in [first_pt, last_pt] {
+                let est = sketch.estimate(pt).unwrap().unwrap();
+                assert!(
+                    est.is_finite() && est > 0.0 && est <= 1.0,
+                    "{filename}: invalid density estimate {est} at retained point {pt:?}"
+                );
+            }
+            let last_x = (n - 1) as f64;
+            for sample in [[0.0, 0.0, 0.0], [last_x, last_x.sqrt(), -last_x]] {
+                let est = sketch.estimate(&sample).unwrap().unwrap();
+                assert!(
+                    est.is_finite() && (0.0..=1.0).contains(&est),
+                    "{filename}: invalid density estimate {est} at {sample:?}"
+                );
+                if n <= 10 {
+                    assert!(est > 0.0, "{filename}: expected positive exact estimate");
+                }
+            }
+        }
+
+        assert_eq!(sketch.serialize(), bytes, "roundtrip: {filename}");
+    }
+}
+
+#[test]
+fn rust_float_snapshots_round_trip() {
+    for n in [0_u64, 1, 10, 100, 1000, 10_000] {
+        let filename = format!("density_float_n{n}_rust.sk");
+        let path = serialization_test_data("rust_generated_files", &filename);
+        let bytes = fs::read(&path).unwrap();
+        let sketch = DensitySketch::<f32>::deserialize(&bytes).unwrap();
+
+        assert_eq!(sketch.k(), 10, "{filename}");
+        assert_eq!(sketch.dim(), 3, "{filename}");
+        assert_eq!(sketch.total_weight(), n, "{filename}");
+        assert_eq!(sketch.is_empty(), n == 0, "{filename}");
+        assert_eq!(sketch.is_estimation_mode(), n >= 30, "{filename}");
+        let retained_weight: u64 = sketch.iter().map(|(_, weight)| weight).sum();
+        if n < 30 {
+            assert_eq!(retained_weight, n, "{filename}");
+        } else {
+            assert!(retained_weight > 0, "{filename}");
+        }
+
+        match n {
+            0 => {
+                assert_eq!(sketch.num_retained(), 0, "{filename}");
+                assert_eq!(sketch.estimate(&[0.0, 0.0, 0.0]).unwrap(), None);
+                assert_eq!(bytes, decode_hex(CPP_F32_EMPTY), "{filename}");
+            }
+            10 => {
+                assert_eq!(bytes, decode_hex(CPP_F32_EXACT_N10), "{filename}");
+            }
+            _ => {}
+        }
+
+        if n > 0 {
+            assert!(sketch.num_retained() > 0, "{filename}");
+            let (first_pt, _) = sketch.iter().next().unwrap();
+            let (last_pt, _) = sketch.iter().last().unwrap();
+            for pt in [first_pt, last_pt] {
+                let est = sketch.estimate(pt).unwrap().unwrap();
+                assert!(
+                    est.is_finite() && est > 0.0 && est <= 1.0,
+                    "{filename}: invalid density estimate {est} at retained point {pt:?}"
+                );
+            }
+            let last_x = (n - 1) as f32;
+            for sample in [[0.0, 0.0, 0.0], [last_x, last_x.sqrt(), -last_x]] {
+                let est = sketch.estimate(&sample).unwrap().unwrap();
+                assert!(
+                    est.is_finite() && (0.0..=1.0).contains(&est),
+                    "{filename}: invalid density estimate {est} at {sample:?}"
+                );
+                if n <= 10 {
+                    assert!(est > 0.0, "{filename}: expected positive exact estimate");
+                }
+            }
+        }
+
+        assert_eq!(sketch.serialize(), bytes, "roundtrip: {filename}");
     }
 }
