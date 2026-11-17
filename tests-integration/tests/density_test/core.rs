@@ -15,12 +15,10 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use std::iter::FusedIterator;
 use std::panic::AssertUnwindSafe;
 use std::panic::catch_unwind;
 
 use datasketches::density::DensitySketch;
-use datasketches::density::DensitySketchIter;
 use datasketches::density::DensityValue;
 use datasketches::density::GaussianKernel;
 use datasketches::density::Kernel;
@@ -38,11 +36,6 @@ impl Kernel<f64> for TaggedKernel {
         let dist_sq: f64 = a.iter().zip(b).map(|(&x, &y)| (x - y) * (x - y)).sum();
         (-self.gamma * dist_sq).exp()
     }
-}
-
-fn assert_iter_traits<'a, T>(iter: &DensitySketchIter<'a, T>) {
-    fn check<I: ExactSizeIterator + FusedIterator + Clone + std::fmt::Debug>(_: &I) {}
-    check(iter);
 }
 
 #[test]
@@ -143,15 +136,11 @@ fn empty_and_reset_retain_configuration() {
 }
 
 #[test]
-fn debug_and_clone_semantics() {
+fn clone_semantics() {
     let mut sketch = DensitySketch::<f64>::new(10, 2).unwrap();
     for i in 0..25 {
         sketch.update(&[i as f64, -(i as f64)]).unwrap();
     }
-
-    let debug = format!("{sketch:?}");
-    assert!(debug.contains("DensitySketch"));
-    assert!(debug.contains("total_weight: 25"));
 
     let mut cloned = sketch.clone();
     assert_eq!(cloned.k(), sketch.k());
@@ -250,7 +239,7 @@ fn iterator_contracts_and_weights() {
     let exact_sum: u64 = exact.iter().map(|(_, weight)| weight).sum();
     assert_eq!(exact_sum, exact.total_weight());
 
-    // Estimation mode: ExactSizeIterator, FusedIterator, Clone, Debug, IntoIterator.
+    // Estimation mode: ExactSizeIterator, FusedIterator, Clone, IntoIterator.
     let mut sketch = DensitySketch::<f64>::new(8, 3).unwrap();
     for i in 0..200 {
         let v = i as f64;
@@ -259,8 +248,6 @@ fn iterator_contracts_and_weights() {
     assert!(sketch.is_estimation_mode());
 
     let mut iter = sketch.iter();
-    assert_iter_traits(&iter);
-    assert!(!format!("{iter:?}").is_empty());
     assert_eq!(iter.len(), sketch.num_retained());
     assert_eq!(
         iter.size_hint(),

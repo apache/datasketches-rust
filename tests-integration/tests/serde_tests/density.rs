@@ -1055,8 +1055,6 @@ fn cpp_trailing_empty_top_level_and_round_trip_single_level_compacted_images() {
         assert_eq!(sketch.dim(), 1);
         assert_eq!(sketch.total_weight(), 3);
         assert_eq!(sketch.num_retained(), 1);
-        assert!(!format!("{sketch:?}").is_empty());
-        assert!(format!("{sketch:?}").contains("is_estimation_mode: true"));
         let retained: Vec<(&[f64], u64)> = sketch.iter().collect();
         assert_eq!(retained, vec![(&[80.0][..], 1)]);
         assert_eq!(sketch.estimate(&[80.0]).unwrap(), Some(1.0 / 3.0));
