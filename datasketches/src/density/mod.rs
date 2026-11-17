@@ -17,7 +17,7 @@
 
 //! Density sketch for streaming kernel density estimation and coreset construction.
 //!
-//! [`DensitySketch`] maintains a weighted coreset of multi-dimensional floating-point vectors so
+//! [`DensitySketch`] maintains a weighted coreset of multidimensional floating-point vectors so
 //! kernel density estimates can be evaluated at arbitrary query points using bounded memory. It is
 //! based on [Discrepancy, Coresets, and Sketches in Machine Learning](https://proceedings.mlr.press/v99/karnin19a/karnin19a.pdf)
 //! by Zohar Karnin and Edo Liberty.

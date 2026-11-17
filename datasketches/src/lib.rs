@@ -36,7 +36,7 @@
 //! * Use `bloom` for incremental probabilistic membership queries or `xor` for immutable sets.
 //! * Use `countmin` for point-frequency estimates and `frequencies` for discovering heavy hitters.
 //! * Use `density` for streaming kernel density estimation and coreset construction over
-//!   multi-dimensional numeric vectors.
+//!   multidimensional numeric vectors.
 //! * Use `hll` for fast distinct counts, `cpc` for compact serialized distinct counts, or `theta`
 //!   when set operations are required.
 //! * Use `kll`, `req`, or `tdigest` for ranks and quantiles. KLL provides strong general-purpose

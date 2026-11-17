@@ -6,7 +6,7 @@ All significant changes to this project will be documented in this file.
 
 ### New features
 
-* Add `DensitySketch`, `Kernel`, `GaussianKernel`, `DensityValue`, and `DensitySketchIter` behind the `density` feature for streaming kernel density estimation and coreset construction over multi-dimensional `f32` and `f64` vectors, with custom kernel support, merging, iteration, and cross-language serialization.
+* Add `DensitySketch`, `Kernel`, `GaussianKernel`, `DensityValue`, and `DensitySketchIter` behind the `density` feature for streaming kernel density estimation and coreset construction over multidimensional `f32` and `f64` vectors, with custom kernel support, merging, iteration, and cross-language serialization.
 
 ## v0.7.0
 
