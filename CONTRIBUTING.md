@@ -174,23 +174,32 @@ cargo install taplo-cli typos-cli hawkeye
 
 ## Serialization snapshots
 
-Serialization compatibility tests use snapshots from a pinned revision of [`apache/datasketches-tck`](https://github.com/apache/datasketches-tck).
+Serialization compatibility tests use cross-language snapshots from a pinned revision of [`apache/datasketches-tck`](https://github.com/apache/datasketches-tck) together with locally generated Rust snapshots from the workspace `snapshots` binary crate.
 
-The `cargo x prepare-testdata` command downloads the TCK archive and synchronizes `.sk` files from `serialization_test_data/<language>_generated_files` into:
+The `cargo x prepare-testdata` command downloads the TCK archive for remote languages, runs the local Rust snapshot generator, and populates `.sk` files in:
 
 - `tests-integration/tests/serde_tests/cpp_generated_files`
 - `tests-integration/tests/serde_tests/go_generated_files`
 - `tests-integration/tests/serde_tests/java_generated_files`
+- `tests-integration/tests/serde_tests/rust_generated_files`
 
-You can synchronize them separately:
+You can prepare each language separately:
 
 ```shell
 cargo x prepare-testdata cpp
 cargo x prepare-testdata go
 cargo x prepare-testdata java
+cargo x prepare-testdata rust
 ```
 
-If no language is specified, all languages are prepared. These directories are not stored in Git. Run the command before the first test run and again whenever the pinned TCK revision changes. It requires network access and replaces the selected generated directories.
+If no language is specified, all languages are prepared. These directories are not stored in Git and are replaced whenever selected. Run the command before the first test run and again whenever the pinned TCK revision or Rust serialization behavior changes. Preparing `cpp`, `go`, or `java` requires network access, while `cargo x prepare-testdata rust` runs offline.
+
+To generate Rust snapshots directly (writing to `serialization_test_data/rust_generated_files` by default) or filter by sketch family, run the `snapshots` package:
+
+```shell
+cargo run --release --package snapshots
+cargo run --release --package snapshots -- --output-dir target/snapshots --sketch hll --sketch theta
+```
 
 ## Code of Conduct
 

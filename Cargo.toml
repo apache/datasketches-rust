@@ -20,6 +20,7 @@ members = [
   "benchmarks",
   "datasketches",
   "examples",
+  "snapshots",
   "tests-integration",
   "xtask",
 ]

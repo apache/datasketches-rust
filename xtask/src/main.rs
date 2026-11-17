@@ -317,7 +317,7 @@ fn make_taplo_cmd(fix: bool) -> StdCommand {
 struct CommandPrepareTestData {
     #[arg(
         value_name = "LANG",
-        value_parser = ["java", "cpp", "c++", "go", "golang"],
+        value_parser = ["java", "cpp", "c++", "go", "golang", "rust"],
         help = "Languages to prepare (all by default)."
     )]
     langs: Vec<String>,
@@ -332,9 +332,26 @@ impl CommandPrepareTestData {
     }
 
     fn prepare(self) -> Result<()> {
-        const REVISION: &str = "8193bab45ca5da3b513ea43fb5793e7e5b4da548";
         let serde_tests =
             Path::new(env!("CARGO_WORKSPACE_DIR")).join("tests-integration/tests/serde_tests");
+        let languages = self.languages();
+        let remote_languages: Vec<&'static str> = languages
+            .iter()
+            .copied()
+            .filter(|&language| language != "rust")
+            .collect();
+
+        if !remote_languages.is_empty() {
+            Self::prepare_remote(&serde_tests, &remote_languages)?;
+        }
+        if languages.contains(&"rust") {
+            Self::prepare_rust(&serde_tests)?;
+        }
+        Ok(())
+    }
+
+    fn prepare_remote(serde_tests: &Path, languages: &[&'static str]) -> Result<()> {
+        const REVISION: &str = "8193bab45ca5da3b513ea43fb5793e7e5b4da548";
         let archive_url =
             format!("https://api.github.com/repos/apache/datasketches-tck/tarball/{REVISION}");
 
@@ -356,18 +373,11 @@ impl CommandPrepareTestData {
         let mut archive = Archive::new(GzDecoder::new(body.into_reader()));
 
         let mut targets = vec![];
-        for language in self.languages() {
+        for &language in languages {
             let directory_name = format!("{language}_generated_files");
             let source_directory = Path::new("serialization_test_data").join(&directory_name);
             let destination = serde_tests.join(directory_name);
-            if fs::exists(&destination)? {
-                println!(
-                    "Removing existing {language} snapshots from {}",
-                    destination.display()
-                );
-                fs::remove_dir_all(&destination)?;
-            }
-            fs::create_dir_all(&destination)?;
+            Self::reset_destination(language, &destination)?;
             targets.push((language, source_directory, destination, 0_usize));
         }
 
@@ -405,9 +415,62 @@ impl CommandPrepareTestData {
         Ok(())
     }
 
+    fn prepare_rust(serde_tests: &Path) -> Result<()> {
+        let destination = serde_tests.join("rust_generated_files");
+        Self::reset_destination("rust", &destination)?;
+
+        let mut cmd = find_command("cargo");
+        cmd.args([
+            "run",
+            "--release",
+            "--package",
+            "snapshots",
+            "--",
+            "--output-dir",
+        ]);
+        cmd.arg(&destination);
+        println!("{cmd:?}");
+        let status = cmd.status()?;
+        if !status.success() {
+            return Err(format!("snapshots generator failed: {status}").into());
+        }
+
+        let mut count = 0_usize;
+        for entry in fs::read_dir(&destination)? {
+            let entry = entry?;
+            if entry.file_type()?.is_file()
+                && entry
+                    .path()
+                    .extension()
+                    .is_some_and(|extension| extension == "sk")
+            {
+                count += 1;
+            }
+        }
+        if count == 0 {
+            return Err("no rust snapshots were generated".into());
+        }
+        println!(
+            "Generated {count} rust snapshots into {}",
+            destination.display()
+        );
+        Ok(())
+    }
+
+    fn reset_destination(language: &str, destination: &Path) -> io::Result<()> {
+        if fs::exists(destination)? {
+            println!(
+                "Removing existing {language} snapshots from {}",
+                destination.display()
+            );
+            fs::remove_dir_all(destination)?;
+        }
+        fs::create_dir_all(destination)
+    }
+
     fn languages(&self) -> Vec<&'static str> {
         if self.langs.is_empty() {
-            return vec!["cpp", "go", "java"];
+            return vec!["cpp", "go", "java", "rust"];
         }
 
         let mut languages = vec![];
@@ -416,6 +479,7 @@ impl CommandPrepareTestData {
                 "java" => "java",
                 "cpp" | "c++" => "cpp",
                 "go" | "golang" => "go",
+                "rust" => "rust",
                 _ => unreachable!("language is validated by clap"),
             };
             if !languages.contains(&language) {
