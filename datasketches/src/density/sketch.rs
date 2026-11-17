@@ -98,10 +98,8 @@ impl<T: DensityValue> DensitySketch<T, GaussianKernel> {
 
     /// Deserializes a sketch using [`GaussianKernel`] from the DataSketches binary format.
     ///
-    /// Accepts images serialized by `datasketches-cpp`'s `density_sketch`. Because the wire format
-    /// encodes no kernel metadata, this method always attaches [`GaussianKernel`]; sketches built
-    /// with a custom kernel must be restored via [`Self::deserialize_with_kernel`] with an
-    /// equivalent kernel configuration.
+    /// Accepts images serialized by `datasketches-cpp`'s `density_sketch`. Use
+    /// [`Self::deserialize_with_kernel`] for sketches built with a custom [`Kernel`].
     ///
     /// # Errors
     ///
@@ -177,11 +175,11 @@ impl<T: DensityValue, K> DensitySketch<T, K> {
         self.n == 0
     }
 
-    /// Returns `true` if the sketch is in estimation mode.
-    ///
-    /// Compaction has either created more than one level or discarded points
-    /// (`self.num_retained() < self.total_weight()`).
+    /// Returns `true` if the sketch is in estimation mode (compaction has occurred).
     pub fn is_estimation_mode(&self) -> bool {
+        // Compaction normally creates higher levels (`levels.len() > 1`), while `datasketches-cpp`
+        // round-trips can strip trailing empty levels and leave a single compacted level with
+        // `num_retained < n`.
         self.levels.len() > 1
             || u64::try_from(self.num_retained).is_ok_and(|retained| retained < self.n)
     }
@@ -320,15 +318,12 @@ impl<T: DensityValue, K: Kernel<T>> DensitySketch<T, K> {
 
     /// Merges another sketch into `self`.
     ///
-    /// Both sketches must use equivalent kernel configurations (including any runtime parameters
-    /// such as bandwidth). Compatibility of kernel values is not checked at runtime; merging
-    /// coresets produced under different kernels invalidates the coreset error guarantees.
-    ///
     /// # Errors
     ///
     /// Returns [`InvalidArgument`](crate::error::ErrorKind::InvalidArgument) without modifying
-    /// `self` if `self.dim() != other.dim()`, if the combined stream weight would exceed
-    /// `u64::MAX`, or if the combined retained count would exceed `usize::MAX`.
+    /// `self` if `self.dim() != other.dim()`, if `self.kernel() != other.kernel()`, if the
+    /// combined stream weight would exceed `u64::MAX`, or if the combined retained count would
+    /// exceed `usize::MAX`.
     ///
     /// # Panics
     ///
@@ -354,6 +349,11 @@ impl<T: DensityValue, K: Kernel<T>> DensitySketch<T, K> {
                 "cannot merge density sketches with different dimensions: expected {}, got {}",
                 self.dim, other.dim
             )));
+        }
+        if self.kernel != other.kernel {
+            return Err(Error::invalid_argument(
+                "cannot merge density sketches with different kernels",
+            ));
         }
         if other.is_empty() {
             return Ok(());
@@ -440,17 +440,15 @@ impl<T: DensityValue, K: Kernel<T>> DensitySketch<T, K> {
 
     /// Serializes the sketch into the DataSketches binary format.
     ///
-    /// The encoded bytes are compatible with `datasketches-cpp`'s `density_sketch`. Kernel
-    /// configuration is not stored in the serialized image; deserialize with a matching kernel
-    /// configuration to preserve density estimates and coreset error guarantees.
+    /// The encoded bytes are compatible with `datasketches-cpp`'s `density_sketch` and do not
+    /// include kernel configuration; see [`Self::deserialize_with_kernel`].
     pub fn serialize(&self) -> Vec<u8> {
         serialize_sketch(self)
     }
 
     /// Deserializes a sketch with a custom `kernel` from the DataSketches binary format.
     ///
-    /// Callers must supply a `kernel` with the same configuration used when building the original
-    /// sketch, as kernel parameters are not encoded in the serialized byte stream.
+    /// Supply a `kernel` equivalent to the one used when building the serialized sketch.
     ///
     /// # Errors
     ///
@@ -603,7 +601,7 @@ mod tests {
 
     #[test]
     fn compact_is_strictly_reducing_and_unbiased_when_kernel_is_zero() {
-        #[derive(Debug, Default, Clone, Copy)]
+        #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
         struct ZeroKernel;
 
         impl Kernel<f64> for ZeroKernel {

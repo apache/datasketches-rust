@@ -23,7 +23,7 @@ use datasketches::density::Kernel;
 use googletest::assert_that;
 use googletest::prelude::near;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 struct SphericalKernel {
     radius_squared: f64,
 }
@@ -59,7 +59,7 @@ impl Kernel<f32> for SphericalKernel {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 struct ScaledGaussianKernel {
     bandwidth: f64,
 }

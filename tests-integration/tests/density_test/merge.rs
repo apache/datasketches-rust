@@ -16,7 +16,21 @@
 // under the License.
 
 use datasketches::density::DensitySketch;
+use datasketches::density::Kernel;
 use datasketches::error::ErrorKind;
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct BandwidthKernel {
+    gamma: f64,
+}
+
+impl Kernel<f64> for BandwidthKernel {
+    fn evaluate(&self, a: &[f64], b: &[f64]) -> f64 {
+        assert_eq!(a.len(), b.len(), "point dimension mismatch");
+        let dist_sq: f64 = a.iter().zip(b).map(|(&x, &y)| (x - y) * (x - y)).sum();
+        (-self.gamma * dist_sq).exp()
+    }
+}
 
 #[test]
 fn merge_empty_combinations() {
@@ -88,6 +102,52 @@ fn merge_rejects_dim_mismatch_even_when_empty() {
         ErrorKind::InvalidArgument
     );
     assert_eq!(non_empty_dim2.serialize(), before);
+}
+
+#[test]
+fn merge_rejects_kernel_mismatch_even_when_empty() {
+    let mut empty_left =
+        DensitySketch::<f64, _>::with_kernel(10, 2, BandwidthKernel { gamma: 0.5 }).unwrap();
+    let empty_right =
+        DensitySketch::<f64, _>::with_kernel(10, 2, BandwidthKernel { gamma: 2.0 }).unwrap();
+
+    assert_eq!(
+        empty_left.merge(&empty_right).unwrap_err().kind(),
+        ErrorKind::InvalidArgument
+    );
+    assert!(empty_left.is_empty());
+
+    let mut non_empty_right =
+        DensitySketch::<f64, _>::with_kernel(10, 2, BandwidthKernel { gamma: 2.0 }).unwrap();
+    non_empty_right.update(&[1.0, 2.0]).unwrap();
+    assert_eq!(
+        empty_left.merge(&non_empty_right).unwrap_err().kind(),
+        ErrorKind::InvalidArgument
+    );
+    assert!(empty_left.is_empty());
+
+    let mut non_empty_left =
+        DensitySketch::<f64, _>::with_kernel(10, 2, BandwidthKernel { gamma: 0.5 }).unwrap();
+    non_empty_left.update(&[1.0, 2.0]).unwrap();
+    let before = non_empty_left.serialize();
+
+    assert_eq!(
+        non_empty_left.merge(&empty_right).unwrap_err().kind(),
+        ErrorKind::InvalidArgument
+    );
+    assert_eq!(non_empty_left.serialize(), before);
+
+    assert_eq!(
+        non_empty_left.merge(&non_empty_right).unwrap_err().kind(),
+        ErrorKind::InvalidArgument
+    );
+    assert_eq!(non_empty_left.serialize(), before);
+
+    let mut matching_right =
+        DensitySketch::<f64, _>::with_kernel(10, 2, BandwidthKernel { gamma: 0.5 }).unwrap();
+    matching_right.update(&[3.0, 4.0]).unwrap();
+    non_empty_left.merge(&matching_right).unwrap();
+    assert_eq!(non_empty_left.total_weight(), 2);
 }
 
 #[test]
