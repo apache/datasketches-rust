@@ -24,8 +24,8 @@ use crate::density::sketch::Level;
 /// Iterator over `(point, weight)` pairs retained in a
 /// [`DensitySketch`](crate::density::DensitySketch).
 ///
-/// Each yielded entry borrows the point slice directly from the sketch together with its level
-/// weight `1_u64 << height`.
+/// Points are borrowed from the sketch without allocation, paired with their coreset weight (`1`
+/// before compaction, doubling with each compaction level).
 #[must_use = "iterators are lazy and do nothing unless consumed"]
 pub struct DensitySketchIter<'a, T> {
     levels: &'a [Level<T>],

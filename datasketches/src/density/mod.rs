@@ -22,6 +22,11 @@
 //! based on [Discrepancy, Coresets, and Sketches in Machine Learning](https://proceedings.mlr.press/v99/karnin19a/karnin19a.pdf)
 //! by Zohar Karnin and Edo Liberty.
 //!
+//! Point coordinates use `f32` or `f64` ([`DensityValue`]). [`DensitySketch::new`] uses the
+//! default [`GaussianKernel`]; supply a custom [`Kernel`] with [`DensitySketch::with_kernel`]. The
+//! binary serialization format supports cross-language interchange when both sides use the same
+//! coordinate type and kernel.
+//!
 //! # Examples
 //!
 //! ```
