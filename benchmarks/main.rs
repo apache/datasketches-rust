@@ -18,6 +18,7 @@
 mod bloom;
 mod countmin;
 mod cpc;
+mod density;
 mod frequencies;
 mod hash_inputs;
 mod hll;
@@ -33,6 +34,7 @@ fn main() {
     bloom::register(&mut runner);
     countmin::register(&mut runner);
     cpc::register(&mut runner);
+    density::register(&mut runner);
     frequencies::register(&mut runner);
     hll::register(&mut runner);
     kll::register(&mut runner);

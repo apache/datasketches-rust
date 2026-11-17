@@ -35,6 +35,8 @@
 //!
 //! * Use `bloom` for incremental probabilistic membership queries or `xor` for immutable sets.
 //! * Use `countmin` for point-frequency estimates and `frequencies` for discovering heavy hitters.
+//! * Use `density` for streaming kernel density estimation and coreset construction over
+//!   multidimensional numeric vectors.
 //! * Use `hll` for fast distinct counts, `cpc` for compact serialized distinct counts, or `theta`
 //!   when set operations are required.
 //! * Use `kll`, `req`, or `tdigest` for ranks and quantiles. KLL provides strong general-purpose
@@ -73,6 +75,8 @@ pub mod bloom;
 pub mod countmin;
 #[cfg(feature = "cpc")]
 pub mod cpc;
+#[cfg(feature = "density")]
+pub mod density;
 #[cfg(feature = "frequencies")]
 pub mod frequencies;
 #[cfg(feature = "hll")]
