@@ -42,8 +42,7 @@ impl<T> Default for Level<T> {
 
 /// Streaming kernel density estimation sketch over `dim`-dimensional vectors.
 ///
-/// Builds a weighted coreset of finite floating-point points by compacting full levels with a
-/// greedy discrepancy-halving rule. See the [module documentation](crate::density) for background.
+/// See the [density module documentation](crate::density) for background and usage.
 #[derive(Clone)]
 pub struct DensitySketch<T, K = GaussianKernel> {
     k: u16,
@@ -96,14 +95,15 @@ impl<T: DensityValue> DensitySketch<T, GaussianKernel> {
         Self::make_with_kernel(k, dim, GaussianKernel)
     }
 
-    /// Deserializes a sketch using [`GaussianKernel`] from the DataSketches binary format.
+    /// Deserializes a sketch from bytes using [`GaussianKernel`].
     ///
-    /// Accepts images serialized by `datasketches-cpp`'s `density_sketch`. Use
-    /// [`Self::deserialize_with_kernel`] for sketches built with a custom [`Kernel`].
+    /// Also accepts data serialized by other DataSketches implementations when both sides use the
+    /// same coordinate type and [`GaussianKernel`]. Use [`Self::deserialize_with_kernel`] for
+    /// sketches built with a custom [`Kernel`].
     ///
     /// # Errors
     ///
-    /// Returns [`InvalidData`](crate::error::ErrorKind::InvalidData) if the input is truncated,
+    /// Returns [`InvalidData`](crate::error::ErrorKind::InvalidData) if the image is truncated,
     /// malformed, or contains non-finite coordinates.
     ///
     /// # Examples
@@ -165,7 +165,7 @@ impl<T: DensityValue, K> DensitySketch<T, K> {
         &self.kernel
     }
 
-    /// Returns the total stream weight (number of observed points).
+    /// Returns the total stream weight.
     pub fn total_weight(&self) -> u64 {
         self.n
     }
@@ -175,7 +175,7 @@ impl<T: DensityValue, K> DensitySketch<T, K> {
         self.n == 0
     }
 
-    /// Returns `true` if the sketch is in estimation mode (compaction has occurred).
+    /// Returns `true` if the sketch is in estimation mode.
     pub fn is_estimation_mode(&self) -> bool {
         // Compaction normally creates higher levels (`levels.len() > 1`), while `datasketches-cpp`
         // round-trips can strip trailing empty levels and leave a single compacted level with
@@ -184,12 +184,12 @@ impl<T: DensityValue, K> DensitySketch<T, K> {
             || u64::try_from(self.num_retained).is_ok_and(|retained| retained < self.n)
     }
 
-    /// Returns the number of points currently retained across all levels.
+    /// Returns the number of retained points.
     pub fn num_retained(&self) -> usize {
         self.num_retained
     }
 
-    /// Returns an implementation-dependent estimate of heap memory usage in bytes.
+    /// Returns an estimate of the sketch's memory usage in bytes.
     pub fn estimated_size(&self) -> usize {
         self.levels.capacity() * size_of::<Level<T>>()
             + self
@@ -199,7 +199,7 @@ impl<T: DensityValue, K> DensitySketch<T, K> {
                 .sum::<usize>()
     }
 
-    /// Resets the sketch to the empty state while preserving `k`, `dim`, and `kernel`.
+    /// Resets the sketch to its empty state while retaining `k`, `dim`, and `kernel`.
     pub fn reset(&mut self) {
         self.n = 0;
         self.num_retained = 0;
@@ -207,7 +207,7 @@ impl<T: DensityValue, K> DensitySketch<T, K> {
         self.levels[0].coords.clear();
     }
 
-    /// Returns an iterator over retained `(point, weight)` entries across all levels.
+    /// Returns an iterator over retained `(point, weight)` pairs.
     pub fn iter(&self) -> DensitySketchIter<'_, T> {
         DensitySketchIter::new(&self.levels, self.dim as usize, self.num_retained)
     }
@@ -290,7 +290,7 @@ impl<T: DensityValue, K: Kernel<T>> DensitySketch<T, K> {
     ///
     /// # Panics
     ///
-    /// Panics without modifying the sketch if the total stream weight would exceed `u64::MAX`, or
+    /// Panics without modifying the sketch if the total stream weight would exceed [`u64::MAX`], or
     /// if compaction reaches the maximum supported level count (`64`).
     ///
     /// # Examples
@@ -318,12 +318,14 @@ impl<T: DensityValue, K: Kernel<T>> DensitySketch<T, K> {
 
     /// Merges another sketch into `self`.
     ///
+    /// Retains `self.k()`, even if `other` uses a different value.
+    ///
     /// # Errors
     ///
     /// Returns [`InvalidArgument`](crate::error::ErrorKind::InvalidArgument) without modifying
     /// `self` if `self.dim() != other.dim()`, if `self.kernel() != other.kernel()`, if the
-    /// combined stream weight would exceed `u64::MAX`, or if the combined retained count would
-    /// exceed `usize::MAX`.
+    /// combined stream weight would exceed [`u64::MAX`], or if the combined retained count would
+    /// exceed [`usize::MAX`].
     ///
     /// # Panics
     ///
@@ -396,13 +398,13 @@ impl<T: DensityValue, K: Kernel<T>> DensitySketch<T, K> {
 
     /// Estimates the normalized kernel density at `point`.
     ///
-    /// Validates `point` before checking emptiness. Returns `Ok(None)` when the sketch is empty.
+    /// Returns `Ok(None)` if the sketch is empty.
     ///
     /// # Errors
     ///
     /// Returns [`InvalidArgument`](crate::error::ErrorKind::InvalidArgument) if
-    /// `point.len() != self.dim() as usize` or any coordinate is non-finite, even when the sketch
-    /// is empty.
+    /// `point.len() != self.dim() as usize` or any coordinate is non-finite, even if the sketch is
+    /// empty.
     ///
     /// # Examples
     ///
@@ -438,21 +440,22 @@ impl<T: DensityValue, K: Kernel<T>> DensitySketch<T, K> {
         Ok(Some(weighted_sum / (self.n as f64)))
     }
 
-    /// Serializes the sketch into the DataSketches binary format.
+    /// Serializes this sketch to bytes.
     ///
-    /// The encoded bytes are compatible with `datasketches-cpp`'s `density_sketch` and do not
-    /// include kernel configuration; see [`Self::deserialize_with_kernel`].
+    /// The serialized data can be read by other DataSketches implementations when both sides use
+    /// the same coordinate type and kernel. Kernel configuration is not stored in the image.
     pub fn serialize(&self) -> Vec<u8> {
         serialize_sketch(self)
     }
 
-    /// Deserializes a sketch with a custom `kernel` from the DataSketches binary format.
+    /// Deserializes a sketch from bytes using `kernel`.
     ///
-    /// Supply a `kernel` equivalent to the one used when building the serialized sketch.
+    /// Also accepts data serialized by other DataSketches implementations when both sides use the
+    /// same coordinate type and an equivalent `kernel`.
     ///
     /// # Errors
     ///
-    /// Returns [`InvalidData`](crate::error::ErrorKind::InvalidData) if the input is truncated,
+    /// Returns [`InvalidData`](crate::error::ErrorKind::InvalidData) if the image is truncated,
     /// malformed, or contains non-finite coordinates.
     ///
     /// # Examples

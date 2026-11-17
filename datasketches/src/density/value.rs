@@ -18,7 +18,7 @@
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
 
-/// Sealed marker trait identifying coordinate value types supported by
+/// Marker trait identifying the coordinate types supported by
 /// [`DensitySketch`](crate::density::DensitySketch).
 ///
 /// Implemented for `f32` and `f64`.

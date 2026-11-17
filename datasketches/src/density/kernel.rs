@@ -29,10 +29,6 @@ pub trait Kernel<T>: PartialEq {
 }
 
 /// Standard unscaled Gaussian (RBF) kernel: `exp(-sum_i (a_i - b_i)^2)`.
-///
-/// # Panics
-///
-/// [`Kernel::evaluate`] panics if `a.len() != b.len()`.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct GaussianKernel;
 
