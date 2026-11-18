@@ -20,6 +20,8 @@ use std::path::Path;
 
 use datasketches::cpc::CpcSketch;
 use datasketches::cpc::CpcUnion;
+use datasketches::cpc::CpcWrapper;
+use datasketches::hash::value::sign_extend;
 use googletest::assert_that;
 use googletest::prelude::near;
 
@@ -163,4 +165,36 @@ fn test_go_compatibility() {
         let sketch = test_sketch_file(&path, n);
         test_sketch_replay(&path, sketch, 0..n);
     }
+}
+
+#[test]
+fn test_rust_compatibility() {
+    for n in [0, 100, 200, 2000, 20000] {
+        let filename = format!("cpc_n{n}_rust.sk");
+        let path = serialization_test_data("rust_generated_files", &filename);
+        let sketch = test_sketch_file(&path, n);
+        let wrapper = CpcWrapper::new(&fs::read(&path).unwrap()).unwrap();
+        assert_eq!(wrapper.lg_k(), sketch.lg_k());
+        assert_eq!(wrapper.is_empty(), sketch.is_empty());
+        assert_eq!(wrapper.estimate(), sketch.estimate());
+        test_sketch_replay(&path, sketch, 0..n);
+    }
+
+    let neg_path = serialization_test_data("rust_generated_files", "cpc_negative_one_rust.sk");
+    let neg_bytes = fs::read(&neg_path).unwrap();
+    let mut neg_sketch = CpcSketch::deserialize(&neg_bytes).unwrap();
+    assert_eq!(neg_sketch.lg_k(), 11);
+    assert!(!neg_sketch.is_empty());
+    let initial_estimate = neg_sketch.estimate();
+    assert_that!(initial_estimate, near(1.0, 0.02));
+    assert_eq!(neg_sketch.serialize(), neg_bytes);
+
+    let wrapper = CpcWrapper::new(&neg_bytes).unwrap();
+    assert_eq!(wrapper.estimate(), initial_estimate);
+
+    neg_sketch.update(sign_extend::from_i8(-1));
+    neg_sketch.update(sign_extend::from_i16(-1));
+    neg_sketch.update(sign_extend::from_i32(-1));
+    neg_sketch.update(-1_i64);
+    assert_eq!(neg_sketch.estimate(), initial_estimate);
 }

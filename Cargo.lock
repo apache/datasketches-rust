@@ -233,6 +233,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "datagen"
+version = "0.0.0"
+dependencies = [
+ "clap",
+ "datasketches",
+]
+
+[[package]]
 name = "datasketches"
 version = "0.7.0"
 dependencies = [

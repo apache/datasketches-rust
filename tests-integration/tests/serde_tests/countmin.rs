@@ -334,3 +334,72 @@ fn zero_seed_hash_uses_the_callers_error_kind() {
         CountMinSketch::<u64>::deserialize_with_seed(&bytes, ZERO_HASH_SEED).unwrap_err();
     assert_eq!(deserialization_error.kind(), ErrorKind::InvalidData);
 }
+
+fn assert_rust_v2_snapshot(filename: &str, seed: u64, n: u64) {
+    const DEFAULT_SEED: u64 = 9001;
+
+    let path = serialization_test_data("rust_generated_files", filename);
+    let bytes = fs::read(&path).unwrap();
+    assert_eq!(bytes[1], 2, "expected v2 serial version in {filename}");
+
+    let sketch = if seed == DEFAULT_SEED {
+        CountMinSketch::<i64>::deserialize(&bytes).unwrap()
+    } else {
+        assert_eq!(
+            CountMinSketch::<i64>::deserialize(&bytes)
+                .unwrap_err()
+                .kind(),
+            ErrorKind::InvalidData
+        );
+        CountMinSketch::<i64>::deserialize_with_seed(&bytes, seed).unwrap()
+    };
+
+    let expected_total_weight = (n * (n + 3) / 2) as i64;
+    assert_eq!(sketch.num_hashes(), 3, "{filename}");
+    assert_eq!(sketch.num_buckets(), 1000, "{filename}");
+    assert_eq!(sketch.seed(), seed, "{filename}");
+    assert_eq!(sketch.total_weight(), expected_total_weight, "{filename}");
+    assert_eq!(sketch.is_empty(), n == 0, "{filename}");
+
+    let mut expected = CountMinSketch::<i64>::with_seed(3, 1000, seed).unwrap();
+    for i in 0..n {
+        expected.update_with_weight(i as i64, (i + 1) as i64);
+        expected.update_with_weight(raw_bytes::from_str(&i.to_string()), 1);
+    }
+
+    if n == 0 {
+        assert_eq!(sketch.estimate(0_i64), 0, "{filename}");
+        assert_eq!(sketch.estimate(raw_bytes::from_str("0")), 0, "{filename}");
+    } else {
+        for i in (0..n.min(200)).chain(std::iter::once(n - 1)) {
+            let key_str = i.to_string();
+            let int_est = sketch.estimate(i as i64);
+            assert!(int_est >= (i + 1) as i64, "{filename}: item {i}");
+            assert_eq!(int_est, expected.estimate(i as i64), "{filename}: item {i}");
+
+            let str_est = sketch.estimate(raw_bytes::from_str(&key_str));
+            assert!(str_est >= 1, "{filename}: str {key_str}");
+            assert_eq!(
+                str_est,
+                expected.estimate(raw_bytes::from_str(&key_str)),
+                "{filename}: str {key_str}"
+            );
+        }
+    }
+
+    assert_eq!(bytes, expected.serialize(), "snapshot mismatch: {filename}");
+    assert_eq!(
+        sketch.serialize(),
+        bytes,
+        "round-trip bytes differ for {filename}"
+    );
+}
+
+#[test]
+fn test_deserialize_rust_v2_snapshots() {
+    for n in [0, 1, 10, 100, 1000, 10_000] {
+        let filename = format!("count_min_v2_n{n}_rust.sk");
+        assert_rust_v2_snapshot(&filename, 9001, n);
+    }
+    assert_rust_v2_snapshot("count_min_v2_seed42_n1000_rust.sk", 42, 1000);
+}

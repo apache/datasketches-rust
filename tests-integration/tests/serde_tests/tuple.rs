@@ -121,6 +121,19 @@ fn test_go_compatibility() {
 }
 
 #[test]
+fn test_rust_compatibility() {
+    for n in [0, 1, 10, 100, 1000, 10_000, 100_000, 1_000_000] {
+        let filename = format!("tuple_int_n{n}_rust.sk");
+        let path = serialization_test_data("rust_generated_files", &filename);
+        let bytes = fs::read(&path).unwrap();
+        let sketch = CompactTupleSketch::<i32>::deserialize(&bytes).unwrap();
+        assert!(sketch.is_ordered(), "{filename}");
+        assert_eq!(sketch.serialize(), bytes, "roundtrip: {filename}");
+        test_sketch_file(path, n);
+    }
+}
+
+#[test]
 fn empty_sketch_serialization() {
     let expected = fs::read(serialization_test_data(
         "cpp_generated_files",

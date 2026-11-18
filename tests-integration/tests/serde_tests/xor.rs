@@ -15,10 +15,14 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::fs;
+
 use datasketches::error::ErrorKind;
 use datasketches::xor::XorFilter;
 use datasketches::xor::XorFilterBuilder;
 use datasketches::xor::XorFilterType;
+
+use crate::serialization_test_data;
 
 // Generated from datasketches-java commit 1ed3eab435a4767d672ce5797eb53f66b14d78bb.
 // XorFilterBuilder.create([1, 2, 3, Long.MIN_VALUE], bits, 42).toByteArray().
@@ -218,4 +222,48 @@ fn xor32_image_preserves_full_width_little_endian_slots() {
     assert_eq!(filter.filter_type(), XorFilterType::Xor32);
     assert!(filter.contains_hash(0));
     assert_eq!(filter.serialize(), bytes);
+}
+
+#[test]
+fn rust_snapshots_round_trip() {
+    for (prefix, expected_type, max_false_positives) in [
+        ("xor8", XorFilterType::Xor8, 120usize),
+        ("xor16", XorFilterType::Xor16, 5),
+        ("xor32", XorFilterType::Xor32, 1),
+    ] {
+        for n in [0_u64, 1, 10, 100, 1000, 10_000, 100_000] {
+            let filename = format!("{prefix}_n{n}_rust.sk");
+            let path = serialization_test_data("rust_generated_files", &filename);
+            let bytes = fs::read(&path).unwrap();
+            let filter = XorFilter::deserialize(&bytes).unwrap();
+
+            assert_eq!(filter.filter_type(), expected_type, "{filename}");
+
+            for key in 0..n.min(1000) {
+                assert!(
+                    filter.contains(key as i64),
+                    "{filename}: false negative on {key}"
+                );
+            }
+            if n > 1000 {
+                assert!(
+                    filter.contains((n - 1) as i64),
+                    "{filename}: false negative on {}",
+                    n - 1
+                );
+            }
+
+            if n > 0 {
+                let false_positives = (1_000_000_i64..1_010_000_i64)
+                    .filter(|&key| filter.contains(key))
+                    .count();
+                assert!(
+                    false_positives <= max_false_positives,
+                    "{filename}: excessive false positives ({false_positives} > {max_false_positives})"
+                );
+            }
+
+            assert_eq!(filter.serialize(), bytes, "roundtrip: {filename}");
+        }
+    }
 }

@@ -161,6 +161,70 @@ fn test_go_compatibility() {
 }
 
 #[test]
+fn test_rust_compatibility() {
+    for n in [0, 1, 10, 100, 1000, 10_000, 100_000, 1_000_000] {
+        let rust_filename = format!("theta_n{n}_rust.sk");
+        let rust_path = serialization_test_data("rust_generated_files", &rust_filename);
+        let java_filename = format!("theta_n{n}_java.sk");
+        let java_path = serialization_test_data("java_generated_files", &java_filename);
+
+        let rust_bytes = fs::read(&rust_path).unwrap();
+        let java_bytes = fs::read(&java_path).unwrap();
+        if n == 1 {
+            // Java sets the optional v3 SINGLE_ITEM flag (0x20) in byte 5; all other header and
+            // hash payload bytes match bit-for-bit.
+            assert_eq!(rust_bytes.len(), java_bytes.len(), "{rust_filename}");
+            assert_eq!(rust_bytes[..5], java_bytes[..5], "{rust_filename}");
+            assert_eq!(rust_bytes[5] | 0x20, java_bytes[5], "{rust_filename}");
+            assert_eq!(rust_bytes[6..], java_bytes[6..], "{rust_filename}");
+        } else {
+            assert_eq!(
+                rust_bytes, java_bytes,
+                "Rust {rust_filename} bytes differ from {java_filename}"
+            );
+        }
+        let sketch = CompactThetaSketch::deserialize(&rust_bytes).unwrap();
+        assert_eq!(sketch.is_empty(), n == 0, "{rust_filename}");
+        assert_eq!(sketch.serialize(), rust_bytes, "{rust_filename}");
+
+        test_sketch_file(rust_path, n, false);
+    }
+
+    for n in [10, 100, 1000, 10_000, 100_000, 1_000_000] {
+        let rust_filename = format!("theta_compressed_n{n}_rust.sk");
+        let rust_path = serialization_test_data("rust_generated_files", &rust_filename);
+        let java_filename = format!("theta_compressed_n{n}_java.sk");
+        let java_path = serialization_test_data("java_generated_files", &java_filename);
+
+        let rust_bytes = fs::read(&rust_path).unwrap();
+        let java_bytes = fs::read(&java_path).unwrap();
+        assert_eq!(
+            rust_bytes, java_bytes,
+            "Rust {rust_filename} bytes differ from {java_filename}"
+        );
+        let sketch = CompactThetaSketch::deserialize(&rust_bytes).unwrap();
+        assert_eq!(sketch.serialize_compressed(), rust_bytes, "{rust_filename}");
+
+        test_sketch_file(rust_path, n, true);
+    }
+
+    let rust_path =
+        serialization_test_data("rust_generated_files", "theta_non_empty_no_entries_rust.sk");
+    let java_path =
+        serialization_test_data("java_generated_files", "theta_non_empty_no_entries_java.sk");
+    let rust_bytes = fs::read(&rust_path).unwrap();
+    let java_bytes = fs::read(&java_path).unwrap();
+    assert_eq!(rust_bytes, java_bytes);
+
+    let sketch = CompactThetaSketch::deserialize(&rust_bytes).unwrap();
+    assert!(!sketch.is_empty());
+    assert_eq!(sketch.num_retained(), 0);
+    assert!(sketch.is_estimation_mode());
+    assert_eq!(sketch.serialize(), rust_bytes);
+    test_sketch_file(rust_path, 0, false);
+}
+
+#[test]
 fn empty_sketch_serialization() {
     let expected = fs::read(serialization_test_data(
         "cpp_generated_files",

@@ -21,6 +21,7 @@ use std::path::PathBuf;
 use datasketches::bloom::BloomFilter;
 use datasketches::bloom::BloomFilterBuilder;
 use datasketches::error::ErrorKind;
+use datasketches::hash::value::canonical_float;
 use googletest::assert_that;
 use googletest::prelude::gt;
 
@@ -127,6 +128,45 @@ fn test_go_compatibility() {
     ] {
         let filename = format!("bf_n{n}_h{num_hashes}_go.sk");
         let path = serialization_test_data("go_generated_files", &filename);
+        test_bloom_filter_file(path, n, num_hashes);
+    }
+}
+
+#[test]
+fn test_rust_compatibility() {
+    for (n, num_hashes) in [
+        (0_u64, 3),
+        (0, 5),
+        (10_000, 3),
+        (10_000, 5),
+        (2_000_000, 3),
+        (2_000_000, 5),
+        (30_000_000, 3),
+        (30_000_000, 5),
+    ] {
+        let filename = format!("bf_n{n}_h{num_hashes}_rust.sk");
+        let path = serialization_test_data("rust_generated_files", &filename);
+        let bytes = fs::read(&path).unwrap();
+        let filter = BloomFilter::deserialize(&bytes).unwrap();
+        assert_eq!(
+            filter.capacity(),
+            n.max(1000).next_multiple_of(64),
+            "Wrong capacity in {}",
+            path.display()
+        );
+        if n > 0 {
+            assert!(
+                filter.contains(canonical_float::from_f64(f64::NAN)),
+                "Missing canonical NaN in {}",
+                path.display()
+            );
+        }
+        assert_eq!(
+            filter.serialize(),
+            bytes,
+            "Round-trip bytes differ for {}",
+            path.display()
+        );
         test_bloom_filter_file(path, n, num_hashes);
     }
 }

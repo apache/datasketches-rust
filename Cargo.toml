@@ -18,6 +18,7 @@
 [workspace]
 members = [
   "benchmarks",
+  "datagen",
   "datasketches",
   "examples",
   "tests-integration",

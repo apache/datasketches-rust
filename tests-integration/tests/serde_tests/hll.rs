@@ -605,6 +605,86 @@ fn test_go_hll8_compatibility() {
     }
 }
 
+fn assert_rust_hll_compatibility(type_name: &str, expected_type: HllType) {
+    for n in [0, 1, 10, 100, 1000, 10000, 100000, 1000000] {
+        let rust_filename = format!("{type_name}_n{n}_rust.sk");
+        let rust_path = serialization_test_data("rust_generated_files", &rust_filename);
+        let java_filename = format!("{type_name}_n{n}_java.sk");
+        let java_path = serialization_test_data("java_generated_files", &java_filename);
+
+        let rust_bytes = fs::read(&rust_path).unwrap();
+        let java_bytes = fs::read(&java_path).unwrap();
+        assert_ne!(rust_bytes[5] & 0x08, 0, "{rust_filename}");
+        assert_eq!(rust_bytes.len(), java_bytes.len(), "{rust_filename}");
+        if expected_type == HllType::Hll4 && n >= 100_000 {
+            // Compact HLL4 stores 0 for lg_arr (byte 4), while Java records its internal aux
+            // table lg_arr; preamble, nibbles, and compact aux coupons otherwise match bit-for-bit.
+            assert_eq!(rust_bytes[..4], java_bytes[..4], "{rust_filename}");
+            assert_eq!(rust_bytes[4], 0, "{rust_filename}");
+            assert_eq!(rust_bytes[5..], java_bytes[5..], "{rust_filename}");
+        } else {
+            assert_eq!(
+                rust_bytes, java_bytes,
+                "Rust {rust_filename} bytes differ from {java_filename}"
+            );
+        }
+
+        let sketch = HllSketch::deserialize(&rust_bytes).unwrap();
+        let java_sketch = HllSketch::deserialize(&java_bytes).unwrap();
+        assert_eq!(sketch.target_type(), expected_type, "{rust_filename}");
+        assert_eq!(sketch.is_empty(), n == 0, "{rust_filename}");
+        if n <= 1 || (expected_type != HllType::Hll4 && n >= 1000) {
+            assert_eq!(sketch.serialize(), rust_bytes, "{rust_filename}");
+        }
+        assert_hll_sketches_eq(&sketch, &java_sketch, &rust_filename);
+        test_sketch_file(rust_path, n, 12);
+    }
+}
+
+#[test]
+fn test_rust_hll4_compatibility() {
+    assert_rust_hll_compatibility("hll4", HllType::Hll4);
+}
+
+#[test]
+fn test_rust_hll6_compatibility() {
+    assert_rust_hll_compatibility("hll6", HllType::Hll6);
+}
+
+#[test]
+fn test_rust_hll8_compatibility() {
+    assert_rust_hll_compatibility("hll8", HllType::Hll8);
+}
+
+#[test]
+fn test_rust_hll_union_compatibility() {
+    for (type_name, expected_type) in [
+        ("hll4", HllType::Hll4),
+        ("hll6", HllType::Hll6),
+        ("hll8", HllType::Hll8),
+    ] {
+        let filename = format!("{type_name}_union_rust.sk");
+        let path = serialization_test_data("rust_generated_files", &filename);
+        let bytes = fs::read(&path).unwrap();
+        assert_ne!(bytes[5] & 0x08, 0, "{filename}");
+        let sketch = HllSketch::deserialize(&bytes).unwrap();
+
+        assert_eq!(sketch.lg_config_k(), 12, "{filename}");
+        assert_eq!(sketch.target_type(), expected_type, "{filename}");
+        assert!(!sketch.is_empty(), "{filename}");
+        assert_that!(
+            6000.0,
+            all!(
+                ge(sketch.lower_bound(NumStdDev::Two)),
+                le(sketch.upper_bound(NumStdDev::Two))
+            ),
+            "{filename}"
+        );
+
+        test_sketch_file(path, 6000, 12);
+    }
+}
+
 #[test]
 fn test_estimate_accuracy() {
     // This test verifies and prints actual estimates to show accuracy

@@ -21,6 +21,7 @@ use datasketches::codec::SketchBytes;
 use datasketches::codec::SketchSlice;
 use datasketches::error::Error;
 use datasketches::error::ErrorKind;
+use datasketches::frequencies::ErrorType;
 use datasketches::frequencies::FrequentItemValue;
 use datasketches::frequencies::FrequentItemsSketch;
 use googletest::assert_that;
@@ -187,6 +188,16 @@ fn test_java_frequent_longs_purged() {
 #[test]
 fn test_java_frequent_strings_purged() {
     check_purged_compatibility::<String>("java_generated_files", "frequent_string_purged_java.sk");
+}
+
+#[test]
+fn test_rust_frequent_longs_purged() {
+    check_purged_compatibility::<i64>("rust_generated_files", "frequent_long_purged_rust.sk");
+}
+
+#[test]
+fn test_rust_frequent_strings_purged() {
+    check_purged_compatibility::<String>("rust_generated_files", "frequent_string_purged_rust.sk");
 }
 
 #[test]
@@ -504,6 +515,145 @@ fn test_go_frequent_strings_utf8() {
     assert_eq!(sketch.estimate(&"уфхцч".to_string()), 5);
     assert_eq!(sketch.estimate(&"шщъыь".to_string()), 6);
     assert_eq!(sketch.estimate(&"эюя".to_string()), 7);
+}
+
+fn assert_frequent_round_trip<T>(sketch: &FrequentItemsSketch<T>, bytes: &[u8])
+where
+    T: FrequentItemValue + Clone + Ord + std::fmt::Debug,
+{
+    if sketch.num_retained() <= 1 {
+        assert_eq!(sketch.serialize(), bytes);
+    }
+
+    let reserialized = sketch.serialize();
+    let restored = FrequentItemsSketch::<T>::deserialize(&reserialized).unwrap();
+    assert_eq!(restored.is_empty(), sketch.is_empty());
+    assert_eq!(restored.lg_max_map_size(), sketch.lg_max_map_size());
+    assert_eq!(restored.lg_cur_map_size(), sketch.lg_cur_map_size());
+    assert_eq!(restored.total_weight(), sketch.total_weight());
+    assert_eq!(restored.maximum_error(), sketch.maximum_error());
+    assert_eq!(restored.num_retained(), sketch.num_retained());
+
+    let mut expected_rows: Vec<_> = sketch
+        .frequent_items(ErrorType::NoFalseNegatives)
+        .into_iter()
+        .map(|row| {
+            (
+                row.item().clone(),
+                row.estimate(),
+                row.lower_bound(),
+                row.upper_bound(),
+            )
+        })
+        .collect();
+    expected_rows.sort_by(|left, right| left.0.cmp(&right.0));
+
+    let mut actual_rows: Vec<_> = restored
+        .frequent_items(ErrorType::NoFalseNegatives)
+        .into_iter()
+        .map(|row| {
+            (
+                row.item().clone(),
+                row.estimate(),
+                row.lower_bound(),
+                row.upper_bound(),
+            )
+        })
+        .collect();
+    actual_rows.sort_by(|left, right| left.0.cmp(&right.0));
+
+    assert_eq!(actual_rows, expected_rows);
+}
+
+#[test]
+fn test_rust_frequent_longs_compatibility() {
+    for n in [0, 1, 10, 100, 1000, 10000, 100000, 1000000] {
+        let filename = format!("frequent_long_n{n}_rust.sk");
+        let path = serialization_test_data("rust_generated_files", &filename);
+        let bytes = fs::read(&path).unwrap();
+        let sketch = FrequentItemsSketch::<i64>::deserialize(&bytes).unwrap();
+        assert_eq!(sketch.is_empty(), n == 0);
+        if n > 10 {
+            assert_that!(sketch.maximum_error(), gt(0));
+        } else {
+            assert_eq!(sketch.maximum_error(), 0);
+            for item in 1..=(n as i64) {
+                assert_eq!(sketch.estimate(&item), 1, "{filename}: item {item}");
+            }
+        }
+        assert_eq!(sketch.total_weight(), n);
+        assert_frequent_round_trip(&sketch, &bytes);
+    }
+}
+
+#[test]
+fn test_rust_frequent_strings_compatibility() {
+    for n in [0, 1, 10, 100, 1000, 10000, 100000, 1000000] {
+        let filename = format!("frequent_string_n{n}_rust.sk");
+        let path = serialization_test_data("rust_generated_files", &filename);
+        let bytes = fs::read(&path).unwrap();
+        let sketch = FrequentItemsSketch::<String>::deserialize(&bytes).unwrap();
+        assert_eq!(sketch.is_empty(), n == 0);
+        if n > 10 {
+            assert_that!(sketch.maximum_error(), gt(0));
+        } else {
+            assert_eq!(sketch.maximum_error(), 0);
+            for item in 1..=n {
+                assert_eq!(
+                    sketch.estimate(&item.to_string()),
+                    1,
+                    "{filename}: item {item}"
+                );
+            }
+        }
+        assert_eq!(sketch.total_weight(), n);
+        assert_frequent_round_trip(&sketch, &bytes);
+    }
+}
+
+#[test]
+fn test_rust_frequent_strings_ascii() {
+    let path = serialization_test_data("rust_generated_files", "frequent_string_ascii_rust.sk");
+    let bytes = fs::read(&path).unwrap();
+    let sketch = FrequentItemsSketch::<String>::deserialize(&bytes).unwrap();
+    assert!(!sketch.is_empty());
+    assert_eq!(sketch.maximum_error(), 0);
+    assert_eq!(sketch.total_weight(), 10);
+    assert_eq!(
+        sketch.estimate(&"aaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string()),
+        1
+    );
+    assert_eq!(
+        sketch.estimate(&"bbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string()),
+        2
+    );
+    assert_eq!(
+        sketch.estimate(&"ccccccccccccccccccccccccccccc".to_string()),
+        3
+    );
+    assert_eq!(
+        sketch.estimate(&"ddddddddddddddddddddddddddddd".to_string()),
+        4
+    );
+    assert_frequent_round_trip(&sketch, &bytes);
+}
+
+#[test]
+fn test_rust_frequent_strings_utf8() {
+    let path = serialization_test_data("rust_generated_files", "frequent_string_utf8_rust.sk");
+    let bytes = fs::read(&path).unwrap();
+    let sketch = FrequentItemsSketch::<String>::deserialize(&bytes).unwrap();
+    assert!(!sketch.is_empty());
+    assert_eq!(sketch.maximum_error(), 0);
+    assert_eq!(sketch.total_weight(), 28);
+    assert_eq!(sketch.estimate(&"абвгд".to_string()), 1);
+    assert_eq!(sketch.estimate(&"еёжзи".to_string()), 2);
+    assert_eq!(sketch.estimate(&"йклмн".to_string()), 3);
+    assert_eq!(sketch.estimate(&"опрст".to_string()), 4);
+    assert_eq!(sketch.estimate(&"уфхцч".to_string()), 5);
+    assert_eq!(sketch.estimate(&"шщъыь".to_string()), 6);
+    assert_eq!(sketch.estimate(&"эюя".to_string()), 7);
+    assert_frequent_round_trip(&sketch, &bytes);
 }
 
 #[test]
