@@ -540,6 +540,57 @@ fn test_java_hll8_compatibility() {
 }
 
 #[test]
+fn test_java_hll_union_compatibility() {
+    for (type_name, expected_type) in [
+        ("hll4", HllType::Hll4),
+        ("hll6", HllType::Hll6),
+        ("hll8", HllType::Hll8),
+    ] {
+        let compact_name = format!("{type_name}_union_java.sk");
+        let compact_path = serialization_test_data("java_generated_files", &compact_name);
+        let compact_bytes = fs::read(&compact_path).unwrap();
+        assert_ne!(compact_bytes[5] & 0x08, 0, "{compact_name}");
+
+        let rust_name = format!("{type_name}_union_rust.sk");
+        let rust_bytes =
+            fs::read(serialization_test_data("rust_generated_files", &rust_name)).unwrap();
+        assert_eq!(compact_bytes, rust_bytes, "{compact_name}");
+
+        let compact_sketch = HllSketch::deserialize(&compact_bytes).unwrap();
+        assert_eq!(compact_sketch.lg_config_k(), 12, "{compact_name}");
+        assert_eq!(
+            compact_sketch.target_type(),
+            expected_type,
+            "{compact_name}"
+        );
+        assert!(!compact_sketch.is_empty(), "{compact_name}");
+        test_sketch_file(compact_path, 6000, 12);
+
+        let upd_name = format!("{type_name}_unionupd_java.sk");
+        let upd_path = serialization_test_data("java_generated_files", &upd_name);
+        let upd_bytes = fs::read(&upd_path).unwrap();
+        assert_eq!(upd_bytes[5] & 0x08, 0, "{upd_name}");
+
+        let upd_sketch = HllSketch::deserialize(&upd_bytes).unwrap();
+        assert_eq!(upd_sketch.lg_config_k(), 12, "{upd_name}");
+        assert_eq!(upd_sketch.target_type(), expected_type, "{upd_name}");
+        assert!(!upd_sketch.is_empty(), "{upd_name}");
+        assert_hll_sketches_eq(&upd_sketch, &compact_sketch, &upd_name);
+        assert_eq!(
+            upd_sketch.estimate(),
+            compact_sketch.estimate(),
+            "{upd_name}"
+        );
+        assert_eq!(
+            upd_sketch.composite_estimate(),
+            compact_sketch.composite_estimate(),
+            "{upd_name}"
+        );
+        test_sketch_file(upd_path, 6000, 12);
+    }
+}
+
+#[test]
 fn test_cpp_hll4_compatibility() {
     let test_cases = [0, 1, 10, 100, 1000, 10000, 100000, 1000000];
 

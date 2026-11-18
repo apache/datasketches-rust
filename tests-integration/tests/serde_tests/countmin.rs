@@ -280,16 +280,17 @@ fn rejects_weights_that_cannot_bound_counter_arithmetic() {
 }
 
 // This helper validates binary format compatibility (deserialize + byte round-trip) for
-// version 1 datasketches-cpp CountMin snapshots. It intentionally does not assert estimate
-// equivalence because version 1 row-seed derivation differs across implementations.
-fn assert_cpp_snapshot(
+// version 1 datasketches-cpp and datasketches-go CountMin snapshots. It intentionally does not
+// assert estimate equivalence because version 1 row-seed derivation differs across implementations.
+fn assert_v1_snapshot(
+    dir: &str,
     filename: &str,
     seed: u64,
     expected_num_hashes: u8,
     expected_num_buckets: u32,
     expected_total_weight: u64,
 ) {
-    let path = serialization_test_data("cpp_generated_files", filename);
+    let path = serialization_test_data(dir, filename);
     let bytes = fs::read(&path).unwrap();
 
     let sketch = CountMinSketch::<u64>::deserialize_with_seed(&bytes, seed).unwrap();
@@ -306,12 +307,47 @@ fn assert_cpp_snapshot(
 
 #[test]
 fn test_deserialize_cpp_empty_snapshot() {
-    assert_cpp_snapshot("count_min_empty_cpp.sk", 9001, 1, 5, 0);
+    assert_v1_snapshot(
+        "cpp_generated_files",
+        "count_min_empty_cpp.sk",
+        9001,
+        1,
+        5,
+        0,
+    );
 }
 
 #[test]
 fn test_deserialize_cpp_non_empty_snapshot() {
-    assert_cpp_snapshot("count_min_non_empty_cpp.sk", 9001, 3, 1024, 2850);
+    assert_v1_snapshot(
+        "cpp_generated_files",
+        "count_min_non_empty_cpp.sk",
+        9001,
+        3,
+        1024,
+        2850,
+    );
+}
+
+#[test]
+fn test_deserialize_go_empty_snapshot() {
+    assert_v1_snapshot("go_generated_files", "count_min_empty_go.sk", 9001, 1, 5, 0);
+}
+
+#[test]
+fn test_deserialize_go_non_empty_snapshot() {
+    assert_v1_snapshot(
+        "go_generated_files",
+        "count_min_non_empty_go.sk",
+        9001,
+        3,
+        1024,
+        2850,
+    );
+    let path = serialization_test_data("go_generated_files", "count_min_non_empty_go.sk");
+    let bytes = fs::read(&path).unwrap();
+    let err = CountMinSketch::<u64>::deserialize_with_seed(&bytes, 9000).unwrap_err();
+    assert_that!(err.message(), contains_substring("incompatible seed hash"));
 }
 
 #[test]
@@ -335,10 +371,10 @@ fn zero_seed_hash_uses_the_callers_error_kind() {
     assert_eq!(deserialization_error.kind(), ErrorKind::InvalidData);
 }
 
-fn assert_rust_v2_snapshot(filename: &str, seed: u64, n: u64) {
+fn assert_v2_snapshot(dir: &str, filename: &str, seed: u64, n: u64) {
     const DEFAULT_SEED: u64 = 9001;
 
-    let path = serialization_test_data("rust_generated_files", filename);
+    let path = serialization_test_data(dir, filename);
     let bytes = fs::read(&path).unwrap();
     assert_eq!(bytes[1], 2, "expected v2 serial version in {filename}");
 
@@ -396,10 +432,55 @@ fn assert_rust_v2_snapshot(filename: &str, seed: u64, n: u64) {
 }
 
 #[test]
+fn test_deserialize_java_v2_snapshots() {
+    for n in [0, 1, 10, 100, 1000, 10_000] {
+        let java_filename = format!("count_min_v2_n{n}_java.sk");
+        let rust_filename = format!("count_min_v2_n{n}_rust.sk");
+        assert_v2_snapshot("java_generated_files", &java_filename, 9001, n);
+        assert_eq!(
+            fs::read(serialization_test_data(
+                "java_generated_files",
+                &java_filename
+            ))
+            .unwrap(),
+            fs::read(serialization_test_data(
+                "rust_generated_files",
+                &rust_filename
+            ))
+            .unwrap(),
+            "{java_filename}"
+        );
+    }
+    assert_v2_snapshot(
+        "java_generated_files",
+        "count_min_v2_seed42_n1000_java.sk",
+        42,
+        1000,
+    );
+    assert_eq!(
+        fs::read(serialization_test_data(
+            "java_generated_files",
+            "count_min_v2_seed42_n1000_java.sk"
+        ))
+        .unwrap(),
+        fs::read(serialization_test_data(
+            "rust_generated_files",
+            "count_min_v2_seed42_n1000_rust.sk"
+        ))
+        .unwrap(),
+    );
+}
+
+#[test]
 fn test_deserialize_rust_v2_snapshots() {
     for n in [0, 1, 10, 100, 1000, 10_000] {
         let filename = format!("count_min_v2_n{n}_rust.sk");
-        assert_rust_v2_snapshot(&filename, 9001, n);
+        assert_v2_snapshot("rust_generated_files", &filename, 9001, n);
     }
-    assert_rust_v2_snapshot("count_min_v2_seed42_n1000_rust.sk", 42, 1000);
+    assert_v2_snapshot(
+        "rust_generated_files",
+        "count_min_v2_seed42_n1000_rust.sk",
+        42,
+        1000,
+    );
 }

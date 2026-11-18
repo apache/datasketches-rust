@@ -131,6 +131,27 @@ fn test_sketch_replay(path: &Path, sketch: CpcSketch, inputs: impl Iterator<Item
     );
 }
 
+fn assert_negative_one_file(dir: &str, filename: &str) -> Vec<u8> {
+    let path = serialization_test_data(dir, filename);
+    let bytes = fs::read(&path).unwrap();
+    let mut sketch = CpcSketch::deserialize(&bytes).unwrap();
+    assert_eq!(sketch.lg_k(), 11, "{filename}");
+    assert!(!sketch.is_empty(), "{filename}");
+    let initial_estimate = sketch.estimate();
+    assert_that!(initial_estimate, near(1.0, 0.02));
+    assert_eq!(sketch.serialize(), bytes, "{filename}");
+
+    let wrapper = CpcWrapper::new(&bytes).unwrap();
+    assert_eq!(wrapper.estimate(), initial_estimate, "{filename}");
+
+    sketch.update(sign_extend::from_i8(-1));
+    sketch.update(sign_extend::from_i16(-1));
+    sketch.update(sign_extend::from_i32(-1));
+    sketch.update(-1_i64);
+    assert_eq!(sketch.estimate(), initial_estimate, "{filename}");
+    bytes
+}
+
 #[test]
 fn test_java_compatibility() {
     let test_cases = [0, 100, 200, 2000, 20000];
@@ -141,6 +162,14 @@ fn test_java_compatibility() {
         let sketch = test_sketch_file(&path, n);
         test_sketch_replay(&path, sketch, 0..n);
     }
+
+    let java_neg = assert_negative_one_file("java_generated_files", "cpc_negative_one_java.sk");
+    let rust_neg = fs::read(serialization_test_data(
+        "rust_generated_files",
+        "cpc_negative_one_rust.sk",
+    ))
+    .unwrap();
+    assert_eq!(java_neg, rust_neg);
 }
 
 #[test]
@@ -180,21 +209,5 @@ fn test_rust_compatibility() {
         test_sketch_replay(&path, sketch, 0..n);
     }
 
-    let neg_path = serialization_test_data("rust_generated_files", "cpc_negative_one_rust.sk");
-    let neg_bytes = fs::read(&neg_path).unwrap();
-    let mut neg_sketch = CpcSketch::deserialize(&neg_bytes).unwrap();
-    assert_eq!(neg_sketch.lg_k(), 11);
-    assert!(!neg_sketch.is_empty());
-    let initial_estimate = neg_sketch.estimate();
-    assert_that!(initial_estimate, near(1.0, 0.02));
-    assert_eq!(neg_sketch.serialize(), neg_bytes);
-
-    let wrapper = CpcWrapper::new(&neg_bytes).unwrap();
-    assert_eq!(wrapper.estimate(), initial_estimate);
-
-    neg_sketch.update(sign_extend::from_i8(-1));
-    neg_sketch.update(sign_extend::from_i16(-1));
-    neg_sketch.update(sign_extend::from_i32(-1));
-    neg_sketch.update(-1_i64);
-    assert_eq!(neg_sketch.estimate(), initial_estimate);
+    assert_negative_one_file("rust_generated_files", "cpc_negative_one_rust.sk");
 }

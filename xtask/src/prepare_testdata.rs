@@ -90,7 +90,7 @@ impl CommandPrepareTestData {
 }
 
 fn prepare_remote(serde_tests: &Path, languages: &[&'static str]) -> Result<()> {
-    const REVISION: &str = "8193bab45ca5da3b513ea43fb5793e7e5b4da548";
+    const REVISION: &str = "78c63c3ef89f85f68d60b0ff00a4e3cadf411c98";
     let archive_url =
         format!("https://api.github.com/repos/apache/datasketches-tck/tarball/{REVISION}");
 
