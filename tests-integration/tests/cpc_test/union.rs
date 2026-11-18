@@ -105,6 +105,22 @@ fn test_sliding_union_matches_single_sketch() {
 }
 
 #[test]
+fn first_sliding_merge_folds_a_higher_precision_source() {
+    let mut wide = CpcSketch::new(10).unwrap();
+    let mut narrow = CpcSketch::new(8).unwrap();
+    for value in 0..32_768 {
+        wide.update(value);
+        narrow.update(value);
+    }
+
+    let mut folded = CpcUnion::new(8).unwrap();
+    folded.update(&wide).unwrap();
+    let mut direct = CpcUnion::new(8).unwrap();
+    direct.update(&narrow).unwrap();
+    assert_eq!(folded.serialize(), direct.serialize());
+}
+
+#[test]
 fn test_reduce_k_empty() {
     let mut sketch = CpcSketch::new(11).unwrap();
     for i in 0..10000 {
