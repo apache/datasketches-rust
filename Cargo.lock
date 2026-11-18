@@ -296,6 +296,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "gensnap"
+version = "0.0.0"
+dependencies = [
+ "clap",
+ "datasketches",
+]
+
+[[package]]
 name = "getrandom"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -665,14 +673,6 @@ name = "similar"
 version = "2.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bbbb5d9659141646ae647b42fe094daf6c6192d1620870b449d9557f748b2daa"
-
-[[package]]
-name = "snapshots"
-version = "0.0.0"
-dependencies = [
- "clap",
- "datasketches",
-]
 
 [[package]]
 name = "socks"

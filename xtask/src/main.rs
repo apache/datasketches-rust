@@ -424,7 +424,7 @@ impl CommandPrepareTestData {
             "run",
             "--release",
             "--package",
-            "snapshots",
+            "gensnap",
             "--",
             "--output-dir",
         ]);
@@ -432,7 +432,7 @@ impl CommandPrepareTestData {
         println!("{cmd:?}");
         let status = cmd.status()?;
         if !status.success() {
-            return Err(format!("snapshots generator failed: {status}").into());
+            return Err(format!("gensnap failed: {status}").into());
         }
 
         let mut count = 0_usize;

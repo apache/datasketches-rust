@@ -16,15 +16,11 @@
 # under the License.
 
 [package]
-name = "snapshots"
+name = "gensnap"
 publish = false
 
 edition.workspace = true
 rust-version.workspace = true
-
-[[bin]]
-name = "snapshots"
-path = "main.rs"
 
 [dependencies]
 clap = { workspace = true }
