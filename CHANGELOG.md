@@ -8,6 +8,10 @@ All significant changes to this project will be documented in this file.
 
 * Add `DensitySketch`, `Kernel`, `GaussianKernel`, `DensityValue`, and `DensitySketchIter` behind the `density` feature for streaming kernel density estimation and coreset construction over multidimensional `f32` and `f64` vectors, with custom kernel support, merging, iteration, and cross-language serialization.
 
+### Performance improvements
+
+* Reduce heap usage and speed up grouped distinct counts with `CpcSketch` when most groups contain only a few distinct values.
+
 ### Bug fixes
 
 * `HllSketch::serialize` and `HllUnion::serialize` now set the compact flag in serialized `HllType::Hll6` and `HllType::Hll8` HLL-mode headers, matching the compact wire format expected by cross-language DataSketches readers; deserialization continues to accept images with or without the flag.

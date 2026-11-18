@@ -15,12 +15,54 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::mem::size_of_val;
+use std::ops::Deref;
+use std::ops::DerefMut;
+
 use crate::error::Error;
 
 const UPSIZE_NUMERATOR: u32 = 3;
 const UPSIZE_DENOMINATOR: u32 = 4;
 const DOWNSIZE_NUMERATOR: u32 = 1;
 const DOWNSIZE_DENOMINATOR: u32 = 4;
+
+const INLINE_SLOTS: usize = 4;
+
+#[derive(Debug, Clone)]
+enum Slots {
+    Inline([u32; INLINE_SLOTS]),
+    Heap(Box<[u32]>),
+}
+
+impl Slots {
+    fn new(len: usize) -> Self {
+        if len == INLINE_SLOTS {
+            Self::Inline([u32::MAX; INLINE_SLOTS])
+        } else {
+            Self::Heap(vec![u32::MAX; len].into_boxed_slice())
+        }
+    }
+}
+
+impl Deref for Slots {
+    type Target = [u32];
+
+    fn deref(&self) -> &[u32] {
+        match self {
+            Self::Inline(slots) => slots,
+            Self::Heap(slots) => slots,
+        }
+    }
+}
+
+impl DerefMut for Slots {
+    fn deref_mut(&mut self) -> &mut [u32] {
+        match self {
+            Self::Inline(slots) => slots,
+            Self::Heap(slots) => slots,
+        }
+    }
+}
 
 /// A highly specialized hash table used for sparse data.
 ///
@@ -32,7 +74,7 @@ pub struct PairTable {
     lg_size: u8,
     num_valid_bits: u8,
     num_items: u32,
-    slots: Vec<u32>,
+    slots: Slots,
 }
 
 impl PairTable {
@@ -49,7 +91,7 @@ impl PairTable {
             lg_size,
             num_valid_bits,
             num_items: 0,
-            slots: vec![u32::MAX; 1 << lg_size],
+            slots: Slots::new(1 << lg_size),
         }
     }
 
@@ -230,7 +272,7 @@ impl PairTable {
         probe
     }
 
-    /// Rebuilds to a larger size. `num_items` and `num_valid_bits` remain unchanged.
+    /// Rehashes the occupied slots at the new size.
     fn rebuild(&mut self, lg_size: u8) {
         assert!(
             (2..=26).contains(&lg_size),
@@ -249,9 +291,9 @@ impl PairTable {
             self.num_items
         );
 
-        let slots = std::mem::replace(&mut self.slots, vec![u32::MAX; new_size as usize]);
+        let slots = std::mem::replace(&mut self.slots, Slots::new(new_size as usize));
         self.lg_size = lg_size;
-        for slot in slots {
+        for &slot in slots.iter() {
             if slot != u32::MAX {
                 self.must_insert(slot);
             }
@@ -260,6 +302,31 @@ impl PairTable {
 
     /// Returns an estimate of memory usage in bytes.
     pub fn estimated_size(&self) -> usize {
-        self.slots.capacity() * size_of::<u32>()
+        match &self.slots {
+            Slots::Inline(_) => 0,
+            Slots::Heap(slots) => size_of_val(slots.as_ref()),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn colliding_pairs_survive_growing_and_shrinking() {
+        let mut table = PairTable::new(2, 10);
+        // These pairs probe from the last inline slot and wrap around.
+        for pair in 0x300..0x303 {
+            assert!(table.maybe_insert(pair));
+        }
+        assert_eq!(table.estimated_size(), 0);
+        assert!(table.maybe_insert(0x303));
+        for pair in 0x300..0x303 {
+            assert!(table.maybe_delete(pair));
+        }
+        assert_eq!(table.estimated_size(), 0);
+        assert!(!table.maybe_insert(0x303));
+        assert!(table.maybe_insert(0x300));
     }
 }
