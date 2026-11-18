@@ -15,7 +15,12 @@
 // specific language governing permissions and limitations
 // under the License.
 
+mod bench;
+mod check;
+mod docs;
+mod lint;
 mod prepare_testdata;
+mod test;
 
 use std::path::Path;
 use std::process::Command as StdCommand;
@@ -23,7 +28,12 @@ use std::process::Command as StdCommand;
 use clap::Parser;
 use clap::Subcommand;
 
+use crate::bench::CommandBench;
+use crate::check::CommandCheck;
+use crate::docs::CommandDocs;
+use crate::lint::CommandLint;
 use crate::prepare_testdata::CommandPrepareTestData;
+use crate::test::CommandTest;
 
 fn main() {
     let cmd = Command::parse();
@@ -68,64 +78,6 @@ enum SubCommand {
     PrepareTestData(CommandPrepareTestData),
 }
 
-#[derive(Parser)]
-struct CommandBench {
-    #[arg(long, help = "Compile benchmarks without running them.")]
-    no_run: bool,
-
-    #[arg(
-        last = true,
-        conflicts_with = "no_run",
-        help = "Arguments passed to the benchmark runner."
-    )]
-    args: Vec<String>,
-}
-
-impl CommandBench {
-    fn run(self) {
-        run_command(make_bench_cmd(self.no_run, &self.args));
-    }
-}
-
-#[derive(Parser)]
-#[clap(name = "check")]
-struct CommandCheck {}
-
-impl CommandCheck {
-    fn run(self) {
-        let features = datasketches_features();
-
-        run_command(make_check_cmd(&[]));
-        for feature in features.chunks(1) {
-            run_command(make_check_cmd(feature));
-        }
-        run_command(make_check_cmd(&features));
-    }
-}
-
-#[derive(Parser)]
-#[clap(name = "docs")]
-struct CommandDocs {}
-
-impl CommandDocs {
-    fn run(self) {
-        run_command(make_docs_cmd(true));
-    }
-}
-
-#[derive(Parser)]
-struct CommandTest {
-    #[arg(long, help = "Run tests serially and do not capture output.")]
-    no_capture: bool,
-}
-
-impl CommandTest {
-    fn run(self) {
-        let features = datasketches_features();
-        run_command(make_test_cmd(self.no_capture, &features));
-    }
-}
-
 fn datasketches_features() -> Vec<String> {
     use cargo_metadata::Metadata;
     use cargo_metadata::MetadataCommand;
@@ -151,24 +103,6 @@ fn datasketches_features() -> Vec<String> {
     features
 }
 
-#[derive(Parser)]
-#[clap(name = "lint")]
-struct CommandLint {
-    #[arg(long, help = "Automatically apply lint suggestions.")]
-    fix: bool,
-}
-
-impl CommandLint {
-    fn run(self) {
-        run_command(make_clippy_cmd(self.fix));
-        run_command(make_format_cmd(self.fix));
-        run_command(make_docs_cmd(false));
-        run_command(make_taplo_cmd(self.fix));
-        run_command(make_typos_cmd());
-        run_command(make_hawkeye_cmd(self.fix));
-    }
-}
-
 fn find_command(cmd: &str) -> StdCommand {
     match which::which(cmd) {
         Ok(exe) => {
@@ -182,128 +116,8 @@ fn find_command(cmd: &str) -> StdCommand {
     }
 }
 
-fn ensure_installed(bin: &str, crate_name: &str) {
-    if which::which(bin).is_err() {
-        let mut cmd = find_command("cargo");
-        cmd.args(["install", crate_name]);
-        run_command(cmd);
-    }
-}
-
 fn run_command(mut cmd: StdCommand) {
     println!("{cmd:?}");
     let status = cmd.status().expect("failed to execute process");
     assert!(status.success(), "command failed: {status}");
-}
-
-fn make_bench_cmd(no_run: bool, args: &[String]) -> StdCommand {
-    let mut cmd = find_command("cargo");
-    cmd.args(["bench", "--package", "benchmarks", "--bench", "benchmarks"]);
-    if no_run {
-        cmd.arg("--no-run");
-    }
-    if !args.is_empty() {
-        cmd.arg("--").args(args);
-    }
-    cmd
-}
-
-fn make_test_cmd(no_capture: bool, features: &[String]) -> StdCommand {
-    let mut cmd = find_command("cargo");
-    cmd.args(["test", "--workspace", "--no-default-features"]);
-    for feature in features {
-        cmd.args(["--features", feature]);
-    }
-    if no_capture {
-        cmd.args(["--", "--nocapture"]);
-    }
-    cmd
-}
-
-fn make_check_cmd(features: &[String]) -> StdCommand {
-    let mut cmd = find_command("cargo");
-    cmd.env("RUSTFLAGS", "-Dwarnings");
-    cmd.args([
-        "+nightly",
-        "check",
-        "--package",
-        "datasketches",
-        "--all-targets",
-        "--no-default-features",
-    ]);
-    for feature in features {
-        cmd.args(["--features", feature]);
-    }
-    cmd
-}
-
-fn make_format_cmd(fix: bool) -> StdCommand {
-    let mut cmd = find_command("cargo");
-    cmd.args(["+nightly", "fmt", "--all"]);
-    if !fix {
-        cmd.arg("--check");
-    }
-    cmd
-}
-
-fn make_clippy_cmd(fix: bool) -> StdCommand {
-    let mut cmd = find_command("cargo");
-    cmd.args([
-        "+nightly",
-        "clippy",
-        "--tests",
-        "--all-features",
-        "--all-targets",
-        "--workspace",
-    ]);
-    if fix {
-        cmd.args(["--allow-staged", "--allow-dirty", "--fix"]);
-    } else {
-        cmd.args(["--", "-D", "warnings"]);
-    }
-    cmd
-}
-
-fn make_docs_cmd(open: bool) -> StdCommand {
-    let mut cmd = find_command("cargo");
-    cmd.env("RUSTDOCFLAGS", "--cfg docsrs -D warnings");
-    cmd.args([
-        "+nightly",
-        "doc",
-        "--package",
-        "datasketches",
-        "--all-features",
-        "--no-deps",
-    ]);
-    if open {
-        cmd.args(["--open"]);
-    }
-    cmd
-}
-
-fn make_hawkeye_cmd(fix: bool) -> StdCommand {
-    ensure_installed("hawkeye", "hawkeye");
-    let mut cmd = find_command("hawkeye");
-    if fix {
-        cmd.args(["format"]);
-    } else {
-        cmd.args(["check"]);
-    }
-    cmd
-}
-
-fn make_typos_cmd() -> StdCommand {
-    ensure_installed("typos", "typos-cli");
-    find_command("typos")
-}
-
-fn make_taplo_cmd(fix: bool) -> StdCommand {
-    ensure_installed("taplo", "taplo-cli");
-    let mut cmd = find_command("taplo");
-    if fix {
-        cmd.args(["format"]);
-    } else {
-        cmd.args(["format", "--check"]);
-    }
-    cmd
 }
