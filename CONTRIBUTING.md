@@ -174,7 +174,7 @@ cargo install taplo-cli typos-cli hawkeye
 
 ## Serialization snapshots
 
-Serialization compatibility tests use cross-language snapshots from a pinned revision of [`apache/datasketches-tck`](https://github.com/apache/datasketches-tck) together with locally generated Rust snapshots from the workspace `gensnap` binary crate.
+Serialization compatibility tests use cross-language snapshots from a pinned revision of [`apache/datasketches-tck`](https://github.com/apache/datasketches-tck) together with locally generated Rust snapshots from the workspace `datagen` binary crate.
 
 The `cargo x prepare-testdata` command downloads the TCK archive for remote languages, runs the local Rust snapshot generator, and populates `.sk` files in:
 
@@ -194,11 +194,11 @@ cargo x prepare-testdata rust
 
 If no language is specified, all languages are prepared. These directories are not stored in Git and are replaced whenever selected. Run the command before the first test run and again whenever the pinned TCK revision or Rust serialization behavior changes. Preparing `cpp`, `go`, or `java` requires network access, while `cargo x prepare-testdata rust` runs offline.
 
-To generate Rust snapshots directly (writing to `serialization_test_data/rust_generated_files` by default) or filter by sketch family, run the `gensnap` package:
+To generate Rust snapshots directly (writing to `serialization_test_data/rust_generated_files` by default) or filter by sketch family, run the `datagen` package:
 
 ```shell
-cargo run --release --package gensnap
-cargo run --release --package gensnap -- --output-dir target/snapshots --sketch hll --sketch theta
+cargo run --release --package datagen
+cargo run --release --package datagen -- --output-dir target/snapshots --sketch hll --sketch theta
 ```
 
 ## Code of Conduct

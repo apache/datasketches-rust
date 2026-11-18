@@ -18,9 +18,9 @@
 [workspace]
 members = [
   "benchmarks",
+  "datagen",
   "datasketches",
   "examples",
-  "gensnap",
   "tests-integration",
   "xtask",
 ]

@@ -16,7 +16,7 @@
 # under the License.
 
 [package]
-name = "gensnap"
+name = "datagen"
 publish = false
 
 edition.workspace = true

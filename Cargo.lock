@@ -233,6 +233,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "datagen"
+version = "0.0.0"
+dependencies = [
+ "clap",
+ "datasketches",
+]
+
+[[package]]
 name = "datasketches"
 version = "0.7.0"
 dependencies = [
@@ -293,14 +301,6 @@ checksum = "843fba2746e448b37e26a819579957415c8cef339bf08564fe8b7ddbd959573c"
 dependencies = [
  "miniz_oxide",
  "zlib-rs",
-]
-
-[[package]]
-name = "gensnap"
-version = "0.0.0"
-dependencies = [
- "clap",
- "datasketches",
 ]
 
 [[package]]
