@@ -22,6 +22,7 @@ use datasketches::bloom::BloomFilter;
 use datasketches::bloom::BloomFilterBuilder;
 use datasketches::error::ErrorKind;
 use datasketches::hash::value::canonical_float;
+use datasketches::hash::value::raw_bytes;
 use googletest::assert_that;
 use googletest::prelude::gt;
 
@@ -54,11 +55,18 @@ fn test_bloom_filter_file(path: PathBuf, expected_num_items: u64, expected_num_h
         path.display()
     );
 
-    // TCK fixtures insert integers 0..n/10. Bound the sample for large fixtures.
+    // TCK fixtures insert integers 0..n/10 and, when non-empty, canonical NaN.
     for item in 0..(expected_num_items / 10).min(100) {
         assert!(
             filter1.contains(item),
             "Missing item {item} in {}",
+            path.display()
+        );
+    }
+    if expected_num_items > 0 {
+        assert!(
+            filter1.contains(canonical_float::from_f64(f64::NAN)),
+            "Missing canonical NaN in {}",
             path.display()
         );
     }
@@ -125,10 +133,79 @@ fn test_go_compatibility() {
         (10_000, 5),
         (2_000_000, 3),
         (2_000_000, 5),
+        (30_000_000, 3),
+        (30_000_000, 5),
     ] {
         let filename = format!("bf_n{n}_h{num_hashes}_go.sk");
         let path = serialization_test_data("go_generated_files", &filename);
         test_bloom_filter_file(path, n, num_hashes);
+    }
+}
+
+#[test]
+fn test_go_typed_compatibility() {
+    let load_go_filter = |filename: &str| {
+        let path = serialization_test_data("go_generated_files", filename);
+        let bytes = fs::read(&path).unwrap();
+        let filter = BloomFilter::deserialize(&bytes).unwrap();
+        assert_eq!(
+            filter.capacity(),
+            10_000_u64.next_multiple_of(64),
+            "{filename}"
+        );
+        assert_eq!(filter.num_hashes(), 3, "{filename}");
+        assert!(!filter.is_empty(), "{filename}");
+        assert_eq!(filter.serialize(), bytes, "{filename}");
+        filter
+    };
+
+    let str_filter = load_go_filter("bf_string_n10000_h3_go.sk");
+    for i in 0..1000 {
+        let item = i.to_string();
+        assert!(
+            str_filter.contains(raw_bytes::from_str(&item)),
+            "missing string {item}"
+        );
+    }
+
+    let double_filter = load_go_filter("bf_double_n10000_h3_go.sk");
+    for i in 0..1000 {
+        assert!(
+            double_filter.contains(canonical_float::from_f64(i as f64)),
+            "missing double {i}"
+        );
+    }
+
+    let long_array_filter = load_go_filter("bf_long_array_n10000_h3_go.sk");
+    for i in 0..1000_i64 {
+        let mut buf = [0_u8; 16];
+        buf[..8].copy_from_slice(&i.to_le_bytes());
+        buf[8..].copy_from_slice(&i.to_le_bytes());
+        assert!(
+            long_array_filter.contains(raw_bytes::from_slice(&buf)),
+            "missing long array {i}"
+        );
+    }
+
+    let double_array_filter = load_go_filter("bf_double_array_n10000_h3_go.sk");
+    for i in 0..1000 {
+        let mut buf = [0_u8; 16];
+        let bits = (i as f64).to_bits().to_le_bytes();
+        buf[..8].copy_from_slice(&bits);
+        buf[8..].copy_from_slice(&bits);
+        assert!(
+            double_array_filter.contains(raw_bytes::from_slice(&buf)),
+            "missing double array {i}"
+        );
+    }
+
+    let byte_array_filter = load_go_filter("bf_byte_array_n10000_h3_go.sk");
+    for i in 0..1000_u32 {
+        let b = (i % 256) as u8;
+        assert!(
+            byte_array_filter.contains(raw_bytes::from_slice(&[b, b, b, b])),
+            "missing byte array {i}"
+        );
     }
 }
 

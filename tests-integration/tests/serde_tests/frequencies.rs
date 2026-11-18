@@ -191,6 +191,16 @@ fn test_java_frequent_strings_purged() {
 }
 
 #[test]
+fn test_go_frequent_longs_purged() {
+    check_purged_compatibility::<i64>("go_generated_files", "frequent_long_purged_go.sk");
+}
+
+#[test]
+fn test_go_frequent_strings_purged() {
+    check_purged_compatibility::<String>("go_generated_files", "frequent_string_purged_go.sk");
+}
+
+#[test]
 fn test_rust_frequent_longs_purged() {
     check_purged_compatibility::<i64>("rust_generated_files", "frequent_long_purged_rust.sk");
 }
@@ -298,6 +308,23 @@ fn test_java_frequent_longs_compatibility() {
         let path = serialization_test_data("java_generated_files", &filename);
         let bytes = fs::read(&path).unwrap();
         let sketch = FrequentItemsSketch::<i64>::deserialize(&bytes).unwrap();
+        assert_eq!(sketch.is_empty(), n == 0);
+        if n > 10 {
+            assert_that!(sketch.maximum_error(), gt(0));
+        } else {
+            assert_eq!(sketch.maximum_error(), 0);
+        }
+        assert_eq!(sketch.total_weight(), n);
+    }
+}
+
+#[test]
+fn test_java_frequent_strings_compatibility() {
+    for n in [0, 1, 10, 100, 1000, 10000, 100000, 1000000] {
+        let filename = format!("frequent_string_n{n}_java.sk");
+        let path = serialization_test_data("java_generated_files", &filename);
+        let bytes = fs::read(&path).unwrap();
+        let sketch = FrequentItemsSketch::<String>::deserialize(&bytes).unwrap();
         assert_eq!(sketch.is_empty(), n == 0);
         if n > 10 {
             assert_that!(sketch.maximum_error(), gt(0));

@@ -544,12 +544,113 @@ fn validate_cross_language_fixture(path: PathBuf, expected_n: u64) {
     );
 }
 
+fn validate_negative_fixture(dir: &str, filename: &str, m: u64) {
+    let path = serialization_test_data(dir, filename);
+    let bytes = fs::read(&path).unwrap();
+    let sketch = ReqSketch::<ReqF32>::deserialize(&bytes).unwrap();
+    let min = req_f32(-(m as f32));
+    let max = req_f32(-1.0);
+    assert_eq!(sketch.k(), 12, "{filename}");
+    assert_eq!(sketch.rank_accuracy(), RankAccuracy::HighRank, "{filename}");
+    assert!(!sketch.is_empty(), "{filename}");
+    assert!(!sketch.is_estimation_mode(), "{filename}");
+    assert_eq!(sketch.total_weight(), m, "{filename}");
+    assert_eq!(sketch.min_item(), Some(&min), "{filename}");
+    assert_eq!(sketch.max_item(), Some(&max), "{filename}");
+    assert_eq!(
+        sketch.quantile(0.0, SearchCriteria::Inclusive).unwrap(),
+        Some(min),
+        "{filename}"
+    );
+    assert_eq!(
+        sketch.quantile(1.0, SearchCriteria::Inclusive).unwrap(),
+        Some(max),
+        "{filename}"
+    );
+    assert_eq!(
+        sketch.rank(&min, SearchCriteria::Exclusive),
+        Some(0.0),
+        "{filename}"
+    );
+    assert_eq!(
+        sketch.rank(&min, SearchCriteria::Inclusive),
+        Some(1.0 / m as f64),
+        "{filename}"
+    );
+    assert_eq!(
+        sketch.rank(&max, SearchCriteria::Inclusive),
+        Some(1.0),
+        "{filename}"
+    );
+    assert_eq!(sketch.serialize(), bytes, "{filename}");
+}
+
+fn validate_mixed_fixture(dir: &str, filename: &str, m: u64) {
+    let path = serialization_test_data(dir, filename);
+    let bytes = fs::read(&path).unwrap();
+    let sketch = ReqSketch::<ReqF32>::deserialize(&bytes).unwrap();
+    let expected_n = 2 * m + 1;
+    let min = req_f32(-(m as f32));
+    let zero = req_f32(0.0);
+    let max = req_f32(m as f32);
+    assert_eq!(sketch.k(), 12, "{filename}");
+    assert_eq!(sketch.rank_accuracy(), RankAccuracy::HighRank, "{filename}");
+    assert!(!sketch.is_empty(), "{filename}");
+    assert!(!sketch.is_estimation_mode(), "{filename}");
+    assert_eq!(sketch.total_weight(), expected_n, "{filename}");
+    assert_eq!(sketch.min_item(), Some(&min), "{filename}");
+    assert_eq!(sketch.max_item(), Some(&max), "{filename}");
+    assert_eq!(
+        sketch.quantile(0.0, SearchCriteria::Inclusive).unwrap(),
+        Some(min),
+        "{filename}"
+    );
+    assert_eq!(
+        sketch.quantile(0.5, SearchCriteria::Inclusive).unwrap(),
+        Some(zero),
+        "{filename}"
+    );
+    assert_eq!(
+        sketch.quantile(1.0, SearchCriteria::Inclusive).unwrap(),
+        Some(max),
+        "{filename}"
+    );
+    assert_eq!(
+        sketch.rank(&zero, SearchCriteria::Exclusive),
+        Some(m as f64 / expected_n as f64),
+        "{filename}"
+    );
+    assert_eq!(
+        sketch.rank(&zero, SearchCriteria::Inclusive),
+        Some((m + 1) as f64 / expected_n as f64),
+        "{filename}"
+    );
+    assert_eq!(
+        sketch.rank(&max, SearchCriteria::Inclusive),
+        Some(1.0),
+        "{filename}"
+    );
+    assert_eq!(sketch.serialize(), bytes, "{filename}");
+}
+
 #[test]
 fn cpp_compatibility() {
     for n in [0u64, 1, 10, 100, 1000, 10000, 100000, 1000000] {
         let path =
             serialization_test_data("cpp_generated_files", &format!("req_float_n{n}_cpp.sk"));
         validate_cross_language_fixture(path, n);
+    }
+    for m in [1u64, 10] {
+        validate_negative_fixture(
+            "cpp_generated_files",
+            &format!("req_float_negative_n{m}_cpp.sk"),
+            m,
+        );
+        validate_mixed_fixture(
+            "cpp_generated_files",
+            &format!("req_float_mixed_n{m}_cpp.sk"),
+            m,
+        );
     }
 }
 
@@ -560,6 +661,38 @@ fn java_compatibility() {
             serialization_test_data("java_generated_files", &format!("req_float_n{n}_java.sk"));
         validate_cross_language_fixture(path, n);
     }
+    for m in [1u64, 10] {
+        validate_negative_fixture(
+            "java_generated_files",
+            &format!("req_float_negative_n{m}_java.sk"),
+            m,
+        );
+        validate_mixed_fixture(
+            "java_generated_files",
+            &format!("req_float_mixed_n{m}_java.sk"),
+            m,
+        );
+    }
+}
+
+#[test]
+fn go_compatibility() {
+    for n in [0u64, 1, 10, 100, 1000, 10000, 100000, 1000000] {
+        let path = serialization_test_data("go_generated_files", &format!("req_float_n{n}_go.sk"));
+        validate_cross_language_fixture(path, n);
+    }
+    for m in [1u64, 10] {
+        validate_negative_fixture(
+            "go_generated_files",
+            &format!("req_float_negative_n{m}_go.sk"),
+            m,
+        );
+        validate_mixed_fixture(
+            "go_generated_files",
+            &format!("req_float_mixed_n{m}_go.sk"),
+            m,
+        );
+    }
 }
 
 #[test]
@@ -569,97 +702,16 @@ fn rust_compatibility() {
             serialization_test_data("rust_generated_files", &format!("req_float_n{n}_rust.sk"));
         validate_cross_language_fixture(path, n);
     }
-
     for m in [1u64, 10] {
-        let neg_name = format!("req_float_negative_n{m}_rust.sk");
-        let neg_path = serialization_test_data("rust_generated_files", &neg_name);
-        let neg_bytes = fs::read(&neg_path).unwrap();
-        let neg = ReqSketch::<ReqF32>::deserialize(&neg_bytes).unwrap();
-        let neg_min = req_f32(-(m as f32));
-        let neg_max = req_f32(-1.0);
-        assert_eq!(neg.k(), 12, "{neg_name}");
-        assert_eq!(neg.rank_accuracy(), RankAccuracy::HighRank, "{neg_name}");
-        assert!(!neg.is_empty(), "{neg_name}");
-        assert!(!neg.is_estimation_mode(), "{neg_name}");
-        assert_eq!(neg.total_weight(), m, "{neg_name}");
-        assert_eq!(neg.min_item(), Some(&neg_min), "{neg_name}");
-        assert_eq!(neg.max_item(), Some(&neg_max), "{neg_name}");
-        assert_eq!(
-            neg.quantile(0.0, SearchCriteria::Inclusive).unwrap(),
-            Some(neg_min),
-            "{neg_name}"
+        validate_negative_fixture(
+            "rust_generated_files",
+            &format!("req_float_negative_n{m}_rust.sk"),
+            m,
         );
-        assert_eq!(
-            neg.quantile(1.0, SearchCriteria::Inclusive).unwrap(),
-            Some(neg_max),
-            "{neg_name}"
+        validate_mixed_fixture(
+            "rust_generated_files",
+            &format!("req_float_mixed_n{m}_rust.sk"),
+            m,
         );
-        assert_eq!(
-            neg.rank(&neg_min, SearchCriteria::Exclusive),
-            Some(0.0),
-            "{neg_name}"
-        );
-        assert_eq!(
-            neg.rank(&neg_min, SearchCriteria::Inclusive),
-            Some(1.0 / m as f64),
-            "{neg_name}"
-        );
-        assert_eq!(
-            neg.rank(&neg_max, SearchCriteria::Inclusive),
-            Some(1.0),
-            "{neg_name}"
-        );
-        assert_eq!(neg.serialize(), neg_bytes, "{neg_name}");
-
-        let mixed_name = format!("req_float_mixed_n{m}_rust.sk");
-        let mixed_path = serialization_test_data("rust_generated_files", &mixed_name);
-        let mixed_bytes = fs::read(&mixed_path).unwrap();
-        let mixed = ReqSketch::<ReqF32>::deserialize(&mixed_bytes).unwrap();
-        let expected_n = 2 * m + 1;
-        let mixed_min = req_f32(-(m as f32));
-        let zero = req_f32(0.0);
-        let mixed_max = req_f32(m as f32);
-        assert_eq!(mixed.k(), 12, "{mixed_name}");
-        assert_eq!(
-            mixed.rank_accuracy(),
-            RankAccuracy::HighRank,
-            "{mixed_name}"
-        );
-        assert!(!mixed.is_empty(), "{mixed_name}");
-        assert!(!mixed.is_estimation_mode(), "{mixed_name}");
-        assert_eq!(mixed.total_weight(), expected_n, "{mixed_name}");
-        assert_eq!(mixed.min_item(), Some(&mixed_min), "{mixed_name}");
-        assert_eq!(mixed.max_item(), Some(&mixed_max), "{mixed_name}");
-        assert_eq!(
-            mixed.quantile(0.0, SearchCriteria::Inclusive).unwrap(),
-            Some(mixed_min),
-            "{mixed_name}"
-        );
-        assert_eq!(
-            mixed.quantile(0.5, SearchCriteria::Inclusive).unwrap(),
-            Some(zero),
-            "{mixed_name}"
-        );
-        assert_eq!(
-            mixed.quantile(1.0, SearchCriteria::Inclusive).unwrap(),
-            Some(mixed_max),
-            "{mixed_name}"
-        );
-        assert_eq!(
-            mixed.rank(&zero, SearchCriteria::Exclusive),
-            Some(m as f64 / expected_n as f64),
-            "{mixed_name}"
-        );
-        assert_eq!(
-            mixed.rank(&zero, SearchCriteria::Inclusive),
-            Some((m + 1) as f64 / expected_n as f64),
-            "{mixed_name}"
-        );
-        assert_eq!(
-            mixed.rank(&mixed_max, SearchCriteria::Inclusive),
-            Some(1.0),
-            "{mixed_name}"
-        );
-        assert_eq!(mixed.serialize(), mixed_bytes, "{mixed_name}");
     }
 }
