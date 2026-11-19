@@ -359,7 +359,7 @@ impl CpcUnion {
                 // Instead, we convert it to a bitMatrix that can be ORed into the destination.
                 assert_eq!(flavor, Flavor::Sliding);
                 let src_matrix = sketch.build_bit_matrix();
-                or_matrix_into_matrix(old_matrix, self.lg_k, &src_matrix, sketch.lg_k());
+                or_rows_into_matrix(old_matrix, &src_matrix);
             }
         }
         Ok(())
@@ -394,7 +394,7 @@ impl CpcUnion {
             UnionState::BitMatrix(matrix) => {
                 let new_k = 1 << new_lg_k;
                 let mut new_matrix = vec![0; new_k];
-                or_matrix_into_matrix(&mut new_matrix, new_lg_k, matrix, self.lg_k);
+                or_rows_into_matrix(&mut new_matrix, matrix);
                 self.lg_k = new_lg_k;
                 self.state = UnionState::BitMatrix(new_matrix);
             }
@@ -455,13 +455,14 @@ fn or_table_into_matrix(dst_matrix: &mut [u64], dst_lg_k: u8, src_table: &PairTa
     }
 }
 
-fn or_matrix_into_matrix(dst_matrix: &mut [u64], dst_lg_k: u8, src_matrix: &[u64], src_lg_k: u8) {
-    assert!(dst_lg_k <= src_lg_k);
-    let dst_mask = (1 << dst_lg_k) - 1; // downsamples when dst_lg_k < src_lg_k
-    let src_k = 1 << src_lg_k;
-    for src_row in 0..src_k {
-        let dst_row = src_row & dst_mask;
-        dst_matrix[dst_row] |= src_matrix[src_row];
+fn or_rows_into_matrix(dst: &mut [u64], src: &[u64]) {
+    // Folding keeps the low row bits, so every destination-sized block maps to the same rows.
+    let blocks = src.chunks_exact(dst.len());
+    debug_assert!(blocks.remainder().is_empty());
+    for block in blocks {
+        for (row, &bits) in dst.iter_mut().zip(block) {
+            *row |= bits;
+        }
     }
 }
 

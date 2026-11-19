@@ -10,6 +10,7 @@ All significant changes to this project will be documented in this file.
 
 ### Performance improvements
 
+* `CpcUnion` merges full coupon matrices in contiguous row blocks when combining Sliding sketches or reducing the precision of a populated matrix.
 * `CpcUnion::update` uses less time and temporary memory when the first nonempty input is a Sliding sketch at the union's effective precision.
 
 ### Bug fixes
