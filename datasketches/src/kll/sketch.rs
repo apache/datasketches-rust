@@ -826,25 +826,13 @@ impl<T: Clone + Ord> KllSketch<T> {
 
     fn merge_higher_levels(&mut self, other: &KllSketch<T>) {
         let provisional_levels = self.levels.len().max(other.levels.len());
-        let mut self_levels = std::mem::take(&mut self.levels);
-        let mut work_levels = vec![Vec::new(); provisional_levels];
-        work_levels[0] = std::mem::take(&mut self_levels[0]);
+        let mut work_levels = std::mem::take(&mut self.levels);
+        work_levels.resize_with(provisional_levels, Vec::new);
 
-        for level in 1..provisional_levels {
-            let left = if level < self_levels.len() {
-                std::mem::take(&mut self_levels[level])
-            } else {
-                Vec::new()
-            };
-            let right = other.levels.get(level).cloned().unwrap_or_default();
-
-            work_levels[level] = if left.is_empty() {
-                right
-            } else if right.is_empty() {
-                left
-            } else {
-                merge_sorted_vec(left, right)
-            };
+        for (work_level, other_level) in work_levels.iter_mut().zip(&other.levels).skip(1) {
+            if !other_level.is_empty() {
+                merge_into_level(work_level, other_level.clone());
+            }
         }
 
         self.levels = general_compress(work_levels, self.k, self.is_level_zero_sorted);
@@ -1014,7 +1002,19 @@ fn downsample<T, I: ExactSizeIterator<Item = T>>(items: I, offset: bool, use_up:
         .collect()
 }
 
-fn merge_sorted_vec<T: Clone + Ord>(left: Vec<T>, right: Vec<T>) -> Vec<T> {
+fn merge_into_level<T: Ord>(target: &mut Vec<T>, right: Vec<T>) {
+    if right.is_empty() {
+        return;
+    }
+    let left = std::mem::take(target);
+    *target = if left.is_empty() {
+        right
+    } else {
+        merge_sorted_vec(left, right)
+    };
+}
+
+fn merge_sorted_vec<T: Ord>(left: Vec<T>, right: Vec<T>) -> Vec<T> {
     let mut merged = Vec::with_capacity(left.len() + right.len());
     let mut left_iter = left.into_iter().peekable();
     let mut right_iter = right.into_iter().peekable();
@@ -1031,7 +1031,7 @@ fn merge_sorted_vec<T: Clone + Ord>(left: Vec<T>, right: Vec<T>) -> Vec<T> {
     merged
 }
 
-fn general_compress<T: Clone + Ord>(
+fn general_compress<T: Ord>(
     mut levels_in: Vec<Vec<T>>,
     k: u16,
     is_level_zero_sorted: bool,
