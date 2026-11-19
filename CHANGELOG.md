@@ -18,7 +18,7 @@ All significant changes to this project will be documented in this file.
 
 * `HllSketch::serialize` and `HllUnion::serialize` now set the compact flag in serialized `HllType::Hll6` and `HllType::Hll8` HLL-mode headers, matching the compact wire format expected by cross-language DataSketches readers; deserialization continues to accept images with or without the flag.
 
-## v0.7.0
+## v0.7.0 (2026-11-19)
 
 ### Breaking changes
 
