@@ -280,6 +280,14 @@ impl CpcUnion {
         // if source is past SPARSE mode, make sure that union is a bitMatrix.
         if flavor > Flavor::Sparse {
             if let UnionState::Accumulator(old_sketch) = &self.state {
+                if flavor == Flavor::Sliding && old_sketch.is_empty() && self.lg_k == sketch.lg_k()
+                {
+                    // At equal precision, each source row is already the result of OR with
+                    // the corresponding zero row in the empty union.
+                    self.state = UnionState::BitMatrix(sketch.build_bit_matrix());
+                    return Ok(());
+                }
+
                 // convert the accumulator to a bit matrix
                 let bit_matrix = old_sketch.build_bit_matrix();
                 self.state = UnionState::BitMatrix(bit_matrix);
