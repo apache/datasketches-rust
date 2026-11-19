@@ -488,7 +488,6 @@ impl CpcSketch {
     /// The serialized data can be read by other DataSketches implementations.
     pub fn serialize(&self) -> Vec<u8> {
         let flavor = self.flavor();
-        let has_window = matches!(flavor, Flavor::Pinned | Flavor::Sliding);
         let mut pairs = match flavor {
             Flavor::Empty => vec![],
             Flavor::Sparse => {
@@ -530,7 +529,8 @@ impl CpcSketch {
                         window_index += 1;
                     }
                 }
-                all_pairs
+                // Merging the two ordered sources already produced row-major order.
+                return self.serialize_sorted_pairs(&all_pairs, false);
             }
             Flavor::Pinned => {
                 let mut pairs = self.surprising_value_table().unwrapping_get_items();
@@ -555,7 +555,10 @@ impl CpcSketch {
             }
         };
         pairs.sort_unstable();
+        self.serialize_sorted_pairs(&pairs, matches!(flavor, Flavor::Pinned | Flavor::Sliding))
+    }
 
+    fn serialize_sorted_pairs(&self, pairs: &[u32], has_window: bool) -> Vec<u8> {
         debug_assert_eq!(
             self.seed_hash,
             compute_seed_hash(self.seed, ErrorKind::InvalidArgument).unwrap()
@@ -570,7 +573,7 @@ impl CpcSketch {
             hip,
             window,
             pairs.len() as u32,
-            |bytes| encode_pairs(&pairs, self.lg_k, bytes),
+            |bytes| encode_pairs(pairs, self.lg_k, bytes),
         )
     }
 
