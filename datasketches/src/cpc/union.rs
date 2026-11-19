@@ -343,13 +343,9 @@ impl CpcUnion {
                 if matches!(flavor, Flavor::Hybrid | Flavor::Pinned) {
                     // [Case C] Hybrid, bitMatrix valid, accumulator == null
                     // [Case C] Pinned, bitMatrix valid, accumulator == null
-                    or_window_into_matrix(
-                        old_matrix,
-                        self.lg_k,
-                        &sketch.sliding_window,
-                        sketch.window_offset,
-                        sketch.lg_k(),
-                    );
+                    // Hybrid and Pinned windows occupy columns 0 through 7.
+                    debug_assert_eq!(sketch.window_offset, 0);
+                    or_rows_into_matrix(old_matrix, &sketch.sliding_window);
                     or_table_into_matrix(old_matrix, self.lg_k, sketch.surprising_value_table());
                     return Ok(());
                 }
@@ -427,21 +423,6 @@ impl fmt::Debug for CpcUnion {
     }
 }
 
-fn or_window_into_matrix(
-    dst_matrix: &mut [u64],
-    dst_lg_k: u8,
-    src_window: &[u8],
-    src_offset: u8,
-    src_lg_k: u8,
-) {
-    assert!(dst_lg_k <= src_lg_k);
-    let dst_mask = (1 << dst_lg_k) - 1; // downsamples when dst_lg_k < src_lg_k
-    let src_k = 1 << src_lg_k;
-    for src_row in 0..src_k {
-        dst_matrix[src_row & dst_mask] |= (src_window[src_row] as u64) << src_offset;
-    }
-}
-
 fn or_table_into_matrix(dst_matrix: &mut [u64], dst_lg_k: u8, src_table: &PairTable) {
     let dst_mask = (1 << dst_lg_k) - 1; // downsamples when dst_lg_k < src_lg_k
     let slots = src_table.slots();
@@ -455,13 +436,13 @@ fn or_table_into_matrix(dst_matrix: &mut [u64], dst_lg_k: u8, src_table: &PairTa
     }
 }
 
-fn or_rows_into_matrix(dst: &mut [u64], src: &[u64]) {
+fn or_rows_into_matrix<T: Copy + Into<u64>>(dst: &mut [u64], src: &[T]) {
     // Folding keeps the low row bits, so every destination-sized block maps to the same rows.
     let blocks = src.chunks_exact(dst.len());
     debug_assert!(blocks.remainder().is_empty());
     for block in blocks {
         for (row, &bits) in dst.iter_mut().zip(block) {
-            *row |= bits;
+            *row |= bits.into();
         }
     }
 }
