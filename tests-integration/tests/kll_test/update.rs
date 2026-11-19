@@ -127,6 +127,65 @@ fn binary_level_decomposition_and_top_level_folding() {
 }
 
 #[test]
+fn merging_sparse_and_top_folded_weighted_sketches() {
+    let mut sparse = KllSketch::<i64>::new(DEFAULT_K).unwrap();
+    sparse.update_with_weight(100, 1u64 << 40);
+
+    let mut unit = KllSketch::<i64>::new(DEFAULT_K).unwrap();
+    for item in 1..=5 {
+        unit.update(item);
+    }
+
+    let mut unit_into_sparse = sparse.clone();
+    unit_into_sparse.merge(&unit);
+    let mut sparse_into_unit = unit;
+    sparse_into_unit.merge(&sparse);
+
+    let expected_weight = (1u64 << 40) + 5;
+    for merged in [&unit_into_sparse, &sparse_into_unit] {
+        assert_eq!(merged.total_weight(), expected_weight);
+        assert_eq!(merged.sorted_view().total_weight(), expected_weight);
+        assert_eq!(merged.num_retained(), 6);
+        assert_eq!(merged.min_item(), Some(&1));
+        assert_eq!(merged.max_item(), Some(&100));
+        assert_eq!(
+            merged.rank(&5, SearchCriteria::Inclusive),
+            Some(5.0 / expected_weight as f64)
+        );
+        assert_eq!(
+            merged.rank(&100, SearchCriteria::Exclusive),
+            Some(5.0 / expected_weight as f64)
+        );
+        assert_eq!(merged.rank(&100, SearchCriteria::Inclusive), Some(1.0));
+
+        let bytes = merged.serialize();
+        let decoded = KllSketch::<i64>::deserialize(&bytes).unwrap();
+        assert_eq!(decoded.serialize(), bytes);
+    }
+
+    let mut top_left = KllSketch::<i64>::new(MIN_K).unwrap();
+    top_left.update_with_weight(1, 7u64 << 60);
+    let mut top_right = KllSketch::<i64>::new(MIN_K).unwrap();
+    top_right.update_with_weight(2, (8u64 << 60) + 3);
+    top_left.merge(&top_right);
+
+    let top_total = (15u64 << 60) + 3;
+    assert_eq!(top_left.total_weight(), top_total);
+    assert_eq!(top_left.sorted_view().total_weight(), top_total);
+    assert_eq!(top_left.num_retained(), 7 + 8 + 2);
+    assert_eq!(top_left.min_item(), Some(&1));
+    assert_eq!(top_left.max_item(), Some(&2));
+    assert_eq!(
+        top_left.rank(&1, SearchCriteria::Inclusive),
+        Some((7u64 << 60) as f64 / top_total as f64)
+    );
+
+    let bytes = top_left.serialize();
+    let decoded = KllSketch::<i64>::deserialize(&bytes).unwrap();
+    assert_eq!(decoded.serialize(), bytes);
+}
+
+#[test]
 fn weighted_updates_into_populated_sketch_preserve_disjoint_mass_and_min_k() {
     let mut sketch = KllSketch::<i64>::new(DEFAULT_K).unwrap();
     for item in 0..1_000 {
