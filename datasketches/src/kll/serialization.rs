@@ -17,9 +17,9 @@
 
 //! Binary serialization format constants for KLL sketches.
 //!
-//! Naming and layout follow the Apache DataSketches Java implementation
-//! (`KllPreambleUtil`) and the C++ `kll_sketch` compact serialization format.
-//! Java's updatable-memory layout is not a cross-language wire format and is
+//! Naming and layout follow datasketches-java's `KllPreambleUtil` and datasketches-cpp's
+//! `kll_sketch` compact serialization format.
+//! datasketches-java's updatable-memory layout is not a cross-language wire format and is
 //! intentionally outside this module's scope.
 
 /// Serialization version for empty or full sketches (KllPreambleUtil.SERIAL_VERSION_EMPTY_FULL).

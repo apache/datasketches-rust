@@ -56,12 +56,14 @@
 //! let mut sketch = TDigestMut::new(100).unwrap();
 //! sketch.update(1.0);
 //! sketch.update(2.0);
-//! let median = sketch.quantile(0.5).unwrap();
+//! let Some(median) = sketch.quantile(0.5)? else {
+//!     return Ok(()); // No samples to query.
+//! };
+//! assert!((1.0..=2.0).contains(&median));
 //! let frozen = sketch.freeze();
-//! assert!(frozen.rank(2.0).is_some());
+//! assert!(frozen.rank(2.0)?.is_some());
+//! # Ok::<(), datasketches::error::Error>(())
 //! ```
-
-mod serialization;
 
 mod sketch;
 pub use self::sketch::TDigest;

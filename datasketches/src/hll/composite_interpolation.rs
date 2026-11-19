@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! Bias-correction tables for `lg_k` 4 through 21 from DataSketches C++:
+//! Bias-correction tables for `lg_k` 4 through 21 from datasketches-cpp:
 //! <https://github.com/apache/datasketches-cpp/blob/5a055521/hll/include/CompositeInterpolationXTable-internal.hpp>
 
 const NUM_X_VALUES: usize = 257;
@@ -4769,7 +4769,7 @@ mod tests {
         let x_arr = get_x_arr(4);
         assert_eq!(x_arr.len(), 257);
 
-        // Check first few values match the C++ data
+        // Check first few values match the datasketches-cpp data.
         assert_that!(x_arr[0], near(10.767999803534, 1e-6));
         assert_that!(x_arr[1], near(11.237701481774, 1e-6));
     }

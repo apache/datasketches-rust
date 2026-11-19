@@ -15,27 +15,26 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::hint::black_box;
+
+use benchmarks::Bencher;
+use benchmarks::Runner;
 use datasketches::kll::KllFloat;
 use datasketches::kll::KllSketch;
-use divan::Bencher;
-use divan::black_box;
-use divan::counter::BytesCount;
 
 use super::support::prepared_sketch;
 
-#[divan::bench]
 fn serialize(bencher: Bencher) {
     let sketch = prepared_sketch();
-    let bytes = sketch.serialize();
-    bencher
-        .counter(BytesCount::new(bytes.len()))
-        .bench_local(|| black_box(&sketch).serialize());
+    bencher.bench_local(|| black_box(&sketch).serialize());
 }
 
-#[divan::bench]
 fn deserialize(bencher: Bencher) {
     let bytes = prepared_sketch().serialize();
-    bencher
-        .counter(BytesCount::new(bytes.len()))
-        .bench_local(|| KllSketch::<KllFloat<f64>>::deserialize(black_box(&bytes)).unwrap());
+    bencher.bench_local(|| KllSketch::<KllFloat<f64>>::deserialize(black_box(&bytes)).unwrap());
+}
+
+pub fn register(runner: &mut Runner) {
+    runner.case("kll::serde::serialize", 200_000, serialize);
+    runner.case("kll::serde::deserialize", 100_000, deserialize);
 }

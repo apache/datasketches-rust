@@ -4,15 +4,87 @@ All significant changes to this project will be documented in this file.
 
 ## Unreleased
 
+### New features
+
+* Add `DensitySketch`, `Kernel`, `GaussianKernel`, `DensityValue`, and `DensitySketchIter` behind the `density` feature for streaming kernel density estimation and coreset construction over multidimensional `f32` and `f64` vectors, with custom kernel support, merging, iteration, and cross-language serialization.
+
+### Performance improvements
+
+* `CpcUnion::update` uses less time and temporary memory when the first nonempty input is a Sliding sketch at the union's effective precision.
+
+### Bug fixes
+
+* `HllSketch::serialize` and `HllUnion::serialize` now set the compact flag in serialized `HllType::Hll6` and `HllType::Hll8` HLL-mode headers, matching the compact wire format expected by cross-language DataSketches readers; deserialization continues to accept images with or without the flag.
+
+## v0.7.0
+
+### Breaking changes
+
+* `BloomFilterBuilder::with_accuracy` now sizes the filter for its integer hash count, correcting false-positive targets that previously produced undersized filters. Capacity and hash count can differ from earlier versions; to combine with an existing filter, use `with_size(existing.capacity(), existing.num_hashes())` and the same seed.
+* `BloomFilter::capacity` now returns `u64` instead of `usize`; update callers expecting `usize` to use `u64` or convert explicitly.
+* `BloomFilter::contains` and `BloomFilter::contains_and_insert` now take `item: T` (`T: Hash`) by value instead of `&T`, matching `BloomFilter::insert`. Pass `&item` to retain owned values such as `String` or `Vec<u8>` without cloning, and remove explicit turbofish type arguments (or change `T` to `&T`) on borrowed calls such as `contains::<u64>(&value)`.
+* Fix 32-bit (`wasm32`) double hashing in `BloomFilter` to use the full 64-bit hash consistently with 64-bit targets, Java, C++, and Go. 64-bit targets and serialized formats are unchanged; rebuild or re-ingest filters created on 32-bit targets instead of mixing them across versions.
+* Remove `BloomFilter::is_compatible`; handle `InvalidArgument` from `union`, `intersect`, or `difference`, or compare `capacity()`, `num_hashes()`, and `seed()` directly.
+* `CountMinSketch::new` and `CountMinSketch::with_seed` now create serial version 2 sketches, require `num_hashes` in `1..=127`, and emit images that require a version 2 reader. Version 2 enables cross-language interchange when using `i64` counters and the documented input encodings, while existing version 1 images remain readable, updatable, and serializable as version 1. `CountMinSketch::merge` rejects mixing version 1 and version 2 sketches; upgrade readers before writers and rebuild persisted version 1 data from source items to merge it with new sketches.
+* `CountMinSketch::decay` now returns `Result<(), Error>`, returning `InvalidArgument` without modifying the sketch when `decay` is NaN or outside `(0.0, 1.0]`.
+* `CpcSketch::max_serialized_bytes` and `ReqSketch::serialized_size_bytes` are removed; serialize the sketch and inspect `len()` on the returned byte buffer when the encoded size is needed.
+* `FrequentItemsSketch::update_with_count` and `FrequentItemsSketch::update_with_count_ref` are renamed to `update_with_weight` and `update_with_weight_ref` to match weighted update naming across the crate.
+* `FrequentItemsSketch::num_active_items` is renamed to `num_retained` to match retained-entry naming across the crate; update callers of `num_active_items()` to call `num_retained()`.
+* `KllSketch::n` and `ReqSketch::n` are renamed to `total_weight` to match stream-weight naming across the crate; update callers of `n()` to call `total_weight()`.
+* `KllSketch::merge` now returns `()` instead of `Result<(), Error>` and panics without modifying the sketch if the combined stream weight exceeds `u64::MAX`.
+* `ReqSketch::num_retained` now returns `usize` instead of `u32`, matching `KllSketch`, `ThetaSketch`, and `TupleSketch`.
+* `ReqSketch::rank_lower_bound` and `ReqSketch::rank_upper_bound` now return `Result<f64, Error>`, returning `InvalidArgument` when `rank` is NaN or outside `[0.0, 1.0]` even on empty or exact-mode sketches.
+* `ThetaJaccardSimilarity::compute` and `TupleJaccardSimilarity::compute` now return `datasketches::common::JaccardSimilarity` instead of `datasketches::thetacommon::JaccardSimilarity`, and `datasketches::thetacommon` is no longer part of the public API.
+* Remove `PartialEq` from `BloomFilter`, `CountMinSketch`, `HllSketch`, `JaccardSimilarity`, and `KllSketch`.
+* `SketchSlice::advance` now takes `n: usize` instead of `u64` and panics if `n > self.remaining().len()`.
+
+### New features
+
+* Add `XorFilter`, `XorFilterBuilder`, and `XorFilterType` behind the `xor` feature for immutable membership queries on values or precomputed hashes. Filters support 8-, 16-, and 32-bit fingerprints and can be serialized for later queries.
+* Add `CpcUnion::serialize`, `HllUnion::serialize`, `ThetaUnion::serialize`, `ThetaUnion::serialize_compressed`, and `TupleUnion::serialize` to encode union results without calling `to_sketch`. Direct serialization avoids intermediate sketch allocations for `HllUnion` and `CpcUnion`, lets `HllUnion::serialize` target any `HllType` (`Hll4`, `Hll6`, or `Hll8`) at the union's effective `lg_k`, supports v4 compressed output via `ThetaUnion::serialize_compressed`, and encodes `TupleUnion` summaries without requiring `Clone` or cloning heap-backed summaries.
+* Add `KllSketch::estimated_size` and `ReqSketch::estimated_size` to estimate sketch memory usage in bytes.
+* Add `TDigest::num_retained` and `TDigestMut::num_retained` to report the number of retained entries or centroids in a t-digest.
+
+### Improvements
+
+* Implement `Clone` for `SketchBytes`, `SketchSlice`, `TDigest`, `ThetaSketchBuilder`, `TupleSketchBuilder`, and `TupleUnionBuilder`; `Default` for `SketchBytes`; `Eq` and `Hash` for `NumStdDev`, `ResizeFactor`, and `SearchCriteria`; and `Hash` for `ErrorType`, `HllType`, and `RankAccuracy`.
+* Improve the readability of `Debug` output across sketches, filters, views, and stateful set operators, and implement `Debug` for `ReqSketchIterator`, `SketchBytes`, `SketchSlice`, and `TDigest`.
+
+### Performance improvements
+
+* Speed up `BloomFilter::contains`, `BloomFilter::insert`, and `BloomFilter::contains_and_insert` across filter saturation levels, particularly for primitive and scalar-wrapped integer inputs and multi-hash configurations; longer byte-slice inputs on CPUs with fast hardware dividers see smaller gains. For `contains_and_insert`, gains are larger on streams containing new keys than on repeated-key streams.
+* Reduce `FrequentItemsSketch` update cost on streams of distinct items while growing toward `max_map_size`, particularly for keys such as strings or byte slices whose comparisons cost more than integers; updates once at capacity are unchanged.
+* Speed up `HllUnion::update` when adopting a high-cardinality `HllType::Hll8` sketch within `lg_max_k` or merging multiple high-cardinality sketches before querying or serializing the union; workloads that query after every merge are roughly unchanged.
+* Speed up `KllSketch::rank` in estimation mode while keeping exact-mode query latency unchanged.
+* Speed up `TDigest` and `TDigestMut` queries for dense `cdf` and `pmf` split-point batches and scalar `rank` lookups, particularly on digests with repeated values, with roughly unchanged performance on sparse split-point batches.
+* Speed up `CompactThetaSketch::serialize_compressed` and `CompactThetaSketch::deserialize` for compressed images while preserving the serialized format.
+* Speed up `CompactTupleSketch` and `TupleUnion` serialization and `CompactTupleSketch` deserialization for primitive summaries and custom `TupleSummaryValue` implementations built on `SketchBytes` and `SketchSlice`.
+* Speed up `ThetaSketch::compact` and `TupleSketch::compact` on populated sketches, along with ordered result generation across `ThetaUnion`, `TupleUnion`, `ThetaIntersection`, `TupleIntersection`, `ThetaANotB`, and `TupleANotB` for larger retained entry counts; sketches with very few retained entries are unchanged.
+* Speed up `ThetaANotB::compute` and `TupleANotB::compute` when either input is unordered, while avoiding intermediate allocations when subtracting a mutable `ThetaSketch` or `TupleSketch` directly; pairs of ordered compact inputs are unchanged.
+
+### Bug fixes
+
+* `FrequentItemsSketch::deserialize` now returns `InvalidData` when an active item weight is zero or when the sum of active item weights and maximum error exceeds the declared stream weight.
+* `ReqSketch::merge` now cascades compaction across newly grown levels when a merged sketch overflows the top compactor's nominal capacity.
+* `ReqSketch::deserialize` now returns `InvalidData` for out-of-range or non-finite compactor `section_size_raw` values instead of overflowing section-size rounding.
+* `ThetaJaccardSimilarity` and `TupleJaccardSimilarity` now return `InvalidArgument` instead of `InvalidData` when a non-empty input sketch's seed hash does not match the configured seed.
+* `ThetaANotB::compute` and `TupleANotB::compute` now stamp empty results with the operator's seed hash instead of copying an unchecked seed hash from an empty left input.
+
+## v0.6.0 (2026-10-29)
+
 ### Breaking changes
 
 * `BloomFilter::invert` is removed; use `BloomFilter::difference` for approximate A-not-B. The result excludes items in the right filter, but hash collisions can also remove items unique to the left filter.
 * `FrequentItemsSketch::is_empty` now returns `false` when the stream weight is nonzero, even if no items are retained. Use `num_active_items() == 0` to test for zero retained items.
 * `ReqSketch` queries now use `datasketches::common::SearchCriteria` instead of `datasketches::req::SearchCriteria`. `SearchCriteria` no longer implements `Default`; explicitly choose `Inclusive` or `Exclusive`.
+* `ReqSketch` and `req::SortedView` queries now distinguish empty sketches from invalid arguments. `rank` returns `Option<f64>`; `quantile`, `quantiles`, `cdf`, and `pmf`, where available, return `Result<Option<_>, Error>`. Handle `None` for valid queries on an empty sketch, and propagate or handle `InvalidArgument` for invalid ranks or split points, which are checked before emptiness.
+* `TDigest` and `TDigestMut` rank, quantile, CDF, and PMF queries now return `Result<Option<_>, Error>`. Invalid arguments return `InvalidArgument` instead of panicking, including on empty digests. Propagate or handle the `Result` before handling `None` for an empty digest; `min_value` and `max_value` still return `Option<f64>`.
+* `estimated_size` now returns an implementation-dependent estimate of memory usage. Returned values may change as implementations evolve and should not be treated as exact totals or a stable accounting contract.
 
 ### New features
 
-* `KllSketch` is now available behind the `kll` feature, with rank, quantile, PMF, and CDF queries, merging, serialization, custom ordered item types, and a `KllFloat` adapter for non-NaN floating-point values.
+* Add `HllSketch::composite_estimate` and `HllUnion::composite_estimate` to query cardinality without relying on HIP update history, matching Java's `getCompositeEstimate()`.
+* `KllSketch` is now available behind the `kll` feature, with rank, quantile, PMF, and CDF queries, merging, serialization, custom ordered item types, and a `KllFloat` adapter for non-NaN floating-point values. Queries distinguish an empty sketch (`None`) from invalid arguments (`InvalidArgument`).
 * Add `TDigestMut::quantiles` and `TDigest::quantiles` for querying several ranks in one centroid scan while preserving input order.
 * Add `FromIterator<TDigestMut>` as an alternative to incremental `TDigestMut::merge` calls for combining owned partial sketches in a single compression pass.
 
@@ -23,7 +95,7 @@ All significant changes to this project will be documented in this file.
 * Improve the readability of `Debug` output for HLL and CPC sketches and unions.
 * `KllSketch::quantile` and `ReqSketch::quantile` are faster at ranks `0.0` and `1.0`, with query work independent of the number of retained samples.
 * `BloomFilter::insert` is faster for integer and raw-byte inputs. `BloomFilter::contains_and_insert` is also faster when checking already-present integer values.
-* `CountMinSketch` updates are faster for integer and raw-byte inputs.
+* `CountMinSketch` updates and estimates are faster for all item types, with the largest gains for integer and raw-byte inputs. Counter placement and serialized bytes are unchanged.
 * `CountMinSketch::decay(1.0)` now takes constant time.
 * `CpcSketch` updates are faster for integer and raw-byte inputs.
 * `FrequentItemsSketch` updates are faster for integer and raw-byte keys.

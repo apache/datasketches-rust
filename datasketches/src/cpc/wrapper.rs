@@ -47,6 +47,8 @@ impl CpcWrapper {
     /// Reads the cardinality metadata without copying or fully deserializing the compressed
     /// payload.
     ///
+    /// Also accepts data serialized by other DataSketches implementations.
+    ///
     /// # Errors
     ///
     /// Returns `InvalidData` if the preamble is malformed or does not describe a compressed CPC

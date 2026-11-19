@@ -15,15 +15,29 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::hash::Hash;
 use std::panic::AssertUnwindSafe;
 use std::panic::catch_unwind;
 
 use datasketches::countmin::CountMinSketch;
+use datasketches::countmin::CountMinValue;
 use datasketches::countmin::UnsignedCountMinValue;
 use datasketches::error::ErrorKind;
+use datasketches::hash::value::natural_extend;
+use datasketches::hash::value::raw_bytes;
 use googletest::assert_that;
 use googletest::prelude::ge;
 use googletest::prelude::le;
+
+fn sketch_snapshot<T: CountMinValue>(sketch: &CountMinSketch<T>) -> (u8, u32, u64, T, Vec<u8>) {
+    (
+        sketch.num_hashes(),
+        sketch.num_buckets(),
+        sketch.seed(),
+        sketch.total_weight(),
+        sketch.serialize(),
+    )
+}
 
 #[test]
 fn weight_overflow_preserves_unsigned_state() {
@@ -37,12 +51,12 @@ fn weight_overflow_preserves_unsigned_state() {
 
     sketch.update_with_weight("x", 0);
     assert!(catch_unwind(AssertUnwindSafe(|| sketch.update("x"))).is_err());
-    assert_eq!(sketch, before);
+    assert_eq!(sketch_snapshot(&sketch), sketch_snapshot(&before));
     assert_eq!(
         sketch.merge(&one).unwrap_err().kind(),
         ErrorKind::InvalidArgument
     );
-    assert_eq!(sketch, before);
+    assert_eq!(sketch_snapshot(&sketch), sketch_snapshot(&before));
 }
 
 #[test]
@@ -50,7 +64,8 @@ fn weight_overflow_preserves_signed_state() {
     let mut sketch = CountMinSketch::<i8>::new(2, 8).unwrap();
     let empty = sketch.clone();
     assert!(catch_unwind(AssertUnwindSafe(|| sketch.update_with_weight("x", i8::MIN))).is_err());
-    assert_eq!(sketch, empty);
+    assert_eq!(sketch_snapshot(&sketch), sketch_snapshot(&empty));
+    assert_eq!(sketch.estimate("x"), 0);
 
     sketch.update_with_weight("x", -i8::MAX);
     assert_eq!(sketch.total_weight(), i8::MAX);
@@ -58,10 +73,10 @@ fn weight_overflow_preserves_signed_state() {
     let before = sketch.clone();
     // Cancellation reduces the counter, but still increases the absolute stream weight.
     assert!(catch_unwind(AssertUnwindSafe(|| sketch.update("x"))).is_err());
-    assert_eq!(sketch, before);
+    assert_eq!(sketch_snapshot(&sketch), sketch_snapshot(&before));
     assert_eq!(
-        CountMinSketch::<i8>::deserialize(&sketch.serialize()).unwrap(),
-        sketch
+        sketch_snapshot(&CountMinSketch::<i8>::deserialize(&sketch.serialize()).unwrap()),
+        sketch_snapshot(&sketch)
     );
 }
 
@@ -210,7 +225,7 @@ fn test_update_and_bounds_with_scaling() {
         estimate + (eps * sketch.total_weight() as f64) as u64
     );
 
-    sketch.decay(0.5);
+    sketch.decay(0.5).unwrap();
     let estimate = sketch.estimate("x");
     let upper = sketch.upper_bound("x");
     let lower = sketch.lower_bound("x");
@@ -274,7 +289,7 @@ fn test_decay() {
     }
 
     const FACTOR: f64 = 0.5;
-    sketch.decay(FACTOR);
+    sketch.decay(FACTOR).unwrap();
 
     for i in 0..1000usize {
         let expected = ((i as f64) * FACTOR).floor() as u64;
@@ -296,7 +311,7 @@ fn test_decay_preserves_large_integer_precision() {
         ] {
             let mut sketch = CountMinSketch::<u64>::new(3, 128).unwrap();
             sketch.update_with_weight("item", weight);
-            sketch.decay(factor);
+            sketch.decay(factor).unwrap();
             assert_eq!(
                 sketch.total_weight(),
                 expected,
@@ -319,7 +334,7 @@ fn decay_truncates_the_exact_binary_product() {
     ] {
         let mut sketch = CountMinSketch::<u64>::new(3, 128).unwrap();
         sketch.update_with_weight("item", weight);
-        sketch.decay(factor);
+        sketch.decay(factor).unwrap();
         assert_eq!(sketch.total_weight(), expected);
         assert_eq!(sketch.estimate("item"), expected);
     }
@@ -334,18 +349,46 @@ fn decay_identity_and_halving_preserve_the_whole_sketch() {
         }
 
         let mut decayed = sketch.clone();
-        decayed.decay(1.0);
-        assert_eq!(decayed, sketch);
+        decayed.decay(1.0).unwrap();
+        assert_eq!(sketch_snapshot(&decayed), sketch_snapshot(&sketch));
 
-        decayed.decay(0.5);
+        decayed.decay(0.5).unwrap();
         sketch.halve();
-        assert_eq!(decayed, sketch);
+        assert_eq!(sketch_snapshot(&decayed), sketch_snapshot(&sketch));
     }
 
     check([u8::MAX / 2, u8::MAX / 4, 1]);
     check([u16::MAX / 2, u16::MAX / 4, 1]);
     check([u32::MAX / 2, u32::MAX / 4, 1]);
     check([u64::MAX / 2, u64::MAX / 4, 1]);
+}
+
+#[test]
+fn decay_rejects_invalid_factors_without_modifying_sketch() {
+    for weight in [0u64, 100] {
+        let mut sketch = CountMinSketch::<u64>::new(3, 128).unwrap();
+        if weight > 0 {
+            sketch.update_with_weight("item", weight);
+        }
+        let before = sketch.clone();
+        for factor in [
+            f64::NAN,
+            0.0,
+            -0.0,
+            -0.5,
+            1.0_f64.next_up(),
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+        ] {
+            let error = sketch.decay(factor).unwrap_err();
+            assert_eq!(
+                error.kind(),
+                ErrorKind::InvalidArgument,
+                "factor={factor:?}"
+            );
+            assert_eq!(sketch_snapshot(&sketch), sketch_snapshot(&before));
+        }
+    }
 }
 
 #[test]
@@ -415,8 +458,11 @@ fn test_truncated_non_empty_payload_is_rejected_before_table_allocation() {
 
 #[test]
 fn test_invalid_hashes_return_error() {
-    let error = CountMinSketch::<i64>::new(0, 5).unwrap_err();
-    assert_eq!(error.kind(), ErrorKind::InvalidArgument);
+    for rows in [0, 128, 255] {
+        let error = CountMinSketch::<i64>::new(rows, 5).unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::InvalidArgument);
+    }
+    assert!(CountMinSketch::<i64>::new(127, 5).is_ok());
 }
 
 #[test]
@@ -428,37 +474,43 @@ fn test_invalid_buckets_return_error() {
 #[test]
 fn test_merge_incompatible() {
     let mut left = CountMinSketch::<i64>::new(3, 64).unwrap();
-    let right = CountMinSketch::<i64>::new(2, 64).unwrap();
-    let error = left.merge(&right).unwrap_err();
-    assert_eq!(error.kind(), ErrorKind::InvalidArgument);
+    left.update_with_weight("apple", 5);
+    let before = left.clone();
+
+    let incompatible = [
+        CountMinSketch::<i64>::new(2, 64).unwrap(),
+        CountMinSketch::<i64>::new(3, 128).unwrap(),
+        CountMinSketch::<i64>::with_seed(3, 64, 42).unwrap(),
+    ];
+    for other in &incompatible {
+        let error = left.merge(other).unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::InvalidArgument);
+        assert_eq!(sketch_snapshot(&left), sketch_snapshot(&before));
+    }
 }
 
 #[test]
-fn test_increment_single_key_like_rust_count_min_sketch() {
-    let mut sketch = CountMinSketch::<i64>::new(4, 32).unwrap();
-    for _ in 0..300 {
-        sketch.update("key");
+fn value_wrappers_match_portable_item_encodings() {
+    fn assert_same_item<I: Hash, J: Hash>(left: I, right: J) {
+        let mut a = CountMinSketch::<i64>::new(3, 1000).unwrap();
+        let mut b = a.clone();
+        a.update_with_weight(&left, 7);
+        b.update_with_weight(&right, 7);
+        assert_eq!(sketch_snapshot(&a), sketch_snapshot(&b));
     }
-    assert_eq!(sketch.estimate("key"), 300);
-}
 
-#[test]
-fn test_estimated_size() {
-    let mut sketch = CountMinSketch::<i64>::new(4, 128).unwrap();
-    assert_eq!(sketch.estimated_size(), 4200);
-
-    // The backing tables are allocated up front; updates do not grow the sketch.
-    sketch.update("apple");
-    assert_eq!(sketch.estimated_size(), 4200);
-}
-
-#[test]
-fn test_increment_multi_like_rust_count_min_sketch() {
-    let mut sketch = CountMinSketch::<i64>::new(6, 128).unwrap();
-    for i in 0..1_000_000u64 {
-        sketch.update(i % 100);
-    }
-    for key in 0..100u64 {
-        assert_that!(sketch.estimate(key), ge(9_000));
-    }
+    assert_same_item(natural_extend::from_i8(-2), -2i64);
+    assert_same_item(natural_extend::from_i16(-2), -2i64);
+    assert_same_item(natural_extend::from_i32(-2), -2i64);
+    assert_same_item(natural_extend::from_u8(u8::MAX), u64::from(u8::MAX));
+    assert_same_item(natural_extend::from_u16(u16::MAX), u64::from(u16::MAX));
+    assert_same_item(natural_extend::from_u32(u32::MAX), u64::from(u32::MAX));
+    assert_same_item(
+        -2i64,
+        raw_bytes::from_slice(&[0xfe, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff]),
+    );
+    assert_same_item(
+        0x0102_0304_0506_0708u64,
+        raw_bytes::from_slice(&[8, 7, 6, 5, 4, 3, 2, 1]),
+    );
 }

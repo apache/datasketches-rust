@@ -18,24 +18,18 @@
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
 use crate::codec::assert::insufficient_data;
-use crate::codec::family::Family;
 use crate::common::NumStdDev;
 use crate::error::Error;
 use crate::hll::Coupon;
+use crate::hll::HllType;
 use crate::hll::aux_map::AuxMap;
 use crate::hll::estimator::EstimateState;
 use crate::hll::estimator::Estimator;
-use crate::hll::serialization::COMPACT_FLAG_MASK;
 use crate::hll::serialization::COUPON_SIZE_BYTES;
-use crate::hll::serialization::CUR_MODE_HLL;
 use crate::hll::serialization::HLL_PREAMBLE_SIZE;
-use crate::hll::serialization::HLL_PREINTS;
-use crate::hll::serialization::OUT_OF_ORDER_FLAG_MASK;
-use crate::hll::serialization::SERIAL_VERSION;
-use crate::hll::serialization::TGT_HLL4;
-use crate::hll::serialization::encode_mode_byte;
+use crate::hll::serialization::write_hll_preamble;
 
-const AUX_TOKEN: u8 = 15;
+pub const AUX_TOKEN: u8 = 15;
 
 #[derive(Clone, Copy)]
 pub enum AuxFormat {
@@ -54,7 +48,7 @@ impl AuxFormat {
 }
 
 /// Registers stored as four-bit offsets from their current minimum.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Array4 {
     lg_config_k: u8,
     /// Even slots occupy the low nibble; odd slots occupy the high nibble.
@@ -241,6 +235,11 @@ impl Array4 {
             .estimate(self.lg_config_k, self.cur_min, self.num_at_cur_min)
     }
 
+    pub fn composite_estimate(&self) -> f64 {
+        self.estimator
+            .composite_estimate(self.lg_config_k, self.cur_min, self.num_at_cur_min)
+    }
+
     pub fn upper_bound(&self, num_std_dev: NumStdDev) -> f64 {
         self.estimator.upper_bound(
             self.lg_config_k,
@@ -381,29 +380,15 @@ impl Array4 {
         let total_size = HLL_PREAMBLE_SIZE + num_bytes + (aux_count as usize * COUPON_SIZE_BYTES);
         let mut bytes = SketchBytes::with_capacity(total_size);
 
-        bytes.write_u8(HLL_PREINTS);
-        bytes.write_u8(SERIAL_VERSION);
-        bytes.write_u8(Family::HLL.id);
-        bytes.write_u8(lg_config_k);
-        bytes.write_u8(0); // lg_arr is unused for compact auxiliary storage.
-
-        let mut flags = COMPACT_FLAG_MASK;
-        if self.estimator.uses_composite_estimate() {
-            flags |= OUT_OF_ORDER_FLAG_MASK;
-        }
-        bytes.write_u8(flags);
-
-        bytes.write_u8(self.cur_min);
-
-        bytes.write_u8(encode_mode_byte(CUR_MODE_HLL, TGT_HLL4));
-
-        bytes.write_f64_le(self.estimator.hip_accum());
-        bytes.write_f64_le(self.estimator.kxq0());
-        bytes.write_f64_le(self.estimator.kxq1());
-
-        bytes.write_u32_le(self.num_at_cur_min);
-
-        bytes.write_u32_le(aux_count);
+        write_hll_preamble(
+            &mut bytes,
+            lg_config_k,
+            HllType::Hll4,
+            self.cur_min,
+            self.num_at_cur_min,
+            aux_count,
+            &self.estimator,
+        );
 
         bytes.write(&self.bytes);
 
@@ -414,7 +399,7 @@ impl Array4 {
         bytes.into_bytes()
     }
 
-    /// Returns the estimated size of the heap allocations in bytes
+    /// Returns an estimate of memory usage in bytes.
     pub fn estimated_size(&self) -> usize {
         self.bytes.len()
             + self

@@ -31,7 +31,7 @@ use crate::hll::serialization::SERIAL_VERSION;
 use crate::hll::serialization::SET_PREAMBLE_SIZE;
 use crate::hll::serialization::encode_mode_byte;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct HashSet {
     container: Container,
 }

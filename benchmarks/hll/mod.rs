@@ -15,4 +15,12 @@
 // specific language governing permissions and limitations
 // under the License.
 
+mod serde;
+mod union;
 mod update;
+
+pub fn register(runner: &mut benchmarks::Runner) {
+    serde::register(runner);
+    union::register(runner);
+    update::register(runner);
+}

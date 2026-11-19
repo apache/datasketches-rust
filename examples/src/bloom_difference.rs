@@ -23,12 +23,14 @@
 use datasketches::bloom::BloomFilter;
 use datasketches::bloom::BloomFilterBuilder;
 
-/// Returns the shared filter configuration published by the origin.
+/// Returns an empty filter using the shared configuration published by the origin.
 ///
 /// Both sides of a difference must use identical capacity, hash count, and seed, so the
 /// parameters are distributed rather than chosen independently by each node.
-fn published_config() -> BloomFilterBuilder {
+fn published_filter() -> BloomFilter {
     BloomFilterBuilder::with_accuracy(CACHED_OBJECTS, 0.01)
+        .build()
+        .unwrap()
 }
 
 /// Number of objects cached by the edge node.
@@ -41,13 +43,13 @@ fn purged_objects() -> impl Iterator<Item = u64> {
 
 fn main() {
     // The edge node records every object it caches.
-    let mut cached = published_config().build().unwrap();
+    let mut cached = published_filter();
     for object in 0..CACHED_OBJECTS {
         cached.insert(object);
     }
 
     // The origin records every purged object using the same published configuration.
-    let mut purged = published_config().build().unwrap();
+    let mut purged = published_filter();
     for object in purged_objects() {
         purged.insert(object);
     }
@@ -61,7 +63,7 @@ fn main() {
 
     // The guarantee that matters for takedowns: a purged object is never served again.
     for object in purged_objects() {
-        assert!(!cached.contains(&object));
+        assert!(!cached.contains(object));
     }
 
     // Count how many still-valid objects survived; dropped ones cost an origin refetch,
@@ -69,7 +71,7 @@ fn main() {
     let valid = CACHED_OBJECTS - purged_objects().count() as u64;
     let mut retained = 0_u64;
     for object in (0..CACHED_OBJECTS).filter(|object| object % 200 != 0) {
-        if cached.contains(&object) {
+        if cached.contains(object) {
             retained += 1;
         }
     }
@@ -84,6 +86,7 @@ fn main() {
     // Ship the resulting filter to a sibling node; the purge filter is discarded.
     let bytes = cached.serialize();
     let shipped = BloomFilter::deserialize(&bytes).unwrap();
-    assert_eq!(shipped, cached);
+    assert_eq!(shipped.bits_used(), cached.bits_used());
+    assert_eq!(shipped.serialize(), bytes);
     println!("Shipped filter:  {} bytes", bytes.len());
 }

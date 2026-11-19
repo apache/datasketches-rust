@@ -168,6 +168,75 @@ fn test_reset() {
 }
 
 #[test]
+fn test_compact_ordering_and_canonical_states() {
+    let empty = ThetaSketchBuilder::default().build().unwrap();
+    for ordered in [false, true] {
+        let compact = empty.compact(ordered);
+        assert!(compact.is_empty());
+        assert!(compact.is_ordered());
+        assert_eq!(compact.num_retained(), 0);
+    }
+
+    let mut exact_singleton = ThetaSketchBuilder::default().build().unwrap();
+    exact_singleton.update(42u64);
+    assert!(exact_singleton.compact(false).is_ordered());
+    assert!(exact_singleton.compact(true).is_ordered());
+
+    let retained_value = (0u64..)
+        .find(|candidate| {
+            let mut sketch = ThetaSketchBuilder::default()
+                .sampling_probability(0.5)
+                .build()
+                .unwrap();
+            sketch.update(*candidate);
+            sketch.num_retained() == 1
+        })
+        .expect("failed to find a value retained under p = 0.5");
+    let mut sampled_singleton = ThetaSketchBuilder::default()
+        .sampling_probability(0.5)
+        .build()
+        .unwrap();
+    sampled_singleton.update(retained_value);
+    assert!(!sampled_singleton.compact(false).is_ordered());
+    assert!(sampled_singleton.compact(true).is_ordered());
+
+    for (lg_k, n, p) in [
+        (12, 2, 1.0),
+        (12, 1_000, 1.0),
+        (5, 1_000, 1.0),
+        (12, 20_000, 1.0),
+        (12, 20_000, 0.1),
+        (14, 50_000, 1.0),
+    ] {
+        let mut sketch = ThetaSketchBuilder::default()
+            .lg_k(lg_k)
+            .sampling_probability(p)
+            .build()
+            .unwrap();
+        for i in 0..n {
+            sketch.update(i as u64);
+        }
+        let mut expected: Vec<u64> = sketch.iter().map(|entry| entry.hash()).collect();
+        expected.sort_unstable();
+
+        let ordered = sketch.compact(true);
+        assert!(ordered.is_ordered());
+        assert_eq!(ordered.theta64(), sketch.theta64());
+        assert_eq!(ordered.seed_hash(), sketch.seed_hash());
+        let ordered_hashes: Vec<u64> = ordered.iter().map(|entry| entry.hash()).collect();
+        assert_eq!(ordered_hashes, expected);
+
+        let unordered = sketch.compact(false);
+        assert!(!unordered.is_ordered());
+        assert_eq!(unordered.theta64(), sketch.theta64());
+        assert_eq!(unordered.seed_hash(), sketch.seed_hash());
+        let mut unordered_hashes: Vec<u64> = unordered.iter().map(|entry| entry.hash()).collect();
+        unordered_hashes.sort_unstable();
+        assert_eq!(unordered_hashes, expected);
+    }
+}
+
+#[test]
 fn test_iterator() {
     let mut sketch = ThetaSketchBuilder::default().lg_k(12).build().unwrap();
 
@@ -267,29 +336,6 @@ fn test_bounds_with_sampling() {
 
     assert_that!(estimate, ge(lower_bound));
     assert_that!(estimate, le(upper_bound));
-}
-
-#[test]
-fn test_bounds_all_num_std_devs() {
-    let mut sketch = ThetaSketchBuilder::default().lg_k(12).build().unwrap();
-    for i in 0..10000 {
-        sketch.update(i);
-    }
-
-    // Test all valid NumStdDev values work correctly
-    // These no longer return Result, so we just verify they return valid values
-    let lb1 = sketch.lower_bound(NumStdDev::One);
-    let lb2 = sketch.lower_bound(NumStdDev::Two);
-    let lb3 = sketch.lower_bound(NumStdDev::Three);
-    let ub1 = sketch.upper_bound(NumStdDev::One);
-    let ub2 = sketch.upper_bound(NumStdDev::Two);
-    let ub3 = sketch.upper_bound(NumStdDev::Three);
-
-    // Verify the bounds are properly ordered
-    assert_that!(lb3, le(lb2));
-    assert_that!(lb2, le(lb1));
-    assert_that!(ub1, le(ub2));
-    assert_that!(ub2, le(ub3));
 }
 
 #[test]

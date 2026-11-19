@@ -18,11 +18,11 @@
 //! Merge behavior for ReqSketch.
 
 use datasketches::common::SearchCriteria;
+use datasketches::error::ErrorKind;
 use datasketches::req::RankAccuracy;
 use datasketches::req::ReqSketch;
 use googletest::assert_that;
-use googletest::prelude::anything;
-use googletest::prelude::err;
+use googletest::prelude::lt;
 use googletest::prelude::near;
 
 use super::ReqF64;
@@ -43,13 +43,16 @@ fn merge_into_empty_preserves_source_distribution() {
 
     let q25 = target
         .quantile(0.25, SearchCriteria::Inclusive)
-        .expect("quantile should succeed");
+        .expect("quantile should succeed")
+        .expect("the sketch is non-empty");
     let q50 = target
         .quantile(0.5, SearchCriteria::Inclusive)
-        .expect("quantile should succeed");
+        .expect("quantile should succeed")
+        .expect("the sketch is non-empty");
     let q75 = target
         .quantile(0.75, SearchCriteria::Inclusive)
-        .expect("quantile should succeed");
+        .expect("quantile should succeed")
+        .expect("the sketch is non-empty");
     let r50 = target
         .rank(&req_f64(500.0), SearchCriteria::Inclusive)
         .expect("rank should succeed");
@@ -78,13 +81,16 @@ fn merge_two_ranges_preserves_distribution() {
 
     let q25 = left
         .quantile(0.25, SearchCriteria::Inclusive)
-        .expect("quantile should succeed");
+        .expect("quantile should succeed")
+        .expect("the sketch is non-empty");
     let q50 = left
         .quantile(0.5, SearchCriteria::Inclusive)
-        .expect("quantile should succeed");
+        .expect("quantile should succeed")
+        .expect("the sketch is non-empty");
     let q75 = left
         .quantile(0.75, SearchCriteria::Inclusive)
-        .expect("quantile should succeed");
+        .expect("quantile should succeed")
+        .expect("the sketch is non-empty");
     let r50 = left
         .rank(&req_f64(1000.0), SearchCriteria::Inclusive)
         .expect("rank should succeed");
@@ -101,7 +107,11 @@ fn merge_rejects_incompatible_accuracy_modes() {
     let low_rank: ReqSketch<ReqF64> = ReqSketch::new(12, RankAccuracy::LowRank).unwrap();
 
     high_rank.update(req_f64(1.0));
-    assert_that!(high_rank.merge(&low_rank), err(anything()));
+    let before = high_rank.serialize();
+
+    let err = high_rank.merge(&low_rank).unwrap_err();
+    assert_eq!(err.kind(), ErrorKind::InvalidArgument);
+    assert_eq!(high_rank.serialize(), before);
 }
 
 #[test]
@@ -116,12 +126,41 @@ fn many_small_merges_preserve_count_bounds_and_median() {
         sketch.merge(&batch_sketch).expect("merge should succeed");
     }
 
-    assert_eq!(sketch.n(), 10_000);
+    assert_eq!(sketch.total_weight(), 10_000);
     assert_eq!(sketch.min_item().copied(), Some(req_f64(0.0)));
     assert_eq!(sketch.max_item().copied(), Some(req_f64(9999.0)));
 
     let median = sketch
         .quantile(0.5, SearchCriteria::Inclusive)
-        .expect("quantile should succeed");
+        .expect("quantile should succeed")
+        .expect("the sketch is non-empty");
     assert_that!(*median, near(4999.5, 500.0));
+}
+
+#[test]
+fn merge_larger_k_into_smaller_k_cascades_compaction_across_new_levels() {
+    let mut target: ReqSketch<ReqF64> = ReqSketch::new(4, RankAccuracy::HighRank).unwrap();
+    let mut source: ReqSketch<ReqF64> = ReqSketch::new(200, RankAccuracy::HighRank).unwrap();
+
+    // 500 items fit in level 0 of k=200 (nominal capacity 1200), so source has 1 level.
+    // Merging into k=4 (level nominal capacity 24) promotes 240 items into a newly grown
+    // level 1, which must cascade further compactions across newly grown upper levels.
+    for i in 0..500 {
+        source.update(req_f64(i as f64));
+    }
+    assert!(!source.is_estimation_mode());
+
+    target.merge(&source).expect("merge should succeed");
+
+    assert_eq!(target.total_weight(), 500);
+    assert!(target.is_estimation_mode());
+    assert_that!(target.num_retained(), lt(120));
+    let weighted_sum: u64 = target.iter().map(|(_, weight)| weight).sum();
+    assert_eq!(weighted_sum, 500);
+    assert_eq!(target.min_item().copied(), Some(req_f64(0.0)));
+    assert_eq!(target.max_item().copied(), Some(req_f64(499.0)));
+
+    let round_trip = ReqSketch::<ReqF64>::deserialize(&target.serialize()).unwrap();
+    assert_eq!(round_trip.total_weight(), target.total_weight());
+    assert_eq!(round_trip.num_retained(), target.num_retained());
 }

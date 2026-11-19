@@ -18,12 +18,19 @@
 //! HLL wire-format constants. Preamble lengths ending in `PREINTS` count 32-bit words;
 //! those ending in `PREAMBLE_SIZE` count bytes.
 
+use crate::codec::SketchBytes;
+use crate::codec::family::Family;
+use crate::hll::HllType;
+use crate::hll::estimator::Estimator;
+
 pub const SERIAL_VERSION: u8 = 1;
 
 pub const EMPTY_FLAG_MASK: u8 = 4;
-/// Flag indicating compact coupon or HLL4 auxiliary storage.
+/// Flag indicating compact serialization format.
 ///
-/// HLL register arrays have the same layout in compact and updatable images.
+/// Coupon lists, coupon hash sets, and HLL4 auxiliary exceptions omit empty slots in compact
+/// images; HLL6 and HLL8 register arrays have the same layout in both forms, and serialized
+/// sketches set this flag consistently across all modes and target types.
 pub const COMPACT_FLAG_MASK: u8 = 8;
 /// Flag indicating that HIP history is unavailable and composite estimation is required.
 pub const OUT_OF_ORDER_FLAG_MASK: u8 = 16;
@@ -65,3 +72,40 @@ pub const TGT_HLL6: u8 = 1;
 pub const TGT_HLL8: u8 = 2;
 
 pub const COUPON_SIZE_BYTES: usize = 4;
+
+pub fn write_hll_preamble(
+    bytes: &mut SketchBytes,
+    lg_config_k: u8,
+    hll_type: HllType,
+    cur_min: u8,
+    num_at_cur_min: u32,
+    aux_count: u32,
+    estimator: &Estimator,
+) {
+    let tgt_type = match hll_type {
+        HllType::Hll4 => TGT_HLL4,
+        HllType::Hll6 => TGT_HLL6,
+        HllType::Hll8 => TGT_HLL8,
+    };
+
+    bytes.write_u8(HLL_PREINTS);
+    bytes.write_u8(SERIAL_VERSION);
+    bytes.write_u8(Family::HLL.id);
+    bytes.write_u8(lg_config_k);
+    bytes.write_u8(0); // unused in HLL6/HLL8 and compact HLL4
+
+    let mut flags = COMPACT_FLAG_MASK;
+    if estimator.uses_composite_estimate() {
+        flags |= OUT_OF_ORDER_FLAG_MASK;
+    }
+    bytes.write_u8(flags);
+    bytes.write_u8(cur_min);
+    bytes.write_u8(encode_mode_byte(CUR_MODE_HLL, tgt_type));
+
+    bytes.write_f64_le(estimator.hip_accum());
+    bytes.write_f64_le(estimator.kxq0());
+    bytes.write_f64_le(estimator.kxq1());
+
+    bytes.write_u32_le(num_at_cur_min);
+    bytes.write_u32_le(aux_count);
+}

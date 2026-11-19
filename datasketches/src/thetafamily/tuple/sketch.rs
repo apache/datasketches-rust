@@ -22,10 +22,11 @@
 //! created by a [`SummaryPolicy`] and updated through one or more [`SummaryUpdatePolicy`]
 //! implementations.
 
+use std::fmt;
 use std::hash::Hash;
+use std::iter::FusedIterator;
 use std::slice;
 
-use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
 use crate::codec::assert::ensure_preamble_longs_in_range;
 use crate::codec::assert::insufficient_data;
@@ -37,28 +38,28 @@ use crate::error::ErrorKind;
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::hash::check_seed_hash;
 use crate::hash::compute_seed_hash;
-use crate::thetacommon::EntrySketch;
-use crate::thetacommon::KeySketch;
-use crate::thetacommon::binomial_bounds;
-use crate::thetacommon::constants::DEFAULT_LG_K;
-use crate::thetacommon::constants::FLAGS_IS_COMPACT;
-use crate::thetacommon::constants::FLAGS_IS_EMPTY;
-use crate::thetacommon::constants::FLAGS_IS_ORDERED;
-use crate::thetacommon::constants::FLAGS_IS_READ_ONLY;
-use crate::thetacommon::constants::MAX_THETA;
-use crate::thetacommon::hash_table::SketchHashTableIter;
-use crate::thetacommon::sketch_state::CompactSketchState;
-use crate::thetacommon::sketch_state::ThetaFamilySketchMetadata;
+use crate::thetafamily::common::EntrySketch;
+use crate::thetafamily::common::KeySketch;
+use crate::thetafamily::common::SketchEntry;
+use crate::thetafamily::common::binomial_bounds;
+use crate::thetafamily::common::constants::DEFAULT_LG_K;
+use crate::thetafamily::common::constants::FLAGS_IS_EMPTY;
+use crate::thetafamily::common::constants::FLAGS_IS_ORDERED;
+use crate::thetafamily::common::constants::MAX_THETA;
+use crate::thetafamily::common::hash_table::SketchHashTable;
+use crate::thetafamily::common::hash_table::SketchHashTableIter;
+use crate::thetafamily::common::sketch_state::CompactSketchState;
+use crate::thetafamily::common::sketch_state::ThetaFamilySketchMetadata;
 use crate::tuple::hash_table::TupleEntry;
 use crate::tuple::hash_table::TupleHashTable;
 use crate::tuple::policy::SummaryPolicy;
 use crate::tuple::policy::SummaryUpdatePolicy;
-use crate::tuple::serialization::EMPTY_SKETCH_BYTES;
 use crate::tuple::serialization::SERIAL_VERSION;
 use crate::tuple::serialization::SERIAL_VERSION_LEGACY;
 use crate::tuple::serialization::SKETCH_TYPE;
 use crate::tuple::serialization::SKETCH_TYPE_LEGACY;
 use crate::tuple::serialization::TupleSummaryValue;
+use crate::tuple::serialization::serialize_compact_uncompressed;
 
 /// Read-only view of a mutable or compact Tuple sketch.
 ///
@@ -78,16 +79,26 @@ use crate::tuple::serialization::TupleSummaryValue;
 /// let view = sketch.as_view();
 /// assert_eq!(view.iter().next().unwrap().summary(), &1);
 /// ```
-#[derive(Debug)]
 pub struct TupleSketchView<'a, S>(TupleSketchViewState<'a, S>);
 
-#[derive(Debug)]
 enum TupleSketchViewState<'a, S> {
     Mutable {
         table: &'a TupleHashTable<S>,
         is_empty: bool,
     },
     Compact(&'a CompactTupleSketch<S>),
+}
+
+impl<S> fmt::Debug for TupleSketchView<'_, S> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TupleSketchView")
+            .field("seed_hash", &self.seed_hash())
+            .field("is_empty", &self.is_empty())
+            .field("is_ordered", &self.is_ordered())
+            .field("num_retained", &self.num_retained())
+            .field("theta64", &self.theta64())
+            .finish()
+    }
 }
 
 enum TupleSketchIter<'a, S> {
@@ -112,6 +123,17 @@ impl<'a, S> Iterator for TupleSketchIter<'a, S> {
         }
     }
 }
+
+impl<S> ExactSizeIterator for TupleSketchIter<'_, S> {
+    fn len(&self) -> usize {
+        match self {
+            Self::Mutable(iter) => iter.len(),
+            Self::Compact(iter) => iter.len(),
+        }
+    }
+}
+
+impl<S> FusedIterator for TupleSketchIter<'_, S> {}
 
 impl<S> Clone for TupleSketchView<'_, S> {
     fn clone(&self) -> Self {
@@ -192,9 +214,7 @@ impl<'a, S> TupleSketchView<'a, S> {
 impl<S> KeySketch for TupleSketchView<'_, S> {
     fn metadata(self) -> ThetaFamilySketchMetadata {
         if self.is_empty() {
-            ThetaFamilySketchMetadata::Empty {
-                seed_hash: self.seed_hash(),
-            }
+            ThetaFamilySketchMetadata::Empty
         } else {
             ThetaFamilySketchMetadata::NonEmpty {
                 seed_hash: self.seed_hash(),
@@ -207,6 +227,14 @@ impl<S> KeySketch for TupleSketchView<'_, S> {
 
     fn hashes(self) -> impl Iterator<Item = u64> {
         self.iter().map(TupleEntry::hash)
+    }
+
+    #[inline]
+    fn hash_table(&self) -> Option<&SketchHashTable<impl SketchEntry>> {
+        match self.0 {
+            TupleSketchViewState::Mutable { table, .. } => Some(table),
+            TupleSketchViewState::Compact(_) => None,
+        }
     }
 }
 
@@ -245,6 +273,8 @@ impl<'a, S> From<&'a CompactTupleSketch<S>> for TupleSketchView<'a, S> {
 /// [`P::Summary`](SummaryPolicy::Summary), while each accepted update type is selected by a
 /// [`SummaryUpdatePolicy<U>`] implementation.
 ///
+/// See the [module level documentation](super) for more.
+///
 /// # Examples
 ///
 /// ```
@@ -258,7 +288,6 @@ impl<'a, S> From<&'a CompactTupleSketch<S>> for TupleSketchView<'a, S> {
 /// assert!(sketch.estimate() >= 1.0);
 /// assert_eq!(sketch.num_retained(), 1);
 /// ```
-#[derive(Debug)]
 pub struct TupleSketch<P>
 where
     P: SummaryPolicy,
@@ -267,6 +296,20 @@ where
     // Public emptiness tracks update calls, not retained entries: theta may screen every update.
     is_empty: bool,
     policy: P,
+}
+
+impl<P: SummaryPolicy> fmt::Debug for TupleSketch<P> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TupleSketch")
+            .field("lg_k", &self.lg_k())
+            .field("seed_hash", &self.seed_hash())
+            .field("is_empty", &self.is_empty())
+            .field("is_estimation_mode", &self.is_estimation_mode())
+            .field("num_retained", &self.num_retained())
+            .field("theta64", &self.theta64())
+            .field("estimate", &self.estimate())
+            .finish()
+    }
 }
 
 impl<P> TupleSketch<P>
@@ -331,7 +374,7 @@ where
     /// Returns theta as a `u64`.
     ///
     /// An empty sketch reports `MAX_THETA` even when it was built with a sampling probability
-    /// below `1.0`, matching the other DataSketches implementations.
+    /// below `1.0`.
     pub fn theta64(&self) -> u64 {
         if self.is_empty {
             MAX_THETA
@@ -404,9 +447,9 @@ where
         .expect("theta should always be valid")
     }
 
-    /// Returns the estimated size of the sketch in bytes.
+    /// Returns an estimate of the sketch's memory usage in bytes.
     pub fn estimated_size(&self) -> usize {
-        size_of::<Self>() + self.table.estimated_size()
+        size_of::<P>() + self.table.estimated_size()
     }
 }
 
@@ -431,6 +474,7 @@ where
     /// let compact = sketch.compact(true);
     /// assert_eq!(compact.num_retained(), 1);
     /// ```
+    #[must_use = "compact returns a new compact sketch without modifying this sketch"]
     pub fn compact(&self, ordered: bool) -> CompactTupleSketch<P::Summary> {
         let compact_state = if self.is_empty() {
             debug_assert_eq!(self.num_retained(), 0);
@@ -446,9 +490,23 @@ where
 ///
 /// This is the serialization-friendly form: a compact array of retained hash-summary pairs plus
 /// theta and a 16-bit seed hash. It can be ordered (sorted ascending by hash) or unordered.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct CompactTupleSketch<S> {
     compact_state: CompactSketchState<TupleEntry<S>>,
+}
+
+impl<S> fmt::Debug for CompactTupleSketch<S> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CompactTupleSketch")
+            .field("seed_hash", &self.seed_hash())
+            .field("is_empty", &self.is_empty())
+            .field("is_ordered", &self.is_ordered())
+            .field("is_estimation_mode", &self.is_estimation_mode())
+            .field("num_retained", &self.num_retained())
+            .field("theta64", &self.theta64())
+            .field("estimate", &self.estimate())
+            .finish()
+    }
 }
 
 impl<S> CompactTupleSketch<S> {
@@ -541,26 +599,15 @@ impl<S> CompactTupleSketch<S> {
         .expect("compact theta should always be valid")
     }
 
-    /// Returns the estimated size of the sketch in bytes.
+    /// Returns an estimate of the sketch's memory usage in bytes.
     pub fn estimated_size(&self) -> usize {
-        size_of::<Self>()
-            + self.compact_state.retained_entries_capacity() * size_of::<TupleEntry<S>>()
-    }
-
-    fn preamble_longs(&self) -> u8 {
-        if self.is_estimation_mode() {
-            3
-        } else if self.num_retained() == 1 {
-            1
-        } else {
-            2
-        }
+        self.compact_state.retained_entries_capacity() * size_of::<TupleEntry<S>>()
     }
 
     /// Serializes this sketch into the compact Tuple binary format.
     ///
-    /// Uses [`TupleSummaryValue`] to encode summaries. Reading the output in Java or C++ requires
-    /// a compatible summary encoding.
+    /// The serialized data can be read by other DataSketches implementations when both
+    /// sides use the same [`TupleSummaryValue`] summary encoding.
     ///
     /// Empty sketches serialize with a zero seed hash.
     ///
@@ -580,47 +627,13 @@ impl<S> CompactTupleSketch<S> {
     where
         S: TupleSummaryValue,
     {
-        if self.is_empty() {
-            return EMPTY_SKETCH_BYTES.to_vec();
-        }
-
-        let retained_entries = self.retained_entries();
-        let pre_longs = self.preamble_longs();
-        let entries_size: usize = retained_entries
-            .iter()
-            .map(|entry| 8 + entry.summary().serialize_size())
-            .sum();
-        let mut bytes = SketchBytes::with_capacity(8 * pre_longs as usize + entries_size);
-
-        bytes.write_u8(pre_longs);
-        bytes.write_u8(SERIAL_VERSION);
-        bytes.write_u8(Family::TUPLE.id);
-        bytes.write_u8(SKETCH_TYPE);
-        bytes.write_u8(0); // unused
-
-        let mut flags = FLAGS_IS_READ_ONLY | FLAGS_IS_COMPACT;
-        if self.is_ordered() {
-            flags |= FLAGS_IS_ORDERED;
-        }
-        bytes.write_u8(flags);
-        bytes.write_u16_le(self.seed_hash());
-
-        if pre_longs > 1 {
-            bytes.write_u32_le(retained_entries.len() as u32);
-            bytes.write_u32_le(0); // unused
-        }
-        if self.is_estimation_mode() {
-            bytes.write_u64_le(self.theta64());
-        }
-
-        for entry in retained_entries {
-            bytes.write_u64_le(entry.hash());
-            entry.summary().serialize_value(&mut bytes);
-        }
-        bytes.into_bytes()
+        serialize_compact_uncompressed(&self.compact_state)
     }
 
     /// Deserializes a compact Tuple sketch using the default seed.
+    ///
+    /// Also accepts data serialized by other DataSketches implementations when both
+    /// sides use the same [`TupleSummaryValue`] summary encoding.
     ///
     /// # Errors
     ///
@@ -635,6 +648,9 @@ impl<S> CompactTupleSketch<S> {
     }
 
     /// Deserializes a compact Tuple sketch using `seed`.
+    ///
+    /// Also accepts data serialized by other DataSketches implementations when both
+    /// sides use the same [`TupleSummaryValue`] summary encoding.
     ///
     /// Empty sketches use the hash of `seed` regardless of the stored seed hash.
     ///
@@ -757,7 +773,7 @@ impl<S> CompactTupleSketch<S> {
 /// summaries, or supply a custom policy.
 ///
 /// Configuration is stored without validation and checked when [`build()`](Self::build) is called.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TupleSketchBuilder<P>
 where
     P: SummaryPolicy,

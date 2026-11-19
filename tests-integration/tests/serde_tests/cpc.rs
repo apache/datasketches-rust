@@ -19,10 +19,69 @@ use std::fs;
 use std::path::Path;
 
 use datasketches::cpc::CpcSketch;
+use datasketches::cpc::CpcUnion;
+use datasketches::cpc::CpcWrapper;
+use datasketches::hash::value::sign_extend;
 use googletest::assert_that;
 use googletest::prelude::near;
 
 use crate::serialization_test_data;
+
+#[test]
+fn test_union_serialization_matches_result() {
+    const LG_K: u8 = 11;
+    const SEED: u64 = 123;
+
+    // Empty, sparse, and bit-matrix union states.
+    for num_values in [0, 100, 2_000] {
+        let mut sketch = CpcSketch::with_seed(LG_K, SEED).unwrap();
+        for value in 0..num_values {
+            sketch.update(value);
+        }
+        let mut union = CpcUnion::with_seed(LG_K, SEED).unwrap();
+        union.update(&sketch).unwrap();
+
+        let bytes = union.serialize();
+        let result = union.to_sketch();
+        assert_eq!(bytes, result.serialize());
+        let decoded = CpcSketch::deserialize_with_seed(&bytes, SEED).unwrap();
+        assert_eq!(decoded.estimate(), result.estimate());
+    }
+}
+
+#[test]
+fn test_union_serialization_after_updates_and_downsampling() {
+    let mut union = CpcUnion::new(12).unwrap();
+    // Adopt a sparse input, accumulate overlapping inputs, downsample, fold a larger input,
+    // then promote to a bit matrix. Serialize between updates to check continued use.
+    for (lg_k, values) in [
+        (12, 0..40),
+        (12, 20..60),
+        (11, 50..100),
+        (12, 90..140),
+        (10, 100..2_000),
+    ] {
+        let mut sketch = CpcSketch::new(lg_k).unwrap();
+        for value in values.clone() {
+            sketch.update(value);
+        }
+        union.update(&sketch).unwrap();
+
+        // The same coupons must produce the same merged result regardless of stream order.
+        let mut reversed = CpcSketch::new(union.lg_k()).unwrap();
+        for value in (0..values.end).rev() {
+            reversed.update(value);
+        }
+        let mut reference = CpcUnion::new(union.lg_k()).unwrap();
+        reference.update(&reversed).unwrap();
+
+        let bytes = union.serialize();
+        assert_eq!(bytes, reference.to_sketch().serialize());
+        let decoded = CpcSketch::deserialize(&bytes).unwrap();
+        assert_eq!(decoded.lg_k(), union.lg_k());
+        assert_eq!(decoded.estimate(), union.to_sketch().estimate());
+    }
+}
 
 fn test_sketch_file(path: &Path, expected_cardinality: usize) -> CpcSketch {
     let expected = expected_cardinality as f64;
@@ -72,6 +131,27 @@ fn test_sketch_replay(path: &Path, sketch: CpcSketch, inputs: impl Iterator<Item
     );
 }
 
+fn assert_negative_one_file(dir: &str, filename: &str) -> Vec<u8> {
+    let path = serialization_test_data(dir, filename);
+    let bytes = fs::read(&path).unwrap();
+    let mut sketch = CpcSketch::deserialize(&bytes).unwrap();
+    assert_eq!(sketch.lg_k(), 11, "{filename}");
+    assert!(!sketch.is_empty(), "{filename}");
+    let initial_estimate = sketch.estimate();
+    assert_that!(initial_estimate, near(1.0, 0.02));
+    assert_eq!(sketch.serialize(), bytes, "{filename}");
+
+    let wrapper = CpcWrapper::new(&bytes).unwrap();
+    assert_eq!(wrapper.estimate(), initial_estimate, "{filename}");
+
+    sketch.update(sign_extend::from_i8(-1));
+    sketch.update(sign_extend::from_i16(-1));
+    sketch.update(sign_extend::from_i32(-1));
+    sketch.update(-1_i64);
+    assert_eq!(sketch.estimate(), initial_estimate, "{filename}");
+    bytes
+}
+
 #[test]
 fn test_java_compatibility() {
     let test_cases = [0, 100, 200, 2000, 20000];
@@ -82,6 +162,14 @@ fn test_java_compatibility() {
         let sketch = test_sketch_file(&path, n);
         test_sketch_replay(&path, sketch, 0..n);
     }
+
+    let java_neg = assert_negative_one_file("java_generated_files", "cpc_negative_one_java.sk");
+    let rust_neg = fs::read(serialization_test_data(
+        "rust_generated_files",
+        "cpc_negative_one_rust.sk",
+    ))
+    .unwrap();
+    assert_eq!(java_neg, rust_neg);
 }
 
 #[test]
@@ -106,4 +194,20 @@ fn test_go_compatibility() {
         let sketch = test_sketch_file(&path, n);
         test_sketch_replay(&path, sketch, 0..n);
     }
+}
+
+#[test]
+fn test_rust_compatibility() {
+    for n in [0, 100, 200, 2000, 20000] {
+        let filename = format!("cpc_n{n}_rust.sk");
+        let path = serialization_test_data("rust_generated_files", &filename);
+        let sketch = test_sketch_file(&path, n);
+        let wrapper = CpcWrapper::new(&fs::read(&path).unwrap()).unwrap();
+        assert_eq!(wrapper.lg_k(), sketch.lg_k());
+        assert_eq!(wrapper.is_empty(), sketch.is_empty());
+        assert_eq!(wrapper.estimate(), sketch.estimate());
+        test_sketch_replay(&path, sketch, 0..n);
+    }
+
+    assert_negative_one_file("rust_generated_files", "cpc_negative_one_rust.sk");
 }

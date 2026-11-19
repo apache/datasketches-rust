@@ -48,7 +48,8 @@ fn prop_quantile_rank_consistency() {
         for rank in [0.1, 0.25, 0.5, 0.75, 0.9] {
             let quantile = sketch
                 .quantile(rank, SearchCriteria::Inclusive)
-                .expect("quantile should succeed");
+                .expect("quantile should succeed")
+                .expect("the sketch is non-empty");
             let recovered = sketch
                 .rank(&quantile, SearchCriteria::Inclusive)
                 .expect("rank should succeed");
@@ -57,8 +58,14 @@ fn prop_quantile_rank_consistency() {
             // interval for the target rank (plus a small cushion for snapping to a
             // stored item). This scales with k and n, unlike a fixed slack, so it
             // actually constrains the result instead of always passing.
-            let lower = sketch.rank_lower_bound(rank, NumStdDev::Three) - 0.02;
-            let upper = sketch.rank_upper_bound(rank, NumStdDev::Three) + 0.02;
+            let lower = sketch
+                .rank_lower_bound(rank, NumStdDev::Three)
+                .expect("rank_lower_bound should succeed")
+                - 0.02;
+            let upper = sketch
+                .rank_upper_bound(rank, NumStdDev::Three)
+                .expect("rank_upper_bound should succeed")
+                + 0.02;
             assert!(
                 (lower..=upper).contains(&recovered),
                 "rank {rank} -> quantile {quantile} -> recovered {recovered}, expected within [{lower:.4}, {upper:.4}]"
@@ -96,7 +103,8 @@ fn prop_sketch_bounds() {
         for rank in [0.0, 0.25, 0.5, 0.75, 1.0] {
             let quantile = sketch
                 .quantile(rank, SearchCriteria::Inclusive)
-                .expect("quantile should succeed");
+                .expect("quantile should succeed")
+                .expect("the sketch is non-empty");
             assert!(
                 quantile >= true_min && quantile <= true_max,
                 "quantile {} out of bounds [{}, {}]",

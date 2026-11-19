@@ -20,7 +20,7 @@
 //! Sequential register updates use HIP (Historical Inverse Probability). Bulk merges use the
 //! composite estimator because register values do not retain their update order.
 //!
-//! Estimator formulas and crossover constants follow DataSketches C++:
+//! Estimator formulas and crossover constants follow datasketches-cpp:
 //! <https://github.com/apache/datasketches-cpp/blob/5a055521/hll/include/HllArray-internal.hpp>
 
 use crate::common::NumStdDev;
@@ -30,7 +30,7 @@ use crate::hll::cubic_interpolation;
 use crate::hll::harmonic_numbers;
 
 /// Selects the estimate that is valid for the current register history.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy)]
 pub enum EstimateState {
     /// The register updates have a known order, so the HIP accumulator is valid.
     Hip(f64),
@@ -40,9 +40,9 @@ pub enum EstimateState {
 
 /// KxQ caches the sum of `2^-register`. Splitting the sum at register value 32 preserves
 /// precision when large and small contributions coexist.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Estimator {
-    estimate_state: EstimateState,
+    state: EstimateState,
     /// KxQ register for values < 32 (larger inverse powers)
     kxq0: f64,
     /// KxQ register for values >= 32 (tiny inverse powers)
@@ -53,7 +53,7 @@ impl Estimator {
     pub fn new(lg_config_k: u8) -> Self {
         let k = 1 << lg_config_k;
         Self {
-            estimate_state: EstimateState::Hip(0.0),
+            state: EstimateState::Hip(0.0),
             kxq0: k as f64, // All registers start at 0, so kxq0 = k * (1/2^0) = k
             kxq1: 0.0,
         }
@@ -61,16 +61,12 @@ impl Estimator {
 
     /// Restores estimator fields from an HLL serialization preamble.
     pub fn from_serialized(hip_accum: f64, kxq0: f64, kxq1: f64, out_of_order: bool) -> Self {
-        let estimate_state = if out_of_order {
+        let state = if out_of_order {
             EstimateState::Composite
         } else {
             EstimateState::Hip(hip_accum)
         };
-        Self {
-            estimate_state,
-            kxq0,
-            kxq1,
-        }
+        Self { state, kxq0, kxq1 }
     }
 
     /// Applies a register increase; requires `new_value > old_value`.
@@ -78,7 +74,7 @@ impl Estimator {
         let k = (1 << lg_config_k) as f64;
 
         // HIP must use the KxQ sums from before this register update.
-        if let EstimateState::Hip(hip_accum) = &mut self.estimate_state {
+        if let EstimateState::Hip(hip_accum) = &mut self.state {
             *hip_accum += k / (self.kxq0 + self.kxq1);
         }
 
@@ -103,7 +99,7 @@ impl Estimator {
     /// For `Array6`/`Array8`, pass zero for `cur_min` and the zero-register count for
     /// `num_at_cur_min`. `Array4` tracks its actual minimum and its count.
     pub fn estimate(&self, lg_config_k: u8, cur_min: u8, num_at_cur_min: u32) -> f64 {
-        match self.estimate_state {
+        match self.state {
             EstimateState::Hip(hip_accum) => hip_accum,
             EstimateState::Composite => {
                 self.composite_estimate(lg_config_k, cur_min, num_at_cur_min)
@@ -182,7 +178,7 @@ impl Estimator {
     }
 
     /// Selects between bias-corrected HLL and bitmap estimates using their empirical crossover.
-    fn composite_estimate(&self, lg_config_k: u8, cur_min: u8, num_at_cur_min: u32) -> f64 {
+    pub fn composite_estimate(&self, lg_config_k: u8, cur_min: u8, num_at_cur_min: u32) -> f64 {
         let raw_estimate = self.raw_estimate(lg_config_k);
 
         let x_arr = composite_interpolation::get_x_arr(lg_config_k);
@@ -234,7 +230,7 @@ impl Estimator {
     }
 
     pub fn hip_accum(&self) -> f64 {
-        match self.estimate_state {
+        match self.state {
             EstimateState::Hip(hip_accum) => hip_accum,
             EstimateState::Composite => 0.0,
         }
@@ -249,21 +245,21 @@ impl Estimator {
     }
 
     pub fn uses_composite_estimate(&self) -> bool {
-        matches!(self.estimate_state, EstimateState::Composite)
+        matches!(self.state, EstimateState::Composite)
     }
 
     pub fn estimate_state(&self) -> EstimateState {
-        self.estimate_state
+        self.state
     }
 
     /// Restores estimate state after copying or transforming the same logical sketch.
     pub fn restore_estimate_state(&mut self, state: EstimateState) {
-        self.estimate_state = state;
+        self.state = state;
     }
 
     /// Invalidates HIP after registers from independent histories are merged.
     pub fn invalidate_hip(&mut self) {
-        self.estimate_state = EstimateState::Composite;
+        self.state = EstimateState::Composite;
     }
 
     /// Replaces register-derived KxQ values after a bulk register operation.
@@ -274,7 +270,7 @@ impl Estimator {
 }
 
 /// Relative error used as `estimate / (1 + error)`: negative for upper bounds.
-/// Follows DataSketches C++ `HllUtil::getRelErr`:
+/// Follows datasketches-cpp's `HllUtil::getRelErr`:
 /// <https://github.com/apache/datasketches-cpp/blob/5a055521/hll/include/HllUtil.hpp>
 fn relative_error(
     lg_config_k: u8,
@@ -283,7 +279,7 @@ fn relative_error(
     num_std_dev: NumStdDev,
 ) -> f64 {
     if lg_config_k > 12 {
-        // RSE factors from Apache DataSketches C++ implementation
+        // RSE factors from datasketches-cpp.
         // HLL_HIP_RSE_FACTOR = sqrt(ln(2)) ≈ 0.8325546
         // HLL_NON_HIP_RSE_FACTOR = sqrt((3 * ln(2)) - 1) ≈ 1.03896
         let rse_factor = if composite {

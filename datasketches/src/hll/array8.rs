@@ -15,28 +15,36 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::sync::OnceLock;
+
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
 use crate::codec::assert::insufficient_data;
-use crate::codec::family::Family;
 use crate::common::NumStdDev;
 use crate::error::Error;
 use crate::hll::Coupon;
+use crate::hll::HllType;
+use crate::hll::array4::AUX_TOKEN;
+use crate::hll::array6::num_bytes_for_k;
 use crate::hll::estimator::EstimateState;
 use crate::hll::estimator::Estimator;
-use crate::hll::serialization::CUR_MODE_HLL;
+use crate::hll::serialization::COUPON_SIZE_BYTES;
 use crate::hll::serialization::HLL_PREAMBLE_SIZE;
-use crate::hll::serialization::HLL_PREINTS;
-use crate::hll::serialization::OUT_OF_ORDER_FLAG_MASK;
-use crate::hll::serialization::SERIAL_VERSION;
-use crate::hll::serialization::TGT_HLL8;
-use crate::hll::serialization::encode_mode_byte;
+use crate::hll::serialization::write_hll_preamble;
 
 /// Registers stored one per byte.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Array8 {
     lg_config_k: u8,
     bytes: Box<[u8]>,
+    /// Absent estimation data means a bulk merge invalidated HIP and the register-derived fields.
+    /// Shared queries initialize it once; exclusive updates can maintain or invalidate it.
+    estimation: OnceLock<Estimation>,
+}
+
+/// Zero-register count and estimator used for cardinality queries.
+#[derive(Debug, Clone)]
+struct Estimation {
     num_zeros: u32,
     estimator: Estimator,
 }
@@ -48,8 +56,10 @@ impl Array8 {
         Self {
             lg_config_k,
             bytes: vec![0u8; k as usize].into_boxed_slice(),
-            num_zeros: k,
-            estimator: Estimator::new(lg_config_k),
+            estimation: OnceLock::from(Estimation {
+                num_zeros: k,
+                estimator: Estimator::new(lg_config_k),
+            }),
         }
     }
 
@@ -71,34 +81,58 @@ impl Array8 {
         let old_value = self.get(slot);
 
         if new_value > old_value {
-            self.estimator
-                .update(self.lg_config_k, old_value, new_value);
-
-            self.put(slot, new_value);
-
-            if old_value == 0 {
-                self.num_zeros -= 1;
+            if let Some(estimation) = self.estimation.get_mut() {
+                estimation
+                    .estimator
+                    .update(self.lg_config_k, old_value, new_value);
+                if old_value == 0 {
+                    estimation.num_zeros -= 1;
+                }
             }
+            self.put(slot, new_value);
         }
     }
 
     pub fn estimate(&self) -> f64 {
+        let Estimation {
+            num_zeros,
+            estimator,
+        } = self.estimation();
         // Array8 doesn't use cur_min (always 0), so num_at_cur_min = num_zeros
-        self.estimator.estimate(self.lg_config_k, 0, self.num_zeros)
+        estimator.estimate(self.lg_config_k, 0, *num_zeros)
+    }
+
+    pub fn composite_estimate(&self) -> f64 {
+        let Estimation {
+            num_zeros,
+            estimator,
+        } = self.estimation();
+        estimator.composite_estimate(self.lg_config_k, 0, *num_zeros)
     }
 
     pub fn upper_bound(&self, num_std_dev: NumStdDev) -> f64 {
-        self.estimator
-            .upper_bound(self.lg_config_k, 0, self.num_zeros, num_std_dev)
+        let Estimation {
+            num_zeros,
+            estimator,
+        } = self.estimation();
+        estimator.upper_bound(self.lg_config_k, 0, *num_zeros, num_std_dev)
     }
 
     pub fn lower_bound(&self, num_std_dev: NumStdDev) -> f64 {
-        self.estimator
-            .lower_bound(self.lg_config_k, 0, self.num_zeros, num_std_dev)
+        let Estimation {
+            num_zeros,
+            estimator,
+        } = self.estimation();
+        estimator.lower_bound(self.lg_config_k, 0, *num_zeros, num_std_dev)
     }
 
     pub fn is_empty(&self) -> bool {
-        self.num_zeros == (1 << self.lg_config_k)
+        if let Some(estimation) = self.estimation.get() {
+            return estimation.num_zeros == (1 << self.lg_config_k);
+        }
+        // Union checks emptiness between merges. A nonzero register answers that without
+        // rebuilding all estimator fields and defeating deferred reconstruction.
+        self.bytes.iter().all(|&value| value == 0)
     }
 
     pub fn values(&self) -> &[u8] {
@@ -110,22 +144,31 @@ impl Array8 {
     }
 
     pub fn estimate_state(&self) -> EstimateState {
-        self.estimator.estimate_state()
+        self.estimation
+            .get()
+            .map_or(EstimateState::Composite, |estimation| {
+                estimation.estimator.estimate_state()
+            })
     }
 
     pub fn restore_estimate_state(&mut self, state: EstimateState) {
-        self.estimator.restore_estimate_state(state);
+        if let Some(estimation) = self.estimation.get_mut() {
+            estimation.estimator.restore_estimate_state(state);
+        } else if let EstimateState::Hip(_) = state {
+            let mut estimation = self.rebuild_estimation();
+            estimation.estimator.restore_estimate_state(state);
+            self.estimation = OnceLock::from(estimation);
+        }
     }
 
-    /// Bypasses estimator updates. Call `rebuild_estimator_from_registers` after all writes.
+    /// Bypasses estimator updates. Call `invalidate_estimator` after all writes.
     pub fn set_register(&mut self, slot: usize, value: u8) {
         self.bytes[slot] = value;
     }
 
-    /// Rebuilds register-derived caches and invalidates HIP after bulk writes.
-    pub fn rebuild_estimator_from_registers(&mut self) {
-        self.rebuild_cached_values();
-        self.estimator.invalidate_hip();
+    /// Invalidates HIP and defers rebuilding register-derived fields until a query needs them.
+    pub fn invalidate_estimator(&mut self) {
+        self.estimation.take();
     }
 
     /// Merges registers and invalidates HIP because their update order is unavailable.
@@ -140,8 +183,7 @@ impl Array8 {
             self.bytes[i] = self.bytes[i].max(val);
         }
 
-        self.rebuild_cached_values();
-        self.estimator.invalidate_hip();
+        self.invalidate_estimator();
     }
 
     /// Register values come from a separate hash word, so folding slot indices needs no
@@ -164,13 +206,15 @@ impl Array8 {
             self.bytes[dst_slot] = self.bytes[dst_slot].max(val);
         }
 
-        self.rebuild_cached_values();
-        self.estimator.invalidate_hip();
+        self.invalidate_estimator();
     }
 
-    /// Rebuilds register-derived caches without changing the estimate state.
-    fn rebuild_cached_values(&mut self) {
-        self.num_zeros = self.bytes.iter().filter(|&&v| v == 0).count() as u32;
+    fn estimation(&self) -> &Estimation {
+        self.estimation.get_or_init(|| self.rebuild_estimation())
+    }
+
+    fn rebuild_estimation(&self) -> Estimation {
+        let num_zeros = self.bytes.iter().filter(|&&v| v == 0).count() as u32;
 
         let mut kxq0_sum = 0.0;
         let mut kxq1_sum = 0.0;
@@ -185,7 +229,13 @@ impl Array8 {
             }
         }
 
-        self.estimator.restore_kxq(kxq0_sum, kxq1_sum);
+        let mut estimator = Estimator::new(self.lg_config_k);
+        estimator.restore_kxq(kxq0_sum, kxq1_sum);
+        estimator.invalidate_hip();
+        Estimation {
+            num_zeros,
+            estimator,
+        }
     }
 
     pub fn deserialize_registers(
@@ -231,49 +281,116 @@ impl Array8 {
         Ok(Self {
             lg_config_k,
             bytes: data.into_boxed_slice(),
-            num_zeros,
-            estimator,
+            estimation: OnceLock::from(Estimation {
+                num_zeros,
+                estimator,
+            }),
         })
     }
 
     pub fn serialize(&self, lg_config_k: u8) -> Vec<u8> {
-        let k = 1 << lg_config_k;
-        let total_size = HLL_PREAMBLE_SIZE + k as usize;
+        let estimation = self.estimation();
+        let k = 1usize << lg_config_k;
+        let total_size = HLL_PREAMBLE_SIZE + k;
         let mut bytes = SketchBytes::with_capacity(total_size);
 
-        bytes.write_u8(HLL_PREINTS);
-        bytes.write_u8(SERIAL_VERSION);
-        bytes.write_u8(Family::HLL.id);
-        bytes.write_u8(lg_config_k);
-        bytes.write_u8(0); // unused for HLL mode
-
-        let mut flags = 0u8;
-        if self.estimator.uses_composite_estimate() {
-            flags |= OUT_OF_ORDER_FLAG_MASK;
-        }
-        bytes.write_u8(flags);
-
-        // cur_min is always 0 for Array8
-        bytes.write_u8(0);
-
-        bytes.write_u8(encode_mode_byte(CUR_MODE_HLL, TGT_HLL8));
-
-        bytes.write_f64_le(self.estimator.hip_accum());
-        bytes.write_f64_le(self.estimator.kxq0());
-        bytes.write_f64_le(self.estimator.kxq1());
-
-        // Write num_at_cur_min (num_zeros for Array8)
-        bytes.write_u32_le(self.num_zeros);
-
-        // Write aux_count (always 0 for Array8)
-        bytes.write_u32_le(0);
+        write_hll_preamble(
+            &mut bytes,
+            lg_config_k,
+            HllType::Hll8,
+            0,
+            estimation.num_zeros,
+            0,
+            &estimation.estimator,
+        );
 
         bytes.write(&self.bytes);
 
         bytes.into_bytes()
     }
 
-    /// Returns the estimated size of the heap allocations in bytes
+    pub fn serialize_as(&self, lg_config_k: u8, hll_type: HllType) -> Vec<u8> {
+        match hll_type {
+            HllType::Hll4 => self.serialize_as_hll4(lg_config_k),
+            HllType::Hll6 => self.serialize_as_hll6(lg_config_k),
+            HllType::Hll8 => self.serialize(lg_config_k),
+        }
+    }
+
+    fn serialize_as_hll6(&self, lg_config_k: u8) -> Vec<u8> {
+        let estimation = self.estimation();
+        let k = 1u32 << lg_config_k;
+        let num_bytes = num_bytes_for_k(k);
+        let total_size = HLL_PREAMBLE_SIZE + num_bytes;
+        let mut bytes = SketchBytes::with_capacity(total_size);
+
+        write_hll_preamble(
+            &mut bytes,
+            lg_config_k,
+            HllType::Hll6,
+            0,
+            estimation.num_zeros,
+            0,
+            &estimation.estimator,
+        );
+
+        for chunk in self.bytes.chunks_exact(4) {
+            let v0 = chunk[0].min(63);
+            let v1 = chunk[1].min(63);
+            let v2 = chunk[2].min(63);
+            let v3 = chunk[3].min(63);
+            bytes.write(&[v0 | (v1 << 6), (v1 >> 2) | (v2 << 4), (v2 >> 4) | (v3 << 2)]);
+        }
+        // Array6 reads and writes 16-bit windows and expects one trailing padding byte.
+        bytes.write_u8(0);
+
+        bytes.into_bytes()
+    }
+
+    fn serialize_as_hll4(&self, lg_config_k: u8) -> Vec<u8> {
+        let estimation = self.estimation();
+        let k = 1usize << lg_config_k;
+
+        let cur_min = self.bytes.iter().copied().min().unwrap_or(0);
+        let mut num_at_cur_min = 0u32;
+        let mut aux_count = 0usize;
+        for &val in &self.bytes {
+            num_at_cur_min += u32::from(val == cur_min);
+            aux_count += usize::from(val - cur_min >= AUX_TOKEN);
+        }
+
+        let num_bytes = k >> 1;
+        let total_size = HLL_PREAMBLE_SIZE + num_bytes + (aux_count * COUPON_SIZE_BYTES);
+        let mut bytes = SketchBytes::with_capacity(total_size);
+
+        write_hll_preamble(
+            &mut bytes,
+            lg_config_k,
+            HllType::Hll4,
+            cur_min,
+            num_at_cur_min,
+            aux_count as u32,
+            &estimation.estimator,
+        );
+
+        for pair in self.bytes.chunks_exact(2) {
+            let lo = (pair[0] - cur_min).min(AUX_TOKEN);
+            let hi = (pair[1] - cur_min).min(AUX_TOKEN);
+            bytes.write_u8(lo | (hi << 4));
+        }
+
+        if aux_count > 0 {
+            for (slot, &val) in self.bytes.iter().enumerate() {
+                if val - cur_min >= AUX_TOKEN {
+                    bytes.write_u32_le(Coupon::pack(slot as u32, val).raw());
+                }
+            }
+        }
+
+        bytes.into_bytes()
+    }
+
+    /// Returns an estimate of memory usage in bytes.
     pub fn estimated_size(&self) -> usize {
         self.bytes.len()
     }
@@ -393,11 +510,11 @@ mod tests {
         arr.update(Coupon::pack(1, 50)); // value >= 32, goes to kxq1
 
         // Initial kxq0 = 256 (all zeros = 1.0 each)
-        assert_that!(arr.estimator.kxq0(), lt(256.0));
+        assert_that!(arr.estimation().estimator.kxq0(), lt(256.0));
 
         // kxq1 should have a positive value (from 1/2^50)
-        assert_that!(arr.estimator.kxq1(), gt(0.0));
-        assert_that!(arr.estimator.kxq1(), lt(1e-10));
+        assert_that!(arr.estimation().estimator.kxq1(), gt(0.0));
+        assert_that!(arr.estimation().estimator.kxq1(), lt(1e-10));
     }
 
     #[test]
@@ -437,9 +554,9 @@ mod tests {
         assert_eq!(dst.get(3), 40, "dst[3] got new value");
 
         // Bulk merges require composite estimation.
-        assert!(dst.estimator.uses_composite_estimate());
+        assert!(dst.estimation().estimator.uses_composite_estimate());
 
-        assert_eq!(dst.num_zeros, 12);
+        assert_eq!(dst.estimation().num_zeros, 12);
     }
 
     #[test]
@@ -463,7 +580,7 @@ mod tests {
         assert_eq!(dst.get(1), 30, "dst[1] = max(20, 18, 30)");
 
         // Bulk merges require composite estimation.
-        assert!(dst.estimator.uses_composite_estimate());
+        assert!(dst.estimation().estimator.uses_composite_estimate());
     }
 
     #[test]
@@ -485,18 +602,28 @@ mod tests {
     }
 
     #[test]
-    fn test_rebuild_cached_values() {
+    fn test_rebuild_estimation() {
         let mut arr = Array8::new(4); // 16 slots
 
         arr.put(0, 10);
         arr.put(1, 20);
         arr.put(2, 30);
 
-        arr.num_zeros = 999;
+        arr.put(3, 31);
+        arr.put(4, 32);
+        arr.put(5, 63);
+        arr.invalidate_estimator();
 
-        arr.rebuild_cached_values();
-
-        assert_eq!(arr.num_zeros, 13);
+        let estimation = arr.estimation();
+        assert_eq!(estimation.num_zeros, 10);
+        assert_eq!(
+            estimation.estimator.kxq0(),
+            10.0 + 2_f64.powi(-10) + 2_f64.powi(-20) + 2_f64.powi(-30) + 2_f64.powi(-31)
+        );
+        assert_eq!(
+            estimation.estimator.kxq1(),
+            2_f64.powi(-32) + 2_f64.powi(-63)
+        );
     }
 
     #[test]
@@ -524,6 +651,117 @@ mod tests {
                 i,
                 15 - i,
                 expected
+            );
+        }
+    }
+
+    #[test]
+    fn test_serialize_as_hll6_matches_array6_bytes() {
+        use crate::hll::HllSketch;
+
+        for lg_k in [4u8, 6, 8] {
+            let k = 1usize << lg_k;
+            let mut arr8 = Array8::new(lg_k);
+            let mut arr6 = crate::hll::array6::Array6::new(lg_k);
+            for slot in 0..k {
+                let val = ((slot * 7) % 64) as u8;
+                if val > 0 {
+                    let coupon = Coupon::pack(slot as u32, val);
+                    arr8.update(coupon);
+                    arr6.update(coupon);
+                }
+            }
+            assert_eq!(arr8.serialize_as(lg_k, HllType::Hll6), arr6.serialize(lg_k));
+
+            // Composite / out-of-order mode matches too.
+            arr8.invalidate_estimator();
+            arr6.restore_estimate_state(EstimateState::Composite);
+            assert_eq!(arr8.serialize_as(lg_k, HllType::Hll6), arr6.serialize(lg_k));
+
+            let decoded = HllSketch::deserialize(&arr8.serialize_as(lg_k, HllType::Hll6)).unwrap();
+            assert_eq!(decoded.estimate(), arr6.estimate());
+            assert_eq!(decoded.composite_estimate(), arr6.composite_estimate());
+        }
+    }
+
+    #[test]
+    fn test_serialize_as_hll4_handles_shifted_cur_min_and_multi_aux() {
+        use crate::hll::HllSketch;
+        use crate::hll::array4::Array4;
+
+        fn canonical_hll4_bytes(sketch: &HllSketch) -> Vec<u8> {
+            let mut bytes = sketch.serialize();
+            bytes[4] = 0;
+            let aux_start = HLL_PREAMBLE_SIZE + (1usize << (sketch.lg_config_k() - 1));
+            let mut aux: Vec<u32> = bytes[aux_start..]
+                .chunks_exact(4)
+                .map(|chunk| u32::from_le_bytes(chunk.try_into().unwrap()))
+                .collect();
+            aux.sort_unstable();
+            for (dst, coupon) in bytes[aux_start..].chunks_exact_mut(4).zip(aux) {
+                dst.copy_from_slice(&coupon.to_le_bytes());
+            }
+            bytes
+        }
+
+        fn assert_hll4_eq(actual: &HllSketch, expected: &HllSketch) {
+            assert_eq!(actual.lg_config_k(), expected.lg_config_k());
+            assert_eq!(actual.target_type(), expected.target_type());
+            assert_eq!(actual.is_empty(), expected.is_empty());
+            assert_eq!(canonical_hll4_bytes(actual), canonical_hll4_bytes(expected));
+        }
+
+        let lg_k = 4u8;
+        let k = 1usize << lg_k;
+        let mut arr8 = Array8::new(lg_k);
+        let mut arr4 = Array4::new(lg_k);
+
+        // Set cur_min = 5, boundary delta 14 (slot 2 -> 19), and three exceptions (slots 1, 7, 15).
+        let values = [5u8, 20, 19, 6, 5, 12, 8, 25, 9, 5, 18, 7, 11, 14, 15, 63];
+        assert_eq!(values.len(), k);
+        for (slot, &val) in values.iter().enumerate() {
+            let coupon = Coupon::pack(slot as u32, val);
+            arr8.update(coupon);
+            arr4.update(coupon);
+        }
+
+        let direct_bytes = arr8.serialize_as(lg_k, HllType::Hll4);
+        assert_eq!(direct_bytes[6], 5); // cur_min == 5
+        assert_eq!(
+            u32::from_le_bytes(direct_bytes[36..40].try_into().unwrap()),
+            3
+        );
+
+        let decoded = HllSketch::deserialize(&direct_bytes).unwrap();
+        let expected = HllSketch::from_mode(lg_k, crate::hll::mode::Mode::Array4(arr4.clone()));
+        assert_hll4_eq(&decoded, &expected);
+        assert_eq!(decoded.estimate(), expected.estimate());
+        assert_eq!(decoded.composite_estimate(), expected.composite_estimate());
+        for std_dev in [NumStdDev::One, NumStdDev::Two, NumStdDev::Three] {
+            assert_eq!(decoded.lower_bound(std_dev), expected.lower_bound(std_dev));
+            assert_eq!(decoded.upper_bound(std_dev), expected.upper_bound(std_dev));
+        }
+
+        // Composite / out-of-order state matches too.
+        arr8.invalidate_estimator();
+        arr4.restore_estimate_state(EstimateState::Composite);
+        let direct_ooo = arr8.serialize_as(lg_k, HllType::Hll4);
+        let decoded_ooo = HllSketch::deserialize(&direct_ooo).unwrap();
+        let expected_ooo = HllSketch::from_mode(lg_k, crate::hll::mode::Mode::Array4(arr4));
+        assert_hll4_eq(&decoded_ooo, &expected_ooo);
+        assert_eq!(decoded_ooo.estimate(), expected_ooo.estimate());
+        assert_eq!(
+            decoded_ooo.composite_estimate(),
+            expected_ooo.composite_estimate()
+        );
+        for std_dev in [NumStdDev::One, NumStdDev::Two, NumStdDev::Three] {
+            assert_eq!(
+                decoded_ooo.lower_bound(std_dev),
+                expected_ooo.lower_bound(std_dev)
+            );
+            assert_eq!(
+                decoded_ooo.upper_bound(std_dev),
+                expected_ooo.upper_bound(std_dev)
             );
         }
     }

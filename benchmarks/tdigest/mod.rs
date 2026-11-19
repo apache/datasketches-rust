@@ -22,3 +22,12 @@ mod query;
 mod serde;
 mod support;
 mod update;
+
+pub fn register(runner: &mut benchmarks::Runner) {
+    aggregation::register(runner);
+    compress::register(runner);
+    merge::register(runner);
+    query::register(runner);
+    serde::register(runner);
+    update::register(runner);
+}

@@ -15,36 +15,49 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::hint::black_box;
+
+use benchmarks::Bencher;
+use benchmarks::Runner;
 use datasketches::common::SearchCriteria;
 use datasketches::kll::KllFloat;
-use divan::Bencher;
-use divan::black_box;
 
 use super::support::prepared_sketch;
 
-#[divan::bench]
 fn rank(bencher: Bencher) {
     let sketch = prepared_sketch();
     let item = KllFloat::<f64>::new(500_000.0).unwrap();
     bencher.bench_local(|| black_box(&sketch).rank(black_box(&item), SearchCriteria::Inclusive));
 }
 
-#[divan::bench(args = [0.0, 0.5, 1.0])]
 fn quantile(bencher: Bencher, rank: f64) {
     let sketch = prepared_sketch();
     bencher.bench_local(|| black_box(&sketch).quantile(black_box(rank), SearchCriteria::Inclusive));
 }
 
-#[divan::bench]
 fn sorted_view_quantile(bencher: Bencher) {
     let view = prepared_sketch().sorted_view();
     bencher.bench_local(|| black_box(&view).quantile(black_box(0.5), SearchCriteria::Inclusive));
 }
 
-#[divan::bench]
 fn batch_quantiles(bencher: Bencher) {
     let sketch = prepared_sketch();
     let ranks = [0.01, 0.1, 0.25, 0.5, 0.75, 0.9, 0.99];
     bencher
         .bench_local(|| black_box(&sketch).quantiles(black_box(&ranks), SearchCriteria::Inclusive));
+}
+
+pub fn register(runner: &mut Runner) {
+    runner.case("kll::query::rank", 7_000_000, rank);
+    for &(rank, rounds) in &[(0.0, 100_000_000), (0.5, 100_000), (1.0, 100_000_000)] {
+        runner.case(format!("kll::query::quantile/{rank:?}"), rounds, |b| {
+            quantile(b, rank)
+        });
+    }
+    runner.case(
+        "kll::query::sorted_view_quantile",
+        40_000_000,
+        sorted_view_quantile,
+    );
+    runner.case("kll::query::batch_quantiles", 100_000, batch_quantiles);
 }

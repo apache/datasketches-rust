@@ -35,11 +35,15 @@ fn rank_space_error_is_bounded() -> Result<(), Error> {
         sketch.update(req_f64(i as f64));
     }
 
-    assert_eq!(sketch.n(), n as u64);
+    assert_eq!(sketch.total_weight(), n as u64);
 
     for rank in [0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99] {
-        let quantile = sketch.quantile(rank, SearchCriteria::Inclusive)?;
-        let estimated_rank = sketch.rank(&quantile, SearchCriteria::Inclusive)?;
+        let quantile = sketch
+            .quantile(rank, SearchCriteria::Inclusive)?
+            .expect("the sketch is non-empty");
+        let estimated_rank = sketch
+            .rank(&quantile, SearchCriteria::Inclusive)
+            .expect("the sketch is non-empty");
         let abs_rank_error = (estimated_rank - rank).abs();
         let max_abs_rank_error = if rank >= 0.9 { 0.01 } else { 0.02 };
 

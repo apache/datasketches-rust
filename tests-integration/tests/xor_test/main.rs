@@ -15,13 +15,4 @@
 // specific language governing permissions and limitations
 // under the License.
 
-pub const PREAMBLE_LONGS_EMPTY_OR_SINGLE: u8 = 1;
-pub const PREAMBLE_LONGS_MULTIPLE: u8 = 2;
-pub const SERIAL_VERSION: u8 = 1;
-pub const FLAGS_IS_EMPTY: u8 = 1 << 0;
-pub const FLAGS_IS_SINGLE_VALUE: u8 = 1 << 1;
-pub const FLAGS_REVERSE_MERGE: u8 = 1 << 2;
-/// the format of the reference implementation is using double (f64) precision
-pub const COMPAT_DOUBLE: u32 = 1;
-/// the format of the reference implementation is using float (f32) precision
-pub const COMPAT_FLOAT: u32 = 2;
+mod filter;

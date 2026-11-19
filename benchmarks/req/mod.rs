@@ -18,3 +18,8 @@
 mod query;
 mod support;
 mod update;
+
+pub fn register(runner: &mut benchmarks::Runner) {
+    query::register(runner);
+    update::register(runner);
+}

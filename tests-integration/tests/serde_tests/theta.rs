@@ -23,6 +23,7 @@ use datasketches::common::NumStdDev;
 use datasketches::error::ErrorKind;
 use datasketches::theta::CompactThetaSketch;
 use datasketches::theta::ThetaSketchBuilder;
+use datasketches::theta::ThetaUnionBuilder;
 use googletest::assert_that;
 use googletest::prelude::near;
 use tests_integration::ZERO_HASH_SEED;
@@ -160,6 +161,70 @@ fn test_go_compatibility() {
 }
 
 #[test]
+fn test_rust_compatibility() {
+    for n in [0, 1, 10, 100, 1000, 10_000, 100_000, 1_000_000] {
+        let rust_filename = format!("theta_n{n}_rust.sk");
+        let rust_path = serialization_test_data("rust_generated_files", &rust_filename);
+        let java_filename = format!("theta_n{n}_java.sk");
+        let java_path = serialization_test_data("java_generated_files", &java_filename);
+
+        let rust_bytes = fs::read(&rust_path).unwrap();
+        let java_bytes = fs::read(&java_path).unwrap();
+        if n == 1 {
+            // Java sets the optional v3 SINGLE_ITEM flag (0x20) in byte 5; all other header and
+            // hash payload bytes match bit-for-bit.
+            assert_eq!(rust_bytes.len(), java_bytes.len(), "{rust_filename}");
+            assert_eq!(rust_bytes[..5], java_bytes[..5], "{rust_filename}");
+            assert_eq!(rust_bytes[5] | 0x20, java_bytes[5], "{rust_filename}");
+            assert_eq!(rust_bytes[6..], java_bytes[6..], "{rust_filename}");
+        } else {
+            assert_eq!(
+                rust_bytes, java_bytes,
+                "Rust {rust_filename} bytes differ from {java_filename}"
+            );
+        }
+        let sketch = CompactThetaSketch::deserialize(&rust_bytes).unwrap();
+        assert_eq!(sketch.is_empty(), n == 0, "{rust_filename}");
+        assert_eq!(sketch.serialize(), rust_bytes, "{rust_filename}");
+
+        test_sketch_file(rust_path, n, false);
+    }
+
+    for n in [10, 100, 1000, 10_000, 100_000, 1_000_000] {
+        let rust_filename = format!("theta_compressed_n{n}_rust.sk");
+        let rust_path = serialization_test_data("rust_generated_files", &rust_filename);
+        let java_filename = format!("theta_compressed_n{n}_java.sk");
+        let java_path = serialization_test_data("java_generated_files", &java_filename);
+
+        let rust_bytes = fs::read(&rust_path).unwrap();
+        let java_bytes = fs::read(&java_path).unwrap();
+        assert_eq!(
+            rust_bytes, java_bytes,
+            "Rust {rust_filename} bytes differ from {java_filename}"
+        );
+        let sketch = CompactThetaSketch::deserialize(&rust_bytes).unwrap();
+        assert_eq!(sketch.serialize_compressed(), rust_bytes, "{rust_filename}");
+
+        test_sketch_file(rust_path, n, true);
+    }
+
+    let rust_path =
+        serialization_test_data("rust_generated_files", "theta_non_empty_no_entries_rust.sk");
+    let java_path =
+        serialization_test_data("java_generated_files", "theta_non_empty_no_entries_java.sk");
+    let rust_bytes = fs::read(&rust_path).unwrap();
+    let java_bytes = fs::read(&java_path).unwrap();
+    assert_eq!(rust_bytes, java_bytes);
+
+    let sketch = CompactThetaSketch::deserialize(&rust_bytes).unwrap();
+    assert!(!sketch.is_empty());
+    assert_eq!(sketch.num_retained(), 0);
+    assert!(sketch.is_estimation_mode());
+    assert_eq!(sketch.serialize(), rust_bytes);
+    test_sketch_file(rust_path, 0, false);
+}
+
+#[test]
 fn empty_sketch_serialization() {
     let expected = fs::read(serialization_test_data(
         "cpp_generated_files",
@@ -245,6 +310,37 @@ fn malformed_input_is_rejected() {
 }
 
 #[test]
+fn compressed_hashes_must_be_nonzero_and_below_theta() {
+    for width in [1, 56, 57, 63] {
+        for count in [2, 128] {
+            let hashes: Vec<u64> = (0..count).map(|i| (1u64 << (width - 1)) + i).collect();
+            let sketch = CompactThetaSketch::deserialize(&serialize_v2_exact(&hashes)).unwrap();
+            let mut bytes = sketch.serialize_compressed();
+
+            // Add a sampling threshold immediately above the last retained hash.
+            bytes[0] = 2;
+            bytes.splice(8..8, (hashes.last().unwrap() + 1).to_le_bytes());
+            let decoded = CompactThetaSketch::deserialize(&bytes).unwrap();
+            assert_eq!(
+                decoded.iter().map(|entry| entry.hash()).collect::<Vec<_>>(),
+                hashes
+            );
+
+            for theta in [hashes[0], hashes[hashes.len() / 2], *hashes.last().unwrap()] {
+                bytes[8..16].copy_from_slice(&theta.to_le_bytes());
+                let err = CompactThetaSketch::deserialize(&bytes).unwrap_err();
+                assert_eq!(err.kind(), ErrorKind::InvalidData);
+            }
+
+            let payload_offset = 16 + usize::from(bytes[4]);
+            bytes[payload_offset..].fill(0);
+            let err = CompactThetaSketch::deserialize(&bytes).unwrap_err();
+            assert_eq!(err.kind(), ErrorKind::InvalidData);
+        }
+    }
+}
+
+#[test]
 fn declared_entry_payload_is_checked_before_allocating() {
     let mut uncompressed = serialize_v2_exact(&[1]);
     uncompressed[8..12].copy_from_slice(&u32::MAX.to_le_bytes());
@@ -299,12 +395,12 @@ fn test_v2_java_empty_layouts() {
         .seed_hash();
     let other_seed_hash = ThetaSketchBuilder::default().build().unwrap().seed_hash();
 
-    // Port of Java 8.0.0 ForwardCompatibilityTest's checkSerVer2_{1,2,3}PreLong[s]_Empty:
-    // https://github.com/apache/datasketches-java/blob/8.0.0/src/test/java/org/apache/datasketches/theta/ForwardCompatibilityTest.java#L90-L137
+    // Port of datasketches-java 8.0.0 ForwardCompatibilityTest's
+    // checkSerVer2_{1,2,3}PreLong[s]_Empty: https://github.com/apache/datasketches-java/blob/8.0.0/src/test/java/org/apache/datasketches/theta/ForwardCompatibilityTest.java#L90-L137
     for pre_longs in [1, 2, 3] {
         let mut bytes = serialize_v2_exact(&[]);
         bytes[0] = pre_longs;
-        bytes[5] = 0x0e; // Java's v2 empty flags.
+        bytes[5] = 0x0e; // datasketches-java's v2 empty flags.
         bytes.resize(pre_longs as usize * 8, 0);
         if pre_longs == 3 {
             bytes[16..24].copy_from_slice(&(i64::MAX as u64).to_le_bytes());
@@ -316,5 +412,165 @@ fn test_v2_java_empty_layouts() {
             assert!(sketch.is_empty());
             assert_eq!(sketch.seed_hash(), expected_seed_hash);
         }
+    }
+}
+
+#[test]
+fn union_serialization_matches_compact_result() {
+    for (rows, probability, mixed_precision) in [
+        (0, 1.0, false),
+        (1, 1.0, false),
+        (12, 1.0, false),
+        (40, 1.0, false),
+        (64, 0.5, false),
+        (64, 1e-12, false),
+        (64, 1.0, true),
+    ] {
+        let seed = 123;
+        let mut input = ThetaSketchBuilder::default()
+            .lg_k(8)
+            .seed(seed)
+            .sampling_probability(probability)
+            .build()
+            .unwrap();
+        for value in 0..rows {
+            input.update(value);
+        }
+        let mut union = ThetaUnionBuilder::default()
+            .lg_k(5)
+            .seed(seed)
+            .build()
+            .unwrap();
+        for ordered in [false, true] {
+            assert_eq!(
+                union.serialize(ordered),
+                union.to_sketch(ordered).serialize()
+            );
+        }
+        union.update(&input).unwrap();
+        if mixed_precision {
+            let mut other = ThetaSketchBuilder::default()
+                .lg_k(5)
+                .seed(seed)
+                .build()
+                .unwrap();
+            for value in 32..96 {
+                other.update(value);
+            }
+            union.update(&other.compact(true)).unwrap();
+        }
+
+        for ordered in [false, true] {
+            let bytes = union.serialize(ordered);
+            assert_eq!(
+                bytes,
+                union.to_sketch(ordered).serialize(),
+                "rows={rows}, probability={probability}, mixed={mixed_precision}, ordered={ordered}",
+            );
+            let restored = CompactThetaSketch::deserialize_with_seed(&bytes, seed).unwrap();
+            assert_eq!(restored.serialize(), bytes);
+        }
+        union.reset();
+        for ordered in [false, true] {
+            assert_eq!(
+                union.serialize(ordered),
+                union.to_sketch(ordered).serialize()
+            );
+        }
+    }
+}
+
+#[test]
+fn union_compressed_serialization_matches_compact_result() {
+    for (lg_k, rows, probability, mixed_precision) in [
+        (5, 0, 1.0, false),
+        (5, 1, 1.0, false),
+        (5, 12, 1.0, false),
+        (5, 40, 1.0, false),
+        (5, 64, 0.5, false),
+        (5, 64, 1e-12, false),
+        (5, 64, 1.0, true),
+        (8, 5_000, 1.0, false),
+    ] {
+        let seed = 123;
+        let mut input = ThetaSketchBuilder::default()
+            .lg_k(8)
+            .seed(seed)
+            .sampling_probability(probability)
+            .build()
+            .unwrap();
+        for value in 0..rows {
+            input.update(value);
+        }
+        let mut union = ThetaUnionBuilder::default()
+            .lg_k(lg_k)
+            .seed(seed)
+            .build()
+            .unwrap();
+
+        let empty_compressed = union.serialize_compressed();
+        assert_eq!(
+            empty_compressed,
+            union.to_sketch(true).serialize_compressed()
+        );
+        assert_eq!(empty_compressed, union.serialize(true));
+        assert_eq!(empty_compressed[1], 3);
+
+        union.update(&input).unwrap();
+        if mixed_precision {
+            let mut other = ThetaSketchBuilder::default()
+                .lg_k(5)
+                .seed(seed)
+                .build()
+                .unwrap();
+            for value in 32..96 {
+                other.update(value);
+            }
+            union.update(&other.compact(true)).unwrap();
+        }
+
+        let compressed = union.serialize_compressed();
+        let expected_sketch = union.to_sketch(true);
+        assert_eq!(
+            compressed,
+            expected_sketch.serialize_compressed(),
+            "lg_k={lg_k}, rows={rows}, probability={probability}, mixed={mixed_precision}",
+        );
+
+        let num_retained = expected_sketch.num_retained();
+        if num_retained == 0 || (num_retained == 1 && !expected_sketch.is_estimation_mode()) {
+            assert_eq!(compressed[1], 3);
+            assert_eq!(compressed, union.serialize(true));
+        } else {
+            assert_eq!(compressed[1], 4);
+            assert!(compressed.len() <= union.serialize(true).len());
+        }
+
+        let restored = CompactThetaSketch::deserialize_with_seed(&compressed, seed).unwrap();
+        assert_eq!(restored.is_empty(), expected_sketch.is_empty());
+        assert_eq!(
+            restored.is_estimation_mode(),
+            expected_sketch.is_estimation_mode()
+        );
+        assert_eq!(restored.is_ordered(), expected_sketch.is_ordered());
+        assert_eq!(restored.theta(), expected_sketch.theta());
+        assert_eq!(restored.estimate(), expected_sketch.estimate());
+        assert_eq!(
+            restored
+                .iter()
+                .map(|entry| entry.hash())
+                .collect::<Vec<_>>(),
+            expected_sketch
+                .iter()
+                .map(|entry| entry.hash())
+                .collect::<Vec<_>>(),
+        );
+        assert_eq!(restored.serialize_compressed(), compressed);
+
+        union.reset();
+        assert_eq!(
+            union.serialize_compressed(),
+            union.to_sketch(true).serialize_compressed()
+        );
     }
 }

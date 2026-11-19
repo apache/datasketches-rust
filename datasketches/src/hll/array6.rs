@@ -18,24 +18,19 @@
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
 use crate::codec::assert::insufficient_data;
-use crate::codec::family::Family;
 use crate::common::NumStdDev;
 use crate::error::Error;
 use crate::hll::Coupon;
+use crate::hll::HllType;
 use crate::hll::estimator::EstimateState;
 use crate::hll::estimator::Estimator;
-use crate::hll::serialization::CUR_MODE_HLL;
 use crate::hll::serialization::HLL_PREAMBLE_SIZE;
-use crate::hll::serialization::HLL_PREINTS;
-use crate::hll::serialization::OUT_OF_ORDER_FLAG_MASK;
-use crate::hll::serialization::SERIAL_VERSION;
-use crate::hll::serialization::TGT_HLL6;
-use crate::hll::serialization::encode_mode_byte;
+use crate::hll::serialization::write_hll_preamble;
 
 const VAL_MASK_6: u16 = 0x3F;
 
 /// Registers packed into consecutive six-bit fields.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Array6 {
     lg_config_k: u8,
     bytes: Box<[u8]>,
@@ -123,6 +118,11 @@ impl Array6 {
         self.estimator.estimate(self.lg_config_k, 0, self.num_zeros)
     }
 
+    pub fn composite_estimate(&self) -> f64 {
+        self.estimator
+            .composite_estimate(self.lg_config_k, 0, self.num_zeros)
+    }
+
     pub fn upper_bound(&self, num_std_dev: NumStdDev) -> f64 {
         self.estimator
             .upper_bound(self.lg_config_k, 0, self.num_zeros, num_std_dev)
@@ -196,45 +196,28 @@ impl Array6 {
         let total_size = HLL_PREAMBLE_SIZE + num_bytes;
         let mut bytes = SketchBytes::with_capacity(total_size);
 
-        bytes.write_u8(HLL_PREINTS);
-        bytes.write_u8(SERIAL_VERSION);
-        bytes.write_u8(Family::HLL.id);
-        bytes.write_u8(lg_config_k);
-        bytes.write_u8(0); // unused for HLL mode
-
-        let mut flags = 0u8;
-        if self.estimator.uses_composite_estimate() {
-            flags |= OUT_OF_ORDER_FLAG_MASK;
-        }
-        bytes.write_u8(flags);
-
-        // cur_min is always 0 for Array6
-        bytes.write_u8(0);
-
-        bytes.write_u8(encode_mode_byte(CUR_MODE_HLL, TGT_HLL6));
-
-        bytes.write_f64_le(self.estimator.hip_accum());
-        bytes.write_f64_le(self.estimator.kxq0());
-        bytes.write_f64_le(self.estimator.kxq1());
-
-        // Write num_at_cur_min (num_zeros for Array6)
-        bytes.write_u32_le(self.num_zeros);
-
-        // Write aux_count (always 0 for Array6)
-        bytes.write_u32_le(0);
+        write_hll_preamble(
+            &mut bytes,
+            lg_config_k,
+            HllType::Hll6,
+            0,
+            self.num_zeros,
+            0,
+            &self.estimator,
+        );
 
         bytes.write(&self.bytes);
 
         bytes.into_bytes()
     }
 
-    /// Returns the estimated size of the heap allocations in bytes
+    /// Returns an estimate of memory usage in bytes.
     pub fn estimated_size(&self) -> usize {
         self.bytes.len()
     }
 }
 
-fn num_bytes_for_k(k: u32) -> usize {
+pub fn num_bytes_for_k(k: u32) -> usize {
     // The final register's 16-bit read/write window needs one padding byte.
     (((k * 3) >> 2) + 1) as usize
 }

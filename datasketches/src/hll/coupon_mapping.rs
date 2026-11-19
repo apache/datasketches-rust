@@ -16,7 +16,7 @@
 // under the License.
 
 //! Coupon-count correction for the 26-bit slot encoding. These X/Y pairs are used with
-//! cubic interpolation and come from DataSketches C++:
+//! cubic interpolation and come from datasketches-cpp:
 //! <https://github.com/apache/datasketches-cpp/blob/5a055521/hll/include/CubicInterpolation-internal.hpp>
 
 /// X values (coupon counts) for interpolation table

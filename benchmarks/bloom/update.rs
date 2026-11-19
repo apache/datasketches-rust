@@ -15,18 +15,18 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::hint::black_box;
+
+use benchmarks::Bencher;
+use benchmarks::Runner;
 use datasketches::bloom::BloomFilterBuilder;
 use datasketches::hash::value::raw_bytes;
-use divan::Bencher;
-use divan::black_box;
-use divan::counter::ItemsCount;
 
 use crate::hash_inputs::ITEMS;
 use crate::hash_inputs::bytes_32_values;
 
-#[divan::bench]
 fn u64(bencher: Bencher) {
-    bencher.counter(ItemsCount::new(ITEMS)).bench_local(|| {
+    bencher.bench_local(|| {
         let mut filter = BloomFilterBuilder::with_accuracy(ITEMS as u64, 0.01)
             .build()
             .unwrap();
@@ -37,11 +37,10 @@ fn u64(bencher: Bencher) {
     });
 }
 
-#[divan::bench]
 fn bytes_32(bencher: Bencher) {
     let values = bytes_32_values();
 
-    bencher.counter(ItemsCount::new(ITEMS)).bench_local(|| {
+    bencher.bench_local(|| {
         let mut filter = BloomFilterBuilder::with_accuracy(ITEMS as u64, 0.01)
             .build()
             .unwrap();
@@ -52,22 +51,54 @@ fn bytes_32(bencher: Bencher) {
     });
 }
 
-#[divan::bench]
-fn contains_and_insert_present_u64(bencher: Bencher) {
+fn contains_and_insert(
+    bencher: Bencher,
+    initial_items: u64,
+    values: impl Iterator<Item = u64> + Clone,
+) {
     let mut populated = BloomFilterBuilder::with_accuracy(ITEMS as u64, 0.01)
         .build()
         .unwrap();
-    for value in 0..ITEMS as u64 {
+    for value in 0..initial_items {
         populated.insert(value);
     }
 
-    bencher
-        .counter(ItemsCount::new(ITEMS))
-        .with_inputs(|| populated.clone())
-        .bench_local_values(|mut filter| {
-            for value in 0..ITEMS as u64 {
-                black_box(filter.contains_and_insert(black_box(&value)));
-            }
-            filter
-        });
+    bencher.bench_local(|| {
+        let mut filter = populated.clone();
+        for value in values.clone() {
+            black_box(filter.contains_and_insert(black_box(value)));
+        }
+        filter
+    });
+}
+
+pub fn register(runner: &mut Runner) {
+    runner.case("bloom::update::u64", 2_000, u64);
+    runner.case("bloom::update::bytes_32", 1_000, bytes_32);
+    runner.case(
+        "bloom::update::contains_and_insert_present_u64",
+        2_000,
+        |b| contains_and_insert(b, ITEMS as u64, 0..ITEMS as u64),
+    );
+    runner.case(
+        "bloom::update::contains_and_insert_absent_u64",
+        1_000,
+        |b| contains_and_insert(b, ITEMS as u64, ITEMS as u64..(2 * ITEMS) as u64),
+    );
+    runner.case("bloom::update::contains_and_insert_mixed_u64", 1_000, |b| {
+        contains_and_insert(
+            b,
+            ITEMS as u64,
+            (0..ITEMS as u64).map(|value| {
+                if value % 2 == 0 {
+                    value
+                } else {
+                    value + ITEMS as u64
+                }
+            }),
+        )
+    });
+    runner.case("bloom::update::contains_and_insert_build_u64", 1_000, |b| {
+        contains_and_insert(b, 0, 0..ITEMS as u64)
+    });
 }

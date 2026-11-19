@@ -19,8 +19,7 @@
 //!
 //! [`ReqSketch`] provides bounded-memory rank, quantile, PMF, and CDF estimates with
 //! configurable relative accuracy at either end of the rank domain. It is based on
-//! [Relative Error Streaming Quantiles](https://arxiv.org/abs/2004.01668) and the Apache
-//! DataSketches C++ implementation.
+//! [Relative Error Streaming Quantiles](https://arxiv.org/abs/2004.01668).
 //!
 //! # Item ordering
 //!
@@ -44,7 +43,9 @@
 //!     sketch.update(ReqFloat::<f64>::new(value)?);
 //! }
 //!
-//! let median = sketch.quantile(0.5, SearchCriteria::Inclusive)?;
+//! let Some(median) = sketch.quantile(0.5, SearchCriteria::Inclusive)? else {
+//!     return Ok(()); // No samples to query.
+//! };
 //! assert_eq!(median.into_inner(), 2.0);
 //! # Ok::<(), datasketches::error::Error>(())
 //! ```
@@ -69,7 +70,7 @@ const MIN_K: u16 = 4;
 const MAX_K: u16 = 1024;
 
 /// Selects which tail of the rank domain the sketch optimizes for.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum RankAccuracy {
     /// Optimize for accuracy at high ranks (near 1.0).
     #[default]
@@ -82,6 +83,6 @@ pub enum RankAccuracy {
 /// determine its capacity and compaction range; the count doubles as its state grows.
 const INITIAL_SECTIONS_PER_COMPACTOR: u8 = 3;
 
-fn nearest_even_section_size(value: f32) -> u32 {
-    ((value / 2.0).round() as u32) << 1
+fn nearest_even_section_size(value: f32) -> usize {
+    ((value / 2.0).round() as usize) << 1
 }

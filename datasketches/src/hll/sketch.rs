@@ -56,7 +56,7 @@ use crate::hll::serialization::extract_tgt_hll_type;
 /// A HyperLogLog sketch.
 ///
 /// See the [module level documentation](super) for more.
-#[derive(Clone, PartialEq)]
+#[derive(Clone)]
 pub struct HllSketch {
     lg_config_k: u8,
     mode: Mode,
@@ -136,9 +136,6 @@ impl HllSketch {
     }
 
     /// Updates the sketch with a value.
-    ///
-    /// You may use [`hash::value`](crate::hash::value) wrappers when another DataSketches
-    /// implementation requires a specific value hashing strategy.
     ///
     /// To reuse the hash across sketches, see [`Coupon`] and
     /// [`update_with_coupon`](Self::update_with_coupon).
@@ -232,6 +229,34 @@ impl HllSketch {
         }
     }
 
+    /// Returns the current cardinality estimate that never depends on
+    /// the order in which values were inserted.
+    ///
+    /// This can be less accurate than [`estimate`](Self::estimate).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::hll::HllSketch;
+    /// use datasketches::hll::HllType;
+    ///
+    /// let mut sketch = HllSketch::new(12, HllType::Hll4).unwrap();
+    /// for value in 0..10_000 {
+    ///     sketch.update(value);
+    /// }
+    /// let estimate = sketch.composite_estimate();
+    /// assert!((estimate - 10_000.0).abs() < 500.0);
+    /// ```
+    pub fn composite_estimate(&self) -> f64 {
+        match &self.mode {
+            Mode::List { list, .. } => list.container().estimate(),
+            Mode::Set { set, .. } => set.container().estimate(),
+            Mode::Array4(arr) => arr.composite_estimate(),
+            Mode::Array6(arr) => arr.composite_estimate(),
+            Mode::Array8(arr) => arr.composite_estimate(),
+        }
+    }
+
     /// Returns the upper confidence bound for `num_std_dev` standard deviations.
     ///
     /// # Examples
@@ -285,6 +310,8 @@ impl HllSketch {
     }
 
     /// Deserializes an HLL sketch from bytes.
+    ///
+    /// Also accepts data serialized by other DataSketches implementations.
     ///
     /// # Errors
     ///
@@ -415,6 +442,8 @@ impl HllSketch {
 
     /// Serializes the HLL sketch to bytes.
     ///
+    /// The serialized data can be read by other DataSketches implementations.
+    ///
     /// # Examples
     ///
     /// ```
@@ -438,17 +467,15 @@ impl HllSketch {
         }
     }
 
-    /// Returns the estimated memory usage in bytes, including owned heap allocations.
+    /// Returns an estimate of the sketch's memory usage in bytes.
     pub fn estimated_size(&self) -> usize {
-        let heap_size = match &self.mode {
+        match &self.mode {
             Mode::List { list, .. } => list.container().estimated_size(),
             Mode::Set { set, .. } => set.container().estimated_size(),
             Mode::Array4(arr) => arr.estimated_size(),
             Mode::Array6(arr) => arr.estimated_size(),
             Mode::Array8(arr) => arr.estimated_size(),
-        };
-
-        size_of::<Self>() + heap_size
+        }
     }
 }
 

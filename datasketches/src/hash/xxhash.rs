@@ -144,7 +144,62 @@ impl Hasher for XxHash64 {
     #[inline(always)]
     fn write(&mut self, bytes: &[u8]) {
         self.total_len = self.total_len.wrapping_add(bytes.len() as u64);
+        self.write_bytes(bytes);
+    }
 
+    #[inline(always)]
+    fn write_u8(&mut self, i: u8) {
+        self.write_fixed(i.to_ne_bytes());
+    }
+
+    #[inline(always)]
+    fn write_u16(&mut self, i: u16) {
+        self.write_fixed(i.to_ne_bytes());
+    }
+
+    #[inline(always)]
+    fn write_u32(&mut self, i: u32) {
+        self.write_fixed(i.to_ne_bytes());
+    }
+
+    #[inline(always)]
+    fn write_u64(&mut self, i: u64) {
+        self.write_fixed(i.to_ne_bytes());
+    }
+
+    #[inline(always)]
+    fn write_u128(&mut self, i: u128) {
+        self.write_fixed(i.to_ne_bytes());
+    }
+
+    #[inline(always)]
+    fn write_usize(&mut self, i: usize) {
+        self.write_fixed(i.to_ne_bytes());
+    }
+}
+
+impl XxHash64 {
+    /// Same result as `write(&bytes)`, with an inlined body small enough that hashing a
+    /// fixed-width integer folds to register arithmetic at the call site.
+    #[inline(always)]
+    fn write_fixed<const N: usize>(&mut self, bytes: [u8; N]) {
+        debug_assert!(N < 32);
+        self.total_len = self.total_len.wrapping_add(N as u64);
+        if self.buffer_len + N < 32 {
+            self.buffer[self.buffer_len..self.buffer_len + N].copy_from_slice(&bytes);
+            self.buffer_len += N;
+        } else {
+            self.write_bytes_outlined(&bytes);
+        }
+    }
+
+    #[inline(never)]
+    fn write_bytes_outlined(&mut self, bytes: &[u8]) {
+        self.write_bytes(bytes);
+    }
+
+    #[inline(always)]
+    fn write_bytes(&mut self, bytes: &[u8]) {
         if self.buffer_len + bytes.len() < 32 {
             self.buffer[self.buffer_len..self.buffer_len + bytes.len()].copy_from_slice(bytes);
             self.buffer_len += bytes.len();
@@ -269,5 +324,50 @@ mod tests {
         hasher.write(&123u64.to_le_bytes());
         let hash2 = hasher.finish64();
         assert_eq!(hash2, hash1);
+    }
+
+    #[test]
+    fn write_integers_match_write_of_native_bytes() {
+        let input: Vec<u8> = (0..=40).collect();
+
+        macro_rules! check_write {
+            ($method:ident, $values:expr) => {
+                for prefix in 0..=input.len() {
+                    for value in $values {
+                        let mut expected = XxHash64::with_seed(PRIME32);
+                        expected.write(&input[..prefix]);
+                        expected.write(&value.to_ne_bytes());
+                        expected.write(&input[..prefix]);
+
+                        let mut hasher = XxHash64::with_seed(PRIME32);
+                        hasher.write(&input[..prefix]);
+                        hasher.$method(value);
+                        hasher.write(&input[..prefix]);
+
+                        assert_eq!(
+                            hasher.finish64(),
+                            expected.finish64(),
+                            "{} prefix {prefix}, value {value:#x}",
+                            stringify!($method)
+                        );
+                    }
+                }
+            };
+        }
+
+        check_write!(write_u8, [0u8, 1, 0x7f, u8::MAX]);
+        check_write!(write_u16, [0u16, 1, 0x1234, u16::MAX]);
+        check_write!(write_u32, [0u32, 1, 0x0123_4567, u32::MAX]);
+        check_write!(write_u64, [0u64, 1, 0x0123_4567_89ab_cdef, u64::MAX]);
+        check_write!(
+            write_u128,
+            [
+                0u128,
+                1,
+                0x0123_4567_89ab_cdef_fedc_ba98_7654_3210,
+                u128::MAX
+            ]
+        );
+        check_write!(write_usize, [0usize, 1, 0x1234_5678, usize::MAX]);
     }
 }

@@ -28,6 +28,17 @@
 //! summaries of shared keys through [`SummaryCombinePolicy`]; the union defaults to
 //! [`DefaultUnionPolicy`].
 //!
+//! # Cross-language hashing
+//!
+//! For cross-language use, apply the following input conventions:
+//!
+//! * Use `i64`/`u64` for 64-bit integers and [`sign_extend`](crate::hash::value::sign_extend) for
+//!   narrower integers.
+//! * Use [`canonical_float`](crate::hash::value::canonical_float) for floating-point values.
+//! * Use [`raw_bytes`](crate::hash::value::raw_bytes) for UTF-8 strings and byte slices.
+//!
+//! These encodings apply to keys. Skip empty string and byte-slice keys before updating the sketch.
+//!
 //! # Usage
 //!
 //! ```

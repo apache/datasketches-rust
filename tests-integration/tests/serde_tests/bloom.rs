@@ -20,67 +20,57 @@ use std::path::PathBuf;
 
 use datasketches::bloom::BloomFilter;
 use datasketches::bloom::BloomFilterBuilder;
+use datasketches::error::ErrorKind;
+use datasketches::hash::value::canonical_float;
+use datasketches::hash::value::raw_bytes;
 use googletest::assert_that;
 use googletest::prelude::gt;
 
 use crate::serialization_test_data;
 
+fn filter_snapshot(filter: &BloomFilter) -> (u64, u16, u64, u64, Vec<u8>) {
+    (
+        filter.capacity(),
+        filter.num_hashes(),
+        filter.seed(),
+        filter.bits_used(),
+        filter.serialize(),
+    )
+}
+
 fn test_bloom_filter_file(path: PathBuf, expected_num_items: u64, expected_num_hashes: u16) {
     let bytes = fs::read(&path).unwrap();
     let filter1 = BloomFilter::deserialize(&bytes).unwrap();
 
-    // Verify basic properties
     assert_eq!(
         filter1.num_hashes(),
         expected_num_hashes,
         "Wrong num_hashes in {}",
         path.display()
     );
+    assert_eq!(
+        filter1.is_empty(),
+        expected_num_items == 0,
+        "Wrong empty state in {}",
+        path.display()
+    );
 
-    // Check empty state
-    if expected_num_items == 0 {
-        assert!(filter1.is_empty(), "Filter should be empty for n=0");
-        assert_eq!(
-            filter1.bits_used(),
-            0,
-            "Empty filter should have 0 bits set"
-        );
-    } else {
+    // TCK fixtures insert integers 0..n/10 and, when non-empty, canonical NaN.
+    for item in 0..(expected_num_items / 10).min(100) {
         assert!(
-            !filter1.is_empty(),
-            "Filter should not be empty for n={}",
-            expected_num_items
+            filter1.contains(item),
+            "Missing item {item} in {}",
+            path.display()
         );
-        assert_that!(filter1.bits_used(), gt(0));
     }
-
-    // Verify the items that were inserted (integers 0 to n/10-1)
-    // C++ code: for (uint64_t i = 0; i < n / 10; ++i) bf.update(i);
-    let num_inserted = expected_num_items / 10;
-
-    if num_inserted > 0 {
-        // Check a sample of inserted items
-        // For large n, we only check a sample to keep tests fast
-        let sample_size = std::cmp::min(num_inserted, 100);
-        let mut false_negatives = 0;
-
-        for i in 0..sample_size {
-            if !filter1.contains(&i) {
-                false_negatives += 1;
-            }
-        }
-
-        assert_eq!(
-            false_negatives,
-            0,
-            "Found {} false negatives out of {} items in {}",
-            false_negatives,
-            sample_size,
+    if expected_num_items > 0 {
+        assert!(
+            filter1.contains(canonical_float::from_f64(f64::NAN)),
+            "Missing canonical NaN in {}",
             path.display()
         );
     }
 
-    // Serialize and deserialize again to test round-trip
     let serialized_bytes = filter1.serialize();
     let filter2 = BloomFilter::deserialize(&serialized_bytes).unwrap_or_else(|err| {
         panic!(
@@ -90,38 +80,12 @@ fn test_bloom_filter_file(path: PathBuf, expected_num_items: u64, expected_num_h
         )
     });
 
-    // Check that both filters are functionally equivalent
     assert_eq!(
-        filter1.num_hashes(),
-        filter2.num_hashes(),
-        "num_hashes mismatch after round-trip for {}",
+        filter_snapshot(&filter1),
+        filter_snapshot(&filter2),
+        "Filter changed after round-trip for {}",
         path.display()
     );
-    assert_eq!(
-        filter1.capacity(),
-        filter2.capacity(),
-        "capacity mismatch after round-trip for {}",
-        path.display()
-    );
-    assert_eq!(
-        filter1.bits_used(),
-        filter2.bits_used(),
-        "bits_used mismatch after round-trip for {}",
-        path.display()
-    );
-
-    // Verify same items are present after round-trip
-    if num_inserted > 0 {
-        let sample_size = std::cmp::min(num_inserted, 100);
-        for i in 0..sample_size {
-            assert_eq!(
-                filter1.contains(&i),
-                filter2.contains(&i),
-                "Item {} presence differs after round-trip",
-                i
-            );
-        }
-    }
 }
 
 #[test]
@@ -169,9 +133,117 @@ fn test_go_compatibility() {
         (10_000, 5),
         (2_000_000, 3),
         (2_000_000, 5),
+        (30_000_000, 3),
+        (30_000_000, 5),
     ] {
         let filename = format!("bf_n{n}_h{num_hashes}_go.sk");
         let path = serialization_test_data("go_generated_files", &filename);
+        test_bloom_filter_file(path, n, num_hashes);
+    }
+}
+
+#[test]
+fn test_go_typed_compatibility() {
+    let load_go_filter = |filename: &str| {
+        let path = serialization_test_data("go_generated_files", filename);
+        let bytes = fs::read(&path).unwrap();
+        let filter = BloomFilter::deserialize(&bytes).unwrap();
+        assert_eq!(
+            filter.capacity(),
+            10_000_u64.next_multiple_of(64),
+            "{filename}"
+        );
+        assert_eq!(filter.num_hashes(), 3, "{filename}");
+        assert!(!filter.is_empty(), "{filename}");
+        assert_eq!(filter.serialize(), bytes, "{filename}");
+        filter
+    };
+
+    let str_filter = load_go_filter("bf_string_n10000_h3_go.sk");
+    for i in 0..1000 {
+        let item = i.to_string();
+        assert!(
+            str_filter.contains(raw_bytes::from_str(&item)),
+            "missing string {item}"
+        );
+    }
+
+    let double_filter = load_go_filter("bf_double_n10000_h3_go.sk");
+    for i in 0..1000 {
+        assert!(
+            double_filter.contains(canonical_float::from_f64(i as f64)),
+            "missing double {i}"
+        );
+    }
+
+    let long_array_filter = load_go_filter("bf_long_array_n10000_h3_go.sk");
+    for i in 0..1000_i64 {
+        let mut buf = [0_u8; 16];
+        buf[..8].copy_from_slice(&i.to_le_bytes());
+        buf[8..].copy_from_slice(&i.to_le_bytes());
+        assert!(
+            long_array_filter.contains(raw_bytes::from_slice(&buf)),
+            "missing long array {i}"
+        );
+    }
+
+    let double_array_filter = load_go_filter("bf_double_array_n10000_h3_go.sk");
+    for i in 0..1000 {
+        let mut buf = [0_u8; 16];
+        let bits = (i as f64).to_bits().to_le_bytes();
+        buf[..8].copy_from_slice(&bits);
+        buf[8..].copy_from_slice(&bits);
+        assert!(
+            double_array_filter.contains(raw_bytes::from_slice(&buf)),
+            "missing double array {i}"
+        );
+    }
+
+    let byte_array_filter = load_go_filter("bf_byte_array_n10000_h3_go.sk");
+    for i in 0..1000_u32 {
+        let b = (i % 256) as u8;
+        assert!(
+            byte_array_filter.contains(raw_bytes::from_slice(&[b, b, b, b])),
+            "missing byte array {i}"
+        );
+    }
+}
+
+#[test]
+fn test_rust_compatibility() {
+    for (n, num_hashes) in [
+        (0_u64, 3),
+        (0, 5),
+        (10_000, 3),
+        (10_000, 5),
+        (2_000_000, 3),
+        (2_000_000, 5),
+        (30_000_000, 3),
+        (30_000_000, 5),
+    ] {
+        let filename = format!("bf_n{n}_h{num_hashes}_rust.sk");
+        let path = serialization_test_data("rust_generated_files", &filename);
+        let bytes = fs::read(&path).unwrap();
+        let filter = BloomFilter::deserialize(&bytes).unwrap();
+        assert_eq!(
+            filter.capacity(),
+            n.max(1000).next_multiple_of(64),
+            "Wrong capacity in {}",
+            path.display()
+        );
+        if n > 0 {
+            assert!(
+                filter.contains(canonical_float::from_f64(f64::NAN)),
+                "Missing canonical NaN in {}",
+                path.display()
+            );
+        }
+        assert_eq!(
+            filter.serialize(),
+            bytes,
+            "Round-trip bytes differ for {}",
+            path.display()
+        );
         test_bloom_filter_file(path, n, num_hashes);
     }
 }
@@ -193,7 +265,10 @@ fn test_cached_num_bits_set_is_validated_or_recomputed() {
         bytes[NUM_BITS_SET_OFFSET..NUM_BITS_SET_OFFSET + size_of::<u64>()]
             .copy_from_slice(&serialized_count.to_le_bytes());
 
-        assert!(BloomFilter::deserialize(&bytes).is_err());
+        assert_eq!(
+            BloomFilter::deserialize(&bytes).unwrap_err().kind(),
+            ErrorKind::InvalidData
+        );
     }
 
     let mut dirty = filter.serialize();
@@ -201,21 +276,37 @@ fn test_cached_num_bits_set_is_validated_or_recomputed() {
         .copy_from_slice(&u64::MAX.to_le_bytes());
     let restored = BloomFilter::deserialize(&dirty).unwrap();
     assert_eq!(restored.bits_used(), actual_bits_set);
-    assert!(restored.contains(&"apple"));
-    assert!(restored.contains(&"banana"));
+    assert!(restored.contains("apple"));
+    assert!(restored.contains("banana"));
 }
 
 #[test]
-fn test_nonempty_payload_length_is_checked_before_allocating() {
+fn test_invalid_bit_array_lengths_are_rejected() {
     const NUM_LONGS_OFFSET: usize = 16;
 
-    let mut filter = BloomFilterBuilder::with_accuracy(100, 0.01)
+    let empty = BloomFilterBuilder::with_accuracy(100, 0.01)
         .build()
         .unwrap();
-    filter.insert("apple");
-    let mut bytes = filter.serialize();
-    bytes[NUM_LONGS_OFFSET..NUM_LONGS_OFFSET + size_of::<i32>()]
-        .copy_from_slice(&i32::MAX.to_le_bytes());
+    let mut non_empty = empty.clone();
+    non_empty.insert("apple");
 
-    assert!(BloomFilter::deserialize(&bytes).is_err());
+    for base in [empty.serialize(), non_empty.serialize()] {
+        for num_longs in [0_i32, -1, i32::MAX] {
+            let mut corrupted = base.clone();
+            corrupted[NUM_LONGS_OFFSET..NUM_LONGS_OFFSET + size_of::<i32>()]
+                .copy_from_slice(&num_longs.to_le_bytes());
+
+            assert_eq!(
+                BloomFilter::deserialize(&corrupted).unwrap_err().kind(),
+                ErrorKind::InvalidData
+            );
+        }
+    }
+
+    let mut truncated = non_empty.serialize();
+    truncated.pop();
+    assert_eq!(
+        BloomFilter::deserialize(&truncated).unwrap_err().kind(),
+        ErrorKind::InvalidData
+    );
 }

@@ -16,6 +16,7 @@
 // under the License.
 
 use std::cmp::Ordering;
+use std::fmt;
 
 use super::DEFAULT_K;
 use super::DEFAULT_M;
@@ -49,10 +50,9 @@ use crate::error::Error;
 /// KLL sketch for estimating quantiles and ranks.
 ///
 /// See the [kll module level documentation](crate::kll) for more.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone)]
 pub struct KllSketch<T> {
     k: u16,
-    m: u8,
     min_k: u16,
     n: u64,
     num_retained: usize,
@@ -61,6 +61,22 @@ pub struct KllSketch<T> {
     levels: Vec<Vec<T>>,
     min_item: Option<T>,
     max_item: Option<T>,
+}
+
+impl<T: fmt::Debug> fmt::Debug for KllSketch<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("KllSketch")
+            .field("k", &self.k)
+            .field("min_k", &self.min_k)
+            .field("total_weight", &self.n)
+            .field("is_empty", &(self.n == 0))
+            .field("is_estimation_mode", &(self.levels.len() > 1))
+            .field("num_levels", &self.levels.len())
+            .field("num_retained", &self.num_retained)
+            .field("min_item", &self.min_item)
+            .field("max_item", &self.max_item)
+            .finish()
+    }
 }
 
 impl<T: Clone + Ord> Default for KllSketch<T> {
@@ -79,7 +95,8 @@ impl<T: Clone + Ord> KllSketch<T> {
     /// # Examples
     ///
     /// ```
-    /// # use datasketches::kll::KllSketch;
+    /// use datasketches::kll::KllSketch;
+    ///
     /// let sketch = KllSketch::<i64>::new(200).unwrap();
     /// assert_eq!(sketch.k(), 200);
     /// ```
@@ -102,8 +119,8 @@ impl<T: Clone + Ord> KllSketch<T> {
         self.min_k
     }
 
-    /// Returns total weight of the stream.
-    pub fn n(&self) -> u64 {
+    /// Returns the total stream weight.
+    pub fn total_weight(&self) -> u64 {
         self.n
     }
 
@@ -123,11 +140,15 @@ impl<T: Clone + Ord> KllSketch<T> {
     }
 
     /// Returns the minimum item seen by the sketch.
+    ///
+    /// Returns `None` if the sketch is empty.
     pub fn min_item(&self) -> Option<&T> {
         self.min_item.as_ref()
     }
 
     /// Returns the maximum item seen by the sketch.
+    ///
+    /// Returns `None` if the sketch is empty.
     pub fn max_item(&self) -> Option<&T> {
         self.max_item.as_ref()
     }
@@ -148,7 +169,7 @@ impl<T: Clone + Ord> KllSketch<T> {
         self.min_k = self.k;
         self.n = 0;
         self.num_retained = 0;
-        self.capacity = total_capacity(self.k, self.m, 1) as usize;
+        self.capacity = total_capacity(self.k, 1) as usize;
         self.is_level_zero_sorted = false;
         self.levels.clear();
         self.levels.push(Vec::new());
@@ -158,28 +179,17 @@ impl<T: Clone + Ord> KllSketch<T> {
 
     /// Merges another sketch into this one.
     ///
-    /// # Errors
+    /// # Panics
     ///
-    /// Returns an error if the combined stream weight exceeds [`u64::MAX`].
-    pub fn merge(&mut self, other: &KllSketch<T>) -> Result<(), Error> {
+    /// Panics without modifying the sketch if the combined stream weight would exceed [`u64::MAX`].
+    pub fn merge(&mut self, other: &KllSketch<T>) {
         if other.is_empty() {
-            return Ok(());
+            return;
         }
-
-        if self.m != other.m {
-            return Err(Error::invalid_argument(format!(
-                "cannot merge sketches with different m values: {} and {}",
-                self.m, other.m
-            )));
-        }
-        let final_n = self.n.checked_add(other.n).ok_or_else(|| {
-            Error::invalid_argument(format!(
-                "combined stream weight exceeds {}: left {}, right {}",
-                u64::MAX,
-                self.n,
-                other.n
-            ))
-        })?;
+        let final_n = self
+            .n
+            .checked_add(other.n)
+            .expect("total stream weight overflow");
 
         self.update_min_max_from_other(other);
 
@@ -196,96 +206,118 @@ impl<T: Clone + Ord> KllSketch<T> {
             self.min_k = self.min_k.min(other.min_k);
         }
 
-        debug_assert_eq!(self.total_weight(), self.n, "total weight does not match n");
-        Ok(())
+        debug_assert_eq!(
+            self.levels_weight(),
+            self.n,
+            "total weight does not match n"
+        );
     }
 
     /// Returns the normalized rank of the given item.
     ///
-    /// # Errors
-    ///
-    /// Returns an error if the sketch is empty.
-    pub fn rank(&self, item: &T, criteria: SearchCriteria) -> Result<f64, Error> {
+    /// Returns `None` if the sketch is empty.
+    pub fn rank(&self, item: &T, criteria: SearchCriteria) -> Option<f64> {
         if self.is_empty() {
-            return Err(Error::invalid_argument("cannot query an empty sketch"));
+            return None;
         }
-        let inclusive = criteria == SearchCriteria::Inclusive;
-        let mut weight = 0u64;
+        // Keep a direct scan to preserve query latency for small exact sketches.
+        if let [items] = self.levels.as_slice() {
+            let count = count_rank_linear(items, item, criteria);
+            return Some(count as f64 / self.n as f64);
+        }
+
+        let mut rank_weight = 0u64;
         for (level, items) in self.levels.iter().enumerate() {
-            let count = items
-                .iter()
-                .filter(|retained| match (*retained).cmp(item) {
-                    Ordering::Less => true,
-                    Ordering::Equal => inclusive,
-                    Ordering::Greater => false,
-                })
-                .count() as u64;
-            weight += count << level;
+            // Higher levels are always sorted; level zero may be an unsorted update buffer.
+            let is_sorted = level > 0 || self.is_level_zero_sorted;
+            let count = if is_sorted {
+                count_rank_sorted(items, item, criteria)
+            } else {
+                count_rank_linear(items, item, criteria)
+            };
+            rank_weight += (count as u64) << level;
         }
-        Ok(weight as f64 / self.n as f64)
+        Some(rank_weight as f64 / self.n as f64)
     }
 
     /// Returns the quantile for the given normalized rank.
     ///
-    /// Ranks `0.0` and `1.0` return the exact minimum and maximum items of the stream.
+    /// Ranks `0.0` and `1.0` return the exact minimum and maximum items of the stream. Returns
+    /// `Ok(None)` if the sketch is empty.
     ///
     /// # Errors
     ///
-    /// Returns an error if the sketch is empty or `rank` is outside `[0.0, 1.0]`.
-    pub fn quantile(&self, rank: f64, criteria: SearchCriteria) -> Result<T, Error> {
-        if self.is_empty() {
-            return Err(Error::invalid_argument("cannot query an empty sketch"));
-        }
+    /// Returns `InvalidArgument` if `rank` is NaN or outside `[0.0, 1.0]`, even if the sketch is
+    /// empty.
+    pub fn quantile(&self, rank: f64, criteria: SearchCriteria) -> Result<Option<T>, Error> {
         if !(0.0..=1.0).contains(&rank) {
             return Err(Error::invalid_argument(format!(
                 "rank must be in [0.0, 1.0], got {rank}"
             )));
         }
+        if self.is_empty() {
+            return Ok(None);
+        }
         if rank == 0.0 {
-            return Ok(self.min_item.as_ref().unwrap().clone());
+            return Ok(Some(self.min_item.as_ref().unwrap().clone()));
         }
         if rank == 1.0 {
-            return Ok(self.max_item.as_ref().unwrap().clone());
+            return Ok(Some(self.max_item.as_ref().unwrap().clone()));
         }
         self.sorted_view().quantile(rank, criteria)
     }
 
     /// Returns approximate quantiles for the given normalized ranks.
     ///
-    /// Ranks `0.0` and `1.0` return the exact minimum and maximum items of the stream.
+    /// Ranks `0.0` and `1.0` return the exact minimum and maximum items of the stream. Returns
+    /// `Ok(None)` if the sketch is empty. Otherwise, an empty `ranks` slice returns
+    /// `Ok(Some(vec![]))`.
     ///
     /// The sorted view is built once for the whole batch.
     ///
     /// # Errors
     ///
-    /// Returns an error if the sketch is empty or any rank is outside `[0.0, 1.0]`.
-    pub fn quantiles(&self, ranks: &[f64], criteria: SearchCriteria) -> Result<Vec<T>, Error> {
+    /// Returns `InvalidArgument` if any rank is NaN or outside `[0.0, 1.0]`, even if the sketch is
+    /// empty.
+    pub fn quantiles(
+        &self,
+        ranks: &[f64],
+        criteria: SearchCriteria,
+    ) -> Result<Option<Vec<T>>, Error> {
         self.sorted_view().quantiles(ranks, criteria)
     }
 
     /// Returns the approximate CDF for the given split points.
     ///
+    /// Returns `Ok(None)` if the sketch is empty. Otherwise, an empty `split_points` slice returns
+    /// `Ok(Some(vec![1.0]))`.
+    ///
     /// # Errors
     ///
-    /// Returns an error if the sketch is empty or the split points are not unique and strictly
-    /// increasing.
-    pub fn cdf(&self, split_points: &[T], criteria: SearchCriteria) -> Result<Vec<f64>, Error> {
-        if self.is_empty() {
-            return Err(Error::invalid_argument("cannot query an empty sketch"));
-        }
+    /// Returns `InvalidArgument` if the split points are not strictly increasing, even if the
+    /// sketch is empty.
+    pub fn cdf(
+        &self,
+        split_points: &[T],
+        criteria: SearchCriteria,
+    ) -> Result<Option<Vec<f64>>, Error> {
         self.sorted_view().cdf(split_points, criteria)
     }
 
     /// Returns the approximate PMF for the given split points.
     ///
+    /// Returns `Ok(None)` if the sketch is empty. Otherwise, an empty `split_points` slice returns
+    /// `Ok(Some(vec![1.0]))`.
+    ///
     /// # Errors
     ///
-    /// Returns an error if the sketch is empty or the split points are not unique and strictly
-    /// increasing.
-    pub fn pmf(&self, split_points: &[T], criteria: SearchCriteria) -> Result<Vec<f64>, Error> {
-        if self.is_empty() {
-            return Err(Error::invalid_argument("cannot query an empty sketch"));
-        }
+    /// Returns `InvalidArgument` if the split points are not strictly increasing, even if the
+    /// sketch is empty.
+    pub fn pmf(
+        &self,
+        split_points: &[T],
+        criteria: SearchCriteria,
+    ) -> Result<Option<Vec<f64>>, Error> {
         self.sorted_view().pmf(split_points, criteria)
     }
 
@@ -309,6 +341,16 @@ impl<T: Clone + Ord> KllSketch<T> {
     /// Returns the normalized double-sided rank error for PMF queries for the configured k.
     pub fn normalized_pmf_error(&self) -> f64 {
         normalized_rank_error(self.min_k, true)
+    }
+
+    /// Returns an estimate of the sketch's memory usage in bytes.
+    pub fn estimated_size(&self) -> usize {
+        self.levels.capacity() * size_of::<Vec<T>>()
+            + self
+                .levels
+                .iter()
+                .map(|level| level.capacity() * size_of::<T>())
+                .sum::<usize>()
     }
 }
 
@@ -367,7 +409,7 @@ fn serialize_with_serde<T: KllValue + Ord>(sketch: &KllSketch<T>) -> Vec<u8> {
     bytes.write_u8(Family::KLL.id);
     bytes.write_u8(flags);
     bytes.write_u16_le(sketch.k);
-    bytes.write_u8(sketch.m);
+    bytes.write_u8(DEFAULT_M);
     bytes.write_u8(0);
 
     if is_empty {
@@ -507,7 +549,7 @@ fn deserialize_with_serde<T: KllValue + Ord>(bytes: &[u8]) -> Result<KllSketch<T
         )));
     }
 
-    let capacity = total_capacity(k, m, num_levels);
+    let capacity = total_capacity(k, num_levels);
     let mut level_offsets = Vec::with_capacity(num_levels + 1);
     if !is_single_item {
         for _ in 0..num_levels {
@@ -616,12 +658,18 @@ fn deserialize_with_serde<T: KllValue + Ord>(bytes: &[u8]) -> Result<KllSketch<T
 }
 
 impl<T: KllValue + Ord> KllSketch<T> {
-    /// Serializes the sketch to bytes.
+    /// Serializes the sketch to bytes in compact form.
+    ///
+    /// The serialized data can be read by other DataSketches implementations when both
+    /// sides use the same [`KllValue`] item encoding.
     pub fn serialize(&self) -> Vec<u8> {
         serialize_with_serde(self)
     }
 
-    /// Deserializes a sketch from bytes.
+    /// Deserializes a sketch from bytes in compact form.
+    ///
+    /// Also accepts data serialized by other DataSketches implementations when both
+    /// sides use the same [`KllValue`] item encoding.
     ///
     /// # Errors
     ///
@@ -643,10 +691,9 @@ impl<T: Clone + Ord> KllSketch<T> {
         is_level_zero_sorted: bool,
     ) -> Self {
         let num_retained = levels.iter().map(Vec::len).sum();
-        let capacity = total_capacity(k, DEFAULT_M, levels.len()) as usize;
+        let capacity = total_capacity(k, levels.len()) as usize;
         Self {
             k,
-            m: DEFAULT_M,
             min_k,
             n,
             num_retained,
@@ -766,14 +813,14 @@ impl<T: Clone + Ord> KllSketch<T> {
         let num_levels = self.levels.len();
         for level in 0..num_levels {
             let pop = self.levels[level].len() as u32;
-            let cap = level_capacity(self.k, num_levels, level, self.m);
+            let cap = level_capacity(self.k, num_levels, level);
             if pop >= cap {
                 return level;
             }
         }
         panic!(
-            "KLL sketch has {}/{} retained items but no level reached its compaction capacity (k {}, m {}, levels {num_levels})",
-            self.num_retained, self.capacity, self.k, self.m
+            "KLL sketch has {}/{} retained items but no level reached its compaction capacity (k {}, levels {num_levels})",
+            self.num_retained, self.capacity, self.k
         );
     }
 
@@ -800,16 +847,16 @@ impl<T: Clone + Ord> KllSketch<T> {
             };
         }
 
-        self.levels = general_compress(work_levels, self.k, self.m, self.is_level_zero_sorted);
+        self.levels = general_compress(work_levels, self.k, self.is_level_zero_sorted);
         self.refresh_capacity_state();
     }
 
     fn refresh_capacity_state(&mut self) {
         self.num_retained = self.levels.iter().map(Vec::len).sum();
-        self.capacity = total_capacity(self.k, self.m, self.levels.len()) as usize;
+        self.capacity = total_capacity(self.k, self.levels.len()) as usize;
     }
 
-    fn total_weight(&self) -> u64 {
+    fn levels_weight(&self) -> u64 {
         self.levels
             .iter()
             .enumerate()
@@ -894,6 +941,23 @@ impl<T: Clone + Ord> KllSketch<T> {
     }
 }
 
+fn count_rank_linear<T: Ord>(items: &[T], item: &T, criteria: SearchCriteria) -> usize {
+    items
+        .iter()
+        .filter(|retained| match criteria {
+            SearchCriteria::Inclusive => *retained <= item,
+            SearchCriteria::Exclusive => *retained < item,
+        })
+        .count()
+}
+
+fn count_rank_sorted<T: Ord>(items: &[T], item: &T, criteria: SearchCriteria) -> usize {
+    items.partition_point(|retained| match criteria {
+        SearchCriteria::Inclusive => retained <= item,
+        SearchCriteria::Exclusive => retained < item,
+    })
+}
+
 fn normalized_rank_error(k: u16, pmf: bool) -> f64 {
     let k = k as f64;
     if pmf {
@@ -970,12 +1034,11 @@ fn merge_sorted_vec<T: Clone + Ord>(left: Vec<T>, right: Vec<T>) -> Vec<T> {
 fn general_compress<T: Clone + Ord>(
     mut levels_in: Vec<Vec<T>>,
     k: u16,
-    m: u8,
     is_level_zero_sorted: bool,
 ) -> Vec<Vec<T>> {
     let mut current_num_levels = levels_in.len();
     let mut current_item_count: usize = levels_in.iter().map(|level| level.len()).sum();
-    let mut target_item_count = total_capacity(k, m, current_num_levels) as usize;
+    let mut target_item_count = total_capacity(k, current_num_levels) as usize;
     let mut levels_out = Vec::with_capacity(current_num_levels + 1);
 
     let mut current_level = 0usize;
@@ -985,7 +1048,7 @@ fn general_compress<T: Clone + Ord>(
         }
 
         let raw_pop = levels_in[current_level].len();
-        let cap = level_capacity(k, current_num_levels, current_level, m) as usize;
+        let cap = level_capacity(k, current_num_levels, current_level) as usize;
 
         if current_item_count < target_item_count || raw_pop < cap {
             levels_out.push(std::mem::take(&mut levels_in[current_level]));
@@ -1018,7 +1081,7 @@ fn general_compress<T: Clone + Ord>(
 
             if current_level == current_num_levels - 1 {
                 current_num_levels += 1;
-                target_item_count += level_capacity(k, current_num_levels, 0, m) as usize;
+                target_item_count += level_capacity(k, current_num_levels, 0) as usize;
                 if levels_in.len() < current_num_levels + 1 {
                     levels_in.resize_with(current_num_levels + 1, Vec::new);
                 }

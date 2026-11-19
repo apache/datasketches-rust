@@ -105,6 +105,22 @@ fn test_sliding_union_matches_single_sketch() {
 }
 
 #[test]
+fn first_sliding_merge_folds_a_higher_precision_source() {
+    let mut wide = CpcSketch::new(10).unwrap();
+    let mut narrow = CpcSketch::new(8).unwrap();
+    for value in 0..32_768 {
+        wide.update(value);
+        narrow.update(value);
+    }
+
+    let mut folded = CpcUnion::new(8).unwrap();
+    folded.update(&wide).unwrap();
+    let mut direct = CpcUnion::new(8).unwrap();
+    direct.update(&narrow).unwrap();
+    assert_eq!(folded.serialize(), direct.serialize());
+}
+
+#[test]
 fn test_reduce_k_empty() {
     let mut sketch = CpcSketch::new(11).unwrap();
     for i in 0..10000 {
@@ -181,14 +197,119 @@ fn test_lg_k_too_large_returns_error() {
 }
 
 #[test]
-fn test_union_estimated_size() {
-    let mut union = CpcUnion::new(11).unwrap();
-    assert_eq!(union.estimated_size(), 112);
+fn test_union_serialize_all_flavors_and_subsequent_merges() {
+    const SEED: u64 = 0x5eed_cafe;
 
-    let mut sketch = CpcSketch::new(11).unwrap();
-    for i in 0..1000 {
-        sketch.update(i);
+    // Covers Empty, Sparse, Hybrid, Pinned (without and with post-window surprises), and Sliding
+    // across MIN_LG_K = 4 and lg_k = 8, spanning multiple window offsets and permutation phases.
+    let cases: &[(u8, &[u64])] = &[
+        (4, &[0, 1, 3, 12, 40, 120, 500]),
+        (8, &[0, 10, 60, 180, 1_500, 3_000, 12_000, 50_000]),
+    ];
+
+    let mut saw_window_only = false;
+    let mut saw_window_and_table = false;
+    for &(lg_k, counts) in cases {
+        for &num_values in counts {
+            let mut union = CpcUnion::with_seed(lg_k, SEED).unwrap();
+            if num_values > 0 {
+                let split = num_values / 2;
+                let mut left = CpcSketch::with_seed(lg_k, SEED).unwrap();
+                for value in 0..split {
+                    left.update(value);
+                }
+                let mut right = CpcSketch::with_seed(lg_k, SEED).unwrap();
+                for value in split..num_values {
+                    right.update(value);
+                }
+                union.update(&left).unwrap();
+                union.update(&right).unwrap();
+            }
+
+            let bytes = union.serialize();
+            let expected_sketch = union.to_sketch();
+            assert_eq!(
+                bytes,
+                expected_sketch.serialize(),
+                "mismatch at lg_k={lg_k}, n={num_values}"
+            );
+
+            let flags = bytes[5];
+            let has_table = flags & (1 << 3) != 0;
+            let has_window = flags & (1 << 4) != 0;
+            if has_window && !has_table {
+                saw_window_only = true;
+            }
+            if has_window && has_table {
+                saw_window_and_table = true;
+            }
+
+            assert_eq!(
+                CpcSketch::deserialize(&bytes).unwrap_err().kind(),
+                ErrorKind::InvalidData
+            );
+            let decoded = CpcSketch::deserialize_with_seed(&bytes, SEED).unwrap();
+            assert_eq!(decoded.lg_k(), expected_sketch.lg_k());
+            assert_eq!(decoded.is_empty(), expected_sketch.is_empty());
+            assert_eq!(decoded.estimate(), expected_sketch.estimate());
+
+            // Decoded union image must merge cleanly into downstream unions.
+            let mut extra = CpcSketch::with_seed(lg_k, SEED).unwrap();
+            for value in num_values..(num_values + 64) {
+                extra.update(value);
+            }
+
+            let mut downstream_from_bytes = CpcUnion::with_seed(lg_k, SEED).unwrap();
+            downstream_from_bytes.update(&decoded).unwrap();
+            downstream_from_bytes.update(&extra).unwrap();
+
+            let mut downstream_from_sketch = CpcUnion::with_seed(lg_k, SEED).unwrap();
+            downstream_from_sketch.update(&expected_sketch).unwrap();
+            downstream_from_sketch.update(&extra).unwrap();
+
+            assert_eq!(
+                downstream_from_bytes.serialize(),
+                downstream_from_sketch.to_sketch().serialize()
+            );
+        }
     }
-    union.update(&sketch).unwrap();
-    assert_eq!(union.estimated_size(), 16496);
+
+    assert!(
+        saw_window_only,
+        "expected a pinned bit-matrix case without surprise table"
+    );
+    assert!(
+        saw_window_and_table,
+        "expected windowed bit-matrix cases with surprise table"
+    );
+}
+
+#[test]
+fn test_union_serialize_mixed_lg_k_downsampling_across_bit_matrix_flavors() {
+    let mut union = CpcUnion::new(11).unwrap();
+
+    // Progress through Sparse -> Hybrid -> Pinned -> Sliding while mixing wider and narrower lg_k
+    // inputs so both source folding and bit-matrix downsampling are exercised before serializing.
+    for (lg_k, range) in [
+        (12_u8, 0_u64..80),
+        (10, 40..450),
+        (11, 300..900),
+        (9, 500..2_200),
+        (10, 1_800..4_500),
+        (8, 2_000..15_000),
+    ] {
+        let mut sketch = CpcSketch::new(lg_k).unwrap();
+        for value in range {
+            sketch.update(value);
+        }
+        union.update(&sketch).unwrap();
+
+        let bytes = union.serialize();
+        let expected = union.to_sketch();
+        assert_eq!(bytes, expected.serialize());
+
+        let decoded = CpcSketch::deserialize(&bytes).unwrap();
+        assert_eq!(decoded.lg_k(), union.lg_k());
+        assert_eq!(decoded.estimate(), expected.estimate());
+    }
 }

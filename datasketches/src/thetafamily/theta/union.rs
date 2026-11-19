@@ -15,20 +15,28 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::fmt;
+
 use crate::common::ResizeFactor;
 use crate::error::Error;
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::theta::CompactThetaSketch;
 use crate::theta::ThetaSketchView;
 use crate::theta::hash_table::ThetaEntry;
-use crate::thetacommon::constants::DEFAULT_LG_K;
-use crate::thetacommon::union::UnionMergePolicy;
-use crate::thetacommon::union::UnionState;
+use crate::theta::serialization;
+use crate::thetafamily::common::constants::DEFAULT_LG_K;
+use crate::thetafamily::common::union::UnionMergePolicy;
+use crate::thetafamily::common::union::UnionState;
 
 /// Stateful union operator for Theta sketches.
-#[derive(Debug)]
 pub struct ThetaUnion {
     state: UnionState<ThetaEntry, NoopUnionPolicy>,
+}
+
+impl fmt::Debug for ThetaUnion {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.state.fmt_debug(f, "ThetaUnion")
+    }
 }
 
 #[derive(Debug)]
@@ -52,11 +60,53 @@ impl ThetaUnion {
 
     /// Returns this union as a compact sketch.
     pub fn to_sketch(&self, ordered: bool) -> CompactThetaSketch {
-        let compact_state = self
-            .state
-            .to_compact_sketch_state(ordered)
-            .map_retained_entries(|entry| entry.hash());
-        CompactThetaSketch::from_compact_state(compact_state)
+        CompactThetaSketch::from_compact_state(self.state.to_compact_hash_state(ordered))
+    }
+
+    /// Serializes this union result into the uncompressed compact Theta format.
+    ///
+    /// The result is the same as [`Self::to_sketch`] followed by
+    /// [`CompactThetaSketch::serialize`]: the same retained hashes, theta, and seed hash, and
+    /// identical bytes when `ordered` is `true` (`to_sketch(true).serialize()`). When `ordered` is
+    /// `false`, retained hashes may appear in a different order. Empty results and exact singletons
+    /// always use their canonical encoding.
+    pub fn serialize(&self, ordered: bool) -> Vec<u8> {
+        let state = self.state.to_compact_hash_state(ordered);
+        serialization::serialize_compact_uncompressed(&state)
+    }
+
+    /// Serializes this union result in compressed compact Theta format if applicable.
+    ///
+    /// Produces the same bytes as `self.to_sketch(true).serialize_compressed()`. Compressed
+    /// serialization requires ordered entries, so retained hashes are sorted ascending. Falls back
+    /// to uncompressed canonical encoding for empty sketches, zero-entry estimation sketches, and
+    /// exact singletons.
+    ///
+    /// The serialized data can be read by other DataSketches implementations via
+    /// [`CompactThetaSketch::deserialize`] or [`CompactThetaSketch::deserialize_with_seed`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::theta::CompactThetaSketch;
+    /// use datasketches::theta::ThetaSketchBuilder;
+    /// use datasketches::theta::ThetaUnionBuilder;
+    ///
+    /// let mut sketch = ThetaSketchBuilder::default().lg_k(12).build().unwrap();
+    /// for value in 0..100 {
+    ///     sketch.update(value);
+    /// }
+    ///
+    /// let mut union = ThetaUnionBuilder::default().lg_k(12).build().unwrap();
+    /// union.update(&sketch).unwrap();
+    ///
+    /// let bytes = union.serialize_compressed();
+    /// let restored = CompactThetaSketch::deserialize(&bytes).unwrap();
+    /// assert_eq!(restored.num_retained(), 100);
+    /// ```
+    pub fn serialize_compressed(&self) -> Vec<u8> {
+        let state = self.state.to_compact_hash_state(true);
+        serialization::serialize_compact_compressed(&state)
     }
 
     /// Resets the union to its empty state.
@@ -64,9 +114,9 @@ impl ThetaUnion {
         self.state.reset();
     }
 
-    /// Returns the estimated size of the union in bytes.
+    /// Returns an estimate of the union's memory usage in bytes.
     pub fn estimated_size(&self) -> usize {
-        size_of::<Self>() + self.state.estimated_size()
+        self.state.estimated_size()
     }
 }
 

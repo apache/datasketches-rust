@@ -29,8 +29,8 @@ pub const PREAMBLE_INTS_EXACT: u8 = 2;
 pub const PREAMBLE_INTS_ESTIMATION: u8 = 4;
 pub const RAW_ITEMS_THRESHOLD: u64 = 4;
 
-/// Flag bits — match the C++ enum order: RESERVED1, RESERVED2, IS_EMPTY, IS_HIGH_RANK, RAW_ITEMS,
-/// IS_LEVEL_ZERO_SORTED.
+// Match the datasketches-cpp enum order: RESERVED1, RESERVED2, IS_EMPTY, IS_HIGH_RANK, RAW_ITEMS,
+// IS_LEVEL_ZERO_SORTED.
 pub const FLAG_IS_EMPTY: u8 = 1 << 2;
 pub const FLAG_IS_HIGH_RANK: u8 = 1 << 3;
 pub const FLAG_RAW_ITEMS: u8 = 1 << 4;
@@ -72,9 +72,10 @@ pub fn validate_compactor_state(
             "REQ compactor lg_weight {lg_weight} does not match level {expected_lg_weight}"
         )));
     }
-    let section_size = nearest_even_section_size(section_size_raw);
-    if !section_size_raw.is_finite()
-        || !(u32::from(MIN_K)..=u32::from(k)).contains(&section_size)
+    let max_raw = f32::from(k) + 2.0;
+    if !(0.0..=max_raw).contains(&section_size_raw)
+        || !(usize::from(MIN_K)..=usize::from(k))
+            .contains(&nearest_even_section_size(section_size_raw))
         || !has_reachable_section_count(state, num_sections)
     {
         return Err(Error::deserial(format!(

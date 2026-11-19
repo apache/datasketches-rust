@@ -60,18 +60,63 @@ thread_local! {
     static STATE: Cell<u64> = Cell::new(random_seed());
 }
 
+/// Returns a uniformly distributed `u64` from the calling thread's stream.
+///
+/// The call is a handful of arithmetic operations on thread-local state: it
+/// never allocates, locks, or blocks. The first call on a thread seeds that
+/// thread's state.
+#[inline]
+pub fn random_u64() -> u64 {
+    STATE.with(|state| {
+        let (next, value) = next_u64(state.get());
+        state.set(next);
+        value
+    })
+}
+
 /// Returns `true` or `false`, each with probability 1/2.
 ///
 /// The bit is the low bit of the next output of the calling thread's stream.
 /// The call is a handful of arithmetic operations on thread-local state: it
 /// never allocates, locks, or blocks. The first call on a thread seeds that
 /// thread's state.
+#[cfg(any(test, feature = "density", feature = "kll", feature = "req"))]
+#[inline]
 pub fn random_bit() -> bool {
-    STATE.with(|state| {
-        let (next, value) = next_u64(state.get());
-        state.set(next);
-        value & 1 == 1
-    })
+    random_u64() & 1 == 1
+}
+
+/// Returns a uniformly distributed `usize` in `0..bound`.
+///
+/// Uses Lemire's nearly divisionless 128-bit multiplication rejection method to avoid modulo bias.
+///
+/// # Panics
+///
+/// Panics if `bound == 0` or `bound` cannot be represented as `u64`.
+#[cfg(any(test, feature = "density"))]
+#[inline]
+pub fn random_below(bound: usize) -> usize {
+    assert!(bound > 0, "bound must be positive");
+    if bound == 1 {
+        return 0;
+    }
+    let range = u64::try_from(bound).expect("bound exceeds u64::MAX");
+    rejection_sample(range, random_u64) as usize
+}
+
+#[cfg(any(test, feature = "density"))]
+#[inline]
+fn rejection_sample(range: u64, mut next: impl FnMut() -> u64) -> u64 {
+    let mut product = u128::from(next()) * u128::from(range);
+    let mut low = product as u64;
+    if low < range {
+        let threshold = range.wrapping_neg() % range;
+        while low < threshold {
+            product = u128::from(next()) * u128::from(range);
+            low = product as u64;
+        }
+    }
+    (product >> 64) as u64
 }
 
 #[cfg(test)]
@@ -138,5 +183,77 @@ mod tests {
             .join()
             .expect("the drawing thread should not panic");
         assert_ne!(draw_word(), other, "two threads shared one stream");
+    }
+
+    #[test]
+    fn assert_random_u64_advances_state() {
+        let first = random_u64();
+        let mut saw_distinct = false;
+        for _ in 0..8 {
+            if random_u64() != first {
+                saw_distinct = true;
+                break;
+            }
+        }
+        assert!(saw_distinct, "random_u64 stream stopped advancing");
+    }
+
+    #[test]
+    #[should_panic(expected = "bound must be positive")]
+    fn assert_random_below_zero_panics() {
+        let _ = random_below(0);
+    }
+
+    #[test]
+    fn assert_random_below_one_returns_zero() {
+        for _ in 0..16 {
+            assert_eq!(random_below(1), 0);
+        }
+    }
+
+    #[test]
+    fn assert_random_below_respects_bounds() {
+        for bound in [2, 3, 5, 7, 17, 64, 100] {
+            for _ in 0..256 {
+                let value = random_below(bound);
+                assert!(value < bound, "value {value} >= bound {bound}");
+            }
+        }
+
+        let mut seen = [false; 7];
+        for _ in 0..512 {
+            seen[random_below(7)] = true;
+        }
+        assert!(seen.into_iter().all(|flag| flag));
+    }
+
+    #[test]
+    fn assert_random_below_rejects_biased_low_product() {
+        // For range = 3, 2^64 mod 3 = 1, so low == 0 must be rejected.
+        // First draw: 0 -> product = 0, low = 0 < 1 (rejected).
+        // Second draw: 2^63 -> product = 3 * 2^63 = 1 * 2^64 + 2^63, low = 2^63 >= 1 (accepted,
+        // returns 1).
+        let mut draws = [0_u64, 1_u64 << 63].into_iter();
+        let sampled = rejection_sample(3, || draws.next().expect("enough draws"));
+        assert_eq!(sampled, 1);
+        assert!(draws.next().is_none());
+    }
+
+    #[test]
+    fn assert_random_below_is_unbiased() {
+        const DRAWS: usize = 300_000;
+        const TOLERANCE: usize = 1_600;
+
+        let mut counts = [0_usize; 3];
+        for _ in 0..DRAWS {
+            counts[random_below(3)] += 1;
+        }
+        let expected = DRAWS / 3;
+        for (bucket, count) in counts.into_iter().enumerate() {
+            assert!(
+                count.abs_diff(expected) <= TOLERANCE,
+                "bucket {bucket} count {count} deviated from {expected}"
+            );
+        }
     }
 }

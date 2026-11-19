@@ -17,7 +17,7 @@
 
 [package]
 name = "datasketches"
-version = "0.5.0"
+version = "0.7.0"
 
 edition.workspace = true
 homepage.workspace = true
@@ -41,6 +41,7 @@ default = []
 bloom = []
 countmin = []
 cpc = []
+density = []
 frequencies = []
 hll = []
 kll = []
@@ -48,10 +49,7 @@ req = []
 tdigest = []
 theta = []
 tuple = []
-
-[[example]]
-name = "bloom_difference"
-required-features = ["bloom"]
+xor = []
 
 [dev-dependencies]
 googletest = { workspace = true }

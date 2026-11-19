@@ -21,8 +21,7 @@
 //! near-optimal accuracy per retained item. It supports one-pass updates,
 //! approximate quantiles, ranks, PMF, and CDF queries.
 //!
-//! This implementation follows Apache DataSketches semantics and uses the compact binary
-//! serialization format shared by the Java, C++, and Go implementations.
+//! The compact binary serialization format supports cross-language interchange.
 //!
 //! Items must implement [`Ord`]. Wrap `f32` or `f64` values in [`KllFloat`], which rejects NaN and
 //! provides their ordinary numerical order. Custom ordering should be expressed with a newtype
@@ -31,13 +30,17 @@
 //! # Usage
 //!
 //! ```rust
-//! # use datasketches::common::SearchCriteria;
-//! # use datasketches::kll::KllSketch;
-//! let mut sketch = KllSketch::<i64>::new(200).unwrap();
+//! use datasketches::common::SearchCriteria;
+//! use datasketches::kll::KllSketch;
+//!
+//! let mut sketch = KllSketch::<i64>::new(200)?;
 //! sketch.update(1);
 //! sketch.update(2);
-//! let q = sketch.quantile(0.5, SearchCriteria::Inclusive).unwrap();
+//! let Some(q) = sketch.quantile(0.5, SearchCriteria::Inclusive)? else {
+//!     return Ok(()); // No samples to query.
+//! };
 //! assert!((1..=2).contains(&q));
+//! # Ok::<(), datasketches::error::Error>(())
 //! ```
 
 mod capacity;
@@ -52,7 +55,7 @@ pub use self::value::KllFloat;
 pub use self::value::KllValue;
 /// Default value of parameter k.
 const DEFAULT_K: u16 = 200;
-/// Default value of parameter m.
+/// Fixed minimum level capacity encoded in the KLL wire format.
 const DEFAULT_M: u8 = 8;
 /// Minimum value of parameter k.
 const MIN_K: u16 = DEFAULT_M as u16;

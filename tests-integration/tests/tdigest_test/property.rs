@@ -39,10 +39,10 @@ fn assert_quantiles_are_monotonic(tdigest: &mut TDigestMut) {
     let ranks = (0..=RANK_STEPS)
         .map(|step| step as f64 / RANK_STEPS as f64)
         .collect::<Vec<_>>();
-    let quantiles = tdigest.quantiles(&ranks).unwrap();
+    let quantiles = tdigest.quantiles(&ranks).unwrap().unwrap();
 
     for (&rank, quantile) in ranks.iter().zip(quantiles) {
-        assert_eq!(tdigest.quantile(rank), Some(quantile));
+        assert_eq!(tdigest.quantile(rank).unwrap(), Some(quantile));
         assert!(
             (previous..=max).contains(&quantile),
             "quantile {quantile} at rank {rank} is outside [{previous}, {max}]"
@@ -77,12 +77,12 @@ fn prop_finite_values_survive_partial_aggregation() {
         // Use the input samples as split points, independently of the computed quantiles.
         values.sort_unstable_by(f64::total_cmp);
         values.dedup();
-        assert_eq!(digest.quantile(0.), values.first().copied());
-        assert_eq!(digest.quantile(1.), values.last().copied());
-        let cdf = digest.cdf(&values).unwrap();
+        assert_eq!(digest.quantile(0.).unwrap(), values.first().copied());
+        assert_eq!(digest.quantile(1.).unwrap(), values.last().copied());
+        let cdf = digest.cdf(&values).unwrap().unwrap();
         assert!(cdf.is_sorted());
         assert!(cdf.iter().all(|rank| (0.0..=1.0).contains(rank)));
-        let pmf = digest.pmf(&values).unwrap();
+        let pmf = digest.pmf(&values).unwrap().unwrap();
         assert!(pmf.iter().all(|p| (0.0..=1.0).contains(p)));
         assert!((pmf.iter().sum::<f64>() - 1.).abs() < 1e-12);
         TestResult::passed()
@@ -159,12 +159,12 @@ fn prop_batch_quantiles_preserve_input_order_and_duplicates() {
                 Some(
                     ranks
                         .iter()
-                        .map(|&rank| frozen.quantile(rank).unwrap())
+                        .map(|&rank| frozen.quantile(rank).unwrap().unwrap())
                         .collect::<Vec<_>>(),
                 )
             };
-            assert_eq!(tdigest.clone().quantiles(&ranks), expected);
-            assert_eq!(frozen.quantiles(&ranks), expected);
+            assert_eq!(tdigest.clone().quantiles(&ranks).unwrap(), expected);
+            assert_eq!(frozen.quantiles(&ranks).unwrap(), expected);
         }
     }
 
@@ -172,4 +172,42 @@ fn prop_batch_quantiles_preserve_input_order_and_duplicates() {
         .tests(256)
         .rng(Gen::new(1200))
         .quickcheck(property as fn(Vec<u32>, Vec<u8>));
+}
+
+#[test]
+fn prop_cdf_matches_scalar_ranks() {
+    fn property(values: Vec<u32>, points: Vec<u32>) {
+        let digest = digest_of(&values);
+        let frozen = digest.clone().freeze();
+        let mut points = points
+            .into_iter()
+            .map(|point| f64::from(point) / 4096.0)
+            .collect::<Vec<_>>();
+        points.extend_from_slice(&[f64::NEG_INFINITY, f64::INFINITY]);
+        points.sort_unstable_by(f64::total_cmp);
+        points.dedup();
+
+        let middle = vec![points[points.len() / 2]];
+        let sparse = points
+            .iter()
+            .step_by((points.len() / 6).max(1))
+            .copied()
+            .collect::<Vec<_>>();
+        for queries in [&[][..], &middle, &sparse, &points] {
+            let expected = (!frozen.is_empty()).then(|| {
+                queries
+                    .iter()
+                    .map(|&point| frozen.rank(point).unwrap().unwrap())
+                    .chain(std::iter::once(1.0))
+                    .collect::<Vec<_>>()
+            });
+            assert_eq!(frozen.cdf(queries).unwrap(), expected);
+            assert_eq!(digest.clone().cdf(queries).unwrap(), expected);
+        }
+    }
+
+    QuickCheck::new()
+        .tests(128)
+        .rng(Gen::new(512))
+        .quickcheck(property as fn(Vec<u32>, Vec<u32>));
 }

@@ -11962,10 +11962,464 @@ pub static DECODING_TABLES_FOR_HIGH_ENTROPY_BYTE: [[u16; 4096]; 22] = [
 
 #[cfg(test)]
 mod tests {
+    // Reconstructs and verifies all six static lookup tables in this module from first principles.
+    //
+    // In the original C/C++/Java implementations of CPC ("FM85"), only the generated static arrays
+    // and the runtime table-inversion helpers (`makeDecodingTable` / `makeInversePermutation` in
+    // `fm85Compression.c`) were checked into source control. The three offline OCaml generators
+    // written by Kevin J. Lang referenced in the comments above were never published:
+    //
+    // 1. `columnProbabilities.ml`: computes cell occupancy probabilities in the FM85 coupon matrix
+    //    and derives the symbol distributions for high-entropy window bytes and for the column
+    //    deltas of surprise pairs.
+    // 2. `generateHuffmanCodes.ml`: builds length-limited (<= 12 bits) canonical LSB-first Huffman
+    //    encoding tables (`LENGTH_LIMITED_UNARY_ENCODING_TABLE65` and the 22 tables of
+    //    `ENCODING_TABLES_FOR_HIGH_ENTROPY_BYTE`).
+    // 3. `generatePermutationsForSLIDING.ml`: orders the 56 non-window columns by descending
+    //    surprise probability across the 16 sliding-window phases
+    //    (`COLUMN_PERMUTATIONS_FOR_ENCODING`).
+    //
+    // The helpers and tests below document which hidden parameters the checked-in tables and
+    // header comments identify, which ones they leave open, and verify a 1-to-1 bit-exact match
+    // for every entry of all six tables.
+
+    use std::array::from_fn;
+
     use googletest::assert_that;
     use googletest::prelude::container_eq;
+    use googletest::prelude::near;
 
     use super::*;
+    use crate::common::inv_pow2::inv_pow2;
+
+    /// Occupancy model of the midrange tables: binomial cell marginals at sketch size `K = 2^32`.
+    ///
+    /// How `K = 2^32` was reverse-engineered: the midrange codewords are reproduced by every
+    /// `K >= 2^16`, so only the 20-digit header entropies (`RECORDED_HEADER_STATS`) can pin `K`.
+    /// The worst deviation over the six midrange headers is `6e-15` at `K = 2^32`, versus
+    /// `4.9e-11` at `K = 2^31`, `2.5e-11` at `K = 2^33`, and `4.9e-11` in the Poisson limit
+    /// `K -> inf`. The residuals on both sides follow the `1 / K` scaling of the finite-`K`
+    /// correction (`ln(1 - x) = -x - x^2 / 2 - ...` multiplies the Poisson exponent by roughly
+    /// `1 + 1 / (2 * K * 2^col)`), and `2^32` is also the upper end of the `2^4 .. 2^32` range
+    /// named in the ICON estimator notes.
+    const MIDRANGE_MODEL: Occupancy = Occupancy::Binomial {
+        k: (1_u64 << 32) as f64,
+    };
+
+    /// Occupancy model of the steady-state tables and the sliding column permutations: the
+    /// stationary Poisson limit `K -> inf`.
+    ///
+    /// At the true base `C / K = 6.0 + phase` (`STEADY_STATE_C_OVER_K_BASE`), the steady-state
+    /// byte tables identify only this limit: the Poisson model matches all 16 steady-state headers
+    /// within `1.1e-14`, whereas the binomial model at `K = 2^32` misses them by `6.1e-12`. That
+    /// residual halves with every unit added to the base (`3.1e-12` at `7.0 + phase`, `1.5e-12` at
+    /// `8.0 + phase`), which is the `2^-col / K` signature of the finite-`K` correction at the
+    /// window columns, not an effect of the matrix edge.
+    /// Although `lambda` is solved over all 128 columns (`f_128(lambda) = E[C] / K`), the
+    /// finite-column shift identity
+    ///
+    ///   f_128(2 * lambda) = f_128(lambda) + (1 - exp(-lambda)) - (1 - exp(-lambda / 2^128))
+    ///
+    /// means that raising the base by one doubles `lambda` and shifts the window by one column up
+    /// to both boundary terms. At `C / K = 6 + 1/32` (`lambda ≈ 51.9`), the left-edge term
+    /// `exp(-lambda)` is about `2.8e-23` and the right-edge term `1 - exp(-lambda / 2^128)` is
+    /// about `1.53e-37`, both negligible compared to `6.1e-12`; by base `84` (`C / K = 84 + 1/32`),
+    /// the right-edge term grows to about `4.61e-14`. Consequently `K = 2^32` with any base from
+    /// `14` to `84` also matches both the entropy and average-length headers of all 16 steady-state
+    /// tables within `HEADER_STATS_TOLERANCE`; the Poisson limit at base `6` is preferred because
+    /// a single operating point then explains both the byte tables and the permutations, which are
+    /// insensitive to `K`.
+    const STEADY_STATE_MODEL: Occupancy = Occupancy::Poisson;
+
+    /// Integer part of the steady-state operating point `C / K = 6.0 + phase`, where
+    /// `phase = (2 * m + 1) / 32` is the midpoint of the `m`-th sixteenth.
+    ///
+    /// The base is pinned by `COLUMN_PERMUTATIONS_FOR_ENCODING` (see
+    /// `generate_sliding_column_permutation`). Under `STEADY_STATE_MODEL` the steady-state byte
+    /// tables accept any base from `6` to `84` across both entropy and average-length headers
+    /// within `HEADER_STATS_TOLERANCE`; below `6` the left edge starts to matter, and beyond `84`
+    /// the 128-column right edge does (at base `85` the average length error already reaches
+    /// `3.1e-14`; base `100` misses by `7e-10`).
+    const STEADY_STATE_C_OVER_K_BASE: f64 = 6.0;
+
+    /// Maximum Huffman codeword length, chosen so single-step lookup decoding tables occupy
+    /// `2^12 = 4096` `u16` entries.
+    const MAX_CODE_LENGTH: usize = 12;
+
+    // -------------------------------------------------------------------------
+    // 1. Reconstructed `columnProbabilities.ml`
+    // -------------------------------------------------------------------------
+
+    /// Probability model for one cell of the coupon matrix after `N = lambda * K` distinct items.
+    #[derive(Clone, Copy)]
+    enum Occupancy {
+        /// Finite sketch size `K`: a cell in 1-based column `col` stays `0` with probability
+        /// `p_0 = (1 - 1 / (K * 2^col))^N`.
+        Binomial { k: f64 },
+        /// Limit `K -> inf` at fixed `lambda = N / K`: `p_0 = exp(-lambda * 2^-col)`.
+        Poisson,
+    }
+
+    impl Occupancy {
+        /// `ln(p_0)` for 1-based column `col` (`1..=128`) at density `lambda = N / K`.
+        fn ln_zero_prob(self, lambda: f64, col: u8) -> f64 {
+            match self {
+                Occupancy::Binomial { k } => k * lambda * (-inv_pow2(col) / k).ln_1p(),
+                Occupancy::Poisson => -lambda * inv_pow2(col),
+            }
+        }
+
+        /// Probability `q = 1 - p_0` that a cell in 1-based column `col` is set.
+        fn one_prob(self, lambda: f64, col: u8) -> f64 {
+            -self.ln_zero_prob(lambda, col).exp_m1()
+        }
+
+        /// Probability `p_0` that a cell in 1-based column `col` is still `0`.
+        ///
+        /// Evaluated as `exp(...)` rather than `1.0 - one_prob(...)`: `one_prob` cannot hold a
+        /// difference from `1.0` below the `2^-53` spacing there, so it rounds to exactly `1.0`
+        /// once `p_0 <= 2^-54` (`f64::EPSILON / 4`) and the subtraction then yields `0.0`. That
+        /// cancellation would misrank tiny surprise probabilities in
+        /// `generate_sliding_column_permutation`.
+        fn zero_prob(self, lambda: f64, col: u8) -> f64 {
+            self.ln_zero_prob(lambda, col).exp()
+        }
+
+        /// Expected coupon density `E[C] / K = sum_{col=1..=128} q(col)` of the unclipped
+        /// 128-column FM85 matrix.
+        fn expected_c_over_k(self, lambda: f64) -> f64 {
+            (1..=128).map(|col| self.one_prob(lambda, col)).sum()
+        }
+
+        /// Inverts `expected_c_over_k(lambda) = target_c_over_k` by monotone binary search.
+        fn solve_lambda(self, target_c_over_k: f64) -> f64 {
+            let mut lo = 0.0;
+            let mut hi = 1.0;
+            while self.expected_c_over_k(hi) < target_c_over_k {
+                hi *= 2.0;
+            }
+            for _ in 0..96 {
+                let mid = 0.5 * (lo + hi);
+                if self.expected_c_over_k(mid) < target_c_over_k {
+                    lo = mid;
+                } else {
+                    hi = mid;
+                }
+            }
+            0.5 * (lo + hi)
+        }
+    }
+
+    /// Computes the 256-entry probability distribution for the 8-bit window starting at 0-based
+    /// column `offset` at density `c_over_k` (`columnProbabilities.ml`).
+    ///
+    /// Within a single row, the 8 window columns `offset .. offset + 8` (1-based
+    /// `offset + 1 ..= offset + 8`) are treated as independent Bernoulli variables, giving
+    /// `P(byte) = prod_{bit=0..8} (q_bit if byte has bit set else p0_bit)`. Independence is exact
+    /// in the Poisson model; with `Occupancy::Binomial` the marginals are exact and the product
+    /// form is an approximation.
+    fn window_byte_probabilities(model: Occupancy, c_over_k: f64, offset: u8) -> [f64; 256] {
+        let lambda = model.solve_lambda(c_over_k);
+        let mut p_one = [0.0; 8];
+        let mut p_zero = [0.0; 8];
+        for bit in 0..8_u8 {
+            let col_1based = offset + bit + 1;
+            p_one[bit as usize] = model.one_prob(lambda, col_1based);
+            p_zero[bit as usize] = model.zero_prob(lambda, col_1based);
+        }
+
+        let mut probs = [0.0; 256];
+        for (byte_val, slot) in probs.iter_mut().enumerate() {
+            let mut prob = 1.0;
+            for bit in 0..8 {
+                if ((byte_val >> bit) & 1) != 0 {
+                    prob *= p_one[bit];
+                } else {
+                    prob *= p_zero[bit];
+                }
+            }
+            *slot = prob;
+        }
+        probs
+    }
+
+    /// Computes the 65-symbol truncated dyadic geometric distribution for
+    /// `LENGTH_LIMITED_UNARY_ENCODING_TABLE65` (`columnProbabilities.ml`):
+    /// `P(s) = 2^{-(s+1)}` for `s in 0..64` and `P(64) = 2^{-64}`, which sums to `1.0` and has
+    /// exact Shannon entropy `2 - 2^{-63}` bits (which rounds to `2.0` in `f64`).
+    ///
+    /// The symbol is the column delta `x_delta` that the pair encoder writes for each surprise
+    /// `(row, col)` pair (the row delta is Golomb-coded with a plain unary high part instead).
+    /// The geometric law is the column distribution of a single coupon, and "unary" describes the
+    /// shape of the resulting code: lengths `1, 2, 3, 4, 5, 7, 8, 8, 10, 10, 11, 12, ...` follow
+    /// the unary pattern until the 12-bit limit forces a redistribution.
+    fn unary65_probabilities() -> [f64; 65] {
+        let mut probs = [0.0; 65];
+        for (s, slot) in probs.iter_mut().enumerate().take(64) {
+            *slot = inv_pow2((s + 1) as u8);
+        }
+        probs[64] = inv_pow2(64);
+        probs
+    }
+
+    fn shannon_entropy(probs: &[f64]) -> f64 {
+        probs
+            .iter()
+            .filter(|&&p| p > 0.0)
+            .map(|&p| -p * p.log2())
+            .sum()
+    }
+
+    fn expected_code_length(probs: &[f64], table: &[u16]) -> f64 {
+        probs
+            .iter()
+            .zip(table.iter())
+            .map(|(&p, &entry)| p * ((entry >> 12) as f64))
+            .sum()
+    }
+
+    // -------------------------------------------------------------------------
+    // 2. Reconstructed `generateHuffmanCodes.ml`
+    // -------------------------------------------------------------------------
+
+    /// Generates a length-limited (`<= max_length`) canonical LSB-first Huffman encoding table
+    /// (`generateHuffmanCodes.ml`), packing each symbol's entry as `(length << 12) | codeword`.
+    ///
+    /// How the algorithm was reverse-engineered from the static tables:
+    /// 1. Length-limited optimality (Larmore-Hirschberg Package-Merge, 1990): symbols with tiny
+    ///    probabilities such as `2^-64` are capped at length 12 while strictly minimizing `sum_s
+    ///    P(s) * len[s]` subject to Kraft's equality `sum_s 2^-len[s] = 1`. In Package-Merge over
+    ///    `max_length` levels, each level pairs adjacent items `(2k, 2k+1)` from the previous level
+    ///    and stably merges `[leaves, packages]` by non-decreasing weight, breaking leaf ties by
+    ///    ascending symbol index. Selecting the `2 * n - 2` lightest items at the final level and
+    ///    counting each symbol's leaf occurrences yields the optimal code lengths. Exact weight
+    ///    ties between a leaf and a package do occur (e.g. `P(62) = 2^-63 == P(63) + P(64)`), but
+    ///    the tables do not identify a tie rule: ordering packages ahead of leaves yields the same
+    ///    code lengths for all 23 tables. Leaves go first here.
+    /// 2. Canonical LSB-first codeword assignment: sorting symbols by `(len[s], s)` ascending,
+    ///    assigning standard canonical MSB-first integers (`code <<= len - prev_len`, then
+    ///    incrementing), and bit-reversing the low `len` bits (`reverse_bits() >> (16 - len)`) so
+    ///    CPC's LSB-first bitstream writer can emit `codeword` directly reproduces every codeword.
+    fn generate_length_limited_huffman_table(probs: &[f64], max_length: usize) -> Vec<u16> {
+        let n = probs.len();
+        assert!(n >= 2 && max_length <= 15);
+
+        let mut leaves: Vec<(f64, Vec<usize>)> = probs
+            .iter()
+            .enumerate()
+            .map(|(s, &p)| (p, vec![s]))
+            .collect();
+        leaves.sort_by(|a, b| a.0.total_cmp(&b.0).then_with(|| a.1[0].cmp(&b.1[0])));
+
+        let mut current = leaves.clone();
+        for level in 0..max_length {
+            if level > 0 {
+                let mut packages = Vec::with_capacity(current.len() / 2);
+                for pair in current.chunks_exact(2) {
+                    let mut syms = Vec::with_capacity(pair[0].1.len() + pair[1].1.len());
+                    syms.extend_from_slice(&pair[0].1);
+                    syms.extend_from_slice(&pair[1].1);
+                    packages.push((pair[0].0 + pair[1].0, syms));
+                }
+                let mut merged = Vec::with_capacity(leaves.len() + packages.len());
+                merged.extend_from_slice(&leaves);
+                merged.extend(packages);
+                // Rust's `sort_by` is guaranteed stable, keeping `leaves` ahead of `packages`
+                // whenever weights tie exactly.
+                merged.sort_by(|a, b| a.0.total_cmp(&b.0));
+                current = merged;
+            }
+        }
+
+        let mut lengths = vec![0_usize; n];
+        for item in current.iter().take(2 * n - 2) {
+            for &sym in &item.1 {
+                lengths[sym] += 1;
+            }
+        }
+
+        let mut order: Vec<usize> = (0..n).collect();
+        order.sort_by(|&a, &b| lengths[a].cmp(&lengths[b]).then_with(|| a.cmp(&b)));
+
+        let mut table = vec![0_u16; n];
+        let mut next_code = 0_u32;
+        let mut prev_len = 0_usize;
+        for sym in order {
+            let len = lengths[sym];
+            assert!((1..=max_length).contains(&len));
+            next_code <<= len - prev_len;
+            let msb_code = next_code as u16;
+            next_code += 1;
+            prev_len = len;
+
+            let lsb_code = msb_code.reverse_bits() >> (16 - len);
+            table[sym] = ((len as u16) << 12) | lsb_code;
+        }
+        assert_eq!(next_code, 1_u32 << prev_len, "Kraft sum must equal 1");
+        table
+    }
+
+    // -------------------------------------------------------------------------
+    // 3. Reconstructed `generatePermutationsForSLIDING.ml`
+    // -------------------------------------------------------------------------
+
+    /// Generates the 56-column encoding permutation for sliding-window `phase = (2 * m + 1) / 32`
+    /// (`generatePermutationsForSLIDING.ml`).
+    ///
+    /// In `Sliding` mode (`c/k >= 3.375`), the 0-based window offset is `floor(c/k - 2.375)`.
+    /// Outside the 8-bit window `[offset, offset + 7]`, a bit at `col < offset` is surprising when
+    /// `0` (probability `p_0`), and a bit at `col >= offset + 8` is surprising when `1`
+    /// (probability `q`). Rotating column indices via `canon = (col + 56 - offset) % 64` places
+    /// post-window columns at `0 .. 56 - offset` and pre-window columns at `56 - offset .. 56`.
+    /// Ranking the 56 canonical columns by descending surprise probability (ties by index) assigns
+    /// shorter unary codes to more frequent surprise columns.
+    ///
+    /// What the 16 stored permutations identify:
+    /// * The base of `c/k = 6.0 + phase`. The base enters only through `offset`, which equals the
+    ///   base minus 3 below `phase = 3/8` and the base minus 2 above it. With `p_0` computed as an
+    ///   exponential, bases 5, 6, and 7 reproduce 6, 16, and 10 of the 16 phases.
+    /// * That `p_0` was computed without cancellation. Computing it as `1.0 - q` reproduces 15 of
+    ///   16 phases for both base 6 and base 7, so the decisive datum is a single comparison at
+    ///   `phase = 19/32` (`offset = 4`): column 1 (`canon = 52`) has `p_0 ≈ 2.22e-17` and must rank
+    ///   ahead of 1-based column 62 (`canon = 49`, `q ≈ 1.66e-17`), whereas `1.0 - q` rounds `p_0`
+    ///   to `0.0` and ranks it last.
+    /// * Nothing about `K`: every `K` from `2^8` to the Poisson limit yields identical
+    ///   permutations.
+    fn generate_sliding_column_permutation(phase_index: usize) -> [u8; 56] {
+        let model = STEADY_STATE_MODEL;
+        let phase = (2 * phase_index + 1) as f64 / 32.0;
+        let c_over_k = STEADY_STATE_C_OVER_K_BASE + phase;
+        let offset = (c_over_k - 2.375).floor() as usize;
+        let lambda = model.solve_lambda(c_over_k);
+
+        let mut surprise_prob = [0.0; 56];
+        for col in 0..64_usize {
+            if (offset..offset + 8).contains(&col) {
+                continue;
+            }
+            let canon = (col + 56 - offset) % 64;
+            let col_1based = (col + 1) as u8;
+            surprise_prob[canon] = if col < offset {
+                model.zero_prob(lambda, col_1based)
+            } else {
+                model.one_prob(lambda, col_1based)
+            };
+        }
+
+        let mut cols_by_prob: [usize; 56] = from_fn(|i| i);
+        cols_by_prob.sort_by(|&a, &b| {
+            surprise_prob[b]
+                .total_cmp(&surprise_prob[a])
+                .then_with(|| a.cmp(&b))
+        });
+
+        let mut encode_perm = [0_u8; 56];
+        for (rank, &canon) in cols_by_prob.iter().enumerate() {
+            encode_perm[canon] = rank as u8;
+        }
+        encode_perm
+    }
+
+    #[test]
+    fn unary_encoding_table65() {
+        let probs = unary65_probabilities();
+        let generated = generate_length_limited_huffman_table(&probs, MAX_CODE_LENGTH);
+
+        assert_that!(shannon_entropy(&probs), near(2.0, 1e-15));
+        assert_that!(
+            expected_code_length(&probs, &generated),
+            near(2.02490234375, 1e-15),
+        );
+        assert_that!(
+            generated,
+            container_eq(LENGTH_LIMITED_UNARY_ENCODING_TABLE65),
+        );
+    }
+
+    /// `(entropy, avg_length)` printed by `generateHuffmanCodes.ml` above each table of
+    /// `ENCODING_TABLES_FOR_HIGH_ENTROPY_BYTE`, copied verbatim from the header comments.
+    ///
+    /// These 20-digit values are the only continuous output of the original generator that
+    /// survived, so they are the evidence that discriminates between occupancy models: the
+    /// codewords alone are reproduced by a wide range of models (e.g. every `K >= 2^16` for the
+    /// midrange tables), whereas the entropies resolve differences of ~`1e-14`.
+    #[allow(clippy::excessive_precision)]
+    const RECORDED_HEADER_STATS: [(f64, f64); 22] = [
+        (4.4619200780464778333, 4.5415773046232610355), // table 0
+        (4.4574755684414029133, 4.5336306265208552446), // table 1
+        (4.4520619712441886762, 4.5253989110544479146), // table 2
+        (4.4457680500675866853, 4.5181192844586535173), // table 3
+        (4.4386754570568340839, 4.5071584786605640716), // table 4
+        (4.4308578632493116345, 4.4996166821663301505), // table 5
+        (4.4310364988500126060, 4.5051134111084252254), // table 6
+        (4.4417871821766841123, 4.5206419191518980583), // table 7
+        (4.4505873338397474726, 4.5270058771550303334), // table 8
+        (4.4575203029748040606, 4.5315465600684730063), // table 9
+        (4.4626765653088611430, 4.5373141251902122661), // table 10
+        (4.4661524304421691411, 4.5443750890419041255), // table 11
+        (4.4680486273043946710, 4.5521643785256946657), // table 12
+        (4.4684687952964843305, 4.5509169030369793774), // table 13
+        (4.4675179140944036860, 4.5477235350841240802), // table 14
+        (4.4653007097343397902, 4.5480722016259509388), // table 15
+        (2.1627885076675394949, 2.2704182849800043087), // table 16
+        (2.9553294756640680063, 3.0766035704232641557), // table 17
+        (3.5218672531711128215, 3.6153551492375441967), // table 18
+        (3.9228873257934386842, 3.9989687586992346269), // table 19
+        (4.1937026483207340277, 4.2809622975207295426), // table 20
+        (4.3601926041863263706, 4.4384101723259572481), // table 21
+    ];
+
+    /// Tolerance for matching `RECORDED_HEADER_STATS`: a few dozen `f64` ULPs, two orders of
+    /// magnitude below the deviation of the rejected base-6 finite-`K` steady-state model
+    /// (`6.1e-12`) and the alternative midrange models (`>= 2.5e-11` away from `K = 2^32`).
+    const HEADER_STATS_TOLERANCE: f64 = 3e-14;
+
+    #[test]
+    fn high_entropy_byte_encoding_tables() {
+        for (idx, &(entropy, avg_length)) in RECORDED_HEADER_STATS.iter().enumerate() {
+            let probs = if idx < 16 {
+                // Tables 0..16: steady-state sliding window at `c/k = 6.0 + (2*m + 1)/32`,
+                // `offset = floor(c/k - 2.375)` (`3` for `m < 6`, `4` for `m >= 6`).
+                let phase = (2 * idx + 1) as f64 / 32.0;
+                let c_over_k = STEADY_STATE_C_OVER_K_BASE + phase;
+                let offset = (c_over_k - 2.375).floor() as u8;
+                window_byte_probabilities(STEADY_STATE_MODEL, c_over_k, offset)
+            } else {
+                // Tables 16..22: midrange pinned window (`offset = 0`) at `c/k = (2*m + 3) / 6`.
+                let m = idx - 16;
+                window_byte_probabilities(MIDRANGE_MODEL, (2 * m + 3) as f64 / 6.0, 0)
+            };
+            let table = generate_length_limited_huffman_table(&probs, MAX_CODE_LENGTH);
+
+            assert_that!(
+                shannon_entropy(&probs),
+                near(entropy, HEADER_STATS_TOLERANCE)
+            );
+            assert_that!(
+                expected_code_length(&probs, &table),
+                near(avg_length, HEADER_STATS_TOLERANCE),
+            );
+            assert_that!(
+                table,
+                container_eq(ENCODING_TABLES_FOR_HIGH_ENTROPY_BYTE[idx])
+            );
+        }
+    }
+
+    #[test]
+    fn sliding_column_permutations() {
+        for phase_idx in 0..16 {
+            let generated = generate_sliding_column_permutation(phase_idx);
+            assert_that!(
+                generated.as_slice(),
+                container_eq(COLUMN_PERMUTATIONS_FOR_ENCODING[phase_idx]),
+            );
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // 4. Decoding table inversions (`fm85Compression.c` / `CompressionData.java`)
+    // -------------------------------------------------------------------------
 
     #[test]
     fn decoding_tables() {

@@ -17,6 +17,8 @@
 
 //! Generic REQ sketch implementation.
 
+use std::fmt;
+
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
 use crate::codec::assert::insufficient_data;
@@ -47,17 +49,33 @@ use crate::req::value::ReqValue;
 /// A Relative Error Quantiles sketch for approximate quantile estimation.
 ///
 /// See the [module level documentation](super) for item ordering and floating-point requirements.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ReqSketch<T> {
     k: u16,
     rank_accuracy: RankAccuracy,
     n: u64,
-    max_nom_size: u32,
-    num_retained: u32,
+    max_nom_size: usize,
+    num_retained: usize,
     compactors: Vec<Compactor<T>>,
     promotion_buf: Vec<T>,
     min_item: Option<T>,
     max_item: Option<T>,
+}
+
+impl<T: fmt::Debug> fmt::Debug for ReqSketch<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ReqSketch")
+            .field("k", &self.k)
+            .field("rank_accuracy", &self.rank_accuracy)
+            .field("total_weight", &self.n)
+            .field("is_empty", &(self.n == 0))
+            .field("is_estimation_mode", &(self.compactors.len() > 1))
+            .field("num_levels", &self.compactors.len())
+            .field("num_retained", &self.num_retained)
+            .field("min_item", &self.min_item)
+            .field("max_item", &self.max_item)
+            .finish()
+    }
 }
 
 impl<T> Default for ReqSketch<T>
@@ -102,8 +120,8 @@ where
         self.rank_accuracy
     }
 
-    /// Returns the total number of items observed.
-    pub fn n(&self) -> u64 {
+    /// Returns the total stream weight.
+    pub fn total_weight(&self) -> u64 {
         self.n
     }
 
@@ -118,7 +136,7 @@ where
     }
 
     /// Returns the number of items currently stored across all compactors.
-    pub fn num_retained(&self) -> u32 {
+    pub fn num_retained(&self) -> usize {
         self.num_retained
     }
 
@@ -130,6 +148,17 @@ where
     /// Returns the largest item ever observed, or `None` if empty.
     pub fn max_item(&self) -> Option<&T> {
         self.max_item.as_ref()
+    }
+
+    /// Returns an estimate of the sketch's memory usage in bytes.
+    pub fn estimated_size(&self) -> usize {
+        self.compactors.capacity() * size_of::<Compactor<T>>()
+            + self
+                .compactors
+                .iter()
+                .map(Compactor::estimated_size)
+                .sum::<usize>()
+            + self.promotion_buf.capacity() * size_of::<T>()
     }
 
     /// Updates the sketch with a new item.
@@ -176,16 +205,13 @@ where
 
     /// Returns the approximate rank of `item` in `[0.0, 1.0]`.
     ///
-    /// Computed directly from the retained items in a single `O(retained)` pass,
-    /// without building a sorted view. The result is identical to
-    /// [`SortedView::rank`] on [`Self::sorted_view`].
+    /// Computed directly from the retained items in a single `O(retained)` pass, without building
+    /// a sorted view. The result is identical to [`SortedView::rank`] on [`Self::sorted_view`].
     ///
-    /// # Errors
-    ///
-    /// Returns an error if the sketch is empty.
-    pub fn rank(&self, item: &T, criteria: SearchCriteria) -> Result<f64, Error> {
+    /// Returns `None` if the sketch is empty.
+    pub fn rank(&self, item: &T, criteria: SearchCriteria) -> Option<f64> {
         if self.is_empty() {
-            return Err(Error::invalid_argument("sketch is empty"));
+            return None;
         }
         let inclusive = matches!(criteria, SearchCriteria::Inclusive);
         let weight: u64 = self
@@ -193,99 +219,115 @@ where
             .iter()
             .map(|c| c.count_below(item, inclusive) as u64 * c.weight())
             .sum();
-        Ok(weight as f64 / self.n as f64)
+        Some(weight as f64 / self.n as f64)
     }
 
     /// Returns the approximate quantile at the given normalized rank.
     ///
-    /// Ranks `0.0` and `1.0` return the exact minimum and maximum items of the stream.
+    /// Ranks `0.0` and `1.0` return the exact minimum and maximum items of the stream. Returns
+    /// `Ok(None)` if the sketch is empty.
     ///
     /// For ranks strictly between `0.0` and `1.0`, builds a transient [`SortedView`].
     /// For repeated queries at those ranks, take one snapshot with [`Self::sorted_view`].
     ///
     /// # Errors
     ///
-    /// Returns an error if the sketch is empty or `rank` is outside `[0.0, 1.0]`.
-    pub fn quantile(&self, rank: f64, criteria: SearchCriteria) -> Result<T, Error> {
+    /// Returns `InvalidArgument` if `rank` is NaN or outside `[0.0, 1.0]`, even if the sketch is
+    /// empty.
+    pub fn quantile(&self, rank: f64, criteria: SearchCriteria) -> Result<Option<T>, Error> {
+        validate_rank(rank)?;
         if self.is_empty() {
-            return Err(Error::invalid_argument("sketch is empty"));
-        }
-        if !(0.0..=1.0).contains(&rank) {
-            return Err(Error::invalid_argument(format!(
-                "rank {rank} must be in [0, 1]"
-            )));
+            return Ok(None);
         }
         if rank == 0.0 {
-            return Ok(self.min_item.as_ref().unwrap().clone());
+            return Ok(Some(self.min_item.as_ref().unwrap().clone()));
         }
         if rank == 1.0 {
-            return Ok(self.max_item.as_ref().unwrap().clone());
+            return Ok(Some(self.max_item.as_ref().unwrap().clone()));
         }
         self.sorted_view().quantile(rank, criteria)
     }
 
     /// Returns approximate quantiles for the given normalized ranks.
     ///
-    /// Ranks `0.0` and `1.0` return the exact minimum and maximum items of the stream.
+    /// Ranks `0.0` and `1.0` return the exact minimum and maximum items of the stream. Returns
+    /// `Ok(None)` if the sketch is empty. Otherwise, an empty `ranks` slice returns
+    /// `Ok(Some(vec![]))`.
     ///
     /// The sorted view is built once and shared across all ranks.
     ///
     /// # Errors
     ///
-    /// Returns an error if the sketch is empty or any rank is outside `[0.0, 1.0]`.
-    pub fn quantiles(&self, ranks: &[f64], criteria: SearchCriteria) -> Result<Vec<T>, Error> {
-        if self.is_empty() {
-            return Err(Error::invalid_argument("sketch is empty"));
-        }
+    /// Returns `InvalidArgument` if any rank is NaN or outside `[0.0, 1.0]`, even if the sketch is
+    /// empty.
+    pub fn quantiles(
+        &self,
+        ranks: &[f64],
+        criteria: SearchCriteria,
+    ) -> Result<Option<Vec<T>>, Error> {
         // Reject invalid ranks before paying for the view build.
         for &r in ranks {
-            if !(0.0..=1.0).contains(&r) {
-                return Err(Error::invalid_argument(format!(
-                    "rank {r} must be in [0, 1]"
-                )));
-            }
+            validate_rank(r)?;
+        }
+        if self.is_empty() {
+            return Ok(None);
         }
         let view = self.sorted_view();
-        ranks.iter().map(|&r| view.quantile(r, criteria)).collect()
+        let quantiles = ranks
+            .iter()
+            .map(|&r| {
+                view.quantile(r, criteria)
+                    .map(|quantile| quantile.expect("checked non-empty view"))
+            })
+            .collect::<Result<_, _>>()?;
+        Ok(Some(quantiles))
     }
 
     /// Returns the Probability Mass Function over the given split points.
     ///
+    /// Returns `Ok(None)` if the sketch is empty. Otherwise, an empty `split_points` slice returns
+    /// `Ok(Some(vec![1.0]))`.
+    ///
     /// # Errors
     ///
-    /// Returns an error if the sketch is empty or the split points are not strictly increasing.
-    pub fn pmf(&self, split_points: &[T], criteria: SearchCriteria) -> Result<Vec<f64>, Error> {
-        if self.is_empty() {
-            return Err(Error::invalid_argument("sketch is empty"));
-        }
+    /// Returns `InvalidArgument` if the split points are not strictly increasing, even if the
+    /// sketch is empty.
+    pub fn pmf(
+        &self,
+        split_points: &[T],
+        criteria: SearchCriteria,
+    ) -> Result<Option<Vec<f64>>, Error> {
         self.sorted_view().pmf(split_points, criteria)
     }
 
     /// Returns the Cumulative Distribution Function over the given split points.
     ///
+    /// Returns `Ok(None)` if the sketch is empty. Otherwise, an empty `split_points` slice returns
+    /// `Ok(Some(vec![1.0]))`.
+    ///
     /// # Errors
     ///
-    /// Returns an error if the sketch is empty or the split points are not strictly increasing.
-    pub fn cdf(&self, split_points: &[T], criteria: SearchCriteria) -> Result<Vec<f64>, Error> {
-        if self.is_empty() {
-            return Err(Error::invalid_argument("sketch is empty"));
-        }
+    /// Returns `InvalidArgument` if the split points are not strictly increasing, even if the
+    /// sketch is empty.
+    pub fn cdf(
+        &self,
+        split_points: &[T],
+        criteria: SearchCriteria,
+    ) -> Result<Option<Vec<f64>>, Error> {
         self.sorted_view().cdf(split_points, criteria)
     }
 
     /// Returns an owned, sorted snapshot of the sketch's current state.
     ///
-    /// An empty sketch yields an empty view; queries on it return an error. The
-    /// view is independent of the sketch — it can be queried (and sent to other
-    /// threads) while the sketch keeps receiving updates, and it keeps answering
-    /// from the state it was taken at.
+    /// An empty sketch yields an empty view. The view can be queried or sent to other threads
+    /// while the sketch receives updates, preserving the state captured when it was created.
     ///
     /// Building the view costs `O(retained · log retained)`; rank and quantile queries
     /// then take `O(log retained)`. Prefer reusing one view for repeated quantile
-    /// queries at ranks strictly between `0.0` and `1.0`, or repeated
-    /// [`Self::pmf`]/[`Self::cdf`] queries.
+    /// queries at ranks strictly between `0.0` and `1.0`, or repeated [`Self::pmf`]/[`Self::cdf`]
+    /// queries.
     pub fn sorted_view(&self) -> SortedView<T> {
-        let mut weighted_items = Vec::with_capacity(self.num_retained as usize);
+        let mut weighted_items = Vec::with_capacity(self.num_retained);
         for compactor in &self.compactors {
             let weight = compactor.weight();
             for item in compactor.iter() {
@@ -318,24 +360,29 @@ where
     /// combined.merge(&first).unwrap();
     /// combined.merge(&second).unwrap();
     ///
-    /// assert_eq!(combined.n(), 2);
+    /// assert_eq!(combined.total_weight(), 2);
     /// # Ok::<(), datasketches::error::Error>(())
     /// ```
     pub fn merge(&mut self, other: &Self) -> Result<(), Error> {
         if self.rank_accuracy != other.rank_accuracy {
-            return Err(Error::invalid_argument(
-                "sketches must have the same rank_accuracy",
-            ));
+            return Err(Error::invalid_argument(format!(
+                "cannot merge REQ sketches with different rank_accuracy: expected {:?}, got {:?}",
+                self.rank_accuracy, other.rank_accuracy
+            )));
         }
 
         if other.is_empty() {
             return Ok(());
         }
 
-        self.n = self
-            .n
-            .checked_add(other.n)
-            .ok_or_else(|| Error::invalid_argument("total stream weight overflow"))?;
+        self.n = self.n.checked_add(other.n).ok_or_else(|| {
+            Error::invalid_argument(format!(
+                "combined stream weight exceeds {}: left {}, right {}",
+                u64::MAX,
+                self.n,
+                other.n
+            ))
+        })?;
 
         if let Some(m) = &other.min_item {
             match &self.min_item {
@@ -371,27 +418,43 @@ where
     }
 
     /// Returns the lower bound for the normalized `rank` at the requested confidence level.
-    pub fn rank_lower_bound(&self, rank: f64, num_std_dev: NumStdDev) -> f64 {
-        self.compute_rank_lower_bound(
+    ///
+    /// In exact mode, including an empty sketch, the bound equals `rank`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidArgument` if `rank` is NaN or outside `[0.0, 1.0]`, even if the sketch is
+    /// empty.
+    pub fn rank_lower_bound(&self, rank: f64, num_std_dev: NumStdDev) -> Result<f64, Error> {
+        validate_rank(rank)?;
+        Ok(self.compute_rank_lower_bound(
             self.k,
             self.compactors.len() as u8,
             rank,
             num_std_dev.as_u8(),
             self.n,
             matches!(self.rank_accuracy, RankAccuracy::HighRank),
-        )
+        ))
     }
 
     /// Returns the upper bound for the normalized `rank` at the requested confidence level.
-    pub fn rank_upper_bound(&self, rank: f64, num_std_dev: NumStdDev) -> f64 {
-        self.compute_rank_upper_bound(
+    ///
+    /// In exact mode, including an empty sketch, the bound equals `rank`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidArgument` if `rank` is NaN or outside `[0.0, 1.0]`, even if the sketch is
+    /// empty.
+    pub fn rank_upper_bound(&self, rank: f64, num_std_dev: NumStdDev) -> Result<f64, Error> {
+        validate_rank(rank)?;
+        Ok(self.compute_rank_upper_bound(
             self.k,
             self.compactors.len() as u8,
             rank,
             num_std_dev.as_u8(),
             self.n,
             matches!(self.rank_accuracy, RankAccuracy::HighRank),
-        )
+        ))
     }
 
     const FIXED_RSE_FACTOR: f64 = 0.084;
@@ -479,7 +542,7 @@ where
     }
 
     /// Returns the number of bytes required to serialize the sketch.
-    pub fn serialized_size_bytes(&self) -> usize
+    fn serialized_size_bytes(&self) -> usize
     where
         T: ReqValue,
     {
@@ -510,7 +573,10 @@ where
         size
     }
 
-    /// Serializes the sketch using the C++/Java-compatible REQ wire format.
+    /// Serializes the sketch using the REQ wire format.
+    ///
+    /// The serialized data can be read by other DataSketches implementations when both
+    /// sides use the same [`ReqValue`] item encoding.
     pub fn serialize(&self) -> Vec<u8>
     where
         T: ReqValue,
@@ -558,8 +624,10 @@ where
         out.into_bytes()
     }
 
-    /// Deserialize a sketch from bytes produced by [`Self::serialize`] or by the
-    /// C++/Java reference implementations.
+    /// Deserializes a sketch from bytes in the REQ wire format.
+    ///
+    /// Also accepts data serialized by other DataSketches implementations when both
+    /// sides use the same [`ReqValue`] item encoding.
     ///
     /// # Errors
     ///
@@ -690,7 +758,8 @@ where
         if num_levels == 1 {
             // Recover n / min / max from level 0 (these aren't in the preamble for exact mode).
             let level0 = &compactors[0];
-            n = level0.num_items() as u64;
+            n = u64::try_from(level0.num_items())
+                .map_err(|_| Error::deserial("REQ level 0 item count overflows u64"))?;
             let mut iter = level0.iter();
             if let Some(first) = iter.next() {
                 let mut mn = first.clone();
@@ -734,14 +803,13 @@ where
         let (retained_count, nominal_capacity, weighted_count) = compactors
             .iter()
             .try_fold(
-                (0u32, 0u32, 0u64),
+                (0usize, 0usize, 0u64),
                 |(retained, capacity, weighted), compactor| {
+                    let level_items = u64::try_from(compactor.num_items()).ok()?;
                     Some((
                         retained.checked_add(compactor.num_items())?,
                         capacity.checked_add(compactor.nominal_capacity())?,
-                        weighted.checked_add(
-                            (compactor.num_items() as u64).checked_mul(compactor.weight())?,
-                        )?,
+                        weighted.checked_add(level_items.checked_mul(compactor.weight())?)?,
                     ))
                 },
             )
@@ -774,13 +842,12 @@ where
             max_nom_size: 0,
             num_retained: 0,
             compactors: vec![],
-            promotion_buf: Vec::with_capacity(k as usize),
+            promotion_buf: Vec::with_capacity(usize::from(k)),
             min_item: None,
             max_item: None,
         };
-        // C++ parity: an empty sketch has a level-0 compactor present from the start.
-        // This makes is_raw_items() and flags_byte() byte-compatible with the C++/Java
-        // wire format for the empty case.
+        // Keep a level-0 compactor, as in datasketches-cpp, so is_raw_items() and flags_byte()
+        // produce the same empty encoding as datasketches-cpp and datasketches-java.
         sketch.grow();
         sketch
     }
@@ -793,7 +860,8 @@ where
     }
 
     fn compress(&mut self) {
-        for h in 0..self.compactors.len() {
+        let mut h = 0;
+        while h < self.compactors.len() {
             if self.compactors[h].num_items() >= self.compactors[h].nominal_capacity() {
                 if h + 1 >= self.compactors.len() {
                     self.grow();
@@ -803,10 +871,11 @@ where
                     self.compactors[h + 1].sort();
                     self.compactors[h + 1].merge_sorted(&self.promotion_buf);
                 }
-                self.update_max_nom_size();
-                self.update_num_retained();
             }
+            h += 1;
         }
+        self.update_max_nom_size();
+        self.update_num_retained();
     }
 
     fn update_max_nom_size(&mut self) {
@@ -816,4 +885,13 @@ where
     fn update_num_retained(&mut self) {
         self.num_retained = self.compactors.iter().map(|c| c.num_items()).sum();
     }
+}
+
+fn validate_rank(rank: f64) -> Result<(), Error> {
+    if !(0.0..=1.0).contains(&rank) {
+        return Err(Error::invalid_argument(format!(
+            "rank {rank} must be in [0, 1]"
+        )));
+    }
+    Ok(())
 }

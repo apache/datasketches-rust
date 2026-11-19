@@ -67,19 +67,51 @@ Benchmark:
 cargo x bench
 ```
 
-Benchmarks live in the standalone `benchmarks` crate. Files are grouped first by sketch and then by workload, for example `benchmarks/cpc/serde.rs` and `benchmarks/tdigest/update.rs`. Keep distinct workloads in separate modules so Divan reports stable names such as `cpc::serde::serialize`.
+Benchmarks live in the standalone `benchmarks` crate. Files are grouped first by sketch and then by workload, for example `benchmarks/cpc/serde.rs` and `benchmarks/tdigest/update.rs`. Each workload module registers its scenarios and fixed round counts with the [runner](benchmarks/harness.rs). Keep distinct workloads in separate modules and use names such as `cpc::serde::serialize/200` that identify the sketch, operation, and input.
 
-To run only one sketch or workload, pass a Divan filter directly:
+Compile, list, or smoke-test the benchmarks:
 
 ```shell
-cargo bench --package benchmarks --bench benchmarks -- cpc::serde
+cargo x bench --no-run
+cargo x bench -- --list
+cargo x bench -- --test
 ```
+
+Smoke mode executes every selected implementation for one outer round, preserving input sizes, inner loops, and correctness checks. CI runs this mode without asserting elapsed times. The runner's tests are included in `cargo x test`.
+
+To select workloads and inspect repeated measurements:
+
+```shell
+cargo x bench -- cpc::serde --repeat 10 --raw
+cargo x bench -- xor::build::8 --repeat 5
+cargo x bench -- 'kll::query::quantile/0.5' --exact --rounds 100000
+```
+
+Filters are substrings; a scenario must match all supplied filters. Use `--exact` with one complete name to select only that scenario. A filter that matches nothing fails. Runner options can also be passed directly with `cargo bench --package benchmarks --bench benchmarks -- ...`.
+
+### Fixed workloads and timing
+
+[Benchmark In Milliseconds](https://matklad.github.io/2026/10/05/benchmark-milliseconds.html) recommends sizing useful work to take roughly 300 ms. Choose a fixed round count on a reference revision and preserve it across comparisons; the runner never calibrates rounds automatically. Hardware and toolchains affect duration, so 300 ms is a sizing guideline, not a performance assertion.
+
+Each repetition times the entire workload, including fixture construction, input preparation, allocations, output destruction, validation, and cleanup. A round invokes the workload closure once and may process a batch of items. Define the workload and fixture reuse to reflect the operation being measured, and keep input sizes, parameters, timing boundaries, and round counts identical when comparing implementations or revisions.
+
+The runner reports the median and full minimum-to-maximum range in integer milliseconds over five repetitions by default. Use `--raw` to retain individual measurements, including the first run and outliers. Comparison groups interleave implementations and rotate their execution order. `vs ref` divides each median by the first implementation's median; `0.80x` means 20% less elapsed time for the same workload. `--baseline-only` runs just the first implementation. Different scenario rows can represent different amounts of work and are not a throughput ranking.
+
+When adding or resizing a scenario, use `--rounds` to select a suitable fixed count, then record it in the workload registration. If the workload or timing boundaries change, rerun both sides under the new definition. Explain scenario-specific assumptions in the benchmark source, and report the measured revisions, environment, commands, and results in the pull request. Inspect the measured range before drawing conclusions; changing rounds alone does not eliminate noise.
 
 ## Public API documentation
 
 - Describe types with noun phrases and API behavior with third-person present-tense verbs such as `Creates`, `Updates`, and `Returns`.
 - End summary sentences with punctuation, and format Rust identifiers, literals, and numeric ranges as inline code.
 - Put contract sections and compatibility notes before examples. When applicable, order sections as `# Errors`, `# Panics`, and `# Examples`. Include only sections that describe an actual contract.
+- Document return values and error conditions on the relevant methods rather than repeating them in crate or module overviews.
+- Describe shared capabilities in language-neutral terms. Name another implementation when it clarifies interoperability requirements, a specific source, a format variant, or a behavior difference. Retain useful implementation references in internal comments.
+- Keep imports visible in doctests. A trailing hidden `Ok(...)` may be used to support `?`.
+
+## Query semantics
+
+- Validate query arguments before handling an empty sketch. Invalid arguments return `InvalidArgument` regardless of whether the sketch is empty.
+- Return a meaningful result when one exists, such as zero, `false`, or an empty collection. Otherwise, use `Option` for an absent result, combined with `Result` when argument validation can fail.
 
 ## Visibility
 
@@ -142,23 +174,32 @@ cargo install taplo-cli typos-cli hawkeye
 
 ## Serialization snapshots
 
-Serialization compatibility tests use snapshots from a pinned revision of [`apache/datasketches-tck`](https://github.com/apache/datasketches-tck).
+Serialization compatibility tests use cross-language snapshots from a pinned revision of [`apache/datasketches-tck`](https://github.com/apache/datasketches-tck) together with locally generated Rust snapshots from the workspace `datagen` binary crate.
 
-The `cargo x prepare-testdata` command downloads the TCK archive and synchronizes `.sk` files from `serialization_test_data/<language>_generated_files` into:
+The `cargo x prepare-testdata` command downloads the TCK archive for remote languages, runs the local Rust snapshot generator, and populates `.sk` files in:
 
 - `tests-integration/tests/serde_tests/cpp_generated_files`
 - `tests-integration/tests/serde_tests/go_generated_files`
 - `tests-integration/tests/serde_tests/java_generated_files`
+- `tests-integration/tests/serde_tests/rust_generated_files`
 
-You can synchronize them separately:
+You can prepare each language separately:
 
 ```shell
 cargo x prepare-testdata cpp
 cargo x prepare-testdata go
 cargo x prepare-testdata java
+cargo x prepare-testdata rust
 ```
 
-If no language is specified, all languages are prepared. These directories are not stored in Git. Run the command before the first test run and again whenever the pinned TCK revision changes. It requires network access and replaces the selected generated directories.
+If no language is specified, all languages are prepared. These directories are not stored in Git and are replaced whenever selected. Run the command before the first test run and again whenever the pinned TCK revision or Rust serialization behavior changes. Preparing `cpp`, `go`, or `java` requires network access, while `cargo x prepare-testdata rust` runs offline.
+
+To generate Rust snapshots directly (writing to `serialization_test_data/rust_generated_files` by default) or filter by sketch family, run the `datagen` package:
+
+```shell
+cargo run --release --package datagen
+cargo run --release --package datagen -- --output-dir target/snapshots --sketch hll --sketch theta
+```
 
 ## Code of Conduct
 

@@ -18,8 +18,6 @@
 //! # Apache® DataSketches™ Core Rust Library Component
 //!
 //! This crate provides compact, mergeable summaries for answering queries over large data streams.
-//! It implements a subset of the algorithms available in the other Apache DataSketches language
-//! components.
 //!
 //! ## Enabling sketches
 //!
@@ -35,8 +33,10 @@
 //!
 //! ## Choosing a sketch
 //!
-//! * Use `bloom` for probabilistic membership queries.
+//! * Use `bloom` for incremental probabilistic membership queries or `xor` for immutable sets.
 //! * Use `countmin` for point-frequency estimates and `frequencies` for discovering heavy hitters.
+//! * Use `density` for streaming kernel density estimation and coreset construction over
+//!   multidimensional numeric vectors.
 //! * Use `hll` for fast distinct counts, `cpc` for compact serialized distinct counts, or `theta`
 //!   when set operations are required.
 //! * Use `kll`, `req`, or `tdigest` for ranks and quantiles. KLL provides strong general-purpose
@@ -49,17 +49,17 @@
 //! ## Cross-language hashing
 //!
 //! Compatible serialization does not by itself make ordinary Rust [`Hash`](std::hash::Hash)
-//! input compatible with Java, C++, or Go. Rust strings and slices include type-specific framing,
+//! input compatible across languages. Rust strings and slices include type-specific framing,
 //! and short integers require different widening rules for different sketch families. When
 //! sketches must represent the same updates across languages, use the wrappers in [`hash::value`]:
 //!
 //! * `raw_bytes` for byte and string contents;
 //! * `canonical_float` for floating-point values;
 //! * `sign_extend` for short integers used with HLL and CPC;
-//! * `natural_extend` for short integers used with Bloom filters.
+//! * `natural_extend` for short integers used with Bloom filters and Count-Min sketches.
 //!
-//! Other DataSketches implementations skip empty strings rather than hashing them. Check for empty
-//! input before updating when that cross-language behavior is required.
+//! When interoperating with an implementation that skips empty strings, check for empty input
+//! before updating here as well.
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![deny(missing_docs)]
@@ -75,6 +75,8 @@ pub mod bloom;
 pub mod countmin;
 #[cfg(feature = "cpc")]
 pub mod cpc;
+#[cfg(feature = "density")]
+pub mod density;
 #[cfg(feature = "frequencies")]
 pub mod frequencies;
 #[cfg(feature = "hll")]
@@ -87,12 +89,13 @@ pub mod req;
 pub mod tdigest;
 #[cfg(any(feature = "theta", feature = "tuple"))]
 mod thetafamily;
-#[cfg(any(feature = "theta", feature = "tuple"))]
-pub use self::thetafamily::common as thetacommon;
 #[cfg(feature = "theta")]
 pub use self::thetafamily::theta;
 #[cfg(feature = "tuple")]
 pub use self::thetafamily::tuple;
+
+#[cfg(feature = "xor")]
+pub mod xor;
 
 // common modules
 pub mod codec;

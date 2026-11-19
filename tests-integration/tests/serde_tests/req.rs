@@ -15,8 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! Serialization round-trip and cross-language compatibility tests for ReqSketch.
-
 use std::fs;
 use std::path::PathBuf;
 
@@ -55,7 +53,7 @@ where
     }
     let bytes = a.serialize();
     let b: ReqSketch<T> = ReqSketch::deserialize(&bytes).unwrap();
-    assert_eq!(a.n(), b.n());
+    assert_eq!(a.total_weight(), b.total_weight());
     assert_eq!(a.k(), b.k());
     assert_eq!(a.rank_accuracy(), b.rank_accuracy());
     assert_eq!(a.min_item(), b.min_item());
@@ -337,11 +335,27 @@ fn deserialize_rejects_inconsistent_weighted_count() {
 
 #[test]
 fn deserialize_rejects_unreachable_section_configuration() {
-    let mut invalid_raw = exact_image(12, &[1.0, 2.0, 3.0, 4.0, 5.0]);
-    invalid_raw[EXACT_COMPACTOR_OFFSET + SECTION_SIZE_RAW_OFFSET
+    for raw in [
+        0.0f32,
+        -6.0,
+        f32::NAN,
+        f32::INFINITY,
+        f32::NEG_INFINITY,
+        f32::MAX,
+    ] {
+        let mut invalid_raw = exact_image(12, &[1.0, 2.0, 3.0, 4.0, 5.0]);
+        invalid_raw[EXACT_COMPACTOR_OFFSET + SECTION_SIZE_RAW_OFFSET
+            ..EXACT_COMPACTOR_OFFSET + SECTION_SIZE_RAW_OFFSET + 4]
+            .copy_from_slice(&raw.to_le_bytes());
+        assert_invalid_data(&invalid_raw);
+    }
+
+    // (4_294_967_808.0 / 2.0) = 0x8000_0100; shifting left in u32 would wrap to 512 == k.
+    let mut wrapping_raw = exact_image(512, &[1.0, 2.0, 3.0, 4.0, 5.0]);
+    wrapping_raw[EXACT_COMPACTOR_OFFSET + SECTION_SIZE_RAW_OFFSET
         ..EXACT_COMPACTOR_OFFSET + SECTION_SIZE_RAW_OFFSET + 4]
-        .copy_from_slice(&0.0f32.to_le_bytes());
-    assert_invalid_data(&invalid_raw);
+        .copy_from_slice(&4_294_967_808.0f32.to_le_bytes());
+    assert_invalid_data(&wrapping_raw);
 
     let mut invalid_sections = exact_image(12, &[1.0, 2.0, 3.0, 4.0, 5.0]);
     invalid_sections[EXACT_COMPACTOR_OFFSET + NUM_SECTIONS_OFFSET] = 6;
@@ -497,7 +511,12 @@ fn validate_cross_language_fixture(path: PathBuf, expected_n: u64) {
     let sketch = ReqSketch::<ReqF32>::deserialize(&bytes)
         .unwrap_or_else(|e| panic!("deserialize failed for {}: {e}", path.display()));
 
-    assert_eq!(sketch.n(), expected_n, "n mismatch on {}", path.display());
+    assert_eq!(
+        sketch.total_weight(),
+        expected_n,
+        "n mismatch on {}",
+        path.display()
+    );
     assert_eq!(sketch.k(), 12, "k mismatch on {}", path.display());
     assert_eq!(sketch.rank_accuracy(), RankAccuracy::HighRank);
 
@@ -510,7 +529,10 @@ fn validate_cross_language_fixture(path: PathBuf, expected_n: u64) {
             sketch.max_item().copied().map(ReqFloat::into_inner),
             Some(expected_n as f32)
         );
-        let _ = sketch.quantile(0.5, SearchCriteria::Inclusive).unwrap();
+        sketch
+            .quantile(0.5, SearchCriteria::Inclusive)
+            .unwrap()
+            .expect("non-empty snapshot should have a median");
     }
 
     let serialized = sketch.serialize();
@@ -522,12 +544,113 @@ fn validate_cross_language_fixture(path: PathBuf, expected_n: u64) {
     );
 }
 
+fn validate_negative_fixture(dir: &str, filename: &str, m: u64) {
+    let path = serialization_test_data(dir, filename);
+    let bytes = fs::read(&path).unwrap();
+    let sketch = ReqSketch::<ReqF32>::deserialize(&bytes).unwrap();
+    let min = req_f32(-(m as f32));
+    let max = req_f32(-1.0);
+    assert_eq!(sketch.k(), 12, "{filename}");
+    assert_eq!(sketch.rank_accuracy(), RankAccuracy::HighRank, "{filename}");
+    assert!(!sketch.is_empty(), "{filename}");
+    assert!(!sketch.is_estimation_mode(), "{filename}");
+    assert_eq!(sketch.total_weight(), m, "{filename}");
+    assert_eq!(sketch.min_item(), Some(&min), "{filename}");
+    assert_eq!(sketch.max_item(), Some(&max), "{filename}");
+    assert_eq!(
+        sketch.quantile(0.0, SearchCriteria::Inclusive).unwrap(),
+        Some(min),
+        "{filename}"
+    );
+    assert_eq!(
+        sketch.quantile(1.0, SearchCriteria::Inclusive).unwrap(),
+        Some(max),
+        "{filename}"
+    );
+    assert_eq!(
+        sketch.rank(&min, SearchCriteria::Exclusive),
+        Some(0.0),
+        "{filename}"
+    );
+    assert_eq!(
+        sketch.rank(&min, SearchCriteria::Inclusive),
+        Some(1.0 / m as f64),
+        "{filename}"
+    );
+    assert_eq!(
+        sketch.rank(&max, SearchCriteria::Inclusive),
+        Some(1.0),
+        "{filename}"
+    );
+    assert_eq!(sketch.serialize(), bytes, "{filename}");
+}
+
+fn validate_mixed_fixture(dir: &str, filename: &str, m: u64) {
+    let path = serialization_test_data(dir, filename);
+    let bytes = fs::read(&path).unwrap();
+    let sketch = ReqSketch::<ReqF32>::deserialize(&bytes).unwrap();
+    let expected_n = 2 * m + 1;
+    let min = req_f32(-(m as f32));
+    let zero = req_f32(0.0);
+    let max = req_f32(m as f32);
+    assert_eq!(sketch.k(), 12, "{filename}");
+    assert_eq!(sketch.rank_accuracy(), RankAccuracy::HighRank, "{filename}");
+    assert!(!sketch.is_empty(), "{filename}");
+    assert!(!sketch.is_estimation_mode(), "{filename}");
+    assert_eq!(sketch.total_weight(), expected_n, "{filename}");
+    assert_eq!(sketch.min_item(), Some(&min), "{filename}");
+    assert_eq!(sketch.max_item(), Some(&max), "{filename}");
+    assert_eq!(
+        sketch.quantile(0.0, SearchCriteria::Inclusive).unwrap(),
+        Some(min),
+        "{filename}"
+    );
+    assert_eq!(
+        sketch.quantile(0.5, SearchCriteria::Inclusive).unwrap(),
+        Some(zero),
+        "{filename}"
+    );
+    assert_eq!(
+        sketch.quantile(1.0, SearchCriteria::Inclusive).unwrap(),
+        Some(max),
+        "{filename}"
+    );
+    assert_eq!(
+        sketch.rank(&zero, SearchCriteria::Exclusive),
+        Some(m as f64 / expected_n as f64),
+        "{filename}"
+    );
+    assert_eq!(
+        sketch.rank(&zero, SearchCriteria::Inclusive),
+        Some((m + 1) as f64 / expected_n as f64),
+        "{filename}"
+    );
+    assert_eq!(
+        sketch.rank(&max, SearchCriteria::Inclusive),
+        Some(1.0),
+        "{filename}"
+    );
+    assert_eq!(sketch.serialize(), bytes, "{filename}");
+}
+
 #[test]
 fn cpp_compatibility() {
     for n in [0u64, 1, 10, 100, 1000, 10000, 100000, 1000000] {
         let path =
             serialization_test_data("cpp_generated_files", &format!("req_float_n{n}_cpp.sk"));
         validate_cross_language_fixture(path, n);
+    }
+    for m in [1u64, 10] {
+        validate_negative_fixture(
+            "cpp_generated_files",
+            &format!("req_float_negative_n{m}_cpp.sk"),
+            m,
+        );
+        validate_mixed_fixture(
+            "cpp_generated_files",
+            &format!("req_float_mixed_n{m}_cpp.sk"),
+            m,
+        );
     }
 }
 
@@ -537,5 +660,58 @@ fn java_compatibility() {
         let path =
             serialization_test_data("java_generated_files", &format!("req_float_n{n}_java.sk"));
         validate_cross_language_fixture(path, n);
+    }
+    for m in [1u64, 10] {
+        validate_negative_fixture(
+            "java_generated_files",
+            &format!("req_float_negative_n{m}_java.sk"),
+            m,
+        );
+        validate_mixed_fixture(
+            "java_generated_files",
+            &format!("req_float_mixed_n{m}_java.sk"),
+            m,
+        );
+    }
+}
+
+#[test]
+fn go_compatibility() {
+    for n in [0u64, 1, 10, 100, 1000, 10000, 100000, 1000000] {
+        let path = serialization_test_data("go_generated_files", &format!("req_float_n{n}_go.sk"));
+        validate_cross_language_fixture(path, n);
+    }
+    for m in [1u64, 10] {
+        validate_negative_fixture(
+            "go_generated_files",
+            &format!("req_float_negative_n{m}_go.sk"),
+            m,
+        );
+        validate_mixed_fixture(
+            "go_generated_files",
+            &format!("req_float_mixed_n{m}_go.sk"),
+            m,
+        );
+    }
+}
+
+#[test]
+fn rust_compatibility() {
+    for n in [0u64, 1, 10, 100, 1000, 10000, 100000, 1000000] {
+        let path =
+            serialization_test_data("rust_generated_files", &format!("req_float_n{n}_rust.sk"));
+        validate_cross_language_fixture(path, n);
+    }
+    for m in [1u64, 10] {
+        validate_negative_fixture(
+            "rust_generated_files",
+            &format!("req_float_negative_n{m}_rust.sk"),
+            m,
+        );
+        validate_mixed_fixture(
+            "rust_generated_files",
+            &format!("req_float_mixed_n{m}_rust.sk"),
+            m,
+        );
     }
 }

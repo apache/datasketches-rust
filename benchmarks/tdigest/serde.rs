@@ -15,12 +15,11 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::hint::black_box;
+
+use benchmarks::Bencher;
+use benchmarks::Runner;
 use datasketches::tdigest::TDigestMut;
-use divan::Bencher;
-use divan::black_box;
-use divan::black_box_drop;
-use divan::counter::BytesCount;
-use divan::counter::ItemsCount;
 
 use super::support::DEFAULT_DIGEST_K;
 use super::support::PARTIAL_GROUPS;
@@ -33,26 +32,20 @@ use super::support::serialized_partial_digests_with;
 use super::support::serialized_state_shape;
 use super::support::values;
 
-#[divan::bench(args = [1, 2, 8, 32, 64, 128])]
 fn small_lifecycle(bencher: Bencher, rows: usize) {
     let values = values(rows);
-    let (serialized_bytes, _) = serialized_state_shape(DEFAULT_DIGEST_K, &values);
 
-    bencher
-        .counter(ItemsCount::new(rows))
-        .counter(BytesCount::new(serialized_bytes))
-        .bench_local(|| {
-            let mut digest = TDigestMut::default();
-            for &value in black_box(&values) {
-                digest.update(value);
-            }
-            let bytes = digest.serialize();
-            black_box_drop(bytes);
-            black_box_drop(digest);
-        });
+    bencher.bench_local(|| {
+        let mut digest = TDigestMut::default();
+        for &value in black_box(&values) {
+            digest.update(value);
+        }
+        let bytes = digest.serialize();
+        drop(black_box(bytes));
+        drop(black_box(digest));
+    });
 }
 
-#[divan::bench(args = [10_u16, 200_u16])]
 fn partial_lifecycle_by_k(bencher: Bencher, k: u16) {
     let values = values(ROWS_PER_PARTIAL);
     let (serialized_bytes, centroids) = serialized_state_shape(k, &values);
@@ -61,78 +54,107 @@ fn partial_lifecycle_by_k(bencher: Bencher, k: u16) {
         (10, 224, 12) | (200, 1_056, 64)
     ));
 
-    bencher
-        .counter(ItemsCount::new(ROWS_PER_PARTIAL))
-        .counter(BytesCount::new(serialized_bytes))
-        .bench_local(|| {
-            let mut digest = TDigestMut::new(black_box(k)).unwrap();
-            for &value in black_box(&values) {
-                digest.update(value);
-            }
-            let bytes = digest.serialize();
-            black_box_drop(bytes);
-            black_box_drop(digest);
-        });
+    bencher.bench_local(|| {
+        let mut digest = TDigestMut::new(black_box(k)).unwrap();
+        for &value in black_box(&values) {
+            digest.update(value);
+        }
+        let bytes = digest.serialize();
+        drop(black_box(bytes));
+        drop(black_box(digest));
+    });
 }
 
-#[divan::bench]
 fn serialize_small_partial_groups(bencher: Bencher) {
     let digests = partial_digests(PARTIAL_GROUPS, SMALL_ROWS_PER_PARTIAL);
 
-    bencher
-        .counter(ItemsCount::new(PARTIAL_GROUPS))
-        .with_inputs(|| digests.clone())
-        .bench_local_values(|mut digests| {
-            let bytes = digests
-                .iter_mut()
-                .map(TDigestMut::serialize)
-                .collect::<Vec<_>>();
-            black_box(bytes)
-        });
+    bencher.bench_local(|| {
+        let mut digests = digests.clone();
+        let bytes = digests
+            .iter_mut()
+            .map(TDigestMut::serialize)
+            .collect::<Vec<_>>();
+        black_box(bytes)
+    });
 }
 
-#[divan::bench]
 fn deserialize_small_partial_groups(bencher: Bencher) {
     let bytes = serialized_partial_digests(PARTIAL_GROUPS, SMALL_ROWS_PER_PARTIAL);
 
-    bencher
-        .counter(ItemsCount::new(PARTIAL_GROUPS))
-        .bench_local(|| {
-            let digests = bytes
-                .iter()
-                .map(|bytes| TDigestMut::deserialize(bytes).unwrap())
-                .collect::<Vec<_>>();
-            black_box(digests)
-        });
+    bencher.bench_local(|| {
+        let digests = bytes
+            .iter()
+            .map(|bytes| TDigestMut::deserialize(bytes).unwrap())
+            .collect::<Vec<_>>();
+        black_box(digests)
+    });
 }
 
-#[divan::bench]
 fn serialize_partial_groups(bencher: Bencher) {
     let digests = partial_digests_with(DEFAULT_DIGEST_K, PARTIAL_GROUPS, ROWS_PER_PARTIAL);
 
-    bencher
-        .counter(ItemsCount::new(PARTIAL_GROUPS))
-        .with_inputs(|| digests.clone())
-        .bench_local_values(|mut digests| {
-            let bytes = digests
-                .iter_mut()
-                .map(TDigestMut::serialize)
-                .collect::<Vec<_>>();
-            black_box(bytes)
-        });
+    bencher.bench_local(|| {
+        let mut digests = digests.clone();
+        let bytes = digests
+            .iter_mut()
+            .map(TDigestMut::serialize)
+            .collect::<Vec<_>>();
+        black_box(bytes)
+    });
 }
 
-#[divan::bench]
 fn deserialize_partial_groups(bencher: Bencher) {
     let bytes = serialized_partial_digests_with(DEFAULT_DIGEST_K, PARTIAL_GROUPS, ROWS_PER_PARTIAL);
 
-    bencher
-        .counter(ItemsCount::new(PARTIAL_GROUPS))
-        .bench_local(|| {
-            let digests = bytes
-                .iter()
-                .map(|bytes| TDigestMut::deserialize(bytes).unwrap())
-                .collect::<Vec<_>>();
-            black_box(digests)
-        });
+    bencher.bench_local(|| {
+        let digests = bytes
+            .iter()
+            .map(|bytes| TDigestMut::deserialize(bytes).unwrap())
+            .collect::<Vec<_>>();
+        black_box(digests)
+    });
+}
+
+pub fn register(runner: &mut Runner) {
+    for &(rows, rounds) in &[
+        (1, 7_000_000),
+        (2, 6_000_000),
+        (8, 2_000_000),
+        (32, 2_000_000),
+        (64, 500_000),
+        (128, 200_000),
+    ] {
+        runner.case(
+            format!("tdigest::serde::small_lifecycle/{rows:?}"),
+            rounds,
+            |b| small_lifecycle(b, rows),
+        );
+    }
+    for &(k, rounds) in &[(10_u16, 400_000), (200_u16, 500_000)] {
+        runner.case(
+            format!("tdigest::serde::partial_lifecycle_by_k/{k:?}"),
+            rounds,
+            |b| partial_lifecycle_by_k(b, k),
+        );
+    }
+    runner.case(
+        "tdigest::serde::serialize_small_partial_groups",
+        10_000,
+        serialize_small_partial_groups,
+    );
+    runner.case(
+        "tdigest::serde::deserialize_small_partial_groups",
+        10_000,
+        deserialize_small_partial_groups,
+    );
+    runner.case(
+        "tdigest::serde::serialize_partial_groups",
+        4_000,
+        serialize_partial_groups,
+    );
+    runner.case(
+        "tdigest::serde::deserialize_partial_groups",
+        4_000,
+        deserialize_partial_groups,
+    );
 }
