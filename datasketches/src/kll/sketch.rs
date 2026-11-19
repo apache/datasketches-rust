@@ -164,6 +164,65 @@ impl<T: Clone + Ord> KllSketch<T> {
         self.internal_update(item);
     }
 
+    /// Updates the sketch with an item repeated `weight` times.
+    ///
+    /// Equivalent to calling [`update`](Self::update) `weight` times. Weights that fit in the
+    /// remaining capacity are appended directly to level zero; larger weights build an exact
+    /// binary-level representation and merge it in one pass.
+    ///
+    /// A weight of zero is a no-op, unlike DataSketches Java and DataSketches C++, which reject
+    /// zero weights.
+    ///
+    /// # Panics
+    ///
+    /// Panics without modifying the sketch if the stream weight would exceed [`u64::MAX`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::common::SearchCriteria;
+    /// use datasketches::kll::KllSketch;
+    ///
+    /// let mut sketch = KllSketch::<i64>::new(200)?;
+    /// sketch.update_with_weight(1, 3);
+    /// sketch.update_with_weight(2, 1_000_000);
+    /// assert_eq!(sketch.total_weight(), 1_000_003);
+    /// assert_eq!(
+    ///     sketch.rank(&1, SearchCriteria::Inclusive),
+    ///     Some(3.0 / 1_000_003.0)
+    /// );
+    /// # Ok::<(), datasketches::error::Error>(())
+    /// ```
+    pub fn update_with_weight(&mut self, item: T, weight: u64) {
+        if weight == 0 {
+            return;
+        }
+        if weight == 1 {
+            self.update(item);
+            return;
+        }
+        let final_n = self
+            .n
+            .checked_add(weight)
+            .expect("total stream weight overflow");
+
+        let free_capacity = self.capacity - self.num_retained;
+        if weight <= free_capacity as u64 {
+            let count = weight as usize;
+            self.levels[0].reserve(count);
+            self.update_min_max(&item);
+            for _ in 1..count {
+                self.levels[0].push(item.clone());
+            }
+            self.levels[0].push(item);
+            self.n = final_n;
+            self.num_retained += count;
+            self.is_level_zero_sorted = false;
+        } else {
+            self.merge_weighted(item, weight, final_n);
+        }
+    }
+
     /// Resets this sketch to its empty state while retaining its configuration.
     pub fn reset(&mut self) {
         self.min_k = self.k;
@@ -837,6 +896,47 @@ impl<T: Clone + Ord> KllSketch<T> {
 
         self.levels = general_compress(work_levels, self.k, self.is_level_zero_sorted);
         self.refresh_capacity_state();
+    }
+
+    fn merge_weighted(&mut self, item: T, weight: u64, final_n: u64) {
+        debug_assert!(weight >= 2);
+        self.update_min_max(&item);
+        if weight & 1 != 0 {
+            self.internal_update(item.clone());
+        }
+
+        // An item at level `h` carries weight `2^h`, so `(weight >> h) & 1` copies at each level
+        // form an exact representation of `weight` copies. Bits above `MAX_NUM_LEVELS - 1` fold
+        // into `weight >> 60` (at most 15) copies at the top level.
+        let num_levels = ((u64::BITS - weight.leading_zeros()) as usize).min(MAX_NUM_LEVELS);
+        let top_level = num_levels - 1;
+        let provisional_levels = self.levels.len().max(num_levels);
+        let mut work_levels = std::mem::take(&mut self.levels);
+        work_levels.resize_with(provisional_levels, Vec::new);
+
+        for (level, work_level) in work_levels.iter_mut().enumerate().take(top_level).skip(1) {
+            if (weight >> level) & 1 != 0 {
+                merge_into_level(work_level, vec![item.clone()]);
+            }
+        }
+
+        let top_count = (weight >> top_level) as usize;
+        let mut top_items = Vec::with_capacity(top_count);
+        for _ in 1..top_count {
+            top_items.push(item.clone());
+        }
+        top_items.push(item);
+        merge_into_level(&mut work_levels[top_level], top_items);
+
+        self.levels = general_compress(work_levels, self.k, self.is_level_zero_sorted);
+        self.refresh_capacity_state();
+        self.n = final_n;
+
+        debug_assert_eq!(
+            self.levels_weight(),
+            self.n,
+            "total weight does not match n"
+        );
     }
 
     fn refresh_capacity_state(&mut self) {
