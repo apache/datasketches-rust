@@ -103,10 +103,18 @@ When adding or resizing a scenario, use `--rounds` to select a suitable fixed co
 
 - Describe types with noun phrases and API behavior with third-person present-tense verbs such as `Creates`, `Updates`, and `Returns`.
 - End summary sentences with punctuation, and format Rust identifiers, literals, and numeric ranges as inline code.
-- Put contract sections and compatibility notes before examples. When applicable, order sections as `# Errors`, `# Panics`, and `# Examples`. Include only sections that describe an actual contract.
+- Put contract and compatibility sections before examples. When applicable, order sections as `# Errors`, `# Panics`, `# Cross-language compatibility`, and `# Examples`, including only sections that apply.
 - Document return values and error conditions on the relevant methods rather than repeating them in crate or module overviews.
-- Describe shared capabilities in language-neutral terms. Name another implementation when it clarifies interoperability requirements, a specific source, a format variant, or a behavior difference. Retain useful implementation references in internal comments.
+- Describe this crate's own capabilities and contracts in language-neutral terms first. Name another implementation (`DataSketches Java`, `DataSketches C++`, `DataSketches Go`, or `DataSketches Python`) only when documenting interoperability requirements, format variants, or behavior differences; retain repository references such as `datasketches-java` in internal code comments.
 - Keep imports visible in doctests. A trailing hidden `Ok(...)` may be used to support `?`.
+
+### Cross-language compatibility
+
+Use consistent patterns for the three kinds of cross-language guidance:
+
+- **Serialization interchange**: On `serialize` methods, state `The serialized data can be read by other DataSketches implementations [when ...].` On `deserialize` methods, state `Also accepts data serialized by other DataSketches implementations [when ...].` State any format-specific caveats (such as unstored configuration or incompatible counter mappings) immediately after that sentence.
+- **Hash input encoding**: On modules whose operations hash caller inputs, add a `# Cross-language hashing` section listing the required `hash::value` wrappers (`raw_bytes`, `canonical_float`, and `sign_extend` or `natural_extend`) and any empty-input handling needed to match peer implementations.
+- **API behavior and range differences**: When a method or type intentionally differs from peer implementations in accepted inputs, edge-case behavior, or value bounds, keep the summary and `# Errors` or `# Panics` sections focused on the Rust contract and record the difference under `# Cross-language compatibility`. Name the peer implementations, contrast their behavior or domain with this crate's behavior, and state any narrower bound callers must stay within when exchanging serialized images (for example, keeping `u64` stream weights at or below `i64::MAX as u64` for DataSketches Java readers).
 
 ## Query semantics
 

@@ -168,14 +168,19 @@ impl<T: Clone + Ord> KllSketch<T> {
     ///
     /// Equivalent to calling [`update`](Self::update) `weight` times. Weights that fit in the
     /// remaining capacity are appended directly to level zero; larger weights build an exact
-    /// binary-level representation and merge it in one pass.
-    ///
-    /// A weight of zero is a no-op, unlike DataSketches Java and DataSketches C++, which reject
-    /// zero weights.
+    /// binary-level representation and merge it in one pass. A weight of `0` is a no-op.
     ///
     /// # Panics
     ///
     /// Panics without modifying the sketch if the stream weight would exceed [`u64::MAX`].
+    ///
+    /// # Cross-language compatibility
+    ///
+    /// DataSketches Java and DataSketches C++ reject weights of `0` and weights above `2^61 - 1`.
+    /// This method treats `0` as a no-op and accepts weights up to [`u64::MAX`], folding bits at or
+    /// above level `60` into level `60`. DataSketches Java reads serialized stream weights as
+    /// signed 64-bit integers, so keep [`total_weight`](Self::total_weight) at or below
+    /// `i64::MAX as u64` when serializing sketches for Java.
     ///
     /// # Examples
     ///
@@ -906,8 +911,8 @@ impl<T: Clone + Ord> KllSketch<T> {
         }
 
         // An item at level `h` carries weight `2^h`, so `(weight >> h) & 1` copies at each level
-        // form an exact representation of `weight` copies. Bits above `MAX_NUM_LEVELS - 1` fold
-        // into `weight >> 60` (at most 15) copies at the top level.
+        // form an exact representation of `weight` copies. Bits at or above `MAX_NUM_LEVELS - 1`
+        // fold into `weight >> (MAX_NUM_LEVELS - 1)` (at most 15) copies at the top level.
         let num_levels = ((u64::BITS - weight.leading_zeros()) as usize).min(MAX_NUM_LEVELS);
         let top_level = num_levels - 1;
         let provisional_levels = self.levels.len().max(num_levels);
