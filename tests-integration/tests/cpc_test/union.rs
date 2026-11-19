@@ -105,19 +105,22 @@ fn test_sliding_union_matches_single_sketch() {
 }
 
 #[test]
-fn first_sliding_merge_folds_a_higher_precision_source() {
-    let mut wide = CpcSketch::new(10).unwrap();
-    let mut narrow = CpcSketch::new(8).unwrap();
-    for value in 0..32_768 {
-        wide.update(value);
-        narrow.update(value);
-    }
+fn union_folds_wider_coupon_rows_to_the_destination_precision() {
+    // Exercise a Hybrid, Pinned, and Sliding source with four rows per destination row.
+    for items in [256, 2_048, 32_768] {
+        let mut wide = CpcSketch::new(10).unwrap();
+        let mut narrow = CpcSketch::new(8).unwrap();
+        for value in 0..items {
+            wide.update(value);
+            narrow.update(value);
+        }
 
-    let mut folded = CpcUnion::new(8).unwrap();
-    folded.update(&wide).unwrap();
-    let mut direct = CpcUnion::new(8).unwrap();
-    direct.update(&narrow).unwrap();
-    assert_eq!(folded.serialize(), direct.serialize());
+        let mut folded = CpcUnion::new(8).unwrap();
+        folded.update(&wide).unwrap();
+        let mut direct = CpcUnion::new(8).unwrap();
+        direct.update(&narrow).unwrap();
+        assert_eq!(folded.serialize(), direct.serialize());
+    }
 }
 
 #[test]

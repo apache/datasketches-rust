@@ -10,7 +10,8 @@ All significant changes to this project will be documented in this file.
 
 ### Performance improvements
 
-* `CpcUnion::update` uses less time and temporary memory when the first nonempty input is a Sliding sketch at the union's effective precision.
+* `CpcUnion::update` is faster when merging sketches that contain many distinct values relative to their configured precision, including when the sketches have different precisions.
+* An empty `CpcUnion` can merge a high-cardinality sketch faster and with less temporary memory when the sketch's `lg_k` is less than or equal to the union's. For example, the first merge saves 16 KiB of temporary memory for a sketch of 65,536 distinct values when both use `lg_k = 11`.
 
 ### Bug fixes
 
