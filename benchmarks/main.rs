@@ -27,6 +27,7 @@ mod req;
 mod tdigest;
 mod theta;
 mod tuple;
+mod uddsketch;
 mod xor;
 
 fn main() {
@@ -42,6 +43,7 @@ fn main() {
     tdigest::register(&mut runner);
     theta::register(&mut runner);
     tuple::register(&mut runner);
+    uddsketch::register(&mut runner);
     xor::register(&mut runner);
     runner.finish();
 }
