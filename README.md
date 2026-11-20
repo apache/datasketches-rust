@@ -76,7 +76,8 @@ Enable multiple algorithms by listing their features together, such as `features
 | `tdigest`     | `TDigestMut`, `TDigest`               | Quantile and rank estimation, with high accuracy near distribution tails.                         |
 | `theta`       | `ThetaSketch` and set operations      | Distinct counts, set expressions, and Jaccard similarity.                                         |
 | `tuple`       | `TupleSketch` and set operations      | Theta-style keys with user-defined summaries attached to retained entries.                        |
-| `xor`         | `XorFilter`, `XorFilterBuilder`        | Immutable probabilistic membership with 8-, 16-, or 32-bit fingerprints.                           |
+| `uddsketch`   | `UddSketch`                           | Reproducible quantile estimation with bounded buckets and a relative value error bound.           |
+| `xor`         | `XorFilter`, `XorFilterBuilder`       | Immutable probabilistic membership with 8-, 16-, or 32-bit fingerprints.                          |
 
 See the [API documentation](https://docs.rs/datasketches) for configuration, accuracy guarantees, serialization, and examples for each algorithm. Runnable end-to-end scenarios live in [`examples`](examples).
 

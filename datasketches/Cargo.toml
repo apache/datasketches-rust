@@ -49,6 +49,7 @@ req = []
 tdigest = []
 theta = []
 tuple = []
+uddsketch = []
 xor = []
 
 [dev-dependencies]

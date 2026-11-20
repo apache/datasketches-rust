@@ -7,6 +7,7 @@ All significant changes to this project will be documented in this file.
 ### New features
 
 * Add `DensitySketch`, `Kernel`, `GaussianKernel`, `DensityValue`, and `DensitySketchIter` behind the `density` feature for streaming kernel density estimation and coreset construction over multidimensional `f32` and `f64` vectors, with custom kernel support, merging, iteration, and cross-language serialization.
+* Add `UddSketch` behind the `uddsketch` feature for reproducible quantile estimation over finite `f64` streams, with weighted updates, order- and merge-tree-invariant merging, a queryable relative value error bound, and binary serialization.
 * Add `KllSketch::update_with_weight` for updating a sketch with an item repeated a given number of times.
 
 ### Performance improvements
