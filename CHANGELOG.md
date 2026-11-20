@@ -11,6 +11,8 @@ All significant changes to this project will be documented in this file.
 
 ### Performance improvements
 
+* `CpcSketch::update` is faster for short byte strings and integer keys, including when counting distinct values across many groups.
+* `CpcSketch::serialize` is faster for sketches of intermediate cardinality, such as 4,096 distinct values at `lg_k = 14`.
 * `CpcUnion::update` is faster when merging sketches that contain many distinct values relative to their configured precision, including when the sketches have different precisions.
 * An empty `CpcUnion` can merge a high-cardinality sketch faster and with less temporary memory when the sketch's `lg_k` is less than or equal to the union's. For example, the first merge saves 16 KiB of temporary memory for a sketch of 65,536 distinct values when both use `lg_k = 11`.
 

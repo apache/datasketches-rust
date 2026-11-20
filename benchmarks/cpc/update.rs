@@ -47,7 +47,25 @@ fn bytes_32(bencher: Bencher) {
     });
 }
 
+fn variable_bytes(bencher: Bencher) {
+    let values = bytes_32_values();
+    let keys: Vec<_> = values
+        .iter()
+        .enumerate()
+        .map(|(i, bytes)| &bytes[..1 + i % bytes.len()])
+        .collect();
+
+    bencher.bench_local(|| {
+        let mut sketch = CpcSketch::new(11).unwrap();
+        for &key in &keys {
+            sketch.update(raw_bytes::from_slice(black_box(key)));
+        }
+        black_box(sketch)
+    });
+}
+
 pub fn register(runner: &mut Runner) {
     runner.case("cpc::update::u64", 3_000, u64);
     runner.case("cpc::update::bytes_32", 2_000, bytes_32);
+    runner.case("cpc::update::variable_bytes", 2_000, variable_bytes);
 }

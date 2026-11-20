@@ -57,7 +57,7 @@ impl MurmurHash3X64128 {
         if rem > 0 {
             if rem > 8 {
                 // read k2 little endian
-                let mut k2 = read_u64_le_partial(&self.buf[8..rem]);
+                let mut k2 = read_tail_word(&self.buf[8..], rem - 8);
                 // mix k2
                 k2 = k2.wrapping_mul(C2);
                 k2 = k2.rotate_left(33);
@@ -66,8 +66,7 @@ impl MurmurHash3X64128 {
             }
 
             // read k1 little endian
-            let k1_len = rem.min(8);
-            let mut k1 = read_u64_le_partial(&self.buf[..k1_len]);
+            let mut k1 = read_tail_word(&self.buf[..8], rem.min(8));
             // mix k1
             k1 = k1.wrapping_mul(C1);
             k1 = k1.rotate_left(31);
@@ -151,18 +150,18 @@ impl Hasher for MurmurHash3X64128 {
             bytes = &bytes[16..];
         }
 
-        self.buf[..bytes.len()].copy_from_slice(bytes);
+        if !bytes.is_empty() {
+            self.buf[..bytes.len()].copy_from_slice(bytes);
+        }
         self.buf_len = bytes.len();
     }
 }
 
 #[inline(always)]
-fn read_u64_le_partial(bytes: &[u8]) -> u64 {
-    let mut value = 0;
-    for (index, &byte) in bytes.iter().enumerate() {
-        value |= u64::from(byte) << (index * 8);
-    }
-    value
+fn read_tail_word(bytes: &[u8], len: usize) -> u64 {
+    // A previous streaming write may have left bytes above the live tail.
+    debug_assert!((1..=8).contains(&len));
+    read_u64_le(bytes) & (u64::MAX >> (8 * (8 - len)))
 }
 
 /// Finalization mix: force all bits of a hash block to avalanche.
