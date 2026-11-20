@@ -386,12 +386,6 @@ impl HllSketch {
                         )));
                     }
 
-                    if lg_arr != 3 {
-                        return Err(Error::deserial(format!(
-                            "LIST mode lg_arr: expected 3, got {lg_arr}"
-                        )));
-                    }
-                    let lg_arr = lg_arr as usize;
                     let coupon_count = state as usize;
                     let list = List::deserialize(cursor, lg_arr, coupon_count, empty, compact)?;
                     Mode::List { list, hll_type }
