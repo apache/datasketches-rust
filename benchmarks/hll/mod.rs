@@ -15,13 +15,13 @@
 // specific language governing permissions and limitations
 // under the License.
 
-mod grouped;
+mod aggregation;
 mod serde;
 mod union;
 mod update;
 
 pub fn register(runner: &mut benchmarks::Runner) {
-    grouped::register(runner);
+    aggregation::register(runner);
     serde::register(runner);
     union::register(runner);
     update::register(runner);
