@@ -13,6 +13,7 @@ All significant changes to this project will be documented in this file.
 
 * HLL sketches store their initial eight coupon slots inline instead of allocating them on the heap. `estimated_size` now reports zero heap bytes in LIST mode.
 * Speed up `HllSketch::update`, `Coupon::from_value`, `CpcSketch::update`, `ThetaSketch::update`, `TupleSketch::update`, and `FrequentItemsSketch::update` for byte-slice and string inputs (including `raw_bytes`), particularly on short and variable-length keys, as well as `CpcSketch::update` and `TupleSketch::update` on integer keys.
+* `HllUnion::update` is faster when merging dense HLL8 registers into a lower-precision sketch.
 * `CpcUnion::update` is faster when merging sketches that contain many distinct values relative to their configured precision, including when the sketches have different precisions.
 * An empty `CpcUnion` can merge a high-cardinality sketch faster and with less temporary memory when the sketch's `lg_k` is less than or equal to the union's. For example, the first merge saves 16 KiB of temporary memory for a sketch of 65,536 distinct values when both use `lg_k = 11`.
 
