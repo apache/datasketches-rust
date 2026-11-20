@@ -48,7 +48,7 @@
 //!
 //! [paper]: https://arxiv.org/abs/1902.04023
 //!
-//! # Usage
+//! # Examples
 //!
 //! ```
 //! use datasketches::tdigest::TDigestMut;

@@ -468,6 +468,8 @@ impl XorFilter {
     }
 
     /// Serializes the filter in the DataSketches format.
+    ///
+    /// The serialized data can be read by other DataSketches implementations.
     pub fn serialize(&self) -> Vec<u8> {
         let mut bytes = SketchBytes::with_capacity(PREAMBLE_BYTES + self.fingerprints.byte_len());
 
@@ -487,7 +489,8 @@ impl XorFilter {
 
     /// Deserializes an owned filter from bytes.
     ///
-    /// Trailing bytes are ignored.
+    /// Also accepts data serialized by other DataSketches implementations. Trailing bytes are
+    /// ignored.
     ///
     /// # Errors
     ///

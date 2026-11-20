@@ -31,7 +31,7 @@
 //! Custom item types need only [`Clone`] and [`Ord`] for in-memory use. Serialization additionally
 //! requires [`ReqValue`].
 //!
-//! # Example
+//! # Examples
 //!
 //! ```
 //! use datasketches::common::SearchCriteria;

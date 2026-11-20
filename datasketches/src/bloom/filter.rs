@@ -314,6 +314,8 @@ impl BloomFilter {
     }
 
     /// Serializes the filter in the DataSketches binary format.
+    ///
+    /// The serialized data can be read by other DataSketches implementations.
     pub fn serialize(&self) -> Vec<u8> {
         let is_empty = self.is_empty();
         let preamble_longs = if is_empty {
@@ -342,6 +344,8 @@ impl BloomFilter {
     }
 
     /// Deserializes a filter from DataSketches binary bytes.
+    ///
+    /// Also accepts data serialized by other DataSketches implementations.
     ///
     /// # Errors
     ///

@@ -33,7 +33,7 @@
 //!
 //! Skip empty strings and byte slices before updating the sketch.
 //!
-//! # Usage
+//! # Examples
 //!
 //! ```
 //! use datasketches::common::NumStdDev;
@@ -46,7 +46,7 @@
 //! assert!(upper >= sketch.estimate());
 //! ```
 //!
-//! # Union
+//! ## Union
 //!
 //! ```
 //! use datasketches::hll::HllSketch;
