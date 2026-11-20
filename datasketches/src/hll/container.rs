@@ -23,49 +23,24 @@ use crate::hll::coupon_mapping::Y_ARR;
 use crate::hll::cubic_interpolation::using_x_and_y_tables;
 
 #[derive(Debug, Clone)]
-pub struct Container {
-    lg_size: usize,
+pub struct Container<S> {
     /// Empty slots contain `Coupon::EMPTY`.
-    pub coupons: Box<[Coupon]>,
+    pub coupons: S,
     /// Number of non-empty coupons
     pub len: usize,
 }
 
-impl Container {
-    pub fn new(lg_size: usize) -> Self {
-        Self {
-            lg_size,
-            coupons: vec![Coupon::EMPTY; 1 << lg_size].into_boxed_slice(),
-            len: 0,
-        }
-    }
-
-    pub fn from_coupons(lg_size: usize, coupons: Box<[Coupon]>, len: usize) -> Self {
-        Self {
-            lg_size,
-            coupons,
-            len,
-        }
+impl<S> Container<S> {
+    pub fn from_coupons(coupons: S, len: usize) -> Self {
+        Self { coupons, len }
     }
 
     pub fn len(&self) -> usize {
         self.len
     }
 
-    pub fn lg_size(&self) -> usize {
-        self.lg_size
-    }
-
-    pub fn is_full(&self) -> bool {
-        self.len == self.coupons.len()
-    }
-
     pub fn is_empty(&self) -> bool {
         self.len == 0
-    }
-
-    pub fn capacity(&self) -> usize {
-        self.coupons.len()
     }
 
     pub fn estimate(&self) -> f64 {
@@ -89,9 +64,36 @@ impl Container {
         let bound = est / (1.0 + rse);
         len.max(bound)
     }
+}
+
+impl<S: AsRef<[Coupon]>> Container<S> {
+    pub fn lg_size(&self) -> usize {
+        usize::try_from(self.coupons.as_ref().len().ilog2()).unwrap()
+    }
+
+    pub fn is_full(&self) -> bool {
+        self.len == self.coupons.as_ref().len()
+    }
+
+    pub fn capacity(&self) -> usize {
+        self.coupons.as_ref().len()
+    }
 
     pub fn iter(&self) -> impl Iterator<Item = Coupon> + '_ {
-        self.coupons.iter().filter(|&&c| !c.is_empty()).copied()
+        self.coupons
+            .as_ref()
+            .iter()
+            .filter(|&&c| !c.is_empty())
+            .copied()
+    }
+}
+
+impl Container<Box<[Coupon]>> {
+    pub fn new(lg_size: usize) -> Self {
+        Self {
+            coupons: vec![Coupon::EMPTY; 1 << lg_size].into_boxed_slice(),
+            len: 0,
+        }
     }
 
     /// Returns an estimate of memory usage in bytes.
