@@ -25,6 +25,7 @@ use datasketches::hash::value::raw_bytes;
 
 use crate::hash_inputs::ITEMS;
 use crate::hash_inputs::bytes_32_values;
+use crate::hash_inputs::bytes_64_values;
 use crate::hash_inputs::variable_byte_slices;
 
 fn populated_u64_filter() -> BloomFilter {
@@ -108,7 +109,7 @@ fn absent_bytes_32(bencher: Bencher) {
 }
 
 fn present_variable_bytes(bencher: Bencher) {
-    let values = bytes_32_values();
+    let values = bytes_64_values();
     let keys = variable_byte_slices(&values);
     let filter = populated_variable_bytes_filter(&keys);
 
@@ -120,13 +121,13 @@ fn present_variable_bytes(bencher: Bencher) {
 }
 
 fn absent_variable_bytes(bencher: Bencher) {
-    let present = bytes_32_values();
+    let present = bytes_64_values();
     let present_keys = variable_byte_slices(&present);
     let filter = populated_variable_bytes_filter(&present_keys);
-    let absent: Vec<[u8; 32]> = (0..ITEMS)
+    let absent: Vec<[u8; 64]> = (0..ITEMS)
         .map(|i| {
-            let mut bytes = [0; 32];
-            // Odd low byte avoids 1-byte prefixes (where `i % 32 == 0`), and values at or above
+            let mut bytes = [0; 64];
+            // Odd low byte avoids 1-byte prefixes (where `i % 64 == 0`), and values at or above
             // `ITEMS` avoid all longer prefixes of `0..ITEMS`.
             let value = ((ITEMS + i) as u64) | 1;
             bytes[..8].copy_from_slice(&value.to_le_bytes());
@@ -149,12 +150,12 @@ pub fn register(runner: &mut Runner) {
     runner.case("bloom::query::absent_bytes_32", 1_000, absent_bytes_32);
     runner.case(
         "bloom::query::present_variable_bytes",
-        1_500,
+        1_200,
         present_variable_bytes,
     );
     runner.case(
         "bloom::query::absent_variable_bytes",
-        1_500,
+        1_200,
         absent_variable_bytes,
     );
 }

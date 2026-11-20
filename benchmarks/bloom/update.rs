@@ -24,6 +24,8 @@ use datasketches::hash::value::raw_bytes;
 
 use crate::hash_inputs::ITEMS;
 use crate::hash_inputs::bytes_32_values;
+use crate::hash_inputs::bytes_64_values;
+use crate::hash_inputs::u64_pair;
 use crate::hash_inputs::variable_byte_slices;
 
 fn u64(bencher: Bencher) {
@@ -33,6 +35,18 @@ fn u64(bencher: Bencher) {
             .unwrap();
         for value in 0..ITEMS as u64 {
             filter.insert(black_box(value));
+        }
+        black_box(filter)
+    });
+}
+
+fn u64_tuple(bencher: Bencher) {
+    bencher.bench_local(|| {
+        let mut filter = BloomFilterBuilder::with_accuracy(ITEMS as u64, 0.01)
+            .build()
+            .unwrap();
+        for value in 0..ITEMS as u64 {
+            filter.insert(black_box(u64_pair(value)));
         }
         black_box(filter)
     });
@@ -53,7 +67,7 @@ fn bytes_32(bencher: Bencher) {
 }
 
 fn variable_bytes(bencher: Bencher) {
-    let values = bytes_32_values();
+    let values = bytes_64_values();
     let keys = variable_byte_slices(&values);
 
     bencher.bench_local(|| {
@@ -62,6 +76,21 @@ fn variable_bytes(bencher: Bencher) {
             .unwrap();
         for &key in &keys {
             filter.insert(raw_bytes::from_slice(black_box(key)));
+        }
+        black_box(filter)
+    });
+}
+
+fn prefixed_bytes(bencher: Bencher) {
+    let values = bytes_64_values();
+    let keys = variable_byte_slices(&values);
+
+    bencher.bench_local(|| {
+        let mut filter = BloomFilterBuilder::with_accuracy(ITEMS as u64, 0.01)
+            .build()
+            .unwrap();
+        for &key in &keys {
+            filter.insert(black_box(key));
         }
         black_box(filter)
     });
@@ -90,8 +119,10 @@ fn contains_and_insert(
 
 pub fn register(runner: &mut Runner) {
     runner.case("bloom::update::u64", 2_000, u64);
+    runner.case("bloom::update::u64_pair", 1_800, u64_tuple);
     runner.case("bloom::update::bytes_32", 1_000, bytes_32);
-    runner.case("bloom::update::variable_bytes", 1_500, variable_bytes);
+    runner.case("bloom::update::variable_bytes", 1_200, variable_bytes);
+    runner.case("bloom::update::prefixed_bytes", 900, prefixed_bytes);
     runner.case(
         "bloom::update::contains_and_insert_present_u64",
         2_000,

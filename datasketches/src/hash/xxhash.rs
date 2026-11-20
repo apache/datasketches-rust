@@ -39,11 +39,10 @@ pub struct XxHash64 {
     v2: u64,
     v3: u64,
     v4: u64,
-    // Buffered tail bytes packed in little-endian order; bytes at or above `buffer_len` are 0.
-    b0: u64,
-    b1: u64,
-    b2: u64,
-    b3: u64,
+    // Buffered tail bytes packed in little-endian bit order across two 128-bit halves;
+    // bits at or above `buffer_len * 8` are always zero.
+    lo: u128,
+    hi: u128,
     buffer_len: usize,
 }
 
@@ -57,10 +56,8 @@ impl XxHash64 {
             v2: seed.wrapping_add(P2),
             v3: seed,
             v4: seed.wrapping_sub(P1),
-            b0: 0,
-            b1: 0,
-            b2: 0,
-            b3: 0,
+            lo: 0,
+            hi: 0,
             buffer_len: 0,
         }
     }
@@ -87,16 +84,20 @@ impl XxHash64 {
 
         let rem = self.buffer_len;
         if rem > 0 {
-            let mut tail = self.b0;
+            let b0 = self.lo as u64;
+            let b1 = (self.lo >> 64) as u64;
+            let b2 = self.hi as u64;
+            let b3 = (self.hi >> 64) as u64;
+            let mut tail = b0;
             if rem >= 8 {
-                hash = mix_u64(hash, self.b0);
-                tail = self.b1;
+                hash = mix_u64(hash, b0);
+                tail = b1;
                 if rem >= 16 {
-                    hash = mix_u64(hash, self.b1);
-                    tail = self.b2;
+                    hash = mix_u64(hash, b1);
+                    tail = b2;
                     if rem >= 24 {
-                        hash = mix_u64(hash, self.b2);
-                        tail = self.b3;
+                        hash = mix_u64(hash, b2);
+                        tail = b3;
                     }
                 }
             }
@@ -127,95 +128,125 @@ impl XxHash64 {
 
     #[inline(always)]
     fn update(&mut self, chunk: &[u8]) {
-        self.v1 = round(self.v1, read_u64_le(&chunk[0..8]));
-        self.v2 = round(self.v2, read_u64_le(&chunk[8..16]));
-        self.v3 = round(self.v3, read_u64_le(&chunk[16..24]));
-        self.v4 = round(self.v4, read_u64_le(&chunk[24..32]));
+        self.update_words(
+            read_u64_le(&chunk[0..8]),
+            read_u64_le(&chunk[8..16]),
+            read_u64_le(&chunk[16..24]),
+            read_u64_le(&chunk[24..32]),
+        );
+    }
+
+    #[inline(always)]
+    fn update_words(&mut self, w0: u64, w1: u64, w2: u64, w3: u64) {
+        self.v1 = round(self.v1, w0);
+        self.v2 = round(self.v2, w1);
+        self.v3 = round(self.v3, w2);
+        self.v4 = round(self.v4, w3);
     }
 
     #[inline(always)]
     fn load_tail(&mut self, rem: &[u8]) {
-        let len = rem.len();
-        debug_assert!((1..32).contains(&len));
-        self.buffer_len = len;
-        if len < 8 {
-            self.b0 = read_u64_le_partial(rem);
+        debug_assert!((1..32).contains(&rem.len()));
+        let (lo, hi) = read_u256_le_partial(rem);
+        self.lo = lo;
+        self.hi = hi;
+        self.buffer_len = rem.len();
+    }
+
+    #[inline(always)]
+    fn append_u256(&mut self, in_lo: u128, in_hi: u128) {
+        if self.buffer_len < 16 {
+            let shift = self.buffer_len * 8;
+            self.lo |= in_lo << shift;
+            self.hi = (in_lo >> (128 - shift)) | (in_hi << shift);
+        } else if self.buffer_len == 16 {
+            self.hi = in_lo;
         } else {
-            self.b0 = read_u64_le(&rem[..8]);
-            if len < 16 {
-                self.b1 = read_u64_le_partial(&rem[8..]);
-            } else {
-                self.b1 = read_u64_le(&rem[8..16]);
-                if len < 24 {
-                    self.b2 = read_u64_le_partial(&rem[16..]);
-                } else {
-                    self.b2 = read_u64_le(&rem[16..24]);
-                    self.b3 = read_u64_le_partial(&rem[24..]);
-                }
-            }
+            let shift = (self.buffer_len - 16) * 8;
+            self.hi |= in_lo << shift;
         }
     }
 
-    /// Same result as `write(&bytes)`, with an inlined body small enough that hashing a
-    /// fixed-width integer folds to register arithmetic at the call site.
+    /// Same result as `write(&bytes)`, keeping single-scalar and multi-field composite writes
+    /// folded to register arithmetic at the call site.
     #[inline(always)]
     fn write_fixed<const N: usize>(&mut self, bytes: [u8; N]) {
         debug_assert!(N <= 16);
-        if self.buffer_len == 0 {
-            self.total_len = self.total_len.wrapping_add(N as u64);
-            self.buffer_len = N;
-            if N > 8 {
-                self.b0 = read_u64_le(&bytes[..8]);
-                self.b1 = read_u64_le_partial(&bytes[8..]);
-            } else {
-                self.b0 = read_u64_le_partial(&bytes);
-            }
-        } else if N == 8 && (self.buffer_len & 7) == 0 && self.buffer_len < 24 {
-            self.total_len = self.total_len.wrapping_add(8);
-            let word = read_u64_le(&bytes);
-            if self.buffer_len == 8 {
-                self.b1 = word;
-            } else {
-                self.b2 = word;
-            }
-            self.buffer_len += 8;
+        self.total_len = self.total_len.wrapping_add(N as u64);
+        let val = if N == 16 {
+            u128::from(read_u64_le(&bytes[..8])) | (u128::from(read_u64_le(&bytes[8..])) << 64)
         } else {
-            self.write_buffered(&bytes);
+            read_u128_le_partial(&bytes)
+        };
+
+        if self.buffer_len == 0 {
+            self.lo = val;
+            self.buffer_len = N;
+        } else if self.buffer_len + N <= 16 {
+            self.lo |= val << (self.buffer_len * 8);
+            self.buffer_len += N;
+        } else if self.buffer_len < 16 {
+            // `1 <= buffer_len <= 15` and `buffer_len + N > 16`: straddles `lo` and `hi`.
+            self.lo |= val << (self.buffer_len * 8);
+            self.hi = val >> ((16 - self.buffer_len) * 8);
+            self.buffer_len += N;
+        } else if self.buffer_len + N < 32 {
+            let hi_len = self.buffer_len - 16;
+            self.hi |= val << (hi_len * 8);
+            self.buffer_len += N;
+        } else {
+            // `16 <= buffer_len <= 31` and `buffer_len + N >= 32`: completes a 32-byte block.
+            let hi_len = self.buffer_len - 16;
+            let full_hi = if hi_len == 0 {
+                val
+            } else {
+                self.hi | (val << (hi_len * 8))
+            };
+            self.update_words(
+                self.lo as u64,
+                (self.lo >> 64) as u64,
+                full_hi as u64,
+                (full_hi >> 64) as u64,
+            );
+            self.lo = if hi_len == 0 {
+                0
+            } else {
+                val >> ((16 - hi_len) * 8)
+            };
+            self.hi = 0;
+            self.buffer_len = self.buffer_len + N - 32;
         }
     }
 
-    #[inline(never)]
-    fn write_buffered(&mut self, mut bytes: &[u8]) {
+    #[inline(always)]
+    fn write_buffered(&mut self, bytes: &[u8]) {
         debug_assert!((1..32).contains(&self.buffer_len));
         if bytes.is_empty() {
             return;
         }
         self.total_len = self.total_len.wrapping_add(bytes.len() as u64);
 
-        let mut buf = [0u8; 32];
-        buf[0..8].copy_from_slice(&self.b0.to_le_bytes());
-        buf[8..16].copy_from_slice(&self.b1.to_le_bytes());
-        buf[16..24].copy_from_slice(&self.b2.to_le_bytes());
-        buf[24..32].copy_from_slice(&self.b3.to_le_bytes());
-
-        if self.buffer_len + bytes.len() < 32 {
-            let end = self.buffer_len + bytes.len();
-            buf[self.buffer_len..end].copy_from_slice(bytes);
-            self.load_tail(&buf[..end]);
+        let needed = 32 - self.buffer_len;
+        if bytes.len() < needed {
+            let (in_lo, in_hi) = read_u256_le_partial(bytes);
+            self.append_u256(in_lo, in_hi);
+            self.buffer_len += bytes.len();
             return;
         }
 
-        let needed = 32 - self.buffer_len;
-        buf[self.buffer_len..].copy_from_slice(&bytes[..needed]);
-        self.update(&buf);
-        self.b0 = 0;
-        self.b1 = 0;
-        self.b2 = 0;
-        self.b3 = 0;
+        let (in_lo, in_hi) = read_u256_le_partial(&bytes[..needed]);
+        self.append_u256(in_lo, in_hi);
+        self.update_words(
+            self.lo as u64,
+            (self.lo >> 64) as u64,
+            self.hi as u64,
+            (self.hi >> 64) as u64,
+        );
+        self.lo = 0;
+        self.hi = 0;
         self.buffer_len = 0;
-        bytes = &bytes[needed..];
 
-        let mut chunks = bytes.chunks_exact(32);
+        let mut chunks = bytes[needed..].chunks_exact(32);
         for chunk in &mut chunks {
             self.update(chunk);
         }
@@ -228,6 +259,7 @@ impl XxHash64 {
 }
 
 impl Default for XxHash64 {
+    #[inline(always)]
     fn default() -> Self {
         Self::with_seed(DEFAULT_SEED)
     }
@@ -260,19 +292,7 @@ impl Hasher for XxHash64 {
 
     #[inline(always)]
     fn write_u8(&mut self, i: u8) {
-        if self.buffer_len < 31 {
-            self.total_len = self.total_len.wrapping_add(1);
-            let byte = u64::from(i) << ((self.buffer_len & 7) * 8);
-            match self.buffer_len >> 3 {
-                0 => self.b0 |= byte,
-                1 => self.b1 |= byte,
-                2 => self.b2 |= byte,
-                _ => self.b3 |= byte,
-            }
-            self.buffer_len += 1;
-        } else {
-            self.write_buffered(&[i]);
-        }
+        self.write_fixed(i.to_ne_bytes());
     }
 
     #[inline(always)]
@@ -298,6 +318,31 @@ impl Hasher for XxHash64 {
     #[inline(always)]
     fn write_usize(&mut self, i: usize) {
         self.write_fixed(i.to_ne_bytes());
+    }
+}
+
+#[inline(always)]
+fn read_u256_le_partial(bytes: &[u8]) -> (u128, u128) {
+    debug_assert!(bytes.len() < 32);
+    if bytes.len() >= 16 {
+        let lo =
+            u128::from(read_u64_le(&bytes[..8])) | (u128::from(read_u64_le(&bytes[8..16])) << 64);
+        let hi = read_u128_le_partial(&bytes[16..]);
+        (lo, hi)
+    } else {
+        (read_u128_le_partial(bytes), 0)
+    }
+}
+
+#[inline(always)]
+fn read_u128_le_partial(bytes: &[u8]) -> u128 {
+    debug_assert!(bytes.len() < 16);
+    if bytes.len() > 8 {
+        let low = u128::from(read_u64_le(&bytes[..8]));
+        let high = u128::from(read_u64_le_partial(&bytes[8..]));
+        low | (high << 64)
+    } else {
+        u128::from(read_u64_le_partial(bytes))
     }
 }
 
@@ -370,6 +415,8 @@ fn finalize(mut hash: u64) -> u64 {
 
 #[cfg(test)]
 mod tests {
+    use std::hash::Hash;
+
     use super::*;
 
     const PRIME32: u64 = 0x9E3779B1;
@@ -498,5 +545,24 @@ mod tests {
             ]
         );
         check_write!(write_usize, [0usize, 1, 0x1234_5678, usize::MAX]);
+
+        // Composite fixed-width tuples straddling 16-byte halves and completing 32-byte blocks.
+        let a = 0x0123_4567_89ab_cdef_u64;
+        let b = 0xfedc_ba98_7654_3210_u64;
+        let c = 0xdead_beef_u32;
+        let d = 0x0011_2233_4455_6677_8899_aabb_ccdd_eeff_u128;
+
+        let mut tuple_bytes = Vec::new();
+        tuple_bytes.extend_from_slice(&a.to_ne_bytes());
+        tuple_bytes.extend_from_slice(&b.to_ne_bytes());
+        let mut pair_hasher = XxHash64::with_seed(PRIME32);
+        (a, b).hash(&mut pair_hasher);
+        assert_eq!(pair_hasher.finish64(), xxhash64(&tuple_bytes, PRIME32));
+
+        tuple_bytes.extend_from_slice(&c.to_ne_bytes());
+        tuple_bytes.extend_from_slice(&d.to_ne_bytes());
+        let mut mixed_hasher = XxHash64::with_seed(PRIME32);
+        (a, b, c, d).hash(&mut mixed_hasher);
+        assert_eq!(mixed_hasher.finish64(), xxhash64(&tuple_bytes, PRIME32));
     }
 }

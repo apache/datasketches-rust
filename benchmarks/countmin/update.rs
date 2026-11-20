@@ -24,6 +24,7 @@ use datasketches::hash::value::raw_bytes;
 
 use crate::hash_inputs::ITEMS;
 use crate::hash_inputs::bytes_32_values;
+use crate::hash_inputs::bytes_64_values;
 use crate::hash_inputs::variable_byte_slices;
 
 fn u64(bencher: Bencher) {
@@ -49,7 +50,7 @@ fn bytes_32(bencher: Bencher) {
 }
 
 fn variable_bytes(bencher: Bencher) {
-    let values = bytes_32_values();
+    let values = bytes_64_values();
     let keys = variable_byte_slices(&values);
 
     bencher.bench_local(|| {
@@ -64,5 +65,5 @@ fn variable_bytes(bencher: Bencher) {
 pub fn register(runner: &mut Runner) {
     runner.case("countmin::update::u64", 2_000, u64);
     runner.case("countmin::update::bytes_32", 1_000, bytes_32);
-    runner.case("countmin::update::variable_bytes", 1_000, variable_bytes);
+    runner.case("countmin::update::variable_bytes", 900, variable_bytes);
 }
