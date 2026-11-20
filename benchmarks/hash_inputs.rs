@@ -15,7 +15,25 @@
 // specific language governing permissions and limitations
 // under the License.
 
+//! Shared hashable input fixtures spanning the orthogonal `Hasher` write patterns:
+//!
+//! * Single fixed-width write (`0..ITEMS as u64`): enters `write_u64` with an empty buffer.
+//! * Multi-write fixed-width composite (`u64_pair`): enters `write_u64` repeatedly across non-empty
+//!   buffer states and block boundaries.
+//! * Single block-aligned slice (`bytes_32_values` with `raw_bytes`): enters `write` once with a
+//!   compile-time block-multiple length (`rem == 0`).
+//! * Single variable-length slice (`variable_byte_slices` with `raw_bytes`): enters `write` once
+//!   with runtime lengths `1..=64`, spanning sub-block tails, exact blocks, and multi-block inputs
+//!   across every 16-byte and 32-byte remainder.
+//! * Multi-write length-prefixed slice (`variable_byte_slices` via `[u8]::hash`): calls
+//!   `write_usize` followed by `write`, entering the buffered slice streaming path.
+
 pub const ITEMS: usize = 10_000;
+
+#[inline(always)]
+pub fn u64_pair(value: u64) -> (u64, u64) {
+    (value, value.wrapping_mul(0x9e37_79b9_7f4a_7c15))
+}
 
 pub fn bytes_32_values() -> Vec<[u8; 32]> {
     (0..ITEMS)
@@ -27,8 +45,19 @@ pub fn bytes_32_values() -> Vec<[u8; 32]> {
         .collect()
 }
 
-/// Cycles slice lengths through `1..=32` so callers exercise every 16-byte block remainder.
-pub fn variable_byte_slices(values: &[[u8; 32]]) -> Vec<&[u8]> {
+pub fn bytes_64_values() -> Vec<[u8; 64]> {
+    (0..ITEMS)
+        .map(|value| {
+            let mut bytes = [0; 64];
+            bytes[..8].copy_from_slice(&(value as u64).to_le_bytes());
+            bytes
+        })
+        .collect()
+}
+
+/// Cycles slice lengths through `1..=64` so callers exercise every 16-byte and 32-byte block
+/// remainder in both single-block and multi-block regimes.
+pub fn variable_byte_slices(values: &[[u8; 64]]) -> Vec<&[u8]> {
     values
         .iter()
         .enumerate()

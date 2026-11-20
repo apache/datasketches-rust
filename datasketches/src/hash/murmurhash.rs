@@ -106,22 +106,38 @@ impl MurmurHash3X64128 {
         self.h2 = self.h2.wrapping_mul(5).wrapping_add(0x38495ab5);
     }
 
+    /// Same result as `write(&bytes)`, keeping single-scalar and multi-field composite writes
+    /// folded to register arithmetic at the call site.
     #[inline(always)]
     fn write_fixed<const N: usize>(&mut self, bytes: [u8; N]) {
         debug_assert!(N <= 16);
-        if N == 16 && self.buf_len == 0 {
-            self.total = self.total.wrapping_add(16);
-            self.update(read_u64_le(&bytes[..8]), read_u64_le(&bytes[8..]));
+        self.total = self.total.wrapping_add(N as u64);
+        let val = if N == 16 {
+            u128::from(read_u64_le(&bytes[..8])) | (u128::from(read_u64_le(&bytes[8..])) << 64)
+        } else {
+            read_u128_le_partial(&bytes)
+        };
+
+        if self.buf_len == 0 {
+            if N == 16 {
+                self.update(val as u64, (val >> 64) as u64);
+            } else {
+                self.buf = val;
+                self.buf_len = N;
+            }
         } else if self.buf_len + N < 16 {
-            self.total = self.total.wrapping_add(N as u64);
-            self.buf |= read_u128_le_partial(&bytes) << (self.buf_len * 8);
+            self.buf |= val << (self.buf_len * 8);
             self.buf_len += N;
         } else {
-            self.write_buffered(&bytes);
+            // `1 <= buf_len <= 15`, so both shifts stay in `8..=120`.
+            let block = self.buf | (val << (self.buf_len * 8));
+            self.update(block as u64, (block >> 64) as u64);
+            self.buf = val >> ((16 - self.buf_len) * 8);
+            self.buf_len = self.buf_len + N - 16;
         }
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn write_buffered(&mut self, bytes: &[u8]) {
         debug_assert!(self.buf_len > 0 && self.buf_len < 16);
         self.total = self.total.wrapping_add(bytes.len() as u64);
@@ -153,6 +169,7 @@ impl MurmurHash3X64128 {
 }
 
 impl Default for MurmurHash3X64128 {
+    #[inline(always)]
     fn default() -> Self {
         Self::with_seed(DEFAULT_UPDATE_SEED)
     }
@@ -259,6 +276,8 @@ fn fmix64(mut k: u64) -> u64 {
 
 #[cfg(test)]
 mod tests {
+    use std::hash::Hash;
+
     use super::*;
 
     fn murmurhash3_x64_128(key: &[u8], seed: u64) -> (u64, u64) {
@@ -345,6 +364,31 @@ mod tests {
             ]
         );
         check_write!(write_usize, [0usize, 1, 0x1234_5678, usize::MAX]);
+
+        // Composite fixed-width tuples crossing 16-byte block boundaries without slice writes.
+        let a = 0x0123_4567_89ab_cdef_u64;
+        let b = 0xfedc_ba98_7654_3210_u64;
+        let c = 0xdead_beef_u32;
+        let d = 0x0011_2233_4455_6677_8899_aabb_ccdd_eeff_u128;
+
+        let mut tuple_bytes = Vec::new();
+        tuple_bytes.extend_from_slice(&a.to_ne_bytes());
+        tuple_bytes.extend_from_slice(&b.to_ne_bytes());
+        let mut pair_hasher = MurmurHash3X64128::with_seed(DEFAULT_UPDATE_SEED);
+        (a, b).hash(&mut pair_hasher);
+        assert_eq!(
+            pair_hasher.finish128(),
+            murmurhash3_x64_128(&tuple_bytes, DEFAULT_UPDATE_SEED)
+        );
+
+        tuple_bytes.extend_from_slice(&c.to_ne_bytes());
+        tuple_bytes.extend_from_slice(&d.to_ne_bytes());
+        let mut mixed_hasher = MurmurHash3X64128::with_seed(DEFAULT_UPDATE_SEED);
+        (a, b, c, d).hash(&mut mixed_hasher);
+        assert_eq!(
+            mixed_hasher.finish128(),
+            murmurhash3_x64_128(&tuple_bytes, DEFAULT_UPDATE_SEED)
+        );
     }
 
     #[test]

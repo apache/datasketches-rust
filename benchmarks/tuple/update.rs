@@ -25,6 +25,7 @@ use datasketches::tuple::TupleSketchBuilder;
 
 use crate::hash_inputs::ITEMS;
 use crate::hash_inputs::bytes_32_values;
+use crate::hash_inputs::bytes_64_values;
 use crate::hash_inputs::variable_byte_slices;
 
 fn u64(bencher: Bencher) {
@@ -52,7 +53,7 @@ fn bytes_32(bencher: Bencher) {
 }
 
 fn variable_bytes(bencher: Bencher) {
-    let values = bytes_32_values();
+    let values = bytes_64_values();
     let keys = variable_byte_slices(&values);
 
     bencher.bench_local(|| {
@@ -68,5 +69,5 @@ fn variable_bytes(bencher: Bencher) {
 pub fn register(runner: &mut Runner) {
     runner.case("tuple::update::u64", 4_000, u64);
     runner.case("tuple::update::bytes_32", 3_000, bytes_32);
-    runner.case("tuple::update::variable_bytes", 2_400, variable_bytes);
+    runner.case("tuple::update::variable_bytes", 2_000, variable_bytes);
 }
