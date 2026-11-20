@@ -26,3 +26,12 @@ pub fn bytes_32_values() -> Vec<[u8; 32]> {
         })
         .collect()
 }
+
+/// Cycles slice lengths through `1..=32` so callers exercise every 16-byte block remainder.
+pub fn variable_byte_slices(values: &[[u8; 32]]) -> Vec<&[u8]> {
+    values
+        .iter()
+        .enumerate()
+        .map(|(i, bytes)| &bytes[..1 + i % bytes.len()])
+        .collect()
+}
