@@ -25,12 +25,25 @@ use datasketches::hll::HllType;
 
 use crate::hash_inputs::ITEMS;
 use crate::hash_inputs::bytes_32_values;
+use crate::hash_inputs::bytes_64_values;
+use crate::hash_inputs::u64_pair;
+use crate::hash_inputs::variable_byte_slices;
 
 fn u64(bencher: Bencher) {
     bencher.bench_local(|| {
         let mut sketch = HllSketch::new(12, HllType::Hll8).unwrap();
         for value in 0..ITEMS as u64 {
             sketch.update(black_box(value));
+        }
+        black_box(sketch)
+    });
+}
+
+fn u64_tuple(bencher: Bencher) {
+    bencher.bench_local(|| {
+        let mut sketch = HllSketch::new(12, HllType::Hll8).unwrap();
+        for value in 0..ITEMS as u64 {
+            sketch.update(black_box(u64_pair(value)));
         }
         black_box(sketch)
     });
@@ -48,7 +61,36 @@ fn bytes_32(bencher: Bencher) {
     });
 }
 
+fn variable_bytes(bencher: Bencher) {
+    let values = bytes_64_values();
+    let keys = variable_byte_slices(&values);
+
+    bencher.bench_local(|| {
+        let mut sketch = HllSketch::new(12, HllType::Hll8).unwrap();
+        for &key in &keys {
+            sketch.update(raw_bytes::from_slice(black_box(key)));
+        }
+        black_box(sketch)
+    });
+}
+
+fn prefixed_bytes(bencher: Bencher) {
+    let values = bytes_64_values();
+    let keys = variable_byte_slices(&values);
+
+    bencher.bench_local(|| {
+        let mut sketch = HllSketch::new(12, HllType::Hll8).unwrap();
+        for &key in &keys {
+            sketch.update(black_box(key));
+        }
+        black_box(sketch)
+    });
+}
+
 pub fn register(runner: &mut Runner) {
     runner.case("hll::update::u64", 6_000, u64);
+    runner.case("hll::update::u64_pair", 5_500, u64_tuple);
     runner.case("hll::update::bytes_32", 2_000, bytes_32);
+    runner.case("hll::update::variable_bytes", 2_000, variable_bytes);
+    runner.case("hll::update::prefixed_bytes", 1_600, prefixed_bytes);
 }

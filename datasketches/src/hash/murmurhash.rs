@@ -18,6 +18,7 @@
 use std::hash::Hasher;
 
 use crate::hash::DEFAULT_UPDATE_SEED;
+use crate::hash::read_u32_le;
 use crate::hash::read_u64_le;
 
 const C1: u64 = 0x87c37b91114253d5;
@@ -30,7 +31,8 @@ pub struct MurmurHash3X64128 {
     h1: u64,
     h2: u64,
     total: u64,
-    buf: [u8; 16],
+    // Buffered tail bytes packed in little-endian bit order; bits at or above `buf_len * 8` are 0.
+    buf: u128,
     buf_len: usize,
 }
 
@@ -41,7 +43,7 @@ impl MurmurHash3X64128 {
             h1: seed,
             h2: seed,
             total: 0,
-            buf: [0; 16],
+            buf: 0,
             buf_len: 0,
         }
     }
@@ -51,24 +53,17 @@ impl MurmurHash3X64128 {
         let mut h1 = self.h1;
         let mut h2 = self.h2;
 
-        let rem = self.buf_len;
-
         // tail
-        if rem > 0 {
-            if rem > 8 {
-                // read k2 little endian
-                let mut k2 = read_u64_le_partial(&self.buf[8..rem]);
-                // mix k2
+        if self.buf_len > 0 {
+            if self.buf_len > 8 {
+                let mut k2 = (self.buf >> 64) as u64;
                 k2 = k2.wrapping_mul(C2);
                 k2 = k2.rotate_left(33);
                 k2 = k2.wrapping_mul(C1);
                 h2 ^= k2;
             }
 
-            // read k1 little endian
-            let k1_len = rem.min(8);
-            let mut k1 = read_u64_le_partial(&self.buf[..k1_len]);
-            // mix k1
+            let mut k1 = self.buf as u64;
             k1 = k1.wrapping_mul(C1);
             k1 = k1.rotate_left(31);
             k1 = k1.wrapping_mul(C2);
@@ -110,9 +105,71 @@ impl MurmurHash3X64128 {
         self.h2 = self.h2.wrapping_add(self.h1);
         self.h2 = self.h2.wrapping_mul(5).wrapping_add(0x38495ab5);
     }
+
+    /// Same result as `write(&bytes)`, keeping single-scalar and multi-field composite writes
+    /// folded to register arithmetic at the call site.
+    #[inline(always)]
+    fn write_fixed<const N: usize>(&mut self, bytes: [u8; N]) {
+        debug_assert!(N <= 16);
+        self.total = self.total.wrapping_add(N as u64);
+        let val = if N == 16 {
+            u128::from(read_u64_le(&bytes[..8])) | (u128::from(read_u64_le(&bytes[8..])) << 64)
+        } else {
+            read_u128_le_partial(&bytes)
+        };
+
+        if self.buf_len == 0 {
+            if N == 16 {
+                self.update(val as u64, (val >> 64) as u64);
+            } else {
+                self.buf = val;
+                self.buf_len = N;
+            }
+        } else if self.buf_len + N < 16 {
+            self.buf |= val << (self.buf_len * 8);
+            self.buf_len += N;
+        } else {
+            // `1 <= buf_len <= 15`, so both shifts stay in `8..=120`.
+            let block = self.buf | (val << (self.buf_len * 8));
+            self.update(block as u64, (block >> 64) as u64);
+            self.buf = val >> ((16 - self.buf_len) * 8);
+            self.buf_len = self.buf_len + N - 16;
+        }
+    }
+
+    #[inline(always)]
+    fn write_buffered(&mut self, bytes: &[u8]) {
+        debug_assert!(self.buf_len > 0 && self.buf_len < 16);
+        self.total = self.total.wrapping_add(bytes.len() as u64);
+
+        let needed = 16 - self.buf_len;
+        if bytes.len() < needed {
+            self.buf |= read_u128_le_partial(bytes) << (self.buf_len * 8);
+            self.buf_len += bytes.len();
+            return;
+        }
+
+        let fill = read_u128_le_partial(&bytes[..needed]);
+        let block = self.buf | (fill << (self.buf_len * 8));
+        self.update(block as u64, (block >> 64) as u64);
+        self.buf = 0;
+        self.buf_len = 0;
+
+        let mut chunks = bytes[needed..].chunks_exact(16);
+        for chunk in &mut chunks {
+            self.update(read_u64_le(&chunk[..8]), read_u64_le(&chunk[8..]));
+        }
+
+        let rem = chunks.remainder();
+        if !rem.is_empty() {
+            self.buf = read_u128_le_partial(rem);
+            self.buf_len = rem.len();
+        }
+    }
 }
 
 impl Default for MurmurHash3X64128 {
+    #[inline(always)]
     fn default() -> Self {
         Self::with_seed(DEFAULT_UPDATE_SEED)
     }
@@ -125,44 +182,86 @@ impl Hasher for MurmurHash3X64128 {
     }
 
     #[inline(always)]
-    fn write(&mut self, mut bytes: &[u8]) {
-        self.total = self.total.wrapping_add(bytes.len() as u64);
-
+    fn write(&mut self, bytes: &[u8]) {
         if self.buf_len != 0 {
-            let copied = (16 - self.buf_len).min(bytes.len());
-            self.buf[self.buf_len..self.buf_len + copied].copy_from_slice(&bytes[..copied]);
-            self.buf_len += copied;
-            bytes = &bytes[copied..];
-
-            if self.buf_len < 16 {
-                return;
-            }
-
-            let k1 = read_u64_le(&self.buf[0..8]);
-            let k2 = read_u64_le(&self.buf[8..16]);
-            self.update(k1, k2);
-            self.buf_len = 0;
+            self.write_buffered(bytes);
+            return;
         }
 
-        while bytes.len() >= 16 {
-            let k1 = read_u64_le(&bytes[..8]);
-            let k2 = read_u64_le(&bytes[8..16]);
-            self.update(k1, k2);
-            bytes = &bytes[16..];
+        self.total = self.total.wrapping_add(bytes.len() as u64);
+        let mut chunks = bytes.chunks_exact(16);
+        for chunk in &mut chunks {
+            self.update(read_u64_le(&chunk[..8]), read_u64_le(&chunk[8..]));
         }
 
-        self.buf[..bytes.len()].copy_from_slice(bytes);
-        self.buf_len = bytes.len();
+        let rem = chunks.remainder();
+        if !rem.is_empty() {
+            self.buf = read_u128_le_partial(rem);
+            self.buf_len = rem.len();
+        }
+    }
+
+    #[inline(always)]
+    fn write_u8(&mut self, i: u8) {
+        self.write_fixed(i.to_ne_bytes());
+    }
+
+    #[inline(always)]
+    fn write_u16(&mut self, i: u16) {
+        self.write_fixed(i.to_ne_bytes());
+    }
+
+    #[inline(always)]
+    fn write_u32(&mut self, i: u32) {
+        self.write_fixed(i.to_ne_bytes());
+    }
+
+    #[inline(always)]
+    fn write_u64(&mut self, i: u64) {
+        self.write_fixed(i.to_ne_bytes());
+    }
+
+    #[inline(always)]
+    fn write_u128(&mut self, i: u128) {
+        self.write_fixed(i.to_ne_bytes());
+    }
+
+    #[inline(always)]
+    fn write_usize(&mut self, i: usize) {
+        self.write_fixed(i.to_ne_bytes());
+    }
+}
+
+#[inline(always)]
+fn read_u128_le_partial(bytes: &[u8]) -> u128 {
+    debug_assert!(bytes.len() < 16);
+    if bytes.len() > 8 {
+        let low = u128::from(read_u64_le(&bytes[..8]));
+        let high = u128::from(read_u64_le_partial(&bytes[8..]));
+        low | (high << 64)
+    } else {
+        u128::from(read_u64_le_partial(bytes))
     }
 }
 
 #[inline(always)]
 fn read_u64_le_partial(bytes: &[u8]) -> u64 {
-    let mut value = 0;
-    for (index, &byte) in bytes.iter().enumerate() {
-        value |= u64::from(byte) << (index * 8);
+    let len = bytes.len();
+    debug_assert!(len <= 8);
+    // Overlapping endpoint loads avoid both a byte loop and copying the tail onto the stack.
+    if len == 8 {
+        read_u64_le(bytes)
+    } else if len >= 4 {
+        let low = u64::from(read_u32_le(&bytes[..4]));
+        let high = u64::from(read_u32_le(&bytes[len - 4..]));
+        low | (high << ((len - 4) * 8))
+    } else if len >= 2 {
+        let low = u64::from(u16::from_le_bytes([bytes[0], bytes[1]]));
+        let high = u64::from(u16::from_le_bytes([bytes[len - 2], bytes[len - 1]]));
+        low | (high << ((len - 2) * 8))
+    } else {
+        bytes.first().map_or(0, |&byte| u64::from(byte))
     }
-    value
 }
 
 /// Finalization mix: force all bits of a hash block to avalanche.
@@ -177,6 +276,8 @@ fn fmix64(mut k: u64) -> u64 {
 
 #[cfg(test)]
 mod tests {
+    use std::hash::Hash;
+
     use super::*;
 
     fn murmurhash3_x64_128(key: &[u8], seed: u64) -> (u64, u64) {
@@ -193,6 +294,7 @@ mod tests {
             for split in 0..=len {
                 let mut hasher = MurmurHash3X64128::with_seed(42);
                 hasher.write(&input[..split]);
+                assert_eq!(hasher.finish128(), murmurhash3_x64_128(&input[..split], 42));
                 hasher.write(&input[split..len]);
                 assert_eq!(
                     hasher.finish128(),
@@ -201,6 +303,92 @@ mod tests {
                 );
             }
         }
+
+        // Exercise repeated block wraparounds and empty writes across chunk sizes 1..=17.
+        for chunk_size in 1..=17 {
+            let mut hasher = MurmurHash3X64128::with_seed(DEFAULT_UPDATE_SEED);
+            let mut consumed = 0;
+            for chunk in input.chunks(chunk_size) {
+                hasher.write(&[]);
+                hasher.write(chunk);
+                consumed += chunk.len();
+                assert_eq!(
+                    hasher.finish128(),
+                    murmurhash3_x64_128(&input[..consumed], DEFAULT_UPDATE_SEED),
+                    "hash changed at prefix {consumed} with chunk size {chunk_size}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn write_integers_match_write_of_native_bytes() {
+        let input: Vec<u8> = (0..=32).collect();
+
+        macro_rules! check_write {
+            ($method:ident, $values:expr) => {
+                for prefix in 0..=input.len() {
+                    for value in $values {
+                        let mut expected = MurmurHash3X64128::with_seed(DEFAULT_UPDATE_SEED);
+                        expected.write(&input[..prefix]);
+                        expected.write(&value.to_ne_bytes());
+                        expected.write(&input[..prefix]);
+
+                        let mut hasher = MurmurHash3X64128::with_seed(DEFAULT_UPDATE_SEED);
+                        hasher.write(&input[..prefix]);
+                        hasher.$method(value);
+                        hasher.write(&input[..prefix]);
+
+                        assert_eq!(
+                            hasher.finish128(),
+                            expected.finish128(),
+                            "{} prefix {prefix}, value {value:#x}",
+                            stringify!($method)
+                        );
+                    }
+                }
+            };
+        }
+
+        check_write!(write_u8, [0u8, 1, 0x7f, u8::MAX]);
+        check_write!(write_u16, [0u16, 1, 0x1234, u16::MAX]);
+        check_write!(write_u32, [0u32, 1, 0x0123_4567, u32::MAX]);
+        check_write!(write_u64, [0u64, 1, 0x0123_4567_89ab_cdef, u64::MAX]);
+        check_write!(
+            write_u128,
+            [
+                0u128,
+                1,
+                0x0123_4567_89ab_cdef_fedc_ba98_7654_3210,
+                u128::MAX
+            ]
+        );
+        check_write!(write_usize, [0usize, 1, 0x1234_5678, usize::MAX]);
+
+        // Composite fixed-width tuples crossing 16-byte block boundaries without slice writes.
+        let a = 0x0123_4567_89ab_cdef_u64;
+        let b = 0xfedc_ba98_7654_3210_u64;
+        let c = 0xdead_beef_u32;
+        let d = 0x0011_2233_4455_6677_8899_aabb_ccdd_eeff_u128;
+
+        let mut tuple_bytes = Vec::new();
+        tuple_bytes.extend_from_slice(&a.to_ne_bytes());
+        tuple_bytes.extend_from_slice(&b.to_ne_bytes());
+        let mut pair_hasher = MurmurHash3X64128::with_seed(DEFAULT_UPDATE_SEED);
+        (a, b).hash(&mut pair_hasher);
+        assert_eq!(
+            pair_hasher.finish128(),
+            murmurhash3_x64_128(&tuple_bytes, DEFAULT_UPDATE_SEED)
+        );
+
+        tuple_bytes.extend_from_slice(&c.to_ne_bytes());
+        tuple_bytes.extend_from_slice(&d.to_ne_bytes());
+        let mut mixed_hasher = MurmurHash3X64128::with_seed(DEFAULT_UPDATE_SEED);
+        (a, b, c, d).hash(&mut mixed_hasher);
+        assert_eq!(
+            mixed_hasher.finish128(),
+            murmurhash3_x64_128(&tuple_bytes, DEFAULT_UPDATE_SEED)
+        );
     }
 
     #[test]
