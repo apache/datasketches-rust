@@ -199,11 +199,10 @@ impl Array8 {
             "Source length must match 2^src_lg_k"
         );
 
-        let dst_mask = (1 << self.lg_config_k) - 1;
-
-        for (src_slot, &val) in src.iter().enumerate() {
-            let dst_slot = (src_slot as u32 & dst_mask) as usize;
-            self.bytes[dst_slot] = self.bytes[dst_slot].max(val);
+        for block in src.chunks_exact(self.bytes.len()) {
+            for (dst, &value) in self.bytes.iter_mut().zip(block) {
+                *dst = (*dst).max(value);
+            }
         }
 
         self.invalidate_estimator();
@@ -561,25 +560,17 @@ mod tests {
 
     #[test]
     fn test_merge_array_with_downsample() {
-        // Downsampling from lg_k=5 (32 slots) to lg_k=4 (16 slots)
-        let mut dst = Array8::new(4); // 16 slots
-        let mut src = Array8::new(5); // 32 slots
-
+        let mut dst = Array8::new(4);
         dst.put(0, 10);
-        dst.put(1, 20);
-
-        // Set up src - slots 0 and 16 both map to dst slot 0
-        src.put(0, 15); // maps to dst[0], max(10, 15) = 15
-        src.put(16, 25); // maps to dst[0], max(15, 25) = 25
-        src.put(1, 18); // maps to dst[1], max(20, 18) = 20
-        src.put(17, 30); // maps to dst[1], max(20, 30) = 30
+        let mut src = Array8::new(5);
+        src.put(0, 5);
+        src.put(1, 20);
+        src.put(17, 15);
+        src.put(18, 30);
 
         dst.merge_array_with_downsample(src.values(), 5);
 
-        assert_eq!(dst.get(0), 25, "dst[0] = max(10, 15, 25)");
-        assert_eq!(dst.get(1), 30, "dst[1] = max(20, 18, 30)");
-
-        // Bulk merges require composite estimation.
+        assert_eq!(&dst.values()[..3], &[10, 20, 30]);
         assert!(dst.estimation().estimator.uses_composite_estimate());
     }
 
