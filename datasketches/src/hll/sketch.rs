@@ -508,6 +508,7 @@ impl fmt::Debug for HllSketch {
     }
 }
 
+#[cold]
 fn promote_container_to_set<S: AsRef<[Coupon]>>(
     container: &Container<S>,
     hll_type: HllType,
@@ -520,6 +521,7 @@ fn promote_container_to_set<S: AsRef<[Coupon]>>(
     Mode::Set { set, hll_type }
 }
 
+#[cold]
 fn grow_set(old_set: &HashSet, hll_type: HllType) -> Mode {
     let new_size = old_set.container().lg_size() + 1;
     let mut new_set = HashSet::new(new_size);
@@ -533,6 +535,7 @@ fn grow_set(old_set: &HashSet, hll_type: HllType) -> Mode {
     }
 }
 
+#[cold]
 fn promote_container_to_array<S: AsRef<[Coupon]>>(
     container: &Container<S>,
     hll_type: HllType,
