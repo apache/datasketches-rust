@@ -306,6 +306,14 @@ impl Store {
             Self::Sparse(sparse) => StoreIter::Sparse(sparse.bins.iter()),
         }
     }
+
+    #[inline]
+    pub fn dense_contiguous_slice(&self) -> Option<(i32, &[u64])> {
+        match self {
+            Self::Dense(dense) => dense.active_slice(),
+            Self::Sparse(_) => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

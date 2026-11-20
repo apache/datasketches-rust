@@ -32,7 +32,16 @@
 //! bins per sign so high-magnitude tail quantiles retain their relative accuracy under bounded
 //! memory.
 //!
+//! # Cross-language compatibility
+//!
+//! [`DdSketch::serialize`] and [`DdSketch::deserialize`] use the compact binary format of the
+//! [reference DDSketch implementation][reference]. Bin storage strategy ([`StoreKind`]) is an
+//! in-memory representation choice and is not stored in the serialized image; use
+//! [`DdSketch::deserialize_with_store`] to decode into a non-default store. Bucket counts are
+//! encoded as variable-width `f64` values, preserving exact integers up to `2^53`.
+//!
 //! [paper]: https://www.vldb.org/pvldb/vol12/p2195-masson.pdf
+//! [reference]: https://github.com/DataDog/sketches-java
 //!
 //! # Examples
 //!
@@ -51,6 +60,7 @@
 
 mod iter;
 mod mapping;
+mod serialization;
 mod sketch;
 mod store;
 

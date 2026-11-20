@@ -95,6 +95,14 @@ impl IndexMapping {
         Self::build(kind, gamma, index_offset).map_err(Error::invalid_argument)
     }
 
+    pub fn from_gamma_offset(
+        kind: MappingKind,
+        gamma: f64,
+        index_offset: f64,
+    ) -> Result<Self, Error> {
+        Self::build(kind, gamma, index_offset).map_err(Error::deserial)
+    }
+
     fn build(kind: MappingKind, gamma: f64, index_offset: f64) -> Result<Self, String> {
         if !gamma.is_finite() || gamma <= 1.0 {
             return Err(format!("gamma must be finite and > 1.0, got {gamma}"));

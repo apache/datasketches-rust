@@ -26,6 +26,7 @@ pub use self::encode::SketchBytes;
     feature = "bloom",
     feature = "countmin",
     feature = "cpc",
+    feature = "ddsketch",
     feature = "density",
     feature = "frequencies",
     feature = "hll",

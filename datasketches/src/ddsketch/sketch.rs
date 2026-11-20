@@ -21,6 +21,8 @@ use super::DEFAULT_RELATIVE_ACCURACY;
 use super::iter::DdSketchIter;
 use super::mapping::IndexMapping;
 use super::mapping::MappingKind;
+use super::serialization::deserialize_sketch;
+use super::serialization::serialize_sketch;
 use super::store::Store;
 use super::store::StoreKind;
 use super::store::validate_store_kind;
@@ -157,7 +159,7 @@ impl DdSketch {
         DdSketchBuilder::new(relative_accuracy).build()
     }
 
-    fn from_parts(
+    pub(super) fn from_parts(
         mapping: IndexMapping,
         negative: Store,
         positive: Store,
@@ -175,6 +177,21 @@ impl DdSketch {
             zero_weight,
             total_weight,
         }
+    }
+
+    #[inline]
+    pub(super) const fn mapping(&self) -> IndexMapping {
+        self.mapping
+    }
+
+    #[inline]
+    pub(super) const fn positive_store(&self) -> &Store {
+        &self.positive
+    }
+
+    #[inline]
+    pub(super) const fn negative_store(&self) -> &Store {
+        &self.negative
     }
 
     /// Returns the relative value accuracy guaranteed for non-collapsed buckets.
@@ -526,6 +543,67 @@ impl DdSketch {
             self.positive.iter_asc(),
             self.num_retained(),
         )
+    }
+
+    /// Serializes this sketch to bytes using the compact DDSketch binary format.
+    ///
+    /// # Cross-language compatibility
+    ///
+    /// The serialized data can be read by the reference DDSketch implementations in Java, Go,
+    /// Python, and JavaScript. [`StoreKind`] is not stored in the image, and bucket weights above
+    /// `2^53` round to IEEE 754 `f64` precision.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::ddsketch::DdSketch;
+    ///
+    /// let mut sketch = DdSketch::new(0.01)?;
+    /// sketch.update(3.5);
+    /// let bytes = sketch.serialize();
+    /// let decoded = DdSketch::deserialize(&bytes)?;
+    /// assert_eq!(decoded.total_weight(), 1);
+    /// # Ok::<(), datasketches::error::Error>(())
+    /// ```
+    pub fn serialize(&self) -> Vec<u8> {
+        serialize_sketch(self)
+    }
+
+    /// Deserializes a sketch from bytes using [`StoreKind::default()`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InvalidData`](crate::error::ErrorKind::InvalidData) if the image is empty,
+    /// truncated, missing an index mapping, contains unsupported flags or non-integer/negative
+    /// counts, or overflows index or weight bounds.
+    ///
+    /// # Cross-language compatibility
+    ///
+    /// Also accepts data serialized by the reference DDSketch implementations in Java, Go, Python,
+    /// and JavaScript, including images carrying optional exact summary-statistic blocks (which
+    /// are skipped). Use [`deserialize_with_store`](Self::deserialize_with_store) when the source
+    /// sketch spans more than `2048` bins per sign and collapsing on decode is undesirable.
+    pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
+        deserialize_sketch(bytes, StoreKind::default())
+    }
+
+    /// Deserializes a sketch from bytes into the specified `store` strategy.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InvalidArgument`](crate::error::ErrorKind::InvalidArgument) if `store` has an
+    /// invalid `max_num_bins` bound, or [`InvalidData`](crate::error::ErrorKind::InvalidData)
+    /// under the same conditions as [`deserialize`](Self::deserialize) (additionally rejecting
+    /// index spans above `67_108_864` when `store` is [`StoreKind::UnboundedDense`]).
+    ///
+    /// # Cross-language compatibility
+    ///
+    /// Also accepts data serialized by the reference DDSketch implementations in Java, Go, Python,
+    /// and JavaScript. [`StoreKind`] is not encoded on the wire, so any valid `store` may be
+    /// selected on decode.
+    pub fn deserialize_with_store(bytes: &[u8], store: StoreKind) -> Result<Self, Error> {
+        validate_store_kind(store)?;
+        deserialize_sketch(bytes, store)
     }
 
     fn quantile_unchecked(&self, rank: f64) -> f64 {
