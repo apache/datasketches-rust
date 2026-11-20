@@ -18,25 +18,6 @@
 use datasketches::error::ErrorKind;
 use datasketches::uddsketch::UddSketch;
 
-fn assert_equivalent(actual: &UddSketch, expected: &UddSketch, ranks: &[f64]) {
-    assert_eq!(actual.num_collapses(), expected.num_collapses());
-    assert_eq!(actual.total_weight(), expected.total_weight());
-    assert_eq!(actual.zero_weight(), expected.zero_weight());
-    assert_eq!(actual.num_retained(), expected.num_retained());
-    assert_eq!(
-        actual.min_value().map(f64::to_bits),
-        expected.min_value().map(f64::to_bits)
-    );
-    assert_eq!(
-        actual.max_value().map(f64::to_bits),
-        expected.max_value().map(f64::to_bits)
-    );
-    assert_eq!(
-        actual.quantiles(ranks).unwrap(),
-        expected.quantiles(ranks).unwrap()
-    );
-}
-
 #[test]
 fn states_are_invariant_across_permutations_partitions_and_merge_trees() {
     let mut dataset = Vec::with_capacity(2060);
@@ -65,9 +46,12 @@ fn states_are_invariant_across_permutations_partitions_and_merge_trees() {
     };
 
     let reference = build(&dataset);
-    let query_ranks: Vec<f64> = (0..=100).map(|i| i as f64 / 100.0).collect();
+    let expected_bytes = reference.serialize();
+    let query_ranks = [0.0, 0.01, 0.1, 0.5, 0.9, 0.99, 1.0];
+    let expected_quantiles = reference.quantiles(&query_ranks).unwrap().unwrap();
     assert!(reference.num_collapses() > 0);
 
+    // Deterministic permutation: ascending, descending, and pseudo-random Fisher-Yates shuffle.
     let mut ascending = dataset.clone();
     ascending.sort_by(f64::total_cmp);
 
@@ -84,23 +68,31 @@ fn states_are_invariant_across_permutations_partitions_and_merge_trees() {
     }
 
     for order in [&dataset, &ascending, &descending, &shuffled] {
-        assert_equivalent(&build(order), &reference, &query_ranks);
+        assert_eq!(build(order).serialize(), expected_bytes);
 
         for chunk_size in [1, 13, 127, 600] {
             let partials: Vec<UddSketch> = order.chunks(chunk_size).map(build).collect();
 
+            // Left-fold merge via serialized roundtrip.
             let mut left = UddSketch::new(128, 0.01).unwrap();
             for part in &partials {
-                left.merge(part).unwrap();
+                let decoded = UddSketch::deserialize(&part.serialize()).unwrap();
+                left.merge(&decoded).unwrap();
             }
-            assert_equivalent(&left, &reference, &query_ranks);
+            assert_eq!(left.serialize(), expected_bytes);
+            assert_eq!(
+                left.quantiles(&query_ranks).unwrap().unwrap(),
+                expected_quantiles
+            );
 
+            // Right-fold merge.
             let mut right = UddSketch::new(128, 0.01).unwrap();
             for part in partials.iter().rev() {
                 right.merge(part).unwrap();
             }
-            assert_equivalent(&right, &reference, &query_ranks);
+            assert_eq!(right.serialize(), expected_bytes);
 
+            // Balanced binary reduction tree.
             let mut layer = partials;
             while layer.len() > 1 {
                 let mut next = Vec::with_capacity(layer.len().div_ceil(2));
@@ -113,7 +105,7 @@ fn states_are_invariant_across_permutations_partitions_and_merge_trees() {
                 }
                 layer = next;
             }
-            assert_equivalent(&layer[0], &reference, &query_ranks);
+            assert_eq!(layer[0].serialize(), expected_bytes);
         }
     }
 }
@@ -141,9 +133,9 @@ fn merging_mismatched_collapse_levels_matches_single_stream() {
     let mut coarse_into_fine = fine.clone();
     coarse_into_fine.merge(&coarse).unwrap();
 
-    let ranks = [0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0];
-    assert_equivalent(&fine_into_coarse, &combined, &ranks);
-    assert_equivalent(&coarse_into_fine, &combined, &ranks);
+    let expected = combined.serialize();
+    assert_eq!(fine_into_coarse.serialize(), expected);
+    assert_eq!(coarse_into_fine.serialize(), expected);
 }
 
 #[test]
@@ -152,6 +144,7 @@ fn incompatible_or_overflowing_merge_leaves_receiver_unchanged() {
     let wrong_buckets = UddSketch::new(128, 0.01).unwrap();
     let wrong_alpha = UddSketch::new(64, 0.02).unwrap();
 
+    // Compatibility must be checked even when both sketches are empty.
     assert_eq!(
         empty_base.merge(&wrong_buckets).unwrap_err().kind(),
         ErrorKind::InvalidArgument
@@ -163,14 +156,13 @@ fn incompatible_or_overflowing_merge_leaves_receiver_unchanged() {
 
     let mut receiver = UddSketch::new(64, 0.01).unwrap();
     receiver.update_with_weight(10.0, u64::MAX - 5);
-    let before = receiver.clone();
-    let ranks = [0.0, 0.5, 1.0];
+    let before = receiver.serialize();
 
     assert_eq!(
         receiver.merge(&wrong_buckets).unwrap_err().kind(),
         ErrorKind::InvalidArgument
     );
-    assert_equivalent(&receiver, &before, &ranks);
+    assert_eq!(receiver.serialize(), before);
 
     let mut heavy = UddSketch::new(64, 0.01).unwrap();
     heavy.update_with_weight(-2.0, 6);
@@ -178,5 +170,5 @@ fn incompatible_or_overflowing_merge_leaves_receiver_unchanged() {
         receiver.merge(&heavy).unwrap_err().kind(),
         ErrorKind::InvalidArgument
     );
-    assert_equivalent(&receiver, &before, &ranks);
+    assert_eq!(receiver.serialize(), before);
 }

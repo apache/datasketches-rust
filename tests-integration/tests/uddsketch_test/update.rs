@@ -21,30 +21,6 @@ use std::panic::catch_unwind;
 use datasketches::error::ErrorKind;
 use datasketches::uddsketch::UddSketch;
 
-fn assert_same_summary(left: &UddSketch, right: &UddSketch) {
-    assert_eq!(left.max_buckets(), right.max_buckets());
-    assert_eq!(
-        left.initial_alpha().to_bits(),
-        right.initial_alpha().to_bits()
-    );
-    assert_eq!(left.num_collapses(), right.num_collapses());
-    assert_eq!(left.total_weight(), right.total_weight());
-    assert_eq!(left.zero_weight(), right.zero_weight());
-    assert_eq!(left.num_retained(), right.num_retained());
-    assert_eq!(
-        left.min_value().map(f64::to_bits),
-        right.min_value().map(f64::to_bits)
-    );
-    assert_eq!(
-        left.max_value().map(f64::to_bits),
-        right.max_value().map(f64::to_bits)
-    );
-    let probe_ranks: Vec<f64> = (0..=100).map(|i| i as f64 / 100.0).collect();
-    let lq = left.quantiles(&probe_ranks).unwrap();
-    let rq = right.quantiles(&probe_ranks).unwrap();
-    assert_eq!(lq, rq);
-}
-
 #[test]
 fn constructor_validates_parameters() {
     for bad_buckets in [0, 1, 2, 3] {
@@ -110,7 +86,7 @@ fn non_finite_values_and_zero_weights_are_ignored_and_signed_zeros_canonicalize(
     assert_eq!(left.max_value().unwrap().to_bits(), 0.0f64.to_bits());
     assert_eq!(left.zero_weight(), 2);
     assert_eq!(left.num_retained(), 0);
-    assert_same_summary(&left, &right);
+    assert_eq!(left.serialize(), right.serialize());
 }
 
 #[test]
@@ -136,7 +112,7 @@ fn weighted_updates_match_repeated_unit_updates_across_index_and_collapse() {
 
     assert!(weighted.num_collapses() > 0);
     assert!(weighted.num_retained() <= 48);
-    assert_same_summary(&weighted, &unit);
+    assert_eq!(weighted.serialize(), unit.serialize());
 }
 
 #[test]
@@ -158,7 +134,7 @@ fn reset_restores_initial_level_and_produces_identical_subsequent_builds() {
         reused.update(v);
         fresh.update(v);
     }
-    assert_same_summary(&reused, &fresh);
+    assert_eq!(reused.serialize(), fresh.serialize());
 }
 
 #[test]
@@ -166,19 +142,19 @@ fn weight_overflow_panics_without_modifying_sketch() {
     let mut sketch = UddSketch::new(32, 0.01).unwrap();
     sketch.update_with_weight(-5.0, u64::MAX - 2);
     sketch.update_with_weight(10.0, 2);
-    let snapshot = sketch.clone();
+    let snapshot = sketch.serialize();
 
     let panic_unit = catch_unwind(AssertUnwindSafe(|| {
         sketch.update(1.0);
     }));
     assert!(panic_unit.is_err());
-    assert_same_summary(&sketch, &snapshot);
+    assert_eq!(sketch.serialize(), snapshot);
 
     let panic_weighted = catch_unwind(AssertUnwindSafe(|| {
         sketch.update_with_weight(0.0, 1);
     }));
     assert!(panic_weighted.is_err());
-    assert_same_summary(&sketch, &snapshot);
+    assert_eq!(sketch.serialize(), snapshot);
 
     // Non-finite and zero-weight calls remain no-ops even at u64::MAX.
     sketch.update(f64::NAN);

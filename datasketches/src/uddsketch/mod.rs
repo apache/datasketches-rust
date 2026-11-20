@@ -31,15 +31,21 @@
 //!
 //! [`UddSketch`] uses a deterministic fixed-point binary logarithm mapping and integer parent
 //! bucket collapsing. For sketches configured with identical `max_buckets` and `initial_alpha`,
-//! insertion-only streams (via [`UddSketch::update`], [`UddSketch::update_with_weight`], and
-//! [`UddSketch::merge`]) produce identical states and quantile estimates regardless of input order,
-//! partitioning, or merge tree topology.
+//! insertion-only streams (via [`UddSketch::update`], [`UddSketch::update_with_weight`],
+//! [`UddSketch::merge`], and unmodified [`UddSketch::serialize`] / [`UddSketch::deserialize`]
+//! roundtrips) produce identical states, serialized bytes, and quantile estimates regardless of
+//! input order, partitioning, or merge tree topology.
 //!
 //! Quantile queries target the lower discrete `q`-quantile at zero-based sorted index
 //! `floor(q * (total_weight - 1))`. Ranks `0.0` and `1.0` return the exact stream minimum and
 //! maximum, and ranks falling in the zero bucket return `0.0`. For nonzero estimates over normal
 //! `f64` values, [`UddSketch::alpha`] reports the effective relative value error bound after any
 //! uniform collapses.
+//!
+//! # Cross-language compatibility
+//!
+//! [`UddSketch`] uses a Rust-specific DataSketches binary format (family ID `24`). Peer
+//! DataSketches implementations in Java, C++, Go, and Python do not currently implement UDDSketch.
 //!
 //! [uddsketch]: https://arxiv.org/abs/2004.08604
 //! [mergeability]: https://arxiv.org/abs/2101.06758
@@ -64,6 +70,7 @@
 //! ```
 
 mod mapping;
+mod serialization;
 mod sketch;
 mod store;
 
@@ -73,3 +80,4 @@ const DEFAULT_MAX_BUCKETS: u32 = 512;
 const DEFAULT_ALPHA: f64 = 0.01;
 const MIN_MAX_BUCKETS: u32 = 4;
 const MIN_ALPHA: f64 = 1e-12;
+const MAX_COLLAPSES: u8 = 62;

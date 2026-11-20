@@ -22,6 +22,8 @@ use super::DEFAULT_MAX_BUCKETS;
 use super::MIN_ALPHA;
 use super::MIN_MAX_BUCKETS;
 use super::mapping::Mapping;
+use super::serialization::deserialize_sketch;
+use super::serialization::serialize_sketch;
 use super::store::BucketStore;
 use crate::error::Error;
 
@@ -100,17 +102,17 @@ impl UddSketch {
             )));
         }
 
-        Ok(Self {
+        Ok(Self::from_parts(
             max_buckets,
-            mapping: Mapping::new(initial_alpha),
-            num_collapses: 0,
-            total_weight: 0,
-            zero_weight: 0,
-            min: f64::INFINITY,
-            max: f64::NEG_INFINITY,
-            neg: BucketStore::default(),
-            pos: BucketStore::default(),
-        })
+            Mapping::new(initial_alpha),
+            0,
+            0,
+            0,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            BucketStore::default(),
+            BucketStore::default(),
+        ))
     }
 
     /// Returns the maximum number of nonzero buckets retained by this sketch.
@@ -389,6 +391,73 @@ impl UddSketch {
             out.push(self.quantile_unchecked(rank));
         }
         Ok(Some(out))
+    }
+
+    /// Serializes this sketch into the DataSketches UDDSketch binary format.
+    ///
+    /// See the [module documentation](crate::uddsketch#cross-language-compatibility) for format
+    /// compatibility notes.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::uddsketch::UddSketch;
+    ///
+    /// let mut sketch = UddSketch::new(256, 0.01)?;
+    /// sketch.update(3.5);
+    /// let bytes = sketch.serialize();
+    /// let decoded = UddSketch::deserialize(&bytes)?;
+    /// assert_eq!(decoded.total_weight(), 1);
+    /// # Ok::<(), datasketches::error::Error>(())
+    /// ```
+    pub fn serialize(&self) -> Vec<u8> {
+        serialize_sketch(self)
+    }
+
+    /// Deserializes a sketch from the DataSketches UDDSketch binary format.
+    ///
+    /// See the [module documentation](crate::uddsketch#cross-language-compatibility) for format
+    /// compatibility notes.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InvalidData`](crate::error::ErrorKind::InvalidData) if the image is truncated, has
+    /// an unsupported header, or violates bucket ordering, count, budget, or extrema invariants.
+    pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
+        deserialize_sketch(bytes)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn from_parts(
+        max_buckets: u32,
+        mapping: Mapping,
+        num_collapses: u8,
+        total_weight: u64,
+        zero_weight: u64,
+        min: f64,
+        max: f64,
+        neg: BucketStore,
+        pos: BucketStore,
+    ) -> Self {
+        Self {
+            max_buckets,
+            mapping,
+            num_collapses,
+            total_weight,
+            zero_weight,
+            min,
+            max,
+            neg,
+            pos,
+        }
+    }
+
+    pub(super) fn neg_store(&self) -> &BucketStore {
+        &self.neg
+    }
+
+    pub(super) fn pos_store(&self) -> &BucketStore {
+        &self.pos
     }
 
     fn enforce_budget(&mut self) {

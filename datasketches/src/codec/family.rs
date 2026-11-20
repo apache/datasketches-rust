@@ -146,6 +146,15 @@ impl Family {
         min_pre_longs: 2,
         max_pre_longs: 3,
     };
+
+    /// UDDSketch for reproducible relative-error quantile estimation.
+    #[cfg(feature = "uddsketch")]
+    pub const UDDSKETCH: Family = Family {
+        id: 24,
+        name: "UDDSKETCH",
+        min_pre_longs: 2,
+        max_pre_longs: 7,
+    };
 }
 
 impl Family {

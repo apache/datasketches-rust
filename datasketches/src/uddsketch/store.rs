@@ -29,7 +29,7 @@ pub struct Bucket {
 }
 
 /// Sorted counter buckets for one sign (positive magnitudes) with a lazy open-addressed hash index
-/// once non-monotonic lookups exceed `INDEX_THRESHOLD` retained buckets.
+/// once the number of retained buckets exceeds `INDEX_THRESHOLD`.
 #[derive(Clone, Debug, Default)]
 pub struct BucketStore {
     entries: Vec<Bucket>,
@@ -38,6 +38,14 @@ pub struct BucketStore {
 }
 
 impl BucketStore {
+    pub fn from_sorted_unchecked(entries: Vec<Bucket>, total_weight: u64) -> Self {
+        Self {
+            entries,
+            total_weight,
+            slots: Vec::new(),
+        }
+    }
+
     #[inline]
     pub fn len(&self) -> usize {
         self.entries.len()
@@ -51,6 +59,11 @@ impl BucketStore {
     #[inline]
     pub fn total_weight(&self) -> u64 {
         self.total_weight
+    }
+
+    #[inline]
+    pub fn buckets(&self) -> &[Bucket] {
+        &self.entries
     }
 
     pub fn estimated_size(&self) -> usize {
