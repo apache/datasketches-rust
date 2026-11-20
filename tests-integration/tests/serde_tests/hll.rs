@@ -19,6 +19,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use datasketches::common::NumStdDev;
+use datasketches::error::ErrorKind;
 use datasketches::hash::value::natural_extend;
 use datasketches::hll::HllSketch;
 use datasketches::hll::HllType;
@@ -412,6 +413,18 @@ fn hll_mode_round_trip_preserves_registers_and_rejects_truncation() {
         assert_hll_sketches_eq(&restored, &sketch, &format!("hll_type: {hll_type:?}"));
         assert!(HllSketch::deserialize(&bytes[..bytes.len() - 1]).is_err());
     }
+}
+
+#[test]
+fn hll8_rejects_register_values_above_63() {
+    let mut sketch = HllSketch::new(9, HllType::Hll8).unwrap();
+    for value in 0..100 {
+        sketch.update(value);
+    }
+    let mut bytes = sketch.serialize();
+    *bytes.last_mut().unwrap() = 64;
+    let error = HllSketch::deserialize(&bytes).unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::InvalidData);
 }
 
 #[test]
