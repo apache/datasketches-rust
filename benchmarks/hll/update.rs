@@ -30,10 +30,14 @@ use crate::hash_inputs::bytes_64_values;
 use crate::hash_inputs::u64_pair;
 use crate::hash_inputs::variable_byte_slices;
 
-fn precomputed_coupons(bencher: Bencher, update: impl Fn(&mut HllSketch, &[Coupon])) {
+fn precomputed_coupons(
+    bencher: Bencher,
+    hll_type: HllType,
+    update: impl Fn(&mut HllSketch, &[Coupon]),
+) {
     let coupons: Vec<_> = (0..400_000_u64).map(Coupon::from_value).collect();
     bencher.bench_local(|| {
-        let mut sketch = HllSketch::new(14, HllType::Hll8).unwrap();
+        let mut sketch = HllSketch::new(14, hll_type).unwrap();
         for batch in black_box(&coupons).chunks(8_192) {
             update(&mut sketch, batch);
         }
@@ -105,22 +109,28 @@ pub fn register(runner: &mut Runner) {
     runner.case("hll::update::bytes_32", 2_000, bytes_32);
     runner.case("hll::update::variable_bytes", 2_000, variable_bytes);
     runner.case("hll::update::prefixed_bytes", 1_600, prefixed_bytes);
-    runner.compare(
-        "hll::update::precomputed_coupons/8192",
-        600,
-        &[
-            ("scalar", &|b| {
-                precomputed_coupons(b, |sketch, batch| {
-                    for &coupon in batch {
-                        sketch.update_with_coupon(coupon);
-                    }
-                })
-            }),
-            ("batch", &|b| {
-                precomputed_coupons(b, |sketch, batch| {
-                    sketch.update_with_coupons(batch.iter().copied());
-                })
-            }),
-        ],
-    );
+    for (label, hll_type, rounds) in [
+        ("hll4", HllType::Hll4, 200),
+        ("hll6", HllType::Hll6, 400),
+        ("hll8", HllType::Hll8, 600),
+    ] {
+        runner.compare(
+            &format!("hll::update::precomputed_coupons/{label}/8192"),
+            rounds,
+            &[
+                ("scalar", &|b| {
+                    precomputed_coupons(b, hll_type, |sketch, batch| {
+                        for &coupon in batch {
+                            sketch.update_with_coupon(coupon);
+                        }
+                    })
+                }),
+                ("batch", &|b| {
+                    precomputed_coupons(b, hll_type, |sketch, batch| {
+                        sketch.update_with_coupons(batch.iter().copied());
+                    })
+                }),
+            ],
+        );
+    }
 }
