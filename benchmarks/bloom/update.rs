@@ -24,6 +24,7 @@ use datasketches::hash::value::raw_bytes;
 
 use crate::hash_inputs::ITEMS;
 use crate::hash_inputs::bytes_32_values;
+use crate::hash_inputs::variable_byte_slices;
 
 fn u64(bencher: Bencher) {
     bencher.bench_local(|| {
@@ -46,6 +47,21 @@ fn bytes_32(bencher: Bencher) {
             .unwrap();
         for value in &values {
             filter.insert(raw_bytes::from_slice(black_box(value)));
+        }
+        black_box(filter)
+    });
+}
+
+fn variable_bytes(bencher: Bencher) {
+    let values = bytes_32_values();
+    let keys = variable_byte_slices(&values);
+
+    bencher.bench_local(|| {
+        let mut filter = BloomFilterBuilder::with_accuracy(ITEMS as u64, 0.01)
+            .build()
+            .unwrap();
+        for &key in &keys {
+            filter.insert(raw_bytes::from_slice(black_box(key)));
         }
         black_box(filter)
     });
@@ -75,6 +91,7 @@ fn contains_and_insert(
 pub fn register(runner: &mut Runner) {
     runner.case("bloom::update::u64", 2_000, u64);
     runner.case("bloom::update::bytes_32", 1_000, bytes_32);
+    runner.case("bloom::update::variable_bytes", 1_500, variable_bytes);
     runner.case(
         "bloom::update::contains_and_insert_present_u64",
         2_000,

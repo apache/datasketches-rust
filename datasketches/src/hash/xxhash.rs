@@ -39,7 +39,11 @@ pub struct XxHash64 {
     v2: u64,
     v3: u64,
     v4: u64,
-    buffer: [u8; 32],
+    // Buffered tail bytes packed in little-endian order; bytes at or above `buffer_len` are 0.
+    b0: u64,
+    b1: u64,
+    b2: u64,
+    b3: u64,
     buffer_len: usize,
 }
 
@@ -53,7 +57,10 @@ impl XxHash64 {
             v2: seed.wrapping_add(P2),
             v3: seed,
             v4: seed.wrapping_sub(P1),
-            buffer: [0; 32],
+            b0: 0,
+            b1: 0,
+            b2: 0,
+            b3: 0,
             buffer_len: 0,
         }
     }
@@ -78,30 +85,34 @@ impl XxHash64 {
 
         hash = hash.wrapping_add(self.total_len);
 
-        let mut idx = 0;
-        let buf = &self.buffer[..self.buffer_len];
-        while idx + 8 <= buf.len() {
-            let mut k1 = read_u64_le(&buf[idx..idx + 8]);
-            k1 = k1.wrapping_mul(P2);
-            k1 = k1.rotate_left(31);
-            k1 = k1.wrapping_mul(P1);
-            hash ^= k1;
-            hash = hash.rotate_left(27).wrapping_mul(P1).wrapping_add(P4);
-            idx += 8;
-        }
+        let rem = self.buffer_len;
+        if rem > 0 {
+            let mut tail = self.b0;
+            if rem >= 8 {
+                hash = mix_u64(hash, self.b0);
+                tail = self.b1;
+                if rem >= 16 {
+                    hash = mix_u64(hash, self.b1);
+                    tail = self.b2;
+                    if rem >= 24 {
+                        hash = mix_u64(hash, self.b2);
+                        tail = self.b3;
+                    }
+                }
+            }
 
-        if idx + 4 <= buf.len() {
-            let k1 = read_u32_le(&buf[idx..idx + 4]);
-            hash ^= u64::from(k1).wrapping_mul(P1);
-            hash = hash.rotate_left(23).wrapping_mul(P2).wrapping_add(P3);
-            idx += 4;
-        }
-
-        while idx < buf.len() {
-            let k1 = buf[idx] as u64;
-            hash ^= k1.wrapping_mul(P5);
-            hash = hash.rotate_left(11).wrapping_mul(P1);
-            idx += 1;
+            if (rem & 4) != 0 {
+                hash = mix_u32(hash, tail as u32);
+                tail >>= 32;
+            }
+            if (rem & 2) != 0 {
+                hash = mix_u8(hash, tail as u8);
+                hash = mix_u8(hash, (tail >> 8) as u8);
+                tail >>= 16;
+            }
+            if (rem & 1) != 0 {
+                hash = mix_u8(hash, tail as u8);
+            }
         }
 
         finalize(hash)
@@ -110,14 +121,8 @@ impl XxHash64 {
     #[allow(dead_code)]
     #[inline(always)]
     pub fn hash_u64(input: u64, seed: u64) -> u64 {
-        let mut hash = seed.wrapping_add(P5).wrapping_add(8);
-        let mut k1 = input;
-        k1 = k1.wrapping_mul(P2);
-        k1 = k1.rotate_left(31);
-        k1 = k1.wrapping_mul(P1);
-        hash ^= k1;
-        hash = hash.rotate_left(27).wrapping_mul(P1).wrapping_add(P4);
-        finalize(hash)
+        let hash = seed.wrapping_add(P5).wrapping_add(8);
+        finalize(mix_u64(hash, input))
     }
 
     #[inline(always)]
@@ -126,6 +131,99 @@ impl XxHash64 {
         self.v2 = round(self.v2, read_u64_le(&chunk[8..16]));
         self.v3 = round(self.v3, read_u64_le(&chunk[16..24]));
         self.v4 = round(self.v4, read_u64_le(&chunk[24..32]));
+    }
+
+    #[inline(always)]
+    fn load_tail(&mut self, rem: &[u8]) {
+        let len = rem.len();
+        debug_assert!((1..32).contains(&len));
+        self.buffer_len = len;
+        if len < 8 {
+            self.b0 = read_u64_le_partial(rem);
+        } else {
+            self.b0 = read_u64_le(&rem[..8]);
+            if len < 16 {
+                self.b1 = read_u64_le_partial(&rem[8..]);
+            } else {
+                self.b1 = read_u64_le(&rem[8..16]);
+                if len < 24 {
+                    self.b2 = read_u64_le_partial(&rem[16..]);
+                } else {
+                    self.b2 = read_u64_le(&rem[16..24]);
+                    self.b3 = read_u64_le_partial(&rem[24..]);
+                }
+            }
+        }
+    }
+
+    /// Same result as `write(&bytes)`, with an inlined body small enough that hashing a
+    /// fixed-width integer folds to register arithmetic at the call site.
+    #[inline(always)]
+    fn write_fixed<const N: usize>(&mut self, bytes: [u8; N]) {
+        debug_assert!(N <= 16);
+        if self.buffer_len == 0 {
+            self.total_len = self.total_len.wrapping_add(N as u64);
+            self.buffer_len = N;
+            if N > 8 {
+                self.b0 = read_u64_le(&bytes[..8]);
+                self.b1 = read_u64_le_partial(&bytes[8..]);
+            } else {
+                self.b0 = read_u64_le_partial(&bytes);
+            }
+        } else if N == 8 && (self.buffer_len & 7) == 0 && self.buffer_len < 24 {
+            self.total_len = self.total_len.wrapping_add(8);
+            let word = read_u64_le(&bytes);
+            if self.buffer_len == 8 {
+                self.b1 = word;
+            } else {
+                self.b2 = word;
+            }
+            self.buffer_len += 8;
+        } else {
+            self.write_buffered(&bytes);
+        }
+    }
+
+    #[inline(never)]
+    fn write_buffered(&mut self, mut bytes: &[u8]) {
+        debug_assert!((1..32).contains(&self.buffer_len));
+        if bytes.is_empty() {
+            return;
+        }
+        self.total_len = self.total_len.wrapping_add(bytes.len() as u64);
+
+        let mut buf = [0u8; 32];
+        buf[0..8].copy_from_slice(&self.b0.to_le_bytes());
+        buf[8..16].copy_from_slice(&self.b1.to_le_bytes());
+        buf[16..24].copy_from_slice(&self.b2.to_le_bytes());
+        buf[24..32].copy_from_slice(&self.b3.to_le_bytes());
+
+        if self.buffer_len + bytes.len() < 32 {
+            let end = self.buffer_len + bytes.len();
+            buf[self.buffer_len..end].copy_from_slice(bytes);
+            self.load_tail(&buf[..end]);
+            return;
+        }
+
+        let needed = 32 - self.buffer_len;
+        buf[self.buffer_len..].copy_from_slice(&bytes[..needed]);
+        self.update(&buf);
+        self.b0 = 0;
+        self.b1 = 0;
+        self.b2 = 0;
+        self.b3 = 0;
+        self.buffer_len = 0;
+        bytes = &bytes[needed..];
+
+        let mut chunks = bytes.chunks_exact(32);
+        for chunk in &mut chunks {
+            self.update(chunk);
+        }
+
+        let rem = chunks.remainder();
+        if !rem.is_empty() {
+            self.load_tail(rem);
+        }
     }
 }
 
@@ -143,13 +241,38 @@ impl Hasher for XxHash64 {
 
     #[inline(always)]
     fn write(&mut self, bytes: &[u8]) {
+        if self.buffer_len != 0 {
+            self.write_buffered(bytes);
+            return;
+        }
+
         self.total_len = self.total_len.wrapping_add(bytes.len() as u64);
-        self.write_bytes(bytes);
+        let mut chunks = bytes.chunks_exact(32);
+        for chunk in &mut chunks {
+            self.update(chunk);
+        }
+
+        let rem = chunks.remainder();
+        if !rem.is_empty() {
+            self.load_tail(rem);
+        }
     }
 
     #[inline(always)]
     fn write_u8(&mut self, i: u8) {
-        self.write_fixed(i.to_ne_bytes());
+        if self.buffer_len < 31 {
+            self.total_len = self.total_len.wrapping_add(1);
+            let byte = u64::from(i) << ((self.buffer_len & 7) * 8);
+            match self.buffer_len >> 3 {
+                0 => self.b0 |= byte,
+                1 => self.b1 |= byte,
+                2 => self.b2 |= byte,
+                _ => self.b3 |= byte,
+            }
+            self.buffer_len += 1;
+        } else {
+            self.write_buffered(&[i]);
+        }
     }
 
     #[inline(always)]
@@ -178,56 +301,45 @@ impl Hasher for XxHash64 {
     }
 }
 
-impl XxHash64 {
-    /// Same result as `write(&bytes)`, with an inlined body small enough that hashing a
-    /// fixed-width integer folds to register arithmetic at the call site.
-    #[inline(always)]
-    fn write_fixed<const N: usize>(&mut self, bytes: [u8; N]) {
-        debug_assert!(N < 32);
-        self.total_len = self.total_len.wrapping_add(N as u64);
-        if self.buffer_len + N < 32 {
-            self.buffer[self.buffer_len..self.buffer_len + N].copy_from_slice(&bytes);
-            self.buffer_len += N;
-        } else {
-            self.write_bytes_outlined(&bytes);
-        }
+#[inline(always)]
+fn read_u64_le_partial(bytes: &[u8]) -> u64 {
+    let len = bytes.len();
+    debug_assert!(len <= 8);
+    // Overlapping endpoint loads avoid both a byte loop and copying the tail onto the stack.
+    if len == 8 {
+        read_u64_le(bytes)
+    } else if len >= 4 {
+        let low = u64::from(read_u32_le(&bytes[..4]));
+        let high = u64::from(read_u32_le(&bytes[len - 4..]));
+        low | (high << ((len - 4) * 8))
+    } else if len >= 2 {
+        let low = u64::from(u16::from_le_bytes([bytes[0], bytes[1]]));
+        let high = u64::from(u16::from_le_bytes([bytes[len - 2], bytes[len - 1]]));
+        low | (high << ((len - 2) * 8))
+    } else {
+        bytes.first().map_or(0, |&byte| u64::from(byte))
     }
+}
 
-    #[inline(never)]
-    fn write_bytes_outlined(&mut self, bytes: &[u8]) {
-        self.write_bytes(bytes);
-    }
+#[inline(always)]
+fn mix_u64(mut hash: u64, mut k1: u64) -> u64 {
+    k1 = k1.wrapping_mul(P2);
+    k1 = k1.rotate_left(31);
+    k1 = k1.wrapping_mul(P1);
+    hash ^= k1;
+    hash.rotate_left(27).wrapping_mul(P1).wrapping_add(P4)
+}
 
-    #[inline(always)]
-    fn write_bytes(&mut self, bytes: &[u8]) {
-        if self.buffer_len + bytes.len() < 32 {
-            self.buffer[self.buffer_len..self.buffer_len + bytes.len()].copy_from_slice(bytes);
-            self.buffer_len += bytes.len();
-            return;
-        }
+#[inline(always)]
+fn mix_u32(mut hash: u64, k1: u32) -> u64 {
+    hash ^= u64::from(k1).wrapping_mul(P1);
+    hash.rotate_left(23).wrapping_mul(P2).wrapping_add(P3)
+}
 
-        let mut bytes = bytes;
-
-        if self.buffer_len != 0 {
-            let needed = 32 - self.buffer_len;
-            self.buffer[self.buffer_len..].copy_from_slice(&bytes[..needed]);
-            let chunk = self.buffer;
-            self.update(&chunk);
-            self.buffer_len = 0;
-            bytes = &bytes[needed..];
-        }
-
-        let mut chunks = bytes.chunks_exact(32);
-        for chunk in &mut chunks {
-            self.update(chunk);
-        }
-
-        let remainder = chunks.remainder();
-        if !remainder.is_empty() {
-            self.buffer[..remainder.len()].copy_from_slice(remainder);
-            self.buffer_len = remainder.len();
-        }
-    }
+#[inline(always)]
+fn mix_u8(mut hash: u64, k1: u8) -> u64 {
+    hash ^= u64::from(k1).wrapping_mul(P5);
+    hash.rotate_left(11).wrapping_mul(P1)
 }
 
 #[inline(always)]
@@ -281,17 +393,34 @@ mod tests {
 
     #[test]
     fn streaming_writes_match_single_write() {
-        let input: Vec<u8> = (0..=96).collect();
+        let input: Vec<u8> = (0..=128).collect();
         for len in 0..=input.len() {
             let expected = xxhash64(&input[..len], PRIME32);
             for split in 0..=len {
                 let mut hasher = XxHash64::with_seed(PRIME32);
                 hasher.write(&input[..split]);
+                assert_eq!(hasher.finish64(), xxhash64(&input[..split], PRIME32));
                 hasher.write(&input[split..len]);
                 assert_eq!(
                     hasher.finish64(),
                     expected,
                     "hash changed for input length {len} split at {split}"
+                );
+            }
+        }
+
+        // Exercise repeated 32-byte block wraparounds and empty writes across chunk sizes 1..=33.
+        for chunk_size in 1..=33 {
+            let mut hasher = XxHash64::with_seed(PRIME32);
+            let mut consumed = 0;
+            for chunk in input.chunks(chunk_size) {
+                hasher.write(&[]);
+                hasher.write(chunk);
+                consumed += chunk.len();
+                assert_eq!(
+                    hasher.finish64(),
+                    xxhash64(&input[..consumed], PRIME32),
+                    "hash changed at prefix {consumed} with chunk size {chunk_size}"
                 );
             }
         }
