@@ -179,8 +179,8 @@ impl Array8 {
             "Source and destination must have same lg_k"
         );
 
-        for (i, &val) in src.iter().enumerate() {
-            self.bytes[i] = self.bytes[i].max(val);
+        for (dst, &value) in self.bytes.iter_mut().zip(src) {
+            *dst = (*dst).max(value);
         }
 
         self.invalidate_estimator();
