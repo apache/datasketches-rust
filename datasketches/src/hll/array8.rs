@@ -272,7 +272,7 @@ impl Array8 {
         })?;
         if registers
             .chunks(256)
-            .any(|block| block.iter().copied().max().unwrap_or(0) > 63)
+            .any(|block| block.iter().fold(0u8, |acc, &value| acc | value) > 63)
         {
             return Err(Error::deserial("HLL8 register value exceeds 63"));
         }
