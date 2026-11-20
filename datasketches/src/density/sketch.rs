@@ -99,7 +99,8 @@ impl<T: DensityValue> DensitySketch<T, GaussianKernel> {
     ///
     /// Also accepts data serialized by other DataSketches implementations when both sides use the
     /// same coordinate type and [`GaussianKernel`]. Use [`Self::deserialize_with_kernel`] for
-    /// sketches built with a custom [`Kernel`].
+    /// sketches built with a custom [`Kernel`]. See the
+    /// [module documentation](crate::density#cross-language-compatibility) for compatibility notes.
     ///
     /// # Errors
     ///
@@ -451,7 +452,8 @@ impl<T: DensityValue, K: Kernel<T>> DensitySketch<T, K> {
     /// Deserializes a sketch from bytes using `kernel`.
     ///
     /// Also accepts data serialized by other DataSketches implementations when both sides use the
-    /// same coordinate type and an equivalent `kernel`.
+    /// same coordinate type and an equivalent `kernel`. See the
+    /// [module documentation](crate::density#cross-language-compatibility) for compatibility notes.
     ///
     /// # Errors
     ///
