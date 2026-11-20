@@ -107,18 +107,6 @@ impl Family {
         max_pre_longs: 2,
     };
 
-    /// Density sketch for streaming kernel density estimation.
-    ///
-    /// Matches `datasketches-cpp`'s `density_sketch::FAMILY_ID` (`19`); preamble lengths on the
-    /// wire are encoded in 4-byte ints (`3` when empty, `6` when non-empty).
-    #[cfg(feature = "density")]
-    pub const DENSITY: Family = Family {
-        id: 19,
-        name: "DENSITY",
-        min_pre_longs: 2,
-        max_pre_longs: 3,
-    };
-
     /// T-Digest for estimating quantiles and ranks.
     #[cfg(feature = "tdigest")]
     pub const TDIGEST: Family = Family {
@@ -143,6 +131,17 @@ impl Family {
         id: 22,
         name: "XORFILTER",
         min_pre_longs: 3,
+        max_pre_longs: 3,
+    };
+
+    /// Density sketch for streaming kernel density estimation.
+    ///
+    /// The preamble length is encoded in 4-byte integers (`3` when empty, `6` when non-empty).
+    #[cfg(feature = "density")]
+    pub const DENSITY: Family = Family {
+        id: 23,
+        name: "DENSITY",
+        min_pre_longs: 2,
         max_pre_longs: 3,
     };
 }

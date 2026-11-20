@@ -97,9 +97,9 @@ impl<T: DensityValue> DensitySketch<T, GaussianKernel> {
 
     /// Deserializes a sketch from bytes using [`GaussianKernel`].
     ///
-    /// Also accepts data serialized by other DataSketches implementations when both sides use the
-    /// same coordinate type and [`GaussianKernel`]. Use [`Self::deserialize_with_kernel`] for
-    /// sketches built with a custom [`Kernel`].
+    /// Also accepts data serialized by other DataSketches implementations when both sides use
+    /// family ID `23`, the same coordinate type, and [`GaussianKernel`]. Use
+    /// [`Self::deserialize_with_kernel`] for sketches built with a custom [`Kernel`].
     ///
     /// # Errors
     ///
@@ -443,15 +443,16 @@ impl<T: DensityValue, K: Kernel<T>> DensitySketch<T, K> {
     /// Serializes this sketch to bytes.
     ///
     /// The serialized data can be read by other DataSketches implementations when both sides use
-    /// the same coordinate type and kernel. Kernel configuration is not stored in the image.
+    /// family ID `23`, the same coordinate type, and equivalent kernels. Kernel configuration is
+    /// not stored in the image.
     pub fn serialize(&self) -> Vec<u8> {
         serialize_sketch(self)
     }
 
     /// Deserializes a sketch from bytes using `kernel`.
     ///
-    /// Also accepts data serialized by other DataSketches implementations when both sides use the
-    /// same coordinate type and an equivalent `kernel`.
+    /// Also accepts data serialized by other DataSketches implementations when both sides use
+    /// family ID `23`, the same coordinate type, and an equivalent `kernel`.
     ///
     /// # Errors
     ///

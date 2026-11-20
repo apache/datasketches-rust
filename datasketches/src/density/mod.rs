@@ -24,8 +24,8 @@
 //!
 //! Point coordinates use `f32` or `f64` ([`DensityValue`]). [`DensitySketch::new`] uses the
 //! default [`GaussianKernel`]; supply a custom [`Kernel`] with [`DensitySketch::with_kernel`]. The
-//! binary serialization format supports cross-language interchange when both sides use the same
-//! coordinate type and kernel.
+//! binary serialization format supports cross-language interchange when both sides use family ID
+//! `23`, the same coordinate type, and equivalent kernels.
 //!
 //! # Examples
 //!
