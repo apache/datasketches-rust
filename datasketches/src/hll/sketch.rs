@@ -204,6 +204,37 @@ impl HllSketch {
         }
     }
 
+    /// Updates the sketch with precomputed coupons in input order, without hashing them again.
+    ///
+    /// This has the same effect on the sketch and its estimates as calling
+    /// [`update_with_coupon`](Self::update_with_coupon) for each coupon.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::hll::Coupon;
+    /// use datasketches::hll::HllSketch;
+    /// use datasketches::hll::HllType;
+    ///
+    /// let coupons = ["apple", "pear"].map(Coupon::from_value);
+    /// let mut sketch = HllSketch::new(12, HllType::Hll8).unwrap();
+    /// sketch.update_with_coupons(coupons);
+    /// ```
+    pub fn update_with_coupons(&mut self, coupons: impl IntoIterator<Item = Coupon>) {
+        let mut coupons = coupons.into_iter();
+        loop {
+            match &mut self.mode {
+                Mode::List { .. } | Mode::Set { .. } => match coupons.next() {
+                    Some(coupon) => self.update_with_coupon(coupon),
+                    None => return,
+                },
+                Mode::Array4(array) => return coupons.for_each(|coupon| array.update(coupon)),
+                Mode::Array6(array) => return coupons.for_each(|coupon| array.update(coupon)),
+                Mode::Array8(array) => return array.update_coupons(coupons),
+            }
+        }
+    }
+
     /// Returns the current cardinality estimate.
     ///
     /// # Examples

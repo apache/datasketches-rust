@@ -49,6 +49,15 @@ struct Estimation {
     estimator: Estimator,
 }
 
+impl Estimation {
+    fn update(&mut self, lg_config_k: u8, old_value: u8, new_value: u8) {
+        self.estimator.update(lg_config_k, old_value, new_value);
+        if old_value == 0 {
+            self.num_zeros -= 1;
+        }
+    }
+}
+
 impl Array8 {
     pub fn new(lg_config_k: u8) -> Self {
         let k = 1 << lg_config_k;
@@ -82,14 +91,25 @@ impl Array8 {
 
         if new_value > old_value {
             if let Some(estimation) = self.estimation.get_mut() {
-                estimation
-                    .estimator
-                    .update(self.lg_config_k, old_value, new_value);
-                if old_value == 0 {
-                    estimation.num_zeros -= 1;
-                }
+                estimation.update(self.lg_config_k, old_value, new_value);
             }
             self.put(slot, new_value);
+        }
+    }
+
+    pub fn update_coupons(&mut self, coupons: impl Iterator<Item = Coupon>) {
+        let mask = (1 << self.lg_config_k) - 1;
+        let mut estimation = self.estimation.get_mut();
+        for coupon in coupons {
+            let slot = usize::try_from(coupon.slot() & mask).unwrap();
+            let register = &mut self.bytes[slot];
+            let new_value = coupon.value();
+            if new_value > *register {
+                if let Some(state) = estimation.as_deref_mut() {
+                    state.update(self.lg_config_k, *register, new_value);
+                }
+                *register = new_value;
+            }
         }
     }
 
