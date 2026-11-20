@@ -20,6 +20,7 @@ use std::hint::black_box;
 use benchmarks::Bencher;
 use benchmarks::Runner;
 use datasketches::hash::value::raw_bytes;
+use datasketches::hll::Coupon;
 use datasketches::hll::HllSketch;
 use datasketches::hll::HllType;
 
@@ -28,6 +29,17 @@ use crate::hash_inputs::bytes_32_values;
 use crate::hash_inputs::bytes_64_values;
 use crate::hash_inputs::u64_pair;
 use crate::hash_inputs::variable_byte_slices;
+
+fn precomputed_coupons(bencher: Bencher, update: impl Fn(&mut HllSketch, &[Coupon])) {
+    let coupons: Vec<_> = (0..400_000_u64).map(Coupon::from_value).collect();
+    bencher.bench_local(|| {
+        let mut sketch = HllSketch::new(14, HllType::Hll8).unwrap();
+        for batch in black_box(&coupons).chunks(8_192) {
+            update(&mut sketch, batch);
+        }
+        black_box(sketch.estimate())
+    });
+}
 
 fn u64(bencher: Bencher) {
     bencher.bench_local(|| {
@@ -93,4 +105,22 @@ pub fn register(runner: &mut Runner) {
     runner.case("hll::update::bytes_32", 2_000, bytes_32);
     runner.case("hll::update::variable_bytes", 2_000, variable_bytes);
     runner.case("hll::update::prefixed_bytes", 1_600, prefixed_bytes);
+    runner.compare(
+        "hll::update::precomputed_coupons/8192",
+        600,
+        &[
+            ("scalar", &|b| {
+                precomputed_coupons(b, |sketch, batch| {
+                    for &coupon in batch {
+                        sketch.update_with_coupon(coupon);
+                    }
+                })
+            }),
+            ("batch", &|b| {
+                precomputed_coupons(b, |sketch, batch| {
+                    sketch.update_with_coupons(batch.iter().copied());
+                })
+            }),
+        ],
+    );
 }
