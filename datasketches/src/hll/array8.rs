@@ -263,24 +263,25 @@ impl Array8 {
                 "HLL8 zero count must not exceed k and auxiliary count must be zero",
             ));
         }
-        let available_bytes = cursor.remaining().len();
-        if available_bytes < k {
-            return Err(Error::insufficient_data_of(
+        let payload = cursor.remaining();
+        let registers = payload.get(..k).ok_or_else(|| {
+            Error::insufficient_data_of(
                 "HLL8 payload",
-                format_args!("expected {k} bytes, got {available_bytes}"),
-            ));
+                format_args!("expected {k} bytes, got {}", payload.len()),
+            )
+        })?;
+        if registers
+            .chunks(256)
+            .any(|block| block.iter().copied().max().unwrap_or(0) > 63)
+        {
+            return Err(Error::deserial("HLL8 register value exceeds 63"));
         }
-
-        let mut data = vec![0u8; k];
-        cursor
-            .read_exact(&mut data)
-            .map_err(insufficient_data("data"))?;
 
         let estimator = Estimator::from_serialized(hip_accum, kxq0, kxq1, ooo);
 
         Ok(Self {
             lg_config_k,
-            bytes: data.into_boxed_slice(),
+            bytes: registers.into(),
             estimation: OnceLock::from(Estimation {
                 num_zeros,
                 estimator,
