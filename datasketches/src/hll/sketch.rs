@@ -467,10 +467,12 @@ impl HllSketch {
         }
     }
 
-    /// Returns an estimate of the sketch's memory usage in bytes.
+    /// Returns an estimate of heap memory used by this sketch in bytes.
+    ///
+    /// Excludes inline storage and allocator overhead.
     pub fn estimated_size(&self) -> usize {
         match &self.mode {
-            Mode::List { list, .. } => list.container().estimated_size(),
+            Mode::List { .. } => 0,
             Mode::Set { set, .. } => set.container().estimated_size(),
             Mode::Array4(arr) => arr.estimated_size(),
             Mode::Array6(arr) => arr.estimated_size(),
@@ -512,7 +514,10 @@ impl fmt::Debug for HllSketch {
     }
 }
 
-fn promote_container_to_set(container: &Container, hll_type: HllType) -> Mode {
+fn promote_container_to_set<S: AsRef<[Coupon]>>(
+    container: &Container<S>,
+    hll_type: HllType,
+) -> Mode {
     let mut set = HashSet::default();
     for coupon in container.iter() {
         set.update(coupon);
@@ -534,7 +539,11 @@ fn grow_set(old_set: &HashSet, hll_type: HllType) -> Mode {
     }
 }
 
-fn promote_container_to_array(container: &Container, hll_type: HllType, lg_config_k: u8) -> Mode {
+fn promote_container_to_array<S: AsRef<[Coupon]>>(
+    container: &Container<S>,
+    hll_type: HllType,
+    lg_config_k: u8,
+) -> Mode {
     match hll_type {
         HllType::Hll4 => {
             let mut array = Array4::new(lg_config_k);

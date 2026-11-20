@@ -408,7 +408,9 @@ impl HllUnion {
         self.gadget.lower_bound(num_std_dev)
     }
 
-    /// Returns an estimate of the union's memory usage in bytes.
+    /// Returns an estimate of heap memory used by this union in bytes.
+    ///
+    /// Excludes inline storage and allocator overhead.
     pub fn estimated_size(&self) -> usize {
         self.gadget.estimated_size()
     }
@@ -431,11 +433,11 @@ impl ArrayMode<'_> {
     }
 }
 
-fn promote_coupons_and_merge_array(
+fn promote_coupons_and_merge_array<S: AsRef<[Coupon]>>(
     src_mode: ArrayMode<'_>,
     src_lg_k: u8,
     lg_max_k: u8,
-    coupons: &Container,
+    coupons: &Container<S>,
 ) -> HllSketch {
     let mut new_array = copy_or_downsample(src_mode, src_lg_k, lg_max_k);
     for coupon in coupons.iter() {

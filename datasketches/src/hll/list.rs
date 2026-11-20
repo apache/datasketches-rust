@@ -30,25 +30,22 @@ use crate::hll::serialization::LIST_PREINTS;
 use crate::hll::serialization::SERIAL_VERSION;
 use crate::hll::serialization::encode_mode_byte;
 
+const LG_INIT_LIST_SIZE: usize = 3;
+
 #[derive(Debug, Clone)]
 pub struct List {
-    container: Container,
+    container: Container<[Coupon; 1 << LG_INIT_LIST_SIZE]>,
 }
 
 impl Default for List {
     fn default() -> Self {
-        const LG_INIT_LIST_SIZE: usize = 3;
-        Self::new(LG_INIT_LIST_SIZE)
+        Self {
+            container: Container::from_coupons([Coupon::EMPTY; 1 << LG_INIT_LIST_SIZE], 0),
+        }
     }
 }
 
 impl List {
-    pub fn new(lg_size: usize) -> Self {
-        Self {
-            container: Container::new(lg_size),
-        }
-    }
-
     pub fn update(&mut self, coupon: Coupon) {
         for value in self.container.coupons.iter_mut() {
             if value.is_empty() {
@@ -61,7 +58,7 @@ impl List {
         }
     }
 
-    pub fn container(&self) -> &Container {
+    pub fn container(&self) -> &Container<[Coupon; 1 << LG_INIT_LIST_SIZE]> {
         &self.container
     }
 
@@ -97,7 +94,7 @@ impl List {
             }
         }
 
-        let mut coupons = vec![Coupon::EMPTY; array_size];
+        let mut coupons = [Coupon::EMPTY; 1 << LG_INIT_LIST_SIZE];
         if !empty && coupon_count > 0 {
             for (i, coupon) in coupons.iter_mut().take(read_count).enumerate() {
                 let raw = cursor.read_u32_le().map_err(|error| {
@@ -109,7 +106,7 @@ impl List {
         }
 
         Ok(Self {
-            container: Container::from_coupons(lg_arr, coupons.into_boxed_slice(), coupon_count),
+            container: Container::from_coupons(coupons, coupon_count),
         })
     }
 

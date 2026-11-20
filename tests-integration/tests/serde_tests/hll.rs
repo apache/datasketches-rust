@@ -763,3 +763,54 @@ fn test_estimate_accuracy() {
         assert_that!(error_pct, lt(2.));
     }
 }
+
+#[test]
+fn updatable_list_preserves_coupon_order_after_duplicate_updates() {
+    let mut sketch = HllSketch::new(14, HllType::Hll8).unwrap();
+    for value in [2, 0, 1] {
+        sketch.update(value);
+    }
+    let compact = sketch.serialize();
+    let mut updatable = compact.clone();
+    updatable[5] &= !8;
+    updatable.resize(8 + size_of::<[u32; 8]>(), 0);
+
+    let mut restored = HllSketch::deserialize(&updatable).unwrap();
+    for value in 0..3 {
+        restored.update(value);
+    }
+    assert_eq!(restored.serialize(), compact);
+}
+
+#[test]
+fn compact_set_preserves_stored_capacity_and_coupon_bytes() {
+    let mut bytes = vec![3, 1, 7, 10, 7, 8, 0, 9, 3, 0, 0, 0];
+    for coupon in [0x0400_0081_u32, 0x0400_0001, 0x0400_0101] {
+        bytes.extend_from_slice(&coupon.to_le_bytes());
+    }
+
+    let restored = HllSketch::deserialize(&bytes).unwrap();
+
+    assert_eq!(restored.serialize(), bytes);
+}
+
+#[test]
+fn updatable_set_preserves_probe_positions_after_duplicate_updates() {
+    let path = serialization_test_data("java_generated_files", "hll8_n10_java.sk");
+    let compact = fs::read(path).unwrap();
+    let mut updatable = compact[..12].to_vec();
+    updatable[5] &= !8;
+    let mut table = [[0; 4]; 32];
+    // Occupied slots for the fixture's ten coupons, including probe collisions.
+    let slots = [1, 6, 11, 16, 18, 20, 21, 26, 27, 28];
+    for (slot, coupon) in slots.into_iter().zip(compact[12..].chunks_exact(4)) {
+        table[slot].copy_from_slice(coupon);
+    }
+    updatable.extend_from_slice(table.as_flattened());
+
+    let mut restored = HllSketch::deserialize(&updatable).unwrap();
+    for value in 0..10_i64 {
+        restored.update(value);
+    }
+    assert_eq!(restored.serialize(), compact);
+}
