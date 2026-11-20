@@ -39,7 +39,7 @@
 //!
 //! These encodings apply to keys. Skip empty string and byte-slice keys before updating the sketch.
 //!
-//! # Usage
+//! # Examples
 //!
 //! ```
 //! use datasketches::tuple::DefaultUpdatePolicy;

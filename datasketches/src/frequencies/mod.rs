@@ -86,7 +86,7 @@
 //! assert!(rows.iter().any(|row| *row.item() == 1));
 //! ```
 //!
-//! # Serialization
+//! ## Serialization
 //!
 //! The built-in serialization methods are available when the item type implements
 //! [`FrequentItemValue`].

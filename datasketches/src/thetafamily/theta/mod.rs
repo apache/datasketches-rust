@@ -41,7 +41,7 @@
 //!
 //! Skip empty strings and byte slices before updating the sketch.
 //!
-//! # Usage
+//! # Examples
 //!
 //! ```
 //! use datasketches::theta::ThetaSketchBuilder;

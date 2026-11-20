@@ -33,7 +33,7 @@
 //! updating the sketch. For these inputs, return zero for the estimate and both bounds without
 //! querying the sketch.
 //!
-//! # Usage
+//! # Examples
 //!
 //! Choose the number of buckets and hash functions from the desired relative error and
 //! confidence, then update the sketch as items arrive:

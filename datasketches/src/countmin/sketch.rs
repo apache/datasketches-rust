@@ -467,7 +467,9 @@ impl<T: CountMinValue> CountMinSketch<T> {
 
     /// Serializes this sketch into the Count-Min binary format.
     ///
-    /// A sketch restored by [`deserialize`](Self::deserialize) retains its original format.
+    /// The serialized data can be read by other DataSketches implementations when using `i64`
+    /// counters and the current format. A sketch restored by [`deserialize`](Self::deserialize)
+    /// retains its original format.
     ///
     /// # Examples
     ///
@@ -518,10 +520,11 @@ impl<T: CountMinValue> CountMinSketch<T> {
 
     /// Deserializes a sketch from bytes using the default seed.
     ///
-    /// Accepts the current format and legacy version 1 images. Legacy images retain their original
-    /// hashing and serialization format and cannot be merged with newly created sketches. Use the
-    /// same input encodings that were used to create the image; version 1 images are not portable
-    /// across implementations. Counter values must fit `T`.
+    /// Also accepts data serialized by other DataSketches implementations when using `i64` counters
+    /// and the current format. Legacy version 1 images are also accepted; they retain their
+    /// original hashing and serialization format, cannot be merged with newly created sketches,
+    /// and are not portable across implementations. Use the same input encodings that were used to
+    /// create the image. Counter values must fit `T`.
     ///
     /// # Errors
     ///
@@ -545,7 +548,9 @@ impl<T: CountMinValue> CountMinSketch<T> {
 
     /// Deserializes a sketch from bytes using the provided seed.
     ///
-    /// The format and counter requirements are the same as for [`deserialize`](Self::deserialize).
+    /// Also accepts data serialized by other DataSketches implementations when using `i64` counters
+    /// and the current format. The format and counter requirements are the same as for
+    /// [`deserialize`](Self::deserialize).
     ///
     /// # Errors
     ///

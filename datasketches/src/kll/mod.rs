@@ -27,9 +27,9 @@
 //! provides their ordinary numerical order. Custom ordering should be expressed with a newtype
 //! that implements [`Ord`], keeping the ordering semantics part of the item type.
 //!
-//! # Usage
+//! # Examples
 //!
-//! ```rust
+//! ```
 //! use datasketches::common::SearchCriteria;
 //! use datasketches::kll::KllSketch;
 //!
