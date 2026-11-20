@@ -120,9 +120,18 @@ impl Array4 {
 
     pub fn update(&mut self, coupon: Coupon) {
         let mask = (1 << self.lg_config_k) - 1;
-        let slot = coupon.slot() & mask;
-        let new_value = coupon.value();
+        self.update_register(coupon.slot() & mask, coupon.value());
+    }
 
+    pub fn update_coupons(&mut self, coupons: impl Iterator<Item = Coupon>) {
+        let mask = (1 << self.lg_config_k) - 1;
+        for coupon in coupons {
+            self.update_register(coupon.slot() & mask, coupon.value());
+        }
+    }
+
+    #[inline]
+    fn update_register(&mut self, slot: u32, new_value: u8) {
         if new_value <= self.cur_min {
             return;
         }
@@ -488,17 +497,17 @@ mod tests {
         assert_eq!(arr.get_raw(0), AUX_TOKEN);
         assert_eq!(arr.aux_map.as_ref().and_then(|aux| aux.get(0)), Some(15));
 
-        for slot in 1..num_slots {
-            arr.update(Coupon::pack(slot, 1));
-        }
+        let fill = (1..num_slots).map(|slot| Coupon::pack(slot, 1));
+        arr.update_coupons(fill.chain([Coupon::pack(1, 2)]));
 
         assert_eq!(arr.cur_min, 1);
-        assert_eq!(arr.num_at_cur_min, num_slots - 1);
+        assert_eq!(arr.num_at_cur_min, num_slots - 2);
         assert_eq!(arr.get_raw(0), 14);
         assert_eq!(arr.get(0), 15);
         assert_that!(arr.aux_map, none());
 
-        for slot in 1..num_slots {
+        assert_eq!(arr.get(1), 2);
+        for slot in 2..num_slots {
             assert_eq!(arr.get(slot), 1);
         }
     }

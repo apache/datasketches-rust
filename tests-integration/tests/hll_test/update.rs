@@ -16,8 +16,10 @@
 // under the License.
 
 use datasketches::error::ErrorKind;
+use datasketches::hll::Coupon;
 use datasketches::hll::HllSketch;
 use datasketches::hll::HllType;
+use datasketches::hll::HllUnion;
 use googletest::assert_that;
 use googletest::prelude::ge;
 use googletest::prelude::gt;
@@ -67,6 +69,39 @@ fn test_set_to_hll_promotion() {
 
     let estimate = sketch.estimate();
     assert_that!(estimate, near(1000.0, 150.0));
+}
+
+#[test]
+fn ordered_coupon_batch_matches_scalar_updates_through_promotion() {
+    for hll_type in [HllType::Hll4, HllType::Hll6, HllType::Hll8] {
+        let mut scalar = HllSketch::new(8, hll_type).unwrap();
+        let mut batch = scalar.clone();
+        let coupons = (0..128).chain(0..64).map(Coupon::from_value);
+        for coupon in coupons.clone() {
+            scalar.update_with_coupon(coupon);
+        }
+        batch.update_with_coupons(coupons);
+        assert_eq!(batch.serialize(), scalar.serialize());
+    }
+}
+
+#[test]
+fn ordered_coupon_batch_preserves_composite_state_after_union() {
+    let mut union = HllUnion::new(4).unwrap();
+    for start in [0, 32] {
+        let mut part = HllSketch::new(4, HllType::Hll8).unwrap();
+        for value in start..start + 32 {
+            part.update(value);
+        }
+        union.update(&part);
+    }
+    let mut scalar = union.to_sketch(HllType::Hll8);
+    let mut batch = scalar.clone();
+    for value in 64..256 {
+        scalar.update(value);
+    }
+    batch.update_with_coupons((64..256).map(Coupon::from_value));
+    assert_eq!(batch.serialize(), scalar.serialize());
 }
 
 #[test]
