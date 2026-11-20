@@ -39,9 +39,10 @@
 //!   multidimensional numeric vectors.
 //! * Use `hll` for fast distinct counts, `cpc` for compact serialized distinct counts, or `theta`
 //!   when set operations are required.
-//! * Use `kll`, `req`, or `tdigest` for ranks and quantiles. KLL provides strong general-purpose
-//!   rank accuracy, REQ targets configurable high- or low-rank accuracy, and T-Digest emphasizes
-//!   distribution tails.
+//! * Use `kll`, `req`, `tdigest`, or `uddsketch` for ranks and quantiles. KLL provides strong
+//!   general-purpose rank accuracy, REQ targets configurable high- or low-rank accuracy, T-Digest
+//!   emphasizes distribution tails, and UDDSketch provides reproducible quantiles with a relative
+//!   value error bound.
 //! * Use `tuple` when retained Theta keys need application-defined summaries.
 //!
 //! See each module's documentation for accuracy, memory, serialization, and update examples.
@@ -93,6 +94,8 @@ mod thetafamily;
 pub use self::thetafamily::theta;
 #[cfg(feature = "tuple")]
 pub use self::thetafamily::tuple;
+#[cfg(feature = "uddsketch")]
+pub mod uddsketch;
 
 #[cfg(feature = "xor")]
 pub mod xor;
