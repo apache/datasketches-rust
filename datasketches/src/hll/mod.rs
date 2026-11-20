@@ -68,6 +68,7 @@
 
 use std::hash::Hash;
 
+use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::hash::MurmurHash3X64128;
 
 mod array4;
@@ -119,7 +120,7 @@ const RESIZE_DENOMINATOR: u32 = 4;
 
 /// A reusable hash of an input value for HLL sketches.
 ///
-/// Compute a coupon once with [`Coupon::from_value`] and pass it to
+/// Compute a coupon with [`Coupon::from_value`] or [`Coupon::from_bytes`] and pass it to
 /// [`HllSketch::update_with_coupon`] on sketches with any `lg_k` or [`HllType`].
 ///
 /// See the [module level documentation](crate::hll) for more.
@@ -176,9 +177,36 @@ impl Coupon {
     pub fn from_value<T: Hash>(value: T) -> Self {
         let mut hasher = MurmurHash3X64128::default();
         value.hash(&mut hasher);
-        let (lo, hi) = hasher.finish128();
+        Self::from_hash128(hasher.finish128())
+    }
 
-        let addr26 = lo as u32 & KEY_MASK_26;
+    /// Computes the coupon for raw bytes using the canonical MurmurHash3-128 hash.
+    ///
+    /// Produces the same coupon as [`from_value`](Self::from_value) with
+    /// [`raw_bytes::from_slice`](crate::hash::value::raw_bytes::from_slice), without a length
+    /// prefix or terminator. Unlike Rust's slice `Hash` implementation, it hashes only the
+    /// contents. Empty slices are hashed too; cross-language callers must apply their
+    /// empty-value policy.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::hash::value::raw_bytes;
+    /// use datasketches::hll::Coupon;
+    ///
+    /// assert_eq!(
+    ///     Coupon::from_bytes(b"apple"),
+    ///     Coupon::from_value(raw_bytes::from_str("apple")),
+    /// );
+    /// ```
+    #[inline]
+    pub fn from_bytes(bytes: &[u8]) -> Self {
+        Self::from_hash128(MurmurHash3X64128::hash_bytes(bytes, DEFAULT_UPDATE_SEED))
+    }
+
+    #[inline(always)]
+    fn from_hash128((lo, hi): (u64, u64)) -> Self {
+        let addr26 = u32::try_from(lo & u64::from(KEY_MASK_26)).unwrap();
         let lz = hi.leading_zeros();
         // Register values must fit in six bits; zero is reserved for empty slots.
         let capped = lz.min(62);
@@ -205,7 +233,25 @@ impl Coupon {
 
 #[cfg(test)]
 mod tests {
+    use crate::hash::value::raw_bytes;
     use crate::hll::Coupon;
+
+    #[test]
+    fn complete_byte_coupons_match_raw_value_hashing() {
+        let input: Vec<u8> = (0..=96).collect();
+        for len in 0..=input.len() {
+            assert_eq!(
+                Coupon::from_bytes(&input[..len]),
+                Coupon::from_value(raw_bytes::from_slice(&input[..len]))
+            );
+        }
+        for value in [i64::MIN, -1, 0, 1, i64::MAX] {
+            assert_eq!(
+                Coupon::from_bytes(&value.to_ne_bytes()),
+                Coupon::from_value(value)
+            );
+        }
+    }
 
     #[test]
     fn test_pack_unpack_coupon() {

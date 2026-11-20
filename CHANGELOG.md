@@ -8,6 +8,7 @@ All significant changes to this project will be documented in this file.
 
 * Add `DensitySketch`, `Kernel`, `GaussianKernel`, `DensityValue`, and `DensitySketchIter` behind the `density` feature for streaming kernel density estimation and coreset construction over multidimensional `f32` and `f64` vectors, with custom kernel support, merging, iteration, and cross-language serialization.
 * Add `KllSketch::update_with_weight` for updating a sketch with an item repeated a given number of times.
+* Add `Coupon::from_bytes` to compute canonical HLL coupons directly from raw bytes. It produces the same coupons as `Coupon::from_value(raw_bytes::from_slice(bytes))`, including for empty slices.
 
 ### Performance improvements
 

@@ -18,6 +18,7 @@
 use std::hash::Hasher;
 
 use crate::hash::DEFAULT_UPDATE_SEED;
+use crate::hash::read_u32_le;
 use crate::hash::read_u64_le;
 
 const C1: u64 = 0x87c37b91114253d5;
@@ -46,18 +47,39 @@ impl MurmurHash3X64128 {
         }
     }
 
+    /// Hashes a complete byte slice without copying its tail into the streaming buffer.
+    #[cfg(any(feature = "hll", test))]
+    #[inline(always)]
+    pub fn hash_bytes(bytes: &[u8], seed: u64) -> (u64, u64) {
+        let mut hasher = Self::with_seed(seed);
+        hasher.total = u64::try_from(bytes.len()).expect("slice length fits u64");
+        if let Ok(word) = <&[u8; 8]>::try_from(bytes) {
+            return hasher.finish_with_tail(word);
+        }
+        let mut chunks = bytes.chunks_exact(16);
+        for chunk in &mut chunks {
+            hasher.update(read_u64_le(&chunk[..8]), read_u64_le(&chunk[8..]));
+        }
+        hasher.finish_with_tail(chunks.remainder())
+    }
+
     #[inline(always)]
     pub fn finish128(&self) -> (u64, u64) {
+        self.finish_with_tail(&self.buf[..self.buf_len])
+    }
+
+    #[inline(always)]
+    fn finish_with_tail(&self, tail: &[u8]) -> (u64, u64) {
         let mut h1 = self.h1;
         let mut h2 = self.h2;
 
-        let rem = self.buf_len;
+        let rem = tail.len();
 
         // tail
         if rem > 0 {
             if rem > 8 {
                 // read k2 little endian
-                let mut k2 = read_u64_le_partial(&self.buf[8..rem]);
+                let mut k2 = read_u64_le_partial(&tail[8..]);
                 // mix k2
                 k2 = k2.wrapping_mul(C2);
                 k2 = k2.rotate_left(33);
@@ -67,7 +89,7 @@ impl MurmurHash3X64128 {
 
             // read k1 little endian
             let k1_len = rem.min(8);
-            let mut k1 = read_u64_le_partial(&self.buf[..k1_len]);
+            let mut k1 = read_u64_le_partial(&tail[..k1_len]);
             // mix k1
             k1 = k1.wrapping_mul(C1);
             k1 = k1.rotate_left(31);
@@ -158,11 +180,22 @@ impl Hasher for MurmurHash3X64128 {
 
 #[inline(always)]
 fn read_u64_le_partial(bytes: &[u8]) -> u64 {
-    let mut value = 0;
-    for (index, &byte) in bytes.iter().enumerate() {
-        value |= u64::from(byte) << (index * 8);
+    let len = bytes.len();
+    debug_assert!(len <= 8);
+    // Full-width or overlapping endpoint loads avoid a byte loop and a temporary buffer.
+    if len == 8 {
+        read_u64_le(bytes)
+    } else if len >= 4 {
+        let low = u64::from(read_u32_le(&bytes[..4]));
+        let high = u64::from(read_u32_le(&bytes[len - 4..]));
+        low | (high << ((len - 4) * 8))
+    } else if len >= 2 {
+        let low = u64::from(u16::from_le_bytes([bytes[0], bytes[1]]));
+        let high = u64::from(u16::from_le_bytes([bytes[len - 2], bytes[len - 1]]));
+        low | (high << ((len - 2) * 8))
+    } else {
+        bytes.first().map_or(0, |&byte| u64::from(byte))
     }
-    value
 }
 
 /// Finalization mix: force all bits of a hash block to avalanche.
@@ -183,6 +216,33 @@ mod tests {
         let mut hasher = MurmurHash3X64128::with_seed(seed);
         hasher.write(key);
         hasher.finish128()
+    }
+
+    #[test]
+    fn partial_words_zero_extend_every_tail_length() {
+        let bytes = [0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef];
+        for len in 0..=bytes.len() {
+            let mut padded = [0; 8];
+            padded[..len].copy_from_slice(&bytes[..len]);
+            assert_eq!(
+                read_u64_le_partial(&bytes[..len]),
+                u64::from_le_bytes(padded)
+            );
+        }
+    }
+
+    #[test]
+    fn complete_slices_match_streaming_hashes() {
+        let input: Vec<u8> = (0..=96).collect();
+        for seed in [0, DEFAULT_UPDATE_SEED, u64::MAX] {
+            for len in 0..=input.len() {
+                assert_eq!(
+                    MurmurHash3X64128::hash_bytes(&input[..len], seed),
+                    murmurhash3_x64_128(&input[..len], seed),
+                    "hash changed for input length {len}, seed {seed}"
+                );
+            }
+        }
     }
 
     #[test]

@@ -20,6 +20,7 @@ use std::hint::black_box;
 use benchmarks::Bencher;
 use benchmarks::Runner;
 use datasketches::hash::value::raw_bytes;
+use datasketches::hll::Coupon;
 use datasketches::hll::HllSketch;
 use datasketches::hll::HllType;
 
@@ -48,7 +49,35 @@ fn bytes_32(bencher: Bencher) {
     });
 }
 
+fn dense_byte_batches(bencher: Bencher, hash: impl Fn(&[u8; 8]) -> Coupon) {
+    let keys: Vec<_> = (0..400_000_u64).map(u64::to_le_bytes).collect();
+    bencher.bench_local(|| {
+        let mut sketch = HllSketch::new(14, HllType::Hll8).unwrap();
+        let mut coupons = Vec::new();
+        for batch in black_box(&keys).chunks(8_192) {
+            coupons.clear();
+            coupons.extend(batch.iter().map(&hash));
+            for &coupon in &coupons {
+                sketch.update_with_coupon(coupon);
+            }
+        }
+        black_box(sketch.composite_estimate())
+    });
+}
+
 pub fn register(runner: &mut Runner) {
+    runner.compare(
+        "hll::update::dense_eight_byte_batches/8192",
+        200,
+        &[
+            ("streaming", &|b| {
+                dense_byte_batches(b, |key| Coupon::from_value(raw_bytes::from_slice(key)))
+            }),
+            ("one_shot", &|b| {
+                dense_byte_batches(b, |key| Coupon::from_bytes(key))
+            }),
+        ],
+    );
     runner.case("hll::update::u64", 6_000, u64);
     runner.case("hll::update::bytes_32", 2_000, bytes_32);
 }
