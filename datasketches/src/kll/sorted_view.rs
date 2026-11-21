@@ -57,6 +57,12 @@ impl<T: Clone + Ord> SortedView<T> {
             total_weight += entry.cumulative_weight;
             entry.cumulative_weight = total_weight;
         }
+        if let (Some(min_item), Some(max_item)) = (&min_item, &max_item) {
+            // Compaction can drop the stream extrema from the retained items. Put them
+            // back with one unit of weight taken from the neighbor, as Java's
+            // IncludeMinMax does, so CDF and near-end quantiles still see them.
+            include_min_max(&mut entries, min_item, max_item);
+        }
         Self {
             entries,
             total_weight,
@@ -266,6 +272,40 @@ pub fn build_sorted_view<T: Clone + Ord>(
     }
 
     SortedView::from_sorted(runs.pop().unwrap_or_default(), min_item, max_item)
+}
+
+/// Inserts stream extrema that compaction did not retain.
+///
+/// The minimum is given cumulative weight 1. The maximum takes the previous
+/// total, and the neighbor's cumulative weight drops by one. The total weight
+/// is unchanged. Endpoints already present are left alone.
+fn include_min_max<T: Clone + Ord>(entries: &mut Vec<Entry<T>>, min_item: &T, max_item: &T) {
+    if entries.is_empty() {
+        return;
+    }
+    let adjust_low = entries[0].item.cmp(min_item) != Ordering::Equal;
+    let adjust_high = entries[entries.len() - 1].item.cmp(max_item) != Ordering::Equal;
+    if !adjust_low && !adjust_high {
+        return;
+    }
+    let total = entries.last().unwrap().cumulative_weight;
+    if adjust_low {
+        entries.insert(
+            0,
+            Entry {
+                item: min_item.clone(),
+                cumulative_weight: 1,
+            },
+        );
+    }
+    if adjust_high && total > 0 {
+        let neighbor = entries.len() - 1;
+        entries[neighbor].cumulative_weight = total - 1;
+        entries.push(Entry {
+            item: max_item.clone(),
+            cumulative_weight: total,
+        });
+    }
 }
 
 fn merge_sorted_entries<T: Ord>(left: Vec<Entry<T>>, right: Vec<Entry<T>>) -> Vec<Entry<T>> {

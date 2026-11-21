@@ -284,6 +284,11 @@ impl<T: Clone + Ord> KllSketch<T> {
         if self.is_empty() {
             return None;
         }
+        // Estimation mode can drop extrema from the retained levels. The sorted
+        // view puts them back, so rank agrees with CDF.
+        if self.is_estimation_mode() {
+            return self.sorted_view().rank(item, criteria);
+        }
         // Keep a direct scan to preserve query latency for small exact sketches.
         if let [items] = self.levels.as_slice() {
             let count = count_rank_linear(items, item, criteria);
