@@ -18,6 +18,7 @@
 mod build;
 mod build_batches;
 mod query;
+mod query_items;
 mod query_shards;
 
 // SplitMix is a permutation, so these pseudorandom precomputed hashes are distinct.
@@ -40,5 +41,6 @@ pub fn register(runner: &mut benchmarks::Runner) {
     build::register(runner);
     build_batches::register(runner);
     query::register(runner);
+    query_items::register(runner);
     query_shards::register(runner);
 }
