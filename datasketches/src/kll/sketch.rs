@@ -284,23 +284,36 @@ impl<T: Clone + Ord> KllSketch<T> {
         if self.is_empty() {
             return None;
         }
-        // Keep a direct scan to preserve query latency for small exact sketches.
-        if let [items] = self.levels.as_slice() {
-            let count = count_rank_linear(items, item, criteria);
-            return Some(count as f64 / self.n as f64);
+        let mut rank_weight = if let [items] = self.levels.as_slice() {
+            // Keep a direct scan to preserve query latency for small exact sketches.
+            count_rank_linear(items, item, criteria) as u64
+        } else {
+            let mut weight = 0u64;
+            for (level, items) in self.levels.iter().enumerate() {
+                // Higher levels are always sorted; level zero may be an unsorted update buffer.
+                let is_sorted = level > 0 || self.is_level_zero_sorted;
+                let count = if is_sorted {
+                    count_rank_sorted(items, item, criteria)
+                } else {
+                    count_rank_linear(items, item, criteria)
+                };
+                weight += (count as u64) << level;
+            }
+            weight
+        };
+
+        // Reconcile with the unit-weight extrema included in `SortedView`: interior weights cancel
+        // out, so only the all-above (`0`) and all-below (`self.n`) boundaries can change by 1.
+        if rank_weight == 0 {
+            if matches_search_criteria(self.min_item.as_ref().unwrap(), item, criteria) {
+                rank_weight = 1;
+            }
+        } else if rank_weight == self.n
+            && !matches_search_criteria(self.max_item.as_ref().unwrap(), item, criteria)
+        {
+            rank_weight = self.n - 1;
         }
 
-        let mut rank_weight = 0u64;
-        for (level, items) in self.levels.iter().enumerate() {
-            // Higher levels are always sorted; level zero may be an unsorted update buffer.
-            let is_sorted = level > 0 || self.is_level_zero_sorted;
-            let count = if is_sorted {
-                count_rank_sorted(items, item, criteria)
-            } else {
-                count_rank_linear(items, item, criteria)
-            };
-            rank_weight += (count as u64) << level;
-        }
         Some(rank_weight as f64 / self.n as f64)
     }
 
@@ -392,8 +405,7 @@ impl<T: Clone + Ord> KllSketch<T> {
         build_sorted_view(
             &self.levels,
             self.is_level_zero_sorted,
-            self.min_item.clone(),
-            self.max_item.clone(),
+            self.min_item.as_ref().zip(self.max_item.as_ref()),
         )
     }
 
@@ -1034,21 +1046,22 @@ impl<T: Clone + Ord> KllSketch<T> {
     }
 }
 
+fn matches_search_criteria<T: Ord>(retained: &T, item: &T, criteria: SearchCriteria) -> bool {
+    match criteria {
+        SearchCriteria::Inclusive => retained <= item,
+        SearchCriteria::Exclusive => retained < item,
+    }
+}
+
 fn count_rank_linear<T: Ord>(items: &[T], item: &T, criteria: SearchCriteria) -> usize {
     items
         .iter()
-        .filter(|retained| match criteria {
-            SearchCriteria::Inclusive => *retained <= item,
-            SearchCriteria::Exclusive => *retained < item,
-        })
+        .filter(|retained| matches_search_criteria(*retained, item, criteria))
         .count()
 }
 
 fn count_rank_sorted<T: Ord>(items: &[T], item: &T, criteria: SearchCriteria) -> usize {
-    items.partition_point(|retained| match criteria {
-        SearchCriteria::Inclusive => retained <= item,
-        SearchCriteria::Exclusive => retained < item,
-    })
+    items.partition_point(|retained| matches_search_criteria(retained, item, criteria))
 }
 
 fn normalized_rank_error(k: u16, pmf: bool) -> f64 {
