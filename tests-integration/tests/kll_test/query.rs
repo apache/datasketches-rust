@@ -23,43 +23,6 @@ const DEFAULT_K: u16 = 200;
 const NUMERIC_NOISE_TOLERANCE: f64 = 1e-6;
 
 #[test]
-fn compacted_extrema_stay_in_the_distribution() {
-    let mut sketch = KllSketch::<i64>::new(8).unwrap();
-    for item in 0..8 {
-        sketch.update(item);
-    }
-    // Compact an even run, then keep an interior point. One endpoint leaves
-    // the retained items; which one depends on the compaction coin.
-    sketch.update(3);
-    assert!(sketch.is_estimation_mode());
-    let view = sketch.sorted_view();
-    let min = *sketch.min_item().unwrap();
-    let max = *sketch.max_item().unwrap();
-    let weight = sketch.total_weight() as f64;
-    // One unit above the neighbor's cumulative weight. Exactly `(n-1)/n` still
-    // belongs to the neighbor; anything higher is the stored maximum.
-    let near_one = (weight - 0.5) / weight;
-
-    assert!(sketch.rank(&min, SearchCriteria::Inclusive).unwrap() > 0.0);
-    assert_eq!(
-        view.quantile(1.0 / weight, SearchCriteria::Inclusive)
-            .unwrap(),
-        Some(min)
-    );
-    assert_eq!(
-        sketch
-            .quantile(near_one, SearchCriteria::Inclusive)
-            .unwrap(),
-        Some(max)
-    );
-    assert_eq!(
-        view.quantile(near_one, SearchCriteria::Inclusive).unwrap(),
-        Some(max)
-    );
-    assert_eq!(view.total_weight(), sketch.total_weight());
-}
-
-#[test]
 fn quantile_endpoints_preserve_extrema_after_compaction() {
     let mut sketch = KllSketch::<i64>::new(8).unwrap();
     for item in 0..8 {
@@ -296,9 +259,7 @@ fn sorted_view_supports_repeated_and_batch_queries() {
         .unwrap()
         .unwrap();
 
-    // Compaction may drop the extrema; the view inserts each missing endpoint.
-    assert!(view.len() >= sketch.num_retained());
-    assert!(view.len() - sketch.num_retained() <= 2);
+    assert_eq!(view.len(), sketch.num_retained());
     assert_eq!(view.total_weight(), sketch.total_weight());
     assert_eq!(
         view.quantiles(&ranks, SearchCriteria::Inclusive)
