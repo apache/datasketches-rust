@@ -30,8 +30,9 @@ use crate::codec::family::Family;
 use crate::error::Error;
 
 // Native DataSketches preamble constants (3 longs = 24 bytes).
-// `PREAMBLE_LONGS = 3` (`0x03`) cannot appear as the leading byte of any valid reference DDSketch
-// image (`flag_type = 0b11` has no `subflag = 0`), making format auto-detection unambiguous.
+// `PREAMBLE_LONGS = 3` (`0x03`) is also disjoint from every valid leading flag byte of the
+// reference DDSketch format (`flag_type = 0b11` defines no `subflag = 0`), ensuring cross-format
+// inputs fail cleanly on the first header check.
 const PREAMBLE_LONGS: u8 = 3;
 const SERIAL_VERSION: u8 = 1;
 const PREAMBLE_BYTES: usize = (PREAMBLE_LONGS as usize) * size_of::<u64>();
@@ -82,6 +83,7 @@ const DD_SUBFLAG_BINS_CONTIGUOUS_COUNTS: u8 = 3 << 2;
 const MAX_VAR_LEN_64: usize = 9;
 const VARFLOAT_ROTATE: u32 = 6;
 const ONE_F64_BITS: u64 = 0x3ff0_0000_0000_0000;
+const MAX_COMPAT_WEIGHT: u64 = (1 << 53) - 1;
 const TWO_POW_64: f64 = 18_446_744_073_709_551_616.0;
 
 pub fn serialize_sketch(sketch: &DdSketch) -> Vec<u8> {
@@ -142,31 +144,63 @@ pub fn serialize_sketch(sketch: &DdSketch) -> Vec<u8> {
     out.into_bytes()
 }
 
-pub fn deserialize_sketch(
-    bytes: &[u8],
-    override_store: Option<StoreKind>,
-) -> Result<DdSketch, Error> {
-    let Some(&first) = bytes.first() else {
-        return Err(Error::insufficient_data_of(
-            "preamble_longs",
-            "unexpected EOF",
-        ));
-    };
-    if is_datadog_start_flag(first) {
-        return deserialize_datadog(bytes, override_store.unwrap_or_default());
-    }
-    deserialize_native(bytes, override_store)
+pub fn deserialize_sketch(bytes: &[u8]) -> Result<DdSketch, Error> {
+    deserialize_native(bytes)
 }
 
-#[inline]
-const fn is_datadog_start_flag(flag: u8) -> bool {
-    matches!(
-        flag,
-        0x02 | 0x06 | 0x0a | 0x0e | 0x12 // IndexMapping layouts
-            | 0x04 | 0x84 | 0x88 | 0x8c | 0xa0 // SketchFeatures
-            | 0x05 | 0x09 | 0x0d // PositiveStore
-            | 0x07 | 0x0b | 0x0f // NegativeStore
-    )
+pub fn serialize_compat_sketch(sketch: &DdSketch) -> Result<Vec<u8>, Error> {
+    let mapping = sketch.mapping();
+    let mapping_subflag = match mapping.kind() {
+        MappingKind::Logarithmic => DD_SUBFLAG_MAPPING_LOGARITHMIC,
+        MappingKind::Linear => DD_SUBFLAG_MAPPING_LINEAR,
+        MappingKind::Cubic => DD_SUBFLAG_MAPPING_CUBIC,
+    };
+
+    let zero_weight = sketch.zero_weight();
+    if zero_weight > MAX_COMPAT_WEIGHT {
+        return Err(Error::invalid_argument(format!(
+            "DDSketch zero_weight ({zero_weight}) exceeds maximum exact compatibility count ({MAX_COMPAT_WEIGHT})"
+        )));
+    }
+    let zero_bytes = if zero_weight == 0 {
+        0
+    } else {
+        1 + varfloat64_size(zero_weight as f64)
+    };
+    let (neg_choice, neg_bytes) = choose_compat_bin_encoding(sketch.negative_store())?;
+    let (pos_choice, pos_bytes) = choose_compat_bin_encoding(sketch.positive_store())?;
+
+    let mut out = SketchBytes::with_capacity(17 + zero_bytes + neg_bytes + pos_bytes);
+    out.write_u8(mapping_subflag | DD_FLAG_TYPE_INDEX_MAPPING);
+    out.write_f64_le(mapping.gamma());
+    out.write_f64_le(mapping.index_offset());
+
+    if zero_weight != 0 {
+        out.write_u8(DD_SUBFLAG_ZERO_COUNT | DD_FLAG_TYPE_SKETCH_FEATURES);
+        encode_varfloat64(&mut out, zero_weight as f64);
+    }
+    if let Some(choice) = neg_choice {
+        encode_compat_store(
+            &mut out,
+            sketch.negative_store(),
+            DD_FLAG_TYPE_NEGATIVE_STORE,
+            choice,
+        );
+    }
+    if let Some(choice) = pos_choice {
+        encode_compat_store(
+            &mut out,
+            sketch.positive_store(),
+            DD_FLAG_TYPE_POSITIVE_STORE,
+            choice,
+        );
+    }
+
+    Ok(out.into_bytes())
+}
+
+pub fn deserialize_compat_sketch(bytes: &[u8], store_kind: StoreKind) -> Result<DdSketch, Error> {
+    deserialize_datadog(bytes, store_kind)
 }
 
 fn encode_store_kind(kind: StoreKind) -> (u8, u32) {
@@ -219,7 +253,7 @@ fn decode_store_kind(store_tag: u8, max_bins_u32: u32) -> Result<StoreKind, Erro
     }
 }
 
-fn deserialize_native(bytes: &[u8], override_store: Option<StoreKind>) -> Result<DdSketch, Error> {
+fn deserialize_native(bytes: &[u8]) -> Result<DdSketch, Error> {
     let mut cursor = SketchSlice::new(bytes);
     let preamble_longs = cursor
         .read_u8()
@@ -274,9 +308,8 @@ fn deserialize_native(bytes: &[u8], override_store: Option<StoreKind>) -> Result
         ));
     }
 
-    let target_store_kind = override_store.unwrap_or(encoded_store_kind);
-    let mut negative = Store::new(target_store_kind)?;
-    let mut positive = Store::new(target_store_kind)?;
+    let mut negative = Store::new(encoded_store_kind)?;
+    let mut positive = Store::new(encoded_store_kind)?;
 
     if is_empty {
         if neg_collapsed || pos_collapsed {
@@ -293,7 +326,7 @@ fn deserialize_native(bytes: &[u8], override_store: Option<StoreKind>) -> Result
         return Ok(DdSketch::from_parts(mapping, negative, positive, 0, 0));
     }
 
-    let enforce_span_limit = matches!(target_store_kind, StoreKind::UnboundedDense);
+    let enforce_span_limit = matches!(encoded_store_kind, StoreKind::UnboundedDense);
     let zero_weight = decode_uvarint64(&mut cursor, "zero_weight")?;
     let (neg_weight, neg_span) =
         decode_native_store(&mut cursor, &mut negative, enforce_span_limit)?;
@@ -320,13 +353,11 @@ fn deserialize_native(bytes: &[u8], override_store: Option<StoreKind>) -> Result
         )));
     }
 
-    if target_store_kind == encoded_store_kind {
-        if neg_collapsed {
-            negative.set_collapsed(true);
-        }
-        if pos_collapsed {
-            positive.set_collapsed(true);
-        }
+    if neg_collapsed {
+        negative.set_collapsed(true);
+    }
+    if pos_collapsed {
+        positive.set_collapsed(true);
     }
 
     Ok(DdSketch::from_parts(
@@ -605,6 +636,125 @@ fn decode_native_store(
         _ => Err(Error::deserial(format!(
             "unsupported DDSketch store encoding mode: {mode:#04x}"
         ))),
+    }
+}
+
+#[derive(Clone, Copy)]
+enum CompatBinChoice {
+    ContiguousCounts { num_bins: u64, min_index: i32 },
+    IndexDeltas { num_bins: u64 },
+    IndexDeltasAndCounts { num_bins: u64 },
+}
+
+fn choose_compat_bin_encoding(store: &Store) -> Result<(Option<CompatBinChoice>, usize), Error> {
+    if store.is_empty() {
+        return Ok((None, 0));
+    }
+
+    let num_non_empty = store.num_occupied() as u64;
+    let mut sparse_deltas_bytes = 1 + uvarint64_size(num_non_empty);
+    let mut sparse_counts_bytes = 0_usize;
+    let mut all_unit_weights = true;
+    let mut prev_index = 0_i64;
+
+    for (idx, weight) in store.iter_asc() {
+        if weight > MAX_COMPAT_WEIGHT {
+            return Err(Error::invalid_argument(format!(
+                "DDSketch bucket weight ({weight}) exceeds maximum exact compatibility count ({MAX_COMPAT_WEIGHT})"
+            )));
+        }
+        let idx64 = i64::from(idx);
+        sparse_deltas_bytes += varint64_size(idx64 - prev_index);
+        sparse_counts_bytes += varfloat64_size(weight as f64);
+        if weight != 1 {
+            all_unit_weights = false;
+        }
+        prev_index = idx64;
+    }
+
+    let (best_sparse, best_sparse_bytes) = if all_unit_weights {
+        (
+            CompatBinChoice::IndexDeltas {
+                num_bins: num_non_empty,
+            },
+            sparse_deltas_bytes,
+        )
+    } else {
+        (
+            CompatBinChoice::IndexDeltasAndCounts {
+                num_bins: num_non_empty,
+            },
+            sparse_deltas_bytes + sparse_counts_bytes,
+        )
+    };
+
+    if let Some((min_index, contiguous)) = store.dense_contiguous_slice() {
+        let num_bins = contiguous.len() as u64;
+        let num_zero_bins = contiguous.len() - store.num_occupied();
+        // `index_delta = 1` encodes as single byte `0x02`, and `0.0` encodes as single byte `0x00`.
+        let dense_bytes = 1
+            + uvarint64_size(num_bins)
+            + varint64_size(i64::from(min_index))
+            + 1
+            + sparse_counts_bytes
+            + num_zero_bins;
+        if dense_bytes <= best_sparse_bytes {
+            return Ok((
+                Some(CompatBinChoice::ContiguousCounts {
+                    num_bins,
+                    min_index,
+                }),
+                dense_bytes,
+            ));
+        }
+    }
+
+    Ok((Some(best_sparse), best_sparse_bytes))
+}
+
+fn encode_compat_store(
+    out: &mut SketchBytes,
+    store: &Store,
+    flag_type: u8,
+    choice: CompatBinChoice,
+) {
+    match choice {
+        CompatBinChoice::ContiguousCounts {
+            num_bins,
+            min_index,
+        } => {
+            let (_, slice) = store
+                .dense_contiguous_slice()
+                .expect("contiguous encoding only selected for non-empty dense store");
+            out.write_u8(DD_SUBFLAG_BINS_CONTIGUOUS_COUNTS | flag_type);
+            encode_uvarint64(out, num_bins);
+            encode_varint64(out, i64::from(min_index));
+            encode_varint64(out, 1);
+            for &weight in slice {
+                encode_varfloat64(out, weight as f64);
+            }
+        }
+        CompatBinChoice::IndexDeltas { num_bins } => {
+            out.write_u8(DD_SUBFLAG_BINS_INDEX_DELTAS | flag_type);
+            encode_uvarint64(out, num_bins);
+            let mut prev = 0_i64;
+            for (idx, _) in store.iter_asc() {
+                let idx64 = i64::from(idx);
+                encode_varint64(out, idx64 - prev);
+                prev = idx64;
+            }
+        }
+        CompatBinChoice::IndexDeltasAndCounts { num_bins } => {
+            out.write_u8(DD_SUBFLAG_BINS_DELTAS_AND_COUNTS | flag_type);
+            encode_uvarint64(out, num_bins);
+            let mut prev = 0_i64;
+            for (idx, weight) in store.iter_asc() {
+                let idx64 = i64::from(idx);
+                encode_varint64(out, idx64 - prev);
+                encode_varfloat64(out, weight as f64);
+                prev = idx64;
+            }
+        }
     }
 }
 
@@ -977,6 +1127,37 @@ pub const fn varint64_size(v: i64) -> usize {
 }
 
 #[inline]
+pub fn encode_varfloat64(out: &mut SketchBytes, v: f64) {
+    let bits = (v + 1.0).to_bits().wrapping_sub(ONE_F64_BITS);
+    let mut x = bits.rotate_left(VARFLOAT_ROTATE);
+    for _ in 0..(MAX_VAR_LEN_64 - 1) {
+        let byte = (x >> 57) as u8;
+        x <<= 7;
+        if x == 0 {
+            out.write_u8(byte);
+            return;
+        }
+        out.write_u8(byte | 0x80);
+    }
+    out.write_u8((x >> 56) as u8);
+}
+
+#[inline]
+pub fn varfloat64_size(v: f64) -> usize {
+    let bits = (v + 1.0).to_bits().wrapping_sub(ONE_F64_BITS);
+    let x = bits.rotate_left(VARFLOAT_ROTATE);
+    if x == 0 {
+        return 1;
+    }
+    let tz = x.trailing_zeros() as usize;
+    if tz < 8 {
+        MAX_VAR_LEN_64
+    } else {
+        (64 - tz).div_ceil(7)
+    }
+}
+
+#[inline]
 pub fn decode_varfloat64(cursor: &mut SketchSlice<'_>, tag: &'static str) -> Result<f64, Error> {
     let mut x = 0_u64;
     let mut shift = 57_u32;
@@ -1103,8 +1284,13 @@ mod tests {
                 &[0xfe, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x3f],
             ),
         ];
-        for &(val, encoded) in cases {
-            let mut slice = SketchSlice::new(encoded);
+        for &(val, expected) in cases {
+            let mut buf = SketchBytes::default();
+            encode_varfloat64(&mut buf, val);
+            let bytes = buf.into_bytes();
+            assert_eq!(bytes, expected, "varfloat64({val})");
+            assert_eq!(varfloat64_size(val), expected.len(), "size({val})");
+            let mut slice = SketchSlice::new(&bytes);
             assert_eq!(decode_varfloat64(&mut slice, "test").unwrap(), val);
             assert!(slice.remaining().is_empty());
         }

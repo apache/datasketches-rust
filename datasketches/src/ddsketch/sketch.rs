@@ -21,7 +21,9 @@ use super::DEFAULT_RELATIVE_ACCURACY;
 use super::iter::DdSketchIter;
 use super::mapping::IndexMapping;
 use super::mapping::MappingKind;
+use super::serialization::deserialize_compat_sketch;
 use super::serialization::deserialize_sketch;
+use super::serialization::serialize_compat_sketch;
 use super::serialization::serialize_sketch;
 use super::store::Store;
 use super::store::StoreKind;
@@ -290,7 +292,8 @@ impl DdSketch {
     ///
     /// Reference DDSketch implementations in Java, Go, and Python reject `NaN`, infinite, and
     /// negative-count inputs with an error and accept fractional `f64` counts. This method ignores
-    /// non-finite values and accumulates exact `u64` integer weights.
+    /// non-finite values and accumulates exact `u64` integer weights; keep per-bucket weights at
+    /// or below `2^53 - 1` when serializing with [`serialize_compat`](Self::serialize_compat).
     ///
     /// # Examples
     ///
@@ -566,41 +569,75 @@ impl DdSketch {
     /// Deserializes a sketch from the DataSketches `DDSKETCH` binary format, restoring its encoded
     /// [`StoreKind`].
     ///
-    /// The binary format of the [reference DDSketch implementations][reference] in Java, Go,
-    /// Python, and JavaScript is auto-detected and decoded into [`StoreKind::default()`].
+    /// Use [`deserialize_compat`](Self::deserialize_compat) to decode images produced by the
+    /// reference DDSketch implementations in Java, Go, Python, and JavaScript.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InvalidData`](crate::error::ErrorKind::InvalidData) if the image is empty,
+    /// truncated, has an unsupported family, version, or flag, or violates index, store, or weight
+    /// bounds.
+    pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
+        deserialize_sketch(bytes)
+    }
+
+    /// Serializes this sketch in the compact binary format of the [reference DDSketch
+    /// implementations][reference] in Java, Go, Python, and JavaScript.
     ///
     /// [reference]: https://github.com/DataDog/sketches-java
     ///
     /// # Errors
     ///
-    /// Returns [`InvalidData`](crate::error::ErrorKind::InvalidData) if the image is empty,
-    /// truncated, has an unsupported format or version, contains non-integer or negative reference
-    /// counts, or violates index, store, or weight bounds.
+    /// Returns [`InvalidArgument`](crate::error::ErrorKind::InvalidArgument) if
+    /// [`zero_weight`](Self::zero_weight) or any retained bucket weight exceeds `2^53 - 1`
+    /// (`9_007_199_254_740_991`), the maximum integer representable without rounding in the
+    /// compatibility format's `v + 1.0` floating-point counter encoding.
     ///
     /// # Cross-language compatibility
     ///
-    /// Reference DDSketch images carrying optional exact summary-statistic blocks (`count`, `sum`,
-    /// `min`, `max`) are accepted and those auxiliary blocks are skipped; reference counts must be
-    /// non-negative integers below `2^64`. Because reference images do not record [`StoreKind`],
-    /// use [`deserialize_with_store`](Self::deserialize_with_store) when decoding a wide-span
-    /// reference sketch without default bin collapsing.
-    pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
-        deserialize_sketch(bytes, None)
+    /// [`StoreKind`] and collapse state are in-memory properties in the reference format and are
+    /// not recorded in the output bytes; decode with
+    /// [`deserialize_compat`](Self::deserialize_compat) and an explicit [`StoreKind`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::ddsketch::DdSketch;
+    /// use datasketches::ddsketch::StoreKind;
+    ///
+    /// let mut sketch = DdSketch::new(0.01)?;
+    /// sketch.update(42.0);
+    /// let compat_bytes = sketch.serialize_compat()?;
+    /// let decoded = DdSketch::deserialize_compat(&compat_bytes, StoreKind::default())?;
+    /// assert_eq!(decoded.total_weight(), 1);
+    /// # Ok::<(), datasketches::error::Error>(())
+    /// ```
+    pub fn serialize_compat(&self) -> Result<Vec<u8>, Error> {
+        serialize_compat_sketch(self)
     }
 
-    /// Deserializes a sketch from either the DataSketches `DDSKETCH` format or the auto-detected
-    /// reference DDSketch format into the specified `store` strategy, overriding any [`StoreKind`]
-    /// recorded in the image.
+    /// Deserializes a sketch from the compact binary format of the [reference DDSketch
+    /// implementations][reference] into the specified `store` strategy.
+    ///
+    /// [reference]: https://github.com/DataDog/sketches-java
     ///
     /// # Errors
     ///
     /// Returns [`InvalidArgument`](crate::error::ErrorKind::InvalidArgument) if `store` has an
-    /// invalid `max_num_bins` bound, or [`InvalidData`](crate::error::ErrorKind::InvalidData)
-    /// under the same conditions as [`deserialize`](Self::deserialize) (additionally rejecting
-    /// index spans above `67_108_864` when `store` is [`StoreKind::UnboundedDense`]).
-    pub fn deserialize_with_store(bytes: &[u8], store: StoreKind) -> Result<Self, Error> {
+    /// invalid `max_num_bins` bound, or [`InvalidData`](crate::error::ErrorKind::InvalidData) if
+    /// the image is empty, truncated, missing an index mapping, contains unsupported flags or
+    /// non-integer/negative counts, overflows index or `u64` weight bounds, or spans more than
+    /// `67_108_864` bins when `store` is [`StoreKind::UnboundedDense`].
+    ///
+    /// # Cross-language compatibility
+    ///
+    /// Accepts images carrying optional exact summary-statistic blocks (`count`, `sum`, `min`,
+    /// `max`), skipping those auxiliary fields; encoded counts must be non-negative integers below
+    /// `2^64`. Because reference images do not record [`StoreKind`], choose [`StoreKind::Sparse`]
+    /// or a sufficiently wide dense bound when decoding a wide-span sketch without bin collapsing.
+    pub fn deserialize_compat(bytes: &[u8], store: StoreKind) -> Result<Self, Error> {
         validate_store_kind(store)?;
-        deserialize_sketch(bytes, Some(store))
+        deserialize_compat_sketch(bytes, store)
     }
 
     fn quantile_unchecked(&self, rank: f64) -> f64 {
