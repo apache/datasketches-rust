@@ -19,6 +19,7 @@ All significant changes to this project will be documented in this file.
 
 ### Bug fixes
 
+* `KllSketch` and `kll::SortedView` now retain the exact stream minimum and maximum with unit weight in their query distribution when compaction discards an endpoint, so `rank`, `cdf`, `pmf`, and near-endpoint `quantile` and `quantiles` queries stay consistent with `min_item` and `max_item`; `kll::SortedView::len` may accordingly exceed `KllSketch::num_retained` by up to `2`.
 * `HllSketch::deserialize` now returns `InvalidData` when a dense `HllType::Hll8` image contains a register value above 63.
 * `HllSketch::serialize` and `HllUnion::serialize` now set the compact flag in serialized `HllType::Hll6` and `HllType::Hll8` HLL-mode headers, matching the compact wire format expected by cross-language DataSketches readers; deserialization continues to accept images with or without the flag.
 
