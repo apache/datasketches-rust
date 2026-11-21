@@ -24,6 +24,8 @@ use datasketches::theta::ThetaSketchBuilder;
 
 use crate::hash_inputs::ITEMS;
 use crate::hash_inputs::bytes_32_values;
+use crate::hash_inputs::bytes_64_values;
+use crate::hash_inputs::variable_byte_slices;
 
 fn u64(bencher: Bencher) {
     bencher.bench_local(|| {
@@ -47,7 +49,21 @@ fn bytes_32(bencher: Bencher) {
     });
 }
 
+fn variable_bytes(bencher: Bencher) {
+    let values = bytes_64_values();
+    let keys = variable_byte_slices(&values);
+
+    bencher.bench_local(|| {
+        let mut sketch = ThetaSketchBuilder::default().lg_k(14).build().unwrap();
+        for &key in &keys {
+            sketch.update(raw_bytes::from_slice(black_box(key)));
+        }
+        black_box(sketch)
+    });
+}
+
 pub fn register(runner: &mut Runner) {
     runner.case("theta::update::u64", 4_000, u64);
     runner.case("theta::update::bytes_32", 3_000, bytes_32);
+    runner.case("theta::update::variable_bytes", 2_000, variable_bytes);
 }

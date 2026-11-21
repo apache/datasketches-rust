@@ -177,3 +177,18 @@ fn test_invalid_lg_k_high_returns_error() {
     let error = HllSketch::new(22, HllType::Hll8).unwrap_err();
     assert_eq!(error.kind(), ErrorKind::InvalidArgument);
 }
+
+#[test]
+fn list_storage_reports_no_heap() {
+    let mut sketch = HllSketch::new(14, HllType::Hll8).unwrap();
+    assert_eq!(sketch.estimated_size(), 0);
+    for value in 0..7_u64 {
+        sketch.update(value);
+    }
+    assert_eq!(sketch.estimated_size(), 0);
+
+    let mut decoded = HllSketch::deserialize(&sketch.serialize()).unwrap();
+    assert_eq!(decoded.estimated_size(), 0);
+    decoded.update(7_u64);
+    assert!(decoded.estimated_size() > 0);
+}

@@ -30,25 +30,23 @@ use crate::hll::serialization::LIST_PREINTS;
 use crate::hll::serialization::SERIAL_VERSION;
 use crate::hll::serialization::encode_mode_byte;
 
+const LG_INIT_LIST_SIZE: u8 = 3;
+const LIST_CAPACITY: usize = 1 << LG_INIT_LIST_SIZE;
+
 #[derive(Debug, Clone)]
 pub struct List {
-    container: Container,
+    container: Container<[Coupon; LIST_CAPACITY]>,
 }
 
 impl Default for List {
     fn default() -> Self {
-        const LG_INIT_LIST_SIZE: usize = 3;
-        Self::new(LG_INIT_LIST_SIZE)
+        Self {
+            container: Container::from_coupons([Coupon::EMPTY; LIST_CAPACITY], 0),
+        }
     }
 }
 
 impl List {
-    pub fn new(lg_size: usize) -> Self {
-        Self {
-            container: Container::new(lg_size),
-        }
-    }
-
     pub fn update(&mut self, coupon: Coupon) {
         for value in self.container.coupons.iter_mut() {
             if value.is_empty() {
@@ -61,23 +59,25 @@ impl List {
         }
     }
 
-    pub fn container(&self) -> &Container {
+    pub fn container(&self) -> &Container<[Coupon; LIST_CAPACITY]> {
         &self.container
     }
 
     pub fn deserialize(
         mut cursor: SketchSlice,
-        lg_arr: usize,
+        lg_arr: u8,
         coupon_count: usize,
         empty: bool,
         compact: bool,
     ) -> Result<Self, Error> {
-        // Compact images omit empty slots. Restore the full capacity so future updates
-        // can insert into an empty slot before the list promotes.
-        let array_size = 1usize << lg_arr;
-        if coupon_count > array_size {
+        if lg_arr != LG_INIT_LIST_SIZE {
             return Err(Error::deserial(format!(
-                "LIST mode coupon count {coupon_count} exceeds capacity {array_size}"
+                "LIST mode lg_arr: expected {LG_INIT_LIST_SIZE}, got {lg_arr}"
+            )));
+        }
+        if coupon_count > LIST_CAPACITY {
+            return Err(Error::deserial(format!(
+                "LIST mode coupon count {coupon_count} exceeds capacity {LIST_CAPACITY}"
             )));
         }
         if empty != (coupon_count == 0) {
@@ -85,7 +85,7 @@ impl List {
                 "LIST mode empty flag and coupon count disagree",
             ));
         }
-        let read_count = if compact { coupon_count } else { array_size };
+        let read_count = if compact { coupon_count } else { LIST_CAPACITY };
         let required_bytes = read_count * size_of::<u32>();
         if !empty {
             let available_bytes = cursor.remaining().len();
@@ -97,7 +97,9 @@ impl List {
             }
         }
 
-        let mut coupons = vec![Coupon::EMPTY; array_size];
+        // Compact images omit empty slots. Restore the full capacity so future updates
+        // can insert into an empty slot before the list promotes.
+        let mut coupons = [Coupon::EMPTY; LIST_CAPACITY];
         if !empty && coupon_count > 0 {
             for (i, coupon) in coupons.iter_mut().take(read_count).enumerate() {
                 let raw = cursor.read_u32_le().map_err(|error| {
@@ -109,7 +111,7 @@ impl List {
         }
 
         Ok(Self {
-            container: Container::from_coupons(lg_arr, coupons.into_boxed_slice(), coupon_count),
+            container: Container::from_coupons(coupons, coupon_count),
         })
     }
 
@@ -117,7 +119,6 @@ impl List {
     pub fn serialize(&self, lg_config_k: u8, hll_type: HllType) -> Vec<u8> {
         let empty = self.container.is_empty();
         let coupon_count = self.container.len();
-        let lg_arr = self.container.lg_size();
         let total_size = LIST_PREAMBLE_SIZE + (coupon_count * size_of::<u32>());
 
         let mut bytes = SketchBytes::with_capacity(total_size);
@@ -126,7 +127,7 @@ impl List {
         bytes.write_u8(SERIAL_VERSION);
         bytes.write_u8(Family::HLL.id);
         bytes.write_u8(lg_config_k);
-        bytes.write_u8(lg_arr as u8);
+        bytes.write_u8(LG_INIT_LIST_SIZE);
 
         let mut flags = COMPACT_FLAG_MASK;
         if empty {
