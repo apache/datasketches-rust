@@ -26,6 +26,7 @@ use clap::ValueEnum;
 mod bloom;
 mod countmin;
 mod cpc;
+mod ddsketch;
 mod density;
 mod frequencies;
 mod hll;
@@ -63,6 +64,8 @@ enum SketchFamily {
     #[value(name = "countmin")]
     CountMin,
     Cpc,
+    #[value(name = "ddsketch")]
+    DdSketch,
     Density,
     Frequencies,
     Hll,
@@ -81,6 +84,7 @@ impl SketchFamily {
             Self::Bloom => bloom::generate(output_dir),
             Self::CountMin => countmin::generate(output_dir),
             Self::Cpc => cpc::generate(output_dir),
+            Self::DdSketch => ddsketch::generate(output_dir),
             Self::Density => density::generate(output_dir),
             Self::Frequencies => frequencies::generate(output_dir),
             Self::Hll => hll::generate(output_dir),
