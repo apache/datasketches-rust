@@ -12,15 +12,14 @@ All significant changes to this project will be documented in this file.
 ### Performance improvements
 
 * Speed up `BloomFilter::contains`, `BloomFilter::insert`, `BloomFilter::contains_and_insert`, `CountMinSketch::update`, `CountMinSketch::estimate`, `XorFilter::contains`, and `XorFilterBuilder` item updates on variable-length byte-slice and string inputs (including `raw_bytes`), particularly on negative `BloomFilter::contains` queries, as well as `XorFilter::contains` on integer and 32-byte inputs.
-* HLL sketches store their initial eight coupon slots inline instead of allocating them on the heap. `estimated_size` now reports zero heap bytes in LIST mode.
+* Speed up `CpcUnion::update` when merging high-cardinality sketches at equal or mixed precisions, and reduce temporary allocations when an empty union adopts a high-cardinality sketch with `lg_k` at or below the union's precision.
+* Avoid heap allocation in empty and low-cardinality `HllSketch` and `HllUnion` instances (up to seven distinct values), where `HllSketch::estimated_size` and `HllUnion::estimated_size` now return `0`.
 * Speed up `HllSketch::update`, `Coupon::from_value`, `CpcSketch::update`, `ThetaSketch::update`, `TupleSketch::update`, and `FrequentItemsSketch::update` for byte-slice and string inputs (including `raw_bytes`), particularly on short and variable-length keys, as well as `CpcSketch::update` and `TupleSketch::update` on integer keys.
-* `HllUnion::update` is faster when merging dense HLL8 registers into a lower-precision sketch.
-* `CpcUnion::update` is faster when merging sketches that contain many distinct values relative to their configured precision, including when the sketches have different precisions.
-* An empty `CpcUnion` can merge a high-cardinality sketch faster and with less temporary memory when the sketch's `lg_k` is less than or equal to the union's. For example, the first merge saves 16 KiB of temporary memory for a sketch of 65,536 distinct values when both use `lg_k = 11`.
+* Speed up `HllUnion::update` when merging a high-cardinality `HllType::Hll8` sketch into a lower-precision union or downsizing a populated union to a smaller `lg_k`.
 
 ### Bug fixes
 
-* `HllSketch::deserialize` rejects dense HLL8 register ranks above 63 with `InvalidData`.
+* `HllSketch::deserialize` now returns `InvalidData` when a dense `HllType::Hll8` image contains a register value above 63.
 * `HllSketch::serialize` and `HllUnion::serialize` now set the compact flag in serialized `HllType::Hll6` and `HllType::Hll8` HLL-mode headers, matching the compact wire format expected by cross-language DataSketches readers; deserialization continues to accept images with or without the flag.
 
 ## v0.7.0 (2026-11-19)
