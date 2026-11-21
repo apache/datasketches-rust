@@ -44,6 +44,7 @@ pub(crate) mod assert;
     feature = "bloom",
     feature = "countmin",
     feature = "cpc",
+    feature = "ddsketch",
     feature = "density",
     feature = "frequencies",
     feature = "hll",

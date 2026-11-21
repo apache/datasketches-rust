@@ -314,6 +314,106 @@ impl Store {
             Self::Sparse(_) => None,
         }
     }
+
+    #[inline]
+    pub const fn is_collapsed(&self) -> bool {
+        match self {
+            Self::Dense(dense) => dense.is_collapsed,
+            Self::Sparse(_) => false,
+        }
+    }
+
+    #[inline]
+    pub fn set_collapsed(&mut self, collapsed: bool) {
+        if let Self::Dense(dense) = self {
+            if let CollapseMode::Lowest(max_bins) | CollapseMode::Highest(max_bins) = dense.mode {
+                debug_assert!(
+                    !collapsed
+                        || (dense.count > 0
+                            && dense.bins.len() == max_bins
+                            && span_len(dense.min_index, dense.max_index) == max_bins
+                            && dense.offset == dense.min_index)
+                );
+                dense.is_collapsed = collapsed;
+            }
+        }
+    }
+
+    /// Decodes `num_bins` contiguous weights starting at `first_index` (step `+1`), writing
+    /// directly into a single pre-sized slice when `self` is an empty `DenseStore` whose bin
+    /// budget fits `num_bins`, and returns `(weight_sum, occupied_wire_span)`.
+    pub fn decode_contiguous_unit_step<F>(
+        &mut self,
+        first_index: i32,
+        num_bins: usize,
+        mut next_weight: F,
+    ) -> Result<(u64, usize), Error>
+    where
+        F: FnMut() -> Result<u64, Error>,
+    {
+        if num_bins == 0 {
+            return Ok((0, 0));
+        }
+        let last_index = (i64::from(first_index) + (num_bins as i64) - 1) as i32;
+        if let Self::Dense(dense) = self {
+            let cap = dense.desired_len(num_bins);
+            if dense.count == 0 && num_bins <= cap {
+                if dense.bins.len() < cap {
+                    dense.bins.resize(cap, 0);
+                }
+                let offset = centered_offset(first_index, last_index, dense.bins.len());
+                let dst_start = (i64::from(first_index) - i64::from(offset)) as usize;
+                let dst = &mut dense.bins[dst_start..(dst_start + num_bins)];
+                let mut sum = 0_u64;
+                let mut occupied = 0_usize;
+                let mut first_nz: Option<usize> = None;
+                let mut last_nz = 0_usize;
+                for (i, slot) in dst.iter_mut().enumerate() {
+                    let w = next_weight()?;
+                    if w != 0 {
+                        sum = sum
+                            .checked_add(w)
+                            .ok_or_else(|| Error::deserial("total_weight overflows u64"))?;
+                        *slot = w;
+                        occupied += 1;
+                        if first_nz.is_none() {
+                            first_nz = Some(i);
+                        }
+                        last_nz = i;
+                    }
+                }
+                if let Some(first_pos) = first_nz {
+                    dense.offset = offset;
+                    dense.min_index = (i64::from(first_index) + (first_pos as i64)) as i32;
+                    dense.max_index = (i64::from(first_index) + (last_nz as i64)) as i32;
+                    dense.occupied = occupied;
+                    dense.count = sum;
+                }
+                let wire_span = first_nz.map_or(0, |first_pos| last_nz - first_pos + 1);
+                return Ok((sum, wire_span));
+            }
+        }
+
+        let mut sum = 0_u64;
+        let mut first_nz: Option<usize> = None;
+        let mut last_nz = 0_usize;
+        for i in 0..num_bins {
+            let w = next_weight()?;
+            if w != 0 {
+                sum = sum
+                    .checked_add(w)
+                    .ok_or_else(|| Error::deserial("total_weight overflows u64"))?;
+                if first_nz.is_none() {
+                    first_nz = Some(i);
+                }
+                last_nz = i;
+                let idx = (i64::from(first_index) + (i as i64)) as i32;
+                self.add(idx, w);
+            }
+        }
+        let wire_span = first_nz.map_or(0, |first_pos| last_nz - first_pos + 1);
+        Ok((sum, wire_span))
+    }
 }
 
 #[derive(Debug, Clone)]

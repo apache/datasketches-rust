@@ -68,11 +68,7 @@ fn main() {
     let mut wire_bytes = 0_usize;
     for payload in &payloads {
         wire_bytes += payload.len();
-        let decoded = DdSketch::deserialize_with_store(
-            payload,
-            StoreKind::CollapsingLowestDense { max_num_bins: 1024 },
-        )
-        .unwrap();
+        let decoded = DdSketch::deserialize(payload).unwrap();
         global.merge(&decoded).unwrap();
     }
 

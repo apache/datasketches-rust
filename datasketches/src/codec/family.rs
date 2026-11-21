@@ -146,6 +146,15 @@ impl Family {
         min_pre_longs: 2,
         max_pre_longs: 3,
     };
+
+    /// DDSketch for estimating quantiles with relative-value error guarantees.
+    #[cfg(feature = "ddsketch")]
+    pub const DDSKETCH: Family = Family {
+        id: 25,
+        name: "DDSKETCH",
+        min_pre_longs: 3,
+        max_pre_longs: 3,
+    };
 }
 
 impl Family {

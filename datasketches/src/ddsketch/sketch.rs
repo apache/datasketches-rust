@@ -290,8 +290,7 @@ impl DdSketch {
     ///
     /// Reference DDSketch implementations in Java, Go, and Python reject `NaN`, infinite, and
     /// negative-count inputs with an error and accept fractional `f64` counts. This method ignores
-    /// non-finite values and accumulates exact `u64` integer weights; keep per-bucket weights at
-    /// or below `2^53` when lossless wire interchange is required.
+    /// non-finite values and accumulates exact `u64` integer weights.
     ///
     /// # Examples
     ///
@@ -545,13 +544,8 @@ impl DdSketch {
         )
     }
 
-    /// Serializes this sketch to bytes using the compact DDSketch binary format.
-    ///
-    /// # Cross-language compatibility
-    ///
-    /// The serialized data can be read by the reference DDSketch implementations in Java, Go,
-    /// Python, and JavaScript. [`StoreKind`] is not stored in the image, and bucket weights above
-    /// `2^53` round to IEEE 754 `f64` precision.
+    /// Serializes this sketch in the DataSketches `DDSKETCH` binary format, preserving
+    /// [`MappingKind`], [`StoreKind`], collapse state, and exact `u64` bucket weights.
     ///
     /// # Examples
     ///
@@ -569,25 +563,34 @@ impl DdSketch {
         serialize_sketch(self)
     }
 
-    /// Deserializes a sketch from bytes using [`StoreKind::default()`].
+    /// Deserializes a sketch from the DataSketches `DDSKETCH` binary format, restoring its encoded
+    /// [`StoreKind`].
+    ///
+    /// The binary format of the [reference DDSketch implementations][reference] in Java, Go,
+    /// Python, and JavaScript is auto-detected and decoded into [`StoreKind::default()`].
+    ///
+    /// [reference]: https://github.com/DataDog/sketches-java
     ///
     /// # Errors
     ///
     /// Returns [`InvalidData`](crate::error::ErrorKind::InvalidData) if the image is empty,
-    /// truncated, missing an index mapping, contains unsupported flags or non-integer/negative
-    /// counts, or overflows index or weight bounds.
+    /// truncated, has an unsupported format or version, contains non-integer or negative reference
+    /// counts, or violates index, store, or weight bounds.
     ///
     /// # Cross-language compatibility
     ///
-    /// Also accepts data serialized by the reference DDSketch implementations in Java, Go, Python,
-    /// and JavaScript, including images carrying optional exact summary-statistic blocks (which
-    /// are skipped). Use [`deserialize_with_store`](Self::deserialize_with_store) when the source
-    /// sketch spans more than `2048` bins per sign and collapsing on decode is undesirable.
+    /// Reference DDSketch images carrying optional exact summary-statistic blocks (`count`, `sum`,
+    /// `min`, `max`) are accepted and those auxiliary blocks are skipped; reference counts must be
+    /// non-negative integers below `2^64`. Because reference images do not record [`StoreKind`],
+    /// use [`deserialize_with_store`](Self::deserialize_with_store) when decoding a wide-span
+    /// reference sketch without default bin collapsing.
     pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
-        deserialize_sketch(bytes, StoreKind::default())
+        deserialize_sketch(bytes, None)
     }
 
-    /// Deserializes a sketch from bytes into the specified `store` strategy.
+    /// Deserializes a sketch from either the DataSketches `DDSKETCH` format or the auto-detected
+    /// reference DDSketch format into the specified `store` strategy, overriding any [`StoreKind`]
+    /// recorded in the image.
     ///
     /// # Errors
     ///
@@ -595,15 +598,9 @@ impl DdSketch {
     /// invalid `max_num_bins` bound, or [`InvalidData`](crate::error::ErrorKind::InvalidData)
     /// under the same conditions as [`deserialize`](Self::deserialize) (additionally rejecting
     /// index spans above `67_108_864` when `store` is [`StoreKind::UnboundedDense`]).
-    ///
-    /// # Cross-language compatibility
-    ///
-    /// Also accepts data serialized by the reference DDSketch implementations in Java, Go, Python,
-    /// and JavaScript. [`StoreKind`] is not encoded on the wire, so any valid `store` may be
-    /// selected on decode.
     pub fn deserialize_with_store(bytes: &[u8], store: StoreKind) -> Result<Self, Error> {
         validate_store_kind(store)?;
-        deserialize_sketch(bytes, store)
+        deserialize_sketch(bytes, Some(store))
     }
 
     fn quantile_unchecked(&self, rank: f64) -> f64 {

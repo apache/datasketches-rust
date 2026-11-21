@@ -21,6 +21,7 @@ use std::path::Path;
 use datasketches::ddsketch::DdSketch;
 use datasketches::ddsketch::DdSketchBuilder;
 use datasketches::ddsketch::MappingKind;
+use datasketches::ddsketch::StoreKind;
 
 use crate::N_STD;
 use crate::write_snapshot;
@@ -41,6 +42,7 @@ pub fn generate(output_dir: &Path) -> io::Result<()> {
     for n in N_STD {
         let mut sketch = DdSketchBuilder::new(0.01)
             .mapping(MappingKind::Logarithmic)
+            .store(StoreKind::CollapsingLowestDense { max_num_bins: 512 })
             .build()
             .unwrap();
         for i in 0..n {

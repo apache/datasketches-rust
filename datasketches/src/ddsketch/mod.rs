@@ -34,11 +34,12 @@
 //!
 //! # Cross-language compatibility
 //!
-//! [`DdSketch::serialize`] and [`DdSketch::deserialize`] use the compact binary format of the
-//! [reference DDSketch implementation][reference]. Bin storage strategy ([`StoreKind`]) is an
-//! in-memory representation choice and is not stored in the serialized image; use
-//! [`DdSketch::deserialize_with_store`] to decode into a non-default store. Bucket counts are
-//! encoded as variable-width `f64` values, preserving exact integers up to `2^53`.
+//! [`DdSketch::serialize`] emits the DataSketches `DDSKETCH` binary format, preserving
+//! [`MappingKind`], [`StoreKind`], collapse state, and exact `u64` bucket weights.
+//! [`DdSketch::deserialize`] reads this format and also auto-detects the binary format of the
+//! [reference DDSketch implementations][reference] in Java, Go, Python, and JavaScript, decoding
+//! reference images into [`StoreKind::default()`] (or an explicit store via
+//! [`DdSketch::deserialize_with_store`]).
 //!
 //! [paper]: https://www.vldb.org/pvldb/vol12/p2195-masson.pdf
 //! [reference]: https://github.com/DataDog/sketches-java
