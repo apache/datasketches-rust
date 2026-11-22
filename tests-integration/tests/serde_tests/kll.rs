@@ -525,3 +525,82 @@ fn test_string_value_reports_the_truncated_field_and_byte_counts() {
         "insufficient data (KLL string payload): expected 5 bytes, got 1"
     );
 }
+
+fn encode_kll_i64(
+    min_item: i64,
+    max_item: i64,
+    is_level_zero_sorted: bool,
+    levels: &[&[i64]],
+) -> Vec<u8> {
+    const K: u16 = 8;
+    const M: u8 = 8;
+    const PREAMBLE_INTS_FULL: u8 = 5;
+    const SERIAL_VERSION_1: u8 = 1;
+    const KLL_FAMILY_ID: u8 = 15;
+    const FLAG_LEVEL_ZERO_SORTED: u8 = 1 << 1;
+
+    let num_levels = levels.len();
+    let capacity = (K as u32) * (num_levels as u32);
+    let num_retained: u32 = levels.iter().map(|level| level.len() as u32).sum();
+    let total_weight: u64 = levels
+        .iter()
+        .enumerate()
+        .map(|(level, items)| (items.len() as u64) << level)
+        .sum();
+    let flags = if is_level_zero_sorted {
+        FLAG_LEVEL_ZERO_SORTED
+    } else {
+        0
+    };
+
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&[PREAMBLE_INTS_FULL, SERIAL_VERSION_1, KLL_FAMILY_ID, flags]);
+    bytes.extend_from_slice(&K.to_le_bytes());
+    bytes.extend_from_slice(&[M, 0]);
+    bytes.extend_from_slice(&total_weight.to_le_bytes());
+    bytes.extend_from_slice(&K.to_le_bytes());
+    bytes.extend_from_slice(&[num_levels as u8, 0]);
+
+    let mut offset = capacity - num_retained;
+    for level in levels {
+        bytes.extend_from_slice(&offset.to_le_bytes());
+        offset += level.len() as u32;
+    }
+    bytes.extend_from_slice(&min_item.to_le_bytes());
+    bytes.extend_from_slice(&max_item.to_le_bytes());
+    for (level_index, level) in levels.iter().enumerate() {
+        if level_index == 0 && !is_level_zero_sorted {
+            for &item in level.iter().rev() {
+                bytes.extend_from_slice(&item.to_le_bytes());
+            }
+        } else {
+            for &item in *level {
+                bytes.extend_from_slice(&item.to_le_bytes());
+            }
+        }
+    }
+    bytes
+}
+
+#[test]
+fn test_rejects_retained_items_outside_min_max_bounds() {
+    assert!(
+        KllSketch::<i64>::deserialize(&encode_kll_i64(1, 9, false, &[&[5, 2, 8, 6], &[3, 7]]))
+            .is_ok()
+    );
+
+    // Unsorted level zero: endpoints `5` and `6` lie inside bounds while interior items `2` or `8`
+    // violate them, ensuring the sorted-level endpoint fast path is not used here.
+    for bytes in [
+        encode_kll_i64(3, 9, false, &[&[5, 2, 8, 6], &[3, 7]]),
+        encode_kll_i64(1, 7, false, &[&[5, 2, 8, 6], &[3, 7]]),
+        // Sorted level zero and sorted higher levels violate bounds at their first or last item.
+        encode_kll_i64(3, 9, true, &[&[2, 5, 6], &[3, 7]]),
+        encode_kll_i64(1, 7, true, &[&[2, 5, 8], &[3, 7]]),
+        encode_kll_i64(4, 9, false, &[&[5, 6], &[3, 7]]),
+        encode_kll_i64(1, 6, false, &[&[5, 6], &[4, 7]]),
+    ] {
+        let error = KllSketch::<i64>::deserialize(&bytes).unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::InvalidData);
+    }
+}

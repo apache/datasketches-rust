@@ -1023,11 +1023,24 @@ impl<T: Clone + Ord> KllSketch<T> {
                 }
             }
 
-            for (item_index, item) in level.iter().enumerate() {
-                if item.cmp(min_item) == Ordering::Less || item.cmp(max_item) == Ordering::Greater {
-                    return Err(Error::deserial(format!(
-                        "retained item at level {level_index}, index {item_index} is outside the serialized minimum and maximum"
-                    )));
+            // A sorted level lies within its first and last items; fall back to the full scan
+            // for unsorted level zero or to locate the first out-of-bounds item.
+            let within_bounds = must_be_sorted
+                && level
+                    .first()
+                    .is_none_or(|first| first.cmp(min_item) != Ordering::Less)
+                && level
+                    .last()
+                    .is_none_or(|last| last.cmp(max_item) != Ordering::Greater);
+            if !within_bounds {
+                for (item_index, item) in level.iter().enumerate() {
+                    if item.cmp(min_item) == Ordering::Less
+                        || item.cmp(max_item) == Ordering::Greater
+                    {
+                        return Err(Error::deserial(format!(
+                            "retained item at level {level_index}, index {item_index} is outside the serialized minimum and maximum"
+                        )));
+                    }
                 }
             }
 
