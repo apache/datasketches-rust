@@ -50,6 +50,7 @@ impl HashSet {
         }
     }
 
+    #[inline]
     pub fn update(&mut self, coupon: Coupon) {
         let mask = u32::try_from(self.container.capacity() - 1).unwrap();
 
