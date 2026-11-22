@@ -30,17 +30,27 @@
 //! bucket. Bucket counts are maintained in a configurable [`StoreKind`], defaulting to a bounded
 //! dense store that collapses lowest-magnitude buckets once the observed index span exceeds `2048`
 //! bins per sign so high-magnitude tail quantiles retain their relative accuracy under bounded
-//! memory.
+//! memory. Alongside bucket counts, [`DdSketch`] tracks exact [`min_value`](DdSketch::min_value),
+//! [`max_value`](DdSketch::max_value), and [`sum`](DdSketch::sum), clamping quantile estimates to
+//! `[min_value, max_value]`.
 //!
 //! # Cross-language compatibility
 //!
 //! [`DdSketch::serialize`] and [`DdSketch::deserialize`] use this crate's native `DDSKETCH` binary
-//! format, preserving [`MappingKind`], [`StoreKind`], collapse state, and exact `u64` bucket
-//! weights. For cross-language wire interchange with the compact flag-block binary format of the
+//! format (`Family::DDSKETCH`, ID `25`), preserving [`MappingKind`], [`StoreKind`], collapse state,
+//! exact summary statistics, and exact `u64` bucket weights. This native format is currently
+//! experimental and may change in future releases while cross-language DataSketches standardization
+//! is underway.
+//!
+//! For cross-language wire interchange with the compact flag-block binary format of the
 //! [Java][java-ref] and [Go][go-ref] reference implementations across [`MappingKind::Cubic`],
 //! [`MappingKind::Linear`], and [`MappingKind::Logarithmic`], use [`DdSketch::serialize_compat`]
 //! and [`DdSketch::deserialize_compat`] (distinct from the Protobuf format used by the Python and
-//! JavaScript reference libraries).
+//! JavaScript reference libraries). Positive magnitudes are indexed with
+//! `floor(approx_log(x) * multiplier + index_offset)`, whereas `sketches-java` and `sketches-go`
+//! evaluate `(int) raw - 1` when `raw < 0`; exact negative-integer boundary inputs therefore land
+//! one bucket lower in the reference implementations while remaining within `relative_accuracy` in
+//! both.
 //!
 //! [paper]: https://www.vldb.org/pvldb/vol12/p2195-masson.pdf
 //! [java-ref]: https://github.com/DataDog/sketches-java

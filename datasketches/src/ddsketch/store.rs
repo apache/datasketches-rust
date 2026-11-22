@@ -61,7 +61,10 @@ pub enum StoreKind {
     ///
     /// Offers constant-time updates inside the observed index span while preserving relative
     /// accuracy across all indexed values. Memory scales with the logarithmic span of observed
-    /// magnitudes.
+    /// magnitudes; when decoding untrusted compatibility inputs with
+    /// [`DdSketch::deserialize_compat`](super::DdSketch::deserialize_compat), prefer a bounded
+    /// collapsing store or [`StoreKind::Sparse`] because a compact two-bin delta stream can span up
+    /// to `67_108_864` bins (`512 MiB`).
     UnboundedDense,
     /// Ordered map of non-empty bins without bin collapsing.
     ///

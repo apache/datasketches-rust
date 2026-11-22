@@ -532,12 +532,13 @@ impl DdSketch {
     ///
     /// # Cross-language compatibility
     ///
-    /// Rank scaling multiplies `total_weight - 1` by the exact binary value of `rank` without
-    /// intermediate `f64` rounding, whereas the Java reference implementation truncates the `f64`
-    /// product `rank * (total_weight - 1) as f64` and the Go reference implementation subtracts
-    /// that untruncated `f64` product from `negative_weight - 1` when indexing negative buckets
-    /// (either of which can shift boundary quantiles by one discrete index at binary-inexact
-    /// decimals such as `0.95`).
+    /// Discrete rank scaling matches `sketches-java` (`floor(rank * (total_weight - 1) as f64)`)
+    /// when `total_weight <= 2^53`. On negative buckets, `sketches-go` mirrors the floating-point
+    /// rank (`KeyAtRank(negative_weight - 1 - rank * (total_weight - 1))`), acting as an upper
+    /// quantile on the negative store and differing on any fractional negative-side rank (such as
+    /// `quantile(0.5)` on `[-100.0, -1.0]`). Sketches decoded via
+    /// [`deserialize_compat`](Self::deserialize_compat) from bare `DDSketch` images without exact
+    /// summary blocks return unclamped bucket estimates.
     ///
     /// # Examples
     ///
@@ -645,7 +646,11 @@ impl DdSketch {
     }
 
     /// Serializes this sketch in this crate's native `DDSKETCH` binary format, preserving
-    /// [`MappingKind`], [`StoreKind`], collapse state, and exact `u64` bucket weights.
+    /// [`MappingKind`], [`StoreKind`], collapse state, exact summary statistics, and exact `u64`
+    /// bucket weights.
+    ///
+    /// Note: the native `Family::DDSKETCH` (`id = 25`) wire format is experimental and may change
+    /// in future releases while cross-language DataSketches standardization is underway.
     ///
     /// # Examples
     ///
@@ -664,9 +669,11 @@ impl DdSketch {
     }
 
     /// Deserializes a sketch from this crate's native `DDSKETCH` binary format, restoring its
-    /// encoded [`StoreKind`].
+    /// encoded [`StoreKind`] and exact summary statistics (when present).
     ///
-    /// Use [`deserialize_compat`](Self::deserialize_compat) to decode compact flag-block images
+    /// Note: the native `Family::DDSKETCH` (`id = 25`) wire format is experimental and may change
+    /// in future releases while cross-language DataSketches standardization is underway. Use
+    /// [`deserialize_compat`](Self::deserialize_compat) to decode compact flag-block images
     /// produced by the Java and Go reference DDSketch implementations.
     ///
     /// # Errors
@@ -695,13 +702,16 @@ impl DdSketch {
     ///
     /// # Cross-language compatibility
     ///
-    /// [`StoreKind`] and collapse state are in-memory properties in the reference format and are
-    /// not recorded in the output bytes; decode with
-    /// [`deserialize_compat`](Self::deserialize_compat) and an explicit [`StoreKind`]. For
-    /// downstream Java or Go readers, keep [`total_weight`](Self::total_weight) at or below
+    /// When exact summary statistics are present, emits `count`, `min`, `max`, and non-zero `sum`
+    /// feature blocks compatible with `DDSketchWithExactSummaryStatistics` in Java and Go (bare
+    /// `DDSketch` decoders safely skip those blocks). [`StoreKind`] and collapse state are
+    /// in-memory properties in the reference format and are not recorded in the output bytes;
+    /// decode with [`deserialize_compat`](Self::deserialize_compat) and an explicit [`StoreKind`].
+    /// For downstream Java or Go readers, keep [`total_weight`](Self::total_weight) at or below
     /// `2^53 - 1` (Java computes `total_weight - 1` in `f64`), per-sign bucket index spans at or
-    /// below `2^26` (Go's default `MaxDecodeIndexRange`), and input magnitudes within the target
-    /// reader's `maxIndexableValue` (reference readers do not clamp near-[`f64::MAX`] buckets).
+    /// below `2^26` (`MaxDecodeIndexRange` on `sketches-go` `main`; unreleased as of `v1.4.8`), and
+    /// input magnitudes within the target reader's `maxIndexableValue` (reference readers do not
+    /// clamp near-[`f64::MAX`] buckets).
     ///
     /// # Examples
     ///
@@ -742,9 +752,12 @@ impl DdSketch {
     /// `DDSketchWithExactSummaryStatistics` in Java and Go; bare `DDSketch` images without summary
     /// blocks decode with [`min_value`](Self::min_value), [`max_value`](Self::max_value), and
     /// [`sum`](Self::sum) set to `None` and re-encode without summary blocks. Encoded counts must
-    /// be non-negative integers below `2^64`. Because reference images do not record [`StoreKind`],
-    /// choose [`StoreKind::Sparse`] or a sufficiently wide dense bound when decoding a wide-span
-    /// sketch without bin collapsing.
+    /// be non-negative integers below `2^64`.
+    ///
+    /// Because reference images do not record [`StoreKind`] and encode sparse bins as compact index
+    /// deltas, a small compatibility payload can span up to `67_108_864` bins (`512 MiB` of `u64`
+    /// counters) when decoded into [`StoreKind::UnboundedDense`]; decode untrusted inputs into a
+    /// bounded collapsing store (`StoreKind::default()`) or [`StoreKind::Sparse`].
     pub fn deserialize_compat(bytes: &[u8], store: StoreKind) -> Result<Self, Error> {
         validate_store_kind(store)?;
         deserialize_compat_sketch(bytes, store)

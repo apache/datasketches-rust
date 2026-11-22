@@ -148,6 +148,9 @@ impl Family {
     };
 
     /// DDSketch for estimating quantiles with relative-value error guarantees.
+    ///
+    /// Family ID `25` and its native binary layout are experimental and may change in future
+    /// releases while cross-language DataSketches standardization is underway.
     #[cfg(feature = "ddsketch")]
     pub const DDSKETCH: Family = Family {
         id: 25,
