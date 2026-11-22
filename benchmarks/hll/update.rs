@@ -108,9 +108,9 @@ pub fn register(runner: &mut Runner) {
     runner.case("hll::update::variable_bytes", 2_000, variable_bytes);
     runner.case("hll::update::prefixed_bytes", 1_600, prefixed_bytes);
     for (label, hll_type, rounds) in [
-        ("hll4", HllType::Hll4, 89),
-        ("hll6", HllType::Hll6, 130),
-        ("hll8", HllType::Hll8, 165),
+        ("hll4", HllType::Hll4, 100),
+        ("hll6", HllType::Hll6, 150),
+        ("hll8", HllType::Hll8, 200),
     ] {
         runner.compare(
             &format!("hll::update::u64_batches/{label}"),
