@@ -120,6 +120,17 @@ impl Store {
         })
     }
 
+    /// Creates a store pre-windowed to the non-zero wire index range `bounds`, avoiding
+    /// intermediate reallocations or window shifts when populating bins via
+    /// [`add_in_bounds`](Self::add_in_bounds).
+    pub fn with_wire_bounds(kind: StoreKind, bounds: Option<(i32, i32)>) -> Result<Self, Error> {
+        let mut store = Self::new(kind)?;
+        if let (Self::Dense(dense), Some((wire_min, wire_max))) = (&mut store, bounds) {
+            dense.init_for_wire_bounds(wire_min, wire_max);
+        }
+        Ok(store)
+    }
+
     #[inline]
     pub const fn kind(&self) -> StoreKind {
         match self {
@@ -217,6 +228,19 @@ impl Store {
         }
         match self {
             Self::Dense(dense) => dense.add(index, weight),
+            Self::Sparse(sparse) => sparse.add(index, weight),
+        }
+    }
+
+    /// Adds `weight` at `index` into a store initialized via
+    /// [`with_wire_bounds`](Self::with_wire_bounds) covering `index`.
+    #[inline]
+    pub fn add_in_bounds(&mut self, index: i32, weight: u64) {
+        if weight == 0 {
+            return;
+        }
+        match self {
+            Self::Dense(dense) => dense.add_in_bounds(index, weight),
             Self::Sparse(sparse) => sparse.add(index, weight),
         }
     }
@@ -1191,7 +1215,7 @@ mod tests {
     }
 
     #[test]
-    fn cross_store_merge_matches_incremental_updates() {
+    fn pre_windowed_bounds_and_cross_store_merge_match_incremental_updates() {
         let samples = [
             (-500, 3_u64),
             (-120, 1),
@@ -1201,6 +1225,7 @@ mod tests {
             (19, 1),
             (250, 6),
         ];
+        let bounds = Some((-500, 250));
 
         let mut wide_sparse = Store::new(StoreKind::Sparse).unwrap();
         let mut wide_unbounded = Store::new(StoreKind::UnboundedDense).unwrap();
@@ -1216,10 +1241,18 @@ mod tests {
             StoreKind::Sparse,
         ] {
             let mut incremental = Store::new(kind).unwrap();
+            let mut pre_windowed = Store::with_wire_bounds(kind, bounds).unwrap();
             for &(idx, w) in &samples {
                 incremental.add(idx, w);
+                pre_windowed.add_in_bounds(idx, w);
             }
             assert_dense_invariants(&incremental);
+            assert_dense_invariants(&pre_windowed);
+            assert_eq!(pre_windowed.is_collapsed(), incremental.is_collapsed());
+            assert_eq!(
+                pre_windowed.iter_asc().collect::<Vec<_>>(),
+                incremental.iter_asc().collect::<Vec<_>>()
+            );
 
             for src in [&wide_sparse, &wide_unbounded] {
                 let mut merged = Store::new(kind).unwrap();

@@ -137,6 +137,14 @@ fn native_round_trips_across_mappings_stores_collapse_states_and_large_weights()
                     decoded.quantiles(&[0.0, 0.25, 0.5, 0.75, 1.0]).unwrap(),
                     sketch.quantiles(&[0.0, 0.25, 0.5, 0.75, 1.0]).unwrap()
                 );
+
+                // Native images are rejected by `deserialize_compat` without heuristic fallback.
+                assert_eq!(
+                    DdSketch::deserialize_compat(&bytes, StoreKind::default())
+                        .unwrap_err()
+                        .kind(),
+                    ErrorKind::InvalidData
+                );
             }
         }
     }
@@ -424,6 +432,387 @@ fn native_malformed_headers_and_body_invariants_are_rejected() {
                 .unwrap_err()
                 .kind(),
             ErrorKind::InvalidData
+        );
+    }
+}
+
+#[test]
+fn compat_round_trips_across_mappings_stores_and_weight_boundaries() {
+    let mappings = [
+        MappingKind::Cubic,
+        MappingKind::Linear,
+        MappingKind::Logarithmic,
+    ];
+    let stores = [
+        StoreKind::CollapsingLowestDense { max_num_bins: 2048 },
+        StoreKind::CollapsingHighestDense { max_num_bins: 256 },
+        StoreKind::UnboundedDense,
+        StoreKind::Sparse,
+    ];
+
+    for mapping in mappings {
+        for src_store in stores {
+            let empty = DdSketchBuilder::new(0.01)
+                .mapping(mapping)
+                .store(src_store)
+                .build()
+                .unwrap();
+            let empty_compat = empty.serialize_compat().unwrap();
+            assert_eq!(empty_compat.len(), 17);
+
+            let mut unit_sparse = empty.clone();
+            for v in [-1e6, -1.0, 0.0, 1.0, 1e6] {
+                unit_sparse.update(v);
+            }
+
+            let mut dense_contiguous = empty.clone();
+            for i in 0..40 {
+                let v = 10.0 * 1.02_f64.powi(i);
+                dense_contiguous.update_with_weight(v, (i as u64 % 5) + 1);
+            }
+
+            // Exact `2^53 - 1` boundary weight is representable losslessly in compat `varfloat64`
+            // (which biases counts by `+ 1.0` in `f64`).
+            let mut boundary_weighted = empty.clone();
+            boundary_weighted.update_with_weight(-500.0, (1_u64 << 53) - 1);
+            boundary_weighted.update_with_weight(0.0, 1_u64 << 52);
+            boundary_weighted.update_with_weight(0.05, 4);
+            boundary_weighted.update_with_weight(50_000.0, (1_u64 << 53) - 2);
+
+            for sketch in [&empty, &unit_sparse, &dense_contiguous, &boundary_weighted] {
+                let compat_bytes = sketch.serialize_compat().unwrap();
+                // Native `deserialize` rejects compat images without heuristic auto-detection.
+                assert_eq!(
+                    DdSketch::deserialize(&compat_bytes).unwrap_err().kind(),
+                    ErrorKind::InvalidData
+                );
+
+                for dst_store in stores {
+                    let decoded = DdSketch::deserialize_compat(&compat_bytes, dst_store).unwrap();
+                    assert_eq!(decoded.mapping_kind(), mapping);
+                    assert_eq!(decoded.store_kind(), dst_store);
+                    assert_eq!(decoded.total_weight(), sketch.total_weight());
+                    assert_eq!(decoded.zero_weight(), sketch.zero_weight());
+                    // When dst_store does not collapse `sketch`'s retained span, buckets match.
+                    if matches!(dst_store, StoreKind::UnboundedDense | StoreKind::Sparse)
+                        || dst_store == src_store
+                    {
+                        assert_eq!(
+                            decoded.iter().collect::<Vec<_>>(),
+                            sketch.iter().collect::<Vec<_>>()
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    // Weights at or above `2^53` (where `weight + 1.0` rounds in IEEE 754 `f64`) are rejected by
+    // `serialize_compat` with `InvalidArgument`.
+    let mut over_zero = DdSketch::new(0.01).unwrap();
+    over_zero.update_with_weight(0.0, 1_u64 << 53);
+    assert_eq!(
+        over_zero.serialize_compat().unwrap_err().kind(),
+        ErrorKind::InvalidArgument
+    );
+
+    let mut over_bucket = DdSketch::new(0.01).unwrap();
+    over_bucket.update_with_weight(10.0, 1_u64 << 53);
+    assert_eq!(
+        over_bucket.serialize_compat().unwrap_err().kind(),
+        ErrorKind::InvalidArgument
+    );
+}
+
+#[test]
+fn compat_decodes_reordered_summary_blocks_and_rejects_malformed_images() {
+    let gamma = (1.0 + 0.01_f64) / (1.0 - 0.01_f64);
+
+    // Reordered reference blocks with summary-statistics features and all three bin encodings:
+    // 1. FlagCount (0xa0) + varfloat64(9.0 = [0x86, 0x40])
+    // 2. FlagSum   (0x84) + f64 LE
+    // 3. FlagMin   (0x88) + f64 LE
+    // 4. FlagMax   (0x8c) + f64 LE
+    // 5. ZeroCount (0x04) + varfloat64(2.0 = [0x03])
+    // 6. NegativeStore IndexDeltas (0x0b): 1 bin at index 10 (varint 0x14)
+    // 7. NegativeStore DeltasAndCounts (0x07): 1 bin at index 12 (varint 0x18), count 3.0 (0x04)
+    // 8. Logarithmic mapping (0x02): gamma, offset = 0.0
+    // 9. PositiveStore ContiguousCounts (0x0d): 2 bins from index 5, step 2, counts [1.0, 2.0]
+    let mut wire = Vec::new();
+    wire.push(0xa0);
+    wire.extend_from_slice(&[0x86, 0x40]);
+    wire.push(0x84);
+    wire.extend_from_slice(&12.5_f64.to_le_bytes());
+    wire.push(0x88);
+    wire.extend_from_slice(&(-1.5_f64).to_le_bytes());
+    wire.push(0x8c);
+    wire.extend_from_slice(&20.0_f64.to_le_bytes());
+    wire.push(0x04);
+    wire.push(0x03); // zero_count = 2
+    wire.push(0x0b);
+    wire.push(0x01);
+    wire.push(0x14); // neg index 10, weight 1
+    wire.push(0x07);
+    wire.push(0x01);
+    wire.push(0x18); // neg index 12
+    wire.push(0x04); // weight 3
+    wire.push(0x02);
+    wire.extend_from_slice(&gamma.to_le_bytes());
+    wire.extend_from_slice(&0.0_f64.to_le_bytes());
+    wire.push(0x0d);
+    wire.push(0x02); // 2 bins
+    wire.push(0x0a); // first_index = +5
+    wire.push(0x04); // index_delta = +2
+    wire.push(0x02); // count[0] = 1
+    wire.push(0x03); // count[1] = 2
+
+    let decoded = DdSketch::deserialize_compat(&wire, StoreKind::default()).unwrap();
+    assert_eq!(decoded.mapping_kind(), MappingKind::Logarithmic);
+    assert_eq!(decoded.store_kind(), StoreKind::default());
+    assert_eq!(decoded.total_weight(), 9);
+    assert_eq!(decoded.zero_weight(), 2);
+    assert_eq!(decoded.num_retained(), 5);
+
+    let decoded_sparse = DdSketch::deserialize_compat(&wire, StoreKind::Sparse).unwrap();
+    assert_eq!(decoded_sparse.store_kind(), StoreKind::Sparse);
+    assert_eq!(
+        decoded_sparse.iter().collect::<Vec<_>>(),
+        decoded.iter().collect::<Vec<_>>()
+    );
+
+    // Missing index mapping (only ZeroCount = 1).
+    assert_eq!(
+        DdSketch::deserialize_compat(&[0x04, 0x02], StoreKind::default())
+            .unwrap_err()
+            .kind(),
+        ErrorKind::InvalidData
+    );
+
+    // Unsupported reference Quadratic mapping (0x0a) and conflicting duplicate mappings.
+    let mut quadratic = vec![0x0a];
+    quadratic.extend_from_slice(&gamma.to_le_bytes());
+    quadratic.extend_from_slice(&0.0_f64.to_le_bytes());
+    assert_eq!(
+        DdSketch::deserialize_compat(&quadratic, StoreKind::default())
+            .unwrap_err()
+            .kind(),
+        ErrorKind::InvalidData
+    );
+
+    let mut base_ref = vec![0x02];
+    base_ref.extend_from_slice(&gamma.to_le_bytes());
+    base_ref.extend_from_slice(&0.0_f64.to_le_bytes());
+
+    let mut conflicting = base_ref.clone();
+    conflicting.push(0x02);
+    conflicting.extend_from_slice(&((1.0 + 0.05_f64) / (1.0 - 0.05_f64)).to_le_bytes());
+    conflicting.extend_from_slice(&0.0_f64.to_le_bytes());
+    assert_eq!(
+        DdSketch::deserialize_compat(&conflicting, StoreKind::default())
+            .unwrap_err()
+            .kind(),
+        ErrorKind::InvalidData
+    );
+
+    // Strict prefixes of an empty 17-byte compat image fail with InvalidData.
+    for end in 0..base_ref.len() {
+        assert_eq!(
+            DdSketch::deserialize_compat(&base_ref[..end], StoreKind::default())
+                .unwrap_err()
+                .kind(),
+            ErrorKind::InvalidData
+        );
+    }
+
+    // Invalid gamma values in reference header.
+    for bad_gamma in [0.5_f64, 1.0, 1.0 + 1e-12, f64::NAN, f64::INFINITY] {
+        let mut img = vec![0x02];
+        img.extend_from_slice(&bad_gamma.to_le_bytes());
+        img.extend_from_slice(&0.0_f64.to_le_bytes());
+        assert_eq!(
+            DdSketch::deserialize_compat(&img, StoreKind::default())
+                .unwrap_err()
+                .kind(),
+            ErrorKind::InvalidData,
+            "bad_gamma={bad_gamma}"
+        );
+    }
+
+    // Negative (-1.0) and fractional (-0.5) varfloat64 counts in reference image.
+    for bad_varfloat in [
+        &[0x82_u8, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x30][..],
+        &[0xfe_u8, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x3f][..],
+    ] {
+        let mut img = base_ref.clone();
+        img.push(0x04);
+        img.extend_from_slice(bad_varfloat);
+        assert_eq!(
+            DdSketch::deserialize_compat(&img, StoreKind::default())
+                .unwrap_err()
+                .kind(),
+            ErrorKind::InvalidData
+        );
+    }
+
+    // Index overflowing i32::MAX in reference IndexDeltas.
+    let mut i32_overflow = base_ref.clone();
+    i32_overflow.extend_from_slice(&[0x09, 0x01, 0x80, 0x80, 0x80, 0x80, 0x10]);
+    assert_eq!(
+        DdSketch::deserialize_compat(&i32_overflow, StoreKind::default())
+            .unwrap_err()
+            .kind(),
+        ErrorKind::InvalidData
+    );
+
+    // Out-of-domain bucket index (including sub-`zero_threshold` index -36_000) under `alpha =
+    // 0.01` is rejected in compat format too.
+    for bad_idx in [-100_000_i64, -36_000, 100_000] {
+        let mut out_of_domain_ref = base_ref.clone();
+        out_of_domain_ref.extend_from_slice(&[0x09, 0x01]);
+        encode_test_varint(&mut out_of_domain_ref, bad_idx);
+        assert_eq!(
+            DdSketch::deserialize_compat(&out_of_domain_ref, StoreKind::Sparse)
+                .unwrap_err()
+                .kind(),
+            ErrorKind::InvalidData
+        );
+    }
+
+    // Duplicate contiguous blocks whose weights sum to `2^64` return InvalidData without panicking
+    // across both collapsing and sparse stores (`0x7e` encodes `2^63` in `varfloat64`).
+    let mut dup_contig_overflow = base_ref;
+    dup_contig_overflow.extend_from_slice(&[0x0d, 0x01, 0x0a, 0x02, 0x7e]);
+    dup_contig_overflow.extend_from_slice(&[0x0d, 0x01, 0x0a, 0x02, 0x7e]);
+    for store in [StoreKind::default(), StoreKind::Sparse] {
+        assert_eq!(
+            DdSketch::deserialize_compat(&dup_contig_overflow, store)
+                .unwrap_err()
+                .kind(),
+            ErrorKind::InvalidData
+        );
+    }
+
+    // Valid wide index span at `alpha = 1e-6` in reference image is rejected by UnboundedDense,
+    // while accepted without collapsing by Sparse.
+    let tight_gamma = (1.0 + 1e-6_f64) / (1.0 - 1e-6_f64);
+    let mut wide_ref = vec![0x02];
+    wide_ref.extend_from_slice(&tight_gamma.to_le_bytes());
+    wide_ref.extend_from_slice(&0.0_f64.to_le_bytes());
+    wide_ref.push(0x09);
+    wide_ref.push(0x02);
+    encode_test_varint(&mut wide_ref, -40_000_000);
+    encode_test_varint(&mut wide_ref, 80_000_000);
+    assert_eq!(
+        DdSketch::deserialize_compat(&wide_ref, StoreKind::UnboundedDense)
+            .unwrap_err()
+            .kind(),
+        ErrorKind::InvalidData
+    );
+    let sparse_wide = DdSketch::deserialize_compat(&wide_ref, StoreKind::Sparse).unwrap();
+    assert_eq!(sparse_wide.total_weight(), 2);
+    assert_eq!(sparse_wide.num_retained(), 2);
+    assert!(sparse_wide.min_value().unwrap() > 0.0);
+
+    // Combined negative + positive span exceeding `2^26` is also rejected for UnboundedDense even
+    // when each sign individually stays below `2^26`, while Sparse accepts it.
+    let mut combined_wide_ref = vec![0x02];
+    combined_wide_ref.extend_from_slice(&tight_gamma.to_le_bytes());
+    combined_wide_ref.extend_from_slice(&0.0_f64.to_le_bytes());
+    combined_wide_ref.extend_from_slice(&[0x0b, 0x02]);
+    encode_test_varint(&mut combined_wide_ref, -20_000_000);
+    encode_test_varint(&mut combined_wide_ref, 40_000_000);
+    combined_wide_ref.extend_from_slice(&[0x09, 0x02]);
+    encode_test_varint(&mut combined_wide_ref, -20_000_000);
+    encode_test_varint(&mut combined_wide_ref, 40_000_000);
+    assert_eq!(
+        DdSketch::deserialize_compat(&combined_wide_ref, StoreKind::UnboundedDense)
+            .unwrap_err()
+            .kind(),
+        ErrorKind::InvalidData
+    );
+    let sparse_combined =
+        DdSketch::deserialize_compat(&combined_wide_ref, StoreKind::Sparse).unwrap();
+    assert_eq!(sparse_combined.total_weight(), 4);
+    assert_eq!(sparse_combined.num_retained(), 4);
+
+    // Invalid StoreKind passed to deserialize_compat returns InvalidArgument even on empty bytes.
+    assert_eq!(
+        DdSketch::deserialize_compat(&[], StoreKind::CollapsingLowestDense { max_num_bins: 0 })
+            .unwrap_err()
+            .kind(),
+        ErrorKind::InvalidArgument
+    );
+
+    // Store block appearing before a missing or out-of-domain mapping is rejected during the
+    // zero-allocation prescan across all target store kinds.
+    let mut bins_without_mapping = vec![0x09, 0x02];
+    encode_test_varint(&mut bins_without_mapping, -1_000_000);
+    encode_test_varint(&mut bins_without_mapping, 2_000_000);
+    for store in [StoreKind::UnboundedDense, StoreKind::Sparse] {
+        assert_eq!(
+            DdSketch::deserialize_compat(&bins_without_mapping, store)
+                .unwrap_err()
+                .kind(),
+            ErrorKind::InvalidData
+        );
+    }
+
+    let mut bins_before_incompatible_mapping = bins_without_mapping;
+    bins_before_incompatible_mapping.push(0x02);
+    bins_before_incompatible_mapping.extend_from_slice(&gamma.to_le_bytes());
+    bins_before_incompatible_mapping.extend_from_slice(&0.0_f64.to_le_bytes());
+    for store in [StoreKind::UnboundedDense, StoreKind::Sparse] {
+        assert_eq!(
+            DdSketch::deserialize_compat(&bins_before_incompatible_mapping, store)
+                .unwrap_err()
+                .kind(),
+            ErrorKind::InvalidData
+        );
+    }
+
+    // Wide contiguous compat block (`num_bins = 2_000`) decoded into narrow collapsing stores
+    // matches incremental updates bit-for-bit, including subsequent updates.
+    let mut wide_unbounded = DdSketchBuilder::new(0.005)
+        .mapping(MappingKind::Cubic)
+        .store(StoreKind::UnboundedDense)
+        .build()
+        .unwrap();
+    for i in 0..2_000 {
+        let v = 1.005_f64.powi(i - 1_000);
+        wide_unbounded.update_with_weight(-v, (i as u64 % 3) + 1);
+        wide_unbounded.update_with_weight(v, (i as u64 % 5) + 1);
+    }
+    let wide_compat_bytes = wide_unbounded.serialize_compat().unwrap();
+
+    for narrow_store in [
+        StoreKind::CollapsingLowestDense { max_num_bins: 16 },
+        StoreKind::CollapsingHighestDense { max_num_bins: 16 },
+    ] {
+        let mut expected = DdSketchBuilder::new(0.005)
+            .mapping(MappingKind::Cubic)
+            .store(narrow_store)
+            .build()
+            .unwrap();
+        for i in 0..2_000 {
+            let v = 1.005_f64.powi(i - 1_000);
+            expected.update_with_weight(-v, (i as u64 % 3) + 1);
+            expected.update_with_weight(v, (i as u64 % 5) + 1);
+        }
+
+        let mut decoded_narrow =
+            DdSketch::deserialize_compat(&wide_compat_bytes, narrow_store).unwrap();
+        assert_eq!(
+            decoded_narrow.iter().collect::<Vec<_>>(),
+            expected.iter().collect::<Vec<_>>()
+        );
+
+        for follow_up in [-1e-12, -1e12, 1e-12, 1e12] {
+            expected.update(follow_up);
+            decoded_narrow.update(follow_up);
+        }
+        assert_eq!(
+            decoded_narrow.iter().collect::<Vec<_>>(),
+            expected.iter().collect::<Vec<_>>()
         );
     }
 }

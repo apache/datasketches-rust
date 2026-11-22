@@ -32,13 +32,19 @@
 //! bins per sign so high-magnitude tail quantiles retain their relative accuracy under bounded
 //! memory.
 //!
-//! # Serialization
+//! # Cross-language compatibility
 //!
 //! [`DdSketch::serialize`] and [`DdSketch::deserialize`] use this crate's native `DDSKETCH` binary
 //! format, preserving [`MappingKind`], [`StoreKind`], collapse state, and exact `u64` bucket
-//! weights.
+//! weights. For cross-language wire interchange with the compact flag-block binary format of the
+//! [Java][java-ref] and [Go][go-ref] reference implementations across [`MappingKind::Cubic`],
+//! [`MappingKind::Linear`], and [`MappingKind::Logarithmic`], use [`DdSketch::serialize_compat`]
+//! and [`DdSketch::deserialize_compat`] (distinct from the Protobuf format used by the Python and
+//! JavaScript reference libraries).
 //!
 //! [paper]: https://www.vldb.org/pvldb/vol12/p2195-masson.pdf
+//! [java-ref]: https://github.com/DataDog/sketches-java
+//! [go-ref]: https://github.com/DataDog/sketches-go
 //!
 //! # Examples
 //!
