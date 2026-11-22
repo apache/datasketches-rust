@@ -39,9 +39,9 @@
 //!   multidimensional numeric vectors.
 //! * Use `hll` for fast distinct counts, `cpc` for compact serialized distinct counts, or `theta`
 //!   when set operations are required.
-//! * Use `kll`, `req`, or `tdigest` for ranks and quantiles. KLL provides strong general-purpose
-//!   rank accuracy, REQ targets configurable high- or low-rank accuracy, and T-Digest emphasizes
-//!   distribution tails.
+//! * Use `ddsketch`, `kll`, `req`, or `tdigest` for ranks and quantiles. DDSketch bounds relative
+//!   value error across wide dynamic ranges, KLL provides strong general-purpose rank accuracy, REQ
+//!   targets configurable high- or low-rank accuracy, and T-Digest emphasizes distribution tails.
 //! * Use `tuple` when retained Theta keys need application-defined summaries.
 //!
 //! See each module's documentation for accuracy, memory, serialization, and update examples.
@@ -75,6 +75,8 @@ pub mod bloom;
 pub mod countmin;
 #[cfg(feature = "cpc")]
 pub mod cpc;
+#[cfg(feature = "ddsketch")]
+pub mod ddsketch;
 #[cfg(feature = "density")]
 pub mod density;
 #[cfg(feature = "frequencies")]
