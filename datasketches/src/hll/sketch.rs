@@ -137,8 +137,9 @@ impl HllSketch {
 
     /// Updates the sketch with a value.
     ///
-    /// To reuse the hash across sketches, see [`Coupon`] and
-    /// [`update_with_coupon`](Self::update_with_coupon).
+    /// To reuse the hash across sketches, see [`Coupon`],
+    /// [`update_with_coupon`](Self::update_with_coupon), and
+    /// [`update_with_coupons`](Self::update_with_coupons).
     ///
     /// # Examples
     ///

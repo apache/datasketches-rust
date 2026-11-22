@@ -6,7 +6,7 @@ All significant changes to this project will be documented in this file.
 
 ### New features
 
-* Add `HllSketch::update_with_coupons` for updating a sketch with a sequence of coupons. It leaves the sketch in the same state as calling `update_with_coupon` for each coupon in order, and is faster once the sketch is dense.
+* Add `HllSketch::update_with_coupons` for updating a sketch with a sequence of coupons. It leaves the sketch in the same state as calling `update_with_coupon` for each coupon in order, and is faster for batches once the sketch is dense.
 * Add `DensitySketch`, `Kernel`, `GaussianKernel`, `DensityValue`, and `DensitySketchIter` behind the `density` feature for streaming kernel density estimation and coreset construction over multidimensional `f32` and `f64` vectors, with custom kernel support, merging, iteration, and cross-language serialization.
 * Add `KllSketch::update_with_weight` for updating a sketch with an item repeated a given number of times.
 
