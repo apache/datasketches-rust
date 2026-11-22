@@ -25,8 +25,8 @@ use datasketches::cpc::CpcUnion;
 const LG_K: u8 = 10;
 const UNION_LG_K: u8 = 18;
 
-fn serialize(bencher: Bencher, items: u64) {
-    let sketch = sketch(LG_K, items);
+fn serialize(bencher: Bencher, lg_k: u8, items: u64) {
+    let sketch = sketch(lg_k, items);
 
     bencher.bench_local(|| black_box(&sketch).serialize());
 }
@@ -65,9 +65,15 @@ fn union(items: u64) -> CpcUnion {
 }
 
 pub fn register(runner: &mut Runner) {
-    for &(items, rounds) in &[(200_u64, 400_000), (8_000_u64, 500_000)] {
-        runner.case(format!("cpc::serde::serialize/{items:?}"), rounds, |b| {
-            serialize(b, items)
+    // At lg_k = 10, 200 items gives a window-only Hybrid sketch and 8,000 gives Pinned; 4,096
+    // items at lg_k = 14 exercises Hybrid serialization with surprise-table entries interleaved.
+    for &(name, lg_k, items, rounds) in &[
+        ("200", LG_K, 200_u64, 400_000),
+        ("4096/lg_k=14", 14, 4_096, 18_000),
+        ("8000", LG_K, 8_000, 500_000),
+    ] {
+        runner.case(format!("cpc::serde::serialize/{name}"), rounds, |b| {
+            serialize(b, lg_k, items)
         });
     }
     for &(items, rounds) in &[(200_u64, 400_000), (8_000_u64, 100_000)] {
