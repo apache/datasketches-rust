@@ -21,6 +21,8 @@ use super::DEFAULT_RELATIVE_ACCURACY;
 use super::iter::DdSketchIter;
 use super::mapping::IndexMapping;
 use super::mapping::MappingKind;
+use super::serialization::deserialize_sketch;
+use super::serialization::serialize_sketch;
 use super::store::Store;
 use super::store::StoreKind;
 use super::store::validate_store_kind;
@@ -175,6 +177,21 @@ impl DdSketch {
             zero_weight,
             total_weight,
         }
+    }
+
+    #[inline]
+    pub(super) const fn mapping(&self) -> IndexMapping {
+        self.mapping
+    }
+
+    #[inline]
+    pub(super) const fn positive_store(&self) -> &Store {
+        &self.positive
+    }
+
+    #[inline]
+    pub(super) const fn negative_store(&self) -> &Store {
+        &self.negative
     }
 
     /// Returns the relative value accuracy guaranteed for non-collapsed buckets.
@@ -544,6 +561,37 @@ impl DdSketch {
             self.positive.iter_asc(),
             self.num_retained(),
         )
+    }
+
+    /// Serializes this sketch in this crate's native `DDSKETCH` binary format, preserving
+    /// [`MappingKind`], [`StoreKind`], collapse state, and exact `u64` bucket weights.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::ddsketch::DdSketch;
+    ///
+    /// let mut sketch = DdSketch::new(0.01)?;
+    /// sketch.update(3.5);
+    /// let bytes = sketch.serialize();
+    /// let decoded = DdSketch::deserialize(&bytes)?;
+    /// assert_eq!(decoded.total_weight(), 1);
+    /// # Ok::<(), datasketches::error::Error>(())
+    /// ```
+    pub fn serialize(&self) -> Vec<u8> {
+        serialize_sketch(self)
+    }
+
+    /// Deserializes a sketch from this crate's native `DDSKETCH` binary format, restoring its
+    /// encoded [`StoreKind`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InvalidData`](crate::error::ErrorKind::InvalidData) if the image is empty,
+    /// truncated, has an unsupported family, version, or flag, or violates index, store, or weight
+    /// bounds.
+    pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
+        deserialize_sketch(bytes)
     }
 
     fn quantile_unchecked(&self, rank: f64) -> f64 {

@@ -64,6 +64,8 @@ pub struct IndexMapping {
     multiplier: f64,
     relative_accuracy: f64,
     min_indexable_value: f64,
+    min_index: i32,
+    max_index: i32,
 }
 
 impl IndexMapping {
@@ -89,6 +91,14 @@ impl IndexMapping {
         };
 
         Self::build(kind, gamma, index_offset).map_err(Error::invalid_argument)
+    }
+
+    pub fn from_gamma_offset(
+        kind: MappingKind,
+        gamma: f64,
+        index_offset: f64,
+    ) -> Result<Self, Error> {
+        Self::build(kind, gamma, index_offset).map_err(Error::deserial)
     }
 
     fn build(kind: MappingKind, gamma: f64, index_offset: f64) -> Result<Self, String> {
@@ -190,6 +200,8 @@ impl IndexMapping {
             multiplier,
             relative_accuracy,
             min_indexable_value,
+            min_index,
+            max_index,
         })
     }
 
@@ -251,6 +263,16 @@ impl IndexMapping {
             MappingKind::Linear => linear_exp(scaled),
             MappingKind::Cubic => cubic_exp(scaled),
         }
+    }
+
+    #[inline]
+    pub const fn max_indexable_index(&self) -> i32 {
+        self.max_index
+    }
+
+    #[inline]
+    pub const fn contains_valid_index(&self, index: i32) -> bool {
+        index >= self.min_index && index <= self.max_index
     }
 }
 

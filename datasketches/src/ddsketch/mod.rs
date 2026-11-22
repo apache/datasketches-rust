@@ -32,6 +32,12 @@
 //! bins per sign so high-magnitude tail quantiles retain their relative accuracy under bounded
 //! memory.
 //!
+//! # Serialization
+//!
+//! [`DdSketch::serialize`] and [`DdSketch::deserialize`] use this crate's native `DDSKETCH` binary
+//! format, preserving [`MappingKind`], [`StoreKind`], collapse state, and exact `u64` bucket
+//! weights.
+//!
 //! [paper]: https://www.vldb.org/pvldb/vol12/p2195-masson.pdf
 //!
 //! # Examples
@@ -51,6 +57,7 @@
 
 mod iter;
 mod mapping;
+mod serialization;
 mod sketch;
 mod store;
 

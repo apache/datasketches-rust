@@ -29,7 +29,7 @@ const MAX_VEC_U64_LEN: u64 = ((isize::MAX as usize) / size_of::<u64>()) as u64;
 /// Maximum number of `u64` slots a `DenseStore` can hold: bounded both by addressable `Vec<u64>`
 /// capacity (`isize::MAX / 8` on 32-bit targets) and by the 32-bit bucket index domain (`2^32` on
 /// 64-bit targets).
-const MAX_DENSE_LEN: usize = if MAX_VEC_U64_LEN < MAX_I32_SPAN {
+pub const MAX_DENSE_LEN: usize = if MAX_VEC_U64_LEN < MAX_I32_SPAN {
     MAX_VEC_U64_LEN as usize
 } else {
     MAX_I32_SPAN as usize
@@ -355,6 +355,121 @@ impl Store {
         match self {
             Self::Dense(dense) => StoreIter::Dense(dense.iter_asc()),
             Self::Sparse(sparse) => StoreIter::Sparse(sparse.bins.iter()),
+        }
+    }
+
+    #[inline]
+    pub fn dense_contiguous_slice(&self) -> Option<(i32, &[u64])> {
+        match self {
+            Self::Dense(dense) => dense.active_slice(),
+            Self::Sparse(_) => None,
+        }
+    }
+
+    #[inline]
+    pub const fn is_collapsed(&self) -> bool {
+        match self {
+            Self::Dense(dense) => dense.is_collapsed,
+            Self::Sparse(_) => false,
+        }
+    }
+
+    #[inline]
+    pub fn set_collapsed(&mut self, collapsed: bool) {
+        if let Self::Dense(dense) = self {
+            if let CollapseMode::Lowest(max_bins) | CollapseMode::Highest(max_bins) = dense.mode {
+                debug_assert!(
+                    !collapsed
+                        || (dense.count > 0
+                            && dense.bins.len() == max_bins
+                            && span_u64(dense.min_index, dense.max_index) == max_bins as u64
+                            && dense.offset == dense.min_index)
+                );
+                dense.is_collapsed = collapsed;
+            }
+        }
+    }
+
+    /// Decodes `num_bins` contiguous weights starting at `first_index` (step `+1`) into an empty
+    /// store whose bin budget fits `num_bins`, returning `(weight_sum, occupied_wire_bounds)`.
+    pub fn decode_contiguous_unit_step<F>(
+        &mut self,
+        first_index: i32,
+        num_bins: usize,
+        mut next_weight: F,
+    ) -> Result<(u64, Option<(i32, i32)>), Error>
+    where
+        F: FnMut() -> Result<u64, Error>,
+    {
+        debug_assert!(self.is_empty());
+        if num_bins == 0 {
+            return Ok((0, None));
+        }
+        let last_index = (i64::from(first_index) + (num_bins as i64) - 1) as i32;
+        match self {
+            Self::Dense(dense) => {
+                let cap = dense.exact_len(num_bins as u64);
+                debug_assert!(dense.count == 0 && num_bins <= cap);
+                dense.grow_bins(cap);
+                let offset = centered_offset(first_index, last_index, dense.bins.len());
+                let dst_start = (i64::from(first_index) - i64::from(offset)) as usize;
+                let dst = &mut dense.bins[dst_start..(dst_start + num_bins)];
+                let mut sum = 0_u64;
+                let mut occupied = 0_usize;
+                let mut first_nz: Option<usize> = None;
+                let mut last_nz = 0_usize;
+                for (i, slot) in dst.iter_mut().enumerate() {
+                    let w = next_weight()?;
+                    if w != 0 {
+                        sum = sum
+                            .checked_add(w)
+                            .ok_or_else(|| Error::deserial("total_weight overflows u64"))?;
+                        *slot = w;
+                        occupied += 1;
+                        if first_nz.is_none() {
+                            first_nz = Some(i);
+                        }
+                        last_nz = i;
+                    }
+                }
+                let wire_bounds = first_nz.map(|first_pos| {
+                    let lo = (i64::from(first_index) + (first_pos as i64)) as i32;
+                    let hi = (i64::from(first_index) + (last_nz as i64)) as i32;
+                    dense.offset = offset;
+                    dense.min_index = lo;
+                    dense.max_index = hi;
+                    dense.occupied = occupied;
+                    dense.count = sum;
+                    (lo, hi)
+                });
+                Ok((sum, wire_bounds))
+            }
+            Self::Sparse(sparse) => {
+                let mut sum = 0_u64;
+                let mut first_nz: Option<usize> = None;
+                let mut last_nz = 0_usize;
+                for i in 0..num_bins {
+                    let w = next_weight()?;
+                    if w != 0 {
+                        sum = sum
+                            .checked_add(w)
+                            .ok_or_else(|| Error::deserial("total_weight overflows u64"))?;
+                        if first_nz.is_none() {
+                            first_nz = Some(i);
+                        }
+                        last_nz = i;
+                        let idx = (i64::from(first_index) + (i as i64)) as i32;
+                        sparse.add(idx, w);
+                    }
+                }
+                let wire_bounds = first_nz.map(|first_pos| {
+                    (
+                        (i64::from(first_index) + (first_pos as i64)) as i32,
+                        (i64::from(first_index) + (last_nz as i64)) as i32,
+                    )
+                });
+                Ok((sum, wire_bounds))
+            }
         }
     }
 }
@@ -972,7 +1087,7 @@ impl DoubleEndedIterator for DenseStoreIter<'_> {
 impl FusedIterator for DenseStoreIter<'_> {}
 
 #[inline]
-fn span_u64(min_index: i32, max_index: i32) -> u64 {
+pub fn span_u64(min_index: i32, max_index: i32) -> u64 {
     debug_assert!(min_index <= max_index);
     ((i64::from(max_index) - i64::from(min_index)) + 1) as u64
 }
@@ -1110,6 +1225,7 @@ mod tests {
                 let mut merged = Store::new(kind).unwrap();
                 merged.merge_from(src);
                 assert_dense_invariants(&merged);
+                assert_eq!(merged.is_collapsed(), incremental.is_collapsed());
                 assert_eq!(
                     merged.iter_asc().collect::<Vec<_>>(),
                     incremental.iter_asc().collect::<Vec<_>>()
