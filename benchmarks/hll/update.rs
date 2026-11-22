@@ -30,21 +30,6 @@ use crate::hash_inputs::bytes_64_values;
 use crate::hash_inputs::u64_pair;
 use crate::hash_inputs::variable_byte_slices;
 
-fn precomputed_coupons(
-    bencher: Bencher,
-    hll_type: HllType,
-    update: impl Fn(&mut HllSketch, &[Coupon]),
-) {
-    let coupons: Vec<_> = (0..400_000_u64).map(Coupon::from_value).collect();
-    bencher.bench_local(|| {
-        let mut sketch = HllSketch::new(14, hll_type).unwrap();
-        for batch in black_box(&coupons).chunks(8_192) {
-            update(&mut sketch, batch);
-        }
-        black_box(sketch.estimate())
-    });
-}
-
 fn u64(bencher: Bencher) {
     bencher.bench_local(|| {
         let mut sketch = HllSketch::new(12, HllType::Hll8).unwrap();
@@ -103,6 +88,19 @@ fn prefixed_bytes(bencher: Bencher) {
     });
 }
 
+// Batches of 8,192 values at `lg_k` 14 match DataFusion's default batch size and
+// `approx_distinct` precision.
+fn u64_batches(bencher: Bencher, hll_type: HllType, update: impl Fn(&mut HllSketch, &[u64])) {
+    let values: Vec<_> = (0..400_000_u64).collect();
+    bencher.bench_local(|| {
+        let mut sketch = HllSketch::new(14, hll_type).unwrap();
+        for batch in black_box(&values).chunks(8_192) {
+            update(&mut sketch, batch);
+        }
+        black_box(sketch.estimate())
+    });
+}
+
 pub fn register(runner: &mut Runner) {
     runner.case("hll::update::u64", 6_000, u64);
     runner.case("hll::update::u64_pair", 5_500, u64_tuple);
@@ -110,24 +108,24 @@ pub fn register(runner: &mut Runner) {
     runner.case("hll::update::variable_bytes", 2_000, variable_bytes);
     runner.case("hll::update::prefixed_bytes", 1_600, prefixed_bytes);
     for (label, hll_type, rounds) in [
-        ("hll4", HllType::Hll4, 200),
-        ("hll6", HllType::Hll6, 400),
-        ("hll8", HllType::Hll8, 600),
+        ("hll4", HllType::Hll4, 89),
+        ("hll6", HllType::Hll6, 130),
+        ("hll8", HllType::Hll8, 165),
     ] {
         runner.compare(
-            &format!("hll::update::precomputed_coupons/{label}/8192"),
+            &format!("hll::update::u64_batches/{label}"),
             rounds,
             &[
                 ("scalar", &|b| {
-                    precomputed_coupons(b, hll_type, |sketch, batch| {
-                        for &coupon in batch {
-                            sketch.update_with_coupon(coupon);
+                    u64_batches(b, hll_type, |sketch, batch| {
+                        for &value in batch {
+                            sketch.update(value);
                         }
                     })
                 }),
                 ("batch", &|b| {
-                    precomputed_coupons(b, hll_type, |sketch, batch| {
-                        sketch.update_with_coupons(batch.iter().copied());
+                    u64_batches(b, hll_type, |sketch, batch| {
+                        sketch.update_with_coupons(batch.iter().copied().map(Coupon::from_value));
                     })
                 }),
             ],

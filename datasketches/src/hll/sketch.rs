@@ -204,7 +204,7 @@ impl HllSketch {
         }
     }
 
-    /// Updates the sketch with precomputed [`Coupon`]s in input order, without hashing them again.
+    /// Updates the sketch with precomputed [`Coupon`]s in order, without hashing the inputs again.
     ///
     /// This has the same effect on the sketch and its estimates as calling
     /// [`update_with_coupon`](Self::update_with_coupon) for each coupon.

@@ -6,7 +6,7 @@ All significant changes to this project will be documented in this file.
 
 ### New features
 
-* Add `HllSketch::update_with_coupons` to process precomputed coupons in order with the same estimates as individual `update_with_coupon` calls.
+* Add `HllSketch::update_with_coupons` for updating a sketch with a sequence of coupons. It leaves the sketch in the same state as calling `update_with_coupon` for each coupon in order, and is faster once the sketch is dense.
 * Add `DensitySketch`, `Kernel`, `GaussianKernel`, `DensityValue`, and `DensitySketchIter` behind the `density` feature for streaming kernel density estimation and coreset construction over multidimensional `f32` and `f64` vectors, with custom kernel support, merging, iteration, and cross-language serialization.
 * Add `KllSketch::update_with_weight` for updating a sketch with an item repeated a given number of times.
 
@@ -16,6 +16,7 @@ All significant changes to this project will be documented in this file.
 * Speed up `CpcUnion::update` when merging high-cardinality sketches at equal or mixed precisions, and reduce temporary allocations when an empty union adopts a high-cardinality sketch with `lg_k` at or below the union's precision.
 * Avoid heap allocation in empty and low-cardinality `HllSketch` and `HllUnion` instances (up to seven distinct values), where `HllSketch::estimated_size` and `HllUnion::estimated_size` now return `0`.
 * Speed up `HllSketch::update`, `Coupon::from_value`, `CpcSketch::update`, `ThetaSketch::update`, `TupleSketch::update`, and `FrequentItemsSketch::update` for byte-slice and string inputs (including `raw_bytes`), particularly on short and variable-length keys, as well as `CpcSketch::update` and `TupleSketch::update` on integer keys.
+* Speed up `HllSketch::update` and `HllSketch::update_with_coupon` on dense `HllType::Hll4` and `HllType::Hll6` sketches.
 * Speed up `HllUnion::update` when merging a high-cardinality `HllType::Hll8` sketch into a lower-precision union or downsizing a populated union to a smaller `lg_k`.
 
 ### Bug fixes

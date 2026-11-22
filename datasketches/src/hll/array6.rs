@@ -231,7 +231,7 @@ mod tests {
     }
 
     #[test]
-    fn updating_a_packed_register_preserves_its_neighbors() {
+    fn test_update_preserves_neighboring_registers() {
         let mut arr = Array6::new(4);
         arr.update(Coupon::pack(13, 63));
         arr.update(Coupon::pack(15, 51));

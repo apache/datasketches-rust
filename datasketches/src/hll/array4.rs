@@ -143,6 +143,12 @@ impl Array4 {
             return;
         }
 
+        self.raise_register(slot, new_value, raw_stored, lower_bound);
+    }
+
+    // Kept out of line so the early returns in `update_register` inline without a stack frame.
+    #[inline(never)]
+    fn raise_register(&mut self, slot: u32, new_value: u8, raw_stored: u8, lower_bound: u8) {
         let old_value = if raw_stored < AUX_TOKEN {
             lower_bound
         } else {
@@ -497,17 +503,17 @@ mod tests {
         assert_eq!(arr.get_raw(0), AUX_TOKEN);
         assert_eq!(arr.aux_map.as_ref().and_then(|aux| aux.get(0)), Some(15));
 
-        let fill = (1..num_slots).map(|slot| Coupon::pack(slot, 1));
-        arr.update_coupons(fill.chain([Coupon::pack(1, 2)]));
+        for slot in 1..num_slots {
+            arr.update(Coupon::pack(slot, 1));
+        }
 
         assert_eq!(arr.cur_min, 1);
-        assert_eq!(arr.num_at_cur_min, num_slots - 2);
+        assert_eq!(arr.num_at_cur_min, num_slots - 1);
         assert_eq!(arr.get_raw(0), 14);
         assert_eq!(arr.get(0), 15);
         assert_that!(arr.aux_map, none());
 
-        assert_eq!(arr.get(1), 2);
-        for slot in 2..num_slots {
+        for slot in 1..num_slots {
             assert_eq!(arr.get(slot), 1);
         }
     }

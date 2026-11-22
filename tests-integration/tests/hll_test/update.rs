@@ -72,16 +72,20 @@ fn test_set_to_hll_promotion() {
 }
 
 #[test]
-fn ordered_coupon_batch_matches_scalar_updates_through_promotion() {
-    for hll_type in [HllType::Hll4, HllType::Hll6, HllType::Hll8] {
-        let mut scalar = HllSketch::new(8, hll_type).unwrap();
-        let mut batch = scalar.clone();
-        let coupons = (0..128).chain(0..64).map(Coupon::from_value);
-        for coupon in coupons.clone() {
-            scalar.update_with_coupon(coupon);
+fn ordered_coupon_batch_matches_scalar_updates() {
+    // At lg_k 4, the list promotes directly to HLL and the HLL4 minimum rises during the batch.
+    // At lg_k 8, the batch promotes through a set.
+    for (lg_k, num_values) in [(4, 100), (8, 128)] {
+        for hll_type in [HllType::Hll4, HllType::Hll6, HllType::Hll8] {
+            let mut scalar = HllSketch::new(lg_k, hll_type).unwrap();
+            let mut batch = scalar.clone();
+            let coupons = (0..num_values).chain(0..64).map(Coupon::from_value);
+            for coupon in coupons.clone() {
+                scalar.update_with_coupon(coupon);
+            }
+            batch.update_with_coupons(coupons);
+            assert_eq!(batch.serialize(), scalar.serialize());
         }
-        batch.update_with_coupons(coupons);
-        assert_eq!(batch.serialize(), scalar.serialize());
     }
 }
 
