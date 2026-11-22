@@ -31,6 +31,7 @@ datasketches = { workspace = true, features = [
   "bloom",
   "countmin",
   "cpc",
+  "ddsketch",
   "density",
   "frequencies",
   "hll",
