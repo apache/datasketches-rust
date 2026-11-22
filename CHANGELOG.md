@@ -6,6 +6,7 @@ All significant changes to this project will be documented in this file.
 
 ### New features
 
+* Add `DdSketch`, `DdSketchBuilder`, `DdSketchIter`, `MappingKind`, and `StoreKind` behind the `ddsketch` feature for mergeable quantile estimation over `f64` streams with relative-value error guarantees, configurable logarithmic or interpolated index mappings, bounded collapsing dense and sparse stores, weighted updates, bucket iteration, native serialization, and Java/Go compact wire interchange via `serialize_compat` and `deserialize_compat`.
 * Add `DensitySketch`, `Kernel`, `GaussianKernel`, `DensityValue`, and `DensitySketchIter` behind the `density` feature for streaming kernel density estimation and coreset construction over multidimensional `f32` and `f64` vectors, with custom kernel support, merging, iteration, and cross-language serialization.
 * Add `KllSketch::update_with_weight` for updating a sketch with an item repeated a given number of times.
 

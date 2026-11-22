@@ -27,6 +27,7 @@ datasketches = { workspace = true, features = [
   "bloom",
   "countmin",
   "cpc",
+  "ddsketch",
   "density",
   "frequencies",
   "hll",
@@ -41,6 +42,10 @@ datasketches = { workspace = true, features = [
 [[example]]
 name = "bloom_difference"
 path = "src/bloom_difference.rs"
+
+[[example]]
+name = "ddsketch_tail_latency"
+path = "src/ddsketch_tail_latency.rs"
 
 [lints]
 workspace = true
