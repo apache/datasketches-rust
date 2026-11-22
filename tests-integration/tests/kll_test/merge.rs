@@ -83,3 +83,25 @@ fn merge_updates_extrema_from_either_side() {
     assert_eq!(second.min_item(), Some(&1));
     assert_eq!(second.max_item(), Some(&2));
 }
+
+#[test]
+fn merge_into_exact_sketch_adopts_higher_levels() {
+    let mut small = KllSketch::<i64>::new(64).unwrap();
+    for item in 0..10 {
+        small.update(item);
+    }
+    let mut large = KllSketch::<i64>::new(64).unwrap();
+    for item in 10..10_000 {
+        large.update(item);
+    }
+    assert!(!small.is_estimation_mode());
+    assert!(large.is_estimation_mode());
+
+    small.merge(&large);
+
+    assert!(small.is_estimation_mode());
+    assert_eq!(small.total_weight(), 10_000);
+    assert_eq!(small.min_item(), Some(&0));
+    assert_eq!(small.max_item(), Some(&9_999));
+    assert_eq!(small.sorted_view().total_weight(), 10_000);
+}

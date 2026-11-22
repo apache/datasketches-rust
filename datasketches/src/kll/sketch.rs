@@ -915,9 +915,7 @@ impl<T: Clone + Ord> KllSketch<T> {
         work_levels.resize_with(provisional_levels, Vec::new);
 
         for (work_level, other_level) in work_levels.iter_mut().zip(&other.levels).skip(1) {
-            if !other_level.is_empty() {
-                merge_into_level(work_level, other_level.clone());
-            }
+            merge_slice_into_level(work_level, other_level);
         }
 
         self.levels = general_compress(work_levels, self.k, self.is_level_zero_sorted);
@@ -942,7 +940,7 @@ impl<T: Clone + Ord> KllSketch<T> {
 
         for (level, work_level) in work_levels.iter_mut().enumerate().take(top_level).skip(1) {
             if (weight >> level) & 1 != 0 {
-                merge_into_level(work_level, vec![item.clone()]);
+                merge_slice_into_level(work_level, std::slice::from_ref(&item));
             }
         }
 
@@ -1141,6 +1139,18 @@ fn merge_into_level<T: Ord>(target: &mut Vec<T>, right: Vec<T>) {
     };
 }
 
+fn merge_slice_into_level<T: Clone + Ord>(target: &mut Vec<T>, right: &[T]) {
+    if right.is_empty() {
+        return;
+    }
+    let left = std::mem::take(target);
+    *target = if left.is_empty() {
+        right.to_vec()
+    } else {
+        merge_sorted_vec_with_slice(left, right)
+    };
+}
+
 fn merge_sorted_vec<T: Ord>(left: Vec<T>, right: Vec<T>) -> Vec<T> {
     let mut merged = Vec::with_capacity(left.len() + right.len());
     let mut left_iter = left.into_iter().peekable();
@@ -1155,6 +1165,27 @@ fn merge_sorted_vec<T: Ord>(left: Vec<T>, right: Vec<T>) -> Vec<T> {
     }
     merged.extend(left_iter);
     merged.extend(right_iter);
+    merged
+}
+
+fn merge_sorted_vec_with_slice<T: Clone + Ord>(left: Vec<T>, right: &[T]) -> Vec<T> {
+    let mut merged = Vec::with_capacity(left.len() + right.len());
+    let mut left_iter = left.into_iter().peekable();
+    let mut right_index = 0;
+
+    while let Some(l) = left_iter.peek() {
+        let Some(r) = right.get(right_index) else {
+            break;
+        };
+        if l.cmp(r) == Ordering::Less {
+            merged.push(left_iter.next().unwrap());
+        } else {
+            merged.push(r.clone());
+            right_index += 1;
+        }
+    }
+    merged.extend(left_iter);
+    merged.extend_from_slice(&right[right_index..]);
     merged
 }
 
