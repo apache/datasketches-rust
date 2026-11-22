@@ -88,7 +88,7 @@ fn empty_sketch_validates_ranks_before_returning_none() {
     assert_eq!(sketch.num_retained(), 0);
     assert_eq!(sketch.min_value(), None);
     assert_eq!(sketch.max_value(), None);
-    assert_eq!(sketch.sum(), 0.0);
+    assert_eq!(sketch.sum(), None);
     assert_eq!(sketch.iter().len(), 0);
     assert_eq!(sketch.iter().next(), None);
 
@@ -161,21 +161,40 @@ fn zero_threshold_subnormals_and_extreme_finite_values_are_tracked() {
         assert_eq!(sketch.total_weight(), 6);
         assert_eq!(sketch.zero_weight(), 6);
         assert_eq!(sketch.num_retained(), 1);
-        assert_eq!(sketch.min_value(), Some(0.0));
-        assert_eq!(sketch.max_value(), Some(0.0));
+        assert_eq!(sketch.min_value(), Some(-threshold));
+        assert_eq!(sketch.max_value(), Some(threshold));
+        assert_eq!(sketch.sum(), Some(0.0));
+        assert_eq!(sketch.quantile(0.0).unwrap(), Some(-threshold));
         assert_eq!(sketch.quantile(0.5).unwrap(), Some(0.0));
+        assert_eq!(sketch.quantile(1.0).unwrap(), Some(threshold));
 
         sketch.update(-f64::MAX);
         sketch.update(f64::MAX);
         assert_eq!(sketch.total_weight(), 8);
         assert_eq!(sketch.num_retained(), 3);
-
-        let min = sketch.min_value().unwrap();
-        let max = sketch.max_value().unwrap();
-        assert!(min.is_finite() && max.is_finite());
-        assert!((min - (-f64::MAX)).abs() <= 0.01 * f64::MAX);
-        assert!((max - f64::MAX).abs() <= 0.01 * f64::MAX);
+        assert_eq!(sketch.min_value(), Some(-f64::MAX));
+        assert_eq!(sketch.max_value(), Some(f64::MAX));
+        assert_eq!(sketch.sum(), Some(0.0));
+        assert_eq!(sketch.quantile(0.0).unwrap(), Some(-f64::MAX));
+        assert_eq!(sketch.quantile(1.0).unwrap(), Some(f64::MAX));
     }
+
+    // Single-sample and negative-zero exact summary and clamping invariants.
+    let mut single = DdSketch::new(0.01).unwrap();
+    single.update(1.0);
+    assert_eq!(single.min_value(), Some(1.0));
+    assert_eq!(single.max_value(), Some(1.0));
+    assert_eq!(single.sum(), Some(1.0));
+    assert_eq!(
+        single.quantiles(&[0.0, 0.5, 1.0]).unwrap(),
+        Some(vec![1.0, 1.0, 1.0])
+    );
+
+    let mut neg_zero = DdSketch::new(0.01).unwrap();
+    neg_zero.update(-0.0);
+    assert_eq!(neg_zero.min_value().unwrap().to_bits(), 0.0_f64.to_bits());
+    assert_eq!(neg_zero.max_value().unwrap().to_bits(), 0.0_f64.to_bits());
+    assert_eq!(neg_zero.sum().unwrap().to_bits(), 0.0_f64.to_bits());
 }
 
 #[test]

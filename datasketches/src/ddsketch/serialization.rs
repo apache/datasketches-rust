@@ -19,6 +19,7 @@ use super::MAX_DENSE_BINS;
 use super::mapping::IndexMapping;
 use super::mapping::MappingKind;
 use super::sketch::DdSketch;
+use super::sketch::SummaryState;
 use super::store::MAX_DENSE_LEN;
 use super::store::Store;
 use super::store::StoreKind;
@@ -54,7 +55,7 @@ const STORE_TAG_SPARSE: u8 = 3;
 const FLAG_IS_EMPTY: u8 = 1 << 4;
 const FLAG_NEG_COLLAPSED: u8 = 1 << 5;
 const FLAG_POS_COLLAPSED: u8 = 1 << 6;
-const FLAG_RESERVED_MASK: u8 = 1 << 7;
+const FLAG_HAS_EXACT_SUMMARY: u8 = 1 << 7;
 
 const NATIVE_STORE_EMPTY: u8 = 0;
 const NATIVE_STORE_CONTIGUOUS_COUNTS: u8 = 1;
@@ -92,9 +93,15 @@ const ONE_F64_BITS: u64 = 0x3ff0_0000_0000_0000;
 const MAX_COMPAT_WEIGHT: u64 = (1 << 53) - 1;
 const TWO_POW_64: f64 = 18_446_744_073_709_551_616.0;
 
+#[inline]
+fn canonical_zero(v: f64) -> f64 {
+    if v == 0.0 { 0.0 } else { v }
+}
+
 pub fn serialize_sketch(sketch: &DdSketch) -> Vec<u8> {
     let mapping = sketch.mapping();
     let is_empty = sketch.is_empty();
+    let summary = sketch.summary_state();
     let (store_tag, max_bins_u32) = encode_store_kind(sketch.store_kind());
     let mapping_tag = match mapping.kind() {
         MappingKind::Logarithmic => MAPPING_TAG_LOGARITHMIC,
@@ -112,6 +119,9 @@ pub fn serialize_sketch(sketch: &DdSketch) -> Vec<u8> {
         if sketch.positive_store().is_collapsed() {
             flags |= FLAG_POS_COLLAPSED;
         }
+        if matches!(summary, SummaryState::Active { .. }) {
+            flags |= FLAG_HAS_EXACT_SUMMARY;
+        }
     }
 
     let (neg_choice, neg_bytes) = if is_empty {
@@ -124,10 +134,15 @@ pub fn serialize_sketch(sketch: &DdSketch) -> Vec<u8> {
     } else {
         choose_native_bin_encoding(sketch.positive_store())
     };
+    let summary_bytes = if matches!(summary, SummaryState::Active { .. }) {
+        3 * size_of::<f64>()
+    } else {
+        0
+    };
     let payload_bytes = if is_empty {
         0
     } else {
-        uvarint64_size(sketch.zero_weight()) + neg_bytes + pos_bytes
+        summary_bytes + uvarint64_size(sketch.zero_weight()) + neg_bytes + pos_bytes
     };
 
     let mut out = SketchBytes::with_capacity(PREAMBLE_BYTES + payload_bytes);
@@ -143,6 +158,11 @@ pub fn serialize_sketch(sketch: &DdSketch) -> Vec<u8> {
         return out.into_bytes();
     }
 
+    if let SummaryState::Active { min, max, sum } = summary {
+        out.write_f64_le(min);
+        out.write_f64_le(max);
+        out.write_f64_le(sum);
+    }
     encode_uvarint64(&mut out, sketch.zero_weight());
     encode_native_store(&mut out, sketch.negative_store(), neg_choice);
     encode_native_store(&mut out, sketch.positive_store(), pos_choice);
@@ -162,6 +182,23 @@ pub fn serialize_compat_sketch(sketch: &DdSketch) -> Result<Vec<u8>, Error> {
         MappingKind::Cubic => DD_SUBFLAG_MAPPING_CUBIC,
     };
 
+    let total_weight = sketch.total_weight();
+    let summary = sketch.summary_state();
+    let summary_bytes = match summary {
+        SummaryState::Active { sum, .. } => {
+            if total_weight > MAX_COMPAT_WEIGHT {
+                return Err(Error::invalid_argument(format!(
+                    "DDSketch total_weight ({total_weight}) exceeds maximum exact compatibility count ({MAX_COMPAT_WEIGHT})"
+                )));
+            }
+            let count_bytes = 1 + varfloat64_size(total_weight as f64);
+            let min_max_bytes = 2 * (1 + size_of::<f64>());
+            let sum_bytes = if sum != 0.0 { 1 + size_of::<f64>() } else { 0 };
+            count_bytes + min_max_bytes + sum_bytes
+        }
+        SummaryState::Empty | SummaryState::Missing => 0,
+    };
+
     let zero_weight = sketch.zero_weight();
     if zero_weight > MAX_COMPAT_WEIGHT {
         return Err(Error::invalid_argument(format!(
@@ -176,7 +213,20 @@ pub fn serialize_compat_sketch(sketch: &DdSketch) -> Result<Vec<u8>, Error> {
     let (neg_choice, neg_bytes) = choose_compat_bin_encoding(sketch.negative_store())?;
     let (pos_choice, pos_bytes) = choose_compat_bin_encoding(sketch.positive_store())?;
 
-    let mut out = SketchBytes::with_capacity(17 + zero_bytes + neg_bytes + pos_bytes);
+    let mut out =
+        SketchBytes::with_capacity(summary_bytes + 17 + zero_bytes + neg_bytes + pos_bytes);
+    if let SummaryState::Active { min, max, sum } = summary {
+        out.write_u8(DD_SUBFLAG_EXACT_COUNT | DD_FLAG_TYPE_SKETCH_FEATURES);
+        encode_varfloat64(&mut out, total_weight as f64);
+        out.write_u8(DD_SUBFLAG_EXACT_MIN | DD_FLAG_TYPE_SKETCH_FEATURES);
+        out.write_f64_le(min);
+        out.write_u8(DD_SUBFLAG_EXACT_MAX | DD_FLAG_TYPE_SKETCH_FEATURES);
+        out.write_f64_le(max);
+        if sum != 0.0 {
+            out.write_u8(DD_SUBFLAG_EXACT_SUM | DD_FLAG_TYPE_SKETCH_FEATURES);
+            out.write_f64_le(sum);
+        }
+    }
     out.write_u8(mapping_subflag | DD_FLAG_TYPE_INDEX_MAPPING);
     out.write_f64_le(mapping.gamma());
     out.write_f64_le(mapping.index_offset());
@@ -274,11 +324,6 @@ fn deserialize_native(bytes: &[u8]) -> Result<DdSketch, Error> {
     ensure_preamble_longs_in(&[PREAMBLE_LONGS], preamble_longs)?;
 
     let flags = cursor.read_u8().map_err(insufficient_data("flags"))?;
-    if (flags & FLAG_RESERVED_MASK) != 0 {
-        return Err(Error::deserial(format!(
-            "unsupported DDSketch flags: {flags:#04x}"
-        )));
-    }
     let max_bins_u32 = cursor
         .read_u32_le()
         .map_err(insufficient_data("max_num_bins"))?;
@@ -303,6 +348,7 @@ fn deserialize_native(bytes: &[u8]) -> Result<DdSketch, Error> {
     let is_empty = (flags & FLAG_IS_EMPTY) != 0;
     let neg_collapsed = (flags & FLAG_NEG_COLLAPSED) != 0;
     let pos_collapsed = (flags & FLAG_POS_COLLAPSED) != 0;
+    let has_exact_summary = (flags & FLAG_HAS_EXACT_SUMMARY) != 0;
     let encoded_max_bins = match encoded_store_kind {
         StoreKind::CollapsingLowestDense { max_num_bins }
         | StoreKind::CollapsingHighestDense { max_num_bins } => Some(max_num_bins),
@@ -318,9 +364,9 @@ fn deserialize_native(bytes: &[u8]) -> Result<DdSketch, Error> {
     let mut positive = Store::new(encoded_store_kind)?;
 
     if is_empty {
-        if neg_collapsed || pos_collapsed {
+        if neg_collapsed || pos_collapsed || has_exact_summary {
             return Err(Error::deserial(
-                "collapsed flags cannot be set on an empty DDSketch",
+                "collapsed or summary flags cannot be set on an empty DDSketch",
             ));
         }
         let trailing = cursor.remaining().len();
@@ -329,8 +375,39 @@ fn deserialize_native(bytes: &[u8]) -> Result<DdSketch, Error> {
                 "expected end of empty DDSketch image, found {trailing} trailing bytes"
             )));
         }
-        return Ok(DdSketch::from_parts(mapping, negative, positive, 0, 0));
+        return Ok(DdSketch::from_parts(
+            mapping,
+            negative,
+            positive,
+            0,
+            0,
+            SummaryState::Empty,
+        ));
     }
+
+    let summary = if has_exact_summary {
+        let min = cursor
+            .read_f64_le()
+            .map_err(insufficient_data("exact_min"))?;
+        let max = cursor
+            .read_f64_le()
+            .map_err(insufficient_data("exact_max"))?;
+        let sum = cursor
+            .read_f64_le()
+            .map_err(insufficient_data("exact_sum"))?;
+        if !min.is_finite() || !max.is_finite() || min > max {
+            return Err(Error::deserial(format!(
+                "invalid DDSketch exact summary bounds: min={min}, max={max}"
+            )));
+        }
+        SummaryState::Active {
+            min: canonical_zero(min),
+            max: canonical_zero(max),
+            sum: canonical_zero(sum),
+        }
+    } else {
+        SummaryState::Missing
+    };
 
     let is_dense_target = !matches!(encoded_store_kind, StoreKind::Sparse);
     let zero_weight = decode_uvarint64(&mut cursor, "zero_weight")?;
@@ -382,6 +459,7 @@ fn deserialize_native(bytes: &[u8]) -> Result<DdSketch, Error> {
         positive,
         zero_weight,
         total_weight,
+        summary,
     ))
 }
 
@@ -841,6 +919,7 @@ struct DatadogScan {
     mapping: IndexMapping,
     zero_weight: u64,
     total_weight: u64,
+    summary: SummaryState,
     neg_bounds: Option<(i32, i32)>,
     pos_bounds: Option<(i32, i32)>,
 }
@@ -864,6 +943,7 @@ fn deserialize_datadog(bytes: &[u8], store_kind: StoreKind) -> Result<DdSketch, 
         positive,
         scan.zero_weight,
         scan.total_weight,
+        scan.summary,
     ))
 }
 
@@ -877,6 +957,14 @@ fn scan_datadog_stream(
     let mut mapping: Option<IndexMapping> = None;
     let mut zero_weight = 0_u64;
     let mut total_weight = 0_u64;
+    let mut saw_count = false;
+    let mut saw_sum = false;
+    let mut saw_min = false;
+    let mut saw_max = false;
+    let mut summary_count = 0_u64;
+    let mut summary_sum = 0.0_f64;
+    let mut summary_min = f64::INFINITY;
+    let mut summary_max = f64::NEG_INFINITY;
 
     let mut cursor = SketchSlice::new(bytes);
     while !cursor.remaining().is_empty() {
@@ -942,17 +1030,42 @@ fn scan_datadog_stream(
                         .ok_or_else(|| Error::deserial("total_weight overflows u64"))?;
                 }
                 DD_SUBFLAG_EXACT_COUNT => {
-                    let raw = decode_varfloat64(&mut cursor, "exact_count")?;
-                    if !raw.is_finite() || raw < 0.0 {
+                    let count = decode_datadog_count(&mut cursor, "exact_count")?;
+                    summary_count = summary_count
+                        .checked_add(count)
+                        .ok_or_else(|| Error::deserial("exact_count overflows u64"))?;
+                    saw_count = true;
+                }
+                DD_SUBFLAG_EXACT_SUM => {
+                    let v = cursor
+                        .read_f64_le()
+                        .map_err(insufficient_data("exact_sum"))?;
+                    summary_sum += v;
+                    saw_sum = true;
+                }
+                DD_SUBFLAG_EXACT_MIN => {
+                    let v = cursor
+                        .read_f64_le()
+                        .map_err(insufficient_data("exact_min"))?;
+                    if !v.is_finite() {
                         return Err(Error::deserial(format!(
-                            "invalid exact_count summary statistic: {raw}"
+                            "invalid exact_min summary statistic: {v}"
                         )));
                     }
+                    summary_min = summary_min.min(canonical_zero(v));
+                    saw_min = true;
                 }
-                DD_SUBFLAG_EXACT_SUM | DD_SUBFLAG_EXACT_MIN | DD_SUBFLAG_EXACT_MAX => {
-                    let _ = cursor
+                DD_SUBFLAG_EXACT_MAX => {
+                    let v = cursor
                         .read_f64_le()
-                        .map_err(insufficient_data("summary_statistic"))?;
+                        .map_err(insufficient_data("exact_max"))?;
+                    if !v.is_finite() {
+                        return Err(Error::deserial(format!(
+                            "invalid exact_max summary statistic: {v}"
+                        )));
+                    }
+                    summary_max = summary_max.max(canonical_zero(v));
+                    saw_max = true;
                 }
                 _ => {
                     return Err(Error::deserial(format!(
@@ -987,10 +1100,39 @@ fn scan_datadog_stream(
         }
     }
 
+    let saw_any_summary = saw_count || saw_sum || saw_min || saw_max;
+    let summary = if total_weight == 0 {
+        if summary_count != 0 || saw_min || saw_max || (saw_sum && summary_sum != 0.0) {
+            return Err(Error::deserial(
+                "non-empty exact summary statistics on an empty reference DDSketch",
+            ));
+        }
+        SummaryState::Empty
+    } else if !saw_any_summary {
+        SummaryState::Missing
+    } else {
+        if !saw_count || summary_count != total_weight {
+            return Err(Error::deserial(format!(
+                "reference DDSketch exact_count ({summary_count}) does not match total bucket weight ({total_weight})"
+            )));
+        }
+        if !saw_min || !saw_max || summary_min > summary_max {
+            return Err(Error::deserial(format!(
+                "invalid reference DDSketch exact min/max summary statistics: min={summary_min}, max={summary_max}"
+            )));
+        }
+        SummaryState::Active {
+            min: summary_min,
+            max: summary_max,
+            sum: canonical_zero(summary_sum),
+        }
+    };
+
     Ok(DatadogScan {
         mapping,
         zero_weight,
         total_weight,
+        summary,
         neg_bounds: neg_range.bounds,
         pos_bounds: pos_range.bounds,
     })

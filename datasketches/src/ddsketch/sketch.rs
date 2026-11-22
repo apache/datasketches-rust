@@ -99,7 +99,70 @@ impl DdSketchBuilder {
         let mapping = IndexMapping::from_accuracy(self.mapping_kind, self.relative_accuracy)?;
         let negative = Store::new(self.store_kind)?;
         let positive = Store::new(self.store_kind)?;
-        Ok(DdSketch::from_parts(mapping, negative, positive, 0, 0))
+        Ok(DdSketch::from_parts(
+            mapping,
+            negative,
+            positive,
+            0,
+            0,
+            SummaryState::Empty,
+        ))
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(super) enum SummaryState {
+    Empty,
+    Active { min: f64, max: f64, sum: f64 },
+    Missing,
+}
+
+impl SummaryState {
+    #[inline]
+    fn canonical_f64(value: f64) -> f64 {
+        if value == 0.0 { 0.0 } else { value }
+    }
+
+    #[inline]
+    fn record(&mut self, value: f64, weight: u64) {
+        let v = Self::canonical_f64(value);
+        let weighted = Self::canonical_f64(v * (weight as f64));
+        match self {
+            Self::Empty => {
+                *self = Self::Active {
+                    min: v,
+                    max: v,
+                    sum: weighted,
+                };
+            }
+            Self::Active { min, max, sum } => {
+                *min = (*min).min(v);
+                *max = (*max).max(v);
+                *sum = Self::canonical_f64(*sum + weighted);
+            }
+            Self::Missing => {}
+        }
+    }
+
+    #[inline]
+    fn merge_non_empty(&mut self, other: Self) {
+        *self = match (*self, other) {
+            (Self::Empty, rhs) => rhs,
+            (
+                Self::Active { min, max, sum },
+                Self::Active {
+                    min: omin,
+                    max: omax,
+                    sum: osum,
+                },
+            ) => Self::Active {
+                min: min.min(omin),
+                max: max.max(omax),
+                sum: Self::canonical_f64(sum + osum),
+            },
+            (Self::Missing, _) | (_, Self::Missing) => Self::Missing,
+            (lhs, Self::Empty) => lhs,
+        };
     }
 }
 
@@ -113,6 +176,7 @@ pub struct DdSketch {
     positive: Store,
     zero_weight: u64,
     total_weight: u64,
+    summary: SummaryState,
 }
 
 impl fmt::Debug for DdSketch {
@@ -127,6 +191,7 @@ impl fmt::Debug for DdSketch {
             .field("num_retained", &self.num_retained())
             .field("min_value", &self.min_value())
             .field("max_value", &self.max_value())
+            .field("sum", &self.sum())
             .finish()
     }
 }
@@ -167,18 +232,26 @@ impl DdSketch {
         positive: Store,
         zero_weight: u64,
         total_weight: u64,
+        summary: SummaryState,
     ) -> Self {
         debug_assert_eq!(
             negative.total_weight() + zero_weight + positive.total_weight(),
             total_weight
         );
+        debug_assert_eq!(total_weight == 0, matches!(summary, SummaryState::Empty));
         Self {
             mapping,
             negative,
             positive,
             zero_weight,
             total_weight,
+            summary,
         }
+    }
+
+    #[inline]
+    pub(super) const fn summary_state(&self) -> SummaryState {
+        self.summary
     }
 
     #[inline]
@@ -332,6 +405,7 @@ impl DdSketch {
             self.zero_weight += weight;
         }
         self.total_weight = next_total;
+        self.summary.record(value, weight);
     }
 
     /// Merges `other` into `self`, retaining `self`'s [`StoreKind`].
@@ -395,6 +469,7 @@ impl DdSketch {
         self.positive.merge_from(&other.positive);
         self.zero_weight += other.zero_weight;
         self.total_weight = next_total;
+        self.summary.merge_non_empty(other.summary);
         Ok(())
     }
 
@@ -405,57 +480,39 @@ impl DdSketch {
         self.positive.reset();
         self.zero_weight = 0;
         self.total_weight = 0;
+        self.summary = SummaryState::Empty;
     }
 
-    /// Returns the bucket-approximated minimum value, or `None` if this sketch is empty.
-    ///
-    /// Equivalent to `self.quantile(0.0)?.unwrap()` on a non-empty sketch: returns the
-    /// representative value of the lowest occupied numerical bucket rather than an exact retained
-    /// input sample.
+    /// Returns the exact minimum value recorded by this sketch, or `None` if this sketch is empty
+    /// or was decoded from a compatibility image without exact summary statistics.
+    #[inline]
     pub fn min_value(&self) -> Option<f64> {
-        if let Some(max_neg_idx) = self.negative.max_index() {
-            Some(-self.mapping.value(max_neg_idx))
-        } else if self.zero_weight > 0 {
-            Some(0.0)
-        } else {
-            self.positive
-                .min_index()
-                .map(|min_pos_idx| self.mapping.value(min_pos_idx))
+        match self.summary {
+            SummaryState::Active { min, .. } => Some(min),
+            SummaryState::Empty | SummaryState::Missing => None,
         }
     }
 
-    /// Returns the bucket-approximated maximum value, or `None` if this sketch is empty.
-    ///
-    /// Equivalent to `self.quantile(1.0)?.unwrap()` on a non-empty sketch: returns the
-    /// representative value of the highest occupied numerical bucket rather than an exact retained
-    /// input sample.
+    /// Returns the exact maximum value recorded by this sketch, or `None` if this sketch is empty
+    /// or was decoded from a compatibility image without exact summary statistics.
+    #[inline]
     pub fn max_value(&self) -> Option<f64> {
-        if let Some(max_pos_idx) = self.positive.max_index() {
-            Some(self.mapping.value(max_pos_idx))
-        } else if self.zero_weight > 0 {
-            Some(0.0)
-        } else {
-            self.negative
-                .min_index()
-                .map(|min_neg_idx| -self.mapping.value(min_neg_idx))
+        match self.summary {
+            SummaryState::Active { max, .. } => Some(max),
+            SummaryState::Empty | SummaryState::Missing => None,
         }
     }
 
-    /// Returns the bucket-approximated sum of recorded values (`0.0` when empty).
+    /// Returns the exact sum of recorded values, or `None` if this sketch is empty or was decoded
+    /// from a compatibility image without exact summary statistics.
     ///
-    /// When all recorded values have the same sign, exceed [`zero_threshold`](Self::zero_threshold)
-    /// in magnitude, fall into uncollapsed buckets, and produce a finite weighted bucket sum, the
-    /// returned value satisfies the configured [`relative_accuracy`](Self::relative_accuracy) bound
-    /// relative to the true stream sum.
-    pub fn sum(&self) -> f64 {
-        let mut total = 0.0_f64;
-        for (idx, weight) in self.negative.iter_asc() {
-            total -= self.mapping.value(idx) * (weight as f64);
+    /// Accumulated with standard IEEE 754 `f64` addition (`value * weight as f64`).
+    #[inline]
+    pub fn sum(&self) -> Option<f64> {
+        match self.summary {
+            SummaryState::Active { sum, .. } => Some(sum),
+            SummaryState::Empty | SummaryState::Missing => None,
         }
-        for (idx, weight) in self.positive.iter_asc() {
-            total += self.mapping.value(idx) * (weight as f64);
-        }
-        total
     }
 
     /// Returns the approximate lower discrete quantile for `rank` in `[0.0, 1.0]`, or `Ok(None)`
@@ -463,7 +520,10 @@ impl DdSketch {
     ///
     /// Selects the bucket containing zero-based sorted item `floor(rank * (total_weight - 1))`
     /// using the standard `f64` product when `total_weight <= 2^53` (matching the Java reference
-    /// implementation) and exact integer significand scaling when `total_weight > 2^53`.
+    /// implementation) and exact integer significand scaling when `total_weight > 2^53`. When exact
+    /// summary statistics are present, `rank == 0.0` returns [`min_value`](Self::min_value),
+    /// `rank == 1.0` returns [`max_value`](Self::max_value), and interior estimates are clamped to
+    /// `[min_value, max_value]`.
     ///
     /// # Errors
     ///
@@ -537,22 +597,38 @@ impl DdSketch {
         if ranks.len() == 1 {
             return Ok(Some(vec![self.quantile_unchecked(ranks[0])]));
         }
+        if let SummaryState::Active { min, max, .. } = self.summary {
+            if min == max {
+                return Ok(Some(vec![min; ranks.len()]));
+            }
+        }
 
         let last = self.total_weight - 1;
         let is_non_decreasing = ranks.windows(2).all(|pair| pair[0] <= pair[1]);
         let mut out = vec![0.0; ranks.len()];
         if is_non_decreasing {
             self.resolve_non_decreasing_ranks(ranks, last, &mut out);
-            return Ok(Some(out));
+        } else {
+            let mut indexed: Vec<(u64, usize)> = ranks
+                .iter()
+                .enumerate()
+                .map(|(pos, &rank)| (quantile_target_index(rank, last), pos))
+                .collect();
+            indexed.sort_unstable_by_key(|&(target, _)| target);
+            self.resolve_sorted_targets(&indexed, &mut out);
         }
 
-        let mut indexed: Vec<(u64, usize)> = ranks
-            .iter()
-            .enumerate()
-            .map(|(pos, &rank)| (quantile_target_index(rank, last), pos))
-            .collect();
-        indexed.sort_unstable_by_key(|&(target, _)| target);
-        self.resolve_sorted_targets(&indexed, &mut out);
+        if let SummaryState::Active { min, max, .. } = self.summary {
+            for (&rank, estimate) in ranks.iter().zip(&mut out) {
+                if rank == 0.0 {
+                    *estimate = min;
+                } else if rank == 1.0 {
+                    *estimate = max;
+                } else {
+                    *estimate = estimate.clamp(min, max);
+                }
+            }
+        }
         Ok(Some(out))
     }
 
@@ -612,7 +688,8 @@ impl DdSketch {
     /// # Errors
     ///
     /// Returns [`InvalidArgument`](crate::error::ErrorKind::InvalidArgument) if
-    /// [`zero_weight`](Self::zero_weight) or any retained bucket weight exceeds `2^53 - 1`
+    /// [`zero_weight`](Self::zero_weight), any retained bucket weight, or (when exact summary
+    /// statistics are present) [`total_weight`](Self::total_weight) exceeds `2^53 - 1`
     /// (`9_007_199_254_740_991`), the maximum integer representable without rounding in the
     /// compatibility format's `v + 1.0` floating-point counter encoding.
     ///
@@ -661,24 +738,52 @@ impl DdSketch {
     ///
     /// # Cross-language compatibility
     ///
-    /// Accepts images carrying optional exact summary-statistic blocks (`count`, `sum`, `min`,
-    /// `max`), skipping those auxiliary fields; encoded counts must be non-negative integers below
-    /// `2^64`. Because reference images do not record [`StoreKind`], choose [`StoreKind::Sparse`]
-    /// or a sufficiently wide dense bound when decoding a wide-span sketch without bin collapsing.
+    /// Preserves optional exact summary-statistic blocks (`count`, `sum`, `min`, `max`) emitted by
+    /// `DDSketchWithExactSummaryStatistics` in Java and Go; bare `DDSketch` images without summary
+    /// blocks decode with [`min_value`](Self::min_value), [`max_value`](Self::max_value), and
+    /// [`sum`](Self::sum) set to `None` and re-encode without summary blocks. Encoded counts must
+    /// be non-negative integers below `2^64`. Because reference images do not record [`StoreKind`],
+    /// choose [`StoreKind::Sparse`] or a sufficiently wide dense bound when decoding a wide-span
+    /// sketch without bin collapsing.
     pub fn deserialize_compat(bytes: &[u8], store: StoreKind) -> Result<Self, Error> {
         validate_store_kind(store)?;
         deserialize_compat_sketch(bytes, store)
     }
 
-    fn quantile_unchecked(&self, rank: f64) -> f64 {
-        debug_assert!(!self.is_empty());
-        let last = self.total_weight - 1;
-        let target = quantile_target_index(rank, last);
+    fn bucket_min_value(&self) -> f64 {
+        if let Some(max_neg_idx) = self.negative.max_index() {
+            -self.mapping.value(max_neg_idx)
+        } else if self.zero_weight > 0 {
+            0.0
+        } else {
+            let min_pos_idx = self
+                .positive
+                .min_index()
+                .expect("non-empty sketch has an occupied bucket");
+            self.mapping.value(min_pos_idx)
+        }
+    }
+
+    fn bucket_max_value(&self) -> f64 {
+        if let Some(max_pos_idx) = self.positive.max_index() {
+            self.mapping.value(max_pos_idx)
+        } else if self.zero_weight > 0 {
+            0.0
+        } else {
+            let min_neg_idx = self
+                .negative
+                .min_index()
+                .expect("non-empty sketch has an occupied bucket");
+            -self.mapping.value(min_neg_idx)
+        }
+    }
+
+    fn bucket_quantile_at_target(&self, target: u64, last: u64) -> f64 {
         if target == 0 {
-            return self.min_value().expect("non-empty sketch has min_value");
+            return self.bucket_min_value();
         }
         if target == last {
-            return self.max_value().expect("non-empty sketch has max_value");
+            return self.bucket_max_value();
         }
 
         let neg_weight = self.negative.total_weight();
@@ -692,6 +797,23 @@ impl DdSketch {
         }
         let pos_rank = target - non_pos_weight;
         self.mapping.value(self.positive.key_at_rank(pos_rank))
+    }
+
+    fn quantile_unchecked(&self, rank: f64) -> f64 {
+        debug_assert!(!self.is_empty());
+        let last = self.total_weight - 1;
+        if let SummaryState::Active { min, max, .. } = self.summary {
+            if rank == 0.0 || min == max {
+                return min;
+            }
+            if rank == 1.0 {
+                return max;
+            }
+            return self
+                .bucket_quantile_at_target(quantile_target_index(rank, last), last)
+                .clamp(min, max);
+        }
+        self.bucket_quantile_at_target(quantile_target_index(rank, last), last)
     }
     fn resolve_non_decreasing_ranks(&self, ranks: &[f64], last: u64, out: &mut [f64]) {
         let neg_weight = self.negative.total_weight();

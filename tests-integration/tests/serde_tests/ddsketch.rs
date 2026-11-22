@@ -129,6 +129,9 @@ fn native_round_trips_across_mappings_stores_collapse_states_and_large_weights()
                 assert_eq!(decoded.store_kind(), src_store);
                 assert_eq!(decoded.total_weight(), sketch.total_weight());
                 assert_eq!(decoded.zero_weight(), sketch.zero_weight());
+                assert_eq!(decoded.min_value(), sketch.min_value());
+                assert_eq!(decoded.max_value(), sketch.max_value());
+                assert_eq!(decoded.sum(), sketch.sum());
                 assert_eq!(
                     decoded.iter().collect::<Vec<_>>(),
                     sketch.iter().collect::<Vec<_>>()
@@ -378,7 +381,19 @@ fn native_malformed_headers_and_body_invariants_are_rejected() {
     assert_eq!(sparse_ok.store_kind(), StoreKind::Sparse);
     assert_eq!(sparse_ok.total_weight(), 2);
     assert_eq!(sparse_ok.num_retained(), 2);
-    assert!(sparse_ok.min_value().unwrap() > 0.0);
+    assert_eq!(sparse_ok.min_value(), None);
+    assert!(sparse_ok.quantile(0.0).unwrap().unwrap() > 0.0);
+
+    // Inverted or non-finite exact summary bounds in native image (`FLAG_HAS_EXACT_SUMMARY` = 1 <<
+    // 7) are rejected.
+    let mut bad_native_summary = single_pos.serialize();
+    bad_native_summary[24..32].copy_from_slice(&50.0_f64.to_le_bytes()); // min = 50.0 > max = 10.0
+    assert_eq!(
+        DdSketch::deserialize(&bad_native_summary)
+            .unwrap_err()
+            .kind(),
+        ErrorKind::InvalidData
+    );
 
     // Forged native collapsing store claiming `num_bins > max_num_bins` (contiguous or delta) is
     // rejected upfront.
@@ -471,13 +486,14 @@ fn compat_round_trips_across_mappings_stores_and_weight_boundaries() {
                 dense_contiguous.update_with_weight(v, (i as u64 % 5) + 1);
             }
 
-            // Exact `2^53 - 1` boundary weight is representable losslessly in compat `varfloat64`
+            // Exact `2^53 - 1` total weight is representable losslessly in compat `varfloat64`
             // (which biases counts by `+ 1.0` in `f64`).
             let mut boundary_weighted = empty.clone();
-            boundary_weighted.update_with_weight(-500.0, (1_u64 << 53) - 1);
-            boundary_weighted.update_with_weight(0.0, 1_u64 << 52);
+            boundary_weighted.update_with_weight(-500.0, (1_u64 << 52) - 5);
+            boundary_weighted.update_with_weight(0.0, 1_u64 << 51);
             boundary_weighted.update_with_weight(0.05, 4);
-            boundary_weighted.update_with_weight(50_000.0, (1_u64 << 53) - 2);
+            boundary_weighted.update_with_weight(50_000.0, 1_u64 << 51);
+            assert_eq!(boundary_weighted.total_weight(), (1_u64 << 53) - 1);
 
             for sketch in [&empty, &unit_sparse, &dense_contiguous, &boundary_weighted] {
                 let compat_bytes = sketch.serialize_compat().unwrap();
@@ -493,6 +509,9 @@ fn compat_round_trips_across_mappings_stores_and_weight_boundaries() {
                     assert_eq!(decoded.store_kind(), dst_store);
                     assert_eq!(decoded.total_weight(), sketch.total_weight());
                     assert_eq!(decoded.zero_weight(), sketch.zero_weight());
+                    assert_eq!(decoded.min_value(), sketch.min_value());
+                    assert_eq!(decoded.max_value(), sketch.max_value());
+                    assert_eq!(decoded.sum(), sketch.sum());
                     // When dst_store does not collapse `sketch`'s retained span, buckets match.
                     if matches!(dst_store, StoreKind::UnboundedDense | StoreKind::Sparse)
                         || dst_store == src_store
@@ -508,7 +527,8 @@ fn compat_round_trips_across_mappings_stores_and_weight_boundaries() {
     }
 
     // Weights at or above `2^53` (where `weight + 1.0` rounds in IEEE 754 `f64`) are rejected by
-    // `serialize_compat` with `InvalidArgument`.
+    // `serialize_compat` with `InvalidArgument`, including when individual buckets stay below
+    // `2^53` while `total_weight` (encoded in `FlagCount`) reaches `2^53`.
     let mut over_zero = DdSketch::new(0.01).unwrap();
     over_zero.update_with_weight(0.0, 1_u64 << 53);
     assert_eq!(
@@ -520,6 +540,14 @@ fn compat_round_trips_across_mappings_stores_and_weight_boundaries() {
     over_bucket.update_with_weight(10.0, 1_u64 << 53);
     assert_eq!(
         over_bucket.serialize_compat().unwrap_err().kind(),
+        ErrorKind::InvalidArgument
+    );
+
+    let mut over_total = DdSketch::new(0.01).unwrap();
+    over_total.update_with_weight(10.0, 1_u64 << 52);
+    over_total.update_with_weight(20.0, 1_u64 << 52);
+    assert_eq!(
+        over_total.serialize_compat().unwrap_err().kind(),
         ErrorKind::InvalidArgument
     );
 }
@@ -572,6 +600,18 @@ fn compat_decodes_reordered_summary_blocks_and_rejects_malformed_images() {
     assert_eq!(decoded.total_weight(), 9);
     assert_eq!(decoded.zero_weight(), 2);
     assert_eq!(decoded.num_retained(), 5);
+    assert_eq!(decoded.min_value(), Some(-1.5));
+    assert_eq!(decoded.max_value(), Some(20.0));
+    assert_eq!(decoded.sum(), Some(12.5));
+    assert_eq!(decoded.quantile(0.0).unwrap(), Some(-1.5));
+    assert_eq!(decoded.quantile(1.0).unwrap(), Some(20.0));
+
+    let reencoded =
+        DdSketch::deserialize_compat(&decoded.serialize_compat().unwrap(), StoreKind::default())
+            .unwrap();
+    assert_eq!(reencoded.min_value(), Some(-1.5));
+    assert_eq!(reencoded.max_value(), Some(20.0));
+    assert_eq!(reencoded.sum(), Some(12.5));
 
     let decoded_sparse = DdSketch::deserialize_compat(&wire, StoreKind::Sparse).unwrap();
     assert_eq!(decoded_sparse.store_kind(), StoreKind::Sparse);
@@ -582,7 +622,8 @@ fn compat_decodes_reordered_summary_blocks_and_rejects_malformed_images() {
 
     // `sketches-go` derives Linear `offset = 1 / log2(gamma)` and Cubic `gamma` with `math.Pow`,
     // differing in the last bits from `DdSketchBuilder::new(0.01)`; both must merge cleanly under
-    // the 1e-12 relative mapping tolerance.
+    // the 1e-12 relative mapping tolerance. Bare compat images without summary flags leave
+    // `min_value`/`max_value`/`sum` as `None` and re-encode without summary blocks.
     let go_linear_gamma = ((1.0 + 0.01_f64) / (1.0 - 0.01_f64)).powf(std::f64::consts::LN_2);
     let go_linear_offset = 49.998333288886464_f64;
     let mut go_linear_wire = vec![0x06];
@@ -590,13 +631,49 @@ fn compat_decodes_reordered_summary_blocks_and_rejects_malformed_images() {
     go_linear_wire.extend_from_slice(&go_linear_offset.to_le_bytes());
     go_linear_wire.extend_from_slice(&[0x09, 0x01, 0x64]); // 1 pos bin at index 50
     let go_linear = DdSketch::deserialize_compat(&go_linear_wire, StoreKind::default()).unwrap();
+    assert_eq!(go_linear.min_value(), None);
+    assert_eq!(go_linear.max_value(), None);
+    assert_eq!(go_linear.sum(), None);
+    assert_eq!(go_linear.serialize_compat().unwrap(), go_linear_wire);
     let mut rust_linear = DdSketchBuilder::new(0.01)
         .mapping(MappingKind::Linear)
         .build()
         .unwrap();
     rust_linear.update(10.0);
+    assert_eq!(rust_linear.min_value(), Some(10.0));
     rust_linear.merge(&go_linear).unwrap();
     assert_eq!(rust_linear.total_weight(), 2);
+    assert_eq!(rust_linear.min_value(), None);
+    assert_eq!(rust_linear.sum(), None);
+
+    // Malformed summary blocks in compat format (count mismatch, missing max, min > max, NaN min,
+    // or non-zero summary on an empty sketch) are rejected with InvalidData.
+    let mut count_mismatch = wire.clone();
+    count_mismatch[1..3].copy_from_slice(&[0x82, 0x40]); // FlagCount = 8 != total_weight 9
+    assert_eq!(
+        DdSketch::deserialize_compat(&count_mismatch, StoreKind::default())
+            .unwrap_err()
+            .kind(),
+        ErrorKind::InvalidData
+    );
+
+    let mut inverted_bounds = wire.clone();
+    inverted_bounds[13..21].copy_from_slice(&50.0_f64.to_le_bytes()); // min = 50 > max = 20
+    assert_eq!(
+        DdSketch::deserialize_compat(&inverted_bounds, StoreKind::default())
+            .unwrap_err()
+            .kind(),
+        ErrorKind::InvalidData
+    );
+
+    let mut nan_min = wire.clone();
+    nan_min[13..21].copy_from_slice(&f64::NAN.to_le_bytes());
+    assert_eq!(
+        DdSketch::deserialize_compat(&nan_min, StoreKind::default())
+            .unwrap_err()
+            .kind(),
+        ErrorKind::InvalidData
+    );
 
     let go_cubic_gamma = 1.0200022828058628_f64;
     let mut go_cubic_wire = vec![0x0e];
@@ -743,7 +820,8 @@ fn compat_decodes_reordered_summary_blocks_and_rejects_malformed_images() {
     let sparse_wide = DdSketch::deserialize_compat(&wide_ref, StoreKind::Sparse).unwrap();
     assert_eq!(sparse_wide.total_weight(), 2);
     assert_eq!(sparse_wide.num_retained(), 2);
-    assert!(sparse_wide.min_value().unwrap() > 0.0);
+    assert_eq!(sparse_wide.min_value(), None);
+    assert!(sparse_wide.quantile(0.0).unwrap().unwrap() > 0.0);
 
     // Combined negative + positive span exceeding `2^26` is also rejected for UnboundedDense even
     // when each sign individually stays below `2^26`, while Sparse accepts it.

@@ -94,24 +94,9 @@ fn uncollapsed_mappings_and_stores_satisfy_relative_value_bound() {
                 }
 
                 let expected_sum: f64 = positive.iter().sum();
-                assert_within_relative_accuracy(
-                    pos_sketch.sum(),
-                    expected_sum,
-                    alpha,
-                    &format!("sum {kind:?}/{store:?}/{alpha}"),
-                );
-                assert_within_relative_accuracy(
-                    pos_sketch.min_value().unwrap(),
-                    positive[0],
-                    alpha,
-                    &format!("min {kind:?}/{store:?}/{alpha}"),
-                );
-                assert_within_relative_accuracy(
-                    pos_sketch.max_value().unwrap(),
-                    *positive.last().unwrap(),
-                    alpha,
-                    &format!("max {kind:?}/{store:?}/{alpha}"),
-                );
+                assert_eq!(pos_sketch.sum(), Some(expected_sum));
+                assert_eq!(pos_sketch.min_value(), Some(positive[0]));
+                assert_eq!(pos_sketch.max_value(), Some(*positive.last().unwrap()));
 
                 let batch = pos_sketch.quantiles(&ranks).unwrap().unwrap();
                 for (i, &q) in ranks.iter().enumerate() {
