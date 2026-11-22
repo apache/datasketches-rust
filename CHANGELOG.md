@@ -19,7 +19,7 @@ All significant changes to this project will be documented in this file.
 * Speed up `HllSketch::update`, `Coupon::from_value`, `CpcSketch::update`, `ThetaSketch::update`, `TupleSketch::update`, and `FrequentItemsSketch::update` for byte-slice and string inputs (including `raw_bytes`), particularly on short and variable-length keys, as well as `CpcSketch::update` and `TupleSketch::update` on integer keys.
 * Speed up `HllSketch::update` and `HllSketch::update_with_coupon` on dense `HllType::Hll4` and `HllType::Hll6` sketches.
 * Speed up `HllUnion::update` when merging a high-cardinality `HllType::Hll8` sketch into a lower-precision union or downsizing a populated union to a smaller `lg_k`.
-* Speed up multi-level `KllSketch::merge`, `KllSketch::deserialize` on populated sketches, and estimation-mode `KllSketch::update` (particularly on CPUs with slower 64-bit integer division or smaller `k`), with additional gains on `KllFloat` sketches across merges and sorted-view queries (`quantile`, `quantiles`, `cdf`, and `pmf`).
+* Speed up multi-level `KllSketch::merge` and `KllSketch::deserialize` on populated sketches, along with `KllFloat` sketches across merges and queries that build a sorted view (`sorted_view`, non-endpoint `quantile`, `quantiles`, `cdf`, and `pmf`).
 
 ### Bug fixes
 

@@ -88,7 +88,7 @@ impl Ord for KllFloat<f32> {
     fn cmp(&self, other: &Self) -> Ordering {
         // `KllFloat::new` rejects NaN, so `<` and `>` define the same total order as
         // `partial_cmp` (including `-0.0 == 0.0`) without emitting an unreachable NaN panic
-        // branch at every comparison site.
+        // branch in `Ord::cmp` callers.
         if self.0 < other.0 {
             Ordering::Less
         } else if self.0 > other.0 {
@@ -120,9 +120,7 @@ impl Eq for KllFloat<f64> {}
 impl Ord for KllFloat<f64> {
     #[inline(always)]
     fn cmp(&self, other: &Self) -> Ordering {
-        // `KllFloat::new` rejects NaN, so `<` and `>` define the same total order as
-        // `partial_cmp` (including `-0.0 == 0.0`) without emitting an unreachable NaN panic
-        // branch at every comparison site.
+        // Same non-NaN total order as `KllFloat<f32>::cmp`.
         if self.0 < other.0 {
             Ordering::Less
         } else if self.0 > other.0 {

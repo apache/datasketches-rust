@@ -85,23 +85,26 @@ fn merge_updates_extrema_from_either_side() {
 }
 
 #[test]
-fn merge_into_exact_sketch_adopts_higher_levels() {
-    let mut small = KllSketch::<i64>::new(64).unwrap();
-    for item in 0..10 {
-        small.update(item);
-    }
-    let mut large = KllSketch::<i64>::new(64).unwrap();
-    for item in 10..10_000 {
-        large.update(item);
-    }
-    assert!(!small.is_estimation_mode());
-    assert!(large.is_estimation_mode());
+fn merge_interleaves_populated_higher_levels_without_compaction() {
+    // At `k = 8`, nine levels have total capacity `72`, so each `weight = 256` (`1 << 8`) call
+    // exceeds `free_capacity` and lands directly in level 8 (`[1, 3]` and `[2, 4]`) while four
+    // retained items stay below level capacity `8`, avoiding random compaction.
+    let mut left = KllSketch::<i64>::new(8).unwrap();
+    left.update_with_weight(1, 256);
+    left.update_with_weight(3, 256);
 
-    small.merge(&large);
+    let mut right = KllSketch::<i64>::new(8).unwrap();
+    right.update_with_weight(2, 256);
+    right.update_with_weight(4, 256);
 
-    assert!(small.is_estimation_mode());
-    assert_eq!(small.total_weight(), 10_000);
-    assert_eq!(small.min_item(), Some(&0));
-    assert_eq!(small.max_item(), Some(&9_999));
-    assert_eq!(small.sorted_view().total_weight(), 10_000);
+    left.merge(&right);
+
+    assert_eq!(left.total_weight(), 1_024);
+    assert_eq!(left.num_retained(), 4);
+    for (item, expected_rank) in [(1, 0.25), (2, 0.5), (3, 0.75), (4, 1.0)] {
+        assert_eq!(
+            left.rank(&item, SearchCriteria::Inclusive),
+            Some(expected_rank)
+        );
+    }
 }

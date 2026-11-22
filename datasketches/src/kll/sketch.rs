@@ -1157,31 +1157,11 @@ fn merge_slice_into_level<T: Clone + Ord>(target: &mut Vec<T>, right: &[T]) {
         return;
     }
     let left = std::mem::take(target);
-    *target = if left.is_empty() {
-        right.to_vec()
-    } else {
-        merge_sorted_vec_with_slice(left, right)
-    };
-}
-
-fn merge_sorted_vec<T: Ord>(left: Vec<T>, right: Vec<T>) -> Vec<T> {
-    let mut merged = Vec::with_capacity(left.len() + right.len());
-    let mut left_iter = left.into_iter().peekable();
-    let mut right_iter = right.into_iter().peekable();
-
-    while let (Some(l), Some(r)) = (left_iter.peek(), right_iter.peek()) {
-        if l.cmp(r) == Ordering::Less {
-            merged.push(left_iter.next().unwrap());
-        } else {
-            merged.push(right_iter.next().unwrap());
-        }
+    if left.is_empty() {
+        *target = right.to_vec();
+        return;
     }
-    merged.extend(left_iter);
-    merged.extend(right_iter);
-    merged
-}
 
-fn merge_sorted_vec_with_slice<T: Clone + Ord>(left: Vec<T>, right: &[T]) -> Vec<T> {
     let mut merged = Vec::with_capacity(left.len() + right.len());
     let mut left_iter = left.into_iter().peekable();
     let mut right_index = 0;
@@ -1199,6 +1179,23 @@ fn merge_sorted_vec_with_slice<T: Clone + Ord>(left: Vec<T>, right: &[T]) -> Vec
     }
     merged.extend(left_iter);
     merged.extend_from_slice(&right[right_index..]);
+    *target = merged;
+}
+
+fn merge_sorted_vec<T: Ord>(left: Vec<T>, right: Vec<T>) -> Vec<T> {
+    let mut merged = Vec::with_capacity(left.len() + right.len());
+    let mut left_iter = left.into_iter().peekable();
+    let mut right_iter = right.into_iter().peekable();
+
+    while let (Some(l), Some(r)) = (left_iter.peek(), right_iter.peek()) {
+        if l.cmp(r) == Ordering::Less {
+            merged.push(left_iter.next().unwrap());
+        } else {
+            merged.push(right_iter.next().unwrap());
+        }
+    }
+    merged.extend(left_iter);
+    merged.extend(right_iter);
     merged
 }
 

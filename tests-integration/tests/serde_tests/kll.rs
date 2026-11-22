@@ -594,6 +594,9 @@ fn test_rejects_retained_items_outside_min_max_bounds() {
     for bytes in [
         encode_kll_i64(3, 9, false, &[&[5, 2, 8, 6], &[3, 7]]),
         encode_kll_i64(1, 7, false, &[&[5, 2, 8, 6], &[3, 7]]),
+        // Claiming level zero is sorted when an interior item is out of order and out of bounds
+        // must still be rejected before trusting the endpoint bounds check.
+        encode_kll_i64(1, 9, true, &[&[2, 10, 5, 7], &[3, 7]]),
         // Sorted level zero and sorted higher levels violate bounds at their first or last item.
         encode_kll_i64(3, 9, true, &[&[2, 5, 6], &[3, 7]]),
         encode_kll_i64(1, 7, true, &[&[2, 5, 8], &[3, 7]]),
