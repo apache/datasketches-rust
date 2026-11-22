@@ -23,9 +23,16 @@
 //! by Zohar Karnin and Edo Liberty.
 //!
 //! Point coordinates use `f32` or `f64` ([`DensityValue`]). [`DensitySketch::new`] uses the
-//! default [`GaussianKernel`]; supply a custom [`Kernel`] with [`DensitySketch::with_kernel`]. The
-//! binary serialization format supports cross-language interchange when both sides use the same
-//! coordinate type and kernel.
+//! default [`GaussianKernel`]; supply a custom [`Kernel`] with [`DensitySketch::with_kernel`].
+//!
+//! # Cross-language compatibility
+//!
+//! The binary serialization format supports cross-language interchange when both sides use the
+//! same coordinate type and an equivalent [`Kernel`]; kernel configuration is not stored in the
+//! serialized image.
+//!
+//! Earlier DataSketches C++ and DataSketches Python releases wrote Density snapshots using a
+//! conflicting format; Rust rejects those snapshots.
 //!
 //! # Examples
 //!

@@ -45,6 +45,19 @@
 //! * Use [`raw_bytes`](crate::hash::value::raw_bytes) for UTF-8 strings and byte slices.
 //!
 //! Skip empty strings and byte slices before updating the sketch.
+//!
+//! # Examples
+//!
+//! ```
+//! use datasketches::common::NumStdDev;
+//! use datasketches::cpc::CpcSketch;
+//!
+//! let mut sketch = CpcSketch::new(11)?;
+//! sketch.update("apple");
+//! sketch.update("banana");
+//! assert!(sketch.upper_bound(NumStdDev::Two) >= sketch.estimate());
+//! # Ok::<(), datasketches::error::Error>(())
+//! ```
 
 mod compression;
 mod compression_data;

@@ -164,6 +164,70 @@ impl<T: Clone + Ord> KllSketch<T> {
         self.internal_update(item);
     }
 
+    /// Updates the sketch with an item repeated `weight` times.
+    ///
+    /// Equivalent to calling [`update`](Self::update) `weight` times. Weights that fit in the
+    /// remaining capacity are appended directly to level zero; larger weights build an exact
+    /// binary-level representation and merge it in one pass. A weight of `0` is a no-op.
+    ///
+    /// # Panics
+    ///
+    /// Panics without modifying the sketch if the stream weight would exceed [`u64::MAX`].
+    ///
+    /// # Cross-language compatibility
+    ///
+    /// DataSketches Java and DataSketches C++ reject weights of `0` and weights above `2^61 - 1`.
+    /// This method treats `0` as a no-op and accepts weights up to [`u64::MAX`], folding bits at or
+    /// above level `60` into level `60`. DataSketches Java reads serialized stream weights as
+    /// signed 64-bit integers, so keep [`total_weight`](Self::total_weight) at or below
+    /// `i64::MAX as u64` when serializing sketches for Java.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::common::SearchCriteria;
+    /// use datasketches::kll::KllSketch;
+    ///
+    /// let mut sketch = KllSketch::<i64>::new(200)?;
+    /// sketch.update_with_weight(1, 3);
+    /// sketch.update_with_weight(2, 1_000_000);
+    /// assert_eq!(sketch.total_weight(), 1_000_003);
+    /// assert_eq!(
+    ///     sketch.rank(&1, SearchCriteria::Inclusive),
+    ///     Some(3.0 / 1_000_003.0)
+    /// );
+    /// # Ok::<(), datasketches::error::Error>(())
+    /// ```
+    pub fn update_with_weight(&mut self, item: T, weight: u64) {
+        if weight == 0 {
+            return;
+        }
+        if weight == 1 {
+            self.update(item);
+            return;
+        }
+        let final_n = self
+            .n
+            .checked_add(weight)
+            .expect("total stream weight overflow");
+
+        let free_capacity = self.capacity - self.num_retained;
+        if weight <= free_capacity as u64 {
+            let count = weight as usize;
+            self.levels[0].reserve(count);
+            self.update_min_max(&item);
+            for _ in 1..count {
+                self.levels[0].push(item.clone());
+            }
+            self.levels[0].push(item);
+            self.n = final_n;
+            self.num_retained += count;
+            self.is_level_zero_sorted = false;
+        } else {
+            self.merge_weighted(item, weight, final_n);
+        }
+    }
+
     /// Resets this sketch to its empty state while retaining its configuration.
     pub fn reset(&mut self) {
         self.min_k = self.k;
@@ -220,23 +284,36 @@ impl<T: Clone + Ord> KllSketch<T> {
         if self.is_empty() {
             return None;
         }
-        // Keep a direct scan to preserve query latency for small exact sketches.
-        if let [items] = self.levels.as_slice() {
-            let count = count_rank_linear(items, item, criteria);
-            return Some(count as f64 / self.n as f64);
+        let mut rank_weight = if let [items] = self.levels.as_slice() {
+            // Keep a direct scan to preserve query latency for small exact sketches.
+            count_rank_linear(items, item, criteria) as u64
+        } else {
+            let mut weight = 0u64;
+            for (level, items) in self.levels.iter().enumerate() {
+                // Higher levels are always sorted; level zero may be an unsorted update buffer.
+                let is_sorted = level > 0 || self.is_level_zero_sorted;
+                let count = if is_sorted {
+                    count_rank_sorted(items, item, criteria)
+                } else {
+                    count_rank_linear(items, item, criteria)
+                };
+                weight += (count as u64) << level;
+            }
+            weight
+        };
+
+        // Reconcile with the unit-weight extrema included in `SortedView`: interior weights cancel
+        // out, so only the all-above (`0`) and all-below (`self.n`) boundaries can change by 1.
+        if rank_weight == 0 {
+            if matches_search_criteria(self.min_item.as_ref().unwrap(), item, criteria) {
+                rank_weight = 1;
+            }
+        } else if rank_weight == self.n
+            && !matches_search_criteria(self.max_item.as_ref().unwrap(), item, criteria)
+        {
+            rank_weight = self.n - 1;
         }
 
-        let mut rank_weight = 0u64;
-        for (level, items) in self.levels.iter().enumerate() {
-            // Higher levels are always sorted; level zero may be an unsorted update buffer.
-            let is_sorted = level > 0 || self.is_level_zero_sorted;
-            let count = if is_sorted {
-                count_rank_sorted(items, item, criteria)
-            } else {
-                count_rank_linear(items, item, criteria)
-            };
-            rank_weight += (count as u64) << level;
-        }
         Some(rank_weight as f64 / self.n as f64)
     }
 
@@ -328,8 +405,7 @@ impl<T: Clone + Ord> KllSketch<T> {
         build_sorted_view(
             &self.levels,
             self.is_level_zero_sorted,
-            self.min_item.clone(),
-            self.max_item.clone(),
+            self.min_item.as_ref().zip(self.max_item.as_ref()),
         )
     }
 
@@ -826,29 +902,58 @@ impl<T: Clone + Ord> KllSketch<T> {
 
     fn merge_higher_levels(&mut self, other: &KllSketch<T>) {
         let provisional_levels = self.levels.len().max(other.levels.len());
-        let mut self_levels = std::mem::take(&mut self.levels);
-        let mut work_levels = vec![Vec::new(); provisional_levels];
-        work_levels[0] = std::mem::take(&mut self_levels[0]);
+        let mut work_levels = std::mem::take(&mut self.levels);
+        work_levels.resize_with(provisional_levels, Vec::new);
 
-        for level in 1..provisional_levels {
-            let left = if level < self_levels.len() {
-                std::mem::take(&mut self_levels[level])
-            } else {
-                Vec::new()
-            };
-            let right = other.levels.get(level).cloned().unwrap_or_default();
-
-            work_levels[level] = if left.is_empty() {
-                right
-            } else if right.is_empty() {
-                left
-            } else {
-                merge_sorted_vec(left, right)
-            };
+        for (work_level, other_level) in work_levels.iter_mut().zip(&other.levels).skip(1) {
+            if !other_level.is_empty() {
+                merge_into_level(work_level, other_level.clone());
+            }
         }
 
         self.levels = general_compress(work_levels, self.k, self.is_level_zero_sorted);
         self.refresh_capacity_state();
+    }
+
+    fn merge_weighted(&mut self, item: T, weight: u64, final_n: u64) {
+        debug_assert!(weight >= 2);
+        self.update_min_max(&item);
+        if weight & 1 != 0 {
+            self.internal_update(item.clone());
+        }
+
+        // An item at level `h` carries weight `2^h`, so `(weight >> h) & 1` copies at each level
+        // form an exact representation of `weight` copies. Bits at or above `MAX_NUM_LEVELS - 1`
+        // fold into `weight >> (MAX_NUM_LEVELS - 1)` (at most 15) copies at the top level.
+        let num_levels = ((u64::BITS - weight.leading_zeros()) as usize).min(MAX_NUM_LEVELS);
+        let top_level = num_levels - 1;
+        let provisional_levels = self.levels.len().max(num_levels);
+        let mut work_levels = std::mem::take(&mut self.levels);
+        work_levels.resize_with(provisional_levels, Vec::new);
+
+        for (level, work_level) in work_levels.iter_mut().enumerate().take(top_level).skip(1) {
+            if (weight >> level) & 1 != 0 {
+                merge_into_level(work_level, vec![item.clone()]);
+            }
+        }
+
+        let top_count = (weight >> top_level) as usize;
+        let mut top_items = Vec::with_capacity(top_count);
+        for _ in 1..top_count {
+            top_items.push(item.clone());
+        }
+        top_items.push(item);
+        merge_into_level(&mut work_levels[top_level], top_items);
+
+        self.levels = general_compress(work_levels, self.k, self.is_level_zero_sorted);
+        self.refresh_capacity_state();
+        self.n = final_n;
+
+        debug_assert_eq!(
+            self.levels_weight(),
+            self.n,
+            "total weight does not match n"
+        );
     }
 
     fn refresh_capacity_state(&mut self) {
@@ -941,21 +1046,22 @@ impl<T: Clone + Ord> KllSketch<T> {
     }
 }
 
+fn matches_search_criteria<T: Ord>(retained: &T, item: &T, criteria: SearchCriteria) -> bool {
+    match criteria {
+        SearchCriteria::Inclusive => retained <= item,
+        SearchCriteria::Exclusive => retained < item,
+    }
+}
+
 fn count_rank_linear<T: Ord>(items: &[T], item: &T, criteria: SearchCriteria) -> usize {
     items
         .iter()
-        .filter(|retained| match criteria {
-            SearchCriteria::Inclusive => *retained <= item,
-            SearchCriteria::Exclusive => *retained < item,
-        })
+        .filter(|retained| matches_search_criteria(*retained, item, criteria))
         .count()
 }
 
 fn count_rank_sorted<T: Ord>(items: &[T], item: &T, criteria: SearchCriteria) -> usize {
-    items.partition_point(|retained| match criteria {
-        SearchCriteria::Inclusive => retained <= item,
-        SearchCriteria::Exclusive => retained < item,
-    })
+    items.partition_point(|retained| matches_search_criteria(retained, item, criteria))
 }
 
 fn normalized_rank_error(k: u16, pmf: bool) -> f64 {
@@ -1014,7 +1120,19 @@ fn downsample<T, I: ExactSizeIterator<Item = T>>(items: I, offset: bool, use_up:
         .collect()
 }
 
-fn merge_sorted_vec<T: Clone + Ord>(left: Vec<T>, right: Vec<T>) -> Vec<T> {
+fn merge_into_level<T: Ord>(target: &mut Vec<T>, right: Vec<T>) {
+    if right.is_empty() {
+        return;
+    }
+    let left = std::mem::take(target);
+    *target = if left.is_empty() {
+        right
+    } else {
+        merge_sorted_vec(left, right)
+    };
+}
+
+fn merge_sorted_vec<T: Ord>(left: Vec<T>, right: Vec<T>) -> Vec<T> {
     let mut merged = Vec::with_capacity(left.len() + right.len());
     let mut left_iter = left.into_iter().peekable();
     let mut right_iter = right.into_iter().peekable();
@@ -1031,7 +1149,7 @@ fn merge_sorted_vec<T: Clone + Ord>(left: Vec<T>, right: Vec<T>) -> Vec<T> {
     merged
 }
 
-fn general_compress<T: Clone + Ord>(
+fn general_compress<T: Ord>(
     mut levels_in: Vec<Vec<T>>,
     k: u16,
     is_level_zero_sorted: bool,

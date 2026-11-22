@@ -24,6 +24,8 @@ use datasketches::hash::value::raw_bytes;
 
 use crate::hash_inputs::ITEMS;
 use crate::hash_inputs::bytes_32_values;
+use crate::hash_inputs::bytes_64_values;
+use crate::hash_inputs::variable_byte_slices;
 
 fn u64(bencher: Bencher) {
     bencher.bench_local(|| {
@@ -48,12 +50,8 @@ fn bytes_32(bencher: Bencher) {
 }
 
 fn variable_bytes(bencher: Bencher) {
-    let values = bytes_32_values();
-    let keys: Vec<_> = values
-        .iter()
-        .enumerate()
-        .map(|(i, bytes)| &bytes[..1 + i % bytes.len()])
-        .collect();
+    let values = bytes_64_values();
+    let keys = variable_byte_slices(&values);
 
     bencher.bench_local(|| {
         let mut sketch = CpcSketch::new(11).unwrap();
@@ -67,5 +65,5 @@ fn variable_bytes(bencher: Bencher) {
 pub fn register(runner: &mut Runner) {
     runner.case("cpc::update::u64", 3_000, u64);
     runner.case("cpc::update::bytes_32", 2_000, bytes_32);
-    runner.case("cpc::update::variable_bytes", 2_000, variable_bytes);
+    runner.case("cpc::update::variable_bytes", 1_800, variable_bytes);
 }

@@ -33,7 +33,7 @@ use crate::hll::serialization::encode_mode_byte;
 
 #[derive(Debug, Clone)]
 pub struct HashSet {
-    container: Container,
+    container: Container<Box<[Coupon]>>,
 }
 
 impl Default for HashSet {
@@ -51,7 +51,7 @@ impl HashSet {
     }
 
     pub fn update(&mut self, coupon: Coupon) {
-        let mask = (1 << self.container.lg_size()) - 1;
+        let mask = u32::try_from(self.container.capacity() - 1).unwrap();
 
         let mut probe = coupon.raw() & mask;
         let starting_position = probe;
@@ -76,7 +76,7 @@ impl HashSet {
         }
     }
 
-    pub fn container(&self) -> &Container {
+    pub fn container(&self) -> &Container<Box<[Coupon]>> {
         &self.container
     }
 
@@ -137,11 +137,7 @@ impl HashSet {
             }
 
             Ok(Self {
-                container: Container::from_coupons(
-                    lg_arr,
-                    coupons.into_boxed_slice(),
-                    coupon_count,
-                ),
+                container: Container::from_coupons(coupons.into_boxed_slice(), coupon_count),
             })
         }
     }
