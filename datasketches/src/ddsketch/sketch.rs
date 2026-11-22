@@ -461,8 +461,9 @@ impl DdSketch {
     /// Returns the approximate lower discrete quantile for `rank` in `[0.0, 1.0]`, or `Ok(None)`
     /// if this sketch is empty.
     ///
-    /// Selects the bucket containing zero-based sorted item `floor(rank * (total_weight - 1))`,
-    /// evaluated with exact integer scaling for weights above `2^53`.
+    /// Selects the bucket containing zero-based sorted item `floor(rank * (total_weight - 1))`
+    /// using the standard `f64` product when `total_weight <= 2^53` (matching the Java reference
+    /// implementation) and exact integer significand scaling when `total_weight > 2^53`.
     ///
     /// # Errors
     ///
@@ -806,6 +807,8 @@ fn check_rank(rank: f64) -> Result<(), Error> {
     Ok(())
 }
 
+const MAX_EXACT_F64_INT: u64 = (1_u64 << 53) - 1;
+
 #[inline]
 fn quantile_target_index(rank: f64, last: u64) -> u64 {
     if rank == 0.0 || last == 0 {
@@ -813,6 +816,13 @@ fn quantile_target_index(rank: f64, last: u64) -> u64 {
     }
     if rank == 1.0 {
         return last;
+    }
+    if last <= MAX_EXACT_F64_INT {
+        // When `last < 2^53`, `last as f64` is exact; evaluating the `f64` product matches
+        // `sketches-java` (`(int) (q * (count - 1))`) so decimal ranks such as `0.95 * 100.0 ==
+        // 95.0` select item 95 rather than truncating the slightly smaller binary value of `0.95`
+        // to item 94.
+        return ((rank * (last as f64)).floor() as u64).min(last);
     }
     // Multiply the exact 53-bit IEEE 754 significand by `last` in u128 before shifting so ranks
     // retain full precision when `total_weight` exceeds 2^53.

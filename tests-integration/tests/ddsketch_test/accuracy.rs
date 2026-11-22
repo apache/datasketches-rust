@@ -21,25 +21,14 @@ use datasketches::ddsketch::MappingKind;
 use datasketches::ddsketch::StoreKind;
 
 fn exact_lower_quantile(sorted: &[f64], rank: f64) -> f64 {
-    let last = (sorted.len() - 1) as u64;
+    let last = sorted.len() - 1;
     if rank == 0.0 || last == 0 {
         return sorted[0];
     }
     if rank == 1.0 {
-        return sorted[last as usize];
+        return sorted[last];
     }
-    let bits = rank.to_bits();
-    let biased_exp = ((bits >> 52) & 0x7ff) as u32;
-    if biased_exp == 0 {
-        return sorted[0];
-    }
-    let significand = (bits & 0x000f_ffff_ffff_ffff) | (1_u64 << 52);
-    let shift = 1075 - biased_exp;
-    let idx = if shift >= 128 {
-        0
-    } else {
-        ((u128::from(significand) * u128::from(last)) >> shift) as usize
-    };
+    let idx = ((rank * (last as f64)).floor() as usize).min(last);
     sorted[idx]
 }
 
@@ -246,7 +235,24 @@ fn sparse_and_unbounded_dense_produce_identical_estimates() {
 }
 
 #[test]
-fn quantile_rank_multiplication_remains_exact_above_2_pow_53_weight() {
+fn quantile_rank_product_matches_f64_below_2_pow_53_and_stays_exact_above() {
+    // With 101 well-separated items (`last = 100`), `0.95 * 100.0 == 95.0` in IEEE 754 `f64`, so
+    // `quantile(0.95)` must select 0-based item 95 (`10^9.5`) rather than item 94 (`10^9.4`).
+    let mut sketch_101 = DdSketch::new(0.01).unwrap();
+    for i in 0..=100 {
+        sketch_101.update(10.0_f64.powf(f64::from(i) * 0.1));
+    }
+    let expected_95 = 10.0_f64.powf(9.5);
+    let p95 = sketch_101.quantile(0.95).unwrap().unwrap();
+    assert!(
+        (p95 - expected_95).abs() <= 0.01 * expected_95,
+        "p95={p95}, expected={expected_95}"
+    );
+    assert_eq!(
+        sketch_101.quantiles(&[0.95]).unwrap().unwrap()[0].to_bits(),
+        p95.to_bits()
+    );
+
     let mut sketch = DdSketch::new(0.01).unwrap();
     let bucket_weight: u64 = (1_u64 << 52) + 2;
     sketch.update_with_weight(10.0, bucket_weight);
