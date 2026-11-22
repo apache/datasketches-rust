@@ -36,6 +36,7 @@ const CUBIC_D0: f64 = CUBIC_B * CUBIC_B - 3.0 * CUBIC_A * CUBIC_C;
 
 /// Index mapping curve used by a [`DdSketch`](super::DdSketch) to map positive magnitudes to
 /// integer bucket indices.
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum MappingKind {
     /// Exact logarithmic mapping (`floor(ln(x) / ln(gamma))`).

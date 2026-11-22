@@ -37,6 +37,7 @@ pub const MAX_DENSE_LEN: usize = if MAX_VEC_U64_LEN < MAX_I32_SPAN {
 
 /// Bin storage strategy used by the positive and negative stores of a
 /// [`DdSketch`](super::DdSketch).
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum StoreKind {
     /// Contiguous bin array capped at `max_num_bins` per sign, collapsing lowest-magnitude bins
