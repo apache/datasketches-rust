@@ -137,8 +137,9 @@ impl HllSketch {
 
     /// Updates the sketch with a value.
     ///
-    /// To reuse the hash across sketches, see [`Coupon`] and
-    /// [`update_with_coupon`](Self::update_with_coupon).
+    /// To reuse the hash across sketches, see [`Coupon`],
+    /// [`update_with_coupon`](Self::update_with_coupon), and
+    /// [`update_with_coupons`](Self::update_with_coupons).
     ///
     /// # Examples
     ///
@@ -201,6 +202,38 @@ impl HllSketch {
             Mode::Array4(arr) => arr.update(coupon),
             Mode::Array6(arr) => arr.update(coupon),
             Mode::Array8(arr) => arr.update(coupon),
+        }
+    }
+
+    /// Updates the sketch with precomputed [`Coupon`]s in order, without hashing the inputs again.
+    ///
+    /// This has the same effect on the sketch and its estimates as calling
+    /// [`update_with_coupon`](Self::update_with_coupon) for each coupon.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::hll::Coupon;
+    /// use datasketches::hll::HllSketch;
+    /// use datasketches::hll::HllType;
+    ///
+    /// let mut sketch = HllSketch::new(12, HllType::Hll8).unwrap();
+    /// let coupons = ["apple", "pear"].into_iter().map(Coupon::from_value);
+    /// sketch.update_with_coupons(coupons);
+    /// assert!(sketch.estimate() >= 2.0);
+    /// ```
+    pub fn update_with_coupons(&mut self, coupons: impl IntoIterator<Item = Coupon>) {
+        let mut coupons = coupons.into_iter();
+        loop {
+            match &mut self.mode {
+                Mode::List { .. } | Mode::Set { .. } => match coupons.next() {
+                    Some(coupon) => self.update_with_coupon(coupon),
+                    None => return,
+                },
+                Mode::Array4(array) => return array.update_coupons(coupons),
+                Mode::Array6(array) => return array.update_coupons(coupons),
+                Mode::Array8(array) => return array.update_coupons(coupons),
+            }
         }
     }
 
