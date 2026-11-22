@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::cmp::Ordering;
 use std::panic::AssertUnwindSafe;
 use std::panic::catch_unwind;
 
@@ -63,14 +64,42 @@ fn empty_and_reset_state() {
 }
 
 #[test]
-fn float_adapter_rejects_nan() {
+fn float_adapter_rejects_nan_and_orders_values() {
     assert_eq!(
         KllFloat::<f32>::new(f32::NAN).unwrap_err().kind(),
         ErrorKind::InvalidArgument
     );
+    assert_eq!(
+        KllFloat::<f64>::new(f64::NAN).unwrap_err().kind(),
+        ErrorKind::InvalidArgument
+    );
+
+    let f32_neg_zero = KllFloat::<f32>::new(-0.0).unwrap();
+    let f32_pos_zero = KllFloat::<f32>::new(0.0).unwrap();
+    assert_eq!(f32_neg_zero.cmp(&f32_pos_zero), Ordering::Equal);
+    assert_eq!(f32_neg_zero, f32_pos_zero);
+    let f32_chain = [f32::NEG_INFINITY, -1.0, 0.0, 1.0, f32::INFINITY]
+        .map(|v| KllFloat::<f32>::new(v).unwrap());
+    assert!(
+        f32_chain
+            .windows(2)
+            .all(|pair| pair[0].cmp(&pair[1]) == Ordering::Less)
+    );
+
+    let f64_neg_zero = KllFloat::<f64>::new(-0.0).unwrap();
+    let f64_pos_zero = KllFloat::<f64>::new(0.0).unwrap();
+    assert_eq!(f64_neg_zero.cmp(&f64_pos_zero), Ordering::Equal);
+    assert_eq!(f64_neg_zero, f64_pos_zero);
+    let f64_chain = [f64::NEG_INFINITY, -1.0, 0.0, 1.0, f64::INFINITY]
+        .map(|v| KllFloat::<f64>::new(v).unwrap());
+    assert!(
+        f64_chain
+            .windows(2)
+            .all(|pair| pair[0].cmp(&pair[1]) == Ordering::Less)
+    );
 
     let mut sketch = KllSketch::new(DEFAULT_K).unwrap();
-    sketch.update(KllFloat::<f32>::new(0.0).unwrap());
+    sketch.update(f32_pos_zero);
     assert_eq!(sketch.min_item().map(|value| **value), Some(0.0));
 }
 
