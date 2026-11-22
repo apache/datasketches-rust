@@ -31,7 +31,7 @@
 //! Custom item types need only [`Clone`] and [`Ord`] for in-memory use. Serialization additionally
 //! requires [`ReqValue`].
 //!
-//! # Example
+//! # Examples
 //!
 //! ```
 //! use datasketches::common::SearchCriteria;
@@ -70,7 +70,7 @@ const MIN_K: u16 = 4;
 const MAX_K: u16 = 1024;
 
 /// Selects which tail of the rank domain the sketch optimizes for.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum RankAccuracy {
     /// Optimize for accuracy at high ranks (near 1.0).
     #[default]
@@ -83,6 +83,6 @@ pub enum RankAccuracy {
 /// determine its capacity and compaction range; the count doubles as its state grows.
 const INITIAL_SECTIONS_PER_COMPACTOR: u8 = 3;
 
-fn nearest_even_section_size(value: f32) -> u32 {
-    ((value / 2.0).round() as u32) << 1
+fn nearest_even_section_size(value: f32) -> usize {
+    ((value / 2.0).round() as usize) << 1
 }

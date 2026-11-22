@@ -35,7 +35,7 @@ static DELTA_OF_NUM_STD_DEVS: [f64; 4] = [
 /// confidence intervals with greater certainty that the true value falls within
 /// the bounds.
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum NumStdDev {
     /// One standard deviation (\~68% confidence interval).
     One = 1,

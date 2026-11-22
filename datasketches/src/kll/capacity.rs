@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use super::DEFAULT_M;
+
 const POWERS_OF_THREE: [u64; 31] = [
     1,
     3,
@@ -52,46 +54,41 @@ const POWERS_OF_THREE: [u64; 31] = [
 const MAX_DEPTH: usize = 60;
 const MAX_SHALLOW_DEPTH: usize = POWERS_OF_THREE.len() - 1;
 
-pub fn total_capacity(k: u16, minimum_capacity: u8, num_levels: usize) -> u32 {
-    validate_inputs(k, minimum_capacity, num_levels);
+pub fn total_capacity(k: u16, num_levels: usize) -> u32 {
+    validate_inputs(k, num_levels);
     let mut total: u32 = 0;
     for level in 0..num_levels {
-        total += level_capacity_unchecked(k, num_levels, level, minimum_capacity);
+        total += level_capacity_unchecked(k, num_levels, level);
     }
     total
 }
 
-pub fn level_capacity(k: u16, num_levels: usize, level: usize, minimum_capacity: u8) -> u32 {
-    validate_inputs(k, minimum_capacity, num_levels);
+pub fn level_capacity(k: u16, num_levels: usize, level: usize) -> u32 {
+    validate_inputs(k, num_levels);
     assert!(
         level < num_levels,
         "KLL level index must be in [0, {num_levels}), got {level}"
     );
-    level_capacity_unchecked(k, num_levels, level, minimum_capacity)
+    level_capacity_unchecked(k, num_levels, level)
 }
 
-fn validate_inputs(k: u16, minimum_capacity: u8, num_levels: usize) {
+fn validate_inputs(k: u16, num_levels: usize) {
     assert!(
         (1..=MAX_DEPTH + 1).contains(&num_levels),
         "KLL number of levels must be in [1, {}], got {num_levels}",
         MAX_DEPTH + 1
     );
     assert!(
-        minimum_capacity as u16 <= k,
-        "KLL minimum level capacity must not exceed k: minimum capacity {minimum_capacity}, k {k}"
+        DEFAULT_M as u16 <= k,
+        "KLL minimum level capacity must not exceed k: minimum capacity {DEFAULT_M}, k {k}"
     );
 }
 
-const fn level_capacity_unchecked(
-    k: u16,
-    num_levels: usize,
-    level: usize,
-    minimum_capacity: u8,
-) -> u32 {
+const fn level_capacity_unchecked(k: u16, num_levels: usize, level: usize) -> u32 {
     let depth = num_levels - level - 1;
     let capacity = capacity_at_depth(k, depth) as u32;
-    if capacity < minimum_capacity as u32 {
-        minimum_capacity as u32
+    if capacity < DEFAULT_M as u32 {
+        DEFAULT_M as u32
     } else {
         capacity
     }

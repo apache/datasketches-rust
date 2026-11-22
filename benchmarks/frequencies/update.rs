@@ -25,6 +25,8 @@ use datasketches::hash::value::raw_bytes::RawBytes;
 
 use crate::hash_inputs::ITEMS;
 use crate::hash_inputs::bytes_32_values;
+use crate::hash_inputs::bytes_64_values;
+use crate::hash_inputs::variable_byte_slices;
 
 fn u64(bencher: Bencher) {
     bencher.bench_local(|| {
@@ -48,7 +50,21 @@ fn bytes_32(bencher: Bencher) {
     });
 }
 
+fn variable_bytes(bencher: Bencher) {
+    let values = bytes_64_values();
+    let keys = variable_byte_slices(&values);
+
+    bencher.bench_local(|| {
+        let mut sketch = FrequentItemsSketch::<RawBytes<&[u8]>>::new(16_384).unwrap();
+        for &key in &keys {
+            sketch.update(raw_bytes::from_slice(black_box(key)));
+        }
+        black_box(sketch)
+    });
+}
+
 pub fn register(runner: &mut Runner) {
     runner.case("frequencies::update::u64", 2_000, u64);
     runner.case("frequencies::update::bytes_32", 900, bytes_32);
+    runner.case("frequencies::update::variable_bytes", 800, variable_bytes);
 }

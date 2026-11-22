@@ -53,34 +53,61 @@
 //! because of the partially inverted Logic in the Sliding flavor, where the presence of coupons
 //! is sometimes indicated by the ABSENCE of row_col pairs in the surprises table.)
 //!
-//! How does [`CpcUnion::to_sketch`] work?
+//! Result extraction and serialization:
 //!
-//! If the union has an Accumulator state, make a copy of that sketch.
+//! An accumulator is already a result sketch: [`CpcUnion::to_sketch`] clones it, while
+//! [`CpcUnion::serialize`] borrows it directly. Its estimator state must therefore be maintained
+//! during merging, including input adoption and downsampling, rather than repaired on export.
 //!
-//! If the union has a BitMatrix state, then we have to convert the bitMatrix back into a sketch,
-//! which requires doing some extra work to figure out the values of num_coupons, offset,
-//! first_interesting_column, and kxp.
+//! A bit matrix has no sliding window or surprise table. [`CpcUnion::to_sketch`] reconstructs
+//! both to return a mutable sketch, while [`CpcUnion::serialize`] streams the window bytes and
+//! ordered coupon pairs directly from the matrix into the compressed encoder. Neither export path
+//! has the stream history needed by HIP, so both emit the merged estimator state.
 
 use std::fmt;
+use std::iter::Empty;
 
+use crate::codec::SketchBytes;
 use crate::cpc::CpcSketch;
 use crate::cpc::DEFAULT_LG_K;
 use crate::cpc::Flavor;
+use crate::cpc::compression::PairEncoder;
+use crate::cpc::compression::determine_pseudo_phase;
+use crate::cpc::compression_data::COLUMN_PERMUTATIONS_FOR_ENCODING;
 use crate::cpc::count_bits_set_in_matrix;
 use crate::cpc::determine_correct_offset;
+use crate::cpc::determine_flavor;
 use crate::cpc::pair_table::PairTable;
+use crate::cpc::serialization::serialize_compressed;
 use crate::error::Error;
+use crate::error::ErrorKind;
 use crate::hash::DEFAULT_UPDATE_SEED;
+use crate::hash::compute_seed_hash;
 
 /// Union operator for CPC sketches.
 #[derive(Clone)]
 pub struct CpcUnion {
-    // immutable config variables
+    // Effective precision can decrease when merging a smaller sketch.
     lg_k: u8,
     seed: u64,
-
-    // union state
     state: UnionState,
+}
+
+/// Working representation of the union's coupon set.
+#[derive(Debug, Clone)]
+enum UnionState {
+    /// An empty or sparse sketch that can be exported directly.
+    ///
+    /// Every nonempty accumulator has `merge_flag = true`, including one adopted from a single
+    /// input. Union results use the merged estimator consistently, regardless of whether the
+    /// input's HIP history was retained by cloning or lost during table traversal.
+    /// Empty accumulators keep `merge_flag = false` to preserve the existing empty-result encoding.
+    Accumulator(CpcSketch),
+    /// A full coupon matrix, used once an input or the accumulator outgrows sparse mode.
+    ///
+    /// Row-wise OR combines coupon sets without maintaining a sketch's compressed layout or
+    /// estimator fields. Export derives the window and surprise pairs from the matrix on demand.
+    BitMatrix(Vec<u64>),
 }
 
 impl Default for CpcUnion {
@@ -105,7 +132,6 @@ impl CpcUnion {
     ///
     /// Returns an error if `lg_k` is not in the range `[4, 26]`, or the computed seed hash is zero.
     pub fn with_seed(lg_k: u8, seed: u64) -> Result<Self, Error> {
-        // We begin with the accumulator holding an EMPTY_MERGED sketch object.
         let sketch = CpcSketch::with_seed(lg_k, seed)?;
         let state = UnionState::Accumulator(sketch);
         Ok(Self { lg_k, seed, state })
@@ -143,16 +169,7 @@ impl CpcUnion {
     /// ```
     pub fn to_sketch(&self) -> CpcSketch {
         match &self.state {
-            UnionState::Accumulator(sketch) => {
-                if sketch.is_empty() {
-                    CpcSketch::with_seed(self.lg_k, self.seed).unwrap()
-                } else {
-                    let mut sketch = sketch.clone();
-                    assert_eq!(sketch.flavor(), Flavor::Sparse);
-                    sketch.merge_flag = true;
-                    sketch
-                }
-            }
+            UnionState::Accumulator(sketch) => sketch.clone(),
             UnionState::BitMatrix(matrix) => {
                 let lg_k = self.lg_k;
 
@@ -199,14 +216,41 @@ impl CpcUnion {
                     sketch.first_interesting_column = offset; // corner case
                 }
 
-                // HIP-related fields will contain zeros, and that is okay since merge_flag is true,
-                // and thus the HIP estimator will not be used.
+                // The matrix has no stream history, so the constructor's HIP fields cannot
+                // estimate this result. The merged estimator uses only lg_k and num_coupons.
                 sketch.sliding_window = sliding_window;
                 sketch.surprising_value_table = Some(table);
                 sketch.merge_flag = true;
 
                 sketch
             }
+        }
+    }
+
+    /// Serializes the union's result as a `CpcSketch`.
+    ///
+    /// Produces the same bytes as [`Self::to_sketch`] followed by [`CpcSketch::serialize`]
+    /// without constructing an intermediate sketch.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::cpc::CpcSketch;
+    /// use datasketches::cpc::CpcUnion;
+    ///
+    /// let mut sketch = CpcSketch::new(12).unwrap();
+    /// sketch.update("apple");
+    ///
+    /// let mut union = CpcUnion::new(12).unwrap();
+    /// union.update(&sketch).unwrap();
+    ///
+    /// let result = CpcSketch::deserialize(&union.serialize()).unwrap();
+    /// assert_eq!(result.estimate(), union.to_sketch().estimate());
+    /// ```
+    pub fn serialize(&self) -> Vec<u8> {
+        match &self.state {
+            UnionState::Accumulator(sketch) => sketch.serialize(),
+            UnionState::BitMatrix(matrix) => serialize_bit_matrix(matrix, self.lg_k, self.seed),
         }
     }
 
@@ -236,6 +280,14 @@ impl CpcUnion {
         // if source is past SPARSE mode, make sure that union is a bitMatrix.
         if flavor > Flavor::Sparse {
             if let UnionState::Accumulator(old_sketch) = &self.state {
+                if flavor == Flavor::Sliding && old_sketch.is_empty() && self.lg_k == sketch.lg_k()
+                {
+                    // At equal precision, each source row is already the result of OR with
+                    // the corresponding zero row in the empty union.
+                    self.state = UnionState::BitMatrix(sketch.build_bit_matrix());
+                    return Ok(());
+                }
+
                 // convert the accumulator to a bit matrix
                 let bit_matrix = old_sketch.build_bit_matrix();
                 self.state = UnionState::BitMatrix(bit_matrix);
@@ -254,14 +306,16 @@ impl CpcUnion {
                         );
                     }
 
-                    // The following partially fixes the snowplow problem provided that the K's
-                    // are equal.
+                    // Matching precision lets us reuse the table layout without reinserting
+                    // coupons. Adoption still produces a union result, so it must use the merged
+                    // estimator even though the cloned input may have a valid HIP history.
                     if old_flavor == Flavor::Empty && self.lg_k == sketch.lg_k() {
                         *old_sketch = sketch.clone();
+                        old_sketch.merge_flag = true;
                         return Ok(());
                     }
 
-                    walk_table_updating_sketch(old_sketch, sketch.surprising_value_table());
+                    merge_table_into_sketch(old_sketch, sketch.surprising_value_table());
                     let final_flavor = old_sketch.flavor();
 
                     // if the accumulator has graduated beyond sparse, switch to a bit matrix
@@ -289,13 +343,9 @@ impl CpcUnion {
                 if matches!(flavor, Flavor::Hybrid | Flavor::Pinned) {
                     // [Case C] Hybrid, bitMatrix valid, accumulator == null
                     // [Case C] Pinned, bitMatrix valid, accumulator == null
-                    or_window_into_matrix(
-                        old_matrix,
-                        self.lg_k,
-                        &sketch.sliding_window,
-                        sketch.window_offset,
-                        sketch.lg_k(),
-                    );
+                    // Hybrid and Pinned windows occupy columns 0 through 7.
+                    debug_assert_eq!(sketch.window_offset, 0);
+                    or_rows_into_matrix(old_matrix, &sketch.sliding_window);
                     or_table_into_matrix(old_matrix, self.lg_k, sketch.surprising_value_table());
                     return Ok(());
                 }
@@ -305,7 +355,7 @@ impl CpcUnion {
                 // Instead, we convert it to a bitMatrix that can be ORed into the destination.
                 assert_eq!(flavor, Flavor::Sliding);
                 let src_matrix = sketch.build_bit_matrix();
-                or_matrix_into_matrix(old_matrix, self.lg_k, &src_matrix, sketch.lg_k());
+                or_rows_into_matrix(old_matrix, &src_matrix);
             }
         }
         Ok(())
@@ -322,7 +372,7 @@ impl CpcUnion {
                 }
 
                 let mut new_sketch = CpcSketch::with_seed(new_lg_k, self.seed).unwrap();
-                walk_table_updating_sketch(&mut new_sketch, sketch.surprising_value_table());
+                merge_table_into_sketch(&mut new_sketch, sketch.surprising_value_table());
 
                 let final_new_flavor = new_sketch.flavor();
                 // SV table had to have something in it
@@ -340,7 +390,7 @@ impl CpcUnion {
             UnionState::BitMatrix(matrix) => {
                 let new_k = 1 << new_lg_k;
                 let mut new_matrix = vec![0; new_k];
-                or_matrix_into_matrix(&mut new_matrix, new_lg_k, matrix, self.lg_k);
+                or_rows_into_matrix(&mut new_matrix, matrix);
                 self.lg_k = new_lg_k;
                 self.state = UnionState::BitMatrix(new_matrix);
             }
@@ -373,21 +423,6 @@ impl fmt::Debug for CpcUnion {
     }
 }
 
-fn or_window_into_matrix(
-    dst_matrix: &mut [u64],
-    dst_lg_k: u8,
-    src_window: &[u8],
-    src_offset: u8,
-    src_lg_k: u8,
-) {
-    assert!(dst_lg_k <= src_lg_k);
-    let dst_mask = (1 << dst_lg_k) - 1; // downsamples when dst_lg_k < src_lg_k
-    let src_k = 1 << src_lg_k;
-    for src_row in 0..src_k {
-        dst_matrix[src_row & dst_mask] |= (src_window[src_row] as u64) << src_offset;
-    }
-}
-
 fn or_table_into_matrix(dst_matrix: &mut [u64], dst_lg_k: u8, src_table: &PairTable) {
     let dst_mask = (1 << dst_lg_k) - 1; // downsamples when dst_lg_k < src_lg_k
     let slots = src_table.slots();
@@ -401,18 +436,21 @@ fn or_table_into_matrix(dst_matrix: &mut [u64], dst_lg_k: u8, src_table: &PairTa
     }
 }
 
-fn or_matrix_into_matrix(dst_matrix: &mut [u64], dst_lg_k: u8, src_matrix: &[u64], src_lg_k: u8) {
-    assert!(dst_lg_k <= src_lg_k);
-    let dst_mask = (1 << dst_lg_k) - 1; // downsamples when dst_lg_k < src_lg_k
-    let src_k = 1 << src_lg_k;
-    for src_row in 0..src_k {
-        let dst_row = src_row & dst_mask;
-        dst_matrix[dst_row] |= src_matrix[src_row];
+fn or_rows_into_matrix<T: Copy + Into<u64>>(dst: &mut [u64], src: &[T]) {
+    // Folding keeps the low row bits, so every destination-sized block maps to the same rows.
+    let blocks = src.chunks_exact(dst.len());
+    debug_assert!(blocks.remainder().is_empty());
+    for block in blocks {
+        for (row, &bits) in dst.iter_mut().zip(block) {
+            *row |= bits.into();
+        }
     }
 }
 
-fn walk_table_updating_sketch(sketch: &mut CpcSketch, table: &PairTable) {
+fn merge_table_into_sketch(sketch: &mut CpcSketch, table: &PairTable) {
     assert!(sketch.lg_k() <= 26);
+    // Table traversal cannot preserve the stream order required by the HIP estimator.
+    sketch.merge_flag = true;
 
     let slots = table.slots();
     let num_slots = slots.len() as u32;
@@ -439,15 +477,173 @@ fn walk_table_updating_sketch(sketch: &mut CpcSketch, table: &PairTable) {
     }
 }
 
-/// The internal State of the Union operation.
-///
-/// At most one of BitMatrix and accumulator will be non-null at any given moment. Accumulator is a
-/// sketch object that is employed until it graduates out of Sparse mode.
-///
-/// At that point, it is converted into a full-sized bitMatrix, which is mathematically a sketch,
-/// but doesn't maintain any of the "extra" fields of our sketch objects.
-#[derive(Debug, Clone)]
-enum UnionState {
-    Accumulator(CpcSketch),
-    BitMatrix(Vec<u64>),
+fn serialize_bit_matrix(matrix: &[u64], lg_k: u8, seed: u64) -> Vec<u8> {
+    let seed_hash = compute_seed_hash(seed, ErrorKind::InvalidArgument)
+        .expect("union seed was validated at construction");
+    let num_coupons = count_bits_set_in_matrix(matrix);
+    let flavor = determine_flavor(lg_k, num_coupons);
+
+    match flavor {
+        Flavor::Empty => {
+            serialize_compressed(lg_k, seed_hash, 0, 0, None, None::<Empty<u8>>, 0, |_| 0)
+        }
+        Flavor::Sparse | Flavor::Hybrid => serialize_compressed(
+            lg_k,
+            seed_hash,
+            0,
+            num_coupons,
+            None,
+            None::<Empty<u8>>,
+            num_coupons,
+            |bytes| encode_all_matrix_pairs(matrix, num_coupons, lg_k, bytes),
+        ),
+        Flavor::Pinned => {
+            let table_num_entries = matrix.iter().map(|&word| (word >> 8).count_ones()).sum();
+            let window = matrix.iter().map(|&word| (word & 0xFF) as u8);
+            serialize_compressed(
+                lg_k,
+                seed_hash,
+                0,
+                num_coupons,
+                None,
+                Some(window),
+                table_num_entries,
+                |bytes| encode_pinned_matrix_pairs(matrix, table_num_entries, lg_k, bytes),
+            )
+        }
+        Flavor::Sliding => {
+            let offset = determine_correct_offset(lg_k, num_coupons);
+            let clear_mask = (0xFFu64 << offset) ^ u64::MAX;
+            let flip_mask = (1u64 << offset) - 1;
+            let mut surprises = 0u64;
+            let mut table_num_entries = 0u32;
+            for &word in matrix {
+                let pattern = (word & clear_mask) ^ flip_mask;
+                surprises |= pattern;
+                table_num_entries += pattern.count_ones();
+            }
+            let first_interesting_column = (surprises.trailing_zeros() as u8).min(offset);
+            let window = matrix.iter().map(|&word| ((word >> offset) & 0xFF) as u8);
+            serialize_compressed(
+                lg_k,
+                seed_hash,
+                first_interesting_column,
+                num_coupons,
+                None,
+                Some(window),
+                table_num_entries,
+                |bytes| {
+                    encode_sliding_matrix_pairs(
+                        matrix,
+                        lg_k,
+                        num_coupons,
+                        offset,
+                        clear_mask,
+                        flip_mask,
+                        table_num_entries,
+                        bytes,
+                    )
+                },
+            )
+        }
+    }
+}
+
+/// Streams all set `(row, col)` bits in ascending row-major order.
+fn encode_all_matrix_pairs(
+    matrix: &[u64],
+    num_pairs: u32,
+    lg_k: u8,
+    bytes: &mut SketchBytes,
+) -> usize {
+    let mut encoder = PairEncoder::new(num_pairs, lg_k, bytes);
+    for (row, &word) in matrix.iter().enumerate() {
+        let row_prefix = (row as u32) << 6;
+        let mut pattern = word;
+        while pattern != 0 {
+            let col = pattern.trailing_zeros();
+            pattern &= pattern - 1;
+            encoder.write_pair(row_prefix | col);
+        }
+    }
+    encoder.finish()
+}
+
+/// Streams post-window `(row, col - 8)` surprise bits (`col >= 8`) in ascending row-major order.
+fn encode_pinned_matrix_pairs(
+    matrix: &[u64],
+    num_pairs: u32,
+    lg_k: u8,
+    bytes: &mut SketchBytes,
+) -> usize {
+    let mut encoder = PairEncoder::new(num_pairs, lg_k, bytes);
+    for (row, &word) in matrix.iter().enumerate() {
+        let row_prefix = (row as u32) << 6;
+        let mut shifted = word >> 8;
+        while shifted != 0 {
+            let reduced_col = shifted.trailing_zeros();
+            shifted &= shifted - 1;
+            encoder.write_pair(row_prefix | reduced_col);
+        }
+    }
+    encoder.finish()
+}
+
+/// Streams sliding-flavor surprise pairs row by row, sorting permuted columns within each row.
+fn encode_sliding_matrix_pairs(
+    matrix: &[u64],
+    lg_k: u8,
+    num_coupons: u32,
+    offset: u8,
+    clear_mask: u64,
+    flip_mask: u64,
+    num_pairs: u32,
+    bytes: &mut SketchBytes,
+) -> usize {
+    debug_assert!(offset <= 56);
+    let pseudo_phase = determine_pseudo_phase(lg_k, num_coupons);
+    let permutation = &COLUMN_PERMUTATIONS_FOR_ENCODING[pseudo_phase as usize];
+    let col_shift = 56 - offset;
+    let mut encoder = PairEncoder::new(num_pairs, lg_k, bytes);
+    let mut row_cols = [0u8; 56];
+
+    for (row, &word) in matrix.iter().enumerate() {
+        let mut pattern = (word & clear_mask) ^ flip_mask;
+        if pattern == 0 {
+            continue;
+        }
+
+        let row_prefix = (row as u32) << 6;
+        let first_col = pattern.trailing_zeros() as u8;
+        pattern &= pattern - 1;
+        let first_perm = permutation[((first_col + col_shift) & 63) as usize];
+        if pattern == 0 {
+            encoder.write_pair(row_prefix | u32::from(first_perm));
+            continue;
+        }
+
+        row_cols[0] = first_perm;
+        let mut len = 1;
+        while pattern != 0 {
+            let col = pattern.trailing_zeros() as u8;
+            pattern &= pattern - 1;
+            row_cols[len] = permutation[((col + col_shift) & 63) as usize];
+            len += 1;
+        }
+
+        // Rows are visited in ascending order; only permuted columns within this row need sorting.
+        for i in 1..len {
+            let key = row_cols[i];
+            let mut j = i;
+            while j > 0 && row_cols[j - 1] > key {
+                row_cols[j] = row_cols[j - 1];
+                j -= 1;
+            }
+            row_cols[j] = key;
+        }
+        for &perm_col in &row_cols[..len] {
+            encoder.write_pair(row_prefix | u32::from(perm_col));
+        }
+    }
+    encoder.finish()
 }

@@ -48,7 +48,7 @@ fn empty_sketch_has_default_state_and_absent_queries() {
     assert_eq!(sketch.k(), 12);
     assert!(sketch.is_empty());
     assert!(!sketch.is_estimation_mode());
-    assert_eq!(sketch.n(), 0);
+    assert_eq!(sketch.total_weight(), 0);
     assert_eq!(sketch.num_retained(), 0);
     assert_that!(sketch.min_item(), none());
     assert_that!(sketch.max_item(), none());
@@ -79,7 +79,7 @@ fn single_value_hra_answers_exactly() {
 
     assert!(!sketch.is_empty());
     assert!(!sketch.is_estimation_mode());
-    assert_eq!(sketch.n(), 1);
+    assert_eq!(sketch.total_weight(), 1);
     assert_eq!(sketch.num_retained(), 1);
     assert_eq!(sketch.min_item().copied(), Some(req_f32(1.0)));
     assert_eq!(sketch.max_item().copied(), Some(req_f32(1.0)));
@@ -128,7 +128,7 @@ fn single_value_lra_preserves_configuration() {
     assert_eq!(sketch.rank_accuracy(), RankAccuracy::LowRank);
     assert!(!sketch.is_empty());
     assert!(!sketch.is_estimation_mode());
-    assert_eq!(sketch.n(), 1);
+    assert_eq!(sketch.total_weight(), 1);
     assert_eq!(sketch.num_retained(), 1);
 }
 
@@ -143,7 +143,7 @@ fn repeated_values_respect_search_criteria() {
     }
 
     assert!(!sketch.is_estimation_mode());
-    assert_eq!(sketch.n(), 6);
+    assert_eq!(sketch.total_weight(), 6);
     assert_eq!(sketch.num_retained(), 6);
 
     assert_that!(
@@ -183,8 +183,8 @@ fn estimation_mode_compresses_and_keeps_min_max() {
 
     assert!(!sketch.is_empty());
     assert!(sketch.is_estimation_mode());
-    assert_eq!(sketch.n(), n);
-    assert_that!(sketch.num_retained(), lt(n as u32));
+    assert_eq!(sketch.total_weight(), n);
+    assert_that!(sketch.num_retained(), lt(n as usize));
     assert_eq!(sketch.min_item().copied(), Some(req_f64(0.0)));
     assert_eq!(sketch.max_item().copied(), Some(req_f64((n - 1) as f64)));
 
@@ -276,7 +276,7 @@ fn weight_overflow_preserves_state() {
         sketch.merge(&sketch.clone()).unwrap();
         sketch.update(0);
     }
-    assert_eq!(sketch.n(), u64::MAX);
+    assert_eq!(sketch.total_weight(), u64::MAX);
     let before = sketch.serialize();
 
     assert!(catch_unwind(AssertUnwindSafe(|| sketch.update(1))).is_err());

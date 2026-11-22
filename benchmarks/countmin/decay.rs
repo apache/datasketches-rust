@@ -29,7 +29,7 @@ fn u64(bencher: Bencher, factor: f64) {
 
     bencher.bench_local(|| {
         let mut sketch = sketch.clone();
-        black_box(&mut sketch).decay(black_box(factor))
+        black_box(&mut sketch).decay(black_box(factor)).unwrap()
     });
 }
 

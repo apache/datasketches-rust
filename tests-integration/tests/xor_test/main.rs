@@ -16,5 +16,3 @@
 // under the License.
 
 mod filter;
-
-mod parts;

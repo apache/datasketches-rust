@@ -15,15 +15,15 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use datasketches::thetacommon::JaccardSimilarity;
+use datasketches::common::JaccardSimilarity;
+use datasketches::error::ErrorKind;
 use datasketches::tuple::DefaultUpdatePolicy;
 use datasketches::tuple::TupleJaccardSimilarity;
 use datasketches::tuple::TupleSketch;
 use datasketches::tuple::TupleSketchBuilder;
 use googletest::assert_that;
-use googletest::prelude::anything;
-use googletest::prelude::err;
 use googletest::prelude::near;
+use tests_integration::ZERO_HASH_SEED;
 
 use crate::default_tuple_sketch_builder;
 use crate::tuple_sketch_with_range;
@@ -134,19 +134,29 @@ fn test_custom_seed_and_seed_mismatch() {
     let jaccard = operator.compute(&sketch_a, &sketch_b).unwrap();
     assert_jaccard_exact(jaccard, 1.0);
     assert!(operator.exactly_equal(&sketch_a, &sketch_b).unwrap());
-    assert_that!(
-        TupleJaccardSimilarity::default().compute(&sketch_a, &sketch_b),
-        err(anything())
+    assert_eq!(
+        TupleJaccardSimilarity::with_seed(ZERO_HASH_SEED)
+            .unwrap_err()
+            .kind(),
+        ErrorKind::InvalidArgument
     );
-    assert_that!(
-        TupleJaccardSimilarity::default().exactly_equal(&sketch_a, &sketch_b),
-        err(anything())
+    let default_operator = TupleJaccardSimilarity::default();
+    assert_eq!(
+        default_operator
+            .compute(&sketch_a, &sketch_b)
+            .unwrap_err()
+            .kind(),
+        ErrorKind::InvalidArgument
     );
-    assert!(
-        !TupleJaccardSimilarity::default()
-            .exactly_equal(&empty, &sketch_a)
-            .unwrap()
+    assert_eq!(
+        default_operator
+            .exactly_equal(&sketch_a, &sketch_b)
+            .unwrap_err()
+            .kind(),
+        ErrorKind::InvalidArgument
     );
+    assert_jaccard_exact(default_operator.compute(&empty, &sketch_a).unwrap(), 0.0);
+    assert!(!default_operator.exactly_equal(&empty, &sketch_a).unwrap());
 }
 
 #[test]

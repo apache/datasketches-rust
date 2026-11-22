@@ -39,25 +39,28 @@ fn exact_mode_rank_quantile_pmf_and_cdf_match_reference() {
     }
 
     assert!(!sketch.is_estimation_mode());
-    assert_eq!(sketch.n(), 10);
+    assert_eq!(sketch.total_weight(), 10);
     assert_eq!(sketch.num_retained(), 10);
+    let view = sketch.sorted_view();
 
     for (value, expected) in [(1.0, 0.0), (2.0, 0.1), (6.0, 0.5), (9.0, 0.8), (10.0, 0.9)] {
-        assert_that!(
-            sketch
-                .rank(&req_f64(value), SearchCriteria::Exclusive)
-                .expect("rank should succeed"),
-            near(expected, 1e-6)
-        );
+        let value = req_f64(value);
+        for rank in [
+            sketch.rank(&value, SearchCriteria::Exclusive),
+            view.rank(&value, SearchCriteria::Exclusive),
+        ] {
+            assert_that!(rank.unwrap(), near(expected, 1e-6));
+        }
     }
 
     for (value, expected) in [(1.0, 0.1), (2.0, 0.2), (5.0, 0.5), (9.0, 0.9), (10.0, 1.0)] {
-        assert_that!(
-            sketch
-                .rank(&req_f64(value), SearchCriteria::Inclusive)
-                .expect("rank should succeed"),
-            near(expected, 1e-6)
-        );
+        let value = req_f64(value);
+        for rank in [
+            sketch.rank(&value, SearchCriteria::Inclusive),
+            view.rank(&value, SearchCriteria::Inclusive),
+        ] {
+            assert_that!(rank.unwrap(), near(expected, 1e-6));
+        }
     }
 
     for (rank, expected) in [(0.0, 1.0), (0.1, 2.0), (0.5, 6.0), (0.9, 10.0), (1.0, 10.0)] {
@@ -194,7 +197,7 @@ fn quantile_endpoints_with_large_stream_weight() {
         sketch.merge(&sketch.clone()).unwrap();
     }
     sketch.update(1);
-    assert_eq!(sketch.n(), (1 << 53) + 1);
+    assert_eq!(sketch.total_weight(), (1 << 53) + 1);
     let view = sketch.sorted_view();
 
     for criteria in [SearchCriteria::Inclusive, SearchCriteria::Exclusive] {

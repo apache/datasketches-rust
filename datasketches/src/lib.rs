@@ -35,6 +35,8 @@
 //!
 //! * Use `bloom` for incremental probabilistic membership queries or `xor` for immutable sets.
 //! * Use `countmin` for point-frequency estimates and `frequencies` for discovering heavy hitters.
+//! * Use `density` for streaming kernel density estimation and coreset construction over
+//!   multidimensional numeric vectors.
 //! * Use `hll` for fast distinct counts, `cpc` for compact serialized distinct counts, or `theta`
 //!   when set operations are required.
 //! * Use `kll`, `req`, or `tdigest` for ranks and quantiles. KLL provides strong general-purpose
@@ -54,7 +56,7 @@
 //! * `raw_bytes` for byte and string contents;
 //! * `canonical_float` for floating-point values;
 //! * `sign_extend` for short integers used with HLL and CPC;
-//! * `natural_extend` for short integers used with Bloom filters.
+//! * `natural_extend` for short integers used with Bloom filters and Count-Min sketches.
 //!
 //! When interoperating with an implementation that skips empty strings, check for empty input
 //! before updating here as well.
@@ -73,6 +75,8 @@ pub mod bloom;
 pub mod countmin;
 #[cfg(feature = "cpc")]
 pub mod cpc;
+#[cfg(feature = "density")]
+pub mod density;
 #[cfg(feature = "frequencies")]
 pub mod frequencies;
 #[cfg(feature = "hll")]
@@ -85,8 +89,6 @@ pub mod req;
 pub mod tdigest;
 #[cfg(any(feature = "theta", feature = "tuple"))]
 mod thetafamily;
-#[cfg(any(feature = "theta", feature = "tuple"))]
-pub use self::thetafamily::common as thetacommon;
 #[cfg(feature = "theta")]
 pub use self::thetafamily::theta;
 #[cfg(feature = "tuple")]

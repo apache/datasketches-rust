@@ -27,9 +27,9 @@
 //! provides their ordinary numerical order. Custom ordering should be expressed with a newtype
 //! that implements [`Ord`], keeping the ordering semantics part of the item type.
 //!
-//! # Usage
+//! # Examples
 //!
-//! ```rust
+//! ```
 //! use datasketches::common::SearchCriteria;
 //! use datasketches::kll::KllSketch;
 //!
@@ -55,7 +55,7 @@ pub use self::value::KllFloat;
 pub use self::value::KllValue;
 /// Default value of parameter k.
 const DEFAULT_K: u16 = 200;
-/// Default value of parameter m.
+/// Fixed minimum level capacity encoded in the KLL wire format.
 const DEFAULT_M: u8 = 8;
 /// Minimum value of parameter k.
 const MIN_K: u16 = DEFAULT_M as u16;

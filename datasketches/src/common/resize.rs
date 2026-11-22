@@ -41,7 +41,7 @@
 /// assert_eq!(factor.value(), 4);
 /// assert_eq!(factor.lg_value(), 2);
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ResizeFactor {
     /// Does not resize; configures the sketch at full size.
     X1,

@@ -15,22 +15,29 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::fmt;
+
 use crate::error::Error;
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::theta::CompactThetaSketch;
 use crate::theta::ThetaSketchView;
 use crate::theta::hash_table::ThetaEntry;
-use crate::thetacommon::intersection::IntersectionMergePolicy;
-use crate::thetacommon::intersection::IntersectionState;
+use crate::thetafamily::common::intersection::IntersectionMergePolicy;
+use crate::thetafamily::common::intersection::IntersectionState;
 
 /// Stateful intersection operator for Theta sketches.
 ///
 /// A newly created operator has no result. [`has_result`](Self::has_result) returns `false` and
 /// [`to_sketch`](Self::to_sketch) returns `None` until the first successful
 /// [`update`](Self::update).
-#[derive(Debug)]
 pub struct ThetaIntersection {
     state: IntersectionState<ThetaEntry, NoopIntersectionPolicy>,
+}
+
+impl fmt::Debug for ThetaIntersection {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.state.fmt_debug(f, "ThetaIntersection")
+    }
 }
 
 impl Default for ThetaIntersection {
@@ -91,11 +98,7 @@ impl ThetaIntersection {
     /// If `ordered` is `true`, retained hashes are sorted in ascending order.
     pub fn to_sketch(&self, ordered: bool) -> Option<CompactThetaSketch> {
         self.state
-            .to_compact_sketch_state(ordered)
-            .map(|compact_state| {
-                CompactThetaSketch::from_compact_state(
-                    compact_state.map_retained_entries(|entry| entry.hash()),
-                )
-            })
+            .to_compact_hash_state(ordered)
+            .map(CompactThetaSketch::from_compact_state)
     }
 }

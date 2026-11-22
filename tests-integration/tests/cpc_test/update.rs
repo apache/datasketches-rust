@@ -17,7 +17,6 @@
 
 use datasketches::common::NumStdDev;
 use datasketches::cpc::CpcSketch;
-use datasketches::error::ErrorKind;
 use googletest::assert_that;
 use googletest::prelude::ge;
 use googletest::prelude::le;
@@ -57,25 +56,4 @@ fn test_many_values() {
     );
     assert_that!(sketch.estimate(), ge(sketch.lower_bound(NumStdDev::One)));
     assert_that!(sketch.estimate(), le(sketch.upper_bound(NumStdDev::One)));
-}
-
-#[test]
-fn test_max_serialized_bytes_validates_lg_k() {
-    assert!(CpcSketch::max_serialized_bytes(11).unwrap() > 0);
-    for lg_k in [3, 27] {
-        let error = CpcSketch::max_serialized_bytes(lg_k).unwrap_err();
-        assert_eq!(error.kind(), ErrorKind::InvalidArgument);
-    }
-}
-
-#[test]
-fn test_estimated_size() {
-    let mut sketch = CpcSketch::new(11).unwrap();
-    let empty_size = sketch.estimated_size();
-    assert_eq!(empty_size, 0);
-
-    for i in 0..10_000 {
-        sketch.update(i);
-    }
-    assert_eq!(sketch.estimated_size(), 2304);
 }

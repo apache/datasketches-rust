@@ -56,7 +56,7 @@ use crate::hll::serialization::extract_tgt_hll_type;
 /// A HyperLogLog sketch.
 ///
 /// See the [module level documentation](super) for more.
-#[derive(Clone, PartialEq)]
+#[derive(Clone)]
 pub struct HllSketch {
     lg_config_k: u8,
     mode: Mode,
@@ -137,11 +137,9 @@ impl HllSketch {
 
     /// Updates the sketch with a value.
     ///
-    /// Use [`hash::value`](crate::hash::value) wrappers to select an input encoding for
-    /// cross-language hashing.
-    ///
-    /// To reuse the hash across sketches, see [`Coupon`] and
-    /// [`update_with_coupon`](Self::update_with_coupon).
+    /// To reuse the hash across sketches, see [`Coupon`],
+    /// [`update_with_coupon`](Self::update_with_coupon), and
+    /// [`update_with_coupons`](Self::update_with_coupons).
     ///
     /// # Examples
     ///
@@ -204,6 +202,38 @@ impl HllSketch {
             Mode::Array4(arr) => arr.update(coupon),
             Mode::Array6(arr) => arr.update(coupon),
             Mode::Array8(arr) => arr.update(coupon),
+        }
+    }
+
+    /// Updates the sketch with precomputed [`Coupon`]s in order, without hashing the inputs again.
+    ///
+    /// This has the same effect on the sketch and its estimates as calling
+    /// [`update_with_coupon`](Self::update_with_coupon) for each coupon.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::hll::Coupon;
+    /// use datasketches::hll::HllSketch;
+    /// use datasketches::hll::HllType;
+    ///
+    /// let mut sketch = HllSketch::new(12, HllType::Hll8).unwrap();
+    /// let coupons = ["apple", "pear"].into_iter().map(Coupon::from_value);
+    /// sketch.update_with_coupons(coupons);
+    /// assert!(sketch.estimate() >= 2.0);
+    /// ```
+    pub fn update_with_coupons(&mut self, coupons: impl IntoIterator<Item = Coupon>) {
+        let mut coupons = coupons.into_iter();
+        loop {
+            match &mut self.mode {
+                Mode::List { .. } | Mode::Set { .. } => match coupons.next() {
+                    Some(coupon) => self.update_with_coupon(coupon),
+                    None => return,
+                },
+                Mode::Array4(array) => return array.update_coupons(coupons),
+                Mode::Array6(array) => return array.update_coupons(coupons),
+                Mode::Array8(array) => return array.update_coupons(coupons),
+            }
         }
     }
 
@@ -389,12 +419,6 @@ impl HllSketch {
                         )));
                     }
 
-                    if lg_arr != 3 {
-                        return Err(Error::deserial(format!(
-                            "LIST mode lg_arr: expected 3, got {lg_arr}"
-                        )));
-                    }
-                    let lg_arr = lg_arr as usize;
                     let coupon_count = state as usize;
                     let list = List::deserialize(cursor, lg_arr, coupon_count, empty, compact)?;
                     Mode::List { list, hll_type }
@@ -470,10 +494,12 @@ impl HllSketch {
         }
     }
 
-    /// Returns an estimate of the sketch's memory usage in bytes.
+    /// Returns an estimate of heap memory used by this sketch in bytes.
+    ///
+    /// Excludes inline storage and allocator overhead.
     pub fn estimated_size(&self) -> usize {
         match &self.mode {
-            Mode::List { list, .. } => list.container().estimated_size(),
+            Mode::List { .. } => 0,
             Mode::Set { set, .. } => set.container().estimated_size(),
             Mode::Array4(arr) => arr.estimated_size(),
             Mode::Array6(arr) => arr.estimated_size(),
@@ -515,7 +541,11 @@ impl fmt::Debug for HllSketch {
     }
 }
 
-fn promote_container_to_set(container: &Container, hll_type: HllType) -> Mode {
+#[cold]
+fn promote_container_to_set<S: AsRef<[Coupon]>>(
+    container: &Container<S>,
+    hll_type: HllType,
+) -> Mode {
     let mut set = HashSet::default();
     for coupon in container.iter() {
         set.update(coupon);
@@ -524,6 +554,7 @@ fn promote_container_to_set(container: &Container, hll_type: HllType) -> Mode {
     Mode::Set { set, hll_type }
 }
 
+#[cold]
 fn grow_set(old_set: &HashSet, hll_type: HllType) -> Mode {
     let new_size = old_set.container().lg_size() + 1;
     let mut new_set = HashSet::new(new_size);
@@ -537,7 +568,12 @@ fn grow_set(old_set: &HashSet, hll_type: HllType) -> Mode {
     }
 }
 
-fn promote_container_to_array(container: &Container, hll_type: HllType, lg_config_k: u8) -> Mode {
+#[cold]
+fn promote_container_to_array<S: AsRef<[Coupon]>>(
+    container: &Container<S>,
+    hll_type: HllType,
+    lg_config_k: u8,
+) -> Mode {
     match hll_type {
         HllType::Hll4 => {
             let mut array = Array4::new(lg_config_k);

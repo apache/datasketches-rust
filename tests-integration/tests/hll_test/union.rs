@@ -69,6 +69,38 @@ fn assert_same_estimate_and_bounds(actual: &HllSketch, expected: &HllSketch) {
     }
 }
 
+fn canonical_hll_bytes(sketch: &HllSketch) -> Vec<u8> {
+    let mut bytes = sketch.serialize();
+    bytes[4] = 0; // lg_arr depends on table history / compact vs updatable form
+    let trailing_offset = match bytes[7] & 0x3 {
+        // Set mode stores open-addressing coupons after the 12-byte preamble.
+        1 => Some(12),
+        // HLL4 stores auxiliary exception coupons after the 40-byte preamble and 4-bit nibbles.
+        2 if sketch.target_type() == HllType::Hll4 => {
+            Some(40 + (1usize << (sketch.lg_config_k() - 1)))
+        }
+        _ => None,
+    };
+    if let Some(offset) = trailing_offset {
+        let mut coupons: Vec<u32> = bytes[offset..]
+            .chunks_exact(4)
+            .map(|chunk| u32::from_le_bytes(chunk.try_into().unwrap()))
+            .collect();
+        coupons.sort_unstable();
+        for (dst, coupon) in bytes[offset..].chunks_exact_mut(4).zip(coupons) {
+            dst.copy_from_slice(&coupon.to_le_bytes());
+        }
+    }
+    bytes
+}
+
+fn assert_hll_sketches_eq(actual: &HllSketch, expected: &HllSketch) {
+    assert_eq!(actual.lg_config_k(), expected.lg_config_k());
+    assert_eq!(actual.target_type(), expected.target_type());
+    assert_eq!(actual.is_empty(), expected.is_empty());
+    assert_eq!(canonical_hll_bytes(actual), canonical_hll_bytes(expected));
+}
+
 fn serialize_flat_union(first: &HllSketch, second: &HllSketch, third: &HllSketch) -> Vec<u8> {
     let mut union = HllUnion::new(8).unwrap();
     union.update(first);
@@ -708,19 +740,6 @@ fn test_union_validation() {
 }
 
 #[test]
-fn test_union_estimated_size() {
-    let mut union = HllUnion::new(10).unwrap();
-    assert_eq!(union.estimated_size(), 32);
-
-    let mut sketch = HllSketch::new(10, HllType::Hll8).unwrap();
-    for i in 0..1000 {
-        sketch.update(i);
-    }
-    union.update(&sketch);
-    assert_eq!(union.estimated_size(), 1024);
-}
-
-#[test]
 fn test_single_hll_input_preserves_estimate_and_bounds() {
     for hll_type in HLL_TYPES {
         let sketch = make_hll_sketch(hll_type, 8, 0, 1_000);
@@ -797,7 +816,7 @@ fn test_union_query_timing_does_not_change_mixed_updates() {
             &queried.to_sketch(HllType::Hll8),
             &queried.to_sketch(HllType::Hll4),
         );
-        let restored = HllSketch::deserialize(&queried.serialize()).unwrap();
+        let restored = HllSketch::deserialize(&queried.serialize(HllType::Hll8)).unwrap();
         assert_eq!(restored.composite_estimate(), queried.composite_estimate());
         for value in start + 5_000..start + 5_100 {
             queried.update_value(value);
@@ -805,7 +824,10 @@ fn test_union_query_timing_does_not_change_mixed_updates() {
         }
     }
 
-    assert_eq!(queried.serialize(), deferred.serialize());
+    assert_eq!(
+        queried.serialize(HllType::Hll8),
+        deferred.serialize(HllType::Hll8)
+    );
     assert_same_estimate_and_bounds(
         &queried.to_sketch(HllType::Hll8),
         &deferred.to_sketch(HllType::Hll8),
@@ -821,7 +843,10 @@ fn test_union_query_timing_does_not_change_mixed_updates() {
         copied.update_value(value);
         deferred.update_value(value);
     }
-    assert_eq!(copied.serialize(), deferred.serialize());
+    assert_eq!(
+        copied.serialize(HllType::Hll8),
+        deferred.serialize(HllType::Hll8)
+    );
 }
 
 #[test]
@@ -835,25 +860,36 @@ fn test_union_supports_shared_queries_after_dense_merges() {
             (index + 1) * 5_000,
         ));
     }
-    let expected = union.to_sketch(HllType::Hll8);
-    let bytes = expected.serialize();
+    let expected_hll8 = union.to_sketch(HllType::Hll8);
+    let bytes_hll8 = expected_hll8.serialize();
+    let expected_hll6 = union.to_sketch(HllType::Hll6);
+    let bytes_hll6 = expected_hll6.serialize();
+    let expected_hll4 = union.to_sketch(HllType::Hll4);
     let barrier = std::sync::Barrier::new(4);
 
     std::thread::scope(|scope| {
         for _ in 0..4 {
             scope.spawn(|| {
                 barrier.wait();
-                assert_eq!(union.estimate(), expected.estimate());
-                assert_eq!(union.composite_estimate(), expected.composite_estimate());
+                assert_eq!(union.estimate(), expected_hll8.estimate());
+                assert_eq!(
+                    union.composite_estimate(),
+                    expected_hll8.composite_estimate()
+                );
                 assert_eq!(
                     union.lower_bound(NumStdDev::Two),
-                    expected.lower_bound(NumStdDev::Two)
+                    expected_hll8.lower_bound(NumStdDev::Two)
                 );
                 assert_eq!(
                     union.upper_bound(NumStdDev::Two),
-                    expected.upper_bound(NumStdDev::Two)
+                    expected_hll8.upper_bound(NumStdDev::Two)
                 );
-                assert_eq!(union.serialize(), bytes);
+                assert_eq!(union.serialize(HllType::Hll8), bytes_hll8);
+                assert_eq!(union.serialize(HllType::Hll6), bytes_hll6);
+                let restored_hll4 =
+                    HllSketch::deserialize(&union.serialize(HllType::Hll4)).unwrap();
+                assert_hll_sketches_eq(&restored_hll4, &expected_hll4);
+                assert_same_estimate_and_bounds(&restored_hll4, &expected_hll4);
             });
         }
     });

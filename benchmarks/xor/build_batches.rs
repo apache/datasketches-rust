@@ -45,7 +45,7 @@ pub fn register(runner: &mut Runner) {
             &[
                 ("distinct", &|b| {
                     build(b, cardinality, |keys| {
-                        XorFilter::from_hashes(keys, XorFilterType::Xor8, 1).unwrap()
+                        XorFilter::from_hashes_with_seed(keys, XorFilterType::Xor8, 1).unwrap()
                     })
                 }),
                 ("xorf", &|b| {

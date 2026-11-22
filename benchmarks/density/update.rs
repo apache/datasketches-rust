@@ -15,7 +15,30 @@
 // specific language governing permissions and limitations
 // under the License.
 
-pub const PREAMBLE_LONGS_SHORT: u8 = 2;
-pub const SERIAL_VERSION: u8 = 1;
-pub const FLAGS_IS_EMPTY: u8 = 1 << 0;
-pub const LONG_SIZE_BYTES: usize = 8;
+use std::hint::black_box;
+
+use benchmarks::Bencher;
+use benchmarks::Runner;
+
+use super::support::build_sketch;
+use super::support::points;
+
+fn update(bencher: Bencher, len: usize, dim: u32) {
+    let points = points(len, dim);
+    bencher.bench_local(|| build_sketch(black_box(&points), dim));
+}
+
+pub fn register(runner: &mut Runner) {
+    for &((len, dim), rounds) in &[
+        ((1_000, 3), 1_000),
+        ((1_000, 32), 400),
+        ((10_000, 3), 80),
+        ((10_000, 32), 30),
+    ] {
+        runner.case(
+            format!("density::update::update/{len}/{dim}"),
+            rounds,
+            |b| update(b, len, dim),
+        );
+    }
+}

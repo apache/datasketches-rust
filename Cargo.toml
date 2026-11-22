@@ -16,7 +16,14 @@
 # under the License.
 
 [workspace]
-members = ["benchmarks", "datasketches", "tests-integration", "xtask"]
+members = [
+  "benchmarks",
+  "datagen",
+  "datasketches",
+  "examples",
+  "tests-integration",
+  "xtask",
+]
 resolver = "3"
 
 [workspace.package]

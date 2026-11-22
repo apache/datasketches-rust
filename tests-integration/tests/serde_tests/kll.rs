@@ -98,7 +98,7 @@ fn test_f32_file(path: PathBuf, expected_n: usize) {
 
     assert_eq!(sketch.k(), DEFAULT_K, "wrong k in {}", path.display());
     assert_eq!(
-        sketch.n() as usize,
+        sketch.total_weight() as usize,
         expected_n,
         "wrong n in {}",
         path.display()
@@ -144,7 +144,7 @@ fn test_f64_file(path: PathBuf, expected_n: usize) {
 
     assert_eq!(sketch.k(), DEFAULT_K, "wrong k in {}", path.display());
     assert_eq!(
-        sketch.n() as usize,
+        sketch.total_weight() as usize,
         expected_n,
         "wrong n in {}",
         path.display()
@@ -190,7 +190,7 @@ fn test_i64_file(path: PathBuf, expected_n: usize) {
 
     assert_eq!(sketch.k(), DEFAULT_K, "wrong k in {}", path.display());
     assert_eq!(
-        sketch.n() as usize,
+        sketch.total_weight() as usize,
         expected_n,
         "wrong n in {}",
         path.display()
@@ -243,7 +243,7 @@ fn test_string_file(path: PathBuf, expected_n: usize) {
 
     assert_eq!(sketch.k(), DEFAULT_K, "wrong k in {}", path.display());
     assert_eq!(
-        sketch.n() as usize,
+        sketch.total_weight() as usize,
         expected_n,
         "wrong n in {}",
         path.display()
@@ -397,6 +397,86 @@ fn test_go_kll_string_compatibility() {
 }
 
 #[test]
+fn test_rust_kll_float_compatibility() {
+    for n in [0, 1, 10, 100, 1000, 10000, 100000, 1000000] {
+        let path =
+            serialization_test_data("rust_generated_files", &format!("kll_float_n{n}_rust.sk"));
+        test_f32_file(path, n);
+    }
+}
+
+#[test]
+fn test_rust_kll_double_compatibility() {
+    for n in [0, 1, 10, 100, 1000, 10000, 100000, 1000000] {
+        let path =
+            serialization_test_data("rust_generated_files", &format!("kll_double_n{n}_rust.sk"));
+        test_f64_file(path, n);
+    }
+}
+
+#[test]
+fn test_rust_kll_long_compatibility() {
+    for n in [0, 1, 10, 100, 1000, 10000, 100000, 1000000] {
+        let path =
+            serialization_test_data("rust_generated_files", &format!("kll_long_n{n}_rust.sk"));
+        test_i64_file(path, n);
+    }
+}
+
+#[test]
+fn test_rust_kll_string_compatibility() {
+    for n in [0, 1, 10, 100, 1000, 10000, 100000, 1000000] {
+        let filename = format!("kll_string_n{n}_rust.sk");
+        let path = serialization_test_data("rust_generated_files", &filename);
+        let bytes = fs::read(&path).unwrap();
+        let sketch = KllSketch::<String>::deserialize(&bytes)
+            .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+
+        assert_eq!(sketch.k(), DEFAULT_K, "wrong k in {}", path.display());
+        assert_eq!(
+            sketch.total_weight() as usize,
+            n,
+            "wrong n in {}",
+            path.display()
+        );
+        assert_eq!(
+            sketch.is_estimation_mode(),
+            n > DEFAULT_K as usize,
+            "wrong estimation mode in {}",
+            path.display()
+        );
+        assert_eq!(
+            sketch.is_empty(),
+            n == 0,
+            "wrong empty flag in {}",
+            path.display()
+        );
+
+        if n == 0 {
+            assert!(sketch.min_item().is_none(), "min should be None");
+            assert!(sketch.max_item().is_none(), "max should be None");
+        } else {
+            let width = n.to_string().len();
+            assert_eq!(
+                sketch.min_item(),
+                Some(&format!("{:>width$}", 1)),
+                "min item mismatch in {}",
+                path.display()
+            );
+            assert_eq!(
+                sketch.max_item(),
+                Some(&n.to_string()),
+                "max item mismatch in {}",
+                path.display()
+            );
+        }
+        assert_eq!(sketch.serialize(), bytes, "roundtrip: {}", path.display());
+
+        test_string_file(path, n);
+    }
+}
+
+#[test]
 fn test_custom_kll_value_roundtrip() {
     let mut sketch = KllSketch::<Record>::new(64).unwrap();
     for key in 0..1_000 {
@@ -408,9 +488,12 @@ fn test_custom_kll_value_roundtrip() {
 
     let decoded = KllSketch::<Record>::deserialize(&sketch.serialize()).unwrap();
 
-    assert_eq!(decoded, sketch);
-    assert_eq!(decoded.n(), 1_000);
+    assert_eq!(decoded.serialize(), sketch.serialize());
+    assert_eq!(decoded.k(), sketch.k());
+    assert_eq!(decoded.total_weight(), 1_000);
     assert_eq!(decoded.num_retained(), sketch.num_retained());
+    assert_eq!(decoded.min_item(), sketch.min_item());
+    assert_eq!(decoded.max_item(), sketch.max_item());
 }
 
 #[test]

@@ -133,6 +133,19 @@ impl Family {
         min_pre_longs: 3,
         max_pre_longs: 3,
     };
+
+    /// Density sketch for streaming kernel density estimation.
+    ///
+    /// Uses family ID `23` instead of the legacy `datasketches-cpp` / `datasketches-python` ID
+    /// `19`, which collided with EBPPS. The preamble length is encoded in 4-byte integers (`3`
+    /// when empty, `6` when non-empty).
+    #[cfg(feature = "density")]
+    pub const DENSITY: Family = Family {
+        id: 23,
+        name: "DENSITY",
+        min_pre_longs: 2,
+        max_pre_longs: 3,
+    };
 }
 
 impl Family {

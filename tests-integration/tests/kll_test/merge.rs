@@ -27,12 +27,12 @@ fn merge_preserves_weight_extrema_and_query_invariants() {
         right.update(19_999 - item);
     }
 
-    left.merge(&right).unwrap();
+    left.merge(&right);
 
-    assert_eq!(left.n(), 20_000);
+    assert_eq!(left.total_weight(), 20_000);
     assert_eq!(left.min_item(), Some(&0));
     assert_eq!(left.max_item(), Some(&19_999));
-    assert_eq!(left.sorted_view().total_weight(), left.n());
+    assert_eq!(left.sorted_view().total_weight(), left.total_weight());
     let quantiles = left
         .quantiles(&[0.0, 0.25, 0.5, 0.75, 1.0], SearchCriteria::Inclusive)
         .unwrap()
@@ -49,7 +49,7 @@ fn merge_tracks_the_smallest_estimation_k() {
         right.update(20_000 - item);
     }
 
-    left.merge(&right).unwrap();
+    left.merge(&right);
 
     assert_eq!(left.min_k(), right.min_k());
     assert_eq!(left.normalized_rank_error(), right.normalized_rank_error());
@@ -65,9 +65,9 @@ fn merging_an_empty_lower_k_sketch_does_not_change_accuracy() {
     let empty = KllSketch::<i64>::new(128).unwrap();
     let rank_error = sketch.normalized_rank_error();
 
-    sketch.merge(&empty).unwrap();
+    sketch.merge(&empty);
 
-    assert_eq!(sketch.n(), 10_000);
+    assert_eq!(sketch.total_weight(), 10_000);
     assert_eq!(sketch.normalized_rank_error(), rank_error);
 }
 
@@ -78,7 +78,7 @@ fn merge_updates_extrema_from_either_side() {
     first.update(1);
     second.update(2);
 
-    second.merge(&first).unwrap();
+    second.merge(&first);
 
     assert_eq!(second.min_item(), Some(&1));
     assert_eq!(second.max_item(), Some(&2));

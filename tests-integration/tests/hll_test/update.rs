@@ -16,8 +16,10 @@
 // under the License.
 
 use datasketches::error::ErrorKind;
+use datasketches::hll::Coupon;
 use datasketches::hll::HllSketch;
 use datasketches::hll::HllType;
+use datasketches::hll::HllUnion;
 use googletest::assert_that;
 use googletest::prelude::ge;
 use googletest::prelude::gt;
@@ -67,6 +69,43 @@ fn test_set_to_hll_promotion() {
 
     let estimate = sketch.estimate();
     assert_that!(estimate, near(1000.0, 150.0));
+}
+
+#[test]
+fn ordered_coupon_batch_matches_scalar_updates() {
+    // At lg_k 4, the list promotes directly to HLL and the HLL4 minimum rises during the batch.
+    // At lg_k 8, the batch promotes through a set.
+    for (lg_k, num_values) in [(4, 100), (8, 128)] {
+        for hll_type in [HllType::Hll4, HllType::Hll6, HllType::Hll8] {
+            let mut scalar = HllSketch::new(lg_k, hll_type).unwrap();
+            let mut batch = scalar.clone();
+            let coupons = (0..num_values).chain(0..64).map(Coupon::from_value);
+            for coupon in coupons.clone() {
+                scalar.update_with_coupon(coupon);
+            }
+            batch.update_with_coupons(coupons);
+            assert_eq!(batch.serialize(), scalar.serialize());
+        }
+    }
+}
+
+#[test]
+fn ordered_coupon_batch_preserves_composite_state_after_union() {
+    let mut union = HllUnion::new(4).unwrap();
+    for start in [0, 32] {
+        let mut part = HllSketch::new(4, HllType::Hll8).unwrap();
+        for value in start..start + 32 {
+            part.update(value);
+        }
+        union.update(&part);
+    }
+    let mut scalar = union.to_sketch(HllType::Hll8);
+    let mut batch = scalar.clone();
+    for value in 64..256 {
+        scalar.update(value);
+    }
+    batch.update_with_coupons((64..256).map(Coupon::from_value));
+    assert_eq!(batch.serialize(), scalar.serialize());
 }
 
 #[test]
@@ -167,30 +206,6 @@ fn test_large_cardinality() {
 }
 
 #[test]
-fn test_equals_method() {
-    let mut sketch1 = HllSketch::new(10, HllType::Hll8).unwrap();
-    let mut sketch2 = HllSketch::new(10, HllType::Hll8).unwrap();
-
-    // Both start equal (empty)
-    assert!(sketch1.eq(&sketch2));
-
-    // Add same values to both
-    for i in 0..100 {
-        sketch1.update(i);
-        sketch2.update(i);
-    }
-
-    // Should still be equal
-    assert!(sketch1.eq(&sketch2));
-
-    // Add different value to sketch2
-    sketch2.update(999);
-
-    // Now they're different
-    assert!(!sketch1.eq(&sketch2));
-}
-
-#[test]
 fn test_invalid_lg_k_low_returns_error() {
     let error = HllSketch::new(3, HllType::Hll8).unwrap_err();
     assert_eq!(error.kind(), ErrorKind::InvalidArgument);
@@ -203,16 +218,16 @@ fn test_invalid_lg_k_high_returns_error() {
 }
 
 #[test]
-fn estimated_size_tracks_retained_storage() {
-    let mut sketch = HllSketch::new(10, HllType::Hll8).unwrap();
-    let initial_size = sketch.estimated_size();
-    assert_eq!(initial_size, 32);
-
-    sketch.update(0);
-    assert_eq!(sketch.estimated_size(), initial_size);
-
-    for i in 1..1000 {
-        sketch.update(i);
+fn list_storage_reports_no_heap() {
+    let mut sketch = HllSketch::new(14, HllType::Hll8).unwrap();
+    assert_eq!(sketch.estimated_size(), 0);
+    for value in 0..7_u64 {
+        sketch.update(value);
     }
-    assert_eq!(sketch.estimated_size(), 1024);
+    assert_eq!(sketch.estimated_size(), 0);
+
+    let mut decoded = HllSketch::deserialize(&sketch.serialize()).unwrap();
+    assert_eq!(decoded.estimated_size(), 0);
+    decoded.update(7_u64);
+    assert!(decoded.estimated_size() > 0);
 }

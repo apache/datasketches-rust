@@ -80,13 +80,13 @@
 //! use datasketches::frequencies::FrequentItemsSketch;
 //!
 //! let mut sketch = FrequentItemsSketch::<i64>::new(64).unwrap();
-//! sketch.update_with_count(1, 3);
+//! sketch.update_with_weight(1, 3);
 //! sketch.update(2);
 //! let rows = sketch.frequent_items(ErrorType::NoFalseNegatives);
 //! assert!(rows.iter().any(|row| *row.item() == 1));
 //! ```
 //!
-//! # Serialization
+//! ## Serialization
 //!
 //! The built-in serialization methods are available when the item type implements
 //! [`FrequentItemValue`].
@@ -95,7 +95,7 @@
 //! use datasketches::frequencies::FrequentItemsSketch;
 //!
 //! let mut sketch = FrequentItemsSketch::<i64>::new(64).unwrap();
-//! sketch.update_with_count(42, 2);
+//! sketch.update_with_weight(42, 2);
 //!
 //! let bytes = sketch.serialize();
 //! let decoded = FrequentItemsSketch::<i64>::deserialize(&bytes).unwrap();

@@ -16,6 +16,7 @@
 // under the License.
 
 use std::cmp::Ordering;
+use std::fmt;
 
 use crate::common::SearchCriteria;
 use crate::error::Error;
@@ -24,12 +25,21 @@ use crate::error::Error;
 ///
 /// Build one with [`KllSketch::sorted_view`](super::KllSketch::sorted_view) when running repeated
 /// queries against the same sketch state.
-#[derive(Debug, Clone)]
-pub struct SortedView<T: Clone> {
+#[derive(Clone)]
+pub struct SortedView<T> {
     entries: Vec<Entry<T>>,
     total_weight: u64,
-    min_item: Option<T>,
-    max_item: Option<T>,
+}
+
+impl<T: fmt::Debug> fmt::Debug for SortedView<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SortedView")
+            .field("len", &self.entries.len())
+            .field("total_weight", &self.total_weight)
+            .field("min_item", &self.entries.first().map(|entry| &entry.item))
+            .field("max_item", &self.entries.last().map(|entry| &entry.item))
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -39,7 +49,11 @@ struct Entry<T> {
 }
 
 impl<T: Clone + Ord> SortedView<T> {
-    fn from_sorted(mut entries: Vec<Entry<T>>, min_item: Option<T>, max_item: Option<T>) -> Self {
+    fn from_weighted_sorted(entries: Vec<Entry<T>>, extrema: Option<(&T, &T)>) -> Self {
+        let mut entries = match extrema {
+            Some((min_item, max_item)) => include_extrema(entries, min_item, max_item),
+            None => entries,
+        };
         let mut total_weight = 0u64;
         for entry in &mut entries {
             total_weight += entry.cumulative_weight;
@@ -48,17 +62,19 @@ impl<T: Clone + Ord> SortedView<T> {
         Self {
             entries,
             total_weight,
-            min_item,
-            max_item,
         }
     }
 
-    /// Returns whether the view contains no retained items.
+    /// Returns whether the view contains no entries.
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
 
-    /// Returns the number of retained items in the view.
+    /// Returns the number of weighted entries in the view.
+    ///
+    /// When compaction has discarded the stream minimum or maximum, the view inserts the missing
+    /// extrema with unit weight, so `len` may exceed
+    /// [`KllSketch::num_retained`](super::KllSketch::num_retained) by up to `2`.
     pub fn len(&self) -> usize {
         self.entries.len()
     }
@@ -106,12 +122,12 @@ impl<T: Clone + Ord> SortedView<T> {
             return Ok(None);
         }
 
-        // Compaction may discard extrema, and large weights can lose precision in f64.
+        // Large stream weights can lose precision in `f64`, so keep the exact endpoints.
         if rank == 0.0 {
-            return Ok(Some(self.min_item.as_ref().unwrap().clone()));
+            return Ok(Some(self.entries[0].item.clone()));
         }
         if rank == 1.0 {
-            return Ok(Some(self.max_item.as_ref().unwrap().clone()));
+            return Ok(Some(self.entries[self.entries.len() - 1].item.clone()));
         }
 
         let weight = if criteria == SearchCriteria::Inclusive {
@@ -218,8 +234,7 @@ impl<T: Clone + Ord> SortedView<T> {
 pub fn build_sorted_view<T: Clone + Ord>(
     levels: &[Vec<T>],
     is_level_zero_sorted: bool,
-    min_item: Option<T>,
-    max_item: Option<T>,
+    extrema: Option<(&T, &T)>,
 ) -> SortedView<T> {
     let mut runs = Vec::with_capacity(levels.len());
     for (level_index, level) in levels.iter().enumerate() {
@@ -253,7 +268,74 @@ pub fn build_sorted_view<T: Clone + Ord>(
         runs = merged_runs;
     }
 
-    SortedView::from_sorted(runs.pop().unwrap_or_default(), min_item, max_item)
+    SortedView::from_weighted_sorted(runs.pop().unwrap_or_default(), extrema)
+}
+
+/// Transfers one unit of weight from the nearest retained neighbor to each missing stream
+/// extremum, matching `datasketches-java` (`IncludeMinMax`) and `datasketches-cpp`
+/// (`quantiles_sorted_view`) while replacing unit-weight neighbors in place so every entry keeps
+/// positive weight.
+fn include_extrema<T: Clone + Ord>(
+    mut entries: Vec<Entry<T>>,
+    min_item: &T,
+    max_item: &T,
+) -> Vec<Entry<T>> {
+    if entries.is_empty() {
+        return entries;
+    }
+
+    let need_min = entries[0].item != *min_item;
+    let need_max = entries[entries.len() - 1].item != *max_item;
+    debug_assert!(
+        !(need_min && need_max && entries.len() == 1 && entries[0].cumulative_weight < 2),
+        "distinct stream extrema require total weight at least 2"
+    );
+
+    let prepend_min = if need_min {
+        if entries[0].cumulative_weight == 1 {
+            entries[0].item = min_item.clone();
+            false
+        } else {
+            entries[0].cumulative_weight -= 1;
+            true
+        }
+    } else {
+        false
+    };
+
+    let append_max = if need_max {
+        let last = entries.last_mut().expect("checked non-empty entries");
+        if last.cumulative_weight == 1 {
+            last.item = max_item.clone();
+            false
+        } else {
+            last.cumulative_weight -= 1;
+            true
+        }
+    } else {
+        false
+    };
+
+    if !prepend_min && !append_max {
+        return entries;
+    }
+
+    let mut adjusted =
+        Vec::with_capacity(entries.len() + usize::from(prepend_min) + usize::from(append_max));
+    if prepend_min {
+        adjusted.push(Entry {
+            item: min_item.clone(),
+            cumulative_weight: 1,
+        });
+    }
+    adjusted.extend(entries);
+    if append_max {
+        adjusted.push(Entry {
+            item: max_item.clone(),
+            cumulative_weight: 1,
+        });
+    }
+    adjusted
 }
 
 fn merge_sorted_entries<T: Ord>(left: Vec<Entry<T>>, right: Vec<Entry<T>>) -> Vec<Entry<T>> {

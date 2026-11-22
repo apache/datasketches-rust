@@ -34,6 +34,30 @@
 //! configurations of K.
 //!
 //! For additional security this sketch can be configured with a user-specified hash seed.
+//!
+//! # Cross-language hashing
+//!
+//! For cross-language use, apply the following input conventions:
+//!
+//! * Use `i64`/`u64` for 64-bit integers and [`sign_extend`](crate::hash::value::sign_extend) for
+//!   narrower integers.
+//! * Use [`canonical_float`](crate::hash::value::canonical_float) for floating-point values.
+//! * Use [`raw_bytes`](crate::hash::value::raw_bytes) for UTF-8 strings and byte slices.
+//!
+//! Skip empty strings and byte slices before updating the sketch.
+//!
+//! # Examples
+//!
+//! ```
+//! use datasketches::common::NumStdDev;
+//! use datasketches::cpc::CpcSketch;
+//!
+//! let mut sketch = CpcSketch::new(11)?;
+//! sketch.update("apple");
+//! sketch.update("banana");
+//! assert!(sketch.upper_bound(NumStdDev::Two) >= sketch.estimate());
+//! # Ok::<(), datasketches::error::Error>(())
+//! ```
 
 mod compression;
 mod compression_data;

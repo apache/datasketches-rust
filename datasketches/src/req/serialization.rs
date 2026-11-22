@@ -72,9 +72,10 @@ pub fn validate_compactor_state(
             "REQ compactor lg_weight {lg_weight} does not match level {expected_lg_weight}"
         )));
     }
-    let section_size = nearest_even_section_size(section_size_raw);
-    if !section_size_raw.is_finite()
-        || !(u32::from(MIN_K)..=u32::from(k)).contains(&section_size)
+    let max_raw = f32::from(k) + 2.0;
+    if !(0.0..=max_raw).contains(&section_size_raw)
+        || !(usize::from(MIN_K)..=usize::from(k))
+            .contains(&nearest_even_section_size(section_size_raw))
         || !has_reachable_section_count(state, num_sections)
     {
         return Err(Error::deserial(format!(

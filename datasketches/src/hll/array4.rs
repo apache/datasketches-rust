@@ -18,24 +18,18 @@
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
 use crate::codec::assert::insufficient_data;
-use crate::codec::family::Family;
 use crate::common::NumStdDev;
 use crate::error::Error;
 use crate::hll::Coupon;
+use crate::hll::HllType;
 use crate::hll::aux_map::AuxMap;
 use crate::hll::estimator::EstimateState;
 use crate::hll::estimator::Estimator;
-use crate::hll::serialization::COMPACT_FLAG_MASK;
 use crate::hll::serialization::COUPON_SIZE_BYTES;
-use crate::hll::serialization::CUR_MODE_HLL;
 use crate::hll::serialization::HLL_PREAMBLE_SIZE;
-use crate::hll::serialization::HLL_PREINTS;
-use crate::hll::serialization::OUT_OF_ORDER_FLAG_MASK;
-use crate::hll::serialization::SERIAL_VERSION;
-use crate::hll::serialization::TGT_HLL4;
-use crate::hll::serialization::encode_mode_byte;
+use crate::hll::serialization::write_hll_preamble;
 
-const AUX_TOKEN: u8 = 15;
+pub const AUX_TOKEN: u8 = 15;
 
 #[derive(Clone, Copy)]
 pub enum AuxFormat {
@@ -54,7 +48,7 @@ impl AuxFormat {
 }
 
 /// Registers stored as four-bit offsets from their current minimum.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Array4 {
     lg_config_k: u8,
     /// Even slots occupy the low nibble; odd slots occupy the high nibble.
@@ -126,9 +120,18 @@ impl Array4 {
 
     pub fn update(&mut self, coupon: Coupon) {
         let mask = (1 << self.lg_config_k) - 1;
-        let slot = coupon.slot() & mask;
-        let new_value = coupon.value();
+        self.update_register(coupon.slot() & mask, coupon.value());
+    }
 
+    pub fn update_coupons(&mut self, coupons: impl Iterator<Item = Coupon>) {
+        let mask = (1 << self.lg_config_k) - 1;
+        for coupon in coupons {
+            self.update_register(coupon.slot() & mask, coupon.value());
+        }
+    }
+
+    #[inline]
+    fn update_register(&mut self, slot: u32, new_value: u8) {
         if new_value <= self.cur_min {
             return;
         }
@@ -140,6 +143,12 @@ impl Array4 {
             return;
         }
 
+        self.raise_register(slot, new_value, raw_stored, lower_bound);
+    }
+
+    // Kept out of line so the early returns in `update_register` inline without a stack frame.
+    #[inline(never)]
+    fn raise_register(&mut self, slot: u32, new_value: u8, raw_stored: u8, lower_bound: u8) {
         let old_value = if raw_stored < AUX_TOKEN {
             lower_bound
         } else {
@@ -386,29 +395,15 @@ impl Array4 {
         let total_size = HLL_PREAMBLE_SIZE + num_bytes + (aux_count as usize * COUPON_SIZE_BYTES);
         let mut bytes = SketchBytes::with_capacity(total_size);
 
-        bytes.write_u8(HLL_PREINTS);
-        bytes.write_u8(SERIAL_VERSION);
-        bytes.write_u8(Family::HLL.id);
-        bytes.write_u8(lg_config_k);
-        bytes.write_u8(0); // lg_arr is unused for compact auxiliary storage.
-
-        let mut flags = COMPACT_FLAG_MASK;
-        if self.estimator.uses_composite_estimate() {
-            flags |= OUT_OF_ORDER_FLAG_MASK;
-        }
-        bytes.write_u8(flags);
-
-        bytes.write_u8(self.cur_min);
-
-        bytes.write_u8(encode_mode_byte(CUR_MODE_HLL, TGT_HLL4));
-
-        bytes.write_f64_le(self.estimator.hip_accum());
-        bytes.write_f64_le(self.estimator.kxq0());
-        bytes.write_f64_le(self.estimator.kxq1());
-
-        bytes.write_u32_le(self.num_at_cur_min);
-
-        bytes.write_u32_le(aux_count);
+        write_hll_preamble(
+            &mut bytes,
+            lg_config_k,
+            HllType::Hll4,
+            self.cur_min,
+            self.num_at_cur_min,
+            aux_count,
+            &self.estimator,
+        );
 
         bytes.write(&self.bytes);
 

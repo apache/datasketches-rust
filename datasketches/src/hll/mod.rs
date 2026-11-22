@@ -21,10 +21,19 @@
 //! [`HllType`] controls register storage; `lg_k` controls the register count and accuracy.
 //!
 //! The binary serialization format supports cross-language interchange.
-//! Cross-language updates must also use compatible hashing; see
-//! [`hash::value`](crate::hash::value).
 //!
-//! # Usage
+//! # Cross-language hashing
+//!
+//! For cross-language use, apply the following input conventions:
+//!
+//! * Use `i64`/`u64` for 64-bit integers and [`sign_extend`](crate::hash::value::sign_extend) for
+//!   narrower integers.
+//! * Use [`canonical_float`](crate::hash::value::canonical_float) for floating-point values.
+//! * Use [`raw_bytes`](crate::hash::value::raw_bytes) for UTF-8 strings and byte slices.
+//!
+//! Skip empty strings and byte slices before updating the sketch.
+//!
+//! # Examples
 //!
 //! ```
 //! use datasketches::common::NumStdDev;
@@ -37,7 +46,7 @@
 //! assert!(upper >= sketch.estimate());
 //! ```
 //!
-//! # Union
+//! ## Union
 //!
 //! ```
 //! use datasketches::hll::HllSketch;
@@ -85,7 +94,7 @@ pub use self::union::HllUnion;
 ///
 /// For the same `lg_k` and input, all three types produce the same estimates.
 /// They trade memory usage against update speed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum HllType {
     /// Uses 4 bits per HLL bucket and has the smallest storage footprint.
     ///
@@ -111,7 +120,10 @@ const RESIZE_DENOMINATOR: u32 = 4;
 /// A reusable hash of an input value for HLL sketches.
 ///
 /// Compute a coupon once with [`Coupon::from_value`] and pass it to
-/// [`HllSketch::update_with_coupon`] on sketches with any `lg_k` or [`HllType`].
+/// [`HllSketch::update_with_coupon`] or [`HllSketch::update_with_coupons`] on sketches
+/// with any `lg_k` or [`HllType`].
+///
+/// See the [module level documentation](crate::hll) for more.
 ///
 /// # Examples
 ///
@@ -148,9 +160,6 @@ impl Coupon {
     }
 
     /// Computes the HLL coupon for a hashable value.
-    ///
-    /// Use [`hash::value`](crate::hash::value) wrappers to select an input encoding for
-    /// cross-language hashing.
     ///
     /// # Examples
     ///

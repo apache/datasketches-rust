@@ -20,17 +20,31 @@ use std::hint::black_box;
 use benchmarks::Bencher;
 use benchmarks::Runner;
 use datasketches::hash::value::raw_bytes;
+use datasketches::hll::Coupon;
 use datasketches::hll::HllSketch;
 use datasketches::hll::HllType;
 
 use crate::hash_inputs::ITEMS;
 use crate::hash_inputs::bytes_32_values;
+use crate::hash_inputs::bytes_64_values;
+use crate::hash_inputs::u64_pair;
+use crate::hash_inputs::variable_byte_slices;
 
 fn u64(bencher: Bencher) {
     bencher.bench_local(|| {
         let mut sketch = HllSketch::new(12, HllType::Hll8).unwrap();
         for value in 0..ITEMS as u64 {
             sketch.update(black_box(value));
+        }
+        black_box(sketch)
+    });
+}
+
+fn u64_tuple(bencher: Bencher) {
+    bencher.bench_local(|| {
+        let mut sketch = HllSketch::new(12, HllType::Hll8).unwrap();
+        for value in 0..ITEMS as u64 {
+            sketch.update(black_box(u64_pair(value)));
         }
         black_box(sketch)
     });
@@ -48,7 +62,73 @@ fn bytes_32(bencher: Bencher) {
     });
 }
 
+fn variable_bytes(bencher: Bencher) {
+    let values = bytes_64_values();
+    let keys = variable_byte_slices(&values);
+
+    bencher.bench_local(|| {
+        let mut sketch = HllSketch::new(12, HllType::Hll8).unwrap();
+        for &key in &keys {
+            sketch.update(raw_bytes::from_slice(black_box(key)));
+        }
+        black_box(sketch)
+    });
+}
+
+fn prefixed_bytes(bencher: Bencher) {
+    let values = bytes_64_values();
+    let keys = variable_byte_slices(&values);
+
+    bencher.bench_local(|| {
+        let mut sketch = HllSketch::new(12, HllType::Hll8).unwrap();
+        for &key in &keys {
+            sketch.update(black_box(key));
+        }
+        black_box(sketch)
+    });
+}
+
+// Batches of 8,192 values at `lg_k` 14 match DataFusion's default batch size and
+// `approx_distinct` precision.
+fn u64_batches(bencher: Bencher, hll_type: HllType, update: impl Fn(&mut HllSketch, &[u64])) {
+    let values: Vec<_> = (0..400_000_u64).collect();
+    bencher.bench_local(|| {
+        let mut sketch = HllSketch::new(14, hll_type).unwrap();
+        for batch in black_box(&values).chunks(8_192) {
+            update(&mut sketch, batch);
+        }
+        black_box(sketch.estimate())
+    });
+}
+
 pub fn register(runner: &mut Runner) {
     runner.case("hll::update::u64", 6_000, u64);
+    runner.case("hll::update::u64_pair", 5_500, u64_tuple);
     runner.case("hll::update::bytes_32", 2_000, bytes_32);
+    runner.case("hll::update::variable_bytes", 2_000, variable_bytes);
+    runner.case("hll::update::prefixed_bytes", 1_600, prefixed_bytes);
+    for (label, hll_type, rounds) in [
+        ("hll4", HllType::Hll4, 100),
+        ("hll6", HllType::Hll6, 150),
+        ("hll8", HllType::Hll8, 200),
+    ] {
+        runner.compare(
+            &format!("hll::update::u64_batches/{label}"),
+            rounds,
+            &[
+                ("scalar", &|b| {
+                    u64_batches(b, hll_type, |sketch, batch| {
+                        for &value in batch {
+                            sketch.update(value);
+                        }
+                    })
+                }),
+                ("batch", &|b| {
+                    u64_batches(b, hll_type, |sketch, batch| {
+                        sketch.update_with_coupons(batch.iter().copied().map(Coupon::from_value));
+                    })
+                }),
+            ],
+        );
+    }
 }

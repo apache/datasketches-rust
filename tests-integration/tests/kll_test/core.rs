@@ -40,7 +40,7 @@ fn empty_and_reset_state() {
     let mut sketch = KllSketch::<i64>::new(64).unwrap();
     assert!(sketch.is_empty());
     assert!(!sketch.is_estimation_mode());
-    assert_eq!(sketch.n(), 0);
+    assert_eq!(sketch.total_weight(), 0);
     assert_eq!(sketch.num_retained(), 0);
     assert_eq!(sketch.min_item(), None);
     assert_eq!(sketch.max_item(), None);
@@ -56,7 +56,7 @@ fn empty_and_reset_state() {
     assert_eq!(sketch.min_k(), 64);
     assert!(sketch.is_empty());
     assert!(!sketch.is_estimation_mode());
-    assert_eq!(sketch.n(), 0);
+    assert_eq!(sketch.total_weight(), 0);
     assert_eq!(sketch.num_retained(), 0);
     assert_eq!(sketch.min_item(), None);
     assert_eq!(sketch.max_item(), None);
@@ -79,11 +79,11 @@ fn retained_count_stays_consistent_through_compaction_and_roundtrip() {
     let mut sketch = KllSketch::<i64>::new(32).unwrap();
     for item in 0..100_000 {
         sketch.update(item);
-        assert!(sketch.num_retained() <= sketch.n() as usize);
+        assert!(sketch.num_retained() <= sketch.total_weight() as usize);
     }
 
     let decoded = KllSketch::<i64>::deserialize(&sketch.serialize()).unwrap();
-    assert_eq!(decoded.n(), sketch.n());
+    assert_eq!(decoded.total_weight(), sketch.total_weight());
     assert_eq!(decoded.num_retained(), sketch.num_retained());
     assert_eq!(decoded.min_item(), Some(&0));
     assert_eq!(decoded.max_item(), Some(&99_999));
@@ -96,17 +96,15 @@ fn weight_overflow_preserves_state() {
     let mut sketch = one.clone();
     // Doubling and adding one reaches the exact limit through valid public operations.
     for _ in 0..63 {
-        sketch.merge(&sketch.clone()).unwrap();
+        sketch.merge(&sketch.clone());
         sketch.update(0);
     }
-    assert_eq!(sketch.n(), u64::MAX);
+    assert_eq!(sketch.total_weight(), u64::MAX);
     let before = sketch.serialize();
 
+    sketch.merge(&KllSketch::new(8).unwrap());
     assert!(catch_unwind(AssertUnwindSafe(|| sketch.update(1))).is_err());
     assert!(sketch.serialize() == before, "overflow changed the sketch");
-    assert_eq!(
-        sketch.merge(&one).unwrap_err().kind(),
-        ErrorKind::InvalidArgument
-    );
+    assert!(catch_unwind(AssertUnwindSafe(|| sketch.merge(&one))).is_err());
     assert!(sketch.serialize() == before, "overflow changed the sketch");
 }
