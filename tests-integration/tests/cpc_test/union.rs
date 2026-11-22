@@ -204,10 +204,12 @@ fn test_union_serialize_all_flavors_and_subsequent_merges() {
     const SEED: u64 = 0x5eed_cafe;
 
     // Covers Empty, Sparse, Hybrid, Pinned (without and with post-window surprises), and Sliding
-    // across MIN_LG_K = 4 and lg_k = 8, spanning multiple window offsets and permutation phases.
+    // across multiple window offsets and permutation phases.
     let cases: &[(u8, &[u64])] = &[
         (4, &[0, 1, 3, 12, 40, 120, 500]),
         (8, &[0, 10, 60, 180, 1_500, 3_000, 12_000, 50_000]),
+        // A Hybrid sketch with table pairs interleaved among rows containing window bits.
+        (14, &[4_096]),
     ];
 
     let mut saw_window_only = false;

@@ -12,6 +12,7 @@ All significant changes to this project will be documented in this file.
 ### Performance improvements
 
 * Speed up `BloomFilter::contains`, `BloomFilter::insert`, `BloomFilter::contains_and_insert`, `CountMinSketch::update`, `CountMinSketch::estimate`, `XorFilter::contains`, and `XorFilterBuilder` item updates on variable-length byte-slice and string inputs (including `raw_bytes`), particularly on negative `BloomFilter::contains` queries, as well as `XorFilter::contains` on integer and 32-byte inputs.
+* Speed up `CpcSketch::serialize` for sketches of intermediate cardinality, such as 4,096 distinct values at `lg_k = 14`.
 * Speed up `CpcUnion::update` when merging high-cardinality sketches at equal or mixed precisions, and reduce temporary allocations when an empty union adopts a high-cardinality sketch with `lg_k` at or below the union's precision.
 * Avoid heap allocation in empty and low-cardinality `HllSketch` and `HllUnion` instances (up to seven distinct values), where `HllSketch::estimated_size` and `HllUnion::estimated_size` now return `0`.
 * Speed up `HllSketch::update`, `Coupon::from_value`, `CpcSketch::update`, `ThetaSketch::update`, `TupleSketch::update`, and `FrequentItemsSketch::update` for byte-slice and string inputs (including `raw_bytes`), particularly on short and variable-length keys, as well as `CpcSketch::update` and `TupleSketch::update` on integer keys.
