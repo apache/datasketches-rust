@@ -580,6 +580,38 @@ fn compat_decodes_reordered_summary_blocks_and_rejects_malformed_images() {
         decoded.iter().collect::<Vec<_>>()
     );
 
+    // `sketches-go` derives Linear `offset = 1 / log2(gamma)` and Cubic `gamma` with `math.Pow`,
+    // differing in the last bits from `DdSketchBuilder::new(0.01)`; both must merge cleanly under
+    // the 1e-12 relative mapping tolerance.
+    let go_linear_gamma = ((1.0 + 0.01_f64) / (1.0 - 0.01_f64)).powf(std::f64::consts::LN_2);
+    let go_linear_offset = 49.998333288886464_f64;
+    let mut go_linear_wire = vec![0x06];
+    go_linear_wire.extend_from_slice(&go_linear_gamma.to_le_bytes());
+    go_linear_wire.extend_from_slice(&go_linear_offset.to_le_bytes());
+    go_linear_wire.extend_from_slice(&[0x09, 0x01, 0x64]); // 1 pos bin at index 50
+    let go_linear = DdSketch::deserialize_compat(&go_linear_wire, StoreKind::default()).unwrap();
+    let mut rust_linear = DdSketchBuilder::new(0.01)
+        .mapping(MappingKind::Linear)
+        .build()
+        .unwrap();
+    rust_linear.update(10.0);
+    rust_linear.merge(&go_linear).unwrap();
+    assert_eq!(rust_linear.total_weight(), 2);
+
+    let go_cubic_gamma = 1.0200022828058628_f64;
+    let mut go_cubic_wire = vec![0x0e];
+    go_cubic_wire.extend_from_slice(&go_cubic_gamma.to_le_bytes());
+    go_cubic_wire.extend_from_slice(&0.0_f64.to_le_bytes());
+    go_cubic_wire.extend_from_slice(&[0x09, 0x01, 0x64]); // 1 pos bin at index 50
+    let go_cubic = DdSketch::deserialize_compat(&go_cubic_wire, StoreKind::default()).unwrap();
+    let mut rust_cubic = DdSketchBuilder::new(0.01)
+        .mapping(MappingKind::Cubic)
+        .build()
+        .unwrap();
+    rust_cubic.update(10.0);
+    rust_cubic.merge(&go_cubic).unwrap();
+    assert_eq!(rust_cubic.total_weight(), 2);
+
     // Missing index mapping (only ZeroCount = 1).
     assert_eq!(
         DdSketch::deserialize_compat(&[0x04, 0x02], StoreKind::default())

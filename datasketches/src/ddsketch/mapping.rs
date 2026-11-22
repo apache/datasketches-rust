@@ -33,6 +33,7 @@ const CUBIC_A: f64 = 6.0 / 35.0;
 const CUBIC_B: f64 = -3.0 / 5.0;
 const CUBIC_C: f64 = 10.0 / 7.0;
 const CUBIC_D0: f64 = CUBIC_B * CUBIC_B - 3.0 * CUBIC_A * CUBIC_C;
+const MAPPING_EQUALITY_REL_TOL: f64 = 1e-12;
 
 /// Index mapping curve used by a [`DdSketch`](super::DdSketch) to map positive magnitudes to
 /// integer bucket indices.
@@ -234,8 +235,12 @@ impl IndexMapping {
     #[inline]
     pub fn is_compatible(&self, other: &Self) -> bool {
         self.kind == other.kind
-            && self.gamma == other.gamma
-            && self.index_offset == other.index_offset
+            && within_tolerance(self.gamma, other.gamma, MAPPING_EQUALITY_REL_TOL)
+            && within_tolerance(
+                self.index_offset,
+                other.index_offset,
+                MAPPING_EQUALITY_REL_TOL,
+            )
     }
 
     #[inline]
@@ -275,6 +280,17 @@ impl IndexMapping {
     pub const fn contains_valid_index(&self, index: i32) -> bool {
         index >= self.min_index && index <= self.max_index
     }
+}
+
+#[inline]
+fn within_tolerance(a: f64, b: f64, tolerance: f64) -> bool {
+    if a == b {
+        return true;
+    }
+    if a == 0.0 || b == 0.0 {
+        return a.abs() <= tolerance && b.abs() <= tolerance;
+    }
+    (a - b).abs() <= tolerance * a.abs().max(b.abs())
 }
 
 #[inline]

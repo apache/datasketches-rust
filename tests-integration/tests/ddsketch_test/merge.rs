@@ -46,13 +46,12 @@ fn merge_rejects_incompatible_mappings_even_when_empty_and_preserves_self_on_err
         ErrorKind::InvalidArgument
     );
 
-    // Near-equal `gamma` values that still shift extreme bucket indices must not be treated as
-    // compatible under direct index-wise merge.
+    // Mappings whose parameters differ beyond the 1e-12 relative tolerance must not be merged.
     let mut log_tight_a = DdSketchBuilder::new(1e-6)
         .mapping(MappingKind::Logarithmic)
         .build()
         .unwrap();
-    let mut log_tight_b = DdSketchBuilder::new(1e-6 + 4e-13)
+    let mut log_tight_b = DdSketchBuilder::new(1e-6 + 1e-9)
         .mapping(MappingKind::Logarithmic)
         .build()
         .unwrap();
