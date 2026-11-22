@@ -856,7 +856,8 @@ impl<T: Clone + Ord> KllSketch<T> {
 
     fn compress_while_updating(&mut self) {
         let level = self.find_level_to_compact();
-        if level + 1 == self.levels.len() {
+        let adds_level = level + 1 == self.levels.len();
+        if adds_level {
             self.levels.push(Vec::new());
         }
 
@@ -882,7 +883,15 @@ impl<T: Clone + Ord> KllSketch<T> {
             new_level.push(item);
         }
         self.levels[level] = new_level;
-        self.refresh_capacity_state();
+        self.num_retained = self.levels.iter().map(Vec::len).sum();
+        if adds_level {
+            // Total capacity depends only on `k` and the number of levels.
+            self.capacity = total_capacity(self.k, self.levels.len()) as usize;
+        }
+        debug_assert_eq!(
+            self.capacity,
+            total_capacity(self.k, self.levels.len()) as usize
+        );
     }
 
     fn find_level_to_compact(&self) -> usize {
