@@ -54,7 +54,7 @@ impl Array6 {
     #[inline]
     pub fn get(&self, slot: u32) -> u8 {
         let (index, shift) = register_position(slot);
-        let bytes = self.bytes[index..].first_chunk::<2>().unwrap();
+        let bytes: &[u8; 2] = self.bytes[index..index + 2].try_into().unwrap();
         let word = u16::from_le_bytes(*bytes);
         u8::try_from((word >> shift) & VAL_MASK_6).unwrap()
     }
@@ -82,7 +82,7 @@ impl Array6 {
     #[inline]
     fn update_register(&mut self, slot: u32, new_value: u8) {
         let (index, shift) = register_position(slot);
-        let bytes = self.bytes[index..].first_chunk_mut::<2>().unwrap();
+        let bytes: &mut [u8; 2] = (&mut self.bytes[index..index + 2]).try_into().unwrap();
         let word = u16::from_le_bytes(*bytes);
         let old_value = u8::try_from((word >> shift) & VAL_MASK_6).unwrap();
 
@@ -203,6 +203,7 @@ impl Array6 {
     }
 }
 
+#[inline]
 fn register_position(slot: u32) -> (usize, u32) {
     let bit = slot * 6;
     (usize::try_from(bit >> 3).unwrap(), bit & 7)
