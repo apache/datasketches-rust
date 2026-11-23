@@ -712,12 +712,15 @@ impl DdSketch {
     /// # Compatibility with reference implementations
     ///
     /// When exact summary statistics are present, emits `count`, `min`, `max`, and non-zero `sum`
-    /// feature blocks compatible with `DDSketchWithExactSummaryStatistics` in Java and Go. In
-    /// `sketches-java`, both `DDSketch` and `DDSketchWithExactSummaryStatistics` decode these
-    /// blocks; in `sketches-go`, decode non-empty images with
-    /// `DecodeDDSketchWithExactSummaryStatistics` (bare `DecodeDDSketch` skips a fixed 8 bytes on
-    /// variable-length `FlagCount`). [`StoreKind`] and collapse state are in-memory properties in
-    /// the reference format and are not recorded in the output bytes; decode with
+    /// feature blocks: `DDSketchWithExactSummaryStatistics` in `sketches-java` and
+    /// `DecodeDDSketchWithExactSummaryStatistics` in `sketches-go` decode them, `sketches-java`'s
+    /// bare `DDSketch` skips them, and `sketches-go`'s bare `DecodeDDSketch` cannot read them (it
+    /// skips a fixed 8 bytes on variable-length `FlagCount`). Sketches whose exact summary
+    /// statistics are unknown write no summary blocks; read non-empty summary-less images with bare
+    /// `DDSketch` / `DecodeDDSketch`, as the exact-summary decoders reject them.
+    ///
+    /// [`StoreKind`] and collapse state are in-memory properties in the reference format and are
+    /// not recorded in the output bytes; decode with
     /// [`deserialize_compat`](Self::deserialize_compat) and an explicit [`StoreKind`]. For
     /// downstream Java or Go readers, keep [`total_weight`](Self::total_weight) at or below
     /// `2^53 - 1` (Java computes `total_weight - 1` in `f64`), per-sign bucket index spans at or
