@@ -142,9 +142,7 @@ impl HllUnion {
                         },
                     );
                 } else {
-                    for coupon in list.container().iter() {
-                        self.gadget.update_with_coupon(coupon);
-                    }
+                    self.gadget.update_with_coupons(list.container().iter());
                 }
             }
             Mode::Set { set, .. } => {
@@ -157,9 +155,7 @@ impl HllUnion {
                         },
                     );
                 } else {
-                    for coupon in set.container().iter() {
-                        self.gadget.update_with_coupon(coupon);
-                    }
+                    self.gadget.update_with_coupons(set.container().iter());
                 }
             }
             Mode::Array4(src) => {
