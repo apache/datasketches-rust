@@ -703,11 +703,14 @@ impl DdSketch {
     /// # Compatibility with reference implementations
     ///
     /// When exact summary statistics are present, emits `count`, `min`, `max`, and non-zero `sum`
-    /// feature blocks compatible with `DDSketchWithExactSummaryStatistics` in Java and Go (bare
-    /// `DDSketch` decoders safely skip those blocks). [`StoreKind`] and collapse state are
-    /// in-memory properties in the reference format and are not recorded in the output bytes;
-    /// decode with [`deserialize_compat`](Self::deserialize_compat) and an explicit [`StoreKind`].
-    /// For downstream Java or Go readers, keep [`total_weight`](Self::total_weight) at or below
+    /// feature blocks compatible with `DDSketchWithExactSummaryStatistics` in Java and Go. In
+    /// `sketches-java`, both `DDSketch` and `DDSketchWithExactSummaryStatistics` decode these
+    /// blocks; in `sketches-go`, decode non-empty images with
+    /// `DecodeDDSketchWithExactSummaryStatistics` (bare `DecodeDDSketch` skips a fixed 8 bytes on
+    /// variable-length `FlagCount`). [`StoreKind`] and collapse state are in-memory properties in
+    /// the reference format and are not recorded in the output bytes; decode with
+    /// [`deserialize_compat`](Self::deserialize_compat) and an explicit [`StoreKind`]. For
+    /// downstream Java or Go readers, keep [`total_weight`](Self::total_weight) at or below
     /// `2^53 - 1` (Java computes `total_weight - 1` in `f64`), per-sign bucket index spans at or
     /// below `2^26` (`MaxDecodeIndexRange` on `sketches-go` `main`; unreleased as of `v1.4.8`), and
     /// input magnitudes within the target reader's `maxIndexableValue` (reference readers do not
