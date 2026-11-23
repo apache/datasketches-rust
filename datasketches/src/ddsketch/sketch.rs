@@ -411,7 +411,10 @@ impl DdSketch {
     /// Merges `other` into `self`, retaining `self`'s [`StoreKind`].
     ///
     /// Sketches that share an equivalent index mapping can be merged even when they use different
-    /// [`StoreKind`] strategies.
+    /// [`StoreKind`] strategies. Merging a non-empty sketch whose exact summary statistics are
+    /// unknown (decoded from a bare compatibility image without summary blocks) makes `self`'s
+    /// [`min_value`](Self::min_value), [`max_value`](Self::max_value), and [`sum`](Self::sum)
+    /// `None` and disables quantile clamping until [`reset`](Self::reset) is called.
     ///
     /// # Errors
     ///
@@ -484,7 +487,8 @@ impl DdSketch {
     }
 
     /// Returns the exact minimum value recorded by this sketch, or `None` if this sketch is empty
-    /// or was decoded from a compatibility image without exact summary statistics.
+    /// or its exact summary statistics are unknown (after decoding from or merging a compatibility
+    /// image without exact summary blocks).
     #[inline]
     pub fn min_value(&self) -> Option<f64> {
         match self.summary {
@@ -494,7 +498,8 @@ impl DdSketch {
     }
 
     /// Returns the exact maximum value recorded by this sketch, or `None` if this sketch is empty
-    /// or was decoded from a compatibility image without exact summary statistics.
+    /// or its exact summary statistics are unknown (after decoding from or merging a compatibility
+    /// image without exact summary blocks).
     #[inline]
     pub fn max_value(&self) -> Option<f64> {
         match self.summary {
@@ -503,8 +508,9 @@ impl DdSketch {
         }
     }
 
-    /// Returns the exact sum of recorded values, or `None` if this sketch is empty or was decoded
-    /// from a compatibility image without exact summary statistics.
+    /// Returns the exact sum of recorded values, or `None` if this sketch is empty or its exact
+    /// summary statistics are unknown (after decoding from or merging a compatibility image without
+    /// exact summary blocks).
     ///
     /// Accumulated with standard IEEE 754 `f64` addition (`value * weight as f64`).
     #[inline]
