@@ -542,9 +542,10 @@ impl DdSketch {
     /// when `total_weight <= 2^53`. On negative buckets, `sketches-go` mirrors the floating-point
     /// rank (`KeyAtRank(negative_weight - 1 - rank * (total_weight - 1))`), acting as an upper
     /// quantile on the negative store and differing on any fractional negative-side rank (such as
-    /// `quantile(0.5)` on `[-100.0, -1.0]`). Sketches decoded via
-    /// [`deserialize_compat`](Self::deserialize_compat) from bare `DDSketch` images without exact
-    /// summary blocks return unclamped bucket estimates.
+    /// `quantile(0.5)` on `[-100.0, -1.0]`). `DDSketchWithExactSummaryStatistics` in Java and Go
+    /// clamps bucket estimates to `[min, max]` without special-casing `0.0` or `1.0`, so its
+    /// endpoint queries can return an inward-rounded bucket value rather than the exact extremum.
+    /// Sketches whose exact summary statistics are unknown return unclamped bucket estimates.
     ///
     /// # Examples
     ///
