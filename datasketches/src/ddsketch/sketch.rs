@@ -363,7 +363,7 @@ impl DdSketch {
     /// Panics without modifying the sketch if [`total_weight`](Self::total_weight) would exceed
     /// [`u64::MAX`], or if [`StoreKind::UnboundedDense`] would exceed addressable slice capacity.
     ///
-    /// # Cross-language compatibility
+    /// # Compatibility with reference implementations
     ///
     /// In the reference DDSketch implementations, Go rejects `NaN`, infinite, and negative-count
     /// inputs with an error, whereas Java rejects out-of-range finite/infinite and negative-count
@@ -530,7 +530,7 @@ impl DdSketch {
     /// Returns [`InvalidArgument`](crate::error::ErrorKind::InvalidArgument) if `rank` is NaN or
     /// outside `[0.0, 1.0]`, even if this sketch is empty.
     ///
-    /// # Cross-language compatibility
+    /// # Compatibility with reference implementations
     ///
     /// Discrete rank scaling matches `sketches-java` (`floor(rank * (total_weight - 1) as f64)`)
     /// when `total_weight <= 2^53`. On negative buckets, `sketches-go` mirrors the floating-point
@@ -700,7 +700,7 @@ impl DdSketch {
     /// (`9_007_199_254_740_991`), the maximum integer representable without rounding in the
     /// compatibility format's `v + 1.0` floating-point counter encoding.
     ///
-    /// # Cross-language compatibility
+    /// # Compatibility with reference implementations
     ///
     /// When exact summary statistics are present, emits `count`, `min`, `max`, and non-zero `sum`
     /// feature blocks compatible with `DDSketchWithExactSummaryStatistics` in Java and Go (bare
@@ -746,7 +746,7 @@ impl DdSketch {
     /// `67_108_864` total bins across negative and positive stores when `store` is
     /// [`StoreKind::UnboundedDense`].
     ///
-    /// # Cross-language compatibility
+    /// # Compatibility with reference implementations
     ///
     /// Preserves optional exact summary-statistic blocks (`count`, `sum`, `min`, `max`) emitted by
     /// `DDSketchWithExactSummaryStatistics` in Java and Go; bare `DDSketch` images without summary

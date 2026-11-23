@@ -34,7 +34,7 @@
 //! [`max_value`](DdSketch::max_value), and [`sum`](DdSketch::sum), clamping quantile estimates to
 //! `[min_value, max_value]`.
 //!
-//! # Cross-language compatibility
+//! # Serialization
 //!
 //! [`DdSketch::serialize`] and [`DdSketch::deserialize`] use this crate's native `DDSKETCH` binary
 //! format (`Family::DDSKETCH`, ID `25`), preserving [`MappingKind`], [`StoreKind`], collapse state,
@@ -42,10 +42,12 @@
 //! experimental and may change in future releases while cross-language DataSketches standardization
 //! is underway.
 //!
-//! For cross-language wire interchange with the compact flag-block binary format of the
-//! [Java][java-ref] and [Go][go-ref] reference implementations across [`MappingKind::Cubic`],
-//! [`MappingKind::Linear`], and [`MappingKind::Logarithmic`], use [`DdSketch::serialize_compat`]
-//! and [`DdSketch::deserialize_compat`] (distinct from the Protobuf format used by the Python and
+//! # Compatibility with reference implementations
+//!
+//! For wire interchange with the compact flag-block binary format of the [Java][java-ref] and
+//! [Go][go-ref] reference implementations across [`MappingKind::Cubic`], [`MappingKind::Linear`],
+//! and [`MappingKind::Logarithmic`], use [`DdSketch::serialize_compat`] and
+//! [`DdSketch::deserialize_compat`] (distinct from the Protobuf format used by the Python and
 //! JavaScript reference libraries). Positive magnitudes are indexed with
 //! `floor(approx_log(x) * multiplier + index_offset)`, whereas `sketches-java` and `sketches-go`
 //! evaluate `(int) raw - 1` when `raw < 0`; exact negative-integer boundary inputs therefore land
