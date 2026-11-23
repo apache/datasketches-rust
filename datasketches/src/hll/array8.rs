@@ -75,9 +75,18 @@ impl Array8 {
 
     pub fn update(&mut self, coupon: Coupon) {
         let mask = (1 << self.lg_config_k) - 1;
-        let slot = coupon.slot() & mask;
-        let new_value = coupon.value();
+        self.update_register(coupon.slot() & mask, coupon.value());
+    }
 
+    pub fn update_coupons(&mut self, coupons: impl Iterator<Item = Coupon>) {
+        let mask = (1 << self.lg_config_k) - 1;
+        for coupon in coupons {
+            self.update_register(coupon.slot() & mask, coupon.value());
+        }
+    }
+
+    #[inline]
+    fn update_register(&mut self, slot: u32, new_value: u8) {
         let old_value = self.get(slot);
 
         if new_value > old_value {

@@ -52,19 +52,11 @@ impl Array6 {
     }
 
     #[inline]
-    fn get_raw(&self, slot: u32) -> u8 {
-        let start_bit = slot * 6;
-        let byte_idx = (start_bit >> 3) as usize;
-        let shift = (start_bit & 7) as u8;
-
-        let two_bytes = u16::from_le_bytes([self.bytes[byte_idx], self.bytes[byte_idx + 1]]);
-
-        ((two_bytes >> shift) & VAL_MASK_6) as u8
-    }
-
-    #[inline]
     pub fn get(&self, slot: u32) -> u8 {
-        self.get_raw(slot)
+        let (index, shift) = register_position(slot);
+        let bytes: &[u8; 2] = self.bytes[index..index + 2].try_into().unwrap();
+        let word = u16::from_le_bytes(*bytes);
+        u8::try_from((word >> shift) & VAL_MASK_6).unwrap()
     }
 
     pub fn num_registers(&self) -> usize {
@@ -75,37 +67,31 @@ impl Array6 {
         self.estimator.estimate_state()
     }
 
-    #[inline]
-    fn put_raw(&mut self, slot: u32, value: u8) {
-        debug_assert!(value <= 63, "6-bit value must be 0-63");
-
-        let start_bit = slot * 6;
-        let byte_idx = (start_bit >> 3) as usize;
-        let shift = (start_bit & 0x7) as u8;
-
-        let mut two_bytes = u16::from_le_bytes([self.bytes[byte_idx], self.bytes[byte_idx + 1]]);
-
-        two_bytes &= !(VAL_MASK_6 << shift);
-
-        two_bytes |= ((value as u16) & VAL_MASK_6) << shift;
-
-        let bytes_out = two_bytes.to_le_bytes();
-        self.bytes[byte_idx] = bytes_out[0];
-        self.bytes[byte_idx + 1] = bytes_out[1];
-    }
-
     pub fn update(&mut self, coupon: Coupon) {
         let mask = (1 << self.lg_config_k) - 1;
-        let slot = coupon.slot() & mask;
-        let new_value = coupon.value();
+        self.update_register(coupon.slot() & mask, coupon.value());
+    }
 
-        let old_value = self.get_raw(slot);
+    pub fn update_coupons(&mut self, coupons: impl Iterator<Item = Coupon>) {
+        let mask = (1 << self.lg_config_k) - 1;
+        for coupon in coupons {
+            self.update_register(coupon.slot() & mask, coupon.value());
+        }
+    }
+
+    #[inline]
+    fn update_register(&mut self, slot: u32, new_value: u8) {
+        let (index, shift) = register_position(slot);
+        let bytes: &mut [u8; 2] = (&mut self.bytes[index..index + 2]).try_into().unwrap();
+        let word = u16::from_le_bytes(*bytes);
+        let old_value = u8::try_from((word >> shift) & VAL_MASK_6).unwrap();
 
         if new_value > old_value {
             self.estimator
                 .update(self.lg_config_k, old_value, new_value);
 
-            self.put_raw(slot, new_value);
+            let word = (word & !(VAL_MASK_6 << shift)) | (u16::from(new_value) << shift);
+            *bytes = word.to_le_bytes();
 
             if old_value == 0 {
                 self.num_zeros -= 1;
@@ -217,6 +203,12 @@ impl Array6 {
     }
 }
 
+#[inline]
+fn register_position(slot: u32) -> (usize, u32) {
+    let bit = slot * 6;
+    (usize::try_from(bit >> 3).unwrap(), bit & 7)
+}
+
 pub fn num_bytes_for_k(k: u32) -> usize {
     // The final register's 16-bit read/write window needs one padding byte.
     (((k * 3) >> 2) + 1) as usize
@@ -240,51 +232,16 @@ mod tests {
     }
 
     #[test]
-    fn test_get_set_raw() {
-        let mut arr = Array6::new(4); // 16 slots
+    fn test_update_preserves_neighboring_registers() {
+        let mut arr = Array6::new(4);
+        arr.update(Coupon::pack(13, 63));
+        arr.update(Coupon::pack(15, 51));
+        arr.update(Coupon::pack(14, 42));
+        arr.update(Coupon::pack(14, 48));
 
-        arr.put_raw(0, 0);
-        arr.put_raw(1, 1);
-        arr.put_raw(2, 31);
-        arr.put_raw(3, 63); // Max 6-bit value
-
-        assert_eq!(arr.get_raw(0), 0);
-        assert_eq!(arr.get_raw(1), 1);
-        assert_eq!(arr.get_raw(2), 31);
-        assert_eq!(arr.get_raw(3), 63);
-
-        arr.put_raw(5, 42);
-        assert_eq!(arr.get_raw(5), 42);
-        assert_eq!(arr.get_raw(3), 63); // Earlier value unchanged
-
-        // Test all slots to ensure no cross-slot corruption
-        for slot in 0..16 {
-            arr.put_raw(slot, (slot % 64) as u8);
-        }
-        for slot in 0..16 {
-            assert_eq!(arr.get_raw(slot), (slot % 64) as u8);
-        }
-    }
-
-    #[test]
-    fn test_boundary_crossing() {
-        let mut arr = Array6::new(8); // 256 slots
-
-        // Slot 1: starts at bit 6 (crosses byte 0/1 boundary)
-        arr.put_raw(1, 0b111111);
-        assert_eq!(arr.get_raw(1), 63);
-
-        // Slot 2: starts at bit 12 (in byte 1)
-        arr.put_raw(2, 0b101010);
-        assert_eq!(arr.get_raw(2), 42);
-
-        // Slot 3: starts at bit 18 (crosses byte 2/3 boundary)
-        arr.put_raw(3, 0b110011);
-        assert_eq!(arr.get_raw(3), 51);
-
-        assert_eq!(arr.get_raw(1), 63);
-        assert_eq!(arr.get_raw(2), 42);
-        assert_eq!(arr.get_raw(3), 51);
+        assert_eq!(arr.get(13), 63);
+        assert_eq!(arr.get(14), 48);
+        assert_eq!(arr.get(15), 51);
     }
 
     #[test]
@@ -311,11 +268,11 @@ mod tests {
         let mut arr = Array6::new(6); // 64 slots
 
         for val in 0..64u8 {
-            arr.put_raw(val as u32, val);
+            arr.update(Coupon::pack(u32::from(val), val));
         }
 
         for val in 0..64u8 {
-            assert_eq!(arr.get_raw(val as u32), val);
+            assert_eq!(arr.get(u32::from(val)), val);
         }
     }
 

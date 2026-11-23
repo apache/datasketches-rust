@@ -120,9 +120,18 @@ impl Array4 {
 
     pub fn update(&mut self, coupon: Coupon) {
         let mask = (1 << self.lg_config_k) - 1;
-        let slot = coupon.slot() & mask;
-        let new_value = coupon.value();
+        self.update_register(coupon.slot() & mask, coupon.value());
+    }
 
+    pub fn update_coupons(&mut self, coupons: impl Iterator<Item = Coupon>) {
+        let mask = (1 << self.lg_config_k) - 1;
+        for coupon in coupons {
+            self.update_register(coupon.slot() & mask, coupon.value());
+        }
+    }
+
+    #[inline]
+    fn update_register(&mut self, slot: u32, new_value: u8) {
         if new_value <= self.cur_min {
             return;
         }
@@ -134,6 +143,12 @@ impl Array4 {
             return;
         }
 
+        self.raise_register(slot, new_value, raw_stored, lower_bound);
+    }
+
+    // Kept out of line so the early returns in `update_register` inline without a stack frame.
+    #[inline(never)]
+    fn raise_register(&mut self, slot: u32, new_value: u8, raw_stored: u8, lower_bound: u8) {
         let old_value = if raw_stored < AUX_TOKEN {
             lower_bound
         } else {

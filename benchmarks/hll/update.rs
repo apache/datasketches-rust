@@ -20,6 +20,7 @@ use std::hint::black_box;
 use benchmarks::Bencher;
 use benchmarks::Runner;
 use datasketches::hash::value::raw_bytes;
+use datasketches::hll::Coupon;
 use datasketches::hll::HllSketch;
 use datasketches::hll::HllType;
 
@@ -87,10 +88,47 @@ fn prefixed_bytes(bencher: Bencher) {
     });
 }
 
+// Batches of 8,192 values at `lg_k` 14 match DataFusion's default batch size and
+// `approx_distinct` precision.
+fn u64_batches(bencher: Bencher, hll_type: HllType, update: impl Fn(&mut HllSketch, &[u64])) {
+    let values: Vec<_> = (0..400_000_u64).collect();
+    bencher.bench_local(|| {
+        let mut sketch = HllSketch::new(14, hll_type).unwrap();
+        for batch in black_box(&values).chunks(8_192) {
+            update(&mut sketch, batch);
+        }
+        black_box(sketch.estimate())
+    });
+}
+
 pub fn register(runner: &mut Runner) {
     runner.case("hll::update::u64", 6_000, u64);
     runner.case("hll::update::u64_pair", 5_500, u64_tuple);
     runner.case("hll::update::bytes_32", 2_000, bytes_32);
     runner.case("hll::update::variable_bytes", 2_000, variable_bytes);
     runner.case("hll::update::prefixed_bytes", 1_600, prefixed_bytes);
+    for (label, hll_type, rounds) in [
+        ("hll4", HllType::Hll4, 100),
+        ("hll6", HllType::Hll6, 150),
+        ("hll8", HllType::Hll8, 200),
+    ] {
+        runner.compare(
+            &format!("hll::update::u64_batches/{label}"),
+            rounds,
+            &[
+                ("scalar", &|b| {
+                    u64_batches(b, hll_type, |sketch, batch| {
+                        for &value in batch {
+                            sketch.update(value);
+                        }
+                    })
+                }),
+                ("batch", &|b| {
+                    u64_batches(b, hll_type, |sketch, batch| {
+                        sketch.update_with_coupons(batch.iter().copied().map(Coupon::from_value));
+                    })
+                }),
+            ],
+        );
+    }
 }

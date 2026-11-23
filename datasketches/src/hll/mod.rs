@@ -120,7 +120,8 @@ const RESIZE_DENOMINATOR: u32 = 4;
 /// A reusable hash of an input value for HLL sketches.
 ///
 /// Compute a coupon once with [`Coupon::from_value`] and pass it to
-/// [`HllSketch::update_with_coupon`] on sketches with any `lg_k` or [`HllType`].
+/// [`HllSketch::update_with_coupon`] or [`HllSketch::update_with_coupons`] on sketches
+/// with any `lg_k` or [`HllType`].
 ///
 /// See the [module level documentation](crate::hll) for more.
 ///
