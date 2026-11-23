@@ -512,7 +512,9 @@ impl DdSketch {
     /// summary statistics are unknown (after decoding from or merging a compatibility image without
     /// exact summary blocks).
     ///
-    /// Accumulated with standard IEEE 754 `f64` addition (`value * weight as f64`).
+    /// Accumulated with standard IEEE 754 `f64` addition (`value * weight as f64`); the Java and Go
+    /// reference implementations use compensated (Kahan) summation in memory, so `sum` can differ
+    /// in the last bits on long or cancelling streams.
     #[inline]
     pub fn sum(&self) -> Option<f64> {
         match self.summary {
