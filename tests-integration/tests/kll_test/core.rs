@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::cmp::Ordering;
 use std::panic::AssertUnwindSafe;
 use std::panic::catch_unwind;
 
@@ -63,11 +64,37 @@ fn empty_and_reset_state() {
 }
 
 #[test]
-fn float_adapter_rejects_nan() {
+fn float_adapter_rejects_nan_and_orders_values() {
     assert_eq!(
         KllFloat::<f32>::new(f32::NAN).unwrap_err().kind(),
         ErrorKind::InvalidArgument
     );
+    assert_eq!(
+        KllFloat::<f64>::new(f64::NAN).unwrap_err().kind(),
+        ErrorKind::InvalidArgument
+    );
+
+    let f32_values = [f32::NEG_INFINITY, -1.0, -0.0, 0.0, 1.0, f32::INFINITY];
+    for &left in &f32_values {
+        for &right in &f32_values {
+            let expected = left.partial_cmp(&right).unwrap();
+            let left_val = KllFloat::<f32>::new(left).unwrap();
+            let right_val = KllFloat::<f32>::new(right).unwrap();
+            assert_eq!(left_val.cmp(&right_val), expected);
+            assert_eq!(left_val == right_val, expected == Ordering::Equal);
+        }
+    }
+
+    let f64_values = [f64::NEG_INFINITY, -1.0, -0.0, 0.0, 1.0, f64::INFINITY];
+    for &left in &f64_values {
+        for &right in &f64_values {
+            let expected = left.partial_cmp(&right).unwrap();
+            let left_val = KllFloat::<f64>::new(left).unwrap();
+            let right_val = KllFloat::<f64>::new(right).unwrap();
+            assert_eq!(left_val.cmp(&right_val), expected);
+            assert_eq!(left_val == right_val, expected == Ordering::Equal);
+        }
+    }
 
     let mut sketch = KllSketch::new(DEFAULT_K).unwrap();
     sketch.update(KllFloat::<f32>::new(0.0).unwrap());

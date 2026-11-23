@@ -856,7 +856,8 @@ impl<T: Clone + Ord> KllSketch<T> {
 
     fn compress_while_updating(&mut self) {
         let level = self.find_level_to_compact();
-        if level + 1 == self.levels.len() {
+        let adds_level = level + 1 == self.levels.len();
+        if adds_level {
             self.levels.push(Vec::new());
         }
 
@@ -882,7 +883,15 @@ impl<T: Clone + Ord> KllSketch<T> {
             new_level.push(item);
         }
         self.levels[level] = new_level;
-        self.refresh_capacity_state();
+        self.num_retained = self.levels.iter().map(Vec::len).sum();
+        if adds_level {
+            // Total capacity depends only on `k` and the number of levels.
+            self.capacity = total_capacity(self.k, self.levels.len()) as usize;
+        }
+        debug_assert_eq!(
+            self.capacity,
+            total_capacity(self.k, self.levels.len()) as usize
+        );
     }
 
     fn find_level_to_compact(&self) -> usize {
@@ -906,9 +915,7 @@ impl<T: Clone + Ord> KllSketch<T> {
         work_levels.resize_with(provisional_levels, Vec::new);
 
         for (work_level, other_level) in work_levels.iter_mut().zip(&other.levels).skip(1) {
-            if !other_level.is_empty() {
-                merge_into_level(work_level, other_level.clone());
-            }
+            merge_slice_into_level(work_level, other_level);
         }
 
         self.levels = general_compress(work_levels, self.k, self.is_level_zero_sorted);
@@ -933,7 +940,7 @@ impl<T: Clone + Ord> KllSketch<T> {
 
         for (level, work_level) in work_levels.iter_mut().enumerate().take(top_level).skip(1) {
             if (weight >> level) & 1 != 0 {
-                merge_into_level(work_level, vec![item.clone()]);
+                merge_slice_into_level(work_level, std::slice::from_ref(&item));
             }
         }
 
@@ -1016,11 +1023,24 @@ impl<T: Clone + Ord> KllSketch<T> {
                 }
             }
 
-            for (item_index, item) in level.iter().enumerate() {
-                if item.cmp(min_item) == Ordering::Less || item.cmp(max_item) == Ordering::Greater {
-                    return Err(Error::deserial(format!(
-                        "retained item at level {level_index}, index {item_index} is outside the serialized minimum and maximum"
-                    )));
+            // A sorted level lies within its first and last items; fall back to the full scan
+            // for unsorted level zero or to locate the first out-of-bounds item.
+            let within_bounds = must_be_sorted
+                && level
+                    .first()
+                    .is_none_or(|first| first.cmp(min_item) != Ordering::Less)
+                && level
+                    .last()
+                    .is_none_or(|last| last.cmp(max_item) != Ordering::Greater);
+            if !within_bounds {
+                for (item_index, item) in level.iter().enumerate() {
+                    if item.cmp(min_item) == Ordering::Less
+                        || item.cmp(max_item) == Ordering::Greater
+                    {
+                        return Err(Error::deserial(format!(
+                            "retained item at level {level_index}, index {item_index} is outside the serialized minimum and maximum"
+                        )));
+                    }
                 }
             }
 
@@ -1130,6 +1150,36 @@ fn merge_into_level<T: Ord>(target: &mut Vec<T>, right: Vec<T>) {
     } else {
         merge_sorted_vec(left, right)
     };
+}
+
+fn merge_slice_into_level<T: Clone + Ord>(target: &mut Vec<T>, right: &[T]) {
+    if right.is_empty() {
+        return;
+    }
+    let left = std::mem::take(target);
+    if left.is_empty() {
+        *target = right.to_vec();
+        return;
+    }
+
+    let mut merged = Vec::with_capacity(left.len() + right.len());
+    let mut left_iter = left.into_iter().peekable();
+    let mut right_index = 0;
+
+    while let Some(l) = left_iter.peek() {
+        let Some(r) = right.get(right_index) else {
+            break;
+        };
+        if l.cmp(r) == Ordering::Less {
+            merged.push(left_iter.next().unwrap());
+        } else {
+            merged.push(r.clone());
+            right_index += 1;
+        }
+    }
+    merged.extend(left_iter);
+    merged.extend_from_slice(&right[right_index..]);
+    *target = merged;
 }
 
 fn merge_sorted_vec<T: Ord>(left: Vec<T>, right: Vec<T>) -> Vec<T> {
