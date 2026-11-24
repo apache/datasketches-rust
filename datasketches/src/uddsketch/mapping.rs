@@ -152,6 +152,15 @@ impl Mapping {
         collapse_key(key0, num_collapses)
     }
 
+    /// Returns the inclusive reachable `[min_key, max_key]` bounds for positive magnitudes at
+    /// `num_collapses`.
+    pub fn key_bounds(self, num_collapses: u8) -> (i64, i64) {
+        (
+            self.key_at_level(f64::from_bits(1), num_collapses),
+            self.key_at_level(f64::MAX, num_collapses),
+        )
+    }
+
     /// Returns the harmonic-mean representative magnitude for positive bucket `key` at
     /// `num_collapses`.
     pub fn value_at_level(self, key: i64, num_collapses: u8) -> f64 {

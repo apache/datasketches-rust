@@ -77,6 +77,16 @@ impl Clone for BucketStore {
 }
 
 impl BucketStore {
+    pub fn from_sorted_unchecked(entries: Vec<Bucket>, total_weight: u64) -> Self {
+        Self {
+            entries,
+            total_weight,
+            slots: Vec::new(),
+            sorted: true,
+            sorted_cache: OnceLock::new(),
+        }
+    }
+
     #[inline]
     pub fn len(&self) -> usize {
         self.entries.len()

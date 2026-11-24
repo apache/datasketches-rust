@@ -147,6 +147,19 @@ impl Family {
         max_pre_longs: 3,
     };
 
+    /// UDDSketch for reproducible quantile estimation with adaptive relative-value error
+    /// guarantees.
+    ///
+    /// Family ID `24` and its native binary layout are experimental and may change in future
+    /// releases while cross-language DataSketches standardization is underway.
+    #[cfg(feature = "uddsketch")]
+    pub const UDDSKETCH: Family = Family {
+        id: 24,
+        name: "UDDSKETCH",
+        min_pre_longs: 2,
+        max_pre_longs: 7,
+    };
+
     /// DDSketch for estimating quantiles with relative-value error guarantees.
     ///
     /// Family ID `25` and its native binary layout are experimental and may change in future

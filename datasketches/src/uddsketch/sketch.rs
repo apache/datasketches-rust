@@ -23,6 +23,8 @@ use crate::uddsketch::DEFAULT_MAX_BUCKETS;
 use crate::uddsketch::MIN_ALPHA;
 use crate::uddsketch::MIN_MAX_BUCKETS;
 use crate::uddsketch::mapping::Mapping;
+use crate::uddsketch::serialization::deserialize_sketch;
+use crate::uddsketch::serialization::serialize_sketch;
 use crate::uddsketch::store::BucketStore;
 use crate::uddsketch::store::key_at_rank_in_slice;
 
@@ -393,8 +395,42 @@ impl UddSketch {
         ))
     }
 
+    /// Serializes this sketch into the DataSketches UDDSketch binary format.
+    ///
+    /// See the [module documentation](crate::uddsketch#serialization) for format
+    /// compatibility notes.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::uddsketch::UddSketch;
+    ///
+    /// let mut sketch = UddSketch::new(256, 0.01)?;
+    /// sketch.update(3.5);
+    /// let bytes = sketch.serialize();
+    /// let decoded = UddSketch::deserialize(&bytes)?;
+    /// assert_eq!(decoded.total_weight(), 1);
+    /// # Ok::<(), datasketches::error::Error>(())
+    /// ```
+    pub fn serialize(&self) -> Vec<u8> {
+        serialize_sketch(self)
+    }
+
+    /// Deserializes a sketch from the DataSketches UDDSketch binary format.
+    ///
+    /// See the [module documentation](crate::uddsketch#serialization) for format
+    /// compatibility notes.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InvalidData`](crate::error::ErrorKind::InvalidData) if the image is truncated, has
+    /// an unsupported header, or violates bucket ordering, count, budget, or extrema invariants.
+    pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
+        deserialize_sketch(bytes)
+    }
+
     #[allow(clippy::too_many_arguments)]
-    fn from_parts(
+    pub(super) fn from_parts(
         max_buckets: u32,
         mapping: Mapping,
         num_collapses: u8,
@@ -416,6 +452,14 @@ impl UddSketch {
             neg,
             pos,
         }
+    }
+
+    pub(super) fn neg_store(&self) -> &BucketStore {
+        &self.neg
+    }
+
+    pub(super) fn pos_store(&self) -> &BucketStore {
+        &self.pos
     }
 
     fn enforce_budget(&mut self) {
