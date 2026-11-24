@@ -428,13 +428,6 @@ fn deserialize_native(bytes: &[u8]) -> Result<DdSketch, Error> {
 
     validate_encoded_sign_store(neg_weight, neg_span, neg_collapsed, encoded_max_bins)?;
     validate_encoded_sign_store(pos_weight, pos_span, pos_collapsed, encoded_max_bins)?;
-    validate_summary_against_stores(
-        summary,
-        &mapping,
-        neg_weight > 0,
-        zero_weight,
-        pos_weight > 0,
-    )?;
 
     let total_weight = zero_weight
         .checked_add(neg_weight)
@@ -445,6 +438,7 @@ fn deserialize_native(bytes: &[u8]) -> Result<DdSketch, Error> {
             "non-empty DDSketch image must have positive total_weight",
         ));
     }
+    validate_summary_against_stores(summary, neg_weight > 0, zero_weight, pos_weight > 0)?;
 
     let trailing = cursor.remaining().len();
     if trailing != 0 {
@@ -472,12 +466,11 @@ fn deserialize_native(bytes: &[u8]) -> Result<DdSketch, Error> {
 
 fn validate_summary_against_stores(
     summary: SummaryState,
-    mapping: &IndexMapping,
     neg_non_empty: bool,
     zero_weight: u64,
     pos_non_empty: bool,
 ) -> Result<(), Error> {
-    let SummaryState::Active { min, max, .. } = summary else {
+    let SummaryState::Active { min, max, sum } = summary else {
         return Ok(());
     };
     if neg_non_empty && min >= 0.0 {
@@ -490,11 +483,29 @@ fn validate_summary_against_stores(
             "DDSketch exact_max ({max}) must be positive when positive store is non-empty"
         )));
     }
-    if zero_weight > 0 {
-        let zero_bound = mapping.min_indexable_value() * (1.0 + 1e-12);
-        if min > zero_bound || max < -zero_bound {
+    if !neg_non_empty && zero_weight == 0 && min <= 0.0 {
+        return Err(Error::deserial(format!(
+            "DDSketch exact_min ({min}) must be positive when only positive store is non-empty"
+        )));
+    }
+    if !pos_non_empty && zero_weight == 0 && max >= 0.0 {
+        return Err(Error::deserial(format!(
+            "DDSketch exact_max ({max}) must be negative when only negative store is non-empty"
+        )));
+    }
+    if sum.is_finite() {
+        let sum_consistent = if min == 0.0 && max == 0.0 {
+            sum == 0.0
+        } else if min >= 0.0 {
+            sum > 0.0
+        } else if max <= 0.0 {
+            sum < 0.0
+        } else {
+            true
+        };
+        if !sum_consistent {
             return Err(Error::deserial(format!(
-                "DDSketch exact summary [{min}, {max}] excludes occupied zero bucket"
+                "DDSketch exact_sum ({sum}) is inconsistent with exact bounds [{min}, {max}]"
             )));
         }
     }
@@ -1166,7 +1177,6 @@ fn scan_datadog_stream(
         };
         validate_summary_against_stores(
             active,
-            &mapping,
             neg_range.bounds.is_some(),
             zero_weight,
             pos_range.bounds.is_some(),

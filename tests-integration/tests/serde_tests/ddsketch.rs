@@ -384,27 +384,24 @@ fn native_malformed_headers_and_body_invariants_are_rejected() {
     assert_eq!(sparse_ok.min_value(), None);
     assert!(sparse_ok.quantile(0.0).unwrap().unwrap() > 0.0);
 
-    // Inverted, non-finite, or sign-contradictory exact summary bounds in native image
-    // (`FLAG_HAS_EXACT_SUMMARY` = 1 << 7) are rejected.
-    let mut bad_native_summary = single_pos.serialize();
-    bad_native_summary[24..32].copy_from_slice(&50.0_f64.to_le_bytes()); // min = 50.0 > max = 10.0
-    assert_eq!(
-        DdSketch::deserialize(&bad_native_summary)
-            .unwrap_err()
-            .kind(),
-        ErrorKind::InvalidData
-    );
-
-    let mut sign_contradictory_native = single_pos.serialize();
-    sign_contradictory_native[24..32].copy_from_slice(&(-10.0_f64).to_le_bytes());
-    sign_contradictory_native[32..40].copy_from_slice(&(-10.0_f64).to_le_bytes());
-    sign_contradictory_native[40..48].copy_from_slice(&(-10.0_f64).to_le_bytes());
-    assert_eq!(
-        DdSketch::deserialize(&sign_contradictory_native)
-            .unwrap_err()
-            .kind(),
-        ErrorKind::InvalidData
-    );
+    // Inverted, non-finite, or zero-bucket summary inconsistencies in native images are rejected.
+    let mut zero_only = DdSketch::new(0.01).unwrap();
+    zero_only.update(0.0);
+    for (base, min, max, sum) in [
+        (&single_pos, 50.0_f64, 10.0_f64, 10.0_f64),
+        (&single_pos, f64::NAN, 10.0, 10.0),
+        (&zero_only, 0.0, 0.0, 1.0),
+        (&zero_only, 0.0, 1.0, 0.0),
+    ] {
+        let mut forged = base.serialize();
+        forged[24..32].copy_from_slice(&min.to_le_bytes());
+        forged[32..40].copy_from_slice(&max.to_le_bytes());
+        forged[40..48].copy_from_slice(&sum.to_le_bytes());
+        assert_eq!(
+            DdSketch::deserialize(&forged).unwrap_err().kind(),
+            ErrorKind::InvalidData
+        );
+    }
 
     // Forged native collapsing store claiming `num_bins > max_num_bins` (contiguous or delta) is
     // rejected upfront.
@@ -688,16 +685,56 @@ fn compat_decodes_reordered_summary_blocks_and_rejects_malformed_images() {
 
     let mut pos_only = DdSketch::new(0.01).unwrap();
     pos_only.update(10.0);
-    let mut sign_contradictory_compat = pos_only.serialize_compat().unwrap();
-    let neg_ten = (-10.0_f64).to_le_bytes();
-    sign_contradictory_compat[3..11].copy_from_slice(&neg_ten); // FlagMin = -10.0
-    sign_contradictory_compat[12..20].copy_from_slice(&neg_ten); // FlagMax = -10.0 with pos bin!
-    assert_eq!(
-        DdSketch::deserialize_compat(&sign_contradictory_compat, StoreKind::default())
-            .unwrap_err()
-            .kind(),
-        ErrorKind::InvalidData
-    );
+    let mut neg_only = DdSketch::new(0.01).unwrap();
+    neg_only.update(-10.0);
+    for (base, min, max, sum) in [
+        (&pos_only, -10.0_f64, -10.0_f64, 10.0_f64),
+        (&pos_only, -10.0, 10.0, 10.0),
+        (&pos_only, 10.0, 10.0, -10.0),
+        (&neg_only, 0.0, 10.0, 10.0),
+        (&neg_only, -10.0, 10.0, -10.0),
+        (&neg_only, -10.0, -10.0, 10.0),
+    ] {
+        let mut native = base.serialize();
+        native[24..32].copy_from_slice(&min.to_le_bytes());
+        native[32..40].copy_from_slice(&max.to_le_bytes());
+        native[40..48].copy_from_slice(&sum.to_le_bytes());
+        assert_eq!(
+            DdSketch::deserialize(&native).unwrap_err().kind(),
+            ErrorKind::InvalidData
+        );
+
+        let mut compat = base.serialize_compat().unwrap();
+        compat[3..11].copy_from_slice(&min.to_le_bytes());
+        compat[12..20].copy_from_slice(&max.to_le_bytes());
+        compat[21..29].copy_from_slice(&sum.to_le_bytes());
+        assert_eq!(
+            DdSketch::deserialize_compat(&compat, StoreKind::default())
+                .unwrap_err()
+                .kind(),
+            ErrorKind::InvalidData
+        );
+    }
+
+    // Non-finite sums (such as `NaN` from reference Kahan overflow) round-trip across both codecs.
+    let mut nan_sum = pos_only.serialize_compat().unwrap();
+    nan_sum[21..29].copy_from_slice(&f64::NAN.to_le_bytes());
+    let nan_sk = DdSketch::deserialize_compat(&nan_sum, StoreKind::default()).unwrap();
+    let nan_rt = DdSketch::deserialize(&nan_sk.serialize()).unwrap();
+    assert!(nan_rt.sum().unwrap().is_nan());
+
+    // Java `DDSketchWithExactSummaryStatistics` with custom `minIndexedValue = 1.0` (unencoded on
+    // wire) recording `0.5` into `zero_count`: `[ZeroCount=1, Count=1, Min=0.5, Max=0.5, Sum=0.5]`.
+    let mut java_zero_wire = compat_mapping_header(0x02, gamma, 0.0);
+    java_zero_wire.extend_from_slice(&[0x04, 0x02, 0xa0, 0x02]);
+    for flag in [0x88_u8, 0x8c, 0x84] {
+        java_zero_wire.push(flag);
+        java_zero_wire.extend_from_slice(&0.5_f64.to_le_bytes());
+    }
+    let java_zero = DdSketch::deserialize_compat(&java_zero_wire, StoreKind::default()).unwrap();
+    assert_eq!(java_zero.quantile(0.5).unwrap(), Some(0.5));
+    let java_rt = DdSketch::deserialize(&java_zero.serialize()).unwrap();
+    assert_eq!((java_rt.zero_weight(), java_rt.min_value()), (1, Some(0.5)));
 
     let go_cubic_wire = {
         let mut w = compat_mapping_header(0x0e, 1.020_002_282_805_862_8, 0.0);
@@ -712,6 +749,23 @@ fn compat_decodes_reordered_summary_blocks_and_rejects_malformed_images() {
     rust_cubic.update(10.0);
     rust_cubic.merge(&go_cubic).unwrap();
     assert_eq!(rust_cubic.total_weight(), 2);
+
+    // Merging a compatible peer whose `zero_threshold` is 1 ULP larger after recording
+    // `src.zero_threshold()` preserves `zero_weight` and `min_value` across both codecs.
+    let mut go_cubic_zero =
+        DdSketch::deserialize_compat(&go_cubic_wire[..17], StoreKind::default()).unwrap();
+    let mut rust_cubic_dst = DdSketch::new(0.01).unwrap();
+    let src_zt = go_cubic_zero.zero_threshold();
+    assert!(src_zt > rust_cubic_dst.zero_threshold());
+    go_cubic_zero.update(src_zt);
+    rust_cubic_dst.merge(&go_cubic_zero).unwrap();
+    let merged_compat = rust_cubic_dst.serialize_compat().unwrap();
+    for rt in [
+        DdSketch::deserialize(&rust_cubic_dst.serialize()).unwrap(),
+        DdSketch::deserialize_compat(&merged_compat, StoreKind::default()).unwrap(),
+    ] {
+        assert_eq!((rt.zero_weight(), rt.min_value()), (1, Some(src_zt)));
+    }
 
     // At `alpha = 1e-6`, `sketches-go`'s `Linear` `offset = 1 / log2(gamma)` (~499999.999976)
     // differs from Rust's `ln_1p` offset (~499999.9999998) by ~2.4e-5 bins (4.7e-11 relative);

@@ -775,9 +775,12 @@ impl DdSketch {
     /// `DDSketchWithExactSummaryStatistics` in Java and Go; bare `DDSketch` images without summary
     /// blocks decode with [`min_value`](Self::min_value), [`max_value`](Self::max_value), and
     /// [`sum`](Self::sum) set to `None` and re-encode without summary blocks. Encoded counts must
-    /// be non-negative integers below `2^64`. Extreme bucket index bounds allow `0.25` bins of
-    /// slack before flooring to accept `sketches-go` `1 / math.Log2(gamma)` rounding near domain
-    /// limits.
+    /// be non-negative integers below `2^64`, and exact summary extrema and finite sums must be
+    /// sign-consistent with occupied buckets. Custom `minIndexedValue` thresholds are not stored in
+    /// the reference format, so non-empty zero buckets accept any sign-consistent summary bounds
+    /// while subsequent updates use the mapping-derived [`zero_threshold`](Self::zero_threshold).
+    /// Extreme bucket index bounds allow `0.25` bins of slack before flooring to accept
+    /// `sketches-go` `1 / math.Log2(gamma)` rounding near domain limits.
     ///
     /// Because reference images do not record [`StoreKind`] and encode sparse bins as compact index
     /// deltas, a small compatibility payload can span up to `67_108_864` bins (`512 MiB` of `u64`
