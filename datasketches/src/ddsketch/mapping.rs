@@ -33,11 +33,14 @@ const CUBIC_A: f64 = 6.0 / 35.0;
 const CUBIC_B: f64 = -3.0 / 5.0;
 const CUBIC_C: f64 = 10.0 / 7.0;
 const CUBIC_D0: f64 = CUBIC_B * CUBIC_B - 3.0 * CUBIC_A * CUBIC_C;
-// Maximum continuous bucket-coordinate drift permitted across the entire normal IEEE 754 `f64`
-// domain when merging two mappings: absorbs 1-2 ULP `pow`/`log2` differences from reference Go/Java
-// encoders (<= 0.086 bins even at `alpha = 1e-6`) while rejecting mappings whose bucket indices
-// diverge across wide dynamic ranges.
-const MAX_COMPAT_BUCKET_DRIFT: f64 = 0.25;
+// Slack permitted at extreme wire bucket bounds (`min_index` / `max_index`) so compatibility
+// payloads from reference encoders that evaluate `1.0 / log2(gamma)` instead of `ln_1p(gamma - 1)`
+// remain decodable near `min_indexable_value` and `f64::MAX`.
+const MAX_WIRE_BUCKET_DRIFT: f64 = 0.25;
+// Maximum continuous bucket-coordinate and scaled coordinate (`drift / multiplier`) drift
+// permitted across the normal IEEE 754 `f64` domain when merging two mappings.
+const MAX_COMPAT_BUCKET_DRIFT: f64 = 1e-4;
+const MAX_COMPAT_VALUE_DRIFT: f64 = 1e-10;
 
 /// Index mapping curve used by a [`DdSketch`](super::DdSketch) to map positive magnitudes to
 /// integer bucket indices.
@@ -149,10 +152,11 @@ impl IndexMapping {
             ));
         }
 
-        // Ensure every finite normal value up to f64::MAX maps within [i32::MIN, i32::MAX].
+        // Ensure every finite normal value up to f64::MAX floors within [i32::MIN, i32::MAX].
+        let i32_max_exclusive = f64::from(i32::MAX) + 1.0;
         let max_raw_index = max_log * multiplier + index_offset;
         if !max_raw_index.is_finite()
-            || max_raw_index > f64::from(i32::MAX)
+            || max_raw_index >= i32_max_exclusive
             || max_raw_index <= f64::from(i32::MIN) + 1.0
         {
             return Err(format!(
@@ -179,16 +183,16 @@ impl IndexMapping {
         if !first_raw.is_finite()
             || first_raw < f64::from(i32::MIN)
             || !last_raw.is_finite()
-            || last_raw > f64::from(i32::MAX)
+            || last_raw >= i32_max_exclusive
         {
             return Err(format!(
                 "mapping parameters overflow 32-bit bucket indices: gamma={gamma}, index_offset={index_offset}"
             ));
         }
         // Allow the 1-bin shift when `first_raw` lands on an exact negative integer in reference
-        // Java/Go encoders (`(int) raw - 1`), as well as `MAX_COMPAT_BUCKET_DRIFT` across
-        // compatible peer mappings near integer boundaries.
-        let min_raw_bound = (first_raw - MAX_COMPAT_BUCKET_DRIFT).max(f64::from(i32::MIN));
+        // Java/Go encoders (`(int) raw - 1`), as well as `MAX_WIRE_BUCKET_DRIFT` for reference
+        // `1 / log2(gamma)` precision differences near integer boundaries.
+        let min_raw_bound = (first_raw - MAX_WIRE_BUCKET_DRIFT).max(f64::from(i32::MIN));
         let min_index = if first_raw < 0.0 && first_raw.fract() == 0.0 {
             (first_raw as i32)
                 .saturating_sub(1)
@@ -196,8 +200,9 @@ impl IndexMapping {
         } else {
             min_raw_bound.floor() as i32
         };
-        let max_raw_bound = (last_raw + MAX_COMPAT_BUCKET_DRIFT).min(f64::from(i32::MAX));
-        let max_index = max_raw_bound.floor() as i32;
+        let max_index = (last_raw + MAX_WIRE_BUCKET_DRIFT)
+            .floor()
+            .min(f64::from(i32::MAX)) as i32;
         if min_index > max_index {
             return Err(format!(
                 "mapping has inverted index bounds [{min_index}, {max_index}]"
@@ -254,6 +259,7 @@ impl IndexMapping {
         let doff = self.index_offset - other.index_offset;
         let drift = (dm * min_log + doff).abs().max((dm * max_log + doff).abs());
         drift <= MAX_COMPAT_BUCKET_DRIFT
+            && drift <= MAX_COMPAT_VALUE_DRIFT * self.multiplier.min(other.multiplier)
     }
 
     #[inline]
