@@ -149,10 +149,11 @@ impl IndexMapping {
             ));
         }
 
-        // Ensure every finite normal value up to f64::MAX maps within [i32::MIN, i32::MAX].
+        // Ensure every finite normal value up to f64::MAX floors within [i32::MIN, i32::MAX].
+        let i32_max_exclusive = f64::from(i32::MAX) + 1.0;
         let max_raw_index = max_log * multiplier + index_offset;
         if !max_raw_index.is_finite()
-            || max_raw_index > f64::from(i32::MAX)
+            || max_raw_index >= i32_max_exclusive
             || max_raw_index <= f64::from(i32::MIN) + 1.0
         {
             return Err(format!(
@@ -179,7 +180,7 @@ impl IndexMapping {
         if !first_raw.is_finite()
             || first_raw < f64::from(i32::MIN)
             || !last_raw.is_finite()
-            || last_raw > f64::from(i32::MAX)
+            || last_raw >= i32_max_exclusive
         {
             return Err(format!(
                 "mapping parameters overflow 32-bit bucket indices: gamma={gamma}, index_offset={index_offset}"
@@ -196,8 +197,9 @@ impl IndexMapping {
         } else {
             min_raw_bound.floor() as i32
         };
-        let max_raw_bound = (last_raw + MAX_COMPAT_BUCKET_DRIFT).min(f64::from(i32::MAX));
-        let max_index = max_raw_bound.floor() as i32;
+        let max_index = (last_raw + MAX_COMPAT_BUCKET_DRIFT)
+            .floor()
+            .min(f64::from(i32::MAX)) as i32;
         if min_index > max_index {
             return Err(format!(
                 "mapping has inverted index bounds [{min_index}, {max_index}]"

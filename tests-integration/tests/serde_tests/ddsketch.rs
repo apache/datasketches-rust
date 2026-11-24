@@ -699,11 +699,11 @@ fn compat_decodes_reordered_summary_blocks_and_rejects_malformed_images() {
         ErrorKind::InvalidData
     );
 
-    let go_cubic_gamma = 1.0200022828058628_f64;
-    let mut go_cubic_wire = vec![0x0e];
-    go_cubic_wire.extend_from_slice(&go_cubic_gamma.to_le_bytes());
-    go_cubic_wire.extend_from_slice(&0.0_f64.to_le_bytes());
-    go_cubic_wire.extend_from_slice(&[0x09, 0x01, 0x64]); // 1 pos bin at index 50
+    let go_cubic_wire = {
+        let mut w = compat_mapping_header(0x0e, 1.020_002_282_805_862_8, 0.0);
+        w.extend_from_slice(&[0x09, 0x01, 0x64]); // 1 pos bin at index 50
+        w
+    };
     let go_cubic = DdSketch::deserialize_compat(&go_cubic_wire, StoreKind::default()).unwrap();
     let mut rust_cubic = DdSketchBuilder::new(0.01)
         .mapping(MappingKind::Cubic)
@@ -718,10 +718,7 @@ fn compat_decodes_reordered_summary_blocks_and_rejects_malformed_images() {
     // both merge directions, native round-trips, and concatenated compat streams in both orders
     // must succeed even with `f64::MAX` populated.
     let go_tight_gamma = ((1.0 + 1e-6_f64) / (1.0 - 1e-6_f64)).powf(std::f64::consts::LN_2);
-    let go_tight_offset = 1.0 / go_tight_gamma.log2();
-    let mut go_tight_header = vec![0x06];
-    go_tight_header.extend_from_slice(&go_tight_gamma.to_le_bytes());
-    go_tight_header.extend_from_slice(&go_tight_offset.to_le_bytes());
+    let go_tight_header = compat_mapping_header(0x06, go_tight_gamma, 1.0 / go_tight_gamma.log2());
     let mut go_tight = DdSketch::deserialize_compat(&go_tight_header, StoreKind::Sparse).unwrap();
     go_tight.update(1.0);
     go_tight.update(f64::MAX);
@@ -757,6 +754,15 @@ fn compat_decodes_reordered_summary_blocks_and_rejects_malformed_images() {
             .total_weight(),
         2
     );
+
+    // Headers whose `f64::MAX` raw coordinate (`2_147_483_647.5`) floors to `i32::MAX` are valid.
+    for flag in [0x02_u8, 0x06, 0x0e] {
+        let hdr = compat_mapping_header(flag, 2.0, 2_147_482_623.5);
+        let mut s = DdSketch::deserialize_compat(&hdr, StoreKind::Sparse).unwrap();
+        s.update(f64::MAX);
+        let rt = DdSketch::deserialize(&s.serialize()).unwrap();
+        assert_eq!(rt.total_weight(), 1);
+    }
 
     // Missing index mapping (only ZeroCount = 1).
     assert_eq!(
@@ -994,6 +1000,14 @@ fn compat_decodes_reordered_summary_blocks_and_rejects_malformed_images() {
             expected.iter().collect::<Vec<_>>()
         );
     }
+}
+
+fn compat_mapping_header(flag: u8, gamma: f64, offset: f64) -> Vec<u8> {
+    let mut out = Vec::with_capacity(17);
+    out.push(flag);
+    out.extend_from_slice(&gamma.to_le_bytes());
+    out.extend_from_slice(&offset.to_le_bytes());
+    out
 }
 
 fn encode_test_varint(out: &mut Vec<u8>, v: i64) {
