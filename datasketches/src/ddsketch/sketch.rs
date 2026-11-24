@@ -290,7 +290,8 @@ impl DdSketch {
     /// Returns the magnitude threshold below or at which inputs map to the zero bucket.
     ///
     /// Any finite input `x` with `|x| <= self.zero_threshold()` increments
-    /// [`zero_weight`](Self::zero_weight) and is approximated by `0.0`.
+    /// [`zero_weight`](Self::zero_weight) and has a bucket representative value of `0.0` (subject
+    /// to `[min_value, max_value]` clamping on quantile queries).
     #[inline]
     pub fn zero_threshold(&self) -> f64 {
         self.mapping.min_indexable_value()
