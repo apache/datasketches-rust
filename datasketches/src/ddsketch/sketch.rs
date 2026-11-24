@@ -462,6 +462,8 @@ impl DdSketch {
                 ))
             })?;
 
+        validate_store_domain(&self.mapping, &other.negative)?;
+        validate_store_domain(&self.mapping, &other.positive)?;
         self.negative.validate_merge_capacity(&other.negative)?;
         self.positive.validate_merge_capacity(&other.positive)?;
 
@@ -942,6 +944,18 @@ impl<'a> IntoIterator for &'a DdSketch {
     fn into_iter(self) -> Self::IntoIter {
         self.iter()
     }
+}
+
+#[inline]
+fn validate_store_domain(mapping: &IndexMapping, store: &Store) -> Result<(), Error> {
+    if let (Some(lo), Some(hi)) = (store.min_index(), store.max_index()) {
+        if !mapping.contains_valid_index(lo) || !mapping.contains_valid_index(hi) {
+            return Err(Error::invalid_argument(format!(
+                "cannot merge DDSketch bucket range [{lo}, {hi}] outside destination mapping domain"
+            )));
+        }
+    }
+    Ok(())
 }
 
 #[inline]

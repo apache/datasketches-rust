@@ -633,7 +633,7 @@ fn compat_decodes_reordered_summary_blocks_and_rejects_malformed_images() {
 
     // `sketches-go` derives Linear `offset = 1 / log2(gamma)` and Cubic `gamma` with `math.Pow`,
     // differing in the last bits from `DdSketchBuilder::new(0.01)`; both must merge cleanly under
-    // the 1e-12 relative mapping tolerance. Bare compat images without summary flags leave
+    // the bucket-drift mapping tolerance. Bare compat images without summary flags leave
     // `min_value`/`max_value`/`sum` as `None` and re-encode without summary blocks.
     let go_linear_gamma = ((1.0 + 0.01_f64) / (1.0 - 0.01_f64)).powf(std::f64::consts::LN_2);
     let go_linear_offset = 49.998333288886464_f64;
@@ -712,6 +712,51 @@ fn compat_decodes_reordered_summary_blocks_and_rejects_malformed_images() {
     rust_cubic.update(10.0);
     rust_cubic.merge(&go_cubic).unwrap();
     assert_eq!(rust_cubic.total_weight(), 2);
+
+    // At `alpha = 1e-6`, `sketches-go`'s `Linear` `offset = 1 / log2(gamma)` (~499999.999976)
+    // differs from Rust's `ln_1p` offset (~499999.9999998) by ~2.4e-5 bins (4.7e-11 relative);
+    // both merge directions, native round-trips, and concatenated compat streams in both orders
+    // must succeed even with `f64::MAX` populated.
+    let go_tight_gamma = ((1.0 + 1e-6_f64) / (1.0 - 1e-6_f64)).powf(std::f64::consts::LN_2);
+    let go_tight_offset = 1.0 / go_tight_gamma.log2();
+    let mut go_tight_header = vec![0x06];
+    go_tight_header.extend_from_slice(&go_tight_gamma.to_le_bytes());
+    go_tight_header.extend_from_slice(&go_tight_offset.to_le_bytes());
+    let mut go_tight = DdSketch::deserialize_compat(&go_tight_header, StoreKind::Sparse).unwrap();
+    go_tight.update(1.0);
+    go_tight.update(f64::MAX);
+
+    let mut rust_tight = DdSketchBuilder::new(1e-6)
+        .mapping(MappingKind::Linear)
+        .store(StoreKind::Sparse)
+        .build()
+        .unwrap();
+    let rust_tight_empty_compat = rust_tight.serialize_compat().unwrap();
+    let go_tight_compat = go_tight.serialize_compat().unwrap();
+
+    for concat in [
+        [
+            rust_tight_empty_compat.as_slice(),
+            go_tight_compat.as_slice(),
+        ]
+        .concat(),
+        [
+            go_tight_compat.as_slice(),
+            rust_tight_empty_compat.as_slice(),
+        ]
+        .concat(),
+    ] {
+        let joined = DdSketch::deserialize_compat(&concat, StoreKind::Sparse).unwrap();
+        assert_eq!(joined.total_weight(), 2);
+    }
+
+    rust_tight.merge(&go_tight).unwrap();
+    assert_eq!(
+        DdSketch::deserialize(&rust_tight.serialize())
+            .unwrap()
+            .total_weight(),
+        2
+    );
 
     // Missing index mapping (only ZeroCount = 1).
     assert_eq!(

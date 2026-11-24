@@ -33,7 +33,11 @@ const CUBIC_A: f64 = 6.0 / 35.0;
 const CUBIC_B: f64 = -3.0 / 5.0;
 const CUBIC_C: f64 = 10.0 / 7.0;
 const CUBIC_D0: f64 = CUBIC_B * CUBIC_B - 3.0 * CUBIC_A * CUBIC_C;
-const MAPPING_EQUALITY_REL_TOL: f64 = 1e-12;
+// Maximum continuous bucket-coordinate drift permitted across the entire normal IEEE 754 `f64`
+// domain when merging two mappings: absorbs 1-2 ULP `pow`/`log2` differences from reference Go/Java
+// encoders (<= 0.086 bins even at `alpha = 1e-6`) while rejecting mappings whose bucket indices
+// diverge across wide dynamic ranges.
+const MAX_COMPAT_BUCKET_DRIFT: f64 = 0.25;
 
 /// Index mapping curve used by a [`DdSketch`](super::DdSketch) to map positive magnitudes to
 /// integer bucket indices.
@@ -182,13 +186,18 @@ impl IndexMapping {
             ));
         }
         // Allow the 1-bin shift when `first_raw` lands on an exact negative integer in reference
-        // Java/Go encoders (`(int) raw - 1`).
+        // Java/Go encoders (`(int) raw - 1`), as well as `MAX_COMPAT_BUCKET_DRIFT` across
+        // compatible peer mappings near integer boundaries.
+        let min_raw_bound = (first_raw - MAX_COMPAT_BUCKET_DRIFT).max(f64::from(i32::MIN));
         let min_index = if first_raw < 0.0 && first_raw.fract() == 0.0 {
-            (first_raw as i32).saturating_sub(1)
+            (first_raw as i32)
+                .saturating_sub(1)
+                .min(min_raw_bound.floor() as i32)
         } else {
-            first_raw.floor() as i32
+            min_raw_bound.floor() as i32
         };
-        let max_index = last_raw.floor() as i32;
+        let max_raw_bound = (last_raw + MAX_COMPAT_BUCKET_DRIFT).min(f64::from(i32::MAX));
+        let max_index = max_raw_bound.floor() as i32;
         if min_index > max_index {
             return Err(format!(
                 "mapping has inverted index bounds [{min_index}, {max_index}]"
@@ -234,13 +243,17 @@ impl IndexMapping {
 
     #[inline]
     pub fn is_compatible(&self, other: &Self) -> bool {
-        self.kind == other.kind
-            && within_tolerance(self.gamma, other.gamma, MAPPING_EQUALITY_REL_TOL)
-            && within_tolerance(
-                self.index_offset,
-                other.index_offset,
-                MAPPING_EQUALITY_REL_TOL,
-            )
+        if self.kind != other.kind {
+            return false;
+        }
+        let (min_log, max_log) = match self.kind {
+            MappingKind::Logarithmic => (-1022.0 * LN_2, 1024.0 * LN_2),
+            MappingKind::Linear | MappingKind::Cubic => (-1022.0, 1024.0),
+        };
+        let dm = self.multiplier - other.multiplier;
+        let doff = self.index_offset - other.index_offset;
+        let drift = (dm * min_log + doff).abs().max((dm * max_log + doff).abs());
+        drift <= MAX_COMPAT_BUCKET_DRIFT
     }
 
     #[inline]
@@ -280,17 +293,6 @@ impl IndexMapping {
     pub const fn contains_valid_index(&self, index: i32) -> bool {
         index >= self.min_index && index <= self.max_index
     }
-}
-
-#[inline]
-fn within_tolerance(a: f64, b: f64, tolerance: f64) -> bool {
-    if a == b {
-        return true;
-    }
-    if a == 0.0 || b == 0.0 {
-        return a.abs() <= tolerance && b.abs() <= tolerance;
-    }
-    (a - b).abs() <= tolerance * a.abs().max(b.abs())
 }
 
 #[inline]
