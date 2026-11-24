@@ -36,6 +36,7 @@ datasketches = { workspace = true, features = [
   "tdigest",
   "theta",
   "tuple",
+  "uddsketch",
   "xor",
 ] }
 googletest = { workspace = true }
