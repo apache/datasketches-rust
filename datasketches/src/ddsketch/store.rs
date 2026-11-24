@@ -921,14 +921,16 @@ impl DenseStore {
             }
             self.occupied += newly_occupied;
             self.count += other.count;
-            return;
-        }
-
-        for (i, &w) in src_slice.iter().enumerate() {
-            if w != 0 {
-                let idx = (i64::from(other_min) + (i as i64)) as i32;
-                self.add(idx, w);
+        } else {
+            for (i, &w) in src_slice.iter().enumerate() {
+                if w != 0 {
+                    let idx = (i64::from(other_min) + (i as i64)) as i32;
+                    self.add(idx, w);
+                }
             }
+        }
+        if other.mode == self.mode && other.is_collapsed {
+            self.is_collapsed = true;
         }
     }
 

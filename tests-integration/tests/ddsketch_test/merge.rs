@@ -157,6 +157,35 @@ fn merge_under_tight_collapse_budget_preserves_tail_invariants() {
         left_then_right.iter().collect::<Vec<_>>(),
         right_then_left.iter().collect::<Vec<_>>()
     );
-    let max = left_then_right.max_value().unwrap();
-    assert!((max - 4e6).abs() <= 0.01 * 4e6);
+    assert_eq!(left_then_right.serialize(), right_then_left.serialize());
+    assert_eq!(left_then_right.max_value(), Some(4e6));
+
+    // Merging a collapsed store into an uncollapsed same-kind store whose active span already
+    // covers the collapsed window must preserve `is_collapsed` symmetrically across merge orders.
+    for (one_bin_store, anchor) in [
+        (StoreKind::CollapsingLowestDense { max_num_bins: 1 }, 100.0),
+        (StoreKind::CollapsingHighestDense { max_num_bins: 1 }, 1.0),
+    ] {
+        let mut uncollapsed = DdSketchBuilder::new(0.01)
+            .store(one_bin_store)
+            .build()
+            .unwrap();
+        uncollapsed.update(anchor);
+
+        let mut collapsed = DdSketchBuilder::new(0.01)
+            .store(one_bin_store)
+            .build()
+            .unwrap();
+        collapsed.update(1.0);
+        collapsed.update(100.0);
+
+        let mut a_then_b = uncollapsed.clone();
+        a_then_b.merge(&collapsed).unwrap();
+        let mut b_then_a = collapsed.clone();
+        b_then_a.merge(&uncollapsed).unwrap();
+
+        let bytes = a_then_b.serialize();
+        assert_eq!(bytes, b_then_a.serialize());
+        assert_eq!(DdSketch::deserialize(&bytes).unwrap().total_weight(), 3);
+    }
 }
