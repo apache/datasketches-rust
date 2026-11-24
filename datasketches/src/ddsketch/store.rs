@@ -188,19 +188,6 @@ impl Store {
         }
     }
 
-    #[inline]
-    pub fn ensure_index_capacity(&self, index: i32) {
-        if let Self::Dense(dense) = self {
-            if matches!(dense.mode, CollapseMode::None) && dense.count > 0 {
-                let span = span_u64(dense.min_index.min(index), dense.max_index.max(index));
-                assert!(
-                    span <= MAX_DENSE_LEN as u64,
-                    "unbounded dense store span ({span}) exceeds maximum dense capacity ({MAX_DENSE_LEN})"
-                );
-            }
-        }
-    }
-
     pub fn validate_merge_capacity(&self, other: &Self) -> Result<(), Error> {
         if other.is_empty() {
             return Ok(());

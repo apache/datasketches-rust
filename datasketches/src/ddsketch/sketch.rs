@@ -394,13 +394,9 @@ impl DdSketch {
 
         let min_indexable = self.mapping.min_indexable_value();
         if value > min_indexable {
-            let idx = self.mapping.index(value);
-            self.positive.ensure_index_capacity(idx);
-            self.positive.add(idx, weight);
+            self.positive.add(self.mapping.index(value), weight);
         } else if value < -min_indexable {
-            let idx = self.mapping.index(-value);
-            self.negative.ensure_index_capacity(idx);
-            self.negative.add(idx, weight);
+            self.negative.add(self.mapping.index(-value), weight);
         } else {
             self.zero_weight += weight;
         }
