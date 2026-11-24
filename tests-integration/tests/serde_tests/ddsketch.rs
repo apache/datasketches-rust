@@ -384,12 +384,23 @@ fn native_malformed_headers_and_body_invariants_are_rejected() {
     assert_eq!(sparse_ok.min_value(), None);
     assert!(sparse_ok.quantile(0.0).unwrap().unwrap() > 0.0);
 
-    // Inverted or non-finite exact summary bounds in native image (`FLAG_HAS_EXACT_SUMMARY` = 1 <<
-    // 7) are rejected.
+    // Inverted, non-finite, or sign-contradictory exact summary bounds in native image
+    // (`FLAG_HAS_EXACT_SUMMARY` = 1 << 7) are rejected.
     let mut bad_native_summary = single_pos.serialize();
     bad_native_summary[24..32].copy_from_slice(&50.0_f64.to_le_bytes()); // min = 50.0 > max = 10.0
     assert_eq!(
         DdSketch::deserialize(&bad_native_summary)
+            .unwrap_err()
+            .kind(),
+        ErrorKind::InvalidData
+    );
+
+    let mut sign_contradictory_native = single_pos.serialize();
+    sign_contradictory_native[24..32].copy_from_slice(&(-10.0_f64).to_le_bytes());
+    sign_contradictory_native[32..40].copy_from_slice(&(-10.0_f64).to_le_bytes());
+    sign_contradictory_native[40..48].copy_from_slice(&(-10.0_f64).to_le_bytes());
+    assert_eq!(
+        DdSketch::deserialize(&sign_contradictory_native)
             .unwrap_err()
             .kind(),
         ErrorKind::InvalidData
@@ -670,6 +681,19 @@ fn compat_decodes_reordered_summary_blocks_and_rejects_malformed_images() {
     nan_min[13..21].copy_from_slice(&f64::NAN.to_le_bytes());
     assert_eq!(
         DdSketch::deserialize_compat(&nan_min, StoreKind::default())
+            .unwrap_err()
+            .kind(),
+        ErrorKind::InvalidData
+    );
+
+    let mut pos_only = DdSketch::new(0.01).unwrap();
+    pos_only.update(10.0);
+    let mut sign_contradictory_compat = pos_only.serialize_compat().unwrap();
+    let neg_ten = (-10.0_f64).to_le_bytes();
+    sign_contradictory_compat[3..11].copy_from_slice(&neg_ten); // FlagMin = -10.0
+    sign_contradictory_compat[12..20].copy_from_slice(&neg_ten); // FlagMax = -10.0 with pos bin!
+    assert_eq!(
+        DdSketch::deserialize_compat(&sign_contradictory_compat, StoreKind::default())
             .unwrap_err()
             .kind(),
         ErrorKind::InvalidData

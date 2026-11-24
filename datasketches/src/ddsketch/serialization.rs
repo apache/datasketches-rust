@@ -428,6 +428,13 @@ fn deserialize_native(bytes: &[u8]) -> Result<DdSketch, Error> {
 
     validate_encoded_sign_store(neg_weight, neg_span, neg_collapsed, encoded_max_bins)?;
     validate_encoded_sign_store(pos_weight, pos_span, pos_collapsed, encoded_max_bins)?;
+    validate_summary_against_stores(
+        summary,
+        &mapping,
+        neg_weight > 0,
+        zero_weight,
+        pos_weight > 0,
+    )?;
 
     let total_weight = zero_weight
         .checked_add(neg_weight)
@@ -461,6 +468,37 @@ fn deserialize_native(bytes: &[u8]) -> Result<DdSketch, Error> {
         total_weight,
         summary,
     ))
+}
+
+fn validate_summary_against_stores(
+    summary: SummaryState,
+    mapping: &IndexMapping,
+    neg_non_empty: bool,
+    zero_weight: u64,
+    pos_non_empty: bool,
+) -> Result<(), Error> {
+    let SummaryState::Active { min, max, .. } = summary else {
+        return Ok(());
+    };
+    if neg_non_empty && min >= 0.0 {
+        return Err(Error::deserial(format!(
+            "DDSketch exact_min ({min}) must be negative when negative store is non-empty"
+        )));
+    }
+    if pos_non_empty && max <= 0.0 {
+        return Err(Error::deserial(format!(
+            "DDSketch exact_max ({max}) must be positive when positive store is non-empty"
+        )));
+    }
+    if zero_weight > 0 {
+        let zero_bound = mapping.min_indexable_value() * (1.0 + 1e-12);
+        if min > zero_bound || max < -zero_bound {
+            return Err(Error::deserial(format!(
+                "DDSketch exact summary [{min}, {max}] excludes occupied zero bucket"
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn validate_encoded_sign_store(
@@ -1121,11 +1159,19 @@ fn scan_datadog_stream(
                 "invalid reference DDSketch exact min/max summary statistics: min={summary_min}, max={summary_max}"
             )));
         }
-        SummaryState::Active {
+        let active = SummaryState::Active {
             min: summary_min,
             max: summary_max,
             sum: canonical_zero(summary_sum),
-        }
+        };
+        validate_summary_against_stores(
+            active,
+            &mapping,
+            neg_range.bounds.is_some(),
+            zero_weight,
+            pos_range.bounds.is_some(),
+        )?;
+        active
     };
 
     Ok(DatadogScan {
