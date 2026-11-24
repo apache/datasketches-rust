@@ -417,8 +417,17 @@ impl DdSketch {
     ///
     /// Returns [`InvalidArgument`](crate::error::ErrorKind::InvalidArgument) without modifying
     /// `self` if `other` uses an incompatible index mapping (even when either sketch is empty), if
-    /// the combined [`total_weight`](Self::total_weight) would exceed [`u64::MAX`], or if merging
-    /// into [`StoreKind::UnboundedDense`] would exceed addressable slice capacity.
+    /// `other` contains a bucket index outside `self`'s valid range, if the combined
+    /// [`total_weight`](Self::total_weight) would exceed [`u64::MAX`], or if merging into
+    /// [`StoreKind::UnboundedDense`] would exceed addressable slice capacity.
+    ///
+    /// # Compatibility with reference implementations
+    ///
+    /// Pairwise compatibility requires the same [`MappingKind`], continuous bucket-coordinate drift
+    /// `<= 1e-4` bins, and scaled coordinate drift `drift / min_multiplier <= 1e-10` across the
+    /// normal `f64` domain. Merging a distinct compatible mapping adds `other`'s bucket and
+    /// zero-bucket counts directly without re-indexing, so quantile accuracy holds up to the
+    /// accumulated merge drift and above the largest zero threshold among merged sources.
     ///
     /// # Examples
     ///
@@ -766,7 +775,9 @@ impl DdSketch {
     /// `DDSketchWithExactSummaryStatistics` in Java and Go; bare `DDSketch` images without summary
     /// blocks decode with [`min_value`](Self::min_value), [`max_value`](Self::max_value), and
     /// [`sum`](Self::sum) set to `None` and re-encode without summary blocks. Encoded counts must
-    /// be non-negative integers below `2^64`.
+    /// be non-negative integers below `2^64`. Extreme bucket index bounds allow `0.25` bins of
+    /// slack before flooring to accept `sketches-go` `1 / math.Log2(gamma)` rounding near domain
+    /// limits.
     ///
     /// Because reference images do not record [`StoreKind`] and encode sparse bins as compact index
     /// deltas, a small compatibility payload can span up to `67_108_864` bins (`512 MiB` of `u64`

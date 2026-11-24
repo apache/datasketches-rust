@@ -46,21 +46,28 @@ fn merge_rejects_incompatible_mappings_even_when_empty_and_preserves_self_on_err
         ErrorKind::InvalidArgument
     );
 
-    // Near-equal `gamma` values at `alpha = 1e-6` whose slope difference shifts bucket indices by
-    // > 0.25 bins across the `f64` range must not be merged.
-    let mut log_tight_a = DdSketchBuilder::new(1e-6)
-        .mapping(MappingKind::Logarithmic)
-        .build()
-        .unwrap();
-    let mut log_tight_b = DdSketchBuilder::new(1e-6 + 4e-13)
-        .mapping(MappingKind::Logarithmic)
-        .build()
-        .unwrap();
-    log_tight_b.update(1e100);
-    assert_eq!(
-        log_tight_a.merge(&log_tight_b).unwrap_err().kind(),
-        ErrorKind::InvalidArgument
-    );
+    // Near-equal `gamma` values exceeding either the bucket-drift (`1e-4`) or value-drift (`1e-10`)
+    // merge bound across the `f64` range must be rejected.
+    for (alpha_a, alpha_b) in [
+        (1e-6, 1e-6 + 4e-13),
+        (0.01, 0.010_000_05),
+        (0.01, 0.01 + 1e-11),
+    ] {
+        let mut left = DdSketchBuilder::new(alpha_a)
+            .mapping(MappingKind::Logarithmic)
+            .build()
+            .unwrap();
+        let mut right = DdSketchBuilder::new(alpha_b)
+            .mapping(MappingKind::Logarithmic)
+            .build()
+            .unwrap();
+        right.update(1e100);
+        assert_eq!(
+            left.merge(&right).unwrap_err().kind(),
+            ErrorKind::InvalidArgument
+        );
+        assert!(left.is_empty());
+    }
 
     cubic_001.update_with_weight(10.0, u64::MAX - 5);
     let mut right = DdSketch::new(0.01).unwrap();

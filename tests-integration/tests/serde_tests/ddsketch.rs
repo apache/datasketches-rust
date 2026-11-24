@@ -755,6 +755,25 @@ fn compat_decodes_reordered_summary_blocks_and_rejects_malformed_images() {
         2
     );
 
+    // Extreme Go `Cubic` wire bin `-354_474_284` (0.04 bins below Rust's `ln_1p` `first_raw` due
+    // to Go's `1 / log2(gamma)` multiplier) decodes and round-trips via `MAX_WIRE_BUCKET_DRIFT`.
+    let mut go_extreme_wire = compat_mapping_header(0x0e, 1.000_001_998_444_339_6, 0.0);
+    go_extreme_wire.extend_from_slice(&[0x09, 0x01]);
+    encode_test_varint(&mut go_extreme_wire, -354_474_284);
+    let go_extreme = DdSketch::deserialize_compat(&go_extreme_wire, StoreKind::Sparse).unwrap();
+    let go_extreme_rt = DdSketch::deserialize(&go_extreme.serialize()).unwrap();
+    assert_eq!(go_extreme_rt.total_weight(), 1);
+
+    // Coarse `gamma = 19.0` with `offset = 5e-11` exceeds the `1e-10` scaled drift bound.
+    let coarse_a_hdr = compat_mapping_header(0x02, 19.0, 0.0);
+    let coarse_b_hdr = compat_mapping_header(0x02, 19.0, 5e-11);
+    let mut coarse_a = DdSketch::deserialize_compat(&coarse_a_hdr, StoreKind::Sparse).unwrap();
+    let coarse_b = DdSketch::deserialize_compat(&coarse_b_hdr, StoreKind::Sparse).unwrap();
+    assert_eq!(
+        coarse_a.merge(&coarse_b).unwrap_err().kind(),
+        ErrorKind::InvalidArgument
+    );
+
     // Headers whose `f64::MAX` raw coordinate (`2_147_483_647.5`) floors to `i32::MAX` are valid.
     for flag in [0x02_u8, 0x06, 0x0e] {
         let hdr = compat_mapping_header(flag, 2.0, 2_147_482_623.5);
