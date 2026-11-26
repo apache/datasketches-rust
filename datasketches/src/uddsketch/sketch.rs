@@ -344,9 +344,10 @@ impl UddSketch {
     ///
     /// Selects the bucket containing zero-based sorted item `floor(rank * (total_weight - 1))`
     /// using the standard `f64` product when `total_weight <= 2^53` and exact integer significand
-    /// scaling when `total_weight > 2^53`. Ranks `0.0` and `1.0` return the exact minimum and
-    /// maximum values of the stream, and ranks falling within the zero bucket return `0.0`.
-    /// Returns `Ok(None)` if the sketch is empty.
+    /// scaling when `total_weight > 2^53`. Ranks `0.0` and `1.0` return
+    /// [`min_value`](Self::min_value) and [`max_value`](Self::max_value), ranks falling within the
+    /// zero bucket return `0.0`, and interior nonzero bucket estimates are clamped to
+    /// `[min_value, max_value]`. Returns `Ok(None)` if the sketch is empty.
     ///
     /// # Errors
     ///

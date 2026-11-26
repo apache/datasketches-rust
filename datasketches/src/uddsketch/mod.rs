@@ -38,9 +38,10 @@
 //!
 //! Quantile queries target the lower discrete `q`-quantile at zero-based sorted index
 //! `floor(q * (total_weight - 1))`. Ranks `0.0` and `1.0` return the exact stream minimum and
-//! maximum, and ranks falling in the zero bucket return `0.0`. For nonzero estimates over normal
-//! `f64` values, [`UddSketch::alpha`] reports the effective relative value error bound after any
-//! uniform collapses.
+//! maximum, ranks falling in the zero bucket return `0.0`, and interior nonzero bucket estimates
+//! are clamped to `[min_value, max_value]`. For nonzero estimates over normal `f64` values,
+//! [`UddSketch::alpha`] reports the effective relative value error bound after any uniform
+//! collapses.
 //!
 //! # Serialization
 //!
