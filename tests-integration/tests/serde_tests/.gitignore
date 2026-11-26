@@ -2,3 +2,4 @@ cpp_generated_files
 go_generated_files
 java_generated_files
 rust_generated_files
+!reference_files/**/*.sk

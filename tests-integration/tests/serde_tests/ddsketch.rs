@@ -1225,6 +1225,244 @@ fn fractional_native_and_compat_round_trips_and_validation() {
     }
 }
 
+#[test]
+fn reference_fixtures_from_go_and_java_decode_query_merge_and_reencode() {
+    struct FixtureCase {
+        name: &'static str,
+        mapping: MappingKind,
+        exact_summary: bool,
+        integer_weights: bool,
+        expected_total: f64,
+        expected_min: Option<f64>,
+        expected_max: Option<f64>,
+        expected_sum: Option<f64>,
+    }
+
+    let cases = [
+        FixtureCase {
+            name: "log_dense_bare_empty",
+            mapping: MappingKind::Logarithmic,
+            exact_summary: false,
+            integer_weights: true,
+            expected_total: 0.0,
+            expected_min: None,
+            expected_max: None,
+            expected_sum: None,
+        },
+        FixtureCase {
+            name: "log_dense_bare_signed_int",
+            mapping: MappingKind::Logarithmic,
+            exact_summary: false,
+            integer_weights: true,
+            expected_total: 13.0,
+            expected_min: None,
+            expected_max: None,
+            expected_sum: None,
+        },
+        FixtureCase {
+            name: "log_sparse_bare_unit",
+            mapping: MappingKind::Logarithmic,
+            exact_summary: false,
+            integer_weights: true,
+            expected_total: 5.0,
+            expected_min: None,
+            expected_max: None,
+            expected_sum: None,
+        },
+        FixtureCase {
+            name: "log_dense_exact_signed_int",
+            mapping: MappingKind::Logarithmic,
+            exact_summary: true,
+            integer_weights: true,
+            expected_total: 13.0,
+            expected_min: Some(-50.0),
+            expected_max: Some(500.0),
+            expected_sum: Some(165.0),
+        },
+        FixtureCase {
+            name: "log_dense_bare_frac",
+            mapping: MappingKind::Logarithmic,
+            exact_summary: false,
+            integer_weights: false,
+            expected_total: 5.75,
+            expected_min: None,
+            expected_max: None,
+            expected_sum: None,
+        },
+        FixtureCase {
+            name: "log_dense_exact_frac",
+            mapping: MappingKind::Logarithmic,
+            exact_summary: true,
+            integer_weights: false,
+            expected_total: 5.75,
+            expected_min: Some(-40.0),
+            expected_max: Some(30.0),
+            expected_sum: Some(35.0),
+        },
+        FixtureCase {
+            name: "log_sparse_exact_frac_nondyadic",
+            mapping: MappingKind::Logarithmic,
+            exact_summary: true,
+            integer_weights: false,
+            expected_total: 0.1 + 0.3 + (1.0 / 3.0) + 0.7,
+            expected_min: Some(-5.0),
+            expected_max: Some(3.0),
+            expected_sum: Some(0.1 + 2.0 * 0.3 + 1.0 - 5.0 * 0.7),
+        },
+        FixtureCase {
+            name: "log_dense_exact_subunit",
+            mapping: MappingKind::Logarithmic,
+            exact_summary: true,
+            integer_weights: false,
+            expected_total: 0.5,
+            expected_min: Some(1.0),
+            expected_max: Some(10.0),
+            expected_sum: Some(2.75),
+        },
+        FixtureCase {
+            name: "linear_dense_bare_signed_int",
+            mapping: MappingKind::Linear,
+            exact_summary: false,
+            integer_weights: true,
+            expected_total: 13.0,
+            expected_min: None,
+            expected_max: None,
+            expected_sum: None,
+        },
+        FixtureCase {
+            name: "linear_dense_exact_frac",
+            mapping: MappingKind::Linear,
+            exact_summary: true,
+            integer_weights: false,
+            expected_total: 5.75,
+            expected_min: Some(-40.0),
+            expected_max: Some(30.0),
+            expected_sum: Some(35.0),
+        },
+        FixtureCase {
+            name: "cubic_dense_bare_signed_int",
+            mapping: MappingKind::Cubic,
+            exact_summary: false,
+            integer_weights: true,
+            expected_total: 13.0,
+            expected_min: None,
+            expected_max: None,
+            expected_sum: None,
+        },
+        FixtureCase {
+            name: "cubic_dense_exact_frac",
+            mapping: MappingKind::Cubic,
+            exact_summary: true,
+            integer_weights: false,
+            expected_total: 5.75,
+            expected_min: Some(-40.0),
+            expected_max: Some(30.0),
+            expected_sum: Some(35.0),
+        },
+    ];
+
+    let ranks = [0.0, 0.25, 0.5, 0.75, 1.0];
+
+    for lang in ["go", "java"] {
+        for case in &cases {
+            let filename = format!("ddsketch/ddsketch_{lang}_{}.sk", case.name);
+            let bytes = fs::read(serialization_test_data("reference_files", &filename)).unwrap();
+
+            for store in [StoreKind::default(), StoreKind::Sparse] {
+                let decoded_f64 = DdSketch::<f64>::deserialize_compat(&bytes, store).unwrap();
+                assert_eq!(decoded_f64.mapping_kind(), case.mapping, "{filename}");
+                assert_eq!(decoded_f64.store_kind(), store, "{filename}");
+                assert!(
+                    (decoded_f64.total_weight() - case.expected_total).abs() <= 1e-12,
+                    "{filename}: got {}, expected {}",
+                    decoded_f64.total_weight(),
+                    case.expected_total
+                );
+                assert_eq!(decoded_f64.min_value(), case.expected_min, "{filename}");
+                assert_eq!(decoded_f64.max_value(), case.expected_max, "{filename}");
+                match (decoded_f64.sum(), case.expected_sum) {
+                    (Some(got), Some(exp)) => {
+                        assert!((got - exp).abs() <= 1e-12, "{filename}: sum {got} != {exp}");
+                    }
+                    (got, exp) => assert_eq!(got, exp, "{filename}"),
+                }
+
+                // Verify quantile consistency and exact endpoint clamping when summary is present.
+                let qs = decoded_f64.quantiles(&ranks).unwrap();
+                if case.expected_total == 0.0 {
+                    assert_eq!(qs, None, "{filename}");
+                } else {
+                    let qs = qs.unwrap();
+                    for (&r, &est) in ranks.iter().zip(&qs) {
+                        assert_eq!(
+                            est.to_bits(),
+                            decoded_f64.quantile(r).unwrap().unwrap().to_bits(),
+                            "{filename} q={r}"
+                        );
+                    }
+                    if case.exact_summary {
+                        assert_eq!(qs[0], case.expected_min.unwrap(), "{filename}");
+                        assert_eq!(qs[4], case.expected_max.unwrap(), "{filename}");
+                    }
+                }
+
+                // Re-encode to compat bytes and verify round-trip preserves summary presence and
+                // quantiles.
+                let reencoded = decoded_f64.serialize_compat().unwrap();
+                let rt = DdSketch::<f64>::deserialize_compat(&reencoded, store).unwrap();
+                assert_eq!(rt.min_value(), decoded_f64.min_value(), "{filename}");
+                assert_eq!(rt.max_value(), decoded_f64.max_value(), "{filename}");
+                assert_eq!(
+                    rt.quantiles(&ranks).unwrap(),
+                    decoded_f64.quantiles(&ranks).unwrap(),
+                    "{filename}"
+                );
+
+                // Merging the reference sketch into a fresh Rust sketch with the same mapping kind
+                // must succeed across Go and Java parameter formulas.
+                let mut rust_peer = DdSketchBuilder::new(0.01)
+                    .mapping(case.mapping)
+                    .store(store)
+                    .build::<f64>()
+                    .unwrap();
+                rust_peer.update(42.0);
+                rust_peer.merge(&decoded_f64).unwrap();
+                assert!(
+                    (rust_peer.total_weight() - (case.expected_total + 1.0)).abs() <= 1e-12,
+                    "{filename}"
+                );
+                if case.expected_total > 0.0 && !case.exact_summary {
+                    assert_eq!(rust_peer.min_value(), None, "{filename}");
+                }
+
+                // Integer-weight fixtures also decode with `DdSketch<u64>`, while fractional-weight
+                // fixtures are rejected by `DdSketch<u64>`.
+                if case.integer_weights {
+                    let decoded_u64 = DdSketch::<u64>::deserialize_compat(&bytes, store).unwrap();
+                    assert_eq!(
+                        decoded_u64.total_weight(),
+                        case.expected_total as u64,
+                        "{filename}"
+                    );
+                    assert_eq!(
+                        decoded_u64.quantiles(&ranks).unwrap(),
+                        decoded_f64.quantiles(&ranks).unwrap(),
+                        "{filename}"
+                    );
+                } else {
+                    assert_eq!(
+                        DdSketch::<u64>::deserialize_compat(&bytes, store)
+                            .unwrap_err()
+                            .kind(),
+                        ErrorKind::InvalidData,
+                        "{filename} should be rejected by u64 decoder"
+                    );
+                }
+            }
+        }
+    }
+}
+
 fn compat_mapping_header(flag: u8, gamma: f64, offset: f64) -> Vec<u8> {
     let mut out = Vec::with_capacity(17);
     out.push(flag);
