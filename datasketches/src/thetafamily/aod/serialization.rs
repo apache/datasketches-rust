@@ -39,12 +39,12 @@ const FLAGS_HAS_ENTRIES: u8 = 1 << 3;
 const HEADER_SIZE: usize = 16;
 
 pub fn serialize_compact(sketch: &CompactArrayOfDoublesSketch) -> Vec<u8> {
-    let entries: Vec<_> = sketch.iter().collect();
+    let num_entries = sketch.num_retained();
     let num_values = usize::from(sketch.num_values());
-    let entries_size = if entries.is_empty() {
+    let entries_size = if num_entries == 0 {
         0
     } else {
-        8 + entries.len() * (size_of::<u64>() + num_values * size_of::<f64>())
+        8 + num_entries * (size_of::<u64>() + num_values * size_of::<f64>())
     };
     let mut bytes = SketchBytes::with_capacity(HEADER_SIZE + entries_size);
 
@@ -57,7 +57,7 @@ pub fn serialize_compact(sketch: &CompactArrayOfDoublesSketch) -> Vec<u8> {
     if sketch.is_empty() {
         flags |= FLAGS_IS_EMPTY;
     }
-    if !entries.is_empty() {
+    if num_entries > 0 {
         flags |= FLAGS_HAS_ENTRIES;
     }
     if sketch.is_ordered() {
@@ -72,15 +72,15 @@ pub fn serialize_compact(sketch: &CompactArrayOfDoublesSketch) -> Vec<u8> {
     });
     bytes.write_u64_le(sketch.theta64());
 
-    if !entries.is_empty() {
+    if num_entries > 0 {
         bytes.write_u32_le(
-            u32::try_from(entries.len()).expect("ArrayOfDoubles retained entries exceed u32"),
+            u32::try_from(num_entries).expect("ArrayOfDoubles retained entries exceed u32"),
         );
         bytes.write_u32_le(0);
-        for entry in &entries {
+        for entry in sketch.iter() {
             bytes.write_u64_le(entry.hash());
         }
-        for entry in &entries {
+        for entry in sketch.iter() {
             debug_assert_eq!(entry.values().len(), num_values);
             for &value in entry.values() {
                 bytes.write_f64_le(value);
