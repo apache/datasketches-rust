@@ -23,6 +23,7 @@ use std::path::PathBuf;
 use clap::Parser;
 use clap::ValueEnum;
 
+mod aod;
 mod bloom;
 mod countmin;
 mod cpc;
@@ -61,6 +62,7 @@ struct Args {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
 enum SketchFamily {
+    Aod,
     Bloom,
     #[value(name = "countmin")]
     CountMin,
@@ -84,6 +86,7 @@ enum SketchFamily {
 impl SketchFamily {
     fn generate(self, output_dir: &Path) -> io::Result<()> {
         match self {
+            Self::Aod => aod::generate(output_dir),
             Self::Bloom => bloom::generate(output_dir),
             Self::CountMin => countmin::generate(output_dir),
             Self::Cpc => cpc::generate(output_dir),

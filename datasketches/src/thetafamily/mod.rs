@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#[cfg(feature = "aod")]
+pub mod aod;
 mod common;
 #[cfg(feature = "theta")]
 pub mod theta;

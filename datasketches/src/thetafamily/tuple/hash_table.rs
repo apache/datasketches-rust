@@ -41,7 +41,7 @@ impl<S> TupleEntry<S> {
     /// # Panics
     ///
     /// Panics if `hash` is zero.
-    pub(super) fn new(hash: u64, summary: S) -> Self {
+    pub(in crate::thetafamily) fn new(hash: u64, summary: S) -> Self {
         let hash = NonZeroU64::new(hash).expect("hash must be non-zero");
         Self { hash, summary }
     }

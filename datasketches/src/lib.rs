@@ -44,7 +44,8 @@
 //!   rank accuracy, REQ targets configurable high- or low-rank accuracy, T-Digest emphasizes
 //!   distribution tails, and UDDSketch bounds relative value error reproducibly via uniform bucket
 //!   collapsing.
-//! * Use `tuple` when retained Theta keys need application-defined summaries.
+//! * Use `aod` when retained Theta keys need fixed-size `f64` vector summaries, or `tuple` for
+//!   application-defined summary types and combination policies.
 //!
 //! See each module's documentation for accuracy, memory, serialization, and update examples.
 //!
@@ -93,6 +94,8 @@ pub mod req;
 pub mod tdigest;
 #[cfg(any(feature = "theta", feature = "tuple"))]
 mod thetafamily;
+#[cfg(feature = "aod")]
+pub use self::thetafamily::aod;
 #[cfg(feature = "theta")]
 pub use self::thetafamily::theta;
 #[cfg(feature = "tuple")]
