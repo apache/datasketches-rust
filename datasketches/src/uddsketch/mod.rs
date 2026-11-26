@@ -81,5 +81,6 @@ pub use self::sketch::UddSketch;
 const DEFAULT_MAX_BUCKETS: u32 = 512;
 const DEFAULT_ALPHA: f64 = 0.01;
 const MIN_MAX_BUCKETS: u32 = 4;
+const MAX_MAX_BUCKETS: u32 = 1 << 26;
 const MIN_ALPHA: f64 = 1e-12;
 const MAX_COLLAPSES: u8 = 62;

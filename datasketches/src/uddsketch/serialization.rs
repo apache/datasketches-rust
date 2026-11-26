@@ -22,6 +22,7 @@ use crate::codec::assert::insufficient_data;
 use crate::codec::family::Family;
 use crate::error::Error;
 use crate::uddsketch::MAX_COLLAPSES;
+use crate::uddsketch::MAX_MAX_BUCKETS;
 use crate::uddsketch::MIN_ALPHA;
 use crate::uddsketch::MIN_MAX_BUCKETS;
 use crate::uddsketch::mapping::Mapping;
@@ -125,9 +126,9 @@ pub fn deserialize_sketch(bytes: &[u8]) -> Result<UddSketch, Error> {
         ));
     }
 
-    if max_buckets < MIN_MAX_BUCKETS {
+    if !(MIN_MAX_BUCKETS..=MAX_MAX_BUCKETS).contains(&max_buckets) {
         return Err(Error::deserial(format!(
-            "max_buckets must be at least {MIN_MAX_BUCKETS}, got {max_buckets}"
+            "max_buckets must be in [{MIN_MAX_BUCKETS}, {MAX_MAX_BUCKETS}], got {max_buckets}"
         )));
     }
     if !(MIN_ALPHA..1.0).contains(&initial_alpha) {

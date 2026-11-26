@@ -103,10 +103,12 @@ fn corrupted_headers_and_bucket_invariants_are_rejected() {
         assert_invalid_data(&bad);
     }
 
-    // Out-of-range max_buckets (< 4).
-    let mut bad_max_buckets = valid.clone();
-    bad_max_buckets[4..8].copy_from_slice(&3u32.to_le_bytes());
-    assert_invalid_data(&bad_max_buckets);
+    // Out-of-range max_buckets (< 4 or > 2^26).
+    for max_buckets in [0u32, 3, (1 << 26) + 1, u32::MAX] {
+        let mut bad_max_buckets = valid.clone();
+        bad_max_buckets[4..8].copy_from_slice(&max_buckets.to_le_bytes());
+        assert_invalid_data(&bad_max_buckets);
+    }
 
     // Out-of-range initial_alpha.
     for alpha in [0.0f64, 1.0, f64::NAN] {

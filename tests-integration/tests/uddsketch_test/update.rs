@@ -23,7 +23,7 @@ use datasketches::uddsketch::UddSketch;
 
 #[test]
 fn constructor_validates_parameters() {
-    for bad_buckets in [0, 1, 2, 3] {
+    for bad_buckets in [0, 1, 2, 3, (1 << 26) + 1, u32::MAX] {
         let err = UddSketch::new(bad_buckets, 0.01).unwrap_err();
         assert_eq!(err.kind(), ErrorKind::InvalidArgument);
     }
@@ -42,6 +42,7 @@ fn constructor_validates_parameters() {
     }
 
     assert!(UddSketch::new(4, 1e-12).is_ok());
+    assert!(UddSketch::new(1 << 26, 0.01).is_ok());
     assert!(UddSketch::new(4, 1.0 - f64::EPSILON).is_ok());
 }
 

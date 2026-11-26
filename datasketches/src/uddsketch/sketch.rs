@@ -20,6 +20,7 @@ use std::fmt;
 use crate::error::Error;
 use crate::uddsketch::DEFAULT_ALPHA;
 use crate::uddsketch::DEFAULT_MAX_BUCKETS;
+use crate::uddsketch::MAX_MAX_BUCKETS;
 use crate::uddsketch::MIN_ALPHA;
 use crate::uddsketch::MIN_MAX_BUCKETS;
 use crate::uddsketch::mapping::Mapping;
@@ -78,8 +79,8 @@ impl UddSketch {
     ///
     /// # Errors
     ///
-    /// Returns [`InvalidArgument`](crate::error::ErrorKind::InvalidArgument) if `max_buckets < 4`
-    /// or `initial_alpha` is NaN or outside `[1e-12, 1.0)`.
+    /// Returns [`InvalidArgument`](crate::error::ErrorKind::InvalidArgument) if `max_buckets` is
+    /// outside `4..=67_108_864` (`2^26`) or `initial_alpha` is NaN or outside `[1e-12, 1.0)`.
     ///
     /// # Examples
     ///
@@ -92,9 +93,9 @@ impl UddSketch {
     /// # Ok::<(), datasketches::error::Error>(())
     /// ```
     pub fn new(max_buckets: u32, initial_alpha: f64) -> Result<Self, Error> {
-        if max_buckets < MIN_MAX_BUCKETS {
+        if !(MIN_MAX_BUCKETS..=MAX_MAX_BUCKETS).contains(&max_buckets) {
             return Err(Error::invalid_argument(format!(
-                "max_buckets must be at least {MIN_MAX_BUCKETS}, got {max_buckets}"
+                "max_buckets must be in [{MIN_MAX_BUCKETS}, {MAX_MAX_BUCKETS}], got {max_buckets}"
             )));
         }
         if !(MIN_ALPHA..1.0).contains(&initial_alpha) {
