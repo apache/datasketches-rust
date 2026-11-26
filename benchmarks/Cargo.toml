@@ -40,6 +40,7 @@ datasketches = { workspace = true, features = [
   "tdigest",
   "theta",
   "tuple",
+  "uddsketch",
   "xor",
 ] }
 rand = { workspace = true }

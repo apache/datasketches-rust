@@ -78,5 +78,8 @@ mod theta;
 #[path = "serde_tests/tuple.rs"]
 mod tuple;
 
+#[path = "serde_tests/uddsketch.rs"]
+mod uddsketch;
+
 #[path = "serde_tests/xor.rs"]
 mod xor;

@@ -35,6 +35,7 @@ mod req;
 mod tdigest;
 mod theta;
 mod tuple;
+mod uddsketch;
 mod xor;
 
 const N_STD: [u64; 8] = [0, 1, 10, 100, 1_000, 10_000, 100_000, 1_000_000];
@@ -75,6 +76,8 @@ enum SketchFamily {
     TDigest,
     Theta,
     Tuple,
+    #[value(name = "uddsketch")]
+    UddSketch,
     Xor,
 }
 
@@ -93,6 +96,7 @@ impl SketchFamily {
             Self::TDigest => tdigest::generate(output_dir),
             Self::Theta => theta::generate(output_dir),
             Self::Tuple => tuple::generate(output_dir),
+            Self::UddSketch => uddsketch::generate(output_dir),
             Self::Xor => xor::generate(output_dir),
         }
     }
