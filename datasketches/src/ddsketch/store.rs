@@ -21,16 +21,20 @@ use std::iter::FusedIterator;
 
 use super::DEFAULT_MAX_NUM_BINS;
 use super::MAX_DENSE_BINS;
+use super::weight::DdSketchWeight;
 use crate::error::Error;
 
 const INITIAL_DENSE_OVERHEAD: usize = 64;
 const MAX_I32_SPAN: u64 = (i32::MAX as i64 - i32::MIN as i64 + 1) as u64;
-const MAX_VEC_U64_LEN: u64 = ((isize::MAX as usize) / size_of::<u64>()) as u64;
-/// Maximum number of `u64` slots a `DenseStore` can hold: bounded both by addressable `Vec<u64>`
-/// capacity (`isize::MAX / 8` on 32-bit targets) and by the 32-bit bucket index domain (`2^32` on
-/// 64-bit targets).
-pub const MAX_DENSE_LEN: usize = if MAX_VEC_U64_LEN < MAX_I32_SPAN {
-    MAX_VEC_U64_LEN as usize
+const MAX_VEC_WORD_LEN: u64 = ((isize::MAX as usize) / size_of::<u64>()) as u64;
+
+const _: () = assert!(size_of::<f64>() == size_of::<u64>());
+
+/// Maximum number of 8-byte weight slots a `DenseStore` can hold: bounded both by addressable
+/// `Vec<W>` capacity (`isize::MAX / 8` on 32-bit targets) and by the 32-bit bucket index domain
+/// (`2^32` on 64-bit targets).
+pub const MAX_DENSE_LEN: usize = if MAX_VEC_WORD_LEN < MAX_I32_SPAN {
+    MAX_VEC_WORD_LEN as usize
 } else {
     MAX_I32_SPAN as usize
 };
@@ -104,12 +108,12 @@ enum CollapseMode {
 }
 
 #[derive(Debug, Clone)]
-pub enum Store {
-    Dense(DenseStore),
-    Sparse(SparseStore),
+pub enum Store<W> {
+    Dense(DenseStore<W>),
+    Sparse(SparseStore<W>),
 }
 
-impl Store {
+impl<W: DdSketchWeight> Store<W> {
     pub fn new(kind: StoreKind) -> Result<Self, Error> {
         validate_store_kind(kind)?;
         Ok(match kind {
@@ -120,7 +124,7 @@ impl Store {
                 Self::Dense(DenseStore::new(CollapseMode::Highest(max_num_bins)))
             }
             StoreKind::UnboundedDense => Self::Dense(DenseStore::new(CollapseMode::None)),
-            StoreKind::Sparse => Self::Sparse(SparseStore::default()),
+            StoreKind::Sparse => Self::Sparse(SparseStore::new()),
         })
     }
 
@@ -152,12 +156,15 @@ impl Store {
     }
 
     #[inline]
-    pub const fn is_empty(&self) -> bool {
-        self.total_weight() == 0
+    pub fn is_empty(&self) -> bool {
+        match self {
+            Self::Dense(dense) => dense.occupied == 0,
+            Self::Sparse(sparse) => sparse.bins.is_empty(),
+        }
     }
 
     #[inline]
-    pub const fn total_weight(&self) -> u64 {
+    pub const fn total_weight(&self) -> W {
         match self {
             Self::Dense(dense) => dense.count,
             Self::Sparse(sparse) => sparse.count,
@@ -196,7 +203,7 @@ impl Store {
             if matches!(dst.mode, CollapseMode::None) {
                 let other_min = other.min_index().expect("non-empty store has min_index");
                 let other_max = other.max_index().expect("non-empty store has max_index");
-                let (new_min, new_max) = if dst.count == 0 {
+                let (new_min, new_max) = if dst.occupied == 0 {
                     (other_min, other_max)
                 } else {
                     (dst.min_index.min(other_min), dst.max_index.max(other_max))
@@ -213,8 +220,8 @@ impl Store {
     }
 
     #[inline]
-    pub fn add(&mut self, index: i32, weight: u64) {
-        if weight == 0 {
+    pub fn add(&mut self, index: i32, weight: W) {
+        if weight.is_zero() {
             return;
         }
         match self {
@@ -226,8 +233,8 @@ impl Store {
     /// Adds `weight` at `index` into a store initialized via
     /// [`with_wire_bounds`](Self::with_wire_bounds) covering `index`.
     #[inline]
-    pub fn add_in_bounds(&mut self, index: i32, weight: u64) {
-        if weight == 0 {
+    pub fn add_in_bounds(&mut self, index: i32, weight: W) {
+        if weight.is_zero() {
             return;
         }
         match self {
@@ -251,10 +258,17 @@ impl Store {
         }
     }
 
-    pub fn key_at_rank(&self, rank: u64) -> i32 {
+    pub fn key_at_rank_asc(&self, rank: W) -> i32 {
         match self {
-            Self::Dense(dense) => dense.key_at_rank(rank),
-            Self::Sparse(sparse) => sparse.key_at_rank(rank),
+            Self::Dense(dense) => dense.key_at_rank_asc(rank),
+            Self::Sparse(sparse) => sparse.key_at_rank_asc(rank),
+        }
+    }
+
+    pub fn key_at_rank_desc(&self, rank: W) -> i32 {
+        match self {
+            Self::Dense(dense) => dense.key_at_rank_desc(rank),
+            Self::Sparse(sparse) => sparse.key_at_rank_desc(rank),
         }
     }
 
@@ -262,7 +276,7 @@ impl Store {
     /// `emit(pos, index)` for each `(rank, pos)` entry.
     pub fn scan_ranks_asc(
         &self,
-        ranks: impl IntoIterator<Item = (u64, usize)>,
+        ranks: impl IntoIterator<Item = (W, usize)>,
         mut emit: impl FnMut(usize, i32),
     ) {
         let mut ranks = ranks.into_iter().peekable();
@@ -277,9 +291,9 @@ impl Store {
                 let mut offset = 0_usize;
                 let mut cumul_end = slice[0];
                 for (target, pos) in ranks {
-                    while target >= cumul_end {
+                    while offset + 1 < slice.len() && target >= cumul_end {
                         offset += 1;
-                        cumul_end += slice[offset];
+                        cumul_end = cumul_end.add_unchecked(slice[offset]);
                     }
                     let idx = (i64::from(dense.min_index) + (offset as i64)) as i32;
                     emit(pos, idx);
@@ -292,10 +306,11 @@ impl Store {
                 let mut cumul_end = first_w;
                 for (target, pos) in ranks {
                     while target >= cumul_end {
-                        let (&idx, &w) =
-                            iter.next().expect("rank within sparse store total_weight");
+                        let Some((&idx, &w)) = iter.next() else {
+                            break;
+                        };
                         cur_idx = idx;
-                        cumul_end += w;
+                        cumul_end = cumul_end.add_unchecked(w);
                     }
                     emit(pos, cur_idx);
                 }
@@ -307,7 +322,7 @@ impl Store {
     /// invoking `emit(pos, index)` for each `(rank, pos)` entry.
     pub fn scan_ranks_desc(
         &self,
-        ranks: impl IntoIterator<Item = (u64, usize)>,
+        ranks: impl IntoIterator<Item = (W, usize)>,
         mut emit: impl FnMut(usize, i32),
     ) {
         let mut ranks = ranks.into_iter().peekable();
@@ -322,9 +337,9 @@ impl Store {
                 let mut offset = slice.len() - 1;
                 let mut cumul_end = slice[offset];
                 for (target, pos) in ranks {
-                    while target >= cumul_end {
+                    while offset > 0 && target >= cumul_end {
                         offset -= 1;
-                        cumul_end += slice[offset];
+                        cumul_end = cumul_end.add_unchecked(slice[offset]);
                     }
                     let idx = (i64::from(dense.min_index) + (offset as i64)) as i32;
                     emit(pos, idx);
@@ -337,10 +352,11 @@ impl Store {
                 let mut cumul_end = first_w;
                 for (target, pos) in ranks {
                     while target >= cumul_end {
-                        let (&idx, &w) =
-                            iter.next().expect("rank within sparse store total_weight");
+                        let Some((&idx, &w)) = iter.next() else {
+                            break;
+                        };
                         cur_idx = idx;
-                        cumul_end += w;
+                        cumul_end = cumul_end.add_unchecked(w);
                     }
                     emit(pos, cur_idx);
                 }
@@ -357,16 +373,16 @@ impl Store {
 
     pub fn estimated_size(&self) -> usize {
         match self {
-            Self::Dense(dense) => dense.bins.capacity().saturating_mul(size_of::<u64>()),
+            Self::Dense(dense) => dense.bins.capacity().saturating_mul(size_of::<W>()),
             Self::Sparse(sparse) => sparse
                 .bins
                 .len()
-                .saturating_mul(size_of::<i32>() + size_of::<u64>() + 16),
+                .saturating_mul(size_of::<i32>() + size_of::<W>() + 16),
         }
     }
 
     #[inline]
-    pub fn iter_asc(&self) -> StoreIter<'_> {
+    pub fn iter_asc(&self) -> StoreIter<'_, W> {
         match self {
             Self::Dense(dense) => StoreIter::Dense(dense.iter_asc()),
             Self::Sparse(sparse) => StoreIter::Sparse(sparse.bins.iter()),
@@ -374,7 +390,7 @@ impl Store {
     }
 
     #[inline]
-    pub fn dense_contiguous_slice(&self) -> Option<(i32, &[u64])> {
+    pub fn dense_contiguous_slice(&self) -> Option<(i32, &[W])> {
         match self {
             Self::Dense(dense) => dense.active_slice(),
             Self::Sparse(_) => None,
@@ -395,7 +411,7 @@ impl Store {
             if let CollapseMode::Lowest(max_bins) | CollapseMode::Highest(max_bins) = dense.mode {
                 debug_assert!(
                     !collapsed
-                        || (dense.count > 0
+                        || (dense.occupied > 0
                             && dense.bins.len() == max_bins
                             && span_u64(dense.min_index, dense.max_index) == max_bins as u64
                             && dense.offset == dense.min_index)
@@ -412,33 +428,33 @@ impl Store {
         first_index: i32,
         num_bins: usize,
         mut next_weight: F,
-    ) -> Result<(u64, Option<(i32, i32)>), Error>
+    ) -> Result<(W, Option<(i32, i32)>), Error>
     where
-        F: FnMut() -> Result<u64, Error>,
+        F: FnMut() -> Result<W, Error>,
     {
         debug_assert!(self.is_empty());
         if num_bins == 0 {
-            return Ok((0, None));
+            return Ok((W::ZERO, None));
         }
         let last_index = (i64::from(first_index) + (num_bins as i64) - 1) as i32;
         match self {
             Self::Dense(dense) => {
                 let cap = dense.exact_len(num_bins as u64);
-                debug_assert!(dense.count == 0 && num_bins <= cap);
+                debug_assert!(dense.occupied == 0 && num_bins <= cap);
                 dense.grow_bins(cap);
                 let offset = centered_offset(first_index, last_index, dense.bins.len());
                 let dst_start = (i64::from(first_index) - i64::from(offset)) as usize;
                 let dst = &mut dense.bins[dst_start..(dst_start + num_bins)];
-                let mut sum = 0_u64;
+                let mut sum = W::ZERO;
                 let mut occupied = 0_usize;
                 let mut first_nz: Option<usize> = None;
                 let mut last_nz = 0_usize;
                 for (i, slot) in dst.iter_mut().enumerate() {
                     let w = next_weight()?;
-                    if w != 0 {
-                        sum = sum
-                            .checked_add(w)
-                            .ok_or_else(|| Error::deserial("total_weight overflows u64"))?;
+                    if !w.is_zero() {
+                        sum = sum.checked_add(w).ok_or_else(|| {
+                            Error::deserial(format!("total_weight overflows {}", W::TYPE_NAME))
+                        })?;
                         *slot = w;
                         occupied += 1;
                         if first_nz.is_none() {
@@ -460,15 +476,15 @@ impl Store {
                 Ok((sum, wire_bounds))
             }
             Self::Sparse(sparse) => {
-                let mut sum = 0_u64;
+                let mut sum = W::ZERO;
                 let mut first_nz: Option<usize> = None;
                 let mut last_nz = 0_usize;
                 for i in 0..num_bins {
                     let w = next_weight()?;
-                    if w != 0 {
-                        sum = sum
-                            .checked_add(w)
-                            .ok_or_else(|| Error::deserial("total_weight overflows u64"))?;
+                    if !w.is_zero() {
+                        sum = sum.checked_add(w).ok_or_else(|| {
+                            Error::deserial(format!("total_weight overflows {}", W::TYPE_NAME))
+                        })?;
                         if first_nz.is_none() {
                             first_nz = Some(i);
                         }
@@ -490,9 +506,9 @@ impl Store {
 }
 
 #[derive(Debug, Clone)]
-pub struct DenseStore {
-    bins: Vec<u64>,
-    count: u64,
+pub struct DenseStore<W> {
+    bins: Vec<W>,
+    count: W,
     occupied: usize,
     offset: i32,
     min_index: i32,
@@ -501,11 +517,11 @@ pub struct DenseStore {
     is_collapsed: bool,
 }
 
-impl DenseStore {
+impl<W: DdSketchWeight> DenseStore<W> {
     const fn new(mode: CollapseMode) -> Self {
         Self {
             bins: Vec::new(),
-            count: 0,
+            count: W::ZERO,
             occupied: 0,
             offset: 0,
             min_index: 0,
@@ -517,7 +533,7 @@ impl DenseStore {
 
     #[inline]
     const fn min_index(&self) -> Option<i32> {
-        if self.count == 0 {
+        if self.occupied == 0 {
             None
         } else {
             Some(self.min_index)
@@ -526,7 +542,7 @@ impl DenseStore {
 
     #[inline]
     const fn max_index(&self) -> Option<i32> {
-        if self.count == 0 {
+        if self.occupied == 0 {
             None
         } else {
             Some(self.max_index)
@@ -534,8 +550,8 @@ impl DenseStore {
     }
 
     #[inline]
-    fn active_slice(&self) -> Option<(i32, &[u64])> {
-        if self.count == 0 {
+    fn active_slice(&self) -> Option<(i32, &[W])> {
+        if self.occupied == 0 {
             return None;
         }
         let start = self.pos(self.min_index);
@@ -549,17 +565,17 @@ impl DenseStore {
     }
 
     #[inline]
-    fn record_at(&mut self, pos: usize, weight: u64) {
-        if self.bins[pos] == 0 {
+    fn record_at(&mut self, pos: usize, weight: W) {
+        if self.bins[pos].is_zero() {
             self.occupied += 1;
         }
-        self.bins[pos] += weight;
-        self.count += weight;
+        self.bins[pos] = self.bins[pos].add_unchecked(weight);
+        self.count = self.count.add_unchecked(weight);
     }
 
     #[inline]
-    fn add(&mut self, index: i32, weight: u64) {
-        if self.count > 0 && index >= self.min_index && index <= self.max_index {
+    fn add(&mut self, index: i32, weight: W) {
+        if self.occupied > 0 && index >= self.min_index && index <= self.max_index {
             let pos = self.pos(index);
             self.record_at(pos, weight);
             return;
@@ -568,8 +584,8 @@ impl DenseStore {
     }
 
     #[cold]
-    fn add_cold(&mut self, index: i32, weight: u64) {
-        if self.count == 0 {
+    fn add_cold(&mut self, index: i32, weight: W) {
+        if self.occupied == 0 {
             let len = self.desired_len(1);
             self.grow_bins(len);
             let offset = centered_offset(index, index, self.bins.len());
@@ -610,7 +626,7 @@ impl DenseStore {
     }
 
     fn init_for_wire_bounds(&mut self, wire_min: i32, wire_max: i32) {
-        debug_assert_eq!(self.count, 0);
+        debug_assert_eq!(self.occupied, 0);
         debug_assert!(wire_min <= wire_max);
         let span = span_u64(wire_min, wire_max);
         let target_len = self.exact_len(span);
@@ -645,7 +661,7 @@ impl DenseStore {
     }
 
     #[inline]
-    fn add_in_bounds(&mut self, index: i32, weight: u64) {
+    fn add_in_bounds(&mut self, index: i32, weight: W) {
         let pos = if index <= self.min_index {
             debug_assert!(
                 index == self.min_index
@@ -668,7 +684,7 @@ impl DenseStore {
         if target_len > self.bins.len() {
             let additional = target_len - self.bins.len();
             self.bins.reserve_exact(additional);
-            self.bins.resize(target_len, 0);
+            self.bins.resize(target_len, W::ZERO);
         }
     }
 
@@ -707,7 +723,7 @@ impl DenseStore {
     }
 
     fn extend_range(&mut self, req_min: i32, req_max: i32) {
-        debug_assert!(self.count > 0);
+        debug_assert!(self.occupied > 0);
         let new_min = self.min_index.min(req_min);
         let new_max = self.max_index.max(req_max);
 
@@ -737,7 +753,7 @@ impl DenseStore {
                 let old_end = self.pos(self.max_index);
 
                 if collapsed_min >= self.max_index {
-                    self.bins[old_start..=old_end].fill(0);
+                    self.bins[old_start..=old_end].fill(W::ZERO);
                     self.bins[0] = self.count;
                     self.occupied = 1;
                     self.offset = collapsed_min;
@@ -749,19 +765,20 @@ impl DenseStore {
 
                 let keep_min = if self.min_index < collapsed_min {
                     let collapse_end = self.pos(collapsed_min);
-                    let mut collapsed_weight = 0_u64;
+                    let mut collapsed_weight = W::ZERO;
                     for slot in &mut self.bins[old_start..collapse_end] {
-                        if *slot != 0 {
-                            collapsed_weight += *slot;
-                            *slot = 0;
+                        if !slot.is_zero() {
+                            collapsed_weight = collapsed_weight.add_unchecked(*slot);
+                            *slot = W::ZERO;
                             self.occupied -= 1;
                         }
                     }
-                    if collapsed_weight != 0 {
-                        if self.bins[collapse_end] == 0 {
+                    if !collapsed_weight.is_zero() {
+                        if self.bins[collapse_end].is_zero() {
                             self.occupied += 1;
                         }
-                        self.bins[collapse_end] += collapsed_weight;
+                        self.bins[collapse_end] =
+                            self.bins[collapse_end].add_unchecked(collapsed_weight);
                     }
                     collapsed_min
                 } else {
@@ -780,7 +797,7 @@ impl DenseStore {
                 let old_end = self.pos(self.max_index);
 
                 if collapsed_max <= self.min_index {
-                    self.bins[old_start..=old_end].fill(0);
+                    self.bins[old_start..=old_end].fill(W::ZERO);
                     self.bins[max_bins - 1] = self.count;
                     self.occupied = 1;
                     self.offset = new_min;
@@ -792,19 +809,20 @@ impl DenseStore {
 
                 let keep_max = if self.max_index > collapsed_max {
                     let collapse_pos = self.pos(collapsed_max);
-                    let mut collapsed_weight = 0_u64;
+                    let mut collapsed_weight = W::ZERO;
                     for slot in &mut self.bins[(collapse_pos + 1)..=old_end] {
-                        if *slot != 0 {
-                            collapsed_weight += *slot;
-                            *slot = 0;
+                        if !slot.is_zero() {
+                            collapsed_weight = collapsed_weight.add_unchecked(*slot);
+                            *slot = W::ZERO;
                             self.occupied -= 1;
                         }
                     }
-                    if collapsed_weight != 0 {
-                        if self.bins[collapse_pos] == 0 {
+                    if !collapsed_weight.is_zero() {
+                        if self.bins[collapse_pos].is_zero() {
                             self.occupied += 1;
                         }
-                        self.bins[collapse_pos] += collapsed_weight;
+                        self.bins[collapse_pos] =
+                            self.bins[collapse_pos].add_unchecked(collapsed_weight);
                     }
                     collapsed_max
                 } else {
@@ -835,18 +853,18 @@ impl DenseStore {
                 .copy_within(src_start..(src_start + len), dst_start);
             if dst_start > src_start {
                 let clear_end = dst_start.min(src_start + len);
-                self.bins[src_start..clear_end].fill(0);
+                self.bins[src_start..clear_end].fill(W::ZERO);
             } else {
                 let clear_start = (dst_start + len).max(src_start);
-                self.bins[clear_start..(src_start + len)].fill(0);
+                self.bins[clear_start..(src_start + len)].fill(W::ZERO);
             }
         }
         self.offset = new_offset;
     }
 
     fn merge_dense(&mut self, other: &Self) {
-        debug_assert!(other.count > 0);
-        if self.count == 0 {
+        debug_assert!(other.occupied > 0);
+        if self.occupied == 0 {
             let src_start = other.pos(other.min_index);
             let src_end = other.pos(other.max_index);
             let src_slice = &other.bins[src_start..=src_end];
@@ -869,7 +887,7 @@ impl DenseStore {
 
             self.init_for_wire_bounds(other.min_index, other.max_index);
             for (i, &w) in src_slice.iter().enumerate() {
-                if w != 0 {
+                if !w.is_zero() {
                     let idx = (i64::from(other.min_index) + (i as i64)) as i32;
                     self.add_in_bounds(idx, w);
                 }
@@ -899,18 +917,18 @@ impl DenseStore {
             let dst_slice = &mut self.bins[dst_start..(dst_start + src_slice.len())];
             let mut newly_occupied = 0_usize;
             for (dst, &w) in dst_slice.iter_mut().zip(src_slice) {
-                if w != 0 {
-                    if *dst == 0 {
+                if !w.is_zero() {
+                    if dst.is_zero() {
                         newly_occupied += 1;
                     }
-                    *dst += w;
+                    *dst = dst.add_unchecked(w);
                 }
             }
             self.occupied += newly_occupied;
-            self.count += other.count;
+            self.count = self.count.add_unchecked(other.count);
         } else {
             for (i, &w) in src_slice.iter().enumerate() {
-                if w != 0 {
+                if !w.is_zero() {
                     let idx = (i64::from(other_min) + (i as i64)) as i32;
                     self.add(idx, w);
                 }
@@ -921,11 +939,11 @@ impl DenseStore {
         }
     }
 
-    fn merge_sparse(&mut self, src: &SparseStore) {
-        debug_assert!(src.count > 0);
+    fn merge_sparse(&mut self, src: &SparseStore<W>) {
+        debug_assert!(!src.bins.is_empty());
         let src_min = src.min_index().expect("non-empty sparse store");
         let src_max = src.max_index().expect("non-empty sparse store");
-        if self.count == 0 {
+        if self.occupied == 0 {
             self.init_for_wire_bounds(src_min, src_max);
             for (&idx, &w) in &src.bins {
                 self.add_in_bounds(idx, w);
@@ -948,26 +966,41 @@ impl DenseStore {
         }
     }
 
-    fn key_at_rank(&self, mut rank: u64) -> i32 {
-        debug_assert!(self.count > 0 && rank < self.count);
+    fn key_at_rank_asc(&self, rank: W) -> i32 {
+        debug_assert!(self.occupied > 0);
         let start = self.pos(self.min_index);
         let end = self.pos(self.max_index);
+        let mut cumul = W::ZERO;
         for (i, &w) in self.bins[start..=end].iter().enumerate() {
-            if rank < w {
+            cumul = cumul.add_unchecked(w);
+            if rank < cumul {
                 return (i64::from(self.min_index) + (i as i64)) as i32;
             }
-            rank -= w;
         }
         self.max_index
     }
 
+    fn key_at_rank_desc(&self, rank: W) -> i32 {
+        debug_assert!(self.occupied > 0);
+        let start = self.pos(self.min_index);
+        let end = self.pos(self.max_index);
+        let mut cumul = W::ZERO;
+        for (i, &w) in self.bins[start..=end].iter().enumerate().rev() {
+            cumul = cumul.add_unchecked(w);
+            if rank < cumul {
+                return (i64::from(self.min_index) + (i as i64)) as i32;
+            }
+        }
+        self.min_index
+    }
+
     fn reset(&mut self) {
-        if self.count > 0 {
+        if self.occupied > 0 {
             let start = self.pos(self.min_index);
             let end = self.pos(self.max_index);
-            self.bins[start..=end].fill(0);
+            self.bins[start..=end].fill(W::ZERO);
         }
-        self.count = 0;
+        self.count = W::ZERO;
         self.occupied = 0;
         self.offset = 0;
         self.min_index = 0;
@@ -976,7 +1009,7 @@ impl DenseStore {
     }
 
     #[inline]
-    fn iter_asc(&self) -> DenseStoreIter<'_> {
+    fn iter_asc(&self) -> DenseStoreIter<'_, W> {
         match self.active_slice() {
             Some((min_index, slice)) => DenseStoreIter {
                 slice,
@@ -990,13 +1023,20 @@ impl DenseStore {
     }
 }
 
-#[derive(Debug, Clone, Default)]
-pub struct SparseStore {
-    bins: BTreeMap<i32, u64>,
-    count: u64,
+#[derive(Debug, Clone)]
+pub struct SparseStore<W> {
+    bins: BTreeMap<i32, W>,
+    count: W,
 }
 
-impl SparseStore {
+impl<W: DdSketchWeight> SparseStore<W> {
+    const fn new() -> Self {
+        Self {
+            bins: BTreeMap::new(),
+            count: W::ZERO,
+        }
+    }
+
     #[inline]
     fn min_index(&self) -> Option<i32> {
         self.bins.first_key_value().map(|(&idx, _)| idx)
@@ -1008,18 +1048,20 @@ impl SparseStore {
     }
 
     #[inline]
-    fn add(&mut self, index: i32, weight: u64) {
-        *self.bins.entry(index).or_insert(0) += weight;
-        self.count += weight;
+    fn add(&mut self, index: i32, weight: W) {
+        let entry = self.bins.entry(index).or_insert(W::ZERO);
+        *entry = entry.add_unchecked(weight);
+        self.count = self.count.add_unchecked(weight);
     }
 
-    fn key_at_rank(&self, mut rank: u64) -> i32 {
-        debug_assert!(self.count > 0 && rank < self.count);
+    fn key_at_rank_asc(&self, rank: W) -> i32 {
+        debug_assert!(!self.bins.is_empty());
+        let mut cumul = W::ZERO;
         for (&idx, &w) in &self.bins {
-            if rank < w {
+            cumul = cumul.add_unchecked(w);
+            if rank < cumul {
                 return idx;
             }
-            rank -= w;
         }
         *self
             .bins
@@ -1028,20 +1070,36 @@ impl SparseStore {
             .0
     }
 
+    fn key_at_rank_desc(&self, rank: W) -> i32 {
+        debug_assert!(!self.bins.is_empty());
+        let mut cumul = W::ZERO;
+        for (&idx, &w) in self.bins.iter().rev() {
+            cumul = cumul.add_unchecked(w);
+            if rank < cumul {
+                return idx;
+            }
+        }
+        *self
+            .bins
+            .first_key_value()
+            .expect("non-empty sparse store")
+            .0
+    }
+
     fn reset(&mut self) {
         self.bins.clear();
-        self.count = 0;
+        self.count = W::ZERO;
     }
 }
 
 #[derive(Debug, Clone)]
-pub enum StoreIter<'a> {
-    Dense(DenseStoreIter<'a>),
-    Sparse(btree_map::Iter<'a, i32, u64>),
+pub enum StoreIter<'a, W> {
+    Dense(DenseStoreIter<'a, W>),
+    Sparse(btree_map::Iter<'a, i32, W>),
 }
 
-impl Iterator for StoreIter<'_> {
-    type Item = (i32, u64);
+impl<W: DdSketchWeight> Iterator for StoreIter<'_, W> {
+    type Item = (i32, W);
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
@@ -1052,7 +1110,7 @@ impl Iterator for StoreIter<'_> {
     }
 }
 
-impl DoubleEndedIterator for StoreIter<'_> {
+impl<W: DdSketchWeight> DoubleEndedIterator for StoreIter<'_, W> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         match self {
@@ -1062,16 +1120,16 @@ impl DoubleEndedIterator for StoreIter<'_> {
     }
 }
 
-impl FusedIterator for StoreIter<'_> {}
+impl<W: DdSketchWeight> FusedIterator for StoreIter<'_, W> {}
 
 #[derive(Debug, Clone)]
-pub struct DenseStoreIter<'a> {
-    slice: &'a [u64],
+pub struct DenseStoreIter<'a, W> {
+    slice: &'a [W],
     front_index: i32,
 }
 
-impl Iterator for DenseStoreIter<'_> {
-    type Item = (i32, u64);
+impl<W: DdSketchWeight> Iterator for DenseStoreIter<'_, W> {
+    type Item = (i32, W);
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
@@ -1079,7 +1137,7 @@ impl Iterator for DenseStoreIter<'_> {
             let idx = self.front_index;
             self.slice = rest;
             self.front_index = idx.wrapping_add(1);
-            if first != 0 {
+            if !first.is_zero() {
                 return Some((idx, first));
             }
         }
@@ -1087,13 +1145,13 @@ impl Iterator for DenseStoreIter<'_> {
     }
 }
 
-impl DoubleEndedIterator for DenseStoreIter<'_> {
+impl<W: DdSketchWeight> DoubleEndedIterator for DenseStoreIter<'_, W> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         while let Some((&last, rest)) = self.slice.split_last() {
             let back_index = (i64::from(self.front_index) + (rest.len() as i64)) as i32;
             self.slice = rest;
-            if last != 0 {
+            if !last.is_zero() {
                 return Some((back_index, last));
             }
         }
@@ -1101,7 +1159,7 @@ impl DoubleEndedIterator for DenseStoreIter<'_> {
     }
 }
 
-impl FusedIterator for DenseStoreIter<'_> {}
+impl<W: DdSketchWeight> FusedIterator for DenseStoreIter<'_, W> {}
 
 #[inline]
 pub fn span_u64(min_index: i32, max_index: i32) -> u64 {
@@ -1126,7 +1184,7 @@ mod tests {
     #[test]
     fn extreme_i32_indices_do_not_overflow_offset_or_span() {
         assert_eq!(span_u64(i32::MIN, i32::MAX), 1_u64 << 32);
-        let unbounded = DenseStore::new(CollapseMode::None);
+        let unbounded = DenseStore::<u64>::new(CollapseMode::None);
         let capped_len = unbounded.desired_len(MAX_DENSE_LEN as u64);
         assert_eq!(capped_len, MAX_DENSE_LEN);
         #[cfg(target_pointer_width = "64")]
@@ -1146,14 +1204,14 @@ mod tests {
             StoreKind::CollapsingLowestDense { max_num_bins: 8 },
             StoreKind::CollapsingHighestDense { max_num_bins: 8 },
         ] {
-            let mut store = Store::new(kind).unwrap();
+            let mut store = Store::<u64>::new(kind).unwrap();
             store.add(i32::MIN, 1);
             store.add(i32::MAX, 3);
             assert_eq!(store.total_weight(), 4);
 
             // Reverse order (`i32::MAX` first, then `i32::MIN`) exercises the opposite collapse
             // branch over the full `2^32` index span.
-            let mut reverse = Store::new(kind).unwrap();
+            let mut reverse = Store::<u64>::new(kind).unwrap();
             reverse.add(i32::MAX, 3);
             reverse.add(i32::MIN, 1);
             assert_eq!(reverse.total_weight(), 4);

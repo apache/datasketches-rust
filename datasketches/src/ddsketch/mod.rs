@@ -38,9 +38,9 @@
 //!
 //! [`DdSketch::serialize`] and [`DdSketch::deserialize`] use this crate's native `DDSKETCH` binary
 //! format (`Family::DDSKETCH`, ID `25`), preserving [`MappingKind`], [`StoreKind`], collapse state,
-//! exact summary statistics, and exact `u64` bucket weights. This native format is currently
-//! experimental and may change in future releases while cross-language DataSketches standardization
-//! is underway.
+//! exact summary statistics, and bucket weights (`u64` by default, or `f64` for fractional weights
+//! via [`DdSketchWeight`]). This native format is currently experimental and may change in future
+//! releases while cross-language DataSketches standardization is underway.
 //!
 //! # Compatibility with reference implementations
 //!
@@ -63,7 +63,7 @@
 //! ```
 //! use datasketches::ddsketch::DdSketch;
 //!
-//! let mut sketch = DdSketch::new(0.01)?;
+//! let mut sketch = DdSketch::<u64>::new(0.01)?;
 //! for latency_ms in [1.2, 2.5, 4.8, 12.0, 250.0] {
 //!     sketch.update(latency_ms);
 //! }
@@ -78,12 +78,14 @@ mod mapping;
 mod serialization;
 mod sketch;
 mod store;
+mod weight;
 
 pub use self::iter::DdSketchIter;
 pub use self::mapping::MappingKind;
 pub use self::sketch::DdSketch;
 pub use self::sketch::DdSketchBuilder;
 pub use self::store::StoreKind;
+pub use self::weight::DdSketchWeight;
 
 const DEFAULT_RELATIVE_ACCURACY: f64 = 0.01;
 const MIN_RELATIVE_ACCURACY: f64 = 1e-6;

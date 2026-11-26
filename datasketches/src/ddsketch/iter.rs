@@ -17,10 +17,10 @@
 
 use std::fmt;
 use std::iter::FusedIterator;
-use std::num::NonZeroU64;
 
 use super::mapping::IndexMapping;
 use super::store::StoreIter;
+use super::weight::DdSketchWeight;
 
 /// Iterator over non-empty `(value, weight)` buckets of a [`DdSketch`](super::DdSketch) in
 /// ascending numerical order.
@@ -29,33 +29,33 @@ use super::store::StoreIter;
 /// accumulated stream weight.
 #[derive(Clone)]
 #[must_use = "iterators are lazy and do nothing unless consumed"]
-pub struct DdSketchIter<'a> {
+pub struct DdSketchIter<'a, W = u64> {
     mapping: IndexMapping,
-    neg_iter: StoreIter<'a>,
-    zero_weight: Option<NonZeroU64>,
-    pos_iter: StoreIter<'a>,
+    neg_iter: StoreIter<'a, W>,
+    zero_weight: Option<W>,
+    pos_iter: StoreIter<'a, W>,
     remaining: usize,
 }
 
-impl<'a> DdSketchIter<'a> {
+impl<'a, W: DdSketchWeight> DdSketchIter<'a, W> {
     pub(super) fn new(
         mapping: IndexMapping,
-        neg_iter: StoreIter<'a>,
-        zero_weight: u64,
-        pos_iter: StoreIter<'a>,
+        neg_iter: StoreIter<'a, W>,
+        zero_weight: W,
+        pos_iter: StoreIter<'a, W>,
         remaining: usize,
     ) -> Self {
         Self {
             mapping,
             neg_iter,
-            zero_weight: NonZeroU64::new(zero_weight),
+            zero_weight: (!zero_weight.is_zero()).then_some(zero_weight),
             pos_iter,
             remaining,
         }
     }
 }
 
-impl fmt::Debug for DdSketchIter<'_> {
+impl<W> fmt::Debug for DdSketchIter<'_, W> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("DdSketchIter")
             .field("remaining", &self.remaining)
@@ -63,8 +63,8 @@ impl fmt::Debug for DdSketchIter<'_> {
     }
 }
 
-impl Iterator for DdSketchIter<'_> {
-    type Item = (f64, u64);
+impl<W: DdSketchWeight> Iterator for DdSketchIter<'_, W> {
+    type Item = (f64, W);
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
@@ -74,7 +74,7 @@ impl Iterator for DdSketchIter<'_> {
         }
         if let Some(weight) = self.zero_weight.take() {
             self.remaining -= 1;
-            return Some((0.0, weight.get()));
+            return Some((0.0, weight));
         }
         if let Some((index, weight)) = self.pos_iter.next() {
             self.remaining -= 1;
@@ -89,7 +89,7 @@ impl Iterator for DdSketchIter<'_> {
     }
 }
 
-impl DoubleEndedIterator for DdSketchIter<'_> {
+impl<W: DdSketchWeight> DoubleEndedIterator for DdSketchIter<'_, W> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         if let Some((index, weight)) = self.pos_iter.next_back() {
@@ -98,7 +98,7 @@ impl DoubleEndedIterator for DdSketchIter<'_> {
         }
         if let Some(weight) = self.zero_weight.take() {
             self.remaining -= 1;
-            return Some((0.0, weight.get()));
+            return Some((0.0, weight));
         }
         if let Some((index, weight)) = self.neg_iter.next() {
             self.remaining -= 1;
@@ -108,11 +108,11 @@ impl DoubleEndedIterator for DdSketchIter<'_> {
     }
 }
 
-impl ExactSizeIterator for DdSketchIter<'_> {
+impl<W: DdSketchWeight> ExactSizeIterator for DdSketchIter<'_, W> {
     #[inline]
     fn len(&self) -> usize {
         self.remaining
     }
 }
 
-impl FusedIterator for DdSketchIter<'_> {}
+impl<W: DdSketchWeight> FusedIterator for DdSketchIter<'_, W> {}

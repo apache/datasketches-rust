@@ -28,6 +28,7 @@ use super::serialization::serialize_sketch;
 use super::store::Store;
 use super::store::StoreKind;
 use super::store::validate_store_kind;
+use super::weight::DdSketchWeight;
 use crate::error::Error;
 
 /// Builder for configuring and constructing a [`DdSketch`].
@@ -45,7 +46,7 @@ use crate::error::Error;
 /// let mut sketch = DdSketchBuilder::new(0.005)
 ///     .mapping(MappingKind::Logarithmic)
 ///     .store(StoreKind::Sparse)
-///     .build()?;
+///     .build::<u64>()?;
 /// sketch.update(42.0);
 /// assert_eq!(sketch.total_weight(), 1);
 /// # Ok::<(), datasketches::error::Error>(())
@@ -87,14 +88,14 @@ impl DdSketchBuilder {
         self
     }
 
-    /// Validates configuration parameters and creates an empty [`DdSketch`].
+    /// Validates configuration parameters and creates an empty [`DdSketch`] with weight type `W`.
     ///
     /// # Errors
     ///
     /// Returns [`InvalidArgument`](crate::error::ErrorKind::InvalidArgument) if
     /// `relative_accuracy` is NaN or outside `[1e-6, 1.0)`, or if `store` specifies a collapsing
     /// dense store with `max_num_bins` outside `1..=67_108_864`.
-    pub fn build(self) -> Result<DdSketch, Error> {
+    pub fn build<W: DdSketchWeight>(self) -> Result<DdSketch<W>, Error> {
         validate_store_kind(self.store_kind)?;
         let mapping = IndexMapping::from_accuracy(self.mapping_kind, self.relative_accuracy)?;
         let negative = Store::new(self.store_kind)?;
@@ -103,8 +104,7 @@ impl DdSketchBuilder {
             mapping,
             negative,
             positive,
-            0,
-            0,
+            W::ZERO,
             SummaryState::Empty,
         ))
     }
@@ -124,9 +124,9 @@ impl SummaryState {
     }
 
     #[inline]
-    fn record(&mut self, value: f64, weight: u64) {
+    fn record(&mut self, value: f64, weight_f64: f64) {
         let v = Self::canonical_f64(value);
-        let weighted = Self::canonical_f64(v * (weight as f64));
+        let weighted = Self::canonical_f64(v * weight_f64);
         match self {
             Self::Empty => {
                 *self = Self::Active {
@@ -168,25 +168,27 @@ impl SummaryState {
 
 /// Mergeable quantile sketch over finite `f64` values with relative-value error guarantees.
 ///
-/// See the [module documentation](super) for accuracy, memory, and compatibility details.
+/// The weight type `W` defaults to `u64` for exact associative integer weights, and can be set to
+/// `f64` for fractional weights and full compatibility with the Java and Go reference
+/// implementations. See the [module documentation](super) for accuracy, memory, and compatibility
+/// details.
 #[derive(Clone)]
-pub struct DdSketch {
+pub struct DdSketch<W: DdSketchWeight = u64> {
     mapping: IndexMapping,
-    negative: Store,
-    positive: Store,
-    zero_weight: u64,
-    total_weight: u64,
+    negative: Store<W>,
+    positive: Store<W>,
+    zero_weight: W,
     summary: SummaryState,
 }
 
-impl fmt::Debug for DdSketch {
+impl<W: DdSketchWeight> fmt::Debug for DdSketch<W> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("DdSketch")
             .field("relative_accuracy", &self.mapping.relative_accuracy())
             .field("mapping_kind", &self.mapping.kind())
             .field("store_kind", &self.positive.kind())
             .field("is_empty", &self.is_empty())
-            .field("total_weight", &self.total_weight)
+            .field("total_weight", &self.total_weight())
             .field("zero_weight", &self.zero_weight)
             .field("num_retained", &self.num_retained())
             .field("min_value", &self.min_value())
@@ -196,7 +198,7 @@ impl fmt::Debug for DdSketch {
     }
 }
 
-impl Default for DdSketch {
+impl<W: DdSketchWeight> Default for DdSketch<W> {
     fn default() -> Self {
         DdSketchBuilder::default()
             .build()
@@ -204,7 +206,7 @@ impl Default for DdSketch {
     }
 }
 
-impl DdSketch {
+impl<W: DdSketchWeight> DdSketch<W> {
     /// Creates an empty sketch with the given `relative_accuracy`, [`MappingKind::Cubic`], and
     /// [`StoreKind::default()`].
     ///
@@ -218,7 +220,7 @@ impl DdSketch {
     /// ```
     /// use datasketches::ddsketch::DdSketch;
     ///
-    /// let sketch = DdSketch::new(0.01)?;
+    /// let sketch = DdSketch::<u64>::new(0.01)?;
     /// assert!(sketch.is_empty());
     /// # Ok::<(), datasketches::error::Error>(())
     /// ```
@@ -228,23 +230,26 @@ impl DdSketch {
 
     pub(super) fn from_parts(
         mapping: IndexMapping,
-        negative: Store,
-        positive: Store,
-        zero_weight: u64,
-        total_weight: u64,
+        negative: Store<W>,
+        positive: Store<W>,
+        zero_weight: W,
         summary: SummaryState,
     ) -> Self {
-        debug_assert_eq!(
-            negative.total_weight() + zero_weight + positive.total_weight(),
-            total_weight
+        let is_empty = negative.is_empty() && zero_weight.is_zero() && positive.is_empty();
+        debug_assert_eq!(is_empty, matches!(summary, SummaryState::Empty));
+        debug_assert!(
+            checked_combine_weights(
+                negative.total_weight(),
+                zero_weight,
+                positive.total_weight()
+            )
+            .is_some()
         );
-        debug_assert_eq!(total_weight == 0, matches!(summary, SummaryState::Empty));
         Self {
             mapping,
             negative,
             positive,
             zero_weight,
-            total_weight,
             summary,
         }
     }
@@ -260,12 +265,12 @@ impl DdSketch {
     }
 
     #[inline]
-    pub(super) const fn positive_store(&self) -> &Store {
+    pub(super) const fn positive_store(&self) -> &Store<W> {
         &self.positive
     }
 
     #[inline]
-    pub(super) const fn negative_store(&self) -> &Store {
+    pub(super) const fn negative_store(&self) -> &Store<W> {
         &self.negative
     }
 
@@ -300,18 +305,21 @@ impl DdSketch {
     /// Returns `true` if this sketch has not recorded any finite observations.
     #[inline]
     pub fn is_empty(&self) -> bool {
-        self.total_weight == 0
+        self.negative.is_empty() && self.zero_weight.is_zero() && self.positive.is_empty()
     }
 
     /// Returns the accumulated stream weight across all buckets.
     #[inline]
-    pub fn total_weight(&self) -> u64 {
-        self.total_weight
+    pub fn total_weight(&self) -> W {
+        self.negative
+            .total_weight()
+            .add_unchecked(self.zero_weight)
+            .add_unchecked(self.positive.total_weight())
     }
 
     /// Returns the accumulated stream weight in the zero bucket.
     #[inline]
-    pub fn zero_weight(&self) -> u64 {
+    pub fn zero_weight(&self) -> W {
         self.zero_weight
     }
 
@@ -320,7 +328,7 @@ impl DdSketch {
     #[inline]
     pub fn num_retained(&self) -> usize {
         self.negative.num_occupied()
-            + usize::from(self.zero_weight != 0)
+            + usize::from(!self.zero_weight.is_zero())
             + self.positive.num_occupied()
     }
 
@@ -331,78 +339,102 @@ impl DdSketch {
             .saturating_add(self.positive.estimated_size())
     }
 
-    /// Updates this sketch with a single observation.
+    /// Updates this sketch with a single observation of unit weight.
     ///
     /// [`f64::NAN`], [`f64::INFINITY`], and [`f64::NEG_INFINITY`] values are ignored.
     ///
     /// # Panics
     ///
-    /// Panics without modifying the sketch if [`total_weight`](Self::total_weight) would exceed
-    /// [`u64::MAX`], or if [`StoreKind::UnboundedDense`] would exceed addressable slice capacity.
+    /// Panics without modifying the sketch if [`total_weight`](Self::total_weight) would overflow
+    /// `W` ([`u64::MAX`] for `u64`, or non-finite for `f64`), or if [`StoreKind::UnboundedDense`]
+    /// would exceed addressable slice capacity.
     ///
     /// # Examples
     ///
     /// ```
     /// use datasketches::ddsketch::DdSketch;
     ///
-    /// let mut sketch = DdSketch::new(0.01)?;
+    /// let mut sketch = DdSketch::<u64>::new(0.01)?;
     /// sketch.update(10.0);
     /// assert_eq!(sketch.total_weight(), 1);
     /// # Ok::<(), datasketches::error::Error>(())
     /// ```
     #[inline]
     pub fn update(&mut self, value: f64) {
-        self.update_with_weight(value, 1);
+        self.update_with_weight(value, W::ONE);
     }
 
-    /// Updates this sketch with `value` repeated `weight` times.
+    /// Updates this sketch with `value` weighted by `weight`.
     ///
-    /// [`f64::NAN`], [`f64::INFINITY`], [`f64::NEG_INFINITY`], and a `weight` of `0` are no-ops.
+    /// [`f64::NAN`], [`f64::INFINITY`], [`f64::NEG_INFINITY`], and a zero `weight` are no-ops.
     ///
     /// # Panics
     ///
-    /// Panics without modifying the sketch if [`total_weight`](Self::total_weight) would exceed
-    /// [`u64::MAX`], or if [`StoreKind::UnboundedDense`] would exceed addressable slice capacity.
+    /// Panics without modifying the sketch if `weight` is negative, NaN, or infinite (for `f64`
+    /// weights), if [`total_weight`](Self::total_weight) would overflow `W` ([`u64::MAX`] for
+    /// `u64`, or non-finite for `f64`), or if [`StoreKind::UnboundedDense`] would exceed
+    /// addressable slice capacity.
     ///
     /// # Compatibility with reference implementations
     ///
     /// In the reference DDSketch implementations, Go rejects `NaN`, infinite, and negative-count
     /// inputs with an error, whereas Java rejects out-of-range finite/infinite and negative-count
     /// inputs while counting `NaN` into the zero bucket; both accept fractional `f64` counts. This
-    /// method ignores non-finite values and accumulates exact `u64` integer weights; keep
-    /// per-bucket weights (and [`total_weight`](Self::total_weight) for Java quantile readers) at
-    /// or below `2^53 - 1` when serializing with [`serialize_compat`](Self::serialize_compat).
+    /// method ignores non-finite values and supports both `u64` integer weights (default) and
+    /// fractional `f64` weights. For `DdSketch<u64>`, keep per-bucket weights (and
+    /// [`total_weight`](Self::total_weight) for Java quantile readers) at or below `2^53 - 1` when
+    /// serializing with [`serialize_compat`](Self::serialize_compat).
     ///
     /// # Examples
     ///
     /// ```
     /// use datasketches::ddsketch::DdSketch;
     ///
-    /// let mut sketch = DdSketch::new(0.01)?;
-    /// sketch.update_with_weight(25.0, 100);
-    /// assert_eq!(sketch.total_weight(), 100);
+    /// let mut sketch = DdSketch::<f64>::new(0.01)?;
+    /// sketch.update_with_weight(25.0, 2.5);
+    /// assert_eq!(sketch.total_weight(), 2.5);
     /// # Ok::<(), datasketches::error::Error>(())
     /// ```
     #[inline]
-    pub fn update_with_weight(&mut self, value: f64, weight: u64) {
-        if !value.is_finite() || weight == 0 {
+    pub fn update_with_weight(&mut self, value: f64, weight: W) {
+        let weight = weight.validate_update_weight();
+        if !value.is_finite() || weight.is_zero() {
             return;
         }
-        let next_total = self
-            .total_weight
-            .checked_add(weight)
-            .expect("total stream weight overflow");
 
         let min_indexable = self.mapping.min_indexable_value();
         if value > min_indexable {
+            let next_pos = self
+                .positive
+                .total_weight()
+                .checked_add(weight)
+                .expect("total stream weight overflow");
+            checked_combine_weights(self.negative.total_weight(), self.zero_weight, next_pos)
+                .expect("total stream weight overflow");
             self.positive.add(self.mapping.index(value), weight);
         } else if value < -min_indexable {
+            let next_neg = self
+                .negative
+                .total_weight()
+                .checked_add(weight)
+                .expect("total stream weight overflow");
+            checked_combine_weights(next_neg, self.zero_weight, self.positive.total_weight())
+                .expect("total stream weight overflow");
             self.negative.add(self.mapping.index(-value), weight);
         } else {
-            self.zero_weight += weight;
+            let next_zero = self
+                .zero_weight
+                .checked_add(weight)
+                .expect("total stream weight overflow");
+            checked_combine_weights(
+                self.negative.total_weight(),
+                next_zero,
+                self.positive.total_weight(),
+            )
+            .expect("total stream weight overflow");
+            self.zero_weight = next_zero;
         }
-        self.total_weight = next_total;
-        self.summary.record(value, weight);
+        self.summary.record(value, weight.to_f64());
     }
 
     /// Merges `other` into `self`, retaining `self`'s [`StoreKind`].
@@ -418,7 +450,7 @@ impl DdSketch {
     /// Returns [`InvalidArgument`](crate::error::ErrorKind::InvalidArgument) without modifying
     /// `self` if `other` uses an incompatible index mapping (even when either sketch is empty), if
     /// `other` contains a bucket index outside `self`'s valid range, if the combined
-    /// [`total_weight`](Self::total_weight) would exceed [`u64::MAX`], or if merging into
+    /// [`total_weight`](Self::total_weight) would overflow `W`, or if merging into
     /// [`StoreKind::UnboundedDense`] would exceed addressable slice capacity.
     ///
     /// # Compatibility with reference implementations
@@ -434,8 +466,8 @@ impl DdSketch {
     /// ```
     /// use datasketches::ddsketch::DdSketch;
     ///
-    /// let mut left = DdSketch::new(0.01)?;
-    /// let mut right = DdSketch::new(0.01)?;
+    /// let mut left = DdSketch::<u64>::new(0.01)?;
+    /// let mut right = DdSketch::<u64>::new(0.01)?;
     /// left.update(1.0);
     /// right.update(100.0);
     /// left.merge(&right)?;
@@ -459,17 +491,28 @@ impl DdSketch {
             return Ok(());
         }
 
-        let next_total = self
-            .total_weight
-            .checked_add(other.total_weight)
-            .ok_or_else(|| {
-                Error::invalid_argument(format!(
-                    "combined stream weight exceeds {}: left {}, right {}",
-                    u64::MAX,
-                    self.total_weight,
-                    other.total_weight
-                ))
-            })?;
+        let next_neg = self
+            .negative
+            .total_weight()
+            .checked_add(other.negative.total_weight());
+        let next_zero = self.zero_weight.checked_add(other.zero_weight);
+        let next_pos = self
+            .positive
+            .total_weight()
+            .checked_add(other.positive.total_weight());
+        let combined_ok = next_neg
+            .zip(next_zero)
+            .zip(next_pos)
+            .and_then(|((n, z), p)| checked_combine_weights(n, z, p))
+            .is_some();
+        if !combined_ok {
+            return Err(Error::invalid_argument(format!(
+                "combined stream weight overflows {}: left {}, right {}",
+                W::TYPE_NAME,
+                self.total_weight(),
+                other.total_weight(),
+            )));
+        }
 
         validate_store_domain(&self.mapping, &other.negative)?;
         validate_store_domain(&self.mapping, &other.positive)?;
@@ -478,8 +521,7 @@ impl DdSketch {
 
         self.negative.merge_from(&other.negative);
         self.positive.merge_from(&other.positive);
-        self.zero_weight += other.zero_weight;
-        self.total_weight = next_total;
+        self.zero_weight = self.zero_weight.add_unchecked(other.zero_weight);
         self.summary.merge_non_empty(other.summary);
         Ok(())
     }
@@ -489,8 +531,7 @@ impl DdSketch {
     pub fn reset(&mut self) {
         self.negative.reset();
         self.positive.reset();
-        self.zero_weight = 0;
-        self.total_weight = 0;
+        self.zero_weight = W::ZERO;
         self.summary = SummaryState::Empty;
     }
 
@@ -520,7 +561,7 @@ impl DdSketch {
     /// summary statistics are unknown (after decoding from or merging a compatibility image without
     /// exact summary blocks).
     ///
-    /// Accumulated with standard IEEE 754 `f64` addition (`value * weight as f64`); the Java and Go
+    /// Accumulated with standard IEEE 754 `f64` addition (`value * weight`); the Java and Go
     /// reference implementations use compensated (Kahan) summation in memory, so `sum` can differ
     /// in the last bits on long or cancelling streams.
     #[inline]
@@ -534,12 +575,15 @@ impl DdSketch {
     /// Returns the approximate lower discrete quantile for `rank` in `[0.0, 1.0]`, or `Ok(None)`
     /// if this sketch is empty.
     ///
-    /// Selects the bucket containing zero-based sorted item `floor(rank * (total_weight - 1))`
-    /// using the standard `f64` product when `total_weight <= 2^53` (matching the Java reference
-    /// implementation) and exact integer significand scaling when `total_weight > 2^53`. When exact
-    /// summary statistics are present, `rank == 0.0` returns [`min_value`](Self::min_value),
-    /// `rank == 1.0` returns [`max_value`](Self::max_value), and interior estimates are clamped to
-    /// `[min_value, max_value]`.
+    /// For `u64` weights, selects the bucket containing zero-based sorted item
+    /// `floor(rank * (total_weight - 1))` using the standard `f64` product when
+    /// `total_weight <= 2^53` (matching the Java reference implementation) and exact integer
+    /// significand scaling when `total_weight > 2^53`. For `f64` weights, selects the first bucket
+    /// in ascending order whose cumulative weight exceeds `rank * (total_weight - 1.0)` (clamped
+    /// to `>= 0.0`, returning the minimum bucket at `rank == 0.0` and the maximum bucket at
+    /// `rank == 1.0`). When exact summary statistics are present, `rank == 0.0` returns
+    /// [`min_value`](Self::min_value), `rank == 1.0` returns [`max_value`](Self::max_value), and
+    /// interior estimates are clamped to `[min_value, max_value]`.
     ///
     /// # Errors
     ///
@@ -548,10 +592,10 @@ impl DdSketch {
     ///
     /// # Compatibility with reference implementations
     ///
-    /// Discrete rank scaling matches `sketches-java` (`floor(rank * (total_weight - 1) as f64)`)
-    /// when `total_weight <= 2^53`. On negative buckets, `sketches-go` mirrors the floating-point
-    /// rank (`KeyAtRank(negative_weight - 1 - rank * (total_weight - 1))`), acting as an upper
-    /// quantile on the negative store and differing on any fractional negative-side rank (such as
+    /// Rank scaling matches `sketches-java` (`rank * (count - 1)`) for both `u64` (up to `2^53`)
+    /// and `f64` weights. On negative buckets, `sketches-go` mirrors the floating-point rank
+    /// (`KeyAtRank(negative_weight - 1 - rank * (total_weight - 1))`), acting as an upper quantile
+    /// on the negative store and differing on any fractional negative-side rank (such as
     /// `quantile(0.5)` on `[-100.0, -1.0]`). `DDSketchWithExactSummaryStatistics` in Java and Go
     /// clamps bucket estimates to `[min, max]` without special-casing `0.0` or `1.0`, so its
     /// endpoint queries can return an inward-rounded bucket value rather than the exact extremum.
@@ -562,7 +606,7 @@ impl DdSketch {
     /// ```
     /// use datasketches::ddsketch::DdSketch;
     ///
-    /// let mut sketch = DdSketch::new(0.01)?;
+    /// let mut sketch = DdSketch::<u64>::new(0.01)?;
     /// for value in 1..=100 {
     ///     sketch.update(f64::from(value));
     /// }
@@ -594,7 +638,7 @@ impl DdSketch {
     /// ```
     /// use datasketches::ddsketch::DdSketch;
     ///
-    /// let mut sketch = DdSketch::new(0.01)?;
+    /// let mut sketch = DdSketch::<u64>::new(0.01)?;
     /// for value in 1..=1000 {
     ///     sketch.update(f64::from(value));
     /// }
@@ -621,18 +665,18 @@ impl DdSketch {
             }
         }
 
-        let last = self.total_weight - 1;
+        let total = self.total_weight();
         let is_non_decreasing = ranks.windows(2).all(|pair| pair[0] <= pair[1]);
         let mut out = vec![0.0; ranks.len()];
         if is_non_decreasing {
-            self.resolve_non_decreasing_ranks(ranks, last, &mut out);
+            self.resolve_non_decreasing_ranks(ranks, total, &mut out);
         } else {
-            let mut indexed: Vec<(u64, usize)> = ranks
+            let mut indexed: Vec<(W, usize)> = ranks
                 .iter()
                 .enumerate()
-                .map(|(pos, &rank)| (quantile_target_index(rank, last), pos))
+                .map(|(pos, &rank)| (W::target_rank(rank, total), pos))
                 .collect();
-            indexed.sort_unstable_by_key(|&(target, _)| target);
+            indexed.sort_unstable_by(|(a, _), (b, _)| a.total_cmp(*b));
             self.resolve_sorted_targets(&indexed, &mut out);
         }
 
@@ -652,7 +696,7 @@ impl DdSketch {
 
     /// Returns an iterator over non-empty `(value, weight)` buckets in ascending numerical order.
     #[inline]
-    pub fn iter(&self) -> DdSketchIter<'_> {
+    pub fn iter(&self) -> DdSketchIter<'_, W> {
         DdSketchIter::new(
             self.mapping,
             self.negative.iter_asc(),
@@ -663,8 +707,8 @@ impl DdSketch {
     }
 
     /// Serializes this sketch in this crate's native `DDSKETCH` binary format, preserving
-    /// [`MappingKind`], [`StoreKind`], collapse state, exact summary statistics, and exact `u64`
-    /// bucket weights.
+    /// [`MappingKind`], [`StoreKind`], collapse state, exact summary statistics, and bucket
+    /// weights.
     ///
     /// Note: the native `Family::DDSKETCH` (`id = 25`) wire format is experimental and may change
     /// in future releases while cross-language DataSketches standardization is underway.
@@ -674,10 +718,10 @@ impl DdSketch {
     /// ```
     /// use datasketches::ddsketch::DdSketch;
     ///
-    /// let mut sketch = DdSketch::new(0.01)?;
+    /// let mut sketch = DdSketch::<u64>::new(0.01)?;
     /// sketch.update(3.5);
     /// let bytes = sketch.serialize();
-    /// let decoded = DdSketch::deserialize(&bytes)?;
+    /// let decoded = DdSketch::<u64>::deserialize(&bytes)?;
     /// assert_eq!(decoded.total_weight(), 1);
     /// # Ok::<(), datasketches::error::Error>(())
     /// ```
@@ -696,8 +740,8 @@ impl DdSketch {
     /// # Errors
     ///
     /// Returns [`InvalidData`](crate::error::ErrorKind::InvalidData) if the image is empty,
-    /// truncated, has an unsupported family, version, or flag, or violates index, store, or weight
-    /// bounds.
+    /// truncated, has an unsupported family, version, flag, or weight type mismatch, or violates
+    /// index, store, or weight bounds.
     pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
         deserialize_sketch(bytes)
     }
@@ -711,11 +755,14 @@ impl DdSketch {
     ///
     /// # Errors
     ///
-    /// Returns [`InvalidArgument`](crate::error::ErrorKind::InvalidArgument) if
+    /// For `u64` weights, returns [`InvalidArgument`](crate::error::ErrorKind::InvalidArgument) if
     /// [`zero_weight`](Self::zero_weight), any retained bucket weight, or (when exact summary
     /// statistics are present) [`total_weight`](Self::total_weight) exceeds `2^53 - 1`
     /// (`9_007_199_254_740_991`), the maximum integer representable without rounding in the
-    /// compatibility format's `v + 1.0` floating-point counter encoding.
+    /// compatibility format's `v + 1.0` floating-point counter encoding. For `f64` weights, counts
+    /// are encoded directly with `varfloat64` (`v + 1.0`), which rounds fractional weights to the
+    /// precision of `v + 1.0` (weights below `2^-53` round to `0.0`, matching the Java and Go
+    /// reference implementations).
     ///
     /// # Compatibility with reference implementations
     ///
@@ -730,7 +777,7 @@ impl DdSketch {
     /// [`StoreKind`] and collapse state are in-memory properties in the reference format and are
     /// not recorded in the output bytes; decode with
     /// [`deserialize_compat`](Self::deserialize_compat) and an explicit [`StoreKind`]. For
-    /// downstream Java or Go readers, keep [`total_weight`](Self::total_weight) at or below
+    /// downstream Java or Go readers, keep integer [`total_weight`](Self::total_weight) at or below
     /// `2^53 - 1` (Java computes `total_weight - 1` in `f64`), per-sign bucket index spans at or
     /// below `2^26` (`MaxDecodeIndexRange` on `sketches-go` `main`; unreleased as of `v1.4.8`), and
     /// input magnitudes within the target reader's `maxIndexableValue` (reference readers do not
@@ -742,11 +789,11 @@ impl DdSketch {
     /// use datasketches::ddsketch::DdSketch;
     /// use datasketches::ddsketch::StoreKind;
     ///
-    /// let mut sketch = DdSketch::new(0.01)?;
-    /// sketch.update(42.0);
+    /// let mut sketch = DdSketch::<f64>::new(0.01)?;
+    /// sketch.update_with_weight(42.0, 1.5);
     /// let compat_bytes = sketch.serialize_compat()?;
-    /// let decoded = DdSketch::deserialize_compat(&compat_bytes, StoreKind::default())?;
-    /// assert_eq!(decoded.total_weight(), 1);
+    /// let decoded = DdSketch::<f64>::deserialize_compat(&compat_bytes, StoreKind::default())?;
+    /// assert_eq!(decoded.total_weight(), 1.5);
     /// # Ok::<(), datasketches::error::Error>(())
     /// ```
     pub fn serialize_compat(&self) -> Result<Vec<u8>, Error> {
@@ -756,6 +803,9 @@ impl DdSketch {
     /// Deserializes a sketch from the compact flag-block binary format of the [Java][java-ref] and
     /// [Go][go-ref] reference DDSketch implementations into the specified `store` strategy.
     ///
+    /// Use `DdSketch::<f64>::deserialize_compat` when images may contain fractional weights, or
+    /// `DdSketch::<u64>::deserialize_compat` to enforce exact integer counts.
+    ///
     /// [java-ref]: https://github.com/DataDog/sketches-java
     /// [go-ref]: https://github.com/DataDog/sketches-go
     ///
@@ -764,26 +814,26 @@ impl DdSketch {
     /// Returns [`InvalidArgument`](crate::error::ErrorKind::InvalidArgument) if `store` has an
     /// invalid `max_num_bins` bound, or [`InvalidData`](crate::error::ErrorKind::InvalidData) if
     /// the image is empty, truncated, missing an index mapping, encodes a mapping that cannot index
-    /// up to [`f64::MAX`] within 32-bit bucket bounds, contains unsupported flags or
-    /// non-integer/negative counts, overflows index or `u64` weight bounds, or spans more than
-    /// `67_108_864` total bins across negative and positive stores when `store` is
-    /// [`StoreKind::UnboundedDense`].
+    /// up to [`f64::MAX`] within 32-bit bucket bounds, contains unsupported flags or invalid
+    /// counts (non-integer or `>= 2^64` for `u64`, negative or non-finite for `f64`), overflows
+    /// index or weight bounds, or spans more than `67_108_864` total bins across negative and
+    /// positive stores when `store` is [`StoreKind::UnboundedDense`].
     ///
     /// # Compatibility with reference implementations
     ///
     /// Preserves optional exact summary-statistic blocks (`count`, `sum`, `min`, `max`) emitted by
     /// `DDSketchWithExactSummaryStatistics` in Java and Go; bare `DDSketch` images without summary
     /// blocks decode with [`min_value`](Self::min_value), [`max_value`](Self::max_value), and
-    /// [`sum`](Self::sum) set to `None` and re-encode without summary blocks. Encoded counts must
-    /// be non-negative integers below `2^64`, and exact summary extrema and finite sums must be
-    /// sign-consistent with occupied buckets. Custom `minIndexedValue` thresholds are not stored in
-    /// the reference format, so non-empty zero buckets accept any sign-consistent summary bounds
-    /// while subsequent updates use the mapping-derived [`zero_threshold`](Self::zero_threshold).
-    /// Extreme bucket index bounds allow `0.25` bins of slack before flooring to accept
-    /// `sketches-go` `1 / math.Log2(gamma)` rounding near domain limits.
+    /// [`sum`](Self::sum) set to `None` and re-encode without summary blocks. Exact summary extrema
+    /// and finite sums must be sign-consistent with occupied buckets. Custom `minIndexedValue`
+    /// thresholds are not stored in the reference format, so non-empty zero buckets accept any
+    /// sign-consistent summary bounds while subsequent updates use the mapping-derived
+    /// [`zero_threshold`](Self::zero_threshold). Extreme bucket index bounds allow `0.25` bins of
+    /// slack before flooring to accept `sketches-go` `1 / math.Log2(gamma)` rounding near domain
+    /// limits.
     ///
     /// Because reference images do not record [`StoreKind`] and encode sparse bins as compact index
-    /// deltas, a small compatibility payload can span up to `67_108_864` bins (`512 MiB` of `u64`
+    /// deltas, a small compatibility payload can span up to `67_108_864` bins (`512 MiB` of
     /// counters) when decoded into [`StoreKind::UnboundedDense`]; decode untrusted inputs into a
     /// bounded collapsing store (`StoreKind::default()`) or [`StoreKind::Sparse`].
     pub fn deserialize_compat(bytes: &[u8], store: StoreKind) -> Result<Self, Error> {
@@ -794,7 +844,7 @@ impl DdSketch {
     fn bucket_min_value(&self) -> f64 {
         if let Some(max_neg_idx) = self.negative.max_index() {
             -self.mapping.value(max_neg_idx)
-        } else if self.zero_weight > 0 {
+        } else if !self.zero_weight.is_zero() {
             0.0
         } else {
             let min_pos_idx = self
@@ -808,7 +858,7 @@ impl DdSketch {
     fn bucket_max_value(&self) -> f64 {
         if let Some(max_pos_idx) = self.positive.max_index() {
             self.mapping.value(max_pos_idx)
-        } else if self.zero_weight > 0 {
+        } else if !self.zero_weight.is_zero() {
             0.0
         } else {
             let min_neg_idx = self
@@ -819,30 +869,33 @@ impl DdSketch {
         }
     }
 
-    fn bucket_quantile_at_target(&self, target: u64, last: u64) -> f64 {
-        if target == 0 {
+    fn bucket_quantile_at_rank(&self, rank: f64, total: W) -> f64 {
+        if rank == 0.0 {
             return self.bucket_min_value();
         }
-        if target == last {
+        if rank == 1.0 {
             return self.bucket_max_value();
         }
 
+        let target = W::target_rank(rank, total);
         let neg_weight = self.negative.total_weight();
         if target < neg_weight {
-            let mag_rank = neg_weight - 1 - target;
-            return -self.mapping.value(self.negative.key_at_rank(mag_rank));
+            return -self.mapping.value(self.negative.key_at_rank_desc(target));
         }
-        let non_pos_weight = neg_weight + self.zero_weight;
+        let non_pos_weight = neg_weight.add_unchecked(self.zero_weight);
         if target < non_pos_weight {
             return 0.0;
         }
-        let pos_rank = target - non_pos_weight;
-        self.mapping.value(self.positive.key_at_rank(pos_rank))
+        if !self.positive.is_empty() {
+            let pos_rank = target.sub_saturating(non_pos_weight);
+            return self.mapping.value(self.positive.key_at_rank_asc(pos_rank));
+        }
+        self.bucket_max_value()
     }
 
     fn quantile_unchecked(&self, rank: f64) -> f64 {
         debug_assert!(!self.is_empty());
-        let last = self.total_weight - 1;
+        let total = self.total_weight();
         if let SummaryState::Active { min, max, .. } = self.summary {
             if rank == 0.0 || min == max {
                 return min;
@@ -850,19 +903,18 @@ impl DdSketch {
             if rank == 1.0 {
                 return max;
             }
-            return self
-                .bucket_quantile_at_target(quantile_target_index(rank, last), last)
-                .clamp(min, max);
+            return self.bucket_quantile_at_rank(rank, total).clamp(min, max);
         }
-        self.bucket_quantile_at_target(quantile_target_index(rank, last), last)
+        self.bucket_quantile_at_rank(rank, total)
     }
-    fn resolve_non_decreasing_ranks(&self, ranks: &[f64], last: u64, out: &mut [f64]) {
-        let neg_weight = self.negative.total_weight();
-        let non_pos_weight = neg_weight + self.zero_weight;
 
-        let neg_end = ranks.partition_point(|&r| quantile_target_index(r, last) < neg_weight);
+    fn resolve_non_decreasing_ranks(&self, ranks: &[f64], total: W, out: &mut [f64]) {
+        let neg_weight = self.negative.total_weight();
+        let non_pos_weight = neg_weight.add_unchecked(self.zero_weight);
+
+        let neg_end = ranks.partition_point(|&r| W::target_rank(r, total) < neg_weight);
         let zero_end = ranks[neg_end..]
-            .partition_point(|&r| quantile_target_index(r, last) < non_pos_weight)
+            .partition_point(|&r| W::target_rank(r, total) < non_pos_weight)
             + neg_end;
 
         if neg_end > 0 {
@@ -870,7 +922,7 @@ impl DdSketch {
             let iter = ranks[..neg_end]
                 .iter()
                 .enumerate()
-                .map(|(pos, &r)| (quantile_target_index(r, last), pos));
+                .map(|(pos, &r)| (W::target_rank(r, total), pos));
             self.negative.scan_ranks_desc(iter, |pos, idx| {
                 let val = match last_idx {
                     Some((cached_idx, cached_val)) if cached_idx == idx => cached_val,
@@ -885,30 +937,35 @@ impl DdSketch {
         }
 
         if zero_end < ranks.len() {
-            let mut last_idx: Option<(i32, f64)> = None;
-            let iter = ranks[zero_end..].iter().enumerate().map(|(offset, &r)| {
-                (
-                    quantile_target_index(r, last) - non_pos_weight,
-                    zero_end + offset,
-                )
-            });
-            self.positive.scan_ranks_asc(iter, |pos, idx| {
-                let val = match last_idx {
-                    Some((cached_idx, cached_val)) if cached_idx == idx => cached_val,
-                    _ => {
-                        let v = self.mapping.value(idx);
-                        last_idx = Some((idx, v));
-                        v
-                    }
-                };
-                out[pos] = val;
-            });
+            if self.positive.is_empty() {
+                let max_val = self.bucket_max_value();
+                out[zero_end..].fill(max_val);
+            } else {
+                let mut last_idx: Option<(i32, f64)> = None;
+                let iter = ranks[zero_end..].iter().enumerate().map(|(offset, &r)| {
+                    (
+                        W::target_rank(r, total).sub_saturating(non_pos_weight),
+                        zero_end + offset,
+                    )
+                });
+                self.positive.scan_ranks_asc(iter, |pos, idx| {
+                    let val = match last_idx {
+                        Some((cached_idx, cached_val)) if cached_idx == idx => cached_val,
+                        _ => {
+                            let v = self.mapping.value(idx);
+                            last_idx = Some((idx, v));
+                            v
+                        }
+                    };
+                    out[pos] = val;
+                });
+            }
         }
     }
 
-    fn resolve_sorted_targets(&self, sorted: &[(u64, usize)], out: &mut [f64]) {
+    fn resolve_sorted_targets(&self, sorted: &[(W, usize)], out: &mut [f64]) {
         let neg_weight = self.negative.total_weight();
-        let non_pos_weight = neg_weight + self.zero_weight;
+        let non_pos_weight = neg_weight.add_unchecked(self.zero_weight);
 
         let neg_end = sorted.partition_point(|&(target, _)| target < neg_weight);
         let zero_end =
@@ -931,28 +988,35 @@ impl DdSketch {
         }
 
         if zero_end < sorted.len() {
-            let mut last_idx: Option<(i32, f64)> = None;
-            let iter = sorted[zero_end..]
-                .iter()
-                .map(|&(target, pos)| (target - non_pos_weight, pos));
-            self.positive.scan_ranks_asc(iter, |pos, idx| {
-                let val = match last_idx {
-                    Some((cached_idx, cached_val)) if cached_idx == idx => cached_val,
-                    _ => {
-                        let v = self.mapping.value(idx);
-                        last_idx = Some((idx, v));
-                        v
-                    }
-                };
-                out[pos] = val;
-            });
+            if self.positive.is_empty() {
+                let max_val = self.bucket_max_value();
+                for &(_, pos) in &sorted[zero_end..] {
+                    out[pos] = max_val;
+                }
+            } else {
+                let mut last_idx: Option<(i32, f64)> = None;
+                let iter = sorted[zero_end..]
+                    .iter()
+                    .map(|&(target, pos)| (target.sub_saturating(non_pos_weight), pos));
+                self.positive.scan_ranks_asc(iter, |pos, idx| {
+                    let val = match last_idx {
+                        Some((cached_idx, cached_val)) if cached_idx == idx => cached_val,
+                        _ => {
+                            let v = self.mapping.value(idx);
+                            last_idx = Some((idx, v));
+                            v
+                        }
+                    };
+                    out[pos] = val;
+                });
+            }
         }
     }
 }
 
-impl<'a> IntoIterator for &'a DdSketch {
-    type Item = (f64, u64);
-    type IntoIter = DdSketchIter<'a>;
+impl<'a, W: DdSketchWeight> IntoIterator for &'a DdSketch<W> {
+    type Item = (f64, W);
+    type IntoIter = DdSketchIter<'a, W>;
 
     #[inline]
     fn into_iter(self) -> Self::IntoIter {
@@ -961,7 +1025,15 @@ impl<'a> IntoIterator for &'a DdSketch {
 }
 
 #[inline]
-fn validate_store_domain(mapping: &IndexMapping, store: &Store) -> Result<(), Error> {
+fn checked_combine_weights<W: DdSketchWeight>(neg: W, zero: W, pos: W) -> Option<W> {
+    neg.checked_add(zero)?.checked_add(pos)
+}
+
+#[inline]
+fn validate_store_domain<W: DdSketchWeight>(
+    mapping: &IndexMapping,
+    store: &Store<W>,
+) -> Result<(), Error> {
     if let (Some(lo), Some(hi)) = (store.min_index(), store.max_index()) {
         if !mapping.contains_valid_index(lo) || !mapping.contains_valid_index(hi) {
             return Err(Error::invalid_argument(format!(
@@ -980,38 +1052,4 @@ fn check_rank(rank: f64) -> Result<(), Error> {
         )));
     }
     Ok(())
-}
-
-const MAX_EXACT_F64_INT: u64 = (1_u64 << 53) - 1;
-
-#[inline]
-fn quantile_target_index(rank: f64, last: u64) -> u64 {
-    if rank == 0.0 || last == 0 {
-        return 0;
-    }
-    if rank == 1.0 {
-        return last;
-    }
-    if last <= MAX_EXACT_F64_INT {
-        // When `last < 2^53`, `last as f64` is exact; evaluating the `f64` product matches
-        // `sketches-java` (`(int) (q * (count - 1))`) so decimal ranks such as `0.95 * 100.0 ==
-        // 95.0` select item 95 rather than truncating the slightly smaller binary value of `0.95`
-        // to item 94.
-        return ((rank * (last as f64)).floor() as u64).min(last);
-    }
-    // Multiply the exact 53-bit IEEE 754 significand by `last` in u128 before shifting so ranks
-    // retain full precision when `total_weight` exceeds 2^53.
-    let bits = rank.to_bits();
-    let biased_exp = ((bits >> 52) & 0x7ff) as u32;
-    if biased_exp == 0 {
-        return 0;
-    }
-    let significand = (bits & 0x000f_ffff_ffff_ffff) | (1_u64 << 52);
-    let product = u128::from(significand) * u128::from(last);
-    let shift = 1075 - biased_exp;
-    if shift >= 128 {
-        0
-    } else {
-        (product >> shift) as u64
-    }
 }

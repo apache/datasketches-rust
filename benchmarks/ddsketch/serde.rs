@@ -33,7 +33,7 @@ fn serialize_full(bencher: Bencher) {
 fn deserialize_full(bencher: Bencher) {
     let bytes = prepared_sketch().serialize();
 
-    bencher.bench_local(|| DdSketch::deserialize(black_box(&bytes)).unwrap());
+    bencher.bench_local(|| DdSketch::<u64>::deserialize(black_box(&bytes)).unwrap());
 }
 
 fn deserialize_and_merge_partials(bencher: Bencher) {
@@ -43,9 +43,9 @@ fn deserialize_and_merge_partials(bencher: Bencher) {
         .collect();
 
     bencher.bench_local(|| {
-        let mut merged = DdSketch::default();
+        let mut merged = DdSketch::<u64>::default();
         for payload in black_box(&payloads) {
-            let partial = DdSketch::deserialize(payload).unwrap();
+            let partial = DdSketch::<u64>::deserialize(payload).unwrap();
             merged.merge(&partial).unwrap();
         }
         black_box(merged)

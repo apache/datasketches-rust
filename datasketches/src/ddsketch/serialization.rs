@@ -24,6 +24,8 @@ use super::store::MAX_DENSE_LEN;
 use super::store::Store;
 use super::store::StoreKind;
 use super::store::span_u64;
+use super::weight::CONFIG_FLOAT_WEIGHTS;
+use super::weight::DdSketchWeight;
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
 use crate::codec::assert::ensure_preamble_longs_in;
@@ -39,6 +41,11 @@ use crate::error::Error;
 const PREAMBLE_LONGS: u8 = 3;
 const SERIAL_VERSION: u8 = 1;
 const PREAMBLE_BYTES: usize = (PREAMBLE_LONGS as usize) * size_of::<u64>();
+
+const CONFIG_MAX_BINS_MASK: u32 = (1 << 27) - 1;
+const CONFIG_RESERVED_MASK: u32 = !(CONFIG_FLOAT_WEIGHTS | CONFIG_MAX_BINS_MASK);
+
+const _: () = assert!(MAX_DENSE_BINS <= CONFIG_MAX_BINS_MASK as usize);
 
 const MAPPING_MASK: u8 = 0b0000_0011;
 const MAPPING_TAG_LOGARITHMIC: u8 = 0;
@@ -90,19 +97,18 @@ const DD_SUBFLAG_BINS_CONTIGUOUS_COUNTS: u8 = 3 << 2;
 const MAX_VAR_LEN_64: usize = 9;
 const VARFLOAT_ROTATE: u32 = 6;
 const ONE_F64_BITS: u64 = 0x3ff0_0000_0000_0000;
-const MAX_COMPAT_WEIGHT: u64 = (1 << 53) - 1;
-const TWO_POW_64: f64 = 18_446_744_073_709_551_616.0;
 
 #[inline]
 fn canonical_zero(v: f64) -> f64 {
     if v == 0.0 { 0.0 } else { v }
 }
 
-pub fn serialize_sketch(sketch: &DdSketch) -> Vec<u8> {
+pub fn serialize_sketch<W: DdSketchWeight>(sketch: &DdSketch<W>) -> Vec<u8> {
     let mapping = sketch.mapping();
     let is_empty = sketch.is_empty();
     let summary = sketch.summary_state();
     let (store_tag, max_bins_u32) = encode_store_kind(sketch.store_kind());
+    let config_word = max_bins_u32 | W::NATIVE_CONFIG_FLAG;
     let mapping_tag = match mapping.kind() {
         MappingKind::Logarithmic => MAPPING_TAG_LOGARITHMIC,
         MappingKind::Linear => MAPPING_TAG_LINEAR,
@@ -142,7 +148,7 @@ pub fn serialize_sketch(sketch: &DdSketch) -> Vec<u8> {
     let payload_bytes = if is_empty {
         0
     } else {
-        summary_bytes + uvarint64_size(sketch.zero_weight()) + neg_bytes + pos_bytes
+        summary_bytes + sketch.zero_weight().native_size() + neg_bytes + pos_bytes
     };
 
     let mut out = SketchBytes::with_capacity(PREAMBLE_BYTES + payload_bytes);
@@ -150,7 +156,7 @@ pub fn serialize_sketch(sketch: &DdSketch) -> Vec<u8> {
     out.write_u8(SERIAL_VERSION);
     out.write_u8(Family::DDSKETCH.id);
     out.write_u8(flags);
-    out.write_u32_le(max_bins_u32);
+    out.write_u32_le(config_word);
     out.write_f64_le(mapping.gamma());
     out.write_f64_le(mapping.index_offset());
 
@@ -163,18 +169,18 @@ pub fn serialize_sketch(sketch: &DdSketch) -> Vec<u8> {
         out.write_f64_le(max);
         out.write_f64_le(sum);
     }
-    encode_uvarint64(&mut out, sketch.zero_weight());
+    sketch.zero_weight().encode_native(&mut out);
     encode_native_store(&mut out, sketch.negative_store(), neg_choice);
     encode_native_store(&mut out, sketch.positive_store(), pos_choice);
 
     out.into_bytes()
 }
 
-pub fn deserialize_sketch(bytes: &[u8]) -> Result<DdSketch, Error> {
+pub fn deserialize_sketch<W: DdSketchWeight>(bytes: &[u8]) -> Result<DdSketch<W>, Error> {
     deserialize_native(bytes)
 }
 
-pub fn serialize_compat_sketch(sketch: &DdSketch) -> Result<Vec<u8>, Error> {
+pub fn serialize_compat_sketch<W: DdSketchWeight>(sketch: &DdSketch<W>) -> Result<Vec<u8>, Error> {
     let mapping = sketch.mapping();
     let mapping_subflag = match mapping.kind() {
         MappingKind::Logarithmic => DD_SUBFLAG_MAPPING_LOGARITHMIC,
@@ -186,12 +192,8 @@ pub fn serialize_compat_sketch(sketch: &DdSketch) -> Result<Vec<u8>, Error> {
     let summary = sketch.summary_state();
     let summary_bytes = match summary {
         SummaryState::Active { sum, .. } => {
-            if total_weight > MAX_COMPAT_WEIGHT {
-                return Err(Error::invalid_argument(format!(
-                    "DDSketch total_weight ({total_weight}) exceeds maximum exact compatibility count ({MAX_COMPAT_WEIGHT})"
-                )));
-            }
-            let count_bytes = 1 + varfloat64_size(total_weight as f64);
+            total_weight.check_compat_encode("total_weight")?;
+            let count_bytes = 1 + total_weight.compat_size();
             let min_max_bytes = 2 * (1 + size_of::<f64>());
             let sum_bytes = if sum != 0.0 { 1 + size_of::<f64>() } else { 0 };
             count_bytes + min_max_bytes + sum_bytes
@@ -200,15 +202,11 @@ pub fn serialize_compat_sketch(sketch: &DdSketch) -> Result<Vec<u8>, Error> {
     };
 
     let zero_weight = sketch.zero_weight();
-    if zero_weight > MAX_COMPAT_WEIGHT {
-        return Err(Error::invalid_argument(format!(
-            "DDSketch zero_weight ({zero_weight}) exceeds maximum exact compatibility count ({MAX_COMPAT_WEIGHT})"
-        )));
-    }
-    let zero_bytes = if zero_weight == 0 {
+    zero_weight.check_compat_encode("zero_weight")?;
+    let zero_bytes = if zero_weight.is_zero() {
         0
     } else {
-        1 + varfloat64_size(zero_weight as f64)
+        1 + zero_weight.compat_size()
     };
     let (neg_choice, neg_bytes) = choose_compat_bin_encoding(sketch.negative_store())?;
     let (pos_choice, pos_bytes) = choose_compat_bin_encoding(sketch.positive_store())?;
@@ -217,7 +215,7 @@ pub fn serialize_compat_sketch(sketch: &DdSketch) -> Result<Vec<u8>, Error> {
         SketchBytes::with_capacity(summary_bytes + 17 + zero_bytes + neg_bytes + pos_bytes);
     if let SummaryState::Active { min, max, sum } = summary {
         out.write_u8(DD_SUBFLAG_EXACT_COUNT | DD_FLAG_TYPE_SKETCH_FEATURES);
-        encode_varfloat64(&mut out, total_weight as f64);
+        total_weight.encode_compat(&mut out);
         out.write_u8(DD_SUBFLAG_EXACT_MIN | DD_FLAG_TYPE_SKETCH_FEATURES);
         out.write_f64_le(min);
         out.write_u8(DD_SUBFLAG_EXACT_MAX | DD_FLAG_TYPE_SKETCH_FEATURES);
@@ -231,9 +229,9 @@ pub fn serialize_compat_sketch(sketch: &DdSketch) -> Result<Vec<u8>, Error> {
     out.write_f64_le(mapping.gamma());
     out.write_f64_le(mapping.index_offset());
 
-    if zero_weight != 0 {
+    if !zero_weight.is_zero() {
         out.write_u8(DD_SUBFLAG_ZERO_COUNT | DD_FLAG_TYPE_SKETCH_FEATURES);
-        encode_varfloat64(&mut out, zero_weight as f64);
+        zero_weight.encode_compat(&mut out);
     }
     if let Some(choice) = neg_choice {
         encode_compat_store(
@@ -255,7 +253,10 @@ pub fn serialize_compat_sketch(sketch: &DdSketch) -> Result<Vec<u8>, Error> {
     Ok(out.into_bytes())
 }
 
-pub fn deserialize_compat_sketch(bytes: &[u8], store_kind: StoreKind) -> Result<DdSketch, Error> {
+pub fn deserialize_compat_sketch<W: DdSketchWeight>(
+    bytes: &[u8],
+    store_kind: StoreKind,
+) -> Result<DdSketch<W>, Error> {
     deserialize_datadog(bytes, store_kind)
 }
 
@@ -309,7 +310,7 @@ fn decode_store_kind(store_tag: u8, max_bins_u32: u32) -> Result<StoreKind, Erro
     }
 }
 
-fn deserialize_native(bytes: &[u8]) -> Result<DdSketch, Error> {
+fn deserialize_native<W: DdSketchWeight>(bytes: &[u8]) -> Result<DdSketch<W>, Error> {
     let mut cursor = SketchSlice::new(bytes);
     let preamble_longs = cursor
         .read_u8()
@@ -324,13 +325,32 @@ fn deserialize_native(bytes: &[u8]) -> Result<DdSketch, Error> {
     ensure_preamble_longs_in(&[PREAMBLE_LONGS], preamble_longs)?;
 
     let flags = cursor.read_u8().map_err(insufficient_data("flags"))?;
-    let max_bins_u32 = cursor
+    let config_word = cursor
         .read_u32_le()
         .map_err(insufficient_data("max_num_bins"))?;
     let gamma = cursor.read_f64_le().map_err(insufficient_data("gamma"))?;
     let index_offset = cursor
         .read_f64_le()
         .map_err(insufficient_data("index_offset"))?;
+
+    if (config_word & CONFIG_RESERVED_MASK) != 0 {
+        return Err(Error::deserial(format!(
+            "invalid DDSketch header reserved config bits: {config_word:#010x}"
+        )));
+    }
+    let encoded_weight_flag = config_word & CONFIG_FLOAT_WEIGHTS;
+    if encoded_weight_flag != W::NATIVE_CONFIG_FLAG {
+        let encoded_name = if encoded_weight_flag == CONFIG_FLOAT_WEIGHTS {
+            "f64"
+        } else {
+            "u64"
+        };
+        return Err(Error::deserial(format!(
+            "DDSketch native image encodes {encoded_name} weights, cannot deserialize into DdSketch<{}>",
+            W::TYPE_NAME
+        )));
+    }
+    let max_bins_u32 = config_word & CONFIG_MAX_BINS_MASK;
 
     let mapping_kind = match flags & MAPPING_MASK {
         MAPPING_TAG_LOGARITHMIC => MappingKind::Logarithmic,
@@ -360,8 +380,8 @@ fn deserialize_native(bytes: &[u8]) -> Result<DdSketch, Error> {
         ));
     }
 
-    let mut negative = Store::new(encoded_store_kind)?;
-    let mut positive = Store::new(encoded_store_kind)?;
+    let mut negative = Store::<W>::new(encoded_store_kind)?;
+    let mut positive = Store::<W>::new(encoded_store_kind)?;
 
     if is_empty {
         if neg_collapsed || pos_collapsed || has_exact_summary {
@@ -379,8 +399,7 @@ fn deserialize_native(bytes: &[u8]) -> Result<DdSketch, Error> {
             mapping,
             negative,
             positive,
-            0,
-            0,
+            W::ZERO,
             SummaryState::Empty,
         ));
     }
@@ -410,7 +429,7 @@ fn deserialize_native(bytes: &[u8]) -> Result<DdSketch, Error> {
     };
 
     let is_dense_target = !matches!(encoded_store_kind, StoreKind::Sparse);
-    let zero_weight = decode_uvarint64(&mut cursor, "zero_weight")?;
+    let zero_weight = W::decode_native(&mut cursor, "zero_weight")?;
     let (neg_weight, neg_span) = decode_native_store(
         &mut cursor,
         &mut negative,
@@ -429,16 +448,21 @@ fn deserialize_native(bytes: &[u8]) -> Result<DdSketch, Error> {
     validate_encoded_sign_store(neg_weight, neg_span, neg_collapsed, encoded_max_bins)?;
     validate_encoded_sign_store(pos_weight, pos_span, pos_collapsed, encoded_max_bins)?;
 
-    let total_weight = zero_weight
-        .checked_add(neg_weight)
+    let total_weight = neg_weight
+        .checked_add(zero_weight)
         .and_then(|acc| acc.checked_add(pos_weight))
-        .ok_or_else(|| Error::deserial("total_weight overflows u64"))?;
-    if total_weight == 0 {
+        .ok_or_else(|| Error::deserial(format!("total_weight overflows {}", W::TYPE_NAME)))?;
+    if total_weight.is_zero() {
         return Err(Error::deserial(
             "non-empty DDSketch image must have positive total_weight",
         ));
     }
-    validate_summary_against_stores(summary, neg_weight > 0, zero_weight, pos_weight > 0)?;
+    validate_summary_against_stores::<W>(
+        summary,
+        !neg_weight.is_zero(),
+        !zero_weight.is_zero(),
+        !pos_weight.is_zero(),
+    )?;
 
     let trailing = cursor.remaining().len();
     if trailing != 0 {
@@ -459,15 +483,14 @@ fn deserialize_native(bytes: &[u8]) -> Result<DdSketch, Error> {
         negative,
         positive,
         zero_weight,
-        total_weight,
         summary,
     ))
 }
 
-fn validate_summary_against_stores(
+fn validate_summary_against_stores<W: DdSketchWeight>(
     summary: SummaryState,
     neg_non_empty: bool,
-    zero_weight: u64,
+    zero_non_empty: bool,
     pos_non_empty: bool,
 ) -> Result<(), Error> {
     let SummaryState::Active { min, max, sum } = summary else {
@@ -483,12 +506,12 @@ fn validate_summary_against_stores(
             "DDSketch exact_max ({max}) must be positive when positive store is non-empty"
         )));
     }
-    if !neg_non_empty && zero_weight == 0 && min <= 0.0 {
+    if !neg_non_empty && !zero_non_empty && min <= 0.0 {
         return Err(Error::deserial(format!(
             "DDSketch exact_min ({min}) must be positive when only positive store is non-empty"
         )));
     }
-    if !pos_non_empty && zero_weight == 0 && max >= 0.0 {
+    if !pos_non_empty && !zero_non_empty && max >= 0.0 {
         return Err(Error::deserial(format!(
             "DDSketch exact_max ({max}) must be negative when only negative store is non-empty"
         )));
@@ -497,9 +520,17 @@ fn validate_summary_against_stores(
         let sum_consistent = if min == 0.0 && max == 0.0 {
             sum == 0.0
         } else if min >= 0.0 {
-            sum > 0.0
+            if W::ALLOWS_SUBUNIT_SUM_UNDERFLOW {
+                sum >= 0.0
+            } else {
+                sum > 0.0
+            }
         } else if max <= 0.0 {
-            sum < 0.0
+            if W::ALLOWS_SUBUNIT_SUM_UNDERFLOW {
+                sum <= 0.0
+            } else {
+                sum < 0.0
+            }
         } else {
             true
         };
@@ -512,13 +543,13 @@ fn validate_summary_against_stores(
     Ok(())
 }
 
-fn validate_encoded_sign_store(
-    weight: u64,
+fn validate_encoded_sign_store<W: DdSketchWeight>(
+    weight: W,
     wire_span: u64,
     collapsed: bool,
     encoded_max_bins: Option<usize>,
 ) -> Result<(), Error> {
-    if collapsed && weight == 0 {
+    if collapsed && weight.is_zero() {
         return Err(Error::deserial(
             "collapsed flag set on an empty DDSketch sign store",
         ));
@@ -547,7 +578,7 @@ enum NativeBinChoice {
     IndexDeltasAndCounts { num_bins: u64 },
 }
 
-fn choose_native_bin_encoding(store: &Store) -> (NativeBinChoice, usize) {
+fn choose_native_bin_encoding<W: DdSketchWeight>(store: &Store<W>) -> (NativeBinChoice, usize) {
     if store.is_empty() {
         return (NativeBinChoice::Empty, 1);
     }
@@ -561,8 +592,8 @@ fn choose_native_bin_encoding(store: &Store) -> (NativeBinChoice, usize) {
     for (idx, weight) in store.iter_asc() {
         let idx64 = i64::from(idx);
         sparse_deltas_bytes += varint64_size(idx64 - prev_index);
-        sparse_counts_bytes += uvarint64_size(weight);
-        if weight != 1 {
+        sparse_counts_bytes += weight.native_size();
+        if !weight.is_one() {
             all_unit_weights = false;
         }
         prev_index = idx64;
@@ -587,12 +618,11 @@ fn choose_native_bin_encoding(store: &Store) -> (NativeBinChoice, usize) {
     if let Some((min_index, contiguous)) = store.dense_contiguous_slice() {
         let num_bins = contiguous.len() as u64;
         let num_zero_bins = contiguous.len() - store.num_occupied();
-        // Zero weight encodes as single byte `0x00` in uvarint64.
         let dense_bytes = 1
             + uvarint64_size(num_bins)
             + varint64_size(i64::from(min_index))
             + sparse_counts_bytes
-            + num_zero_bins;
+            + num_zero_bins * W::NATIVE_ZERO_BYTES;
         if contiguous.len() > MAX_SPARSE_ENCODED_DENSE_SPAN || dense_bytes <= best_sparse_bytes {
             return (
                 NativeBinChoice::ContiguousCounts {
@@ -607,7 +637,11 @@ fn choose_native_bin_encoding(store: &Store) -> (NativeBinChoice, usize) {
     (best_sparse, best_sparse_bytes)
 }
 
-fn encode_native_store(out: &mut SketchBytes, store: &Store, choice: NativeBinChoice) {
+fn encode_native_store<W: DdSketchWeight>(
+    out: &mut SketchBytes,
+    store: &Store<W>,
+    choice: NativeBinChoice,
+) {
     match choice {
         NativeBinChoice::Empty => out.write_u8(NATIVE_STORE_EMPTY),
         NativeBinChoice::ContiguousCounts {
@@ -621,7 +655,7 @@ fn encode_native_store(out: &mut SketchBytes, store: &Store, choice: NativeBinCh
             encode_uvarint64(out, num_bins);
             encode_varint64(out, i64::from(min_index));
             for &weight in slice {
-                encode_uvarint64(out, weight);
+                weight.encode_native(out);
             }
         }
         NativeBinChoice::IndexDeltas { num_bins } => {
@@ -641,7 +675,7 @@ fn encode_native_store(out: &mut SketchBytes, store: &Store, choice: NativeBinCh
             for (idx, weight) in store.iter_asc() {
                 let idx64 = i64::from(idx);
                 encode_varint64(out, idx64 - prev);
-                encode_uvarint64(out, weight);
+                weight.encode_native(out);
                 prev = idx64;
             }
         }
@@ -657,19 +691,19 @@ fn validate_mapping_bounds(mapping: &IndexMapping, lo: i32, hi: i32) -> Result<(
     Ok(())
 }
 
-fn decode_native_store(
+fn decode_native_store<W: DdSketchWeight>(
     cursor: &mut SketchSlice<'_>,
-    store: &mut Store,
+    store: &mut Store<W>,
     mapping: &IndexMapping,
     is_dense_target: bool,
     encoded_max_bins: Option<usize>,
-) -> Result<(u64, u64), Error> {
+) -> Result<(W, u64), Error> {
     let mode = cursor.read_u8().map_err(insufficient_data("store_mode"))?;
     let max_delta_dense_span = encoded_max_bins.map_or(MAX_SPARSE_ENCODED_DENSE_SPAN, |m| {
         m.min(MAX_SPARSE_ENCODED_DENSE_SPAN)
     }) as u64;
     match mode {
-        NATIVE_STORE_EMPTY => Ok((0, 0)),
+        NATIVE_STORE_EMPTY => Ok((W::ZERO, 0)),
         NATIVE_STORE_CONTIGUOUS_COUNTS => {
             let num_bins = decode_uvarint64(cursor, "num_bins")?;
             if num_bins == 0 {
@@ -678,7 +712,7 @@ fn decode_native_store(
                 ));
             }
             let first_index = decode_varint64(cursor, "first_index")?;
-            if num_bins > cursor.remaining().len() as u64 {
+            if num_bins > (cursor.remaining().len() / W::NATIVE_MIN_BYTES) as u64 {
                 return Err(Error::insufficient_data_of(
                     "contiguous_bins",
                     format!(
@@ -704,7 +738,7 @@ fn decode_native_store(
             }
             let (sum, bounds) =
                 store.decode_contiguous_unit_step(first_index as i32, num_bins as usize, || {
-                    decode_uvarint64(cursor, "bin_weight")
+                    W::decode_native(cursor, "bin_weight")
                 })?;
             let Some((lo, hi)) = bounds else {
                 return Err(Error::deserial(
@@ -732,6 +766,7 @@ fn decode_native_store(
             let max_valid_index = mapping.max_indexable_index();
             let mut first_index = 0_i64;
             let mut index = 0_i64;
+            let mut sum = W::ZERO;
             for step in 0..num_bins {
                 let delta = decode_varint64(cursor, "index_delta")?;
                 if step > 0 && delta <= 0 {
@@ -763,10 +798,13 @@ fn decode_native_store(
                         "DDSketch delta-encoded dense store span ({wire_span}) exceeds dense limit ({max_delta_dense_span})"
                     )));
                 }
-                store.add(idx32, 1);
+                sum = sum.checked_add(W::ONE).ok_or_else(|| {
+                    Error::deserial(format!("total_weight overflows {}", W::TYPE_NAME))
+                })?;
+                store.add(idx32, W::ONE);
             }
             let wire_span = (index - first_index) as u64 + 1;
-            Ok((num_bins, wire_span))
+            Ok((sum, wire_span))
         }
         NATIVE_STORE_DELTAS_AND_COUNTS => {
             let num_bins = decode_uvarint64(cursor, "num_bins")?;
@@ -775,7 +813,8 @@ fn decode_native_store(
                     "DDSketch delta-and-count store block must have num_bins >= 1",
                 ));
             }
-            if num_bins > (cursor.remaining().len() / 2) as u64 {
+            let min_entry_bytes = 1 + W::NATIVE_MIN_BYTES;
+            if num_bins > (cursor.remaining().len() / min_entry_bytes) as u64 {
                 return Err(Error::insufficient_data_of(
                     "store_bins",
                     format!(
@@ -787,7 +826,7 @@ fn decode_native_store(
             let max_valid_index = mapping.max_indexable_index();
             let mut first_index = 0_i64;
             let mut index = 0_i64;
-            let mut sum = 0_u64;
+            let mut sum = W::ZERO;
             for step in 0..num_bins {
                 let delta = decode_varint64(cursor, "index_delta")?;
                 if step > 0 && delta <= 0 {
@@ -795,8 +834,8 @@ fn decode_native_store(
                         "DDSketch delta store indices must be strictly increasing",
                     ));
                 }
-                let weight = decode_uvarint64(cursor, "bin_weight")?;
-                if weight == 0 {
+                let weight = W::decode_native(cursor, "bin_weight")?;
+                if weight.is_zero() {
                     return Err(Error::deserial(
                         "DDSketch delta-and-count store block cannot contain zero weight",
                     ));
@@ -825,9 +864,9 @@ fn decode_native_store(
                         "DDSketch delta-encoded dense store span ({wire_span}) exceeds dense limit ({max_delta_dense_span})"
                     )));
                 }
-                sum = sum
-                    .checked_add(weight)
-                    .ok_or_else(|| Error::deserial("total_weight overflows u64"))?;
+                sum = sum.checked_add(weight).ok_or_else(|| {
+                    Error::deserial(format!("total_weight overflows {}", W::TYPE_NAME))
+                })?;
                 store.add(idx32, weight);
             }
             let wire_span = (index - first_index) as u64 + 1;
@@ -846,7 +885,9 @@ enum CompatBinChoice {
     IndexDeltasAndCounts { num_bins: u64 },
 }
 
-fn choose_compat_bin_encoding(store: &Store) -> Result<(Option<CompatBinChoice>, usize), Error> {
+fn choose_compat_bin_encoding<W: DdSketchWeight>(
+    store: &Store<W>,
+) -> Result<(Option<CompatBinChoice>, usize), Error> {
     if store.is_empty() {
         return Ok((None, 0));
     }
@@ -858,15 +899,11 @@ fn choose_compat_bin_encoding(store: &Store) -> Result<(Option<CompatBinChoice>,
     let mut prev_index = 0_i64;
 
     for (idx, weight) in store.iter_asc() {
-        if weight > MAX_COMPAT_WEIGHT {
-            return Err(Error::invalid_argument(format!(
-                "DDSketch bucket weight ({weight}) exceeds maximum exact compatibility count ({MAX_COMPAT_WEIGHT})"
-            )));
-        }
+        weight.check_compat_encode("bucket weight")?;
         let idx64 = i64::from(idx);
         sparse_deltas_bytes += varint64_size(idx64 - prev_index);
-        sparse_counts_bytes += varfloat64_size(weight as f64);
-        if weight != 1 {
+        sparse_counts_bytes += weight.compat_size();
+        if !weight.is_one() {
             all_unit_weights = false;
         }
         prev_index = idx64;
@@ -912,9 +949,9 @@ fn choose_compat_bin_encoding(store: &Store) -> Result<(Option<CompatBinChoice>,
     Ok((Some(best_sparse), best_sparse_bytes))
 }
 
-fn encode_compat_store(
+fn encode_compat_store<W: DdSketchWeight>(
     out: &mut SketchBytes,
-    store: &Store,
+    store: &Store<W>,
     flag_type: u8,
     choice: CompatBinChoice,
 ) {
@@ -931,7 +968,7 @@ fn encode_compat_store(
             encode_varint64(out, i64::from(min_index));
             encode_varint64(out, 1);
             for &weight in slice {
-                encode_varfloat64(out, weight as f64);
+                weight.encode_compat(out);
             }
         }
         CompatBinChoice::IndexDeltas { num_bins } => {
@@ -951,7 +988,7 @@ fn encode_compat_store(
             for (idx, weight) in store.iter_asc() {
                 let idx64 = i64::from(idx);
                 encode_varint64(out, idx64 - prev);
-                encode_varfloat64(out, weight as f64);
+                weight.encode_compat(out);
                 prev = idx64;
             }
         }
@@ -964,53 +1001,62 @@ enum Sign {
     Positive,
 }
 
-struct DatadogScan {
+struct DatadogScan<W> {
     mapping: IndexMapping,
-    zero_weight: u64,
-    total_weight: u64,
+    zero_weight: W,
     summary: SummaryState,
     neg_bounds: Option<(i32, i32)>,
     pos_bounds: Option<(i32, i32)>,
 }
 
-fn deserialize_datadog(bytes: &[u8], store_kind: StoreKind) -> Result<DdSketch, Error> {
+fn deserialize_datadog<W: DdSketchWeight>(
+    bytes: &[u8],
+    store_kind: StoreKind,
+) -> Result<DdSketch<W>, Error> {
     let enforce_span_limit = matches!(store_kind, StoreKind::UnboundedDense);
-    let scan = scan_datadog_stream(bytes, enforce_span_limit, |_, _, _| {})?;
+    let scan = scan_datadog_stream::<W>(bytes, enforce_span_limit, |_, _, _| {})?;
 
-    let mut negative = Store::with_wire_bounds(store_kind, scan.neg_bounds)?;
-    let mut positive = Store::with_wire_bounds(store_kind, scan.pos_bounds)?;
+    let mut negative = Store::<W>::with_wire_bounds(store_kind, scan.neg_bounds)?;
+    let mut positive = Store::<W>::with_wire_bounds(store_kind, scan.pos_bounds)?;
     if scan.neg_bounds.is_some() || scan.pos_bounds.is_some() {
-        scan_datadog_stream(bytes, false, |sign, idx, count| match sign {
+        scan_datadog_stream::<W>(bytes, false, |sign, idx, count| match sign {
             Sign::Negative => negative.add_in_bounds(idx, count),
             Sign::Positive => positive.add_in_bounds(idx, count),
         })?;
     }
+
+    // Re-check combined weight after bin accumulation so `f64` store-order rounding near
+    // `f64::MAX` can never leave `total_weight()` non-finite.
+    negative
+        .total_weight()
+        .checked_add(scan.zero_weight)
+        .and_then(|acc| acc.checked_add(positive.total_weight()))
+        .ok_or_else(|| Error::deserial(format!("total_weight overflows {}", W::TYPE_NAME)))?;
 
     Ok(DdSketch::from_parts(
         scan.mapping,
         negative,
         positive,
         scan.zero_weight,
-        scan.total_weight,
         scan.summary,
     ))
 }
 
-fn scan_datadog_stream(
+fn scan_datadog_stream<W: DdSketchWeight>(
     bytes: &[u8],
     enforce_span_limit: bool,
-    mut on_bin: impl FnMut(Sign, i32, u64),
-) -> Result<DatadogScan, Error> {
+    mut on_bin: impl FnMut(Sign, i32, W),
+) -> Result<DatadogScan<W>, Error> {
     let mut pos_range = IndexRangeTracker::new(enforce_span_limit);
     let mut neg_range = IndexRangeTracker::new(enforce_span_limit);
     let mut mapping: Option<IndexMapping> = None;
-    let mut zero_weight = 0_u64;
-    let mut total_weight = 0_u64;
+    let mut zero_weight = W::ZERO;
+    let mut total_weight = W::ZERO;
     let mut saw_count = false;
     let mut saw_sum = false;
     let mut saw_min = false;
     let mut saw_max = false;
-    let mut summary_count = 0_u64;
+    let mut summary_count = W::ZERO;
     let mut summary_sum = 0.0_f64;
     let mut summary_min = f64::INFINITY;
     let mut summary_max = f64::NEG_INFINITY;
@@ -1070,19 +1116,19 @@ fn scan_datadog_stream(
             }
             DD_FLAG_TYPE_SKETCH_FEATURES => match subflag {
                 DD_SUBFLAG_ZERO_COUNT => {
-                    let count = decode_datadog_count(&mut cursor, "zero_count")?;
-                    zero_weight = zero_weight
-                        .checked_add(count)
-                        .ok_or_else(|| Error::deserial("zero_count overflows u64"))?;
-                    total_weight = total_weight
-                        .checked_add(count)
-                        .ok_or_else(|| Error::deserial("total_weight overflows u64"))?;
+                    let count = W::decode_compat(&mut cursor, "zero_count")?;
+                    zero_weight = zero_weight.checked_add(count).ok_or_else(|| {
+                        Error::deserial(format!("zero_count overflows {}", W::TYPE_NAME))
+                    })?;
+                    total_weight = total_weight.checked_add(count).ok_or_else(|| {
+                        Error::deserial(format!("total_weight overflows {}", W::TYPE_NAME))
+                    })?;
                 }
                 DD_SUBFLAG_EXACT_COUNT => {
-                    let count = decode_datadog_count(&mut cursor, "exact_count")?;
-                    summary_count = summary_count
-                        .checked_add(count)
-                        .ok_or_else(|| Error::deserial("exact_count overflows u64"))?;
+                    let count = W::decode_compat(&mut cursor, "exact_count")?;
+                    summary_count = summary_count.checked_add(count).ok_or_else(|| {
+                        Error::deserial(format!("exact_count overflows {}", W::TYPE_NAME))
+                    })?;
                     saw_count = true;
                 }
                 DD_SUBFLAG_EXACT_SUM => {
@@ -1150,8 +1196,8 @@ fn scan_datadog_stream(
     }
 
     let saw_any_summary = saw_count || saw_sum || saw_min || saw_max;
-    let summary = if total_weight == 0 {
-        if summary_count != 0 || saw_min || saw_max || (saw_sum && summary_sum != 0.0) {
+    let summary = if total_weight.is_zero() {
+        if !summary_count.is_zero() || saw_min || saw_max || (saw_sum && summary_sum != 0.0) {
             return Err(Error::deserial(
                 "non-empty exact summary statistics on an empty reference DDSketch",
             ));
@@ -1160,11 +1206,7 @@ fn scan_datadog_stream(
     } else if !saw_any_summary {
         SummaryState::Missing
     } else {
-        if !saw_count || summary_count != total_weight {
-            return Err(Error::deserial(format!(
-                "reference DDSketch exact_count ({summary_count}) does not match total bucket weight ({total_weight})"
-            )));
-        }
+        W::validate_compat_summary_count(saw_count, summary_count, total_weight)?;
         if !saw_min || !saw_max || summary_min > summary_max {
             return Err(Error::deserial(format!(
                 "invalid reference DDSketch exact min/max summary statistics: min={summary_min}, max={summary_max}"
@@ -1175,10 +1217,10 @@ fn scan_datadog_stream(
             max: summary_max,
             sum: canonical_zero(summary_sum),
         };
-        validate_summary_against_stores(
+        validate_summary_against_stores::<W>(
             active,
             neg_range.bounds.is_some(),
-            zero_weight,
+            !zero_weight.is_zero(),
             pos_range.bounds.is_some(),
         )?;
         active
@@ -1187,7 +1229,6 @@ fn scan_datadog_stream(
     Ok(DatadogScan {
         mapping,
         zero_weight,
-        total_weight,
         summary,
         neg_bounds: neg_range.bounds,
         pos_bounds: pos_range.bounds,
@@ -1228,13 +1269,13 @@ impl IndexRangeTracker {
     }
 }
 
-fn scan_datadog_store_block(
+fn scan_datadog_store_block<W: DdSketchWeight>(
     cursor: &mut SketchSlice<'_>,
     subflag: u8,
     sign: Sign,
     tracker: &mut IndexRangeTracker,
-    total_weight: &mut u64,
-    on_bin: &mut impl FnMut(Sign, i32, u64),
+    total_weight: &mut W,
+    on_bin: &mut impl FnMut(Sign, i32, W),
 ) -> Result<(), Error> {
     match subflag {
         DD_SUBFLAG_BINS_DELTAS_AND_COUNTS => {
@@ -1251,18 +1292,18 @@ fn scan_datadog_store_block(
             let mut index = 0_i64;
             for _ in 0..num_bins {
                 let delta = decode_varint64(cursor, "index_delta")?;
-                let count = decode_datadog_count(cursor, "bin_count")?;
+                let count = W::decode_compat(cursor, "bin_count")?;
                 index = index
                     .checked_add(delta)
                     .ok_or_else(|| Error::deserial("DDSketch bin index delta overflow"))?;
                 let idx32 = i32::try_from(index).map_err(|_| {
                     Error::deserial(format!("DDSketch bin index {index} overflows 32-bit range"))
                 })?;
-                if count != 0 {
+                if !count.is_zero() {
                     tracker.accept(index)?;
-                    *total_weight = total_weight
-                        .checked_add(count)
-                        .ok_or_else(|| Error::deserial("total_weight overflows u64"))?;
+                    *total_weight = total_weight.checked_add(count).ok_or_else(|| {
+                        Error::deserial(format!("total_weight overflows {}", W::TYPE_NAME))
+                    })?;
                     on_bin(sign, idx32, count);
                 }
             }
@@ -1285,10 +1326,10 @@ fn scan_datadog_store_block(
                     .checked_add(delta)
                     .ok_or_else(|| Error::deserial("DDSketch bin index delta overflow"))?;
                 let idx32 = tracker.accept(index)?;
-                *total_weight = total_weight
-                    .checked_add(1)
-                    .ok_or_else(|| Error::deserial("total_weight overflows u64"))?;
-                on_bin(sign, idx32, 1);
+                *total_weight = total_weight.checked_add(W::ONE).ok_or_else(|| {
+                    Error::deserial(format!("total_weight overflows {}", W::TYPE_NAME))
+                })?;
+                on_bin(sign, idx32, W::ONE);
             }
         }
         DD_SUBFLAG_BINS_CONTIGUOUS_COUNTS => {
@@ -1309,12 +1350,12 @@ fn scan_datadog_store_block(
             }
             let mut index = first_index;
             for step in 0..num_bins {
-                let count = decode_datadog_count(cursor, "bin_count")?;
-                if count != 0 {
+                let count = W::decode_compat(cursor, "bin_count")?;
+                if !count.is_zero() {
                     let idx32 = tracker.accept(index)?;
-                    *total_weight = total_weight
-                        .checked_add(count)
-                        .ok_or_else(|| Error::deserial("total_weight overflows u64"))?;
+                    *total_weight = total_weight.checked_add(count).ok_or_else(|| {
+                        Error::deserial(format!("total_weight overflows {}", W::TYPE_NAME))
+                    })?;
                     on_bin(sign, idx32, count);
                 }
                 if step + 1 < num_bins {
@@ -1360,17 +1401,6 @@ fn validate_contiguous_bounds(
         )));
     }
     Ok(())
-}
-
-#[inline]
-fn decode_datadog_count(cursor: &mut SketchSlice<'_>, tag: &'static str) -> Result<u64, Error> {
-    let raw = decode_varfloat64(cursor, tag)?;
-    if !raw.is_finite() || raw < 0.0 || raw.fract() != 0.0 || raw >= TWO_POW_64 {
-        return Err(Error::deserial(format!(
-            "invalid reference DDSketch {tag}: expected non-negative integer < 2^64, got {raw}"
-        )));
-    }
-    Ok(raw as u64)
 }
 
 #[inline]
