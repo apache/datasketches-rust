@@ -93,6 +93,20 @@ fn cpp_compatibility() {
 }
 
 #[test]
+fn go_compatibility() {
+    for num_values in [1, 3] {
+        for n in N_STD {
+            let filename = format!("aod_{num_values}_n{n}_go.sk");
+            test_sketch_file(
+                serialization_test_data("go_generated_files", &filename),
+                n,
+                num_values,
+            );
+        }
+    }
+}
+
+#[test]
 fn rust_compatibility() {
     for num_values in [1, 3] {
         for n in N_STD {
@@ -162,16 +176,22 @@ fn cross_language_summaries_match_by_hash() {
         "rust_generated_files",
         "aod_3_n10_rust.sk",
     ));
+    let go = entries(&serialization_test_data(
+        "go_generated_files",
+        "aod_3_n10_go.sk",
+    ));
 
     assert_eq!(cpp.len(), 10);
     assert_eq!(java, cpp);
     assert_eq!(rust, cpp);
+    assert_eq!(go, cpp);
 }
 
 #[test]
 fn non_empty_images_without_entries_preserve_state_and_require_seed() {
     for (directory, suffix) in [
         ("cpp_generated_files", "cpp"),
+        ("go_generated_files", "go"),
         ("java_generated_files", "java"),
         ("rust_generated_files", "rust"),
     ] {
@@ -227,6 +247,16 @@ fn empty_deserialization_uses_the_supplied_seed() {
         .build()
         .unwrap()
         .seed_hash();
+
+    let go_bytes = fs::read(serialization_test_data(
+        "go_generated_files",
+        "aod_1_n0_go.sk",
+    ))
+    .unwrap();
+    assert_ne!(u16::from_le_bytes(go_bytes[6..8].try_into().unwrap()), 0);
+    let go_restored = CompactArrayOfDoublesSketch::deserialize_with_seed(&go_bytes, 123).unwrap();
+    assert!(go_restored.is_empty());
+    assert_eq!(go_restored.seed_hash(), expected_seed_hash);
 
     for stored_seed_hash in [0, other_seed_hash] {
         let mut bytes = expected.clone();
