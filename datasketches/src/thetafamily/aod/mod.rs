@@ -15,11 +15,9 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! Tuple sketches with a fixed-size array of `f64` summaries per retained key.
-//!
-//! ArrayOfDoubles combines Theta distinct-count estimation with additive vector summaries. Every
-//! sketch has a `num_values` configuration, and each update supplies exactly that many values.
-//! Repeated keys and keys shared by union inputs combine their values element by element.
+//! ArrayOfDoubles extends Theta distinct-count estimation with fixed-size `f64` vector summaries.
+//! Each update supplies exactly `num_values` values, and repeated or unioned keys combine values
+//! element by element.
 //!
 //! # Cross-language hashing
 //!
