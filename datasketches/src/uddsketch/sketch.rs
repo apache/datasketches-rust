@@ -341,8 +341,11 @@ impl UddSketch {
 
     /// Returns the approximate lower discrete quantile for `rank` in `[0.0, 1.0]`.
     ///
-    /// Ranks `0.0` and `1.0` return the exact minimum and maximum values of the stream, and ranks
-    /// falling within the zero bucket return `0.0`. Returns `Ok(None)` if the sketch is empty.
+    /// Selects the bucket containing zero-based sorted item `floor(rank * (total_weight - 1))`
+    /// using the standard `f64` product when `total_weight <= 2^53` and exact integer significand
+    /// scaling when `total_weight > 2^53`. Ranks `0.0` and `1.0` return the exact minimum and
+    /// maximum values of the stream, and ranks falling within the zero bucket return `0.0`.
+    /// Returns `Ok(None)` if the sketch is empty.
     ///
     /// # Errors
     ///
@@ -510,24 +513,36 @@ fn check_rank(rank: f64) -> Result<(), Error> {
     Ok(())
 }
 
-/// Computes `floor(rank * (total_weight - 1))` exactly for `rank in (0.0, 1.0)` and
-/// `total_weight >= 1` using exact IEEE-754 significand arithmetic so weights above `2^53` never
-/// suffer `f64` rounding.
+const MAX_EXACT_F64_INT: u64 = (1_u64 << 53) - 1;
+
+/// Computes `floor(rank * (total_weight - 1))` for `rank in (0.0, 1.0)` and `total_weight >= 1`,
+/// using the standard `f64` product when `total_weight - 1 <= 2^53 - 1` (matching `DdSketch`,
+/// `KllSketch`, `ReqSketch`, and `TDigest`) and exact `u128` IEEE-754 significand scaling above
+/// `2^53 - 1`.
 fn lower_quantile_index(rank: f64, total_weight: u64) -> u64 {
-    debug_assert!(rank > 0.0 && rank < 1.0 && total_weight >= 1);
+    let last = total_weight - 1;
+    if rank <= 0.0 || last == 0 {
+        return 0;
+    }
+    if rank >= 1.0 {
+        return last;
+    }
+    if last <= MAX_EXACT_F64_INT {
+        return ((rank * (last as f64)).floor() as u64).min(last);
+    }
+
     let bits = rank.to_bits();
-    let exp_bits = ((bits >> 52) & 0x7ff) as i32;
-    let (mantissa, shift) = if exp_bits == 0 {
-        (bits & ((1u64 << 52) - 1), 1074u32)
-    } else {
-        (
-            (bits & ((1u64 << 52) - 1)) | (1u64 << 52),
-            (1075 - exp_bits) as u32,
-        )
-    };
+    let biased_exp = ((bits >> 52) & 0x7ff) as u32;
+    if biased_exp == 0 {
+        return 0;
+    }
+    // A normal rank equals its 53-bit significand times 2^(biased_exp - 1075).
+    let significand = (bits & 0x000f_ffff_ffff_ffff) | (1_u64 << 52);
+    let product = u128::from(significand) * u128::from(last);
+    let shift = 1075 - biased_exp;
     if shift >= 128 {
         0
     } else {
-        ((u128::from(mantissa) * u128::from(total_weight - 1)) >> shift) as u64
+        ((product >> shift) as u64).min(last)
     }
 }

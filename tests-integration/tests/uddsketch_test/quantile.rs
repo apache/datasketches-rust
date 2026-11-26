@@ -18,26 +18,31 @@
 use datasketches::uddsketch::UddSketch;
 
 fn exact_lower_quantile_index(rank: f64, len: usize) -> usize {
-    if rank <= 0.0 || len <= 1 {
+    const MAX_EXACT_F64_INT: u64 = (1_u64 << 53) - 1;
+
+    let last = (len - 1) as u64;
+    if rank <= 0.0 || last == 0 {
         return 0;
     }
     if rank >= 1.0 {
-        return len - 1;
+        return last as usize;
     }
+    if last <= MAX_EXACT_F64_INT {
+        return ((rank * (last as f64)).floor() as u64).min(last) as usize;
+    }
+
     let bits = rank.to_bits();
-    let exp_bits = ((bits >> 52) & 0x7ff) as i32;
-    let (mantissa, shift) = if exp_bits == 0 {
-        (bits & ((1u64 << 52) - 1), 1074u32)
-    } else {
-        (
-            (bits & ((1u64 << 52) - 1)) | (1u64 << 52),
-            (1075 - exp_bits) as u32,
-        )
-    };
+    let biased_exp = ((bits >> 52) & 0x7ff) as u32;
+    if biased_exp == 0 {
+        return 0;
+    }
+    let significand = (bits & 0x000f_ffff_ffff_ffff) | (1_u64 << 52);
+    let product = u128::from(significand) * u128::from(last);
+    let shift = 1075 - biased_exp;
     if shift >= 128 {
         0
     } else {
-        ((u128::from(mantissa) * u128::try_from(len - 1).unwrap()) >> shift) as usize
+        ((product >> shift) as u64).min(last) as usize
     }
 }
 
@@ -136,25 +141,38 @@ fn quantile_satisfies_relative_error_bound_across_distributions_and_minimum_budg
 
 #[test]
 fn lower_discrete_quantile_handles_weights_above_f64_precision() {
-    let mut sketch = UddSketch::new(64, 0.01).unwrap();
-    let half = 1u64 << 62;
-    sketch.update_with_weight(-10.0, half - 1);
-    sketch.update_with_weight(0.0, 1);
-    sketch.update_with_weight(10.0, half);
+    let mut weighted = UddSketch::default();
+    weighted.update_with_weight(0.0, 1_u64 << 62);
+    weighted.update_with_weight(100.0, 1_u64 << 62);
+    assert_eq!(weighted.quantile(0.5).unwrap(), Some(0.0));
+    assert_eq!(weighted.quantiles(&[]).unwrap(), Some(vec![]));
+    let next_rank = f64::from_bits(0.5_f64.to_bits() + 1);
+    assert_within_bound(
+        weighted.quantile(next_rank).unwrap().unwrap(),
+        100.0,
+        weighted.alpha(),
+    );
+    assert_eq!(weighted.quantile(f64::from_bits(1)).unwrap(), Some(0.0));
 
-    // Total weight is `2^63`, so `total_weight - 1 = 2^63 - 1`; exact index at `rank = 0.5` is
-    // `floor(0.5 * (2^63 - 1)) = 2^62 - 1 = half - 1` (the single `0.0`), whereas rounding
-    // `total_weight - 1` in `f64` would jump to `2^62` (`10.0`).
-    assert_eq!(sketch.quantile(0.5).unwrap(), Some(0.0));
-    assert_eq!(sketch.quantiles(&[]).unwrap(), Some(vec![]));
+    let mut mostly_zeros = UddSketch::default();
+    mostly_zeros.update_with_weight(0.0, 19);
+    mostly_zeros.update(1.0);
+    mostly_zeros.update(2.0);
+    assert_within_bound(
+        mostly_zeros.quantile(0.95).unwrap().unwrap(),
+        1.0,
+        mostly_zeros.alpha(),
+    );
 
-    // `0.95_f64` is strictly below mathematical `19 / 20`, so `floor(0.95_f64 * 20) == 18` rather
-    // than `19` (which naive `f64` multiplication `(0.95_f64 * 20.0).floor()` would produce).
-    let mut small = UddSketch::new(64, 0.01).unwrap();
-    small.update_with_weight(0.0, 19);
-    small.update(1.0);
-    small.update(2.0);
-    assert_eq!(small.quantile(0.95).unwrap(), Some(0.0));
+    let mut geometric = UddSketch::new(512, 0.001).unwrap();
+    for i in 0..=100 {
+        geometric.update(1.1_f64.powi(i));
+    }
+    assert_within_bound(
+        geometric.quantile(0.95).unwrap().unwrap(),
+        1.1_f64.powi(95),
+        geometric.alpha(),
+    );
 }
 
 #[test]
