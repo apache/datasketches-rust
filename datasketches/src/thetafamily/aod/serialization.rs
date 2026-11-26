@@ -223,7 +223,7 @@ pub fn deserialize_compact(bytes: &[u8], seed: u64) -> Result<CompactArrayOfDoub
                 .read_f64_le()
                 .map_err(insufficient_data("entry_values"))?;
         }
-        retained_entries.push(TupleEntry::new(hash, values));
+        retained_entries.push(TupleEntry::new(hash, values.into_boxed_slice()));
     }
 
     Ok(CompactArrayOfDoublesSketch::from_compact_state(

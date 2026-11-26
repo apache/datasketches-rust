@@ -32,10 +32,10 @@ pub struct ArrayOfDoublesPolicy {
 }
 
 impl SummaryPolicy for ArrayOfDoublesPolicy {
-    type Summary = Vec<f64>;
+    type Summary = Box<[f64]>;
 
     fn create(&self) -> Self::Summary {
-        vec![0.0; usize::from(self.num_values)]
+        vec![0.0; usize::from(self.num_values)].into_boxed_slice()
     }
 }
 
@@ -67,10 +67,10 @@ impl<C> SummaryPolicy for ArrayOfDoublesIntersectionPolicy<C>
 where
     C: ArrayOfDoublesCombiner,
 {
-    type Summary = Vec<f64>;
+    type Summary = Box<[f64]>;
 
     fn create(&self) -> Self::Summary {
-        vec![0.0; usize::from(self.num_values)]
+        vec![0.0; usize::from(self.num_values)].into_boxed_slice()
     }
 }
 

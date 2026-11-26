@@ -39,7 +39,7 @@ pub struct ArrayOfDoublesEntry<'a> {
 }
 
 impl<'a> ArrayOfDoublesEntry<'a> {
-    fn from_tuple(entry: &'a TupleEntry<Vec<f64>>) -> Self {
+    fn from_tuple(entry: &'a TupleEntry<Box<[f64]>>) -> Self {
         Self {
             hash: entry.hash(),
             values: entry.summary(),
@@ -60,7 +60,7 @@ impl<'a> ArrayOfDoublesEntry<'a> {
 /// Read-only view of a mutable or compact ArrayOfDoubles sketch.
 #[derive(Clone, Copy)]
 pub struct ArrayOfDoublesSketchView<'a> {
-    inner: TupleSketchView<'a, Vec<f64>>,
+    inner: TupleSketchView<'a, Box<[f64]>>,
     num_values: u8,
 }
 
@@ -78,7 +78,7 @@ impl fmt::Debug for ArrayOfDoublesSketchView<'_> {
 }
 
 impl<'a> ArrayOfDoublesSketchView<'a> {
-    pub(in crate::thetafamily) fn into_tuple_view(self) -> TupleSketchView<'a, Vec<f64>> {
+    pub(in crate::thetafamily) fn into_tuple_view(self) -> TupleSketchView<'a, Box<[f64]>> {
         self.inner
     }
 
@@ -277,13 +277,13 @@ impl<'a> From<&'a ArrayOfDoublesSketch> for ArrayOfDoublesSketchView<'a> {
 /// Compact, immutable ArrayOfDoubles sketch.
 #[derive(Clone)]
 pub struct CompactArrayOfDoublesSketch {
-    inner: CompactTupleSketch<Vec<f64>>,
+    inner: CompactTupleSketch<Box<[f64]>>,
     num_values: u8,
 }
 
 impl CompactArrayOfDoublesSketch {
     pub(in crate::thetafamily) fn from_tuple(
-        inner: CompactTupleSketch<Vec<f64>>,
+        inner: CompactTupleSketch<Box<[f64]>>,
         num_values: u8,
     ) -> Self {
         debug_assert!(
@@ -295,7 +295,7 @@ impl CompactArrayOfDoublesSketch {
     }
 
     pub(in crate::thetafamily) fn from_compact_state(
-        compact_state: CompactSketchState<TupleEntry<Vec<f64>>>,
+        compact_state: CompactSketchState<TupleEntry<Box<[f64]>>>,
         num_values: u8,
     ) -> Self {
         Self::from_tuple(
