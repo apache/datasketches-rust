@@ -30,7 +30,7 @@ use crate::thetafamily::common::constants::FLAGS_IS_EMPTY;
 use crate::thetafamily::common::constants::FLAGS_IS_ORDERED;
 use crate::thetafamily::common::constants::MAX_THETA;
 use crate::thetafamily::common::sketch_state::CompactSketchState;
-use crate::tuple::TupleEntry;
+use crate::thetafamily::tuple::TupleEntry;
 
 const PREAMBLE_LONGS: u8 = 1;
 const SERIAL_VERSION: u8 = 1;

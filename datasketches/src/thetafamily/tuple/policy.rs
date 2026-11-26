@@ -23,7 +23,9 @@
 //! different behaviors and can carry per-instance configuration (such as the number of values in an
 //! array-of-doubles summary).
 
+#[cfg(feature = "tuple")]
 use std::marker::PhantomData;
+#[cfg(feature = "tuple")]
 use std::ops::AddAssign;
 
 /// Defines how summaries are created.
@@ -61,11 +63,13 @@ pub trait SummaryCombinePolicy: SummaryPolicy {
 ///
 /// The factory determines the summary type and creates its identity state. The policy accepts every
 /// update type `U` for which the summary implements [`AddAssign<U>`].
+#[cfg(feature = "tuple")]
 #[derive(Default, Debug, Clone, Copy)]
 pub struct DefaultUpdatePolicy<S> {
     marker: PhantomData<fn() -> S>,
 }
 
+#[cfg(feature = "tuple")]
 impl<S> SummaryPolicy for DefaultUpdatePolicy<S>
 where
     S: Default,
@@ -77,6 +81,7 @@ where
     }
 }
 
+#[cfg(feature = "tuple")]
 impl<S, U> SummaryUpdatePolicy<U> for DefaultUpdatePolicy<S>
 where
     S: Default + AddAssign<U>,
@@ -95,11 +100,13 @@ where
 /// There is intentionally no default combine policy for the intersection: how to combine summaries
 /// of the keys present in both inputs is application-specific, so the intersection always requires
 /// an explicit policy.
+#[cfg(feature = "tuple")]
 #[derive(Default, Debug, Clone, Copy)]
 pub struct DefaultUnionPolicy<S> {
     marker: PhantomData<fn() -> S>,
 }
 
+#[cfg(feature = "tuple")]
 impl<S> SummaryPolicy for DefaultUnionPolicy<S>
 where
     S: Default,
@@ -111,6 +118,7 @@ where
     }
 }
 
+#[cfg(feature = "tuple")]
 impl<S> SummaryCombinePolicy for DefaultUnionPolicy<S>
 where
     S: Default + for<'a> AddAssign<&'a S>,

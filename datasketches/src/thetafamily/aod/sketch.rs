@@ -25,11 +25,11 @@ use crate::common::NumStdDev;
 use crate::common::ResizeFactor;
 use crate::error::Error;
 use crate::thetafamily::common::sketch_state::CompactSketchState;
-use crate::tuple::CompactTupleSketch;
-use crate::tuple::TupleEntry;
-use crate::tuple::TupleSketch;
-use crate::tuple::TupleSketchBuilder;
-use crate::tuple::TupleSketchView;
+use crate::thetafamily::tuple::CompactTupleSketch;
+use crate::thetafamily::tuple::TupleEntry;
+use crate::thetafamily::tuple::TupleSketch;
+use crate::thetafamily::tuple::TupleSketchBuilder;
+use crate::thetafamily::tuple::TupleSketchView;
 
 /// A retained hash and its associated array of double values.
 #[derive(Debug, Clone, Copy, PartialEq)]

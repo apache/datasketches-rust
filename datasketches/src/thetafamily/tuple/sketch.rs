@@ -27,39 +27,54 @@ use std::hash::Hash;
 use std::iter::FusedIterator;
 use std::slice;
 
+#[cfg(feature = "tuple")]
 use crate::codec::SketchSlice;
+#[cfg(feature = "tuple")]
 use crate::codec::assert::ensure_preamble_longs_in_range;
+#[cfg(feature = "tuple")]
 use crate::codec::assert::insufficient_data;
+#[cfg(feature = "tuple")]
 use crate::codec::family::Family;
 use crate::common::NumStdDev;
 use crate::common::ResizeFactor;
 use crate::error::Error;
+#[cfg(feature = "tuple")]
 use crate::error::ErrorKind;
 use crate::hash::DEFAULT_UPDATE_SEED;
+#[cfg(feature = "tuple")]
 use crate::hash::check_seed_hash;
+#[cfg(feature = "tuple")]
 use crate::hash::compute_seed_hash;
 use crate::thetafamily::common::EntrySketch;
 use crate::thetafamily::common::KeySketch;
 use crate::thetafamily::common::SketchEntry;
 use crate::thetafamily::common::binomial_bounds;
 use crate::thetafamily::common::constants::DEFAULT_LG_K;
+#[cfg(feature = "tuple")]
 use crate::thetafamily::common::constants::FLAGS_IS_EMPTY;
+#[cfg(feature = "tuple")]
 use crate::thetafamily::common::constants::FLAGS_IS_ORDERED;
 use crate::thetafamily::common::constants::MAX_THETA;
 use crate::thetafamily::common::hash_table::SketchHashTable;
 use crate::thetafamily::common::hash_table::SketchHashTableIter;
 use crate::thetafamily::common::sketch_state::CompactSketchState;
 use crate::thetafamily::common::sketch_state::ThetaFamilySketchMetadata;
-use crate::tuple::hash_table::TupleEntry;
-use crate::tuple::hash_table::TupleHashTable;
-use crate::tuple::policy::SummaryPolicy;
-use crate::tuple::policy::SummaryUpdatePolicy;
-use crate::tuple::serialization::SERIAL_VERSION;
-use crate::tuple::serialization::SERIAL_VERSION_LEGACY;
-use crate::tuple::serialization::SKETCH_TYPE;
-use crate::tuple::serialization::SKETCH_TYPE_LEGACY;
-use crate::tuple::serialization::TupleSummaryValue;
-use crate::tuple::serialization::serialize_compact_uncompressed;
+use crate::thetafamily::tuple::hash_table::TupleEntry;
+use crate::thetafamily::tuple::hash_table::TupleHashTable;
+use crate::thetafamily::tuple::policy::SummaryPolicy;
+use crate::thetafamily::tuple::policy::SummaryUpdatePolicy;
+#[cfg(feature = "tuple")]
+use crate::thetafamily::tuple::serialization::SERIAL_VERSION;
+#[cfg(feature = "tuple")]
+use crate::thetafamily::tuple::serialization::SERIAL_VERSION_LEGACY;
+#[cfg(feature = "tuple")]
+use crate::thetafamily::tuple::serialization::SKETCH_TYPE;
+#[cfg(feature = "tuple")]
+use crate::thetafamily::tuple::serialization::SKETCH_TYPE_LEGACY;
+#[cfg(feature = "tuple")]
+use crate::thetafamily::tuple::serialization::TupleSummaryValue;
+#[cfg(feature = "tuple")]
+use crate::thetafamily::tuple::serialization::serialize_compact_uncompressed;
 
 /// Read-only view of a mutable or compact Tuple sketch.
 ///
@@ -67,8 +82,8 @@ use crate::tuple::serialization::serialize_compact_uncompressed;
 /// requiring `S: Clone`; set operations that retain summaries require `S: Clone` when invoked.
 ///
 /// # Examples
-///
-/// ```
+#[cfg_attr(feature = "tuple", doc = "```")]
+#[cfg_attr(not(feature = "tuple"), doc = "```ignore")]
 /// use datasketches::tuple::DefaultUpdatePolicy;
 /// use datasketches::tuple::TupleSketchBuilder;
 ///
@@ -276,8 +291,8 @@ impl<'a, S> From<&'a CompactTupleSketch<S>> for TupleSketchView<'a, S> {
 /// See the [module level documentation](super) for more.
 ///
 /// # Examples
-///
-/// ```
+#[cfg_attr(feature = "tuple", doc = "```")]
+#[cfg_attr(not(feature = "tuple"), doc = "```ignore")]
 /// use datasketches::tuple::DefaultUpdatePolicy;
 /// use datasketches::tuple::TupleSketchBuilder;
 ///
@@ -328,8 +343,8 @@ where
     /// change any summary.
     ///
     /// # Examples
-    ///
-    /// ```
+    #[cfg_attr(feature = "tuple", doc = "```")]
+    #[cfg_attr(not(feature = "tuple"), doc = "```ignore")]
     /// use datasketches::tuple::DefaultUpdatePolicy;
     /// use datasketches::tuple::TupleSketchBuilder;
     ///
@@ -463,8 +478,8 @@ where
     /// If `ordered` is `true`, retained entries are sorted by hash in ascending order.
     ///
     /// # Examples
-    ///
-    /// ```
+    #[cfg_attr(feature = "tuple", doc = "```")]
+    #[cfg_attr(not(feature = "tuple"), doc = "```ignore")]
     /// use datasketches::tuple::DefaultUpdatePolicy;
     /// use datasketches::tuple::TupleSketchBuilder;
     ///
@@ -614,8 +629,8 @@ impl<S> CompactTupleSketch<S> {
     /// Empty sketches serialize with a zero seed hash.
     ///
     /// # Examples
-    ///
-    /// ```
+    #[cfg_attr(feature = "tuple", doc = "```")]
+    #[cfg_attr(not(feature = "tuple"), doc = "```ignore")]
     /// use datasketches::tuple::DefaultUpdatePolicy;
     /// use datasketches::tuple::TupleSketchBuilder;
     ///
@@ -625,6 +640,7 @@ impl<S> CompactTupleSketch<S> {
     /// let bytes = sketch.compact(true).serialize();
     /// assert!(!bytes.is_empty());
     /// ```
+    #[cfg(feature = "tuple")]
     pub fn serialize(&self) -> Vec<u8>
     where
         S: TupleSummaryValue,
@@ -642,6 +658,7 @@ impl<S> CompactTupleSketch<S> {
     /// Returns `InvalidData` if the image is malformed or a non-empty image's seed hash does not
     /// match the default seed. Also propagates errors from
     /// [`TupleSummaryValue::deserialize_value`].
+    #[cfg(feature = "tuple")]
     pub fn deserialize(bytes: &[u8]) -> Result<Self, Error>
     where
         S: TupleSummaryValue,
@@ -661,6 +678,7 @@ impl<S> CompactTupleSketch<S> {
     /// Returns `InvalidData` if the image is malformed, a non-empty image's seed hash does not
     /// match `seed`, or `seed` itself computes to the reserved zero seed hash. Also propagates
     /// errors from [`TupleSummaryValue::deserialize_value`].
+    #[cfg(feature = "tuple")]
     pub fn deserialize_with_seed(bytes: &[u8], seed: u64) -> Result<Self, Error>
     where
         S: TupleSummaryValue,
@@ -794,8 +812,8 @@ where
     /// Creates a builder with the given summary policy.
     ///
     /// # Examples
-    ///
-    /// ```
+    #[cfg_attr(feature = "tuple", doc = "```")]
+    #[cfg_attr(not(feature = "tuple"), doc = "```ignore")]
     /// use datasketches::tuple::SummaryPolicy;
     /// use datasketches::tuple::SummaryUpdatePolicy;
     /// use datasketches::tuple::TupleSketchBuilder;

@@ -27,8 +27,8 @@ use crate::error::ErrorKind;
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::hash::compute_seed_hash;
 use crate::thetafamily::common::a_not_b;
-use crate::tuple::sketch::CompactTupleSketch;
-use crate::tuple::sketch::TupleSketchView;
+use crate::thetafamily::tuple::sketch::CompactTupleSketch;
+use crate::thetafamily::tuple::sketch::TupleSketchView;
 
 /// Set difference operator (`A and not B`) for Tuple sketches.
 ///
@@ -37,8 +37,8 @@ use crate::tuple::sketch::TupleSketchView;
 /// summaries straight from `A`.
 ///
 /// # Examples
-///
-/// ```
+#[cfg_attr(feature = "tuple", doc = "```")]
+#[cfg_attr(not(feature = "tuple"), doc = "```ignore")]
 /// use datasketches::tuple::DefaultUpdatePolicy;
 /// use datasketches::tuple::TupleANotB;
 /// use datasketches::tuple::TupleSketchBuilder;

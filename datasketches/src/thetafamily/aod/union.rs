@@ -27,8 +27,8 @@ use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::hash::check_seed_hash;
 use crate::hash::compute_seed_hash;
-use crate::tuple::TupleUnion;
-use crate::tuple::TupleUnionBuilder;
+use crate::thetafamily::tuple::TupleUnion;
+use crate::thetafamily::tuple::TupleUnionBuilder;
 
 /// Union of ArrayOfDoubles sketches.
 ///
