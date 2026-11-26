@@ -381,8 +381,9 @@ impl CompactArrayOfDoublesSketch {
 
     /// Serializes this sketch into the compact ArrayOfDoubles binary format.
     ///
-    /// The serialized data can be read by other DataSketches implementations.
-    /// Empty sketches serialize with a zero seed hash.
+    /// The serialized data can be read by other DataSketches implementations when `num_values` is
+    /// in `1..=127`. Values in `128..=255` can be read by DataSketches C++ and Go, but not by
+    /// DataSketches Java. Empty sketches serialize with a zero seed hash.
     pub fn serialize(&self) -> Vec<u8> {
         crate::aod::serialization::serialize_compact(self)
     }
@@ -390,6 +391,8 @@ impl CompactArrayOfDoublesSketch {
     /// Deserializes a compact ArrayOfDoubles sketch using the default seed.
     ///
     /// Also accepts data serialized by other DataSketches implementations.
+    /// Images with `num_values` in `128..=255` can originate from DataSketches C++ and Go, but not
+    /// from DataSketches Java.
     ///
     /// # Errors
     ///
@@ -402,7 +405,9 @@ impl CompactArrayOfDoublesSketch {
     /// Deserializes a compact ArrayOfDoubles sketch using `seed`.
     ///
     /// Also accepts data serialized by other DataSketches implementations.
-    /// Empty sketches use the hash of `seed` regardless of the stored seed hash.
+    /// Images with `num_values` in `128..=255` can originate from DataSketches C++ and Go, but not
+    /// from DataSketches Java. Empty sketches use the hash of `seed` regardless of the stored seed
+    /// hash.
     ///
     /// # Errors
     ///

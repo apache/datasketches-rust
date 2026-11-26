@@ -30,6 +30,11 @@
 //!
 //! Skip empty string and byte-slice keys before updating the sketch.
 //!
+//! # Cross-language compatibility
+//!
+//! DataSketches Java reads `num_values` as a signed byte and accepts only `1..=127`. Values in
+//! `128..=255` can be exchanged with DataSketches C++ and Go, but not DataSketches Java.
+//!
 //! # Examples
 //!
 //! ```
