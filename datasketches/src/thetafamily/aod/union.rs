@@ -24,9 +24,6 @@ use crate::aod::policy::check_num_values;
 use crate::aod::policy::validate_num_values;
 use crate::common::ResizeFactor;
 use crate::error::Error;
-use crate::error::ErrorKind;
-use crate::hash::check_seed_hash;
-use crate::hash::compute_seed_hash;
 use crate::thetafamily::tuple::TupleUnion;
 use crate::thetafamily::tuple::TupleUnionBuilder;
 
@@ -36,7 +33,6 @@ use crate::thetafamily::tuple::TupleUnionBuilder;
 pub struct ArrayOfDoublesUnion {
     inner: TupleUnion<ArrayOfDoublesPolicy>,
     num_values: u8,
-    seed_hash: u16,
 }
 
 impl fmt::Debug for ArrayOfDoublesUnion {
@@ -65,14 +61,6 @@ impl ArrayOfDoublesUnion {
             usize::from(sketch.num_values()),
             "union update",
         )?;
-        if !sketch.is_empty() {
-            check_seed_hash(
-                self.seed_hash,
-                sketch.seed_hash(),
-                "ArrayOfDoubles union input",
-                ErrorKind::InvalidArgument,
-            )?;
-        }
         self.inner.update(sketch.into_tuple_view())
     }
 
@@ -150,7 +138,6 @@ impl ArrayOfDoublesUnionBuilder {
     /// `sampling_probability` is outside `(0.0, 1.0]`, or the computed seed hash is zero.
     pub fn build(self) -> Result<ArrayOfDoublesUnion, Error> {
         validate_num_values(self.num_values)?;
-        let seed_hash = compute_seed_hash(self.seed, ErrorKind::InvalidArgument)?;
         let policy = ArrayOfDoublesPolicy {
             num_values: self.num_values,
         };
@@ -163,7 +150,6 @@ impl ArrayOfDoublesUnionBuilder {
         Ok(ArrayOfDoublesUnion {
             inner,
             num_values: self.num_values,
-            seed_hash,
         })
     }
 }
