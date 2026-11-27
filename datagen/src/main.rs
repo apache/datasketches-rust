@@ -32,6 +32,7 @@ mod density;
 mod frequencies;
 mod hll;
 mod kll;
+mod quantiles;
 mod req;
 mod tdigest;
 mod theta;
@@ -73,6 +74,7 @@ enum SketchFamily {
     Frequencies,
     Hll,
     Kll,
+    Quantiles,
     Req,
     #[value(name = "tdigest")]
     TDigest,
@@ -95,6 +97,7 @@ impl SketchFamily {
             Self::Frequencies => frequencies::generate(output_dir),
             Self::Hll => hll::generate(output_dir),
             Self::Kll => kll::generate(output_dir),
+            Self::Quantiles => quantiles::generate(output_dir),
             Self::Req => req::generate(output_dir),
             Self::TDigest => tdigest::generate(output_dir),
             Self::Theta => theta::generate(output_dir),

@@ -20,6 +20,7 @@ use std::fmt;
 
 use super::DEFAULT_K;
 use super::DEFAULT_M;
+use super::KllValue;
 use super::MAX_K;
 use super::MIN_K;
 use super::capacity::level_capacity;
@@ -35,7 +36,6 @@ use super::serialization::PREAMBLE_INTS_FULL;
 use super::serialization::PREAMBLE_INTS_SHORT;
 use super::serialization::SERIAL_VERSION_1;
 use super::serialization::SERIAL_VERSION_2;
-use super::value::KllValue;
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
 use crate::codec::assert::ensure_serial_version_is;
@@ -705,23 +705,31 @@ fn deserialize_with_serde<T: KllValue + Ord>(bytes: &[u8]) -> Result<KllSketch<T
 }
 
 impl<T: KllValue + Ord> KllSketch<T> {
-    /// Serializes the sketch to bytes in compact form.
+    /// Serializes the sketch in compact form.
     ///
-    /// The serialized data can be read by other DataSketches implementations when both
-    /// sides use the same [`KllValue`] item encoding.
+    /// # Panics
+    ///
+    /// Panics if a `String` item exceeds `u32::MAX` bytes.
+    ///
+    /// # Cross-language compatibility
+    ///
+    /// The serialized data can be read by other DataSketches implementations when the
+    /// [item encoding and ordering](KllValue) match.
     pub fn serialize(&self) -> Vec<u8> {
         serialize_with_serde(self)
     }
 
-    /// Deserializes a sketch from bytes in compact form.
-    ///
-    /// Also accepts data serialized by other DataSketches implementations when both
-    /// sides use the same [`KllValue`] item encoding.
+    /// Deserializes a compact sketch.
     ///
     /// # Errors
     ///
     /// Returns `InvalidData` if the image is truncated, malformed, or contains values that are not
     /// totally ordered.
+    ///
+    /// # Cross-language compatibility
+    ///
+    /// Also accepts data serialized by other DataSketches implementations when the
+    /// [item encoding and ordering](KllValue) match.
     pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
         deserialize_with_serde(bytes)
     }

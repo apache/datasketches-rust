@@ -56,8 +56,10 @@
 //! ```
 
 mod query;
+mod serialization;
 mod sketch;
 
 pub use self::sketch::QuantilesSketch;
 pub use crate::common::quantiles_float::QuantilesFloat;
+pub use crate::common::quantiles_value::QuantilesValue;
 pub use crate::common::sorted_view::SortedView;

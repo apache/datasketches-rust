@@ -46,11 +46,10 @@
 mod capacity;
 mod serialization;
 mod sketch;
-mod value;
 
 pub use self::sketch::KllSketch;
-pub use self::value::KllValue;
 pub use crate::common::quantiles_float::QuantilesFloat as KllFloat;
+pub use crate::common::quantiles_value::QuantilesValue as KllValue;
 pub use crate::common::sorted_view::SortedView;
 
 /// Default value of parameter k.

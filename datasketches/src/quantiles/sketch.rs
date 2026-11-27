@@ -55,12 +55,12 @@ fn merge_and_compact<T: Ord>(left: Vec<T>, right: Vec<T>) -> Vec<T> {
 /// The default is `k = 128`.
 pub struct QuantilesSketch<T> {
     k: u16,
-    total_weight: u64,
+    pub(super) total_weight: u64,
     // Level 0 is the unsorted buffer of unit-weight items. Each occupied level i > 0
     // holds k sorted items of weight 2^i.
     pub(super) levels: Vec<Vec<T>>,
-    min_item: Option<T>,
-    max_item: Option<T>,
+    pub(super) min_item: Option<T>,
+    pub(super) max_item: Option<T>,
     pub(super) sorted_view_cache: OnceLock<SortedView<T>>,
 }
 

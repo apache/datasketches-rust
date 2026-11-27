@@ -30,6 +30,8 @@ pub use self::search_criteria::SearchCriteria;
 pub(crate) mod inv_pow2;
 #[cfg(any(feature = "kll", feature = "quantiles"))]
 pub(crate) mod quantiles_float;
+#[cfg(any(feature = "kll", feature = "quantiles"))]
+pub(crate) mod quantiles_value;
 #[cfg(any(
     feature = "aod",
     feature = "density",
