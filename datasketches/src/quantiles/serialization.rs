@@ -35,6 +35,25 @@ const FLAG_EMPTY: u8 = 1 << 2;
 const FLAG_COMPACT: u8 = 1 << 3;
 const FLAG_ORDERED: u8 = 1 << 4;
 
+fn deserialize_item<T: QuantilesValue>(
+    input: &mut SketchSlice<'_>,
+    compact: bool,
+) -> Result<T, Error> {
+    if compact {
+        return T::deserialize(input);
+    }
+
+    let mut slot = SketchSlice::new(&input.remaining()[..size_of::<f64>()]);
+    let item = T::deserialize(&mut slot)?;
+    if !slot.remaining().is_empty() {
+        return Err(Error::deserial(
+            "a noncompact item must consume one double slot",
+        ));
+    }
+    input.advance(size_of::<f64>());
+    Ok(item)
+}
+
 impl<T: QuantilesValue + Ord> QuantilesSketch<T> {
     /// Serializes the sketch in ordered compact version `3` format.
     ///
@@ -85,7 +104,7 @@ impl<T: QuantilesValue + Ord> QuantilesSketch<T> {
         bytes.into_bytes()
     }
 
-    /// Deserializes an ordered or unordered compact version `3` sketch.
+    /// Deserializes a version `3` Classic Quantiles sketch.
     ///
     /// # Errors
     ///
@@ -95,6 +114,7 @@ impl<T: QuantilesValue + Ord> QuantilesSketch<T> {
     ///
     /// Also accepts data serialized by other DataSketches implementations when the
     /// [item encoding and ordering](QuantilesValue) match.
+    /// Use [`QuantilesFloat<f64>`](super::QuantilesFloat) to read noncompact doubles written by DataSketches Java's `toByteArray()`.
     pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
         let mut input = SketchSlice::new(bytes);
         let preamble_longs = input
@@ -115,11 +135,7 @@ impl<T: QuantilesValue + Ord> QuantilesSketch<T> {
                 "invalid Classic Quantiles flags: {flags:#x}"
             )));
         }
-        if flags & FLAG_COMPACT == 0 {
-            return Err(Error::deserial(
-                "expected a compact Classic Quantiles sketch",
-            ));
-        }
+        let compact = flags & FLAG_COMPACT != 0;
         let mut sketch = Self::new(k).map_err(|error| Error::deserial(error.message()))?;
         if flags & FLAG_EMPTY != 0 {
             // Java direct compact can declare two longs for an eight-byte empty sketch.
@@ -138,43 +154,59 @@ impl<T: QuantilesValue + Ord> QuantilesSketch<T> {
                 ));
             }
 
-            let base_capacity = 2 * u64::from(k);
-            let base_count = (total_weight % base_capacity) as usize;
-            let occupied = total_weight / base_capacity;
-            let num_retained = base_count + occupied.count_ones() as usize * usize::from(k);
-            let min_bytes = (num_retained + 2)
-                .checked_mul(T::MIN_SERIALIZED_SIZE)
-                .ok_or_else(|| Error::deserial("minimum item payload size overflows usize"))?;
-            if input.remaining().len() < min_bytes {
-                return Err(Error::insufficient_data_of(
-                    "Classic Quantiles item payload",
-                    format_args!(
-                        "expected at least {min_bytes} bytes, got {}",
-                        input.remaining().len()
-                    ),
-                ));
-            }
+            let k = usize::from(k);
+            let base_capacity = 2 * k;
+            let base_count = (total_weight % base_capacity as u64) as usize;
+            let occupied = total_weight / base_capacity as u64;
+            let num_upper_levels = (u64::BITS - occupied.leading_zeros()) as usize;
+            let payload_bytes = input.remaining().len();
+            let base_slots = if compact {
+                let num_retained = base_count + occupied.count_ones() as usize * k;
+                let min_bytes = (num_retained + 2)
+                    .checked_mul(T::MIN_SERIALIZED_SIZE)
+                    .ok_or_else(|| Error::deserial("minimum item payload size overflows usize"))?;
+                if payload_bytes < min_bytes {
+                    return Err(Error::insufficient_data_of(
+                        "Classic Quantiles item payload",
+                        format_args!("expected at least {min_bytes} bytes, got {payload_bytes}"),
+                    ));
+                }
+                base_count
+            } else {
+                if total_weight > i64::MAX as u64 {
+                    return Err(Error::deserial(
+                        "noncompact total weight must fit in an i64",
+                    ));
+                }
+                // Java's base starts at four slots and grows to twice k.
+                let slots = if total_weight <= k as u64 {
+                    base_count.next_power_of_two().max(4)
+                } else {
+                    base_capacity
+                };
+                let expected_bytes = (2 + slots + num_upper_levels * k) * size_of::<f64>();
+                if payload_bytes != expected_bytes {
+                    return Err(Error::deserial(format!(
+                        "invalid noncompact payload size: expected {expected_bytes} bytes, got {payload_bytes}"
+                    )));
+                }
+                slots
+            };
 
-            let min = T::deserialize(&mut input)?;
-            let max = T::deserialize(&mut input)?;
+            let min = deserialize_item::<T>(&mut input, compact)?;
+            let max = deserialize_item::<T>(&mut input, compact)?;
             if min > max {
                 return Err(Error::deserial("sketch minimum exceeds its maximum"));
             }
 
             // Bit i marks a level of k items of weight 2^(i + 1).
-            let num_upper_levels = u64::BITS - occupied.leading_zeros();
-            let upper_sizes = (0..num_upper_levels).map(|bit| {
-                if occupied & (1 << bit) != 0 {
-                    usize::from(k)
-                } else {
-                    0
-                }
-            });
-            let mut levels = Vec::with_capacity(1 + num_upper_levels as usize);
+            let upper_sizes =
+                (0..num_upper_levels).map(|bit| if occupied & (1 << bit) != 0 { k } else { 0 });
+            let mut levels = Vec::with_capacity(1 + num_upper_levels);
             for (level, size) in iter::once(base_count).chain(upper_sizes).enumerate() {
                 let mut items = Vec::with_capacity(size);
                 for index in 0..size {
-                    let item = T::deserialize(&mut input).map_err(|error| {
+                    let item = deserialize_item::<T>(&mut input, compact).map_err(|error| {
                         error
                             .with_context("Classic Quantiles level", level)
                             .with_context("item index", index)
@@ -185,6 +217,10 @@ impl<T: QuantilesValue + Ord> QuantilesSketch<T> {
                         )));
                     }
                     items.push(item);
+                }
+                if !compact {
+                    let slots = if level == 0 { base_slots } else { k };
+                    input.advance((slots - size) * size_of::<f64>());
                 }
                 let ordered = level > 0 || flags & FLAG_ORDERED != 0;
                 if ordered && !items.is_sorted() {

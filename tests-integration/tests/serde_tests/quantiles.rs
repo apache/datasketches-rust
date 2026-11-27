@@ -138,7 +138,7 @@ fn rejects_misordered_or_out_of_bounds_retained_items() {
 #[test]
 fn rejects_invalid_headers_and_payload_lengths() {
     let bytes = compact_i64(0x18, 1, 2, 2, &[2]);
-    for (offset, value) in [(0, 1), (1, 2), (2, 15), (3, 0x10), (4, 3)] {
+    for (offset, value) in [(0, 1), (1, 2), (2, 15), (3, 0x19), (4, 3)] {
         let mut invalid = bytes.clone();
         invalid[offset] = value;
         let error = QuantilesSketch::<i64>::deserialize(&invalid).unwrap_err();
@@ -162,4 +162,91 @@ fn reads_the_empty_java_direct_compact_preamble() {
     let sketch = QuantilesSketch::<QuantilesFloat<f64>>::deserialize(&bytes).unwrap();
     assert!(sketch.is_empty());
     assert_eq!(sketch.k(), 128);
+}
+
+fn java_doubles_image(flags: u8, k: u16, total_weight: u64, payload: &[f64]) -> Vec<u8> {
+    let mut bytes = vec![2, 3, 8, flags];
+    bytes.extend_from_slice(&k.to_le_bytes());
+    bytes.extend_from_slice(&[0, 0]);
+    bytes.extend_from_slice(&total_weight.to_le_bytes());
+    bytes.extend(payload.iter().flat_map(|value| value.to_le_bytes()));
+    bytes
+}
+
+fn retained_doubles(sketch: &QuantilesSketch<QuantilesFloat<f64>>) -> Vec<(f64, u64)> {
+    let mut items: Vec<_> = sketch
+        .iter()
+        .map(|(item, weight)| (item.into_inner(), weight))
+        .collect();
+    items.sort_unstable_by(|left, right| left.0.total_cmp(&right.0));
+    items
+}
+
+#[test]
+fn reads_java_doubles_across_an_empty_level() {
+    // Java writes both images for a sketch fed four 1s and four 3s.
+    let compact = java_doubles_image(0x1a, 2, 8, &[1.0, 3.0, 1.0, 3.0]);
+    let noncompact = java_doubles_image(
+        0,
+        2,
+        8,
+        &[
+            1.0, 3.0, // extrema
+            0.0, 0.0, 0.0, 0.0, // empty base
+            1.0, 1.0, // unused level
+            1.0, 3.0, // weight 4
+        ],
+    );
+    for bytes in [&compact, &noncompact] {
+        let sketch = QuantilesSketch::<QuantilesFloat<f64>>::deserialize(bytes).unwrap();
+        assert_eq!(sketch.total_weight(), 8);
+        assert_eq!(retained_doubles(&sketch), [(1.0, 4), (3.0, 4)]);
+    }
+
+    // The unused level starts at byte 64 and occupies two double slots.
+    let mut missing_level = noncompact;
+    missing_level.drain(64..80);
+    let error = QuantilesSketch::<QuantilesFloat<f64>>::deserialize(&missing_level).unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::InvalidData);
+    assert_eq!(
+        error.message(),
+        "invalid noncompact payload size: expected 80 bytes, got 64"
+    );
+}
+
+#[test]
+fn reads_java_doubles_with_a_partially_filled_base_after_compaction() {
+    // Java writes this image after eight 1s, eight 3s, and a 5.
+    let bytes = java_doubles_image(
+        0,
+        4,
+        17,
+        &[
+            1.0, 5.0, // extrema
+            5.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, // base
+            1.0, 1.0, 1.0, 1.0, // unused level
+            1.0, 1.0, 3.0, 3.0, // weight 4
+        ],
+    );
+    let sketch = QuantilesSketch::<QuantilesFloat<f64>>::deserialize(&bytes).unwrap();
+    assert_eq!(sketch.total_weight(), 17);
+    assert_eq!(
+        retained_doubles(&sketch),
+        [(1.0, 4), (1.0, 4), (3.0, 4), (3.0, 4), (5.0, 1)]
+    );
+}
+
+#[test]
+fn reads_java_doubles_with_a_padded_exact_base() {
+    // Java reserves eight base slots for these five inputs at k = 8.
+    let bytes = java_doubles_image(
+        0,
+        8,
+        5,
+        &[-7.0, 13.0, 13.0, -7.0, 9.0, 4.0, 2.0, 0.0, 0.0, 0.0],
+    );
+    let sketch = QuantilesSketch::<QuantilesFloat<f64>>::deserialize(&bytes).unwrap();
+    let mut items: Vec<_> = sketch.iter().map(|(item, _)| item.into_inner()).collect();
+    items.sort_unstable_by(f64::total_cmp);
+    assert_eq!(items, [-7.0, 2.0, 4.0, 9.0, 13.0]);
 }
