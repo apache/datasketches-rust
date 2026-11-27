@@ -17,10 +17,42 @@
 
 use datasketches::common::SearchCriteria;
 use datasketches::error::ErrorKind;
+use datasketches::kll::KllFloat;
 use datasketches::kll::KllSketch;
 
 const DEFAULT_K: u16 = 200;
 const NUMERIC_NOISE_TOLERANCE: f64 = 1e-6;
+
+#[test]
+fn one_weighted_item_can_have_two_distinct_endpoint_representations() {
+    let mut sketch = KllSketch::new(8).unwrap();
+    sketch.update_with_weight(KllFloat::<f64>::new(-0.0).unwrap(), 256);
+    assert_eq!(sketch.num_retained(), 1);
+
+    // The last three doubles are the minimum, the maximum, and the retained item.
+    let mut bytes = sketch.serialize();
+    let max_offset = bytes.len() - 2 * size_of::<f64>();
+    bytes[max_offset..max_offset + size_of::<f64>()].copy_from_slice(&0.0_f64.to_le_bytes());
+    let sketch = KllSketch::<KllFloat<f64>>::deserialize(&bytes).unwrap();
+    let view = sketch.sorted_view();
+
+    assert_eq!(view.len(), 1);
+    assert_eq!(view.total_weight(), 256);
+    let ranks = [0.0, 0.5, 1.0];
+    let expected_bits = [
+        (-0.0_f64).to_bits(),
+        (-0.0_f64).to_bits(),
+        0.0_f64.to_bits(),
+    ];
+    for quantiles in [
+        sketch.quantiles(&ranks, SearchCriteria::Inclusive),
+        view.quantiles(&ranks, SearchCriteria::Inclusive),
+    ] {
+        let quantiles = quantiles.unwrap().unwrap();
+        let bits: Vec<_> = quantiles.iter().map(|item| item.to_bits()).collect();
+        assert_eq!(bits, expected_bits);
+    }
+}
 
 #[test]
 fn compacted_extrema_stay_in_query_distribution() {

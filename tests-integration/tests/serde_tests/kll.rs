@@ -32,7 +32,7 @@ use crate::serialization_test_data;
 const DEFAULT_K: u16 = 200;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct NumericString(String);
+pub(super) struct NumericString(pub(super) String);
 
 impl Ord for NumericString {
     fn cmp(&self, other: &Self) -> Ordering {
@@ -522,7 +522,7 @@ fn test_string_value_reports_the_truncated_field_and_byte_counts() {
     assert_eq!(error.kind(), ErrorKind::InvalidData);
     assert_eq!(
         error.message(),
-        "insufficient data (KLL string payload): expected 5 bytes, got 1"
+        "insufficient data (string payload): expected 5 bytes, got 1"
     );
 }
 

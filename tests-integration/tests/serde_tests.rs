@@ -69,6 +69,9 @@ mod hll;
 #[path = "serde_tests/kll.rs"]
 mod kll;
 
+#[path = "serde_tests/quantiles.rs"]
+mod quantiles;
+
 #[path = "serde_tests/req.rs"]
 mod req;
 

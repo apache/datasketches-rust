@@ -39,11 +39,12 @@
 //!   multidimensional numeric vectors.
 //! * Use `hll` for fast distinct counts, `cpc` for compact serialized distinct counts, or `theta`
 //!   when set operations are required.
-//! * Use `ddsketch`, `kll`, `req`, `tdigest`, or `uddsketch` for ranks and quantiles. DDSketch
-//!   bounds relative value error across wide dynamic ranges, KLL provides strong general-purpose
-//!   rank accuracy, REQ targets configurable high- or low-rank accuracy, T-Digest emphasizes
-//!   distribution tails, and UDDSketch bounds relative value error reproducibly via uniform bucket
-//!   collapsing.
+//! * For quantiles and ranks, choose a sketch by its accuracy across the distribution.
+//!   * `ddsketch` bounds relative value error across wide dynamic ranges.
+//!   * `kll` and `quantiles` (Classic Quantiles) both provide uniform rank accuracy.
+//!   * `req` targets configurable high- or low-rank accuracy.
+//!   * `tdigest` emphasizes the tails.
+//!   * `uddsketch` bounds relative value error reproducibly via uniform bucket collapsing.
 //! * Use `aod` when retained Theta keys need fixed-size `f64` vector summaries, or `tuple` for
 //!   application-defined summary types and combination policies.
 //!
@@ -88,6 +89,8 @@ pub mod frequencies;
 pub mod hll;
 #[cfg(feature = "kll")]
 pub mod kll;
+#[cfg(feature = "quantiles")]
+pub mod quantiles;
 #[cfg(feature = "req")]
 pub mod req;
 #[cfg(feature = "tdigest")]

@@ -80,7 +80,13 @@ pub fn random_u64() -> u64 {
 /// The call is a handful of arithmetic operations on thread-local state: it
 /// never allocates, locks, or blocks. The first call on a thread seeds that
 /// thread's state.
-#[cfg(any(test, feature = "density", feature = "kll", feature = "req"))]
+#[cfg(any(
+    test,
+    feature = "density",
+    feature = "kll",
+    feature = "quantiles",
+    feature = "req",
+))]
 #[inline]
 pub fn random_bit() -> bool {
     random_u64() & 1 == 1
@@ -93,7 +99,7 @@ pub fn random_bit() -> bool {
 /// # Panics
 ///
 /// Panics if `bound == 0` or `bound` cannot be represented as `u64`.
-#[cfg(any(test, feature = "density"))]
+#[cfg(any(test, feature = "density", feature = "quantiles"))]
 #[inline]
 pub fn random_below(bound: usize) -> usize {
     assert!(bound > 0, "bound must be positive");
@@ -104,7 +110,7 @@ pub fn random_below(bound: usize) -> usize {
     rejection_sample(range, random_u64) as usize
 }
 
-#[cfg(any(test, feature = "density"))]
+#[cfg(any(test, feature = "density", feature = "quantiles"))]
 #[inline]
 fn rejection_sample(range: u64, mut next: impl FnMut() -> u64) -> u64 {
     let mut product = u128::from(next()) * u128::from(range);

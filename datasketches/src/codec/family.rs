@@ -53,6 +53,15 @@ impl Family {
         max_pre_longs: 1,
     };
 
+    /// Classic Quantiles.
+    #[cfg(feature = "quantiles")]
+    pub const QUANTILES: Family = Family {
+        id: 8,
+        name: "QUANTILES",
+        min_pre_longs: 1,
+        max_pre_longs: 2,
+    };
+
     /// Tuple Sketch for cardinality estimation with per-key summaries.
     #[cfg(any(feature = "aod", feature = "tuple"))]
     pub const TUPLE: Family = Family {
