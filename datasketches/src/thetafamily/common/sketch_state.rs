@@ -17,6 +17,11 @@
 
 use crate::thetafamily::common::SketchEntry;
 use crate::thetafamily::common::constants::MAX_THETA;
+use crate::thetafamily::common::sort::sort_by_hash_key;
+#[cfg(feature = "tuple")]
+use crate::thetafamily::common::sort::with_bucket_starts;
+#[cfg(feature = "tuple")]
+use crate::tuple::TupleEntry;
 
 /// Observable metadata consumed by shared Theta-family set operations.
 ///
@@ -173,11 +178,8 @@ impl<E> CompactSketchState<E> {
 }
 
 pub fn sort_copy_by_hash<E: SketchEntry + Copy>(entries: &mut Vec<E>) {
-    super::sort::sort_by_hash_key(entries, SketchEntry::hash);
+    sort_by_hash_key(entries, SketchEntry::hash);
 }
-
-#[cfg(feature = "tuple")]
-use crate::tuple::TupleEntry;
 
 #[cfg(feature = "tuple")]
 pub fn sort_niche_by_hash<S>(entries: &mut Vec<TupleEntry<S>>) {
@@ -190,7 +192,7 @@ pub fn sort_niche_by_hash<S>(entries: &mut Vec<TupleEntry<S>>) {
         }
     }
 
-    super::sort::with_bucket_starts(
+    with_bucket_starts(
         entries,
         SketchEntry::hash,
         |entries, starts, shift, mask| {

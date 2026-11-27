@@ -21,6 +21,8 @@ use std::hash::Hash;
 use crate::aod::hash_table::AodHashTable;
 use crate::aod::hash_table::AodIter;
 use crate::aod::policy::check_num_values;
+use crate::aod::serialization::deserialize_compact;
+use crate::aod::serialization::serialize_compact;
 use crate::common::NumStdDev;
 use crate::common::ResizeFactor;
 use crate::error::Error;
@@ -547,7 +549,7 @@ impl CompactArrayOfDoublesSketch {
     /// in `1..=127`. Values in `128..=255` can be read by DataSketches C++ and Go, but not by
     /// DataSketches Java. Empty sketches serialize with a zero seed hash.
     pub fn serialize(&self) -> Vec<u8> {
-        crate::aod::serialization::serialize_compact(self)
+        serialize_compact(self)
     }
 
     /// Deserializes a compact ArrayOfDoubles sketch using the default seed.
@@ -580,7 +582,7 @@ impl CompactArrayOfDoublesSketch {
     /// Returns `InvalidData` if the image is malformed, a non-empty image's seed hash does not
     /// match `seed`, or `seed` itself computes to the reserved zero seed hash.
     pub fn deserialize_with_seed(bytes: &[u8], seed: u64) -> Result<Self, Error> {
-        crate::aod::serialization::deserialize_compact(bytes, seed)
+        deserialize_compact(bytes, seed)
     }
 }
 

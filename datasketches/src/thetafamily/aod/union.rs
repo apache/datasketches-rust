@@ -21,6 +21,7 @@ use crate::aod::ArrayOfDoublesSketchView;
 use crate::aod::CompactArrayOfDoublesSketch;
 use crate::aod::hash_table::AodHashTable;
 use crate::aod::policy::check_num_values;
+use crate::aod::serialization::serialize_union;
 use crate::common::ResizeFactor;
 use crate::error::Error;
 use crate::error::ErrorKind;
@@ -212,7 +213,7 @@ impl ArrayOfDoublesUnion {
     /// # Ok::<(), datasketches::error::Error>(())
     /// ```
     pub fn serialize(&self, ordered: bool) -> Vec<u8> {
-        crate::aod::serialization::serialize_union(self, ordered)
+        serialize_union(self, ordered)
     }
 
     /// Resets the union to its initial empty state.
