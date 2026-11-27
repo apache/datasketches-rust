@@ -38,19 +38,20 @@ fn one_weighted_item_can_have_two_distinct_endpoint_representations() {
 
     assert_eq!(view.len(), 1);
     assert_eq!(view.total_weight(), 256);
-    let quantiles = view
-        .quantiles(&[0.0, 0.5, 1.0], SearchCriteria::Inclusive)
-        .unwrap()
-        .unwrap();
-    let bits: Vec<_> = quantiles.iter().map(|item| item.to_bits()).collect();
-    assert_eq!(
-        bits,
-        [
-            (-0.0_f64).to_bits(),
-            (-0.0_f64).to_bits(),
-            0.0_f64.to_bits()
-        ]
-    );
+    let ranks = [0.0, 0.5, 1.0];
+    let expected_bits = [
+        (-0.0_f64).to_bits(),
+        (-0.0_f64).to_bits(),
+        0.0_f64.to_bits(),
+    ];
+    for quantiles in [
+        sketch.quantiles(&ranks, SearchCriteria::Inclusive),
+        view.quantiles(&ranks, SearchCriteria::Inclusive),
+    ] {
+        let quantiles = quantiles.unwrap().unwrap();
+        let bits: Vec<_> = quantiles.iter().map(|item| item.to_bits()).collect();
+        assert_eq!(bits, expected_bits);
+    }
 }
 
 #[test]

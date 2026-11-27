@@ -43,9 +43,12 @@ use crate::codec::assert::insufficient_data;
 use crate::codec::family::Family;
 use crate::common::SearchCriteria;
 use crate::common::random::random_bit;
+use crate::common::sorted_view::SortedEntries;
 use crate::common::sorted_view::SortedView;
+use crate::common::sorted_view::pmf_from_cdf;
 use crate::common::sorted_view::rank;
 use crate::common::sorted_view::validate_rank;
+use crate::common::sorted_view::validate_split_points;
 use crate::error::Error;
 
 /// KLL sketch for estimating quantiles and ranks.
@@ -292,6 +295,14 @@ impl<T: Clone + Ord> KllSketch<T> {
         )
     }
 
+    fn sorted_entries(&self) -> SortedEntries<T> {
+        SortedEntries::new(
+            &self.levels,
+            self.is_level_zero_sorted,
+            self.min_item.as_ref().zip(self.max_item.as_ref()),
+        )
+    }
+
     /// Returns the quantile for the given normalized rank.
     ///
     /// Ranks `0.0` and `1.0` return the exact minimum and maximum items of the stream. Returns
@@ -312,7 +323,9 @@ impl<T: Clone + Ord> KllSketch<T> {
         if rank == 1.0 {
             return Ok(Some(self.max_item.as_ref().unwrap().clone()));
         }
-        Ok(self.sorted_view().quantile_at_valid_rank(rank, criteria))
+        Ok(Some(
+            self.sorted_entries().interior_quantile(rank, criteria),
+        ))
     }
 
     /// Returns approximate quantiles for the given normalized ranks.
@@ -332,7 +345,14 @@ impl<T: Clone + Ord> KllSketch<T> {
         ranks: &[f64],
         criteria: SearchCriteria,
     ) -> Result<Option<Vec<T>>, Error> {
-        self.sorted_view().quantiles(ranks, criteria)
+        ranks.iter().copied().try_for_each(validate_rank)?;
+        let Some(extrema) = self.min_item.as_ref().zip(self.max_item.as_ref()) else {
+            return Ok(None);
+        };
+        Ok(Some(
+            self.sorted_entries()
+                .quantiles_at_valid_ranks(ranks, criteria, extrema),
+        ))
     }
 
     /// Returns the approximate CDF for the given split points.
@@ -349,7 +369,14 @@ impl<T: Clone + Ord> KllSketch<T> {
         split_points: &[T],
         criteria: SearchCriteria,
     ) -> Result<Option<Vec<f64>>, Error> {
-        self.sorted_view().cdf(split_points, criteria)
+        validate_split_points(split_points)?;
+        if self.is_empty() {
+            return Ok(None);
+        }
+        Ok(Some(
+            self.sorted_entries()
+                .cdf_at_valid_split_points(split_points, criteria),
+        ))
     }
 
     /// Returns the approximate PMF for the given split points.
@@ -366,7 +393,7 @@ impl<T: Clone + Ord> KllSketch<T> {
         split_points: &[T],
         criteria: SearchCriteria,
     ) -> Result<Option<Vec<f64>>, Error> {
-        self.sorted_view().pmf(split_points, criteria)
+        Ok(self.cdf(split_points, criteria)?.map(pmf_from_cdf))
     }
 
     /// Returns an owned, sorted snapshot of the current sketch state.

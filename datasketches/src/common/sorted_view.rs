@@ -104,42 +104,14 @@ pub fn pmf_from_cdf(mut buckets: Vec<f64>) -> Vec<f64> {
     buckets
 }
 
-/// An owned snapshot of a sketch's weighted items in sorted order.
-/// Later updates to the sketch leave the snapshot unchanged.
 #[derive(Clone)]
-pub struct SortedView<T> {
-    entries: Vec<Entry<T>>,
+pub struct SortedEntries<T> {
+    vec: Vec<Entry<T>>,
     total_weight: u64,
-    // Ranks 0 and 1 return these original values even if a retained item compares equal.
-    // For example, +0.0 and -0.0 compare equal but have different bits.
-    extrema: Option<(T, T)>,
 }
 
-impl<T: fmt::Debug> fmt::Debug for SortedView<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let (min_item, max_item) = self.extrema.as_ref().map(|(min, max)| (min, max)).unzip();
-        f.debug_struct("SortedView")
-            .field("len", &self.entries.len())
-            .field("total_weight", &self.total_weight)
-            .field("min_item", &min_item)
-            .field("max_item", &max_item)
-            .finish()
-    }
-}
-
-#[cfg(feature = "quantiles")]
-impl<T> SortedView<T> {
-    pub(crate) fn estimated_size(&self) -> usize {
-        self.entries.capacity() * size_of::<Entry<T>>()
-    }
-}
-
-impl<T: Clone + Ord> SortedView<T> {
-    pub(crate) fn new(
-        levels: &[Vec<T>],
-        is_level_zero_sorted: bool,
-        extrema: Option<(&T, &T)>,
-    ) -> Self {
+impl<T: Clone + Ord> SortedEntries<T> {
+    pub fn new(levels: &[Vec<T>], is_level_zero_sorted: bool, extrema: Option<(&T, &T)>) -> Self {
         let mut runs = Vec::with_capacity(levels.len());
         for (level_index, level) in levels.iter().enumerate() {
             let weight = 1u64 << level_index;
@@ -183,15 +155,129 @@ impl<T: Clone + Ord> SortedView<T> {
             entry.cumulative_weight = total_weight;
         }
         Self {
-            entries,
+            vec: entries,
             total_weight,
+        }
+    }
+
+    fn rank(&self, item: &T, criteria: SearchCriteria) -> Option<f64> {
+        if self.vec.is_empty() {
+            return None;
+        }
+        let index = if criteria == SearchCriteria::Inclusive {
+            self.vec.partition_point(|entry| entry.item <= *item)
+        } else {
+            self.vec.partition_point(|entry| entry.item < *item)
+        };
+
+        let rank_weight = self.vec[..index]
+            .last()
+            .map_or(0, |entry| entry.cumulative_weight);
+        Some(rank_weight as f64 / self.total_weight as f64)
+    }
+
+    pub fn interior_quantile(&self, rank: f64, criteria: SearchCriteria) -> T {
+        let target = rank * self.total_weight as f64;
+        let index = match criteria {
+            SearchCriteria::Inclusive => {
+                let weight = target.ceil() as u64;
+                self.vec
+                    .partition_point(|entry| entry.cumulative_weight < weight)
+            }
+            SearchCriteria::Exclusive => {
+                let weight = target as u64;
+                self.vec
+                    .partition_point(|entry| entry.cumulative_weight <= weight)
+            }
+        };
+        self.vec[index.min(self.vec.len() - 1)].item.clone()
+    }
+
+    fn quantile_at_valid_rank(
+        &self,
+        rank: f64,
+        criteria: SearchCriteria,
+        (min_item, max_item): (&T, &T),
+    ) -> T {
+        if rank == 0.0 {
+            return min_item.clone();
+        }
+        if rank == 1.0 {
+            return max_item.clone();
+        }
+        self.interior_quantile(rank, criteria)
+    }
+
+    pub fn quantiles_at_valid_ranks(
+        &self,
+        ranks: &[f64],
+        criteria: SearchCriteria,
+        extrema: (&T, &T),
+    ) -> Vec<T> {
+        ranks
+            .iter()
+            .map(|&rank| self.quantile_at_valid_rank(rank, criteria, extrema))
+            .collect()
+    }
+
+    pub fn cdf_at_valid_split_points(
+        &self,
+        split_points: &[T],
+        criteria: SearchCriteria,
+    ) -> Vec<f64> {
+        let mut ranks = Vec::with_capacity(split_points.len() + 1);
+        for item in split_points {
+            ranks.push(self.rank(item, criteria).expect("checked non-empty view"));
+        }
+        ranks.push(1.0);
+        ranks
+    }
+}
+
+/// An owned snapshot of a sketch's weighted items in sorted order.
+/// Later updates to the sketch leave the snapshot unchanged.
+#[derive(Clone)]
+pub struct SortedView<T> {
+    entries: SortedEntries<T>,
+    // Ranks 0 and 1 return these original values even if a retained item compares equal.
+    // For example, +0.0 and -0.0 compare equal but have different bits.
+    extrema: Option<(T, T)>,
+}
+
+impl<T: fmt::Debug> fmt::Debug for SortedView<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let (min_item, max_item) = self.extrema.as_ref().map(|(min, max)| (min, max)).unzip();
+        f.debug_struct("SortedView")
+            .field("len", &self.entries.vec.len())
+            .field("total_weight", &self.entries.total_weight)
+            .field("min_item", &min_item)
+            .field("max_item", &max_item)
+            .finish()
+    }
+}
+
+#[cfg(feature = "quantiles")]
+impl<T> SortedView<T> {
+    pub(crate) fn estimated_size(&self) -> usize {
+        self.entries.vec.capacity() * size_of::<Entry<T>>()
+    }
+}
+
+impl<T: Clone + Ord> SortedView<T> {
+    pub(crate) fn new(
+        levels: &[Vec<T>],
+        is_level_zero_sorted: bool,
+        extrema: Option<(&T, &T)>,
+    ) -> Self {
+        Self {
+            entries: SortedEntries::new(levels, is_level_zero_sorted, extrema),
             extrema: extrema.map(|(min, max)| (min.clone(), max.clone())),
         }
     }
 
     /// Returns whether the view contains no entries.
     pub fn is_empty(&self) -> bool {
-        self.entries.is_empty()
+        self.entries.vec.is_empty()
     }
 
     /// Returns the number of weighted entries in the view.
@@ -199,56 +285,27 @@ impl<T: Clone + Ord> SortedView<T> {
     /// The view includes both stream extrema, so it can have up to two more entries than the sketch
     /// retains.
     pub fn len(&self) -> usize {
-        self.entries.len()
+        self.entries.vec.len()
     }
 
     /// Returns the total stream weight represented by the view.
     pub fn total_weight(&self) -> u64 {
-        self.total_weight
+        self.entries.total_weight
     }
 
     /// Returns the approximate normalized rank of `item`.
     ///
     /// Returns `None` if the view is empty.
     pub fn rank(&self, item: &T, criteria: SearchCriteria) -> Option<f64> {
-        if self.is_empty() {
-            return None;
-        }
-        let index = if criteria == SearchCriteria::Inclusive {
-            self.entries.partition_point(|entry| entry.item <= *item)
-        } else {
-            self.entries.partition_point(|entry| entry.item < *item)
-        };
-
-        let rank_weight = self.entries[..index]
-            .last()
-            .map_or(0, |entry| entry.cumulative_weight);
-        Some(rank_weight as f64 / self.total_weight as f64)
+        self.entries.rank(item, criteria)
     }
 
     pub(crate) fn quantile_at_valid_rank(&self, rank: f64, criteria: SearchCriteria) -> Option<T> {
         let (min_item, max_item) = self.extrema.as_ref()?;
-        if rank == 0.0 {
-            return Some(min_item.clone());
-        }
-        if rank == 1.0 {
-            return Some(max_item.clone());
-        }
-
-        let target = rank * self.total_weight as f64;
-        let index = match criteria {
-            SearchCriteria::Inclusive => {
-                let weight = target.ceil() as u64;
-                self.entries
-                    .partition_point(|entry| entry.cumulative_weight < weight)
-            }
-            SearchCriteria::Exclusive => {
-                let weight = target as u64;
-                self.entries
-                    .partition_point(|entry| entry.cumulative_weight <= weight)
-            }
-        };
-        Some(self.entries[index.min(self.entries.len() - 1)].item.clone())
+        Some(
+            self.entries
+                .quantile_at_valid_rank(rank, criteria, (min_item, max_item)),
+        )
     }
 
     /// Returns the approximate quantile for `rank`.
@@ -269,13 +326,9 @@ impl<T: Clone + Ord> SortedView<T> {
         ranks: &[f64],
         criteria: SearchCriteria,
     ) -> Vec<T> {
-        ranks
-            .iter()
-            .map(|&rank| {
-                self.quantile_at_valid_rank(rank, criteria)
-                    .expect("checked non-empty view")
-            })
-            .collect()
+        let (min_item, max_item) = self.extrema.as_ref().expect("checked non-empty view");
+        self.entries
+            .quantiles_at_valid_ranks(ranks, criteria, (min_item, max_item))
     }
 
     /// Returns approximate quantiles for all `ranks`.
@@ -304,12 +357,8 @@ impl<T: Clone + Ord> SortedView<T> {
         split_points: &[T],
         criteria: SearchCriteria,
     ) -> Vec<f64> {
-        let mut ranks = Vec::with_capacity(split_points.len() + 1);
-        for item in split_points {
-            ranks.push(self.rank(item, criteria).expect("checked non-empty view"));
-        }
-        ranks.push(1.0);
-        ranks
+        self.entries
+            .cdf_at_valid_split_points(split_points, criteria)
     }
 
     /// Returns the approximate cumulative distribution over `split_points`.
