@@ -272,3 +272,54 @@ fn unsorted_uncollapsed_stores_match_sorted_across_queries_and_subsequent_update
         );
     }
 }
+
+#[test]
+fn batch_quantiles_match_individual_quantile_bitwise_across_unsorted_and_duplicate_ranks() {
+    let ranks = [
+        1.0,
+        0.5,
+        0.0,
+        0.75,
+        0.25,
+        f64::from_bits(1),
+        0.5,
+        1.0 - f64::EPSILON,
+        0.25,
+        0.75,
+        0.0,
+        1.0,
+    ];
+    let mut sorted = ranks;
+    sorted.sort_by(f64::total_cmp);
+
+    // The buckets for -1.0 and 1.0 have representatives strictly inside these extrema.
+    let mixed: &[f64] = &[-1.0, -0.1, -0.01, 0.0, 0.01, 0.1, 1.0];
+    for (budget, values, weight) in [
+        (512, mixed, 3),
+        (512, &[-100.0, -10.0, -1.0], 3),
+        (512, &[1.0, 10.0, 100.0], 3),
+        (512, &[0.0], 1),
+        (4, mixed, 3),
+        (512, &[-1.0, 0.0, 1.0], u64::MAX / 3),
+    ] {
+        let mut sketch = UddSketch::new(budget, 0.01).unwrap();
+        for &value in values {
+            sketch.update_with_weight(value, weight);
+        }
+        if budget == 4 {
+            assert!(sketch.num_collapses() > 0);
+        }
+        for query in [&ranks, &sorted] {
+            let batch = sketch.quantiles(query).unwrap().unwrap();
+            assert_eq!(batch.len(), query.len());
+            for (&estimate, &rank) in batch.iter().zip(query) {
+                let single = sketch.quantile(rank).unwrap().unwrap();
+                assert_eq!(
+                    estimate.to_bits(),
+                    single.to_bits(),
+                    "rank={rank}, values={values:?}, weight={weight}, budget={budget}"
+                );
+            }
+        }
+    }
+}

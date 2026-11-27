@@ -406,12 +406,39 @@ impl UddSketch {
         if self.is_empty() {
             return Ok(None);
         }
-        Ok(Some(
-            ranks
+        if ranks.is_empty() {
+            return Ok(Some(Vec::new()));
+        }
+        if ranks.len() == 1 {
+            return Ok(Some(vec![self.quantile_unchecked(ranks[0])]));
+        }
+        if self.min == self.max {
+            return Ok(Some(vec![self.min; ranks.len()]));
+        }
+
+        let mut out = vec![0.0; ranks.len()];
+        // Endpoint-only queries can leave the stores' lazy sorted caches untouched.
+        if ranks.iter().any(|&rank| rank > 0.0 && rank < 1.0) {
+            let targets = ranks
                 .iter()
-                .map(|&rank| self.quantile_unchecked(rank))
-                .collect(),
-        ))
+                .enumerate()
+                .map(|(pos, &rank)| (lower_quantile_index(rank, self.total_weight), pos));
+            if ranks.windows(2).all(|pair| pair[0] <= pair[1]) {
+                self.resolve_sorted_targets(targets, &mut out);
+            } else {
+                let mut indexed: Vec<(u64, usize)> = targets.collect();
+                indexed.sort_unstable_by_key(|&(target, _)| target);
+                self.resolve_sorted_targets(indexed.into_iter(), &mut out);
+            }
+        }
+        for (i, &rank) in ranks.iter().enumerate() {
+            if rank == 0.0 {
+                out[i] = self.min;
+            } else if rank == 1.0 {
+                out[i] = self.max;
+            }
+        }
+        Ok(Some(out))
     }
 
     /// Serializes this sketch into the DataSketches UDDSketch binary format.
@@ -487,6 +514,38 @@ impl UddSketch {
             self.neg.collapse(1);
             self.pos.collapse(1);
             self.num_collapses += 1;
+        }
+    }
+
+    fn resolve_sorted_targets(&self, targets: impl Iterator<Item = (u64, usize)>, out: &mut [f64]) {
+        let neg = self.neg.sorted_buckets().iter().rev();
+        let pos = self.pos.sorted_buckets().iter();
+        let mut buckets = neg
+            .map(|b| (b.count, Some((true, b.key))))
+            .chain(std::iter::once((self.zero_weight, None)))
+            .chain(pos.map(|b| (b.count, Some((false, b.key)))));
+
+        // The estimate stays valid until the exclusive end of the current bucket.
+        let mut end = 0;
+        let mut estimate = 0.0;
+        for (target, out_pos) in targets {
+            if target >= end {
+                let (_, key) = buckets
+                    .find(|(count, _)| {
+                        end += count;
+                        target < end
+                    })
+                    .expect("target must be below the total weight");
+                estimate = match key {
+                    Some((is_neg, key)) => {
+                        let magnitude = self.mapping.value_at_level(key, self.num_collapses);
+                        let value = if is_neg { -magnitude } else { magnitude };
+                        value.clamp(self.min, self.max)
+                    }
+                    None => 0.0,
+                };
+            }
+            out[out_pos] = estimate;
         }
     }
 
