@@ -23,7 +23,6 @@ pub use self::decode::SketchSlice;
 pub use self::encode::SketchBytes;
 
 #[cfg(any(
-    feature = "aod",
     feature = "bloom",
     feature = "countmin",
     feature = "cpc",
@@ -43,7 +42,6 @@ pub use self::encode::SketchBytes;
 pub(crate) mod assert;
 
 #[cfg(any(
-    feature = "aod",
     feature = "bloom",
     feature = "countmin",
     feature = "cpc",

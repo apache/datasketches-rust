@@ -54,7 +54,7 @@ impl Family {
     };
 
     /// Tuple Sketch for cardinality estimation with per-key summaries.
-    #[cfg(any(feature = "aod", feature = "tuple"))]
+    #[cfg(feature = "tuple")]
     pub const TUPLE: Family = Family {
         id: 9,
         name: "TUPLE",

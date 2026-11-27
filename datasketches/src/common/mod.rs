@@ -29,7 +29,6 @@ pub use self::search_criteria::SearchCriteria;
 #[cfg(any(feature = "cpc", feature = "hll"))]
 pub(crate) mod inv_pow2;
 #[cfg(any(
-    feature = "aod",
     feature = "density",
     feature = "kll",
     feature = "req",

@@ -338,7 +338,6 @@ pub fn upper_bound(
 }
 
 /// Computes an approximate lower bound for an unknown binomial proportion.
-#[cfg(any(test, feature = "theta", feature = "tuple"))]
 pub fn approximate_lower_bound_on_p(n: u64, k: u64, num_std_devs: f64) -> Result<f64, Error> {
     check_proportion_inputs(n, k)?;
     if n == 0 || k == 0 {
@@ -360,7 +359,6 @@ pub fn approximate_lower_bound_on_p(n: u64, k: u64, num_std_devs: f64) -> Result
 }
 
 /// Computes an approximate upper bound for an unknown binomial proportion.
-#[cfg(any(test, feature = "theta", feature = "tuple"))]
 pub fn approximate_upper_bound_on_p(n: u64, k: u64, num_std_devs: f64) -> Result<f64, Error> {
     check_proportion_inputs(n, k)?;
     if n == 0 || k == n {
@@ -381,7 +379,6 @@ pub fn approximate_upper_bound_on_p(n: u64, k: u64, num_std_devs: f64) -> Result
     }
 }
 
-#[cfg(any(test, feature = "theta", feature = "tuple"))]
 fn check_proportion_inputs(n: u64, k: u64) -> Result<(), Error> {
     if k > n {
         return Err(Error::invalid_argument(format!(
@@ -391,17 +388,14 @@ fn check_proportion_inputs(n: u64, k: u64) -> Result<(), Error> {
     Ok(())
 }
 
-#[cfg(any(test, feature = "theta", feature = "tuple"))]
 fn delta_of_num_stdevs(kappa: f64) -> f64 {
     normal_cdf(-kappa)
 }
 
-#[cfg(any(test, feature = "theta", feature = "tuple"))]
 fn normal_cdf(x: f64) -> f64 {
     0.5 * (1.0 + erf(x / 2.0_f64.sqrt()))
 }
 
-#[cfg(any(test, feature = "theta", feature = "tuple"))]
 fn erf(x: f64) -> f64 {
     if x < 0.0 {
         -erf_of_nonneg(-x)
@@ -410,7 +404,6 @@ fn erf(x: f64) -> f64 {
     }
 }
 
-#[cfg(any(test, feature = "theta", feature = "tuple"))]
 fn erf_of_nonneg(x: f64) -> f64 {
     let a1 = 0.0705230784;
     let a2 = 0.0422820123;
@@ -431,7 +424,6 @@ fn erf_of_nonneg(x: f64) -> f64 {
     1.0 - (1.0 / sum16)
 }
 
-#[cfg(any(test, feature = "theta", feature = "tuple"))]
 fn abramowitz_stegun_formula_26p5p22(a: f64, b: f64, yp: f64) -> f64 {
     let b2m1 = (2.0 * b) - 1.0;
     let a2m1 = (2.0 * a) - 1.0;
@@ -445,22 +437,18 @@ fn abramowitz_stegun_formula_26p5p22(a: f64, b: f64, yp: f64) -> f64 {
     a / (a + (b * (2.0 * w).exp()))
 }
 
-#[cfg(any(test, feature = "theta", feature = "tuple"))]
 fn exact_upper_bound_on_p_k_eq_zero(n: u64, delta: f64) -> f64 {
     1.0 - delta.powf(1.0 / n as f64)
 }
 
-#[cfg(any(test, feature = "theta", feature = "tuple"))]
 fn exact_lower_bound_on_p_k_eq_n(n: u64, delta: f64) -> f64 {
     delta.powf(1.0 / n as f64)
 }
 
-#[cfg(any(test, feature = "theta", feature = "tuple"))]
 fn exact_lower_bound_on_p_k_eq_1(n: u64, delta: f64) -> f64 {
     1.0 - (1.0 - delta).powf(1.0 / n as f64)
 }
 
-#[cfg(any(test, feature = "theta", feature = "tuple"))]
 fn exact_upper_bound_on_p_k_eq_minusone(n: u64, delta: f64) -> f64 {
     (1.0 - delta).powf(1.0 / n as f64)
 }

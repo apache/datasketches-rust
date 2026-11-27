@@ -110,7 +110,6 @@ impl<E> CompactSketchState<E> {
     }
 
     /// Returns the preamble size in 8-byte words for uncompressed compact Theta and Tuple images.
-    #[cfg(any(feature = "theta", feature = "tuple"))]
     pub fn uncompressed_preamble_longs(&self) -> u8 {
         if self.is_empty() {
             1
@@ -252,10 +251,10 @@ pub fn sort_copy_by_hash<E: SketchEntry + Copy>(entries: &mut Vec<E>) {
     });
 }
 
-#[cfg(any(feature = "aod", feature = "tuple"))]
-use crate::thetafamily::tuple::TupleEntry;
+#[cfg(feature = "tuple")]
+use crate::tuple::TupleEntry;
 
-#[cfg(any(feature = "aod", feature = "tuple"))]
+#[cfg(feature = "tuple")]
 pub fn sort_niche_by_hash<S>(entries: &mut Vec<TupleEntry<S>>) {
     const {
         if size_of::<TupleEntry<S>>() != size_of::<Option<TupleEntry<S>>>() {

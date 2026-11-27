@@ -29,14 +29,12 @@ use crate::error::Error;
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::thetafamily::common::constants::DEFAULT_LG_K;
 use crate::thetafamily::common::union::UnionState;
-use crate::thetafamily::tuple::hash_table::TupleEntry;
-use crate::thetafamily::tuple::policy::SummaryCombinePolicy;
-#[cfg(feature = "tuple")]
-use crate::thetafamily::tuple::serialization::TupleSummaryValue;
-#[cfg(feature = "tuple")]
-use crate::thetafamily::tuple::serialization::serialize_compact_uncompressed;
-use crate::thetafamily::tuple::sketch::CompactTupleSketch;
-use crate::thetafamily::tuple::sketch::TupleSketchView;
+use crate::tuple::hash_table::TupleEntry;
+use crate::tuple::policy::SummaryCombinePolicy;
+use crate::tuple::serialization::TupleSummaryValue;
+use crate::tuple::serialization::serialize_compact_uncompressed;
+use crate::tuple::sketch::CompactTupleSketch;
+use crate::tuple::sketch::TupleSketchView;
 
 /// Union (set OR) of Tuple sketches.
 ///
@@ -45,8 +43,8 @@ use crate::thetafamily::tuple::sketch::TupleSketchView;
 /// [`DefaultUnionPolicy`](crate::tuple::DefaultUnionPolicy) can be used.
 ///
 /// # Examples
-#[cfg_attr(feature = "tuple", doc = "```")]
-#[cfg_attr(not(feature = "tuple"), doc = "```ignore")]
+///
+/// ```
 /// use datasketches::tuple::DefaultUnionPolicy;
 /// use datasketches::tuple::DefaultUpdatePolicy;
 /// use datasketches::tuple::TupleSketchBuilder;
@@ -127,8 +125,8 @@ where
     /// implement [`Clone`].
     ///
     /// # Examples
-    #[cfg_attr(feature = "tuple", doc = "```")]
-    #[cfg_attr(not(feature = "tuple"), doc = "```ignore")]
+    ///
+    /// ```
     /// use datasketches::tuple::CompactTupleSketch;
     /// use datasketches::tuple::DefaultUnionPolicy;
     /// use datasketches::tuple::DefaultUpdatePolicy;
@@ -149,7 +147,6 @@ where
     /// let result = CompactTupleSketch::<u64>::deserialize(&bytes).unwrap();
     /// assert_eq!(result.num_retained(), 1);
     /// ```
-    #[cfg(feature = "tuple")]
     pub fn serialize(&self, ordered: bool) -> Vec<u8>
     where
         P::Summary: TupleSummaryValue,
@@ -163,7 +160,6 @@ where
     }
 
     /// Returns an estimate of the union's memory usage in bytes.
-    #[cfg(feature = "tuple")]
     pub fn estimated_size(&self) -> usize {
         self.state.estimated_size()
     }
@@ -195,8 +191,8 @@ where
     /// Creates a builder with the given combine policy.
     ///
     /// # Examples
-    #[cfg_attr(feature = "tuple", doc = "```")]
-    #[cfg_attr(not(feature = "tuple"), doc = "```ignore")]
+    ///
+    /// ```
     /// use datasketches::tuple::DefaultUnionPolicy;
     /// use datasketches::tuple::TupleUnionBuilder;
     ///

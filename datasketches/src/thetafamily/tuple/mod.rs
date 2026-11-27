@@ -40,8 +40,8 @@
 //! These encodings apply to keys. Skip empty string and byte-slice keys before updating the sketch.
 //!
 //! # Examples
-#![cfg_attr(feature = "tuple", doc = "```")]
-#![cfg_attr(not(feature = "tuple"), doc = "```ignore")]
+//!
+//! ```
 //! use datasketches::tuple::DefaultUpdatePolicy;
 //! use datasketches::tuple::TupleSketchBuilder;
 //!
@@ -54,10 +54,8 @@
 mod a_not_b;
 mod hash_table;
 mod intersection;
-#[cfg(feature = "tuple")]
 mod jaccard_similarity;
 mod policy;
-#[cfg(feature = "tuple")]
 mod serialization;
 mod sketch;
 mod union;
@@ -65,16 +63,12 @@ mod union;
 pub use self::a_not_b::TupleANotB;
 pub use self::hash_table::TupleEntry;
 pub use self::intersection::TupleIntersection;
-#[cfg(feature = "tuple")]
 pub use self::jaccard_similarity::TupleJaccardSimilarity;
-#[cfg(feature = "tuple")]
 pub use self::policy::DefaultUnionPolicy;
-#[cfg(feature = "tuple")]
 pub use self::policy::DefaultUpdatePolicy;
 pub use self::policy::SummaryCombinePolicy;
 pub use self::policy::SummaryPolicy;
 pub use self::policy::SummaryUpdatePolicy;
-#[cfg(feature = "tuple")]
 pub use self::serialization::TupleSummaryValue;
 pub use self::sketch::CompactTupleSketch;
 pub use self::sketch::TupleSketch;

@@ -16,9 +16,9 @@
 // under the License.
 
 use crate::error::Error;
-use crate::thetafamily::tuple::SummaryCombinePolicy;
-use crate::thetafamily::tuple::SummaryPolicy;
-use crate::thetafamily::tuple::SummaryUpdatePolicy;
+use crate::tuple::SummaryCombinePolicy;
+use crate::tuple::SummaryPolicy;
+use crate::tuple::SummaryUpdatePolicy;
 
 /// Combines the value arrays of keys shared by two ArrayOfDoubles sketches.
 pub trait ArrayOfDoublesCombiner {

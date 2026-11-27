@@ -22,7 +22,7 @@ use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::hash::check_seed_hash;
 use crate::hash::compute_seed_hash;
-use crate::thetafamily::tuple::TupleANotB;
+use crate::tuple::TupleANotB;
 
 /// Set difference operator (`A and not B`) for ArrayOfDoubles sketches.
 ///

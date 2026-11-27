@@ -23,7 +23,7 @@ use crate::error::ErrorKind;
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::hash::compute_seed_hash;
 use crate::thetafamily::common::jaccard_similarity;
-use crate::thetafamily::tuple::TupleSketchView;
+use crate::tuple::TupleSketchView;
 
 /// Jaccard similarity operator for Tuple sketches.
 ///

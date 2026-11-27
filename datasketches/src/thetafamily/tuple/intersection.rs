@@ -28,13 +28,12 @@
 use std::fmt;
 
 use crate::error::Error;
-#[cfg(feature = "tuple")]
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::thetafamily::common::intersection::IntersectionState;
-use crate::thetafamily::tuple::hash_table::TupleEntry;
-use crate::thetafamily::tuple::policy::SummaryCombinePolicy;
-use crate::thetafamily::tuple::sketch::CompactTupleSketch;
-use crate::thetafamily::tuple::sketch::TupleSketchView;
+use crate::tuple::hash_table::TupleEntry;
+use crate::tuple::policy::SummaryCombinePolicy;
+use crate::tuple::sketch::CompactTupleSketch;
+use crate::tuple::sketch::TupleSketchView;
 
 /// Stateful intersection operator for Tuple sketches.
 ///
@@ -46,8 +45,8 @@ use crate::thetafamily::tuple::sketch::TupleSketchView;
 /// [`update`](Self::update).
 ///
 /// # Examples
-#[cfg_attr(feature = "tuple", doc = "```")]
-#[cfg_attr(not(feature = "tuple"), doc = "```ignore")]
+///
+/// ```
 /// use datasketches::tuple::DefaultUpdatePolicy;
 /// use datasketches::tuple::SummaryCombinePolicy;
 /// use datasketches::tuple::SummaryPolicy;
@@ -105,7 +104,6 @@ where
     P: SummaryCombinePolicy,
 {
     /// Creates a new intersection operator with the default seed and the given combine `policy`.
-    #[cfg(feature = "tuple")]
     pub fn new(policy: P) -> Self {
         Self::with_seed(policy, DEFAULT_UPDATE_SEED).unwrap()
     }
@@ -148,7 +146,6 @@ where
     }
 
     /// Returns an estimate of the intersection's memory usage in bytes.
-    #[cfg(feature = "tuple")]
     pub fn estimated_size(&self) -> usize {
         self.state.estimated_size()
     }

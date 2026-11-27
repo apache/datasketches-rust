@@ -27,7 +27,7 @@ use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::hash::check_seed_hash;
 use crate::hash::compute_seed_hash;
-use crate::thetafamily::tuple::TupleIntersection;
+use crate::tuple::TupleIntersection;
 
 /// Stateful intersection operator for ArrayOfDoubles sketches.
 ///

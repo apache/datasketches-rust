@@ -200,7 +200,6 @@ where
     }
 
     /// Returns an estimate of memory usage in bytes.
-    #[cfg(any(feature = "theta", feature = "tuple"))]
     pub fn estimated_size(&self) -> usize {
         size_of::<P>() + self.table.estimated_size()
     }

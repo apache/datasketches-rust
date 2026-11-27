@@ -20,5 +20,5 @@ pub mod aod;
 mod common;
 #[cfg(feature = "theta")]
 pub mod theta;
-#[cfg(any(feature = "aod", feature = "tuple"))]
+#[cfg(feature = "tuple")]
 pub mod tuple;

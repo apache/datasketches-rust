@@ -92,7 +92,7 @@ pub mod kll;
 pub mod req;
 #[cfg(feature = "tdigest")]
 pub mod tdigest;
-#[cfg(any(feature = "aod", feature = "theta", feature = "tuple"))]
+#[cfg(any(feature = "theta", feature = "tuple"))]
 mod thetafamily;
 #[cfg(feature = "aod")]
 pub use self::thetafamily::aod;

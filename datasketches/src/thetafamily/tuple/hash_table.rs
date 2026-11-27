@@ -23,7 +23,7 @@ use crate::thetafamily::common::hash_table::SketchHashTable;
 use crate::thetafamily::common::intersection::IntersectionMergePolicy;
 use crate::thetafamily::common::sketch_state::sort_niche_by_hash;
 use crate::thetafamily::common::union::UnionMergePolicy;
-use crate::thetafamily::tuple::SummaryCombinePolicy;
+use crate::tuple::SummaryCombinePolicy;
 
 /// A retained entry in a Tuple sketch: a hash key together with its associated summary.
 #[derive(Debug, Clone)]

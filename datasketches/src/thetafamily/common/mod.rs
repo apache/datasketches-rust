@@ -22,7 +22,6 @@ pub(super) mod binomial_bounds;
 pub(super) mod constants;
 pub(super) mod hash_table;
 pub(super) mod intersection;
-#[cfg(any(feature = "theta", feature = "tuple"))]
 pub(super) mod jaccard_similarity;
 pub(super) mod sketch_state;
 pub(super) mod union;

@@ -24,8 +24,8 @@ use crate::aod::policy::check_num_values;
 use crate::aod::policy::validate_num_values;
 use crate::common::ResizeFactor;
 use crate::error::Error;
-use crate::thetafamily::tuple::TupleUnion;
-use crate::thetafamily::tuple::TupleUnionBuilder;
+use crate::tuple::TupleUnion;
+use crate::tuple::TupleUnionBuilder;
 
 /// Union of ArrayOfDoubles sketches.
 ///
