@@ -18,11 +18,11 @@
 use std::hash::Hash;
 use std::num::NonZeroU64;
 
-use crate::thetafamily::common::SketchEntry;
-use crate::thetafamily::common::hash_table::SketchHashTable;
-use crate::thetafamily::common::intersection::IntersectionMergePolicy;
-use crate::thetafamily::common::sketch_state::sort_niche_by_hash;
-use crate::thetafamily::common::union::UnionMergePolicy;
+use crate::thetafamily::entry::SketchEntry;
+use crate::thetafamily::entry::hash_table::SketchHashTable;
+use crate::thetafamily::entry::intersection::IntersectionMergePolicy;
+use crate::thetafamily::entry::sketch_state::sort_niche_by_hash;
+use crate::thetafamily::entry::union::UnionMergePolicy;
 use crate::tuple::SummaryCombinePolicy;
 
 /// A retained entry in a Tuple sketch: a hash key together with its associated summary.

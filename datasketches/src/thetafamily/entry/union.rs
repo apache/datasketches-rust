@@ -21,12 +21,12 @@ use crate::common::ResizeFactor;
 use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::hash::check_seed_hash;
-use crate::thetafamily::common::EntrySketch;
-use crate::thetafamily::common::SketchEntry;
 use crate::thetafamily::common::constants::MAX_THETA;
-use crate::thetafamily::common::hash_table::SketchHashTable;
-use crate::thetafamily::common::sketch_state::CompactSketchState;
-use crate::thetafamily::common::sketch_state::ThetaFamilySketchMetadata;
+use crate::thetafamily::entry::EntrySketch;
+use crate::thetafamily::entry::SketchEntry;
+use crate::thetafamily::entry::hash_table::SketchHashTable;
+use crate::thetafamily::entry::sketch_state::CompactSketchState;
+use crate::thetafamily::entry::sketch_state::ThetaFamilySketchMetadata;
 
 /// Merges an incoming entry into an existing entry with the same hash.
 pub trait UnionMergePolicy<E> {

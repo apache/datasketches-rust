@@ -42,18 +42,18 @@ use crate::theta::serialization;
 use crate::theta::serialization::V2_PREAMBLE_EMPTY;
 use crate::theta::serialization::V2_PREAMBLE_ESTIMATE;
 use crate::theta::serialization::V2_PREAMBLE_PRECISE;
-use crate::thetafamily::common::EntrySketch;
-use crate::thetafamily::common::KeySketch;
-use crate::thetafamily::common::SketchEntry;
 use crate::thetafamily::common::binomial_bounds;
 use crate::thetafamily::common::constants::DEFAULT_LG_K;
 use crate::thetafamily::common::constants::FLAGS_IS_EMPTY;
 use crate::thetafamily::common::constants::FLAGS_IS_ORDERED;
 use crate::thetafamily::common::constants::MAX_THETA;
-use crate::thetafamily::common::hash_table::SketchHashTable;
-use crate::thetafamily::common::hash_table::SketchHashTableIter;
-use crate::thetafamily::common::sketch_state::CompactSketchState;
-use crate::thetafamily::common::sketch_state::ThetaFamilySketchMetadata;
+use crate::thetafamily::entry::EntrySketch;
+use crate::thetafamily::entry::KeySketch;
+use crate::thetafamily::entry::SketchEntry;
+use crate::thetafamily::entry::hash_table::SketchHashTable;
+use crate::thetafamily::entry::hash_table::SketchHashTableIter;
+use crate::thetafamily::entry::sketch_state::CompactSketchState;
+use crate::thetafamily::entry::sketch_state::ThetaFamilySketchMetadata;
 
 /// Read-only view for Theta sketches.
 ///

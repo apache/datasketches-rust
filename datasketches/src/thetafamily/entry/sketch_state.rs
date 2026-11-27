@@ -15,11 +15,11 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use crate::thetafamily::common::SketchEntry;
 use crate::thetafamily::common::constants::MAX_THETA;
 use crate::thetafamily::common::sort::sort_by_hash_key;
 #[cfg(feature = "tuple")]
 use crate::thetafamily::common::sort::with_bucket_starts;
+use crate::thetafamily::entry::SketchEntry;
 #[cfg(feature = "tuple")]
 use crate::tuple::TupleEntry;
 

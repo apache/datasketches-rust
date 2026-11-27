@@ -18,9 +18,9 @@
 use std::hash::Hash;
 use std::num::NonZeroU64;
 
-use crate::thetafamily::common::SketchEntry;
-use crate::thetafamily::common::hash_table::SketchHashTable;
-use crate::thetafamily::common::sketch_state::sort_copy_by_hash;
+use crate::thetafamily::entry::SketchEntry;
+use crate::thetafamily::entry::hash_table::SketchHashTable;
+use crate::thetafamily::entry::sketch_state::sort_copy_by_hash;
 
 /// Specific hash table for theta sketch
 ///

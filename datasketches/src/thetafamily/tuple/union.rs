@@ -28,7 +28,7 @@ use crate::common::ResizeFactor;
 use crate::error::Error;
 use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::thetafamily::common::constants::DEFAULT_LG_K;
-use crate::thetafamily::common::union::UnionState;
+use crate::thetafamily::entry::union::UnionState;
 use crate::tuple::hash_table::TupleEntry;
 use crate::tuple::policy::SummaryCombinePolicy;
 use crate::tuple::serialization::TupleSummaryValue;
