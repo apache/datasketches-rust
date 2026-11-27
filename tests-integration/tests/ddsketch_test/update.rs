@@ -297,4 +297,55 @@ fn fractional_weights_validate_inputs_and_preserve_state_on_panic() {
     assert!(panicked.is_err());
     assert!(near_max.total_weight().is_finite());
     assert_eq!(near_max.total_weight(), f64::MAX);
+
+    // Partial bin collapse near `f64::MAX` must not let `f64` non-associativity produce `+Inf`
+    // bucket weights while `total_weight` remains finite. Place each sample at the center of
+    // consecutive logarithmic buckets `0..=4` so `values[3]` collapses `0` into `1` (`0.6 * u`)
+    // and `values[4]` collapses `1` (`0.6 * u`) into `2` (`f64::MAX`).
+    let gamma = (1.0 + 0.01_f64) / (1.0 - 0.01_f64);
+    let bucket_center = |k: i32| gamma.powf(f64::from(k) + 0.5);
+    for (store, values) in [
+        (
+            StoreKind::CollapsingLowestDense { max_num_bins: 3 },
+            [
+                bucket_center(0),
+                bucket_center(1),
+                bucket_center(2),
+                bucket_center(3),
+                bucket_center(4),
+            ],
+        ),
+        (
+            StoreKind::CollapsingHighestDense { max_num_bins: 3 },
+            [
+                bucket_center(4),
+                bucket_center(3),
+                bucket_center(2),
+                bucket_center(1),
+                bucket_center(0),
+            ],
+        ),
+    ] {
+        let mut collapsing = DdSketchBuilder::new(0.01)
+            .mapping(MappingKind::Logarithmic)
+            .store(store)
+            .build::<f64>()
+            .unwrap();
+        // `f64::MAX + 0.3 * max_ulp == f64::MAX`, whereas `0.3 * max_ulp + 0.3 * max_ulp == 0.6 *
+        // max_ulp` overflows when added to `f64::MAX` during partial collapse.
+        collapsing.update_with_weight(values[2], f64::MAX);
+        collapsing.update_with_weight(values[0], 0.3 * max_ulp);
+        collapsing.update_with_weight(values[1], 0.3 * max_ulp);
+        collapsing.update_with_weight(values[3], 1.0);
+        collapsing.update_with_weight(values[4], 1.0);
+
+        assert!(collapsing.total_weight().is_finite());
+        assert!(collapsing.iter().all(|(_, w)| w.is_finite() && w > 0.0));
+        let native_rt = DdSketch::<f64>::deserialize(&collapsing.serialize()).unwrap();
+        assert_eq!(native_rt.total_weight(), collapsing.total_weight());
+        let compat_rt =
+            DdSketch::<f64>::deserialize_compat(&collapsing.serialize_compat().unwrap(), store)
+                .unwrap();
+        assert!(compat_rt.total_weight().is_finite());
+    }
 }

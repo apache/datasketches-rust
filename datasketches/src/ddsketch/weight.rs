@@ -57,12 +57,19 @@ mod private {
         const NATIVE_MIN_BYTES: usize;
         const NATIVE_ZERO_BYTES: usize;
         const ALLOWS_SUBUNIT_SUM_UNDERFLOW: bool;
+        const COMPAT_WEIGHTS_CAN_UNDERFLOW: bool;
 
         fn is_zero(self) -> bool;
         fn is_one(self) -> bool;
         fn validate_update_weight(self) -> Self;
         fn checked_add(self, rhs: Self) -> Option<Self>;
         fn add_unchecked(self, rhs: Self) -> Self;
+        /// Adds `rhs` to `self`, capping at `cap` if floating-point rounding overflows `f64::MAX`.
+        ///
+        /// For `u64`, addition is exact and associative so any bin sum bounded by `cap` cannot
+        /// overflow. For `f64`, collapsing or merging bins near `f64::MAX` can round past
+        /// `f64::MAX` even when the store's `count` (`cap`) remained finite.
+        fn add_capped(self, rhs: Self, cap: Self) -> Self;
         fn sub_saturating(self, rhs: Self) -> Self;
         fn to_f64(self) -> f64;
         fn total_cmp(self, rhs: Self) -> Ordering;
@@ -73,6 +80,7 @@ mod private {
         fn decode_native(cursor: &mut SketchSlice<'_>, tag: &'static str) -> Result<Self, Error>;
 
         fn check_compat_encode(self, label: &'static str) -> Result<(), Error>;
+        fn compat_encodes_nonzero(self) -> bool;
         fn compat_size(self) -> usize;
         fn encode_compat(self, out: &mut SketchBytes);
         fn decode_compat(cursor: &mut SketchSlice<'_>, tag: &'static str) -> Result<Self, Error>;
@@ -95,6 +103,7 @@ impl private::DdSketchWeight for u64 {
     const NATIVE_MIN_BYTES: usize = 1;
     const NATIVE_ZERO_BYTES: usize = 1;
     const ALLOWS_SUBUNIT_SUM_UNDERFLOW: bool = false;
+    const COMPAT_WEIGHTS_CAN_UNDERFLOW: bool = false;
 
     #[inline]
     fn is_zero(self) -> bool {
@@ -118,6 +127,11 @@ impl private::DdSketchWeight for u64 {
 
     #[inline]
     fn add_unchecked(self, rhs: Self) -> Self {
+        self + rhs
+    }
+
+    #[inline]
+    fn add_capped(self, rhs: Self, _cap: Self) -> Self {
         self + rhs
     }
 
@@ -168,6 +182,11 @@ impl private::DdSketchWeight for u64 {
     }
 
     #[inline]
+    fn compat_encodes_nonzero(self) -> bool {
+        self != 0
+    }
+
+    #[inline]
     fn compat_size(self) -> usize {
         varfloat64_size(self as f64)
     }
@@ -211,6 +230,7 @@ impl private::DdSketchWeight for f64 {
     const NATIVE_MIN_BYTES: usize = size_of::<f64>();
     const NATIVE_ZERO_BYTES: usize = size_of::<f64>();
     const ALLOWS_SUBUNIT_SUM_UNDERFLOW: bool = true;
+    const COMPAT_WEIGHTS_CAN_UNDERFLOW: bool = true;
 
     #[inline]
     fn is_zero(self) -> bool {
@@ -240,6 +260,12 @@ impl private::DdSketchWeight for f64 {
     #[inline]
     fn add_unchecked(self, rhs: Self) -> Self {
         self + rhs
+    }
+
+    #[inline]
+    fn add_capped(self, rhs: Self, cap: Self) -> Self {
+        let sum = self + rhs;
+        if sum.is_finite() { sum } else { cap }
     }
 
     #[inline]
@@ -293,6 +319,12 @@ impl private::DdSketchWeight for f64 {
     #[inline]
     fn check_compat_encode(self, _label: &'static str) -> Result<(), Error> {
         Ok(())
+    }
+
+    #[inline]
+    fn compat_encodes_nonzero(self) -> bool {
+        // `varfloat64` encodes `v + 1.0`, so positive weights at or below `2^-53` round to `0.0`.
+        self + 1.0 > 1.0
     }
 
     #[inline]

@@ -296,4 +296,39 @@ fn fractional_merge_combines_stores_and_rejects_f64_overflow_atomically() {
     );
     assert_eq!(huge_left.total_weight(), 0.75 * f64::MAX);
     assert_eq!(huge_left.iter().collect::<Vec<_>>(), snapshot);
+
+    // Merging near `f64::MAX` where `(a + (b + c))` is finite (`f64::MAX`) while `((a + b) + c)`
+    // would overflow must preserve a finite `total_weight` and finite bins across both sparse and
+    // collapsing dense merge paths.
+    let max_ulp = f64::MAX - f64::MAX.next_down();
+    for (left_store, right_store) in [
+        (StoreKind::Sparse, StoreKind::Sparse),
+        (
+            StoreKind::CollapsingLowestDense { max_num_bins: 2 },
+            StoreKind::CollapsingLowestDense { max_num_bins: 4 },
+        ),
+        (
+            StoreKind::CollapsingLowestDense { max_num_bins: 2 },
+            StoreKind::Sparse,
+        ),
+    ] {
+        let mut a = DdSketchBuilder::new(0.01)
+            .store(left_store)
+            .build::<f64>()
+            .unwrap();
+        a.update_with_weight(1000.0, f64::MAX.next_down());
+
+        let mut b = DdSketchBuilder::new(0.01)
+            .store(right_store)
+            .build::<f64>()
+            .unwrap();
+        b.update_with_weight(1.0, 0.6 * max_ulp);
+        b.update_with_weight(10.0, 0.6 * max_ulp);
+
+        a.merge(&b).unwrap();
+        assert_eq!(a.total_weight(), f64::MAX);
+        assert!(a.iter().all(|(_, w)| w.is_finite() && w > 0.0));
+        let native_rt = DdSketch::<f64>::deserialize(&a.serialize()).unwrap();
+        assert_eq!(native_rt.total_weight(), f64::MAX);
+    }
 }

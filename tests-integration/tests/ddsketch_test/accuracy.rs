@@ -347,4 +347,28 @@ fn fractional_quantiles_match_java_rank_semantics_and_handle_subunit_and_drift()
             }
         }
     }
+
+    // Bare `f64` sketch (`SummaryState::Missing`) where `neg_weight + pos_weight == neg_weight`
+    // in `f64`: `quantiles()` must match `quantile()` at `rank == 0.0` and `rank == 1.0`,
+    // returning the maximum positive bucket rather than stopping at the first positive bucket.
+    let mut bare_wire = DdSketch::<f64>::new(0.01)
+        .unwrap()
+        .serialize_compat()
+        .unwrap();
+    // PositiveStore IndexDeltas (0x09): 1 bin at index 0 (`~1.0`), bare (no summary blocks).
+    bare_wire.extend_from_slice(&[0x09, 0x01, 0x00]);
+    let mut bare = DdSketch::<f64>::deserialize_compat(&bare_wire, StoreKind::default()).unwrap();
+    bare.update_with_weight(-10.0, 1e17);
+    bare.update_with_weight(50.0, 1.0);
+    bare.update_with_weight(100.0, 1.0);
+    assert_eq!(bare.min_value(), None);
+
+    let max_q = bare.quantile(1.0).unwrap().unwrap();
+    assert_within_relative_accuracy(max_q, 100.0, 0.01, "bare f64 q=1.0");
+    for ranks in [&[0.0, 0.5, 1.0][..], &[1.0, 0.5, 0.0][..]] {
+        let batch = bare.quantiles(ranks).unwrap().unwrap();
+        for (&r, &est) in ranks.iter().zip(&batch) {
+            assert_eq!(est.to_bits(), bare.quantile(r).unwrap().unwrap().to_bits());
+        }
+    }
 }

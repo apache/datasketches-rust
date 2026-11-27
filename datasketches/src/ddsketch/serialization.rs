@@ -208,11 +208,21 @@ pub fn serialize_compat_sketch<W: DdSketchWeight>(sketch: &DdSketch<W>) -> Resul
     } else {
         1 + zero_weight.compat_size()
     };
-    let (neg_choice, neg_bytes) = choose_compat_bin_encoding(sketch.negative_store())?;
-    let (pos_choice, pos_bytes) = choose_compat_bin_encoding(sketch.positive_store())?;
+    let neg_plan = choose_compat_bin_encoding(sketch.negative_store())?;
+    let pos_plan = choose_compat_bin_encoding(sketch.positive_store())?;
+    let has_nonzero_compat_weight = zero_weight.compat_encodes_nonzero()
+        || neg_plan.has_nonzero_weight
+        || pos_plan.has_nonzero_weight;
+    if !sketch.is_empty() && !has_nonzero_compat_weight {
+        return Err(Error::invalid_argument(format!(
+            "reference DDSketch compatibility format rounds all non-empty {} weights to zero",
+            W::TYPE_NAME
+        )));
+    }
 
-    let mut out =
-        SketchBytes::with_capacity(summary_bytes + 17 + zero_bytes + neg_bytes + pos_bytes);
+    let mut out = SketchBytes::with_capacity(
+        summary_bytes + 17 + zero_bytes + neg_plan.bytes + pos_plan.bytes,
+    );
     if let SummaryState::Active { min, max, sum } = summary {
         out.write_u8(DD_SUBFLAG_EXACT_COUNT | DD_FLAG_TYPE_SKETCH_FEATURES);
         total_weight.encode_compat(&mut out);
@@ -233,7 +243,7 @@ pub fn serialize_compat_sketch<W: DdSketchWeight>(sketch: &DdSketch<W>) -> Resul
         out.write_u8(DD_SUBFLAG_ZERO_COUNT | DD_FLAG_TYPE_SKETCH_FEATURES);
         zero_weight.encode_compat(&mut out);
     }
-    if let Some(choice) = neg_choice {
+    if let Some(choice) = neg_plan.choice {
         encode_compat_store(
             &mut out,
             sketch.negative_store(),
@@ -241,7 +251,7 @@ pub fn serialize_compat_sketch<W: DdSketchWeight>(sketch: &DdSketch<W>) -> Resul
             choice,
         );
     }
-    if let Some(choice) = pos_choice {
+    if let Some(choice) = pos_plan.choice {
         encode_compat_store(
             &mut out,
             sketch.positive_store(),
@@ -462,6 +472,7 @@ fn deserialize_native<W: DdSketchWeight>(bytes: &[u8]) -> Result<DdSketch<W>, Er
         !neg_weight.is_zero(),
         !zero_weight.is_zero(),
         !pos_weight.is_zero(),
+        false,
     )?;
 
     let trailing = cursor.remaining().len();
@@ -492,6 +503,7 @@ fn validate_summary_against_stores<W: DdSketchWeight>(
     neg_non_empty: bool,
     zero_non_empty: bool,
     pos_non_empty: bool,
+    allow_underflowed_stores: bool,
 ) -> Result<(), Error> {
     let SummaryState::Active { min, max, sum } = summary else {
         return Ok(());
@@ -506,15 +518,20 @@ fn validate_summary_against_stores<W: DdSketchWeight>(
             "DDSketch exact_max ({max}) must be positive when positive store is non-empty"
         )));
     }
-    if !neg_non_empty && !zero_non_empty && min <= 0.0 {
-        return Err(Error::deserial(format!(
-            "DDSketch exact_min ({min}) must be positive when only positive store is non-empty"
-        )));
-    }
-    if !pos_non_empty && !zero_non_empty && max >= 0.0 {
-        return Err(Error::deserial(format!(
-            "DDSketch exact_max ({max}) must be negative when only negative store is non-empty"
-        )));
+    // In `varfloat64` compatibility images with `f64` weights, positive weights `<= 2^-53` round to
+    // `0.0` while exact summary extrema remain finite. Only enforce empty-sign bound exclusion
+    // when weights cannot underflow to zero on the wire.
+    if !allow_underflowed_stores {
+        if !neg_non_empty && !zero_non_empty && min <= 0.0 {
+            return Err(Error::deserial(format!(
+                "DDSketch exact_min ({min}) must be positive when only positive store is non-empty"
+            )));
+        }
+        if !pos_non_empty && !zero_non_empty && max >= 0.0 {
+            return Err(Error::deserial(format!(
+                "DDSketch exact_max ({max}) must be negative when only negative store is non-empty"
+            )));
+        }
     }
     if sum.is_finite() {
         let sum_consistent = if min == 0.0 && max == 0.0 {
@@ -885,21 +902,33 @@ enum CompatBinChoice {
     IndexDeltasAndCounts { num_bins: u64 },
 }
 
-fn choose_compat_bin_encoding<W: DdSketchWeight>(
-    store: &Store<W>,
-) -> Result<(Option<CompatBinChoice>, usize), Error> {
+struct CompatBinPlan {
+    choice: Option<CompatBinChoice>,
+    bytes: usize,
+    has_nonzero_weight: bool,
+}
+
+fn choose_compat_bin_encoding<W: DdSketchWeight>(store: &Store<W>) -> Result<CompatBinPlan, Error> {
     if store.is_empty() {
-        return Ok((None, 0));
+        return Ok(CompatBinPlan {
+            choice: None,
+            bytes: 0,
+            has_nonzero_weight: false,
+        });
     }
 
     let num_non_empty = store.num_occupied() as u64;
     let mut sparse_deltas_bytes = 1 + uvarint64_size(num_non_empty);
     let mut sparse_counts_bytes = 0_usize;
     let mut all_unit_weights = true;
+    let mut has_nonzero_weight = false;
     let mut prev_index = 0_i64;
 
     for (idx, weight) in store.iter_asc() {
         weight.check_compat_encode("bucket weight")?;
+        if weight.compat_encodes_nonzero() {
+            has_nonzero_weight = true;
+        }
         let idx64 = i64::from(idx);
         sparse_deltas_bytes += varint64_size(idx64 - prev_index);
         sparse_counts_bytes += weight.compat_size();
@@ -936,17 +965,22 @@ fn choose_compat_bin_encoding<W: DdSketchWeight>(
             + sparse_counts_bytes
             + num_zero_bins;
         if dense_bytes <= best_sparse_bytes {
-            return Ok((
-                Some(CompatBinChoice::ContiguousCounts {
+            return Ok(CompatBinPlan {
+                choice: Some(CompatBinChoice::ContiguousCounts {
                     num_bins,
                     min_index,
                 }),
-                dense_bytes,
-            ));
+                bytes: dense_bytes,
+                has_nonzero_weight,
+            });
         }
     }
 
-    Ok((Some(best_sparse), best_sparse_bytes))
+    Ok(CompatBinPlan {
+        choice: Some(best_sparse),
+        bytes: best_sparse_bytes,
+        has_nonzero_weight,
+    })
 }
 
 fn encode_compat_store<W: DdSketchWeight>(
@@ -1222,6 +1256,7 @@ fn scan_datadog_stream<W: DdSketchWeight>(
             neg_range.bounds.is_some(),
             !zero_weight.is_zero(),
             pos_range.bounds.is_some(),
+            W::COMPAT_WEIGHTS_CAN_UNDERFLOW,
         )?;
         active
     };

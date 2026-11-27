@@ -251,9 +251,12 @@ impl<W: DdSketchWeight> Store<W> {
             (Self::Dense(dst), Self::Dense(src)) => dst.merge_dense(src),
             (Self::Dense(dst), Self::Sparse(src)) => dst.merge_sparse(src),
             (Self::Sparse(dst), src) => {
+                let next_count = dst.count.add_unchecked(src.total_weight());
                 for (index, weight) in src.iter_asc() {
-                    dst.add(index, weight);
+                    let entry = dst.bins.entry(index).or_insert(W::ZERO);
+                    *entry = entry.add_capped(weight, next_count);
                 }
+                dst.count = next_count;
             }
         }
     }
@@ -661,8 +664,8 @@ impl<W: DdSketchWeight> DenseStore<W> {
     }
 
     #[inline]
-    fn add_in_bounds(&mut self, index: i32, weight: W) {
-        let pos = if index <= self.min_index {
+    fn in_bounds_pos(&self, index: i32) -> usize {
+        if index <= self.min_index {
             debug_assert!(
                 index == self.min_index
                     || (matches!(self.mode, CollapseMode::Lowest(_)) && self.is_collapsed)
@@ -676,8 +679,22 @@ impl<W: DdSketchWeight> DenseStore<W> {
             self.pos(self.max_index)
         } else {
             self.pos(index)
-        };
+        }
+    }
+
+    #[inline]
+    fn add_in_bounds(&mut self, index: i32, weight: W) {
+        let pos = self.in_bounds_pos(index);
         self.record_at(pos, weight);
+    }
+
+    #[inline]
+    fn add_bin_in_bounds_capped(&mut self, index: i32, weight: W, cap: W) {
+        let pos = self.in_bounds_pos(index);
+        if self.bins[pos].is_zero() {
+            self.occupied += 1;
+        }
+        self.bins[pos] = self.bins[pos].add_capped(weight, cap);
     }
 
     fn grow_bins(&mut self, target_len: usize) {
@@ -768,7 +785,7 @@ impl<W: DdSketchWeight> DenseStore<W> {
                     let mut collapsed_weight = W::ZERO;
                     for slot in &mut self.bins[old_start..collapse_end] {
                         if !slot.is_zero() {
-                            collapsed_weight = collapsed_weight.add_unchecked(*slot);
+                            collapsed_weight = collapsed_weight.add_capped(*slot, self.count);
                             *slot = W::ZERO;
                             self.occupied -= 1;
                         }
@@ -778,7 +795,7 @@ impl<W: DdSketchWeight> DenseStore<W> {
                             self.occupied += 1;
                         }
                         self.bins[collapse_end] =
-                            self.bins[collapse_end].add_unchecked(collapsed_weight);
+                            self.bins[collapse_end].add_capped(collapsed_weight, self.count);
                     }
                     collapsed_min
                 } else {
@@ -812,7 +829,7 @@ impl<W: DdSketchWeight> DenseStore<W> {
                     let mut collapsed_weight = W::ZERO;
                     for slot in &mut self.bins[(collapse_pos + 1)..=old_end] {
                         if !slot.is_zero() {
-                            collapsed_weight = collapsed_weight.add_unchecked(*slot);
+                            collapsed_weight = collapsed_weight.add_capped(*slot, self.count);
                             *slot = W::ZERO;
                             self.occupied -= 1;
                         }
@@ -822,7 +839,7 @@ impl<W: DdSketchWeight> DenseStore<W> {
                             self.occupied += 1;
                         }
                         self.bins[collapse_pos] =
-                            self.bins[collapse_pos].add_unchecked(collapsed_weight);
+                            self.bins[collapse_pos].add_capped(collapsed_weight, self.count);
                     }
                     collapsed_max
                 } else {
@@ -889,9 +906,10 @@ impl<W: DdSketchWeight> DenseStore<W> {
             for (i, &w) in src_slice.iter().enumerate() {
                 if !w.is_zero() {
                     let idx = (i64::from(other.min_index) + (i as i64)) as i32;
-                    self.add_in_bounds(idx, w);
+                    self.add_bin_in_bounds_capped(idx, w, other.count);
                 }
             }
+            self.count = other.count;
             return;
         }
 
@@ -910,6 +928,7 @@ impl<W: DdSketchWeight> DenseStore<W> {
             return;
         };
 
+        let next_count = self.count.add_unchecked(other.count);
         // Fast contiguous overlap path when the entire source span lies within `[min_index,
         // max_index]`.
         if other_min >= self.min_index && other.max_index <= self.max_index {
@@ -921,19 +940,19 @@ impl<W: DdSketchWeight> DenseStore<W> {
                     if dst.is_zero() {
                         newly_occupied += 1;
                     }
-                    *dst = dst.add_unchecked(w);
+                    *dst = dst.add_capped(w, next_count);
                 }
             }
             self.occupied += newly_occupied;
-            self.count = self.count.add_unchecked(other.count);
         } else {
             for (i, &w) in src_slice.iter().enumerate() {
                 if !w.is_zero() {
                     let idx = (i64::from(other_min) + (i as i64)) as i32;
-                    self.add(idx, w);
+                    self.add_bin_in_bounds_capped(idx, w, next_count);
                 }
             }
         }
+        self.count = next_count;
         if other.mode == self.mode && other.is_collapsed {
             self.is_collapsed = true;
         }
@@ -946,8 +965,9 @@ impl<W: DdSketchWeight> DenseStore<W> {
         if self.occupied == 0 {
             self.init_for_wire_bounds(src_min, src_max);
             for (&idx, &w) in &src.bins {
-                self.add_in_bounds(idx, w);
+                self.add_bin_in_bounds_capped(idx, w, src.count);
             }
+            self.count = src.count;
             return;
         }
 
@@ -961,9 +981,11 @@ impl<W: DdSketchWeight> DenseStore<W> {
                 self.extend_range(src_min, src_max);
             }
         }
+        let next_count = self.count.add_unchecked(src.count);
         for (&idx, &w) in &src.bins {
-            self.add(idx, w);
+            self.add_bin_in_bounds_capped(idx, w, next_count);
         }
+        self.count = next_count;
     }
 
     fn key_at_rank_asc(&self, rank: W) -> i32 {

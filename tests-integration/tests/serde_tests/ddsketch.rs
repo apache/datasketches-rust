@@ -1223,6 +1223,63 @@ fn fractional_native_and_compat_round_trips_and_validation() {
             "bad_w={bad_w:?}"
         );
     }
+
+    // Compat `varfloat64` rounds weights `<= 2^-53` to `0.0`:
+    // 1. Mixed sketches where a tiny weight on another sign or zero rounds to `0.0` still
+    //    round-trip through `serialize_compat` / `deserialize_compat` with intact exact bounds.
+    for (major, minor, expected_min, expected_max) in [
+        ((10.0, 1.0), (-5.0, 1e-20), -5.0, 10.0),
+        ((10.0, 1.0), (0.0, 1e-20), 0.0, 10.0),
+        ((-10.0, 1.0), (5.0, 1e-20), -10.0, 5.0),
+    ] {
+        let mut mixed = DdSketch::<f64>::new(0.01).unwrap();
+        mixed.update_with_weight(major.0, major.1);
+        mixed.update_with_weight(minor.0, minor.1);
+        let compat = mixed.serialize_compat().unwrap();
+        let decoded = DdSketch::<f64>::deserialize_compat(&compat, StoreKind::default()).unwrap();
+        assert_eq!(decoded.total_weight(), 1.0);
+        assert_eq!(decoded.min_value(), Some(expected_min));
+        assert_eq!(decoded.max_value(), Some(expected_max));
+    }
+
+    // 2. Non-empty `f64` sketches where every bin and `zero_weight` is `<= 2^-53` (even when their
+    //    sum exceeds `2^-53`) cannot survive `varfloat64` encoding and return `InvalidArgument`,
+    //    while the native format preserves them losslessly.
+    let mut all_tiny_single = DdSketch::<f64>::new(0.01).unwrap();
+    all_tiny_single.update_with_weight(10.0, 1e-20);
+    let mut all_tiny_multi = DdSketch::<f64>::new(0.01).unwrap();
+    let half_eps = 2.0_f64.powi(-54);
+    for v in [1.0, 2.0, 4.0, 8.0] {
+        all_tiny_multi.update_with_weight(v, half_eps);
+    }
+    assert!(all_tiny_multi.total_weight() + 1.0 > 1.0);
+    for tiny in [&all_tiny_single, &all_tiny_multi] {
+        assert_eq!(
+            tiny.serialize_compat().unwrap_err().kind(),
+            ErrorKind::InvalidArgument
+        );
+        let rt = DdSketch::<f64>::deserialize(&tiny.serialize()).unwrap();
+        assert_eq!(rt.total_weight().to_bits(), tiny.total_weight().to_bits());
+    }
+
+    // 3. Sign-impossible `f64` compat summaries (positive store non-empty with `max <= 0`, or
+    //    negative store non-empty with `min >= 0`) are still rejected with `InvalidData`.
+    let mut pos_f64 = DdSketch::<f64>::new(0.01).unwrap();
+    pos_f64.update_with_weight(10.0, 1.5);
+    let mut bad_max = pos_f64.serialize_compat().unwrap();
+    // Overwrite FlagMax payload (`-1.0_f64`) after FlagMin (`-2.0_f64`) so `min <= max <= 0`.
+    let min_pos = bad_max
+        .windows(8)
+        .position(|w| w == 10.0_f64.to_le_bytes())
+        .unwrap();
+    bad_max[min_pos..min_pos + 8].copy_from_slice(&(-2.0_f64).to_le_bytes());
+    bad_max[min_pos + 9..min_pos + 17].copy_from_slice(&(-1.0_f64).to_le_bytes());
+    assert_eq!(
+        DdSketch::<f64>::deserialize_compat(&bad_max, StoreKind::default())
+            .unwrap_err()
+            .kind(),
+        ErrorKind::InvalidData
+    );
 }
 
 #[test]

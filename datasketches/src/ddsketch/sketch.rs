@@ -581,9 +581,12 @@ impl<W: DdSketchWeight> DdSketch<W> {
     /// significand scaling when `total_weight > 2^53`. For `f64` weights, selects the first bucket
     /// in ascending order whose cumulative weight exceeds `rank * (total_weight - 1.0)` (clamped
     /// to `>= 0.0`, returning the minimum bucket at `rank == 0.0` and the maximum bucket at
-    /// `rank == 1.0`). When exact summary statistics are present, `rank == 0.0` returns
-    /// [`min_value`](Self::min_value), `rank == 1.0` returns [`max_value`](Self::max_value), and
-    /// interior estimates are clamped to `[min_value, max_value]`.
+    /// `rank == 1.0`). Because `f64` weights use this unit-count offset rather than
+    /// `rank * total_weight`, any sketch with `total_weight <= 1.0` returns the minimum bucket for
+    /// all interior ranks `0.0 < rank < 1.0`, and small fractional totals above `1.0` skew
+    /// interior quantiles downward. When exact summary statistics are present, `rank == 0.0`
+    /// returns [`min_value`](Self::min_value), `rank == 1.0` returns [`max_value`](Self::max_value),
+    /// and interior estimates are clamped to `[min_value, max_value]`.
     ///
     /// # Errors
     ///
@@ -680,16 +683,28 @@ impl<W: DdSketchWeight> DdSketch<W> {
             self.resolve_sorted_targets(&indexed, &mut out);
         }
 
-        if let SummaryState::Active { min, max, .. } = self.summary {
-            for (&rank, estimate) in ranks.iter().zip(&mut out) {
-                if rank == 0.0 {
-                    *estimate = min;
-                } else if rank == 1.0 {
-                    *estimate = max;
-                } else {
-                    *estimate = estimate.clamp(min, max);
+        match self.summary {
+            SummaryState::Active { min, max, .. } => {
+                for (&rank, estimate) in ranks.iter().zip(&mut out) {
+                    if rank == 0.0 {
+                        *estimate = min;
+                    } else if rank == 1.0 {
+                        *estimate = max;
+                    } else {
+                        *estimate = estimate.clamp(min, max);
+                    }
                 }
             }
+            SummaryState::Missing => {
+                for (&rank, estimate) in ranks.iter().zip(&mut out) {
+                    if rank == 0.0 {
+                        *estimate = self.bucket_min_value();
+                    } else if rank == 1.0 {
+                        *estimate = self.bucket_max_value();
+                    }
+                }
+            }
+            SummaryState::Empty => unreachable!("non-empty sketch checked above"),
         }
         Ok(Some(out))
     }
@@ -761,8 +776,11 @@ impl<W: DdSketchWeight> DdSketch<W> {
     /// (`9_007_199_254_740_991`), the maximum integer representable without rounding in the
     /// compatibility format's `v + 1.0` floating-point counter encoding. For `f64` weights, counts
     /// are encoded directly with `varfloat64` (`v + 1.0`), which rounds fractional weights to the
-    /// precision of `v + 1.0` (weights below `2^-53` round to `0.0`, matching the Java and Go
-    /// reference implementations).
+    /// precision of `v + 1.0` (weights at or below `2^-53` round to `0.0`, matching the Java and
+    /// Go reference implementations), and returns
+    /// [`InvalidArgument`](crate::error::ErrorKind::InvalidArgument) if a non-empty sketch has no
+    /// retained bucket or [`zero_weight`](Self::zero_weight) above `2^-53` (so every weight would
+    /// encode as `0.0`).
     ///
     /// # Compatibility with reference implementations
     ///
