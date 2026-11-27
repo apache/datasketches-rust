@@ -23,12 +23,43 @@ use datasketches::ddsketch::MappingKind;
 use datasketches::ddsketch::StoreKind;
 
 use super::support::build_sketch;
+use super::support::build_weighted_f64_sketch;
+use super::support::build_weighted_u64_sketch;
+use super::support::fractional_weights;
 use super::support::latency_values;
 
 fn update_with(bencher: Bencher, len: usize, mapping: MappingKind, store: StoreKind) {
     let values = latency_values(len);
 
     bencher.bench_local(|| build_sketch(black_box(&values), mapping, store));
+}
+
+fn update_weighted_u64(bencher: Bencher, len: usize) {
+    let values = latency_values(len);
+    let weights: Vec<u64> = (0..len).map(|i| ((i % 9) + 1) as u64).collect();
+
+    bencher.bench_local(|| {
+        build_weighted_u64_sketch(
+            black_box(&values),
+            black_box(&weights),
+            MappingKind::Cubic,
+            StoreKind::default(),
+        )
+    });
+}
+
+fn update_weighted_f64(bencher: Bencher, len: usize) {
+    let values = latency_values(len);
+    let weights = fractional_weights(len);
+
+    bencher.bench_local(|| {
+        build_weighted_f64_sketch(
+            black_box(&values),
+            black_box(&weights),
+            MappingKind::Cubic,
+            StoreKind::default(),
+        )
+    });
 }
 
 pub fn register(runner: &mut Runner) {
@@ -63,6 +94,15 @@ pub fn register(runner: &mut Runner) {
             ("Sparse", &|b| {
                 update_with(b, 10_000, MappingKind::Cubic, StoreKind::Sparse)
             }),
+        ],
+    );
+
+    runner.compare(
+        "ddsketch::update::weight/100000",
+        600,
+        &[
+            ("u64", &|b| update_weighted_u64(b, 100_000)),
+            ("f64", &|b| update_weighted_f64(b, 100_000)),
         ],
     );
 }
