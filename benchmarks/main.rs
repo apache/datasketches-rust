@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+mod aod;
 mod bloom;
 mod countmin;
 mod cpc;
@@ -33,6 +34,7 @@ mod xor;
 
 fn main() {
     let mut runner = benchmarks::Runner::from_args();
+    aod::register(&mut runner);
     bloom::register(&mut runner);
     countmin::register(&mut runner);
     cpc::register(&mut runner);

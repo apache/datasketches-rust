@@ -17,9 +17,11 @@
 
 //! Data structures and functions that may be used across all the Theta sketch family.
 
+#[cfg(any(feature = "theta", feature = "tuple"))]
 pub(super) mod a_not_b;
 pub(super) mod binomial_bounds;
 pub(super) mod constants;
+pub(super) mod fold_hash;
 pub(super) mod hash_table;
 pub(super) mod intersection;
 pub(super) mod jaccard_similarity;
@@ -61,7 +63,10 @@ pub(super) trait KeySketch: Copy {
     fn hashes(self) -> impl Iterator<Item = u64>;
 
     /// Returns the backing hash table when this sketch stores entries in one.
-    fn hash_table(&self) -> Option<&hash_table::SketchHashTable<impl SketchEntry>>;
+    #[cfg(any(feature = "theta", feature = "tuple"))]
+    fn hash_table(&self) -> Option<&hash_table::SketchHashTable<impl SketchEntry>> {
+        None::<&hash_table::SketchHashTable<u64>>
+    }
 }
 
 pub(super) trait EntrySketch: KeySketch {

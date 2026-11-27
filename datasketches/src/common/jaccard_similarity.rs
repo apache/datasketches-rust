@@ -26,7 +26,7 @@ pub struct JaccardSimilarity {
 }
 
 impl JaccardSimilarity {
-    #[cfg(any(feature = "theta", feature = "tuple"))]
+    #[cfg(any(feature = "aod", feature = "theta", feature = "tuple"))]
     pub(crate) const fn new(lower_bound: f64, estimate: f64, upper_bound: f64) -> Self {
         Self {
             lower_bound,
@@ -35,7 +35,7 @@ impl JaccardSimilarity {
         }
     }
 
-    #[cfg(any(feature = "theta", feature = "tuple"))]
+    #[cfg(any(feature = "aod", feature = "theta", feature = "tuple"))]
     pub(crate) const fn exact(value: f64) -> Self {
         Self::new(value, value, value)
     }

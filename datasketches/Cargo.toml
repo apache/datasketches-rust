@@ -38,7 +38,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 default = []
 
 # Each sketch has its own feature, so that users can opt in to only the sketches they need.
-aod = ["tuple"]
+aod = []
 bloom = []
 countmin = []
 cpc = []

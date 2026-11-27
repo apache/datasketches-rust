@@ -17,6 +17,7 @@
 
 mod a_not_b;
 mod intersection;
+mod jaccard_similarity;
 mod sketch;
 mod union;
 

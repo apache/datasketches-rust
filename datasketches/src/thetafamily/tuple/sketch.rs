@@ -510,9 +510,7 @@ impl<S> fmt::Debug for CompactTupleSketch<S> {
 }
 
 impl<S> CompactTupleSketch<S> {
-    pub(in crate::thetafamily) fn from_compact_state(
-        compact_state: CompactSketchState<TupleEntry<S>>,
-    ) -> Self {
+    pub(super) fn from_compact_state(compact_state: CompactSketchState<TupleEntry<S>>) -> Self {
         Self { compact_state }
     }
 

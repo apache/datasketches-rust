@@ -28,6 +28,7 @@ use crate::thetafamily::common::binomial_bounds;
 use crate::thetafamily::common::constants::MAX_LG_K;
 use crate::thetafamily::common::constants::MAX_THETA;
 use crate::thetafamily::common::constants::MIN_LG_K;
+#[cfg(any(feature = "theta", feature = "tuple"))]
 use crate::thetafamily::common::hash_table::SketchHashTable;
 use crate::thetafamily::common::intersection::IntersectionMergePolicy;
 use crate::thetafamily::common::intersection::IntersectionState;
@@ -81,6 +82,7 @@ where
         self.0.hashes()
     }
 
+    #[cfg(any(feature = "theta", feature = "tuple"))]
     #[inline]
     fn hash_table(&self) -> Option<&SketchHashTable<impl SketchEntry>> {
         self.0.hash_table()

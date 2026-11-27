@@ -16,75 +16,16 @@
 // under the License.
 
 use crate::error::Error;
-use crate::tuple::SummaryCombinePolicy;
-use crate::tuple::SummaryPolicy;
-use crate::tuple::SummaryUpdatePolicy;
 
-/// Combines the value arrays of keys shared by two ArrayOfDoubles sketches.
+/// Combines the value arrays of keys shared by two ArrayOfDoubles sketches during intersection.
 pub trait ArrayOfDoublesCombiner {
     /// Combines `incoming` into `existing` in place.
+    ///
+    /// Both slices have length equal to the intersection operator's configured `num_values`.
     fn combine(&self, existing: &mut [f64], incoming: &[f64]);
 }
 
-#[derive(Debug, Clone)]
-pub struct ArrayOfDoublesPolicy {
-    pub num_values: u8,
-}
-
-impl SummaryPolicy for ArrayOfDoublesPolicy {
-    type Summary = Box<[f64]>;
-
-    fn create(&self) -> Self::Summary {
-        vec![0.0; usize::from(self.num_values)].into_boxed_slice()
-    }
-}
-
-impl SummaryUpdatePolicy<&[f64]> for ArrayOfDoublesPolicy {
-    fn update(&self, summary: &mut Self::Summary, value: &[f64]) {
-        debug_assert_eq!(summary.len(), value.len());
-        for (summary, value) in summary.iter_mut().zip(value) {
-            *summary += value;
-        }
-    }
-}
-
-impl SummaryCombinePolicy for ArrayOfDoublesPolicy {
-    fn combine(&self, summary: &mut Self::Summary, other: &Self::Summary) {
-        debug_assert_eq!(summary.len(), other.len());
-        for (summary, other) in summary.iter_mut().zip(other) {
-            *summary += other;
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct ArrayOfDoublesIntersectionPolicy<C> {
-    pub num_values: u8,
-    pub combiner: C,
-}
-
-impl<C> SummaryPolicy for ArrayOfDoublesIntersectionPolicy<C>
-where
-    C: ArrayOfDoublesCombiner,
-{
-    type Summary = Box<[f64]>;
-
-    fn create(&self) -> Self::Summary {
-        vec![0.0; usize::from(self.num_values)].into_boxed_slice()
-    }
-}
-
-impl<C> SummaryCombinePolicy for ArrayOfDoublesIntersectionPolicy<C>
-where
-    C: ArrayOfDoublesCombiner,
-{
-    fn combine(&self, summary: &mut Self::Summary, other: &Self::Summary) {
-        debug_assert_eq!(summary.len(), other.len());
-        self.combiner.combine(summary, other);
-    }
-}
-
-pub fn validate_num_values(num_values: u8) -> Result<(), Error> {
+pub(super) fn validate_num_values(num_values: u8) -> Result<(), Error> {
     if num_values == 0 {
         return Err(Error::invalid_argument(
             "num_values must be greater than 0, got 0",
@@ -93,7 +34,7 @@ pub fn validate_num_values(num_values: u8) -> Result<(), Error> {
     Ok(())
 }
 
-pub fn check_num_values(expected: u8, actual: usize, operation: &str) -> Result<(), Error> {
+pub(super) fn check_num_values(expected: u8, actual: usize, operation: &str) -> Result<(), Error> {
     if actual != usize::from(expected) {
         return Err(Error::invalid_argument(format!(
             "num_values mismatch for {operation}: expected {expected}, got {actual}"

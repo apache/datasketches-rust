@@ -58,7 +58,7 @@
 //!
 //! * `raw_bytes` for byte and string contents;
 //! * `canonical_float` for floating-point values;
-//! * `sign_extend` for short integers used with HLL and CPC;
+//! * `sign_extend` for short integers used with HLL, CPC, Theta, Tuple, and ArrayOfDoubles;
 //! * `natural_extend` for short integers used with Bloom filters and Count-Min sketches.
 //!
 //! When interoperating with an implementation that skips empty strings, check for empty input
@@ -92,7 +92,7 @@ pub mod kll;
 pub mod req;
 #[cfg(feature = "tdigest")]
 pub mod tdigest;
-#[cfg(any(feature = "theta", feature = "tuple"))]
+#[cfg(any(feature = "aod", feature = "theta", feature = "tuple"))]
 mod thetafamily;
 #[cfg(feature = "aod")]
 pub use self::thetafamily::aod;

@@ -75,6 +75,7 @@ impl<E> FusedIterator for SketchHashTableIter<'_, E> {}
 ///   exceeds the threshold, it will rebuild the table: only keep the min 2^lg_nom_size entries and
 ///   update the theta to the k-th smallest entry.
 #[derive(Debug)]
+#[cfg_attr(not(any(feature = "theta", feature = "tuple")), allow(dead_code))]
 pub struct SketchHashTable<E> {
     lg_cur_size: u8,
     lg_nom_size: u8,
@@ -95,6 +96,7 @@ pub struct SketchHashTable<E> {
     num_retained: usize,
 }
 
+#[cfg_attr(not(any(feature = "theta", feature = "tuple")), allow(dead_code))]
 impl<E> SketchHashTable<E>
 where
     E: SketchEntry,

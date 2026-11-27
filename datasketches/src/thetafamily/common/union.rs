@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#[cfg(any(feature = "theta", feature = "tuple"))]
 use std::fmt;
 
 use crate::common::ResizeFactor;
@@ -23,6 +24,7 @@ use crate::error::ErrorKind;
 use crate::hash::check_seed_hash;
 use crate::thetafamily::common::EntrySketch;
 use crate::thetafamily::common::SketchEntry;
+#[cfg(any(feature = "theta", feature = "tuple"))]
 use crate::thetafamily::common::constants::MAX_THETA;
 use crate::thetafamily::common::hash_table::SketchHashTable;
 use crate::thetafamily::common::sketch_state::CompactSketchState;
@@ -194,17 +196,20 @@ where
     }
 
     /// Reset the union to its initial state.
+    #[cfg(any(feature = "theta", feature = "tuple"))]
     pub fn reset(&mut self) {
         self.table.reset();
         self.result_theta = None;
     }
 
     /// Returns an estimate of memory usage in bytes.
+    #[cfg(any(feature = "theta", feature = "tuple"))]
     pub fn estimated_size(&self) -> usize {
         size_of::<P>() + self.table.estimated_size()
     }
 
     /// Formats a concise diagnostic summary for Theta-family union operators.
+    #[cfg(any(feature = "theta", feature = "tuple"))]
     pub fn fmt_debug(&self, f: &mut fmt::Formatter<'_>, name: &str) -> fmt::Result {
         let is_empty = self.result_theta.is_none();
         let union_theta = self

@@ -17,7 +17,9 @@
 
 use std::collections::HashSet;
 
-use crate::aod::CompactArrayOfDoublesSketch;
+use crate::aod::ArrayOfDoublesUnion;
+use crate::aod::hash_table::AodCompactData;
+use crate::aod::union::CompactUnionSlots;
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
 use crate::codec::assert::insufficient_data;
@@ -29,8 +31,7 @@ use crate::hash::compute_seed_hash;
 use crate::thetafamily::common::constants::FLAGS_IS_EMPTY;
 use crate::thetafamily::common::constants::FLAGS_IS_ORDERED;
 use crate::thetafamily::common::constants::MAX_THETA;
-use crate::thetafamily::common::sketch_state::CompactSketchState;
-use crate::tuple::TupleEntry;
+use crate::thetafamily::common::fold_hash::FoldHashState;
 
 const PREAMBLE_LONGS: u8 = 1;
 const SERIAL_VERSION: u8 = 1;
@@ -38,59 +39,94 @@ const SKETCH_TYPE: u8 = 3;
 const FLAGS_HAS_ENTRIES: u8 = 1 << 3;
 const HEADER_SIZE: usize = 16;
 
-pub fn serialize_compact(sketch: &CompactArrayOfDoublesSketch) -> Vec<u8> {
-    let num_entries = sketch.num_retained();
-    let num_values = usize::from(sketch.num_values());
-    let entries_size = if num_entries == 0 {
-        0
-    } else {
-        8 + num_entries * (size_of::<u64>() + num_values * size_of::<f64>())
+pub(super) fn serialize_compact(data: &AodCompactData) -> Vec<u8> {
+    let mut bytes = compact_header(
+        data.is_empty(),
+        data.is_ordered(),
+        data.seed_hash(),
+        data.theta(),
+        data.num_values(),
+        data.num_retained(),
+    );
+    for &hash in data.hashes() {
+        bytes.write_u64_le(hash);
+    }
+    for &value in data.values() {
+        bytes.write_f64_le(value);
+    }
+    bytes.into_bytes()
+}
+
+pub(super) fn serialize_union(union: &ArrayOfDoublesUnion, ordered: bool) -> Vec<u8> {
+    let table = union.table();
+    let Some(CompactUnionSlots {
+        theta,
+        is_ordered,
+        slots,
+    }) = union.compact_slots(ordered)
+    else {
+        return compact_header(true, true, 0, MAX_THETA, table.num_values(), 0).into_bytes();
     };
-    let mut bytes = SketchBytes::with_capacity(HEADER_SIZE + entries_size);
-
-    bytes.write_u8(PREAMBLE_LONGS);
-    bytes.write_u8(SERIAL_VERSION);
-    bytes.write_u8(Family::TUPLE.id);
-    bytes.write_u8(SKETCH_TYPE);
-
-    let mut flags = 0;
-    if sketch.is_empty() {
-        flags |= FLAGS_IS_EMPTY;
+    let mut bytes = compact_header(
+        false,
+        is_ordered,
+        table.seed_hash(),
+        theta,
+        table.num_values(),
+        slots.len(),
+    );
+    for &(hash, _) in &slots {
+        bytes.write_u64_le(hash);
     }
-    if num_entries > 0 {
-        flags |= FLAGS_HAS_ENTRIES;
-    }
-    if sketch.is_ordered() {
-        flags |= FLAGS_IS_ORDERED;
-    }
-    bytes.write_u8(flags);
-    bytes.write_u8(sketch.num_values());
-    bytes.write_u16_le(if sketch.is_empty() {
-        0
-    } else {
-        sketch.seed_hash()
-    });
-    bytes.write_u64_le(sketch.theta64());
-
-    if num_entries > 0 {
-        bytes.write_u32_le(
-            u32::try_from(num_entries).expect("ArrayOfDoubles retained entries exceed u32"),
-        );
-        bytes.write_u32_le(0);
-        for entry in sketch.iter() {
-            bytes.write_u64_le(entry.hash());
-        }
-        for entry in sketch.iter() {
-            debug_assert_eq!(entry.values().len(), num_values);
-            for &value in entry.values() {
-                bytes.write_f64_le(value);
-            }
+    for (_, slot) in slots {
+        for &value in table.slot_values(slot as usize) {
+            bytes.write_f64_le(value);
         }
     }
     bytes.into_bytes()
 }
 
-pub fn deserialize_compact(bytes: &[u8], seed: u64) -> Result<CompactArrayOfDoublesSketch, Error> {
+fn compact_header(
+    is_empty: bool,
+    is_ordered: bool,
+    seed_hash: u16,
+    theta: u64,
+    num_values: u8,
+    num_entries: usize,
+) -> SketchBytes {
+    let payload_size =
+        num_entries * (size_of::<u64>() + usize::from(num_values) * size_of::<f64>());
+    let mut bytes = SketchBytes::with_capacity(
+        HEADER_SIZE + if num_entries > 0 { 8 + payload_size } else { 0 },
+    );
+    bytes.write_u8(PREAMBLE_LONGS);
+    bytes.write_u8(SERIAL_VERSION);
+    bytes.write_u8(Family::TUPLE.id);
+    bytes.write_u8(SKETCH_TYPE);
+    let mut flags = 0;
+    if is_empty {
+        flags |= FLAGS_IS_EMPTY;
+    }
+    if num_entries > 0 {
+        flags |= FLAGS_HAS_ENTRIES;
+    }
+    if is_ordered {
+        flags |= FLAGS_IS_ORDERED;
+    }
+    bytes.write_u8(flags);
+    bytes.write_u8(num_values);
+    bytes.write_u16_le(if is_empty { 0 } else { seed_hash });
+    bytes.write_u64_le(theta);
+    if num_entries > 0 {
+        bytes.write_u32_le(
+            u32::try_from(num_entries).expect("ArrayOfDoubles retained entries exceed u32"),
+        );
+        bytes.write_u32_le(0);
+    }
+    bytes
+}
+
+pub(super) fn deserialize_compact(bytes: &[u8], seed: u64) -> Result<AodCompactData, Error> {
     let expected_seed_hash = compute_seed_hash(seed, ErrorKind::InvalidData)?;
     let mut cursor = SketchSlice::new(bytes);
     let preamble_longs = cursor
@@ -143,10 +179,7 @@ pub fn deserialize_compact(bytes: &[u8], seed: u64) -> Result<CompactArrayOfDoub
         ));
     }
     if is_empty {
-        return Ok(CompactArrayOfDoublesSketch::from_compact_state(
-            CompactSketchState::empty(expected_seed_hash),
-            num_values,
-        ));
+        return Ok(AodCompactData::empty(expected_seed_hash, num_values));
     }
 
     check_seed_hash(
@@ -157,9 +190,14 @@ pub fn deserialize_compact(bytes: &[u8], seed: u64) -> Result<CompactArrayOfDoub
     )?;
 
     if !has_entries {
-        return Ok(CompactArrayOfDoublesSketch::from_compact_state(
-            CompactSketchState::non_empty(Vec::new(), theta, seed_hash, is_ordered),
+        return Ok(AodCompactData::from_raw_parts(
+            false,
+            is_ordered,
+            seed_hash,
+            theta,
             num_values,
+            Vec::new(),
+            Vec::new(),
         ));
     }
 
@@ -175,15 +213,11 @@ pub fn deserialize_compact(bytes: &[u8], seed: u64) -> Result<CompactArrayOfDoub
         ));
     }
 
-    let summary_size = usize::from(num_values)
-        .checked_mul(size_of::<f64>())
-        .ok_or_else(|| Error::deserial("ArrayOfDoubles summary length overflows"))?;
-    let entry_size = size_of::<u64>()
-        .checked_add(summary_size)
-        .ok_or_else(|| Error::deserial("ArrayOfDoubles entry length overflows"))?;
-    let required_bytes = num_entries
-        .checked_mul(entry_size)
-        .ok_or_else(|| Error::deserial("ArrayOfDoubles entry payload length overflows"))?;
+    let stride = usize::from(num_values);
+    let entry_size = size_of::<u64>() + stride * size_of::<f64>();
+    let required_bytes = num_entries.checked_mul(entry_size).ok_or_else(|| {
+        Error::insufficient_data_of("ArrayOfDoubles entries", "payload length overflows usize")
+    })?;
     let available_bytes = cursor.remaining().len();
     if available_bytes < required_bytes {
         return Err(Error::insufficient_data_of(
@@ -193,8 +227,9 @@ pub fn deserialize_compact(bytes: &[u8], seed: u64) -> Result<CompactArrayOfDoub
     }
 
     let mut hashes = Vec::with_capacity(num_entries);
-    let mut seen = (!is_ordered).then(|| HashSet::with_capacity(num_entries));
-    let mut previous_hash = None;
+    let mut seen = (!is_ordered && num_entries > 1).then(|| {
+        HashSet::<u64, FoldHashState>::with_capacity_and_hasher(num_entries, FoldHashState::new())
+    });
     for _ in 0..num_entries {
         let hash = cursor
             .read_u64_le()
@@ -202,32 +237,27 @@ pub fn deserialize_compact(bytes: &[u8], seed: u64) -> Result<CompactArrayOfDoub
         if hash == 0 || hash >= theta {
             return Err(Error::deserial("corrupted: invalid retained hash value"));
         }
-        if is_ordered {
-            if previous_hash.is_some_and(|previous| previous >= hash) {
-                return Err(Error::deserial(
-                    "corrupted: ordered hashes are not strictly increasing",
-                ));
-            }
-            previous_hash = Some(hash);
-        } else if !seen.as_mut().unwrap().insert(hash) {
+        if is_ordered && hashes.last().is_some_and(|&previous| previous >= hash) {
+            return Err(Error::deserial(
+                "corrupted: ordered hashes are not strictly increasing",
+            ));
+        }
+        if seen.as_mut().is_some_and(|seen| !seen.insert(hash)) {
             return Err(Error::deserial("corrupted: duplicate retained hash"));
         }
         hashes.push(hash);
     }
 
-    let mut retained_entries = Vec::with_capacity(num_entries);
-    for hash in hashes {
-        let mut values = vec![0.0; usize::from(num_values)];
-        for value in &mut values {
-            *value = cursor
+    let num_items = num_entries * stride;
+    let mut values = Vec::with_capacity(num_items);
+    for _ in 0..num_items {
+        values.push(
+            cursor
                 .read_f64_le()
-                .map_err(insufficient_data("entry_values"))?;
-        }
-        retained_entries.push(TupleEntry::new(hash, values.into_boxed_slice()));
+                .map_err(insufficient_data("entry_values"))?,
+        );
     }
-
-    Ok(CompactArrayOfDoublesSketch::from_compact_state(
-        CompactSketchState::non_empty(retained_entries, theta, seed_hash, is_ordered),
-        num_values,
+    Ok(AodCompactData::from_raw_parts(
+        false, is_ordered, seed_hash, theta, num_values, hashes, values,
     ))
 }
