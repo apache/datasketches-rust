@@ -19,13 +19,31 @@ use std::hint::black_box;
 
 use benchmarks::Bencher;
 use benchmarks::Runner;
+use datasketches::uddsketch::UddSketch;
 
+use crate::uddsketch::support::DEFAULT_ALPHA;
 use crate::uddsketch::support::build_sketch;
 use crate::uddsketch::support::values;
 
 fn update(bencher: Bencher, len: usize, max_buckets: u32) {
     let input = values(len);
     bencher.bench_local(|| build_sketch(black_box(&input), max_buckets));
+}
+
+fn update_medium_group(bencher: Bencher, distinct_per_group: usize, max_buckets: u32) {
+    let input: Vec<f64> = (0..distinct_per_group)
+        .map(|i| {
+            let idx = (i * 17) % distinct_per_group;
+            1.05_f64.powi(idx as i32)
+        })
+        .collect();
+    bencher.bench_local(|| {
+        let mut sketch = UddSketch::new(max_buckets, DEFAULT_ALPHA).unwrap();
+        for &v in black_box(&input) {
+            sketch.update(v);
+        }
+        black_box(sketch)
+    });
 }
 
 pub fn register(runner: &mut Runner) {
@@ -38,6 +56,13 @@ pub fn register(runner: &mut Runner) {
             format!("uddsketch::update::update/{len}/{max_buckets}"),
             rounds,
             |b| update(b, len, max_buckets),
+        );
+    }
+    for &(distinct, rounds) in &[(24usize, 600_000), (48, 400_000)] {
+        runner.case(
+            format!("uddsketch::update::update_medium_group/{distinct}/512"),
+            rounds,
+            |b| update_medium_group(b, distinct, 512),
         );
     }
 }

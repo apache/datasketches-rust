@@ -21,7 +21,7 @@ use crate::uddsketch::mapping::collapse_key;
 
 const EMPTY_SLOT: u32 = u32::MAX;
 const INDEX_THRESHOLD: usize = 16;
-const MIN_SLOTS_CAP: usize = 64;
+const MIN_SLOTS_CAP: usize = 128;
 const HASH_MULTIPLIER: u64 = 0x517c_c1b7_2722_0a95;
 
 #[derive(Clone, Copy, Debug)]
