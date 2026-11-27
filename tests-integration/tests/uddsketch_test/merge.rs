@@ -172,3 +172,54 @@ fn incompatible_or_overflowing_merge_leaves_receiver_unchanged() {
     );
     assert_eq!(receiver.serialize(), before);
 }
+
+#[test]
+fn merging_unsorted_zero_shift_sketches_preserves_all_buckets() {
+    let mut left = UddSketch::new(32, 0.01).unwrap();
+    let mut right = left.clone();
+    let mut reference = left.clone();
+    for exponent in 0..=16 {
+        left.update(2f64.powi(exponent));
+    }
+    left.update(0.5);
+    right.update(1.0);
+    assert_eq!(left.num_collapses(), 0);
+    assert_eq!(right.num_collapses(), 0);
+
+    reference.update(0.5);
+    reference.update(1.0);
+    for exponent in 0..=16 {
+        reference.update(2f64.powi(exponent));
+    }
+    left.merge(&right).unwrap();
+    assert_eq!(left.serialize(), reference.serialize());
+}
+
+#[test]
+fn merging_full_sketches_collapses_multiple_levels_and_avoids_capacity_doubling() {
+    let mut left = UddSketch::new(16, 0.01).unwrap();
+    let mut right = left.clone();
+    let mut combined = left.clone();
+    let mut doubled = left.clone();
+    for exponent in 0..16 {
+        let value = 2f64.powi(exponent);
+        left.update(value);
+        right.update(-value);
+        combined.update(value);
+        combined.update(-value);
+        doubled.update_with_weight(value, 2);
+    }
+    assert_eq!(left.num_retained(), 16);
+    assert_eq!(right.num_retained(), 16);
+
+    let mut identical = left.clone();
+    let size = identical.estimated_size();
+    identical.merge(&left).unwrap();
+    assert_eq!(identical.estimated_size(), size);
+    assert_eq!(identical.serialize(), doubled.serialize());
+
+    let initial_level = left.num_collapses().max(right.num_collapses());
+    left.merge(&right).unwrap();
+    assert!(left.num_collapses() >= initial_level + 2);
+    assert_eq!(left.serialize(), combined.serialize());
+}
