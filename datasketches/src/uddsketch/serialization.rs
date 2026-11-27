@@ -240,26 +240,6 @@ pub fn deserialize_sketch(bytes: &[u8]) -> Result<UddSketch, Error> {
     let (pos_entries, pos_weight) =
         decode_bucket_run(&mut cursor, num_pos as usize, min_key, max_key)?;
 
-    if num_collapses > 0 {
-        let (prev_min_key, prev_max_key) = mapping.key_bounds(num_collapses - 1);
-        let max_prev_buckets: u64 = neg_entries
-            .iter()
-            .chain(pos_entries.iter())
-            .map(|bucket| {
-                let hi_child = bucket.key.saturating_mul(2);
-                let lo_child = hi_child - 1;
-                let reachable = u64::from((prev_min_key..=prev_max_key).contains(&lo_child))
-                    + u64::from((prev_min_key..=prev_max_key).contains(&hi_child));
-                bucket.count.min(reachable)
-            })
-            .sum();
-        if max_prev_buckets <= u64::from(max_buckets) {
-            return Err(Error::deserial(format!(
-                "UDDSketch with num_collapses={num_collapses} could have occupied at most {max_prev_buckets} buckets before its last collapse, within max_buckets={max_buckets}"
-            )));
-        }
-    }
-
     let total_weight = neg_weight
         .checked_add(zero_weight)
         .and_then(|acc| acc.checked_add(pos_weight))
@@ -317,6 +297,39 @@ pub fn deserialize_sketch(bytes: &[u8]) -> Result<UddSketch, Error> {
         ));
     }
 
+    if num_collapses > 0 {
+        let prev_level = num_collapses - 1;
+        let (prev_min_key, _) = mapping.key_bounds(prev_level);
+        let neg_prev = if neg_entries.is_empty() {
+            0
+        } else {
+            let neg_lo = if max_value < 0.0 {
+                mapping.key_at_level(-max_value, prev_level)
+            } else {
+                prev_min_key
+            };
+            let neg_hi = mapping.key_at_level(-min_value, prev_level);
+            count_reachable_prev_buckets(&neg_entries, neg_lo, neg_hi)
+        };
+        let pos_prev = if pos_entries.is_empty() {
+            0
+        } else {
+            let pos_lo = if min_value > 0.0 {
+                mapping.key_at_level(min_value, prev_level)
+            } else {
+                prev_min_key
+            };
+            let pos_hi = mapping.key_at_level(max_value, prev_level);
+            count_reachable_prev_buckets(&pos_entries, pos_lo, pos_hi)
+        };
+        let max_prev_buckets = neg_prev + pos_prev;
+        if max_prev_buckets <= u64::from(max_buckets) {
+            return Err(Error::deserial(format!(
+                "UDDSketch with num_collapses={num_collapses} could have occupied at most {max_prev_buckets} buckets before its last collapse, within max_buckets={max_buckets}"
+            )));
+        }
+    }
+
     Ok(UddSketch::from_parts(
         max_buckets,
         mapping,
@@ -369,4 +382,17 @@ fn decode_bucket_run(
     }
 
     Ok((entries, total_weight))
+}
+
+fn count_reachable_prev_buckets(entries: &[Bucket], prev_min_key: i64, prev_max_key: i64) -> u64 {
+    entries
+        .iter()
+        .map(|bucket| {
+            let hi_child = bucket.key.saturating_mul(2);
+            let lo_child = hi_child - 1;
+            let reachable = u64::from((prev_min_key..=prev_max_key).contains(&lo_child))
+                + u64::from((prev_min_key..=prev_max_key).contains(&hi_child));
+            bucket.count.min(reachable)
+        })
+        .sum()
 }
