@@ -46,13 +46,13 @@
 mod capacity;
 mod serialization;
 mod sketch;
-mod sorted_view;
 mod value;
 
 pub use self::sketch::KllSketch;
-pub use self::sorted_view::SortedView;
-pub use self::value::KllFloat;
 pub use self::value::KllValue;
+pub use crate::common::quantiles_float::QuantilesFloat as KllFloat;
+pub use crate::common::sorted_view::SortedView;
+
 /// Default value of parameter k.
 const DEFAULT_K: u16 = 200;
 /// Fixed minimum level capacity encoded in the KLL wire format.

@@ -35,8 +35,6 @@ use super::serialization::PREAMBLE_INTS_FULL;
 use super::serialization::PREAMBLE_INTS_SHORT;
 use super::serialization::SERIAL_VERSION_1;
 use super::serialization::SERIAL_VERSION_2;
-use super::sorted_view::SortedView;
-use super::sorted_view::build_sorted_view;
 use super::value::KllValue;
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
@@ -45,6 +43,9 @@ use crate::codec::assert::insufficient_data;
 use crate::codec::family::Family;
 use crate::common::SearchCriteria;
 use crate::common::random::random_bit;
+use crate::common::sorted_view::SortedView;
+use crate::common::sorted_view::rank;
+use crate::common::sorted_view::validate_rank;
 use crate::error::Error;
 
 /// KLL sketch for estimating quantiles and ranks.
@@ -281,40 +282,14 @@ impl<T: Clone + Ord> KllSketch<T> {
     ///
     /// Returns `None` if the sketch is empty.
     pub fn rank(&self, item: &T, criteria: SearchCriteria) -> Option<f64> {
-        if self.is_empty() {
-            return None;
-        }
-        let mut rank_weight = if let [items] = self.levels.as_slice() {
-            // Keep a direct scan to preserve query latency for small exact sketches.
-            count_rank_linear(items, item, criteria) as u64
-        } else {
-            let mut weight = 0u64;
-            for (level, items) in self.levels.iter().enumerate() {
-                // Higher levels are always sorted; level zero may be an unsorted update buffer.
-                let is_sorted = level > 0 || self.is_level_zero_sorted;
-                let count = if is_sorted {
-                    count_rank_sorted(items, item, criteria)
-                } else {
-                    count_rank_linear(items, item, criteria)
-                };
-                weight += (count as u64) << level;
-            }
-            weight
-        };
-
-        // Reconcile with the unit-weight extrema included in `SortedView`: interior weights cancel
-        // out, so only the all-above (`0`) and all-below (`self.n`) boundaries can change by 1.
-        if rank_weight == 0 {
-            if matches_search_criteria(self.min_item.as_ref().unwrap(), item, criteria) {
-                rank_weight = 1;
-            }
-        } else if rank_weight == self.n
-            && !matches_search_criteria(self.max_item.as_ref().unwrap(), item, criteria)
-        {
-            rank_weight = self.n - 1;
-        }
-
-        Some(rank_weight as f64 / self.n as f64)
+        rank(
+            &self.levels,
+            self.is_level_zero_sorted,
+            self.min_item.as_ref().zip(self.max_item.as_ref()),
+            self.n,
+            item,
+            criteria,
+        )
     }
 
     /// Returns the quantile for the given normalized rank.
@@ -327,11 +302,7 @@ impl<T: Clone + Ord> KllSketch<T> {
     /// Returns `InvalidArgument` if `rank` is NaN or outside `[0.0, 1.0]`, even if the sketch is
     /// empty.
     pub fn quantile(&self, rank: f64, criteria: SearchCriteria) -> Result<Option<T>, Error> {
-        if !(0.0..=1.0).contains(&rank) {
-            return Err(Error::invalid_argument(format!(
-                "rank must be in [0.0, 1.0], got {rank}"
-            )));
-        }
+        validate_rank(rank)?;
         if self.is_empty() {
             return Ok(None);
         }
@@ -341,7 +312,7 @@ impl<T: Clone + Ord> KllSketch<T> {
         if rank == 1.0 {
             return Ok(Some(self.max_item.as_ref().unwrap().clone()));
         }
-        self.sorted_view().quantile(rank, criteria)
+        Ok(self.sorted_view().quantile_at_valid_rank(rank, criteria))
     }
 
     /// Returns approximate quantiles for the given normalized ranks.
@@ -402,7 +373,7 @@ impl<T: Clone + Ord> KllSketch<T> {
     ///
     /// The view can be reused for repeated queries while this sketch continues to receive updates.
     pub fn sorted_view(&self) -> SortedView<T> {
-        build_sorted_view(
+        SortedView::new(
             &self.levels,
             self.is_level_zero_sorted,
             self.min_item.as_ref().zip(self.max_item.as_ref()),
@@ -1064,24 +1035,6 @@ impl<T: Clone + Ord> KllSketch<T> {
 
         Ok(())
     }
-}
-
-fn matches_search_criteria<T: Ord>(retained: &T, item: &T, criteria: SearchCriteria) -> bool {
-    match criteria {
-        SearchCriteria::Inclusive => retained <= item,
-        SearchCriteria::Exclusive => retained < item,
-    }
-}
-
-fn count_rank_linear<T: Ord>(items: &[T], item: &T, criteria: SearchCriteria) -> usize {
-    items
-        .iter()
-        .filter(|retained| matches_search_criteria(*retained, item, criteria))
-        .count()
-}
-
-fn count_rank_sorted<T: Ord>(items: &[T], item: &T, criteria: SearchCriteria) -> usize {
-    items.partition_point(|retained| matches_search_criteria(retained, item, criteria))
 }
 
 fn normalized_rank_error(k: u16, pmf: bool) -> f64 {

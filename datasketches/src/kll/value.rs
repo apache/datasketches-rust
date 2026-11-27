@@ -15,121 +15,13 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use std::cmp::Ordering;
-use std::fmt;
 use std::mem::size_of;
-use std::ops::Deref;
 
+use super::KllFloat;
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
 use crate::codec::assert::insufficient_data;
 use crate::error::Error;
-
-/// A non-NaN floating-point adapter for [`KllSketch`](crate::kll::KllSketch).
-///
-/// KLL requires a totally ordered item domain, while primitive floats are unordered in the
-/// presence of NaN. Construction therefore rejects NaN. Other values retain their numerical
-/// order: signed zeros compare equal and infinities are allowed.
-///
-/// The inner float is available through [`into_inner`](Self::into_inner) or immutable
-/// dereferencing.
-#[repr(transparent)]
-#[derive(Clone, Copy, PartialEq, PartialOrd)]
-pub struct KllFloat<T>(T);
-
-impl<T> KllFloat<T> {
-    /// Returns the wrapped floating-point value.
-    #[inline(always)]
-    pub fn into_inner(self) -> T {
-        self.0
-    }
-}
-
-impl<T> Deref for KllFloat<T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl<T: fmt::Debug> fmt::Debug for KllFloat<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-impl<T: fmt::Display> fmt::Display for KllFloat<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-impl KllFloat<f32> {
-    /// Creates a non-NaN KLL value.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if `value` is NaN.
-    #[inline(always)]
-    pub fn new(value: f32) -> Result<Self, Error> {
-        if value.is_nan() {
-            Err(Error::invalid_argument("KLL float must not be NaN"))
-        } else {
-            Ok(Self(value))
-        }
-    }
-}
-
-impl Eq for KllFloat<f32> {}
-
-impl Ord for KllFloat<f32> {
-    #[inline(always)]
-    fn cmp(&self, other: &Self) -> Ordering {
-        // `KllFloat::new` rejects NaN, so `<` and `>` define the same total order as
-        // `partial_cmp` (including `-0.0 == 0.0`) without emitting an unreachable NaN panic
-        // branch in `Ord::cmp` callers.
-        if self.0 < other.0 {
-            Ordering::Less
-        } else if self.0 > other.0 {
-            Ordering::Greater
-        } else {
-            Ordering::Equal
-        }
-    }
-}
-
-impl KllFloat<f64> {
-    /// Creates a non-NaN KLL value.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if `value` is NaN.
-    #[inline(always)]
-    pub fn new(value: f64) -> Result<Self, Error> {
-        if value.is_nan() {
-            Err(Error::invalid_argument("KLL float must not be NaN"))
-        } else {
-            Ok(Self(value))
-        }
-    }
-}
-
-impl Eq for KllFloat<f64> {}
-
-impl Ord for KllFloat<f64> {
-    #[inline(always)]
-    fn cmp(&self, other: &Self) -> Ordering {
-        // Same non-NaN total order as `KllFloat<f32>::cmp`.
-        if self.0 < other.0 {
-            Ordering::Less
-        } else if self.0 > other.0 {
-            Ordering::Greater
-        } else {
-            Ordering::Equal
-        }
-    }
-}
 
 /// Defines the compact binary representation of a KLL item.
 ///
@@ -158,7 +50,7 @@ impl KllValue for KllFloat<f32> {
     }
 
     fn serialize(value: &Self, bytes: &mut SketchBytes) {
-        bytes.write_f32_le(value.0);
+        bytes.write_f32_le(**value);
     }
 
     fn deserialize(input: &mut SketchSlice<'_>) -> Result<Self, Error> {
@@ -177,7 +69,7 @@ impl KllValue for KllFloat<f64> {
     }
 
     fn serialize(value: &Self, bytes: &mut SketchBytes) {
-        bytes.write_f64_le(value.0);
+        bytes.write_f64_le(**value);
     }
 
     fn deserialize(input: &mut SketchSlice<'_>) -> Result<Self, Error> {

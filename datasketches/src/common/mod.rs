@@ -28,12 +28,17 @@ pub use self::search_criteria::SearchCriteria;
 
 #[cfg(any(feature = "cpc", feature = "hll"))]
 pub(crate) mod inv_pow2;
+#[cfg(any(feature = "kll", feature = "quantiles"))]
+pub(crate) mod quantiles_float;
 #[cfg(any(
     feature = "aod",
     feature = "density",
     feature = "kll",
+    feature = "quantiles",
     feature = "req",
     feature = "theta",
     feature = "tuple",
 ))]
 pub(crate) mod random;
+#[cfg(any(feature = "kll", feature = "quantiles"))]
+pub(crate) mod sorted_view;
