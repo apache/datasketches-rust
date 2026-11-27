@@ -119,3 +119,32 @@ fn disjoint_result_is_empty_and_later_inputs_still_require_compatibility() {
     let error = intersection.update(&wrong_seed).unwrap_err();
     assert_eq!(error.kind(), ErrorKind::InvalidArgument);
 }
+
+#[test]
+fn small_overlap_between_large_sketches_shrinks_table_allocation() {
+    let mut a = ArrayOfDoublesSketchBuilder::default()
+        .lg_k(14)
+        .num_values(8)
+        .build()
+        .unwrap();
+    let mut b = ArrayOfDoublesSketchBuilder::default()
+        .lg_k(14)
+        .num_values(8)
+        .build()
+        .unwrap();
+    for key in 0..10_000_u64 {
+        a.update(key, [1.0; 8]).unwrap();
+    }
+    b.update(0_u64, [2.0; 8]).unwrap();
+    for key in 10_000..20_000_u64 {
+        b.update(key, [2.0; 8]).unwrap();
+    }
+
+    let mut intersection = ArrayOfDoublesIntersection::new(8, SumCombiner).unwrap();
+    intersection.update(&a).unwrap();
+    let initial_bytes = intersection.estimated_size();
+    intersection.update(&b).unwrap();
+
+    assert_eq!(intersection.to_sketch(true).unwrap().num_retained(), 1);
+    assert!(intersection.estimated_size() < initial_bytes / 64);
+}

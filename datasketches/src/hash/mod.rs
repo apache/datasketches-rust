@@ -20,6 +20,7 @@
 pub mod value;
 
 #[cfg(any(
+    feature = "aod",
     feature = "countmin",
     feature = "cpc",
     feature = "frequencies",
@@ -29,6 +30,7 @@ pub mod value;
 ))]
 mod murmurhash;
 #[cfg(any(
+    feature = "aod",
     feature = "countmin",
     feature = "cpc",
     feature = "frequencies",
@@ -44,6 +46,7 @@ mod xxhash;
 pub(crate) use self::xxhash::*;
 
 #[cfg(any(
+    feature = "aod",
     feature = "countmin",
     feature = "cpc",
     feature = "theta",
@@ -51,6 +54,7 @@ pub(crate) use self::xxhash::*;
 ))]
 mod seed;
 #[cfg(any(
+    feature = "aod",
     feature = "countmin",
     feature = "cpc",
     feature = "theta",
@@ -72,6 +76,7 @@ pub(crate) use self::seed::*;
 /// original source key value and the hashed bit string would be violated. Once you have developed
 /// a history of stored sketches you are stuck with it.
 #[cfg(any(
+    feature = "aod",
     feature = "bloom",
     feature = "countmin",
     feature = "cpc",
@@ -83,6 +88,7 @@ pub(crate) use self::seed::*;
 pub(crate) const DEFAULT_UPDATE_SEED: u64 = 9001;
 
 #[cfg(any(
+    feature = "aod",
     feature = "bloom",
     feature = "countmin",
     feature = "cpc",
@@ -98,6 +104,7 @@ fn read_u32_le(bytes: &[u8]) -> u32 {
 }
 
 #[cfg(any(
+    feature = "aod",
     feature = "bloom",
     feature = "countmin",
     feature = "cpc",

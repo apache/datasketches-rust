@@ -201,3 +201,21 @@ fn sampled_non_empty_sketch_without_entries_is_not_empty() {
     assert_eq!(restored.theta64(), compact.theta64());
     assert_eq!(restored.num_retained(), 0);
 }
+
+#[test]
+fn estimated_size_accounts_for_heap_buffers_only() {
+    let empty_mutable = ArrayOfDoublesSketchBuilder::default()
+        .num_values(3)
+        .build()
+        .unwrap();
+    assert!(empty_mutable.estimated_size() > 0);
+
+    let empty_compact = empty_mutable.compact(true);
+    assert_eq!(empty_compact.estimated_size(), 0);
+
+    let populated = sketch_with_range(0, 500, 3).compact(true);
+    assert_eq!(
+        populated.estimated_size(),
+        populated.num_retained() * (size_of::<u64>() + 3 * size_of::<f64>())
+    );
+}

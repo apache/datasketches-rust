@@ -63,23 +63,23 @@ Enable multiple algorithms by listing their features together, such as `features
 
 ## Available sketches
 
-| Feature       | Main types                            | Use case                                                                                          |
-| ------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `aod`         | `ArrayOfDoublesSketch` and set operations | Distinct-count estimation with a fixed-size array of `f64` values associated with each key.    |
-| `bloom`       | `BloomFilter`                         | Space-efficient probabilistic set membership with a configurable false-positive rate.             |
-| `countmin`    | `CountMinSketch`                      | Approximate point-frequency queries over a stream.                                                |
-| `cpc`         | `CpcSketch`, `CpcUnion`, `CpcWrapper` | Highly compact distinct-count estimation and unions.                                              |
-| `ddsketch`    | `DdSketch`, `DdSketchBuilder`         | Quantile estimation over `f64` streams with relative-value error guarantees.                      |
-| `density`     | `DensitySketch`, `GaussianKernel`     | Streaming kernel density estimation and coreset construction over multidimensional vectors.       |
-| `frequencies` | `FrequentItemsSketch`                 | Heavy-hitter discovery with upper and lower frequency bounds.                                     |
-| `hll`         | `HllSketch`, `HllUnion`               | Fast distinct-count estimation and unions.                                                        |
-| `kll`         | `KllSketch`                           | General-purpose quantile, rank, PMF, and CDF queries over totally ordered items.                  |
-| `req`         | `ReqSketch`                           | Relative-error quantile, rank, PMF, and CDF queries with configurable high- or low-rank accuracy. |
-| `tdigest`     | `TDigestMut`, `TDigest`               | Quantile and rank estimation, with high accuracy near distribution tails.                         |
-| `theta`       | `ThetaSketch` and set operations      | Distinct counts, set expressions, and Jaccard similarity.                                         |
-| `tuple`       | `TupleSketch` and set operations      | Theta-style keys with user-defined summaries attached to retained entries.                        |
-| `uddsketch`   | `UddSketch`                           | Reproducible quantile estimation over `f64` streams via uniform bucket collapsing.                |
-| `xor`         | `XorFilter`, `XorFilterBuilder`       | Immutable probabilistic membership with 8-, 16-, or 32-bit fingerprints.                          |
+| Feature       | Main types                                | Use case                                                                                          |
+| ------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `aod`         | `ArrayOfDoublesSketch` and set operations | Distinct-count estimation with a fixed-size array of `f64` values associated with each key.       |
+| `bloom`       | `BloomFilter`                             | Space-efficient probabilistic set membership with a configurable false-positive rate.             |
+| `countmin`    | `CountMinSketch`                          | Approximate point-frequency queries over a stream.                                                |
+| `cpc`         | `CpcSketch`, `CpcUnion`, `CpcWrapper`     | Highly compact distinct-count estimation and unions.                                              |
+| `ddsketch`    | `DdSketch`, `DdSketchBuilder`             | Quantile estimation over `f64` streams with relative-value error guarantees.                      |
+| `density`     | `DensitySketch`, `GaussianKernel`         | Streaming kernel density estimation and coreset construction over multidimensional vectors.       |
+| `frequencies` | `FrequentItemsSketch`                     | Heavy-hitter discovery with upper and lower frequency bounds.                                     |
+| `hll`         | `HllSketch`, `HllUnion`                   | Fast distinct-count estimation and unions.                                                        |
+| `kll`         | `KllSketch`                               | General-purpose quantile, rank, PMF, and CDF queries over totally ordered items.                  |
+| `req`         | `ReqSketch`                               | Relative-error quantile, rank, PMF, and CDF queries with configurable high- or low-rank accuracy. |
+| `tdigest`     | `TDigestMut`, `TDigest`                   | Quantile and rank estimation, with high accuracy near distribution tails.                         |
+| `theta`       | `ThetaSketch` and set operations          | Distinct counts, set expressions, and Jaccard similarity.                                         |
+| `tuple`       | `TupleSketch` and set operations          | Theta-style keys with user-defined summaries attached to retained entries.                        |
+| `uddsketch`   | `UddSketch`                               | Reproducible quantile estimation over `f64` streams via uniform bucket collapsing.                |
+| `xor`         | `XorFilter`, `XorFilterBuilder`           | Immutable probabilistic membership with 8-, 16-, or 32-bit fingerprints.                          |
 
 See the [API documentation](https://docs.rs/datasketches) for configuration, accuracy guarantees, serialization, and examples for each algorithm. Runnable end-to-end scenarios live in [`examples`](examples).
 

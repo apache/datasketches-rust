@@ -15,39 +15,59 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::collections::HashSet;
+
 use crate::aod::ArrayOfDoublesSketchView;
 use crate::aod::CompactArrayOfDoublesSketch;
 use crate::aod::policy::check_num_values;
 use crate::error::Error;
 use crate::error::ErrorKind;
+use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::hash::check_seed_hash;
 use crate::hash::compute_seed_hash;
-use crate::tuple::TupleANotB;
+use crate::thetafamily::common::constants::MAX_THETA;
+use crate::thetafamily::common::fold_hash::FoldHashState;
 
 /// Set difference operator (`A and not B`) for ArrayOfDoubles sketches.
 ///
 /// Surviving keys keep their values from `A` unchanged.
+///
+/// # Examples
+///
+/// ```
+/// use datasketches::aod::ArrayOfDoublesANotB;
+/// use datasketches::aod::ArrayOfDoublesSketchBuilder;
+///
+/// let mut a = ArrayOfDoublesSketchBuilder::default().build()?;
+/// a.update("apple", [1.0])?;
+/// a.update("banana", [2.0])?;
+/// let mut b = ArrayOfDoublesSketchBuilder::default().build()?;
+/// b.update("banana", [20.0])?;
+///
+/// let diff = ArrayOfDoublesANotB::default().compute(&a, &b, true)?;
+/// assert_eq!(diff.num_retained(), 1);
+/// assert_eq!(diff.iter().next().unwrap().values(), &[1.0]);
+/// # Ok::<(), datasketches::error::Error>(())
+/// ```
 #[derive(Debug, Clone, Copy)]
 pub struct ArrayOfDoublesANotB {
-    inner: TupleANotB,
     seed_hash: u16,
 }
 
 impl Default for ArrayOfDoublesANotB {
     fn default() -> Self {
-        Self::with_seed(crate::hash::DEFAULT_UPDATE_SEED).unwrap()
+        Self::with_seed(DEFAULT_UPDATE_SEED).unwrap()
     }
 }
 
 impl ArrayOfDoublesANotB {
-    /// Creates a set difference operator for the given seed.
+    /// Creates a set difference operator for `seed`.
     ///
     /// # Errors
     ///
     /// Returns `InvalidArgument` if the computed seed hash is zero.
     pub fn with_seed(seed: u64) -> Result<Self, Error> {
         Ok(Self {
-            inner: TupleANotB::with_seed(seed)?,
             seed_hash: compute_seed_hash(seed, ErrorKind::InvalidArgument)?,
         })
     }
@@ -58,22 +78,21 @@ impl ArrayOfDoublesANotB {
     ///
     /// # Errors
     ///
-    /// Returns `InvalidArgument` if the inputs have different `num_values` or a non-empty input
-    /// has a seed hash that differs from this operator's seed.
+    /// Returns `InvalidArgument` if `a` and `b` have different `num_values`, or if either
+    /// non-empty input has a seed hash that differs from this operator's seed.
     pub fn compute<'a, 'b>(
         &self,
         a: impl Into<ArrayOfDoublesSketchView<'a>>,
         b: impl Into<ArrayOfDoublesSketchView<'b>>,
         ordered: bool,
     ) -> Result<CompactArrayOfDoublesSketch, Error> {
-        let a = a.into();
-        let b = b.into();
+        let (a, b) = (a.into(), b.into());
         check_num_values(a.num_values(), usize::from(b.num_values()), "A-not-B input")?;
         if !a.is_empty() {
             check_seed_hash(
                 self.seed_hash,
                 a.seed_hash(),
-                "ArrayOfDoubles A-not-B input A",
+                "A",
                 ErrorKind::InvalidArgument,
             )?;
         }
@@ -81,16 +100,94 @@ impl ArrayOfDoublesANotB {
             check_seed_hash(
                 self.seed_hash,
                 b.seed_hash(),
-                "ArrayOfDoubles A-not-B input B",
+                "B",
                 ErrorKind::InvalidArgument,
             )?;
         }
-        let result = self
-            .inner
-            .compute(a.into_tuple_view(), b.into_tuple_view(), ordered)?;
-        Ok(CompactArrayOfDoublesSketch::from_tuple(
-            result,
-            a.num_values(),
-        ))
+        if a.is_empty() {
+            return Ok(CompactArrayOfDoublesSketch::empty(
+                self.seed_hash,
+                a.num_values(),
+            ));
+        }
+        if b.is_empty() {
+            if let Some(table) = a.table {
+                return Ok(table.to_non_empty_compact(ordered));
+            }
+            return Ok(CompactArrayOfDoublesSketch::compact_non_empty(
+                a.keys.to_vec(),
+                a.values.to_vec(),
+                a.theta64(),
+                self.seed_hash,
+                a.num_values(),
+                a.is_ordered(),
+                ordered,
+            ));
+        }
+
+        let theta = a.theta64().min(b.theta64());
+        let (hashes, values) = if b.num_retained() == 0 {
+            retain_not_in_b(a, theta, |_| false)
+        } else if let Some(b_table) = b.table {
+            retain_not_in_b(a, theta, |hash| b_table.find_values(hash).is_some())
+        } else if a.is_ordered() && b.is_ordered() {
+            let mut remaining = b.keys.iter().copied().peekable();
+            retain_not_in_b(a, theta, |hash| {
+                while remaining.next_if(|&other| other < hash).is_some() {}
+                remaining.peek() == Some(&hash)
+            })
+        } else {
+            let mut excluded = HashSet::<u64, FoldHashState>::with_capacity_and_hasher(
+                b.num_retained(),
+                FoldHashState::new(),
+            );
+            for &hash in b.keys {
+                if hash < theta {
+                    excluded.insert(hash);
+                } else if b.is_ordered() {
+                    break;
+                }
+            }
+            retain_not_in_b(a, theta, |hash| excluded.contains(&hash))
+        };
+
+        if hashes.is_empty() && theta == MAX_THETA {
+            Ok(CompactArrayOfDoublesSketch::empty(
+                self.seed_hash,
+                a.num_values(),
+            ))
+        } else {
+            Ok(CompactArrayOfDoublesSketch::compact_non_empty(
+                hashes,
+                values,
+                theta,
+                self.seed_hash,
+                a.num_values(),
+                a.is_ordered(),
+                ordered,
+            ))
+        }
     }
+}
+
+fn retain_not_in_b(
+    a: ArrayOfDoublesSketchView<'_>,
+    theta: u64,
+    mut contains: impl FnMut(u64) -> bool,
+) -> (Vec<u64>, Vec<f64>) {
+    let mut hashes = Vec::new();
+    let mut values = Vec::new();
+    let ordered = a.is_ordered();
+    for entry in a.iter() {
+        let hash = entry.hash();
+        if hash < theta {
+            if !contains(hash) {
+                hashes.push(hash);
+                values.extend_from_slice(entry.values());
+            }
+        } else if ordered {
+            break;
+        }
+    }
+    (hashes, values)
 }

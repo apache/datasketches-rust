@@ -28,6 +28,7 @@ clap = { workspace = true }
 [dev-dependencies]
 xorf = { version = "=0.13.0", default-features = false }
 datasketches = { workspace = true, features = [
+  "aod",
   "bloom",
   "countmin",
   "cpc",

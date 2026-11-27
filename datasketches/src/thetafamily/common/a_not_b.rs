@@ -16,10 +16,7 @@
 // under the License.
 
 use std::collections::HashSet;
-use std::hash::BuildHasher;
-use std::hash::Hasher;
 
-use crate::common::random::random_u64;
 use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::hash::check_seed_hash;
@@ -27,6 +24,7 @@ use crate::thetafamily::common::EntrySketch;
 use crate::thetafamily::common::KeySketch;
 use crate::thetafamily::common::SketchEntry;
 use crate::thetafamily::common::constants::MAX_THETA;
+use crate::thetafamily::common::fold_hash::FoldHashState;
 use crate::thetafamily::common::sketch_state::CompactSketchState;
 use crate::thetafamily::common::sketch_state::ThetaFamilySketchMetadata;
 
@@ -162,57 +160,4 @@ where
         }
     }
     entries
-}
-
-const FOLD_MULTIPLIER: u64 = 0x9E37_79B9_7F4A_7C15;
-
-#[inline]
-fn folded_multiply(x: u64, y: u64) -> u64 {
-    let product = u128::from(x) * u128::from(y);
-    (product as u64) ^ ((product >> 64) as u64)
-}
-
-/// Per-operation random state for hashing pre-hashed 64-bit sketch keys.
-///
-/// Keys in Theta and Tuple sketches are already uniform MurmurHash3 outputs, so SipHash is
-/// unnecessary overhead, but compact sketches can be deserialized from untrusted bytes whose raw
-/// hashes were chosen to collide. Seeding a 128-bit folded multiply from the thread-local PRNG on
-/// each call prevents crafted inputs from forcing worst-case probe chains.
-struct FoldHashState(u64);
-
-impl FoldHashState {
-    #[inline]
-    fn new() -> Self {
-        Self(random_u64())
-    }
-}
-
-impl BuildHasher for FoldHashState {
-    type Hasher = FoldHasher;
-
-    #[inline]
-    fn build_hasher(&self) -> FoldHasher {
-        FoldHasher(self.0)
-    }
-}
-
-struct FoldHasher(u64);
-
-impl Hasher for FoldHasher {
-    #[inline]
-    fn finish(&self) -> u64 {
-        self.0
-    }
-
-    #[inline]
-    fn write(&mut self, bytes: &[u8]) {
-        for &byte in bytes {
-            self.0 = folded_multiply(self.0 ^ u64::from(byte), FOLD_MULTIPLIER);
-        }
-    }
-
-    #[inline]
-    fn write_u64(&mut self, value: u64) {
-        self.0 = folded_multiply(self.0 ^ value, FOLD_MULTIPLIER);
-    }
 }

@@ -306,6 +306,22 @@ fn invalid_header_fields_are_rejected() {
     empty_with_entries[4] |= 1 << 2;
     assert_invalid_data(&empty_with_entries);
 
+    let mut zero_hash_sketch = ArrayOfDoublesSketchBuilder::default()
+        .seed(0)
+        .num_values(2)
+        .build()
+        .unwrap();
+    zero_hash_sketch.update((), [1.0, 2.0]).unwrap();
+    assert!(!zero_hash_sketch.is_empty());
+    assert_eq!(zero_hash_sketch.num_retained(), 0);
+    assert_eq!(zero_hash_sketch.theta64(), MAX_THETA);
+    let zero_hash_bytes = zero_hash_sketch.compact(true).serialize();
+    let zero_hash_restored =
+        CompactArrayOfDoublesSketch::deserialize_with_seed(&zero_hash_bytes, 0).unwrap();
+    assert!(!zero_hash_restored.is_empty());
+    assert_eq!(zero_hash_restored.num_retained(), 0);
+    assert_eq!(zero_hash_restored.theta64(), MAX_THETA);
+
     let mut zero_theta = bytes.clone();
     zero_theta[8..16].fill(0);
     assert_invalid_data(&zero_theta);
@@ -374,4 +390,83 @@ fn duplicate_hashes_are_rejected_in_unordered_images() {
     bytes[32..40].copy_from_slice(&first_hash);
 
     assert_invalid_data(&bytes);
+}
+
+#[test]
+fn direct_union_serialization_matches_compact_sketch_path() {
+    use datasketches::aod::ArrayOfDoublesUnionBuilder;
+
+    let empty = ArrayOfDoublesUnionBuilder::default()
+        .num_values(2)
+        .build()
+        .unwrap();
+    for ordered in [true, false] {
+        assert_eq!(
+            empty.serialize(ordered),
+            empty.to_sketch(ordered).serialize()
+        );
+    }
+
+    let seed = 123;
+    for (lg_k, union_p, input_p, count) in [
+        (5, 1.0, 1.0, 0_u64),
+        (5, 1.0, 1.0, 1),
+        (5, 1.0, 1.0, 20),
+        (5, 1.0, 1.0, 5_000),
+        (10, 1.0, 1.0, 5_000),
+        (8, 0.5, 1.0, 5_000),
+        (5, 1e-12, 1.0, 10),
+        (5, 1.0, 0.1, 200),
+    ] {
+        let mut a = ArrayOfDoublesSketchBuilder::default()
+            .num_values(2)
+            .seed(seed)
+            .build()
+            .unwrap();
+        let mut b = ArrayOfDoublesSketchBuilder::default()
+            .num_values(2)
+            .seed(seed)
+            .sampling_probability(input_p)
+            .build()
+            .unwrap();
+        for key in 0..count {
+            a.update(key, [1.0, key as f64]).unwrap();
+            b.update(key + count / 2, [2.0, 10.0]).unwrap();
+        }
+
+        let mut union = ArrayOfDoublesUnionBuilder::default()
+            .num_values(2)
+            .seed(seed)
+            .lg_k(lg_k)
+            .sampling_probability(union_p)
+            .build()
+            .unwrap();
+        union.update(&a).unwrap();
+        union.update(&b).unwrap();
+
+        for ordered in [true, false] {
+            let direct = union.serialize(ordered);
+            let via_sketch = union.to_sketch(ordered).serialize();
+            if ordered {
+                assert_eq!(direct, via_sketch);
+            }
+            let decoded_direct =
+                CompactArrayOfDoublesSketch::deserialize_with_seed(&direct, seed).unwrap();
+            let decoded_sketch =
+                CompactArrayOfDoublesSketch::deserialize_with_seed(&via_sketch, seed).unwrap();
+            assert_eq!(decoded_direct.is_empty(), decoded_sketch.is_empty());
+            assert_eq!(decoded_direct.is_ordered(), decoded_sketch.is_ordered());
+            assert_eq!(decoded_direct.theta64(), decoded_sketch.theta64());
+            assert_eq!(decoded_direct.seed_hash(), decoded_sketch.seed_hash());
+            let map_direct: BTreeMap<_, _> = decoded_direct
+                .iter()
+                .map(|e| (e.hash(), e.values().to_vec()))
+                .collect();
+            let map_sketch: BTreeMap<_, _> = decoded_sketch
+                .iter()
+                .map(|e| (e.hash(), e.values().to_vec()))
+                .collect();
+            assert_eq!(map_direct, map_sketch);
+        }
+    }
 }
