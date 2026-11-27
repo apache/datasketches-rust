@@ -24,6 +24,7 @@ rust-version.workspace = true
 
 [dev-dependencies]
 datasketches = { workspace = true, features = [
+  "aod",
   "bloom",
   "countmin",
   "cpc",

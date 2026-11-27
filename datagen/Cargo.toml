@@ -25,6 +25,7 @@ rust-version.workspace = true
 [dependencies]
 clap = { workspace = true }
 datasketches = { workspace = true, features = [
+  "aod",
   "bloom",
   "countmin",
   "cpc",

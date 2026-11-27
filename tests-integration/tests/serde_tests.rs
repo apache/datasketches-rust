@@ -42,6 +42,9 @@ pub fn serialization_test_data(sub_dir: &str, name: &str) -> PathBuf {
     path
 }
 
+#[path = "serde_tests/aod.rs"]
+mod aod;
+
 #[path = "serde_tests/bloom.rs"]
 mod bloom;
 

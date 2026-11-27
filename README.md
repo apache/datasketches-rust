@@ -65,6 +65,7 @@ Enable multiple algorithms by listing their features together, such as `features
 
 | Feature       | Main types                            | Use case                                                                                          |
 | ------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `aod`         | `ArrayOfDoublesSketch` and set operations | Distinct-count estimation with a fixed-size array of `f64` values associated with each key.    |
 | `bloom`       | `BloomFilter`                         | Space-efficient probabilistic set membership with a configurable false-positive rate.             |
 | `countmin`    | `CountMinSketch`                      | Approximate point-frequency queries over a stream.                                                |
 | `cpc`         | `CpcSketch`, `CpcUnion`, `CpcWrapper` | Highly compact distinct-count estimation and unions.                                              |
