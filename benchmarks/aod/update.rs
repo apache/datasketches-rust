@@ -27,29 +27,16 @@ use crate::hash_inputs::bytes_32_values;
 use crate::hash_inputs::bytes_64_values;
 use crate::hash_inputs::variable_byte_slices;
 
-fn u64_1(bencher: Bencher) {
+fn update_u64<const N: usize>(bencher: Bencher) {
+    let summary = [1.0; N];
     bencher.bench_local(|| {
         let mut sketch = ArrayOfDoublesSketchBuilder::default()
             .lg_k(14)
-            .num_values(1)
+            .num_values(N as u8)
             .build()
             .unwrap();
         for value in 0..ITEMS as u64 {
-            sketch.update(black_box(value), [1.0]).unwrap();
-        }
-        black_box(sketch)
-    });
-}
-
-fn u64_3(bencher: Bencher) {
-    bencher.bench_local(|| {
-        let mut sketch = ArrayOfDoublesSketchBuilder::default()
-            .lg_k(14)
-            .num_values(3)
-            .build()
-            .unwrap();
-        for value in 0..ITEMS as u64 {
-            sketch.update(black_box(value), [1.0, 2.0, 3.0]).unwrap();
+            sketch.update(black_box(value), summary).unwrap();
         }
         black_box(sketch)
     });
@@ -93,8 +80,8 @@ fn variable_bytes_3(bencher: Bencher) {
 }
 
 pub fn register(runner: &mut Runner) {
-    runner.case("aod::update::u64/1", 3_500, u64_1);
-    runner.case("aod::update::u64/3", 3_000, u64_3);
+    runner.case("aod::update::u64/1", 3_500, update_u64::<1>);
+    runner.case("aod::update::u64/3", 3_000, update_u64::<3>);
     runner.case("aod::update::bytes_32/3", 2_500, bytes_32_3);
     runner.case("aod::update::variable_bytes/3", 1_800, variable_bytes_3);
 }

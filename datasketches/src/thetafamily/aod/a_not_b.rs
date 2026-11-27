@@ -19,9 +19,7 @@ use std::collections::HashSet;
 
 use crate::aod::ArrayOfDoublesSketchView;
 use crate::aod::CompactArrayOfDoublesSketch;
-use crate::aod::hash_table::AodCompactData;
 use crate::aod::policy::check_num_values;
-use crate::aod::sketch::AodViewState;
 use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::hash::DEFAULT_UPDATE_SEED;
@@ -107,62 +105,59 @@ impl ArrayOfDoublesANotB {
             )?;
         }
         if a.is_empty() {
-            return Ok(CompactArrayOfDoublesSketch::from_compact_data(
-                AodCompactData::empty(self.seed_hash, a.num_values()),
+            return Ok(CompactArrayOfDoublesSketch::empty(
+                self.seed_hash,
+                a.num_values(),
             ));
         }
         if b.is_empty() {
-            return Ok(match a.0 {
-                AodViewState::Mutable(sketch) => sketch.compact(ordered),
-                AodViewState::Compact(sketch) if ordered && !sketch.is_ordered() => {
-                    CompactArrayOfDoublesSketch::from_compact_data(
-                        AodCompactData::compact_non_empty(
-                            sketch.data.hashes().to_vec(),
-                            sketch.data.values().to_vec(),
-                            sketch.theta64(),
-                            self.seed_hash,
-                            sketch.num_values(),
-                            false,
-                            true,
-                        ),
-                    )
-                }
-                AodViewState::Compact(sketch) => sketch.clone(),
-            });
+            if let Some(table) = a.table {
+                return Ok(table.to_non_empty_compact(ordered));
+            }
+            return Ok(CompactArrayOfDoublesSketch::compact_non_empty(
+                a.keys.to_vec(),
+                a.values.to_vec(),
+                a.theta64(),
+                self.seed_hash,
+                a.num_values(),
+                a.is_ordered(),
+                ordered,
+            ));
         }
 
         let theta = a.theta64().min(b.theta64());
-        let (hashes, values) = match b.0 {
-            _ if b.num_retained() == 0 => retain_not_in_b(a, theta, |_| false),
-            AodViewState::Mutable(sketch) => {
-                retain_not_in_b(a, theta, |hash| sketch.table.find_values(hash).is_some())
-            }
-            AodViewState::Compact(sketch) if a.is_ordered() && b.is_ordered() => {
-                let mut remaining = sketch.data.hashes().iter().copied().peekable();
-                retain_not_in_b(a, theta, |hash| {
-                    while remaining.next_if(|&other| other < hash).is_some() {}
-                    remaining.peek() == Some(&hash)
-                })
-            }
-            AodViewState::Compact(sketch) => {
-                let mut excluded = HashSet::<u64, FoldHashState>::with_capacity_and_hasher(
-                    b.num_retained(),
-                    FoldHashState::new(),
-                );
-                for &hash in sketch.data.hashes() {
-                    if hash < theta {
-                        excluded.insert(hash);
-                    } else if b.is_ordered() {
-                        break;
-                    }
-                }
-                retain_not_in_b(a, theta, |hash| excluded.contains(&hash))
-            }
-        };
-        let data = if hashes.is_empty() && theta == MAX_THETA {
-            AodCompactData::empty(self.seed_hash, a.num_values())
+        let (hashes, values) = if b.num_retained() == 0 {
+            retain_not_in_b(a, theta, |_| false)
+        } else if let Some(b_table) = b.table {
+            retain_not_in_b(a, theta, |hash| b_table.find_values(hash).is_some())
+        } else if a.is_ordered() && b.is_ordered() {
+            let mut remaining = b.keys.iter().copied().peekable();
+            retain_not_in_b(a, theta, |hash| {
+                while remaining.next_if(|&other| other < hash).is_some() {}
+                remaining.peek() == Some(&hash)
+            })
         } else {
-            AodCompactData::compact_non_empty(
+            let mut excluded = HashSet::<u64, FoldHashState>::with_capacity_and_hasher(
+                b.num_retained(),
+                FoldHashState::new(),
+            );
+            for &hash in b.keys {
+                if hash < theta {
+                    excluded.insert(hash);
+                } else if b.is_ordered() {
+                    break;
+                }
+            }
+            retain_not_in_b(a, theta, |hash| excluded.contains(&hash))
+        };
+
+        if hashes.is_empty() && theta == MAX_THETA {
+            Ok(CompactArrayOfDoublesSketch::empty(
+                self.seed_hash,
+                a.num_values(),
+            ))
+        } else {
+            Ok(CompactArrayOfDoublesSketch::compact_non_empty(
                 hashes,
                 values,
                 theta,
@@ -170,9 +165,8 @@ impl ArrayOfDoublesANotB {
                 a.num_values(),
                 a.is_ordered(),
                 ordered,
-            )
-        };
-        Ok(CompactArrayOfDoublesSketch::from_compact_data(data))
+            ))
+        }
     }
 }
 

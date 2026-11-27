@@ -172,83 +172,8 @@ impl<E> CompactSketchState<E> {
     }
 }
 
-const MIN_BUCKET_SORT_LEN: usize = 256;
-const MAX_BUCKET_LEN: u32 = 32;
-
-/// Sorts uniform 64-bit MurmurHash3 entries in ascending hash order using a single top-bit bucket
-/// pass followed by a linear insertion pass, falling back to `sort_unstable_by_key` for small or
-/// skewed inputs.
-fn with_bucket_starts<E: SketchEntry>(
-    entries: &mut Vec<E>,
-    scatter: impl FnOnce(&mut Vec<E>, &mut [u32], u32, usize),
-) {
-    let len = entries.len();
-    if len < MIN_BUCKET_SORT_LEN {
-        if len > 1 {
-            entries.sort_unstable_by_key(SketchEntry::hash);
-        }
-        return;
-    }
-
-    // The highest set bit of the bitwise OR equals the highest set bit of the maximum hash,
-    // avoiding a branch-dependent max reduction before computing the top-bit bucket shift.
-    let bits = entries.iter().fold(0u64, |acc, entry| acc | entry.hash());
-    let lg_buckets = len.ilog2();
-    let num_buckets = 1usize << lg_buckets;
-    let mask = num_buckets - 1;
-    let shift = (u64::BITS - bits.leading_zeros()).saturating_sub(lg_buckets);
-
-    let mut heap_starts;
-    let mut stack_10;
-    let mut stack_12;
-    let starts: &mut [u32] = if lg_buckets <= 10 {
-        stack_10 = [0u32; (1 << 10) + 1];
-        &mut stack_10[..=num_buckets]
-    } else if lg_buckets <= 12 {
-        stack_12 = [0u32; (1 << 12) + 1];
-        &mut stack_12[..=num_buckets]
-    } else {
-        heap_starts = vec![0u32; num_buckets + 1];
-        &mut heap_starts
-    };
-
-    for entry in entries.iter() {
-        starts[((entry.hash() >> shift) as usize & mask) + 1] += 1;
-    }
-    let mut largest = 0u32;
-    for i in 1..starts.len() {
-        largest = largest.max(starts[i]);
-        starts[i] += starts[i - 1];
-    }
-    if largest > MAX_BUCKET_LEN {
-        entries.sort_unstable_by_key(SketchEntry::hash);
-        return;
-    }
-
-    scatter(entries, starts, shift, mask);
-}
-
 pub fn sort_copy_by_hash<E: SketchEntry + Copy>(entries: &mut Vec<E>) {
-    with_bucket_starts(entries, |entries, starts, shift, mask| {
-        let len = entries.len();
-        let mut sorted = vec![entries[0]; len];
-        for &entry in entries.iter() {
-            let next = &mut starts[(entry.hash() >> shift) as usize & mask];
-            sorted[*next as usize] = entry;
-            *next += 1;
-        }
-        for i in 1..len {
-            let entry = sorted[i];
-            let hash = entry.hash();
-            let mut j = i;
-            while j > 0 && sorted[j - 1].hash() > hash {
-                sorted[j] = sorted[j - 1];
-                j -= 1;
-            }
-            sorted[j] = entry;
-        }
-        *entries = sorted;
-    });
+    super::sort::sort_by_hash_key(entries, SketchEntry::hash);
 }
 
 #[cfg(feature = "tuple")]
@@ -265,27 +190,31 @@ pub fn sort_niche_by_hash<S>(entries: &mut Vec<TupleEntry<S>>) {
         }
     }
 
-    with_bucket_starts(entries, |entries, starts, shift, mask| {
-        let len = entries.len();
-        let mut sorted = std::iter::repeat_with(|| None)
-            .take(len)
-            .collect::<Vec<_>>();
-        for entry in std::mem::take(entries) {
-            let next = &mut starts[(entry.hash() >> shift) as usize & mask];
-            sorted[*next as usize] = Some(entry);
-            *next += 1;
-        }
-        let mut sorted = sorted
-            .into_iter()
-            .map(|ent| ent.unwrap())
-            .collect::<Vec<_>>();
-        for i in 1..len {
-            let mut j = i;
-            while j > 0 && sorted[j - 1].hash() > sorted[j].hash() {
-                sorted.swap(j - 1, j);
-                j -= 1;
+    super::sort::with_bucket_starts(
+        entries,
+        SketchEntry::hash,
+        |entries, starts, shift, mask| {
+            let len = entries.len();
+            let mut sorted = std::iter::repeat_with(|| None)
+                .take(len)
+                .collect::<Vec<_>>();
+            for entry in std::mem::take(entries) {
+                let next = &mut starts[(entry.hash() >> shift) as usize & mask];
+                sorted[*next as usize] = Some(entry);
+                *next += 1;
             }
-        }
-        *entries = sorted;
-    });
+            let mut sorted = sorted
+                .into_iter()
+                .map(|ent| ent.unwrap())
+                .collect::<Vec<_>>();
+            for i in 1..len {
+                let mut j = i;
+                while j > 0 && sorted[j - 1].hash() > sorted[j].hash() {
+                    sorted.swap(j - 1, j);
+                    j -= 1;
+                }
+            }
+            *entries = sorted;
+        },
+    );
 }

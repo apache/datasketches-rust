@@ -20,7 +20,6 @@ use std::fmt;
 use crate::aod::ArrayOfDoublesCombiner;
 use crate::aod::ArrayOfDoublesSketchView;
 use crate::aod::CompactArrayOfDoublesSketch;
-use crate::aod::hash_table::AodCompactData;
 use crate::aod::hash_table::AodHashTable;
 use crate::aod::policy::check_num_values;
 use crate::aod::policy::validate_num_values;
@@ -90,15 +89,12 @@ enum AodIntersectionState {
     NonEmpty,
 }
 
-impl<C> fmt::Debug for ArrayOfDoublesIntersection<C>
-where
-    C: ArrayOfDoublesCombiner,
-{
+impl<C: ArrayOfDoublesCombiner> fmt::Debug for ArrayOfDoublesIntersection<C> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut debug = f.debug_struct("ArrayOfDoublesIntersection");
         debug
-            .field("seed_hash", &self.table.seed_hash())
-            .field("num_values", &self.table.num_values())
+            .field("seed_hash", &self.table.seed_hash)
+            .field("num_values", &self.table.num_values)
             .field("has_result", &self.has_result());
         match self.result_state {
             AodIntersectionState::Uninitialized => {}
@@ -111,18 +107,15 @@ where
             AodIntersectionState::NonEmpty => {
                 debug
                     .field("is_empty", &false)
-                    .field("theta64", &self.table.retention_theta())
-                    .field("num_retained", &self.table.num_retained());
+                    .field("theta64", &self.table.retention_theta)
+                    .field("num_retained", &self.table.num_retained);
             }
         }
         debug.finish()
     }
 }
 
-impl<C> ArrayOfDoublesIntersection<C>
-where
-    C: ArrayOfDoublesCombiner,
-{
+impl<C: ArrayOfDoublesCombiner> ArrayOfDoublesIntersection<C> {
     /// Creates an intersection operator with the default seed and the given configuration.
     ///
     /// # Errors
@@ -159,8 +152,8 @@ where
         sketch: impl Into<ArrayOfDoublesSketchView<'a>>,
     ) -> Result<(), Error> {
         let sketch = sketch.into();
-        let num_values = self.table.num_values();
-        let seed_hash = self.table.seed_hash();
+        let num_values = self.table.num_values;
+        let seed_hash = self.table.seed_hash;
         check_num_values(
             num_values,
             usize::from(sketch.num_values()),
@@ -178,7 +171,7 @@ where
             return Ok(());
         }
 
-        let seed = self.table.seed();
+        let seed = self.table.seed;
         let new_table = |count, theta| {
             let lg_size = if count == 0 {
                 0
@@ -200,17 +193,15 @@ where
             return Ok(());
         }
 
-        let result_theta = self.table.retention_theta().min(sketch.theta64());
+        let result_theta = self.table.retention_theta.min(sketch.theta64());
         let input_count = sketch.num_retained();
         if input_count == 0 {
             self.table = new_table(0, result_theta);
             self.result_state = AodIntersectionState::NonEmpty;
             return Ok(());
         }
-        if self.result_state == AodIntersectionState::NonEmpty && self.table.num_retained() == 0 {
-            if result_theta < self.table.retention_theta() {
-                self.table.set_retention_theta(result_theta);
-            }
+        if self.result_state == AodIntersectionState::NonEmpty && self.table.num_retained == 0 {
+            self.table.retention_theta = result_theta;
             return Ok(());
         }
 
@@ -223,7 +214,7 @@ where
                         Error::invalid_argument("invalid or duplicate hash in intersection input")
                     })?;
             }
-            if next_table.num_retained() != input_count {
+            if next_table.num_retained != input_count {
                 return Err(Error::invalid_argument(
                     "retained count mismatch in intersection input",
                 ));
@@ -233,7 +224,7 @@ where
             return Ok(());
         }
 
-        let max_matches = input_count.min(self.table.num_retained());
+        let max_matches = input_count.min(self.table.num_retained);
         let mut next_table = new_table(max_matches, result_theta);
         let ordered = sketch.is_ordered();
         let mut count = 0;
@@ -241,7 +232,7 @@ where
             let hash = entry.hash();
             if hash < result_theta {
                 if let Some(existing) = self.table.find_values(hash) {
-                    if next_table.num_retained() == max_matches {
+                    if next_table.num_retained == max_matches {
                         return Err(Error::invalid_argument(
                             "intersection match count exceeds input size",
                         ));
@@ -263,7 +254,7 @@ where
         }
 
         let mut state = AodIntersectionState::NonEmpty;
-        if next_table.num_retained() == 0 {
+        if next_table.num_retained == 0 {
             next_table = new_table(0, result_theta);
             if result_theta == MAX_THETA {
                 state = AodIntersectionState::Empty;
@@ -290,13 +281,13 @@ where
     /// `Some` even when the intersection is empty. If `ordered` is `true`, retained entries are
     /// sorted ascending by hash.
     pub fn to_sketch(&self, ordered: bool) -> Option<CompactArrayOfDoublesSketch> {
-        let data = match self.result_state {
-            AodIntersectionState::Uninitialized => return None,
-            AodIntersectionState::Empty => {
-                AodCompactData::empty(self.table.seed_hash(), self.table.num_values())
-            }
-            AodIntersectionState::NonEmpty => self.table.to_non_empty_compact_data(ordered),
-        };
-        Some(CompactArrayOfDoublesSketch::from_compact_data(data))
+        match self.result_state {
+            AodIntersectionState::Uninitialized => None,
+            AodIntersectionState::Empty => Some(CompactArrayOfDoublesSketch::empty(
+                self.table.seed_hash,
+                self.table.num_values,
+            )),
+            AodIntersectionState::NonEmpty => Some(self.table.to_non_empty_compact(ordered)),
+        }
     }
 }

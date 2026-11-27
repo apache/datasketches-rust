@@ -19,6 +19,7 @@ use std::hash::Hash;
 use std::iter::FusedIterator;
 
 use crate::aod::ArrayOfDoublesEntry;
+use crate::aod::CompactArrayOfDoublesSketch;
 use crate::aod::policy::validate_num_values;
 use crate::common::ResizeFactor;
 use crate::error::Error;
@@ -31,6 +32,7 @@ use crate::thetafamily::common::constants::MIN_LG_K;
 use crate::thetafamily::common::constants::STRIDE_MASK;
 use crate::thetafamily::common::hash_table::starting_retention_theta;
 use crate::thetafamily::common::hash_table::starting_sub_multiple;
+use crate::thetafamily::common::sort::sort_by_hash_key;
 
 /// Flat open-addressed hash table storing `u64` keys alongside a strided `Vec<f64>` summary buffer.
 ///
@@ -39,21 +41,20 @@ use crate::thetafamily::common::hash_table::starting_sub_multiple;
 #[derive(Debug, Clone)]
 pub(super) struct AodHashTable {
     lg_cur_size: u8,
-    lg_nom_size: u8,
+    pub(super) lg_nom_size: u8,
     lg_max_size: u8,
-    num_values: u8,
+    pub(super) num_values: u8,
     resize_factor: ResizeFactor,
     sampling_probability: f32,
-    seed: u64,
-    seed_hash: u16,
-    retention_theta: u64,
-    num_retained: usize,
-    keys: Vec<u64>,
-    values: Vec<f64>,
+    pub(super) seed: u64,
+    pub(super) seed_hash: u16,
+    pub(super) retention_theta: u64,
+    pub(super) num_retained: usize,
+    pub(super) keys: Vec<u64>,
+    pub(super) values: Vec<f64>,
 }
 
 impl AodHashTable {
-    /// Creates a new mutable hash table with validated Theta-family and `num_values` parameters.
     pub fn new(
         lg_nom_size: u8,
         resize_factor: ResizeFactor,
@@ -99,7 +100,6 @@ impl AodHashTable {
         ))
     }
 
-    /// Creates a table sized for an intersection operator (`lg_cur_size == 0` allocates nothing).
     pub fn for_intersection(
         lg_cur_size: u8,
         lg_nom_size: u8,
@@ -132,16 +132,12 @@ impl AodHashTable {
         num_values: u8,
     ) -> Self {
         let lg_max_size = lg_nom_size + 1;
-        assert!(
-            lg_cur_size <= lg_max_size,
-            "lg_cur_size must be <= lg_nom_size + 1, got lg_cur_size={lg_cur_size}, lg_nom_size={lg_nom_size}"
-        );
+        assert!(lg_cur_size <= lg_max_size);
         let size = if lg_cur_size > 0 {
             1usize << lg_cur_size
         } else {
             0
         };
-        let stride = usize::from(num_values);
         Self {
             lg_cur_size,
             lg_nom_size,
@@ -154,56 +150,13 @@ impl AodHashTable {
             retention_theta,
             num_retained: 0,
             keys: vec![0; size],
-            values: vec![0.0; size * stride],
+            values: vec![0.0; size * usize::from(num_values)],
         }
     }
 
     #[inline]
     pub fn stride(&self) -> usize {
         usize::from(self.num_values)
-    }
-
-    #[inline]
-    pub fn num_values(&self) -> u8 {
-        self.num_values
-    }
-
-    #[inline]
-    pub fn lg_nom_size(&self) -> u8 {
-        self.lg_nom_size
-    }
-
-    #[inline]
-    pub fn seed(&self) -> u64 {
-        self.seed
-    }
-
-    #[inline]
-    pub fn seed_hash(&self) -> u16 {
-        self.seed_hash
-    }
-
-    #[inline]
-    pub fn retention_theta(&self) -> u64 {
-        self.retention_theta
-    }
-
-    pub fn set_retention_theta(&mut self, retention_theta: u64) {
-        assert!(
-            (1..=MAX_THETA).contains(&retention_theta),
-            "theta must be in [1, {MAX_THETA}], got {retention_theta}"
-        );
-        self.retention_theta = retention_theta;
-    }
-
-    #[inline]
-    pub fn num_retained(&self) -> usize {
-        self.num_retained
-    }
-
-    #[inline]
-    pub fn keys(&self) -> &[u64] {
-        &self.keys
     }
 
     #[inline]
@@ -216,21 +169,9 @@ impl AodHashTable {
     pub fn hash<T: Hash>(&self, value: T) -> u64 {
         let mut hasher = MurmurHash3X64128::with_seed(self.seed);
         value.hash(&mut hasher);
-        let (h1, _) = hasher.finish128();
-        h1 >> 1
+        hasher.finish128().0 >> 1
     }
 
-    #[inline]
-    pub fn capacity_threshold(&self) -> usize {
-        if self.lg_cur_size <= self.lg_nom_size {
-            self.keys.len() / 2
-        } else {
-            self.keys.len() - self.keys.len() / 16
-        }
-    }
-
-    /// Inserts `incoming` for `hash` if new, or adds `incoming` element-by-element if already
-    /// retained. Hashes equal to `0` or `>= retention_theta` are ignored.
     pub fn insert_or_add(&mut self, hash: u64, incoming: &[f64]) {
         if hash == 0 || hash >= self.retention_theta {
             return;
@@ -248,7 +189,12 @@ impl AodHashTable {
         slot.copy_from_slice(incoming);
         self.keys[idx] = hash;
         self.num_retained += 1;
-        if self.num_retained > self.capacity_threshold() {
+        let threshold = if self.lg_cur_size <= self.lg_nom_size {
+            self.keys.len() / 2
+        } else {
+            self.keys.len() - self.keys.len() / 16
+        };
+        if self.num_retained > threshold {
             if self.lg_cur_size <= self.lg_nom_size {
                 self.resize();
             } else {
@@ -257,9 +203,6 @@ impl AodHashTable {
         }
     }
 
-    /// Inserts a known-unique entry without combining or resizing, returning a mutable slice to
-    /// the inserted slot's values, or `None` if `hash == 0`, `hash >= retention_theta`, the table
-    /// has no free slot, or `hash` already exists in the table.
     pub fn insert_unique(&mut self, hash: u64, incoming: &[f64]) -> Option<&mut [f64]> {
         if hash == 0 || hash >= self.retention_theta {
             return None;
@@ -276,7 +219,6 @@ impl AodHashTable {
         Some(slot)
     }
 
-    /// Looks up the retained value slice for `hash`, returning `None` if absent.
     #[inline]
     pub fn find_values(&self, hash: u64) -> Option<&[f64]> {
         if hash == 0 {
@@ -303,14 +245,12 @@ impl AodHashTable {
         }
     }
 
-    /// Trims retained entries down to nominal capacity `1 << lg_nom_size` via QuickSelect rebuild.
     pub fn trim(&mut self) {
         if self.num_retained > (1usize << self.lg_nom_size) {
             self.rebuild();
         }
     }
 
-    /// Resets the table to its initial capacity, retention theta, and zero retained entries.
     pub fn reset(&mut self) {
         let init_lg_cur = starting_sub_multiple(
             self.lg_nom_size + 1,
@@ -318,51 +258,60 @@ impl AodHashTable {
             self.resize_factor.lg_value(),
         );
         let size = 1usize << init_lg_cur;
-        let stride = self.stride();
         self.keys.clear();
         self.keys.resize(size, 0);
         self.values.clear();
-        self.values.resize(size * stride, 0.0);
+        self.values.resize(size * self.stride(), 0.0);
         self.num_retained = 0;
         self.retention_theta = starting_retention_theta(self.sampling_probability);
         self.lg_cur_size = init_lg_cur;
     }
 
-    /// Estimates heap memory usage in bytes across `keys` and `values` buffers.
     pub fn estimated_size(&self) -> usize {
         self.keys.capacity() * size_of::<u64>() + self.values.capacity() * size_of::<f64>()
     }
 
-    /// Iterates over retained `(hash, values)` entries in hash-table slot order.
-    pub fn iter(&self) -> AodTableIter<'_> {
-        AodTableIter {
-            keys: &self.keys,
-            values: &self.values,
-            stride: self.stride(),
-            index: 0,
-            remaining: self.num_retained,
-        }
+    pub fn iter(&self) -> AodIter<'_> {
+        AodIter::new(&self.keys, &self.values, self.num_values, self.num_retained)
     }
 
-    /// Materializes a non-empty [`AodCompactData`] from the table's current retained entries.
-    pub fn to_non_empty_compact_data(&self, ordered: bool) -> AodCompactData {
+    pub fn materialize_compact(
+        &self,
+        theta: u64,
+        is_ordered: bool,
+        slots: &[(u64, u32)],
+    ) -> CompactArrayOfDoublesSketch {
+        let mut hashes = Vec::with_capacity(slots.len());
+        let mut values = Vec::with_capacity(slots.len() * self.stride());
+        for &(hash, slot) in slots {
+            hashes.push(hash);
+            values.extend_from_slice(self.slot_values(slot as usize));
+        }
+        CompactArrayOfDoublesSketch::from_raw_parts(
+            false,
+            is_ordered,
+            self.seed_hash,
+            theta,
+            self.num_values,
+            hashes,
+            values,
+        )
+    }
+
+    pub fn to_non_empty_compact(&self, ordered: bool) -> CompactArrayOfDoublesSketch {
+        if ordered && self.num_retained > 1 {
+            let mut slots = self.retained_slots();
+            sort_by_hash_key(&mut slots, |&(hash, _)| hash);
+            return self.materialize_compact(self.retention_theta, true, &slots);
+        }
         let mut hashes = Vec::with_capacity(self.num_retained);
         let mut values = Vec::with_capacity(self.num_retained * self.stride());
-        if ordered && self.num_retained > 1 {
-            let mut pairs = self.retained_slots();
-            order_indices_by_hash(&mut pairs);
-            for (hash, slot) in pairs {
-                hashes.push(hash);
-                values.extend_from_slice(self.slot_values(slot as usize));
-            }
-        } else {
-            for entry in self.iter() {
-                hashes.push(entry.hash());
-                values.extend_from_slice(entry.values());
-            }
+        for entry in self.iter() {
+            hashes.push(entry.hash());
+            values.extend_from_slice(entry.values());
         }
         let is_ordered = ordered || (hashes.len() == 1 && self.retention_theta == MAX_THETA);
-        AodCompactData::from_raw_parts(
+        CompactArrayOfDoublesSketch::from_raw_parts(
             false,
             is_ordered,
             self.seed_hash,
@@ -424,7 +373,7 @@ impl AodHashTable {
 }
 
 #[derive(Clone)]
-pub(super) struct AodTableIter<'a> {
+pub(super) struct AodIter<'a> {
     keys: &'a [u64],
     values: &'a [f64],
     stride: usize,
@@ -432,7 +381,20 @@ pub(super) struct AodTableIter<'a> {
     remaining: usize,
 }
 
-impl<'a> Iterator for AodTableIter<'a> {
+impl<'a> AodIter<'a> {
+    #[inline]
+    pub fn new(keys: &'a [u64], values: &'a [f64], num_values: u8, remaining: usize) -> Self {
+        Self {
+            keys,
+            values,
+            stride: usize::from(num_values),
+            index: 0,
+            remaining,
+        }
+    }
+}
+
+impl<'a> Iterator for AodIter<'a> {
     type Item = ArrayOfDoublesEntry<'a>;
 
     #[inline]
@@ -459,264 +421,11 @@ impl<'a> Iterator for AodTableIter<'a> {
     }
 }
 
-impl ExactSizeIterator for AodTableIter<'_> {
+impl ExactSizeIterator for AodIter<'_> {
     #[inline]
     fn len(&self) -> usize {
         self.remaining
     }
 }
 
-impl FusedIterator for AodTableIter<'_> {}
-
-/// Flat Structure-of-Arrays backing storage for [`CompactArrayOfDoublesSketch`](crate::aod::CompactArrayOfDoublesSketch).
-#[derive(Clone, Debug)]
-pub(super) struct AodCompactData {
-    is_empty: bool,
-    is_ordered: bool,
-    seed_hash: u16,
-    theta: u64,
-    num_values: u8,
-    hashes: Vec<u64>,
-    values: Vec<f64>,
-}
-
-impl AodCompactData {
-    pub fn empty(seed_hash: u16, num_values: u8) -> Self {
-        Self {
-            is_empty: true,
-            is_ordered: true,
-            seed_hash,
-            theta: MAX_THETA,
-            num_values,
-            hashes: Vec::new(),
-            values: Vec::new(),
-        }
-    }
-
-    pub fn from_raw_parts(
-        is_empty: bool,
-        is_ordered: bool,
-        seed_hash: u16,
-        theta: u64,
-        num_values: u8,
-        hashes: Vec<u64>,
-        values: Vec<f64>,
-    ) -> Self {
-        debug_assert_eq!(values.len(), hashes.len() * usize::from(num_values));
-        debug_assert!(!is_empty || (hashes.is_empty() && theta == MAX_THETA && is_ordered));
-        Self {
-            is_empty,
-            is_ordered,
-            seed_hash,
-            theta,
-            num_values,
-            hashes,
-            values,
-        }
-    }
-
-    /// Canonicalizes non-empty flat `hashes` and `values`, sorting by ascending hash when
-    /// `ordered && !already_ordered && hashes.len() > 1`. Exact singletons (`hashes.len() == 1`
-    /// with `theta == MAX_THETA`) are always marked ordered.
-    pub fn compact_non_empty(
-        hashes: Vec<u64>,
-        values: Vec<f64>,
-        theta: u64,
-        seed_hash: u16,
-        num_values: u8,
-        already_ordered: bool,
-        ordered: bool,
-    ) -> Self {
-        let stride = usize::from(num_values);
-        assert_eq!(values.len(), hashes.len() * stride);
-        let is_ordered = ordered || already_ordered || (hashes.len() == 1 && theta == MAX_THETA);
-        if ordered && !already_ordered && hashes.len() > 1 {
-            let mut pairs = hashes
-                .iter()
-                .enumerate()
-                .map(|(slot, &hash)| (hash, slot as u32))
-                .collect();
-            order_indices_by_hash(&mut pairs);
-            let mut sorted_hashes = Vec::with_capacity(hashes.len());
-            let mut sorted_values = Vec::with_capacity(values.len());
-            for (hash, slot) in pairs {
-                let start = slot as usize * stride;
-                sorted_hashes.push(hash);
-                sorted_values.extend_from_slice(&values[start..start + stride]);
-            }
-            return Self::from_raw_parts(
-                false,
-                is_ordered,
-                seed_hash,
-                theta,
-                num_values,
-                sorted_hashes,
-                sorted_values,
-            );
-        }
-        Self::from_raw_parts(
-            false, is_ordered, seed_hash, theta, num_values, hashes, values,
-        )
-    }
-
-    #[inline]
-    pub fn is_empty(&self) -> bool {
-        self.is_empty
-    }
-
-    #[inline]
-    pub fn is_ordered(&self) -> bool {
-        self.is_ordered
-    }
-
-    #[inline]
-    pub fn is_estimation_mode(&self) -> bool {
-        !self.is_empty && self.theta < MAX_THETA
-    }
-
-    #[inline]
-    pub fn seed_hash(&self) -> u16 {
-        self.seed_hash
-    }
-
-    #[inline]
-    pub fn theta(&self) -> u64 {
-        self.theta
-    }
-
-    #[inline]
-    pub fn num_values(&self) -> u8 {
-        self.num_values
-    }
-
-    #[inline]
-    pub fn hashes(&self) -> &[u64] {
-        &self.hashes
-    }
-
-    #[inline]
-    pub fn values(&self) -> &[f64] {
-        &self.values
-    }
-
-    #[inline]
-    pub fn num_retained(&self) -> usize {
-        self.hashes.len()
-    }
-
-    #[inline]
-    pub fn estimated_size(&self) -> usize {
-        self.hashes.capacity() * size_of::<u64>() + self.values.capacity() * size_of::<f64>()
-    }
-
-    pub fn iter(&self) -> AodCompactIter<'_> {
-        AodCompactIter {
-            hashes: &self.hashes,
-            values: &self.values,
-            stride: usize::from(self.num_values),
-            index: 0,
-        }
-    }
-}
-
-#[derive(Clone)]
-pub(super) struct AodCompactIter<'a> {
-    hashes: &'a [u64],
-    values: &'a [f64],
-    stride: usize,
-    index: usize,
-}
-
-impl<'a> Iterator for AodCompactIter<'a> {
-    type Item = ArrayOfDoublesEntry<'a>;
-
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        let hash = *self.hashes.get(self.index)?;
-        let slot = self.index;
-        self.index += 1;
-        let values = &self.values[slot * self.stride..(slot + 1) * self.stride];
-        Some(ArrayOfDoublesEntry::new(hash, values))
-    }
-
-    #[inline]
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let remaining = self.hashes.len() - self.index;
-        (remaining, Some(remaining))
-    }
-}
-
-impl ExactSizeIterator for AodCompactIter<'_> {
-    #[inline]
-    fn len(&self) -> usize {
-        self.hashes.len() - self.index
-    }
-}
-
-impl FusedIterator for AodCompactIter<'_> {}
-
-/// Sorts `(hash, source_index)` pairs in ascending hash order using a top-bit bucket pass for
-/// `pairs.len() >= 256` with `sort_unstable_by_key` fallback for small or skewed inputs.
-pub(super) fn order_indices_by_hash(pairs: &mut Vec<(u64, u32)>) {
-    const MIN_BUCKET_SORT_LEN: usize = 256;
-    const MAX_BUCKET_LEN: u32 = 32;
-
-    let len = pairs.len();
-    if len < MIN_BUCKET_SORT_LEN {
-        if len > 1 {
-            pairs.sort_unstable_by_key(|&(hash, _)| hash);
-        }
-        return;
-    }
-
-    let bits = pairs.iter().fold(0u64, |acc, &(hash, _)| acc | hash);
-    let lg_buckets = len.ilog2();
-    let num_buckets = 1usize << lg_buckets;
-    let mask = num_buckets - 1;
-    let shift = (u64::BITS - bits.leading_zeros()).saturating_sub(lg_buckets);
-    let bucket = |hash: u64| (hash >> shift) as usize & mask;
-
-    let mut stack_10;
-    let mut stack_12;
-    let mut heap_starts;
-    let starts: &mut [u32] = if lg_buckets <= 10 {
-        stack_10 = [0u32; (1 << 10) + 1];
-        &mut stack_10[..=num_buckets]
-    } else if lg_buckets <= 12 {
-        stack_12 = [0u32; (1 << 12) + 1];
-        &mut stack_12[..=num_buckets]
-    } else {
-        heap_starts = vec![0u32; num_buckets + 1];
-        &mut heap_starts
-    };
-
-    for &(hash, _) in pairs.iter() {
-        starts[bucket(hash) + 1] += 1;
-    }
-    let mut largest = 0;
-    for i in 1..starts.len() {
-        largest = largest.max(starts[i]);
-        starts[i] += starts[i - 1];
-    }
-    if largest > MAX_BUCKET_LEN {
-        pairs.sort_unstable_by_key(|&(hash, _)| hash);
-        return;
-    }
-
-    let mut sorted = vec![pairs[0]; len];
-    for &pair in pairs.iter() {
-        let next = &mut starts[bucket(pair.0)];
-        sorted[*next as usize] = pair;
-        *next += 1;
-    }
-    for i in 1..len {
-        let pair = sorted[i];
-        let mut j = i;
-        while j > 0 && sorted[j - 1].0 > pair.0 {
-            sorted[j] = sorted[j - 1];
-            j -= 1;
-        }
-        sorted[j] = pair;
-    }
-    *pairs = sorted;
-}
+impl FusedIterator for AodIter<'_> {}

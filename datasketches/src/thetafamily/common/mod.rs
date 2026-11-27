@@ -29,6 +29,7 @@ pub(super) mod intersection;
 pub(super) mod jaccard_similarity;
 #[cfg(any(feature = "theta", feature = "tuple"))]
 pub(super) mod sketch_state;
+pub(super) mod sort;
 #[cfg(any(feature = "theta", feature = "tuple"))]
 pub(super) mod union;
 

@@ -18,7 +18,7 @@
 use std::collections::HashSet;
 
 use crate::aod::ArrayOfDoublesUnion;
-use crate::aod::hash_table::AodCompactData;
+use crate::aod::CompactArrayOfDoublesSketch;
 use crate::aod::union::CompactUnionSlots;
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
@@ -39,40 +39,40 @@ const SKETCH_TYPE: u8 = 3;
 const FLAGS_HAS_ENTRIES: u8 = 1 << 3;
 const HEADER_SIZE: usize = 16;
 
-pub(super) fn serialize_compact(data: &AodCompactData) -> Vec<u8> {
+pub(super) fn serialize_compact(sketch: &CompactArrayOfDoublesSketch) -> Vec<u8> {
     let mut bytes = compact_header(
-        data.is_empty(),
-        data.is_ordered(),
-        data.seed_hash(),
-        data.theta(),
-        data.num_values(),
-        data.num_retained(),
+        sketch.is_empty(),
+        sketch.is_ordered(),
+        sketch.seed_hash(),
+        sketch.theta64(),
+        sketch.num_values(),
+        sketch.num_retained(),
     );
-    for &hash in data.hashes() {
+    for &hash in &sketch.hashes {
         bytes.write_u64_le(hash);
     }
-    for &value in data.values() {
+    for &value in &sketch.values {
         bytes.write_f64_le(value);
     }
     bytes.into_bytes()
 }
 
 pub(super) fn serialize_union(union: &ArrayOfDoublesUnion, ordered: bool) -> Vec<u8> {
-    let table = union.table();
+    let table = &union.table;
     let Some(CompactUnionSlots {
         theta,
         is_ordered,
         slots,
     }) = union.compact_slots(ordered)
     else {
-        return compact_header(true, true, 0, MAX_THETA, table.num_values(), 0).into_bytes();
+        return compact_header(true, true, 0, MAX_THETA, table.num_values, 0).into_bytes();
     };
     let mut bytes = compact_header(
         false,
         is_ordered,
-        table.seed_hash(),
+        table.seed_hash,
         theta,
-        table.num_values(),
+        table.num_values,
         slots.len(),
     );
     for &(hash, _) in &slots {
@@ -126,7 +126,10 @@ fn compact_header(
     bytes
 }
 
-pub(super) fn deserialize_compact(bytes: &[u8], seed: u64) -> Result<AodCompactData, Error> {
+pub(super) fn deserialize_compact(
+    bytes: &[u8],
+    seed: u64,
+) -> Result<CompactArrayOfDoublesSketch, Error> {
     let expected_seed_hash = compute_seed_hash(seed, ErrorKind::InvalidData)?;
     let mut cursor = SketchSlice::new(bytes);
     let preamble_longs = cursor
@@ -179,7 +182,10 @@ pub(super) fn deserialize_compact(bytes: &[u8], seed: u64) -> Result<AodCompactD
         ));
     }
     if is_empty {
-        return Ok(AodCompactData::empty(expected_seed_hash, num_values));
+        return Ok(CompactArrayOfDoublesSketch::empty(
+            expected_seed_hash,
+            num_values,
+        ));
     }
 
     check_seed_hash(
@@ -190,7 +196,7 @@ pub(super) fn deserialize_compact(bytes: &[u8], seed: u64) -> Result<AodCompactD
     )?;
 
     if !has_entries {
-        return Ok(AodCompactData::from_raw_parts(
+        return Ok(CompactArrayOfDoublesSketch::from_raw_parts(
             false,
             is_ordered,
             seed_hash,
@@ -257,7 +263,7 @@ pub(super) fn deserialize_compact(bytes: &[u8], seed: u64) -> Result<AodCompactD
                 .map_err(insufficient_data("entry_values"))?,
         );
     }
-    Ok(AodCompactData::from_raw_parts(
+    Ok(CompactArrayOfDoublesSketch::from_raw_parts(
         false, is_ordered, seed_hash, theta, num_values, hashes, values,
     ))
 }

@@ -17,12 +17,9 @@
 
 use std::fmt;
 use std::hash::Hash;
-use std::iter::FusedIterator;
 
-use crate::aod::hash_table::AodCompactData;
-use crate::aod::hash_table::AodCompactIter;
 use crate::aod::hash_table::AodHashTable;
-use crate::aod::hash_table::AodTableIter;
+use crate::aod::hash_table::AodIter;
 use crate::aod::policy::check_num_values;
 use crate::common::NumStdDev;
 use crate::common::ResizeFactor;
@@ -31,6 +28,7 @@ use crate::hash::DEFAULT_UPDATE_SEED;
 use crate::thetafamily::common::binomial_bounds;
 use crate::thetafamily::common::constants::DEFAULT_LG_K;
 use crate::thetafamily::common::constants::MAX_THETA;
+use crate::thetafamily::common::sort::sort_by_hash_key;
 
 /// A retained hash key and its associated slice of `f64` values.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -64,148 +62,115 @@ impl<'a> ArrayOfDoublesEntry<'a> {
 /// [`ArrayOfDoublesIntersection`](crate::aod::ArrayOfDoublesIntersection), and
 /// [`ArrayOfDoublesANotB`](crate::aod::ArrayOfDoublesANotB).
 #[derive(Clone, Copy)]
-pub struct ArrayOfDoublesSketchView<'a>(pub(super) AodViewState<'a>);
-
-#[derive(Clone, Copy)]
-pub(super) enum AodViewState<'a> {
-    Mutable(&'a ArrayOfDoublesSketch),
-    Compact(&'a CompactArrayOfDoublesSketch),
+pub struct ArrayOfDoublesSketchView<'a> {
+    pub(super) table: Option<&'a AodHashTable>,
+    pub(super) keys: &'a [u64],
+    pub(super) values: &'a [f64],
+    num_retained: usize,
+    theta: u64,
+    seed_hash: u16,
+    num_values: u8,
+    is_empty: bool,
+    is_ordered: bool,
 }
 
 impl fmt::Debug for ArrayOfDoublesSketchView<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ArrayOfDoublesSketchView")
-            .field("seed_hash", &self.seed_hash())
-            .field("num_values", &self.num_values())
-            .field("is_empty", &self.is_empty())
-            .field("is_ordered", &self.is_ordered())
-            .field("num_retained", &self.num_retained())
-            .field("theta64", &self.theta64())
+            .field("seed_hash", &self.seed_hash)
+            .field("num_values", &self.num_values)
+            .field("is_empty", &self.is_empty)
+            .field("is_ordered", &self.is_ordered)
+            .field("num_retained", &self.num_retained)
+            .field("theta64", &self.theta)
             .finish()
     }
 }
-
-enum AodViewIter<'a> {
-    Mutable(AodTableIter<'a>),
-    Compact(AodCompactIter<'a>),
-}
-
-impl<'a> Iterator for AodViewIter<'a> {
-    type Item = ArrayOfDoublesEntry<'a>;
-
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        match self {
-            Self::Mutable(iter) => iter.next(),
-            Self::Compact(iter) => iter.next(),
-        }
-    }
-
-    #[inline]
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        match self {
-            Self::Mutable(iter) => iter.size_hint(),
-            Self::Compact(iter) => iter.size_hint(),
-        }
-    }
-}
-
-impl ExactSizeIterator for AodViewIter<'_> {
-    #[inline]
-    fn len(&self) -> usize {
-        match self {
-            Self::Mutable(iter) => iter.len(),
-            Self::Compact(iter) => iter.len(),
-        }
-    }
-}
-
-impl FusedIterator for AodViewIter<'_> {}
 
 impl<'a> ArrayOfDoublesSketchView<'a> {
     /// Returns the number of `f64` values associated with each key.
     #[inline]
     pub fn num_values(&self) -> u8 {
-        match self.0 {
-            AodViewState::Mutable(sketch) => sketch.num_values(),
-            AodViewState::Compact(sketch) => sketch.num_values(),
-        }
+        self.num_values
     }
 
     /// Returns the 16-bit seed hash.
     #[inline]
     pub fn seed_hash(&self) -> u16 {
-        match self.0 {
-            AodViewState::Mutable(sketch) => sketch.seed_hash(),
-            AodViewState::Compact(sketch) => sketch.seed_hash(),
-        }
+        self.seed_hash
     }
 
     /// Returns `true` if the viewed sketch is empty.
     #[inline]
     pub fn is_empty(&self) -> bool {
-        match self.0 {
-            AodViewState::Mutable(sketch) => sketch.is_empty(),
-            AodViewState::Compact(sketch) => sketch.is_empty(),
-        }
+        self.is_empty
     }
 
     /// Returns `true` if the viewed sketch is in estimation mode.
     #[inline]
     pub fn is_estimation_mode(&self) -> bool {
-        match self.0 {
-            AodViewState::Mutable(sketch) => sketch.is_estimation_mode(),
-            AodViewState::Compact(sketch) => sketch.is_estimation_mode(),
-        }
+        !self.is_empty && self.theta < MAX_THETA
     }
 
     /// Returns `true` if retained entries are ordered by ascending hash.
     #[inline]
     pub fn is_ordered(&self) -> bool {
-        match self.0 {
-            AodViewState::Mutable(_) => false,
-            AodViewState::Compact(sketch) => sketch.is_ordered(),
-        }
+        self.is_ordered
     }
 
     /// Returns the number of retained entries.
     #[inline]
     pub fn num_retained(&self) -> usize {
-        match self.0 {
-            AodViewState::Mutable(sketch) => sketch.num_retained(),
-            AodViewState::Compact(sketch) => sketch.num_retained(),
-        }
+        self.num_retained
     }
 
     /// Returns theta as a `u64` threshold.
     #[inline]
     pub fn theta64(&self) -> u64 {
-        match self.0 {
-            AodViewState::Mutable(sketch) => sketch.theta64(),
-            AodViewState::Compact(sketch) => sketch.theta64(),
-        }
+        self.theta
     }
 
     /// Returns theta as a fraction in `[0.0, 1.0]`.
     #[inline]
     pub fn theta(&self) -> f64 {
-        self.theta64() as f64 / MAX_THETA as f64
+        self.theta as f64 / MAX_THETA as f64
     }
 
     /// Returns the cardinality estimate.
     pub fn estimate(&self) -> f64 {
-        match self.0 {
-            AodViewState::Mutable(sketch) => sketch.estimate(),
-            AodViewState::Compact(sketch) => sketch.estimate(),
+        if self.is_empty {
+            0.0
+        } else if self.theta == MAX_THETA {
+            self.num_retained as f64
+        } else {
+            self.num_retained as f64 / self.theta()
         }
     }
 
     /// Returns an iterator over retained entries.
     pub fn iter(self) -> impl Iterator<Item = ArrayOfDoublesEntry<'a>> + 'a {
-        match self.0 {
-            AodViewState::Mutable(sketch) => AodViewIter::Mutable(sketch.table.iter()),
-            AodViewState::Compact(sketch) => AodViewIter::Compact(sketch.data.iter()),
+        AodIter::new(self.keys, self.values, self.num_values, self.num_retained)
+    }
+
+    fn lower_bound(&self, num_std_dev: NumStdDev) -> f64 {
+        if !self.is_estimation_mode() {
+            return self.num_retained as f64;
         }
+        binomial_bounds::lower_bound(self.num_retained as u64, self.theta(), num_std_dev)
+            .expect("theta should always be valid")
+    }
+
+    fn upper_bound(&self, num_std_dev: NumStdDev) -> f64 {
+        if !self.is_estimation_mode() {
+            return self.num_retained as f64;
+        }
+        binomial_bounds::upper_bound(
+            self.num_retained as u64,
+            self.theta(),
+            num_std_dev,
+            self.is_empty,
+        )
+        .expect("theta should always be valid")
     }
 }
 
@@ -229,7 +194,7 @@ impl<'a> ArrayOfDoublesSketchView<'a> {
 /// # Ok::<(), datasketches::error::Error>(())
 /// ```
 pub struct ArrayOfDoublesSketch {
-    pub(super) table: AodHashTable,
+    table: AodHashTable,
     // Public emptiness tracks accepted update calls, not retained entries: sampling may screen
     // all.
     is_empty: bool,
@@ -241,7 +206,7 @@ impl fmt::Debug for ArrayOfDoublesSketch {
             .field("lg_k", &self.lg_k())
             .field("seed_hash", &self.seed_hash())
             .field("num_values", &self.num_values())
-            .field("is_empty", &self.is_empty())
+            .field("is_empty", &self.is_empty)
             .field("is_estimation_mode", &self.is_estimation_mode())
             .field("num_retained", &self.num_retained())
             .field("theta64", &self.theta64())
@@ -253,7 +218,17 @@ impl fmt::Debug for ArrayOfDoublesSketch {
 impl ArrayOfDoublesSketch {
     /// Returns a read-only view accepted by ArrayOfDoubles set operations.
     pub fn as_view(&self) -> ArrayOfDoublesSketchView<'_> {
-        ArrayOfDoublesSketchView(AodViewState::Mutable(self))
+        ArrayOfDoublesSketchView {
+            table: Some(&self.table),
+            keys: &self.table.keys,
+            values: &self.table.values,
+            num_retained: self.table.num_retained,
+            theta: self.theta64(),
+            seed_hash: self.table.seed_hash,
+            num_values: self.table.num_values,
+            is_empty: self.is_empty,
+            is_ordered: false,
+        }
     }
 
     /// Updates the sketch with a key and its `f64` values.
@@ -265,22 +240,9 @@ impl ArrayOfDoublesSketch {
     ///
     /// Returns `InvalidArgument` without modifying the sketch if `values.as_ref().len()` does not
     /// equal [`num_values`](Self::num_values).
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use datasketches::aod::ArrayOfDoublesSketchBuilder;
-    ///
-    /// let mut sketch = ArrayOfDoublesSketchBuilder::default()
-    ///     .num_values(2)
-    ///     .build()?;
-    /// sketch.update(42_u64, [3.0, 4.0])?;
-    /// assert!(sketch.update(42_u64, [1.0]).is_err());
-    /// # Ok::<(), datasketches::error::Error>(())
-    /// ```
     pub fn update(&mut self, key: impl Hash, values: impl AsRef<[f64]>) -> Result<(), Error> {
         let values = values.as_ref();
-        check_num_values(self.table.num_values(), values.len(), "sketch update")?;
+        check_num_values(self.table.num_values, values.len(), "sketch update")?;
         self.is_empty = false;
         let hash = self.table.hash(key);
         self.table.insert_or_add(hash, values);
@@ -290,19 +252,12 @@ impl ArrayOfDoublesSketch {
     /// Returns the number of `f64` values associated with each key.
     #[inline]
     pub fn num_values(&self) -> u8 {
-        self.table.num_values()
+        self.table.num_values
     }
 
     /// Returns the cardinality estimate.
     pub fn estimate(&self) -> f64 {
-        if self.is_empty {
-            return 0.0;
-        }
-        let num_retained = self.table.num_retained() as f64;
-        if self.table.retention_theta() == MAX_THETA {
-            return num_retained;
-        }
-        num_retained / self.theta()
+        self.as_view().estimate()
     }
 
     /// Returns theta as a fraction in `[0.0, 1.0]`.
@@ -319,14 +274,14 @@ impl ArrayOfDoublesSketch {
         if self.is_empty {
             MAX_THETA
         } else {
-            self.table.retention_theta()
+            self.table.retention_theta
         }
     }
 
     /// Returns the 16-bit seed hash.
     #[inline]
     pub fn seed_hash(&self) -> u16 {
-        self.table.seed_hash()
+        self.table.seed_hash
     }
 
     /// Returns `true` if the sketch is empty.
@@ -338,19 +293,19 @@ impl ArrayOfDoublesSketch {
     /// Returns `true` if the sketch is in estimation mode.
     #[inline]
     pub fn is_estimation_mode(&self) -> bool {
-        !self.is_empty && self.table.retention_theta() < MAX_THETA
+        !self.is_empty && self.table.retention_theta < MAX_THETA
     }
 
     /// Returns the number of retained entries.
     #[inline]
     pub fn num_retained(&self) -> usize {
-        self.table.num_retained()
+        self.table.num_retained
     }
 
     /// Returns the configured `lg_k`.
     #[inline]
     pub fn lg_k(&self) -> u8 {
-        self.table.lg_nom_size()
+        self.table.lg_nom_size
     }
 
     /// Trims the sketch to the nominal capacity `1 << lg_k`.
@@ -371,25 +326,12 @@ impl ArrayOfDoublesSketch {
 
     /// Returns the approximate lower error bound for `num_std_dev`.
     pub fn lower_bound(&self, num_std_dev: NumStdDev) -> f64 {
-        if !self.is_estimation_mode() {
-            return self.num_retained() as f64;
-        }
-        binomial_bounds::lower_bound(self.num_retained() as u64, self.theta(), num_std_dev)
-            .expect("theta should always be valid")
+        self.as_view().lower_bound(num_std_dev)
     }
 
     /// Returns the approximate upper error bound for `num_std_dev`.
     pub fn upper_bound(&self, num_std_dev: NumStdDev) -> f64 {
-        if !self.is_estimation_mode() {
-            return self.num_retained() as f64;
-        }
-        binomial_bounds::upper_bound(
-            self.num_retained() as u64,
-            self.theta(),
-            num_std_dev,
-            self.is_empty(),
-        )
-        .expect("theta should always be valid")
+        self.as_view().upper_bound(num_std_dev)
     }
 
     /// Returns an estimate of heap memory usage in bytes.
@@ -400,28 +342,14 @@ impl ArrayOfDoublesSketch {
     /// Returns this sketch in compact, immutable form.
     ///
     /// If `ordered` is `true`, retained entries are sorted by ascending hash.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use datasketches::aod::ArrayOfDoublesSketchBuilder;
-    ///
-    /// let mut sketch = ArrayOfDoublesSketchBuilder::default().build()?;
-    /// sketch.update("apple", [1.0])?;
-    /// let compact = sketch.compact(true);
-    /// assert!(compact.is_ordered());
-    /// assert_eq!(compact.num_retained(), 1);
-    /// # Ok::<(), datasketches::error::Error>(())
-    /// ```
     #[must_use = "compact returns a new compact sketch without modifying this sketch"]
     pub fn compact(&self, ordered: bool) -> CompactArrayOfDoublesSketch {
-        let data = if self.is_empty {
+        if self.is_empty {
             debug_assert_eq!(self.num_retained(), 0);
-            AodCompactData::empty(self.seed_hash(), self.num_values())
+            CompactArrayOfDoublesSketch::empty(self.seed_hash(), self.num_values())
         } else {
-            self.table.to_non_empty_compact_data(ordered)
-        };
-        CompactArrayOfDoublesSketch { data }
+            self.table.to_non_empty_compact(ordered)
+        }
     }
 }
 
@@ -434,110 +362,182 @@ impl<'a> From<&'a ArrayOfDoublesSketch> for ArrayOfDoublesSketchView<'a> {
 /// Compact, immutable ArrayOfDoubles sketch backed by contiguous hash and value arrays.
 #[derive(Clone)]
 pub struct CompactArrayOfDoublesSketch {
-    pub(super) data: AodCompactData,
+    is_empty: bool,
+    is_ordered: bool,
+    seed_hash: u16,
+    theta: u64,
+    num_values: u8,
+    pub(super) hashes: Vec<u64>,
+    pub(super) values: Vec<f64>,
 }
 
 impl CompactArrayOfDoublesSketch {
-    pub(super) fn from_compact_data(data: AodCompactData) -> Self {
-        Self { data }
+    pub(super) fn empty(seed_hash: u16, num_values: u8) -> Self {
+        Self {
+            is_empty: true,
+            is_ordered: true,
+            seed_hash,
+            theta: MAX_THETA,
+            num_values,
+            hashes: Vec::new(),
+            values: Vec::new(),
+        }
+    }
+
+    pub(super) fn from_raw_parts(
+        is_empty: bool,
+        is_ordered: bool,
+        seed_hash: u16,
+        theta: u64,
+        num_values: u8,
+        hashes: Vec<u64>,
+        values: Vec<f64>,
+    ) -> Self {
+        debug_assert_eq!(values.len(), hashes.len() * usize::from(num_values));
+        debug_assert!(!is_empty || (hashes.is_empty() && theta == MAX_THETA && is_ordered));
+        Self {
+            is_empty,
+            is_ordered,
+            seed_hash,
+            theta,
+            num_values,
+            hashes,
+            values,
+        }
+    }
+
+    pub(super) fn compact_non_empty(
+        hashes: Vec<u64>,
+        values: Vec<f64>,
+        theta: u64,
+        seed_hash: u16,
+        num_values: u8,
+        already_ordered: bool,
+        ordered: bool,
+    ) -> Self {
+        let stride = usize::from(num_values);
+        assert_eq!(values.len(), hashes.len() * stride);
+        let is_ordered = ordered || already_ordered || (hashes.len() == 1 && theta == MAX_THETA);
+        if ordered && !already_ordered && hashes.len() > 1 {
+            let mut pairs: Vec<_> = hashes
+                .iter()
+                .enumerate()
+                .map(|(slot, &hash)| (hash, slot as u32))
+                .collect();
+            sort_by_hash_key(&mut pairs, |&(hash, _)| hash);
+            let mut sorted_hashes = Vec::with_capacity(hashes.len());
+            let mut sorted_values = Vec::with_capacity(values.len());
+            for (hash, slot) in pairs {
+                let start = slot as usize * stride;
+                sorted_hashes.push(hash);
+                sorted_values.extend_from_slice(&values[start..start + stride]);
+            }
+            return Self::from_raw_parts(
+                false,
+                is_ordered,
+                seed_hash,
+                theta,
+                num_values,
+                sorted_hashes,
+                sorted_values,
+            );
+        }
+        Self::from_raw_parts(
+            false, is_ordered, seed_hash, theta, num_values, hashes, values,
+        )
     }
 
     /// Returns a read-only view accepted by ArrayOfDoubles set operations.
     pub fn as_view(&self) -> ArrayOfDoublesSketchView<'_> {
-        ArrayOfDoublesSketchView(AodViewState::Compact(self))
+        ArrayOfDoublesSketchView {
+            table: None,
+            keys: &self.hashes,
+            values: &self.values,
+            num_retained: self.hashes.len(),
+            theta: self.theta,
+            seed_hash: self.seed_hash,
+            num_values: self.num_values,
+            is_empty: self.is_empty,
+            is_ordered: self.is_ordered,
+        }
     }
 
     /// Returns the number of `f64` values associated with each key.
     #[inline]
     pub fn num_values(&self) -> u8 {
-        self.data.num_values()
+        self.num_values
     }
 
     /// Returns the cardinality estimate.
     pub fn estimate(&self) -> f64 {
-        if self.is_empty() {
-            return 0.0;
-        }
-        let num_retained = self.num_retained() as f64;
-        if self.theta64() == MAX_THETA {
-            return num_retained;
-        }
-        num_retained / self.theta()
+        self.as_view().estimate()
     }
 
     /// Returns theta as a fraction in `[0.0, 1.0]`.
     #[inline]
     pub fn theta(&self) -> f64 {
-        self.theta64() as f64 / MAX_THETA as f64
+        self.theta as f64 / MAX_THETA as f64
     }
 
     /// Returns theta as a `u64` threshold.
     #[inline]
     pub fn theta64(&self) -> u64 {
-        self.data.theta()
+        self.theta
     }
 
     /// Returns `true` if the sketch is empty.
     #[inline]
     pub fn is_empty(&self) -> bool {
-        self.data.is_empty()
+        self.is_empty
     }
 
     /// Returns `true` if the sketch is in estimation mode.
     #[inline]
     pub fn is_estimation_mode(&self) -> bool {
-        self.data.is_estimation_mode()
+        !self.is_empty && self.theta < MAX_THETA
     }
 
     /// Returns the number of retained entries.
     #[inline]
     pub fn num_retained(&self) -> usize {
-        self.data.num_retained()
+        self.hashes.len()
     }
 
     /// Returns `true` if retained entries are ordered by ascending hash.
     #[inline]
     pub fn is_ordered(&self) -> bool {
-        self.data.is_ordered()
+        self.is_ordered
     }
 
     /// Returns the 16-bit seed hash.
     #[inline]
     pub fn seed_hash(&self) -> u16 {
-        self.data.seed_hash()
+        self.seed_hash
     }
 
     /// Returns an iterator over retained entries.
     pub fn iter(&self) -> impl Iterator<Item = ArrayOfDoublesEntry<'_>> + '_ {
-        self.data.iter()
+        AodIter::new(
+            &self.hashes,
+            &self.values,
+            self.num_values,
+            self.hashes.len(),
+        )
     }
 
     /// Returns the approximate lower error bound for `num_std_dev`.
     pub fn lower_bound(&self, num_std_dev: NumStdDev) -> f64 {
-        if !self.is_estimation_mode() {
-            return self.num_retained() as f64;
-        }
-        binomial_bounds::lower_bound(self.num_retained() as u64, self.theta(), num_std_dev)
-            .expect("compact theta should always be valid")
+        self.as_view().lower_bound(num_std_dev)
     }
 
     /// Returns the approximate upper error bound for `num_std_dev`.
     pub fn upper_bound(&self, num_std_dev: NumStdDev) -> f64 {
-        if !self.is_estimation_mode() {
-            return self.num_retained() as f64;
-        }
-        binomial_bounds::upper_bound(
-            self.num_retained() as u64,
-            self.theta(),
-            num_std_dev,
-            self.is_empty(),
-        )
-        .expect("compact theta should always be valid")
+        self.as_view().upper_bound(num_std_dev)
     }
 
     /// Returns an estimate of heap memory usage in bytes.
     pub fn estimated_size(&self) -> usize {
-        self.data.estimated_size()
+        self.hashes.capacity() * size_of::<u64>() + self.values.capacity() * size_of::<f64>()
     }
 
     /// Serializes this sketch into the compact ArrayOfDoubles binary format.
@@ -545,24 +545,8 @@ impl CompactArrayOfDoublesSketch {
     /// The serialized data can be read by other DataSketches implementations when `num_values` is
     /// in `1..=127`. Values in `128..=255` can be read by DataSketches C++ and Go, but not by
     /// DataSketches Java. Empty sketches serialize with a zero seed hash.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use datasketches::aod::ArrayOfDoublesSketchBuilder;
-    /// use datasketches::aod::CompactArrayOfDoublesSketch;
-    ///
-    /// let mut sketch = ArrayOfDoublesSketchBuilder::default()
-    ///     .num_values(2)
-    ///     .build()?;
-    /// sketch.update("apple", [1.0, 2.0])?;
-    /// let bytes = sketch.compact(true).serialize();
-    /// let decoded = CompactArrayOfDoublesSketch::deserialize(&bytes)?;
-    /// assert_eq!(decoded.num_retained(), 1);
-    /// # Ok::<(), datasketches::error::Error>(())
-    /// ```
     pub fn serialize(&self) -> Vec<u8> {
-        crate::aod::serialization::serialize_compact(&self.data)
+        crate::aod::serialization::serialize_compact(self)
     }
 
     /// Deserializes a compact ArrayOfDoubles sketch using the default seed.
@@ -595,21 +579,20 @@ impl CompactArrayOfDoublesSketch {
     /// Returns `InvalidData` if the image is malformed, a non-empty image's seed hash does not
     /// match `seed`, or `seed` itself computes to the reserved zero seed hash.
     pub fn deserialize_with_seed(bytes: &[u8], seed: u64) -> Result<Self, Error> {
-        let data = crate::aod::serialization::deserialize_compact(bytes, seed)?;
-        Ok(Self { data })
+        crate::aod::serialization::deserialize_compact(bytes, seed)
     }
 }
 
 impl fmt::Debug for CompactArrayOfDoublesSketch {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("CompactArrayOfDoublesSketch")
-            .field("seed_hash", &self.seed_hash())
-            .field("num_values", &self.num_values())
-            .field("is_empty", &self.is_empty())
-            .field("is_ordered", &self.is_ordered())
+            .field("seed_hash", &self.seed_hash)
+            .field("num_values", &self.num_values)
+            .field("is_empty", &self.is_empty)
+            .field("is_ordered", &self.is_ordered)
             .field("is_estimation_mode", &self.is_estimation_mode())
             .field("num_retained", &self.num_retained())
-            .field("theta64", &self.theta64())
+            .field("theta64", &self.theta)
             .field("estimate", &self.estimate())
             .finish()
     }
@@ -682,20 +665,6 @@ impl ArrayOfDoublesSketchBuilder {
     ///
     /// Returns `InvalidArgument` if `num_values` is zero, `lg_k` is outside `5..=26`,
     /// `sampling_probability` is outside `(0.0, 1.0]`, or the computed seed hash is zero.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use datasketches::aod::ArrayOfDoublesSketchBuilder;
-    ///
-    /// let sketch = ArrayOfDoublesSketchBuilder::default()
-    ///     .lg_k(10)
-    ///     .num_values(3)
-    ///     .build()?;
-    /// assert_eq!(sketch.lg_k(), 10);
-    /// assert_eq!(sketch.num_values(), 3);
-    /// # Ok::<(), datasketches::error::Error>(())
-    /// ```
     pub fn build(self) -> Result<ArrayOfDoublesSketch, Error> {
         let table = AodHashTable::new(
             self.lg_k,
