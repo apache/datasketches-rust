@@ -34,11 +34,11 @@ fn folded_multiply(x: u64, y: u64) -> u64 {
 /// unnecessary overhead, but compact sketches can be deserialized from untrusted bytes whose raw
 /// hashes were chosen to collide. Seeding a 128-bit folded multiply from the thread-local PRNG on
 /// each call prevents crafted inputs from forcing worst-case probe chains.
-pub(in crate::thetafamily) struct FoldHashState(u64);
+pub struct FoldHashState(u64);
 
 impl FoldHashState {
     #[inline]
-    pub(in crate::thetafamily) fn new() -> Self {
+    pub fn new() -> Self {
         Self(random_u64())
     }
 }
@@ -52,7 +52,7 @@ impl BuildHasher for FoldHashState {
     }
 }
 
-pub(in crate::thetafamily) struct FoldHasher(u64);
+pub struct FoldHasher(u64);
 
 impl Hasher for FoldHasher {
     #[inline]

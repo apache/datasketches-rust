@@ -92,7 +92,7 @@ impl fmt::Debug for ArrayOfDoublesUnion {
     }
 }
 
-pub(super) struct CompactUnionSlots {
+pub struct CompactUnionSlots {
     pub theta: u64,
     pub is_ordered: bool,
     pub slots: Vec<(u64, u32)>,

@@ -31,10 +31,10 @@ use crate::thetafamily::common::sort::sort_by_hash_key;
 
 /// Contiguous Structure-of-Arrays slot storage for [`AodHashTable`].
 #[derive(Debug, Clone)]
-pub(super) struct AodSlots {
-    pub(super) num_values: u8,
-    pub(super) keys: Vec<u64>,
-    pub(super) values: Vec<f64>,
+pub struct AodSlots {
+    pub num_values: u8,
+    pub keys: Vec<u64>,
+    pub values: Vec<f64>,
 }
 
 impl AodSlots {
@@ -93,7 +93,7 @@ impl TableSlots for AodSlots {
     }
 }
 
-pub(super) type AodHashTable = RawHashTable<AodSlots>;
+pub type AodHashTable = RawHashTable<AodSlots>;
 
 impl AodHashTable {
     pub fn new_aod(
@@ -255,7 +255,7 @@ impl AodHashTable {
 }
 
 #[derive(Clone)]
-pub(super) struct AodIter<'a> {
+pub struct AodIter<'a> {
     keys: &'a [u64],
     values: &'a [f64],
     stride: usize,

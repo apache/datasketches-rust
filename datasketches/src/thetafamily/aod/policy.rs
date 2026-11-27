@@ -25,7 +25,7 @@ pub trait ArrayOfDoublesCombiner {
     fn combine(&self, existing: &mut [f64], incoming: &[f64]);
 }
 
-pub(super) fn validate_num_values(num_values: u8) -> Result<(), Error> {
+pub fn validate_num_values(num_values: u8) -> Result<(), Error> {
     if num_values == 0 {
         return Err(Error::invalid_argument(
             "num_values must be greater than 0, got 0",
@@ -34,7 +34,7 @@ pub(super) fn validate_num_values(num_values: u8) -> Result<(), Error> {
     Ok(())
 }
 
-pub(super) fn check_num_values(expected: u8, actual: usize, operation: &str) -> Result<(), Error> {
+pub fn check_num_values(expected: u8, actual: usize, operation: &str) -> Result<(), Error> {
     if actual != usize::from(expected) {
         return Err(Error::invalid_argument(format!(
             "num_values mismatch for {operation}: expected {expected}, got {actual}"

@@ -21,7 +21,7 @@
 pub(super) mod a_not_b;
 pub(super) mod binomial_bounds;
 pub(super) mod constants;
-pub(super) mod fold_hash;
+pub mod fold_hash;
 pub(super) mod hash_table;
 #[cfg(any(feature = "theta", feature = "tuple"))]
 pub(super) mod intersection;
@@ -29,7 +29,7 @@ pub(super) mod intersection;
 pub(super) mod jaccard_similarity;
 #[cfg(any(feature = "theta", feature = "tuple"))]
 pub(super) mod sketch_state;
-pub(super) mod sort;
+pub mod sort;
 #[cfg(any(feature = "theta", feature = "tuple"))]
 pub(super) mod union;
 

@@ -39,7 +39,7 @@ const SKETCH_TYPE: u8 = 3;
 const FLAGS_HAS_ENTRIES: u8 = 1 << 3;
 const HEADER_SIZE: usize = 16;
 
-pub(super) fn serialize_compact(sketch: &CompactArrayOfDoublesSketch) -> Vec<u8> {
+pub fn serialize_compact(sketch: &CompactArrayOfDoublesSketch) -> Vec<u8> {
     let mut bytes = compact_header(
         sketch.is_empty(),
         sketch.is_ordered(),
@@ -57,7 +57,7 @@ pub(super) fn serialize_compact(sketch: &CompactArrayOfDoublesSketch) -> Vec<u8>
     bytes.into_bytes()
 }
 
-pub(super) fn serialize_union(union: &ArrayOfDoublesUnion, ordered: bool) -> Vec<u8> {
+pub fn serialize_union(union: &ArrayOfDoublesUnion, ordered: bool) -> Vec<u8> {
     let table = &union.table;
     let slots_storage = table.slots();
     let Some(CompactUnionSlots {
@@ -127,10 +127,7 @@ fn compact_header(
     bytes
 }
 
-pub(super) fn deserialize_compact(
-    bytes: &[u8],
-    seed: u64,
-) -> Result<CompactArrayOfDoublesSketch, Error> {
+pub fn deserialize_compact(bytes: &[u8], seed: u64) -> Result<CompactArrayOfDoublesSketch, Error> {
     let expected_seed_hash = compute_seed_hash(seed, ErrorKind::InvalidData)?;
     let mut cursor = SketchSlice::new(bytes);
     let preamble_longs = cursor

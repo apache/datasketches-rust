@@ -21,7 +21,7 @@ const MAX_BUCKET_LEN: u32 = 32;
 /// Sorts uniform 64-bit MurmurHash3 entries in ascending hash order using a single top-bit bucket
 /// pass followed by a linear insertion pass, falling back to `sort_unstable_by_key` for small or
 /// skewed inputs.
-pub(super) fn with_bucket_starts<T>(
+pub fn with_bucket_starts<T>(
     entries: &mut Vec<T>,
     hash_of: impl Fn(&T) -> u64,
     scatter: impl FnOnce(&mut Vec<T>, &mut [u32], u32, usize),
