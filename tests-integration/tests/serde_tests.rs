@@ -69,6 +69,9 @@ mod kll;
 #[path = "serde_tests/req.rs"]
 mod req;
 
+#[path = "serde_tests/reservoir.rs"]
+mod reservoir;
+
 #[path = "serde_tests/tdigest.rs"]
 mod tdigest;
 

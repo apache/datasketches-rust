@@ -33,6 +33,7 @@ datasketches = { workspace = true, features = [
   "hll",
   "kll",
   "req",
+  "reservoir",
   "tdigest",
   "theta",
   "tuple",

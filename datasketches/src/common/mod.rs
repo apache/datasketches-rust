@@ -26,12 +26,16 @@ pub use self::num_std_dev::NumStdDev;
 pub use self::resize::ResizeFactor;
 pub use self::search_criteria::SearchCriteria;
 
+#[cfg(any(test, feature = "reservoir", feature = "theta", feature = "tuple",))]
+#[allow(dead_code)] // some utilities are only used for certain sketches
+pub(crate) mod binomial_bounds;
 #[cfg(any(feature = "cpc", feature = "hll"))]
 pub(crate) mod inv_pow2;
 #[cfg(any(
     feature = "density",
     feature = "kll",
     feature = "req",
+    feature = "reservoir",
     feature = "theta",
     feature = "tuple",
 ))]

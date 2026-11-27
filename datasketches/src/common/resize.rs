@@ -17,10 +17,10 @@
 
 /// Controls internal cache growth for sketch families that support resizing.
 ///
-/// For Theta sketches, the resize factor provides a dynamic trade-off between update speed and
-/// memory use. Sketches configured with a resize factor greater than `X1` start with an internal
-/// hash table size that is the smallest submultiple of the target nominal entries
-/// and larger than the minimum required hash table size for that sketch.
+/// For Theta and Reservoir sketches, the resize factor provides a dynamic trade-off between update
+/// speed and memory use. Sketches configured with a resize factor greater than `X1` start with an
+/// internal allocation that is the smallest submultiple of the target capacity at or above the
+/// sketch's minimum allocation floor.
 ///
 /// When the sketch needs to grow, the resize factor is used as a multiplier for
 /// the current sketch cache array size.
@@ -72,6 +72,30 @@ impl ResizeFactor {
             ResizeFactor::X2 => 2,
             ResizeFactor::X4 => 4,
             ResizeFactor::X8 => 8,
+        }
+    }
+
+    #[cfg(any(feature = "reservoir", feature = "theta", feature = "tuple"))]
+    #[allow(dead_code)]
+    pub(crate) const fn from_lg_bits(bits: u8) -> Self {
+        match bits & 0x03 {
+            0 => ResizeFactor::X1,
+            1 => ResizeFactor::X2,
+            2 => ResizeFactor::X4,
+            _ => ResizeFactor::X8,
+        }
+    }
+
+    #[cfg(any(feature = "reservoir", feature = "theta", feature = "tuple"))]
+    #[allow(dead_code)]
+    pub(crate) fn starting_sub_multiple(self, lg_target: u8, lg_min: u8) -> u8 {
+        let lg_rf = self.lg_value();
+        if lg_target <= lg_min {
+            lg_min
+        } else if lg_rf == 0 {
+            lg_target
+        } else {
+            (lg_target - lg_min) % lg_rf + lg_min
         }
     }
 }

@@ -86,6 +86,31 @@ pub fn random_bit() -> bool {
     random_u64() & 1 == 1
 }
 
+/// Returns a uniformly distributed `f64` in `[0.0, 1.0)` with 53 bits of precision.
+#[cfg(any(test, feature = "reservoir"))]
+#[inline]
+pub fn random_f64() -> f64 {
+    const SCALE: f64 = 1.0 / ((1_u64 << 53) as f64);
+    (random_u64() >> 11) as f64 * SCALE
+}
+
+/// Returns a uniformly distributed `u64` in `0..bound`.
+///
+/// Uses Lemire's nearly divisionless 128-bit multiplication rejection method to avoid modulo bias.
+///
+/// # Panics
+///
+/// Panics if `bound == 0`.
+#[cfg(any(test, feature = "density", feature = "reservoir"))]
+#[inline]
+pub fn random_below_u64(bound: u64) -> u64 {
+    assert!(bound > 0, "bound must be positive");
+    if bound == 1 {
+        return 0;
+    }
+    rejection_sample(bound, random_u64)
+}
+
 /// Returns a uniformly distributed `usize` in `0..bound`.
 ///
 /// Uses Lemire's nearly divisionless 128-bit multiplication rejection method to avoid modulo bias.
@@ -93,18 +118,15 @@ pub fn random_bit() -> bool {
 /// # Panics
 ///
 /// Panics if `bound == 0` or `bound` cannot be represented as `u64`.
-#[cfg(any(test, feature = "density"))]
+#[cfg(any(test, feature = "density", feature = "reservoir"))]
 #[inline]
 pub fn random_below(bound: usize) -> usize {
     assert!(bound > 0, "bound must be positive");
-    if bound == 1 {
-        return 0;
-    }
     let range = u64::try_from(bound).expect("bound exceeds u64::MAX");
-    rejection_sample(range, random_u64) as usize
+    random_below_u64(range) as usize
 }
 
-#[cfg(any(test, feature = "density"))]
+#[cfg(any(test, feature = "density", feature = "reservoir"))]
 #[inline]
 fn rejection_sample(range: u64, mut next: impl FnMut() -> u64) -> u64 {
     let mut product = u128::from(next()) * u128::from(range);
@@ -196,6 +218,14 @@ mod tests {
             }
         }
         assert!(saw_distinct, "random_u64 stream stopped advancing");
+    }
+
+    #[test]
+    fn assert_random_f64_in_unit_interval() {
+        for _ in 0..1024 {
+            let value = random_f64();
+            assert!((0.0..1.0).contains(&value), "value {value} outside [0, 1)");
+        }
     }
 
     #[test]
