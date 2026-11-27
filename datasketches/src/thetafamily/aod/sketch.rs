@@ -28,11 +28,9 @@ use crate::common::NumStdDev;
 use crate::common::ResizeFactor;
 use crate::error::Error;
 use crate::hash::DEFAULT_UPDATE_SEED;
-use crate::thetafamily::common::KeySketch;
 use crate::thetafamily::common::binomial_bounds;
 use crate::thetafamily::common::constants::DEFAULT_LG_K;
 use crate::thetafamily::common::constants::MAX_THETA;
-use crate::thetafamily::common::sketch_state::ThetaFamilySketchMetadata;
 
 /// A retained hash key and its associated slice of `f64` values.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -63,9 +61,8 @@ impl<'a> ArrayOfDoublesEntry<'a> {
 /// Read-only view of a mutable or compact ArrayOfDoubles sketch.
 ///
 /// Accepted by [`ArrayOfDoublesUnion`](crate::aod::ArrayOfDoublesUnion),
-/// [`ArrayOfDoublesIntersection`](crate::aod::ArrayOfDoublesIntersection),
-/// [`ArrayOfDoublesANotB`](crate::aod::ArrayOfDoublesANotB), and
-/// [`ArrayOfDoublesJaccardSimilarity`](crate::aod::ArrayOfDoublesJaccardSimilarity).
+/// [`ArrayOfDoublesIntersection`](crate::aod::ArrayOfDoublesIntersection), and
+/// [`ArrayOfDoublesANotB`](crate::aod::ArrayOfDoublesANotB).
 #[derive(Clone, Copy)]
 pub struct ArrayOfDoublesSketchView<'a>(pub(super) AodViewState<'a>);
 
@@ -209,25 +206,6 @@ impl<'a> ArrayOfDoublesSketchView<'a> {
             AodViewState::Mutable(sketch) => AodViewIter::Mutable(sketch.table.iter()),
             AodViewState::Compact(sketch) => AodViewIter::Compact(sketch.data.iter()),
         }
-    }
-}
-
-impl KeySketch for ArrayOfDoublesSketchView<'_> {
-    fn metadata(self) -> ThetaFamilySketchMetadata {
-        if self.is_empty() {
-            ThetaFamilySketchMetadata::Empty
-        } else {
-            ThetaFamilySketchMetadata::NonEmpty {
-                seed_hash: self.seed_hash(),
-                theta: self.theta64(),
-                ordered: self.is_ordered(),
-                num_retained: self.num_retained(),
-            }
-        }
-    }
-
-    fn hashes(self) -> impl Iterator<Item = u64> {
-        self.iter().map(|entry| entry.hash())
     }
 }
 

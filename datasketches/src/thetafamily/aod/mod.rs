@@ -59,7 +59,6 @@
 mod a_not_b;
 mod hash_table;
 mod intersection;
-mod jaccard_similarity;
 mod policy;
 mod serialization;
 mod sketch;
@@ -67,7 +66,6 @@ mod union;
 
 pub use self::a_not_b::ArrayOfDoublesANotB;
 pub use self::intersection::ArrayOfDoublesIntersection;
-pub use self::jaccard_similarity::ArrayOfDoublesJaccardSimilarity;
 pub use self::policy::ArrayOfDoublesCombiner;
 pub use self::sketch::ArrayOfDoublesEntry;
 pub use self::sketch::ArrayOfDoublesSketch;

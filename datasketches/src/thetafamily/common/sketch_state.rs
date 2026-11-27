@@ -40,7 +40,6 @@ pub enum ThetaFamilySketchMetadata {
 /// canonical empty-image path. The non-empty variant may contain no retained entries after theta
 /// screening.
 #[derive(Clone, Debug)]
-#[cfg_attr(not(any(feature = "theta", feature = "tuple")), allow(dead_code))]
 pub enum CompactSketchState<E> {
     Empty {
         seed_hash: u16,
@@ -58,7 +57,6 @@ impl<E> CompactSketchState<E> {
         Self::Empty { seed_hash }
     }
 
-    #[cfg(any(feature = "theta", feature = "tuple"))]
     pub fn non_empty(retained_entries: Vec<E>, theta: u64, seed_hash: u16, ordered: bool) -> Self {
         Self::NonEmpty {
             retained_entries,
@@ -103,18 +101,15 @@ impl<E> CompactSketchState<E> {
         }
     }
 
-    #[cfg(any(feature = "theta", feature = "tuple"))]
     pub fn is_empty(&self) -> bool {
         matches!(self, Self::Empty { .. })
     }
 
-    #[cfg(any(feature = "theta", feature = "tuple"))]
     pub fn is_estimation_mode(&self) -> bool {
         matches!(self, Self::NonEmpty { theta, .. } if *theta < MAX_THETA)
     }
 
     /// Returns the preamble size in 8-byte words for uncompressed compact Theta and Tuple images.
-    #[cfg(any(feature = "theta", feature = "tuple"))]
     pub fn uncompressed_preamble_longs(&self) -> u8 {
         if self.is_empty() {
             1
@@ -127,7 +122,6 @@ impl<E> CompactSketchState<E> {
         }
     }
 
-    #[cfg(any(feature = "theta", feature = "tuple"))]
     pub fn seed_hash(&self) -> u16 {
         match self {
             Self::Empty { seed_hash } | Self::NonEmpty { seed_hash, .. } => *seed_hash,
@@ -143,7 +137,6 @@ impl<E> CompactSketchState<E> {
         }
     }
 
-    #[cfg(any(feature = "theta", feature = "tuple"))]
     pub fn retained_entries_capacity(&self) -> usize {
         match self {
             Self::Empty { .. } => 0,
@@ -153,7 +146,6 @@ impl<E> CompactSketchState<E> {
         }
     }
 
-    #[cfg(any(feature = "theta", feature = "tuple"))]
     pub fn is_ordered(&self) -> bool {
         match self {
             Self::Empty { .. } => true,

@@ -31,7 +31,7 @@ use crate::hash::check_seed_hash;
 use crate::hash::compute_seed_hash;
 use crate::thetafamily::common::constants::HASH_TABLE_REBUILD_THRESHOLD;
 use crate::thetafamily::common::constants::MAX_THETA;
-use crate::thetafamily::common::hash_table::SketchHashTable;
+use crate::thetafamily::common::hash_table::lg_size_from_count_for_rebuild;
 
 /// Stateful intersection operator for ArrayOfDoubles sketches.
 ///
@@ -183,10 +183,7 @@ where
             let lg_size = if count == 0 {
                 0
             } else {
-                SketchHashTable::<u64>::lg_size_from_count_for_rebuild(
-                    count,
-                    HASH_TABLE_REBUILD_THRESHOLD,
-                )
+                lg_size_from_count_for_rebuild(count, HASH_TABLE_REBUILD_THRESHOLD)
             };
             AodHashTable::for_intersection(
                 lg_size,

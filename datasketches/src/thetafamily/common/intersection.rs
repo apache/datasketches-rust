@@ -15,7 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#[cfg(any(feature = "theta", feature = "tuple"))]
 use std::fmt;
 
 use crate::error::Error;
@@ -233,19 +232,16 @@ where
     }
 
     /// Returns whether this operator has received at least one update.
-    #[cfg(any(feature = "theta", feature = "tuple"))]
     pub fn has_result(&self) -> bool {
         self.result_state != IntersectionResultState::Uninitialized
     }
 
     /// Returns an estimate of memory usage in bytes.
-    #[cfg(any(feature = "theta", feature = "tuple"))]
     pub fn estimated_size(&self) -> usize {
         size_of::<P>() + self.table.estimated_size()
     }
 
     /// Formats a concise diagnostic summary for Theta-family intersection operators.
-    #[cfg(any(feature = "theta", feature = "tuple"))]
     pub fn fmt_debug(&self, f: &mut fmt::Formatter<'_>, name: &str) -> fmt::Result {
         let mut debug = f.debug_struct(name);
         debug

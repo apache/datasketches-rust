@@ -15,27 +15,42 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#[cfg(any(feature = "theta", feature = "tuple"))]
 use std::hash::Hash;
+#[cfg(any(feature = "theta", feature = "tuple"))]
 use std::iter::FusedIterator;
+#[cfg(any(feature = "theta", feature = "tuple"))]
 use std::slice;
 
+#[cfg(any(feature = "theta", feature = "tuple"))]
 use crate::common::ResizeFactor;
+#[cfg(any(feature = "theta", feature = "tuple"))]
 use crate::error::Error;
+#[cfg(any(feature = "theta", feature = "tuple"))]
 use crate::error::ErrorKind;
+#[cfg(any(feature = "theta", feature = "tuple"))]
 use crate::hash::MurmurHash3X64128;
+#[cfg(any(feature = "theta", feature = "tuple"))]
 use crate::hash::compute_seed_hash;
+#[cfg(any(feature = "theta", feature = "tuple"))]
 use crate::thetafamily::common::SketchEntry;
+#[cfg(any(feature = "theta", feature = "tuple"))]
 use crate::thetafamily::common::constants::MAX_LG_K;
 use crate::thetafamily::common::constants::MAX_THETA;
+#[cfg(any(feature = "theta", feature = "tuple"))]
 use crate::thetafamily::common::constants::MIN_LG_K;
+#[cfg(any(feature = "theta", feature = "tuple"))]
 use crate::thetafamily::common::constants::STRIDE_MASK;
+#[cfg(any(feature = "theta", feature = "tuple"))]
 use crate::thetafamily::common::sketch_state::CompactSketchState;
 
+#[cfg(any(feature = "theta", feature = "tuple"))]
 pub struct SketchHashTableIter<'a, E> {
     iter: slice::Iter<'a, Option<E>>,
     remaining: usize,
 }
 
+#[cfg(any(feature = "theta", feature = "tuple"))]
 impl<'a, E> Iterator for SketchHashTableIter<'a, E> {
     type Item = &'a E;
 
@@ -55,6 +70,7 @@ impl<'a, E> Iterator for SketchHashTableIter<'a, E> {
     }
 }
 
+#[cfg(any(feature = "theta", feature = "tuple"))]
 impl<E> ExactSizeIterator for SketchHashTableIter<'_, E> {
     #[inline]
     fn len(&self) -> usize {
@@ -62,6 +78,7 @@ impl<E> ExactSizeIterator for SketchHashTableIter<'_, E> {
     }
 }
 
+#[cfg(any(feature = "theta", feature = "tuple"))]
 impl<E> FusedIterator for SketchHashTableIter<'_, E> {}
 
 /// Generic hash-table mechanics shared by Theta and Tuple sketches.
@@ -74,8 +91,8 @@ impl<E> FusedIterator for SketchHashTableIter<'_, E> {}
 /// * After it reaches the capacity bigger than 2^lg_nom_size, every time the number of entries
 ///   exceeds the threshold, it will rebuild the table: only keep the min 2^lg_nom_size entries and
 ///   update the theta to the k-th smallest entry.
+#[cfg(any(feature = "theta", feature = "tuple"))]
 #[derive(Debug)]
-#[cfg_attr(not(any(feature = "theta", feature = "tuple")), allow(dead_code))]
 pub struct SketchHashTable<E> {
     lg_cur_size: u8,
     lg_nom_size: u8,
@@ -96,7 +113,7 @@ pub struct SketchHashTable<E> {
     num_retained: usize,
 }
 
-#[cfg_attr(not(any(feature = "theta", feature = "tuple")), allow(dead_code))]
+#[cfg(any(feature = "theta", feature = "tuple"))]
 impl<E> SketchHashTable<E>
 where
     E: SketchEntry,
@@ -382,16 +399,7 @@ where
 
     /// Returns minimal lg_size where rebuild-capacity can hold `count`.
     pub fn lg_size_from_count_for_rebuild(count: usize, load_factor: f64) -> u8 {
-        let log2 = |n: usize| {
-            if n == 0 { 0_u8 } else { n.ilog2() as u8 }
-        };
-        let log2_n = log2(count);
-        log2_n
-            + (if count > (((1u128 << ((log2_n as u32) + 1)) as f64) * load_factor) as usize {
-                2
-            } else {
-                1
-            })
+        lg_size_from_count_for_rebuild(count, load_factor)
     }
 
     /// Returns an estimate of memory usage in bytes.
@@ -488,6 +496,21 @@ where
     fn get_stride(key: u64, lg_size: u8) -> usize {
         (2 * ((key >> (lg_size)) & STRIDE_MASK) + 1) as usize
     }
+}
+
+/// Returns minimal `lg_size` whose rebuild capacity can hold `count` entries at `load_factor`.
+pub fn lg_size_from_count_for_rebuild(count: usize, load_factor: f64) -> u8 {
+    let log2_n = if count == 0 {
+        0_u8
+    } else {
+        count.ilog2() as u8
+    };
+    log2_n
+        + (if count > (((1u128 << ((log2_n as u32) + 1)) as f64) * load_factor) as usize {
+            2
+        } else {
+            1
+        })
 }
 
 /// Compute initial lg_size for hash table based on target lg_size, minimum lg_size, and resize

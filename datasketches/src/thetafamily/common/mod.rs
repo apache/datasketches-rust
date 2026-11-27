@@ -23,18 +23,24 @@ pub(super) mod binomial_bounds;
 pub(super) mod constants;
 pub(super) mod fold_hash;
 pub(super) mod hash_table;
+#[cfg(any(feature = "theta", feature = "tuple"))]
 pub(super) mod intersection;
+#[cfg(any(feature = "theta", feature = "tuple"))]
 pub(super) mod jaccard_similarity;
+#[cfg(any(feature = "theta", feature = "tuple"))]
 pub(super) mod sketch_state;
+#[cfg(any(feature = "theta", feature = "tuple"))]
 pub(super) mod union;
 
 /// Minimal entry behavior required by the shared hash table, compaction, and set operations.
+#[cfg(any(feature = "theta", feature = "tuple"))]
 pub(super) trait SketchEntry: Sized {
     fn hash(&self) -> u64;
 
     fn sort_by_hash(entries: &mut Vec<Self>);
 }
 
+#[cfg(any(feature = "theta", feature = "tuple"))]
 impl SketchEntry for u64 {
     #[inline]
     fn hash(&self) -> u64 {
@@ -46,6 +52,7 @@ impl SketchEntry for u64 {
     }
 }
 
+#[cfg(any(feature = "theta", feature = "tuple"))]
 impl<E: SketchEntry> SketchEntry for &E {
     #[inline]
     fn hash(&self) -> u64 {
@@ -57,18 +64,17 @@ impl<E: SketchEntry> SketchEntry for &E {
     }
 }
 
+#[cfg(any(feature = "theta", feature = "tuple"))]
 pub(super) trait KeySketch: Copy {
     fn metadata(self) -> sketch_state::ThetaFamilySketchMetadata;
 
     fn hashes(self) -> impl Iterator<Item = u64>;
 
     /// Returns the backing hash table when this sketch stores entries in one.
-    #[cfg(any(feature = "theta", feature = "tuple"))]
-    fn hash_table(&self) -> Option<&hash_table::SketchHashTable<impl SketchEntry>> {
-        None::<&hash_table::SketchHashTable<u64>>
-    }
+    fn hash_table(&self) -> Option<&hash_table::SketchHashTable<impl SketchEntry>>;
 }
 
+#[cfg(any(feature = "theta", feature = "tuple"))]
 pub(super) trait EntrySketch: KeySketch {
     type Entry: SketchEntry;
 
