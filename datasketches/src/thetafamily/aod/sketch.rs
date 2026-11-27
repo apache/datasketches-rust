@@ -78,7 +78,7 @@ impl fmt::Debug for ArrayOfDoublesSketchView<'_> {
 }
 
 impl<'a> ArrayOfDoublesSketchView<'a> {
-    pub(in crate::thetafamily) fn into_tuple_view(self) -> TupleSketchView<'a, Box<[f64]>> {
+    pub(super) fn into_tuple_view(self) -> TupleSketchView<'a, Box<[f64]>> {
         self.inner
     }
 
@@ -282,10 +282,7 @@ pub struct CompactArrayOfDoublesSketch {
 }
 
 impl CompactArrayOfDoublesSketch {
-    pub(in crate::thetafamily) fn from_tuple(
-        inner: CompactTupleSketch<Box<[f64]>>,
-        num_values: u8,
-    ) -> Self {
+    pub(super) fn from_tuple(inner: CompactTupleSketch<Box<[f64]>>, num_values: u8) -> Self {
         debug_assert!(
             inner
                 .iter()
@@ -294,7 +291,7 @@ impl CompactArrayOfDoublesSketch {
         Self { inner, num_values }
     }
 
-    pub(in crate::thetafamily) fn from_compact_state(
+    pub(super) fn from_compact_state(
         compact_state: CompactSketchState<TupleEntry<Box<[f64]>>>,
         num_values: u8,
     ) -> Self {
