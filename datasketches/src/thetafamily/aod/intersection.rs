@@ -93,8 +93,8 @@ impl<C: ArrayOfDoublesCombiner> fmt::Debug for ArrayOfDoublesIntersection<C> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut debug = f.debug_struct("ArrayOfDoublesIntersection");
         debug
-            .field("seed_hash", &self.table.seed_hash)
-            .field("num_values", &self.table.num_values)
+            .field("seed_hash", &self.table.seed_hash())
+            .field("num_values", &self.table.num_values())
             .field("has_result", &self.has_result());
         match self.result_state {
             AodIntersectionState::Uninitialized => {}
@@ -107,8 +107,8 @@ impl<C: ArrayOfDoublesCombiner> fmt::Debug for ArrayOfDoublesIntersection<C> {
             AodIntersectionState::NonEmpty => {
                 debug
                     .field("is_empty", &false)
-                    .field("theta64", &self.table.retention_theta)
-                    .field("num_retained", &self.table.num_retained);
+                    .field("theta64", &self.table.retention_theta())
+                    .field("num_retained", &self.table.num_retained());
             }
         }
         debug.finish()
@@ -152,8 +152,8 @@ impl<C: ArrayOfDoublesCombiner> ArrayOfDoublesIntersection<C> {
         sketch: impl Into<ArrayOfDoublesSketchView<'a>>,
     ) -> Result<(), Error> {
         let sketch = sketch.into();
-        let num_values = self.table.num_values;
-        let seed_hash = self.table.seed_hash;
+        let num_values = self.table.num_values();
+        let seed_hash = self.table.seed_hash();
         check_num_values(
             num_values,
             usize::from(sketch.num_values()),
@@ -171,7 +171,7 @@ impl<C: ArrayOfDoublesCombiner> ArrayOfDoublesIntersection<C> {
             return Ok(());
         }
 
-        let seed = self.table.seed;
+        let seed = self.table.seed();
         let new_table = |count, theta| {
             let lg_size = if count == 0 {
                 0
@@ -193,28 +193,28 @@ impl<C: ArrayOfDoublesCombiner> ArrayOfDoublesIntersection<C> {
             return Ok(());
         }
 
-        let result_theta = self.table.retention_theta.min(sketch.theta64());
+        let result_theta = self.table.retention_theta().min(sketch.theta64());
         let input_count = sketch.num_retained();
         if input_count == 0 {
             self.table = new_table(0, result_theta);
             self.result_state = AodIntersectionState::NonEmpty;
             return Ok(());
         }
-        if self.result_state == AodIntersectionState::NonEmpty && self.table.num_retained == 0 {
-            self.table.retention_theta = result_theta;
+        if self.result_state == AodIntersectionState::NonEmpty && self.table.num_retained() == 0 {
+            self.table.set_retention_theta(result_theta);
             return Ok(());
         }
 
         if self.result_state == AodIntersectionState::Uninitialized {
             let mut next_table = new_table(input_count, result_theta);
             for entry in sketch.iter() {
-                next_table
-                    .insert_unique(entry.hash(), entry.values())
-                    .ok_or_else(|| {
-                        Error::invalid_argument("invalid or duplicate hash in intersection input")
-                    })?;
+                if !next_table.insert_unique(entry.hash(), entry.values()) {
+                    return Err(Error::invalid_argument(
+                        "invalid or duplicate hash in intersection input",
+                    ));
+                }
             }
-            if next_table.num_retained != input_count {
+            if next_table.num_retained() != input_count {
                 return Err(Error::invalid_argument(
                     "retained count mismatch in intersection input",
                 ));
@@ -224,23 +224,26 @@ impl<C: ArrayOfDoublesCombiner> ArrayOfDoublesIntersection<C> {
             return Ok(());
         }
 
-        let max_matches = input_count.min(self.table.num_retained);
-        let mut next_table = new_table(max_matches, result_theta);
+        let max_matches = input_count.min(self.table.num_retained());
+        let stride = self.table.slots().stride();
+        let mut matched_hashes = Vec::new();
+        let mut matched_values = Vec::new();
         let ordered = sketch.is_ordered();
         let mut count = 0;
         for entry in sketch.iter() {
             let hash = entry.hash();
             if hash < result_theta {
                 if let Some(existing) = self.table.find_values(hash) {
-                    if next_table.num_retained == max_matches {
+                    if matched_hashes.len() == max_matches {
                         return Err(Error::invalid_argument(
                             "intersection match count exceeds input size",
                         ));
                     }
-                    let slot = next_table.insert_unique(hash, existing).ok_or_else(|| {
-                        Error::invalid_argument("duplicate hash in intersection input")
-                    })?;
-                    self.combiner.combine(slot, entry.values());
+                    matched_hashes.push(hash);
+                    let start = matched_values.len();
+                    matched_values.extend_from_slice(existing);
+                    self.combiner
+                        .combine(&mut matched_values[start..start + stride], entry.values());
                 }
             } else if ordered {
                 break;
@@ -253,15 +256,26 @@ impl<C: ArrayOfDoublesCombiner> ArrayOfDoublesIntersection<C> {
             ));
         }
 
-        let mut state = AodIntersectionState::NonEmpty;
-        if next_table.num_retained == 0 {
-            next_table = new_table(0, result_theta);
+        if matched_hashes.is_empty() {
+            self.table = new_table(0, result_theta);
             if result_theta == MAX_THETA {
-                state = AodIntersectionState::Empty;
+                self.result_state = AodIntersectionState::Empty;
+            }
+            return Ok(());
+        }
+
+        let mut next_table = new_table(matched_hashes.len(), result_theta);
+        for (hash, values) in matched_hashes
+            .into_iter()
+            .zip(matched_values.chunks_exact(stride))
+        {
+            if !next_table.insert_unique(hash, values) {
+                return Err(Error::invalid_argument(
+                    "duplicate hash in intersection input",
+                ));
             }
         }
         self.table = next_table;
-        self.result_state = state;
         Ok(())
     }
 
@@ -284,8 +298,8 @@ impl<C: ArrayOfDoublesCombiner> ArrayOfDoublesIntersection<C> {
         match self.result_state {
             AodIntersectionState::Uninitialized => None,
             AodIntersectionState::Empty => Some(CompactArrayOfDoublesSketch::empty(
-                self.table.seed_hash,
-                self.table.num_values,
+                self.table.seed_hash(),
+                self.table.num_values(),
             )),
             AodIntersectionState::NonEmpty => Some(self.table.to_non_empty_compact(ordered)),
         }

@@ -15,34 +15,72 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#[cfg(any(feature = "theta", feature = "tuple"))]
 use std::hash::Hash;
 #[cfg(any(feature = "theta", feature = "tuple"))]
 use std::iter::FusedIterator;
 #[cfg(any(feature = "theta", feature = "tuple"))]
 use std::slice;
 
-#[cfg(any(feature = "theta", feature = "tuple"))]
 use crate::common::ResizeFactor;
-#[cfg(any(feature = "theta", feature = "tuple"))]
 use crate::error::Error;
-#[cfg(any(feature = "theta", feature = "tuple"))]
 use crate::error::ErrorKind;
-#[cfg(any(feature = "theta", feature = "tuple"))]
 use crate::hash::MurmurHash3X64128;
-#[cfg(any(feature = "theta", feature = "tuple"))]
 use crate::hash::compute_seed_hash;
 #[cfg(any(feature = "theta", feature = "tuple"))]
 use crate::thetafamily::common::SketchEntry;
-#[cfg(any(feature = "theta", feature = "tuple"))]
 use crate::thetafamily::common::constants::MAX_LG_K;
 use crate::thetafamily::common::constants::MAX_THETA;
-#[cfg(any(feature = "theta", feature = "tuple"))]
 use crate::thetafamily::common::constants::MIN_LG_K;
-#[cfg(any(feature = "theta", feature = "tuple"))]
 use crate::thetafamily::common::constants::STRIDE_MASK;
 #[cfg(any(feature = "theta", feature = "tuple"))]
 use crate::thetafamily::common::sketch_state::CompactSketchState;
+
+/// Backing slot storage for [`RawHashTable`], abstracting AoS entry vectors (`Theta`, `Tuple`) and
+/// strided SoA key/value buffers (`ArrayOfDoubles`).
+pub trait TableSlots {
+    fn len(&self) -> usize;
+
+    fn key_at(&self, slot: usize) -> u64;
+
+    fn allocate_like(&self, size: usize) -> Self;
+
+    fn clear_and_resize(&mut self, size: usize);
+
+    fn move_slot(&mut self, src_slot: usize, dst: &mut Self, dst_slot: usize);
+
+    fn estimated_size(&self) -> usize;
+}
+
+#[cfg(any(feature = "theta", feature = "tuple"))]
+impl<E: SketchEntry> TableSlots for Vec<Option<E>> {
+    #[inline]
+    fn len(&self) -> usize {
+        Vec::len(self)
+    }
+
+    #[inline]
+    fn key_at(&self, slot: usize) -> u64 {
+        self[slot].as_ref().map_or(0, SketchEntry::hash)
+    }
+
+    fn allocate_like(&self, size: usize) -> Self {
+        std::iter::repeat_with(|| None).take(size).collect()
+    }
+
+    fn clear_and_resize(&mut self, size: usize) {
+        self.clear();
+        self.resize_with(size, || None);
+    }
+
+    #[inline]
+    fn move_slot(&mut self, src_slot: usize, dst: &mut Self, dst_slot: usize) {
+        dst[dst_slot] = self[src_slot].take();
+    }
+
+    fn estimated_size(&self) -> usize {
+        self.capacity() * size_of::<Option<E>>()
+    }
+}
 
 #[cfg(any(feature = "theta", feature = "tuple"))]
 pub struct SketchHashTableIter<'a, E> {
@@ -81,19 +119,13 @@ impl<E> ExactSizeIterator for SketchHashTableIter<'_, E> {
 #[cfg(any(feature = "theta", feature = "tuple"))]
 impl<E> FusedIterator for SketchHashTableIter<'_, E> {}
 
-/// Generic hash-table mechanics shared by Theta and Tuple sketches.
+/// Open-addressed QuickSelect hash table shared across Theta, Tuple, and ArrayOfDoubles sketches.
 ///
-/// The entry type supplies the retained hash and any sketch-specific payload. The table owns all
-/// theta screening, probing, resizing, rebuilding, and trimming.
-///
-/// It maintains an array with capacity up to 2^lg_max_size:
-/// * Before it reaches the max capacity, it will extend the array based on resize_factor.
-/// * After it reaches the capacity bigger than 2^lg_nom_size, every time the number of entries
-///   exceeds the threshold, it will rebuild the table: only keep the min 2^lg_nom_size entries and
-///   update the theta to the k-th smallest entry.
-#[cfg(any(feature = "theta", feature = "tuple"))]
-#[derive(Debug)]
-pub struct SketchHashTable<E> {
+/// The slot container `S` supplies per-slot key inspection and slot movement while this type owns
+/// parameter validation, MurmurHash3 key screening, double-hash probing, resizing, QuickSelect
+/// rebuilding, trimming, and reset mechanics.
+#[derive(Debug, Clone)]
+pub struct RawHashTable<S> {
     lg_cur_size: u8,
     lg_nom_size: u8,
     lg_max_size: u8,
@@ -101,34 +133,23 @@ pub struct SketchHashTable<E> {
     sampling_probability: f32,
     seed: u64,
     seed_hash: u16,
-
-    // The operational threshold used to screen future updates. This is intentionally independent
-    // of the sketch's externally visible empty state: a never-updated sketch built with p < 1.0
-    // must retain this sampling threshold even though its public theta is MAX_THETA.
+    // Operational threshold used to screen incoming hashes, independent of public emptiness.
     retention_theta: u64,
-
-    entries: Vec<Option<E>>,
-
-    // Number of retained non-zero hashes currently stored in `entries`.
+    slots: S,
     num_retained: usize,
 }
 
+/// AoS hash-table instantiation used by Theta and Tuple sketches.
 #[cfg(any(feature = "theta", feature = "tuple"))]
-impl<E> SketchHashTable<E>
-where
-    E: SketchEntry,
-{
-    /// Creates a new hash table.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if `lg_nom_size` is outside `[5, 26]`, `sampling_probability` is outside
-    /// `(0.0, 1.0]`, or the computed seed hash is zero.
-    pub fn new(
+pub type SketchHashTable<E> = RawHashTable<Vec<Option<E>>>;
+
+impl<S: TableSlots> RawHashTable<S> {
+    pub fn new_with_slots(
         lg_nom_size: u8,
         resize_factor: ResizeFactor,
         sampling_probability: f32,
         seed: u64,
+        make_slots: impl FnOnce(usize) -> S,
     ) -> Result<Self, Error> {
         if !(MIN_LG_K..=MAX_LG_K).contains(&lg_nom_size) {
             return Err(Error::invalid_argument(format!(
@@ -143,7 +164,7 @@ where
         let seed_hash = compute_seed_hash(seed, ErrorKind::InvalidArgument)?;
         let lg_max_size = lg_nom_size + 1;
         let lg_cur_size = starting_sub_multiple(lg_max_size, MIN_LG_K, resize_factor.lg_value());
-        Ok(Self::allocate_empty(
+        Ok(Self::allocate_with_slots(
             lg_cur_size,
             lg_nom_size,
             resize_factor,
@@ -151,22 +172,19 @@ where
             starting_retention_theta(sampling_probability),
             seed,
             seed_hash,
+            make_slots,
         ))
     }
 
-    /// Creates a table used internally by a Theta-family set operation.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `lg_cur_size > lg_nom_size + 1`. (`lg_nom_size + 1 == lg_max_size`)
-    pub fn for_set_operation(
+    pub fn for_set_operation_with_slots(
         lg_cur_size: u8,
         lg_nom_size: u8,
         retention_theta: u64,
         seed: u64,
         seed_hash: u16,
+        make_slots: impl FnOnce(usize) -> S,
     ) -> Self {
-        Self::allocate_empty(
+        Self::allocate_with_slots(
             lg_cur_size,
             lg_nom_size,
             ResizeFactor::X1,
@@ -174,10 +192,12 @@ where
             retention_theta,
             seed,
             seed_hash,
+            make_slots,
         )
     }
 
-    fn allocate_empty(
+    #[allow(clippy::too_many_arguments)]
+    fn allocate_with_slots(
         lg_cur_size: u8,
         lg_nom_size: u8,
         resize_factor: ResizeFactor,
@@ -185,14 +205,18 @@ where
         retention_theta: u64,
         seed: u64,
         seed_hash: u16,
+        make_slots: impl FnOnce(usize) -> S,
     ) -> Self {
         let lg_max_size = lg_nom_size + 1;
         assert!(
             lg_cur_size <= lg_max_size,
             "lg_cur_size must be <= lg_nom_size + 1, got lg_cur_size={lg_cur_size}, lg_nom_size={lg_nom_size}"
         );
-        let size = if lg_cur_size > 0 { 1 << lg_cur_size } else { 0 };
-        let entries = std::iter::repeat_with(|| None).take(size).collect();
+        let size = if lg_cur_size > 0 {
+            1usize << lg_cur_size
+        } else {
+            0
+        };
         Self {
             lg_cur_size,
             lg_nom_size,
@@ -202,137 +226,260 @@ where
             seed,
             seed_hash,
             retention_theta,
-            entries,
+            slots: make_slots(size),
             num_retained: 0,
         }
     }
 
-    /// Hash a value with the table seed and return the hash.
+    /// Hashes `value` with the table seed into the 63-bit Theta-family hash domain.
     #[inline]
     pub fn hash<T: Hash>(&self, value: T) -> u64 {
         let mut hasher = MurmurHash3X64128::with_seed(self.seed);
         value.hash(&mut hasher);
         let (h1, _) = hasher.finish128();
-        h1 >> 1 // Match the 63-bit hash domain used by datasketches-java's Theta and Tuple sketches.
+        h1 >> 1
     }
 
-    /// Inserts or updates the entry slot for a pre-hashed key.
-    ///
-    /// The callback `f` is invoked with the current entry for `hash`:
-    /// * `Some(existing)` if the key is already retained. The callback should modify it in place;
-    ///   its return value is ignored.
-    /// * `None` if the key is new. The callback returns `Some(entry)` to insert it, or `None` to
-    ///   decline insertion.
-    ///
-    /// Using a single callback ensures any captured update value is consumed exactly once, so it
-    /// works for both the update sketch (folding an update value) and set operations (merging an
-    /// incoming entry) without requiring the value to be `Copy` or `Clone`.
-    ///
-    /// Returns true if a new entry was created, false otherwise (existing key, declined insertion,
-    /// or a hash screened out by theta).
-    pub fn upsert_entry<F>(&mut self, hash: u64, f: F) -> bool
-    where
-        F: FnOnce(Option<&mut E>) -> Option<E>,
-    {
+    #[inline]
+    pub fn slots(&self) -> &S {
+        &self.slots
+    }
+
+    #[inline]
+    pub fn slots_mut(&mut self) -> &mut S {
+        &mut self.slots
+    }
+
+    /// Screens `hash` against `0` and `retention_theta` and probes for its slot, returning
+    /// `Some((slot, occupied))` or `None` if screened out or the table is full.
+    #[inline]
+    pub fn probe_slot(&self, hash: u64) -> Option<(usize, bool)> {
         if hash == 0 || hash >= self.retention_theta {
-            return false;
+            return None;
         }
+        let slot = self.find_in_curr_slots(hash)?;
+        Some((slot, self.slots.key_at(slot) == hash))
+    }
 
-        let Some(index) = self.find_in_curr_entries(hash) else {
-            unreachable!(
-                "Resize or rebuild should be called to make sure it always can find the entry."
-            );
-        };
-
-        if let Some(entry) = self.entries[index].as_mut() {
-            f(Some(entry));
-            return false;
+    /// Finds the slot containing `hash`, ignoring `retention_theta` (used by read-only lookups).
+    #[inline]
+    pub fn find_occupied_slot(&self, hash: u64) -> Option<usize> {
+        if hash == 0 {
+            return None;
         }
+        let slot = self.find_in_curr_slots(hash)?;
+        (self.slots.key_at(slot) == hash).then_some(slot)
+    }
 
-        let Some(entry) = f(None) else {
-            return false;
-        };
-        debug_assert_eq!(entry.hash(), hash, "entry hash must match insertion hash");
-        self.entries[index] = Some(entry);
+    /// Records a newly inserted entry and resizes or rebuilds if `capacity_threshold` is exceeded.
+    #[inline]
+    pub fn finish_insert(&mut self) {
         self.num_retained += 1;
-
-        // Check if we need to resize or rebuild.
-        let capacity_threshold = self.capacity_threshold();
-        if self.num_retained > capacity_threshold {
+        if self.num_retained > self.capacity_threshold() {
             if self.lg_cur_size <= self.lg_nom_size {
                 self.resize();
             } else {
                 self.rebuild();
             }
         }
-        true
     }
 
-    /// Returns a reference to the entry stored for `hash`, or `None` if the hash is not retained.
+    /// Returns the current resize or rebuild capacity threshold.
     #[inline]
-    pub fn entry(&self, hash: u64) -> Option<&E> {
-        if hash == 0 {
-            return None;
-        }
-        let index = self.find_in_curr_entries(hash)?;
-        match &self.entries[index] {
-            Some(entry) if entry.hash() == hash => Some(entry),
-            _ => None,
-        }
-    }
-
-    /// Return the current resize or rebuild capacity threshold.
     pub fn capacity_threshold(&self) -> usize {
         if self.lg_cur_size <= self.lg_nom_size {
-            self.entries.len() / 2
+            self.slots.len() / 2
         } else {
-            self.entries.len() - self.entries.len() / 16
+            self.slots.len() - self.slots.len() / 16
         }
     }
 
-    /// Trim the table to nominal size k.
+    /// Trims the table to nominal size `1 << lg_nom_size`.
     pub fn trim(&mut self) {
-        if self.num_retained > (1 << self.lg_nom_size) {
+        if self.num_retained > (1usize << self.lg_nom_size) {
             self.rebuild();
         }
     }
 
-    /// Restores the table's initial capacity and retention threshold and removes all entries.
+    /// Restores initial capacity and retention threshold and removes all entries.
     pub fn reset(&mut self) {
-        let initial_retention_theta = starting_retention_theta(self.sampling_probability);
         let init_lg_cur = starting_sub_multiple(
             self.lg_nom_size + 1,
             MIN_LG_K,
             self.resize_factor.lg_value(),
         );
-
-        let size = 1 << init_lg_cur;
-        self.entries.clear();
-        self.entries.resize_with(size, || None);
+        self.slots.clear_and_resize(1usize << init_lg_cur);
         self.num_retained = 0;
-        self.retention_theta = initial_retention_theta;
+        self.retention_theta = starting_retention_theta(self.sampling_probability);
         self.lg_cur_size = init_lg_cur;
     }
 
-    /// Return number of retained entries.
+    #[inline]
     pub fn num_retained(&self) -> usize {
         self.num_retained
     }
 
-    /// Returns the operational theta used to screen retained entries.
+    #[inline]
     pub fn retention_theta(&self) -> u64 {
         self.retention_theta
     }
 
-    /// Get iterator over retained entries.
+    pub fn set_retention_theta(&mut self, retention_theta: u64) {
+        assert!(
+            (1..=MAX_THETA).contains(&retention_theta),
+            "theta must be in [1, {MAX_THETA}], got {retention_theta}"
+        );
+        self.retention_theta = retention_theta;
+    }
+
+    #[inline]
+    pub fn lg_nom_size(&self) -> u8 {
+        self.lg_nom_size
+    }
+
+    #[inline]
+    pub fn seed_hash(&self) -> u16 {
+        self.seed_hash
+    }
+
+    #[inline]
+    pub fn seed(&self) -> u64 {
+        self.seed
+    }
+
+    pub fn estimated_size(&self) -> usize {
+        self.slots.estimated_size()
+    }
+
+    #[inline]
+    fn find_in_curr_slots(&self, key: u64) -> Option<usize> {
+        Self::find_in_slots(&self.slots, key, self.lg_cur_size)
+    }
+
+    fn find_in_slots(slots: &S, key: u64, lg_size: u8) -> Option<usize> {
+        let mask = slots.len().checked_sub(1)?;
+        let stride = (2 * ((key >> lg_size) & STRIDE_MASK) + 1) as usize;
+        let start = (key as usize) & mask;
+        let mut index = start;
+        loop {
+            let slot_key = slots.key_at(index);
+            if slot_key == 0 || slot_key == key {
+                return Some(index);
+            }
+            index = (index + stride) & mask;
+            if index == start {
+                return None;
+            }
+        }
+    }
+
+    fn resize(&mut self) {
+        let new_lg_size = (self.lg_cur_size + self.resize_factor.lg_value()).min(self.lg_max_size);
+        let mut new_slots = self.slots.allocate_like(1usize << new_lg_size);
+        for src_slot in 0..self.slots.len() {
+            let hash = self.slots.key_at(src_slot);
+            if hash != 0 {
+                let dst_slot = Self::find_in_slots(&new_slots, hash, new_lg_size)
+                    .expect("resized table has a free slot for every retained entry");
+                self.slots.move_slot(src_slot, &mut new_slots, dst_slot);
+            }
+        }
+        self.slots = new_slots;
+        self.lg_cur_size = new_lg_size;
+    }
+
+    fn rebuild(&mut self) {
+        let k = 1usize << self.lg_nom_size;
+        let mut retained = Vec::with_capacity(self.num_retained);
+        for src_slot in 0..self.slots.len() {
+            let hash = self.slots.key_at(src_slot);
+            if hash != 0 {
+                retained.push((hash, src_slot as u32));
+            }
+        }
+        let (_, kth, _) = retained.select_nth_unstable_by_key(k, |&(hash, _)| hash);
+        self.retention_theta = kth.0;
+        retained.truncate(k);
+
+        let mut new_slots = self.slots.allocate_like(1usize << self.lg_cur_size);
+        for (hash, src_slot) in retained {
+            let dst_slot = Self::find_in_slots(&new_slots, hash, self.lg_cur_size)
+                .expect("rebuilt table has a free slot for every selected entry");
+            self.slots
+                .move_slot(src_slot as usize, &mut new_slots, dst_slot);
+        }
+        self.slots = new_slots;
+        self.num_retained = k;
+    }
+}
+
+#[cfg(any(feature = "theta", feature = "tuple"))]
+impl<E: SketchEntry> SketchHashTable<E> {
+    pub fn new(
+        lg_nom_size: u8,
+        resize_factor: ResizeFactor,
+        sampling_probability: f32,
+        seed: u64,
+    ) -> Result<Self, Error> {
+        Self::new_with_slots(
+            lg_nom_size,
+            resize_factor,
+            sampling_probability,
+            seed,
+            |n| std::iter::repeat_with(|| None).take(n).collect(),
+        )
+    }
+
+    pub fn for_set_operation(
+        lg_cur_size: u8,
+        lg_nom_size: u8,
+        retention_theta: u64,
+        seed: u64,
+        seed_hash: u16,
+    ) -> Self {
+        Self::for_set_operation_with_slots(
+            lg_cur_size,
+            lg_nom_size,
+            retention_theta,
+            seed,
+            seed_hash,
+            |n| std::iter::repeat_with(|| None).take(n).collect(),
+        )
+    }
+
+    pub fn upsert_entry<F>(&mut self, hash: u64, f: F) -> bool
+    where
+        F: FnOnce(Option<&mut E>) -> Option<E>,
+    {
+        let Some((index, occupied)) = self.probe_slot(hash) else {
+            return false;
+        };
+        if occupied {
+            f(self.slots_mut()[index].as_mut());
+            return false;
+        }
+        let Some(entry) = f(None) else {
+            return false;
+        };
+        debug_assert_eq!(entry.hash(), hash, "entry hash must match insertion hash");
+        self.slots_mut()[index] = Some(entry);
+        self.finish_insert();
+        true
+    }
+
+    #[inline]
+    pub fn entry(&self, hash: u64) -> Option<&E> {
+        let index = self.find_occupied_slot(hash)?;
+        self.slots()[index].as_ref()
+    }
+
     pub fn iter_entries(&self) -> SketchHashTableIter<'_, E> {
         SketchHashTableIter {
-            iter: self.entries.iter(),
+            iter: self.slots.iter(),
             remaining: self.num_retained,
         }
     }
 
-    /// Creates compact state for a sketch known by its owner to be non-empty.
     pub fn to_non_empty_compact_state(&self, ordered: bool) -> CompactSketchState<E>
     where
         E: Clone,
@@ -347,23 +494,20 @@ where
         )
     }
 
-    /// Creates compact hash state for a Theta sketch or operator known to be non-empty.
     #[cfg(feature = "theta")]
     pub fn to_non_empty_compact_hashes(&self, ordered: bool) -> CompactSketchState<u64> {
         let hashes = self.retained_hashes();
         CompactSketchState::compact(hashes, self.retention_theta, self.seed_hash, false, ordered)
     }
 
-    /// Returns retained hashes in table order.
     #[cfg(feature = "theta")]
     pub fn retained_hashes(&self) -> Vec<u64> {
-        if self.num_retained * 16 <= self.entries.len() {
+        if self.num_retained * 16 <= self.slots.len() {
             return self.iter_entries().map(SketchEntry::hash).collect();
         }
-
         let mut hashes = vec![0u64; self.num_retained + 1];
         let mut len = 0;
-        for slot in &self.entries {
+        for slot in &self.slots {
             let hash = slot.as_ref().map_or(0, SketchEntry::hash);
             hashes[len] = hash;
             len += usize::from(hash != 0);
@@ -373,128 +517,8 @@ where
         hashes
     }
 
-    /// Get log2 of nominal size.
-    pub fn lg_nom_size(&self) -> u8 {
-        self.lg_nom_size
-    }
-
-    /// Get the hash of the seed that was used to hash the input.
-    pub fn seed_hash(&self) -> u16 {
-        self.seed_hash
-    }
-
-    /// Get the seed used by this table.
-    pub fn seed(&self) -> u64 {
-        self.seed
-    }
-
-    /// Sets the operational theta used to screen retained entries.
-    pub fn set_retention_theta(&mut self, retention_theta: u64) {
-        assert!(
-            (1..=MAX_THETA).contains(&retention_theta),
-            "theta must be in [1, {MAX_THETA}], got {retention_theta}"
-        );
-        self.retention_theta = retention_theta;
-    }
-
-    /// Returns minimal lg_size where rebuild-capacity can hold `count`.
     pub fn lg_size_from_count_for_rebuild(count: usize, load_factor: f64) -> u8 {
         lg_size_from_count_for_rebuild(count, load_factor)
-    }
-
-    /// Returns an estimate of memory usage in bytes.
-    pub fn estimated_size(&self) -> usize {
-        self.entries.capacity() * size_of::<Option<E>>()
-    }
-
-    #[inline]
-    fn find_in_curr_entries(&self, key: u64) -> Option<usize> {
-        Self::find_in_entries(&self.entries, key, self.lg_cur_size)
-    }
-
-    fn find_in_entries(entries: &[Option<E>], key: u64, lg_size: u8) -> Option<usize> {
-        if entries.is_empty() {
-            return None;
-        }
-
-        let size = entries.len();
-        let mask = size - 1;
-        let stride = Self::get_stride(key, lg_size);
-        let mut index = (key as usize) & mask;
-        let loop_index = index;
-
-        loop {
-            match &entries[index] {
-                None => return Some(index),
-                Some(entry) if entry.hash() == key => return Some(index),
-                _ => {}
-            }
-            index = (index + stride) & mask;
-            if index == loop_index {
-                return None;
-            }
-        }
-    }
-
-    fn resize(&mut self) {
-        let new_lg_size = std::cmp::min(
-            self.lg_cur_size + self.resize_factor.lg_value(),
-            self.lg_max_size,
-        );
-        let new_size = 1 << new_lg_size;
-
-        let mut new_entries: Vec<Option<E>> =
-            std::iter::repeat_with(|| None).take(new_size).collect();
-        for entry in std::mem::take(&mut self.entries).into_iter().flatten() {
-            let Some(idx) = Self::find_in_entries(&new_entries, entry.hash(), new_lg_size) else {
-                unreachable!(
-                    "find_in_entries should always return Some if the entry is not empty."
-                );
-            };
-            new_entries[idx] = Some(entry);
-        }
-
-        self.entries = new_entries;
-        self.lg_cur_size = new_lg_size;
-    }
-
-    fn rebuild(&mut self) {
-        let k = 1usize << self.lg_nom_size;
-
-        // Select the k-th smallest entry as new theta and keep the lesser entries.
-        let mut retained = Vec::with_capacity(self.num_retained);
-        retained.extend(std::mem::take(&mut self.entries).into_iter().flatten());
-        let kth_hash = {
-            let (_lesser, kth, _greater) = retained.select_nth_unstable_by_key(k, |e| e.hash());
-            kth.hash()
-        };
-        self.retention_theta = kth_hash;
-        retained.truncate(k);
-
-        let size = 1 << self.lg_cur_size;
-        let mut new_entries: Vec<Option<E>> = std::iter::repeat_with(|| None).take(size).collect();
-        let mut num_inserted = 0;
-        for entry in retained {
-            if let Some(idx) = Self::find_in_entries(&new_entries, entry.hash(), self.lg_cur_size) {
-                new_entries[idx] = Some(entry);
-                num_inserted += 1;
-            } else {
-                unreachable!(
-                    "find_in_entries should always return Some if the entry is not empty."
-                );
-            }
-        }
-
-        assert_eq!(
-            num_inserted, k,
-            "Number of inserted entries should be equal to k."
-        );
-        self.num_retained = num_inserted;
-        self.entries = new_entries;
-    }
-
-    fn get_stride(key: u64, lg_size: u8) -> usize {
-        (2 * ((key >> (lg_size)) & STRIDE_MASK) + 1) as usize
     }
 }
 
@@ -513,9 +537,8 @@ pub fn lg_size_from_count_for_rebuild(count: usize, load_factor: f64) -> u8 {
         })
 }
 
-/// Compute initial lg_size for hash table based on target lg_size, minimum lg_size, and resize
-/// factor. Make sure `lg_target = lg_init + n * lg_resize_factor`, where `n` is an integer and
-/// `lg_init >= lg_min`.
+/// Computes initial `lg_size` for a hash table from target `lg_size`, minimum `lg_size`, and
+/// resize factor.
 pub fn starting_sub_multiple(lg_target: u8, lg_min: u8, lg_resize_factor: u8) -> u8 {
     if lg_target <= lg_min {
         lg_min

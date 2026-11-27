@@ -218,14 +218,15 @@ impl fmt::Debug for ArrayOfDoublesSketch {
 impl ArrayOfDoublesSketch {
     /// Returns a read-only view accepted by ArrayOfDoubles set operations.
     pub fn as_view(&self) -> ArrayOfDoublesSketchView<'_> {
+        let slots = self.table.slots();
         ArrayOfDoublesSketchView {
             table: Some(&self.table),
-            keys: &self.table.keys,
-            values: &self.table.values,
-            num_retained: self.table.num_retained,
+            keys: &slots.keys,
+            values: &slots.values,
+            num_retained: self.table.num_retained(),
             theta: self.theta64(),
-            seed_hash: self.table.seed_hash,
-            num_values: self.table.num_values,
+            seed_hash: self.table.seed_hash(),
+            num_values: slots.num_values,
             is_empty: self.is_empty,
             is_ordered: false,
         }
@@ -242,7 +243,7 @@ impl ArrayOfDoublesSketch {
     /// equal [`num_values`](Self::num_values).
     pub fn update(&mut self, key: impl Hash, values: impl AsRef<[f64]>) -> Result<(), Error> {
         let values = values.as_ref();
-        check_num_values(self.table.num_values, values.len(), "sketch update")?;
+        check_num_values(self.table.num_values(), values.len(), "sketch update")?;
         self.is_empty = false;
         let hash = self.table.hash(key);
         self.table.insert_or_add(hash, values);
@@ -252,7 +253,7 @@ impl ArrayOfDoublesSketch {
     /// Returns the number of `f64` values associated with each key.
     #[inline]
     pub fn num_values(&self) -> u8 {
-        self.table.num_values
+        self.table.num_values()
     }
 
     /// Returns the cardinality estimate.
@@ -274,14 +275,14 @@ impl ArrayOfDoublesSketch {
         if self.is_empty {
             MAX_THETA
         } else {
-            self.table.retention_theta
+            self.table.retention_theta()
         }
     }
 
     /// Returns the 16-bit seed hash.
     #[inline]
     pub fn seed_hash(&self) -> u16 {
-        self.table.seed_hash
+        self.table.seed_hash()
     }
 
     /// Returns `true` if the sketch is empty.
@@ -293,19 +294,19 @@ impl ArrayOfDoublesSketch {
     /// Returns `true` if the sketch is in estimation mode.
     #[inline]
     pub fn is_estimation_mode(&self) -> bool {
-        !self.is_empty && self.table.retention_theta < MAX_THETA
+        !self.is_empty && self.table.retention_theta() < MAX_THETA
     }
 
     /// Returns the number of retained entries.
     #[inline]
     pub fn num_retained(&self) -> usize {
-        self.table.num_retained
+        self.table.num_retained()
     }
 
     /// Returns the configured `lg_k`.
     #[inline]
     pub fn lg_k(&self) -> u8 {
-        self.table.lg_nom_size
+        self.table.lg_nom_size()
     }
 
     /// Trims the sketch to the nominal capacity `1 << lg_k`.
@@ -666,7 +667,7 @@ impl ArrayOfDoublesSketchBuilder {
     /// Returns `InvalidArgument` if `num_values` is zero, `lg_k` is outside `5..=26`,
     /// `sampling_probability` is outside `(0.0, 1.0]`, or the computed seed hash is zero.
     pub fn build(self) -> Result<ArrayOfDoublesSketch, Error> {
-        let table = AodHashTable::new(
+        let table = AodHashTable::new_aod(
             self.lg_k,
             self.resize_factor,
             self.sampling_probability,

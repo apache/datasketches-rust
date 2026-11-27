@@ -68,12 +68,13 @@ pub struct ArrayOfDoublesUnion {
 impl fmt::Debug for ArrayOfDoublesUnion {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let is_empty = self.result_theta.is_none();
+        let retention_theta = self.table.retention_theta();
         let union_theta = self
             .result_theta
-            .map_or(MAX_THETA, |theta| theta.min(self.table.retention_theta));
+            .map_or(MAX_THETA, |theta| theta.min(retention_theta));
         let num_retained = match self.result_theta {
             None => 0,
-            Some(theta) if theta >= self.table.retention_theta => self.table.num_retained,
+            Some(theta) if theta >= retention_theta => self.table.num_retained(),
             Some(theta) => self
                 .table
                 .iter()
@@ -81,9 +82,9 @@ impl fmt::Debug for ArrayOfDoublesUnion {
                 .count(),
         };
         f.debug_struct("ArrayOfDoublesUnion")
-            .field("lg_k", &self.table.lg_nom_size)
-            .field("seed_hash", &self.table.seed_hash)
-            .field("num_values", &self.table.num_values)
+            .field("lg_k", &self.table.lg_nom_size())
+            .field("seed_hash", &self.table.seed_hash())
+            .field("num_values", &self.table.num_values())
             .field("is_empty", &is_empty)
             .field("union_theta", &union_theta)
             .field("num_retained", &num_retained)
@@ -110,7 +111,7 @@ impl ArrayOfDoublesUnion {
     ) -> Result<(), Error> {
         let sketch = sketch.into();
         check_num_values(
-            self.table.num_values,
+            self.table.num_values(),
             usize::from(sketch.num_values()),
             "union update",
         )?;
@@ -118,38 +119,38 @@ impl ArrayOfDoublesUnion {
             return Ok(());
         }
         check_seed_hash(
-            self.table.seed_hash,
+            self.table.seed_hash(),
             sketch.seed_hash(),
             "union update",
             ErrorKind::InvalidArgument,
         )?;
 
-        let current_theta = self.result_theta.unwrap_or(self.table.retention_theta);
+        let current_theta = self.result_theta.unwrap_or(self.table.retention_theta());
         let result_theta = current_theta.min(sketch.theta64());
         self.result_theta = Some(result_theta);
         let ordered = sketch.is_ordered();
         for entry in sketch.iter() {
             let hash = entry.hash();
-            if hash < result_theta && hash < self.table.retention_theta {
+            if hash < result_theta && hash < self.table.retention_theta() {
                 self.table.insert_or_add(hash, entry.values());
             } else if ordered {
                 break;
             }
         }
-        self.result_theta = Some(result_theta.min(self.table.retention_theta));
+        self.result_theta = Some(result_theta.min(self.table.retention_theta()));
         Ok(())
     }
 
     pub(super) fn compact_slots(&self, ordered: bool) -> Option<CompactUnionSlots> {
         let result_theta = self.result_theta?;
-        let mut theta = result_theta.min(self.table.retention_theta);
-        let mut slots = Vec::with_capacity(self.table.num_retained);
-        for (slot, &hash) in self.table.keys.iter().enumerate() {
+        let mut theta = result_theta.min(self.table.retention_theta());
+        let mut slots = Vec::with_capacity(self.table.num_retained());
+        for (slot, &hash) in self.table.slots().keys.iter().enumerate() {
             if hash != 0 && hash < theta {
                 slots.push((hash, slot as u32));
             }
         }
-        let nominal_num = 1usize << self.table.lg_nom_size;
+        let nominal_num = 1usize << self.table.lg_nom_size();
         if slots.len() > nominal_num {
             let (_, kth, _) = slots.select_nth_unstable_by_key(nominal_num, |&(hash, _)| hash);
             theta = kth.0;
@@ -176,7 +177,9 @@ impl ArrayOfDoublesUnion {
                 is_ordered,
                 slots,
             }) => self.table.materialize_compact(theta, is_ordered, &slots),
-            None => CompactArrayOfDoublesSketch::empty(self.table.seed_hash, self.table.num_values),
+            None => {
+                CompactArrayOfDoublesSketch::empty(self.table.seed_hash(), self.table.num_values())
+            }
         }
     }
 
@@ -286,7 +289,7 @@ impl ArrayOfDoublesUnionBuilder {
     /// Returns `InvalidArgument` if `num_values` is zero, `lg_k` is outside `5..=26`,
     /// `sampling_probability` is outside `(0.0, 1.0]`, or the computed seed hash is zero.
     pub fn build(self) -> Result<ArrayOfDoublesUnion, Error> {
-        let table = AodHashTable::new(
+        let table = AodHashTable::new_aod(
             self.lg_k,
             self.resize_factor,
             self.sampling_probability,

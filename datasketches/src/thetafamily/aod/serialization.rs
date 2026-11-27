@@ -59,27 +59,28 @@ pub(super) fn serialize_compact(sketch: &CompactArrayOfDoublesSketch) -> Vec<u8>
 
 pub(super) fn serialize_union(union: &ArrayOfDoublesUnion, ordered: bool) -> Vec<u8> {
     let table = &union.table;
+    let slots_storage = table.slots();
     let Some(CompactUnionSlots {
         theta,
         is_ordered,
         slots,
     }) = union.compact_slots(ordered)
     else {
-        return compact_header(true, true, 0, MAX_THETA, table.num_values, 0).into_bytes();
+        return compact_header(true, true, 0, MAX_THETA, slots_storage.num_values, 0).into_bytes();
     };
     let mut bytes = compact_header(
         false,
         is_ordered,
-        table.seed_hash,
+        table.seed_hash(),
         theta,
-        table.num_values,
+        slots_storage.num_values,
         slots.len(),
     );
     for &(hash, _) in &slots {
         bytes.write_u64_le(hash);
     }
     for (_, slot) in slots {
-        for &value in table.slot_values(slot as usize) {
+        for &value in slots_storage.slot_values(slot as usize) {
             bytes.write_f64_le(value);
         }
     }
