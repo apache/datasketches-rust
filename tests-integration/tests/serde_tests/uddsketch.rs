@@ -19,12 +19,15 @@ use std::fs;
 
 use datasketches::error::ErrorKind;
 use datasketches::uddsketch::UddSketch;
+use datasketches::uddsketch::UddSketchWrapper;
 
 use crate::serialization_test_data;
 
 fn assert_invalid_data(bytes: &[u8]) {
     let err = UddSketch::deserialize(bytes).unwrap_err();
     assert_eq!(err.kind(), ErrorKind::InvalidData);
+    let wrapper_err = UddSketchWrapper::new(bytes).unwrap_err();
+    assert_eq!(wrapper_err.kind(), ErrorKind::InvalidData);
 }
 
 #[test]
@@ -275,4 +278,107 @@ fn v1_wire_format_golden_fixture_is_pinned() {
         fresh.update(value);
     }
     assert_eq!(fresh.serialize(), GOLDEN_V1);
+}
+
+#[test]
+fn wrapper_matches_deserialize_bitwise_across_snapshots_and_collapsed_fixtures() {
+    fn assert_matches(bytes: &[u8]) {
+        let wrapper = UddSketchWrapper::new(bytes).unwrap();
+        let sketch = UddSketch::deserialize(bytes).unwrap();
+        assert_eq!(wrapper.max_buckets(), sketch.max_buckets());
+        assert_eq!(
+            wrapper.initial_alpha().to_bits(),
+            sketch.initial_alpha().to_bits()
+        );
+        assert_eq!(wrapper.alpha().to_bits(), sketch.alpha().to_bits());
+        assert_eq!(wrapper.num_collapses(), sketch.num_collapses());
+        assert_eq!(wrapper.is_empty(), sketch.is_empty());
+        assert_eq!(wrapper.total_weight(), sketch.total_weight());
+        assert_eq!(wrapper.zero_weight(), sketch.zero_weight());
+        assert_eq!(wrapper.num_retained(), sketch.num_retained());
+        assert_eq!(
+            wrapper.min_value().map(f64::to_bits),
+            sketch.min_value().map(f64::to_bits)
+        );
+        assert_eq!(
+            wrapper.max_value().map(f64::to_bits),
+            sketch.max_value().map(f64::to_bits)
+        );
+
+        let sorted = [
+            0.0,
+            f64::from_bits(1),
+            0.25,
+            0.5,
+            0.75,
+            1.0_f64.next_down(),
+            1.0,
+        ];
+        for rank in sorted {
+            assert_eq!(
+                wrapper.quantile(rank).unwrap().map(f64::to_bits),
+                sketch.quantile(rank).unwrap().map(f64::to_bits),
+                "rank={rank}"
+            );
+        }
+        let bits = |values: Vec<f64>| values.into_iter().map(f64::to_bits).collect::<Vec<_>>();
+        for ranks in [
+            &sorted[..],
+            &[1.0, 0.75, 0.0, 0.25, 0.75],
+            &[1.0, 0.0],
+            &[0.5],
+            &[],
+        ] {
+            assert_eq!(
+                wrapper.quantiles(ranks).unwrap().map(bits),
+                sketch.quantiles(ranks).unwrap().map(bits),
+                "ranks={ranks:?}"
+            );
+        }
+        for rank in [-0.1, 1.1, f64::NEG_INFINITY, f64::INFINITY, f64::NAN] {
+            let ranks = [0.5, rank];
+            for error in [
+                wrapper.quantile(rank).unwrap_err(),
+                sketch.quantile(rank).unwrap_err(),
+                wrapper.quantiles(&ranks).unwrap_err(),
+                sketch.quantiles(&ranks).unwrap_err(),
+            ] {
+                assert_eq!(error.kind(), ErrorKind::InvalidArgument);
+            }
+        }
+    }
+
+    // The n=10 snapshot is byte-for-byte the pinned GOLDEN_V1 image.
+    for n in [0, 1, 10, 100, 1_000, 10_000, 100_000, 1_000_000] {
+        let filename = format!("uddsketch_n{n}_rust.sk");
+        let path = serialization_test_data("rust_generated_files", &filename);
+        assert_matches(&fs::read(path).unwrap());
+    }
+
+    for values in [
+        &[-16.0, -8.0, -4.0, -2.0, -1.0][..],
+        &[-16.0, -8.0, -4.0, -2.0, -1.0, 0.0],
+        &[-16.0, -8.0, 0.0, 1.0, 2.0, 4.0],
+        &[0.0, 1.0, 2.0, 4.0, 8.0, 16.0],
+        &[1.0, 2.0, 4.0, 8.0, 16.0],
+    ] {
+        let mut sketch = UddSketch::new(4, 0.02).unwrap();
+        for &value in values {
+            sketch.update(value);
+        }
+        assert!(sketch.num_collapses() > 0);
+        assert_matches(&sketch.serialize());
+    }
+
+    for (value, weight) in [(0.0, 7), (3.5, 1), (-3.5, 7)] {
+        let mut sketch = UddSketch::new(8, 0.02).unwrap();
+        sketch.update_with_weight(value, weight);
+        assert_matches(&sketch.serialize());
+    }
+
+    let mut heavy = UddSketch::new(8, 0.02).unwrap();
+    heavy.update_with_weight(-1.0, u64::MAX / 2);
+    heavy.update(0.0);
+    heavy.update_with_weight(1.0, u64::MAX / 2);
+    assert_matches(&heavy.serialize());
 }

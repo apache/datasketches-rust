@@ -34,7 +34,30 @@ const SERIAL_VERSION: u8 = 1;
 const PREAMBLE_LONGS_EMPTY: u8 = 2;
 const PREAMBLE_LONGS_NON_EMPTY: u8 = 7;
 const FLAGS_IS_EMPTY: u8 = 1 << 2;
-const BUCKET_BYTES: usize = size_of::<i64>() + size_of::<u64>();
+pub(super) const BUCKET_BYTES: usize = size_of::<i64>() + size_of::<u64>();
+
+pub(super) struct ValidatedSketchImage<'a> {
+    pub(super) max_buckets: u32,
+    pub(super) mapping: Mapping,
+    pub(super) num_collapses: u8,
+    pub(super) total_weight: u64,
+    pub(super) zero_weight: u64,
+    pub(super) min: f64,
+    pub(super) max: f64,
+    pub(super) neg_bytes: &'a [u8],
+    pub(super) pos_bytes: &'a [u8],
+    pub(super) neg_weight: u64,
+    pub(super) pos_weight: u64,
+}
+
+#[inline]
+pub(super) fn decode_bucket(chunk: &[u8]) -> Bucket {
+    debug_assert_eq!(chunk.len(), BUCKET_BYTES);
+    Bucket {
+        key: i64::from_le_bytes(chunk[..8].try_into().unwrap()),
+        count: u64::from_le_bytes(chunk[8..16].try_into().unwrap()),
+    }
+}
 
 pub fn serialize_sketch(sketch: &UddSketch) -> Vec<u8> {
     let is_empty = sketch.is_empty();
@@ -88,6 +111,46 @@ pub fn serialize_sketch(sketch: &UddSketch) -> Vec<u8> {
 }
 
 pub fn deserialize_sketch(bytes: &[u8]) -> Result<UddSketch, Error> {
+    let image = validate_sketch_image(bytes)?;
+    if image.total_weight == 0 {
+        return Ok(UddSketch::from_parts(
+            image.max_buckets,
+            image.mapping,
+            0,
+            0,
+            0,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            BucketStore::default(),
+            BucketStore::default(),
+        ));
+    }
+
+    let neg_entries: Vec<Bucket> = image
+        .neg_bytes
+        .chunks_exact(BUCKET_BYTES)
+        .map(decode_bucket)
+        .collect();
+    let pos_entries: Vec<Bucket> = image
+        .pos_bytes
+        .chunks_exact(BUCKET_BYTES)
+        .map(decode_bucket)
+        .collect();
+
+    Ok(UddSketch::from_parts(
+        image.max_buckets,
+        image.mapping,
+        image.num_collapses,
+        image.total_weight,
+        image.zero_weight,
+        image.min,
+        image.max,
+        BucketStore::from_sorted_unchecked(neg_entries, image.neg_weight),
+        BucketStore::from_sorted_unchecked(pos_entries, image.pos_weight),
+    ))
+}
+
+pub(super) fn validate_sketch_image(bytes: &[u8]) -> Result<ValidatedSketchImage<'_>, Error> {
     let mut cursor = SketchSlice::new(bytes);
 
     let preamble_longs = cursor
@@ -146,17 +209,19 @@ pub fn deserialize_sketch(bytes: &[u8]) -> Result<UddSketch, Error> {
                 "expected end of empty UDDSketch image, found {trailing} trailing bytes"
             )));
         }
-        return Ok(UddSketch::from_parts(
+        return Ok(ValidatedSketchImage {
             max_buckets,
             mapping,
-            0,
-            0,
-            0,
-            f64::INFINITY,
-            f64::NEG_INFINITY,
-            BucketStore::default(),
-            BucketStore::default(),
-        ));
+            num_collapses: 0,
+            total_weight: 0,
+            zero_weight: 0,
+            min: f64::INFINITY,
+            max: f64::NEG_INFINITY,
+            neg_bytes: &[],
+            pos_bytes: &[],
+            neg_weight: 0,
+            pos_weight: 0,
+        });
     }
 
     let num_collapses = cursor
@@ -234,11 +299,11 @@ pub fn deserialize_sketch(bytes: &[u8]) -> Result<UddSketch, Error> {
         )));
     }
 
+    let payload = &bytes[bytes.len() - remaining_bytes..];
+    let (neg_bytes, pos_bytes) = payload.split_at(num_neg as usize * BUCKET_BYTES);
     let (min_key, max_key) = mapping.key_bounds(num_collapses);
-    let (neg_entries, neg_weight) =
-        decode_bucket_run(&mut cursor, num_neg as usize, min_key, max_key)?;
-    let (pos_entries, pos_weight) =
-        decode_bucket_run(&mut cursor, num_pos as usize, min_key, max_key)?;
+    let neg_weight = validate_bucket_run(neg_bytes, min_key, max_key)?;
+    let pos_weight = validate_bucket_run(pos_bytes, min_key, max_key)?;
 
     let total_weight = neg_weight
         .checked_add(zero_weight)
@@ -256,8 +321,9 @@ pub fn deserialize_sketch(bytes: &[u8]) -> Result<UddSketch, Error> {
     }
 
     // Validate that stream extrema fall in the outermost occupied buckets or zero bucket.
-    if let Some(largest_neg) = neg_entries.last() {
-        if !(min_value < 0.0 && mapping.key_at_level(-min_value, num_collapses) == largest_neg.key)
+    if let Some(largest_neg) = neg_bytes.last_chunk::<BUCKET_BYTES>() {
+        if !(min_value < 0.0
+            && mapping.key_at_level(-min_value, num_collapses) == decode_bucket(largest_neg).key)
         {
             return Err(Error::deserial(
                 "min_value does not match outermost negative bucket",
@@ -270,15 +336,18 @@ pub fn deserialize_sketch(bytes: &[u8]) -> Result<UddSketch, Error> {
             ));
         }
     } else if !(min_value > 0.0
-        && mapping.key_at_level(min_value, num_collapses) == pos_entries[0].key)
+        && mapping.key_at_level(min_value, num_collapses)
+            == decode_bucket(&pos_bytes[..BUCKET_BYTES]).key)
     {
         return Err(Error::deserial(
             "min_value does not match innermost positive bucket",
         ));
     }
 
-    if let Some(largest_pos) = pos_entries.last() {
-        if !(max_value > 0.0 && mapping.key_at_level(max_value, num_collapses) == largest_pos.key) {
+    if let Some(largest_pos) = pos_bytes.last_chunk::<BUCKET_BYTES>() {
+        if !(max_value > 0.0
+            && mapping.key_at_level(max_value, num_collapses) == decode_bucket(largest_pos).key)
+        {
             return Err(Error::deserial(
                 "max_value does not match outermost positive bucket",
             ));
@@ -290,7 +359,8 @@ pub fn deserialize_sketch(bytes: &[u8]) -> Result<UddSketch, Error> {
             ));
         }
     } else if !(max_value < 0.0
-        && mapping.key_at_level(-max_value, num_collapses) == neg_entries[0].key)
+        && mapping.key_at_level(-max_value, num_collapses)
+            == decode_bucket(&neg_bytes[..BUCKET_BYTES]).key)
     {
         return Err(Error::deserial(
             "max_value does not match innermost negative bucket",
@@ -300,7 +370,7 @@ pub fn deserialize_sketch(bytes: &[u8]) -> Result<UddSketch, Error> {
     if num_collapses > 0 {
         let prev_level = num_collapses - 1;
         let (prev_min_key, _) = mapping.key_bounds(prev_level);
-        let neg_prev = if neg_entries.is_empty() {
+        let neg_prev = if neg_bytes.is_empty() {
             0
         } else {
             let neg_lo = if max_value < 0.0 {
@@ -309,9 +379,9 @@ pub fn deserialize_sketch(bytes: &[u8]) -> Result<UddSketch, Error> {
                 prev_min_key
             };
             let neg_hi = mapping.key_at_level(-min_value, prev_level);
-            count_reachable_prev_buckets(&neg_entries, neg_lo, neg_hi)
+            count_reachable_prev_buckets(neg_bytes, neg_lo, neg_hi)
         };
-        let pos_prev = if pos_entries.is_empty() {
+        let pos_prev = if pos_bytes.is_empty() {
             0
         } else {
             let pos_lo = if min_value > 0.0 {
@@ -320,7 +390,7 @@ pub fn deserialize_sketch(bytes: &[u8]) -> Result<UddSketch, Error> {
                 prev_min_key
             };
             let pos_hi = mapping.key_at_level(max_value, prev_level);
-            count_reachable_prev_buckets(&pos_entries, pos_lo, pos_hi)
+            count_reachable_prev_buckets(pos_bytes, pos_lo, pos_hi)
         };
         let max_prev_buckets = neg_prev + pos_prev;
         if max_prev_buckets <= u64::from(max_buckets) {
@@ -330,37 +400,27 @@ pub fn deserialize_sketch(bytes: &[u8]) -> Result<UddSketch, Error> {
         }
     }
 
-    Ok(UddSketch::from_parts(
+    Ok(ValidatedSketchImage {
         max_buckets,
         mapping,
         num_collapses,
         total_weight,
         zero_weight,
-        min_value,
-        max_value,
-        BucketStore::from_sorted_unchecked(neg_entries, neg_weight),
-        BucketStore::from_sorted_unchecked(pos_entries, pos_weight),
-    ))
+        min: min_value,
+        max: max_value,
+        neg_bytes,
+        pos_bytes,
+        neg_weight,
+        pos_weight,
+    })
 }
 
-fn decode_bucket_run(
-    cursor: &mut SketchSlice<'_>,
-    len: usize,
-    min_key: i64,
-    max_key: i64,
-) -> Result<(Vec<Bucket>, u64), Error> {
-    let mut entries = Vec::with_capacity(len);
+fn validate_bucket_run(bytes: &[u8], min_key: i64, max_key: i64) -> Result<u64, Error> {
     let mut total_weight = 0u64;
     let mut prev_key: Option<i64> = None;
 
-    for _ in 0..len {
-        let key = cursor
-            .read_i64_le()
-            .map_err(insufficient_data("bucket key"))?;
-        let count = cursor
-            .read_u64_le()
-            .map_err(insufficient_data("bucket count"))?;
-
+    for chunk in bytes.chunks_exact(BUCKET_BYTES) {
+        let Bucket { key, count } = decode_bucket(chunk);
         if count == 0 {
             return Err(Error::deserial("UDDSketch bucket count must be positive"));
         }
@@ -378,15 +438,15 @@ fn decode_bucket_run(
             .checked_add(count)
             .ok_or_else(|| Error::deserial("UDDSketch bucket weight overflow"))?;
         prev_key = Some(key);
-        entries.push(Bucket { key, count });
     }
 
-    Ok((entries, total_weight))
+    Ok(total_weight)
 }
 
-fn count_reachable_prev_buckets(entries: &[Bucket], prev_min_key: i64, prev_max_key: i64) -> u64 {
-    entries
-        .iter()
+fn count_reachable_prev_buckets(bytes: &[u8], prev_min_key: i64, prev_max_key: i64) -> u64 {
+    bytes
+        .chunks_exact(BUCKET_BYTES)
+        .map(decode_bucket)
         .map(|bucket| {
             let hi_child = bucket.key.saturating_mul(2);
             let lo_child = hi_child - 1;

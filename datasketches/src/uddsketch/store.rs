@@ -97,11 +97,6 @@ impl BucketStore {
         self.entries.is_empty()
     }
 
-    #[inline]
-    pub fn total_weight(&self) -> u64 {
-        self.total_weight
-    }
-
     pub fn estimated_size(&self) -> usize {
         let cache_bytes = self
             .sorted_cache
@@ -247,8 +242,8 @@ impl BucketStore {
     /// Merges `other`'s buckets (collapsed on the fly by `other_shift` levels) into `self` (first
     /// collapsed by `self_shift` levels) in-place using the precomputed `merged_len`.
     ///
-    /// Caller must pass `merged_len == count_merged_collapsed(self.sorted_buckets(), self_shift, other.sorted_buckets(), other_shift)`
-    /// and validate combined weight overflow beforehand.
+    /// Caller must pass `merged_len == count_merged_collapsed(self.sorted_buckets(), self_shift,
+    /// other.sorted_buckets(), other_shift)` and validate combined weight overflow beforehand.
     pub fn merge_collapsed_exact(
         &mut self,
         self_shift: u8,
@@ -389,29 +384,59 @@ pub fn count_merged_collapsed(
     count
 }
 
+/// Read-only sorted bucket source in ascending `key` order used to share quantile kernels
+/// between in-memory [`BucketStore`] slices and borrowed serialized byte payloads.
+pub(super) trait BucketSource: Copy {
+    fn total_weight(self) -> u64;
+    fn len(self) -> usize;
+    fn iter_asc(self) -> impl Iterator<Item = Bucket>;
+    fn iter_desc(self) -> impl Iterator<Item = Bucket>;
+}
+
+impl BucketSource for &BucketStore {
+    #[inline]
+    fn total_weight(self) -> u64 {
+        self.total_weight
+    }
+
+    #[inline]
+    fn len(self) -> usize {
+        self.entries.len()
+    }
+
+    #[inline]
+    fn iter_asc(self) -> impl Iterator<Item = Bucket> {
+        self.sorted_buckets().iter().copied()
+    }
+
+    #[inline]
+    fn iter_desc(self) -> impl Iterator<Item = Bucket> {
+        self.sorted_buckets().iter().rev().copied()
+    }
+}
+
 #[inline]
-pub fn key_at_rank_in_slice(entries: &[Bucket], total_weight: u64, target: u64) -> i64 {
+pub(super) fn key_at_rank<S: BucketSource>(source: S, target: u64) -> i64 {
+    let total_weight = source.total_weight();
     debug_assert!(target < total_weight);
-    // Walk from the nearer end so high-percentile queries (`p90`, `p99`) touch only the tail.
     if target <= total_weight / 2 {
-        let mut acc = 0u64;
-        for bucket in entries {
+        let mut acc = 0;
+        for bucket in source.iter_asc() {
             acc += bucket.count;
             if target < acc {
                 return bucket.key;
             }
         }
-        entries.last().unwrap().key
     } else {
         let mut rem = total_weight;
-        for bucket in entries.iter().rev() {
+        for bucket in source.iter_desc() {
             rem -= bucket.count;
             if target >= rem {
                 return bucket.key;
             }
         }
-        entries[0].key
     }
+    unreachable!("target must be below the total weight")
 }
 
 #[inline(always)]
@@ -436,7 +461,7 @@ mod tests {
         left.merge_collapsed_exact(0, &right, 0, len);
         assert_eq!(left.entries.capacity(), 1024);
         assert_eq!(left.len(), len);
-        assert_eq!(left.total_weight(), 2048);
+        assert_eq!(BucketSource::total_weight(&left), 2048);
         for (key, bucket) in left.entries.iter().enumerate() {
             assert_eq!((bucket.key, bucket.count), (key as i64, 2));
         }
@@ -465,7 +490,7 @@ mod tests {
             left.merge_collapsed_exact(left_shift, &right, 1, len);
             let actual: Vec<_> = left.entries.iter().map(|b| (b.key, b.count)).collect();
             assert_eq!(actual, expected);
-            assert_eq!(left.total_weight(), 17);
+            assert_eq!(BucketSource::total_weight(&left), 17);
         }
     }
 
@@ -487,9 +512,14 @@ mod tests {
             store.insert(key, 2);
         }
         assert!(store.sorted);
-        assert!(store.sorted_buckets().windows(2).all(|w| w[0].key < w[1].key));
+        assert!(
+            store
+                .sorted_buckets()
+                .windows(2)
+                .all(|w| w[0].key < w[1].key)
+        );
         assert!(store.sorted_cache.get().is_none());
-        assert_eq!(store.total_weight(), 16);
+        assert_eq!(BucketSource::total_weight(&store), 16);
 
         // Reaching INDEX_THRESHOLD + 1 with out-of-order keys promotes to the open-addressed index.
         for key in (10..30).rev() {

@@ -77,9 +77,11 @@ mod mapping;
 mod serialization;
 mod sketch;
 mod store;
+mod wrapper;
 
 pub use self::iter::UddSketchIter;
 pub use self::sketch::UddSketch;
+pub use self::wrapper::UddSketchWrapper;
 
 const DEFAULT_MAX_BUCKETS: u32 = 512;
 const DEFAULT_ALPHA: f64 = 0.01;

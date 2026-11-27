@@ -27,9 +27,10 @@ use crate::uddsketch::iter::UddSketchIter;
 use crate::uddsketch::mapping::Mapping;
 use crate::uddsketch::serialization::deserialize_sketch;
 use crate::uddsketch::serialization::serialize_sketch;
+use crate::uddsketch::store::BucketSource;
 use crate::uddsketch::store::BucketStore;
 use crate::uddsketch::store::count_merged_collapsed;
-use crate::uddsketch::store::key_at_rank_in_slice;
+use crate::uddsketch::store::key_at_rank;
 
 /// Uniform DDSketch (`UDDSketch`) for reproducible quantile estimation with a relative value error
 /// bound.
@@ -407,39 +408,17 @@ impl UddSketch {
         if self.is_empty() {
             return Ok(None);
         }
-        if ranks.is_empty() {
-            return Ok(Some(Vec::new()));
-        }
-        if ranks.len() == 1 {
-            return Ok(Some(vec![self.quantile_unchecked(ranks[0])]));
-        }
-        if self.min == self.max {
-            return Ok(Some(vec![self.min; ranks.len()]));
-        }
-
-        let mut out = vec![0.0; ranks.len()];
-        // Endpoint-only queries can leave the stores' lazy sorted caches untouched.
-        if ranks.iter().any(|&rank| rank > 0.0 && rank < 1.0) {
-            let targets = ranks
-                .iter()
-                .enumerate()
-                .map(|(pos, &rank)| (lower_quantile_index(rank, self.total_weight), pos));
-            if ranks.windows(2).all(|pair| pair[0] <= pair[1]) {
-                self.resolve_sorted_targets(targets, &mut out);
-            } else {
-                let mut indexed: Vec<(u64, usize)> = targets.collect();
-                indexed.sort_unstable_by_key(|&(target, _)| target);
-                self.resolve_sorted_targets(indexed.into_iter(), &mut out);
-            }
-        }
-        for (i, &rank) in ranks.iter().enumerate() {
-            if rank == 0.0 {
-                out[i] = self.min;
-            } else if rank == 1.0 {
-                out[i] = self.max;
-            }
-        }
-        Ok(Some(out))
+        Ok(Some(quantiles_in_sources(
+            self.mapping,
+            self.num_collapses,
+            self.total_weight,
+            self.zero_weight,
+            self.min,
+            self.max,
+            &self.neg,
+            &self.pos,
+            ranks,
+        )))
     }
 
     /// Returns an iterator over non-empty `(value, weight)` buckets in ascending numerical order.
@@ -540,18 +519,100 @@ impl UddSketch {
         }
     }
 
-    fn resolve_sorted_targets(&self, targets: impl Iterator<Item = (u64, usize)>, out: &mut [f64]) {
-        let neg = self.neg.sorted_buckets().iter().rev();
-        let pos = self.pos.sorted_buckets().iter();
-        let mut buckets = neg
-            .map(|b| (b.count, Some((true, b.key))))
-            .chain(std::iter::once((self.zero_weight, None)))
-            .chain(pos.map(|b| (b.count, Some((false, b.key)))));
+    fn quantile_unchecked(&self, rank: f64) -> f64 {
+        quantile_in_sources(
+            self.mapping,
+            self.num_collapses,
+            self.total_weight,
+            self.zero_weight,
+            self.min,
+            self.max,
+            &self.neg,
+            &self.pos,
+            rank,
+        )
+    }
+}
 
-        // The estimate stays valid until the exclusive end of the current bucket.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn quantile_in_sources<S: BucketSource>(
+    mapping: Mapping,
+    num_collapses: u8,
+    total_weight: u64,
+    zero_weight: u64,
+    min: f64,
+    max: f64,
+    neg: S,
+    pos: S,
+    rank: f64,
+) -> f64 {
+    if rank == 0.0 || min == max {
+        return min;
+    }
+    if rank == 1.0 {
+        return max;
+    }
+
+    let target = lower_quantile_index(rank, total_weight);
+    let neg_weight = neg.total_weight();
+    if target < neg_weight {
+        // Increasing signed rank traverses negative magnitudes in reverse.
+        let mag_rank = neg_weight - 1 - target;
+        let key = key_at_rank(neg, mag_rank);
+        (-mapping.value_at_level(key, num_collapses)).clamp(min, max)
+    } else if target < neg_weight + zero_weight {
+        0.0
+    } else {
+        let pos_rank = target - neg_weight - zero_weight;
+        let key = key_at_rank(pos, pos_rank);
+        mapping.value_at_level(key, num_collapses).clamp(min, max)
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn quantiles_in_sources<S: BucketSource>(
+    mapping: Mapping,
+    num_collapses: u8,
+    total_weight: u64,
+    zero_weight: u64,
+    min: f64,
+    max: f64,
+    neg: S,
+    pos: S,
+    ranks: &[f64],
+) -> Vec<f64> {
+    if ranks.is_empty() {
+        return Vec::new();
+    }
+    if ranks.len() == 1 {
+        return vec![quantile_in_sources(
+            mapping,
+            num_collapses,
+            total_weight,
+            zero_weight,
+            min,
+            max,
+            neg,
+            pos,
+            ranks[0],
+        )];
+    }
+    if min == max {
+        return vec![min; ranks.len()];
+    }
+
+    let mut out = vec![0.0; ranks.len()];
+    if ranks.iter().any(|&rank| rank > 0.0 && rank < 1.0) {
+        let mut buckets = neg
+            .iter_desc()
+            .map(|b| (b.count, Some((true, b.key))))
+            .chain(std::iter::once((zero_weight, None)))
+            .chain(pos.iter_asc().map(|b| (b.count, Some((false, b.key)))));
+
+        // Reuse the estimate up to the exclusive end of the current bucket.
         let mut end = 0;
         let mut estimate = 0.0;
-        for (target, out_pos) in targets {
+        let resolve = |(target, index)| {
             if target >= end {
                 let (_, key) = buckets
                     .find(|(count, _)| {
@@ -561,48 +622,41 @@ impl UddSketch {
                     .expect("target must be below the total weight");
                 estimate = match key {
                     Some((is_neg, key)) => {
-                        let magnitude = self.mapping.value_at_level(key, self.num_collapses);
+                        let magnitude = mapping.value_at_level(key, num_collapses);
                         let value = if is_neg { -magnitude } else { magnitude };
-                        value.clamp(self.min, self.max)
+                        value.clamp(min, max)
                     }
                     None => 0.0,
                 };
             }
-            out[out_pos] = estimate;
-        }
-    }
-
-    fn quantile_unchecked(&self, rank: f64) -> f64 {
-        if rank == 0.0 || self.min == self.max {
-            return self.min;
-        }
-        if rank == 1.0 {
-            return self.max;
-        }
-
-        let target = lower_quantile_index(rank, self.total_weight);
-        let neg_weight = self.neg.total_weight();
-        if target < neg_weight {
-            // Negative magnitudes are stored in ascending `abs(x)` order, which is descending
-            // signed order; invert the zero-based rank within the negative partition.
-            let mag_rank = neg_weight - 1 - target;
-            let key = key_at_rank_in_slice(self.neg.sorted_buckets(), neg_weight, mag_rank);
-            let estimate = -self.mapping.value_at_level(key, self.num_collapses);
-            estimate.clamp(self.min, self.max)
-        } else if target < neg_weight + self.zero_weight {
-            0.0
+            out[index] = estimate;
+        };
+        let targets = ranks
+            .iter()
+            .copied()
+            .enumerate()
+            .filter(|&(_, rank)| rank > 0.0 && rank < 1.0)
+            .map(|(index, rank)| (lower_quantile_index(rank, total_weight), index));
+        if ranks.windows(2).all(|pair| pair[0] <= pair[1]) {
+            targets.for_each(resolve);
         } else {
-            let pos_rank = target - neg_weight - self.zero_weight;
-            let key =
-                key_at_rank_in_slice(self.pos.sorted_buckets(), self.pos.total_weight(), pos_rank);
-            let estimate = self.mapping.value_at_level(key, self.num_collapses);
-            estimate.clamp(self.min, self.max)
+            let mut indexed: Vec<_> = targets.collect();
+            indexed.sort_unstable_by_key(|&(target, _)| target);
+            indexed.into_iter().for_each(resolve);
         }
     }
+    for (value, &rank) in out.iter_mut().zip(ranks) {
+        if rank == 0.0 {
+            *value = min;
+        } else if rank == 1.0 {
+            *value = max;
+        }
+    }
+    out
 }
 
 #[inline]
-fn check_rank(rank: f64) -> Result<(), Error> {
+pub(super) fn check_rank(rank: f64) -> Result<(), Error> {
     if !(0.0..=1.0).contains(&rank) {
         return Err(Error::invalid_argument(format!(
             "rank must be in [0.0, 1.0], got {rank}"
