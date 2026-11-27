@@ -71,6 +71,24 @@ impl Family {
         max_pre_longs: 4,
     };
 
+    /// Reservoir sampling sketch for uniform unweighted random samples.
+    #[cfg(feature = "reservoir")]
+    pub const RESERVOIR: Family = Family {
+        id: 11,
+        name: "RESERVOIR",
+        min_pre_longs: 1,
+        max_pre_longs: 2,
+    };
+
+    /// Reservoir sampling union operator.
+    #[cfg(feature = "reservoir")]
+    pub const RESERVOIR_UNION: Family = Family {
+        id: 12,
+        name: "RESERVOIR_UNION",
+        min_pre_longs: 1,
+        max_pre_longs: 1,
+    };
+
     /// KLL sketch for estimating quantiles and ranks.
     #[cfg(feature = "kll")]
     pub const KLL: Family = Family {

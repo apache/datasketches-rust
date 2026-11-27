@@ -74,6 +74,7 @@ Enable multiple algorithms by listing their features together, such as `features
 | `hll`         | `HllSketch`, `HllUnion`               | Fast distinct-count estimation and unions.                                                        |
 | `kll`         | `KllSketch`                           | General-purpose quantile, rank, PMF, and CDF queries over totally ordered items.                  |
 | `req`         | `ReqSketch`                           | Relative-error quantile, rank, PMF, and CDF queries with configurable high- or low-rank accuracy. |
+| `reservoir`   | `ReservoirSketch`, `ReservoirUnion`   | Uniform unweighted random sampling and predicate subset-sum estimation over streams.              |
 | `tdigest`     | `TDigestMut`, `TDigest`               | Quantile and rank estimation, with high accuracy near distribution tails.                         |
 | `theta`       | `ThetaSketch` and set operations      | Distinct counts, set expressions, and Jaccard similarity.                                         |
 | `tuple`       | `TupleSketch` and set operations      | Theta-style keys with user-defined summaries attached to retained entries.                        |

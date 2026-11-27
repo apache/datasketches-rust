@@ -25,6 +25,7 @@ mod hash_inputs;
 mod hll;
 mod kll;
 mod req;
+mod reservoir;
 mod tdigest;
 mod theta;
 mod tuple;
@@ -42,6 +43,7 @@ fn main() {
     hll::register(&mut runner);
     kll::register(&mut runner);
     req::register(&mut runner);
+    reservoir::register(&mut runner);
     tdigest::register(&mut runner);
     theta::register(&mut runner);
     tuple::register(&mut runner);

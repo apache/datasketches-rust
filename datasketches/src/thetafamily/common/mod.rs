@@ -18,7 +18,6 @@
 //! Data structures and functions that may be used across all the Theta sketch family.
 
 pub(super) mod a_not_b;
-pub(super) mod binomial_bounds;
 pub(super) mod constants;
 pub(super) mod hash_table;
 pub(super) mod intersection;

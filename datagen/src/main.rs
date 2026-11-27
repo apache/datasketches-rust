@@ -32,6 +32,7 @@ mod frequencies;
 mod hll;
 mod kll;
 mod req;
+mod reservoir;
 mod tdigest;
 mod theta;
 mod tuple;
@@ -72,6 +73,7 @@ enum SketchFamily {
     Hll,
     Kll,
     Req,
+    Reservoir,
     #[value(name = "tdigest")]
     TDigest,
     Theta,
@@ -93,6 +95,7 @@ impl SketchFamily {
             Self::Hll => hll::generate(output_dir),
             Self::Kll => kll::generate(output_dir),
             Self::Req => req::generate(output_dir),
+            Self::Reservoir => reservoir::generate(output_dir),
             Self::TDigest => tdigest::generate(output_dir),
             Self::Theta => theta::generate(output_dir),
             Self::Tuple => tuple::generate(output_dir),

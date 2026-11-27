@@ -44,6 +44,7 @@
 //!   rank accuracy, REQ targets configurable high- or low-rank accuracy, T-Digest emphasizes
 //!   distribution tails, and UDDSketch bounds relative value error reproducibly via uniform bucket
 //!   collapsing.
+//! * Use `reservoir` for uniform unweighted random sampling and predicate subset-sum estimation.
 //! * Use `tuple` when retained Theta keys need application-defined summaries.
 //!
 //! See each module's documentation for accuracy, memory, serialization, and update examples.
@@ -89,6 +90,8 @@ pub mod hll;
 pub mod kll;
 #[cfg(feature = "req")]
 pub mod req;
+#[cfg(feature = "reservoir")]
+pub mod reservoir;
 #[cfg(feature = "tdigest")]
 pub mod tdigest;
 #[cfg(any(feature = "theta", feature = "tuple"))]
