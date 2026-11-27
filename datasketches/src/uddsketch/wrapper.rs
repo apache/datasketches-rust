@@ -162,7 +162,11 @@ impl<'a> UddSketchWrapper<'a> {
 
     /// Returns the number of nonzero buckets currently retained (`<= max_buckets()`).
     pub fn num_retained(&self) -> usize {
-        self.neg.len() + self.pos.len()
+        if self.total_weight > 0 && self.min == self.max {
+            usize::from(self.zero_weight == 0)
+        } else {
+            self.neg.len() + self.pos.len()
+        }
     }
 
     /// Returns the minimum finite value seen by this sketch, or `None` if it is empty.

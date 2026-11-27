@@ -32,8 +32,10 @@ use crate::uddsketch::store::BucketStore;
 
 const SERIAL_VERSION: u8 = 1;
 const PREAMBLE_LONGS_EMPTY: u8 = 2;
+const PREAMBLE_LONGS_SINGLE: u8 = 4;
 const PREAMBLE_LONGS_NON_EMPTY: u8 = 7;
 const FLAGS_IS_EMPTY: u8 = 1 << 2;
+const FLAGS_SINGLE_VALUE: u8 = 1 << 3;
 pub(super) const BUCKET_BYTES: usize = size_of::<i64>() + size_of::<u64>();
 
 pub(super) struct ValidatedSketchImage<'a> {
@@ -61,27 +63,42 @@ pub(super) fn decode_bucket(chunk: &[u8]) -> Bucket {
 
 pub fn serialize_sketch(sketch: &UddSketch) -> Vec<u8> {
     let is_empty = sketch.is_empty();
+    let is_single = !is_empty && sketch.min_value() == sketch.max_value();
     let preamble_longs = if is_empty {
         PREAMBLE_LONGS_EMPTY
+    } else if is_single {
+        PREAMBLE_LONGS_SINGLE
     } else {
         PREAMBLE_LONGS_NON_EMPTY
     };
     let header_bytes = usize::from(preamble_longs) * size_of::<u64>();
-    let payload_bytes = if is_empty {
+    let payload_bytes = if is_empty || is_single {
         0
     } else {
         sketch.num_retained() * BUCKET_BYTES
+    };
+    let flags = if is_empty {
+        FLAGS_IS_EMPTY
+    } else if is_single {
+        FLAGS_SINGLE_VALUE
+    } else {
+        0
     };
 
     let mut bytes = SketchBytes::with_capacity(header_bytes + payload_bytes);
     bytes.write_u8(preamble_longs);
     bytes.write_u8(SERIAL_VERSION);
     bytes.write_u8(Family::UDDSKETCH.id);
-    bytes.write_u8(if is_empty { FLAGS_IS_EMPTY } else { 0 });
+    bytes.write_u8(flags);
     bytes.write_u32_le(sketch.max_buckets());
     bytes.write_f64_le(sketch.initial_alpha());
 
     if is_empty {
+        return bytes.into_bytes();
+    }
+    if is_single {
+        bytes.write_u64_le(sketch.total_weight());
+        bytes.write_f64_le(sketch.min_value().unwrap());
         return bytes.into_bytes();
     }
 
@@ -123,6 +140,30 @@ pub fn deserialize_sketch(bytes: &[u8]) -> Result<UddSketch, Error> {
             f64::NEG_INFINITY,
             BucketStore::default(),
             BucketStore::default(),
+        ));
+    }
+
+    if image.min == image.max {
+        let mut neg = BucketStore::default();
+        let mut pos = BucketStore::default();
+        if image.zero_weight == 0 {
+            let bucket = Bucket {
+                key: image.mapping.key_at_level(image.min.abs(), 0),
+                count: image.total_weight,
+            };
+            let store = if image.min < 0.0 { &mut neg } else { &mut pos };
+            *store = BucketStore::from_sorted_unchecked(vec![bucket], image.total_weight);
+        }
+        return Ok(UddSketch::from_parts(
+            image.max_buckets,
+            image.mapping,
+            0,
+            image.total_weight,
+            image.zero_weight,
+            image.min,
+            image.max,
+            neg,
+            pos,
         ));
     }
 
@@ -171,14 +212,22 @@ pub(super) fn validate_sketch_image(bytes: &[u8]) -> Result<ValidatedSketchImage
     Family::UDDSKETCH.validate_id(family_id)?;
     ensure_serial_version_is(SERIAL_VERSION, serial_version)?;
 
-    if (flags & !FLAGS_IS_EMPTY) != 0 {
+    if (flags & !(FLAGS_IS_EMPTY | FLAGS_SINGLE_VALUE)) != 0 {
         return Err(Error::deserial(format!(
             "unsupported UDDSketch flags: {flags:#x}"
         )));
     }
     let is_empty = (flags & FLAGS_IS_EMPTY) != 0;
+    let is_single = (flags & FLAGS_SINGLE_VALUE) != 0;
+    if is_empty && is_single {
+        return Err(Error::deserial(
+            "conflicting UDDSketch flags: empty and single-value",
+        ));
+    }
     let expected_preamble_longs = if is_empty {
         PREAMBLE_LONGS_EMPTY
+    } else if is_single {
+        PREAMBLE_LONGS_SINGLE
     } else {
         PREAMBLE_LONGS_NON_EMPTY
     };
@@ -221,6 +270,40 @@ pub(super) fn validate_sketch_image(bytes: &[u8]) -> Result<ValidatedSketchImage
             pos_bytes: &[],
             neg_weight: 0,
             pos_weight: 0,
+        });
+    }
+
+    if is_single {
+        let total_weight = cursor
+            .read_u64_le()
+            .map_err(insufficient_data("total_weight"))?;
+        let value = cursor.read_f64_le().map_err(insufficient_data("value"))?;
+        let trailing = cursor.remaining().len();
+        if trailing != 0 {
+            return Err(Error::deserial(format!(
+                "expected end of single-value UDDSketch image, found {trailing} trailing bytes"
+            )));
+        }
+        if total_weight == 0 {
+            return Err(Error::deserial(
+                "single-value UDDSketch must have total_weight > 0",
+            ));
+        }
+        if !value.is_finite() || value.to_bits() == (-0.0f64).to_bits() {
+            return Err(Error::deserial("invalid UDDSketch single value"));
+        }
+        return Ok(ValidatedSketchImage {
+            max_buckets,
+            mapping,
+            num_collapses: 0,
+            total_weight,
+            zero_weight: if value == 0.0 { total_weight } else { 0 },
+            min: value,
+            max: value,
+            neg_bytes: &[],
+            pos_bytes: &[],
+            neg_weight: if value < 0.0 { total_weight } else { 0 },
+            pos_weight: if value > 0.0 { total_weight } else { 0 },
         });
     }
 
@@ -278,6 +361,11 @@ pub(super) fn validate_sketch_image(bytes: &[u8]) -> Result<ValidatedSketchImage
         || max_value.to_bits() == (-0.0f64).to_bits()
     {
         return Err(Error::deserial("invalid UDDSketch extrema"));
+    }
+    if min_value == max_value {
+        return Err(Error::deserial(
+            "non-canonical UDDSketch: constant stream must use single-value encoding",
+        ));
     }
 
     let total_buckets_usize = usize::try_from(total_buckets)
