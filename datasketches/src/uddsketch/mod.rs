@@ -72,11 +72,13 @@
 //! # Ok::<(), datasketches::error::Error>(())
 //! ```
 
+mod iter;
 mod mapping;
 mod serialization;
 mod sketch;
 mod store;
 
+pub use self::iter::UddSketchIter;
 pub use self::sketch::UddSketch;
 
 const DEFAULT_MAX_BUCKETS: u32 = 512;

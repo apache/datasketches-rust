@@ -168,3 +168,85 @@ fn weight_overflow_panics_without_modifying_sketch() {
     sketch.update_with_weight(1.0, 0);
     assert_eq!(sketch.total_weight(), u64::MAX);
 }
+
+#[test]
+fn iter_supports_double_ended_exact_size_fused_and_into_iter() {
+    fn assert_remaining(
+        iter: &(impl ExactSizeIterator + std::iter::FusedIterator + std::fmt::Debug),
+        remaining: usize,
+    ) {
+        assert_eq!(iter.len(), remaining, "{iter:?}");
+        assert_eq!(iter.size_hint(), (remaining, Some(remaining)), "{iter:?}");
+    }
+
+    fn check(sketch: &UddSketch, expected: &[(f64, u64)]) {
+        let mut buckets = Vec::new();
+        for item in sketch {
+            buckets.push(item);
+        }
+        assert_eq!(buckets.len(), expected.len());
+        assert!(buckets.windows(2).all(|pair| pair[0].0 < pair[1].0));
+        assert_eq!(
+            buckets.iter().map(|&(_, weight)| weight).sum::<u64>(),
+            sketch.total_weight()
+        );
+        for (&(value, weight), &(representative, count)) in buckets.iter().zip(expected) {
+            assert!((value - representative).abs() <= representative.abs() * 1e-12);
+            assert_eq!(weight, count);
+        }
+
+        for start_at_front in [true, false] {
+            let mut iter = sketch.iter();
+            let mut pending = buckets.iter().copied();
+            let mut from_front = start_at_front;
+            assert_remaining(&iter, pending.len());
+            while pending.len() > 0 {
+                if from_front {
+                    assert_eq!(iter.next(), pending.next());
+                } else {
+                    assert_eq!(iter.next_back(), pending.next_back());
+                }
+                assert_remaining(&iter, pending.len());
+                assert!(iter.clone().eq(pending.clone()));
+                from_front = !from_front;
+            }
+            for _ in 0..2 {
+                assert_eq!(iter.next(), None);
+                assert_eq!(iter.next_back(), None);
+                assert_remaining(&iter, 0);
+            }
+        }
+    }
+
+    let mut zero = UddSketch::default();
+    check(&zero, &[]);
+    zero.update_with_weight(0.0, 7);
+    assert_eq!(zero.num_retained(), 0);
+    check(&zero, &[(0.0, 7)]);
+
+    // At alpha = 1/3, bucket boundaries approximate powers of two. Representatives
+    // are the harmonic means of adjacent boundaries, e.g. 4/3 for (1, 2].
+    let mut neg = UddSketch::new(4, 1.0 / 3.0).unwrap();
+    let mut pos = neg.clone();
+    let mut mixed = neg.clone();
+    for (value, weight) in [(4.1, 5), (1.1, 2), (2.1, 3)] {
+        neg.update_with_weight(-value, weight);
+        pos.update_with_weight(value, weight + 1);
+        mixed.update_with_weight(-value, weight);
+        mixed.update_with_weight(value, weight + 1);
+    }
+    check(&neg, &[(-16.0 / 3.0, 5), (-8.0 / 3.0, 3), (-4.0 / 3.0, 2)]);
+    check(&pos, &[(4.0 / 3.0, 3), (8.0 / 3.0, 4), (16.0 / 3.0, 6)]);
+
+    mixed.update_with_weight(0.0, 7);
+    assert_eq!(mixed.num_collapses(), 1);
+    // After one collapse, the outer magnitudes fall in (4, 16], represented by 6.4.
+    check(
+        &mixed,
+        &[(-6.4, 5), (-1.6, 5), (0.0, 7), (1.6, 7), (6.4, 6)],
+    );
+    assert!(mixed.iter().next().unwrap().0 < mixed.min_value().unwrap());
+    assert!(mixed.iter().next_back().unwrap().0 > mixed.max_value().unwrap());
+    assert_eq!(mixed.quantile(0.01).unwrap(), mixed.min_value());
+    assert_eq!(mixed.quantile(0.99).unwrap(), mixed.max_value());
+}
