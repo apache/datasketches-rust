@@ -250,8 +250,7 @@ fn corrupted_headers_and_bucket_invariants_are_rejected() {
     let mut weighted_one = UddSketch::new(16, 0.01).unwrap();
     weighted_one.update_with_weight(2.0, 2);
     let weighted_one_bytes = weighted_one.serialize();
-    let mut count_overflow = weighted_one_bytes[..33].to_vec(); // 32B header + num_pos=1
-    count_overflow.push(0x00); // first_key = 0
+    let mut count_overflow = weighted_one_bytes[..weighted_one_bytes.len() - 1].to_vec();
     count_overflow.extend_from_slice(&[0xff; 9]); // count - 1 = u64::MAX
     assert_invalid_data(&count_overflow);
 
@@ -265,23 +264,24 @@ fn corrupted_headers_and_bucket_invariants_are_rejected() {
 #[test]
 fn v1_wire_format_golden_fixture_is_pinned() {
     // Frozen `SERIAL_VERSION = 1` (`Family::UDDSKETCH` = 24) image not touched by `datagen`,
-    // guarding compact header fields, unit-weight flags, and Q52 delta-varint bucket coordinates.
+    // guarding compact header fields, negative unit-weight elision (`FLAG_NEG_UNIT_WEIGHT`),
+    // positive `count - 1` varints (`0`, `128`, `2`), and Q52 delta-varint bucket coordinates.
     #[rustfmt::skip]
-    const GOLDEN_V1: [u8; 49] = [
-        0x04, 0x01, 0x18, 0x7a, 0x00, 0x01, 0x00, 0x00,
+    const GOLDEN_V1: [u8; 54] = [
+        0x04, 0x01, 0x18, 0x3a, 0x00, 0x01, 0x00, 0x00,
         0x7b, 0x14, 0xae, 0x47, 0xe1, 0x7a, 0x84, 0x3f,
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x1c, 0xc0,
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x18, 0x40,
         0x02, 0x04, 0x93, 0x0f, 0xac, 0x01, 0xbf, 0x06,
-        0x3e, 0x04, 0xd9, 0x0f, 0xad, 0x01, 0xbe, 0x06,
-        0x59,
+        0x3e, 0x04, 0xd9, 0x0f, 0x00, 0xad, 0x01, 0x00,
+        0xbe, 0x06, 0x80, 0x01, 0x59, 0x02,
     ];
 
     let decoded = UddSketch::deserialize(&GOLDEN_V1).unwrap();
     assert_eq!(decoded.max_buckets(), 256);
     assert_eq!(decoded.initial_alpha(), 0.01);
     assert_eq!(decoded.num_collapses(), 0);
-    assert_eq!(decoded.total_weight(), 10);
+    assert_eq!(decoded.total_weight(), 140);
     assert_eq!(decoded.zero_weight(), 2);
     assert_eq!(decoded.num_retained(), 8);
     assert_eq!(decoded.min_value(), Some(-7.0));
@@ -299,5 +299,8 @@ fn v1_wire_format_golden_fixture_is_pinned() {
         };
         fresh.update(value);
     }
+    fresh.update_with_weight(1.0, 128);
+    fresh.update_with_weight(6.0, 2);
     assert_eq!(fresh.serialize(), GOLDEN_V1);
+    assert_eq!(decoded.quantile(0.5).unwrap(), fresh.quantile(0.5).unwrap());
 }
