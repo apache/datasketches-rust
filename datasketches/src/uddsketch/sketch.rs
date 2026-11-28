@@ -23,6 +23,7 @@ use crate::uddsketch::DEFAULT_MAX_BUCKETS;
 use crate::uddsketch::MAX_MAX_BUCKETS;
 use crate::uddsketch::MIN_ALPHA;
 use crate::uddsketch::MIN_MAX_BUCKETS;
+use crate::uddsketch::iter::UddSketchIter;
 use crate::uddsketch::mapping::Mapping;
 use crate::uddsketch::serialization::deserialize_sketch;
 use crate::uddsketch::serialization::serialize_sketch;
@@ -414,6 +415,41 @@ impl UddSketch {
         ))
     }
 
+    /// Returns an iterator over non-empty `(value, weight)` buckets in ascending numerical order.
+    ///
+    /// Yields `self.num_retained() + usize::from(self.zero_weight() > 0)` items whose weights sum
+    /// to [`total_weight`](Self::total_weight). Outer bucket representatives are unclamped and may
+    /// lie outside `[min_value, max_value]`, whereas [`quantile`](Self::quantile) and
+    /// [`quantiles`](Self::quantiles) clamp estimates to `[min_value, max_value]`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use datasketches::uddsketch::UddSketch;
+    ///
+    /// let mut sketch = UddSketch::new(256, 0.01)?;
+    /// for v in [-10.0, 0.0, 20.0] {
+    ///     sketch.update(v);
+    /// }
+    /// assert_eq!(sketch.iter().len(), 3);
+    /// assert_eq!(sketch.iter().map(|(_, w)| w).sum::<u64>(), 3);
+    /// # Ok::<(), datasketches::error::Error>(())
+    /// ```
+    #[inline]
+    pub fn iter(&self) -> UddSketchIter<'_> {
+        let neg = self.neg.sorted_buckets();
+        let pos = self.pos.sorted_buckets();
+        let remaining = neg.len() + usize::from(self.zero_weight > 0) + pos.len();
+        UddSketchIter::new(
+            self.mapping,
+            self.num_collapses,
+            neg.iter(),
+            self.zero_weight,
+            pos.iter(),
+            remaining,
+        )
+    }
+
     /// Serializes this sketch into the DataSketches UDDSketch binary format.
     ///
     /// See the [module documentation](crate::uddsketch#serialization) for format
@@ -560,5 +596,15 @@ fn lower_quantile_index(rank: f64, total_weight: u64) -> u64 {
         0
     } else {
         ((product >> shift) as u64).min(last)
+    }
+}
+
+impl<'a> IntoIterator for &'a UddSketch {
+    type Item = (f64, u64);
+    type IntoIter = UddSketchIter<'a>;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
     }
 }

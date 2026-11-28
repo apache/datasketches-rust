@@ -168,3 +168,73 @@ fn weight_overflow_panics_without_modifying_sketch() {
     sketch.update_with_weight(1.0, 0);
     assert_eq!(sketch.total_weight(), u64::MAX);
 }
+
+#[test]
+fn iter_yields_ascending_buckets_and_supports_double_ended_exact_size_traversal() {
+    let check = |sketch: &UddSketch, expected: &[(f64, u64)]| {
+        let forward: Vec<_> = sketch.into_iter().collect();
+        assert_eq!(forward.len(), expected.len());
+        assert_eq!(
+            forward.len(),
+            sketch.num_retained() + usize::from(sketch.zero_weight() > 0)
+        );
+        assert!(forward.windows(2).all(|pair| pair[0].0 < pair[1].0));
+        assert_eq!(
+            forward.iter().map(|&(_, weight)| weight).sum::<u64>(),
+            sketch.total_weight()
+        );
+        for (&(value, weight), &(rep, count)) in forward.iter().zip(expected) {
+            assert!((value - rep).abs() <= rep.abs() * 1e-12);
+            assert_eq!(weight, count);
+        }
+
+        let mut iter = sketch.iter();
+        let mut pending = forward.as_slice();
+        let mut take_front = true;
+        assert_eq!(iter.len(), pending.len());
+        while let Some((&head, rest)) = pending.split_first() {
+            if take_front {
+                assert_eq!(iter.next(), Some(head));
+                pending = rest;
+            } else {
+                let (&tail, init) = pending.split_last().unwrap();
+                assert_eq!(iter.next_back(), Some(tail));
+                pending = init;
+            }
+            assert_eq!(iter.len(), pending.len());
+            take_front = !take_front;
+        }
+        assert_eq!(iter.next(), None);
+        assert_eq!(iter.next_back(), None);
+    };
+
+    let mut zero = UddSketch::default();
+    check(&zero, &[]);
+    zero.update_with_weight(0.0, 7);
+    assert_eq!(zero.num_retained(), 0);
+    check(&zero, &[(0.0, 7)]);
+
+    // At alpha = 1/3, bucket boundaries are powers of two and representatives are harmonic means.
+    let mut neg = UddSketch::new(4, 1.0 / 3.0).unwrap();
+    let mut pos = neg.clone();
+    let mut mixed = neg.clone();
+    for (value, weight) in [(4.1, 5), (1.1, 2), (2.1, 3)] {
+        neg.update_with_weight(-value, weight);
+        pos.update_with_weight(value, weight + 1);
+        mixed.update_with_weight(-value, weight);
+        mixed.update_with_weight(value, weight + 1);
+    }
+    check(&neg, &[(-16.0 / 3.0, 5), (-8.0 / 3.0, 3), (-4.0 / 3.0, 2)]);
+    check(&pos, &[(4.0 / 3.0, 3), (8.0 / 3.0, 4), (16.0 / 3.0, 6)]);
+
+    mixed.update_with_weight(0.0, 7);
+    assert_eq!(mixed.num_collapses(), 1);
+    check(
+        &mixed,
+        &[(-6.4, 5), (-1.6, 5), (0.0, 7), (1.6, 7), (6.4, 6)],
+    );
+    assert!(mixed.iter().next().unwrap().0 < mixed.min_value().unwrap());
+    assert!(mixed.iter().next_back().unwrap().0 > mixed.max_value().unwrap());
+    assert_eq!(mixed.quantile(0.01).unwrap(), mixed.min_value());
+    assert_eq!(mixed.quantile(0.99).unwrap(), mixed.max_value());
+}
