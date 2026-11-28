@@ -30,19 +30,31 @@ fn update(bencher: Bencher, len: usize, max_buckets: u32) {
     bencher.bench_local(|| build_sketch(black_box(&input), max_buckets));
 }
 
-fn update_medium_group(bencher: Bencher, distinct_per_group: usize, max_buckets: u32) {
-    let input: Vec<f64> = (0..distinct_per_group)
+// Reusable sketch lifecycle across small and medium groups (`reset` + `update` + `quantile`),
+// matching grouped aggregation operators that reuse one state across groups and materialize each
+// group's sorted buckets once at finalization.
+fn update_grouped_reset(bencher: Bencher, rows_per_group: usize, max_buckets: u32) {
+    const GROUPS: usize = 64;
+    let inputs: Vec<f64> = (0..(GROUPS * rows_per_group))
         .map(|i| {
-            let idx = (i * 17) % distinct_per_group;
-            1.05_f64.powi(idx as i32)
+            let group = i / rows_per_group;
+            let row = i % rows_per_group;
+            let idx = (row * 17 + group * 7) % (rows_per_group * 2);
+            1.05_f64.powi(idx as i32) * (1.0 + group as f64 * 0.1)
         })
         .collect();
+
     bencher.bench_local(|| {
         let mut sketch = UddSketch::new(max_buckets, DEFAULT_ALPHA).unwrap();
-        for &v in black_box(&input) {
-            sketch.update(v);
+        let mut acc = 0.0_f64;
+        for chunk in black_box(&inputs).chunks_exact(rows_per_group) {
+            sketch.reset();
+            for &v in chunk {
+                sketch.update(v);
+            }
+            acc += sketch.quantile(0.5).unwrap().unwrap_or(0.0);
         }
-        black_box(sketch)
+        black_box((sketch, acc))
     });
 }
 
@@ -58,11 +70,11 @@ pub fn register(runner: &mut Runner) {
             |b| update(b, len, max_buckets),
         );
     }
-    for &(distinct, rounds) in &[(24usize, 600_000), (48, 400_000)] {
+    for &(rows_per_group, rounds) in &[(8usize, 40_000), (24, 12_000), (48, 6_000)] {
         runner.case(
-            format!("uddsketch::update::update_medium_group/{distinct}/512"),
+            format!("uddsketch::update::grouped_reset/{rows_per_group}/512"),
             rounds,
-            |b| update_medium_group(b, distinct, 512),
+            |b| update_grouped_reset(b, rows_per_group, 512),
         );
     }
 }

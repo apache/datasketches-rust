@@ -41,6 +41,35 @@ fn merge_batch(bencher: Bencher, partials: usize, rows_per_partial: usize, max_b
     });
 }
 
+// Multi-way reduction of skewed partial sketches at fine relative accuracy (`alpha = 1e-4`,
+// `max_buckets = 16_384`), where the accumulator grows across partitions without saturating on the
+// first partial sketch.
+fn merge_fine_partials(bencher: Bencher, partials: usize, rows_per_partial: usize) {
+    const FINE_MAX_BUCKETS: u32 = 16_384;
+    const FINE_ALPHA: f64 = 1e-4;
+    let all = values(partials * rows_per_partial);
+    let sketches: Vec<UddSketch> = all
+        .chunks_exact(rows_per_partial)
+        .enumerate()
+        .map(|(part, chunk)| {
+            let scale = 1.0 + part as f64 * 0.25;
+            let mut sketch = UddSketch::new(FINE_MAX_BUCKETS, FINE_ALPHA).unwrap();
+            for &v in chunk {
+                sketch.update(v * scale);
+            }
+            sketch
+        })
+        .collect();
+
+    bencher.bench_local(|| {
+        let mut acc = UddSketch::new(FINE_MAX_BUCKETS, FINE_ALPHA).unwrap();
+        for sketch in black_box(&sketches) {
+            acc.merge(sketch).unwrap();
+        }
+        black_box(acc)
+    });
+}
+
 pub fn register(runner: &mut Runner) {
     for &((partials, rows, max_buckets), rounds) in &[
         ((64, 64, 512), 12_000),
@@ -51,6 +80,13 @@ pub fn register(runner: &mut Runner) {
             format!("uddsketch::merge::batch/{partials}/{rows}/{max_buckets}"),
             rounds,
             |b| merge_batch(b, partials, rows, max_buckets),
+        );
+    }
+    for &(rows, rounds) in &[(8usize, 24_000), (64, 4_500)] {
+        runner.case(
+            format!("uddsketch::merge::fine_partials/64/{rows}/16384"),
+            rounds,
+            |b| merge_fine_partials(b, 64, rows),
         );
     }
 }
