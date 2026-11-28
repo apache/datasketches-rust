@@ -32,7 +32,7 @@ fn rust_snapshots_round_trip_and_preserve_queries() {
     for n in N_STD {
         let filename = format!("ddsketch_cubic_n{n}_rust.sk");
         let bytes = fs::read(serialization_test_data("rust_generated_files", &filename)).unwrap();
-        let sketch = DdSketch::deserialize(&bytes).unwrap();
+        let sketch = DdSketch::<u64>::deserialize(&bytes).unwrap();
         assert_eq!(sketch.mapping_kind(), MappingKind::Cubic, "{filename}");
         assert_eq!(sketch.store_kind(), StoreKind::default(), "{filename}");
         assert_eq!(sketch.total_weight(), n, "{filename}");
@@ -51,7 +51,7 @@ fn rust_snapshots_round_trip_and_preserve_queries() {
     for n in N_STD {
         let filename = format!("ddsketch_signed_n{n}_rust.sk");
         let bytes = fs::read(serialization_test_data("rust_generated_files", &filename)).unwrap();
-        let sketch = DdSketch::deserialize(&bytes).unwrap();
+        let sketch = DdSketch::<u64>::deserialize(&bytes).unwrap();
         assert_eq!(
             sketch.mapping_kind(),
             MappingKind::Logarithmic,
@@ -149,7 +149,7 @@ fn native_round_trips_across_mappings_stores_collapse_states_and_large_weights()
 
                 // Native images are rejected by `deserialize_compat` without heuristic fallback.
                 assert_eq!(
-                    DdSketch::deserialize_compat(&bytes, StoreKind::default())
+                    DdSketch::<u64>::deserialize_compat(&bytes, StoreKind::default())
                         .unwrap_err()
                         .kind(),
                     ErrorKind::InvalidData
@@ -164,11 +164,14 @@ fn native_round_trips_across_mappings_stores_collapse_states_and_large_weights()
         StoreKind::CollapsingLowestDense { max_num_bins: 64 },
         StoreKind::CollapsingHighestDense { max_num_bins: 64 },
     ] {
-        let mut original = DdSketchBuilder::new(0.01).store(store).build().unwrap();
+        let mut original = DdSketchBuilder::new(0.01)
+            .store(store)
+            .build::<u64>()
+            .unwrap();
         for v in [-1e12, -1.0, 1.0, 1e12] {
             original.update(v);
         }
-        let mut round_tripped = DdSketch::deserialize(&original.serialize()).unwrap();
+        let mut round_tripped = DdSketch::<u64>::deserialize(&original.serialize()).unwrap();
         assert_eq!(round_tripped.store_kind(), store);
 
         for follow_up in [-1e-9, -1e15, 1e-9, 1e15, -25.0, 25.0] {
@@ -184,19 +187,19 @@ fn native_round_trips_across_mappings_stores_collapse_states_and_large_weights()
 
 #[test]
 fn native_strict_prefixes_and_trailing_bytes_are_rejected() {
-    let empty = DdSketch::default();
+    let empty = DdSketch::<u64>::default();
 
-    let mut unit_deltas = DdSketch::new(0.01).unwrap();
+    let mut unit_deltas = DdSketch::<u64>::new(0.01).unwrap();
     unit_deltas.update(-100.0);
     unit_deltas.update(0.0);
     unit_deltas.update(100.0);
 
-    let mut contiguous = DdSketch::new(0.01).unwrap();
+    let mut contiguous = DdSketch::<u64>::new(0.01).unwrap();
     for i in 0..16 {
         contiguous.update_with_weight(1.02_f64.powi(i), 3);
     }
 
-    let mut gapped = DdSketch::new(0.01).unwrap();
+    let mut gapped = DdSketch::<u64>::new(0.01).unwrap();
     gapped.update_with_weight(1.0, 5);
     gapped.update_with_weight(1e9, 7);
 
@@ -204,7 +207,9 @@ fn native_strict_prefixes_and_trailing_bytes_are_rejected() {
         let bytes = sketch.serialize();
         for end in 0..bytes.len() {
             assert_eq!(
-                DdSketch::deserialize(&bytes[..end]).unwrap_err().kind(),
+                DdSketch::<u64>::deserialize(&bytes[..end])
+                    .unwrap_err()
+                    .kind(),
                 ErrorKind::InvalidData,
                 "truncated prefix {end}/{}",
                 bytes.len()
@@ -213,7 +218,9 @@ fn native_strict_prefixes_and_trailing_bytes_are_rejected() {
         let mut with_trailing = bytes.clone();
         with_trailing.push(0x00);
         assert_eq!(
-            DdSketch::deserialize(&with_trailing).unwrap_err().kind(),
+            DdSketch::<u64>::deserialize(&with_trailing)
+                .unwrap_err()
+                .kind(),
             ErrorKind::InvalidData
         );
     }
@@ -221,14 +228,14 @@ fn native_strict_prefixes_and_trailing_bytes_are_rejected() {
 
 #[test]
 fn native_malformed_headers_and_body_invariants_are_rejected() {
-    let empty_bytes = DdSketch::default().serialize();
+    let empty_bytes = DdSketch::<u64>::default().serialize();
 
     // Wrong preamble_longs, serial_version, family_id, reserved flag bit, and mapping_tag = 3.
     for (offset, bad_byte) in [(0, 1_u8), (1, 2), (2, 20), (3, 0x90), (3, 0x13)] {
         let mut img = empty_bytes.clone();
         img[offset] = bad_byte;
         assert_eq!(
-            DdSketch::deserialize(&img).unwrap_err().kind(),
+            DdSketch::<u64>::deserialize(&img).unwrap_err().kind(),
             ErrorKind::InvalidData,
             "header mutation at byte {offset} = {bad_byte:#04x}"
         );
@@ -239,7 +246,7 @@ fn native_malformed_headers_and_body_invariants_are_rejected() {
         let mut img = empty_bytes.clone();
         img[4..8].copy_from_slice(&bad_max_bins.to_le_bytes());
         assert_eq!(
-            DdSketch::deserialize(&img).unwrap_err().kind(),
+            DdSketch::<u64>::deserialize(&img).unwrap_err().kind(),
             ErrorKind::InvalidData
         );
     }
@@ -247,12 +254,14 @@ fn native_malformed_headers_and_body_invariants_are_rejected() {
     // UnboundedDense (store_tag = 2) with non-zero max_num_bins.
     let mut bad_unbounded = DdSketchBuilder::new(0.01)
         .store(StoreKind::UnboundedDense)
-        .build()
+        .build::<u64>()
         .unwrap()
         .serialize();
     bad_unbounded[4..8].copy_from_slice(&128_u32.to_le_bytes());
     assert_eq!(
-        DdSketch::deserialize(&bad_unbounded).unwrap_err().kind(),
+        DdSketch::<u64>::deserialize(&bad_unbounded)
+            .unwrap_err()
+            .kind(),
         ErrorKind::InvalidData
     );
 
@@ -260,28 +269,34 @@ fn native_malformed_headers_and_body_invariants_are_rejected() {
     let mut empty_collapsed = empty_bytes.clone();
     empty_collapsed[3] |= 1 << 6;
     assert_eq!(
-        DdSketch::deserialize(&empty_collapsed).unwrap_err().kind(),
+        DdSketch::<u64>::deserialize(&empty_collapsed)
+            .unwrap_err()
+            .kind(),
         ErrorKind::InvalidData
     );
 
-    let mut single_pos = DdSketch::new(0.01).unwrap();
+    let mut single_pos = DdSketch::<u64>::new(0.01).unwrap();
     single_pos.update(10.0);
     let mut forged_collapsed = single_pos.serialize();
     forged_collapsed[3] |= 1 << 6; // FLAG_POS_COLLAPSED on 1-bin store (span = 1 != 2048)
     assert_eq!(
-        DdSketch::deserialize(&forged_collapsed).unwrap_err().kind(),
+        DdSketch::<u64>::deserialize(&forged_collapsed)
+            .unwrap_err()
+            .kind(),
         ErrorKind::InvalidData
     );
 
     let mut sparse_one = DdSketchBuilder::new(0.01)
         .store(StoreKind::Sparse)
-        .build()
+        .build::<u64>()
         .unwrap();
     sparse_one.update(10.0);
     let mut sparse_collapsed = sparse_one.serialize();
     sparse_collapsed[3] |= 1 << 6;
     assert_eq!(
-        DdSketch::deserialize(&sparse_collapsed).unwrap_err().kind(),
+        DdSketch::<u64>::deserialize(&sparse_collapsed)
+            .unwrap_err()
+            .kind(),
         ErrorKind::InvalidData
     );
 
@@ -290,7 +305,9 @@ fn native_malformed_headers_and_body_invariants_are_rejected() {
     zero_total[3] &= !(1 << 4);
     zero_total.extend_from_slice(&[0x00, 0x00, 0x00]);
     assert_eq!(
-        DdSketch::deserialize(&zero_total).unwrap_err().kind(),
+        DdSketch::<u64>::deserialize(&zero_total)
+            .unwrap_err()
+            .kind(),
         ErrorKind::InvalidData
     );
 
@@ -306,7 +323,7 @@ fn native_malformed_headers_and_body_invariants_are_rejected() {
         0x00, // +0 (duplicate index!)
     ]);
     assert_eq!(
-        DdSketch::deserialize(&dup_delta).unwrap_err().kind(),
+        DdSketch::<u64>::deserialize(&dup_delta).unwrap_err().kind(),
         ErrorKind::InvalidData
     );
 
@@ -322,7 +339,7 @@ fn native_malformed_headers_and_body_invariants_are_rejected() {
         0x00, // weight = 0 (invalid!)
     ]);
     assert_eq!(
-        DdSketch::deserialize(&zero_bin).unwrap_err().kind(),
+        DdSketch::<u64>::deserialize(&zero_bin).unwrap_err().kind(),
         ErrorKind::InvalidData
     );
 
@@ -330,13 +347,13 @@ fn native_malformed_headers_and_body_invariants_are_rejected() {
     let mut wide_dense = DdSketchBuilder::new(1e-5)
         .mapping(MappingKind::Logarithmic)
         .store(StoreKind::UnboundedDense)
-        .build()
+        .build::<u64>()
         .unwrap();
     wide_dense.update(1.0);
     wide_dense.update(10.0);
     let wide_dense_bytes = wide_dense.serialize();
     assert!(wide_dense_bytes.len() > 65_536);
-    let wide_dense_decoded = DdSketch::deserialize(&wide_dense_bytes).unwrap();
+    let wide_dense_decoded = DdSketch::<u64>::deserialize(&wide_dense_bytes).unwrap();
     assert_eq!(wide_dense_decoded.store_kind(), StoreKind::UnboundedDense);
     assert_eq!(
         wide_dense_decoded.iter().collect::<Vec<_>>(),
@@ -349,14 +366,16 @@ fn native_malformed_headers_and_body_invariants_are_rejected() {
         let mut out_of_domain = DdSketchBuilder::new(0.01)
             .mapping(MappingKind::Logarithmic)
             .store(StoreKind::Sparse)
-            .build()
+            .build::<u64>()
             .unwrap()
             .serialize();
         out_of_domain[3] &= !(1 << 4);
         out_of_domain.extend_from_slice(&[0x00, 0x00, 0x02, 0x01]);
         encode_test_varint(&mut out_of_domain, bad_idx);
         assert_eq!(
-            DdSketch::deserialize(&out_of_domain).unwrap_err().kind(),
+            DdSketch::<u64>::deserialize(&out_of_domain)
+                .unwrap_err()
+                .kind(),
             ErrorKind::InvalidData,
             "bad_idx={bad_idx}"
         );
@@ -367,7 +386,7 @@ fn native_malformed_headers_and_body_invariants_are_rejected() {
     let mut forged_wide_dense = DdSketchBuilder::new(1e-6)
         .mapping(MappingKind::Logarithmic)
         .store(StoreKind::UnboundedDense)
-        .build()
+        .build::<u64>()
         .unwrap()
         .serialize();
     forged_wide_dense[3] &= !(1 << 4);
@@ -375,7 +394,7 @@ fn native_malformed_headers_and_body_invariants_are_rejected() {
     encode_test_varint(&mut forged_wide_dense, -40_000_000);
     encode_test_varint(&mut forged_wide_dense, 80_000_000);
     assert_eq!(
-        DdSketch::deserialize(&forged_wide_dense)
+        DdSketch::<u64>::deserialize(&forged_wide_dense)
             .unwrap_err()
             .kind(),
         ErrorKind::InvalidData
@@ -383,7 +402,7 @@ fn native_malformed_headers_and_body_invariants_are_rejected() {
 
     let mut valid_wide_sparse = forged_wide_dense;
     valid_wide_sparse[3] = (valid_wide_sparse[3] & !(0b11 << 2)) | (3 << 2);
-    let sparse_ok = DdSketch::deserialize(&valid_wide_sparse).unwrap();
+    let sparse_ok = DdSketch::<u64>::deserialize(&valid_wide_sparse).unwrap();
     assert_eq!(sparse_ok.store_kind(), StoreKind::Sparse);
     assert_eq!(sparse_ok.total_weight(), 2);
     assert_eq!(sparse_ok.num_retained(), 2);
@@ -392,9 +411,9 @@ fn native_malformed_headers_and_body_invariants_are_rejected() {
 
     // Inverted, non-finite, zero-bucket, or sign-inconsistent summary metadata in native images
     // is rejected.
-    let mut zero_only = DdSketch::new(0.01).unwrap();
+    let mut zero_only = DdSketch::<u64>::new(0.01).unwrap();
     zero_only.update(0.0);
-    let mut neg_only = DdSketch::new(0.01).unwrap();
+    let mut neg_only = DdSketch::<u64>::new(0.01).unwrap();
     neg_only.update(-10.0);
     for (base, min, max, sum) in [
         (&single_pos, 50.0_f64, 10.0_f64, 10.0_f64),
@@ -413,7 +432,7 @@ fn native_malformed_headers_and_body_invariants_are_rejected() {
         forged[32..40].copy_from_slice(&max.to_le_bytes());
         forged[40..48].copy_from_slice(&sum.to_le_bytes());
         assert_eq!(
-            DdSketch::deserialize(&forged).unwrap_err().kind(),
+            DdSketch::<u64>::deserialize(&forged).unwrap_err().kind(),
             ErrorKind::InvalidData
         );
     }
@@ -423,7 +442,7 @@ fn native_malformed_headers_and_body_invariants_are_rejected() {
     let narrow_header = DdSketchBuilder::new(0.01)
         .mapping(MappingKind::Logarithmic)
         .store(StoreKind::CollapsingLowestDense { max_num_bins: 16 })
-        .build()
+        .build::<u64>()
         .unwrap()
         .serialize();
     let mut forged_contig_over_max = narrow_header.clone();
@@ -431,7 +450,7 @@ fn native_malformed_headers_and_body_invariants_are_rejected() {
     forged_contig_over_max.extend_from_slice(&[0x00, 0x00, 0x01, 32, 0x00]);
     forged_contig_over_max.extend(std::iter::repeat_n(0x01, 32));
     assert_eq!(
-        DdSketch::deserialize(&forged_contig_over_max)
+        DdSketch::<u64>::deserialize(&forged_contig_over_max)
             .unwrap_err()
             .kind(),
         ErrorKind::InvalidData
@@ -443,7 +462,7 @@ fn native_malformed_headers_and_body_invariants_are_rejected() {
     encode_test_varint(&mut forged_delta_over_max, 0);
     encode_test_varint(&mut forged_delta_over_max, 32);
     assert_eq!(
-        DdSketch::deserialize(&forged_delta_over_max)
+        DdSketch::<u64>::deserialize(&forged_delta_over_max)
             .unwrap_err()
             .kind(),
         ErrorKind::InvalidData
@@ -458,7 +477,7 @@ fn native_malformed_headers_and_body_invariants_are_rejected() {
         let mut forged_contig_out_of_domain = DdSketchBuilder::new(0.01)
             .mapping(MappingKind::Logarithmic)
             .store(StoreKind::UnboundedDense)
-            .build()
+            .build::<u64>()
             .unwrap()
             .serialize();
         forged_contig_out_of_domain[3] &= !(1 << 4);
@@ -466,7 +485,7 @@ fn native_malformed_headers_and_body_invariants_are_rejected() {
         encode_test_varint(&mut forged_contig_out_of_domain, first_idx);
         forged_contig_out_of_domain.extend_from_slice(weights);
         assert_eq!(
-            DdSketch::deserialize(&forged_contig_out_of_domain)
+            DdSketch::<u64>::deserialize(&forged_contig_out_of_domain)
                 .unwrap_err()
                 .kind(),
             ErrorKind::InvalidData
@@ -507,7 +526,9 @@ fn compat_round_trips_across_mappings_stores_and_weight_boundaries() {
                 let compat_bytes = sketch.serialize_compat().unwrap();
                 // Native `deserialize` rejects compat images without heuristic auto-detection.
                 assert_eq!(
-                    DdSketch::deserialize(&compat_bytes).unwrap_err().kind(),
+                    DdSketch::<u64>::deserialize(&compat_bytes)
+                        .unwrap_err()
+                        .kind(),
                     ErrorKind::InvalidData
                 );
 
@@ -602,7 +623,7 @@ fn compat_decodes_reordered_summary_blocks_and_rejects_malformed_images() {
     wire.push(0x02); // count[0] = 1
     wire.push(0x03); // count[1] = 2
 
-    let decoded = DdSketch::deserialize_compat(&wire, StoreKind::default()).unwrap();
+    let decoded = DdSketch::<u64>::deserialize_compat(&wire, StoreKind::default()).unwrap();
     assert_eq!(decoded.mapping_kind(), MappingKind::Logarithmic);
     assert_eq!(decoded.store_kind(), StoreKind::default());
     assert_eq!(decoded.total_weight(), 9);
@@ -614,14 +635,16 @@ fn compat_decodes_reordered_summary_blocks_and_rejects_malformed_images() {
     assert_eq!(decoded.quantile(0.0).unwrap(), Some(-1.5));
     assert_eq!(decoded.quantile(1.0).unwrap(), Some(20.0));
 
-    let reencoded =
-        DdSketch::deserialize_compat(&decoded.serialize_compat().unwrap(), StoreKind::default())
-            .unwrap();
+    let reencoded = DdSketch::<u64>::deserialize_compat(
+        &decoded.serialize_compat().unwrap(),
+        StoreKind::default(),
+    )
+    .unwrap();
     assert_eq!(reencoded.min_value(), Some(-1.5));
     assert_eq!(reencoded.max_value(), Some(20.0));
     assert_eq!(reencoded.sum(), Some(12.5));
 
-    let decoded_sparse = DdSketch::deserialize_compat(&wire, StoreKind::Sparse).unwrap();
+    let decoded_sparse = DdSketch::<u64>::deserialize_compat(&wire, StoreKind::Sparse).unwrap();
     assert_eq!(decoded_sparse.store_kind(), StoreKind::Sparse);
     assert_eq!(
         decoded_sparse.iter().collect::<Vec<_>>(),
@@ -638,14 +661,15 @@ fn compat_decodes_reordered_summary_blocks_and_rejects_malformed_images() {
     go_linear_wire.extend_from_slice(&go_linear_gamma.to_le_bytes());
     go_linear_wire.extend_from_slice(&go_linear_offset.to_le_bytes());
     go_linear_wire.extend_from_slice(&[0x09, 0x01, 0x64]); // 1 pos bin at index 50
-    let go_linear = DdSketch::deserialize_compat(&go_linear_wire, StoreKind::default()).unwrap();
+    let go_linear =
+        DdSketch::<u64>::deserialize_compat(&go_linear_wire, StoreKind::default()).unwrap();
     assert_eq!(go_linear.min_value(), None);
     assert_eq!(go_linear.max_value(), None);
     assert_eq!(go_linear.sum(), None);
     assert_eq!(go_linear.serialize_compat().unwrap(), go_linear_wire);
     let mut rust_linear = DdSketchBuilder::new(0.01)
         .mapping(MappingKind::Linear)
-        .build()
+        .build::<u64>()
         .unwrap();
     rust_linear.update(10.0);
     assert_eq!(rust_linear.min_value(), Some(10.0));
@@ -659,7 +683,7 @@ fn compat_decodes_reordered_summary_blocks_and_rejects_malformed_images() {
     let mut count_mismatch = wire.clone();
     count_mismatch[1..3].copy_from_slice(&[0x82, 0x40]); // FlagCount = 8 != total_weight 9
     assert_eq!(
-        DdSketch::deserialize_compat(&count_mismatch, StoreKind::default())
+        DdSketch::<u64>::deserialize_compat(&count_mismatch, StoreKind::default())
             .unwrap_err()
             .kind(),
         ErrorKind::InvalidData
@@ -668,7 +692,7 @@ fn compat_decodes_reordered_summary_blocks_and_rejects_malformed_images() {
     let mut inverted_bounds = wire.clone();
     inverted_bounds[13..21].copy_from_slice(&50.0_f64.to_le_bytes()); // min = 50 > max = 20
     assert_eq!(
-        DdSketch::deserialize_compat(&inverted_bounds, StoreKind::default())
+        DdSketch::<u64>::deserialize_compat(&inverted_bounds, StoreKind::default())
             .unwrap_err()
             .kind(),
         ErrorKind::InvalidData
@@ -677,15 +701,15 @@ fn compat_decodes_reordered_summary_blocks_and_rejects_malformed_images() {
     let mut nan_min = wire.clone();
     nan_min[13..21].copy_from_slice(&f64::NAN.to_le_bytes());
     assert_eq!(
-        DdSketch::deserialize_compat(&nan_min, StoreKind::default())
+        DdSketch::<u64>::deserialize_compat(&nan_min, StoreKind::default())
             .unwrap_err()
             .kind(),
         ErrorKind::InvalidData
     );
 
-    let mut pos_only = DdSketch::new(0.01).unwrap();
+    let mut pos_only = DdSketch::<u64>::new(0.01).unwrap();
     pos_only.update(10.0);
-    let mut neg_only = DdSketch::new(0.01).unwrap();
+    let mut neg_only = DdSketch::<u64>::new(0.01).unwrap();
     neg_only.update(-10.0);
     for (base, min, max, sum) in [
         (&pos_only, -10.0_f64, -10.0_f64, 10.0_f64),
@@ -700,7 +724,7 @@ fn compat_decodes_reordered_summary_blocks_and_rejects_malformed_images() {
         compat[12..20].copy_from_slice(&max.to_le_bytes());
         compat[21..29].copy_from_slice(&sum.to_le_bytes());
         assert_eq!(
-            DdSketch::deserialize_compat(&compat, StoreKind::default())
+            DdSketch::<u64>::deserialize_compat(&compat, StoreKind::default())
                 .unwrap_err()
                 .kind(),
             ErrorKind::InvalidData
@@ -710,8 +734,8 @@ fn compat_decodes_reordered_summary_blocks_and_rejects_malformed_images() {
     // Non-finite sums (such as `NaN` from reference Kahan overflow) round-trip across both codecs.
     let mut nan_sum = pos_only.serialize_compat().unwrap();
     nan_sum[21..29].copy_from_slice(&f64::NAN.to_le_bytes());
-    let nan_sk = DdSketch::deserialize_compat(&nan_sum, StoreKind::default()).unwrap();
-    let nan_rt = DdSketch::deserialize(&nan_sk.serialize()).unwrap();
+    let nan_sk = DdSketch::<u64>::deserialize_compat(&nan_sum, StoreKind::default()).unwrap();
+    let nan_rt = DdSketch::<u64>::deserialize(&nan_sk.serialize()).unwrap();
     assert!(nan_rt.sum().unwrap().is_nan());
 
     // Java `DDSketchWithExactSummaryStatistics` with custom `minIndexedValue = 1.0` (unencoded on
@@ -722,9 +746,10 @@ fn compat_decodes_reordered_summary_blocks_and_rejects_malformed_images() {
         java_zero_wire.push(flag);
         java_zero_wire.extend_from_slice(&0.5_f64.to_le_bytes());
     }
-    let java_zero = DdSketch::deserialize_compat(&java_zero_wire, StoreKind::default()).unwrap();
+    let java_zero =
+        DdSketch::<u64>::deserialize_compat(&java_zero_wire, StoreKind::default()).unwrap();
     assert_eq!(java_zero.quantile(0.5).unwrap(), Some(0.5));
-    let java_rt = DdSketch::deserialize(&java_zero.serialize()).unwrap();
+    let java_rt = DdSketch::<u64>::deserialize(&java_zero.serialize()).unwrap();
     assert_eq!((java_rt.zero_weight(), java_rt.min_value()), (1, Some(0.5)));
 
     let go_cubic_wire = {
@@ -732,10 +757,11 @@ fn compat_decodes_reordered_summary_blocks_and_rejects_malformed_images() {
         w.extend_from_slice(&[0x09, 0x01, 0x64]); // 1 pos bin at index 50
         w
     };
-    let go_cubic = DdSketch::deserialize_compat(&go_cubic_wire, StoreKind::default()).unwrap();
+    let go_cubic =
+        DdSketch::<u64>::deserialize_compat(&go_cubic_wire, StoreKind::default()).unwrap();
     let mut rust_cubic = DdSketchBuilder::new(0.01)
         .mapping(MappingKind::Cubic)
-        .build()
+        .build::<u64>()
         .unwrap();
     rust_cubic.update(10.0);
     rust_cubic.merge(&go_cubic).unwrap();
@@ -744,16 +770,16 @@ fn compat_decodes_reordered_summary_blocks_and_rejects_malformed_images() {
     // Merging a compatible peer whose `zero_threshold` is 1 ULP larger after recording
     // `src.zero_threshold()` preserves `zero_weight` and `min_value` across both codecs.
     let mut go_cubic_zero =
-        DdSketch::deserialize_compat(&go_cubic_wire[..17], StoreKind::default()).unwrap();
-    let mut rust_cubic_dst = DdSketch::new(0.01).unwrap();
+        DdSketch::<u64>::deserialize_compat(&go_cubic_wire[..17], StoreKind::default()).unwrap();
+    let mut rust_cubic_dst = DdSketch::<u64>::new(0.01).unwrap();
     let src_zt = go_cubic_zero.zero_threshold();
     assert!(src_zt > rust_cubic_dst.zero_threshold());
     go_cubic_zero.update(src_zt);
     rust_cubic_dst.merge(&go_cubic_zero).unwrap();
     let merged_compat = rust_cubic_dst.serialize_compat().unwrap();
     for rt in [
-        DdSketch::deserialize(&rust_cubic_dst.serialize()).unwrap(),
-        DdSketch::deserialize_compat(&merged_compat, StoreKind::default()).unwrap(),
+        DdSketch::<u64>::deserialize(&rust_cubic_dst.serialize()).unwrap(),
+        DdSketch::<u64>::deserialize_compat(&merged_compat, StoreKind::default()).unwrap(),
     ] {
         assert_eq!((rt.zero_weight(), rt.min_value()), (1, Some(src_zt)));
     }
@@ -764,14 +790,15 @@ fn compat_decodes_reordered_summary_blocks_and_rejects_malformed_images() {
     // must succeed even with `f64::MAX` populated.
     let go_tight_gamma = ((1.0 + 1e-6_f64) / (1.0 - 1e-6_f64)).powf(std::f64::consts::LN_2);
     let go_tight_header = compat_mapping_header(0x06, go_tight_gamma, 1.0 / go_tight_gamma.log2());
-    let mut go_tight = DdSketch::deserialize_compat(&go_tight_header, StoreKind::Sparse).unwrap();
+    let mut go_tight =
+        DdSketch::<u64>::deserialize_compat(&go_tight_header, StoreKind::Sparse).unwrap();
     go_tight.update(1.0);
     go_tight.update(f64::MAX);
 
     let mut rust_tight = DdSketchBuilder::new(1e-6)
         .mapping(MappingKind::Linear)
         .store(StoreKind::Sparse)
-        .build()
+        .build::<u64>()
         .unwrap();
     let rust_tight_empty_compat = rust_tight.serialize_compat().unwrap();
     let go_tight_compat = go_tight.serialize_compat().unwrap();
@@ -788,13 +815,13 @@ fn compat_decodes_reordered_summary_blocks_and_rejects_malformed_images() {
         ]
         .concat(),
     ] {
-        let joined = DdSketch::deserialize_compat(&concat, StoreKind::Sparse).unwrap();
+        let joined = DdSketch::<u64>::deserialize_compat(&concat, StoreKind::Sparse).unwrap();
         assert_eq!(joined.total_weight(), 2);
     }
 
     rust_tight.merge(&go_tight).unwrap();
     assert_eq!(
-        DdSketch::deserialize(&rust_tight.serialize())
+        DdSketch::<u64>::deserialize(&rust_tight.serialize())
             .unwrap()
             .total_weight(),
         2
@@ -805,15 +832,17 @@ fn compat_decodes_reordered_summary_blocks_and_rejects_malformed_images() {
     let mut go_extreme_wire = compat_mapping_header(0x0e, 1.000_001_998_444_339_6, 0.0);
     go_extreme_wire.extend_from_slice(&[0x09, 0x01]);
     encode_test_varint(&mut go_extreme_wire, -354_474_284);
-    let go_extreme = DdSketch::deserialize_compat(&go_extreme_wire, StoreKind::Sparse).unwrap();
-    let go_extreme_rt = DdSketch::deserialize(&go_extreme.serialize()).unwrap();
+    let go_extreme =
+        DdSketch::<u64>::deserialize_compat(&go_extreme_wire, StoreKind::Sparse).unwrap();
+    let go_extreme_rt = DdSketch::<u64>::deserialize(&go_extreme.serialize()).unwrap();
     assert_eq!(go_extreme_rt.total_weight(), 1);
 
     // Coarse `gamma = 19.0` with `offset = 5e-11` exceeds the `1e-10` scaled drift bound.
     let coarse_a_hdr = compat_mapping_header(0x02, 19.0, 0.0);
     let coarse_b_hdr = compat_mapping_header(0x02, 19.0, 5e-11);
-    let mut coarse_a = DdSketch::deserialize_compat(&coarse_a_hdr, StoreKind::Sparse).unwrap();
-    let coarse_b = DdSketch::deserialize_compat(&coarse_b_hdr, StoreKind::Sparse).unwrap();
+    let mut coarse_a =
+        DdSketch::<u64>::deserialize_compat(&coarse_a_hdr, StoreKind::Sparse).unwrap();
+    let coarse_b = DdSketch::<u64>::deserialize_compat(&coarse_b_hdr, StoreKind::Sparse).unwrap();
     assert_eq!(
         coarse_a.merge(&coarse_b).unwrap_err().kind(),
         ErrorKind::InvalidArgument
@@ -822,15 +851,15 @@ fn compat_decodes_reordered_summary_blocks_and_rejects_malformed_images() {
     // Headers whose `f64::MAX` raw coordinate (`2_147_483_647.5`) floors to `i32::MAX` are valid.
     for flag in [0x02_u8, 0x06, 0x0e] {
         let hdr = compat_mapping_header(flag, 2.0, 2_147_482_623.5);
-        let mut s = DdSketch::deserialize_compat(&hdr, StoreKind::Sparse).unwrap();
+        let mut s = DdSketch::<u64>::deserialize_compat(&hdr, StoreKind::Sparse).unwrap();
         s.update(f64::MAX);
-        let rt = DdSketch::deserialize(&s.serialize()).unwrap();
+        let rt = DdSketch::<u64>::deserialize(&s.serialize()).unwrap();
         assert_eq!(rt.total_weight(), 1);
     }
 
     // Missing index mapping (only ZeroCount = 1).
     assert_eq!(
-        DdSketch::deserialize_compat(&[0x04, 0x02], StoreKind::default())
+        DdSketch::<u64>::deserialize_compat(&[0x04, 0x02], StoreKind::default())
             .unwrap_err()
             .kind(),
         ErrorKind::InvalidData
@@ -841,7 +870,7 @@ fn compat_decodes_reordered_summary_blocks_and_rejects_malformed_images() {
     quadratic.extend_from_slice(&gamma.to_le_bytes());
     quadratic.extend_from_slice(&0.0_f64.to_le_bytes());
     assert_eq!(
-        DdSketch::deserialize_compat(&quadratic, StoreKind::default())
+        DdSketch::<u64>::deserialize_compat(&quadratic, StoreKind::default())
             .unwrap_err()
             .kind(),
         ErrorKind::InvalidData
@@ -856,7 +885,7 @@ fn compat_decodes_reordered_summary_blocks_and_rejects_malformed_images() {
     conflicting.extend_from_slice(&((1.0 + 0.05_f64) / (1.0 - 0.05_f64)).to_le_bytes());
     conflicting.extend_from_slice(&0.0_f64.to_le_bytes());
     assert_eq!(
-        DdSketch::deserialize_compat(&conflicting, StoreKind::default())
+        DdSketch::<u64>::deserialize_compat(&conflicting, StoreKind::default())
             .unwrap_err()
             .kind(),
         ErrorKind::InvalidData
@@ -865,7 +894,7 @@ fn compat_decodes_reordered_summary_blocks_and_rejects_malformed_images() {
     // Strict prefixes of an empty 17-byte compat image fail with InvalidData.
     for end in 0..base_ref.len() {
         assert_eq!(
-            DdSketch::deserialize_compat(&base_ref[..end], StoreKind::default())
+            DdSketch::<u64>::deserialize_compat(&base_ref[..end], StoreKind::default())
                 .unwrap_err()
                 .kind(),
             ErrorKind::InvalidData
@@ -878,7 +907,7 @@ fn compat_decodes_reordered_summary_blocks_and_rejects_malformed_images() {
         img.extend_from_slice(&bad_gamma.to_le_bytes());
         img.extend_from_slice(&0.0_f64.to_le_bytes());
         assert_eq!(
-            DdSketch::deserialize_compat(&img, StoreKind::default())
+            DdSketch::<u64>::deserialize_compat(&img, StoreKind::default())
                 .unwrap_err()
                 .kind(),
             ErrorKind::InvalidData,
@@ -895,7 +924,7 @@ fn compat_decodes_reordered_summary_blocks_and_rejects_malformed_images() {
         img.push(0x04);
         img.extend_from_slice(bad_varfloat);
         assert_eq!(
-            DdSketch::deserialize_compat(&img, StoreKind::default())
+            DdSketch::<u64>::deserialize_compat(&img, StoreKind::default())
                 .unwrap_err()
                 .kind(),
             ErrorKind::InvalidData
@@ -906,7 +935,7 @@ fn compat_decodes_reordered_summary_blocks_and_rejects_malformed_images() {
     let mut i32_overflow = base_ref.clone();
     i32_overflow.extend_from_slice(&[0x09, 0x01, 0x80, 0x80, 0x80, 0x80, 0x10]);
     assert_eq!(
-        DdSketch::deserialize_compat(&i32_overflow, StoreKind::default())
+        DdSketch::<u64>::deserialize_compat(&i32_overflow, StoreKind::default())
             .unwrap_err()
             .kind(),
         ErrorKind::InvalidData
@@ -919,7 +948,7 @@ fn compat_decodes_reordered_summary_blocks_and_rejects_malformed_images() {
         out_of_domain_ref.extend_from_slice(&[0x09, 0x01]);
         encode_test_varint(&mut out_of_domain_ref, bad_idx);
         assert_eq!(
-            DdSketch::deserialize_compat(&out_of_domain_ref, StoreKind::Sparse)
+            DdSketch::<u64>::deserialize_compat(&out_of_domain_ref, StoreKind::Sparse)
                 .unwrap_err()
                 .kind(),
             ErrorKind::InvalidData
@@ -933,7 +962,7 @@ fn compat_decodes_reordered_summary_blocks_and_rejects_malformed_images() {
     dup_contig_overflow.extend_from_slice(&[0x0d, 0x01, 0x0a, 0x02, 0x7e]);
     for store in [StoreKind::default(), StoreKind::Sparse] {
         assert_eq!(
-            DdSketch::deserialize_compat(&dup_contig_overflow, store)
+            DdSketch::<u64>::deserialize_compat(&dup_contig_overflow, store)
                 .unwrap_err()
                 .kind(),
             ErrorKind::InvalidData
@@ -959,12 +988,12 @@ fn compat_decodes_reordered_summary_blocks_and_rejects_malformed_images() {
 
     for (img, expected_weight) in [(&wide_ref, 2_u64), (&combined_wide_ref, 4_u64)] {
         assert_eq!(
-            DdSketch::deserialize_compat(img, StoreKind::UnboundedDense)
+            DdSketch::<u64>::deserialize_compat(img, StoreKind::UnboundedDense)
                 .unwrap_err()
                 .kind(),
             ErrorKind::InvalidData
         );
-        let sparse = DdSketch::deserialize_compat(img, StoreKind::Sparse).unwrap();
+        let sparse = DdSketch::<u64>::deserialize_compat(img, StoreKind::Sparse).unwrap();
         assert_eq!(sparse.total_weight(), expected_weight);
         assert_eq!(sparse.num_retained(), expected_weight as usize);
         if expected_weight == 2 {
@@ -975,9 +1004,12 @@ fn compat_decodes_reordered_summary_blocks_and_rejects_malformed_images() {
 
     // Invalid StoreKind passed to deserialize_compat returns InvalidArgument even on empty bytes.
     assert_eq!(
-        DdSketch::deserialize_compat(&[], StoreKind::CollapsingLowestDense { max_num_bins: 0 })
-            .unwrap_err()
-            .kind(),
+        DdSketch::<u64>::deserialize_compat(
+            &[],
+            StoreKind::CollapsingLowestDense { max_num_bins: 0 }
+        )
+        .unwrap_err()
+        .kind(),
         ErrorKind::InvalidArgument
     );
 
@@ -986,14 +1018,15 @@ fn compat_decodes_reordered_summary_blocks_and_rejects_malformed_images() {
     let mut bins_without_mapping = vec![0x09, 0x02];
     encode_test_varint(&mut bins_without_mapping, -1_000_000);
     encode_test_varint(&mut bins_without_mapping, 2_000_000);
-
     let mut bins_before_incompatible_mapping = bins_without_mapping.clone();
     bins_before_incompatible_mapping.extend_from_slice(&compat_mapping_header(0x02, gamma, 0.0));
 
     for img in [&bins_without_mapping, &bins_before_incompatible_mapping] {
         for store in [StoreKind::UnboundedDense, StoreKind::Sparse] {
             assert_eq!(
-                DdSketch::deserialize_compat(img, store).unwrap_err().kind(),
+                DdSketch::<u64>::deserialize_compat(img, store)
+                    .unwrap_err()
+                    .kind(),
                 ErrorKind::InvalidData
             );
         }
@@ -1043,6 +1076,447 @@ fn compat_decodes_reordered_summary_blocks_and_rejects_malformed_images() {
             decoded_narrow.iter().collect::<Vec<_>>(),
             expected.iter().collect::<Vec<_>>()
         );
+    }
+}
+
+#[test]
+fn fractional_native_and_compat_round_trips_and_validation() {
+    let mappings = [
+        MappingKind::Cubic,
+        MappingKind::Linear,
+        MappingKind::Logarithmic,
+    ];
+    let stores = [
+        StoreKind::CollapsingLowestDense { max_num_bins: 2048 },
+        StoreKind::CollapsingHighestDense { max_num_bins: 256 },
+        StoreKind::UnboundedDense,
+        StoreKind::Sparse,
+    ];
+
+    for mapping in mappings {
+        for store in stores {
+            let empty = DdSketchBuilder::new(0.01)
+                .mapping(mapping)
+                .store(store)
+                .build::<f64>()
+                .unwrap();
+            let empty_bytes = empty.serialize();
+            assert_eq!(empty_bytes.len(), 24);
+            assert_eq!(
+                DdSketch::<u64>::deserialize(&empty_bytes)
+                    .unwrap_err()
+                    .kind(),
+                ErrorKind::InvalidData
+            );
+
+            let mut unit = empty.clone();
+            for v in [-100.0, 0.0, 100.0] {
+                unit.update(v);
+            }
+
+            let mut fractional = empty.clone();
+            for (v, w) in [
+                (-40.0, 1.25),
+                (0.0, 0.1),
+                (1.0, 1.0 / 3.0),
+                (20.0, 2.5),
+                (1e5, 1e20),
+            ] {
+                fractional.update_with_weight(v, w);
+            }
+
+            // Tiny positive weights whose `value * weight` sum underflows to `0.0` must still
+            // round-trip losslessly through the native format.
+            let mut underflow_sum = empty.clone();
+            underflow_sum.update_with_weight(1e-200, 1e-200);
+            assert_eq!(underflow_sum.sum(), Some(0.0));
+
+            for sketch in [&empty, &unit, &fractional, &underflow_sum] {
+                let bytes = sketch.serialize();
+                let decoded = DdSketch::<f64>::deserialize(&bytes).unwrap();
+                assert_eq!(decoded.mapping_kind(), mapping);
+                assert_eq!(decoded.store_kind(), store);
+                assert_eq!(
+                    decoded.total_weight().to_bits(),
+                    sketch.total_weight().to_bits()
+                );
+                assert_eq!(
+                    decoded.zero_weight().to_bits(),
+                    sketch.zero_weight().to_bits()
+                );
+                assert_eq!(decoded.min_value(), sketch.min_value());
+                assert_eq!(decoded.max_value(), sketch.max_value());
+                assert_eq!(decoded.sum(), sketch.sum());
+                let decoded_bins: Vec<(u64, u64)> = decoded
+                    .iter()
+                    .map(|(v, w)| (v.to_bits(), w.to_bits()))
+                    .collect();
+                let expected_bins: Vec<(u64, u64)> = sketch
+                    .iter()
+                    .map(|(v, w)| (v.to_bits(), w.to_bits()))
+                    .collect();
+                assert_eq!(decoded_bins, expected_bins);
+
+                // Native `f64` images are rejected by `DdSketch::<u64>::deserialize` and
+                // `deserialize_compat`.
+                assert_eq!(
+                    DdSketch::<u64>::deserialize(&bytes).unwrap_err().kind(),
+                    ErrorKind::InvalidData
+                );
+                assert_eq!(
+                    DdSketch::<f64>::deserialize_compat(&bytes, StoreKind::default())
+                        .unwrap_err()
+                        .kind(),
+                    ErrorKind::InvalidData
+                );
+            }
+
+            // Compat round-trip preserves fractional weights (including weights above `2^53`).
+            let compat = fractional.serialize_compat().unwrap();
+            let decoded_compat = DdSketch::<f64>::deserialize_compat(&compat, store).unwrap();
+            assert_eq!(decoded_compat.mapping_kind(), mapping);
+            assert_eq!(decoded_compat.min_value(), fractional.min_value());
+            assert_eq!(decoded_compat.max_value(), fractional.max_value());
+            assert_eq!(decoded_compat.sum(), fractional.sum());
+            assert!(
+                (decoded_compat.total_weight() - fractional.total_weight()).abs()
+                    <= 1e-12 * fractional.total_weight()
+            );
+        }
+    }
+
+    // Native `u64` images are rejected by `DdSketch::<f64>::deserialize`.
+    let u64_bytes = DdSketch::<u64>::default().serialize();
+    assert_eq!(
+        DdSketch::<f64>::deserialize(&u64_bytes).unwrap_err().kind(),
+        ErrorKind::InvalidData
+    );
+
+    // Reserved header config bits (bits 27..=30) are rejected for both weight types.
+    let mut bad_reserved = u64_bytes;
+    bad_reserved[7] |= 0x40;
+    assert_eq!(
+        DdSketch::<u64>::deserialize(&bad_reserved)
+            .unwrap_err()
+            .kind(),
+        ErrorKind::InvalidData
+    );
+    bad_reserved[7] |= 0x80;
+    assert_eq!(
+        DdSketch::<f64>::deserialize(&bad_reserved)
+            .unwrap_err()
+            .kind(),
+        ErrorKind::InvalidData
+    );
+
+    // Invalid native `f64` weights (negative, `-0.0`, NaN, Inf) are rejected.
+    let mut zero_only = DdSketch::<f64>::new(0.01).unwrap();
+    zero_only.update_with_weight(0.0, 2.5);
+    let base_native = zero_only.serialize();
+    for bad_w in [-1.0_f64, -0.0, f64::NAN, f64::INFINITY] {
+        let mut forged = base_native.clone();
+        // Payload layout: 24-byte preamble + 24-byte summary + 8-byte f64 zero_weight.
+        forged[48..56].copy_from_slice(&bad_w.to_le_bytes());
+        assert_eq!(
+            DdSketch::<f64>::deserialize(&forged).unwrap_err().kind(),
+            ErrorKind::InvalidData,
+            "bad_w={bad_w:?}"
+        );
+    }
+
+    // Compat `varfloat64` rounds weights `<= 2^-53` to `0.0`:
+    // 1. Mixed sketches where a tiny weight on another sign or zero rounds to `0.0` still
+    //    round-trip through `serialize_compat` / `deserialize_compat` with intact exact bounds.
+    for (major, minor, expected_min, expected_max) in [
+        ((10.0, 1.0), (-5.0, 1e-20), -5.0, 10.0),
+        ((10.0, 1.0), (0.0, 1e-20), 0.0, 10.0),
+        ((-10.0, 1.0), (5.0, 1e-20), -10.0, 5.0),
+    ] {
+        let mut mixed = DdSketch::<f64>::new(0.01).unwrap();
+        mixed.update_with_weight(major.0, major.1);
+        mixed.update_with_weight(minor.0, minor.1);
+        let compat = mixed.serialize_compat().unwrap();
+        let decoded = DdSketch::<f64>::deserialize_compat(&compat, StoreKind::default()).unwrap();
+        assert_eq!(decoded.total_weight(), 1.0);
+        assert_eq!(decoded.min_value(), Some(expected_min));
+        assert_eq!(decoded.max_value(), Some(expected_max));
+    }
+
+    // 2. Non-empty `f64` sketches where every bin and `zero_weight` is `<= 2^-53` (even when their
+    //    sum exceeds `2^-53`) cannot survive `varfloat64` encoding and return `InvalidArgument`,
+    //    while the native format preserves them losslessly.
+    let mut all_tiny_single = DdSketch::<f64>::new(0.01).unwrap();
+    all_tiny_single.update_with_weight(10.0, 1e-20);
+    let mut all_tiny_multi = DdSketch::<f64>::new(0.01).unwrap();
+    let half_eps = 2.0_f64.powi(-54);
+    for v in [1.0, 2.0, 4.0, 8.0] {
+        all_tiny_multi.update_with_weight(v, half_eps);
+    }
+    assert!(all_tiny_multi.total_weight() + 1.0 > 1.0);
+    for tiny in [&all_tiny_single, &all_tiny_multi] {
+        assert_eq!(
+            tiny.serialize_compat().unwrap_err().kind(),
+            ErrorKind::InvalidArgument
+        );
+        let rt = DdSketch::<f64>::deserialize(&tiny.serialize()).unwrap();
+        assert_eq!(rt.total_weight().to_bits(), tiny.total_weight().to_bits());
+    }
+
+    // 3. Sign-impossible `f64` compat summaries (positive store non-empty with `max <= 0`, or
+    //    negative store non-empty with `min >= 0`) are still rejected with `InvalidData`.
+    let mut pos_f64 = DdSketch::<f64>::new(0.01).unwrap();
+    pos_f64.update_with_weight(10.0, 1.5);
+    let mut bad_max = pos_f64.serialize_compat().unwrap();
+    // Overwrite FlagMax payload (`-1.0_f64`) after FlagMin (`-2.0_f64`) so `min <= max <= 0`.
+    let min_pos = bad_max
+        .windows(8)
+        .position(|w| w == 10.0_f64.to_le_bytes())
+        .unwrap();
+    bad_max[min_pos..min_pos + 8].copy_from_slice(&(-2.0_f64).to_le_bytes());
+    bad_max[min_pos + 9..min_pos + 17].copy_from_slice(&(-1.0_f64).to_le_bytes());
+    assert_eq!(
+        DdSketch::<f64>::deserialize_compat(&bad_max, StoreKind::default())
+            .unwrap_err()
+            .kind(),
+        ErrorKind::InvalidData
+    );
+}
+
+#[test]
+fn reference_fixtures_from_go_and_java_decode_query_merge_and_reencode() {
+    struct FixtureCase {
+        name: &'static str,
+        mapping: MappingKind,
+        exact_summary: bool,
+        integer_weights: bool,
+        expected_total: f64,
+        expected_min: Option<f64>,
+        expected_max: Option<f64>,
+        expected_sum: Option<f64>,
+    }
+
+    let cases = [
+        FixtureCase {
+            name: "log_dense_bare_empty",
+            mapping: MappingKind::Logarithmic,
+            exact_summary: false,
+            integer_weights: true,
+            expected_total: 0.0,
+            expected_min: None,
+            expected_max: None,
+            expected_sum: None,
+        },
+        FixtureCase {
+            name: "log_dense_bare_signed_int",
+            mapping: MappingKind::Logarithmic,
+            exact_summary: false,
+            integer_weights: true,
+            expected_total: 13.0,
+            expected_min: None,
+            expected_max: None,
+            expected_sum: None,
+        },
+        FixtureCase {
+            name: "log_sparse_bare_unit",
+            mapping: MappingKind::Logarithmic,
+            exact_summary: false,
+            integer_weights: true,
+            expected_total: 5.0,
+            expected_min: None,
+            expected_max: None,
+            expected_sum: None,
+        },
+        FixtureCase {
+            name: "log_dense_exact_signed_int",
+            mapping: MappingKind::Logarithmic,
+            exact_summary: true,
+            integer_weights: true,
+            expected_total: 13.0,
+            expected_min: Some(-50.0),
+            expected_max: Some(500.0),
+            expected_sum: Some(165.0),
+        },
+        FixtureCase {
+            name: "log_dense_bare_frac",
+            mapping: MappingKind::Logarithmic,
+            exact_summary: false,
+            integer_weights: false,
+            expected_total: 5.75,
+            expected_min: None,
+            expected_max: None,
+            expected_sum: None,
+        },
+        FixtureCase {
+            name: "log_dense_exact_frac",
+            mapping: MappingKind::Logarithmic,
+            exact_summary: true,
+            integer_weights: false,
+            expected_total: 5.75,
+            expected_min: Some(-40.0),
+            expected_max: Some(30.0),
+            expected_sum: Some(35.0),
+        },
+        FixtureCase {
+            name: "log_sparse_exact_frac_nondyadic",
+            mapping: MappingKind::Logarithmic,
+            exact_summary: true,
+            integer_weights: false,
+            expected_total: 0.1 + 0.3 + (1.0 / 3.0) + 0.7,
+            expected_min: Some(-5.0),
+            expected_max: Some(3.0),
+            expected_sum: Some(0.1 + 2.0 * 0.3 + 1.0 - 5.0 * 0.7),
+        },
+        FixtureCase {
+            name: "log_dense_exact_subunit",
+            mapping: MappingKind::Logarithmic,
+            exact_summary: true,
+            integer_weights: false,
+            expected_total: 0.5,
+            expected_min: Some(1.0),
+            expected_max: Some(10.0),
+            expected_sum: Some(2.75),
+        },
+        FixtureCase {
+            name: "linear_dense_bare_signed_int",
+            mapping: MappingKind::Linear,
+            exact_summary: false,
+            integer_weights: true,
+            expected_total: 13.0,
+            expected_min: None,
+            expected_max: None,
+            expected_sum: None,
+        },
+        FixtureCase {
+            name: "linear_dense_exact_frac",
+            mapping: MappingKind::Linear,
+            exact_summary: true,
+            integer_weights: false,
+            expected_total: 5.75,
+            expected_min: Some(-40.0),
+            expected_max: Some(30.0),
+            expected_sum: Some(35.0),
+        },
+        FixtureCase {
+            name: "cubic_dense_bare_signed_int",
+            mapping: MappingKind::Cubic,
+            exact_summary: false,
+            integer_weights: true,
+            expected_total: 13.0,
+            expected_min: None,
+            expected_max: None,
+            expected_sum: None,
+        },
+        FixtureCase {
+            name: "cubic_dense_exact_frac",
+            mapping: MappingKind::Cubic,
+            exact_summary: true,
+            integer_weights: false,
+            expected_total: 5.75,
+            expected_min: Some(-40.0),
+            expected_max: Some(30.0),
+            expected_sum: Some(35.0),
+        },
+    ];
+
+    let ranks = [0.0, 0.25, 0.5, 0.75, 1.0];
+
+    for lang in ["go", "java"] {
+        for case in &cases {
+            let filename = format!("ddsketch/ddsketch_{lang}_{}.sk", case.name);
+            let bytes = fs::read(serialization_test_data("reference_files", &filename)).unwrap();
+
+            for store in [StoreKind::default(), StoreKind::Sparse] {
+                let decoded_f64 = DdSketch::<f64>::deserialize_compat(&bytes, store).unwrap();
+                assert_eq!(decoded_f64.mapping_kind(), case.mapping, "{filename}");
+                assert_eq!(decoded_f64.store_kind(), store, "{filename}");
+                assert!(
+                    (decoded_f64.total_weight() - case.expected_total).abs() <= 1e-12,
+                    "{filename}: got {}, expected {}",
+                    decoded_f64.total_weight(),
+                    case.expected_total
+                );
+                assert_eq!(decoded_f64.min_value(), case.expected_min, "{filename}");
+                assert_eq!(decoded_f64.max_value(), case.expected_max, "{filename}");
+                match (decoded_f64.sum(), case.expected_sum) {
+                    (Some(got), Some(exp)) => {
+                        assert!((got - exp).abs() <= 1e-12, "{filename}: sum {got} != {exp}");
+                    }
+                    (got, exp) => assert_eq!(got, exp, "{filename}"),
+                }
+
+                // Verify quantile consistency and exact endpoint clamping when summary is present.
+                let qs = decoded_f64.quantiles(&ranks).unwrap();
+                if case.expected_total == 0.0 {
+                    assert_eq!(qs, None, "{filename}");
+                } else {
+                    let qs = qs.unwrap();
+                    for (&r, &est) in ranks.iter().zip(&qs) {
+                        assert_eq!(
+                            est.to_bits(),
+                            decoded_f64.quantile(r).unwrap().unwrap().to_bits(),
+                            "{filename} q={r}"
+                        );
+                    }
+                    if case.exact_summary {
+                        assert_eq!(qs[0], case.expected_min.unwrap(), "{filename}");
+                        assert_eq!(qs[4], case.expected_max.unwrap(), "{filename}");
+                    }
+                }
+
+                // Re-encode to compat bytes and verify round-trip preserves summary presence and
+                // quantiles.
+                let reencoded = decoded_f64.serialize_compat().unwrap();
+                let rt = DdSketch::<f64>::deserialize_compat(&reencoded, store).unwrap();
+                assert_eq!(rt.min_value(), decoded_f64.min_value(), "{filename}");
+                assert_eq!(rt.max_value(), decoded_f64.max_value(), "{filename}");
+                assert_eq!(
+                    rt.quantiles(&ranks).unwrap(),
+                    decoded_f64.quantiles(&ranks).unwrap(),
+                    "{filename}"
+                );
+
+                // Merging the reference sketch into a fresh Rust sketch with the same mapping kind
+                // must succeed across Go and Java parameter formulas.
+                let mut rust_peer = DdSketchBuilder::new(0.01)
+                    .mapping(case.mapping)
+                    .store(store)
+                    .build::<f64>()
+                    .unwrap();
+                rust_peer.update(42.0);
+                rust_peer.merge(&decoded_f64).unwrap();
+                assert!(
+                    (rust_peer.total_weight() - (case.expected_total + 1.0)).abs() <= 1e-12,
+                    "{filename}"
+                );
+                if case.expected_total > 0.0 && !case.exact_summary {
+                    assert_eq!(rust_peer.min_value(), None, "{filename}");
+                }
+
+                // Integer-weight fixtures also decode with `DdSketch<u64>`, while fractional-weight
+                // fixtures are rejected by `DdSketch<u64>`.
+                if case.integer_weights {
+                    let decoded_u64 = DdSketch::<u64>::deserialize_compat(&bytes, store).unwrap();
+                    assert_eq!(
+                        decoded_u64.total_weight(),
+                        case.expected_total as u64,
+                        "{filename}"
+                    );
+                    assert_eq!(
+                        decoded_u64.quantiles(&ranks).unwrap(),
+                        decoded_f64.quantiles(&ranks).unwrap(),
+                        "{filename}"
+                    );
+                } else {
+                    assert_eq!(
+                        DdSketch::<u64>::deserialize_compat(&bytes, store)
+                            .unwrap_err()
+                            .kind(),
+                        ErrorKind::InvalidData,
+                        "{filename} should be rejected by u64 decoder"
+                    );
+                }
+            }
+        }
     }
 }
 

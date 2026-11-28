@@ -36,7 +36,7 @@ fn construction_validates_accuracy_and_store_bounds() {
         1.0,
         1.5,
     ] {
-        let err = DdSketch::new(bad_alpha).unwrap_err();
+        let err = DdSketch::<u64>::new(bad_alpha).unwrap_err();
         assert_eq!(err.kind(), ErrorKind::InvalidArgument, "alpha={bad_alpha}");
     }
 
@@ -48,7 +48,7 @@ fn construction_validates_accuracy_and_store_bounds() {
         ] {
             let sketch = DdSketchBuilder::new(valid_alpha)
                 .mapping(kind)
-                .build()
+                .build::<u64>()
                 .unwrap();
             assert_eq!(sketch.mapping_kind(), kind);
             assert!((sketch.relative_accuracy() - valid_alpha).abs() <= 1e-12);
@@ -64,14 +64,17 @@ fn construction_validates_accuracy_and_store_bounds() {
                 max_num_bins: bad_bins,
             },
         ] {
-            let err = DdSketchBuilder::new(0.01).store(store).build().unwrap_err();
+            let err = DdSketchBuilder::new(0.01)
+                .store(store)
+                .build::<u64>()
+                .unwrap_err();
             assert_eq!(err.kind(), ErrorKind::InvalidArgument);
         }
     }
 
     let one_bin = DdSketchBuilder::new(0.01)
         .store(StoreKind::CollapsingLowestDense { max_num_bins: 1 })
-        .build()
+        .build::<u64>()
         .unwrap();
     assert_eq!(
         one_bin.store_kind(),
@@ -81,7 +84,7 @@ fn construction_validates_accuracy_and_store_bounds() {
 
 #[test]
 fn empty_sketch_validates_ranks_before_returning_none() {
-    let sketch = DdSketch::default();
+    let sketch = DdSketch::<u64>::default();
     assert!(sketch.is_empty());
     assert_eq!(sketch.total_weight(), 0);
     assert_eq!(sketch.zero_weight(), 0);
@@ -150,7 +153,10 @@ fn zero_threshold_subnormals_and_extreme_finite_values_are_tracked() {
         MappingKind::Linear,
         MappingKind::Logarithmic,
     ] {
-        let mut sketch = DdSketchBuilder::new(0.01).mapping(kind).build().unwrap();
+        let mut sketch = DdSketchBuilder::new(0.01)
+            .mapping(kind)
+            .build::<u64>()
+            .unwrap();
         let threshold = sketch.zero_threshold();
         assert!(threshold > 0.0 && threshold.is_finite());
 
@@ -180,7 +186,7 @@ fn zero_threshold_subnormals_and_extreme_finite_values_are_tracked() {
     }
 
     // Single-sample and negative-zero exact summary and clamping invariants.
-    let mut single = DdSketch::new(0.01).unwrap();
+    let mut single = DdSketch::<u64>::new(0.01).unwrap();
     single.update(1.0);
     assert_eq!(single.min_value(), Some(1.0));
     assert_eq!(single.max_value(), Some(1.0));
@@ -190,7 +196,7 @@ fn zero_threshold_subnormals_and_extreme_finite_values_are_tracked() {
         Some(vec![1.0, 1.0, 1.0])
     );
 
-    let mut neg_zero = DdSketch::new(0.01).unwrap();
+    let mut neg_zero = DdSketch::<u64>::new(0.01).unwrap();
     neg_zero.update(-0.0);
     assert_eq!(neg_zero.min_value().unwrap().to_bits(), 0.0_f64.to_bits());
     assert_eq!(neg_zero.max_value().unwrap().to_bits(), 0.0_f64.to_bits());
@@ -238,4 +244,108 @@ fn reset_reuses_dense_capacity_and_iter_supports_double_ended_traversal() {
     sketch.update(42.0);
     let q = sketch.quantile(0.5).unwrap().unwrap();
     assert!((q - 42.0).abs() <= 0.01 * 42.0);
+}
+
+#[test]
+fn fractional_weights_validate_inputs_and_preserve_state_on_panic() {
+    let mut sketch = DdSketch::<f64>::new(0.01).unwrap();
+    sketch.update(f64::NAN);
+    sketch.update_with_weight(10.0, 0.0);
+    sketch.update_with_weight(10.0, -0.0);
+    assert!(sketch.is_empty());
+
+    sketch.update_with_weight(-40.0, 1.25);
+    sketch.update_with_weight(0.0, 0.5);
+    sketch.update_with_weight(10.0, 0.5);
+    sketch.update_with_weight(20.0, 2.5);
+    sketch.update(30.0);
+    assert_eq!(sketch.total_weight(), 5.75);
+    assert_eq!(sketch.zero_weight(), 0.5);
+    assert_eq!(sketch.num_retained(), 5);
+    assert_eq!(sketch.min_value(), Some(-40.0));
+    assert_eq!(sketch.max_value(), Some(30.0));
+    assert_eq!(sketch.sum(), Some(35.0));
+
+    // Negative, NaN, and infinite weights panic without mutating observable state, even when
+    // `value` itself is non-finite.
+    let before: Vec<_> = sketch.iter().collect();
+    for (value, bad_weight) in [
+        (10.0, -1.0),
+        (10.0, -f64::MIN_POSITIVE),
+        (10.0, f64::NAN),
+        (10.0, f64::INFINITY),
+        (10.0, f64::NEG_INFINITY),
+        (f64::NAN, -1.0),
+    ] {
+        let panicked = catch_unwind(AssertUnwindSafe(|| {
+            sketch.update_with_weight(value, bad_weight);
+        }));
+        assert!(panicked.is_err(), "value={value}, weight={bad_weight}");
+        assert_eq!(sketch.total_weight(), 5.75);
+        assert_eq!(sketch.iter().collect::<Vec<_>>(), before);
+    }
+
+    // Overflowing `f64::MAX` panics atomically without mutating state, including when rounding
+    // across separate sign stores would push `neg + zero + pos` to infinity.
+    let mut near_max = DdSketch::<f64>::new(0.01).unwrap();
+    near_max.update_with_weight(-10.0, 0.5 * f64::MAX);
+    near_max.update_with_weight(10.0, 0.5 * f64::MAX);
+    let max_ulp = f64::MAX - f64::MAX.next_down();
+    let panicked = catch_unwind(AssertUnwindSafe(|| {
+        near_max.update_with_weight(-10.0, 0.49 * max_ulp);
+    }));
+    assert!(panicked.is_err());
+    assert!(near_max.total_weight().is_finite());
+    assert_eq!(near_max.total_weight(), f64::MAX);
+
+    // Partial bin collapse near `f64::MAX` must not let `f64` non-associativity produce `+Inf`
+    // bucket weights while `total_weight` remains finite. Place each sample at the center of
+    // consecutive logarithmic buckets `0..=4` so `values[3]` collapses `0` into `1` (`0.6 * u`)
+    // and `values[4]` collapses `1` (`0.6 * u`) into `2` (`f64::MAX`).
+    let gamma = (1.0 + 0.01_f64) / (1.0 - 0.01_f64);
+    let bucket_center = |k: i32| gamma.powf(f64::from(k) + 0.5);
+    for (store, values) in [
+        (
+            StoreKind::CollapsingLowestDense { max_num_bins: 3 },
+            [
+                bucket_center(0),
+                bucket_center(1),
+                bucket_center(2),
+                bucket_center(3),
+                bucket_center(4),
+            ],
+        ),
+        (
+            StoreKind::CollapsingHighestDense { max_num_bins: 3 },
+            [
+                bucket_center(4),
+                bucket_center(3),
+                bucket_center(2),
+                bucket_center(1),
+                bucket_center(0),
+            ],
+        ),
+    ] {
+        let mut collapsing = DdSketchBuilder::new(0.01)
+            .mapping(MappingKind::Logarithmic)
+            .store(store)
+            .build::<f64>()
+            .unwrap();
+        // `f64::MAX + 0.3 * max_ulp == f64::MAX`, whereas `0.3 * max_ulp + 0.3 * max_ulp == 0.6 *
+        // max_ulp` overflows when added to `f64::MAX` during partial collapse.
+        collapsing.update_with_weight(values[2], f64::MAX);
+        collapsing.update_with_weight(values[0], 0.3 * max_ulp);
+        collapsing.update_with_weight(values[1], 0.3 * max_ulp);
+        collapsing.update_with_weight(values[3], 1.0);
+        collapsing.update_with_weight(values[4], 1.0);
+
+        assert!(collapsing.total_weight().is_finite());
+        assert!(collapsing.iter().all(|(_, w)| w.is_finite() && w > 0.0));
+        let native_rt = DdSketch::<f64>::deserialize(&collapsing.serialize()).unwrap();
+        assert_eq!(native_rt.total_weight(), collapsing.total_weight());
+        let compat_rt =
+            DdSketch::<f64>::deserialize_compat(&collapsing.serialize_compat().unwrap(), store)
+                .unwrap();
+        assert!(compat_rt.total_weight().is_finite());
+    }
 }

@@ -55,11 +55,11 @@ fn merge_rejects_incompatible_mappings_even_when_empty_and_preserves_self_on_err
     ] {
         let mut left = DdSketchBuilder::new(alpha_a)
             .mapping(MappingKind::Logarithmic)
-            .build()
+            .build::<u64>()
             .unwrap();
         let mut right = DdSketchBuilder::new(alpha_b)
             .mapping(MappingKind::Logarithmic)
-            .build()
+            .build::<u64>()
             .unwrap();
         right.update(1e100);
         assert_eq!(
@@ -144,8 +144,14 @@ fn merge_is_order_and_partition_independent_across_stores() {
 #[test]
 fn merge_under_tight_collapse_budget_preserves_tail_invariants() {
     let store = StoreKind::CollapsingLowestDense { max_num_bins: 8 };
-    let mut left = DdSketchBuilder::new(0.01).store(store).build().unwrap();
-    let mut right = DdSketchBuilder::new(0.01).store(store).build().unwrap();
+    let mut left = DdSketchBuilder::new(0.01)
+        .store(store)
+        .build::<u64>()
+        .unwrap();
+    let mut right = DdSketchBuilder::new(0.01)
+        .store(store)
+        .build::<u64>()
+        .unwrap();
 
     for v in [1.0, 2.0, 4.0] {
         left.update(v);
@@ -176,13 +182,13 @@ fn merge_under_tight_collapse_budget_preserves_tail_invariants() {
     ] {
         let mut uncollapsed = DdSketchBuilder::new(0.01)
             .store(one_bin_store)
-            .build()
+            .build::<u64>()
             .unwrap();
         uncollapsed.update(anchor);
 
         let mut collapsed = DdSketchBuilder::new(0.01)
             .store(one_bin_store)
-            .build()
+            .build::<u64>()
             .unwrap();
         collapsed.update(1.0);
         collapsed.update(100.0);
@@ -194,10 +200,12 @@ fn merge_under_tight_collapse_budget_preserves_tail_invariants() {
 
         let bytes = a_then_b.serialize();
         assert_eq!(bytes, b_then_a.serialize());
-        assert_eq!(DdSketch::deserialize(&bytes).unwrap().total_weight(), 3);
+        assert_eq!(
+            DdSketch::<u64>::deserialize(&bytes).unwrap().total_weight(),
+            3
+        );
     }
 }
-
 #[test]
 fn merge_wide_sparse_and_unbounded_into_empty_narrow_collapsing_matches_incremental() {
     let samples = [
@@ -249,5 +257,78 @@ fn merge_wide_sparse_and_unbounded_into_empty_narrow_collapsing_matches_incremen
             );
             assert_eq!(merged.serialize(), incremental.serialize());
         }
+    }
+}
+
+#[test]
+fn fractional_merge_combines_stores_and_rejects_f64_overflow_atomically() {
+    let mut left = DdSketchBuilder::new(0.01)
+        .store(StoreKind::CollapsingLowestDense { max_num_bins: 128 })
+        .build::<f64>()
+        .unwrap();
+    let mut right = DdSketchBuilder::new(0.01)
+        .store(StoreKind::Sparse)
+        .build::<f64>()
+        .unwrap();
+
+    left.update_with_weight(-25.0, 0.75);
+    left.update_with_weight(0.0, 0.25);
+    left.update_with_weight(10.0, 1.5);
+    right.update_with_weight(-25.0, 0.5);
+    right.update_with_weight(0.0, 0.5);
+    right.update_with_weight(100.0, 2.25);
+
+    left.merge(&right).unwrap();
+    assert_eq!(left.total_weight(), 5.75);
+    assert_eq!(left.zero_weight(), 0.75);
+    assert_eq!(left.min_value(), Some(-25.0));
+    assert_eq!(left.max_value(), Some(100.0));
+
+    // Overflowing `f64::MAX` returns `InvalidArgument` without modifying `left`.
+    let mut huge_left = DdSketch::<f64>::new(0.01).unwrap();
+    huge_left.update_with_weight(10.0, 0.75 * f64::MAX);
+    let mut huge_right = DdSketch::<f64>::new(0.01).unwrap();
+    huge_right.update_with_weight(-10.0, 0.5 * f64::MAX);
+    let snapshot: Vec<_> = huge_left.iter().collect();
+    assert_eq!(
+        huge_left.merge(&huge_right).unwrap_err().kind(),
+        ErrorKind::InvalidArgument
+    );
+    assert_eq!(huge_left.total_weight(), 0.75 * f64::MAX);
+    assert_eq!(huge_left.iter().collect::<Vec<_>>(), snapshot);
+
+    // Merging near `f64::MAX` where `(a + (b + c))` is finite (`f64::MAX`) while `((a + b) + c)`
+    // would overflow must preserve a finite `total_weight` and finite bins across both sparse and
+    // collapsing dense merge paths.
+    let max_ulp = f64::MAX - f64::MAX.next_down();
+    for (left_store, right_store) in [
+        (StoreKind::Sparse, StoreKind::Sparse),
+        (
+            StoreKind::CollapsingLowestDense { max_num_bins: 2 },
+            StoreKind::CollapsingLowestDense { max_num_bins: 4 },
+        ),
+        (
+            StoreKind::CollapsingLowestDense { max_num_bins: 2 },
+            StoreKind::Sparse,
+        ),
+    ] {
+        let mut a = DdSketchBuilder::new(0.01)
+            .store(left_store)
+            .build::<f64>()
+            .unwrap();
+        a.update_with_weight(1000.0, f64::MAX.next_down());
+
+        let mut b = DdSketchBuilder::new(0.01)
+            .store(right_store)
+            .build::<f64>()
+            .unwrap();
+        b.update_with_weight(1.0, 0.6 * max_ulp);
+        b.update_with_weight(10.0, 0.6 * max_ulp);
+
+        a.merge(&b).unwrap();
+        assert_eq!(a.total_weight(), f64::MAX);
+        assert!(a.iter().all(|(_, w)| w.is_finite() && w > 0.0));
+        let native_rt = DdSketch::<f64>::deserialize(&a.serialize()).unwrap();
+        assert_eq!(native_rt.total_weight(), f64::MAX);
     }
 }

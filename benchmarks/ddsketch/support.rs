@@ -39,6 +39,20 @@ pub(super) fn latency_values(len: usize) -> Vec<f64> {
         .collect()
 }
 
+/// Deterministic positive non-dyadic fractional weights so `varfloat64` exercises full mantissa
+/// encoding rather than short integer counts.
+pub(super) fn fractional_weights(len: usize) -> Vec<f64> {
+    let mut state = 0xd1b5_4a32_d192_ed03_u64;
+    (0..len)
+        .map(|_| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            ((state % 9) + 1) as f64 * 0.1 + 1.0 / ((state % 13) + 3) as f64
+        })
+        .collect()
+}
+
 pub(super) fn build_sketch(values: &[f64], mapping: MappingKind, store: StoreKind) -> DdSketch {
     let mut sketch = DdSketchBuilder::new(DEFAULT_ACCURACY)
         .mapping(mapping)
@@ -51,6 +65,40 @@ pub(super) fn build_sketch(values: &[f64], mapping: MappingKind, store: StoreKin
     sketch
 }
 
+pub(super) fn build_weighted_u64_sketch(
+    values: &[f64],
+    weights: &[u64],
+    mapping: MappingKind,
+    store: StoreKind,
+) -> DdSketch<u64> {
+    let mut sketch = DdSketchBuilder::new(DEFAULT_ACCURACY)
+        .mapping(mapping)
+        .store(store)
+        .build::<u64>()
+        .unwrap();
+    for (&value, &weight) in values.iter().zip(weights) {
+        sketch.update_with_weight(value, weight);
+    }
+    sketch
+}
+
+pub(super) fn build_weighted_f64_sketch(
+    values: &[f64],
+    weights: &[f64],
+    mapping: MappingKind,
+    store: StoreKind,
+) -> DdSketch<f64> {
+    let mut sketch = DdSketchBuilder::new(DEFAULT_ACCURACY)
+        .mapping(mapping)
+        .store(store)
+        .build::<f64>()
+        .unwrap();
+    for (&value, &weight) in values.iter().zip(weights) {
+        sketch.update_with_weight(value, weight);
+    }
+    sketch
+}
+
 pub(super) fn prepared_sketch() -> DdSketch {
     build_sketch(
         &latency_values(100_000),
@@ -59,10 +107,29 @@ pub(super) fn prepared_sketch() -> DdSketch {
     )
 }
 
+pub(super) fn prepared_f64_sketch() -> DdSketch<f64> {
+    let values = latency_values(100_000);
+    let weights = fractional_weights(100_000);
+    build_weighted_f64_sketch(&values, &weights, MappingKind::Cubic, StoreKind::default())
+}
+
 pub(super) fn partial_sketches() -> Vec<DdSketch> {
     let values = latency_values(PARTIAL_GROUPS * ROWS_PER_PARTIAL);
     values
         .chunks_exact(ROWS_PER_PARTIAL)
         .map(|chunk| build_sketch(chunk, MappingKind::Cubic, StoreKind::default()))
+        .collect()
+}
+
+pub(super) fn partial_f64_sketches() -> Vec<DdSketch<f64>> {
+    let total = PARTIAL_GROUPS * ROWS_PER_PARTIAL;
+    let values = latency_values(total);
+    let weights = fractional_weights(total);
+    values
+        .chunks_exact(ROWS_PER_PARTIAL)
+        .zip(weights.chunks_exact(ROWS_PER_PARTIAL))
+        .map(|(v_chunk, w_chunk)| {
+            build_weighted_f64_sketch(v_chunk, w_chunk, MappingKind::Cubic, StoreKind::default())
+        })
         .collect()
 }

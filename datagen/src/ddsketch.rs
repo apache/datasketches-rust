@@ -28,7 +28,7 @@ use crate::write_snapshot;
 
 pub fn generate(output_dir: &Path) -> io::Result<()> {
     for n in N_STD {
-        let mut sketch = DdSketch::new(0.01).unwrap();
+        let mut sketch = DdSketch::<u64>::new(0.01).unwrap();
         for i in 1..=n {
             sketch.update(i as f64);
         }
@@ -43,7 +43,7 @@ pub fn generate(output_dir: &Path) -> io::Result<()> {
         let mut sketch = DdSketchBuilder::new(0.01)
             .mapping(MappingKind::Logarithmic)
             .store(StoreKind::CollapsingLowestDense { max_num_bins: 512 })
-            .build()
+            .build::<u64>()
             .unwrap();
         for i in 0..n {
             let value = match i % 5 {
