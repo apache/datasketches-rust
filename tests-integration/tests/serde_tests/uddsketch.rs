@@ -171,6 +171,33 @@ fn corrupted_headers_and_bucket_invariants_are_rejected() {
     forged_unreachable_level[16] = 32;
     assert_invalid_data(&forged_unreachable_level);
 
+    // Extrema-bounded pre-collapse check: 4 buckets with `max_buckets = 4` where outer buckets
+    // have weight 2, yet recorded `(min_value, max_value)` keep `hi_child` out of reach at
+    // `prev_level = 9` so at most 4 pre-collapse buckets could have existed (`<= 4`).
+    let mut extrema_bounded = UddSketch::new(4, 0.01).unwrap();
+    extrema_bounded.update_with_weight(-1.01, 2);
+    extrema_bounded.update(-1.0);
+    extrema_bounded.update(1.0);
+    extrema_bounded.update_with_weight(1.01, 2);
+    let mut forged_extrema_collapse = extrema_bounded.serialize();
+    forged_extrema_collapse[16] = 10;
+    assert_invalid_data(&forged_extrema_collapse);
+
+    // Same extrema-bounded check for single-sign (positive-only / negative-only) with inner
+    // bucket weight 2 where `lo_child` is below the recorded inner extremum.
+    for pairs in [
+        [(1.0, 2u64), (1.01, 1), (1.03, 1)],
+        [(-1.03, 1u64), (-1.01, 1), (-1.0, 2)],
+    ] {
+        let mut single_sign = UddSketch::new(4, 0.01).unwrap();
+        for (v, w) in pairs {
+            single_sign.update_with_weight(v, w);
+        }
+        let mut forged = single_sign.serialize();
+        forged[16] = 10;
+        assert_invalid_data(&forged);
+    }
+
     // Reversed or bucket-mismatched extrema.
     let mut bad_min = valid.clone();
     bad_min[40..48].copy_from_slice(&(-1.0f64).to_le_bytes()); // wrong bucket for min_value

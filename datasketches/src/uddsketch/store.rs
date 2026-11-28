@@ -21,7 +21,7 @@ use crate::uddsketch::mapping::collapse_key;
 
 const EMPTY_SLOT: u32 = u32::MAX;
 const INDEX_THRESHOLD: usize = 16;
-const MIN_SLOTS_CAP: usize = 64;
+const MIN_SLOTS_CAP: usize = 128;
 const HASH_MULTIPLIER: u64 = 0x517c_c1b7_2722_0a95;
 
 #[derive(Clone, Copy, Debug)]
@@ -30,9 +30,9 @@ pub struct Bucket {
     pub count: u64,
 }
 
-/// Counter buckets for one sign (positive magnitudes) with append-only out-of-order accumulation,
-/// a lazy open-addressed `u32` hash index once retained buckets reach `INDEX_THRESHOLD`, and
-/// cached/deferred sorting for queries, merges, collapses, and serialization.
+/// Counter buckets for one sign (positive magnitudes), maintained in sorted `key` order below
+/// `INDEX_THRESHOLD` and transitioning to append-only accumulation with an open-addressed `u32`
+/// hash index and cached/deferred sorting once retained buckets reach `INDEX_THRESHOLD`.
 #[derive(Debug)]
 pub struct BucketStore {
     entries: Vec<Bucket>,
@@ -162,16 +162,16 @@ impl BucketStore {
         }
 
         if self.slots.is_empty() && self.entries.len() < INDEX_THRESHOLD {
-            for bucket in &mut self.entries {
-                if bucket.key == key {
-                    bucket.count += weight;
-                    self.total_weight += weight;
-                    return;
+            debug_assert!(self.sorted);
+            match self.entries.binary_search_by_key(&key, |b| b.key) {
+                Ok(idx) => {
+                    self.entries[idx].count += weight;
+                }
+                Err(idx) => {
+                    self.entries.insert(idx, Bucket { key, count: weight });
                 }
             }
-            self.entries.push(Bucket { key, count: weight });
             self.total_weight += weight;
-            self.sorted = false;
             return;
         }
 
@@ -390,4 +390,44 @@ pub fn key_at_rank_in_slice(entries: &[Bucket], total_weight: u64, target: u64) 
 fn hash_key(key: i64) -> usize {
     let mixed = (key as u64).wrapping_mul(HASH_MULTIPLIER);
     (mixed ^ (mixed >> 32)) as usize
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn small_store_maintains_sorted_order_without_allocating_sorted_cache() {
+        let mut store = BucketStore::default();
+        for key in (0..INDEX_THRESHOLD as i64).rev() {
+            store.insert(key * 2, 1);
+        }
+        assert_eq!(store.len(), INDEX_THRESHOLD);
+        assert!(store.sorted);
+        assert!(store.slots.is_empty());
+        assert_eq!(store.sorted_buckets().len(), INDEX_THRESHOLD);
+        assert!(store.sorted_cache.get().is_none());
+
+        // Inserting a duplicate key while still below INDEX_THRESHOLD updates count in place.
+        store.reset();
+        for key in [9, 3, 7, 1, 5, 3, 9, 0] {
+            store.insert(key, 2);
+        }
+        assert!(store.sorted);
+        assert!(
+            store
+                .sorted_buckets()
+                .windows(2)
+                .all(|w| w[0].key < w[1].key)
+        );
+        assert!(store.sorted_cache.get().is_none());
+        assert_eq!(store.total_weight(), 16);
+
+        // Reaching INDEX_THRESHOLD + 1 with out-of-order keys promotes to the open-addressed index.
+        for key in (10..30).rev() {
+            store.insert(key, 1);
+        }
+        assert!(!store.slots.is_empty());
+        assert_eq!(store.sorted_buckets().len(), 26);
+    }
 }
