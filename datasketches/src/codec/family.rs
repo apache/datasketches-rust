@@ -157,7 +157,7 @@ impl Family {
         id: 24,
         name: "UDDSKETCH",
         min_pre_longs: 2,
-        max_pre_longs: 7,
+        max_pre_longs: 4,
     };
 
     /// DDSketch for estimating quantiles with relative-value error guarantees.

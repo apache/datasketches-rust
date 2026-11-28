@@ -20,6 +20,11 @@ use crate::codec::SketchSlice;
 use crate::codec::assert::ensure_serial_version_is;
 use crate::codec::assert::insufficient_data;
 use crate::codec::family::Family;
+use crate::codec::varint::MAX_VAR_LEN_64;
+use crate::codec::varint::decode_uvarint64_slice;
+use crate::codec::varint::decode_varint64_slice;
+use crate::codec::varint::encode_uvarint64;
+use crate::codec::varint::write_uvarint64_to_buf;
 use crate::error::Error;
 use crate::uddsketch::MAX_COLLAPSES;
 use crate::uddsketch::MAX_MAX_BUCKETS;
@@ -32,61 +37,103 @@ use crate::uddsketch::store::BucketStore;
 
 const SERIAL_VERSION: u8 = 1;
 const PREAMBLE_LONGS_EMPTY: u8 = 2;
-const PREAMBLE_LONGS_NON_EMPTY: u8 = 7;
+const PREAMBLE_LONGS_NON_EMPTY: u8 = 4;
+
+const FLAG_HAS_COLLAPSES: u8 = 1 << 0;
+const FLAG_HAS_ZERO: u8 = 1 << 1;
 const FLAGS_IS_EMPTY: u8 = 1 << 2;
-const BUCKET_BYTES: usize = size_of::<i64>() + size_of::<u64>();
+const FLAG_HAS_NEG: u8 = 1 << 3;
+const FLAG_HAS_POS: u8 = 1 << 4;
+const FLAG_NEG_UNIT_WEIGHT: u8 = 1 << 5;
+const FLAG_POS_UNIT_WEIGHT: u8 = 1 << 6;
+const SUPPORTED_FLAGS: u8 = FLAG_HAS_COLLAPSES
+    | FLAG_HAS_ZERO
+    | FLAGS_IS_EMPTY
+    | FLAG_HAS_NEG
+    | FLAG_HAS_POS
+    | FLAG_NEG_UNIT_WEIGHT
+    | FLAG_POS_UNIT_WEIGHT;
 
+const RUN_CHUNK_BYTES: usize = 256;
+
+/// Serializes `sketch` into the compact delta-varint `UDDSKETCH` binary wire format.
 pub fn serialize_sketch(sketch: &UddSketch) -> Vec<u8> {
-    let is_empty = sketch.is_empty();
-    let preamble_longs = if is_empty {
-        PREAMBLE_LONGS_EMPTY
-    } else {
-        PREAMBLE_LONGS_NON_EMPTY
-    };
-    let header_bytes = usize::from(preamble_longs) * size_of::<u64>();
-    let payload_bytes = if is_empty {
-        0
-    } else {
-        sketch.num_retained() * BUCKET_BYTES
-    };
-
-    let mut bytes = SketchBytes::with_capacity(header_bytes + payload_bytes);
-    bytes.write_u8(preamble_longs);
-    bytes.write_u8(SERIAL_VERSION);
-    bytes.write_u8(Family::UDDSKETCH.id);
-    bytes.write_u8(if is_empty { FLAGS_IS_EMPTY } else { 0 });
-    bytes.write_u32_le(sketch.max_buckets());
-    bytes.write_f64_le(sketch.initial_alpha());
-
-    if is_empty {
+    if sketch.is_empty() {
+        let mut bytes = SketchBytes::with_capacity(16);
+        bytes.write_u8(PREAMBLE_LONGS_EMPTY);
+        bytes.write_u8(SERIAL_VERSION);
+        bytes.write_u8(Family::UDDSKETCH.id);
+        bytes.write_u8(FLAGS_IS_EMPTY);
+        bytes.write_u32_le(sketch.max_buckets());
+        bytes.write_f64_le(sketch.initial_alpha());
         return bytes.into_bytes();
     }
 
-    let num_neg =
-        u32::try_from(sketch.neg_store().len()).expect("negative bucket count exceeds u32::MAX");
-    let num_pos =
-        u32::try_from(sketch.pos_store().len()).expect("positive bucket count exceeds u32::MAX");
+    let neg = sketch.neg_store();
+    let pos = sketch.pos_store();
+    let neg_unit = !neg.is_empty() && neg.total_weight() == neg.len() as u64;
+    let pos_unit = !pos.is_empty() && pos.total_weight() == pos.len() as u64;
+    let mut flags = 0;
+    if sketch.num_collapses() > 0 {
+        flags |= FLAG_HAS_COLLAPSES;
+    }
+    if sketch.zero_weight() > 0 {
+        flags |= FLAG_HAS_ZERO;
+    }
+    if !neg.is_empty() {
+        flags |= FLAG_HAS_NEG;
+    }
+    if !pos.is_empty() {
+        flags |= FLAG_HAS_POS;
+    }
+    if neg_unit {
+        flags |= FLAG_NEG_UNIT_WEIGHT;
+    }
+    if pos_unit {
+        flags |= FLAG_POS_UNIT_WEIGHT;
+    }
 
-    bytes.write_u8(sketch.num_collapses());
-    bytes.write(&[0u8; 7]);
-    bytes.write_u32_le(num_neg);
-    bytes.write_u32_le(num_pos);
-    bytes.write_u64_le(sketch.zero_weight());
+    let mut bytes = SketchBytes::with_capacity(
+        32 + 16
+            + neg.len() * if neg_unit { 1 } else { 2 }
+            + pos.len() * if pos_unit { 1 } else { 2 },
+    );
+    bytes.write_u8(PREAMBLE_LONGS_NON_EMPTY);
+    bytes.write_u8(SERIAL_VERSION);
+    bytes.write_u8(Family::UDDSKETCH.id);
+    bytes.write_u8(flags);
+    bytes.write_u32_le(sketch.max_buckets());
+    bytes.write_f64_le(sketch.initial_alpha());
     bytes.write_f64_le(sketch.min_value().unwrap());
     bytes.write_f64_le(sketch.max_value().unwrap());
 
-    for bucket in sketch.neg_store().sorted_buckets() {
-        bytes.write_i64_le(bucket.key);
-        bytes.write_u64_le(bucket.count);
+    if flags & FLAG_HAS_COLLAPSES != 0 {
+        bytes.write_u8(sketch.num_collapses());
     }
-    for bucket in sketch.pos_store().sorted_buckets() {
-        bytes.write_i64_le(bucket.key);
-        bytes.write_u64_le(bucket.count);
+    if flags & FLAG_HAS_ZERO != 0 {
+        encode_uvarint64(&mut bytes, sketch.zero_weight());
     }
-
+    if flags & FLAG_HAS_NEG != 0 {
+        encode_uvarint64(&mut bytes, neg.len() as u64);
+        if neg_unit {
+            encode_bucket_run::<true>(&mut bytes, neg.sorted_buckets());
+        } else {
+            encode_bucket_run::<false>(&mut bytes, neg.sorted_buckets());
+        }
+    }
+    if flags & FLAG_HAS_POS != 0 {
+        encode_uvarint64(&mut bytes, pos.len() as u64);
+        if pos_unit {
+            encode_bucket_run::<true>(&mut bytes, pos.sorted_buckets());
+        } else {
+            encode_bucket_run::<false>(&mut bytes, pos.sorted_buckets());
+        }
+    }
     bytes.into_bytes()
 }
 
+/// Deserializes a `UDDSKETCH` image from `bytes`, enforcing header, flag, DoS budget, bucket
+/// key/weight, extrema, and pre-collapse reachability invariants.
 pub fn deserialize_sketch(bytes: &[u8]) -> Result<UddSketch, Error> {
     let mut cursor = SketchSlice::new(bytes);
 
@@ -108,12 +155,15 @@ pub fn deserialize_sketch(bytes: &[u8]) -> Result<UddSketch, Error> {
     Family::UDDSKETCH.validate_id(family_id)?;
     ensure_serial_version_is(SERIAL_VERSION, serial_version)?;
 
-    if (flags & !FLAGS_IS_EMPTY) != 0 {
+    if (flags & !SUPPORTED_FLAGS) != 0 {
         return Err(Error::deserial(format!(
             "unsupported UDDSketch flags: {flags:#x}"
         )));
     }
     let is_empty = (flags & FLAGS_IS_EMPTY) != 0;
+    if is_empty && flags != FLAGS_IS_EMPTY {
+        return Err(Error::deserial("empty UDDSketch has non-empty flags"));
+    }
     let expected_preamble_longs = if is_empty {
         PREAMBLE_LONGS_EMPTY
     } else {
@@ -159,52 +209,27 @@ pub fn deserialize_sketch(bytes: &[u8]) -> Result<UddSketch, Error> {
         ));
     }
 
-    let num_collapses = cursor
-        .read_u8()
-        .map_err(insufficient_data("num_collapses"))?;
-    let mut reserved = [0u8; 7];
-    cursor
-        .read_exact(&mut reserved)
-        .map_err(insufficient_data("reserved"))?;
-    let num_neg = cursor
-        .read_u32_le()
-        .map_err(insufficient_data("num_neg_buckets"))?;
-    let num_pos = cursor
-        .read_u32_le()
-        .map_err(insufficient_data("num_pos_buckets"))?;
-    let zero_weight = cursor
-        .read_u64_le()
-        .map_err(insufficient_data("zero_weight"))?;
+    let has_collapses = flags & FLAG_HAS_COLLAPSES != 0;
+    let has_zero = flags & FLAG_HAS_ZERO != 0;
+    let has_neg = flags & FLAG_HAS_NEG != 0;
+    let has_pos = flags & FLAG_HAS_POS != 0;
+    let neg_unit = flags & FLAG_NEG_UNIT_WEIGHT != 0;
+    let pos_unit = flags & FLAG_POS_UNIT_WEIGHT != 0;
+    if (neg_unit && !has_neg) || (pos_unit && !has_pos) {
+        return Err(Error::deserial("unit weight flag requires a bucket run"));
+    }
+    if !has_zero && !has_neg && !has_pos {
+        return Err(Error::deserial(
+            "non-empty UDDSketch has no occupied buckets",
+        ));
+    }
+
     let min_value = cursor
         .read_f64_le()
         .map_err(insufficient_data("min_value"))?;
     let max_value = cursor
         .read_f64_le()
         .map_err(insufficient_data("max_value"))?;
-
-    if reserved != [0u8; 7] {
-        return Err(Error::deserial(
-            "non-zero reserved bytes in UDDSketch header",
-        ));
-    }
-    if num_collapses > MAX_COLLAPSES {
-        return Err(Error::deserial(format!(
-            "num_collapses must be at most {MAX_COLLAPSES}, got {num_collapses}"
-        )));
-    }
-
-    let total_buckets = u64::from(num_neg) + u64::from(num_pos);
-    if total_buckets > u64::from(max_buckets) {
-        return Err(Error::deserial(format!(
-            "retained bucket count ({total_buckets}) exceeds max_buckets ({max_buckets})"
-        )));
-    }
-    let min_collapsed_buckets = u64::from(max_buckets) / 2 + 1;
-    if num_collapses > 0 && total_buckets < min_collapsed_buckets {
-        return Err(Error::deserial(format!(
-            "UDDSketch with num_collapses={num_collapses} must retain at least {min_collapsed_buckets} buckets, got {total_buckets}"
-        )));
-    }
 
     if !min_value.is_finite()
         || !max_value.is_finite()
@@ -215,30 +240,93 @@ pub fn deserialize_sketch(bytes: &[u8]) -> Result<UddSketch, Error> {
         return Err(Error::deserial("invalid UDDSketch extrema"));
     }
 
-    let total_buckets_usize = usize::try_from(total_buckets)
-        .map_err(|_| Error::deserial("bucket count exceeds platform usize::MAX"))?;
-    let expected_payload_bytes = total_buckets_usize
-        .checked_mul(BUCKET_BYTES)
-        .ok_or_else(|| Error::deserial("bucket payload size overflows usize"))?;
-    let remaining_bytes = cursor.remaining().len();
-    if remaining_bytes < expected_payload_bytes {
-        return Err(Error::insufficient_data_of(
-            "UDDSketch buckets",
-            format_args!("expected {expected_payload_bytes} bytes, got {remaining_bytes}"),
-        ));
-    }
-    if remaining_bytes > expected_payload_bytes {
+    let mut rem = cursor.remaining();
+    let num_collapses = if has_collapses {
+        let (&level, rest) = rem
+            .split_first()
+            .ok_or_else(|| Error::insufficient_data_of("num_collapses", "expected one byte"))?;
+        rem = rest;
+        if level == 0 || level > MAX_COLLAPSES {
+            return Err(Error::deserial(format!(
+                "num_collapses must be in [1, {MAX_COLLAPSES}] when present, got {level}"
+            )));
+        }
+        level
+    } else {
+        0
+    };
+    let zero_weight = if has_zero {
+        let weight = decode_uvarint64_slice(&mut rem, "zero_weight")?;
+        if weight == 0 {
+            return Err(Error::deserial("zero_weight must be positive when present"));
+        }
+        weight
+    } else {
+        0
+    };
+
+    let (min_key, max_key) = mapping.key_bounds(num_collapses);
+    let (neg_entries, neg_weight) = if has_neg {
+        let num_neg = decode_uvarint64_slice(&mut rem, "num_neg_buckets")?;
+        if num_neg == 0 {
+            return Err(Error::deserial(
+                "num_neg_buckets must be positive when present",
+            ));
+        }
+        if num_neg > u64::from(max_buckets) {
+            return Err(Error::deserial(format!(
+                "retained bucket count ({num_neg}) exceeds max_buckets ({max_buckets})"
+            )));
+        }
+        let len = usize::try_from(num_neg)
+            .map_err(|_| Error::deserial("bucket count exceeds platform usize::MAX"))?;
+        if neg_unit {
+            decode_bucket_run::<true>(&mut rem, len, min_key, max_key)?
+        } else {
+            decode_bucket_run::<false>(&mut rem, len, min_key, max_key)?
+        }
+    } else {
+        (Vec::new(), 0)
+    };
+    let (pos_entries, pos_weight) = if has_pos {
+        let num_pos = decode_uvarint64_slice(&mut rem, "num_pos_buckets")?;
+        if num_pos == 0 {
+            return Err(Error::deserial(
+                "num_pos_buckets must be positive when present",
+            ));
+        }
+        let total_buckets = (neg_entries.len() as u64)
+            .checked_add(num_pos)
+            .ok_or_else(|| Error::deserial("UDDSketch bucket count overflow"))?;
+        if total_buckets > u64::from(max_buckets) {
+            return Err(Error::deserial(format!(
+                "retained bucket count ({total_buckets}) exceeds max_buckets ({max_buckets})"
+            )));
+        }
+        let len = usize::try_from(num_pos)
+            .map_err(|_| Error::deserial("bucket count exceeds platform usize::MAX"))?;
+        if pos_unit {
+            decode_bucket_run::<true>(&mut rem, len, min_key, max_key)?
+        } else {
+            decode_bucket_run::<false>(&mut rem, len, min_key, max_key)?
+        }
+    } else {
+        (Vec::new(), 0)
+    };
+    if !rem.is_empty() {
         return Err(Error::deserial(format!(
-            "expected {expected_payload_bytes} bucket bytes, found {} trailing bytes",
-            remaining_bytes - expected_payload_bytes
+            "expected end of UDDSketch image, found {} trailing bytes",
+            rem.len()
         )));
     }
 
-    let (min_key, max_key) = mapping.key_bounds(num_collapses);
-    let (neg_entries, neg_weight) =
-        decode_bucket_run(&mut cursor, num_neg as usize, min_key, max_key)?;
-    let (pos_entries, pos_weight) =
-        decode_bucket_run(&mut cursor, num_pos as usize, min_key, max_key)?;
+    let total_buckets = (neg_entries.len() + pos_entries.len()) as u64;
+    let min_collapsed_buckets = u64::from(max_buckets) / 2 + 1;
+    if num_collapses > 0 && total_buckets < min_collapsed_buckets {
+        return Err(Error::deserial(format!(
+            "UDDSketch with num_collapses={num_collapses} must retain at least {min_collapsed_buckets} buckets, got {total_buckets}"
+        )));
+    }
 
     let total_weight = neg_weight
         .checked_add(zero_weight)
@@ -343,44 +431,118 @@ pub fn deserialize_sketch(bytes: &[u8]) -> Result<UddSketch, Error> {
     ))
 }
 
-fn decode_bucket_run(
-    cursor: &mut SketchSlice<'_>,
+#[inline(always)]
+fn push_uvarint64_chunked(chunk: &mut [u8; RUN_CHUNK_BYTES], pos: &mut usize, v: u64) {
+    if v < 0x80 {
+        chunk[*pos] = v as u8;
+        *pos += 1;
+    } else if v < 0x4000 {
+        chunk[*pos] = (v as u8) | 0x80;
+        chunk[*pos + 1] = (v >> 7) as u8;
+        *pos += 2;
+    } else {
+        *pos += write_uvarint64_to_buf(&mut chunk[*pos..], v);
+    }
+}
+
+/// Encodes a sorted bucket run into `out` using a `[u8; 256]` stack buffer (`UNIT_WEIGHT` omits
+/// per-bucket `count - 1` varints).
+fn encode_bucket_run<const UNIT_WEIGHT: bool>(out: &mut SketchBytes, buckets: &[Bucket]) {
+    if buckets.is_empty() {
+        return;
+    }
+    let mut chunk = [0u8; RUN_CHUNK_BYTES];
+    let mut pos = 0usize;
+    let first_key = buckets[0].key;
+    let zigzag = ((first_key << 1) ^ (first_key >> 63)) as u64;
+    push_uvarint64_chunked(&mut chunk, &mut pos, zigzag);
+    if !UNIT_WEIGHT {
+        push_uvarint64_chunked(&mut chunk, &mut pos, buckets[0].count - 1);
+    }
+
+    let mut prev_key = first_key;
+    for bucket in &buckets[1..] {
+        if pos > RUN_CHUNK_BYTES - MAX_VAR_LEN_64 * 2 {
+            out.write(&chunk[..pos]);
+            pos = 0;
+        }
+        let delta_m1 = (bucket.key as u64).wrapping_sub(prev_key as u64) - 1;
+        push_uvarint64_chunked(&mut chunk, &mut pos, delta_m1);
+        if !UNIT_WEIGHT {
+            push_uvarint64_chunked(&mut chunk, &mut pos, bucket.count - 1);
+        }
+        prev_key = bucket.key;
+    }
+    if pos > 0 {
+        out.write(&chunk[..pos]);
+    }
+}
+
+/// Decodes `len` strictly ascending buckets in `[min_key, max_key]` from `src` after checking
+/// minimum byte bounds to prevent oversized preallocation.
+fn decode_bucket_run<const UNIT_WEIGHT: bool>(
+    src: &mut &[u8],
     len: usize,
     min_key: i64,
     max_key: i64,
 ) -> Result<(Vec<Bucket>, u64), Error> {
+    if len == 0 {
+        return Ok((Vec::new(), 0));
+    }
+    let min_bytes = if UNIT_WEIGHT {
+        len
+    } else {
+        len.checked_mul(2)
+            .ok_or_else(|| Error::deserial("bucket payload size overflows usize"))?
+    };
+    if src.len() < min_bytes {
+        return Err(Error::insufficient_data_of(
+            "UDDSketch buckets",
+            format_args!("expected at least {min_bytes} bytes, got {}", src.len()),
+        ));
+    }
+
     let mut entries = Vec::with_capacity(len);
-    let mut total_weight = 0u64;
-    let mut prev_key: Option<i64> = None;
-
-    for _ in 0..len {
-        let key = cursor
-            .read_i64_le()
-            .map_err(insufficient_data("bucket key"))?;
-        let count = cursor
-            .read_u64_le()
-            .map_err(insufficient_data("bucket count"))?;
-
-        if count == 0 {
-            return Err(Error::deserial("UDDSketch bucket count must be positive"));
-        }
-        if key < min_key || key > max_key {
-            return Err(Error::deserial(format!(
-                "UDDSketch bucket key {key} outside valid range [{min_key}, {max_key}]"
-            )));
-        }
-        if prev_key.is_some_and(|prev| prev >= key) {
+    let first_key = decode_varint64_slice(src, "bucket key")?;
+    if first_key < min_key || first_key > max_key {
+        return Err(Error::deserial(format!(
+            "UDDSketch bucket key {first_key} outside valid range [{min_key}, {max_key}]"
+        )));
+    }
+    let first_count = if UNIT_WEIGHT {
+        1
+    } else {
+        decode_uvarint64_slice(src, "bucket count")?
+            .checked_add(1)
+            .ok_or_else(|| Error::deserial("UDDSketch bucket count overflow"))?
+    };
+    entries.push(Bucket {
+        key: first_key,
+        count: first_count,
+    });
+    let mut total_weight = first_count;
+    let mut prev_key = first_key;
+    for _ in 1..len {
+        let delta_m1 = decode_uvarint64_slice(src, "bucket key delta")?;
+        if delta_m1 >= (max_key as u64).wrapping_sub(prev_key as u64) {
             return Err(Error::deserial(
-                "UDDSketch bucket keys must be strictly ascending",
+                "UDDSketch bucket key delta exceeds valid range",
             ));
         }
+        let key = (prev_key as u64).wrapping_add(delta_m1).wrapping_add(1) as i64;
+        let count = if UNIT_WEIGHT {
+            1
+        } else {
+            decode_uvarint64_slice(src, "bucket count")?
+                .checked_add(1)
+                .ok_or_else(|| Error::deserial("UDDSketch bucket count overflow"))?
+        };
         total_weight = total_weight
             .checked_add(count)
             .ok_or_else(|| Error::deserial("UDDSketch bucket weight overflow"))?;
-        prev_key = Some(key);
         entries.push(Bucket { key, count });
+        prev_key = key;
     }
-
     Ok((entries, total_weight))
 }
 

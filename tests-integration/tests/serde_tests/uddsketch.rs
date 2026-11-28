@@ -94,11 +94,20 @@ fn corrupted_headers_and_bucket_invariants_are_rejected() {
         (0usize, 2u8), // wrong preamble_longs for non-empty
         (1, 2),        // unsupported serial_version
         (2, 20),       // wrong family_id (TDIGEST)
-        (3, 1),        // unsupported flag bit
-        (16, 63),      // num_collapses > MAX_COLLAPSES (62)
-        (17, 1),       // non-zero reserved byte
+        (3, 0x80),     // reserved flag bit 7
+        (3, 0x7e),     // FLAGS_IS_EMPTY combined with non-empty flags
+        (3, 0x00),     // non-empty with no occupied buckets
+        (3, 0x22),     // FLAG_NEG_UNIT_WEIGHT without FLAG_HAS_NEG
+        (3, 0x42),     // FLAG_POS_UNIT_WEIGHT without FLAG_HAS_POS
     ] {
         let mut bad = valid.clone();
+        bad[offset] = bad_byte;
+        assert_invalid_data(&bad);
+    }
+
+    let empty_valid = UddSketch::new(16, 0.01).unwrap().serialize();
+    for (offset, bad_byte) in [(0usize, 4u8), (3, 0x05), (3, 0x84)] {
+        let mut bad = empty_valid.clone();
         bad[offset] = bad_byte;
         assert_invalid_data(&bad);
     }
@@ -117,8 +126,7 @@ fn corrupted_headers_and_bucket_invariants_are_rejected() {
         assert_invalid_data(&bad_alpha);
     }
 
-    // Retained buckets exceeding max_buckets: lower max_buckets below 4 retained buckets? Set
-    // max_buckets = 4 and add a 5th bucket.
+    // Retained buckets exceeding max_buckets: set max_buckets = 4 with 5 retained buckets.
     let mut over_budget = UddSketch::new(8, 0.01).unwrap();
     for v in [1.0, 2.0, 4.0, 8.0, 16.0] {
         over_budget.update(v);
@@ -127,17 +135,33 @@ fn corrupted_headers_and_bucket_invariants_are_rejected() {
     over_budget_bytes[4..8].copy_from_slice(&4u32.to_le_bytes());
     assert_invalid_data(&over_budget_bytes);
 
-    // Negative zero in min_value or max_value.
+    // Negative zero in min_value (16..24) or max_value (24..32).
     let mut zero_only = UddSketch::new(8, 0.01).unwrap();
     zero_only.update(0.0);
     let zero_bytes = zero_only.serialize();
-    for range in [40..48, 48..56] {
+    for range in [16..24, 24..32] {
         let mut bad = zero_bytes.clone();
         bad[range].copy_from_slice(&(-0.0f64).to_le_bytes());
         assert_invalid_data(&bad);
     }
 
-    // Non-zero num_collapses inconsistent with retained bucket count or pre-collapse capacity.
+    // Zero zero_weight when FLAG_HAS_ZERO is set.
+    let mut zero_zero_weight = zero_bytes.clone();
+    zero_zero_weight[32] = 0;
+    assert_invalid_data(&zero_zero_weight);
+
+    // Non-zero num_collapses validation (`FLAG_HAS_COLLAPSES = 1 << 0`, byte inserted at 32).
+    let with_collapses = |bytes: &[u8], level: u8| -> Vec<u8> {
+        let mut out = Vec::with_capacity(bytes.len() + 1);
+        out.extend_from_slice(&bytes[..32]);
+        out[3] |= 1 << 0;
+        out.push(level);
+        out.extend_from_slice(&bytes[32..]);
+        out
+    };
+    assert_invalid_data(&with_collapses(&valid, 0)); // 0 invalid when FLAG_HAS_COLLAPSES set
+    assert_invalid_data(&with_collapses(&valid, 63)); // > MAX_COLLAPSES (62)
+
     let mut unit_three = UddSketch::new(4, 0.01).unwrap();
     for v in [-1.0, 1.0, 1.01] {
         unit_three.update(v);
@@ -151,25 +175,15 @@ fn corrupted_headers_and_bucket_invariants_are_rejected() {
     let weighted_three_bytes = weighted_three.serialize();
 
     for forged_level in [1u8, 32, 62] {
-        let mut forged_zero_collapse = zero_bytes.clone();
-        forged_zero_collapse[16] = forged_level;
-        assert_invalid_data(&forged_zero_collapse);
-
-        let mut forged_sparse_collapse = valid.clone(); // 4 retained buckets with max_buckets = 16
-        forged_sparse_collapse[16] = forged_level;
-        assert_invalid_data(&forged_sparse_collapse);
-
+        assert_invalid_data(&with_collapses(&zero_bytes, forged_level));
+        assert_invalid_data(&with_collapses(&valid, forged_level));
         // 3 unit-weight buckets with max_buckets = 4 pass `total_buckets >= max_buckets / 2 + 1`
         // (`3 >= 3`), yet could only come from at most 3 pre-collapse buckets (`<= 4`).
-        let mut forged_unit_three = unit_three_bytes.clone();
-        forged_unit_three[16] = forged_level;
-        assert_invalid_data(&forged_unit_three);
+        assert_invalid_data(&with_collapses(&unit_three_bytes, forged_level));
     }
     // With weight 2 per bucket, `num_collapses = 32` is still unreachable because `key_bounds(31)`
     // collapses to `(0, 1)`, leaving at most 3 reachable pre-collapse child buckets (`<= 4`).
-    let mut forged_unreachable_level = weighted_three_bytes;
-    forged_unreachable_level[16] = 32;
-    assert_invalid_data(&forged_unreachable_level);
+    assert_invalid_data(&with_collapses(&weighted_three_bytes, 32));
 
     // Extrema-bounded pre-collapse check: 4 buckets with `max_buckets = 4` where outer buckets
     // have weight 2, yet recorded `(min_value, max_value)` keep `hi_child` out of reach at
@@ -179,9 +193,7 @@ fn corrupted_headers_and_bucket_invariants_are_rejected() {
     extrema_bounded.update(-1.0);
     extrema_bounded.update(1.0);
     extrema_bounded.update_with_weight(1.01, 2);
-    let mut forged_extrema_collapse = extrema_bounded.serialize();
-    forged_extrema_collapse[16] = 10;
-    assert_invalid_data(&forged_extrema_collapse);
+    assert_invalid_data(&with_collapses(&extrema_bounded.serialize(), 10));
 
     // Same extrema-bounded check for single-sign (positive-only / negative-only) with inner
     // bucket weight 2 where `lo_child` is below the recorded inner extremum.
@@ -193,70 +205,83 @@ fn corrupted_headers_and_bucket_invariants_are_rejected() {
         for (v, w) in pairs {
             single_sign.update_with_weight(v, w);
         }
-        let mut forged = single_sign.serialize();
-        forged[16] = 10;
-        assert_invalid_data(&forged);
+        assert_invalid_data(&with_collapses(&single_sign.serialize(), 10));
     }
 
     // Reversed or bucket-mismatched extrema.
     let mut bad_min = valid.clone();
-    bad_min[40..48].copy_from_slice(&(-1.0f64).to_le_bytes()); // wrong bucket for min_value
+    bad_min[16..24].copy_from_slice(&(-1.0f64).to_le_bytes()); // wrong bucket for min_value
     assert_invalid_data(&bad_min);
 
     let mut bad_max = valid.clone();
-    bad_max[48..56].copy_from_slice(&1000.0f64.to_le_bytes()); // wrong bucket for max_value
+    bad_max[24..32].copy_from_slice(&1000.0f64.to_le_bytes()); // wrong bucket for max_value
     assert_invalid_data(&bad_max);
 
-    // Zero bucket count in first negative bucket (`56..72` -> count at `64..72`).
-    let mut zero_bucket_count = valid.clone();
-    zero_bucket_count[64..72].copy_from_slice(&0u64.to_le_bytes());
-    assert_invalid_data(&zero_bucket_count);
+    // Zero run length when FLAG_HAS_NEG is set, and DoS run length > remaining bytes.
+    let mut neg_only = UddSketch::new(16_384, 0.01).unwrap();
+    neg_only.update(-2.0);
+    let neg_only_bytes = neg_only.serialize();
+    let mut zero_neg_len = neg_only_bytes.clone();
+    zero_neg_len[32] = 0;
+    assert_invalid_data(&zero_neg_len);
 
-    // Non-ascending negative bucket keys (`56..64` and `72..80`).
-    let second_key = i64::from_le_bytes(valid[72..80].try_into().unwrap());
-    let mut duplicate_keys = valid.clone();
-    duplicate_keys[56..64].copy_from_slice(&second_key.to_le_bytes());
-    assert_invalid_data(&duplicate_keys);
+    let mut dos_neg_len = neg_only_bytes[..32].to_vec();
+    // Claim 10_000 buckets (`0x90, 0x4e`) with only 2 trailing bytes (`<= max_buckets = 16_384`).
+    dos_neg_len.extend_from_slice(&[0x90, 0x4e, 0x00, 0x00]);
+    assert_invalid_data(&dos_neg_len);
 
-    // Out-of-range bucket key (`i64::MAX`).
-    let mut out_of_range_key = valid.clone();
-    out_of_range_key[72..80].copy_from_slice(&i64::MAX.to_le_bytes());
-    assert_invalid_data(&out_of_range_key);
+    // Out-of-range first bucket key (`i64::MAX` ZigZag -> 9-byte varint) and delta overflow.
+    let mut pos_two = UddSketch::new(16, 0.01).unwrap();
+    pos_two.update(2.0);
+    pos_two.update(3.0);
+    let pos_two_bytes = pos_two.serialize();
+    let mut out_of_range_first = pos_two_bytes[..33].to_vec(); // 32B header + num_pos=2
+    out_of_range_first.extend_from_slice(&[0xfe, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff]);
+    out_of_range_first.push(0x00);
+    assert_invalid_data(&out_of_range_first);
 
-    // Total weight overflow across buckets.
-    let mut weight_overflow = valid.clone();
-    weight_overflow[32..40].copy_from_slice(&u64::MAX.to_le_bytes()); // zero_weight = u64::MAX
+    let mut out_of_range_delta = pos_two_bytes[..32].to_vec();
+    out_of_range_delta.push(0x02); // num_pos = 2
+    out_of_range_delta.push(0x00); // first_key = 0
+    out_of_range_delta.extend_from_slice(&[0xff; 9]); // delta_m1 = u64::MAX > max_key - 0
+    assert_invalid_data(&out_of_range_delta);
+
+    // Bucket count overflow (`count - 1 = u64::MAX`) and total weight overflow across runs.
+    let mut weighted_one = UddSketch::new(16, 0.01).unwrap();
+    weighted_one.update_with_weight(2.0, 2);
+    let weighted_one_bytes = weighted_one.serialize();
+    let mut count_overflow = weighted_one_bytes[..weighted_one_bytes.len() - 1].to_vec();
+    count_overflow.extend_from_slice(&[0xff; 9]); // count - 1 = u64::MAX
+    assert_invalid_data(&count_overflow);
+
+    // Total weight overflow (`zero_weight = u64::MAX` + positive bucket weight).
+    let mut weight_overflow = valid[..32].to_vec();
+    weight_overflow.extend_from_slice(&[0xff; 9]); // zero_weight = u64::MAX
+    weight_overflow.extend_from_slice(&valid[33..]);
     assert_invalid_data(&weight_overflow);
 }
 
 #[test]
 fn v1_wire_format_golden_fixture_is_pinned() {
     // Frozen `SERIAL_VERSION = 1` (`Family::UDDSKETCH` = 24) image not touched by `datagen`,
-    // guarding header fields and Q52 bucket key coordinates against silent drift.
+    // guarding compact header fields, negative unit-weight elision (`FLAG_NEG_UNIT_WEIGHT`),
+    // positive `count - 1` varints (`0`, `128`, `2`), and Q52 delta-varint bucket coordinates.
     #[rustfmt::skip]
-    const GOLDEN_V1: [u8; 184] = [
-        0x07, 0x01, 0x18, 0x00, 0x00, 0x01, 0x00, 0x00,
+    const GOLDEN_V1: [u8; 54] = [
+        0x04, 0x01, 0x18, 0x3a, 0x00, 0x01, 0x00, 0x00,
         0x7b, 0x14, 0xae, 0x47, 0xe1, 0x7a, 0x84, 0x3f,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x04, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00,
-        0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x1c, 0xc0,
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x18, 0x40,
-        0x36, 0xfc, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0xe3, 0xfc, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x23, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x62, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x13, 0xfc, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0xc1, 0xfc, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x5a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x02, 0x04, 0x93, 0x0f, 0xac, 0x01, 0xbf, 0x06,
+        0x3e, 0x04, 0xd9, 0x0f, 0x00, 0xad, 0x01, 0x00,
+        0xbe, 0x06, 0x80, 0x01, 0x59, 0x02,
     ];
 
     let decoded = UddSketch::deserialize(&GOLDEN_V1).unwrap();
     assert_eq!(decoded.max_buckets(), 256);
     assert_eq!(decoded.initial_alpha(), 0.01);
     assert_eq!(decoded.num_collapses(), 0);
-    assert_eq!(decoded.total_weight(), 10);
+    assert_eq!(decoded.total_weight(), 140);
     assert_eq!(decoded.zero_weight(), 2);
     assert_eq!(decoded.num_retained(), 8);
     assert_eq!(decoded.min_value(), Some(-7.0));
@@ -274,5 +299,8 @@ fn v1_wire_format_golden_fixture_is_pinned() {
         };
         fresh.update(value);
     }
+    fresh.update_with_weight(1.0, 128);
+    fresh.update_with_weight(6.0, 2);
     assert_eq!(fresh.serialize(), GOLDEN_V1);
+    assert_eq!(decoded.quantile(0.5).unwrap(), fresh.quantile(0.5).unwrap());
 }
