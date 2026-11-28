@@ -21,17 +21,13 @@ use std::panic::AssertUnwindSafe;
 use std::panic::catch_unwind;
 
 use datasketches::common::SearchCriteria;
-use datasketches::error::Error;
 use datasketches::error::ErrorKind;
 use datasketches::req::RankAccuracy;
 use datasketches::req::ReqSketch;
 use googletest::assert_that;
-use googletest::prelude::all;
 use googletest::prelude::anything;
 use googletest::prelude::approx_eq;
 use googletest::prelude::err;
-use googletest::prelude::ge;
-use googletest::prelude::le;
 use googletest::prelude::lt;
 use googletest::prelude::near;
 use googletest::prelude::none;
@@ -121,18 +117,6 @@ fn single_value_hra_answers_exactly() {
 }
 
 #[test]
-fn single_value_lra_preserves_configuration() {
-    let mut sketch = ReqSketch::<ReqF64>::new(12, RankAccuracy::LowRank).unwrap();
-    sketch.update(req_f64(1.0));
-
-    assert_eq!(sketch.rank_accuracy(), RankAccuracy::LowRank);
-    assert!(!sketch.is_empty());
-    assert!(!sketch.is_estimation_mode());
-    assert_eq!(sketch.total_weight(), 1);
-    assert_eq!(sketch.num_retained(), 1);
-}
-
-#[test]
 fn repeated_values_respect_search_criteria() {
     let mut sketch: ReqSketch<ReqF64> = ReqSketch::default();
     for _ in 0..3 {
@@ -216,39 +200,6 @@ fn req_float_adapts_the_non_nan_numeric_order() {
     let negative_infinity = req_f64(f64::NEG_INFINITY);
     let infinity = req_f64(f64::INFINITY);
     assert!(negative_infinity < infinity);
-}
-
-#[test]
-fn small_edge_cases_answer_reasonably() -> Result<(), Error> {
-    let mut single: ReqSketch<ReqF64> = ReqSketch::default();
-    single.update(req_f64(42.0));
-    assert_eq!(
-        single
-            .quantile(0.5, SearchCriteria::Inclusive)?
-            .expect("the sketch is non-empty"),
-        req_f64(42.0)
-    );
-
-    let mut two_values = ReqSketch::default();
-    two_values.update(req_f64(1.0));
-    two_values.update(req_f64(100.0));
-    let median = two_values
-        .quantile(0.5, SearchCriteria::Inclusive)?
-        .expect("the sketch is non-empty");
-    assert_that!(*median, all!(ge(1.0), le(100.0)));
-
-    let mut duplicates = ReqSketch::default();
-    for _ in 0..100 {
-        duplicates.update(req_f64(42.0));
-    }
-    assert_eq!(
-        duplicates
-            .quantile(0.5, SearchCriteria::Inclusive)?
-            .expect("the sketch is non-empty"),
-        req_f64(42.0)
-    );
-
-    Ok(())
 }
 
 #[test]

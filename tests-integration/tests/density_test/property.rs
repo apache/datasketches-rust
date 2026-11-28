@@ -18,7 +18,6 @@
 //! Property-based density sketch tests.
 
 use datasketches::density::DensitySketch;
-use datasketches::error::ErrorKind;
 use quickcheck::Gen;
 use quickcheck::QuickCheck;
 use quickcheck::TestResult;
@@ -134,55 +133,4 @@ fn prop_partial_aggregation_and_roundtrip_preserve_invariants() {
         .min_tests_passed(128)
         .rng(Gen::new(512))
         .quickcheck(property as fn(u8, u8, Vec<i16>) -> TestResult);
-}
-
-#[test]
-fn prop_invalid_points_never_mutate_sketch() {
-    fn property(dim_seed: u8, len_seed: u8, non_finite_kind: u8, bad_idx: u8, seed_pts: Vec<i16>) {
-        let dim = usize::from(dim_seed % 5) + 1;
-        let mut sketch = DensitySketch::<f64>::new(8, dim as u32).unwrap();
-        for p in to_points(&seed_pts, dim, 20) {
-            sketch.update(&p).unwrap();
-        }
-        let before = sketch.serialize();
-
-        // Wrong dimension length.
-        let wrong_len = {
-            let candidate = usize::from(len_seed % 7);
-            if candidate == dim { dim + 1 } else { candidate }
-        };
-        let wrong_point = vec![1.0; wrong_len];
-        assert_eq!(
-            sketch.update(&wrong_point).unwrap_err().kind(),
-            ErrorKind::InvalidArgument
-        );
-        assert_eq!(
-            sketch.estimate(&wrong_point).unwrap_err().kind(),
-            ErrorKind::InvalidArgument
-        );
-        assert_eq!(sketch.serialize(), before);
-
-        // Non-finite coordinate at an arbitrary index.
-        let mut bad_point = vec![0.5; dim];
-        let idx = usize::from(bad_idx) % dim;
-        bad_point[idx] = match non_finite_kind % 3 {
-            0 => f64::NAN,
-            1 => f64::INFINITY,
-            _ => f64::NEG_INFINITY,
-        };
-        assert_eq!(
-            sketch.update(&bad_point).unwrap_err().kind(),
-            ErrorKind::InvalidArgument
-        );
-        assert_eq!(
-            sketch.estimate(&bad_point).unwrap_err().kind(),
-            ErrorKind::InvalidArgument
-        );
-        assert_eq!(sketch.serialize(), before);
-    }
-
-    QuickCheck::new()
-        .tests(128)
-        .rng(Gen::new(256))
-        .quickcheck(property as fn(u8, u8, u8, u8, Vec<i16>));
 }

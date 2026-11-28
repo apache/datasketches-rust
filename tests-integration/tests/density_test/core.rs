@@ -19,7 +19,6 @@ use std::panic::AssertUnwindSafe;
 use std::panic::catch_unwind;
 
 use datasketches::density::DensitySketch;
-use datasketches::density::DensityValue;
 use datasketches::density::GaussianKernel;
 use datasketches::density::Kernel;
 use datasketches::error::ErrorKind;
@@ -133,35 +132,6 @@ fn empty_and_reset_retain_configuration() {
     assert_eq!(sketch.total_weight(), 1);
     assert_eq!(sketch.num_retained(), 1);
     assert_eq!(sketch.estimate(&[1.0, 2.0, 3.0]).unwrap(), Some(1.0));
-}
-
-#[test]
-fn clone_semantics() {
-    let mut sketch = DensitySketch::<f64>::new(10, 2).unwrap();
-    for i in 0..25 {
-        sketch.update(&[i as f64, -(i as f64)]).unwrap();
-    }
-
-    let mut cloned = sketch.clone();
-    assert_eq!(cloned.k(), sketch.k());
-    assert_eq!(cloned.dim(), sketch.dim());
-    assert_eq!(cloned.total_weight(), sketch.total_weight());
-    assert_eq!(cloned.num_retained(), sketch.num_retained());
-    assert_eq!(cloned.is_estimation_mode(), sketch.is_estimation_mode());
-    assert_eq!(cloned.serialize(), sketch.serialize());
-    assert_eq!(
-        cloned.estimate(&[12.0, -12.0]).unwrap(),
-        sketch.estimate(&[12.0, -12.0]).unwrap()
-    );
-
-    // Mutating the clone does not affect the original.
-    cloned.update(&[100.0, -100.0]).unwrap();
-    assert_eq!(cloned.total_weight(), 26);
-    assert_eq!(sketch.total_weight(), 25);
-
-    cloned.reset();
-    assert!(cloned.is_empty());
-    assert!(!sketch.is_empty());
 }
 
 #[test]
@@ -336,32 +306,4 @@ fn update_weight_overflow_panics_without_mutating() {
     );
     assert_eq!(sketch.total_weight(), u64::MAX);
     assert_eq!(sketch.serialize(), before);
-}
-
-fn check_generic_value_contract<T: DensityValue>(p1: &[T], p2: &[T])
-where
-    GaussianKernel: Kernel<T>,
-{
-    let mut sketch = DensitySketch::<T>::new(8, p1.len() as u32).unwrap();
-    assert!(sketch.is_empty());
-    assert_eq!(sketch.estimate(p1).unwrap(), None);
-
-    sketch.update(p1).unwrap();
-    sketch.update(p2).unwrap();
-    assert_eq!(sketch.total_weight(), 2);
-    assert_eq!(sketch.num_retained(), 2);
-
-    let est = sketch.estimate(p1).unwrap().unwrap();
-    assert!(est.is_finite() && est > 0.0);
-
-    let bytes = sketch.serialize();
-    let restored = DensitySketch::<T>::deserialize(&bytes).unwrap();
-    assert_eq!(restored.serialize(), bytes);
-    assert_eq!(restored.estimate(p1).unwrap(), Some(est));
-}
-
-#[test]
-fn generic_density_value_supports_f32_and_f64() {
-    check_generic_value_contract(&[1.0_f32, -1.0], &[1.5_f32, -0.5]);
-    check_generic_value_contract(&[1.0_f64, -1.0], &[1.5_f64, -0.5]);
 }

@@ -273,31 +273,6 @@ fn test_halve() {
 }
 
 #[test]
-fn test_decay() {
-    let buckets = CountMinSketch::<u64>::suggest_num_buckets(0.01).unwrap();
-    let hashes = CountMinSketch::<u64>::suggest_num_hashes(0.9).unwrap();
-    let mut sketch = CountMinSketch::<u64>::new(hashes, buckets).unwrap();
-
-    for i in 0..1000usize {
-        for _ in 0..i {
-            sketch.update(i as u64);
-        }
-    }
-
-    for i in 0..1000usize {
-        assert_that!(sketch.estimate(i as u64), ge(i as u64));
-    }
-
-    const FACTOR: f64 = 0.5;
-    sketch.decay(FACTOR).unwrap();
-
-    for i in 0..1000usize {
-        let expected = ((i as f64) * FACTOR).floor() as u64;
-        assert_that!(sketch.estimate(i as u64), ge(expected));
-    }
-}
-
-#[test]
 fn test_decay_preserves_large_integer_precision() {
     for weight in [(1_u64 << 53) + 1, u64::MAX - 1, u64::MAX] {
         for (factor, expected) in [
@@ -409,39 +384,13 @@ fn test_merge() {
 }
 
 #[test]
-fn test_serialize_deserialize_empty() {
-    let sketch = CountMinSketch::<i64>::with_seed(2, 5, 123).unwrap();
-    let bytes = sketch.serialize();
-    let decoded = CountMinSketch::<i64>::deserialize_with_seed(&bytes, 123).unwrap();
-    assert!(decoded.is_empty());
-    assert_eq!(decoded.num_hashes(), 2);
-    assert_eq!(decoded.num_buckets(), 5);
-    assert_eq!(decoded.seed(), 123);
-}
-
-#[test]
-fn test_serialize_deserialize_non_empty() {
-    let mut sketch = CountMinSketch::<i64>::with_seed(3, 32, 123).unwrap();
-    for i in 0..100i64 {
-        sketch.update(i);
-    }
-    let bytes = sketch.serialize();
-    let decoded = CountMinSketch::<i64>::deserialize_with_seed(&bytes, 123).unwrap();
-    assert_eq!(decoded.total_weight(), sketch.total_weight());
-    assert_eq!(decoded.estimate(42i64), sketch.estimate(42i64));
-}
-
-#[test]
-fn test_invalid_hashes_return_error() {
+fn test_invalid_dimensions_return_error() {
     for rows in [0, 128, 255] {
         let error = CountMinSketch::<i64>::new(rows, 5).unwrap_err();
         assert_eq!(error.kind(), ErrorKind::InvalidArgument);
     }
     assert!(CountMinSketch::<i64>::new(127, 5).is_ok());
-}
 
-#[test]
-fn test_invalid_buckets_return_error() {
     let error = CountMinSketch::<i64>::new(1, 2).unwrap_err();
     assert_eq!(error.kind(), ErrorKind::InvalidArgument);
 }

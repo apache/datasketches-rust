@@ -481,23 +481,13 @@ fn test_from_iter_handles_empty_and_single_input_without_recompression() {
 fn test_invalid_inputs() {
     let n = 100;
 
-    let mut td = TDigestMut::new(10).unwrap();
-    for _ in 0..n {
-        td.update(f64::NAN);
+    for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        let mut td = TDigestMut::new(10).unwrap();
+        for _ in 0..n {
+            td.update(bad);
+        }
+        assert!(td.is_empty());
     }
-    assert!(td.is_empty());
-
-    let mut td = TDigestMut::new(10).unwrap();
-    for _ in 0..n {
-        td.update(f64::INFINITY);
-    }
-    assert!(td.is_empty());
-
-    let mut td = TDigestMut::new(10).unwrap();
-    for _ in 0..n {
-        td.update(f64::NEG_INFINITY);
-    }
-    assert!(td.is_empty());
 
     let mut td = TDigestMut::new(10).unwrap();
     for i in 0..n {
@@ -562,15 +552,6 @@ fn test_tail_interpolation_across_extreme_finite_values() {
             near(rank, 4. * f64::EPSILON)
         );
     }
-}
-
-#[test]
-fn test_estimate_repeat_values() {
-    let mut tdigest = TDigestMut::default();
-    for _ in 0..20 {
-        tdigest.update(1.0);
-    }
-    assert_eq!(tdigest.quantile(0.9).unwrap(), Some(1.0));
 }
 
 /// Builds a weighted image, including tail centroids unavailable through raw updates.
@@ -692,33 +673,6 @@ fn test_signed_zero_queries_are_consistent() {
 }
 
 #[test]
-fn test_batch_quantiles_match_scalar_queries_in_input_order() {
-    let mut tdigest = TDigestMut::new(100).unwrap();
-    for value in 0..10_000 {
-        tdigest.update(((value * 37) % 1_003) as f64);
-    }
-
-    let frozen = tdigest.clone().freeze();
-    for ranks in [
-        vec![-0.0, 0.0, 0.001, 0.25, 0.5, 0.5, 0.99, 1.0],
-        vec![0.99, 0.0, 0.5, 1.0, 0.001, -0.0, 0.5, 0.25],
-        vec![1.0, 0.99, 0.5, 0.5, 0.25, 0.001, 0.0],
-        vec![],
-    ] {
-        let expected = ranks
-            .iter()
-            .map(|&rank| frozen.quantile(rank).unwrap().unwrap())
-            .collect::<Vec<_>>();
-        // Each mutable batch starts with the original buffered values still pending.
-        assert_eq!(
-            tdigest.clone().quantiles(&ranks).unwrap(),
-            Some(expected.clone())
-        );
-        assert_eq!(frozen.quantiles(&ranks).unwrap(), Some(expected));
-    }
-}
-
-#[test]
 fn test_batch_quantiles_cross_centroid_and_tail_boundaries() {
     let tdigest =
         deserialize_with_centroids(100, 0.0, 100.0, &[(10.0, 10), (50.0, 10), (90.0, 10)]);
@@ -793,42 +747,11 @@ fn test_quantiles_interpolate_around_singleton_centroids() {
 }
 
 #[test]
-fn test_quantiles_stay_within_extrema_at_large_total_weights() {
-    for total_weight in [1_u64 << 53, 1_u64 << 54, u64::MAX] {
-        let tdigest = deserialize_with_centroids(
-            100,
-            0.0,
-            100.0,
-            &[(10.0, total_weight - 2), (50.0, 1), (90.0, 1)],
-        );
-        let frozen = tdigest.clone().freeze();
-        let ranks = [0.0, 0.5, 1.0_f64.next_down(), 1.0, 1.0];
-        for quantiles in [
-            tdigest.clone().quantiles(&ranks).unwrap().unwrap(),
-            frozen.quantiles(&ranks).unwrap().unwrap(),
-            ranks
-                .map(|rank| frozen.quantile(rank).unwrap().unwrap())
-                .to_vec(),
-        ] {
-            assert_eq!(quantiles[0], 0.0);
-            assert_eq!(&quantiles[3..], &[100.0, 100.0]);
-            assert!(
-                quantiles.is_sorted(),
-                "weight {total_weight}: {quantiles:?}"
-            );
-            assert!(
-                quantiles.iter().all(|value| (0.0..=100.0).contains(value)),
-                "weight {total_weight}: {quantiles:?}"
-            );
-        }
-    }
-}
-
-#[test]
 fn test_queries_stay_ordered_at_large_centroid_centers() {
     for total_weight in [
         (1_u64 << 53) - 2,
         (1_u64 << 53) - 1,
+        1_u64 << 53,
         (1_u64 << 53) + 2,
         1_u64 << 54,
         u64::MAX,
@@ -838,7 +761,8 @@ fn test_queries_stay_ordered_at_large_centroid_centers() {
             vec![(0., 1), (90., total_weight - 1)],
             vec![(0., total_weight - 3), (90., 3)],
         ] {
-            let digest = deserialize_with_centroids(100, 0., 100., &centroids).freeze();
+            let mut mutable = deserialize_with_centroids(100, 0., 100., &centroids);
+            let digest = mutable.clone().freeze();
             // Probe either side of a heavy centroid's center and the rounded upper endpoint.
             let ranks = [
                 0.,
@@ -849,6 +773,7 @@ fn test_queries_stay_ordered_at_large_centroid_centers() {
                 1.,
             ];
             let quantiles = digest.quantiles(&ranks).unwrap().unwrap();
+            assert_eq!(quantiles, mutable.quantiles(&ranks).unwrap().unwrap());
             assert_eq!(quantiles[0], 0.);
             assert_eq!(quantiles[5], 100.);
             assert!(

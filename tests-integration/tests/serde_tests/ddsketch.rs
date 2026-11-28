@@ -71,6 +71,27 @@ fn rust_snapshots_round_trip_and_preserve_queries() {
     }
 }
 
+fn sample_sketches(mapping: MappingKind, store: StoreKind) -> (DdSketch, DdSketch, DdSketch) {
+    let empty = DdSketchBuilder::new(0.01)
+        .mapping(mapping)
+        .store(store)
+        .build()
+        .unwrap();
+
+    let mut unit_sparse = empty.clone();
+    for v in [-1e6, -1.0, 0.0, 1.0, 1e6] {
+        unit_sparse.update(v);
+    }
+
+    let mut dense_contiguous = empty.clone();
+    for i in 0..40 {
+        let v = 10.0 * 1.02_f64.powi(i);
+        dense_contiguous.update_with_weight(v, (i as u64 % 5) + 1);
+    }
+
+    (empty, unit_sparse, dense_contiguous)
+}
+
 #[test]
 fn native_round_trips_across_mappings_stores_collapse_states_and_large_weights() {
     let mappings = [
@@ -87,24 +108,9 @@ fn native_round_trips_across_mappings_stores_collapse_states_and_large_weights()
 
     for mapping in mappings {
         for src_store in stores {
-            let empty = DdSketchBuilder::new(0.01)
-                .mapping(mapping)
-                .store(src_store)
-                .build()
-                .unwrap();
+            let (empty, unit_sparse, dense_contiguous) = sample_sketches(mapping, src_store);
             let empty_bytes = empty.serialize();
             assert_eq!(empty_bytes.len(), 24);
-
-            let mut unit_sparse = empty.clone();
-            for v in [-1e6, -1.0, 0.0, 1.0, 1e6] {
-                unit_sparse.update(v);
-            }
-
-            let mut dense_contiguous = empty.clone();
-            for i in 0..40 {
-                let v = 10.0 * 1.02_f64.powi(i);
-                dense_contiguous.update_with_weight(v, (i as u64 % 5) + 1);
-            }
 
             // Include weights above 2^53 that cannot be represented without rounding in `f64`.
             let w_neg = (1_u64 << 60) + 7;
@@ -484,24 +490,9 @@ fn compat_round_trips_across_mappings_stores_and_weight_boundaries() {
 
     for mapping in mappings {
         for src_store in stores {
-            let empty = DdSketchBuilder::new(0.01)
-                .mapping(mapping)
-                .store(src_store)
-                .build()
-                .unwrap();
+            let (empty, unit_sparse, dense_contiguous) = sample_sketches(mapping, src_store);
             let empty_compat = empty.serialize_compat().unwrap();
             assert_eq!(empty_compat.len(), 17);
-
-            let mut unit_sparse = empty.clone();
-            for v in [-1e6, -1.0, 0.0, 1.0, 1e6] {
-                unit_sparse.update(v);
-            }
-
-            let mut dense_contiguous = empty.clone();
-            for i in 0..40 {
-                let v = 10.0 * 1.02_f64.powi(i);
-                dense_contiguous.update_with_weight(v, (i as u64 % 5) + 1);
-            }
 
             // Exact `2^53 - 1` total weight is representable losslessly in compat `varfloat64`
             // (which biases counts by `+ 1.0` in `f64`).
@@ -949,49 +940,38 @@ fn compat_decodes_reordered_summary_blocks_and_rejects_malformed_images() {
         );
     }
 
-    // Valid wide index span at `alpha = 1e-6` in reference image is rejected by UnboundedDense,
-    // while accepted without collapsing by Sparse.
+    // Valid wide index span (and combined negative + positive span exceeding `2^26`) at
+    // `alpha = 1e-6` in reference image is rejected by UnboundedDense, while accepted without
+    // collapsing by Sparse.
     let tight_gamma = (1.0 + 1e-6_f64) / (1.0 - 1e-6_f64);
-    let mut wide_ref = vec![0x02];
-    wide_ref.extend_from_slice(&tight_gamma.to_le_bytes());
-    wide_ref.extend_from_slice(&0.0_f64.to_le_bytes());
-    wide_ref.push(0x09);
-    wide_ref.push(0x02);
+    let mut wide_ref = compat_mapping_header(0x02, tight_gamma, 0.0);
+    wide_ref.extend_from_slice(&[0x09, 0x02]);
     encode_test_varint(&mut wide_ref, -40_000_000);
     encode_test_varint(&mut wide_ref, 80_000_000);
-    assert_eq!(
-        DdSketch::deserialize_compat(&wide_ref, StoreKind::UnboundedDense)
-            .unwrap_err()
-            .kind(),
-        ErrorKind::InvalidData
-    );
-    let sparse_wide = DdSketch::deserialize_compat(&wide_ref, StoreKind::Sparse).unwrap();
-    assert_eq!(sparse_wide.total_weight(), 2);
-    assert_eq!(sparse_wide.num_retained(), 2);
-    assert_eq!(sparse_wide.min_value(), None);
-    assert!(sparse_wide.quantile(0.0).unwrap().unwrap() > 0.0);
 
-    // Combined negative + positive span exceeding `2^26` is also rejected for UnboundedDense even
-    // when each sign individually stays below `2^26`, while Sparse accepts it.
-    let mut combined_wide_ref = vec![0x02];
-    combined_wide_ref.extend_from_slice(&tight_gamma.to_le_bytes());
-    combined_wide_ref.extend_from_slice(&0.0_f64.to_le_bytes());
+    let mut combined_wide_ref = compat_mapping_header(0x02, tight_gamma, 0.0);
     combined_wide_ref.extend_from_slice(&[0x0b, 0x02]);
     encode_test_varint(&mut combined_wide_ref, -20_000_000);
     encode_test_varint(&mut combined_wide_ref, 40_000_000);
     combined_wide_ref.extend_from_slice(&[0x09, 0x02]);
     encode_test_varint(&mut combined_wide_ref, -20_000_000);
     encode_test_varint(&mut combined_wide_ref, 40_000_000);
-    assert_eq!(
-        DdSketch::deserialize_compat(&combined_wide_ref, StoreKind::UnboundedDense)
-            .unwrap_err()
-            .kind(),
-        ErrorKind::InvalidData
-    );
-    let sparse_combined =
-        DdSketch::deserialize_compat(&combined_wide_ref, StoreKind::Sparse).unwrap();
-    assert_eq!(sparse_combined.total_weight(), 4);
-    assert_eq!(sparse_combined.num_retained(), 4);
+
+    for (img, expected_weight) in [(&wide_ref, 2_u64), (&combined_wide_ref, 4_u64)] {
+        assert_eq!(
+            DdSketch::deserialize_compat(img, StoreKind::UnboundedDense)
+                .unwrap_err()
+                .kind(),
+            ErrorKind::InvalidData
+        );
+        let sparse = DdSketch::deserialize_compat(img, StoreKind::Sparse).unwrap();
+        assert_eq!(sparse.total_weight(), expected_weight);
+        assert_eq!(sparse.num_retained(), expected_weight as usize);
+        if expected_weight == 2 {
+            assert_eq!(sparse.min_value(), None);
+            assert!(sparse.quantile(0.0).unwrap().unwrap() > 0.0);
+        }
+    }
 
     // Invalid StoreKind passed to deserialize_compat returns InvalidArgument even on empty bytes.
     assert_eq!(
@@ -1006,26 +986,17 @@ fn compat_decodes_reordered_summary_blocks_and_rejects_malformed_images() {
     let mut bins_without_mapping = vec![0x09, 0x02];
     encode_test_varint(&mut bins_without_mapping, -1_000_000);
     encode_test_varint(&mut bins_without_mapping, 2_000_000);
-    for store in [StoreKind::UnboundedDense, StoreKind::Sparse] {
-        assert_eq!(
-            DdSketch::deserialize_compat(&bins_without_mapping, store)
-                .unwrap_err()
-                .kind(),
-            ErrorKind::InvalidData
-        );
-    }
 
-    let mut bins_before_incompatible_mapping = bins_without_mapping;
-    bins_before_incompatible_mapping.push(0x02);
-    bins_before_incompatible_mapping.extend_from_slice(&gamma.to_le_bytes());
-    bins_before_incompatible_mapping.extend_from_slice(&0.0_f64.to_le_bytes());
-    for store in [StoreKind::UnboundedDense, StoreKind::Sparse] {
-        assert_eq!(
-            DdSketch::deserialize_compat(&bins_before_incompatible_mapping, store)
-                .unwrap_err()
-                .kind(),
-            ErrorKind::InvalidData
-        );
+    let mut bins_before_incompatible_mapping = bins_without_mapping.clone();
+    bins_before_incompatible_mapping.extend_from_slice(&compat_mapping_header(0x02, gamma, 0.0));
+
+    for img in [&bins_without_mapping, &bins_before_incompatible_mapping] {
+        for store in [StoreKind::UnboundedDense, StoreKind::Sparse] {
+            assert_eq!(
+                DdSketch::deserialize_compat(img, store).unwrap_err().kind(),
+                ErrorKind::InvalidData
+            );
+        }
     }
 
     // Wide contiguous compat block (`num_bins = 2_000`) decoded into narrow collapsing stores

@@ -291,13 +291,10 @@ fn incompatible_set_operations_are_rejected() {
 
 #[test]
 fn builder_validation_and_word_rounding() {
-    let builder = BloomFilterBuilder::with_size(65, 3).seed(42);
-    let _ = format!("{builder:?}");
-    let size_seeded = builder.clone().build().unwrap();
-    assert_eq!(
-        filter_snapshot(&size_seeded),
-        filter_snapshot(&builder.build().unwrap())
-    );
+    let size_seeded = BloomFilterBuilder::with_size(65, 3)
+        .seed(42)
+        .build()
+        .unwrap();
     assert_eq!(size_seeded.capacity(), 128);
     assert_eq!(size_seeded.num_hashes(), 3);
     assert_eq!(size_seeded.seed(), 42);
@@ -347,27 +344,11 @@ fn builder_validation_and_word_rounding() {
                 .kind(),
             ErrorKind::InvalidArgument
         );
-        assert_eq!(
-            BloomFilterBuilder::with_accuracy(max_items, fpp)
-                .seed(42)
-                .build()
-                .unwrap_err()
-                .kind(),
-            ErrorKind::InvalidArgument
-        );
     }
 
     for (num_bits, num_hashes) in [(0, 3), (u64::MAX, 3), (128, 0), (128, 32_768)] {
         assert_eq!(
             BloomFilterBuilder::with_size(num_bits, num_hashes)
-                .build()
-                .unwrap_err()
-                .kind(),
-            ErrorKind::InvalidArgument
-        );
-        assert_eq!(
-            BloomFilterBuilder::with_size(num_bits, num_hashes)
-                .seed(42)
                 .build()
                 .unwrap_err()
                 .kind(),

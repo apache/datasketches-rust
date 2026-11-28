@@ -124,65 +124,31 @@ fn union_folds_wider_coupon_rows_to_the_destination_precision() {
 }
 
 #[test]
-fn test_reduce_k_empty() {
-    let mut sketch = CpcSketch::new(11).unwrap();
-    for i in 0..10000 {
-        sketch.update(i);
+fn test_reduce_k() {
+    for (initial_lg_12, lg_11_count, expected_est) in [
+        (0_u64, 10_000_u64, 10_000.0),
+        (100, 1_000, 1_000.0),
+        (500, 1_000, 1_000.0),
+    ] {
+        let mut union = CpcUnion::new(12).unwrap();
+        if initial_lg_12 > 0 {
+            let mut sketch12 = CpcSketch::new(12).unwrap();
+            for i in 0..initial_lg_12 {
+                sketch12.update(i);
+            }
+            union.update(&sketch12).unwrap();
+        }
+        let mut sketch11 = CpcSketch::new(11).unwrap();
+        for i in 0..lg_11_count {
+            sketch11.update(i);
+        }
+        union.update(&sketch11).unwrap();
+
+        let result = union.to_sketch();
+        assert_eq!(result.lg_k(), 11);
+        assert_that!(
+            result.estimate(),
+            near(expected_est, RELATIVE_ERROR_FOR_LG_K_11 * expected_est)
+        );
     }
-    let mut union = CpcUnion::new(12).unwrap();
-    union.update(&sketch).unwrap();
-    let result = union.to_sketch();
-    assert_eq!(result.lg_k(), 11);
-    assert_that!(
-        result.estimate(),
-        near(10000.0, RELATIVE_ERROR_FOR_LG_K_11 * 10000.0)
-    );
-}
-
-#[test]
-fn test_reduce_k_sparse() {
-    let mut union = CpcUnion::new(12).unwrap();
-
-    let mut sketch12 = CpcSketch::new(12).unwrap();
-    for i in 0..100 {
-        sketch12.update(i);
-    }
-    union.update(&sketch12).unwrap();
-
-    let mut sketch11 = CpcSketch::new(11).unwrap();
-    for i in 0..1000 {
-        sketch11.update(i);
-    }
-    union.update(&sketch11).unwrap();
-
-    let result = union.to_sketch();
-    assert_eq!(result.lg_k(), 11);
-    assert_that!(
-        result.estimate(),
-        near(1000.0, RELATIVE_ERROR_FOR_LG_K_11 * 1000.0)
-    );
-}
-
-#[test]
-fn test_reduce_k_window() {
-    let mut union = CpcUnion::new(12).unwrap();
-
-    let mut sketch12 = CpcSketch::new(12).unwrap();
-    for i in 0..500 {
-        sketch12.update(i);
-    }
-    union.update(&sketch12).unwrap();
-
-    let mut sketch11 = CpcSketch::new(11).unwrap();
-    for i in 0..1000 {
-        sketch11.update(i);
-    }
-    union.update(&sketch11).unwrap();
-
-    let result = union.to_sketch();
-    assert_eq!(result.lg_k(), 11);
-    assert_that!(
-        result.estimate(),
-        near(1000.0, RELATIVE_ERROR_FOR_LG_K_11 * 1000.0)
-    );
 }

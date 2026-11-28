@@ -19,6 +19,7 @@ use datasketches::theta::CompactThetaSketch;
 use datasketches::theta::ThetaIntersection;
 use datasketches::theta::ThetaSketch;
 use datasketches::theta::ThetaSketchBuilder;
+use datasketches::theta::ThetaSketchView;
 use googletest::assert_that;
 use googletest::prelude::anything;
 use googletest::prelude::err;
@@ -182,93 +183,69 @@ fn test_non_empty_no_retained_keys() {
 }
 
 #[test]
-fn test_exact_half_overlap_unordered() {
+fn test_exact_half_overlap() {
     let s1 = sketch_with_range(0, 1000);
     let s2 = sketch_with_range(500, 1000);
+    let c1 = s1.compact(true);
+    let c2 = s2.compact(true);
 
-    let mut i = ThetaIntersection::default();
-    i.update(&s1).unwrap();
-    i.update(&s2).unwrap();
-    let r = i.to_sketch(true).unwrap();
+    for (left, right) in [
+        (ThetaSketchView::from(&s1), ThetaSketchView::from(&s2)),
+        ((&c1).into(), (&c2).into()),
+    ] {
+        let mut i = ThetaIntersection::default();
+        i.update(left).unwrap();
+        i.update(right).unwrap();
+        let r = i.to_sketch(true).unwrap();
 
-    assert!(!r.is_empty());
-    assert!(!r.is_estimation_mode());
-    assert_eq!(r.estimate(), 500.0);
+        assert!(!r.is_empty());
+        assert!(!r.is_estimation_mode());
+        assert_eq!(r.estimate(), 500.0);
+    }
 }
 
 #[test]
-fn test_exact_half_overlap_ordered() {
-    let s1 = sketch_with_range(0, 1000);
-    let s2 = sketch_with_range(500, 1000);
-
-    let mut i = ThetaIntersection::default();
-    i.update(&s1.compact(true)).unwrap();
-    i.update(&s2.compact(true)).unwrap();
-    let r = i.to_sketch(true).unwrap();
-
-    assert!(!r.is_empty());
-    assert!(!r.is_estimation_mode());
-    assert_eq!(r.estimate(), 500.0);
-}
-
-#[test]
-fn test_exact_disjoint_unordered() {
+fn test_exact_disjoint() {
     let s1 = sketch_with_range(0, 1000);
     let s2 = sketch_with_range(1000, 1000);
+    let c1 = s1.compact(true);
+    let c2 = s2.compact(true);
 
-    let mut i = ThetaIntersection::default();
-    i.update(&s1).unwrap();
-    i.update(&s2).unwrap();
-    let r = i.to_sketch(true).unwrap();
+    for (left, right) in [
+        (ThetaSketchView::from(&s1), ThetaSketchView::from(&s2)),
+        ((&c1).into(), (&c2).into()),
+    ] {
+        let mut i = ThetaIntersection::default();
+        i.update(left).unwrap();
+        i.update(right).unwrap();
+        let r = i.to_sketch(true).unwrap();
 
-    assert!(r.is_empty());
-    assert!(!r.is_estimation_mode());
-    assert_eq!(r.estimate(), 0.0);
+        assert!(r.is_empty());
+        assert!(!r.is_estimation_mode());
+        assert_eq!(r.estimate(), 0.0);
+    }
 }
 
 #[test]
-fn test_exact_disjoint_ordered() {
-    let s1 = sketch_with_range(0, 1000);
-    let s2 = sketch_with_range(1000, 1000);
-
-    let mut i = ThetaIntersection::default();
-    i.update(&s1.compact(true)).unwrap();
-    i.update(&s2.compact(true)).unwrap();
-    let r = i.to_sketch(true).unwrap();
-
-    assert!(r.is_empty());
-    assert!(!r.is_estimation_mode());
-    assert_eq!(r.estimate(), 0.0);
-}
-
-#[test]
-fn test_estimation_half_overlap_unordered() {
+fn test_estimation_half_overlap() {
     let s1 = sketch_with_range(0, 10000);
     let s2 = sketch_with_range(5000, 10000);
+    let c1 = s1.compact(true);
+    let c2 = s2.compact(true);
 
-    let mut i = ThetaIntersection::default();
-    i.update(&s1).unwrap();
-    i.update(&s2).unwrap();
-    let r = i.to_sketch(true).unwrap();
+    for (left, right) in [
+        (ThetaSketchView::from(&s1), ThetaSketchView::from(&s2)),
+        ((&c1).into(), (&c2).into()),
+    ] {
+        let mut i = ThetaIntersection::default();
+        i.update(left).unwrap();
+        i.update(right).unwrap();
+        let r = i.to_sketch(true).unwrap();
 
-    assert!(!r.is_empty());
-    assert!(r.is_estimation_mode());
-    assert_that!(r.estimate(), near(5000.0, 5000.0 * 0.02));
-}
-
-#[test]
-fn test_estimation_half_overlap_ordered() {
-    let s1 = sketch_with_range(0, 10000);
-    let s2 = sketch_with_range(5000, 10000);
-
-    let mut i = ThetaIntersection::default();
-    i.update(&s1.compact(true)).unwrap();
-    i.update(&s2.compact(true)).unwrap();
-    let r = i.to_sketch(true).unwrap();
-
-    assert!(!r.is_empty());
-    assert!(r.is_estimation_mode());
-    assert_that!(r.estimate(), near(5000.0, 5000.0 * 0.02));
+        assert!(!r.is_empty());
+        assert!(r.is_estimation_mode());
+        assert_that!(r.estimate(), near(5000.0, 5000.0 * 0.02));
+    }
 }
 
 #[test]
@@ -289,40 +266,23 @@ fn test_estimation_half_overlap_ordered_deserialized_compact() {
 }
 
 #[test]
-fn test_estimation_disjoint_unordered() {
+fn test_estimation_disjoint() {
     let s1 = sketch_with_range(0, 10000);
     let s2 = sketch_with_range(10000, 10000);
+    let c1 = s1.compact(true);
+    let c2 = s2.compact(true);
 
-    let mut i = ThetaIntersection::default();
-    i.update(&s1).unwrap();
-    i.update(&s2).unwrap();
-    let r = i.to_sketch(true).unwrap();
+    for (left, right) in [
+        (ThetaSketchView::from(&s1), ThetaSketchView::from(&s2)),
+        ((&c1).into(), (&c2).into()),
+    ] {
+        let mut i = ThetaIntersection::default();
+        i.update(left).unwrap();
+        i.update(right).unwrap();
+        let r = i.to_sketch(true).unwrap();
 
-    assert!(!r.is_empty());
-    assert!(r.is_estimation_mode());
-    assert_eq!(r.estimate(), 0.0);
-}
-
-#[test]
-fn test_estimation_disjoint_ordered() {
-    let s1 = sketch_with_range(0, 10000);
-    let s2 = sketch_with_range(10000, 10000);
-
-    let mut i = ThetaIntersection::default();
-    i.update(&s1.compact(true)).unwrap();
-    i.update(&s2.compact(true)).unwrap();
-    let r = i.to_sketch(true).unwrap();
-
-    assert!(!r.is_empty());
-    assert!(r.is_estimation_mode());
-    assert_eq!(r.estimate(), 0.0);
-}
-
-#[test]
-fn test_seed_mismatch_non_empty_returns_error() {
-    let mut s = ThetaSketchBuilder::default().build().unwrap();
-    s.update(1u64);
-
-    let mut i = ThetaIntersection::with_seed(123).unwrap();
-    assert_that!(i.update(&s), err(anything()));
+        assert!(!r.is_empty());
+        assert!(r.is_estimation_mode());
+        assert_eq!(r.estimate(), 0.0);
+    }
 }

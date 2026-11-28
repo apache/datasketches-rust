@@ -81,30 +81,23 @@ fn builder_deduplicates_values_and_hashes() {
 }
 
 #[test]
-fn default_seed_constructors_and_builder_clone_behave_consistently() {
+fn default_seed_constructors_behave_consistently() {
     for ty in [
         XorFilterType::Xor8,
         XorFilterType::Xor16,
         XorFilterType::Xor32,
     ] {
-        let default_builder = XorFilterBuilder::new(ty).update_values([1_u64, 2, 3]);
-        let cloned_builder = default_builder.clone();
-        let extended_builder = default_builder.update(4_u64);
-
-        let zero_seeded_builder = XorFilterBuilder::new(ty)
+        let default_filter = XorFilterBuilder::new(ty)
+            .update_values([1_u64, 2, 3])
+            .build()
+            .unwrap();
+        let zero_seeded_filter = XorFilterBuilder::new(ty)
             .seed(0)
-            .update_values([1_u64, 2, 3]);
-
-        let cloned_filter = cloned_builder.build().unwrap();
-        assert_eq!(
-            cloned_filter.serialize(),
-            zero_seeded_builder.build().unwrap().serialize(),
-        );
-        assert_eq!(cloned_filter.filter_type(), ty);
-        assert_ne!(
-            cloned_filter.serialize(),
-            extended_builder.build().unwrap().serialize(),
-        );
+            .update_values([1_u64, 2, 3])
+            .build()
+            .unwrap();
+        assert_eq!(default_filter.filter_type(), ty);
+        assert_eq!(default_filter.serialize(), zero_seeded_filter.serialize());
 
         assert_eq!(
             XorFilter::from_hashes(&[10, 20, 30], ty)

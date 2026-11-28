@@ -134,34 +134,23 @@ fn test_empty_b_returns_a() {
 }
 
 #[test]
-fn test_exact_partial_overlap_unordered() {
+fn test_exact_partial_overlap() {
     let a = sketch_with_range(0, 1000);
     let b = sketch_with_range(500, 1000);
+    let a_compact = a.compact(true);
+    let b_compact = b.compact(true);
 
     let a_not_b = ThetaANotB::default();
-    let r = a_not_b.compute(&a, &b, true).unwrap();
-
-    // Keys 0..500 survive (exact mode).
-    assert!(!r.is_empty());
-    assert!(!r.is_estimation_mode());
-    assert_eq!(r.num_retained(), 500);
-    assert_eq!(r.estimate(), 500.0);
-}
-
-#[test]
-fn test_exact_partial_overlap_ordered() {
-    let a = sketch_with_range(0, 1000);
-    let b = sketch_with_range(500, 1000);
-
-    let a_not_b = ThetaANotB::default();
-    let r = a_not_b
-        .compute(&a.compact(true), &b.compact(true), true)
-        .unwrap();
-
-    assert!(!r.is_empty());
-    assert!(!r.is_estimation_mode());
-    assert_eq!(r.num_retained(), 500);
-    assert_eq!(r.estimate(), 500.0);
+    for r in [
+        a_not_b.compute(&a, &b, true).unwrap(),
+        a_not_b.compute(&a_compact, &b_compact, true).unwrap(),
+    ] {
+        // Keys 0..500 survive (exact mode).
+        assert!(!r.is_empty());
+        assert!(!r.is_estimation_mode());
+        assert_eq!(r.num_retained(), 500);
+        assert_eq!(r.estimate(), 500.0);
+    }
 }
 
 #[test]
@@ -209,19 +198,24 @@ fn test_result_ordering() {
 }
 
 #[test]
-fn test_estimation_lower_theta_b_unordered() {
+fn test_estimation_lower_theta_b() {
     let a = sketch_with_range(0, 10000);
     let b = sketch_with_range(5000, 25000);
     assert_that!(b.theta64(), lt(a.theta64()));
+    let a_compact = a.compact(true);
+    let b_compact = b.compact(true);
 
     let a_not_b = ThetaANotB::default();
-    let r = a_not_b.compute(&a, &b, true).unwrap();
-
-    // B is deliberately larger so its lower theta constrains the difference.
-    assert!(!r.is_empty());
-    assert!(r.is_estimation_mode());
-    assert_eq!(r.theta64(), b.theta64());
-    assert_that!(r.estimate(), near(5000.0, 5000.0 * 0.03));
+    for r in [
+        a_not_b.compute(&a, &b, true).unwrap(),
+        a_not_b.compute(&a_compact, &b_compact, true).unwrap(),
+    ] {
+        // B is deliberately larger so its lower theta constrains the difference.
+        assert!(!r.is_empty());
+        assert!(r.is_estimation_mode());
+        assert_eq!(r.theta64(), b.theta64());
+        assert_that!(r.estimate(), near(5000.0, 5000.0 * 0.03));
+    }
 }
 
 #[test]
@@ -239,23 +233,6 @@ fn test_estimation_lower_theta_a_mutable_b() {
     let compact_hashes: Vec<u64> = from_compact_b.iter().map(|entry| entry.hash()).collect();
     assert_eq!(mutable_hashes, compact_hashes);
     assert_that!(from_mutable_b.estimate(), near(15000.0, 15000.0 * 0.03));
-}
-
-#[test]
-fn test_estimation_lower_theta_b_ordered() {
-    let a = sketch_with_range(0, 10000);
-    let b = sketch_with_range(5000, 25000);
-    assert_that!(b.theta64(), lt(a.theta64()));
-
-    let a_not_b = ThetaANotB::default();
-    let r = a_not_b
-        .compute(&a.compact(true), &b.compact(true), true)
-        .unwrap();
-
-    assert!(!r.is_empty());
-    assert!(r.is_estimation_mode());
-    assert_eq!(r.theta64(), b.theta64());
-    assert_that!(r.estimate(), near(5000.0, 5000.0 * 0.03));
 }
 
 #[test]

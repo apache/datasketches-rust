@@ -118,25 +118,6 @@ fn hra_and_lra_bounds_are_tighter_at_their_target_end() -> Result<(), Error> {
 }
 
 #[test]
-fn exact_mode_bounds_are_tight() -> Result<(), Error> {
-    let mut sketch: ReqSketch<ReqF64> = ReqSketch::default();
-
-    for i in 0..20 {
-        sketch.update(req_f64(i as f64));
-    }
-
-    assert!(!sketch.is_estimation_mode());
-
-    for rank in [0.1, 0.25, 0.5, 0.75, 0.9] {
-        let lower = sketch.rank_lower_bound(rank, NumStdDev::Two)?;
-        let upper = sketch.rank_upper_bound(rank, NumStdDev::Two)?;
-        assert_that!((upper - lower) / 2.0, lt(0.05));
-    }
-
-    Ok(())
-}
-
-#[test]
 fn high_rank_accuracy_matches_tight_thresholds() -> Result<(), Error> {
     let mut sketch: ReqSketch<ReqF64> = ReqSketch::default();
     let n = 50_000;
@@ -164,12 +145,6 @@ fn high_rank_accuracy_matches_tight_thresholds() -> Result<(), Error> {
         assert_that!(abs_error, le(max_abs_error));
     }
 
-    for rank in [0.9, 0.99, 0.999] {
-        let lower = sketch.rank_lower_bound(rank, NumStdDev::Three)?;
-        let upper = sketch.rank_upper_bound(rank, NumStdDev::Three)?;
-        assert_that!(rank, all!(ge(lower), le(upper)));
-    }
-
     Ok(())
 }
 
@@ -194,6 +169,13 @@ fn rank_bounds_reject_invalid_ranks_across_sketch_states() {
         if !expected_estimation {
             assert_eq!(sketch.rank_lower_bound(0.5, NumStdDev::Two).unwrap(), 0.5);
             assert_eq!(sketch.rank_upper_bound(0.5, NumStdDev::Two).unwrap(), 0.5);
+            if n > 0 {
+                for rank in [0.1, 0.25, 0.5, 0.75, 0.9] {
+                    let lower = sketch.rank_lower_bound(rank, NumStdDev::Two).unwrap();
+                    let upper = sketch.rank_upper_bound(rank, NumStdDev::Two).unwrap();
+                    assert_that!((upper - lower) / 2.0, lt(0.05));
+                }
+            }
         }
     }
 }

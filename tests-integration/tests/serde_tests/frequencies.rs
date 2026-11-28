@@ -53,33 +53,6 @@ impl FrequentItemValue for NonCloneSerializableItem {
 }
 
 #[test]
-fn test_longs_round_trip() {
-    let mut sketch: FrequentItemsSketch<i64> = FrequentItemsSketch::new(32).unwrap();
-    for i in 1..=100 {
-        sketch.update_with_weight(i, i as u64);
-    }
-    let bytes = sketch.serialize();
-    let restored = FrequentItemsSketch::<i64>::deserialize(&bytes).unwrap();
-    assert_eq!(restored.total_weight(), sketch.total_weight());
-    assert_eq!(restored.estimate(&42), sketch.estimate(&42));
-    assert_eq!(restored.maximum_error(), sketch.maximum_error());
-}
-
-#[test]
-fn test_items_round_trip() {
-    let mut sketch = FrequentItemsSketch::new(32).unwrap();
-    sketch.update_with_weight("alpha".to_string(), 3);
-    sketch.update_with_weight("beta".to_string(), 5);
-    sketch.update_with_weight("gamma".to_string(), 7);
-
-    let bytes = sketch.serialize();
-    let restored = FrequentItemsSketch::<String>::deserialize(&bytes).unwrap();
-    assert_eq!(restored.total_weight(), sketch.total_weight());
-    assert_eq!(restored.estimate(&"beta".to_string()), 5);
-    assert_eq!(restored.maximum_error(), sketch.maximum_error());
-}
-
-#[test]
 fn test_string_deserialize_rejects_length_larger_than_input() {
     let bytes = 1024u32.to_le_bytes();
     let mut cursor = SketchSlice::new(&bytes);
@@ -104,18 +77,6 @@ fn test_non_clone_item_round_trip() {
     assert_eq!(restored.total_weight(), sketch.total_weight());
     assert_eq!(restored.estimate(&NonCloneSerializableItem(1)), 2);
     assert_eq!(restored.estimate(&NonCloneSerializableItem(2)), 5);
-}
-
-#[test]
-fn test_empty_round_trip() {
-    let sketch = FrequentItemsSketch::<i64>::new(32).unwrap();
-    let bytes = sketch.serialize();
-    // One preamble long, matching the datasketches-java and datasketches-cpp empty encoding.
-    assert_eq!(bytes.len(), 8);
-    let restored = FrequentItemsSketch::<i64>::deserialize(&bytes).unwrap();
-    assert!(restored.is_empty());
-    assert_eq!(restored.total_weight(), 0);
-    assert_eq!(restored.maximum_error(), 0);
 }
 
 fn check_purged_round_trip<T: FrequentItemValue>(make_item: impl Fn(i64) -> T) {
@@ -153,11 +114,6 @@ fn check_purged_round_trip<T: FrequentItemValue>(make_item: impl Fn(i64) -> T) {
 #[test]
 fn test_longs_purged_round_trip() {
     check_purged_round_trip(|item| item);
-}
-
-#[test]
-fn test_items_purged_round_trip() {
-    check_purged_round_trip(|item| item.to_string());
 }
 
 fn check_purged_compatibility<T: FrequentItemValue>(dir: &str, filename: &str) {

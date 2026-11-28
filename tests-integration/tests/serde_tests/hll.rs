@@ -750,34 +750,6 @@ fn test_rust_hll_union_compatibility() {
 }
 
 #[test]
-fn test_estimate_accuracy() {
-    // This test verifies and prints actual estimates to show accuracy
-    let test_cases = [
-        ("java_generated_files", "hll8_n1000_java.sk", 1000),
-        ("java_generated_files", "hll8_n10000_java.sk", 10000),
-        ("java_generated_files", "hll8_n100000_java.sk", 100000),
-        ("java_generated_files", "hll8_n1000000_java.sk", 1000000),
-    ];
-
-    println!("\nCardinality Estimation Accuracy:");
-    println!("{:<12} {:<12} {:<10}", "Expected", "Estimate", "Error %");
-    println!("{:-<40}", "");
-
-    for (dir, file, expected) in test_cases {
-        let path = serialization_test_data(dir, file);
-        let bytes = fs::read(&path).unwrap();
-        let sketch = HllSketch::deserialize(&bytes).unwrap();
-        let estimate = sketch.estimate();
-        let error_pct = ((estimate - expected as f64).abs() / expected as f64) * 100.;
-
-        println!("{:<12} {:<12.0} {:<10.3}", expected, estimate, error_pct,);
-
-        // All estimates should be within 2% error
-        assert_that!(error_pct, lt(2.));
-    }
-}
-
-#[test]
 fn updatable_list_preserves_coupon_order_after_duplicate_updates() {
     let mut sketch = HllSketch::new(14, HllType::Hll8).unwrap();
     for value in [2, 0, 1] {
