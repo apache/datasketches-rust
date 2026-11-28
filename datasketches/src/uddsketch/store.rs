@@ -21,7 +21,7 @@ use crate::uddsketch::mapping::collapse_key;
 
 const EMPTY_SLOT: u32 = u32::MAX;
 const INDEX_THRESHOLD: usize = 16;
-const MIN_SLOTS_CAP: usize = 128;
+const MIN_SLOTS_CAP: usize = 64;
 const HASH_MULTIPLIER: u64 = 0x517c_c1b7_2722_0a95;
 
 #[derive(Clone, Copy, Debug)]
@@ -30,9 +30,9 @@ pub struct Bucket {
     pub count: u64,
 }
 
-/// Counter buckets for one sign (positive magnitudes), maintained in sorted `key` order below
-/// `INDEX_THRESHOLD` and transitioning to append-only accumulation with an open-addressed `u32`
-/// hash index and cached/deferred sorting once retained buckets reach `INDEX_THRESHOLD`.
+/// Counter buckets for one sign (positive magnitudes) with append-only out-of-order accumulation,
+/// a lazy open-addressed `u32` hash index once retained buckets reach `INDEX_THRESHOLD`, and
+/// cached/deferred sorting for queries, merges, collapses, and serialization.
 #[derive(Debug)]
 pub struct BucketStore {
     entries: Vec<Bucket>,
@@ -162,16 +162,16 @@ impl BucketStore {
         }
 
         if self.slots.is_empty() && self.entries.len() < INDEX_THRESHOLD {
-            debug_assert!(self.sorted);
-            match self.entries.binary_search_by_key(&key, |b| b.key) {
-                Ok(idx) => {
-                    self.entries[idx].count += weight;
-                }
-                Err(idx) => {
-                    self.entries.insert(idx, Bucket { key, count: weight });
+            for bucket in &mut self.entries {
+                if bucket.key == key {
+                    bucket.count += weight;
+                    self.total_weight += weight;
+                    return;
                 }
             }
+            self.entries.push(Bucket { key, count: weight });
             self.total_weight += weight;
+            self.sorted = false;
             return;
         }
 
@@ -245,24 +245,14 @@ impl BucketStore {
     }
 
     /// Merges `other`'s buckets (collapsed on the fly by `other_shift` levels) into `self` (first
-    /// collapsed by `self_shift` levels) in-place using the precomputed `merged_len`.
-    ///
-    /// Caller must pass `merged_len == count_merged_collapsed(self.sorted_buckets(), self_shift,
-    /// other.sorted_buckets(), other_shift)` and validate combined weight overflow beforehand.
-    pub fn merge_collapsed_exact(
-        &mut self,
-        self_shift: u8,
-        other: &Self,
-        other_shift: u8,
-        merged_len: usize,
-    ) {
+    /// collapsed by `self_shift` levels). Caller validates combined weight overflow beforehand.
+    pub fn merge_collapsed(&mut self, self_shift: u8, other: &Self, other_shift: u8) {
         if self_shift > 0 {
             self.collapse(self_shift);
         } else {
             self.ensure_sorted();
         }
         if other.is_empty() {
-            debug_assert_eq!(self.entries.len(), merged_len);
             return;
         }
         if self.is_empty() && other_shift == 0 {
@@ -273,35 +263,50 @@ impl BucketStore {
         let right = other.sorted_buckets();
         let m = self.entries.len();
         let n = right.len();
-        self.entries.resize(merged_len, Bucket { key: 0, count: 0 });
+        let total_cap = m + n;
+        self.entries.resize(total_cap, Bucket { key: 0, count: 0 });
 
-        // At every step `(i, j)`, `write` equals the union size of `self.entries[..i]` (distinct
-        // keys) and collapsed `right[..j]`, so `write >= i` holds throughout and `write == i`
-        // when `j == 0`.
-        let (mut i, mut j, mut write) = (m, n, merged_len);
+        let mut i = m;
+        let mut j = n;
+        let mut write = total_cap;
+
+        // `write >= i + j` holds throughout: each step decrements `write` by 1 and `i + j` by
+        // at least 1, so `write - 1 >= i` whenever `j > 0` and unread `self.entries[..i]` is
+        // intact.
         while j > 0 {
             j -= 1;
-            let key = collapse_key(right[j].key, other_shift);
-            let mut count = right[j].count;
-            while other_shift > 0 && j > 0 && collapse_key(right[j - 1].key, other_shift) == key {
+            let b_key = collapse_key(right[j].key, other_shift);
+            let mut b_count = right[j].count;
+            while other_shift > 0 && j > 0 && collapse_key(right[j - 1].key, other_shift) == b_key {
                 j -= 1;
-                count += right[j].count;
+                b_count += right[j].count;
             }
 
-            while i > 0 && self.entries[i - 1].key > key {
+            while i > 0 && self.entries[i - 1].key > b_key {
                 i -= 1;
                 write -= 1;
                 self.entries[write] = self.entries[i];
             }
-            if i > 0 && self.entries[i - 1].key == key {
+
+            if i > 0 && self.entries[i - 1].key == b_key {
                 i -= 1;
-                count += self.entries[i].count;
+                b_count += self.entries[i].count;
             }
             write -= 1;
-            self.entries[write] = Bucket { key, count };
+            self.entries[write] = Bucket {
+                key: b_key,
+                count: b_count,
+            };
         }
-        debug_assert_eq!(write, i);
+
+        if write > i {
+            let new_len = i + (total_cap - write);
+            self.entries.copy_within(write..total_cap, i);
+            self.entries.truncate(new_len);
+        }
+
         self.total_weight += other.total_weight;
+        // Defer index rebuild until budget enforcement finishes collapsing if needed.
         self.slots.clear();
         self.sorted = true;
     }
@@ -346,50 +351,6 @@ impl BucketStore {
         }
         self.slots[probe] = idx;
     }
-}
-
-/// Counts the distinct retained bucket keys after collapsing sorted `left` by `left_shift` and
-/// sorted `right` by `right_shift`, deduplicating consecutive equal-parent runs on both sides.
-pub fn count_merged_collapsed(
-    left: &[Bucket],
-    left_shift: u8,
-    right: &[Bucket],
-    right_shift: u8,
-) -> usize {
-    fn skip_run(buckets: &[Bucket], shift: u8, index: usize, key: i64) -> usize {
-        let mut next = index + 1;
-        while shift > 0 && next < buckets.len() && collapse_key(buckets[next].key, shift) == key {
-            next += 1;
-        }
-        next
-    }
-
-    let (mut i, mut j, mut count) = (0, 0, 0);
-    while i < left.len() && j < right.len() {
-        let left_key = collapse_key(left[i].key, left_shift);
-        let right_key = collapse_key(right[j].key, right_shift);
-        if left_key <= right_key {
-            i = skip_run(left, left_shift, i, left_key);
-        }
-        if right_key <= left_key {
-            j = skip_run(right, right_shift, j, right_key);
-        }
-        count += 1;
-    }
-
-    let (tail, shift, mut index) = if i < left.len() {
-        (left, left_shift, i)
-    } else {
-        (right, right_shift, j)
-    };
-    if shift == 0 {
-        return count + (tail.len() - index);
-    }
-    while index < tail.len() {
-        index = skip_run(tail, shift, index, collapse_key(tail[index].key, shift));
-        count += 1;
-    }
-    count
 }
 
 #[inline]

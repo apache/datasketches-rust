@@ -27,7 +27,6 @@ use crate::uddsketch::mapping::Mapping;
 use crate::uddsketch::serialization::deserialize_sketch;
 use crate::uddsketch::serialization::serialize_sketch;
 use crate::uddsketch::store::BucketStore;
-use crate::uddsketch::store::count_merged_collapsed;
 use crate::uddsketch::store::key_at_rank_in_slice;
 
 /// Uniform DDSketch (`UDDSketch`) for reproducible quantile estimation with a relative value error
@@ -323,34 +322,21 @@ impl UddSketch {
             return Ok(());
         }
 
-        let mut target_level = self.num_collapses.max(other.num_collapses);
-        let budget = self.max_buckets as usize;
-        let left_neg = self.neg.sorted_buckets();
-        let right_neg = other.neg.sorted_buckets();
-        let left_pos = self.pos.sorted_buckets();
-        let right_pos = other.pos.sorted_buckets();
-        let (neg_merged_len, pos_merged_len) = loop {
-            let self_shift = target_level - self.num_collapses;
-            let other_shift = target_level - other.num_collapses;
-            let neg_len = count_merged_collapsed(left_neg, self_shift, right_neg, other_shift);
-            let pos_len = count_merged_collapsed(left_pos, self_shift, right_pos, other_shift);
-            if neg_len + pos_len <= budget {
-                break (neg_len, pos_len);
-            }
-            target_level += 1;
-        };
+        let target_level = self.num_collapses.max(other.num_collapses);
         let self_shift = target_level - self.num_collapses;
         let other_shift = target_level - other.num_collapses;
 
         self.neg
-            .merge_collapsed_exact(self_shift, &other.neg, other_shift, neg_merged_len);
+            .merge_collapsed(self_shift, &other.neg, other_shift);
         self.pos
-            .merge_collapsed_exact(self_shift, &other.pos, other_shift, pos_merged_len);
+            .merge_collapsed(self_shift, &other.pos, other_shift);
         self.num_collapses = target_level;
         self.total_weight = next_total;
         self.zero_weight += other.zero_weight;
         self.min = self.min.min(other.min);
         self.max = self.max.max(other.max);
+
+        self.enforce_budget();
         Ok(())
     }
 
