@@ -384,12 +384,21 @@ fn native_malformed_headers_and_body_invariants_are_rejected() {
     assert_eq!(sparse_ok.min_value(), None);
     assert!(sparse_ok.quantile(0.0).unwrap().unwrap() > 0.0);
 
-    // Inverted, non-finite, or zero-bucket summary inconsistencies in native images are rejected.
+    // Inverted, non-finite, zero-bucket, or sign-inconsistent summary metadata in native images
+    // is rejected.
     let mut zero_only = DdSketch::new(0.01).unwrap();
     zero_only.update(0.0);
+    let mut neg_only = DdSketch::new(0.01).unwrap();
+    neg_only.update(-10.0);
     for (base, min, max, sum) in [
         (&single_pos, 50.0_f64, 10.0_f64, 10.0_f64),
         (&single_pos, f64::NAN, 10.0, 10.0),
+        (&single_pos, -10.0, -10.0, 10.0),
+        (&single_pos, -10.0, 10.0, 10.0),
+        (&single_pos, 10.0, 10.0, -10.0),
+        (&neg_only, 0.0, 10.0, 10.0),
+        (&neg_only, -10.0, 10.0, -10.0),
+        (&neg_only, -10.0, -10.0, 10.0),
         (&zero_only, 0.0, 0.0, 1.0),
         (&zero_only, 0.0, 1.0, 0.0),
     ] {
@@ -695,15 +704,6 @@ fn compat_decodes_reordered_summary_blocks_and_rejects_malformed_images() {
         (&neg_only, -10.0, 10.0, -10.0),
         (&neg_only, -10.0, -10.0, 10.0),
     ] {
-        let mut native = base.serialize();
-        native[24..32].copy_from_slice(&min.to_le_bytes());
-        native[32..40].copy_from_slice(&max.to_le_bytes());
-        native[40..48].copy_from_slice(&sum.to_le_bytes());
-        assert_eq!(
-            DdSketch::deserialize(&native).unwrap_err().kind(),
-            ErrorKind::InvalidData
-        );
-
         let mut compat = base.serialize_compat().unwrap();
         compat[3..11].copy_from_slice(&min.to_le_bytes());
         compat[12..20].copy_from_slice(&max.to_le_bytes());
