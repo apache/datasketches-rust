@@ -25,8 +25,8 @@ use crate::theta::ThetaSketchView;
 use crate::theta::hash_table::ThetaEntry;
 use crate::theta::serialization;
 use crate::thetafamily::common::constants::DEFAULT_LG_K;
-use crate::thetafamily::common::union::UnionMergePolicy;
-use crate::thetafamily::common::union::UnionState;
+use crate::thetafamily::entry::union::UnionMergePolicy;
+use crate::thetafamily::entry::union::UnionState;
 
 /// Stateful union operator for Theta sketches.
 pub struct ThetaUnion {

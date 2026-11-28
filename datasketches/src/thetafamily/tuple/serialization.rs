@@ -35,7 +35,7 @@ use crate::error::Error;
 use crate::thetafamily::common::constants::FLAGS_IS_COMPACT;
 use crate::thetafamily::common::constants::FLAGS_IS_ORDERED;
 use crate::thetafamily::common::constants::FLAGS_IS_READ_ONLY;
-use crate::thetafamily::common::sketch_state::CompactSketchState;
+use crate::thetafamily::entry::sketch_state::CompactSketchState;
 use crate::tuple::hash_table::TupleEntry;
 
 /// Current serial version written by this implementation.

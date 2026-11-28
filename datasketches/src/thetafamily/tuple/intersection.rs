@@ -29,7 +29,7 @@ use std::fmt;
 
 use crate::error::Error;
 use crate::hash::DEFAULT_UPDATE_SEED;
-use crate::thetafamily::common::intersection::IntersectionState;
+use crate::thetafamily::entry::intersection::IntersectionState;
 use crate::tuple::hash_table::TupleEntry;
 use crate::tuple::policy::SummaryCombinePolicy;
 use crate::tuple::sketch::CompactTupleSketch;

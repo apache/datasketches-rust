@@ -20,13 +20,13 @@ use std::collections::HashSet;
 use crate::error::Error;
 use crate::error::ErrorKind;
 use crate::hash::check_seed_hash;
-use crate::thetafamily::common::EntrySketch;
-use crate::thetafamily::common::KeySketch;
-use crate::thetafamily::common::SketchEntry;
 use crate::thetafamily::common::constants::MAX_THETA;
 use crate::thetafamily::common::fold_hash::FoldHashState;
-use crate::thetafamily::common::sketch_state::CompactSketchState;
-use crate::thetafamily::common::sketch_state::ThetaFamilySketchMetadata;
+use crate::thetafamily::entry::EntrySketch;
+use crate::thetafamily::entry::KeySketch;
+use crate::thetafamily::entry::SketchEntry;
+use crate::thetafamily::entry::sketch_state::CompactSketchState;
+use crate::thetafamily::entry::sketch_state::ThetaFamilySketchMetadata;
 
 /// Computes `a and not b` for Theta-family sketch views.
 ///
