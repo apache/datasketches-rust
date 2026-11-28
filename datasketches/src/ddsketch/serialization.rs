@@ -30,6 +30,13 @@ use crate::codec::assert::ensure_preamble_longs_in;
 use crate::codec::assert::ensure_serial_version_is;
 use crate::codec::assert::insufficient_data;
 use crate::codec::family::Family;
+use crate::codec::varint::MAX_VAR_LEN_64;
+use crate::codec::varint::decode_uvarint64;
+use crate::codec::varint::decode_varint64;
+use crate::codec::varint::encode_uvarint64;
+use crate::codec::varint::encode_varint64;
+use crate::codec::varint::uvarint64_size;
+use crate::codec::varint::varint64_size;
 use crate::error::Error;
 
 // Native DDSKETCH preamble constants (3 longs = 24 bytes).
@@ -87,7 +94,6 @@ const DD_SUBFLAG_BINS_DELTAS_AND_COUNTS: u8 = 1 << 2;
 const DD_SUBFLAG_BINS_INDEX_DELTAS: u8 = 2 << 2;
 const DD_SUBFLAG_BINS_CONTIGUOUS_COUNTS: u8 = 3 << 2;
 
-const MAX_VAR_LEN_64: usize = 9;
 const VARFLOAT_ROTATE: u32 = 6;
 const ONE_F64_BITS: u64 = 0x3ff0_0000_0000_0000;
 const MAX_COMPAT_WEIGHT: u64 = (1 << 53) - 1;
@@ -1374,64 +1380,6 @@ fn decode_datadog_count(cursor: &mut SketchSlice<'_>, tag: &'static str) -> Resu
 }
 
 #[inline]
-pub fn encode_uvarint64(out: &mut SketchBytes, mut v: u64) {
-    for _ in 0..(MAX_VAR_LEN_64 - 1) {
-        if v < 0x80 {
-            break;
-        }
-        out.write_u8((v as u8) | 0x80);
-        v >>= 7;
-    }
-    out.write_u8(v as u8);
-}
-
-#[inline]
-pub fn decode_uvarint64(cursor: &mut SketchSlice<'_>, tag: &'static str) -> Result<u64, Error> {
-    let mut x = 0_u64;
-    let mut shift = 0_u32;
-    for i in 0..MAX_VAR_LEN_64 {
-        let n = cursor.read_u8().map_err(insufficient_data(tag))?;
-        if n < 0x80 || i == MAX_VAR_LEN_64 - 1 {
-            return Ok(x | (u64::from(n) << shift));
-        }
-        x |= u64::from(n & 0x7f) << shift;
-        shift += 7;
-    }
-    unreachable!()
-}
-
-#[inline]
-pub const fn uvarint64_size(v: u64) -> usize {
-    if v == 0 {
-        return 1;
-    }
-    let sig_bits = 64 - v.leading_zeros() as usize;
-    if sig_bits == 64 {
-        MAX_VAR_LEN_64
-    } else {
-        sig_bits.div_ceil(7)
-    }
-}
-
-#[inline]
-pub fn encode_varint64(out: &mut SketchBytes, v: i64) {
-    let zigzag = ((v << 1) ^ (v >> 63)) as u64;
-    encode_uvarint64(out, zigzag);
-}
-
-#[inline]
-pub fn decode_varint64(cursor: &mut SketchSlice<'_>, tag: &'static str) -> Result<i64, Error> {
-    let u = decode_uvarint64(cursor, tag)?;
-    Ok(((u >> 1) as i64) ^ -((u & 1) as i64))
-}
-
-#[inline]
-pub const fn varint64_size(v: i64) -> usize {
-    let zigzag = ((v << 1) ^ (v >> 63)) as u64;
-    uvarint64_size(zigzag)
-}
-
-#[inline]
 pub fn encode_varfloat64(out: &mut SketchBytes, v: f64) {
     let bits = (v + 1.0).to_bits().wrapping_sub(ONE_F64_BITS);
     let mut x = bits.rotate_left(VARFLOAT_ROTATE);
@@ -1486,72 +1434,6 @@ pub fn decode_varfloat64(cursor: &mut SketchSlice<'_>, tag: &'static str) -> Res
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn datadog_uvarint64_reference_vectors_match() {
-        let cases: &[(u64, &[u8])] = &[
-            (0, &[0x00]),
-            (1, &[0x01]),
-            (127, &[0x7f]),
-            (128, &[0x80, 0x01]),
-            (129, &[0x81, 0x01]),
-            (255, &[0xff, 0x01]),
-            (256, &[0x80, 0x02]),
-            (16_383, &[0xff, 0x7f]),
-            (16_384, &[0x80, 0x80, 0x01]),
-            (16_385, &[0x81, 0x80, 0x01]),
-            (
-                u64::MAX - 1,
-                &[0xfe, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff],
-            ),
-            (
-                u64::MAX,
-                &[0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff],
-            ),
-        ];
-        for &(val, expected) in cases {
-            let mut buf = SketchBytes::default();
-            encode_uvarint64(&mut buf, val);
-            let bytes = buf.into_bytes();
-            assert_eq!(bytes, expected, "uvarint64({val})");
-            assert_eq!(uvarint64_size(val), expected.len(), "size({val})");
-            let mut slice = SketchSlice::new(&bytes);
-            assert_eq!(decode_uvarint64(&mut slice, "test").unwrap(), val);
-            assert!(slice.remaining().is_empty());
-        }
-    }
-
-    #[test]
-    fn datadog_varint64_reference_vectors_match() {
-        let cases: &[(i64, &[u8])] = &[
-            (0, &[0x00]),
-            (1, &[0x02]),
-            (63, &[0x7e]),
-            (64, &[0x80, 0x01]),
-            (-1, &[0x01]),
-            (-63, &[0x7d]),
-            (-64, &[0x7f]),
-            (-65, &[0x81, 0x01]),
-            (
-                i64::MAX,
-                &[0xfe, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff],
-            ),
-            (
-                i64::MIN,
-                &[0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff],
-            ),
-        ];
-        for &(val, expected) in cases {
-            let mut buf = SketchBytes::default();
-            encode_varint64(&mut buf, val);
-            let bytes = buf.into_bytes();
-            assert_eq!(bytes, expected, "varint64({val})");
-            assert_eq!(varint64_size(val), expected.len(), "size({val})");
-            let mut slice = SketchSlice::new(&bytes);
-            assert_eq!(decode_varint64(&mut slice, "test").unwrap(), val);
-            assert!(slice.remaining().is_empty());
-        }
-    }
 
     #[test]
     fn datadog_varfloat64_reference_vectors_decode() {

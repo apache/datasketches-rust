@@ -60,3 +60,7 @@ pub(crate) mod assert;
     feature = "xor",
 ))]
 pub(crate) mod family;
+
+#[cfg(any(feature = "ddsketch", feature = "uddsketch"))]
+#[allow(dead_code)] // shared varint helpers are selectively used across ddsketch and uddsketch
+pub(crate) mod varint;
