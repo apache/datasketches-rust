@@ -17,8 +17,9 @@
 
 use std::collections::HashSet;
 
-use crate::aod::ArrayOfDoublesUnion;
-use crate::aod::CompactArrayOfDoublesSketch;
+use crate::aod::ArrayOfNumbersUnion;
+use crate::aod::CompactArrayOfNumbersSketch;
+use crate::aod::policy::ArrayOfNumbersValue;
 use crate::aod::union::CompactUnionSlots;
 use crate::codec::SketchBytes;
 use crate::codec::SketchSlice;
@@ -39,7 +40,9 @@ const SKETCH_TYPE: u8 = 3;
 const FLAGS_HAS_ENTRIES: u8 = 1 << 3;
 const HEADER_SIZE: usize = 16;
 
-pub fn serialize_compact(sketch: &CompactArrayOfDoublesSketch) -> Vec<u8> {
+pub fn serialize_compact<T: ArrayOfNumbersValue>(
+    sketch: &CompactArrayOfNumbersSketch<T>,
+) -> Vec<u8> {
     let mut bytes = compact_header(
         sketch.is_empty(),
         sketch.is_ordered(),
@@ -47,17 +50,21 @@ pub fn serialize_compact(sketch: &CompactArrayOfDoublesSketch) -> Vec<u8> {
         sketch.theta64(),
         sketch.num_values(),
         sketch.num_retained(),
+        size_of::<T>(),
     );
     for &hash in &sketch.hashes {
         bytes.write_u64_le(hash);
     }
     for &value in &sketch.values {
-        bytes.write_f64_le(value);
+        value.write_le(&mut bytes);
     }
     bytes.into_bytes()
 }
 
-pub fn serialize_union(union: &ArrayOfDoublesUnion, ordered: bool) -> Vec<u8> {
+pub fn serialize_union<T: ArrayOfNumbersValue>(
+    union: &ArrayOfNumbersUnion<T>,
+    ordered: bool,
+) -> Vec<u8> {
     let table = &union.table;
     let slots_storage = table.slots();
     let Some(CompactUnionSlots {
@@ -66,7 +73,16 @@ pub fn serialize_union(union: &ArrayOfDoublesUnion, ordered: bool) -> Vec<u8> {
         slots,
     }) = union.compact_slots(ordered)
     else {
-        return compact_header(true, true, 0, MAX_THETA, slots_storage.num_values, 0).into_bytes();
+        return compact_header(
+            true,
+            true,
+            0,
+            MAX_THETA,
+            slots_storage.num_values,
+            0,
+            size_of::<T>(),
+        )
+        .into_bytes();
     };
     let mut bytes = compact_header(
         false,
@@ -75,13 +91,14 @@ pub fn serialize_union(union: &ArrayOfDoublesUnion, ordered: bool) -> Vec<u8> {
         theta,
         slots_storage.num_values,
         slots.len(),
+        size_of::<T>(),
     );
     for &(hash, _) in &slots {
         bytes.write_u64_le(hash);
     }
     for (_, slot) in slots {
         for &value in slots_storage.slot_values(slot as usize) {
-            bytes.write_f64_le(value);
+            value.write_le(&mut bytes);
         }
     }
     bytes.into_bytes()
@@ -94,9 +111,17 @@ fn compact_header(
     theta: u64,
     num_values: u8,
     num_entries: usize,
+    value_size: usize,
 ) -> SketchBytes {
-    let payload_size =
-        num_entries * (size_of::<u64>() + usize::from(num_values) * size_of::<f64>());
+    let summary_size = usize::from(num_values)
+        .checked_mul(value_size)
+        .expect("ArrayOfNumbers summary length overflows usize");
+    let entry_size = size_of::<u64>()
+        .checked_add(summary_size)
+        .expect("ArrayOfNumbers entry length overflows usize");
+    let payload_size = num_entries
+        .checked_mul(entry_size)
+        .expect("ArrayOfNumbers entry payload length overflows usize");
     let mut bytes = SketchBytes::with_capacity(
         HEADER_SIZE + if num_entries > 0 { 8 + payload_size } else { 0 },
     );
@@ -120,14 +145,17 @@ fn compact_header(
     bytes.write_u64_le(theta);
     if num_entries > 0 {
         bytes.write_u32_le(
-            u32::try_from(num_entries).expect("ArrayOfDoubles retained entries exceed u32"),
+            u32::try_from(num_entries).expect("ArrayOfNumbers retained entries exceed u32"),
         );
         bytes.write_u32_le(0);
     }
     bytes
 }
 
-pub fn deserialize_compact(bytes: &[u8], seed: u64) -> Result<CompactArrayOfDoublesSketch, Error> {
+pub fn deserialize_compact<T: ArrayOfNumbersValue>(
+    bytes: &[u8],
+    seed: u64,
+) -> Result<CompactArrayOfNumbersSketch<T>, Error> {
     let expected_seed_hash = compute_seed_hash(seed, ErrorKind::InvalidData)?;
     let mut cursor = SketchSlice::new(bytes);
     let preamble_longs = cursor
@@ -180,7 +208,7 @@ pub fn deserialize_compact(bytes: &[u8], seed: u64) -> Result<CompactArrayOfDoub
         ));
     }
     if is_empty {
-        return Ok(CompactArrayOfDoublesSketch::empty(
+        return Ok(CompactArrayOfNumbersSketch::empty(
             expected_seed_hash,
             num_values,
         ));
@@ -189,12 +217,12 @@ pub fn deserialize_compact(bytes: &[u8], seed: u64) -> Result<CompactArrayOfDoub
     check_seed_hash(
         expected_seed_hash,
         seed_hash,
-        "deserialized CompactArrayOfDoublesSketch",
+        "deserialized CompactArrayOfNumbersSketch",
         ErrorKind::InvalidData,
     )?;
 
     if !has_entries {
-        return Ok(CompactArrayOfDoublesSketch::from_raw_parts(
+        return Ok(CompactArrayOfNumbersSketch::from_raw_parts(
             false,
             is_ordered,
             seed_hash,
@@ -218,14 +246,19 @@ pub fn deserialize_compact(bytes: &[u8], seed: u64) -> Result<CompactArrayOfDoub
     }
 
     let stride = usize::from(num_values);
-    let entry_size = size_of::<u64>() + stride * size_of::<f64>();
+    let summary_size = stride.checked_mul(size_of::<T>()).ok_or_else(|| {
+        Error::insufficient_data_of("ArrayOfNumbers entries", "summary length overflows usize")
+    })?;
+    let entry_size = size_of::<u64>().checked_add(summary_size).ok_or_else(|| {
+        Error::insufficient_data_of("ArrayOfNumbers entries", "entry length overflows usize")
+    })?;
     let required_bytes = num_entries.checked_mul(entry_size).ok_or_else(|| {
-        Error::insufficient_data_of("ArrayOfDoubles entries", "payload length overflows usize")
+        Error::insufficient_data_of("ArrayOfNumbers entries", "payload length overflows usize")
     })?;
     let available_bytes = cursor.remaining().len();
     if available_bytes < required_bytes {
         return Err(Error::insufficient_data_of(
-            "ArrayOfDoubles entries",
+            "ArrayOfNumbers entries",
             format_args!("expected {required_bytes} bytes, got {available_bytes}"),
         ));
     }
@@ -252,16 +285,14 @@ pub fn deserialize_compact(bytes: &[u8], seed: u64) -> Result<CompactArrayOfDoub
         hashes.push(hash);
     }
 
-    let num_items = num_entries * stride;
+    let num_items = num_entries.checked_mul(stride).ok_or_else(|| {
+        Error::insufficient_data_of("ArrayOfNumbers entries", "value count overflows usize")
+    })?;
     let mut values = Vec::with_capacity(num_items);
     for _ in 0..num_items {
-        values.push(
-            cursor
-                .read_f64_le()
-                .map_err(insufficient_data("entry_values"))?,
-        );
+        values.push(T::read_le(&mut cursor)?);
     }
-    Ok(CompactArrayOfDoublesSketch::from_raw_parts(
+    Ok(CompactArrayOfNumbersSketch::from_raw_parts(
         false, is_ordered, seed_hash, theta, num_values, hashes, values,
     ))
 }

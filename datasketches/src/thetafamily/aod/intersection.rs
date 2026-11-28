@@ -17,10 +17,11 @@
 
 use std::fmt;
 
-use crate::aod::ArrayOfDoublesCombiner;
-use crate::aod::ArrayOfDoublesSketchView;
-use crate::aod::CompactArrayOfDoublesSketch;
+use crate::aod::ArrayOfNumbersCombiner;
+use crate::aod::ArrayOfNumbersSketchView;
+use crate::aod::CompactArrayOfNumbersSketch;
 use crate::aod::hash_table::AodHashTable;
+use crate::aod::policy::ArrayOfNumbersValue;
 use crate::aod::policy::check_num_values;
 use crate::aod::policy::validate_num_values;
 use crate::error::Error;
@@ -32,20 +33,20 @@ use crate::thetafamily::common::constants::HASH_TABLE_REBUILD_THRESHOLD;
 use crate::thetafamily::common::constants::MAX_THETA;
 use crate::thetafamily::common::hash_table::lg_size_from_count_for_rebuild;
 
-/// Stateful intersection operator for ArrayOfDoubles sketches.
+/// Stateful intersection operator for ArrayOfNumbers sketches.
 ///
-/// The caller supplies an [`ArrayOfDoublesCombiner`] for values associated with shared keys. A
+/// The caller supplies an [`ArrayOfNumbersCombiner`] for values associated with shared keys. A
 /// newly created operator has no result until its first successful [`update`](Self::update).
 ///
 /// # Examples
 ///
 /// ```
-/// use datasketches::aod::ArrayOfDoublesCombiner;
-/// use datasketches::aod::ArrayOfDoublesIntersection;
-/// use datasketches::aod::ArrayOfDoublesSketchBuilder;
+/// use datasketches::aod::ArrayOfNumbersCombiner;
+/// use datasketches::aod::ArrayOfNumbersIntersection;
+/// use datasketches::aod::ArrayOfNumbersSketchBuilder;
 ///
 /// struct SumCombiner;
-/// impl ArrayOfDoublesCombiner for SumCombiner {
+/// impl ArrayOfNumbersCombiner<f64> for SumCombiner {
 ///     fn combine(&self, existing: &mut [f64], incoming: &[f64]) {
 ///         for (dst, src) in existing.iter_mut().zip(incoming) {
 ///             *dst += *src;
@@ -53,12 +54,12 @@ use crate::thetafamily::common::hash_table::lg_size_from_count_for_rebuild;
 ///     }
 /// }
 ///
-/// let mut a = ArrayOfDoublesSketchBuilder::default().build()?;
+/// let mut a = ArrayOfNumbersSketchBuilder::default().build()?;
 /// a.update("shared", [3.0])?;
-/// let mut b = ArrayOfDoublesSketchBuilder::default().build()?;
+/// let mut b = ArrayOfNumbersSketchBuilder::default().build()?;
 /// b.update("shared", [4.0])?;
 ///
-/// let mut intersection = ArrayOfDoublesIntersection::new(1, SumCombiner)?;
+/// let mut intersection = ArrayOfNumbersIntersection::new(1, SumCombiner)?;
 /// intersection.update(&a)?;
 /// intersection.update(&b)?;
 /// assert_eq!(
@@ -73,11 +74,12 @@ use crate::thetafamily::common::hash_table::lg_size_from_count_for_rebuild;
 /// );
 /// # Ok::<(), datasketches::error::Error>(())
 /// ```
-pub struct ArrayOfDoublesIntersection<C>
+pub struct ArrayOfNumbersIntersection<T, C>
 where
-    C: ArrayOfDoublesCombiner,
+    T: ArrayOfNumbersValue,
+    C: ArrayOfNumbersCombiner<T>,
 {
-    table: AodHashTable,
+    table: AodHashTable<T>,
     combiner: C,
     result_state: AodIntersectionState,
 }
@@ -89,9 +91,11 @@ enum AodIntersectionState {
     NonEmpty,
 }
 
-impl<C: ArrayOfDoublesCombiner> fmt::Debug for ArrayOfDoublesIntersection<C> {
+impl<T: ArrayOfNumbersValue, C: ArrayOfNumbersCombiner<T>> fmt::Debug
+    for ArrayOfNumbersIntersection<T, C>
+{
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut debug = f.debug_struct("ArrayOfDoublesIntersection");
+        let mut debug = f.debug_struct("ArrayOfNumbersIntersection");
         debug
             .field("seed_hash", &self.table.seed_hash())
             .field("num_values", &self.table.num_values())
@@ -115,7 +119,7 @@ impl<C: ArrayOfDoublesCombiner> fmt::Debug for ArrayOfDoublesIntersection<C> {
     }
 }
 
-impl<C: ArrayOfDoublesCombiner> ArrayOfDoublesIntersection<C> {
+impl<T: ArrayOfNumbersValue, C: ArrayOfNumbersCombiner<T>> ArrayOfNumbersIntersection<T, C> {
     /// Creates an intersection operator with the default seed and the given configuration.
     ///
     /// # Errors
@@ -149,7 +153,7 @@ impl<C: ArrayOfDoublesCombiner> ArrayOfDoublesIntersection<C> {
     /// corrupted.
     pub fn update<'a>(
         &mut self,
-        sketch: impl Into<ArrayOfDoublesSketchView<'a>>,
+        sketch: impl Into<ArrayOfNumbersSketchView<'a, T>>,
     ) -> Result<(), Error> {
         let sketch = sketch.into();
         let num_values = self.table.num_values();
@@ -163,7 +167,7 @@ impl<C: ArrayOfDoublesCombiner> ArrayOfDoublesIntersection<C> {
             check_seed_hash(
                 seed_hash,
                 sketch.seed_hash(),
-                "ArrayOfDoubles intersection input",
+                "ArrayOfNumbers intersection input",
                 ErrorKind::InvalidArgument,
             )?;
         }
@@ -294,10 +298,10 @@ impl<C: ArrayOfDoublesCombiner> ArrayOfDoublesIntersection<C> {
     /// Returns `None` until the first successful [`update`](Self::update). After that, returns
     /// `Some` even when the intersection is empty. If `ordered` is `true`, retained entries are
     /// sorted ascending by hash.
-    pub fn to_sketch(&self, ordered: bool) -> Option<CompactArrayOfDoublesSketch> {
+    pub fn to_sketch(&self, ordered: bool) -> Option<CompactArrayOfNumbersSketch<T>> {
         match self.result_state {
             AodIntersectionState::Uninitialized => None,
-            AodIntersectionState::Empty => Some(CompactArrayOfDoublesSketch::empty(
+            AodIntersectionState::Empty => Some(CompactArrayOfNumbersSketch::empty(
                 self.table.seed_hash(),
                 self.table.num_values(),
             )),

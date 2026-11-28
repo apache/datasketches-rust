@@ -17,8 +17,9 @@
 
 use std::collections::HashSet;
 
-use crate::aod::ArrayOfDoublesSketchView;
-use crate::aod::CompactArrayOfDoublesSketch;
+use crate::aod::ArrayOfNumbersSketchView;
+use crate::aod::CompactArrayOfNumbersSketch;
+use crate::aod::policy::ArrayOfNumbersValue;
 use crate::aod::policy::check_num_values;
 use crate::error::Error;
 use crate::error::ErrorKind;
@@ -28,39 +29,39 @@ use crate::hash::compute_seed_hash;
 use crate::thetafamily::common::constants::MAX_THETA;
 use crate::thetafamily::common::fold_hash::FoldHashState;
 
-/// Set difference operator (`A and not B`) for ArrayOfDoubles sketches.
+/// Set difference operator (`A and not B`) for ArrayOfNumbers sketches.
 ///
 /// Surviving keys keep their values from `A` unchanged.
 ///
 /// # Examples
 ///
 /// ```
-/// use datasketches::aod::ArrayOfDoublesANotB;
-/// use datasketches::aod::ArrayOfDoublesSketchBuilder;
+/// use datasketches::aod::ArrayOfNumbersANotB;
+/// use datasketches::aod::ArrayOfNumbersSketchBuilder;
 ///
-/// let mut a = ArrayOfDoublesSketchBuilder::default().build()?;
+/// let mut a = ArrayOfNumbersSketchBuilder::default().build()?;
 /// a.update("apple", [1.0])?;
 /// a.update("banana", [2.0])?;
-/// let mut b = ArrayOfDoublesSketchBuilder::default().build()?;
+/// let mut b = ArrayOfNumbersSketchBuilder::default().build()?;
 /// b.update("banana", [20.0])?;
 ///
-/// let diff = ArrayOfDoublesANotB::default().compute(&a, &b, true)?;
+/// let diff = ArrayOfNumbersANotB::default().compute(&a, &b, true)?;
 /// assert_eq!(diff.num_retained(), 1);
 /// assert_eq!(diff.iter().next().unwrap().values(), &[1.0]);
 /// # Ok::<(), datasketches::error::Error>(())
 /// ```
 #[derive(Debug, Clone, Copy)]
-pub struct ArrayOfDoublesANotB {
+pub struct ArrayOfNumbersANotB {
     seed_hash: u16,
 }
 
-impl Default for ArrayOfDoublesANotB {
+impl Default for ArrayOfNumbersANotB {
     fn default() -> Self {
         Self::with_seed(DEFAULT_UPDATE_SEED).unwrap()
     }
 }
 
-impl ArrayOfDoublesANotB {
+impl ArrayOfNumbersANotB {
     /// Creates a set difference operator for `seed`.
     ///
     /// # Errors
@@ -80,12 +81,12 @@ impl ArrayOfDoublesANotB {
     ///
     /// Returns `InvalidArgument` if `a` and `b` have different `num_values`, or if either
     /// non-empty input has a seed hash that differs from this operator's seed.
-    pub fn compute<'a, 'b>(
+    pub fn compute<'a, 'b, T: ArrayOfNumbersValue>(
         &self,
-        a: impl Into<ArrayOfDoublesSketchView<'a>>,
-        b: impl Into<ArrayOfDoublesSketchView<'b>>,
+        a: impl Into<ArrayOfNumbersSketchView<'a, T>>,
+        b: impl Into<ArrayOfNumbersSketchView<'b, T>>,
         ordered: bool,
-    ) -> Result<CompactArrayOfDoublesSketch, Error> {
+    ) -> Result<CompactArrayOfNumbersSketch<T>, Error> {
         let (a, b) = (a.into(), b.into());
         check_num_values(a.num_values(), usize::from(b.num_values()), "A-not-B input")?;
         if !a.is_empty() {
@@ -105,7 +106,7 @@ impl ArrayOfDoublesANotB {
             )?;
         }
         if a.is_empty() {
-            return Ok(CompactArrayOfDoublesSketch::empty(
+            return Ok(CompactArrayOfNumbersSketch::empty(
                 self.seed_hash,
                 a.num_values(),
             ));
@@ -114,7 +115,7 @@ impl ArrayOfDoublesANotB {
             if let Some(table) = a.table {
                 return Ok(table.to_non_empty_compact(ordered));
             }
-            return Ok(CompactArrayOfDoublesSketch::compact_non_empty(
+            return Ok(CompactArrayOfNumbersSketch::compact_non_empty(
                 a.keys.to_vec(),
                 a.values.to_vec(),
                 a.theta64(),
@@ -152,12 +153,12 @@ impl ArrayOfDoublesANotB {
         };
 
         if hashes.is_empty() && theta == MAX_THETA {
-            Ok(CompactArrayOfDoublesSketch::empty(
+            Ok(CompactArrayOfNumbersSketch::empty(
                 self.seed_hash,
                 a.num_values(),
             ))
         } else {
-            Ok(CompactArrayOfDoublesSketch::compact_non_empty(
+            Ok(CompactArrayOfNumbersSketch::compact_non_empty(
                 hashes,
                 values,
                 theta,
@@ -170,11 +171,11 @@ impl ArrayOfDoublesANotB {
     }
 }
 
-fn retain_not_in_b(
-    a: ArrayOfDoublesSketchView<'_>,
+fn retain_not_in_b<T: ArrayOfNumbersValue>(
+    a: ArrayOfNumbersSketchView<'_, T>,
     theta: u64,
     mut contains: impl FnMut(u64) -> bool,
-) -> (Vec<u64>, Vec<f64>) {
+) -> (Vec<u64>, Vec<T>) {
     let mut hashes = Vec::new();
     let mut values = Vec::new();
     let ordered = a.is_ordered();

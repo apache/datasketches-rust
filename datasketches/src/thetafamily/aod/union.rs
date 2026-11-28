@@ -16,10 +16,12 @@
 // under the License.
 
 use std::fmt;
+use std::marker::PhantomData;
 
-use crate::aod::ArrayOfDoublesSketchView;
-use crate::aod::CompactArrayOfDoublesSketch;
+use crate::aod::ArrayOfNumbersSketchView;
+use crate::aod::CompactArrayOfNumbersSketch;
 use crate::aod::hash_table::AodHashTable;
+use crate::aod::policy::ArrayOfNumbersValue;
 use crate::aod::policy::check_num_values;
 use crate::aod::serialization::serialize_union;
 use crate::common::ResizeFactor;
@@ -31,26 +33,26 @@ use crate::thetafamily::common::constants::DEFAULT_LG_K;
 use crate::thetafamily::common::constants::MAX_THETA;
 use crate::thetafamily::common::sort::sort_by_hash_key;
 
-/// Stateful union operator for ArrayOfDoubles sketches.
+/// Stateful union operator for ArrayOfNumbers sketches.
 ///
 /// Values associated with a key present in multiple inputs are added element by element.
 ///
 /// # Examples
 ///
 /// ```
-/// use datasketches::aod::ArrayOfDoublesSketchBuilder;
-/// use datasketches::aod::ArrayOfDoublesUnionBuilder;
+/// use datasketches::aod::ArrayOfNumbersSketchBuilder;
+/// use datasketches::aod::ArrayOfNumbersUnionBuilder;
 ///
-/// let mut a = ArrayOfDoublesSketchBuilder::default()
+/// let mut a = ArrayOfNumbersSketchBuilder::default()
 ///     .num_values(2)
 ///     .build()?;
 /// a.update("shared", [1.0, 2.0])?;
-/// let mut b = ArrayOfDoublesSketchBuilder::default()
+/// let mut b = ArrayOfNumbersSketchBuilder::default()
 ///     .num_values(2)
 ///     .build()?;
 /// b.update("shared", [10.0, 20.0])?;
 ///
-/// let mut union = ArrayOfDoublesUnionBuilder::default()
+/// let mut union = ArrayOfNumbersUnionBuilder::default()
 ///     .num_values(2)
 ///     .build()?;
 /// union.update(&a)?;
@@ -60,13 +62,13 @@ use crate::thetafamily::common::sort::sort_by_hash_key;
 /// assert_eq!(result.iter().next().unwrap().values(), &[11.0, 22.0]);
 /// # Ok::<(), datasketches::error::Error>(())
 /// ```
-pub struct ArrayOfDoublesUnion {
-    pub(super) table: AodHashTable,
+pub struct ArrayOfNumbersUnion<T> {
+    pub(super) table: AodHashTable<T>,
     // None until the union receives a non-empty input sketch.
     result_theta: Option<u64>,
 }
 
-impl fmt::Debug for ArrayOfDoublesUnion {
+impl<T: ArrayOfNumbersValue> fmt::Debug for ArrayOfNumbersUnion<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let is_empty = self.result_theta.is_none();
         let retention_theta = self.table.retention_theta();
@@ -82,7 +84,7 @@ impl fmt::Debug for ArrayOfDoublesUnion {
                 .filter(|entry| entry.hash() < theta)
                 .count(),
         };
-        f.debug_struct("ArrayOfDoublesUnion")
+        f.debug_struct("ArrayOfNumbersUnion")
             .field("lg_k", &self.table.lg_nom_size())
             .field("seed_hash", &self.table.seed_hash())
             .field("num_values", &self.table.num_values())
@@ -99,7 +101,7 @@ pub struct CompactUnionSlots {
     pub slots: Vec<(u64, u32)>,
 }
 
-impl ArrayOfDoublesUnion {
+impl<T: ArrayOfNumbersValue> ArrayOfNumbersUnion<T> {
     /// Merges a mutable or compact sketch into the union.
     ///
     /// # Errors
@@ -108,7 +110,7 @@ impl ArrayOfDoublesUnion {
     /// `num_values` or a non-empty `sketch` has a different seed hash.
     pub fn update<'a>(
         &mut self,
-        sketch: impl Into<ArrayOfDoublesSketchView<'a>>,
+        sketch: impl Into<ArrayOfNumbersSketchView<'a, T>>,
     ) -> Result<(), Error> {
         let sketch = sketch.into();
         check_num_values(
@@ -171,7 +173,7 @@ impl ArrayOfDoublesUnion {
     /// Returns the union result as a compact sketch.
     ///
     /// If `ordered` is `true`, retained entries are sorted ascending by hash.
-    pub fn to_sketch(&self, ordered: bool) -> CompactArrayOfDoublesSketch {
+    pub fn to_sketch(&self, ordered: bool) -> CompactArrayOfNumbersSketch<T> {
         match self.compact_slots(ordered) {
             Some(CompactUnionSlots {
                 theta,
@@ -179,12 +181,12 @@ impl ArrayOfDoublesUnion {
                 slots,
             }) => self.table.materialize_compact(theta, is_ordered, &slots),
             None => {
-                CompactArrayOfDoublesSketch::empty(self.table.seed_hash(), self.table.num_values())
+                CompactArrayOfNumbersSketch::empty(self.table.seed_hash(), self.table.num_values())
             }
         }
     }
 
-    /// Serializes the union result directly into the compact ArrayOfDoubles binary format.
+    /// Serializes the union result directly into the compact ArrayOfNumbers binary format.
     ///
     /// Produces the same retained entries, theta, and seed hash as
     /// `self.to_sketch(ordered).serialize()`, and identical bytes when `ordered` is `true`,
@@ -197,18 +199,18 @@ impl ArrayOfDoublesUnion {
     /// # Examples
     ///
     /// ```
-    /// use datasketches::aod::ArrayOfDoublesSketchBuilder;
-    /// use datasketches::aod::ArrayOfDoublesUnionBuilder;
-    /// use datasketches::aod::CompactArrayOfDoublesSketch;
+    /// use datasketches::aod::ArrayOfNumbersSketchBuilder;
+    /// use datasketches::aod::ArrayOfNumbersUnionBuilder;
+    /// use datasketches::aod::CompactArrayOfNumbersSketch;
     ///
-    /// let mut sketch = ArrayOfDoublesSketchBuilder::default().build()?;
+    /// let mut sketch = ArrayOfNumbersSketchBuilder::default().build()?;
     /// sketch.update("apple", [1.0])?;
     ///
-    /// let mut union = ArrayOfDoublesUnionBuilder::default().build()?;
+    /// let mut union = ArrayOfNumbersUnionBuilder::default().build()?;
     /// union.update(&sketch)?;
     ///
     /// let bytes = union.serialize(true);
-    /// let decoded = CompactArrayOfDoublesSketch::deserialize(&bytes)?;
+    /// let decoded = CompactArrayOfNumbersSketch::<f64>::deserialize(&bytes)?;
     /// assert_eq!(decoded.num_retained(), 1);
     /// # Ok::<(), datasketches::error::Error>(())
     /// ```
@@ -228,19 +230,20 @@ impl ArrayOfDoublesUnion {
     }
 }
 
-/// Builder for [`ArrayOfDoublesUnion`].
+/// Builder for [`ArrayOfNumbersUnion`].
 ///
 /// Configuration is stored without validation and checked when [`build`](Self::build) is called.
 #[derive(Debug, Clone)]
-pub struct ArrayOfDoublesUnionBuilder {
+pub struct ArrayOfNumbersUnionBuilder<T> {
     lg_k: u8,
     resize_factor: ResizeFactor,
     sampling_probability: f32,
     seed: u64,
     num_values: u8,
+    marker: PhantomData<fn() -> T>,
 }
 
-impl Default for ArrayOfDoublesUnionBuilder {
+impl<T> Default for ArrayOfNumbersUnionBuilder<T> {
     fn default() -> Self {
         Self {
             lg_k: DEFAULT_LG_K,
@@ -248,11 +251,12 @@ impl Default for ArrayOfDoublesUnionBuilder {
             sampling_probability: 1.0,
             seed: DEFAULT_UPDATE_SEED,
             num_values: 1,
+            marker: PhantomData,
         }
     }
 }
 
-impl ArrayOfDoublesUnionBuilder {
+impl<T: ArrayOfNumbersValue> ArrayOfNumbersUnionBuilder<T> {
     /// Sets `lg_k`, the base-2 logarithm of the nominal capacity (`5..=26`).
     pub fn lg_k(mut self, lg_k: u8) -> Self {
         self.lg_k = lg_k;
@@ -277,19 +281,19 @@ impl ArrayOfDoublesUnionBuilder {
         self
     }
 
-    /// Sets the number of `f64` values associated with each key (`1..=255`).
+    /// Sets the number of numeric values associated with each key (`1..=255`).
     pub fn num_values(mut self, num_values: u8) -> Self {
         self.num_values = num_values;
         self
     }
 
-    /// Builds an [`ArrayOfDoublesUnion`].
+    /// Builds an [`ArrayOfNumbersUnion`].
     ///
     /// # Errors
     ///
     /// Returns `InvalidArgument` if `num_values` is zero, `lg_k` is outside `5..=26`,
     /// `sampling_probability` is outside `(0.0, 1.0]`, or the computed seed hash is zero.
-    pub fn build(self) -> Result<ArrayOfDoublesUnion, Error> {
+    pub fn build(self) -> Result<ArrayOfNumbersUnion<T>, Error> {
         let table = AodHashTable::new_aod(
             self.lg_k,
             self.resize_factor,
@@ -297,7 +301,7 @@ impl ArrayOfDoublesUnionBuilder {
             self.seed,
             self.num_values,
         )?;
-        Ok(ArrayOfDoublesUnion {
+        Ok(ArrayOfNumbersUnion {
             table,
             result_theta: None,
         })

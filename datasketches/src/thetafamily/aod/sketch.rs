@@ -17,9 +17,11 @@
 
 use std::fmt;
 use std::hash::Hash;
+use std::marker::PhantomData;
 
 use crate::aod::hash_table::AodHashTable;
 use crate::aod::hash_table::AodIter;
+use crate::aod::policy::ArrayOfNumbersValue;
 use crate::aod::policy::check_num_values;
 use crate::aod::serialization::deserialize_compact;
 use crate::aod::serialization::serialize_compact;
@@ -32,16 +34,16 @@ use crate::thetafamily::common::constants::DEFAULT_LG_K;
 use crate::thetafamily::common::constants::MAX_THETA;
 use crate::thetafamily::common::sort::sort_by_hash_key;
 
-/// A retained hash key and its associated slice of `f64` values.
+/// A retained hash key and its associated slice of numeric values.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct ArrayOfDoublesEntry<'a> {
+pub struct ArrayOfNumbersEntry<'a, T> {
     hash: u64,
-    values: &'a [f64],
+    values: &'a [T],
 }
 
-impl<'a> ArrayOfDoublesEntry<'a> {
+impl<'a, T> ArrayOfNumbersEntry<'a, T> {
     #[inline]
-    pub(super) fn new(hash: u64, values: &'a [f64]) -> Self {
+    pub(super) fn new(hash: u64, values: &'a [T]) -> Self {
         Self { hash, values }
     }
 
@@ -53,21 +55,21 @@ impl<'a> ArrayOfDoublesEntry<'a> {
 
     /// Returns the summary values associated with this entry's key.
     #[inline]
-    pub fn values(&self) -> &'a [f64] {
+    pub fn values(&self) -> &'a [T] {
         self.values
     }
 }
 
-/// Read-only view of a mutable or compact ArrayOfDoubles sketch.
+/// Read-only view of a mutable or compact ArrayOfNumbers sketch.
 ///
-/// Accepted by [`ArrayOfDoublesUnion`](crate::aod::ArrayOfDoublesUnion),
-/// [`ArrayOfDoublesIntersection`](crate::aod::ArrayOfDoublesIntersection), and
-/// [`ArrayOfDoublesANotB`](crate::aod::ArrayOfDoublesANotB).
+/// Accepted by [`ArrayOfNumbersUnion`](crate::aod::ArrayOfNumbersUnion),
+/// [`ArrayOfNumbersIntersection`](crate::aod::ArrayOfNumbersIntersection), and
+/// [`ArrayOfNumbersANotB`](crate::aod::ArrayOfNumbersANotB).
 #[derive(Clone, Copy)]
-pub struct ArrayOfDoublesSketchView<'a> {
-    pub(super) table: Option<&'a AodHashTable>,
+pub struct ArrayOfNumbersSketchView<'a, T> {
+    pub(super) table: Option<&'a AodHashTable<T>>,
     pub(super) keys: &'a [u64],
-    pub(super) values: &'a [f64],
+    pub(super) values: &'a [T],
     num_retained: usize,
     theta: u64,
     seed_hash: u16,
@@ -76,9 +78,9 @@ pub struct ArrayOfDoublesSketchView<'a> {
     is_ordered: bool,
 }
 
-impl fmt::Debug for ArrayOfDoublesSketchView<'_> {
+impl<T: ArrayOfNumbersValue> fmt::Debug for ArrayOfNumbersSketchView<'_, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ArrayOfDoublesSketchView")
+        f.debug_struct("ArrayOfNumbersSketchView")
             .field("seed_hash", &self.seed_hash)
             .field("num_values", &self.num_values)
             .field("is_empty", &self.is_empty)
@@ -89,8 +91,8 @@ impl fmt::Debug for ArrayOfDoublesSketchView<'_> {
     }
 }
 
-impl<'a> ArrayOfDoublesSketchView<'a> {
-    /// Returns the number of `f64` values associated with each key.
+impl<'a, T: ArrayOfNumbersValue> ArrayOfNumbersSketchView<'a, T> {
+    /// Returns the number of numeric values associated with each key.
     #[inline]
     pub fn num_values(&self) -> u8 {
         self.num_values
@@ -150,7 +152,7 @@ impl<'a> ArrayOfDoublesSketchView<'a> {
     }
 
     /// Returns an iterator over retained entries.
-    pub fn iter(self) -> impl Iterator<Item = ArrayOfDoublesEntry<'a>> + 'a {
+    pub fn iter(self) -> impl Iterator<Item = ArrayOfNumbersEntry<'a, T>> + 'a {
         AodIter::new(self.keys, self.values, self.num_values, self.num_retained)
     }
 
@@ -176,17 +178,17 @@ impl<'a> ArrayOfDoublesSketchView<'a> {
     }
 }
 
-/// Mutable ArrayOfDoubles sketch for summarizing streams of keyed `f64` vectors.
+/// Mutable ArrayOfNumbers sketch for summarizing streams of keyed numeric vectors.
 ///
-/// Retained hashes and their fixed-width `f64` arrays are stored in contiguous buffers without
+/// Retained hashes and their fixed-width numeric arrays are stored in contiguous buffers without
 /// per-entry heap allocations.
 ///
 /// # Examples
 ///
 /// ```
-/// use datasketches::aod::ArrayOfDoublesSketchBuilder;
+/// use datasketches::aod::ArrayOfNumbersSketchBuilder;
 ///
-/// let mut sketch = ArrayOfDoublesSketchBuilder::default()
+/// let mut sketch = ArrayOfNumbersSketchBuilder::default()
 ///     .num_values(2)
 ///     .build()?;
 /// sketch.update("user-1", [1.0, 25.0])?;
@@ -195,16 +197,16 @@ impl<'a> ArrayOfDoublesSketchView<'a> {
 /// assert_eq!(sketch.iter().next().unwrap().values(), &[2.0, 40.0]);
 /// # Ok::<(), datasketches::error::Error>(())
 /// ```
-pub struct ArrayOfDoublesSketch {
-    table: AodHashTable,
+pub struct ArrayOfNumbersSketch<T> {
+    table: AodHashTable<T>,
     // Public emptiness tracks accepted update calls, not retained entries: sampling may screen
     // all.
     is_empty: bool,
 }
 
-impl fmt::Debug for ArrayOfDoublesSketch {
+impl<T: ArrayOfNumbersValue> fmt::Debug for ArrayOfNumbersSketch<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ArrayOfDoublesSketch")
+        f.debug_struct("ArrayOfNumbersSketch")
             .field("lg_k", &self.lg_k())
             .field("seed_hash", &self.seed_hash())
             .field("num_values", &self.num_values())
@@ -217,11 +219,11 @@ impl fmt::Debug for ArrayOfDoublesSketch {
     }
 }
 
-impl ArrayOfDoublesSketch {
-    /// Returns a read-only view accepted by ArrayOfDoubles set operations.
-    pub fn as_view(&self) -> ArrayOfDoublesSketchView<'_> {
+impl<T: ArrayOfNumbersValue> ArrayOfNumbersSketch<T> {
+    /// Returns a read-only view accepted by ArrayOfNumbers set operations.
+    pub fn as_view(&self) -> ArrayOfNumbersSketchView<'_, T> {
         let slots = self.table.slots();
-        ArrayOfDoublesSketchView {
+        ArrayOfNumbersSketchView {
             table: Some(&self.table),
             keys: &slots.keys,
             values: &slots.values,
@@ -234,7 +236,7 @@ impl ArrayOfDoublesSketch {
         }
     }
 
-    /// Updates the sketch with a key and its `f64` values.
+    /// Updates the sketch with a key and its numeric values.
     ///
     /// Values are added element by element when `key` is already retained. Updates screened out by
     /// theta leave retained summaries unchanged.
@@ -243,7 +245,7 @@ impl ArrayOfDoublesSketch {
     ///
     /// Returns `InvalidArgument` without modifying the sketch if `values.as_ref().len()` does not
     /// equal [`num_values`](Self::num_values).
-    pub fn update(&mut self, key: impl Hash, values: impl AsRef<[f64]>) -> Result<(), Error> {
+    pub fn update(&mut self, key: impl Hash, values: impl AsRef<[T]>) -> Result<(), Error> {
         let values = values.as_ref();
         check_num_values(self.table.num_values(), values.len(), "sketch update")?;
         self.is_empty = false;
@@ -252,7 +254,7 @@ impl ArrayOfDoublesSketch {
         Ok(())
     }
 
-    /// Returns the number of `f64` values associated with each key.
+    /// Returns the number of numeric values associated with each key.
     #[inline]
     pub fn num_values(&self) -> u8 {
         self.table.num_values()
@@ -323,7 +325,7 @@ impl ArrayOfDoublesSketch {
     }
 
     /// Returns an iterator over retained entries.
-    pub fn iter(&self) -> impl Iterator<Item = ArrayOfDoublesEntry<'_>> + '_ {
+    pub fn iter(&self) -> impl Iterator<Item = ArrayOfNumbersEntry<'_, T>> + '_ {
         self.table.iter()
     }
 
@@ -346,35 +348,37 @@ impl ArrayOfDoublesSketch {
     ///
     /// If `ordered` is `true`, retained entries are sorted by ascending hash.
     #[must_use = "compact returns a new compact sketch without modifying this sketch"]
-    pub fn compact(&self, ordered: bool) -> CompactArrayOfDoublesSketch {
+    pub fn compact(&self, ordered: bool) -> CompactArrayOfNumbersSketch<T> {
         if self.is_empty {
             debug_assert_eq!(self.num_retained(), 0);
-            CompactArrayOfDoublesSketch::empty(self.seed_hash(), self.num_values())
+            CompactArrayOfNumbersSketch::empty(self.seed_hash(), self.num_values())
         } else {
             self.table.to_non_empty_compact(ordered)
         }
     }
 }
 
-impl<'a> From<&'a ArrayOfDoublesSketch> for ArrayOfDoublesSketchView<'a> {
-    fn from(sketch: &'a ArrayOfDoublesSketch) -> Self {
+impl<'a, T: ArrayOfNumbersValue> From<&'a ArrayOfNumbersSketch<T>>
+    for ArrayOfNumbersSketchView<'a, T>
+{
+    fn from(sketch: &'a ArrayOfNumbersSketch<T>) -> Self {
         sketch.as_view()
     }
 }
 
-/// Compact, immutable ArrayOfDoubles sketch backed by contiguous hash and value arrays.
+/// Compact, immutable ArrayOfNumbers sketch backed by contiguous hash and value arrays.
 #[derive(Clone)]
-pub struct CompactArrayOfDoublesSketch {
+pub struct CompactArrayOfNumbersSketch<T> {
     is_empty: bool,
     is_ordered: bool,
     seed_hash: u16,
     theta: u64,
     num_values: u8,
     pub(super) hashes: Vec<u64>,
-    pub(super) values: Vec<f64>,
+    pub(super) values: Vec<T>,
 }
 
-impl CompactArrayOfDoublesSketch {
+impl<T: ArrayOfNumbersValue> CompactArrayOfNumbersSketch<T> {
     pub(super) fn empty(seed_hash: u16, num_values: u8) -> Self {
         Self {
             is_empty: true,
@@ -394,7 +398,7 @@ impl CompactArrayOfDoublesSketch {
         theta: u64,
         num_values: u8,
         hashes: Vec<u64>,
-        values: Vec<f64>,
+        values: Vec<T>,
     ) -> Self {
         debug_assert_eq!(values.len(), hashes.len() * usize::from(num_values));
         debug_assert!(!is_empty || (hashes.is_empty() && theta == MAX_THETA && is_ordered));
@@ -411,7 +415,7 @@ impl CompactArrayOfDoublesSketch {
 
     pub(super) fn compact_non_empty(
         hashes: Vec<u64>,
-        values: Vec<f64>,
+        values: Vec<T>,
         theta: u64,
         seed_hash: u16,
         num_values: u8,
@@ -450,9 +454,9 @@ impl CompactArrayOfDoublesSketch {
         )
     }
 
-    /// Returns a read-only view accepted by ArrayOfDoubles set operations.
-    pub fn as_view(&self) -> ArrayOfDoublesSketchView<'_> {
-        ArrayOfDoublesSketchView {
+    /// Returns a read-only view accepted by ArrayOfNumbers set operations.
+    pub fn as_view(&self) -> ArrayOfNumbersSketchView<'_, T> {
+        ArrayOfNumbersSketchView {
             table: None,
             keys: &self.hashes,
             values: &self.values,
@@ -465,7 +469,7 @@ impl CompactArrayOfDoublesSketch {
         }
     }
 
-    /// Returns the number of `f64` values associated with each key.
+    /// Returns the number of numeric values associated with each key.
     #[inline]
     pub fn num_values(&self) -> u8 {
         self.num_values
@@ -519,7 +523,7 @@ impl CompactArrayOfDoublesSketch {
     }
 
     /// Returns an iterator over retained entries.
-    pub fn iter(&self) -> impl Iterator<Item = ArrayOfDoublesEntry<'_>> + '_ {
+    pub fn iter(&self) -> impl Iterator<Item = ArrayOfNumbersEntry<'_, T>> + '_ {
         AodIter::new(
             &self.hashes,
             &self.values,
@@ -540,10 +544,10 @@ impl CompactArrayOfDoublesSketch {
 
     /// Returns an estimate of heap memory usage in bytes.
     pub fn estimated_size(&self) -> usize {
-        self.hashes.capacity() * size_of::<u64>() + self.values.capacity() * size_of::<f64>()
+        self.hashes.capacity() * size_of::<u64>() + self.values.capacity() * size_of::<T>()
     }
 
-    /// Serializes this sketch into the compact ArrayOfDoubles binary format.
+    /// Serializes this sketch into the compact ArrayOfNumbers binary format.
     ///
     /// The serialized data can be read by other DataSketches implementations when `num_values` is
     /// in `1..=127`. Values in `128..=255` can be read by DataSketches C++ and Go, but not by
@@ -552,10 +556,10 @@ impl CompactArrayOfDoublesSketch {
         serialize_compact(self)
     }
 
-    /// Deserializes a compact ArrayOfDoubles sketch using the default seed.
+    /// Deserializes a compact ArrayOfNumbers sketch using the default seed.
     ///
     /// Also accepts data serialized by other DataSketches implementations when encoded in the
-    /// compact ArrayOfDoubles format (`sketch_type = 3`). DataSketches Java's updatable
+    /// compact ArrayOfNumbers format (`sketch_type = 3`). DataSketches Java's updatable
     /// (`sketch_type = 2`) and union (`sketch_type = 4`) images must be compacted via
     /// `.compact()` or `.getResult()` before exchange. Images with `num_values` in `128..=255` can
     /// originate from DataSketches C++ and Go, but not from DataSketches Java.
@@ -568,10 +572,10 @@ impl CompactArrayOfDoublesSketch {
         Self::deserialize_with_seed(bytes, DEFAULT_UPDATE_SEED)
     }
 
-    /// Deserializes a compact ArrayOfDoubles sketch using `seed`.
+    /// Deserializes a compact ArrayOfNumbers sketch using `seed`.
     ///
     /// Also accepts data serialized by other DataSketches implementations when encoded in the
-    /// compact ArrayOfDoubles format (`sketch_type = 3`). DataSketches Java's updatable
+    /// compact ArrayOfNumbers format (`sketch_type = 3`). DataSketches Java's updatable
     /// (`sketch_type = 2`) and union (`sketch_type = 4`) images must be compacted via
     /// `.compact()` or `.getResult()` before exchange. Images with `num_values` in `128..=255` can
     /// originate from DataSketches C++ and Go, but not from DataSketches Java. Empty sketches use
@@ -586,9 +590,9 @@ impl CompactArrayOfDoublesSketch {
     }
 }
 
-impl fmt::Debug for CompactArrayOfDoublesSketch {
+impl<T: ArrayOfNumbersValue> fmt::Debug for CompactArrayOfNumbersSketch<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("CompactArrayOfDoublesSketch")
+        f.debug_struct("CompactArrayOfNumbersSketch")
             .field("seed_hash", &self.seed_hash)
             .field("num_values", &self.num_values)
             .field("is_empty", &self.is_empty)
@@ -601,25 +605,28 @@ impl fmt::Debug for CompactArrayOfDoublesSketch {
     }
 }
 
-impl<'a> From<&'a CompactArrayOfDoublesSketch> for ArrayOfDoublesSketchView<'a> {
-    fn from(sketch: &'a CompactArrayOfDoublesSketch) -> Self {
+impl<'a, T: ArrayOfNumbersValue> From<&'a CompactArrayOfNumbersSketch<T>>
+    for ArrayOfNumbersSketchView<'a, T>
+{
+    fn from(sketch: &'a CompactArrayOfNumbersSketch<T>) -> Self {
         sketch.as_view()
     }
 }
 
-/// Builder for [`ArrayOfDoublesSketch`].
+/// Builder for [`ArrayOfNumbersSketch`].
 ///
 /// Configuration is stored without validation and checked when [`build`](Self::build) is called.
 #[derive(Debug, Clone)]
-pub struct ArrayOfDoublesSketchBuilder {
+pub struct ArrayOfNumbersSketchBuilder<T> {
     lg_k: u8,
     resize_factor: ResizeFactor,
     sampling_probability: f32,
     seed: u64,
     num_values: u8,
+    marker: PhantomData<fn() -> T>,
 }
 
-impl Default for ArrayOfDoublesSketchBuilder {
+impl<T> Default for ArrayOfNumbersSketchBuilder<T> {
     fn default() -> Self {
         Self {
             lg_k: DEFAULT_LG_K,
@@ -627,11 +634,12 @@ impl Default for ArrayOfDoublesSketchBuilder {
             sampling_probability: 1.0,
             seed: DEFAULT_UPDATE_SEED,
             num_values: 1,
+            marker: PhantomData,
         }
     }
 }
 
-impl ArrayOfDoublesSketchBuilder {
+impl<T: ArrayOfNumbersValue> ArrayOfNumbersSketchBuilder<T> {
     /// Sets `lg_k`, the base-2 logarithm of the nominal capacity (`5..=26`).
     pub fn lg_k(mut self, lg_k: u8) -> Self {
         self.lg_k = lg_k;
@@ -656,19 +664,19 @@ impl ArrayOfDoublesSketchBuilder {
         self
     }
 
-    /// Sets the number of `f64` values associated with each key (`1..=255`).
+    /// Sets the number of numeric values associated with each key (`1..=255`).
     pub fn num_values(mut self, num_values: u8) -> Self {
         self.num_values = num_values;
         self
     }
 
-    /// Builds an [`ArrayOfDoublesSketch`].
+    /// Builds an [`ArrayOfNumbersSketch`].
     ///
     /// # Errors
     ///
     /// Returns `InvalidArgument` if `num_values` is zero, `lg_k` is outside `5..=26`,
     /// `sampling_probability` is outside `(0.0, 1.0]`, or the computed seed hash is zero.
-    pub fn build(self) -> Result<ArrayOfDoublesSketch, Error> {
+    pub fn build(self) -> Result<ArrayOfNumbersSketch<T>, Error> {
         let table = AodHashTable::new_aod(
             self.lg_k,
             self.resize_factor,
@@ -676,7 +684,7 @@ impl ArrayOfDoublesSketchBuilder {
             self.seed,
             self.num_values,
         )?;
-        Ok(ArrayOfDoublesSketch {
+        Ok(ArrayOfNumbersSketch {
             table,
             is_empty: true,
         })
