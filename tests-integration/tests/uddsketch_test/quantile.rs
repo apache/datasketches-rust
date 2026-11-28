@@ -243,12 +243,10 @@ fn unsorted_uncollapsed_stores_match_sorted_across_queries_and_subsequent_update
             descending.update(-v);
         }
         assert_eq!(descending.num_collapses(), 0);
-        let size_before_extrema = descending.estimated_size();
         assert_eq!(
             descending.quantiles(&[0.0, 1.0]).unwrap(),
             ascending.quantiles(&[0.0, 1.0]).unwrap()
         );
-        assert_eq!(descending.estimated_size(), size_before_extrema);
         assert_eq!(descending.serialize(), ascending.serialize());
         assert_eq!(
             descending.quantiles(&ranks).unwrap(),

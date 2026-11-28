@@ -310,3 +310,37 @@ fn test_invalid_bit_array_lengths_are_rejected() {
         ErrorKind::InvalidData
     );
 }
+
+fn decode_hex(input: &str) -> Vec<u8> {
+    assert_eq!(input.len() % 2, 0);
+    input
+        .as_bytes()
+        .chunks_exact(2)
+        .map(|digits| {
+            let digits = std::str::from_utf8(digits).unwrap();
+            u8::from_str_radix(digits, 16).unwrap()
+        })
+        .collect()
+}
+
+#[test]
+fn serialized_bit_layout_matches_cross_language_vector() {
+    let expected = decode_hex(concat!(
+        "04011500030000002923000000000000",
+        "03000000000000000300000000000000",
+        "0000000000000000",
+        "0008080000000000",
+        "0000000400000000",
+    ));
+    let mut filter = BloomFilterBuilder::with_size(192, 3)
+        .seed(9001)
+        .build()
+        .unwrap();
+    filter.insert(0_u64);
+
+    assert_eq!(filter.serialize(), expected);
+
+    let restored = BloomFilter::deserialize(&expected).unwrap();
+    assert_eq!(filter_snapshot(&restored), filter_snapshot(&filter));
+    assert!(restored.contains(0_u64));
+}

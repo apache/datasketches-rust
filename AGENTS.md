@@ -36,6 +36,14 @@ cargo x bench -- --test    # Smoke-test benchmarks (see benchmarks/AGENTS.md for
 
 End-to-end tests live in the standalone `tests-integration` crate, which depends on `datasketches` with every sketch feature enabled. Unit tests that require private implementation access remain next to the library code.
 
+### Test Design and Restraint
+
+- Reserve `#[cfg(test)]` modules in `datasketches/src/` for low-level mathematical, bit-packing, lookup-table, hash, or codec invariants that require private access and cannot be isolated cleanly through public APIs. Place all public-API behavior tests in `tests-integration/tests/<sketch>_test/` and all binary wire-format or serialization tests in `tests-integration/tests/serde_tests/<sketch>.rs`.
+- Test observable contracts (estimates, bounds, ranks, quantiles, extrema, retained counts, serialization round-trips, `ErrorKind`, and error atomicity), never private struct fields, internal caches or laziness flags (`OnceLock`, sorted flags, or hash slots), `Vec` capacities, internal promotion thresholds, or uncontracted `estimated_size` side effects. Refactoring internal data structures or fast paths without changing observable behavior must not break tests.
+- Validate pure performance optimizations against the existing test suite and workloads in `benchmarks/` rather than adding white-box unit tests or new integration test functions. Add a behavior assertion during performance work only when it uncovers an untested public input shape (such as unsorted or duplicate batch query slices), extending an existing integration test rather than duplicating setup.
+- Audit existing `<sketch>_test` and `serde_tests` coverage before adding tests. Fold related input cases into an existing test or parameterized loop instead of adding near-duplicate test functions.
+- Omit tests that restate literal constants or trivial formulas, check compiler-derived traits (`Clone`, `Debug`, `Send`, `Sync`), or match non-contract `Debug` or `ErrorKind::InvalidData` diagnostic message substrings (assert `ErrorKind` instead, checking message parameters only where compatibility error contracts require expected and actual values).
+
 ### Sketch Behavior Tests
 
 Non-serialization tests are grouped into one directory-style integration-test target per sketch at `tests-integration/tests/<sketch>_test/main.rs`, with operation-specific modules such as `update.rs`, `union.rs`, or `intersection.rs` alongside it. Cargo discovers these targets automatically, so adding a target requires no Cargo manifest entry or feature gate. When adding cases to an existing sketch target, place them in the appropriate module and declare any new module in that target's `main.rs`.

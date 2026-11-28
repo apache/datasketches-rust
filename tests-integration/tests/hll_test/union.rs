@@ -703,15 +703,11 @@ fn test_union_large_cardinality() {
 }
 
 #[test]
-fn test_union_invalid_lg_k_low_returns_error() {
-    let error = HllUnion::new(3).unwrap_err();
-    assert_eq!(error.kind(), ErrorKind::InvalidArgument);
-}
-
-#[test]
-fn test_union_invalid_lg_k_high_returns_error() {
-    let error = HllUnion::new(22).unwrap_err();
-    assert_eq!(error.kind(), ErrorKind::InvalidArgument);
+fn test_union_invalid_lg_k_returns_error() {
+    for lg_k in [3, 22] {
+        let error = HllUnion::new(lg_k).unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::InvalidArgument);
+    }
 }
 
 #[test]

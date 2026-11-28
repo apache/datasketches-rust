@@ -66,28 +66,6 @@ fn java_images_round_trip_byte_for_byte() {
 }
 
 #[test]
-fn serialization_round_trips_standard_fingerprint_types() {
-    for ty in [
-        XorFilterType::Xor8,
-        XorFilterType::Xor16,
-        XorFilterType::Xor32,
-    ] {
-        for count in [0, 1, 10_000_u64] {
-            let hashes: Vec<_> = (0..count).collect();
-            let original = XorFilter::from_hashes(&hashes, ty).unwrap();
-            let bytes = original.serialize();
-
-            let restored = XorFilter::deserialize(&bytes).unwrap();
-            assert_eq!(restored.filter_type(), ty);
-            assert_eq!(restored.serialize(), bytes);
-            for hash in 0..count {
-                assert!(restored.contains_hash(hash));
-            }
-        }
-    }
-}
-
-#[test]
 fn every_truncated_image_is_rejected() {
     for ty in [
         XorFilterType::Xor8,

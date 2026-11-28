@@ -93,6 +93,24 @@ fn compacted_extrema_stay_in_query_distribution() {
             sketch.cdf(&[0, 3, 6, 7], criteria).unwrap(),
             view.cdf(&[0, 3, 6, 7], criteria).unwrap()
         );
+        assert_eq!(sketch.quantile(0.0, criteria).unwrap(), Some(0));
+        assert_eq!(sketch.quantile(1.0, criteria).unwrap(), Some(7));
+        assert_eq!(
+            sketch.quantiles(&[0.0, 1.0], criteria).unwrap(),
+            Some(vec![0, 7])
+        );
+    }
+
+    sketch.reset();
+    for criteria in [SearchCriteria::Inclusive, SearchCriteria::Exclusive] {
+        assert_eq!(sketch.quantile(0.0, criteria).unwrap(), None);
+        assert_eq!(sketch.quantile(1.0, criteria).unwrap(), None);
+        assert_eq!(view.quantile(0.0, criteria).unwrap(), Some(0));
+        assert_eq!(view.quantile(1.0, criteria).unwrap(), Some(7));
+        assert_eq!(
+            view.quantiles(&[0.0, 1.0], criteria).unwrap(),
+            Some(vec![0, 7])
+        );
     }
 }
 
@@ -247,40 +265,6 @@ fn decode_kll_i64(min_item: i64, max_item: i64, levels: &[&[i64]]) -> KllSketch<
 }
 
 #[test]
-fn quantile_endpoints_preserve_extrema_after_compaction() {
-    let mut sketch = KllSketch::<i64>::new(8).unwrap();
-    for item in 0..8 {
-        sketch.update(item);
-    }
-    // Compact an even run with distinct extrema before inserting an interior item.
-    // Either sampling parity discards one of the two endpoints.
-    sketch.update(3);
-    assert!(sketch.is_estimation_mode());
-    let view = sketch.sorted_view();
-
-    for criteria in [SearchCriteria::Inclusive, SearchCriteria::Exclusive] {
-        assert_eq!(sketch.quantile(0.0, criteria).unwrap(), Some(0));
-        assert_eq!(sketch.quantile(1.0, criteria).unwrap(), Some(7));
-        assert_eq!(
-            sketch.quantiles(&[0.0, 1.0], criteria).unwrap(),
-            Some(vec![0, 7])
-        );
-    }
-
-    sketch.reset();
-    for criteria in [SearchCriteria::Inclusive, SearchCriteria::Exclusive] {
-        assert_eq!(sketch.quantile(0.0, criteria).unwrap(), None);
-        assert_eq!(sketch.quantile(1.0, criteria).unwrap(), None);
-        assert_eq!(view.quantile(0.0, criteria).unwrap(), Some(0));
-        assert_eq!(view.quantile(1.0, criteria).unwrap(), Some(7));
-        assert_eq!(
-            view.quantiles(&[0.0, 1.0], criteria).unwrap(),
-            Some(vec![0, 7])
-        );
-    }
-}
-
-#[test]
 fn quantile_endpoints_with_large_stream_weight() {
     let mut sketch = KllSketch::<i64>::new(8).unwrap();
     sketch.update(0);
@@ -431,40 +415,30 @@ fn exact_mode_queries_match_the_stream() {
 }
 
 #[test]
-fn estimation_mode_queries_preserve_deterministic_invariants() {
-    let mut sketch = KllSketch::<i64>::new(64).unwrap();
-    for item in 0..10_000 {
-        sketch.update(item);
-    }
-
-    let mut previous_rank = 0.0;
-    for item in (0..10_000).step_by(100) {
-        let rank = sketch.rank(&item, SearchCriteria::Inclusive).unwrap();
-        assert!(rank >= previous_rank);
-        assert!((0.0..=1.0).contains(&rank));
-        previous_rank = rank;
-    }
-    assert_eq!(sketch.min_item(), Some(&0));
-    assert_eq!(sketch.max_item(), Some(&9_999));
-    assert!(sketch.normalized_rank_error() < sketch.normalized_pmf_error());
-}
-
-#[test]
 fn rank_cdf_and_pmf_are_consistent() {
     let mut sketch = KllSketch::<i64>::new(64).unwrap();
     for item in 0..10_000 {
         sketch.update(item);
     }
+    assert_eq!(sketch.min_item(), Some(&0));
+    assert_eq!(sketch.max_item(), Some(&9_999));
+    assert!(sketch.normalized_rank_error() < sketch.normalized_pmf_error());
+
     let split_points: Vec<_> = (100..10_000).step_by(100).collect();
 
     for criteria in [SearchCriteria::Inclusive, SearchCriteria::Exclusive] {
         let cdf = sketch.cdf(&split_points, criteria).unwrap().unwrap();
         let pmf = sketch.pmf(&split_points, criteria).unwrap().unwrap();
         let mut subtotal = 0.0;
+        let mut previous_rank = 0.0;
         for (index, split_point) in split_points.iter().enumerate() {
             subtotal += pmf[index];
             assert!((cdf[index] - subtotal).abs() <= NUMERIC_NOISE_TOLERANCE);
-            assert_eq!(cdf[index], sketch.rank(split_point, criteria).unwrap());
+            let rank = sketch.rank(split_point, criteria).unwrap();
+            assert_eq!(cdf[index], rank);
+            assert!(rank >= previous_rank);
+            assert!((0.0..=1.0).contains(&rank));
+            previous_rank = rank;
         }
         assert!((pmf.iter().sum::<f64>() - 1.0).abs() <= NUMERIC_NOISE_TOLERANCE);
     }

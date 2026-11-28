@@ -104,30 +104,10 @@ fn test_items_borrowed_key_updates_and_queries() {
     assert_eq!(sketch.estimate("beta"), 3);
     assert_eq!(sketch.estimate("ignored"), 0);
     assert_eq!(sketch.estimate("missing"), 0);
+    assert_eq!(sketch.maximum_error(), 0);
 
     let owned = "alpha".to_string();
     assert_eq!(sketch.estimate(&owned), 2);
-}
-
-#[test]
-fn test_longs_several_items_no_resize_no_purge() {
-    let mut sketch: FrequentItemsSketch<i64> = FrequentItemsSketch::new(8).unwrap();
-    sketch.update(1);
-    sketch.update(2);
-    sketch.update(3);
-    sketch.update(4);
-    sketch.update(2);
-    sketch.update(3);
-    sketch.update(2);
-
-    assert!(!sketch.is_empty());
-    assert_eq!(sketch.total_weight(), 7);
-    assert_eq!(sketch.num_retained(), 4);
-    assert_eq!(sketch.estimate(&1), 1);
-    assert_eq!(sketch.estimate(&2), 3);
-    assert_eq!(sketch.estimate(&3), 2);
-    assert_eq!(sketch.estimate(&4), 1);
-    assert_eq!(sketch.maximum_error(), 0);
 }
 
 #[test]
@@ -165,34 +145,6 @@ fn test_items_several_items_no_resize_no_purge() {
     assert!(sketch.is_empty());
     assert_eq!(sketch.num_retained(), 0);
     assert_eq!(sketch.total_weight(), 0);
-}
-
-#[test]
-fn test_items_several_items_with_resize_no_purge() {
-    let mut sketch = FrequentItemsSketch::new(16).unwrap();
-    let a = "a".to_string();
-    let b = "b".to_string();
-    let c = "c".to_string();
-    let d = "d".to_string();
-    sketch.update(a.clone());
-    sketch.update(b.clone());
-    sketch.update(c.clone());
-    sketch.update(d.clone());
-    sketch.update(b.clone());
-    sketch.update(c.clone());
-    sketch.update(b.clone());
-    for item in ["e", "f", "g", "h", "i", "j", "k", "l"] {
-        sketch.update(item.to_string());
-    }
-
-    assert!(!sketch.is_empty());
-    assert_eq!(sketch.total_weight(), 15);
-    assert_eq!(sketch.num_retained(), 12);
-    assert_eq!(sketch.estimate(&a), 1);
-    assert_eq!(sketch.estimate(&b), 3);
-    assert_eq!(sketch.estimate(&c), 2);
-    assert_eq!(sketch.estimate(&d), 1);
-    assert_eq!(sketch.maximum_error(), 0);
 }
 
 #[test]
@@ -377,30 +329,11 @@ fn test_merge_weight_overflow_preserves_state() {
 }
 
 #[test]
-fn test_longs_reset() {
-    let mut sketch: FrequentItemsSketch<i64> = FrequentItemsSketch::new(8).unwrap();
-    sketch.update_with_weight(1, 3);
-    sketch.update_with_weight(2, 2);
-    sketch.reset();
-
-    assert!(sketch.is_empty());
-    assert_eq!(sketch.total_weight(), 0);
-    assert_eq!(sketch.num_retained(), 0);
-    assert_eq!(sketch.lg_max_map_size(), 3);
-}
-
-#[test]
 fn test_invalid_map_size_returns_error() {
-    for max_map_size in [1, 2, 4, 6] {
+    for max_map_size in [1, 2, 4, 6, 1 << 31] {
         let error = FrequentItemsSketch::<i64>::new(max_map_size).unwrap_err();
         assert_eq!(error.kind(), ErrorKind::InvalidArgument);
     }
-}
-
-#[test]
-fn test_map_size_above_cross_language_limit_returns_error() {
-    let error = FrequentItemsSketch::<i64>::new(1 << 31).unwrap_err();
-    assert_eq!(error.kind(), ErrorKind::InvalidArgument);
 }
 
 #[derive(Debug, PartialEq, Eq)]

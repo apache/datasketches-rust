@@ -470,3 +470,34 @@ fn direct_union_serialization_matches_compact_sketch_path() {
         }
     }
 }
+
+#[test]
+fn compact_round_trip_preserves_values() {
+    let mut sketch = ArrayOfDoublesSketchBuilder::default()
+        .num_values(3)
+        .build()
+        .unwrap();
+    for i in 0..100 {
+        sketch
+            .update(i, [i as f64, (i * 2) as f64, (i * 3) as f64])
+            .unwrap();
+    }
+    for ordered in [false, true] {
+        let bytes = sketch.compact(ordered).serialize();
+        let restored = CompactArrayOfDoublesSketch::deserialize(&bytes).unwrap();
+        assert_eq!(restored.is_ordered(), ordered);
+        assert_eq!(restored.serialize(), bytes);
+
+        let mut expected: Vec<_> = sketch
+            .iter()
+            .map(|entry| (entry.hash(), entry.values().to_vec()))
+            .collect();
+        expected.sort_unstable_by_key(|entry| entry.0);
+        let mut actual: Vec<_> = restored
+            .iter()
+            .map(|entry| (entry.hash(), entry.values().to_vec()))
+            .collect();
+        actual.sort_unstable_by_key(|entry| entry.0);
+        assert_eq!(actual, expected);
+    }
+}

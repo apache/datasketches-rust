@@ -148,29 +148,6 @@ fn compact_and_view_preserve_entries_and_state() {
 }
 
 #[test]
-fn compact_round_trip_preserves_values() {
-    let sketch = sketch_with_range(0, 100, 3);
-    for ordered in [false, true] {
-        let bytes = sketch.compact(ordered).serialize();
-        let restored = CompactArrayOfDoublesSketch::deserialize(&bytes).unwrap();
-        assert_eq!(restored.is_ordered(), ordered);
-        assert_eq!(restored.serialize(), bytes);
-
-        let mut expected: Vec<_> = sketch
-            .iter()
-            .map(|entry| (entry.hash(), entry.values().to_vec()))
-            .collect();
-        expected.sort_unstable_by_key(|entry| entry.0);
-        let mut actual: Vec<_> = restored
-            .iter()
-            .map(|entry| (entry.hash(), entry.values().to_vec()))
-            .collect();
-        actual.sort_unstable_by_key(|entry| entry.0);
-        assert_eq!(actual, expected);
-    }
-}
-
-#[test]
 fn sampled_non_empty_sketch_without_entries_is_not_empty() {
     let screened_key = (0_u64..)
         .find(|key| {

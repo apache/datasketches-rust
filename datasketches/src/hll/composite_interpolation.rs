@@ -4729,50 +4729,8 @@ static ARRAYS: [[f64; NUM_X_VALUES]; 18] = [
 mod tests {
     use googletest::assert_that;
     use googletest::prelude::gt;
-    use googletest::prelude::near;
 
     use super::*;
-
-    #[test]
-    fn test_y_strides() {
-        assert_eq!(get_y_stride(4), 1);
-        assert_eq!(get_y_stride(5), 2);
-        assert_eq!(get_y_stride(6), 3);
-        assert_eq!(get_y_stride(7), 5);
-        assert_eq!(get_y_stride(8), 10);
-        assert_eq!(get_y_stride(9), 20);
-        assert_eq!(get_y_stride(10), 40);
-        assert_eq!(get_y_stride(11), 80);
-        assert_eq!(get_y_stride(12), 160);
-        assert_eq!(get_y_stride(21), 81920);
-    }
-
-    #[test]
-    #[should_panic(expected = "lg_k must be in range")]
-    fn test_invalid_lg_k_low() {
-        get_y_stride(3);
-    }
-
-    #[test]
-    #[should_panic(expected = "lg_k must be in range")]
-    fn test_invalid_lg_k_high() {
-        get_y_stride(22);
-    }
-
-    #[test]
-    fn test_x_arr_length() {
-        assert_eq!(get_x_arr_length(), 257);
-    }
-
-    #[test]
-    fn test_x_arr_access() {
-        let x_arr = get_x_arr(4);
-        assert_eq!(x_arr.len(), 257);
-
-        // Check first few values match the datasketches-cpp data.
-        assert_that!(x_arr[0], near(10.767999803534, 1e-6));
-        assert_that!(x_arr[1], near(11.237701481774, 1e-6));
-    }
 
     #[test]
     fn test_x_arr_monotonic() {

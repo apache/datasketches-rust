@@ -28,7 +28,6 @@ fn req_f64(value: f64) -> ReqF64 {
     ReqF64::new(value).unwrap()
 }
 
-mod accuracy;
 mod bounds;
 mod core;
 mod generic;

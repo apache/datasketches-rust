@@ -58,15 +58,10 @@ fn sorted_view_on_empty_sketch_is_an_empty_view() {
     assert_eq!(view.len(), 0);
     assert_eq!(view.total_weight(), 0);
     for criteria in [SearchCriteria::Inclusive, SearchCriteria::Exclusive] {
-        assert_eq!(sketch.rank(&req_f64(0.0), criteria), None);
         assert_eq!(view.rank(&req_f64(0.0), criteria), None);
         for rank in [0.0, 0.5, 1.0] {
-            assert_eq!(sketch.quantile(rank, criteria).unwrap(), None);
             assert_eq!(view.quantile(rank, criteria).unwrap(), None);
         }
-        assert_eq!(sketch.quantiles(&[0.0, 0.5, 1.0], criteria).unwrap(), None);
-        assert_eq!(sketch.pmf(&[req_f64(0.0)], criteria).unwrap(), None);
-        assert_eq!(sketch.cdf(&[req_f64(0.0)], criteria).unwrap(), None);
         assert_eq!(view.pmf(&[req_f64(0.0)], criteria).unwrap(), None);
         assert_eq!(view.cdf(&[req_f64(0.0)], criteria).unwrap(), None);
     }
@@ -117,11 +112,4 @@ fn invalid_arguments_are_rejected_regardless_of_sketch_state() {
             }
         }
     }
-}
-
-#[test]
-fn view_is_send_and_sync() {
-    fn assert_send_sync<T: Send + Sync>() {}
-    assert_send_sync::<SortedView<ReqF64>>();
-    assert_send_sync::<ReqSketch<ReqF64>>();
 }

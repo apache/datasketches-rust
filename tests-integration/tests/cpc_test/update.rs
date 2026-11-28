@@ -17,6 +17,7 @@
 
 use datasketches::common::NumStdDev;
 use datasketches::cpc::CpcSketch;
+use datasketches::error::ErrorKind;
 use googletest::assert_that;
 use googletest::prelude::ge;
 use googletest::prelude::le;
@@ -56,4 +57,12 @@ fn test_many_values() {
     );
     assert_that!(sketch.estimate(), ge(sketch.lower_bound(NumStdDev::One)));
     assert_that!(sketch.estimate(), le(sketch.upper_bound(NumStdDev::One)));
+}
+
+#[test]
+fn test_invalid_lg_k_returns_error() {
+    for lg_k in [3, 27] {
+        let error = CpcSketch::new(lg_k).unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::InvalidArgument);
+    }
 }

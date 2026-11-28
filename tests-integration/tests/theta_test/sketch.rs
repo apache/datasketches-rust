@@ -250,17 +250,21 @@ fn test_iterator() {
 
 #[test]
 fn test_bounds_empty_sketch() {
-    let sketch = ThetaSketchBuilder::default().lg_k(12).build().unwrap();
-    assert!(sketch.is_empty());
-    assert!(!sketch.is_estimation_mode());
-    assert_eq!(sketch.theta(), 1.0);
-    assert_eq!(sketch.estimate(), 0.0);
-    assert_eq!(sketch.lower_bound(NumStdDev::One), 0.0);
-    assert_eq!(sketch.upper_bound(NumStdDev::One), 0.0);
-    assert_eq!(sketch.lower_bound(NumStdDev::Two), 0.0);
-    assert_eq!(sketch.upper_bound(NumStdDev::Two), 0.0);
-    assert_eq!(sketch.lower_bound(NumStdDev::Three), 0.0);
-    assert_eq!(sketch.upper_bound(NumStdDev::Three), 0.0);
+    for sampling_probability in [1.0, 0.1] {
+        let sketch = ThetaSketchBuilder::default()
+            .lg_k(12)
+            .sampling_probability(sampling_probability)
+            .build()
+            .unwrap();
+        assert!(sketch.is_empty());
+        assert!(!sketch.is_estimation_mode());
+        assert_eq!(sketch.theta(), 1.0);
+        assert_eq!(sketch.estimate(), 0.0);
+        for num_std_dev in [NumStdDev::One, NumStdDev::Two, NumStdDev::Three] {
+            assert_eq!(sketch.lower_bound(num_std_dev), 0.0);
+            assert_eq!(sketch.upper_bound(num_std_dev), 0.0);
+        }
+    }
 }
 
 #[test]
@@ -336,21 +340,6 @@ fn test_bounds_with_sampling() {
 
     assert_that!(estimate, ge(lower_bound));
     assert_that!(estimate, le(upper_bound));
-}
-
-#[test]
-fn test_bounds_empty_with_sampling() {
-    let sketch = ThetaSketchBuilder::default()
-        .lg_k(12)
-        .sampling_probability(0.1)
-        .build()
-        .unwrap();
-
-    assert!(sketch.is_empty());
-    assert!(!sketch.is_estimation_mode());
-    assert_eq!(sketch.estimate(), 0.0);
-    assert_eq!(sketch.lower_bound(NumStdDev::One), 0.0);
-    assert_eq!(sketch.upper_bound(NumStdDev::One), 0.0);
 }
 
 #[test]

@@ -103,60 +103,63 @@ fn test_exactly_equal() {
 #[test]
 fn test_same_sketch_exact_mode() {
     let sketch = sketch_with_range(0, 1000);
+    let compact = sketch.compact(true);
 
     let operator = ThetaJaccardSimilarity::default();
-    let jaccard = operator.compute(&sketch, &sketch).unwrap();
-    assert_jaccard_exact(jaccard, 1.0);
-
-    let jaccard = operator
-        .compute(&sketch.compact(true), &sketch.compact(true))
-        .unwrap();
-    assert_jaccard_exact(jaccard, 1.0);
+    for jaccard in [
+        operator.compute(&sketch, &sketch).unwrap(),
+        operator.compute(&compact, &compact).unwrap(),
+    ] {
+        assert_jaccard_exact(jaccard, 1.0);
+    }
 }
 
 #[test]
 fn test_full_overlap_exact_mode() {
     let sketch_a = sketch_with_range(0, 1000);
     let sketch_b = sketch_with_range(0, 1000);
+    let compact_a = sketch_a.compact(true);
+    let compact_b = sketch_b.compact(true);
 
     let operator = ThetaJaccardSimilarity::default();
-    let jaccard = operator.compute(&sketch_a, &sketch_b).unwrap();
-    assert_jaccard_exact(jaccard, 1.0);
-
-    let jaccard = operator
-        .compute(&sketch_a.compact(true), &sketch_b.compact(true))
-        .unwrap();
-    assert_jaccard_exact(jaccard, 1.0);
+    for jaccard in [
+        operator.compute(&sketch_a, &sketch_b).unwrap(),
+        operator.compute(&compact_a, &compact_b).unwrap(),
+    ] {
+        assert_jaccard_exact(jaccard, 1.0);
+    }
 }
 
 #[test]
 fn test_disjoint_exact_mode() {
     let sketch_a = sketch_with_range(0, 1000);
     let sketch_b = sketch_with_range(1000, 1000);
+    let compact_a = sketch_a.compact(true);
+    let compact_b = sketch_b.compact(true);
 
     let operator = ThetaJaccardSimilarity::default();
-    let jaccard = operator.compute(&sketch_a, &sketch_b).unwrap();
-    assert_jaccard_exact(jaccard, 0.0);
-
-    let jaccard = operator
-        .compute(&sketch_a.compact(true), &sketch_b.compact(true))
-        .unwrap();
-    assert_jaccard_exact(jaccard, 0.0);
+    for jaccard in [
+        operator.compute(&sketch_a, &sketch_b).unwrap(),
+        operator.compute(&compact_a, &compact_b).unwrap(),
+    ] {
+        assert_jaccard_exact(jaccard, 0.0);
+    }
 }
 
 #[test]
 fn test_half_overlap_estimation_mode() {
     let sketch_a = sketch_with_range(0, 10000);
     let sketch_b = sketch_with_range(5000, 10000);
+    let compact_a = sketch_a.compact(true);
+    let compact_b = sketch_b.compact(true);
 
     let operator = ThetaJaccardSimilarity::default();
-    let jaccard = operator.compute(&sketch_a, &sketch_b).unwrap();
-    assert_jaccard_estimate(jaccard, 0.33);
-
-    let jaccard = operator
-        .compute(&sketch_a.compact(true), &sketch_b.compact(true))
-        .unwrap();
-    assert_jaccard_estimate(jaccard, 0.33);
+    for jaccard in [
+        operator.compute(&sketch_a, &sketch_b).unwrap(),
+        operator.compute(&compact_a, &compact_b).unwrap(),
+    ] {
+        assert_jaccard_estimate(jaccard, 0.33);
+    }
 }
 
 #[test]
@@ -164,15 +167,16 @@ fn test_half_overlap_estimation_mode_custom_seed() {
     let seed = 123;
     let sketch_a = sketch_with_range_and_seed(0, 10000, seed);
     let sketch_b = sketch_with_range_and_seed(5000, 10000, seed);
+    let compact_a = sketch_a.compact(true);
+    let compact_b = sketch_b.compact(true);
 
     let operator = ThetaJaccardSimilarity::with_seed(seed).unwrap();
-    let jaccard = operator.compute(&sketch_a, &sketch_b).unwrap();
-    assert_jaccard_estimate(jaccard, 0.33);
-
-    let jaccard = operator
-        .compute(&sketch_a.compact(true), &sketch_b.compact(true))
-        .unwrap();
-    assert_jaccard_estimate(jaccard, 0.33);
+    for jaccard in [
+        operator.compute(&sketch_a, &sketch_b).unwrap(),
+        operator.compute(&compact_a, &compact_b).unwrap(),
+    ] {
+        assert_jaccard_estimate(jaccard, 0.33);
+    }
 }
 
 #[test]

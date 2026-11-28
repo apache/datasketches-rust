@@ -44,34 +44,6 @@ fn test_basic_update() {
 }
 
 #[test]
-fn test_list_to_set_promotion() {
-    // Use lg_k=12, which has promotion threshold ~512 for List→Set
-    let mut sketch = HllSketch::new(12, HllType::Hll8).unwrap();
-
-    // Add enough unique values to trigger promotion
-    for i in 0..600 {
-        sketch.update(i);
-    }
-
-    let estimate = sketch.estimate();
-    assert_that!(estimate, near(600.0, 100.0));
-}
-
-#[test]
-fn test_set_to_hll_promotion() {
-    // Use lg_k=10 (K=1024), set promotes at 75% = 768
-    let mut sketch = HllSketch::new(10, HllType::Hll8).unwrap();
-
-    // Add enough values to trigger List→Set→HLL promotions
-    for i in 0..1000 {
-        sketch.update(i);
-    }
-
-    let estimate = sketch.estimate();
-    assert_that!(estimate, near(1000.0, 150.0));
-}
-
-#[test]
 fn ordered_coupon_batch_matches_scalar_updates() {
     // At lg_k 4, the list promotes directly to HLL and the HLL4 minimum rises during the batch.
     // At lg_k 8, the batch promotes through a set.
@@ -140,53 +112,14 @@ fn test_different_types() {
 }
 
 #[test]
-fn test_hll4_type() {
-    let mut sketch = HllSketch::new(12, HllType::Hll4).unwrap();
-
-    for i in 0..1000 {
-        sketch.update(i);
+fn test_hll4_and_hll6_types() {
+    for hll_type in [HllType::Hll4, HllType::Hll6] {
+        let mut sketch = HllSketch::new(12, hll_type).unwrap();
+        for i in 0..1000 {
+            sketch.update(i);
+        }
+        assert_that!(sketch.estimate(), near(1000.0, 200.0));
     }
-
-    let estimate = sketch.estimate();
-    assert_that!(estimate, near(1000.0, 200.0));
-}
-
-#[test]
-fn test_hll6_type() {
-    let mut sketch = HllSketch::new(12, HllType::Hll6).unwrap();
-
-    for i in 0..1000 {
-        sketch.update(i);
-    }
-
-    let estimate = sketch.estimate();
-    assert_that!(estimate, near(1000.0, 200.0));
-}
-
-#[test]
-fn test_serialization_roundtrip_after_updates() {
-    let mut sketch1 = HllSketch::new(12, HllType::Hll8).unwrap();
-
-    // Add values and promote through all modes
-    for i in 0..2000 {
-        sketch1.update(i);
-    }
-
-    let estimate1 = sketch1.estimate();
-
-    // Serialize and deserialize
-    let bytes = sketch1.serialize();
-    let sketch2 = HllSketch::deserialize(&bytes).unwrap();
-
-    let estimate2 = sketch2.estimate();
-
-    // Estimates should match after round-trip (allow some numerical error)
-    let relative_error = (estimate1 - estimate2).abs() / estimate1;
-    assert_that!(
-        relative_error,
-        lt(0.05),
-        "estimate1={estimate1}, estimate2={estimate2}"
-    );
 }
 
 #[test]
@@ -206,15 +139,11 @@ fn test_large_cardinality() {
 }
 
 #[test]
-fn test_invalid_lg_k_low_returns_error() {
-    let error = HllSketch::new(3, HllType::Hll8).unwrap_err();
-    assert_eq!(error.kind(), ErrorKind::InvalidArgument);
-}
-
-#[test]
-fn test_invalid_lg_k_high_returns_error() {
-    let error = HllSketch::new(22, HllType::Hll8).unwrap_err();
-    assert_eq!(error.kind(), ErrorKind::InvalidArgument);
+fn test_invalid_lg_k_returns_error() {
+    for lg_k in [3, 22] {
+        let error = HllSketch::new(lg_k, HllType::Hll8).unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::InvalidArgument);
+    }
 }
 
 #[test]

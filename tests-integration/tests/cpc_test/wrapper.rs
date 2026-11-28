@@ -86,10 +86,7 @@ fn test_is_compressed() {
     let mut bytes = sketch.serialize();
     bytes[5] &= (-3i8) as u8; // clear compressed flag
     let err = CpcWrapper::new(&bytes).unwrap_err();
-    assert_that!(
-        err.message(),
-        contains_substring("only compressed sketches are supported")
-    );
+    assert_that!(err.kind(), eq(ErrorKind::InvalidData));
 }
 
 #[test]

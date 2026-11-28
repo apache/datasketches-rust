@@ -559,41 +559,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn compact_preserves_level_capacity_and_num_retained_invariant() {
-        let mut sketch = DensitySketch::<f64>::new(4, 2).unwrap();
-        for i in 0..20 {
-            sketch.update(&[f64::from(i), f64::from(i) * 0.5]).unwrap();
-            let dim = sketch.dim() as usize;
-            let actual_retained: usize = sketch.levels.iter().map(|l| l.coords.len() / dim).sum();
-            assert_eq!(sketch.num_retained, actual_retained);
-        }
-        assert!(sketch.levels[0].coords.capacity() >= 8);
-
-        let cap_before_reset = sketch.levels[0].coords.capacity();
-        sketch.reset();
-        assert_eq!(sketch.levels.len(), 1);
-        assert_eq!(sketch.levels[0].coords.capacity(), cap_before_reset);
-    }
-
-    #[test]
-    fn compact_picks_lowest_full_level() {
-        let levels = vec![
-            Level {
-                coords: vec![1.0, 2.0, 3.0, 4.0],
-            },
-            Level {
-                coords: vec![5.0, 6.0, 7.0, 8.0],
-            },
-        ];
-        let mut sketch = DensitySketch::from_parts(2, 1, GaussianKernel, 8, 12, levels);
-        sketch.compact();
-        // Level 0 was compacted into level 1, leaving level 0 empty and level 1 populated.
-        assert!(sketch.levels[0].coords.is_empty());
-        assert!(!sketch.levels[1].coords.is_empty());
-        assert_eq!(sketch.levels.len(), 2);
-    }
-
-    #[test]
     #[should_panic(expected = "density sketch exceeded 64 levels")]
     fn compact_panics_when_levels_exceed_max_levels() {
         let mut levels = vec![Level::default(); MAX_LEVELS];
@@ -613,26 +578,6 @@ mod tests {
             fn evaluate(&self, _a: &[f64], _b: &[f64]) -> f64 {
                 0.0
             }
-        }
-
-        // For k = 2, merging 2 distant points triggers compaction of m = 2 items:
-        // kept must be strictly in 1..=1 (always 1).
-        for _ in 0..128 {
-            let mut left = DensitySketch::<f64, _>::with_kernel(2, 1, ZeroKernel).unwrap();
-            let mut right = DensitySketch::<f64, _>::with_kernel(2, 1, ZeroKernel).unwrap();
-            right.update(&[0.0]).unwrap();
-            right.update(&[33.6875]).unwrap();
-
-            left.merge(&right).unwrap();
-            assert_eq!(left.num_retained(), 1);
-            assert_eq!(left.levels.len(), 2);
-            assert_eq!(left.levels[1].coords.len(), 1);
-
-            let bytes = left.serialize();
-            let decoded =
-                DensitySketch::<f64, _>::deserialize_with_kernel(&bytes, ZeroKernel).unwrap();
-            assert_eq!(decoded.total_weight(), left.total_weight());
-            assert_eq!(decoded.num_retained(), left.num_retained());
         }
 
         // For m = 4 (k = 4), compact_level must always keep 1..=3 items with E[kept] = 2.0.

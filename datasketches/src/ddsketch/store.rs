@@ -1123,49 +1123,6 @@ fn centered_offset(min_index: i32, max_index: i32, len: usize) -> i32 {
 mod tests {
     use super::*;
 
-    fn assert_dense_invariants(store: &Store) {
-        let Store::Dense(dense) = store else {
-            return;
-        };
-        assert_eq!(dense.bins.capacity(), dense.bins.len());
-        let nonzero: Vec<u64> = dense.bins.iter().copied().filter(|&w| w != 0).collect();
-        assert_eq!(dense.occupied, nonzero.len());
-        assert_eq!(dense.count, nonzero.iter().sum::<u64>());
-        if dense.count > 0 {
-            assert!(dense.min_index <= dense.max_index);
-            assert!(dense.bins[dense.pos(dense.min_index)] > 0);
-            assert!(dense.bins[dense.pos(dense.max_index)] > 0);
-        } else {
-            assert!(dense.bins.iter().all(|&w| w == 0));
-        }
-    }
-
-    #[test]
-    fn collapsing_lowest_and_highest_preserve_dense_invariants() {
-        for kind in [
-            StoreKind::CollapsingLowestDense { max_num_bins: 4 },
-            StoreKind::CollapsingHighestDense { max_num_bins: 4 },
-            StoreKind::UnboundedDense,
-        ] {
-            let mut store = Store::new(kind).unwrap();
-            for idx in [10, 12, 0, -5, 100, -100, 50] {
-                store.add(idx, 2);
-                assert_dense_invariants(&store);
-            }
-            assert_eq!(store.total_weight(), 14);
-
-            let forward: Vec<_> = store.iter_asc().collect();
-            let mut backward: Vec<_> = store.iter_asc().rev().collect();
-            backward.reverse();
-            assert_eq!(forward, backward);
-            assert_eq!(forward.len(), store.num_occupied());
-
-            store.reset();
-            assert_dense_invariants(&store);
-            assert!(store.is_empty());
-        }
-    }
-
     #[test]
     fn extreme_i32_indices_do_not_overflow_offset_or_span() {
         assert_eq!(span_u64(i32::MIN, i32::MAX), 1_u64 << 32);
@@ -1191,72 +1148,15 @@ mod tests {
         ] {
             let mut store = Store::new(kind).unwrap();
             store.add(i32::MIN, 1);
-            assert_dense_invariants(&store);
             store.add(i32::MAX, 3);
-            assert_dense_invariants(&store);
             assert_eq!(store.total_weight(), 4);
 
             // Reverse order (`i32::MAX` first, then `i32::MIN`) exercises the opposite collapse
             // branch over the full `2^32` index span.
             let mut reverse = Store::new(kind).unwrap();
             reverse.add(i32::MAX, 3);
-            assert_dense_invariants(&reverse);
             reverse.add(i32::MIN, 1);
-            assert_dense_invariants(&reverse);
             assert_eq!(reverse.total_weight(), 4);
-        }
-    }
-
-    #[test]
-    fn pre_windowed_bounds_and_cross_store_merge_match_incremental_updates() {
-        let samples = [
-            (-500, 3_u64),
-            (-120, 1),
-            (-4, 5),
-            (0, 2),
-            (7, 4),
-            (19, 1),
-            (250, 6),
-        ];
-        let bounds = Some((-500, 250));
-
-        let mut wide_sparse = Store::new(StoreKind::Sparse).unwrap();
-        let mut wide_unbounded = Store::new(StoreKind::UnboundedDense).unwrap();
-        for &(idx, w) in &samples {
-            wide_sparse.add(idx, w);
-            wide_unbounded.add(idx, w);
-        }
-
-        for kind in [
-            StoreKind::CollapsingLowestDense { max_num_bins: 8 },
-            StoreKind::CollapsingHighestDense { max_num_bins: 8 },
-            StoreKind::UnboundedDense,
-            StoreKind::Sparse,
-        ] {
-            let mut incremental = Store::new(kind).unwrap();
-            let mut pre_windowed = Store::with_wire_bounds(kind, bounds).unwrap();
-            for &(idx, w) in &samples {
-                incremental.add(idx, w);
-                pre_windowed.add_in_bounds(idx, w);
-            }
-            assert_dense_invariants(&incremental);
-            assert_dense_invariants(&pre_windowed);
-            assert_eq!(pre_windowed.is_collapsed(), incremental.is_collapsed());
-            assert_eq!(
-                pre_windowed.iter_asc().collect::<Vec<_>>(),
-                incremental.iter_asc().collect::<Vec<_>>()
-            );
-
-            for src in [&wide_sparse, &wide_unbounded] {
-                let mut merged = Store::new(kind).unwrap();
-                merged.merge_from(src);
-                assert_dense_invariants(&merged);
-                assert_eq!(merged.is_collapsed(), incremental.is_collapsed());
-                assert_eq!(
-                    merged.iter_asc().collect::<Vec<_>>(),
-                    incremental.iter_asc().collect::<Vec<_>>()
-                );
-            }
         }
     }
 }

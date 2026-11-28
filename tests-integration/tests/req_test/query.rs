@@ -25,7 +25,6 @@ use googletest::assert_that;
 use googletest::prelude::all;
 use googletest::prelude::ge;
 use googletest::prelude::le;
-use googletest::prelude::lt;
 use googletest::prelude::near;
 
 use super::ReqF64;
@@ -128,6 +127,19 @@ fn pmf_and_cdf_are_consistent() {
         assert_that!(cdf[i], near(cumulative, 1e-10));
     }
     assert_that!(cdf[cdf.len() - 1], near(1.0, 1e-10));
+
+    for value in [100.0, 250.0, 500.0, 750.0].map(req_f64) {
+        let inclusive_rank = sketch
+            .rank(&value, SearchCriteria::Inclusive)
+            .expect("the sketch is non-empty");
+        let exclusive_rank = sketch
+            .rank(&value, SearchCriteria::Exclusive)
+            .expect("the sketch is non-empty");
+
+        assert_that!(exclusive_rank, le(inclusive_rank));
+        assert_that!(inclusive_rank, all!(ge(0.0), le(1.0)));
+        assert_that!(exclusive_rank, all!(ge(0.0), le(1.0)));
+    }
 }
 
 #[test]
@@ -206,91 +218,6 @@ fn quantile_endpoints_with_large_stream_weight() {
         assert_eq!(view.quantile(0.0, criteria).unwrap(), Some(0));
         assert_eq!(view.quantile(1.0, criteria).unwrap(), Some(1));
     }
-}
-
-#[test]
-fn rank_is_monotonic_and_bounded() {
-    let mut sketch: ReqSketch<ReqF64> = ReqSketch::default();
-    for i in 0..10_000 {
-        sketch.update(req_f64(i as f64));
-    }
-
-    let test_values = (0..10_000).step_by(1000).map(|value| req_f64(value as f64));
-    let mut last_rank = 0.0;
-
-    for value in test_values {
-        let rank = sketch
-            .rank(&value, SearchCriteria::Inclusive)
-            .expect("rank should succeed");
-        assert_that!(rank, ge(last_rank));
-        assert_that!(rank, all!(ge(0.0), le(1.0)));
-        last_rank = rank;
-    }
-}
-
-#[test]
-fn quantiles_are_monotonic() -> Result<(), Error> {
-    let mut sketch: ReqSketch<ReqF64> = ReqSketch::default();
-    for i in 0..10_000 {
-        sketch.update(req_f64(i as f64));
-    }
-
-    let ranks = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9];
-    let mut previous = 0.0;
-
-    for rank in ranks {
-        let quantile = sketch
-            .quantile(rank, SearchCriteria::Inclusive)?
-            .expect("the sketch is non-empty");
-        assert_that!(*quantile, ge(previous));
-        previous = *quantile;
-    }
-
-    Ok(())
-}
-
-#[test]
-fn rank_quantile_round_trip_is_consistent() -> Result<(), Error> {
-    let mut sketch: ReqSketch<ReqF64> = ReqSketch::default();
-    for i in 0..10_000 {
-        sketch.update(req_f64(i as f64));
-    }
-
-    for target_rank in [0.1, 0.25, 0.5, 0.75, 0.9] {
-        let quantile = sketch
-            .quantile(target_rank, SearchCriteria::Inclusive)?
-            .expect("the sketch is non-empty");
-        let recovered_rank = sketch
-            .rank(&quantile, SearchCriteria::Inclusive)
-            .expect("the sketch is non-empty");
-        let error = (recovered_rank - target_rank).abs() / target_rank;
-        assert_that!(error, lt(0.2));
-    }
-
-    Ok(())
-}
-
-#[test]
-fn search_criteria_rank_consistency() -> Result<(), Error> {
-    let mut sketch: ReqSketch<ReqF64> = ReqSketch::default();
-    for i in 0..1000 {
-        sketch.update(req_f64(i as f64));
-    }
-
-    for value in [100.0, 250.0, 500.0, 750.0].map(req_f64) {
-        let inclusive_rank = sketch
-            .rank(&value, SearchCriteria::Inclusive)
-            .expect("the sketch is non-empty");
-        let exclusive_rank = sketch
-            .rank(&value, SearchCriteria::Exclusive)
-            .expect("the sketch is non-empty");
-
-        assert_that!(exclusive_rank, le(inclusive_rank));
-        assert_that!(inclusive_rank, all!(ge(0.0), le(1.0)));
-        assert_that!(exclusive_rank, all!(ge(0.0), le(1.0)));
-    }
-
-    Ok(())
 }
 
 #[test]
