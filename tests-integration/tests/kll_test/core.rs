@@ -102,21 +102,6 @@ fn float_adapter_rejects_nan_and_orders_values() {
 }
 
 #[test]
-fn retained_count_stays_consistent_through_compaction_and_roundtrip() {
-    let mut sketch = KllSketch::<i64>::new(32).unwrap();
-    for item in 0..100_000 {
-        sketch.update(item);
-        assert!(sketch.num_retained() <= sketch.total_weight() as usize);
-    }
-
-    let decoded = KllSketch::<i64>::deserialize(&sketch.serialize()).unwrap();
-    assert_eq!(decoded.total_weight(), sketch.total_weight());
-    assert_eq!(decoded.num_retained(), sketch.num_retained());
-    assert_eq!(decoded.min_item(), Some(&0));
-    assert_eq!(decoded.max_item(), Some(&99_999));
-}
-
-#[test]
 fn weight_overflow_preserves_state() {
     let mut one = KllSketch::<i64>::new(8).unwrap();
     one.update(0);

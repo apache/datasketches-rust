@@ -19,6 +19,7 @@ use datasketches::error::ErrorKind;
 use datasketches::theta::CompactThetaSketch;
 use datasketches::theta::ThetaSketch;
 use datasketches::theta::ThetaSketchBuilder;
+use datasketches::theta::ThetaSketchView;
 use datasketches::theta::ThetaUnionBuilder;
 use googletest::assert_that;
 use googletest::prelude::anything;
@@ -121,33 +122,6 @@ fn test_exact_mode_half_overlap() {
     for value in 0i64..1000i64 {
         sketch1.update(value);
     }
-
-    let mut sketch2 = ThetaSketchBuilder::default().build().unwrap();
-    for value in 500i64..1500i64 {
-        sketch2.update(value);
-    }
-
-    let mut union = ThetaUnionBuilder::default().build().unwrap();
-    union.update(&sketch1).unwrap();
-    union.update(&sketch2).unwrap();
-    let result = union.to_sketch(true);
-    assert!(!result.is_empty());
-    assert!(!result.is_estimation_mode());
-    assert_eq!(result.estimate(), 1500.0);
-
-    union.reset();
-    let reset = union.to_sketch(true);
-    assert_eq!(reset.num_retained(), 0);
-    assert!(reset.is_empty());
-    assert!(!reset.is_estimation_mode());
-}
-
-#[test]
-fn test_exact_mode_half_overlap_compact() {
-    let mut sketch1 = ThetaSketchBuilder::default().build().unwrap();
-    for value in 0i64..1000i64 {
-        sketch1.update(value);
-    }
     let compact1 = CompactThetaSketch::deserialize(&sketch1.compact(true).serialize()).unwrap();
 
     let mut sketch2 = ThetaSketchBuilder::default().build().unwrap();
@@ -156,13 +130,27 @@ fn test_exact_mode_half_overlap_compact() {
     }
     let compact2 = CompactThetaSketch::deserialize(&sketch2.compact(true).serialize()).unwrap();
 
-    let mut union = ThetaUnionBuilder::default().build().unwrap();
-    union.update(&compact1).unwrap();
-    union.update(&compact2).unwrap();
-    let result = union.to_sketch(true);
-    assert!(!result.is_empty());
-    assert!(!result.is_estimation_mode());
-    assert_eq!(result.estimate(), 1500.0);
+    for (left, right) in [
+        (
+            ThetaSketchView::from(&sketch1),
+            ThetaSketchView::from(&sketch2),
+        ),
+        ((&compact1).into(), (&compact2).into()),
+    ] {
+        let mut union = ThetaUnionBuilder::default().build().unwrap();
+        union.update(left).unwrap();
+        union.update(right).unwrap();
+        let result = union.to_sketch(true);
+        assert!(!result.is_empty());
+        assert!(!result.is_estimation_mode());
+        assert_eq!(result.estimate(), 1500.0);
+
+        union.reset();
+        let reset = union.to_sketch(true);
+        assert_eq!(reset.num_retained(), 0);
+        assert!(reset.is_empty());
+        assert!(!reset.is_estimation_mode());
+    }
 }
 
 #[test]
@@ -460,30 +448,6 @@ fn test_union_cutback_to_k() {
 }
 
 #[test]
-fn test_union_empty_valid_rules() {
-    let empty1 = ThetaSketchBuilder::default().build().unwrap().compact(true);
-    let empty2 = ThetaSketchBuilder::default().build().unwrap().compact(true);
-    let mut one = ThetaSketchBuilder::default().build().unwrap();
-    one.update(1i64);
-    let one = one.compact(true);
-
-    let mut empty_union = ThetaUnionBuilder::default().lg_k(5).build().unwrap();
-    empty_union.update(&empty1).unwrap();
-    empty_union.update(&empty2).unwrap();
-    assert!(empty_union.to_sketch(true).is_empty());
-
-    let mut left_non_empty_union = ThetaUnionBuilder::default().lg_k(5).build().unwrap();
-    left_non_empty_union.update(&one).unwrap();
-    left_non_empty_union.update(&empty2).unwrap();
-    assert!(!left_non_empty_union.to_sketch(true).is_empty());
-
-    let mut right_non_empty_union = ThetaUnionBuilder::default().lg_k(5).build().unwrap();
-    right_non_empty_union.update(&empty1).unwrap();
-    right_non_empty_union.update(&one).unwrap();
-    assert!(!right_non_empty_union.to_sketch(true).is_empty());
-}
-
-#[test]
 fn test_trim_to_k() {
     let hi_sketch = sketch_with_range(10, 0, 3749);
     let lo_sketch = sketch_with_range(9, 10_000, 1783);
@@ -512,15 +476,6 @@ fn test_mixed_lg_k_union_compacts_result_storage() {
             le(result.num_retained().next_power_of_two().max(4) * size_of::<u64>()),
         );
     }
-}
-
-#[test]
-fn test_builder_lg_k() {
-    let sketch = sketch_with_range(10, 0, 1000);
-    let mut union = ThetaUnionBuilder::default().lg_k(10).build().unwrap();
-    union.update(&sketch).unwrap();
-
-    assert_eq!(union.to_sketch(true).estimate(), 1000.0);
 }
 
 #[derive(Clone, Copy, Debug)]

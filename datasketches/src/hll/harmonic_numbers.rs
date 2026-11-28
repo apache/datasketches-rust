@@ -129,30 +129,19 @@ mod tests {
     }
 
     #[test]
-    fn test_bitmap_estimate_empty() {
-        let est = bitmap_estimate(1024, 0);
-        assert_that!(est, near(0.0, 1e-6));
-    }
-
-    #[test]
-    fn test_bitmap_estimate_full() {
+    fn test_bitmap_estimate() {
         let k = 1024;
-        let est = bitmap_estimate(k, k);
+        assert_that!(bitmap_estimate(k, 0), near(0.0, 1e-6));
 
-        // With all slots hit, estimate should be >> k
-        assert_that!(est, gt(k as f64));
+        let full = bitmap_estimate(k, k);
+        // With all slots hit, estimate should be >> k.
+        assert_that!(full, gt(k as f64));
+        // H(k) - H(0) = H(k), so estimate = k * H(k).
+        let expected_full = k as f64 * harmonic_number(k as usize);
+        assert_that!(full, near(expected_full, 1e-6));
 
-        // H(k) - H(0) = H(k), so estimate = k * H(k)
-        let expected = k as f64 * harmonic_number(k as usize);
-        assert_that!(est, near(expected, 1e-6));
-    }
-
-    #[test]
-    fn test_bitmap_estimate_half() {
-        let k = 1024;
-        let est = bitmap_estimate(k, k / 2);
-
-        assert_that!(est, gt(0.0));
-        assert_that!(est, lt(k as f64 * harmonic_number(k as usize)));
+        let half = bitmap_estimate(k, k / 2);
+        assert_that!(half, gt(0.0));
+        assert_that!(half, lt(expected_full));
     }
 }
