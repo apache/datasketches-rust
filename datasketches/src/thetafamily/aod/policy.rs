@@ -15,7 +15,62 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::ops::AddAssign;
+
+use crate::codec::SketchBytes;
+use crate::codec::SketchSlice;
+use crate::codec::assert::insufficient_data;
 use crate::error::Error;
+
+mod sealed {
+    pub trait Sealed {}
+
+    impl Sealed for f32 {}
+    impl Sealed for f64 {}
+}
+
+/// A fixed-width numeric value supported by the ArrayOfNumbers compact wire format.
+///
+/// This trait is sealed and currently implemented only for `f32` and `f64`.
+pub trait ArrayOfNumbersValue: sealed::Sealed + Copy + Default + AddAssign + 'static {
+    #[doc(hidden)]
+    /// Writes this value using the compact ArrayOfNumbers little-endian encoding.
+    fn write_le(self, bytes: &mut SketchBytes);
+
+    #[doc(hidden)]
+    /// Reads this value from the compact ArrayOfNumbers little-endian encoding.
+    fn read_le(cursor: &mut SketchSlice<'_>) -> Result<Self, Error>;
+}
+
+impl ArrayOfNumbersValue for f32 {
+    fn write_le(self, bytes: &mut SketchBytes) {
+        bytes.write_f32_le(self);
+    }
+
+    fn read_le(cursor: &mut SketchSlice<'_>) -> Result<Self, Error> {
+        cursor
+            .read_f32_le()
+            .map_err(insufficient_data("entry_values"))
+    }
+}
+
+impl ArrayOfNumbersValue for f64 {
+    fn write_le(self, bytes: &mut SketchBytes) {
+        bytes.write_f64_le(self);
+    }
+
+    fn read_le(cursor: &mut SketchSlice<'_>) -> Result<Self, Error> {
+        cursor
+            .read_f64_le()
+            .map_err(insufficient_data("entry_values"))
+    }
+}
+
+/// Combines value arrays of type `T` for keys shared by two ArrayOfNumbers sketches.
+pub trait ArrayOfNumbersCombiner<T> {
+    /// Combines `incoming` into `existing` in place.
+    fn combine(&self, existing: &mut [T], incoming: &[T]);
+}
 
 /// Combines the value arrays of keys shared by two ArrayOfDoubles sketches during intersection.
 pub trait ArrayOfDoublesCombiner {
@@ -23,6 +78,12 @@ pub trait ArrayOfDoublesCombiner {
     ///
     /// Both slices have length equal to the intersection operator's configured `num_values`.
     fn combine(&self, existing: &mut [f64], incoming: &[f64]);
+}
+
+impl<C: ArrayOfDoublesCombiner> ArrayOfNumbersCombiner<f64> for C {
+    fn combine(&self, existing: &mut [f64], incoming: &[f64]) {
+        ArrayOfDoublesCombiner::combine(self, existing, incoming);
+    }
 }
 
 pub fn validate_num_values(num_values: u8) -> Result<(), Error> {

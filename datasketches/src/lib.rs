@@ -44,8 +44,8 @@
 //!   rank accuracy, REQ targets configurable high- or low-rank accuracy, T-Digest emphasizes
 //!   distribution tails, and UDDSketch bounds relative value error reproducibly via uniform bucket
 //!   collapsing.
-//! * Use `aod` when retained Theta keys need fixed-size `f64` vector summaries, or `tuple` for
-//!   application-defined summary types and combination policies.
+//! * Use `aod` when retained Theta keys need fixed-size `f32` or `f64` vector summaries, or `tuple`
+//!   for application-defined summary types and combination policies.
 //!
 //! See each module's documentation for accuracy, memory, serialization, and update examples.
 //!
