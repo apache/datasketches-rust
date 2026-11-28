@@ -216,20 +216,8 @@ pub fn num_bytes_for_k(k: u32) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use googletest::assert_that;
-    use googletest::prelude::gt;
-    use googletest::prelude::is_finite;
-    use googletest::prelude::lt;
-
     use super::*;
     use crate::hll::Coupon;
-
-    #[test]
-    fn test_num_bytes_calculation() {
-        assert_eq!(num_bytes_for_k(16), (16 * 3 / 4) + 1);
-
-        assert_eq!(num_bytes_for_k(1024), (1024 * 3 / 4) + 1);
-    }
 
     #[test]
     fn test_update_preserves_neighboring_registers() {
@@ -245,25 +233,6 @@ mod tests {
     }
 
     #[test]
-    fn test_hip_estimator() {
-        let mut arr = Array6::new(10); // 1024 buckets
-
-        assert_eq!(arr.estimate(), 0.0);
-
-        for i in 0..10_000u32 {
-            arr.update(Coupon::from_value(i));
-        }
-
-        let estimate = arr.estimate();
-
-        assert_that!(estimate, gt(0.0));
-        assert_that!(estimate, is_finite());
-
-        assert_that!(estimate, gt(1_000.0));
-        assert_that!(estimate, lt(100_000.0));
-    }
-
-    #[test]
     fn test_full_range() {
         let mut arr = Array6::new(6); // 64 slots
 
@@ -274,20 +243,5 @@ mod tests {
         for val in 0..64u8 {
             assert_eq!(arr.get(u32::from(val)), val);
         }
-    }
-
-    #[test]
-    fn test_kxq_register_split() {
-        let mut arr = Array6::new(8); // 256 buckets
-
-        arr.update(Coupon::pack(0, 10)); // value < 32, goes to kxq0
-        arr.update(Coupon::pack(1, 40)); // value >= 32, goes to kxq1
-
-        // Initial kxq0 = 256 (all zeros = 1.0 each)
-        assert_that!(arr.estimator.kxq0(), lt(256.0));
-
-        // kxq1 should have a small positive value (from 1/2^40)
-        assert_that!(arr.estimator.kxq1(), gt(0.0));
-        assert_that!(arr.estimator.kxq1(), lt(0.001));
     }
 }

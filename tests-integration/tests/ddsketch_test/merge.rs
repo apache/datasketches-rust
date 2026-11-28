@@ -197,3 +197,57 @@ fn merge_under_tight_collapse_budget_preserves_tail_invariants() {
         assert_eq!(DdSketch::deserialize(&bytes).unwrap().total_weight(), 3);
     }
 }
+
+#[test]
+fn merge_wide_sparse_and_unbounded_into_empty_narrow_collapsing_matches_incremental() {
+    let samples = [
+        (1e-6, 3_u64),
+        (1e-3, 1),
+        (0.5, 5),
+        (1.0, 2),
+        (7.5, 4),
+        (190.0, 1),
+        (25_000.0, 6),
+    ];
+    let ranks = [0.0, 0.25, 0.5, 0.75, 1.0];
+
+    let mut wide_sparse = DdSketchBuilder::new(0.01)
+        .store(StoreKind::Sparse)
+        .build()
+        .unwrap();
+    let mut wide_unbounded = DdSketchBuilder::new(0.01)
+        .store(StoreKind::UnboundedDense)
+        .build()
+        .unwrap();
+    for &(v, w) in &samples {
+        wide_sparse.update_with_weight(v, w);
+        wide_unbounded.update_with_weight(v, w);
+    }
+
+    for kind in [
+        StoreKind::CollapsingLowestDense { max_num_bins: 8 },
+        StoreKind::CollapsingHighestDense { max_num_bins: 8 },
+    ] {
+        let mut incremental = DdSketchBuilder::new(0.01).store(kind).build().unwrap();
+        for &(v, w) in &samples {
+            incremental.update_with_weight(v, w);
+        }
+
+        for src in [&wide_sparse, &wide_unbounded] {
+            let mut merged = DdSketchBuilder::new(0.01).store(kind).build().unwrap();
+            merged.merge(src).unwrap();
+            assert_eq!(merged.total_weight(), incremental.total_weight());
+            assert_eq!(merged.min_value(), incremental.min_value());
+            assert_eq!(merged.max_value(), incremental.max_value());
+            assert_eq!(
+                merged.quantiles(&ranks).unwrap(),
+                incremental.quantiles(&ranks).unwrap()
+            );
+            assert_eq!(
+                merged.iter().collect::<Vec<_>>(),
+                incremental.iter().collect::<Vec<_>>()
+            );
+            assert_eq!(merged.serialize(), incremental.serialize());
+        }
+    }
+}

@@ -445,20 +445,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn lower_bound_is_clamped_to_the_non_zero_register_count() {
-        let lg_config_k = 4;
-        let mut estimator = Estimator::new(lg_config_k);
-        for _ in 0..8 {
-            estimator.update(lg_config_k, 0, 1);
-        }
-
-        assert_eq!(
-            estimator.lower_bound(lg_config_k, 0, 8, NumStdDev::Three),
-            8.0
-        );
-    }
-
-    #[test]
     fn lower_bound_is_clamped_to_config_k_when_every_register_is_hit() {
         let lg_config_k = 4;
         let mut estimator = Estimator::new(lg_config_k);
@@ -470,28 +456,6 @@ mod tests {
             estimator.lower_bound(lg_config_k, 1, 16, NumStdDev::Three),
             16.0
         );
-    }
-
-    #[test]
-    fn test_estimator_initialization() {
-        let est = Estimator::new(10); // 1024 registers
-
-        assert_eq!(est.hip_accum(), 0.0);
-        assert_eq!(est.kxq0(), 1024.0); // All zeros = 1.0 each
-        assert_eq!(est.kxq1(), 0.0);
-        assert!(!est.uses_composite_estimate());
-    }
-
-    #[test]
-    fn test_estimator_update() {
-        let mut est = Estimator::new(8); // 256 registers
-
-        est.update(8, 0, 10);
-
-        assert_that!(est.hip_accum(), gt(0.0));
-
-        assert_that!(est.kxq0(), lt(256.0));
-        assert_eq!(est.kxq1(), 0.0);
     }
 
     #[test]

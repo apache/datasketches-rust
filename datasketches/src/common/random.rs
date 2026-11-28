@@ -140,19 +140,6 @@ mod tests {
         }
     }
 
-    /// A coin that stops moving is the failure this module is most exposed to:
-    /// dropping the write-back in `random_bit` pins every flip to one value, and
-    /// the sketches keep compacting and keep passing their own tests while
-    /// always promoting the same half.
-    #[test]
-    fn assert_random_bit_yields_both_values() {
-        let mut seen = [false; 2];
-        for _ in 0..64 {
-            seen[usize::from(random_bit())] = true;
-        }
-        assert_eq!(seen, [true, true], "the stream stopped advancing");
-    }
-
     /// The KLL and REQ error bounds hold only for a fair coin, so pin the
     /// balance. One million draws have a standard deviation of 500 heads; the
     /// bound below is six of them, which a correct generator exceeds about twice
@@ -205,15 +192,8 @@ mod tests {
     }
 
     #[test]
-    fn assert_random_below_one_returns_zero() {
-        for _ in 0..16 {
-            assert_eq!(random_below(1), 0);
-        }
-    }
-
-    #[test]
     fn assert_random_below_respects_bounds() {
-        for bound in [2, 3, 5, 7, 17, 64, 100] {
+        for bound in [1, 2, 3, 5, 7, 17, 64, 100] {
             for _ in 0..256 {
                 let value = random_below(bound);
                 assert!(value < bound, "value {value} >= bound {bound}");

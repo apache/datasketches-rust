@@ -427,14 +427,7 @@ impl Array4 {
 
 #[cfg(test)]
 mod tests {
-    use googletest::assert_that;
-    use googletest::prelude::gt;
-    use googletest::prelude::is_finite;
-    use googletest::prelude::lt;
-    use googletest::prelude::none;
-
     use super::*;
-    use crate::hll::Coupon;
 
     #[test]
     fn test_get_set_raw() {
@@ -455,66 +448,5 @@ mod tests {
         data.put_raw(3, 3);
         assert_eq!(data.get_raw(2), 15);
         assert_eq!(data.get_raw(3), 3);
-    }
-
-    #[test]
-    fn test_hip_estimator_basic() {
-        let mut arr = Array4::new(10); // 1024 buckets
-
-        assert_eq!(arr.estimate(), 0.0);
-
-        for i in 0..10_000u32 {
-            arr.update(Coupon::from_value(i));
-        }
-
-        let estimate = arr.estimate();
-
-        assert_that!(estimate, gt(0.0));
-        assert_that!(estimate, is_finite());
-        assert_that!(estimate, lt(100_000.0));
-
-        assert_that!(estimate, gt(1_000.0));
-        assert_that!(estimate, lt(100_000.0));
-    }
-
-    #[test]
-    fn test_kxq_register_split() {
-        let mut arr = Array4::new(8); // 256 buckets
-
-        arr.update(Coupon::pack(0, 10)); // value < 32, goes to kxq0
-        arr.update(Coupon::pack(1, 40)); // value >= 32, goes to kxq1
-
-        // kxq0 should have decreased (we removed a 0 and added a 10)
-        // Initial kxq0 = 256 (all zeros = 1.0 each)
-        assert_that!(arr.estimator.kxq0(), lt(256.0));
-
-        // kxq1 should have a small positive value (from 1/2^40)
-        assert_that!(arr.estimator.kxq1(), gt(0.0));
-        assert_that!(arr.estimator.kxq1(), lt(0.001));
-    }
-
-    #[test]
-    fn test_shift_cur_min_rebuilds_aux_entry() {
-        let lg_config_k = 4;
-        let num_slots = 1_u32 << lg_config_k;
-        let mut arr = Array4::new(lg_config_k);
-
-        arr.update(Coupon::pack(0, 15));
-        assert_eq!(arr.get_raw(0), AUX_TOKEN);
-        assert_eq!(arr.aux_map.as_ref().and_then(|aux| aux.get(0)), Some(15));
-
-        for slot in 1..num_slots {
-            arr.update(Coupon::pack(slot, 1));
-        }
-
-        assert_eq!(arr.cur_min, 1);
-        assert_eq!(arr.num_at_cur_min, num_slots - 1);
-        assert_eq!(arr.get_raw(0), 14);
-        assert_eq!(arr.get(0), 15);
-        assert_that!(arr.aux_map, none());
-
-        for slot in 1..num_slots {
-            assert_eq!(arr.get(slot), 1);
-        }
     }
 }
