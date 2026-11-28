@@ -49,14 +49,15 @@ pub fn write_uvarint64_to_buf(dst: &mut [u8], v: u64) -> usize {
 
 /// Encodes `v` as a DataDog unsigned varint into `out`.
 #[inline]
-pub fn encode_uvarint64(out: &mut SketchBytes, v: u64) {
-    if v < 0x80 {
-        out.write_u8(v as u8);
-        return;
+pub fn encode_uvarint64(out: &mut SketchBytes, mut v: u64) {
+    for _ in 0..(MAX_VAR_LEN_64 - 1) {
+        if v < 0x80 {
+            break;
+        }
+        out.write_u8((v as u8) | 0x80);
+        v >>= 7;
     }
-    let mut buf = [0; MAX_VAR_LEN_64];
-    let len = write_uvarint64_to_buf(&mut buf, v);
-    out.write(&buf[..len]);
+    out.write_u8(v as u8);
 }
 
 /// Decodes a DataDog unsigned varint from `cursor`, preserving lenient 9th-byte and overlong
