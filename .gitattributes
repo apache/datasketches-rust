@@ -41,6 +41,7 @@ NOTICE text
 # Explicitly denote all files that are truly binary and should not be modified.
 *.jpg binary
 *.png binary
+*.sk binary
 *.svg binary
 
 # Declare files that should be ignored when creating an archive of the git repository
